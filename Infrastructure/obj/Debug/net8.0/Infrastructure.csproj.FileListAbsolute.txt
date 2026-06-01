@@ -1,0 +1,17 @@
+D:\ki9\PEMS\Infrastructure\bin\Debug\net8.0\Infrastructure.deps.json
+D:\ki9\PEMS\Infrastructure\bin\Debug\net8.0\Infrastructure.dll
+D:\ki9\PEMS\Infrastructure\bin\Debug\net8.0\Infrastructure.pdb
+D:\ki9\PEMS\Infrastructure\bin\Debug\net8.0\Domain.dll
+D:\ki9\PEMS\Infrastructure\bin\Debug\net8.0\Domain.pdb
+D:\ki9\PEMS\Infrastructure\obj\Debug\net8.0\Infrastructure.csproj.AssemblyReference.cache
+D:\ki9\PEMS\Infrastructure\obj\Debug\net8.0\Infrastructure.GeneratedMSBuildEditorConfig.editorconfig
+D:\ki9\PEMS\Infrastructure\obj\Debug\net8.0\Infrastructure.AssemblyInfoInputs.cache
+D:\ki9\PEMS\Infrastructure\obj\Debug\net8.0\Infrastructure.AssemblyInfo.cs
+D:\ki9\PEMS\Infrastructure\obj\Debug\net8.0\Infrastructure.csproj.CoreCompileInputs.cache
+D:\ki9\PEMS\Infrastructure\obj\Debug\net8.0\Infrastr.15EFFBFE.Up2Date
+D:\ki9\PEMS\Infrastructure\obj\Debug\net8.0\Infrastructure.dll
+D:\ki9\PEMS\Infrastructure\obj\Debug\net8.0\refint\Infrastructure.dll
+D:\ki9\PEMS\Infrastructure\obj\Debug\net8.0\Infrastructure.pdb
+D:\ki9\PEMS\Infrastructure\obj\Debug\net8.0\ref\Infrastructure.dll
+D:\ki9\PEMS\Infrastructure\bin\Debug\net8.0\Infrastructure.runtimeconfig.json
+D:\ki9\PEMS\Infrastructure\obj\Debug\net8.0\Infrastructure.genruntimeconfig.cache

@@ -1,0 +1,6 @@
+@Pems_WebAPI_HostAddress = http://localhost:5265
+
+GET {{Pems_WebAPI_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

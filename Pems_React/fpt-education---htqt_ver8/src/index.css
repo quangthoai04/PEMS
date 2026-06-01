@@ -1,0 +1,39 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,100..900&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  
+  --color-fpt-orange: #F37021;
+  --color-fpt-orange-hover: #d9621a;
+  --color-fpt-navy: #004C91;
+  --color-fpt-navy-hover: #003b70;
+  --color-fpt-green: #006D3E;
+  --color-fpt-footer: #173d24;
+  --color-fpt-footer-light: #1f4f30;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: #f8fafc;
+  color: #1e293b;
+}
+
+.ql-editor {
+  min-height: 250px;
+}
+
+.ql-container {
+  min-height: 250px;
+}
+
+.custom-quill-no-border .ql-toolbar.ql-snow {
+  border-left: none !important;
+  border-right: none !important;
+  border-top: none !important;
+  border-bottom: 1px solid #f3f4f6 !important;
+}
+
+.custom-quill-no-border .ql-container.ql-snow {
+  border: none !important;
+}
