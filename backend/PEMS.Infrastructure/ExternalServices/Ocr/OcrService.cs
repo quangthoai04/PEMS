@@ -1,5 +1,7 @@
-namespace PEMS.Shared;
+using PEMS.Application.Common.Interfaces;
 
-public class OcrService
+namespace PEMS.Infrastructure.ExternalServices.Ocr;
+
+public class OcrService : IOcrService
 {
 }

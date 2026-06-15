@@ -1,5 +1,7 @@
-namespace PEMS.Shared;
+using PEMS.Application.Common.Interfaces;
 
-public class FaceRecognitionService
+namespace PEMS.Infrastructure.ExternalServices.FaceRecognition;
+
+public class FaceRecognitionService : IFaceRecognitionService
 {
 }

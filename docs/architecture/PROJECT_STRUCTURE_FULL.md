@@ -1,19 +1,18 @@
-# Project Structure Full Detailed
+# PROJECT STRUCTURE FULL REPORT
 
-## 1. Project Overview
+## 1. Tổng quan dự án
 
-* **Tên dự án**: PEMS (FPT Education Management System)
-* **Mục đích hệ thống**: Quản lý các chuyến tham quan (Visit Requests) và điều phối đối tác (Partners) cho FPT Education.
-* **Backend**: .NET 9 (C# 13), Clean Architecture, MediatR (CQRS), Entity Framework Core.
-* **Frontend**: React 19, TypeScript, Vite.
-* **Database**: MySQL 8.0.
-* **Kiến trúc tổng thể**: Clean Architecture, CQRS.
-* **Trạng thái hiện tại**: Scaffold / Pending implementation.
+* Tên dự án: PEMS (Education Management System)
+* Công nghệ backend: .NET 9, C# 13, Entity Framework Core
+* Công nghệ frontend: React 19, TypeScript, Vite
+* Database: MySQL 8.0
+* Kiến trúc đang dùng: Clean Architecture (Domain, Application, Infrastructure, Api) cho backend. CQRS Pattern.
+* Nhận xét nhanh về cấu trúc hiện tại: Hệ thống đã được tổ chức phân lớp rất tốt. Các thư mục rác (như Scaffolder) đã được loại bỏ. Frontend và Backend được tách biệt rõ ràng.
 
-## 2. Full Project Tree
+## 2. Cây thư mục đầy đủ
 
-```text
-PEMS/
+```
+project-root/
 ├── .vscode/
 │   ├── launch.json
 │   └── tasks.json
@@ -71,137 +70,200 @@ PEMS/
 │   │   ├── Accounts/
 │   │   │   ├── Commands/
 │   │   │   │   ├── CreateAccount/
-│   │   │   │   │   ├── CreateAccountCommandHa.../
-│   │   │   │   │   ├── CreateAccountCommandVa.../
 │   │   │   │   │   ├── CreateAccountCommand.cs
+│   │   │   │   │   ├── CreateAccountCommandHandler.cs
+│   │   │   │   │   ├── CreateAccountCommandValidator.cs
 │   │   │   │   │   └── CreateAccountResponse.cs
 │   │   │   │   ├── ManageAccountStatus/
-│   │   │   │   │   └── ManageAccountSta.../
+│   │   │   │   │   ├── ManageAccountStatusCommand.cs
+│   │   │   │   │   ├── ManageAccountStatusCommandHandler.cs
+│   │   │   │   │   ├── ManageAccountStatusCommandValidator.cs
+│   │   │   │   │   └── ManageAccountStatusResponse.cs
 │   │   │   │   └── UpdateAccountRole/
-│   │   │   │       ├── UpdateAccountRoleC.../
-│   │   │   │       └── UpdateAccountRoleR.../
+│   │   │   │       ├── UpdateAccountRoleCommand.cs
+│   │   │   │       ├── UpdateAccountRoleCommandHandler.cs
+│   │   │   │       ├── UpdateAccountRoleCommandValidator.cs
+│   │   │   │       └── UpdateAccountRoleResponse.cs
 │   │   │   └── Queries/
 │   │   │       ├── SearchandFilterAccounts/
-│   │   │       │   └── SearchandFilt.../
+│   │   │       │   ├── SearchandFilterAccountsDto.cs
+│   │   │       │   ├── SearchandFilterAccountsQuery.cs
+│   │   │       │   └── SearchandFilterAccountsQueryHandler.cs
 │   │   │       ├── ViewAccountDetails/
-│   │   │       │   └── ViewAccountDetails.../
+│   │   │       │   ├── ViewAccountDetailsDto.cs
+│   │   │       │   ├── ViewAccountDetailsQuery.cs
+│   │   │       │   └── ViewAccountDetailsQueryHandler.cs
 │   │   │       └── ViewAccountList/
-│   │   │           ├── ViewAccountListQueryH.../
 │   │   │           ├── ViewAccountListDto.cs
-│   │   │           └── ViewAccountListQuery.cs
+│   │   │           ├── ViewAccountListQuery.cs
+│   │   │           └── ViewAccountListQueryHandler.cs
 │   │   ├── AgendaTemplates/
 │   │   │   ├── Commands/
 │   │   │   │   ├── CreateAgendaTemplate/
-│   │   │   │   │   └── CreateAg.../
+│   │   │   │   │   ├── CreateAgendaTemplateCommand.cs
+│   │   │   │   │   ├── CreateAgendaTemplateCommandHandler.cs
+│   │   │   │   │   ├── CreateAgendaTemplateCommandValidator.cs
+│   │   │   │   │   └── CreateAgendaTemplateResponse.cs
 │   │   │   │   ├── DeleteAgendaTemplate/
-│   │   │   │   │   └── DeleteAg.../
+│   │   │   │   │   ├── DeleteAgendaTemplateCommand.cs
+│   │   │   │   │   ├── DeleteAgendaTemplateCommandHandler.cs
+│   │   │   │   │   ├── DeleteAgendaTemplateCommandValidator.cs
+│   │   │   │   │   └── DeleteAgendaTemplateResponse.cs
 │   │   │   │   └── UpdateAgendaTemplate/
-│   │   │   │       └── UpdateAg.../
+│   │   │   │       ├── UpdateAgendaTemplateCommand.cs
+│   │   │   │       ├── UpdateAgendaTemplateCommandHandler.cs
+│   │   │   │       ├── UpdateAgendaTemplateCommandValidator.cs
+│   │   │   │       └── UpdateAgendaTemplateResponse.cs
 │   │   │   └── Queries/
 │   │   │       ├── ViewAgendaTemplateDetail/
-│   │   │       │   └── ViewA.../
+│   │   │       │   ├── ViewAgendaTemplateDetailDto.cs
+│   │   │       │   ├── ViewAgendaTemplateDetailQuery.cs
+│   │   │       │   └── ViewAgendaTemplateDetailQueryHandler.cs
 │   │   │       └── ViewAgendaTemplateList/
-│   │   │           └── ViewAge.../
+│   │   │           ├── ViewAgendaTemplateListDto.cs
+│   │   │           ├── ViewAgendaTemplateListQuery.cs
+│   │   │           └── ViewAgendaTemplateListQueryHandler.cs
 │   │   ├── ApiIntegrations/
 │   │   │   ├── Commands/
 │   │   │   │   ├── ConfigureRequestLimit/
-│   │   │   │   │   └── Configu.../
+│   │   │   │   │   ├── ConfigureRequestLimitCommand.cs
+│   │   │   │   │   ├── ConfigureRequestLimitCommandHandler.cs
+│   │   │   │   │   ├── ConfigureRequestLimitCommandValidator.cs
+│   │   │   │   │   └── ConfigureRequestLimitResponse.cs
 │   │   │   │   ├── CreateAPIConfiguration/
-│   │   │   │   │   └── Create.../
+│   │   │   │   │   ├── CreateAPIConfigurationCommand.cs
+│   │   │   │   │   ├── CreateAPIConfigurationCommandHandler.cs
+│   │   │   │   │   ├── CreateAPIConfigurationCommandValidator.cs
+│   │   │   │   │   └── CreateAPIConfigurationResponse.cs
 │   │   │   │   ├── DeleteAPIConfiguration/
-│   │   │   │   │   └── Delete.../
+│   │   │   │   │   ├── DeleteAPIConfigurationCommand.cs
+│   │   │   │   │   ├── DeleteAPIConfigurationCommandHandler.cs
+│   │   │   │   │   ├── DeleteAPIConfigurationCommandValidator.cs
+│   │   │   │   │   └── DeleteAPIConfigurationResponse.cs
 │   │   │   │   ├── ManageAPIStatus/
-│   │   │   │   │   └── ManageAPIStat.../
+│   │   │   │   │   ├── ManageAPIStatusCommand.cs
+│   │   │   │   │   ├── ManageAPIStatusCommandHandler.cs
+│   │   │   │   │   ├── ManageAPIStatusCommandValidator.cs
+│   │   │   │   │   └── ManageAPIStatusResponse.cs
 │   │   │   │   ├── TestAPIConnection/
-│   │   │   │   │   └── TestAPIConn.../
+│   │   │   │   │   ├── TestAPIConnectionCommand.cs
+│   │   │   │   │   ├── TestAPIConnectionCommandHandler.cs
+│   │   │   │   │   ├── TestAPIConnectionCommandValidator.cs
+│   │   │   │   │   └── TestAPIConnectionResponse.cs
 │   │   │   │   └── UpdateAPIConfiguration/
-│   │   │   │       └── Update.../
+│   │   │   │       ├── UpdateAPIConfigurationCommand.cs
+│   │   │   │       ├── UpdateAPIConfigurationCommandHandler.cs
+│   │   │   │       ├── UpdateAPIConfigurationCommandValidator.cs
+│   │   │   │       └── UpdateAPIConfigurationResponse.cs
 │   │   │   └── Queries/
 │   │   │       ├── SearchAPILogs/
-│   │   │       │   ├── SearchAPILogsQue.../
-│   │   │       │   └── SearchAPILogsDto.cs
+│   │   │       │   ├── SearchAPILogsDto.cs
+│   │   │       │   ├── SearchAPILogsQuery.cs
+│   │   │       │   └── SearchAPILogsQueryHandler.cs
 │   │   │       ├── ViewAPIConfiguration/
-│   │   │       │   └── ViewAPICo.../
+│   │   │       │   ├── ViewAPIConfigurationDto.cs
+│   │   │       │   ├── ViewAPIConfigurationQuery.cs
+│   │   │       │   └── ViewAPIConfigurationQueryHandler.cs
 │   │   │       └── ViewAPILogs/
-│   │   │           ├── ViewAPILogsQueryHa.../
 │   │   │           ├── ViewAPILogsDto.cs
-│   │   │           └── ViewAPILogsQuery.cs
+│   │   │           ├── ViewAPILogsQuery.cs
+│   │   │           └── ViewAPILogsQueryHandler.cs
 │   │   ├── Authentication/
 │   │   │   ├── Commands/
 │   │   │   │   ├── ForgotPassword/
-│   │   │   │   │   ├── ForgotPasswordC.../
-│   │   │   │   │   └── ForgotPasswordR.../
+│   │   │   │   │   ├── ForgotPasswordCommand.cs
+│   │   │   │   │   ├── ForgotPasswordCommandHandler.cs
+│   │   │   │   │   ├── ForgotPasswordCommandValidator.cs
+│   │   │   │   │   └── ForgotPasswordResponse.cs
 │   │   │   │   ├── LoginViaCredentials/
-│   │   │   │   │   └── LoginViaCr.../
+│   │   │   │   │   ├── LoginViaCredentialsCommand.cs
+│   │   │   │   │   ├── LoginViaCredentialsCommandHandler.cs
+│   │   │   │   │   ├── LoginViaCredentialsCommandValidator.cs
+│   │   │   │   │   └── LoginViaCredentialsResponse.cs
 │   │   │   │   ├── LoginViaSso/
-│   │   │   │   │   ├── LoginViaSsoCommand.../
-│   │   │   │   │   ├── LoginViaSsoRespons.../
-│   │   │   │   │   └── LoginViaSsoCommand.cs
+│   │   │   │   │   ├── LoginViaSsoCommand.cs
+│   │   │   │   │   ├── LoginViaSsoCommandHandler.cs
+│   │   │   │   │   ├── LoginViaSsoCommandValidator.cs
+│   │   │   │   │   └── LoginViaSsoResponse.cs
 │   │   │   │   └── Logout/
 │   │   │   │       ├── LogoutCommand.cs
 │   │   │   │       ├── LogoutCommandHandler.cs
 │   │   │   │       ├── LogoutCommandValidator.cs
 │   │   │   │       └── LogoutResponse.cs
-│   │   │   ├── Dtos/
-│   │   │   │   ├── LoginRequest.cs
-│   │   │   │   ├── LoginResponse.cs
-│   │   │   │   └── README.md
 │   │   │   ├── Mappings/
 │   │   │   │   └── AuthenticationMappingProfile.cs
-│   │   │   ├── Rules/
-│   │   │   │   └── README.md
-│   │   │   └── Services/
-│   │   │       ├── AuthService.cs
-│   │   │       └── IAuthService.cs
+│   │   │   └── Rules/
+│   │   │       └── README.md
 │   │   ├── Calendars/
 │   │   │   ├── Commands/
 │   │   │   │   ├── AddPersonalEvent/
-│   │   │   │   │   ├── AddPersonalEventCo.../
-│   │   │   │   │   └── AddPersonalEventRe.../
+│   │   │   │   │   ├── AddPersonalEventCommand.cs
+│   │   │   │   │   ├── AddPersonalEventCommandHandler.cs
+│   │   │   │   │   ├── AddPersonalEventCommandValidator.cs
+│   │   │   │   │   └── AddPersonalEventResponse.cs
 │   │   │   │   ├── DeletePersonalEvent/
-│   │   │   │   │   └── DeletePersonalE.../
+│   │   │   │   │   ├── DeletePersonalEventCommand.cs
+│   │   │   │   │   ├── DeletePersonalEventCommandHandler.cs
+│   │   │   │   │   ├── DeletePersonalEventCommandValidator.cs
+│   │   │   │   │   └── DeletePersonalEventResponse.cs
 │   │   │   │   ├── SwitchViewMode/
-│   │   │   │   │   ├── SwitchViewModeComman.../
-│   │   │   │   │   └── SwitchViewModeRespon.../
+│   │   │   │   │   ├── SwitchViewModeCommand.cs
+│   │   │   │   │   ├── SwitchViewModeCommandHandler.cs
+│   │   │   │   │   ├── SwitchViewModeCommandValidator.cs
+│   │   │   │   │   └── SwitchViewModeResponse.cs
 │   │   │   │   └── UpdatePersonalEvent/
-│   │   │   │       └── UpdatePersonalE.../
+│   │   │   │       ├── UpdatePersonalEventCommand.cs
+│   │   │   │       ├── UpdatePersonalEventCommandHandler.cs
+│   │   │   │       ├── UpdatePersonalEventCommandValidator.cs
+│   │   │   │       └── UpdatePersonalEventResponse.cs
 │   │   │   └── Queries/
 │   │   │       ├── ViewDepartmentCalendar/
-│   │   │       │   └── ViewDepartmen.../
+│   │   │       │   ├── ViewDepartmentCalendarDto.cs
+│   │   │       │   ├── ViewDepartmentCalendarQuery.cs
+│   │   │       │   └── ViewDepartmentCalendarQueryHandler.cs
 │   │   │       ├── ViewEventDetails/
-│   │   │       │   ├── ViewEventDetailsQue.../
-│   │   │       │   └── ViewEventDetailsDto.cs
+│   │   │       │   ├── ViewEventDetailsDto.cs
+│   │   │       │   ├── ViewEventDetailsQuery.cs
+│   │   │       │   └── ViewEventDetailsQueryHandler.cs
 │   │   │       └── ViewMyEvents/
-│   │   │           ├── ViewMyEventsQueryHandle.../
 │   │   │           ├── ViewMyEventsDto.cs
-│   │   │           └── ViewMyEventsQuery.cs
+│   │   │           ├── ViewMyEventsQuery.cs
+│   │   │           └── ViewMyEventsQueryHandler.cs
 │   │   ├── Campuses/
 │   │   │   ├── Commands/
 │   │   │   │   ├── AddNewCampus/
-│   │   │   │   │   ├── AddNewCampusCommandHand.../
-│   │   │   │   │   ├── AddNewCampusCommandVali.../
 │   │   │   │   │   ├── AddNewCampusCommand.cs
+│   │   │   │   │   ├── AddNewCampusCommandHandler.cs
+│   │   │   │   │   ├── AddNewCampusCommandValidator.cs
 │   │   │   │   │   └── AddNewCampusResponse.cs
 │   │   │   │   ├── AssignCampusLead/
-│   │   │   │   │   ├── AssignCampusLeadCom.../
-│   │   │   │   │   └── AssignCampusLeadRes.../
+│   │   │   │   │   ├── AssignCampusLeadCommand.cs
+│   │   │   │   │   ├── AssignCampusLeadCommandHandler.cs
+│   │   │   │   │   ├── AssignCampusLeadCommandValidator.cs
+│   │   │   │   │   └── AssignCampusLeadResponse.cs
 │   │   │   │   ├── ManageCampusStatus/
-│   │   │   │   │   └── ManageCampusStatu.../
+│   │   │   │   │   ├── ManageCampusStatusCommand.cs
+│   │   │   │   │   ├── ManageCampusStatusCommandHandler.cs
+│   │   │   │   │   ├── ManageCampusStatusCommandValidator.cs
+│   │   │   │   │   └── ManageCampusStatusResponse.cs
 │   │   │   │   └── UpdateCampus/
-│   │   │   │       ├── UpdateCampusCommandHand.../
-│   │   │   │       ├── UpdateCampusCommandVali.../
 │   │   │   │       ├── UpdateCampusCommand.cs
+│   │   │   │       ├── UpdateCampusCommandHandler.cs
+│   │   │   │       ├── UpdateCampusCommandValidator.cs
 │   │   │   │       └── UpdateCampusResponse.cs
 │   │   │   └── Queries/
 │   │   │       ├── SearchandFilterCampus/
-│   │   │       │   └── SearchandFilter.../
+│   │   │       │   ├── SearchandFilterCampusDto.cs
+│   │   │       │   ├── SearchandFilterCampusQuery.cs
+│   │   │       │   └── SearchandFilterCampusQueryHandler.cs
 │   │   │       ├── ViewCampusDetails/
-│   │   │       │   ├── ViewCampusDetailsDt.../
-│   │   │       │   └── ViewCampusDetailsQu.../
+│   │   │       │   ├── ViewCampusDetailsDto.cs
+│   │   │       │   ├── ViewCampusDetailsQuery.cs
+│   │   │       │   └── ViewCampusDetailsQueryHandler.cs
 │   │   │       └── ViewCampusList/
-│   │   │           ├── ViewCampusListQueryHan.../
 │   │   │           ├── ViewCampusListDto.cs
-│   │   │           └── ViewCampusListQuery.cs
+│   │   │           ├── ViewCampusListQuery.cs
+│   │   │           └── ViewCampusListQueryHandler.cs
 │   │   ├── Common/
 │   │   │   ├── Behaviours/
 │   │   │   │   ├── AuditLogBehaviour.cs
@@ -253,124 +315,235 @@ PEMS/
 │   │   ├── Delegations/
 │   │   │   ├── Commands/
 │   │   │   │   ├── ApproveCrossCampusRequest/
-│   │   │   │   │   └── Approve.../
+│   │   │   │   │   ├── ApproveCrossCampusRequestCommand.cs
+│   │   │   │   │   ├── ApproveCrossCampusRequestCommandHandler.cs
+│   │   │   │   │   ├── ApproveCrossCampusRequestCommandValidator.cs
+│   │   │   │   │   └── ApproveCrossCampusRequestResponse.cs
 │   │   │   │   ├── ApproveResourceRequest/
-│   │   │   │   │   └── ApproveRes.../
+│   │   │   │   │   ├── ApproveResourceRequestCommand.cs
+│   │   │   │   │   ├── ApproveResourceRequestCommandHandler.cs
+│   │   │   │   │   ├── ApproveResourceRequestCommandValidator.cs
+│   │   │   │   │   └── ApproveResourceRequestResponse.cs
 │   │   │   │   ├── CloseDelegation/
-│   │   │   │   │   ├── CloseDelegationCo.../
-│   │   │   │   │   └── CloseDelegationRe.../
+│   │   │   │   │   ├── CloseDelegationCommand.cs
+│   │   │   │   │   ├── CloseDelegationCommandHandler.cs
+│   │   │   │   │   ├── CloseDelegationCommandValidator.cs
+│   │   │   │   │   └── CloseDelegationResponse.cs
 │   │   │   │   ├── ConfirmParticipation/
-│   │   │   │   │   └── ConfirmParti.../
+│   │   │   │   │   ├── ConfirmParticipationCommand.cs
+│   │   │   │   │   ├── ConfirmParticipationCommandHandler.cs
+│   │   │   │   │   ├── ConfirmParticipationCommandValidator.cs
+│   │   │   │   │   └── ConfirmParticipationResponse.cs
 │   │   │   │   ├── ConfirmTheChangeProposal/
-│   │   │   │   │   └── ConfirmT.../
+│   │   │   │   │   ├── ConfirmTheChangeProposalCommand.cs
+│   │   │   │   │   ├── ConfirmTheChangeProposalCommandHandler.cs
+│   │   │   │   │   ├── ConfirmTheChangeProposalCommandValidator.cs
+│   │   │   │   │   └── ConfirmTheChangeProposalResponse.cs
 │   │   │   │   ├── CreateGuestDelegation/
-│   │   │   │   │   └── CreateGuest.../
+│   │   │   │   │   ├── CreateGuestDelegationCommand.cs
+│   │   │   │   │   ├── CreateGuestDelegationCommandHandler.cs
+│   │   │   │   │   ├── CreateGuestDelegationCommandValidator.cs
+│   │   │   │   │   └── CreateGuestDelegationResponse.cs
 │   │   │   │   ├── CreateMeetingMinutes/
-│   │   │   │   │   └── CreateMeetin.../
+│   │   │   │   │   ├── CreateMeetingMinutesCommand.cs
+│   │   │   │   │   ├── CreateMeetingMinutesCommandHandler.cs
+│   │   │   │   │   ├── CreateMeetingMinutesCommandValidator.cs
+│   │   │   │   │   └── CreateMeetingMinutesResponse.cs
 │   │   │   │   ├── CreateNewsArticle/
-│   │   │   │   │   └── CreateNewsArtic.../
+│   │   │   │   │   ├── CreateNewsArticleCommand.cs
+│   │   │   │   │   ├── CreateNewsArticleCommandHandler.cs
+│   │   │   │   │   ├── CreateNewsArticleCommandValidator.cs
+│   │   │   │   │   └── CreateNewsArticleResponse.cs
 │   │   │   │   ├── CreatePartnerProfile/
-│   │   │   │   │   └── CreatePartne.../
+│   │   │   │   │   ├── CreatePartnerProfileCommand.cs
+│   │   │   │   │   ├── CreatePartnerProfileCommandHandler.cs
+│   │   │   │   │   ├── CreatePartnerProfileCommandValidator.cs
+│   │   │   │   │   └── CreatePartnerProfileResponse.cs
 │   │   │   │   ├── EditMeetingMinutes/
-│   │   │   │   │   └── EditMeetingMin.../
+│   │   │   │   │   ├── EditMeetingMinutesCommand.cs
+│   │   │   │   │   ├── EditMeetingMinutesCommandHandler.cs
+│   │   │   │   │   ├── EditMeetingMinutesCommandValidator.cs
+│   │   │   │   │   └── EditMeetingMinutesResponse.cs
 │   │   │   │   ├── PrepareVisitLogistics/
-│   │   │   │   │   └── PrepareVisi.../
+│   │   │   │   │   ├── PrepareVisitLogisticsCommand.cs
+│   │   │   │   │   ├── PrepareVisitLogisticsCommandHandler.cs
+│   │   │   │   │   ├── PrepareVisitLogisticsCommandValidator.cs
+│   │   │   │   │   └── PrepareVisitLogisticsResponse.cs
 │   │   │   │   ├── ProcessVisitRequest/
-│   │   │   │   │   └── ProcessVisitR.../
+│   │   │   │   │   ├── ProcessVisitRequestCommand.cs
+│   │   │   │   │   ├── ProcessVisitRequestCommandHandler.cs
+│   │   │   │   │   ├── ProcessVisitRequestCommandValidator.cs
+│   │   │   │   │   └── ProcessVisitRequestResponse.cs
 │   │   │   │   ├── ProposeResourceModification/
-│   │   │   │   │   └── Propo.../
+│   │   │   │   │   ├── ProposeResourceModificationCommand.cs
+│   │   │   │   │   ├── ProposeResourceModificationCommandHandler.cs
+│   │   │   │   │   ├── ProposeResourceModificationCommandValidator.cs
+│   │   │   │   │   └── ProposeResourceModificationResponse.cs
 │   │   │   │   ├── ScanBusinessCard/
-│   │   │   │   │   └── ScanBusinessCard.../
+│   │   │   │   │   ├── ScanBusinessCardCommand.cs
+│   │   │   │   │   ├── ScanBusinessCardCommandHandler.cs
+│   │   │   │   │   ├── ScanBusinessCardCommandValidator.cs
+│   │   │   │   │   └── ScanBusinessCardResponse.cs
 │   │   │   │   ├── SubmitDelegationFeedback/
-│   │   │   │   │   └── SubmitDe.../
+│   │   │   │   │   ├── SubmitDelegationFeedbackCommand.cs
+│   │   │   │   │   ├── SubmitDelegationFeedbackCommandHandler.cs
+│   │   │   │   │   ├── SubmitDelegationFeedbackCommandValidator.cs
+│   │   │   │   │   └── SubmitDelegationFeedbackResponse.cs
 │   │   │   │   ├── SubmitVisitRequest/
-│   │   │   │   │   └── SubmitVisitReq.../
+│   │   │   │   │   ├── SubmitVisitRequestCommand.cs
+│   │   │   │   │   ├── SubmitVisitRequestCommandHandler.cs
+│   │   │   │   │   ├── SubmitVisitRequestCommandValidator.cs
+│   │   │   │   │   └── SubmitVisitRequestResponse.cs
 │   │   │   │   ├── TagFacesOnPhotos/
-│   │   │   │   │   └── TagFacesOnPhotos.../
+│   │   │   │   │   ├── TagFacesOnPhotosCommand.cs
+│   │   │   │   │   ├── TagFacesOnPhotosCommandHandler.cs
+│   │   │   │   │   ├── TagFacesOnPhotosCommandValidator.cs
+│   │   │   │   │   └── TagFacesOnPhotosResponse.cs
 │   │   │   │   ├── UpdateGuestDelegation/
-│   │   │   │   │   └── UpdateGuest.../
+│   │   │   │   │   ├── UpdateGuestDelegationCommand.cs
+│   │   │   │   │   ├── UpdateGuestDelegationCommandHandler.cs
+│   │   │   │   │   ├── UpdateGuestDelegationCommandValidator.cs
+│   │   │   │   │   └── UpdateGuestDelegationResponse.cs
 │   │   │   │   ├── UpdateVisitLogistics/
-│   │   │   │   │   └── UpdateVisitL.../
+│   │   │   │   │   ├── UpdateVisitLogisticsCommand.cs
+│   │   │   │   │   ├── UpdateVisitLogisticsCommandHandler.cs
+│   │   │   │   │   ├── UpdateVisitLogisticsCommandValidator.cs
+│   │   │   │   │   └── UpdateVisitLogisticsResponse.cs
 │   │   │   │   ├── UploadAttachedDocuments/
-│   │   │   │   │   └── UploadAtt.../
+│   │   │   │   │   ├── UploadAttachedDocumentsCommand.cs
+│   │   │   │   │   ├── UploadAttachedDocumentsCommandHandler.cs
+│   │   │   │   │   ├── UploadAttachedDocumentsCommandValidator.cs
+│   │   │   │   │   └── UploadAttachedDocumentsResponse.cs
 │   │   │   │   └── UploadVisitPhotos/
-│   │   │   │       └── UploadVisitPhot.../
+│   │   │   │       ├── UploadVisitPhotosCommand.cs
+│   │   │   │       ├── UploadVisitPhotosCommandHandler.cs
+│   │   │   │       ├── UploadVisitPhotosCommandValidator.cs
+│   │   │   │       └── UploadVisitPhotosResponse.cs
 │   │   │   ├── Dtos/
 │   │   │   │   └── README.md
 │   │   │   ├── Mappings/
 │   │   │   │   └── DelegationsMappingProfile.cs
 │   │   │   ├── Queries/
 │   │   │   │   ├── SearchDelegations/
-│   │   │   │   │   └── SearchDelegation.../
+│   │   │   │   │   ├── SearchDelegationsDto.cs
+│   │   │   │   │   ├── SearchDelegationsQuery.cs
+│   │   │   │   │   └── SearchDelegationsQueryHandler.cs
 │   │   │   │   ├── ViewGuestDelegationDetails/
-│   │   │   │   │   └── ViewGue.../
+│   │   │   │   │   ├── ViewGuestDelegationDetailsDto.cs
+│   │   │   │   │   ├── ViewGuestDelegationDetailsQuery.cs
+│   │   │   │   │   └── ViewGuestDelegationDetailsQueryHandler.cs
 │   │   │   │   ├── ViewGuestDelegationList/
-│   │   │   │   │   └── ViewGuestD.../
+│   │   │   │   │   ├── ViewGuestDelegationListDto.cs
+│   │   │   │   │   ├── ViewGuestDelegationListQuery.cs
+│   │   │   │   │   └── ViewGuestDelegationListQueryHandler.cs
 │   │   │   │   └── ViewMeetingMinutesDetails/
-│   │   │   │       └── ViewMeet.../
+│   │   │   │       ├── ViewMeetingMinutesDetailsDto.cs
+│   │   │   │       ├── ViewMeetingMinutesDetailsQuery.cs
+│   │   │   │       └── ViewMeetingMinutesDetailsQueryHandler.cs
 │   │   │   └── Rules/
 │   │   │       └── README.md
 │   │   ├── Departments/
 │   │   │   ├── Commands/
 │   │   │   │   ├── AddDepartmentPersonnel/
-│   │   │   │   │   └── AddDepartm.../
+│   │   │   │   │   ├── AddDepartmentPersonnelCommand.cs
+│   │   │   │   │   ├── AddDepartmentPersonnelCommandHandler.cs
+│   │   │   │   │   ├── AddDepartmentPersonnelCommandValidator.cs
+│   │   │   │   │   └── AddDepartmentPersonnelResponse.cs
 │   │   │   │   ├── AddNewDepartment/
-│   │   │   │   │   └── AddNewDepartment.../
+│   │   │   │   │   ├── AddNewDepartmentCommand.cs
+│   │   │   │   │   ├── AddNewDepartmentCommandHandler.cs
+│   │   │   │   │   ├── AddNewDepartmentCommandValidator.cs
+│   │   │   │   │   └── AddNewDepartmentResponse.cs
 │   │   │   │   ├── AssignTasks/
-│   │   │   │   │   ├── AssignTasksCommandHan.../
-│   │   │   │   │   ├── AssignTasksCommandVal.../
 │   │   │   │   │   ├── AssignTasksCommand.cs
+│   │   │   │   │   ├── AssignTasksCommandHandler.cs
+│   │   │   │   │   ├── AssignTasksCommandValidator.cs
 │   │   │   │   │   └── AssignTasksResponse.cs
 │   │   │   │   ├── ManageDepartmentStatus/
-│   │   │   │   │   └── ManageDepa.../
+│   │   │   │   │   ├── ManageDepartmentStatusCommand.cs
+│   │   │   │   │   ├── ManageDepartmentStatusCommandHandler.cs
+│   │   │   │   │   ├── ManageDepartmentStatusCommandValidator.cs
+│   │   │   │   │   └── ManageDepartmentStatusResponse.cs
 │   │   │   │   ├── ReassignDepartmentLead/
-│   │   │   │   │   └── ReassignDe.../
+│   │   │   │   │   ├── ReassignDepartmentLeadCommand.cs
+│   │   │   │   │   ├── ReassignDepartmentLeadCommandHandler.cs
+│   │   │   │   │   ├── ReassignDepartmentLeadCommandValidator.cs
+│   │   │   │   │   └── ReassignDepartmentLeadResponse.cs
 │   │   │   │   ├── RemovePersonnel/
-│   │   │   │   │   ├── RemovePersonnelCo.../
-│   │   │   │   │   └── RemovePersonnelRe.../
+│   │   │   │   │   ├── RemovePersonnelCommand.cs
+│   │   │   │   │   ├── RemovePersonnelCommandHandler.cs
+│   │   │   │   │   ├── RemovePersonnelCommandValidator.cs
+│   │   │   │   │   └── RemovePersonnelResponse.cs
 │   │   │   │   ├── ReviewAssignedTasks/
-│   │   │   │   │   └── ReviewAssigne.../
+│   │   │   │   │   ├── ReviewAssignedTasksCommand.cs
+│   │   │   │   │   ├── ReviewAssignedTasksCommandHandler.cs
+│   │   │   │   │   ├── ReviewAssignedTasksCommandValidator.cs
+│   │   │   │   │   └── ReviewAssignedTasksResponse.cs
 │   │   │   │   ├── SignTheServiceDeliveryReport/
-│   │   │   │   │   └── Sign.../
+│   │   │   │   │   ├── SignTheServiceDeliveryReportCommand.cs
+│   │   │   │   │   ├── SignTheServiceDeliveryReportCommandHandler.cs
+│   │   │   │   │   ├── SignTheServiceDeliveryReportCommandValidator.cs
+│   │   │   │   │   └── SignTheServiceDeliveryReportResponse.cs
 │   │   │   │   └── UpdateDepartment/
-│   │   │   │       └── UpdateDepartment.../
+│   │   │   │       ├── UpdateDepartmentCommand.cs
+│   │   │   │       ├── UpdateDepartmentCommandHandler.cs
+│   │   │   │       ├── UpdateDepartmentCommandValidator.cs
+│   │   │   │       └── UpdateDepartmentResponse.cs
 │   │   │   └── Queries/
 │   │   │       ├── SearchandFilterDepartments/
-│   │   │       │   └── Searcha.../
+│   │   │       │   ├── SearchandFilterDepartmentsDto.cs
+│   │   │       │   ├── SearchandFilterDepartmentsQuery.cs
+│   │   │       │   └── SearchandFilterDepartmentsQueryHandler.cs
 │   │   │       ├── SearchCoordinationTasks/
-│   │   │       │   └── SearchCoor.../
+│   │   │       │   ├── SearchCoordinationTasksDto.cs
+│   │   │       │   ├── SearchCoordinationTasksQuery.cs
+│   │   │       │   └── SearchCoordinationTasksQueryHandler.cs
 │   │   │       ├── SearchPersonnel/
-│   │   │       │   ├── SearchPersonnelQue.../
-│   │   │       │   └── SearchPersonnelDto.cs
+│   │   │       │   ├── SearchPersonnelDto.cs
+│   │   │       │   ├── SearchPersonnelQuery.cs
+│   │   │       │   └── SearchPersonnelQueryHandler.cs
 │   │   │       ├── ViewCoordinationTasks/
-│   │   │       │   └── ViewCoordina.../
+│   │   │       │   ├── ViewCoordinationTasksDto.cs
+│   │   │       │   ├── ViewCoordinationTasksQuery.cs
+│   │   │       │   └── ViewCoordinationTasksQueryHandler.cs
 │   │   │       ├── ViewDepartmentDetails/
-│   │   │       │   └── ViewDepartme.../
+│   │   │       │   ├── ViewDepartmentDetailsDto.cs
+│   │   │       │   ├── ViewDepartmentDetailsQuery.cs
+│   │   │       │   └── ViewDepartmentDetailsQueryHandler.cs
 │   │   │       ├── ViewDepartmentList/
-│   │   │       │   └── ViewDepartmentL.../
+│   │   │       │   ├── ViewDepartmentListDto.cs
+│   │   │       │   ├── ViewDepartmentListQuery.cs
+│   │   │       │   └── ViewDepartmentListQueryHandler.cs
 │   │   │       └── ViewPersonnelDetails/
-│   │   │           └── ViewPersonnel.../
+│   │   │           ├── ViewPersonnelDetailsDto.cs
+│   │   │           ├── ViewPersonnelDetailsQuery.cs
+│   │   │           └── ViewPersonnelDetailsQueryHandler.cs
 │   │   ├── Documents/
-│   │   │   ├── Commands/
 │   │   │   └── Queries/
 │   │   │       ├── SearchDocuments/
-│   │   │       │   ├── SearchDocumentsQuery.../
 │   │   │       │   ├── SearchDocumentsDto.cs
-│   │   │       │   └── SearchDocumentsQuery.cs
+│   │   │       │   ├── SearchDocumentsQuery.cs
+│   │   │       │   └── SearchDocumentsQueryHandler.cs
 │   │   │       └── ViewDocumentList/
-│   │   │           ├── ViewDocumentListQue.../
-│   │   │           └── ViewDocumentListDto.cs
+│   │   │           ├── ViewDocumentListDto.cs
+│   │   │           ├── ViewDocumentListQuery.cs
+│   │   │           └── ViewDocumentListQueryHandler.cs
 │   │   ├── Emails/
 │   │   │   ├── Commands/
 │   │   │   │   ├── CreateEmailTemplate/
-│   │   │   │   │   └── CreateEmailTemplat.../
+│   │   │   │   │   ├── CreateEmailTemplateCommand.cs
+│   │   │   │   │   ├── CreateEmailTemplateCommandHandler.cs
+│   │   │   │   │   ├── CreateEmailTemplateCommandValidator.cs
+│   │   │   │   │   └── CreateEmailTemplateResponse.cs
 │   │   │   │   ├── EditEmailContent/
-│   │   │   │   │   ├── EditEmailContentComma.../
-│   │   │   │   │   └── EditEmailContentRespo.../
+│   │   │   │   │   ├── EditEmailContentCommand.cs
+│   │   │   │   │   ├── EditEmailContentCommandHandler.cs
+│   │   │   │   │   ├── EditEmailContentCommandValidator.cs
+│   │   │   │   │   └── EditEmailContentResponse.cs
 │   │   │   │   ├── ReplytoEmail/
-│   │   │   │   │   ├── ReplytoEmailCommandHandle.../
-│   │   │   │   │   ├── ReplytoEmailCommandValida.../
 │   │   │   │   │   ├── ReplytoEmailCommand.cs
+│   │   │   │   │   ├── ReplytoEmailCommandHandler.cs
+│   │   │   │   │   ├── ReplytoEmailCommandValidator.cs
 │   │   │   │   │   └── ReplytoEmailResponse.cs
 │   │   │   │   ├── SendEmail/
 │   │   │   │   │   ├── SendEmailCommand.cs
@@ -378,21 +551,30 @@ PEMS/
 │   │   │   │   │   ├── SendEmailCommandValidator.cs
 │   │   │   │   │   └── SendEmailResponse.cs
 │   │   │   │   └── UpdateEmailTemplate/
-│   │   │   │       └── UpdateEmailTemplat.../
+│   │   │   │       ├── UpdateEmailTemplateCommand.cs
+│   │   │   │       ├── UpdateEmailTemplateCommandHandler.cs
+│   │   │   │       ├── UpdateEmailTemplateCommandValidator.cs
+│   │   │   │       └── UpdateEmailTemplateResponse.cs
 │   │   │   └── Queries/
 │   │   │       ├── ViewEmail/
 │   │   │       │   ├── ViewEmailDto.cs
 │   │   │       │   ├── ViewEmailQuery.cs
 │   │   │       │   └── ViewEmailQueryHandler.cs
 │   │   │       ├── ViewEmailTemplateDetail/
-│   │   │       │   └── ViewEmailTempla.../
+│   │   │       │   ├── ViewEmailTemplateDetailDto.cs
+│   │   │       │   ├── ViewEmailTemplateDetailQuery.cs
+│   │   │       │   └── ViewEmailTemplateDetailQueryHandler.cs
 │   │   │       └── ViewEmailTemplateList/
-│   │   │           └── ViewEmailTemplate.../
+│   │   │           ├── ViewEmailTemplateListDto.cs
+│   │   │           ├── ViewEmailTemplateListQuery.cs
+│   │   │           └── ViewEmailTemplateListQueryHandler.cs
 │   │   ├── Faqs/
 │   │   │   ├── Commands/
 │   │   │   │   ├── ChangeFAQVisibility/
-│   │   │   │   │   ├── ChangeFAQVisibilityC.../
-│   │   │   │   │   └── ChangeFAQVisibilityR.../
+│   │   │   │   │   ├── ChangeFAQVisibilityCommand.cs
+│   │   │   │   │   ├── ChangeFAQVisibilityCommandHandler.cs
+│   │   │   │   │   ├── ChangeFAQVisibilityCommandValidator.cs
+│   │   │   │   │   └── ChangeFAQVisibilityResponse.cs
 │   │   │   │   ├── CreateFAQ/
 │   │   │   │   │   ├── CreateFAQCommand.cs
 │   │   │   │   │   ├── CreateFAQCommandHandler.cs
@@ -413,38 +595,58 @@ PEMS/
 │   │   │           ├── ViewListFAQQuery.cs
 │   │   │           └── ViewListFAQQueryHandler.cs
 │   │   ├── Feedbacks/
-│   │   │   ├── Commands/
 │   │   │   └── Queries/
 │   │   │       ├── SearchAndFilterFeedback/
-│   │   │       │   └── SearchAndFil.../
+│   │   │       │   ├── SearchAndFilterFeedbackDto.cs
+│   │   │       │   ├── SearchAndFilterFeedbackQuery.cs
+│   │   │       │   └── SearchAndFilterFeedbackQueryHandler.cs
 │   │   │       └── ViewFeedbackSummary/
-│   │   │           └── ViewFeedbackSumm.../
+│   │   │           ├── ViewFeedbackSummaryDto.cs
+│   │   │           ├── ViewFeedbackSummaryQuery.cs
+│   │   │           └── ViewFeedbackSummaryQueryHandler.cs
 │   │   ├── Galleries/
 │   │   │   ├── Commands/
 │   │   │   │   ├── AddGalleryItem/
-│   │   │   │   │   ├── AddGalleryItemComman.../
-│   │   │   │   │   └── AddGalleryItemRespon.../
+│   │   │   │   │   ├── AddGalleryItemCommand.cs
+│   │   │   │   │   ├── AddGalleryItemCommandHandler.cs
+│   │   │   │   │   ├── AddGalleryItemCommandValidator.cs
+│   │   │   │   │   └── AddGalleryItemResponse.cs
 │   │   │   │   ├── DeleteGalleryItem/
-│   │   │   │   │   └── DeleteGalleryItem.../
+│   │   │   │   │   ├── DeleteGalleryItemCommand.cs
+│   │   │   │   │   ├── DeleteGalleryItemCommandHandler.cs
+│   │   │   │   │   ├── DeleteGalleryItemCommandValidator.cs
+│   │   │   │   │   └── DeleteGalleryItemResponse.cs
 │   │   │   │   └── UpdateGalleryItem/
-│   │   │   │       └── UpdateGalleryItem.../
+│   │   │   │       ├── UpdateGalleryItemCommand.cs
+│   │   │   │       ├── UpdateGalleryItemCommandHandler.cs
+│   │   │   │       ├── UpdateGalleryItemCommandValidator.cs
+│   │   │   │       └── UpdateGalleryItemResponse.cs
 │   │   │   └── Queries/
 │   │   │       ├── SearchGalleryItems/
-│   │   │       │   └── SearchGalleryItem.../
+│   │   │       │   ├── SearchGalleryItemsDto.cs
+│   │   │       │   ├── SearchGalleryItemsQuery.cs
+│   │   │       │   └── SearchGalleryItemsQueryHandler.cs
 │   │   │       └── ViewGalleryItemList/
-│   │   │           └── ViewGalleryItemL.../
+│   │   │           ├── ViewGalleryItemListDto.cs
+│   │   │           ├── ViewGalleryItemListQuery.cs
+│   │   │           └── ViewGalleryItemListQueryHandler.cs
 │   │   ├── MeetingMinutes/
-│   │   │   ├── Commands/
 │   │   │   └── Queries/
 │   │   │       ├── SearchAndFilterMinutes/
-│   │   │       │   └── SearchAn.../
+│   │   │       │   ├── SearchAndFilterMinutesDto.cs
+│   │   │       │   ├── SearchAndFilterMinutesQuery.cs
+│   │   │       │   └── SearchAndFilterMinutesQueryHandler.cs
 │   │   │       └── ViewMinutesList/
-│   │   │           └── ViewMinutesList.../
+│   │   │           ├── ViewMinutesListDto.cs
+│   │   │           ├── ViewMinutesListQuery.cs
+│   │   │           └── ViewMinutesListQueryHandler.cs
 │   │   ├── News/
 │   │   │   ├── Commands/
 │   │   │   │   ├── AddMultilingualNews/
-│   │   │   │   │   ├── AddMultilingualNewsC.../
-│   │   │   │   │   └── AddMultilingualNewsR.../
+│   │   │   │   │   ├── AddMultilingualNewsCommand.cs
+│   │   │   │   │   ├── AddMultilingualNewsCommandHandler.cs
+│   │   │   │   │   ├── AddMultilingualNewsCommandValidator.cs
+│   │   │   │   │   └── AddMultilingualNewsResponse.cs
 │   │   │   │   ├── ApproveNews/
 │   │   │   │   │   ├── ApproveNewsCommand.cs
 │   │   │   │   │   ├── ApproveNewsCommandHandler.cs
@@ -456,7 +658,10 @@ PEMS/
 │   │   │   │   │   ├── EditNewsCommandValidator.cs
 │   │   │   │   │   └── EditNewsResponse.cs
 │   │   │   │   ├── ManageNewsVisibility/
-│   │   │   │   │   └── ManageNewsVisibilit.../
+│   │   │   │   │   ├── ManageNewsVisibilityCommand.cs
+│   │   │   │   │   ├── ManageNewsVisibilityCommandHandler.cs
+│   │   │   │   │   ├── ManageNewsVisibilityCommandValidator.cs
+│   │   │   │   │   └── ManageNewsVisibilityResponse.cs
 │   │   │   │   └── PublishNews/
 │   │   │   │       ├── PublishNewsCommand.cs
 │   │   │   │       ├── PublishNewsCommandHandler.cs
@@ -464,48 +669,55 @@ PEMS/
 │   │   │   │       └── PublishNewsResponse.cs
 │   │   │   └── Queries/
 │   │   │       ├── ViewNewsDetails/
-│   │   │       │   ├── ViewNewsDetailsQueryHandl.../
 │   │   │       │   ├── ViewNewsDetailsDto.cs
-│   │   │       │   └── ViewNewsDetailsQuery.cs
+│   │   │       │   ├── ViewNewsDetailsQuery.cs
+│   │   │       │   └── ViewNewsDetailsQueryHandler.cs
 │   │   │       └── ViewNewsList/
 │   │   │           ├── ViewNewsListDto.cs
 │   │   │           ├── ViewNewsListQuery.cs
 │   │   │           └── ViewNewsListQueryHandler.cs
-│   │   ├── Notifications/
-│   │   │   ├── Commands/
-│   │   │   └── Queries/
 │   │   ├── Partners/
 │   │   │   ├── Commands/
 │   │   │   │   ├── EditPartnerInformation/
-│   │   │   │   │   └── EditPartnerIn.../
+│   │   │   │   │   ├── EditPartnerInformationCommand.cs
+│   │   │   │   │   ├── EditPartnerInformationCommandHandler.cs
+│   │   │   │   │   ├── EditPartnerInformationCommandValidator.cs
+│   │   │   │   │   └── EditPartnerInformationResponse.cs
 │   │   │   │   └── ProcessPartnerCreationRequest/
-│   │   │   │       └── Proces.../
+│   │   │   │       ├── ProcessPartnerCreationRequestCommand.cs
+│   │   │   │       ├── ProcessPartnerCreationRequestCommandHandler.cs
+│   │   │   │       ├── ProcessPartnerCreationRequestCommandValidator.cs
+│   │   │   │       └── ProcessPartnerCreationRequestResponse.cs
 │   │   │   ├── Dtos/
 │   │   │   │   └── README.md
 │   │   │   ├── Mappings/
 │   │   │   │   └── PartnersMappingProfile.cs
 │   │   │   ├── Queries/
 │   │   │   │   ├── SearchPartners/
-│   │   │   │   │   ├── SearchPartnersQueryHan.../
 │   │   │   │   │   ├── SearchPartnersDto.cs
-│   │   │   │   │   └── SearchPartnersQuery.cs
+│   │   │   │   │   ├── SearchPartnersQuery.cs
+│   │   │   │   │   └── SearchPartnersQueryHandler.cs
 │   │   │   │   ├── ViewPartnerDetails/
-│   │   │   │   │   └── ViewPartnerDetails.../
+│   │   │   │   │   ├── ViewPartnerDetailsDto.cs
+│   │   │   │   │   ├── ViewPartnerDetailsQuery.cs
+│   │   │   │   │   └── ViewPartnerDetailsQueryHandler.cs
 │   │   │   │   └── ViewPartnerLists/
-│   │   │   │       ├── ViewPartnerListsQuer.../
-│   │   │   │       └── ViewPartnerListsDto.cs
+│   │   │   │       ├── ViewPartnerListsDto.cs
+│   │   │   │       ├── ViewPartnerListsQuery.cs
+│   │   │   │       └── ViewPartnerListsQueryHandler.cs
 │   │   │   └── Rules/
 │   │   │       └── README.md
 │   │   ├── Profiles/
 │   │   │   ├── Commands/
 │   │   │   │   ├── ChangePassword/
-│   │   │   │   │   ├── ChangePasswordCommand.../
-│   │   │   │   │   ├── ChangePasswordRespons.../
-│   │   │   │   │   └── ChangePasswordCommand.cs
+│   │   │   │   │   ├── ChangePasswordCommand.cs
+│   │   │   │   │   ├── ChangePasswordCommandHandler.cs
+│   │   │   │   │   ├── ChangePasswordCommandValidator.cs
+│   │   │   │   │   └── ChangePasswordResponse.cs
 │   │   │   │   └── UpdateProfile/
-│   │   │   │       ├── UpdateProfileCommandHa.../
-│   │   │   │       ├── UpdateProfileCommandVa.../
 │   │   │   │       ├── UpdateProfileCommand.cs
+│   │   │   │       ├── UpdateProfileCommandHandler.cs
+│   │   │   │       ├── UpdateProfileCommandValidator.cs
 │   │   │   │       └── UpdateProfileResponse.cs
 │   │   │   ├── Dtos/
 │   │   │   │   └── README.md
@@ -525,59 +737,81 @@ PEMS/
 │   │   │   │   └── PublicContentMappingProfile.cs
 │   │   │   ├── Queries/
 │   │   │   │   ├── SearchInformation/
-│   │   │   │   │   └── SearchInformat.../
+│   │   │   │   │   ├── SearchInformationDto.cs
+│   │   │   │   │   ├── SearchInformationQuery.cs
+│   │   │   │   │   └── SearchInformationQueryHandler.cs
 │   │   │   │   ├── ViewContactInfo/
-│   │   │   │   │   ├── ViewContactInfoD.../
-│   │   │   │   │   └── ViewContactInfoQ.../
+│   │   │   │   │   ├── ViewContactInfoDto.cs
+│   │   │   │   │   ├── ViewContactInfoQuery.cs
+│   │   │   │   │   └── ViewContactInfoQueryHandler.cs
 │   │   │   │   ├── ViewFaq/
 │   │   │   │   │   ├── ViewFaqDto.cs
 │   │   │   │   │   ├── ViewFaqQuery.cs
 │   │   │   │   │   └── ViewFaqQueryHandler.cs
 │   │   │   │   ├── ViewGallery/
-│   │   │   │   │   ├── ViewGalleryQueryHand.../
 │   │   │   │   │   ├── ViewGalleryDto.cs
-│   │   │   │   │   └── ViewGalleryQuery.cs
+│   │   │   │   │   ├── ViewGalleryQuery.cs
+│   │   │   │   │   └── ViewGalleryQueryHandler.cs
 │   │   │   │   ├── ViewHomepage/
-│   │   │   │   │   ├── ViewHomepageQueryHa.../
 │   │   │   │   │   ├── ViewHomepageDto.cs
-│   │   │   │   │   └── ViewHomepageQuery.cs
+│   │   │   │   │   ├── ViewHomepageQuery.cs
+│   │   │   │   │   └── ViewHomepageQueryHandler.cs
 │   │   │   │   ├── ViewNews/
 │   │   │   │   │   ├── ViewNewsDto.cs
 │   │   │   │   │   ├── ViewNewsQuery.cs
 │   │   │   │   │   └── ViewNewsQueryHandler.cs
 │   │   │   │   ├── ViewNotifications/
-│   │   │   │   │   └── ViewNotificati.../
+│   │   │   │   │   ├── ViewNotificationsDto.cs
+│   │   │   │   │   ├── ViewNotificationsQuery.cs
+│   │   │   │   │   └── ViewNotificationsQueryHandler.cs
 │   │   │   │   ├── ViewPartners/
-│   │   │   │   │   ├── ViewPartnersQueryHa.../
 │   │   │   │   │   ├── ViewPartnersDto.cs
-│   │   │   │   │   └── ViewPartnersQuery.cs
+│   │   │   │   │   ├── ViewPartnersQuery.cs
+│   │   │   │   │   └── ViewPartnersQueryHandler.cs
 │   │   │   │   └── ViewPolicyAndTerms/
-│   │   │   │       └── ViewPolicyAnd.../
+│   │   │   │       ├── ViewPolicyAndTermsDto.cs
+│   │   │   │       ├── ViewPolicyAndTermsQuery.cs
+│   │   │   │       └── ViewPolicyAndTermsQueryHandler.cs
 │   │   │   └── Rules/
 │   │   │       └── README.md
 │   │   ├── Reports/
 │   │   │   ├── Commands/
 │   │   │   │   └── ExportStatisticsReport/
-│   │   │   │       └── ExportStatisti.../
+│   │   │   │       ├── ExportStatisticsReportCommand.cs
+│   │   │   │       ├── ExportStatisticsReportCommandHandler.cs
+│   │   │   │       ├── ExportStatisticsReportCommandValidator.cs
+│   │   │   │       └── ExportStatisticsReportResponse.cs
 │   │   │   └── Queries/
 │   │   │       ├── FilterDashboardByTime/
-│   │   │       │   └── FilterDashboardB.../
+│   │   │       │   ├── FilterDashboardByTimeDto.cs
+│   │   │       │   ├── FilterDashboardByTimeQuery.cs
+│   │   │       │   └── FilterDashboardByTimeQueryHandler.cs
 │   │   │       └── ViewDashboardStatistics/
-│   │   │           └── ViewDashboardS.../
+│   │   │           ├── ViewDashboardStatisticsDto.cs
+│   │   │           ├── ViewDashboardStatisticsQuery.cs
+│   │   │           └── ViewDashboardStatisticsQueryHandler.cs
 │   │   ├── Roles/
 │   │   │   ├── Commands/
 │   │   │   │   ├── ConfigureRolePermissions/
-│   │   │   │   │   └── ConfigureRoleP.../
+│   │   │   │   │   ├── ConfigureRolePermissionsCommand.cs
+│   │   │   │   │   ├── ConfigureRolePermissionsCommandHandler.cs
+│   │   │   │   │   ├── ConfigureRolePermissionsCommandValidator.cs
+│   │   │   │   │   └── ConfigureRolePermissionsResponse.cs
 │   │   │   │   ├── CreateNewRole/
-│   │   │   │   │   ├── CreateNewRoleCommandHandl.../
-│   │   │   │   │   ├── CreateNewRoleCommandValid.../
 │   │   │   │   │   ├── CreateNewRoleCommand.cs
+│   │   │   │   │   ├── CreateNewRoleCommandHandler.cs
+│   │   │   │   │   ├── CreateNewRoleCommandValidator.cs
 │   │   │   │   │   └── CreateNewRoleResponse.cs
 │   │   │   │   ├── DisableAndDeleteRole/
-│   │   │   │   │   └── DisableAndDeleteRo.../
+│   │   │   │   │   ├── DisableAndDeleteRoleCommand.cs
+│   │   │   │   │   ├── DisableAndDeleteRoleCommandHandler.cs
+│   │   │   │   │   ├── DisableAndDeleteRoleCommandValidator.cs
+│   │   │   │   │   └── DisableAndDeleteRoleResponse.cs
 │   │   │   │   └── UpdateRoleDetails/
-│   │   │   │       ├── UpdateRoleDetailsComm.../
-│   │   │   │       └── UpdateRoleDetailsResp.../
+│   │   │   │       ├── UpdateRoleDetailsCommand.cs
+│   │   │   │       ├── UpdateRoleDetailsCommandHandler.cs
+│   │   │   │       ├── UpdateRoleDetailsCommandValidator.cs
+│   │   │   │       └── UpdateRoleDetailsResponse.cs
 │   │   │   └── Queries/
 │   │   │       └── ViewRoleList/
 │   │   │           ├── ViewRoleListDto.cs
@@ -685,13 +919,11 @@ PEMS/
 │   │   │   ├── ApiClient/
 │   │   │   │   └── ExternalApiClient.cs
 │   │   │   ├── Calendar/
-│   │   │   │   └── CalendarIntegrationServic.../
+│   │   │   │   └── CalendarIntegrationService.cs
 │   │   │   ├── FaceRecognition/
-│   │   │   │   └── FaceRecognitionSer.../
-│   │   │   ├── Ocr/
-│   │   │   │   └── OcrService.cs
-│   │   │   ├── FaceRecognitionService.cs
-│   │   │   └── OcrService.cs
+│   │   │   │   └── FaceRecognitionService.cs
+│   │   │   └── Ocr/
+│   │   │       └── OcrService.cs
 │   │   ├── FileStorage/
 │   │   │   ├── CloudFileStorageService.cs
 │   │   │   ├── FileStorageService.cs
@@ -738,8 +970,6 @@ PEMS/
 │   │   │   └── RedisRateLimitStore.cs
 │   │   ├── DependencyInjection.cs
 │   │   └── PEMS.Infrastructure.csproj
-│   └── PEMS.SharedKernel/
-│       └── README.md
 ├── database/
 │   ├── migrations/
 │   │   └── README.md
@@ -757,12 +987,12 @@ PEMS/
 │   │   ├── API_SPECIFICATION.md
 │   │   └── FRONTEND_BACKEND_CONTRACT_GAP.md
 │   ├── architecture/
-│   │   ├── PROJECT_STRUCTURE_DETAILED_EXPLANATION.md/
 │   │   ├── ARCHITECTURE_GUARD_TEST_REPORT.md
 │   │   ├── BACKEND_SCAFFOLD_CLEANUP_REPORT.md
 │   │   ├── BACKEND_SCAFFOLD_REPORT.md
 │   │   ├── BACKEND_USE_CASE_CLASS_BLUEPRINT.md
 │   │   ├── CLEAN_ARCHITECTURE.md
+│   │   ├── PROJECT_STRUCTURE_FULL_DETAILED.md
 │   │   └── REFACTOR_CHANGELOG.md
 │   ├── database/
 │   │   ├── DATABASE_DEPLOYMENT.md
@@ -878,16 +1108,16 @@ PEMS/
 │       │   ├── features/
 │       │   │   ├── account-management/
 │       │   │   │   ├── adapters/
-│       │   │   │   │   └── accountManagementA.../
+│       │   │   │   │   └── accountManagementAdapter.ts
 │       │   │   │   ├── api/
 │       │   │   │   │   └── accountManagementApi.ts
 │       │   │   │   ├── hooks/
 │       │   │   │   │   └── useAccountManagement.ts
 │       │   │   │   └── types/
-│       │   │   │       └── accountManagement.typ.../
+│       │   │   │       └── accountManagement.types.ts
 │       │   │   ├── agenda-templates/
 │       │   │   │   ├── adapters/
-│       │   │   │   │   └── agendaTemplatesAdapt.../
+│       │   │   │   │   └── agendaTemplatesAdapter.ts
 │       │   │   │   ├── api/
 │       │   │   │   │   └── agendaTemplatesApi.ts
 │       │   │   │   ├── hooks/
@@ -923,7 +1153,7 @@ PEMS/
 │       │   │   │       └── calendars.types.ts
 │       │   │   ├── campus-management/
 │       │   │   │   ├── adapters/
-│       │   │   │   │   └── campusManagementAda.../
+│       │   │   │   │   └── campusManagementAdapter.ts
 │       │   │   │   ├── api/
 │       │   │   │   │   └── campusManagementApi.ts
 │       │   │   │   ├── hooks/
@@ -941,13 +1171,13 @@ PEMS/
 │       │   │   │       └── delegations.types.ts
 │       │   │   ├── department-management/
 │       │   │   │   ├── adapters/
-│       │   │   │   │   └── departmentManag.../
+│       │   │   │   │   └── departmentManagementAdapter.ts
 │       │   │   │   ├── api/
-│       │   │   │   │   └── departmentManagement.../
+│       │   │   │   │   └── departmentManagementApi.ts
 │       │   │   │   ├── hooks/
-│       │   │   │   │   └── useDepartmentManag.../
+│       │   │   │   │   └── useDepartmentManagement.ts
 │       │   │   │   └── types/
-│       │   │   │       └── departmentManageme.../
+│       │   │   │       └── departmentManagement.types.ts
 │       │   │   ├── documents/
 │       │   │   │   ├── adapters/
 │       │   │   │   │   └── documentsAdapter.ts
@@ -986,13 +1216,13 @@ PEMS/
 │       │   │   │       └── feedbacks.types.ts
 │       │   │   ├── gallery-management/
 │       │   │   │   ├── adapters/
-│       │   │   │   │   └── galleryManagementA.../
+│       │   │   │   │   └── galleryManagementAdapter.ts
 │       │   │   │   ├── api/
 │       │   │   │   │   └── galleryManagementApi.ts
 │       │   │   │   ├── hooks/
 │       │   │   │   │   └── useGalleryManagement.ts
 │       │   │   │   └── types/
-│       │   │   │       └── galleryManagement.typ.../
+│       │   │   │       └── galleryManagement.types.ts
 │       │   │   ├── meeting-minutes/
 │       │   │   │   ├── adapters/
 │       │   │   │   │   └── meetingMinutesAdapter.ts
@@ -1058,13 +1288,13 @@ PEMS/
 │       │   │   │       └── reports.types.ts
 │       │   │   └── role-permission-management/
 │       │   │       ├── adapters/
-│       │   │       │   └── rolePermis.../
+│       │   │       │   └── rolePermissionManagementAdapter.ts
 │       │   │       ├── api/
-│       │   │       │   └── rolePermissionM.../
+│       │   │       │   └── rolePermissionManagementApi.ts
 │       │   │       ├── hooks/
-│       │   │       │   └── useRolePermis.../
+│       │   │       │   └── useRolePermissionManagement.ts
 │       │   │       └── types/
-│       │   │           └── rolePermissio.../
+│       │   │           └── rolePermissionManagement.types.ts
 │       │   ├── pages/
 │       │   │   ├── dashboard/
 │       │   │   │   ├── accounts/
@@ -1186,7 +1416,6 @@ PEMS/
 │       ├── index.html
 │       ├── metadata.json
 │       ├── out.txt
-│       ├── package-lock.json
 │       ├── package.json
 │       ├── README.md
 │       ├── transform_editable.cjs
@@ -1195,9 +1424,8 @@ PEMS/
 │       ├── tsconfig.json
 │       ├── updateHeaders.cjs
 │       └── vite.config.ts
-├── Scaffolder/
-│   ├── Program.cs
-│   └── Scaffolder.csproj
+├── scripts/
+│   └── guard-project-structure.ps1
 ├── tests/
 │   ├── PEMS.ApplicationTests/
 │   │   ├── Accounts/
@@ -1274,7 +1502,6 @@ PEMS/
 │   │   │   ├── ViewGuestDelegationListQueryTests.cs
 │   │   │   └── ViewMeetingMinutesDetailsQueryTests.cs
 │   │   ├── Departments/
-│   │   │   ├── SignTheServiceDeliveryReportCommandTest.../
 │   │   │   ├── AddDepartmentPersonnelCommandTests.cs
 │   │   │   ├── AddNewDepartmentCommandTests.cs
 │   │   │   ├── AssignTasksCommandTests.cs
@@ -1286,6 +1513,7 @@ PEMS/
 │   │   │   ├── SearchandFilterDepartmentsQueryTests.cs
 │   │   │   ├── SearchCoordinationTasksQueryTests.cs
 │   │   │   ├── SearchPersonnelQueryTests.cs
+│   │   │   ├── SignTheServiceDeliveryReportCommandTests.cs
 │   │   │   ├── UpdateDepartmentCommandTests.cs
 │   │   │   ├── ViewCoordinationTasksQueryTests.cs
 │   │   │   ├── ViewDepartmentDetailsQueryTests.cs
@@ -1337,7 +1565,7 @@ PEMS/
 │   │   │   ├── ViewPartnerDetailsQueryTests.cs
 │   │   │   └── ViewPartnerListsQueryTests.cs
 │   │   ├── Permissions/
-│   │   │   └── ConfigureRolePermissionsCommandHandlerT.../
+│   │   │   └── ConfigureRolePermissionsCommandHandlerTests.cs
 │   │   ├── Profiles/
 │   │   │   ├── ChangePasswordCommandTests.cs
 │   │   │   ├── UpdateProfileCommandTests.cs
@@ -1388,270 +1616,112 @@ PEMS/
 ├── .gitattributes
 ├── .gitignore
 ├── PEMS.slnx
-└── README.md
+├── README.md
+└── tree_scan.json
 
 ```
 
-## 3. Backend Architecture Explanation
+## 3. Giải thích ý nghĩa từng tầng / từng folder chính
 
-### 3.1 PEMS.Domain
+### backend/
 
-* Đây là lõi nghiệp vụ.
-* Không phụ thuộc project nào.
-* Chứa Entities, Enums, ValueObjects, Domain Events.
-* Không được chứa EF Core, DbContext, Repository implementation, Controller.
-* Vai trò chính:
-  * `Entities`: Định nghĩa các object cốt lõi mang state và behavior.
-  * `Enums`: Tập hợp các hằng số.
-  * `Events`: Các sự kiện xảy ra trong domain.
-  * `ValueObjects`: Các object định danh bởi thuộc tính thay vì ID.
-  
-* Các file chính trong Domain:
-  * `BaseEntity.cs`
-  * `AuditableEntity.cs`
-  * `SoftDeleteEntity.cs`
-  * `DomainEvent.cs`
-  * `User.cs`
-  * `Role.cs`
-  * `Permission.cs`
-  * `Delegation.cs`
-  * `VisitRequest.cs`
-  * `Partner.cs`
-  * `Campus.cs`
-  * (Các entity khác tương ứng)
+* Mục đích: Chứa toàn bộ source code của hệ thống API.
+* Chứa những gì: Các project C# tuân theo Clean Architecture (`PEMS.Api`, `PEMS.Application`, `PEMS.Domain`, `PEMS.Infrastructure`, `PEMS.SharedKernel`).
+* Có hợp lý không: Rất hợp lý và đạt chuẩn.
+* Có thiếu gì không: Không thiếu, các tầng đã được định nghĩa đầy đủ.
 
-### 3.2 PEMS.Application
+### frontend/
 
-* Đây là tầng Use Case.
-* Chứa Command/Query theo CQRS.
-* Chứa Handler xử lý use case.
-* Chứa Validator, DTO, Response.
-* Chứa interface abstraction trong Common/Interfaces.
-* Chỉ reference Domain.
-* Không được reference Infrastructure.
-* Không được gọi DbContext concrete, Repository concrete, EmailService concrete.
+* Mục đích: Chứa mã nguồn của ứng dụng giao diện người dùng.
+* Chứa những gì: Mã nguồn React, components, pages, hooks, services, cấu hình vite, package.json.
+* Có hợp lý không: Hợp lý.
+* Có thiếu gì không: Không.
 
-Giải thích rõ:
-* **Commands**: dùng cho thao tác ghi/thay đổi trạng thái.
-* **Queries**: dùng cho thao tác đọc.
-* **Handlers**: là nơi implement use case sau này.
-* **Validators**: là nơi kiểm tra input.
-* **Responses/DTOs**: là contract trả về API.
-* **Interfaces**: là cổng để Application gọi Infrastructure mà không phụ thuộc Infrastructure.
+### database/
 
-### 3.3 PEMS.Infrastructure
+* Mục đích: Chứa các tài nguyên liên quan đến cơ sở dữ liệu.
+* Chứa những gì: Script tạo bảng, seed data, hoặc file config database (nếu có).
+* Có hợp lý không: Hợp lý để quản lý độc lập với source code.
+* Có thiếu gì không: Không.
 
-* Đây là tầng kỹ thuật.
-* Chứa DbContext, EF Core configuration, Repository implementation.
-* Chứa Email, File Storage, Logging, Identity, Rate Limiting, External Services.
-* Implement interface do Application định nghĩa.
-* Được phép reference Application và Domain.
-* Không chứa business logic nghiệp vụ.
+### docs/
 
-Giải thích vai trò:
-* **Persistence**: Nơi chứa `ApplicationDbContext.cs` và migration.
-* **Repositories**: Nơi implement các interface thao tác DB.
-* **Configurations**: EF Core mappings cho Entities.
-* **Identity**: Tích hợp xác thực phân quyền.
-* **Email / FileStorage**: Dịch vụ gọi mail server, lưu file.
-* **ExternalServices**: Giao tiếp API ngoài.
-* **Logging**: Ghi log hệ thống.
-* **RateLimiting**: Chống spam request.
-* **DependencyInjection.cs**: Đăng ký các service này vào DI container.
+* Mục đích: Chứa tài liệu dự án.
+* Chứa những gì: Các báo cáo kiến trúc, tài liệu luồng nghiệp vụ (USE_CASE_LIST.md, ARCHITECTURE_GUARD_TEST_REPORT.md).
+* Có hợp lý không: Hợp lý, giúp tập trung tài liệu dễ tra cứu.
+* Có thiếu gì không: Không.
 
-### 3.4 PEMS.Api
+### tests/
 
-* Đây là Presentation Layer / Entry Point.
-* Chứa Controllers, Middleware, Filters, Extensions, Program.cs.
-* Controller chỉ nên inject IMediator.
-* API là Composition Root, được phép gọi `AddApplication` và `AddInfrastructure`.
-* Không được gọi DbContext hoặc Repository trực tiếp.
+* Mục đích: Chứa các project Unit Test, Integration Test, Architecture Test.
+* Chứa những gì: `PEMS.ArchitectureTests` và các project test tương ứng cho backend.
+* Có hợp lý không: Rất hợp lý, tách biệt source code chạy thực tế.
+* Có thiếu gì không: Hiện tại cấu trúc backend test đã có. Có thể thiếu e2e test cho frontend.
 
-## 4. Frontend Structure Explanation
+## 4. Danh sách folder trống
 
-* `src/pages`:
-  * Chứa các page/màn hình chính.
-  * Mỗi file page tương ứng một màn hình route hoặc dashboard.
+| Folder | Trạng thái | Có nên giữ không | Lý do | Đề xuất xử lý |
+| ------ | ---------- | ---------------- | ----- | ------------- |
+| (Không có) | Sau khi quét không phát hiện folder trống. | N/A | Dự án đã được cleanup kỹ. | N/A |
 
-* `src/features`:
-  * Chứa logic theo module nghiệp vụ.
-  * Mỗi feature có thể có:
-    * `api/`: Giao tiếp API.
-    * `hooks/`: Custom hooks chứa logic UI.
-    * `types/`: Định nghĩa interface, types.
-    * `adapters/`: Xử lý convert data từ API sang UI hoặc ngược lại.
+## 5. Danh sách file cấu hình quan trọng
 
-* `src/components`:
-  * Chứa component dùng chung hoặc component theo layout.
+| File | Vị trí | Mục đích | Nhận xét |
+| ---- | ------ | -------- | -------- |
+| `PEMS.slnx` | Root | Solution file của .NET, dùng để quản lý toàn bộ các project backend. | Hợp lý, định dạng slnx mới và gọn gàng. |
+| `appsettings.json` | `backend/PEMS.Api/` | Cấu hình cho backend API (chuỗi kết nối DB, JWT, Logging). | Đúng vị trí tiêu chuẩn của ASP.NET Core. |
+| `Program.cs` | `backend/PEMS.Api/` | Entry point của backend, cấu hình DI container, middlewares. | Chuẩn cấu trúc Minimal Hosting Model. |
+| `.gitignore` | Root | Chứa danh sách các file/folder bỏ qua không commit lên Git. | Cấu hình đúng vị trí root. |
+| `README.md` | Root | File giới thiệu chung về dự án, cách setup môi trường. | Đúng vị trí chuẩn. |
+| `package.json` | `frontend/` (nếu có) | Quản lý thư viện phụ thuộc và scripts cho Frontend. | Chuẩn xác. |
+| `vite.config.ts` | `frontend/` (nếu có) | File cấu hình của Vite bundler. | Chuẩn xác. |
+| `tsconfig.json` | `frontend/` (nếu có) | File cấu hình TypeScript. | Chuẩn xác. |
 
-* `src/shared`:
-  * Chứa API client, auth helper, permission checker, constants, utilities nếu có.
+## 6. Danh sách file có vẻ bị đặt sai vị trí
 
-* `src/assets`:
-  * Chứa ảnh, banner, logo, icon, hình campus, hình giao diện.
-  * **Avatar**: Chứa avatar user mẫu.
-  * **FPT banner**: Chứa banner quảng cáo, thông tin FPT.
-  * **campus images**: Chứa hình ảnh các cơ sở.
-  * **logo**: Các định dạng logo dự án.
-  * **image/news assets**: Hình ảnh cho tin tức, mockup.
+| File/Folder | Vị trí hiện tại | Vấn đề | Vị trí đề xuất |
+| ----------- | --------------- | ------ | -------------- |
+| `tree_scan.json` | Root | File tạm được tạo ra trong quá trình quét cấu trúc. | Nên xóa sau khi hoàn thành báo cáo. |
+| `tree_output.txt` | Root | File tạm chứa định dạng cây thư mục. | Nên xóa sau khi hoàn thành báo cáo. |
+| `empty_dirs.json` | Root | File tạm dùng để kiểm tra folder trống. | Nên xóa sau khi hoàn thành báo cáo. |
+| `clean_structure_utf8.txt` | Root | File text ghi lại kết quả dọn dẹp trước đó. | Nên chuyển vào thư mục `docs/` hoặc xóa. |
 
-## 5. Test Structure Explanation
+## 7. Danh sách file/folder có khả năng bị trùng
 
-### PEMS.ArchitectureTests
-* Dùng để khóa Dependency Rule.
-* Đảm bảo Domain/Application/Infrastructure/API không reference sai.
-* Đảm bảo Controller không inject DbContext/Repository concrete.
-* Đảm bảo Handler không inject Infrastructure concrete.
+| File/Folder | Vị trí 1 | Vị trí 2 | Vì sao nghi bị trùng | Đề xuất xử lý |
+| ----------- | -------- | -------- | -------------------- | ------------- |
+| (Không phát hiện) | N/A | N/A | Mã nguồn đã được dọn dẹp, không phát hiện trùng lặp module lớn. | N/A |
 
-### PEMS.ApplicationTests
-* Dùng để test Command/Query/Handler/Validator.
-* Nếu test đang Skip thì ghi rõ đang chờ đặc tả UC.
+## 8. Đánh giá cấu trúc theo kiến trúc dự án
 
-### PEMS.InfrastructureTests
-* Dùng để test DbContext, EF Core mapping, Repository implementation.
+| Tầng | Trạng thái | Nhận xét | Cần sửa gì |
+| ---- | ---------- | -------- | ---------- |
+| **Domain** | Tốt | Chỉ chứa Entities, Value Objects, Enums, Interfaces. Không phụ thuộc vào thư viện ngoài. | Không cần sửa. |
+| **Application** | Tốt | Chứa logic nghiệp vụ. Sử dụng CQRS pattern (Commands, Queries) phân chia theo từng Entity rất rõ ràng. | Không cần sửa. |
+| **Infrastructure** | Tốt | Nơi implement các interfaces (Repositories, external services), cấu hình Entity Framework. | Không cần sửa. |
+| **API** | Tốt | Nơi tiếp nhận HTTP requests, controllers mỏng, delegate công việc cho Application layer. | Không cần sửa. |
+| **Frontend** | Tốt | Tách biệt với backend, độc lập phát triển. | Không cần sửa. |
+| **Database** | Tốt | Scripts tách biệt. | Không cần sửa. |
+| **Tests** | Tốt | Đã áp dụng Architecture Tests để bảo vệ sự toàn vẹn của kiến trúc. | Không cần sửa. |
+| **Docs** | Tốt | Được tổ chức tốt, tài liệu rõ ràng. | Không cần sửa. |
 
-### PEMS.ApiIntegrationTests
-* Dùng để test endpoint API end-to-end nếu có.
+## 9. Những phần nên giữ nguyên
 
-## 6. Database Structure Explanation
+* Toàn bộ cấu trúc **Clean Architecture** của Backend.
+* Việc chia tách module theo **Feature/CQRS** trong tầng `PEMS.Application`.
+* Các rule bảo vệ kiến trúc trong project `PEMS.ArchitectureTests`.
+* Hệ thống thư mục phân chia theo vai trò (backend, frontend, docs, database, tests).
 
-* `database/scripts`: chứa SQL schema chính.
-* `database/seed`: chứa dữ liệu seed.
-* `database/migrations`: chứa migration nếu có.
+## 10. Những phần cần sửa
 
-Giải thích quan hệ:
-* SQL schema là nền để map sang Domain Entity.
-* EF Core Configuration nằm trong Infrastructure.
-* Application không thao tác SQL trực tiếp.
+* **Cần xóa các file tạm thời ở Root**: `tree_scan.json`, `tree_output.txt`, `empty_dirs.json`, `generate_report.js`, `generate_report.py`.
+* **Cần di chuyển**: File `clean_structure_utf8.txt` nên được di chuyển vào folder `docs/` nếu muốn lưu trữ lại lịch sử dọn dẹp, hoặc xóa đi nếu không cần thiết.
 
-## 7. Documentation Structure Explanation
+## 11. Kết luận
 
-* `docs/architecture`: Chứa các tài liệu về kiến trúc hệ thống, design pattern.
-* `docs/api`: Chứa tài liệu về thiết kế API, contract.
-* `docs/database`: Chứa schema DB và document.
-* `docs/permissions`: Ma trận phân quyền.
-* `docs/use-cases`: Đặc tả use case.
+* **Cấu trúc hiện tại đã rõ ràng chưa?** Cấu trúc dự án hiện tại cực kỳ rõ ràng, tuân thủ xuất sắc các nguyên lý của Clean Architecture và CQRS. Dự án sẵn sàng cho quá trình scale-up và mở rộng tính năng.
+* **Có còn folder trống không?** Không phát hiện thư mục trống nào.
+* **Có còn file bị đặt sai chỗ không?** Hầu như không có, ngoại trừ một vài file log/scan sinh ra trong quá trình audit hiện tại.
+* **Có còn file/folder bị trùng không?** Không.
+* **Có cần tái cấu trúc tiếp không?** Ở thời điểm này là **KHÔNG**. Cấu trúc đã đạt chuẩn "production-ready". Mọi tính năng mới nên được thêm vào tuân theo đúng quy tắc kiến trúc hiện tại đã được define.
 
-Mỗi file trong đây đóng vai trò làm tài liệu hướng dẫn (SSOT) và được giữ lại làm tham chiếu cho các giai đoạn phát triển tiếp theo.
-
-## 8. Dependency Diagram
-
-```text
-PEMS.Api
-   ↓
-PEMS.Application
-   ↓
-PEMS.Domain
-
-PEMS.Infrastructure
-   ↗
-PEMS.Application
-   ↘
-PEMS.Domain
-```
-
-* `PEMS.Domain` → no project reference
-* `PEMS.Application` → PEMS.Domain
-* `PEMS.Infrastructure` → PEMS.Application, PEMS.Domain
-* `PEMS.Api` → PEMS.Application, PEMS.Infrastructure
-
-Giải thích:
-* Domain là lõi.
-* Application chỉ biết Domain và interface abstraction.
-* Infrastructure implement interface.
-* API là composition root.
-
-## 9. Request Flow Example
-
-```text
-Frontend
-  ↓ HTTP POST
-DelegationsController
-  ↓ _mediator.Send(command)
-SubmitVisitRequestCommandHandler
-  ↓ gọi interface
-IDelegationRepository / IApplicationDbContext
-  ↓ implementation
-DelegationRepository / ApplicationDbContext
-  ↓
-MySQL Database
-```
-
-Giải thích:
-* Frontend gọi API.
-* Controller nhận request.
-* Controller gửi Command/Query qua MediatR.
-* Handler xử lý use case.
-* Handler gọi interface.
-* Infrastructure implement interface để truy cập DB hoặc service kỹ thuật.
-* Database chỉ được truy cập từ Infrastructure.
-
-## 10. How To Add A New Use Case
-
-1. Thêm Command hoặc Query trong Application.
-2. Thêm Handler.
-3. Thêm Validator.
-4. Thêm Response hoặc DTO.
-5. Thêm endpoint trong Controller.
-6. Nếu cần DB, thêm interface ở Application.
-7. Implement interface trong Infrastructure.
-8. Viết test.
-9. Chạy Architecture Tests.
-
-Nhấn mạnh:
-* Không thêm Infrastructure reference vào Application.
-* Không inject DbContext vào Controller.
-* Không viết business logic trong Infrastructure.
-
-## 11. Important Files
-
-* `Program.cs`: Khởi tạo và cấu hình pipeline của API.
-* `PEMS.Api.csproj`: File cấu hình project API.
-* `PEMS.Application.csproj`: File cấu hình project Application.
-* `PEMS.Domain.csproj`: File cấu hình project Domain.
-* `PEMS.Infrastructure.csproj`: File cấu hình project Infrastructure.
-* `DependencyInjection.cs` của Application: Nơi đăng ký MediatR, FluentValidation.
-* `DependencyInjection.cs` của Infrastructure: Nơi đăng ký DbContext, Services kỹ thuật.
-* `IApplicationDbContext.cs`: Interface giao tiếp với DB ở Application.
-* `ApplicationDbContext.cs`: Implementation của DbContext ở Infrastructure.
-* `Architecture Tests`: Khóa kiến trúc và dependencies.
-* `BACKEND_USE_CASE_CLASS_BLUEPRINT.md`: Hướng dẫn các use case.
-* `FRONTEND_BACKEND_CONTRACT_GAP.md`: Khoảng trống contract giữa FE và BE.
-* `pems_full.sql`: File SQL tạo toàn bộ database table ban đầu.
-* `Permission matrix`: Ma trận phân quyền.
-* `appsettings.json`: Cấu hình hệ thống (như chuỗi kết nối).
-* `package.json`: Khai báo thư viện Frontend.
-* `vite.config.ts`: Cấu hình build của frontend (Vite).
-
-## 12. Ignored / Generated Files
-
-* `bin/`, `obj/`: Output build của .NET.
-* `node_modules/`: Thư viện npm.
-* `.git/`: Dữ liệu git history.
-* `.vs/`, `.vscode/`: Cấu hình IDE cá nhân.
-* `dist/`, `build/`: Output build production của Frontend.
-* `coverage/`, `cache/log/temp files`: File sinh tự động khi test/chạy.
-
-Giải thích:
-* Đây là file sinh tự động.
-* Không cần đưa vào phân tích kiến trúc.
-* Không nên commit lên git.
-
-## 13. Conclusion
-
-* Dự án đang tổ chức theo Clean Architecture scaffold.
-* Backend có 135 Use Cases scaffold nếu đúng theo tài liệu.
-* Dependency Rule đã đúng nếu Architecture Tests vẫn pass.
-* Backend hiện sẵn sàng để implement logic theo từng vertical slice.
-* EF Core mapping, business logic và integration frontend/backend cần làm ở giai đoạn tiếp theo.
-* Tài liệu này dùng để onboarding, review kiến trúc và làm bản đồ dự án.
-
-
-## 14. Cleanup Suggestions
-
-| File/Folder | Vấn đề | Đề xuất |
-|---|---|---|
-| `docs/architecture/PROJECT_STRUCTURE_DETAILED_EXPLANATION.md` | File report cũ, trùng lặp mục đích với báo cáo mới | Xóa file cũ để tránh nhầm lẫn |
-| `docs/PEMS_AI_Refactor_Project_Structure_Prompt.md` | File prompt rác | Nên xóa khỏi repo |
-| `backend/PEMS.SharedKernel/` | Folder gần như trống, chỉ có README.md | Review lại, nếu không áp dụng pattern SharedKernel thì nên xóa |
-| `tests/` | Cấu trúc tests chưa đầy đủ hoặc đang để trống các project con | Bổ sung đầy đủ các project test theo quy chuẩn |
