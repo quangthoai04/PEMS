@@ -1,2 +1,0 @@
-namespace PEMS.Application.CampusManagement.Commands.CreateCampusManagementItem;
-public class CreateCampusManagementItemCommandValidator {}

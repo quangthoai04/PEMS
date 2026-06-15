@@ -1,2 +1,7 @@
+using MediatR;
+
 namespace PEMS.Application.Authentication.Commands.ForgotPassword;
-public class ForgotPasswordCommand {}
+
+public class ForgotPasswordCommand : IRequest<ForgotPasswordResponse>
+{
+}

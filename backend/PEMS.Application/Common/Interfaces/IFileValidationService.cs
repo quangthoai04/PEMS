@@ -1,5 +1,6 @@
-namespace PEMS.Shared;
+namespace PEMS.Application.Common.Interfaces;
 
-public class IFileValidationService
+public interface IFileValidationService
 {
 }
+

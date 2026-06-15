@@ -8,3 +8,4 @@ public interface ICampusRepository
 {
     Task<IEnumerable<Campus>> GetActiveCampusesAsync();
 }
+

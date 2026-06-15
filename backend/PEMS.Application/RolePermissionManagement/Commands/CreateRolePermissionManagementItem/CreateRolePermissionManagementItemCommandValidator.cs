@@ -1,2 +1,0 @@
-namespace PEMS.Application.RolePermissionManagement.Commands.CreateRolePermissionManagementItem;
-public class CreateRolePermissionManagementItemCommandValidator {}

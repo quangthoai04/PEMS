@@ -1,2 +1,7 @@
+using MediatR;
+
 namespace PEMS.Application.Profiles.Queries.ViewProfile;
-public class ViewProfileQuery {}
+
+public class ViewProfileQuery : IRequest<ViewProfileDto>
+{
+}

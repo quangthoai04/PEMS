@@ -1,2 +1,7 @@
+using MediatR;
+
 namespace PEMS.Application.PublicContent.Queries.ViewGallery;
-public class ViewGalleryQuery {}
+
+public class ViewGalleryQuery : IRequest<ViewGalleryDto>
+{
+}

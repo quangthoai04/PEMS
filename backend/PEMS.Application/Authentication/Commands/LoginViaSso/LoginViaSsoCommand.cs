@@ -1,2 +1,7 @@
-namespace PEMS.Application.Authentication.Commands.LoginViaSso;
-public class LoginViaSsoCommand {}
+using MediatR;
+
+namespace PEMS.Application.Authentication.Commands.LoginviaSSO;
+
+public class LoginviaSSOCommand : IRequest<LoginviaSSOResponse>
+{
+}

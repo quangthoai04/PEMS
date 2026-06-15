@@ -7,3 +7,4 @@ public interface IUserRepository
 {
     Task<User?> GetUserByEmailWithDetailsAsync(string email);
 }
+

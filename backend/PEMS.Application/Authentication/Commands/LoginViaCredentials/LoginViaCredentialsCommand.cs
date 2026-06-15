@@ -1,2 +1,7 @@
-namespace PEMS.Application.Authentication.Commands.LoginViaCredentials;
-public class LoginViaCredentialsCommand {}
+using MediatR;
+
+namespace PEMS.Application.Authentication.Commands.LoginviaCredentials;
+
+public class LoginviaCredentialsCommand : IRequest<LoginviaCredentialsResponse>
+{
+}

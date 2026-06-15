@@ -1,2 +1,10 @@
+using System;
+
 namespace PEMS.Application.Delegations.Commands.CreateNewsArticle;
-public class CreateNewsArticleResponse {}
+
+public sealed class CreateNewsArticleResponse
+{
+    public Guid? Id { get; init; }
+    public string Status { get; init; } = "Scaffolded";
+    public string Message { get; init; } = "Use case scaffolded. Business logic is not implemented yet.";
+}

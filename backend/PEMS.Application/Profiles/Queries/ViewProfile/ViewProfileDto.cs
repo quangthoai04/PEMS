@@ -1,2 +1,10 @@
+using System;
+
 namespace PEMS.Application.Profiles.Queries.ViewProfile;
-public class ViewProfileDto {}
+
+public sealed class ViewProfileDto
+{
+    public Guid? Id { get; init; }
+    public string Status { get; init; } = "Scaffolded";
+    public string Message { get; init; } = "Use case scaffolded. Business logic is not implemented yet.";
+}

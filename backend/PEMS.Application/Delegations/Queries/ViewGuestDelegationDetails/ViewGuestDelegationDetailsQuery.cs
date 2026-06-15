@@ -1,2 +1,7 @@
+using MediatR;
+
 namespace PEMS.Application.Delegations.Queries.ViewGuestDelegationDetails;
-public class ViewGuestDelegationDetailsQuery {}
+
+public class ViewGuestDelegationDetailsQuery : IRequest<ViewGuestDelegationDetailsDto>
+{
+}

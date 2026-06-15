@@ -1,2 +1,7 @@
+using MediatR;
+
 namespace PEMS.Application.Partners.Commands.ProcessPartnerCreationRequest;
-public class ProcessPartnerCreationRequestCommand {}
+
+public class ProcessPartnerCreationRequestCommand : IRequest<ProcessPartnerCreationRequestResponse>
+{
+}

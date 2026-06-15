@@ -1,2 +1,10 @@
+using System;
+
 namespace PEMS.Application.Delegations.Commands.ApproveResourceRequest;
-public class ApproveResourceRequestResponse {}
+
+public sealed class ApproveResourceRequestResponse
+{
+    public Guid? Id { get; init; }
+    public string Status { get; init; } = "Scaffolded";
+    public string Message { get; init; } = "Use case scaffolded. Business logic is not implemented yet.";
+}

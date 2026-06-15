@@ -1,2 +1,0 @@
-namespace PEMS.Application.RolePermissionManagement.Queries.GetRolePermissionManagementList;
-public class GetRolePermissionManagementListDto {}
