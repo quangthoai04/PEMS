@@ -1,0 +1,2 @@
+namespace PEMS.Application.AgendaTemplates.Commands.CreateAgendaTemplatesItem;
+public class CreateAgendaTemplatesItemCommandHandler {}

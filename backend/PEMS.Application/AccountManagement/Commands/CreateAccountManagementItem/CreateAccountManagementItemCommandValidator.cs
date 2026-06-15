@@ -1,0 +1,2 @@
+namespace PEMS.Application.AccountManagement.Commands.CreateAccountManagementItem;
+public class CreateAccountManagementItemCommandValidator {}

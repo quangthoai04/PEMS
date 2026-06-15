@@ -1,0 +1,1 @@
+export type PagedResult<T> = { items: T[]; total: number; };

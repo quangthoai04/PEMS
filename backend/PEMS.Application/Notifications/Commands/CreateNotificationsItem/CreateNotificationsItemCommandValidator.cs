@@ -1,0 +1,2 @@
+namespace PEMS.Application.Notifications.Commands.CreateNotificationsItem;
+public class CreateNotificationsItemCommandValidator {}

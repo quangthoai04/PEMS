@@ -1,0 +1,2 @@
+namespace PEMS.Application.EmailManagement.Commands.CreateEmailManagementItem;
+public class CreateEmailManagementItemCommandValidator {}

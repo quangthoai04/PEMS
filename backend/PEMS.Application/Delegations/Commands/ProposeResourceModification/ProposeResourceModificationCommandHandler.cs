@@ -1,0 +1,2 @@
+namespace PEMS.Application.Delegations.Commands.ProposeResourceModification;
+public class ProposeResourceModificationCommandHandler {}

@@ -1,0 +1,2 @@
+namespace PEMS.Application.Delegations.Queries.ViewGuestDelegationDetails;
+public class ViewGuestDelegationDetailsDto {}

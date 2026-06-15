@@ -1,0 +1,2 @@
+namespace PEMS.Application.DepartmentManagement.Commands.CreateDepartmentManagementItem;
+public class CreateDepartmentManagementItemCommandHandler {}

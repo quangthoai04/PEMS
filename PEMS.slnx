@@ -1,6 +1,6 @@
 <Solution>
-  <Project Path="Application/Application.csproj" />
-  <Project Path="Domain/Domain.csproj" />
-  <Project Path="Infrastructure/Infrastructure.csproj" />
-  <Project Path="Pems_WebAPI/Pems_WebAPI.csproj" />
+  <Project Path="backend/PEMS.Application/PEMS.Application.csproj" />
+  <Project Path="backend/PEMS.Domain/PEMS.Domain.csproj" />
+  <Project Path="backend/PEMS.Infrastructure/PEMS.Infrastructure.csproj" />
+  <Project Path="backend/PEMS.Api/PEMS.Api.csproj" />
 </Solution>

@@ -1,0 +1,2 @@
+namespace PEMS.Application.GalleryManagement.Commands.CreateGalleryManagementItem;
+public class CreateGalleryManagementItemResponse {}

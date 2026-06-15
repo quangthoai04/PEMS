@@ -1,0 +1,2 @@
+namespace PEMS.Application.DepartmentManagement.Queries.GetDepartmentManagementList;
+public class GetDepartmentManagementListDto {}
