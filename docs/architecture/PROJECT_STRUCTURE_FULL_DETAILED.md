@@ -757,12 +757,12 @@ PEMS/
 │   │   ├── API_SPECIFICATION.md
 │   │   └── FRONTEND_BACKEND_CONTRACT_GAP.md
 │   ├── architecture/
+│   │   ├── PROJECT_STRUCTURE_DETAILED_EXPLANATION.md/
 │   │   ├── ARCHITECTURE_GUARD_TEST_REPORT.md
 │   │   ├── BACKEND_SCAFFOLD_CLEANUP_REPORT.md
 │   │   ├── BACKEND_SCAFFOLD_REPORT.md
 │   │   ├── BACKEND_USE_CASE_CLASS_BLUEPRINT.md
 │   │   ├── CLEAN_ARCHITECTURE.md
-│   │   ├── PROJECT_STRUCTURE_DETAILED_EXPLANATION.md
 │   │   └── REFACTOR_CHANGELOG.md
 │   ├── database/
 │   │   ├── DATABASE_DEPLOYMENT.md
@@ -1646,11 +1646,12 @@ Giải thích:
 * EF Core mapping, business logic và integration frontend/backend cần làm ở giai đoạn tiếp theo.
 * Tài liệu này dùng để onboarding, review kiến trúc và làm bản đồ dự án.
 
+
 ## 14. Cleanup Suggestions
 
 | File/Folder | Vấn đề | Đề xuất |
 |---|---|---|
-| \docs/architecture/PROJECT_STRUCTURE_DETAILED_EXPLANATION.md\ | File report cũ, trùng lặp mục đích với báo cáo mới | Xóa file cũ để tránh nhầm lẫn |
-| \docs/PEMS_AI_Refactor_Project_Structure_Prompt.md\ | File prompt rác | Nên xóa khỏi repo |
-| \ackend/PEMS.SharedKernel/\ | Folder gần như trống, chỉ có README.md | Review lại, nếu không áp dụng pattern SharedKernel thì nên xóa |
-| \	ests/\ | Cấu trúc tests chưa đầy đủ hoặc đang để trống các project con | Bổ sung đầy đủ các project test theo quy chuẩn |
+| `docs/architecture/PROJECT_STRUCTURE_DETAILED_EXPLANATION.md` | File report cũ, trùng lặp mục đích với báo cáo mới | Xóa file cũ để tránh nhầm lẫn |
+| `docs/PEMS_AI_Refactor_Project_Structure_Prompt.md` | File prompt rác | Nên xóa khỏi repo |
+| `backend/PEMS.SharedKernel/` | Folder gần như trống, chỉ có README.md | Review lại, nếu không áp dụng pattern SharedKernel thì nên xóa |
+| `tests/` | Cấu trúc tests chưa đầy đủ hoặc đang để trống các project con | Bổ sung đầy đủ các project test theo quy chuẩn |
