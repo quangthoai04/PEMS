@@ -6,7 +6,7 @@
 * **Mục đích hệ thống**: Quản lý các chuyến tham quan (Visit Requests) và điều phối đối tác (Partners) cho FPT Education.
 * **Backend**: .NET 9 (C# 13), Clean Architecture, MediatR (CQRS), Entity Framework Core.
 * **Frontend**: React 19, TypeScript, Vite.
-* **Database**: PostgreSQL.
+* **Database**: MySQL 8.0.
 * **Kiến trúc tổng thể**: Clean Architecture, CQRS.
 * **Trạng thái hiện tại**: Scaffold / Pending implementation.
 
@@ -1574,7 +1574,7 @@ IDelegationRepository / IApplicationDbContext
   ↓ implementation
 DelegationRepository / ApplicationDbContext
   ↓
-MySQL Database / PostgreSQL Database
+MySQL Database
 ```
 
 Giải thích:
