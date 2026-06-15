@@ -2,71 +2,60 @@
 # .gitignore Tổng Hợp Toàn Diện Cho Dự Án Fullstack (ASP.NET Core & React/Vite)
 # ==============================================================================
 
-# ------------------------------------------------------------------------------
-# 1. PHẦN CẤU HÌNH CHO ASP.NET CORE / C# / VISUAL STUDIO
-# ------------------------------------------------------------------------------
-## Các thư mục build và biên dịch tự động (Build outputs)
-[Bb]in/
-[Oo]bj/
+# Visual Studio / IDE
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+.idea/
+.vscode/
+
+# .NET build output
+bin/
+obj/
+**/bin/
+**/obj/
 [An]ative/
 x64/
 x86/
 ubuntu.*/
 debian.*/
 centos.*/
-
-## Các file kết quả biên dịch và debug
 *.pdb
 *.dll
 *.exe
 *.ini
-*.log
 
-## Thư mục cấu hình cá nhân của Visual Studio (.vs)
-.vs/
-*.suo
-*.user
-*.userosscache
-*.sln.docstates
-
-## Thư mục cấu hình của JetBrains Rider / VS Code
-.idea/
-.vscode/
-
-## File cấu hình môi trường / Bảo mật của Backend
-*.Secrets.json
-appsettings.Development.json
-appsettings.Local.json
-[Ee]nv.json
-
-## Thư mục sinh ra bởi công cụ kiểm thử (Test Results)
-[Tt]est[Rr]esult*/
-
-# ------------------------------------------------------------------------------
-# 2. PHẦN CẤU HÌNH CHO FRONTEND (NODE.JS / REACT / VITE / TYPESCRIPT)
-# ------------------------------------------------------------------------------
-## Thư mục quản lý thư viện Node (Tuyệt đối không commit vì cực kỳ nặng)
+# Frontend dependencies/build
 node_modules/
 jspm_packages/
-
-## Thư mục chứa code đã được biên dịch/build để triển khai (Production Build)
 dist/
 build/
 out/
+coverage/
 
-## Các file log lỗi của NPM / Yarn / Pnpm
+# Logs/temp
+*.log
+logs/
+temp/
+tmp/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
-## Các file cấu hình môi trường bảo mật của Frontend (Chứa API Key, Token)
+# Environment/secrets
 .env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
-.env*.local
+.env.*
+!.env.example
+appsettings.Development.json
+appsettings.Local.json
+*.Secrets.json
+[Ee]nv.json
+
+## Thư mục sinh ra bởi công cụ kiểm thử (Test Results)
+[Tt]est[Rr]esult*/
 
 ## Thư mục lưu cache hệ thống của các thư viện Frontend
 .eslintcache
@@ -84,4 +73,4 @@ Desktop.ini
 
 ## macOS
 .DS_Store
-._*
+._*
