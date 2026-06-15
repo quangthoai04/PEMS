@@ -1,46 +1,29 @@
-﻿using System;
-using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace Domain.Entities;
 
-/// <summary>
-/// Bảo mật nhật ký tích hợp API với trang Outbound
-/// </summary>
-public partial class Partnersynclog
+[Table("partner_sync_logs")]
+public class PartnerSyncLog
 {
-    /// <summary>
-    /// UUID mã log
-    /// </summary>
-    public Guid LogId { get; set; }
+    [Key]
+    [Column("sync_id")]
+    public string SyncId { get; set; } = null!;
 
-    /// <summary>
-    /// Đối tác được đồng bộ
-    /// </summary>
-    public Guid PartnerId { get; set; }
+    [Column("partner_id")]
+    public string? PartnerId { get; set; }
 
-    /// <summary>
-    /// Cán bộ click đồng bộ
-    /// </summary>
-    public Guid SyncedBy { get; set; }
-
-    /// <summary>
-    /// Hướng đồng bộ (PUSH_TO_OUTBOUND, PULL_PROGRAM_FROM_OUTBOUND)
-    /// </summary>
+    [Column("sync_direction")]
     public string SyncDirection { get; set; } = null!;
 
-    /// <summary>
-    /// Trạng thái (SUCCESS, FAILED)
-    /// </summary>
+    [Column("sync_status")]
     public string SyncStatus { get; set; } = null!;
 
-    /// <summary>
-    /// Nội dung phản hồi từ API Outbound hoặc thông báo lỗi
-    /// </summary>
-    public string? ResponseContent { get; set; }
+    [Column("message")]
+    public string? Message { get; set; }
 
+    [Column("synced_at")]
     public DateTime SyncedAt { get; set; }
 
-    public virtual Partner Partner { get; set; } = null!;
-
-    public virtual Useraccount SyncedByNavigation { get; set; } = null!;
+    public virtual Partner? Partner { get; set; }
 }

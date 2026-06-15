@@ -1,44 +1,35 @@
-﻿using System;
-using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace Domain.Entities;
 
-/// <summary>
-/// Kho lưu trữ văn bản ký kết phụ thuộc thực thể Đối tác
-/// </summary>
-public partial class Partnerdocument
+[Table("partner_documents")]
+public class PartnerDocument
 {
-    /// <summary>
-    /// UUID file đính kèm
-    /// </summary>
-    public Guid DocumentId { get; set; }
+    [Key]
+    [Column("doc_id")]
+    public string DocId { get; set; } = null!;
 
-    /// <summary>
-    /// Thuộc đối tác nào
-    /// </summary>
-    public Guid PartnerId { get; set; }
+    [Column("partner_id")]
+    public string PartnerId { get; set; } = null!;
 
-    /// <summary>
-    /// Tiêu đề tài liệu (Ví dụ: MoU_Signing_2026)
-    /// </summary>
-    public string DocumentTitle { get; set; } = null!;
+    [Column("file_name")]
+    public string FileName { get; set; } = null!;
 
-    /// <summary>
-    /// Phân loại (MoU, MoA, Proposal, Brochure)
-    /// </summary>
-    public string DocumentType { get; set; } = null!;
+    [Column("file_size")]
+    public string? FileSize { get; set; }
 
-    /// <summary>
-    /// Đường dẫn vật lý lưu file an toàn trên Cloud Storage
-    /// </summary>
+    [Column("file_type")]
+    public string? FileType { get; set; }
+
+    [Column("file_url")]
     public string FileUrl { get; set; } = null!;
 
-    /// <summary>
-    /// Ngày hết hạn hiệu lực văn bản ký kết
-    /// </summary>
-    public DateOnly? ExpiryDate { get; set; }
+    [Column("upload_date")]
+    public DateOnly UploadDate { get; set; }
 
-    public DateTime UploadedAt { get; set; }
+    [Column("uploaded_by")]
+    public string? UploadedBy { get; set; }
 
     public virtual Partner Partner { get; set; } = null!;
 }

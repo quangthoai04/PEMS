@@ -3,21 +3,21 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace Domain.Entities;
 
-[Table("departments")]
-public class Department
+[Table("roles")]
+public class Role
 {
     [Key]
-    [Column("department_id")]
-    public string DepartmentId { get; set; } = null!;
+    [Column("role_id")]
+    public string RoleId { get; set; } = null!;
+
+    [Column("role_code")]
+    public string RoleCode { get; set; } = null!;
 
     [Column("name")]
     public string Name { get; set; } = null!;
 
-    [Column("campus_id")]
-    public string CampusId { get; set; } = null!;
-
-    [Column("head_user_id")]
-    public string? HeadUserId { get; set; }
+    [Column("description")]
+    public string? Description { get; set; }
 
     [Column("status")]
     public string Status { get; set; } = "active";
@@ -25,7 +25,6 @@ public class Department
     [Column("created_at")]
     public DateTime CreatedAt { get; set; }
 
-    public virtual Campus Campus { get; set; } = null!;
     public virtual ICollection<User> Users { get; set; } = new List<User>();
-    public virtual ICollection<PemsTask> Tasks { get; set; } = new List<PemsTask>();
+    public virtual ICollection<RolePermission> RolePermissions { get; set; } = new List<RolePermission>();
 }

@@ -1,67 +1,62 @@
-﻿using System;
-using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace Domain.Entities;
 
-/// <summary>
-/// Mạng lưới thực thể Đối tác toàn cầu
-/// </summary>
-public partial class Partner
+[Table("partners")]
+public class Partner
 {
-    /// <summary>
-    /// UUID định danh đối tác
-    /// </summary>
-    public Guid PartnerId { get; set; }
+    [Key]
+    [Column("partner_id")]
+    public string PartnerId { get; set; } = null!;
 
-    /// <summary>
-    /// Tên tiếng Anh chính thức của trường đối tác
-    /// </summary>
-    public string EnglishName { get; set; } = null!;
+    [Column("code")]
+    public string Code { get; set; } = null!;
 
-    /// <summary>
-    /// Tên theo tiếng bản địa
-    /// </summary>
-    public string? LocalName { get; set; }
+    [Column("name")]
+    public string Name { get; set; } = null!;
 
-    /// <summary>
-    /// Quốc gia/Vùng lãnh thổ
-    /// </summary>
-    public string Country { get; set; } = null!;
+    [Column("country")]
+    public string? Country { get; set; }
 
-    /// <summary>
-    /// Đường dẫn trang web đối tác
-    /// </summary>
+    [Column("status")]
+    public string Status { get; set; } = "Draft";
+
+    [Column("created_by")]
+    public string? CreatedBy { get; set; }
+
+    [Column("campus_id")]
+    public string? CampusId { get; set; }
+
+    [Column("website")]
     public string? Website { get; set; }
 
-    /// <summary>
-    /// Link CDN ảnh logo đối tác
-    /// </summary>
+    [Column("address")]
+    public string? Address { get; set; }
+
+    [Column("description")]
+    public string? Description { get; set; }
+
+    [Column("logo_url")]
     public string? LogoUrl { get; set; }
 
-    /// <summary>
-    /// Trạng thái hợp tác (Potential, In-Discussion, Signed_MoU, Signed_MoA)
-    /// </summary>
-    public string CollaborationStatus { get; set; } = null!;
+    [Column("cover_url")]
+    public string? CoverUrl { get; set; }
 
-    /// <summary>
-    /// Cán bộ tạo thực thể
-    /// </summary>
-    public Guid CreatedBy { get; set; }
-
-    /// <summary>
-    /// Trạng thái Admin/HO duyệt (1: Đã duyệt, 0: Chờ duyệt thô)
-    /// </summary>
-    public bool IsApproved { get; set; }
-
+    [Column("created_at")]
     public DateTime CreatedAt { get; set; }
 
-    public virtual Useraccount CreatedByNavigation { get; set; } = null!;
+    [Column("updated_at")]
+    public DateTime? UpdatedAt { get; set; }
 
-    public virtual ICollection<Delegation> Delegations { get; set; } = new List<Delegation>();
+    [Column("updated_by")]
+    public string? UpdatedBy { get; set; }
 
-    public virtual ICollection<Partnercontact> Partnercontacts { get; set; } = new List<Partnercontact>();
+    [Column("deleted_at")]
+    public DateTime? DeletedAt { get; set; }
 
-    public virtual ICollection<Partnerdocument> Partnerdocuments { get; set; } = new List<Partnerdocument>();
-
-    public virtual ICollection<Partnersynclog> Partnersynclogs { get; set; } = new List<Partnersynclog>();
+    public virtual ICollection<PartnerContact> Contacts { get; set; } = new List<PartnerContact>();
+    public virtual ICollection<PartnerHistory> Histories { get; set; } = new List<PartnerHistory>();
+    public virtual ICollection<PartnerDocument> Documents { get; set; } = new List<PartnerDocument>();
+    public virtual ICollection<PartnerSyncLog> SyncLogs { get; set; } = new List<PartnerSyncLog>();
 }

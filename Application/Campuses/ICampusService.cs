@@ -1,14 +1,8 @@
-﻿using Domain.Entities;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+using Domain.Entities;
 
-namespace Application.Campuses
+namespace Application.Campuses;
+
+public interface ICampusService
 {
-    public interface ICampusService
-    {
-        Task<IEnumerable<Fptcampus>> GetAllCampusesAsync();
-    }
+    Task<IEnumerable<Campus>> GetAllCampusesAsync();
 }

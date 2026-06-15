@@ -1,42 +1,35 @@
-﻿using System;
-using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace Domain.Entities;
 
-/// <summary>
-/// Danh sách đầu mối liên lạc con thuộc Hồ sơ Đối tác
-/// </summary>
-public partial class Partnercontact
+[Table("partner_contacts")]
+public class PartnerContact
 {
-    /// <summary>
-    /// UUID đầu mối liên hệ
-    /// </summary>
-    public Guid ContactId { get; set; }
+    [Key]
+    [Column("contact_id")]
+    public string ContactId { get; set; } = null!;
 
-    /// <summary>
-    /// Liên kết thuộc đối tác nào
-    /// </summary>
-    public Guid PartnerId { get; set; }
+    [Column("partner_id")]
+    public string PartnerId { get; set; } = null!;
 
-    /// <summary>
-    /// Họ tên cán bộ đầu mối phía đối tác
-    /// </summary>
-    public string ContactName { get; set; } = null!;
+    [Column("name")]
+    public string Name { get; set; } = null!;
 
-    /// <summary>
-    /// Chức vụ, chức danh làm việc
-    /// </summary>
-    public string? Designation { get; set; }
+    [Column("email")]
+    public string? Email { get; set; }
 
-    /// <summary>
-    /// Email làm việc trực tiếp
-    /// </summary>
-    public string ContactEmail { get; set; } = null!;
+    [Column("phone")]
+    public string? Phone { get; set; }
 
-    /// <summary>
-    /// Số điện thoại/Whatsapp
-    /// </summary>
-    public string? ContactPhone { get; set; }
+    [Column("role_title")]
+    public string? RoleTitle { get; set; }
+
+    [Column("department")]
+    public string? Department { get; set; }
+
+    [Column("address")]
+    public string? Address { get; set; }
 
     public virtual Partner Partner { get; set; } = null!;
 }

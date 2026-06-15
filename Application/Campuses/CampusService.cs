@@ -1,22 +1,23 @@
-﻿using Application.Campuses;
 using Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 using Infrastructure._Persistence;
 
-namespace Application.Campuses
+namespace Application.Campuses;
+
+public class CampusService : ICampusService
 {
-    public class CampusService : ICampusService
+    private readonly ApplicationDbContext _context;
+
+    public CampusService(ApplicationDbContext context)
     {
-        private readonly ApplicationDbContext _context;
+        _context = context;
+    }
 
-        public CampusService(ApplicationDbContext context)
-        {
-            _context = context;
-        }
-
-        public async Task<IEnumerable<Fptcampus>> GetAllCampusesAsync()
-        {
-            return await _context.Fptcampuses.ToListAsync();
-        }
+    public async Task<IEnumerable<Campus>> GetAllCampusesAsync()
+    {
+        return await _context.Campuses
+            .Where(c => c.Status == "active")
+            .OrderBy(c => c.CampusCode)
+            .ToListAsync();
     }
 }

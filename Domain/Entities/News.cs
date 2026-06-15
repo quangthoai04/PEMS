@@ -1,56 +1,51 @@
-﻿using System;
-using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace Domain.Entities;
 
-/// <summary>
-/// Quản lý tin tức sự kiện truyền thông công cộng (Hỗ trợ nạp API tự động)
-/// </summary>
-public partial class News
+[Table("news")]
+public class News
 {
-    /// <summary>
-    /// UUID bài viết tin tức
-    /// </summary>
-    public Guid NewsId { get; set; }
+    [Key]
+    [Column("news_id")]
+    public string NewsId { get; set; } = null!;
 
-    /// <summary>
-    /// Bài viết liên kết với đoàn khách cụ thể nào
-    /// </summary>
-    public Guid? DelegationId { get; set; }
+    [Column("news_type")]
+    public string NewsType { get; set; } = "News";
 
-    /// <summary>
-    /// Tiêu đề bài báo truyền thông sự kiện
-    /// </summary>
+    [Column("title")]
     public string Title { get; set; } = null!;
 
-    /// <summary>
-    /// Nội dung bài viết (HTML format)
-    /// </summary>
-    public string Content { get; set; } = null!;
+    [Column("summary")]
+    public string? Summary { get; set; }
 
-    /// <summary>
-    /// Ảnh đại diện bài viết
-    /// </summary>
-    public string? ThumbnailUrl { get; set; }
+    [Column("body")]
+    public string? Body { get; set; }
 
-    /// <summary>
-    /// Trạng thái phê duyệt (Draft, PendingApproval, Published)
-    /// </summary>
-    public string NewsStatus { get; set; } = null!;
+    [Column("image_url")]
+    public string? ImageUrl { get; set; }
 
-    /// <summary>
-    /// Cờ nhận diện (1: Bài nạp tự động từ trang Outbound về, 0: Bài tự viết)
-    /// </summary>
-    public bool IsFromOutbound { get; set; }
+    [Column("created_by")]
+    public string? CreatedBy { get; set; }
 
-    /// <summary>
-    /// Người soạn thảo
-    /// </summary>
-    public Guid CreatedBy { get; set; }
+    [Column("campus_id")]
+    public string? CampusId { get; set; }
 
+    [Column("status")]
+    public string Status { get; set; } = "Cho Duyet";
+
+    [Column("published_date")]
+    public DateOnly? PublishedDate { get; set; }
+
+    [Column("created_at")]
     public DateTime CreatedAt { get; set; }
 
-    public virtual Useraccount CreatedByNavigation { get; set; } = null!;
+    [Column("updated_at")]
+    public DateTime? UpdatedAt { get; set; }
 
-    public virtual Delegation? Delegation { get; set; }
+    [Column("updated_by")]
+    public string? UpdatedBy { get; set; }
+
+    [Column("deleted_at")]
+    public DateTime? DeletedAt { get; set; }
 }
