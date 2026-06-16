@@ -1,20 +1,29 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
-namespace PEMS.Domain.Entities.Partners;
+namespace PEMS.Domain.Entities.Delegations;
 
-[Table("partner_contacts")]
-public class PartnerContact
+[Table("visit_guest_members")]
+public class VisitGuestMember
 {
     [Key]
-    [Column("contact_id")]
-    public string ContactId { get; set; } = null!;
+    [Column("guest_member_id")]
+    public string GuestMemberId { get; set; } = null!;
 
-    [Column("partner_id")]
-    public string PartnerId { get; set; } = null!;
+    [Column("visit_request_id")]
+    public string VisitRequestId { get; set; } = null!;
 
     [Column("full_name")]
     public string FullName { get; set; } = null!;
+
+    [Column("organization")]
+    public string? Organization { get; set; }
+
+    [Column("job_title")]
+    public string? JobTitle { get; set; }
+
+    [Column("nationality")]
+    public string? Nationality { get; set; }
 
     [Column("email")]
     public string? Email { get; set; }
@@ -22,20 +31,11 @@ public class PartnerContact
     [Column("phone")]
     public string? Phone { get; set; }
 
-    [Column("job_title")]
-    public string? JobTitle { get; set; }
-
-    [Column("department_name")]
-    public string? DepartmentName { get; set; }
+    [Column("is_representative")]
+    public bool IsRepresentative { get; set; }
 
     [Column("note")]
     public string? Note { get; set; }
-
-    [Column("is_primary")]
-    public bool IsPrimary { get; set; }
-
-    [Column("status")]
-    public string Status { get; set; } = "ACTIVE";
 
     [Column("created_at")]
     public DateTime CreatedAt { get; set; }
@@ -49,5 +49,5 @@ public class PartnerContact
     [Column("updated_by")]
     public string? UpdatedBy { get; set; }
 
-    public virtual Partner Partner { get; set; } = null!;
+    public virtual VisitRequest VisitRequest { get; set; } = null!;
 }

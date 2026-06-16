@@ -1,19 +1,3 @@
-using PEMS.Domain.Entities.AgendaTemplates;
-using PEMS.Domain.Entities.Campuses;
-using PEMS.Domain.Entities.Delegations;
-using PEMS.Domain.Entities.Departments;
-using PEMS.Domain.Entities.Documents;
-using PEMS.Domain.Entities.Emails;
-using PEMS.Domain.Entities.Faqs;
-using PEMS.Domain.Entities.Feedbacks;
-using PEMS.Domain.Entities.Galleries;
-using PEMS.Domain.Entities.Minutes;
-using PEMS.Domain.Entities.News;
-using PEMS.Domain.Entities.Notifications;
-using PEMS.Domain.Entities.Partners;
-using PEMS.Domain.Entities.Reports;
-using PEMS.Domain.Entities.Tasks;
-using PEMS.Domain.Entities.Users;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
@@ -26,20 +10,41 @@ public class VisitAgenda
     [Column("agenda_id")]
     public string AgendaId { get; set; } = null!;
 
-    [Column("visit_id")]
-    public string VisitId { get; set; } = null!;
+    [Column("visit_instance_id")]
+    public string VisitInstanceId { get; set; } = null!;
+
+    [Column("title")]
+    public string Title { get; set; } = null!;
 
     [Column("start_time")]
-    public TimeSpan? StartTime { get; set; }
+    public DateTime StartTime { get; set; }
 
     [Column("end_time")]
-    public TimeSpan? EndTime { get; set; }
+    public DateTime? EndTime { get; set; }
 
-    [Column("content")]
-    public string Content { get; set; } = null!;
+    [Column("description")]
+    public string? Description { get; set; }
+
+    [Column("location")]
+    public string? Location { get; set; }
+
+    [Column("responsible_user_id")]
+    public string? ResponsibleUserId { get; set; }
 
     [Column("sequence_order")]
     public int SequenceOrder { get; set; }
 
-    public virtual VisitRequest VisitRequest { get; set; } = null!;
+    [Column("created_at")]
+    public DateTime CreatedAt { get; set; }
+
+    [Column("created_by")]
+    public string? CreatedBy { get; set; }
+
+    [Column("updated_at")]
+    public DateTime? UpdatedAt { get; set; }
+
+    [Column("updated_by")]
+    public string? UpdatedBy { get; set; }
+
+    public virtual VisitRequestCampus VisitInstance { get; set; } = null!;
 }

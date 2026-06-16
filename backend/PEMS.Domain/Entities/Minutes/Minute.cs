@@ -1,19 +1,3 @@
-using PEMS.Domain.Entities.AgendaTemplates;
-using PEMS.Domain.Entities.Campuses;
-using PEMS.Domain.Entities.Delegations;
-using PEMS.Domain.Entities.Departments;
-using PEMS.Domain.Entities.Documents;
-using PEMS.Domain.Entities.Emails;
-using PEMS.Domain.Entities.Faqs;
-using PEMS.Domain.Entities.Feedbacks;
-using PEMS.Domain.Entities.Galleries;
-using PEMS.Domain.Entities.Minutes;
-using PEMS.Domain.Entities.News;
-using PEMS.Domain.Entities.Notifications;
-using PEMS.Domain.Entities.Partners;
-using PEMS.Domain.Entities.Reports;
-using PEMS.Domain.Entities.Tasks;
-using PEMS.Domain.Entities.Users;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
@@ -23,33 +7,60 @@ namespace PEMS.Domain.Entities.Minutes;
 public class Minute
 {
     [Key]
-    [Column("minute_id")]
-    public string MinuteId { get; set; } = null!;
+    [Column("minutes_id")]
+    public string MinutesId { get; set; } = null!;
 
-    [Column("visit_id")]
-    public string VisitId { get; set; } = null!;
+    [Column("visit_instance_id")]
+    public string VisitInstanceId { get; set; } = null!;
 
-    [Column("name")]
-    public string Name { get; set; } = null!;
+    [Column("title")]
+    public string Title { get; set; } = null!;
 
-    [Column("guest_name")]
-    public string? GuestName { get; set; }
+    [Column("content")]
+    public string? Content { get; set; }
 
-    [Column("file_url")]
-    public string? FileUrl { get; set; }
+    [Column("participants_json")]
+    public string? ParticipantsJson { get; set; }
 
-    [Column("upload_date")]
-    public DateOnly? UploadDate { get; set; }
+    [Column("attachments_json")]
+    public string? AttachmentsJson { get; set; }
 
-    [Column("is_draft")]
-    public bool IsDraft { get; set; } = true;
+    [Column("action_items_json")]
+    public string? ActionItemsJson { get; set; }
 
-    [Column("created_by")]
-    public string? CreatedBy { get; set; }
+    [Column("status")]
+    public string Status { get; set; } = "DRAFT";
+
+    [Column("finalized_by")]
+    public string? FinalizedBy { get; set; }
+
+    [Column("finalized_at")]
+    public DateTime? FinalizedAt { get; set; }
+
+    [Column("editing_by")]
+    public string? EditingBy { get; set; }
+
+    [Column("editing_started_at")]
+    public DateTime? EditingStartedAt { get; set; }
+
+    [Column("editing_until")]
+    public DateTime? EditingUntil { get; set; }
+
+    [Column("edit_lock_token")]
+    public string? EditLockToken { get; set; }
+
+    [Column("row_version")]
+    public int RowVersion { get; set; }
 
     [Column("created_at")]
     public DateTime CreatedAt { get; set; }
 
-    public virtual VisitRequest VisitRequest { get; set; } = null!;
-    public virtual ICollection<MinuteParticipant> Participants { get; set; } = new List<MinuteParticipant>();
+    [Column("created_by")]
+    public string? CreatedBy { get; set; }
+
+    [Column("updated_at")]
+    public DateTime? UpdatedAt { get; set; }
+
+    [Column("updated_by")]
+    public string? UpdatedBy { get; set; }
 }

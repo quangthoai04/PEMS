@@ -1,19 +1,5 @@
-using PEMS.Domain.Entities.AgendaTemplates;
 using PEMS.Domain.Entities.Campuses;
-using PEMS.Domain.Entities.Delegations;
 using PEMS.Domain.Entities.Departments;
-using PEMS.Domain.Entities.Documents;
-using PEMS.Domain.Entities.Emails;
-using PEMS.Domain.Entities.Faqs;
-using PEMS.Domain.Entities.Feedbacks;
-using PEMS.Domain.Entities.Galleries;
-using PEMS.Domain.Entities.Minutes;
-using PEMS.Domain.Entities.News;
-using PEMS.Domain.Entities.Notifications;
-using PEMS.Domain.Entities.Partners;
-using PEMS.Domain.Entities.Reports;
-using PEMS.Domain.Entities.Tasks;
-using PEMS.Domain.Entities.Users;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
@@ -44,11 +30,8 @@ public class User
     [Column("sub_role")]
     public string? SubRole { get; set; }
 
-    [Column("title")]
-    public string? Title { get; set; }
-
-    [Column("campus_id")]
-    public string? CampusId { get; set; }
+    [Column("primary_campus_id")]
+    public string? PrimaryCampusId { get; set; }
 
     [Column("department_id")]
     public string? DepartmentId { get; set; }
@@ -59,43 +42,54 @@ public class User
     [Column("avatar_url")]
     public string? AvatarUrl { get; set; }
 
-    [Column("status")]
-    public string Status { get; set; } = "PendingApproval";
-
-    [Column("login_status")]
-    public string LoginStatus { get; set; } = "NeverLoggedIn";
-
     [Column("student_code")]
     public string? StudentCode { get; set; }
 
-    [Column("major")]
-    public string? Major { get; set; }
+    [Column("fe_id")]
+    public string? FeId { get; set; }
 
-    [Column("nationality")]
-    public string? Nationality { get; set; }
+    [Column("status")]
+    public string Status { get; set; } = "PENDING_APPROVAL";
 
-    [Column("organization")]
-    public string? Organization { get; set; }
+    [Column("email_verified_at")]
+    public DateTime? EmailVerifiedAt { get; set; }
 
-    [Column("manage_scope")]
-    public string? ManageScope { get; set; }
+    [Column("must_set_password")]
+    public bool MustSetPassword { get; set; }
+
+    [Column("must_change_password")]
+    public bool MustChangePassword { get; set; }
+
+    [Column("failed_login_count")]
+    public int FailedLoginCount { get; set; }
+
+    [Column("locked_until")]
+    public DateTime? LockedUntil { get; set; }
+
+    [Column("created_via")]
+    public string CreatedVia { get; set; } = "ADMIN_CREATED";
+
+    [Column("first_login_at")]
+    public DateTime? FirstLoginAt { get; set; }
+
+    [Column("last_login_at")]
+    public DateTime? LastLoginAt { get; set; }
 
     [Column("created_at")]
     public DateTime CreatedAt { get; set; }
 
-    [Column("updated_at")]
-    public DateTime? UpdatedAt { get; set; }
-
     [Column("created_by")]
     public string? CreatedBy { get; set; }
+
+    [Column("updated_at")]
+    public DateTime? UpdatedAt { get; set; }
 
     [Column("updated_by")]
     public string? UpdatedBy { get; set; }
 
-    [Column("deleted_at")]
-    public DateTime? DeletedAt { get; set; }
-
     public virtual Role Role { get; set; } = null!;
-    public virtual Campus? Campus { get; set; }
+    public virtual Campus? PrimaryCampus { get; set; }
     public virtual Department? Department { get; set; }
+    public virtual ICollection<UserAuthProvider> AuthProviders { get; set; } = new List<UserAuthProvider>();
+    public virtual ICollection<UserSession> Sessions { get; set; } = new List<UserSession>();
 }

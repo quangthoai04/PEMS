@@ -1,19 +1,3 @@
-using PEMS.Domain.Entities.AgendaTemplates;
-using PEMS.Domain.Entities.Campuses;
-using PEMS.Domain.Entities.Delegations;
-using PEMS.Domain.Entities.Departments;
-using PEMS.Domain.Entities.Documents;
-using PEMS.Domain.Entities.Emails;
-using PEMS.Domain.Entities.Faqs;
-using PEMS.Domain.Entities.Feedbacks;
-using PEMS.Domain.Entities.Galleries;
-using PEMS.Domain.Entities.Minutes;
-using PEMS.Domain.Entities.News;
-using PEMS.Domain.Entities.Notifications;
-using PEMS.Domain.Entities.Partners;
-using PEMS.Domain.Entities.Reports;
-using PEMS.Domain.Entities.Tasks;
-using PEMS.Domain.Entities.Users;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
@@ -37,6 +21,12 @@ public class Permission
 
     [Column("description")]
     public string? Description { get; set; }
+
+    [Column("is_system")]
+    public bool IsSystem { get; set; }
+
+    [Column("created_at")]
+    public DateTime CreatedAt { get; set; }
 
     public virtual ICollection<RolePermission> RolePermissions { get; set; } = new List<RolePermission>();
 }

@@ -1,19 +1,3 @@
-using PEMS.Domain.Entities.AgendaTemplates;
-using PEMS.Domain.Entities.Campuses;
-using PEMS.Domain.Entities.Delegations;
-using PEMS.Domain.Entities.Departments;
-using PEMS.Domain.Entities.Documents;
-using PEMS.Domain.Entities.Emails;
-using PEMS.Domain.Entities.Faqs;
-using PEMS.Domain.Entities.Feedbacks;
-using PEMS.Domain.Entities.Galleries;
-using PEMS.Domain.Entities.Minutes;
-using PEMS.Domain.Entities.News;
-using PEMS.Domain.Entities.Notifications;
-using PEMS.Domain.Entities.Partners;
-using PEMS.Domain.Entities.Reports;
-using PEMS.Domain.Entities.Tasks;
-using PEMS.Domain.Entities.Users;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
@@ -23,11 +7,14 @@ namespace PEMS.Domain.Entities.Delegations;
 public class VisitStatusLog
 {
     [Key]
-    [Column("id")]
-    public long Id { get; set; }
+    [Column("visit_status_log_id")]
+    public long VisitStatusLogId { get; set; }
 
-    [Column("visit_id")]
-    public string VisitId { get; set; } = null!;
+    [Column("visit_request_id")]
+    public string? VisitRequestId { get; set; }
+
+    [Column("visit_instance_id")]
+    public string? VisitInstanceId { get; set; }
 
     [Column("old_status")]
     public string? OldStatus { get; set; }
@@ -44,5 +31,6 @@ public class VisitStatusLog
     [Column("changed_at")]
     public DateTime ChangedAt { get; set; }
 
-    public virtual VisitRequest VisitRequest { get; set; } = null!;
+    public virtual VisitRequest? VisitRequest { get; set; }
+    public virtual VisitRequestCampus? VisitInstance { get; set; }
 }

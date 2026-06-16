@@ -1,19 +1,3 @@
-using PEMS.Domain.Entities.AgendaTemplates;
-using PEMS.Domain.Entities.Campuses;
-using PEMS.Domain.Entities.Delegations;
-using PEMS.Domain.Entities.Departments;
-using PEMS.Domain.Entities.Documents;
-using PEMS.Domain.Entities.Emails;
-using PEMS.Domain.Entities.Faqs;
-using PEMS.Domain.Entities.Feedbacks;
-using PEMS.Domain.Entities.Galleries;
-using PEMS.Domain.Entities.Minutes;
-using PEMS.Domain.Entities.News;
-using PEMS.Domain.Entities.Notifications;
-using PEMS.Domain.Entities.Partners;
-using PEMS.Domain.Entities.Reports;
-using PEMS.Domain.Entities.Tasks;
-using PEMS.Domain.Entities.Users;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
@@ -26,20 +10,41 @@ public class Gallery
     [Column("gallery_id")]
     public string GalleryId { get; set; } = null!;
 
-    [Column("name")]
-    public string Name { get; set; } = null!;
+    [Column("campus_id")]
+    public string? CampusId { get; set; }
+
+    [Column("visit_instance_id")]
+    public string? VisitInstanceId { get; set; }
+
+    [Column("title")]
+    public string Title { get; set; } = null!;
 
     [Column("description")]
     public string? Description { get; set; }
 
-    [Column("uploaded_by")]
-    public string? UploadedBy { get; set; }
+    [Column("status")]
+    public string Status { get; set; } = "ACTIVE";
 
-    [Column("campus_id")]
-    public string? CampusId { get; set; }
+    [Column("visibility")]
+    public string Visibility { get; set; } = "INTERNAL";
 
     [Column("created_at")]
     public DateTime CreatedAt { get; set; }
+
+    [Column("created_by")]
+    public string? CreatedBy { get; set; }
+
+    [Column("updated_at")]
+    public DateTime? UpdatedAt { get; set; }
+
+    [Column("updated_by")]
+    public string? UpdatedBy { get; set; }
+
+    [Column("deleted_at")]
+    public DateTime? DeletedAt { get; set; }
+
+    [Column("deleted_by")]
+    public string? DeletedBy { get; set; }
 
     public virtual ICollection<GalleryImage> Images { get; set; } = new List<GalleryImage>();
 }

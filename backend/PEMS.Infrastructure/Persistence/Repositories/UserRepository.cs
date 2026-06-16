@@ -18,7 +18,7 @@ public class UserRepository : IUserRepository
     {
         return await _context.Users
             .Include(u => u.Role)
-            .Include(u => u.Campus)
-            .FirstOrDefaultAsync(u => u.Email == email && u.DeletedAt == null);
+            .Include(u => u.PrimaryCampus)
+            .FirstOrDefaultAsync(u => u.Email == email);
     }
 }

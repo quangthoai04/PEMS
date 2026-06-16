@@ -30,7 +30,7 @@ public class JwtTokenService : IJwtTokenService
             new Claim(ClaimTypes.Email,          user.Email),
             new Claim(ClaimTypes.Name,           user.FullName),
             new Claim(ClaimTypes.Role,           user.Role.RoleCode),
-            new Claim("CampusCode",              user.Campus?.CampusCode ?? "HO"),
+            new Claim("CampusCode",              user.PrimaryCampus?.CampusCode ?? "HO"),
             new Claim("SubRole",                 user.SubRole ?? "")
         };
 

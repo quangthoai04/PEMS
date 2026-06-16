@@ -1,19 +1,3 @@
-using PEMS.Domain.Entities.AgendaTemplates;
-using PEMS.Domain.Entities.Campuses;
-using PEMS.Domain.Entities.Delegations;
-using PEMS.Domain.Entities.Departments;
-using PEMS.Domain.Entities.Documents;
-using PEMS.Domain.Entities.Emails;
-using PEMS.Domain.Entities.Faqs;
-using PEMS.Domain.Entities.Feedbacks;
-using PEMS.Domain.Entities.Galleries;
-using PEMS.Domain.Entities.Minutes;
-using PEMS.Domain.Entities.News;
-using PEMS.Domain.Entities.Notifications;
-using PEMS.Domain.Entities.Partners;
-using PEMS.Domain.Entities.Reports;
-using PEMS.Domain.Entities.Tasks;
-using PEMS.Domain.Entities.Users;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
@@ -26,18 +10,39 @@ public class Feedback
     [Column("feedback_id")]
     public string FeedbackId { get; set; } = null!;
 
-    [Column("visit_id")]
-    public string VisitId { get; set; } = null!;
+    [Column("visit_request_id")]
+    public string VisitRequestId { get; set; } = null!;
 
-    [Column("guest_name")]
-    public string? GuestName { get; set; }
+    [Column("visit_instance_id")]
+    public string? VisitInstanceId { get; set; }
 
-    [Column("average_rating")]
-    public decimal? AverageRating { get; set; }
+    [Column("submitted_by_user_id")]
+    public string? SubmittedByUserId { get; set; }
 
-    [Column("feedback_date")]
-    public DateOnly? FeedbackDate { get; set; }
+    [Column("guest_member_id")]
+    public string? GuestMemberId { get; set; }
 
-    public virtual VisitRequest VisitRequest { get; set; } = null!;
-    public virtual ICollection<FeedbackItem> Items { get; set; } = new List<FeedbackItem>();
+    [Column("rating")]
+    public byte? Rating { get; set; }
+
+    [Column("comment")]
+    public string? Comment { get; set; }
+
+    [Column("answers_json")]
+    public string? AnswersJson { get; set; }
+
+    [Column("rating_details_json")]
+    public string? RatingDetailsJson { get; set; }
+
+    [Column("status")]
+    public string Status { get; set; } = "SUBMITTED";
+
+    [Column("created_at")]
+    public DateTime CreatedAt { get; set; }
+
+    [Column("reviewed_by")]
+    public string? ReviewedBy { get; set; }
+
+    [Column("reviewed_at")]
+    public DateTime? ReviewedAt { get; set; }
 }

@@ -1,19 +1,3 @@
-using PEMS.Domain.Entities.AgendaTemplates;
-using PEMS.Domain.Entities.Campuses;
-using PEMS.Domain.Entities.Delegations;
-using PEMS.Domain.Entities.Departments;
-using PEMS.Domain.Entities.Documents;
-using PEMS.Domain.Entities.Emails;
-using PEMS.Domain.Entities.Faqs;
-using PEMS.Domain.Entities.Feedbacks;
-using PEMS.Domain.Entities.Galleries;
-using PEMS.Domain.Entities.Minutes;
-using PEMS.Domain.Entities.News;
-using PEMS.Domain.Entities.Notifications;
-using PEMS.Domain.Entities.Partners;
-using PEMS.Domain.Entities.Reports;
-using PEMS.Domain.Entities.Tasks;
-using PEMS.Domain.Entities.Users;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
@@ -35,8 +19,11 @@ public class Faq
     [Column("category")]
     public string? Category { get; set; }
 
+    [Column("display_order")]
+    public int DisplayOrder { get; set; }
+
     [Column("status")]
-    public string Status { get; set; } = "Draft";
+    public string Status { get; set; } = "DRAFT";
 
     [Column("created_by")]
     public string? CreatedBy { get; set; }
@@ -46,4 +33,7 @@ public class Faq
 
     [Column("updated_at")]
     public DateTime? UpdatedAt { get; set; }
+
+    [Column("updated_by")]
+    public string? UpdatedBy { get; set; }
 }

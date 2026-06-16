@@ -1,19 +1,4 @@
-using PEMS.Domain.Entities.AgendaTemplates;
-using PEMS.Domain.Entities.Campuses;
-using PEMS.Domain.Entities.Delegations;
-using PEMS.Domain.Entities.Departments;
-using PEMS.Domain.Entities.Documents;
-using PEMS.Domain.Entities.Emails;
-using PEMS.Domain.Entities.Faqs;
-using PEMS.Domain.Entities.Feedbacks;
-using PEMS.Domain.Entities.Galleries;
-using PEMS.Domain.Entities.Minutes;
-using PEMS.Domain.Entities.News;
-using PEMS.Domain.Entities.Notifications;
 using PEMS.Domain.Entities.Partners;
-using PEMS.Domain.Entities.Reports;
-using PEMS.Domain.Entities.Tasks;
-using PEMS.Domain.Entities.Users;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
@@ -23,59 +8,98 @@ namespace PEMS.Domain.Entities.Delegations;
 public class VisitRequest
 {
     [Key]
-    [Column("visit_id")]
-    public string VisitId { get; set; } = null!;
+    [Column("visit_request_id")]
+    public string VisitRequestId { get; set; } = null!;
 
-    [Column("title")]
-    public string Title { get; set; } = null!;
+    [Column("request_code")]
+    public string RequestCode { get; set; } = null!;
 
-    [Column("guest_org")]
-    public string? GuestOrg { get; set; }
-
-    [Column("guest_name")]
-    public string? GuestName { get; set; }
-
-    [Column("visit_mode")]
-    public string VisitMode { get; set; } = "single";
-
-    [Column("visit_types")]
-    public string? VisitTypes { get; set; }
-
-    [Column("purpose")]
-    public string? Purpose { get; set; }
-
-    [Column("work_content")]
-    public string? WorkContent { get; set; }
-
-    [Column("pax")]
-    public int? Pax { get; set; }
-
-    [Column("campus_id")]
-    public string CampusId { get; set; } = null!;
+    [Column("visitor_user_id")]
+    public string VisitorUserId { get; set; } = null!;
 
     [Column("partner_id")]
     public string? PartnerId { get; set; }
 
-    [Column("host_user_id")]
-    public string? HostUserId { get; set; }
+    [Column("registrant_full_name")]
+    public string RegistrantFullName { get; set; } = null!;
 
-    [Column("sender_user_id")]
-    public string? SenderUserId { get; set; }
+    [Column("registrant_nationality")]
+    public string? RegistrantNationality { get; set; }
+
+    [Column("registrant_organization")]
+    public string RegistrantOrganization { get; set; } = null!;
+
+    [Column("registrant_job_title")]
+    public string? RegistrantJobTitle { get; set; }
+
+    [Column("registrant_phone")]
+    public string? RegistrantPhone { get; set; }
+
+    [Column("registrant_email")]
+    public string RegistrantEmail { get; set; } = null!;
+
+    [Column("delegation_name")]
+    public string DelegationName { get; set; } = null!;
+
+    [Column("visit_scope")]
+    public string VisitScope { get; set; } = "SINGLE_CAMPUS";
+
+    [Column("purpose")]
+    public string Purpose { get; set; } = null!;
+
+    [Column("working_content")]
+    public string? WorkingContent { get; set; }
+
+    [Column("expected_guest_count")]
+    public int ExpectedGuestCount { get; set; } = 1;
+
+    [Column("support_team_json")]
+    public string? SupportTeamJson { get; set; }
+
+    [Column("contact_person_json")]
+    public string? ContactPersonJson { get; set; }
+
+    [Column("working_language")]
+    public string WorkingLanguage { get; set; } = "EN";
+
+    [Column("interpreter_note")]
+    public string? InterpreterNote { get; set; }
+
+    [Column("transportation_note")]
+    public string? TransportationNote { get; set; }
+
+    [Column("note_to_fptu")]
+    public string? NoteToFptu { get; set; }
 
     [Column("status")]
-    public string Status { get; set; } = "Cho duyet";
+    public string Status { get; set; } = "PENDING_EMAIL_VERIFICATION";
 
-    [Column("reject_reason")]
-    public string? RejectReason { get; set; }
+    [Column("submitted_at")]
+    public DateTime SubmittedAt { get; set; }
 
-    [Column("scheduled_time")]
-    public DateTime? ScheduledTime { get; set; }
+    [Column("email_verified_at")]
+    public DateTime? EmailVerifiedAt { get; set; }
 
-    [Column("created_by")]
-    public string? CreatedBy { get; set; }
+    [Column("decided_by")]
+    public string? DecidedBy { get; set; }
+
+    [Column("decided_at")]
+    public DateTime? DecidedAt { get; set; }
+
+    [Column("decision_actor_role")]
+    public string? DecisionActorRole { get; set; }
+
+    [Column("decision_note")]
+    public string? DecisionNote { get; set; }
+
+    [Column("row_version")]
+    public int RowVersion { get; set; }
 
     [Column("created_at")]
     public DateTime CreatedAt { get; set; }
+
+    [Column("created_by")]
+    public string? CreatedBy { get; set; }
 
     [Column("updated_at")]
     public DateTime? UpdatedAt { get; set; }
@@ -83,15 +107,8 @@ public class VisitRequest
     [Column("updated_by")]
     public string? UpdatedBy { get; set; }
 
-    [Column("deleted_at")]
-    public DateTime? DeletedAt { get; set; }
-
-    public virtual Campus Campus { get; set; } = null!;
     public virtual Partner? Partner { get; set; }
-    public virtual ICollection<VisitDetail> Details { get; set; } = new List<VisitDetail>();
-    public virtual ICollection<VisitParticipant> Participants { get; set; } = new List<VisitParticipant>();
-    public virtual ICollection<VisitAgenda> Agendas { get; set; } = new List<VisitAgenda>();
-    public virtual ICollection<PemsTask> Tasks { get; set; } = new List<PemsTask>();
-    public virtual ICollection<Minute> Minutes { get; set; } = new List<Minute>();
-    public virtual ICollection<Feedback> Feedbacks { get; set; } = new List<Feedback>();
+    public virtual ICollection<VisitRequestCampus> CampusInstances { get; set; } = new List<VisitRequestCampus>();
+    public virtual ICollection<VisitGuestMember> GuestMembers { get; set; } = new List<VisitGuestMember>();
+    public virtual ICollection<VisitStatusLog> StatusLogs { get; set; } = new List<VisitStatusLog>();
 }

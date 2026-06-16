@@ -1,19 +1,3 @@
-using PEMS.Domain.Entities.AgendaTemplates;
-using PEMS.Domain.Entities.Campuses;
-using PEMS.Domain.Entities.Delegations;
-using PEMS.Domain.Entities.Departments;
-using PEMS.Domain.Entities.Documents;
-using PEMS.Domain.Entities.Emails;
-using PEMS.Domain.Entities.Faqs;
-using PEMS.Domain.Entities.Feedbacks;
-using PEMS.Domain.Entities.Galleries;
-using PEMS.Domain.Entities.Minutes;
-using PEMS.Domain.Entities.News;
-using PEMS.Domain.Entities.Notifications;
-using PEMS.Domain.Entities.Partners;
-using PEMS.Domain.Entities.Reports;
-using PEMS.Domain.Entities.Tasks;
-using PEMS.Domain.Entities.Users;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
@@ -26,35 +10,41 @@ public class News
     [Column("news_id")]
     public string NewsId { get; set; } = null!;
 
-    [Column("news_type")]
-    public string NewsType { get; set; } = "News";
-
-    [Column("title")]
-    public string Title { get; set; } = null!;
-
-    [Column("summary")]
-    public string? Summary { get; set; }
-
-    [Column("body")]
-    public string? Body { get; set; }
-
-    [Column("image_url")]
-    public string? ImageUrl { get; set; }
-
-    [Column("created_by")]
-    public string? CreatedBy { get; set; }
-
     [Column("campus_id")]
     public string? CampusId { get; set; }
 
-    [Column("status")]
-    public string Status { get; set; } = "Cho Duyet";
+    [Column("author_user_id")]
+    public string AuthorUserId { get; set; } = null!;
 
-    [Column("published_date")]
-    public DateOnly? PublishedDate { get; set; }
+    [Column("cover_file_id")]
+    public string? CoverFileId { get; set; }
+
+    [Column("status")]
+    public string Status { get; set; } = "DRAFT";
+
+    [Column("published_at")]
+    public DateTime? PublishedAt { get; set; }
+
+    [Column("decided_by")]
+    public string? DecidedBy { get; set; }
+
+    [Column("decided_at")]
+    public DateTime? DecidedAt { get; set; }
+
+    [Column("decision_note")]
+    public string? DecisionNote { get; set; }
+
+    [Column("is_featured")]
+    public bool IsFeatured { get; set; }
+
+    [Column("row_version")]
+    public int RowVersion { get; set; }
 
     [Column("created_at")]
     public DateTime CreatedAt { get; set; }
+
+    [Column("created_by")]
+    public string? CreatedBy { get; set; }
 
     [Column("updated_at")]
     public DateTime? UpdatedAt { get; set; }
@@ -64,4 +54,9 @@ public class News
 
     [Column("deleted_at")]
     public DateTime? DeletedAt { get; set; }
+
+    [Column("deleted_by")]
+    public string? DeletedBy { get; set; }
+
+    public virtual ICollection<NewsTranslation> Translations { get; set; } = new List<NewsTranslation>();
 }
