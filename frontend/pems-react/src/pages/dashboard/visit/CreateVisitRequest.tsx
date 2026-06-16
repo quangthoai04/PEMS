@@ -83,6 +83,16 @@ export function CreateVisitRequest() {
 
   const [notes, setNotes] = useState('');
 
+  // Collapse state for 3 main sections
+  const [collapseSection1, setCollapseSection1] = useState(false);
+  const [collapseSection2, setCollapseSection2] = useState(false);
+  const [collapseSection3, setCollapseSection3] = useState(false);
+
+  // Section completion checkers (for green border)
+  const isSection1Complete = !!(hostInfo.name && hostInfo.org && hostInfo.title && hostInfo.phone && hostInfo.email);
+  const isSection2Complete = !!(guestInfo.name && visits.every(v => v.date && v.startTime && v.endTime) && guestInfo.purpose && guestInfo.workContent);
+  const isSection3Complete = visitTypes.length > 0;
+
   const handleVisitTypeChange = (type: string) => {
     if (visitTypes.includes(type)) {
       setVisitTypes(visitTypes.filter(t => t !== type));
@@ -115,13 +125,19 @@ export function CreateVisitRequest() {
       <div className="space-y-8 flex-1">
         
         {/* Section 1: Thông tin người tạo / đăng ký */}
-        <div className="bg-white rounded-2xl border border-[#004c91]/20 shadow-sm overflow-hidden">
-          <div className="bg-[#004c91] px-6 py-4 border-b border-[#003366]">
+        <div className={`bg-white rounded-2xl shadow-sm overflow-hidden border-2 transition-colors duration-300 ${isSection1Complete ? 'border-green-400' : 'border-[#004c91]/20'}`}>
+          <div
+            className="bg-[#004c91] px-6 py-4 border-b border-[#003366] flex items-center justify-between cursor-pointer select-none"
+            onClick={() => setCollapseSection1(p => !p)}
+          >
             <h2 className="text-lg font-bold text-white flex items-center gap-2">
               <span className="flex items-center justify-center w-6 h-6 rounded-full bg-[#f37021] text-white font-black text-sm">1</span>
               Thông tin người {guestData ? 'đăng ký' : 'tạo'}
+              {isSection1Complete && <span className="ml-2 text-green-300 text-xs font-bold flex items-center gap-1">✓ Hoàn thành</span>}
             </h2>
+            <ChevronDown className={`w-5 h-5 text-white/70 transition-transform duration-200 ${collapseSection1 ? '-rotate-90' : ''}`} />
           </div>
+          {!collapseSection1 && (
           <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
               <label className="block text-sm font-bold text-gray-700 mb-2">Họ và tên</label>
@@ -144,17 +160,23 @@ export function CreateVisitRequest() {
               <input type="email" className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none text-sm bg-gray-50/50" value={hostInfo.email} onChange={e => setHostInfo({...hostInfo, email: e.target.value})} />
             </div>
           </div>
+          )}
         </div>
 
         {/* Section 2: Thông tin đoàn khách */}
-        <div className="bg-white rounded-2xl border border-[#004c91]/20 shadow-sm overflow-hidden">
-          <div className="bg-[#004c91] px-6 py-4 border-b border-[#003366]">
+        <div className={`bg-white rounded-2xl shadow-sm overflow-hidden border-2 transition-colors duration-300 ${isSection2Complete ? 'border-green-400' : 'border-[#004c91]/20'}`}>
+          <div
+            className="bg-[#004c91] px-6 py-4 border-b border-[#003366] flex items-center justify-between cursor-pointer select-none"
+            onClick={() => setCollapseSection2(p => !p)}
+          >
             <h2 className="text-lg font-bold text-white flex items-center gap-2">
               <span className="flex items-center justify-center w-6 h-6 rounded-full bg-[#f37021] text-white font-black text-sm">2</span>
               Thông tin đoàn khách
+              {isSection2Complete && <span className="ml-2 text-green-300 text-xs font-bold flex items-center gap-1">✓ Hoàn thành</span>}
             </h2>
+            <ChevronDown className={`w-5 h-5 text-white/70 transition-transform duration-200 ${collapseSection2 ? '-rotate-90' : ''}`} />
           </div>
-          <div className="p-6 space-y-6">
+          {!collapseSection2 && <div className="p-6 space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <label className="block text-sm font-bold text-gray-700 mb-2">Tên đoàn khách</label>
@@ -269,19 +291,24 @@ export function CreateVisitRequest() {
                 <textarea className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-[#f37021] focus:ring-1 focus:ring-[#f37021] outline-none text-sm min-h-[80px] resize-none" value={guestInfo.workContent} onChange={e => setGuestInfo({...guestInfo, workContent: e.target.value})} placeholder="Nhập nội dung dự kiến..."></textarea>
               </div>
             </div>
-          </div>
+          </div>}
         </div>
 
         {/* Section 3: Setup */}
-        <div className="bg-white rounded-2xl border border-[#004c91]/20 shadow-sm overflow-hidden mb-8">
-          <div className="bg-[#004c91] px-6 py-4 border-b border-[#003366]">
+        <div className={`bg-white rounded-2xl shadow-sm overflow-hidden mb-8 border-2 transition-colors duration-300 ${isSection3Complete ? 'border-green-400' : 'border-[#004c91]/20'}`}>
+          <div
+            className="bg-[#004c91] px-6 py-4 border-b border-[#003366] flex items-center justify-between cursor-pointer select-none"
+            onClick={() => setCollapseSection3(p => !p)}
+          >
             <h2 className="text-lg font-bold text-white flex items-center gap-2">
               <span className="flex items-center justify-center w-6 h-6 rounded-full bg-[#f37021] text-white font-black text-sm">3</span>
               Thiết lập & Điều phối sự kiện (Set up)
+              {isSection3Complete && <span className="ml-2 text-green-300 text-xs font-bold">✓ Hoàn thành</span>}
             </h2>
+            <ChevronDown className={`w-5 h-5 text-white/70 transition-transform duration-200 ${collapseSection3 ? '-rotate-90' : ''}`} />
           </div>
           
-          <div className="p-0">
+          {!collapseSection3 && <div className="p-0">
             {/* 3.1 Loại hình tham quan */}
             <div className="p-6 border-b border-gray-100">
               <h3 className="text-base font-bold text-orange-900 bg-orange-50 w-max px-3 py-1.5 rounded-lg border border-orange-100 flex items-center gap-2 mb-4">
@@ -309,8 +336,8 @@ export function CreateVisitRequest() {
               )}
             </div>
 
-            {/* 3.2 Agenda */}
-            <div className="p-6 border-b border-gray-100 bg-slate-50/50">
+            {/* 3.2 Agenda - chỉ hiện khi có loại hình tham quan */}
+            {visitTypes.length > 0 && <div className="p-6 border-b border-gray-100 bg-slate-50/50">
               <h3 className="text-base font-bold text-orange-900 bg-orange-50 w-max px-3 py-1.5 rounded-lg border border-orange-100 flex items-center gap-2 mb-2">
                 <span className="w-1.5 h-4 bg-[#f37021] rounded-full"></span>
                 2. Agenda dự kiến
@@ -389,7 +416,7 @@ export function CreateVisitRequest() {
                   <Plus className="w-4 h-4" /> Thêm nội dung
                 </button>
               </div>
-            </div>
+            </div>}
 
             {/* 3.3 Thành phần tham gia */}
             <div className="p-6 border-b border-gray-100">
@@ -398,7 +425,7 @@ export function CreateVisitRequest() {
                 3. Thành phần tham gia
               </h3>
               
-              <div className="space-y-6">
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
                 {/* 1. Host */}
                 <div className="bg-white border border-gray-200 border-l-[6px] border-l-[#004c91] rounded-xl p-5 shadow-sm bg-gradient-to-r from-[#004c91]/[0.03] to-transparent">
                   <div className="flex items-center justify-between mb-4">
@@ -716,7 +743,7 @@ export function CreateVisitRequest() {
                 </div>
 
               </div>
-            </div>
+            </div>  {/* end 3.3 */}
 
             {/* 3.4 Cảnh báo */}
             <div className="p-6 border-b border-gray-100 bg-slate-50/50">
@@ -725,38 +752,40 @@ export function CreateVisitRequest() {
                 4. Cảnh báo & Thông báo
               </h3>
 
-              <div className="space-y-6">
-                <div>
-                  <h4 className="text-sm font-bold text-gray-700 flex items-center gap-2 mb-2">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Thông báo hệ thống */}
+                <div className="bg-white border border-blue-100 rounded-xl p-4 shadow-sm">
+                  <h4 className="text-sm font-bold text-gray-700 flex items-center gap-2 mb-1">
+                    <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-[#004c91] shrink-0">
+                      <Bell className="w-4 h-4" />
+                    </div>
                     1. Thông báo tới các thành phần tham gia
                   </h4>
-                  <p className="text-xs text-gray-500 mb-3">Thông báo trên hệ thống</p>
-                  <div className="flex flex-wrap items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-[#004c91]">
-                      <Bell className="w-5 h-5" />
+                  <p className="text-xs text-gray-500 mb-3 ml-10">Thông báo trên hệ thống</p>
+                  <div className="flex flex-wrap items-center gap-2 ml-10">
+                    <div className="flex items-center bg-gray-50 border border-gray-200 rounded-lg overflow-hidden">
+                      <input type="number" min="1" max="31" className="w-14 px-2 py-2 text-center text-sm font-bold outline-none bg-transparent" value={alerts.system.days} onChange={e => setAlerts({...alerts, system: {...alerts.system, days: parseInt(e.target.value)||1}})} />
                     </div>
-                    <div className="flex items-center bg-white border border-gray-200 rounded-lg overflow-hidden">
-                      <input type="number" min="1" max="31" className="w-16 px-3 py-2 text-center text-sm font-bold outline-none" value={alerts.system.days} onChange={e => setAlerts({...alerts, system: {...alerts.system, days: parseInt(e.target.value)||1}})} />
-                    </div>
-                    <span className="text-sm text-gray-600 font-medium">ngày trước khi sự kiện diễn ra vào lúc</span>
-                    <input type="time" className="px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none bg-white" value={alerts.system.time} onChange={e => setAlerts({...alerts, system: {...alerts.system, time: e.target.value}})} />
+                    <span className="text-xs text-gray-600 font-medium">ngày trước, vào lúc</span>
+                    <input type="time" className="px-2 py-2 border border-gray-200 rounded-lg text-sm outline-none bg-white" value={alerts.system.time} onChange={e => setAlerts({...alerts, system: {...alerts.system, time: e.target.value}})} />
                   </div>
                 </div>
 
-                <div className="pt-4 border-t border-gray-200">
-                  <h4 className="text-sm font-bold text-gray-700 flex items-center gap-2 mb-2">
+                {/* Thông báo email */}
+                <div className="bg-white border border-orange-100 rounded-xl p-4 shadow-sm">
+                  <h4 className="text-sm font-bold text-gray-700 flex items-center gap-2 mb-1">
+                    <div className="w-8 h-8 rounded-full bg-orange-100 flex items-center justify-center text-[#f37021] shrink-0">
+                      <Mail className="w-4 h-4" />
+                    </div>
                     2. Thông báo tới HOST
                   </h4>
-                  <p className="text-xs text-gray-500 mb-3">Gửi email nhắc nhở host - viết email cho các bên liên quan</p>
-                  <div className="flex flex-wrap items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-orange-100 flex items-center justify-center text-[#f37021]">
-                      <Mail className="w-5 h-5" />
+                  <p className="text-xs text-gray-500 mb-3 ml-10">Gửi email nhắc nhở host</p>
+                  <div className="flex flex-wrap items-center gap-2 ml-10">
+                    <div className="flex items-center bg-gray-50 border border-gray-200 rounded-lg overflow-hidden">
+                      <input type="number" min="1" max="31" className="w-14 px-2 py-2 text-center text-sm font-bold outline-none bg-transparent" value={alerts.email.days} onChange={e => setAlerts({...alerts, email: {...alerts.email, days: parseInt(e.target.value)||1}})} />
                     </div>
-                    <div className="flex items-center bg-white border border-gray-200 rounded-lg overflow-hidden">
-                      <input type="number" min="1" max="31" className="w-16 px-3 py-2 text-center text-sm font-bold outline-none" value={alerts.email.days} onChange={e => setAlerts({...alerts, email: {...alerts.email, days: parseInt(e.target.value)||1}})} />
-                    </div>
-                    <span className="text-sm text-gray-600 font-medium">ngày trước khi sự kiện diễn ra vào lúc</span>
-                    <input type="time" className="px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none bg-white" value={alerts.email.time} onChange={e => setAlerts({...alerts, email: {...alerts.email, time: e.target.value}})} />
+                    <span className="text-xs text-gray-600 font-medium">ngày trước, vào lúc</span>
+                    <input type="time" className="px-2 py-2 border border-gray-200 rounded-lg text-sm outline-none bg-white" value={alerts.email.time} onChange={e => setAlerts({...alerts, email: {...alerts.email, time: e.target.value}})} />
                   </div>
                 </div>
               </div>
@@ -776,7 +805,7 @@ export function CreateVisitRequest() {
               ></textarea>
             </div>
 
-          </div>
+          </div>}
         </div>
       </div>
 
