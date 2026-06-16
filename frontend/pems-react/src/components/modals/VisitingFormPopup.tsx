@@ -76,18 +76,18 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
   const [isContactPointSameAsRegister, setIsContactPointSameAsRegister] = useState(false);
 
   const [visitMode, setVisitMode] = useState<'single' | 'multiple'>('single');
-  const [visits, setVisits] = useState([{ id: '1', campus: 'Hà Nội', date: '', startTime: '', endTime: '' }]);
+  const [visits, setVisits] = useState([{ id: '1', campus: 'Hà Nội', startDatetime: '', endDatetime: '' }]);
   const campusOptions = ['Hà Nội', 'Đà Nẵng', 'Cần Thơ', 'Hồ Chí Minh', 'Quy Nhơn'];
 
-  const handleDateChange = (val: string, index: number) => {
+  const handleStartDatetimeChange = (val: string, index: number) => {
     const newVisits = [...visits];
-    newVisits[index].date = val;
+    newVisits[index].startDatetime = val;
     setVisits(newVisits);
 
     if (val) {
       const selectedDate = new Date(val);
       const today = new Date();
-      today.setHours(0, 0, 0, 0); 
+      today.setHours(0, 0, 0, 0);
       const diffMs = selectedDate.getTime() - today.getTime();
       const diffDays = diffMs / (1000 * 60 * 60 * 24);
       if (diffDays <= 3 && diffDays >= 0) {
@@ -102,7 +102,7 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
 
   useEffect(() => {
     if (visitMode === 'single' && visits.length > 1) {
-      setVisits([visits[0]]);
+      setVisits([{ ...visits[0] }]);
     }
   }, [visitMode]);
 
@@ -275,31 +275,33 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
                                     <ChevronDown className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
                                   </div>
                                 </div>
-                                {/* Ngày bắt đầu */}
+                                {/* Thời Gian Bắt đầu */}
                                 <div className="flex-[1.5] w-full xl:w-auto relative">
-                                  {index === 0 && <label className="block text-xs font-bold text-gray-600 mb-1 uppercase tracking-wider">Ngày bắt đầu</label>}
+                                  {index === 0 && <label className="block text-xs font-bold text-gray-600 mb-1 uppercase tracking-wider">Thời Gian Bắt đầu</label>}
                                   <div className="relative">
-                                    <input type="date" value={visit.date} onChange={(e) => handleDateChange(e.target.value, index)} className="w-full px-4 py-2.5 pl-10 rounded-xl border border-gray-300 focus:border-[#f37021] focus:ring-1 focus:ring-[#f37021] outline-none text-sm font-medium bg-white shadow-sm" required />
+                                    <input
+                                      type="datetime-local"
+                                      value={visit.startDatetime}
+                                      onChange={(e) => handleStartDatetimeChange(e.target.value, index)}
+                                      className="w-full px-4 py-2.5 pl-10 rounded-xl border border-gray-300 focus:border-[#f37021] focus:ring-1 focus:ring-[#f37021] outline-none text-sm font-medium bg-white shadow-sm"
+                                      required
+                                    />
                                     <Calendar className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#004c91]" />
                                   </div>
                                 </div>
-                                {/* Thời gian bắt đầu */}
-                                <div className="flex-1 w-full xl:w-auto relative">
-                                  {index === 0 && <label className="block text-xs font-bold text-gray-600 mb-1 uppercase tracking-wider">TG Bắt đầu</label>}
+                                {/* Thời Gian Kết thúc */}
+                                <div className="flex-[1.5] w-full xl:w-auto relative">
+                                  {index === 0 && <label className="block text-xs font-bold text-gray-600 mb-1 uppercase tracking-wider">Thời Gian Kết thúc</label>}
                                   <div className="relative">
-                                    <input type="time" value={visit.startTime} onChange={(e) => {
-                                      const newV = [...visits]; newV[index].startTime = e.target.value; setVisits(newV);
-                                    }} className="w-full px-4 py-2.5 pl-10 rounded-xl border border-gray-300 focus:border-[#f37021] focus:ring-1 focus:ring-[#f37021] outline-none text-sm font-medium bg-white shadow-sm" required />
-                                    <Clock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#004c91]" />
-                                  </div>
-                                </div>
-                                {/* Thời gian kết thúc */}
-                                <div className="flex-1 w-full xl:w-auto relative">
-                                  {index === 0 && <label className="block text-xs font-bold text-gray-600 mb-1 uppercase tracking-wider">TG Kết thúc</label>}
-                                  <div className="relative">
-                                    <input type="time" value={visit.endTime} onChange={(e) => {
-                                      const newV = [...visits]; newV[index].endTime = e.target.value; setVisits(newV);
-                                    }} className="w-full px-4 py-2.5 pl-10 rounded-xl border border-gray-300 focus:border-[#f37021] focus:ring-1 focus:ring-[#f37021] outline-none text-sm font-medium bg-white shadow-sm" required />
+                                    <input
+                                      type="datetime-local"
+                                      value={visit.endDatetime}
+                                      onChange={(e) => {
+                                        const newV = [...visits]; newV[index].endDatetime = e.target.value; setVisits(newV);
+                                      }}
+                                      className="w-full px-4 py-2.5 pl-10 rounded-xl border border-gray-300 focus:border-[#f37021] focus:ring-1 focus:ring-[#f37021] outline-none text-sm font-medium bg-white shadow-sm"
+                                      required
+                                    />
                                     <Clock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#004c91]" />
                                   </div>
                                 </div>
@@ -314,7 +316,7 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
                           {visitMode === 'multiple' && (
                             <button
                               type="button"
-                              onClick={() => setVisits([...visits, { id: Date.now().toString(), campus: 'Hà Nội', date: '', startTime: '', endTime: '' }])}
+                              onClick={() => setVisits([...visits, { id: Date.now().toString(), campus: 'Hà Nội', startDatetime: '', endDatetime: '' }])}
                               className="w-full mt-4 flex items-center justify-center gap-2 py-2.5 border-2 border-dashed border-[#f37021]/30 hover:border-[#f37021] text-[#f37021] rounded-xl text-sm font-bold transition-colors bg-orange-50/50 hover:bg-orange-50"
                             >
                               <Plus className="w-4 h-4" /> Thêm cơ sở
@@ -523,84 +525,61 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
                       </div>
                     </div>
 
-                    {/* Khối 3: Yêu cầu & Xác nhận bổ sung */}
+                    {/* Khối 3: Yêu cầu bổ sung */}
                     <div className="bg-slate-50/50 rounded-2xl border-l-4 border-l-[#f37021] border border-gray-100 p-5 sm:p-7 shadow-sm mt-8">
-                      <h4 className="text-gray-800 font-bold text-base mb-5 border-b border-gray-200 pb-2 uppercase tracking-wide">III. Yêu cầu & Xác nhận bổ sung</h4>
-                      
+                      <h4 className="text-gray-800 font-bold text-base mb-5 border-b border-gray-200 pb-2 uppercase tracking-wide">III. Yêu cầu bổ sung</h4>
+
+                      {/* Hàng 1: Ngôn ngữ sử dụng & Nhận diện phương tiện */}
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                         {/* Ngôn ngữ sử dụng */}
-                      <div>
-                        <FormLabel required>Ngôn ngữ sử dụng</FormLabel>
-                        <div className="flex items-center gap-8 mt-2 mb-3">
-                          <label className="flex items-center gap-2.5 cursor-pointer group">
-                            <input type="radio" name="language" value="tienganh" required className="w-5 h-5 text-[#f37021] border-gray-300 focus:ring-[#f37021] cursor-pointer" />
-                            <span className="text-gray-800 font-bold text-sm group-hover:text-[#004c91] transition-colors">Tiếng Anh</span>
-                          </label>
-                          <label className="flex items-center gap-2.5 cursor-pointer group">
-                            <input type="radio" name="language" value="tiengviet" required className="w-5 h-5 text-[#f37021] border-gray-300 focus:ring-[#f37021] cursor-pointer" />
-                            <span className="text-gray-800 font-bold text-sm group-hover:text-[#004c91] transition-colors">Tiếng Việt</span>
-                          </label>
-                        </div>
-                        <div className="bg-slate-50 border border-slate-100 p-3 rounded-xl">
-                          <p className="text-xs text-slate-500 italic leading-relaxed">
-                            <span className="font-bold text-slate-600 not-italic mr-1">Note:</span> 
-                            Hiện tại FPTU chỉ có thể hỗ trợ bằng 2 ngôn ngữ tiếng Anh và tiếng Việt. Với lựa chọn khác ngoài tiếng Anh hoặc tiếng Việt, đầu mối gửi visit request sẽ cần chủ động bố trí phiên dịch viên (nếu cần).
-                          </p>
-                        </div>
-                      </div>
-
-                      {/* Xác nhận sử dụng hình ảnh & Thông tin */}
-                      <div>
-                        <FormLabel required>Xác nhận sử dụng hình ảnh & Thông tin</FormLabel>
-                        <div className="flex items-center gap-8 mt-2 mb-3">
-                          <label className="flex items-center gap-2.5 cursor-pointer group">
-                            <input type="radio" name="consent" value="dongy" required className="w-5 h-5 text-[#f37021] border-gray-300 focus:ring-[#f37021] cursor-pointer" />
-                            <span className="text-gray-800 font-bold text-sm group-hover:text-[#f37021] transition-colors">Đồng ý</span>
-                          </label>
-                          <label className="flex items-center gap-2.5 cursor-pointer group">
-                            <input type="radio" name="consent" value="khongdongy" required className="w-5 h-5 text-[#f37021] border-gray-300 focus:ring-[#f37021] cursor-pointer" />
-                            <span className="text-gray-800 font-bold text-sm group-hover:text-red-500 transition-colors">Không đồng ý</span>
-                          </label>
-                        </div>
-                        <div className="text-xs text-slate-500 bg-slate-50 p-3 rounded-xl border border-slate-100">
-                          <p className="font-bold text-slate-600 mb-1.5 not-italic">Bao gồm hoạt động:</p>
-                          <ul className="list-none space-y-1">
-                            <li className="flex gap-2 items-start"><span className="text-[#f37021] mt-0.5">•</span> Chụp và sử dụng ảnh</li>
-                            <li className="flex gap-2 items-start"><span className="text-[#f37021] mt-0.5">•</span> Lên bài trên các trang thông tin chính thức và mạng xã hội của trường</li>
-                            <li className="flex gap-2 items-start"><span className="text-[#f37021] mt-0.5">•</span> Hiển thị tên trên màn hình Led</li>
-                          </ul>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 pt-4">
-                      {/* Nhận diện phương tiện */}
-                      <div>
-                        <InputField label="Nhận diện phương tiện di chuyển tới FPTU" placeholder="Ví dụ: Xe khách 45 chỗ, biển số 29A-XXXXX..." />
-                        <div className="text-xs text-slate-500 bg-slate-50 p-3 rounded-xl border border-slate-100 mt-2">
-                          <ul className="list-none space-y-2 italic">
-                            <li className="flex gap-2 items-start">
-                              <span className="text-[#004c91] font-bold not-italic">∗</span> 
-                              Các phương tiện cá nhân không được di chuyển trong khuôn viên trường nếu chưa được cho phép.
-                            </li>
-                            <li className="flex gap-2 items-start">
-                              <span className="text-[#004c91] font-bold not-italic">∗</span> 
-                              Với các đoàn khách di chuyển từ FSO và có số lượng khách đông (6 người trở lên), đầu mối phụ trách chủ động yêu cầu xe điện từ FSO qua FPTU và cả trong quá trình campus tour.
-                            </li>
-                          </ul>
-                        </div>
-                      </div>
-
-                        {/* Ghi chú */}
                         <div>
-                          <label className="block text-base font-bold text-gray-900 mb-2">Ghi chú cho FPTU</label>
-                          <textarea 
-                            rows={6} 
-                            placeholder="Nhập bất kỳ ghi chú thiết yếu nào..."
-                            className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:border-[#f37021] focus:ring-1 focus:ring-[#f37021] outline-none transition-shadow bg-white text-sm shadow-sm resize-none font-medium text-gray-900"
-                          ></textarea>
+                          <FormLabel required>Ngôn ngữ sử dụng</FormLabel>
+                          <div className="flex items-center gap-8 mt-2 mb-3">
+                            <label className="flex items-center gap-2.5 cursor-pointer group">
+                              <input type="radio" name="language" value="tienganh" required className="w-5 h-5 text-[#f37021] border-gray-300 focus:ring-[#f37021] cursor-pointer" />
+                              <span className="text-gray-800 font-bold text-sm group-hover:text-[#004c91] transition-colors">Tiếng Anh</span>
+                            </label>
+                            <label className="flex items-center gap-2.5 cursor-pointer group">
+                              <input type="radio" name="language" value="tiengviet" required className="w-5 h-5 text-[#f37021] border-gray-300 focus:ring-[#f37021] cursor-pointer" />
+                              <span className="text-gray-800 font-bold text-sm group-hover:text-[#004c91] transition-colors">Tiếng Việt</span>
+                            </label>
+                          </div>
+                          <div className="bg-slate-50 border border-slate-100 p-3 rounded-xl">
+                            <p className="text-xs text-slate-500 italic leading-relaxed">
+                              <span className="font-bold text-slate-600 not-italic mr-1">Note:</span>
+                              Hiện tại FPTU chỉ có thể hỗ trợ bằng 2 ngôn ngữ tiếng Anh và tiếng Việt. Với lựa chọn khác ngoài tiếng Anh hoặc tiếng Việt, đầu mối gửi visit request sẽ cần chủ động bố trí phiên dịch viên (nếu cần).
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Nhận diện phương tiện di chuyển tới FPTU */}
+                        <div>
+                          <InputField label="Nhận diện phương tiện di chuyển tới FPTU" placeholder="Ví dụ: Xe khách 45 chỗ, biển số 29A-XXXXX..." />
+                          <div className="text-xs text-slate-500 bg-slate-50 p-3 rounded-xl border border-slate-100 mt-2">
+                            <ul className="list-none space-y-2 italic">
+                              <li className="flex gap-2 items-start">
+                                <span className="text-[#004c91] font-bold not-italic">∗</span>
+                                Các phương tiện cá nhân không được di chuyển trong khuôn viên trường nếu chưa được cho phép.
+                              </li>
+                              <li className="flex gap-2 items-start">
+                                <span className="text-[#004c91] font-bold not-italic">∗</span>
+                                Với các đoàn khách di chuyển từ FSO và có số lượng khách đông (6 người trở lên), đầu mối phụ trách chủ động yêu cầu xe điện từ FSO qua FPTU và cả trong quá trình campus tour.
+                              </li>
+                            </ul>
+                          </div>
                         </div>
                       </div>
+
+                      {/* Hàng 2: Ghi chú cho FPTU - full width */}
+                      <div className="mt-8">
+                        <label className="block text-base font-bold text-gray-900 mb-2">Ghi chú cho FPTU</label>
+                        <textarea
+                          rows={5}
+                          placeholder="Nhập bất kỳ ghi chú thiết yếu nào..."
+                          className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:border-[#f37021] focus:ring-1 focus:ring-[#f37021] outline-none transition-shadow bg-white text-sm shadow-sm resize-none font-medium text-gray-900"
+                        ></textarea>
+                      </div>
+
                     </div>
 
                   </div>
