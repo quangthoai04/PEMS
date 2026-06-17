@@ -1,4 +1,5 @@
 using FluentValidation;
+using PEMS.Domain.Constants;
 
 namespace PEMS.Application.Authentication.Commands.LoginviaSSO;
 
@@ -6,6 +7,12 @@ public sealed class LoginviaSSOCommandValidator : AbstractValidator<LoginviaSSOC
 {
     public LoginviaSSOCommandValidator()
     {
-        // TODO: Add validation rules after UC specification is completed.
+        RuleFor(x => x.IdToken)
+            .NotEmpty().WithMessage("Google ID token is required.");
+
+        RuleFor(x => x.LoginPortal)
+            .NotEmpty().WithMessage("Login portal is required.")
+            .Must(p => p == LoginPortals.Internal || p == LoginPortals.Visitor)
+            .WithMessage("Login portal must be INTERNAL or VISITOR.");
     }
 }

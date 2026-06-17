@@ -16,10 +16,11 @@ using PEMS.Domain.Entities.Notifications;
 using PEMS.Domain.Entities.Partners;
 using PEMS.Domain.Entities.PublicContents;
 using PEMS.Domain.Entities.Users;
+using PEMS.Application.Common.Interfaces;
 
 namespace PEMS.Infrastructure.Persistence;
 
-public class ApplicationDbContext : DbContext
+public class ApplicationDbContext : DbContext, IApplicationDbContext
 {
     public ApplicationDbContext() { }
     public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options) : base(options) { }

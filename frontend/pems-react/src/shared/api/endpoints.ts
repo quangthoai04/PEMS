@@ -1,9 +1,14 @@
 export const API_ENDPOINTS = {
   auth: {
     login: '/auth/login',
-    sso: '/auth/sso',
+    google: '/auth/google',
+    refresh: '/auth/refresh',
     logout: '/auth/logout',
+    me: '/auth/me',
+    permissions: '/auth/permissions',
     forgotPassword: '/auth/forgot-password',
+    resetPassword: '/auth/reset-password',
+    changePassword: '/auth/change-password',
   },
   partners: {
     list: '/partners',

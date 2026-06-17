@@ -56,6 +56,13 @@ import { PermissionManagement } from './pages/dashboard/permissions/PermissionMa
 
 import { ApiManagement } from './pages/dashboard/apis/ApiManagement.tsx';
 
+import { LoginPage } from './pages/auth/LoginPage';
+import { ForgotPasswordPage } from './pages/auth/ForgotPasswordPage';
+import { ResetPasswordPage } from './pages/auth/ResetPasswordPage';
+import { ChangePasswordPage } from './pages/auth/ChangePasswordPage';
+import { ForbiddenPage } from './pages/ForbiddenPage';
+import { ProtectedRoute } from './shared/auth/ProtectedRoute';
+
 function ScrollToTop() {
   const { pathname } = useLocation();
 
@@ -80,17 +87,20 @@ const PlaceholderPage = ({ title }: { title: string }) => (
   </div>
 );
 
+const BARE_ROUTES = ['/login', '/forgot-password', '/reset-password', '/change-password', '/403'];
+
 export default function App() {
   const location = useLocation();
   const isDashboardRoute = location.pathname.startsWith('/dashboard');
+  const isBareRoute = isDashboardRoute || BARE_ROUTES.includes(location.pathname);
 
   return (
     <div className="font-sans text-gray-900 bg-white min-h-screen flex flex-col">
       <ScrollToTop />
-      
+
       {/* Conditionally render Header and Footer based on route */}
-      {!isDashboardRoute && <Header />}
-      
+      {!isBareRoute && <Header />}
+
       <main className="flex-grow">
         <Routes>
           {/* Public Routes */}
@@ -103,8 +113,15 @@ export default function App() {
           <Route path="/visit-fptu/:id" element={<CampusDetailVisitPage />} />
           <Route path="/faq" element={<FAQPage />} />
 
-          {/* Dashboard Routes */}
-          <Route path="/dashboard" element={<DashboardLayout />}>
+          {/* Authentication Routes */}
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
+          <Route path="/change-password" element={<ProtectedRoute><ChangePasswordPage /></ProtectedRoute>} />
+          <Route path="/403" element={<ForbiddenPage />} />
+
+          {/* Dashboard Routes (require authentication) */}
+          <Route path="/dashboard" element={<ProtectedRoute><DashboardLayout /></ProtectedRoute>}>
             <Route index element={<DashboardHome />} />
             <Route path="profile" element={<Profile />} />
             <Route path="news" element={<NewsManagement />} />

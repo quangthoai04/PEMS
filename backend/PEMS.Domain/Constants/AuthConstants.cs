@@ -1,0 +1,139 @@
+namespace PEMS.Domain.Constants;
+
+/// <summary>
+/// Canonical string values used by the authentication / RBAC tables.
+/// These mirror the MySQL ENUM definitions in database/scripts/pems_full.sql.
+/// Keeping them as constants avoids magic strings scattered across the codebase
+/// while still letting EF map the underlying columns as plain strings.
+/// </summary>
+public static class RoleCodes
+{
+    public const string Admin = "ADMIN";
+    public const string Ho = "HO";
+    public const string Staff = "STAFF";
+    public const string Dept = "DEPT";
+    public const string Student = "STUDENT";
+    public const string Visitor = "VISITOR";
+}
+
+public static class SubRoles
+{
+    public const string Leader = "Leader";
+    public const string Staff = "Staff";
+}
+
+public static class UserStatuses
+{
+    public const string PendingEmailVerification = "PENDING_EMAIL_VERIFICATION";
+    public const string PendingApproval = "PENDING_APPROVAL";
+    public const string Active = "ACTIVE";
+    public const string Inactive = "INACTIVE";
+    public const string Rejected = "REJECTED";
+    public const string Locked = "LOCKED";
+}
+
+public static class EntityStatuses
+{
+    public const string Active = "ACTIVE";
+    public const string Inactive = "INACTIVE";
+}
+
+public static class ProviderTypes
+{
+    public const string LocalPassword = "LOCAL_PASSWORD";
+    public const string GoogleSso = "GOOGLE_SSO";
+    public const string FeId = "FEID";
+}
+
+public static class LoginPortals
+{
+    public const string Internal = "INTERNAL";
+    public const string Visitor = "VISITOR";
+}
+
+public static class PermissionLevels
+{
+    public const string Full = "F";
+    public const string Execute = "E";
+    public const string Read = "R";
+    public const string Own = "O";
+
+    /// <summary>
+    /// Numeric rank used for "minimum level" checks. Higher == more powerful.
+    /// O (own) is intentionally ranked between Read and Execute, but callers
+    /// that require O must still verify ownership of the target resource.
+    /// </summary>
+    public static int Rank(string? level) => level switch
+    {
+        Full => 4,
+        Execute => 3,
+        Own => 2,
+        Read => 1,
+        _ => 0
+    };
+
+    /// <summary>
+    /// Returns true when <paramref name="actual"/> satisfies <paramref name="required"/>.
+    /// </summary>
+    public static bool Satisfies(string? actual, string required)
+        => Rank(actual) >= Rank(required);
+}
+
+public static class LoginLogStatuses
+{
+    public const string Success = "SUCCESS";
+    public const string Failed = "FAILED";
+    public const string Blocked = "BLOCKED";
+}
+
+public static class OtpPurposes
+{
+    public const string VerifyEmail = "VERIFY_EMAIL";
+    public const string SetPassword = "SET_PASSWORD";
+    public const string Login = "LOGIN";
+    public const string ForgotPassword = "FORGOT_PASSWORD";
+    public const string ChangeSensitiveAction = "CHANGE_SENSITIVE_ACTION";
+}
+
+public static class OtpTokenTypes
+{
+    public const string OtpCode = "OTP_CODE";
+    public const string MagicLink = "MAGIC_LINK";
+}
+
+public static class SecurityEventTypes
+{
+    public const string LoginSuccess = "LOGIN_SUCCESS";
+    public const string LoginFailed = "LOGIN_FAILED";
+    public const string LoginBlocked = "LOGIN_BLOCKED";
+    public const string AccountLocked = "ACCOUNT_LOCKED";
+    public const string Logout = "LOGOUT";
+    public const string PasswordResetRequested = "PASSWORD_RESET_REQUESTED";
+    public const string PasswordResetSuccess = "PASSWORD_RESET_SUCCESS";
+    public const string PasswordChanged = "PASSWORD_CHANGED";
+    public const string SessionRevoked = "SESSION_REVOKED";
+}
+
+public static class SecuritySeverities
+{
+    public const string Low = "LOW";
+    public const string Medium = "MEDIUM";
+    public const string High = "HIGH";
+    public const string Critical = "CRITICAL";
+}
+
+public static class SessionRevokeReasons
+{
+    public const string UserLogout = "USER_LOGOUT";
+    public const string PasswordReset = "PASSWORD_RESET";
+    public const string PasswordChanged = "PASSWORD_CHANGED";
+    public const string AccountDeactivated = "ACCOUNT_DEACTIVATED";
+    public const string RoleChanged = "ROLE_CHANGED";
+}
+
+public static class CreatedViaValues
+{
+    public const string AdminCreated = "ADMIN_CREATED";
+    public const string VisitorForm = "VISITOR_FORM";
+    public const string SsoProvisioned = "SSO_PROVISIONED";
+}

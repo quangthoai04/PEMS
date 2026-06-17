@@ -1,0 +1,28 @@
+namespace PEMS.Application.Authentication.Models;
+
+/// <summary>
+/// Safe user projection returned to the client after authentication.
+/// Never contains password hashes, token hashes or provider subjects.
+/// </summary>
+public sealed class AuthUserDto
+{
+    public string UserId { get; init; } = null!;
+    public string FullName { get; init; } = null!;
+    public string Email { get; init; } = null!;
+    public string? Phone { get; init; }
+    public string? AvatarUrl { get; init; }
+
+    public string RoleCode { get; init; } = null!;
+    public string? RoleName { get; init; }
+    public string? SubRole { get; init; }
+
+    public string? PrimaryCampusId { get; init; }
+    public string? CampusCode { get; init; }
+    public string? CampusName { get; init; }
+
+    public string? DepartmentId { get; init; }
+    public string? DepartmentName { get; init; }
+
+    public bool MustChangePassword { get; init; }
+    public bool MustSetPassword { get; init; }
+}

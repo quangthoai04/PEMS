@@ -1,5 +1,9 @@
-namespace PEMS.Shared;
+namespace PEMS.Application.Common.Exceptions;
 
-public class ConflictException
+/// <summary>
+/// Thrown when an operation conflicts with current state (e.g. duplicate). Maps to HTTP 409.
+/// </summary>
+public class ConflictException : Exception
 {
+    public ConflictException(string message) : base(message) { }
 }
