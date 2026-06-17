@@ -5,7 +5,6 @@ using PEMS.Api.Middleware;
 using PEMS.Application;
 using PEMS.Infrastructure;
 using PEMS.Infrastructure.Persistence;
-using PEMS.Infrastructure.Persistence.Seed;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -13,9 +12,8 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
 
-// ── Database ─────────────────────────────────────────────────────────────────
+// ── Database (MySQL, database-first — schema is owned by manual SQL, not EF) ──
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
-Console.WriteLine("CONN: " + connectionString);
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString)));
 
@@ -60,25 +58,6 @@ builder.Services.AddCors(options =>
 });
 
 var app = builder.Build();
-
-// ── Seeding (Development or Seed:Enabled) — best-effort, never crashes startup ─
-var runSeed = app.Environment.IsDevelopment() || app.Configuration.GetValue<bool>("Seed:Enabled");
-if (runSeed)
-{
-    using var scope = app.Services.CreateScope();
-    var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
-    try
-    {
-        var seeder = scope.ServiceProvider.GetRequiredService<DatabaseSeeder>();
-        var includeDevAccounts = app.Environment.IsDevelopment()
-            || app.Configuration.GetValue<bool>("Seed:DevAccounts");
-        await seeder.SeedAsync(includeDevAccounts);
-    }
-    catch (Exception ex)
-    {
-        logger.LogWarning(ex, "Database seeding skipped/failed (is the database available and migrated?).");
-    }
-}
 
 // ── HTTP pipeline ────────────────────────────────────────────────────────────
 // Exception handler is outermost so it catches everything; it does not clear

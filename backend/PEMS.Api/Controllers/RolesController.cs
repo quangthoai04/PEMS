@@ -24,7 +24,7 @@ namespace PEMS.Api.Controllers
         }
 
         [HttpPost("createnewrole")]
-        [RequirePermission(PermissionCodes.CreateRole, PermissionLevels.Execute)]
+        [RequirePermission(PermissionCodes.CreateNewRole, PermissionLevels.Execute)]
         public async Task<IActionResult> CreateNewRole([FromBody] PEMS.Application.Roles.Commands.CreateNewRole.CreateNewRoleCommand command, CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(command, cancellationToken);

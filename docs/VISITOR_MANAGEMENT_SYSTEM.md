@@ -144,29 +144,8 @@ lý do từ chối     ↓
 ```
 
 ### 5.3 Staff tạo đoàn thăm liên cơ sở (Cơ sở A → C & D)
-
-```
-[Staff tại cơ sở A chọn liên cơ sở: C và D]
-        ↓
-[Staff điền thông tin & gửi tới HO]
-        ↓
-[HO tiếp nhận và ra quyết định]
-        ↓
-   ┌────┴────┐
-[Từ chối]  [Duyệt]
-    ↓           ↓
-HO điền     HO chuyển tiếp tới Cơ sở C và Cơ sở D
-lý do            ↓ (mỗi cơ sở xử lý độc lập)
-Staff A thấy [Staff_Lead tại C & D tiếp nhận]
-lý do             ↓
-              ┌────┴────┐
-           [Từ chối]  [Duyệt]
-               ↓           ↓
-           HO thấy lý do  [Staff nhận đón → Tạo đoàn khách]
-           HO thông báo        ↓
-           Staff A        → Tiếp tục quy trình 3 tab (xem Mục 6)
-```
-
+thì sẽ để ho duyệt hoăc từ chối , nếu từ chối thì điền lí do, nếu duyệt thì auto các staff leader các cơ sở đó chịu trách nhiêm, staff leader có thể gán host cho người khác cũng được.
+( chỉ ho mới nhìn đc đơn liên cơ sở, staff leader chỉ nhìn được đơn liên cơ sở mà ho đã duyệt và nhảy về campus tương ứng)
 ---
 
 ## 6. QUY TRÌNH 3 TAB TIẾP KHÁCH (DÙNG CHUNG CHO MỌI LUỒNG)

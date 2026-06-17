@@ -27,6 +27,7 @@ public sealed class GetCurrentUserPermissionsQueryHandler
     {
         var roleId = _currentUser.RoleId;
         var roleCode = _currentUser.RoleCode;
+        var subRole = _currentUser.SubRole;
 
         if (string.IsNullOrEmpty(roleId))
         {
@@ -42,9 +43,20 @@ public sealed class GetCurrentUserPermissionsQueryHandler
 
             roleId = user.RoleId;
             roleCode = user.Role?.RoleCode;
+            subRole = user.SubRole;
         }
 
-        var permissions = await _permissionChecker.GetPermissionsForRoleAsync(roleId, cancellationToken);
+        if (roleCode == "STAFF" || roleCode == "DEPT")
+        {
+            if (string.IsNullOrEmpty(subRole))
+                throw new ForbiddenException();
+        }
+        else
+        {
+            subRole = "NONE";
+        }
+
+        var permissions = await _permissionChecker.GetPermissionsForRoleAsync(roleId, subRole, cancellationToken);
 
         return new PermissionsResponse
         {

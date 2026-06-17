@@ -26,7 +26,8 @@ public static class AuthResultBuilder
             user, loginPortal, authProviderId, ipAddress, userAgent, cancellationToken);
 
         var accessToken = jwtTokenService.GenerateAccessToken(user, session.SessionId, loginPortal);
-        var permissions = await permissionChecker.GetPermissionsForRoleAsync(user.RoleId, cancellationToken);
+        var subRole = user.Role?.RoleCode is "STAFF" or "DEPT" ? (user.SubRole ?? "NONE") : "NONE";
+        var permissions = await permissionChecker.GetPermissionsForRoleAsync(user.RoleId, subRole, cancellationToken);
 
         return new AuthResponse
         {

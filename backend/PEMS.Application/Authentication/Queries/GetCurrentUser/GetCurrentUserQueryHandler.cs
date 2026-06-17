@@ -39,7 +39,8 @@ public sealed class GetCurrentUserQueryHandler : IRequestHandler<GetCurrentUserQ
         if (user is null)
             throw new NotFoundException("User", userId);
 
-        var permissions = await _permissionChecker.GetPermissionsForRoleAsync(user.RoleId, cancellationToken);
+        var subRole = user.Role?.RoleCode is "STAFF" or "DEPT" ? (user.SubRole ?? "NONE") : "NONE";
+        var permissions = await _permissionChecker.GetPermissionsForRoleAsync(user.RoleId, subRole, cancellationToken);
 
         return new UserProfileResponse
         {

@@ -100,7 +100,7 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
         // ── Composite PKs ─────────────────────────────────────────────────
 
         modelBuilder.Entity<RolePermission>()
-            .HasKey(rp => new { rp.RoleId, rp.PermissionId });
+            .HasKey(rp => new { rp.RoleId, rp.SubRole, rp.PermissionId });
 
         // ── BIGINT AUTO_INCREMENT PKs ─────────────────────────────────────
 

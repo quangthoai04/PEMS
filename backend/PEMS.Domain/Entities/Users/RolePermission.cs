@@ -11,6 +11,9 @@ public class RolePermission
     [Column("permission_id")]
     public string PermissionId { get; set; } = null!;
 
+    [Column("sub_role")]
+    public string SubRole { get; set; } = null!;
+
     [Column("permission_level")]
     public string PermissionLevel { get; set; } = null!;
 

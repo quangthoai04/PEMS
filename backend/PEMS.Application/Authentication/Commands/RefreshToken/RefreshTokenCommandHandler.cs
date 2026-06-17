@@ -47,7 +47,8 @@ public sealed class RefreshTokenCommandHandler : IRequestHandler<RefreshTokenCom
 
         var rotated = await _sessionService.RotateRefreshTokenAsync(session, cancellationToken);
         var accessToken = _jwtTokenService.GenerateAccessToken(user, session.SessionId, session.LoginPortal);
-        var permissions = await _permissionChecker.GetPermissionsForRoleAsync(user.RoleId, cancellationToken);
+        var subRole = user.Role?.RoleCode is "STAFF" or "DEPT" ? (user.SubRole ?? "NONE") : "NONE";
+        var permissions = await _permissionChecker.GetPermissionsForRoleAsync(user.RoleId, subRole, cancellationToken);
 
         return new AuthResponse
         {

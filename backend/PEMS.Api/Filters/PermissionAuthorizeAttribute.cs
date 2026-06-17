@@ -35,7 +35,10 @@ public sealed class RequirePermissionAttribute : Attribute, IAsyncAuthorizationF
         }
 
         var roleId = currentUser.RoleId;
-        if (string.IsNullOrEmpty(roleId))
+        var roleCode = currentUser.RoleCode;
+        var subRole = currentUser.SubRole;
+
+        if (string.IsNullOrEmpty(roleId) || string.IsNullOrEmpty(roleCode))
         {
             context.Result = new ObjectResult(new { message = "You do not have permission to perform this action." })
             {
@@ -44,9 +47,25 @@ public sealed class RequirePermissionAttribute : Attribute, IAsyncAuthorizationF
             return;
         }
 
+        if (roleCode == "STAFF" || roleCode == "DEPT")
+        {
+            if (string.IsNullOrEmpty(subRole))
+            {
+                context.Result = new ObjectResult(new { message = "You do not have permission to perform this action. Sub-role is required." })
+                {
+                    StatusCode = StatusCodes.Status403Forbidden
+                };
+                return;
+            }
+        }
+        else
+        {
+            subRole = "NONE";
+        }
+
         var permissionChecker = services.GetRequiredService<IPermissionChecker>();
         var allowed = await permissionChecker.HasPermissionAsync(
-            roleId, _permissionCode, _minimumLevel, context.HttpContext.RequestAborted);
+            roleId, subRole, _permissionCode, _minimumLevel, context.HttpContext.RequestAborted);
 
         if (!allowed)
         {

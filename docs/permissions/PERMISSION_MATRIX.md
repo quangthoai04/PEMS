@@ -1,33 +1,65 @@
 # Role & Permission Matrix
 
-> **Status:** Draft baseline. Các quyền trong file này dùng làm bản khởi tạo để thiết kế hệ thống. Cần kiểm định lại sau khi đặc tả từng UC và business rule hoàn tất.
+> **Status:** Revised baseline v0.2.  
+> Tài liệu này là nguồn tham chiếu cho backend authorization, frontend menu visibility, UI action control và kiểm thử phân quyền. Khi đặc tả UC hoặc business rule thay đổi, ma trận này phải được cập nhật trước khi sinh SQL/Permission seed thủ công.
 
 ## 1. Purpose
 
-File này mô tả ma trận phân quyền theo từng Use Case. Ma trận được dùng làm tài liệu tham chiếu cho backend authorization, frontend menu visibility, UI action control và kiểm thử phân quyền sau này.
+File này mô tả ma trận phân quyền theo từng Use Case của hệ thống PEMS. Mỗi UC tương ứng với một `permission_code` trong database. Backend phải kiểm tra quyền dựa trên:
+
+1. `permission_code` của API/action.
+2. `permission_level` gồm `F/E/R/O`.
+3. `role_code` của user.
+4. `sub_role` nếu user thuộc nhóm `STAFF` hoặc `DEPT`.
+5. Data scope, ownership và trạng thái nghiệp vụ của bản ghi.
+
+> **Lưu ý quan trọng:** `F` không có nghĩa là toàn quyền toàn hệ thống. `F` chỉ là toàn quyền đối với hành động chính của UC đó.
+
+---
 
 ## 2. Permission Legend
 
-| Symbol | Meaning | Description |
+| Symbol | Meaning | Backend Meaning |
 |---|---|---|
-| F | Full Permission | Có toàn quyền thực hiện hành động chính của UC, ví dụ tạo mới, quản lý, phân công, cấu hình, xóa hoặc đóng hồ sơ. |
-| E | Execute / Edit Permission | Được xử lý, chỉnh sửa, phê duyệt, cập nhật hoặc đổi trạng thái trong phạm vi nghiệp vụ được giao. |
-| R | Read Permission | Chỉ được xem, tìm kiếm, lọc hoặc truy cập thông tin; không được thay đổi dữ liệu. |
-| O | Own / Personal Permission | Chỉ được thao tác với dữ liệu của chính người dùng, ví dụ profile, session, email cá nhân hoặc lịch cá nhân. |
-| — | No Permission | Không có quyền truy cập hoặc thực hiện UC này. Frontend nên ẩn chức năng và backend phải chặn request. |
+| F | Full Permission | Được thực hiện hành động chính của UC, ví dụ tạo mới, quản lý, phân công, cấu hình, xóa hoặc đóng hồ sơ. Vẫn phải kiểm tra scope, trạng thái nghiệp vụ và audit log. |
+| E | Execute / Edit Permission | Được xử lý, chỉnh sửa, phê duyệt, cập nhật hoặc đổi trạng thái trong phạm vi nghiệp vụ được giao. Không tự động có quyền tạo/xóa nếu UC khác không cấp. |
+| R | Read Permission | Chỉ được xem, tìm kiếm, lọc hoặc truy cập thông tin. Không được thay đổi dữ liệu. |
+| O | Own / Personal Permission | Chỉ được thao tác với dữ liệu của chính user hiện tại, ví dụ profile, session, email cá nhân, lịch cá nhân, draft/outbox cá nhân. |
+| — | No Permission | Không có quyền truy cập hoặc thực hiện UC này. Frontend nên ẩn chức năng và backend phải trả 403 nếu gọi trực tiếp. |
+
+---
 
 ## 3. Role Scope
 
-| Role | Scope |
-|---|---|
-| HO | Quản lý cấp Head Office, gồm campus, FAQ, report, agenda template và một số cấu hình nghiệp vụ. |
-| Admin | Quản trị kỹ thuật hệ thống, gồm role, permission, API configuration và API logs. |
-| Staff Leader | Điều phối/quản lý cấp staff hoặc campus, duyệt request, duyệt news, quản lý account/department trong phạm vi được giao. |
-| Staff | Nhân sự vận hành chính, tạo/cập nhật delegation, chuẩn bị logistics, quản lý partner, tài liệu, ảnh và tin tức. |
-| Department Lead | Trưởng bộ phận, duyệt resource, phân công nhiệm vụ, quản lý personnel và theo dõi coordination tasks. |
-| Department | Nhân sự bộ phận, nhận nhiệm vụ, xác nhận tham gia, cập nhật task và ký báo cáo nếu được phân công. |
-| Student | Vai trò hỗ trợ, có thể tham gia đoàn phái, tạo minutes, gửi feedback, upload ảnh hoặc tạo news khi được giao. |
-| VISITOR | Khách bên ngoài, chủ yếu gửi visit request và xem thông tin liên quan đến delegation của mình. |
+| Role in Matrix | DB Mapping | Scope |
+|---|---|---|
+| HO | `role_code = HO` | Quản lý cấp Head Office, gồm campus, FAQ, report, agenda template và một số cấu hình nghiệp vụ. |
+| Admin | `role_code = ADMIN` | Quản trị kỹ thuật hệ thống, gồm role, permission, API configuration và API logs. Không phải super admin nghiệp vụ. |
+| Staff Leader | `role_code = STAFF`, `sub_role = Leader` | Điều phối/quản lý cấp staff hoặc campus, duyệt request, duyệt news, quản lý account/department trong phạm vi được giao. |
+| Staff | `role_code = STAFF`, `sub_role = Staff` | Nhân sự vận hành chính, tạo/cập nhật delegation, chuẩn bị logistics, quản lý partner, tài liệu, ảnh và tin tức. |
+| Department Lead | `role_code = DEPT`, `sub_role = Leader` | Trưởng bộ phận, duyệt resource, phân công nhiệm vụ, quản lý personnel và theo dõi coordination tasks. |
+| Department | `role_code = DEPT`, `sub_role = Staff` | Nhân sự bộ phận, nhận nhiệm vụ, xác nhận tham gia, cập nhật task và ký báo cáo nếu được phân công. |
+| Student | `role_code = STUDENT` | Vai trò hỗ trợ, có thể tham gia đoàn phái, tạo minutes, gửi feedback, upload ảnh hoặc tạo news khi được giao. |
+| VISITOR | `role_code = VISITOR` | Khách bên ngoài, chủ yếu gửi visit request, xem thông tin được cấp quyền và sử dụng email trong phạm vi tài khoản của mình. |
+
+### 3.1. Effective Role Rule
+
+Backend nên resolve effective role như sau:
+
+| `role_code` | `sub_role` | Effective Role |
+|---|---|---|
+| ADMIN | NULL | Admin |
+| HO | NULL | HO |
+| STAFF | Leader | Staff Leader |
+| STAFF | Staff | Staff |
+| DEPT | Leader | Department Lead |
+| DEPT | Staff | Department |
+| STUDENT | NULL | Student |
+| VISITOR | NULL | VISITOR |
+
+Nếu `role_code` là `STAFF` hoặc `DEPT` mà `sub_role` bị thiếu, backend phải coi là dữ liệu không hợp lệ và không được cấp quyền ngầm định.
+
+---
 
 ## 4. General Authorization Rules
 
@@ -35,15 +67,52 @@ File này mô tả ma trận phân quyền theo từng Use Case. Ma trận đư�
 - Backend luôn là lớp kiểm tra quyền cuối cùng, không được chỉ dựa vào frontend.
 - Mọi API cần kiểm tra role permission, data scope, trạng thái nghiệp vụ hiện tại và quyền trên bản ghi cụ thể.
 - Các thao tác create, update, delete, approve, reject, assign, publish, close hoặc change status cần có audit log.
-- Các UC có quyền `O` chỉ được xử lý dữ liệu của chính user hiện tại.
+- Các UC có quyền `O` chỉ được xử lý dữ liệu của chính user hiện tại hoặc dữ liệu mà user là owner/participant hợp lệ.
 - Các UC có quyền `R` không được cho phép thay đổi dữ liệu.
 - Các UC có quyền `—` phải bị chặn ở backend kể cả khi user gọi API trực tiếp.
+- `F` chỉ full trong phạm vi UC đó, không tự động bao gồm UC khác.
+- Nếu một API thực hiện nhiều hành động, backend phải kiểm tra đủ permission tương ứng với từng hành động hoặc tách API.
+
+### 4.1. Public Endpoint Rule
+
+Một số UC trong nhóm Common có thể là public endpoint. Nếu endpoint được thiết kế public, backend **không cần gắn `RequirePermission`**, nhưng vẫn phải filter dữ liệu theo trạng thái `published/visible/active`.
+
+Ví dụ:
+
+- Public homepage.
+- Public FAQ.
+- Public news.
+- Public gallery.
+- Public contact information.
+
+Nếu endpoint yêu cầu đăng nhập để xem bản nội bộ, backend mới áp dụng permission `R` theo ma trận.
+
+### 4.2. Pre-auth Endpoint Rule
+
+Các UC sau là pre-auth endpoint nên **không được check RBAC bằng `RequirePermission` trước khi user đăng nhập**:
+
+- UC-10 Login via SSO.
+- UC-11 Login via Credentials.
+- UC-13 Forgot Password.
+
+Các endpoint này phải được bảo vệ bằng rule bảo mật khác, ví dụ:
+
+- Account status.
+- Portal validation.
+- Rate limit.
+- CAPTCHA nếu cần.
+- Lockout policy.
+- Audit/security log.
+
+UC-12 Logout có thể kiểm tra user đã authenticated/session hợp lệ, nhưng không nên phụ thuộc vào quyền nghiệp vụ.
+
+---
 
 ## 5. Permission Matrix By Feature Area
 
 ### 5.1. Common
 
-> Các UC dùng cho nội dung công khai và truy cập cơ bản. Nội dung public chỉ nên lấy dữ liệu đã được published/visible.
+> Các UC dùng cho nội dung công khai và truy cập cơ bản. Nội dung public chỉ nên lấy dữ liệu đã được published/visible. Nếu endpoint là public thì không cần `RequirePermission`; nếu endpoint là nội bộ thì áp dụng `R` theo bảng.
 
 | UC ID | Action | HO | Admin | Staff Leader | Staff | Department Lead | Department | Student | VISITOR |
 |---|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
@@ -59,7 +128,7 @@ File này mô tả ma trận phân quyền theo từng Use Case. Ma trận đư�
 
 ### 5.2. Authentication
 
-> Các UC xác thực tài khoản. Cần kiểm tra trạng thái tài khoản, token/session và ghi log đăng nhập/đăng xuất.
+> UC-10, UC-11 và UC-13 là pre-auth endpoint, không gắn `RequirePermission` trước khi login. Level `O` trong bảng dùng để thể hiện đây là thao tác cá nhân của tài khoản, không phải quyền nghiệp vụ. Cần kiểm tra trạng thái tài khoản, token/session, rate limit và ghi log đăng nhập/đăng xuất.
 
 | UC ID | Action | HO | Admin | Staff Leader | Staff | Department Lead | Department | Student | VISITOR |
 |---|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
@@ -112,13 +181,14 @@ File này mô tả ma trận phân quyền theo từng Use Case. Ma trận đư�
 
 ### 5.5. Email Management
 
-> Quản lý mẫu email và thao tác email theo phạm vi người gửi/người nhận hoặc hồ sơ đoàn phái liên quan.
+> Email trong hệ thống là chức năng soạn, gửi, xem và phản hồi email. Email **không bắt buộc** phải gắn với delegation/visit request.  
+> Quyền `O` nghĩa là user chỉ được thao tác trên email/draft/outbox/conversation của chính mình hoặc email mà user là participant hợp lệ. Nếu email có liên kết với visit request/delegation thì backend phải kiểm tra thêm user có quyền trên visit request/delegation đó.
 
 | UC ID | Action | HO | Admin | Staff Leader | Staff | Department Lead | Department | Student | VISITOR |
 |---|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
 | UC-42 | View Email Template List | R | — | — | — | — | — | — | — |
 | UC-43 | View Email Template Detail | R | — | — | — | — | — | — | — |
-| UC-44 | Update Email Template | F | — | — | — | — | — | — | — |
+| UC-44 | Update Email Template | E | — | — | — | — | — | — | — |
 | UC-45 | Create Email Template | F | — | — | — | — | — | — | — |
 | UC-46 | Edit Email Content | O | — | O | O | O | O | O | O |
 | UC-47 | Send Email | O | — | O | O | O | O | O | O |
@@ -173,7 +243,7 @@ File này mô tả ma trận phân quyền theo từng Use Case. Ma trận đư�
 
 | UC ID | Action | HO | Admin | Staff Leader | Staff | Department Lead | Department | Student | VISITOR |
 |---|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| UC-64 | View List FAQ | F | — | — | — | — | — | — | — |
+| UC-64 | View List FAQ | R | — | — | — | — | — | — | — |
 | UC-65 | Create FAQ | F | — | — | — | — | — | — | — |
 | UC-66 | Update FAQ | E | — | — | — | — | — | — | — |
 | UC-67 | Change FAQ Visibility | E | — | — | — | — | — | — | — |
@@ -191,11 +261,11 @@ File này mô tả ma trận phân quyền theo từng Use Case. Ma trận đư�
 
 ### 5.12. Calendar Management
 
-> Quản lý lịch cá nhân, lịch bộ phận và sự kiện liên quan đến đoàn phái.
+> Quản lý lịch cá nhân, lịch bộ phận và sự kiện liên quan đến đoàn phái. `View My Events` là dữ liệu cá nhân nên dùng `O`; các quyền xem lịch chung/sự kiện theo phạm vi dùng `R`.
 
 | UC ID | Action | HO | Admin | Staff Leader | Staff | Department Lead | Department | Student | VISITOR |
 |---|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| UC-72 | View My Events | — | — | R | R | R | R | R | — |
+| UC-72 | View My Events | — | — | O | O | O | O | O | — |
 | UC-73 | View Department Calendar | — | — | R | R | — | — | — | — |
 | UC-74 | Switch View Mode | — | — | R | R | R | R | R | — |
 | UC-75 | Add Personal Event | — | — | O | O | — | — | — | — |
@@ -228,12 +298,12 @@ File này mô tả ma trận phân quyền theo từng Use Case. Ma trận đư�
 
 ### 5.15. News Management
 
-> Quản lý tin tức, duyệt bài, xuất bản, ẩn/hiện và tin song ngữ.
+> Quản lý tin tức, duyệt bài, xuất bản, ẩn/hiện và tin song ngữ. Student có thể tạo/chỉnh sửa nội dung khi được giao, nhưng không được publish trực tiếp. Publish nên do Staff vận hành hoặc theo quy trình đã được duyệt.
 
 | UC ID | Action | HO | Admin | Staff Leader | Staff | Department Lead | Department | Student | VISITOR |
 |---|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
 | UC-88 | Approve News | — | — | E | — | — | — | — | — |
-| UC-89 | Publish News | — | — | — | F | — | — | F | — |
+| UC-89 | Publish News | — | — | — | F | — | — | — | — |
 | UC-90 | View News List | — | — | R | R | — | — | R | — |
 | UC-91 | View News Details | — | — | R | R | — | — | R | — |
 | UC-92 | Add Multilingual News | — | — | — | F | — | — | F | — |
@@ -278,7 +348,7 @@ File này mô tả ma trận phân quyền theo từng Use Case. Ma trận đư�
 
 ### 5.18. Role & Permission Management
 
-> Quản lý vai trò và ma trận quyền. Đây là nhóm chức năng có rủi ro cao, chỉ dành cho Admin.
+> Quản lý vai trò và ma trận quyền. Đây là nhóm chức năng có rủi ro cao, chỉ dành cho Admin kỹ thuật. Admin không tự động có quyền nghiệp vụ khác.
 
 | UC ID | Action | HO | Admin | Staff Leader | Staff | Department Lead | Department | Student | VISITOR |
 |---|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
@@ -316,8 +386,68 @@ File này mô tả ma trận phân quyền theo từng Use Case. Ma trận đư�
 | UC-134 | View Agenda Template List | R | — | — | — | — | — | — | — |
 | UC-135 | View Agenda Template Detail | R | — | — | — | — | — | — | — |
 
-## 6. Change Log
+---
+
+## 6. Backend Enforcement Notes
+
+### 6.1. Required Claims / Current User Context
+
+Backend authorization cần có tối thiểu các thông tin sau từ JWT hoặc `CurrentUserService`:
+
+| Field | Purpose |
+|---|---|
+| `UserId` | Check ownership, audit log và data scope. |
+| `RoleCode` | Check role-level permission. |
+| `SubRole` | Phân biệt Staff Leader/Staff và Department Lead/Department. |
+| `CampusId` | Check campus scope. |
+| `DepartmentId` | Check department/task/resource scope. |
+| `Status` | Chặn account inactive/locked. |
+
+### 6.2. Authorization Flow
+
+Backend nên xử lý theo thứ tự:
+
+1. Authenticate user/session nếu endpoint không phải public/pre-auth.
+2. Resolve effective role từ `role_code` + `sub_role`.
+3. Check `permission_code` có grant không.
+4. Check `permission_level` đúng với hành động.
+5. Check ownership nếu level là `O`.
+6. Check campus/department/delegation/email/news scope.
+7. Check business status.
+8. Ghi audit log với các thao tác mutate data.
+
+### 6.3. Email Scope Rule
+
+Email không bắt buộc phải gắn với delegation. Backend áp dụng scope như sau:
+
+- Email cá nhân/draft/outbox: user chỉ được thao tác email của chính mình.
+- Email conversation: user chỉ được xem/trả lời nếu là sender, recipient, cc/bcc hợp lệ hoặc participant được hệ thống ghi nhận.
+- Email gắn với visit request/delegation: ngoài email scope, phải check thêm quyền/scope với visit request/delegation liên quan.
+- Visitor có thể soạn/gửi/trả lời email trong hệ thống theo quyền `O`, nhưng không được xem hoặc thao tác email của người khác.
+
+### 6.4. Public Content Rule
+
+Với public homepage/news/FAQ/gallery/partner/contact, endpoint public không dùng `RequirePermission`, nhưng query phải chỉ trả dữ liệu:
+
+- `published` hoặc `visible`.
+- `active`.
+- Không bị soft delete.
+- Không chứa dữ liệu nội bộ hoặc nhạy cảm.
+
+### 6.5. News Student Rule
+
+Student có thể tạo hoặc chỉnh sửa nội dung tin tức khi được giao, nhưng không được publish trực tiếp. Nếu cần cho Student publish trong tương lai, phải thêm rule rõ:
+
+- Chỉ publish bài của chính mình.
+- Bài phải ở trạng thái approved.
+- Có audit log.
+- Có thể cần UC riêng để phân biệt submit draft và publish.
+
+---
+
+## 7. Change Log
 
 | Version | Date | Description |
 |---|---|---|
 | v0.1 | 2026-06-15 | Initial draft permission matrix formatted by feature area. |
+| v0.2 | 2026-06-18 | Revised backend enforcement rules; clarified pre-auth/public endpoints; added effective role mapping for `sub_role`; changed UC-44 HO F→E, UC-64 HO F→R, UC-72 R→O; removed Student publish permission UC-89; clarified email scope is not mandatory delegation-based. |

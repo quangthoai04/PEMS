@@ -10,7 +10,6 @@ using PEMS.Infrastructure.Identity;
 using PEMS.Infrastructure.Logging;
 using PEMS.Infrastructure.Persistence;
 using PEMS.Infrastructure.Persistence.Repositories;
-using PEMS.Infrastructure.Persistence.Seed;
 
 namespace PEMS.Infrastructure;
 
@@ -45,9 +44,6 @@ public static class DependencyInjection
         // External services (scaffolded)
         services.AddScoped<IFaceRecognitionService, FaceRecognitionService>();
         services.AddScoped<IOcrService, OcrService>();
-
-        // Dev/data seeder
-        services.AddScoped<DatabaseSeeder>();
 
         return services;
     }

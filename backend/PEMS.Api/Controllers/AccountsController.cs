@@ -48,7 +48,7 @@ namespace PEMS.Api.Controllers
         }
 
         [HttpGet("searchandfilteraccounts")]
-        [RequirePermission(PermissionCodes.SearchFilterAccounts, PermissionLevels.Read)]
+        [RequirePermission(PermissionCodes.SearchAndFilterAccounts, PermissionLevels.Read)]
         public async Task<IActionResult> SearchandFilterAccounts([FromQuery] PEMS.Application.Accounts.Queries.SearchandFilterAccounts.SearchandFilterAccountsQuery query, CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(query, cancellationToken);
