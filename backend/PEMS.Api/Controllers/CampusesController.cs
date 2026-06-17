@@ -1,5 +1,8 @@
 using MediatR;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using PEMS.Application.Common.Interfaces;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -10,7 +13,28 @@ namespace PEMS.Api.Controllers
     public class CampusesController : ControllerBase
     {
         private readonly IMediator _mediator;
-        public CampusesController(IMediator mediator) => _mediator = mediator;
+        private readonly IApplicationDbContext _db;
+        public CampusesController(IMediator mediator, IApplicationDbContext db)
+        {
+            _mediator = mediator;
+            _db = db;
+        }
+
+        /// <summary>
+        /// Returns active campuses for the login page campus dropdown.
+        /// Anonymous access — no authentication required.
+        /// </summary>
+        [HttpGet("active")]
+        [AllowAnonymous]
+        public async Task<IActionResult> GetActiveCampuses(CancellationToken cancellationToken)
+        {
+            var campuses = await _db.Campuses
+                .Where(c => c.Status == "ACTIVE")
+                .OrderBy(c => c.CampusCode)
+                .Select(c => new { campusId = c.CampusId, campusCode = c.CampusCode, campusName = c.Name })
+                .ToListAsync(cancellationToken);
+            return Ok(campuses);
+        }
 
         [HttpPost("addnewcampus")]
         public async Task<IActionResult> AddNewCampus([FromBody] PEMS.Application.Campuses.Commands.AddNewCampus.AddNewCampusCommand command, CancellationToken cancellationToken)

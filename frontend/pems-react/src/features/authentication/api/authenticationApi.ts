@@ -2,6 +2,7 @@ import httpClient from '../../../shared/api/httpClient';
 import { API_ENDPOINTS } from '../../../shared/api/endpoints';
 import type {
   AuthResponse,
+  CampusOption,
   ChangePasswordRequest,
   LoginPortal,
   MessageResponse,
@@ -11,22 +12,66 @@ import type {
 } from '../types/authentication.types';
 
 export const authenticationApi = {
-  async login(email: string, password: string, loginPortal: LoginPortal): Promise<AuthResponse> {
+  // ── Portal-specific login methods ────────────────────────────────────
+
+  async loginInternal(email: string, password: string, selectedCampusId: string): Promise<AuthResponse> {
     const { data } = await httpClient.post<AuthResponse>(API_ENDPOINTS.auth.login, {
       email,
       password,
-      loginPortal,
+      loginPortal: 'INTERNAL' as LoginPortal,
+      selectedCampusId,
     });
     return data;
   },
 
-  async loginWithGoogle(idToken: string, loginPortal: LoginPortal): Promise<AuthResponse> {
-    const { data } = await httpClient.post<AuthResponse>(API_ENDPOINTS.auth.google, {
-      idToken,
-      loginPortal,
+  async loginVisitor(email: string, password: string): Promise<AuthResponse> {
+    const { data } = await httpClient.post<AuthResponse>(API_ENDPOINTS.auth.login, {
+      email,
+      password,
+      loginPortal: 'VISITOR' as LoginPortal,
     });
     return data;
   },
+
+  async loginGoogleInternal(idToken: string, selectedCampusId: string): Promise<AuthResponse> {
+    const { data } = await httpClient.post<AuthResponse>(API_ENDPOINTS.auth.google, {
+      idToken,
+      loginPortal: 'INTERNAL' as LoginPortal,
+      selectedCampusId,
+    });
+    return data;
+  },
+
+  async loginGoogleVisitor(idToken: string): Promise<AuthResponse> {
+    const { data } = await httpClient.post<AuthResponse>(API_ENDPOINTS.auth.google, {
+      idToken,
+      loginPortal: 'VISITOR' as LoginPortal,
+    });
+    return data;
+  },
+
+  // ── Generic (kept for AuthContext backward compat) ───────────────────
+
+  async login(email: string, password: string, loginPortal: LoginPortal, selectedCampusId?: string): Promise<AuthResponse> {
+    const { data } = await httpClient.post<AuthResponse>(API_ENDPOINTS.auth.login, {
+      email,
+      password,
+      loginPortal,
+      ...(loginPortal === 'INTERNAL' && selectedCampusId ? { selectedCampusId } : {}),
+    });
+    return data;
+  },
+
+  async loginWithGoogle(idToken: string, loginPortal: LoginPortal, selectedCampusId?: string): Promise<AuthResponse> {
+    const { data } = await httpClient.post<AuthResponse>(API_ENDPOINTS.auth.google, {
+      idToken,
+      loginPortal,
+      ...(loginPortal === 'INTERNAL' && selectedCampusId ? { selectedCampusId } : {}),
+    });
+    return data;
+  },
+
+  // ── Session management ──────────────────────────────────────────────
 
   async logout(refreshToken?: string | null): Promise<MessageResponse> {
     const { data } = await httpClient.post<MessageResponse>(API_ENDPOINTS.auth.logout, {
@@ -45,6 +90,8 @@ export const authenticationApi = {
     return data;
   },
 
+  // ── Password management ─────────────────────────────────────────────
+
   async forgotPassword(email: string): Promise<MessageResponse> {
     const { data } = await httpClient.post<MessageResponse>(API_ENDPOINTS.auth.forgotPassword, { email });
     return data;
@@ -57,6 +104,13 @@ export const authenticationApi = {
 
   async changePassword(payload: ChangePasswordRequest): Promise<MessageResponse> {
     const { data } = await httpClient.post<MessageResponse>(API_ENDPOINTS.auth.changePassword, payload);
+    return data;
+  },
+
+  // ── Campus ──────────────────────────────────────────────────────────
+
+  async getActiveCampuses(): Promise<CampusOption[]> {
+    const { data } = await httpClient.get<CampusOption[]>(API_ENDPOINTS.campuses.active);
     return data;
   },
 };

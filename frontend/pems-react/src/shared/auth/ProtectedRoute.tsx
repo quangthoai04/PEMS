@@ -1,7 +1,7 @@
 import React from 'react';
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
-import type { PermissionLevel } from '../../features/authentication/types/authentication.types';
+import type { LoginPortal, PermissionLevel } from '../../features/authentication/types/authentication.types';
 
 interface ProtectedRouteProps {
   children?: React.ReactNode;
@@ -10,6 +10,8 @@ interface ProtectedRouteProps {
   /** Require a permission code (optionally at a minimum level, default R). */
   permission?: string;
   permissionLevel?: PermissionLevel;
+  /** Restrict by login portal */
+  portals?: LoginPortal[];
 }
 
 function FullScreenLoader() {
@@ -51,6 +53,11 @@ export function ProtectedRoute({ children, roles, permission, permissionLevel }:
   }
 
   if (permission && !hasPermission(permission, permissionLevel ?? 'R')) {
+    return <Navigate to="/403" replace />;
+  }
+
+  const currentPortal = useAuth().loginPortal;
+  if (portals && portals.length > 0 && currentPortal && !portals.includes(currentPortal)) {
     return <Navigate to="/403" replace />;
   }
 

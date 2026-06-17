@@ -73,7 +73,11 @@ public sealed class ExceptionHandlingMiddleware
 
             default:
                 status = StatusCodes.Status500InternalServerError;
-                payload = new { message = "An unexpected error occurred. Please try again later." };
+                payload = new { 
+                    message = "An unexpected error occurred. Please try again later.",
+                    error = ex.Message,
+                    stackTrace = ex.StackTrace 
+                };
                 _logger.LogError(ex, "Unhandled exception processing {Path}.", context.Request.Path);
                 break;
         }

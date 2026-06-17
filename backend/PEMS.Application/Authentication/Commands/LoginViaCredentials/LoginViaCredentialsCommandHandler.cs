@@ -86,6 +86,23 @@ public sealed class LoginviaCredentialsCommandHandler : IRequestHandler<Loginvia
             await FailAsync(user, email, portal, ProviderTypes.LocalPassword, LoginLogStatuses.Failed,
                 "wrong_portal", request, GenericBlockedError, cancellationToken);
 
+        // Campus validation: VISITOR must not send campus, INTERNAL must send a valid campus.
+        if (portal == LoginPortals.Visitor && !string.IsNullOrWhiteSpace(request.SelectedCampusId))
+            await FailAsync(user, email, portal, ProviderTypes.LocalPassword, LoginLogStatuses.Failed,
+                "visitor_with_campus", request, GenericBlockedError, cancellationToken);
+
+        if (portal == LoginPortals.Internal)
+        {
+            if (string.IsNullOrWhiteSpace(request.SelectedCampusId))
+                await FailAsync(user, email, portal, ProviderTypes.LocalPassword, LoginLogStatuses.Failed,
+                    "missing_campus", request, "Please select a campus to continue.", cancellationToken);
+
+            if (user.PrimaryCampusId is not null
+                && !string.Equals(request.SelectedCampusId, user.PrimaryCampusId, StringComparison.OrdinalIgnoreCase))
+                await FailAsync(user, email, portal, ProviderTypes.LocalPassword, LoginLogStatuses.Failed,
+                    "campus_mismatch", request, "Unable to sign in with selected campus.", cancellationToken);
+        }
+
         // Local password provider, if present, must be enabled.
         var localProvider = user.AuthProviders
             .FirstOrDefault(p => p.ProviderType == ProviderTypes.LocalPassword);

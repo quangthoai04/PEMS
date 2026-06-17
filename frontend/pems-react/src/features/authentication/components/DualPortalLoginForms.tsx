@@ -1,0 +1,379 @@
+import React, { useEffect, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { Eye, EyeOff } from 'lucide-react';
+import { useAuth } from '../../../shared/hooks/useAuth';
+import { getDashboardRoute } from '../../../shared/auth/dashboardRoute';
+import { getAuthErrorMessage } from '../api/authError';
+import { authenticationApi } from '../api/authenticationApi';
+import type { CampusOption, LoginPortal } from '../types/authentication.types';
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+export function InternalLoginForm({ fromPath, onSuccess }: { fromPath?: string; onSuccess?: () => void }) {
+  const { login, loginWithGoogle } = useAuth();
+  const navigate = useNavigate();
+
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [selectedCampusId, setSelectedCampusId] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string; campus?: string }>({});
+  const [formError, setFormError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [campuses, setCampuses] = useState<CampusOption[]>([]);
+  const [loadingCampuses, setLoadingCampuses] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    authenticationApi.getActiveCampuses()
+      .then(data => {
+        if (active) {
+          setCampuses(Array.isArray(data) ? data : []);
+          setLoadingCampuses(false);
+        }
+      })
+      .catch(() => {
+        if (active) setLoadingCampuses(false);
+      });
+    return () => { active = false; };
+  }, []);
+
+  const validate = () => {
+    const errors: { email?: string; password?: string; campus?: string } = {};
+    if (!email.trim()) errors.email = 'Vui lòng nhập email.';
+    else if (!EMAIL_RE.test(email.trim())) errors.email = 'Email không hợp lệ.';
+    if (!password) errors.password = 'Vui lòng nhập mật khẩu.';
+    if (!selectedCampusId) errors.campus = 'Vui lòng chọn cơ sở.';
+    
+    setFieldErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setFormError('');
+    if (!validate()) return;
+
+    setSubmitting(true);
+    try {
+      const user = await login(email.trim(), password, 'INTERNAL', selectedCampusId);
+      if (onSuccess) onSuccess();
+      if (user.mustChangePassword || user.mustSetPassword) {
+        navigate('/change-password', { replace: true });
+      } else {
+        navigate(fromPath ?? getDashboardRoute(user), { replace: true });
+      }
+    } catch (err) {
+      setFormError(getAuthErrorMessage(err, 'Email, mật khẩu hoặc cơ sở không chính xác.'));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <>
+      {formError && (
+        <div className="mb-4 p-3 bg-red-50 text-red-600 text-[13px] rounded-lg border border-red-100" role="alert">
+          {formError}
+        </div>
+      )}
+
+      <form onSubmit={handleSubmit} noValidate className="space-y-4">
+        <div>
+          <label className="block text-gray-700 font-semibold text-[13px] mb-1.5">Cơ sở (Campus)</label>
+          <select
+            value={selectedCampusId}
+            onChange={(e) => setSelectedCampusId(e.target.value)}
+            className="w-full px-4 py-2.5 rounded-xl border border-gray-300 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none bg-white text-[14px]"
+            disabled={loadingCampuses}
+          >
+            <option value="" disabled>-- Chọn cơ sở --</option>
+            {campuses.map((c) => (
+              <option key={c.campusId} value={c.campusId}>
+                {c.campusName} ({c.campusCode})
+              </option>
+            ))}
+          </select>
+          {fieldErrors.campus && <p className="mt-1 text-xs text-red-600">{fieldErrors.campus}</p>}
+        </div>
+
+        <div>
+          <label className="block text-gray-700 font-semibold text-[13px] mb-1.5">Email</label>
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="you@fpt.edu.vn"
+            autoComplete="username"
+            className="w-full px-4 py-2.5 rounded-xl border border-gray-300 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none text-[14px]"
+          />
+          {fieldErrors.email && <p className="mt-1 text-xs text-red-600">{fieldErrors.email}</p>}
+        </div>
+
+        <div>
+          <label className="block text-gray-700 font-semibold text-[13px] mb-1.5">Mật khẩu</label>
+          <div className="relative">
+            <input
+              type={showPassword ? 'text' : 'password'}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••"
+              autoComplete="current-password"
+              className="w-full px-4 py-2.5 pr-11 rounded-xl border border-gray-300 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none text-[14px]"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword((s) => !s)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              aria-label={showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
+            >
+              {showPassword ? <Eye className="w-5 h-5" /> : <EyeOff className="w-5 h-5" />}
+            </button>
+          </div>
+          {fieldErrors.password && <p className="mt-1 text-xs text-red-600">{fieldErrors.password}</p>}
+        </div>
+
+        <div className="flex justify-end">
+          <Link to="/forgot-password" onClick={onSuccess} className="text-[13px] text-[#004c91] hover:underline font-medium">
+            Quên mật khẩu?
+          </Link>
+        </div>
+
+        <button
+          type="submit"
+          disabled={submitting}
+          className="w-full bg-[#004c91] hover:bg-[#003a6f] disabled:opacity-60 disabled:cursor-not-allowed text-white py-3 rounded-xl font-bold transition-colors shadow-sm text-[14px]"
+        >
+          {submitting ? 'Đang xử lý...' : 'Đăng nhập'}
+        </button>
+      </form>
+
+      <div className="my-5 flex items-center gap-3 text-gray-400 text-xs">
+        <div className="h-px flex-1 bg-gray-200" />
+        <span>HOẶC</span>
+        <div className="h-px flex-1 bg-gray-200" />
+      </div>
+
+      <GoogleSignInButton 
+        portal="INTERNAL" 
+        selectedCampusId={selectedCampusId}
+        onError={setFormError} 
+        fromPath={fromPath} 
+        onSuccess={onSuccess}
+        onValidateCampus={() => {
+          if (!selectedCampusId) {
+            setFieldErrors(prev => ({ ...prev, campus: 'Vui lòng chọn cơ sở trước khi đăng nhập bằng Google.' }));
+            return false;
+          }
+          return true;
+        }}
+      />
+    </>
+  );
+}
+
+export function VisitorLoginForm({ fromPath, onSuccess }: { fromPath?: string; onSuccess?: () => void }) {
+  const { login } = useAuth();
+  const navigate = useNavigate();
+
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({});
+  const [formError, setFormError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const validate = () => {
+    const errors: { email?: string; password?: string } = {};
+    if (!email.trim()) errors.email = 'Vui lòng nhập email.';
+    else if (!EMAIL_RE.test(email.trim())) errors.email = 'Email không hợp lệ.';
+    if (!password) errors.password = 'Vui lòng nhập mật khẩu.';
+    
+    setFieldErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setFormError('');
+    if (!validate()) return;
+
+    setSubmitting(true);
+    try {
+      const user = await login(email.trim(), password, 'VISITOR');
+      if (onSuccess) onSuccess();
+      if (user.mustChangePassword || user.mustSetPassword) {
+        navigate('/change-password', { replace: true });
+      } else {
+        navigate(fromPath ?? getDashboardRoute(user), { replace: true });
+      }
+    } catch (err) {
+      setFormError(getAuthErrorMessage(err, 'Email hoặc mật khẩu không chính xác.'));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <>
+      {formError && (
+        <div className="mb-4 p-3 bg-red-50 text-red-600 text-[13px] rounded-lg border border-red-100" role="alert">
+          {formError}
+        </div>
+      )}
+
+      <form onSubmit={handleSubmit} noValidate className="space-y-4">
+        <div>
+          <label className="block text-gray-700 font-semibold text-[13px] mb-1.5">Email</label>
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="guest@example.com"
+            autoComplete="username"
+            className="w-full px-4 py-2.5 rounded-xl border border-gray-300 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none text-[14px]"
+          />
+          {fieldErrors.email && <p className="mt-1 text-xs text-red-600">{fieldErrors.email}</p>}
+        </div>
+
+        <div>
+          <label className="block text-gray-700 font-semibold text-[13px] mb-1.5">Mật khẩu</label>
+          <div className="relative">
+            <input
+              type={showPassword ? 'text' : 'password'}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••"
+              autoComplete="current-password"
+              className="w-full px-4 py-2.5 pr-11 rounded-xl border border-gray-300 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none text-[14px]"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword((s) => !s)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              aria-label={showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
+            >
+              {showPassword ? <Eye className="w-5 h-5" /> : <EyeOff className="w-5 h-5" />}
+            </button>
+          </div>
+          {fieldErrors.password && <p className="mt-1 text-xs text-red-600">{fieldErrors.password}</p>}
+        </div>
+
+        <div className="flex justify-end">
+          <Link to="/forgot-password" onClick={onSuccess} className="text-[13px] text-[#004c91] hover:underline font-medium">
+            Quên mật khẩu?
+          </Link>
+        </div>
+
+        <button
+          type="submit"
+          disabled={submitting}
+          className="w-full bg-[#004c91] hover:bg-[#003a6f] disabled:opacity-60 disabled:cursor-not-allowed text-white py-3 rounded-xl font-bold transition-colors shadow-sm text-[14px]"
+        >
+          {submitting ? 'Đang xử lý...' : 'Đăng nhập'}
+        </button>
+      </form>
+    </>
+  );
+}
+
+export function GoogleSignInButton({
+  portal,
+  selectedCampusId,
+  onError,
+  fromPath,
+  onSuccess,
+  onValidateCampus,
+}: {
+  portal: LoginPortal;
+  selectedCampusId?: string;
+  onError: (msg: string) => void;
+  fromPath?: string;
+  onSuccess?: () => void;
+  onValidateCampus?: () => boolean;
+}) {
+  const { loginWithGoogle } = useAuth();
+  const navigate = useNavigate();
+  const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined;
+  const containerRef = React.useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!clientId) return;
+
+    const handleCredential = async (response: { credential?: string }) => {
+      if (!response.credential) return;
+      
+      if (onValidateCampus && !onValidateCampus()) {
+        return;
+      }
+
+      try {
+        const user = await loginWithGoogle(response.credential, portal, selectedCampusId);
+        if (onSuccess) onSuccess();
+        if (user.mustChangePassword || user.mustSetPassword) navigate('/change-password', { replace: true });
+        else navigate(fromPath ?? getDashboardRoute(user), { replace: true });
+      } catch (err) {
+        onError(getAuthErrorMessage(err, 'Unable to sign in with this account.'));
+      }
+    };
+
+    const init = () => {
+      const google = (window as any).google;
+      if (!google?.accounts?.id || !containerRef.current) return;
+      google.accounts.id.initialize({ client_id: clientId, callback: handleCredential });
+      google.accounts.id.renderButton(containerRef.current, { theme: 'outline', size: 'large', width: '100%' });
+    };
+
+    if ((window as any).google?.accounts?.id) {
+      init();
+      return;
+    }
+
+    const existing = document.getElementById('google-gsi-script');
+    if (existing) {
+      existing.addEventListener('load', init);
+      return () => existing.removeEventListener('load', init);
+    }
+
+    const script = document.createElement('script');
+    script.src = 'https://accounts.google.com/gsi/client';
+    script.async = true;
+    script.defer = true;
+    script.id = 'google-gsi-script';
+    script.onload = init;
+    document.body.appendChild(script);
+  }, [clientId, portal, selectedCampusId, fromPath, loginWithGoogle, navigate, onError, onValidateCampus, onSuccess]);
+
+  if (!clientId) {
+    return (
+      <button
+        type="button"
+        disabled
+        title="Cấu hình VITE_GOOGLE_CLIENT_ID để bật đăng nhập Google"
+        className="w-full flex items-center justify-center gap-3 border border-gray-300 text-gray-400 py-2.5 rounded-xl font-medium cursor-not-allowed text-[14px]"
+      >
+        <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M12.48 10.92v3.28h7.84c-.24 1.84-.853 3.187-1.787 4.133-1.147 1.147-2.933 2.4-6.053 2.4-4.827 0-8.6-3.893-8.6-8.72s3.773-8.72 8.6-8.72c2.6 0 4.507 1.027 5.907 2.347l2.307-2.307C18.747 1.44 16.133 0 12.48 0 5.867 0 .307 5.387.307 12s5.56 12 12.173 12c3.573 0 6.267-1.173 8.373-3.36 2.16-2.16 2.84-5.213 2.84-7.667 0-.76-.053-1.467-.173-2.053H12.48z" />
+        </svg>
+        Sign in with Google
+      </button>
+    );
+  }
+
+  return (
+    <div className="relative w-full">
+      <div ref={containerRef} className="w-full flex justify-center [&>div]:w-full" />
+      {onValidateCampus && !selectedCampusId && (
+        <div 
+          className="absolute inset-0 z-10 cursor-pointer"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onValidateCampus();
+          }}
+          title="Vui lòng chọn cơ sở trước"
+        />
+      )}
+    </div>
+  );
+}

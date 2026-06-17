@@ -10,6 +10,9 @@ export const API_ENDPOINTS = {
     resetPassword: '/auth/reset-password',
     changePassword: '/auth/change-password',
   },
+  campuses: {
+    active: '/campuses/active',
+  },
   partners: {
     list: '/partners',
     detail: (id: string | number) => `/partners/${id}`,

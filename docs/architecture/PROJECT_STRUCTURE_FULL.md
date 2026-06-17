@@ -1178,6 +1178,10 @@ backend/PEMS.Infrastructure/
 ├── Logging/
 │   ├── ApiRequestLogService.cs
 │   └── AuditLogService.cs
+├── Migrations/
+│   ├── 20260617130132_CheckAuthSchemaMapping.cs
+│   ├── 20260617130132_CheckAuthSchemaMapping.Designer.cs
+│   └── ApplicationDbContextModelSnapshot.cs
 ├── Persistence/
 │   ├── Configurations/
 │   │   └── UserConfiguration.cs
@@ -1316,6 +1320,10 @@ frontend/
     │   │   ├── authentication/
     │   │   │   ├── adapters/authenticationAdapter.ts
     │   │   │   ├── api/authenticationApi.ts
+    │   │   │   ├── components/
+    │   │   │   │   ├── DualPortalLoginForms.tsx
+    │   │   │   │   ├── InternalLoginForm.tsx
+    │   │   │   │   └── VisitorLoginForm.tsx
     │   │   │   ├── hooks/useAuthentication.ts
     │   │   │   └── types/authentication.types.ts
     │   │   ├── calendars/
@@ -1517,6 +1525,7 @@ frontend/
     │   ├── main.tsx
     │   ├── types.ts
     │   └── vite-env.d.ts
+    ├── .env
     ├── .env.example
     ├── .gitignore
     ├── README.md

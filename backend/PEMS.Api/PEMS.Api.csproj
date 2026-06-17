@@ -8,8 +8,8 @@
 		<PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.0" />
 		<PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="8.0.22" />
 		<PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
-		<PackageReference Include="Pomelo.EntityFrameworkCore.MySql" Version="8.0.2" />
-		<PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="8.0.22" />
+		<PackageReference Include="Pomelo.EntityFrameworkCore.MySql" Version="9.0.0" />
+		<PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="9.0.0" />
 	</ItemGroup>
 	<ItemGroup>
 		<ProjectReference Include="..\PEMS.Application\PEMS.Application.csproj" />

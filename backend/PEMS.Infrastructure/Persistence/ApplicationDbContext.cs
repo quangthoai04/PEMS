@@ -119,344 +119,344 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
 
         modelBuilder.Entity<Role>(b =>
         {
-            b.Property(e => e.RoleId).HasColumnType("char(36)");
-            b.Property(e => e.DeletedBy).HasColumnType("char(36)");
+            b.Property(e => e.RoleId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.DeletedBy).HasMaxLength(36).IsFixedLength();
         });
 
         modelBuilder.Entity<Permission>(b =>
         {
-            b.Property(e => e.PermissionId).HasColumnType("char(36)");
+            b.Property(e => e.PermissionId).HasMaxLength(36).IsFixedLength();
         });
 
         modelBuilder.Entity<RolePermission>(b =>
         {
-            b.Property(e => e.RoleId).HasColumnType("char(36)");
-            b.Property(e => e.PermissionId).HasColumnType("char(36)");
-            b.Property(e => e.GrantedBy).HasColumnType("char(36)");
+            b.Property(e => e.RoleId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.PermissionId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.GrantedBy).HasMaxLength(36).IsFixedLength();
         });
 
         modelBuilder.Entity<Campus>(b =>
         {
-            b.Property(e => e.CampusId).HasColumnType("char(36)");
-            b.Property(e => e.IcHeadUserId).HasColumnType("char(36)");
-            b.Property(e => e.CreatedBy).HasColumnType("char(36)");
-            b.Property(e => e.UpdatedBy).HasColumnType("char(36)");
+            b.Property(e => e.CampusId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.IcHeadUserId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.CreatedBy).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.UpdatedBy).HasMaxLength(36).IsFixedLength();
         });
 
         modelBuilder.Entity<Department>(b =>
         {
-            b.Property(e => e.DepartmentId).HasColumnType("char(36)");
-            b.Property(e => e.CampusId).HasColumnType("char(36)");
-            b.Property(e => e.HeadUserId).HasColumnType("char(36)");
-            b.Property(e => e.CreatedBy).HasColumnType("char(36)");
-            b.Property(e => e.UpdatedBy).HasColumnType("char(36)");
+            b.Property(e => e.DepartmentId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.CampusId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.HeadUserId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.CreatedBy).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.UpdatedBy).HasMaxLength(36).IsFixedLength();
         });
 
         modelBuilder.Entity<User>(b =>
         {
-            b.Property(e => e.UserId).HasColumnType("char(36)");
-            b.Property(e => e.RoleId).HasColumnType("char(36)");
-            b.Property(e => e.PrimaryCampusId).HasColumnType("char(36)");
-            b.Property(e => e.DepartmentId).HasColumnType("char(36)");
-            b.Property(e => e.CreatedBy).HasColumnType("char(36)");
-            b.Property(e => e.UpdatedBy).HasColumnType("char(36)");
+            b.Property(e => e.UserId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.RoleId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.PrimaryCampusId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.DepartmentId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.CreatedBy).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.UpdatedBy).HasMaxLength(36).IsFixedLength();
         });
 
         modelBuilder.Entity<UserAuthProvider>(b =>
         {
-            b.Property(e => e.AuthProviderId).HasColumnType("char(36)");
-            b.Property(e => e.UserId).HasColumnType("char(36)");
+            b.Property(e => e.AuthProviderId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.UserId).HasMaxLength(36).IsFixedLength();
         });
 
         modelBuilder.Entity<UserSession>(b =>
         {
-            b.Property(e => e.SessionId).HasColumnType("char(36)");
-            b.Property(e => e.UserId).HasColumnType("char(36)");
-            b.Property(e => e.SelectedCampusId).HasColumnType("char(36)");
-            b.Property(e => e.AuthProviderId).HasColumnType("char(36)");
-            b.Property(e => e.RevokedBy).HasColumnType("char(36)");
+            b.Property(e => e.SessionId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.UserId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.SelectedCampusId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.AuthProviderId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.RevokedBy).HasMaxLength(36).IsFixedLength();
         });
 
         modelBuilder.Entity<OtpToken>(b =>
         {
-            b.Property(e => e.OtpTokenId).HasColumnType("char(36)");
-            b.Property(e => e.UserId).HasColumnType("char(36)");
+            b.Property(e => e.OtpTokenId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.UserId).HasMaxLength(36).IsFixedLength();
         });
 
         modelBuilder.Entity<LoginLog>(b =>
         {
-            b.Property(e => e.UserId).HasColumnType("char(36)");
-            b.Property(e => e.SelectedCampusId).HasColumnType("char(36)");
-            b.Property(e => e.SessionId).HasColumnType("char(36)");
+            b.Property(e => e.UserId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.SelectedCampusId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.SessionId).HasMaxLength(36).IsFixedLength();
         });
 
         modelBuilder.Entity<SecurityEvent>(b =>
         {
-            b.Property(e => e.UserId).HasColumnType("char(36)");
+            b.Property(e => e.UserId).HasMaxLength(36).IsFixedLength();
         });
 
         modelBuilder.Entity<AuditLog>(b =>
         {
-            b.Property(e => e.ActorUserId).HasColumnType("char(36)");
-            b.Property(e => e.CampusId).HasColumnType("char(36)");
-            b.Property(e => e.EntityId).HasColumnType("char(36)");
+            b.Property(e => e.ActorUserId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.CampusId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.EntityId).HasMaxLength(36).IsFixedLength();
         });
 
         modelBuilder.Entity<Partner>(b =>
         {
-            b.Property(e => e.PartnerId).HasColumnType("char(36)");
-            b.Property(e => e.CreatedBy).HasColumnType("char(36)");
-            b.Property(e => e.UpdatedBy).HasColumnType("char(36)");
+            b.Property(e => e.PartnerId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.CreatedBy).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.UpdatedBy).HasMaxLength(36).IsFixedLength();
         });
 
         modelBuilder.Entity<PartnerContact>(b =>
         {
-            b.Property(e => e.ContactId).HasColumnType("char(36)");
-            b.Property(e => e.PartnerId).HasColumnType("char(36)");
-            b.Property(e => e.CreatedBy).HasColumnType("char(36)");
-            b.Property(e => e.UpdatedBy).HasColumnType("char(36)");
+            b.Property(e => e.ContactId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.PartnerId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.CreatedBy).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.UpdatedBy).HasMaxLength(36).IsFixedLength();
         });
 
         modelBuilder.Entity<UploadedFile>(b =>
         {
-            b.Property(e => e.FileId).HasColumnType("char(36)");
-            b.Property(e => e.UploadedBy).HasColumnType("char(36)");
+            b.Property(e => e.FileId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.UploadedBy).HasMaxLength(36).IsFixedLength();
         });
 
         modelBuilder.Entity<Document>(b =>
         {
-            b.Property(e => e.DocumentId).HasColumnType("char(36)");
-            b.Property(e => e.FileId).HasColumnType("char(36)");
-            b.Property(e => e.OwnerId).HasColumnType("char(36)");
-            b.Property(e => e.CampusId).HasColumnType("char(36)");
-            b.Property(e => e.CreatedBy).HasColumnType("char(36)");
-            b.Property(e => e.UpdatedBy).HasColumnType("char(36)");
+            b.Property(e => e.DocumentId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.FileId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.OwnerId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.CampusId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.CreatedBy).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.UpdatedBy).HasMaxLength(36).IsFixedLength();
         });
 
         modelBuilder.Entity<VisitRequest>(b =>
         {
-            b.Property(e => e.VisitRequestId).HasColumnType("char(36)");
-            b.Property(e => e.VisitorUserId).HasColumnType("char(36)");
-            b.Property(e => e.PartnerId).HasColumnType("char(36)");
-            b.Property(e => e.DecidedBy).HasColumnType("char(36)");
-            b.Property(e => e.CreatedBy).HasColumnType("char(36)");
-            b.Property(e => e.UpdatedBy).HasColumnType("char(36)");
+            b.Property(e => e.VisitRequestId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.VisitorUserId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.PartnerId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.DecidedBy).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.CreatedBy).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.UpdatedBy).HasMaxLength(36).IsFixedLength();
         });
 
         modelBuilder.Entity<VisitRequestCampus>(b =>
         {
-            b.Property(e => e.VisitInstanceId).HasColumnType("char(36)");
-            b.Property(e => e.VisitRequestId).HasColumnType("char(36)");
-            b.Property(e => e.CampusId).HasColumnType("char(36)");
-            b.Property(e => e.CurrentHostUserId).HasColumnType("char(36)");
-            b.Property(e => e.HostTransferredBy).HasColumnType("char(36)");
-            b.Property(e => e.ClosedBy).HasColumnType("char(36)");
-            b.Property(e => e.CreatedBy).HasColumnType("char(36)");
-            b.Property(e => e.UpdatedBy).HasColumnType("char(36)");
+            b.Property(e => e.VisitInstanceId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.VisitRequestId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.CampusId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.CurrentHostUserId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.HostTransferredBy).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.ClosedBy).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.CreatedBy).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.UpdatedBy).HasMaxLength(36).IsFixedLength();
         });
 
         modelBuilder.Entity<VisitGuestMember>(b =>
         {
-            b.Property(e => e.GuestMemberId).HasColumnType("char(36)");
-            b.Property(e => e.VisitRequestId).HasColumnType("char(36)");
-            b.Property(e => e.CreatedBy).HasColumnType("char(36)");
-            b.Property(e => e.UpdatedBy).HasColumnType("char(36)");
+            b.Property(e => e.GuestMemberId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.VisitRequestId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.CreatedBy).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.UpdatedBy).HasMaxLength(36).IsFixedLength();
         });
 
         modelBuilder.Entity<VisitParticipant>(b =>
         {
-            b.Property(e => e.ParticipantId).HasColumnType("char(36)");
-            b.Property(e => e.VisitInstanceId).HasColumnType("char(36)");
-            b.Property(e => e.UserId).HasColumnType("char(36)");
-            b.Property(e => e.InvitedBy).HasColumnType("char(36)");
-            b.Property(e => e.AssignedBy).HasColumnType("char(36)");
-            b.Property(e => e.CreatedBy).HasColumnType("char(36)");
-            b.Property(e => e.UpdatedBy).HasColumnType("char(36)");
+            b.Property(e => e.ParticipantId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.VisitInstanceId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.UserId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.InvitedBy).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.AssignedBy).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.CreatedBy).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.UpdatedBy).HasMaxLength(36).IsFixedLength();
         });
 
         modelBuilder.Entity<VisitAgenda>(b =>
         {
-            b.Property(e => e.AgendaId).HasColumnType("char(36)");
-            b.Property(e => e.VisitInstanceId).HasColumnType("char(36)");
-            b.Property(e => e.ResponsibleUserId).HasColumnType("char(36)");
-            b.Property(e => e.CreatedBy).HasColumnType("char(36)");
-            b.Property(e => e.UpdatedBy).HasColumnType("char(36)");
+            b.Property(e => e.AgendaId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.VisitInstanceId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.ResponsibleUserId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.CreatedBy).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.UpdatedBy).HasMaxLength(36).IsFixedLength();
         });
 
         modelBuilder.Entity<VisitLogisticsItem>(b =>
         {
-            b.Property(e => e.LogisticsItemId).HasColumnType("char(36)");
-            b.Property(e => e.VisitInstanceId).HasColumnType("char(36)");
-            b.Property(e => e.RequestedBy).HasColumnType("char(36)");
-            b.Property(e => e.RequestedToDepartmentId).HasColumnType("char(36)");
-            b.Property(e => e.ReceivedBy).HasColumnType("char(36)");
-            b.Property(e => e.AssignedToUserId).HasColumnType("char(36)");
-            b.Property(e => e.AssignedBy).HasColumnType("char(36)");
-            b.Property(e => e.ProposedBy).HasColumnType("char(36)");
-            b.Property(e => e.ProposalRespondedBy).HasColumnType("char(36)");
-            b.Property(e => e.CreatedBy).HasColumnType("char(36)");
-            b.Property(e => e.UpdatedBy).HasColumnType("char(36)");
+            b.Property(e => e.LogisticsItemId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.VisitInstanceId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.RequestedBy).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.RequestedToDepartmentId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.ReceivedBy).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.AssignedToUserId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.AssignedBy).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.ProposedBy).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.ProposalRespondedBy).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.CreatedBy).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.UpdatedBy).HasMaxLength(36).IsFixedLength();
         });
 
         modelBuilder.Entity<VisitStatusLog>(b =>
         {
-            b.Property(e => e.VisitRequestId).HasColumnType("char(36)");
-            b.Property(e => e.VisitInstanceId).HasColumnType("char(36)");
-            b.Property(e => e.ChangedBy).HasColumnType("char(36)");
+            b.Property(e => e.VisitRequestId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.VisitInstanceId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.ChangedBy).HasMaxLength(36).IsFixedLength();
         });
 
         modelBuilder.Entity<Minute>(b =>
         {
-            b.Property(e => e.MinutesId).HasColumnType("char(36)");
-            b.Property(e => e.VisitInstanceId).HasColumnType("char(36)");
-            b.Property(e => e.FinalizedBy).HasColumnType("char(36)");
-            b.Property(e => e.EditingBy).HasColumnType("char(36)");
-            b.Property(e => e.EditLockToken).HasColumnType("char(36)");
-            b.Property(e => e.CreatedBy).HasColumnType("char(36)");
-            b.Property(e => e.UpdatedBy).HasColumnType("char(36)");
+            b.Property(e => e.MinutesId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.VisitInstanceId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.FinalizedBy).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.EditingBy).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.EditLockToken).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.CreatedBy).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.UpdatedBy).HasMaxLength(36).IsFixedLength();
         });
 
         modelBuilder.Entity<Feedback>(b =>
         {
-            b.Property(e => e.FeedbackId).HasColumnType("char(36)");
-            b.Property(e => e.VisitRequestId).HasColumnType("char(36)");
-            b.Property(e => e.VisitInstanceId).HasColumnType("char(36)");
-            b.Property(e => e.SubmittedByUserId).HasColumnType("char(36)");
-            b.Property(e => e.GuestMemberId).HasColumnType("char(36)");
-            b.Property(e => e.ReviewedBy).HasColumnType("char(36)");
+            b.Property(e => e.FeedbackId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.VisitRequestId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.VisitInstanceId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.SubmittedByUserId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.GuestMemberId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.ReviewedBy).HasMaxLength(36).IsFixedLength();
         });
 
         modelBuilder.Entity<News>(b =>
         {
-            b.Property(e => e.NewsId).HasColumnType("char(36)");
-            b.Property(e => e.CampusId).HasColumnType("char(36)");
-            b.Property(e => e.AuthorUserId).HasColumnType("char(36)");
-            b.Property(e => e.CoverFileId).HasColumnType("char(36)");
-            b.Property(e => e.DecidedBy).HasColumnType("char(36)");
-            b.Property(e => e.CreatedBy).HasColumnType("char(36)");
-            b.Property(e => e.UpdatedBy).HasColumnType("char(36)");
-            b.Property(e => e.DeletedBy).HasColumnType("char(36)");
+            b.Property(e => e.NewsId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.CampusId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.AuthorUserId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.CoverFileId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.DecidedBy).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.CreatedBy).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.UpdatedBy).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.DeletedBy).HasMaxLength(36).IsFixedLength();
         });
 
         modelBuilder.Entity<NewsTranslation>(b =>
         {
-            b.Property(e => e.NewsTranslationId).HasColumnType("char(36)");
-            b.Property(e => e.NewsId).HasColumnType("char(36)");
+            b.Property(e => e.NewsTranslationId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.NewsId).HasMaxLength(36).IsFixedLength();
         });
 
         modelBuilder.Entity<Faq>(b =>
         {
-            b.Property(e => e.FaqId).HasColumnType("char(36)");
-            b.Property(e => e.CreatedBy).HasColumnType("char(36)");
-            b.Property(e => e.UpdatedBy).HasColumnType("char(36)");
+            b.Property(e => e.FaqId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.CreatedBy).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.UpdatedBy).HasMaxLength(36).IsFixedLength();
         });
 
         modelBuilder.Entity<PublicContent>(b =>
         {
-            b.Property(e => e.PublicContentId).HasColumnType("char(36)");
-            b.Property(e => e.CampusId).HasColumnType("char(36)");
-            b.Property(e => e.CreatedBy).HasColumnType("char(36)");
-            b.Property(e => e.UpdatedBy).HasColumnType("char(36)");
+            b.Property(e => e.PublicContentId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.CampusId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.CreatedBy).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.UpdatedBy).HasMaxLength(36).IsFixedLength();
         });
 
         modelBuilder.Entity<Gallery>(b =>
         {
-            b.Property(e => e.GalleryId).HasColumnType("char(36)");
-            b.Property(e => e.CampusId).HasColumnType("char(36)");
-            b.Property(e => e.VisitInstanceId).HasColumnType("char(36)");
-            b.Property(e => e.CreatedBy).HasColumnType("char(36)");
-            b.Property(e => e.UpdatedBy).HasColumnType("char(36)");
-            b.Property(e => e.DeletedBy).HasColumnType("char(36)");
+            b.Property(e => e.GalleryId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.CampusId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.VisitInstanceId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.CreatedBy).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.UpdatedBy).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.DeletedBy).HasMaxLength(36).IsFixedLength();
         });
 
         modelBuilder.Entity<GalleryImage>(b =>
         {
-            b.Property(e => e.ImageId).HasColumnType("char(36)");
-            b.Property(e => e.GalleryId).HasColumnType("char(36)");
-            b.Property(e => e.FileId).HasColumnType("char(36)");
-            b.Property(e => e.CreatedBy).HasColumnType("char(36)");
-            b.Property(e => e.UpdatedBy).HasColumnType("char(36)");
-            b.Property(e => e.DeletedBy).HasColumnType("char(36)");
+            b.Property(e => e.ImageId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.GalleryId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.FileId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.CreatedBy).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.UpdatedBy).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.DeletedBy).HasMaxLength(36).IsFixedLength();
         });
 
         modelBuilder.Entity<PhotoFaceTag>(b =>
         {
-            b.Property(e => e.FaceTagId).HasColumnType("char(36)");
-            b.Property(e => e.ImageId).HasColumnType("char(36)");
-            b.Property(e => e.VisitRequestId).HasColumnType("char(36)");
-            b.Property(e => e.GuestMemberId).HasColumnType("char(36)");
-            b.Property(e => e.PartnerContactId).HasColumnType("char(36)");
-            b.Property(e => e.ConfirmedBy).HasColumnType("char(36)");
-            b.Property(e => e.CreatedBy).HasColumnType("char(36)");
-            b.Property(e => e.RemovedBy).HasColumnType("char(36)");
+            b.Property(e => e.FaceTagId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.ImageId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.VisitRequestId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.GuestMemberId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.PartnerContactId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.ConfirmedBy).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.CreatedBy).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.RemovedBy).HasMaxLength(36).IsFixedLength();
         });
 
         modelBuilder.Entity<EmailTemplate>(b =>
         {
-            b.Property(e => e.EmailTemplateId).HasColumnType("char(36)");
-            b.Property(e => e.CreatedBy).HasColumnType("char(36)");
-            b.Property(e => e.UpdatedBy).HasColumnType("char(36)");
+            b.Property(e => e.EmailTemplateId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.CreatedBy).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.UpdatedBy).HasMaxLength(36).IsFixedLength();
         });
 
         modelBuilder.Entity<SentEmail>(b =>
         {
-            b.Property(e => e.SentEmailId).HasColumnType("char(36)");
-            b.Property(e => e.EmailTemplateId).HasColumnType("char(36)");
-            b.Property(e => e.RelatedId).HasColumnType("char(36)");
-            b.Property(e => e.SentBy).HasColumnType("char(36)");
+            b.Property(e => e.SentEmailId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.EmailTemplateId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.RelatedId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.SentBy).HasMaxLength(36).IsFixedLength();
         });
 
         modelBuilder.Entity<Notification>(b =>
         {
-            b.Property(e => e.NotificationId).HasColumnType("char(36)");
-            b.Property(e => e.RecipientUserId).HasColumnType("char(36)");
-            b.Property(e => e.RelatedId).HasColumnType("char(36)");
+            b.Property(e => e.NotificationId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.RecipientUserId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.RelatedId).HasMaxLength(36).IsFixedLength();
         });
 
         modelBuilder.Entity<CalendarEvent>(b =>
         {
-            b.Property(e => e.CalendarEventId).HasColumnType("char(36)");
-            b.Property(e => e.OwnerUserId).HasColumnType("char(36)");
-            b.Property(e => e.CampusId).HasColumnType("char(36)");
-            b.Property(e => e.VisitInstanceId).HasColumnType("char(36)");
-            b.Property(e => e.LogisticsItemId).HasColumnType("char(36)");
-            b.Property(e => e.CreatedBy).HasColumnType("char(36)");
-            b.Property(e => e.UpdatedBy).HasColumnType("char(36)");
-            b.Property(e => e.DeletedBy).HasColumnType("char(36)");
+            b.Property(e => e.CalendarEventId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.OwnerUserId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.CampusId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.VisitInstanceId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.LogisticsItemId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.CreatedBy).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.UpdatedBy).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.DeletedBy).HasMaxLength(36).IsFixedLength();
         });
 
         modelBuilder.Entity<AgendaTemplate>(b =>
         {
-            b.Property(e => e.AgendaTemplateId).HasColumnType("char(36)");
-            b.Property(e => e.CampusId).HasColumnType("char(36)");
-            b.Property(e => e.CreatedBy).HasColumnType("char(36)");
-            b.Property(e => e.UpdatedBy).HasColumnType("char(36)");
-            b.Property(e => e.DeletedBy).HasColumnType("char(36)");
+            b.Property(e => e.AgendaTemplateId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.CampusId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.CreatedBy).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.UpdatedBy).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.DeletedBy).HasMaxLength(36).IsFixedLength();
         });
 
         modelBuilder.Entity<ApiConfiguration>(b =>
         {
-            b.Property(e => e.ApiConfigId).HasColumnType("char(36)");
-            b.Property(e => e.CreatedBy).HasColumnType("char(36)");
-            b.Property(e => e.UpdatedBy).HasColumnType("char(36)");
-            b.Property(e => e.DeletedBy).HasColumnType("char(36)");
+            b.Property(e => e.ApiConfigId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.CreatedBy).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.UpdatedBy).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.DeletedBy).HasMaxLength(36).IsFixedLength();
         });
 
         modelBuilder.Entity<ApiUsageQuota>(b =>
         {
-            b.Property(e => e.ApiUsageQuotaId).HasColumnType("char(36)");
-            b.Property(e => e.ApiConfigId).HasColumnType("char(36)");
-            b.Property(e => e.CampusId).HasColumnType("char(36)");
-            b.Property(e => e.CreatedBy).HasColumnType("char(36)");
-            b.Property(e => e.UpdatedBy).HasColumnType("char(36)");
+            b.Property(e => e.ApiUsageQuotaId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.ApiConfigId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.CampusId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.CreatedBy).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.UpdatedBy).HasMaxLength(36).IsFixedLength();
         });
 
         modelBuilder.Entity<ApiRequestLog>(b =>
         {
-            b.Property(e => e.ApiConfigId).HasColumnType("char(36)");
-            b.Property(e => e.CampusId).HasColumnType("char(36)");
-            b.Property(e => e.RequestedBy).HasColumnType("char(36)");
-            b.Property(e => e.RelatedId).HasColumnType("char(36)");
+            b.Property(e => e.ApiConfigId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.CampusId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.RequestedBy).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.RelatedId).HasMaxLength(36).IsFixedLength();
         });
 
         // ── Relationships ─────────────────────────────────────────────────

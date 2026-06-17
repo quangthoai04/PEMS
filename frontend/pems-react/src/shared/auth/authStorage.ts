@@ -1,12 +1,12 @@
-import type { AuthUser, UserPermission } from '../../features/authentication/types/authentication.types';
+import type { AuthUser, LoginPortal, UserPermission } from '../../features/authentication/types/authentication.types';
 
-// localStorage keys. 'token' is kept as the access-token key so the existing
-// request interceptor keeps working. 'currentUser' mirrors the auth user in the
-// shape the existing dashboard pages already read.
+// localStorage keys.
 const ACCESS_TOKEN_KEY = 'token';
 const REFRESH_TOKEN_KEY = 'refreshToken';
 const USER_KEY = 'pems_user';
 const PERMISSIONS_KEY = 'pems_permissions';
+const LOGIN_PORTAL_KEY = 'pems_loginPortal';
+const SELECTED_CAMPUS_KEY = 'pems_selectedCampusId';
 const LEGACY_USER_KEY = 'currentUser';
 
 function readJson<T>(key: string): T | null {
@@ -55,6 +55,18 @@ export const authStorage = {
   setPermissions: (permissions: UserPermission[]) =>
     localStorage.setItem(PERMISSIONS_KEY, JSON.stringify(permissions)),
 
+  getLoginPortal: (): LoginPortal | null =>
+    localStorage.getItem(LOGIN_PORTAL_KEY) as LoginPortal | null,
+  setLoginPortal: (portal: LoginPortal) =>
+    localStorage.setItem(LOGIN_PORTAL_KEY, portal),
+
+  getSelectedCampusId: (): string | null =>
+    localStorage.getItem(SELECTED_CAMPUS_KEY),
+  setSelectedCampusId: (campusId: string) =>
+    localStorage.setItem(SELECTED_CAMPUS_KEY, campusId),
+  clearSelectedCampusId: () =>
+    localStorage.removeItem(SELECTED_CAMPUS_KEY),
+
   setTokens: (accessToken: string, refreshToken: string) => {
     localStorage.setItem(ACCESS_TOKEN_KEY, accessToken);
     localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
@@ -65,6 +77,8 @@ export const authStorage = {
     localStorage.removeItem(REFRESH_TOKEN_KEY);
     localStorage.removeItem(USER_KEY);
     localStorage.removeItem(PERMISSIONS_KEY);
+    localStorage.removeItem(LOGIN_PORTAL_KEY);
+    localStorage.removeItem(SELECTED_CAMPUS_KEY);
     localStorage.removeItem(LEGACY_USER_KEY);
   },
 

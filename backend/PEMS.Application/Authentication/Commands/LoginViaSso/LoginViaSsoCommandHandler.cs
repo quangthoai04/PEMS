@@ -84,6 +84,20 @@ public sealed class LoginviaSSOCommandHandler : IRequestHandler<LoginviaSSOComma
         if ((portal == LoginPortals.Visitor && !isVisitor) || (portal == LoginPortals.Internal && isVisitor))
             await FailAsync(user, email, portal, "wrong_portal", request, cancellationToken);
 
+        // Campus validation: VISITOR must not send campus, INTERNAL must send a valid campus.
+        if (portal == LoginPortals.Visitor && !string.IsNullOrWhiteSpace(request.SelectedCampusId))
+            await FailAsync(user, email, portal, "visitor_with_campus", request, cancellationToken);
+
+        if (portal == LoginPortals.Internal)
+        {
+            if (string.IsNullOrWhiteSpace(request.SelectedCampusId))
+                await FailAsync(user, email, portal, "missing_campus", request, cancellationToken);
+
+            if (user.PrimaryCampusId is not null
+                && !string.Equals(request.SelectedCampusId, user.PrimaryCampusId, StringComparison.OrdinalIgnoreCase))
+                await FailAsync(user, email, portal, "campus_mismatch", request, cancellationToken);
+        }
+
         // Require an enabled Google provider; link the subject on first use.
         var googleProvider = user.AuthProviders.FirstOrDefault(p => p.ProviderType == ProviderTypes.GoogleSso);
         if (googleProvider is null || !googleProvider.IsEnabled)

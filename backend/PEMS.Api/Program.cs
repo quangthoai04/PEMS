@@ -15,6 +15,7 @@ builder.Services.AddInfrastructure(builder.Configuration);
 
 // ── Database ─────────────────────────────────────────────────────────────────
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+Console.WriteLine("CONN: " + connectionString);
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString)));
 

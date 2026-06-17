@@ -13,11 +13,13 @@ import { hasAnyPermission, hasPermission, hasRole } from './permissionChecker';
 interface AuthContextValue {
   user: AuthUser | null;
   permissions: UserPermission[];
+  loginPortal: LoginPortal | null;
+  selectedCampusId: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
 
-  login: (email: string, password: string, loginPortal: LoginPortal) => Promise<AuthUser>;
-  loginWithGoogle: (idToken: string, loginPortal: LoginPortal) => Promise<AuthUser>;
+  login: (email: string, password: string, loginPortal: LoginPortal, selectedCampusId?: string) => Promise<AuthUser>;
+  loginWithGoogle: (idToken: string, loginPortal: LoginPortal, selectedCampusId?: string) => Promise<AuthUser>;
   logout: () => Promise<void>;
   refreshProfile: () => Promise<void>;
   changePassword: (payload: ChangePasswordRequest) => Promise<void>;
@@ -32,6 +34,8 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(() => authStorage.getUser());
   const [permissions, setPermissions] = useState<UserPermission[]>(() => authStorage.getPermissions());
+  const [loginPortal, setLoginPortal] = useState<LoginPortal | null>(() => authStorage.getLoginPortal());
+  const [selectedCampusId, setSelectedCampusId] = useState<string | null>(() => authStorage.getSelectedCampusId());
   const [isLoading, setIsLoading] = useState<boolean>(() => !!authStorage.getAccessToken());
 
   const applySession = useCallback((nextUser: AuthUser, nextPermissions: UserPermission[]) => {
@@ -45,6 +49,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     authStorage.clear();
     setUser(null);
     setPermissions([]);
+    setLoginPortal(null);
+    setSelectedCampusId(null);
   }, []);
 
   // Validate the stored token on first load by fetching the live profile.
@@ -77,15 +83,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const handler = () => {
       setUser(null);
       setPermissions([]);
+      setLoginPortal(null);
+      setSelectedCampusId(null);
     };
     window.addEventListener(AUTH_EXPIRED_EVENT, handler);
     return () => window.removeEventListener(AUTH_EXPIRED_EVENT, handler);
   }, []);
 
   const login = useCallback(
-    async (email: string, password: string, loginPortal: LoginPortal) => {
-      const result = await authenticationApi.login(email, password, loginPortal);
+    async (email: string, password: string, portal: LoginPortal, campusId?: string) => {
+      const result = await authenticationApi.login(email, password, portal, campusId);
       authStorage.setTokens(result.accessToken, result.refreshToken);
+      authStorage.setLoginPortal(portal);
+      if (portal === 'INTERNAL' && campusId) {
+        authStorage.setSelectedCampusId(campusId);
+        setSelectedCampusId(campusId);
+      } else {
+        authStorage.clearSelectedCampusId();
+        setSelectedCampusId(null);
+      }
+      setLoginPortal(portal);
       applySession(result.user, result.permissions);
       return result.user;
     },
@@ -93,9 +110,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const loginWithGoogle = useCallback(
-    async (idToken: string, loginPortal: LoginPortal) => {
-      const result = await authenticationApi.loginWithGoogle(idToken, loginPortal);
+    async (idToken: string, portal: LoginPortal, campusId?: string) => {
+      const result = await authenticationApi.loginWithGoogle(idToken, portal, campusId);
       authStorage.setTokens(result.accessToken, result.refreshToken);
+      authStorage.setLoginPortal(portal);
+      if (portal === 'INTERNAL' && campusId) {
+        authStorage.setSelectedCampusId(campusId);
+        setSelectedCampusId(campusId);
+      } else {
+        authStorage.clearSelectedCampusId();
+        setSelectedCampusId(null);
+      }
+      setLoginPortal(portal);
       applySession(result.user, result.permissions);
       return result.user;
     },
@@ -132,6 +158,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     () => ({
       user,
       permissions,
+      loginPortal,
+      selectedCampusId,
       isAuthenticated: !!user,
       isLoading,
       login,
@@ -143,7 +171,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       hasAnyPermission: (codes, minimumLevel) => hasAnyPermission(permissions, codes, minimumLevel),
       hasRole: (roles) => hasRole(user?.roleCode, roles),
     }),
-    [user, permissions, isLoading, login, loginWithGoogle, logout, refreshProfile, changePassword],
+    [user, permissions, loginPortal, selectedCampusId, isLoading, login, loginWithGoogle, logout, refreshProfile, changePassword],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
