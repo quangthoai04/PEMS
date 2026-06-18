@@ -6,7 +6,10 @@
       "Bash(curl -s -X POST http://localhost:5265/api/auth/login -H 'Content-Type: application/json' -d '{\"email\":\"minh.nguyen@company.vn\",\"password\":\"WRONG_password_999\",\"loginPortal\":\"INTERNAL\",\"selectedCampusId\":\"a02cb046-6a5a-11f1-943a-0250867905ad\"}' -w '\\\\n___HTTP_STATUS=%{http_code}___\\\\n')",
       "PowerShell($env:MYSQL_PWD='123456'; $mysql='C:\\\\Program Files\\\\MySQL\\\\MySQL Server 8.0\\\\bin\\\\mysql.exe'; & $mysql -u root -h 127.0.0.1 -P 3306 -D pems_db --table -e \"SELECT email, failed_login_count, locked_until, last_login_at FROM users WHERE email='minh.nguyen@company.vn';\")",
       "Bash(curl -s -X POST http://localhost:5265/api/auth/login -H 'Content-Type: application/json' -d '{\"email\":\"minh.nguyen@company.vn\",\"password\":\"Admin@123456\",\"loginPortal\":\"INTERNAL\",\"selectedCampusId\":\"a02cb046-6a5a-11f1-943a-0250867905ad\"}' -w '\\\\n___HTTP_STATUS=%{http_code}___\\\\n' -o /dev/null)",
-      "PowerShell(Get-Process -Name PEMS.Api -ErrorAction SilentlyContinue | ForEach-Object { Write-Output \\(\"Stopping PEMS.Api PID \" + $_.Id\\); Stop-Process -Id $_.Id -Force }; Start-Sleep -Milliseconds 500; $r = Get-Process -Name PEMS.Api -ErrorAction SilentlyContinue; if \\($r\\) { Write-Output \"still running\" } else { Write-Output \"API stopped\" })"
+      "PowerShell(Get-Process -Name PEMS.Api -ErrorAction SilentlyContinue | ForEach-Object { Write-Output \\(\"Stopping PEMS.Api PID \" + $_.Id\\); Stop-Process -Id $_.Id -Force }; Start-Sleep -Milliseconds 500; $r = Get-Process -Name PEMS.Api -ErrorAction SilentlyContinue; if \\($r\\) { Write-Output \"still running\" } else { Write-Output \"API stopped\" })",
+      "Bash(npx tsc *)",
+      "Bash(npm run *)",
+      "Bash(node -e \"console.log\\('react types version:', require\\('./node_modules/@types/react/package.json'\\).version\\)\")"
     ]
   }
 }

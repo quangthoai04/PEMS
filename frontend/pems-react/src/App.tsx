@@ -61,7 +61,9 @@ import { ForgotPasswordPage } from './pages/auth/ForgotPasswordPage';
 import { ResetPasswordPage } from './pages/auth/ResetPasswordPage';
 import { ChangePasswordPage } from './pages/auth/ChangePasswordPage';
 import { ForbiddenPage } from './pages/ForbiddenPage';
+import { InvalidAccountPage } from './pages/InvalidAccountPage';
 import { ProtectedRoute } from './shared/auth/ProtectedRoute';
+import { PERMISSIONS } from './shared/constants/permissions';
 
 function ScrollToTop() {
   const { pathname } = useLocation();
@@ -87,7 +89,7 @@ const PlaceholderPage = ({ title }: { title: string }) => (
   </div>
 );
 
-const BARE_ROUTES = ['/login', '/forgot-password', '/reset-password', '/change-password', '/403'];
+const BARE_ROUTES = ['/login', '/forgot-password', '/reset-password', '/change-password', '/403', '/invalid-account'];
 
 export default function App() {
   const location = useLocation();
@@ -119,6 +121,7 @@ export default function App() {
           <Route path="/reset-password" element={<ResetPasswordPage />} />
           <Route path="/change-password" element={<ProtectedRoute><ChangePasswordPage /></ProtectedRoute>} />
           <Route path="/403" element={<ForbiddenPage />} />
+          <Route path="/invalid-account" element={<InvalidAccountPage />} />
 
           {/* Dashboard Routes (require authentication) */}
           <Route path="/dashboard" element={<ProtectedRoute><DashboardLayout /></ProtectedRoute>}>
@@ -128,11 +131,11 @@ export default function App() {
             <Route path="news/create" element={<CreateNews />} />
             <Route path="news/:id/edit" element={<EditNews />} />
             <Route path="news/:id" element={<NewsDetailDashboard />} />
-            <Route path="email" element={<EmailManagement />} />
-            <Route path="email/create" element={<CreateEmail />} />
-            <Route path="email/sent/:id" element={<SentEmailDetail />} />
-            <Route path="email/:id" element={<EmailDetail />} />
-            <Route path="email/:id/edit" element={<EditEmail />} />
+            <Route path="email" element={<ProtectedRoute permission={PERMISSIONS.VIEW_EMAIL} permissionLevel="O"><EmailManagement /></ProtectedRoute>} />
+            <Route path="email/create" element={<ProtectedRoute permission={PERMISSIONS.EDIT_EMAIL_CONTENT} permissionLevel="O"><CreateEmail /></ProtectedRoute>} />
+            <Route path="email/sent/:id" element={<ProtectedRoute permission={PERMISSIONS.VIEW_EMAIL} permissionLevel="O"><SentEmailDetail /></ProtectedRoute>} />
+            <Route path="email/:id" element={<ProtectedRoute permission={PERMISSIONS.VIEW_EMAIL} permissionLevel="O"><EmailDetail /></ProtectedRoute>} />
+            <Route path="email/:id/edit" element={<ProtectedRoute permission={PERMISSIONS.EDIT_EMAIL_CONTENT} permissionLevel="O"><EditEmail /></ProtectedRoute>} />
             <Route path="partners" element={<PartnerManagement />} />
             <Route path="partners/create" element={<CreatePartner />} />
             <Route path="partners/:id" element={<PartnerDetail />} />
@@ -140,9 +143,9 @@ export default function App() {
             <Route path="departments/:id" element={<DepartmentDetailDashboard />} />
             <Route path="departments/:id/tasks/:taskId" element={<TaskDetail />} />
             <Route path="departments/:id/invitations/:taskId" element={<TaskInvitationDetail />} />
-            <Route path="accounts" element={<AccountManagement />} />
-            <Route path="campus" element={<CampusManagement />} />
-            <Route path="campus/:id" element={<CampusDetail />} />
+            <Route path="accounts" element={<ProtectedRoute permission={PERMISSIONS.VIEW_ACCOUNT_LIST}><AccountManagement /></ProtectedRoute>} />
+            <Route path="campus" element={<ProtectedRoute permission={PERMISSIONS.VIEW_CAMPUS_LIST}><CampusManagement /></ProtectedRoute>} />
+            <Route path="campus/:id" element={<ProtectedRoute permission={PERMISSIONS.VIEW_CAMPUS_LIST}><CampusDetail /></ProtectedRoute>} />
             <Route path="faq" element={<FAQManagement />} />
             <Route path="faq/:id" element={<FAQDetail />} />
             <Route path="visit" element={<VisitRequestManagement />} />
@@ -156,11 +159,11 @@ export default function App() {
             <Route path="gallery" element={<GalleryManagement />} />
             <Route path="gallery/locations" element={<LocationManagement />} />
             <Route path="minutes" element={<MinuteManagement />} />
-            <Route path="reports" element={<ReportManagement />} />
+            <Route path="reports" element={<ProtectedRoute anyPermissions={[PERMISSIONS.VIEW_DASHBOARD_STATISTICS, PERMISSIONS.EXPORT_STATISTICS_REPORT]}><ReportManagement /></ProtectedRoute>} />
             <Route path="feedback" element={<FeedbackManagement />} />
             <Route path="feedback/:id" element={<FeedbackDetail />} />
-            <Route path="permissions" element={<PermissionManagement />} />
-            <Route path="apis" element={<ApiManagement />} />
+            <Route path="permissions" element={<ProtectedRoute roles={['ADMIN']} permission={PERMISSIONS.VIEW_ROLE_LIST}><PermissionManagement /></ProtectedRoute>} />
+            <Route path="apis" element={<ProtectedRoute roles={['ADMIN']} anyPermissions={[PERMISSIONS.VIEW_API_CONFIGURATION, PERMISSIONS.VIEW_API_LOGS]}><ApiManagement /></ProtectedRoute>} />
           </Route>
         </Routes>
       </main>

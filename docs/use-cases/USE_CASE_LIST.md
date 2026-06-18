@@ -35,10 +35,10 @@
 | UC-31  | Create Meeting Minutes           |
 | UC-32  | Edit Meeting Minutes             |
 | UC-33  | View Meeting Minutes Details     |
-| UC-34  | Upload Attached Documents        |
-| UC-35  | Submit Delegation Feedback       |
-| UC-36  | Scan Business Card               |
-| UC-37  | Create Partner Profile           |
+| UC-34  | Submit Delegation Feedback       |
+| UC-35  | Scan Business Card               |
+| UC-36  | Create Partner Profile           |
+| UC-37  | Upload Attached Documents        |
 | UC-38  | Upload Visit Photos              |
 | UC-39  | Tag Faces on Photos              |
 | UC-40  | Create News Article              |

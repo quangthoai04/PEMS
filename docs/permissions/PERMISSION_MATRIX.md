@@ -106,6 +106,16 @@ Các endpoint này phải được bảo vệ bằng rule bảo mật khác, ví
 
 UC-12 Logout có thể kiểm tra user đã authenticated/session hợp lệ, nhưng không nên phụ thuộc vào quyền nghiệp vụ.
 
+
+### 4.3. Login Portal & Provisioning Rule
+
+Hệ thống có hai nhóm cổng đăng nhập chính:
+
+- **Cổng Visitor / Student-facing:** dùng cho VISITOR và các trường hợp sinh viên/khách theo chính sách đăng nhập bằng SSO/FEID. Nếu email Google/FEID thuộc role VISITOR và đăng nhập đúng cổng Visitor thì hệ thống cho phép vào nếu tài khoản đã tồn tại; nếu chưa tồn tại thì hệ thống có thể auto-provision tài khoản VISITOR không gắn campus. Visitor không chọn `selected_campus_id` khi login.
+- **Cổng Internal:** dùng cho HO, ADMIN, STAFF, DEPT, STUDENT nội bộ theo cấu hình hệ thống. Cổng này bắt buộc chọn campus khi role cần campus. Nếu email chưa có tài khoản nội bộ trong hệ thống thì không auto-provision và phải từ chối đăng nhập. Nếu tài khoản có role không phù hợp với cổng đang dùng, backend phải trả lỗi rõ ràng, ví dụ: “Tài khoản của bạn không phù hợp với cổng đăng nhập này.”
+
+Nếu một tài khoản VISITOR cần chuyển sang role nội bộ, Staff Leader hoặc role được cấp quyền phù hợp phải dùng UC-100 Update Account Role hoặc UC-96 Create Account để gán role, sub_role, campus và department hợp lệ. Sau khi chuyển role nội bộ, user phải đăng nhập qua cổng Internal và chọn đúng campus.
+
 ---
 
 ## 5. Permission Matrix By Feature Area
@@ -128,7 +138,7 @@ UC-12 Logout có thể kiểm tra user đã authenticated/session hợp lệ, nh
 
 ### 5.2. Authentication
 
-> UC-10, UC-11 và UC-13 là pre-auth endpoint, không gắn `RequirePermission` trước khi login. Level `O` trong bảng dùng để thể hiện đây là thao tác cá nhân của tài khoản, không phải quyền nghiệp vụ. Cần kiểm tra trạng thái tài khoản, token/session, rate limit và ghi log đăng nhập/đăng xuất.
+> UC-10, UC-11 và UC-13 là pre-auth endpoint, không gắn `RequirePermission` trước khi login. Level `O` trong bảng dùng để thể hiện đây là thao tác cá nhân của tài khoản, không phải quyền nghiệp vụ. Trong giai đoạn triển khai/dev, hệ thống có thể cho phép đăng nhập bằng mật khẩu local, SSO và FEID để kiểm thử. Khi build hệ thống thật/production, cơ chế chính là SSO/FEID theo đúng cổng đăng nhập; LOCAL_PASSWORD chỉ giữ cho DEV/test hoặc trường hợp đặc biệt. Cần kiểm tra portal, role, campus, trạng thái tài khoản, token/session, rate limit và ghi log đăng nhập/đăng xuất.
 
 | UC ID | Action | HO | Admin | Staff Leader | Staff | Department Lead | Department | Student | VISITOR |
 |---|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
@@ -182,7 +192,7 @@ UC-12 Logout có thể kiểm tra user đã authenticated/session hợp lệ, nh
 ### 5.5. Email Management
 
 > Email trong hệ thống là chức năng soạn, gửi, xem và phản hồi email. Email **không bắt buộc** phải gắn với delegation/visit request.  
-> Quyền `O` nghĩa là user chỉ được thao tác trên email/draft/outbox/conversation của chính mình hoặc email mà user là participant hợp lệ. Nếu email có liên kết với visit request/delegation thì backend phải kiểm tra thêm user có quyền trên visit request/delegation đó.
+> Quyền `O` nghĩa là user chỉ được thao tác trên email/draft/outbox/conversation của chính mình hoặc email mà user là participant hợp lệ. UC-48 View Email cũng dùng `O` để tránh hiểu nhầm rằng user có thể đọc toàn bộ email hệ thống. Nếu email có liên kết với visit request/delegation thì backend phải kiểm tra thêm user có quyền trên visit request/delegation đó.
 
 | UC ID | Action | HO | Admin | Staff Leader | Staff | Department Lead | Department | Student | VISITOR |
 |---|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
@@ -192,7 +202,7 @@ UC-12 Logout có thể kiểm tra user đã authenticated/session hợp lệ, nh
 | UC-45 | Create Email Template | F | — | — | — | — | — | — | — |
 | UC-46 | Edit Email Content | O | — | O | O | O | O | O | O |
 | UC-47 | Send Email | O | — | O | O | O | O | O | O |
-| UC-48 | View Email | R | — | R | R | R | R | R | R |
+| UC-48 | View Email | O | — | O | O | O | O | O | O |
 | UC-49 | Reply to Email | O | — | O | O | O | O | O | O |
 
 ### 5.6. Partner Management

@@ -29,6 +29,8 @@ import {
 import { HODashboardView } from './HODashboardView';
 import { SharedDashboardView } from './SharedDashboardView';
 import { AdminDashboardView } from './AdminDashboardView';
+import { useAuth } from '../../../shared/hooks/useAuth';
+import { PERMISSIONS } from '../../../shared/constants/permissions';
 
 interface EventItem {
   id: string;
@@ -67,6 +69,10 @@ export function DashboardHome() {
         campus: "Hà Nội",
         role: "GUEST",
       };
+
+  // Permission gate for the business statistics dashboard (UC-69). Sourced from
+  // AuthContext (real backend permissions), not from the legacy localStorage user.
+  const { hasPermission } = useAuth();
 
   const isStaffLeader = (user?.role?.toUpperCase() === 'STAFF' && user?.subRole === 'Leader') || user?.role?.toUpperCase() === 'STAFF_LEADER';
   const isDeptLeader = user?.role?.toUpperCase() === 'DEPT_LEADER' || user?.role?.toUpperCase() === 'DEPT LEADER' || (user?.role?.toUpperCase() === 'DEPT' && user?.subRole?.toUpperCase() !== 'STAFF');
@@ -325,7 +331,7 @@ export function DashboardHome() {
         </div>
       </div>
 
-      {user.role?.toUpperCase() === 'HO' ? (
+      {user.role?.toUpperCase() === 'HO' && hasPermission(PERMISSIONS.VIEW_DASHBOARD_STATISTICS) ? (
         <HODashboardView />
       ) : isAdmin ? (
         <AdminDashboardView />

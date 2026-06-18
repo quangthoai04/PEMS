@@ -35,6 +35,8 @@ import {
 import logo from "../../assets/images/2021-FPTU-Eng.png";
 import avatarImg from "../../assets/Avatar/AvatarDefault.png";
 import { motion, AnimatePresence } from "motion/react";
+import { useAuth } from "../../shared/hooks/useAuth";
+import { PERMISSIONS } from "../../shared/constants/permissions";
 
 interface SidebarProps {
   isMobileOpen?: boolean;
@@ -44,6 +46,7 @@ interface SidebarProps {
 export function Sidebar({ isMobileOpen = false, onCloseMobile }: SidebarProps) {
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const navigate = useNavigate();
+  const { logout, hasPermission, hasAnyPermission } = useAuth();
 
   // Get user from localStorage
   const userStr = localStorage.getItem("currentUser");
@@ -60,8 +63,10 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile }: SidebarProps) {
   const isDeptLeader = roleForSidebar === 'DEPT' && user?.subRole === 'Leader';
   const isRealAdmin = roleForSidebar === 'ADMIN';
 
-  const handleLogout = () => {
-    localStorage.removeItem("currentUser");
+  const handleLogout = async () => {
+    // Clear the real session (token + pems_user + legacy currentUser) via the
+    // auth context, otherwise the user stays authenticated after "logging out".
+    await logout();
     navigate("/");
     if (onCloseMobile) onCloseMobile();
   };
@@ -129,7 +134,13 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile }: SidebarProps) {
               <span>Quản lý tin tức</span>
             </NavLink>
           )}
-          {(roleForSidebar !== "ADMIN") && (
+          {(roleForSidebar !== "ADMIN") &&
+            hasAnyPermission([
+              PERMISSIONS.EDIT_EMAIL_CONTENT,
+              PERMISSIONS.SEND_EMAIL,
+              PERMISSIONS.VIEW_EMAIL,
+              PERMISSIONS.REPLY_TO_EMAIL,
+            ]) && (
             <NavLink to="/dashboard/email" className={navItemClass} onClick={handleLinkClick}>
               <Mail className="w-5 h-5 flex-shrink-0" />
               <span>Quản lý email</span>
@@ -149,7 +160,7 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile }: SidebarProps) {
               <span>Quản lý phòng ban</span>
             </NavLink>
           )}
-          {(roleForSidebar === "HO" || isStaffLeader) && (
+          {(roleForSidebar === "HO" || isStaffLeader) && hasPermission(PERMISSIONS.VIEW_ACCOUNT_LIST) && (
             <NavLink to="/dashboard/accounts" className={navItemClass} onClick={handleLinkClick}>
               <UserCog className="w-5 h-5 flex-shrink-0" />
               <span>Quản lý tài khoản</span>
@@ -161,7 +172,13 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile }: SidebarProps) {
               <span>Quản lý campus</span>
             </NavLink>
           )}
-          {(["HO", "STAFF", "DEPT", "STUDENT", "VISITOR"].includes(roleForSidebar)) && (
+          {(["HO", "STAFF", "DEPT", "STUDENT", "VISITOR"].includes(roleForSidebar)) &&
+            hasAnyPermission([
+              PERMISSIONS.SUBMIT_VISIT_REQUEST,
+              PERMISSIONS.VIEW_GUEST_DELEGATION_LIST,
+              PERMISSIONS.SEARCH_DELEGATIONS,
+              PERMISSIONS.PROCESS_VISIT_REQUEST,
+            ]) && (
             <NavLink to="/dashboard/visit" className={navItemClass} onClick={handleLinkClick}>
               <Briefcase className="w-5 h-5 flex-shrink-0" />
               <span>Quản lý tiếp khách</span>
@@ -205,14 +222,18 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile }: SidebarProps) {
           )}
           {roleForSidebar === "ADMIN" && (
             <>
-              <NavLink to="/dashboard/permissions" className={navItemClass} onClick={handleLinkClick}>
-                <Shield className="w-5 h-5 flex-shrink-0" />
-                <span>Quản lý Vai trò & Phân quyền</span>
-              </NavLink>
-              <NavLink to="/dashboard/apis" className={navItemClass} onClick={handleLinkClick}>
-                <Cpu className="w-5 h-5 flex-shrink-0" />
-                <span>Quản lý API</span>
-              </NavLink>
+              {hasPermission(PERMISSIONS.VIEW_ROLE_LIST) && (
+                <NavLink to="/dashboard/permissions" className={navItemClass} onClick={handleLinkClick}>
+                  <Shield className="w-5 h-5 flex-shrink-0" />
+                  <span>Quản lý Vai trò & Phân quyền</span>
+                </NavLink>
+              )}
+              {hasAnyPermission([PERMISSIONS.VIEW_API_CONFIGURATION, PERMISSIONS.VIEW_API_LOGS]) && (
+                <NavLink to="/dashboard/apis" className={navItemClass} onClick={handleLinkClick}>
+                  <Cpu className="w-5 h-5 flex-shrink-0" />
+                  <span>Quản lý API</span>
+                </NavLink>
+              )}
             </>
           )}
         </nav>
