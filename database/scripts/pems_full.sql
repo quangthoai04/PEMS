@@ -2456,7 +2456,7 @@ SET @v_short_name=UUID();
 
 SET @v_long_name=UUID();
 
-SET @pwd_hash = '$2a$12$A649uaaQNoePUlyK3hrupOXDX..MgWiR8w6.5ndc62xpPgl.ALQU6';
+SET @pwd_hash = '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi';
 
 INSERT INTO users (user_id, full_name, email, phone, nationality, password_hash, role_id, sub_role, primary_campus_id, department_id, gender, avatar_url, student_code, fe_id, status, email_verified_at, failed_login_count, locked_until, created_via, first_login_at, last_login_at, created_at, created_by, updated_at, updated_by)
 VALUES
@@ -4981,7 +4981,7 @@ USE pems_db;
 
 START TRANSACTION;
 
-SET @pwd_hash = '$2a$12$A649uaaQNoePUlyK3hrupOXDX..MgWiR8w6.5ndc62xpPgl.ALQU6';
+SET @pwd_hash = '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi';
 
 SET @role_admin   = (SELECT role_id FROM roles WHERE role_code = 'ADMIN'   AND deleted_at IS NULL LIMIT 1);
 SET @role_ho      = (SELECT role_id FROM roles WHERE role_code = 'HO'      AND deleted_at IS NULL LIMIT 1);
