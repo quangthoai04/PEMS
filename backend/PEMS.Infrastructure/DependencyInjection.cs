@@ -10,6 +10,7 @@ using PEMS.Infrastructure.Identity;
 using PEMS.Infrastructure.Logging;
 using PEMS.Infrastructure.Persistence;
 using PEMS.Infrastructure.Persistence.Repositories;
+using PEMS.Infrastructure.Services;
 
 namespace PEMS.Infrastructure;
 
@@ -40,6 +41,11 @@ public static class DependencyInjection
         services.AddScoped<IEmailService, EmailService>();
         services.AddHttpContextAccessor();
         services.AddHttpClient();
+
+        // Visit request flow services (UC-17)
+        services.AddScoped<IVisitRequestService, VisitRequestService>();
+        services.AddScoped<IUserProvisionService, UserProvisionService>();
+        services.AddScoped<IApprovalRoutingService, ApprovalRoutingService>();
 
         // External services (scaffolded)
         services.AddScoped<IFaceRecognitionService, FaceRecognitionService>();

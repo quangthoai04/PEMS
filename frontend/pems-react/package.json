@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@google/genai": "^1.29.0",
+    "@hookform/resolvers": "^5.4.0",
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.6.1",
     "@tailwindcss/vite": "^4.1.14",
@@ -21,19 +22,25 @@
     "axios": "^1.18.0",
     "cobe": "^2.0.1",
     "dotenv": "^17.2.3",
+    "i18n-iso-countries": "^7.14.0",
+    "libphonenumber-js": "^1.13.6",
     "lucide-react": "^0.469.0",
     "motion": "^12.23.24",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
     "react-globe.gl": "^2.37.1",
+    "react-hook-form": "^7.79.0",
     "react-quill": "^2.0.0",
     "react-quill-new": "^3.8.3",
     "react-router-dom": "^7.15.0",
+    "react-select": "^5.10.2",
     "recharts": "^3.8.1",
     "tailwindcss": "^4.1.14",
     "three": "^0.184.0",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",
-    "vite": "^6.2.3"
+    "vite": "^6.2.3",
+    "xlsx": "^0.18.5",
+    "zod": "^4.4.3"
   }
 }

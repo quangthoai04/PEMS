@@ -53,6 +53,7 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
 
     // ── Visit / Delegation ────────────────────────────────────────────────
     public DbSet<VisitRequest> VisitRequests { get; set; }
+    public DbSet<PendingVisitRequest> PendingVisitRequests { get; set; }
     public DbSet<VisitRequestCampus> VisitRequestCampuses { get; set; }
     public DbSet<VisitGuestMember> VisitGuestMembers { get; set; }
     public DbSet<VisitParticipant> VisitParticipants { get; set; }

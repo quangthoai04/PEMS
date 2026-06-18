@@ -550,6 +550,7 @@ CREATE TABLE visit_requests (
   registrant_job_title VARCHAR(150) NULL COMMENT 'Chức danh/phòng ban người đăng ký',
   registrant_phone VARCHAR(50) NULL COMMENT 'SĐT người đăng ký',
   registrant_email VARCHAR(150) NOT NULL COMMENT 'Email người đăng ký',
+  registrant_nationality VARCHAR(100) NULL COMMENT 'Quốc tịch người đăng ký',
 
   -- 2. Delegation information
   delegation_name VARCHAR(200) NOT NULL COMMENT 'Tên đoàn khách',
@@ -567,7 +568,7 @@ CREATE TABLE visit_requests (
   transportation_note TEXT NULL COMMENT 'Nhận diện phương tiện di chuyển tới FPTU',
   note_to_fptu TEXT NULL COMMENT 'Ghi chú cho FPTU',
 
-  status ENUM('PENDING_APPROVAL','REJECTED','APPROVED','CANCELLED') NOT NULL DEFAULT 'PENDING_APPROVAL',
+  status ENUM('PENDING_APPROVAL','PENDING_HO_APPROVAL','PENDING_STAFF_LEAD_APPROVAL','APPROVED','REJECTED','CANCELLED','IN_PROGRESS','COMPLETED') NOT NULL DEFAULT 'PENDING_STAFF_LEAD_APPROVAL',
   submitted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   email_verified_at DATETIME NULL,
 

@@ -37,6 +37,7 @@ public interface IApplicationDbContext
     DbSet<UploadedFile> Files { get; }
     DbSet<Document> Documents { get; }
     DbSet<VisitRequest> VisitRequests { get; }
+    DbSet<PendingVisitRequest> PendingVisitRequests { get; }
     DbSet<VisitRequestCampus> VisitRequestCampuses { get; }
     DbSet<VisitGuestMember> VisitGuestMembers { get; }
     DbSet<VisitParticipant> VisitParticipants { get; }

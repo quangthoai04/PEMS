@@ -16,55 +16,65 @@ public sealed class OtpService : IOtpService
     private readonly IApplicationDbContext _db;
     private readonly IDateTimeService _clock;
     private readonly int _codeMinutes;
+    private readonly int _visitRequestCodeMinutes;
     private readonly int _maxAttempts;
     private readonly int _maxResendPerHour;
 
     public OtpService(IApplicationDbContext db, IDateTimeService clock, IConfiguration configuration)
     {
-        _db = db;
-        _clock = clock;
-        _codeMinutes = int.TryParse(configuration["Otp:CodeMinutes"], out var m) ? m : 15;
-        _maxAttempts = int.TryParse(configuration["Otp:MaxAttempts"], out var a) ? a : 5;
-        _maxResendPerHour = int.TryParse(configuration["Otp:MaxResendPerHour"], out var r) ? r : 5;
+        _db                      = db;
+        _clock                   = clock;
+        _codeMinutes             = int.TryParse(configuration["Otp:CodeMinutes"], out var m) ? m : 15;
+        _visitRequestCodeMinutes = int.TryParse(configuration["Otp:VisitRequestCodeMinutes"], out var v) ? v : 5;
+        _maxAttempts             = int.TryParse(configuration["Otp:MaxAttempts"], out var a) ? a : 5;
+        _maxResendPerHour        = int.TryParse(configuration["Otp:MaxResendPerHour"], out var r) ? r : 5;
     }
 
-    public async Task<string> CreateAsync(
+    public Task<string> CreateAsync(
         User user, string purpose, string? ipAddress, string? userAgent, CancellationToken cancellationToken = default)
+        => CreateCoreAsync(user.UserId, user.Email, purpose, _codeMinutes, ipAddress, userAgent, cancellationToken);
+
+    public Task<string> CreateForEmailAsync(
+        string email, string purpose, string? ipAddress, string? userAgent, CancellationToken cancellationToken = default)
+        => CreateCoreAsync(null, email, purpose, _visitRequestCodeMinutes, ipAddress, userAgent, cancellationToken);
+
+    private async Task<string> CreateCoreAsync(
+        string? userId, string email, string purpose, int expiryMinutes,
+        string? ipAddress, string? userAgent, CancellationToken cancellationToken)
     {
-        var now = _clock.UtcNow;
-        var email = user.Email.Trim().ToLowerInvariant();
-        var windowStart = now.AddHours(-1);
+        var now             = _clock.UtcNow;
+        var normalizedEmail = email.Trim().ToLowerInvariant();
+        var windowStart     = now.AddHours(-1);
 
         var recentCount = await _db.OtpTokens.AsNoTracking()
-            .CountAsync(t => t.Email == email && t.Purpose == purpose && t.CreatedAt >= windowStart, cancellationToken);
+            .CountAsync(t => t.Email == normalizedEmail && t.Purpose == purpose && t.CreatedAt >= windowStart, cancellationToken);
 
         if (recentCount >= _maxResendPerHour)
-            throw new BusinessRuleException("Too many requests. Please try again later.");
+            throw new BusinessRuleException("Bạn đã yêu cầu quá nhiều lần. Vui lòng thử lại sau.");
 
-        // Invalidate any previous still-active codes for this email + purpose.
-        var active = await _db.OtpTokens
-            .Where(t => t.Email == email && t.Purpose == purpose && t.UsedAt == null && t.ExpiresAt > now)
-            .ToListAsync(cancellationToken);
-        foreach (var t in active)
-            t.UsedAt = now;
+        // Old tokens are NOT invalidated here. VerifyAsync always picks the LATEST
+        // non-used token (OrderByDescending CreatedAt), so old codes naturally stop
+        // working once a newer token exists. Removing the invalidation step avoids
+        // a race condition where concurrent resend requests mark each other's tokens
+        // as used before the user has a chance to verify.
 
         for (var attempt = 0; attempt < 3; attempt++)
         {
             var rawCode = SecureTokenGenerator.GenerateNumericCode(6);
-            var token = new OtpToken
+            var token   = new OtpToken
             {
-                OtpTokenId = Guid.NewGuid().ToString(),
-                UserId = user.UserId,
-                Email = email,
-                TokenType = OtpTokenTypes.OtpCode,
-                Purpose = purpose,
-                TokenHash = HashCode(email, purpose, rawCode),
-                ExpiresAt = now.AddMinutes(_codeMinutes),
+                OtpTokenId  = Guid.NewGuid().ToString(),
+                UserId      = userId,
+                Email       = normalizedEmail,
+                TokenType   = OtpTokenTypes.OtpCode,
+                Purpose     = purpose,
+                TokenHash   = HashCode(normalizedEmail, purpose, rawCode),
+                ExpiresAt   = now.AddMinutes(expiryMinutes),
                 MaxAttempts = _maxAttempts,
                 ResendCount = recentCount,
-                IpAddress = Truncate(ipAddress, 45),
-                UserAgent = Truncate(userAgent, 500),
-                CreatedAt = now
+                IpAddress   = Truncate(ipAddress, 45),
+                UserAgent   = Truncate(userAgent, 500),
+                CreatedAt   = now
             };
 
             _db.OtpTokens.Add(token);
@@ -75,18 +85,17 @@ public sealed class OtpService : IOtpService
             }
             catch (DbUpdateException)
             {
-                // Extremely rare token_hash collision — drop and regenerate.
                 _db.OtpTokens.Remove(token);
             }
         }
 
-        throw new BusinessRuleException("Unable to generate a code. Please try again.");
+        throw new BusinessRuleException("Không thể tạo mã xác thực. Vui lòng thử lại.");
     }
 
     public async Task<OtpVerificationResult> VerifyAsync(
         string email, string purpose, string rawCode, CancellationToken cancellationToken = default)
     {
-        var now = _clock.UtcNow;
+        var now             = _clock.UtcNow;
         var normalizedEmail = (email ?? string.Empty).Trim().ToLowerInvariant();
 
         var token = await _db.OtpTokens

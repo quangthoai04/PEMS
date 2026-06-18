@@ -1,14 +1,45 @@
-using System;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
+using Microsoft.EntityFrameworkCore;
+using PEMS.Application.Common.Interfaces;
 
 namespace PEMS.Application.Campuses.Queries.ViewCampusList;
 
 public sealed class ViewCampusListQueryHandler : IRequestHandler<ViewCampusListQuery, ViewCampusListDto>
 {
-    public Task<ViewCampusListDto> Handle(ViewCampusListQuery request, CancellationToken cancellationToken)
+    private readonly IApplicationDbContext _db;
+
+    public ViewCampusListQueryHandler(IApplicationDbContext db)
     {
-        throw new NotImplementedException("UC View Campus List has been scaffolded. Business rules must be implemented after UC specification is completed.");
+        _db = db;
+    }
+
+    public async Task<ViewCampusListDto> Handle(ViewCampusListQuery request, CancellationToken cancellationToken)
+    {
+        var campuses = await _db.Campuses
+            .AsNoTracking()
+            .Include(c => c.IcHeadUser)
+            .OrderBy(c => c.CampusCode)
+            .Select(c => new CampusItemDto
+            {
+                CampusId = c.CampusId,
+                CampusCode = c.CampusCode,
+                Name = c.Name,
+                City = c.City,
+                Address = c.Address,
+                Phone = c.Phone,
+                Email = c.Email,
+                IcHeadUserId = c.IcHeadUserId,
+                IcHeadUserName = c.IcHeadUser != null ? c.IcHeadUser.FullName : null,
+                Status = c.Status
+            })
+            .ToListAsync(cancellationToken);
+
+        return new ViewCampusListDto
+        {
+            Campuses = campuses
+        };
     }
 }

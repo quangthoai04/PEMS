@@ -36,6 +36,7 @@ builder.Services.AddSwaggerGen(options =>
     };
     options.AddSecurityDefinition("Bearer", jwtScheme);
     options.AddSecurityRequirement(new OpenApiSecurityRequirement { [jwtScheme] = Array.Empty<string>() });
+    options.CustomSchemaIds(type => type.FullName);
 });
 
 // ── AuthN / AuthZ ────────────────────────────────────────────────────────────
