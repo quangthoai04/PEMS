@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 
 using PEMS.Application.Authentication.Commands.ForgotPassword;
 using PEMS.Application.Authentication.Commands.LoginviaCredentials;
+using PEMS.Application.Authentication.Commands.LoginviaFeid;
 using PEMS.Application.Authentication.Commands.LoginviaSSO;
 using PEMS.Application.Authentication.Commands.Logout;
 using PEMS.Application.Authentication.Commands.RefreshToken;
@@ -32,6 +33,14 @@ public class AuthenticationController : ControllerBase
     [HttpPost("google")]
     [AllowAnonymous]
     public async Task<IActionResult> Google([FromBody] LoginviaSSOCommand command, CancellationToken cancellationToken)
+    {
+        ApplyRequestContext(c => { command.IpAddress = c.ip; command.UserAgent = c.ua; });
+        return Ok(await _mediator.Send(command, cancellationToken));
+    }
+
+    [HttpPost("feid")]
+    [AllowAnonymous]
+    public async Task<IActionResult> Feid([FromBody] LoginviaFeidCommand command, CancellationToken cancellationToken)
     {
         ApplyRequestContext(c => { command.IpAddress = c.ip; command.UserAgent = c.ua; });
         return Ok(await _mediator.Send(command, cancellationToken));

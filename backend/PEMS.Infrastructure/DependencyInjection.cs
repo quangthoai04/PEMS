@@ -35,6 +35,7 @@ public static class DependencyInjection
         services.AddScoped<IOtpService, OtpService>();
         services.AddScoped<ISecurityAuditService, SecurityAuditService>();
         services.AddScoped<IGoogleTokenValidator, GoogleTokenValidator>();
+        services.AddScoped<IFeidIdentityVerifier, FeidIdentityVerifier>();
 
         // Cross-cutting
         services.AddSingleton<IDateTimeService, DateTimeService>();

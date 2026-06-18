@@ -1,11 +1,16 @@
+using System.Diagnostics;
 using System.Text.Json;
 using PEMS.Application.Common.Exceptions;
 
 namespace PEMS.Api.Middleware;
 
 /// <summary>
-/// Converts known application exceptions into safe HTTP responses. Never leaks
-/// stack traces or internal reasons to the client.
+/// Converts known application exceptions into safe HTTP responses.
+///
+/// Production responses NEVER leak exception details, stack traces, connection
+/// strings or SQL — only <c>success</c>, <c>errorCode</c>, <c>message</c> and a
+/// <c>traceId</c> for support. Development additionally surfaces <c>error</c> /
+/// <c>stackTrace</c> on the 500 path to aid debugging.
 /// </summary>
 public sealed class ExceptionHandlingMiddleware
 {
@@ -13,11 +18,16 @@ public sealed class ExceptionHandlingMiddleware
 
     private readonly RequestDelegate _next;
     private readonly ILogger<ExceptionHandlingMiddleware> _logger;
+    private readonly IHostEnvironment _environment;
 
-    public ExceptionHandlingMiddleware(RequestDelegate next, ILogger<ExceptionHandlingMiddleware> logger)
+    public ExceptionHandlingMiddleware(
+        RequestDelegate next,
+        ILogger<ExceptionHandlingMiddleware> logger,
+        IHostEnvironment environment)
     {
         _next = next;
         _logger = logger;
+        _environment = environment;
     }
 
     public async Task InvokeAsync(HttpContext context)
@@ -34,6 +44,8 @@ public sealed class ExceptionHandlingMiddleware
 
     private async Task HandleAsync(HttpContext context, Exception ex)
     {
+        var traceId = Activity.Current?.Id ?? context.TraceIdentifier;
+
         int status;
         object payload;
 
@@ -41,50 +53,65 @@ public sealed class ExceptionHandlingMiddleware
         {
             case ValidationException validation:
                 status = StatusCodes.Status400BadRequest;
-                payload = new { message = validation.Message, errors = validation.Errors };
+                payload = new { success = false, message = validation.Message, errors = validation.Errors, traceId };
                 _logger.LogInformation("Validation failed: {Message}", validation.Message);
                 break;
 
             case AuthBusinessException authBiz:
                 status = authBiz.StatusCode;
-                payload = new { success = false, errorCode = authBiz.ErrorCode, message = authBiz.Message };
+                payload = new { success = false, errorCode = authBiz.ErrorCode, message = authBiz.Message, traceId };
                 _logger.LogInformation("Auth business failure ({Code}).", authBiz.ErrorCode);
                 break;
 
             case AuthenticationFailedException auth:
                 status = StatusCodes.Status401Unauthorized;
-                payload = new { message = auth.Message };
+                payload = new { success = false, message = auth.Message, traceId };
                 _logger.LogInformation("Authentication failed ({Reason}).", auth.InternalReason ?? "n/a");
                 break;
 
             case ForbiddenException forbidden:
                 status = StatusCodes.Status403Forbidden;
-                payload = new { message = forbidden.Message };
+                payload = new { success = false, message = forbidden.Message, traceId };
                 break;
 
             case NotFoundException notFound:
                 status = StatusCodes.Status404NotFound;
-                payload = new { message = notFound.Message };
+                payload = new { success = false, message = notFound.Message, traceId };
                 break;
 
             case ConflictException conflict:
                 status = StatusCodes.Status409Conflict;
-                payload = new { message = conflict.Message };
+                payload = new { success = false, message = conflict.Message, traceId };
                 break;
 
             case BusinessRuleException business:
                 status = StatusCodes.Status422UnprocessableEntity;
-                payload = new { message = business.Message };
+                payload = new { success = false, message = business.Message, traceId };
                 break;
 
             default:
                 status = StatusCodes.Status500InternalServerError;
-                payload = new { 
-                    message = "An unexpected error occurred. Please try again later.",
-                    error = ex.Message,
-                    stackTrace = ex.StackTrace 
-                };
-                _logger.LogError(ex, "Unhandled exception processing {Path}.", context.Request.Path);
+                _logger.LogError(ex, "Unhandled exception processing {Path} (traceId {TraceId}).", context.Request.Path, traceId);
+
+                // Generic, safe message for everyone. Only Development adds raw details.
+                const string genericMessage = "An unexpected error occurred. Please try again later.";
+                payload = _environment.IsDevelopment()
+                    ? new
+                    {
+                        success = false,
+                        errorCode = "INTERNAL_ERROR",
+                        message = genericMessage,
+                        traceId,
+                        error = ex.Message,
+                        stackTrace = ex.StackTrace
+                    }
+                    : new
+                    {
+                        success = false,
+                        errorCode = "INTERNAL_ERROR",
+                        message = genericMessage,
+                        traceId
+                    };
                 break;
         }
 

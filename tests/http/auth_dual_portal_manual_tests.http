@@ -1,0 +1,329 @@
+###############################################################################
+# PEMS — Auth Dual Portal Manual Test Suite
+#
+# Open in VS Code with the "REST Client" extension (humao.rest-client) and click
+# "Send Request" above each request. Requests are grouped; some are chained
+# (a later request reuses a token captured from an earlier one), so run a section
+# top-to-bottom.
+#
+# Covers the manual test matrix from
+#   docs/authentication/PEMS_CORE_AUTH_BACKEND_DUAL_PORTAL_IMPLEMENTATION_PROMPT.md (§20)
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# PREREQUISITES
+# 1. Backend running (Development). Default http profile: http://localhost:5265
+#    (HTTPS: https://localhost:7190 — if you use it, set "rest-client.verifySSL": false).
+# 2. Database seeded from database/scripts/pems_full.sql, which creates the DEV
+#    accounts below (all share local password: Admin@123).
+# 3. Campus ids are DB-generated GUIDs (CHAR(36)). Look them up once and paste
+#    into @campusHnId / @campusOtherId below:
+#       SELECT campus_id, campus_code FROM campuses;
+#    The internal dev accounts live at campus HN.
+# 4. Google SSO cases (Section B) need a REAL Google ID token (the backend
+#    verifies signature/audience). Paste it into @googleIdToken. Without it those
+#    requests return EXTERNAL_AUTH_FAILED — that is itself the "no fake success"
+#    guarantee. The portal/campus policy that SSO shares is fully exercised by the
+#    credential cases in Section A.
+###############################################################################
+
+@host = http://localhost:5265
+@base = {{host}}/api/auth
+
+# Dev accounts (password Admin@123)
+@internalEmail = staff.hn@fpt.edu.vn
+@visitorEmail  = visitor@example.com
+@password      = Admin@123
+
+# Campus ids — FILL THESE IN from: SELECT campus_id, campus_code FROM campuses;
+@campusHnId    = PASTE_HN_CAMPUS_GUID_HERE
+@campusOtherId = PASTE_A_DIFFERENT_CAMPUS_GUID_HERE
+
+# Google SSO — paste a real Google ID token to exercise Section B
+@googleIdToken = PASTE_REAL_GOOGLE_ID_TOKEN_HERE
+
+
+###############################################################################
+# SECTION A — CREDENTIALS (fully scriptable; shares the dual-portal policy)
+###############################################################################
+
+### A1. Credentials dev login SUCCESS (internal, correct campus)
+# Expect: 200 OK. Body has accessToken, refreshToken, user{roleCode:STAFF, campusId}, permissions[].
+# @name internalLogin
+POST {{base}}/login
+Content-Type: application/json
+
+{
+  "email": "{{internalEmail}}",
+  "password": "{{password}}",
+  "loginPortal": "INTERNAL",
+  "selectedCampusId": "{{campusHnId}}"
+}
+
+### A2. Credentials dev login SUCCESS (visitor portal)
+# Expect: 200 OK. user.roleCode == VISITOR, campusId null.
+POST {{base}}/login
+Content-Type: application/json
+
+{
+  "email": "{{visitorEmail}}",
+  "password": "{{password}}",
+  "loginPortal": "VISITOR",
+  "selectedCampusId": null
+}
+
+### A3. Visitor account on INTERNAL portal -> WRONG_PORTAL_VISITOR_ACCOUNT
+# Expect: 403, errorCode WRONG_PORTAL_VISITOR_ACCOUNT.
+POST {{base}}/login
+Content-Type: application/json
+
+{
+  "email": "{{visitorEmail}}",
+  "password": "{{password}}",
+  "loginPortal": "INTERNAL",
+  "selectedCampusId": "{{campusHnId}}"
+}
+
+### A4. Internal account on VISITOR portal -> WRONG_PORTAL_INTERNAL_ACCOUNT
+# Expect: 403, errorCode WRONG_PORTAL_INTERNAL_ACCOUNT.
+POST {{base}}/login
+Content-Type: application/json
+
+{
+  "email": "{{internalEmail}}",
+  "password": "{{password}}",
+  "loginPortal": "VISITOR",
+  "selectedCampusId": null
+}
+
+### A5. Internal portal MISSING campus -> CAMPUS_REQUIRED
+# Expect: 400, errorCode CAMPUS_REQUIRED.
+POST {{base}}/login
+Content-Type: application/json
+
+{
+  "email": "{{internalEmail}}",
+  "password": "{{password}}",
+  "loginPortal": "INTERNAL",
+  "selectedCampusId": null
+}
+
+### A6. Internal portal WRONG campus -> CAMPUS_MISMATCH
+# Expect: 403, errorCode CAMPUS_MISMATCH. (campusOtherId must differ from the user's HN campus)
+POST {{base}}/login
+Content-Type: application/json
+
+{
+  "email": "{{internalEmail}}",
+  "password": "{{password}}",
+  "loginPortal": "INTERNAL",
+  "selectedCampusId": "{{campusOtherId}}"
+}
+
+### A7. Wrong password -> INVALID_CREDENTIALS
+# Expect: 401, errorCode INVALID_CREDENTIALS. (Repeat 5x to observe ACCOUNT_LOCKED lockout.)
+POST {{base}}/login
+Content-Type: application/json
+
+{
+  "email": "{{internalEmail}}",
+  "password": "wrong-password",
+  "loginPortal": "INTERNAL",
+  "selectedCampusId": "{{campusHnId}}"
+}
+
+### A8. Credentials login disabled in production -> PASSWORD_LOGIN_DISABLED
+# Expect: 403, errorCode PASSWORD_LOGIN_DISABLED.
+# PREREQUISITE: set AuthOptions:LoginMode = "ProductionSsoOnly" (or AllowPasswordLogin=false)
+# in appsettings and restart the API, then send. Revert afterwards.
+POST {{base}}/login
+Content-Type: application/json
+
+{
+  "email": "{{internalEmail}}",
+  "password": "{{password}}",
+  "loginPortal": "INTERNAL",
+  "selectedCampusId": "{{campusHnId}}"
+}
+
+
+###############################################################################
+# SECTION B — GOOGLE SSO  (requires a real @googleIdToken)
+###############################################################################
+
+### B1. Visitor SSO, NEW email -> auto-create VISITOR
+# Use a Google token whose email is NOT yet in the DB.
+# Expect: 200 OK, user.roleCode VISITOR, campusId null. A users row is created
+#         with created_via = SSO_AUTO_PROVISION (verify in DB).
+POST {{base}}/google
+Content-Type: application/json
+
+{
+  "idToken": "{{googleIdToken}}",
+  "loginPortal": "VISITOR",
+  "selectedCampusId": null
+}
+
+### B2. Visitor SSO, EXISTING visitor -> login success (no duplicate)
+# Re-send B1 (same token) or use a token for an existing VISITOR email.
+# Expect: 200 OK, same user, no new row created; provider link reused.
+POST {{base}}/google
+Content-Type: application/json
+
+{
+  "idToken": "{{googleIdToken}}",
+  "loginPortal": "VISITOR",
+  "selectedCampusId": null
+}
+
+### B3. Internal SSO, email NOT in system -> INTERNAL_ACCOUNT_NOT_FOUND
+# Use a Google token whose email is NOT a provisioned internal account.
+# Expect: 403, errorCode INTERNAL_ACCOUNT_NOT_FOUND (NO auto-create).
+POST {{base}}/google
+Content-Type: application/json
+
+{
+  "idToken": "{{googleIdToken}}",
+  "loginPortal": "INTERNAL",
+  "selectedCampusId": "{{campusHnId}}"
+}
+
+### B4. Internal SSO, email is a VISITOR -> WRONG_PORTAL_VISITOR_ACCOUNT
+# Use a Google token for visitor@example.com (or any VISITOR email).
+# Expect: 403, errorCode WRONG_PORTAL_VISITOR_ACCOUNT.
+POST {{base}}/google
+Content-Type: application/json
+
+{
+  "idToken": "{{googleIdToken}}",
+  "loginPortal": "INTERNAL",
+  "selectedCampusId": "{{campusHnId}}"
+}
+
+### B5. Internal SSO, internal email + CORRECT campus -> success
+# Use a Google token whose email matches a seeded internal account at HN.
+# Expect: 200 OK.
+POST {{base}}/google
+Content-Type: application/json
+
+{
+  "idToken": "{{googleIdToken}}",
+  "loginPortal": "INTERNAL",
+  "selectedCampusId": "{{campusHnId}}"
+}
+
+### B6. Internal SSO, internal email + WRONG campus -> CAMPUS_MISMATCH
+# Expect: 403, errorCode CAMPUS_MISMATCH.
+POST {{base}}/google
+Content-Type: application/json
+
+{
+  "idToken": "{{googleIdToken}}",
+  "loginPortal": "INTERNAL",
+  "selectedCampusId": "{{campusOtherId}}"
+}
+
+### B7. Google SSO disabled -> SSO_DISABLED
+# PREREQUISITE: set AuthOptions:AllowGoogleSso=false and restart. Expect 403 SSO_DISABLED.
+POST {{base}}/google
+Content-Type: application/json
+
+{
+  "idToken": "{{googleIdToken}}",
+  "loginPortal": "VISITOR",
+  "selectedCampusId": null
+}
+
+
+###############################################################################
+# SECTION C — FEID  (controlled adapter; must NOT fake success)
+###############################################################################
+
+### C1. FEID with AllowFeid=true but no provider configured -> FEID_NOT_CONFIGURED
+# Default appsettings: AllowFeid=false (see C2). To test this case set
+# AuthOptions:AllowFeid=true and leave the "Feid" section empty, then restart.
+# Expect: 403, errorCode FEID_NOT_CONFIGURED. NO token returned, no user created.
+POST {{base}}/feid
+Content-Type: application/json
+
+{
+  "idTokenOrCode": "any-placeholder-code",
+  "loginPortal": "VISITOR",
+  "selectedCampusId": null
+}
+
+### C2. FEID disabled (default config AllowFeid=false) -> FEID_DISABLED
+# Expect: 403, errorCode FEID_DISABLED.
+POST {{base}}/feid
+Content-Type: application/json
+
+{
+  "idTokenOrCode": "any-placeholder-code",
+  "loginPortal": "VISITOR",
+  "selectedCampusId": null
+}
+
+
+###############################################################################
+# SECTION D — SESSION LIFECYCLE: /auth/me, permissions, logout revocation
+# Run top-to-bottom: D0 logs in and captures the token used by D1-D4.
+###############################################################################
+
+### D0. Login to obtain a fresh session token
+# @name sessionLogin
+POST {{base}}/login
+Content-Type: application/json
+
+{
+  "email": "{{internalEmail}}",
+  "password": "{{password}}",
+  "loginPortal": "INTERNAL",
+  "selectedCampusId": "{{campusHnId}}"
+}
+
+### D1. GET /auth/me with a VALID token -> 200 user + role + campus + permissions
+# Expect: 200 OK. user{userId,email,roleCode,roleName,campusId,campusCode,...} + permissions[].
+GET {{base}}/me
+Authorization: Bearer {{sessionLogin.response.body.$.accessToken}}
+
+### D2. GET /auth/permissions with the valid token -> 200 roleCode + permissions[]
+GET {{base}}/permissions
+Authorization: Bearer {{sessionLogin.response.body.$.accessToken}}
+
+### D3. Logout (revokes the current session)
+# Expect: 200 OK, { success:true, message:"Logged out successfully." }.
+POST {{base}}/logout
+Authorization: Bearer {{sessionLogin.response.body.$.accessToken}}
+Content-Type: application/json
+
+{}
+
+### D4. GET /auth/me again with the SAME (now revoked) token -> 401
+# Expect: 401 Unauthorized (session revoked) — proves logout takes effect immediately.
+GET {{base}}/me
+Authorization: Bearer {{sessionLogin.response.body.$.accessToken}}
+
+### D5. GET /auth/me with NO token -> 401
+GET {{base}}/me
+
+
+###############################################################################
+# SECTION E — FORGOT PASSWORD (UC-13)
+###############################################################################
+
+### E1. Forgot password for a LOCAL_PASSWORD dev account -> generic success
+# Expect: 200 OK, generic message (does not reveal whether the email exists).
+# In dev an OTP/reset code is generated & emailed (see Smtp config / logs).
+POST {{base}}/forgot-password
+Content-Type: application/json
+
+{
+  "email": "{{internalEmail}}"
+}
+
+### E2. Forgot password for an UNKNOWN email -> same generic success (anti-enumeration)
+POST {{base}}/forgot-password
+Content-Type: application/json
+
+{
+  "email": "definitely-not-a-user@nowhere.example"
+}

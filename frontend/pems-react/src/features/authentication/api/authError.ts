@@ -26,6 +26,10 @@ export const AUTH_ERROR_MESSAGES: Record<string, string> = {
   ACCOUNT_LOCKED: 'Tài khoản của bạn đang bị khóa. Vui lòng thử lại sau hoặc liên hệ quản trị viên.',
   SSO_DISABLED: 'Đăng nhập bằng Google hiện đang bị tắt.',
   FEID_DISABLED: 'Đăng nhập bằng FEID hiện đang bị tắt.',
+  FEID_NOT_CONFIGURED:
+    'Đăng nhập bằng FEID hiện chưa khả dụng. Vui lòng dùng phương thức khác hoặc liên hệ quản trị viên.',
+  FEID_NOT_ELIGIBLE:
+    'Tài khoản FEID của bạn chưa đủ điều kiện đăng nhập. Vui lòng liên hệ quản trị viên.',
   EXTERNAL_AUTH_FAILED: 'Không thể đăng nhập bằng tài khoản này. Vui lòng thử lại.',
   VISITOR_PROVISION_DISABLED: 'Hệ thống chưa cho phép tạo tài khoản Visitor tự động.',
 };
