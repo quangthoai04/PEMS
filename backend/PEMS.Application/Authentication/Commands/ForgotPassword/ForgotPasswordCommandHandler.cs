@@ -47,10 +47,10 @@ public sealed class ForgotPasswordCommandHandler : IRequestHandler<ForgotPasswor
                 && (!string.IsNullOrEmpty(user.PasswordHash)
                     || user.AuthProviders.Any(p => p.ProviderType == ProviderTypes.LocalPassword && p.IsEnabled));
 
-            if (user is not null && hasLocalPassword && user.Status != UserStatuses.Rejected)
+            if (user is not null && hasLocalPassword && user.Status == UserStatuses.Active)
             {
                 var code = await _otpService.CreateAsync(
-                    user, OtpPurposes.ForgotPassword, request.IpAddress, request.UserAgent, cancellationToken);
+                    user, OtpPurposes.ChangeSensitiveAction, request.IpAddress, request.UserAgent, cancellationToken);
 
                 await _emailService.SendPasswordResetAsync(user.Email, user.FullName, code, cancellationToken);
 

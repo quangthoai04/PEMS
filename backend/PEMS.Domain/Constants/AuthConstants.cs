@@ -24,11 +24,8 @@ public static class SubRoles
 
 public static class UserStatuses
 {
-    public const string PendingEmailVerification = "PENDING_EMAIL_VERIFICATION";
-    public const string PendingApproval = "PENDING_APPROVAL";
     public const string Active = "ACTIVE";
     public const string Inactive = "INACTIVE";
-    public const string Rejected = "REJECTED";
     public const string Locked = "LOCKED";
 }
 
@@ -88,10 +85,7 @@ public static class LoginLogStatuses
 
 public static class OtpPurposes
 {
-    public const string VerifyEmail = "VERIFY_EMAIL";
-    public const string SetPassword = "SET_PASSWORD";
-    public const string Login = "LOGIN";
-    public const string ForgotPassword = "FORGOT_PASSWORD";
+    public const string VisitRequestVerify = "VISIT_REQUEST_VERIFY";
     public const string ChangeSensitiveAction = "CHANGE_SENSITIVE_ACTION";
 }
 
@@ -133,7 +127,6 @@ public static class SessionRevokeReasons
 
 public static class CreatedViaValues
 {
-    public const string AdminCreated = "ADMIN_CREATED";
+    public const string ManualCreated = "MANUAL_CREATED";
     public const string VisitorForm = "VISITOR_FORM";
-    public const string SsoProvisioned = "SSO_PROVISIONED";
 }

@@ -59,4 +59,5 @@ public class News
     public string? DeletedBy { get; set; }
 
     public virtual ICollection<NewsTranslation> Translations { get; set; } = new List<NewsTranslation>();
+    public virtual ICollection<NewsContentSection> Sections { get; set; } = new List<NewsContentSection>();
 }

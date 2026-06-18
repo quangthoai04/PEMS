@@ -41,7 +41,7 @@ public sealed class ResetPasswordCommandHandler : IRequestHandler<ResetPasswordC
         var email = request.Email.Trim().ToLowerInvariant();
 
         var verification = await _otpService.VerifyAsync(
-            email, OtpPurposes.ForgotPassword, request.OtpOrToken, cancellationToken);
+            email, OtpPurposes.ChangeSensitiveAction, request.OtpOrToken, cancellationToken);
 
         if (!verification.Success || verification.Token is null)
             throw new BusinessRuleException(InvalidCodeMessage);
@@ -62,8 +62,7 @@ public sealed class ResetPasswordCommandHandler : IRequestHandler<ResetPasswordC
 
         var now = _clock.UtcNow;
         user.PasswordHash = _passwordHasher.Hash(request.NewPassword);
-        user.MustChangePassword = false;
-        user.MustSetPassword = false;
+        // Schema v4.5 removed these fields
         user.UpdatedAt = now;
 
         // Ensure a usable local-password provider exists.

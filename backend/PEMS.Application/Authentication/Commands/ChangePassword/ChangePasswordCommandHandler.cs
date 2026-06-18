@@ -61,8 +61,8 @@ public sealed class ChangePasswordCommandHandler : IRequestHandler<ChangePasswor
 
         var now = _clock.UtcNow;
         user.PasswordHash = _passwordHasher.Hash(request.NewPassword);
-        user.MustChangePassword = false;
-        user.MustSetPassword = false;
+        // Schema v4.5 removed these fields.
+        // If there is any password policy flag required later, it can be added.
         user.UpdatedAt = now;
 
         var localProvider = user.AuthProviders.FirstOrDefault(p => p.ProviderType == ProviderTypes.LocalPassword);

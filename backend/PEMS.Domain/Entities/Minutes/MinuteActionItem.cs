@@ -3,33 +3,33 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace PEMS.Domain.Entities.Minutes;
 
-[Table("minutes")]
-public class Minute
+[Table("minute_action_items")]
+public class MinuteActionItem
 {
     [Key]
+    [Column("action_item_id")]
+    public string ActionItemId { get; set; } = null!;
+
     [Column("minutes_id")]
     public string MinutesId { get; set; } = null!;
-
-    [Column("visit_instance_id")]
-    public string VisitInstanceId { get; set; } = null!;
 
     [Column("title")]
     public string Title { get; set; } = null!;
 
-    [Column("content")]
-    public string? Content { get; set; }
+    [Column("note")]
+    public string? Note { get; set; }
 
-    [Column("participants_json")]
-    public string? ParticipantsJson { get; set; }
+    [Column("due_date")]
+    public DateTime? DueDate { get; set; }
 
     [Column("status")]
-    public string Status { get; set; } = "DRAFT";
+    public string Status { get; set; } = "PENDING";
 
-    [Column("finalized_by")]
-    public string? FinalizedBy { get; set; }
+    [Column("completed_at")]
+    public DateTime? CompletedAt { get; set; }
 
-    [Column("finalized_at")]
-    public DateTime? FinalizedAt { get; set; }
+    [Column("display_order")]
+    public int DisplayOrder { get; set; } = 0;
 
     [Column("created_at")]
     public DateTime CreatedAt { get; set; }
@@ -43,5 +43,5 @@ public class Minute
     [Column("updated_by")]
     public string? UpdatedBy { get; set; }
 
-    public virtual ICollection<MinuteActionItem> ActionItems { get; set; } = new List<MinuteActionItem>();
+    public virtual Minute Minute { get; set; } = null!;
 }

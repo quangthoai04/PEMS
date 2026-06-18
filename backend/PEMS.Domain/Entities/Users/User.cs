@@ -49,16 +49,13 @@ public class User
     public string? FeId { get; set; }
 
     [Column("status")]
-    public string Status { get; set; } = "PENDING_APPROVAL";
+    public string Status { get; set; } = "ACTIVE";
 
     [Column("email_verified_at")]
     public DateTime? EmailVerifiedAt { get; set; }
 
-    [Column("must_set_password")]
-    public bool MustSetPassword { get; set; }
-
-    [Column("must_change_password")]
-    public bool MustChangePassword { get; set; }
+    [Column("nationality")]
+    public string? Nationality { get; set; }
 
     [Column("failed_login_count")]
     public int FailedLoginCount { get; set; }
@@ -67,7 +64,7 @@ public class User
     public DateTime? LockedUntil { get; set; }
 
     [Column("created_via")]
-    public string CreatedVia { get; set; } = "ADMIN_CREATED";
+    public string CreatedVia { get; set; } = "MANUAL_CREATED";
 
     [Column("first_login_at")]
     public DateTime? FirstLoginAt { get; set; }

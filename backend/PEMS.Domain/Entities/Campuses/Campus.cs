@@ -33,9 +33,6 @@ public class Campus
     [Column("ic_head_user_id")]
     public string? IcHeadUserId { get; set; }
 
-    [Column("capacity")]
-    public int? Capacity { get; set; }
-
     [Column("status")]
     public string Status { get; set; } = "ACTIVE";
 

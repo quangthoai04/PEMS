@@ -1,5 +1,7 @@
 namespace PEMS.Shared;
 
-public class FaqVisibilityStatus
+public static class FaqVisibilityStatus
 {
+    public const string Published = "PUBLISHED";
+    public const string Hidden = "HIDDEN";
 }

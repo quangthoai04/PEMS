@@ -22,7 +22,4 @@ public sealed class AuthUserDto
 
     public string? DepartmentId { get; init; }
     public string? DepartmentName { get; init; }
-
-    public bool MustChangePassword { get; init; }
-    public bool MustSetPassword { get; init; }
 }

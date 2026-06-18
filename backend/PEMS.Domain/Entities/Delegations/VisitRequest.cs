@@ -72,7 +72,7 @@ public class VisitRequest
     public string? NoteToFptu { get; set; }
 
     [Column("status")]
-    public string Status { get; set; } = "PENDING_EMAIL_VERIFICATION";
+    public string Status { get; set; } = "PENDING_APPROVAL";
 
     [Column("submitted_at")]
     public DateTime SubmittedAt { get; set; }

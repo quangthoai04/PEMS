@@ -62,15 +62,18 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
 
     // ── Minutes + Feedback ────────────────────────────────────────────────
     public DbSet<Minute> Minutes { get; set; }
+    public DbSet<MinuteActionItem> MinuteActionItems { get; set; }
     public DbSet<Feedback> Feedbacks { get; set; }
 
     // ── News ──────────────────────────────────────────────────────────────
-    public DbSet<News> News { get; set; }
+    public DbSet<PEMS.Domain.Entities.News.News> News { get; set; }
     public DbSet<NewsTranslation> NewsTranslations { get; set; }
+    public DbSet<NewsContentSection> NewsContentSections { get; set; }
+    public DbSet<NewsSectionFile> NewsSectionFiles { get; set; }
 
     // ── FAQs + Public Content ─────────────────────────────────────────────
     public DbSet<Faq> Faqs { get; set; }
-    public DbSet<PublicContent> PublicContents { get; set; }
+    public DbSet<PEMS.Domain.Entities.PublicContents.PublicContent> PublicContents { get; set; }
 
     // ── Gallery ───────────────────────────────────────────────────────────
     public DbSet<Gallery> Galleries { get; set; }
@@ -310,8 +313,6 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
             b.Property(e => e.MinutesId).HasMaxLength(36).IsFixedLength();
             b.Property(e => e.VisitInstanceId).HasMaxLength(36).IsFixedLength();
             b.Property(e => e.FinalizedBy).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.EditingBy).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.EditLockToken).HasMaxLength(36).IsFixedLength();
             b.Property(e => e.CreatedBy).HasMaxLength(36).IsFixedLength();
             b.Property(e => e.UpdatedBy).HasMaxLength(36).IsFixedLength();
         });
@@ -322,11 +323,10 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
             b.Property(e => e.VisitRequestId).HasMaxLength(36).IsFixedLength();
             b.Property(e => e.VisitInstanceId).HasMaxLength(36).IsFixedLength();
             b.Property(e => e.SubmittedByUserId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.GuestMemberId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.ReviewedBy).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.TargetUserId).HasMaxLength(36).IsFixedLength();
         });
 
-        modelBuilder.Entity<News>(b =>
+        modelBuilder.Entity<PEMS.Domain.Entities.News.News>(b =>
         {
             b.Property(e => e.NewsId).HasMaxLength(36).IsFixedLength();
             b.Property(e => e.CampusId).HasMaxLength(36).IsFixedLength();
@@ -351,7 +351,7 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
             b.Property(e => e.UpdatedBy).HasMaxLength(36).IsFixedLength();
         });
 
-        modelBuilder.Entity<PublicContent>(b =>
+        modelBuilder.Entity<PEMS.Domain.Entities.PublicContents.PublicContent>(b =>
         {
             b.Property(e => e.PublicContentId).HasMaxLength(36).IsFixedLength();
             b.Property(e => e.CampusId).HasMaxLength(36).IsFixedLength();
@@ -643,9 +643,6 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
         modelBuilder.Entity<Minute>()
             .HasOne<User>().WithMany()
             .HasForeignKey(m => m.FinalizedBy).OnDelete(DeleteBehavior.SetNull);
-        modelBuilder.Entity<Minute>()
-            .HasOne<User>().WithMany()
-            .HasForeignKey(m => m.EditingBy).OnDelete(DeleteBehavior.SetNull);
 
         // Feedback → VisitRequest, VisitRequestCampus, SubmittedBy, GuestMember, ReviewedBy
         modelBuilder.Entity<Feedback>()
@@ -658,23 +655,20 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
             .HasOne<User>().WithMany()
             .HasForeignKey(f => f.SubmittedByUserId).OnDelete(DeleteBehavior.SetNull);
         modelBuilder.Entity<Feedback>()
-            .HasOne<VisitGuestMember>().WithMany()
-            .HasForeignKey(f => f.GuestMemberId).OnDelete(DeleteBehavior.SetNull);
-        modelBuilder.Entity<Feedback>()
             .HasOne<User>().WithMany()
-            .HasForeignKey(f => f.ReviewedBy).OnDelete(DeleteBehavior.SetNull);
+            .HasForeignKey(f => f.TargetUserId).OnDelete(DeleteBehavior.SetNull);
 
         // News → Campus, AuthorUser, CoverFile, DecidedBy
-        modelBuilder.Entity<News>()
+        modelBuilder.Entity<PEMS.Domain.Entities.News.News>()
             .HasOne<Campus>().WithMany()
             .HasForeignKey(n => n.CampusId).OnDelete(DeleteBehavior.SetNull);
-        modelBuilder.Entity<News>()
+        modelBuilder.Entity<PEMS.Domain.Entities.News.News>()
             .HasOne<User>().WithMany()
             .HasForeignKey(n => n.AuthorUserId).OnDelete(DeleteBehavior.Restrict);
-        modelBuilder.Entity<News>()
+        modelBuilder.Entity<PEMS.Domain.Entities.News.News>()
             .HasOne<UploadedFile>().WithMany()
             .HasForeignKey(n => n.CoverFileId).OnDelete(DeleteBehavior.SetNull);
-        modelBuilder.Entity<News>()
+        modelBuilder.Entity<PEMS.Domain.Entities.News.News>()
             .HasOne<User>().WithMany()
             .HasForeignKey(n => n.DecidedBy).OnDelete(DeleteBehavior.SetNull);
 
@@ -684,7 +678,7 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
             .HasForeignKey(nt => nt.NewsId).OnDelete(DeleteBehavior.Cascade);
 
         // PublicContent → Campus
-        modelBuilder.Entity<PublicContent>()
+        modelBuilder.Entity<PEMS.Domain.Entities.PublicContents.PublicContent>()
             .HasOne<Campus>().WithMany()
             .HasForeignKey(pc => pc.CampusId).OnDelete(DeleteBehavior.SetNull);
 
@@ -771,5 +765,44 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
         modelBuilder.Entity<ApiRequestLog>()
             .HasOne<User>().WithMany()
             .HasForeignKey(rl => rl.RequestedBy).OnDelete(DeleteBehavior.SetNull);
+        // -- JSON columns --------------------------------------------------
+        modelBuilder.Entity<PEMS.Domain.Entities.PublicContents.PublicContent>().Property(x => x.TranslationsJson).HasColumnType("json");
+        modelBuilder.Entity<EmailTemplate>().Property(x => x.TranslationsJson).HasColumnType("json");
+        modelBuilder.Entity<SentEmail>().Property(x => x.RecipientsJson).HasColumnType("json");
+        modelBuilder.Entity<CalendarEvent>().Property(x => x.AttendeesJson).HasColumnType("json");
+        modelBuilder.Entity<CalendarEvent>().Property(x => x.RemindersJson).HasColumnType("json");
+        modelBuilder.Entity<ApiConfiguration>().Property(x => x.CredentialsJson).HasColumnType("json");
+        modelBuilder.Entity<ApiConfiguration>().Property(x => x.HeadersJson).HasColumnType("json");
+        modelBuilder.Entity<ApiConfiguration>().Property(x => x.BodyTemplateJson).HasColumnType("json");
+        modelBuilder.Entity<ApiConfiguration>().Property(x => x.SettingsJson).HasColumnType("json");
+        modelBuilder.Entity<AgendaTemplate>().Property(x => x.ItemsJson).HasColumnType("json");
+
+        // -- New entities relationships & CHAR(36) -------------------------
+        modelBuilder.Entity<MinuteActionItem>(b => {
+            b.Property(e => e.ActionItemId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.MinutesId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.CreatedBy).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.UpdatedBy).HasMaxLength(36).IsFixedLength();
+            b.HasOne(a => a.Minute).WithMany(m => m.ActionItems).HasForeignKey(a => a.MinutesId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<NewsContentSection>(b => {
+            b.Property(e => e.SectionId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.NewsId).HasMaxLength(36).IsFixedLength();
+            b.HasOne(s => s.News).WithMany(n => n.Sections).HasForeignKey(s => s.NewsId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<NewsSectionFile>(b => {
+            b.Property(e => e.SectionFileId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.SectionId).HasMaxLength(36).IsFixedLength();
+            b.Property(e => e.FileId).HasMaxLength(36).IsFixedLength();
+            b.HasOne(f => f.Section).WithMany(s => s.SectionFiles).HasForeignKey(f => f.SectionId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(f => f.File).WithMany().HasForeignKey(f => f.FileId).OnDelete(DeleteBehavior.Restrict);
+        });
+
     }
 }
+
+
+
+

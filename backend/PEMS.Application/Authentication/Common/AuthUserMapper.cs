@@ -24,8 +24,6 @@ public static class AuthUserMapper
         CampusCode = user.PrimaryCampus?.CampusCode,
         CampusName = user.PrimaryCampus?.Name,
         DepartmentId = user.DepartmentId,
-        DepartmentName = user.Department?.Name,
-        MustChangePassword = user.MustChangePassword,
-        MustSetPassword = user.MustSetPassword
+        DepartmentName = user.Department?.Name
     };
 }
