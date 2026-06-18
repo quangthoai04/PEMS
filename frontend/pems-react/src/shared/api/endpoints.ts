@@ -23,7 +23,11 @@ export const API_ENDPOINTS = {
   delegations: {
     list: '/delegations',
     detail: (id: string | number) => `/delegations/${id}`,
-    submitVisitRequest: '/visit-requests',
     processVisitRequest: (id: string | number) => `/visit-requests/${id}/process`,
+  },
+  visitRequests: {
+    initiate: '/visit-requests/initiate',
+    verify: '/visit-requests/verify',
+    resendOtp: '/visit-requests/resend-otp',
   },
 };

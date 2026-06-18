@@ -6,17 +6,29 @@ namespace PEMS.Application.Common.Interfaces;
 public sealed record OtpVerificationResult(bool Success, string? FailureReason, OtpToken? Token);
 
 /// <summary>
-/// Issues and verifies one-time codes (OTP) used for password reset, etc. Codes
-/// are stored hashed (SHA-256); the raw code is returned once for delivery.
+/// Issues and verifies one-time codes (OTP). Codes are stored hashed (SHA-256);
+/// the raw code is returned once for delivery.
 /// </summary>
 public interface IOtpService
 {
     /// <summary>
-    /// Creates a new OTP for the given user/purpose, enforcing a resend limit,
-    /// and returns the raw code. Persists immediately.
+    /// Creates an OTP tied to an existing <see cref="User"/> (e.g. password reset).
+    /// Enforces hourly resend limit and invalidates previous active codes.
     /// </summary>
     Task<string> CreateAsync(
         User user,
+        string purpose,
+        string? ipAddress,
+        string? userAgent,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Creates an OTP tied only to an email address — no User entity required.
+    /// Used for unauthenticated flows such as visit-request submission.
+    /// The OTP expires after the visit-request-specific code duration (5 min).
+    /// </summary>
+    Task<string> CreateForEmailAsync(
+        string email,
         string purpose,
         string? ipAddress,
         string? userAgent,
