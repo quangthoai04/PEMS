@@ -6,6 +6,7 @@ using PEMS.Application.Authentication.Common;
 using PEMS.Application.Authentication.Models;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Common.Security;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Users;
 
@@ -14,7 +15,6 @@ namespace PEMS.Application.Authentication.Commands.LoginviaCredentials;
 public sealed class LoginviaCredentialsCommandHandler : IRequestHandler<LoginviaCredentialsCommand, AuthResponse>
 {
     private const string GenericCredentialError = "Invalid email or password.";
-    private const string GenericBlockedError = "Unable to sign in. Please contact administrator.";
 
     private readonly IApplicationDbContext _db;
     private readonly IPasswordHasher _passwordHasher;
@@ -23,6 +23,7 @@ public sealed class LoginviaCredentialsCommandHandler : IRequestHandler<Loginvia
     private readonly IPermissionChecker _permissionChecker;
     private readonly ISecurityAuditService _audit;
     private readonly IDateTimeService _clock;
+    private readonly AuthOptions _options;
     private readonly int _maxFailedAttempts;
     private readonly int _lockoutMinutes;
 
@@ -34,6 +35,7 @@ public sealed class LoginviaCredentialsCommandHandler : IRequestHandler<Loginvia
         IPermissionChecker permissionChecker,
         ISecurityAuditService audit,
         IDateTimeService clock,
+        AuthOptions options,
         IConfiguration configuration)
     {
         _db = db;
@@ -43,6 +45,7 @@ public sealed class LoginviaCredentialsCommandHandler : IRequestHandler<Loginvia
         _permissionChecker = permissionChecker;
         _audit = audit;
         _clock = clock;
+        _options = options;
         _maxFailedAttempts = int.TryParse(configuration["Security:MaxFailedLoginAttempts"], out var a) ? a : 5;
         _lockoutMinutes = int.TryParse(configuration["Security:LockoutMinutes"], out var m) ? m : 15;
     }
@@ -52,6 +55,12 @@ public sealed class LoginviaCredentialsCommandHandler : IRequestHandler<Loginvia
         var email = request.Email.Trim().ToLowerInvariant();
         var portal = request.LoginPortal;
 
+        // 0. Password login is disabled entirely in ProductionSsoOnly mode (or by config).
+        if (!_options.PasswordLoginEnabled)
+            await FailAsync(null, email, portal, LoginLogStatuses.Blocked, "password_login_disabled",
+                request, AuthErrorCodes.PasswordLoginDisabled,
+                "Password sign-in is disabled. Please use SSO/FEID.", 403, cancellationToken);
+
         var user = await _db.Users
             .Include(u => u.Role)
             .Include(u => u.PrimaryCampus)
@@ -59,79 +68,84 @@ public sealed class LoginviaCredentialsCommandHandler : IRequestHandler<Loginvia
             .Include(u => u.AuthProviders)
             .FirstOrDefaultAsync(u => u.Email == email, cancellationToken);
 
+        // Unknown email — generic to avoid account enumeration.
         if (user is null)
-            await FailAsync(null, email, portal, ProviderTypes.LocalPassword, LoginLogStatuses.Failed,
-                "user_not_found", request, GenericCredentialError, cancellationToken);
+            await FailAsync(null, email, portal, LoginLogStatuses.Failed, "user_not_found",
+                request, AuthErrorCodes.InvalidCredentials, GenericCredentialError, 401, cancellationToken);
 
         var now = _clock.UtcNow;
 
         // Temporary lockout window.
         if (user!.LockedUntil is not null && user.LockedUntil > now)
-            await FailAsync(user, email, portal, ProviderTypes.LocalPassword, LoginLogStatuses.Blocked,
-                "account_locked", request, GenericBlockedError, cancellationToken);
+            await FailAsync(user, email, portal, LoginLogStatuses.Blocked, "account_locked",
+                request, AuthErrorCodes.AccountLocked,
+                "Your account is temporarily locked. Please try again later.", 403, cancellationToken);
 
         // Account status must be ACTIVE.
         if (user.Status != UserStatuses.Active)
-            await FailAsync(user, email, portal, ProviderTypes.LocalPassword, LoginLogStatuses.Blocked,
-                $"status_{user.Status}", request, GenericBlockedError, cancellationToken);
+            await FailAsync(user, email, portal, LoginLogStatuses.Blocked, $"status_{user.Status}",
+                request, AuthErrorCodes.AccountInactive, "Your account is not active.", 403, cancellationToken);
 
         // Role must be active and not soft-deleted.
         if (user.Role is null || user.Role.Status != EntityStatuses.Active || user.Role.DeletedAt is not null)
-            await FailAsync(user, email, portal, ProviderTypes.LocalPassword, LoginLogStatuses.Blocked,
-                "role_inactive", request, GenericBlockedError, cancellationToken);
-
-        // Portal must match the role (VISITOR ↔ VISITOR portal; everyone else ↔ INTERNAL).
-        var isVisitor = user.Role!.RoleCode == RoleCodes.Visitor;
-        if ((portal == LoginPortals.Visitor && !isVisitor) || (portal == LoginPortals.Internal && isVisitor))
-            await FailAsync(user, email, portal, ProviderTypes.LocalPassword, LoginLogStatuses.Failed,
-                "wrong_portal", request, GenericBlockedError, cancellationToken);
-
-        // Campus validation: VISITOR must not send campus, INTERNAL must send a valid campus.
-        if (portal == LoginPortals.Visitor && !string.IsNullOrWhiteSpace(request.SelectedCampusId))
-            await FailAsync(user, email, portal, ProviderTypes.LocalPassword, LoginLogStatuses.Failed,
-                "visitor_with_campus", request, GenericBlockedError, cancellationToken);
-
-        if (portal == LoginPortals.Internal)
-        {
-            if (string.IsNullOrWhiteSpace(request.SelectedCampusId))
-                await FailAsync(user, email, portal, ProviderTypes.LocalPassword, LoginLogStatuses.Failed,
-                    "missing_campus", request, "Please select a campus to continue.", cancellationToken);
-
-            if (user.PrimaryCampusId is not null
-                && !string.Equals(request.SelectedCampusId, user.PrimaryCampusId, StringComparison.OrdinalIgnoreCase))
-                await FailAsync(user, email, portal, ProviderTypes.LocalPassword, LoginLogStatuses.Failed,
-                    "campus_mismatch", request, "Unable to sign in with selected campus.", cancellationToken);
-        }
+            await FailAsync(user, email, portal, LoginLogStatuses.Blocked, "role_inactive",
+                request, AuthErrorCodes.AccountInactive, "Your account is not active.", 403, cancellationToken);
 
         // Local password provider, if present, must be enabled.
-        var localProvider = user.AuthProviders
-            .FirstOrDefault(p => p.ProviderType == ProviderTypes.LocalPassword);
+        var localProvider = user.AuthProviders.FirstOrDefault(p => p.ProviderType == ProviderTypes.LocalPassword);
         if (localProvider is not null && !localProvider.IsEnabled)
-            await FailAsync(user, email, portal, ProviderTypes.LocalPassword, LoginLogStatuses.Blocked,
-                "local_provider_disabled", request, GenericBlockedError, cancellationToken);
+            await FailAsync(user, email, portal, LoginLogStatuses.Blocked, "local_provider_disabled",
+                request, AuthErrorCodes.PasswordLoginDisabled,
+                "Password sign-in is disabled for this account.", 403, cancellationToken);
 
-        // Verify the password.
+        // Verify the password BEFORE revealing any portal/campus mismatch (anti-enumeration).
         var passwordOk = !string.IsNullOrEmpty(user.PasswordHash)
                          && _passwordHasher.VerifyPassword(request.Password, user.PasswordHash);
 
         if (!passwordOk)
         {
             user.FailedLoginCount += 1;
-            var lockedNow = user.FailedLoginCount >= _maxFailedAttempts;
-            if (lockedNow)
+            if (user.FailedLoginCount >= _maxFailedAttempts)
             {
                 user.LockedUntil = now.AddMinutes(_lockoutMinutes);
                 await _db.SaveChangesAsync(cancellationToken);
                 await _audit.WriteSecurityEventAsync(user.UserId, email, SecurityEventTypes.AccountLocked,
                     SecuritySeverities.High, request.IpAddress, request.UserAgent,
                     $"{{\"failedAttempts\":{user.FailedLoginCount}}}", cancellationToken);
-                await FailAsync(user, email, portal, ProviderTypes.LocalPassword, LoginLogStatuses.Blocked,
-                    "lockout_triggered", request, GenericBlockedError, cancellationToken);
+                await FailAsync(user, email, portal, LoginLogStatuses.Blocked, "lockout_triggered",
+                    request, AuthErrorCodes.AccountLocked,
+                    "Your account is temporarily locked. Please try again later.", 403, cancellationToken);
             }
 
             await _db.SaveChangesAsync(cancellationToken);
-            await FailAsync(user, email, portal, ProviderTypes.LocalPassword, LoginLogStatuses.Failed,
-                "bad_password", request, GenericCredentialError, cancellationToken);
+            await FailAsync(user, email, portal, LoginLogStatuses.Failed, "bad_password",
+                request, AuthErrorCodes.InvalidCredentials, GenericCredentialError, 401, cancellationToken);
+        }
+
+        // ── Same portal / role / campus policy as SSO (applied after password is verified) ──
+        var isVisitor = user.Role!.RoleCode == RoleCodes.Visitor;
+        if (portal == LoginPortals.Visitor && !isVisitor)
+            await FailAsync(user, email, portal, LoginLogStatuses.Failed, "wrong_portal_internal_in_visitor",
+                request, AuthErrorCodes.WrongPortalInternalAccount,
+                "Your account belongs to the internal portal.", 403, cancellationToken);
+
+        if (portal == LoginPortals.Internal && isVisitor)
+            await FailAsync(user, email, portal, LoginLogStatuses.Failed, "wrong_portal_visitor_in_internal",
+                request, AuthErrorCodes.WrongPortalVisitorAccount,
+                "Your Visitor account cannot use the internal portal.", 403, cancellationToken);
+
+        if (portal == LoginPortals.Internal)
+        {
+            if (string.IsNullOrWhiteSpace(request.SelectedCampusId))
+                await FailAsync(user, email, portal, LoginLogStatuses.Failed, "missing_campus",
+                    request, AuthErrorCodes.CampusRequired,
+                    "Please select a campus to continue.", 400, cancellationToken);
+
+            if (user.PrimaryCampusId is not null
+                && !string.Equals(request.SelectedCampusId, user.PrimaryCampusId, StringComparison.OrdinalIgnoreCase))
+                await FailAsync(user, email, portal, LoginLogStatuses.Failed, "campus_mismatch",
+                    request, AuthErrorCodes.CampusMismatch,
+                    "Your account does not belong to the selected campus.", 403, cancellationToken);
         }
 
         // ── Success ───────────────────────────────────────────────────────────
@@ -155,16 +169,16 @@ public sealed class LoginviaCredentialsCommandHandler : IRequestHandler<Loginvia
         return response;
     }
 
-    /// <summary>Writes a failed/blocked login log and throws a generic 401. Never returns.</summary>
+    /// <summary>Writes a failed/blocked login log + security event, then throws a coded auth error. Never returns.</summary>
     private async Task FailAsync(
-        User? user, string email, string portal, string providerType, string status,
-        string internalReason, LoginviaCredentialsCommand request, string publicMessage,
+        User? user, string email, string portal, string logStatus, string internalReason,
+        LoginviaCredentialsCommand request, string errorCode, string message, int statusCode,
         CancellationToken cancellationToken)
     {
         await _audit.WriteLoginLogAsync(user?.UserId, email, portal, user?.PrimaryCampusId,
-            providerType, status, internalReason, request.IpAddress, request.UserAgent, null, cancellationToken);
+            ProviderTypes.LocalPassword, logStatus, internalReason, request.IpAddress, request.UserAgent, null, cancellationToken);
 
-        if (status == LoginLogStatuses.Blocked)
+        if (logStatus == LoginLogStatuses.Blocked)
             await _audit.WriteSecurityEventAsync(user?.UserId, email, SecurityEventTypes.LoginBlocked,
                 SecuritySeverities.Medium, request.IpAddress, request.UserAgent,
                 $"{{\"reason\":\"{internalReason}\"}}", cancellationToken);
@@ -173,6 +187,6 @@ public sealed class LoginviaCredentialsCommandHandler : IRequestHandler<Loginvia
                 SecuritySeverities.Low, request.IpAddress, request.UserAgent,
                 $"{{\"reason\":\"{internalReason}\"}}", cancellationToken);
 
-        throw new AuthenticationFailedException(publicMessage, internalReason);
+        throw new AuthBusinessException(errorCode, message, statusCode);
     }
 }

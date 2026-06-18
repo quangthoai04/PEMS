@@ -1,0 +1,23 @@
+namespace PEMS.Application.Common.Security;
+
+/// <summary>
+/// Stable, machine-readable error codes returned in the <c>"errorCode"</c> field of
+/// authentication failures. The frontend maps these to localized messages
+/// (see <c>AUTH_ERROR_MESSAGES</c>). Values must stay in sync with the frontend map.
+/// </summary>
+public static class AuthErrorCodes
+{
+    public const string CampusRequired = "CAMPUS_REQUIRED";
+    public const string CampusMismatch = "CAMPUS_MISMATCH";
+    public const string WrongPortalVisitorAccount = "WRONG_PORTAL_VISITOR_ACCOUNT";
+    public const string WrongPortalInternalAccount = "WRONG_PORTAL_INTERNAL_ACCOUNT";
+    public const string InternalAccountNotFound = "INTERNAL_ACCOUNT_NOT_FOUND";
+    public const string PasswordLoginDisabled = "PASSWORD_LOGIN_DISABLED";
+    public const string InvalidCredentials = "INVALID_CREDENTIALS";
+    public const string AccountInactive = "ACCOUNT_INACTIVE";
+    public const string AccountLocked = "ACCOUNT_LOCKED";
+    public const string SsoDisabled = "SSO_DISABLED";
+    public const string FeidDisabled = "FEID_DISABLED";
+    public const string ExternalAuthFailed = "EXTERNAL_AUTH_FAILED";
+    public const string VisitorProvisionDisabled = "VISITOR_PROVISION_DISABLED";
+}

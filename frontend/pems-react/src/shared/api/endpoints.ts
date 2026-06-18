@@ -13,6 +13,14 @@ export const API_ENDPOINTS = {
   campuses: {
     active: '/campuses/active',
   },
+  accounts: {
+    list: '/accounts/viewaccountlist',
+    create: '/accounts/createaccount',
+    manageStatus: '/accounts/manageaccountstatus',
+    details: '/accounts/viewaccountdetails',
+    search: '/accounts/searchandfilteraccounts',
+    updateRole: '/accounts/updateaccountrole',
+  },
   partners: {
     list: '/partners',
     detail: (id: string | number) => `/partners/${id}`,

@@ -129,4 +129,11 @@ public static class CreatedViaValues
 {
     public const string ManualCreated = "MANUAL_CREATED";
     public const string VisitorForm = "VISITOR_FORM";
+
+    /// <summary>
+    /// Visitor account created automatically on first external (SSO/FEID) login at the
+    /// Visitor portal. Requires the <c>users.created_via</c> ENUM to include this value
+    /// (see database/scripts/patch_auth_dual_portal_sso_first.sql).
+    /// </summary>
+    public const string SsoAutoProvision = "SSO_AUTO_PROVISION";
 }

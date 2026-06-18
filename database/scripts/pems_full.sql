@@ -1,4 +1,11 @@
 -- =====================================================================
+-- PEMS FULL SQL — SQL-aligned baseline with UC-48 View Email = Own scope
+-- Generated from: pems_full(1).sql
+-- Change: UC-48.VIEW_EMAIL role_permissions are seeded directly as permission_level 'O'.
+-- This is a full SQL baseline file, not an UPDATE/PATCH script.
+-- =====================================================================
+
+-- =====================================================================
 -- PEMS v4.5
 -- Revision v4: Removed visit_requests.status value old email-verification pending status; visit form is created only after OTP/email verification. - NEW BASE MySQL 8.0 Schema
 -- Version: 43 tables - SSO-first auth; revised User/Gallery/FAQ/News modules; updated Feedback/Minutes/Action Items
@@ -550,7 +557,6 @@ CREATE TABLE visit_requests (
   registrant_job_title VARCHAR(150) NULL COMMENT 'Chức danh/phòng ban người đăng ký',
   registrant_phone VARCHAR(50) NULL COMMENT 'SĐT người đăng ký',
   registrant_email VARCHAR(150) NOT NULL COMMENT 'Email người đăng ký',
-  registrant_nationality VARCHAR(100) NULL COMMENT 'Quốc tịch người đăng ký',
 
   -- 2. Delegation information
   delegation_name VARCHAR(200) NOT NULL COMMENT 'Tên đoàn khách',
@@ -568,7 +574,7 @@ CREATE TABLE visit_requests (
   transportation_note TEXT NULL COMMENT 'Nhận diện phương tiện di chuyển tới FPTU',
   note_to_fptu TEXT NULL COMMENT 'Ghi chú cho FPTU',
 
-  status ENUM('PENDING_APPROVAL','PENDING_HO_APPROVAL','PENDING_STAFF_LEAD_APPROVAL','APPROVED','REJECTED','CANCELLED','IN_PROGRESS','COMPLETED') NOT NULL DEFAULT 'PENDING_STAFF_LEAD_APPROVAL',
+  status ENUM('PENDING_APPROVAL','REJECTED','APPROVED','CANCELLED') NOT NULL DEFAULT 'PENDING_APPROVAL',
   submitted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   email_verified_at DATETIME NULL,
 
@@ -2902,13 +2908,13 @@ FROM (
   UNION ALL SELECT 'DEPT' AS role_code, 'Staff' AS sub_role, 'UC-47.SEND_EMAIL' AS permission_code, 'O' AS permission_level
   UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-47.SEND_EMAIL' AS permission_code, 'O' AS permission_level
   UNION ALL SELECT 'VISITOR' AS role_code, 'NONE' AS sub_role, 'UC-47.SEND_EMAIL' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-48.VIEW_EMAIL' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Leader' AS sub_role, 'UC-48.VIEW_EMAIL' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Staff' AS sub_role, 'UC-48.VIEW_EMAIL' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Leader' AS sub_role, 'UC-48.VIEW_EMAIL' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Staff' AS sub_role, 'UC-48.VIEW_EMAIL' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-48.VIEW_EMAIL' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'VISITOR' AS role_code, 'NONE' AS sub_role, 'UC-48.VIEW_EMAIL' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-48.VIEW_EMAIL' AS permission_code, 'O' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'Leader' AS sub_role, 'UC-48.VIEW_EMAIL' AS permission_code, 'O' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'Staff' AS sub_role, 'UC-48.VIEW_EMAIL' AS permission_code, 'O' AS permission_level
+  UNION ALL SELECT 'DEPT' AS role_code, 'Leader' AS sub_role, 'UC-48.VIEW_EMAIL' AS permission_code, 'O' AS permission_level
+  UNION ALL SELECT 'DEPT' AS role_code, 'Staff' AS sub_role, 'UC-48.VIEW_EMAIL' AS permission_code, 'O' AS permission_level
+  UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-48.VIEW_EMAIL' AS permission_code, 'O' AS permission_level
+  UNION ALL SELECT 'VISITOR' AS role_code, 'NONE' AS sub_role, 'UC-48.VIEW_EMAIL' AS permission_code, 'O' AS permission_level
   UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-49.REPLY_TO_EMAIL' AS permission_code, 'O' AS permission_level
   UNION ALL SELECT 'STAFF' AS role_code, 'Leader' AS sub_role, 'UC-49.REPLY_TO_EMAIL' AS permission_code, 'O' AS permission_level
   UNION ALL SELECT 'STAFF' AS role_code, 'Staff' AS sub_role, 'UC-49.REPLY_TO_EMAIL' AS permission_code, 'O' AS permission_level
@@ -4713,13 +4719,13 @@ VALUES
   ('DEPT', 'Staff', 'UC-47.SEND_EMAIL', 'O'),
   ('STUDENT', 'NONE', 'UC-47.SEND_EMAIL', 'O'),
   ('VISITOR', 'NONE', 'UC-47.SEND_EMAIL', 'O'),
-  ('HO', 'NONE', 'UC-48.VIEW_EMAIL', 'R'),
-  ('STAFF', 'Leader', 'UC-48.VIEW_EMAIL', 'R'),
-  ('STAFF', 'Staff', 'UC-48.VIEW_EMAIL', 'R'),
-  ('DEPT', 'Leader', 'UC-48.VIEW_EMAIL', 'R'),
-  ('DEPT', 'Staff', 'UC-48.VIEW_EMAIL', 'R'),
-  ('STUDENT', 'NONE', 'UC-48.VIEW_EMAIL', 'R'),
-  ('VISITOR', 'NONE', 'UC-48.VIEW_EMAIL', 'R'),
+  ('HO', 'NONE', 'UC-48.VIEW_EMAIL', 'O'),
+  ('STAFF', 'Leader', 'UC-48.VIEW_EMAIL', 'O'),
+  ('STAFF', 'Staff', 'UC-48.VIEW_EMAIL', 'O'),
+  ('DEPT', 'Leader', 'UC-48.VIEW_EMAIL', 'O'),
+  ('DEPT', 'Staff', 'UC-48.VIEW_EMAIL', 'O'),
+  ('STUDENT', 'NONE', 'UC-48.VIEW_EMAIL', 'O'),
+  ('VISITOR', 'NONE', 'UC-48.VIEW_EMAIL', 'O'),
   ('HO', 'NONE', 'UC-49.REPLY_TO_EMAIL', 'O'),
   ('STAFF', 'Leader', 'UC-49.REPLY_TO_EMAIL', 'O'),
   ('STAFF', 'Staff', 'UC-49.REPLY_TO_EMAIL', 'O'),

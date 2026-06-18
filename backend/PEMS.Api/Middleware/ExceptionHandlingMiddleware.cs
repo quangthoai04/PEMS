@@ -45,6 +45,12 @@ public sealed class ExceptionHandlingMiddleware
                 _logger.LogInformation("Validation failed: {Message}", validation.Message);
                 break;
 
+            case AuthBusinessException authBiz:
+                status = authBiz.StatusCode;
+                payload = new { success = false, errorCode = authBiz.ErrorCode, message = authBiz.Message };
+                _logger.LogInformation("Auth business failure ({Code}).", authBiz.ErrorCode);
+                break;
+
             case AuthenticationFailedException auth:
                 status = StatusCodes.Status401Unauthorized;
                 payload = new { message = auth.Message };

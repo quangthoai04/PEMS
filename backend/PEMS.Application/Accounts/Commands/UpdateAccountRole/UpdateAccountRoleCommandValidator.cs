@@ -6,6 +6,12 @@ public sealed class UpdateAccountRoleCommandValidator : AbstractValidator<Update
 {
     public UpdateAccountRoleCommandValidator()
     {
-        // TODO: Add validation rules after UC specification is completed.
+        RuleFor(x => x.UserId)
+            .NotEmpty().WithMessage("Target account id is required.");
+
+        RuleFor(x => x.NewRoleCode)
+            .NotEmpty().WithMessage("New role is required.");
+
+        // Role-specific shape (sub-role / department / campus) is validated in the handler.
     }
 }

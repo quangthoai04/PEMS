@@ -3,6 +3,7 @@ using Microsoft.OpenApi.Models;
 using PEMS.Api.Extensions;
 using PEMS.Api.Middleware;
 using PEMS.Application;
+using PEMS.Application.Common.Security;
 using PEMS.Infrastructure;
 using PEMS.Infrastructure.Persistence;
 
@@ -11,6 +12,11 @@ var builder = WebApplication.CreateBuilder(args);
 // ── Application / Infrastructure services ────────────────────────────────────
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
+
+// ── Auth policy options (SSO-first / dual-portal). Bound once and shared. ─────
+var authOptions = builder.Configuration.GetSection(AuthOptions.SectionName).Get<AuthOptions>()
+    ?? new AuthOptions();
+builder.Services.AddSingleton(authOptions);
 
 // ── Database (MySQL, database-first — schema is owned by manual SQL, not EF) ──
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");

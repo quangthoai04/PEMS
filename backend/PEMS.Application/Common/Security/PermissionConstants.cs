@@ -31,6 +31,11 @@ public static class PermissionCodes
     public const string UpdateAccountRole = "UC-100.UPDATE_ACCOUNT_ROLE";
 
     // ── Email Management ──────────────────────────────────────────────────
+    public const string ViewEmailTemplateList = "UC-42.VIEW_EMAIL_TEMPLATE_LIST";
+    public const string ViewEmailTemplateDetail = "UC-43.VIEW_EMAIL_TEMPLATE_DETAIL";
+    public const string UpdateEmailTemplate = "UC-44.UPDATE_EMAIL_TEMPLATE";
+    public const string CreateEmailTemplate = "UC-45.CREATE_EMAIL_TEMPLATE";
+
     public const string EditEmailContent = "UC-46.EDIT_EMAIL_CONTENT";
     public const string SendEmail = "UC-47.SEND_EMAIL";
     public const string ViewEmail = "UC-48.VIEW_EMAIL";

@@ -1,10 +1,11 @@
-using System;
-
 namespace PEMS.Application.Accounts.Commands.CreateAccount;
 
 public sealed class CreateAccountResponse
 {
-    public Guid? Id { get; init; }
-    public string Status { get; init; } = "Scaffolded";
-    public string Message { get; init; } = "Use case scaffolded. Business logic is not implemented yet.";
+    public string UserId { get; init; } = default!;
+    public string Email { get; init; } = default!;
+    public string RoleCode { get; init; } = default!;
+    public string? PrimaryCampusId { get; init; }
+    public bool PasswordSet { get; init; }
+    public string Message { get; init; } = "Account created successfully.";
 }
