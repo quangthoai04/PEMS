@@ -10,7 +10,13 @@ namespace DbSeeder
         static async Task Main(string[] args)
         {
             var sqlFile = "pems_full.sql";
-            var script = await File.ReadAllTextAsync(sqlFile);
+            if (!File.Exists(sqlFile))
+            {
+                Console.WriteLine($"Cannot find {sqlFile}");
+                return;
+            }
+
+            var scriptText = await File.ReadAllTextAsync(sqlFile);
 
             var connStrBuilder = new MySqlConnectionStringBuilder
             {
@@ -35,12 +41,9 @@ namespace DbSeeder
             using (var conn = new MySqlConnection(connStrBuilder.ConnectionString))
             {
                 await conn.OpenAsync();
-                using var cmd = conn.CreateCommand();
-                cmd.CommandText = "SHOW COLUMNS FROM users;";
-                using var reader = await cmd.ExecuteReaderAsync();
-                while(await reader.ReadAsync()) {
-                    Console.WriteLine(reader.GetString(0));
-                }
+                var script = new MySqlScript(conn, scriptText);
+                await script.ExecuteAsync();
+                Console.WriteLine("Successfully executed pems_full.sql.");
             }
         }
     }

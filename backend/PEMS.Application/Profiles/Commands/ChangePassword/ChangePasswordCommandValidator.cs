@@ -1,4 +1,5 @@
 using FluentValidation;
+using PEMS.Application.Common.Security;
 
 namespace PEMS.Application.Profiles.Commands.ChangePassword;
 
@@ -6,6 +7,11 @@ public sealed class ChangePasswordCommandValidator : AbstractValidator<ChangePas
 {
     public ChangePasswordCommandValidator()
     {
-        // TODO: Add validation rules after UC specification is completed.
+        RuleFor(x => x.NewPassword)
+            .NotEmpty().WithMessage("New password is required.")
+            .Must(PasswordPolicy.IsStrong).WithMessage(PasswordPolicy.RequirementsMessage);
+
+        RuleFor(x => x.ConfirmPassword)
+            .Equal(x => x.NewPassword).WithMessage("Passwords do not match.");
     }
 }

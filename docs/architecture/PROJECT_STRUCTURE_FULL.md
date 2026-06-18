@@ -1,19 +1,24 @@
-﻿# PEMS Project Structure (Full Tree)
+# PEMS Project Structure (Full Tree)
 
-This document contains the complete and un-abbreviated directory tree of the PEMS project, generated automatically from the source code.
+- File này phản ánh cấu trúc thư mục thật hiện tại của project PEMS.
+- Được cập nhật sau khi quét lại source code.
+- Không bao gồm các thư mục build/generated như node_modules, dist, bin, obj.
 
-## 1. Directory Tree
+## 1. Scope
 
-`	xt
+Ghi rõ tài liệu bao gồm:
+- Backend Clean Architecture
+- Frontend React
+- Database scripts
+- Documentation
+- Root configuration files
+
+## 2. Directory Tree
+
+```text
 PEMS/
-├── .claude/
-│   ├── settings.json
-│   └── settings.local.json
-├── .gitattributes
-├── .gitignore
 ├── backend/
 │   ├── PEMS.Api/
-│   │   ├── appsettings.json
 │   │   ├── Contracts/
 │   │   │   ├── ApiResponse.cs
 │   │   │   └── ApiRoutes.cs
@@ -56,15 +61,12 @@ PEMS/
 │   │   │   ├── RequestLoggingMiddleware.cs
 │   │   │   ├── SecurityHeadersMiddleware.cs
 │   │   │   └── SessionValidationMiddleware.cs
+│   │   ├── Properties/
+│   │   │   └── launchSettings.json
 │   │   ├── PEMS.Api.csproj
 │   │   ├── Pems_WebAPI.http
 │   │   ├── Program.cs
-│   │   ├── Properties/
-│   │   │   ├── launchSettings.json
-│   │   ├── test.cs
-│   │   └── TestBcrypt/
-│   │       ├── Program.cs
-│   │       └── TestBcrypt.csproj
+│   │   └── appsettings.json
 │   ├── PEMS.Application/
 │   │   ├── Accounts/
 │   │   │   ├── Commands/
@@ -169,10 +171,6 @@ PEMS/
 │   │   │           └── ViewAPILogsQueryHandler.cs
 │   │   ├── Authentication/
 │   │   │   ├── Commands/
-│   │   │   │   ├── ChangePassword/
-│   │   │   │   │   ├── ChangePasswordCommand.cs
-│   │   │   │   │   ├── ChangePasswordCommandHandler.cs
-│   │   │   │   │   └── ChangePasswordCommandValidator.cs
 │   │   │   │   ├── ForgotPassword/
 │   │   │   │   │   ├── ForgotPasswordCommand.cs
 │   │   │   │   │   ├── ForgotPasswordCommandHandler.cs
@@ -201,7 +199,7 @@ PEMS/
 │   │   │   │   ├── AuthResultBuilder.cs
 │   │   │   │   └── AuthUserMapper.cs
 │   │   │   ├── Mappings/
-│   │   │   │   ├── AuthenticationMappingProfile.cs
+│   │   │   │   └── AuthenticationMappingProfile.cs
 │   │   │   ├── Models/
 │   │   │   │   ├── AuthResponse.cs
 │   │   │   │   ├── AuthUserDto.cs
@@ -217,7 +215,7 @@ PEMS/
 │   │   │   │       ├── GetCurrentUserPermissionsQuery.cs
 │   │   │   │       └── GetCurrentUserPermissionsQueryHandler.cs
 │   │   │   └── Rules/
-│   │   │       ├── README.md
+│   │   │       └── README.md
 │   │   ├── Calendars/
 │   │   │   ├── Commands/
 │   │   │   │   ├── AddPersonalEvent/
@@ -451,9 +449,9 @@ PEMS/
 │   │   │   │       ├── UploadVisitPhotosCommandValidator.cs
 │   │   │   │       └── UploadVisitPhotosResponse.cs
 │   │   │   ├── Dtos/
-│   │   │   │   ├── README.md
+│   │   │   │   └── README.md
 │   │   │   ├── Mappings/
-│   │   │   │   ├── DelegationsMappingProfile.cs
+│   │   │   │   └── DelegationsMappingProfile.cs
 │   │   │   ├── Queries/
 │   │   │   │   ├── SearchDelegations/
 │   │   │   │   │   ├── SearchDelegationsDto.cs
@@ -472,7 +470,7 @@ PEMS/
 │   │   │   │       ├── ViewMeetingMinutesDetailsQuery.cs
 │   │   │   │       └── ViewMeetingMinutesDetailsQueryHandler.cs
 │   │   │   └── Rules/
-│   │   │       ├── README.md
+│   │   │       └── README.md
 │   │   ├── Departments/
 │   │   │   ├── Commands/
 │   │   │   │   ├── AddDepartmentPersonnel/
@@ -521,10 +519,6 @@ PEMS/
 │   │   │   │       ├── UpdateDepartmentCommandValidator.cs
 │   │   │   │       └── UpdateDepartmentResponse.cs
 │   │   │   └── Queries/
-│   │   │       ├── SearchandFilterDepartments/
-│   │   │       │   ├── SearchandFilterDepartmentsDto.cs
-│   │   │       │   ├── SearchandFilterDepartmentsQuery.cs
-│   │   │       │   └── SearchandFilterDepartmentsQueryHandler.cs
 │   │   │       ├── SearchCoordinationTasks/
 │   │   │       │   ├── SearchCoordinationTasksDto.cs
 │   │   │       │   ├── SearchCoordinationTasksQuery.cs
@@ -533,6 +527,10 @@ PEMS/
 │   │   │       │   ├── SearchPersonnelDto.cs
 │   │   │       │   ├── SearchPersonnelQuery.cs
 │   │   │       │   └── SearchPersonnelQueryHandler.cs
+│   │   │       ├── SearchandFilterDepartments/
+│   │   │       │   ├── SearchandFilterDepartmentsDto.cs
+│   │   │       │   ├── SearchandFilterDepartmentsQuery.cs
+│   │   │       │   └── SearchandFilterDepartmentsQueryHandler.cs
 │   │   │       ├── ViewCoordinationTasks/
 │   │   │       │   ├── ViewCoordinationTasksDto.cs
 │   │   │       │   ├── ViewCoordinationTasksQuery.cs
@@ -549,17 +547,16 @@ PEMS/
 │   │   │           ├── ViewPersonnelDetailsDto.cs
 │   │   │           ├── ViewPersonnelDetailsQuery.cs
 │   │   │           └── ViewPersonnelDetailsQueryHandler.cs
-│   │   ├── DependencyInjection.cs
 │   │   ├── Documents/
-│   │   │   ├── Queries/
-│   │   │   │   ├── SearchDocuments/
-│   │   │   │   │   ├── SearchDocumentsDto.cs
-│   │   │   │   │   ├── SearchDocumentsQuery.cs
-│   │   │   │   │   └── SearchDocumentsQueryHandler.cs
-│   │   │   │   └── ViewDocumentList/
-│   │   │   │       ├── ViewDocumentListDto.cs
-│   │   │   │       ├── ViewDocumentListQuery.cs
-│   │   │   │       └── ViewDocumentListQueryHandler.cs
+│   │   │   └── Queries/
+│   │   │       ├── SearchDocuments/
+│   │   │       │   ├── SearchDocumentsDto.cs
+│   │   │       │   ├── SearchDocumentsQuery.cs
+│   │   │       │   └── SearchDocumentsQueryHandler.cs
+│   │   │       └── ViewDocumentList/
+│   │   │           ├── ViewDocumentListDto.cs
+│   │   │           ├── ViewDocumentListQuery.cs
+│   │   │           └── ViewDocumentListQueryHandler.cs
 │   │   ├── Emails/
 │   │   │   ├── Commands/
 │   │   │   │   ├── CreateEmailTemplate/
@@ -627,15 +624,15 @@ PEMS/
 │   │   │           ├── ViewListFAQQuery.cs
 │   │   │           └── ViewListFAQQueryHandler.cs
 │   │   ├── Feedbacks/
-│   │   │   ├── Queries/
-│   │   │   │   ├── SearchAndFilterFeedback/
-│   │   │   │   │   ├── SearchAndFilterFeedbackDto.cs
-│   │   │   │   │   ├── SearchAndFilterFeedbackQuery.cs
-│   │   │   │   │   └── SearchAndFilterFeedbackQueryHandler.cs
-│   │   │   │   └── ViewFeedbackSummary/
-│   │   │   │       ├── ViewFeedbackSummaryDto.cs
-│   │   │   │       ├── ViewFeedbackSummaryQuery.cs
-│   │   │   │       └── ViewFeedbackSummaryQueryHandler.cs
+│   │   │   └── Queries/
+│   │   │       ├── SearchAndFilterFeedback/
+│   │   │       │   ├── SearchAndFilterFeedbackDto.cs
+│   │   │       │   ├── SearchAndFilterFeedbackQuery.cs
+│   │   │       │   └── SearchAndFilterFeedbackQueryHandler.cs
+│   │   │       └── ViewFeedbackSummary/
+│   │   │           ├── ViewFeedbackSummaryDto.cs
+│   │   │           ├── ViewFeedbackSummaryQuery.cs
+│   │   │           └── ViewFeedbackSummaryQueryHandler.cs
 │   │   ├── Galleries/
 │   │   │   ├── Commands/
 │   │   │   │   ├── AddGalleryItem/
@@ -663,15 +660,15 @@ PEMS/
 │   │   │           ├── ViewGalleryItemListQuery.cs
 │   │   │           └── ViewGalleryItemListQueryHandler.cs
 │   │   ├── MeetingMinutes/
-│   │   │   ├── Queries/
-│   │   │   │   ├── SearchAndFilterMinutes/
-│   │   │   │   │   ├── SearchAndFilterMinutesDto.cs
-│   │   │   │   │   ├── SearchAndFilterMinutesQuery.cs
-│   │   │   │   │   └── SearchAndFilterMinutesQueryHandler.cs
-│   │   │   │   └── ViewMinutesList/
-│   │   │   │       ├── ViewMinutesListDto.cs
-│   │   │   │       ├── ViewMinutesListQuery.cs
-│   │   │   │       └── ViewMinutesListQueryHandler.cs
+│   │   │   └── Queries/
+│   │   │       ├── SearchAndFilterMinutes/
+│   │   │       │   ├── SearchAndFilterMinutesDto.cs
+│   │   │       │   ├── SearchAndFilterMinutesQuery.cs
+│   │   │       │   └── SearchAndFilterMinutesQueryHandler.cs
+│   │   │       └── ViewMinutesList/
+│   │   │           ├── ViewMinutesListDto.cs
+│   │   │           ├── ViewMinutesListQuery.cs
+│   │   │           └── ViewMinutesListQueryHandler.cs
 │   │   ├── News/
 │   │   │   ├── Commands/
 │   │   │   │   ├── AddMultilingualNews/
@@ -721,9 +718,9 @@ PEMS/
 │   │   │   │       ├── ProcessPartnerCreationRequestCommandValidator.cs
 │   │   │   │       └── ProcessPartnerCreationRequestResponse.cs
 │   │   │   ├── Dtos/
-│   │   │   │   ├── README.md
+│   │   │   │   └── README.md
 │   │   │   ├── Mappings/
-│   │   │   │   ├── PartnersMappingProfile.cs
+│   │   │   │   └── PartnersMappingProfile.cs
 │   │   │   ├── Queries/
 │   │   │   │   ├── SearchPartners/
 │   │   │   │   │   ├── SearchPartnersDto.cs
@@ -738,8 +735,7 @@ PEMS/
 │   │   │   │       ├── ViewPartnerListsQuery.cs
 │   │   │   │       └── ViewPartnerListsQueryHandler.cs
 │   │   │   └── Rules/
-│   │   │       ├── README.md
-│   │   ├── PEMS.Application.csproj
+│   │   │       └── README.md
 │   │   ├── Profiles/
 │   │   │   ├── Commands/
 │   │   │   │   ├── ChangePassword/
@@ -753,21 +749,21 @@ PEMS/
 │   │   │   │       ├── UpdateProfileCommandValidator.cs
 │   │   │   │       └── UpdateProfileResponse.cs
 │   │   │   ├── Dtos/
-│   │   │   │   ├── README.md
+│   │   │   │   └── README.md
 │   │   │   ├── Mappings/
-│   │   │   │   ├── ProfilesMappingProfile.cs
+│   │   │   │   └── ProfilesMappingProfile.cs
 │   │   │   ├── Queries/
-│   │   │   │   ├── ViewProfile/
-│   │   │   │   │   ├── ViewProfileDto.cs
-│   │   │   │   │   ├── ViewProfileQuery.cs
-│   │   │   │   │   └── ViewProfileQueryHandler.cs
+│   │   │   │   └── ViewProfile/
+│   │   │   │       ├── ViewProfileDto.cs
+│   │   │   │       ├── ViewProfileQuery.cs
+│   │   │   │       └── ViewProfileQueryHandler.cs
 │   │   │   └── Rules/
-│   │   │       ├── README.md
+│   │   │       └── README.md
 │   │   ├── PublicContent/
 │   │   │   ├── Dtos/
-│   │   │   │   ├── README.md
+│   │   │   │   └── README.md
 │   │   │   ├── Mappings/
-│   │   │   │   ├── PublicContentMappingProfile.cs
+│   │   │   │   └── PublicContentMappingProfile.cs
 │   │   │   ├── Queries/
 │   │   │   │   ├── SearchInformation/
 │   │   │   │   │   ├── SearchInformationDto.cs
@@ -806,14 +802,14 @@ PEMS/
 │   │   │   │       ├── ViewPolicyAndTermsQuery.cs
 │   │   │   │       └── ViewPolicyAndTermsQueryHandler.cs
 │   │   │   └── Rules/
-│   │   │       ├── README.md
+│   │   │       └── README.md
 │   │   ├── Reports/
 │   │   │   ├── Commands/
-│   │   │   │   ├── ExportStatisticsReport/
-│   │   │   │   │   ├── ExportStatisticsReportCommand.cs
-│   │   │   │   │   ├── ExportStatisticsReportCommandHandler.cs
-│   │   │   │   │   ├── ExportStatisticsReportCommandValidator.cs
-│   │   │   │   │   └── ExportStatisticsReportResponse.cs
+│   │   │   │   └── ExportStatisticsReport/
+│   │   │   │       ├── ExportStatisticsReportCommand.cs
+│   │   │   │       ├── ExportStatisticsReportCommandHandler.cs
+│   │   │   │       ├── ExportStatisticsReportCommandValidator.cs
+│   │   │   │       └── ExportStatisticsReportResponse.cs
 │   │   │   └── Queries/
 │   │   │       ├── FilterDashboardByTime/
 │   │   │       │   ├── FilterDashboardByTimeDto.cs
@@ -823,33 +819,35 @@ PEMS/
 │   │   │           ├── ViewDashboardStatisticsDto.cs
 │   │   │           ├── ViewDashboardStatisticsQuery.cs
 │   │   │           └── ViewDashboardStatisticsQueryHandler.cs
-│   │   └── Roles/
-│   │       ├── Commands/
-│   │       │   ├── ConfigureRolePermissions/
-│   │       │   │   ├── ConfigureRolePermissionsCommand.cs
-│   │       │   │   ├── ConfigureRolePermissionsCommandHandler.cs
-│   │       │   │   ├── ConfigureRolePermissionsCommandValidator.cs
-│   │       │   │   └── ConfigureRolePermissionsResponse.cs
-│   │       │   ├── CreateNewRole/
-│   │       │   │   ├── CreateNewRoleCommand.cs
-│   │       │   │   ├── CreateNewRoleCommandHandler.cs
-│   │       │   │   ├── CreateNewRoleCommandValidator.cs
-│   │       │   │   └── CreateNewRoleResponse.cs
-│   │       │   ├── DisableAndDeleteRole/
-│   │       │   │   ├── DisableAndDeleteRoleCommand.cs
-│   │       │   │   ├── DisableAndDeleteRoleCommandHandler.cs
-│   │       │   │   ├── DisableAndDeleteRoleCommandValidator.cs
-│   │       │   │   └── DisableAndDeleteRoleResponse.cs
-│   │       │   └── UpdateRoleDetails/
-│   │       │       ├── UpdateRoleDetailsCommand.cs
-│   │       │       ├── UpdateRoleDetailsCommandHandler.cs
-│   │       │       ├── UpdateRoleDetailsCommandValidator.cs
-│   │       │       └── UpdateRoleDetailsResponse.cs
-│   │       └── Queries/
-│   │           ├── ViewRoleList/
-│   │           │   ├── ViewRoleListDto.cs
-│   │           │   ├── ViewRoleListQuery.cs
-│   │           │   └── ViewRoleListQueryHandler.cs
+│   │   ├── Roles/
+│   │   │   ├── Commands/
+│   │   │   │   ├── ConfigureRolePermissions/
+│   │   │   │   │   ├── ConfigureRolePermissionsCommand.cs
+│   │   │   │   │   ├── ConfigureRolePermissionsCommandHandler.cs
+│   │   │   │   │   ├── ConfigureRolePermissionsCommandValidator.cs
+│   │   │   │   │   └── ConfigureRolePermissionsResponse.cs
+│   │   │   │   ├── CreateNewRole/
+│   │   │   │   │   ├── CreateNewRoleCommand.cs
+│   │   │   │   │   ├── CreateNewRoleCommandHandler.cs
+│   │   │   │   │   ├── CreateNewRoleCommandValidator.cs
+│   │   │   │   │   └── CreateNewRoleResponse.cs
+│   │   │   │   ├── DisableAndDeleteRole/
+│   │   │   │   │   ├── DisableAndDeleteRoleCommand.cs
+│   │   │   │   │   ├── DisableAndDeleteRoleCommandHandler.cs
+│   │   │   │   │   ├── DisableAndDeleteRoleCommandValidator.cs
+│   │   │   │   │   └── DisableAndDeleteRoleResponse.cs
+│   │   │   │   └── UpdateRoleDetails/
+│   │   │   │       ├── UpdateRoleDetailsCommand.cs
+│   │   │   │       ├── UpdateRoleDetailsCommandHandler.cs
+│   │   │   │       ├── UpdateRoleDetailsCommandValidator.cs
+│   │   │   │       └── UpdateRoleDetailsResponse.cs
+│   │   │   └── Queries/
+│   │   │       └── ViewRoleList/
+│   │   │           ├── ViewRoleListDto.cs
+│   │   │           ├── ViewRoleListQuery.cs
+│   │   │           └── ViewRoleListQueryHandler.cs
+│   │   ├── DependencyInjection.cs
+│   │   └── PEMS.Application.csproj
 │   ├── PEMS.Domain/
 │   │   ├── Common/
 │   │   │   ├── AuditableEntity.cs
@@ -857,18 +855,18 @@ PEMS/
 │   │   │   ├── DomainEvent.cs
 │   │   │   └── SoftDeleteEntity.cs
 │   │   ├── Constants/
-│   │   │   ├── AuthConstants.cs
+│   │   │   └── AuthConstants.cs
 │   │   ├── Entities/
 │   │   │   ├── AgendaTemplates/
-│   │   │   │   ├── AgendaTemplate.cs
+│   │   │   │   └── AgendaTemplate.cs
 │   │   │   ├── ApiIntegrations/
 │   │   │   │   ├── ApiConfiguration.cs
 │   │   │   │   ├── ApiRequestLog.cs
 │   │   │   │   └── ApiUsageQuota.cs
 │   │   │   ├── Calendar/
-│   │   │   │   ├── CalendarEvent.cs
+│   │   │   │   └── CalendarEvent.cs
 │   │   │   ├── Campuses/
-│   │   │   │   ├── Campus.cs
+│   │   │   │   └── Campus.cs
 │   │   │   ├── Delegations/
 │   │   │   │   ├── VisitAgenda.cs
 │   │   │   │   ├── VisitGuestMember.cs
@@ -878,7 +876,7 @@ PEMS/
 │   │   │   │   ├── VisitRequestCampus.cs
 │   │   │   │   └── VisitStatusLog.cs
 │   │   │   ├── Departments/
-│   │   │   │   ├── Department.cs
+│   │   │   │   └── Department.cs
 │   │   │   ├── Documents/
 │   │   │   │   ├── Document.cs
 │   │   │   │   └── UploadedFile.cs
@@ -886,25 +884,28 @@ PEMS/
 │   │   │   │   ├── EmailTemplate.cs
 │   │   │   │   └── SentEmail.cs
 │   │   │   ├── Faqs/
-│   │   │   │   ├── Faq.cs
+│   │   │   │   └── Faq.cs
 │   │   │   ├── Feedbacks/
-│   │   │   │   ├── Feedback.cs
+│   │   │   │   └── Feedback.cs
 │   │   │   ├── Galleries/
 │   │   │   │   ├── Gallery.cs
 │   │   │   │   ├── GalleryImage.cs
 │   │   │   │   └── PhotoFaceTag.cs
 │   │   │   ├── Minutes/
 │   │   │   │   ├── Minute.cs
+│   │   │   │   └── MinuteActionItem.cs
 │   │   │   ├── News/
 │   │   │   │   ├── News.cs
+│   │   │   │   ├── NewsContentSection.cs
+│   │   │   │   ├── NewsSectionFile.cs
 │   │   │   │   └── NewsTranslation.cs
 │   │   │   ├── Notifications/
-│   │   │   │   ├── Notification.cs
+│   │   │   │   └── Notification.cs
 │   │   │   ├── Partners/
 │   │   │   │   ├── Partner.cs
-│   │   │   │   └── Partnercontact.cs
+│   │   │   │   └── PartnerContact.cs
 │   │   │   ├── PublicContents/
-│   │   │   │   ├── PublicContent.cs
+│   │   │   │   └── PublicContent.cs
 │   │   │   └── Users/
 │   │   │       ├── AuditLog.cs
 │   │   │       ├── LoginLog.cs
@@ -923,9 +924,15 @@ PEMS/
 │   │   │   ├── DelegationStatus.cs
 │   │   │   ├── DepartmentStatus.cs
 │   │   │   ├── FaqVisibilityStatus.cs
+│   │   │   ├── LogisticsItemStatus.cs
+│   │   │   ├── MinuteStatus.cs
 │   │   │   ├── NewsStatus.cs
+│   │   │   ├── OtpPurpose.cs
 │   │   │   ├── PermissionCode.cs
+│   │   │   ├── SubRole.cs
+│   │   │   ├── UserCreatedVia.cs
 │   │   │   ├── UserRoleCode.cs
+│   │   │   ├── VisitInstanceStatus.cs
 │   │   │   └── VisitRequestStatus.cs
 │   │   ├── Events/
 │   │   │   ├── AccountCreatedEvent.cs
@@ -934,30 +941,29 @@ PEMS/
 │   │   │   ├── ResourceRequestApprovedEvent.cs
 │   │   │   ├── VisitRequestApprovedEvent.cs
 │   │   │   └── VisitRequestSubmittedEvent.cs
-│   │   ├── PEMS.Domain.csproj
-│   │   └── ValueObjects/
-│   │       ├── Address.cs
-│   │       ├── DateRange.cs
-│   │       ├── EmailAddress.cs
-│   │       ├── FileMetadata.cs
-│   │       └── PhoneNumber.cs
+│   │   ├── ValueObjects/
+│   │   │   ├── Address.cs
+│   │   │   ├── DateRange.cs
+│   │   │   ├── EmailAddress.cs
+│   │   │   ├── FileMetadata.cs
+│   │   │   └── PhoneNumber.cs
+│   │   └── PEMS.Domain.csproj
 │   └── PEMS.Infrastructure/
 │       ├── Common/
-│       │   ├── DateTimeService.cs
-│       ├── DependencyInjection.cs
+│       │   └── DateTimeService.cs
 │       ├── Email/
 │       │   ├── EmailService.cs
 │       │   ├── EmailTemplateRenderer.cs
 │       │   └── SmtpEmailSender.cs
 │       ├── ExternalServices/
 │       │   ├── ApiClient/
-│       │   │   ├── ExternalApiClient.cs
+│       │   │   └── ExternalApiClient.cs
 │       │   ├── Calendar/
-│       │   │   ├── CalendarIntegrationService.cs
+│       │   │   └── CalendarIntegrationService.cs
 │       │   ├── FaceRecognition/
-│       │   │   ├── FaceRecognitionService.cs
+│       │   │   └── FaceRecognitionService.cs
 │       │   └── Ocr/
-│       │       ├── OcrService.cs
+│       │       └── OcrService.cs
 │       ├── FileStorage/
 │       │   ├── CloudFileStorageService.cs
 │       │   ├── FileStorageService.cs
@@ -965,7 +971,7 @@ PEMS/
 │       │   ├── LocalFileStorageService.cs
 │       │   └── VirusScanService.cs
 │       ├── Idempotency/
-│       │   ├── IdempotencyService.cs
+│       │   └── IdempotencyService.cs
 │       ├── Identity/
 │       │   ├── CurrentUserService.cs
 │       │   ├── GoogleTokenValidator.cs
@@ -982,12 +988,9 @@ PEMS/
 │       │   ├── ApiRequestLogService.cs
 │       │   ├── AuditLogService.cs
 │       │   └── SecurityAuditService.cs
-│       ├── PEMS.Infrastructure.csproj
 │       ├── Persistence/
-│       │   ├── ApplicationDbContext.cs
-│       │   ├── ApplicationDbContextFactory.cs
 │       │   ├── Configurations/
-│       │   │   ├── UserConfiguration.cs
+│       │   │   └── UserConfiguration.cs
 │       │   ├── Repositories/
 │       │   │   ├── CampusRepository.cs
 │       │   │   ├── DelegationRepository.cs
@@ -996,25 +999,28 @@ PEMS/
 │       │   │   ├── PartnerRepository.cs
 │       │   │   ├── ReportRepository.cs
 │       │   │   └── UserRepository.cs
-│       │   └── Seed/
-│       └── RateLimiting/
-│           ├── InMemoryRateLimitStore.cs
-│           ├── RateLimitService.cs
-│           └── RedisRateLimitStore.cs
+│       │   ├── ApplicationDbContext.cs
+│       │   └── ApplicationDbContextFactory.cs
+│       ├── RateLimiting/
+│       │   ├── InMemoryRateLimitStore.cs
+│       │   ├── RateLimitService.cs
+│       │   └── RedisRateLimitStore.cs
+│       ├── DependencyInjection.cs
+│       └── PEMS.Infrastructure.csproj
 ├── database/
 │   ├── migrations/
-│   │   ├── README.md
-│   ├── README.md
+│   │   └── README.md
 │   ├── scripts/
 │   │   ├── DbSeeder/
 │   │   │   ├── DbSeeder.csproj
 │   │   │   └── Program.cs
-│   │   ├── pems_full.sql
-│   │   └── SEED_DATA_CONVENTION.md
-│   └── seed/
-│       ├── campuses.sql
-│       ├── permissions.sql
-│       └── roles.sql
+│   │   ├── SEED_DATA_CONVENTION.md
+│   │   └── pems_full.sql
+│   ├── seed/
+│   │   ├── campuses.sql
+│   │   ├── permissions.sql
+│   │   └── roles.sql
+│   └── README.md
 ├── docs/
 │   ├── api/
 │   │   ├── API_ROUTE_CONVENTION.md
@@ -1024,601 +1030,680 @@ PEMS/
 │   │   ├── CLEAN_ARCHITECTURE.md
 │   │   └── PROJECT_STRUCTURE_FULL.md
 │   ├── authentication/
-│   │   ├── AUTHENTICATION_FLOW_REPORT.md
+│   │   └── AUTHENTICATION_FLOW_REPORT.md
 │   ├── database/
 │   │   ├── DATABASE_DEPLOYMENT.md
 │   │   └── DATABASE_SCHEMA.md
-│   ├── PEMS_AI_Refactor_Project_Structure_Prompt.md
 │   ├── permissions/
 │   │   ├── PERMISSION_MATRIX.md
 │   │   └── PERMISSION_RULES.md
-│   ├── PROJECT_OVERVIEW.md
-│   ├── Technology.md
 │   ├── use-cases/
 │   │   ├── USE_CASE_LIST.md
 │   │   └── USE_CASE_NOTES.md
+│   ├── PEMS_AI_Refactor_Project_Structure_Prompt.md
+│   ├── PROJECT_OVERVIEW.md
+│   ├── Technology.md
 │   └── VISITOR_MANAGEMENT_SYSTEM.md
 ├── frontend/
-│   ├── pems-react/
-│   │   ├── .env
-│   │   ├── .env.example
-│   │   ├── .gitignore
-│   │   ├── fix_process.cjs
-│   │   ├── fix_responsive.cjs
-│   │   ├── index.html
-│   │   ├── metadata.json
-│   │   ├── out.txt
-│   │   ├── package.json
-│   │   ├── package-lock.json
-│   │   ├── README.md
-│   │   ├── scripts/
-│   │   │   ├── applet_update.js
-│   │   │   ├── applet_update_contact.js
-│   │   │   ├── applet_update_emerald.js
-│   │   │   ├── applet_update_visit_3.js
-│   │   │   ├── applet_update_visit_4.js
-│   │   │   ├── applet_update_vp.js
-│   │   │   ├── transform.js
-│   │   │   ├── update_ho.js
-│   │   │   ├── update_linter.js
-│   │   │   ├── update_visit_2.js
-│   │   │   ├── update_visit_3.js
-│   │   │   ├── update_visit_4.js
-│   │   │   └── update_vp.js
-│   │   ├── src/
-│   │   │   ├── App.tsx
-│   │   │   ├── assets/
-│   │   │   │   ├── Avatar/
-│   │   │   │   │   ├── AvatarDefault.png
-│   │   │   │   ├── FPTbanner_visit/
-│   │   │   │   │   ├── (8 media files)
-│   │   │   │   ├── images/
-│   │   │   │   │   ├── (7 media files)
-│   │   │   │   ├── img_visit_detail/
-│   │   │   │   │   ├── (20 media files)
-│   │   │   │   └── Logo/
-│   │   │   │       ├── (18 media files)
-│   │   │   ├── components/
-│   │   │   │   ├── dashboard/
-│   │   │   │   │   ├── NotificationBell.tsx
-│   │   │   │   │   └── Sidebar.tsx
-│   │   │   │   ├── home/
-│   │   │   │   │   ├── CTASection.tsx
-│   │   │   │   │   ├── HeroSection.tsx
-│   │   │   │   │   ├── NewsSection.tsx
-│   │   │   │   │   ├── PartnersSection.tsx
-│   │   │   │   │   └── StatsSection.tsx
-│   │   │   │   ├── layout/
-│   │   │   │   │   ├── DashboardLayout.tsx
-│   │   │   │   │   ├── Footer.tsx
-│   │   │   │   │   └── Header.tsx
-│   │   │   │   ├── modals/
-│   │   │   │   │   ├── LoginModal.tsx
-│   │   │   │   │   ├── SearchPopup.tsx
-│   │   │   │   │   ├── VisitDetailsModal.tsx
-│   │   │   │   │   └── VisitingFormPopup.tsx
-│   │   │   │   └── partners/
-│   │   │   │       ├── GlobeComponent.tsx
-│   │   │   ├── features/
-│   │   │   │   ├── account-management/
-│   │   │   │   │   ├── adapters/
-│   │   │   │   │   │   ├── accountManagementAdapter.ts
-│   │   │   │   │   ├── api/
-│   │   │   │   │   │   ├── accountManagementApi.ts
-│   │   │   │   │   ├── hooks/
-│   │   │   │   │   │   ├── useAccountManagement.ts
-│   │   │   │   │   └── types/
-│   │   │   │   │       ├── accountManagement.types.ts
-│   │   │   │   ├── agenda-templates/
-│   │   │   │   │   ├── adapters/
-│   │   │   │   │   │   ├── agendaTemplatesAdapter.ts
-│   │   │   │   │   ├── api/
-│   │   │   │   │   │   ├── agendaTemplatesApi.ts
-│   │   │   │   │   ├── hooks/
-│   │   │   │   │   │   ├── useAgendaTemplates.ts
-│   │   │   │   │   └── types/
-│   │   │   │   │       ├── agendaTemplates.types.ts
-│   │   │   │   ├── api-management/
-│   │   │   │   │   ├── adapters/
-│   │   │   │   │   │   ├── apiManagementAdapter.ts
-│   │   │   │   │   ├── api/
-│   │   │   │   │   │   ├── apiManagementApi.ts
-│   │   │   │   │   ├── hooks/
-│   │   │   │   │   │   ├── useApiManagement.ts
-│   │   │   │   │   └── types/
-│   │   │   │   │       ├── apiManagement.types.ts
-│   │   │   │   ├── authentication/
-│   │   │   │   │   ├── adapters/
-│   │   │   │   │   │   ├── authenticationAdapter.ts
-│   │   │   │   │   ├── api/
-│   │   │   │   │   │   ├── authenticationApi.ts
-│   │   │   │   │   │   └── authError.ts
-│   │   │   │   │   ├── components/
-│   │   │   │   │   │   ├── DualPortalLoginForms.tsx
-│   │   │   │   │   ├── hooks/
-│   │   │   │   │   │   ├── useAuthentication.ts
-│   │   │   │   │   └── types/
-│   │   │   │   │       ├── authentication.types.ts
-│   │   │   │   ├── calendars/
-│   │   │   │   │   ├── adapters/
-│   │   │   │   │   │   ├── calendarsAdapter.ts
-│   │   │   │   │   ├── api/
-│   │   │   │   │   │   ├── calendarsApi.ts
-│   │   │   │   │   ├── hooks/
-│   │   │   │   │   │   ├── useCalendars.ts
-│   │   │   │   │   └── types/
-│   │   │   │   │       ├── calendars.types.ts
-│   │   │   │   ├── campus-management/
-│   │   │   │   │   ├── adapters/
-│   │   │   │   │   │   ├── campusManagementAdapter.ts
-│   │   │   │   │   ├── api/
-│   │   │   │   │   │   ├── campusManagementApi.ts
-│   │   │   │   │   ├── hooks/
-│   │   │   │   │   │   ├── useCampusManagement.ts
-│   │   │   │   │   └── types/
-│   │   │   │   │       ├── campusManagement.types.ts
-│   │   │   │   ├── delegations/
-│   │   │   │   │   ├── adapters/
-│   │   │   │   │   │   ├── delegationsAdapter.ts
-│   │   │   │   │   ├── api/
-│   │   │   │   │   │   ├── delegationsApi.ts
-│   │   │   │   │   ├── hooks/
-│   │   │   │   │   │   ├── useDelegations.ts
-│   │   │   │   │   └── types/
-│   │   │   │   │       ├── delegations.types.ts
-│   │   │   │   ├── department-management/
-│   │   │   │   │   ├── adapters/
-│   │   │   │   │   │   ├── departmentManagementAdapter.ts
-│   │   │   │   │   ├── api/
-│   │   │   │   │   │   ├── departmentManagementApi.ts
-│   │   │   │   │   ├── hooks/
-│   │   │   │   │   │   ├── useDepartmentManagement.ts
-│   │   │   │   │   └── types/
-│   │   │   │   │       ├── departmentManagement.types.ts
-│   │   │   │   ├── documents/
-│   │   │   │   │   ├── adapters/
-│   │   │   │   │   │   ├── documentsAdapter.ts
-│   │   │   │   │   ├── api/
-│   │   │   │   │   │   ├── documentsApi.ts
-│   │   │   │   │   ├── hooks/
-│   │   │   │   │   │   ├── useDocuments.ts
-│   │   │   │   │   └── types/
-│   │   │   │   │       ├── documents.types.ts
-│   │   │   │   ├── emails/
-│   │   │   │   │   ├── adapters/
-│   │   │   │   │   │   ├── emailsAdapter.ts
-│   │   │   │   │   ├── api/
-│   │   │   │   │   │   ├── emailsApi.ts
-│   │   │   │   │   ├── hooks/
-│   │   │   │   │   │   ├── useEmails.ts
-│   │   │   │   │   └── types/
-│   │   │   │   │       ├── emails.types.ts
-│   │   │   │   ├── faq-management/
-│   │   │   │   │   ├── adapters/
-│   │   │   │   │   │   ├── faqManagementAdapter.ts
-│   │   │   │   │   ├── api/
-│   │   │   │   │   │   ├── faqManagementApi.ts
-│   │   │   │   │   ├── hooks/
-│   │   │   │   │   │   ├── useFaqManagement.ts
-│   │   │   │   │   └── types/
-│   │   │   │   │       ├── faqManagement.types.ts
-│   │   │   │   ├── feedbacks/
-│   │   │   │   │   ├── adapters/
-│   │   │   │   │   │   ├── feedbacksAdapter.ts
-│   │   │   │   │   ├── api/
-│   │   │   │   │   │   ├── feedbacksApi.ts
-│   │   │   │   │   ├── hooks/
-│   │   │   │   │   │   ├── useFeedbacks.ts
-│   │   │   │   │   └── types/
-│   │   │   │   │       ├── feedbacks.types.ts
-│   │   │   │   ├── gallery-management/
-│   │   │   │   │   ├── adapters/
-│   │   │   │   │   │   ├── galleryManagementAdapter.ts
-│   │   │   │   │   ├── api/
-│   │   │   │   │   │   ├── galleryManagementApi.ts
-│   │   │   │   │   ├── hooks/
-│   │   │   │   │   │   ├── useGalleryManagement.ts
-│   │   │   │   │   └── types/
-│   │   │   │   │       ├── galleryManagement.types.ts
-│   │   │   │   ├── meeting-minutes/
-│   │   │   │   │   ├── adapters/
-│   │   │   │   │   │   ├── meetingMinutesAdapter.ts
-│   │   │   │   │   ├── api/
-│   │   │   │   │   │   ├── meetingMinutesApi.ts
-│   │   │   │   │   ├── hooks/
-│   │   │   │   │   │   ├── useMeetingMinutes.ts
-│   │   │   │   │   └── types/
-│   │   │   │   │       ├── meetingMinutes.types.ts
-│   │   │   │   ├── news-management/
-│   │   │   │   │   ├── adapters/
-│   │   │   │   │   │   ├── newsManagementAdapter.ts
-│   │   │   │   │   ├── api/
-│   │   │   │   │   │   ├── newsManagementApi.ts
-│   │   │   │   │   ├── hooks/
-│   │   │   │   │   │   ├── useNewsManagement.ts
-│   │   │   │   │   └── types/
-│   │   │   │   │       ├── newsManagement.types.ts
-│   │   │   │   ├── notifications/
-│   │   │   │   │   ├── adapters/
-│   │   │   │   │   │   ├── notificationsAdapter.ts
-│   │   │   │   │   ├── api/
-│   │   │   │   │   │   ├── notificationsApi.ts
-│   │   │   │   │   ├── hooks/
-│   │   │   │   │   │   ├── useNotifications.ts
-│   │   │   │   │   └── types/
-│   │   │   │   │       ├── notifications.types.ts
-│   │   │   │   ├── partners/
-│   │   │   │   │   ├── adapters/
-│   │   │   │   │   │   ├── partnersAdapter.ts
-│   │   │   │   │   ├── api/
-│   │   │   │   │   │   ├── partnersApi.ts
-│   │   │   │   │   ├── hooks/
-│   │   │   │   │   │   ├── usePartners.ts
-│   │   │   │   │   └── types/
-│   │   │   │   │       ├── partners.types.ts
-│   │   │   │   ├── profile/
-│   │   │   │   │   ├── adapters/
-│   │   │   │   │   │   ├── profileAdapter.ts
-│   │   │   │   │   ├── api/
-│   │   │   │   │   │   ├── profileApi.ts
-│   │   │   │   │   ├── hooks/
-│   │   │   │   │   │   ├── useProfile.ts
-│   │   │   │   │   └── types/
-│   │   │   │   │       ├── profile.types.ts
-│   │   │   │   ├── public-content/
-│   │   │   │   │   ├── adapters/
-│   │   │   │   │   │   ├── publicContentAdapter.ts
-│   │   │   │   │   ├── api/
-│   │   │   │   │   │   ├── publicContentApi.ts
-│   │   │   │   │   ├── hooks/
-│   │   │   │   │   │   ├── usePublicContent.ts
-│   │   │   │   │   └── types/
-│   │   │   │   │       ├── publicContent.types.ts
-│   │   │   │   ├── reports/
-│   │   │   │   │   ├── adapters/
-│   │   │   │   │   │   ├── reportsAdapter.ts
-│   │   │   │   │   ├── api/
-│   │   │   │   │   │   ├── reportsApi.ts
-│   │   │   │   │   ├── hooks/
-│   │   │   │   │   │   ├── useReports.ts
-│   │   │   │   │   └── types/
-│   │   │   │   │       ├── reports.types.ts
-│   │   │   │   └── role-permission-management/
-│   │   │   │       ├── adapters/
-│   │   │   │       │   ├── rolePermissionManagementAdapter.ts
-│   │   │   │       ├── api/
-│   │   │   │       │   ├── rolePermissionManagementApi.ts
-│   │   │   │       ├── hooks/
-│   │   │   │       │   ├── useRolePermissionManagement.ts
-│   │   │   │       └── types/
-│   │   │   │           ├── rolePermissionManagement.types.ts
-│   │   │   ├── index.css
-│   │   │   ├── main.tsx
-│   │   │   ├── pages/
-│   │   │   │   ├── auth/
-│   │   │   │   │   ├── ChangePasswordPage.tsx
-│   │   │   │   │   ├── ForgotPasswordPage.tsx
-│   │   │   │   │   ├── LoginPage.tsx
-│   │   │   │   │   └── ResetPasswordPage.tsx
-│   │   │   │   ├── CampusDetailVisitPage.tsx
-│   │   │   │   ├── dashboard/
-│   │   │   │   │   ├── accounts/
-│   │   │   │   │   │   ├── AccountManagement.tsx
-│   │   │   │   │   ├── apis/
-│   │   │   │   │   │   ├── ApiManagement.tsx
-│   │   │   │   │   ├── campus/
-│   │   │   │   │   │   ├── CampusDetail.tsx
-│   │   │   │   │   │   └── CampusManagement.tsx
-│   │   │   │   │   ├── departments/
-│   │   │   │   │   │   ├── DepartmentDetailDashboard.tsx
-│   │   │   │   │   │   ├── DepartmentManagement.tsx
-│   │   │   │   │   │   ├── TaskDetail.tsx
-│   │   │   │   │   │   └── TaskInvitationDetail.tsx
-│   │   │   │   │   ├── documents/
-│   │   │   │   │   │   ├── DocumentManagement.tsx
-│   │   │   │   │   ├── emails/
-│   │   │   │   │   │   ├── CreateEmail.tsx
-│   │   │   │   │   │   ├── EditEmail.tsx
-│   │   │   │   │   │   ├── EmailDetail.tsx
-│   │   │   │   │   │   ├── EmailManagement.tsx
-│   │   │   │   │   │   ├── SendEmailTab.tsx
-│   │   │   │   │   │   └── SentEmailDetail.tsx
-│   │   │   │   │   ├── faq/
-│   │   │   │   │   │   ├── FAQDetail.tsx
-│   │   │   │   │   │   └── FAQManagement.tsx
-│   │   │   │   │   ├── feedback/
-│   │   │   │   │   │   ├── FeedbackDetail.tsx
-│   │   │   │   │   │   ├── FeedbackManagement.tsx
-│   │   │   │   │   │   └── mockData.ts
-│   │   │   │   │   ├── gallery/
-│   │   │   │   │   │   ├── GalleryManagement.tsx
-│   │   │   │   │   │   └── LocationManagement.tsx
-│   │   │   │   │   ├── home/
-│   │   │   │   │   │   ├── AdminDashboardView.tsx
-│   │   │   │   │   │   ├── DashboardHome.tsx
-│   │   │   │   │   │   ├── HODashboardView.tsx
-│   │   │   │   │   │   └── SharedDashboardView.tsx
-│   │   │   │   │   ├── minutes/
-│   │   │   │   │   │   ├── MinuteManagement.tsx
-│   │   │   │   │   ├── news/
-│   │   │   │   │   │   ├── CreateNews.tsx
-│   │   │   │   │   │   ├── EditNews.tsx
-│   │   │   │   │   │   ├── NewsDetailDashboard.tsx
-│   │   │   │   │   │   └── NewsManagement.tsx
-│   │   │   │   │   ├── partners/
-│   │   │   │   │   │   ├── CreatePartner.tsx
-│   │   │   │   │   │   ├── PartnerDetail.tsx
-│   │   │   │   │   │   └── PartnerManagement.tsx
-│   │   │   │   │   ├── permissions/
-│   │   │   │   │   │   ├── PermissionManagement.tsx
-│   │   │   │   │   ├── profile/
-│   │   │   │   │   │   ├── Profile.tsx
-│   │   │   │   │   ├── reports/
-│   │   │   │   │   │   ├── DeptReportManagement.tsx
-│   │   │   │   │   │   ├── mockReportData.ts
-│   │   │   │   │   │   └── ReportManagement.tsx
-│   │   │   │   │   └── visit/
-│   │   │   │   │       ├── AgendaTemplateManagement.tsx
-│   │   │   │   │       ├── CreateVisitRequest.tsx
-│   │   │   │   │       ├── HoVisitProcessDetail.tsx
-│   │   │   │   │       ├── VisitAfterTab.tsx
-│   │   │   │   │       ├── VisitDuringTab.tsx
-│   │   │   │   │       ├── VisitProcess.tsx
-│   │   │   │   │       ├── VisitRequestDetail.tsx
-│   │   │   │   │       └── VisitRequestManagement.tsx
-│   │   │   │   ├── FAQPage.tsx
-│   │   │   │   ├── ForbiddenPage.tsx
-│   │   │   │   ├── HomePage.tsx
-│   │   │   │   ├── NewsDetailPage.tsx
-│   │   │   │   ├── NewsPage.tsx
-│   │   │   │   ├── PartnerDetailPage.tsx
-│   │   │   │   ├── PartnersPage.tsx
-│   │   │   │   └── VisitFPTUPage.tsx
-│   │   │   ├── shared/
-│   │   │   │   ├── api/
-│   │   │   │   │   ├── authInterceptor.ts
-│   │   │   │   │   ├── endpoints.ts
-│   │   │   │   │   ├── errorHandler.ts
-│   │   │   │   │   └── httpClient.ts
-│   │   │   │   ├── auth/
-│   │   │   │   │   ├── AuthContext.tsx
-│   │   │   │   │   ├── authStorage.ts
-│   │   │   │   │   ├── dashboardRoute.ts
-│   │   │   │   │   ├── permissionChecker.ts
-│   │   │   │   │   ├── ProtectedRoute.tsx
-│   │   │   │   │   └── RoleGuard.tsx
-│   │   │   │   ├── constants/
-│   │   │   │   │   ├── appRoutes.ts
-│   │   │   │   │   ├── permissions.ts
-│   │   │   │   │   ├── roles.ts
-│   │   │   │   │   ├── statusCodes.ts
-│   │   │   │   │   └── ucCodes.ts
-│   │   │   │   ├── hooks/
-│   │   │   │   │   ├── useApiError.ts
-│   │   │   │   │   ├── useAuth.ts
-│   │   │   │   │   ├── useDebounce.ts
-│   │   │   │   │   ├── usePagination.ts
-│   │   │   │   │   └── usePermission.ts
-│   │   │   │   ├── types/
-│   │   │   │   │   ├── api.types.ts
-│   │   │   │   │   ├── auth.types.ts
-│   │   │   │   │   ├── common.types.ts
-│   │   │   │   │   ├── pagination.types.ts
-│   │   │   │   │   └── permission.types.ts
-│   │   │   │   └── utils/
-│   │   │   │       ├── dateUtils.ts
-│   │   │   │       ├── fileUtils.ts
-│   │   │   │       ├── formatUtils.ts
-│   │   │   │       ├── passwordPolicy.ts
-│   │   │   │       ├── routeUtils.ts
-│   │   │   │       └── validationUtils.ts
-│   │   │   ├── types.ts
-│   │   │   └── vite-env.d.ts
-│   │   ├── transform.cjs
-│   │   ├── transform_editable.cjs
-│   │   ├── transform_setup_editable.cjs
-│   │   ├── tsconfig.json
-│   │   ├── updateHeaders.cjs
-│   │   └── vite.config.ts
-├── payload.json
+│   └── pems-react/
+│       ├── scripts/
+│       │   ├── applet_update.js
+│       │   ├── applet_update_contact.js
+│       │   ├── applet_update_emerald.js
+│       │   ├── applet_update_visit_3.js
+│       │   ├── applet_update_visit_4.js
+│       │   ├── applet_update_vp.js
+│       │   ├── transform.js
+│       │   ├── update_ho.js
+│       │   ├── update_linter.js
+│       │   ├── update_visit_2.js
+│       │   ├── update_visit_3.js
+│       │   ├── update_visit_4.js
+│       │   └── update_vp.js
+│       ├── src/
+│       │   ├── assets/
+│       │   │   ├── Avatar/
+│       │   │   │   └── AvatarDefault.png
+│       │   │   ├── FPTbanner_visit/
+│       │   │   │   ├── 5CS.png
+│       │   │   │   ├── CanTho.png
+│       │   │   │   ├── DaNang.png
+│       │   │   │   ├── HCM.png
+│       │   │   │   ├── Hola.jpg
+│       │   │   │   ├── QuanAP.jpg
+│       │   │   │   ├── QuyNhon.png
+│       │   │   │   └── hola_new.jpg
+│       │   │   ├── Logo/
+│       │   │   │   ├── logo01.png
+│       │   │   │   ├── logo02.png
+│       │   │   │   ├── logo03.png
+│       │   │   │   ├── logo04.png
+│       │   │   │   ├── logo05.png
+│       │   │   │   ├── logo06.png
+│       │   │   │   ├── logo07.png
+│       │   │   │   ├── logo08.png
+│       │   │   │   ├── logo09.png
+│       │   │   │   ├── logo10.png
+│       │   │   │   ├── logo11.png
+│       │   │   │   ├── logo12.png
+│       │   │   │   ├── logo13.jpg
+│       │   │   │   ├── logo14.png
+│       │   │   │   ├── logo15.png
+│       │   │   │   ├── logo16.png
+│       │   │   │   ├── logo17.png
+│       │   │   │   └── logo18.png
+│       │   │   ├── images/
+│       │   │   │   ├── 2021-FPTU-Eng.png
+│       │   │   │   ├── banner.jpg
+│       │   │   │   ├── banner02.png
+│       │   │   │   ├── banner_partner.png
+│       │   │   │   ├── loading.png
+│       │   │   │   ├── news_pattern.svg
+│       │   │   │   └── regenerated_image_1778552336496.png
+│       │   │   └── img_visit_detail/
+│       │   │       ├── 01.jpg
+│       │   │       ├── 02.jpg
+│       │   │       ├── 03.jpg
+│       │   │       ├── 04.jpg
+│       │   │       ├── 05.jpg
+│       │   │       ├── 06.jpg
+│       │   │       ├── 07.jpg
+│       │   │       ├── 08.jpg
+│       │   │       ├── 09.jpg
+│       │   │       ├── 10.jpg
+│       │   │       ├── 11.jpg
+│       │   │       ├── 12.jpg
+│       │   │       ├── 13.jpg
+│       │   │       ├── 14.jpg
+│       │   │       ├── 15.jpg
+│       │   │       ├── 16.jpg
+│       │   │       ├── 17.jpg
+│       │   │       ├── 18.jpg
+│       │   │       ├── 19.jpg
+│       │   │       └── 20.jpg
+│       │   ├── components/
+│       │   │   ├── dashboard/
+│       │   │   │   ├── NotificationBell.tsx
+│       │   │   │   └── Sidebar.tsx
+│       │   │   ├── home/
+│       │   │   │   ├── CTASection.tsx
+│       │   │   │   ├── HeroSection.tsx
+│       │   │   │   ├── NewsSection.tsx
+│       │   │   │   ├── PartnersSection.tsx
+│       │   │   │   └── StatsSection.tsx
+│       │   │   ├── layout/
+│       │   │   │   ├── DashboardLayout.tsx
+│       │   │   │   ├── Footer.tsx
+│       │   │   │   └── Header.tsx
+│       │   │   ├── modals/
+│       │   │   │   ├── LoginModal.tsx
+│       │   │   │   ├── SearchPopup.tsx
+│       │   │   │   ├── VisitDetailsModal.tsx
+│       │   │   │   └── VisitingFormPopup.tsx
+│       │   │   └── partners/
+│       │   │       └── GlobeComponent.tsx
+│       │   ├── features/
+│       │   │   ├── account-management/
+│       │   │   │   ├── adapters/
+│       │   │   │   │   └── accountManagementAdapter.ts
+│       │   │   │   ├── api/
+│       │   │   │   │   └── accountManagementApi.ts
+│       │   │   │   ├── hooks/
+│       │   │   │   │   └── useAccountManagement.ts
+│       │   │   │   └── types/
+│       │   │   │       └── accountManagement.types.ts
+│       │   │   ├── agenda-templates/
+│       │   │   │   ├── adapters/
+│       │   │   │   │   └── agendaTemplatesAdapter.ts
+│       │   │   │   ├── api/
+│       │   │   │   │   └── agendaTemplatesApi.ts
+│       │   │   │   ├── hooks/
+│       │   │   │   │   └── useAgendaTemplates.ts
+│       │   │   │   └── types/
+│       │   │   │       └── agendaTemplates.types.ts
+│       │   │   ├── api-management/
+│       │   │   │   ├── adapters/
+│       │   │   │   │   └── apiManagementAdapter.ts
+│       │   │   │   ├── api/
+│       │   │   │   │   └── apiManagementApi.ts
+│       │   │   │   ├── hooks/
+│       │   │   │   │   └── useApiManagement.ts
+│       │   │   │   └── types/
+│       │   │   │       └── apiManagement.types.ts
+│       │   │   ├── authentication/
+│       │   │   │   ├── adapters/
+│       │   │   │   │   └── authenticationAdapter.ts
+│       │   │   │   ├── api/
+│       │   │   │   │   ├── authError.ts
+│       │   │   │   │   └── authenticationApi.ts
+│       │   │   │   ├── components/
+│       │   │   │   │   └── DualPortalLoginForms.tsx
+│       │   │   │   ├── hooks/
+│       │   │   │   │   └── useAuthentication.ts
+│       │   │   │   └── types/
+│       │   │   │       └── authentication.types.ts
+│       │   │   ├── calendars/
+│       │   │   │   ├── adapters/
+│       │   │   │   │   └── calendarsAdapter.ts
+│       │   │   │   ├── api/
+│       │   │   │   │   └── calendarsApi.ts
+│       │   │   │   ├── hooks/
+│       │   │   │   │   └── useCalendars.ts
+│       │   │   │   └── types/
+│       │   │   │       └── calendars.types.ts
+│       │   │   ├── campus-management/
+│       │   │   │   ├── adapters/
+│       │   │   │   │   └── campusManagementAdapter.ts
+│       │   │   │   ├── api/
+│       │   │   │   │   └── campusManagementApi.ts
+│       │   │   │   ├── hooks/
+│       │   │   │   │   └── useCampusManagement.ts
+│       │   │   │   └── types/
+│       │   │   │       └── campusManagement.types.ts
+│       │   │   ├── delegations/
+│       │   │   │   ├── adapters/
+│       │   │   │   │   └── delegationsAdapter.ts
+│       │   │   │   ├── api/
+│       │   │   │   │   └── delegationsApi.ts
+│       │   │   │   ├── hooks/
+│       │   │   │   │   └── useDelegations.ts
+│       │   │   │   └── types/
+│       │   │   │       └── delegations.types.ts
+│       │   │   ├── department-management/
+│       │   │   │   ├── adapters/
+│       │   │   │   │   └── departmentManagementAdapter.ts
+│       │   │   │   ├── api/
+│       │   │   │   │   └── departmentManagementApi.ts
+│       │   │   │   ├── hooks/
+│       │   │   │   │   └── useDepartmentManagement.ts
+│       │   │   │   └── types/
+│       │   │   │       └── departmentManagement.types.ts
+│       │   │   ├── documents/
+│       │   │   │   ├── adapters/
+│       │   │   │   │   └── documentsAdapter.ts
+│       │   │   │   ├── api/
+│       │   │   │   │   └── documentsApi.ts
+│       │   │   │   ├── hooks/
+│       │   │   │   │   └── useDocuments.ts
+│       │   │   │   └── types/
+│       │   │   │       └── documents.types.ts
+│       │   │   ├── emails/
+│       │   │   │   ├── adapters/
+│       │   │   │   │   └── emailsAdapter.ts
+│       │   │   │   ├── api/
+│       │   │   │   │   └── emailsApi.ts
+│       │   │   │   ├── hooks/
+│       │   │   │   │   └── useEmails.ts
+│       │   │   │   └── types/
+│       │   │   │       └── emails.types.ts
+│       │   │   ├── faq-management/
+│       │   │   │   ├── adapters/
+│       │   │   │   │   └── faqManagementAdapter.ts
+│       │   │   │   ├── api/
+│       │   │   │   │   └── faqManagementApi.ts
+│       │   │   │   ├── hooks/
+│       │   │   │   │   └── useFaqManagement.ts
+│       │   │   │   └── types/
+│       │   │   │       └── faqManagement.types.ts
+│       │   │   ├── feedbacks/
+│       │   │   │   ├── adapters/
+│       │   │   │   │   └── feedbacksAdapter.ts
+│       │   │   │   ├── api/
+│       │   │   │   │   └── feedbacksApi.ts
+│       │   │   │   ├── hooks/
+│       │   │   │   │   └── useFeedbacks.ts
+│       │   │   │   └── types/
+│       │   │   │       └── feedbacks.types.ts
+│       │   │   ├── gallery-management/
+│       │   │   │   ├── adapters/
+│       │   │   │   │   └── galleryManagementAdapter.ts
+│       │   │   │   ├── api/
+│       │   │   │   │   └── galleryManagementApi.ts
+│       │   │   │   ├── hooks/
+│       │   │   │   │   └── useGalleryManagement.ts
+│       │   │   │   └── types/
+│       │   │   │       └── galleryManagement.types.ts
+│       │   │   ├── meeting-minutes/
+│       │   │   │   ├── adapters/
+│       │   │   │   │   └── meetingMinutesAdapter.ts
+│       │   │   │   ├── api/
+│       │   │   │   │   └── meetingMinutesApi.ts
+│       │   │   │   ├── hooks/
+│       │   │   │   │   └── useMeetingMinutes.ts
+│       │   │   │   └── types/
+│       │   │   │       └── meetingMinutes.types.ts
+│       │   │   ├── news-management/
+│       │   │   │   ├── adapters/
+│       │   │   │   │   └── newsManagementAdapter.ts
+│       │   │   │   ├── api/
+│       │   │   │   │   └── newsManagementApi.ts
+│       │   │   │   ├── hooks/
+│       │   │   │   │   └── useNewsManagement.ts
+│       │   │   │   └── types/
+│       │   │   │       └── newsManagement.types.ts
+│       │   │   ├── notifications/
+│       │   │   │   ├── adapters/
+│       │   │   │   │   └── notificationsAdapter.ts
+│       │   │   │   ├── api/
+│       │   │   │   │   └── notificationsApi.ts
+│       │   │   │   ├── hooks/
+│       │   │   │   │   └── useNotifications.ts
+│       │   │   │   └── types/
+│       │   │   │       └── notifications.types.ts
+│       │   │   ├── partners/
+│       │   │   │   ├── adapters/
+│       │   │   │   │   └── partnersAdapter.ts
+│       │   │   │   ├── api/
+│       │   │   │   │   └── partnersApi.ts
+│       │   │   │   ├── hooks/
+│       │   │   │   │   └── usePartners.ts
+│       │   │   │   └── types/
+│       │   │   │       └── partners.types.ts
+│       │   │   ├── profile/
+│       │   │   │   ├── adapters/
+│       │   │   │   │   └── profileAdapter.ts
+│       │   │   │   ├── api/
+│       │   │   │   │   └── profileApi.ts
+│       │   │   │   ├── hooks/
+│       │   │   │   │   └── useProfile.ts
+│       │   │   │   └── types/
+│       │   │   │       └── profile.types.ts
+│       │   │   ├── public-content/
+│       │   │   │   ├── adapters/
+│       │   │   │   │   └── publicContentAdapter.ts
+│       │   │   │   ├── api/
+│       │   │   │   │   └── publicContentApi.ts
+│       │   │   │   ├── hooks/
+│       │   │   │   │   └── usePublicContent.ts
+│       │   │   │   └── types/
+│       │   │   │       └── publicContent.types.ts
+│       │   │   ├── reports/
+│       │   │   │   ├── adapters/
+│       │   │   │   │   └── reportsAdapter.ts
+│       │   │   │   ├── api/
+│       │   │   │   │   └── reportsApi.ts
+│       │   │   │   ├── hooks/
+│       │   │   │   │   └── useReports.ts
+│       │   │   │   └── types/
+│       │   │   │       └── reports.types.ts
+│       │   │   └── role-permission-management/
+│       │   │       ├── adapters/
+│       │   │       │   └── rolePermissionManagementAdapter.ts
+│       │   │       ├── api/
+│       │   │       │   └── rolePermissionManagementApi.ts
+│       │   │       ├── hooks/
+│       │   │       │   └── useRolePermissionManagement.ts
+│       │   │       └── types/
+│       │   │           └── rolePermissionManagement.types.ts
+│       │   ├── pages/
+│       │   │   ├── auth/
+│       │   │   │   ├── ChangePasswordPage.tsx
+│       │   │   │   ├── ForgotPasswordPage.tsx
+│       │   │   │   ├── LoginPage.tsx
+│       │   │   │   └── ResetPasswordPage.tsx
+│       │   │   ├── dashboard/
+│       │   │   │   ├── accounts/
+│       │   │   │   │   └── AccountManagement.tsx
+│       │   │   │   ├── apis/
+│       │   │   │   │   └── ApiManagement.tsx
+│       │   │   │   ├── campus/
+│       │   │   │   │   ├── CampusDetail.tsx
+│       │   │   │   │   └── CampusManagement.tsx
+│       │   │   │   ├── departments/
+│       │   │   │   │   ├── DepartmentDetailDashboard.tsx
+│       │   │   │   │   ├── DepartmentManagement.tsx
+│       │   │   │   │   ├── TaskDetail.tsx
+│       │   │   │   │   └── TaskInvitationDetail.tsx
+│       │   │   │   ├── documents/
+│       │   │   │   │   └── DocumentManagement.tsx
+│       │   │   │   ├── emails/
+│       │   │   │   │   ├── CreateEmail.tsx
+│       │   │   │   │   ├── EditEmail.tsx
+│       │   │   │   │   ├── EmailDetail.tsx
+│       │   │   │   │   ├── EmailManagement.tsx
+│       │   │   │   │   ├── SendEmailTab.tsx
+│       │   │   │   │   └── SentEmailDetail.tsx
+│       │   │   │   ├── faq/
+│       │   │   │   │   ├── FAQDetail.tsx
+│       │   │   │   │   └── FAQManagement.tsx
+│       │   │   │   ├── feedback/
+│       │   │   │   │   ├── FeedbackDetail.tsx
+│       │   │   │   │   ├── FeedbackManagement.tsx
+│       │   │   │   │   └── mockData.ts
+│       │   │   │   ├── gallery/
+│       │   │   │   │   ├── GalleryManagement.tsx
+│       │   │   │   │   └── LocationManagement.tsx
+│       │   │   │   ├── home/
+│       │   │   │   │   ├── AdminDashboardView.tsx
+│       │   │   │   │   ├── DashboardHome.tsx
+│       │   │   │   │   ├── HODashboardView.tsx
+│       │   │   │   │   └── SharedDashboardView.tsx
+│       │   │   │   ├── minutes/
+│       │   │   │   │   └── MinuteManagement.tsx
+│       │   │   │   ├── news/
+│       │   │   │   │   ├── CreateNews.tsx
+│       │   │   │   │   ├── EditNews.tsx
+│       │   │   │   │   ├── NewsDetailDashboard.tsx
+│       │   │   │   │   └── NewsManagement.tsx
+│       │   │   │   ├── partners/
+│       │   │   │   │   ├── CreatePartner.tsx
+│       │   │   │   │   ├── PartnerDetail.tsx
+│       │   │   │   │   └── PartnerManagement.tsx
+│       │   │   │   ├── permissions/
+│       │   │   │   │   └── PermissionManagement.tsx
+│       │   │   │   ├── profile/
+│       │   │   │   │   └── Profile.tsx
+│       │   │   │   ├── reports/
+│       │   │   │   │   ├── DeptReportManagement.tsx
+│       │   │   │   │   ├── ReportManagement.tsx
+│       │   │   │   │   └── mockReportData.ts
+│       │   │   │   └── visit/
+│       │   │   │       ├── AgendaTemplateManagement.tsx
+│       │   │   │       ├── CreateVisitRequest.tsx
+│       │   │   │       ├── HoVisitProcessDetail.tsx
+│       │   │   │       ├── VisitAfterTab.tsx
+│       │   │   │       ├── VisitDuringTab.tsx
+│       │   │   │       ├── VisitProcess.tsx
+│       │   │   │       ├── VisitRequestDetail.tsx
+│       │   │   │       └── VisitRequestManagement.tsx
+│       │   │   ├── CampusDetailVisitPage.tsx
+│       │   │   ├── FAQPage.tsx
+│       │   │   ├── ForbiddenPage.tsx
+│       │   │   ├── HomePage.tsx
+│       │   │   ├── NewsDetailPage.tsx
+│       │   │   ├── NewsPage.tsx
+│       │   │   ├── PartnerDetailPage.tsx
+│       │   │   ├── PartnersPage.tsx
+│       │   │   └── VisitFPTUPage.tsx
+│       │   ├── shared/
+│       │   │   ├── api/
+│       │   │   │   ├── authInterceptor.ts
+│       │   │   │   ├── endpoints.ts
+│       │   │   │   ├── errorHandler.ts
+│       │   │   │   └── httpClient.ts
+│       │   │   ├── auth/
+│       │   │   │   ├── AuthContext.tsx
+│       │   │   │   ├── ProtectedRoute.tsx
+│       │   │   │   ├── RoleGuard.tsx
+│       │   │   │   ├── authStorage.ts
+│       │   │   │   ├── dashboardRoute.ts
+│       │   │   │   └── permissionChecker.ts
+│       │   │   ├── constants/
+│       │   │   │   ├── appRoutes.ts
+│       │   │   │   ├── permissions.ts
+│       │   │   │   ├── roles.ts
+│       │   │   │   ├── statusCodes.ts
+│       │   │   │   └── ucCodes.ts
+│       │   │   ├── hooks/
+│       │   │   │   ├── useApiError.ts
+│       │   │   │   ├── useAuth.ts
+│       │   │   │   ├── useDebounce.ts
+│       │   │   │   ├── usePagination.ts
+│       │   │   │   └── usePermission.ts
+│       │   │   ├── types/
+│       │   │   │   ├── api.types.ts
+│       │   │   │   ├── auth.types.ts
+│       │   │   │   ├── common.types.ts
+│       │   │   │   ├── pagination.types.ts
+│       │   │   │   └── permission.types.ts
+│       │   │   └── utils/
+│       │   │       ├── dateUtils.ts
+│       │   │       ├── fileUtils.ts
+│       │   │       ├── formatUtils.ts
+│       │   │       ├── passwordPolicy.ts
+│       │   │       ├── routeUtils.ts
+│       │   │       └── validationUtils.ts
+│       │   ├── App.tsx
+│       │   ├── index.css
+│       │   ├── main.tsx
+│       │   ├── types.ts
+│       │   └── vite-env.d.ts
+│       ├── .env
+│       ├── .env.example
+│       ├── .gitignore
+│       ├── README.md
+│       ├── fix_process.cjs
+│       ├── fix_responsive.cjs
+│       ├── index.html
+│       ├── metadata.json
+│       ├── out.txt
+│       ├── package-lock.json
+│       ├── package.json
+│       ├── transform.cjs
+│       ├── transform_editable.cjs
+│       ├── transform_setup_editable.cjs
+│       ├── tsconfig.json
+│       ├── updateHeaders.cjs
+│       └── vite.config.ts
+├── scripts/
+│   └── guard-project-structure.ps1
+├── tests/
+│   ├── PEMS.ApplicationTests/
+│   │   ├── Accounts/
+│   │   │   ├── CreateAccountCommandHandlerTests.cs
+│   │   │   ├── CreateAccountCommandTests.cs
+│   │   │   ├── ManageAccountStatusCommandTests.cs
+│   │   │   ├── SearchandFilterAccountsQueryTests.cs
+│   │   │   ├── UpdateAccountRoleCommandTests.cs
+│   │   │   ├── ViewAccountDetailsQueryTests.cs
+│   │   │   └── ViewAccountListQueryTests.cs
+│   │   ├── AgendaTemplates/
+│   │   │   ├── CreateAgendaTemplateCommandTests.cs
+│   │   │   ├── DeleteAgendaTemplateCommandTests.cs
+│   │   │   ├── UpdateAgendaTemplateCommandTests.cs
+│   │   │   ├── ViewAgendaTemplateDetailQueryTests.cs
+│   │   │   └── ViewAgendaTemplateListQueryTests.cs
+│   │   ├── ApiIntegrations/
+│   │   │   ├── ConfigureRequestLimitCommandTests.cs
+│   │   │   ├── CreateAPIConfigurationCommandTests.cs
+│   │   │   ├── DeleteAPIConfigurationCommandTests.cs
+│   │   │   ├── ManageAPIStatusCommandTests.cs
+│   │   │   ├── SearchAPILogsQueryTests.cs
+│   │   │   ├── TestAPIConnectionCommandTests.cs
+│   │   │   ├── UpdateAPIConfigurationCommandTests.cs
+│   │   │   ├── ViewAPIConfigurationQueryTests.cs
+│   │   │   └── ViewAPILogsQueryTests.cs
+│   │   ├── Authentication/
+│   │   │   ├── ForgotPasswordCommandTests.cs
+│   │   │   ├── LoginviaCredentialsCommandTests.cs
+│   │   │   ├── LoginviaSSOCommandTests.cs
+│   │   │   └── LogoutCommandTests.cs
+│   │   ├── Calendars/
+│   │   │   ├── AddPersonalEventCommandTests.cs
+│   │   │   ├── DeletePersonalEventCommandTests.cs
+│   │   │   ├── SwitchViewModeCommandTests.cs
+│   │   │   ├── UpdatePersonalEventCommandTests.cs
+│   │   │   ├── ViewDepartmentCalendarQueryTests.cs
+│   │   │   ├── ViewEventDetailsQueryTests.cs
+│   │   │   └── ViewMyEventsQueryTests.cs
+│   │   ├── Campuses/
+│   │   │   ├── AddNewCampusCommandTests.cs
+│   │   │   ├── AssignCampusLeadCommandTests.cs
+│   │   │   ├── ManageCampusStatusCommandTests.cs
+│   │   │   ├── SearchandFilterCampusQueryTests.cs
+│   │   │   ├── UpdateCampusCommandTests.cs
+│   │   │   ├── ViewCampusDetailsQueryTests.cs
+│   │   │   └── ViewCampusListQueryTests.cs
+│   │   ├── Delegations/
+│   │   │   ├── ApproveCrossCampusRequestCommandTests.cs
+│   │   │   ├── ApproveResourceRequestCommandTests.cs
+│   │   │   ├── CloseDelegationCommandTests.cs
+│   │   │   ├── ConfirmParticipationCommandTests.cs
+│   │   │   ├── ConfirmTheChangeProposalCommandTests.cs
+│   │   │   ├── CreateGuestDelegationCommandTests.cs
+│   │   │   ├── CreateMeetingMinutesCommandTests.cs
+│   │   │   ├── CreateNewsArticleCommandTests.cs
+│   │   │   ├── CreatePartnerProfileCommandTests.cs
+│   │   │   ├── EditMeetingMinutesCommandTests.cs
+│   │   │   ├── PrepareVisitLogisticsCommandTests.cs
+│   │   │   ├── ProcessVisitRequestCommandHandlerTests.cs
+│   │   │   ├── ProcessVisitRequestCommandTests.cs
+│   │   │   ├── ProposeResourceModificationCommandTests.cs
+│   │   │   ├── ScanBusinessCardCommandTests.cs
+│   │   │   ├── SearchDelegationsQueryTests.cs
+│   │   │   ├── SubmitDelegationFeedbackCommandTests.cs
+│   │   │   ├── SubmitVisitRequestCommandHandlerTests.cs
+│   │   │   ├── SubmitVisitRequestCommandTests.cs
+│   │   │   ├── TagFacesonPhotosCommandTests.cs
+│   │   │   ├── UpdateGuestDelegationCommandTests.cs
+│   │   │   ├── UpdateVisitLogisticsCommandTests.cs
+│   │   │   ├── UploadAttachedDocumentsCommandTests.cs
+│   │   │   ├── UploadVisitPhotosCommandTests.cs
+│   │   │   ├── ViewGuestDelegationDetailsQueryTests.cs
+│   │   │   ├── ViewGuestDelegationListQueryTests.cs
+│   │   │   └── ViewMeetingMinutesDetailsQueryTests.cs
+│   │   ├── Departments/
+│   │   │   ├── AddDepartmentPersonnelCommandTests.cs
+│   │   │   ├── AddNewDepartmentCommandTests.cs
+│   │   │   ├── AssignTasksCommandTests.cs
+│   │   │   ├── DepartmentTests.cs
+│   │   │   ├── ManageDepartmentStatusCommandTests.cs
+│   │   │   ├── ReassignDepartmentLeadCommandTests.cs
+│   │   │   ├── RemovePersonnelCommandTests.cs
+│   │   │   ├── ReviewAssignedTasksCommandTests.cs
+│   │   │   ├── SearchCoordinationTasksQueryTests.cs
+│   │   │   ├── SearchPersonnelQueryTests.cs
+│   │   │   ├── SearchandFilterDepartmentsQueryTests.cs
+│   │   │   ├── SignTheServiceDeliveryReportCommandTests.cs
+│   │   │   ├── UpdateDepartmentCommandTests.cs
+│   │   │   ├── ViewCoordinationTasksQueryTests.cs
+│   │   │   ├── ViewDepartmentDetailsQueryTests.cs
+│   │   │   ├── ViewDepartmentListQueryTests.cs
+│   │   │   └── ViewPersonnelDetailsQueryTests.cs
+│   │   ├── Documents/
+│   │   │   ├── SearchDocumentsQueryTests.cs
+│   │   │   └── ViewDocumentListQueryTests.cs
+│   │   ├── Emails/
+│   │   │   ├── CreateEmailTemplateCommandTests.cs
+│   │   │   ├── EditEmailContentCommandTests.cs
+│   │   │   ├── ReplytoEmailCommandTests.cs
+│   │   │   ├── SendEmailCommandTests.cs
+│   │   │   ├── UpdateEmailTemplateCommandTests.cs
+│   │   │   ├── ViewEmailQueryTests.cs
+│   │   │   ├── ViewEmailTemplateDetailQueryTests.cs
+│   │   │   └── ViewEmailTemplateListQueryTests.cs
+│   │   ├── Faqs/
+│   │   │   ├── ChangeFAQVisibilityCommandTests.cs
+│   │   │   ├── CreateFAQCommandTests.cs
+│   │   │   ├── SearchFAQQueryTests.cs
+│   │   │   ├── UpdateFAQCommandTests.cs
+│   │   │   └── ViewListFAQQueryTests.cs
+│   │   ├── Feedbacks/
+│   │   │   ├── SearchAndFilterFeedbackQueryTests.cs
+│   │   │   └── ViewFeedbackSummaryQueryTests.cs
+│   │   ├── Galleries/
+│   │   │   ├── AddGalleryItemCommandTests.cs
+│   │   │   ├── DeleteGalleryItemCommandTests.cs
+│   │   │   ├── SearchGalleryItemsQueryTests.cs
+│   │   │   ├── UpdateGalleryItemCommandTests.cs
+│   │   │   └── ViewGalleryItemListQueryTests.cs
+│   │   ├── MeetingMinutes/
+│   │   │   ├── SearchAndFilterMinutesQueryTests.cs
+│   │   │   └── ViewMinutesListQueryTests.cs
+│   │   ├── News/
+│   │   │   ├── AddMultilingualNewsCommandTests.cs
+│   │   │   ├── ApproveNewsCommandTests.cs
+│   │   │   ├── EditNewsCommandTests.cs
+│   │   │   ├── ManageNewsVisibilityCommandTests.cs
+│   │   │   ├── PublishNewsCommandTests.cs
+│   │   │   ├── ViewNewsDetailsQueryTests.cs
+│   │   │   └── ViewNewsListQueryTests.cs
+│   │   ├── Partners/
+│   │   │   ├── EditPartnerInformationCommandTests.cs
+│   │   │   ├── PartnerTests.cs
+│   │   │   ├── ProcessPartnerCreationRequestCommandTests.cs
+│   │   │   ├── SearchPartnersQueryTests.cs
+│   │   │   ├── ViewPartnerDetailsQueryTests.cs
+│   │   │   └── ViewPartnerListsQueryTests.cs
+│   │   ├── Permissions/
+│   │   │   └── ConfigureRolePermissionsCommandHandlerTests.cs
+│   │   ├── Profiles/
+│   │   │   ├── ChangePasswordCommandTests.cs
+│   │   │   ├── UpdateProfileCommandTests.cs
+│   │   │   └── ViewProfileQueryTests.cs
+│   │   ├── PublicContent/
+│   │   │   ├── SearchInformationQueryTests.cs
+│   │   │   ├── ViewContactInfoQueryTests.cs
+│   │   │   ├── ViewFAQQueryTests.cs
+│   │   │   ├── ViewGalleryQueryTests.cs
+│   │   │   ├── ViewHomepageQueryTests.cs
+│   │   │   ├── ViewNewsQueryTests.cs
+│   │   │   ├── ViewNotificationsQueryTests.cs
+│   │   │   ├── ViewPartnersQueryTests.cs
+│   │   │   └── ViewPolicyAndTermsQueryTests.cs
+│   │   ├── Reports/
+│   │   │   ├── ExportStatisticsReportCommandTests.cs
+│   │   │   ├── FilterDashboardByTimeQueryTests.cs
+│   │   │   └── ViewDashboardStatisticsQueryTests.cs
+│   │   └── Roles/
+│   │       ├── ConfigureRolePermissionsCommandTests.cs
+│   │       ├── CreateNewRoleCommandTests.cs
+│   │       ├── DisableAndDeleteRoleCommandTests.cs
+│   │       ├── UpdateRoleDetailsCommandTests.cs
+│   │       └── ViewRoleListQueryTests.cs
+│   ├── PEMS.ArchitectureTests/
+│   │   ├── ApplicationHandlerTests.cs
+│   │   ├── ControllerTests.cs
+│   │   ├── DependencyRuleTests.cs
+│   │   ├── NamespaceAndConcreteClassTests.cs
+│   │   └── PEMS.ArchitectureTests.csproj
+│   ├── PEMS.IntegrationTests/
+│   │   ├── Api/
+│   │   │   ├── FileValidationServiceTests.cs
+│   │   │   ├── IdempotencyBehaviourTests.cs
+│   │   │   └── RateLimitMiddlewareTests.cs
+│   │   ├── Database/
+│   │   │   └── DatabaseTest.cs
+│   │   └── Security/
+│   │       ├── OwnershipCheckerTests.cs
+│   │       └── PermissionCheckerTests.cs
+│   ├── PEMS.UnitTests/
+│   │   ├── Application/
+│   │   │   └── ApplicationDummyTest.cs
+│   │   ├── Domain/
+│   │   │   └── DomainDummyTest.cs
+│   │   └── SharedKernel/
+│   │       └── SharedKernelDummyTest.cs
+│   └── temp_bcrypt/
+│       ├── Program.cs
+│       └── temp_bcrypt.csproj
+├── .gitattributes
+├── .gitignore
 ├── PEMS.slnx
 ├── README.md
-├── scripts/
-│   ├── guard-project-structure.ps1
-└── tests/
-    ├── PEMS.ApplicationTests/
-    │   ├── Accounts/
-    │   │   ├── CreateAccountCommandHandlerTests.cs
-    │   │   ├── CreateAccountCommandTests.cs
-    │   │   ├── ManageAccountStatusCommandTests.cs
-    │   │   ├── SearchandFilterAccountsQueryTests.cs
-    │   │   ├── UpdateAccountRoleCommandTests.cs
-    │   │   ├── ViewAccountDetailsQueryTests.cs
-    │   │   └── ViewAccountListQueryTests.cs
-    │   ├── AgendaTemplates/
-    │   │   ├── CreateAgendaTemplateCommandTests.cs
-    │   │   ├── DeleteAgendaTemplateCommandTests.cs
-    │   │   ├── UpdateAgendaTemplateCommandTests.cs
-    │   │   ├── ViewAgendaTemplateDetailQueryTests.cs
-    │   │   └── ViewAgendaTemplateListQueryTests.cs
-    │   ├── ApiIntegrations/
-    │   │   ├── ConfigureRequestLimitCommandTests.cs
-    │   │   ├── CreateAPIConfigurationCommandTests.cs
-    │   │   ├── DeleteAPIConfigurationCommandTests.cs
-    │   │   ├── ManageAPIStatusCommandTests.cs
-    │   │   ├── SearchAPILogsQueryTests.cs
-    │   │   ├── TestAPIConnectionCommandTests.cs
-    │   │   ├── UpdateAPIConfigurationCommandTests.cs
-    │   │   ├── ViewAPIConfigurationQueryTests.cs
-    │   │   └── ViewAPILogsQueryTests.cs
-    │   ├── Authentication/
-    │   │   ├── ForgotPasswordCommandTests.cs
-    │   │   ├── LoginviaCredentialsCommandTests.cs
-    │   │   ├── LoginviaSSOCommandTests.cs
-    │   │   └── LogoutCommandTests.cs
-    │   ├── Calendars/
-    │   │   ├── AddPersonalEventCommandTests.cs
-    │   │   ├── DeletePersonalEventCommandTests.cs
-    │   │   ├── SwitchViewModeCommandTests.cs
-    │   │   ├── UpdatePersonalEventCommandTests.cs
-    │   │   ├── ViewDepartmentCalendarQueryTests.cs
-    │   │   ├── ViewEventDetailsQueryTests.cs
-    │   │   └── ViewMyEventsQueryTests.cs
-    │   ├── Campuses/
-    │   │   ├── AddNewCampusCommandTests.cs
-    │   │   ├── AssignCampusLeadCommandTests.cs
-    │   │   ├── ManageCampusStatusCommandTests.cs
-    │   │   ├── SearchandFilterCampusQueryTests.cs
-    │   │   ├── UpdateCampusCommandTests.cs
-    │   │   ├── ViewCampusDetailsQueryTests.cs
-    │   │   └── ViewCampusListQueryTests.cs
-    │   ├── Delegations/
-    │   │   ├── ApproveCrossCampusRequestCommandTests.cs
-    │   │   ├── ApproveResourceRequestCommandTests.cs
-    │   │   ├── CloseDelegationCommandTests.cs
-    │   │   ├── ConfirmParticipationCommandTests.cs
-    │   │   ├── ConfirmTheChangeProposalCommandTests.cs
-    │   │   ├── CreateGuestDelegationCommandTests.cs
-    │   │   ├── CreateMeetingMinutesCommandTests.cs
-    │   │   ├── CreateNewsArticleCommandTests.cs
-    │   │   ├── CreatePartnerProfileCommandTests.cs
-    │   │   ├── EditMeetingMinutesCommandTests.cs
-    │   │   ├── PrepareVisitLogisticsCommandTests.cs
-    │   │   ├── ProcessVisitRequestCommandHandlerTests.cs
-    │   │   ├── ProcessVisitRequestCommandTests.cs
-    │   │   ├── ProposeResourceModificationCommandTests.cs
-    │   │   ├── ScanBusinessCardCommandTests.cs
-    │   │   ├── SearchDelegationsQueryTests.cs
-    │   │   ├── SubmitDelegationFeedbackCommandTests.cs
-    │   │   ├── SubmitVisitRequestCommandHandlerTests.cs
-    │   │   ├── SubmitVisitRequestCommandTests.cs
-    │   │   ├── TagFacesonPhotosCommandTests.cs
-    │   │   ├── UpdateGuestDelegationCommandTests.cs
-    │   │   ├── UpdateVisitLogisticsCommandTests.cs
-    │   │   ├── UploadAttachedDocumentsCommandTests.cs
-    │   │   ├── UploadVisitPhotosCommandTests.cs
-    │   │   ├── ViewGuestDelegationDetailsQueryTests.cs
-    │   │   ├── ViewGuestDelegationListQueryTests.cs
-    │   │   └── ViewMeetingMinutesDetailsQueryTests.cs
-    │   ├── Departments/
-    │   │   ├── AddDepartmentPersonnelCommandTests.cs
-    │   │   ├── AddNewDepartmentCommandTests.cs
-    │   │   ├── AssignTasksCommandTests.cs
-    │   │   ├── DepartmentTests.cs
-    │   │   ├── ManageDepartmentStatusCommandTests.cs
-    │   │   ├── ReassignDepartmentLeadCommandTests.cs
-    │   │   ├── RemovePersonnelCommandTests.cs
-    │   │   ├── ReviewAssignedTasksCommandTests.cs
-    │   │   ├── SearchandFilterDepartmentsQueryTests.cs
-    │   │   ├── SearchCoordinationTasksQueryTests.cs
-    │   │   ├── SearchPersonnelQueryTests.cs
-    │   │   ├── SignTheServiceDeliveryReportCommandTests.cs
-    │   │   ├── UpdateDepartmentCommandTests.cs
-    │   │   ├── ViewCoordinationTasksQueryTests.cs
-    │   │   ├── ViewDepartmentDetailsQueryTests.cs
-    │   │   ├── ViewDepartmentListQueryTests.cs
-    │   │   └── ViewPersonnelDetailsQueryTests.cs
-    │   ├── Documents/
-    │   │   ├── SearchDocumentsQueryTests.cs
-    │   │   └── ViewDocumentListQueryTests.cs
-    │   ├── Emails/
-    │   │   ├── CreateEmailTemplateCommandTests.cs
-    │   │   ├── EditEmailContentCommandTests.cs
-    │   │   ├── ReplytoEmailCommandTests.cs
-    │   │   ├── SendEmailCommandTests.cs
-    │   │   ├── UpdateEmailTemplateCommandTests.cs
-    │   │   ├── ViewEmailQueryTests.cs
-    │   │   ├── ViewEmailTemplateDetailQueryTests.cs
-    │   │   └── ViewEmailTemplateListQueryTests.cs
-    │   ├── Faqs/
-    │   │   ├── ChangeFAQVisibilityCommandTests.cs
-    │   │   ├── CreateFAQCommandTests.cs
-    │   │   ├── SearchFAQQueryTests.cs
-    │   │   ├── UpdateFAQCommandTests.cs
-    │   │   └── ViewListFAQQueryTests.cs
-    │   ├── Feedbacks/
-    │   │   ├── SearchAndFilterFeedbackQueryTests.cs
-    │   │   └── ViewFeedbackSummaryQueryTests.cs
-    │   ├── Galleries/
-    │   │   ├── AddGalleryItemCommandTests.cs
-    │   │   ├── DeleteGalleryItemCommandTests.cs
-    │   │   ├── SearchGalleryItemsQueryTests.cs
-    │   │   ├── UpdateGalleryItemCommandTests.cs
-    │   │   └── ViewGalleryItemListQueryTests.cs
-    │   ├── MeetingMinutes/
-    │   │   ├── SearchAndFilterMinutesQueryTests.cs
-    │   │   └── ViewMinutesListQueryTests.cs
-    │   ├── News/
-    │   │   ├── AddMultilingualNewsCommandTests.cs
-    │   │   ├── ApproveNewsCommandTests.cs
-    │   │   ├── EditNewsCommandTests.cs
-    │   │   ├── ManageNewsVisibilityCommandTests.cs
-    │   │   ├── PublishNewsCommandTests.cs
-    │   │   ├── ViewNewsDetailsQueryTests.cs
-    │   │   └── ViewNewsListQueryTests.cs
-    │   ├── Partners/
-    │   │   ├── EditPartnerInformationCommandTests.cs
-    │   │   ├── PartnerTests.cs
-    │   │   ├── ProcessPartnerCreationRequestCommandTests.cs
-    │   │   ├── SearchPartnersQueryTests.cs
-    │   │   ├── ViewPartnerDetailsQueryTests.cs
-    │   │   └── ViewPartnerListsQueryTests.cs
-    │   ├── Permissions/
-    │   │   ├── ConfigureRolePermissionsCommandHandlerTests.cs
-    │   ├── Profiles/
-    │   │   ├── ChangePasswordCommandTests.cs
-    │   │   ├── UpdateProfileCommandTests.cs
-    │   │   └── ViewProfileQueryTests.cs
-    │   ├── PublicContent/
-    │   │   ├── SearchInformationQueryTests.cs
-    │   │   ├── ViewContactInfoQueryTests.cs
-    │   │   ├── ViewFAQQueryTests.cs
-    │   │   ├── ViewGalleryQueryTests.cs
-    │   │   ├── ViewHomepageQueryTests.cs
-    │   │   ├── ViewNewsQueryTests.cs
-    │   │   ├── ViewNotificationsQueryTests.cs
-    │   │   ├── ViewPartnersQueryTests.cs
-    │   │   └── ViewPolicyAndTermsQueryTests.cs
-    │   ├── Reports/
-    │   │   ├── ExportStatisticsReportCommandTests.cs
-    │   │   ├── FilterDashboardByTimeQueryTests.cs
-    │   │   └── ViewDashboardStatisticsQueryTests.cs
-    │   └── Roles/
-    │       ├── ConfigureRolePermissionsCommandTests.cs
-    │       ├── CreateNewRoleCommandTests.cs
-    │       ├── DisableAndDeleteRoleCommandTests.cs
-    │       ├── UpdateRoleDetailsCommandTests.cs
-    │       └── ViewRoleListQueryTests.cs
-    ├── PEMS.ArchitectureTests/
-    │   ├── ApplicationHandlerTests.cs
-    │   ├── ControllerTests.cs
-    │   ├── DependencyRuleTests.cs
-    │   ├── NamespaceAndConcreteClassTests.cs
-    │   └── PEMS.ArchitectureTests.csproj
-    ├── PEMS.IntegrationTests/
-    │   ├── Api/
-    │   │   ├── FileValidationServiceTests.cs
-    │   │   ├── IdempotencyBehaviourTests.cs
-    │   │   └── RateLimitMiddlewareTests.cs
-    │   ├── Database/
-    │   │   ├── DatabaseTest.cs
-    │   └── Security/
-    │       ├── OwnershipCheckerTests.cs
-    │       └── PermissionCheckerTests.cs
-    └── PEMS.UnitTests/
-        ├── Application/
-        │   ├── ApplicationDummyTest.cs
-        ├── Domain/
-        │   ├── DomainDummyTest.cs
-        └── SharedKernel/
-            ├── SharedKernelDummyTest.cs
+├── payload.json
+├── tree_generator.js
+└── tree_generator.py
+```
 
-`
+## 3. Layer Overview
 
-## 2. Directory Rules
+- backend/PEMS.Api:
+  Vai trò API layer, Controllers, Middleware, Filters, Extensions.
+- backend/PEMS.Application:
+  Vai trò use case layer, CQRS Commands/Queries/Handlers, DTOs, Validators, Interfaces.
+- backend/PEMS.Domain:
+  Vai trò domain layer, Entities, Enums, Events, ValueObjects, Common base classes.
+- backend/PEMS.Infrastructure:
+  Vai trò persistence/external services layer, DbContext, Repositories, Identity, Email, FileStorage, Logging.
+- frontend/pems-react:
+  Vai trò React client, pages/components/services/routes/store nếu có.
+- database:
+  Vai trò schema, seed, migration, deployment scripts.
+- docs:
+  Vai trò tài liệu kiến trúc, use cases, permissions, API, database, authentication.
 
-- **frontend/**: React/Vite/TypeScript frontend application.
-- **backend/**: .NET 8 backend application using Clean Architecture (API, Application, Domain, Infrastructure).
-- **database/**: MySQL database scripts and seeds.
-- **docs/**: Project documentation, architectural blueprints, API specifications.
+## 4. Important Notes
 
+- Không còn tồn tại module `PEMS.Application/Authentication/Commands/ChangePassword` do đã chuyển hoàn toàn sang `Profiles`.
+- Module `Profiles` chứa implementation chính thức của ChangePassword.
+- Đã dọn dẹp các file rác như `test.cs` và `TestBcrypt` ở `PEMS.Api`.
+- `DbSeeder` đã cập nhật logic chạy script.
+- Cấu trúc thư mục được tinh chỉnh rõ ràng và theo chuẩn Clean Architecture.
+
+## 5. Change Summary
+
+- Đã quét lại cấu trúc từ source hiện tại.
+- Đã cập nhật tree theo trạng thái thật.
+- Đã loại trừ generated folders.
+- Không sửa code.

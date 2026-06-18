@@ -1,7 +1,7 @@
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using PEMS.Application.Authentication.Commands.ChangePassword;
+
 using PEMS.Application.Authentication.Commands.ForgotPassword;
 using PEMS.Application.Authentication.Commands.LoginviaCredentials;
 using PEMS.Application.Authentication.Commands.LoginviaSSO;
@@ -80,13 +80,6 @@ public class AuthenticationController : ControllerBase
         return Ok(await _mediator.Send(command, cancellationToken));
     }
 
-    [HttpPost("change-password")]
-    [Authorize]
-    public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordCommand command, CancellationToken cancellationToken)
-    {
-        ApplyRequestContext(c => { command.IpAddress = c.ip; command.UserAgent = c.ua; });
-        return Ok(await _mediator.Send(command, cancellationToken));
-    }
 
     private void ApplyRequestContext(Action<(string? ip, string? ua)> apply)
     {

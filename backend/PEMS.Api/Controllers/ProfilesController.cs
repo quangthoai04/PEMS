@@ -2,6 +2,8 @@ using MediatR;
 using Microsoft.AspNetCore.Mvc;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Authorization;
+using PEMS.Application.Profiles.Commands.ChangePassword;
 
 namespace PEMS.Api.Controllers
 {
@@ -26,9 +28,14 @@ namespace PEMS.Api.Controllers
             return Ok(result);
         }
 
-        [HttpPost("changepassword")]
-        public async Task<IActionResult> ChangePassword([FromBody] PEMS.Application.Profiles.Commands.ChangePassword.ChangePasswordCommand command, CancellationToken cancellationToken)
+        [HttpPost("change-password")]
+        [Authorize]
+        public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordCommand command, CancellationToken cancellationToken)
         {
+            command.IpAddress = HttpContext.Connection.RemoteIpAddress?.ToString();
+            var ua = Request.Headers.UserAgent.ToString();
+            command.UserAgent = string.IsNullOrWhiteSpace(ua) ? null : ua;
+
             var result = await _mediator.Send(command, cancellationToken);
             return Ok(result);
         }
