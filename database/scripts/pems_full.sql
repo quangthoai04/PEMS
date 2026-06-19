@@ -538,6 +538,17 @@ COMMENT='Tài liệu nghiệp vụ. partner_documents/reports/logistics document
 -- After the main request is approved, backend assigns each campus instance to its Staff Leader by setting current_host_user_id and status='ASSIGNED'.
 -- Staff Leader/current host may transfer host to another IC Staff in the same campus.
 
+CREATE TABLE pending_visit_requests (
+  pending_id VARCHAR(255) NOT NULL,
+  email VARCHAR(255) NOT NULL,
+  form_data_json LONGTEXT NOT NULL,
+  expires_at DATETIME NOT NULL,
+  ip_address VARCHAR(255) DEFAULT NULL,
+  created_at DATETIME NOT NULL,
+  PRIMARY KEY (pending_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Temporary storage for visit request form data while OTP verification is pending.';
+
 CREATE TABLE visit_requests (
   visit_request_id CHAR(36) NOT NULL,
   request_code VARCHAR(50) NOT NULL,
@@ -568,7 +579,7 @@ CREATE TABLE visit_requests (
   transportation_note TEXT NULL COMMENT 'Nhận diện phương tiện di chuyển tới FPTU',
   note_to_fptu TEXT NULL COMMENT 'Ghi chú cho FPTU',
 
-  status ENUM('PENDING_APPROVAL','PENDING_HO_APPROVAL','PENDING_STAFF_LEAD_APPROVAL','APPROVED','REJECTED','CANCELLED','IN_PROGRESS','COMPLETED') NOT NULL DEFAULT 'PENDING_STAFF_LEAD_APPROVAL',
+  status ENUM('PENDING_APPROVAL','APPROVED','REJECTED','CANCELLED','IN_PROGRESS','COMPLETED') NOT NULL DEFAULT 'PENDING_APPROVAL',
   submitted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   email_verified_at DATETIME NULL,
 

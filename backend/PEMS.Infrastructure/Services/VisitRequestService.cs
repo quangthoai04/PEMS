@@ -65,7 +65,7 @@ public sealed class VisitRequestService : IVisitRequestService
             WorkingLanguage      = f.Language == "VI" ? WorkingLanguages.Vietnamese : WorkingLanguages.English,
             TransportationNote   = f.Vehicle,
             NoteToFptu           = f.Notes,
-            Status               = VisitRequestStatuses.PendingStaffLeadApproval, // overwritten by routing service
+            Status               = VisitRequestStatuses.PendingApproval, // overwritten by routing service
             SubmittedAt          = utcNow,
             RowVersion           = 0,
             CreatedAt            = utcNow,
