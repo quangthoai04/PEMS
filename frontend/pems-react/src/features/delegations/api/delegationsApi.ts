@@ -37,4 +37,11 @@ export const delegationsApi = {
     );
     return data;
   },
+
+  async getVisitRequestManagementList(params?: any): Promise<any> {
+    const { data } = await httpClient.get<any>('/delegations/viewguestdelegationlist', {
+      params,
+    });
+    return data;
+  },
 };

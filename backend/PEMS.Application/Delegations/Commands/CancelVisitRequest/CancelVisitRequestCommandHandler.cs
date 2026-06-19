@@ -54,27 +54,12 @@ public sealed class CancelVisitRequestCommandHandler
                 ? "Đơn chưa được duyệt. Trước khi duyệt hãy dùng chức năng từ chối (reject), không phải hủy."
                 : "Chỉ có thể hủy đơn đã được duyệt.");
 
-        var isVisitor = visit.VisitorUserId == actorId;
-
-        // Visitor may only cancel their OWN request.
-        if (roleCode == RoleCodes.Visitor && !isVisitor)
-            throw new ForbiddenException("Bạn chỉ có thể hủy đơn của chính mình.");
-
-        var now = _clock.UtcNow;
-        var actorType = ResolveActorType(roleCode, subRole, isVisitor);
-        var source = isVisitor ? CancellationSource.SelfService : CancellationSource.ExternalConfirmation;
-
         // Determine the campus instances to cancel.
         IReadOnlyList<VisitRequestCampus> targets;
         if (request.VisitInstanceId is { } instanceId)
         {
             var instance = visit.CampusInstances.FirstOrDefault(c => c.VisitInstanceId == instanceId)
                 ?? throw new NotFoundException("VisitRequestCampus", instanceId);
-
-            // Host (STAFF/Staff) may only cancel a campus instance they currently host.
-            if (!isVisitor && roleCode == RoleCodes.Staff && subRole == SubRoles.Staff
-                && instance.CurrentHostUserId != actorId)
-                throw new ForbiddenException("Bạn chỉ có thể hủy cơ sở mà bạn đang là host.");
 
             targets = new[] { instance };
         }
@@ -84,6 +69,23 @@ public sealed class CancelVisitRequestCommandHandler
                 .Where(c => CancellableCampusStatuses.Contains(c.Status))
                 .ToList();
         }
+
+        var isVisitorOwner = roleCode == RoleCodes.Visitor && visit.VisitorUserId == actorId;
+
+        if (!isVisitorOwner)
+        {
+            foreach (var instance in targets)
+            {
+                if (instance.CurrentHostUserId != actorId)
+                {
+                    throw new ForbiddenException("Only the request owner visitor or assigned host can cancel this visit.");
+                }
+            }
+        }
+
+        var now = _clock.UtcNow;
+        var actorType = isVisitorOwner ? CancellationActorType.Visitor : CancellationActorType.Host;
+        var source = isVisitorOwner ? CancellationSource.SelfService : CancellationSource.ExternalConfirmation;
 
         var cancelled = new List<CancelledCampusDto>();
         foreach (var instance in targets)
@@ -163,14 +165,5 @@ public sealed class CancelVisitRequestCommandHandler
             allCancelled
                 ? "Đơn tham quan đã được hủy."
                 : "Cơ sở đã được hủy. Các cơ sở còn lại của đơn vẫn giữ nguyên.");
-    }
-
-    private static string ResolveActorType(string? roleCode, string? subRole, bool isVisitor)
-    {
-        if (isVisitor) return CancellationActorType.Visitor;
-        if (roleCode == RoleCodes.Ho) return CancellationActorType.Ho;
-        if (roleCode == RoleCodes.Staff && subRole == SubRoles.Leader) return CancellationActorType.StaffLeader;
-        // STAFF/Staff acting on the campus they host, or any other on-behalf cancel.
-        return CancellationActorType.Host;
     }
 }

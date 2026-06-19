@@ -38,6 +38,7 @@ namespace PEMS.Api.Controllers
         }
 
         [HttpGet("viewguestdelegationlist")]
+        [RequirePermission(PermissionCodes.ViewGuestDelegationList, PermissionLevels.Read)]
         public async Task<IActionResult> ViewGuestDelegationList([FromQuery] PEMS.Application.Delegations.Queries.ViewGuestDelegationList.ViewGuestDelegationListQuery query, CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(query, cancellationToken);
