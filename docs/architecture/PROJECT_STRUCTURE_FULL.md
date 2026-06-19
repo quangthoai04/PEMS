@@ -17,6 +17,9 @@ Ghi rõ tài liệu bao gồm:
 
 ```text
 PEMS/
+├── .claude/
+│   ├── settings.json
+│   └── settings.local.json
 ├── backend/
 │   ├── PEMS.Api/
 │   │   ├── Contracts/
@@ -42,7 +45,8 @@ PEMS/
 │   │   │   ├── ProfilesController.cs
 │   │   │   ├── PublicContentController.cs
 │   │   │   ├── ReportsController.cs
-│   │   │   └── RolesController.cs
+│   │   │   ├── RolesController.cs
+│   │   │   └── VisitRequestsController.cs
 │   │   ├── Extensions/
 │   │   │   ├── AuthenticationExtensions.cs
 │   │   │   ├── AuthorizationExtensions.cs
@@ -63,10 +67,10 @@ PEMS/
 │   │   │   └── SessionValidationMiddleware.cs
 │   │   ├── Properties/
 │   │   │   └── launchSettings.json
-│   │   ├── PEMS.Api.csproj
+│   │   ├── appsettings.json
 │   │   ├── Pems_WebAPI.http
-│   │   ├── Program.cs
-│   │   └── appsettings.json
+│   │   ├── PEMS.Api.csproj
+│   │   └── Program.cs
 │   ├── PEMS.Application/
 │   │   ├── Accounts/
 │   │   │   ├── Commands/
@@ -85,19 +89,26 @@ PEMS/
 │   │   │   │       ├── UpdateAccountRoleCommandHandler.cs
 │   │   │   │       ├── UpdateAccountRoleCommandValidator.cs
 │   │   │   │       └── UpdateAccountRoleResponse.cs
+│   │   │   ├── Common/
+│   │   │   │   ├── AccountErrorCodes.cs
+│   │   │   │   ├── AccountListCriteriaRules.cs
+│   │   │   │   ├── AccountListItemDto.cs
+│   │   │   │   ├── AccountListQueryExecutor.cs
+│   │   │   │   ├── AccountProvisioningRules.cs
+│   │   │   │   └── IAccountListCriteria.cs
 │   │   │   └── Queries/
 │   │   │       ├── SearchandFilterAccounts/
-│   │   │       │   ├── SearchandFilterAccountsDto.cs
 │   │   │       │   ├── SearchandFilterAccountsQuery.cs
-│   │   │       │   └── SearchandFilterAccountsQueryHandler.cs
+│   │   │       │   ├── SearchandFilterAccountsQueryHandler.cs
+│   │   │       │   └── SearchandFilterAccountsQueryValidator.cs
 │   │   │       ├── ViewAccountDetails/
 │   │   │       │   ├── ViewAccountDetailsDto.cs
 │   │   │       │   ├── ViewAccountDetailsQuery.cs
 │   │   │       │   └── ViewAccountDetailsQueryHandler.cs
 │   │   │       └── ViewAccountList/
-│   │   │           ├── ViewAccountListDto.cs
 │   │   │           ├── ViewAccountListQuery.cs
-│   │   │           └── ViewAccountListQueryHandler.cs
+│   │   │           ├── ViewAccountListQueryHandler.cs
+│   │   │           └── ViewAccountListQueryValidator.cs
 │   │   ├── AgendaTemplates/
 │   │   │   ├── Commands/
 │   │   │   │   ├── CreateAgendaTemplate/
@@ -179,6 +190,10 @@ PEMS/
 │   │   │   │   │   ├── LoginViaCredentialsCommand.cs
 │   │   │   │   │   ├── LoginViaCredentialsCommandHandler.cs
 │   │   │   │   │   └── LoginViaCredentialsCommandValidator.cs
+│   │   │   │   ├── LoginViaFeid/
+│   │   │   │   │   ├── LoginViaFeidCommand.cs
+│   │   │   │   │   ├── LoginViaFeidCommandHandler.cs
+│   │   │   │   │   └── LoginViaFeidCommandValidator.cs
 │   │   │   │   ├── LoginViaSso/
 │   │   │   │   │   ├── LoginViaSsoCommand.cs
 │   │   │   │   │   ├── LoginViaSsoCommandHandler.cs
@@ -203,6 +218,7 @@ PEMS/
 │   │   │   ├── Models/
 │   │   │   │   ├── AuthResponse.cs
 │   │   │   │   ├── AuthUserDto.cs
+│   │   │   │   ├── ExternalIdentityResult.cs
 │   │   │   │   ├── MessageResponse.cs
 │   │   │   │   ├── PermissionsResponse.cs
 │   │   │   │   ├── UserPermissionDto.cs
@@ -294,7 +310,10 @@ PEMS/
 │   │   │   │   ├── LoggingBehaviour.cs
 │   │   │   │   ├── TransactionBehaviour.cs
 │   │   │   │   └── ValidationBehaviour.cs
+│   │   │   ├── DTOs/
+│   │   │   │   └── VisitFormDtos.cs
 │   │   │   ├── Exceptions/
+│   │   │   │   ├── AuthBusinessException.cs
 │   │   │   │   ├── AuthenticationFailedException.cs
 │   │   │   │   ├── BusinessRuleException.cs
 │   │   │   │   ├── ConflictException.cs
@@ -303,6 +322,7 @@ PEMS/
 │   │   │   │   └── ValidationException.cs
 │   │   │   ├── Interfaces/
 │   │   │   │   ├── IApplicationDbContext.cs
+│   │   │   │   ├── IApprovalRoutingService.cs
 │   │   │   │   ├── IAuditLogService.cs
 │   │   │   │   ├── ICampusRepository.cs
 │   │   │   │   ├── ICurrentUserService.cs
@@ -312,6 +332,7 @@ PEMS/
 │   │   │   │   ├── IEmailService.cs
 │   │   │   │   ├── IExternalApiClient.cs
 │   │   │   │   ├── IFaceRecognitionService.cs
+│   │   │   │   ├── IFeidIdentityVerifier.cs
 │   │   │   │   ├── IFileStorageService.cs
 │   │   │   │   ├── IFileValidationService.cs
 │   │   │   │   ├── IGoogleTokenValidator.cs
@@ -327,15 +348,20 @@ PEMS/
 │   │   │   │   ├── IRateLimitService.cs
 │   │   │   │   ├── ISecurityAuditService.cs
 │   │   │   │   ├── ISessionService.cs
-│   │   │   │   └── IUserRepository.cs
+│   │   │   │   ├── IUserProvisionService.cs
+│   │   │   │   ├── IUserRepository.cs
+│   │   │   │   └── IVisitRequestService.cs
 │   │   │   ├── Models/
 │   │   │   │   ├── ErrorResponse.cs
 │   │   │   │   ├── FileUploadResult.cs
 │   │   │   │   ├── PagedResult.cs
+│   │   │   │   ├── PaginatedResult.cs
 │   │   │   │   ├── PaginationRequest.cs
 │   │   │   │   ├── Result.cs
 │   │   │   │   └── ResultOfT.cs
 │   │   │   └── Security/
+│   │   │       ├── AuthErrorCodes.cs
+│   │   │       ├── AuthOptions.cs
 │   │   │       ├── PasswordPolicy.cs
 │   │   │       ├── PemsClaimTypes.cs
 │   │   │       ├── PermissionConstants.cs
@@ -353,6 +379,11 @@ PEMS/
 │   │   │   │   │   ├── ApproveResourceRequestCommandHandler.cs
 │   │   │   │   │   ├── ApproveResourceRequestCommandValidator.cs
 │   │   │   │   │   └── ApproveResourceRequestResponse.cs
+│   │   │   │   ├── CancelVisitRequest/
+│   │   │   │   │   ├── CancelVisitRequestCommand.cs
+│   │   │   │   │   ├── CancelVisitRequestCommandHandler.cs
+│   │   │   │   │   ├── CancelVisitRequestCommandValidator.cs
+│   │   │   │   │   └── CancelVisitRequestResponse.cs
 │   │   │   │   ├── CloseDelegation/
 │   │   │   │   │   ├── CloseDelegationCommand.cs
 │   │   │   │   │   ├── CloseDelegationCommandHandler.cs
@@ -393,6 +424,11 @@ PEMS/
 │   │   │   │   │   ├── EditMeetingMinutesCommandHandler.cs
 │   │   │   │   │   ├── EditMeetingMinutesCommandValidator.cs
 │   │   │   │   │   └── EditMeetingMinutesResponse.cs
+│   │   │   │   ├── InitiateVisitRequest/
+│   │   │   │   │   ├── InitiateVisitRequestCommand.cs
+│   │   │   │   │   ├── InitiateVisitRequestCommandHandler.cs
+│   │   │   │   │   ├── InitiateVisitRequestCommandValidator.cs
+│   │   │   │   │   └── InitiateVisitRequestResponse.cs
 │   │   │   │   ├── PrepareVisitLogistics/
 │   │   │   │   │   ├── PrepareVisitLogisticsCommand.cs
 │   │   │   │   │   ├── PrepareVisitLogisticsCommandHandler.cs
@@ -408,6 +444,10 @@ PEMS/
 │   │   │   │   │   ├── ProposeResourceModificationCommandHandler.cs
 │   │   │   │   │   ├── ProposeResourceModificationCommandValidator.cs
 │   │   │   │   │   └── ProposeResourceModificationResponse.cs
+│   │   │   │   ├── ResendVisitRequestOtp/
+│   │   │   │   │   ├── ResendVisitRequestOtpCommand.cs
+│   │   │   │   │   ├── ResendVisitRequestOtpCommandHandler.cs
+│   │   │   │   │   └── ResendVisitRequestOtpCommandValidator.cs
 │   │   │   │   ├── ScanBusinessCard/
 │   │   │   │   │   ├── ScanBusinessCardCommand.cs
 │   │   │   │   │   ├── ScanBusinessCardCommandHandler.cs
@@ -443,11 +483,16 @@ PEMS/
 │   │   │   │   │   ├── UploadAttachedDocumentsCommandHandler.cs
 │   │   │   │   │   ├── UploadAttachedDocumentsCommandValidator.cs
 │   │   │   │   │   └── UploadAttachedDocumentsResponse.cs
-│   │   │   │   └── UploadVisitPhotos/
-│   │   │   │       ├── UploadVisitPhotosCommand.cs
-│   │   │   │       ├── UploadVisitPhotosCommandHandler.cs
-│   │   │   │       ├── UploadVisitPhotosCommandValidator.cs
-│   │   │   │       └── UploadVisitPhotosResponse.cs
+│   │   │   │   ├── UploadVisitPhotos/
+│   │   │   │   │   ├── UploadVisitPhotosCommand.cs
+│   │   │   │   │   ├── UploadVisitPhotosCommandHandler.cs
+│   │   │   │   │   ├── UploadVisitPhotosCommandValidator.cs
+│   │   │   │   │   └── UploadVisitPhotosResponse.cs
+│   │   │   │   └── VerifyAndCreateVisitRequest/
+│   │   │   │       ├── VerifyAndCreateVisitRequestCommand.cs
+│   │   │   │       ├── VerifyAndCreateVisitRequestCommandHandler.cs
+│   │   │   │       ├── VerifyAndCreateVisitRequestCommandValidator.cs
+│   │   │   │       └── VerifyAndCreateVisitRequestResponse.cs
 │   │   │   ├── Dtos/
 │   │   │   │   └── README.md
 │   │   │   ├── Mappings/
@@ -519,6 +564,10 @@ PEMS/
 │   │   │   │       ├── UpdateDepartmentCommandValidator.cs
 │   │   │   │       └── UpdateDepartmentResponse.cs
 │   │   │   └── Queries/
+│   │   │       ├── SearchandFilterDepartments/
+│   │   │       │   ├── SearchandFilterDepartmentsDto.cs
+│   │   │       │   ├── SearchandFilterDepartmentsQuery.cs
+│   │   │       │   └── SearchandFilterDepartmentsQueryHandler.cs
 │   │   │       ├── SearchCoordinationTasks/
 │   │   │       │   ├── SearchCoordinationTasksDto.cs
 │   │   │       │   ├── SearchCoordinationTasksQuery.cs
@@ -527,10 +576,6 @@ PEMS/
 │   │   │       │   ├── SearchPersonnelDto.cs
 │   │   │       │   ├── SearchPersonnelQuery.cs
 │   │   │       │   └── SearchPersonnelQueryHandler.cs
-│   │   │       ├── SearchandFilterDepartments/
-│   │   │       │   ├── SearchandFilterDepartmentsDto.cs
-│   │   │       │   ├── SearchandFilterDepartmentsQuery.cs
-│   │   │       │   └── SearchandFilterDepartmentsQueryHandler.cs
 │   │   │       ├── ViewCoordinationTasks/
 │   │   │       │   ├── ViewCoordinationTasksDto.cs
 │   │   │       │   ├── ViewCoordinationTasksQuery.cs
@@ -739,9 +784,9 @@ PEMS/
 │   │   ├── Profiles/
 │   │   │   ├── Commands/
 │   │   │   │   ├── ChangePassword/
-│   │   │   │   │   ├── ChangePasswordCommand.cs
-│   │   │   │   │   ├── ChangePasswordCommandHandler.cs
-│   │   │   │   │   ├── ChangePasswordCommandValidator.cs
+│   │   │   │   │   ├── ChangePasswordCommandHandlerProfile.cs
+│   │   │   │   │   ├── ChangePasswordCommandProfile.cs
+│   │   │   │   │   ├── ChangePasswordCommandValidatorProfile.cs
 │   │   │   │   │   └── ChangePasswordResponse.cs
 │   │   │   │   └── UpdateProfile/
 │   │   │   │       ├── UpdateProfileCommand.cs
@@ -855,7 +900,8 @@ PEMS/
 │   │   │   ├── DomainEvent.cs
 │   │   │   └── SoftDeleteEntity.cs
 │   │   ├── Constants/
-│   │   │   └── AuthConstants.cs
+│   │   │   ├── AuthConstants.cs
+│   │   │   └── VisitRequestConstants.cs
 │   │   ├── Entities/
 │   │   │   ├── AgendaTemplates/
 │   │   │   │   └── AgendaTemplate.cs
@@ -868,6 +914,7 @@ PEMS/
 │   │   │   ├── Campuses/
 │   │   │   │   └── Campus.cs
 │   │   │   ├── Delegations/
+│   │   │   │   ├── PendingVisitRequest.cs
 │   │   │   │   ├── VisitAgenda.cs
 │   │   │   │   ├── VisitGuestMember.cs
 │   │   │   │   ├── VisitLogisticsItem.cs
@@ -974,6 +1021,7 @@ PEMS/
 │       │   └── IdempotencyService.cs
 │       ├── Identity/
 │       │   ├── CurrentUserService.cs
+│       │   ├── FeidIdentityVerifier.cs
 │       │   ├── GoogleTokenValidator.cs
 │       │   ├── JwtTokenService.cs
 │       │   ├── NotificationService.cs
@@ -1005,6 +1053,10 @@ PEMS/
 │       │   ├── InMemoryRateLimitStore.cs
 │       │   ├── RateLimitService.cs
 │       │   └── RedisRateLimitStore.cs
+│       ├── Services/
+│       │   ├── ApprovalRoutingService.cs
+│       │   ├── UserProvisionService.cs
+│       │   └── VisitRequestService.cs
 │       ├── DependencyInjection.cs
 │       └── PEMS.Infrastructure.csproj
 ├── database/
@@ -1014,25 +1066,33 @@ PEMS/
 │   │   ├── DbSeeder/
 │   │   │   ├── DbSeeder.csproj
 │   │   │   └── Program.cs
-│   │   ├── SEED_DATA_CONVENTION.md
-│   │   └── pems_full.sql
+│   │   ├── pems_full.sql
+│   │   └── SEED_DATA_CONVENTION.md
 │   ├── seed/
-│   │   ├── campuses.sql
-│   │   ├── permissions.sql
-│   │   └── roles.sql
 │   └── README.md
 ├── docs/
+│   ├── account-management/
+│   │   ├── PROMPT_UC95_UC99_ACCOUNT_LIST_SEARCH_FILTER_PEMS.md
+│   │   └── UC95_UC99_ACCOUNT_LIST_SEARCH_FILTER.md
 │   ├── api/
 │   │   ├── API_ROUTE_CONVENTION.md
-│   │   ├── API_SPECIFICATION.md
 │   │   └── FRONTEND_BACKEND_CONTRACT_GAP.md
 │   ├── architecture/
 │   │   ├── CLEAN_ARCHITECTURE.md
-│   │   └── PROJECT_STRUCTURE_FULL.md
+│   │   ├── PEMS_AI_Refactor_Project_Structure_Prompt.md
+│   │   ├── PROJECT_STRUCTURE_FULL.md
+│   │   └── REFACTOR_CHANGELOG.md
+│   ├── auth/
+│   │   ├── AUTH_CORE_BACKEND_DUAL_PORTAL.md
+│   │   └── AUTH_ERROR_CODES.md
 │   ├── authentication/
-│   │   └── AUTHENTICATION_FLOW_REPORT.md
+│   │   ├── Detail/
+│   │   │   ├── pems_full_sql_42tables_final_v5_sso_auto_provision.sql
+│   │   │   └── pems_full_sql_aligned_uc48_own_scope.sql
+│   │   ├── PEMS_CORE_AUTH_BACKEND_DUAL_PORTAL_IMPLEMENTATION_PROMPT.md
+│   │   ├── PEMS_ROLE_BASED_FRONTEND_RBAC_PROMPT.md
+│   │   └── PROMPT_SUA_LOGIN_SSO_FIRST_DUAL_PORTAL_PEMS.md
 │   ├── database/
-│   │   ├── DATABASE_DEPLOYMENT.md
 │   │   └── DATABASE_SCHEMA.md
 │   ├── permissions/
 │   │   ├── PERMISSION_MATRIX.md
@@ -1040,19 +1100,19 @@ PEMS/
 │   ├── use-cases/
 │   │   ├── USE_CASE_LIST.md
 │   │   └── USE_CASE_NOTES.md
-│   ├── PEMS_AI_Refactor_Project_Structure_Prompt.md
+│   ├── PEMS_UC_IMPLEMENTATION_RULEBOOK_FRONTEND_BACKEND_DATABASE_VALIDATION_SECURITY.md
 │   ├── PROJECT_OVERVIEW.md
 │   ├── Technology.md
 │   └── VISITOR_MANAGEMENT_SYSTEM.md
 ├── frontend/
 │   └── pems-react/
 │       ├── scripts/
-│       │   ├── applet_update.js
 │       │   ├── applet_update_contact.js
 │       │   ├── applet_update_emerald.js
 │       │   ├── applet_update_visit_3.js
 │       │   ├── applet_update_visit_4.js
 │       │   ├── applet_update_vp.js
+│       │   ├── applet_update.js
 │       │   ├── transform.js
 │       │   ├── update_ho.js
 │       │   ├── update_linter.js
@@ -1069,58 +1129,58 @@ PEMS/
 │       │   │   │   ├── CanTho.png
 │       │   │   │   ├── DaNang.png
 │       │   │   │   ├── HCM.png
+│       │   │   │   ├── hola_new.jpg
 │       │   │   │   ├── Hola.jpg
 │       │   │   │   ├── QuanAP.jpg
-│       │   │   │   ├── QuyNhon.png
-│       │   │   │   └── hola_new.jpg
-│       │   │   ├── Logo/
-│       │   │   │   ├── logo01.png
-│       │   │   │   ├── logo02.png
-│       │   │   │   ├── logo03.png
-│       │   │   │   ├── logo04.png
-│       │   │   │   ├── logo05.png
-│       │   │   │   ├── logo06.png
-│       │   │   │   ├── logo07.png
-│       │   │   │   ├── logo08.png
-│       │   │   │   ├── logo09.png
-│       │   │   │   ├── logo10.png
-│       │   │   │   ├── logo11.png
-│       │   │   │   ├── logo12.png
-│       │   │   │   ├── logo13.jpg
-│       │   │   │   ├── logo14.png
-│       │   │   │   ├── logo15.png
-│       │   │   │   ├── logo16.png
-│       │   │   │   ├── logo17.png
-│       │   │   │   └── logo18.png
+│       │   │   │   └── QuyNhon.png
 │       │   │   ├── images/
 │       │   │   │   ├── 2021-FPTU-Eng.png
+│       │   │   │   ├── banner_partner.png
 │       │   │   │   ├── banner.jpg
 │       │   │   │   ├── banner02.png
-│       │   │   │   ├── banner_partner.png
 │       │   │   │   ├── loading.png
 │       │   │   │   ├── news_pattern.svg
 │       │   │   │   └── regenerated_image_1778552336496.png
-│       │   │   └── img_visit_detail/
-│       │   │       ├── 01.jpg
-│       │   │       ├── 02.jpg
-│       │   │       ├── 03.jpg
-│       │   │       ├── 04.jpg
-│       │   │       ├── 05.jpg
-│       │   │       ├── 06.jpg
-│       │   │       ├── 07.jpg
-│       │   │       ├── 08.jpg
-│       │   │       ├── 09.jpg
-│       │   │       ├── 10.jpg
-│       │   │       ├── 11.jpg
-│       │   │       ├── 12.jpg
-│       │   │       ├── 13.jpg
-│       │   │       ├── 14.jpg
-│       │   │       ├── 15.jpg
-│       │   │       ├── 16.jpg
-│       │   │       ├── 17.jpg
-│       │   │       ├── 18.jpg
-│       │   │       ├── 19.jpg
-│       │   │       └── 20.jpg
+│       │   │   ├── img_visit_detail/
+│       │   │   │   ├── 01.jpg
+│       │   │   │   ├── 02.jpg
+│       │   │   │   ├── 03.jpg
+│       │   │   │   ├── 04.jpg
+│       │   │   │   ├── 05.jpg
+│       │   │   │   ├── 06.jpg
+│       │   │   │   ├── 07.jpg
+│       │   │   │   ├── 08.jpg
+│       │   │   │   ├── 09.jpg
+│       │   │   │   ├── 10.jpg
+│       │   │   │   ├── 11.jpg
+│       │   │   │   ├── 12.jpg
+│       │   │   │   ├── 13.jpg
+│       │   │   │   ├── 14.jpg
+│       │   │   │   ├── 15.jpg
+│       │   │   │   ├── 16.jpg
+│       │   │   │   ├── 17.jpg
+│       │   │   │   ├── 18.jpg
+│       │   │   │   ├── 19.jpg
+│       │   │   │   └── 20.jpg
+│       │   │   └── Logo/
+│       │   │       ├── logo01.png
+│       │   │       ├── logo02.png
+│       │   │       ├── logo03.png
+│       │   │       ├── logo04.png
+│       │   │       ├── logo05.png
+│       │   │       ├── logo06.png
+│       │   │       ├── logo07.png
+│       │   │       ├── logo08.png
+│       │   │       ├── logo09.png
+│       │   │       ├── logo10.png
+│       │   │       ├── logo11.png
+│       │   │       ├── logo12.png
+│       │   │       ├── logo13.jpg
+│       │   │       ├── logo14.png
+│       │   │       ├── logo15.png
+│       │   │       ├── logo16.png
+│       │   │       ├── logo17.png
+│       │   │       └── logo18.png
 │       │   ├── components/
 │       │   │   ├── dashboard/
 │       │   │   │   ├── NotificationBell.tsx
@@ -1140,15 +1200,18 @@ PEMS/
 │       │   │   │   ├── SearchPopup.tsx
 │       │   │   │   ├── VisitDetailsModal.tsx
 │       │   │   │   └── VisitingFormPopup.tsx
-│       │   │   └── partners/
-│       │   │       └── GlobeComponent.tsx
+│       │   │   ├── partners/
+│       │   │   │   └── GlobeComponent.tsx
+│       │   │   └── ErrorBoundary.tsx
 │       │   ├── features/
 │       │   │   ├── account-management/
 │       │   │   │   ├── adapters/
 │       │   │   │   │   └── accountManagementAdapter.ts
 │       │   │   │   ├── api/
+│       │   │   │   │   ├── accountError.ts
 │       │   │   │   │   └── accountManagementApi.ts
 │       │   │   │   ├── hooks/
+│       │   │   │   │   ├── useAccountList.ts
 │       │   │   │   │   └── useAccountManagement.ts
 │       │   │   │   └── types/
 │       │   │   │       └── accountManagement.types.ts
@@ -1174,8 +1237,8 @@ PEMS/
 │       │   │   │   ├── adapters/
 │       │   │   │   │   └── authenticationAdapter.ts
 │       │   │   │   ├── api/
-│       │   │   │   │   ├── authError.ts
-│       │   │   │   │   └── authenticationApi.ts
+│       │   │   │   │   ├── authenticationApi.ts
+│       │   │   │   │   └── authError.ts
 │       │   │   │   ├── components/
 │       │   │   │   │   └── DualPortalLoginForms.tsx
 │       │   │   │   ├── hooks/
@@ -1326,15 +1389,41 @@ PEMS/
 │       │   │   │   │   └── useReports.ts
 │       │   │   │   └── types/
 │       │   │   │       └── reports.types.ts
-│       │   │   └── role-permission-management/
-│       │   │       ├── adapters/
-│       │   │       │   └── rolePermissionManagementAdapter.ts
+│       │   │   ├── role-permission-management/
+│       │   │   │   ├── adapters/
+│       │   │   │   │   └── rolePermissionManagementAdapter.ts
+│       │   │   │   ├── api/
+│       │   │   │   │   └── rolePermissionManagementApi.ts
+│       │   │   │   ├── hooks/
+│       │   │   │   │   └── useRolePermissionManagement.ts
+│       │   │   │   └── types/
+│       │   │   │       └── rolePermissionManagement.types.ts
+│       │   │   └── visit-request/
 │       │   │       ├── api/
-│       │   │       │   └── rolePermissionManagementApi.ts
+│       │   │       │   └── visitRequestApi.ts
+│       │   │       ├── components/
+│       │   │       │   ├── ExcelUpload/
+│       │   │       │   │   ├── excelDownload.ts
+│       │   │       │   │   ├── ExcelUpload.tsx
+│       │   │       │   │   └── excelValidator.ts
+│       │   │       │   ├── sections/
+│       │   │       │   │   ├── AdditionalSection.tsx
+│       │   │       │   │   ├── ContactSection.tsx
+│       │   │       │   │   ├── RegisterInfoSection.tsx
+│       │   │       │   │   ├── VisitInfoSection.tsx
+│       │   │       │   │   └── VisitorListSection.tsx
+│       │   │       │   ├── shared/
+│       │   │       │   │   ├── CountrySelect.tsx
+│       │   │       │   │   ├── FormField.tsx
+│       │   │       │   │   ├── OrganizationSelect.tsx
+│       │   │       │   │   └── PhoneInput.tsx
+│       │   │       │   └── OtpVerificationModal.tsx
 │       │   │       ├── hooks/
-│       │   │       │   └── useRolePermissionManagement.ts
+│       │   │       │   └── useVisitRequestForm.ts
+│       │   │       ├── schema/
+│       │   │       │   └── visitRequest.schema.ts
 │       │   │       └── types/
-│       │   │           └── rolePermissionManagement.types.ts
+│       │   │           └── visitRequest.types.ts
 │       │   ├── pages/
 │       │   │   ├── auth/
 │       │   │   │   ├── ChangePasswordPage.tsx
@@ -1395,8 +1484,8 @@ PEMS/
 │       │   │   │   │   └── Profile.tsx
 │       │   │   │   ├── reports/
 │       │   │   │   │   ├── DeptReportManagement.tsx
-│       │   │   │   │   ├── ReportManagement.tsx
-│       │   │   │   │   └── mockReportData.ts
+│       │   │   │   │   ├── mockReportData.ts
+│       │   │   │   │   └── ReportManagement.tsx
 │       │   │   │   └── visit/
 │       │   │   │       ├── AgendaTemplateManagement.tsx
 │       │   │   │       ├── CreateVisitRequest.tsx
@@ -1410,6 +1499,7 @@ PEMS/
 │       │   │   ├── FAQPage.tsx
 │       │   │   ├── ForbiddenPage.tsx
 │       │   │   ├── HomePage.tsx
+│       │   │   ├── InvalidAccountPage.tsx
 │       │   │   ├── NewsDetailPage.tsx
 │       │   │   ├── NewsPage.tsx
 │       │   │   ├── PartnerDetailPage.tsx
@@ -1423,13 +1513,15 @@ PEMS/
 │       │   │   │   └── httpClient.ts
 │       │   │   ├── auth/
 │       │   │   │   ├── AuthContext.tsx
-│       │   │   │   ├── ProtectedRoute.tsx
-│       │   │   │   ├── RoleGuard.tsx
 │       │   │   │   ├── authStorage.ts
 │       │   │   │   ├── dashboardRoute.ts
-│       │   │   │   └── permissionChecker.ts
+│       │   │   │   ├── permissionChecker.ts
+│       │   │   │   ├── ProtectedRoute.tsx
+│       │   │   │   ├── resolveEffectiveRole.ts
+│       │   │   │   └── RoleGuard.tsx
 │       │   │   ├── constants/
 │       │   │   │   ├── appRoutes.ts
+│       │   │   │   ├── auth.ts
 │       │   │   │   ├── permissions.ts
 │       │   │   │   ├── roles.ts
 │       │   │   │   ├── statusCodes.ts
@@ -1461,7 +1553,6 @@ PEMS/
 │       ├── .env
 │       ├── .env.example
 │       ├── .gitignore
-│       ├── README.md
 │       ├── fix_process.cjs
 │       ├── fix_responsive.cjs
 │       ├── index.html
@@ -1469,15 +1560,18 @@ PEMS/
 │       ├── out.txt
 │       ├── package-lock.json
 │       ├── package.json
-│       ├── transform.cjs
+│       ├── README.md
 │       ├── transform_editable.cjs
 │       ├── transform_setup_editable.cjs
+│       ├── transform.cjs
 │       ├── tsconfig.json
 │       ├── updateHeaders.cjs
 │       └── vite.config.ts
 ├── scripts/
 │   └── guard-project-structure.ps1
 ├── tests/
+│   ├── http/
+│   │   └── auth_dual_portal_manual_tests.http
 │   ├── PEMS.ApplicationTests/
 │   │   ├── Accounts/
 │   │   │   ├── CreateAccountCommandHandlerTests.cs
@@ -1561,9 +1655,9 @@ PEMS/
 │   │   │   ├── ReassignDepartmentLeadCommandTests.cs
 │   │   │   ├── RemovePersonnelCommandTests.cs
 │   │   │   ├── ReviewAssignedTasksCommandTests.cs
+│   │   │   ├── SearchandFilterDepartmentsQueryTests.cs
 │   │   │   ├── SearchCoordinationTasksQueryTests.cs
 │   │   │   ├── SearchPersonnelQueryTests.cs
-│   │   │   ├── SearchandFilterDepartmentsQueryTests.cs
 │   │   │   ├── SignTheServiceDeliveryReportCommandTests.cs
 │   │   │   ├── UpdateDepartmentCommandTests.cs
 │   │   │   ├── ViewCoordinationTasksQueryTests.cs
@@ -1669,11 +1763,12 @@ PEMS/
 │       └── temp_bcrypt.csproj
 ├── .gitattributes
 ├── .gitignore
-├── PEMS.slnx
-├── README.md
+├── generate_tree.js
+├── generate_tree.ps1
+├── generate_tree.py
 ├── payload.json
-├── tree_generator.js
-└── tree_generator.py
+├── PEMS.slnx
+└── README.md
 ```
 
 ## 3. Layer Overview
@@ -1695,11 +1790,10 @@ PEMS/
 
 ## 4. Important Notes
 
-- Không còn tồn tại module `PEMS.Application/Authentication/Commands/ChangePassword` do đã chuyển hoàn toàn sang `Profiles`.
-- Module `Profiles` chứa implementation chính thức của ChangePassword.
-- Đã dọn dẹp các file rác như `test.cs` và `TestBcrypt` ở `PEMS.Api`.
-- `DbSeeder` đã cập nhật logic chạy script.
-- Cấu trúc thư mục được tinh chỉnh rõ ràng và theo chuẩn Clean Architecture.
+- Có module mới xuất hiện như `VisitRequestsController` ở layer API và `VisitRequests` ở Application layer, phản ánh quá trình triển khai Use Case Visit.
+- Module `Authentication` và các tính năng SSO, Credentials đã được làm rõ hơn.
+- Không đánh giá sâu logic code, chỉ ghi nhận ở mức structure.
+- Đã loại trừ các folder build/generated và cache.
 
 ## 5. Change Summary
 
@@ -1707,3 +1801,19 @@ PEMS/
 - Đã cập nhật tree theo trạng thái thật.
 - Đã loại trừ generated folders.
 - Không sửa code.
+
+
+## v8.2 Added Test File
+
+```text
+PEMS.Tests/Application/Delegations/CancelVisitRequestCommandHandlerTests.cs
+```
+
+
+---
+
+## v8.2 Structure Note — UC-136 Cancel thuộc Delegations
+
+UC-136 `Cancel Visit Request` đặt trong `PEMS.Application/Delegations/Commands/CancelVisitRequest/`.
+Không tạo module riêng trong `VisitRequests` cho cancellation, vì sau khi request đã tồn tại thì hủy là thao tác vòng đời Delegation.
+Không tạo DTO/field `externalConfirmationNote`; dùng `cancellationReason`.

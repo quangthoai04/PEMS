@@ -105,3 +105,37 @@ Chúng ta chia Validation làm 2 loại. Phải viết đúng chỗ:
 3. **Repository là Kẻ hầu hạ (Dumb DB Accessor)**:
    * Repository chỉ chứa các lệnh cơ bản: `GetById`, `Add`, `Update`, `ExistsBy...`.
    * Cấm viết logic nghiệp vụ (VD: Tính tiền, kiểm tra quyền) bên trong Repository.
+---
+
+## 6. Bổ sung rule cho UC-136 Cancel Visit Request
+
+UC-136 thuộc **Delegations feature**, không đặt trong module submit form public.
+
+### Vị trí code bắt buộc
+
+```text
+PEMS.Api/Controllers/DelegationsController.cs
+PEMS.Application/Delegations/Commands/CancelVisitRequest/
+  CancelVisitRequestCommand.cs
+  CancelVisitRequestCommandHandler.cs
+  CancelVisitRequestCommandValidator.cs
+  CancelVisitRequestResponse.cs
+PEMS.Domain/Entities/VisitRequest.cs
+PEMS.Domain/Entities/VisitRequestCampus.cs
+PEMS.Infrastructure/Persistence/Configurations/VisitRequestConfiguration.cs
+PEMS.Infrastructure/Persistence/Configurations/VisitRequestCampusConfiguration.cs
+```
+
+### Rule triển khai
+
+- Controller chỉ nhận request, gọi `IMediator`, trả response.
+- Validator kiểm tra input cơ bản: `visitRequestId/visitInstanceId`, `cancellationSource`, `cancellationReason`, `rowVersion`.
+- Handler kiểm tra permission `UC-136.CANCEL_VISIT_REQUEST`, ownership/current-host/campus scope và trạng thái hiện tại.
+- Entity chịu trách nhiệm đổi trạng thái và set metadata hủy.
+- Không dùng `external_confirmation_note`; nếu `cancellationSource = EXTERNAL_CONFIRMATION`, `cancellationReason` phải chứa kênh xác nhận, thời gian, người xác nhận và lý do.
+- Phải ghi `visit_status_logs` và `audit_logs` trong cùng transaction.
+
+### Không nhầm UC-136 với UC-41
+
+- UC-136: hủy request/delegation trước khi hoàn tất xử lý, status `CANCELLED`.
+- UC-41: đóng delegation sau khi xử lý xong, campus status `CLOSED`.

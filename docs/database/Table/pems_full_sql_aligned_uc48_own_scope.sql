@@ -1,23 +1,14 @@
 -- =====================================================================
--- PEMS v4.5 - FINAL STRICT VISIBILITY BUILD (v4)
--- Generated rule set:
---   + 42 CREATE TABLE statements.
---   + NO temporary pre-verification visit-form table.
---   + visit_requests.registrant_nationality is kept.
---   + visit_requests.status uses extended lifecycle:
---       PENDING_APPROVAL, APPROVED, REJECTED, CANCELLED, IN_PROGRESS, COMPLETED.
---   + UC-48.VIEW_EMAIL is Own scope (O).
---   + ADMIN must NOT view Visit Request / Delegation business records.
---   + HO sees ONLY MULTI_CAMPUS visit requests.
---   + STAFF Leader sees:
---       - SINGLE_CAMPUS requests for their own campus;
---       - MULTI_CAMPUS requests only after HO approval, only for campuses included in the request.
+-- PEMS FULL SQL — SQL-aligned baseline with UC-48 View Email = Own scope
+-- Generated from: pems_full(1).sql
+-- Change: UC-48.VIEW_EMAIL role_permissions are seeded directly as permission_level 'O'.
+-- This is a full SQL baseline file, not an UPDATE/PATCH script.
 -- =====================================================================
 
 -- =====================================================================
 -- PEMS v4.5
--- Revision v4-final: 42-table schema; no temporary visit-request table; visit form is created only after OTP/email verification. - NEW BASE MySQL 8.0 Schema
--- Version: 42 tables - SSO-first auth; no temporary visit-request table; revised User/Gallery/FAQ/News modules; updated Feedback/Minutes/Action Items
+-- Revision v4: Removed visit_requests.status value old email-verification pending status; visit form is created only after OTP/email verification. - NEW BASE MySQL 8.0 Schema
+-- Version: 43 tables - SSO-first auth; revised User/Gallery/FAQ/News modules; updated Feedback/Minutes/Action Items
 --
 -- What is fixed in this version:
 -- - Added DROP TRIGGER IF EXISTS and DROP TABLE IF EXISTS in dependency order.
@@ -33,13 +24,11 @@
 -- - Removed tasks/task_actions; logistics/resource workflow is handled by visit_logistics_items.
 -- - Removed user_campuses; every non-VISITOR user has exactly one primary_campus_id.
 -- - Updated visit request, host assignment, simplified minutes/action items, simplified feedback, logistics proposal workflow, and news review fields.
--- - Removed temporary visit-request storage table; frontend keeps draft form temporarily until OTP/email verification succeeds.
 -- - Removed user_campuses; each internal user has exactly one primary_campus_id.
 -- - Removed redundant approval helper columns; backend derives approval display data from visit_scope.
 -- - Removed redundant visit_request_campuses.assigned_by/assigned_at; approval actor/time already stored in visit_requests + logs.
 -- - Added role_permissions.sub_role to support STAFF Leader/Staff and DEPT Leader/Staff RBAC without overgrant.
 -- - Production auth is SSO-first; LOCAL_PASSWORD is kept only for DEV/test accounts.
--- - Added users.created_via='SSO_AUTO_PROVISION' for Visitor portal auto-provisioning on first SSO login.
 -- - Locked approval flow:
 --   + SINGLE_CAMPUS request tổng chỉ được STAFF_LEADER quyết định.
 --   + MULTI_CAMPUS request tổng chỉ được HO quyết định.
@@ -257,7 +246,7 @@ CREATE TABLE users (
   email_verified_at DATETIME NULL COMMENT 'Thời điểm email được xác thực qua SSO lần đầu hoặc xác nhận bởi hệ thống',
   failed_login_count INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'Số lần đăng nhập sai local password liên tiếp; reset khi login thành công',
   locked_until DATETIME NULL COMMENT 'Thời điểm hết khóa tạm thời nếu bị lock',
-  created_via ENUM('MANUAL_CREATED','VISITOR_FORM','SSO_AUTO_PROVISION') NOT NULL DEFAULT 'MANUAL_CREATED' COMMENT 'MANUAL_CREATED=HO/Staff Leader tạo, VISITOR_FORM=tạo từ form visitor, SSO_AUTO_PROVISION=tạo tự động khi đăng nhập SSO ở cổng Visitor',
+  created_via ENUM('MANUAL_CREATED','VISITOR_FORM') NOT NULL DEFAULT 'MANUAL_CREATED' COMMENT 'MANUAL_CREATED=HO/Staff Leader tạo, VISITOR_FORM=tạo từ form visitor',
   first_login_at DATETIME NULL,
   last_login_at DATETIME NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -556,7 +545,6 @@ COMMENT='Tài liệu nghiệp vụ. partner_documents/reports/logistics document
 -- After the main request is approved, backend assigns each campus instance to its Staff Leader by setting current_host_user_id and status='ASSIGNED'.
 -- Staff Leader/current host may transfer host to another IC Staff in the same campus.
 
-
 CREATE TABLE visit_requests (
   visit_request_id CHAR(36) NOT NULL,
   request_code VARCHAR(50) NOT NULL,
@@ -569,7 +557,6 @@ CREATE TABLE visit_requests (
   registrant_job_title VARCHAR(150) NULL COMMENT 'Chức danh/phòng ban người đăng ký',
   registrant_phone VARCHAR(50) NULL COMMENT 'SĐT người đăng ký',
   registrant_email VARCHAR(150) NOT NULL COMMENT 'Email người đăng ký',
-  registrant_nationality VARCHAR(100) NULL COMMENT 'Quốc tịch người đăng ký',
 
   -- 2. Delegation information
   delegation_name VARCHAR(200) NOT NULL COMMENT 'Tên đoàn khách',
@@ -587,7 +574,7 @@ CREATE TABLE visit_requests (
   transportation_note TEXT NULL COMMENT 'Nhận diện phương tiện di chuyển tới FPTU',
   note_to_fptu TEXT NULL COMMENT 'Ghi chú cho FPTU',
 
-  status ENUM('PENDING_APPROVAL','APPROVED','REJECTED','CANCELLED','IN_PROGRESS','COMPLETED') NOT NULL DEFAULT 'PENDING_APPROVAL',
+  status ENUM('PENDING_APPROVAL','REJECTED','APPROVED','CANCELLED') NOT NULL DEFAULT 'PENDING_APPROVAL',
   submitted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   email_verified_at DATETIME NULL,
 
@@ -616,7 +603,7 @@ CREATE TABLE visit_requests (
   CHECK (expected_guest_count >= 1),
   CHECK (
     decision_actor_role IS NULL
-    OR status NOT IN ('APPROVED','IN_PROGRESS','COMPLETED','REJECTED','CANCELLED')
+    OR status NOT IN ('APPROVED','REJECTED','CANCELLED')
     OR (
       visit_scope = 'SINGLE_CAMPUS'
       AND decision_actor_role IN ('STAFF_LEADER','SYSTEM')
@@ -637,7 +624,7 @@ CREATE TABLE visit_requests (
     FOREIGN KEY (decided_by) REFERENCES users(user_id)
     ON UPDATE CASCADE ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-COMMENT='Đơn đăng ký tham quan. Record chỉ được tạo sau khi email/OTP đã xác minh; nội dung form không sửa sau khi submit vào PENDING_APPROVAL; tiến trình thực tế theo visit_request_campuses.';
+COMMENT='Đơn đăng ký tham quan. Nội dung không được sửa sau khi chuyển sang PENDING_APPROVAL; thời gian/campus lưu ở visit_request_campuses.';
 
 CREATE TABLE visit_request_campuses (
   visit_instance_id CHAR(36) NOT NULL,
@@ -5130,120 +5117,6 @@ COMMIT;
 -- <<< END dev_accounts.sql
 
 
--- <<< VISIT VISIBILITY RULES / DERIVED DISPLAY STATUS >>>
--- =====================================================================
--- PEMS Visit Visibility Patch
--- Rule:
--- - MULTI_CAMPUS pending requests are visible only to HO.
--- - Staff Leader cannot see MULTI_CAMPUS requests before HO approval.
--- - After HO approves, only Staff Leader of campuses included in that request can see their campus instance.
--- - SINGLE_CAMPUS requests are visible/actionable only to Staff Leader of that campus.
--- - "HO_APPROVED" is a display/approval badge, not a lifecycle status.
--- =====================================================================
-
--- Extra indexes for visibility queries. Keep existing indexes; these optimize the new access rules.
-ALTER TABLE visit_requests
-  ADD KEY idx_visit_requests_visibility_scope_status_decision
-    (visit_scope, status, decision_actor_role, decided_at);
-
-ALTER TABLE visit_request_campuses
-  ADD KEY idx_visit_instances_visibility_campus_request
-    (campus_id, visit_request_id, status, current_host_user_id);
-
--- HO view: HO can see all inter-campus/multi-campus requests, including PENDING_APPROVAL.
-CREATE OR REPLACE VIEW vw_visit_requests_for_ho AS
-SELECT
-  vr.visit_request_id,
-  vr.request_code,
-  vr.delegation_name,
-  vr.visit_scope,
-  vr.status AS request_status,
-  vr.submitted_at,
-  vr.decided_by,
-  vr.decided_at,
-  vr.decision_actor_role,
-  vr.decision_note,
-  CASE
-    WHEN vr.visit_scope = 'MULTI_CAMPUS' AND vr.status = 'PENDING_APPROVAL'
-      THEN 'WAITING_HO_APPROVAL'
-    WHEN vr.visit_scope = 'MULTI_CAMPUS'
-      AND vr.status IN ('APPROVED','IN_PROGRESS','COMPLETED')
-      AND vr.decision_actor_role = 'HO'
-      THEN 'HO_APPROVED'
-    WHEN vr.status = 'REJECTED'
-      THEN 'REJECTED'
-    WHEN vr.status = 'CANCELLED'
-      THEN 'CANCELLED'
-    ELSE vr.status
-  END AS approval_display_status
-FROM visit_requests vr
-WHERE vr.visit_scope = 'MULTI_CAMPUS';
-
--- Staff Leader view: backend must still filter visible_campus_id = current user's primary_campus_id.
--- This view deliberately excludes MULTI_CAMPUS requests before HO approval.
-CREATE OR REPLACE VIEW vw_visit_requests_for_staff_leader AS
-SELECT
-  vr.visit_request_id,
-  vrc.visit_instance_id,
-  vrc.campus_id AS visible_campus_id,
-  vrc.current_host_user_id,
-  vr.request_code,
-  vr.delegation_name,
-  vr.visit_scope,
-  vr.status AS request_status,
-  vrc.status AS campus_status,
-  vr.submitted_at,
-  vr.decided_by,
-  vr.decided_at,
-  vr.decision_actor_role,
-  vr.decision_note,
-  CASE
-    WHEN vr.visit_scope = 'SINGLE_CAMPUS' AND vr.status = 'PENDING_APPROVAL'
-      THEN 'WAITING_STAFF_LEADER_APPROVAL'
-    WHEN vr.visit_scope = 'SINGLE_CAMPUS'
-      AND vr.status IN ('APPROVED','IN_PROGRESS','COMPLETED')
-      AND vr.decision_actor_role = 'STAFF_LEADER'
-      THEN 'STAFF_LEADER_APPROVED'
-    WHEN vr.visit_scope = 'MULTI_CAMPUS'
-      AND vr.status IN ('APPROVED','IN_PROGRESS','COMPLETED')
-      AND vr.decision_actor_role = 'HO'
-      THEN 'HO_APPROVED'
-    WHEN vr.status = 'REJECTED'
-      THEN 'REJECTED'
-    WHEN vr.status = 'CANCELLED'
-      THEN 'CANCELLED'
-    ELSE vr.status
-  END AS approval_display_status,
-  CASE
-    WHEN vr.visit_scope = 'SINGLE_CAMPUS' AND vr.status = 'PENDING_APPROVAL'
-      THEN 1
-    ELSE 0
-  END AS can_staff_leader_decide,
-  CASE
-    WHEN vr.visit_scope = 'MULTI_CAMPUS'
-      AND vr.status IN ('APPROVED','IN_PROGRESS','COMPLETED')
-      AND vr.decision_actor_role = 'HO'
-      THEN 1
-    ELSE 0
-  END AS is_released_by_ho
-FROM visit_requests vr
-JOIN visit_request_campuses vrc
-  ON vrc.visit_request_id = vr.visit_request_id
-WHERE
-  -- Single-campus: Staff Leader of that campus may see pending and later states.
-  vr.visit_scope = 'SINGLE_CAMPUS'
-  OR
-  -- Multi-campus: Staff Leader may see only after HO has approved/released it.
-  (
-    vr.visit_scope = 'MULTI_CAMPUS'
-    AND vr.status IN ('APPROVED','IN_PROGRESS','COMPLETED')
-    AND vr.decision_actor_role = 'HO'
-    AND vr.decided_at IS NOT NULL
-  );
-
--- <<< END VISIT VISIBILITY RULES >>>
-
-
 -- =====================================================================
 -- FINAL STANDARD VERIFICATION AFTER MANUAL SEED SYNCHRONIZATION
 -- =====================================================================
@@ -5288,213 +5161,3 @@ ORDER BY FIELD(u.email,
   'student@fpt.edu.vn',
   'visitor@example.com'
 );
-
--- =====================================================================
--- FINAL STRICT BUSINESS VISIBILITY GUARDS
--- =====================================================================
--- These guards intentionally live at the end of the file so they win over
--- older scenario/manual seed blocks above.
---
--- Final visit/delegation access rule:
---   ADMIN: no visit request/delegation business access.
---   HO: only MULTI_CAMPUS requests.
---   STAFF Leader: own campus SINGLE_CAMPUS requests; and own-campus instances
---                 of MULTI_CAMPUS requests only after HO approval.
--- =====================================================================
-
--- 1) Hard-clean accidental ADMIN permissions for visit/delegation business UCs.
--- ADMIN remains a technical/system administrator, not a visit workflow actor.
-DELETE rp
-FROM role_permissions rp
-JOIN roles r
-  ON r.role_id = rp.role_id
-JOIN permissions p
-  ON p.permission_id = rp.permission_id
-WHERE r.role_code = 'ADMIN'
-  AND (
-    p.permission_group = 'Delegation Reception Management'
-    OR p.permission_code REGEXP '^UC-(17|18|19|20|21|22|23|24|25|26|27|28|29|30|31|32|33|34|35|36|37|38|39|40|41|42|43|44|45|46|47|48)\\.'
-  );
-
--- 2) HO list/detail source: HO sees ONLY MULTI_CAMPUS requests.
-CREATE OR REPLACE VIEW vw_visit_requests_for_ho AS
-SELECT
-  vr.visit_request_id,
-  vr.request_code,
-  vr.visitor_user_id,
-  vr.partner_id,
-  vr.registrant_full_name,
-  vr.registrant_organization,
-  vr.registrant_job_title,
-  vr.registrant_phone,
-  vr.registrant_email,
-  vr.registrant_nationality,
-  vr.delegation_name,
-  vr.visit_scope,
-  vr.purpose,
-  vr.working_content,
-  vr.expected_guest_count,
-  vr.working_language,
-  vr.status AS request_status,
-  vr.submitted_at,
-  vr.email_verified_at,
-  vr.decided_by,
-  vr.decided_at,
-  vr.decision_actor_role,
-  vr.decision_note,
-  vr.row_version,
-  vr.created_at,
-  vr.updated_at,
-  CASE
-    WHEN vr.status = 'PENDING_APPROVAL'
-      THEN 'WAITING_HO_APPROVAL'
-    WHEN vr.status IN ('APPROVED','IN_PROGRESS','COMPLETED')
-      AND vr.decision_actor_role = 'HO'
-      THEN 'HO_APPROVED'
-    WHEN vr.status = 'REJECTED'
-      THEN 'REJECTED'
-    WHEN vr.status = 'CANCELLED'
-      THEN 'CANCELLED'
-    ELSE vr.status
-  END AS approval_display_status,
-  CASE
-    WHEN vr.status = 'PENDING_APPROVAL'
-      THEN 1 ELSE 0
-  END AS can_ho_decide
-FROM visit_requests vr
-WHERE vr.visit_scope = 'MULTI_CAMPUS';
-
--- 3) STAFF Leader list/detail source.
--- Backend must still filter this view with:
---   WHERE visible_campus_id = @CurrentUserPrimaryCampusId
--- and must only expose this route to STAFF sub_role = 'Leader'.
-CREATE OR REPLACE VIEW vw_visit_requests_for_staff_leader AS
-SELECT
-  vr.visit_request_id,
-  vrc.visit_instance_id,
-  vrc.campus_id AS visible_campus_id,
-  vrc.current_host_user_id,
-  vr.request_code,
-  vr.visitor_user_id,
-  vr.partner_id,
-  vr.registrant_full_name,
-  vr.registrant_organization,
-  vr.registrant_job_title,
-  vr.registrant_phone,
-  vr.registrant_email,
-  vr.registrant_nationality,
-  vr.delegation_name,
-  vr.visit_scope,
-  vr.purpose,
-  vr.working_content,
-  vr.expected_guest_count,
-  vr.working_language,
-  vr.status AS request_status,
-  vrc.status AS campus_status,
-  vrc.planned_start_at,
-  vrc.planned_end_at,
-  vrc.actual_start_at,
-  vrc.actual_end_at,
-  vr.submitted_at,
-  vr.email_verified_at,
-  vr.decided_by,
-  vr.decided_at,
-  vr.decision_actor_role,
-  vr.decision_note,
-  vr.row_version AS request_row_version,
-  vrc.row_version AS campus_row_version,
-  vr.created_at,
-  vr.updated_at,
-  CASE
-    WHEN vr.visit_scope = 'SINGLE_CAMPUS'
-      AND vr.status = 'PENDING_APPROVAL'
-      THEN 'WAITING_STAFF_LEADER_APPROVAL'
-    WHEN vr.visit_scope = 'SINGLE_CAMPUS'
-      AND vr.status IN ('APPROVED','IN_PROGRESS','COMPLETED')
-      AND vr.decision_actor_role = 'STAFF_LEADER'
-      THEN 'STAFF_LEADER_APPROVED'
-    WHEN vr.visit_scope = 'MULTI_CAMPUS'
-      AND vr.status IN ('APPROVED','IN_PROGRESS','COMPLETED')
-      AND vr.decision_actor_role = 'HO'
-      THEN 'HO_APPROVED'
-    WHEN vr.status = 'REJECTED'
-      THEN 'REJECTED'
-    WHEN vr.status = 'CANCELLED'
-      THEN 'CANCELLED'
-    ELSE vr.status
-  END AS approval_display_status,
-  CASE
-    WHEN vr.visit_scope = 'SINGLE_CAMPUS'
-      AND vr.status = 'PENDING_APPROVAL'
-      THEN 1 ELSE 0
-  END AS can_staff_leader_decide,
-  CASE
-    WHEN vr.visit_scope = 'MULTI_CAMPUS'
-      AND vr.status IN ('APPROVED','IN_PROGRESS','COMPLETED')
-      AND vr.decision_actor_role = 'HO'
-      AND vr.decided_at IS NOT NULL
-      THEN 1 ELSE 0
-  END AS is_released_by_ho
-FROM visit_requests vr
-JOIN visit_request_campuses vrc
-  ON vrc.visit_request_id = vr.visit_request_id
-WHERE
-  (
-    vr.visit_scope = 'SINGLE_CAMPUS'
-  )
-  OR
-  (
-    vr.visit_scope = 'MULTI_CAMPUS'
-    AND vr.status IN ('APPROVED','IN_PROGRESS','COMPLETED')
-    AND vr.decision_actor_role = 'HO'
-    AND vr.decided_at IS NOT NULL
-  );
-
--- 4) Empty ADMIN view to prevent accidental reuse of a privileged admin path.
--- If a repository/service tries to use an admin visit view, it will return zero rows.
-CREATE OR REPLACE VIEW vw_visit_requests_for_admin AS
-SELECT
-  vr.visit_request_id,
-  vr.request_code,
-  vr.visit_scope,
-  vr.status AS request_status,
-  vr.submitted_at,
-  vr.decided_by,
-  vr.decided_at,
-  vr.decision_actor_role,
-  'ADMIN_NO_VISIT_ACCESS' AS approval_display_status
-FROM visit_requests vr
-WHERE 1 = 0;
-
--- 5) Verification checks for the final rule set.
-SELECT 'FINAL STRICT VISIBILITY BUILD v4' AS build_name;
-
-SELECT 'create_table_count' AS check_name, COUNT(*) AS value
-FROM information_schema.tables
-WHERE table_schema = DATABASE()
-  AND table_type = 'BASE TABLE';
-
-
-SELECT 'admin_delegation_permissions' AS check_name, COUNT(*) AS value
-FROM role_permissions rp
-JOIN roles r ON r.role_id = rp.role_id
-JOIN permissions p ON p.permission_id = rp.permission_id
-WHERE r.role_code = 'ADMIN'
-  AND (
-    p.permission_group = 'Delegation Reception Management'
-    OR p.permission_code REGEXP '^UC-(17|18|19|20|21|22|23|24|25|26|27|28|29|30|31|32|33|34|35|36|37|38|39|40|41|42|43|44|45|46|47|48)\\.'
-  );
-
-SELECT 'uc48_non_own_permissions' AS check_name, COUNT(*) AS value
-FROM role_permissions rp
-JOIN permissions p ON p.permission_id = rp.permission_id
-WHERE p.permission_code = 'UC-48.VIEW_EMAIL'
-  AND rp.permission_level <> 'O';
-
-SELECT 'ho_view_single_campus_rows' AS check_name, COUNT(*) AS value
-FROM vw_visit_requests_for_ho
-WHERE visit_scope <> 'MULTI_CAMPUS';
-
-SELECT 'admin_view_rows' AS check_name, COUNT(*) AS value
-FROM vw_visit_requests_for_admin;
-

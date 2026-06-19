@@ -1,209 +1,299 @@
-# Permission Rules
+# Permission Rules — PEMS v8
 
-- **F**: Full Access (Read, Edit, Delete, Admin)
-- **E**: Edit Access
-- **R**: Read Access
-- **O**: Own / Object-level ownership access
-- **—**: No Access
-# Role & Permission Matrix
-
-## 1. Purpose
-
-This document defines the initial permission matrix for all use cases in the system.
-The matrix describes which user roles are allowed to access, view, edit, manage, or perform each use case.
-
-The purpose of this file is to provide a clear permission reference for backend authorization, frontend menu visibility, UI action control, and future use case implementation.
-
-At the current stage, this permission matrix is used as a working draft. Some permissions may need to be reviewed again after each use case is fully specified and validated with business rules.
+> **Purpose:** File này là bản rule ngắn gọn để backend/frontend triển khai authorization nhất quán theo SQL v8.  
+> **Source of truth for detailed UC matrix:** `PERMISSION_MATRIX_UPDATED_V5.md`.  
+> File này không lặp lại toàn bộ ma trận UC; nó chỉ ghi các nguyên tắc bắt buộc, scope rule và các case dễ nhầm.
 
 ---
 
-## 2. Permission Legend
+## 1. Permission Level Meaning
 
-| Symbol | Meaning                   | Description                                                                                                                                                              |
-| ------ | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| F      | Full Permission           | The role has full authority to perform the main action of the use case, such as create, manage, approve, delete, assign, or configure.                                   |
-| E      | Execute / Edit Permission | The role can execute or edit the use case within a limited business scope. This permission is usually used for approval, update, processing, or status-changing actions. |
-| R      | Read Permission           | The role can only view, search, filter, or access information. The role cannot change system data through this permission.                                               |
-| O      | Own / Personal Permission | The role can perform the action only on its own account, profile, session, email, personal calendar, or personal data.                                                   |
-| —      | No Permission             | The role is not allowed to access or perform this use case.                                                                                                              |
-
----
-
-## 3. Role Description
-
-| Role            | Description                                                                                                                                                                                              |
-| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| HO              | Head Office role responsible for high-level management such as campus management, FAQ management, report viewing, agenda templates, and some system-level configurations.                                |
-| Admin           | System administrator responsible for technical administration such as role management, permission configuration, API configuration, API logs, and integration settings.                                  |
-| Staff Leader    | Campus or staff management role responsible for reviewing requests, approving news, managing staff-related operations, and supervising delegation-related activities.                                    |
-| Staff           | Operational role responsible for creating and updating delegation records, preparing logistics, managing partner information, uploading documents, creating news, and handling daily coordination tasks. |
-| Department Lead | Department-level manager responsible for approving resource requests, assigning department tasks, managing department personnel, and monitoring coordination work.                                       |
-| Department      | Department member role responsible for reviewing assigned tasks, participating in delegation activities, signing service delivery reports, and supporting department coordination work.                  |
-| Student         | Supporting role that may participate in delegation activities, confirm participation, create meeting minutes, submit feedback, upload visit photos, or create news when assigned.                        |
-| Visitor         | External guest role mainly used for submitting visit requests and viewing information related to their own delegation or visit process.                                                                  |
+| Symbol | Meaning | Backend Rule |
+|---|---|---|
+| `F` | Full Permission | Được thực hiện hành động chính của UC trong scope được giao. Không có nghĩa là toàn quyền toàn hệ thống. |
+| `E` | Execute / Edit | Được xử lý, cập nhật, phê duyệt, đổi trạng thái trong scope hợp lệ. |
+| `R` | Read | Chỉ xem/tìm kiếm/lọc; không thay đổi dữ liệu. |
+| `O` | Own / Object Scope | Chỉ thao tác dữ liệu của chính user hoặc object mà user là owner/participant hợp lệ. |
+| `—` | No Access | Không có quyền; frontend ẩn chức năng và backend trả 403 nếu gọi trực tiếp. |
 
 ---
 
-## 4. General Permission Principles
+## 2. Effective Role Resolution
 
-The system follows role-based access control. Each use case must be checked against the user’s assigned role before allowing access.
+| `role_code` | `sub_role` | Effective Role |
+|---|---|---|
+| `ADMIN` | `NULL` / `NONE` | Admin |
+| `HO` | `NULL` / `NONE` | HO |
+| `STAFF` | `Leader` | Staff Leader |
+| `STAFF` | `Staff` | Staff |
+| `DEPT` | `Leader` | Department Lead |
+| `DEPT` | `Staff` | Department |
+| `STUDENT` | `NULL` / `NONE` | Student |
+| `VISITOR` | `NULL` / `NONE` | VISITOR |
 
-Public use cases such as homepage, news, FAQ, contact information, partner information, gallery, and policy pages are available with read-only access.
-
-Authenticated use cases such as notifications, profile management, password change, email actions, personal calendar, and assigned tasks require the user to be logged in.
-
-For use cases marked as **O**, users are only allowed to access or modify their own data. They must not be able to view or change another user’s private information.
-
-For use cases marked as **R**, users can only view, search, or filter data. They must not be allowed to create, update, delete, approve, or change status.
-
-For use cases marked as **E**, users can perform business actions such as approve, update, process, change status, or edit data, but only within their assigned business scope.
-
-For use cases marked as **F**, users have full control over the main action of that use case within the scope of their role and assigned responsibility.
-
-For use cases marked as **—**, the use case must be hidden from the user interface and blocked by backend authorization.
+Invalid combinations must not receive implicit permission. For example, `STAFF` without `sub_role` is invalid for authorization.
 
 ---
 
-## 5. Feature Area Notes
+## 3. Authentication / Portal Rules
 
-### Common
+### 3.1. Visitor Portal
 
-Common use cases are mostly public-facing functions. These include viewing homepage content, searching public information, viewing contact information, policies, FAQ, news, partners, gallery, and notifications.
+- Only `VISITOR` accounts can log in through the Visitor portal.
+- `selected_campus_id` must be `NULL`.
+- If a Google SSO / FEID login has no existing user and Visitor auto-provisioning is allowed, backend creates a VISITOR account with:
+  - `created_via = 'SSO_AUTO_PROVISION'`
+  - `primary_campus_id = NULL`
+  - `department_id = NULL`
+  - `sub_role = NULL`
+  - `status = 'ACTIVE'`
+- Visitor portal must not create internal accounts.
 
-Public content must only include published or visible data. Draft, hidden, internal, or restricted data must not be exposed to public users.
+### 3.2. Internal Portal
 
-### Authentication
+- Internal portal is for non-VISITOR users only.
+- Internal user must have exactly one `primary_campus_id` when the role requires campus.
+- `selected_campus_id` must match `users.primary_campus_id`.
+- Internal portal must not auto-provision unknown SSO users.
+- If account exists but role/portal mismatch, return a clear 403/validation error.
 
-Authentication use cases include SSO login, credential login, logout, and forgot password. These use cases are available to all users because every role may need to authenticate.
+### 3.3. Pre-auth Endpoints
 
-Authentication actions must include account status checking, secure session handling, token handling, password reset validation, OTP or reset link expiration, and login activity logging.
+The following UCs are pre-auth and must not use business `RequirePermission` before authentication:
 
-### Profile Management
+- UC-10 Login via SSO.
+- UC-11 Login via Credentials.
+- UC-13 Forgot Password.
 
-Profile management use cases allow authenticated users to view and update their own profile, change password, and manage personal information.
-
-Users must not be allowed to change sensitive fields such as role, campus assignment, account status, or permission level unless they have a separate authorized management use case.
-
-### Delegation Reception Management
-
-Delegation reception management is the core operational area of the system. It covers visit request submission, approval, delegation creation, logistics preparation, participation confirmation, resource approval, meeting minutes, documents, feedback, photos, partner creation, news creation, and delegation closing.
-
-Access to delegation data must depend on role, assigned campus, assigned department, participation status, and delegation ownership.
-
-### Email Management
-
-Email management covers template management, email drafting, sending, viewing, and replying.
-
-Email templates are controlled by authorized management roles. Normal users may send or reply to emails only within their permitted scope. Email history should be logged and access should be restricted to relevant senders, recipients, or linked delegation records.
-
-### Partner Management
-
-Partner management covers partner creation request processing, partner editing, partner list viewing, partner search, and partner details.
-
-Partner records should be protected from unauthorized modification. Duplicate organization or contact information should be checked before creating or approving partner profiles.
-
-### Document Management
-
-Document management covers viewing and searching uploaded documents.
-
-Users should only see documents that they are allowed to access based on delegation, campus, role, or assigned responsibility. Restricted documents must not appear in search results for unauthorized users.
-
-### Gallery Management
-
-Gallery management controls the virtual campus gallery content.
-
-Only authorized users should be able to add, update, or delete gallery items. Public users should only see gallery items that are marked as visible or published.
-
-### Minutes Management
-
-Minutes management covers the archive of meeting minutes.
-
-Meeting minutes should be linked to the correct delegation and should only be visible to users with proper access. Closed delegation records should be protected from unauthorized editing.
-
-### FAQ Management
-
-FAQ management allows authorized users to create, update, search, and control FAQ visibility.
-
-Only visible or published FAQ items should appear on the public homepage. Draft, hidden, or deleted FAQ items must not be shown publicly.
-
-### Report Management
-
-Report management provides dashboard statistics, report export, and time-based filtering.
-
-Statistics should follow role scope, campus scope, and reporting permission. Exported reports must not include data outside the user’s authorized access range.
-
-### Calendar Management
-
-Calendar management includes personal events, department calendar, view mode switching, and event details.
-
-Users may view events related to their role or assignment. Personal event create, update, and delete actions must only apply to events owned by the current user.
-
-### Feedback Management
-
-Feedback management includes searching feedback and viewing feedback summaries.
-
-Feedback data should be filtered by role and access scope. Sensitive feedback details should be hidden if required by business rules.
-
-### Campus Management
-
-Campus management is controlled by HO.
-
-Campus records are master data and may affect account assignment, delegation routing, department structure, and reporting. Changes to campus status should be handled carefully.
-
-### News Management
-
-News management controls news approval, publishing, visibility, list viewing, details viewing, multilingual news creation, and editing.
-
-Only approved news should be published publicly. Draft, rejected, hidden, or pending news should not appear on the public homepage.
-
-### Account Management
-
-Account management controls user account listing, creation, status management, details viewing, search, filtering, and role update.
-
-Sensitive data such as passwords, tokens, reset codes, and authentication secrets must never be displayed. Account status changes should revoke active sessions if needed.
-
-### Department Management
-
-Department management controls department creation, update, search, status, personnel, task assignment, task review, service delivery report signing, and department lead reassignment.
-
-Department operations must respect campus scope and department ownership. Removing personnel should not delete the user account; it should only remove the department relationship.
-
-### Role & Permission Management
-
-Role and permission management is controlled by Admin.
-
-This area defines system roles and their permission matrix. Changes to permissions must be logged carefully because they directly affect system access control.
-
-### API Management
-
-API management is controlled by Admin.
-
-API configuration includes external service settings, connection testing, request limits, status management, and API logs. Secrets, tokens, and credentials must be encrypted or masked and must not be exposed in logs.
-
-### Agenda Templates Management
-
-Agenda template management is controlled by HO.
-
-Agenda templates are reusable schedule structures for delegation preparation. Updating or deleting a template should not automatically modify existing delegation agendas unless explicitly confirmed by business rules.
+They still require security checks: account status, portal validation, rate limit, lockout, OTP/token expiry, audit/security log.
 
 ---
 
-## 6. Implementation Notes
+## 4. Strict Visit / Delegation Visibility
 
-Frontend permission checking should be used to hide menus, buttons, and pages that the user cannot access.
+This is the most important SQL v8 rule.
 
-Backend permission checking is mandatory and must be the final source of truth. Even if a button is hidden on the frontend, the backend must still validate permission before processing any request.
+| Role | Single-campus request | Multi-campus before HO approval | Multi-campus after HO approval/release |
+|---|---:|---:|---:|
+| ADMIN | No access | No access | No access |
+| HO | No access | View + approve/reject | View |
+| Staff Leader, same campus | View + process | No access | View own campus instance |
+| Staff Leader, other campus | No access | No access | No access |
+| Staff | Only assigned/linked records | No access unless linked after release | Assigned/linked records only |
+| Department Lead/Department | Department task/resource scope only | No access unless task/resource is released | Assigned resource/task scope only |
+| Student | Assigned/participant scope only | No access unless assigned after release | Assigned/participant scope only |
+| VISITOR | Own submitted/linked request only | Own submitted/linked request only | Own submitted/linked request only |
 
-Each protected API should check:
+### 4.1. HO Query Rule
 
-* whether the user is authenticated;
-* whether the user’s role has permission for the use case;
-* whether the user has access to the specific data scope;
-* whether the action is valid for the current business status;
-* whether audit logging is required.
+HO list/detail must use `vw_visit_requests_for_ho` or equivalent predicate:
 
-All create, update, delete, approve, reject, assign, publish, close, or status-changing actions should be recorded in audit logs.
+```sql
+WHERE visit_scope = 'MULTI_CAMPUS'
+```
 
-This permission matrix is a draft baseline and should be updated whenever use case details, role responsibilities, business rules, or security requirements change.
- 
+HO must not see `SINGLE_CAMPUS` even with direct ID access.
+
+### 4.2. Staff Leader Query Rule
+
+Staff Leader list/detail must use `vw_visit_requests_for_staff_leader` plus current campus filter:
+
+```sql
+WHERE visible_campus_id = @CurrentUserPrimaryCampusId
+```
+
+Staff Leader can process only:
+
+```sql
+visit_scope = 'SINGLE_CAMPUS'
+AND request_status = 'PENDING_APPROVAL'
+AND visible_campus_id = @CurrentUserPrimaryCampusId
+```
+
+Staff Leader cannot process `MULTI_CAMPUS`.
+
+### 4.3. Admin Query Rule
+
+ADMIN has no visit/delegation business access. Backend should return 403 or use `vw_visit_requests_for_admin`, which intentionally returns zero rows.
+
+---
+
+## 5. Visit Request Status vs Campus Progress Status
+
+`visit_requests.status` is request/approval status only:
+
+```text
+PENDING_APPROVAL → APPROVED
+PENDING_APPROVAL → REJECTED
+PENDING_APPROVAL / APPROVED → CANCELLED
+```
+
+Do not add `HO_APPROVED`, `IN_PROGRESS`, or `COMPLETED` into `visit_requests.status`.
+
+Use derived display labels instead:
+
+| Display Label | How to derive |
+|---|---|
+| `WAITING_HO_APPROVAL` | `visit_scope = MULTI_CAMPUS` and `visit_requests.status = PENDING_APPROVAL` |
+| `HO_APPROVED` | `visit_scope = MULTI_CAMPUS`, `visit_requests.status = APPROVED`, `decision_actor_role = HO` |
+| `WAITING_STAFF_LEADER_APPROVAL` | `visit_scope = SINGLE_CAMPUS` and `visit_requests.status = PENDING_APPROVAL` |
+| `STAFF_LEADER_APPROVED` | `visit_scope = SINGLE_CAMPUS`, `visit_requests.status = APPROVED`, `decision_actor_role = STAFF_LEADER` |
+| `IN_PROGRESS` | derived from one or more `visit_request_campuses.status = DURING_VISIT` |
+| `COMPLETED` | derived when all campus instances are `CLOSED` |
+
+---
+
+## 6. Email Scope Rule
+
+UC-48 `View Email` is `O` own-scope, not broad read.
+
+A user may view/reply only if one of these is true:
+
+- user is sender;
+- user is recipient / cc / bcc participant;
+- user is an explicitly stored participant in the email conversation;
+- email is linked to a visit/delegation that user can access under the same strict visit visibility rule.
+
+No role may read the whole email history simply because it has UC-48.
+
+---
+
+## 7. Public Content Rule
+
+Public endpoints do not need business `RequirePermission`, but must filter:
+
+- published/visible only;
+- active only;
+- not soft-deleted;
+- no internal/private data;
+- no draft/pending/rejected/hidden content.
+
+Examples: homepage, FAQ, public news, public gallery, public contact information.
+
+---
+
+## 8. Backend Enforcement Order
+
+For every protected endpoint:
+
+1. Authenticate user/session.
+2. Resolve effective role.
+3. Check permission code and level.
+4. Apply object ownership if level is `O`.
+5. Apply data scope: campus, department, participant, owner, linked visit/delegation.
+6. Apply business status rule.
+7. Apply action-specific rule: approve/reject/assign/publish/close.
+8. Write audit log for mutations.
+
+Frontend visibility is only UX. Backend authorization is mandatory.
+
+---
+
+## 9. Change Log
+
+| Version | Description |
+|---|---|
+| v5 | Rewritten as concise implementation rulebook; removed duplicate full matrix content; added `SSO_AUTO_PROVISION`; added strict visit visibility; clarified Admin no visit access, HO multi-campus only, Staff Leader campus scope, UC-48 own-scope. |
+
+
+---
+
+## 9. SQL v8 Visit Request Status Rule
+
+`visit_requests.status` is request/approval-only:
+
+```text
+PENDING_APPROVAL
+APPROVED
+REJECTED
+CANCELLED
+```
+
+It must not store `IN_PROGRESS` or `COMPLETED`.
+
+`visit_request_campuses.status` is per-campus operational status:
+
+```text
+WAITING_REQUEST_APPROVAL
+ASSIGNED
+BEFORE_VISIT
+DURING_VISIT
+AFTER_VISIT
+CLOSED
+CANCELLED
+```
+
+Frontend must display two layers:
+
+```text
+requestStatus = visit_requests.status
+campusStatus = visit_request_campuses.status
+progressStatus = derived display label from vw_visit_request_progress_summary
+```
+
+## 10. SQL v8 Host Assignment Rule
+
+`WAITING_REQUEST_APPROVAL` means the campus instance is waiting for main request approval. It is not a “waiting host” state.
+
+After approval:
+
+- `MULTI_CAMPUS`: HO approves; backend auto-assigns each campus Staff Leader as host; campus status becomes `ASSIGNED`; `host_assignment_source = AUTO_STAFF_LEADER`.
+- `SINGLE_CAMPUS`: Staff Leader approves; Staff Leader must select host immediately; campus status becomes `ASSIGNED`; `host_assignment_source = MANUAL_APPROVAL`.
+- Transfer Host: update current host and set `host_assignment_source = TRANSFERRED`.
+
+A campus instance with status `ASSIGNED`, `BEFORE_VISIT`, `DURING_VISIT`, `AFTER_VISIT`, or `CLOSED` must have `current_host_user_id`.
+
+## 11. SQL v8 Removed Columns
+
+`visit_request_campuses` must not use:
+
+```text
+actual_start_at
+actual_end_at
+```
+
+Do not reference these fields in backend entity, DTO, validators, mapping, query, or frontend forms.
+---
+
+# v8.2 Addendum — Cancel thuộc Delegation Feature
+
+## UC-136 — Cancel Visit Request
+
+- Permission code: `UC-136.CANCEL_VISIT_REQUEST`.
+- Permission group: `Delegation Reception Management`.
+- Backend module: `PEMS.Application/Delegations/Commands/CancelVisitRequest`.
+- Controller: `DelegationsController`.
+
+## Required metadata
+
+Khi chuyển `visit_requests.status` hoặc `visit_request_campuses.status` sang `CANCELLED`, backend phải set:
+
+```text
+cancelled_by
+cancelled_at
+cancellation_actor_type
+cancellation_source
+cancellation_reason
+```
+
+Không dùng `external_confirmation_note`.
+
+## Source rules
+
+| Source | Rule |
+|---|---|
+| `SELF_SERVICE` | Visitor tự hủy trong hệ thống. |
+| `EXTERNAL_CONFIRMATION` | Host/Staff hủy thay khách sau khi khách xác nhận bên ngoài. `cancellation_reason` bắt buộc ghi rõ kênh xác nhận, thời gian, người xác nhận, lý do. |
+| `INTERNAL_DECISION` | HO/Staff Leader hủy theo lý do nội bộ hợp lệ. `cancellation_reason` bắt buộc. |
+
+## Hard stop
+
+Không cho hủy campus instance nếu status đã là:
+
+```text
+DURING_VISIT
+AFTER_VISIT
+CLOSED
+```
+
+Nếu đã xử lý xong visit, dùng UC-41 `Close Delegation`, không dùng UC-136.

@@ -1,6 +1,6 @@
 # Role & Permission Matrix
 
-> **Status:** Revised baseline v0.2.  
+> **Status:** Revised baseline v0.3 — aligned with SQL v5 strict visit visibility and SSO auto-provisioning.  
 > Tài liệu này là nguồn tham chiếu cho backend authorization, frontend menu visibility, UI action control và kiểm thử phân quyền. Khi đặc tả UC hoặc business rule thay đổi, ma trận này phải được cập nhật trước khi sinh SQL/Permission seed thủ công.
 
 ## 1. Purpose
@@ -33,9 +33,9 @@ File này mô tả ma trận phân quyền theo từng Use Case của hệ thố
 
 | Role in Matrix | DB Mapping | Scope |
 |---|---|---|
-| HO | `role_code = HO` | Quản lý cấp Head Office, gồm campus, FAQ, report, agenda template và một số cấu hình nghiệp vụ. |
-| Admin | `role_code = ADMIN` | Quản trị kỹ thuật hệ thống, gồm role, permission, API configuration và API logs. Không phải super admin nghiệp vụ. |
-| Staff Leader | `role_code = STAFF`, `sub_role = Leader` | Điều phối/quản lý cấp staff hoặc campus, duyệt request, duyệt news, quản lý account/department trong phạm vi được giao. |
+| HO | `role_code = HO` | Head Office chỉ xử lý nghiệp vụ cấp liên cơ sở: xem/duyệt `MULTI_CAMPUS`, campus master, FAQ, report, agenda template và một số cấu hình nghiệp vụ. HO không xem/xử lý `SINGLE_CAMPUS` visit request. |
+| Admin | `role_code = ADMIN` | Quản trị kỹ thuật hệ thống, gồm role, permission, API configuration và API logs. Không phải super admin nghiệp vụ và không xem visit/delegation records. |
+| Staff Leader | `role_code = STAFF`, `sub_role = Leader` | Điều phối cấp campus: xem/xử lý `SINGLE_CAMPUS` thuộc campus mình; xem `MULTI_CAMPUS` chỉ sau khi HO duyệt/release và chỉ với campus mình; duyệt news, quản lý account/department trong phạm vi được giao. |
 | Staff | `role_code = STAFF`, `sub_role = Staff` | Nhân sự vận hành chính, tạo/cập nhật delegation, chuẩn bị logistics, quản lý partner, tài liệu, ảnh và tin tức. |
 | Department Lead | `role_code = DEPT`, `sub_role = Leader` | Trưởng bộ phận, duyệt resource, phân công nhiệm vụ, quản lý personnel và theo dõi coordination tasks. |
 | Department | `role_code = DEPT`, `sub_role = Staff` | Nhân sự bộ phận, nhận nhiệm vụ, xác nhận tham gia, cập nhật task và ký báo cáo nếu được phân công. |
@@ -72,6 +72,27 @@ Nếu `role_code` là `STAFF` hoặc `DEPT` mà `sub_role` bị thiếu, backend
 - Các UC có quyền `—` phải bị chặn ở backend kể cả khi user gọi API trực tiếp.
 - `F` chỉ full trong phạm vi UC đó, không tự động bao gồm UC khác.
 - Nếu một API thực hiện nhiều hành động, backend phải kiểm tra đủ permission tương ứng với từng hành động hoặc tách API.
+
+
+### 4.0. Strict Visit / Delegation Visibility Rule
+
+Permission level `R` hoặc `E` trong nhóm Delegation Reception Management chỉ là điều kiện cần. Backend vẫn phải áp dụng data scope sau:
+
+| Role | `SINGLE_CAMPUS` | `MULTI_CAMPUS` pending HO | `MULTI_CAMPUS` after HO approval/release |
+|---|---:|---:|---:|
+| ADMIN | No access | No access | No access |
+| HO | No access | View/decide | View |
+| Staff Leader, same campus | View/decide | No access | View own campus instance |
+| Staff Leader, other campus | No access | No access | No access |
+| Staff / Department / Student / VISITOR | Only if assigned, participant, owner, or explicitly linked | No access unless linked by a valid rule after release | Only within assigned/linked scope |
+
+Implementation source query:
+
+- HO list/detail: `vw_visit_requests_for_ho` and `visit_scope = 'MULTI_CAMPUS'`.
+- Staff Leader list/detail: `vw_visit_requests_for_staff_leader` plus `visible_campus_id = CurrentUser.PrimaryCampusId`.
+- ADMIN list/detail: no route or `vw_visit_requests_for_admin`, which returns zero rows.
+
+`approval_display_status` such as `WAITING_HO_APPROVAL`, `HO_APPROVED`, `WAITING_STAFF_LEADER_APPROVAL`, and `STAFF_LEADER_APPROVED` is a display/status-label concept. It must not replace the lifecycle column `visit_requests.status`.
 
 ### 4.1. Public Endpoint Rule
 
@@ -111,7 +132,7 @@ UC-12 Logout có thể kiểm tra user đã authenticated/session hợp lệ, nh
 
 Hệ thống có hai nhóm cổng đăng nhập chính:
 
-- **Cổng Visitor / Student-facing:** dùng cho VISITOR và các trường hợp sinh viên/khách theo chính sách đăng nhập bằng SSO/FEID. Nếu email Google/FEID thuộc role VISITOR và đăng nhập đúng cổng Visitor thì hệ thống cho phép vào nếu tài khoản đã tồn tại; nếu chưa tồn tại thì hệ thống có thể auto-provision tài khoản VISITOR không gắn campus. Visitor không chọn `selected_campus_id` khi login.
+- **Cổng Visitor / Student-facing:** dùng cho VISITOR và các trường hợp sinh viên/khách theo chính sách đăng nhập bằng SSO/FEID. Nếu email Google/FEID thuộc role VISITOR và đăng nhập đúng cổng Visitor thì hệ thống cho phép vào nếu tài khoản đã tồn tại; nếu chưa tồn tại thì hệ thống có thể auto-provision tài khoản VISITOR không gắn campus, không department, không sub_role và lưu `users.created_via = 'SSO_AUTO_PROVISION'`. Visitor không chọn `selected_campus_id` khi login.
 - **Cổng Internal:** dùng cho HO, ADMIN, STAFF, DEPT, STUDENT nội bộ theo cấu hình hệ thống. Cổng này bắt buộc chọn campus khi role cần campus. Nếu email chưa có tài khoản nội bộ trong hệ thống thì không auto-provision và phải từ chối đăng nhập. Nếu tài khoản có role không phù hợp với cổng đang dùng, backend phải trả lỗi rõ ràng, ví dụ: “Tài khoản của bạn không phù hợp với cổng đăng nhập này.”
 
 Nếu một tài khoản VISITOR cần chuyển sang role nội bộ, Staff Leader hoặc role được cấp quyền phù hợp phải dùng UC-100 Update Account Role hoặc UC-96 Create Account để gán role, sub_role, campus và department hợp lệ. Sau khi chuyển role nội bộ, user phải đăng nhập qua cổng Internal và chọn đúng campus.
@@ -159,7 +180,7 @@ Nếu một tài khoản VISITOR cần chuyển sang role nội bộ, Staff Lead
 
 ### 5.4. Delegation Reception Management
 
-> Nhóm UC lõi cho quản lý đoàn phái, logistics, biên bản, phản hồi, tài liệu và đóng hồ sơ.
+> Nhóm UC lõi cho quản lý đoàn phái, logistics, biên bản, phản hồi, tài liệu và đóng hồ sơ. Admin không có quyền nghiệp vụ trong nhóm này. HO chỉ áp dụng cho `MULTI_CAMPUS`. Staff Leader chỉ áp dụng theo campus scope. Các role khác phải có assignment/ownership/participation/link hợp lệ.
 
 | UC ID | Action | HO | Admin | Staff Leader | Staff | Department Lead | Department | Student | VISITOR |
 |---|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
@@ -188,6 +209,15 @@ Nếu một tài khoản VISITOR cần chuyển sang role nội bộ, Staff Lead
 | UC-39 | Tag Faces on Photos | — | — | — | F | — | — | — | — |
 | UC-40 | Create News Article | — | — | — | F | — | — | F | — |
 | UC-41 | Close Delegation | — | — | — | F | — | — | — | — |
+
+
+#### Delegation Data Scope Notes
+
+- UC-18 `Approve Cross-Campus Request`: HO only, `visit_scope = 'MULTI_CAMPUS'`.
+- UC-22 `Process Visit Request`: Staff Leader only, `visit_scope = 'SINGLE_CAMPUS'` and `vrc.campus_id = CurrentUser.PrimaryCampusId`.
+- UC-19/UC-20/UC-21: read/search/list must not query `visit_requests` directly without data scope. Use the SQL v5 views or equivalent backend predicates.
+- ADMIN must stay `—` for UC-17 to UC-41 and must not receive indirect visit access through dashboard/search/detail APIs.
+- Display labels such as `HO_APPROVED` are derived from `visit_scope`, `status`, and `decision_actor_role`; they are not permission codes.
 
 ### 5.5. Email Management
 
@@ -461,3 +491,4 @@ Student có thể tạo hoặc chỉnh sửa nội dung tin tức khi được g
 |---|---|---|
 | v0.1 | 2026-06-15 | Initial draft permission matrix formatted by feature area. |
 | v0.2 | 2026-06-18 | Revised backend enforcement rules; clarified pre-auth/public endpoints; added effective role mapping for `sub_role`; changed UC-44 HO F→E, UC-64 HO F→R, UC-72 R→O; removed Student publish permission UC-89; clarified email scope is not mandatory delegation-based. |
+| v0.3 | 2026-06-19 | Aligned with SQL v5: added `SSO_AUTO_PROVISION` rule; formalized ADMIN no visit access; limited HO to `MULTI_CAMPUS`; limited Staff Leader to campus scope; clarified visit access views and display status labels; kept UC-48 `O` own-scope. |

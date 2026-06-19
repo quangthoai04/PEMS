@@ -1,4 +1,18 @@
 -- =====================================================================
+-- PEMS v4.5 - FINAL INT AUTO_INCREMENT BUILD v7.1 FIXED
+-- Generated from FINAL STRICT VISIBILITY BUILD v5.
+-- Changes in this file:
+--   + Converted UUID/CHAR(36) primary keys to BIGINT UNSIGNED AUTO_INCREMENT.
+--   + FIX v7.1: AUTO_INCREMENT is kept only on the real primary-key column; FK columns are plain BIGINT UNSIGNED.
+--   + Converted matching FK/id columns to BIGINT UNSIGNED.
+--   + role_permissions now has role_permission_id as AUTO_INCREMENT PK and
+--     keeps UNIQUE(role_id, sub_role, permission_id).
+--   + Rewrote seed IDs so MySQL can use numeric IDs instead of UUID strings.
+--   + Preserved seed content and demo/business scenario data from the v5 SQL.
+--   + Kept strict visit visibility guards and views.
+-- =====================================================================
+
+-- =====================================================================
 -- PEMS v4.5 - FINAL STRICT VISIBILITY BUILD (v4)
 -- Generated rule set:
 --   + 42 CREATE TABLE statements.
@@ -50,8 +64,8 @@
 
 
 -- Insert fix note:
--- - Existing CREATE TABLE definitions are kept as the source of truth.
--- - INSERT statements no longer pass explicit NULL values for AUTO_INCREMENT ids.
+-- - INT build converts UUID/CHAR(36) PK/FK columns to BIGINT UNSIGNED.
+-- - Seed NULL calls are converted to numeric AUTO_INCREMENT-safe values or NULL where the DB should generate IDs.
 -- - Final departments seed is trigger-safe: update existing rows first, then insert missing rows only.
 -- - feedbacks not-self rule moved from CHECK to triggers to satisfy MySQL FK/CHECK restriction.
 
@@ -135,23 +149,22 @@ SET FOREIGN_KEY_CHECKS = 1;
 -- =====================================================================
 
 CREATE TABLE roles (
-  role_id CHAR(36) NOT NULL,
+  role_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   role_code VARCHAR(30) NOT NULL COMMENT 'ADMIN, HO, STAFF, DEPT, STUDENT, VISITOR',
   name VARCHAR(100) NOT NULL,
   description VARCHAR(255) NULL,
   status ENUM('ACTIVE','INACTIVE') NOT NULL DEFAULT 'ACTIVE',
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   deleted_at DATETIME NULL COMMENT 'Soft delete supported by UC-121 Disable/Delete Role',
-  deleted_by CHAR(36) NULL COMMENT 'User who soft-deleted this role; no FK here because roles is created before users',
+  deleted_by BIGINT UNSIGNED NULL COMMENT 'User who soft-deleted this role; no FK here because roles is created before users',
   PRIMARY KEY (role_id),
   UNIQUE KEY uq_roles_code (role_code),
   KEY idx_roles_status_deleted (status, deleted_at),
-  CHECK (role_code IN ('ADMIN','HO','STAFF','DEPT','STUDENT','VISITOR'))
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  CHECK (role_code IN ('ADMIN','HO','STAFF','DEPT','STUDENT','VISITOR'))) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='6 role chính của hệ thống';
 
 CREATE TABLE permissions (
-  permission_id CHAR(36) NOT NULL,
+  permission_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   permission_code VARCHAR(100) NOT NULL COMMENT 'Example: UC-17.SUBMIT_VISIT_REQUEST',
   name VARCHAR(150) NOT NULL,
   permission_group VARCHAR(60) NOT NULL,
@@ -161,18 +174,19 @@ CREATE TABLE permissions (
   PRIMARY KEY (permission_id),
   UNIQUE KEY uq_permissions_code (permission_code),
   KEY idx_permissions_group (permission_group),
-  KEY idx_permissions_group_code (permission_group, permission_code)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  KEY idx_permissions_group_code (permission_group, permission_code)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Danh mục quyền theo UC/action';
 
 CREATE TABLE role_permissions (
-  role_id CHAR(36) NOT NULL,
+  role_permission_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  role_id BIGINT UNSIGNED NOT NULL,
   sub_role ENUM('NONE','Leader','Staff') NOT NULL DEFAULT 'NONE' COMMENT 'NONE for ADMIN/HO/STUDENT/VISITOR; Leader/Staff for STAFF and DEPT',
-  permission_id CHAR(36) NOT NULL,
+  permission_id BIGINT UNSIGNED NOT NULL,
   permission_level ENUM('F','E','R','O') NOT NULL COMMENT 'F=Full, E=Execute/Edit, R=Read, O=Own',
   granted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  granted_by CHAR(36) NULL,
-  PRIMARY KEY (role_id, sub_role, permission_id),
+  granted_by BIGINT UNSIGNED NULL,
+  PRIMARY KEY (role_permission_id),
+  UNIQUE KEY uq_role_permissions_role_sub_permission (role_id, sub_role, permission_id),
   KEY idx_role_permissions_permission (permission_id),
   KEY idx_role_permissions_role_sub_role (role_id, sub_role),
   CONSTRAINT fk_role_permissions_role
@@ -180,8 +194,7 @@ CREATE TABLE role_permissions (
     ON UPDATE CASCADE ON DELETE CASCADE,
   CONSTRAINT fk_role_permissions_permission
     FOREIGN KEY (permission_id) REFERENCES permissions(permission_id)
-    ON UPDATE CASCADE ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ON UPDATE CASCADE ON DELETE CASCADE) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Ma trận phân quyền theo role + sub_role + permission';
 
 -- =====================================================================
@@ -189,39 +202,38 @@ COMMENT='Ma trận phân quyền theo role + sub_role + permission';
 -- =====================================================================
 
 CREATE TABLE campuses (
-  campus_id CHAR(36) NOT NULL,
+  campus_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   campus_code VARCHAR(20) NOT NULL COMMENT 'HN, HCM, DN, CT, QN',
   name VARCHAR(150) NOT NULL,
   city VARCHAR(100) NULL,
   address VARCHAR(255) NULL,
   phone VARCHAR(30) NULL,
   email VARCHAR(150) NULL,
-  ic_head_user_id CHAR(36) NULL COMMENT 'FK added after users table',
+  ic_head_user_id BIGINT UNSIGNED NULL COMMENT 'FK added after users table',
   status ENUM('ACTIVE','INACTIVE') NOT NULL DEFAULT 'ACTIVE',
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  created_by CHAR(36) NULL,
+  created_by BIGINT UNSIGNED NULL,
   updated_at DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
-  updated_by CHAR(36) NULL,
+  updated_by BIGINT UNSIGNED NULL,
   PRIMARY KEY (campus_id),
   UNIQUE KEY uq_campuses_code (campus_code),
   KEY idx_campuses_status (status),
   KEY idx_campuses_city_status (city, status),
-  KEY idx_campuses_ic_head (ic_head_user_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  KEY idx_campuses_ic_head (ic_head_user_id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Danh mục campus';
 
 CREATE TABLE departments (
-  department_id CHAR(36) NOT NULL,
-  campus_id CHAR(36) NOT NULL,
+  department_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  campus_id BIGINT UNSIGNED NOT NULL,
   department_code VARCHAR(50) NOT NULL,
   name VARCHAR(150) NOT NULL,
   department_type ENUM('IC','GENERAL') NOT NULL COMMENT 'IC=International Cooperation; GENERAL=other departments',
-  head_user_id CHAR(36) NULL COMMENT 'FK added after users table',
+  head_user_id BIGINT UNSIGNED NULL COMMENT 'FK added after users table',
   status ENUM('ACTIVE','INACTIVE') NOT NULL DEFAULT 'ACTIVE',
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  created_by CHAR(36) NULL,
+  created_by BIGINT UNSIGNED NULL,
   updated_at DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
-  updated_by CHAR(36) NULL,
+  updated_by BIGINT UNSIGNED NULL,
   PRIMARY KEY (department_id),
   UNIQUE KEY uq_departments_campus_code (campus_id, department_code),
   UNIQUE KEY uq_departments_campus_name (campus_id, name),
@@ -230,8 +242,7 @@ CREATE TABLE departments (
   KEY idx_departments_head (head_user_id),
   CONSTRAINT fk_departments_campus
     FOREIGN KEY (campus_id) REFERENCES campuses(campus_id)
-    ON UPDATE CASCADE ON DELETE RESTRICT
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ON UPDATE CASCADE ON DELETE RESTRICT) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Phòng ban theo campus. STAFF thuộc IC, DEPT thuộc GENERAL';
 
 -- =====================================================================
@@ -239,16 +250,16 @@ COMMENT='Phòng ban theo campus. STAFF thuộc IC, DEPT thuộc GENERAL';
 -- =====================================================================
 
 CREATE TABLE users (
-  user_id CHAR(36) NOT NULL,
+  user_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   full_name VARCHAR(150) NOT NULL,
   email VARCHAR(150) NOT NULL,
   phone VARCHAR(30) NULL,
   nationality VARCHAR(100) NULL COMMENT 'Quốc tịch của user/visitor',
   password_hash VARCHAR(255) NULL COMMENT 'DEV/local password hash only. Production SSO-only accounts keep this NULL.',
-  role_id CHAR(36) NOT NULL,
+  role_id BIGINT UNSIGNED NOT NULL,
   sub_role ENUM('Leader','Staff') NULL COMMENT 'Only for STAFF/DEPT',
-  primary_campus_id CHAR(36) NULL COMMENT 'Campus duy nhất của user nội bộ. VISITOR phải NULL.',
-  department_id CHAR(36) NULL COMMENT 'STAFF = IC department; DEPT = GENERAL department',
+  primary_campus_id BIGINT UNSIGNED NULL COMMENT 'Campus duy nhất của user nội bộ. VISITOR phải NULL.',
+  department_id BIGINT UNSIGNED NULL COMMENT 'STAFF = IC department; DEPT = GENERAL department',
   gender ENUM('MALE','FEMALE','OTHER','UNKNOWN') NULL,
   avatar_url VARCHAR(500) NULL,
   student_code VARCHAR(30) NULL,
@@ -261,9 +272,9 @@ CREATE TABLE users (
   first_login_at DATETIME NULL,
   last_login_at DATETIME NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  created_by CHAR(36) NULL,
+  created_by BIGINT UNSIGNED NULL,
   updated_at DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
-  updated_by CHAR(36) NULL,
+  updated_by BIGINT UNSIGNED NULL,
   PRIMARY KEY (user_id),
   UNIQUE KEY uq_users_email (email),
   UNIQUE KEY uq_users_student_code (student_code),
@@ -286,8 +297,7 @@ CREATE TABLE users (
     ON UPDATE CASCADE ON DELETE RESTRICT,
   CONSTRAINT fk_users_department
     FOREIGN KEY (department_id) REFERENCES departments(department_id)
-    ON UPDATE CASCADE ON DELETE RESTRICT
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ON UPDATE CASCADE ON DELETE RESTRICT) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Tài khoản chính. Production dùng SSO; LOCAL_PASSWORD chỉ dùng DEV/test.';
 
 ALTER TABLE campuses
@@ -302,8 +312,8 @@ ALTER TABLE departments
 
 
 CREATE TABLE user_auth_providers (
-  auth_provider_id CHAR(36) NOT NULL,
-  user_id CHAR(36) NOT NULL,
+  auth_provider_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  user_id BIGINT UNSIGNED NOT NULL,
   provider_type ENUM('LOCAL_PASSWORD','GOOGLE_SSO','FEID') NOT NULL,
   provider_subject VARCHAR(255) NULL COMMENT 'Required for GOOGLE_SSO/FEID',
   provider_email VARCHAR(150) NULL,
@@ -317,16 +327,15 @@ CREATE TABLE user_auth_providers (
   KEY idx_auth_provider_type_email_enabled (provider_type, provider_email, is_enabled),
   CONSTRAINT fk_auth_providers_user
     FOREIGN KEY (user_id) REFERENCES users(user_id)
-    ON UPDATE CASCADE ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ON UPDATE CASCADE ON DELETE CASCADE) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Provider đăng nhập của user. Production dùng GOOGLE_SSO/FEID; LOCAL_PASSWORD chỉ dùng DEV/test.';
 
 CREATE TABLE user_sessions (
-  session_id CHAR(36) NOT NULL,
-  user_id CHAR(36) NOT NULL,
+  session_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  user_id BIGINT UNSIGNED NOT NULL,
   login_portal ENUM('VISITOR','INTERNAL') NOT NULL,
-  selected_campus_id CHAR(36) NULL COMMENT 'Auto set to users.primary_campus_id for INTERNAL, NULL for VISITOR',
-  auth_provider_id CHAR(36) NULL,
+  selected_campus_id BIGINT UNSIGNED NULL COMMENT 'Auto set to users.primary_campus_id for INTERNAL, NULL for VISITOR',
+  auth_provider_id BIGINT UNSIGNED NULL,
   refresh_token_hash VARCHAR(255) NULL COMMENT 'Refresh token hash merged into session',
   refresh_expires_at DATETIME NULL,
   refresh_revoked_at DATETIME NULL,
@@ -335,7 +344,7 @@ CREATE TABLE user_sessions (
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   expires_at DATETIME NOT NULL,
   revoked_at DATETIME NULL,
-  revoked_by CHAR(36) NULL,
+  revoked_by BIGINT UNSIGNED NULL,
   revoked_reason VARCHAR(255) NULL,
   PRIMARY KEY (session_id),
   UNIQUE KEY uq_sessions_refresh_hash (refresh_token_hash),
@@ -354,13 +363,12 @@ CREATE TABLE user_sessions (
     ON UPDATE CASCADE ON DELETE SET NULL,
   CONSTRAINT fk_sessions_revoked_by
     FOREIGN KEY (revoked_by) REFERENCES users(user_id)
-    ON UPDATE CASCADE ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ON UPDATE CASCADE ON DELETE SET NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Session + refresh token hash';
 
 CREATE TABLE otp_tokens (
-  otp_token_id CHAR(36) NOT NULL,
-  user_id CHAR(36) NULL,
+  otp_token_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  user_id BIGINT UNSIGNED NULL,
   email VARCHAR(150) NOT NULL,
   token_type ENUM('OTP_CODE','MAGIC_LINK') NOT NULL DEFAULT 'OTP_CODE',
   purpose ENUM('VISIT_REQUEST_VERIFY','CHANGE_SENSITIVE_ACTION') NOT NULL,
@@ -381,22 +389,21 @@ CREATE TABLE otp_tokens (
   KEY idx_otp_ip_time (ip_address, created_at),
   CONSTRAINT fk_otp_tokens_user
     FOREIGN KEY (user_id) REFERENCES users(user_id)
-    ON UPDATE CASCADE ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ON UPDATE CASCADE ON DELETE CASCADE) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='OTP, magic link, set password token, reset password token';
 
 CREATE TABLE login_logs (
   login_log_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  user_id CHAR(36) NULL,
+  user_id BIGINT UNSIGNED NULL,
   email VARCHAR(150) NOT NULL,
   login_portal ENUM('VISITOR','INTERNAL') NOT NULL,
-  selected_campus_id CHAR(36) NULL,
+  selected_campus_id BIGINT UNSIGNED NULL,
   provider_type ENUM('LOCAL_PASSWORD','GOOGLE_SSO','FEID') NULL,
   status ENUM('SUCCESS','FAILED','BLOCKED') NOT NULL,
   failure_reason VARCHAR(255) NULL,
   ip_address VARCHAR(45) NULL,
   user_agent VARCHAR(500) NULL,
-  session_id CHAR(36) NULL,
+  session_id BIGINT UNSIGNED NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (login_log_id),
   KEY idx_login_logs_user_time (user_id, created_at),
@@ -409,13 +416,12 @@ CREATE TABLE login_logs (
     ON UPDATE CASCADE ON DELETE SET NULL,
   CONSTRAINT fk_login_logs_campus
     FOREIGN KEY (selected_campus_id) REFERENCES campuses(campus_id)
-    ON UPDATE CASCADE ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ON UPDATE CASCADE ON DELETE SET NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Lịch sử đăng nhập';
 
 CREATE TABLE security_events (
   security_event_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  user_id CHAR(36) NULL,
+  user_id BIGINT UNSIGNED NULL,
   email VARCHAR(150) NULL,
   event_type VARCHAR(80) NOT NULL COMMENT 'LOGIN_LOCKED, OTP_FAILED, SUSPICIOUS_IP...',
   severity ENUM('LOW','MEDIUM','HIGH','CRITICAL') NOT NULL DEFAULT 'LOW',
@@ -431,8 +437,7 @@ CREATE TABLE security_events (
   KEY idx_security_severity_time (severity, created_at),
   CONSTRAINT fk_security_events_user
     FOREIGN KEY (user_id) REFERENCES users(user_id)
-    ON UPDATE CASCADE ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ON UPDATE CASCADE ON DELETE SET NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Security, abuse, lockout events';
 
 -- =====================================================================
@@ -440,7 +445,7 @@ COMMENT='Security, abuse, lockout events';
 -- =====================================================================
 
 CREATE TABLE partners (
-  partner_id CHAR(36) NOT NULL,
+  partner_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   partner_code VARCHAR(50) NULL,
   name VARCHAR(200) NOT NULL,
   short_name VARCHAR(100) NULL,
@@ -451,22 +456,21 @@ CREATE TABLE partners (
   cooperation_status ENUM('POTENTIAL','ACTIVE','INACTIVE','BLACKLISTED') NOT NULL DEFAULT 'POTENTIAL',
   description TEXT NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  created_by CHAR(36) NULL,
+  created_by BIGINT UNSIGNED NULL,
   updated_at DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
-  updated_by CHAR(36) NULL,
+  updated_by BIGINT UNSIGNED NULL,
   PRIMARY KEY (partner_id),
   UNIQUE KEY uq_partners_code (partner_code),
   KEY idx_partners_country (country),
   KEY idx_partners_status (cooperation_status),
   KEY idx_partners_type_status (partner_type, cooperation_status),
   KEY idx_partners_created_at (created_at),
-  FULLTEXT KEY ft_partners_search (name, short_name, description)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  FULLTEXT KEY ft_partners_search (name, short_name, description)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Hồ sơ đối tác';
 
 CREATE TABLE partner_contacts (
-  contact_id CHAR(36) NOT NULL,
-  partner_id CHAR(36) NOT NULL,
+  contact_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  partner_id BIGINT UNSIGNED NOT NULL,
   full_name VARCHAR(150) NOT NULL,
   email VARCHAR(150) NULL,
   phone VARCHAR(50) NULL,
@@ -476,9 +480,9 @@ CREATE TABLE partner_contacts (
   is_primary BOOLEAN NOT NULL DEFAULT FALSE,
   status ENUM('ACTIVE','INACTIVE') NOT NULL DEFAULT 'ACTIVE',
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  created_by CHAR(36) NULL,
+  created_by BIGINT UNSIGNED NULL,
   updated_at DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
-  updated_by CHAR(36) NULL,
+  updated_by BIGINT UNSIGNED NULL,
   PRIMARY KEY (contact_id),
   UNIQUE KEY uq_partner_contacts_partner_email (partner_id, email),
   KEY idx_partner_contacts_partner (partner_id),
@@ -486,12 +490,11 @@ CREATE TABLE partner_contacts (
   KEY idx_partner_contacts_status (status),
   CONSTRAINT fk_partner_contacts_partner
     FOREIGN KEY (partner_id) REFERENCES partners(partner_id)
-    ON UPDATE CASCADE ON DELETE RESTRICT
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ON UPDATE CASCADE ON DELETE RESTRICT) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Người liên hệ đối tác. OCR final confirmed data saved here.';
 
 CREATE TABLE files (
-  file_id CHAR(36) NOT NULL,
+  file_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   storage_provider ENUM('LOCAL','S3','AZURE','GCS','GOOGLE_DRIVE','OTHER') NOT NULL DEFAULT 'LOCAL',
   bucket_name VARCHAR(150) NULL,
   object_key VARCHAR(700) NOT NULL COMMENT 'Max 700 chars to keep UNIQUE index safe under utf8mb4',
@@ -500,7 +503,7 @@ CREATE TABLE files (
   file_size BIGINT UNSIGNED NULL,
   checksum_sha256 CHAR(64) NULL,
   visibility ENUM('PRIVATE','INTERNAL','PUBLIC') NOT NULL DEFAULT 'PRIVATE',
-  uploaded_by CHAR(36) NULL,
+  uploaded_by BIGINT UNSIGNED NULL,
   uploaded_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (file_id),
   UNIQUE KEY uq_files_object_key (object_key),
@@ -510,24 +513,23 @@ CREATE TABLE files (
   KEY idx_files_checksum (checksum_sha256),
   CONSTRAINT fk_files_uploaded_by
     FOREIGN KEY (uploaded_by) REFERENCES users(user_id)
-    ON UPDATE CASCADE ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ON UPDATE CASCADE ON DELETE SET NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='File metadata only. Binary file is stored outside DB.';
 
 CREATE TABLE documents (
-  document_id CHAR(36) NOT NULL,
-  file_id CHAR(36) NOT NULL,
+  document_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  file_id BIGINT UNSIGNED NOT NULL,
   owner_type ENUM('GENERAL','VISIT','PARTNER','MINUTES','NEWS','LOGISTICS','REPORT') NOT NULL DEFAULT 'GENERAL',
-  owner_id CHAR(36) NULL,
-  campus_id CHAR(36) NULL,
+  owner_id BIGINT UNSIGNED NULL,
+  campus_id BIGINT UNSIGNED NULL,
   title VARCHAR(255) NOT NULL,
   description TEXT NULL,
   document_category VARCHAR(100) NULL,
   status ENUM('DRAFT','PUBLISHED','ARCHIVED') NOT NULL DEFAULT 'DRAFT',
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  created_by CHAR(36) NULL,
+  created_by BIGINT UNSIGNED NULL,
   updated_at DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
-  updated_by CHAR(36) NULL,
+  updated_by BIGINT UNSIGNED NULL,
   PRIMARY KEY (document_id),
   KEY idx_documents_owner (owner_type, owner_id),
   KEY idx_documents_campus_status (campus_id, status),
@@ -542,8 +544,7 @@ CREATE TABLE documents (
     ON UPDATE CASCADE ON DELETE SET NULL,
   CONSTRAINT fk_documents_created_by
     FOREIGN KEY (created_by) REFERENCES users(user_id)
-    ON UPDATE CASCADE ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ON UPDATE CASCADE ON DELETE SET NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Tài liệu nghiệp vụ. partner_documents/reports/logistics documents merged by owner_type.';
 
 -- =====================================================================
@@ -558,10 +559,10 @@ COMMENT='Tài liệu nghiệp vụ. partner_documents/reports/logistics document
 
 
 CREATE TABLE visit_requests (
-  visit_request_id CHAR(36) NOT NULL,
+  visit_request_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   request_code VARCHAR(50) NOT NULL,
-  visitor_user_id CHAR(36) NOT NULL COMMENT 'Visitor user/account created or linked for the registrant',
-  partner_id CHAR(36) NULL,
+  visitor_user_id BIGINT UNSIGNED NOT NULL COMMENT 'Visitor user/account created or linked for the registrant',
+  partner_id BIGINT UNSIGNED NULL,
 
   -- 1. Registrant information from the Campus Visit form
   registrant_full_name VARCHAR(150) NOT NULL COMMENT 'Họ và tên người đăng ký',
@@ -591,7 +592,7 @@ CREATE TABLE visit_requests (
   submitted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   email_verified_at DATETIME NULL,
 
-  decided_by CHAR(36) NULL COMMENT 'Người approve/reject/cancel request tổng',
+  decided_by BIGINT UNSIGNED NULL COMMENT 'Người approve/reject/cancel request tổng',
   decided_at DATETIME NULL COMMENT 'Thời điểm xử lý request tổng',
   decision_actor_role ENUM('HO','STAFF_LEADER','SYSTEM') NULL COMMENT 'Vai trò người xử lý tại thời điểm quyết định',
   decision_note TEXT NULL COMMENT 'Lý do/ghi chú khi approve, reject hoặc cancel',
@@ -599,9 +600,9 @@ CREATE TABLE visit_requests (
   row_version INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'Optimistic concurrency token',
 
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  created_by CHAR(36) NULL,
+  created_by BIGINT UNSIGNED NULL,
   updated_at DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
-  updated_by CHAR(36) NULL,
+  updated_by BIGINT UNSIGNED NULL,
 
   PRIMARY KEY (visit_request_id),
   UNIQUE KEY uq_visit_requests_code (request_code),
@@ -635,14 +636,13 @@ CREATE TABLE visit_requests (
     ON UPDATE CASCADE ON DELETE SET NULL,
   CONSTRAINT fk_visit_requests_decided_by
     FOREIGN KEY (decided_by) REFERENCES users(user_id)
-    ON UPDATE CASCADE ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ON UPDATE CASCADE ON DELETE SET NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Đơn đăng ký tham quan. Record chỉ được tạo sau khi email/OTP đã xác minh; nội dung form không sửa sau khi submit vào PENDING_APPROVAL; tiến trình thực tế theo visit_request_campuses.';
 
 CREATE TABLE visit_request_campuses (
-  visit_instance_id CHAR(36) NOT NULL,
-  visit_request_id CHAR(36) NOT NULL,
-  campus_id CHAR(36) NOT NULL,
+  visit_instance_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  visit_request_id BIGINT UNSIGNED NOT NULL,
+  campus_id BIGINT UNSIGNED NOT NULL,
   instance_code VARCHAR(60) NULL,
 
   planned_start_at DATETIME NOT NULL COMMENT 'Ngày giờ bắt đầu dự kiến tại campus',
@@ -660,24 +660,24 @@ CREATE TABLE visit_request_campuses (
     'CANCELLED'
   ) NOT NULL DEFAULT 'WAITING_REQUEST_APPROVAL',
 
-  current_host_user_id CHAR(36) NULL
+  current_host_user_id BIGINT UNSIGNED NULL
     COMMENT 'Host hiện tại chịu trách nhiệm campus instance. Mặc định là Staff Leader của campus sau khi request tổng được duyệt; có thể chuyển cho IC Staff khác cùng campus',
 
 
-  host_transferred_by CHAR(36) NULL COMMENT 'Người chuyển host gần nhất',
+  host_transferred_by BIGINT UNSIGNED NULL COMMENT 'Người chuyển host gần nhất',
   host_transferred_at DATETIME NULL COMMENT 'Thời điểm chuyển host gần nhất',
   host_transfer_note TEXT NULL COMMENT 'Ghi chú/lý do chuyển host gần nhất',
 
-  closed_by CHAR(36) NULL,
+  closed_by BIGINT UNSIGNED NULL,
   closed_at DATETIME NULL,
   close_note TEXT NULL,
 
   row_version INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'Optimistic concurrency token',
 
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  created_by CHAR(36) NULL,
+  created_by BIGINT UNSIGNED NULL,
   updated_at DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
-  updated_by CHAR(36) NULL,
+  updated_by BIGINT UNSIGNED NULL,
 
   PRIMARY KEY (visit_instance_id),
   UNIQUE KEY uq_visit_instance_request_campus (visit_request_id, campus_id),
@@ -705,13 +705,12 @@ CREATE TABLE visit_request_campuses (
     ON UPDATE CASCADE ON DELETE SET NULL,
   CONSTRAINT fk_visit_instances_closed_by
     FOREIGN KEY (closed_by) REFERENCES users(user_id)
-    ON UPDATE CASCADE ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ON UPDATE CASCADE ON DELETE SET NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Mỗi campus trong request có một instance riêng. Campus không duyệt/từ chối riêng; sau khi request tổng được duyệt, backend gán current_host_user_id và chuyển status=ASSIGNED.';
 
 CREATE TABLE visit_guest_members (
-  guest_member_id CHAR(36) NOT NULL,
-  visit_request_id CHAR(36) NOT NULL,
+  guest_member_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  visit_request_id BIGINT UNSIGNED NOT NULL,
   full_name VARCHAR(150) NOT NULL,
   organization VARCHAR(200) NULL,
   job_title VARCHAR(150) NULL,
@@ -721,36 +720,35 @@ CREATE TABLE visit_guest_members (
   is_representative BOOLEAN NOT NULL DEFAULT FALSE,
   note TEXT NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  created_by CHAR(36) NULL,
+  created_by BIGINT UNSIGNED NULL,
   updated_at DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
-  updated_by CHAR(36) NULL,
+  updated_by BIGINT UNSIGNED NULL,
   PRIMARY KEY (guest_member_id),
   KEY idx_guest_members_request (visit_request_id),
   KEY idx_guest_members_email (email),
   KEY idx_guest_members_representative (visit_request_id, is_representative),
   CONSTRAINT fk_guest_members_request
     FOREIGN KEY (visit_request_id) REFERENCES visit_requests(visit_request_id)
-    ON UPDATE CASCADE ON DELETE RESTRICT
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ON UPDATE CASCADE ON DELETE RESTRICT) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Danh sách từng người trong đoàn khách. Không lưu consent hình ảnh vì form đã bỏ phần xác nhận sử dụng hình ảnh/thông tin.';
 
 CREATE TABLE visit_participants (
-  participant_id CHAR(36) NOT NULL,
-  visit_instance_id CHAR(36) NOT NULL,
-  user_id CHAR(36) NOT NULL,
+  participant_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  visit_instance_id BIGINT UNSIGNED NOT NULL,
+  user_id BIGINT UNSIGNED NOT NULL,
   participant_role ENUM('IC_HOST','IC_SUPPORT','DEPT_SUPPORT','STUDENT_BUDDY','MEDIA','INTERPRETER','OTHER') NOT NULL DEFAULT 'OTHER',
   is_host BOOLEAN NOT NULL DEFAULT FALSE,
   status ENUM('INVITED','ACCEPTED','DECLINED','ASSIGNED','REMOVED') NOT NULL DEFAULT 'INVITED',
-  invited_by CHAR(36) NULL,
+  invited_by BIGINT UNSIGNED NULL,
   invited_at DATETIME NULL,
   responded_at DATETIME NULL,
-  assigned_by CHAR(36) NULL,
+  assigned_by BIGINT UNSIGNED NULL,
   assigned_at DATETIME NULL,
   note TEXT NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  created_by CHAR(36) NULL,
+  created_by BIGINT UNSIGNED NULL,
   updated_at DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
-  updated_by CHAR(36) NULL,
+  updated_by BIGINT UNSIGNED NULL,
   PRIMARY KEY (participant_id),
   UNIQUE KEY uq_visit_participants_user (visit_instance_id, user_id),
   KEY idx_visit_participants_one_host_lookup (visit_instance_id, is_host),
@@ -768,24 +766,23 @@ CREATE TABLE visit_participants (
     ON UPDATE CASCADE ON DELETE SET NULL,
   CONSTRAINT fk_visit_participants_assigned_by
     FOREIGN KEY (assigned_by) REFERENCES users(user_id)
-    ON UPDATE CASCADE ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ON UPDATE CASCADE ON DELETE SET NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Người nội bộ tham gia. HOST lưu bằng is_host. One-host rule should be enforced by backend/audit for portability.';
 
 CREATE TABLE visit_agendas (
-  agenda_id CHAR(36) NOT NULL,
-  visit_instance_id CHAR(36) NOT NULL,
+  agenda_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  visit_instance_id BIGINT UNSIGNED NOT NULL,
   sequence_order INT UNSIGNED NOT NULL,
   title VARCHAR(255) NOT NULL,
   description TEXT NULL,
   start_time DATETIME NOT NULL,
   end_time DATETIME NULL,
   location VARCHAR(255) NULL,
-  responsible_user_id CHAR(36) NULL,
+  responsible_user_id BIGINT UNSIGNED NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  created_by CHAR(36) NULL,
+  created_by BIGINT UNSIGNED NULL,
   updated_at DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
-  updated_by CHAR(36) NULL,
+  updated_by BIGINT UNSIGNED NULL,
   PRIMARY KEY (agenda_id),
   UNIQUE KEY uq_visit_agendas_order (visit_instance_id, sequence_order),
   KEY idx_visit_agendas_time (visit_instance_id, start_time),
@@ -795,13 +792,12 @@ CREATE TABLE visit_agendas (
     ON UPDATE CASCADE ON DELETE RESTRICT,
   CONSTRAINT fk_visit_agendas_responsible_user
     FOREIGN KEY (responsible_user_id) REFERENCES users(user_id)
-    ON UPDATE CASCADE ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ON UPDATE CASCADE ON DELETE SET NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Lịch trình tiếp khách';
 
 CREATE TABLE visit_logistics_items (
-  logistics_item_id CHAR(36) NOT NULL,
-  visit_instance_id CHAR(36) NOT NULL,
+  logistics_item_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  visit_instance_id BIGINT UNSIGNED NOT NULL,
 
   item_type ENUM('ROOM','TRANSPORT','MEAL','EQUIPMENT','BANNER','LED','OTHER') NOT NULL,
   title VARCHAR(255) NOT NULL,
@@ -827,15 +823,15 @@ CREATE TABLE visit_logistics_items (
 
   priority ENUM('LOW','MEDIUM','HIGH','URGENT') NOT NULL DEFAULT 'MEDIUM',
 
-  requested_by CHAR(36) NULL COMMENT 'Người gửi yêu cầu hậu cần/resource',
-  requested_to_department_id CHAR(36) NULL COMMENT 'Phòng ban được yêu cầu xử lý',
+  requested_by BIGINT UNSIGNED NULL COMMENT 'Người gửi yêu cầu hậu cần/resource',
+  requested_to_department_id BIGINT UNSIGNED NULL COMMENT 'Phòng ban được yêu cầu xử lý',
   requested_at DATETIME NULL COMMENT 'Thời điểm gửi yêu cầu',
 
-  received_by CHAR(36) NULL COMMENT 'Trưởng phòng/người tiếp nhận yêu cầu',
+  received_by BIGINT UNSIGNED NULL COMMENT 'Trưởng phòng/người tiếp nhận yêu cầu',
   received_at DATETIME NULL COMMENT 'Thời điểm tiếp nhận yêu cầu',
 
-  assigned_to_user_id CHAR(36) NULL COMMENT 'Nhân viên được giao xử lý chính',
-  assigned_by CHAR(36) NULL COMMENT 'Người phân công',
+  assigned_to_user_id BIGINT UNSIGNED NULL COMMENT 'Nhân viên được giao xử lý chính',
+  assigned_by BIGINT UNSIGNED NULL COMMENT 'Người phân công',
   assigned_at DATETIME NULL COMMENT 'Thời điểm phân công',
 
   assignee_accepted_at DATETIME NULL COMMENT 'Thời điểm nhân viên xác nhận nhận nhiệm vụ',
@@ -844,7 +840,7 @@ CREATE TABLE visit_logistics_items (
   due_at DATETIME NULL COMMENT 'Deadline hoàn thành hạng mục',
   completed_at DATETIME NULL COMMENT 'Thời điểm hoàn thành',
 
-  proposed_by CHAR(36) NULL COMMENT 'Người gửi đề xuất thay đổi',
+  proposed_by BIGINT UNSIGNED NULL COMMENT 'Người gửi đề xuất thay đổi',
   proposed_at DATETIME NULL COMMENT 'Thời điểm gửi đề xuất thay đổi',
   proposed_quantity INT UNSIGNED NULL COMMENT 'Số lượng được đề xuất thay đổi',
   proposed_usage_start_at DATETIME NULL COMMENT 'Thời gian bắt đầu sử dụng được đề xuất',
@@ -852,7 +848,7 @@ CREATE TABLE visit_logistics_items (
   proposed_description TEXT NULL COMMENT 'Nội dung chi tiết công việc được đề xuất thay đổi',
   proposal_note TEXT NULL COMMENT 'Lý do/ghi chú đề xuất thay đổi',
 
-  proposal_responded_by CHAR(36) NULL COMMENT 'Người xác nhận/từ chối đề xuất',
+  proposal_responded_by BIGINT UNSIGNED NULL COMMENT 'Người xác nhận/từ chối đề xuất',
   proposal_responded_at DATETIME NULL COMMENT 'Thời điểm xác nhận/từ chối đề xuất',
   proposal_response ENUM('ACCEPTED','REJECTED') NULL COMMENT 'Kết quả phản hồi đề xuất',
   proposal_response_note TEXT NULL COMMENT 'Ghi chú phản hồi đề xuất',
@@ -862,9 +858,9 @@ CREATE TABLE visit_logistics_items (
   row_version INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'Optimistic concurrency token',
 
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  created_by CHAR(36) NULL,
+  created_by BIGINT UNSIGNED NULL,
   updated_at DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
-  updated_by CHAR(36) NULL,
+  updated_by BIGINT UNSIGNED NULL,
 
   PRIMARY KEY (logistics_item_id),
 
@@ -907,8 +903,7 @@ CREATE TABLE visit_logistics_items (
     ON UPDATE CASCADE ON DELETE SET NULL,
   CONSTRAINT fk_logistics_proposal_responded_by
     FOREIGN KEY (proposal_responded_by) REFERENCES users(user_id)
-    ON UPDATE CASCADE ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ON UPDATE CASCADE ON DELETE SET NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Yêu cầu hậu cần/resource cho visit: gửi yêu cầu, đề xuất thay đổi, tiếp nhận, phân công, xác nhận và hoàn thành. Thay thế tasks cho logistics/resource.';
 
 -- =====================================================================
@@ -921,8 +916,8 @@ COMMENT='Yêu cầu hậu cần/resource cho visit: gửi yêu cầu, đề xu�
 -- - All submitters/targets must be system users, so feedback only stores submitted_by_user_id and target_user_id.
 
 CREATE TABLE minutes (
-  minutes_id CHAR(36) NOT NULL,
-  visit_instance_id CHAR(36) NOT NULL,
+  minutes_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  visit_instance_id BIGINT UNSIGNED NOT NULL,
 
   title VARCHAR(255) NOT NULL,
   content LONGTEXT NULL,
@@ -932,13 +927,13 @@ CREATE TABLE minutes (
   status ENUM('DRAFT','FINAL') NOT NULL DEFAULT 'DRAFT'
     COMMENT 'DRAFT=đang soạn, FINAL=đã chốt',
 
-  finalized_by CHAR(36) NULL COMMENT 'Người chốt biên bản',
+  finalized_by BIGINT UNSIGNED NULL COMMENT 'Người chốt biên bản',
   finalized_at DATETIME NULL COMMENT 'Thời điểm chốt biên bản',
 
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  created_by CHAR(36) NULL,
+  created_by BIGINT UNSIGNED NULL,
   updated_at DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
-  updated_by CHAR(36) NULL,
+  updated_by BIGINT UNSIGNED NULL,
 
   PRIMARY KEY (minutes_id),
 
@@ -962,13 +957,12 @@ CREATE TABLE minutes (
 
   CONSTRAINT fk_minutes_finalized_by
     FOREIGN KEY (finalized_by) REFERENCES users(user_id)
-    ON UPDATE CASCADE ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ON UPDATE CASCADE ON DELETE SET NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Biên bản chuyến thăm. Không lưu file đính kèm và không lưu action item dạng JSON; action item tách bảng riêng.';
 
 CREATE TABLE minute_action_items (
-  action_item_id CHAR(36) NOT NULL,
-  minutes_id CHAR(36) NOT NULL,
+  action_item_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  minutes_id BIGINT UNSIGNED NOT NULL,
 
   title VARCHAR(255) NOT NULL COMMENT 'Tên đầu việc',
   note TEXT NULL COMMENT 'Ghi chú thêm cho đầu việc',
@@ -983,9 +977,9 @@ CREATE TABLE minute_action_items (
   display_order INT UNSIGNED NOT NULL DEFAULT 1 COMMENT 'Thứ tự hiển thị trong biên bản',
 
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  created_by CHAR(36) NULL,
+  created_by BIGINT UNSIGNED NULL,
   updated_at DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
-  updated_by CHAR(36) NULL,
+  updated_by BIGINT UNSIGNED NULL,
 
   PRIMARY KEY (action_item_id),
 
@@ -1004,24 +998,23 @@ CREATE TABLE minute_action_items (
 
   CONSTRAINT fk_action_items_updated_by
     FOREIGN KEY (updated_by) REFERENCES users(user_id)
-    ON UPDATE CASCADE ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ON UPDATE CASCADE ON DELETE SET NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Các đầu việc sau biên bản. Không gán người phụ trách; chỉ có note, deadline và trạng thái hoàn thành.';
 
 CREATE TABLE feedbacks (
-  feedback_id CHAR(36) NOT NULL,
+  feedback_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
 
-  visit_request_id CHAR(36) NOT NULL,
-  visit_instance_id CHAR(36) NULL,
+  visit_request_id BIGINT UNSIGNED NOT NULL,
+  visit_instance_id BIGINT UNSIGNED NULL,
 
-  submitted_by_user_id CHAR(36) NOT NULL COMMENT 'User gửi feedback; khách/host/logistics đều phải có tài khoản hệ thống',
+  submitted_by_user_id BIGINT UNSIGNED NOT NULL COMMENT 'User gửi feedback; khách/host/logistics đều phải có tài khoản hệ thống',
   submitter_role ENUM('VISITOR','HOST','LOGISTICS') NOT NULL COMMENT 'Vai trò người gửi trong chuyến thăm',
   submitter_context VARCHAR(120) NOT NULL DEFAULT ''
     COMMENT 'Ngữ cảnh vai trò người gửi, ví dụ: Host chính, Xe điện, Teabreak, Khách đại diện',
   submitter_name_snapshot VARCHAR(255) NOT NULL
     COMMENT 'Tên người gửi tại thời điểm gửi feedback',
 
-  target_user_id CHAR(36) NOT NULL COMMENT 'User được đánh giá',
+  target_user_id BIGINT UNSIGNED NOT NULL COMMENT 'User được đánh giá',
   target_role ENUM('VISITOR','HOST','LOGISTICS') NOT NULL COMMENT 'Vai trò người được đánh giá trong chuyến thăm',
   target_context VARCHAR(120) NOT NULL DEFAULT ''
     COMMENT 'Ngữ cảnh đối tượng được đánh giá, ví dụ: Host chính, Đoàn khách, Xe điện, Teabreak',
@@ -1068,8 +1061,7 @@ CREATE TABLE feedbacks (
 
   CONSTRAINT fk_feedbacks_target
     FOREIGN KEY (target_user_id) REFERENCES users(user_id)
-    ON UPDATE CASCADE ON DELETE RESTRICT
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ON UPDATE CASCADE ON DELETE RESTRICT) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Feedback đơn giản: mỗi dòng là một đánh giá giữa hai user trong một visit. Khách/logistics đánh giá host; host đánh giá khách hoặc logistics.';
 
 -- =====================================================================
@@ -1077,16 +1069,16 @@ COMMENT='Feedback đơn giản: mỗi dòng là một đánh giá giữa hai use
 -- =====================================================================
 
 CREATE TABLE news (
-  news_id CHAR(36) NOT NULL,
-  campus_id CHAR(36) NULL COMMENT 'Campus liên quan đến bài viết. NULL nếu bài toàn hệ thống',
-  visit_instance_id CHAR(36) NULL COMMENT 'Visit instance liên quan nếu bài viết được tạo từ một chuyến tiếp đón',
-  author_user_id CHAR(36) NOT NULL COMMENT 'Người tạo/viết bài',
-  cover_file_id CHAR(36) NULL COMMENT 'Ảnh bìa bài viết, trỏ tới files.file_id',
+  news_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  campus_id BIGINT UNSIGNED NULL COMMENT 'Campus liên quan đến bài viết. NULL nếu bài toàn hệ thống',
+  visit_instance_id BIGINT UNSIGNED NULL COMMENT 'Visit instance liên quan nếu bài viết được tạo từ một chuyến tiếp đón',
+  author_user_id BIGINT UNSIGNED NOT NULL COMMENT 'Người tạo/viết bài',
+  cover_file_id BIGINT UNSIGNED NULL COMMENT 'Ảnh bìa bài viết, trỏ tới files.file_id',
   status ENUM('PENDING_REVIEW','REJECTED','PUBLISHED','HIDDEN') NOT NULL DEFAULT 'PENDING_REVIEW'
     COMMENT 'PENDING_REVIEW=chờ host duyệt, REJECTED=bị từ chối, PUBLISHED=đã đăng, HIDDEN=ẩn khỏi trang tin',
   submitted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Thời điểm người viết gửi bài cho host duyệt',
 
-  reviewed_by CHAR(36) NULL COMMENT 'Host duyệt hoặc từ chối bài viết',
+  reviewed_by BIGINT UNSIGNED NULL COMMENT 'Host duyệt hoặc từ chối bài viết',
   reviewed_at DATETIME NULL COMMENT 'Thời điểm host duyệt hoặc từ chối',
   review_note TEXT NULL COMMENT 'Ghi chú duyệt hoặc lý do từ chối',
 
@@ -1095,9 +1087,9 @@ CREATE TABLE news (
   row_version INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'Optimistic concurrency token, chống ghi đè khi cập nhật đồng thời',
 
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  created_by CHAR(36) NULL,
+  created_by BIGINT UNSIGNED NULL,
   updated_at DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
-  updated_by CHAR(36) NULL,
+  updated_by BIGINT UNSIGNED NULL,
 
   PRIMARY KEY (news_id),
   KEY idx_news_public (status, campus_id, published_at),
@@ -1120,13 +1112,12 @@ CREATE TABLE news (
     ON UPDATE CASCADE ON DELETE SET NULL,
   CONSTRAINT fk_news_reviewed_by
     FOREIGN KEY (reviewed_by) REFERENCES users(user_id)
-    ON UPDATE CASCADE ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ON UPDATE CASCADE ON DELETE SET NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='News metadata. Người tham gia gửi bài, host duyệt/từ chối; nội dung chia theo section.';
 
 CREATE TABLE news_translations (
-  news_translation_id CHAR(36) NOT NULL,
-  news_id CHAR(36) NOT NULL,
+  news_translation_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  news_id BIGINT UNSIGNED NOT NULL,
   language_code ENUM('vi','en','zh','ja','ko') NOT NULL DEFAULT 'vi',
   title VARCHAR(255) NOT NULL COMMENT 'Tiêu đề chính của bài viết',
   slug VARCHAR(255) NOT NULL COMMENT 'Đường dẫn SEO của bài viết',
@@ -1142,13 +1133,12 @@ CREATE TABLE news_translations (
   FULLTEXT KEY ft_news_translations_search (title, summary),
   CONSTRAINT fk_news_translations_news
     FOREIGN KEY (news_id) REFERENCES news(news_id)
-    ON UPDATE CASCADE ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ON UPDATE CASCADE ON DELETE CASCADE) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Tiêu đề, slug, tóm tắt và SEO của bài viết theo ngôn ngữ';
 
 CREATE TABLE news_content_sections (
-  section_id CHAR(36) NOT NULL,
-  news_translation_id CHAR(36) NOT NULL,
+  section_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  news_translation_id BIGINT UNSIGNED NOT NULL,
   section_order TINYINT UNSIGNED NOT NULL COMMENT 'Thứ tự section, từ 1 đến 10',
   section_title VARCHAR(255) NOT NULL COMMENT 'Tiêu đề section',
   section_body_html LONGTEXT NOT NULL COMMENT 'Nội dung rich text dạng HTML đã sanitize, có thể chứa paragraph, bold, italic, color, link, image',
@@ -1162,14 +1152,13 @@ CREATE TABLE news_content_sections (
   CHECK (section_order BETWEEN 1 AND 10),
   CONSTRAINT fk_news_sections_translation
     FOREIGN KEY (news_translation_id) REFERENCES news_translations(news_translation_id)
-    ON UPDATE CASCADE ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ON UPDATE CASCADE ON DELETE CASCADE) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Các khối nội dung chi tiết của bài viết, tối đa 10 section mỗi bản dịch';
 
 CREATE TABLE news_section_files (
-  section_file_id CHAR(36) NOT NULL,
-  section_id CHAR(36) NOT NULL,
-  file_id CHAR(36) NOT NULL,
+  section_file_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  section_id BIGINT UNSIGNED NOT NULL,
+  file_id BIGINT UNSIGNED NOT NULL,
   usage_type ENUM('INLINE_IMAGE','ATTACHMENT') NOT NULL DEFAULT 'INLINE_IMAGE'
     COMMENT 'INLINE_IMAGE=ảnh chèn trong nội dung, ATTACHMENT=file đính kèm',
   display_order INT UNSIGNED NOT NULL DEFAULT 0,
@@ -1183,12 +1172,11 @@ CREATE TABLE news_section_files (
     ON UPDATE CASCADE ON DELETE CASCADE,
   CONSTRAINT fk_news_section_files_file
     FOREIGN KEY (file_id) REFERENCES files(file_id)
-    ON UPDATE CASCADE ON DELETE RESTRICT
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ON UPDATE CASCADE ON DELETE RESTRICT) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='File/ảnh được dùng trong từng section của bài news';
 
 CREATE TABLE faqs (
-  faq_id CHAR(36) NOT NULL,
+  faq_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   category VARCHAR(100) NULL COMMENT 'Nhóm FAQ, ví dụ: Visit Request, Security, Logistics',
   question VARCHAR(500) NOT NULL COMMENT 'Câu hỏi FAQ',
   answer TEXT NOT NULL COMMENT 'Câu trả lời FAQ',
@@ -1196,14 +1184,13 @@ CREATE TABLE faqs (
   status ENUM('PUBLISHED','HIDDEN') NOT NULL DEFAULT 'HIDDEN'
     COMMENT 'PUBLISHED=hiển thị trên trang FAQ, HIDDEN=ẩn khỏi người xem thường nhưng người quản lý vẫn thấy',
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  created_by CHAR(36) NULL,
+  created_by BIGINT UNSIGNED NULL,
   updated_at DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
-  updated_by CHAR(36) NULL,
+  updated_by BIGINT UNSIGNED NULL,
   PRIMARY KEY (faq_id),
   KEY idx_faqs_status_order (status, display_order),
   KEY idx_faqs_category_status (category, status),
-  FULLTEXT KEY ft_faqs_search (question, answer)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  FULLTEXT KEY ft_faqs_search (question, answer)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='FAQ một ngôn ngữ, chỉ dùng PUBLISHED/HIDDEN';
 
 -- =====================================================================
@@ -1211,8 +1198,8 @@ COMMENT='FAQ một ngôn ngữ, chỉ dùng PUBLISHED/HIDDEN';
 -- =====================================================================
 
 CREATE TABLE galleries (
-  gallery_id CHAR(36) NOT NULL,
-  campus_id CHAR(36) NOT NULL,
+  gallery_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  campus_id BIGINT UNSIGNED NOT NULL,
   location_name VARCHAR(150) NOT NULL COMMENT 'Tên địa điểm trong campus, ví dụ: Sảnh Alpha, Green Lab, Thư viện',
   title VARCHAR(255) NOT NULL COMMENT 'Tên hiển thị của gallery/địa điểm',
   description TEXT NULL COMMENT 'Mô tả ngắn về địa điểm',
@@ -1222,36 +1209,35 @@ CREATE TABLE galleries (
   visibility ENUM('PRIVATE','INTERNAL','PUBLIC') NOT NULL DEFAULT 'INTERNAL'
     COMMENT 'Phạm vi xem khi status=PUBLISHED: PRIVATE=chỉ quản lý, INTERNAL=user nội bộ, PUBLIC=công khai',
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  created_by CHAR(36) NULL,
+  created_by BIGINT UNSIGNED NULL,
   updated_at DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
-  updated_by CHAR(36) NULL,
+  updated_by BIGINT UNSIGNED NULL,
   deleted_at DATETIME NULL,
-  deleted_by CHAR(36) NULL,
+  deleted_by BIGINT UNSIGNED NULL,
   PRIMARY KEY (gallery_id),
   KEY idx_galleries_campus_status (campus_id, status, deleted_at),
   KEY idx_galleries_location_name (location_name),
   KEY idx_galleries_visibility_status (visibility, status),
   CONSTRAINT fk_galleries_campus
     FOREIGN KEY (campus_id) REFERENCES campuses(campus_id)
-    ON UPDATE CASCADE ON DELETE RESTRICT
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ON UPDATE CASCADE ON DELETE RESTRICT) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Gallery địa điểm trong campus, có mô tả và câu chuyện';
 
 CREATE TABLE gallery_images (
-  image_id CHAR(36) NOT NULL,
-  gallery_id CHAR(36) NOT NULL,
-  file_id CHAR(36) NOT NULL,
+  image_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  gallery_id BIGINT UNSIGNED NOT NULL,
+  file_id BIGINT UNSIGNED NOT NULL,
   caption VARCHAR(500) NULL COMMENT 'Chú thích riêng cho từng ảnh',
   display_order INT UNSIGNED NOT NULL DEFAULT 0,
   taken_at DATETIME NULL,
   status ENUM('ACTIVE','HIDDEN') NOT NULL DEFAULT 'ACTIVE'
     COMMENT 'ACTIVE=ảnh đang dùng, HIDDEN=ảnh bị ẩn khỏi gallery thường',
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  created_by CHAR(36) NULL,
+  created_by BIGINT UNSIGNED NULL,
   updated_at DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
-  updated_by CHAR(36) NULL,
+  updated_by BIGINT UNSIGNED NULL,
   deleted_at DATETIME NULL,
-  deleted_by CHAR(36) NULL,
+  deleted_by BIGINT UNSIGNED NULL,
   PRIMARY KEY (image_id),
   UNIQUE KEY uq_gallery_images_file (file_id),
   KEY idx_gallery_images_gallery_order (gallery_id, display_order),
@@ -1261,28 +1247,27 @@ CREATE TABLE gallery_images (
     ON UPDATE CASCADE ON DELETE RESTRICT,
   CONSTRAINT fk_gallery_images_file
     FOREIGN KEY (file_id) REFERENCES files(file_id)
-    ON UPDATE CASCADE ON DELETE RESTRICT
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ON UPDATE CASCADE ON DELETE RESTRICT) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Ảnh thuộc gallery địa điểm campus';
 
 CREATE TABLE photo_face_tags (
-  face_tag_id CHAR(36) NOT NULL,
-  image_id CHAR(36) NOT NULL,
-  visit_request_id CHAR(36) NULL,
-  guest_member_id CHAR(36) NULL,
-  partner_contact_id CHAR(36) NULL,
+  face_tag_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  image_id BIGINT UNSIGNED NOT NULL,
+  visit_request_id BIGINT UNSIGNED NULL,
+  guest_member_id BIGINT UNSIGNED NULL,
+  partner_contact_id BIGINT UNSIGNED NULL,
   display_name VARCHAR(150) NOT NULL,
   bounding_box_x DECIMAL(8,4) NULL,
   bounding_box_y DECIMAL(8,4) NULL,
   bounding_box_width DECIMAL(8,4) NULL,
   bounding_box_height DECIMAL(8,4) NULL,
   tag_status ENUM('MANUALLY_TAGGED','CONFIRMED','REMOVED') NOT NULL DEFAULT 'MANUALLY_TAGGED',
-  confirmed_by CHAR(36) NULL,
+  confirmed_by BIGINT UNSIGNED NULL,
   confirmed_at DATETIME NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  created_by CHAR(36) NULL,
+  created_by BIGINT UNSIGNED NULL,
   removed_at DATETIME NULL,
-  removed_by CHAR(36) NULL,
+  removed_by BIGINT UNSIGNED NULL,
   PRIMARY KEY (face_tag_id),
   KEY idx_face_tags_image (image_id),
   KEY idx_face_tags_guest (guest_member_id),
@@ -1302,8 +1287,7 @@ CREATE TABLE photo_face_tags (
     ON UPDATE CASCADE ON DELETE SET NULL,
   CONSTRAINT fk_face_tags_confirmed_by
     FOREIGN KEY (confirmed_by) REFERENCES users(user_id)
-    ON UPDATE CASCADE ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ON UPDATE CASCADE ON DELETE SET NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Confirmed face tag metadata only. No biometric vector.';
 
 -- =====================================================================
@@ -1311,7 +1295,7 @@ COMMENT='Confirmed face tag metadata only. No biometric vector.';
 -- =====================================================================
 
 CREATE TABLE email_templates (
-  email_template_id CHAR(36) NOT NULL,
+  email_template_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   template_code VARCHAR(100) NOT NULL,
   name VARCHAR(150) NOT NULL,
   purpose VARCHAR(100) NOT NULL,
@@ -1319,28 +1303,27 @@ CREATE TABLE email_templates (
   translations_json JSON NOT NULL COMMENT 'Merged email_template_translations table',
   variables_json JSON NULL COMMENT 'Allowed variables: FullName, OtpCode, Link...',
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  created_by CHAR(36) NULL,
+  created_by BIGINT UNSIGNED NULL,
   updated_at DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
-  updated_by CHAR(36) NULL,
+  updated_by BIGINT UNSIGNED NULL,
   PRIMARY KEY (email_template_id),
   UNIQUE KEY uq_email_templates_code (template_code),
   KEY idx_email_templates_status (status),
-  KEY idx_email_templates_purpose_status (purpose, status)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  KEY idx_email_templates_purpose_status (purpose, status)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Email templates with translations_json';
 
 CREATE TABLE sent_emails (
-  sent_email_id CHAR(36) NOT NULL,
-  email_template_id CHAR(36) NULL,
+  sent_email_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  email_template_id BIGINT UNSIGNED NULL,
   related_type VARCHAR(80) NULL,
-  related_id CHAR(36) NULL,
+  related_id BIGINT UNSIGNED NULL,
   subject VARCHAR(255) NOT NULL,
   body_snapshot LONGTEXT NULL,
   recipients_json JSON NOT NULL COMMENT 'Merged sent_email_recipients table',
   metadata_json JSON NULL COMMENT 'provider message id, retry count, etc.',
   status ENUM('QUEUED','SENT','FAILED') NOT NULL DEFAULT 'QUEUED',
   error_message TEXT NULL,
-  sent_by CHAR(36) NULL,
+  sent_by BIGINT UNSIGNED NULL,
   sent_at DATETIME NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (sent_email_id),
@@ -1353,18 +1336,17 @@ CREATE TABLE sent_emails (
     ON UPDATE CASCADE ON DELETE SET NULL,
   CONSTRAINT fk_sent_emails_sent_by
     FOREIGN KEY (sent_by) REFERENCES users(user_id)
-    ON UPDATE CASCADE ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ON UPDATE CASCADE ON DELETE SET NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Sent email log with recipients_json';
 
 CREATE TABLE notifications (
-  notification_id CHAR(36) NOT NULL,
-  recipient_user_id CHAR(36) NOT NULL,
+  notification_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  recipient_user_id BIGINT UNSIGNED NOT NULL,
   title VARCHAR(255) NOT NULL,
   message TEXT NULL,
   notification_type VARCHAR(80) NOT NULL,
   related_type VARCHAR(80) NULL,
-  related_id CHAR(36) NULL,
+  related_id BIGINT UNSIGNED NULL,
   is_read BOOLEAN NOT NULL DEFAULT FALSE,
   read_at DATETIME NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -1374,8 +1356,7 @@ CREATE TABLE notifications (
   KEY idx_notifications_type_time (notification_type, created_at),
   CONSTRAINT fk_notifications_user
     FOREIGN KEY (recipient_user_id) REFERENCES users(user_id)
-    ON UPDATE CASCADE ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ON UPDATE CASCADE ON DELETE CASCADE) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='In-app notifications';
 
 -- =====================================================================
@@ -1383,11 +1364,11 @@ COMMENT='In-app notifications';
 -- =====================================================================
 
 CREATE TABLE calendar_events (
-  calendar_event_id CHAR(36) NOT NULL,
-  owner_user_id CHAR(36) NOT NULL,
-  campus_id CHAR(36) NULL,
-  visit_instance_id CHAR(36) NULL,
-  logistics_item_id CHAR(36) NULL,
+  calendar_event_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  owner_user_id BIGINT UNSIGNED NOT NULL,
+  campus_id BIGINT UNSIGNED NULL,
+  visit_instance_id BIGINT UNSIGNED NULL,
+  logistics_item_id BIGINT UNSIGNED NULL,
   source_type ENUM('PERSONAL','VISIT','LOGISTICS','DEADLINE') NOT NULL DEFAULT 'PERSONAL',
   title VARCHAR(255) NOT NULL,
   description TEXT NULL,
@@ -1400,11 +1381,11 @@ CREATE TABLE calendar_events (
   reminders_json JSON NULL COMMENT 'Merged calendar_event_reminders table',
   status ENUM('ACTIVE','CANCELLED','DONE') NOT NULL DEFAULT 'ACTIVE',
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  created_by CHAR(36) NULL,
+  created_by BIGINT UNSIGNED NULL,
   updated_at DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
-  updated_by CHAR(36) NULL,
+  updated_by BIGINT UNSIGNED NULL,
   deleted_at DATETIME NULL,
-  deleted_by CHAR(36) NULL,
+  deleted_by BIGINT UNSIGNED NULL,
   PRIMARY KEY (calendar_event_id),
   KEY idx_calendar_owner_time (owner_user_id, start_at),
   KEY idx_calendar_campus_time (campus_id, start_at),
@@ -1423,12 +1404,11 @@ CREATE TABLE calendar_events (
     ON UPDATE CASCADE ON DELETE SET NULL,
   CONSTRAINT fk_calendar_logistics
     FOREIGN KEY (logistics_item_id) REFERENCES visit_logistics_items(logistics_item_id)
-    ON UPDATE CASCADE ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ON UPDATE CASCADE ON DELETE SET NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Calendar events. Personal/visit/logistics/deadline events. Attendees/reminders merged into JSON fields.';
 
 CREATE TABLE api_configurations (
-  api_config_id CHAR(36) NOT NULL,
+  api_config_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   api_code VARCHAR(100) NOT NULL,
   name VARCHAR(150) NOT NULL,
   provider_name VARCHAR(150) NULL,
@@ -1443,31 +1423,30 @@ CREATE TABLE api_configurations (
   timeout_seconds INT UNSIGNED NOT NULL DEFAULT 30,
   status ENUM('ACTIVE','INACTIVE','DISABLED') NOT NULL DEFAULT 'ACTIVE',
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  created_by CHAR(36) NULL,
+  created_by BIGINT UNSIGNED NULL,
   updated_at DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
-  updated_by CHAR(36) NULL,
+  updated_by BIGINT UNSIGNED NULL,
   deleted_at DATETIME NULL,
-  deleted_by CHAR(36) NULL,
+  deleted_by BIGINT UNSIGNED NULL,
   PRIMARY KEY (api_config_id),
   UNIQUE KEY uq_api_config_code (api_code),
   KEY idx_api_config_status (status),
-  KEY idx_api_provider_status (provider_name, status)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  KEY idx_api_provider_status (provider_name, status)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='API config + encrypted credentials JSON';
 
 CREATE TABLE api_usage_quotas (
-  api_usage_quota_id CHAR(36) NOT NULL,
-  api_config_id CHAR(36) NOT NULL,
-  campus_id CHAR(36) NULL COMMENT 'NULL = global quota',
+  api_usage_quota_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  api_config_id BIGINT UNSIGNED NOT NULL,
+  campus_id BIGINT UNSIGNED NULL COMMENT 'NULL = global quota',
   campus_scope_key VARCHAR(36) NOT NULL DEFAULT 'GLOBAL',
   period_yyyymm CHAR(6) NOT NULL COMMENT 'YYYYMM',
   monthly_limit INT UNSIGNED NOT NULL,
   used_count INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'Merged api_usage_counters table',
   last_used_at DATETIME NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  created_by CHAR(36) NULL,
+  created_by BIGINT UNSIGNED NULL,
   updated_at DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
-  updated_by CHAR(36) NULL,
+  updated_by BIGINT UNSIGNED NULL,
   PRIMARY KEY (api_usage_quota_id),
   UNIQUE KEY uq_api_quota_config_scope_period (api_config_id, campus_scope_key, period_yyyymm),
   KEY idx_api_quota_campus_period (campus_id, period_yyyymm),
@@ -1477,17 +1456,16 @@ CREATE TABLE api_usage_quotas (
     ON UPDATE CASCADE ON DELETE CASCADE,
   CONSTRAINT fk_api_quota_campus
     FOREIGN KEY (campus_id) REFERENCES campuses(campus_id)
-    ON UPDATE CASCADE ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ON UPDATE CASCADE ON DELETE CASCADE) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='API quota + counter per campus/month';
 
 CREATE TABLE api_request_logs (
   api_request_log_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  api_config_id CHAR(36) NOT NULL,
-  campus_id CHAR(36) NULL,
-  requested_by CHAR(36) NULL,
+  api_config_id BIGINT UNSIGNED NOT NULL,
+  campus_id BIGINT UNSIGNED NULL,
+  requested_by BIGINT UNSIGNED NULL,
   related_type VARCHAR(80) NULL,
-  related_id CHAR(36) NULL,
+  related_id BIGINT UNSIGNED NULL,
   endpoint VARCHAR(500) NOT NULL,
   method ENUM('GET','POST','PUT','PATCH','DELETE') NOT NULL,
   http_status INT NULL,
@@ -1512,32 +1490,30 @@ CREATE TABLE api_request_logs (
     ON UPDATE CASCADE ON DELETE SET NULL,
   CONSTRAINT fk_api_logs_user
     FOREIGN KEY (requested_by) REFERENCES users(user_id)
-    ON UPDATE CASCADE ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ON UPDATE CASCADE ON DELETE SET NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='External API request logs. Never log full secret/token.';
 
 CREATE TABLE agenda_templates (
-  agenda_template_id CHAR(36) NOT NULL,
-  campus_id CHAR(36) NULL,
+  agenda_template_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  campus_id BIGINT UNSIGNED NULL,
   campus_scope_key VARCHAR(36) NOT NULL DEFAULT 'GLOBAL',
   name VARCHAR(150) NOT NULL,
   description TEXT NULL,
   items_json JSON NOT NULL COMMENT 'Merged agenda_template_items table',
   status ENUM('ACTIVE','INACTIVE') NOT NULL DEFAULT 'ACTIVE',
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  created_by CHAR(36) NULL,
+  created_by BIGINT UNSIGNED NULL,
   updated_at DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
-  updated_by CHAR(36) NULL,
+  updated_by BIGINT UNSIGNED NULL,
   deleted_at DATETIME NULL,
-  deleted_by CHAR(36) NULL,
+  deleted_by BIGINT UNSIGNED NULL,
   PRIMARY KEY (agenda_template_id),
   UNIQUE KEY uq_agenda_template_scope_name (campus_scope_key, name),
   KEY idx_agenda_templates_status (status),
   KEY idx_agenda_templates_campus_status (campus_id, status),
   CONSTRAINT fk_agenda_templates_campus
     FOREIGN KEY (campus_id) REFERENCES campuses(campus_id)
-    ON UPDATE CASCADE ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ON UPDATE CASCADE ON DELETE SET NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Agenda template with items_json';
 
 -- =====================================================================
@@ -1546,11 +1522,11 @@ COMMENT='Agenda template with items_json';
 
 CREATE TABLE audit_logs (
   audit_log_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  actor_user_id CHAR(36) NULL,
-  campus_id CHAR(36) NULL,
+  actor_user_id BIGINT UNSIGNED NULL,
+  campus_id BIGINT UNSIGNED NULL,
   action VARCHAR(100) NOT NULL,
   entity_type VARCHAR(100) NOT NULL,
-  entity_id CHAR(36) NULL,
+  entity_id BIGINT UNSIGNED NULL,
   old_values_json JSON NULL,
   new_values_json JSON NULL,
   ip_address VARCHAR(45) NULL,
@@ -1568,17 +1544,16 @@ CREATE TABLE audit_logs (
     ON UPDATE CASCADE ON DELETE SET NULL,
   CONSTRAINT fk_audit_campus
     FOREIGN KEY (campus_id) REFERENCES campuses(campus_id)
-    ON UPDATE CASCADE ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ON UPDATE CASCADE ON DELETE SET NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='General audit log';
 
 CREATE TABLE visit_status_logs (
   visit_status_log_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  visit_request_id CHAR(36) NULL,
-  visit_instance_id CHAR(36) NULL,
+  visit_request_id BIGINT UNSIGNED NULL,
+  visit_instance_id BIGINT UNSIGNED NULL,
   old_status VARCHAR(50) NULL,
   new_status VARCHAR(50) NOT NULL,
-  changed_by CHAR(36) NULL,
+  changed_by BIGINT UNSIGNED NULL,
   reason TEXT NULL,
   changed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (visit_status_log_id),
@@ -1593,8 +1568,7 @@ CREATE TABLE visit_status_logs (
     ON UPDATE CASCADE ON DELETE SET NULL,
   CONSTRAINT fk_visit_status_logs_changed_by
     FOREIGN KEY (changed_by) REFERENCES users(user_id)
-    ON UPDATE CASCADE ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ON UPDATE CASCADE ON DELETE SET NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Timeline trạng thái visit';
 
 -- =====================================================================
@@ -1648,7 +1622,7 @@ FOR EACH ROW
 BEGIN
   DECLARE v_role_code VARCHAR(30);
   DECLARE v_department_type VARCHAR(20);
-  DECLARE v_department_campus_id CHAR(36);
+  DECLARE v_department_campus_id BIGINT UNSIGNED;
 
   SELECT role_code INTO v_role_code
   FROM roles
@@ -1714,7 +1688,7 @@ FOR EACH ROW
 BEGIN
   DECLARE v_role_code VARCHAR(30);
   DECLARE v_department_type VARCHAR(20);
-  DECLARE v_department_campus_id CHAR(36);
+  DECLARE v_department_campus_id BIGINT UNSIGNED;
 
   SELECT role_code INTO v_role_code
   FROM roles
@@ -1799,7 +1773,7 @@ BEFORE INSERT ON user_sessions
 FOR EACH ROW
 BEGIN
   DECLARE v_role_code VARCHAR(30);
-  DECLARE v_primary_campus_id CHAR(36);
+  DECLARE v_primary_campus_id BIGINT UNSIGNED;
 
   SELECT r.role_code, u.primary_campus_id
     INTO v_role_code, v_primary_campus_id
@@ -1841,7 +1815,7 @@ BEGIN
   DECLARE v_actor_role_code VARCHAR(30);
   DECLARE v_actor_sub_role VARCHAR(30);
 
-  IF NEW.status IN ('APPROVED','REJECTED','CANCELLED') THEN
+  IF NEW.status IN ('APPROVED','IN_PROGRESS','COMPLETED','REJECTED','CANCELLED') THEN
     IF NEW.decision_actor_role IS NULL THEN
       SIGNAL SQLSTATE '45000'
         SET MESSAGE_TEXT = 'decision_actor_role is required when visit request is decided';
@@ -1892,7 +1866,7 @@ BEGIN
   DECLARE v_actor_role_code VARCHAR(30);
   DECLARE v_actor_sub_role VARCHAR(30);
 
-  IF NEW.status IN ('APPROVED','REJECTED','CANCELLED') THEN
+  IF NEW.status IN ('APPROVED','IN_PROGRESS','COMPLETED','REJECTED','CANCELLED') THEN
     IF NEW.decision_actor_role IS NULL THEN
       SIGNAL SQLSTATE '45000'
         SET MESSAGE_TEXT = 'decision_actor_role is required when visit request is decided';
@@ -1947,10 +1921,10 @@ BEGIN
   DECLARE v_request_status VARCHAR(30);
   DECLARE v_host_role_code VARCHAR(30);
   DECLARE v_host_sub_role VARCHAR(30);
-  DECLARE v_host_campus_id CHAR(36);
+  DECLARE v_host_campus_id BIGINT UNSIGNED;
   DECLARE v_transfer_role_code VARCHAR(30);
   DECLARE v_transfer_sub_role VARCHAR(30);
-  DECLARE v_transfer_campus_id CHAR(36);
+  DECLARE v_transfer_campus_id BIGINT UNSIGNED;
 
   SELECT status
     INTO v_request_status
@@ -2023,10 +1997,10 @@ BEGIN
   DECLARE v_request_status VARCHAR(30);
   DECLARE v_host_role_code VARCHAR(30);
   DECLARE v_host_sub_role VARCHAR(30);
-  DECLARE v_host_campus_id CHAR(36);
+  DECLARE v_host_campus_id BIGINT UNSIGNED;
   DECLARE v_transfer_role_code VARCHAR(30);
   DECLARE v_transfer_sub_role VARCHAR(30);
-  DECLARE v_transfer_campus_id CHAR(36);
+  DECLARE v_transfer_campus_id BIGINT UNSIGNED;
 
   SELECT status
     INTO v_request_status
@@ -2105,28 +2079,28 @@ CREATE TRIGGER trg_api_usage_quotas_scope_bi
 BEFORE INSERT ON api_usage_quotas
 FOR EACH ROW
 BEGIN
-  SET NEW.campus_scope_key = IFNULL(NEW.campus_id, 'GLOBAL');
+  SET NEW.campus_scope_key = IFNULL(CAST(NEW.campus_id AS CHAR), 'GLOBAL');
 END$$
 
 CREATE TRIGGER trg_api_usage_quotas_scope_bu
 BEFORE UPDATE ON api_usage_quotas
 FOR EACH ROW
 BEGIN
-  SET NEW.campus_scope_key = IFNULL(NEW.campus_id, 'GLOBAL');
+  SET NEW.campus_scope_key = IFNULL(CAST(NEW.campus_id AS CHAR), 'GLOBAL');
 END$$
 
 CREATE TRIGGER trg_agenda_templates_scope_bi
 BEFORE INSERT ON agenda_templates
 FOR EACH ROW
 BEGIN
-  SET NEW.campus_scope_key = IFNULL(NEW.campus_id, 'GLOBAL');
+  SET NEW.campus_scope_key = IFNULL(CAST(NEW.campus_id AS CHAR), 'GLOBAL');
 END$$
 
 CREATE TRIGGER trg_agenda_templates_scope_bu
 BEFORE UPDATE ON agenda_templates
 FOR EACH ROW
 BEGIN
-  SET NEW.campus_scope_key = IFNULL(NEW.campus_id, 'GLOBAL');
+  SET NEW.campus_scope_key = IFNULL(CAST(NEW.campus_id AS CHAR), 'GLOBAL');
 END$$
 
 -- MySQL 8.0 does not allow a CHECK constraint on FK columns when those
@@ -2160,18 +2134,18 @@ DELIMITER ;
 
 INSERT INTO roles (role_id, role_code, name, description)
 VALUES
-  (UUID(), 'ADMIN', 'Admin', 'Quản trị kỹ thuật hệ thống'),
-  (UUID(), 'HO', 'Head Office', 'Quản lý cấp Head Office'),
-  (UUID(), 'STAFF', 'IC Staff', 'Nhân sự phòng Hợp tác Quốc tế, dùng sub_role Leader/Staff'),
-  (UUID(), 'DEPT', 'Department', 'Nhân sự phòng ban khác, dùng sub_role Leader/Staff'),
-  (UUID(), 'STUDENT', 'Student', 'Sinh viên hỗ trợ'),
-  (UUID(), 'VISITOR', 'Visitor', 'Khách gửi visit request và theo dõi thông tin của mình');
+  (NULL, 'ADMIN', 'Admin', 'Quản trị kỹ thuật hệ thống'),
+  (NULL, 'HO', 'Head Office', 'Quản lý cấp Head Office'),
+  (NULL, 'STAFF', 'IC Staff', 'Nhân sự phòng Hợp tác Quốc tế, dùng sub_role Leader/Staff'),
+  (NULL, 'DEPT', 'Department', 'Nhân sự phòng ban khác, dùng sub_role Leader/Staff'),
+  (NULL, 'STUDENT', 'Student', 'Sinh viên hỗ trợ'),
+  (NULL, 'VISITOR', 'Visitor', 'Khách gửi visit request và theo dõi thông tin của mình');
 
-SET @campus_hn = UUID();
-SET @campus_hcm = UUID();
-SET @campus_dn = UUID();
-SET @campus_ct = UUID();
-SET @campus_qn = UUID();
+SET @campus_hn = 100000;
+SET @campus_hcm = 100001;
+SET @campus_dn = 100002;
+SET @campus_ct = 100003;
+SET @campus_qn = 100004;
 
 INSERT INTO campuses (campus_id, campus_code, name, city, status)
 VALUES
@@ -2183,15 +2157,15 @@ VALUES
 
 INSERT INTO departments (department_id, campus_id, department_code, name, department_type, status)
 VALUES
-  (UUID(), @campus_hn, 'IC', 'International Cooperation', 'IC', 'ACTIVE'),
-  (UUID(), @campus_hcm, 'IC', 'International Cooperation', 'IC', 'ACTIVE'),
-  (UUID(), @campus_dn, 'IC', 'International Cooperation', 'IC', 'ACTIVE'),
-  (UUID(), @campus_ct, 'IC', 'International Cooperation', 'IC', 'ACTIVE'),
-  (UUID(), @campus_qn, 'IC', 'International Cooperation', 'IC', 'ACTIVE'),
-  (UUID(), @campus_hn, 'ACADEMIC', 'Academic Department', 'GENERAL', 'ACTIVE'),
-  (UUID(), @campus_hn, 'MARKETING', 'Marketing Department', 'GENERAL', 'ACTIVE'),
-  (UUID(), @campus_hn, 'ADMISSION', 'Admission Department', 'GENERAL', 'ACTIVE'),
-  (UUID(), @campus_hn, 'IT', 'IT Department', 'GENERAL', 'ACTIVE');
+  (NULL, @campus_hn, 'IC', 'International Cooperation', 'IC', 'ACTIVE'),
+  (NULL, @campus_hcm, 'IC', 'International Cooperation', 'IC', 'ACTIVE'),
+  (NULL, @campus_dn, 'IC', 'International Cooperation', 'IC', 'ACTIVE'),
+  (NULL, @campus_ct, 'IC', 'International Cooperation', 'IC', 'ACTIVE'),
+  (NULL, @campus_qn, 'IC', 'International Cooperation', 'IC', 'ACTIVE'),
+  (NULL, @campus_hn, 'ACADEMIC', 'Academic Department', 'GENERAL', 'ACTIVE'),
+  (NULL, @campus_hn, 'MARKETING', 'Marketing Department', 'GENERAL', 'ACTIVE'),
+  (NULL, @campus_hn, 'ADMISSION', 'Admission Department', 'GENERAL', 'ACTIVE'),
+  (NULL, @campus_hn, 'IT', 'IT Department', 'GENERAL', 'ACTIVE');
 
 -- =====================================================================
 -- 15. CHECK QUERIES
@@ -2252,77 +2226,77 @@ UPDATE campuses SET address='Khu đô thị Nam Cần Thơ, phường Hưng Th�
 UPDATE campuses SET address='Khu đô thị giáo dục FPT Quy Nhơn, phường Nhơn Bình, TP. Quy Nhơn, Bình Định', phone='02567300999', email='ic.qn@company.vn', status='ACTIVE', updated_at=@seed_now WHERE campus_code='QN';
 UPDATE departments SET name='Phòng Hợp tác Quốc tế' WHERE department_code='IC';
 
-INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT UUID(), @campus_hn, 'ADMIN', 'Phòng Hành chính', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_hn AND department_code='ADMIN');
+INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_hn, 'ADMIN', 'Phòng Hành chính', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_hn AND department_code='ADMIN');
 
-INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT UUID(), @campus_hn, 'PLANNING', 'Phòng Kế hoạch', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_hn AND department_code='PLANNING');
+INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_hn, 'PLANNING', 'Phòng Kế hoạch', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_hn AND department_code='PLANNING');
 
-INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT UUID(), @campus_hn, 'IT', 'Phòng CNTT', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_hn AND department_code='IT');
+INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_hn, 'IT', 'Phòng CNTT', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_hn AND department_code='IT');
 
-INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT UUID(), @campus_hn, 'FINANCE', 'Phòng Tài chính', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_hn AND department_code='FINANCE');
+INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_hn, 'FINANCE', 'Phòng Tài chính', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_hn AND department_code='FINANCE');
 
-INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT UUID(), @campus_hn, 'OPERATIONS', 'Ban Điều hành', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_hn AND department_code='OPERATIONS');
+INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_hn, 'OPERATIONS', 'Ban Điều hành', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_hn AND department_code='OPERATIONS');
 
-INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT UUID(), @campus_hn, 'ACADEMIC', 'Phòng Đào tạo', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_hn AND department_code='ACADEMIC');
+INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_hn, 'ACADEMIC', 'Phòng Đào tạo', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_hn AND department_code='ACADEMIC');
 
-INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT UUID(), @campus_hn, 'MARKETING', 'Phòng Truyền thông', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_hn AND department_code='MARKETING');
+INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_hn, 'MARKETING', 'Phòng Truyền thông', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_hn AND department_code='MARKETING');
 
-INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT UUID(), @campus_hcm, 'ADMIN', 'Phòng Hành chính', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_hcm AND department_code='ADMIN');
+INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_hcm, 'ADMIN', 'Phòng Hành chính', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_hcm AND department_code='ADMIN');
 
-INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT UUID(), @campus_hcm, 'PLANNING', 'Phòng Kế hoạch', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_hcm AND department_code='PLANNING');
+INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_hcm, 'PLANNING', 'Phòng Kế hoạch', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_hcm AND department_code='PLANNING');
 
-INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT UUID(), @campus_hcm, 'IT', 'Phòng CNTT', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_hcm AND department_code='IT');
+INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_hcm, 'IT', 'Phòng CNTT', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_hcm AND department_code='IT');
 
-INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT UUID(), @campus_hcm, 'FINANCE', 'Phòng Tài chính', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_hcm AND department_code='FINANCE');
+INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_hcm, 'FINANCE', 'Phòng Tài chính', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_hcm AND department_code='FINANCE');
 
-INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT UUID(), @campus_hcm, 'OPERATIONS', 'Ban Điều hành', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_hcm AND department_code='OPERATIONS');
+INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_hcm, 'OPERATIONS', 'Ban Điều hành', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_hcm AND department_code='OPERATIONS');
 
-INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT UUID(), @campus_hcm, 'ACADEMIC', 'Phòng Đào tạo', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_hcm AND department_code='ACADEMIC');
+INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_hcm, 'ACADEMIC', 'Phòng Đào tạo', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_hcm AND department_code='ACADEMIC');
 
-INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT UUID(), @campus_hcm, 'MARKETING', 'Phòng Truyền thông', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_hcm AND department_code='MARKETING');
+INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_hcm, 'MARKETING', 'Phòng Truyền thông', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_hcm AND department_code='MARKETING');
 
-INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT UUID(), @campus_dn, 'ADMIN', 'Phòng Hành chính', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_dn AND department_code='ADMIN');
+INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_dn, 'ADMIN', 'Phòng Hành chính', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_dn AND department_code='ADMIN');
 
-INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT UUID(), @campus_dn, 'PLANNING', 'Phòng Kế hoạch', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_dn AND department_code='PLANNING');
+INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_dn, 'PLANNING', 'Phòng Kế hoạch', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_dn AND department_code='PLANNING');
 
-INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT UUID(), @campus_dn, 'IT', 'Phòng CNTT', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_dn AND department_code='IT');
+INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_dn, 'IT', 'Phòng CNTT', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_dn AND department_code='IT');
 
-INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT UUID(), @campus_dn, 'FINANCE', 'Phòng Tài chính', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_dn AND department_code='FINANCE');
+INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_dn, 'FINANCE', 'Phòng Tài chính', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_dn AND department_code='FINANCE');
 
-INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT UUID(), @campus_dn, 'OPERATIONS', 'Ban Điều hành', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_dn AND department_code='OPERATIONS');
+INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_dn, 'OPERATIONS', 'Ban Điều hành', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_dn AND department_code='OPERATIONS');
 
-INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT UUID(), @campus_dn, 'ACADEMIC', 'Phòng Đào tạo', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_dn AND department_code='ACADEMIC');
+INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_dn, 'ACADEMIC', 'Phòng Đào tạo', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_dn AND department_code='ACADEMIC');
 
-INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT UUID(), @campus_dn, 'MARKETING', 'Phòng Truyền thông', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_dn AND department_code='MARKETING');
+INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_dn, 'MARKETING', 'Phòng Truyền thông', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_dn AND department_code='MARKETING');
 
-INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT UUID(), @campus_ct, 'ADMIN', 'Phòng Hành chính', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_ct AND department_code='ADMIN');
+INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_ct, 'ADMIN', 'Phòng Hành chính', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_ct AND department_code='ADMIN');
 
-INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT UUID(), @campus_ct, 'PLANNING', 'Phòng Kế hoạch', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_ct AND department_code='PLANNING');
+INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_ct, 'PLANNING', 'Phòng Kế hoạch', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_ct AND department_code='PLANNING');
 
-INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT UUID(), @campus_ct, 'IT', 'Phòng CNTT', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_ct AND department_code='IT');
+INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_ct, 'IT', 'Phòng CNTT', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_ct AND department_code='IT');
 
-INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT UUID(), @campus_ct, 'FINANCE', 'Phòng Tài chính', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_ct AND department_code='FINANCE');
+INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_ct, 'FINANCE', 'Phòng Tài chính', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_ct AND department_code='FINANCE');
 
-INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT UUID(), @campus_ct, 'OPERATIONS', 'Ban Điều hành', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_ct AND department_code='OPERATIONS');
+INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_ct, 'OPERATIONS', 'Ban Điều hành', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_ct AND department_code='OPERATIONS');
 
-INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT UUID(), @campus_ct, 'ACADEMIC', 'Phòng Đào tạo', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_ct AND department_code='ACADEMIC');
+INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_ct, 'ACADEMIC', 'Phòng Đào tạo', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_ct AND department_code='ACADEMIC');
 
-INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT UUID(), @campus_ct, 'MARKETING', 'Phòng Truyền thông', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_ct AND department_code='MARKETING');
+INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_ct, 'MARKETING', 'Phòng Truyền thông', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_ct AND department_code='MARKETING');
 
-INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT UUID(), @campus_qn, 'ADMIN', 'Phòng Hành chính', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_qn AND department_code='ADMIN');
+INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_qn, 'ADMIN', 'Phòng Hành chính', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_qn AND department_code='ADMIN');
 
-INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT UUID(), @campus_qn, 'PLANNING', 'Phòng Kế hoạch', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_qn AND department_code='PLANNING');
+INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_qn, 'PLANNING', 'Phòng Kế hoạch', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_qn AND department_code='PLANNING');
 
-INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT UUID(), @campus_qn, 'IT', 'Phòng CNTT', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_qn AND department_code='IT');
+INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_qn, 'IT', 'Phòng CNTT', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_qn AND department_code='IT');
 
-INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT UUID(), @campus_qn, 'FINANCE', 'Phòng Tài chính', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_qn AND department_code='FINANCE');
+INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_qn, 'FINANCE', 'Phòng Tài chính', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_qn AND department_code='FINANCE');
 
-INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT UUID(), @campus_qn, 'OPERATIONS', 'Ban Điều hành', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_qn AND department_code='OPERATIONS');
+INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_qn, 'OPERATIONS', 'Ban Điều hành', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_qn AND department_code='OPERATIONS');
 
-INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT UUID(), @campus_qn, 'ACADEMIC', 'Phòng Đào tạo', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_qn AND department_code='ACADEMIC');
+INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_qn, 'ACADEMIC', 'Phòng Đào tạo', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_qn AND department_code='ACADEMIC');
 
-INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT UUID(), @campus_qn, 'MARKETING', 'Phòng Truyền thông', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_qn AND department_code='MARKETING');
+INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_qn, 'MARKETING', 'Phòng Truyền thông', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_qn AND department_code='MARKETING');
 
-INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT UUID(), @campus_qn, 'ARCHIVE_FINANCE', 'Phòng Tài chính lưu trữ', 'GENERAL', 'INACTIVE', DATE_SUB(@seed_now, INTERVAL 280 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_qn AND department_code='ARCHIVE_FINANCE');
+INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_qn, 'ARCHIVE_FINANCE', 'Phòng Tài chính lưu trữ', 'GENERAL', 'INACTIVE', DATE_SUB(@seed_now, INTERVAL 280 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_qn AND department_code='ARCHIVE_FINANCE');
 
 SELECT department_id INTO @dept_hn_ic FROM departments WHERE campus_id=@campus_hn AND department_code='IC' LIMIT 1;
 
@@ -2406,75 +2380,75 @@ SELECT department_id INTO @dept_qn_marketing FROM departments WHERE campus_id=@c
 
 SELECT department_id INTO @dept_qn_archive_finance FROM departments WHERE campus_id=@campus_qn AND department_code='ARCHIVE_FINANCE' LIMIT 1;
 
-SET @u_admin_minh=UUID();
+SET @u_admin_minh = 100005;
 
-SET @u_ho_ha=UUID();
+SET @u_ho_ha = 100006;
 
-SET @u_ho_linh=UUID();
+SET @u_ho_linh = 100007;
 
-SET @u_stafflead_hn=UUID();
+SET @u_stafflead_hn = 100008;
 
-SET @u_staff_hn=UUID();
+SET @u_staff_hn = 100009;
 
-SET @u_stafflead_hcm=UUID();
+SET @u_stafflead_hcm = 100010;
 
-SET @u_staff_hcm=UUID();
+SET @u_staff_hcm = 100011;
 
-SET @u_stafflead_dn=UUID();
+SET @u_stafflead_dn = 100012;
 
-SET @u_staff_dn=UUID();
+SET @u_staff_dn = 100013;
 
-SET @u_stafflead_ct=UUID();
+SET @u_stafflead_ct = 100014;
 
-SET @u_staff_ct=UUID();
+SET @u_staff_ct = 100015;
 
-SET @u_stafflead_qn=UUID();
+SET @u_stafflead_qn = 100016;
 
-SET @u_staff_qn=UUID();
+SET @u_staff_qn = 100017;
 
-SET @u_deptlead_it_hn=UUID();
+SET @u_deptlead_it_hn = 100018;
 
-SET @u_dept_it_hn=UUID();
+SET @u_dept_it_hn = 100019;
 
-SET @u_deptlead_finance_hcm=UUID();
+SET @u_deptlead_finance_hcm = 100020;
 
-SET @u_dept_finance_hcm=UUID();
+SET @u_dept_finance_hcm = 100021;
 
-SET @u_deptlead_admin_ct=UUID();
+SET @u_deptlead_admin_ct = 100022;
 
-SET @u_dept_admin_ct=UUID();
+SET @u_dept_admin_ct = 100023;
 
-SET @u_student_anh=UUID();
+SET @u_student_anh = 100024;
 
-SET @u_student_bao=UUID();
+SET @u_student_bao = 100025;
 
-SET @u_student_long=UUID();
+SET @u_student_long = 100026;
 
-SET @u_locked_staff=UUID();
+SET @u_locked_staff = 100027;
 
-SET @u_inactive_dept=UUID();
+SET @u_inactive_dept = 100028;
 
-SET @u_pending_internal=UUID();
+SET @u_pending_internal = 100029;
 
-SET @u_rejected_internal=UUID();
+SET @u_rejected_internal = 100030;
 
-SET @v_kim=UUID();
+SET @v_kim = 100031;
 
-SET @v_lee=UUID();
+SET @v_lee = 100032;
 
-SET @v_tanaka=UUID();
+SET @v_tanaka = 100033;
 
-SET @v_smith=UUID();
+SET @v_smith = 100034;
 
-SET @v_nguyen_no_dau=UUID();
+SET @v_nguyen_no_dau = 100035;
 
-SET @v_pending_approval_seed=UUID();
+SET @v_pending_approval_seed = 100036;
 
-SET @v_pending_approval=UUID();
+SET @v_pending_approval = 100037;
 
-SET @v_short_name=UUID();
+SET @v_short_name = 100038;
 
-SET @v_long_name=UUID();
+SET @v_long_name = 100039;
 
 SET @pwd_hash = '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi';
 
@@ -2540,152 +2514,152 @@ INSERT IGNORE INTO users
   (user_id, full_name, email, password_hash, role_id, sub_role, primary_campus_id, department_id,
    status, email_verified_at, created_via, created_at)
 VALUES
-  (UUID(), 'System Administrator',      'admin@fpt.edu.vn',            @pwd_hash, @role_admin,   NULL,     @campus_hn, NULL,              'ACTIVE', NOW(), 'MANUAL_CREATED', NOW()),
-  (UUID(), 'Head Office Manager',       'ho@fpt.edu.vn',               @pwd_hash, @role_ho,      NULL,     @campus_hn, NULL,              'ACTIVE', NOW(), 'MANUAL_CREATED', NOW()),
-  (UUID(), 'IC Staff Leader (HN)',      'staff.leader.hn@fpt.edu.vn',  @pwd_hash, @role_staff,   'Leader', @campus_hn, @dept_hn_ic,       'ACTIVE', NOW(), 'MANUAL_CREATED', NOW()),
-  (UUID(), 'IC Staff (HN)',             'staff.hn@fpt.edu.vn',         @pwd_hash, @role_staff,   'Staff',  @campus_hn, @dept_hn_ic,       'ACTIVE', NOW(), 'MANUAL_CREATED', NOW()),
-  (UUID(), 'Department Lead (HN)',      'dept.leader.hn@fpt.edu.vn',   @pwd_hash, @role_dept,    'Leader', @campus_hn, @dept_hn_academic, 'ACTIVE', NOW(), 'MANUAL_CREATED', NOW()),
-  (UUID(), 'Department Personnel (HN)', 'dept.hn@fpt.edu.vn',          @pwd_hash, @role_dept,    'Staff',  @campus_hn, @dept_hn_academic, 'ACTIVE', NOW(), 'MANUAL_CREATED', NOW()),
-  (UUID(), 'Support Student',           'student@fpt.edu.vn',          @pwd_hash, @role_student, NULL,     @campus_hn, NULL,              'ACTIVE', NOW(), 'MANUAL_CREATED', NOW()),
-  (UUID(), 'External Visitor',          'visitor@example.com',         @pwd_hash, @role_visitor, NULL,     NULL,       NULL,              'ACTIVE', NOW(), 'MANUAL_CREATED', NOW());
+  (NULL, 'System Administrator',      'admin@fpt.edu.vn',            @pwd_hash, @role_admin,   NULL,     @campus_hn, NULL,              'ACTIVE', NOW(), 'MANUAL_CREATED', NOW()),
+  (NULL, 'Head Office Manager',       'ho@fpt.edu.vn',               @pwd_hash, @role_ho,      NULL,     @campus_hn, NULL,              'ACTIVE', NOW(), 'MANUAL_CREATED', NOW()),
+  (NULL, 'IC Staff Leader (HN)',      'staff.leader.hn@fpt.edu.vn',  @pwd_hash, @role_staff,   'Leader', @campus_hn, @dept_hn_ic,       'ACTIVE', NOW(), 'MANUAL_CREATED', NOW()),
+  (NULL, 'IC Staff (HN)',             'staff.hn@fpt.edu.vn',         @pwd_hash, @role_staff,   'Staff',  @campus_hn, @dept_hn_ic,       'ACTIVE', NOW(), 'MANUAL_CREATED', NOW()),
+  (NULL, 'Department Lead (HN)',      'dept.leader.hn@fpt.edu.vn',   @pwd_hash, @role_dept,    'Leader', @campus_hn, @dept_hn_academic, 'ACTIVE', NOW(), 'MANUAL_CREATED', NOW()),
+  (NULL, 'Department Personnel (HN)', 'dept.hn@fpt.edu.vn',          @pwd_hash, @role_dept,    'Staff',  @campus_hn, @dept_hn_academic, 'ACTIVE', NOW(), 'MANUAL_CREATED', NOW()),
+  (NULL, 'Support Student',           'student@fpt.edu.vn',          @pwd_hash, @role_student, NULL,     @campus_hn, NULL,              'ACTIVE', NOW(), 'MANUAL_CREATED', NOW()),
+  (NULL, 'External Visitor',          'visitor@example.com',         @pwd_hash, @role_visitor, NULL,     NULL,       NULL,              'ACTIVE', NOW(), 'MANUAL_CREATED', NOW());
 
 INSERT INTO permissions (permission_id, permission_code, name, permission_group, description, is_system, created_at)
 VALUES
-  (UUID(), 'UC-01.VIEW_HOMEPAGE', 'UC-01 - View Homepage', 'Common', 'Seeded from Role & Permission Matrix: View Homepage', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-02.SEARCH_INFORMATION', 'UC-02 - Search Information', 'Common', 'Seeded from Role & Permission Matrix: Search Information', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-03.VIEW_CONTACT_INFO', 'UC-03 - View Contact Info', 'Common', 'Seeded from Role & Permission Matrix: View Contact Info', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-04.VIEW_POLICY_AND_TERMS', 'UC-04 - View Policy & Terms', 'Common', 'Seeded from Role & Permission Matrix: View Policy & Terms', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-05.VIEW_FAQ', 'UC-05 - View FAQ', 'Common', 'Seeded from Role & Permission Matrix: View FAQ', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-06.VIEW_NEWS', 'UC-06 - View News', 'Common', 'Seeded from Role & Permission Matrix: View News', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-07.VIEW_PARTNERS', 'UC-07 - View Partners', 'Common', 'Seeded from Role & Permission Matrix: View Partners', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-08.VIEW_GALLERY', 'UC-08 - View Gallery', 'Common', 'Seeded from Role & Permission Matrix: View Gallery', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-09.VIEW_NOTIFICATIONS', 'UC-09 - View Notifications', 'Common', 'Seeded from Role & Permission Matrix: View Notifications', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-10.LOGIN_VIA_SSO', 'UC-10 - Login via SSO', 'Authentication', 'Seeded from Role & Permission Matrix: Login via SSO', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-11.LOGIN_VIA_CREDENTIALS', 'UC-11 - Login via Credentials', 'Authentication', 'Seeded from Role & Permission Matrix: Login via Credentials', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-12.LOGOUT', 'UC-12 - Logout', 'Authentication', 'Seeded from Role & Permission Matrix: Logout', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-13.FORGOT_PASSWORD', 'UC-13 - Forgot Password', 'Authentication', 'Seeded from Role & Permission Matrix: Forgot Password', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-14.VIEW_PROFILE', 'UC-14 - View Profile', 'Profile Management', 'Seeded from Role & Permission Matrix: View Profile', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-15.UPDATE_PROFILE', 'UC-15 - Update Profile', 'Profile Management', 'Seeded from Role & Permission Matrix: Update Profile', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-16.CHANGE_PASSWORD', 'UC-16 - Change Password', 'Profile Management', 'Seeded from Role & Permission Matrix: Change Password', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-17.SUBMIT_VISIT_REQUEST', 'UC-17 - Submit Visit Request', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: Submit Visit Request', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-18.APPROVE_CROSS_CAMPUS_REQUEST', 'UC-18 - Approve Cross-Campus Request', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: Approve Cross-Campus Request', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-19.VIEW_GUEST_DELEGATION_DETAILS', 'UC-19 - View Guest Delegation Details', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: View Guest Delegation Details', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-20.VIEW_GUEST_DELEGATION_LIST', 'UC-20 - View Guest Delegation List', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: View Guest Delegation List', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-21.SEARCH_DELEGATIONS', 'UC-21 - Search Delegations', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: Search Delegations', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-22.PROCESS_VISIT_REQUEST', 'UC-22 - Process Visit Request', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: Process Visit Request', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-23.CREATE_GUEST_DELEGATION', 'UC-23 - Create Guest Delegation', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: Create Guest Delegation', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-24.UPDATE_GUEST_DELEGATION', 'UC-24 - Update Guest Delegation', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: Update Guest Delegation', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-25.PREPARE_VISIT_LOGISTICS', 'UC-25 - Prepare Visit Logistics', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: Prepare Visit Logistics', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-26.UPDATE_VISIT_LOGISTICS', 'UC-26 - Update Visit Logistics', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: Update Visit Logistics', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-27.CONFIRM_PARTICIPATION', 'UC-27 - Confirm Participation', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: Confirm Participation', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-28.APPROVE_RESOURCE_REQUEST', 'UC-28 - Approve Resource Request', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: Approve Resource Request', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-29.PROPOSE_RESOURCE_MODIFICATION', 'UC-29 - Propose Resource Modification', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: Propose Resource Modification', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-30.CONFIRM_THE_CHANGE_PROPOSAL', 'UC-30 - Confirm The Change Proposal', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: Confirm The Change Proposal', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-31.CREATE_MEETING_MINUTES', 'UC-31 - Create Meeting Minutes', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: Create Meeting Minutes', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-32.EDIT_MEETING_MINUTES', 'UC-32 - Edit Meeting Minutes', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: Edit Meeting Minutes', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-33.VIEW_MEETING_MINUTES_DETAILS', 'UC-33 - View Meeting Minutes Details', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: View Meeting Minutes Details', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-34.SUBMIT_DELEGATION_FEEDBACK', 'UC-34 - Submit Delegation Feedback', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: Submit Delegation Feedback', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-35.SCAN_BUSINESS_CARD', 'UC-35 - Scan Business Card', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: Scan Business Card', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-36.CREATE_PARTNER_PROFILE', 'UC-36 - Create Partner Profile', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: Create Partner Profile', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-37.UPLOAD_ATTACHED_DOCUMENTS', 'UC-37 - Upload Attached Documents', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: Upload Attached Documents', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-38.UPLOAD_VISIT_PHOTOS', 'UC-38 - Upload Visit Photos', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: Upload Visit Photos', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-39.TAG_FACES_ON_PHOTOS', 'UC-39 - Tag Faces on Photos', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: Tag Faces on Photos', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-40.CREATE_NEWS_ARTICLE', 'UC-40 - Create News Article', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: Create News Article', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-41.CLOSE_DELEGATION', 'UC-41 - Close Delegation', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: Close Delegation', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-42.VIEW_EMAIL_TEMPLATE_LIST', 'UC-42 - View Email Template List', 'Email Management', 'Seeded from Role & Permission Matrix: View Email Template List', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-43.VIEW_EMAIL_TEMPLATE_DETAIL', 'UC-43 - View Email Template Detail', 'Email Management', 'Seeded from Role & Permission Matrix: View Email Template Detail', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-44.UPDATE_EMAIL_TEMPLATE', 'UC-44 - Update Email Template', 'Email Management', 'Seeded from Role & Permission Matrix: Update Email Template', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-45.CREATE_EMAIL_TEMPLATE', 'UC-45 - Create Email Template', 'Email Management', 'Seeded from Role & Permission Matrix: Create Email Template', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-46.EDIT_EMAIL_CONTENT', 'UC-46 - Edit Email Content', 'Email Management', 'Seeded from Role & Permission Matrix: Edit Email Content', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-47.SEND_EMAIL', 'UC-47 - Send Email', 'Email Management', 'Seeded from Role & Permission Matrix: Send Email', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-48.VIEW_EMAIL', 'UC-48 - View Email', 'Email Management', 'Seeded from Role & Permission Matrix: View Email', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-49.REPLY_TO_EMAIL', 'UC-49 - Reply to Email', 'Email Management', 'Seeded from Role & Permission Matrix: Reply to Email', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-50.PROCESS_PARTNER_CREATION_REQUEST', 'UC-50 - Process Partner Creation Request', 'Partner Management', 'Seeded from Role & Permission Matrix: Process Partner Creation Request', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-51.EDIT_PARTNER_INFORMATION', 'UC-51 - Edit Partner Information', 'Partner Management', 'Seeded from Role & Permission Matrix: Edit Partner Information', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-52.VIEW_PARTNER_LISTS', 'UC-52 - View Partner Lists', 'Partner Management', 'Seeded from Role & Permission Matrix: View Partner Lists', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-53.SEARCH_PARTNERS', 'UC-53 - Search Partners', 'Partner Management', 'Seeded from Role & Permission Matrix: Search Partners', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-54.VIEW_PARTNER_DETAILS', 'UC-54 - View Partner Details', 'Partner Management', 'Seeded from Role & Permission Matrix: View Partner Details', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-55.VIEW_DOCUMENT_LIST', 'UC-55 - View Document List', 'Document Management', 'Seeded from Role & Permission Matrix: View Document List', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-56.SEARCH_DOCUMENTS', 'UC-56 - Search Documents', 'Document Management', 'Seeded from Role & Permission Matrix: Search Documents', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-57.VIEW_GALLERY_ITEM_LIST', 'UC-57 - View Gallery Item List', 'Gallery Management', 'Seeded from Role & Permission Matrix: View Gallery Item List', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-58.SEARCH_GALLERY_ITEMS', 'UC-58 - Search Gallery Items', 'Gallery Management', 'Seeded from Role & Permission Matrix: Search Gallery Items', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-59.ADD_GALLERY_ITEM', 'UC-59 - Add Gallery Item', 'Gallery Management', 'Seeded from Role & Permission Matrix: Add Gallery Item', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-60.UPDATE_GALLERY_ITEM', 'UC-60 - Update Gallery Item', 'Gallery Management', 'Seeded from Role & Permission Matrix: Update Gallery Item', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-61.DELETE_GALLERY_ITEM', 'UC-61 - Delete Gallery Item', 'Gallery Management', 'Seeded from Role & Permission Matrix: Delete Gallery Item', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-62.VIEW_MINUTES_LIST', 'UC-62 - View Minutes List', 'Minutes Management', 'Seeded from Role & Permission Matrix: View Minutes List', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-63.SEARCH_FILTER_MINUTES', 'UC-63 - Search/Filter Minutes', 'Minutes Management', 'Seeded from Role & Permission Matrix: Search/Filter Minutes', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-64.VIEW_LIST_FAQ', 'UC-64 - View List FAQ', 'FAQ Management', 'Seeded from Role & Permission Matrix: View List FAQ', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-65.CREATE_FAQ', 'UC-65 - Create FAQ', 'FAQ Management', 'Seeded from Role & Permission Matrix: Create FAQ', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-66.UPDATE_FAQ', 'UC-66 - Update FAQ', 'FAQ Management', 'Seeded from Role & Permission Matrix: Update FAQ', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-67.CHANGE_FAQ_VISIBILITY', 'UC-67 - Change FAQ Visibility', 'FAQ Management', 'Seeded from Role & Permission Matrix: Change FAQ Visibility', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-68.SEARCH_FAQ', 'UC-68 - Search FAQ', 'FAQ Management', 'Seeded from Role & Permission Matrix: Search FAQ', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-69.VIEW_DASHBOARD_STATISTICS', 'UC-69 - View Dashboard Statistics', 'Report Management', 'Seeded from Role & Permission Matrix: View Dashboard Statistics', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-70.EXPORT_STATISTICS_REPORT', 'UC-70 - Export Statistics Report', 'Report Management', 'Seeded from Role & Permission Matrix: Export Statistics Report', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-71.FILTER_DASHBOARD_BY_TIME', 'UC-71 - Filter Dashboard By Time', 'Report Management', 'Seeded from Role & Permission Matrix: Filter Dashboard By Time', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-72.VIEW_MY_EVENTS', 'UC-72 - View My Events', 'Calendar Management', 'Seeded from Role & Permission Matrix: View My Events', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-73.VIEW_DEPARTMENT_CALENDAR', 'UC-73 - View Department Calendar', 'Calendar Management', 'Seeded from Role & Permission Matrix: View Department Calendar', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-74.SWITCH_VIEW_MODE', 'UC-74 - Switch View Mode', 'Calendar Management', 'Seeded from Role & Permission Matrix: Switch View Mode', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-75.ADD_PERSONAL_EVENT', 'UC-75 - Add Personal Event', 'Calendar Management', 'Seeded from Role & Permission Matrix: Add Personal Event', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-76.DELETE_PERSONAL_EVENT', 'UC-76 - Delete Personal Event', 'Calendar Management', 'Seeded from Role & Permission Matrix: Delete Personal Event', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-77.UPDATE_PERSONAL_EVENT', 'UC-77 - Update Personal Event', 'Calendar Management', 'Seeded from Role & Permission Matrix: Update Personal Event', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-78.VIEW_EVENT_DETAILS', 'UC-78 - View Event Details', 'Calendar Management', 'Seeded from Role & Permission Matrix: View Event Details', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-79.SEARCH_FILTER_FEEDBACK', 'UC-79 - Search/Filter Feedback', 'Feedback Management', 'Seeded from Role & Permission Matrix: Search/Filter Feedback', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-80.VIEW_FEEDBACK_SUMMARY', 'UC-80 - View Feedback Summary', 'Feedback Management', 'Seeded from Role & Permission Matrix: View Feedback Summary', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-81.ADD_NEW_CAMPUS', 'UC-81 - Add New Campus', 'Campus Management', 'Seeded from Role & Permission Matrix: Add New Campus', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-82.VIEW_CAMPUS_LIST', 'UC-82 - View Campus List', 'Campus Management', 'Seeded from Role & Permission Matrix: View Campus List', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-83.SEARCH_AND_FILTER_CAMPUS', 'UC-83 - Search and Filter Campus', 'Campus Management', 'Seeded from Role & Permission Matrix: Search and Filter Campus', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-84.VIEW_CAMPUS_DETAILS', 'UC-84 - View Campus Details', 'Campus Management', 'Seeded from Role & Permission Matrix: View Campus Details', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-85.UPDATE_CAMPUS', 'UC-85 - Update Campus', 'Campus Management', 'Seeded from Role & Permission Matrix: Update Campus', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-86.MANAGE_CAMPUS_STATUS', 'UC-86 - Manage Campus Status', 'Campus Management', 'Seeded from Role & Permission Matrix: Manage Campus Status', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-87.ASSIGN_CAMPUS_LEAD', 'UC-87 - Assign Campus Lead', 'Campus Management', 'Seeded from Role & Permission Matrix: Assign Campus Lead', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-88.APPROVE_NEWS', 'UC-88 - Approve News', 'News Management', 'Seeded from Role & Permission Matrix: Approve News', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-89.PUBLISH_NEWS', 'UC-89 - Publish News', 'News Management', 'Seeded from Role & Permission Matrix: Publish News', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-90.VIEW_NEWS_LIST', 'UC-90 - View News List', 'News Management', 'Seeded from Role & Permission Matrix: View News List', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-91.VIEW_NEWS_DETAILS', 'UC-91 - View News Details', 'News Management', 'Seeded from Role & Permission Matrix: View News Details', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-92.ADD_MULTILINGUAL_NEWS', 'UC-92 - Add Multilingual News', 'News Management', 'Seeded from Role & Permission Matrix: Add Multilingual News', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-93.MANAGE_NEWS_VISIBILITY', 'UC-93 - Manage News Visibility', 'News Management', 'Seeded from Role & Permission Matrix: Manage News Visibility', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-94.EDIT_NEWS', 'UC-94 - Edit News', 'News Management', 'Seeded from Role & Permission Matrix: Edit News', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-95.VIEW_ACCOUNT_LIST', 'UC-95 - View Account List', 'Account Management', 'Seeded from Role & Permission Matrix: View Account List', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-96.CREATE_ACCOUNT', 'UC-96 - Create Account', 'Account Management', 'Seeded from Role & Permission Matrix: Create Account', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-97.MANAGE_ACCOUNT_STATUS', 'UC-97 - Manage Account Status', 'Account Management', 'Seeded from Role & Permission Matrix: Manage Account Status', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-98.VIEW_ACCOUNT_DETAILS', 'UC-98 - View Account Details', 'Account Management', 'Seeded from Role & Permission Matrix: View Account Details', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-99.SEARCH_AND_FILTER_ACCOUNTS', 'UC-99 - Search and Filter Accounts', 'Account Management', 'Seeded from Role & Permission Matrix: Search and Filter Accounts', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-100.UPDATE_ACCOUNT_ROLE', 'UC-100 - Update Account Role', 'Account Management', 'Seeded from Role & Permission Matrix: Update Account Role', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-101.ADD_NEW_DEPARTMENT', 'UC-101 - Add New Department', 'Department Management', 'Seeded from Role & Permission Matrix: Add New Department', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-102.UPDATE_DEPARTMENT', 'UC-102 - Update Department', 'Department Management', 'Seeded from Role & Permission Matrix: Update Department', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-103.SEARCH_AND_FILTER_DEPARTMENTS', 'UC-103 - Search and Filter Departments', 'Department Management', 'Seeded from Role & Permission Matrix: Search and Filter Departments', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-104.VIEW_DEPARTMENT_LIST', 'UC-104 - View Department List', 'Department Management', 'Seeded from Role & Permission Matrix: View Department List', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-105.VIEW_DEPARTMENT_DETAILS', 'UC-105 - View Department Details', 'Department Management', 'Seeded from Role & Permission Matrix: View Department Details', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-106.MANAGE_DEPARTMENT_STATUS', 'UC-106 - Manage Department Status', 'Department Management', 'Seeded from Role & Permission Matrix: Manage Department Status', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-107.ADD_DEPARTMENT_PERSONNEL', 'UC-107 - Add Department Personnel', 'Department Management', 'Seeded from Role & Permission Matrix: Add Department Personnel', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-108.VIEW_PERSONNEL_DETAILS', 'UC-108 - View Personnel Details', 'Department Management', 'Seeded from Role & Permission Matrix: View Personnel Details', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-109.SEARCH_PERSONNEL', 'UC-109 - Search Personnel', 'Department Management', 'Seeded from Role & Permission Matrix: Search Personnel', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-110.REVIEW_ASSIGNED_TASKS', 'UC-110 - Review Assigned Tasks', 'Department Management', 'Seeded from Role & Permission Matrix: Review Assigned Tasks', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-111.ASSIGN_TASKS', 'UC-111 - Assign Tasks', 'Department Management', 'Seeded from Role & Permission Matrix: Assign Tasks', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-112.SIGN_THE_SERVICE_DELIVERY_REPORT', 'UC-112 - Sign The Service Delivery Report', 'Department Management', 'Seeded from Role & Permission Matrix: Sign The Service Delivery Report', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-113.REMOVE_PERSONNEL', 'UC-113 - Remove Personnel', 'Department Management', 'Seeded from Role & Permission Matrix: Remove Personnel', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-114.VIEW_COORDINATION_TASKS', 'UC-114 - View Coordination Tasks', 'Department Management', 'Seeded from Role & Permission Matrix: View Coordination Tasks', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-115.SEARCH_COORDINATION_TASKS', 'UC-115 - Search Coordination Tasks', 'Department Management', 'Seeded from Role & Permission Matrix: Search Coordination Tasks', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-116.REASSIGN_DEPARTMENT_LEAD', 'UC-116 - Reassign Department Lead', 'Department Management', 'Seeded from Role & Permission Matrix: Reassign Department Lead', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-117.VIEW_ROLE_LIST', 'UC-117 - View Role List', 'Role & Permission Management', 'Seeded from Role & Permission Matrix: View Role List', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-118.CREATE_NEW_ROLE', 'UC-118 - Create New Role', 'Role & Permission Management', 'Seeded from Role & Permission Matrix: Create New Role', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-119.CONFIGURE_ROLE_PERMISSIONS', 'UC-119 - Configure Role Permissions', 'Role & Permission Management', 'Seeded from Role & Permission Matrix: Configure Role Permissions', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-120.UPDATE_ROLE_DETAILS', 'UC-120 - Update Role Details', 'Role & Permission Management', 'Seeded from Role & Permission Matrix: Update Role Details', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-121.DISABLE_DELETE_ROLE', 'UC-121 - Disable/Delete Role', 'Role & Permission Management', 'Seeded from Role & Permission Matrix: Disable/Delete Role', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-122.VIEW_API_CONFIGURATION', 'UC-122 - View API Configuration', 'API Management', 'Seeded from Role & Permission Matrix: View API Configuration', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-123.CREATE_API_CONFIGURATION', 'UC-123 - Create API Configuration', 'API Management', 'Seeded from Role & Permission Matrix: Create API Configuration', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-124.UPDATE_API_CONFIGURATION', 'UC-124 - Update API Configuration', 'API Management', 'Seeded from Role & Permission Matrix: Update API Configuration', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-125.DELETE_API_CONFIGURATION', 'UC-125 - Delete API Configuration', 'API Management', 'Seeded from Role & Permission Matrix: Delete API Configuration', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-126.TEST_API_CONNECTION', 'UC-126 - Test API Connection', 'API Management', 'Seeded from Role & Permission Matrix: Test API Connection', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-127.MANAGE_API_STATUS', 'UC-127 - Manage API Status', 'API Management', 'Seeded from Role & Permission Matrix: Manage API Status', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-128.CONFIGURE_REQUEST_LIMIT', 'UC-128 - Configure Request Limit', 'API Management', 'Seeded from Role & Permission Matrix: Configure Request Limit', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-129.VIEW_API_LOGS', 'UC-129 - View API Logs', 'API Management', 'Seeded from Role & Permission Matrix: View API Logs', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-130.SEARCH_API_LOGS', 'UC-130 - Search API Logs', 'API Management', 'Seeded from Role & Permission Matrix: Search API Logs', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-131.CREATE_AGENDA_TEMPLATE', 'UC-131 - Create Agenda Template', 'Agenda Templates Management', 'Seeded from Role & Permission Matrix: Create Agenda Template', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-132.UPDATE_AGENDA_TEMPLATE', 'UC-132 - Update Agenda Template', 'Agenda Templates Management', 'Seeded from Role & Permission Matrix: Update Agenda Template', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-133.DELETE_AGENDA_TEMPLATE', 'UC-133 - Delete Agenda Template', 'Agenda Templates Management', 'Seeded from Role & Permission Matrix: Delete Agenda Template', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-134.VIEW_AGENDA_TEMPLATE_LIST', 'UC-134 - View Agenda Template List', 'Agenda Templates Management', 'Seeded from Role & Permission Matrix: View Agenda Template List', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (UUID(), 'UC-135.VIEW_AGENDA_TEMPLATE_DETAIL', 'UC-135 - View Agenda Template Detail', 'Agenda Templates Management', 'Seeded from Role & Permission Matrix: View Agenda Template Detail', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY));
+  (NULL, 'UC-01.VIEW_HOMEPAGE', 'UC-01 - View Homepage', 'Common', 'Seeded from Role & Permission Matrix: View Homepage', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-02.SEARCH_INFORMATION', 'UC-02 - Search Information', 'Common', 'Seeded from Role & Permission Matrix: Search Information', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-03.VIEW_CONTACT_INFO', 'UC-03 - View Contact Info', 'Common', 'Seeded from Role & Permission Matrix: View Contact Info', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-04.VIEW_POLICY_AND_TERMS', 'UC-04 - View Policy & Terms', 'Common', 'Seeded from Role & Permission Matrix: View Policy & Terms', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-05.VIEW_FAQ', 'UC-05 - View FAQ', 'Common', 'Seeded from Role & Permission Matrix: View FAQ', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-06.VIEW_NEWS', 'UC-06 - View News', 'Common', 'Seeded from Role & Permission Matrix: View News', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-07.VIEW_PARTNERS', 'UC-07 - View Partners', 'Common', 'Seeded from Role & Permission Matrix: View Partners', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-08.VIEW_GALLERY', 'UC-08 - View Gallery', 'Common', 'Seeded from Role & Permission Matrix: View Gallery', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-09.VIEW_NOTIFICATIONS', 'UC-09 - View Notifications', 'Common', 'Seeded from Role & Permission Matrix: View Notifications', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-10.LOGIN_VIA_SSO', 'UC-10 - Login via SSO', 'Authentication', 'Seeded from Role & Permission Matrix: Login via SSO', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-11.LOGIN_VIA_CREDENTIALS', 'UC-11 - Login via Credentials', 'Authentication', 'Seeded from Role & Permission Matrix: Login via Credentials', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-12.LOGOUT', 'UC-12 - Logout', 'Authentication', 'Seeded from Role & Permission Matrix: Logout', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-13.FORGOT_PASSWORD', 'UC-13 - Forgot Password', 'Authentication', 'Seeded from Role & Permission Matrix: Forgot Password', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-14.VIEW_PROFILE', 'UC-14 - View Profile', 'Profile Management', 'Seeded from Role & Permission Matrix: View Profile', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-15.UPDATE_PROFILE', 'UC-15 - Update Profile', 'Profile Management', 'Seeded from Role & Permission Matrix: Update Profile', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-16.CHANGE_PASSWORD', 'UC-16 - Change Password', 'Profile Management', 'Seeded from Role & Permission Matrix: Change Password', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-17.SUBMIT_VISIT_REQUEST', 'UC-17 - Submit Visit Request', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: Submit Visit Request', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-18.APPROVE_CROSS_CAMPUS_REQUEST', 'UC-18 - Approve Cross-Campus Request', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: Approve Cross-Campus Request', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-19.VIEW_GUEST_DELEGATION_DETAILS', 'UC-19 - View Guest Delegation Details', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: View Guest Delegation Details', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-20.VIEW_GUEST_DELEGATION_LIST', 'UC-20 - View Guest Delegation List', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: View Guest Delegation List', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-21.SEARCH_DELEGATIONS', 'UC-21 - Search Delegations', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: Search Delegations', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-22.PROCESS_VISIT_REQUEST', 'UC-22 - Process Visit Request', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: Process Visit Request', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-23.CREATE_GUEST_DELEGATION', 'UC-23 - Create Guest Delegation', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: Create Guest Delegation', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-24.UPDATE_GUEST_DELEGATION', 'UC-24 - Update Guest Delegation', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: Update Guest Delegation', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-25.PREPARE_VISIT_LOGISTICS', 'UC-25 - Prepare Visit Logistics', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: Prepare Visit Logistics', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-26.UPDATE_VISIT_LOGISTICS', 'UC-26 - Update Visit Logistics', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: Update Visit Logistics', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-27.CONFIRM_PARTICIPATION', 'UC-27 - Confirm Participation', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: Confirm Participation', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-28.APPROVE_RESOURCE_REQUEST', 'UC-28 - Approve Resource Request', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: Approve Resource Request', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-29.PROPOSE_RESOURCE_MODIFICATION', 'UC-29 - Propose Resource Modification', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: Propose Resource Modification', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-30.CONFIRM_THE_CHANGE_PROPOSAL', 'UC-30 - Confirm The Change Proposal', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: Confirm The Change Proposal', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-31.CREATE_MEETING_MINUTES', 'UC-31 - Create Meeting Minutes', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: Create Meeting Minutes', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-32.EDIT_MEETING_MINUTES', 'UC-32 - Edit Meeting Minutes', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: Edit Meeting Minutes', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-33.VIEW_MEETING_MINUTES_DETAILS', 'UC-33 - View Meeting Minutes Details', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: View Meeting Minutes Details', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-34.SUBMIT_DELEGATION_FEEDBACK', 'UC-34 - Submit Delegation Feedback', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: Submit Delegation Feedback', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-35.SCAN_BUSINESS_CARD', 'UC-35 - Scan Business Card', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: Scan Business Card', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-36.CREATE_PARTNER_PROFILE', 'UC-36 - Create Partner Profile', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: Create Partner Profile', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-37.UPLOAD_ATTACHED_DOCUMENTS', 'UC-37 - Upload Attached Documents', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: Upload Attached Documents', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-38.UPLOAD_VISIT_PHOTOS', 'UC-38 - Upload Visit Photos', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: Upload Visit Photos', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-39.TAG_FACES_ON_PHOTOS', 'UC-39 - Tag Faces on Photos', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: Tag Faces on Photos', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-40.CREATE_NEWS_ARTICLE', 'UC-40 - Create News Article', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: Create News Article', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-41.CLOSE_DELEGATION', 'UC-41 - Close Delegation', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: Close Delegation', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-42.VIEW_EMAIL_TEMPLATE_LIST', 'UC-42 - View Email Template List', 'Email Management', 'Seeded from Role & Permission Matrix: View Email Template List', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-43.VIEW_EMAIL_TEMPLATE_DETAIL', 'UC-43 - View Email Template Detail', 'Email Management', 'Seeded from Role & Permission Matrix: View Email Template Detail', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-44.UPDATE_EMAIL_TEMPLATE', 'UC-44 - Update Email Template', 'Email Management', 'Seeded from Role & Permission Matrix: Update Email Template', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-45.CREATE_EMAIL_TEMPLATE', 'UC-45 - Create Email Template', 'Email Management', 'Seeded from Role & Permission Matrix: Create Email Template', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-46.EDIT_EMAIL_CONTENT', 'UC-46 - Edit Email Content', 'Email Management', 'Seeded from Role & Permission Matrix: Edit Email Content', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-47.SEND_EMAIL', 'UC-47 - Send Email', 'Email Management', 'Seeded from Role & Permission Matrix: Send Email', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-48.VIEW_EMAIL', 'UC-48 - View Email', 'Email Management', 'Seeded from Role & Permission Matrix: View Email', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-49.REPLY_TO_EMAIL', 'UC-49 - Reply to Email', 'Email Management', 'Seeded from Role & Permission Matrix: Reply to Email', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-50.PROCESS_PARTNER_CREATION_REQUEST', 'UC-50 - Process Partner Creation Request', 'Partner Management', 'Seeded from Role & Permission Matrix: Process Partner Creation Request', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-51.EDIT_PARTNER_INFORMATION', 'UC-51 - Edit Partner Information', 'Partner Management', 'Seeded from Role & Permission Matrix: Edit Partner Information', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-52.VIEW_PARTNER_LISTS', 'UC-52 - View Partner Lists', 'Partner Management', 'Seeded from Role & Permission Matrix: View Partner Lists', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-53.SEARCH_PARTNERS', 'UC-53 - Search Partners', 'Partner Management', 'Seeded from Role & Permission Matrix: Search Partners', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-54.VIEW_PARTNER_DETAILS', 'UC-54 - View Partner Details', 'Partner Management', 'Seeded from Role & Permission Matrix: View Partner Details', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-55.VIEW_DOCUMENT_LIST', 'UC-55 - View Document List', 'Document Management', 'Seeded from Role & Permission Matrix: View Document List', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-56.SEARCH_DOCUMENTS', 'UC-56 - Search Documents', 'Document Management', 'Seeded from Role & Permission Matrix: Search Documents', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-57.VIEW_GALLERY_ITEM_LIST', 'UC-57 - View Gallery Item List', 'Gallery Management', 'Seeded from Role & Permission Matrix: View Gallery Item List', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-58.SEARCH_GALLERY_ITEMS', 'UC-58 - Search Gallery Items', 'Gallery Management', 'Seeded from Role & Permission Matrix: Search Gallery Items', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-59.ADD_GALLERY_ITEM', 'UC-59 - Add Gallery Item', 'Gallery Management', 'Seeded from Role & Permission Matrix: Add Gallery Item', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-60.UPDATE_GALLERY_ITEM', 'UC-60 - Update Gallery Item', 'Gallery Management', 'Seeded from Role & Permission Matrix: Update Gallery Item', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-61.DELETE_GALLERY_ITEM', 'UC-61 - Delete Gallery Item', 'Gallery Management', 'Seeded from Role & Permission Matrix: Delete Gallery Item', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-62.VIEW_MINUTES_LIST', 'UC-62 - View Minutes List', 'Minutes Management', 'Seeded from Role & Permission Matrix: View Minutes List', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-63.SEARCH_FILTER_MINUTES', 'UC-63 - Search/Filter Minutes', 'Minutes Management', 'Seeded from Role & Permission Matrix: Search/Filter Minutes', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-64.VIEW_LIST_FAQ', 'UC-64 - View List FAQ', 'FAQ Management', 'Seeded from Role & Permission Matrix: View List FAQ', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-65.CREATE_FAQ', 'UC-65 - Create FAQ', 'FAQ Management', 'Seeded from Role & Permission Matrix: Create FAQ', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-66.UPDATE_FAQ', 'UC-66 - Update FAQ', 'FAQ Management', 'Seeded from Role & Permission Matrix: Update FAQ', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-67.CHANGE_FAQ_VISIBILITY', 'UC-67 - Change FAQ Visibility', 'FAQ Management', 'Seeded from Role & Permission Matrix: Change FAQ Visibility', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-68.SEARCH_FAQ', 'UC-68 - Search FAQ', 'FAQ Management', 'Seeded from Role & Permission Matrix: Search FAQ', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-69.VIEW_DASHBOARD_STATISTICS', 'UC-69 - View Dashboard Statistics', 'Report Management', 'Seeded from Role & Permission Matrix: View Dashboard Statistics', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-70.EXPORT_STATISTICS_REPORT', 'UC-70 - Export Statistics Report', 'Report Management', 'Seeded from Role & Permission Matrix: Export Statistics Report', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-71.FILTER_DASHBOARD_BY_TIME', 'UC-71 - Filter Dashboard By Time', 'Report Management', 'Seeded from Role & Permission Matrix: Filter Dashboard By Time', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-72.VIEW_MY_EVENTS', 'UC-72 - View My Events', 'Calendar Management', 'Seeded from Role & Permission Matrix: View My Events', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-73.VIEW_DEPARTMENT_CALENDAR', 'UC-73 - View Department Calendar', 'Calendar Management', 'Seeded from Role & Permission Matrix: View Department Calendar', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-74.SWITCH_VIEW_MODE', 'UC-74 - Switch View Mode', 'Calendar Management', 'Seeded from Role & Permission Matrix: Switch View Mode', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-75.ADD_PERSONAL_EVENT', 'UC-75 - Add Personal Event', 'Calendar Management', 'Seeded from Role & Permission Matrix: Add Personal Event', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-76.DELETE_PERSONAL_EVENT', 'UC-76 - Delete Personal Event', 'Calendar Management', 'Seeded from Role & Permission Matrix: Delete Personal Event', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-77.UPDATE_PERSONAL_EVENT', 'UC-77 - Update Personal Event', 'Calendar Management', 'Seeded from Role & Permission Matrix: Update Personal Event', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-78.VIEW_EVENT_DETAILS', 'UC-78 - View Event Details', 'Calendar Management', 'Seeded from Role & Permission Matrix: View Event Details', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-79.SEARCH_FILTER_FEEDBACK', 'UC-79 - Search/Filter Feedback', 'Feedback Management', 'Seeded from Role & Permission Matrix: Search/Filter Feedback', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-80.VIEW_FEEDBACK_SUMMARY', 'UC-80 - View Feedback Summary', 'Feedback Management', 'Seeded from Role & Permission Matrix: View Feedback Summary', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-81.ADD_NEW_CAMPUS', 'UC-81 - Add New Campus', 'Campus Management', 'Seeded from Role & Permission Matrix: Add New Campus', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-82.VIEW_CAMPUS_LIST', 'UC-82 - View Campus List', 'Campus Management', 'Seeded from Role & Permission Matrix: View Campus List', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-83.SEARCH_AND_FILTER_CAMPUS', 'UC-83 - Search and Filter Campus', 'Campus Management', 'Seeded from Role & Permission Matrix: Search and Filter Campus', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-84.VIEW_CAMPUS_DETAILS', 'UC-84 - View Campus Details', 'Campus Management', 'Seeded from Role & Permission Matrix: View Campus Details', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-85.UPDATE_CAMPUS', 'UC-85 - Update Campus', 'Campus Management', 'Seeded from Role & Permission Matrix: Update Campus', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-86.MANAGE_CAMPUS_STATUS', 'UC-86 - Manage Campus Status', 'Campus Management', 'Seeded from Role & Permission Matrix: Manage Campus Status', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-87.ASSIGN_CAMPUS_LEAD', 'UC-87 - Assign Campus Lead', 'Campus Management', 'Seeded from Role & Permission Matrix: Assign Campus Lead', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-88.APPROVE_NEWS', 'UC-88 - Approve News', 'News Management', 'Seeded from Role & Permission Matrix: Approve News', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-89.PUBLISH_NEWS', 'UC-89 - Publish News', 'News Management', 'Seeded from Role & Permission Matrix: Publish News', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-90.VIEW_NEWS_LIST', 'UC-90 - View News List', 'News Management', 'Seeded from Role & Permission Matrix: View News List', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-91.VIEW_NEWS_DETAILS', 'UC-91 - View News Details', 'News Management', 'Seeded from Role & Permission Matrix: View News Details', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-92.ADD_MULTILINGUAL_NEWS', 'UC-92 - Add Multilingual News', 'News Management', 'Seeded from Role & Permission Matrix: Add Multilingual News', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-93.MANAGE_NEWS_VISIBILITY', 'UC-93 - Manage News Visibility', 'News Management', 'Seeded from Role & Permission Matrix: Manage News Visibility', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-94.EDIT_NEWS', 'UC-94 - Edit News', 'News Management', 'Seeded from Role & Permission Matrix: Edit News', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-95.VIEW_ACCOUNT_LIST', 'UC-95 - View Account List', 'Account Management', 'Seeded from Role & Permission Matrix: View Account List', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-96.CREATE_ACCOUNT', 'UC-96 - Create Account', 'Account Management', 'Seeded from Role & Permission Matrix: Create Account', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-97.MANAGE_ACCOUNT_STATUS', 'UC-97 - Manage Account Status', 'Account Management', 'Seeded from Role & Permission Matrix: Manage Account Status', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-98.VIEW_ACCOUNT_DETAILS', 'UC-98 - View Account Details', 'Account Management', 'Seeded from Role & Permission Matrix: View Account Details', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-99.SEARCH_AND_FILTER_ACCOUNTS', 'UC-99 - Search and Filter Accounts', 'Account Management', 'Seeded from Role & Permission Matrix: Search and Filter Accounts', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-100.UPDATE_ACCOUNT_ROLE', 'UC-100 - Update Account Role', 'Account Management', 'Seeded from Role & Permission Matrix: Update Account Role', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-101.ADD_NEW_DEPARTMENT', 'UC-101 - Add New Department', 'Department Management', 'Seeded from Role & Permission Matrix: Add New Department', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-102.UPDATE_DEPARTMENT', 'UC-102 - Update Department', 'Department Management', 'Seeded from Role & Permission Matrix: Update Department', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-103.SEARCH_AND_FILTER_DEPARTMENTS', 'UC-103 - Search and Filter Departments', 'Department Management', 'Seeded from Role & Permission Matrix: Search and Filter Departments', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-104.VIEW_DEPARTMENT_LIST', 'UC-104 - View Department List', 'Department Management', 'Seeded from Role & Permission Matrix: View Department List', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-105.VIEW_DEPARTMENT_DETAILS', 'UC-105 - View Department Details', 'Department Management', 'Seeded from Role & Permission Matrix: View Department Details', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-106.MANAGE_DEPARTMENT_STATUS', 'UC-106 - Manage Department Status', 'Department Management', 'Seeded from Role & Permission Matrix: Manage Department Status', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-107.ADD_DEPARTMENT_PERSONNEL', 'UC-107 - Add Department Personnel', 'Department Management', 'Seeded from Role & Permission Matrix: Add Department Personnel', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-108.VIEW_PERSONNEL_DETAILS', 'UC-108 - View Personnel Details', 'Department Management', 'Seeded from Role & Permission Matrix: View Personnel Details', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-109.SEARCH_PERSONNEL', 'UC-109 - Search Personnel', 'Department Management', 'Seeded from Role & Permission Matrix: Search Personnel', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-110.REVIEW_ASSIGNED_TASKS', 'UC-110 - Review Assigned Tasks', 'Department Management', 'Seeded from Role & Permission Matrix: Review Assigned Tasks', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-111.ASSIGN_TASKS', 'UC-111 - Assign Tasks', 'Department Management', 'Seeded from Role & Permission Matrix: Assign Tasks', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-112.SIGN_THE_SERVICE_DELIVERY_REPORT', 'UC-112 - Sign The Service Delivery Report', 'Department Management', 'Seeded from Role & Permission Matrix: Sign The Service Delivery Report', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-113.REMOVE_PERSONNEL', 'UC-113 - Remove Personnel', 'Department Management', 'Seeded from Role & Permission Matrix: Remove Personnel', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-114.VIEW_COORDINATION_TASKS', 'UC-114 - View Coordination Tasks', 'Department Management', 'Seeded from Role & Permission Matrix: View Coordination Tasks', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-115.SEARCH_COORDINATION_TASKS', 'UC-115 - Search Coordination Tasks', 'Department Management', 'Seeded from Role & Permission Matrix: Search Coordination Tasks', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-116.REASSIGN_DEPARTMENT_LEAD', 'UC-116 - Reassign Department Lead', 'Department Management', 'Seeded from Role & Permission Matrix: Reassign Department Lead', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-117.VIEW_ROLE_LIST', 'UC-117 - View Role List', 'Role & Permission Management', 'Seeded from Role & Permission Matrix: View Role List', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-118.CREATE_NEW_ROLE', 'UC-118 - Create New Role', 'Role & Permission Management', 'Seeded from Role & Permission Matrix: Create New Role', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-119.CONFIGURE_ROLE_PERMISSIONS', 'UC-119 - Configure Role Permissions', 'Role & Permission Management', 'Seeded from Role & Permission Matrix: Configure Role Permissions', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-120.UPDATE_ROLE_DETAILS', 'UC-120 - Update Role Details', 'Role & Permission Management', 'Seeded from Role & Permission Matrix: Update Role Details', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-121.DISABLE_DELETE_ROLE', 'UC-121 - Disable/Delete Role', 'Role & Permission Management', 'Seeded from Role & Permission Matrix: Disable/Delete Role', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-122.VIEW_API_CONFIGURATION', 'UC-122 - View API Configuration', 'API Management', 'Seeded from Role & Permission Matrix: View API Configuration', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-123.CREATE_API_CONFIGURATION', 'UC-123 - Create API Configuration', 'API Management', 'Seeded from Role & Permission Matrix: Create API Configuration', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-124.UPDATE_API_CONFIGURATION', 'UC-124 - Update API Configuration', 'API Management', 'Seeded from Role & Permission Matrix: Update API Configuration', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-125.DELETE_API_CONFIGURATION', 'UC-125 - Delete API Configuration', 'API Management', 'Seeded from Role & Permission Matrix: Delete API Configuration', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-126.TEST_API_CONNECTION', 'UC-126 - Test API Connection', 'API Management', 'Seeded from Role & Permission Matrix: Test API Connection', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-127.MANAGE_API_STATUS', 'UC-127 - Manage API Status', 'API Management', 'Seeded from Role & Permission Matrix: Manage API Status', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-128.CONFIGURE_REQUEST_LIMIT', 'UC-128 - Configure Request Limit', 'API Management', 'Seeded from Role & Permission Matrix: Configure Request Limit', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-129.VIEW_API_LOGS', 'UC-129 - View API Logs', 'API Management', 'Seeded from Role & Permission Matrix: View API Logs', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-130.SEARCH_API_LOGS', 'UC-130 - Search API Logs', 'API Management', 'Seeded from Role & Permission Matrix: Search API Logs', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-131.CREATE_AGENDA_TEMPLATE', 'UC-131 - Create Agenda Template', 'Agenda Templates Management', 'Seeded from Role & Permission Matrix: Create Agenda Template', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-132.UPDATE_AGENDA_TEMPLATE', 'UC-132 - Update Agenda Template', 'Agenda Templates Management', 'Seeded from Role & Permission Matrix: Update Agenda Template', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-133.DELETE_AGENDA_TEMPLATE', 'UC-133 - Delete Agenda Template', 'Agenda Templates Management', 'Seeded from Role & Permission Matrix: Delete Agenda Template', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-134.VIEW_AGENDA_TEMPLATE_LIST', 'UC-134 - View Agenda Template List', 'Agenda Templates Management', 'Seeded from Role & Permission Matrix: View Agenda Template List', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
+  (NULL, 'UC-135.VIEW_AGENDA_TEMPLATE_DETAIL', 'UC-135 - View Agenda Template Detail', 'Agenda Templates Management', 'Seeded from Role & Permission Matrix: View Agenda Template Detail', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY));
 
 -- =====================================================================
 -- RBAC Permission Matrix v0.2 seed
@@ -3086,27 +3060,27 @@ JOIN roles r ON r.role_id = rp.role_id
 GROUP BY r.role_code, rp.sub_role
 ORDER BY r.role_code, rp.sub_role;
 
-SET @ap_admin_local=UUID();
+SET @ap_admin_local = 100040;
 
-SET @ap_ho_google=UUID();
+SET @ap_ho_google = 100041;
 
-SET @ap_staff_feid=UUID();
+SET @ap_staff_feid = 100042;
 
-SET @ap_visitor_local=UUID();
+SET @ap_visitor_local = 100043;
 
-SET @ap_student_feid=UUID();
+SET @ap_student_feid = 100044;
 
-SET @ap_disabled_google=UUID();
+SET @ap_disabled_google = 100045;
 
-SET @sess_admin=UUID();
+SET @sess_admin = 100046;
 
-SET @sess_ho_revoked=UUID();
+SET @sess_ho_revoked = 100047;
 
-SET @sess_visitor=UUID();
+SET @sess_visitor = 100048;
 
-SET @sess_expired=UUID();
+SET @sess_expired = 100049;
 
-SET @sess_staff=UUID();
+SET @sess_staff = 100050;
 
 INSERT INTO user_auth_providers (auth_provider_id, user_id, provider_type, provider_subject, provider_email, is_enabled, linked_at, last_used_at)
 VALUES
@@ -3121,7 +3095,7 @@ VALUES
 -- DEV local-password auth providers for the seeded test accounts.
 INSERT IGNORE INTO user_auth_providers
   (auth_provider_id, user_id, provider_type, provider_subject, provider_email, is_enabled, linked_at)
-SELECT UUID(), u.user_id, 'LOCAL_PASSWORD', NULL, u.email, TRUE, NOW()
+SELECT NULL, u.user_id, 'LOCAL_PASSWORD', NULL, u.email, TRUE, NOW()
 FROM users u
 WHERE u.email IN (
     'admin@fpt.edu.vn',
@@ -3150,8 +3124,8 @@ VALUES
 
 INSERT INTO otp_tokens (otp_token_id, user_id, email, token_type, purpose, token_hash, expires_at, used_at, attempt_count, max_attempts, resend_count, ip_address, user_agent, created_at)
 VALUES
-  (UUID(), @v_pending_approval_seed, 'thaomy.pending.approval@partner.example', 'OTP_CODE', 'VISIT_REQUEST_VERIFY', '636df26e46eb19a12ab4f2aaab155d160c2e19384eb1e8163980b5f157499bc8', DATE_ADD(DATE_SUB(@seed_now, INTERVAL 17 DAY), INTERVAL 10 MINUTE), DATE_ADD(DATE_SUB(@seed_now, INTERVAL 17 DAY), INTERVAL 5 MINUTE), 1, 5, 0, '203.113.11.10', 'Mozilla/5.0', DATE_SUB(@seed_now, INTERVAL 17 DAY)),
-  (UUID(), @u_admin_minh, 'minh.nguyen@company.vn', 'OTP_CODE', 'CHANGE_SENSITIVE_ACTION', '12ea12eace7d655f471ce55e34f89b1b77a3d9d05a445ca82877dd2235beaa51', DATE_ADD(@seed_now, INTERVAL 5 MINUTE), NULL, 0, 3, 0, '10.10.1.15', 'Mozilla/5.0', DATE_SUB(@seed_now, INTERVAL 5 MINUTE));
+  (NULL, @v_pending_approval_seed, 'thaomy.pending.approval@partner.example', 'OTP_CODE', 'VISIT_REQUEST_VERIFY', '636df26e46eb19a12ab4f2aaab155d160c2e19384eb1e8163980b5f157499bc8', DATE_ADD(DATE_SUB(@seed_now, INTERVAL 17 DAY), INTERVAL 10 MINUTE), DATE_ADD(DATE_SUB(@seed_now, INTERVAL 17 DAY), INTERVAL 5 MINUTE), 1, 5, 0, '203.113.11.10', 'Mozilla/5.0', DATE_SUB(@seed_now, INTERVAL 17 DAY)),
+  (NULL, @u_admin_minh, 'minh.nguyen@company.vn', 'OTP_CODE', 'CHANGE_SENSITIVE_ACTION', '12ea12eace7d655f471ce55e34f89b1b77a3d9d05a445ca82877dd2235beaa51', DATE_ADD(@seed_now, INTERVAL 5 MINUTE), NULL, 0, 3, 0, '10.10.1.15', 'Mozilla/5.0', DATE_SUB(@seed_now, INTERVAL 5 MINUTE));
 
 INSERT INTO login_logs (user_id, email, login_portal, selected_campus_id, provider_type, status, failure_reason, ip_address, user_agent, session_id, created_at)
 VALUES
@@ -3171,27 +3145,27 @@ VALUES
   (@u_locked_staff, 'huy.locked@company.vn', 'LOGIN_LOCKED', 'HIGH', '10.10.1.18', 'Mozilla/5.0', JSON_OBJECT('failed_login_count',7), DATE_SUB(@seed_now, INTERVAL 20 MINUTE)),
   (NULL, 'unknown.person@company.vn', 'SUSPICIOUS_IP', 'CRITICAL', '198.51.100.10', 'curl/8.0', JSON_OBJECT('blocked',true), DATE_SUB(@seed_now, INTERVAL 10 MINUTE));
 
-SET @p_seoul=UUID();
+SET @p_seoul = 100051;
 
-SET @p_green=UUID();
+SET @p_green = 100052;
 
-SET @p_ministry=UUID();
+SET @p_ministry = 100053;
 
-SET @p_asean=UUID();
+SET @p_asean = 100054;
 
-SET @p_legacy=UUID();
+SET @p_legacy = 100055;
 
-SET @c_kim=UUID();
+SET @c_kim = 100056;
 
-SET @c_lee=UUID();
+SET @c_lee = 100057;
 
-SET @c_smith=UUID();
+SET @c_smith = 100058;
 
-SET @c_tanaka=UUID();
+SET @c_tanaka = 100059;
 
-SET @c_ied=UUID();
+SET @c_ied = 100060;
 
-SET @c_inactive=UUID();
+SET @c_inactive = 100061;
 
 INSERT INTO partners (partner_id, partner_code, name, short_name, country, city, website_url, partner_type, cooperation_status, description, created_at, created_by, updated_at, updated_by)
 VALUES
@@ -3210,33 +3184,33 @@ VALUES
   (@c_ied, @p_ministry, 'Nguyễn Văn Nam', 'nguyen.van.nam@partner.example', '0909000009', 'Chuyên viên hợp tác quốc tế', 'Phòng Kế hoạch', 'Tên kiểm thử search dấu/không dấu.', TRUE, 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 50 DAY), @u_ho_ha, @seed_now, @u_ho_ha),
   (@c_inactive, @p_asean, 'Somchai Anan', 'anan.somchai@fsf-asean.example', '+6625550000', 'Former Program Officer', 'Digital Skills', 'Liên hệ cũ.', FALSE, 'INACTIVE', DATE_SUB(@seed_now, INTERVAL 580 DAY), @u_ho_linh, DATE_SUB(@seed_now, INTERVAL 60 DAY), @u_ho_linh);
 
-SET @file_news_ai=UUID();
+SET @file_news_ai = 100062;
 
-SET @file_news_green=UUID();
+SET @file_news_green = 100063;
 
-SET @file_news_policy=UUID();
+SET @file_news_policy = 100064;
 
-SET @file_gallery_hn=UUID();
+SET @file_gallery_hn = 100065;
 
-SET @file_gallery_hcm=UUID();
+SET @file_gallery_hcm = 100066;
 
-SET @file_gallery_hidden=UUID();
+SET @file_gallery_hidden = 100067;
 
-SET @file_doc_general=UUID();
+SET @file_doc_general = 100068;
 
-SET @file_doc_partner=UUID();
+SET @file_doc_partner = 100069;
 
-SET @file_doc_visit=UUID();
+SET @file_doc_visit = 100070;
 
-SET @file_doc_minutes=UUID();
+SET @file_doc_minutes = 100071;
 
-SET @file_doc_logistics=UUID();
+SET @file_doc_logistics = 100072;
 
-SET @file_doc_report=UUID();
+SET @file_doc_report = 100073;
 
-SET @file_edge_small=UUID();
+SET @file_edge_small = 100074;
 
-SET @file_edge_large=UUID();
+SET @file_edge_large = 100075;
 
 INSERT INTO files (file_id, storage_provider, bucket_name, object_key, original_filename, mime_type, file_size, checksum_sha256, visibility, uploaded_by, uploaded_at)
 VALUES
@@ -3257,28 +3231,28 @@ VALUES
 
 INSERT INTO faqs (faq_id, category, question, answer, display_order, status, created_at, created_by, updated_at, updated_by)
 VALUES
-  (UUID(), 'Visit Request', 'Làm thế nào để gửi yêu cầu thăm quan campus?', 'Khách chọn mục Gửi yêu cầu thăm quan, điền thông tin và xác thực email bằng OTP.', 1, 'PUBLISHED', DATE_SUB(@seed_now, INTERVAL 90 DAY), @u_staff_hn, @seed_now, @u_staff_hn),
-  (UUID(), 'Visit Request', 'How can I update a submitted delegation request?', 'Only requests in editable workflow status can be updated.', 2, 'PUBLISHED', DATE_SUB(@seed_now, INTERVAL 88 DAY), @u_staff_hcm, @seed_now, @u_staff_hcm),
-  (UUID(), 'Security', 'Khách có cần mang giấy tờ tùy thân không?', 'Có. Thành viên đoàn cần mang hộ chiếu hoặc căn cước.', 3, 'HIDDEN', DATE_SUB(@seed_now, INTERVAL 85 DAY), @u_stafflead_hn, @seed_now, @u_stafflead_hn),
-  (UUID(), 'Logistics', 'Xe đoàn khách có được vào trong campus không?', 'Tùy từng campus và lịch bảo vệ.', 4, 'HIDDEN', DATE_SUB(@seed_now, INTERVAL 2 DAY), @u_staff_ct, NULL, NULL),
-  (UUID(), 'Visit Request', 'Câu hỏi cũ về biểu mẫu giấy có còn áp dụng không?', 'Không. Quy trình đã chuyển sang biểu mẫu trực tuyến.', 99, 'HIDDEN', DATE_SUB(@seed_now, INTERVAL 400 DAY), @u_ho_ha, DATE_SUB(@seed_now, INTERVAL 200 DAY), @u_ho_ha);
+  (NULL, 'Visit Request', 'Làm thế nào để gửi yêu cầu thăm quan campus?', 'Khách chọn mục Gửi yêu cầu thăm quan, điền thông tin và xác thực email bằng OTP.', 1, 'PUBLISHED', DATE_SUB(@seed_now, INTERVAL 90 DAY), @u_staff_hn, @seed_now, @u_staff_hn),
+  (NULL, 'Visit Request', 'How can I update a submitted delegation request?', 'Only requests in editable workflow status can be updated.', 2, 'PUBLISHED', DATE_SUB(@seed_now, INTERVAL 88 DAY), @u_staff_hcm, @seed_now, @u_staff_hcm),
+  (NULL, 'Security', 'Khách có cần mang giấy tờ tùy thân không?', 'Có. Thành viên đoàn cần mang hộ chiếu hoặc căn cước.', 3, 'HIDDEN', DATE_SUB(@seed_now, INTERVAL 85 DAY), @u_stafflead_hn, @seed_now, @u_stafflead_hn),
+  (NULL, 'Logistics', 'Xe đoàn khách có được vào trong campus không?', 'Tùy từng campus và lịch bảo vệ.', 4, 'HIDDEN', DATE_SUB(@seed_now, INTERVAL 2 DAY), @u_staff_ct, NULL, NULL),
+  (NULL, 'Visit Request', 'Câu hỏi cũ về biểu mẫu giấy có còn áp dụng không?', 'Không. Quy trình đã chuyển sang biểu mẫu trực tuyến.', 99, 'HIDDEN', DATE_SUB(@seed_now, INTERVAL 400 DAY), @u_ho_ha, DATE_SUB(@seed_now, INTERVAL 200 DAY), @u_ho_ha);
 
-SET @news_pending=UUID();
-SET @news_rejected=UUID();
-SET @news_published=UUID();
-SET @news_hidden=UUID();
+SET @news_pending = 100076;
+SET @news_rejected = 100077;
+SET @news_published = 100078;
+SET @news_hidden = 100079;
 
-SET @ntr_pending_vi=UUID();
-SET @ntr_rejected_vi=UUID();
-SET @ntr_published_vi=UUID();
-SET @ntr_published_en=UUID();
-SET @ntr_hidden_vi=UUID();
+SET @ntr_pending_vi = 100080;
+SET @ntr_rejected_vi = 100081;
+SET @ntr_published_vi = 100082;
+SET @ntr_published_en = 100083;
+SET @ntr_hidden_vi = 100084;
 
-SET @sec_pending_1=UUID();
-SET @sec_rejected_1=UUID();
-SET @sec_published_1=UUID();
-SET @sec_published_2=UUID();
-SET @sec_hidden_1=UUID();
+SET @sec_pending_1 = 100085;
+SET @sec_rejected_1 = 100086;
+SET @sec_published_1 = 100087;
+SET @sec_published_2 = 100088;
+SET @sec_hidden_1 = 100089;
 
 INSERT INTO news (news_id, campus_id, visit_instance_id, author_user_id, cover_file_id, status, submitted_at, reviewed_by, reviewed_at, review_note, published_at, is_featured, row_version, created_at, created_by, updated_at, updated_by)
 VALUES
@@ -3305,18 +3279,18 @@ VALUES
 
 INSERT INTO news_section_files (section_file_id, section_id, file_id, usage_type, display_order, created_at)
 VALUES
-  (UUID(), @sec_published_1, @file_news_ai, 'INLINE_IMAGE', 1, DATE_SUB(@seed_now, INTERVAL 30 DAY)),
-  (UUID(), @sec_pending_1, @file_news_green, 'INLINE_IMAGE', 1, DATE_SUB(@seed_now, INTERVAL 2 DAY));
+  (NULL, @sec_published_1, @file_news_ai, 'INLINE_IMAGE', 1, DATE_SUB(@seed_now, INTERVAL 30 DAY)),
+  (NULL, @sec_pending_1, @file_news_green, 'INLINE_IMAGE', 1, DATE_SUB(@seed_now, INTERVAL 2 DAY));
 
-SET @tpl_verify=UUID();
+SET @tpl_verify = 100090;
 
-SET @tpl_approved=UUID();
+SET @tpl_approved = 100091;
 
-SET @tpl_rejected=UUID();
+SET @tpl_rejected = 100092;
 
-SET @tpl_task=UUID();
+SET @tpl_task = 100093;
 
-SET @tpl_inactive=UUID();
+SET @tpl_inactive = 100094;
 
 INSERT INTO email_templates (email_template_id, template_code, name, purpose, status, translations_json, variables_json, created_at, created_by, updated_at, updated_by)
 VALUES
@@ -3326,145 +3300,145 @@ VALUES
   (@tpl_task, 'LOGISTICS_TASK_ASSIGNED', 'Thông báo phân công hậu cần', 'LOGISTICS', 'ACTIVE', JSON_OBJECT('vi',JSON_OBJECT('subject','Bạn được phân công hậu cần','body','Task {{ItemTitle}}')), JSON_ARRAY('ItemTitle'), DATE_SUB(@seed_now, INTERVAL 180 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
   (@tpl_inactive, 'OLD_WEEKLY_DIGEST', 'Mẫu tổng hợp tuần cũ', 'DIGEST', 'INACTIVE', JSON_OBJECT('vi',JSON_OBJECT('subject','Tổng hợp tuần cũ','body','Inactive')), JSON_ARRAY('WeekRange'), DATE_SUB(@seed_now, INTERVAL 500 DAY), @u_admin_minh, DATE_SUB(@seed_now, INTERVAL 300 DAY), @u_admin_minh);
 
-SET @vr_pending_approval_seed=UUID();
+SET @vr_pending_approval_seed = 100095;
 
-SET @vi_pending_approval_hcm=UUID();
+SET @vi_pending_approval_hcm = 100096;
 
-SET @vr_pending_approval_multi=UUID();
+SET @vr_pending_approval_multi = 100097;
 
-SET @vi_pa_hn=UUID();
+SET @vi_pa_hn = 100098;
 
-SET @vi_pa_ct=UUID();
+SET @vi_pa_ct = 100099;
 
-SET @vr_approved_single_before=UUID();
+SET @vr_approved_single_before = 100100;
 
-SET @vi_as_hn=UUID();
+SET @vi_as_hn = 100101;
 
-SET @vr_approved_multi_during=UUID();
+SET @vr_approved_multi_during = 100102;
 
-SET @vi_am_hn=UUID();
+SET @vi_am_hn = 100103;
 
-SET @vi_am_hcm=UUID();
+SET @vi_am_hcm = 100104;
 
-SET @vr_rejected_single=UUID();
+SET @vr_rejected_single = 100105;
 
-SET @vi_rs_hcm=UUID();
+SET @vi_rs_hcm = 100106;
 
-SET @vr_rejected_multi=UUID();
+SET @vr_rejected_multi = 100107;
 
-SET @vi_rm_dn=UUID();
+SET @vi_rm_dn = 100108;
 
-SET @vi_rm_ct=UUID();
+SET @vi_rm_ct = 100109;
 
-SET @vr_cancelled=UUID();
+SET @vr_cancelled = 100110;
 
-SET @vi_cn_hn=UUID();
+SET @vi_cn_hn = 100111;
 
-SET @vr_after_visit=UUID();
+SET @vr_after_visit = 100112;
 
-SET @vi_av_ct=UUID();
+SET @vi_av_ct = 100113;
 
-SET @vr_closed=UUID();
+SET @vr_closed = 100114;
 
-SET @vi_cl_hn=UUID();
+SET @vi_cl_hn = 100115;
 
-SET @vr_cancelled_instance=UUID();
+SET @vr_cancelled_instance = 100116;
 
-SET @vi_ci_hcm=UUID();
+SET @vi_ci_hcm = 100117;
 
-SET @vi_ci_hn=UUID();
+SET @vi_ci_hn = 100118;
 
-SET @vr_assigned_only=UUID();
+SET @vr_assigned_only = 100119;
 
-SET @vi_ao_dn=UUID();
+SET @vi_ao_dn = 100120;
 
-SET @vr_hist_01=UUID(); SET @vi_hist_01=UUID();
+SET @vr_hist_01 = 100121; SET @vi_hist_01 = 100122;
 
-SET @vr_hist_02=UUID(); SET @vi_hist_02=UUID();
+SET @vr_hist_02 = 100123; SET @vi_hist_02 = 100124;
 
-SET @vr_hist_03=UUID(); SET @vi_hist_03=UUID();
+SET @vr_hist_03 = 100125; SET @vi_hist_03 = 100126;
 
-SET @vr_hist_04=UUID(); SET @vi_hist_04=UUID();
+SET @vr_hist_04 = 100127; SET @vi_hist_04 = 100128;
 
-SET @vr_hist_05=UUID(); SET @vi_hist_05=UUID();
+SET @vr_hist_05 = 100129; SET @vi_hist_05 = 100130;
 
-SET @vr_hist_06=UUID(); SET @vi_hist_06=UUID();
+SET @vr_hist_06 = 100131; SET @vi_hist_06 = 100132;
 
-SET @vr_hist_07=UUID(); SET @vi_hist_07=UUID();
+SET @vr_hist_07 = 100133; SET @vi_hist_07 = 100134;
 
-SET @vr_hist_08=UUID(); SET @vi_hist_08=UUID();
+SET @vr_hist_08 = 100135; SET @vi_hist_08 = 100136;
 
-SET @vr_hist_09=UUID(); SET @vi_hist_09=UUID();
+SET @vr_hist_09 = 100137; SET @vi_hist_09 = 100138;
 
-SET @vr_hist_10=UUID(); SET @vi_hist_10=UUID();
+SET @vr_hist_10 = 100139; SET @vi_hist_10 = 100140;
 
-SET @vr_hist_11=UUID(); SET @vi_hist_11=UUID();
+SET @vr_hist_11 = 100141; SET @vi_hist_11 = 100142;
 
-SET @vr_hist_12=UUID(); SET @vi_hist_12=UUID();
+SET @vr_hist_12 = 100143; SET @vi_hist_12 = 100144;
 
-SET @vr_hist_13=UUID(); SET @vi_hist_13=UUID();
+SET @vr_hist_13 = 100145; SET @vi_hist_13 = 100146;
 
-SET @vr_hist_14=UUID(); SET @vi_hist_14=UUID();
+SET @vr_hist_14 = 100147; SET @vi_hist_14 = 100148;
 
-SET @vr_hist_15=UUID(); SET @vi_hist_15=UUID();
+SET @vr_hist_15 = 100149; SET @vi_hist_15 = 100150;
 
-SET @vr_hist_16=UUID(); SET @vi_hist_16=UUID();
+SET @vr_hist_16 = 100151; SET @vi_hist_16 = 100152;
 
-SET @vr_hist_17=UUID(); SET @vi_hist_17=UUID();
+SET @vr_hist_17 = 100153; SET @vi_hist_17 = 100154;
 
-SET @vr_hist_18=UUID(); SET @vi_hist_18=UUID();
+SET @vr_hist_18 = 100155; SET @vi_hist_18 = 100156;
 
-SET @vr_hist_19=UUID(); SET @vi_hist_19=UUID();
+SET @vr_hist_19 = 100157; SET @vi_hist_19 = 100158;
 
-SET @vr_hist_20=UUID(); SET @vi_hist_20=UUID();
+SET @vr_hist_20 = 100159; SET @vi_hist_20 = 100160;
 
-SET @vr_hist_21=UUID(); SET @vi_hist_21=UUID();
+SET @vr_hist_21 = 100161; SET @vi_hist_21 = 100162;
 
-SET @vr_hist_22=UUID(); SET @vi_hist_22=UUID();
+SET @vr_hist_22 = 100163; SET @vi_hist_22 = 100164;
 
-SET @vr_hist_23=UUID(); SET @vi_hist_23=UUID();
+SET @vr_hist_23 = 100165; SET @vi_hist_23 = 100166;
 
-SET @vr_hist_24=UUID(); SET @vi_hist_24=UUID();
+SET @vr_hist_24 = 100167; SET @vi_hist_24 = 100168;
 
-SET @vr_hist_25=UUID(); SET @vi_hist_25=UUID();
+SET @vr_hist_25 = 100169; SET @vi_hist_25 = 100170;
 
-SET @vr_hist_26=UUID(); SET @vi_hist_26=UUID();
+SET @vr_hist_26 = 100171; SET @vi_hist_26 = 100172;
 
-SET @vr_hist_27=UUID(); SET @vi_hist_27=UUID();
+SET @vr_hist_27 = 100173; SET @vi_hist_27 = 100174;
 
-SET @vr_hist_28=UUID(); SET @vi_hist_28=UUID();
+SET @vr_hist_28 = 100175; SET @vi_hist_28 = 100176;
 
-SET @vr_hist_29=UUID(); SET @vi_hist_29=UUID();
+SET @vr_hist_29 = 100177; SET @vi_hist_29 = 100178;
 
-SET @vr_hist_30=UUID(); SET @vi_hist_30=UUID();
+SET @vr_hist_30 = 100179; SET @vi_hist_30 = 100180;
 
-SET @vr_hist_31=UUID(); SET @vi_hist_31=UUID();
+SET @vr_hist_31 = 100181; SET @vi_hist_31 = 100182;
 
-SET @vr_hist_32=UUID(); SET @vi_hist_32=UUID();
+SET @vr_hist_32 = 100183; SET @vi_hist_32 = 100184;
 
-SET @vr_hist_33=UUID(); SET @vi_hist_33=UUID();
+SET @vr_hist_33 = 100185; SET @vi_hist_33 = 100186;
 
-SET @vr_hist_34=UUID(); SET @vi_hist_34=UUID();
+SET @vr_hist_34 = 100187; SET @vi_hist_34 = 100188;
 
-SET @vr_hist_35=UUID(); SET @vi_hist_35=UUID();
+SET @vr_hist_35 = 100189; SET @vi_hist_35 = 100190;
 
-SET @vr_hist_36=UUID(); SET @vi_hist_36=UUID();
+SET @vr_hist_36 = 100191; SET @vi_hist_36 = 100192;
 
-SET @vr_hist_37=UUID(); SET @vi_hist_37=UUID();
+SET @vr_hist_37 = 100193; SET @vi_hist_37 = 100194;
 
-SET @vr_hist_38=UUID(); SET @vi_hist_38=UUID();
+SET @vr_hist_38 = 100195; SET @vi_hist_38 = 100196;
 
-SET @vr_hist_39=UUID(); SET @vi_hist_39=UUID();
+SET @vr_hist_39 = 100197; SET @vi_hist_39 = 100198;
 
-SET @vr_hist_40=UUID(); SET @vi_hist_40=UUID();
+SET @vr_hist_40 = 100199; SET @vi_hist_40 = 100200;
 
-SET @vr_hist_41=UUID(); SET @vi_hist_41=UUID();
+SET @vr_hist_41 = 100201; SET @vi_hist_41 = 100202;
 
-SET @vr_hist_42=UUID(); SET @vi_hist_42=UUID();
+SET @vr_hist_42 = 100203; SET @vi_hist_42 = 100204;
 
-SET @vr_hist_43=UUID(); SET @vi_hist_43=UUID();
+SET @vr_hist_43 = 100205; SET @vi_hist_43 = 100206;
 
-SET @vr_hist_44=UUID(); SET @vi_hist_44=UUID();
+SET @vr_hist_44 = 100207; SET @vi_hist_44 = 100208;
 
 INSERT INTO visit_requests (visit_request_id, request_code, visitor_user_id, partner_id, registrant_full_name, registrant_organization, registrant_job_title, registrant_phone, registrant_email, delegation_name, visit_scope, purpose, working_content, expected_guest_count, support_team_json, contact_person_json, working_language, interpreter_note, transportation_note, note_to_fptu, status, submitted_at, email_verified_at, decided_by, decided_at, decision_actor_role, decision_note, row_version, created_at, created_by, updated_at, updated_by)
 VALUES
@@ -3588,155 +3562,155 @@ VALUES
 
 INSERT INTO visit_guest_members (guest_member_id, visit_request_id, full_name, organization, job_title, nationality, email, phone, is_representative, note, created_at, created_by, updated_at, updated_by)
 VALUES
-  (UUID(), @vr_pending_approval_seed, 'Nguyễn Thảo My', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'thaomy.pending.approval@partner.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 17 DAY), @v_pending_approval_seed, @seed_now, @v_pending_approval_seed),
-  (UUID(), @vr_pending_approval_seed, 'Trợ lý điều phối Nguyễn', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 17 DAY), @v_pending_approval_seed, @seed_now, @v_pending_approval_seed),
-  (UUID(), @vr_pending_approval_multi, 'Nguyễn Văn Nam', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'nam.pending.approval@partner.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 24 DAY), @v_pending_approval, @seed_now, @v_pending_approval),
-  (UUID(), @vr_pending_approval_multi, 'Trợ lý điều phối Nguyễn', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 24 DAY), @v_pending_approval, @seed_now, @v_pending_approval),
-  (UUID(), @vr_approved_single_before, 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'kim.minseo@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 29 DAY), @v_kim, @seed_now, @v_kim),
-  (UUID(), @vr_approved_single_before, 'Trợ lý điều phối Kim', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 29 DAY), @v_kim, @seed_now, @v_kim),
-  (UUID(), @vr_approved_multi_during, 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'lee.joonho@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 15 DAY), @v_lee, @seed_now, @v_lee),
-  (UUID(), @vr_approved_multi_during, 'Trợ lý điều phối Lee', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 15 DAY), @v_lee, @seed_now, @v_lee),
-  (UUID(), @vr_rejected_single, 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'emily.smith@greentech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 20 DAY), @v_smith, @seed_now, @v_smith),
-  (UUID(), @vr_rejected_single, 'Trợ lý điều phối Emily', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 20 DAY), @v_smith, @seed_now, @v_smith),
-  (UUID(), @vr_rejected_multi, 'Tanaka Aoi', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'aoi.tanaka@kyoto-global.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 35 DAY), @v_tanaka, @seed_now, @v_tanaka),
-  (UUID(), @vr_rejected_multi, 'Trợ lý điều phối Tanaka', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 35 DAY), @v_tanaka, @seed_now, @v_tanaka),
-  (UUID(), @vr_cancelled, 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'nguyen.van.nam@partner.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 45 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
-  (UUID(), @vr_cancelled, 'Trợ lý điều phối Nguyen', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 45 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
-  (UUID(), @vr_after_visit, 'An', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'an.short@partner.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 22 DAY), @v_short_name, @seed_now, @v_short_name),
-  (UUID(), @vr_after_visit, 'Trợ lý điều phối An', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 22 DAY), @v_short_name, @seed_now, @v_short_name),
-  (UUID(), @vr_closed, 'Nguyễn Thị Minh Anh Phương Khánh Linh Hoàng Bảo Trân Quốc Việt', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'long.name.visitor@partner.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 50 DAY), @v_long_name, @seed_now, @v_long_name),
-  (UUID(), @vr_closed, 'Trợ lý điều phối Nguyễn', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 50 DAY), @v_long_name, @seed_now, @v_long_name),
-  (UUID(), @vr_cancelled_instance, 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'emily.smith@greentech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 40 DAY), @v_smith, @seed_now, @v_smith),
-  (UUID(), @vr_cancelled_instance, 'Trợ lý điều phối Emily', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 40 DAY), @v_smith, @seed_now, @v_smith),
-  (UUID(), @vr_assigned_only, 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'lee.joonho@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 26 DAY), @v_lee, @seed_now, @v_lee),
-  (UUID(), @vr_assigned_only, 'Trợ lý điều phối Lee', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 26 DAY), @v_lee, @seed_now, @v_lee),
-  (UUID(), @vr_hist_01, 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'kim.minseo@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 28 DAY), @v_kim, @seed_now, @v_kim),
-  (UUID(), @vr_hist_01, 'Trợ lý điều phối Kim', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 28 DAY), @v_kim, @seed_now, @v_kim),
-  (UUID(), @vr_hist_02, 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'emily.smith@greentech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 36 DAY), @v_smith, @seed_now, @v_smith),
-  (UUID(), @vr_hist_02, 'Trợ lý điều phối Emily', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 36 DAY), @v_smith, @seed_now, @v_smith),
-  (UUID(), @vr_hist_03, 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'nguyen.van.nam@partner.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 44 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
-  (UUID(), @vr_hist_03, 'Trợ lý điều phối Nguyen', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 44 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
-  (UUID(), @vr_hist_04, 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'lee.joonho@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 52 DAY), @v_lee, @seed_now, @v_lee),
-  (UUID(), @vr_hist_04, 'Trợ lý điều phối Lee', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 52 DAY), @v_lee, @seed_now, @v_lee),
-  (UUID(), @vr_hist_05, 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'kim.minseo@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 60 DAY), @v_kim, @seed_now, @v_kim),
-  (UUID(), @vr_hist_05, 'Trợ lý điều phối Kim', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 60 DAY), @v_kim, @seed_now, @v_kim),
-  (UUID(), @vr_hist_06, 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'emily.smith@greentech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 68 DAY), @v_smith, @seed_now, @v_smith),
-  (UUID(), @vr_hist_06, 'Trợ lý điều phối Emily', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 68 DAY), @v_smith, @seed_now, @v_smith),
-  (UUID(), @vr_hist_07, 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'nguyen.van.nam@partner.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 76 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
-  (UUID(), @vr_hist_07, 'Trợ lý điều phối Nguyen', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 76 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
-  (UUID(), @vr_hist_08, 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'lee.joonho@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 84 DAY), @v_lee, @seed_now, @v_lee),
-  (UUID(), @vr_hist_08, 'Trợ lý điều phối Lee', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 84 DAY), @v_lee, @seed_now, @v_lee),
-  (UUID(), @vr_hist_09, 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'kim.minseo@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 92 DAY), @v_kim, @seed_now, @v_kim),
-  (UUID(), @vr_hist_09, 'Trợ lý điều phối Kim', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 92 DAY), @v_kim, @seed_now, @v_kim),
-  (UUID(), @vr_hist_10, 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'emily.smith@greentech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 100 DAY), @v_smith, @seed_now, @v_smith),
-  (UUID(), @vr_hist_10, 'Trợ lý điều phối Emily', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 100 DAY), @v_smith, @seed_now, @v_smith),
-  (UUID(), @vr_hist_11, 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'nguyen.van.nam@partner.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 108 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
-  (UUID(), @vr_hist_11, 'Trợ lý điều phối Nguyen', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 108 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
-  (UUID(), @vr_hist_12, 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'lee.joonho@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 116 DAY), @v_lee, @seed_now, @v_lee),
-  (UUID(), @vr_hist_12, 'Trợ lý điều phối Lee', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 116 DAY), @v_lee, @seed_now, @v_lee),
-  (UUID(), @vr_hist_13, 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'kim.minseo@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 124 DAY), @v_kim, @seed_now, @v_kim),
-  (UUID(), @vr_hist_13, 'Trợ lý điều phối Kim', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 124 DAY), @v_kim, @seed_now, @v_kim),
-  (UUID(), @vr_hist_14, 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'emily.smith@greentech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 132 DAY), @v_smith, @seed_now, @v_smith),
-  (UUID(), @vr_hist_14, 'Trợ lý điều phối Emily', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 132 DAY), @v_smith, @seed_now, @v_smith),
-  (UUID(), @vr_hist_15, 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'nguyen.van.nam@partner.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 140 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
-  (UUID(), @vr_hist_15, 'Trợ lý điều phối Nguyen', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 140 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
-  (UUID(), @vr_hist_16, 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'lee.joonho@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 148 DAY), @v_lee, @seed_now, @v_lee),
-  (UUID(), @vr_hist_16, 'Trợ lý điều phối Lee', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 148 DAY), @v_lee, @seed_now, @v_lee),
-  (UUID(), @vr_hist_17, 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'kim.minseo@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 156 DAY), @v_kim, @seed_now, @v_kim),
-  (UUID(), @vr_hist_17, 'Trợ lý điều phối Kim', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 156 DAY), @v_kim, @seed_now, @v_kim),
-  (UUID(), @vr_hist_18, 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'emily.smith@greentech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 164 DAY), @v_smith, @seed_now, @v_smith),
-  (UUID(), @vr_hist_18, 'Trợ lý điều phối Emily', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 164 DAY), @v_smith, @seed_now, @v_smith),
-  (UUID(), @vr_hist_19, 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'nguyen.van.nam@partner.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 172 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
-  (UUID(), @vr_hist_19, 'Trợ lý điều phối Nguyen', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 172 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
-  (UUID(), @vr_hist_20, 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'lee.joonho@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 180 DAY), @v_lee, @seed_now, @v_lee),
-  (UUID(), @vr_hist_20, 'Trợ lý điều phối Lee', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 180 DAY), @v_lee, @seed_now, @v_lee),
-  (UUID(), @vr_hist_21, 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'kim.minseo@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 188 DAY), @v_kim, @seed_now, @v_kim),
-  (UUID(), @vr_hist_21, 'Trợ lý điều phối Kim', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 188 DAY), @v_kim, @seed_now, @v_kim),
-  (UUID(), @vr_hist_22, 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'emily.smith@greentech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 196 DAY), @v_smith, @seed_now, @v_smith),
-  (UUID(), @vr_hist_22, 'Trợ lý điều phối Emily', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 196 DAY), @v_smith, @seed_now, @v_smith),
-  (UUID(), @vr_hist_23, 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'nguyen.van.nam@partner.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 204 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
-  (UUID(), @vr_hist_23, 'Trợ lý điều phối Nguyen', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 204 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
-  (UUID(), @vr_hist_24, 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'lee.joonho@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 212 DAY), @v_lee, @seed_now, @v_lee),
-  (UUID(), @vr_hist_24, 'Trợ lý điều phối Lee', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 212 DAY), @v_lee, @seed_now, @v_lee),
-  (UUID(), @vr_hist_25, 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'kim.minseo@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 220 DAY), @v_kim, @seed_now, @v_kim),
-  (UUID(), @vr_hist_25, 'Trợ lý điều phối Kim', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 220 DAY), @v_kim, @seed_now, @v_kim),
-  (UUID(), @vr_hist_26, 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'emily.smith@greentech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 228 DAY), @v_smith, @seed_now, @v_smith),
-  (UUID(), @vr_hist_26, 'Trợ lý điều phối Emily', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 228 DAY), @v_smith, @seed_now, @v_smith),
-  (UUID(), @vr_hist_27, 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'nguyen.van.nam@partner.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 236 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
-  (UUID(), @vr_hist_27, 'Trợ lý điều phối Nguyen', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 236 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
-  (UUID(), @vr_hist_28, 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'lee.joonho@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 244 DAY), @v_lee, @seed_now, @v_lee),
-  (UUID(), @vr_hist_28, 'Trợ lý điều phối Lee', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 244 DAY), @v_lee, @seed_now, @v_lee),
-  (UUID(), @vr_hist_29, 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'kim.minseo@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 252 DAY), @v_kim, @seed_now, @v_kim),
-  (UUID(), @vr_hist_29, 'Trợ lý điều phối Kim', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 252 DAY), @v_kim, @seed_now, @v_kim),
-  (UUID(), @vr_hist_30, 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'emily.smith@greentech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 260 DAY), @v_smith, @seed_now, @v_smith),
-  (UUID(), @vr_hist_30, 'Trợ lý điều phối Emily', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 260 DAY), @v_smith, @seed_now, @v_smith),
-  (UUID(), @vr_hist_31, 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'nguyen.van.nam@partner.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 268 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
-  (UUID(), @vr_hist_31, 'Trợ lý điều phối Nguyen', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 268 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
-  (UUID(), @vr_hist_32, 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'lee.joonho@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 276 DAY), @v_lee, @seed_now, @v_lee),
-  (UUID(), @vr_hist_32, 'Trợ lý điều phối Lee', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 276 DAY), @v_lee, @seed_now, @v_lee),
-  (UUID(), @vr_hist_33, 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'kim.minseo@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 284 DAY), @v_kim, @seed_now, @v_kim),
-  (UUID(), @vr_hist_33, 'Trợ lý điều phối Kim', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 284 DAY), @v_kim, @seed_now, @v_kim),
-  (UUID(), @vr_hist_34, 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'emily.smith@greentech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 292 DAY), @v_smith, @seed_now, @v_smith),
-  (UUID(), @vr_hist_34, 'Trợ lý điều phối Emily', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 292 DAY), @v_smith, @seed_now, @v_smith),
-  (UUID(), @vr_hist_35, 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'nguyen.van.nam@partner.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 300 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
-  (UUID(), @vr_hist_35, 'Trợ lý điều phối Nguyen', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 300 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
-  (UUID(), @vr_hist_36, 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'lee.joonho@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 308 DAY), @v_lee, @seed_now, @v_lee),
-  (UUID(), @vr_hist_36, 'Trợ lý điều phối Lee', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 308 DAY), @v_lee, @seed_now, @v_lee),
-  (UUID(), @vr_hist_37, 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'kim.minseo@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 316 DAY), @v_kim, @seed_now, @v_kim),
-  (UUID(), @vr_hist_37, 'Trợ lý điều phối Kim', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 316 DAY), @v_kim, @seed_now, @v_kim),
-  (UUID(), @vr_hist_38, 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'emily.smith@greentech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 324 DAY), @v_smith, @seed_now, @v_smith),
-  (UUID(), @vr_hist_38, 'Trợ lý điều phối Emily', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 324 DAY), @v_smith, @seed_now, @v_smith),
-  (UUID(), @vr_hist_39, 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'nguyen.van.nam@partner.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 332 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
-  (UUID(), @vr_hist_39, 'Trợ lý điều phối Nguyen', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 332 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
-  (UUID(), @vr_hist_40, 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'lee.joonho@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 340 DAY), @v_lee, @seed_now, @v_lee),
-  (UUID(), @vr_hist_40, 'Trợ lý điều phối Lee', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 340 DAY), @v_lee, @seed_now, @v_lee),
-  (UUID(), @vr_hist_41, 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'kim.minseo@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 348 DAY), @v_kim, @seed_now, @v_kim),
-  (UUID(), @vr_hist_41, 'Trợ lý điều phối Kim', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 348 DAY), @v_kim, @seed_now, @v_kim),
-  (UUID(), @vr_hist_42, 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'emily.smith@greentech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 356 DAY), @v_smith, @seed_now, @v_smith),
-  (UUID(), @vr_hist_42, 'Trợ lý điều phối Emily', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 356 DAY), @v_smith, @seed_now, @v_smith),
-  (UUID(), @vr_hist_43, 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'nguyen.van.nam@partner.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 364 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
-  (UUID(), @vr_hist_43, 'Trợ lý điều phối Nguyen', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 364 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
-  (UUID(), @vr_hist_44, 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'lee.joonho@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 372 DAY), @v_lee, @seed_now, @v_lee),
-  (UUID(), @vr_hist_44, 'Trợ lý điều phối Lee', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 372 DAY), @v_lee, @seed_now, @v_lee);
+  (NULL, @vr_pending_approval_seed, 'Nguyễn Thảo My', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'thaomy.pending.approval@partner.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 17 DAY), @v_pending_approval_seed, @seed_now, @v_pending_approval_seed),
+  (NULL, @vr_pending_approval_seed, 'Trợ lý điều phối Nguyễn', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 17 DAY), @v_pending_approval_seed, @seed_now, @v_pending_approval_seed),
+  (NULL, @vr_pending_approval_multi, 'Nguyễn Văn Nam', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'nam.pending.approval@partner.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 24 DAY), @v_pending_approval, @seed_now, @v_pending_approval),
+  (NULL, @vr_pending_approval_multi, 'Trợ lý điều phối Nguyễn', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 24 DAY), @v_pending_approval, @seed_now, @v_pending_approval),
+  (NULL, @vr_approved_single_before, 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'kim.minseo@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 29 DAY), @v_kim, @seed_now, @v_kim),
+  (NULL, @vr_approved_single_before, 'Trợ lý điều phối Kim', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 29 DAY), @v_kim, @seed_now, @v_kim),
+  (NULL, @vr_approved_multi_during, 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'lee.joonho@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 15 DAY), @v_lee, @seed_now, @v_lee),
+  (NULL, @vr_approved_multi_during, 'Trợ lý điều phối Lee', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 15 DAY), @v_lee, @seed_now, @v_lee),
+  (NULL, @vr_rejected_single, 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'emily.smith@greentech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 20 DAY), @v_smith, @seed_now, @v_smith),
+  (NULL, @vr_rejected_single, 'Trợ lý điều phối Emily', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 20 DAY), @v_smith, @seed_now, @v_smith),
+  (NULL, @vr_rejected_multi, 'Tanaka Aoi', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'aoi.tanaka@kyoto-global.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 35 DAY), @v_tanaka, @seed_now, @v_tanaka),
+  (NULL, @vr_rejected_multi, 'Trợ lý điều phối Tanaka', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 35 DAY), @v_tanaka, @seed_now, @v_tanaka),
+  (NULL, @vr_cancelled, 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'nguyen.van.nam@partner.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 45 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
+  (NULL, @vr_cancelled, 'Trợ lý điều phối Nguyen', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 45 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
+  (NULL, @vr_after_visit, 'An', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'an.short@partner.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 22 DAY), @v_short_name, @seed_now, @v_short_name),
+  (NULL, @vr_after_visit, 'Trợ lý điều phối An', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 22 DAY), @v_short_name, @seed_now, @v_short_name),
+  (NULL, @vr_closed, 'Nguyễn Thị Minh Anh Phương Khánh Linh Hoàng Bảo Trân Quốc Việt', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'long.name.visitor@partner.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 50 DAY), @v_long_name, @seed_now, @v_long_name),
+  (NULL, @vr_closed, 'Trợ lý điều phối Nguyễn', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 50 DAY), @v_long_name, @seed_now, @v_long_name),
+  (NULL, @vr_cancelled_instance, 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'emily.smith@greentech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 40 DAY), @v_smith, @seed_now, @v_smith),
+  (NULL, @vr_cancelled_instance, 'Trợ lý điều phối Emily', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 40 DAY), @v_smith, @seed_now, @v_smith),
+  (NULL, @vr_assigned_only, 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'lee.joonho@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 26 DAY), @v_lee, @seed_now, @v_lee),
+  (NULL, @vr_assigned_only, 'Trợ lý điều phối Lee', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 26 DAY), @v_lee, @seed_now, @v_lee),
+  (NULL, @vr_hist_01, 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'kim.minseo@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 28 DAY), @v_kim, @seed_now, @v_kim),
+  (NULL, @vr_hist_01, 'Trợ lý điều phối Kim', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 28 DAY), @v_kim, @seed_now, @v_kim),
+  (NULL, @vr_hist_02, 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'emily.smith@greentech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 36 DAY), @v_smith, @seed_now, @v_smith),
+  (NULL, @vr_hist_02, 'Trợ lý điều phối Emily', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 36 DAY), @v_smith, @seed_now, @v_smith),
+  (NULL, @vr_hist_03, 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'nguyen.van.nam@partner.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 44 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
+  (NULL, @vr_hist_03, 'Trợ lý điều phối Nguyen', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 44 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
+  (NULL, @vr_hist_04, 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'lee.joonho@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 52 DAY), @v_lee, @seed_now, @v_lee),
+  (NULL, @vr_hist_04, 'Trợ lý điều phối Lee', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 52 DAY), @v_lee, @seed_now, @v_lee),
+  (NULL, @vr_hist_05, 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'kim.minseo@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 60 DAY), @v_kim, @seed_now, @v_kim),
+  (NULL, @vr_hist_05, 'Trợ lý điều phối Kim', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 60 DAY), @v_kim, @seed_now, @v_kim),
+  (NULL, @vr_hist_06, 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'emily.smith@greentech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 68 DAY), @v_smith, @seed_now, @v_smith),
+  (NULL, @vr_hist_06, 'Trợ lý điều phối Emily', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 68 DAY), @v_smith, @seed_now, @v_smith),
+  (NULL, @vr_hist_07, 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'nguyen.van.nam@partner.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 76 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
+  (NULL, @vr_hist_07, 'Trợ lý điều phối Nguyen', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 76 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
+  (NULL, @vr_hist_08, 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'lee.joonho@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 84 DAY), @v_lee, @seed_now, @v_lee),
+  (NULL, @vr_hist_08, 'Trợ lý điều phối Lee', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 84 DAY), @v_lee, @seed_now, @v_lee),
+  (NULL, @vr_hist_09, 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'kim.minseo@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 92 DAY), @v_kim, @seed_now, @v_kim),
+  (NULL, @vr_hist_09, 'Trợ lý điều phối Kim', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 92 DAY), @v_kim, @seed_now, @v_kim),
+  (NULL, @vr_hist_10, 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'emily.smith@greentech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 100 DAY), @v_smith, @seed_now, @v_smith),
+  (NULL, @vr_hist_10, 'Trợ lý điều phối Emily', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 100 DAY), @v_smith, @seed_now, @v_smith),
+  (NULL, @vr_hist_11, 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'nguyen.van.nam@partner.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 108 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
+  (NULL, @vr_hist_11, 'Trợ lý điều phối Nguyen', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 108 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
+  (NULL, @vr_hist_12, 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'lee.joonho@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 116 DAY), @v_lee, @seed_now, @v_lee),
+  (NULL, @vr_hist_12, 'Trợ lý điều phối Lee', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 116 DAY), @v_lee, @seed_now, @v_lee),
+  (NULL, @vr_hist_13, 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'kim.minseo@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 124 DAY), @v_kim, @seed_now, @v_kim),
+  (NULL, @vr_hist_13, 'Trợ lý điều phối Kim', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 124 DAY), @v_kim, @seed_now, @v_kim),
+  (NULL, @vr_hist_14, 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'emily.smith@greentech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 132 DAY), @v_smith, @seed_now, @v_smith),
+  (NULL, @vr_hist_14, 'Trợ lý điều phối Emily', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 132 DAY), @v_smith, @seed_now, @v_smith),
+  (NULL, @vr_hist_15, 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'nguyen.van.nam@partner.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 140 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
+  (NULL, @vr_hist_15, 'Trợ lý điều phối Nguyen', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 140 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
+  (NULL, @vr_hist_16, 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'lee.joonho@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 148 DAY), @v_lee, @seed_now, @v_lee),
+  (NULL, @vr_hist_16, 'Trợ lý điều phối Lee', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 148 DAY), @v_lee, @seed_now, @v_lee),
+  (NULL, @vr_hist_17, 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'kim.minseo@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 156 DAY), @v_kim, @seed_now, @v_kim),
+  (NULL, @vr_hist_17, 'Trợ lý điều phối Kim', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 156 DAY), @v_kim, @seed_now, @v_kim),
+  (NULL, @vr_hist_18, 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'emily.smith@greentech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 164 DAY), @v_smith, @seed_now, @v_smith),
+  (NULL, @vr_hist_18, 'Trợ lý điều phối Emily', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 164 DAY), @v_smith, @seed_now, @v_smith),
+  (NULL, @vr_hist_19, 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'nguyen.van.nam@partner.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 172 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
+  (NULL, @vr_hist_19, 'Trợ lý điều phối Nguyen', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 172 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
+  (NULL, @vr_hist_20, 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'lee.joonho@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 180 DAY), @v_lee, @seed_now, @v_lee),
+  (NULL, @vr_hist_20, 'Trợ lý điều phối Lee', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 180 DAY), @v_lee, @seed_now, @v_lee),
+  (NULL, @vr_hist_21, 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'kim.minseo@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 188 DAY), @v_kim, @seed_now, @v_kim),
+  (NULL, @vr_hist_21, 'Trợ lý điều phối Kim', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 188 DAY), @v_kim, @seed_now, @v_kim),
+  (NULL, @vr_hist_22, 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'emily.smith@greentech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 196 DAY), @v_smith, @seed_now, @v_smith),
+  (NULL, @vr_hist_22, 'Trợ lý điều phối Emily', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 196 DAY), @v_smith, @seed_now, @v_smith),
+  (NULL, @vr_hist_23, 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'nguyen.van.nam@partner.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 204 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
+  (NULL, @vr_hist_23, 'Trợ lý điều phối Nguyen', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 204 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
+  (NULL, @vr_hist_24, 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'lee.joonho@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 212 DAY), @v_lee, @seed_now, @v_lee),
+  (NULL, @vr_hist_24, 'Trợ lý điều phối Lee', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 212 DAY), @v_lee, @seed_now, @v_lee),
+  (NULL, @vr_hist_25, 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'kim.minseo@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 220 DAY), @v_kim, @seed_now, @v_kim),
+  (NULL, @vr_hist_25, 'Trợ lý điều phối Kim', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 220 DAY), @v_kim, @seed_now, @v_kim),
+  (NULL, @vr_hist_26, 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'emily.smith@greentech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 228 DAY), @v_smith, @seed_now, @v_smith),
+  (NULL, @vr_hist_26, 'Trợ lý điều phối Emily', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 228 DAY), @v_smith, @seed_now, @v_smith),
+  (NULL, @vr_hist_27, 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'nguyen.van.nam@partner.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 236 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
+  (NULL, @vr_hist_27, 'Trợ lý điều phối Nguyen', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 236 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
+  (NULL, @vr_hist_28, 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'lee.joonho@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 244 DAY), @v_lee, @seed_now, @v_lee),
+  (NULL, @vr_hist_28, 'Trợ lý điều phối Lee', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 244 DAY), @v_lee, @seed_now, @v_lee),
+  (NULL, @vr_hist_29, 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'kim.minseo@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 252 DAY), @v_kim, @seed_now, @v_kim),
+  (NULL, @vr_hist_29, 'Trợ lý điều phối Kim', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 252 DAY), @v_kim, @seed_now, @v_kim),
+  (NULL, @vr_hist_30, 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'emily.smith@greentech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 260 DAY), @v_smith, @seed_now, @v_smith),
+  (NULL, @vr_hist_30, 'Trợ lý điều phối Emily', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 260 DAY), @v_smith, @seed_now, @v_smith),
+  (NULL, @vr_hist_31, 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'nguyen.van.nam@partner.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 268 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
+  (NULL, @vr_hist_31, 'Trợ lý điều phối Nguyen', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 268 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
+  (NULL, @vr_hist_32, 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'lee.joonho@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 276 DAY), @v_lee, @seed_now, @v_lee),
+  (NULL, @vr_hist_32, 'Trợ lý điều phối Lee', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 276 DAY), @v_lee, @seed_now, @v_lee),
+  (NULL, @vr_hist_33, 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'kim.minseo@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 284 DAY), @v_kim, @seed_now, @v_kim),
+  (NULL, @vr_hist_33, 'Trợ lý điều phối Kim', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 284 DAY), @v_kim, @seed_now, @v_kim),
+  (NULL, @vr_hist_34, 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'emily.smith@greentech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 292 DAY), @v_smith, @seed_now, @v_smith),
+  (NULL, @vr_hist_34, 'Trợ lý điều phối Emily', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 292 DAY), @v_smith, @seed_now, @v_smith),
+  (NULL, @vr_hist_35, 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'nguyen.van.nam@partner.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 300 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
+  (NULL, @vr_hist_35, 'Trợ lý điều phối Nguyen', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 300 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
+  (NULL, @vr_hist_36, 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'lee.joonho@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 308 DAY), @v_lee, @seed_now, @v_lee),
+  (NULL, @vr_hist_36, 'Trợ lý điều phối Lee', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 308 DAY), @v_lee, @seed_now, @v_lee),
+  (NULL, @vr_hist_37, 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'kim.minseo@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 316 DAY), @v_kim, @seed_now, @v_kim),
+  (NULL, @vr_hist_37, 'Trợ lý điều phối Kim', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 316 DAY), @v_kim, @seed_now, @v_kim),
+  (NULL, @vr_hist_38, 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'emily.smith@greentech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 324 DAY), @v_smith, @seed_now, @v_smith),
+  (NULL, @vr_hist_38, 'Trợ lý điều phối Emily', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 324 DAY), @v_smith, @seed_now, @v_smith),
+  (NULL, @vr_hist_39, 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'nguyen.van.nam@partner.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 332 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
+  (NULL, @vr_hist_39, 'Trợ lý điều phối Nguyen', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 332 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
+  (NULL, @vr_hist_40, 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'lee.joonho@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 340 DAY), @v_lee, @seed_now, @v_lee),
+  (NULL, @vr_hist_40, 'Trợ lý điều phối Lee', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 340 DAY), @v_lee, @seed_now, @v_lee),
+  (NULL, @vr_hist_41, 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'kim.minseo@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 348 DAY), @v_kim, @seed_now, @v_kim),
+  (NULL, @vr_hist_41, 'Trợ lý điều phối Kim', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 348 DAY), @v_kim, @seed_now, @v_kim),
+  (NULL, @vr_hist_42, 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'emily.smith@greentech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 356 DAY), @v_smith, @seed_now, @v_smith),
+  (NULL, @vr_hist_42, 'Trợ lý điều phối Emily', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 356 DAY), @v_smith, @seed_now, @v_smith),
+  (NULL, @vr_hist_43, 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'nguyen.van.nam@partner.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 364 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
+  (NULL, @vr_hist_43, 'Trợ lý điều phối Nguyen', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 364 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
+  (NULL, @vr_hist_44, 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'lee.joonho@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 372 DAY), @v_lee, @seed_now, @v_lee),
+  (NULL, @vr_hist_44, 'Trợ lý điều phối Lee', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 372 DAY), @v_lee, @seed_now, @v_lee);
 
 INSERT INTO visit_participants (participant_id, visit_instance_id, user_id, participant_role, is_host, status, invited_by, invited_at, responded_at, assigned_by, assigned_at, note, created_at, created_by, updated_at, updated_by)
 VALUES
-  (UUID(), @vi_as_hn, @u_stafflead_hn, 'IC_HOST', TRUE, 'ACCEPTED', @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 10 DAY), DATE_SUB(@seed_now, INTERVAL 9 DAY), @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 10 DAY), 'Host chính.', DATE_SUB(@seed_now, INTERVAL 10 DAY), @u_stafflead_hn, @seed_now, @u_stafflead_hn),
-  (UUID(), @vi_as_hn, @u_staff_hn, 'IC_SUPPORT', FALSE, 'INVITED', @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 2 DAY), NULL, NULL, NULL, 'Chờ xác nhận.', DATE_SUB(@seed_now, INTERVAL 2 DAY), @u_stafflead_hn, NULL, NULL),
-  (UUID(), @vi_as_hn, @u_dept_it_hn, 'DEPT_SUPPORT', FALSE, 'ASSIGNED', @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 9 DAY), NULL, @u_deptlead_it_hn, DATE_SUB(@seed_now, INTERVAL 8 DAY), 'Chuẩn bị thiết bị.', DATE_SUB(@seed_now, INTERVAL 9 DAY), @u_stafflead_hn, @seed_now, @u_deptlead_it_hn),
-  (UUID(), @vi_as_hn, @u_student_anh, 'STUDENT_BUDDY', FALSE, 'ACCEPTED', @u_staff_hn, DATE_SUB(@seed_now, INTERVAL 7 DAY), DATE_SUB(@seed_now, INTERVAL 6 DAY), @u_staff_hn, DATE_SUB(@seed_now, INTERVAL 7 DAY), 'Sinh viên hỗ trợ.', DATE_SUB(@seed_now, INTERVAL 7 DAY), @u_staff_hn, @seed_now, @u_student_anh),
-  (UUID(), @vi_am_hn, @u_student_bao, 'MEDIA', FALSE, 'ACCEPTED', @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 4 DAY), DATE_SUB(@seed_now, INTERVAL 3 DAY), @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 4 DAY), 'Hỗ trợ media.', DATE_SUB(@seed_now, INTERVAL 4 DAY), @u_stafflead_hn, @seed_now, @u_student_bao),
-  (UUID(), @vi_am_hcm, @u_dept_finance_hcm, 'OTHER', FALSE, 'DECLINED', @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 3 DAY), DATE_SUB(@seed_now, INTERVAL 2 DAY), NULL, NULL, 'Trùng lịch.', DATE_SUB(@seed_now, INTERVAL 3 DAY), @u_stafflead_hcm, @seed_now, @u_dept_finance_hcm),
-  (UUID(), @vi_ci_hcm, @u_student_long, 'INTERPRETER', FALSE, 'REMOVED', @u_staff_hcm, DATE_SUB(@seed_now, INTERVAL 5 DAY), DATE_SUB(@seed_now, INTERVAL 4 DAY), @u_staff_hcm, DATE_SUB(@seed_now, INTERVAL 5 DAY), 'Removed do đổi ngôn ngữ.', DATE_SUB(@seed_now, INTERVAL 5 DAY), @u_staff_hcm, @seed_now, @u_staff_hcm);
+  (NULL, @vi_as_hn, @u_stafflead_hn, 'IC_HOST', TRUE, 'ACCEPTED', @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 10 DAY), DATE_SUB(@seed_now, INTERVAL 9 DAY), @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 10 DAY), 'Host chính.', DATE_SUB(@seed_now, INTERVAL 10 DAY), @u_stafflead_hn, @seed_now, @u_stafflead_hn),
+  (NULL, @vi_as_hn, @u_staff_hn, 'IC_SUPPORT', FALSE, 'INVITED', @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 2 DAY), NULL, NULL, NULL, 'Chờ xác nhận.', DATE_SUB(@seed_now, INTERVAL 2 DAY), @u_stafflead_hn, NULL, NULL),
+  (NULL, @vi_as_hn, @u_dept_it_hn, 'DEPT_SUPPORT', FALSE, 'ASSIGNED', @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 9 DAY), NULL, @u_deptlead_it_hn, DATE_SUB(@seed_now, INTERVAL 8 DAY), 'Chuẩn bị thiết bị.', DATE_SUB(@seed_now, INTERVAL 9 DAY), @u_stafflead_hn, @seed_now, @u_deptlead_it_hn),
+  (NULL, @vi_as_hn, @u_student_anh, 'STUDENT_BUDDY', FALSE, 'ACCEPTED', @u_staff_hn, DATE_SUB(@seed_now, INTERVAL 7 DAY), DATE_SUB(@seed_now, INTERVAL 6 DAY), @u_staff_hn, DATE_SUB(@seed_now, INTERVAL 7 DAY), 'Sinh viên hỗ trợ.', DATE_SUB(@seed_now, INTERVAL 7 DAY), @u_staff_hn, @seed_now, @u_student_anh),
+  (NULL, @vi_am_hn, @u_student_bao, 'MEDIA', FALSE, 'ACCEPTED', @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 4 DAY), DATE_SUB(@seed_now, INTERVAL 3 DAY), @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 4 DAY), 'Hỗ trợ media.', DATE_SUB(@seed_now, INTERVAL 4 DAY), @u_stafflead_hn, @seed_now, @u_student_bao),
+  (NULL, @vi_am_hcm, @u_dept_finance_hcm, 'OTHER', FALSE, 'DECLINED', @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 3 DAY), DATE_SUB(@seed_now, INTERVAL 2 DAY), NULL, NULL, 'Trùng lịch.', DATE_SUB(@seed_now, INTERVAL 3 DAY), @u_stafflead_hcm, @seed_now, @u_dept_finance_hcm),
+  (NULL, @vi_ci_hcm, @u_student_long, 'INTERPRETER', FALSE, 'REMOVED', @u_staff_hcm, DATE_SUB(@seed_now, INTERVAL 5 DAY), DATE_SUB(@seed_now, INTERVAL 4 DAY), @u_staff_hcm, DATE_SUB(@seed_now, INTERVAL 5 DAY), 'Removed do đổi ngôn ngữ.', DATE_SUB(@seed_now, INTERVAL 5 DAY), @u_staff_hcm, @seed_now, @u_staff_hcm);
 
 INSERT INTO visit_agendas (agenda_id, visit_instance_id, sequence_order, title, description, start_time, end_time, location, responsible_user_id, created_at, created_by, updated_at, updated_by)
 VALUES
-  (UUID(), @vi_as_hn, 1, 'Đón đoàn tại cổng chính', 'IC host và student buddy đón đoàn.', DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 14 DAY), INTERVAL 525 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 14 DAY), INTERVAL 555 MINUTE), 'Cổng chính FPTU Hà Nội', @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 7 DAY), @u_stafflead_hn, @seed_now, @u_stafflead_hn),
-  (UUID(), @vi_as_hn, 2, 'Giới thiệu FPTU và chương trình hợp tác', 'Trình bày tổng quan.', DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 14 DAY), INTERVAL 570 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 14 DAY), INTERVAL 660 MINUTE), 'Phòng họp Alpha', @u_staff_hn, DATE_SUB(@seed_now, INTERVAL 7 DAY), @u_stafflead_hn, @seed_now, @u_stafflead_hn),
-  (UUID(), @vi_am_hn, 1, 'Check-in đoàn liên cơ sở', 'Đang diễn ra tại Hà Nội.', DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 0 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 0 DAY), INTERVAL 600 MINUTE), 'Sảnh Alpha', @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 3 DAY), @u_stafflead_hn, @seed_now, @u_stafflead_hn),
-  (UUID(), @vi_av_ct, 1, 'Tổng kết sau visit Cần Thơ', 'Chờ gửi biên bản.', DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -2 DAY), INTERVAL 900 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -2 DAY), INTERVAL 960 MINUTE), 'Phòng họp Cần Thơ 2', @u_stafflead_ct, DATE_SUB(@seed_now, INTERVAL 5 DAY), @u_stafflead_ct, @seed_now, @u_stafflead_ct);
+  (NULL, @vi_as_hn, 1, 'Đón đoàn tại cổng chính', 'IC host và student buddy đón đoàn.', DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 14 DAY), INTERVAL 525 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 14 DAY), INTERVAL 555 MINUTE), 'Cổng chính FPTU Hà Nội', @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 7 DAY), @u_stafflead_hn, @seed_now, @u_stafflead_hn),
+  (NULL, @vi_as_hn, 2, 'Giới thiệu FPTU và chương trình hợp tác', 'Trình bày tổng quan.', DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 14 DAY), INTERVAL 570 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 14 DAY), INTERVAL 660 MINUTE), 'Phòng họp Alpha', @u_staff_hn, DATE_SUB(@seed_now, INTERVAL 7 DAY), @u_stafflead_hn, @seed_now, @u_stafflead_hn),
+  (NULL, @vi_am_hn, 1, 'Check-in đoàn liên cơ sở', 'Đang diễn ra tại Hà Nội.', DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 0 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 0 DAY), INTERVAL 600 MINUTE), 'Sảnh Alpha', @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 3 DAY), @u_stafflead_hn, @seed_now, @u_stafflead_hn),
+  (NULL, @vi_av_ct, 1, 'Tổng kết sau visit Cần Thơ', 'Chờ gửi biên bản.', DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -2 DAY), INTERVAL 900 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -2 DAY), INTERVAL 960 MINUTE), 'Phòng họp Cần Thơ 2', @u_stafflead_ct, DATE_SUB(@seed_now, INTERVAL 5 DAY), @u_stafflead_ct, @seed_now, @u_stafflead_ct);
 
-SET @log_1=UUID();
+SET @log_1 = 100209;
 
-SET @log_2=UUID();
+SET @log_2 = 100210;
 
-SET @log_3=UUID();
+SET @log_3 = 100211;
 
-SET @log_4=UUID();
+SET @log_4 = 100212;
 
-SET @log_5=UUID();
+SET @log_5 = 100213;
 
-SET @log_6=UUID();
+SET @log_6 = 100214;
 
-SET @log_7=UUID();
+SET @log_7 = 100215;
 
-SET @log_8=UUID();
+SET @log_8 = 100216;
 
-SET @log_9=UUID();
+SET @log_9 = 100217;
 
-SET @log_10=UUID();
+SET @log_10 = 100218;
 
-SET @log_11=UUID();
+SET @log_11 = 100219;
 
 INSERT INTO visit_logistics_items (logistics_item_id, visit_instance_id, item_type, title, description, quantity, usage_start_at, usage_end_at, status, priority, requested_by, requested_to_department_id, requested_at, received_by, received_at, assigned_to_user_id, assigned_by, assigned_at, assignee_accepted_at, assignee_response_note, due_at, completed_at, proposed_by, proposed_at, proposed_quantity, proposed_usage_start_at, proposed_usage_end_at, proposed_description, proposal_note, proposal_responded_by, proposal_responded_at, proposal_response, proposal_response_note, decision_note, row_version, created_at, created_by, updated_at, updated_by)
 VALUES
@@ -3752,8 +3726,8 @@ VALUES
   (@log_10, @vi_rs_hcm, 'MEAL', 'Hạng mục hậu cần REJECTED', 'Nội dung thực tế cho trạng thái REJECTED.', 10, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -2 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -2 DAY), INTERVAL 960 MINUTE), 'REJECTED', 'HIGH', @u_staff_hn, @dept_hn_it, DATE_SUB(@seed_now, INTERVAL 7 DAY), @u_deptlead_it_hn, DATE_SUB(@seed_now, INTERVAL 6 DAY), NULL, NULL, NULL, NULL, NULL, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 13 DAY), INTERVAL 1020 MINUTE), NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'Ghi chú quyết định.', 1, DATE_SUB(@seed_now, INTERVAL 7 DAY), @u_staff_hn, @seed_now, @u_staff_hn),
   (@log_11, @vi_cn_hn, 'TRANSPORT', 'Hạng mục hậu cần CANCELLED', 'Nội dung thực tế cho trạng thái CANCELLED.', 11, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -2 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -2 DAY), INTERVAL 960 MINUTE), 'CANCELLED', 'URGENT', @u_staff_hn, @dept_hn_it, DATE_SUB(@seed_now, INTERVAL 7 DAY), NULL, NULL, NULL, NULL, NULL, NULL, NULL, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 13 DAY), INTERVAL 1020 MINUTE), NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'Ghi chú quyết định.', 2, DATE_SUB(@seed_now, INTERVAL 7 DAY), @u_staff_hn, @seed_now, @u_staff_hn);
 
-SET @min_draft=UUID();
-SET @min_final=UUID();
+SET @min_draft = 100220;
+SET @min_final = 100221;
 
 INSERT INTO minutes (
   minutes_id, visit_instance_id, title, content, participants_json,
@@ -3796,7 +3770,7 @@ INSERT INTO minute_action_items (
 )
 VALUES
   (
-    UUID(),
+    NULL,
     @min_draft,
     'Gửi email cảm ơn',
     'Gửi cho đại diện đoàn khách trong ngày.',
@@ -3810,7 +3784,7 @@ VALUES
     @u_stafflead_ct
   ),
   (
-    UUID(),
+    NULL,
     @min_draft,
     'Gửi hình ảnh sau sự kiện',
     'Chọn ảnh phù hợp trước khi gửi.',
@@ -3824,7 +3798,7 @@ VALUES
     @u_stafflead_ct
   ),
   (
-    UUID(),
+    NULL,
     @min_final,
     'Gửi MOU bản nháp',
     'Gửi file MOU cho đối tác để hai bên cùng góp ý.',
@@ -3856,7 +3830,7 @@ INSERT INTO feedbacks (
 )
 VALUES
   (
-    UUID(),
+    NULL,
     @vr_after_visit,
     @vi_av_ct,
     @v_short_name,
@@ -3872,7 +3846,7 @@ VALUES
     DATE_SUB(@seed_now, INTERVAL 1 DAY)
   ),
   (
-    UUID(),
+    NULL,
     @vr_closed,
     @vi_cl_hn,
     @u_dept_it_hn,
@@ -3888,7 +3862,7 @@ VALUES
     DATE_SUB(@seed_now, INTERVAL 27 DAY)
   ),
   (
-    UUID(),
+    NULL,
     @vr_closed,
     @vi_cl_hn,
     @u_stafflead_hn,
@@ -3904,7 +3878,7 @@ VALUES
     DATE_SUB(@seed_now, INTERVAL 27 DAY)
   ),
   (
-    UUID(),
+    NULL,
     @vr_closed,
     @vi_cl_hn,
     @u_stafflead_hn,
@@ -3920,13 +3894,13 @@ VALUES
     DATE_SUB(@seed_now, INTERVAL 27 DAY)
   );
 
-SET @gal_public=UUID();
-SET @gal_internal=UUID();
-SET @gal_hidden=UUID();
+SET @gal_public = 100222;
+SET @gal_internal = 100223;
+SET @gal_hidden = 100224;
 
-SET @img_public=UUID();
-SET @img_hcm=UUID();
-SET @img_hidden=UUID();
+SET @img_public = 100225;
+SET @img_hcm = 100226;
+SET @img_hidden = 100227;
 
 INSERT INTO galleries (gallery_id, campus_id, location_name, title, description, story_content, status, visibility, created_at, created_by, updated_at, updated_by, deleted_at, deleted_by)
 VALUES
@@ -3942,32 +3916,32 @@ VALUES
 
 INSERT INTO photo_face_tags (face_tag_id, image_id, visit_request_id, guest_member_id, partner_contact_id, display_name, bounding_box_x, bounding_box_y, bounding_box_width, bounding_box_height, tag_status, confirmed_by, confirmed_at, created_at, created_by, removed_at, removed_by)
 VALUES
-  (UUID(), @img_public, @vr_closed, NULL, @c_kim, 'Kim Min Seo', 0.102, 0.18, 0.22, 0.28, 'MANUALLY_TAGGED', NULL, NULL, DATE_SUB(@seed_now, INTERVAL 27 DAY), @u_staff_hn, NULL, NULL),
-  (UUID(), @img_public, @vr_closed, NULL, @c_lee, 'Lee Joon Ho', 0.42, 0.2, 0.18, 0.26, 'CONFIRMED', @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 26 DAY), DATE_SUB(@seed_now, INTERVAL 27 DAY), @u_staff_hn, NULL, NULL),
-  (UUID(), @img_hidden, NULL, NULL, NULL, 'Khách không xác định', NULL, NULL, NULL, NULL, 'REMOVED', NULL, NULL, DATE_SUB(@seed_now, INTERVAL 8 DAY), @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 7 DAY), @u_stafflead_hn);
+  (NULL, @img_public, @vr_closed, NULL, @c_kim, 'Kim Min Seo', 0.102, 0.18, 0.22, 0.28, 'MANUALLY_TAGGED', NULL, NULL, DATE_SUB(@seed_now, INTERVAL 27 DAY), @u_staff_hn, NULL, NULL),
+  (NULL, @img_public, @vr_closed, NULL, @c_lee, 'Lee Joon Ho', 0.42, 0.2, 0.18, 0.26, 'CONFIRMED', @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 26 DAY), DATE_SUB(@seed_now, INTERVAL 27 DAY), @u_staff_hn, NULL, NULL),
+  (NULL, @img_hidden, NULL, NULL, NULL, 'Khách không xác định', NULL, NULL, NULL, NULL, 'REMOVED', NULL, NULL, DATE_SUB(@seed_now, INTERVAL 8 DAY), @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 7 DAY), @u_stafflead_hn);
 
 INSERT INTO documents (document_id, file_id, owner_type, owner_id, campus_id, title, description, document_category, status, created_at, created_by, updated_at, updated_by)
 VALUES
-  (UUID(), @file_doc_general, 'GENERAL', NULL, @campus_hn, 'Quy trình tiếp đoàn khách quốc tế', 'Tài liệu SOP cho IC Office.', 'SOP', 'PUBLISHED', DATE_SUB(@seed_now, INTERVAL 100 DAY), @u_ho_ha, @seed_now, @u_ho_ha),
-  (UUID(), @file_doc_visit, 'VISIT', @vr_approved_single_before, @campus_hn, 'Agenda chính thức đoàn SeoulTech Hà Nội', 'File agenda visit sắp tới.', 'AGENDA', 'PUBLISHED', DATE_SUB(@seed_now, INTERVAL 7 DAY), @u_staff_hn, @seed_now, @u_staff_hn),
-  (UUID(), @file_doc_partner, 'PARTNER', @p_seoul, @campus_hn, 'MOU dự thảo với SeoulTech', 'Tài liệu đối tác ở trạng thái nháp.', 'MOU', 'DRAFT', DATE_SUB(@seed_now, INTERVAL 70 DAY), @u_stafflead_hn, @seed_now, @u_stafflead_hn),
-  (UUID(), @file_doc_minutes, 'MINUTES', @min_final, @campus_hn, 'Biên bản chính thức đoàn nghiên cứu AI', 'PDF biên bản đã chốt.', 'MINUTES', 'PUBLISHED', DATE_SUB(@seed_now, INTERVAL 28 DAY), @u_stafflead_hn, @seed_now, @u_stafflead_hn),
-  (UUID(), @file_news_policy, 'NEWS', @news_hidden, NULL, 'Tài liệu minh chứng bản tin ẩn', 'Tài liệu liên quan bản tin đang ẩn.', 'NEWS_ATTACHMENT', 'PUBLISHED', DATE_SUB(@seed_now, INTERVAL 180 DAY), @u_ho_ha, DATE_SUB(@seed_now, INTERVAL 100 DAY), @u_ho_ha),
-  (UUID(), @file_doc_logistics, 'LOGISTICS', @log_4, @campus_hn, 'Sơ đồ bố trí phòng họp Alpha', 'Sơ đồ hạng mục thiết bị.', 'ROOM_LAYOUT', 'PUBLISHED', DATE_SUB(@seed_now, INTERVAL 5 DAY), @u_dept_it_hn, @seed_now, @u_dept_it_hn),
-  (UUID(), @file_doc_report, 'REPORT', NULL, NULL, 'Báo cáo dashboard đoàn khách theo tháng', 'Tệp xuất báo cáo.', 'DASHBOARD_REPORT', 'PUBLISHED', DATE_SUB(@seed_now, INTERVAL 1 DAY), @u_ho_ha, @seed_now, @u_ho_ha),
-  (UUID(), @file_edge_small, 'GENERAL', NULL, NULL, 'Tệp biên chú rỗng', 'Edge case file_size = 0.', 'EDGE_CASE', 'DRAFT', DATE_SUB(@seed_now, INTERVAL 2 DAY), @u_admin_minh, NULL, NULL);
+  (NULL, @file_doc_general, 'GENERAL', NULL, @campus_hn, 'Quy trình tiếp đoàn khách quốc tế', 'Tài liệu SOP cho IC Office.', 'SOP', 'PUBLISHED', DATE_SUB(@seed_now, INTERVAL 100 DAY), @u_ho_ha, @seed_now, @u_ho_ha),
+  (NULL, @file_doc_visit, 'VISIT', @vr_approved_single_before, @campus_hn, 'Agenda chính thức đoàn SeoulTech Hà Nội', 'File agenda visit sắp tới.', 'AGENDA', 'PUBLISHED', DATE_SUB(@seed_now, INTERVAL 7 DAY), @u_staff_hn, @seed_now, @u_staff_hn),
+  (NULL, @file_doc_partner, 'PARTNER', @p_seoul, @campus_hn, 'MOU dự thảo với SeoulTech', 'Tài liệu đối tác ở trạng thái nháp.', 'MOU', 'DRAFT', DATE_SUB(@seed_now, INTERVAL 70 DAY), @u_stafflead_hn, @seed_now, @u_stafflead_hn),
+  (NULL, @file_doc_minutes, 'MINUTES', @min_final, @campus_hn, 'Biên bản chính thức đoàn nghiên cứu AI', 'PDF biên bản đã chốt.', 'MINUTES', 'PUBLISHED', DATE_SUB(@seed_now, INTERVAL 28 DAY), @u_stafflead_hn, @seed_now, @u_stafflead_hn),
+  (NULL, @file_news_policy, 'NEWS', @news_hidden, NULL, 'Tài liệu minh chứng bản tin ẩn', 'Tài liệu liên quan bản tin đang ẩn.', 'NEWS_ATTACHMENT', 'PUBLISHED', DATE_SUB(@seed_now, INTERVAL 180 DAY), @u_ho_ha, DATE_SUB(@seed_now, INTERVAL 100 DAY), @u_ho_ha),
+  (NULL, @file_doc_logistics, 'LOGISTICS', @log_4, @campus_hn, 'Sơ đồ bố trí phòng họp Alpha', 'Sơ đồ hạng mục thiết bị.', 'ROOM_LAYOUT', 'PUBLISHED', DATE_SUB(@seed_now, INTERVAL 5 DAY), @u_dept_it_hn, @seed_now, @u_dept_it_hn),
+  (NULL, @file_doc_report, 'REPORT', NULL, NULL, 'Báo cáo dashboard đoàn khách theo tháng', 'Tệp xuất báo cáo.', 'DASHBOARD_REPORT', 'PUBLISHED', DATE_SUB(@seed_now, INTERVAL 1 DAY), @u_ho_ha, @seed_now, @u_ho_ha),
+  (NULL, @file_edge_small, 'GENERAL', NULL, NULL, 'Tệp biên chú rỗng', 'Edge case file_size = 0.', 'EDGE_CASE', 'DRAFT', DATE_SUB(@seed_now, INTERVAL 2 DAY), @u_admin_minh, NULL, NULL);
 
-SET @cal_personal=UUID();
+SET @cal_personal = 100228;
 
-SET @cal_visit=UUID();
+SET @cal_visit = 100229;
 
-SET @cal_logistics=UUID();
+SET @cal_logistics = 100230;
 
-SET @cal_deadline=UUID();
+SET @cal_deadline = 100231;
 
-SET @cal_cancelled=UUID();
+SET @cal_cancelled = 100232;
 
-SET @cal_deleted=UUID();
+SET @cal_deleted = 100233;
 
 INSERT INTO calendar_events (calendar_event_id, owner_user_id, campus_id, visit_instance_id, logistics_item_id, source_type, title, description, location, start_at, end_at, timezone, visibility, attendees_json, reminders_json, status, created_at, created_by, updated_at, updated_by, deleted_at, deleted_by)
 VALUES
@@ -3980,36 +3954,36 @@ VALUES
 
 INSERT INTO sent_emails (sent_email_id, email_template_id, related_type, related_id, subject, body_snapshot, recipients_json, metadata_json, status, error_message, sent_by, sent_at, created_at)
 VALUES
-  (UUID(), @tpl_verify, 'VISIT_REQUEST', @vr_pending_approval_seed, 'Mã xác thực email trước khi gửi yêu cầu thăm quan VR-PA-001', 'OTP sẽ hết hạn sau 10 phút.', JSON_ARRAY(JSON_OBJECT('email','thaomy.pending.approval@partner.example')), JSON_OBJECT('provider','SMTP'), 'QUEUED', NULL, NULL, NULL, DATE_SUB(@seed_now, INTERVAL 1 HOUR)),
-  (UUID(), @tpl_approved, 'VISIT_REQUEST', @vr_approved_single_before, 'Yêu cầu VR-AS-003 đã được duyệt', 'FPTU xác nhận lịch thăm Hà Nội.', JSON_ARRAY(JSON_OBJECT('email','kim.minseo@seoultech.example')), JSON_OBJECT('provider','SMTP','message_id','seed-approved-001'), 'SENT', NULL, @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 12 DAY), DATE_SUB(@seed_now, INTERVAL 12 DAY)),
-  (UUID(), @tpl_rejected, 'VISIT_REQUEST', @vr_rejected_single, 'Yêu cầu VR-RS-005 chưa được duyệt', 'Lý do: lịch quá sát.', JSON_ARRAY(JSON_OBJECT('email','emily.smith@greentech.example')), JSON_OBJECT('provider','SMTP','retry_count',3), 'FAILED', 'Mailbox temporarily unavailable', @u_stafflead_hcm, NULL, DATE_SUB(@seed_now, INTERVAL 8 DAY));
+  (NULL, @tpl_verify, 'VISIT_REQUEST', @vr_pending_approval_seed, 'Mã xác thực email trước khi gửi yêu cầu thăm quan VR-PA-001', 'OTP sẽ hết hạn sau 10 phút.', JSON_ARRAY(JSON_OBJECT('email','thaomy.pending.approval@partner.example')), JSON_OBJECT('provider','SMTP'), 'QUEUED', NULL, NULL, NULL, DATE_SUB(@seed_now, INTERVAL 1 HOUR)),
+  (NULL, @tpl_approved, 'VISIT_REQUEST', @vr_approved_single_before, 'Yêu cầu VR-AS-003 đã được duyệt', 'FPTU xác nhận lịch thăm Hà Nội.', JSON_ARRAY(JSON_OBJECT('email','kim.minseo@seoultech.example')), JSON_OBJECT('provider','SMTP','message_id','seed-approved-001'), 'SENT', NULL, @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 12 DAY), DATE_SUB(@seed_now, INTERVAL 12 DAY)),
+  (NULL, @tpl_rejected, 'VISIT_REQUEST', @vr_rejected_single, 'Yêu cầu VR-RS-005 chưa được duyệt', 'Lý do: lịch quá sát.', JSON_ARRAY(JSON_OBJECT('email','emily.smith@greentech.example')), JSON_OBJECT('provider','SMTP','retry_count',3), 'FAILED', 'Mailbox temporarily unavailable', @u_stafflead_hcm, NULL, DATE_SUB(@seed_now, INTERVAL 8 DAY));
 
 INSERT INTO notifications (notification_id, recipient_user_id, title, message, notification_type, related_type, related_id, is_read, read_at, created_at)
 VALUES
-  (UUID(), @u_stafflead_hn, 'Yêu cầu thăm quan mới cần xử lý', 'Visitor Kim Min Seo gửi VR-AS-003.', 'VISIT_REQUEST', 'VISIT_REQUEST', @vr_approved_single_before, TRUE, DATE_SUB(@seed_now, INTERVAL 12 DAY), DATE_SUB(@seed_now, INTERVAL 13 DAY)),
-  (UUID(), @u_ho_ha, 'Yêu cầu liên cơ sở cần HO duyệt', 'VR-PA-002 đang chờ HO.', 'APPROVAL', 'VISIT_REQUEST', @vr_pending_approval_multi, FALSE, NULL, DATE_SUB(@seed_now, INTERVAL 1 DAY)),
-  (UUID(), @u_dept_it_hn, 'Bạn được phân công thiết bị', 'Chuẩn bị thiết bị cho VR-AS-003.', 'LOGISTICS', 'LOGISTICS_ITEM', @log_4, FALSE, NULL, DATE_SUB(@seed_now, INTERVAL 5 DAY)),
-  (UUID(), @v_smith, 'Yêu cầu chưa được duyệt', 'VR-RS-005 chưa được duyệt.', 'VISIT_DECISION', 'VISIT_REQUEST', @vr_rejected_single, TRUE, DATE_SUB(@seed_now, INTERVAL 8 DAY), DATE_SUB(@seed_now, INTERVAL 8 DAY));
+  (NULL, @u_stafflead_hn, 'Yêu cầu thăm quan mới cần xử lý', 'Visitor Kim Min Seo gửi VR-AS-003.', 'VISIT_REQUEST', 'VISIT_REQUEST', @vr_approved_single_before, TRUE, DATE_SUB(@seed_now, INTERVAL 12 DAY), DATE_SUB(@seed_now, INTERVAL 13 DAY)),
+  (NULL, @u_ho_ha, 'Yêu cầu liên cơ sở cần HO duyệt', 'VR-PA-002 đang chờ HO.', 'APPROVAL', 'VISIT_REQUEST', @vr_pending_approval_multi, FALSE, NULL, DATE_SUB(@seed_now, INTERVAL 1 DAY)),
+  (NULL, @u_dept_it_hn, 'Bạn được phân công thiết bị', 'Chuẩn bị thiết bị cho VR-AS-003.', 'LOGISTICS', 'LOGISTICS_ITEM', @log_4, FALSE, NULL, DATE_SUB(@seed_now, INTERVAL 5 DAY)),
+  (NULL, @v_smith, 'Yêu cầu chưa được duyệt', 'VR-RS-005 chưa được duyệt.', 'VISIT_DECISION', 'VISIT_REQUEST', @vr_rejected_single, TRUE, DATE_SUB(@seed_now, INTERVAL 8 DAY), DATE_SUB(@seed_now, INTERVAL 8 DAY));
 
-SET @api_email=UUID();
+SET @api_email = 100234;
 
-SET @api_ocr=UUID();
+SET @api_ocr = 100235;
 
-SET @api_calendar=UUID();
+SET @api_calendar = 100236;
 
-SET @api_sms=UUID();
+SET @api_sms = 100237;
 
-SET @api_report=UUID();
+SET @api_report = 100238;
 
-SET @api_deleted=UUID();
+SET @api_deleted = 100239;
 
-SET @agt_global=UUID();
+SET @agt_global = 100240;
 
-SET @agt_hn=UUID();
+SET @agt_hn = 100241;
 
-SET @agt_inactive=UUID();
+SET @agt_inactive = 100242;
 
-SET @agt_deleted=UUID();
+SET @agt_deleted = 100243;
 
 INSERT INTO api_configurations (api_config_id, api_code, name, provider_name, purpose, base_url, default_method, auth_type, credentials_json, headers_json, body_template_json, settings_json, timeout_seconds, status, created_at, created_by, updated_at, updated_by, deleted_at, deleted_by)
 VALUES
@@ -4022,10 +3996,10 @@ VALUES
 
 INSERT INTO api_usage_quotas (api_usage_quota_id, api_config_id, campus_id, campus_scope_key, period_yyyymm, monthly_limit, used_count, last_used_at, created_at, created_by, updated_at, updated_by)
 VALUES
-  (UUID(), @api_email, NULL, 'GLOBAL', DATE_FORMAT(@seed_now, '%Y%m'), 5000, 843, DATE_SUB(@seed_now, INTERVAL 10 MINUTE), DATE_SUB(@seed_now, INTERVAL 30 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
-  (UUID(), @api_ocr, @campus_hn, @campus_hn, DATE_FORMAT(@seed_now, '%Y%m'), 300, 42, DATE_SUB(@seed_now, INTERVAL 2 DAY), DATE_SUB(@seed_now, INTERVAL 30 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
-  (UUID(), @api_ocr, @campus_hcm, @campus_hcm, DATE_FORMAT(@seed_now, '%Y%m'), 300, 299, DATE_SUB(@seed_now, INTERVAL 1 HOUR), DATE_SUB(@seed_now, INTERVAL 30 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
-  (UUID(), @api_report, NULL, 'GLOBAL', DATE_FORMAT(DATE_SUB(@seed_now, INTERVAL 1 MONTH), '%Y%m'), 1000, 1000, DATE_SUB(@seed_now, INTERVAL 30 DAY), DATE_SUB(@seed_now, INTERVAL 60 DAY), @u_admin_minh, @seed_now, @u_admin_minh);
+  (NULL, @api_email, NULL, 'GLOBAL', DATE_FORMAT(@seed_now, '%Y%m'), 5000, 843, DATE_SUB(@seed_now, INTERVAL 10 MINUTE), DATE_SUB(@seed_now, INTERVAL 30 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
+  (NULL, @api_ocr, @campus_hn, @campus_hn, DATE_FORMAT(@seed_now, '%Y%m'), 300, 42, DATE_SUB(@seed_now, INTERVAL 2 DAY), DATE_SUB(@seed_now, INTERVAL 30 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
+  (NULL, @api_ocr, @campus_hcm, @campus_hcm, DATE_FORMAT(@seed_now, '%Y%m'), 300, 299, DATE_SUB(@seed_now, INTERVAL 1 HOUR), DATE_SUB(@seed_now, INTERVAL 30 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
+  (NULL, @api_report, NULL, 'GLOBAL', DATE_FORMAT(DATE_SUB(@seed_now, INTERVAL 1 MONTH), '%Y%m'), 1000, 1000, DATE_SUB(@seed_now, INTERVAL 30 DAY), DATE_SUB(@seed_now, INTERVAL 60 DAY), @u_admin_minh, @seed_now, @u_admin_minh);
 
 INSERT INTO api_request_logs (api_config_id, campus_id, requested_by, related_type, related_id, endpoint, method, http_status, response_time_ms, request_size_bytes, response_size_bytes, success, error_code, error_message, created_at)
 VALUES
@@ -4149,12 +4123,12 @@ START TRANSACTION;
 
 INSERT INTO roles (role_id, role_code, name, description, status, created_at, deleted_at, deleted_by)
 VALUES
-  (UUID(), 'ADMIN',   'Admin',       'Quản trị kỹ thuật hệ thống', 'ACTIVE', NOW(), NULL, NULL),
-  (UUID(), 'HO',      'Head Office', 'Quản lý cấp Head Office', 'ACTIVE', NOW(), NULL, NULL),
-  (UUID(), 'STAFF',   'IC Staff',    'Nhân sự phòng Hợp tác Quốc tế, dùng users.sub_role = Leader/Staff', 'ACTIVE', NOW(), NULL, NULL),
-  (UUID(), 'DEPT',    'Department',  'Nhân sự phòng ban khác, dùng users.sub_role = Leader/Staff', 'ACTIVE', NOW(), NULL, NULL),
-  (UUID(), 'STUDENT', 'Student',     'Sinh viên hỗ trợ', 'ACTIVE', NOW(), NULL, NULL),
-  (UUID(), 'VISITOR', 'Visitor',     'Khách gửi visit request và theo dõi thông tin của mình', 'ACTIVE', NOW(), NULL, NULL)
+  (NULL, 'ADMIN',   'Admin',       'Quản trị kỹ thuật hệ thống', 'ACTIVE', NOW(), NULL, NULL),
+  (NULL, 'HO',      'Head Office', 'Quản lý cấp Head Office', 'ACTIVE', NOW(), NULL, NULL),
+  (NULL, 'STAFF',   'IC Staff',    'Nhân sự phòng Hợp tác Quốc tế, dùng users.sub_role = Leader/Staff', 'ACTIVE', NOW(), NULL, NULL),
+  (NULL, 'DEPT',    'Department',  'Nhân sự phòng ban khác, dùng users.sub_role = Leader/Staff', 'ACTIVE', NOW(), NULL, NULL),
+  (NULL, 'STUDENT', 'Student',     'Sinh viên hỗ trợ', 'ACTIVE', NOW(), NULL, NULL),
+  (NULL, 'VISITOR', 'Visitor',     'Khách gửi visit request và theo dõi thông tin của mình', 'ACTIVE', NOW(), NULL, NULL)
 ON DUPLICATE KEY UPDATE
   name = VALUES(name),
   description = VALUES(description),
@@ -4185,11 +4159,11 @@ START TRANSACTION;
 
 INSERT INTO campuses (campus_id, campus_code, name, city, status, created_at)
 VALUES
-  (UUID(), 'HN',  'FPT University Hà Nội',          'Hà Nội',          'ACTIVE', NOW()),
-  (UUID(), 'HCM', 'FPT University TP. Hồ Chí Minh', 'TP. Hồ Chí Minh', 'ACTIVE', NOW()),
-  (UUID(), 'DN',  'FPT University Đà Nẵng',         'Đà Nẵng',         'ACTIVE', NOW()),
-  (UUID(), 'CT',  'FPT University Cần Thơ',         'Cần Thơ',         'ACTIVE', NOW()),
-  (UUID(), 'QN',  'FPT University Quy Nhơn',        'Quy Nhơn',        'ACTIVE', NOW())
+  (NULL, 'HN',  'FPT University Hà Nội',          'Hà Nội',          'ACTIVE', NOW()),
+  (NULL, 'HCM', 'FPT University TP. Hồ Chí Minh', 'TP. Hồ Chí Minh', 'ACTIVE', NOW()),
+  (NULL, 'DN',  'FPT University Đà Nẵng',         'Đà Nẵng',         'ACTIVE', NOW()),
+  (NULL, 'CT',  'FPT University Cần Thơ',         'Cần Thơ',         'ACTIVE', NOW()),
+  (NULL, 'QN',  'FPT University Quy Nhơn',        'Quy Nhơn',        'ACTIVE', NOW())
 ON DUPLICATE KEY UPDATE
   name = VALUES(name),
   city = VALUES(city),
@@ -4274,7 +4248,7 @@ SET
 -- Insert only rows that do not exist yet. This avoids firing the one-active-IC
 -- trigger for duplicate IC departments.
 INSERT INTO departments (department_id, campus_id, department_code, name, department_type, status, created_at)
-SELECT UUID(), c.campus_id, dd.department_code, dd.name, dd.department_type, dd.status, NOW()
+SELECT NULL, c.campus_id, dd.department_code, dd.name, dd.department_type, dd.status, NOW()
 FROM desired_departments dd
 JOIN campuses c ON c.campus_code = dd.campus_code
 WHERE NOT EXISTS (
@@ -4313,141 +4287,141 @@ START TRANSACTION;
 INSERT INTO permissions
   (permission_id, permission_code, name, permission_group, description, is_system, created_at)
 VALUES
-  (UUID(), 'UC-01.VIEW_HOMEPAGE', 'UC-01 - View Homepage', 'Common', 'Seeded from Permission Matrix v0.2: View Homepage', TRUE, NOW()),
-  (UUID(), 'UC-02.SEARCH_INFORMATION', 'UC-02 - Search Information', 'Common', 'Seeded from Permission Matrix v0.2: Search Information', TRUE, NOW()),
-  (UUID(), 'UC-03.VIEW_CONTACT_INFO', 'UC-03 - View Contact Info', 'Common', 'Seeded from Permission Matrix v0.2: View Contact Info', TRUE, NOW()),
-  (UUID(), 'UC-04.VIEW_POLICY_AND_TERMS', 'UC-04 - View Policy & Terms', 'Common', 'Seeded from Permission Matrix v0.2: View Policy & Terms', TRUE, NOW()),
-  (UUID(), 'UC-05.VIEW_FAQ', 'UC-05 - View FAQ', 'Common', 'Seeded from Permission Matrix v0.2: View FAQ', TRUE, NOW()),
-  (UUID(), 'UC-06.VIEW_NEWS', 'UC-06 - View News', 'Common', 'Seeded from Permission Matrix v0.2: View News', TRUE, NOW()),
-  (UUID(), 'UC-07.VIEW_PARTNERS', 'UC-07 - View Partners', 'Common', 'Seeded from Permission Matrix v0.2: View Partners', TRUE, NOW()),
-  (UUID(), 'UC-08.VIEW_GALLERY', 'UC-08 - View Gallery', 'Common', 'Seeded from Permission Matrix v0.2: View Gallery', TRUE, NOW()),
-  (UUID(), 'UC-09.VIEW_NOTIFICATIONS', 'UC-09 - View Notifications', 'Common', 'Seeded from Permission Matrix v0.2: View Notifications', TRUE, NOW()),
-  (UUID(), 'UC-10.LOGIN_VIA_SSO', 'UC-10 - Login via SSO', 'Authentication', 'Seeded from Permission Matrix v0.2: Login via SSO', TRUE, NOW()),
-  (UUID(), 'UC-11.LOGIN_VIA_CREDENTIALS', 'UC-11 - Login via Credentials', 'Authentication', 'Seeded from Permission Matrix v0.2: Login via Credentials', TRUE, NOW()),
-  (UUID(), 'UC-12.LOGOUT', 'UC-12 - Logout', 'Authentication', 'Seeded from Permission Matrix v0.2: Logout', TRUE, NOW()),
-  (UUID(), 'UC-13.FORGOT_PASSWORD', 'UC-13 - Forgot Password', 'Authentication', 'Seeded from Permission Matrix v0.2: Forgot Password', TRUE, NOW()),
-  (UUID(), 'UC-14.VIEW_PROFILE', 'UC-14 - View Profile', 'Profile Management', 'Seeded from Permission Matrix v0.2: View Profile', TRUE, NOW()),
-  (UUID(), 'UC-15.UPDATE_PROFILE', 'UC-15 - Update Profile', 'Profile Management', 'Seeded from Permission Matrix v0.2: Update Profile', TRUE, NOW()),
-  (UUID(), 'UC-16.CHANGE_PASSWORD', 'UC-16 - Change Password', 'Profile Management', 'Seeded from Permission Matrix v0.2: Change Password', TRUE, NOW()),
-  (UUID(), 'UC-17.SUBMIT_VISIT_REQUEST', 'UC-17 - Submit Visit Request', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: Submit Visit Request', TRUE, NOW()),
-  (UUID(), 'UC-18.APPROVE_CROSS_CAMPUS_REQUEST', 'UC-18 - Approve Cross-Campus Request', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: Approve Cross-Campus Request', TRUE, NOW()),
-  (UUID(), 'UC-19.VIEW_GUEST_DELEGATION_DETAILS', 'UC-19 - View Guest Delegation Details', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: View Guest Delegation Details', TRUE, NOW()),
-  (UUID(), 'UC-20.VIEW_GUEST_DELEGATION_LIST', 'UC-20 - View Guest Delegation List', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: View Guest Delegation List', TRUE, NOW()),
-  (UUID(), 'UC-21.SEARCH_DELEGATIONS', 'UC-21 - Search Delegations', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: Search Delegations', TRUE, NOW()),
-  (UUID(), 'UC-22.PROCESS_VISIT_REQUEST', 'UC-22 - Process Visit Request', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: Process Visit Request', TRUE, NOW()),
-  (UUID(), 'UC-23.CREATE_GUEST_DELEGATION', 'UC-23 - Create Guest Delegation', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: Create Guest Delegation', TRUE, NOW()),
-  (UUID(), 'UC-24.UPDATE_GUEST_DELEGATION', 'UC-24 - Update Guest Delegation', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: Update Guest Delegation', TRUE, NOW()),
-  (UUID(), 'UC-25.PREPARE_VISIT_LOGISTICS', 'UC-25 - Prepare Visit Logistics', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: Prepare Visit Logistics', TRUE, NOW()),
-  (UUID(), 'UC-26.UPDATE_VISIT_LOGISTICS', 'UC-26 - Update Visit Logistics', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: Update Visit Logistics', TRUE, NOW()),
-  (UUID(), 'UC-27.CONFIRM_PARTICIPATION', 'UC-27 - Confirm Participation', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: Confirm Participation', TRUE, NOW()),
-  (UUID(), 'UC-28.APPROVE_RESOURCE_REQUEST', 'UC-28 - Approve Resource Request', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: Approve Resource Request', TRUE, NOW()),
-  (UUID(), 'UC-29.PROPOSE_RESOURCE_MODIFICATION', 'UC-29 - Propose Resource Modification', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: Propose Resource Modification', TRUE, NOW()),
-  (UUID(), 'UC-30.CONFIRM_THE_CHANGE_PROPOSAL', 'UC-30 - Confirm The Change Proposal', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: Confirm The Change Proposal', TRUE, NOW()),
-  (UUID(), 'UC-31.CREATE_MEETING_MINUTES', 'UC-31 - Create Meeting Minutes', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: Create Meeting Minutes', TRUE, NOW()),
-  (UUID(), 'UC-32.EDIT_MEETING_MINUTES', 'UC-32 - Edit Meeting Minutes', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: Edit Meeting Minutes', TRUE, NOW()),
-  (UUID(), 'UC-33.VIEW_MEETING_MINUTES_DETAILS', 'UC-33 - View Meeting Minutes Details', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: View Meeting Minutes Details', TRUE, NOW()),
-  (UUID(), 'UC-34.SUBMIT_DELEGATION_FEEDBACK', 'UC-34 - Submit Delegation Feedback', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: Submit Delegation Feedback', TRUE, NOW()),
-  (UUID(), 'UC-35.SCAN_BUSINESS_CARD', 'UC-35 - Scan Business Card', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: Scan Business Card', TRUE, NOW()),
-  (UUID(), 'UC-36.CREATE_PARTNER_PROFILE', 'UC-36 - Create Partner Profile', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: Create Partner Profile', TRUE, NOW()),
-  (UUID(), 'UC-37.UPLOAD_ATTACHED_DOCUMENTS', 'UC-37 - Upload Attached Documents', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: Upload Attached Documents', TRUE, NOW()),
-  (UUID(), 'UC-38.UPLOAD_VISIT_PHOTOS', 'UC-38 - Upload Visit Photos', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: Upload Visit Photos', TRUE, NOW()),
-  (UUID(), 'UC-39.TAG_FACES_ON_PHOTOS', 'UC-39 - Tag Faces on Photos', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: Tag Faces on Photos', TRUE, NOW()),
-  (UUID(), 'UC-40.CREATE_NEWS_ARTICLE', 'UC-40 - Create News Article', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: Create News Article', TRUE, NOW()),
-  (UUID(), 'UC-41.CLOSE_DELEGATION', 'UC-41 - Close Delegation', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: Close Delegation', TRUE, NOW()),
-  (UUID(), 'UC-42.VIEW_EMAIL_TEMPLATE_LIST', 'UC-42 - View Email Template List', 'Email Management', 'Seeded from Permission Matrix v0.2: View Email Template List', TRUE, NOW()),
-  (UUID(), 'UC-43.VIEW_EMAIL_TEMPLATE_DETAIL', 'UC-43 - View Email Template Detail', 'Email Management', 'Seeded from Permission Matrix v0.2: View Email Template Detail', TRUE, NOW()),
-  (UUID(), 'UC-44.UPDATE_EMAIL_TEMPLATE', 'UC-44 - Update Email Template', 'Email Management', 'Seeded from Permission Matrix v0.2: Update Email Template', TRUE, NOW()),
-  (UUID(), 'UC-45.CREATE_EMAIL_TEMPLATE', 'UC-45 - Create Email Template', 'Email Management', 'Seeded from Permission Matrix v0.2: Create Email Template', TRUE, NOW()),
-  (UUID(), 'UC-46.EDIT_EMAIL_CONTENT', 'UC-46 - Edit Email Content', 'Email Management', 'Seeded from Permission Matrix v0.2: Edit Email Content', TRUE, NOW()),
-  (UUID(), 'UC-47.SEND_EMAIL', 'UC-47 - Send Email', 'Email Management', 'Seeded from Permission Matrix v0.2: Send Email', TRUE, NOW()),
-  (UUID(), 'UC-48.VIEW_EMAIL', 'UC-48 - View Email', 'Email Management', 'Seeded from Permission Matrix v0.2: View Email', TRUE, NOW()),
-  (UUID(), 'UC-49.REPLY_TO_EMAIL', 'UC-49 - Reply to Email', 'Email Management', 'Seeded from Permission Matrix v0.2: Reply to Email', TRUE, NOW()),
-  (UUID(), 'UC-50.PROCESS_PARTNER_CREATION_REQUEST', 'UC-50 - Process Partner Creation Request', 'Partner Management', 'Seeded from Permission Matrix v0.2: Process Partner Creation Request', TRUE, NOW()),
-  (UUID(), 'UC-51.EDIT_PARTNER_INFORMATION', 'UC-51 - Edit Partner Information', 'Partner Management', 'Seeded from Permission Matrix v0.2: Edit Partner Information', TRUE, NOW()),
-  (UUID(), 'UC-52.VIEW_PARTNER_LISTS', 'UC-52 - View Partner Lists', 'Partner Management', 'Seeded from Permission Matrix v0.2: View Partner Lists', TRUE, NOW()),
-  (UUID(), 'UC-53.SEARCH_PARTNERS', 'UC-53 - Search Partners', 'Partner Management', 'Seeded from Permission Matrix v0.2: Search Partners', TRUE, NOW()),
-  (UUID(), 'UC-54.VIEW_PARTNER_DETAILS', 'UC-54 - View Partner Details', 'Partner Management', 'Seeded from Permission Matrix v0.2: View Partner Details', TRUE, NOW()),
-  (UUID(), 'UC-55.VIEW_DOCUMENT_LIST', 'UC-55 - View Document List', 'Document Management', 'Seeded from Permission Matrix v0.2: View Document List', TRUE, NOW()),
-  (UUID(), 'UC-56.SEARCH_DOCUMENTS', 'UC-56 - Search Documents', 'Document Management', 'Seeded from Permission Matrix v0.2: Search Documents', TRUE, NOW()),
-  (UUID(), 'UC-57.VIEW_GALLERY_ITEM_LIST', 'UC-57 - View Gallery Item List', 'Gallery Management', 'Seeded from Permission Matrix v0.2: View Gallery Item List', TRUE, NOW()),
-  (UUID(), 'UC-58.SEARCH_GALLERY_ITEMS', 'UC-58 - Search Gallery Items', 'Gallery Management', 'Seeded from Permission Matrix v0.2: Search Gallery Items', TRUE, NOW()),
-  (UUID(), 'UC-59.ADD_GALLERY_ITEM', 'UC-59 - Add Gallery Item', 'Gallery Management', 'Seeded from Permission Matrix v0.2: Add Gallery Item', TRUE, NOW()),
-  (UUID(), 'UC-60.UPDATE_GALLERY_ITEM', 'UC-60 - Update Gallery Item', 'Gallery Management', 'Seeded from Permission Matrix v0.2: Update Gallery Item', TRUE, NOW()),
-  (UUID(), 'UC-61.DELETE_GALLERY_ITEM', 'UC-61 - Delete Gallery Item', 'Gallery Management', 'Seeded from Permission Matrix v0.2: Delete Gallery Item', TRUE, NOW()),
-  (UUID(), 'UC-62.VIEW_MINUTES_LIST', 'UC-62 - View Minutes List', 'Minutes Management', 'Seeded from Permission Matrix v0.2: View Minutes List', TRUE, NOW()),
-  (UUID(), 'UC-63.SEARCH_FILTER_MINUTES', 'UC-63 - Search/Filter Minutes', 'Minutes Management', 'Seeded from Permission Matrix v0.2: Search/Filter Minutes', TRUE, NOW()),
-  (UUID(), 'UC-64.VIEW_LIST_FAQ', 'UC-64 - View List FAQ', 'FAQ Management', 'Seeded from Permission Matrix v0.2: View List FAQ', TRUE, NOW()),
-  (UUID(), 'UC-65.CREATE_FAQ', 'UC-65 - Create FAQ', 'FAQ Management', 'Seeded from Permission Matrix v0.2: Create FAQ', TRUE, NOW()),
-  (UUID(), 'UC-66.UPDATE_FAQ', 'UC-66 - Update FAQ', 'FAQ Management', 'Seeded from Permission Matrix v0.2: Update FAQ', TRUE, NOW()),
-  (UUID(), 'UC-67.CHANGE_FAQ_VISIBILITY', 'UC-67 - Change FAQ Visibility', 'FAQ Management', 'Seeded from Permission Matrix v0.2: Change FAQ Visibility', TRUE, NOW()),
-  (UUID(), 'UC-68.SEARCH_FAQ', 'UC-68 - Search FAQ', 'FAQ Management', 'Seeded from Permission Matrix v0.2: Search FAQ', TRUE, NOW()),
-  (UUID(), 'UC-69.VIEW_DASHBOARD_STATISTICS', 'UC-69 - View Dashboard Statistics', 'Report Management', 'Seeded from Permission Matrix v0.2: View Dashboard Statistics', TRUE, NOW()),
-  (UUID(), 'UC-70.EXPORT_STATISTICS_REPORT', 'UC-70 - Export Statistics Report', 'Report Management', 'Seeded from Permission Matrix v0.2: Export Statistics Report', TRUE, NOW()),
-  (UUID(), 'UC-71.FILTER_DASHBOARD_BY_TIME', 'UC-71 - Filter Dashboard By Time', 'Report Management', 'Seeded from Permission Matrix v0.2: Filter Dashboard By Time', TRUE, NOW()),
-  (UUID(), 'UC-72.VIEW_MY_EVENTS', 'UC-72 - View My Events', 'Calendar Management', 'Seeded from Permission Matrix v0.2: View My Events', TRUE, NOW()),
-  (UUID(), 'UC-73.VIEW_DEPARTMENT_CALENDAR', 'UC-73 - View Department Calendar', 'Calendar Management', 'Seeded from Permission Matrix v0.2: View Department Calendar', TRUE, NOW()),
-  (UUID(), 'UC-74.SWITCH_VIEW_MODE', 'UC-74 - Switch View Mode', 'Calendar Management', 'Seeded from Permission Matrix v0.2: Switch View Mode', TRUE, NOW()),
-  (UUID(), 'UC-75.ADD_PERSONAL_EVENT', 'UC-75 - Add Personal Event', 'Calendar Management', 'Seeded from Permission Matrix v0.2: Add Personal Event', TRUE, NOW()),
-  (UUID(), 'UC-76.DELETE_PERSONAL_EVENT', 'UC-76 - Delete Personal Event', 'Calendar Management', 'Seeded from Permission Matrix v0.2: Delete Personal Event', TRUE, NOW()),
-  (UUID(), 'UC-77.UPDATE_PERSONAL_EVENT', 'UC-77 - Update Personal Event', 'Calendar Management', 'Seeded from Permission Matrix v0.2: Update Personal Event', TRUE, NOW()),
-  (UUID(), 'UC-78.VIEW_EVENT_DETAILS', 'UC-78 - View Event Details', 'Calendar Management', 'Seeded from Permission Matrix v0.2: View Event Details', TRUE, NOW()),
-  (UUID(), 'UC-79.SEARCH_FILTER_FEEDBACK', 'UC-79 - Search/Filter Feedback', 'Feedback Management', 'Seeded from Permission Matrix v0.2: Search/Filter Feedback', TRUE, NOW()),
-  (UUID(), 'UC-80.VIEW_FEEDBACK_SUMMARY', 'UC-80 - View Feedback Summary', 'Feedback Management', 'Seeded from Permission Matrix v0.2: View Feedback Summary', TRUE, NOW()),
-  (UUID(), 'UC-81.ADD_NEW_CAMPUS', 'UC-81 - Add New Campus', 'Campus Management', 'Seeded from Permission Matrix v0.2: Add New Campus', TRUE, NOW()),
-  (UUID(), 'UC-82.VIEW_CAMPUS_LIST', 'UC-82 - View Campus List', 'Campus Management', 'Seeded from Permission Matrix v0.2: View Campus List', TRUE, NOW()),
-  (UUID(), 'UC-83.SEARCH_AND_FILTER_CAMPUS', 'UC-83 - Search and Filter Campus', 'Campus Management', 'Seeded from Permission Matrix v0.2: Search and Filter Campus', TRUE, NOW()),
-  (UUID(), 'UC-84.VIEW_CAMPUS_DETAILS', 'UC-84 - View Campus Details', 'Campus Management', 'Seeded from Permission Matrix v0.2: View Campus Details', TRUE, NOW()),
-  (UUID(), 'UC-85.UPDATE_CAMPUS', 'UC-85 - Update Campus', 'Campus Management', 'Seeded from Permission Matrix v0.2: Update Campus', TRUE, NOW()),
-  (UUID(), 'UC-86.MANAGE_CAMPUS_STATUS', 'UC-86 - Manage Campus Status', 'Campus Management', 'Seeded from Permission Matrix v0.2: Manage Campus Status', TRUE, NOW()),
-  (UUID(), 'UC-87.ASSIGN_CAMPUS_LEAD', 'UC-87 - Assign Campus Lead', 'Campus Management', 'Seeded from Permission Matrix v0.2: Assign Campus Lead', TRUE, NOW()),
-  (UUID(), 'UC-88.APPROVE_NEWS', 'UC-88 - Approve News', 'News Management', 'Seeded from Permission Matrix v0.2: Approve News', TRUE, NOW()),
-  (UUID(), 'UC-89.PUBLISH_NEWS', 'UC-89 - Publish News', 'News Management', 'Seeded from Permission Matrix v0.2: Publish News', TRUE, NOW()),
-  (UUID(), 'UC-90.VIEW_NEWS_LIST', 'UC-90 - View News List', 'News Management', 'Seeded from Permission Matrix v0.2: View News List', TRUE, NOW()),
-  (UUID(), 'UC-91.VIEW_NEWS_DETAILS', 'UC-91 - View News Details', 'News Management', 'Seeded from Permission Matrix v0.2: View News Details', TRUE, NOW()),
-  (UUID(), 'UC-92.ADD_MULTILINGUAL_NEWS', 'UC-92 - Add Multilingual News', 'News Management', 'Seeded from Permission Matrix v0.2: Add Multilingual News', TRUE, NOW()),
-  (UUID(), 'UC-93.MANAGE_NEWS_VISIBILITY', 'UC-93 - Manage News Visibility', 'News Management', 'Seeded from Permission Matrix v0.2: Manage News Visibility', TRUE, NOW()),
-  (UUID(), 'UC-94.EDIT_NEWS', 'UC-94 - Edit News', 'News Management', 'Seeded from Permission Matrix v0.2: Edit News', TRUE, NOW()),
-  (UUID(), 'UC-95.VIEW_ACCOUNT_LIST', 'UC-95 - View Account List', 'Account Management', 'Seeded from Permission Matrix v0.2: View Account List', TRUE, NOW()),
-  (UUID(), 'UC-96.CREATE_ACCOUNT', 'UC-96 - Create Account', 'Account Management', 'Seeded from Permission Matrix v0.2: Create Account', TRUE, NOW()),
-  (UUID(), 'UC-97.MANAGE_ACCOUNT_STATUS', 'UC-97 - Manage Account Status', 'Account Management', 'Seeded from Permission Matrix v0.2: Manage Account Status', TRUE, NOW()),
-  (UUID(), 'UC-98.VIEW_ACCOUNT_DETAILS', 'UC-98 - View Account Details', 'Account Management', 'Seeded from Permission Matrix v0.2: View Account Details', TRUE, NOW()),
-  (UUID(), 'UC-99.SEARCH_AND_FILTER_ACCOUNTS', 'UC-99 - Search and Filter Accounts', 'Account Management', 'Seeded from Permission Matrix v0.2: Search and Filter Accounts', TRUE, NOW()),
-  (UUID(), 'UC-100.UPDATE_ACCOUNT_ROLE', 'UC-100 - Update Account Role', 'Account Management', 'Seeded from Permission Matrix v0.2: Update Account Role', TRUE, NOW()),
-  (UUID(), 'UC-101.ADD_NEW_DEPARTMENT', 'UC-101 - Add New Department', 'Department Management', 'Seeded from Permission Matrix v0.2: Add New Department', TRUE, NOW()),
-  (UUID(), 'UC-102.UPDATE_DEPARTMENT', 'UC-102 - Update Department', 'Department Management', 'Seeded from Permission Matrix v0.2: Update Department', TRUE, NOW()),
-  (UUID(), 'UC-103.SEARCH_AND_FILTER_DEPARTMENTS', 'UC-103 - Search and Filter Departments', 'Department Management', 'Seeded from Permission Matrix v0.2: Search and Filter Departments', TRUE, NOW()),
-  (UUID(), 'UC-104.VIEW_DEPARTMENT_LIST', 'UC-104 - View Department List', 'Department Management', 'Seeded from Permission Matrix v0.2: View Department List', TRUE, NOW()),
-  (UUID(), 'UC-105.VIEW_DEPARTMENT_DETAILS', 'UC-105 - View Department Details', 'Department Management', 'Seeded from Permission Matrix v0.2: View Department Details', TRUE, NOW()),
-  (UUID(), 'UC-106.MANAGE_DEPARTMENT_STATUS', 'UC-106 - Manage Department Status', 'Department Management', 'Seeded from Permission Matrix v0.2: Manage Department Status', TRUE, NOW()),
-  (UUID(), 'UC-107.ADD_DEPARTMENT_PERSONNEL', 'UC-107 - Add Department Personnel', 'Department Management', 'Seeded from Permission Matrix v0.2: Add Department Personnel', TRUE, NOW()),
-  (UUID(), 'UC-108.VIEW_PERSONNEL_DETAILS', 'UC-108 - View Personnel Details', 'Department Management', 'Seeded from Permission Matrix v0.2: View Personnel Details', TRUE, NOW()),
-  (UUID(), 'UC-109.SEARCH_PERSONNEL', 'UC-109 - Search Personnel', 'Department Management', 'Seeded from Permission Matrix v0.2: Search Personnel', TRUE, NOW()),
-  (UUID(), 'UC-110.REVIEW_ASSIGNED_TASKS', 'UC-110 - Review Assigned Tasks', 'Department Management', 'Seeded from Permission Matrix v0.2: Review Assigned Tasks', TRUE, NOW()),
-  (UUID(), 'UC-111.ASSIGN_TASKS', 'UC-111 - Assign Tasks', 'Department Management', 'Seeded from Permission Matrix v0.2: Assign Tasks', TRUE, NOW()),
-  (UUID(), 'UC-112.SIGN_THE_SERVICE_DELIVERY_REPORT', 'UC-112 - Sign The Service Delivery Report', 'Department Management', 'Seeded from Permission Matrix v0.2: Sign The Service Delivery Report', TRUE, NOW()),
-  (UUID(), 'UC-113.REMOVE_PERSONNEL', 'UC-113 - Remove Personnel', 'Department Management', 'Seeded from Permission Matrix v0.2: Remove Personnel', TRUE, NOW()),
-  (UUID(), 'UC-114.VIEW_COORDINATION_TASKS', 'UC-114 - View Coordination Tasks', 'Department Management', 'Seeded from Permission Matrix v0.2: View Coordination Tasks', TRUE, NOW()),
-  (UUID(), 'UC-115.SEARCH_COORDINATION_TASKS', 'UC-115 - Search Coordination Tasks', 'Department Management', 'Seeded from Permission Matrix v0.2: Search Coordination Tasks', TRUE, NOW()),
-  (UUID(), 'UC-116.REASSIGN_DEPARTMENT_LEAD', 'UC-116 - Reassign Department Lead', 'Department Management', 'Seeded from Permission Matrix v0.2: Reassign Department Lead', TRUE, NOW()),
-  (UUID(), 'UC-117.VIEW_ROLE_LIST', 'UC-117 - View Role List', 'Role & Permission Management', 'Seeded from Permission Matrix v0.2: View Role List', TRUE, NOW()),
-  (UUID(), 'UC-118.CREATE_NEW_ROLE', 'UC-118 - Create New Role', 'Role & Permission Management', 'Seeded from Permission Matrix v0.2: Create New Role', TRUE, NOW()),
-  (UUID(), 'UC-119.CONFIGURE_ROLE_PERMISSIONS', 'UC-119 - Configure Role Permissions', 'Role & Permission Management', 'Seeded from Permission Matrix v0.2: Configure Role Permissions', TRUE, NOW()),
-  (UUID(), 'UC-120.UPDATE_ROLE_DETAILS', 'UC-120 - Update Role Details', 'Role & Permission Management', 'Seeded from Permission Matrix v0.2: Update Role Details', TRUE, NOW()),
-  (UUID(), 'UC-121.DISABLE_DELETE_ROLE', 'UC-121 - Disable/Delete Role', 'Role & Permission Management', 'Seeded from Permission Matrix v0.2: Disable/Delete Role', TRUE, NOW()),
-  (UUID(), 'UC-122.VIEW_API_CONFIGURATION', 'UC-122 - View API Configuration', 'API Management', 'Seeded from Permission Matrix v0.2: View API Configuration', TRUE, NOW()),
-  (UUID(), 'UC-123.CREATE_API_CONFIGURATION', 'UC-123 - Create API Configuration', 'API Management', 'Seeded from Permission Matrix v0.2: Create API Configuration', TRUE, NOW()),
-  (UUID(), 'UC-124.UPDATE_API_CONFIGURATION', 'UC-124 - Update API Configuration', 'API Management', 'Seeded from Permission Matrix v0.2: Update API Configuration', TRUE, NOW()),
-  (UUID(), 'UC-125.DELETE_API_CONFIGURATION', 'UC-125 - Delete API Configuration', 'API Management', 'Seeded from Permission Matrix v0.2: Delete API Configuration', TRUE, NOW()),
-  (UUID(), 'UC-126.TEST_API_CONNECTION', 'UC-126 - Test API Connection', 'API Management', 'Seeded from Permission Matrix v0.2: Test API Connection', TRUE, NOW()),
-  (UUID(), 'UC-127.MANAGE_API_STATUS', 'UC-127 - Manage API Status', 'API Management', 'Seeded from Permission Matrix v0.2: Manage API Status', TRUE, NOW()),
-  (UUID(), 'UC-128.CONFIGURE_REQUEST_LIMIT', 'UC-128 - Configure Request Limit', 'API Management', 'Seeded from Permission Matrix v0.2: Configure Request Limit', TRUE, NOW()),
-  (UUID(), 'UC-129.VIEW_API_LOGS', 'UC-129 - View API Logs', 'API Management', 'Seeded from Permission Matrix v0.2: View API Logs', TRUE, NOW()),
-  (UUID(), 'UC-130.SEARCH_API_LOGS', 'UC-130 - Search API Logs', 'API Management', 'Seeded from Permission Matrix v0.2: Search API Logs', TRUE, NOW()),
-  (UUID(), 'UC-131.CREATE_AGENDA_TEMPLATE', 'UC-131 - Create Agenda Template', 'Agenda Templates Management', 'Seeded from Permission Matrix v0.2: Create Agenda Template', TRUE, NOW()),
-  (UUID(), 'UC-132.UPDATE_AGENDA_TEMPLATE', 'UC-132 - Update Agenda Template', 'Agenda Templates Management', 'Seeded from Permission Matrix v0.2: Update Agenda Template', TRUE, NOW()),
-  (UUID(), 'UC-133.DELETE_AGENDA_TEMPLATE', 'UC-133 - Delete Agenda Template', 'Agenda Templates Management', 'Seeded from Permission Matrix v0.2: Delete Agenda Template', TRUE, NOW()),
-  (UUID(), 'UC-134.VIEW_AGENDA_TEMPLATE_LIST', 'UC-134 - View Agenda Template List', 'Agenda Templates Management', 'Seeded from Permission Matrix v0.2: View Agenda Template List', TRUE, NOW()),
-  (UUID(), 'UC-135.VIEW_AGENDA_TEMPLATE_DETAIL', 'UC-135 - View Agenda Template Detail', 'Agenda Templates Management', 'Seeded from Permission Matrix v0.2: View Agenda Template Detail', TRUE, NOW())
+  (NULL, 'UC-01.VIEW_HOMEPAGE', 'UC-01 - View Homepage', 'Common', 'Seeded from Permission Matrix v0.2: View Homepage', TRUE, NOW()),
+  (NULL, 'UC-02.SEARCH_INFORMATION', 'UC-02 - Search Information', 'Common', 'Seeded from Permission Matrix v0.2: Search Information', TRUE, NOW()),
+  (NULL, 'UC-03.VIEW_CONTACT_INFO', 'UC-03 - View Contact Info', 'Common', 'Seeded from Permission Matrix v0.2: View Contact Info', TRUE, NOW()),
+  (NULL, 'UC-04.VIEW_POLICY_AND_TERMS', 'UC-04 - View Policy & Terms', 'Common', 'Seeded from Permission Matrix v0.2: View Policy & Terms', TRUE, NOW()),
+  (NULL, 'UC-05.VIEW_FAQ', 'UC-05 - View FAQ', 'Common', 'Seeded from Permission Matrix v0.2: View FAQ', TRUE, NOW()),
+  (NULL, 'UC-06.VIEW_NEWS', 'UC-06 - View News', 'Common', 'Seeded from Permission Matrix v0.2: View News', TRUE, NOW()),
+  (NULL, 'UC-07.VIEW_PARTNERS', 'UC-07 - View Partners', 'Common', 'Seeded from Permission Matrix v0.2: View Partners', TRUE, NOW()),
+  (NULL, 'UC-08.VIEW_GALLERY', 'UC-08 - View Gallery', 'Common', 'Seeded from Permission Matrix v0.2: View Gallery', TRUE, NOW()),
+  (NULL, 'UC-09.VIEW_NOTIFICATIONS', 'UC-09 - View Notifications', 'Common', 'Seeded from Permission Matrix v0.2: View Notifications', TRUE, NOW()),
+  (NULL, 'UC-10.LOGIN_VIA_SSO', 'UC-10 - Login via SSO', 'Authentication', 'Seeded from Permission Matrix v0.2: Login via SSO', TRUE, NOW()),
+  (NULL, 'UC-11.LOGIN_VIA_CREDENTIALS', 'UC-11 - Login via Credentials', 'Authentication', 'Seeded from Permission Matrix v0.2: Login via Credentials', TRUE, NOW()),
+  (NULL, 'UC-12.LOGOUT', 'UC-12 - Logout', 'Authentication', 'Seeded from Permission Matrix v0.2: Logout', TRUE, NOW()),
+  (NULL, 'UC-13.FORGOT_PASSWORD', 'UC-13 - Forgot Password', 'Authentication', 'Seeded from Permission Matrix v0.2: Forgot Password', TRUE, NOW()),
+  (NULL, 'UC-14.VIEW_PROFILE', 'UC-14 - View Profile', 'Profile Management', 'Seeded from Permission Matrix v0.2: View Profile', TRUE, NOW()),
+  (NULL, 'UC-15.UPDATE_PROFILE', 'UC-15 - Update Profile', 'Profile Management', 'Seeded from Permission Matrix v0.2: Update Profile', TRUE, NOW()),
+  (NULL, 'UC-16.CHANGE_PASSWORD', 'UC-16 - Change Password', 'Profile Management', 'Seeded from Permission Matrix v0.2: Change Password', TRUE, NOW()),
+  (NULL, 'UC-17.SUBMIT_VISIT_REQUEST', 'UC-17 - Submit Visit Request', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: Submit Visit Request', TRUE, NOW()),
+  (NULL, 'UC-18.APPROVE_CROSS_CAMPUS_REQUEST', 'UC-18 - Approve Cross-Campus Request', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: Approve Cross-Campus Request', TRUE, NOW()),
+  (NULL, 'UC-19.VIEW_GUEST_DELEGATION_DETAILS', 'UC-19 - View Guest Delegation Details', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: View Guest Delegation Details', TRUE, NOW()),
+  (NULL, 'UC-20.VIEW_GUEST_DELEGATION_LIST', 'UC-20 - View Guest Delegation List', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: View Guest Delegation List', TRUE, NOW()),
+  (NULL, 'UC-21.SEARCH_DELEGATIONS', 'UC-21 - Search Delegations', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: Search Delegations', TRUE, NOW()),
+  (NULL, 'UC-22.PROCESS_VISIT_REQUEST', 'UC-22 - Process Visit Request', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: Process Visit Request', TRUE, NOW()),
+  (NULL, 'UC-23.CREATE_GUEST_DELEGATION', 'UC-23 - Create Guest Delegation', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: Create Guest Delegation', TRUE, NOW()),
+  (NULL, 'UC-24.UPDATE_GUEST_DELEGATION', 'UC-24 - Update Guest Delegation', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: Update Guest Delegation', TRUE, NOW()),
+  (NULL, 'UC-25.PREPARE_VISIT_LOGISTICS', 'UC-25 - Prepare Visit Logistics', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: Prepare Visit Logistics', TRUE, NOW()),
+  (NULL, 'UC-26.UPDATE_VISIT_LOGISTICS', 'UC-26 - Update Visit Logistics', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: Update Visit Logistics', TRUE, NOW()),
+  (NULL, 'UC-27.CONFIRM_PARTICIPATION', 'UC-27 - Confirm Participation', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: Confirm Participation', TRUE, NOW()),
+  (NULL, 'UC-28.APPROVE_RESOURCE_REQUEST', 'UC-28 - Approve Resource Request', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: Approve Resource Request', TRUE, NOW()),
+  (NULL, 'UC-29.PROPOSE_RESOURCE_MODIFICATION', 'UC-29 - Propose Resource Modification', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: Propose Resource Modification', TRUE, NOW()),
+  (NULL, 'UC-30.CONFIRM_THE_CHANGE_PROPOSAL', 'UC-30 - Confirm The Change Proposal', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: Confirm The Change Proposal', TRUE, NOW()),
+  (NULL, 'UC-31.CREATE_MEETING_MINUTES', 'UC-31 - Create Meeting Minutes', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: Create Meeting Minutes', TRUE, NOW()),
+  (NULL, 'UC-32.EDIT_MEETING_MINUTES', 'UC-32 - Edit Meeting Minutes', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: Edit Meeting Minutes', TRUE, NOW()),
+  (NULL, 'UC-33.VIEW_MEETING_MINUTES_DETAILS', 'UC-33 - View Meeting Minutes Details', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: View Meeting Minutes Details', TRUE, NOW()),
+  (NULL, 'UC-34.SUBMIT_DELEGATION_FEEDBACK', 'UC-34 - Submit Delegation Feedback', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: Submit Delegation Feedback', TRUE, NOW()),
+  (NULL, 'UC-35.SCAN_BUSINESS_CARD', 'UC-35 - Scan Business Card', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: Scan Business Card', TRUE, NOW()),
+  (NULL, 'UC-36.CREATE_PARTNER_PROFILE', 'UC-36 - Create Partner Profile', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: Create Partner Profile', TRUE, NOW()),
+  (NULL, 'UC-37.UPLOAD_ATTACHED_DOCUMENTS', 'UC-37 - Upload Attached Documents', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: Upload Attached Documents', TRUE, NOW()),
+  (NULL, 'UC-38.UPLOAD_VISIT_PHOTOS', 'UC-38 - Upload Visit Photos', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: Upload Visit Photos', TRUE, NOW()),
+  (NULL, 'UC-39.TAG_FACES_ON_PHOTOS', 'UC-39 - Tag Faces on Photos', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: Tag Faces on Photos', TRUE, NOW()),
+  (NULL, 'UC-40.CREATE_NEWS_ARTICLE', 'UC-40 - Create News Article', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: Create News Article', TRUE, NOW()),
+  (NULL, 'UC-41.CLOSE_DELEGATION', 'UC-41 - Close Delegation', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: Close Delegation', TRUE, NOW()),
+  (NULL, 'UC-42.VIEW_EMAIL_TEMPLATE_LIST', 'UC-42 - View Email Template List', 'Email Management', 'Seeded from Permission Matrix v0.2: View Email Template List', TRUE, NOW()),
+  (NULL, 'UC-43.VIEW_EMAIL_TEMPLATE_DETAIL', 'UC-43 - View Email Template Detail', 'Email Management', 'Seeded from Permission Matrix v0.2: View Email Template Detail', TRUE, NOW()),
+  (NULL, 'UC-44.UPDATE_EMAIL_TEMPLATE', 'UC-44 - Update Email Template', 'Email Management', 'Seeded from Permission Matrix v0.2: Update Email Template', TRUE, NOW()),
+  (NULL, 'UC-45.CREATE_EMAIL_TEMPLATE', 'UC-45 - Create Email Template', 'Email Management', 'Seeded from Permission Matrix v0.2: Create Email Template', TRUE, NOW()),
+  (NULL, 'UC-46.EDIT_EMAIL_CONTENT', 'UC-46 - Edit Email Content', 'Email Management', 'Seeded from Permission Matrix v0.2: Edit Email Content', TRUE, NOW()),
+  (NULL, 'UC-47.SEND_EMAIL', 'UC-47 - Send Email', 'Email Management', 'Seeded from Permission Matrix v0.2: Send Email', TRUE, NOW()),
+  (NULL, 'UC-48.VIEW_EMAIL', 'UC-48 - View Email', 'Email Management', 'Seeded from Permission Matrix v0.2: View Email', TRUE, NOW()),
+  (NULL, 'UC-49.REPLY_TO_EMAIL', 'UC-49 - Reply to Email', 'Email Management', 'Seeded from Permission Matrix v0.2: Reply to Email', TRUE, NOW()),
+  (NULL, 'UC-50.PROCESS_PARTNER_CREATION_REQUEST', 'UC-50 - Process Partner Creation Request', 'Partner Management', 'Seeded from Permission Matrix v0.2: Process Partner Creation Request', TRUE, NOW()),
+  (NULL, 'UC-51.EDIT_PARTNER_INFORMATION', 'UC-51 - Edit Partner Information', 'Partner Management', 'Seeded from Permission Matrix v0.2: Edit Partner Information', TRUE, NOW()),
+  (NULL, 'UC-52.VIEW_PARTNER_LISTS', 'UC-52 - View Partner Lists', 'Partner Management', 'Seeded from Permission Matrix v0.2: View Partner Lists', TRUE, NOW()),
+  (NULL, 'UC-53.SEARCH_PARTNERS', 'UC-53 - Search Partners', 'Partner Management', 'Seeded from Permission Matrix v0.2: Search Partners', TRUE, NOW()),
+  (NULL, 'UC-54.VIEW_PARTNER_DETAILS', 'UC-54 - View Partner Details', 'Partner Management', 'Seeded from Permission Matrix v0.2: View Partner Details', TRUE, NOW()),
+  (NULL, 'UC-55.VIEW_DOCUMENT_LIST', 'UC-55 - View Document List', 'Document Management', 'Seeded from Permission Matrix v0.2: View Document List', TRUE, NOW()),
+  (NULL, 'UC-56.SEARCH_DOCUMENTS', 'UC-56 - Search Documents', 'Document Management', 'Seeded from Permission Matrix v0.2: Search Documents', TRUE, NOW()),
+  (NULL, 'UC-57.VIEW_GALLERY_ITEM_LIST', 'UC-57 - View Gallery Item List', 'Gallery Management', 'Seeded from Permission Matrix v0.2: View Gallery Item List', TRUE, NOW()),
+  (NULL, 'UC-58.SEARCH_GALLERY_ITEMS', 'UC-58 - Search Gallery Items', 'Gallery Management', 'Seeded from Permission Matrix v0.2: Search Gallery Items', TRUE, NOW()),
+  (NULL, 'UC-59.ADD_GALLERY_ITEM', 'UC-59 - Add Gallery Item', 'Gallery Management', 'Seeded from Permission Matrix v0.2: Add Gallery Item', TRUE, NOW()),
+  (NULL, 'UC-60.UPDATE_GALLERY_ITEM', 'UC-60 - Update Gallery Item', 'Gallery Management', 'Seeded from Permission Matrix v0.2: Update Gallery Item', TRUE, NOW()),
+  (NULL, 'UC-61.DELETE_GALLERY_ITEM', 'UC-61 - Delete Gallery Item', 'Gallery Management', 'Seeded from Permission Matrix v0.2: Delete Gallery Item', TRUE, NOW()),
+  (NULL, 'UC-62.VIEW_MINUTES_LIST', 'UC-62 - View Minutes List', 'Minutes Management', 'Seeded from Permission Matrix v0.2: View Minutes List', TRUE, NOW()),
+  (NULL, 'UC-63.SEARCH_FILTER_MINUTES', 'UC-63 - Search/Filter Minutes', 'Minutes Management', 'Seeded from Permission Matrix v0.2: Search/Filter Minutes', TRUE, NOW()),
+  (NULL, 'UC-64.VIEW_LIST_FAQ', 'UC-64 - View List FAQ', 'FAQ Management', 'Seeded from Permission Matrix v0.2: View List FAQ', TRUE, NOW()),
+  (NULL, 'UC-65.CREATE_FAQ', 'UC-65 - Create FAQ', 'FAQ Management', 'Seeded from Permission Matrix v0.2: Create FAQ', TRUE, NOW()),
+  (NULL, 'UC-66.UPDATE_FAQ', 'UC-66 - Update FAQ', 'FAQ Management', 'Seeded from Permission Matrix v0.2: Update FAQ', TRUE, NOW()),
+  (NULL, 'UC-67.CHANGE_FAQ_VISIBILITY', 'UC-67 - Change FAQ Visibility', 'FAQ Management', 'Seeded from Permission Matrix v0.2: Change FAQ Visibility', TRUE, NOW()),
+  (NULL, 'UC-68.SEARCH_FAQ', 'UC-68 - Search FAQ', 'FAQ Management', 'Seeded from Permission Matrix v0.2: Search FAQ', TRUE, NOW()),
+  (NULL, 'UC-69.VIEW_DASHBOARD_STATISTICS', 'UC-69 - View Dashboard Statistics', 'Report Management', 'Seeded from Permission Matrix v0.2: View Dashboard Statistics', TRUE, NOW()),
+  (NULL, 'UC-70.EXPORT_STATISTICS_REPORT', 'UC-70 - Export Statistics Report', 'Report Management', 'Seeded from Permission Matrix v0.2: Export Statistics Report', TRUE, NOW()),
+  (NULL, 'UC-71.FILTER_DASHBOARD_BY_TIME', 'UC-71 - Filter Dashboard By Time', 'Report Management', 'Seeded from Permission Matrix v0.2: Filter Dashboard By Time', TRUE, NOW()),
+  (NULL, 'UC-72.VIEW_MY_EVENTS', 'UC-72 - View My Events', 'Calendar Management', 'Seeded from Permission Matrix v0.2: View My Events', TRUE, NOW()),
+  (NULL, 'UC-73.VIEW_DEPARTMENT_CALENDAR', 'UC-73 - View Department Calendar', 'Calendar Management', 'Seeded from Permission Matrix v0.2: View Department Calendar', TRUE, NOW()),
+  (NULL, 'UC-74.SWITCH_VIEW_MODE', 'UC-74 - Switch View Mode', 'Calendar Management', 'Seeded from Permission Matrix v0.2: Switch View Mode', TRUE, NOW()),
+  (NULL, 'UC-75.ADD_PERSONAL_EVENT', 'UC-75 - Add Personal Event', 'Calendar Management', 'Seeded from Permission Matrix v0.2: Add Personal Event', TRUE, NOW()),
+  (NULL, 'UC-76.DELETE_PERSONAL_EVENT', 'UC-76 - Delete Personal Event', 'Calendar Management', 'Seeded from Permission Matrix v0.2: Delete Personal Event', TRUE, NOW()),
+  (NULL, 'UC-77.UPDATE_PERSONAL_EVENT', 'UC-77 - Update Personal Event', 'Calendar Management', 'Seeded from Permission Matrix v0.2: Update Personal Event', TRUE, NOW()),
+  (NULL, 'UC-78.VIEW_EVENT_DETAILS', 'UC-78 - View Event Details', 'Calendar Management', 'Seeded from Permission Matrix v0.2: View Event Details', TRUE, NOW()),
+  (NULL, 'UC-79.SEARCH_FILTER_FEEDBACK', 'UC-79 - Search/Filter Feedback', 'Feedback Management', 'Seeded from Permission Matrix v0.2: Search/Filter Feedback', TRUE, NOW()),
+  (NULL, 'UC-80.VIEW_FEEDBACK_SUMMARY', 'UC-80 - View Feedback Summary', 'Feedback Management', 'Seeded from Permission Matrix v0.2: View Feedback Summary', TRUE, NOW()),
+  (NULL, 'UC-81.ADD_NEW_CAMPUS', 'UC-81 - Add New Campus', 'Campus Management', 'Seeded from Permission Matrix v0.2: Add New Campus', TRUE, NOW()),
+  (NULL, 'UC-82.VIEW_CAMPUS_LIST', 'UC-82 - View Campus List', 'Campus Management', 'Seeded from Permission Matrix v0.2: View Campus List', TRUE, NOW()),
+  (NULL, 'UC-83.SEARCH_AND_FILTER_CAMPUS', 'UC-83 - Search and Filter Campus', 'Campus Management', 'Seeded from Permission Matrix v0.2: Search and Filter Campus', TRUE, NOW()),
+  (NULL, 'UC-84.VIEW_CAMPUS_DETAILS', 'UC-84 - View Campus Details', 'Campus Management', 'Seeded from Permission Matrix v0.2: View Campus Details', TRUE, NOW()),
+  (NULL, 'UC-85.UPDATE_CAMPUS', 'UC-85 - Update Campus', 'Campus Management', 'Seeded from Permission Matrix v0.2: Update Campus', TRUE, NOW()),
+  (NULL, 'UC-86.MANAGE_CAMPUS_STATUS', 'UC-86 - Manage Campus Status', 'Campus Management', 'Seeded from Permission Matrix v0.2: Manage Campus Status', TRUE, NOW()),
+  (NULL, 'UC-87.ASSIGN_CAMPUS_LEAD', 'UC-87 - Assign Campus Lead', 'Campus Management', 'Seeded from Permission Matrix v0.2: Assign Campus Lead', TRUE, NOW()),
+  (NULL, 'UC-88.APPROVE_NEWS', 'UC-88 - Approve News', 'News Management', 'Seeded from Permission Matrix v0.2: Approve News', TRUE, NOW()),
+  (NULL, 'UC-89.PUBLISH_NEWS', 'UC-89 - Publish News', 'News Management', 'Seeded from Permission Matrix v0.2: Publish News', TRUE, NOW()),
+  (NULL, 'UC-90.VIEW_NEWS_LIST', 'UC-90 - View News List', 'News Management', 'Seeded from Permission Matrix v0.2: View News List', TRUE, NOW()),
+  (NULL, 'UC-91.VIEW_NEWS_DETAILS', 'UC-91 - View News Details', 'News Management', 'Seeded from Permission Matrix v0.2: View News Details', TRUE, NOW()),
+  (NULL, 'UC-92.ADD_MULTILINGUAL_NEWS', 'UC-92 - Add Multilingual News', 'News Management', 'Seeded from Permission Matrix v0.2: Add Multilingual News', TRUE, NOW()),
+  (NULL, 'UC-93.MANAGE_NEWS_VISIBILITY', 'UC-93 - Manage News Visibility', 'News Management', 'Seeded from Permission Matrix v0.2: Manage News Visibility', TRUE, NOW()),
+  (NULL, 'UC-94.EDIT_NEWS', 'UC-94 - Edit News', 'News Management', 'Seeded from Permission Matrix v0.2: Edit News', TRUE, NOW()),
+  (NULL, 'UC-95.VIEW_ACCOUNT_LIST', 'UC-95 - View Account List', 'Account Management', 'Seeded from Permission Matrix v0.2: View Account List', TRUE, NOW()),
+  (NULL, 'UC-96.CREATE_ACCOUNT', 'UC-96 - Create Account', 'Account Management', 'Seeded from Permission Matrix v0.2: Create Account', TRUE, NOW()),
+  (NULL, 'UC-97.MANAGE_ACCOUNT_STATUS', 'UC-97 - Manage Account Status', 'Account Management', 'Seeded from Permission Matrix v0.2: Manage Account Status', TRUE, NOW()),
+  (NULL, 'UC-98.VIEW_ACCOUNT_DETAILS', 'UC-98 - View Account Details', 'Account Management', 'Seeded from Permission Matrix v0.2: View Account Details', TRUE, NOW()),
+  (NULL, 'UC-99.SEARCH_AND_FILTER_ACCOUNTS', 'UC-99 - Search and Filter Accounts', 'Account Management', 'Seeded from Permission Matrix v0.2: Search and Filter Accounts', TRUE, NOW()),
+  (NULL, 'UC-100.UPDATE_ACCOUNT_ROLE', 'UC-100 - Update Account Role', 'Account Management', 'Seeded from Permission Matrix v0.2: Update Account Role', TRUE, NOW()),
+  (NULL, 'UC-101.ADD_NEW_DEPARTMENT', 'UC-101 - Add New Department', 'Department Management', 'Seeded from Permission Matrix v0.2: Add New Department', TRUE, NOW()),
+  (NULL, 'UC-102.UPDATE_DEPARTMENT', 'UC-102 - Update Department', 'Department Management', 'Seeded from Permission Matrix v0.2: Update Department', TRUE, NOW()),
+  (NULL, 'UC-103.SEARCH_AND_FILTER_DEPARTMENTS', 'UC-103 - Search and Filter Departments', 'Department Management', 'Seeded from Permission Matrix v0.2: Search and Filter Departments', TRUE, NOW()),
+  (NULL, 'UC-104.VIEW_DEPARTMENT_LIST', 'UC-104 - View Department List', 'Department Management', 'Seeded from Permission Matrix v0.2: View Department List', TRUE, NOW()),
+  (NULL, 'UC-105.VIEW_DEPARTMENT_DETAILS', 'UC-105 - View Department Details', 'Department Management', 'Seeded from Permission Matrix v0.2: View Department Details', TRUE, NOW()),
+  (NULL, 'UC-106.MANAGE_DEPARTMENT_STATUS', 'UC-106 - Manage Department Status', 'Department Management', 'Seeded from Permission Matrix v0.2: Manage Department Status', TRUE, NOW()),
+  (NULL, 'UC-107.ADD_DEPARTMENT_PERSONNEL', 'UC-107 - Add Department Personnel', 'Department Management', 'Seeded from Permission Matrix v0.2: Add Department Personnel', TRUE, NOW()),
+  (NULL, 'UC-108.VIEW_PERSONNEL_DETAILS', 'UC-108 - View Personnel Details', 'Department Management', 'Seeded from Permission Matrix v0.2: View Personnel Details', TRUE, NOW()),
+  (NULL, 'UC-109.SEARCH_PERSONNEL', 'UC-109 - Search Personnel', 'Department Management', 'Seeded from Permission Matrix v0.2: Search Personnel', TRUE, NOW()),
+  (NULL, 'UC-110.REVIEW_ASSIGNED_TASKS', 'UC-110 - Review Assigned Tasks', 'Department Management', 'Seeded from Permission Matrix v0.2: Review Assigned Tasks', TRUE, NOW()),
+  (NULL, 'UC-111.ASSIGN_TASKS', 'UC-111 - Assign Tasks', 'Department Management', 'Seeded from Permission Matrix v0.2: Assign Tasks', TRUE, NOW()),
+  (NULL, 'UC-112.SIGN_THE_SERVICE_DELIVERY_REPORT', 'UC-112 - Sign The Service Delivery Report', 'Department Management', 'Seeded from Permission Matrix v0.2: Sign The Service Delivery Report', TRUE, NOW()),
+  (NULL, 'UC-113.REMOVE_PERSONNEL', 'UC-113 - Remove Personnel', 'Department Management', 'Seeded from Permission Matrix v0.2: Remove Personnel', TRUE, NOW()),
+  (NULL, 'UC-114.VIEW_COORDINATION_TASKS', 'UC-114 - View Coordination Tasks', 'Department Management', 'Seeded from Permission Matrix v0.2: View Coordination Tasks', TRUE, NOW()),
+  (NULL, 'UC-115.SEARCH_COORDINATION_TASKS', 'UC-115 - Search Coordination Tasks', 'Department Management', 'Seeded from Permission Matrix v0.2: Search Coordination Tasks', TRUE, NOW()),
+  (NULL, 'UC-116.REASSIGN_DEPARTMENT_LEAD', 'UC-116 - Reassign Department Lead', 'Department Management', 'Seeded from Permission Matrix v0.2: Reassign Department Lead', TRUE, NOW()),
+  (NULL, 'UC-117.VIEW_ROLE_LIST', 'UC-117 - View Role List', 'Role & Permission Management', 'Seeded from Permission Matrix v0.2: View Role List', TRUE, NOW()),
+  (NULL, 'UC-118.CREATE_NEW_ROLE', 'UC-118 - Create New Role', 'Role & Permission Management', 'Seeded from Permission Matrix v0.2: Create New Role', TRUE, NOW()),
+  (NULL, 'UC-119.CONFIGURE_ROLE_PERMISSIONS', 'UC-119 - Configure Role Permissions', 'Role & Permission Management', 'Seeded from Permission Matrix v0.2: Configure Role Permissions', TRUE, NOW()),
+  (NULL, 'UC-120.UPDATE_ROLE_DETAILS', 'UC-120 - Update Role Details', 'Role & Permission Management', 'Seeded from Permission Matrix v0.2: Update Role Details', TRUE, NOW()),
+  (NULL, 'UC-121.DISABLE_DELETE_ROLE', 'UC-121 - Disable/Delete Role', 'Role & Permission Management', 'Seeded from Permission Matrix v0.2: Disable/Delete Role', TRUE, NOW()),
+  (NULL, 'UC-122.VIEW_API_CONFIGURATION', 'UC-122 - View API Configuration', 'API Management', 'Seeded from Permission Matrix v0.2: View API Configuration', TRUE, NOW()),
+  (NULL, 'UC-123.CREATE_API_CONFIGURATION', 'UC-123 - Create API Configuration', 'API Management', 'Seeded from Permission Matrix v0.2: Create API Configuration', TRUE, NOW()),
+  (NULL, 'UC-124.UPDATE_API_CONFIGURATION', 'UC-124 - Update API Configuration', 'API Management', 'Seeded from Permission Matrix v0.2: Update API Configuration', TRUE, NOW()),
+  (NULL, 'UC-125.DELETE_API_CONFIGURATION', 'UC-125 - Delete API Configuration', 'API Management', 'Seeded from Permission Matrix v0.2: Delete API Configuration', TRUE, NOW()),
+  (NULL, 'UC-126.TEST_API_CONNECTION', 'UC-126 - Test API Connection', 'API Management', 'Seeded from Permission Matrix v0.2: Test API Connection', TRUE, NOW()),
+  (NULL, 'UC-127.MANAGE_API_STATUS', 'UC-127 - Manage API Status', 'API Management', 'Seeded from Permission Matrix v0.2: Manage API Status', TRUE, NOW()),
+  (NULL, 'UC-128.CONFIGURE_REQUEST_LIMIT', 'UC-128 - Configure Request Limit', 'API Management', 'Seeded from Permission Matrix v0.2: Configure Request Limit', TRUE, NOW()),
+  (NULL, 'UC-129.VIEW_API_LOGS', 'UC-129 - View API Logs', 'API Management', 'Seeded from Permission Matrix v0.2: View API Logs', TRUE, NOW()),
+  (NULL, 'UC-130.SEARCH_API_LOGS', 'UC-130 - Search API Logs', 'API Management', 'Seeded from Permission Matrix v0.2: Search API Logs', TRUE, NOW()),
+  (NULL, 'UC-131.CREATE_AGENDA_TEMPLATE', 'UC-131 - Create Agenda Template', 'Agenda Templates Management', 'Seeded from Permission Matrix v0.2: Create Agenda Template', TRUE, NOW()),
+  (NULL, 'UC-132.UPDATE_AGENDA_TEMPLATE', 'UC-132 - Update Agenda Template', 'Agenda Templates Management', 'Seeded from Permission Matrix v0.2: Update Agenda Template', TRUE, NOW()),
+  (NULL, 'UC-133.DELETE_AGENDA_TEMPLATE', 'UC-133 - Delete Agenda Template', 'Agenda Templates Management', 'Seeded from Permission Matrix v0.2: Delete Agenda Template', TRUE, NOW()),
+  (NULL, 'UC-134.VIEW_AGENDA_TEMPLATE_LIST', 'UC-134 - View Agenda Template List', 'Agenda Templates Management', 'Seeded from Permission Matrix v0.2: View Agenda Template List', TRUE, NOW()),
+  (NULL, 'UC-135.VIEW_AGENDA_TEMPLATE_DETAIL', 'UC-135 - View Agenda Template Detail', 'Agenda Templates Management', 'Seeded from Permission Matrix v0.2: View Agenda Template Detail', TRUE, NOW())
 ON DUPLICATE KEY UPDATE
   name = VALUES(name),
   permission_group = VALUES(permission_group),
@@ -4493,12 +4467,12 @@ START TRANSACTION;
 -- 1. Ensure canonical roles exist. This does not replace roles.sql; it makes this seed safer to rerun.
 INSERT INTO roles (role_id, role_code, name, description, status, created_at, deleted_at, deleted_by)
 VALUES
-  (UUID(), 'ADMIN',   'Admin',       'Quản trị kỹ thuật hệ thống', 'ACTIVE', NOW(), NULL, NULL),
-  (UUID(), 'HO',      'Head Office', 'Quản lý cấp Head Office', 'ACTIVE', NOW(), NULL, NULL),
-  (UUID(), 'STAFF',   'IC Staff',    'Nhân sự phòng Hợp tác Quốc tế, dùng users.sub_role = Leader/Staff', 'ACTIVE', NOW(), NULL, NULL),
-  (UUID(), 'DEPT',    'Department',  'Nhân sự phòng ban khác, dùng users.sub_role = Leader/Staff', 'ACTIVE', NOW(), NULL, NULL),
-  (UUID(), 'STUDENT', 'Student',     'Sinh viên hỗ trợ', 'ACTIVE', NOW(), NULL, NULL),
-  (UUID(), 'VISITOR', 'Visitor',     'Khách gửi visit request và theo dõi thông tin của mình', 'ACTIVE', NOW(), NULL, NULL)
+  (NULL, 'ADMIN',   'Admin',       'Quản trị kỹ thuật hệ thống', 'ACTIVE', NOW(), NULL, NULL),
+  (NULL, 'HO',      'Head Office', 'Quản lý cấp Head Office', 'ACTIVE', NOW(), NULL, NULL),
+  (NULL, 'STAFF',   'IC Staff',    'Nhân sự phòng Hợp tác Quốc tế, dùng users.sub_role = Leader/Staff', 'ACTIVE', NOW(), NULL, NULL),
+  (NULL, 'DEPT',    'Department',  'Nhân sự phòng ban khác, dùng users.sub_role = Leader/Staff', 'ACTIVE', NOW(), NULL, NULL),
+  (NULL, 'STUDENT', 'Student',     'Sinh viên hỗ trợ', 'ACTIVE', NOW(), NULL, NULL),
+  (NULL, 'VISITOR', 'Visitor',     'Khách gửi visit request và theo dõi thông tin của mình', 'ACTIVE', NOW(), NULL, NULL)
 ON DUPLICATE KEY UPDATE
   name = VALUES(name),
   description = VALUES(description),
@@ -5034,14 +5008,14 @@ INSERT INTO users
    status, email_verified_at, failed_login_count,
    created_via, created_at)
 VALUES
-  (UUID(), 'System Administrator',      'admin@fpt.edu.vn',            @pwd_hash, @role_admin,   NULL,     @campus_hn, NULL,         'ACTIVE', NOW(), 0, 'MANUAL_CREATED', NOW()),
-  (UUID(), 'Head Office Manager',       'ho@fpt.edu.vn',               @pwd_hash, @role_ho,      NULL,     @campus_hn, NULL,         'ACTIVE', NOW(), 0, 'MANUAL_CREATED', NOW()),
-  (UUID(), 'IC Staff Leader (HN)',      'staff.leader.hn@fpt.edu.vn',  @pwd_hash, @role_staff,   'Leader', @campus_hn, @dept_ic_hn,  'ACTIVE', NOW(), 0, 'MANUAL_CREATED', NOW()),
-  (UUID(), 'IC Staff (HN)',             'staff.hn@fpt.edu.vn',         @pwd_hash, @role_staff,   'Staff',  @campus_hn, @dept_ic_hn,  'ACTIVE', NOW(), 0, 'MANUAL_CREATED', NOW()),
-  (UUID(), 'Department Lead (HN)',      'dept.leader.hn@fpt.edu.vn',   @pwd_hash, @role_dept,    'Leader', @campus_hn, @dept_aca_hn, 'ACTIVE', NOW(), 0, 'MANUAL_CREATED', NOW()),
-  (UUID(), 'Department Personnel (HN)', 'dept.hn@fpt.edu.vn',          @pwd_hash, @role_dept,    'Staff',  @campus_hn, @dept_aca_hn, 'ACTIVE', NOW(), 0, 'MANUAL_CREATED', NOW()),
-  (UUID(), 'Support Student',           'student@fpt.edu.vn',          @pwd_hash, @role_student, NULL,     @campus_hn, NULL,         'ACTIVE', NOW(), 0, 'MANUAL_CREATED', NOW()),
-  (UUID(), 'External Visitor',          'visitor@example.com',         @pwd_hash, @role_visitor, NULL,     NULL,       NULL,         'ACTIVE', NOW(), 0, 'MANUAL_CREATED', NOW())
+  (NULL, 'System Administrator',      'admin@fpt.edu.vn',            @pwd_hash, @role_admin,   NULL,     @campus_hn, NULL,         'ACTIVE', NOW(), 0, 'MANUAL_CREATED', NOW()),
+  (NULL, 'Head Office Manager',       'ho@fpt.edu.vn',               @pwd_hash, @role_ho,      NULL,     @campus_hn, NULL,         'ACTIVE', NOW(), 0, 'MANUAL_CREATED', NOW()),
+  (NULL, 'IC Staff Leader (HN)',      'staff.leader.hn@fpt.edu.vn',  @pwd_hash, @role_staff,   'Leader', @campus_hn, @dept_ic_hn,  'ACTIVE', NOW(), 0, 'MANUAL_CREATED', NOW()),
+  (NULL, 'IC Staff (HN)',             'staff.hn@fpt.edu.vn',         @pwd_hash, @role_staff,   'Staff',  @campus_hn, @dept_ic_hn,  'ACTIVE', NOW(), 0, 'MANUAL_CREATED', NOW()),
+  (NULL, 'Department Lead (HN)',      'dept.leader.hn@fpt.edu.vn',   @pwd_hash, @role_dept,    'Leader', @campus_hn, @dept_aca_hn, 'ACTIVE', NOW(), 0, 'MANUAL_CREATED', NOW()),
+  (NULL, 'Department Personnel (HN)', 'dept.hn@fpt.edu.vn',          @pwd_hash, @role_dept,    'Staff',  @campus_hn, @dept_aca_hn, 'ACTIVE', NOW(), 0, 'MANUAL_CREATED', NOW()),
+  (NULL, 'Support Student',           'student@fpt.edu.vn',          @pwd_hash, @role_student, NULL,     @campus_hn, NULL,         'ACTIVE', NOW(), 0, 'MANUAL_CREATED', NOW()),
+  (NULL, 'External Visitor',          'visitor@example.com',         @pwd_hash, @role_visitor, NULL,     NULL,       NULL,         'ACTIVE', NOW(), 0, 'MANUAL_CREATED', NOW())
 ON DUPLICATE KEY UPDATE
   full_name = VALUES(full_name),
   password_hash = VALUES(password_hash),
@@ -5059,7 +5033,7 @@ ON DUPLICATE KEY UPDATE
 -- uq_user_auth_provider_type(user_id, provider_type) makes this idempotent.
 INSERT INTO user_auth_providers
   (auth_provider_id, user_id, provider_type, provider_subject, provider_email, is_enabled, linked_at)
-SELECT UUID(), u.user_id, 'LOCAL_PASSWORD', NULL, u.email, 1, NOW()
+SELECT NULL, u.user_id, 'LOCAL_PASSWORD', NULL, u.email, 1, NOW()
 FROM users u
 WHERE u.email IN (
   'admin@fpt.edu.vn',
@@ -5498,3 +5472,26 @@ WHERE visit_scope <> 'MULTI_CAMPUS';
 SELECT 'admin_view_rows' AS check_name, COUNT(*) AS value
 FROM vw_visit_requests_for_admin;
 
+
+
+-- =====================================================================
+-- FINAL INT BUILD VERIFICATION
+-- =====================================================================
+SELECT 'FINAL INT AUTO_INCREMENT BUILD v7.1 FIXED' AS build_name;
+
+SELECT 'char36_columns_remaining' AS check_name, COUNT(*) AS value
+FROM information_schema.columns
+WHERE table_schema = DATABASE()
+  AND column_type LIKE 'char(36)%';
+
+SELECT 'auto_increment_primary_keys' AS check_name, COUNT(*) AS value
+FROM information_schema.columns
+WHERE table_schema = DATABASE()
+  AND extra LIKE '%auto_increment%';
+
+SELECT 'role_permissions_has_surrogate_pk' AS check_name, COUNT(*) AS value
+FROM information_schema.columns
+WHERE table_schema = DATABASE()
+  AND table_name = 'role_permissions'
+  AND column_name = 'role_permission_id'
+  AND extra LIKE '%auto_increment%';
