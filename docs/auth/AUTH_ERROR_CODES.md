@@ -28,6 +28,10 @@ Hai file này phải luôn đồng bộ.
 | `FEID_DISABLED` | 403 | `AllowFeid = false` | |
 | `FEID_NOT_CONFIGURED` | 403 | FEID login nhưng chưa cấu hình provider thật | Không fake login |
 | `FEID_NOT_ELIGIBLE` | 403 | FEID identity hợp lệ nhưng không đủ điều kiện (vd cohort < `StudentFeidMinCohort`) | Chỉ reachable khi FEID có provider thật |
+| `SESSION_REVOKED` | 401 | Session bị thu hồi (logout / đổi security context) | SessionValidationMiddleware |
+| `TOKEN_EXPIRED` | 401 | Access/refresh token hết hạn hoặc invalid ở protected endpoint | Frontend interceptor thử refresh |
+| `UNAUTHORIZED` | 401 | Chưa đăng nhập / thiếu token | |
+| `INTERNAL_SERVER_ERROR` | 500 | Lỗi bất ngờ | KHÔNG lộ stackTrace/SQL/secret ở production |
 
 ## Quy tắc status code
 - **400**: thiếu input/format sai (`CAMPUS_REQUIRED`, validation).

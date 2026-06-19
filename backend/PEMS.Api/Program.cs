@@ -115,6 +115,16 @@ var app = builder.Build();
 // headers, so CORS headers added downstream survive on error responses.
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 
+// Baseline security headers on every response (safe for the JSON API + SPA).
+app.UseMiddleware<SecurityHeadersMiddleware>();
+
+// HSTS only outside Development so local HTTP dev keeps working. Requires that
+// production is served fully over HTTPS (it is, behind the reverse proxy).
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHsts();
+}
+
 app.UseCors(CorsPolicy);
 
 if (app.Environment.IsDevelopment())

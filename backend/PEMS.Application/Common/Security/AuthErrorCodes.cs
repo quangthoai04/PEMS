@@ -27,4 +27,16 @@ public static class AuthErrorCodes
 
     public const string ExternalAuthFailed = "EXTERNAL_AUTH_FAILED";
     public const string VisitorProvisionDisabled = "VISITOR_PROVISION_DISABLED";
+
+    /// <summary>Session was revoked server-side (logout, security context change). HTTP 401.</summary>
+    public const string SessionRevoked = "SESSION_REVOKED";
+
+    /// <summary>Access/refresh token expired or invalid at a protected endpoint. HTTP 401.</summary>
+    public const string TokenExpired = "TOKEN_EXPIRED";
+
+    /// <summary>Generic unauthenticated state. HTTP 401.</summary>
+    public const string Unauthorized = "UNAUTHORIZED";
+
+    /// <summary>Unexpected server error. Production responses NEVER include details. HTTP 500.</summary>
+    public const string InternalServerError = "INTERNAL_SERVER_ERROR";
 }

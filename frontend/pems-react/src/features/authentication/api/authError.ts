@@ -32,6 +32,10 @@ export const AUTH_ERROR_MESSAGES: Record<string, string> = {
     'Tài khoản FEID của bạn chưa đủ điều kiện đăng nhập. Vui lòng liên hệ quản trị viên.',
   EXTERNAL_AUTH_FAILED: 'Không thể đăng nhập bằng tài khoản này. Vui lòng thử lại.',
   VISITOR_PROVISION_DISABLED: 'Hệ thống chưa cho phép tạo tài khoản Visitor tự động.',
+  SESSION_REVOKED: 'Phiên đăng nhập đã bị thu hồi. Vui lòng đăng nhập lại.',
+  TOKEN_EXPIRED: 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.',
+  UNAUTHORIZED: 'Bạn cần đăng nhập để tiếp tục.',
+  INTERNAL_SERVER_ERROR: 'Đã xảy ra lỗi hệ thống. Vui lòng thử lại sau.',
 };
 
 /**

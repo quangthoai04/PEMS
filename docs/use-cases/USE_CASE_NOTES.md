@@ -1,15 +1,15 @@
 <!-- =====================================================================
-PEMS DOC UPDATE v8.2-full-preserved-cancel-delegation-no-external-note
-Generated: 2026-06-19
-Mode: PRESERVE ORIGINAL CONTENT + APPEND ADDENDUM.
-No original section below has been removed or compressed.
-The addendum section at the end is the authoritative update for cancellation UC-136.
+PEMS DOC UPDATE v8.2-clean-sync-use-case-notes
+Generated: 2026-06-20
+Mode: FULL DOCUMENT CLEAN SYNC.
+UC-136 has been added to the main UC Notes table.
+Parser-risk related-UC table has been converted into bullet clarification notes.
 ===================================================================== -->
 
 # UC Notes
 
 > File này chỉ giữ các trường đã cần dùng hiện tại: **UC ID**, **UC Name**, **Note**. Các trường khác như Actor, Preconditions, Postconditions, FT, Priority, Status... tạm thời không đưa vào vì chưa kiểm định.
-> **Updated for:** SQL v5 `SSO_AUTO_PROVISION` + strict visit visibility. ADMIN không xem visit/delegation; HO chỉ xem/duyệt liên cơ sở; Staff Leader chỉ xem/xử lý theo campus scope.
+> **Updated for:** SQL v8.2 `SSO_AUTO_PROVISION` + strict visit visibility + UC-136 cancellation flow. ADMIN không xem/hủy visit/delegation; HO chỉ xem/duyệt/hủy liên cơ sở; Staff Leader chỉ xem/xử lý/hủy theo campus scope.
 
 
 | UC ID | UC Name | Note |
@@ -149,6 +149,7 @@ The addendum section at the end is the authoritative update for cancellation UC-
 | UC-133 | Delete Agenda Template | Cho phép HO xóa hoặc vô hiệu hóa mẫu agenda không còn sử dụng. Cần kiểm tra mẫu có đang được dùng bởi đoàn phái/mẫu logistics nào không; ưu tiên soft delete để giữ lịch sử và tránh ảnh hưởng dữ liệu đã phát sinh. |
 | UC-134 | View Agenda Template List | Cho phép HO xem danh sách mẫu agenda hiện có, gồm tên mẫu, mục đích sử dụng, trạng thái, số bước lịch trình và lần cập nhật cuối. Hỗ trợ lọc/tìm kiếm để chọn mẫu khi quản lý hoặc khi Staff chuẩn bị kế hoạch đón tiếp. |
 | UC-135 | View Agenda Template Detail | Cho phép HO xem chi tiết một mẫu agenda, gồm toàn bộ các bước lịch trình, thời lượng, địa điểm, bộ phận phụ trách và ghi chú triển khai. Đây là màn hình xem/kiểm tra, không thực hiện chỉnh sửa nếu chưa chuyển sang UC cập nhật. |
+| UC-136 | Cancel Visit Request | Hủy yêu cầu thăm/đoàn khách thuộc FE-02 Delegation Reception Management. Visitor được hủy đơn của chính mình khi chưa bước vào giai đoạn đang diễn ra/hậu xử lý/đã đóng. Host được hủy campus instance mình phụ trách nếu khách đã xác nhận hủy qua kênh ngoài hệ thống; khi đó `cancellation_source = EXTERNAL_CONFIRMATION` và `cancellation_reason` phải ghi rõ kênh xác nhận, thời điểm, người xác nhận và lý do. Staff Leader được hủy trong phạm vi campus của mình theo rule nghiệp vụ; HO xử lý hủy `MULTI_CAMPUS`; Admin không có quyền hủy visit/delegation nghiệp vụ. Không dùng `external_confirmation_note`. |
 
 ---
 
@@ -161,7 +162,7 @@ The addendum section at the end is the authoritative update for cancellation UC-
 
 ---
 
-## SQL v5 Scope Notes
+## SQL v8.2 Scope Notes
 
 - `visit_requests` bắt đầu từ `PENDING_APPROVAL` vì OTP/email verification hoàn tất trước khi insert DB.
 - Không dùng bảng `pending_visit_requests`; frontend có thể giữ form tạm bằng state/sessionStorage có TTL ngắn.
@@ -170,15 +171,16 @@ The addendum section at the end is the authoritative update for cancellation UC-
 - HO chỉ xem và duyệt `MULTI_CAMPUS`.
 - Staff Leader chỉ xem/xử lý `SINGLE_CAMPUS` thuộc campus mình; `MULTI_CAMPUS` chỉ thấy sau khi HO duyệt/release và chỉ trong campus của mình.
 - Backend list/detail/search phải dùng đúng visibility query/view; frontend ẩn menu/nút không đủ để bảo mật.
+- UC-136 dùng `cancellation_reason` cho cả xác nhận ngoài hệ thống và lý do nội bộ; không tạo/không dùng `external_confirmation_note`.
 
 ---
 
-# Addendum — UC Notes bổ sung UC-136
+# Reference Notes — UC-136 Cancellation Flow
 
 
-## V8.2 Addendum — UC-136 Cancel Visit Request thuộc Delegation Reception Management
+## V8.2 Reference — UC-136 Cancel Visit Request thuộc Delegation Reception Management
 
-> Phần này là nội dung bổ sung, không xóa nội dung gốc. Nếu nội dung gốc có flow cũ như “đã duyệt nhưng chưa có host” hoặc “mỗi cơ sở duyệt lại sau HO”, hãy ưu tiên rule V8.2 trong phần addendum này.
+> Phần này là ghi chú triển khai bổ sung cho UC-136. UC-136 đã được đưa vào bảng chính ở đầu file. Nếu tài liệu cũ còn flow “đã duyệt nhưng chưa có host” hoặc “mỗi cơ sở duyệt lại sau HO”, ưu tiên rule V8.2 ở phần này.
 
 ### 1. Feature ownership
 
@@ -249,17 +251,13 @@ PEMS.Application/Delegations/Commands/CancelVisitRequest/
 Controller chỉ nhận request và gọi `IMediator`. Logic kiểm tra scope, current host, request/campus status, và cancellation metadata nằm trong Handler/Domain Entity.
 
 
-## UC-136 Note
+## UC-136 Detail Note
 
-| UC ID | UC Name | Note |
-|---|---|---|
-| UC-136 | Cancel Visit Request | Hủy yêu cầu thăm/đoàn khách thuộc FE-02 Delegation Reception Management. Visitor được hủy đơn của chính mình khi chưa bước vào giai đoạn đang diễn ra/hậu xử lý/đã đóng. Host được hủy campus instance mình phụ trách nếu khách đã xác nhận hủy qua kênh ngoài hệ thống; khi đó `cancellation_source = EXTERNAL_CONFIRMATION` và `cancellation_reason` phải ghi rõ kênh xác nhận, thời điểm, người xác nhận và lý do. Staff Leader được hủy trong phạm vi campus của mình theo rule nghiệp vụ; HO xử lý hủy `MULTI_CAMPUS`; Admin không có quyền hủy visit/delegation nghiệp vụ. Không dùng `external_confirmation_note`. |
+UC-136 — Cancel Visit Request: Hủy yêu cầu thăm/đoàn khách thuộc FE-02 Delegation Reception Management. Visitor được hủy đơn của chính mình khi chưa bước vào giai đoạn đang diễn ra/hậu xử lý/đã đóng. Host được hủy campus instance mình phụ trách nếu khách đã xác nhận hủy qua kênh ngoài hệ thống; khi đó `cancellation_source = EXTERNAL_CONFIRMATION` và `cancellation_reason` phải ghi rõ kênh xác nhận, thời điểm, người xác nhận và lý do. Staff Leader được hủy trong phạm vi campus của mình theo rule nghiệp vụ; HO xử lý hủy `MULTI_CAMPUS`; Admin không có quyền hủy visit/delegation nghiệp vụ. Không dùng `external_confirmation_note`.
 
-## UC liên quan cần hiểu lại
+## Related UC Clarification Notes
 
-| UC ID | Nội dung cập nhật |
-|---|---|
-| UC-17 | Submit form xong mới tạo request. Hủy sau submit không thuộc UC-17, mà thuộc UC-136. |
-| UC-18 | HO duyệt/từ chối multi-campus; nếu cần hủy sau khi đã duyệt thì dùng UC-136. |
-| UC-22 | Staff Leader xử lý approve/reject single-campus; nếu hủy sau khi đã duyệt thì dùng UC-136. |
-| UC-41 | Close Delegation là đóng hồ sơ sau khi hoàn tất, không phải hủy. |
+- **UC-17 Submit Visit Request:** Submit form xong mới tạo request. Hủy sau submit không thuộc UC-17, mà thuộc UC-136.
+- **UC-18 Approve Cross-Campus Request:** HO duyệt/từ chối multi-campus; nếu cần hủy sau khi đã duyệt thì dùng UC-136.
+- **UC-22 Process Visit Request:** Staff Leader xử lý approve/reject single-campus; nếu hủy sau khi đã duyệt thì dùng UC-136.
+- **UC-41 Close Delegation:** Close Delegation là đóng hồ sơ sau khi hoàn tất, không phải hủy.

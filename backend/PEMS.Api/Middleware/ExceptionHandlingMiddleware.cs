@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text.Json;
 using PEMS.Application.Common.Exceptions;
+using PEMS.Application.Common.Security;
 
 namespace PEMS.Api.Middleware;
 
@@ -94,12 +95,13 @@ public sealed class ExceptionHandlingMiddleware
                 _logger.LogError(ex, "Unhandled exception processing {Path} (traceId {TraceId}).", context.Request.Path, traceId);
 
                 // Generic, safe message for everyone. Only Development adds raw details.
-                const string genericMessage = "An unexpected error occurred. Please try again later.";
+                // NOTE: never leak ex.Message / stackTrace / SQL / secrets outside Development.
+                const string genericMessage = "Đã xảy ra lỗi hệ thống. Vui lòng thử lại sau.";
                 payload = _environment.IsDevelopment()
                     ? new
                     {
                         success = false,
-                        errorCode = "INTERNAL_ERROR",
+                        errorCode = AuthErrorCodes.InternalServerError,
                         message = genericMessage,
                         traceId,
                         error = ex.Message,
@@ -108,7 +110,7 @@ public sealed class ExceptionHandlingMiddleware
                     : new
                     {
                         success = false,
-                        errorCode = "INTERNAL_ERROR",
+                        errorCode = AuthErrorCodes.InternalServerError,
                         message = genericMessage,
                         traceId
                     };

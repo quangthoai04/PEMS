@@ -1,6 +1,6 @@
-# Use Case List — PEMS v8 aligned
+# Use Case List — PEMS v8.2 aligned
 
-> UC IDs and names are unchanged in SQL v8. Status/host-assignment changes are documented in `USE_CASE_NOTES_UPDATED_V8.md`, `PERMISSION_RULES_UPDATED_V8.md`, and `DATABASE_SCHEMA_UPDATED_V8_REQUEST_STATUS_HOST_ASSIGNMENT.md`.
+> UC IDs and names are unchanged and aligned through SQL v8.2. UC-136 cancellation logic is documented in `USE_CASE_NOTES_UPDATED_V8_2.md` and `PERMISSION_MATRIX_UPDATED_V8_2.md`.
 
 
 | UC ID  | UC Name                          |
@@ -140,4 +140,4 @@
 | UC-133 | Delete Agenda Template           |
 | UC-134 | View Agenda Template List        |
 | UC-135 | View Agenda Template Detail      |
-| UC-136 | Cancel Visit Request |
+| UC-136 | Cancel Visit Request              |

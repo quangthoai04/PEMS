@@ -8,6 +8,7 @@ import React, { useEffect } from 'react';
 import { Calendar, User, Clock } from 'lucide-react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
+import { sanitizeHtml } from '../../../shared/security/sanitizeHtml';
 
 const articleMock = {
   id: 1,
@@ -116,7 +117,7 @@ export function NewsDetailDashboard() {
 
         {/* Article Content */}
         <div className="news-content text-gray-800">
-          <div dangerouslySetInnerHTML={{ __html: article.content }}></div>
+          <div dangerouslySetInnerHTML={{ __html: sanitizeHtml(article.content) }}></div>
         </div>
 
         <style>{`

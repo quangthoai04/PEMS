@@ -1,14 +1,14 @@
 <!-- =====================================================================
-PEMS DOC UPDATE v8.2-full-preserved-cancel-delegation-no-external-note
-Generated: 2026-06-19
-Mode: PRESERVE ORIGINAL CONTENT + APPEND ADDENDUM.
-No original section below has been removed or compressed.
-The addendum section at the end is the authoritative update for cancellation UC-136.
+PEMS DOC UPDATE v8.2-clean-sync-permission-matrix
+Generated: 2026-06-20
+Mode: FULL DOCUMENT CLEAN SYNC.
+UC-136 has been merged into the main Delegation Reception Management matrix.
+Parser-risk addendum tables have been converted into prose/reference notes.
 ===================================================================== -->
 
 # Role & Permission Matrix
 
-> **Status:** Revised baseline v0.3 — aligned with SQL v5 strict visit visibility and SSO auto-provisioning.  
+> **Status:** Revised baseline v8.2 — aligned with SQL v8.2 strict visit visibility, SSO auto-provisioning, and UC-136 cancellation flow.  
 > Tài liệu này là nguồn tham chiếu cho backend authorization, frontend menu visibility, UI action control và kiểm thử phân quyền. Khi đặc tả UC hoặc business rule thay đổi, ma trận này phải được cập nhật trước khi sinh SQL/Permission seed thủ công.
 
 ## 1. Purpose
@@ -217,14 +217,16 @@ Nếu một tài khoản VISITOR cần chuyển sang role nội bộ, Staff Lead
 | UC-39 | Tag Faces on Photos | — | — | — | F | — | — | — | — |
 | UC-40 | Create News Article | — | — | — | F | — | — | F | — |
 | UC-41 | Close Delegation | — | — | — | F | — | — | — | — |
+| UC-136 | Cancel Visit Request | E | — | E | O | — | — | — | O |
 
 
 #### Delegation Data Scope Notes
 
 - UC-18 `Approve Cross-Campus Request`: HO only, `visit_scope = 'MULTI_CAMPUS'`.
 - UC-22 `Process Visit Request`: Staff Leader only, `visit_scope = 'SINGLE_CAMPUS'` and `vrc.campus_id = CurrentUser.PrimaryCampusId`.
-- UC-19/UC-20/UC-21: read/search/list must not query `visit_requests` directly without data scope. Use the SQL v5 views or equivalent backend predicates.
-- ADMIN must stay `—` for UC-17 to UC-41 and must not receive indirect visit access through dashboard/search/detail APIs.
+- UC-136 `Cancel Visit Request`: HO only for `MULTI_CAMPUS`; Staff Leader only within `CurrentUser.PrimaryCampusId`; Staff only as valid host/assignment owner; Visitor only for their own request.
+- UC-19/UC-20/UC-21: read/search/list must not query `visit_requests` directly without data scope. Use the SQL v8.2 visibility views or equivalent backend predicates.
+- ADMIN must stay `—` for UC-17 to UC-41 and UC-136, and must not receive indirect visit/cancellation access through dashboard/search/detail/cancel APIs.
 - Display labels such as `HO_APPROVED` are derived from `visit_scope`, `status`, and `decision_actor_role`; they are not permission codes.
 
 ### 5.5. Email Management
@@ -500,15 +502,16 @@ Student có thể tạo hoặc chỉnh sửa nội dung tin tức khi được g
 | v0.1 | 2026-06-15 | Initial draft permission matrix formatted by feature area. |
 | v0.2 | 2026-06-18 | Revised backend enforcement rules; clarified pre-auth/public endpoints; added effective role mapping for `sub_role`; changed UC-44 HO F→E, UC-64 HO F→R, UC-72 R→O; removed Student publish permission UC-89; clarified email scope is not mandatory delegation-based. |
 | v0.3 | 2026-06-19 | Aligned with SQL v5: added `SSO_AUTO_PROVISION` rule; formalized ADMIN no visit access; limited HO to `MULTI_CAMPUS`; limited Staff Leader to campus scope; clarified visit access views and display status labels; kept UC-48 `O` own-scope. |
+| v8.2 | 2026-06-20 | Merged UC-136 into the main Delegation Reception Management matrix; updated document status from SQL v5 to SQL v8.2; converted parser-risk UC-136 addendum permission table into reference notes. |
 
 ---
 
-# Addendum — Permission Matrix bổ sung UC-136
+# Reference Notes — UC-136 Cancellation Flow
 
 
-## V8.2 Addendum — UC-136 Cancel Visit Request thuộc Delegation Reception Management
+## V8.2 Reference — UC-136 Cancel Visit Request thuộc Delegation Reception Management
 
-> Phần này là nội dung bổ sung, không xóa nội dung gốc. Nếu nội dung gốc có flow cũ như “đã duyệt nhưng chưa có host” hoặc “mỗi cơ sở duyệt lại sau HO”, hãy ưu tiên rule V8.2 trong phần addendum này.
+> Phần này là ghi chú triển khai bổ sung cho UC-136. Quyền chính thức của UC-136 đã được đưa vào bảng chính tại mục **5.4 Delegation Reception Management**. Nếu tài liệu cũ còn flow “đã duyệt nhưng chưa có host” hoặc “mỗi cơ sở duyệt lại sau HO”, ưu tiên rule V8.2 ở phần này.
 
 ### 1. Feature ownership
 
@@ -579,11 +582,12 @@ PEMS.Application/Delegations/Commands/CancelVisitRequest/
 Controller chỉ nhận request và gọi `IMediator`. Logic kiểm tra scope, current host, request/campus status, và cancellation metadata nằm trong Handler/Domain Entity.
 
 
-## UC-136 Permission Row
+## UC-136 Permission Reference
 
-| UC ID | Permission Code | Permission Group | HO | Admin | Staff Leader | Staff | Department Lead | Department | Student | Visitor | Scope Note |
-|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
-| UC-136 | `UC-136.CANCEL_VISIT_REQUEST` | Delegation Reception Management | E | — | E | O | — | — | — | O | Visitor hủy đơn của chính họ; Host/Staff hủy trong campus/assignment scope; HO xử lý multi-campus; Admin không có nghiệp vụ visit/delegation |
+- Main matrix row: `| UC-136 | Cancel Visit Request | E | — | E | O | — | — | — | O |`
+- Permission code: `UC-136.CANCEL_VISIT_REQUEST`
+- Permission group: `Delegation Reception Management`
+- Scope note: Visitor hủy đơn của chính họ; Host/Staff hủy trong campus/assignment scope; HO xử lý multi-campus; Admin không có nghiệp vụ visit/delegation.
 
 ## Seed permission đề xuất
 
