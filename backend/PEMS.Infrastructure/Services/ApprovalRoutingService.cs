@@ -9,7 +9,5 @@ namespace PEMS.Infrastructure.Services;
 public sealed class ApprovalRoutingService : IApprovalRoutingService
 {
     public string DetermineInitialStatus(string visitScope)
-        => visitScope == VisitScopes.MultiCampus
-            ? VisitRequestStatuses.PendingHoApproval
-            : VisitRequestStatuses.PendingStaffLeadApproval;
+        => VisitRequestStatuses.PendingApproval;
 }

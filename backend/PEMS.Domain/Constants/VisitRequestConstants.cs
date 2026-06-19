@@ -2,8 +2,7 @@ namespace PEMS.Domain.Constants;
 
 public static class VisitRequestStatuses
 {
-    public const string PendingHoApproval       = "PENDING_HO_APPROVAL";
-    public const string PendingStaffLeadApproval = "PENDING_STAFF_LEAD_APPROVAL";
+    public const string PendingApproval          = "PENDING_APPROVAL";
     public const string Approved                 = "APPROVED";
     public const string Rejected                 = "REJECTED";
     public const string Cancelled                = "CANCELLED";
