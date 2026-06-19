@@ -4,14 +4,22 @@
  * Bao gồm các chức năng phân trang, tìm kiếm, chỉnh sửa và tạo mới tài khoản.
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { 
-  Users, UserCheck, UserX, Clock, Search, MapPin, 
-  Shield, CheckCircle, XCircle, MoreVertical, Eye, 
+import {
+  Users, UserCheck, UserX, Clock, Search, MapPin,
+  Shield, CheckCircle, XCircle, MoreVertical, Eye,
   Edit, Key, RefreshCw, Plus, X, UserCog, Briefcase, GraduationCap,
   ChevronLeft, ChevronRight, ChevronDown, ChevronUp, UserCircle
 } from 'lucide-react';
+import { useDebounce } from '../../../shared/hooks/useDebounce';
+import { useAccountList } from '../../../features/account-management/hooks/useAccountList';
+import { accountManagementApi } from '../../../features/account-management/api/accountManagementApi';
+import type {
+  AccountListItem,
+  AccountListQueryParams,
+  ActiveCampusOption,
+} from '../../../features/account-management/types/accountManagement.types';
 
 const CAMPUSES = ["Hà Nội", "Hồ Chí Minh", "Đà Nẵng", "Cần Thơ", "Quy Nhơn"];
 const ROLES = ["ADMIN", "HO", "STAFF", "DEPT", "STUDENT", "VISITOR"];
@@ -47,7 +55,7 @@ export function AccountManagement() {
 
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(5);
+  const [pageSize, setPageSize] = useState(20);
 
   const tableRef = useRef<HTMLDivElement>(null);
 
@@ -103,56 +111,86 @@ export function AccountManagement() {
     setCurrentPage(1);
   }, [activeTab, searchQuery, campusFilter, roleFilter, statusFilter]);
 
-  // Mock data for accounts
-  const [accounts, setAccounts] = useState(() => {
-    const isUserHO = user?.role?.toUpperCase() === 'HO';
-    if (isUserHO) {
-      return CAMPUSES.map((campus, i) => ({
-        id: i + 1,
-        name: `Nhân viên Staff ${campus}`,
-        email: `staff${i+1}@fpt.edu.vn`,
-        campus: campus,
-        role: "STAFF",
-        loginStatus: "Đã đăng nhập",
-        status: "Active",
-        gender: "Nam",
-        phone: `09000000${i.toString().padStart(2, "0")}`,
-        avatar: `https://ui-avatars.com/api/?name=Nhân+Văn+Staff&background=random`,
-        createdAt: "2023-10-15",
-        department: "Phòng Hành chính",
-        subRole: "Nhân viên",
-        studentId: null,
-        major: null,
-        nationality: null,
-        organization: null,
-        manageScope: null
-      }));
-    }
+  // ── UC-95 / UC-99: real account data from the API (replaces the old mock) ──
+  const [accounts, setAccounts] = useState<any[]>([]);
+  const [campusOptions, setCampusOptions] = useState<ActiveCampusOption[]>([]);
 
-    return Array.from({ length: 15 }, (_, i) => {
-    const rolesCycle = ["ADMIN", "HO", "STAFF", "DEPT", "STUDENT", "VISITOR"];
-    const role = rolesCycle[i % rolesCycle.length];
+  // Active campuses — used to translate the HO campus-name filter into a campusId.
+  useEffect(() => {
+    if (!isHO) return;
+    let active = true;
+    accountManagementApi
+      .getActiveCampuses()
+      .then((list) => { if (active) setCampusOptions(list); })
+      .catch(() => { /* non-fatal: campus filter simply falls back to no filter */ });
+    return () => { active = false; };
+  }, [isHO]);
+
+  // Debounce the keyword so we don't call the API on every keystroke.
+  const debouncedSearch = useDebounce(searchQuery, 450);
+
+  // Map the "all" tab UI filters → backend query params (server enforces scope/paging).
+  const listParams = useMemo<AccountListQueryParams>(() => {
+    const campusId = isHO && campusFilter
+      ? campusOptions.find((c) => c.campusName.includes(campusFilter))?.campusId
+      : undefined;
+
+    const status = statusFilter === 'Active'
+      ? 'ACTIVE'
+      : statusFilter === 'Deactive'
+        ? 'LOCKED'
+        : undefined;
+
     return {
-      id: i + 1,
-      name: `Nguyễn Văn ${String.fromCharCode(65 + i)}`,
-      email: `nguyenvan${String.fromCharCode(97 + i).toLowerCase()}@fpt.edu.vn`,
-      campus: CAMPUSES[i % CAMPUSES.length],
-      role: role,
-      loginStatus: i % 5 === 0 ? "Chưa từng đăng nhập" : "Đã đăng nhập",
-      status: i === 3 ? "Deactive" : "Active",
-      gender: i % 2 === 0 ? "Nam" : "Nữ",
-      phone: `09000000${i.toString().padStart(2, "0")}`,
-      avatar: `https://ui-avatars.com/api/?name=Nguyễn+Văn+${String.fromCharCode(65 + i)}&background=random`,
-      createdAt: "2023-10-15",
-      department: ["STAFF", "DEPT"].includes(role) ? "Phòng Hành chính" : null,
-      subRole: ["STAFF", "DEPT"].includes(role) ? (i % 3 === 0 ? "Trưởng phòng" : "Nhân viên") : null,
-      studentId: role === "STUDENT" ? `HE15000${i}` : null,
-      major: role === "STUDENT" ? "Kỹ thuật phần mềm" : null,
-      nationality: role === "VISITOR" ? "Mỹ" : null,
-      organization: role === "VISITOR" ? "Đại học ABC" : null,
-      manageScope: role === "ADMIN" ? `Cán bộ Quản trị ${CAMPUSES[i % CAMPUSES.length]}` : (role === "HO" ? "Ban Quản lý Tổng (FEHO)" : null)
+      page: currentPage,
+      pageSize,
+      keyword: debouncedSearch.trim() || undefined,
+      roleCode: roleFilter || undefined,
+      status,
+      campusId,
+      sortBy: 'createdAt',
+      sortDirection: 'desc',
     };
-  })});
+  }, [isHO, campusFilter, campusOptions, statusFilter, currentPage, pageSize, debouncedSearch, roleFilter]);
+
+  const {
+    data: accountsData,
+    loading: accountsLoading,
+    error: accountsError,
+  } = useAccountList(listParams, activeTab === 'all');
+
+  // Project API rows into the shape the existing table/drawer already expect.
+  useEffect(() => {
+    if (activeTab !== 'all') return;
+    const items = accountsData?.items ?? [];
+    setAccounts(items.map((a: AccountListItem) => ({
+      id: a.userId,
+      userId: a.userId,
+      name: a.fullName,
+      email: a.email,
+      campus: a.campusName || '',
+      campusId: a.campusId,
+      role: a.roleCode,
+      roleName: a.roleName,
+      loginStatus: a.lastLoginAt ? 'Đã đăng nhập' : 'Chưa từng đăng nhập',
+      status: a.status === 'ACTIVE' ? 'Active' : 'Deactive',
+      rawStatus: a.status,
+      gender: a.gender,
+      phone: a.phone,
+      avatar: a.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(a.fullName)}&background=random`,
+      createdAt: a.createdAt ? a.createdAt.substring(0, 10) : '',
+      department: a.departmentName,
+      subRole: a.subRole,
+      studentId: a.studentCode,
+      major: null,
+      nationality: a.nationality,
+      organization: null,
+      manageScope: null,
+      canViewDetails: a.canViewDetails,
+      canUpdateRole: a.canUpdateRole,
+      canManageStatus: a.canManageStatus,
+    })));
+  }, [accountsData, activeTab]);
 
   const [pendingAccounts, setPendingAccounts] = useState(() => [
     {
@@ -219,7 +257,7 @@ export function AccountManagement() {
 
   // Mock data for top widgets
   const statsBase = [
-    { label: "Tổng số tài khoản", value: accounts.length.toString(), icon: Users, color: "text-[#004c91]", bg: "bg-white border-gray-100 shadow-sm outline-none", iconBg: "bg-blue-50", onClick: () => { setActiveTab('all'); setAllFilters(prev => ({ ...prev, status: '', role: '', search: '' })); scrollToTable(); } },
+    { label: "Tổng số tài khoản", value: (accountsData?.totalItems ?? accounts.length).toString(), icon: Users, color: "text-[#004c91]", bg: "bg-white border-gray-100 shadow-sm outline-none", iconBg: "bg-blue-50", onClick: () => { setActiveTab('all'); setAllFilters(prev => ({ ...prev, status: '', role: '', search: '' })); scrollToTable(); } },
     { label: "Tài khoản hoạt động", value: accounts.filter(a => a.status === 'Active').length.toString(), icon: UserCheck, color: "text-[#0aa14f]", bg: "bg-white border-gray-100 shadow-sm outline-none", iconBg: "bg-green-50", onClick: () => { setActiveTab('all'); setAllFilters(prev => ({ ...prev, status: 'Active' })); scrollToTable(); } },
     { label: "Tài khoản bị khóa", value: accounts.filter(a => a.status === 'Deactive').length.toString(), icon: XCircle, color: "text-red-500", bg: "bg-white border-gray-100 shadow-sm outline-none", iconBg: "bg-red-50", onClick: () => { setActiveTab('all'); setAllFilters(prev => ({ ...prev, status: 'Deactive' })); scrollToTable(); } },
     { label: "Chưa từng đăng nhập", value: accounts.filter(a => a.loginStatus === 'Chưa từng đăng nhập').length.toString(), icon: UserX, color: "text-gray-500", bg: "bg-white border-gray-100 shadow-sm outline-none", iconBg: "bg-gray-100", onClick: () => { setActiveTab('all'); setAllFilters(prev => ({ ...prev, status: 'NoLogin' })); scrollToTable(); } },
@@ -253,47 +291,34 @@ export function AccountManagement() {
     : [...statsBase, { label: "Yêu cầu chờ duyệt", value: pendingAccounts.length.toString(), icon: Clock, color: "text-[#f37021]", bg: "bg-white border-gray-100 shadow-sm outline-none", iconBg: "bg-orange-50", onClick: () => { setActiveTab('pending'); setPendingFilters(prev => ({ ...prev, status: '', role: '', search: '' })); scrollToTable(); } }];
 
 
-  const sourceAccounts = activeTab === 'pending' ? pendingAccounts : accounts;
+  // The "all" tab is server-driven (UC-95/UC-99): the API already applied scope,
+  // search, filters and paging. The "pending" tab stays client-side (out of scope).
+  const isServerTab = activeTab === 'all';
 
-  const filteredAccounts = sourceAccounts.filter(acc => {
-    const matchesSearch = acc.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+  const filteredPending = pendingAccounts.filter(acc => {
+    const matchesSearch = acc.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
                           acc.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
                           (acc.studentId && acc.studentId.toLowerCase().includes(searchQuery.toLowerCase()));
     const matchesCampus = (!isHO || !campusFilter) ? true : acc.campus === campusFilter;
     const matchesRole = roleFilter === "" ? true : acc.role === roleFilter;
-    
-    let matchesStatus = true;
-    if (activeTab === 'all') {
-      if (statusFilter === "NoLogin") {
-        matchesStatus = acc.loginStatus === 'Chưa từng đăng nhập';
-      } else if (statusFilter !== "") {
-        matchesStatus = acc.status === statusFilter;
-      }
-    } else if (activeTab === 'pending') {
-      if (statusFilter !== "") {
-        matchesStatus = acc.status === statusFilter;
-      }
-    }
-
+    const matchesStatus = statusFilter === "" ? true : acc.status === statusFilter;
     const matchesStaffLeaderRole = isStaffLeader ? ['STAFF', 'DEPT', 'STUDENT', 'VISITOR'].includes(acc.role) : true;
-
     return matchesSearch && matchesCampus && matchesRole && matchesStatus && matchesStaffLeaderRole;
   });
 
-  const sortedAccounts = [...filteredAccounts];
-  if (activeTab === 'pending') {
-    sortedAccounts.sort((a, b) => {
-      // Assuming dates are formatted as DD-MM-YYYY or YYYY-MM-DD. It is YYYY-MM-DD typically.
-      // In AccountManagement we saw: acc.createdAt?.split('-').reverse().join('-')
-      // Original data format: YYYY-MM-DD
-      const timeA = new Date(a.createdAt || 0).getTime();
-      const timeB = new Date(b.createdAt || 0).getTime();
-      return sortOrder === 'asc' ? timeA - timeB : timeB - timeA;
-    });
-  }
+  const sortedPending = [...filteredPending].sort((a, b) => {
+    const timeA = new Date(a.createdAt || 0).getTime();
+    const timeB = new Date(b.createdAt || 0).getTime();
+    return sortOrder === 'asc' ? timeA - timeB : timeB - timeA;
+  });
 
-  const totalPages = Math.ceil(sortedAccounts.length / pageSize);
-  const paginatedAccounts = sortedAccounts.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const totalItems = isServerTab ? (accountsData?.totalItems ?? 0) : sortedPending.length;
+  const totalPages = isServerTab
+    ? (accountsData?.totalPages ?? 0)
+    : Math.ceil(sortedPending.length / pageSize);
+  const paginatedAccounts = isServerTab
+    ? accounts
+    : sortedPending.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   const getRoleStyle = (role: string) => {
     switch(role.toUpperCase()) {
@@ -394,6 +419,13 @@ export function AccountManagement() {
           + Tạo tài khoản mới
         </button>
       </div>
+
+      {isServerTab && accountsError && (
+        <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-bold text-red-700 flex items-center gap-3">
+          <XCircle className="w-5 h-5 shrink-0" />
+          <span>{accountsError}</span>
+        </div>
+      )}
 
       <div ref={tableRef} className="bg-white rounded-[2rem] shadow-[0_8px_30px_-4px_rgba(0,0,0,0.05)] border border-[#004c91] overflow-hidden">
         {/* Tab Filters */}
@@ -646,7 +678,9 @@ export function AccountManagement() {
                 </tr>
               )) : (
                 <tr>
-                  <td colSpan={8} className="py-16 text-center text-gray-400 font-medium text-sm">Không tìm thấy tài khoản nào phù hợp</td>
+                  <td colSpan={8} className="py-16 text-center text-gray-400 font-medium text-sm">
+                    {isServerTab && accountsLoading ? 'Đang tải danh sách tài khoản...' : 'Không tìm thấy tài khoản nào phù hợp'}
+                  </td>
                 </tr>
               )}
             </tbody>
@@ -654,7 +688,7 @@ export function AccountManagement() {
         </div>
 
         {/* Pagination */}
-        {filteredAccounts.length > 0 && (
+        {totalItems > 0 && (
         <div className="p-6 border-t border-gray-100 flex items-center justify-between bg-gray-50/50">
           <div className="flex items-center gap-2">
             <span className="text-sm font-medium text-gray-500">Hiển thị</span>

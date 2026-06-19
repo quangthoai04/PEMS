@@ -1,5 +1,33 @@
 # Refactor Changelog
 
+## 2026-06-19 — UC-95 + UC-99 Account List / Search / Filter
+
+Theo `docs/account-management/PROMPT_UC95_UC99_ACCOUNT_LIST_SEARCH_FILTER_PEMS.md`. Chi tiết đầy đủ:
+`docs/account-management/UC95_UC99_ACCOUNT_LIST_SEARCH_FILTER.md`.
+
+### Summary
+- `GET /api/accounts/viewaccountlist` (UC-95) và `GET /api/accounts/searchandfilteraccounts` (UC-99) chạy thật,
+  bỏ `NotImplementedException`. Dùng chung 1 read model `AccountListQueryExecutor` (không trùng logic).
+- Trả `PaginatedResult<AccountListItemDto>` (paging + filter + sort), không lộ password_hash/provider_subject/token.
+- Scope theo current user: HO toàn hệ thống; STAFF Leader chỉ campus mình + Visitor khi có keyword (không dump Visitor).
+- Validation (page/pageSize≤100/keyword≤100/sortDirection/accountType/date-range) + error codes
+  (`ACCOUNT_LIST_FORBIDDEN`, `CAMPUS_SCOPE_FORBIDDEN`, `UNSUPPORTED_SORT_COLUMN`).
+- Rate limit runtime: 2 endpoint account (`viewaccountlist`, `searchandfilteraccounts`) gắn
+  `[EnableRateLimiting("accounts-read")]` (built-in .NET 8 limiter, per-user fixed window: ADMIN/HO 60/min,
+  role khác 30/min; vượt → 429 `RATE_LIMIT_EXCEEDED`). Chỉ áp dụng cho 2 endpoint này, không ảnh hưởng phần còn lại.
+- Frontend: trang Account Management (tab "Tất cả") lấy API thật — search (debounce 450ms)/role/status/campus/pagination,
+  có loading/empty/error. Sửa `shared/hooks/useDebounce.ts` (trước là stub rỗng).
+- DB: index `users` đã đủ → không cần patch. Build backend (PEMS.Api) + frontend (vite) pass.
+
+### Nghiệm thu quyền (theo Permission Matrix hiện tại — đúng thiết kế)
+- HO có quyền → 200; STAFF Leader có quyền → 200 theo campus scope.
+- **ADMIN không có UC-95/UC-99 → 403 là đúng thiết kế, không phải bug.** Không sửa seed/`role_permissions`.
+- Visitor/Student/Dept không có quyền → 403.
+
+### Known limitations
+- Stat breakdown cards phản ánh trang hiện tại (chưa có endpoint thống kê tổng hợp).
+- Rate limit toàn hệ thống (mọi endpoint, store Redis) để dành cho phase security-hardening.
+
 ## 2026-06-19 — Core Auth Backend: FEID controlled adapter + docs
 
 Theo `docs/authentication/PEMS_CORE_AUTH_BACKEND_DUAL_PORTAL_IMPLEMENTATION_PROMPT.md`.

@@ -1,3 +1,5 @@
+using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi.Models;
 using PEMS.Api.Extensions;
@@ -64,6 +66,48 @@ builder.Services.AddCors(options =>
     });
 });
 
+// ── Rate limiting ────────────────────────────────────────────────────────────
+// Scoped policy applied ONLY to the account list/search endpoints (UC-95/UC-99)
+// via [EnableRateLimiting("accounts-read")]. Endpoints without the attribute are
+// untouched, so this has no blast radius on the rest of the system. Per-user fixed
+// window: ADMIN/HO 60 req/min, other roles 30 req/min.
+const string AccountsReadRateLimit = "accounts-read";
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+    options.AddPolicy(AccountsReadRateLimit, httpContext =>
+    {
+        var roleCode = httpContext.User.FindFirst(PemsClaimTypes.RoleCode)?.Value;
+        var permitPerMinute = roleCode is "ADMIN" or "HO" ? 60 : 30;
+
+        var partitionKey = httpContext.User.Identity?.Name
+            ?? httpContext.Connection.RemoteIpAddress?.ToString()
+            ?? "anonymous";
+
+        return RateLimitPartition.GetFixedWindowLimiter(partitionKey, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = permitPerMinute,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+            QueueProcessingOrder = QueueProcessingOrder.OldestFirst
+        });
+    });
+
+    options.OnRejected = async (context, token) =>
+    {
+        var response = context.HttpContext.Response;
+        if (response.HasStarted) return;
+        response.StatusCode = StatusCodes.Status429TooManyRequests;
+        response.ContentType = "application/json";
+        if (context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter))
+            response.Headers.RetryAfter = ((int)retryAfter.TotalSeconds).ToString();
+        await response.WriteAsync(
+            "{\"success\":false,\"errorCode\":\"RATE_LIMIT_EXCEEDED\",\"message\":\"Bạn thao tác quá nhanh. Vui lòng thử lại sau.\"}",
+            token);
+    };
+});
+
 var app = builder.Build();
 
 // ── HTTP pipeline ────────────────────────────────────────────────────────────
@@ -84,6 +128,9 @@ app.UseHttpsRedirection();
 app.UseAuthentication();
 app.UseMiddleware<SessionValidationMiddleware>();
 app.UseAuthorization();
+
+// Enforces the named rate-limit policies declared above (only on annotated endpoints).
+app.UseRateLimiter();
 
 app.MapControllers();
 

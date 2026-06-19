@@ -1,6 +1,7 @@
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using PEMS.Api.Filters;
 using PEMS.Application.Common.Security;
 using PEMS.Domain.Constants;
@@ -16,6 +17,7 @@ namespace PEMS.Api.Controllers
         public AccountsController(IMediator mediator) => _mediator = mediator;
 
         [HttpGet("viewaccountlist")]
+        [EnableRateLimiting("accounts-read")]
         [RequirePermission(PermissionCodes.ViewAccountList, PermissionLevels.Read)]
         public async Task<IActionResult> ViewAccountList([FromQuery] PEMS.Application.Accounts.Queries.ViewAccountList.ViewAccountListQuery query, CancellationToken cancellationToken)
         {
@@ -48,6 +50,7 @@ namespace PEMS.Api.Controllers
         }
 
         [HttpGet("searchandfilteraccounts")]
+        [EnableRateLimiting("accounts-read")]
         [RequirePermission(PermissionCodes.SearchAndFilterAccounts, PermissionLevels.Read)]
         public async Task<IActionResult> SearchandFilterAccounts([FromQuery] PEMS.Application.Accounts.Queries.SearchandFilterAccounts.SearchandFilterAccountsQuery query, CancellationToken cancellationToken)
         {

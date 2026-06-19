@@ -31,5 +31,15 @@ export const AUTH_CONFIG = {
   enableGoogleSso: flag(env.VITE_ENABLE_GOOGLE_SSO, true),
   enableFeid: flag(env.VITE_ENABLE_FEID, false),
   /** Google OAuth client id; empty means SSO is enabled but not yet configured. */
-  googleClientId: env.VITE_GOOGLE_CLIENT_ID ?? '',
+  googleClientId: (env.VITE_GOOGLE_CLIENT_ID ?? '').trim(),
 } as const;
+
+if (import.meta.env.DEV) {
+  console.log('[ENV]', {
+    mode: import.meta.env.MODE,
+    googleClientId: import.meta.env.VITE_GOOGLE_CLIENT_ID,
+    authConfigGoogleClientId: AUTH_CONFIG.googleClientId,
+    enableGoogleSso: AUTH_CONFIG.enableGoogleSso,
+  });
+}
+
