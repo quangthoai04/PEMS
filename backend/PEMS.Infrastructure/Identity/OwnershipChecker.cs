@@ -20,15 +20,15 @@ public sealed class OwnershipChecker : IOwnershipChecker
     private bool IsSystemWide =>
         _currentUser.RoleCode is RoleCodes.Admin or RoleCodes.Ho;
 
-    public bool IsOwner(string? resourceOwnerUserId)
+    public bool IsOwner(ulong? resourceOwnerUserId)
     {
-        if (string.IsNullOrEmpty(resourceOwnerUserId) || !_currentUser.IsAuthenticated)
+        if (resourceOwnerUserId is null || !_currentUser.IsAuthenticated)
             return false;
 
-        return string.Equals(resourceOwnerUserId, _currentUser.UserId, StringComparison.Ordinal);
+        return resourceOwnerUserId == _currentUser.UserId;
     }
 
-    public bool CanAccessCampus(string? campusId)
+    public bool CanAccessCampus(ulong? campusId)
     {
         if (!_currentUser.IsAuthenticated)
             return false;
@@ -36,13 +36,13 @@ public sealed class OwnershipChecker : IOwnershipChecker
         if (IsSystemWide)
             return true;
 
-        if (string.IsNullOrEmpty(campusId))
+        if (campusId is null)
             return false;
 
-        return string.Equals(campusId, _currentUser.PrimaryCampusId, StringComparison.Ordinal);
+        return campusId == _currentUser.PrimaryCampusId;
     }
 
-    public bool CanAccessDepartment(string? departmentId)
+    public bool CanAccessDepartment(ulong? departmentId)
     {
         if (!_currentUser.IsAuthenticated)
             return false;
@@ -50,9 +50,9 @@ public sealed class OwnershipChecker : IOwnershipChecker
         if (IsSystemWide)
             return true;
 
-        if (string.IsNullOrEmpty(departmentId))
+        if (departmentId is null)
             return false;
 
-        return string.Equals(departmentId, _currentUser.DepartmentId, StringComparison.Ordinal);
+        return departmentId == _currentUser.DepartmentId;
     }
 }

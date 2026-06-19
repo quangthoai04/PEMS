@@ -26,7 +26,7 @@ public sealed class GetCurrentUserQueryHandler : IRequestHandler<GetCurrentUserQ
     public async Task<UserProfileResponse> Handle(GetCurrentUserQuery request, CancellationToken cancellationToken)
     {
         var userId = _currentUser.UserId;
-        if (string.IsNullOrEmpty(userId))
+        if (userId is null)
             throw new ForbiddenException();
 
         var user = await _db.Users

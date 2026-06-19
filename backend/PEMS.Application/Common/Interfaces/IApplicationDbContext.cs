@@ -14,7 +14,6 @@ using PEMS.Domain.Entities.Minutes;
 using PEMS.Domain.Entities.News;
 using PEMS.Domain.Entities.Notifications;
 using PEMS.Domain.Entities.Partners;
-using PEMS.Domain.Entities.PublicContents;
 using PEMS.Domain.Entities.Users;
 
 namespace PEMS.Application.Common.Interfaces;
@@ -37,7 +36,6 @@ public interface IApplicationDbContext
     DbSet<UploadedFile> Files { get; }
     DbSet<Document> Documents { get; }
     DbSet<VisitRequest> VisitRequests { get; }
-    DbSet<PendingVisitRequest> PendingVisitRequests { get; }
     DbSet<VisitRequestCampus> VisitRequestCampuses { get; }
     DbSet<VisitGuestMember> VisitGuestMembers { get; }
     DbSet<VisitParticipant> VisitParticipants { get; }
@@ -51,7 +49,6 @@ public interface IApplicationDbContext
     DbSet<NewsContentSection> NewsContentSections { get; }
     DbSet<NewsSectionFile> NewsSectionFiles { get; }
     DbSet<Faq> Faqs { get; }
-    DbSet<PEMS.Domain.Entities.PublicContents.PublicContent> PublicContents { get; }
     DbSet<Gallery> Galleries { get; }
     DbSet<GalleryImage> GalleryImages { get; }
     DbSet<PhotoFaceTag> PhotoFaceTags { get; }

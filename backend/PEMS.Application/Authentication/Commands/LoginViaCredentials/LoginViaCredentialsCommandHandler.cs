@@ -136,13 +136,13 @@ public sealed class LoginviaCredentialsCommandHandler : IRequestHandler<Loginvia
 
         if (portal == LoginPortals.Internal)
         {
-            if (string.IsNullOrWhiteSpace(request.SelectedCampusId))
+            if (!request.SelectedCampusId.HasValue)
                 await FailAsync(user, email, portal, LoginLogStatuses.Failed, "missing_campus",
                     request, AuthErrorCodes.CampusRequired,
                     "Please select a campus to continue.", 400, cancellationToken);
 
             if (user.PrimaryCampusId is not null
-                && !string.Equals(request.SelectedCampusId, user.PrimaryCampusId, StringComparison.OrdinalIgnoreCase))
+                && request.SelectedCampusId != user.PrimaryCampusId)
                 await FailAsync(user, email, portal, LoginLogStatuses.Failed, "campus_mismatch",
                     request, AuthErrorCodes.CampusMismatch,
                     "Your account does not belong to the selected campus.", 403, cancellationToken);

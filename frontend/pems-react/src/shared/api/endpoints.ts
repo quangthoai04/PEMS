@@ -32,6 +32,10 @@ export const API_ENDPOINTS = {
     list: '/delegations',
     detail: (id: string | number) => `/delegations/${id}`,
     processVisitRequest: (id: string | number) => `/visit-requests/${id}/process`,
+    // UC-136 Cancel Visit Request (post-approval only).
+    cancel: (visitRequestId: string | number) => `/delegations/${visitRequestId}/cancel`,
+    cancelCampus: (visitRequestId: string | number, visitInstanceId: string | number) =>
+      `/delegations/${visitRequestId}/campuses/${visitInstanceId}/cancel`,
   },
   visitRequests: {
     initiate: '/visit-requests/initiate',

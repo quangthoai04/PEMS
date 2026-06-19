@@ -15,11 +15,11 @@ internal static class AccountProvisioningRules
 {
     /// <summary>Normalized, validated account shape ready to assign to a <c>User</c>.</summary>
     public sealed record ResolvedShape(
-        string RoleId,
+        ulong RoleId,
         string RoleCode,
         string? SubRole,
-        string? DepartmentId,
-        string? PrimaryCampusId);
+        ulong? DepartmentId,
+        ulong? PrimaryCampusId);
 
     /// <summary>ADMIN / HO may operate across campuses; everyone else is scoped to their own campus.</summary>
     public static bool IsPrivileged(string? roleCode)
@@ -29,10 +29,10 @@ internal static class AccountProvisioningRules
         IApplicationDbContext db,
         string roleCode,
         string? subRole,
-        string? primaryCampusId,
-        string? departmentId,
+        ulong? primaryCampusId,
+        ulong? departmentId,
         bool actorIsPrivileged,
-        string? actorCampusId,
+        ulong? actorCampusId,
         CancellationToken cancellationToken)
     {
         roleCode = (roleCode ?? string.Empty).Trim().ToUpperInvariant();
@@ -45,11 +45,10 @@ internal static class AccountProvisioningRules
         // Staff-Leader (non-privileged) scoping: cannot assign accounts to another campus.
         if (!actorIsPrivileged && roleCode != RoleCodes.Visitor)
         {
-            if (string.IsNullOrWhiteSpace(actorCampusId))
+            if (actorCampusId is null)
                 throw new ForbiddenException("Your account is not assigned to a campus and cannot manage internal accounts.");
 
-            if (!string.IsNullOrWhiteSpace(primaryCampusId) &&
-                !string.Equals(primaryCampusId, actorCampusId, StringComparison.OrdinalIgnoreCase))
+            if (primaryCampusId is not null && primaryCampusId != actorCampusId)
                 throw new ForbiddenException("You can only manage accounts within your own campus.");
 
             primaryCampusId = actorCampusId;
@@ -66,7 +65,7 @@ internal static class AccountProvisioningRules
             {
                 if (subRole != SubRoles.Leader && subRole != SubRoles.Staff)
                     throw new ValidationException("Sub-role (Leader or Staff) is required for STAFF/DEPT roles.");
-                if (string.IsNullOrWhiteSpace(departmentId))
+                if (departmentId is null)
                     throw new ValidationException("Department is required for STAFF/DEPT roles.");
 
                 var dept = await db.Departments.FirstOrDefaultAsync(d => d.DepartmentId == departmentId, cancellationToken)
@@ -80,12 +79,10 @@ internal static class AccountProvisioningRules
                         ? "STAFF must belong to an IC department."
                         : "DEPT must belong to a GENERAL department.");
 
-                if (!string.IsNullOrWhiteSpace(primaryCampusId) &&
-                    !string.Equals(primaryCampusId, dept.CampusId, StringComparison.OrdinalIgnoreCase))
+                if (primaryCampusId is not null && primaryCampusId != dept.CampusId)
                     throw new ValidationException("Selected campus does not match the department's campus.");
 
-                if (!actorIsPrivileged &&
-                    !string.Equals(dept.CampusId, actorCampusId, StringComparison.OrdinalIgnoreCase))
+                if (!actorIsPrivileged && dept.CampusId != actorCampusId)
                     throw new ForbiddenException("You can only manage departments within your own campus.");
 
                 // Campus is derived from the department (matches the DB trigger behaviour).
@@ -96,9 +93,9 @@ internal static class AccountProvisioningRules
             {
                 if (!string.IsNullOrWhiteSpace(subRole))
                     throw new ValidationException($"{roleCode} must not have a sub-role.");
-                if (!string.IsNullOrWhiteSpace(departmentId))
+                if (departmentId is not null)
                     throw new ValidationException($"{roleCode} must not have a department.");
-                if (string.IsNullOrWhiteSpace(primaryCampusId))
+                if (primaryCampusId is null)
                     throw new ValidationException($"{roleCode} requires a campus.");
 
                 var campus = await db.Campuses.FirstOrDefaultAsync(c => c.CampusId == primaryCampusId, cancellationToken)

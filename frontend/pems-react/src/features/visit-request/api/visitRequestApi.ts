@@ -9,7 +9,7 @@ export interface InitiateResponse {
 }
 
 export interface VerifyResponse {
-  visitRequestId: string;
+  visitRequestId: number;
   requestCode: string;
   status: string;
   message: string;
@@ -77,18 +77,20 @@ export const visitRequestApi = {
     return res;
   },
 
-  async verify(sessionToken: string, otpCode: string): Promise<VerifyResponse> {
+  // SQL v8.3 has no pending_visit_requests table: the draft stays in the browser and
+  // the full form is resubmitted here together with the OTP code.
+  async verify(data: VisitRequestSchema, otpCode: string): Promise<VerifyResponse> {
     const { data: res } = await httpClient.post<VerifyResponse>(
       API_ENDPOINTS.visitRequests.verify,
-      { sessionToken, otpCode }
+      { ...mapToPayload(data), otpCode }
     );
     return res;
   },
 
-  async resendOtp(sessionToken: string): Promise<{ message: string }> {
+  async resendOtp(registerEmail: string, registerFullName: string): Promise<{ message: string }> {
     const { data: res } = await httpClient.post<{ message: string }>(
       API_ENDPOINTS.visitRequests.resendOtp,
-      { sessionToken }
+      { registerEmail, registerFullName }
     );
     return res;
   },

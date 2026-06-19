@@ -1,4 +1,4 @@
-using System.ComponentModel.DataAnnotations;
+﻿using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace PEMS.Domain.Entities.ApiIntegrations;
@@ -8,13 +8,13 @@ public class ApiUsageQuota
 {
     [Key]
     [Column("api_usage_quota_id")]
-    public string ApiUsageQuotaId { get; set; } = null!;
+    public ulong ApiUsageQuotaId { get; set; }
 
     [Column("api_config_id")]
-    public string ApiConfigId { get; set; } = null!;
+    public ulong ApiConfigId { get; set; }
 
     [Column("campus_id")]
-    public string? CampusId { get; set; }
+    public ulong? CampusId { get; set; }
 
     [Column("campus_scope_key")]
     public string CampusScopeKey { get; set; } = "GLOBAL";
@@ -35,13 +35,13 @@ public class ApiUsageQuota
     public DateTime CreatedAt { get; set; }
 
     [Column("created_by")]
-    public string? CreatedBy { get; set; }
+    public ulong? CreatedBy { get; set; }
 
     [Column("updated_at")]
     public DateTime? UpdatedAt { get; set; }
 
     [Column("updated_by")]
-    public string? UpdatedBy { get; set; }
+    public ulong? UpdatedBy { get; set; }
 
     public virtual ApiConfiguration ApiConfiguration { get; set; } = null!;
 }

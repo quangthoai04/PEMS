@@ -1,4 +1,4 @@
-using System.ComponentModel.DataAnnotations;
+﻿using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace PEMS.Domain.Entities.Delegations;
@@ -8,10 +8,10 @@ public class VisitAgenda
 {
     [Key]
     [Column("agenda_id")]
-    public string AgendaId { get; set; } = null!;
+    public ulong AgendaId { get; set; }
 
     [Column("visit_instance_id")]
-    public string VisitInstanceId { get; set; } = null!;
+    public ulong VisitInstanceId { get; set; }
 
     [Column("title")]
     public string Title { get; set; } = null!;
@@ -29,7 +29,7 @@ public class VisitAgenda
     public string? Location { get; set; }
 
     [Column("responsible_user_id")]
-    public string? ResponsibleUserId { get; set; }
+    public ulong? ResponsibleUserId { get; set; }
 
     [Column("sequence_order")]
     public int SequenceOrder { get; set; }
@@ -38,13 +38,13 @@ public class VisitAgenda
     public DateTime CreatedAt { get; set; }
 
     [Column("created_by")]
-    public string? CreatedBy { get; set; }
+    public ulong? CreatedBy { get; set; }
 
     [Column("updated_at")]
     public DateTime? UpdatedAt { get; set; }
 
     [Column("updated_by")]
-    public string? UpdatedBy { get; set; }
+    public ulong? UpdatedBy { get; set; }
 
     public virtual VisitRequestCampus VisitInstance { get; set; } = null!;
 }

@@ -1,5 +1,9 @@
 using MediatR;
 using Microsoft.AspNetCore.Mvc;
+using PEMS.Api.Filters;
+using PEMS.Application.Common.Security;
+using PEMS.Application.Delegations.Commands.CancelVisitRequest;
+using PEMS.Domain.Constants;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -187,5 +191,35 @@ namespace PEMS.Api.Controllers
             return Ok(result);
         }
 
+        // ── UC-136 Cancel Visit Request (post-approval only) ──────────────────
+        // Cancel the whole approved request (Visitor self-cancel, or Staff Leader / HO).
+        [HttpPost("{visitRequestId}/cancel")]
+        [RequirePermission(PermissionCodes.CancelVisitRequest, PermissionLevels.Own)]
+        public async Task<IActionResult> CancelVisitRequest(
+            ulong visitRequestId,
+            [FromBody] CancelVisitRequestBody body,
+            CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(
+                new CancelVisitRequestCommand(visitRequestId, null, body.CancellationReason), cancellationToken);
+            return Ok(result);
+        }
+
+        // Cancel a single campus instance (current Host, after external confirmation from the guest).
+        [HttpPost("{visitRequestId}/campuses/{visitInstanceId}/cancel")]
+        [RequirePermission(PermissionCodes.CancelVisitRequest, PermissionLevels.Own)]
+        public async Task<IActionResult> CancelVisitRequestCampus(
+            ulong visitRequestId,
+            ulong visitInstanceId,
+            [FromBody] CancelVisitRequestBody body,
+            CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(
+                new CancelVisitRequestCommand(visitRequestId, visitInstanceId, body.CancellationReason), cancellationToken);
+            return Ok(result);
+        }
     }
+
+    /// <summary>Request body for the UC-136 cancel endpoints.</summary>
+    public sealed record CancelVisitRequestBody(string CancellationReason);
 }

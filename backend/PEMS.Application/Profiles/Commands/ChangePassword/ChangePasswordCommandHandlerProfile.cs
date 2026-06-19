@@ -33,7 +33,7 @@ public sealed class ChangePasswordCommandHandler : IRequestHandler<ChangePasswor
     public async Task<ChangePasswordResponse> Handle(ChangePasswordCommand request, CancellationToken cancellationToken)
     {
         var userId = _currentUser.UserId;
-        if (string.IsNullOrEmpty(userId))
+        if (userId is null)
             throw new ForbiddenException();
 
         var user = await _db.Users
@@ -66,7 +66,6 @@ public sealed class ChangePasswordCommandHandler : IRequestHandler<ChangePasswor
         {
             _db.UserAuthProviders.Add(new UserAuthProvider
             {
-                AuthProviderId = Guid.NewGuid().ToString(),
                 UserId = user.UserId,
                 ProviderType = ProviderTypes.LocalPassword,
                 ProviderEmail = user.Email,

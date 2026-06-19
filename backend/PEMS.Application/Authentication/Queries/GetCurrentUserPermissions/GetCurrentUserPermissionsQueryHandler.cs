@@ -29,11 +29,11 @@ public sealed class GetCurrentUserPermissionsQueryHandler
         var roleCode = _currentUser.RoleCode;
         var subRole = _currentUser.SubRole;
 
-        if (string.IsNullOrEmpty(roleId))
+        if (roleId is null)
         {
             // Fall back to loading the user when claims are incomplete.
             var userId = _currentUser.UserId;
-            if (string.IsNullOrEmpty(userId))
+            if (userId is null)
                 throw new ForbiddenException();
 
             var user = await _db.Users.AsNoTracking()
@@ -56,7 +56,7 @@ public sealed class GetCurrentUserPermissionsQueryHandler
             subRole = "NONE";
         }
 
-        var permissions = await _permissionChecker.GetPermissionsForRoleAsync(roleId, subRole, cancellationToken);
+        var permissions = await _permissionChecker.GetPermissionsForRoleAsync(roleId.Value, subRole, cancellationToken);
 
         return new PermissionsResponse
         {

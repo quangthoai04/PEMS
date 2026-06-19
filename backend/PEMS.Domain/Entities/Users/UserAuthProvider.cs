@@ -1,4 +1,4 @@
-using System.ComponentModel.DataAnnotations;
+﻿using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace PEMS.Domain.Entities.Users;
@@ -8,10 +8,10 @@ public class UserAuthProvider
 {
     [Key]
     [Column("auth_provider_id")]
-    public string AuthProviderId { get; set; } = null!;
+    public ulong AuthProviderId { get; set; }
 
     [Column("user_id")]
-    public string UserId { get; set; } = null!;
+    public ulong UserId { get; set; }
 
     [Column("provider_type")]
     public string ProviderType { get; set; } = null!;

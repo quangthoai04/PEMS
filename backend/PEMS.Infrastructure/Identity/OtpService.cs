@@ -39,7 +39,7 @@ public sealed class OtpService : IOtpService
         => CreateCoreAsync(null, email, purpose, _visitRequestCodeMinutes, ipAddress, userAgent, cancellationToken);
 
     private async Task<string> CreateCoreAsync(
-        string? userId, string email, string purpose, int expiryMinutes,
+        ulong? userId, string email, string purpose, int expiryMinutes,
         string? ipAddress, string? userAgent, CancellationToken cancellationToken)
     {
         var now             = _clock.UtcNow;
@@ -63,7 +63,7 @@ public sealed class OtpService : IOtpService
             var rawCode = SecureTokenGenerator.GenerateNumericCode(6);
             var token   = new OtpToken
             {
-                OtpTokenId  = Guid.NewGuid().ToString(),
+                // OtpTokenId is DB-generated (BIGINT AUTO_INCREMENT).
                 UserId      = userId,
                 Email       = normalizedEmail,
                 TokenType   = OtpTokenTypes.OtpCode,

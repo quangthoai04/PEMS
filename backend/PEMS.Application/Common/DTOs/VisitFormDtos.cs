@@ -1,12 +1,13 @@
 namespace PEMS.Application.Common.DTOs;
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Nested input records — used both as command properties and serialised into
-// PendingVisitRequest.FormDataJson for reconstruction after OTP verification.
+// Nested input records for the UC-17 visit-request form.
+// SQL v8.3 has no pending_visit_requests table: the draft is held by the frontend
+// (sessionStorage) and resubmitted at the verify step; only the OTP lives server-side.
 // ──────────────────────────────────────────────────────────────────────────────
 
 public record VisitSlotDto(
-    string CampusId,
+    string CampusId,   // campus CODE (e.g. "HN", "HCM"); resolved to campus_id on create
     DateTime StartDatetime,
     DateTime EndDatetime);
 
@@ -31,10 +32,10 @@ public record ContactPointDto(
     string Email);
 
 /// <summary>
-/// The complete, deserialised form payload stored inside
-/// <c>PendingVisitRequest.FormDataJson</c>.
+/// The complete visit-request form payload. Carried by the frontend between the
+/// initiate (OTP) and verify (create) steps — never persisted before verification.
 /// </summary>
-public record PendingVisitRequestFormData(
+public record VisitRequestFormData(
     // ── Registration info ────────────────────────────────
     string RegisterFullName,
     string RegisterNationality,

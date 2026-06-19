@@ -1,4 +1,4 @@
-using System.ComponentModel.DataAnnotations;
+﻿using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace PEMS.Domain.Entities.Minutes;
@@ -8,10 +8,10 @@ public class MinuteActionItem
 {
     [Key]
     [Column("action_item_id")]
-    public string ActionItemId { get; set; } = null!;
+    public ulong ActionItemId { get; set; }
 
     [Column("minutes_id")]
-    public string MinutesId { get; set; } = null!;
+    public ulong MinutesId { get; set; }
 
     [Column("title")]
     public string Title { get; set; } = null!;
@@ -35,13 +35,13 @@ public class MinuteActionItem
     public DateTime CreatedAt { get; set; }
 
     [Column("created_by")]
-    public string? CreatedBy { get; set; }
+    public ulong? CreatedBy { get; set; }
 
     [Column("updated_at")]
     public DateTime? UpdatedAt { get; set; }
 
     [Column("updated_by")]
-    public string? UpdatedBy { get; set; }
+    public ulong? UpdatedBy { get; set; }
 
     public virtual Minute Minute { get; set; } = null!;
 }

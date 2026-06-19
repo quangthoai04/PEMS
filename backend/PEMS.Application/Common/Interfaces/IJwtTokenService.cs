@@ -11,5 +11,5 @@ public interface IJwtTokenService
     /// Builds a signed JWT access token for the given user and active session.
     /// The user is expected to have <see cref="User.Role"/> loaded.
     /// </summary>
-    AccessTokenResult GenerateAccessToken(User user, string sessionId, string loginPortal);
+    AccessTokenResult GenerateAccessToken(User user, ulong sessionId, string loginPortal);
 }

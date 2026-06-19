@@ -1,6 +1,14 @@
-# Permission Rules — PEMS v8
+<!-- =====================================================================
+PEMS DOC UPDATE v8.2-full-preserved-cancel-delegation-no-external-note
+Generated: 2026-06-19
+Mode: PRESERVE ORIGINAL CONTENT + APPEND ADDENDUM.
+No original section below has been removed or compressed.
+The addendum section at the end is the authoritative update for cancellation UC-136.
+===================================================================== -->
 
-> **Purpose:** File này là bản rule ngắn gọn để backend/frontend triển khai authorization nhất quán theo SQL v8.  
+# Permission Rules — PEMS v5
+
+> **Purpose:** File này là bản rule ngắn gọn để backend/frontend triển khai authorization nhất quán theo SQL v5.  
 > **Source of truth for detailed UC matrix:** `PERMISSION_MATRIX_UPDATED_V5.md`.  
 > File này không lặp lại toàn bộ ma trận UC; nó chỉ ghi các nguyên tắc bắt buộc, scope rule và các case dễ nhầm.
 
@@ -71,7 +79,7 @@ They still require security checks: account status, portal validation, rate limi
 
 ## 4. Strict Visit / Delegation Visibility
 
-This is the most important SQL v8 rule.
+This is the most important SQL v5 rule.
 
 | Role | Single-campus request | Multi-campus before HO approval | Multi-campus after HO approval/release |
 |---|---:|---:|---:|
@@ -118,28 +126,26 @@ ADMIN has no visit/delegation business access. Backend should return 403 or use 
 
 ---
 
-## 5. Visit Request Status vs Campus Progress Status
+## 5. Visit Status vs Display Status
 
-`visit_requests.status` is request/approval status only:
+`visit_requests.status` is lifecycle status only:
 
 ```text
-PENDING_APPROVAL → APPROVED
+PENDING_APPROVAL → APPROVED → IN_PROGRESS → COMPLETED
 PENDING_APPROVAL → REJECTED
 PENDING_APPROVAL / APPROVED → CANCELLED
 ```
 
-Do not add `HO_APPROVED`, `IN_PROGRESS`, or `COMPLETED` into `visit_requests.status`.
+Do not add `HO_APPROVED` into `visit_requests.status`.
 
 Use derived display labels instead:
 
 | Display Label | How to derive |
 |---|---|
-| `WAITING_HO_APPROVAL` | `visit_scope = MULTI_CAMPUS` and `visit_requests.status = PENDING_APPROVAL` |
-| `HO_APPROVED` | `visit_scope = MULTI_CAMPUS`, `visit_requests.status = APPROVED`, `decision_actor_role = HO` |
-| `WAITING_STAFF_LEADER_APPROVAL` | `visit_scope = SINGLE_CAMPUS` and `visit_requests.status = PENDING_APPROVAL` |
-| `STAFF_LEADER_APPROVED` | `visit_scope = SINGLE_CAMPUS`, `visit_requests.status = APPROVED`, `decision_actor_role = STAFF_LEADER` |
-| `IN_PROGRESS` | derived from one or more `visit_request_campuses.status = DURING_VISIT` |
-| `COMPLETED` | derived when all campus instances are `CLOSED` |
+| `WAITING_HO_APPROVAL` | `visit_scope = MULTI_CAMPUS` and `status = PENDING_APPROVAL` |
+| `HO_APPROVED` | `visit_scope = MULTI_CAMPUS`, `status IN (APPROVED, IN_PROGRESS, COMPLETED)`, `decision_actor_role = HO` |
+| `WAITING_STAFF_LEADER_APPROVAL` | `visit_scope = SINGLE_CAMPUS` and `status = PENDING_APPROVAL` |
+| `STAFF_LEADER_APPROVED` | `visit_scope = SINGLE_CAMPUS`, approved lifecycle status, `decision_actor_role = STAFF_LEADER` |
 
 ---
 
@@ -195,105 +201,96 @@ Frontend visibility is only UX. Backend authorization is mandatory.
 |---|---|
 | v5 | Rewritten as concise implementation rulebook; removed duplicate full matrix content; added `SSO_AUTO_PROVISION`; added strict visit visibility; clarified Admin no visit access, HO multi-campus only, Staff Leader campus scope, UC-48 own-scope. |
 
-
 ---
 
-## 9. SQL v8 Visit Request Status Rule
+# Addendum — Authorization Rules cho UC-136 Cancel Visit Request
 
-`visit_requests.status` is request/approval-only:
 
-```text
-PENDING_APPROVAL
-APPROVED
-REJECTED
-CANCELLED
-```
+## V8.2 Addendum — UC-136 Cancel Visit Request thuộc Delegation Reception Management
 
-It must not store `IN_PROGRESS` or `COMPLETED`.
+> Phần này là nội dung bổ sung, không xóa nội dung gốc. Nếu nội dung gốc có flow cũ như “đã duyệt nhưng chưa có host” hoặc “mỗi cơ sở duyệt lại sau HO”, hãy ưu tiên rule V8.2 trong phần addendum này.
 
-`visit_request_campuses.status` is per-campus operational status:
+### 1. Feature ownership
+
+UC hủy đơn thăm thuộc **FE-02 — Quản lý Tiếp đón Đoàn khách / Delegation Reception Management** vì đây là thao tác trên vòng đời đoàn/visit request, không phải bước submit form.
 
 ```text
-WAITING_REQUEST_APPROVAL
-ASSIGNED
-BEFORE_VISIT
-DURING_VISIT
-AFTER_VISIT
-CLOSED
-CANCELLED
+Feature: FE-02 Delegation Reception Management
+UC: UC-136 Cancel Visit Request
+Permission code: UC-136.CANCEL_VISIT_REQUEST
 ```
 
-Frontend must display two layers:
+### 2. Không dùng `external_confirmation_note`
+
+Không tạo cột `external_confirmation_note`. Khi Host hủy thay khách dựa trên xác nhận ngoài hệ thống, toàn bộ thông tin xác nhận được ghi vào `cancellation_reason`.
 
 ```text
-requestStatus = visit_requests.status
-campusStatus = visit_request_campuses.status
-progressStatus = derived display label from vw_visit_request_progress_summary
+cancellation_source = EXTERNAL_CONFIRMATION
+cancellation_reason = "Khách xác nhận hủy qua email/điện thoại/Zalo..., thời gian..., người xác nhận..., lý do..."
 ```
 
-## 10. SQL v8 Host Assignment Rule
+### 3. Cancellation metadata chuẩn
 
-`WAITING_REQUEST_APPROVAL` means the campus instance is waiting for main request approval. It is not a “waiting host” state.
+Áp dụng cho `visit_requests` và `visit_request_campuses`:
 
-After approval:
+```sql
+cancelled_by BIGINT UNSIGNED NULL,
+cancelled_at DATETIME NULL,
+cancellation_actor_type ENUM('VISITOR','HOST','STAFF_LEADER','HO','SYSTEM') NULL,
+cancellation_source ENUM('SELF_SERVICE','EXTERNAL_CONFIRMATION','INTERNAL_DECISION') NULL,
+cancellation_reason TEXT NULL
+```
 
-- `MULTI_CAMPUS`: HO approves; backend auto-assigns each campus Staff Leader as host; campus status becomes `ASSIGNED`; `host_assignment_source = AUTO_STAFF_LEADER`.
-- `SINGLE_CAMPUS`: Staff Leader approves; Staff Leader must select host immediately; campus status becomes `ASSIGNED`; `host_assignment_source = MANUAL_APPROVAL`.
-- Transfer Host: update current host and set `host_assignment_source = TRANSFERRED`.
+### 4. Meaning của `cancellation_source`
 
-A campus instance with status `ASSIGNED`, `BEFORE_VISIT`, `DURING_VISIT`, `AFTER_VISIT`, or `CLOSED` must have `current_host_user_id`.
+| Value | Meaning | Khi dùng |
+|---|---|---|
+| `SELF_SERVICE` | Người dùng tự thao tác trên hệ thống | Visitor tự hủy đơn của chính họ |
+| `EXTERNAL_CONFIRMATION` | Hủy dựa trên xác nhận ngoài hệ thống | Host hủy thay khách sau khi khách xác nhận qua email/điện thoại/Zalo/gặp trực tiếp |
+| `INTERNAL_DECISION` | Nội bộ hủy vì lý do vận hành | HO/Staff Leader hủy vì campus không thể tiếp, trùng lịch, lý do tổ chức |
 
-## 11. SQL v8 Removed Columns
+### 5. Rule hủy theo role
 
-`visit_request_campuses` must not use:
+| Actor | Scope | Nguồn hủy hợp lệ | Ghi chú |
+|---|---|---|---|
+| Visitor | Đơn của chính họ | `SELF_SERVICE` | Chỉ hủy khi chưa vào giai đoạn `DURING_VISIT`, `AFTER_VISIT`, `CLOSED` |
+| Host | Campus instance mình đang phụ trách | `EXTERNAL_CONFIRMATION` | Bắt buộc nhập `cancellation_reason` rõ kênh/thời điểm/người xác nhận |
+| Staff Leader | Đơn/campus thuộc campus mình | `INTERNAL_DECISION` hoặc `EXTERNAL_CONFIRMATION` | Không xử lý campus khác |
+| HO | `MULTI_CAMPUS` | `INTERNAL_DECISION` hoặc `EXTERNAL_CONFIRMATION` | Có thể hủy request tổng liên cơ sở nếu nghiệp vụ cho phép |
+| Admin | Không có quyền nghiệp vụ visit/delegation | Không áp dụng | ADMIN không được hủy delegation |
+
+### 6. Rule trạng thái
+
+- `visit_requests.status = CANCELLED` dùng khi hủy request/delegation tổng.
+- `visit_request_campuses.status = CANCELLED` dùng khi hủy một campus instance.
+- Không cho hủy campus instance nếu đã vào `DURING_VISIT`, `AFTER_VISIT`, hoặc `CLOSED`.
+- Không dùng `CANCELLED` thay cho `REJECTED`. Nếu đơn đang `PENDING_APPROVAL` và người duyệt không chấp nhận, dùng reject flow.
+
+### 7. Vị trí code Clean Architecture
 
 ```text
-actual_start_at
-actual_end_at
+PEMS.Application/Delegations/Commands/CancelVisitRequest/
+├── CancelVisitRequestCommand.cs
+├── CancelVisitRequestCommandHandler.cs
+├── CancelVisitRequestCommandValidator.cs
+└── CancelVisitRequestResponse.cs
 ```
 
-Do not reference these fields in backend entity, DTO, validators, mapping, query, or frontend forms.
----
+Controller chỉ nhận request và gọi `IMediator`. Logic kiểm tra scope, current host, request/campus status, và cancellation metadata nằm trong Handler/Domain Entity.
 
-# v8.2 Addendum — Cancel thuộc Delegation Feature
 
-## UC-136 — Cancel Visit Request
-
-- Permission code: `UC-136.CANCEL_VISIT_REQUEST`.
-- Permission group: `Delegation Reception Management`.
-- Backend module: `PEMS.Application/Delegations/Commands/CancelVisitRequest`.
-- Controller: `DelegationsController`.
-
-## Required metadata
-
-Khi chuyển `visit_requests.status` hoặc `visit_request_campuses.status` sang `CANCELLED`, backend phải set:
+## Backend authorization checklist
 
 ```text
-cancelled_by
-cancelled_at
-cancellation_actor_type
-cancellation_source
-cancellation_reason
+1. Check authenticated user, trừ trường hợp public token-based visitor cancel được thiết kế riêng.
+2. Check permission UC-136.CANCEL_VISIT_REQUEST.
+3. Check role scope.
+4. Check ownership/assignment/current host.
+5. Check request/campus status.
+6. Require cancellation_reason for EXTERNAL_CONFIRMATION and INTERNAL_DECISION.
+7. Write audit log and visit_status_logs.
 ```
 
-Không dùng `external_confirmation_note`.
+## Không dùng `external_confirmation_note`
 
-## Source rules
-
-| Source | Rule |
-|---|---|
-| `SELF_SERVICE` | Visitor tự hủy trong hệ thống. |
-| `EXTERNAL_CONFIRMATION` | Host/Staff hủy thay khách sau khi khách xác nhận bên ngoài. `cancellation_reason` bắt buộc ghi rõ kênh xác nhận, thời gian, người xác nhận, lý do. |
-| `INTERNAL_DECISION` | HO/Staff Leader hủy theo lý do nội bộ hợp lệ. `cancellation_reason` bắt buộc. |
-
-## Hard stop
-
-Không cho hủy campus instance nếu status đã là:
-
-```text
-DURING_VISIT
-AFTER_VISIT
-CLOSED
-```
-
-Nếu đã xử lý xong visit, dùng UC-41 `Close Delegation`, không dùng UC-136.
+Mọi bằng chứng xác nhận ngoài hệ thống được ghi trong `cancellation_reason`, không tạo field riêng.

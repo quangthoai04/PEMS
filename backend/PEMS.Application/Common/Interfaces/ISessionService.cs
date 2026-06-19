@@ -4,7 +4,7 @@ namespace PEMS.Application.Common.Interfaces;
 
 /// <summary>Tokens produced when creating or rotating a session.</summary>
 public sealed record SessionTokens(
-    string SessionId,
+    ulong SessionId,
     string RefreshToken,
     DateTime RefreshExpiresAt,
     DateTime SessionExpiresAt);
@@ -23,7 +23,7 @@ public interface ISessionService
     Task<SessionTokens> CreateSessionAsync(
         User user,
         string loginPortal,
-        string? authProviderId,
+        ulong? authProviderId,
         string? ipAddress,
         string? userAgent,
         CancellationToken cancellationToken = default);
@@ -35,14 +35,14 @@ public interface ISessionService
     Task<UserSession?> GetActiveByRefreshTokenAsync(string rawRefreshToken, CancellationToken cancellationToken = default);
 
     /// <summary>True when the session exists, is not revoked and has not expired.</summary>
-    Task<bool> IsSessionActiveAsync(string sessionId, CancellationToken cancellationToken = default);
+    Task<bool> IsSessionActiveAsync(ulong sessionId, CancellationToken cancellationToken = default);
 
     /// <summary>Rotates the refresh token of an existing session and returns the new raw token.</summary>
     Task<SessionTokens> RotateRefreshTokenAsync(UserSession session, CancellationToken cancellationToken = default);
 
     /// <summary>Revokes a single session (logout).</summary>
-    Task RevokeSessionAsync(string sessionId, string reason, string? revokedBy = null, CancellationToken cancellationToken = default);
+    Task RevokeSessionAsync(ulong sessionId, string reason, ulong? revokedBy = null, CancellationToken cancellationToken = default);
 
     /// <summary>Revokes every active session of a user. Returns the number revoked.</summary>
-    Task<int> RevokeAllActiveSessionsAsync(string userId, string reason, string? revokedBy = null, CancellationToken cancellationToken = default);
+    Task<int> RevokeAllActiveSessionsAsync(ulong userId, string reason, ulong? revokedBy = null, CancellationToken cancellationToken = default);
 }

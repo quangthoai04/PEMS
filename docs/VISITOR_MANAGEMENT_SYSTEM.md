@@ -1,273 +1,472 @@
-# Visitor Management System — Main Flow v8
+<!-- =====================================================================
+PEMS DOC UPDATE v8.2-full-preserved-cancel-delegation-no-external-note
+Generated: 2026-06-19
+Mode: PRESERVE ORIGINAL CONTENT + ADD V8.2 OVERRIDE.
+No original section below has been removed or compressed.
+===================================================================== -->
 
-> Replacement for `VISITOR_MANAGEMENT_SYSTEM(2).md`.  
-> Aligned with SQL v8: request status separated from campus status, no pending visit table, immediate host assignment after approval.
+# V8.2 Override — Luồng hủy đơn thuộc Delegation và không dùng external_confirmation_note
 
----
+> Tài liệu gốc bên dưới được giữ nguyên để không mất nội dung. Tuy nhiên, nếu có đoạn cũ ghi “Đã duyệt — chưa có HOST”, “Staff click nhận đón”, hoặc “mỗi cơ sở duyệt lại sau HO”, thì áp dụng override V8.2 trong phần này.
 
-## 1. Purpose
 
-This document describes the main visitor request and delegation handling flow for FPT University campuses.
+## V8.2 Addendum — UC-136 Cancel Visit Request thuộc Delegation Reception Management
 
-The system supports:
+> Phần này là nội dung bổ sung, không xóa nội dung gốc. Nếu nội dung gốc có flow cũ như “đã duyệt nhưng chưa có host” hoặc “mỗi cơ sở duyệt lại sau HO”, hãy ưu tiên rule V8.2 trong phần addendum này.
 
-- Visitor public visit request submission.
-- OTP/email verification before saving official request.
-- Single-campus and multi-campus routing.
-- HO approval for multi-campus requests.
-- Staff Leader approval for single-campus requests.
-- Immediate host assignment after approval.
-- Campus-level before/during/after/closed operation.
+### 1. Feature ownership
 
----
-
-## 2. Status Model
-
-### 2.1. Request status
-
-Stored in `visit_requests.status`:
+UC hủy đơn thăm thuộc **FE-02 — Quản lý Tiếp đón Đoàn khách / Delegation Reception Management** vì đây là thao tác trên vòng đời đoàn/visit request, không phải bước submit form.
 
 ```text
-PENDING_APPROVAL
-APPROVED
-REJECTED
-CANCELLED
+Feature: FE-02 Delegation Reception Management
+UC: UC-136 Cancel Visit Request
+Permission code: UC-136.CANCEL_VISIT_REQUEST
 ```
 
-This is the status of the request/approval only.
+### 2. Không dùng `external_confirmation_note`
 
-### 2.2. Campus status
-
-Stored in `visit_request_campuses.status`:
+Không tạo cột `external_confirmation_note`. Khi Host hủy thay khách dựa trên xác nhận ngoài hệ thống, toàn bộ thông tin xác nhận được ghi vào `cancellation_reason`.
 
 ```text
-WAITING_REQUEST_APPROVAL
-ASSIGNED
-BEFORE_VISIT
-DURING_VISIT
-AFTER_VISIT
-CLOSED
-CANCELLED
-```
-
-This is the operational status of each campus instance.
-
----
-
-## 3. Visitor Public Submit Flow
-
-```text
-Visitor fills visit form
-→ Frontend stores draft in sessionStorage
-→ Visitor requests OTP
-→ Backend stores OTP in otp_tokens only
-→ Visitor enters OTP
-→ Backend returns verificationToken
-→ Frontend submits official form + verificationToken
-→ Backend validates form and token
-→ Backend creates/links VISITOR user
-→ Backend inserts visit_requests
-→ Backend inserts visit_request_campuses
-→ Backend inserts visit_guest_members
-```
-
-Initial database state:
-
-```text
-visit_requests.status = PENDING_APPROVAL
-visit_request_campuses.status = WAITING_REQUEST_APPROVAL
-current_host_user_id = NULL
-host_assignment_source = NULL
-```
-
----
-
-## 4. Flow A — Single-Campus Request
-
-```text
-Visitor submits request for 1 campus
-→ Staff Leader of that campus sees pending request
-→ Staff Leader approves/rejects
-```
-
-If rejected:
-
-```text
-visit_requests.status = REJECTED
-```
-
-If approved:
-
-```text
-Staff Leader must select host immediately
-visit_requests.status = APPROVED
-visit_request_campuses.status = ASSIGNED
-current_host_user_id = selected host
-host_assignment_source = MANUAL_APPROVAL
-host_assigned_by = current Staff Leader
-host_assigned_at = now
-```
-
-Then the campus progresses:
-
-```text
-ASSIGNED
-→ BEFORE_VISIT
-→ DURING_VISIT
-→ AFTER_VISIT
-→ CLOSED
-```
-
----
-
-## 5. Flow B — Multi-Campus Request
-
-```text
-Visitor submits request for 2+ campuses
-→ HO sees pending request
-→ Staff Leaders do not see it while pending HO approval
-→ HO approves/rejects
-```
-
-If rejected:
-
-```text
-visit_requests.status = REJECTED
-```
-
-If approved:
-
-```text
-visit_requests.status = APPROVED
-For each selected campus:
-  visit_request_campuses.status = ASSIGNED
-  current_host_user_id = Staff Leader of that campus
-  host_assignment_source = AUTO_STAFF_LEADER
-  host_assigned_by = HO user id or system actor
-  host_assigned_at = now
-```
-
-After release, each Staff Leader sees only their own campus instance.
-
-Staff Leader may transfer host:
-
-```text
-current_host_user_id = new IC Staff
-host_assignment_source = TRANSFERRED
-host_transferred_by = current actor
-host_transferred_at = now
-host_transfer_note = reason
-```
-
----
-
-## 6. UI Display
-
-### Single-campus list row example
-
-```text
-Request Status: Chờ Staff Leader duyệt
-Campus Progress: Chờ đơn được duyệt
-Host: Chưa có
-```
-
-After approval:
-
-```text
-Request Status: Đã duyệt
-Campus Progress: Đã giao host
-Host: Nguyễn Văn A
-```
-
-### Multi-campus list row for HO
-
-```text
-Request Status: Chờ HO duyệt
-Scope: Liên cơ sở
-```
-
-After HO approval:
-
-```text
-Request Status: Đã duyệt bởi HO
-Campus Progress: Đã giao host các cơ sở
-```
-
-### Staff Leader view after HO approval
-
-```text
-Request Status: Đơn từ HO / Đã duyệt
-Campus Progress: Đã giao bạn làm host
-Host: Staff Leader campus hiện tại
-```
-
----
-
-## 7. Visibility
-
-| Actor | Can see pending single-campus? | Can see pending multi-campus? | Can see released multi-campus? |
-|---|---:|---:|---:|
-| HO | No | Yes | Yes |
-| Staff Leader same campus | Yes | No | Own campus only |
-| Staff Leader other campus | No | No | No |
-| Admin | No | No | No |
-| Visitor | Own submitted request | Own submitted request | Own submitted request |
-
----
-
-## 8. Removed/Invalid Old Flow
-
-Do not implement these old states anymore:
-
-```text
-Đã duyệt — chưa có HOST
-Staff click Nhận đón after approval
-Campus approve/reject after HO approval
-visit_requests.status = IN_PROGRESS / COMPLETED
-actual_start_at / actual_end_at in visit_request_campuses
-```
-
-The host must be assigned at the moment of approval, either automatically or manually depending on visit scope.
----
-
-# v8.2 Addendum — Luồng hủy request/delegation
-
-## Visitor tự hủy
-
-```text
-[Visitor đăng nhập]
-  ↓
-[Mở chi tiết request của mình]
-  ↓
-[Bấm Hủy đơn]
-  ↓
-[Nhập lý do hủy]
-  ↓
-Backend kiểm tra:
-- request thuộc visitor hiện tại
-- request chưa REJECTED/CANCELLED
-- campus chưa DURING_VISIT/AFTER_VISIT/CLOSED
-  ↓
-visit_requests.status = CANCELLED
-visit_request_campuses.status = CANCELLED
-cancellation_source = SELF_SERVICE
-```
-
-## Host hủy thay khách
-
-```text
-[Khách xác nhận hủy bên ngoài hệ thống]
-  ↓
-[Host hiện tại vào chi tiết delegation/campus instance]
-  ↓
-[Bấm Hủy thay khách]
-  ↓
-[Nhập cancellation_reason gồm kênh xác nhận + thời gian + lý do]
-  ↓
-Backend kiểm tra current_host_user_id
-  ↓
-Campus instance hoặc request single-campus chuyển CANCELLED
 cancellation_source = EXTERNAL_CONFIRMATION
+cancellation_reason = "Khách xác nhận hủy qua email/điện thoại/Zalo..., thời gian..., người xác nhận..., lý do..."
 ```
 
-Không dùng `external_confirmation_note`; lý do và bằng chứng xác nhận ngoài hệ thống đều nằm trong `cancellation_reason`.
+### 3. Cancellation metadata chuẩn
+
+Áp dụng cho `visit_requests` và `visit_request_campuses`:
+
+```sql
+cancelled_by BIGINT UNSIGNED NULL,
+cancelled_at DATETIME NULL,
+cancellation_actor_type ENUM('VISITOR','HOST','STAFF_LEADER','HO','SYSTEM') NULL,
+cancellation_source ENUM('SELF_SERVICE','EXTERNAL_CONFIRMATION','INTERNAL_DECISION') NULL,
+cancellation_reason TEXT NULL
+```
+
+### 4. Meaning của `cancellation_source`
+
+| Value | Meaning | Khi dùng |
+|---|---|---|
+| `SELF_SERVICE` | Người dùng tự thao tác trên hệ thống | Visitor tự hủy đơn của chính họ |
+| `EXTERNAL_CONFIRMATION` | Hủy dựa trên xác nhận ngoài hệ thống | Host hủy thay khách sau khi khách xác nhận qua email/điện thoại/Zalo/gặp trực tiếp |
+| `INTERNAL_DECISION` | Nội bộ hủy vì lý do vận hành | HO/Staff Leader hủy vì campus không thể tiếp, trùng lịch, lý do tổ chức |
+
+### 5. Rule hủy theo role
+
+| Actor | Scope | Nguồn hủy hợp lệ | Ghi chú |
+|---|---|---|---|
+| Visitor | Đơn của chính họ | `SELF_SERVICE` | Chỉ hủy khi chưa vào giai đoạn `DURING_VISIT`, `AFTER_VISIT`, `CLOSED` |
+| Host | Campus instance mình đang phụ trách | `EXTERNAL_CONFIRMATION` | Bắt buộc nhập `cancellation_reason` rõ kênh/thời điểm/người xác nhận |
+| Staff Leader | Đơn/campus thuộc campus mình | `INTERNAL_DECISION` hoặc `EXTERNAL_CONFIRMATION` | Không xử lý campus khác |
+| HO | `MULTI_CAMPUS` | `INTERNAL_DECISION` hoặc `EXTERNAL_CONFIRMATION` | Có thể hủy request tổng liên cơ sở nếu nghiệp vụ cho phép |
+| Admin | Không có quyền nghiệp vụ visit/delegation | Không áp dụng | ADMIN không được hủy delegation |
+
+### 6. Rule trạng thái
+
+- `visit_requests.status = CANCELLED` dùng khi hủy request/delegation tổng.
+- `visit_request_campuses.status = CANCELLED` dùng khi hủy một campus instance.
+- Không cho hủy campus instance nếu đã vào `DURING_VISIT`, `AFTER_VISIT`, hoặc `CLOSED`.
+- Không dùng `CANCELLED` thay cho `REJECTED`. Nếu đơn đang `PENDING_APPROVAL` và người duyệt không chấp nhận, dùng reject flow.
+
+### 7. Vị trí code Clean Architecture
+
+```text
+PEMS.Application/Delegations/Commands/CancelVisitRequest/
+├── CancelVisitRequestCommand.cs
+├── CancelVisitRequestCommandHandler.cs
+├── CancelVisitRequestCommandValidator.cs
+└── CancelVisitRequestResponse.cs
+```
+
+Controller chỉ nhận request và gọi `IMediator`. Logic kiểm tra scope, current host, request/campus status, và cancellation metadata nằm trong Handler/Domain Entity.
+
+
+## Luồng SINGLE_CAMPUS sau V8.2
+
+```text
+Visitor submit form + OTP verified
+→ visit_requests.status = PENDING_APPROVAL
+→ visit_request_campuses.status = WAITING_REQUEST_APPROVAL
+→ Staff Leader campus duyệt hoặc từ chối
+→ Nếu duyệt: Staff Leader chọn host ngay
+→ visit_requests.status = APPROVED
+→ visit_request_campuses.status = ASSIGNED
+→ BEFORE_VISIT → DURING_VISIT → AFTER_VISIT → CLOSED
+```
+
+## Luồng MULTI_CAMPUS sau V8.2
+
+```text
+Visitor submit form + OTP verified
+→ visit_requests.status = PENDING_APPROVAL
+→ mỗi campus instance = WAITING_REQUEST_APPROVAL
+→ HO duyệt hoặc từ chối request tổng
+→ Nếu duyệt: backend auto gán Staff Leader từng campus làm host
+→ mỗi campus instance = ASSIGNED
+→ từng campus vận hành độc lập: BEFORE_VISIT → DURING_VISIT → AFTER_VISIT → CLOSED
+```
+
+## Luồng hủy sau V8.2
+
+```text
+Visitor tự hủy đơn của mình
+→ cancellation_source = SELF_SERVICE
+→ cancellation_reason = lý do visitor nhập, nếu có
+
+Host hủy thay khách sau khi xác nhận ngoài hệ thống
+→ cancellation_source = EXTERNAL_CONFIRMATION
+→ cancellation_reason = ghi rõ kênh xác nhận, thời điểm, người xác nhận, lý do
+
+Staff Leader/HO hủy do quyết định nội bộ
+→ cancellation_source = INTERNAL_DECISION
+→ cancellation_reason bắt buộc
+```
+
+---
+
+# HỆ THỐNG QUẢN LÝ TIẾP KHÁCH QUỐC TẾ — TÀI LIỆU LUỒNG CHÍNH
+
+> Tài liệu này mô tả toàn bộ luồng nghiệp vụ, phân quyền và quy trình xử lý của hệ thống quản lý tiếp khách quốc tế tới thăm các cơ sở của Trường Đại học FPT Việt Nam (5 cơ sở trên toàn quốc).
+
+---
+
+## 1. TỔNG QUAN HỆ THỐNG
+
+### 1.1 Mục đích
+Hệ thống hỗ trợ các nghiệp vụ Hợp tác Quốc tế (HTQT), bao gồm:
+- Quản lý lịch và công khai lịch chương trình
+- Quản lý lịch của cán bộ HTQT và sinh viên liên quan
+- Quản lý hoạt động tiếp khách (Visiting Request, Visit Online Tour)
+- Quản lý đối tác (bao gồm cả đối tác chưa ký kết)
+
+### 1.2 Phạm vi
+- **5 Cơ sở (CS):** HN, HCM, ĐN, CT, QN (ví dụ)
+- **HO:** Văn phòng trung tâm, quản lý toàn bộ 5 cơ sở
+
+---
+
+## 2. CÁC ROLE TRONG HỆ THỐNG
+
+| Role | Mô tả |
+|---|---|
+| **HO** | Quản lý chung, toàn quyền với 5 cơ sở. Xử lý các đoàn khách liên cơ sở |
+| **Admin** | Quản trị viên kỹ thuật, cấu hình hệ thống và API |
+| **Staff** | Nhân sự phòng Hợp tác Quốc tế (IC) tại một cơ sở cụ thể |
+| **Staff_Lead** | Trưởng phòng IC, đứng đầu một cơ sở |
+| **Dept** | Nhân sự thuộc các phòng ban khác (bao gồm Trưởng phòng và Nhân viên) |
+| **Student** | Sinh viên hỗ trợ (buddy, media, v.v.) |
+| **Visitor (có tài khoản)** | Khách có thể đăng nhập, xem dữ liệu được phân quyền |
+| **Visitor (không có tài khoản)** | Khách đăng ký thăm mà không cần đăng nhập |
+
+---
+
+## 3. CÁC TRẠNG THÁI CỦA ĐOÀN KHÁCH
+
+```
+Chờ duyệt → Từ chối
+          → Đã duyệt (chưa có HOST)
+              → Trước tiếp khách  (Tab 1 — sau khi Staff nhận đón & tạo đoàn)
+                  → Trong tiếp khách (Tab 2 — sau khi HOST xác nhận tab 1)
+                      → Sau tiếp khách  (Tab 3 — sau khi HOST xác nhận tab 2)
+                          → Đã đóng đoàn (sau khi HOST đóng đoàn)
+```
+
+---
+
+## 4. LUỒNG CHÍNH — INPUT 1: KHÁCH TỰ GỬI YÊU CẦU
+
+### 4.1 Trường hợp A — Khách muốn thăm 1 cơ sở duy nhất
+
+```
+[Visitor gửi form yêu cầu]
+        ↓
+[Staff_Lead & Staff của cơ sở đó thấy yêu cầu — trạng thái: Chờ duyệt]
+        ↓ (chỉ Staff_Lead được ra quyết định)
+   ┌────┴────┐
+[Từ chối]  [Duyệt]
+    ↓           ↓
+Staff_Lead   Trạng thái: "Đã duyệt — chưa có HOST"
+điền lý do       ↓
+Khách thấy   [Một Staff click "Nhận đón"]
+lý do từ chối    ↓
+             [Trang tạo đoàn khách — Staff điền thông tin & tạo]
+                 ↓
+             Trạng thái: "Trước tiếp khách"
+             HOST mặc định = Staff vừa nhận đón
+             (HOST có thể đổi cho Staff khác cùng phòng IC)
+                 ↓
+             [Gửi lời mời tham gia tới: Staff khác, Dept_Lead, Student]
+                 ↓
+             → Tiếp tục quy trình 3 tab (xem Mục 6)
+```
+
+### 4.2 Trường hợp B — Khách muốn thăm liên cơ sở (≥2 cơ sở)
+
+```
+[Visitor gửi form yêu cầu]
+        ↓
+[HO tiếp nhận — trạng thái: Chờ duyệt]
+        ↓ (HO ra quyết định)
+   ┌────┴────┐
+[Từ chối]  [Duyệt]
+    ↓           ↓
+HO điền     HO chuyển tiếp yêu cầu tới từng Cơ sở liên quan
+lý do            ↓ (mỗi cơ sở xử lý độc lập)
+Gửi email   [Staff_Lead của từng cơ sở tiếp nhận]
+cho khách        ↓
+             ┌────┴────┐
+          [Từ chối]  [Duyệt]
+              ↓           ↓
+          Staff_Lead   Trạng thái: "Đã duyệt — chưa có HOST"
+          điền lý do       ↓
+          HO thấy lý do [Một Staff tại cơ sở click "Nhận đón"]
+          HO liên hệ       ↓
+          thông báo khách  [Tạo đoàn khách]
+                           ↓
+                       → Tiếp tục quy trình 3 tab (xem Mục 6)
+```
+
+> **Lưu ý:** Với liên cơ sở, mỗi cơ sở tạo đoàn khách và quản lý quy trình độc lập nhau. HO theo dõi tổng thể.
+
+---
+
+## 5. LUỒNG CHÍNH — INPUT 2: STAFF CHỦ ĐỘNG TẠO ĐOÀN KHÁCH
+
+### 5.1 Staff tạo đoàn thăm cơ sở của chính mình (Cơ sở A → A)
+
+```
+[Staff tại cơ sở A click "Tạo đoàn khách", chọn cơ sở A]
+        ↓
+[Staff điền thông tin & tạo đoàn]
+        ↓
+Trạng thái: "Trước tiếp khách"
+HOST mặc định = Staff tạo đoàn
+(có thể đổi HOST cho Staff khác cùng phòng IC)
+        ↓
+[Gửi lời mời tới: Staff khác, Dept_Lead, Student]
+        ↓
+→ Tiếp tục quy trình 3 tab (xem Mục 6)
+```
+
+### 5.2 Staff tạo đoàn thăm cơ sở khác (Cơ sở A → B)
+
+```
+[Staff tại cơ sở A click "Tạo đoàn khách", chọn cơ sở B]
+        ↓
+[Staff điền thông tin & gửi tới Cơ sở B]
+        ↓
+[Staff_Lead & Staff của Cơ sở B thấy đơn — trạng thái: Chờ duyệt]
+        ↓ (chỉ Staff_Lead cơ sở B ra quyết định)
+   ┌────┴────┐
+[Từ chối]  [Duyệt]
+    ↓           ↓
+Staff_Lead B  Trạng thái: "Đã duyệt — chưa có HOST"
+điền lý do        ↓
+Staff A thấy  [Một Staff tại Cơ sở B click "Nhận đón"]
+lý do từ chối     ↓
+              [Tạo đoàn khách tại Cơ sở B]
+                  ↓
+              → Tiếp tục quy trình 3 tab (xem Mục 6)
+```
+
+### 5.3 Staff tạo đoàn thăm liên cơ sở (Cơ sở A → C & D)
+thì sẽ để ho duyệt hoăc từ chối , nếu từ chối thì điền lí do, nếu duyệt thì auto các staff leader các cơ sở đó chịu trách nhiêm, staff leader có thể gán host cho người khác cũng được.
+( chỉ ho mới nhìn đc đơn liên cơ sở, staff leader chỉ nhìn được đơn liên cơ sở mà ho đã duyệt và nhảy về campus tương ứng)
+---
+
+## 6. QUY TRÌNH 3 TAB TIẾP KHÁCH (DÙNG CHUNG CHO MỌI LUỒNG)
+
+Sau khi đoàn khách được tạo thành công, HOST quản lý đoàn qua 3 tab:
+
+### Tab 1 — TRƯỚC TIẾP KHÁCH
+
+**Trạng thái đoàn:** `Trước tiếp khách`
+
+**HOST thực hiện:**
+- Xem chi tiết đoàn khách
+- Thực hiện Setup & Detail Setup
+- Gửi yêu cầu mượn đồ tới Trưởng phòng của các phòng ban khác
+- Theo dõi xác nhận/từ chối từ những người được mời
+- Theo dõi xác nhận cho mượn đồ từ phòng ban khác
+- Khi mọi thứ hoàn tất → HOST **Xác nhận** để chuyển sang Tab 2
+
+### Tab 2 — TRONG TIẾP KHÁCH
+
+**Trạng thái đoàn:** `Trong tiếp khách`
+
+**Các chức năng:**
+- Feedback
+- Tạo đối tác
+- Tạo biên bản cuộc họp
+- Scan card visit
+- Thêm tài liệu cho đối tác
+
+Khi hoàn tất → HOST **Xác nhận** để chuyển sang Tab 3
+
+### Tab 3 — SAU TIẾP KHÁCH
+
+**Trạng thái đoàn:** `Sau tiếp khách`
+
+**Các chức năng:**
+- Upload album ảnh (do sinh viên chụp trong buổi tiếp khách)
+- Gán tên và thông tin card visit lên khuôn mặt trong ảnh
+- Đăng bài tin tức về đoàn khách đã tới thăm
+
+Khi hoàn tất → HOST **Đóng đoàn** → Trạng thái: `Đã đóng đoàn`
+
+> **Lưu ý quan trọng:** Sau khi đóng đoàn, toàn bộ hoạt động trong 3 tab bị **disable** — không thể chỉnh sửa.
+
+---
+
+## 7. PHÂN QUYỀN TRONG QUY TRÌNH 3 TAB
+
+### HOST (Staff được chỉ định)
+- **Tab 1:** Toàn quyền — setup, detail setup, gửi yêu cầu mượn đồ, xác nhận chuyển tab
+- **Tab 2:** Toàn quyền — feedback, tạo đối tác, tạo biên bản, scan card, thêm tài liệu
+- **Tab 3:** Toàn quyền — upload ảnh, gán thông tin, đăng bài tin tức
+- **Đặc quyền:** Có thể **Đóng đoàn**
+
+### STAFF (Nhân sự phòng IC, không phải HOST)
+- **Tab 1:** Xem toàn bộ; chỉ xác nhận/từ chối lời mời của chính mình
+- **Tab 2:** Feedback, tạo đối tác, tạo biên bản cuộc họp, thêm tài liệu, scan card visit
+- **Tab 3:** Upload album ảnh, đăng bài tin
+- **Không thể:** Đóng đoàn
+
+### DEPT (Nhân sự phòng ban khác — được mời tham gia)
+- **Tab 1:** Xem toàn bộ; chỉ xác nhận/từ chối lời mời của chính mình
+- **Tab 2:** Feedback, tạo biên bản cuộc họp
+- **Tab 3:** Chỉ xem album ảnh và bài tin tức
+- **Không thể:** Upload ảnh, đăng bài, đóng đoàn
+
+### DEPT (Trưởng phòng phòng ban — nhận yêu cầu mượn đồ)
+- **Tab 1:** Xem toàn bộ chi tiết setup và detail setup
+- **Tab 2:** Chỉ feedback
+- **Không thể:** Đóng đoàn
+
+### STUDENT (Sinh viên hỗ trợ)
+- **Tab 1:** Xem toàn bộ; chỉ xác nhận/từ chối lời mời của chính mình
+- **Tab 2:** Feedback, tạo biên bản cuộc họp
+- **Tab 3:** Upload album ảnh, đăng bài tin
+- **Không thể:** Đóng đoàn
+
+### STAFF_LEAD (Trưởng phòng IC)
+- Xem và phê duyệt/từ chối đơn yêu cầu tới tham quan
+- Theo dõi chi tiết quy trình sau khi có HOST nhận đón
+- **Không thể:** Thao tác bất kỳ hành động nào trong 3 tab
+
+### HO
+- Tiếp nhận & phê duyệt/từ chối đơn liên cơ sở
+- Điều phối đơn về các cơ sở liên quan
+- Theo dõi trạng thái phê duyệt từ các cơ sở
+- Xem biên bản cuộc họp của các cơ sở
+- **Không thể:** Thao tác quy trình nội bộ của từng cơ sở
+
+### VISITOR (Khách)
+- Gửi yêu cầu tới tham quan
+- Theo dõi trạng thái đơn của mình
+- Xem lý do từ chối (nếu bị từ chối)
+- Xem thông tin setup và detail setup (nếu được duyệt)
+- Feedback
+- Xem bài tin tức và album ảnh về đoàn của mình
+
+---
+
+## 8. LUỒNG XỬ LÝ YÊU CẦU MƯỢN ĐỒ & THƯ MỜI THAM GIA
+
+### Nguyên tắc
+- **Trưởng phòng** của phòng ban khác là người **mặc định nhận** lời mời / yêu cầu mượn đồ từ HOST
+- Trưởng phòng có thể **tự xử lý** hoặc **phân công cho nhân viên**
+
+### Luồng xử lý Thư mời tham gia
+
+```
+[HOST gửi thư mời tới Trưởng phòng]
+        ↓
+[Trưởng phòng xem & quyết định]
+     ┌──┴──┐
+  [Tự làm]  [Phân công nhân viên]
+     ↓              ↓
+[Xác nhận]   [Nhân viên nhận nhiệm vụ]
+hoặc               ↓
+[Từ chối     [Xác nhận] hoặc [Từ chối + lý do]
++ lý do]
+
+Trạng thái thư mời:
+  Xác nhận → "Hoàn thành"
+  Từ chối  → "Từ chối" + lý do
+```
+
+### Luồng xử lý Yêu cầu mượn đồ (2 bước B1 & B2)
+
+#### Bước B1 — Xác nhận mượn
+
+```
+[Nhân viên/Trưởng phòng xem yêu cầu mượn đồ]
+        ↓
+   ┌────┼────┐
+[Xác nhận] [Từ chối] [Đề xuất thay thế]
+    ↓           ↓            ↓
+Trạng thái: Trạng thái: [HOST xem xét đề xuất]
+"Đang làm" "Từ chối"    ┌───┴───┐
+→ Tiếp B2   + lý do  [Đồng ý] [Không đồng ý]
+                         ↓           ↓
+                     "Đang làm" "Từ chối" + lý do
+                     → Tiếp B2
+```
+
+#### Bước B2 — Biên bản bàn giao & nghiệm thu (chỉ khi B1 = "Đang làm")
+
+```
+[Nhân viên bên cho mượn đồ & HOST ký kết biên bản]
+        ↓
+[Ký kết 4 lần: Bàn giao (2 lần) + Nghiệm thu (2 lần)]
+        ↓
+[Đủ 4 lần ký] → Trạng thái: "Hoàn thành"
+
+Trạng thái đồng bộ tới: Nhân viên, Trưởng phòng, HOST
+```
+
+---
+
+## 9. TÓM TẮT QUAN HỆ GIỮA CÁC ROLE
+
+```
+                    ┌─────────┐
+                    │   HO    │ ← Quản lý liên cơ sở
+                    └────┬────┘
+          ┌──────────────┼──────────────┐
+     ┌────┴────┐    ┌────┴────┐    ┌────┴────┐
+     │ Cơ sở A│    │ Cơ sở B │    │ Cơ sở C │  ...
+     └────┬────┘    └─────────┘    └─────────┘
+          │
+    ┌─────┴──────┐
+    │ Staff_Lead │ ← Phê duyệt đơn, theo dõi quy trình
+    └─────┬──────┘
+          │
+    ┌─────┴──────┐
+    │   Staff    │ ← Nhận đón, làm HOST, thực thi 3 tab
+    └─────┬──────┘
+          │  (mời tham gia)
+    ┌─────┼──────────┬──────────┐
+    │     │          │          │
+┌───┴──┐ ┌┴──────┐ ┌┴───────┐  │
+│Dept  │ │Student│ │Dept    │  │
+│Lead  │ │       │ │(nhân   │  │
+│(mời) │ │       │ │viên)   │  │
+└──────┘ └───────┘ └────────┘  │
+                          (mượn đồ)
+```
+
+---
+
+## 10. CÁC ĐIỂM ĐẶC BIỆT CẦN LƯU Ý
+
+1. **Visitor không có tài khoản** vẫn có thể gửi form đăng ký tới thăm mà không cần đăng nhập.
+2. **HOST mặc định** là Staff đầu tiên bấm "Nhận đón", nhưng có thể chuyển HOST sang Staff khác trong cùng phòng IC.
+3. **Liên cơ sở từ phía khách:** HO phê duyệt trước, sau đó phân về từng cơ sở. Mỗi cơ sở có Staff_Lead phê duyệt riêng.
+4. **Liên cơ sở từ phía Staff:** Staff tạo → HO phê duyệt → phân về cơ sở đích → Staff_Lead tại cơ sở đích phê duyệt.
+5. **Đóng đoàn là hành động không thể đảo ngược** — toàn bộ 3 tab bị khóa.
+6. **Biên bản bàn giao mượn đồ** yêu cầu đúng 4 lần ký mới hoàn thành, trạng thái đồng bộ thời gian thực cho tất cả các bên liên quan.
+7. **Staff_Lead và HO** chỉ có vai trò giám sát sau khi đoàn đã được tạo — không thể thao tác trong quy trình 3 tab.

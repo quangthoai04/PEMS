@@ -14,7 +14,7 @@ public static class AuthResultBuilder
     public static async Task<AuthResponse> IssueAsync(
         User user,
         string loginPortal,
-        string? authProviderId,
+        ulong? authProviderId,
         string? ipAddress,
         string? userAgent,
         ISessionService sessionService,

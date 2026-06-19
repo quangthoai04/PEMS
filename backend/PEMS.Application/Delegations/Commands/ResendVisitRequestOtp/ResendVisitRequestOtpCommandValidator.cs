@@ -7,7 +7,11 @@ public sealed class ResendVisitRequestOtpCommandValidator
 {
     public ResendVisitRequestOtpCommandValidator()
     {
-        RuleFor(x => x.SessionToken)
-            .NotEmpty().WithMessage("SessionToken không được để trống.");
+        RuleFor(x => x.RegisterEmail)
+            .NotEmpty().WithMessage("Email đăng ký không được để trống.")
+            .EmailAddress().WithMessage("Email đăng ký không hợp lệ.");
+
+        RuleFor(x => x.RegisterFullName)
+            .NotEmpty().WithMessage("Họ và tên người đăng ký không được để trống.");
     }
 }

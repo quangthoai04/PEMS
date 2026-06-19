@@ -18,9 +18,9 @@ public sealed class PermissionChecker : IPermissionChecker
     }
 
     public async Task<IReadOnlyList<UserPermissionDto>> GetPermissionsForRoleAsync(
-        string roleId, string subRole, CancellationToken cancellationToken = default)
+        ulong roleId, string subRole, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrEmpty(roleId) || string.IsNullOrEmpty(subRole))
+        if (roleId == 0 || string.IsNullOrEmpty(subRole))
             return Array.Empty<UserPermissionDto>();
 
         return await _db.RolePermissions
@@ -41,9 +41,9 @@ public sealed class PermissionChecker : IPermissionChecker
     }
 
     public async Task<string?> GetPermissionLevelAsync(
-        string roleId, string subRole, string permissionCode, CancellationToken cancellationToken = default)
+        ulong roleId, string subRole, string permissionCode, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrEmpty(roleId) || string.IsNullOrEmpty(subRole) || string.IsNullOrEmpty(permissionCode))
+        if (roleId == 0 || string.IsNullOrEmpty(subRole) || string.IsNullOrEmpty(permissionCode))
             return null;
 
         return await _db.RolePermissions
@@ -57,7 +57,7 @@ public sealed class PermissionChecker : IPermissionChecker
     }
 
     public async Task<bool> HasPermissionAsync(
-        string roleId, string subRole, string permissionCode, string minimumLevel, CancellationToken cancellationToken = default)
+        ulong roleId, string subRole, string permissionCode, string minimumLevel, CancellationToken cancellationToken = default)
     {
         var level = await GetPermissionLevelAsync(roleId, subRole, permissionCode, cancellationToken);
         return level is not null && PermissionLevels.Satisfies(level, minimumLevel);

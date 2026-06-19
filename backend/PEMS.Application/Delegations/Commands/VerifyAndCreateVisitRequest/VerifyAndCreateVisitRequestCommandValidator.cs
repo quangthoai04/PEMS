@@ -7,8 +7,12 @@ public sealed class VerifyAndCreateVisitRequestCommandValidator
 {
     public VerifyAndCreateVisitRequestCommandValidator()
     {
-        RuleFor(x => x.SessionToken)
-            .NotEmpty().WithMessage("SessionToken không được để trống.");
+        RuleFor(x => x.RegisterEmail)
+            .NotEmpty().WithMessage("Email đăng ký không được để trống.")
+            .EmailAddress().WithMessage("Email đăng ký không hợp lệ.");
+
+        RuleFor(x => x.RegisterFullName)
+            .NotEmpty().WithMessage("Họ và tên người đăng ký không được để trống.");
 
         RuleFor(x => x.OtpCode)
             .NotEmpty().WithMessage("Mã OTP không được để trống.")

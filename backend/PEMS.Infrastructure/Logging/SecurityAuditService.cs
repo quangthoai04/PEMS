@@ -19,16 +19,16 @@ public sealed class SecurityAuditService : ISecurityAuditService
     }
 
     public async Task WriteLoginLogAsync(
-        string? userId,
+        ulong? userId,
         string email,
         string loginPortal,
-        string? selectedCampusId,
+        ulong? selectedCampusId,
         string? providerType,
         string status,
         string? failureReason,
         string? ipAddress,
         string? userAgent,
-        string? sessionId,
+        ulong? sessionId,
         CancellationToken cancellationToken = default)
     {
         var entry = new LoginLog
@@ -51,7 +51,7 @@ public sealed class SecurityAuditService : ISecurityAuditService
     }
 
     public async Task WriteSecurityEventAsync(
-        string? userId,
+        ulong? userId,
         string? email,
         string eventType,
         string severity,

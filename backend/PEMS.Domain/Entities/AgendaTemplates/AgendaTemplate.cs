@@ -1,4 +1,4 @@
-using System.ComponentModel.DataAnnotations;
+﻿using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace PEMS.Domain.Entities.AgendaTemplates;
@@ -8,10 +8,10 @@ public class AgendaTemplate
 {
     [Key]
     [Column("agenda_template_id")]
-    public string AgendaTemplateId { get; set; } = null!;
+    public ulong AgendaTemplateId { get; set; }
 
     [Column("campus_id")]
-    public string? CampusId { get; set; }
+    public ulong? CampusId { get; set; }
 
     [Column("campus_scope_key")]
     public string CampusScopeKey { get; set; } = null!;
@@ -32,17 +32,17 @@ public class AgendaTemplate
     public DateTime CreatedAt { get; set; }
 
     [Column("created_by")]
-    public string? CreatedBy { get; set; }
+    public ulong? CreatedBy { get; set; }
 
     [Column("updated_at")]
     public DateTime? UpdatedAt { get; set; }
 
     [Column("updated_by")]
-    public string? UpdatedBy { get; set; }
+    public ulong? UpdatedBy { get; set; }
 
     [Column("deleted_at")]
     public DateTime? DeletedAt { get; set; }
 
     [Column("deleted_by")]
-    public string? DeletedBy { get; set; }
+    public ulong? DeletedBy { get; set; }
 }

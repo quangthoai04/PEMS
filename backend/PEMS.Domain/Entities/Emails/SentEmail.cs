@@ -1,4 +1,4 @@
-using System.ComponentModel.DataAnnotations;
+﻿using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace PEMS.Domain.Entities.Emails;
@@ -8,16 +8,16 @@ public class SentEmail
 {
     [Key]
     [Column("sent_email_id")]
-    public string SentEmailId { get; set; } = null!;
+    public ulong SentEmailId { get; set; }
 
     [Column("email_template_id")]
-    public string? EmailTemplateId { get; set; }
+    public ulong? EmailTemplateId { get; set; }
 
     [Column("related_type")]
     public string? RelatedType { get; set; }
 
     [Column("related_id")]
-    public string? RelatedId { get; set; }
+    public ulong? RelatedId { get; set; }
 
     [Column("subject")]
     public string Subject { get; set; } = null!;
@@ -38,7 +38,7 @@ public class SentEmail
     public string? ErrorMessage { get; set; }
 
     [Column("sent_by")]
-    public string? SentBy { get; set; }
+    public ulong? SentBy { get; set; }
 
     [Column("sent_at")]
     public DateTime? SentAt { get; set; }

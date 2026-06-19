@@ -41,6 +41,9 @@ public static class PermissionCodes
     public const string ViewEmail = "UC-48.VIEW_EMAIL";
     public const string ReplyToEmail = "UC-49.REPLY_TO_EMAIL";
 
+    // ── Delegation Reception Management ───────────────────────────────────
+    public const string CancelVisitRequest = "UC-136.CANCEL_VISIT_REQUEST";
+
     // ── Role Management ───────────────────────────────────────────────────
     public const string ViewRoleList = "UC-117.VIEW_ROLE_LIST";
     public const string CreateNewRole = "UC-118.CREATE_NEW_ROLE";

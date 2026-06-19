@@ -1,4 +1,4 @@
-using System.ComponentModel.DataAnnotations;
+﻿using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace PEMS.Domain.Entities.Emails;
@@ -8,7 +8,7 @@ public class EmailTemplate
 {
     [Key]
     [Column("email_template_id")]
-    public string EmailTemplateId { get; set; } = null!;
+    public ulong EmailTemplateId { get; set; }
 
     [Column("template_code")]
     public string TemplateCode { get; set; } = null!;
@@ -32,11 +32,11 @@ public class EmailTemplate
     public DateTime CreatedAt { get; set; }
 
     [Column("created_by")]
-    public string? CreatedBy { get; set; }
+    public ulong? CreatedBy { get; set; }
 
     [Column("updated_at")]
     public DateTime? UpdatedAt { get; set; }
 
     [Column("updated_by")]
-    public string? UpdatedBy { get; set; }
+    public ulong? UpdatedBy { get; set; }
 }

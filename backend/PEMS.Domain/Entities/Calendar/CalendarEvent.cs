@@ -1,4 +1,4 @@
-using System.ComponentModel.DataAnnotations;
+﻿using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace PEMS.Domain.Entities.Calendar;
@@ -8,19 +8,19 @@ public class CalendarEvent
 {
     [Key]
     [Column("calendar_event_id")]
-    public string CalendarEventId { get; set; } = null!;
+    public ulong CalendarEventId { get; set; }
 
     [Column("owner_user_id")]
-    public string OwnerUserId { get; set; } = null!;
+    public ulong OwnerUserId { get; set; }
 
     [Column("campus_id")]
-    public string? CampusId { get; set; }
+    public ulong? CampusId { get; set; }
 
     [Column("visit_instance_id")]
-    public string? VisitInstanceId { get; set; }
+    public ulong? VisitInstanceId { get; set; }
 
     [Column("logistics_item_id")]
-    public string? LogisticsItemId { get; set; }
+    public ulong? LogisticsItemId { get; set; }
 
     [Column("source_type")]
     public string SourceType { get; set; } = "PERSONAL";
@@ -59,17 +59,17 @@ public class CalendarEvent
     public DateTime CreatedAt { get; set; }
 
     [Column("created_by")]
-    public string? CreatedBy { get; set; }
+    public ulong? CreatedBy { get; set; }
 
     [Column("updated_at")]
     public DateTime? UpdatedAt { get; set; }
 
     [Column("updated_by")]
-    public string? UpdatedBy { get; set; }
+    public ulong? UpdatedBy { get; set; }
 
     [Column("deleted_at")]
     public DateTime? DeletedAt { get; set; }
 
     [Column("deleted_by")]
-    public string? DeletedBy { get; set; }
+    public ulong? DeletedBy { get; set; }
 }

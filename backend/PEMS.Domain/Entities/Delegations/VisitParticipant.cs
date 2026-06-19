@@ -1,4 +1,4 @@
-using System.ComponentModel.DataAnnotations;
+﻿using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace PEMS.Domain.Entities.Delegations;
@@ -8,13 +8,13 @@ public class VisitParticipant
 {
     [Key]
     [Column("participant_id")]
-    public string ParticipantId { get; set; } = null!;
+    public ulong ParticipantId { get; set; }
 
     [Column("visit_instance_id")]
-    public string VisitInstanceId { get; set; } = null!;
+    public ulong VisitInstanceId { get; set; }
 
     [Column("user_id")]
-    public string UserId { get; set; } = null!;
+    public ulong UserId { get; set; }
 
     [Column("participant_role")]
     public string ParticipantRole { get; set; } = "OTHER";
@@ -26,7 +26,7 @@ public class VisitParticipant
     public string Status { get; set; } = "INVITED";
 
     [Column("invited_by")]
-    public string? InvitedBy { get; set; }
+    public ulong? InvitedBy { get; set; }
 
     [Column("invited_at")]
     public DateTime? InvitedAt { get; set; }
@@ -35,7 +35,7 @@ public class VisitParticipant
     public DateTime? RespondedAt { get; set; }
 
     [Column("assigned_by")]
-    public string? AssignedBy { get; set; }
+    public ulong? AssignedBy { get; set; }
 
     [Column("assigned_at")]
     public DateTime? AssignedAt { get; set; }
@@ -47,13 +47,13 @@ public class VisitParticipant
     public DateTime CreatedAt { get; set; }
 
     [Column("created_by")]
-    public string? CreatedBy { get; set; }
+    public ulong? CreatedBy { get; set; }
 
     [Column("updated_at")]
     public DateTime? UpdatedAt { get; set; }
 
     [Column("updated_by")]
-    public string? UpdatedBy { get; set; }
+    public ulong? UpdatedBy { get; set; }
 
     public virtual VisitRequestCampus VisitInstance { get; set; } = null!;
 }

@@ -1,6 +1,4 @@
-using System.Text.Json;
 using MediatR;
-using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.DTOs;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
@@ -18,11 +16,6 @@ public sealed class VerifyAndCreateVisitRequestCommandHandler
     private readonly IApprovalRoutingService _approvalRouting;
     private readonly IEmailService _emailService;
     private readonly IDateTimeService _clock;
-
-    private static readonly JsonSerializerOptions _json = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-    };
 
     public VerifyAndCreateVisitRequestCommandHandler(
         IApplicationDbContext db,
@@ -46,18 +39,11 @@ public sealed class VerifyAndCreateVisitRequestCommandHandler
         VerifyAndCreateVisitRequestCommand request, CancellationToken cancellationToken)
     {
         var now = _clock.UtcNow;
+        var email = request.RegisterEmail.Trim().ToLowerInvariant();
 
-        // ── 1. Load pending session ───────────────────────────────────────────
-        var pending = await _db.PendingVisitRequests
-            .FirstOrDefaultAsync(p => p.PendingId == request.SessionToken, cancellationToken)
-            ?? throw new NotFoundException("Phiên đăng ký không tồn tại. Vui lòng điền lại form.");
-
-        if (pending.ExpiresAt <= now)
-            throw new BusinessRuleException("Phiên đăng ký đã hết hạn. Vui lòng điền lại form và gửi lại.");
-
-        // ── 2. Verify OTP ─────────────────────────────────────────────────────
+        // ── 1. Verify OTP (no server-side draft in v8.3 — form is resubmitted by client) ──
         var otpResult = await _otpService.VerifyAsync(
-            pending.Email,
+            email,
             OtpPurposes.VisitRequestVerify,
             request.OtpCode,
             cancellationToken);
@@ -74,11 +60,28 @@ public sealed class VerifyAndCreateVisitRequestCommandHandler
             });
         }
 
-        // ── 3. Deserialise form data ──────────────────────────────────────────
-        var formData = JsonSerializer.Deserialize<PendingVisitRequestFormData>(pending.FormDataJson, _json)
-            ?? throw new BusinessRuleException("Không thể đọc dữ liệu form. Vui lòng thử lại.");
+        // ── 2. Rebuild the form payload from the resubmitted command ──────────
+        var formData = new VisitRequestFormData(
+            request.RegisterFullName,
+            request.RegisterNationality,
+            request.RegisterOrganization,
+            request.RegisterJobTitle,
+            request.RegisterPhone,
+            email,
+            request.DelegationName,
+            request.VisitScope,
+            request.VisitSlots,
+            request.Purpose,
+            request.WorkingContent,
+            request.Visitors,
+            request.SupportTeam,
+            request.ContactPoint,
+            request.IsContactSelf,
+            request.Language,
+            request.Vehicle,
+            request.Notes);
 
-        // ── 4. Provision Visitor account ──────────────────────────────────────
+        // ── 3. Provision Visitor account ──────────────────────────────────────
         //      Contact point is the account holder; falls back to registrant when IsContactSelf.
         var contactEmail = formData.IsContactSelf
             ? formData.RegisterEmail
@@ -108,11 +111,7 @@ public sealed class VerifyAndCreateVisitRequestCommandHandler
 
         await _db.SaveChangesAsync(cancellationToken);
 
-        // ── 7. Remove pending session ─────────────────────────────────────────
-        _db.PendingVisitRequests.Remove(pending);
-        await _db.SaveChangesAsync(cancellationToken);
-
-        // ── 8. Send confirmation email (fire-and-forget — do not block response) ──
+        // ── 7. Send confirmation email (fire-and-forget — do not block response) ──
         _ = _emailService.SendVisitRequestConfirmationAsync(
             contactEmail,
             contactName,

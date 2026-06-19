@@ -1,4 +1,4 @@
-using System.ComponentModel.DataAnnotations;
+﻿using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace PEMS.Domain.Entities.Galleries;
@@ -8,13 +8,13 @@ public class GalleryImage
 {
     [Key]
     [Column("image_id")]
-    public string ImageId { get; set; } = null!;
+    public ulong ImageId { get; set; }
 
     [Column("gallery_id")]
-    public string GalleryId { get; set; } = null!;
+    public ulong GalleryId { get; set; }
 
     [Column("file_id")]
-    public string FileId { get; set; } = null!;
+    public ulong FileId { get; set; }
 
     [Column("caption")]
     public string? Caption { get; set; }
@@ -35,19 +35,19 @@ public class GalleryImage
     public DateTime CreatedAt { get; set; }
 
     [Column("created_by")]
-    public string? CreatedBy { get; set; }
+    public ulong? CreatedBy { get; set; }
 
     [Column("updated_at")]
     public DateTime? UpdatedAt { get; set; }
 
     [Column("updated_by")]
-    public string? UpdatedBy { get; set; }
+    public ulong? UpdatedBy { get; set; }
 
     [Column("deleted_at")]
     public DateTime? DeletedAt { get; set; }
 
     [Column("deleted_by")]
-    public string? DeletedBy { get; set; }
+    public ulong? DeletedBy { get; set; }
 
     public virtual Gallery Gallery { get; set; } = null!;
 }

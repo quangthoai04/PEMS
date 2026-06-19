@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace PEMS.Domain.Entities.Users;
@@ -5,14 +6,19 @@ namespace PEMS.Domain.Entities.Users;
 [Table("role_permissions")]
 public class RolePermission
 {
-    [Column("role_id")]
-    public string RoleId { get; set; } = null!;
+    // SQL v8.3: surrogate PK + UNIQUE(role_id, sub_role, permission_id).
+    [Key]
+    [Column("role_permission_id")]
+    public ulong RolePermissionId { get; set; }
 
-    [Column("permission_id")]
-    public string PermissionId { get; set; } = null!;
+    [Column("role_id")]
+    public ulong RoleId { get; set; }
 
     [Column("sub_role")]
-    public string SubRole { get; set; } = null!;
+    public string SubRole { get; set; } = "NONE";
+
+    [Column("permission_id")]
+    public ulong PermissionId { get; set; }
 
     [Column("permission_level")]
     public string PermissionLevel { get; set; } = null!;
@@ -21,7 +27,7 @@ public class RolePermission
     public DateTime GrantedAt { get; set; }
 
     [Column("granted_by")]
-    public string? GrantedBy { get; set; }
+    public ulong? GrantedBy { get; set; }
 
     public virtual Role Role { get; set; } = null!;
     public virtual Permission Permission { get; set; } = null!;

@@ -1,78 +1,43 @@
 using MediatR;
-using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Authentication.Models;
-using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Domain.Constants;
-using System.Text.Json;
 
 namespace PEMS.Application.Delegations.Commands.ResendVisitRequestOtp;
 
 public sealed class ResendVisitRequestOtpCommandHandler
     : IRequestHandler<ResendVisitRequestOtpCommand, MessageResponse>
 {
-    private readonly IApplicationDbContext _db;
     private readonly IOtpService _otpService;
     private readonly IEmailService _emailService;
-    private readonly IDateTimeService _clock;
 
     public ResendVisitRequestOtpCommandHandler(
-        IApplicationDbContext db,
         IOtpService otpService,
-        IEmailService emailService,
-        IDateTimeService clock)
+        IEmailService emailService)
     {
-        _db           = db;
         _otpService   = otpService;
         _emailService = emailService;
-        _clock        = clock;
     }
 
     public async Task<MessageResponse> Handle(
         ResendVisitRequestOtpCommand request, CancellationToken cancellationToken)
     {
-        var now = _clock.UtcNow;
+        var email = request.RegisterEmail.Trim().ToLowerInvariant();
 
-        var pending = await _db.PendingVisitRequests
-            .FirstOrDefaultAsync(p => p.PendingId == request.SessionToken, cancellationToken)
-            ?? throw new NotFoundException("Phiên đăng ký không tồn tại hoặc đã hết hạn.");
-
-        if (pending.ExpiresAt <= now)
-            throw new BusinessRuleException("Phiên đăng ký đã hết hạn. Vui lòng điền lại form.");
-
-        // Extend session window on resend so the user has enough time
-        pending.ExpiresAt = now.AddMinutes(10);
-
+        // Issue a fresh OTP for the registrant email (old code, if any, is superseded).
         var rawCode = await _otpService.CreateForEmailAsync(
-            pending.Email,
+            email,
             OtpPurposes.VisitRequestVerify,
             null,
             null,
             cancellationToken);
 
-        // We need the registrant name for the email — pull it from the JSON
-        var fullName = ExtractFullName(pending.FormDataJson);
-
         await _emailService.SendVisitRequestOtpAsync(
-            pending.Email,
-            fullName,
+            email,
+            request.RegisterFullName,
             rawCode,
             cancellationToken);
 
-        await _db.SaveChangesAsync(cancellationToken);
-
         return new MessageResponse("Mã xác thực mới đã được gửi tới email của bạn.");
-    }
-
-    private static string ExtractFullName(string json)
-    {
-        try
-        {
-            using var doc = System.Text.Json.JsonDocument.Parse(json);
-            if (doc.RootElement.TryGetProperty("registerFullName", out var prop))
-                return prop.GetString() ?? "Quý khách";
-        }
-        catch { /* ignore */ }
-        return "Quý khách";
     }
 }

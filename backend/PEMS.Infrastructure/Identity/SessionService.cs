@@ -26,7 +26,7 @@ public sealed class SessionService : ISessionService
     public async Task<SessionTokens> CreateSessionAsync(
         User user,
         string loginPortal,
-        string? authProviderId,
+        ulong? authProviderId,
         string? ipAddress,
         string? userAgent,
         CancellationToken cancellationToken = default)
@@ -37,7 +37,7 @@ public sealed class SessionService : ISessionService
 
         var session = new UserSession
         {
-            SessionId = Guid.NewGuid().ToString(),
+            // SessionId is DB-generated (BIGINT AUTO_INCREMENT).
             UserId = user.UserId,
             LoginPortal = loginPortal,
             // INTERNAL → own primary campus; VISITOR → NULL (enforced by trigger).
@@ -78,9 +78,9 @@ public sealed class SessionService : ISessionService
                 cancellationToken);
     }
 
-    public async Task<bool> IsSessionActiveAsync(string sessionId, CancellationToken cancellationToken = default)
+    public async Task<bool> IsSessionActiveAsync(ulong sessionId, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrEmpty(sessionId))
+        if (sessionId == 0)
             return false;
 
         var now = _clock.UtcNow;
@@ -105,7 +105,7 @@ public sealed class SessionService : ISessionService
     }
 
     public async Task RevokeSessionAsync(
-        string sessionId, string reason, string? revokedBy = null, CancellationToken cancellationToken = default)
+        ulong sessionId, string reason, ulong? revokedBy = null, CancellationToken cancellationToken = default)
     {
         var session = await _db.UserSessions.FirstOrDefaultAsync(s => s.SessionId == sessionId, cancellationToken);
         if (session is null || session.RevokedAt != null)
@@ -121,7 +121,7 @@ public sealed class SessionService : ISessionService
     }
 
     public async Task<int> RevokeAllActiveSessionsAsync(
-        string userId, string reason, string? revokedBy = null, CancellationToken cancellationToken = default)
+        ulong userId, string reason, ulong? revokedBy = null, CancellationToken cancellationToken = default)
     {
         var now = _clock.UtcNow;
         var sessions = await _db.UserSessions

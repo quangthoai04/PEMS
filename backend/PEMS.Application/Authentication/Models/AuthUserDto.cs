@@ -6,7 +6,7 @@ namespace PEMS.Application.Authentication.Models;
 /// </summary>
 public sealed class AuthUserDto
 {
-    public string UserId { get; init; } = null!;
+    public ulong UserId { get; init; }
     public string FullName { get; init; } = null!;
     public string Email { get; init; } = null!;
     public string? Phone { get; init; }
@@ -16,10 +16,10 @@ public sealed class AuthUserDto
     public string? RoleName { get; init; }
     public string? SubRole { get; init; }
 
-    public string? PrimaryCampusId { get; init; }
+    public ulong? PrimaryCampusId { get; init; }
     public string? CampusCode { get; init; }
     public string? CampusName { get; init; }
 
-    public string? DepartmentId { get; init; }
+    public ulong? DepartmentId { get; init; }
     public string? DepartmentName { get; init; }
 }

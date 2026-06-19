@@ -1,4 +1,4 @@
-using System.ComponentModel.DataAnnotations;
+﻿using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace PEMS.Domain.Entities.Users;
@@ -8,13 +8,13 @@ public class AuditLog
 {
     [Key]
     [Column("audit_log_id")]
-    public long AuditLogId { get; set; }
+    public ulong AuditLogId { get; set; }
 
     [Column("actor_user_id")]
-    public string? ActorUserId { get; set; }
+    public ulong? ActorUserId { get; set; }
 
     [Column("campus_id")]
-    public string? CampusId { get; set; }
+    public ulong? CampusId { get; set; }
 
     [Column("action")]
     public string Action { get; set; } = null!;
@@ -23,7 +23,7 @@ public class AuditLog
     public string EntityType { get; set; } = null!;
 
     [Column("entity_id")]
-    public string? EntityId { get; set; }
+    public ulong? EntityId { get; set; }
 
     [Column("old_values_json")]
     public string? OldValuesJson { get; set; }

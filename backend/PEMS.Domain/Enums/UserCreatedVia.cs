@@ -4,4 +4,5 @@ public static class UserCreatedVia
 {
     public const string ManualCreated = "MANUAL_CREATED";
     public const string VisitorForm = "VISITOR_FORM";
+    public const string SsoAutoProvision = "SSO_AUTO_PROVISION";
 }

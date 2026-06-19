@@ -1,4 +1,4 @@
-using System.ComponentModel.DataAnnotations;
+﻿using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace PEMS.Domain.Entities.ApiIntegrations;
@@ -8,22 +8,22 @@ public class ApiRequestLog
 {
     [Key]
     [Column("api_request_log_id")]
-    public long ApiRequestLogId { get; set; }
+    public ulong ApiRequestLogId { get; set; }
 
     [Column("api_config_id")]
-    public string ApiConfigId { get; set; } = null!;
+    public ulong ApiConfigId { get; set; }
 
     [Column("campus_id")]
-    public string? CampusId { get; set; }
+    public ulong? CampusId { get; set; }
 
     [Column("requested_by")]
-    public string? RequestedBy { get; set; }
+    public ulong? RequestedBy { get; set; }
 
     [Column("related_type")]
     public string? RelatedType { get; set; }
 
     [Column("related_id")]
-    public string? RelatedId { get; set; }
+    public ulong? RelatedId { get; set; }
 
     [Column("endpoint")]
     public string Endpoint { get; set; } = null!;

@@ -1,4 +1,4 @@
-using MediatR;
+﻿using MediatR;
 
 namespace PEMS.Application.Accounts.Commands.UpdateAccountRole;
 
@@ -10,9 +10,9 @@ namespace PEMS.Application.Accounts.Commands.UpdateAccountRole;
 /// </summary>
 public sealed class UpdateAccountRoleCommand : IRequest<UpdateAccountRoleResponse>
 {
-    public string UserId { get; set; } = string.Empty;
+    public ulong UserId { get; set; }
     public string NewRoleCode { get; set; } = string.Empty;  // ADMIN | HO | STAFF | DEPT | STUDENT | VISITOR
     public string? SubRole { get; set; }                     // Leader | Staff (STAFF/DEPT only)
-    public string? PrimaryCampusId { get; set; }
-    public string? DepartmentId { get; set; }
+    public ulong? PrimaryCampusId { get; set; }
+    public ulong? DepartmentId { get; set; }
 }

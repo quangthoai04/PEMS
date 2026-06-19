@@ -1,3 +1,11 @@
+<!-- =====================================================================
+PEMS DOC UPDATE v8.2-full-preserved-cancel-delegation-no-external-note
+Generated: 2026-06-19
+Mode: PRESERVE ORIGINAL CONTENT + APPEND ADDENDUM.
+No original section below has been removed or compressed.
+The addendum section at the end is the authoritative update for cancellation UC-136.
+===================================================================== -->
+
 Project name: Partnership Engagement Management System  
 Main function:
 
@@ -18,4 +26,19 @@ Technology used:
 | **Deployment**  | Docker \+ Railway / Render (staging); domain TBD (production)  |
 | **Communication**  | Google Meet, Zalo  |
 
-Installation/Usage Instructions:  
+Installation/Usage Instructions:
+
+---
+
+# Addendum — Implementation note for UC-136
+
+UC-136 Cancel Visit Request vẫn dùng cùng stack công nghệ hiện tại:
+
+| Layer | Update |
+|---|---|
+| Frontend ReactJS | Thêm Cancel modal trong Delegation detail/list, validate reason theo cancellation source |
+| Backend C#/.NET RESTful API | Thêm command `CancelVisitRequest` trong Delegations feature, dùng MediatR + FluentValidation |
+| Database MySQL 8 | Dùng các cột `cancelled_by`, `cancelled_at`, `cancellation_actor_type`, `cancellation_source`, `cancellation_reason` |
+| Testing Postman/Selenium | Bổ sung test case Visitor cancel, Host cancel by external confirmation, Staff Leader scope, HO multi-campus, Admin forbidden |
+
+Không cần công nghệ mới cho UC này.

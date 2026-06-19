@@ -11,7 +11,7 @@ public interface IUserProvisionService
     /// Creates one (Role = VISITOR, CreatedVia = VISITOR_FORM) if not found.
     /// Returns the <c>UserId</c> of the existing or newly created account.
     /// </summary>
-    Task<string> EnsureVisitorAccountAsync(
+    Task<ulong> EnsureVisitorAccountAsync(
         string email,
         string fullName,
         string? phone,

@@ -9,16 +9,16 @@ public class VisitRequest
 {
     [Key]
     [Column("visit_request_id")]
-    public string VisitRequestId { get; set; } = null!;
+    public ulong VisitRequestId { get; set; }
 
     [Column("request_code")]
     public string RequestCode { get; set; } = null!;
 
     [Column("visitor_user_id")]
-    public string VisitorUserId { get; set; } = null!;
+    public ulong VisitorUserId { get; set; }
 
     [Column("partner_id")]
-    public string? PartnerId { get; set; }
+    public ulong? PartnerId { get; set; }
 
     [Column("registrant_full_name")]
     public string RegistrantFullName { get; set; } = null!;
@@ -71,6 +71,8 @@ public class VisitRequest
     [Column("note_to_fptu")]
     public string? NoteToFptu { get; set; }
 
+    // Request decision status only (PENDING_APPROVAL/APPROVED/REJECTED/CANCELLED).
+    // Visit progress is derived from VisitRequestCampus.Status.
     [Column("status")]
     public string Status { get; set; } = "PENDING_APPROVAL";
 
@@ -81,7 +83,7 @@ public class VisitRequest
     public DateTime? EmailVerifiedAt { get; set; }
 
     [Column("decided_by")]
-    public string? DecidedBy { get; set; }
+    public ulong? DecidedBy { get; set; }
 
     [Column("decided_at")]
     public DateTime? DecidedAt { get; set; }
@@ -92,6 +94,23 @@ public class VisitRequest
     [Column("decision_note")]
     public string? DecisionNote { get; set; }
 
+    // --- Cancellation (UC-136, post-approval only). cancellation_reason carries
+    // both the reason and any external-confirmation details; there is no separate note column. ---
+    [Column("cancelled_by")]
+    public ulong? CancelledBy { get; set; }
+
+    [Column("cancelled_at")]
+    public DateTime? CancelledAt { get; set; }
+
+    [Column("cancellation_actor_type")]
+    public string? CancellationActorType { get; set; }
+
+    [Column("cancellation_source")]
+    public string? CancellationSource { get; set; }
+
+    [Column("cancellation_reason")]
+    public string? CancellationReason { get; set; }
+
     [Column("row_version")]
     public int RowVersion { get; set; }
 
@@ -99,13 +118,13 @@ public class VisitRequest
     public DateTime CreatedAt { get; set; }
 
     [Column("created_by")]
-    public string? CreatedBy { get; set; }
+    public ulong? CreatedBy { get; set; }
 
     [Column("updated_at")]
     public DateTime? UpdatedAt { get; set; }
 
     [Column("updated_by")]
-    public string? UpdatedBy { get; set; }
+    public ulong? UpdatedBy { get; set; }
 
     public virtual Partner? Partner { get; set; }
     public virtual ICollection<VisitRequestCampus> CampusInstances { get; set; } = new List<VisitRequestCampus>();

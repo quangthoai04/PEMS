@@ -1,4 +1,4 @@
-using System.ComponentModel.DataAnnotations;
+﻿using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace PEMS.Domain.Entities.Faqs;
@@ -8,7 +8,7 @@ public class Faq
 {
     [Key]
     [Column("faq_id")]
-    public string FaqId { get; set; } = null!;
+    public ulong FaqId { get; set; }
 
     [Column("question")]
     public string Question { get; set; } = null!;
@@ -26,7 +26,7 @@ public class Faq
     public string Status { get; set; } = "DRAFT";
 
     [Column("created_by")]
-    public string? CreatedBy { get; set; }
+    public ulong? CreatedBy { get; set; }
 
     [Column("created_at")]
     public DateTime CreatedAt { get; set; }
@@ -35,5 +35,5 @@ public class Faq
     public DateTime? UpdatedAt { get; set; }
 
     [Column("updated_by")]
-    public string? UpdatedBy { get; set; }
+    public ulong? UpdatedBy { get; set; }
 }

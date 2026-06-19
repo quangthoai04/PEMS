@@ -1,4 +1,4 @@
-using System.ComponentModel.DataAnnotations;
+﻿using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace PEMS.Domain.Entities.News;
@@ -8,10 +8,10 @@ public class NewsContentSection
 {
     [Key]
     [Column("section_id")]
-    public string SectionId { get; set; } = null!;
+    public ulong SectionId { get; set; }
 
     [Column("news_id")]
-    public string NewsId { get; set; } = null!;
+    public ulong NewsId { get; set; }
 
     [Column("section_order")]
     public int SectionOrder { get; set; }

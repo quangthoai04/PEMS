@@ -23,19 +23,18 @@ public sealed class VisitRequestService : IVisitRequestService
     public VisitRequestService(IApplicationDbContext db) => _db = db;
 
     public async Task<VisitRequest> CreateAsync(
-        PendingVisitRequestFormData f,
-        string visitorUserId,
+        VisitRequestFormData f,
+        ulong visitorUserId,
         DateTime utcNow,
         CancellationToken cancellationToken = default)
     {
-        // Frontend sends campus codes (e.g. "HN", "HCM") — resolve to UUIDs
+        // Frontend sends campus codes (e.g. "HN", "HCM") — resolve to BIGINT campus_id
         var requestedCodes = f.VisitSlots.Select(s => s.CampusId).Distinct().ToList();
         var campusIdMap = await _db.Campuses
             .Where(c => requestedCodes.Contains(c.CampusCode))
             .Select(c => new { c.CampusCode, c.CampusId })
             .ToDictionaryAsync(c => c.CampusCode, c => c.CampusId, cancellationToken);
 
-        var requestId   = Guid.NewGuid().ToString();
         var requestCode = GenerateRequestCode(utcNow);
 
         var supportJson  = JsonSerializer.Serialize(f.SupportTeam, _json);
@@ -46,7 +45,7 @@ public sealed class VisitRequestService : IVisitRequestService
 
         var visitRequest = new VisitRequest
         {
-            VisitRequestId       = requestId,
+            // VisitRequestId is DB-generated (BIGINT AUTO_INCREMENT).
             RequestCode          = requestCode,
             VisitorUserId        = visitorUserId,
             RegistrantFullName   = f.RegisterFullName,
@@ -69,39 +68,36 @@ public sealed class VisitRequestService : IVisitRequestService
             SubmittedAt          = utcNow,
             RowVersion           = 0,
             CreatedAt            = utcNow,
-            CreatedBy            = f.RegisterEmail
+            CreatedBy            = visitorUserId
         };
 
-        _db.VisitRequests.Add(visitRequest);
-
-        // ── Campus instances ──────────────────────────────────────────────────
-        foreach (var (slot, idx) in f.VisitSlots.Select((s, i) => (s, i)))
+        // ── Campus instances (added via navigation so EF sets the FK after insert) ──
+        var idx = 0;
+        foreach (var slot in f.VisitSlots)
         {
-            // Resolve campus code → UUID; fall back to raw value if not found in DB
-            var campusId = campusIdMap.TryGetValue(slot.CampusId, out var id) ? id : slot.CampusId;
+            if (!campusIdMap.TryGetValue(slot.CampusId, out var campusId))
+                throw new InvalidOperationException($"Unknown campus code '{slot.CampusId}'.");
 
-            _db.VisitRequestCampuses.Add(new VisitRequestCampus
+            idx++;
+            visitRequest.CampusInstances.Add(new VisitRequestCampus
             {
-                VisitInstanceId  = Guid.NewGuid().ToString(),
-                VisitRequestId   = requestId,
+                // VisitInstanceId / VisitRequestId are DB-generated / set via navigation.
                 CampusId         = campusId,
-                InstanceCode     = $"{requestCode}-C{idx + 1:D2}",
+                InstanceCode     = $"{requestCode}-C{idx:D2}",
                 PlannedStartAt   = slot.StartDatetime,
                 PlannedEndAt     = slot.EndDatetime,
                 Status           = "WAITING_REQUEST_APPROVAL",
                 RowVersion       = 0,
                 CreatedAt        = utcNow,
-                CreatedBy        = f.RegisterEmail
+                CreatedBy        = visitorUserId
             });
         }
 
         // ── Guest members ─────────────────────────────────────────────────────
         foreach (var visitor in f.Visitors)
         {
-            _db.VisitGuestMembers.Add(new VisitGuestMember
+            visitRequest.GuestMembers.Add(new VisitGuestMember
             {
-                GuestMemberId    = Guid.NewGuid().ToString(),
-                VisitRequestId   = requestId,
                 FullName         = visitor.FullName,
                 Organization     = visitor.Organization,
                 JobTitle         = visitor.JobTitle,
@@ -109,10 +105,11 @@ public sealed class VisitRequestService : IVisitRequestService
                 Email            = visitor.Email,
                 IsRepresentative = false,
                 CreatedAt        = utcNow,
-                CreatedBy        = f.RegisterEmail
+                CreatedBy        = visitorUserId
             });
         }
 
+        _db.VisitRequests.Add(visitRequest);
         return visitRequest;
     }
 

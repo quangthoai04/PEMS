@@ -98,7 +98,7 @@ public sealed class LoginviaSSOCommandHandler : IRequestHandler<LoginviaSSOComma
 
         // ── INTERNAL portal ──────────────────────────────────────────────────
         // Campus must be selected first (Case I — campus required).
-        if (string.IsNullOrWhiteSpace(request.SelectedCampusId))
+        if (!request.SelectedCampusId.HasValue)
             await FailAsync(user, email, portal, "missing_campus",
                 request, AuthErrorCodes.CampusRequired, "Please select a campus to continue.", 400, cancellationToken);
 
@@ -119,7 +119,7 @@ public sealed class LoginviaSSOCommandHandler : IRequestHandler<LoginviaSSOComma
 
         // Case I3 — campus must match the user's primary campus.
         if (user.PrimaryCampusId is not null
-            && !string.Equals(request.SelectedCampusId, user.PrimaryCampusId, StringComparison.OrdinalIgnoreCase))
+            && request.SelectedCampusId != user.PrimaryCampusId)
             await FailAsync(user, email, portal, "campus_mismatch",
                 request, AuthErrorCodes.CampusMismatch,
                 "Your account does not belong to the selected campus.", 403, cancellationToken);
@@ -141,7 +141,6 @@ public sealed class LoginviaSSOCommandHandler : IRequestHandler<LoginviaSSOComma
 
         var user = new User
         {
-            UserId = Guid.NewGuid().ToString(),
             FullName = string.IsNullOrWhiteSpace(info.Name) ? email : info.Name!.Trim(),
             Email = email,
             RoleId = role.RoleId,
@@ -155,8 +154,7 @@ public sealed class LoginviaSSOCommandHandler : IRequestHandler<LoginviaSSOComma
 
         var provider = new UserAuthProvider
         {
-            AuthProviderId = Guid.NewGuid().ToString(),
-            UserId = user.UserId,
+            // AuthProviderId is DB-generated; UserId is set via the navigation on save.
             ProviderType = ProviderTypes.GoogleSso,
             ProviderSubject = info.Subject,
             ProviderEmail = email,
@@ -183,7 +181,6 @@ public sealed class LoginviaSSOCommandHandler : IRequestHandler<LoginviaSSOComma
         {
             provider = new UserAuthProvider
             {
-                AuthProviderId = Guid.NewGuid().ToString(),
                 UserId = user.UserId,
                 ProviderType = ProviderTypes.GoogleSso,
                 ProviderSubject = info.Subject,

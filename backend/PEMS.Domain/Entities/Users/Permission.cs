@@ -1,4 +1,4 @@
-using System.ComponentModel.DataAnnotations;
+﻿using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace PEMS.Domain.Entities.Users;
@@ -8,7 +8,7 @@ public class Permission
 {
     [Key]
     [Column("permission_id")]
-    public string PermissionId { get; set; } = null!;
+    public ulong PermissionId { get; set; }
 
     [Column("permission_code")]
     public string PermissionCode { get; set; } = null!;

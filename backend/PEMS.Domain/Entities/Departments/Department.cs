@@ -1,4 +1,4 @@
-using PEMS.Domain.Entities.Campuses;
+﻿using PEMS.Domain.Entities.Campuses;
 using PEMS.Domain.Entities.Users;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
@@ -10,10 +10,10 @@ public class Department
 {
     [Key]
     [Column("department_id")]
-    public string DepartmentId { get; set; } = null!;
+    public ulong DepartmentId { get; set; }
 
     [Column("campus_id")]
-    public string CampusId { get; set; } = null!;
+    public ulong CampusId { get; set; }
 
     [Column("department_code")]
     public string DepartmentCode { get; set; } = null!;
@@ -25,7 +25,7 @@ public class Department
     public string DepartmentType { get; set; } = null!;
 
     [Column("head_user_id")]
-    public string? HeadUserId { get; set; }
+    public ulong? HeadUserId { get; set; }
 
     [Column("status")]
     public string Status { get; set; } = "ACTIVE";
@@ -34,13 +34,13 @@ public class Department
     public DateTime CreatedAt { get; set; }
 
     [Column("created_by")]
-    public string? CreatedBy { get; set; }
+    public ulong? CreatedBy { get; set; }
 
     [Column("updated_at")]
     public DateTime? UpdatedAt { get; set; }
 
     [Column("updated_by")]
-    public string? UpdatedBy { get; set; }
+    public ulong? UpdatedBy { get; set; }
 
     public virtual Campus Campus { get; set; } = null!;
     public virtual User? HeadUser { get; set; }

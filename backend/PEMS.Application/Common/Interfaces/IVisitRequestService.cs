@@ -15,8 +15,8 @@ public interface IVisitRequestService
     /// with its campus instances and guest-member rows. Does not call SaveChanges.
     /// </summary>
     Task<VisitRequest> CreateAsync(
-        PendingVisitRequestFormData formData,
-        string visitorUserId,
+        VisitRequestFormData formData,
+        ulong visitorUserId,
         DateTime utcNow,
         CancellationToken cancellationToken = default);
 }

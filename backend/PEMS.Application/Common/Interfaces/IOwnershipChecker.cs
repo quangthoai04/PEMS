@@ -7,11 +7,11 @@ namespace PEMS.Application.Common.Interfaces;
 public interface IOwnershipChecker
 {
     /// <summary>True when the resource belongs to the current user (Own / "O" scope).</summary>
-    bool IsOwner(string? resourceOwnerUserId);
+    bool IsOwner(ulong? resourceOwnerUserId);
 
     /// <summary>True when the current user may act within the given campus.</summary>
-    bool CanAccessCampus(string? campusId);
+    bool CanAccessCampus(ulong? campusId);
 
     /// <summary>True when the current user may act within the given department.</summary>
-    bool CanAccessDepartment(string? departmentId);
+    bool CanAccessDepartment(ulong? departmentId);
 }

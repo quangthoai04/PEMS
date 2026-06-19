@@ -71,7 +71,6 @@ public sealed class ResetPasswordCommandHandler : IRequestHandler<ResetPasswordC
         {
             _db.UserAuthProviders.Add(new UserAuthProvider
             {
-                AuthProviderId = Guid.NewGuid().ToString(),
                 UserId = user.UserId,
                 ProviderType = ProviderTypes.LocalPassword,
                 ProviderEmail = email,

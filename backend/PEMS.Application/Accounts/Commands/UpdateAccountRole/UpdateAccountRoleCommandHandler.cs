@@ -43,10 +43,9 @@ public sealed class UpdateAccountRoleCommandHandler : IRequestHandler<UpdateAcco
         // (Visitors have no campus, so they can be promoted into the leader's campus.)
         if (!privileged)
         {
-            if (string.IsNullOrWhiteSpace(actorCampus))
+            if (actorCampus is null)
                 throw new ForbiddenException("Your account is not assigned to a campus and cannot manage accounts.");
-            if (user.PrimaryCampusId is not null &&
-                !string.Equals(user.PrimaryCampusId, actorCampus, StringComparison.OrdinalIgnoreCase))
+            if (user.PrimaryCampusId is not null && user.PrimaryCampusId != actorCampus)
                 throw new ForbiddenException("You can only manage accounts within your own campus.");
         }
 

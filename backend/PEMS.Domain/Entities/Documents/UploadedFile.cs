@@ -1,4 +1,4 @@
-using System.ComponentModel.DataAnnotations;
+﻿using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace PEMS.Domain.Entities.Documents;
@@ -8,7 +8,7 @@ public class UploadedFile
 {
     [Key]
     [Column("file_id")]
-    public string FileId { get; set; } = null!;
+    public ulong FileId { get; set; }
 
     [Column("storage_provider")]
     public string StorageProvider { get; set; } = "LOCAL";
@@ -35,7 +35,7 @@ public class UploadedFile
     public string Visibility { get; set; } = "PRIVATE";
 
     [Column("uploaded_by")]
-    public string? UploadedBy { get; set; }
+    public ulong? UploadedBy { get; set; }
 
     [Column("uploaded_at")]
     public DateTime UploadedAt { get; set; }

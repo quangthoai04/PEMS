@@ -15,8 +15,8 @@ public interface IAccountListCriteria
     string? RoleCode { get; }
     string? SubRole { get; }
     string? Status { get; }
-    string? CampusId { get; }
-    string? DepartmentId { get; }
+    ulong? CampusId { get; }
+    ulong? DepartmentId { get; }
     string? ProviderType { get; }
     string? CreatedVia { get; }
 

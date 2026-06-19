@@ -31,10 +31,10 @@ public sealed class SessionValidationMiddleware
             return;
         }
 
-        var sessionId = principal.FindFirst(PemsClaimTypes.SessionId)?.Value;
-        var userId = principal.FindFirst(PemsClaimTypes.UserId)?.Value;
+        var sessionIdClaim = principal.FindFirst(PemsClaimTypes.SessionId)?.Value;
+        var userIdClaim = principal.FindFirst(PemsClaimTypes.UserId)?.Value;
 
-        if (string.IsNullOrEmpty(sessionId) || string.IsNullOrEmpty(userId))
+        if (!ulong.TryParse(sessionIdClaim, out var sessionId) || !ulong.TryParse(userIdClaim, out var userId))
         {
             await WriteUnauthorizedAsync(context, "Your session is no longer valid. Please sign in again.");
             return;

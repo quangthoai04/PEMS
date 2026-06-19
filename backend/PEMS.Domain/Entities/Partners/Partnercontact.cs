@@ -1,4 +1,4 @@
-using System.ComponentModel.DataAnnotations;
+﻿using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace PEMS.Domain.Entities.Partners;
@@ -8,10 +8,10 @@ public class PartnerContact
 {
     [Key]
     [Column("contact_id")]
-    public string ContactId { get; set; } = null!;
+    public ulong ContactId { get; set; }
 
     [Column("partner_id")]
-    public string PartnerId { get; set; } = null!;
+    public ulong PartnerId { get; set; }
 
     [Column("full_name")]
     public string FullName { get; set; } = null!;
@@ -41,13 +41,13 @@ public class PartnerContact
     public DateTime CreatedAt { get; set; }
 
     [Column("created_by")]
-    public string? CreatedBy { get; set; }
+    public ulong? CreatedBy { get; set; }
 
     [Column("updated_at")]
     public DateTime? UpdatedAt { get; set; }
 
     [Column("updated_by")]
-    public string? UpdatedBy { get; set; }
+    public ulong? UpdatedBy { get; set; }
 
     public virtual Partner Partner { get; set; } = null!;
 }

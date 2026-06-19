@@ -108,7 +108,8 @@ export const useVisitRequestForm = (onSuccess: (result: VerifyResponse) => void)
     setIsVerifying(true);
     setOtpError(null);
     try {
-      const result = await visitRequestApi.verify(sessionToken, otpCode);
+      // SQL v8.3: resubmit the full form (kept in the form state) together with the OTP.
+      const result = await visitRequestApi.verify(form.getValues(), otpCode);
       setSessionToken(null);
       onSuccess(result);
     } catch (err: any) {
@@ -125,7 +126,8 @@ export const useVisitRequestForm = (onSuccess: (result: VerifyResponse) => void)
     setIsResending(true);
     setOtpError(null);
     try {
-      await visitRequestApi.resendOtp(sessionToken);
+      const data = form.getValues();
+      await visitRequestApi.resendOtp(data.registerInfo.email, data.registerInfo.fullName);
     } catch (err: any) {
       setOtpError(
         err?.response?.data?.message ?? 'Không thể gửi lại mã. Vui lòng thử lại.'

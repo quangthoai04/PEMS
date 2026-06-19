@@ -1,4 +1,4 @@
-using System.ComponentModel.DataAnnotations;
+﻿using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace PEMS.Domain.Entities.Delegations;
@@ -8,10 +8,10 @@ public class VisitLogisticsItem
 {
     [Key]
     [Column("logistics_item_id")]
-    public string LogisticsItemId { get; set; } = null!;
+    public ulong LogisticsItemId { get; set; }
 
     [Column("visit_instance_id")]
-    public string VisitInstanceId { get; set; } = null!;
+    public ulong VisitInstanceId { get; set; }
 
     [Column("item_type")]
     public string ItemType { get; set; } = null!;
@@ -38,25 +38,25 @@ public class VisitLogisticsItem
     public string Priority { get; set; } = "MEDIUM";
 
     [Column("requested_by")]
-    public string? RequestedBy { get; set; }
+    public ulong? RequestedBy { get; set; }
 
     [Column("requested_to_department_id")]
-    public string? RequestedToDepartmentId { get; set; }
+    public ulong? RequestedToDepartmentId { get; set; }
 
     [Column("requested_at")]
     public DateTime? RequestedAt { get; set; }
 
     [Column("received_by")]
-    public string? ReceivedBy { get; set; }
+    public ulong? ReceivedBy { get; set; }
 
     [Column("received_at")]
     public DateTime? ReceivedAt { get; set; }
 
     [Column("assigned_to_user_id")]
-    public string? AssignedToUserId { get; set; }
+    public ulong? AssignedToUserId { get; set; }
 
     [Column("assigned_by")]
-    public string? AssignedBy { get; set; }
+    public ulong? AssignedBy { get; set; }
 
     [Column("assigned_at")]
     public DateTime? AssignedAt { get; set; }
@@ -74,7 +74,7 @@ public class VisitLogisticsItem
     public DateTime? CompletedAt { get; set; }
 
     [Column("proposed_by")]
-    public string? ProposedBy { get; set; }
+    public ulong? ProposedBy { get; set; }
 
     [Column("proposed_at")]
     public DateTime? ProposedAt { get; set; }
@@ -95,7 +95,7 @@ public class VisitLogisticsItem
     public string? ProposalNote { get; set; }
 
     [Column("proposal_responded_by")]
-    public string? ProposalRespondedBy { get; set; }
+    public ulong? ProposalRespondedBy { get; set; }
 
     [Column("proposal_responded_at")]
     public DateTime? ProposalRespondedAt { get; set; }
@@ -116,13 +116,13 @@ public class VisitLogisticsItem
     public DateTime CreatedAt { get; set; }
 
     [Column("created_by")]
-    public string? CreatedBy { get; set; }
+    public ulong? CreatedBy { get; set; }
 
     [Column("updated_at")]
     public DateTime? UpdatedAt { get; set; }
 
     [Column("updated_by")]
-    public string? UpdatedBy { get; set; }
+    public ulong? UpdatedBy { get; set; }
 
     public virtual VisitRequestCampus VisitInstance { get; set; } = null!;
 }

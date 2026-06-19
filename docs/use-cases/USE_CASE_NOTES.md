@@ -1,3 +1,11 @@
+<!-- =====================================================================
+PEMS DOC UPDATE v8.2-full-preserved-cancel-delegation-no-external-note
+Generated: 2026-06-19
+Mode: PRESERVE ORIGINAL CONTENT + APPEND ADDENDUM.
+No original section below has been removed or compressed.
+The addendum section at the end is the authoritative update for cancellation UC-136.
+===================================================================== -->
+
 # UC Notes
 
 > File này chỉ giữ các trường đã cần dùng hiện tại: **UC ID**, **UC Name**, **Note**. Các trường khác như Actor, Preconditions, Postconditions, FT, Priority, Status... tạm thời không đưa vào vì chưa kiểm định.
@@ -162,3 +170,96 @@
 - HO chỉ xem và duyệt `MULTI_CAMPUS`.
 - Staff Leader chỉ xem/xử lý `SINGLE_CAMPUS` thuộc campus mình; `MULTI_CAMPUS` chỉ thấy sau khi HO duyệt/release và chỉ trong campus của mình.
 - Backend list/detail/search phải dùng đúng visibility query/view; frontend ẩn menu/nút không đủ để bảo mật.
+
+---
+
+# Addendum — UC Notes bổ sung UC-136
+
+
+## V8.2 Addendum — UC-136 Cancel Visit Request thuộc Delegation Reception Management
+
+> Phần này là nội dung bổ sung, không xóa nội dung gốc. Nếu nội dung gốc có flow cũ như “đã duyệt nhưng chưa có host” hoặc “mỗi cơ sở duyệt lại sau HO”, hãy ưu tiên rule V8.2 trong phần addendum này.
+
+### 1. Feature ownership
+
+UC hủy đơn thăm thuộc **FE-02 — Quản lý Tiếp đón Đoàn khách / Delegation Reception Management** vì đây là thao tác trên vòng đời đoàn/visit request, không phải bước submit form.
+
+```text
+Feature: FE-02 Delegation Reception Management
+UC: UC-136 Cancel Visit Request
+Permission code: UC-136.CANCEL_VISIT_REQUEST
+```
+
+### 2. Không dùng `external_confirmation_note`
+
+Không tạo cột `external_confirmation_note`. Khi Host hủy thay khách dựa trên xác nhận ngoài hệ thống, toàn bộ thông tin xác nhận được ghi vào `cancellation_reason`.
+
+```text
+cancellation_source = EXTERNAL_CONFIRMATION
+cancellation_reason = "Khách xác nhận hủy qua email/điện thoại/Zalo..., thời gian..., người xác nhận..., lý do..."
+```
+
+### 3. Cancellation metadata chuẩn
+
+Áp dụng cho `visit_requests` và `visit_request_campuses`:
+
+```sql
+cancelled_by BIGINT UNSIGNED NULL,
+cancelled_at DATETIME NULL,
+cancellation_actor_type ENUM('VISITOR','HOST','STAFF_LEADER','HO','SYSTEM') NULL,
+cancellation_source ENUM('SELF_SERVICE','EXTERNAL_CONFIRMATION','INTERNAL_DECISION') NULL,
+cancellation_reason TEXT NULL
+```
+
+### 4. Meaning của `cancellation_source`
+
+| Value | Meaning | Khi dùng |
+|---|---|---|
+| `SELF_SERVICE` | Người dùng tự thao tác trên hệ thống | Visitor tự hủy đơn của chính họ |
+| `EXTERNAL_CONFIRMATION` | Hủy dựa trên xác nhận ngoài hệ thống | Host hủy thay khách sau khi khách xác nhận qua email/điện thoại/Zalo/gặp trực tiếp |
+| `INTERNAL_DECISION` | Nội bộ hủy vì lý do vận hành | HO/Staff Leader hủy vì campus không thể tiếp, trùng lịch, lý do tổ chức |
+
+### 5. Rule hủy theo role
+
+| Actor | Scope | Nguồn hủy hợp lệ | Ghi chú |
+|---|---|---|---|
+| Visitor | Đơn của chính họ | `SELF_SERVICE` | Chỉ hủy khi chưa vào giai đoạn `DURING_VISIT`, `AFTER_VISIT`, `CLOSED` |
+| Host | Campus instance mình đang phụ trách | `EXTERNAL_CONFIRMATION` | Bắt buộc nhập `cancellation_reason` rõ kênh/thời điểm/người xác nhận |
+| Staff Leader | Đơn/campus thuộc campus mình | `INTERNAL_DECISION` hoặc `EXTERNAL_CONFIRMATION` | Không xử lý campus khác |
+| HO | `MULTI_CAMPUS` | `INTERNAL_DECISION` hoặc `EXTERNAL_CONFIRMATION` | Có thể hủy request tổng liên cơ sở nếu nghiệp vụ cho phép |
+| Admin | Không có quyền nghiệp vụ visit/delegation | Không áp dụng | ADMIN không được hủy delegation |
+
+### 6. Rule trạng thái
+
+- `visit_requests.status = CANCELLED` dùng khi hủy request/delegation tổng.
+- `visit_request_campuses.status = CANCELLED` dùng khi hủy một campus instance.
+- Không cho hủy campus instance nếu đã vào `DURING_VISIT`, `AFTER_VISIT`, hoặc `CLOSED`.
+- Không dùng `CANCELLED` thay cho `REJECTED`. Nếu đơn đang `PENDING_APPROVAL` và người duyệt không chấp nhận, dùng reject flow.
+
+### 7. Vị trí code Clean Architecture
+
+```text
+PEMS.Application/Delegations/Commands/CancelVisitRequest/
+├── CancelVisitRequestCommand.cs
+├── CancelVisitRequestCommandHandler.cs
+├── CancelVisitRequestCommandValidator.cs
+└── CancelVisitRequestResponse.cs
+```
+
+Controller chỉ nhận request và gọi `IMediator`. Logic kiểm tra scope, current host, request/campus status, và cancellation metadata nằm trong Handler/Domain Entity.
+
+
+## UC-136 Note
+
+| UC ID | UC Name | Note |
+|---|---|---|
+| UC-136 | Cancel Visit Request | Hủy yêu cầu thăm/đoàn khách thuộc FE-02 Delegation Reception Management. Visitor được hủy đơn của chính mình khi chưa bước vào giai đoạn đang diễn ra/hậu xử lý/đã đóng. Host được hủy campus instance mình phụ trách nếu khách đã xác nhận hủy qua kênh ngoài hệ thống; khi đó `cancellation_source = EXTERNAL_CONFIRMATION` và `cancellation_reason` phải ghi rõ kênh xác nhận, thời điểm, người xác nhận và lý do. Staff Leader được hủy trong phạm vi campus của mình theo rule nghiệp vụ; HO xử lý hủy `MULTI_CAMPUS`; Admin không có quyền hủy visit/delegation nghiệp vụ. Không dùng `external_confirmation_note`. |
+
+## UC liên quan cần hiểu lại
+
+| UC ID | Nội dung cập nhật |
+|---|---|
+| UC-17 | Submit form xong mới tạo request. Hủy sau submit không thuộc UC-17, mà thuộc UC-136. |
+| UC-18 | HO duyệt/từ chối multi-campus; nếu cần hủy sau khi đã duyệt thì dùng UC-136. |
+| UC-22 | Staff Leader xử lý approve/reject single-campus; nếu hủy sau khi đã duyệt thì dùng UC-136. |
+| UC-41 | Close Delegation là đóng hồ sơ sau khi hoàn tất, không phải hủy. |

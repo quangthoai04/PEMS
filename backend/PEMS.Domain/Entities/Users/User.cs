@@ -10,7 +10,7 @@ public class User
 {
     [Key]
     [Column("user_id")]
-    public string UserId { get; set; } = null!;
+    public ulong UserId { get; set; }
 
     [Column("full_name")]
     public string FullName { get; set; } = null!;
@@ -25,16 +25,16 @@ public class User
     public string? PasswordHash { get; set; }
 
     [Column("role_id")]
-    public string RoleId { get; set; } = null!;
+    public ulong RoleId { get; set; }
 
     [Column("sub_role")]
     public string? SubRole { get; set; }
 
     [Column("primary_campus_id")]
-    public string? PrimaryCampusId { get; set; }
+    public ulong? PrimaryCampusId { get; set; }
 
     [Column("department_id")]
-    public string? DepartmentId { get; set; }
+    public ulong? DepartmentId { get; set; }
 
     [Column("gender")]
     public string? Gender { get; set; }
@@ -76,13 +76,13 @@ public class User
     public DateTime CreatedAt { get; set; }
 
     [Column("created_by")]
-    public string? CreatedBy { get; set; }
+    public ulong? CreatedBy { get; set; }
 
     [Column("updated_at")]
     public DateTime? UpdatedAt { get; set; }
 
     [Column("updated_by")]
-    public string? UpdatedBy { get; set; }
+    public ulong? UpdatedBy { get; set; }
 
     public virtual Role Role { get; set; } = null!;
     public virtual Campus? PrimaryCampus { get; set; }

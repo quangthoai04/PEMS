@@ -1,4 +1,4 @@
-using System.ComponentModel.DataAnnotations;
+﻿using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace PEMS.Domain.Entities.Users;
@@ -8,19 +8,19 @@ public class UserSession
 {
     [Key]
     [Column("session_id")]
-    public string SessionId { get; set; } = null!;
+    public ulong SessionId { get; set; }
 
     [Column("user_id")]
-    public string UserId { get; set; } = null!;
+    public ulong UserId { get; set; }
 
     [Column("login_portal")]
     public string LoginPortal { get; set; } = null!;
 
     [Column("selected_campus_id")]
-    public string? SelectedCampusId { get; set; }
+    public ulong? SelectedCampusId { get; set; }
 
     [Column("auth_provider_id")]
-    public string? AuthProviderId { get; set; }
+    public ulong? AuthProviderId { get; set; }
 
     [Column("refresh_token_hash")]
     public string? RefreshTokenHash { get; set; }
@@ -47,7 +47,7 @@ public class UserSession
     public DateTime? RevokedAt { get; set; }
 
     [Column("revoked_by")]
-    public string? RevokedBy { get; set; }
+    public ulong? RevokedBy { get; set; }
 
     [Column("revoked_reason")]
     public string? RevokedReason { get; set; }

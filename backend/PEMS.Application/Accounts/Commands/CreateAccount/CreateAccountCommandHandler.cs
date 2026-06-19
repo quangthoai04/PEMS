@@ -50,7 +50,6 @@ public sealed class CreateAccountCommandHandler : IRequestHandler<CreateAccountC
         var now = _clock.UtcNow;
         var user = new User
         {
-            UserId = Guid.NewGuid().ToString(),
             FullName = request.FullName.Trim(),
             Email = email,
             Phone = Clean(request.Phone),
@@ -79,8 +78,7 @@ public sealed class CreateAccountCommandHandler : IRequestHandler<CreateAccountC
             user.PasswordHash = _passwordHasher.Hash(request.Password);
             user.AuthProviders.Add(new UserAuthProvider
             {
-                AuthProviderId = Guid.NewGuid().ToString(),
-                UserId = user.UserId,
+                // AuthProviderId is DB-generated; UserId is set via the navigation on save.
                 ProviderType = ProviderTypes.LocalPassword,
                 ProviderEmail = email,
                 IsEnabled = true,
@@ -90,6 +88,9 @@ public sealed class CreateAccountCommandHandler : IRequestHandler<CreateAccountC
         }
 
         _db.Users.Add(user);
+        await _db.SaveChangesAsync(cancellationToken);
+
+        // user.UserId is now populated by the database (BIGINT AUTO_INCREMENT).
         _db.AuditLogs.Add(new AuditLog
         {
             ActorUserId = actorId,

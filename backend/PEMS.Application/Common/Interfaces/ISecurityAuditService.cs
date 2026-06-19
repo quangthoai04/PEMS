@@ -8,20 +8,20 @@ namespace PEMS.Application.Common.Interfaces;
 public interface ISecurityAuditService
 {
     Task WriteLoginLogAsync(
-        string? userId,
+        ulong? userId,
         string email,
         string loginPortal,
-        string? selectedCampusId,
+        ulong? selectedCampusId,
         string? providerType,
         string status,
         string? failureReason,
         string? ipAddress,
         string? userAgent,
-        string? sessionId,
+        ulong? sessionId,
         CancellationToken cancellationToken = default);
 
     Task WriteSecurityEventAsync(
-        string? userId,
+        ulong? userId,
         string? email,
         string eventType,
         string severity,

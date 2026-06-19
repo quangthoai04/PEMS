@@ -1,4 +1,4 @@
-using System.ComponentModel.DataAnnotations;
+﻿using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace PEMS.Domain.Entities.Users;
@@ -8,10 +8,10 @@ public class LoginLog
 {
     [Key]
     [Column("login_log_id")]
-    public long LoginLogId { get; set; }
+    public ulong LoginLogId { get; set; }
 
     [Column("user_id")]
-    public string? UserId { get; set; }
+    public ulong? UserId { get; set; }
 
     [Column("email")]
     public string Email { get; set; } = null!;
@@ -20,7 +20,7 @@ public class LoginLog
     public string LoginPortal { get; set; } = null!;
 
     [Column("selected_campus_id")]
-    public string? SelectedCampusId { get; set; }
+    public ulong? SelectedCampusId { get; set; }
 
     [Column("provider_type")]
     public string? ProviderType { get; set; }
@@ -38,7 +38,7 @@ public class LoginLog
     public string? UserAgent { get; set; }
 
     [Column("session_id")]
-    public string? SessionId { get; set; }
+    public ulong? SessionId { get; set; }
 
     [Column("created_at")]
     public DateTime CreatedAt { get; set; }

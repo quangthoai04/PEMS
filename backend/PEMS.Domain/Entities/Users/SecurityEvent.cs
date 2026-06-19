@@ -1,4 +1,4 @@
-using System.ComponentModel.DataAnnotations;
+﻿using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace PEMS.Domain.Entities.Users;
@@ -8,10 +8,10 @@ public class SecurityEvent
 {
     [Key]
     [Column("security_event_id")]
-    public long SecurityEventId { get; set; }
+    public ulong SecurityEventId { get; set; }
 
     [Column("user_id")]
-    public string? UserId { get; set; }
+    public ulong? UserId { get; set; }
 
     [Column("email")]
     public string? Email { get; set; }

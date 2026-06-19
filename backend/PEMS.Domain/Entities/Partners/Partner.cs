@@ -1,4 +1,4 @@
-using System.ComponentModel.DataAnnotations;
+﻿using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace PEMS.Domain.Entities.Partners;
@@ -8,7 +8,7 @@ public class Partner
 {
     [Key]
     [Column("partner_id")]
-    public string PartnerId { get; set; } = null!;
+    public ulong PartnerId { get; set; }
 
     [Column("partner_code")]
     public string PartnerCode { get; set; } = null!;
@@ -41,13 +41,13 @@ public class Partner
     public DateTime CreatedAt { get; set; }
 
     [Column("created_by")]
-    public string? CreatedBy { get; set; }
+    public ulong? CreatedBy { get; set; }
 
     [Column("updated_at")]
     public DateTime? UpdatedAt { get; set; }
 
     [Column("updated_by")]
-    public string? UpdatedBy { get; set; }
+    public ulong? UpdatedBy { get; set; }
 
     public virtual ICollection<PartnerContact> Contacts { get; set; } = new List<PartnerContact>();
 }

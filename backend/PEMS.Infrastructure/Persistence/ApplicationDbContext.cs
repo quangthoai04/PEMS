@@ -14,7 +14,6 @@ using PEMS.Domain.Entities.Minutes;
 using PEMS.Domain.Entities.News;
 using PEMS.Domain.Entities.Notifications;
 using PEMS.Domain.Entities.Partners;
-using PEMS.Domain.Entities.PublicContents;
 using PEMS.Domain.Entities.Users;
 using PEMS.Application.Common.Interfaces;
 
@@ -52,8 +51,8 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     public DbSet<Document> Documents { get; set; }
 
     // ── Visit / Delegation ────────────────────────────────────────────────
+    // NOTE: no pending_visit_requests table in SQL v8.3 — OTP drafts live in otp_tokens.
     public DbSet<VisitRequest> VisitRequests { get; set; }
-    public DbSet<PendingVisitRequest> PendingVisitRequests { get; set; }
     public DbSet<VisitRequestCampus> VisitRequestCampuses { get; set; }
     public DbSet<VisitGuestMember> VisitGuestMembers { get; set; }
     public DbSet<VisitParticipant> VisitParticipants { get; set; }
@@ -72,9 +71,9 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     public DbSet<NewsContentSection> NewsContentSections { get; set; }
     public DbSet<NewsSectionFile> NewsSectionFiles { get; set; }
 
-    // ── FAQs + Public Content ─────────────────────────────────────────────
+    // ── FAQs ──────────────────────────────────────────────────────────────
+    // NOTE: no public_contents table in SQL v8.3 — public pages read from news/faqs/galleries/partners.
     public DbSet<Faq> Faqs { get; set; }
-    public DbSet<PEMS.Domain.Entities.PublicContents.PublicContent> PublicContents { get; set; }
 
     // ── Gallery ───────────────────────────────────────────────────────────
     public DbSet<Gallery> Galleries { get; set; }
@@ -101,364 +100,17 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
             .UseCollation("utf8mb4_unicode_ci")
             .HasCharSet("utf8mb4");
 
-        // ── Composite PKs ─────────────────────────────────────────────────
-
-        modelBuilder.Entity<RolePermission>()
-            .HasKey(rp => new { rp.RoleId, rp.SubRole, rp.PermissionId });
-
-        // ── BIGINT AUTO_INCREMENT PKs ─────────────────────────────────────
-
-        modelBuilder.Entity<AuditLog>()
-            .Property(e => e.AuditLogId).ValueGeneratedOnAdd();
-        modelBuilder.Entity<LoginLog>()
-            .Property(e => e.LoginLogId).ValueGeneratedOnAdd();
-        modelBuilder.Entity<SecurityEvent>()
-            .Property(e => e.SecurityEventId).ValueGeneratedOnAdd();
-        modelBuilder.Entity<VisitStatusLog>()
-            .Property(e => e.VisitStatusLogId).ValueGeneratedOnAdd();
-        modelBuilder.Entity<ApiRequestLog>()
-            .Property(e => e.ApiRequestLogId).ValueGeneratedOnAdd();
-
-        // ── CHAR(36) column types ─────────────────────────────────────────
-
-        modelBuilder.Entity<Role>(b =>
-        {
-            b.Property(e => e.RoleId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.DeletedBy).HasMaxLength(36).IsFixedLength();
-        });
-
-        modelBuilder.Entity<Permission>(b =>
-        {
-            b.Property(e => e.PermissionId).HasMaxLength(36).IsFixedLength();
-        });
-
+        // ── role_permissions: surrogate PK + UNIQUE(role_id, sub_role, permission_id) (SQL v8.3) ──
         modelBuilder.Entity<RolePermission>(b =>
         {
-            b.Property(e => e.RoleId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.PermissionId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.GrantedBy).HasMaxLength(36).IsFixedLength();
+            b.HasKey(rp => rp.RolePermissionId);
+            b.Property(rp => rp.RolePermissionId).ValueGeneratedOnAdd();
+            b.HasIndex(rp => new { rp.RoleId, rp.SubRole, rp.PermissionId }).IsUnique();
         });
 
-        modelBuilder.Entity<Campus>(b =>
-        {
-            b.Property(e => e.CampusId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.IcHeadUserId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.CreatedBy).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.UpdatedBy).HasMaxLength(36).IsFixedLength();
-        });
-
-        modelBuilder.Entity<Department>(b =>
-        {
-            b.Property(e => e.DepartmentId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.CampusId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.HeadUserId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.CreatedBy).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.UpdatedBy).HasMaxLength(36).IsFixedLength();
-        });
-
-        modelBuilder.Entity<User>(b =>
-        {
-            b.Property(e => e.UserId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.RoleId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.PrimaryCampusId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.DepartmentId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.CreatedBy).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.UpdatedBy).HasMaxLength(36).IsFixedLength();
-        });
-
-        modelBuilder.Entity<UserAuthProvider>(b =>
-        {
-            b.Property(e => e.AuthProviderId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.UserId).HasMaxLength(36).IsFixedLength();
-        });
-
-        modelBuilder.Entity<UserSession>(b =>
-        {
-            b.Property(e => e.SessionId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.UserId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.SelectedCampusId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.AuthProviderId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.RevokedBy).HasMaxLength(36).IsFixedLength();
-        });
-
-        modelBuilder.Entity<OtpToken>(b =>
-        {
-            b.Property(e => e.OtpTokenId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.UserId).HasMaxLength(36).IsFixedLength();
-        });
-
-        modelBuilder.Entity<LoginLog>(b =>
-        {
-            b.Property(e => e.UserId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.SelectedCampusId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.SessionId).HasMaxLength(36).IsFixedLength();
-        });
-
-        modelBuilder.Entity<SecurityEvent>(b =>
-        {
-            b.Property(e => e.UserId).HasMaxLength(36).IsFixedLength();
-        });
-
-        modelBuilder.Entity<AuditLog>(b =>
-        {
-            b.Property(e => e.ActorUserId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.CampusId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.EntityId).HasMaxLength(36).IsFixedLength();
-        });
-
-        modelBuilder.Entity<Partner>(b =>
-        {
-            b.Property(e => e.PartnerId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.CreatedBy).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.UpdatedBy).HasMaxLength(36).IsFixedLength();
-        });
-
-        modelBuilder.Entity<PartnerContact>(b =>
-        {
-            b.Property(e => e.ContactId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.PartnerId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.CreatedBy).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.UpdatedBy).HasMaxLength(36).IsFixedLength();
-        });
-
-        modelBuilder.Entity<UploadedFile>(b =>
-        {
-            b.Property(e => e.FileId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.UploadedBy).HasMaxLength(36).IsFixedLength();
-        });
-
-        modelBuilder.Entity<Document>(b =>
-        {
-            b.Property(e => e.DocumentId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.FileId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.OwnerId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.CampusId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.CreatedBy).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.UpdatedBy).HasMaxLength(36).IsFixedLength();
-        });
-
-        modelBuilder.Entity<VisitRequest>(b =>
-        {
-            b.Property(e => e.VisitRequestId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.VisitorUserId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.PartnerId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.DecidedBy).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.CreatedBy).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.UpdatedBy).HasMaxLength(36).IsFixedLength();
-        });
-
-        modelBuilder.Entity<VisitRequestCampus>(b =>
-        {
-            b.Property(e => e.VisitInstanceId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.VisitRequestId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.CampusId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.CurrentHostUserId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.HostTransferredBy).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.ClosedBy).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.CreatedBy).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.UpdatedBy).HasMaxLength(36).IsFixedLength();
-        });
-
-        modelBuilder.Entity<VisitGuestMember>(b =>
-        {
-            b.Property(e => e.GuestMemberId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.VisitRequestId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.CreatedBy).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.UpdatedBy).HasMaxLength(36).IsFixedLength();
-        });
-
-        modelBuilder.Entity<VisitParticipant>(b =>
-        {
-            b.Property(e => e.ParticipantId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.VisitInstanceId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.UserId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.InvitedBy).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.AssignedBy).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.CreatedBy).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.UpdatedBy).HasMaxLength(36).IsFixedLength();
-        });
-
-        modelBuilder.Entity<VisitAgenda>(b =>
-        {
-            b.Property(e => e.AgendaId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.VisitInstanceId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.ResponsibleUserId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.CreatedBy).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.UpdatedBy).HasMaxLength(36).IsFixedLength();
-        });
-
-        modelBuilder.Entity<VisitLogisticsItem>(b =>
-        {
-            b.Property(e => e.LogisticsItemId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.VisitInstanceId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.RequestedBy).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.RequestedToDepartmentId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.ReceivedBy).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.AssignedToUserId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.AssignedBy).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.ProposedBy).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.ProposalRespondedBy).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.CreatedBy).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.UpdatedBy).HasMaxLength(36).IsFixedLength();
-        });
-
-        modelBuilder.Entity<VisitStatusLog>(b =>
-        {
-            b.Property(e => e.VisitRequestId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.VisitInstanceId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.ChangedBy).HasMaxLength(36).IsFixedLength();
-        });
-
-        modelBuilder.Entity<Minute>(b =>
-        {
-            b.Property(e => e.MinutesId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.VisitInstanceId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.FinalizedBy).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.CreatedBy).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.UpdatedBy).HasMaxLength(36).IsFixedLength();
-        });
-
-        modelBuilder.Entity<Feedback>(b =>
-        {
-            b.Property(e => e.FeedbackId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.VisitRequestId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.VisitInstanceId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.SubmittedByUserId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.TargetUserId).HasMaxLength(36).IsFixedLength();
-        });
-
-        modelBuilder.Entity<PEMS.Domain.Entities.News.News>(b =>
-        {
-            b.Property(e => e.NewsId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.CampusId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.AuthorUserId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.CoverFileId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.DecidedBy).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.CreatedBy).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.UpdatedBy).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.DeletedBy).HasMaxLength(36).IsFixedLength();
-        });
-
-        modelBuilder.Entity<NewsTranslation>(b =>
-        {
-            b.Property(e => e.NewsTranslationId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.NewsId).HasMaxLength(36).IsFixedLength();
-        });
-
-        modelBuilder.Entity<Faq>(b =>
-        {
-            b.Property(e => e.FaqId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.CreatedBy).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.UpdatedBy).HasMaxLength(36).IsFixedLength();
-        });
-
-        modelBuilder.Entity<PEMS.Domain.Entities.PublicContents.PublicContent>(b =>
-        {
-            b.Property(e => e.PublicContentId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.CampusId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.CreatedBy).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.UpdatedBy).HasMaxLength(36).IsFixedLength();
-        });
-
-        modelBuilder.Entity<Gallery>(b =>
-        {
-            b.Property(e => e.GalleryId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.CampusId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.VisitInstanceId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.CreatedBy).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.UpdatedBy).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.DeletedBy).HasMaxLength(36).IsFixedLength();
-        });
-
-        modelBuilder.Entity<GalleryImage>(b =>
-        {
-            b.Property(e => e.ImageId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.GalleryId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.FileId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.CreatedBy).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.UpdatedBy).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.DeletedBy).HasMaxLength(36).IsFixedLength();
-        });
-
-        modelBuilder.Entity<PhotoFaceTag>(b =>
-        {
-            b.Property(e => e.FaceTagId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.ImageId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.VisitRequestId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.GuestMemberId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.PartnerContactId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.ConfirmedBy).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.CreatedBy).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.RemovedBy).HasMaxLength(36).IsFixedLength();
-        });
-
-        modelBuilder.Entity<EmailTemplate>(b =>
-        {
-            b.Property(e => e.EmailTemplateId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.CreatedBy).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.UpdatedBy).HasMaxLength(36).IsFixedLength();
-        });
-
-        modelBuilder.Entity<SentEmail>(b =>
-        {
-            b.Property(e => e.SentEmailId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.EmailTemplateId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.RelatedId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.SentBy).HasMaxLength(36).IsFixedLength();
-        });
-
-        modelBuilder.Entity<Notification>(b =>
-        {
-            b.Property(e => e.NotificationId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.RecipientUserId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.RelatedId).HasMaxLength(36).IsFixedLength();
-        });
-
-        modelBuilder.Entity<CalendarEvent>(b =>
-        {
-            b.Property(e => e.CalendarEventId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.OwnerUserId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.CampusId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.VisitInstanceId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.LogisticsItemId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.CreatedBy).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.UpdatedBy).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.DeletedBy).HasMaxLength(36).IsFixedLength();
-        });
-
-        modelBuilder.Entity<AgendaTemplate>(b =>
-        {
-            b.Property(e => e.AgendaTemplateId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.CampusId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.CreatedBy).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.UpdatedBy).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.DeletedBy).HasMaxLength(36).IsFixedLength();
-        });
-
-        modelBuilder.Entity<ApiConfiguration>(b =>
-        {
-            b.Property(e => e.ApiConfigId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.CreatedBy).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.UpdatedBy).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.DeletedBy).HasMaxLength(36).IsFixedLength();
-        });
-
-        modelBuilder.Entity<ApiUsageQuota>(b =>
-        {
-            b.Property(e => e.ApiUsageQuotaId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.ApiConfigId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.CampusId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.CreatedBy).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.UpdatedBy).HasMaxLength(36).IsFixedLength();
-        });
-
-        modelBuilder.Entity<ApiRequestLog>(b =>
-        {
-            b.Property(e => e.ApiConfigId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.CampusId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.RequestedBy).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.RelatedId).HasMaxLength(36).IsFixedLength();
-        });
+        // All other PKs are BIGINT UNSIGNED AUTO_INCREMENT and are treated as
+        // store-generated identity by EF Core convention for integer keys.
+        // FK columns (also BIGINT UNSIGNED) are NOT store-generated.
 
         // ── Relationships ─────────────────────────────────────────────────
 
@@ -499,7 +151,7 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
             .HasOne(p => p.User).WithMany(u => u.AuthProviders)
             .HasForeignKey(p => p.UserId).OnDelete(DeleteBehavior.Cascade);
 
-        // UserSession → User, Campus, AuthProvider, RevokedBy
+        // UserSession → User, AuthProvider
         modelBuilder.Entity<UserSession>()
             .HasOne(s => s.User).WithMany(u => u.Sessions)
             .HasForeignKey(s => s.UserId).OnDelete(DeleteBehavior.Cascade);
@@ -542,7 +194,7 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
             .HasOne(d => d.File).WithMany(f => f.Documents)
             .HasForeignKey(d => d.FileId).OnDelete(DeleteBehavior.Restrict);
 
-        // VisitRequest → Partner, VisitorUser, DecidedBy
+        // VisitRequest → Partner, VisitorUser, DecidedBy, CancelledBy
         modelBuilder.Entity<VisitRequest>()
             .HasOne(v => v.Partner).WithMany()
             .HasForeignKey(v => v.PartnerId).OnDelete(DeleteBehavior.SetNull);
@@ -552,8 +204,11 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
         modelBuilder.Entity<VisitRequest>()
             .HasOne<User>().WithMany()
             .HasForeignKey(v => v.DecidedBy).OnDelete(DeleteBehavior.SetNull);
+        modelBuilder.Entity<VisitRequest>()
+            .HasOne<User>().WithMany()
+            .HasForeignKey(v => v.CancelledBy).OnDelete(DeleteBehavior.SetNull);
 
-        // VisitRequestCampus → VisitRequest, Campus, CurrentHostUser, HostTransferredBy, ClosedBy
+        // VisitRequestCampus → VisitRequest, Campus, host/transfer/closed/cancelled users
         modelBuilder.Entity<VisitRequestCampus>()
             .HasOne(vc => vc.VisitRequest).WithMany(v => v.CampusInstances)
             .HasForeignKey(vc => vc.VisitRequestId).OnDelete(DeleteBehavior.Restrict);
@@ -565,10 +220,16 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
             .HasForeignKey(vc => vc.CurrentHostUserId).OnDelete(DeleteBehavior.SetNull);
         modelBuilder.Entity<VisitRequestCampus>()
             .HasOne<User>().WithMany()
+            .HasForeignKey(vc => vc.HostAssignedBy).OnDelete(DeleteBehavior.SetNull);
+        modelBuilder.Entity<VisitRequestCampus>()
+            .HasOne<User>().WithMany()
             .HasForeignKey(vc => vc.HostTransferredBy).OnDelete(DeleteBehavior.SetNull);
         modelBuilder.Entity<VisitRequestCampus>()
             .HasOne<User>().WithMany()
             .HasForeignKey(vc => vc.ClosedBy).OnDelete(DeleteBehavior.SetNull);
+        modelBuilder.Entity<VisitRequestCampus>()
+            .HasOne<User>().WithMany()
+            .HasForeignKey(vc => vc.CancelledBy).OnDelete(DeleteBehavior.SetNull);
 
         // VisitGuestMember → VisitRequest
         modelBuilder.Entity<VisitGuestMember>()
@@ -634,7 +295,7 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
             .HasOne<User>().WithMany()
             .HasForeignKey(vsl => vsl.ChangedBy).OnDelete(DeleteBehavior.SetNull);
 
-        // Minute → VisitRequestCampus, CreatedBy, FinalizedBy, EditingBy
+        // Minute → VisitRequestCampus, CreatedBy, FinalizedBy
         modelBuilder.Entity<Minute>()
             .HasOne<VisitRequestCampus>().WithMany()
             .HasForeignKey(m => m.VisitInstanceId).OnDelete(DeleteBehavior.Restrict);
@@ -645,7 +306,7 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
             .HasOne<User>().WithMany()
             .HasForeignKey(m => m.FinalizedBy).OnDelete(DeleteBehavior.SetNull);
 
-        // Feedback → VisitRequest, VisitRequestCampus, SubmittedBy, GuestMember, ReviewedBy
+        // Feedback → VisitRequest, VisitRequestCampus, SubmittedBy, TargetUser
         modelBuilder.Entity<Feedback>()
             .HasOne<VisitRequest>().WithMany()
             .HasForeignKey(f => f.VisitRequestId).OnDelete(DeleteBehavior.Restrict);
@@ -677,11 +338,6 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
         modelBuilder.Entity<NewsTranslation>()
             .HasOne(nt => nt.News).WithMany(n => n.Translations)
             .HasForeignKey(nt => nt.NewsId).OnDelete(DeleteBehavior.Cascade);
-
-        // PublicContent → Campus
-        modelBuilder.Entity<PEMS.Domain.Entities.PublicContents.PublicContent>()
-            .HasOne<Campus>().WithMany()
-            .HasForeignKey(pc => pc.CampusId).OnDelete(DeleteBehavior.SetNull);
 
         // Gallery → Campus, VisitRequestCampus
         modelBuilder.Entity<Gallery>()
@@ -766,8 +422,8 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
         modelBuilder.Entity<ApiRequestLog>()
             .HasOne<User>().WithMany()
             .HasForeignKey(rl => rl.RequestedBy).OnDelete(DeleteBehavior.SetNull);
-        // -- JSON columns --------------------------------------------------
-        modelBuilder.Entity<PEMS.Domain.Entities.PublicContents.PublicContent>().Property(x => x.TranslationsJson).HasColumnType("json");
+
+        // ── JSON columns ──────────────────────────────────────────────────
         modelBuilder.Entity<EmailTemplate>().Property(x => x.TranslationsJson).HasColumnType("json");
         modelBuilder.Entity<SentEmail>().Property(x => x.RecipientsJson).HasColumnType("json");
         modelBuilder.Entity<CalendarEvent>().Property(x => x.AttendeesJson).HasColumnType("json");
@@ -778,32 +434,19 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
         modelBuilder.Entity<ApiConfiguration>().Property(x => x.SettingsJson).HasColumnType("json");
         modelBuilder.Entity<AgendaTemplate>().Property(x => x.ItemsJson).HasColumnType("json");
 
-        // -- New entities relationships & CHAR(36) -------------------------
-        modelBuilder.Entity<MinuteActionItem>(b => {
-            b.Property(e => e.ActionItemId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.MinutesId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.CreatedBy).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.UpdatedBy).HasMaxLength(36).IsFixedLength();
-            b.HasOne(a => a.Minute).WithMany(m => m.ActionItems).HasForeignKey(a => a.MinutesId).OnDelete(DeleteBehavior.Cascade);
-        });
+        // ── Remaining child relationships ─────────────────────────────────
+        modelBuilder.Entity<MinuteActionItem>()
+            .HasOne(a => a.Minute).WithMany(m => m.ActionItems)
+            .HasForeignKey(a => a.MinutesId).OnDelete(DeleteBehavior.Cascade);
 
-        modelBuilder.Entity<NewsContentSection>(b => {
-            b.Property(e => e.SectionId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.NewsId).HasMaxLength(36).IsFixedLength();
-            b.HasOne(s => s.News).WithMany(n => n.Sections).HasForeignKey(s => s.NewsId).OnDelete(DeleteBehavior.Cascade);
-        });
+        modelBuilder.Entity<NewsContentSection>()
+            .HasOne(s => s.News).WithMany(n => n.Sections)
+            .HasForeignKey(s => s.NewsId).OnDelete(DeleteBehavior.Cascade);
 
-        modelBuilder.Entity<NewsSectionFile>(b => {
-            b.Property(e => e.SectionFileId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.SectionId).HasMaxLength(36).IsFixedLength();
-            b.Property(e => e.FileId).HasMaxLength(36).IsFixedLength();
+        modelBuilder.Entity<NewsSectionFile>(b =>
+        {
             b.HasOne(f => f.Section).WithMany(s => s.SectionFiles).HasForeignKey(f => f.SectionId).OnDelete(DeleteBehavior.Cascade);
             b.HasOne(f => f.File).WithMany().HasForeignKey(f => f.FileId).OnDelete(DeleteBehavior.Restrict);
         });
-
     }
 }
-
-
-
-

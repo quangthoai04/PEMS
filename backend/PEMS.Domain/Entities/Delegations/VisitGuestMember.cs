@@ -1,4 +1,4 @@
-using System.ComponentModel.DataAnnotations;
+﻿using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace PEMS.Domain.Entities.Delegations;
@@ -8,10 +8,10 @@ public class VisitGuestMember
 {
     [Key]
     [Column("guest_member_id")]
-    public string GuestMemberId { get; set; } = null!;
+    public ulong GuestMemberId { get; set; }
 
     [Column("visit_request_id")]
-    public string VisitRequestId { get; set; } = null!;
+    public ulong VisitRequestId { get; set; }
 
     [Column("full_name")]
     public string FullName { get; set; } = null!;
@@ -41,13 +41,13 @@ public class VisitGuestMember
     public DateTime CreatedAt { get; set; }
 
     [Column("created_by")]
-    public string? CreatedBy { get; set; }
+    public ulong? CreatedBy { get; set; }
 
     [Column("updated_at")]
     public DateTime? UpdatedAt { get; set; }
 
     [Column("updated_by")]
-    public string? UpdatedBy { get; set; }
+    public ulong? UpdatedBy { get; set; }
 
     public virtual VisitRequest VisitRequest { get; set; } = null!;
 }

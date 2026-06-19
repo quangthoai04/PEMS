@@ -18,7 +18,7 @@ public class JwtTokenService : IJwtTokenService
         _configuration = configuration;
     }
 
-    public AccessTokenResult GenerateAccessToken(User user, string sessionId, string loginPortal)
+    public AccessTokenResult GenerateAccessToken(User user, ulong sessionId, string loginPortal)
     {
         var jwtSettings = _configuration.GetSection("JwtSettings");
 
@@ -34,29 +34,31 @@ public class JwtTokenService : IJwtTokenService
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secretKey));
         var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
+        // BIGINT ids are written to claims as their invariant string form and parsed back in CurrentUserService.
+        var userIdStr = user.UserId.ToString();
         var claims = new List<Claim>
         {
-            new(JwtRegisteredClaimNames.Sub, user.UserId),
+            new(JwtRegisteredClaimNames.Sub, userIdStr),
             new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
-            new(PemsClaimTypes.UserId, user.UserId),
+            new(PemsClaimTypes.UserId, userIdStr),
             new(PemsClaimTypes.Email, user.Email),
-            new(PemsClaimTypes.RoleId, user.RoleId),
+            new(PemsClaimTypes.RoleId, user.RoleId.ToString()),
             new(PemsClaimTypes.RoleCode, user.Role?.RoleCode ?? string.Empty),
-            new(PemsClaimTypes.SessionId, sessionId),
+            new(PemsClaimTypes.SessionId, sessionId.ToString()),
             new(PemsClaimTypes.LoginPortal, loginPortal),
             // Standard role claim so [Authorize(Roles=...)] keeps working.
             new(ClaimTypes.Role, user.Role?.RoleCode ?? string.Empty),
-            new(ClaimTypes.NameIdentifier, user.UserId),
+            new(ClaimTypes.NameIdentifier, userIdStr),
             new(ClaimTypes.Email, user.Email),
             new(ClaimTypes.Name, user.FullName)
         };
 
         if (!string.IsNullOrEmpty(user.SubRole))
             claims.Add(new Claim(PemsClaimTypes.SubRole, user.SubRole));
-        if (!string.IsNullOrEmpty(user.PrimaryCampusId))
-            claims.Add(new Claim(PemsClaimTypes.PrimaryCampusId, user.PrimaryCampusId));
-        if (!string.IsNullOrEmpty(user.DepartmentId))
-            claims.Add(new Claim(PemsClaimTypes.DepartmentId, user.DepartmentId));
+        if (user.PrimaryCampusId.HasValue)
+            claims.Add(new Claim(PemsClaimTypes.PrimaryCampusId, user.PrimaryCampusId.Value.ToString()));
+        if (user.DepartmentId.HasValue)
+            claims.Add(new Claim(PemsClaimTypes.DepartmentId, user.DepartmentId.Value.ToString()));
 
         var token = new JwtSecurityToken(
             issuer: jwtSettings["Issuer"],

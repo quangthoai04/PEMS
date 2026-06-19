@@ -1,4 +1,4 @@
-using System.ComponentModel.DataAnnotations;
+﻿using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace PEMS.Domain.Entities.News;
@@ -8,16 +8,16 @@ public class News
 {
     [Key]
     [Column("news_id")]
-    public string NewsId { get; set; } = null!;
+    public ulong NewsId { get; set; }
 
     [Column("campus_id")]
-    public string? CampusId { get; set; }
+    public ulong? CampusId { get; set; }
 
     [Column("author_user_id")]
-    public string AuthorUserId { get; set; } = null!;
+    public ulong AuthorUserId { get; set; }
 
     [Column("cover_file_id")]
-    public string? CoverFileId { get; set; }
+    public ulong? CoverFileId { get; set; }
 
     [Column("status")]
     public string Status { get; set; } = "DRAFT";
@@ -26,7 +26,7 @@ public class News
     public DateTime? PublishedAt { get; set; }
 
     [Column("decided_by")]
-    public string? DecidedBy { get; set; }
+    public ulong? DecidedBy { get; set; }
 
     [Column("decided_at")]
     public DateTime? DecidedAt { get; set; }
@@ -44,19 +44,19 @@ public class News
     public DateTime CreatedAt { get; set; }
 
     [Column("created_by")]
-    public string? CreatedBy { get; set; }
+    public ulong? CreatedBy { get; set; }
 
     [Column("updated_at")]
     public DateTime? UpdatedAt { get; set; }
 
     [Column("updated_by")]
-    public string? UpdatedBy { get; set; }
+    public ulong? UpdatedBy { get; set; }
 
     [Column("deleted_at")]
     public DateTime? DeletedAt { get; set; }
 
     [Column("deleted_by")]
-    public string? DeletedBy { get; set; }
+    public ulong? DeletedBy { get; set; }
 
     public virtual ICollection<NewsTranslation> Translations { get; set; } = new List<NewsTranslation>();
     public virtual ICollection<NewsContentSection> Sections { get; set; } = new List<NewsContentSection>();

@@ -1,3 +1,11 @@
+<!-- =====================================================================
+PEMS DOC UPDATE v8.2-full-preserved-cancel-delegation-no-external-note
+Generated: 2026-06-19
+Mode: PRESERVE ORIGINAL CONTENT + APPEND ADDENDUM.
+No original section below has been removed or compressed.
+The addendum section at the end is the authoritative update for cancellation UC-136.
+===================================================================== -->
+
 # Cẩm nang Kiến trúc & Quy tắc Lập trình (PEMS Backend)
 
 Tài liệu này là bộ luật bắt buộc (Strict Rulebook) dành cho toàn bộ Developer tham gia phát triển tầng Backend của PEMS. Bất kỳ Pull Request nào vi phạm các nguyên tắc dưới đây đều phải bị từ chối (Reject).
@@ -105,37 +113,108 @@ Chúng ta chia Validation làm 2 loại. Phải viết đúng chỗ:
 3. **Repository là Kẻ hầu hạ (Dumb DB Accessor)**:
    * Repository chỉ chứa các lệnh cơ bản: `GetById`, `Add`, `Update`, `ExistsBy...`.
    * Cấm viết logic nghiệp vụ (VD: Tính tiền, kiểm tra quyền) bên trong Repository.
+
 ---
 
-## 6. Bổ sung rule cho UC-136 Cancel Visit Request
+# Addendum — Clean Architecture cho UC-136 Cancel Visit Request
 
-UC-136 thuộc **Delegations feature**, không đặt trong module submit form public.
 
-### Vị trí code bắt buộc
+## V8.2 Addendum — UC-136 Cancel Visit Request thuộc Delegation Reception Management
+
+> Phần này là nội dung bổ sung, không xóa nội dung gốc. Nếu nội dung gốc có flow cũ như “đã duyệt nhưng chưa có host” hoặc “mỗi cơ sở duyệt lại sau HO”, hãy ưu tiên rule V8.2 trong phần addendum này.
+
+### 1. Feature ownership
+
+UC hủy đơn thăm thuộc **FE-02 — Quản lý Tiếp đón Đoàn khách / Delegation Reception Management** vì đây là thao tác trên vòng đời đoàn/visit request, không phải bước submit form.
 
 ```text
-PEMS.Api/Controllers/DelegationsController.cs
-PEMS.Application/Delegations/Commands/CancelVisitRequest/
-  CancelVisitRequestCommand.cs
-  CancelVisitRequestCommandHandler.cs
-  CancelVisitRequestCommandValidator.cs
-  CancelVisitRequestResponse.cs
-PEMS.Domain/Entities/VisitRequest.cs
-PEMS.Domain/Entities/VisitRequestCampus.cs
-PEMS.Infrastructure/Persistence/Configurations/VisitRequestConfiguration.cs
-PEMS.Infrastructure/Persistence/Configurations/VisitRequestCampusConfiguration.cs
+Feature: FE-02 Delegation Reception Management
+UC: UC-136 Cancel Visit Request
+Permission code: UC-136.CANCEL_VISIT_REQUEST
 ```
 
-### Rule triển khai
+### 2. Không dùng `external_confirmation_note`
 
-- Controller chỉ nhận request, gọi `IMediator`, trả response.
-- Validator kiểm tra input cơ bản: `visitRequestId/visitInstanceId`, `cancellationSource`, `cancellationReason`, `rowVersion`.
-- Handler kiểm tra permission `UC-136.CANCEL_VISIT_REQUEST`, ownership/current-host/campus scope và trạng thái hiện tại.
-- Entity chịu trách nhiệm đổi trạng thái và set metadata hủy.
-- Không dùng `external_confirmation_note`; nếu `cancellationSource = EXTERNAL_CONFIRMATION`, `cancellationReason` phải chứa kênh xác nhận, thời gian, người xác nhận và lý do.
-- Phải ghi `visit_status_logs` và `audit_logs` trong cùng transaction.
+Không tạo cột `external_confirmation_note`. Khi Host hủy thay khách dựa trên xác nhận ngoài hệ thống, toàn bộ thông tin xác nhận được ghi vào `cancellation_reason`.
 
-### Không nhầm UC-136 với UC-41
+```text
+cancellation_source = EXTERNAL_CONFIRMATION
+cancellation_reason = "Khách xác nhận hủy qua email/điện thoại/Zalo..., thời gian..., người xác nhận..., lý do..."
+```
 
-- UC-136: hủy request/delegation trước khi hoàn tất xử lý, status `CANCELLED`.
-- UC-41: đóng delegation sau khi xử lý xong, campus status `CLOSED`.
+### 3. Cancellation metadata chuẩn
+
+Áp dụng cho `visit_requests` và `visit_request_campuses`:
+
+```sql
+cancelled_by BIGINT UNSIGNED NULL,
+cancelled_at DATETIME NULL,
+cancellation_actor_type ENUM('VISITOR','HOST','STAFF_LEADER','HO','SYSTEM') NULL,
+cancellation_source ENUM('SELF_SERVICE','EXTERNAL_CONFIRMATION','INTERNAL_DECISION') NULL,
+cancellation_reason TEXT NULL
+```
+
+### 4. Meaning của `cancellation_source`
+
+| Value | Meaning | Khi dùng |
+|---|---|---|
+| `SELF_SERVICE` | Người dùng tự thao tác trên hệ thống | Visitor tự hủy đơn của chính họ |
+| `EXTERNAL_CONFIRMATION` | Hủy dựa trên xác nhận ngoài hệ thống | Host hủy thay khách sau khi khách xác nhận qua email/điện thoại/Zalo/gặp trực tiếp |
+| `INTERNAL_DECISION` | Nội bộ hủy vì lý do vận hành | HO/Staff Leader hủy vì campus không thể tiếp, trùng lịch, lý do tổ chức |
+
+### 5. Rule hủy theo role
+
+| Actor | Scope | Nguồn hủy hợp lệ | Ghi chú |
+|---|---|---|---|
+| Visitor | Đơn của chính họ | `SELF_SERVICE` | Chỉ hủy khi chưa vào giai đoạn `DURING_VISIT`, `AFTER_VISIT`, `CLOSED` |
+| Host | Campus instance mình đang phụ trách | `EXTERNAL_CONFIRMATION` | Bắt buộc nhập `cancellation_reason` rõ kênh/thời điểm/người xác nhận |
+| Staff Leader | Đơn/campus thuộc campus mình | `INTERNAL_DECISION` hoặc `EXTERNAL_CONFIRMATION` | Không xử lý campus khác |
+| HO | `MULTI_CAMPUS` | `INTERNAL_DECISION` hoặc `EXTERNAL_CONFIRMATION` | Có thể hủy request tổng liên cơ sở nếu nghiệp vụ cho phép |
+| Admin | Không có quyền nghiệp vụ visit/delegation | Không áp dụng | ADMIN không được hủy delegation |
+
+### 6. Rule trạng thái
+
+- `visit_requests.status = CANCELLED` dùng khi hủy request/delegation tổng.
+- `visit_request_campuses.status = CANCELLED` dùng khi hủy một campus instance.
+- Không cho hủy campus instance nếu đã vào `DURING_VISIT`, `AFTER_VISIT`, hoặc `CLOSED`.
+- Không dùng `CANCELLED` thay cho `REJECTED`. Nếu đơn đang `PENDING_APPROVAL` và người duyệt không chấp nhận, dùng reject flow.
+
+### 7. Vị trí code Clean Architecture
+
+```text
+PEMS.Application/Delegations/Commands/CancelVisitRequest/
+├── CancelVisitRequestCommand.cs
+├── CancelVisitRequestCommandHandler.cs
+├── CancelVisitRequestCommandValidator.cs
+└── CancelVisitRequestResponse.cs
+```
+
+Controller chỉ nhận request và gọi `IMediator`. Logic kiểm tra scope, current host, request/campus status, và cancellation metadata nằm trong Handler/Domain Entity.
+
+
+## 8. Handler responsibilities
+
+`CancelVisitRequestCommandHandler` cần làm đủ các bước:
+
+1. Load `visit_requests` và campus instances liên quan.
+2. Resolve current user: `UserId`, `RoleCode`, `SubRole`, `PrimaryCampusId`.
+3. Kiểm tra permission `UC-136.CANCEL_VISIT_REQUEST`.
+4. Kiểm tra data scope:
+   - Visitor chỉ hủy request của chính họ.
+   - Host chỉ hủy campus instance mà `current_host_user_id = CurrentUser.UserId`.
+   - Staff Leader chỉ thao tác trong `CurrentUser.PrimaryCampusId`.
+   - HO chỉ thao tác request `MULTI_CAMPUS`.
+   - Admin không có route nghiệp vụ này.
+5. Kiểm tra trạng thái hợp lệ.
+6. Set `status = CANCELLED` và cancellation metadata.
+7. Ghi `visit_status_logs` với `status_owner_type = REQUEST` hoặc `CAMPUS_INSTANCE`.
+8. Gửi notification/email nếu nghiệp vụ yêu cầu.
+
+## 9. API route đề xuất
+
+```http
+POST /api/delegations/{visitRequestId}/cancel
+POST /api/delegations/{visitRequestId}/campuses/{visitInstanceId}/cancel
+```
+
+Không đặt route này trong public submit-form controller, vì đây là thao tác vòng đời delegation sau khi request đã tồn tại.

@@ -38,7 +38,7 @@ public sealed class RequirePermissionAttribute : Attribute, IAsyncAuthorizationF
         var roleCode = currentUser.RoleCode;
         var subRole = currentUser.SubRole;
 
-        if (string.IsNullOrEmpty(roleId) || string.IsNullOrEmpty(roleCode))
+        if (roleId is null || string.IsNullOrEmpty(roleCode))
         {
             context.Result = new ObjectResult(new { message = "You do not have permission to perform this action." })
             {
@@ -65,7 +65,7 @@ public sealed class RequirePermissionAttribute : Attribute, IAsyncAuthorizationF
 
         var permissionChecker = services.GetRequiredService<IPermissionChecker>();
         var allowed = await permissionChecker.HasPermissionAsync(
-            roleId, subRole, _permissionCode, _minimumLevel, context.HttpContext.RequestAborted);
+            roleId.Value, subRole, _permissionCode, _minimumLevel, context.HttpContext.RequestAborted);
 
         if (!allowed)
         {

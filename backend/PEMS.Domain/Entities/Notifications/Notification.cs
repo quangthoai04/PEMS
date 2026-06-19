@@ -1,4 +1,4 @@
-using System.ComponentModel.DataAnnotations;
+﻿using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace PEMS.Domain.Entities.Notifications;
@@ -8,10 +8,10 @@ public class Notification
 {
     [Key]
     [Column("notification_id")]
-    public string NotificationId { get; set; } = null!;
+    public ulong NotificationId { get; set; }
 
     [Column("recipient_user_id")]
-    public string RecipientUserId { get; set; } = null!;
+    public ulong RecipientUserId { get; set; }
 
     [Column("notification_type")]
     public string NotificationType { get; set; } = null!;
@@ -26,7 +26,7 @@ public class Notification
     public string? RelatedType { get; set; }
 
     [Column("related_id")]
-    public string? RelatedId { get; set; }
+    public ulong? RelatedId { get; set; }
 
     [Column("is_read")]
     public bool IsRead { get; set; }

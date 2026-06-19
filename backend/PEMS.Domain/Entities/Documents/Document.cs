@@ -1,4 +1,4 @@
-using System.ComponentModel.DataAnnotations;
+﻿using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace PEMS.Domain.Entities.Documents;
@@ -8,19 +8,19 @@ public class Document
 {
     [Key]
     [Column("document_id")]
-    public string DocumentId { get; set; } = null!;
+    public ulong DocumentId { get; set; }
 
     [Column("file_id")]
-    public string FileId { get; set; } = null!;
+    public ulong FileId { get; set; }
 
     [Column("owner_type")]
     public string OwnerType { get; set; } = "GENERAL";
 
     [Column("owner_id")]
-    public string? OwnerId { get; set; }
+    public ulong? OwnerId { get; set; }
 
     [Column("campus_id")]
-    public string? CampusId { get; set; }
+    public ulong? CampusId { get; set; }
 
     [Column("title")]
     public string Title { get; set; } = null!;
@@ -38,13 +38,13 @@ public class Document
     public DateTime CreatedAt { get; set; }
 
     [Column("created_by")]
-    public string? CreatedBy { get; set; }
+    public ulong? CreatedBy { get; set; }
 
     [Column("updated_at")]
     public DateTime? UpdatedAt { get; set; }
 
     [Column("updated_by")]
-    public string? UpdatedBy { get; set; }
+    public ulong? UpdatedBy { get; set; }
 
     public virtual UploadedFile File { get; set; } = null!;
 }

@@ -22,15 +22,19 @@ public sealed class CurrentUserService : ICurrentUserService
 
     public bool IsAuthenticated => Principal?.Identity?.IsAuthenticated ?? false;
 
-    public string? UserId =>
-        Principal?.FindFirstValue(PemsClaimTypes.UserId)
-        ?? Principal?.FindFirstValue(ClaimTypes.NameIdentifier);
+    // IDs are stored as plain strings in the JWT claims (BIGINT values) and parsed back to ulong here.
+    private static ulong? ParseId(string? value)
+        => ulong.TryParse(value, out var id) ? id : null;
+
+    public ulong? UserId =>
+        ParseId(Principal?.FindFirstValue(PemsClaimTypes.UserId)
+                ?? Principal?.FindFirstValue(ClaimTypes.NameIdentifier));
 
     public string? Email =>
         Principal?.FindFirstValue(PemsClaimTypes.Email)
         ?? Principal?.FindFirstValue(ClaimTypes.Email);
 
-    public string? RoleId => Principal?.FindFirstValue(PemsClaimTypes.RoleId);
+    public ulong? RoleId => ParseId(Principal?.FindFirstValue(PemsClaimTypes.RoleId));
 
     public string? RoleCode =>
         Principal?.FindFirstValue(PemsClaimTypes.RoleCode)
@@ -38,11 +42,11 @@ public sealed class CurrentUserService : ICurrentUserService
 
     public string? SubRole => Principal?.FindFirstValue(PemsClaimTypes.SubRole);
 
-    public string? PrimaryCampusId => Principal?.FindFirstValue(PemsClaimTypes.PrimaryCampusId);
+    public ulong? PrimaryCampusId => ParseId(Principal?.FindFirstValue(PemsClaimTypes.PrimaryCampusId));
 
-    public string? DepartmentId => Principal?.FindFirstValue(PemsClaimTypes.DepartmentId);
+    public ulong? DepartmentId => ParseId(Principal?.FindFirstValue(PemsClaimTypes.DepartmentId));
 
-    public string? SessionId => Principal?.FindFirstValue(PemsClaimTypes.SessionId);
+    public ulong? SessionId => ParseId(Principal?.FindFirstValue(PemsClaimTypes.SessionId));
 
     public string? LoginPortal => Principal?.FindFirstValue(PemsClaimTypes.LoginPortal);
 }

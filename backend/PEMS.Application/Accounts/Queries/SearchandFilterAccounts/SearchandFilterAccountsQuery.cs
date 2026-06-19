@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using MediatR;
 using PEMS.Application.Accounts.Common;
 using PEMS.Application.Common.Models;
@@ -19,8 +19,8 @@ public sealed class SearchandFilterAccountsQuery : IRequest<PaginatedResult<Acco
     public string? RoleCode { get; set; }
     public string? SubRole { get; set; }
     public string? Status { get; set; }
-    public string? CampusId { get; set; }
-    public string? DepartmentId { get; set; }
+    public ulong? CampusId { get; set; }
+    public ulong? DepartmentId { get; set; }
     public string? ProviderType { get; set; }
     public string? CreatedVia { get; set; }
     public string? AccountType { get; set; }   // INTERNAL | VISITOR | ALL

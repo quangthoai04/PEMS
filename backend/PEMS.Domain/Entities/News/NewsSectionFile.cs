@@ -1,4 +1,4 @@
-using PEMS.Domain.Entities.Documents;
+﻿using PEMS.Domain.Entities.Documents;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
@@ -9,13 +9,13 @@ public class NewsSectionFile
 {
     [Key]
     [Column("section_file_id")]
-    public string SectionFileId { get; set; } = null!;
+    public ulong SectionFileId { get; set; }
 
     [Column("section_id")]
-    public string SectionId { get; set; } = null!;
+    public ulong SectionId { get; set; }
 
     [Column("file_id")]
-    public string FileId { get; set; } = null!;
+    public ulong FileId { get; set; }
 
     [Column("usage_type")]
     public string UsageType { get; set; } = "ATTACHMENT";

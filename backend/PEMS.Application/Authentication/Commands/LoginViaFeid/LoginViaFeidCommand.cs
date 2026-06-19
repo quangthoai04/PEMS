@@ -1,4 +1,4 @@
-using MediatR;
+﻿using MediatR;
 using PEMS.Application.Authentication.Models;
 
 namespace PEMS.Application.Authentication.Commands.LoginviaFeid;
@@ -13,9 +13,9 @@ public sealed class LoginviaFeidCommand : IRequest<AuthResponse>
     /// <summary>The FEID id-token or authorization code returned by the FEID provider.</summary>
     public string IdTokenOrCode { get; set; } = string.Empty;
     public string LoginPortal { get; set; } = string.Empty;
-    public string? SelectedCampusId { get; set; }
+    public ulong? SelectedCampusId { get; set; }
 
-    // Set by the controller from the HTTP context — never bound from the body.
+    // Set by the controller from the HTTP context â€” never bound from the body.
     public string? IpAddress { get; set; }
     public string? UserAgent { get; set; }
 }

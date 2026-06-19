@@ -8,13 +8,17 @@ public class VisitStatusLog
 {
     [Key]
     [Column("visit_status_log_id")]
-    public long VisitStatusLogId { get; set; }
+    public ulong VisitStatusLogId { get; set; }
 
     [Column("visit_request_id")]
-    public string? VisitRequestId { get; set; }
+    public ulong? VisitRequestId { get; set; }
 
     [Column("visit_instance_id")]
-    public string? VisitInstanceId { get; set; }
+    public ulong? VisitInstanceId { get; set; }
+
+    // REQUEST = visit_requests.status; CAMPUS_INSTANCE = visit_request_campuses.status.
+    [Column("status_owner_type")]
+    public string StatusOwnerType { get; set; } = "CAMPUS_INSTANCE";
 
     [Column("old_status")]
     public string? OldStatus { get; set; }
@@ -23,7 +27,7 @@ public class VisitStatusLog
     public string NewStatus { get; set; } = null!;
 
     [Column("changed_by")]
-    public string? ChangedBy { get; set; }
+    public ulong? ChangedBy { get; set; }
 
     [Column("reason")]
     public string? Reason { get; set; }

@@ -1,4 +1,4 @@
-using System.ComponentModel.DataAnnotations;
+﻿using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace PEMS.Domain.Entities.ApiIntegrations;
@@ -8,7 +8,7 @@ public class ApiConfiguration
 {
     [Key]
     [Column("api_config_id")]
-    public string ApiConfigId { get; set; } = null!;
+    public ulong ApiConfigId { get; set; }
 
     [Column("api_code")]
     public string ApiCode { get; set; } = null!;
@@ -53,19 +53,19 @@ public class ApiConfiguration
     public DateTime CreatedAt { get; set; }
 
     [Column("created_by")]
-    public string? CreatedBy { get; set; }
+    public ulong? CreatedBy { get; set; }
 
     [Column("updated_at")]
     public DateTime? UpdatedAt { get; set; }
 
     [Column("updated_by")]
-    public string? UpdatedBy { get; set; }
+    public ulong? UpdatedBy { get; set; }
 
     [Column("deleted_at")]
     public DateTime? DeletedAt { get; set; }
 
     [Column("deleted_by")]
-    public string? DeletedBy { get; set; }
+    public ulong? DeletedBy { get; set; }
 
     public virtual ICollection<ApiUsageQuota> UsageQuotas { get; set; } = new List<ApiUsageQuota>();
     public virtual ICollection<ApiRequestLog> RequestLogs { get; set; } = new List<ApiRequestLog>();

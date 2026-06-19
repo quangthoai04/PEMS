@@ -1,4 +1,4 @@
-using System.ComponentModel.DataAnnotations;
+﻿using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace PEMS.Domain.Entities.Feedbacks;
@@ -8,16 +8,16 @@ public class Feedback
 {
     [Key]
     [Column("feedback_id")]
-    public string FeedbackId { get; set; } = null!;
+    public ulong FeedbackId { get; set; }
 
     [Column("visit_request_id")]
-    public string VisitRequestId { get; set; } = null!;
+    public ulong VisitRequestId { get; set; }
 
     [Column("visit_instance_id")]
-    public string? VisitInstanceId { get; set; }
+    public ulong? VisitInstanceId { get; set; }
 
     [Column("submitted_by_user_id")]
-    public string? SubmittedByUserId { get; set; }
+    public ulong? SubmittedByUserId { get; set; }
 
     [Column("submitter_role")]
     public string SubmitterRole { get; set; } = null!;
@@ -29,7 +29,7 @@ public class Feedback
     public string SubmitterNameSnapshot { get; set; } = null!;
 
     [Column("target_user_id")]
-    public string? TargetUserId { get; set; }
+    public ulong? TargetUserId { get; set; }
 
     [Column("target_role")]
     public string TargetRole { get; set; } = null!;

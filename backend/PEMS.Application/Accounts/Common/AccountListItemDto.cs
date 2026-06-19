@@ -1,4 +1,4 @@
-namespace PEMS.Application.Accounts.Common;
+﻿namespace PEMS.Application.Accounts.Common;
 
 /// <summary>
 /// One row in the Account List (UC-95) / Search &amp; Filter (UC-99) result.
@@ -8,7 +8,7 @@ namespace PEMS.Application.Accounts.Common;
 /// </summary>
 public sealed class AccountListItemDto
 {
-    public string UserId { get; init; } = default!;
+    public ulong UserId { get; init; }
     public string Email { get; init; } = default!;
     public string FullName { get; init; } = default!;
     public string? Phone { get; init; }
@@ -21,11 +21,11 @@ public sealed class AccountListItemDto
     public string RoleName { get; init; } = default!;
     public string? SubRole { get; init; }
 
-    public string? CampusId { get; init; }
+    public ulong? CampusId { get; init; }
     public string? CampusCode { get; init; }
     public string? CampusName { get; init; }
 
-    public string? DepartmentId { get; init; }
+    public ulong? DepartmentId { get; init; }
     public string? DepartmentName { get; init; }
 
     public string Status { get; init; } = default!;

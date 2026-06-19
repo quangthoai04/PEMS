@@ -15,7 +15,7 @@ public sealed class UserProvisionService : IUserProvisionService
 
     public UserProvisionService(IApplicationDbContext db) => _db = db;
 
-    public async Task<string> EnsureVisitorAccountAsync(
+    public async Task<ulong> EnsureVisitorAccountAsync(
         string email,
         string fullName,
         string? phone,
@@ -27,11 +27,11 @@ public sealed class UserProvisionService : IUserProvisionService
         // Return existing account without modification
         var existing = await _db.Users.AsNoTracking()
             .Where(u => u.Email == normalized)
-            .Select(u => u.UserId)
+            .Select(u => (ulong?)u.UserId)
             .FirstOrDefaultAsync(cancellationToken);
 
         if (existing is not null)
-            return existing;
+            return existing.Value;
 
         // Look up the Visitor role
         var role = await _db.Roles.AsNoTracking()
@@ -41,7 +41,7 @@ public sealed class UserProvisionService : IUserProvisionService
 
         var newUser = new User
         {
-            UserId      = Guid.NewGuid().ToString(),
+            // UserId is DB-generated (BIGINT AUTO_INCREMENT).
             FullName    = fullName.Trim(),
             Email       = normalized,
             Phone       = phone?.Trim(),

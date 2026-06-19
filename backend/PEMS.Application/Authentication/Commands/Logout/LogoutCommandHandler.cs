@@ -27,8 +27,8 @@ public sealed class LogoutCommandHandler : IRequestHandler<LogoutCommand, Messag
 
         // Revoke the session bound to the current access token.
         var sessionId = _currentUser.SessionId;
-        if (!string.IsNullOrEmpty(sessionId))
-            await _sessionService.RevokeSessionAsync(sessionId, SessionRevokeReasons.UserLogout, userId, cancellationToken);
+        if (sessionId.HasValue)
+            await _sessionService.RevokeSessionAsync(sessionId.Value, SessionRevokeReasons.UserLogout, userId, cancellationToken);
 
         // Also revoke the session referenced by an explicit refresh token, if different.
         if (!string.IsNullOrWhiteSpace(request.RefreshToken))

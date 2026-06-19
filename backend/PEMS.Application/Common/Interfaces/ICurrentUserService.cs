@@ -7,13 +7,13 @@ namespace PEMS.Application.Common.Interfaces;
 public interface ICurrentUserService
 {
     bool IsAuthenticated { get; }
-    string? UserId { get; }
+    ulong? UserId { get; }
     string? Email { get; }
-    string? RoleId { get; }
+    ulong? RoleId { get; }
     string? RoleCode { get; }
     string? SubRole { get; }
-    string? PrimaryCampusId { get; }
-    string? DepartmentId { get; }
-    string? SessionId { get; }
+    ulong? PrimaryCampusId { get; }
+    ulong? DepartmentId { get; }
+    ulong? SessionId { get; }
     string? LoginPortal { get; }
 }
