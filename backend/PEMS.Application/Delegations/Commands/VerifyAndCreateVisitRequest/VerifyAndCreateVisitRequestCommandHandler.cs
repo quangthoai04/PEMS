@@ -4,6 +4,7 @@ using PEMS.Application.Common.DTOs;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Domain.Constants;
+using Microsoft.Extensions.Logging;
 using PEMS.Domain.Entities.Delegations;
 
 namespace PEMS.Application.Delegations.Commands.VerifyAndCreateVisitRequest;
@@ -18,6 +19,7 @@ public sealed class VerifyAndCreateVisitRequestCommandHandler
     private readonly IApprovalRoutingService _approvalRouting;
     private readonly IEmailService _emailService;
     private readonly IDateTimeService _clock;
+    private readonly ILogger<VerifyAndCreateVisitRequestCommandHandler> _logger;
 
     public VerifyAndCreateVisitRequestCommandHandler(
         IApplicationDbContext db,
@@ -26,7 +28,8 @@ public sealed class VerifyAndCreateVisitRequestCommandHandler
         IUserProvisionService userProvisionService,
         IApprovalRoutingService approvalRouting,
         IEmailService emailService,
-        IDateTimeService clock)
+        IDateTimeService clock,
+        ILogger<VerifyAndCreateVisitRequestCommandHandler> logger)
     {
         _db                   = db;
         _otpService           = otpService;
@@ -35,6 +38,7 @@ public sealed class VerifyAndCreateVisitRequestCommandHandler
         _approvalRouting      = approvalRouting;
         _emailService         = emailService;
         _clock                = clock;
+        _logger               = logger;
     }
 
     public async Task<VerifyAndCreateVisitRequestResponse> Handle(
@@ -141,12 +145,46 @@ public sealed class VerifyAndCreateVisitRequestCommandHandler
         }
 
         // ── 7. Send confirmation email AFTER commit (fire-and-forget — do not block response) ──
-        _ = _emailService.SendVisitRequestConfirmationAsync(
-            contactEmail,
-            contactName,
-            visitRequest.RequestCode,
-            contactEmail,
-            CancellationToken.None);
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var minTime = request.VisitSlots.Min(s => s.StartDatetime);
+                var maxTime = request.VisitSlots.Max(s => s.EndDatetime);
+                var plannedTimeText = minTime.Date == maxTime.Date 
+                    ? $"{minTime:dd/MM/yyyy} ({minTime:HH:mm} - {maxTime:HH:mm})"
+                    : $"{minTime:dd/MM/yyyy HH:mm} - {maxTime:dd/MM/yyyy HH:mm}";
+
+                await _emailService.SendVisitorAccountCreatedOrLinkedEmailAsync(
+                    contactEmail,
+                    contactName,
+                    request.DelegationName,
+                    visitRequest.RequestCode,
+                    request.VisitScope,
+                    plannedTimeText,
+                    CancellationToken.None);
+
+                if (!string.Equals(email, contactEmail, StringComparison.OrdinalIgnoreCase))
+                {
+                    await _emailService.SendRegistrantConfirmationAsync(
+                        email,
+                        request.RegisterFullName,
+                        contactName,
+                        contactEmail,
+                        request.DelegationName,
+                        visitRequest.RequestCode,
+                        CancellationToken.None);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(
+                    ex,
+                    "Failed to send VISITOR account notification email for visit request {VisitRequestId} to {ContactEmail}",
+                    visitRequest.VisitRequestId,
+                    contactEmail);
+            }
+        });
 
         return new VerifyAndCreateVisitRequestResponse(
             visitRequest.VisitRequestId,

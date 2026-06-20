@@ -190,6 +190,7 @@ public sealed class LoginviaSSOCommandHandler : IRequestHandler<LoginviaSSOComma
             };
             user.AuthProviders.Add(provider);
             _db.UserAuthProviders.Add(provider);
+            await _db.SaveChangesAsync(cancellationToken);
             return provider;
         }
 

@@ -71,9 +71,18 @@ public static class VisitRequestFormValidationRules
         {
             slot.RuleFor(s => s.CampusId)
                 .NotEmpty().WithMessage("Vui lòng chọn cơ sở.");
+            
+            slot.RuleFor(s => s.StartDatetime)
+                .Must(start => start >= DateTime.Now.AddHours(72))
+                .WithMessage("Thời gian bắt đầu phải ít nhất 72 giờ so với thời điểm hiện tại.");
+
             slot.RuleFor(s => s)
                 .Must(s => s.EndDatetime > s.StartDatetime)
                 .WithMessage("Thời gian kết thúc phải sau thời gian bắt đầu.");
+
+            slot.RuleFor(s => s)
+                .Must(s => (s.EndDatetime - s.StartDatetime).TotalHours >= 3)
+                .WithMessage("Thời gian tham quan tối thiểu 3 giờ.");
         });
 
         // ── Guests ────────────────────────────────────────────────────────────
@@ -92,9 +101,9 @@ public static class VisitRequestFormValidationRules
             guest.RuleFor(g => g.JobTitle)
                 .MaximumLength(150);
             guest.RuleFor(g => g.Email)
+                .NotEmpty().WithMessage("Email khách không được để trống.")
                 .EmailAddress().WithMessage("Email khách không đúng định dạng.")
-                .MaximumLength(150)
-                .When(g => !string.IsNullOrWhiteSpace(g.Email));
+                .MaximumLength(150);
         });
 
         // ── Support team / contact ────────────────────────────────────────────

@@ -1,14 +1,17 @@
 import React, { useEffect, useState } from 'react';
 import { X, Loader2, AlertCircle, ChevronLeft, ChevronRight, Check, CheckCircle2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { useVisitRequestForm } from '../../features/visit-request/hooks/useVisitRequestForm';
+import { useVisitRequestForm, DEFAULT_VISIT_REQUEST_VALUES } from '../../features/visit-request/hooks/useVisitRequestForm';
 import { RegisterInfoSection } from '../../features/visit-request/components/sections/RegisterInfoSection';
 import { VisitInfoSection } from '../../features/visit-request/components/sections/VisitInfoSection';
 import { VisitorListSection } from '../../features/visit-request/components/sections/VisitorListSection';
 import { ContactSection } from '../../features/visit-request/components/sections/ContactSection';
 import { AdditionalSection } from '../../features/visit-request/components/sections/AdditionalSection';
 import { OtpVerificationModal } from '../../features/visit-request/components/OtpVerificationModal';
+import { findCampusTimeOverlaps } from '../../features/visit-request/schema/visitRequest.schema';
+import type { VisitRequestSchema } from '../../features/visit-request/schema/visitRequest.schema';
 import type { VerifyResponse } from '../../features/visit-request/api/visitRequestApi';
+import { loadVisitRequestDraft, clearVisitRequestDraft } from '../../features/visit-request/utils/visitRequestDraftStorage';
 
 const STEPS = [
   { num: 1, label: 'Thông tin đăng ký' },
@@ -25,8 +28,14 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
   const [currentStep, setCurrentStep] = useState(1);
   const [successResult, setSuccessResult] = useState<VerifyResponse | null>(null);
   const [stepError, setStepError] = useState<string | null>(null);
+  const [showOverlapConfirm, setShowOverlapConfirm] = useState(false);
+  const [stepAttempted, setStepAttempted] = useState<Record<number, boolean>>({});
+
+  const [pendingDraft, setPendingDraft] = useState<ReturnType<typeof loadVisitRequestDraft> | null>(null);
+  const [showRestoreDraftModal, setShowRestoreDraftModal] = useState(false);
 
   const handleSuccess = (result: VerifyResponse) => {
+    clearVisitRequestDraft();
     setSuccessResult(result);
     // Auto-close after 4 seconds
     setTimeout(() => {
@@ -55,6 +64,8 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
     verifyOtp,
     resendOtp,
     cancelOtp,
+    setDraftHydrated,
+    isRestoringDraftRef,
   } = useVisitRequestForm(handleSuccess);
 
   useEffect(() => {
@@ -73,6 +84,87 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
   }, [isOpen]);
 
   useEffect(() => {
+    if (!isOpen) return;
+
+    const draft = loadVisitRequestDraft();
+    if (draft?.data) {
+      setPendingDraft(draft);
+      setShowRestoreDraftModal(true);
+      setDraftHydrated(false);
+    } else {
+      setDraftHydrated(true);
+    }
+  }, [isOpen, setDraftHydrated]);
+
+  const handleRestoreDraft = () => {
+    if (pendingDraft?.data) {
+      const restoredValues: VisitRequestSchema = {
+        ...DEFAULT_VISIT_REQUEST_VALUES,
+        ...pendingDraft.data,
+        registerInfo: {
+          ...DEFAULT_VISIT_REQUEST_VALUES.registerInfo,
+          ...pendingDraft.data.registerInfo,
+        },
+        contactPoint: {
+          ...DEFAULT_VISIT_REQUEST_VALUES.contactPoint,
+          ...pendingDraft.data.contactPoint,
+        },
+        visits: pendingDraft.data.visits?.length
+          ? pendingDraft.data.visits
+          : DEFAULT_VISIT_REQUEST_VALUES.visits,
+        visitors: pendingDraft.data.visitors?.length
+          ? pendingDraft.data.visitors
+          : DEFAULT_VISIT_REQUEST_VALUES.visitors,
+        supportTeam: pendingDraft.data.supportTeam?.length
+          ? pendingDraft.data.supportTeam
+          : DEFAULT_VISIT_REQUEST_VALUES.supportTeam,
+      } as VisitRequestSchema;
+
+      isRestoringDraftRef.current = true;
+
+      form.reset(restoredValues, {
+        keepDefaultValues: false,
+        keepDirty: false,
+        keepTouched: false,
+      });
+
+      visitFields.replace(restoredValues.visits);
+      visitorFields.replace(restoredValues.visitors);
+      supportTeamFields.replace(restoredValues.supportTeam);
+
+      isRestoringDraftRef.current = false;
+    }
+    setShowRestoreDraftModal(false);
+    setPendingDraft(null);
+    setDraftHydrated(true);
+  };
+
+  const handleDiscardDraft = () => {
+    clearVisitRequestDraft();
+    setShowRestoreDraftModal(false);
+    setPendingDraft(null);
+    setDraftHydrated(true);
+  };
+
+  const handleCancelForm = () => {
+    const hasDraft = !!loadVisitRequestDraft();
+
+    if (!hasDraft) {
+      onClose();
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Bạn có chắc muốn hủy form đăng ký? Thông tin đã nhập sẽ bị xóa."
+    );
+
+    if (!confirmed) return;
+
+    clearVisitRequestDraft();
+    onClose();
+  };
+
+  useEffect(() => {
     if (!isOpen) {
       setCurrentStep(1);
       setSuccessResult(null);
@@ -81,19 +173,33 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
 
   const handleNextStep = async () => {
     setStepError(null);
+    setStepAttempted((prev) => ({ ...prev, [currentStep]: true }));
+
     const stepFields: Record<number, string[]> = {
       1: ['registerInfo', 'delegationName', 'visitMode', 'visits', 'purpose', 'workingContent'],
       2: ['visitors', 'supportTeam', 'contactPoint'],
     };
     const fields = stepFields[currentStep];
     if (!fields) { setCurrentStep((s) => s + 1); return; }
+    
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const valid = await form.trigger(fields as any);
-    if (valid) {
-      setCurrentStep((s) => s + 1);
-    } else {
+    if (!valid) {
       setStepError('Vui lòng điền đầy đủ và đúng các trường bắt buộc trước khi tiếp tục.');
+      return;
     }
+
+    if (currentStep === 1) {
+      const values = form.getValues();
+      const overlaps = findCampusTimeOverlaps(values.visits || []);
+      const isConfirmed = values.timeOverlapConfirmed;
+      if (values.visitMode === 'multiple' && overlaps.length > 0 && !isConfirmed) {
+        setShowOverlapConfirm(true);
+        return; // wait for confirmation
+      }
+    }
+
+    setCurrentStep((s) => s + 1);
   };
 
   return (
@@ -105,7 +211,7 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6"
-            onClick={onClose}
+            onClick={handleCancelForm}
           >
             <motion.div
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
@@ -163,7 +269,7 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
                   </p>
                 </div>
                 <button
-                  onClick={onClose}
+                  onClick={handleCancelForm}
                   className="absolute top-4 right-4 sm:top-5 sm:right-6 p-2 text-white/70 hover:text-white hover:bg-white/20 rounded-full transition-all z-20"
                 >
                   <X className="w-5 h-5 sm:w-6 sm:h-6" />
@@ -236,7 +342,7 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
                         className="space-y-12"
                       >
                         <RegisterInfoSection form={form} />
-                        <VisitInfoSection form={form} visitFields={visitFields} />
+                        <VisitInfoSection form={form} visitFields={visitFields} showErrors={!!stepAttempted[1]} />
                       </motion.div>
                     )}
 
@@ -285,7 +391,7 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
                   {currentStep === 1 ? (
                     <button
                       type="button"
-                      onClick={onClose}
+                      onClick={handleCancelForm}
                       disabled={isSubmitting}
                       className="px-6 py-3 rounded-xl font-bold text-gray-600 bg-white border-2 border-gray-200 hover:bg-gray-50 hover:text-gray-900 transition-colors disabled:opacity-50"
                     >
@@ -369,6 +475,102 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
           onCancel={cancelOtp}
         />
       )}
+
+      {/* Overlap Confirm Modal */}
+      <AnimatePresence>
+        {showOverlapConfirm && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[200] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl"
+            >
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center shrink-0">
+                  <AlertCircle className="w-6 h-6 text-amber-600" />
+                </div>
+                <h3 className="text-lg font-bold text-gray-900">Xác nhận lịch trình trùng thời gian</h3>
+              </div>
+              <p className="text-sm text-gray-600 mb-6">
+                Một số cơ sở trong lịch trình có thời gian bắt đầu/kết thúc bị chồng lên nhau. Điều này có thể gây khó khăn cho quá trình tiếp đón.
+                <br /><br />
+                Bạn có chắc chắn muốn tiếp tục không?
+              </p>
+              <div className="flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowOverlapConfirm(false)}
+                  className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-bold rounded-xl transition-colors"
+                >
+                  Kiểm tra lại
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    form.setValue('timeOverlapConfirmed', true, {
+                      shouldValidate: false,
+                      shouldDirty: true,
+                    });
+                    setShowOverlapConfirm(false);
+                    setCurrentStep((s) => s + 1);
+                  }}
+                  className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-bold rounded-xl transition-colors shadow-lg shadow-amber-500/30"
+                >
+                  Vẫn tiếp tục
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Restore Draft Modal */}
+      <AnimatePresence>
+        {showRestoreDraftModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[300] bg-black/50 flex items-center justify-center p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6"
+            >
+              <h3 className="text-lg font-bold text-gray-900 mb-2">
+                Khôi phục thông tin đã nhập?
+              </h3>
+              <p className="text-sm text-gray-600 mb-6">
+                Hệ thống tìm thấy bản nháp form đăng ký tham quan bạn đã nhập trước đó. Bạn có muốn khôi phục để tiếp tục không?
+              </p>
+              <div className="flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={handleDiscardDraft}
+                  className="px-4 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-bold"
+                >
+                  Không, nhập lại
+                </button>
+                <button
+                  type="button"
+                  onClick={handleRestoreDraft}
+                  className="px-4 py-2 rounded-xl bg-[#004c91] hover:bg-[#013565] text-white text-sm font-bold"
+                >
+                  Khôi phục
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </>
   );
 }

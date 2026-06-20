@@ -3,6 +3,7 @@ import { Controller, type UseFormReturn, type UseFieldArrayReturn } from 'react-
 import { Calendar, Clock, Plus, X, ChevronDown } from 'lucide-react';
 import { motion } from 'motion/react';
 import type { VisitRequestSchema } from '../../schema/visitRequest.schema';
+import { findCampusTimeOverlaps } from '../../schema/visitRequest.schema';
 import { FormField, inputCls } from '../shared/FormField';
 import { SectionTitle } from './RegisterInfoSection';
 
@@ -14,17 +15,48 @@ const CAMPUS_OPTIONS = [
   { value: 'QN',  label: 'Quy Nhơn' },
 ];
 
+function findDuplicateCampusIndexes(visits: Array<{ campus?: string }>) {
+  const seen = new Map<string, number>();
+  const duplicated = new Set<number>();
+
+  visits.forEach((visit, index) => {
+    const campus = visit.campus?.trim();
+    if (!campus) return;
+
+    if (seen.has(campus)) {
+      duplicated.add(seen.get(campus)!);
+      duplicated.add(index);
+    } else {
+      seen.set(campus, index);
+    }
+  });
+
+  return duplicated;
+}
+
 interface Props {
   form: UseFormReturn<VisitRequestSchema>;
   visitFields: UseFieldArrayReturn<VisitRequestSchema, 'visits'>;
+  showErrors?: boolean;
 }
 
-export const VisitInfoSection: React.FC<Props> = ({ form, visitFields }) => {
-  const { register, control, watch, formState: { errors, touchedFields } } = form;
+export const VisitInfoSection: React.FC<Props> = ({ form, visitFields, showErrors }) => {
+  const { register, control, watch, trigger, formState: { errors, touchedFields } } = form;
   const visitMode = watch('visitMode');
+  const visits = watch('visits');
   const e = errors;
-  // Array-level error from the schema (scope ↔ campus count, no duplicate campus).
-  const visitsMessage = (e.visits as { message?: string } | undefined)?.message;
+  const visitsMessage = (e.visits as any)?.root?.message || (e.visits as any)?.message;
+
+  const overlaps = React.useMemo(() => findCampusTimeOverlaps(visits || []), [visits]);
+  const duplicateCampusIndexes = React.useMemo(() => findDuplicateCampusIndexes(visits || []), [visits]);
+
+  React.useEffect(() => {
+    form.setValue('timeOverlapConfirmed', false, {
+      shouldValidate: false,
+      shouldDirty: false,
+      shouldTouch: false,
+    });
+  }, [visitMode, JSON.stringify(visits), form]);
 
   return (
     <section>
@@ -86,10 +118,25 @@ export const VisitInfoSection: React.FC<Props> = ({ form, visitFields }) => {
                 <div className="space-y-4 mt-2">
                   {visitFields.fields.map((field, index) => {
                     const slotErrors = e.visits?.[index];
+                    const isOverlap = overlaps.some(o => o.firstIndex === index || o.secondIndex === index);
+                    const isDuplicateCampus = duplicateCampusIndexes.has(index);
+                    
+                    const shouldShowStartError = showErrors || touchedFields.visits?.[index]?.startDatetime;
+                    const shouldShowEndError = showErrors || touchedFields.visits?.[index]?.endDatetime;
+                    const startHasError = shouldShowStartError && !!slotErrors?.startDatetime;
+                    const endHasError = shouldShowEndError && !!slotErrors?.endDatetime;
+
                     return (
                       <div
                         key={field.id}
-                        className="flex flex-col xl:flex-row items-start gap-3 w-full pb-4 border-b border-gray-100 last:border-b-0 last:pb-0 relative"
+                        className={[
+                          'flex flex-col xl:flex-row items-start gap-3 w-full pb-4 border-b last:border-b-0 last:pb-0 relative rounded-xl transition-colors',
+                          isDuplicateCampus
+                            ? 'border-red-200 bg-red-50/60 p-3 -mx-3'
+                            : isOverlap 
+                              ? 'border-amber-200 bg-amber-50/50 p-3 -mx-3' 
+                              : 'border-gray-100'
+                        ].join(' ')}
                       >
                         {visitMode === 'multiple' && visitFields.fields.length > 1 && (
                           <button
@@ -119,7 +166,7 @@ export const VisitInfoSection: React.FC<Props> = ({ form, visitFields }) => {
                           </div>
                           {/* Reserved error slot keeps every column the same height → no row shift */}
                           <div className="min-h-[20px] mt-1">
-                            {slotErrors?.campus && (
+                            {showErrors && slotErrors?.campus && (
                               <p className="text-xs text-red-600 font-medium leading-5">⚠ {slotErrors.campus.message}</p>
                             )}
                           </div>
@@ -136,7 +183,7 @@ export const VisitInfoSection: React.FC<Props> = ({ form, visitFields }) => {
                               {...register(`visits.${index}.startDatetime`)}
                               className={[
                                 'w-full px-4 py-2.5 pl-10 rounded-xl border outline-none text-sm font-medium bg-white shadow-sm',
-                                slotErrors?.startDatetime
+                                startHasError
                                   ? 'border-red-400 focus:border-red-500 focus:ring-1 focus:ring-red-400'
                                   : 'border-gray-300 focus:border-[#f37021] focus:ring-1 focus:ring-[#f37021]',
                               ].join(' ')}
@@ -144,7 +191,7 @@ export const VisitInfoSection: React.FC<Props> = ({ form, visitFields }) => {
                             <Calendar className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#004c91] pointer-events-none" />
                           </div>
                           <div className="min-h-[20px] mt-1">
-                            {slotErrors?.startDatetime && (
+                            {startHasError && (
                               <p className="text-xs text-red-600 font-medium leading-5">⚠ {slotErrors.startDatetime.message}</p>
                             )}
                           </div>
@@ -161,7 +208,7 @@ export const VisitInfoSection: React.FC<Props> = ({ form, visitFields }) => {
                               {...register(`visits.${index}.endDatetime`)}
                               className={[
                                 'w-full px-4 py-2.5 pl-10 rounded-xl border outline-none text-sm font-medium bg-white shadow-sm',
-                                slotErrors?.endDatetime
+                                endHasError
                                   ? 'border-red-400 focus:border-red-500 focus:ring-1 focus:ring-red-400'
                                   : 'border-gray-300 focus:border-[#f37021] focus:ring-1 focus:ring-[#f37021]',
                               ].join(' ')}
@@ -169,7 +216,7 @@ export const VisitInfoSection: React.FC<Props> = ({ form, visitFields }) => {
                             <Clock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#004c91] pointer-events-none" />
                           </div>
                           <div className="min-h-[20px] mt-1">
-                            {slotErrors?.endDatetime && (
+                            {endHasError && (
                               <p className="text-xs text-red-600 font-medium leading-5">⚠ {slotErrors.endDatetime.message}</p>
                             )}
                           </div>
@@ -191,7 +238,14 @@ export const VisitInfoSection: React.FC<Props> = ({ form, visitFields }) => {
                 </div>
               </FormField>
 
-              {visitsMessage && (
+              {overlaps.length > 0 && (
+                <p className="mt-3 text-xs text-amber-600 font-medium flex items-center gap-1 bg-amber-50 p-2.5 rounded-lg border border-amber-200">
+                  <span className="shrink-0">⚠</span>
+                  Một số cơ sở trong lịch trình có thời gian bắt đầu/kết thúc bị chồng lên nhau. Vui lòng kiểm tra lại trước khi tiếp tục.
+                </p>
+              )}
+
+              {showErrors && visitsMessage && visitsMessage !== 'OVERLAP_UNCONFIRMED' && (
                 <p className="mt-3 text-xs text-red-600 font-medium flex items-center gap-1">
                   <span className="shrink-0">⚠</span>{visitsMessage}
                 </p>

@@ -392,10 +392,7 @@ export const ContactSection: React.FC<Props> = ({
           </table>
         </div>
 
-        <p className="mt-2 text-xs text-slate-500 leading-5">
-          Email đầu mối liên hệ sẽ được dùng để tạo tài khoản VISITOR. Lần sau, đầu mối liên hệ có thể đăng nhập
-          bằng Google với email này để theo dõi yêu cầu đã gửi.
-        </p>
+
       </div>
     </div>
   );

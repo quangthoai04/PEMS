@@ -15,6 +15,11 @@ export interface VerifyResponse {
   message: string;
 }
 
+function toVietnamIso(value: string) {
+  if (!value) return '';
+  return `${value}:00+07:00`;
+}
+
 function mapToPayload(data: VisitRequestSchema) {
   return {
     registerFullName: data.registerInfo.fullName,
@@ -29,8 +34,8 @@ function mapToPayload(data: VisitRequestSchema) {
 
     visitSlots: data.visits.map((v) => ({
       campusId: v.campus,
-      startDatetime: v.startDatetime,
-      endDatetime: v.endDatetime,
+      startDatetime: toVietnamIso(v.startDatetime),
+      endDatetime: toVietnamIso(v.endDatetime),
     })),
 
     purpose: data.purpose,

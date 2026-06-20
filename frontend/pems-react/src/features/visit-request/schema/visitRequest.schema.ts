@@ -4,6 +4,38 @@ import { isValidPhoneNumber } from 'libphonenumber-js';
 const MIN_ADVANCE_HOURS = 72;
 const MIN_DURATION_HOURS = 3;
 
+export type VisitCampusRow = {
+  campus: string;
+  startDatetime: string;
+  endDatetime: string;
+};
+
+export function isTimeOverlap(a: VisitCampusRow, b: VisitCampusRow): boolean {
+  if (!a.startDatetime || !a.endDatetime || !b.startDatetime || !b.endDatetime) return false;
+  const startA = new Date(a.startDatetime).getTime();
+  const endA = new Date(a.endDatetime).getTime();
+  const startB = new Date(b.startDatetime).getTime();
+  const endB = new Date(b.endDatetime).getTime();
+  return startA < endB && startB < endA;
+}
+
+export function findCampusTimeOverlaps(visits: VisitCampusRow[]) {
+  const conflicts: Array<{ firstIndex: number; secondIndex: number; campusId: string }> = [];
+  for (let i = 0; i < visits.length; i++) {
+    for (let j = i + 1; j < visits.length; j++) {
+      const a = visits[i];
+      const b = visits[j];
+      if (!a.campus || !b.campus) continue;
+      // Duplicate campus is a hard error handled separately. Track overlap for DIFFERENT campuses.
+      if (a.campus === b.campus) continue;
+      if (isTimeOverlap(a, b)) {
+        conflicts.push({ firstIndex: i, secondIndex: j, campusId: a.campus });
+      }
+    }
+  }
+  return conflicts;
+}
+
 const phoneSchema = z
   .string()
   .min(1, 'Số điện thoại không được để trống')
@@ -103,19 +135,29 @@ export const visitRequestSchema = z.object({
   language: z.enum(['english', 'vietnamese'], 'Vui lòng chọn ngôn ngữ sử dụng'),
   vehicle: z.string().optional().default(''),
   notes: z.string().optional().default(''),
+  timeOverlapConfirmed: z.boolean().optional().default(false),
 }).superRefine((data, ctx) => {
   // Campus count must match the chosen scope. MULTI_CAMPUS never auto-downgrades —
   // it stays "Liên cơ sở" and the user is told to add a second campus.
   const codes = data.visits.map((v) => v.campus?.trim()).filter(Boolean);
   const distinct = new Set(codes);
 
-  if (data.visitMode === 'multiple' && distinct.size < 2) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ['visits'],
-      message:
-        'Yêu cầu liên cơ sở cần ít nhất 2 cơ sở. Vui lòng thêm cơ sở thứ hai hoặc đổi sang Một cơ sở.',
-    });
+  if (data.visitMode === 'multiple') {
+    const hasDuplicateCampus = codes.length !== distinct.size;
+
+    if (hasDuplicateCampus) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['visits'],
+        message: 'Không được chọn trùng cơ sở trong yêu cầu liên cơ sở. Vui lòng chọn cơ sở khác.',
+      });
+    } else if (distinct.size < 2) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['visits'],
+        message: 'Yêu cầu liên cơ sở cần ít nhất 2 cơ sở. Vui lòng thêm cơ sở thứ hai hoặc đổi sang Một cơ sở.',
+      });
+    }
   }
 
   if (data.visitMode === 'single' && distinct.size !== 1) {
@@ -126,13 +168,6 @@ export const visitRequestSchema = z.object({
     });
   }
 
-  if (codes.length !== distinct.size) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ['visits'],
-      message: 'Không được chọn trùng cơ sở.',
-    });
-  }
 });
 
 export type VisitRequestSchema = z.infer<typeof visitRequestSchema>;

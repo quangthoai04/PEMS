@@ -24,11 +24,26 @@ public interface IEmailService
     /// <summary>
     /// Sends the submission-confirmed email after OTP passes and the request is created.
     /// Includes the request code, pending-approval message, and the provisioned account email.
+    /// Sent to the contact person.
     /// </summary>
-    Task SendVisitRequestConfirmationAsync(
+    Task SendVisitorAccountCreatedOrLinkedEmailAsync(
         string toEmail,
-        string fullName,
+        string contactFullName,
+        string delegationName,
         string requestCode,
-        string accountEmail,
+        string visitScope,
+        string plannedTime,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Sends a short confirmation email to the registrant if they are not the contact person.
+    /// </summary>
+    Task SendRegistrantConfirmationAsync(
+        string toEmail,
+        string registrantFullName,
+        string contactFullName,
+        string contactEmail,
+        string delegationName,
+        string requestCode,
         CancellationToken cancellationToken = default);
 }
