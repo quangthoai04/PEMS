@@ -5661,3 +5661,329 @@ FROM information_schema.columns
 WHERE table_schema = DATABASE()
   AND table_name = 'visit_request_campuses'
   AND column_name IN ('host_assigned_by','host_assigned_at','host_assignment_source');
+
+
+-- =====================================================================
+-- APPENDED STATUS COVERAGE SEED - SAFE RUN ALL
+-- =====================================================================
+
+-- =====================================================================
+-- PEMS v8.2 - STATUS COVERAGE SEED ADD-ON
+-- Purpose:
+--   Seed thêm dữ liệu kiểm thử để phủ đầy đủ các case status chính
+--   nhưng vẫn giữ đúng logic nghiệp vụ PEMS:
+--   - visit_requests.status chỉ là trạng thái duyệt/từ chối/hủy tổng.
+--   - visit_request_campuses.status là tiến độ vận hành từng campus.
+--   - CANCELLED chỉ mô phỏng trường hợp sau khi đã APPROVED và có metadata hủy.
+--   - WAITING_REQUEST_APPROVAL không có host assignment.
+--   - Operational campus statuses luôn thuộc request APPROVED và có current host.
+-- How to run:
+--   Run after pems_full.sql / pems_full(3)(4).sql on DEV/LOCAL database.
+-- =====================================================================
+
+USE pems_db;
+SET NAMES utf8mb4;
+SET @seed_now = IFNULL(@seed_now, NOW());
+SET @OLD_SQL_SAFE_UPDATES_STATUS_COVERAGE = @@SQL_SAFE_UPDATES;
+SET SQL_SAFE_UPDATES = 0;
+
+START TRANSACTION;
+
+-- ---------------------------------------------------------------------
+-- Resolve existing canonical seed references.
+-- ---------------------------------------------------------------------
+SELECT role_id INTO @role_visitor FROM roles WHERE role_code = 'VISITOR' LIMIT 1;
+SELECT campus_id INTO @campus_hn FROM campuses WHERE campus_code = 'HN' LIMIT 1;
+SELECT campus_id INTO @campus_hcm FROM campuses WHERE campus_code = 'HCM' LIMIT 1;
+SELECT campus_id INTO @campus_dn FROM campuses WHERE campus_code = 'DN' LIMIT 1;
+SELECT campus_id INTO @campus_ct FROM campuses WHERE campus_code = 'CT' LIMIT 1;
+SELECT campus_id INTO @campus_qn FROM campuses WHERE campus_code = 'QN' LIMIT 1;
+
+SELECT user_id INTO @u_ho_seed FROM users u JOIN roles r ON r.role_id = u.role_id WHERE r.role_code = 'HO' AND u.status = 'ACTIVE' ORDER BY u.user_id LIMIT 1;
+SELECT user_id INTO @u_stafflead_hn_seed FROM users u JOIN roles r ON r.role_id = u.role_id WHERE r.role_code = 'STAFF' AND u.sub_role = 'Leader' AND u.primary_campus_id = @campus_hn AND u.status = 'ACTIVE' ORDER BY u.user_id LIMIT 1;
+SELECT user_id INTO @u_staff_hn_seed FROM users u JOIN roles r ON r.role_id = u.role_id WHERE r.role_code = 'STAFF' AND u.sub_role = 'Staff' AND u.primary_campus_id = @campus_hn AND u.status = 'ACTIVE' ORDER BY u.user_id LIMIT 1;
+SELECT user_id INTO @u_stafflead_hcm_seed FROM users u JOIN roles r ON r.role_id = u.role_id WHERE r.role_code = 'STAFF' AND u.sub_role = 'Leader' AND u.primary_campus_id = @campus_hcm AND u.status = 'ACTIVE' ORDER BY u.user_id LIMIT 1;
+SELECT user_id INTO @u_staff_hcm_seed FROM users u JOIN roles r ON r.role_id = u.role_id WHERE r.role_code = 'STAFF' AND u.sub_role = 'Staff' AND u.primary_campus_id = @campus_hcm AND u.status = 'ACTIVE' ORDER BY u.user_id LIMIT 1;
+SELECT user_id INTO @u_stafflead_dn_seed FROM users u JOIN roles r ON r.role_id = u.role_id WHERE r.role_code = 'STAFF' AND u.sub_role = 'Leader' AND u.primary_campus_id = @campus_dn AND u.status = 'ACTIVE' ORDER BY u.user_id LIMIT 1;
+SELECT user_id INTO @u_stafflead_ct_seed FROM users u JOIN roles r ON r.role_id = u.role_id WHERE r.role_code = 'STAFF' AND u.sub_role = 'Leader' AND u.primary_campus_id = @campus_ct AND u.status = 'ACTIVE' ORDER BY u.user_id LIMIT 1;
+SELECT user_id INTO @u_stafflead_qn_seed FROM users u JOIN roles r ON r.role_id = u.role_id WHERE r.role_code = 'STAFF' AND u.sub_role = 'Leader' AND u.primary_campus_id = @campus_qn AND u.status = 'ACTIVE' ORDER BY u.user_id LIMIT 1;
+SELECT department_id INTO @dept_hn_it_seed FROM departments WHERE campus_id = @campus_hn AND department_code = 'IT' LIMIT 1;
+SELECT department_id INTO @dept_hn_ic_seed FROM departments WHERE campus_id = @campus_hn AND department_code = 'IC' LIMIT 1;
+
+-- ---------------------------------------------------------------------
+-- Partner/contact status coverage.
+-- ---------------------------------------------------------------------
+SET @p_status_potential = 900001;
+SET @p_status_active = 900002;
+SET @p_status_inactive = 900003;
+SET @p_status_blacklisted = 900004;
+
+INSERT INTO partners (partner_id, partner_code, name, short_name, country, city, website_url, partner_type, cooperation_status, description, created_at, created_by, updated_at, updated_by)
+VALUES
+  (@p_status_potential, 'STATUS-POTENTIAL-TEST', 'Status Coverage Potential Partner', 'Status Potential', 'Việt Nam', 'Hà Nội', NULL, 'UNIVERSITY', 'POTENTIAL', 'Đối tác tiềm năng dùng để test bộ lọc status.', DATE_SUB(@seed_now, INTERVAL 20 DAY), @u_stafflead_hn_seed, @seed_now, @u_stafflead_hn_seed),
+  (@p_status_active, 'STATUS-ACTIVE-TEST', 'Status Coverage Active Partner', 'Status Active', 'Hàn Quốc', 'Seoul', NULL, 'COMPANY', 'ACTIVE', 'Đối tác đang hợp tác dùng để test bộ lọc status.', DATE_SUB(@seed_now, INTERVAL 30 DAY), @u_stafflead_hn_seed, @seed_now, @u_stafflead_hn_seed),
+  (@p_status_inactive, 'STATUS-INACTIVE-TEST', 'Status Coverage Inactive Partner', 'Status Inactive', 'Nhật Bản', 'Tokyo', NULL, 'NGO', 'INACTIVE', 'Đối tác tạm ngưng hợp tác dùng để test bộ lọc status.', DATE_SUB(@seed_now, INTERVAL 60 DAY), @u_stafflead_hn_seed, @seed_now, @u_stafflead_hn_seed),
+  (@p_status_blacklisted, 'STATUS-BLACKLISTED-TEST', 'Status Coverage Blacklisted Partner', 'Status Blacklisted', 'Singapore', 'Singapore', NULL, 'OTHER', 'BLACKLISTED', 'Đối tác nằm trong danh sách chặn, không dùng cho tạo request thật.', DATE_SUB(@seed_now, INTERVAL 90 DAY), @u_stafflead_hn_seed, @seed_now, @u_stafflead_hn_seed)
+ON DUPLICATE KEY UPDATE
+  name = VALUES(name),
+  short_name = VALUES(short_name),
+  cooperation_status = VALUES(cooperation_status),
+  description = VALUES(description),
+  updated_at = VALUES(updated_at),
+  updated_by = VALUES(updated_by);
+
+INSERT INTO partner_contacts (contact_id, partner_id, full_name, email, phone, job_title, department_name, note, is_primary, status, created_at, created_by, updated_at, updated_by)
+VALUES
+  (900011, @p_status_active, 'Active Contact Status Test', 'active.contact.status@test.example', '0901000001', 'Partnership Manager', 'International Office', 'Liên hệ đang hoạt động.', TRUE, 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 20 DAY), @u_stafflead_hn_seed, @seed_now, @u_stafflead_hn_seed),
+  (900012, @p_status_inactive, 'Inactive Contact Status Test', 'inactive.contact.status@test.example', '0901000002', 'Former Coordinator', 'International Office', 'Liên hệ cũ đã ngưng sử dụng.', FALSE, 'INACTIVE', DATE_SUB(@seed_now, INTERVAL 60 DAY), @u_stafflead_hn_seed, @seed_now, @u_stafflead_hn_seed)
+ON DUPLICATE KEY UPDATE
+  full_name = VALUES(full_name),
+  phone = VALUES(phone),
+  status = VALUES(status),
+  note = VALUES(note),
+  updated_at = VALUES(updated_at),
+  updated_by = VALUES(updated_by);
+
+-- ---------------------------------------------------------------------
+-- Visitor accounts used by request status cases.
+-- ---------------------------------------------------------------------
+SET @pwd_hash_status_seed = '$2a$10$statusCoverageDevOnlyHash000000000000000000000000000000000000';
+SET @v_status_pending_single = 900101;
+SET @v_status_pending_multi = 900102;
+SET @v_status_assigned = 900103;
+SET @v_status_before = 900104;
+SET @v_status_during = 900105;
+SET @v_status_after = 900106;
+SET @v_status_closed = 900107;
+SET @v_status_rejected = 900108;
+SET @v_status_cancel_visitor = 900109;
+SET @v_status_cancel_host = 900110;
+SET @v_status_cancel_instance = 900111;
+SET @v_status_transfer = 900112;
+
+INSERT INTO users (user_id, full_name, email, phone, nationality, password_hash, role_id, sub_role, primary_campus_id, department_id, gender, status, email_verified_at, failed_login_count, locked_until, created_via, first_login_at, last_login_at, created_at, created_by, updated_at, updated_by)
+VALUES
+  (@v_status_pending_single, 'Visitor Pending Single Status', 'status.pending.single@test.example', '0902000001', 'Việt Nam', @pwd_hash_status_seed, @role_visitor, NULL, NULL, NULL, 'UNKNOWN', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 3 DAY), 0, NULL, 'VISITOR_FORM', NULL, NULL, DATE_SUB(@seed_now, INTERVAL 3 DAY), @u_stafflead_hn_seed, @seed_now, @u_stafflead_hn_seed),
+  (@v_status_pending_multi, 'Visitor Pending Multi Status', 'status.pending.multi@test.example', '0902000002', 'Việt Nam', @pwd_hash_status_seed, @role_visitor, NULL, NULL, NULL, 'UNKNOWN', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 4 DAY), 0, NULL, 'VISITOR_FORM', NULL, NULL, DATE_SUB(@seed_now, INTERVAL 4 DAY), @u_stafflead_hn_seed, @seed_now, @u_stafflead_hn_seed),
+  (@v_status_assigned, 'Visitor Assigned Status', 'status.assigned@test.example', '0902000003', 'Hàn Quốc', @pwd_hash_status_seed, @role_visitor, NULL, NULL, NULL, 'UNKNOWN', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 8 DAY), 0, NULL, 'VISITOR_FORM', NULL, NULL, DATE_SUB(@seed_now, INTERVAL 8 DAY), @u_stafflead_hn_seed, @seed_now, @u_stafflead_hn_seed),
+  (@v_status_before, 'Visitor Before Visit Status', 'status.before.visit@test.example', '0902000004', 'Nhật Bản', @pwd_hash_status_seed, @role_visitor, NULL, NULL, NULL, 'UNKNOWN', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 10 DAY), 0, NULL, 'VISITOR_FORM', NULL, NULL, DATE_SUB(@seed_now, INTERVAL 10 DAY), @u_stafflead_hn_seed, @seed_now, @u_stafflead_hn_seed),
+  (@v_status_during, 'Visitor During Visit Status', 'status.during.visit@test.example', '0902000005', 'Singapore', @pwd_hash_status_seed, @role_visitor, NULL, NULL, NULL, 'UNKNOWN', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 12 DAY), 0, NULL, 'VISITOR_FORM', NULL, NULL, DATE_SUB(@seed_now, INTERVAL 12 DAY), @u_stafflead_hn_seed, @seed_now, @u_stafflead_hn_seed),
+  (@v_status_after, 'Visitor After Visit Status', 'status.after.visit@test.example', '0902000006', 'Thái Lan', @pwd_hash_status_seed, @role_visitor, NULL, NULL, NULL, 'UNKNOWN', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 15 DAY), 0, NULL, 'VISITOR_FORM', NULL, NULL, DATE_SUB(@seed_now, INTERVAL 15 DAY), @u_stafflead_hn_seed, @seed_now, @u_stafflead_hn_seed),
+  (@v_status_closed, 'Visitor Closed Status', 'status.closed@test.example', '0902000007', 'Việt Nam', @pwd_hash_status_seed, @role_visitor, NULL, NULL, NULL, 'UNKNOWN', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 30 DAY), 0, NULL, 'VISITOR_FORM', NULL, NULL, DATE_SUB(@seed_now, INTERVAL 30 DAY), @u_stafflead_hn_seed, @seed_now, @u_stafflead_hn_seed),
+  (@v_status_rejected, 'Visitor Rejected Status', 'status.rejected@test.example', '0902000008', 'Việt Nam', @pwd_hash_status_seed, @role_visitor, NULL, NULL, NULL, 'UNKNOWN', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 5 DAY), 0, NULL, 'VISITOR_FORM', NULL, NULL, DATE_SUB(@seed_now, INTERVAL 5 DAY), @u_stafflead_hn_seed, @seed_now, @u_stafflead_hn_seed),
+  (@v_status_cancel_visitor, 'Visitor Cancel Self Service Status', 'status.cancel.visitor@test.example', '0902000009', 'Việt Nam', @pwd_hash_status_seed, @role_visitor, NULL, NULL, NULL, 'UNKNOWN', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 18 DAY), 0, NULL, 'VISITOR_FORM', NULL, NULL, DATE_SUB(@seed_now, INTERVAL 18 DAY), @u_stafflead_hn_seed, @seed_now, @u_stafflead_hn_seed),
+  (@v_status_cancel_host, 'Visitor Cancel Host Confirmed Status', 'status.cancel.host@test.example', '0902000010', 'Việt Nam', @pwd_hash_status_seed, @role_visitor, NULL, NULL, NULL, 'UNKNOWN', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 18 DAY), 0, NULL, 'VISITOR_FORM', NULL, NULL, DATE_SUB(@seed_now, INTERVAL 18 DAY), @u_stafflead_hn_seed, @seed_now, @u_stafflead_hn_seed),
+  (@v_status_cancel_instance, 'Visitor Campus Cancelled Instance Status', 'status.cancel.instance@test.example', '0902000011', 'Việt Nam', @pwd_hash_status_seed, @role_visitor, NULL, NULL, NULL, 'UNKNOWN', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 18 DAY), 0, NULL, 'VISITOR_FORM', NULL, NULL, DATE_SUB(@seed_now, INTERVAL 18 DAY), @u_stafflead_hn_seed, @seed_now, @u_stafflead_hn_seed),
+  (@v_status_transfer, 'Visitor Host Transfer Status', 'status.host.transfer@test.example', '0902000012', 'Việt Nam', @pwd_hash_status_seed, @role_visitor, NULL, NULL, NULL, 'UNKNOWN', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 9 DAY), 0, NULL, 'VISITOR_FORM', NULL, NULL, DATE_SUB(@seed_now, INTERVAL 9 DAY), @u_stafflead_hn_seed, @seed_now, @u_stafflead_hn_seed)
+ON DUPLICATE KEY UPDATE
+  full_name = VALUES(full_name),
+  phone = VALUES(phone),
+  nationality = VALUES(nationality),
+  status = VALUES(status),
+  email_verified_at = VALUES(email_verified_at),
+  updated_at = VALUES(updated_at),
+  updated_by = VALUES(updated_by);
+
+-- ---------------------------------------------------------------------
+-- Visit request status coverage.
+-- ---------------------------------------------------------------------
+SET @vr_sc_waiting = 900201;
+SET @vr_mc_waiting = 900202;
+SET @vr_sc_assigned = 900203;
+SET @vr_sc_before = 900204;
+SET @vr_sc_during = 900205;
+SET @vr_sc_after = 900206;
+SET @vr_sc_closed = 900207;
+SET @vr_sc_rejected = 900208;
+SET @vr_cancel_visitor = 900209;
+SET @vr_cancel_host = 900210;
+SET @vr_multi_cancel_instance = 900211;
+SET @vr_transfer = 900212;
+
+INSERT INTO visit_requests (
+  visit_request_id, request_code, visitor_user_id, partner_id,
+  registrant_full_name, registrant_organization, registrant_job_title, registrant_phone, registrant_email, registrant_nationality,
+  delegation_name, visit_scope, purpose, working_content, expected_guest_count,
+  support_team_json, contact_person_json, working_language, interpreter_note, transportation_note, note_to_fptu,
+  status, submitted_at, email_verified_at,
+  decided_by, decided_at, decision_actor_role, decision_note,
+  cancelled_by, cancelled_at, cancellation_actor_type, cancellation_source, cancellation_reason,
+  row_version, created_at, created_by, updated_at, updated_by
+)
+VALUES
+  (@vr_sc_waiting, 'VR-CASE-PENDING-SINGLE', @v_status_pending_single, @p_status_potential, 'Visitor Pending Single Status', 'Status Coverage Org', 'Coordinator', '0902000001', 'status.pending.single@test.example', 'Việt Nam', 'Case PENDING single-campus awaiting Staff Leader approval', 'SINGLE_CAMPUS', 'Kiểm thử trạng thái PENDING_APPROVAL của đơn một cơ sở.', 'Đơn mới gửi, đã xác thực email và đang chờ Staff Leader duyệt.', 2, JSON_ARRAY(JSON_OBJECT('full_name','Support A','role','Coordinator')), JSON_OBJECT('full_name','Visitor Pending Single Status','phone','0902000001','email','status.pending.single@test.example'), 'VI', NULL, 'Tự túc di chuyển.', 'Seed status coverage.', 'PENDING_APPROVAL', DATE_SUB(@seed_now, INTERVAL 3 DAY), DATE_SUB(@seed_now, INTERVAL 3 DAY), NULL, NULL, NULL, 'Chờ Staff Leader duyệt.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 3 DAY), @v_status_pending_single, @seed_now, NULL),
+  (@vr_mc_waiting, 'VR-CASE-PENDING-MULTI', @v_status_pending_multi, @p_status_potential, 'Visitor Pending Multi Status', 'Status Coverage Org', 'Coordinator', '0902000002', 'status.pending.multi@test.example', 'Việt Nam', 'Case PENDING multi-campus awaiting HO approval', 'MULTI_CAMPUS', 'Kiểm thử trạng thái PENDING_APPROVAL của đơn liên cơ sở.', 'Đơn liên cơ sở mới gửi, đang chờ HO duyệt tổng.', 4, JSON_ARRAY(JSON_OBJECT('full_name','Support B','role','Coordinator')), JSON_OBJECT('full_name','Visitor Pending Multi Status','phone','0902000002','email','status.pending.multi@test.example'), 'EN', NULL, 'Xe 16 chỗ.', 'Seed status coverage.', 'PENDING_APPROVAL', DATE_SUB(@seed_now, INTERVAL 4 DAY), DATE_SUB(@seed_now, INTERVAL 4 DAY), NULL, NULL, NULL, 'Chờ HO duyệt.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 4 DAY), @v_status_pending_multi, @seed_now, NULL),
+  (@vr_sc_assigned, 'VR-CASE-APPROVED-ASSIGNED', @v_status_assigned, @p_status_active, 'Visitor Assigned Status', 'Status Coverage Org', 'Coordinator', '0902000003', 'status.assigned@test.example', 'Hàn Quốc', 'Case APPROVED single-campus assigned host only', 'SINGLE_CAMPUS', 'Kiểm thử request APPROVED với campus ASSIGNED.', 'Đã duyệt và đã gán host, chưa bắt đầu chuẩn bị chi tiết.', 3, JSON_ARRAY(JSON_OBJECT('full_name','Support C','role','Coordinator')), JSON_OBJECT('full_name','Visitor Assigned Status','phone','0902000003','email','status.assigned@test.example'), 'EN', NULL, 'Tự túc.', 'Seed status coverage.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 8 DAY), DATE_SUB(@seed_now, INTERVAL 8 DAY), @u_stafflead_hn_seed, DATE_SUB(@seed_now, INTERVAL 7 DAY), 'STAFF_LEADER', 'Staff Leader duyệt và gán host.', NULL, NULL, NULL, NULL, NULL, 1, DATE_SUB(@seed_now, INTERVAL 8 DAY), @v_status_assigned, @seed_now, @u_stafflead_hn_seed),
+  (@vr_sc_before, 'VR-CASE-APPROVED-BEFORE', @v_status_before, @p_status_active, 'Visitor Before Visit Status', 'Status Coverage Org', 'Coordinator', '0902000004', 'status.before.visit@test.example', 'Nhật Bản', 'Case BEFORE_VISIT preparation', 'SINGLE_CAMPUS', 'Kiểm thử campus BEFORE_VISIT.', 'Đã duyệt và đang chuẩn bị trước chuyến thăm.', 3, JSON_ARRAY(JSON_OBJECT('full_name','Support D','role','Coordinator')), JSON_OBJECT('full_name','Visitor Before Visit Status','phone','0902000004','email','status.before.visit@test.example'), 'EN', NULL, 'Tự túc.', 'Seed status coverage.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 10 DAY), DATE_SUB(@seed_now, INTERVAL 10 DAY), @u_stafflead_hn_seed, DATE_SUB(@seed_now, INTERVAL 9 DAY), 'STAFF_LEADER', 'Đã duyệt, đang chuẩn bị.', NULL, NULL, NULL, NULL, NULL, 1, DATE_SUB(@seed_now, INTERVAL 10 DAY), @v_status_before, @seed_now, @u_stafflead_hn_seed),
+  (@vr_sc_during, 'VR-CASE-APPROVED-DURING', @v_status_during, @p_status_active, 'Visitor During Visit Status', 'Status Coverage Org', 'Coordinator', '0902000005', 'status.during.visit@test.example', 'Singapore', 'Case DURING_VISIT in progress', 'SINGLE_CAMPUS', 'Kiểm thử campus DURING_VISIT.', 'Đoàn đang có mặt tại campus.', 3, JSON_ARRAY(JSON_OBJECT('full_name','Support E','role','Coordinator')), JSON_OBJECT('full_name','Visitor During Visit Status','phone','0902000005','email','status.during.visit@test.example'), 'EN', NULL, 'Tự túc.', 'Seed status coverage.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 12 DAY), DATE_SUB(@seed_now, INTERVAL 12 DAY), @u_stafflead_hcm_seed, DATE_SUB(@seed_now, INTERVAL 11 DAY), 'STAFF_LEADER', 'Đã duyệt, visit đang diễn ra.', NULL, NULL, NULL, NULL, NULL, 2, DATE_SUB(@seed_now, INTERVAL 12 DAY), @v_status_during, @seed_now, @u_stafflead_hcm_seed),
+  (@vr_sc_after, 'VR-CASE-APPROVED-AFTER', @v_status_after, @p_status_active, 'Visitor After Visit Status', 'Status Coverage Org', 'Coordinator', '0902000006', 'status.after.visit@test.example', 'Thái Lan', 'Case AFTER_VISIT post visit follow-up', 'SINGLE_CAMPUS', 'Kiểm thử campus AFTER_VISIT.', 'Đã tiếp xong, đang xử lý biên bản và feedback.', 3, JSON_ARRAY(JSON_OBJECT('full_name','Support F','role','Coordinator')), JSON_OBJECT('full_name','Visitor After Visit Status','phone','0902000006','email','status.after.visit@test.example'), 'EN', NULL, 'Tự túc.', 'Seed status coverage.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 15 DAY), DATE_SUB(@seed_now, INTERVAL 15 DAY), @u_stafflead_ct_seed, DATE_SUB(@seed_now, INTERVAL 14 DAY), 'STAFF_LEADER', 'Đã kết thúc visit, chờ tổng hợp.', NULL, NULL, NULL, NULL, NULL, 2, DATE_SUB(@seed_now, INTERVAL 15 DAY), @v_status_after, @seed_now, @u_stafflead_ct_seed),
+  (@vr_sc_closed, 'VR-CASE-APPROVED-CLOSED', @v_status_closed, @p_status_active, 'Visitor Closed Status', 'Status Coverage Org', 'Coordinator', '0902000007', 'status.closed@test.example', 'Việt Nam', 'Case CLOSED completed visit', 'SINGLE_CAMPUS', 'Kiểm thử campus CLOSED.', 'Đã hoàn tất biên bản, feedback và đóng hồ sơ campus.', 3, JSON_ARRAY(JSON_OBJECT('full_name','Support G','role','Coordinator')), JSON_OBJECT('full_name','Visitor Closed Status','phone','0902000007','email','status.closed@test.example'), 'VI', NULL, 'Tự túc.', 'Seed status coverage.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 30 DAY), DATE_SUB(@seed_now, INTERVAL 30 DAY), @u_stafflead_hn_seed, DATE_SUB(@seed_now, INTERVAL 29 DAY), 'STAFF_LEADER', 'Hồ sơ đã hoàn tất.', NULL, NULL, NULL, NULL, NULL, 3, DATE_SUB(@seed_now, INTERVAL 30 DAY), @v_status_closed, @seed_now, @u_stafflead_hn_seed),
+  (@vr_sc_rejected, 'VR-CASE-REJECTED-SINGLE', @v_status_rejected, @p_status_potential, 'Visitor Rejected Status', 'Status Coverage Org', 'Coordinator', '0902000008', 'status.rejected@test.example', 'Việt Nam', 'Case REJECTED before approval', 'SINGLE_CAMPUS', 'Kiểm thử request REJECTED.', 'Đơn bị từ chối trước khi chuyển sang vận hành campus.', 2, JSON_ARRAY(JSON_OBJECT('full_name','Support H','role','Coordinator')), JSON_OBJECT('full_name','Visitor Rejected Status','phone','0902000008','email','status.rejected@test.example'), 'VI', NULL, 'Tự túc.', 'Seed status coverage.', 'REJECTED', DATE_SUB(@seed_now, INTERVAL 5 DAY), DATE_SUB(@seed_now, INTERVAL 5 DAY), @u_stafflead_hn_seed, DATE_SUB(@seed_now, INTERVAL 4 DAY), 'STAFF_LEADER', 'Từ chối vì lịch quá sát và thiếu thông tin đoàn.', NULL, NULL, NULL, NULL, NULL, 1, DATE_SUB(@seed_now, INTERVAL 5 DAY), @v_status_rejected, @seed_now, @u_stafflead_hn_seed),
+  (@vr_cancel_visitor, 'VR-CASE-CANCEL-VISITOR', @v_status_cancel_visitor, @p_status_active, 'Visitor Cancel Self Service Status', 'Status Coverage Org', 'Coordinator', '0902000009', 'status.cancel.visitor@test.example', 'Việt Nam', 'Case CANCELLED by visitor self-service after approval', 'SINGLE_CAMPUS', 'Kiểm thử request CANCELLED bởi visitor sau khi đã APPROVED.', 'Đã duyệt, sau đó visitor tự hủy trên cổng khách.', 3, JSON_ARRAY(JSON_OBJECT('full_name','Support I','role','Coordinator')), JSON_OBJECT('full_name','Visitor Cancel Self Service Status','phone','0902000009','email','status.cancel.visitor@test.example'), 'VI', NULL, 'Tự túc.', 'Seed status coverage.', 'CANCELLED', DATE_SUB(@seed_now, INTERVAL 18 DAY), DATE_SUB(@seed_now, INTERVAL 18 DAY), @u_stafflead_hn_seed, DATE_SUB(@seed_now, INTERVAL 17 DAY), 'STAFF_LEADER', 'Đã duyệt trước khi visitor hủy.', @v_status_cancel_visitor, DATE_SUB(@seed_now, INTERVAL 16 DAY), 'VISITOR', 'SELF_SERVICE', 'Visitor tự hủy trên portal do thay đổi lịch bay sau khi request đã được duyệt.', 3, DATE_SUB(@seed_now, INTERVAL 18 DAY), @v_status_cancel_visitor, @seed_now, @v_status_cancel_visitor),
+  (@vr_cancel_host, 'VR-CASE-CANCEL-HOST', @v_status_cancel_host, @p_status_active, 'Visitor Cancel Host Confirmed Status', 'Status Coverage Org', 'Coordinator', '0902000010', 'status.cancel.host@test.example', 'Việt Nam', 'Case CANCELLED by host after external confirmation', 'SINGLE_CAMPUS', 'Kiểm thử request CANCELLED do host ghi nhận xác nhận ngoài hệ thống.', 'Đã duyệt, sau đó khách xác nhận hủy qua email/điện thoại và host cập nhật hệ thống.', 3, JSON_ARRAY(JSON_OBJECT('full_name','Support J','role','Coordinator')), JSON_OBJECT('full_name','Visitor Cancel Host Confirmed Status','phone','0902000010','email','status.cancel.host@test.example'), 'VI', NULL, 'Tự túc.', 'Seed status coverage.', 'CANCELLED', DATE_SUB(@seed_now, INTERVAL 18 DAY), DATE_SUB(@seed_now, INTERVAL 18 DAY), @u_stafflead_hn_seed, DATE_SUB(@seed_now, INTERVAL 17 DAY), 'STAFF_LEADER', 'Đã duyệt trước khi host hủy theo xác nhận ngoài hệ thống.', @u_staff_hn_seed, DATE_SUB(@seed_now, INTERVAL 15 DAY), 'HOST', 'EXTERNAL_CONFIRMATION', 'Host nhận email xác nhận từ đại diện đoàn vào 09:00, đoàn xin hủy vì lịch công tác thay đổi.', 3, DATE_SUB(@seed_now, INTERVAL 18 DAY), @v_status_cancel_host, @seed_now, @u_staff_hn_seed),
+  (@vr_multi_cancel_instance, 'VR-CASE-CANCEL-INSTANCE', @v_status_cancel_instance, @p_status_active, 'Visitor Campus Cancelled Instance Status', 'Status Coverage Org', 'Coordinator', '0902000011', 'status.cancel.instance@test.example', 'Việt Nam', 'Case APPROVED multi-campus with one cancelled campus instance', 'MULTI_CAMPUS', 'Kiểm thử request APPROVED nhưng một campus instance bị hủy riêng.', 'HO đã duyệt tổng; campus HN giữ lịch, campus HCM bị hủy theo xác nhận ngoài hệ thống.', 4, JSON_ARRAY(JSON_OBJECT('full_name','Support K','role','Coordinator')), JSON_OBJECT('full_name','Visitor Campus Cancelled Instance Status','phone','0902000011','email','status.cancel.instance@test.example'), 'EN', NULL, 'Xe 29 chỗ.', 'Seed status coverage.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 18 DAY), DATE_SUB(@seed_now, INTERVAL 18 DAY), @u_ho_seed, DATE_SUB(@seed_now, INTERVAL 17 DAY), 'HO', 'HO duyệt request liên cơ sở.', NULL, NULL, NULL, NULL, NULL, 2, DATE_SUB(@seed_now, INTERVAL 18 DAY), @v_status_cancel_instance, @seed_now, @u_ho_seed),
+  (@vr_transfer, 'VR-CASE-HOST-TRANSFER', @v_status_transfer, @p_status_active, 'Visitor Host Transfer Status', 'Status Coverage Org', 'Coordinator', '0902000012', 'status.host.transfer@test.example', 'Việt Nam', 'Case host transferred after approval', 'SINGLE_CAMPUS', 'Kiểm thử host_assignment_source = TRANSFERRED.', 'Staff Leader duyệt và chuyển host cho IC Staff cùng campus.', 3, JSON_ARRAY(JSON_OBJECT('full_name','Support L','role','Coordinator')), JSON_OBJECT('full_name','Visitor Host Transfer Status','phone','0902000012','email','status.host.transfer@test.example'), 'VI', NULL, 'Tự túc.', 'Seed status coverage.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 9 DAY), DATE_SUB(@seed_now, INTERVAL 9 DAY), @u_stafflead_hn_seed, DATE_SUB(@seed_now, INTERVAL 8 DAY), 'STAFF_LEADER', 'Đã duyệt và chuyển host sau đó.', NULL, NULL, NULL, NULL, NULL, 2, DATE_SUB(@seed_now, INTERVAL 9 DAY), @v_status_transfer, @seed_now, @u_stafflead_hn_seed)
+ON DUPLICATE KEY UPDATE
+  partner_id = VALUES(partner_id),
+  delegation_name = VALUES(delegation_name),
+  visit_scope = VALUES(visit_scope),
+  status = VALUES(status),
+  decided_by = VALUES(decided_by),
+  decided_at = VALUES(decided_at),
+  decision_actor_role = VALUES(decision_actor_role),
+  decision_note = VALUES(decision_note),
+  cancelled_by = VALUES(cancelled_by),
+  cancelled_at = VALUES(cancelled_at),
+  cancellation_actor_type = VALUES(cancellation_actor_type),
+  cancellation_source = VALUES(cancellation_source),
+  cancellation_reason = VALUES(cancellation_reason),
+  row_version = VALUES(row_version),
+  updated_at = VALUES(updated_at),
+  updated_by = VALUES(updated_by);
+
+-- ---------------------------------------------------------------------
+-- Campus instance progress status coverage.
+-- ---------------------------------------------------------------------
+SET @vi_sc_waiting_hn = 900301;
+SET @vi_mc_waiting_hn = 900302;
+SET @vi_mc_waiting_hcm = 900303;
+SET @vi_sc_assigned_hn = 900304;
+SET @vi_sc_before_hn = 900305;
+SET @vi_sc_during_hcm = 900306;
+SET @vi_sc_after_ct = 900307;
+SET @vi_sc_closed_hn = 900308;
+SET @vi_sc_rejected_waiting_hn = 900309;
+SET @vi_cancel_visitor_hn = 900310;
+SET @vi_cancel_host_hn = 900311;
+SET @vi_multi_keep_hn = 900312;
+SET @vi_multi_cancel_hcm = 900313;
+SET @vi_transfer_hn = 900314;
+
+INSERT INTO visit_request_campuses (
+  visit_instance_id, visit_request_id, campus_id, instance_code,
+  planned_start_at, planned_end_at, status,
+  current_host_user_id, host_assigned_by, host_assigned_at, host_assignment_source,
+  host_transferred_by, host_transferred_at, host_transfer_note,
+  closed_by, closed_at, close_note,
+  cancelled_by, cancelled_at, cancellation_actor_type, cancellation_source, cancellation_reason,
+  row_version, created_at, created_by, updated_at, updated_by
+)
+VALUES
+  (@vi_sc_waiting_hn, @vr_sc_waiting, @campus_hn, 'VI-CASE-WAITING-HN', DATE_ADD(DATE(@seed_now), INTERVAL 14 DAY), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 14 DAY), INTERVAL 4 HOUR), 'WAITING_REQUEST_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 3 DAY), @v_status_pending_single, @seed_now, NULL),
+  (@vi_mc_waiting_hn, @vr_mc_waiting, @campus_hn, 'VI-CASE-WAITING-MULTI-HN', DATE_ADD(DATE(@seed_now), INTERVAL 21 DAY), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 21 DAY), INTERVAL 4 HOUR), 'WAITING_REQUEST_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 4 DAY), @v_status_pending_multi, @seed_now, NULL),
+  (@vi_mc_waiting_hcm, @vr_mc_waiting, @campus_hcm, 'VI-CASE-WAITING-MULTI-HCM', DATE_ADD(DATE(@seed_now), INTERVAL 23 DAY), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 23 DAY), INTERVAL 4 HOUR), 'WAITING_REQUEST_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 4 DAY), @v_status_pending_multi, @seed_now, NULL),
+  (@vi_sc_assigned_hn, @vr_sc_assigned, @campus_hn, 'VI-CASE-ASSIGNED-HN', DATE_ADD(DATE(@seed_now), INTERVAL 10 DAY), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 10 DAY), INTERVAL 4 HOUR), 'ASSIGNED', @u_stafflead_hn_seed, @u_stafflead_hn_seed, DATE_SUB(@seed_now, INTERVAL 7 DAY), 'MANUAL_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, DATE_SUB(@seed_now, INTERVAL 8 DAY), @v_status_assigned, @seed_now, @u_stafflead_hn_seed),
+  (@vi_sc_before_hn, @vr_sc_before, @campus_hn, 'VI-CASE-BEFORE-HN', DATE_ADD(DATE(@seed_now), INTERVAL 6 DAY), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 6 DAY), INTERVAL 4 HOUR), 'BEFORE_VISIT', @u_stafflead_hn_seed, @u_stafflead_hn_seed, DATE_SUB(@seed_now, INTERVAL 9 DAY), 'MANUAL_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 2, DATE_SUB(@seed_now, INTERVAL 10 DAY), @v_status_before, @seed_now, @u_stafflead_hn_seed),
+  (@vi_sc_during_hcm, @vr_sc_during, @campus_hcm, 'VI-CASE-DURING-HCM', DATE_ADD(DATE(@seed_now), INTERVAL 0 DAY), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 0 DAY), INTERVAL 4 HOUR), 'DURING_VISIT', @u_stafflead_hcm_seed, @u_stafflead_hcm_seed, DATE_SUB(@seed_now, INTERVAL 11 DAY), 'MANUAL_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 3, DATE_SUB(@seed_now, INTERVAL 12 DAY), @v_status_during, @seed_now, @u_stafflead_hcm_seed),
+  (@vi_sc_after_ct, @vr_sc_after, @campus_ct, 'VI-CASE-AFTER-CT', DATE_SUB(DATE(@seed_now), INTERVAL 2 DAY), DATE_ADD(DATE_SUB(DATE(@seed_now), INTERVAL 2 DAY), INTERVAL 4 HOUR), 'AFTER_VISIT', @u_stafflead_ct_seed, @u_stafflead_ct_seed, DATE_SUB(@seed_now, INTERVAL 14 DAY), 'MANUAL_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 4, DATE_SUB(@seed_now, INTERVAL 15 DAY), @v_status_after, @seed_now, @u_stafflead_ct_seed),
+  (@vi_sc_closed_hn, @vr_sc_closed, @campus_hn, 'VI-CASE-CLOSED-HN', DATE_SUB(DATE(@seed_now), INTERVAL 20 DAY), DATE_ADD(DATE_SUB(DATE(@seed_now), INTERVAL 20 DAY), INTERVAL 4 HOUR), 'CLOSED', @u_stafflead_hn_seed, @u_stafflead_hn_seed, DATE_SUB(@seed_now, INTERVAL 29 DAY), 'MANUAL_APPROVAL', NULL, NULL, NULL, @u_stafflead_hn_seed, DATE_SUB(@seed_now, INTERVAL 18 DAY), 'Đã hoàn tất biên bản, feedback và tài liệu.', NULL, NULL, NULL, NULL, NULL, 5, DATE_SUB(@seed_now, INTERVAL 30 DAY), @v_status_closed, @seed_now, @u_stafflead_hn_seed),
+  (@vi_sc_rejected_waiting_hn, @vr_sc_rejected, @campus_hn, 'VI-CASE-REJECTED-WAITING-HN', DATE_ADD(DATE(@seed_now), INTERVAL 12 DAY), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 12 DAY), INTERVAL 4 HOUR), 'WAITING_REQUEST_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 5 DAY), @v_status_rejected, @seed_now, @u_stafflead_hn_seed),
+  (@vi_cancel_visitor_hn, @vr_cancel_visitor, @campus_hn, 'VI-CASE-CANCEL-VISITOR-HN', DATE_ADD(DATE(@seed_now), INTERVAL 8 DAY), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 8 DAY), INTERVAL 4 HOUR), 'CANCELLED', @u_stafflead_hn_seed, @u_stafflead_hn_seed, DATE_SUB(@seed_now, INTERVAL 17 DAY), 'MANUAL_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, @v_status_cancel_visitor, DATE_SUB(@seed_now, INTERVAL 16 DAY), 'VISITOR', 'SELF_SERVICE', 'Visitor tự hủy sau khi đơn đã được duyệt.', 3, DATE_SUB(@seed_now, INTERVAL 18 DAY), @v_status_cancel_visitor, @seed_now, @v_status_cancel_visitor),
+  (@vi_cancel_host_hn, @vr_cancel_host, @campus_hn, 'VI-CASE-CANCEL-HOST-HN', DATE_ADD(DATE(@seed_now), INTERVAL 9 DAY), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 9 DAY), INTERVAL 4 HOUR), 'CANCELLED', @u_staff_hn_seed, @u_stafflead_hn_seed, DATE_SUB(@seed_now, INTERVAL 17 DAY), 'MANUAL_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, @u_staff_hn_seed, DATE_SUB(@seed_now, INTERVAL 15 DAY), 'HOST', 'EXTERNAL_CONFIRMATION', 'Host nhận xác nhận ngoài hệ thống từ khách và cập nhật hủy.', 3, DATE_SUB(@seed_now, INTERVAL 18 DAY), @v_status_cancel_host, @seed_now, @u_staff_hn_seed),
+  (@vi_multi_keep_hn, @vr_multi_cancel_instance, @campus_hn, 'VI-CASE-MULTI-KEEP-HN', DATE_ADD(DATE(@seed_now), INTERVAL 11 DAY), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 11 DAY), INTERVAL 4 HOUR), 'BEFORE_VISIT', @u_stafflead_hn_seed, @u_ho_seed, DATE_SUB(@seed_now, INTERVAL 17 DAY), 'AUTO_STAFF_LEADER', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 2, DATE_SUB(@seed_now, INTERVAL 18 DAY), @v_status_cancel_instance, @seed_now, @u_stafflead_hn_seed),
+  (@vi_multi_cancel_hcm, @vr_multi_cancel_instance, @campus_hcm, 'VI-CASE-MULTI-CANCEL-HCM', DATE_ADD(DATE(@seed_now), INTERVAL 13 DAY), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 13 DAY), INTERVAL 4 HOUR), 'CANCELLED', @u_stafflead_hcm_seed, @u_ho_seed, DATE_SUB(@seed_now, INTERVAL 17 DAY), 'AUTO_STAFF_LEADER', NULL, NULL, NULL, NULL, NULL, NULL, @u_stafflead_hcm_seed, DATE_SUB(@seed_now, INTERVAL 14 DAY), 'HOST', 'EXTERNAL_CONFIRMATION', 'Campus HCM bị hủy riêng theo email xác nhận của đoàn; request tổng vẫn APPROVED vì HN còn lịch.', 3, DATE_SUB(@seed_now, INTERVAL 18 DAY), @v_status_cancel_instance, @seed_now, @u_stafflead_hcm_seed),
+  (@vi_transfer_hn, @vr_transfer, @campus_hn, 'VI-CASE-TRANSFER-HN', DATE_ADD(DATE(@seed_now), INTERVAL 7 DAY), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 7 DAY), INTERVAL 4 HOUR), 'BEFORE_VISIT', @u_staff_hn_seed, @u_stafflead_hn_seed, DATE_SUB(@seed_now, INTERVAL 8 DAY), 'TRANSFERRED', @u_stafflead_hn_seed, DATE_SUB(@seed_now, INTERVAL 6 DAY), 'Staff Leader chuyển host từ leader sang IC Staff cùng campus để xử lý lịch chi tiết.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 3, DATE_SUB(@seed_now, INTERVAL 9 DAY), @v_status_transfer, @seed_now, @u_stafflead_hn_seed)
+ON DUPLICATE KEY UPDATE
+  planned_start_at = VALUES(planned_start_at),
+  planned_end_at = VALUES(planned_end_at),
+  status = VALUES(status),
+  current_host_user_id = VALUES(current_host_user_id),
+  host_assigned_by = VALUES(host_assigned_by),
+  host_assigned_at = VALUES(host_assigned_at),
+  host_assignment_source = VALUES(host_assignment_source),
+  host_transferred_by = VALUES(host_transferred_by),
+  host_transferred_at = VALUES(host_transferred_at),
+  host_transfer_note = VALUES(host_transfer_note),
+  closed_by = VALUES(closed_by),
+  closed_at = VALUES(closed_at),
+  close_note = VALUES(close_note),
+  cancelled_by = VALUES(cancelled_by),
+  cancelled_at = VALUES(cancelled_at),
+  cancellation_actor_type = VALUES(cancellation_actor_type),
+  cancellation_source = VALUES(cancellation_source),
+  cancellation_reason = VALUES(cancellation_reason),
+  row_version = VALUES(row_version),
+  updated_at = VALUES(updated_at),
+  updated_by = VALUES(updated_by);
+
+-- ---------------------------------------------------------------------
+-- Participants: ensure all participant.status values are present on status-case visit.
+-- ---------------------------------------------------------------------
+INSERT INTO visit_participants (participant_id, visit_instance_id, user_id, participant_role, is_host, status, invited_by, invited_at, responded_at, assigned_by, assigned_at, note, created_at, created_by, updated_at, updated_by)
+VALUES
+  (900501, @vi_transfer_hn, @u_staff_hn_seed, 'IC_HOST', TRUE, 'ACCEPTED', @u_stafflead_hn_seed, DATE_SUB(@seed_now, INTERVAL 8 DAY), DATE_SUB(@seed_now, INTERVAL 7 DAY), @u_stafflead_hn_seed, DATE_SUB(@seed_now, INTERVAL 8 DAY), 'Host sau chuyển giao, đã nhận vai trò.', DATE_SUB(@seed_now, INTERVAL 8 DAY), @u_stafflead_hn_seed, @seed_now, @u_staff_hn_seed),
+  (900502, @vi_transfer_hn, @u_stafflead_hn_seed, 'IC_SUPPORT', FALSE, 'REMOVED', @u_stafflead_hn_seed, DATE_SUB(@seed_now, INTERVAL 8 DAY), NULL, @u_stafflead_hn_seed, DATE_SUB(@seed_now, INTERVAL 8 DAY), 'Leader rời vai trò host chính sau khi chuyển giao.', DATE_SUB(@seed_now, INTERVAL 8 DAY), @u_stafflead_hn_seed, @seed_now, @u_stafflead_hn_seed)
+ON DUPLICATE KEY UPDATE
+  is_host = VALUES(is_host),
+  status = VALUES(status),
+  note = VALUES(note),
+  updated_at = VALUES(updated_at),
+  updated_by = VALUES(updated_by);
+
+-- ---------------------------------------------------------------------
+-- Add missing/common support statuses around minutes/documents/auth logs.
+-- ---------------------------------------------------------------------
+SET @min_status_case = 900601;
+INSERT INTO minutes (minutes_id, visit_instance_id, title, content, participants_json, status, finalized_by, finalized_at, created_at, created_by, updated_at, updated_by)
+VALUES
+  (@min_status_case, @vi_sc_after_ct, 'Biên bản status coverage - after visit', 'Biên bản dùng để kiểm thử action item CANCELLED.', JSON_ARRAY(JSON_OBJECT('name','Status Coverage Host','role','Host')), 'DRAFT', NULL, NULL, DATE_SUB(@seed_now, INTERVAL 1 DAY), @u_stafflead_ct_seed, @seed_now, @u_stafflead_ct_seed)
+ON DUPLICATE KEY UPDATE
+  status = VALUES(status),
+  content = VALUES(content),
+  updated_at = VALUES(updated_at),
+  updated_by = VALUES(updated_by);
+
+INSERT INTO minute_action_items (action_item_id, minutes_id, title, note, due_date, status, completed_at, display_order, created_at, created_by, updated_at, updated_by)
+VALUES
+  (900611, @min_status_case, 'Action item bị hủy để phủ status CANCELLED', 'Đầu việc không còn cần thiết sau khi hai bên đổi phạm vi follow-up.', DATE_ADD(DATE(@seed_now), INTERVAL 3 DAY), 'CANCELLED', NULL, 1, DATE_SUB(@seed_now, INTERVAL 1 DAY), @u_stafflead_ct_seed, @seed_now, @u_stafflead_ct_seed)
+ON DUPLICATE KEY UPDATE
+  status = VALUES(status),
+  note = VALUES(note),
+  due_date = VALUES(due_date),
+  updated_at = VALUES(updated_at),
+  updated_by = VALUES(updated_by);
+
+SET @file_doc_archived_status = 900701;
+INSERT INTO files (file_id, storage_provider, bucket_name, object_key, original_filename, mime_type, file_size, checksum_sha256, visibility, uploaded_by, uploaded_at)
+VALUES
+  (@file_doc_archived_status, 'LOCAL', NULL, 'status-coverage/documents/archived-policy-v1.pdf', 'archived-policy-v1.pdf', 'application/pdf', 128000, 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'INTERNAL', @u_stafflead_hn_seed, DATE_SUB(@seed_now, INTERVAL 120 DAY))
+ON DUPLICATE KEY UPDATE
+  original_filename = VALUES(original_filename),
+  mime_type = VALUES(mime_type),
+  visibility = VALUES(visibility),
+  uploaded_by = VALUES(uploaded_by),
+  uploaded_at = VALUES(uploaded_at);
+
+INSERT INTO documents (document_id, file_id, owner_type, owner_id, campus_id, title, description, document_category, status, created_at, created_by, updated_at, updated_by)
+VALUES
+  (900711, @file_doc_archived_status, 'GENERAL', NULL, @campus_hn, 'Tài liệu quy trình cũ đã lưu trữ', 'Dùng để kiểm thử status ARCHIVED của documents.', 'STATUS_COVERAGE', 'ARCHIVED', DATE_SUB(@seed_now, INTERVAL 120 DAY), @u_stafflead_hn_seed, DATE_SUB(@seed_now, INTERVAL 60 DAY), @u_stafflead_hn_seed)
+ON DUPLICATE KEY UPDATE
+  title = VALUES(title),
+  status = VALUES(status),
+  updated_at = VALUES(updated_at),
+  updated_by = VALUES(updated_by);
+
+INSERT INTO login_logs (user_id, email, login_portal, selected_campus_id, provider_type, status, failure_reason, ip_address, user_agent, session_id, created_at)
+SELECT @u_stafflead_hn_seed, 'staff.leader.hn@fpt.edu.vn', 'INTERNAL', @campus_hn, 'LOCAL_PASSWORD', 'BLOCKED', 'Tài khoản bị khóa tạm thời do quá số lần đăng nhập sai.', '10.99.0.10', 'StatusCoverageBot/1.0', NULL, DATE_SUB(@seed_now, INTERVAL 30 MINUTE)
+WHERE NOT EXISTS (
+  SELECT 1 FROM login_logs
+  WHERE email = 'staff.leader.hn@fpt.edu.vn'
+    AND status = 'BLOCKED'
+    AND failure_reason = 'Tài khoản bị khóa tạm thời do quá số lần đăng nhập sai.'
+    AND ip_address = '10.99.0.10'
+);
+
+INSERT INTO security_events (user_id, email, event_type, severity, ip_address, user_agent, metadata, created_at)
+SELECT @u_stafflead_hn_seed, 'staff.leader.hn@fpt.edu.vn', 'STATUS_COVERAGE_CRITICAL_EVENT', 'CRITICAL', '10.99.0.10', 'StatusCoverageBot/1.0', JSON_OBJECT('reason','coverage seed'), DATE_SUB(@seed_now, INTERVAL 30 MINUTE)
+WHERE NOT EXISTS (
+  SELECT 1 FROM security_events
+  WHERE event_type = 'STATUS_COVERAGE_CRITICAL_EVENT'
+    AND email = 'staff.leader.hn@fpt.edu.vn'
+    AND ip_address = '10.99.0.10'
+);
+
+COMMIT;
+SET SQL_SAFE_UPDATES = @OLD_SQL_SAFE_UPDATES_STATUS_COVERAGE;
+
+-- DONE: file này có thể Ctrl+A rồi Execute toàn bộ trong MySQL Workbench.
+SELECT 'DONE_STATUS_COVERAGE_SEED_V8_2' AS result, NOW() AS completed_at;

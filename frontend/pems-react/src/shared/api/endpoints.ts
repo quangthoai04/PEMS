@@ -30,9 +30,17 @@ export const API_ENDPOINTS = {
   },
   delegations: {
     list: '/delegations',
+    managementList: '/delegations/viewguestdelegationlist',
     detail: (id: string | number) => `/delegations/${id}`,
-    processVisitRequest: (id: string | number) => `/visit-requests/${id}/process`,
-    // UC-136 Cancel Visit Request (post-approval only).
+    // UC-18 HO approve / reject a MULTI_CAMPUS request (whole request).
+    hoApprove: (visitRequestId: string | number) => `/delegations/${visitRequestId}/ho-approve`,
+    hoReject: (visitRequestId: string | number) => `/delegations/${visitRequestId}/ho-reject`,
+    // UC-22 Staff Leader: reject own-campus single request, list host candidates, assign/transfer host.
+    campusReject: (visitRequestId: string | number) => `/delegations/${visitRequestId}/campus-reject`,
+    hostCandidates: (visitInstanceId: string | number) => `/delegations/campuses/${visitInstanceId}/host-candidates`,
+    assignHost: (visitRequestId: string | number, visitInstanceId: string | number) =>
+      `/delegations/${visitRequestId}/campuses/${visitInstanceId}/assign-host`,
+    // UC-136 Cancel Visit Request.
     cancel: (visitRequestId: string | number) => `/delegations/${visitRequestId}/cancel`,
     cancelCampus: (visitRequestId: string | number, visitInstanceId: string | number) =>
       `/delegations/${visitRequestId}/campuses/${visitInstanceId}/cancel`,

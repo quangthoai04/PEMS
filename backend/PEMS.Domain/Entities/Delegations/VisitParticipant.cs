@@ -16,8 +16,9 @@ public class VisitParticipant
     [Column("user_id")]
     public ulong UserId { get; set; }
 
+    // visit_participants.participant_role ENUM('IC_HOST','IC_SUPPORT','DEPT_SUPPORT','STUDENT')
     [Column("participant_role")]
-    public string ParticipantRole { get; set; } = "OTHER";
+    public string ParticipantRole { get; set; } = "IC_SUPPORT";
 
     [Column("is_host")]
     public bool IsHost { get; set; }

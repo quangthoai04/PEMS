@@ -74,9 +74,9 @@ export function DashboardHome() {
   // AuthContext (real backend permissions), not from the legacy localStorage user.
   const { hasPermission } = useAuth();
 
-  const isStaffLeader = (user?.role?.toUpperCase() === 'STAFF' && user?.subRole === 'Leader') || user?.role?.toUpperCase() === 'STAFF_LEADER';
-  const isDeptLeader = user?.role?.toUpperCase() === 'DEPT_LEADER' || user?.role?.toUpperCase() === 'DEPT LEADER' || (user?.role?.toUpperCase() === 'DEPT' && user?.subRole?.toUpperCase() !== 'STAFF');
-  const isDeptStaff = user?.role?.toUpperCase() === 'DEPT_STAFF' || (user?.role?.toUpperCase() === 'DEPT' && user?.subRole?.toUpperCase() === 'STAFF');
+  const isStaffLeader = user?.role?.toUpperCase() === 'STAFF' && user?.subRole?.toUpperCase() === 'LEADER';
+  const isDeptLeader = user?.role?.toUpperCase() === 'DEPT' && user?.subRole?.toUpperCase() === 'LEADER';
+  const isDeptStaff = user?.role?.toUpperCase() === 'DEPT' && user?.subRole?.toUpperCase() === 'STAFF';
   const isStudent = user?.role?.toUpperCase() === 'STUDENT';
   const isVisitor = user?.role?.toUpperCase() === 'VISITOR';
   const isAdmin = user?.role?.toUpperCase() === 'ADMIN';

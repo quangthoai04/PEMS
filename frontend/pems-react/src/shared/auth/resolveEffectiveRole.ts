@@ -13,10 +13,8 @@ import type { AuthUser } from '../../features/authentication/types/authenticatio
 export type EffectiveRole =
   | 'ADMIN'
   | 'HO'
-  | 'STAFF_LEADER'
   | 'STAFF'
-  | 'DEPARTMENT_LEAD'
-  | 'DEPARTMENT'
+  | 'DEPT'
   | 'STUDENT'
   | 'VISITOR';
 
@@ -24,17 +22,18 @@ function normalizeRoleCode(roleCode?: string | null): string {
   return (roleCode ?? '').trim().toUpperCase();
 }
 
-/** Returns 'LEADER' | 'STAFF' | '' (empty = missing / NONE). */
-function normalizeSubRole(subRole?: string | null): 'LEADER' | 'STAFF' | '' {
+/** Returns 'LEADER' | 'STAFF' | 'DEPT' | '' (empty = missing / NONE). */
+function normalizeSubRole(subRole?: string | null): 'LEADER' | 'STAFF' | 'DEPT' | '' {
   const value = (subRole ?? '').trim().toUpperCase();
   if (value === 'LEADER') return 'LEADER';
   if (value === 'STAFF') return 'STAFF';
+  if (value === 'DEPT') return 'DEPT';
   return ''; // covers null, '', 'NONE', and any unexpected value
 }
 
 /**
  * Resolve the effective role. Returns `null` when the account cannot be mapped
- * to a valid workspace (e.g. STAFF/DEPT without a Leader/Staff sub-role, or an
+ * to a valid workspace (e.g. STAFF/DEPT without a valid Leader/Staff/Dept sub-role, or an
  * unknown role code) — the caller should route such users to /invalid-account.
  */
 export function resolveEffectiveRole(user: AuthUser | null | undefined): EffectiveRole | null {
@@ -49,13 +48,11 @@ export function resolveEffectiveRole(user: AuthUser | null | undefined): Effecti
     case 'HO':
       return 'HO';
     case 'STAFF':
-      if (subRole === 'LEADER') return 'STAFF_LEADER';
-      if (subRole === 'STAFF') return 'STAFF';
-      return null; // STAFF must have a sub-role — no implicit grant
+      if (subRole === 'LEADER' || subRole === 'STAFF') return 'STAFF';
+      return null; // STAFF must have a valid sub-role — no implicit grant
     case 'DEPT':
-      if (subRole === 'LEADER') return 'DEPARTMENT_LEAD';
-      if (subRole === 'STAFF') return 'DEPARTMENT';
-      return null; // DEPT must have a sub-role — no implicit grant
+      if (subRole === 'LEADER' || subRole === 'STAFF') return 'DEPT';
+      return null; // DEPT must have a valid sub-role — no implicit grant
     case 'STUDENT':
       return 'STUDENT';
     case 'VISITOR':

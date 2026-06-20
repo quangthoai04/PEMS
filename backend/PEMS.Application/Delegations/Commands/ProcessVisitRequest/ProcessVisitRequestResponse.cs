@@ -1,10 +1,9 @@
-using System;
-
 namespace PEMS.Application.Delegations.Commands.ProcessVisitRequest;
 
-public sealed class ProcessVisitRequestResponse
-{
-    public Guid? Id { get; init; }
-    public string Status { get; init; } = "Scaffolded";
-    public string Message { get; init; } = "Use case scaffolded. Business logic is not implemented yet.";
-}
+public sealed record ProcessVisitRequestResponse(
+    ulong VisitRequestId,
+    ulong VisitInstanceId,
+    string RequestStatus,
+    string CampusStatus,
+    ulong HostUserId,
+    string Message);

@@ -155,7 +155,7 @@ export const visitRequestSchema = z.object({
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['visits'],
-        message: 'Yêu cầu liên cơ sở cần ít nhất 2 cơ sở. Vui lòng thêm cơ sở thứ hai hoặc đổi sang Một cơ sở.',
+        message: 'Yêu cầu liên cơ sở cần ít nhất 2 cơ sở. Vui lòng thêm cơ sở thứ hai hoặc đổi sang Đơn cơ sở.',
       });
     }
   }
@@ -164,7 +164,7 @@ export const visitRequestSchema = z.object({
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ['visits'],
-      message: 'Yêu cầu một cơ sở chỉ được chọn đúng 1 cơ sở.',
+      message: 'Yêu cầu đơn cơ sở chỉ được chọn đúng 1 cơ sở.',
     });
   }
 

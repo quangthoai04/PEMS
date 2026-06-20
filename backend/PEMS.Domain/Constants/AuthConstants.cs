@@ -18,8 +18,8 @@ public static class RoleCodes
 
 public static class SubRoles
 {
-    public const string Leader = "Leader";
-    public const string Staff = "Staff";
+    public const string Leader = "LEADER";
+    public const string Staff = "STAFF";
 }
 
 public static class UserStatuses

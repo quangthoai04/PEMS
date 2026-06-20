@@ -407,8 +407,8 @@ export function VisitDuringTab({ isReadOnly = false, isDept = false }: { isReadO
                            <p className="font-bold text-[#f37021] mb-1">Thành phần tham gia:</p>
                            <ul className="list-disc pl-4 space-y-1">
                              <li><span className="font-semibold text-gray-700">Host:</span> Trần Văn A</li>
-                             <li><span className="font-semibold text-gray-700">Người hỗ trợ:</span> Lê Hữu B</li>
-                             <li><span className="font-semibold text-gray-700">Buddy:</span> Nhóm 1</li>
+                             <li><span className="font-semibold text-gray-700">Staff hỗ trợ IC:</span> Lê Hữu B</li>
+                             <li><span className="font-semibold text-gray-700">Phòng ban hỗ trợ:</span> Phòng IT</li>
                              <li><span className="font-semibold text-gray-700">Sinh viên hỗ trợ:</span> Câu lạc bộ sự kiện</li>
                            </ul>
                          </div>

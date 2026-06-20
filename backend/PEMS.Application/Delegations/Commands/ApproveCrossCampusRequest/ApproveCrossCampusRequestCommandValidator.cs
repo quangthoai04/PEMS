@@ -6,6 +6,6 @@ public sealed class ApproveCrossCampusRequestCommandValidator : AbstractValidato
 {
     public ApproveCrossCampusRequestCommandValidator()
     {
-        // TODO: Add validation rules after UC specification is completed.
+        RuleFor(x => x.VisitRequestId).GreaterThan(0UL);
     }
 }

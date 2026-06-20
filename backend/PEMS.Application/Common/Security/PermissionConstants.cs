@@ -42,7 +42,11 @@ public static class PermissionCodes
     public const string ReplyToEmail = "UC-49.REPLY_TO_EMAIL";
 
     // ── Delegation Reception Management ───────────────────────────────────
+    public const string ApproveCrossCampusRequest = "UC-18.APPROVE_CROSS_CAMPUS_REQUEST";
+    public const string ViewGuestDelegationDetails = "UC-19.VIEW_GUEST_DELEGATION_DETAILS";
     public const string ViewGuestDelegationList = "UC-20.VIEW_GUEST_DELEGATION_LIST";
+    public const string ProcessVisitRequest = "UC-22.PROCESS_VISIT_REQUEST";
+    public const string ConfirmParticipation = "UC-27.CONFIRM_PARTICIPATION";
     public const string CancelVisitRequest = "UC-136.CANCEL_VISIT_REQUEST";
 
     // ── Role Management ───────────────────────────────────────────────────

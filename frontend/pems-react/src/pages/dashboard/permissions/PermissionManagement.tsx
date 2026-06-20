@@ -32,7 +32,7 @@ type Role = {
 const initialRoles: Role[] = [
   { id: '1', name: 'ADMIN', code: 'ADMIN', description: 'Quản trị viên toàn hệ thống', userCount: 5, status: 'active' },
   { id: '2', name: 'HO', code: 'HO', description: 'Cán bộ Head Office (Điều phối chung)', userCount: 15, status: 'active' },
-  { id: '3', name: 'Staff Leader', code: 'STAFF_LEADER', description: 'Trưởng ban đối ngoại Campus', userCount: 8, status: 'active' },
+  { id: '3', name: 'Department', code: 'DEPT', description: 'Các phòng ban chuyên môn khác', userCount: 8, status: 'active' },
   { id: '4', name: 'Campus Staff', code: 'STAFF', description: 'Cán bộ phòng IC/Đối ngoại cơ sở', userCount: 32, status: 'active' },
   { id: '5', name: 'Visitor', code: 'VISITOR', description: 'Khách tham quan', userCount: 120, status: 'active' },
 ];

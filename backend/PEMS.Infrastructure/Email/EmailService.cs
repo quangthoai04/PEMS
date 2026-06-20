@@ -125,7 +125,7 @@ public sealed class EmailService : IEmailService
         CancellationToken cancellationToken = default)
     {
         const string subject = "PEMS — Yêu cầu tham quan của bạn đã được ghi nhận";
-        string visitScopeDisplay = visitScope == "MULTI_CAMPUS" ? "Nhiều cơ sở" : "Một cơ sở";
+        string visitScopeDisplay = visitScope == "MULTI_CAMPUS" ? "Liên cơ sở" : "Đơn cơ sở";
         
         var body = $@"
 <!DOCTYPE html>

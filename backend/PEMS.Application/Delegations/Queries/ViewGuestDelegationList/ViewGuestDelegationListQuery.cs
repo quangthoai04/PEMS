@@ -6,6 +6,13 @@ namespace PEMS.Application.Delegations.Queries.ViewGuestDelegationList;
 
 public class ViewGuestDelegationListQuery : IRequest<PaginatedResult<VisitRequestManagementItemDto>>
 {
+    /// <summary>
+    /// "responsible" (default) = Tab "Đơn phụ trách" — requests the user is responsible for
+    /// (created, approves, hosts, or is assigned a task on), scoped by role.
+    /// "attending" = Tab "Đơn mời tham dự" — requests the user has ACCEPTED a participation
+    /// invitation for. Not available to Visitor/Admin.
+    /// </summary>
+    public string? Tab { get; init; }
     public int Page { get; init; } = 1;
     public int PageSize { get; init; } = 10;
     public string? Keyword { get; init; }

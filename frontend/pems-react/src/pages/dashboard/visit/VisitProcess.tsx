@@ -854,7 +854,7 @@ export function VisitProcess() {
                 {/* 2. Người hỗ trợ */}
                 <div className={`bg-white border border-gray-300 border-l-[6px] border-l-[#004c91] rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow bg-gradient-to-r from-[#004c91]/[0.03] to-transparent`}>
                   <h4 className="font-bold text-[#004c91] text-base flex items-center gap-2 mb-4">
-                    <Users className="w-5 h-5 text-[#004c91]" /> 2. Người hỗ trợ (Phòng IC)
+                    <Users className="w-5 h-5 text-[#004c91]" /> 2. Staff hỗ trợ IC
                   </h4>
                   <div>
                     {addedSupporters.length > 0 && (
@@ -965,7 +965,7 @@ export function VisitProcess() {
                 {/* 3. Người tham gia phòng khác */}
                 <div className={`bg-white border border-gray-300 border-l-[6px] border-l-[#004c91] rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow bg-gradient-to-r from-[#004c91]/[0.03] to-transparent`}>
                   <h4 className="font-bold text-[#004c91] text-base flex items-center gap-2 mb-4">
-                    <Users className="w-5 h-5 text-[#004c91]" /> 3. Người tham gia (Phòng ban khác)
+                    <Users className="w-5 h-5 text-[#004c91]" /> 3. Phòng ban hỗ trợ
                   </h4>
                   <div>
                     {addedOtherDepts.length > 0 && (
@@ -1092,7 +1092,7 @@ export function VisitProcess() {
                 {/* 4. Sinh viên hỗ trợ */}
                 <div className={`bg-white border border-gray-300 border-l-[6px] border-l-[#004c91] rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow bg-gradient-to-r from-[#004c91]/[0.03] to-transparent`}>
                   <h4 className="font-bold text-[#004c91] text-base flex items-center gap-2 mb-4">
-                    <Users className="w-5 h-5 text-[#004c91]" /> 4. Sinh viên hỗ trợ (Buddy, Media)
+                    <Users className="w-5 h-5 text-[#004c91]" /> 4. Sinh viên hỗ trợ
                   </h4>
                   <div>
                     {addedStudents.length > 0 && (

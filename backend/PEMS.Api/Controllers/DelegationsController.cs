@@ -2,7 +2,11 @@ using MediatR;
 using Microsoft.AspNetCore.Mvc;
 using PEMS.Api.Filters;
 using PEMS.Application.Common.Security;
+using PEMS.Application.Delegations.Commands.ApproveCrossCampusRequest;
 using PEMS.Application.Delegations.Commands.CancelVisitRequest;
+using PEMS.Application.Delegations.Commands.ProcessVisitRequest;
+using PEMS.Application.Delegations.Commands.RejectVisitRequest;
+using PEMS.Application.Delegations.Queries.GetHostCandidates;
 using PEMS.Domain.Constants;
 using System.Threading;
 using System.Threading.Tasks;
@@ -21,10 +25,21 @@ namespace PEMS.Api.Controllers
         // The former DelegationsController.submitvisitrequest scaffold (NotImplementedException)
         // was removed — it was unused and conflicted with the real UC-17.
 
-        [HttpPost("approvecrosscampusrequest")]
-        public async Task<IActionResult> ApproveCrossCampusRequest([FromBody] PEMS.Application.Delegations.Commands.ApproveCrossCampusRequest.ApproveCrossCampusRequestCommand command, CancellationToken cancellationToken)
+        // ── UC-18 HO approve / reject a MULTI_CAMPUS request ──────────────────
+        // Approve: request → APPROVED and every campus instance is auto-assigned to its IC head.
+        [HttpPost("{visitRequestId}/ho-approve")]
+        [RequirePermission(PermissionCodes.ApproveCrossCampusRequest, PermissionLevels.Execute)]
+        public async Task<IActionResult> HoApprove(ulong visitRequestId, CancellationToken cancellationToken)
         {
-            var result = await _mediator.Send(command, cancellationToken);
+            var result = await _mediator.Send(new ApproveCrossCampusRequestCommand(visitRequestId), cancellationToken);
+            return Ok(result);
+        }
+
+        [HttpPost("{visitRequestId}/ho-reject")]
+        [RequirePermission(PermissionCodes.ApproveCrossCampusRequest, PermissionLevels.Execute)]
+        public async Task<IActionResult> HoReject(ulong visitRequestId, [FromBody] RejectVisitRequestBody body, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(new RejectVisitRequestCommand(visitRequestId, body.Reason), cancellationToken);
             return Ok(result);
         }
 
@@ -50,10 +65,29 @@ namespace PEMS.Api.Controllers
             return Ok(result);
         }
 
-        [HttpPost("processvisitrequest")]
-        public async Task<IActionResult> ProcessVisitRequest([FromBody] PEMS.Application.Delegations.Commands.ProcessVisitRequest.ProcessVisitRequestCommand command, CancellationToken cancellationToken)
+        // ── UC-22 Staff Leader: list host candidates, approve+assign host (single) /
+        //    transfer host (multi), and reject own-campus single requests ─────────
+        [HttpGet("campuses/{visitInstanceId}/host-candidates")]
+        [RequirePermission(PermissionCodes.ProcessVisitRequest, PermissionLevels.Read)]
+        public async Task<IActionResult> GetHostCandidates(ulong visitInstanceId, CancellationToken cancellationToken)
         {
-            var result = await _mediator.Send(command, cancellationToken);
+            var result = await _mediator.Send(new GetHostCandidatesQuery(visitInstanceId), cancellationToken);
+            return Ok(result);
+        }
+
+        [HttpPost("{visitRequestId}/campuses/{visitInstanceId}/assign-host")]
+        [RequirePermission(PermissionCodes.ProcessVisitRequest, PermissionLevels.Execute)]
+        public async Task<IActionResult> AssignHost(ulong visitRequestId, ulong visitInstanceId, [FromBody] AssignHostBody body, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(new ProcessVisitRequestCommand(visitRequestId, visitInstanceId, body.HostUserId), cancellationToken);
+            return Ok(result);
+        }
+
+        [HttpPost("{visitRequestId}/campus-reject")]
+        [RequirePermission(PermissionCodes.ProcessVisitRequest, PermissionLevels.Execute)]
+        public async Task<IActionResult> CampusReject(ulong visitRequestId, [FromBody] RejectVisitRequestBody body, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(new RejectVisitRequestCommand(visitRequestId, body.Reason), cancellationToken);
             return Ok(result);
         }
 
@@ -221,4 +255,10 @@ namespace PEMS.Api.Controllers
 
     /// <summary>Request body for the UC-136 cancel endpoints.</summary>
     public sealed record CancelVisitRequestBody(string CancellationReason);
+
+    /// <summary>Request body for the UC-18/UC-22 reject endpoints (reason is mandatory).</summary>
+    public sealed record RejectVisitRequestBody(string Reason);
+
+    /// <summary>Request body for the UC-22 approve-and-assign / transfer-host endpoint.</summary>
+    public sealed record AssignHostBody(ulong HostUserId);
 }

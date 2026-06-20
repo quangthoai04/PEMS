@@ -821,7 +821,7 @@ Controller chỉ nhận request và gọi `IMediator`. Logic kiểm tra scope, c
 | `participant_id` | `BIGINT UNSIGNED` | NO | `` |  |
 | `visit_instance_id` | `BIGINT UNSIGNED` | NO | `` |  |
 | `user_id` | `BIGINT UNSIGNED` | NO | `` |  |
-| `participant_role` | `ENUM('IC_HOST','IC_SUPPORT','DEPT_SUPPORT','STUDENT_BUDDY','MEDIA','INTERPRETER','OTHER')` | NO | `'OTHER'` |  |
+| `participant_role` | `ENUM('IC_HOST','IC_SUPPORT','DEPT_SUPPORT','STUDENT')` | NO | `'IC_SUPPORT'` |  |
 | `is_host` | `BOOLEAN` | NO | `FALSE` |  |
 | `status` | `ENUM('INVITED','ACCEPTED','DECLINED','ASSIGNED','REMOVED')` | NO | `'INVITED'` |  |
 | `invited_by` | `BIGINT UNSIGNED` | YES | `` |  |

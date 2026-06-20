@@ -16,11 +16,6 @@ public sealed class CancelVisitRequestCommandHandler
     private readonly ICurrentUserService _currentUser;
     private readonly IDateTimeService _clock;
 
-    // A request may only be cancelled while its campus instances are still ASSIGNED or
-    // BEFORE_VISIT — never once the visit is DURING_VISIT / AFTER_VISIT / CLOSED.
-    private static readonly string[] CancellableCampusStatuses =
-        { VisitInstanceStatus.Assigned, VisitInstanceStatus.BeforeVisit };
-
     public CancelVisitRequestCommandHandler(
         IApplicationDbContext db, ICurrentUserService currentUser, IDateTimeService clock)
     {
@@ -48,50 +43,83 @@ public sealed class CancelVisitRequestCommandHandler
             .FirstOrDefaultAsync(v => v.VisitRequestId == request.VisitRequestId, cancellationToken)
             ?? throw new NotFoundException("VisitRequest", request.VisitRequestId);
 
-        // Cancellation is a post-approval action only. PENDING → reject flow; REJECTED/CANCELLED → invalid.
-        if (visit.Status != VisitRequestStatuses.Approved)
-            throw new BusinessRuleException(visit.Status == VisitRequestStatuses.PendingApproval
-                ? "Đơn chưa được duyệt. Trước khi duyệt hãy dùng chức năng từ chối (reject), không phải hủy."
-                : "Chỉ có thể hủy đơn đã được duyệt.");
+        var isVisitorOwner = roleCode == RoleCodes.Visitor && visit.VisitorUserId == actorId;
+        var isHo = roleCode == RoleCodes.Ho;
+        var isStaffLeader = roleCode == RoleCodes.Staff && subRole == SubRoles.Leader;
 
-        // Determine the campus instances to cancel.
+        // Status rules:
+        //  • Visitor may self-cancel (withdraw) their own request while PENDING or APPROVED.
+        //  • Everyone else cancels only after approval (pre-approval is ended via reject).
+        if (isVisitorOwner)
+        {
+            if (visit.Status != VisitRequestStatuses.PendingApproval && visit.Status != VisitRequestStatuses.Approved)
+                throw new BusinessRuleException("Chỉ có thể hủy đơn đang chờ duyệt hoặc đã được duyệt.");
+        }
+        else
+        {
+            if (visit.Status != VisitRequestStatuses.Approved)
+                throw new BusinessRuleException(visit.Status == VisitRequestStatuses.PendingApproval
+                    ? "Đơn chưa được duyệt. Trước khi duyệt hãy dùng chức năng từ chối (reject), không phải hủy."
+                    : "Chỉ có thể hủy đơn đã được duyệt.");
+        }
+
+        // A visitor withdrawing a pending request cancels its still-waiting instances too.
+        var cancellableStatuses = isVisitorOwner
+            ? new[] { VisitInstanceStatus.WaitingRequestApproval, VisitInstanceStatus.Assigned, VisitInstanceStatus.BeforeVisit }
+            : new[] { VisitInstanceStatus.Assigned, VisitInstanceStatus.BeforeVisit };
+
         IReadOnlyList<VisitRequestCampus> targets;
         if (request.VisitInstanceId is { } instanceId)
         {
             var instance = visit.CampusInstances.FirstOrDefault(c => c.VisitInstanceId == instanceId)
                 ?? throw new NotFoundException("VisitRequestCampus", instanceId);
-
             targets = new[] { instance };
         }
         else
         {
-            targets = visit.CampusInstances
-                .Where(c => CancellableCampusStatuses.Contains(c.Status))
-                .ToList();
+            targets = visit.CampusInstances.Where(c => cancellableStatuses.Contains(c.Status)).ToList();
         }
 
-        var isVisitorOwner = roleCode == RoleCodes.Visitor && visit.VisitorUserId == actorId;
-
-        if (!isVisitorOwner)
+        // Authorization + actor classification.
+        string actorType;
+        string source;
+        if (isVisitorOwner)
         {
-            foreach (var instance in targets)
-            {
-                if (instance.CurrentHostUserId != actorId)
-                {
-                    throw new ForbiddenException("Only the request owner visitor or assigned host can cancel this visit.");
-                }
-            }
+            actorType = CancellationActorType.Visitor;
+            source = CancellationSource.SelfService;
+        }
+        else if (isHo && visit.VisitScope == VisitScopes.MultiCampus)
+        {
+            actorType = CancellationActorType.Ho;
+            source = CancellationSource.ExternalConfirmation;
+        }
+        else if (isStaffLeader && targets.All(t => t.CampusId == _currentUser.PrimaryCampusId))
+        {
+            actorType = CancellationActorType.StaffLeader;
+            source = CancellationSource.ExternalConfirmation;
+        }
+        else if (targets.All(t => t.CurrentHostUserId == actorId))
+        {
+            // Current host cancels after the guest confirms via an external channel.
+            actorType = CancellationActorType.Host;
+            source = CancellationSource.ExternalConfirmation;
+        }
+        else
+        {
+            throw new ForbiddenException("Bạn không có quyền hủy lịch thăm này.");
         }
 
         var now = _clock.UtcNow;
-        var actorType = isVisitorOwner ? CancellationActorType.Visitor : CancellationActorType.Host;
-        var source = isVisitorOwner ? CancellationSource.SelfService : CancellationSource.ExternalConfirmation;
+        var enforceBeforeStart = actorType == CancellationActorType.Visitor || actorType == CancellationActorType.Host;
 
         var cancelled = new List<CancelledCampusDto>();
         foreach (var instance in targets)
         {
-            if (!CancellableCampusStatuses.Contains(instance.Status))
+            if (!cancellableStatuses.Contains(instance.Status))
                 throw new BusinessRuleException($"Không thể hủy cơ sở ở trạng thái '{instance.Status}'.");
+
+            if (enforceBeforeStart && now >= instance.PlannedStartAt)
+                throw new BusinessRuleException("Đã đến hoặc qua thời gian bắt đầu, không thể hủy.");
 
             var oldStatus = instance.Status;
             instance.Status = VisitInstanceStatus.Cancelled;
@@ -102,6 +130,7 @@ public sealed class CancelVisitRequestCommandHandler
             instance.CancellationReason = request.CancellationReason;
             instance.UpdatedAt = now;
             instance.UpdatedBy = actorId;
+            instance.RowVersion += 1;
 
             _db.VisitStatusLogs.Add(new VisitStatusLog
             {
@@ -119,7 +148,7 @@ public sealed class CancelVisitRequestCommandHandler
         }
 
         if (cancelled.Count == 0)
-            throw new BusinessRuleException("Không có cơ sở nào ở trạng thái có thể hủy (ASSIGNED/BEFORE_VISIT).");
+            throw new BusinessRuleException("Không có cơ sở nào ở trạng thái có thể hủy.");
 
         // Single-campus, or all campuses now cancelled → the overall request becomes CANCELLED.
         var allCancelled = visit.CampusInstances.All(c => c.Status == VisitInstanceStatus.Cancelled);
@@ -134,6 +163,7 @@ public sealed class CancelVisitRequestCommandHandler
             visit.CancellationReason = request.CancellationReason;
             visit.UpdatedAt = now;
             visit.UpdatedBy = actorId;
+            visit.RowVersion += 1;
 
             _db.VisitStatusLogs.Add(new VisitStatusLog
             {
