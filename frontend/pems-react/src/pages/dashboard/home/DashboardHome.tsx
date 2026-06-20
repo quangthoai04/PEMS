@@ -74,13 +74,19 @@ export function DashboardHome() {
   // AuthContext (real backend permissions), not from the legacy localStorage user.
   const { hasPermission } = useAuth();
 
+  // Canonical Role + SubRole identification (xem docs/permissions/PERMISSION_RULES.md):
+  //   STAFF      + STAFF  = Staff thường | STAFF      + LEADER = Staff Leader
+  //   DEPARTMENT + STAFF  = Department Staff | DEPARTMENT + LEADER = Department Leader
+  const isStaffMember = user?.role?.toUpperCase() === 'STAFF' && user?.subRole?.toUpperCase() === 'STAFF';
   const isStaffLeader = user?.role?.toUpperCase() === 'STAFF' && user?.subRole?.toUpperCase() === 'LEADER';
-  const isDeptLeader = user?.role?.toUpperCase() === 'DEPT' && user?.subRole?.toUpperCase() === 'LEADER';
-  const isDeptStaff = user?.role?.toUpperCase() === 'DEPT' && user?.subRole?.toUpperCase() === 'STAFF';
+  const isDeptLeader = user?.role?.toUpperCase() === 'DEPARTMENT' && user?.subRole?.toUpperCase() === 'LEADER';
+  const isDeptStaff = user?.role?.toUpperCase() === 'DEPARTMENT' && user?.subRole?.toUpperCase() === 'STAFF';
   const isStudent = user?.role?.toUpperCase() === 'STUDENT';
   const isVisitor = user?.role?.toUpperCase() === 'VISITOR';
   const isAdmin = user?.role?.toUpperCase() === 'ADMIN';
-  const isStaff = user?.role?.toUpperCase() === 'STAFF' || isStaffLeader || isDeptLeader || isDeptStaff || isStudent || isVisitor;
+  // Đúng nghĩa: ai dùng SharedDashboardView (KHÔNG gom nhầm vào biến "isStaff").
+  const shouldUseSharedDashboard =
+    isStaffMember || isStaffLeader || isDeptLeader || isDeptStaff || isStudent || isVisitor;
 
   // State to handle Events Map (synchronized with localStorage)
   const [events, setEvents] = useState<Record<string, EventItem[]>>(() => {
@@ -335,7 +341,7 @@ export function DashboardHome() {
         <HODashboardView />
       ) : isAdmin ? (
         <AdminDashboardView />
-      ) : isStaff ? (
+      ) : shouldUseSharedDashboard ? (
         <SharedDashboardView user={user} isDeptLeader={isDeptLeader} isDeptStaff={isDeptStaff} isStudent={isStudent} isVisitor={isVisitor} />
       ) : (
       <>

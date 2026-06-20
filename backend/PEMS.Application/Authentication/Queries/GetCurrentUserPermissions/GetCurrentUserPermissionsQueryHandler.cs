@@ -46,7 +46,7 @@ public sealed class GetCurrentUserPermissionsQueryHandler
             subRole = user.SubRole;
         }
 
-        if (roleCode == "STAFF" || roleCode == "DEPT")
+        if (roleCode == "STAFF" || roleCode == "DEPARTMENT")
         {
             if (string.IsNullOrEmpty(subRole))
                 throw new ForbiddenException();

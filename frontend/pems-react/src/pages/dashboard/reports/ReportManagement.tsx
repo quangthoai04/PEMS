@@ -13,7 +13,7 @@ export function ReportManagement() {
   const [timeFilter, setTimeFilter] = useState('this_year');
   const userStr = localStorage.getItem('currentUser');
   const user = userStr ? JSON.parse(userStr) : null;
-  const isDept = user?.role?.toUpperCase() === 'DEPT';
+  const isDept = user?.role?.toUpperCase() === 'DEPARTMENT';
   
   if (isDept) {
     return <DeptReportManagement />;

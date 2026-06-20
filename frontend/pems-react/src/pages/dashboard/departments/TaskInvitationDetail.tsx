@@ -29,8 +29,8 @@ export function TaskInvitationDetail() {
 
   const userStr = localStorage.getItem("currentUser");
   const user = userStr ? JSON.parse(userStr) : null;
-  const isLeader = user?.role === 'ADMIN' || user?.role === 'HO' || user?.role === 'Staff' || (user?.role === 'Dept' && user?.subRole === 'Leader');
-  const isStaff = user?.role === 'Dept' && user?.subRole === 'Staff';
+  const isLeader = user?.role === 'ADMIN' || user?.role === 'HO' || user?.role?.toUpperCase() === 'STAFF' || (user?.role?.toUpperCase() === 'DEPARTMENT' && user?.subRole?.toUpperCase() === 'LEADER');
+  const isStaff = user?.role?.toUpperCase() === 'DEPARTMENT' && user?.subRole?.toUpperCase() === 'STAFF';
 
   const location = useLocation();
   const taskStatusFromState = location.state?.taskStatus || "Đang làm";
@@ -89,9 +89,9 @@ export function TaskInvitationDetail() {
   // Mock data
   const taskStatus = taskStatusFromState;
   const coordinatorName = "Nguyễn Văn Trưởng Phòng";
-  const supporterName = (user?.role?.toUpperCase() === 'STAFF' || user?.role?.toUpperCase() === 'DEPT') ? assigneeNameFromState : "Trần B Hỗ Trợ";
+  const supporterName = (user?.role?.toUpperCase() === 'STAFF' || user?.role?.toUpperCase() === 'DEPARTMENT') ? assigneeNameFromState : "Trần B Hỗ Trợ";
 
-  const isDeptLeader = user?.role === 'Dept' && user?.subRole === 'Leader';
+  const isDeptLeader = user?.role?.toUpperCase() === 'DEPARTMENT' && user?.subRole?.toUpperCase() === 'LEADER';
   
   const shouldDisableButtons = () => {
     if (isDeptLeader) {
@@ -114,7 +114,7 @@ export function TaskInvitationDetail() {
         >
           Dashboard
         </button>
-        {(user?.role?.toUpperCase() !== 'DEPT' && user?.role?.toUpperCase() !== 'STAFF') && (
+        {(user?.role?.toUpperCase() !== 'DEPARTMENT' && user?.role?.toUpperCase() !== 'STAFF') && (
           <>
             <span className="mx-2">/</span>
             <button
@@ -130,7 +130,7 @@ export function TaskInvitationDetail() {
           onClick={() => navigate(`/dashboard/departments/${id}`)}
           className="hover:text-[#004c91] transition-colors outline-none"
         >
-           {user?.role?.toUpperCase() === 'DEPT' || user?.role?.toUpperCase() === 'STAFF' ? 'Nhiệm vụ của tôi' : 'Chi tiết phòng ban'}
+           {user?.role?.toUpperCase() === 'DEPARTMENT' || user?.role?.toUpperCase() === 'STAFF' ? 'Nhiệm vụ của tôi' : 'Chi tiết phòng ban'}
         </button>
         <span className="mx-2">/</span>
         <span className="text-[#004c91] font-bold">Thư mời tham gia</span>

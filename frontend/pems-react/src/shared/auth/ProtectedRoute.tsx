@@ -63,7 +63,7 @@ export function ProtectedRoute({
   }
 
   // Accounts whose (roleCode + subRole) cannot be mapped to a valid workspace
-  // (e.g. STAFF/DEPT missing a Leader/Staff sub-role) get no implicit access.
+  // (e.g. STAFF/DEPARTMENT missing a Leader/Staff sub-role) get no implicit access.
   // We still let them reach /change-password so a forced reset isn't blocked.
   const effectiveRole = resolveEffectiveRole(user);
   if (!effectiveRole && location.pathname !== '/change-password') {

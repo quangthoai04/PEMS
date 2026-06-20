@@ -10,7 +10,7 @@ public static class ParticipantRoles
     /// <summary>Another STAFF of the same IC/campus invited by the host to help.</summary>
     public const string IcSupport = "IC_SUPPORT";
 
-    /// <summary>A DEPT (department) user invited/assigned to support.</summary>
+    /// <summary>A DEPARTMENT (department) user invited/assigned to support.</summary>
     public const string DeptSupport = "DEPT_SUPPORT";
 
     /// <summary>A STUDENT invited to support.</summary>

@@ -31,7 +31,7 @@ export function NewsManagement() {
   const userStr = localStorage.getItem('currentUser');
   const user = userStr ? JSON.parse(userStr) : null;
   const userRole = user?.role?.toUpperCase();
-  const isStaffLeader = user?.role?.toUpperCase() === 'STAFF' && user?.subRole === 'Leader';
+  const isStaffLeader = user?.role?.toUpperCase() === 'STAFF' && user?.subRole?.toUpperCase() === 'LEADER';
   const isAdmin = userRole === 'ADMIN' || isStaffLeader;
   const isStaff = userRole === 'STAFF';
   const isStudent = userRole === 'STUDENT';

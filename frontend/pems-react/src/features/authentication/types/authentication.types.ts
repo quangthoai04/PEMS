@@ -4,7 +4,7 @@ export type LoginPortal = 'INTERNAL' | 'VISITOR';
 
 export type PermissionLevel = 'F' | 'E' | 'R' | 'O';
 
-export type RoleCode = 'ADMIN' | 'HO' | 'STAFF' | 'DEPT' | 'STUDENT' | 'VISITOR';
+export type RoleCode = 'ADMIN' | 'HO' | 'STAFF' | 'DEPARTMENT' | 'STUDENT' | 'VISITOR';
 
 export interface AuthUser {
   userId: string;

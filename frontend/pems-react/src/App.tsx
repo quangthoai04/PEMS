@@ -45,6 +45,7 @@ import { AccountManagement } from './pages/dashboard/accounts/AccountManagement'
 import { VisitFPTUPage } from './pages/VisitFPTUPage';
 import { CampusDetailVisitPage } from './pages/CampusDetailVisitPage';
 import { VisitRequestManagement } from './pages/dashboard/visit/VisitRequestManagement';
+import { VisitParticipantInvitationDetail } from './pages/dashboard/visit/VisitParticipantInvitationDetail';
 import { AgendaTemplateManagement } from './pages/dashboard/visit/AgendaTemplateManagement';
 import { CreateVisitRequest } from './pages/dashboard/visit/CreateVisitRequest';
 import { FAQManagement } from './pages/dashboard/faq/FAQManagement';
@@ -149,6 +150,7 @@ export default function App() {
             <Route path="faq" element={<FAQManagement />} />
             <Route path="faq/:id" element={<FAQDetail />} />
             <Route path="visit" element={<VisitRequestManagement />} />
+            <Route path="visit/invitations/:participantId" element={<VisitParticipantInvitationDetail />} />
             <Route path="visit/create" element={<CreateVisitRequest />} />
             <Route path="visit/agenda-templates" element={<AgendaTemplateManagement />} />
             <Route path="visit/process/:id" element={<VisitProcess />} />

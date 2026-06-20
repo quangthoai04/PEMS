@@ -49,7 +49,7 @@ internal static class AccountListQueryExecutor
         var myCampusId = currentUser.PrimaryCampusId;
         var privileged = AccountProvisioningRules.IsPrivileged(roleCode);   // ADMIN / HO
         var isStaffLeader = roleCode == RoleCodes.Staff && currentUser.SubRole == SubRoles.Leader;
-        var subRoleForCheck = roleCode is "STAFF" or "DEPT" ? currentUser.SubRole ?? "NONE" : "NONE";
+        var subRoleForCheck = roleCode is "STAFF" or "DEPARTMENT" ? currentUser.SubRole ?? "NONE" : "NONE";
 
         // â”€â”€ Normalize paging / sort â”€â”€
         var page = request.Page < 1 ? 1 : request.Page;

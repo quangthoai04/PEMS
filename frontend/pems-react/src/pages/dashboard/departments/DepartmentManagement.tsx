@@ -26,7 +26,7 @@ export function DepartmentManagement() {
   const userStr = localStorage.getItem("currentUser");
   const user = userStr ? JSON.parse(userStr) : null;
   const userRole = user?.role?.toUpperCase() || "";
-  const isStaffLeader = userRole === 'STAFF' && user?.subRole === 'Leader';
+  const isStaffLeader = userRole === 'STAFF' && user?.subRole?.toUpperCase() === 'LEADER';
   const isHO = user?.role === 'HO';
 
   const [searchQuery, setSearchQuery] = useState("");

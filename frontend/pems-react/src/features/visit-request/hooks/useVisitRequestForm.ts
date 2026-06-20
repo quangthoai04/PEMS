@@ -58,6 +58,20 @@ function getApiErrorMessage(error: unknown): string {
   return 'Có lỗi xảy ra khi gửi đơn. Vui lòng thử lại.';
 }
 
+/** Machine-readable backend error code (response.errorCode), if present. */
+function getApiErrorCode(error: unknown): string | null {
+  if (axios.isAxiosError(error)) {
+    const data = error.response?.data as any;
+    if (typeof data?.errorCode === 'string' && data.errorCode.trim()) {
+      return data.errorCode;
+    }
+  }
+  return null;
+}
+
+const CONTACT_EMAIL_CONFLICT = 'CONTACT_EMAIL_CANNOT_BE_USED_FOR_VISITOR_ACCOUNT';
+const VISITOR_ACCOUNT_INACTIVE = 'VISITOR_ACCOUNT_INACTIVE';
+
 import { saveVisitRequestDraft } from '../utils/visitRequestDraftStorage';
 
 function debounce<T extends (...args: any[]) => void>(fn: T, delay = 700) {
@@ -150,11 +164,22 @@ export const useVisitRequestForm = (onSuccess: (result: VerifyResponse) => void)
       setMaskedEmail(res.maskedEmail);
     } catch (error) {
       console.error('UC-17 submit/initiate failed', error);
-      setSubmitError(getApiErrorMessage(error));
+      const message = getApiErrorMessage(error);
+      setSubmitError(message);
+      mapContactEmailError(error, message);
     } finally {
       setIsSubmitting(false);
     }
   });
+
+  // Surface contact-email business conflicts on the specific field so the user knows
+  // exactly which input to change (not just a generic submit banner).
+  const mapContactEmailError = (error: unknown, message: string) => {
+    const code = getApiErrorCode(error);
+    if (code === CONTACT_EMAIL_CONFLICT || code === VISITOR_ACCOUNT_INACTIVE) {
+      form.setError('contactPoint.email', { type: 'server', message });
+    }
+  };
 
   // Step 2: Verify OTP → create visit request
   const verifyOtp = async (otpCode: string) => {
@@ -167,9 +192,19 @@ export const useVisitRequestForm = (onSuccess: (result: VerifyResponse) => void)
       setSessionToken(null);
       onSuccess(result);
     } catch (err: any) {
-      setOtpError(
-        err?.response?.data?.message ?? 'Mã xác thực không đúng. Vui lòng thử lại.'
-      );
+      const code = getApiErrorCode(err);
+      // A contact-email business conflict is not an OTP problem — close the OTP modal,
+      // return to the form and surface the message on the contact email field.
+      if (code === CONTACT_EMAIL_CONFLICT || code === VISITOR_ACCOUNT_INACTIVE) {
+        const message = getApiErrorMessage(err);
+        setSessionToken(null);
+        setSubmitError(message);
+        mapContactEmailError(err, message);
+      } else {
+        setOtpError(
+          err?.response?.data?.message ?? 'Mã xác thực không đúng. Vui lòng thử lại.'
+        );
+      }
     } finally {
       setIsVerifying(false);
     }

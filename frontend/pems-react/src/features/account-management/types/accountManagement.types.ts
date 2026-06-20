@@ -1,4 +1,4 @@
-export type AccountRoleCode = 'ADMIN' | 'HO' | 'STAFF' | 'DEPT' | 'STUDENT' | 'VISITOR';
+export type AccountRoleCode = 'ADMIN' | 'HO' | 'STAFF' | 'DEPARTMENT' | 'STUDENT' | 'VISITOR';
 export type AccountSubRole = 'Leader' | 'Staff';
 
 /** Generic paged envelope returned by list/search endpoints. Mirrors backend PaginatedResult<T>. */

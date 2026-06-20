@@ -39,7 +39,7 @@ export function EmailManagement() {
   const userStr = localStorage.getItem('currentUser');
   const user = userStr ? JSON.parse(userStr) : null;
   const userRole = user?.role?.toUpperCase();
-  const isStaff = userRole === 'STAFF' || userRole === 'DEPT' || userRole === 'STUDENT' || userRole === 'VISITOR';
+  const isStaff = userRole === 'STAFF' || userRole === 'DEPARTMENT' || userRole === 'STUDENT' || userRole === 'VISITOR';
 
   const [data, setData] = useState(mockEmailData);
   const [page, setPage] = useState(1);

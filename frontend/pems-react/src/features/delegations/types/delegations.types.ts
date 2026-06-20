@@ -194,3 +194,45 @@ export interface CancelVisitRequestResult {
   cancelledCampuses: CancelledCampus[];
   message: string;
 }
+
+/** Invitation status as returned by GET /delegations/my-invitations (UC-27). */
+export type InvitationStatus = 'INVITED' | 'ACCEPTED' | 'DECLINED';
+
+/** Actions on the invitation-detail screen (NOT on the "Đơn mời tham dự" tab). */
+export type InvitationAction = 'VIEW_DETAIL' | 'ACCEPT_INVITATION' | 'DECLINE_INVITATION';
+
+/** One visit-participation invitation addressed to the signed-in user (UC-27). */
+export interface VisitInvitation {
+  participantId: number;
+  visitRequestId: number;
+  visitInstanceId: number;
+  requestCode: string | null;
+  delegationName: string | null;
+  organizationName: string | null;
+  campusId: number;
+  campusName: string | null;
+  participantRole: ParticipantRole;
+  status: InvitationStatus;
+  plannedStartAt: string;
+  plannedEndAt: string;
+  purpose: string | null;
+  workingContent: string | null;
+  invitedByUserId: number | null;
+  invitedByName: string | null;
+  invitedAt: string | null;
+  respondedAt: string | null;
+  note: string | null;
+  allowedActions: InvitationAction[];
+}
+
+/** Body for POST /delegations/participants/{id}/respond. */
+export interface RespondInvitationPayload {
+  accept: boolean;
+  declineReason?: string | null;
+}
+
+export interface RespondInvitationResult {
+  participantId: number;
+  status: InvitationStatus;
+  message: string;
+}

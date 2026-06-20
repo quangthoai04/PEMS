@@ -11,7 +11,7 @@ public static class RoleCodes
     public const string Admin = "ADMIN";
     public const string Ho = "HO";
     public const string Staff = "STAFF";
-    public const string Dept = "DEPT";
+    public const string Department = "DEPARTMENT";
     public const string Student = "STUDENT";
     public const string Visitor = "VISITOR";
 }
@@ -20,6 +20,12 @@ public static class SubRoles
 {
     public const string Leader = "LEADER";
     public const string Staff = "STAFF";
+
+    /// <summary>
+    /// Placeholder sub-role used by the permission matrix for roles that do not
+    /// carry a sub-role in the <c>users</c> table (ADMIN, HO, STUDENT, VISITOR).
+    /// </summary>
+    public const string None = "NONE";
 }
 
 public static class UserStatuses

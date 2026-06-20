@@ -4,6 +4,9 @@ import type {
   CancelVisitRequestPayload,
   CancelVisitRequestResult,
   HostCandidate,
+  VisitInvitation,
+  RespondInvitationPayload,
+  RespondInvitationResult,
 } from '../types/delegations.types';
 
 export const delegationsApi = {
@@ -79,6 +82,35 @@ export const delegationsApi = {
   ): Promise<CancelVisitRequestResult> {
     const { data } = await httpClient.post<CancelVisitRequestResult>(
       API_ENDPOINTS.delegations.cancelCampus(visitRequestId, visitInstanceId),
+      payload,
+    );
+    return data;
+  },
+
+  /** UC-27: the signed-in user's invitations (pending only unless `includeResponded`). */
+  async getMyInvitations(includeResponded = false): Promise<VisitInvitation[]> {
+    const { data } = await httpClient.get<VisitInvitation[]>(
+      API_ENDPOINTS.delegations.myInvitations,
+      { params: { includeResponded } },
+    );
+    return data;
+  },
+
+  /** UC-27: one invitation for the invitation-detail screen (ownership enforced server-side). */
+  async getInvitationDetail(participantId: number | string): Promise<VisitInvitation> {
+    const { data } = await httpClient.get<VisitInvitation>(
+      API_ENDPOINTS.delegations.invitationDetail(participantId),
+    );
+    return data;
+  },
+
+  /** UC-27: accept or decline an invitation (decline requires a reason). */
+  async respondInvitation(
+    participantId: number | string,
+    payload: RespondInvitationPayload,
+  ): Promise<RespondInvitationResult> {
+    const { data } = await httpClient.post<RespondInvitationResult>(
+      API_ENDPOINTS.delegations.respondInvitation(participantId),
       payload,
     );
     return data;

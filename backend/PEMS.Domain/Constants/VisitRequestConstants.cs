@@ -45,4 +45,12 @@ public static class VisitRequestErrorCodes
     public const string CampusInactive        = "CAMPUS_INACTIVE";
     public const string InvalidVisitScope     = "INVALID_VISIT_SCOPE";
     public const string InvalidVisitTime      = "INVALID_VISIT_TIME";
+
+    // contactEmail belongs to an existing non-VISITOR (internal) account — it must
+    // never be repurposed as a Visitor nor have its role changed.
+    public const string ContactEmailCannotBeUsedForVisitorAccount =
+        "CONTACT_EMAIL_CANNOT_BE_USED_FOR_VISITOR_ACCOUNT";
+
+    // contactEmail belongs to an existing VISITOR account that is not ACTIVE.
+    public const string VisitorAccountInactive = "VISITOR_ACCOUNT_INACTIVE";
 }

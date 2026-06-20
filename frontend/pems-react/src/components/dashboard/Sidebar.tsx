@@ -58,9 +58,9 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile }: SidebarProps) {
         role: "GUEST",
       };
 
-  const isStaffLeader = user?.role?.toUpperCase() === 'STAFF' && user?.subRole === 'Leader';
+  const isStaffLeader = user?.role?.toUpperCase() === 'STAFF' && user?.subRole?.toUpperCase() === 'LEADER';
   const roleForSidebar = user?.role?.toUpperCase() || 'GUEST';
-  const isDeptLeader = roleForSidebar === 'DEPT' && user?.subRole === 'Leader';
+  const isDeptLeader = roleForSidebar === 'DEPARTMENT' && user?.subRole?.toUpperCase() === 'LEADER';
   const isRealAdmin = roleForSidebar === 'ADMIN';
 
   const handleLogout = async () => {
@@ -128,7 +128,7 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile }: SidebarProps) {
             <Home className="w-5 h-5 flex-shrink-0" />
             <span>Dashboard</span>
           </NavLink>
-          {roleForSidebar !== "DEPT" && roleForSidebar !== "VISITOR" && !isRealAdmin && (
+          {roleForSidebar !== "DEPARTMENT" && roleForSidebar !== "VISITOR" && !isRealAdmin && (
             <NavLink to="/dashboard/news" className={navItemClass} onClick={handleLinkClick}>
               <Newspaper className="w-5 h-5 flex-shrink-0" />
               <span>Quản lý tin tức</span>
@@ -154,8 +154,8 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile }: SidebarProps) {
               <span>Quản lý đối tác</span>
             </NavLink>
           )}
-          {((["ADMIN", "DEPT"].includes(roleForSidebar) && !isRealAdmin) || isStaffLeader) && (
-            <NavLink to={roleForSidebar === "DEPT" ? `/dashboard/departments/${user.departmentId || '1'}` : "/dashboard/departments"} className={navItemClass} end={roleForSidebar !== "DEPT"} onClick={handleLinkClick}>
+          {((["ADMIN", "DEPARTMENT"].includes(roleForSidebar) && !isRealAdmin) || isStaffLeader) && (
+            <NavLink to={roleForSidebar === "DEPARTMENT" ? `/dashboard/departments/${user.departmentId || '1'}` : "/dashboard/departments"} className={navItemClass} end={roleForSidebar !== "DEPARTMENT"} onClick={handleLinkClick}>
               <Building2 className="w-5 h-5 flex-shrink-0" />
               <span>Quản lý phòng ban</span>
             </NavLink>
@@ -172,7 +172,7 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile }: SidebarProps) {
               <span>Quản lý campus</span>
             </NavLink>
           )}
-          {(["HO", "STAFF", "DEPT", "STUDENT", "VISITOR"].includes(roleForSidebar)) &&
+          {(["HO", "STAFF", "DEPARTMENT", "STUDENT", "VISITOR"].includes(roleForSidebar)) &&
             hasAnyPermission([
               PERMISSIONS.SUBMIT_VISIT_REQUEST,
               PERMISSIONS.VIEW_GUEST_DELEGATION_LIST,

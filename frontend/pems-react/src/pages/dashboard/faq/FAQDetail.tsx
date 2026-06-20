@@ -27,7 +27,7 @@ export function FAQDetail() {
   const user = userStr ? JSON.parse(userStr) : null;
   const userRole = user?.role?.toUpperCase();
   const isHO = userRole === 'HO';
-  const isAdmin = userRole === 'ADMIN' || (userRole === 'STAFF' && user?.subRole === 'Leader');
+  const isAdmin = userRole === 'ADMIN' || (userRole === 'STAFF' && user?.subRole?.toUpperCase() === 'LEADER');
   const isFullAccess = isHO || isAdmin;
 
   useEffect(() => {

@@ -18,7 +18,7 @@ File này mô tả ma trận phân quyền theo từng Use Case của hệ thố
 1. `permission_code` của API/action.
 2. `permission_level` gồm `F/E/R/O`.
 3. `role_code` của user.
-4. `sub_role` nếu user thuộc nhóm `STAFF` hoặc `DEPT`.
+4. `sub_role` nếu user thuộc nhóm `STAFF` hoặc `DEPARTMENT`.
 5. Data scope, ownership và trạng thái nghiệp vụ của bản ghi.
 
 > **Lưu ý quan trọng:** `F` không có nghĩa là toàn quyền toàn hệ thống. `F` chỉ là toàn quyền đối với hành động chính của UC đó.
@@ -41,12 +41,12 @@ File này mô tả ma trận phân quyền theo từng Use Case của hệ thố
 
 | Role in Matrix | DB Mapping | Scope |
 |---|---|---|
-| HO | `role_code = HO` | Head Office chỉ xử lý nghiệp vụ cấp liên cơ sở: xem/duyệt `MULTI_CAMPUS`, campus master, FAQ, report, agenda template và một số cấu hình nghiệp vụ. HO không xem/xử lý `SINGLE_CAMPUS` visit request. |
+| HO | `role_code = HO` | Head Office xử lý nghiệp vụ cấp liên cơ sở: xem/duyệt `MULTI_CAMPUS`, campus master, FAQ, report, agenda template và một số cấu hình nghiệp vụ. HO **được xem `SINGLE_CAMPUS` ở chế độ read-only để theo dõi** (chốt 2026-06) nhưng **không xử lý** `SINGLE_CAMPUS` (không duyệt/từ chối/gán host/hủy). |
 | Admin | `role_code = ADMIN` | Quản trị kỹ thuật hệ thống, gồm role, permission, API configuration và API logs. Không phải super admin nghiệp vụ và không xem visit/delegation records. |
 | Staff Leader | `role_code = STAFF`, `sub_role = Leader` | Điều phối cấp campus: xem/xử lý `SINGLE_CAMPUS` thuộc campus mình; xem `MULTI_CAMPUS` chỉ sau khi HO duyệt/release và chỉ với campus mình; duyệt news, quản lý account/department trong phạm vi được giao. |
 | Staff | `role_code = STAFF`, `sub_role = Staff` | Nhân sự vận hành chính, tạo/cập nhật delegation, chuẩn bị logistics, quản lý partner, tài liệu, ảnh và tin tức. |
-| Department Lead | `role_code = DEPT`, `sub_role = Leader` | Trưởng bộ phận, duyệt resource, phân công nhiệm vụ, quản lý personnel và theo dõi coordination tasks. |
-| Department | `role_code = DEPT`, `sub_role = Staff` | Nhân sự bộ phận, nhận nhiệm vụ, xác nhận tham gia, cập nhật task và ký báo cáo nếu được phân công. |
+| Department Lead | `role_code = DEPARTMENT`, `sub_role = Leader` | Trưởng bộ phận, duyệt resource, phân công nhiệm vụ, quản lý personnel và theo dõi coordination tasks. |
+| Department | `role_code = DEPARTMENT`, `sub_role = Staff` | Nhân sự bộ phận, nhận nhiệm vụ, xác nhận tham gia, cập nhật task và ký báo cáo nếu được phân công. |
 | Student | `role_code = STUDENT` | Vai trò hỗ trợ, có thể tham gia đoàn phái, tạo minutes, gửi feedback, upload ảnh hoặc tạo news khi được giao. |
 | VISITOR | `role_code = VISITOR` | Khách bên ngoài, chủ yếu gửi visit request, xem thông tin được cấp quyền và sử dụng email trong phạm vi tài khoản của mình. |
 
@@ -60,12 +60,12 @@ Backend nên resolve effective role như sau:
 | HO | NULL | HO |
 | STAFF | Leader | Staff Leader |
 | STAFF | Staff | Staff |
-| DEPT | Leader | Department Lead |
-| DEPT | Staff | Department |
+| DEPARTMENT | Leader | Department Lead |
+| DEPARTMENT | Staff | Department |
 | STUDENT | NULL | Student |
 | VISITOR | NULL | VISITOR |
 
-Nếu `role_code` là `STAFF` hoặc `DEPT` mà `sub_role` bị thiếu, backend phải coi là dữ liệu không hợp lệ và không được cấp quyền ngầm định.
+Nếu `role_code` là `STAFF` hoặc `DEPARTMENT` mà `sub_role` bị thiếu, backend phải coi là dữ liệu không hợp lệ và không được cấp quyền ngầm định.
 
 ---
 
@@ -89,7 +89,7 @@ Permission level `R` hoặc `E` trong nhóm Delegation Reception Management ch�
 | Role | `SINGLE_CAMPUS` | `MULTI_CAMPUS` pending HO | `MULTI_CAMPUS` after HO approval/release |
 |---|---:|---:|---:|
 | ADMIN | No access | No access | No access |
-| HO | No access | View/decide | View |
+| HO | View (read-only, monitor) | View/decide | View |
 | Staff Leader, same campus | View/decide | No access | View own campus instance |
 | Staff Leader, other campus | No access | No access | No access |
 | Staff / Department / Student / VISITOR | Only if assigned, participant, owner, or explicitly linked | No access unless linked by a valid rule after release | Only within assigned/linked scope |
@@ -141,7 +141,7 @@ UC-12 Logout có thể kiểm tra user đã authenticated/session hợp lệ, nh
 Hệ thống có hai nhóm cổng đăng nhập chính:
 
 - **Cổng Visitor / Student-facing:** dùng cho VISITOR và các trường hợp sinh viên/khách theo chính sách đăng nhập bằng SSO/FEID. Nếu email Google/FEID thuộc role VISITOR và đăng nhập đúng cổng Visitor thì hệ thống cho phép vào nếu tài khoản đã tồn tại; nếu chưa tồn tại thì hệ thống có thể auto-provision tài khoản VISITOR không gắn campus, không department, không sub_role và lưu `users.created_via = 'SSO_AUTO_PROVISION'`. Visitor không chọn `selected_campus_id` khi login.
-- **Cổng Internal:** dùng cho HO, ADMIN, STAFF, DEPT, STUDENT nội bộ theo cấu hình hệ thống. Cổng này bắt buộc chọn campus khi role cần campus. Nếu email chưa có tài khoản nội bộ trong hệ thống thì không auto-provision và phải từ chối đăng nhập. Nếu tài khoản có role không phù hợp với cổng đang dùng, backend phải trả lỗi rõ ràng, ví dụ: “Tài khoản của bạn không phù hợp với cổng đăng nhập này.”
+- **Cổng Internal:** dùng cho HO, ADMIN, STAFF, DEPARTMENT, STUDENT nội bộ theo cấu hình hệ thống. Cổng này bắt buộc chọn campus khi role cần campus. Nếu email chưa có tài khoản nội bộ trong hệ thống thì không auto-provision và phải từ chối đăng nhập. Nếu tài khoản có role không phù hợp với cổng đang dùng, backend phải trả lỗi rõ ràng, ví dụ: “Tài khoản của bạn không phù hợp với cổng đăng nhập này.”
 
 Nếu một tài khoản VISITOR cần chuyển sang role nội bộ, Staff Leader hoặc role được cấp quyền phù hợp phải dùng UC-100 Update Account Role hoặc UC-96 Create Account để gán role, sub_role, campus và department hợp lệ. Sau khi chuyển role nội bộ, user phải đăng nhập qua cổng Internal và chọn đúng campus.
 

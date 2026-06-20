@@ -43,7 +43,7 @@ export function Profile() {
     studentId: 'HE150000',
     avatar: avatarImg,
     department: 'Phòng Đào tạo',
-    position: ((userRole === 'DEPT' || userRole === 'STAFF') && user.subRole === 'Leader') ? 'Trưởng phòng' : 'Nhân viên',
+    position: ((userRole === 'DEPARTMENT' || userRole === 'STAFF') && user.subRole?.toUpperCase() === 'LEADER') ? 'Trưởng phòng' : 'Nhân viên',
     workplace: 'FPT University',
     nationality: 'Việt Nam'
   });
@@ -287,7 +287,7 @@ export function Profile() {
                         )}
                       </div>
                    </div>
-                 ) : (userRole === 'DEPT' || userRole === 'STAFF') ? (
+                 ) : (userRole === 'DEPARTMENT' || userRole === 'STAFF') ? (
                    <>
                      <div className="bg-[#f0f7fc] border border-[#d2e5f5] rounded-2xl p-4 flex items-center gap-4 hover:shadow-sm transition-all md:col-span-1">
                         <div className="w-10 h-10 rounded-full bg-white text-[#004c91] flex items-center justify-center flex-shrink-0 shadow-sm border border-[#eef5fa]">

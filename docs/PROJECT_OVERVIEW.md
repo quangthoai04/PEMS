@@ -462,7 +462,7 @@ B2: Ký kết biên bản bàn giao (4 lần: Bàn giao ×2 + Nghiệm thu ×2)
 
 #### Giai đoạn 3 — KẾT THÚC (Sau tiếp khách)
 
-| Chức năng | HOST | STAFF_P | Student | DEPT | Visitor |
+| Chức năng | HOST | STAFF_P | Student | DEPARTMENT | Visitor |
 |---|---|---|---|---|---|
 | Upload album ảnh | ✓ | ✓ | ✓ | ✗ | ✗ |
 | Gán tên lên khuôn mặt ảnh | ✓ | ✓ | ✗ | ✗ | ✗ |

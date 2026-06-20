@@ -47,6 +47,12 @@ public sealed class RejectVisitRequestCommandHandler
             .FirstOrDefaultAsync(v => v.VisitRequestId == request.VisitRequestId, cancellationToken)
             ?? throw new NotFoundException("VisitRequest", request.VisitRequestId);
 
+        // HO has read-only monitoring on single-campus (chốt 2026-06) — never processing.
+        if (isHo && visit.VisitScope == VisitScopes.SingleCampus)
+            throw new BusinessRuleException(
+                "HO chỉ được xem đơn một cơ sở ở chế độ theo dõi, không được xử lý nghiệp vụ trên đơn này.",
+                "HO_SINGLE_CAMPUS_READ_ONLY");
+
         // Reject is a decision-stage action only.
         if (visit.Status != VisitRequestStatuses.PendingApproval)
             throw new ConflictException("Đơn đã được người khác xử lý hoặc trạng thái đã thay đổi.");

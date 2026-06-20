@@ -11,8 +11,8 @@ public sealed class CreateAccountCommand : IRequest<CreateAccountResponse>
 {
     public string Email { get; set; } = string.Empty;
     public string FullName { get; set; } = string.Empty;
-    public string RoleCode { get; set; } = string.Empty;     // ADMIN | HO | STAFF | DEPT | STUDENT | VISITOR
-    public string? SubRole { get; set; }                     // Leader | Staff (STAFF/DEPT only)
+    public string RoleCode { get; set; } = string.Empty;     // ADMIN | HO | STAFF | DEPARTMENT | STUDENT | VISITOR
+    public string? SubRole { get; set; }                     // Leader | Staff (STAFF/DEPARTMENT only)
     public ulong? PrimaryCampusId { get; set; }
     public ulong? DepartmentId { get; set; }
     public string? Phone { get; set; }

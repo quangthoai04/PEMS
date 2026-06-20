@@ -147,7 +147,7 @@ Controller chỉ nhận request và gọi `IMediator`. Logic kiểm tra scope, c
 | Column | Type | Null | Default | Notes |
 |---|---|---:|---|---|
 | `role_id` | `BIGINT UNSIGNED` | NO | `` |  |
-| `role_code` | `VARCHAR(30)` | NO | `` | ADMIN, HO, STAFF, DEPT, STUDENT, VISITOR |
+| `role_code` | `VARCHAR(30)` | NO | `` | ADMIN, HO, STAFF, DEPARTMENT, STUDENT, VISITOR |
 | `name` | `VARCHAR(100)` | NO | `` |  |
 | `description` | `VARCHAR(255)` | YES | `` |  |
 | `status` | `ENUM('ACTIVE','INACTIVE')` | NO | `'ACTIVE'` |  |
@@ -165,7 +165,7 @@ Controller chỉ nhận request và gọi `IMediator`. Logic kiểm tra scope, c
 - `KEY idx_roles_status_deleted (status, deleted_at)`
 
 **Check Constraints:**
-- `CHECK (role_code IN ('ADMIN','HO','STAFF','DEPT','STUDENT','VISITOR'))`
+- `CHECK (role_code IN ('ADMIN','HO','STAFF','DEPARTMENT','STUDENT','VISITOR'))`
 
 ### 4.2. `permissions`
 
@@ -199,7 +199,7 @@ Controller chỉ nhận request và gọi `IMediator`. Logic kiểm tra scope, c
 |---|---|---:|---|---|
 | `role_permission_id` | `BIGINT UNSIGNED` | NO | `` |  |
 | `role_id` | `BIGINT UNSIGNED` | NO | `` |  |
-| `sub_role` | `ENUM('NONE','Leader','Staff')` | NO | `'NONE'` | NONE for ADMIN/HO/STUDENT/VISITOR; Leader/Staff for STAFF and DEPT |
+| `sub_role` | `ENUM('NONE','Leader','Staff')` | NO | `'NONE'` | NONE for ADMIN/HO/STUDENT/VISITOR; Leader/Staff for STAFF and DEPARTMENT |
 | `permission_id` | `BIGINT UNSIGNED` | NO | `` |  |
 | `permission_level` | `ENUM('F','E','R','O')` | NO | `` | F=Full, E=Execute/Edit, R=Read, O=Own |
 | `granted_at` | `DATETIME` | NO | `CURRENT_TIMESTAMP` |  |
@@ -296,9 +296,9 @@ Controller chỉ nhận request và gọi `IMediator`. Logic kiểm tra scope, c
 | `nationality` | `VARCHAR(100)` | YES | `` | Quốc tịch của user/visitor |
 | `password_hash` | `VARCHAR(255)` | YES | `` | DEV/local password hash only. Production SSO-only accounts keep this NULL. |
 | `role_id` | `BIGINT UNSIGNED` | NO | `` |  |
-| `sub_role` | `ENUM('Leader','Staff')` | YES | `` | Only for STAFF/DEPT |
+| `sub_role` | `ENUM('Leader','Staff')` | YES | `` | Only for STAFF/DEPARTMENT |
 | `primary_campus_id` | `BIGINT UNSIGNED` | YES | `` | Campus duy nhất của user nội bộ. VISITOR phải NULL. |
-| `department_id` | `BIGINT UNSIGNED` | YES | `` | STAFF = IC department; DEPT = GENERAL department |
+| `department_id` | `BIGINT UNSIGNED` | YES | `` | STAFF = IC department; DEPARTMENT = GENERAL department |
 | `gender` | `ENUM('MALE','FEMALE','OTHER','UNKNOWN')` | YES | `` |  |
 | `avatar_url` | `VARCHAR(500)` | YES | `` |  |
 | `student_code` | `VARCHAR(30)` | YES | `` |  |

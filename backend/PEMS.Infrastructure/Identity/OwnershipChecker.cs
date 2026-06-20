@@ -5,7 +5,7 @@ namespace PEMS.Infrastructure.Identity;
 
 /// <summary>
 /// Data-scope checks for command/query handlers. HO and ADMIN are treated as
-/// system-wide; STAFF/STUDENT are scoped to their primary campus; DEPT is scoped
+/// system-wide; STAFF/STUDENT are scoped to their primary campus; DEPARTMENT is scoped
 /// to its department; everyone else only to their own records.
 /// </summary>
 public sealed class OwnershipChecker : IOwnershipChecker

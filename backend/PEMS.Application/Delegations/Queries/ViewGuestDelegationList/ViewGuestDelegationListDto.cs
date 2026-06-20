@@ -36,6 +36,25 @@ public sealed class VisitRequestManagementItemDto
     /// <summary>The signed-in user's participation role on the attending tab (IC_SUPPORT/DEPT_SUPPORT/...).</summary>
     public string? ParticipantRole { get; set; }
 
+    /// <summary>Which tab this row belongs to: RESPONSIBLE | INVITED | MY_REQUESTS | TASKS.</summary>
+    public string TabType { get; set; } = "RESPONSIBLE";
+
+    /// <summary>
+    /// The signed-in user's relation to this row. One of:
+    /// NONE | HO_APPROVER | HO_MONITOR | CAMPUS_APPROVER | TEMP_HOST | HOST | IC_SUPPORT |
+    /// DEPT_SUPPORT | STUDENT_SUPPORT | VISITOR_OWNER | DEPARTMENT_TASK_OWNER.
+    /// HO_APPROVER = HO on a pending multi-campus request (can decide); HO_MONITOR = HO
+    /// read-only (single-campus, or an already-decided multi-campus request).
+    /// </summary>
+    public string CurrentUserRelation { get; set; } = "NONE";
+
+    /// <summary>
+    /// True when the caller may only view this row (no mutating action available) — e.g.
+    /// HO monitoring a SINGLE_CAMPUS request, or any attending-tab row. Convenience flag
+    /// derived from <see cref="AllowedActions"/>; the frontend may use it to render a read-only badge.
+    /// </summary>
+    public bool IsReadOnly { get; set; }
+
     public DateTime? ExpectedStartAt { get; set; }
     public DateTime? ExpectedEndAt { get; set; }
     public DateTime? PlannedStartAt { get; set; }

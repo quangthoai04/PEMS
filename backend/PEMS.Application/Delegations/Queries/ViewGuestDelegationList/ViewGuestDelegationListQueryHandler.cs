@@ -86,7 +86,13 @@ public sealed class ViewGuestDelegationListQueryHandler
 
         var now = _clock.UtcNow;
         foreach (var item in items)
+        {
             item.AllowedActions = BuildAllowedActions(item, tab, userId, now);
+            item.TabType = ResolveTabType(tab, roleCode);
+            item.CurrentUserRelation = ResolveRelation(item, tab, roleCode, isStaffLeader);
+            // Read-only when no mutating action is available (only VIEW_DETAIL, or none).
+            item.IsReadOnly = !item.AllowedActions.Any(a => a != "VIEW_DETAIL");
+        }
 
         return PaginatedResult<VisitRequestManagementItemDto>.Create(items, request.Page, request.PageSize, totalItems);
     }
@@ -149,9 +155,9 @@ public sealed class ViewGuestDelegationListQueryHandler
                     || x.vr.CreatedBy == userId
                     || (!string.IsNullOrEmpty(currentUserEmail) && x.vr.RegistrantEmail != null && x.vr.RegistrantEmail.ToLower() == currentUserEmail));
             }
-            else if (roleCode == RoleCodes.Dept || roleCode == RoleCodes.Student)
+            else if (roleCode == RoleCodes.Department || roleCode == RoleCodes.Student)
             {
-                // Dept (incl. Dept Leader = DEPT + sub_role Leader) / Student appear in Tab 1
+                // Dept (incl. Dept Leader = DEPARTMENT + sub_role Leader) / Student appear in Tab 1
                 // only when given a concrete assignment — a logistics/agenda task, or an
                 // ASSIGNED (not merely INVITED) participant slot. No throw; empty if none.
                 q = q.Where(x =>
@@ -341,8 +347,11 @@ public sealed class ViewGuestDelegationListQueryHandler
 
         if (roleCode == RoleCodes.Visitor)
             q = q.Where(vr => vr.VisitorUserId == userId || vr.CreatedBy == userId);
-        else if (roleCode == RoleCodes.Ho)
-            q = q.Where(vr => vr.VisitScope == VisitScopes.MultiCampus);
+        // HO sees every MULTI_CAMPUS request (they decide it) AND every SINGLE_CAMPUS request
+        // in read-only monitoring mode (business rule chốt 2026-06: HO theo dõi SINGLE_CAMPUS).
+        // No filter is applied for HO here — read-only is enforced via AllowedActions (the HO
+        // action builder only grants HO_APPROVE/HO_REJECT to MULTI_CAMPUS pending requests).
+        // else if (roleCode == RoleCodes.Ho)  → all requests visible.
 
         if (!string.IsNullOrWhiteSpace(request.Keyword))
         {
@@ -538,5 +547,46 @@ public sealed class ViewGuestDelegationListQueryHandler
         }
 
         return actions;
+    }
+
+    /// <summary>Which tab/section a row belongs to, for the frontend's convenience.</summary>
+    private static string ResolveTabType(string tab, string? roleCode)
+    {
+        if (tab == TabAttending) return "INVITED";
+        if (roleCode == RoleCodes.Visitor) return "MY_REQUESTS";
+        return "RESPONSIBLE";
+    }
+
+    /// <summary>
+    /// Best-effort relation of the caller to a row (display/telemetry only — never an
+    /// authorization input; every action is still re-validated server-side).
+    /// </summary>
+    private string ResolveRelation(VisitRequestManagementItemDto item, string tab, string? roleCode, bool isStaffLeader)
+    {
+        if (tab == TabAttending)
+        {
+            return item.ParticipantRole switch
+            {
+                ParticipantRoles.IcSupport => "IC_SUPPORT",
+                ParticipantRoles.DeptSupport => "DEPT_SUPPORT",
+                ParticipantRoles.Student => "STUDENT_SUPPORT",
+                _ => "NONE",
+            };
+        }
+
+        if (item.CurrentUserIsHost)
+            return item.HostAssignmentSource == "AUTO_STAFF_LEADER" ? "TEMP_HOST" : "HOST";
+        if (roleCode == RoleCodes.Visitor)
+            return "VISITOR_OWNER";
+        if (roleCode == RoleCodes.Ho)
+            // HO can DECIDE only a pending multi-campus request; everything else is monitoring.
+            return item.VisitScope == VisitScopes.MultiCampus
+                && item.RequestStatus == VisitRequestStatuses.PendingApproval
+                ? "HO_APPROVER" : "HO_MONITOR";
+        if (isStaffLeader)
+            return "CAMPUS_APPROVER";
+        if (roleCode == RoleCodes.Department || roleCode == RoleCodes.Student)
+            return "DEPARTMENT_TASK_OWNER";
+        return "NONE";
     }
 }

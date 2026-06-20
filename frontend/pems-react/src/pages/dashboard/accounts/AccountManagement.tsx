@@ -22,14 +22,14 @@ import type {
 } from '../../../features/account-management/types/accountManagement.types';
 
 const CAMPUSES = ["Hà Nội", "Hồ Chí Minh", "Đà Nẵng", "Cần Thơ", "Quy Nhơn"];
-const ROLES = ["ADMIN", "HO", "STAFF", "DEPT", "STUDENT", "VISITOR"];
+const ROLES = ["ADMIN", "HO", "STAFF", "DEPARTMENT", "STUDENT", "VISITOR"];
 
 export function AccountManagement() {
   const navigate = useNavigate();
   const userStr = localStorage.getItem("currentUser");
   const user = userStr ? JSON.parse(userStr) : null;
   const isHO = user?.role?.toUpperCase() === 'HO';
-  const isStaffLeader = user?.role?.toUpperCase() === 'STAFF' && user?.subRole === 'Leader';
+  const isStaffLeader = user?.role?.toUpperCase() === 'STAFF' && user?.subRole?.toUpperCase() === 'LEADER';
   const isAdmin = user?.role?.toUpperCase() === 'ADMIN' || isStaffLeader;
   const isStaff = user?.role?.toUpperCase() === 'STAFF';
 
@@ -302,7 +302,7 @@ export function AccountManagement() {
     const matchesCampus = (!isHO || !campusFilter) ? true : acc.campus === campusFilter;
     const matchesRole = roleFilter === "" ? true : acc.role === roleFilter;
     const matchesStatus = statusFilter === "" ? true : acc.status === statusFilter;
-    const matchesStaffLeaderRole = isStaffLeader ? ['STAFF', 'DEPT', 'STUDENT', 'VISITOR'].includes(acc.role) : true;
+    const matchesStaffLeaderRole = isStaffLeader ? ['STAFF', 'DEPARTMENT', 'STUDENT', 'VISITOR'].includes(acc.role) : true;
     return matchesSearch && matchesCampus && matchesRole && matchesStatus && matchesStaffLeaderRole;
   });
 
@@ -324,7 +324,7 @@ export function AccountManagement() {
     switch(role.toUpperCase()) {
       case 'ADMIN': return 'bg-red-50 text-red-700 border-red-200';
       case 'HO': return 'bg-blue-50 text-blue-700 border-blue-200';
-      case 'DEPT': return 'bg-orange-50 text-orange-700 border-orange-200';
+      case 'DEPARTMENT': return 'bg-orange-50 text-orange-700 border-orange-200';
       case 'STAFF': return 'bg-emerald-50 text-emerald-700 border-emerald-200';
       case 'STUDENT': return 'bg-purple-50 text-purple-700 border-purple-200';
       case 'VISITOR': return 'bg-pink-50 text-pink-700 border-pink-200';
@@ -485,7 +485,7 @@ export function AccountManagement() {
               <option className="text-gray-900" value="">Tất cả Vai trò</option>
               {ROLES.filter(r => {
                 if (isHO) return ['ADMIN', 'HO', 'STAFF'].includes(r);
-                if (isStaffLeader) return ['STAFF', 'DEPT', 'STUDENT', 'VISITOR'].includes(r);
+                if (isStaffLeader) return ['STAFF', 'DEPARTMENT', 'STUDENT', 'VISITOR'].includes(r);
                 return r !== 'HO';
               }).map(r => <option className="text-gray-900" key={r} value={r}>{r}</option>)}
             </select>
@@ -888,14 +888,14 @@ export function AccountManagement() {
                                 {value:'STAFF', label:'STAFF (Leader of Campus)'}
                               ] : isStaffLeader ? [
                                 {value:'STAFF', label:'STAFF (Nhân sự IC)'},
-                                {value:'DEPT', label:'DEPT (Trưởng phòng ban)'},
+                                {value:'DEPARTMENT', label:'Department (phòng ban)'},
                                 {value:'STUDENT', label:'STUDENT (Sinh viên)'},
                                 {value:'VISITOR', label:'VISITOR (Khách)'}
                               ] : [
                                 {value:'ADMIN', label:'ADMIN'},
                                 {value:'HO', label:'HO (Head Office)'},
                                 {value:'STAFF', label:'STAFF'},
-                                {value:'DEPT', label:'DEPT'},
+                                {value:'DEPARTMENT', label:'DEPARTMENT'},
                                 {value:'STUDENT', label:'STUDENT'},
                                 {value:'VISITOR', label:'VISITOR'}
                               ]
@@ -911,7 +911,7 @@ export function AccountManagement() {
                           </>
                         )}
 
-                        {(data.role === 'STAFF' || data.role === 'DEPT') && (
+                        {(data.role === 'STAFF' || data.role === 'DEPARTMENT') && (
                           <>
                             <Select label="Cơ sở trực thuộc" value={data.campus} field="campus" options={CAMPUSES.map(c=>({value:c,label:c}))} disabled={isStaffLeader} />
                             <Select label="Chức vụ" value={data.subRole} field="subRole" options={[{value:'Trưởng phòng', label:'Trưởng phòng'}, {value:'Nhân viên', label:'Nhân viên'}]} disabled={isStaffLeader} />
@@ -1038,7 +1038,7 @@ export function AccountManagement() {
                       ) : isStaffLeader ? (
                         <>
                           <option value="STAFF">STAFF (Nhân sự IC)</option>
-                          <option value="DEPT">DEPT (Trưởng phòng ban)</option>
+                          <option value="DEPARTMENT">Department (phòng ban)</option>
                           <option value="STUDENT">STUDENT (Sinh viên)</option>
                           <option value="VISITOR">VISITOR (Khách)</option>
                         </>

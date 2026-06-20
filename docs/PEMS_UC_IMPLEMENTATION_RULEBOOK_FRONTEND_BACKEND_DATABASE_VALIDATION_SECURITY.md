@@ -281,7 +281,7 @@ Login/logout/public endpoint có thể `[AllowAnonymous]`, nhưng handler vẫn 
 ```text
 - Có thể xem toàn bộ account.
 - Có thể filter mọi campus/role/status/department.
-- Có thể thấy account ADMIN/HO/STAFF/DEPT/STUDENT/VISITOR.
+- Có thể thấy account ADMIN/HO/STAFF/DEPARTMENT/STUDENT/VISITOR.
 - Có thể quản trị kỹ thuật theo permission được cấp.
 ```
 
@@ -1081,7 +1081,7 @@ GET /api/accounts?page=1&pageSize=20&keyword=nguyen&roleCode=STAFF&status=ACTIVE
 ```text
 [ ] Không token gọi GET /accounts -> 401.
 [ ] VISITOR gọi GET /accounts -> 403.
-[ ] DEPT/STUDENT không có permission -> 403.
+[ ] DEPARTMENT/STUDENT không có permission -> 403.
 [ ] ADMIN gọi GET /accounts -> 200 toàn hệ thống.
 [ ] HO gọi GET /accounts -> 200 theo scope HO.
 [ ] STAFF_L campus HN -> chỉ thấy campus HN.

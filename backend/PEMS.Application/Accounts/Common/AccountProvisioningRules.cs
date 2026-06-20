@@ -61,12 +61,12 @@ internal static class AccountProvisioningRules
                 return new ResolvedShape(role.RoleId, roleCode, null, null, null);
 
             case RoleCodes.Staff:
-            case RoleCodes.Dept:
+            case RoleCodes.Department:
             {
                 if (subRole != SubRoles.Leader && subRole != SubRoles.Staff)
-                    throw new ValidationException("Sub-role (Leader or Staff) is required for STAFF/DEPT roles.");
+                    throw new ValidationException("Sub-role (Leader or Staff) is required for STAFF/DEPARTMENT roles.");
                 if (departmentId is null)
-                    throw new ValidationException("Department is required for STAFF/DEPT roles.");
+                    throw new ValidationException("Department is required for STAFF/DEPARTMENT roles.");
 
                 var dept = await db.Departments.FirstOrDefaultAsync(d => d.DepartmentId == departmentId, cancellationToken)
                     ?? throw new ValidationException("Selected department was not found.");
@@ -77,7 +77,7 @@ internal static class AccountProvisioningRules
                 if (!string.Equals(dept.DepartmentType, expectedType, StringComparison.OrdinalIgnoreCase))
                     throw new ValidationException(roleCode == RoleCodes.Staff
                         ? "STAFF must belong to an IC department."
-                        : "DEPT must belong to a GENERAL department.");
+                        : "DEPARTMENT must belong to a GENERAL department.");
 
                 if (primaryCampusId is not null && primaryCampusId != dept.CampusId)
                     throw new ValidationException("Selected campus does not match the department's campus.");

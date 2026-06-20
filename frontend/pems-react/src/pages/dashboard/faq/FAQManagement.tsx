@@ -37,10 +37,10 @@ export function FAQManagement() {
   const user = userStr ? JSON.parse(userStr) : null;
   const userRole = user?.role?.toUpperCase();
   const isHO = userRole === 'HO';
-  const isAdmin = userRole === 'ADMIN' || (userRole === 'STAFF' && user?.subRole === 'Leader');
+  const isAdmin = userRole === 'ADMIN' || (userRole === 'STAFF' && user?.subRole?.toUpperCase() === 'LEADER');
   const isFullAccess = isHO || isAdmin;
 
-  if (!['ADMIN', 'HO', 'STAFF', 'DEPT', 'STUDENT'].includes(userRole || '')) {
+  if (!['ADMIN', 'HO', 'STAFF', 'DEPARTMENT', 'STUDENT'].includes(userRole || '')) {
     return (
       <div className="p-4 sm:p-6 md:p-8 h-full flex items-center justify-center">
         <div className="text-center">

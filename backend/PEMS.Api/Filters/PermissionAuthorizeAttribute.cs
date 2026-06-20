@@ -47,7 +47,7 @@ public sealed class RequirePermissionAttribute : Attribute, IAsyncAuthorizationF
             return;
         }
 
-        if (roleCode == "STAFF" || roleCode == "DEPT")
+        if (roleCode == RoleCodes.Staff || roleCode == RoleCodes.Department)
         {
             if (string.IsNullOrEmpty(subRole))
             {

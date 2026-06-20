@@ -45,7 +45,7 @@ export function VisitProcess() {
   const userStr = localStorage.getItem("currentUser");
   const currentUser = userStr ? JSON.parse(userStr) : null;
   const isHO = currentUser?.role?.toUpperCase() === 'HO';
-  const isDept = currentUser?.role?.toUpperCase() === 'DEPT' || currentUser?.role?.toUpperCase() === 'STUDENT' || currentUser?.role?.toUpperCase() === 'VISITOR';
+  const isDept = currentUser?.role?.toUpperCase() === 'DEPARTMENT' || currentUser?.role?.toUpperCase() === 'STUDENT' || currentUser?.role?.toUpperCase() === 'VISITOR';
   const isStudent = currentUser?.role?.toUpperCase() === 'STUDENT';
   const isVisitor = currentUser?.role?.toUpperCase() === 'VISITOR';
 

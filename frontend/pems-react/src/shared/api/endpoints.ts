@@ -44,6 +44,10 @@ export const API_ENDPOINTS = {
     cancel: (visitRequestId: string | number) => `/delegations/${visitRequestId}/cancel`,
     cancelCampus: (visitRequestId: string | number, visitInstanceId: string | number) =>
       `/delegations/${visitRequestId}/campuses/${visitInstanceId}/cancel`,
+    // UC-27 Confirm Participation: invitee's own invitations + accept/decline.
+    myInvitations: '/delegations/my-invitations',
+    invitationDetail: (participantId: string | number) => `/delegations/invitations/${participantId}`,
+    respondInvitation: (participantId: string | number) => `/delegations/participants/${participantId}/respond`,
   },
   visitRequests: {
     initiate: '/visit-requests/initiate',

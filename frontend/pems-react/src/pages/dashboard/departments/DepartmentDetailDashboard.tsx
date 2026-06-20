@@ -35,10 +35,10 @@ export function DepartmentDetailDashboard() {
 
   const userStr = localStorage.getItem("currentUser");
   const user = userStr ? JSON.parse(userStr) : null;
-  const isDeptLeader = user?.role === 'Dept' && user?.subRole === 'Leader';
-  const isStaffLeader = user?.role?.toUpperCase() === 'STAFF' && user?.subRole === 'Leader';
+  const isDeptLeader = user?.role?.toUpperCase() === 'DEPARTMENT' && user?.subRole?.toUpperCase() === 'LEADER';
+  const isStaffLeader = user?.role?.toUpperCase() === 'STAFF' && user?.subRole?.toUpperCase() === 'LEADER';
   const isStaffRole = user?.role?.toUpperCase() === 'STAFF';
-  const isStaff = user?.role === 'Dept' && user?.subRole === 'Staff';
+  const isStaff = user?.role?.toUpperCase() === 'DEPARTMENT' && user?.subRole?.toUpperCase() === 'STAFF';
   const isLeader = user?.role === 'ADMIN' || user?.role === 'Admin' || user?.role === 'HO' || isStaffLeader || isDeptLeader;
   const isHO = user?.role?.toUpperCase() === 'HO';
   const isSysAdmin = user?.role?.toUpperCase() === 'ADMIN' || user?.role === 'Admin';
@@ -187,7 +187,7 @@ export function DepartmentDetailDashboard() {
         >
           Dashboard
         </button>
-        {(user?.role?.toUpperCase() !== 'DEPT' && user?.role?.toUpperCase() !== 'STAFF') && (
+        {(user?.role?.toUpperCase() !== 'DEPARTMENT' && user?.role?.toUpperCase() !== 'STAFF') && (
           <>
             <span className="mx-2">/</span>
             <button
@@ -289,7 +289,7 @@ export function DepartmentDetailDashboard() {
         </div>
 
         {/* Tổng nhân sự */}
-        <div className={`bg-gradient-to-br from-[#004c91] to-[#003b73] text-white rounded-xl p-5 shadow-sm flex flex-col justify-between relative overflow-hidden group max-h-[320px] ${!(isStaffRole || user?.role?.toUpperCase() === 'DEPT' || isHO) ? 'md:col-span-3' : 'md:col-span-6'}`}>
+        <div className={`bg-gradient-to-br from-[#004c91] to-[#003b73] text-white rounded-xl p-5 shadow-sm flex flex-col justify-between relative overflow-hidden group max-h-[320px] ${!(isStaffRole || user?.role?.toUpperCase() === 'DEPARTMENT' || isHO) ? 'md:col-span-3' : 'md:col-span-6'}`}>
           <div className="absolute top-3 right-3 opacity-10 group-hover:opacity-20 transition-opacity">
             <Users className="w-12 h-12" />
           </div>
@@ -310,7 +310,7 @@ export function DepartmentDetailDashboard() {
         </div>
 
         {/* Số tài khoản */}
-        {!(isStaffRole || user?.role?.toUpperCase() === 'DEPT' || isHO) && (
+        {!(isStaffRole || user?.role?.toUpperCase() === 'DEPARTMENT' || isHO) && (
           <div className="md:col-span-3 bg-gradient-to-br from-[#f37021] to-[#df6217] text-white rounded-xl p-5 shadow-sm flex flex-col justify-between relative overflow-hidden group max-h-[320px]">
             <div className="absolute top-3 right-3 opacity-10 group-hover:opacity-20 transition-opacity">
               <Key className="w-12 h-12" />
@@ -561,7 +561,7 @@ export function DepartmentDetailDashboard() {
             />
             <Search className="w-4 h-4 text-white/60 absolute left-3.5 top-1/2 -translate-y-1/2" />
           </div>
-          {!(isStaffRole || user?.role?.toUpperCase() === 'DEPT' || isHO) && (
+          {!(isStaffRole || user?.role?.toUpperCase() === 'DEPARTMENT' || isHO) && (
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-2 text-sm font-medium text-white/80">
                 <Filter className="w-4 h-4" />
@@ -602,7 +602,7 @@ export function DepartmentDetailDashboard() {
                 <th className="p-4 w-[15%] font-bold text-center whitespace-nowrap">
                   Chức vụ
                 </th>
-                {!(isStaffRole || user?.role?.toUpperCase() === 'DEPT' || isHO) && (
+                {!(isStaffRole || user?.role?.toUpperCase() === 'DEPARTMENT' || isHO) && (
                   <th className="p-4 w-[15%] font-bold text-center whitespace-nowrap">
                     Tài khoản
                   </th>
@@ -643,7 +643,7 @@ export function DepartmentDetailDashboard() {
                         {member.role}
                       </span>
                     </td>
-                    {!(isStaffRole || user?.role?.toUpperCase() === 'DEPT' || isHO) && (
+                    {!(isStaffRole || user?.role?.toUpperCase() === 'DEPARTMENT' || isHO) && (
                       <td className="p-4 text-center whitespace-nowrap">
                         {member.status === "Đã cấp tài khoản" ? (
                           <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-[#eaffe4] text-[#0aa14f] border border-[#ceefda]">
@@ -682,7 +682,7 @@ export function DepartmentDetailDashboard() {
                             <Trash2 className="w-5 h-5" />
                           </button>
                         )}
-                        {member.status === "Chưa cấp tài khoản" && user?.role?.toUpperCase() !== 'DEPT' && !(isStaffRole || isHO) && (
+                        {member.status === "Chưa cấp tài khoản" && user?.role?.toUpperCase() !== 'DEPARTMENT' && !(isStaffRole || isHO) && (
                           <button
                             className={`bg-[#0aa14f] hover:bg-[#088a42] text-white rounded-lg text-xs font-bold transition-colors shadow-sm outline-none flex items-center justify-center whitespace-nowrap ${isStaffOrHO ? 'p-2' : 'px-3 py-1.5 gap-1.5'}`}
                             title="Cấp tài khoản"
@@ -698,7 +698,7 @@ export function DepartmentDetailDashboard() {
               ) : (
                 <tr>
                   <td
-                    colSpan={(isStaffRole || user?.role?.toUpperCase() === 'DEPT' || isHO) ? 6 : 7}
+                    colSpan={(isStaffRole || user?.role?.toUpperCase() === 'DEPARTMENT' || isHO) ? 6 : 7}
                     className="py-12 text-center text-gray-500 bg-white font-medium"
                   >
                     Không tìm thấy nhân sự nào

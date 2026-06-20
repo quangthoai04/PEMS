@@ -20,7 +20,7 @@ export function PartnerDetail() {
   const userStr = localStorage.getItem('currentUser');
   const user = userStr ? JSON.parse(userStr) : null;
   const userRole = user?.role?.toUpperCase() || '';
-  const isStaffLeader = user?.role?.toUpperCase() === 'STAFF' && user?.subRole === 'Leader';
+  const isStaffLeader = user?.role?.toUpperCase() === 'STAFF' && user?.subRole?.toUpperCase() === 'LEADER';
   const isHO = userRole === 'HO';
 
   // Mock contact person data

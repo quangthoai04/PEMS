@@ -6,7 +6,9 @@ using PEMS.Application.Delegations.Commands.ApproveCrossCampusRequest;
 using PEMS.Application.Delegations.Commands.CancelVisitRequest;
 using PEMS.Application.Delegations.Commands.ProcessVisitRequest;
 using PEMS.Application.Delegations.Commands.RejectVisitRequest;
+using PEMS.Application.Delegations.Commands.RespondVisitParticipantInvitation;
 using PEMS.Application.Delegations.Queries.GetHostCandidates;
+using PEMS.Application.Delegations.Queries.ViewMyVisitInvitations;
 using PEMS.Domain.Constants;
 using System.Threading;
 using System.Threading.Tasks;
@@ -123,6 +125,36 @@ namespace PEMS.Api.Controllers
         public async Task<IActionResult> ConfirmParticipation([FromBody] PEMS.Application.Delegations.Commands.ConfirmParticipation.ConfirmParticipationCommand command, CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(command, cancellationToken);
+            return Ok(result);
+        }
+
+        // ── UC-27 Confirm Participation: an invitee's own participation invitations ─────
+        // The pending invitations to respond to (and optionally the responded history).
+        [HttpGet("my-invitations")]
+        [RequirePermission(PermissionCodes.ConfirmParticipation, PermissionLevels.Read)]
+        public async Task<IActionResult> GetMyInvitations([FromQuery] bool includeResponded, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(new ViewMyVisitInvitationsQuery { IncludeResponded = includeResponded }, cancellationToken);
+            return Ok(result);
+        }
+
+        // A single invitation for the invitation-detail screen (ownership enforced server-side).
+        [HttpGet("invitations/{participantId}")]
+        [RequirePermission(PermissionCodes.ConfirmParticipation, PermissionLevels.Read)]
+        public async Task<IActionResult> GetInvitation(ulong participantId, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(new GetVisitInvitationByIdQuery(participantId), cancellationToken);
+            return Ok(result);
+        }
+
+        // Accept / decline an invitation (decline requires a reason). Accepting makes the row
+        // appear in the "Đơn mời tham dự" tab; this endpoint is NOT on that tab.
+        [HttpPost("participants/{participantId}/respond")]
+        [RequirePermission(PermissionCodes.ConfirmParticipation, PermissionLevels.Execute)]
+        public async Task<IActionResult> RespondInvitation(ulong participantId, [FromBody] RespondInvitationBody body, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(
+                new RespondVisitParticipantInvitationCommand(participantId, body.Accept, body.DeclineReason), cancellationToken);
             return Ok(result);
         }
 
@@ -261,4 +293,7 @@ namespace PEMS.Api.Controllers
 
     /// <summary>Request body for the UC-22 approve-and-assign / transfer-host endpoint.</summary>
     public sealed record AssignHostBody(ulong HostUserId);
+
+    /// <summary>Request body for the UC-27 respond-to-invitation endpoint (decline requires a reason).</summary>
+    public sealed record RespondInvitationBody(bool Accept, string? DeclineReason);
 }

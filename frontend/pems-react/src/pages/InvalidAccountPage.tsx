@@ -6,7 +6,7 @@ import { useAuth } from '../shared/hooks/useAuth';
 /**
  * Trang /invalid-account
  * Hiển thị khi tài khoản chưa được cấu hình vai trò hợp lệ:
- * - STAFF / DEPT thiếu sub_role (Leader/Staff)
+ * - STAFF / DEPARTMENT thiếu sub_role (Leader/Staff)
  * - roleCode không hợp lệ hoặc thiếu role
  * Không cấp quyền ngầm, không làm trắng màn hình.
  */

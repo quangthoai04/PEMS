@@ -29,8 +29,8 @@ export function VisitRequestDetail() {
 
   const userStr = localStorage.getItem("currentUser");
   const user = userStr ? JSON.parse(userStr) : null;
-  const isLeader = user?.role === 'ADMIN' || user?.role === 'HO' || user?.role === 'Staff' || (user?.role === 'Dept' && user?.subRole === 'Leader');
-  const isStaff = user?.role === 'Dept' && user?.subRole === 'Staff';
+  const isLeader = user?.role === 'ADMIN' || user?.role === 'HO' || user?.role?.toUpperCase() === 'STAFF' || (user?.role?.toUpperCase() === 'DEPARTMENT' && user?.subRole?.toUpperCase() === 'LEADER');
+  const isStaff = user?.role?.toUpperCase() === 'DEPARTMENT' && user?.subRole?.toUpperCase() === 'STAFF';
 
   const [taskActionStatus, setTaskActionStatus] = useState<'pending' | 'confirmed' | 'rejected' | 'waiting_for_approval'>(() => {
     return inMemoryTaskStore[`visitRequest_${id}_${type}_actionStatus`] || 'pending';
@@ -43,7 +43,7 @@ export function VisitRequestDetail() {
   const [isProposing, setIsProposing] = useState(false);
   const [proposedTime, setProposedTime] = useState(() => inMemoryTaskStore[`visitRequest_${id}_${type}_proposedTime`] || "");
   const [proposedContent, setProposedContent] = useState(() => inMemoryTaskStore[`visitRequest_${id}_${type}_proposedContent`] || "");
-  const [proposedBy, setProposedBy] = useState(() => inMemoryTaskStore[`visitRequest_${id}_${type}_proposedBy`] || "DEPT");
+  const [proposedBy, setProposedBy] = useState(() => inMemoryTaskStore[`visitRequest_${id}_${type}_proposedBy`] || "DEPARTMENT");
   const [isSubmitProposalModalOpen, setIsSubmitProposalModalOpen] = useState(false);
 
   useEffect(() => {
@@ -258,7 +258,7 @@ export function VisitRequestDetail() {
               </div>
             )}
 
-            {!isProposing && taskActionStatus === 'pending' && ['DEPT', 'STAFF'].includes(user?.role?.toUpperCase()) && (
+            {!isProposing && taskActionStatus === 'pending' && ['DEPARTMENT', 'STAFF'].includes(user?.role?.toUpperCase()) && (
               <div className="flex justify-end pt-2">
                 <button 
                   onClick={() => setIsProposing(true)}
@@ -720,7 +720,7 @@ export function VisitRequestDetail() {
               <button 
                 onClick={() => {
                    setTaskActionStatus('waiting_for_approval');
-                   setProposedBy(user?.role?.toUpperCase() || 'DEPT');
+                   setProposedBy(user?.role?.toUpperCase() || 'DEPARTMENT');
                    setIsProposing(false);
                    setActionTime(getCurrentTime());
                    setIsSubmitProposalModalOpen(false);

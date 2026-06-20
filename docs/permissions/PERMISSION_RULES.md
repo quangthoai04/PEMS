@@ -34,8 +34,8 @@ The addendum section at the end is the authoritative update for cancellation UC-
 | `HO` | `NULL` / `NONE` | HO |
 | `STAFF` | `Leader` | Staff Leader |
 | `STAFF` | `Staff` | Staff |
-| `DEPT` | `Leader` | Department Lead |
-| `DEPT` | `Staff` | Department |
+| `DEPARTMENT` | `Leader` | Department Lead |
+| `DEPARTMENT` | `Staff` | Department |
 | `STUDENT` | `NULL` / `NONE` | Student |
 | `VISITOR` | `NULL` / `NONE` | VISITOR |
 
@@ -84,7 +84,7 @@ This is the most important SQL v5 rule.
 | Role | Single-campus request | Multi-campus before HO approval | Multi-campus after HO approval/release |
 |---|---:|---:|---:|
 | ADMIN | No access | No access | No access |
-| HO | No access | View + approve/reject | View |
+| HO | View (read-only, monitor) ¹ | View + approve/reject | View |
 | Staff Leader, same campus | View + process | No access | View own campus instance |
 | Staff Leader, other campus | No access | No access | No access |
 | Staff | Only assigned/linked records | No access unless linked after release | Assigned/linked records only |
@@ -92,15 +92,27 @@ This is the most important SQL v5 rule.
 | Student | Assigned/participant scope only | No access unless assigned after release | Assigned/participant scope only |
 | VISITOR | Own submitted/linked request only | Own submitted/linked request only | Own submitted/linked request only |
 
+> ¹ **Business rule update (chốt 2026-06):** HO may now **view** `SINGLE_CAMPUS`
+> requests in **read-only monitoring** mode. HO still has **no processing rights** on
+> `SINGLE_CAMPUS` — no approve / reject / assign-host / transfer-host / cancel. This
+> supersedes the earlier "HO No access to SINGLE_CAMPUS" rule for the list/detail screen
+> only; the processing restriction is unchanged.
+
 ### 4.1. HO Query Rule
 
-HO list/detail must use `vw_visit_requests_for_ho` or equivalent predicate:
+HO list/detail now returns **all** requests, but processing is restricted by scope:
 
 ```sql
+-- Visibility: HO sees MULTI_CAMPUS (decide) + SINGLE_CAMPUS (monitor, read-only).
+-- (No visit_scope filter on the list query for HO.)
+
+-- Processing (approve/reject/assign/cancel) is allowed ONLY for:
 WHERE visit_scope = 'MULTI_CAMPUS'
 ```
 
-HO must not see `SINGLE_CAMPUS` even with direct ID access.
+HO read-only on `SINGLE_CAMPUS` is enforced by the backend AllowedActions builder, which
+grants HO only `VIEW_DETAIL` for `SINGLE_CAMPUS` rows (no mutating action). Action
+endpoints (approve/reject/assign/cancel) still reject HO on `SINGLE_CAMPUS`.
 
 ### 4.2. Staff Leader Query Rule
 
@@ -294,3 +306,29 @@ Controller chỉ nhận request và gọi `IMediator`. Logic kiểm tra scope, c
 ## Không dùng `external_confirmation_note`
 
 Mọi bằng chứng xác nhận ngoài hệ thống được ghi trong `cancellation_reason`, không tạo field riêng.
+
+## Role/SubRole Canonical Rules
+
+PEMS không dùng role riêng cho Staff Leader hoặc Department Leader. Hệ thống dùng role chính kết hợp với subRole.
+
+| Nhóm người dùng | role_code | sub_role | Ghi chú |
+|---|---|---|---|
+| Admin | `ADMIN` | NULL / NONE | Quản trị hệ thống |
+| Head Office | `HO` | NULL / NONE | Cấp Head Office |
+| Staff | `STAFF` | `STAFF` | Nhân sự IC thường |
+| Staff Leader | `STAFF` | `LEADER` | Trưởng IC / người duyệt campus |
+| Department Staff | `DEPARTMENT` | `STAFF` | Nhân sự phòng ban |
+| Department Leader | `DEPARTMENT` | `LEADER` | Trưởng phòng ban |
+| Student | `STUDENT` | NULL / NONE | Sinh viên hỗ trợ |
+| Visitor | `VISITOR` | NULL / NONE | Khách ngoài |
+
+### Quy tắc
+
+- Không dùng role `DEPT` (đã đổi sang `DEPARTMENT`).
+- Không dùng role `STAFF_LEADER`, `DEPT_LEADER`, `DEPARTMENT_LEADER` — Leader luôn là `sub_role = LEADER`.
+- Staff Leader luôn là `role_code = STAFF` + `sub_role = LEADER`; Staff thường là `STAFF` + `STAFF`.
+- Department Leader luôn là `role_code = DEPARTMENT` + `sub_role = LEADER`; Department Staff là `DEPARTMENT` + `STAFF`.
+- ADMIN, HO, STUDENT, VISITOR không dùng `sub_role` trong bảng `users` (NULL). Trong `role_permissions` dùng `NONE`.
+- Lưu trữ DB: `users.sub_role ENUM('LEADER','STAFF')` (uppercase); `role_permissions.sub_role ENUM('NONE','Leader','Staff')`. So khớp dùng collation `utf8mb4_unicode_ci` (case-insensitive) nên `LEADER` khớp `Leader`. Code phải normalize uppercase khi so sánh để tránh lỗi casing.
+- `DEPT_SUPPORT` là role tham dự đoàn (visit participant), KHÔNG phải role_code — không đổi tên.
+- Các enum audit `decision_actor_role`/`cancellation_actor_type`/`host_assignment_source` chứa `STAFF_LEADER`/`AUTO_STAFF_LEADER` là nhãn người thực hiện (audit), KHÔNG phải role_code — giữ nguyên để không phá trigger.

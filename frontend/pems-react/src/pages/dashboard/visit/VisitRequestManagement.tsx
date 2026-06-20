@@ -10,7 +10,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   Search, Plus, Eye, AlertCircle, Users, MapPin, Calendar,
-  ChevronLeft, ChevronRight, ChevronDown, Check, X, XCircle, UserCog,
+  ChevronLeft, ChevronRight, ChevronDown, Check, X, XCircle, UserCog, Mail,
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
@@ -22,6 +22,7 @@ import {
   PARTICIPANT_ROLE_LABELS,
   type AllowedAction,
   type VisitRequestManagementItem,
+  type VisitInvitation,
 } from '../../../features/delegations/types/delegations.types';
 import { useAuthContext } from '../../../shared/auth/AuthContext';
 
@@ -115,7 +116,7 @@ export function VisitRequestManagement() {
   const isStaffLeader = isStaff && subRole === 'LEADER';
   const isRegularStaff = isStaff && subRole === 'STAFF';
   const isVisitor = roleCode === 'VISITOR';
-  const isDept = roleCode === 'DEPT';
+  const isDept = roleCode === 'DEPARTMENT';
   const isStudent = roleCode === 'STUDENT';
 
   // The "Đơn mời tham dự" (attending) tab is only for users who can be invited as a
@@ -123,6 +124,11 @@ export function VisitRequestManagement() {
   // are never invitees, so they see only the "Đơn phụ trách" list (no Tab 2).
   const showTabs = isRegularStaff || isDept || isStudent;
   const [activeTab, setActiveTab] = useState<Tab>('responsible');
+
+  // UC-27: pending participation invitations for invitee roles. This banner is the entry
+  // point to the invitation-detail screen, where Accept/Decline happens — never in the
+  // attending tab (which only lists already-ACCEPTED invitations and is read-only).
+  const [pendingInvitations, setPendingInvitations] = useState<VisitInvitation[]>([]);
 
   const emptyFilters = { keyword: '', status: '', visitScopes: [] as string[], fromDate: '', toDate: '' };
   const [draftFilters, setDraftFilters] = useState(emptyFilters);
@@ -225,6 +231,16 @@ export function VisitRequestManagement() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, currentPage, pageSize, appliedFilters.keyword, appliedFilters.status, appliedFilters.visitScopes.join(','), appliedFilters.fromDate, appliedFilters.toDate]);
 
+  // Load pending invitations (invitee roles only). Non-blocking: a failure just hides the banner.
+  useEffect(() => {
+    if (!showTabs) return;
+    let active = true;
+    delegationsApi.getMyInvitations(false)
+      .then((data) => { if (active) setPendingInvitations(data || []); })
+      .catch(() => { if (active) setPendingInvitations([]); });
+    return () => { active = false; };
+  }, [showTabs]);
+
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   // Navigation when opening a row's detail (keeps existing detail routes).
@@ -244,7 +260,10 @@ export function VisitRequestManagement() {
       return;
     }
     if (isHO) {
-      navigate(`/dashboard/visit/ho-detail/${idForRoute}`, { state: { guestData: row } });
+      // HO processes MULTI_CAMPUS on the dedicated HO detail page; SINGLE_CAMPUS is
+      // read-only monitoring (chốt 2026-06) → show the read-only details modal instead.
+      if (row.visitScope === 'SINGLE_CAMPUS') setView({ open: true, row });
+      else navigate(`/dashboard/visit/ho-detail/${idForRoute}`, { state: { guestData: row } });
       return;
     }
     const st = row.statusText;
@@ -445,6 +464,37 @@ export function VisitRequestManagement() {
           </button>
         ) : null}
       </div>
+
+      {/* UC-27: pending invitations entry point (accept/decline lives on the detail screen) */}
+      {showTabs && pendingInvitations.length > 0 && (
+        <div className="rounded-2xl border border-orange-200 bg-orange-50/70 p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <Mail className="w-5 h-5 text-[#F37021]" />
+            <h3 className="text-sm font-bold text-slate-800">Lời mời tham gia chờ phản hồi ({pendingInvitations.length})</h3>
+          </div>
+          <div className="space-y-2">
+            {pendingInvitations.map((inv) => (
+              <button
+                key={inv.participantId}
+                onClick={() => navigate(`/dashboard/visit/invitations/${inv.participantId}`)}
+                className="w-full flex items-center justify-between gap-3 rounded-xl border border-orange-100 bg-white px-4 py-3 text-left hover:border-[#F37021] hover:shadow-sm transition-all outline-none cursor-pointer"
+              >
+                <div className="min-w-0">
+                  <p className="text-sm font-bold text-[#004c91] truncate">{inv.delegationName || 'Đoàn khách'}</p>
+                  <p className="text-xs text-slate-500 truncate">
+                    {PARTICIPANT_ROLE_LABELS[inv.participantRole] ?? inv.participantRole}
+                    {inv.campusName ? ` · ${inv.campusName}` : ''}
+                    {inv.invitedByName ? ` · Mời bởi ${inv.invitedByName}` : ''}
+                  </p>
+                </div>
+                <span className="flex-shrink-0 inline-flex items-center gap-1 text-xs font-bold text-[#F37021]">
+                  Phản hồi <ChevronRight className="w-4 h-4" />
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Tabs */}
       {showTabs && (

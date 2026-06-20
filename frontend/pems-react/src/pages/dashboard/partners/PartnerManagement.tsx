@@ -163,7 +163,7 @@ export function PartnerManagement() {
   const userRole = user?.role?.toUpperCase() || "";
   const isStudent = userRole === "STUDENT";
   const isStaff = userRole === "STAFF";
-  const isStaffLeader = user?.role?.toUpperCase() === 'STAFF' && user?.subRole === 'Leader';
+  const isStaffLeader = user?.role?.toUpperCase() === 'STAFF' && user?.subRole?.toUpperCase() === 'LEADER';
   const isAdmin = userRole === "ADMIN" || isStaffLeader;
   const isHO = userRole === "HO";
 

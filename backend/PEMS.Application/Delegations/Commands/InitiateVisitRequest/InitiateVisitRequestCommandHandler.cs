@@ -9,19 +9,29 @@ public sealed class InitiateVisitRequestCommandHandler
 {
     private readonly IOtpService _otpService;
     private readonly IEmailService _emailService;
+    private readonly IUserProvisionService _userProvisionService;
 
     public InitiateVisitRequestCommandHandler(
         IOtpService otpService,
-        IEmailService emailService)
+        IEmailService emailService,
+        IUserProvisionService userProvisionService)
     {
         _otpService  = otpService;
         _emailService = emailService;
+        _userProvisionService = userProvisionService;
     }
 
     public async Task<InitiateVisitRequestResponse> Handle(
         InitiateVisitRequestCommand request, CancellationToken cancellationToken)
     {
         var email = request.RegisterEmail.Trim().ToLowerInvariant();
+
+        // ── Fail fast: the contact email is what becomes the VISITOR account. If it already
+        //    belongs to a non-VISITOR (or inactive VISITOR) account, reject BEFORE sending an
+        //    OTP so the registrant can fix the contact email up front. ──
+        var contactEmail = request.IsContactSelf ? email : request.ContactPoint.Email;
+        await _userProvisionService.ValidateContactEmailCanBeUsedForVisitorAsync(
+            contactEmail, cancellationToken);
 
         // SQL v8.3 has no pending_visit_requests table. The form draft stays on the
         // frontend (sessionStorage) and is resubmitted at the verify step. Here we only

@@ -153,7 +153,7 @@ export function AssignHostModal({
                       <div className="min-w-0">
                         <p className="text-sm font-bold text-slate-800 truncate">
                           {c.fullName}
-                          {c.subRole === 'Leader' && <span className="ml-2 text-[10px] font-semibold text-[#004c91] bg-blue-100 rounded px-1.5 py-0.5">Leader</span>}
+                          {c.subRole?.toUpperCase() === 'LEADER' && <span className="ml-2 text-[10px] font-semibold text-[#004c91] bg-blue-100 rounded px-1.5 py-0.5">Leader</span>}
                           {isCurrent && <span className="ml-2 text-[10px] font-semibold text-slate-600 bg-slate-100 rounded px-1.5 py-0.5">Host hiện tại</span>}
                         </p>
                         <p className="text-xs text-slate-500 truncate">{c.email}{c.departmentName ? ` · ${c.departmentName}` : ''}</p>

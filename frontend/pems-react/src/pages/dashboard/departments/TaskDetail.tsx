@@ -29,14 +29,14 @@ export function TaskDetail() {
 
   const userStr = localStorage.getItem("currentUser");
   const user = userStr ? JSON.parse(userStr) : null;
-  const isLeader = user?.role === 'ADMIN' || user?.role === 'HO' || user?.role === 'Staff' || (user?.role === 'Dept' && user?.subRole === 'Leader');
-  const isStaff = user?.role === 'Dept' && user?.subRole === 'Staff';
+  const isLeader = user?.role === 'ADMIN' || user?.role === 'HO' || user?.role?.toUpperCase() === 'STAFF' || (user?.role?.toUpperCase() === 'DEPARTMENT' && user?.subRole?.toUpperCase() === 'LEADER');
+  const isStaff = user?.role?.toUpperCase() === 'DEPARTMENT' && user?.subRole?.toUpperCase() === 'STAFF';
 
   const location = useLocation();
   const taskStatusFromState = location.state?.taskStatus || "Đang làm";
   const assigneeIdFromState = location.state?.assigneeId;
 
-  const isDeptLeader = user?.role === 'Dept' && user?.subRole === 'Leader';
+  const isDeptLeader = user?.role?.toUpperCase() === 'DEPARTMENT' && user?.subRole?.toUpperCase() === 'LEADER';
 
   const shouldDisableButtons = () => {
     if (isDeptLeader) {
@@ -62,7 +62,7 @@ export function TaskDetail() {
   const [isProposing, setIsProposing] = useState(false);
   const [proposedTime, setProposedTime] = useState(() => inMemoryTaskStore[`taskDetail_${taskId}_proposedTime`] || "");
   const [proposedContent, setProposedContent] = useState(() => inMemoryTaskStore[`taskDetail_${taskId}_proposedContent`] || "");
-  const [proposedBy, setProposedBy] = useState(() => inMemoryTaskStore[`taskDetail_${taskId}_proposedBy`] || "DEPT");
+  const [proposedBy, setProposedBy] = useState(() => inMemoryTaskStore[`taskDetail_${taskId}_proposedBy`] || "DEPARTMENT");
   const [isSubmitProposalModalOpen, setIsSubmitProposalModalOpen] = useState(false);
 
   useEffect(() => {
@@ -117,7 +117,7 @@ export function TaskDetail() {
         >
           Dashboard
         </button>
-        {(user?.role?.toUpperCase() !== 'DEPT' && user?.role?.toUpperCase() !== 'STAFF') && (
+        {(user?.role?.toUpperCase() !== 'DEPARTMENT' && user?.role?.toUpperCase() !== 'STAFF') && (
           <>
             <span className="mx-2">/</span>
             <button
@@ -281,7 +281,7 @@ export function TaskDetail() {
               </div>
             )}
 
-            {!isProposing && taskActionStatus === 'pending' && ['DEPT', 'STAFF'].includes(user?.role?.toUpperCase()) && (
+            {!isProposing && taskActionStatus === 'pending' && ['DEPARTMENT', 'STAFF'].includes(user?.role?.toUpperCase()) && (
               <div className="flex justify-end pt-2">
                 <button 
                   onClick={() => setIsProposing(true)}
@@ -745,7 +745,7 @@ export function TaskDetail() {
               <button 
                 onClick={() => {
                    setTaskActionStatus('waiting_for_approval');
-                   setProposedBy(user?.role?.toUpperCase() || 'DEPT');
+                   setProposedBy(user?.role?.toUpperCase() || 'DEPARTMENT');
                    setIsProposing(false);
                    setActionTime(getCurrentTime());
                    setIsSubmitProposalModalOpen(false);

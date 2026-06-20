@@ -1,4 +1,5 @@
 -- =====================================================================
+-- PATCH NOTE: Canonical role_code DEPARTMENT and uppercase sub_role values LEADER/STAFF/NONE.
 -- PEMS v4.5 - FINAL INT AUTO_INCREMENT BUILD v8.2 CANCEL_DELEGATION
 -- Generated from FINAL STRICT VISIBILITY BUILD v5.
 -- Changes in this file:
@@ -27,7 +28,7 @@
 --   + Cancellation is a post-approval Delegation action only. Before approval, guest withdrawal is handled by reject. cancellation_reason stores both reason and external-confirmation details; no separate external note column is created.
 --   + UC-48.VIEW_EMAIL is Own scope (O).
 --   + ADMIN must NOT view Visit Request / Delegation business records.
---   + HO sees ONLY MULTI_CAMPUS visit requests.
+--   + HO decides MULTI_CAMPUS visit requests; HO also SEES SINGLE_CAMPUS read-only (monitor) — chốt 2026-06. HO never processes SINGLE_CAMPUS (no approve/reject/assign/cancel).
 --   + STAFF Leader sees:
 --       - SINGLE_CAMPUS requests for their own campus;
 --       - MULTI_CAMPUS requests only after HO approval, only for campuses included in the request.
@@ -56,7 +57,7 @@
 -- - Removed user_campuses; each internal user has exactly one primary_campus_id.
 -- - Removed redundant approval helper columns; backend derives approval display data from visit_scope.
 -- - Removed redundant visit_request_campuses.assigned_by/assigned_at; approval actor/time already stored in visit_requests + logs.
--- - Added role_permissions.sub_role to support STAFF Leader/Staff and DEPT Leader/Staff RBAC without overgrant.
+-- - Added role_permissions.sub_role to support STAFF LEADER/STAFF and DEPARTMENT LEADER/STAFF RBAC without overgrant.
 -- - Production auth is SSO-first; LOCAL_PASSWORD is kept only for DEV/test accounts.
 -- - Added users.created_via='SSO_AUTO_PROVISION' for Visitor portal auto-provisioning on first SSO login.
 -- - Locked approval flow:
@@ -157,7 +158,7 @@ SET FOREIGN_KEY_CHECKS = 1;
 
 CREATE TABLE roles (
   role_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  role_code VARCHAR(30) NOT NULL COMMENT 'ADMIN, HO, STAFF, DEPT, STUDENT, VISITOR',
+  role_code VARCHAR(30) NOT NULL COMMENT 'ADMIN, HO, STAFF, DEPARTMENT, STUDENT, VISITOR',
   name VARCHAR(100) NOT NULL,
   description VARCHAR(255) NULL,
   status ENUM('ACTIVE','INACTIVE') NOT NULL DEFAULT 'ACTIVE',
@@ -167,7 +168,7 @@ CREATE TABLE roles (
   PRIMARY KEY (role_id),
   UNIQUE KEY uq_roles_code (role_code),
   KEY idx_roles_status_deleted (status, deleted_at),
-  CHECK (role_code IN ('ADMIN','HO','STAFF','DEPT','STUDENT','VISITOR'))) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  CHECK (role_code IN ('ADMIN','HO','STAFF','DEPARTMENT','STUDENT','VISITOR'))) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='6 role chính của hệ thống';
 
 CREATE TABLE permissions (
@@ -187,7 +188,7 @@ COMMENT='Danh mục quyền theo UC/action';
 CREATE TABLE role_permissions (
   role_permission_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   role_id BIGINT UNSIGNED NOT NULL,
-  sub_role ENUM('NONE','Leader','Staff') NOT NULL DEFAULT 'NONE' COMMENT 'NONE for ADMIN/HO/STUDENT/VISITOR; Leader/Staff for STAFF and DEPT',
+  sub_role ENUM('NONE','LEADER','STAFF') NOT NULL DEFAULT 'NONE' COMMENT 'NONE for ADMIN/HO/STUDENT/VISITOR; LEADER/STAFF for STAFF and DEPARTMENT',
   permission_id BIGINT UNSIGNED NOT NULL,
   permission_level ENUM('F','E','R','O') NOT NULL COMMENT 'F=Full, E=Execute/Edit, R=Read, O=Own',
   granted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -250,7 +251,7 @@ CREATE TABLE departments (
   CONSTRAINT fk_departments_campus
     FOREIGN KEY (campus_id) REFERENCES campuses(campus_id)
     ON UPDATE CASCADE ON DELETE RESTRICT) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-COMMENT='Phòng ban theo campus. STAFF thuộc IC, DEPT thuộc GENERAL';
+COMMENT='Phòng ban theo campus. STAFF thuộc IC, DEPARTMENT thuộc GENERAL';
 
 -- =====================================================================
 -- 3. USERS + AUTH
@@ -264,9 +265,9 @@ CREATE TABLE users (
   nationality VARCHAR(100) NULL COMMENT 'Quốc tịch của user/visitor',
   password_hash VARCHAR(255) NULL COMMENT 'DEV/local password hash only. Production SSO-only accounts keep this NULL.',
   role_id BIGINT UNSIGNED NOT NULL,
-  sub_role ENUM('LEADER','STAFF') NULL COMMENT 'Only for STAFF/DEPT',
+  sub_role ENUM('LEADER','STAFF') NULL COMMENT 'Only for STAFF/DEPARTMENT',
   primary_campus_id BIGINT UNSIGNED NULL COMMENT 'Campus duy nhất của user nội bộ. VISITOR phải NULL.',
-  department_id BIGINT UNSIGNED NULL COMMENT 'STAFF = IC department; DEPT = GENERAL department',
+  department_id BIGINT UNSIGNED NULL COMMENT 'STAFF = IC department; DEPARTMENT = GENERAL department',
   gender ENUM('MALE','FEMALE','OTHER','UNKNOWN') NULL,
   avatar_url VARCHAR(500) NULL,
   student_code VARCHAR(30) NULL,
@@ -1682,12 +1683,12 @@ BEGIN
     IF NEW.primary_campus_id IS NOT NULL THEN
       SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'VISITOR must not have primary_campus_id';
     END IF;
-  ELSEIF v_role_code IN ('STAFF','DEPT') THEN
+  ELSEIF v_role_code IN ('STAFF','DEPARTMENT') THEN
     IF NEW.sub_role IS NULL THEN
-      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'STAFF/DEPT must have sub_role';
+      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'STAFF/DEPARTMENT must have sub_role';
     END IF;
     IF NEW.department_id IS NULL THEN
-      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'STAFF/DEPT must have department_id';
+      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'STAFF/DEPARTMENT must have department_id';
     END IF;
 
     SELECT department_type, campus_id
@@ -1699,8 +1700,8 @@ BEGIN
       SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'STAFF must belong to IC department';
     END IF;
 
-    IF v_role_code = 'DEPT' AND v_department_type <> 'GENERAL' THEN
-      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'DEPT must belong to GENERAL department';
+    IF v_role_code = 'DEPARTMENT' AND v_department_type <> 'GENERAL' THEN
+      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'DEPARTMENT must belong to GENERAL department';
     END IF;
 
     IF NEW.primary_campus_id IS NULL THEN
@@ -1710,10 +1711,10 @@ BEGIN
     END IF;
   ELSE
     IF NEW.sub_role IS NOT NULL THEN
-      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Only STAFF/DEPT may have sub_role';
+      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Only STAFF/DEPARTMENT may have sub_role';
     END IF;
     IF NEW.department_id IS NOT NULL THEN
-      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Only STAFF/DEPT may have department_id';
+      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Only STAFF/DEPARTMENT may have department_id';
     END IF;
     IF NEW.primary_campus_id IS NULL THEN
       SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Internal user must have primary_campus_id';
@@ -1748,12 +1749,12 @@ BEGIN
     IF NEW.primary_campus_id IS NOT NULL THEN
       SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'VISITOR must not have primary_campus_id';
     END IF;
-  ELSEIF v_role_code IN ('STAFF','DEPT') THEN
+  ELSEIF v_role_code IN ('STAFF','DEPARTMENT') THEN
     IF NEW.sub_role IS NULL THEN
-      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'STAFF/DEPT must have sub_role';
+      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'STAFF/DEPARTMENT must have sub_role';
     END IF;
     IF NEW.department_id IS NULL THEN
-      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'STAFF/DEPT must have department_id';
+      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'STAFF/DEPARTMENT must have department_id';
     END IF;
 
     SELECT department_type, campus_id
@@ -1765,8 +1766,8 @@ BEGIN
       SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'STAFF must belong to IC department';
     END IF;
 
-    IF v_role_code = 'DEPT' AND v_department_type <> 'GENERAL' THEN
-      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'DEPT must belong to GENERAL department';
+    IF v_role_code = 'DEPARTMENT' AND v_department_type <> 'GENERAL' THEN
+      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'DEPARTMENT must belong to GENERAL department';
     END IF;
 
     IF NEW.primary_campus_id IS NULL THEN
@@ -1776,10 +1777,10 @@ BEGIN
     END IF;
   ELSE
     IF NEW.sub_role IS NOT NULL THEN
-      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Only STAFF/DEPT may have sub_role';
+      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Only STAFF/DEPARTMENT may have sub_role';
     END IF;
     IF NEW.department_id IS NOT NULL THEN
-      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Only STAFF/DEPT may have department_id';
+      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Only STAFF/DEPARTMENT may have department_id';
     END IF;
     IF NEW.primary_campus_id IS NULL THEN
       SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Internal user must have primary_campus_id';
@@ -1893,7 +1894,7 @@ BEGIN
       END IF;
 
       IF NEW.decision_actor_role = 'STAFF_LEADER'
-         AND NOT (v_actor_role_code = 'STAFF' AND v_actor_sub_role = 'Leader') THEN
+         AND NOT (v_actor_role_code = 'STAFF' AND v_actor_sub_role = 'LEADER') THEN
         SIGNAL SQLSTATE '45000'
           SET MESSAGE_TEXT = 'decision_actor_role STAFF_LEADER requires STAFF Leader user';
       END IF;
@@ -1944,7 +1945,7 @@ BEGIN
       END IF;
 
       IF NEW.decision_actor_role = 'STAFF_LEADER'
-         AND NOT (v_actor_role_code = 'STAFF' AND v_actor_sub_role = 'Leader') THEN
+         AND NOT (v_actor_role_code = 'STAFF' AND v_actor_sub_role = 'LEADER') THEN
         SIGNAL SQLSTATE '45000'
           SET MESSAGE_TEXT = 'decision_actor_role STAFF_LEADER requires STAFF Leader user';
       END IF;
@@ -2109,14 +2110,14 @@ BEGIN
     FROM users u
     JOIN roles r ON r.role_id = u.role_id
     WHERE u.user_id = NEW.current_host_user_id;
-    IF NOT (v_host_role_code = 'STAFF' AND v_host_sub_role IN ('Leader','Staff')) THEN
+    IF NOT (v_host_role_code = 'STAFF' AND v_host_sub_role IN ('LEADER','STAFF')) THEN
       SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'current_host_user_id must be a STAFF user';
     END IF;
     IF v_host_campus_id <> NEW.campus_id THEN
       SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'current_host_user_id must belong to the same campus instance';
     END IF;
     IF NEW.host_assignment_source = 'AUTO_STAFF_LEADER'
-       AND NOT (v_host_role_code = 'STAFF' AND v_host_sub_role = 'Leader') THEN
+       AND NOT (v_host_role_code = 'STAFF' AND v_host_sub_role = 'LEADER') THEN
       SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'AUTO_STAFF_LEADER assignment requires current_host_user_id to be Staff Leader';
     END IF;
   END IF;
@@ -2143,7 +2144,7 @@ BEGIN
     JOIN roles r ON r.role_id = u.role_id
     WHERE u.user_id = NEW.host_assigned_by;
     IF NEW.host_assignment_source = 'MANUAL_APPROVAL'
-       AND NOT (v_assigned_by_role_code = 'STAFF' AND v_assigned_by_sub_role = 'Leader' AND v_assigned_by_campus_id = NEW.campus_id) THEN
+       AND NOT (v_assigned_by_role_code = 'STAFF' AND v_assigned_by_sub_role = 'LEADER' AND v_assigned_by_campus_id = NEW.campus_id) THEN
       SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'MANUAL_APPROVAL host_assigned_by must be Staff Leader of the same campus';
     END IF;
     IF NEW.host_assignment_source = 'AUTO_STAFF_LEADER'
@@ -2166,7 +2167,7 @@ BEGIN
     FROM users u
     JOIN roles r ON r.role_id = u.role_id
     WHERE u.user_id = NEW.host_transferred_by;
-    IF NOT (v_transfer_role_code = 'STAFF' AND v_transfer_sub_role IN ('Leader','Staff')) THEN
+    IF NOT (v_transfer_role_code = 'STAFF' AND v_transfer_sub_role IN ('LEADER','STAFF')) THEN
       SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'host_transferred_by must be a STAFF user';
     END IF;
     IF v_transfer_campus_id <> NEW.campus_id THEN
@@ -2223,14 +2224,14 @@ BEGIN
     FROM users u
     JOIN roles r ON r.role_id = u.role_id
     WHERE u.user_id = NEW.current_host_user_id;
-    IF NOT (v_host_role_code = 'STAFF' AND v_host_sub_role IN ('Leader','Staff')) THEN
+    IF NOT (v_host_role_code = 'STAFF' AND v_host_sub_role IN ('LEADER','STAFF')) THEN
       SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'current_host_user_id must be a STAFF user';
     END IF;
     IF v_host_campus_id <> NEW.campus_id THEN
       SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'current_host_user_id must belong to the same campus instance';
     END IF;
     IF NEW.host_assignment_source = 'AUTO_STAFF_LEADER'
-       AND NOT (v_host_role_code = 'STAFF' AND v_host_sub_role = 'Leader') THEN
+       AND NOT (v_host_role_code = 'STAFF' AND v_host_sub_role = 'LEADER') THEN
       SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'AUTO_STAFF_LEADER assignment requires current_host_user_id to be Staff Leader';
     END IF;
   END IF;
@@ -2266,7 +2267,7 @@ BEGIN
     JOIN roles r ON r.role_id = u.role_id
     WHERE u.user_id = NEW.host_assigned_by;
     IF NEW.host_assignment_source = 'MANUAL_APPROVAL'
-       AND NOT (v_assigned_by_role_code = 'STAFF' AND v_assigned_by_sub_role = 'Leader' AND v_assigned_by_campus_id = NEW.campus_id) THEN
+       AND NOT (v_assigned_by_role_code = 'STAFF' AND v_assigned_by_sub_role = 'LEADER' AND v_assigned_by_campus_id = NEW.campus_id) THEN
       SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'MANUAL_APPROVAL host_assigned_by must be Staff Leader of the same campus';
     END IF;
     IF NEW.host_assignment_source = 'AUTO_STAFF_LEADER'
@@ -2289,7 +2290,7 @@ BEGIN
     FROM users u
     JOIN roles r ON r.role_id = u.role_id
     WHERE u.user_id = NEW.host_transferred_by;
-    IF NOT (v_transfer_role_code = 'STAFF' AND v_transfer_sub_role IN ('Leader','Staff')) THEN
+    IF NOT (v_transfer_role_code = 'STAFF' AND v_transfer_sub_role IN ('LEADER','STAFF')) THEN
       SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'host_transferred_by must be a STAFF user';
     END IF;
     IF v_transfer_campus_id <> NEW.campus_id THEN
@@ -2360,8 +2361,8 @@ INSERT INTO roles (role_id, role_code, name, description)
 VALUES
   (NULL, 'ADMIN', 'Admin', 'Quản trị kỹ thuật hệ thống'),
   (NULL, 'HO', 'Head Office', 'Quản lý cấp Head Office'),
-  (NULL, 'STAFF', 'IC Staff', 'Nhân sự phòng Hợp tác Quốc tế, dùng sub_role Leader/Staff'),
-  (NULL, 'DEPT', 'Department', 'Nhân sự phòng ban khác, dùng sub_role Leader/Staff'),
+  (NULL, 'STAFF', 'IC Staff', 'Nhân sự phòng Hợp tác Quốc tế, dùng sub_role LEADER/STAFF'),
+  (NULL, 'DEPARTMENT', 'Department', 'Nhân sự phòng ban khác, dùng sub_role LEADER/STAFF'),
   (NULL, 'STUDENT', 'Student', 'Sinh viên hỗ trợ'),
   (NULL, 'VISITOR', 'Visitor', 'Khách gửi visit request và theo dõi thông tin của mình');
 
@@ -2434,7 +2435,7 @@ SET @seed_now = NOW();
 SELECT role_id INTO @role_admin FROM roles WHERE role_code='ADMIN' LIMIT 1;
 SELECT role_id INTO @role_ho FROM roles WHERE role_code='HO' LIMIT 1;
 SELECT role_id INTO @role_staff FROM roles WHERE role_code='STAFF' LIMIT 1;
-SELECT role_id INTO @role_dept FROM roles WHERE role_code='DEPT' LIMIT 1;
+SELECT role_id INTO @role_department FROM roles WHERE role_code='DEPARTMENT' LIMIT 1;
 SELECT role_id INTO @role_student FROM roles WHERE role_code='STUDENT' LIMIT 1;
 SELECT role_id INTO @role_visitor FROM roles WHERE role_code='VISITOR' LIMIT 1;
 SELECT campus_id INTO @campus_hn FROM campuses WHERE campus_code='HN' LIMIT 1;
@@ -2691,19 +2692,19 @@ VALUES
   (@u_staff_ct, 'Đặng Minh Châu', 'chau.dang@company.vn', '0925566778', NULL, @pwd_hash, @role_staff, 'STAFF', @campus_ct, @dept_ct_ic, 'OTHER', NULL, NULL, 'FE-SEED-010', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 90 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 80 DAY), DATE_SUB(@seed_now, INTERVAL 11 DAY), DATE_SUB(@seed_now, INTERVAL 130 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
   (@u_stafflead_qn, 'Hoàng Minh Quân', 'quan.hoang@company.vn', '0911002003', NULL, @pwd_hash, @role_staff, 'LEADER', @campus_qn, @dept_qn_ic, 'MALE', NULL, NULL, 'FE-SEED-011', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 91 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 81 DAY), DATE_SUB(@seed_now, INTERVAL 12 DAY), DATE_SUB(@seed_now, INTERVAL 131 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
   (@u_staff_qn, 'Lý Thanh Mai', 'mai.ly@company.vn', '0911222333', NULL, @pwd_hash, @role_staff, 'STAFF', @campus_qn, @dept_qn_ic, 'FEMALE', NULL, NULL, 'FE-SEED-012', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 92 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 82 DAY), DATE_SUB(@seed_now, INTERVAL 13 DAY), DATE_SUB(@seed_now, INTERVAL 132 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
-  (@u_deptlead_it_hn, 'Department Lead (HN)', 'dept.leader.hn@fpt.edu.vn', '0909988776', NULL, @pwd_hash, @role_dept, 'LEADER', @campus_hn, @dept_hn_it, 'UNKNOWN', NULL, NULL, 'FE-SEED-013', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 93 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 83 DAY), DATE_SUB(@seed_now, INTERVAL 14 DAY), DATE_SUB(@seed_now, INTERVAL 133 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
-  (@u_dept_it_hn, 'Department Personnel (HN)', 'dept.hn@fpt.edu.vn', '0903344556', NULL, @pwd_hash, @role_dept, 'STAFF', @campus_hn, @dept_hn_it, 'UNKNOWN', NULL, NULL, 'FE-SEED-014', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 94 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 84 DAY), DATE_SUB(@seed_now, INTERVAL 15 DAY), DATE_SUB(@seed_now, INTERVAL 134 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
-  (@u_deptlead_finance_hcm, 'Ngô Thanh Hương', 'huong.ngo@company.vn', '0906677889', NULL, @pwd_hash, @role_dept, 'LEADER', @campus_hcm, @dept_hcm_finance, 'FEMALE', NULL, NULL, 'FE-SEED-015', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 95 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 85 DAY), DATE_SUB(@seed_now, INTERVAL 16 DAY), DATE_SUB(@seed_now, INTERVAL 135 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
-  (@u_dept_finance_hcm, 'Mai Anh Tuấn', 'tuan.mai@company.vn', '0907788990', NULL, @pwd_hash, @role_dept, 'STAFF', @campus_hcm, @dept_hcm_finance, 'MALE', NULL, NULL, 'FE-SEED-016', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 96 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 86 DAY), DATE_SUB(@seed_now, INTERVAL 17 DAY), DATE_SUB(@seed_now, INTERVAL 136 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
-  (@u_deptlead_admin_ct, 'Lâm Khánh Vy', 'vy.lam@company.vn', '0913456780', NULL, @pwd_hash, @role_dept, 'LEADER', @campus_ct, @dept_ct_admin, 'FEMALE', NULL, NULL, 'FE-SEED-017', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 97 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 87 DAY), DATE_SUB(@seed_now, INTERVAL 18 DAY), DATE_SUB(@seed_now, INTERVAL 137 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
-  (@u_dept_admin_ct, 'Phan Gia Phúc', 'phuc.phan@company.vn', '0919988776', NULL, @pwd_hash, @role_dept, 'STAFF', @campus_ct, @dept_ct_admin, 'MALE', NULL, NULL, 'FE-SEED-018', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 98 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 88 DAY), DATE_SUB(@seed_now, INTERVAL 19 DAY), DATE_SUB(@seed_now, INTERVAL 138 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
+  (@u_deptlead_it_hn, 'Department Lead (HN)', 'dept.leader.hn@fpt.edu.vn', '0909988776', NULL, @pwd_hash, @role_department, 'LEADER', @campus_hn, @dept_hn_it, 'UNKNOWN', NULL, NULL, 'FE-SEED-013', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 93 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 83 DAY), DATE_SUB(@seed_now, INTERVAL 14 DAY), DATE_SUB(@seed_now, INTERVAL 133 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
+  (@u_dept_it_hn, 'Department Personnel (HN)', 'dept.hn@fpt.edu.vn', '0903344556', NULL, @pwd_hash, @role_department, 'STAFF', @campus_hn, @dept_hn_it, 'UNKNOWN', NULL, NULL, 'FE-SEED-014', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 94 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 84 DAY), DATE_SUB(@seed_now, INTERVAL 15 DAY), DATE_SUB(@seed_now, INTERVAL 134 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
+  (@u_deptlead_finance_hcm, 'Ngô Thanh Hương', 'huong.ngo@company.vn', '0906677889', NULL, @pwd_hash, @role_department, 'LEADER', @campus_hcm, @dept_hcm_finance, 'FEMALE', NULL, NULL, 'FE-SEED-015', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 95 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 85 DAY), DATE_SUB(@seed_now, INTERVAL 16 DAY), DATE_SUB(@seed_now, INTERVAL 135 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
+  (@u_dept_finance_hcm, 'Mai Anh Tuấn', 'tuan.mai@company.vn', '0907788990', NULL, @pwd_hash, @role_department, 'STAFF', @campus_hcm, @dept_hcm_finance, 'MALE', NULL, NULL, 'FE-SEED-016', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 96 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 86 DAY), DATE_SUB(@seed_now, INTERVAL 17 DAY), DATE_SUB(@seed_now, INTERVAL 136 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
+  (@u_deptlead_admin_ct, 'Lâm Khánh Vy', 'vy.lam@company.vn', '0913456780', NULL, @pwd_hash, @role_department, 'LEADER', @campus_ct, @dept_ct_admin, 'FEMALE', NULL, NULL, 'FE-SEED-017', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 97 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 87 DAY), DATE_SUB(@seed_now, INTERVAL 18 DAY), DATE_SUB(@seed_now, INTERVAL 137 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
+  (@u_dept_admin_ct, 'Phan Gia Phúc', 'phuc.phan@company.vn', '0919988776', NULL, @pwd_hash, @role_department, 'STAFF', @campus_ct, @dept_ct_admin, 'MALE', NULL, NULL, 'FE-SEED-018', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 98 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 88 DAY), DATE_SUB(@seed_now, INTERVAL 19 DAY), DATE_SUB(@seed_now, INTERVAL 138 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
   (@u_student_anh, 'Support Student', 'student@fpt.edu.vn', '0866123456', NULL, @pwd_hash, @role_student, NULL, @campus_hn, NULL, 'UNKNOWN', NULL, 'SE190019', 'FE-SEED-019', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 99 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 89 DAY), DATE_SUB(@seed_now, INTERVAL 20 DAY), DATE_SUB(@seed_now, INTERVAL 139 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
   (@u_student_bao, 'Phạm Quốc Bảo Student', 'bao.student@company.vn', '0866543210', NULL, @pwd_hash, @role_student, NULL, @campus_hcm, NULL, 'MALE', NULL, 'SE190020', 'FE-SEED-020', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 100 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 90 DAY), DATE_SUB(@seed_now, INTERVAL 1 DAY), DATE_SUB(@seed_now, INTERVAL 140 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
   (@u_student_long, 'Nguyễn Thị Minh Châu Hồng Phúc Gia Bảo Hoàng Anh Tuấn Kiệt', 'long.name.student@company.vn', '0866000001', NULL, @pwd_hash, @role_student, NULL, @campus_ct, NULL, 'UNKNOWN', NULL, 'SE190021', 'FE-SEED-021', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 101 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 91 DAY), DATE_SUB(@seed_now, INTERVAL 2 DAY), DATE_SUB(@seed_now, INTERVAL 141 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
   (@u_locked_staff, 'Tạ Quang Huy', 'huy.locked@company.vn', '0918000111', NULL, @pwd_hash, @role_staff, 'STAFF', @campus_hn, @dept_hn_ic, 'MALE', NULL, NULL, 'FE-SEED-022', 'LOCKED', DATE_SUB(@seed_now, INTERVAL 102 DAY), '7', DATE_ADD(@seed_now, INTERVAL 30 MINUTE), 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 92 DAY), DATE_SUB(@seed_now, INTERVAL 3 DAY), DATE_SUB(@seed_now, INTERVAL 142 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
-  (@u_inactive_dept, 'Trịnh Hà My', 'my.inactive@company.vn', '0918111222', NULL, @pwd_hash, @role_dept, 'STAFF', @campus_hcm, @dept_hcm_finance, 'FEMALE', NULL, NULL, 'FE-SEED-023', 'INACTIVE', DATE_SUB(@seed_now, INTERVAL 103 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 93 DAY), DATE_SUB(@seed_now, INTERVAL 4 DAY), DATE_SUB(@seed_now, INTERVAL 143 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
+  (@u_inactive_dept, 'Trịnh Hà My', 'my.inactive@company.vn', '0918111222', NULL, @pwd_hash, @role_department, 'STAFF', @campus_hcm, @dept_hcm_finance, 'FEMALE', NULL, NULL, 'FE-SEED-023', 'INACTIVE', DATE_SUB(@seed_now, INTERVAL 103 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 93 DAY), DATE_SUB(@seed_now, INTERVAL 4 DAY), DATE_SUB(@seed_now, INTERVAL 143 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
   (@u_pending_internal, 'Nguyễn Quốc Khánh', 'khanh.pending@company.vn', '0918222333', NULL, @pwd_hash, @role_staff, 'STAFF', @campus_dn, @dept_dn_ic, 'MALE', NULL, NULL, 'FE-SEED-024', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 104 DAY), '0', NULL, 'MANUAL_CREATED', NULL, NULL, DATE_SUB(@seed_now, INTERVAL 144 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
-  (@u_rejected_internal, 'Lê Thảo Chi', 'chi.rejected@company.vn', '0918333444', NULL, @pwd_hash, @role_dept, 'STAFF', @campus_qn, @dept_qn_archive_finance, 'FEMALE', NULL, NULL, 'FE-SEED-025', 'INACTIVE', DATE_SUB(@seed_now, INTERVAL 105 DAY), '0', NULL, 'MANUAL_CREATED', NULL, NULL, DATE_SUB(@seed_now, INTERVAL 145 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
+  (@u_rejected_internal, 'Lê Thảo Chi', 'chi.rejected@company.vn', '0918333444', NULL, @pwd_hash, @role_department, 'STAFF', @campus_qn, @dept_qn_archive_finance, 'FEMALE', NULL, NULL, 'FE-SEED-025', 'INACTIVE', DATE_SUB(@seed_now, INTERVAL 105 DAY), '0', NULL, 'MANUAL_CREATED', NULL, NULL, DATE_SUB(@seed_now, INTERVAL 145 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
   (@v_kim, 'External Visitor', 'visitor@example.com', '+821012345678', 'Việt Nam', @pwd_hash, @role_visitor, NULL, NULL, NULL, 'UNKNOWN', NULL, NULL, NULL, 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 106 DAY), '0', NULL, 'VISITOR_FORM', DATE_SUB(@seed_now, INTERVAL 96 DAY), DATE_SUB(@seed_now, INTERVAL 7 DAY), DATE_SUB(@seed_now, INTERVAL 146 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
   (@v_lee, 'Lee Joon Ho', 'lee.joonho@seoultech.example', '+821055512345', 'Hàn Quốc', @pwd_hash, @role_visitor, NULL, NULL, NULL, 'MALE', NULL, NULL, NULL, 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 107 DAY), '0', NULL, 'VISITOR_FORM', DATE_SUB(@seed_now, INTERVAL 97 DAY), DATE_SUB(@seed_now, INTERVAL 8 DAY), DATE_SUB(@seed_now, INTERVAL 147 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
   (@v_tanaka, 'Tanaka Aoi', 'aoi.tanaka@kyoto-global.example', '+819012345678', 'Nhật Bản', @pwd_hash, @role_visitor, NULL, NULL, NULL, 'FEMALE', NULL, NULL, NULL, 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 108 DAY), '0', NULL, 'VISITOR_FORM', DATE_SUB(@seed_now, INTERVAL 98 DAY), DATE_SUB(@seed_now, INTERVAL 9 DAY), DATE_SUB(@seed_now, INTERVAL 148 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
@@ -2870,11 +2871,11 @@ VALUES
 -- =====================================================================
 -- RBAC Permission Matrix v0.2 seed
 -- Source of truth: Role & Permission Matrix v0.2.
--- IMPORTANT: No merged-role overgrant. STAFF/DEPT permissions are split by sub_role.
+-- IMPORTANT: No merged-role overgrant. STAFF/DEPARTMENT permissions are split by sub_role.
 --   STAFF + Leader = Staff Leader
 --   STAFF + Staff  = Staff
---   DEPT  + Leader = Department Lead
---   DEPT  + Staff  = Department
+--   DEPARTMENT  + Leader = Department Lead
+--   DEPARTMENT  + Staff  = Department
 --   ADMIN/HO/STUDENT/VISITOR use sub_role = 'NONE'.
 -- =====================================================================
 
@@ -2890,293 +2891,293 @@ SELECT
 FROM (
   SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-01.VIEW_HOMEPAGE' AS permission_code, 'R' AS permission_level
   UNION ALL SELECT 'ADMIN' AS role_code, 'NONE' AS sub_role, 'UC-01.VIEW_HOMEPAGE' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Leader' AS sub_role, 'UC-01.VIEW_HOMEPAGE' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Staff' AS sub_role, 'UC-01.VIEW_HOMEPAGE' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Leader' AS sub_role, 'UC-01.VIEW_HOMEPAGE' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Staff' AS sub_role, 'UC-01.VIEW_HOMEPAGE' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-01.VIEW_HOMEPAGE' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-01.VIEW_HOMEPAGE' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-01.VIEW_HOMEPAGE' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-01.VIEW_HOMEPAGE' AS permission_code, 'R' AS permission_level
   UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-01.VIEW_HOMEPAGE' AS permission_code, 'R' AS permission_level
   UNION ALL SELECT 'VISITOR' AS role_code, 'NONE' AS sub_role, 'UC-01.VIEW_HOMEPAGE' AS permission_code, 'R' AS permission_level
   UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-02.SEARCH_INFORMATION' AS permission_code, 'R' AS permission_level
   UNION ALL SELECT 'ADMIN' AS role_code, 'NONE' AS sub_role, 'UC-02.SEARCH_INFORMATION' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Leader' AS sub_role, 'UC-02.SEARCH_INFORMATION' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Staff' AS sub_role, 'UC-02.SEARCH_INFORMATION' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Leader' AS sub_role, 'UC-02.SEARCH_INFORMATION' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Staff' AS sub_role, 'UC-02.SEARCH_INFORMATION' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-02.SEARCH_INFORMATION' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-02.SEARCH_INFORMATION' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-02.SEARCH_INFORMATION' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-02.SEARCH_INFORMATION' AS permission_code, 'R' AS permission_level
   UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-02.SEARCH_INFORMATION' AS permission_code, 'R' AS permission_level
   UNION ALL SELECT 'VISITOR' AS role_code, 'NONE' AS sub_role, 'UC-02.SEARCH_INFORMATION' AS permission_code, 'R' AS permission_level
   UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-03.VIEW_CONTACT_INFO' AS permission_code, 'R' AS permission_level
   UNION ALL SELECT 'ADMIN' AS role_code, 'NONE' AS sub_role, 'UC-03.VIEW_CONTACT_INFO' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Leader' AS sub_role, 'UC-03.VIEW_CONTACT_INFO' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Staff' AS sub_role, 'UC-03.VIEW_CONTACT_INFO' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Leader' AS sub_role, 'UC-03.VIEW_CONTACT_INFO' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Staff' AS sub_role, 'UC-03.VIEW_CONTACT_INFO' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-03.VIEW_CONTACT_INFO' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-03.VIEW_CONTACT_INFO' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-03.VIEW_CONTACT_INFO' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-03.VIEW_CONTACT_INFO' AS permission_code, 'R' AS permission_level
   UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-03.VIEW_CONTACT_INFO' AS permission_code, 'R' AS permission_level
   UNION ALL SELECT 'VISITOR' AS role_code, 'NONE' AS sub_role, 'UC-03.VIEW_CONTACT_INFO' AS permission_code, 'R' AS permission_level
   UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-04.VIEW_POLICY_AND_TERMS' AS permission_code, 'R' AS permission_level
   UNION ALL SELECT 'ADMIN' AS role_code, 'NONE' AS sub_role, 'UC-04.VIEW_POLICY_AND_TERMS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Leader' AS sub_role, 'UC-04.VIEW_POLICY_AND_TERMS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Staff' AS sub_role, 'UC-04.VIEW_POLICY_AND_TERMS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Leader' AS sub_role, 'UC-04.VIEW_POLICY_AND_TERMS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Staff' AS sub_role, 'UC-04.VIEW_POLICY_AND_TERMS' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-04.VIEW_POLICY_AND_TERMS' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-04.VIEW_POLICY_AND_TERMS' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-04.VIEW_POLICY_AND_TERMS' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-04.VIEW_POLICY_AND_TERMS' AS permission_code, 'R' AS permission_level
   UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-04.VIEW_POLICY_AND_TERMS' AS permission_code, 'R' AS permission_level
   UNION ALL SELECT 'VISITOR' AS role_code, 'NONE' AS sub_role, 'UC-04.VIEW_POLICY_AND_TERMS' AS permission_code, 'R' AS permission_level
   UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-05.VIEW_FAQ' AS permission_code, 'R' AS permission_level
   UNION ALL SELECT 'ADMIN' AS role_code, 'NONE' AS sub_role, 'UC-05.VIEW_FAQ' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Leader' AS sub_role, 'UC-05.VIEW_FAQ' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Staff' AS sub_role, 'UC-05.VIEW_FAQ' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Leader' AS sub_role, 'UC-05.VIEW_FAQ' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Staff' AS sub_role, 'UC-05.VIEW_FAQ' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-05.VIEW_FAQ' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-05.VIEW_FAQ' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-05.VIEW_FAQ' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-05.VIEW_FAQ' AS permission_code, 'R' AS permission_level
   UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-05.VIEW_FAQ' AS permission_code, 'R' AS permission_level
   UNION ALL SELECT 'VISITOR' AS role_code, 'NONE' AS sub_role, 'UC-05.VIEW_FAQ' AS permission_code, 'R' AS permission_level
   UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-06.VIEW_NEWS' AS permission_code, 'R' AS permission_level
   UNION ALL SELECT 'ADMIN' AS role_code, 'NONE' AS sub_role, 'UC-06.VIEW_NEWS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Leader' AS sub_role, 'UC-06.VIEW_NEWS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Staff' AS sub_role, 'UC-06.VIEW_NEWS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Leader' AS sub_role, 'UC-06.VIEW_NEWS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Staff' AS sub_role, 'UC-06.VIEW_NEWS' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-06.VIEW_NEWS' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-06.VIEW_NEWS' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-06.VIEW_NEWS' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-06.VIEW_NEWS' AS permission_code, 'R' AS permission_level
   UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-06.VIEW_NEWS' AS permission_code, 'R' AS permission_level
   UNION ALL SELECT 'VISITOR' AS role_code, 'NONE' AS sub_role, 'UC-06.VIEW_NEWS' AS permission_code, 'R' AS permission_level
   UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-07.VIEW_PARTNERS' AS permission_code, 'R' AS permission_level
   UNION ALL SELECT 'ADMIN' AS role_code, 'NONE' AS sub_role, 'UC-07.VIEW_PARTNERS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Leader' AS sub_role, 'UC-07.VIEW_PARTNERS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Staff' AS sub_role, 'UC-07.VIEW_PARTNERS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Leader' AS sub_role, 'UC-07.VIEW_PARTNERS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Staff' AS sub_role, 'UC-07.VIEW_PARTNERS' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-07.VIEW_PARTNERS' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-07.VIEW_PARTNERS' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-07.VIEW_PARTNERS' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-07.VIEW_PARTNERS' AS permission_code, 'R' AS permission_level
   UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-07.VIEW_PARTNERS' AS permission_code, 'R' AS permission_level
   UNION ALL SELECT 'VISITOR' AS role_code, 'NONE' AS sub_role, 'UC-07.VIEW_PARTNERS' AS permission_code, 'R' AS permission_level
   UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-08.VIEW_GALLERY' AS permission_code, 'R' AS permission_level
   UNION ALL SELECT 'ADMIN' AS role_code, 'NONE' AS sub_role, 'UC-08.VIEW_GALLERY' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Leader' AS sub_role, 'UC-08.VIEW_GALLERY' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Staff' AS sub_role, 'UC-08.VIEW_GALLERY' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Leader' AS sub_role, 'UC-08.VIEW_GALLERY' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Staff' AS sub_role, 'UC-08.VIEW_GALLERY' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-08.VIEW_GALLERY' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-08.VIEW_GALLERY' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-08.VIEW_GALLERY' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-08.VIEW_GALLERY' AS permission_code, 'R' AS permission_level
   UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-08.VIEW_GALLERY' AS permission_code, 'R' AS permission_level
   UNION ALL SELECT 'VISITOR' AS role_code, 'NONE' AS sub_role, 'UC-08.VIEW_GALLERY' AS permission_code, 'R' AS permission_level
   UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-09.VIEW_NOTIFICATIONS' AS permission_code, 'R' AS permission_level
   UNION ALL SELECT 'ADMIN' AS role_code, 'NONE' AS sub_role, 'UC-09.VIEW_NOTIFICATIONS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Leader' AS sub_role, 'UC-09.VIEW_NOTIFICATIONS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Staff' AS sub_role, 'UC-09.VIEW_NOTIFICATIONS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Leader' AS sub_role, 'UC-09.VIEW_NOTIFICATIONS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Staff' AS sub_role, 'UC-09.VIEW_NOTIFICATIONS' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-09.VIEW_NOTIFICATIONS' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-09.VIEW_NOTIFICATIONS' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-09.VIEW_NOTIFICATIONS' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-09.VIEW_NOTIFICATIONS' AS permission_code, 'R' AS permission_level
   UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-09.VIEW_NOTIFICATIONS' AS permission_code, 'R' AS permission_level
   UNION ALL SELECT 'VISITOR' AS role_code, 'NONE' AS sub_role, 'UC-09.VIEW_NOTIFICATIONS' AS permission_code, 'R' AS permission_level
   UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-10.LOGIN_VIA_SSO' AS permission_code, 'O' AS permission_level
   UNION ALL SELECT 'ADMIN' AS role_code, 'NONE' AS sub_role, 'UC-10.LOGIN_VIA_SSO' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Leader' AS sub_role, 'UC-10.LOGIN_VIA_SSO' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Staff' AS sub_role, 'UC-10.LOGIN_VIA_SSO' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Leader' AS sub_role, 'UC-10.LOGIN_VIA_SSO' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Staff' AS sub_role, 'UC-10.LOGIN_VIA_SSO' AS permission_code, 'O' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-10.LOGIN_VIA_SSO' AS permission_code, 'O' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-10.LOGIN_VIA_SSO' AS permission_code, 'O' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-10.LOGIN_VIA_SSO' AS permission_code, 'O' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-10.LOGIN_VIA_SSO' AS permission_code, 'O' AS permission_level
   UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-10.LOGIN_VIA_SSO' AS permission_code, 'O' AS permission_level
   UNION ALL SELECT 'VISITOR' AS role_code, 'NONE' AS sub_role, 'UC-10.LOGIN_VIA_SSO' AS permission_code, 'O' AS permission_level
   UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-11.LOGIN_VIA_CREDENTIALS' AS permission_code, 'O' AS permission_level
   UNION ALL SELECT 'ADMIN' AS role_code, 'NONE' AS sub_role, 'UC-11.LOGIN_VIA_CREDENTIALS' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Leader' AS sub_role, 'UC-11.LOGIN_VIA_CREDENTIALS' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Staff' AS sub_role, 'UC-11.LOGIN_VIA_CREDENTIALS' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Leader' AS sub_role, 'UC-11.LOGIN_VIA_CREDENTIALS' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Staff' AS sub_role, 'UC-11.LOGIN_VIA_CREDENTIALS' AS permission_code, 'O' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-11.LOGIN_VIA_CREDENTIALS' AS permission_code, 'O' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-11.LOGIN_VIA_CREDENTIALS' AS permission_code, 'O' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-11.LOGIN_VIA_CREDENTIALS' AS permission_code, 'O' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-11.LOGIN_VIA_CREDENTIALS' AS permission_code, 'O' AS permission_level
   UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-11.LOGIN_VIA_CREDENTIALS' AS permission_code, 'O' AS permission_level
   UNION ALL SELECT 'VISITOR' AS role_code, 'NONE' AS sub_role, 'UC-11.LOGIN_VIA_CREDENTIALS' AS permission_code, 'O' AS permission_level
   UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-12.LOGOUT' AS permission_code, 'O' AS permission_level
   UNION ALL SELECT 'ADMIN' AS role_code, 'NONE' AS sub_role, 'UC-12.LOGOUT' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Leader' AS sub_role, 'UC-12.LOGOUT' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Staff' AS sub_role, 'UC-12.LOGOUT' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Leader' AS sub_role, 'UC-12.LOGOUT' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Staff' AS sub_role, 'UC-12.LOGOUT' AS permission_code, 'O' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-12.LOGOUT' AS permission_code, 'O' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-12.LOGOUT' AS permission_code, 'O' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-12.LOGOUT' AS permission_code, 'O' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-12.LOGOUT' AS permission_code, 'O' AS permission_level
   UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-12.LOGOUT' AS permission_code, 'O' AS permission_level
   UNION ALL SELECT 'VISITOR' AS role_code, 'NONE' AS sub_role, 'UC-12.LOGOUT' AS permission_code, 'O' AS permission_level
   UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-13.FORGOT_PASSWORD' AS permission_code, 'O' AS permission_level
   UNION ALL SELECT 'ADMIN' AS role_code, 'NONE' AS sub_role, 'UC-13.FORGOT_PASSWORD' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Leader' AS sub_role, 'UC-13.FORGOT_PASSWORD' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Staff' AS sub_role, 'UC-13.FORGOT_PASSWORD' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Leader' AS sub_role, 'UC-13.FORGOT_PASSWORD' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Staff' AS sub_role, 'UC-13.FORGOT_PASSWORD' AS permission_code, 'O' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-13.FORGOT_PASSWORD' AS permission_code, 'O' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-13.FORGOT_PASSWORD' AS permission_code, 'O' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-13.FORGOT_PASSWORD' AS permission_code, 'O' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-13.FORGOT_PASSWORD' AS permission_code, 'O' AS permission_level
   UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-13.FORGOT_PASSWORD' AS permission_code, 'O' AS permission_level
   UNION ALL SELECT 'VISITOR' AS role_code, 'NONE' AS sub_role, 'UC-13.FORGOT_PASSWORD' AS permission_code, 'O' AS permission_level
   UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-14.VIEW_PROFILE' AS permission_code, 'O' AS permission_level
   UNION ALL SELECT 'ADMIN' AS role_code, 'NONE' AS sub_role, 'UC-14.VIEW_PROFILE' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Leader' AS sub_role, 'UC-14.VIEW_PROFILE' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Staff' AS sub_role, 'UC-14.VIEW_PROFILE' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Leader' AS sub_role, 'UC-14.VIEW_PROFILE' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Staff' AS sub_role, 'UC-14.VIEW_PROFILE' AS permission_code, 'O' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-14.VIEW_PROFILE' AS permission_code, 'O' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-14.VIEW_PROFILE' AS permission_code, 'O' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-14.VIEW_PROFILE' AS permission_code, 'O' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-14.VIEW_PROFILE' AS permission_code, 'O' AS permission_level
   UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-14.VIEW_PROFILE' AS permission_code, 'O' AS permission_level
   UNION ALL SELECT 'VISITOR' AS role_code, 'NONE' AS sub_role, 'UC-14.VIEW_PROFILE' AS permission_code, 'O' AS permission_level
   UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-15.UPDATE_PROFILE' AS permission_code, 'O' AS permission_level
   UNION ALL SELECT 'ADMIN' AS role_code, 'NONE' AS sub_role, 'UC-15.UPDATE_PROFILE' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Leader' AS sub_role, 'UC-15.UPDATE_PROFILE' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Staff' AS sub_role, 'UC-15.UPDATE_PROFILE' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Leader' AS sub_role, 'UC-15.UPDATE_PROFILE' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Staff' AS sub_role, 'UC-15.UPDATE_PROFILE' AS permission_code, 'O' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-15.UPDATE_PROFILE' AS permission_code, 'O' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-15.UPDATE_PROFILE' AS permission_code, 'O' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-15.UPDATE_PROFILE' AS permission_code, 'O' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-15.UPDATE_PROFILE' AS permission_code, 'O' AS permission_level
   UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-15.UPDATE_PROFILE' AS permission_code, 'O' AS permission_level
   UNION ALL SELECT 'VISITOR' AS role_code, 'NONE' AS sub_role, 'UC-15.UPDATE_PROFILE' AS permission_code, 'O' AS permission_level
   UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-16.CHANGE_PASSWORD' AS permission_code, 'O' AS permission_level
   UNION ALL SELECT 'ADMIN' AS role_code, 'NONE' AS sub_role, 'UC-16.CHANGE_PASSWORD' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Leader' AS sub_role, 'UC-16.CHANGE_PASSWORD' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Staff' AS sub_role, 'UC-16.CHANGE_PASSWORD' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Leader' AS sub_role, 'UC-16.CHANGE_PASSWORD' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Staff' AS sub_role, 'UC-16.CHANGE_PASSWORD' AS permission_code, 'O' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-16.CHANGE_PASSWORD' AS permission_code, 'O' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-16.CHANGE_PASSWORD' AS permission_code, 'O' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-16.CHANGE_PASSWORD' AS permission_code, 'O' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-16.CHANGE_PASSWORD' AS permission_code, 'O' AS permission_level
   UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-16.CHANGE_PASSWORD' AS permission_code, 'O' AS permission_level
   UNION ALL SELECT 'VISITOR' AS role_code, 'NONE' AS sub_role, 'UC-16.CHANGE_PASSWORD' AS permission_code, 'O' AS permission_level
   UNION ALL SELECT 'VISITOR' AS role_code, 'NONE' AS sub_role, 'UC-17.SUBMIT_VISIT_REQUEST' AS permission_code, 'F' AS permission_level
   UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-18.APPROVE_CROSS_CAMPUS_REQUEST' AS permission_code, 'E' AS permission_level
   UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-19.VIEW_GUEST_DELEGATION_DETAILS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Leader' AS sub_role, 'UC-19.VIEW_GUEST_DELEGATION_DETAILS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Staff' AS sub_role, 'UC-19.VIEW_GUEST_DELEGATION_DETAILS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Leader' AS sub_role, 'UC-19.VIEW_GUEST_DELEGATION_DETAILS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Staff' AS sub_role, 'UC-19.VIEW_GUEST_DELEGATION_DETAILS' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-19.VIEW_GUEST_DELEGATION_DETAILS' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-19.VIEW_GUEST_DELEGATION_DETAILS' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-19.VIEW_GUEST_DELEGATION_DETAILS' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-19.VIEW_GUEST_DELEGATION_DETAILS' AS permission_code, 'R' AS permission_level
   UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-19.VIEW_GUEST_DELEGATION_DETAILS' AS permission_code, 'R' AS permission_level
   UNION ALL SELECT 'VISITOR' AS role_code, 'NONE' AS sub_role, 'UC-19.VIEW_GUEST_DELEGATION_DETAILS' AS permission_code, 'R' AS permission_level
   UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-20.VIEW_GUEST_DELEGATION_LIST' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Leader' AS sub_role, 'UC-20.VIEW_GUEST_DELEGATION_LIST' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Staff' AS sub_role, 'UC-20.VIEW_GUEST_DELEGATION_LIST' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Leader' AS sub_role, 'UC-20.VIEW_GUEST_DELEGATION_LIST' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Staff' AS sub_role, 'UC-20.VIEW_GUEST_DELEGATION_LIST' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-20.VIEW_GUEST_DELEGATION_LIST' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-20.VIEW_GUEST_DELEGATION_LIST' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-20.VIEW_GUEST_DELEGATION_LIST' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-20.VIEW_GUEST_DELEGATION_LIST' AS permission_code, 'R' AS permission_level
   UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-20.VIEW_GUEST_DELEGATION_LIST' AS permission_code, 'R' AS permission_level
   UNION ALL SELECT 'VISITOR' AS role_code, 'NONE' AS sub_role, 'UC-20.VIEW_GUEST_DELEGATION_LIST' AS permission_code, 'R' AS permission_level
   UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-21.SEARCH_DELEGATIONS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Leader' AS sub_role, 'UC-21.SEARCH_DELEGATIONS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Staff' AS sub_role, 'UC-21.SEARCH_DELEGATIONS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Leader' AS sub_role, 'UC-21.SEARCH_DELEGATIONS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Staff' AS sub_role, 'UC-21.SEARCH_DELEGATIONS' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-21.SEARCH_DELEGATIONS' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-21.SEARCH_DELEGATIONS' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-21.SEARCH_DELEGATIONS' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-21.SEARCH_DELEGATIONS' AS permission_code, 'R' AS permission_level
   UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-21.SEARCH_DELEGATIONS' AS permission_code, 'R' AS permission_level
   UNION ALL SELECT 'VISITOR' AS role_code, 'NONE' AS sub_role, 'UC-21.SEARCH_DELEGATIONS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Leader' AS sub_role, 'UC-22.PROCESS_VISIT_REQUEST' AS permission_code, 'E' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Staff' AS sub_role, 'UC-23.CREATE_GUEST_DELEGATION' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Staff' AS sub_role, 'UC-24.UPDATE_GUEST_DELEGATION' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Leader' AS sub_role, 'UC-25.PREPARE_VISIT_LOGISTICS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Staff' AS sub_role, 'UC-25.PREPARE_VISIT_LOGISTICS' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Leader' AS sub_role, 'UC-26.UPDATE_VISIT_LOGISTICS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Staff' AS sub_role, 'UC-26.UPDATE_VISIT_LOGISTICS' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Staff' AS sub_role, 'UC-27.CONFIRM_PARTICIPATION' AS permission_code, 'E' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Leader' AS sub_role, 'UC-27.CONFIRM_PARTICIPATION' AS permission_code, 'E' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Staff' AS sub_role, 'UC-27.CONFIRM_PARTICIPATION' AS permission_code, 'E' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-22.PROCESS_VISIT_REQUEST' AS permission_code, 'E' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-23.CREATE_GUEST_DELEGATION' AS permission_code, 'F' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-24.UPDATE_GUEST_DELEGATION' AS permission_code, 'F' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-25.PREPARE_VISIT_LOGISTICS' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-25.PREPARE_VISIT_LOGISTICS' AS permission_code, 'F' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-26.UPDATE_VISIT_LOGISTICS' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-26.UPDATE_VISIT_LOGISTICS' AS permission_code, 'F' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-27.CONFIRM_PARTICIPATION' AS permission_code, 'E' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-27.CONFIRM_PARTICIPATION' AS permission_code, 'E' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-27.CONFIRM_PARTICIPATION' AS permission_code, 'E' AS permission_level
   UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-27.CONFIRM_PARTICIPATION' AS permission_code, 'E' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Leader' AS sub_role, 'UC-28.APPROVE_RESOURCE_REQUEST' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Leader' AS sub_role, 'UC-29.PROPOSE_RESOURCE_MODIFICATION' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Staff' AS sub_role, 'UC-29.PROPOSE_RESOURCE_MODIFICATION' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Staff' AS sub_role, 'UC-30.CONFIRM_THE_CHANGE_PROPOSAL' AS permission_code, 'E' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Leader' AS sub_role, 'UC-30.CONFIRM_THE_CHANGE_PROPOSAL' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Staff' AS sub_role, 'UC-30.CONFIRM_THE_CHANGE_PROPOSAL' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Staff' AS sub_role, 'UC-31.CREATE_MEETING_MINUTES' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Leader' AS sub_role, 'UC-31.CREATE_MEETING_MINUTES' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Staff' AS sub_role, 'UC-31.CREATE_MEETING_MINUTES' AS permission_code, 'F' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-28.APPROVE_RESOURCE_REQUEST' AS permission_code, 'F' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-29.PROPOSE_RESOURCE_MODIFICATION' AS permission_code, 'F' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-29.PROPOSE_RESOURCE_MODIFICATION' AS permission_code, 'F' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-30.CONFIRM_THE_CHANGE_PROPOSAL' AS permission_code, 'E' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-30.CONFIRM_THE_CHANGE_PROPOSAL' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-30.CONFIRM_THE_CHANGE_PROPOSAL' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-31.CREATE_MEETING_MINUTES' AS permission_code, 'F' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-31.CREATE_MEETING_MINUTES' AS permission_code, 'F' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-31.CREATE_MEETING_MINUTES' AS permission_code, 'F' AS permission_level
   UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-31.CREATE_MEETING_MINUTES' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Staff' AS sub_role, 'UC-32.EDIT_MEETING_MINUTES' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Leader' AS sub_role, 'UC-32.EDIT_MEETING_MINUTES' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Staff' AS sub_role, 'UC-32.EDIT_MEETING_MINUTES' AS permission_code, 'F' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-32.EDIT_MEETING_MINUTES' AS permission_code, 'F' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-32.EDIT_MEETING_MINUTES' AS permission_code, 'F' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-32.EDIT_MEETING_MINUTES' AS permission_code, 'F' AS permission_level
   UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-32.EDIT_MEETING_MINUTES' AS permission_code, 'F' AS permission_level
   UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-33.VIEW_MEETING_MINUTES_DETAILS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Leader' AS sub_role, 'UC-33.VIEW_MEETING_MINUTES_DETAILS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Staff' AS sub_role, 'UC-33.VIEW_MEETING_MINUTES_DETAILS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Leader' AS sub_role, 'UC-33.VIEW_MEETING_MINUTES_DETAILS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Staff' AS sub_role, 'UC-33.VIEW_MEETING_MINUTES_DETAILS' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-33.VIEW_MEETING_MINUTES_DETAILS' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-33.VIEW_MEETING_MINUTES_DETAILS' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-33.VIEW_MEETING_MINUTES_DETAILS' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-33.VIEW_MEETING_MINUTES_DETAILS' AS permission_code, 'R' AS permission_level
   UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-33.VIEW_MEETING_MINUTES_DETAILS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Staff' AS sub_role, 'UC-34.SUBMIT_DELEGATION_FEEDBACK' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Leader' AS sub_role, 'UC-34.SUBMIT_DELEGATION_FEEDBACK' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Staff' AS sub_role, 'UC-34.SUBMIT_DELEGATION_FEEDBACK' AS permission_code, 'F' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-34.SUBMIT_DELEGATION_FEEDBACK' AS permission_code, 'F' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-34.SUBMIT_DELEGATION_FEEDBACK' AS permission_code, 'F' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-34.SUBMIT_DELEGATION_FEEDBACK' AS permission_code, 'F' AS permission_level
   UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-34.SUBMIT_DELEGATION_FEEDBACK' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Staff' AS sub_role, 'UC-35.SCAN_BUSINESS_CARD' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Staff' AS sub_role, 'UC-36.CREATE_PARTNER_PROFILE' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Staff' AS sub_role, 'UC-37.UPLOAD_ATTACHED_DOCUMENTS' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Staff' AS sub_role, 'UC-38.UPLOAD_VISIT_PHOTOS' AS permission_code, 'F' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-35.SCAN_BUSINESS_CARD' AS permission_code, 'F' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-36.CREATE_PARTNER_PROFILE' AS permission_code, 'F' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-37.UPLOAD_ATTACHED_DOCUMENTS' AS permission_code, 'F' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-38.UPLOAD_VISIT_PHOTOS' AS permission_code, 'F' AS permission_level
   UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-38.UPLOAD_VISIT_PHOTOS' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Staff' AS sub_role, 'UC-39.TAG_FACES_ON_PHOTOS' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Staff' AS sub_role, 'UC-40.CREATE_NEWS_ARTICLE' AS permission_code, 'F' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-39.TAG_FACES_ON_PHOTOS' AS permission_code, 'F' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-40.CREATE_NEWS_ARTICLE' AS permission_code, 'F' AS permission_level
   UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-40.CREATE_NEWS_ARTICLE' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Staff' AS sub_role, 'UC-41.CLOSE_DELEGATION' AS permission_code, 'F' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-41.CLOSE_DELEGATION' AS permission_code, 'F' AS permission_level
   UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-42.VIEW_EMAIL_TEMPLATE_LIST' AS permission_code, 'R' AS permission_level
   UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-43.VIEW_EMAIL_TEMPLATE_DETAIL' AS permission_code, 'R' AS permission_level
   UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-44.UPDATE_EMAIL_TEMPLATE' AS permission_code, 'E' AS permission_level
   UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-45.CREATE_EMAIL_TEMPLATE' AS permission_code, 'F' AS permission_level
   UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-46.EDIT_EMAIL_CONTENT' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Leader' AS sub_role, 'UC-46.EDIT_EMAIL_CONTENT' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Staff' AS sub_role, 'UC-46.EDIT_EMAIL_CONTENT' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Leader' AS sub_role, 'UC-46.EDIT_EMAIL_CONTENT' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Staff' AS sub_role, 'UC-46.EDIT_EMAIL_CONTENT' AS permission_code, 'O' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-46.EDIT_EMAIL_CONTENT' AS permission_code, 'O' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-46.EDIT_EMAIL_CONTENT' AS permission_code, 'O' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-46.EDIT_EMAIL_CONTENT' AS permission_code, 'O' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-46.EDIT_EMAIL_CONTENT' AS permission_code, 'O' AS permission_level
   UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-46.EDIT_EMAIL_CONTENT' AS permission_code, 'O' AS permission_level
   UNION ALL SELECT 'VISITOR' AS role_code, 'NONE' AS sub_role, 'UC-46.EDIT_EMAIL_CONTENT' AS permission_code, 'O' AS permission_level
   UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-47.SEND_EMAIL' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Leader' AS sub_role, 'UC-47.SEND_EMAIL' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Staff' AS sub_role, 'UC-47.SEND_EMAIL' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Leader' AS sub_role, 'UC-47.SEND_EMAIL' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Staff' AS sub_role, 'UC-47.SEND_EMAIL' AS permission_code, 'O' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-47.SEND_EMAIL' AS permission_code, 'O' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-47.SEND_EMAIL' AS permission_code, 'O' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-47.SEND_EMAIL' AS permission_code, 'O' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-47.SEND_EMAIL' AS permission_code, 'O' AS permission_level
   UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-47.SEND_EMAIL' AS permission_code, 'O' AS permission_level
   UNION ALL SELECT 'VISITOR' AS role_code, 'NONE' AS sub_role, 'UC-47.SEND_EMAIL' AS permission_code, 'O' AS permission_level
   UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-48.VIEW_EMAIL' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Leader' AS sub_role, 'UC-48.VIEW_EMAIL' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Staff' AS sub_role, 'UC-48.VIEW_EMAIL' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Leader' AS sub_role, 'UC-48.VIEW_EMAIL' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Staff' AS sub_role, 'UC-48.VIEW_EMAIL' AS permission_code, 'O' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-48.VIEW_EMAIL' AS permission_code, 'O' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-48.VIEW_EMAIL' AS permission_code, 'O' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-48.VIEW_EMAIL' AS permission_code, 'O' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-48.VIEW_EMAIL' AS permission_code, 'O' AS permission_level
   UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-48.VIEW_EMAIL' AS permission_code, 'O' AS permission_level
   UNION ALL SELECT 'VISITOR' AS role_code, 'NONE' AS sub_role, 'UC-48.VIEW_EMAIL' AS permission_code, 'O' AS permission_level
   UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-49.REPLY_TO_EMAIL' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Leader' AS sub_role, 'UC-49.REPLY_TO_EMAIL' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Staff' AS sub_role, 'UC-49.REPLY_TO_EMAIL' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Leader' AS sub_role, 'UC-49.REPLY_TO_EMAIL' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Staff' AS sub_role, 'UC-49.REPLY_TO_EMAIL' AS permission_code, 'O' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-49.REPLY_TO_EMAIL' AS permission_code, 'O' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-49.REPLY_TO_EMAIL' AS permission_code, 'O' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-49.REPLY_TO_EMAIL' AS permission_code, 'O' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-49.REPLY_TO_EMAIL' AS permission_code, 'O' AS permission_level
   UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-49.REPLY_TO_EMAIL' AS permission_code, 'O' AS permission_level
   UNION ALL SELECT 'VISITOR' AS role_code, 'NONE' AS sub_role, 'UC-49.REPLY_TO_EMAIL' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Leader' AS sub_role, 'UC-50.PROCESS_PARTNER_CREATION_REQUEST' AS permission_code, 'E' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Staff' AS sub_role, 'UC-51.EDIT_PARTNER_INFORMATION' AS permission_code, 'E' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Leader' AS sub_role, 'UC-52.VIEW_PARTNER_LISTS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Staff' AS sub_role, 'UC-52.VIEW_PARTNER_LISTS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Leader' AS sub_role, 'UC-53.SEARCH_PARTNERS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Staff' AS sub_role, 'UC-53.SEARCH_PARTNERS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Leader' AS sub_role, 'UC-54.VIEW_PARTNER_DETAILS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Staff' AS sub_role, 'UC-54.VIEW_PARTNER_DETAILS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Leader' AS sub_role, 'UC-55.VIEW_DOCUMENT_LIST' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Staff' AS sub_role, 'UC-55.VIEW_DOCUMENT_LIST' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Leader' AS sub_role, 'UC-56.SEARCH_DOCUMENTS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Staff' AS sub_role, 'UC-56.SEARCH_DOCUMENTS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Leader' AS sub_role, 'UC-57.VIEW_GALLERY_ITEM_LIST' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Leader' AS sub_role, 'UC-58.SEARCH_GALLERY_ITEMS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Leader' AS sub_role, 'UC-59.ADD_GALLERY_ITEM' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Leader' AS sub_role, 'UC-60.UPDATE_GALLERY_ITEM' AS permission_code, 'E' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Leader' AS sub_role, 'UC-61.DELETE_GALLERY_ITEM' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Leader' AS sub_role, 'UC-62.VIEW_MINUTES_LIST' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Staff' AS sub_role, 'UC-62.VIEW_MINUTES_LIST' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Leader' AS sub_role, 'UC-63.SEARCH_FILTER_MINUTES' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Staff' AS sub_role, 'UC-63.SEARCH_FILTER_MINUTES' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-50.PROCESS_PARTNER_CREATION_REQUEST' AS permission_code, 'E' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-51.EDIT_PARTNER_INFORMATION' AS permission_code, 'E' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-52.VIEW_PARTNER_LISTS' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-52.VIEW_PARTNER_LISTS' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-53.SEARCH_PARTNERS' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-53.SEARCH_PARTNERS' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-54.VIEW_PARTNER_DETAILS' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-54.VIEW_PARTNER_DETAILS' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-55.VIEW_DOCUMENT_LIST' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-55.VIEW_DOCUMENT_LIST' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-56.SEARCH_DOCUMENTS' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-56.SEARCH_DOCUMENTS' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-57.VIEW_GALLERY_ITEM_LIST' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-58.SEARCH_GALLERY_ITEMS' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-59.ADD_GALLERY_ITEM' AS permission_code, 'F' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-60.UPDATE_GALLERY_ITEM' AS permission_code, 'E' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-61.DELETE_GALLERY_ITEM' AS permission_code, 'F' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-62.VIEW_MINUTES_LIST' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-62.VIEW_MINUTES_LIST' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-63.SEARCH_FILTER_MINUTES' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-63.SEARCH_FILTER_MINUTES' AS permission_code, 'R' AS permission_level
   UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-64.VIEW_LIST_FAQ' AS permission_code, 'R' AS permission_level
   UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-65.CREATE_FAQ' AS permission_code, 'F' AS permission_level
   UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-66.UPDATE_FAQ' AS permission_code, 'E' AS permission_level
   UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-67.CHANGE_FAQ_VISIBILITY' AS permission_code, 'E' AS permission_level
   UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-68.SEARCH_FAQ' AS permission_code, 'R' AS permission_level
   UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-69.VIEW_DASHBOARD_STATISTICS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Leader' AS sub_role, 'UC-69.VIEW_DASHBOARD_STATISTICS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Leader' AS sub_role, 'UC-69.VIEW_DASHBOARD_STATISTICS' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-69.VIEW_DASHBOARD_STATISTICS' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-69.VIEW_DASHBOARD_STATISTICS' AS permission_code, 'R' AS permission_level
   UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-70.EXPORT_STATISTICS_REPORT' AS permission_code, 'E' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Leader' AS sub_role, 'UC-70.EXPORT_STATISTICS_REPORT' AS permission_code, 'E' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Leader' AS sub_role, 'UC-70.EXPORT_STATISTICS_REPORT' AS permission_code, 'E' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-70.EXPORT_STATISTICS_REPORT' AS permission_code, 'E' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-70.EXPORT_STATISTICS_REPORT' AS permission_code, 'E' AS permission_level
   UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-71.FILTER_DASHBOARD_BY_TIME' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Leader' AS sub_role, 'UC-71.FILTER_DASHBOARD_BY_TIME' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Leader' AS sub_role, 'UC-71.FILTER_DASHBOARD_BY_TIME' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Leader' AS sub_role, 'UC-72.VIEW_MY_EVENTS' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Staff' AS sub_role, 'UC-72.VIEW_MY_EVENTS' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Leader' AS sub_role, 'UC-72.VIEW_MY_EVENTS' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Staff' AS sub_role, 'UC-72.VIEW_MY_EVENTS' AS permission_code, 'O' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-71.FILTER_DASHBOARD_BY_TIME' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-71.FILTER_DASHBOARD_BY_TIME' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-72.VIEW_MY_EVENTS' AS permission_code, 'O' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-72.VIEW_MY_EVENTS' AS permission_code, 'O' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-72.VIEW_MY_EVENTS' AS permission_code, 'O' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-72.VIEW_MY_EVENTS' AS permission_code, 'O' AS permission_level
   UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-72.VIEW_MY_EVENTS' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Leader' AS sub_role, 'UC-73.VIEW_DEPARTMENT_CALENDAR' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Staff' AS sub_role, 'UC-73.VIEW_DEPARTMENT_CALENDAR' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Leader' AS sub_role, 'UC-74.SWITCH_VIEW_MODE' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Staff' AS sub_role, 'UC-74.SWITCH_VIEW_MODE' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Leader' AS sub_role, 'UC-74.SWITCH_VIEW_MODE' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Staff' AS sub_role, 'UC-74.SWITCH_VIEW_MODE' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-73.VIEW_DEPARTMENT_CALENDAR' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-73.VIEW_DEPARTMENT_CALENDAR' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-74.SWITCH_VIEW_MODE' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-74.SWITCH_VIEW_MODE' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-74.SWITCH_VIEW_MODE' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-74.SWITCH_VIEW_MODE' AS permission_code, 'R' AS permission_level
   UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-74.SWITCH_VIEW_MODE' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Leader' AS sub_role, 'UC-75.ADD_PERSONAL_EVENT' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Staff' AS sub_role, 'UC-75.ADD_PERSONAL_EVENT' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Leader' AS sub_role, 'UC-76.DELETE_PERSONAL_EVENT' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Staff' AS sub_role, 'UC-76.DELETE_PERSONAL_EVENT' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Leader' AS sub_role, 'UC-77.UPDATE_PERSONAL_EVENT' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Staff' AS sub_role, 'UC-77.UPDATE_PERSONAL_EVENT' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Leader' AS sub_role, 'UC-78.VIEW_EVENT_DETAILS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Staff' AS sub_role, 'UC-78.VIEW_EVENT_DETAILS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Leader' AS sub_role, 'UC-78.VIEW_EVENT_DETAILS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Staff' AS sub_role, 'UC-78.VIEW_EVENT_DETAILS' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-75.ADD_PERSONAL_EVENT' AS permission_code, 'O' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-75.ADD_PERSONAL_EVENT' AS permission_code, 'O' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-76.DELETE_PERSONAL_EVENT' AS permission_code, 'O' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-76.DELETE_PERSONAL_EVENT' AS permission_code, 'O' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-77.UPDATE_PERSONAL_EVENT' AS permission_code, 'O' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-77.UPDATE_PERSONAL_EVENT' AS permission_code, 'O' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-78.VIEW_EVENT_DETAILS' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-78.VIEW_EVENT_DETAILS' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-78.VIEW_EVENT_DETAILS' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-78.VIEW_EVENT_DETAILS' AS permission_code, 'R' AS permission_level
   UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-78.VIEW_EVENT_DETAILS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Leader' AS sub_role, 'UC-79.SEARCH_FILTER_FEEDBACK' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Staff' AS sub_role, 'UC-79.SEARCH_FILTER_FEEDBACK' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Leader' AS sub_role, 'UC-80.VIEW_FEEDBACK_SUMMARY' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Staff' AS sub_role, 'UC-80.VIEW_FEEDBACK_SUMMARY' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-79.SEARCH_FILTER_FEEDBACK' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-79.SEARCH_FILTER_FEEDBACK' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-80.VIEW_FEEDBACK_SUMMARY' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-80.VIEW_FEEDBACK_SUMMARY' AS permission_code, 'R' AS permission_level
   UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-81.ADD_NEW_CAMPUS' AS permission_code, 'F' AS permission_level
   UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-82.VIEW_CAMPUS_LIST' AS permission_code, 'R' AS permission_level
   UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-83.SEARCH_AND_FILTER_CAMPUS' AS permission_code, 'R' AS permission_level
@@ -3184,54 +3185,54 @@ FROM (
   UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-85.UPDATE_CAMPUS' AS permission_code, 'E' AS permission_level
   UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-86.MANAGE_CAMPUS_STATUS' AS permission_code, 'E' AS permission_level
   UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-87.ASSIGN_CAMPUS_LEAD' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Leader' AS sub_role, 'UC-88.APPROVE_NEWS' AS permission_code, 'E' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Staff' AS sub_role, 'UC-89.PUBLISH_NEWS' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Leader' AS sub_role, 'UC-90.VIEW_NEWS_LIST' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Staff' AS sub_role, 'UC-90.VIEW_NEWS_LIST' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-88.APPROVE_NEWS' AS permission_code, 'E' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-89.PUBLISH_NEWS' AS permission_code, 'F' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-90.VIEW_NEWS_LIST' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-90.VIEW_NEWS_LIST' AS permission_code, 'R' AS permission_level
   UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-90.VIEW_NEWS_LIST' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Leader' AS sub_role, 'UC-91.VIEW_NEWS_DETAILS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Staff' AS sub_role, 'UC-91.VIEW_NEWS_DETAILS' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-91.VIEW_NEWS_DETAILS' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-91.VIEW_NEWS_DETAILS' AS permission_code, 'R' AS permission_level
   UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-91.VIEW_NEWS_DETAILS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Staff' AS sub_role, 'UC-92.ADD_MULTILINGUAL_NEWS' AS permission_code, 'F' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-92.ADD_MULTILINGUAL_NEWS' AS permission_code, 'F' AS permission_level
   UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-92.ADD_MULTILINGUAL_NEWS' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Leader' AS sub_role, 'UC-93.MANAGE_NEWS_VISIBILITY' AS permission_code, 'E' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Staff' AS sub_role, 'UC-94.EDIT_NEWS' AS permission_code, 'E' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-93.MANAGE_NEWS_VISIBILITY' AS permission_code, 'E' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-94.EDIT_NEWS' AS permission_code, 'E' AS permission_level
   UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-94.EDIT_NEWS' AS permission_code, 'E' AS permission_level
   UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-95.VIEW_ACCOUNT_LIST' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Leader' AS sub_role, 'UC-95.VIEW_ACCOUNT_LIST' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-95.VIEW_ACCOUNT_LIST' AS permission_code, 'R' AS permission_level
   UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-96.CREATE_ACCOUNT' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Leader' AS sub_role, 'UC-96.CREATE_ACCOUNT' AS permission_code, 'F' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-96.CREATE_ACCOUNT' AS permission_code, 'F' AS permission_level
   UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-97.MANAGE_ACCOUNT_STATUS' AS permission_code, 'E' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Leader' AS sub_role, 'UC-97.MANAGE_ACCOUNT_STATUS' AS permission_code, 'E' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-97.MANAGE_ACCOUNT_STATUS' AS permission_code, 'E' AS permission_level
   UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-98.VIEW_ACCOUNT_DETAILS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Leader' AS sub_role, 'UC-98.VIEW_ACCOUNT_DETAILS' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-98.VIEW_ACCOUNT_DETAILS' AS permission_code, 'R' AS permission_level
   UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-99.SEARCH_AND_FILTER_ACCOUNTS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Leader' AS sub_role, 'UC-99.SEARCH_AND_FILTER_ACCOUNTS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Leader' AS sub_role, 'UC-100.UPDATE_ACCOUNT_ROLE' AS permission_code, 'E' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Leader' AS sub_role, 'UC-101.ADD_NEW_DEPARTMENT' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Leader' AS sub_role, 'UC-102.UPDATE_DEPARTMENT' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Leader' AS sub_role, 'UC-103.SEARCH_AND_FILTER_DEPARTMENTS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Leader' AS sub_role, 'UC-104.VIEW_DEPARTMENT_LIST' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Leader' AS sub_role, 'UC-105.VIEW_DEPARTMENT_DETAILS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Leader' AS sub_role, 'UC-105.VIEW_DEPARTMENT_DETAILS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Staff' AS sub_role, 'UC-105.VIEW_DEPARTMENT_DETAILS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Leader' AS sub_role, 'UC-106.MANAGE_DEPARTMENT_STATUS' AS permission_code, 'E' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Leader' AS sub_role, 'UC-107.ADD_DEPARTMENT_PERSONNEL' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Leader' AS sub_role, 'UC-108.VIEW_PERSONNEL_DETAILS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Staff' AS sub_role, 'UC-108.VIEW_PERSONNEL_DETAILS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Leader' AS sub_role, 'UC-109.SEARCH_PERSONNEL' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Staff' AS sub_role, 'UC-109.SEARCH_PERSONNEL' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Staff' AS sub_role, 'UC-110.REVIEW_ASSIGNED_TASKS' AS permission_code, 'E' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Leader' AS sub_role, 'UC-111.ASSIGN_TASKS' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'Staff' AS sub_role, 'UC-112.SIGN_THE_SERVICE_DELIVERY_REPORT' AS permission_code, 'E' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Leader' AS sub_role, 'UC-112.SIGN_THE_SERVICE_DELIVERY_REPORT' AS permission_code, 'E' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Staff' AS sub_role, 'UC-112.SIGN_THE_SERVICE_DELIVERY_REPORT' AS permission_code, 'E' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Leader' AS sub_role, 'UC-113.REMOVE_PERSONNEL' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Leader' AS sub_role, 'UC-114.VIEW_COORDINATION_TASKS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Staff' AS sub_role, 'UC-114.VIEW_COORDINATION_TASKS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Leader' AS sub_role, 'UC-115.SEARCH_COORDINATION_TASKS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Staff' AS sub_role, 'UC-115.SEARCH_COORDINATION_TASKS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPT' AS role_code, 'Leader' AS sub_role, 'UC-116.REASSIGN_DEPARTMENT_LEAD' AS permission_code, 'F' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-99.SEARCH_AND_FILTER_ACCOUNTS' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-100.UPDATE_ACCOUNT_ROLE' AS permission_code, 'E' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-101.ADD_NEW_DEPARTMENT' AS permission_code, 'F' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-102.UPDATE_DEPARTMENT' AS permission_code, 'F' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-103.SEARCH_AND_FILTER_DEPARTMENTS' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-104.VIEW_DEPARTMENT_LIST' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-105.VIEW_DEPARTMENT_DETAILS' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-105.VIEW_DEPARTMENT_DETAILS' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-105.VIEW_DEPARTMENT_DETAILS' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-106.MANAGE_DEPARTMENT_STATUS' AS permission_code, 'E' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-107.ADD_DEPARTMENT_PERSONNEL' AS permission_code, 'F' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-108.VIEW_PERSONNEL_DETAILS' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-108.VIEW_PERSONNEL_DETAILS' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-109.SEARCH_PERSONNEL' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-109.SEARCH_PERSONNEL' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-110.REVIEW_ASSIGNED_TASKS' AS permission_code, 'E' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-111.ASSIGN_TASKS' AS permission_code, 'F' AS permission_level
+  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-112.SIGN_THE_SERVICE_DELIVERY_REPORT' AS permission_code, 'E' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-112.SIGN_THE_SERVICE_DELIVERY_REPORT' AS permission_code, 'E' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-112.SIGN_THE_SERVICE_DELIVERY_REPORT' AS permission_code, 'E' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-113.REMOVE_PERSONNEL' AS permission_code, 'F' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-114.VIEW_COORDINATION_TASKS' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-114.VIEW_COORDINATION_TASKS' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-115.SEARCH_COORDINATION_TASKS' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-115.SEARCH_COORDINATION_TASKS' AS permission_code, 'R' AS permission_level
+  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-116.REASSIGN_DEPARTMENT_LEAD' AS permission_code, 'F' AS permission_level
   UNION ALL SELECT 'ADMIN' AS role_code, 'NONE' AS sub_role, 'UC-117.VIEW_ROLE_LIST' AS permission_code, 'R' AS permission_level
   UNION ALL SELECT 'ADMIN' AS role_code, 'NONE' AS sub_role, 'UC-118.CREATE_NEW_ROLE' AS permission_code, 'F' AS permission_level
   UNION ALL SELECT 'ADMIN' AS role_code, 'NONE' AS sub_role, 'UC-119.CONFIGURE_ROLE_PERMISSIONS' AS permission_code, 'F' AS permission_level
@@ -4263,7 +4264,7 @@ WHERE email IN (
 ORDER BY email;
 
 -- RBAC quick check: expected effective-role buckets are ADMIN/NONE, HO/NONE,
--- STAFF/Leader, STAFF/Staff, DEPT/Leader, DEPT/Staff, STUDENT/NONE, VISITOR/NONE.
+-- STAFF/Leader, STAFF/Staff, DEPARTMENT/Leader, DEPARTMENT/Staff, STUDENT/NONE, VISITOR/NONE.
 SELECT r.role_code, rp.sub_role, COUNT(*) AS total_permissions
 FROM role_permissions rp
 JOIN roles r ON r.role_id = rp.role_id
@@ -4330,8 +4331,8 @@ INSERT INTO roles (role_id, role_code, name, description, status, created_at, de
 VALUES
   (NULL, 'ADMIN',   'Admin',       'Quản trị kỹ thuật hệ thống', 'ACTIVE', NOW(), NULL, NULL),
   (NULL, 'HO',      'Head Office', 'Quản lý cấp Head Office', 'ACTIVE', NOW(), NULL, NULL),
-  (NULL, 'STAFF',   'IC Staff',    'Nhân sự phòng Hợp tác Quốc tế, dùng users.sub_role = Leader/Staff', 'ACTIVE', NOW(), NULL, NULL),
-  (NULL, 'DEPT',    'Department',  'Nhân sự phòng ban khác, dùng users.sub_role = Leader/Staff', 'ACTIVE', NOW(), NULL, NULL),
+  (NULL, 'STAFF',   'IC Staff',    'Nhân sự phòng Hợp tác Quốc tế, dùng users.sub_role = LEADER/STAFF', 'ACTIVE', NOW(), NULL, NULL),
+  (NULL, 'DEPARTMENT',    'Department',  'Nhân sự phòng ban khác, dùng users.sub_role = LEADER/STAFF', 'ACTIVE', NOW(), NULL, NULL),
   (NULL, 'STUDENT', 'Student',     'Sinh viên hỗ trợ', 'ACTIVE', NOW(), NULL, NULL),
   (NULL, 'VISITOR', 'Visitor',     'Khách gửi visit request và theo dõi thông tin của mình', 'ACTIVE', NOW(), NULL, NULL)
 ON DUPLICATE KEY UPDATE
@@ -4343,8 +4344,8 @@ ON DUPLICATE KEY UPDATE
 
 SELECT role_code, name, status, deleted_at
 FROM roles
-WHERE role_code IN ('ADMIN','HO','STAFF','DEPT','STUDENT','VISITOR')
-ORDER BY FIELD(role_code, 'ADMIN','HO','STAFF','DEPT','STUDENT','VISITOR');
+WHERE role_code IN ('ADMIN','HO','STAFF','DEPARTMENT','STUDENT','VISITOR')
+ORDER BY FIELD(role_code, 'ADMIN','HO','STAFF','DEPARTMENT','STUDENT','VISITOR');
 
 COMMIT;
 
@@ -4675,7 +4676,7 @@ ON DUPLICATE KEY UPDATE
 --
 -- RBAC convention:
 --   role_permissions.sub_role = 'NONE' for ADMIN/HO/STUDENT/VISITOR.
---   role_permissions.sub_role = 'Leader' or 'Staff' for STAFF/DEPT.
+--   role_permissions.sub_role = 'LEADER' or 'STAFF' for STAFF/DEPARTMENT.
 --   users.sub_role remains NULL for ADMIN/HO/STUDENT/VISITOR.
 -- =====================================================================
 USE pems_db;
@@ -4687,8 +4688,8 @@ INSERT INTO roles (role_id, role_code, name, description, status, created_at, de
 VALUES
   (NULL, 'ADMIN',   'Admin',       'Quản trị kỹ thuật hệ thống', 'ACTIVE', NOW(), NULL, NULL),
   (NULL, 'HO',      'Head Office', 'Quản lý cấp Head Office', 'ACTIVE', NOW(), NULL, NULL),
-  (NULL, 'STAFF',   'IC Staff',    'Nhân sự phòng Hợp tác Quốc tế, dùng users.sub_role = Leader/Staff', 'ACTIVE', NOW(), NULL, NULL),
-  (NULL, 'DEPT',    'Department',  'Nhân sự phòng ban khác, dùng users.sub_role = Leader/Staff', 'ACTIVE', NOW(), NULL, NULL),
+  (NULL, 'STAFF',   'IC Staff',    'Nhân sự phòng Hợp tác Quốc tế, dùng users.sub_role = LEADER/STAFF', 'ACTIVE', NOW(), NULL, NULL),
+  (NULL, 'DEPARTMENT',    'Department',  'Nhân sự phòng ban khác, dùng users.sub_role = LEADER/STAFF', 'ACTIVE', NOW(), NULL, NULL),
   (NULL, 'STUDENT', 'Student',     'Sinh viên hỗ trợ', 'ACTIVE', NOW(), NULL, NULL),
   (NULL, 'VISITOR', 'Visitor',     'Khách gửi visit request và theo dõi thông tin của mình', 'ACTIVE', NOW(), NULL, NULL)
 ON DUPLICATE KEY UPDATE
@@ -4715,128 +4716,128 @@ VALUES
   ('ADMIN', 'NONE', 'UC-01.VIEW_HOMEPAGE', 'R'),
   ('STAFF', 'LEADER', 'UC-01.VIEW_HOMEPAGE', 'R'),
   ('STAFF', 'STAFF', 'UC-01.VIEW_HOMEPAGE', 'R'),
-  ('DEPT', 'LEADER', 'UC-01.VIEW_HOMEPAGE', 'R'),
-  ('DEPT', 'STAFF', 'UC-01.VIEW_HOMEPAGE', 'R'),
+  ('DEPARTMENT', 'LEADER', 'UC-01.VIEW_HOMEPAGE', 'R'),
+  ('DEPARTMENT', 'STAFF', 'UC-01.VIEW_HOMEPAGE', 'R'),
   ('STUDENT', 'NONE', 'UC-01.VIEW_HOMEPAGE', 'R'),
   ('VISITOR', 'NONE', 'UC-01.VIEW_HOMEPAGE', 'R'),
   ('HO', 'NONE', 'UC-02.SEARCH_INFORMATION', 'R'),
   ('ADMIN', 'NONE', 'UC-02.SEARCH_INFORMATION', 'R'),
   ('STAFF', 'LEADER', 'UC-02.SEARCH_INFORMATION', 'R'),
   ('STAFF', 'STAFF', 'UC-02.SEARCH_INFORMATION', 'R'),
-  ('DEPT', 'LEADER', 'UC-02.SEARCH_INFORMATION', 'R'),
-  ('DEPT', 'STAFF', 'UC-02.SEARCH_INFORMATION', 'R'),
+  ('DEPARTMENT', 'LEADER', 'UC-02.SEARCH_INFORMATION', 'R'),
+  ('DEPARTMENT', 'STAFF', 'UC-02.SEARCH_INFORMATION', 'R'),
   ('STUDENT', 'NONE', 'UC-02.SEARCH_INFORMATION', 'R'),
   ('VISITOR', 'NONE', 'UC-02.SEARCH_INFORMATION', 'R'),
   ('HO', 'NONE', 'UC-03.VIEW_CONTACT_INFO', 'R'),
   ('ADMIN', 'NONE', 'UC-03.VIEW_CONTACT_INFO', 'R'),
   ('STAFF', 'LEADER', 'UC-03.VIEW_CONTACT_INFO', 'R'),
   ('STAFF', 'STAFF', 'UC-03.VIEW_CONTACT_INFO', 'R'),
-  ('DEPT', 'LEADER', 'UC-03.VIEW_CONTACT_INFO', 'R'),
-  ('DEPT', 'STAFF', 'UC-03.VIEW_CONTACT_INFO', 'R'),
+  ('DEPARTMENT', 'LEADER', 'UC-03.VIEW_CONTACT_INFO', 'R'),
+  ('DEPARTMENT', 'STAFF', 'UC-03.VIEW_CONTACT_INFO', 'R'),
   ('STUDENT', 'NONE', 'UC-03.VIEW_CONTACT_INFO', 'R'),
   ('VISITOR', 'NONE', 'UC-03.VIEW_CONTACT_INFO', 'R'),
   ('HO', 'NONE', 'UC-04.VIEW_POLICY_AND_TERMS', 'R'),
   ('ADMIN', 'NONE', 'UC-04.VIEW_POLICY_AND_TERMS', 'R'),
   ('STAFF', 'LEADER', 'UC-04.VIEW_POLICY_AND_TERMS', 'R'),
   ('STAFF', 'STAFF', 'UC-04.VIEW_POLICY_AND_TERMS', 'R'),
-  ('DEPT', 'LEADER', 'UC-04.VIEW_POLICY_AND_TERMS', 'R'),
-  ('DEPT', 'STAFF', 'UC-04.VIEW_POLICY_AND_TERMS', 'R'),
+  ('DEPARTMENT', 'LEADER', 'UC-04.VIEW_POLICY_AND_TERMS', 'R'),
+  ('DEPARTMENT', 'STAFF', 'UC-04.VIEW_POLICY_AND_TERMS', 'R'),
   ('STUDENT', 'NONE', 'UC-04.VIEW_POLICY_AND_TERMS', 'R'),
   ('VISITOR', 'NONE', 'UC-04.VIEW_POLICY_AND_TERMS', 'R'),
   ('HO', 'NONE', 'UC-05.VIEW_FAQ', 'R'),
   ('ADMIN', 'NONE', 'UC-05.VIEW_FAQ', 'R'),
   ('STAFF', 'LEADER', 'UC-05.VIEW_FAQ', 'R'),
   ('STAFF', 'STAFF', 'UC-05.VIEW_FAQ', 'R'),
-  ('DEPT', 'LEADER', 'UC-05.VIEW_FAQ', 'R'),
-  ('DEPT', 'STAFF', 'UC-05.VIEW_FAQ', 'R'),
+  ('DEPARTMENT', 'LEADER', 'UC-05.VIEW_FAQ', 'R'),
+  ('DEPARTMENT', 'STAFF', 'UC-05.VIEW_FAQ', 'R'),
   ('STUDENT', 'NONE', 'UC-05.VIEW_FAQ', 'R'),
   ('VISITOR', 'NONE', 'UC-05.VIEW_FAQ', 'R'),
   ('HO', 'NONE', 'UC-06.VIEW_NEWS', 'R'),
   ('ADMIN', 'NONE', 'UC-06.VIEW_NEWS', 'R'),
   ('STAFF', 'LEADER', 'UC-06.VIEW_NEWS', 'R'),
   ('STAFF', 'STAFF', 'UC-06.VIEW_NEWS', 'R'),
-  ('DEPT', 'LEADER', 'UC-06.VIEW_NEWS', 'R'),
-  ('DEPT', 'STAFF', 'UC-06.VIEW_NEWS', 'R'),
+  ('DEPARTMENT', 'LEADER', 'UC-06.VIEW_NEWS', 'R'),
+  ('DEPARTMENT', 'STAFF', 'UC-06.VIEW_NEWS', 'R'),
   ('STUDENT', 'NONE', 'UC-06.VIEW_NEWS', 'R'),
   ('VISITOR', 'NONE', 'UC-06.VIEW_NEWS', 'R'),
   ('HO', 'NONE', 'UC-07.VIEW_PARTNERS', 'R'),
   ('ADMIN', 'NONE', 'UC-07.VIEW_PARTNERS', 'R'),
   ('STAFF', 'LEADER', 'UC-07.VIEW_PARTNERS', 'R'),
   ('STAFF', 'STAFF', 'UC-07.VIEW_PARTNERS', 'R'),
-  ('DEPT', 'LEADER', 'UC-07.VIEW_PARTNERS', 'R'),
-  ('DEPT', 'STAFF', 'UC-07.VIEW_PARTNERS', 'R'),
+  ('DEPARTMENT', 'LEADER', 'UC-07.VIEW_PARTNERS', 'R'),
+  ('DEPARTMENT', 'STAFF', 'UC-07.VIEW_PARTNERS', 'R'),
   ('STUDENT', 'NONE', 'UC-07.VIEW_PARTNERS', 'R'),
   ('VISITOR', 'NONE', 'UC-07.VIEW_PARTNERS', 'R'),
   ('HO', 'NONE', 'UC-08.VIEW_GALLERY', 'R'),
   ('ADMIN', 'NONE', 'UC-08.VIEW_GALLERY', 'R'),
   ('STAFF', 'LEADER', 'UC-08.VIEW_GALLERY', 'R'),
   ('STAFF', 'STAFF', 'UC-08.VIEW_GALLERY', 'R'),
-  ('DEPT', 'LEADER', 'UC-08.VIEW_GALLERY', 'R'),
-  ('DEPT', 'STAFF', 'UC-08.VIEW_GALLERY', 'R'),
+  ('DEPARTMENT', 'LEADER', 'UC-08.VIEW_GALLERY', 'R'),
+  ('DEPARTMENT', 'STAFF', 'UC-08.VIEW_GALLERY', 'R'),
   ('STUDENT', 'NONE', 'UC-08.VIEW_GALLERY', 'R'),
   ('VISITOR', 'NONE', 'UC-08.VIEW_GALLERY', 'R'),
   ('HO', 'NONE', 'UC-09.VIEW_NOTIFICATIONS', 'R'),
   ('ADMIN', 'NONE', 'UC-09.VIEW_NOTIFICATIONS', 'R'),
   ('STAFF', 'LEADER', 'UC-09.VIEW_NOTIFICATIONS', 'R'),
   ('STAFF', 'STAFF', 'UC-09.VIEW_NOTIFICATIONS', 'R'),
-  ('DEPT', 'LEADER', 'UC-09.VIEW_NOTIFICATIONS', 'R'),
-  ('DEPT', 'STAFF', 'UC-09.VIEW_NOTIFICATIONS', 'R'),
+  ('DEPARTMENT', 'LEADER', 'UC-09.VIEW_NOTIFICATIONS', 'R'),
+  ('DEPARTMENT', 'STAFF', 'UC-09.VIEW_NOTIFICATIONS', 'R'),
   ('STUDENT', 'NONE', 'UC-09.VIEW_NOTIFICATIONS', 'R'),
   ('VISITOR', 'NONE', 'UC-09.VIEW_NOTIFICATIONS', 'R'),
   ('HO', 'NONE', 'UC-10.LOGIN_VIA_SSO', 'O'),
   ('ADMIN', 'NONE', 'UC-10.LOGIN_VIA_SSO', 'O'),
   ('STAFF', 'LEADER', 'UC-10.LOGIN_VIA_SSO', 'O'),
   ('STAFF', 'STAFF', 'UC-10.LOGIN_VIA_SSO', 'O'),
-  ('DEPT', 'LEADER', 'UC-10.LOGIN_VIA_SSO', 'O'),
-  ('DEPT', 'STAFF', 'UC-10.LOGIN_VIA_SSO', 'O'),
+  ('DEPARTMENT', 'LEADER', 'UC-10.LOGIN_VIA_SSO', 'O'),
+  ('DEPARTMENT', 'STAFF', 'UC-10.LOGIN_VIA_SSO', 'O'),
   ('STUDENT', 'NONE', 'UC-10.LOGIN_VIA_SSO', 'O'),
   ('VISITOR', 'NONE', 'UC-10.LOGIN_VIA_SSO', 'O'),
   ('HO', 'NONE', 'UC-11.LOGIN_VIA_CREDENTIALS', 'O'),
   ('ADMIN', 'NONE', 'UC-11.LOGIN_VIA_CREDENTIALS', 'O'),
   ('STAFF', 'LEADER', 'UC-11.LOGIN_VIA_CREDENTIALS', 'O'),
   ('STAFF', 'STAFF', 'UC-11.LOGIN_VIA_CREDENTIALS', 'O'),
-  ('DEPT', 'LEADER', 'UC-11.LOGIN_VIA_CREDENTIALS', 'O'),
-  ('DEPT', 'STAFF', 'UC-11.LOGIN_VIA_CREDENTIALS', 'O'),
+  ('DEPARTMENT', 'LEADER', 'UC-11.LOGIN_VIA_CREDENTIALS', 'O'),
+  ('DEPARTMENT', 'STAFF', 'UC-11.LOGIN_VIA_CREDENTIALS', 'O'),
   ('STUDENT', 'NONE', 'UC-11.LOGIN_VIA_CREDENTIALS', 'O'),
   ('VISITOR', 'NONE', 'UC-11.LOGIN_VIA_CREDENTIALS', 'O'),
   ('HO', 'NONE', 'UC-12.LOGOUT', 'O'),
   ('ADMIN', 'NONE', 'UC-12.LOGOUT', 'O'),
   ('STAFF', 'LEADER', 'UC-12.LOGOUT', 'O'),
   ('STAFF', 'STAFF', 'UC-12.LOGOUT', 'O'),
-  ('DEPT', 'LEADER', 'UC-12.LOGOUT', 'O'),
-  ('DEPT', 'STAFF', 'UC-12.LOGOUT', 'O'),
+  ('DEPARTMENT', 'LEADER', 'UC-12.LOGOUT', 'O'),
+  ('DEPARTMENT', 'STAFF', 'UC-12.LOGOUT', 'O'),
   ('STUDENT', 'NONE', 'UC-12.LOGOUT', 'O'),
   ('VISITOR', 'NONE', 'UC-12.LOGOUT', 'O'),
   ('HO', 'NONE', 'UC-13.FORGOT_PASSWORD', 'O'),
   ('ADMIN', 'NONE', 'UC-13.FORGOT_PASSWORD', 'O'),
   ('STAFF', 'LEADER', 'UC-13.FORGOT_PASSWORD', 'O'),
   ('STAFF', 'STAFF', 'UC-13.FORGOT_PASSWORD', 'O'),
-  ('DEPT', 'LEADER', 'UC-13.FORGOT_PASSWORD', 'O'),
-  ('DEPT', 'STAFF', 'UC-13.FORGOT_PASSWORD', 'O'),
+  ('DEPARTMENT', 'LEADER', 'UC-13.FORGOT_PASSWORD', 'O'),
+  ('DEPARTMENT', 'STAFF', 'UC-13.FORGOT_PASSWORD', 'O'),
   ('STUDENT', 'NONE', 'UC-13.FORGOT_PASSWORD', 'O'),
   ('VISITOR', 'NONE', 'UC-13.FORGOT_PASSWORD', 'O'),
   ('HO', 'NONE', 'UC-14.VIEW_PROFILE', 'O'),
   ('ADMIN', 'NONE', 'UC-14.VIEW_PROFILE', 'O'),
   ('STAFF', 'LEADER', 'UC-14.VIEW_PROFILE', 'O'),
   ('STAFF', 'STAFF', 'UC-14.VIEW_PROFILE', 'O'),
-  ('DEPT', 'LEADER', 'UC-14.VIEW_PROFILE', 'O'),
-  ('DEPT', 'STAFF', 'UC-14.VIEW_PROFILE', 'O'),
+  ('DEPARTMENT', 'LEADER', 'UC-14.VIEW_PROFILE', 'O'),
+  ('DEPARTMENT', 'STAFF', 'UC-14.VIEW_PROFILE', 'O'),
   ('STUDENT', 'NONE', 'UC-14.VIEW_PROFILE', 'O'),
   ('VISITOR', 'NONE', 'UC-14.VIEW_PROFILE', 'O'),
   ('HO', 'NONE', 'UC-15.UPDATE_PROFILE', 'O'),
   ('ADMIN', 'NONE', 'UC-15.UPDATE_PROFILE', 'O'),
   ('STAFF', 'LEADER', 'UC-15.UPDATE_PROFILE', 'O'),
   ('STAFF', 'STAFF', 'UC-15.UPDATE_PROFILE', 'O'),
-  ('DEPT', 'LEADER', 'UC-15.UPDATE_PROFILE', 'O'),
-  ('DEPT', 'STAFF', 'UC-15.UPDATE_PROFILE', 'O'),
+  ('DEPARTMENT', 'LEADER', 'UC-15.UPDATE_PROFILE', 'O'),
+  ('DEPARTMENT', 'STAFF', 'UC-15.UPDATE_PROFILE', 'O'),
   ('STUDENT', 'NONE', 'UC-15.UPDATE_PROFILE', 'O'),
   ('VISITOR', 'NONE', 'UC-15.UPDATE_PROFILE', 'O'),
   ('HO', 'NONE', 'UC-16.CHANGE_PASSWORD', 'O'),
   ('ADMIN', 'NONE', 'UC-16.CHANGE_PASSWORD', 'O'),
   ('STAFF', 'LEADER', 'UC-16.CHANGE_PASSWORD', 'O'),
   ('STAFF', 'STAFF', 'UC-16.CHANGE_PASSWORD', 'O'),
-  ('DEPT', 'LEADER', 'UC-16.CHANGE_PASSWORD', 'O'),
-  ('DEPT', 'STAFF', 'UC-16.CHANGE_PASSWORD', 'O'),
+  ('DEPARTMENT', 'LEADER', 'UC-16.CHANGE_PASSWORD', 'O'),
+  ('DEPARTMENT', 'STAFF', 'UC-16.CHANGE_PASSWORD', 'O'),
   ('STUDENT', 'NONE', 'UC-16.CHANGE_PASSWORD', 'O'),
   ('VISITOR', 'NONE', 'UC-16.CHANGE_PASSWORD', 'O'),
   ('VISITOR', 'NONE', 'UC-17.SUBMIT_VISIT_REQUEST', 'F'),
@@ -4844,22 +4845,22 @@ VALUES
   ('HO', 'NONE', 'UC-19.VIEW_GUEST_DELEGATION_DETAILS', 'R'),
   ('STAFF', 'LEADER', 'UC-19.VIEW_GUEST_DELEGATION_DETAILS', 'R'),
   ('STAFF', 'STAFF', 'UC-19.VIEW_GUEST_DELEGATION_DETAILS', 'R'),
-  ('DEPT', 'LEADER', 'UC-19.VIEW_GUEST_DELEGATION_DETAILS', 'R'),
-  ('DEPT', 'STAFF', 'UC-19.VIEW_GUEST_DELEGATION_DETAILS', 'R'),
+  ('DEPARTMENT', 'LEADER', 'UC-19.VIEW_GUEST_DELEGATION_DETAILS', 'R'),
+  ('DEPARTMENT', 'STAFF', 'UC-19.VIEW_GUEST_DELEGATION_DETAILS', 'R'),
   ('STUDENT', 'NONE', 'UC-19.VIEW_GUEST_DELEGATION_DETAILS', 'R'),
   ('VISITOR', 'NONE', 'UC-19.VIEW_GUEST_DELEGATION_DETAILS', 'R'),
   ('HO', 'NONE', 'UC-20.VIEW_GUEST_DELEGATION_LIST', 'R'),
   ('STAFF', 'LEADER', 'UC-20.VIEW_GUEST_DELEGATION_LIST', 'R'),
   ('STAFF', 'STAFF', 'UC-20.VIEW_GUEST_DELEGATION_LIST', 'R'),
-  ('DEPT', 'LEADER', 'UC-20.VIEW_GUEST_DELEGATION_LIST', 'R'),
-  ('DEPT', 'STAFF', 'UC-20.VIEW_GUEST_DELEGATION_LIST', 'R'),
+  ('DEPARTMENT', 'LEADER', 'UC-20.VIEW_GUEST_DELEGATION_LIST', 'R'),
+  ('DEPARTMENT', 'STAFF', 'UC-20.VIEW_GUEST_DELEGATION_LIST', 'R'),
   ('STUDENT', 'NONE', 'UC-20.VIEW_GUEST_DELEGATION_LIST', 'R'),
   ('VISITOR', 'NONE', 'UC-20.VIEW_GUEST_DELEGATION_LIST', 'R'),
   ('HO', 'NONE', 'UC-21.SEARCH_DELEGATIONS', 'R'),
   ('STAFF', 'LEADER', 'UC-21.SEARCH_DELEGATIONS', 'R'),
   ('STAFF', 'STAFF', 'UC-21.SEARCH_DELEGATIONS', 'R'),
-  ('DEPT', 'LEADER', 'UC-21.SEARCH_DELEGATIONS', 'R'),
-  ('DEPT', 'STAFF', 'UC-21.SEARCH_DELEGATIONS', 'R'),
+  ('DEPARTMENT', 'LEADER', 'UC-21.SEARCH_DELEGATIONS', 'R'),
+  ('DEPARTMENT', 'STAFF', 'UC-21.SEARCH_DELEGATIONS', 'R'),
   ('STUDENT', 'NONE', 'UC-21.SEARCH_DELEGATIONS', 'R'),
   ('VISITOR', 'NONE', 'UC-21.SEARCH_DELEGATIONS', 'R'),
   ('STAFF', 'LEADER', 'UC-22.PROCESS_VISIT_REQUEST', 'E'),
@@ -4870,32 +4871,32 @@ VALUES
   ('STAFF', 'LEADER', 'UC-26.UPDATE_VISIT_LOGISTICS', 'R'),
   ('STAFF', 'STAFF', 'UC-26.UPDATE_VISIT_LOGISTICS', 'F'),
   ('STAFF', 'STAFF', 'UC-27.CONFIRM_PARTICIPATION', 'E'),
-  ('DEPT', 'LEADER', 'UC-27.CONFIRM_PARTICIPATION', 'E'),
-  ('DEPT', 'STAFF', 'UC-27.CONFIRM_PARTICIPATION', 'E'),
+  ('DEPARTMENT', 'LEADER', 'UC-27.CONFIRM_PARTICIPATION', 'E'),
+  ('DEPARTMENT', 'STAFF', 'UC-27.CONFIRM_PARTICIPATION', 'E'),
   ('STUDENT', 'NONE', 'UC-27.CONFIRM_PARTICIPATION', 'E'),
-  ('DEPT', 'LEADER', 'UC-28.APPROVE_RESOURCE_REQUEST', 'F'),
-  ('DEPT', 'LEADER', 'UC-29.PROPOSE_RESOURCE_MODIFICATION', 'F'),
-  ('DEPT', 'STAFF', 'UC-29.PROPOSE_RESOURCE_MODIFICATION', 'F'),
+  ('DEPARTMENT', 'LEADER', 'UC-28.APPROVE_RESOURCE_REQUEST', 'F'),
+  ('DEPARTMENT', 'LEADER', 'UC-29.PROPOSE_RESOURCE_MODIFICATION', 'F'),
+  ('DEPARTMENT', 'STAFF', 'UC-29.PROPOSE_RESOURCE_MODIFICATION', 'F'),
   ('STAFF', 'STAFF', 'UC-30.CONFIRM_THE_CHANGE_PROPOSAL', 'E'),
-  ('DEPT', 'LEADER', 'UC-30.CONFIRM_THE_CHANGE_PROPOSAL', 'R'),
-  ('DEPT', 'STAFF', 'UC-30.CONFIRM_THE_CHANGE_PROPOSAL', 'R'),
+  ('DEPARTMENT', 'LEADER', 'UC-30.CONFIRM_THE_CHANGE_PROPOSAL', 'R'),
+  ('DEPARTMENT', 'STAFF', 'UC-30.CONFIRM_THE_CHANGE_PROPOSAL', 'R'),
   ('STAFF', 'STAFF', 'UC-31.CREATE_MEETING_MINUTES', 'F'),
-  ('DEPT', 'LEADER', 'UC-31.CREATE_MEETING_MINUTES', 'F'),
-  ('DEPT', 'STAFF', 'UC-31.CREATE_MEETING_MINUTES', 'F'),
+  ('DEPARTMENT', 'LEADER', 'UC-31.CREATE_MEETING_MINUTES', 'F'),
+  ('DEPARTMENT', 'STAFF', 'UC-31.CREATE_MEETING_MINUTES', 'F'),
   ('STUDENT', 'NONE', 'UC-31.CREATE_MEETING_MINUTES', 'F'),
   ('STAFF', 'STAFF', 'UC-32.EDIT_MEETING_MINUTES', 'F'),
-  ('DEPT', 'LEADER', 'UC-32.EDIT_MEETING_MINUTES', 'F'),
-  ('DEPT', 'STAFF', 'UC-32.EDIT_MEETING_MINUTES', 'F'),
+  ('DEPARTMENT', 'LEADER', 'UC-32.EDIT_MEETING_MINUTES', 'F'),
+  ('DEPARTMENT', 'STAFF', 'UC-32.EDIT_MEETING_MINUTES', 'F'),
   ('STUDENT', 'NONE', 'UC-32.EDIT_MEETING_MINUTES', 'F'),
   ('HO', 'NONE', 'UC-33.VIEW_MEETING_MINUTES_DETAILS', 'R'),
   ('STAFF', 'LEADER', 'UC-33.VIEW_MEETING_MINUTES_DETAILS', 'R'),
   ('STAFF', 'STAFF', 'UC-33.VIEW_MEETING_MINUTES_DETAILS', 'R'),
-  ('DEPT', 'LEADER', 'UC-33.VIEW_MEETING_MINUTES_DETAILS', 'R'),
-  ('DEPT', 'STAFF', 'UC-33.VIEW_MEETING_MINUTES_DETAILS', 'R'),
+  ('DEPARTMENT', 'LEADER', 'UC-33.VIEW_MEETING_MINUTES_DETAILS', 'R'),
+  ('DEPARTMENT', 'STAFF', 'UC-33.VIEW_MEETING_MINUTES_DETAILS', 'R'),
   ('STUDENT', 'NONE', 'UC-33.VIEW_MEETING_MINUTES_DETAILS', 'R'),
   ('STAFF', 'STAFF', 'UC-34.SUBMIT_DELEGATION_FEEDBACK', 'F'),
-  ('DEPT', 'LEADER', 'UC-34.SUBMIT_DELEGATION_FEEDBACK', 'F'),
-  ('DEPT', 'STAFF', 'UC-34.SUBMIT_DELEGATION_FEEDBACK', 'F'),
+  ('DEPARTMENT', 'LEADER', 'UC-34.SUBMIT_DELEGATION_FEEDBACK', 'F'),
+  ('DEPARTMENT', 'STAFF', 'UC-34.SUBMIT_DELEGATION_FEEDBACK', 'F'),
   ('STUDENT', 'NONE', 'UC-34.SUBMIT_DELEGATION_FEEDBACK', 'F'),
   ('STAFF', 'STAFF', 'UC-35.SCAN_BUSINESS_CARD', 'F'),
   ('STAFF', 'STAFF', 'UC-36.CREATE_PARTNER_PROFILE', 'F'),
@@ -4913,29 +4914,29 @@ VALUES
   ('HO', 'NONE', 'UC-46.EDIT_EMAIL_CONTENT', 'O'),
   ('STAFF', 'LEADER', 'UC-46.EDIT_EMAIL_CONTENT', 'O'),
   ('STAFF', 'STAFF', 'UC-46.EDIT_EMAIL_CONTENT', 'O'),
-  ('DEPT', 'LEADER', 'UC-46.EDIT_EMAIL_CONTENT', 'O'),
-  ('DEPT', 'STAFF', 'UC-46.EDIT_EMAIL_CONTENT', 'O'),
+  ('DEPARTMENT', 'LEADER', 'UC-46.EDIT_EMAIL_CONTENT', 'O'),
+  ('DEPARTMENT', 'STAFF', 'UC-46.EDIT_EMAIL_CONTENT', 'O'),
   ('STUDENT', 'NONE', 'UC-46.EDIT_EMAIL_CONTENT', 'O'),
   ('VISITOR', 'NONE', 'UC-46.EDIT_EMAIL_CONTENT', 'O'),
   ('HO', 'NONE', 'UC-47.SEND_EMAIL', 'O'),
   ('STAFF', 'LEADER', 'UC-47.SEND_EMAIL', 'O'),
   ('STAFF', 'STAFF', 'UC-47.SEND_EMAIL', 'O'),
-  ('DEPT', 'LEADER', 'UC-47.SEND_EMAIL', 'O'),
-  ('DEPT', 'STAFF', 'UC-47.SEND_EMAIL', 'O'),
+  ('DEPARTMENT', 'LEADER', 'UC-47.SEND_EMAIL', 'O'),
+  ('DEPARTMENT', 'STAFF', 'UC-47.SEND_EMAIL', 'O'),
   ('STUDENT', 'NONE', 'UC-47.SEND_EMAIL', 'O'),
   ('VISITOR', 'NONE', 'UC-47.SEND_EMAIL', 'O'),
   ('HO', 'NONE', 'UC-48.VIEW_EMAIL', 'O'),
   ('STAFF', 'LEADER', 'UC-48.VIEW_EMAIL', 'O'),
   ('STAFF', 'STAFF', 'UC-48.VIEW_EMAIL', 'O'),
-  ('DEPT', 'LEADER', 'UC-48.VIEW_EMAIL', 'O'),
-  ('DEPT', 'STAFF', 'UC-48.VIEW_EMAIL', 'O'),
+  ('DEPARTMENT', 'LEADER', 'UC-48.VIEW_EMAIL', 'O'),
+  ('DEPARTMENT', 'STAFF', 'UC-48.VIEW_EMAIL', 'O'),
   ('STUDENT', 'NONE', 'UC-48.VIEW_EMAIL', 'O'),
   ('VISITOR', 'NONE', 'UC-48.VIEW_EMAIL', 'O'),
   ('HO', 'NONE', 'UC-49.REPLY_TO_EMAIL', 'O'),
   ('STAFF', 'LEADER', 'UC-49.REPLY_TO_EMAIL', 'O'),
   ('STAFF', 'STAFF', 'UC-49.REPLY_TO_EMAIL', 'O'),
-  ('DEPT', 'LEADER', 'UC-49.REPLY_TO_EMAIL', 'O'),
-  ('DEPT', 'STAFF', 'UC-49.REPLY_TO_EMAIL', 'O'),
+  ('DEPARTMENT', 'LEADER', 'UC-49.REPLY_TO_EMAIL', 'O'),
+  ('DEPARTMENT', 'STAFF', 'UC-49.REPLY_TO_EMAIL', 'O'),
   ('STUDENT', 'NONE', 'UC-49.REPLY_TO_EMAIL', 'O'),
   ('VISITOR', 'NONE', 'UC-49.REPLY_TO_EMAIL', 'O'),
   ('STAFF', 'LEADER', 'UC-50.PROCESS_PARTNER_CREATION_REQUEST', 'E'),
@@ -4966,24 +4967,24 @@ VALUES
   ('HO', 'NONE', 'UC-68.SEARCH_FAQ', 'R'),
   ('HO', 'NONE', 'UC-69.VIEW_DASHBOARD_STATISTICS', 'R'),
   ('STAFF', 'LEADER', 'UC-69.VIEW_DASHBOARD_STATISTICS', 'R'),
-  ('DEPT', 'LEADER', 'UC-69.VIEW_DASHBOARD_STATISTICS', 'R'),
+  ('DEPARTMENT', 'LEADER', 'UC-69.VIEW_DASHBOARD_STATISTICS', 'R'),
   ('HO', 'NONE', 'UC-70.EXPORT_STATISTICS_REPORT', 'E'),
   ('STAFF', 'LEADER', 'UC-70.EXPORT_STATISTICS_REPORT', 'E'),
-  ('DEPT', 'LEADER', 'UC-70.EXPORT_STATISTICS_REPORT', 'E'),
+  ('DEPARTMENT', 'LEADER', 'UC-70.EXPORT_STATISTICS_REPORT', 'E'),
   ('HO', 'NONE', 'UC-71.FILTER_DASHBOARD_BY_TIME', 'R'),
   ('STAFF', 'LEADER', 'UC-71.FILTER_DASHBOARD_BY_TIME', 'R'),
-  ('DEPT', 'LEADER', 'UC-71.FILTER_DASHBOARD_BY_TIME', 'R'),
+  ('DEPARTMENT', 'LEADER', 'UC-71.FILTER_DASHBOARD_BY_TIME', 'R'),
   ('STAFF', 'LEADER', 'UC-72.VIEW_MY_EVENTS', 'O'),
   ('STAFF', 'STAFF', 'UC-72.VIEW_MY_EVENTS', 'O'),
-  ('DEPT', 'LEADER', 'UC-72.VIEW_MY_EVENTS', 'O'),
-  ('DEPT', 'STAFF', 'UC-72.VIEW_MY_EVENTS', 'O'),
+  ('DEPARTMENT', 'LEADER', 'UC-72.VIEW_MY_EVENTS', 'O'),
+  ('DEPARTMENT', 'STAFF', 'UC-72.VIEW_MY_EVENTS', 'O'),
   ('STUDENT', 'NONE', 'UC-72.VIEW_MY_EVENTS', 'O'),
   ('STAFF', 'LEADER', 'UC-73.VIEW_DEPARTMENT_CALENDAR', 'R'),
   ('STAFF', 'STAFF', 'UC-73.VIEW_DEPARTMENT_CALENDAR', 'R'),
   ('STAFF', 'LEADER', 'UC-74.SWITCH_VIEW_MODE', 'R'),
   ('STAFF', 'STAFF', 'UC-74.SWITCH_VIEW_MODE', 'R'),
-  ('DEPT', 'LEADER', 'UC-74.SWITCH_VIEW_MODE', 'R'),
-  ('DEPT', 'STAFF', 'UC-74.SWITCH_VIEW_MODE', 'R'),
+  ('DEPARTMENT', 'LEADER', 'UC-74.SWITCH_VIEW_MODE', 'R'),
+  ('DEPARTMENT', 'STAFF', 'UC-74.SWITCH_VIEW_MODE', 'R'),
   ('STUDENT', 'NONE', 'UC-74.SWITCH_VIEW_MODE', 'R'),
   ('STAFF', 'LEADER', 'UC-75.ADD_PERSONAL_EVENT', 'O'),
   ('STAFF', 'STAFF', 'UC-75.ADD_PERSONAL_EVENT', 'O'),
@@ -4993,8 +4994,8 @@ VALUES
   ('STAFF', 'STAFF', 'UC-77.UPDATE_PERSONAL_EVENT', 'O'),
   ('STAFF', 'LEADER', 'UC-78.VIEW_EVENT_DETAILS', 'R'),
   ('STAFF', 'STAFF', 'UC-78.VIEW_EVENT_DETAILS', 'R'),
-  ('DEPT', 'LEADER', 'UC-78.VIEW_EVENT_DETAILS', 'R'),
-  ('DEPT', 'STAFF', 'UC-78.VIEW_EVENT_DETAILS', 'R'),
+  ('DEPARTMENT', 'LEADER', 'UC-78.VIEW_EVENT_DETAILS', 'R'),
+  ('DEPARTMENT', 'STAFF', 'UC-78.VIEW_EVENT_DETAILS', 'R'),
   ('STUDENT', 'NONE', 'UC-78.VIEW_EVENT_DETAILS', 'R'),
   ('STAFF', 'LEADER', 'UC-79.SEARCH_FILTER_FEEDBACK', 'R'),
   ('STAFF', 'STAFF', 'UC-79.SEARCH_FILTER_FEEDBACK', 'R'),
@@ -5036,25 +5037,25 @@ VALUES
   ('STAFF', 'LEADER', 'UC-103.SEARCH_AND_FILTER_DEPARTMENTS', 'R'),
   ('STAFF', 'LEADER', 'UC-104.VIEW_DEPARTMENT_LIST', 'R'),
   ('STAFF', 'LEADER', 'UC-105.VIEW_DEPARTMENT_DETAILS', 'R'),
-  ('DEPT', 'LEADER', 'UC-105.VIEW_DEPARTMENT_DETAILS', 'R'),
-  ('DEPT', 'STAFF', 'UC-105.VIEW_DEPARTMENT_DETAILS', 'R'),
+  ('DEPARTMENT', 'LEADER', 'UC-105.VIEW_DEPARTMENT_DETAILS', 'R'),
+  ('DEPARTMENT', 'STAFF', 'UC-105.VIEW_DEPARTMENT_DETAILS', 'R'),
   ('STAFF', 'LEADER', 'UC-106.MANAGE_DEPARTMENT_STATUS', 'E'),
-  ('DEPT', 'LEADER', 'UC-107.ADD_DEPARTMENT_PERSONNEL', 'F'),
-  ('DEPT', 'LEADER', 'UC-108.VIEW_PERSONNEL_DETAILS', 'R'),
-  ('DEPT', 'STAFF', 'UC-108.VIEW_PERSONNEL_DETAILS', 'R'),
-  ('DEPT', 'LEADER', 'UC-109.SEARCH_PERSONNEL', 'R'),
-  ('DEPT', 'STAFF', 'UC-109.SEARCH_PERSONNEL', 'R'),
-  ('DEPT', 'STAFF', 'UC-110.REVIEW_ASSIGNED_TASKS', 'E'),
-  ('DEPT', 'LEADER', 'UC-111.ASSIGN_TASKS', 'F'),
+  ('DEPARTMENT', 'LEADER', 'UC-107.ADD_DEPARTMENT_PERSONNEL', 'F'),
+  ('DEPARTMENT', 'LEADER', 'UC-108.VIEW_PERSONNEL_DETAILS', 'R'),
+  ('DEPARTMENT', 'STAFF', 'UC-108.VIEW_PERSONNEL_DETAILS', 'R'),
+  ('DEPARTMENT', 'LEADER', 'UC-109.SEARCH_PERSONNEL', 'R'),
+  ('DEPARTMENT', 'STAFF', 'UC-109.SEARCH_PERSONNEL', 'R'),
+  ('DEPARTMENT', 'STAFF', 'UC-110.REVIEW_ASSIGNED_TASKS', 'E'),
+  ('DEPARTMENT', 'LEADER', 'UC-111.ASSIGN_TASKS', 'F'),
   ('STAFF', 'STAFF', 'UC-112.SIGN_THE_SERVICE_DELIVERY_REPORT', 'E'),
-  ('DEPT', 'LEADER', 'UC-112.SIGN_THE_SERVICE_DELIVERY_REPORT', 'E'),
-  ('DEPT', 'STAFF', 'UC-112.SIGN_THE_SERVICE_DELIVERY_REPORT', 'E'),
-  ('DEPT', 'LEADER', 'UC-113.REMOVE_PERSONNEL', 'F'),
-  ('DEPT', 'LEADER', 'UC-114.VIEW_COORDINATION_TASKS', 'R'),
-  ('DEPT', 'STAFF', 'UC-114.VIEW_COORDINATION_TASKS', 'R'),
-  ('DEPT', 'LEADER', 'UC-115.SEARCH_COORDINATION_TASKS', 'R'),
-  ('DEPT', 'STAFF', 'UC-115.SEARCH_COORDINATION_TASKS', 'R'),
-  ('DEPT', 'LEADER', 'UC-116.REASSIGN_DEPARTMENT_LEAD', 'F'),
+  ('DEPARTMENT', 'LEADER', 'UC-112.SIGN_THE_SERVICE_DELIVERY_REPORT', 'E'),
+  ('DEPARTMENT', 'STAFF', 'UC-112.SIGN_THE_SERVICE_DELIVERY_REPORT', 'E'),
+  ('DEPARTMENT', 'LEADER', 'UC-113.REMOVE_PERSONNEL', 'F'),
+  ('DEPARTMENT', 'LEADER', 'UC-114.VIEW_COORDINATION_TASKS', 'R'),
+  ('DEPARTMENT', 'STAFF', 'UC-114.VIEW_COORDINATION_TASKS', 'R'),
+  ('DEPARTMENT', 'LEADER', 'UC-115.SEARCH_COORDINATION_TASKS', 'R'),
+  ('DEPARTMENT', 'STAFF', 'UC-115.SEARCH_COORDINATION_TASKS', 'R'),
+  ('DEPARTMENT', 'LEADER', 'UC-116.REASSIGN_DEPARTMENT_LEAD', 'F'),
   ('ADMIN', 'NONE', 'UC-117.VIEW_ROLE_LIST', 'R'),
   ('ADMIN', 'NONE', 'UC-118.CREATE_NEW_ROLE', 'F'),
   ('ADMIN', 'NONE', 'UC-119.CONFIGURE_ROLE_PERMISSIONS', 'F'),
@@ -5151,7 +5152,7 @@ LEFT JOIN desired_role_permissions d
  AND d.sub_role = rp.sub_role
  AND d.permission_code = p.permission_code
 WHERE d.permission_code IS NULL
-  AND r.role_code IN ('ADMIN', 'HO', 'STAFF', 'DEPT', 'STUDENT', 'VISITOR')
+  AND r.role_code IN ('ADMIN', 'HO', 'STAFF', 'DEPARTMENT', 'STUDENT', 'VISITOR')
   AND p.permission_code REGEXP '^UC-[0-9]+\.'
 ORDER BY r.role_code, rp.sub_role, p.permission_code;
 
@@ -5166,7 +5167,7 @@ LEFT JOIN desired_role_permissions d
  AND d.sub_role = rp.sub_role
  AND d.permission_code = p.permission_code
 WHERE d.permission_code IS NULL
-  AND r.role_code IN ('ADMIN', 'HO', 'STAFF', 'DEPT', 'STUDENT', 'VISITOR')
+  AND r.role_code IN ('ADMIN', 'HO', 'STAFF', 'DEPARTMENT', 'STUDENT', 'VISITOR')
   AND p.permission_code REGEXP '^UC-[0-9]+\.';
 */
 
@@ -5178,7 +5179,7 @@ SELECT
 FROM role_permissions rp
 JOIN roles r ON r.role_id = rp.role_id
 GROUP BY r.role_code, rp.sub_role
-ORDER BY FIELD(r.role_code, 'ADMIN','HO','STAFF','DEPT','STUDENT','VISITOR'), rp.sub_role;
+ORDER BY FIELD(r.role_code, 'ADMIN','HO','STAFF','DEPARTMENT','STUDENT','VISITOR'), rp.sub_role;
 
 COMMIT;
 
@@ -5319,9 +5320,9 @@ SELECT
   COUNT(*) AS total_permissions
 FROM role_permissions rp
 JOIN roles r ON r.role_id = rp.role_id
-WHERE r.role_code IN ('ADMIN','HO','STAFF','DEPT','STUDENT','VISITOR')
+WHERE r.role_code IN ('ADMIN','HO','STAFF','DEPARTMENT','STUDENT','VISITOR')
 GROUP BY r.role_code, rp.sub_role
-ORDER BY FIELD(r.role_code, 'ADMIN','HO','STAFF','DEPT','STUDENT','VISITOR'), rp.sub_role;
+ORDER BY FIELD(r.role_code, 'ADMIN','HO','STAFF','DEPARTMENT','STUDENT','VISITOR'), rp.sub_role;
 
 SELECT
   u.email,
@@ -5430,7 +5431,7 @@ WHERE vr.visit_scope = 'MULTI_CAMPUS';
 -- 3) STAFF Leader list/detail source.
 -- Backend must still filter this view with:
 --   WHERE visible_campus_id = @CurrentUserPrimaryCampusId
--- and must only expose this route to STAFF sub_role = 'Leader'.
+-- and must only expose this route to STAFF sub_role = 'LEADER'.
 CREATE OR REPLACE VIEW vw_visit_requests_for_staff_leader AS
 SELECT
   vr.visit_request_id,

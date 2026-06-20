@@ -47,6 +47,13 @@ public sealed class CancelVisitRequestCommandHandler
         var isHo = roleCode == RoleCodes.Ho;
         var isStaffLeader = roleCode == RoleCodes.Staff && subRole == SubRoles.Leader;
 
+        // HO has read-only monitoring on single-campus (chốt 2026-06): HO may cancel only
+        // MULTI_CAMPUS (handled below), never a single-campus request.
+        if (isHo && visit.VisitScope == VisitScopes.SingleCampus)
+            throw new BusinessRuleException(
+                "HO chỉ được xem đơn một cơ sở ở chế độ theo dõi, không được xử lý nghiệp vụ trên đơn này.",
+                "HO_SINGLE_CAMPUS_READ_ONLY");
+
         // Status rules:
         //  • Visitor may self-cancel (withdraw) their own request while PENDING or APPROVED.
         //  • Everyone else cancels only after approval (pre-approval is ended via reject).

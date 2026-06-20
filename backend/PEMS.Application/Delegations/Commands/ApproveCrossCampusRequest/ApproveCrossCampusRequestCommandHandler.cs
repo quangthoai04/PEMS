@@ -45,8 +45,12 @@ public sealed class ApproveCrossCampusRequestCommandHandler
             .FirstOrDefaultAsync(v => v.VisitRequestId == request.VisitRequestId, cancellationToken)
             ?? throw new NotFoundException("VisitRequest", request.VisitRequestId);
 
+        // HO may only DECIDE multi-campus. Single-campus is read-only monitoring for HO
+        // (chốt 2026-06) — surfaced with a machine-readable code the frontend can branch on.
         if (visit.VisitScope != VisitScopes.MultiCampus)
-            throw new BusinessRuleException("Chỉ đơn liên cơ sở (MULTI_CAMPUS) mới do HO duyệt.");
+            throw new BusinessRuleException(
+                "HO chỉ được xem đơn một cơ sở ở chế độ theo dõi, không được xử lý nghiệp vụ trên đơn này.",
+                "HO_SINGLE_CAMPUS_READ_ONLY");
 
         // Status guard = optimistic concurrency protection (see CancelVisitRequestCommandHandler).
         if (visit.Status != VisitRequestStatuses.PendingApproval)
