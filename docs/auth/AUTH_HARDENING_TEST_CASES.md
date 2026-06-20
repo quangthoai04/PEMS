@@ -25,7 +25,11 @@
 - [ ] Reset password → tất cả session bị revoke.
 - [ ] Admin/Staff Leader đổi role user → tất cả session user đó bị revoke (`RevokedSessions` > 0).
 - [ ] User login lại nhận role/campus/permission mới.
-- [ ] (TODO) Khóa user (ManageAccountStatus) → session bị revoke khi handler được implement; hiện tại bị chặn realtime bởi SessionValidationMiddleware.
+- [x] Code: Khóa user (ManageAccountStatus, `ACTIVE`→`INACTIVE`/`LOCKED`) → `RevokeAllActiveSessionsAsync(... ACCOUNT_DEACTIVATED)` + `security_events`.
+- [x] Code: Reactivate (`→ACTIVE`) reset `failed_login_count`/`locked_until`, KHÔNG revoke.
+- [x] Code: Actor không thể đổi status chính mình; Staff Leader chỉ trong campus của mình.
+- [ ] Runtime: khóa user → access token cũ gọi protected API → 401. (pending DB)
+- [ ] Runtime: khóa user → refresh token cũ → 401; `user_sessions.revoked_at IS NOT NULL`. (pending DB)
 
 ## 4. CORS / HTTPS / Security headers
 - [x] Code: Production CORS chỉ allow `https://pems.fpt.edu.vn` (config), không `AllowAnyOrigin`/`AllowCredentials`.
@@ -42,10 +46,18 @@
 ## 6. XSS
 - [x] Code: `sanitizeHtml` xóa `<script>`, `on*`, `javascript:`/`data:text/html` URL, `iframe/object/embed`.
 - [x] Code: 2 chỗ render News dùng `sanitizeHtml(...)`.
+- [x] Code: Backend `IHtmlSanitizerService`/`HtmlSanitizerService` (package `HtmlSanitizer`) bỏ script/iframe/object/embed/form/style, `on*`, scheme chỉ http/https/mailto/tel; đăng ký DI.
 - [ ] Runtime: nội dung `<script>alert(1)</script>` trong News không chạy.
 - [ ] Runtime: `<img src=x onerror=alert(1)>` → thuộc tính `onerror` bị loại.
 - [ ] Runtime: `<a href="javascript:alert(1)">` → href bị loại.
-- [ ] (TODO) SVG/HTML upload bị chặn (FileValidationService).
+- [ ] (PENDING) Backend sanitize News trước khi lưu DB — chờ wire vào `AddMultilingualNews`/`EditNews` (handler News còn scaffold).
+
+## 6b. Upload guard (FileValidationService)
+- [x] Code: denylist extension chặn `.svg/.svgz/.html/.htm/.js/.jsx/.ts/.php/.aspx/.jsp/.exe/.bat/.ps1/.sh/.jar...`.
+- [x] Code: denylist MIME chặn `image/svg+xml`, `text/html`, `application/javascript`, `application/x-msdownload`, `application/x-sh`...
+- [x] Code: kiểm tra size + không tin `ContentType` client; đăng ký DI.
+- [ ] Runtime: upload `.svg` / `.html` / `.js` bị chặn; ảnh `.jpg/.png/.webp` + `.pdf` hợp lệ vẫn pass.
+      (PENDING: chưa có upload endpoint gọi service — Gallery/News/Documents chưa implement.)
 
 ## 7. Build
 - [x] Backend: `dotnet build PEMS.Api` → 0 error, 0 warning (build ra output dir riêng vì dev server đang khóa bin mặc định).

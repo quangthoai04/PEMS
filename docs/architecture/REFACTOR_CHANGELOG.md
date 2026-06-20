@@ -1,5 +1,43 @@
 # Refactor Changelog
 
+## 2026-06-20 — Auth Hardening TODO Completion
+
+### Summary
+Hoàn thiện các TODO còn lại sau phase Auth Hardening: implement UC-97 revoke session khi
+khóa/deactivate user, thêm backend HTML sanitizer (package `HtmlSanitizer`, namespace `Ganss.Xss`),
+harden `FileValidationService` chặn upload SVG/HTML/JS/executable, và chuẩn hoá secrets/domain
+production qua environment variables. KHÔNG đụng login/SSO/RBAC/session flow đang chạy.
+
+### Backend
+- `PEMS.Application/Accounts/Commands/ManageAccountStatus/*` — implement đầy đủ Command/Validator/Response/Handler
+  (trước là scaffold `NotImplementedException`). Handler: scope check (Staff Leader theo campus, ADMIN/HO toàn hệ thống),
+  chặn tự đổi status chính mình, update `users.status`, ghi `audit_logs`; khi rời trạng thái `ACTIVE`
+  → `RevokeAllActiveSessionsAsync(userId, ACCOUNT_DEACTIVATED, actorId)` + `security_events` (`ACCOUNT_LOCKED`, severity HIGH).
+  Reactivate (→ACTIVE) reset `failed_login_count` / `locked_until`.
+- `PEMS.Application/Common/Security/IHtmlSanitizerService.cs` — MỚI (interface).
+- `PEMS.Infrastructure/Security/HtmlSanitizerService.cs` — MỚI (impl: bỏ script/iframe/object/embed/form/style…,
+  bỏ event handler `on*`, chỉ cho scheme http/https/mailto/tel).
+- `PEMS.Application/Common/Interfaces/IFileValidationService.cs` — định nghĩa interface (trước rỗng), framework-agnostic.
+- `PEMS.Infrastructure/FileStorage/FileValidationService.cs` — denylist extension + MIME
+  (chặn `.svg/.svgz/.html/.htm/.js/.jsx/.ts/.php/.aspx/.jsp/.exe/.bat/.ps1/.sh/.jar…` và `image/svg+xml`,
+  `text/html`, `application/javascript`…), kiểm tra size, không tin `ContentType` client.
+- `PEMS.Infrastructure/DependencyInjection.cs` — đăng ký `IHtmlSanitizerService` + `IFileValidationService` (Singleton).
+- `PEMS.Infrastructure.csproj` — thêm package `HtmlSanitizer` 9.0.892 (NuGet id là `HtmlSanitizer`, namespace `Ganss.Xss`).
+
+### Config
+- `frontend/pems-react/.env.example` — bổ sung mục production (API URL thật; KHÔNG để secret trong frontend env).
+- `docs/database/DATABASE_DEPLOYMENT.md` — danh sách env var bắt buộc cho production (secrets dùng `__`),
+  cảnh báo rotate SMTP app password đã commit, checklist production.
+- Production secrets override qua environment variables / secret manager (env override mặc định của
+  `WebApplication.CreateBuilder` — không cần đổi code). Production CORS chỉ allow domain frontend thật.
+
+### Tests
+- Backend build PASS: `dotnet build PEMS.Api -p:BaseOutputPath=./.tmp-build/` → 0 error, 0 warning.
+- `tests/PEMS.ApplicationTests` KHÔNG có `.csproj` (không compile/chạy) → chưa thêm unit test tự động cho UC-97;
+  test runtime/manual ghi trong `AUTH_HARDENING_TEST_CASES.md` (pending trên môi trường có DB).
+- News create/edit handlers vẫn là scaffold (`NotImplementedException`) nên CHƯA wire `IHtmlSanitizerService`
+  vào luồng lưu DB; service đã sẵn sàng để gọi khi News được implement.
+
 ## 2026-06-20 — Auth Hardening (post Core Auth Dual Portal)
 
 ### Summary

@@ -10,6 +10,7 @@
 --   + Rewrote seed IDs so MySQL can use numeric IDs instead of UUID strings.
 --   + Preserved seed content and demo/business scenario data from the v5 SQL.
 --   + Kept strict visit visibility guards and views.
+--   + Auth hardening: added user_sessions cleanup indexes (expires_at, revoked_at).
 -- =====================================================================
 
 -- =====================================================================
@@ -357,6 +358,8 @@ CREATE TABLE user_sessions (
   KEY idx_sessions_portal_campus (login_portal, selected_campus_id),
   KEY idx_sessions_refresh_active (refresh_token_hash, refresh_revoked_at, refresh_expires_at),
   KEY idx_sessions_ip_time (ip_address, created_at),
+  KEY idx_sessions_expires_at (expires_at),
+  KEY idx_sessions_revoked_at (revoked_at),
   CONSTRAINT fk_sessions_user
     FOREIGN KEY (user_id) REFERENCES users(user_id)
     ON UPDATE CASCADE ON DELETE CASCADE,
@@ -2674,11 +2677,11 @@ SET @pwd_hash = '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi';
 
 INSERT INTO users (user_id, full_name, email, phone, nationality, password_hash, role_id, sub_role, primary_campus_id, department_id, gender, avatar_url, student_code, fe_id, status, email_verified_at, failed_login_count, locked_until, created_via, first_login_at, last_login_at, created_at, created_by, updated_at, updated_by)
 VALUES
-  (@u_admin_minh, 'Nguyễn Văn Minh', 'minh.nguyen@company.vn', '0901123456', NULL, @pwd_hash, @role_admin, NULL, @campus_hn, NULL, 'MALE', NULL, NULL, 'FE-SEED-000', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 80 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 70 DAY), DATE_SUB(@seed_now, INTERVAL 1 DAY), DATE_SUB(@seed_now, INTERVAL 120 DAY), NULL, @seed_now, NULL),
-  (@u_ho_ha, 'Trần Thu Hà', 'ha.tran@company.vn', '0912345678', NULL, @pwd_hash, @role_ho, NULL, @campus_hn, NULL, 'FEMALE', NULL, NULL, 'FE-SEED-001', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 81 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 71 DAY), DATE_SUB(@seed_now, INTERVAL 2 DAY), DATE_SUB(@seed_now, INTERVAL 121 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
+  (@u_admin_minh, 'System Administrator', 'admin@fpt.edu.vn', '0901123456', NULL, @pwd_hash, @role_admin, NULL, @campus_hn, NULL, 'UNKNOWN', NULL, NULL, 'FE-SEED-000', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 80 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 70 DAY), DATE_SUB(@seed_now, INTERVAL 1 DAY), DATE_SUB(@seed_now, INTERVAL 120 DAY), NULL, @seed_now, NULL),
+  (@u_ho_ha, 'Head Office Manager', 'ho@fpt.edu.vn', '0912345678', NULL, @pwd_hash, @role_ho, NULL, @campus_hn, NULL, 'UNKNOWN', NULL, NULL, 'FE-SEED-001', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 81 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 71 DAY), DATE_SUB(@seed_now, INTERVAL 2 DAY), DATE_SUB(@seed_now, INTERVAL 121 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
   (@u_ho_linh, 'Đỗ Gia Linh', 'linh.do@company.vn', '0902233445', NULL, @pwd_hash, @role_ho, NULL, @campus_hcm, NULL, 'UNKNOWN', NULL, NULL, 'FE-SEED-002', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 82 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 72 DAY), DATE_SUB(@seed_now, INTERVAL 3 DAY), DATE_SUB(@seed_now, INTERVAL 122 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
-  (@u_stafflead_hn, 'Lê Hoàng Nam', 'nam.le@company.vn', '0934567890', NULL, @pwd_hash, @role_staff, 'Leader', @campus_hn, @dept_hn_ic, 'MALE', NULL, NULL, 'FE-SEED-003', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 83 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 73 DAY), DATE_SUB(@seed_now, INTERVAL 4 DAY), DATE_SUB(@seed_now, INTERVAL 123 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
-  (@u_staff_hn, 'Phạm Quốc Bảo', 'bao.pham@company.vn', '0945678901', NULL, @pwd_hash, @role_staff, 'Staff', @campus_hn, @dept_hn_ic, 'MALE', NULL, NULL, 'FE-SEED-004', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 84 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 74 DAY), DATE_SUB(@seed_now, INTERVAL 5 DAY), DATE_SUB(@seed_now, INTERVAL 124 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
+  (@u_stafflead_hn, 'IC Staff Leader (HN)', 'staff.leader.hn@fpt.edu.vn', '0934567890', NULL, @pwd_hash, @role_staff, 'Leader', @campus_hn, @dept_hn_ic, 'UNKNOWN', NULL, NULL, 'FE-SEED-003', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 83 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 73 DAY), DATE_SUB(@seed_now, INTERVAL 4 DAY), DATE_SUB(@seed_now, INTERVAL 123 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
+  (@u_staff_hn, 'IC Staff (HN)', 'staff.hn@fpt.edu.vn', '0945678901', NULL, @pwd_hash, @role_staff, 'Staff', @campus_hn, @dept_hn_ic, 'UNKNOWN', NULL, NULL, 'FE-SEED-004', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 84 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 74 DAY), DATE_SUB(@seed_now, INTERVAL 5 DAY), DATE_SUB(@seed_now, INTERVAL 124 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
   (@u_stafflead_hcm, 'Vũ Lan Anh', 'anh.vu@company.vn', '0976543210', NULL, @pwd_hash, @role_staff, 'Leader', @campus_hcm, @dept_hcm_ic, 'FEMALE', NULL, NULL, 'FE-SEED-005', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 85 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 75 DAY), DATE_SUB(@seed_now, INTERVAL 6 DAY), DATE_SUB(@seed_now, INTERVAL 125 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
   (@u_staff_hcm, 'Nguyễn Văn Nam', 'nam.nguyen@company.vn', '0987654321', NULL, @pwd_hash, @role_staff, 'Staff', @campus_hcm, @dept_hcm_ic, 'MALE', NULL, NULL, 'FE-SEED-006', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 86 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 76 DAY), DATE_SUB(@seed_now, INTERVAL 7 DAY), DATE_SUB(@seed_now, INTERVAL 126 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
   (@u_stafflead_dn, 'Nguyễn Nam', 'nguyen.nam@company.vn', '0961234567', NULL, @pwd_hash, @role_staff, 'Leader', @campus_dn, @dept_dn_ic, 'MALE', NULL, NULL, 'FE-SEED-007', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 87 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 77 DAY), DATE_SUB(@seed_now, INTERVAL 8 DAY), DATE_SUB(@seed_now, INTERVAL 127 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
@@ -2687,20 +2690,20 @@ VALUES
   (@u_staff_ct, 'Đặng Minh Châu', 'chau.dang@company.vn', '0925566778', NULL, @pwd_hash, @role_staff, 'Staff', @campus_ct, @dept_ct_ic, 'OTHER', NULL, NULL, 'FE-SEED-010', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 90 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 80 DAY), DATE_SUB(@seed_now, INTERVAL 11 DAY), DATE_SUB(@seed_now, INTERVAL 130 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
   (@u_stafflead_qn, 'Hoàng Minh Quân', 'quan.hoang@company.vn', '0911002003', NULL, @pwd_hash, @role_staff, 'Leader', @campus_qn, @dept_qn_ic, 'MALE', NULL, NULL, 'FE-SEED-011', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 91 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 81 DAY), DATE_SUB(@seed_now, INTERVAL 12 DAY), DATE_SUB(@seed_now, INTERVAL 131 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
   (@u_staff_qn, 'Lý Thanh Mai', 'mai.ly@company.vn', '0911222333', NULL, @pwd_hash, @role_staff, 'Staff', @campus_qn, @dept_qn_ic, 'FEMALE', NULL, NULL, 'FE-SEED-012', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 92 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 82 DAY), DATE_SUB(@seed_now, INTERVAL 13 DAY), DATE_SUB(@seed_now, INTERVAL 132 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
-  (@u_deptlead_it_hn, 'Bùi Đức Hải', 'hai.bui@company.vn', '0909988776', NULL, @pwd_hash, @role_dept, 'Leader', @campus_hn, @dept_hn_it, 'MALE', NULL, NULL, 'FE-SEED-013', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 93 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 83 DAY), DATE_SUB(@seed_now, INTERVAL 14 DAY), DATE_SUB(@seed_now, INTERVAL 133 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
-  (@u_dept_it_hn, 'Đỗ Minh Khang', 'khang.do@company.vn', '0903344556', NULL, @pwd_hash, @role_dept, 'Staff', @campus_hn, @dept_hn_it, 'MALE', NULL, NULL, 'FE-SEED-014', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 94 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 84 DAY), DATE_SUB(@seed_now, INTERVAL 15 DAY), DATE_SUB(@seed_now, INTERVAL 134 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
+  (@u_deptlead_it_hn, 'Department Lead (HN)', 'dept.leader.hn@fpt.edu.vn', '0909988776', NULL, @pwd_hash, @role_dept, 'Leader', @campus_hn, @dept_hn_it, 'UNKNOWN', NULL, NULL, 'FE-SEED-013', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 93 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 83 DAY), DATE_SUB(@seed_now, INTERVAL 14 DAY), DATE_SUB(@seed_now, INTERVAL 133 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
+  (@u_dept_it_hn, 'Department Personnel (HN)', 'dept.hn@fpt.edu.vn', '0903344556', NULL, @pwd_hash, @role_dept, 'Staff', @campus_hn, @dept_hn_it, 'UNKNOWN', NULL, NULL, 'FE-SEED-014', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 94 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 84 DAY), DATE_SUB(@seed_now, INTERVAL 15 DAY), DATE_SUB(@seed_now, INTERVAL 134 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
   (@u_deptlead_finance_hcm, 'Ngô Thanh Hương', 'huong.ngo@company.vn', '0906677889', NULL, @pwd_hash, @role_dept, 'Leader', @campus_hcm, @dept_hcm_finance, 'FEMALE', NULL, NULL, 'FE-SEED-015', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 95 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 85 DAY), DATE_SUB(@seed_now, INTERVAL 16 DAY), DATE_SUB(@seed_now, INTERVAL 135 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
   (@u_dept_finance_hcm, 'Mai Anh Tuấn', 'tuan.mai@company.vn', '0907788990', NULL, @pwd_hash, @role_dept, 'Staff', @campus_hcm, @dept_hcm_finance, 'MALE', NULL, NULL, 'FE-SEED-016', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 96 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 86 DAY), DATE_SUB(@seed_now, INTERVAL 17 DAY), DATE_SUB(@seed_now, INTERVAL 136 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
   (@u_deptlead_admin_ct, 'Lâm Khánh Vy', 'vy.lam@company.vn', '0913456780', NULL, @pwd_hash, @role_dept, 'Leader', @campus_ct, @dept_ct_admin, 'FEMALE', NULL, NULL, 'FE-SEED-017', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 97 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 87 DAY), DATE_SUB(@seed_now, INTERVAL 18 DAY), DATE_SUB(@seed_now, INTERVAL 137 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
   (@u_dept_admin_ct, 'Phan Gia Phúc', 'phuc.phan@company.vn', '0919988776', NULL, @pwd_hash, @role_dept, 'Staff', @campus_ct, @dept_ct_admin, 'MALE', NULL, NULL, 'FE-SEED-018', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 98 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 88 DAY), DATE_SUB(@seed_now, INTERVAL 19 DAY), DATE_SUB(@seed_now, INTERVAL 138 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
-  (@u_student_anh, 'Vũ Lan Anh Student', 'lananh.student@company.vn', '0866123456', NULL, @pwd_hash, @role_student, NULL, @campus_hn, NULL, 'FEMALE', NULL, 'SE190019', 'FE-SEED-019', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 99 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 89 DAY), DATE_SUB(@seed_now, INTERVAL 20 DAY), DATE_SUB(@seed_now, INTERVAL 139 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
+  (@u_student_anh, 'Support Student', 'student@fpt.edu.vn', '0866123456', NULL, @pwd_hash, @role_student, NULL, @campus_hn, NULL, 'UNKNOWN', NULL, 'SE190019', 'FE-SEED-019', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 99 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 89 DAY), DATE_SUB(@seed_now, INTERVAL 20 DAY), DATE_SUB(@seed_now, INTERVAL 139 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
   (@u_student_bao, 'Phạm Quốc Bảo Student', 'bao.student@company.vn', '0866543210', NULL, @pwd_hash, @role_student, NULL, @campus_hcm, NULL, 'MALE', NULL, 'SE190020', 'FE-SEED-020', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 100 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 90 DAY), DATE_SUB(@seed_now, INTERVAL 1 DAY), DATE_SUB(@seed_now, INTERVAL 140 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
   (@u_student_long, 'Nguyễn Thị Minh Châu Hồng Phúc Gia Bảo Hoàng Anh Tuấn Kiệt', 'long.name.student@company.vn', '0866000001', NULL, @pwd_hash, @role_student, NULL, @campus_ct, NULL, 'UNKNOWN', NULL, 'SE190021', 'FE-SEED-021', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 101 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 91 DAY), DATE_SUB(@seed_now, INTERVAL 2 DAY), DATE_SUB(@seed_now, INTERVAL 141 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
   (@u_locked_staff, 'Tạ Quang Huy', 'huy.locked@company.vn', '0918000111', NULL, @pwd_hash, @role_staff, 'Staff', @campus_hn, @dept_hn_ic, 'MALE', NULL, NULL, 'FE-SEED-022', 'LOCKED', DATE_SUB(@seed_now, INTERVAL 102 DAY), '7', DATE_ADD(@seed_now, INTERVAL 30 MINUTE), 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 92 DAY), DATE_SUB(@seed_now, INTERVAL 3 DAY), DATE_SUB(@seed_now, INTERVAL 142 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
   (@u_inactive_dept, 'Trịnh Hà My', 'my.inactive@company.vn', '0918111222', NULL, @pwd_hash, @role_dept, 'Staff', @campus_hcm, @dept_hcm_finance, 'FEMALE', NULL, NULL, 'FE-SEED-023', 'INACTIVE', DATE_SUB(@seed_now, INTERVAL 103 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 93 DAY), DATE_SUB(@seed_now, INTERVAL 4 DAY), DATE_SUB(@seed_now, INTERVAL 143 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
   (@u_pending_internal, 'Nguyễn Quốc Khánh', 'khanh.pending@company.vn', '0918222333', NULL, @pwd_hash, @role_staff, 'Staff', @campus_dn, @dept_dn_ic, 'MALE', NULL, NULL, 'FE-SEED-024', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 104 DAY), '0', NULL, 'MANUAL_CREATED', NULL, NULL, DATE_SUB(@seed_now, INTERVAL 144 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
   (@u_rejected_internal, 'Lê Thảo Chi', 'chi.rejected@company.vn', '0918333444', NULL, @pwd_hash, @role_dept, 'Staff', @campus_qn, @dept_qn_archive_finance, 'FEMALE', NULL, NULL, 'FE-SEED-025', 'INACTIVE', DATE_SUB(@seed_now, INTERVAL 105 DAY), '0', NULL, 'MANUAL_CREATED', NULL, NULL, DATE_SUB(@seed_now, INTERVAL 145 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
-  (@v_kim, 'Kim Min Seo', 'kim.minseo@seoultech.example', '+821012345678', 'Hàn Quốc', @pwd_hash, @role_visitor, NULL, NULL, NULL, 'FEMALE', NULL, NULL, NULL, 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 106 DAY), '0', NULL, 'VISITOR_FORM', DATE_SUB(@seed_now, INTERVAL 96 DAY), DATE_SUB(@seed_now, INTERVAL 7 DAY), DATE_SUB(@seed_now, INTERVAL 146 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
+  (@v_kim, 'External Visitor', 'visitor@example.com', '+821012345678', 'Việt Nam', @pwd_hash, @role_visitor, NULL, NULL, NULL, 'UNKNOWN', NULL, NULL, NULL, 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 106 DAY), '0', NULL, 'VISITOR_FORM', DATE_SUB(@seed_now, INTERVAL 96 DAY), DATE_SUB(@seed_now, INTERVAL 7 DAY), DATE_SUB(@seed_now, INTERVAL 146 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
   (@v_lee, 'Lee Joon Ho', 'lee.joonho@seoultech.example', '+821055512345', 'Hàn Quốc', @pwd_hash, @role_visitor, NULL, NULL, NULL, 'MALE', NULL, NULL, NULL, 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 107 DAY), '0', NULL, 'VISITOR_FORM', DATE_SUB(@seed_now, INTERVAL 97 DAY), DATE_SUB(@seed_now, INTERVAL 8 DAY), DATE_SUB(@seed_now, INTERVAL 147 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
   (@v_tanaka, 'Tanaka Aoi', 'aoi.tanaka@kyoto-global.example', '+819012345678', 'Nhật Bản', @pwd_hash, @role_visitor, NULL, NULL, NULL, 'FEMALE', NULL, NULL, NULL, 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 108 DAY), '0', NULL, 'VISITOR_FORM', DATE_SUB(@seed_now, INTERVAL 98 DAY), DATE_SUB(@seed_now, INTERVAL 9 DAY), DATE_SUB(@seed_now, INTERVAL 148 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
   (@v_smith, 'Emily Smith', 'emily.smith@greentech.example', '+6591234567', 'Singapore', @pwd_hash, @role_visitor, NULL, NULL, NULL, 'FEMALE', NULL, NULL, NULL, 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 109 DAY), '0', NULL, 'VISITOR_FORM', DATE_SUB(@seed_now, INTERVAL 99 DAY), DATE_SUB(@seed_now, INTERVAL 10 DAY), DATE_SUB(@seed_now, INTERVAL 149 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
@@ -2724,24 +2727,6 @@ UPDATE departments SET head_user_id=@u_deptlead_it_hn WHERE department_id=@dept_
 UPDATE departments SET head_user_id=@u_deptlead_finance_hcm WHERE department_id=@dept_hcm_finance;
 UPDATE departments SET head_user_id=@u_deptlead_admin_ct WHERE department_id=@dept_ct_admin;
 
-
--- =====================================================================
--- Development / test accounts (DEV ONLY — DO NOT RUN IN PRODUCTION)
--- All accounts share local-password login password: Admin@123
--- BCrypt hash is stored in @pwd_hash.
--- =====================================================================
-INSERT IGNORE INTO users
-  (user_id, full_name, email, password_hash, role_id, sub_role, primary_campus_id, department_id,
-   status, email_verified_at, created_via, created_at)
-VALUES
-  (NULL, 'System Administrator',      'admin@fpt.edu.vn',            @pwd_hash, @role_admin,   NULL,     @campus_hn, NULL,              'ACTIVE', NOW(), 'MANUAL_CREATED', NOW()),
-  (NULL, 'Head Office Manager',       'ho@fpt.edu.vn',               @pwd_hash, @role_ho,      NULL,     @campus_hn, NULL,              'ACTIVE', NOW(), 'MANUAL_CREATED', NOW()),
-  (NULL, 'IC Staff Leader (HN)',      'staff.leader.hn@fpt.edu.vn',  @pwd_hash, @role_staff,   'Leader', @campus_hn, @dept_hn_ic,       'ACTIVE', NOW(), 'MANUAL_CREATED', NOW()),
-  (NULL, 'IC Staff (HN)',             'staff.hn@fpt.edu.vn',         @pwd_hash, @role_staff,   'Staff',  @campus_hn, @dept_hn_ic,       'ACTIVE', NOW(), 'MANUAL_CREATED', NOW()),
-  (NULL, 'Department Lead (HN)',      'dept.leader.hn@fpt.edu.vn',   @pwd_hash, @role_dept,    'Leader', @campus_hn, @dept_hn_academic, 'ACTIVE', NOW(), 'MANUAL_CREATED', NOW()),
-  (NULL, 'Department Personnel (HN)', 'dept.hn@fpt.edu.vn',          @pwd_hash, @role_dept,    'Staff',  @campus_hn, @dept_hn_academic, 'ACTIVE', NOW(), 'MANUAL_CREATED', NOW()),
-  (NULL, 'Support Student',           'student@fpt.edu.vn',          @pwd_hash, @role_student, NULL,     @campus_hn, NULL,              'ACTIVE', NOW(), 'MANUAL_CREATED', NOW()),
-  (NULL, 'External Visitor',          'visitor@example.com',         @pwd_hash, @role_visitor, NULL,     NULL,       NULL,              'ACTIVE', NOW(), 'MANUAL_CREATED', NOW());
 
 INSERT INTO permissions (permission_id, permission_code, name, permission_group, description, is_system, created_at)
 VALUES
@@ -3304,11 +3289,11 @@ SET @sess_staff = 100050;
 
 INSERT INTO user_auth_providers (auth_provider_id, user_id, provider_type, provider_subject, provider_email, is_enabled, linked_at, last_used_at)
 VALUES
-  (@ap_admin_local, @u_admin_minh, 'LOCAL_PASSWORD', NULL, 'minh.nguyen@company.vn', TRUE, DATE_SUB(@seed_now, INTERVAL 365 DAY), DATE_SUB(@seed_now, INTERVAL 1 DAY)),
-  (@ap_ho_google, @u_ho_ha, 'GOOGLE_SSO', 'google-oauth2|ha-tran', 'ha.tran@company.vn', TRUE, DATE_SUB(@seed_now, INTERVAL 350 DAY), DATE_SUB(@seed_now, INTERVAL 1 DAY)),
-  (@ap_staff_feid, @u_stafflead_hn, 'FEID', 'FE-NAM-HN', 'nam.le@company.vn', TRUE, DATE_SUB(@seed_now, INTERVAL 330 DAY), DATE_SUB(@seed_now, INTERVAL 1 DAY)),
-  (@ap_visitor_local, @v_kim, 'LOCAL_PASSWORD', NULL, 'kim.minseo@seoultech.example', TRUE, DATE_SUB(@seed_now, INTERVAL 75 DAY), DATE_SUB(@seed_now, INTERVAL 5 DAY)),
-  (@ap_student_feid, @u_student_anh, 'FEID', 'FE-STU-001', 'lananh.student@company.vn', TRUE, DATE_SUB(@seed_now, INTERVAL 190 DAY), DATE_SUB(@seed_now, INTERVAL 1 DAY)),
+  (@ap_admin_local, @u_admin_minh, 'LOCAL_PASSWORD', NULL, 'admin@fpt.edu.vn', TRUE, DATE_SUB(@seed_now, INTERVAL 365 DAY), DATE_SUB(@seed_now, INTERVAL 1 DAY)),
+  (@ap_ho_google, @u_ho_ha, 'GOOGLE_SSO', 'google-oauth2|ho-fpt', 'ho@fpt.edu.vn', TRUE, DATE_SUB(@seed_now, INTERVAL 350 DAY), DATE_SUB(@seed_now, INTERVAL 1 DAY)),
+  (@ap_staff_feid, @u_stafflead_hn, 'FEID', 'FE-STAFF-LEADER-HN', 'staff.leader.hn@fpt.edu.vn', TRUE, DATE_SUB(@seed_now, INTERVAL 330 DAY), DATE_SUB(@seed_now, INTERVAL 1 DAY)),
+  (@ap_visitor_local, @v_kim, 'LOCAL_PASSWORD', NULL, 'visitor@example.com', TRUE, DATE_SUB(@seed_now, INTERVAL 75 DAY), DATE_SUB(@seed_now, INTERVAL 5 DAY)),
+  (@ap_student_feid, @u_student_anh, 'FEID', 'FE-STUDENT-HN', 'student@fpt.edu.vn', TRUE, DATE_SUB(@seed_now, INTERVAL 190 DAY), DATE_SUB(@seed_now, INTERVAL 1 DAY)),
   (@ap_disabled_google, @u_inactive_dept, 'GOOGLE_SSO', 'google-oauth2|inactive', 'my.inactive@company.vn', FALSE, DATE_SUB(@seed_now, INTERVAL 120 DAY), DATE_SUB(@seed_now, INTERVAL 60 DAY));
 
 
@@ -3345,22 +3330,22 @@ VALUES
 INSERT INTO otp_tokens (otp_token_id, user_id, email, token_type, purpose, token_hash, expires_at, used_at, attempt_count, max_attempts, resend_count, ip_address, user_agent, created_at)
 VALUES
   (NULL, @v_pending_approval_seed, 'thaomy.pending.approval@partner.example', 'OTP_CODE', 'VISIT_REQUEST_VERIFY', '636df26e46eb19a12ab4f2aaab155d160c2e19384eb1e8163980b5f157499bc8', DATE_ADD(DATE_SUB(@seed_now, INTERVAL 17 DAY), INTERVAL 10 MINUTE), DATE_ADD(DATE_SUB(@seed_now, INTERVAL 17 DAY), INTERVAL 5 MINUTE), 1, 5, 0, '203.113.11.10', 'Mozilla/5.0', DATE_SUB(@seed_now, INTERVAL 17 DAY)),
-  (NULL, @u_admin_minh, 'minh.nguyen@company.vn', 'OTP_CODE', 'CHANGE_SENSITIVE_ACTION', '12ea12eace7d655f471ce55e34f89b1b77a3d9d05a445ca82877dd2235beaa51', DATE_ADD(@seed_now, INTERVAL 5 MINUTE), NULL, 0, 3, 0, '10.10.1.15', 'Mozilla/5.0', DATE_SUB(@seed_now, INTERVAL 5 MINUTE));
+  (NULL, @u_admin_minh, 'admin@fpt.edu.vn', 'OTP_CODE', 'CHANGE_SENSITIVE_ACTION', '12ea12eace7d655f471ce55e34f89b1b77a3d9d05a445ca82877dd2235beaa51', DATE_ADD(@seed_now, INTERVAL 5 MINUTE), NULL, 0, 3, 0, '10.10.1.15', 'Mozilla/5.0', DATE_SUB(@seed_now, INTERVAL 5 MINUTE));
 
 INSERT INTO login_logs (user_id, email, login_portal, selected_campus_id, provider_type, status, failure_reason, ip_address, user_agent, session_id, created_at)
 VALUES
   
-  (@u_admin_minh, 'minh.nguyen@company.vn', 'INTERNAL', @campus_hn, 'LOCAL_PASSWORD', 'SUCCESS', NULL, '10.10.1.15', 'Mozilla/5.0', @sess_admin, DATE_SUB(@seed_now, INTERVAL 1 HOUR)),
-  (@u_ho_ha, 'ha.tran@company.vn', 'INTERNAL', @campus_hn, 'GOOGLE_SSO', 'SUCCESS', NULL, '10.10.1.16', 'Mozilla/5.0', @sess_ho_revoked, DATE_SUB(@seed_now, INTERVAL 2 DAY)),
-  (@v_kim, 'kim.minseo@seoultech.example', 'VISITOR', NULL, 'LOCAL_PASSWORD', 'SUCCESS', NULL, '203.113.10.21', 'Mozilla/5.0', @sess_visitor, DATE_SUB(@seed_now, INTERVAL 5 DAY)),
+  (@u_admin_minh, 'admin@fpt.edu.vn', 'INTERNAL', @campus_hn, 'LOCAL_PASSWORD', 'SUCCESS', NULL, '10.10.1.15', 'Mozilla/5.0', @sess_admin, DATE_SUB(@seed_now, INTERVAL 1 HOUR)),
+  (@u_ho_ha, 'ho@fpt.edu.vn', 'INTERNAL', @campus_hn, 'GOOGLE_SSO', 'SUCCESS', NULL, '10.10.1.16', 'Mozilla/5.0', @sess_ho_revoked, DATE_SUB(@seed_now, INTERVAL 2 DAY)),
+  (@v_kim, 'visitor@example.com', 'VISITOR', NULL, 'LOCAL_PASSWORD', 'SUCCESS', NULL, '203.113.10.21', 'Mozilla/5.0', @sess_visitor, DATE_SUB(@seed_now, INTERVAL 5 DAY)),
   (@u_locked_staff, 'huy.locked@company.vn', 'INTERNAL', @campus_hn, 'LOCAL_PASSWORD', 'BLOCKED', 'Account locked', '10.10.1.18', 'Mozilla/5.0', NULL, DATE_SUB(@seed_now, INTERVAL 20 MINUTE)),
   (NULL, 'unknown.person@company.vn', 'INTERNAL', NULL, 'LOCAL_PASSWORD', 'FAILED', 'Invalid credentials', '198.51.100.10', 'curl/8.0', NULL, DATE_SUB(@seed_now, INTERVAL 15 MINUTE)),
-  (@u_student_anh, 'lananh.student@company.vn', 'INTERNAL', @campus_hn, 'FEID', 'SUCCESS', NULL, '10.10.1.19', 'Mozilla/5.0', NULL, DATE_SUB(@seed_now, INTERVAL 1 DAY));
+  (@u_student_anh, 'student@fpt.edu.vn', 'INTERNAL', @campus_hn, 'FEID', 'SUCCESS', NULL, '10.10.1.19', 'Mozilla/5.0', NULL, DATE_SUB(@seed_now, INTERVAL 1 DAY));
 
 INSERT INTO security_events (user_id, email, event_type, severity, ip_address, user_agent, metadata, created_at)
 VALUES
   
-  (@u_admin_minh, 'minh.nguyen@company.vn', 'LOGIN_SUCCESS_REVIEWED', 'LOW', '10.10.1.15', 'Mozilla/5.0', JSON_OBJECT('portal','INTERNAL'), DATE_SUB(@seed_now, INTERVAL 1 HOUR)),
+  (@u_admin_minh, 'admin@fpt.edu.vn', 'LOGIN_SUCCESS_REVIEWED', 'LOW', '10.10.1.15', 'Mozilla/5.0', JSON_OBJECT('portal','INTERNAL'), DATE_SUB(@seed_now, INTERVAL 1 HOUR)),
   (@v_smith, 'emily.smith@greentech.example', 'OTP_FAILED', 'MEDIUM', '203.113.11.11', 'Mozilla/5.0', JSON_OBJECT('attempt_count',5), DATE_SUB(@seed_now, INTERVAL 30 MINUTE)),
   (@u_locked_staff, 'huy.locked@company.vn', 'LOGIN_LOCKED', 'HIGH', '10.10.1.18', 'Mozilla/5.0', JSON_OBJECT('failed_login_count',7), DATE_SUB(@seed_now, INTERVAL 20 MINUTE)),
   (NULL, 'unknown.person@company.vn', 'SUSPICIOUS_IP', 'CRITICAL', '198.51.100.10', 'curl/8.0', JSON_OBJECT('blocked',true), DATE_SUB(@seed_now, INTERVAL 10 MINUTE));
@@ -4241,7 +4226,7 @@ VALUES
 INSERT INTO audit_logs (actor_user_id, campus_id, action, entity_type, entity_id, old_values_json, new_values_json, ip_address, user_agent, request_id, created_at)
 VALUES
   
-  (@u_admin_minh, @campus_hn, 'CREATE', 'USER', @u_stafflead_hn, NULL, JSON_OBJECT('email','nam.le@company.vn'), '10.10.1.15', 'Mozilla/5.0', 'req-seed-create-user', DATE_SUB(@seed_now, INTERVAL 340 DAY)),
+  (@u_admin_minh, @campus_hn, 'CREATE', 'USER', @u_stafflead_hn, NULL, JSON_OBJECT('email','staff.leader.hn@fpt.edu.vn'), '10.10.1.15', 'Mozilla/5.0', 'req-seed-create-user', DATE_SUB(@seed_now, INTERVAL 340 DAY)),
   (@u_stafflead_hn, @campus_hn, 'SUBMIT', 'VISIT_REQUEST', @vr_approved_single_before, JSON_OBJECT('status','PENDING_APPROVAL'), JSON_OBJECT('status','PENDING_APPROVAL'), '10.10.2.15', 'Mozilla/5.0', 'req-seed-submit', DATE_SUB(@seed_now, INTERVAL 13 DAY)),
   (@u_stafflead_hn, @campus_hn, 'APPROVE', 'VISIT_REQUEST', @vr_approved_single_before, JSON_OBJECT('status','PENDING_APPROVAL'), JSON_OBJECT('status','APPROVED'), '10.10.2.15', 'Mozilla/5.0', 'req-seed-approve', DATE_SUB(@seed_now, INTERVAL 12 DAY)),
   (@u_ho_ha, NULL, 'APPROVE', 'VISIT_REQUEST', @vr_approved_multi_during, JSON_OBJECT('status','PENDING_APPROVAL'), JSON_OBJECT('status','APPROVED','scope','MULTI_CAMPUS'), '10.10.1.16', 'Mozilla/5.0', 'req-seed-approve-multi', DATE_SUB(@seed_now, INTERVAL 12 DAY)),
@@ -5200,153 +5185,6 @@ COMMIT;
 -- <<< END permission_matrix.sql
 
 
--- >>> BEGIN dev_accounts.sql
-
--- =====================================================================
--- PEMS — Development/test accounts seed
--- DEV ONLY — DO NOT RUN IN PRODUCTION.
---
--- Run AFTER:
---   1) roles.sql
---   2) campuses.sql
---   3) departments.sql
---   4) permissions.sql
---   5) permission_matrix.sql
---
--- All accounts share password: Admin@123
--- BCrypt hash: $2a$12$A649uaaQNoePUlyK3hrupOXDX..MgWiR8w6.5ndc62xpPgl.ALQU6
--- =====================================================================
-USE pems_db;
-
-START TRANSACTION;
-
-SET @pwd_hash = '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi';
-
-SET @role_admin   = (SELECT role_id FROM roles WHERE role_code = 'ADMIN'   AND deleted_at IS NULL LIMIT 1);
-SET @role_ho      = (SELECT role_id FROM roles WHERE role_code = 'HO'      AND deleted_at IS NULL LIMIT 1);
-SET @role_staff   = (SELECT role_id FROM roles WHERE role_code = 'STAFF'   AND deleted_at IS NULL LIMIT 1);
-SET @role_dept    = (SELECT role_id FROM roles WHERE role_code = 'DEPT'    AND deleted_at IS NULL LIMIT 1);
-SET @role_student = (SELECT role_id FROM roles WHERE role_code = 'STUDENT' AND deleted_at IS NULL LIMIT 1);
-SET @role_visitor = (SELECT role_id FROM roles WHERE role_code = 'VISITOR' AND deleted_at IS NULL LIMIT 1);
-
-SET @campus_hn   = (SELECT campus_id FROM campuses WHERE campus_code = 'HN' LIMIT 1);
-SET @dept_ic_hn  = (SELECT d.department_id FROM departments d WHERE d.campus_id = @campus_hn AND d.department_code = 'IC' LIMIT 1);
-SET @dept_aca_hn = (SELECT d.department_id FROM departments d WHERE d.campus_id = @campus_hn AND d.department_code = 'ACADEMIC' LIMIT 1);
-
--- Pre-check. These SELECTs must show no NULL required IDs before the INSERT below.
-SELECT
-  @role_admin AS role_admin,
-  @role_ho AS role_ho,
-  @role_staff AS role_staff,
-  @role_dept AS role_dept,
-  @role_student AS role_student,
-  @role_visitor AS role_visitor,
-  @campus_hn AS campus_hn,
-  @dept_ic_hn AS dept_ic_hn,
-  @dept_aca_hn AS dept_aca_hn;
-
--- Users. For users.sub_role:
---   ADMIN/HO/STUDENT/VISITOR = NULL
---   STAFF/DEPT = Leader or Staff
-INSERT INTO users
-  (user_id, full_name, email, password_hash, role_id, sub_role, primary_campus_id, department_id,
-   status, email_verified_at, failed_login_count,
-   created_via, created_at)
-VALUES
-  (NULL, 'System Administrator',      'admin@fpt.edu.vn',            @pwd_hash, @role_admin,   NULL,     @campus_hn, NULL,         'ACTIVE', NOW(), 0, 'MANUAL_CREATED', NOW()),
-  (NULL, 'Head Office Manager',       'ho@fpt.edu.vn',               @pwd_hash, @role_ho,      NULL,     @campus_hn, NULL,         'ACTIVE', NOW(), 0, 'MANUAL_CREATED', NOW()),
-  (NULL, 'IC Staff Leader (HN)',      'staff.leader.hn@fpt.edu.vn',  @pwd_hash, @role_staff,   'Leader', @campus_hn, @dept_ic_hn,  'ACTIVE', NOW(), 0, 'MANUAL_CREATED', NOW()),
-  (NULL, 'IC Staff (HN)',             'staff.hn@fpt.edu.vn',         @pwd_hash, @role_staff,   'Staff',  @campus_hn, @dept_ic_hn,  'ACTIVE', NOW(), 0, 'MANUAL_CREATED', NOW()),
-  (NULL, 'Department Lead (HN)',      'dept.leader.hn@fpt.edu.vn',   @pwd_hash, @role_dept,    'Leader', @campus_hn, @dept_aca_hn, 'ACTIVE', NOW(), 0, 'MANUAL_CREATED', NOW()),
-  (NULL, 'Department Personnel (HN)', 'dept.hn@fpt.edu.vn',          @pwd_hash, @role_dept,    'Staff',  @campus_hn, @dept_aca_hn, 'ACTIVE', NOW(), 0, 'MANUAL_CREATED', NOW()),
-  (NULL, 'Support Student',           'student@fpt.edu.vn',          @pwd_hash, @role_student, NULL,     @campus_hn, NULL,         'ACTIVE', NOW(), 0, 'MANUAL_CREATED', NOW()),
-  (NULL, 'External Visitor',          'visitor@example.com',         @pwd_hash, @role_visitor, NULL,     NULL,       NULL,         'ACTIVE', NOW(), 0, 'MANUAL_CREATED', NOW())
-ON DUPLICATE KEY UPDATE
-  full_name = VALUES(full_name),
-  password_hash = VALUES(password_hash),
-  role_id = VALUES(role_id),
-  sub_role = VALUES(sub_role),
-  primary_campus_id = VALUES(primary_campus_id),
-  department_id = VALUES(department_id),
-  status = VALUES(status),
-  email_verified_at = VALUES(email_verified_at),
-  failed_login_count = 0,
-  locked_until = NULL,
-  updated_at = NOW();
-
--- Local-password auth providers.
--- uq_user_auth_provider_type(user_id, provider_type) makes this idempotent.
-INSERT INTO user_auth_providers
-  (auth_provider_id, user_id, provider_type, provider_subject, provider_email, is_enabled, linked_at)
-SELECT NULL, u.user_id, 'LOCAL_PASSWORD', NULL, u.email, 1, NOW()
-FROM users u
-WHERE u.email IN (
-  'admin@fpt.edu.vn',
-  'ho@fpt.edu.vn',
-  'staff.leader.hn@fpt.edu.vn',
-  'staff.hn@fpt.edu.vn',
-  'dept.leader.hn@fpt.edu.vn',
-  'dept.hn@fpt.edu.vn',
-  'student@fpt.edu.vn',
-  'visitor@example.com'
-)
-ON DUPLICATE KEY UPDATE
-  provider_email = VALUES(provider_email),
-  is_enabled = VALUES(is_enabled);
-
--- Verification.
-SELECT
-  u.full_name,
-  u.email,
-  r.role_code,
-  u.sub_role AS users_sub_role,
-  c.campus_code,
-  d.department_code,
-  u.status
-FROM users u
-JOIN roles r ON r.role_id = u.role_id
-LEFT JOIN campuses c ON c.campus_id = u.primary_campus_id
-LEFT JOIN departments d ON d.department_id = u.department_id
-WHERE u.email IN (
-  'admin@fpt.edu.vn',
-  'ho@fpt.edu.vn',
-  'staff.leader.hn@fpt.edu.vn',
-  'staff.hn@fpt.edu.vn',
-  'dept.leader.hn@fpt.edu.vn',
-  'dept.hn@fpt.edu.vn',
-  'student@fpt.edu.vn',
-  'visitor@example.com'
-)
-ORDER BY FIELD(u.email,
-  'admin@fpt.edu.vn',
-  'ho@fpt.edu.vn',
-  'staff.leader.hn@fpt.edu.vn',
-  'staff.hn@fpt.edu.vn',
-  'dept.leader.hn@fpt.edu.vn',
-  'dept.hn@fpt.edu.vn',
-  'student@fpt.edu.vn',
-  'visitor@example.com'
-);
-
-SELECT u.email, ap.provider_type, ap.provider_email, ap.is_enabled
-FROM user_auth_providers ap
-JOIN users u ON u.user_id = ap.user_id
-WHERE u.email IN (
-  'admin@fpt.edu.vn',
-  'ho@fpt.edu.vn',
-  'staff.leader.hn@fpt.edu.vn',
-  'staff.hn@fpt.edu.vn',
-  'dept.leader.hn@fpt.edu.vn',
-  'dept.hn@fpt.edu.vn',
-  'student@fpt.edu.vn',
-  'visitor@example.com'
-)
-ORDER BY u.email, ap.provider_type;
-
-COMMIT;
-
-
--- <<< END dev_accounts.sql
 
 
 -- <<< VISIT VISIBILITY RULES / DERIVED DISPLAY STATUS >>>

@@ -13,7 +13,7 @@ Trạng thái sau phase hardening 2026-06-20.
 - [x] Refresh check session active + user/role ACTIVE.
 - [x] Logout revoke session hiện tại (+ session theo refresh token).
 - [x] Đổi role/reset password/đổi password → revoke session.
-- [ ] Khóa/deactivate user → revoke session (TODO: handler scaffold; tạm chặn bằng SessionValidationMiddleware).
+- [x] Khóa/deactivate user (UC-97) → revoke session (`ACCOUNT_DEACTIVATED`) khi `ACTIVE`→non-ACTIVE; runtime test pending trên DB.
 - [ ] Reuse-detection refresh token (TODO, optional).
 
 ## Database
@@ -36,12 +36,16 @@ Trạng thái sau phase hardening 2026-06-20.
 - [x] Sanitize HTML render-time cho News (`sanitizeHtml`).
 - [x] Security headers: nosniff, X-Frame-Options DENY, Referrer-Policy, Permissions-Policy.
 - [x] CSP cho production (non-Swagger).
-- [ ] Backend sanitize HTML khi lưu News (TODO: Ganss.Xss).
-- [ ] Upload guard chặn SVG/HTML/JS (TODO: xác nhận FileValidationService).
+- [x] Backend HTML sanitizer service (`IHtmlSanitizerService` / package `HtmlSanitizer`) + DI sẵn sàng.
+- [ ] Wire backend sanitize vào News create/edit (PARTIAL: chờ handler News hết scaffold).
+- [x] `FileValidationService` chặn SVG/HTML/JS/executable (extension + MIME) + DI sẵn sàng.
+- [ ] Gọi `FileValidationService` từ upload flow thật (PARTIAL: chờ Gallery/News/Documents upload).
 
 ## Secrets
-- [ ] Production override JWT SecretKey / DB password / SMTP password bằng env/secret manager (KHÔNG commit secret thật).
+- [x] Env override secrets được hỗ trợ + tài liệu hoá (env var `__`, danh sách trong `DATABASE_DEPLOYMENT.md`); thực thi khi deploy.
 - [x] `appsettings.Production.json` không chứa secret.
+- [ ] Rotate SMTP app password đã commit trong git trước khi deploy.
+- [ ] Set giá trị secret production thật qua env/secret manager khi deploy.
 
 ## Build
 - [x] `dotnet build PEMS.Api` PASS (0 error/0 warning).

@@ -84,10 +84,10 @@ Không thay đổi nền tảng: PEMS vẫn là JWT + DB-backed session, Dual Po
 | Đổi role | `UpdateAccountRoleCommandHandler` | tất cả session | `ROLE_CHANGED` |
 | Reset password | `ResetPasswordCommandHandler` | tất cả session | `PASSWORD_RESET` |
 | Đổi password | `ChangePasswordCommandHandler` | mọi session KHÁC session hiện tại | `PASSWORD_CHANGED` |
-| Khóa/deactivate | `ManageAccountStatusCommandHandler` | **TODO** (handler là scaffold) | `ACCOUNT_DEACTIVATED` |
+| Khóa/deactivate | `ManageAccountStatusCommandHandler` | tất cả session (khi `ACTIVE` → non-ACTIVE) | `ACCOUNT_DEACTIVATED` |
 
-Mitigation cho TODO: `SessionValidationMiddleware` chặn ngay user/role non-ACTIVE ở request kế tiếp,
-nên dù chưa revoke ở thời điểm khóa, user vẫn bị chặn realtime.
+`SessionValidationMiddleware` vẫn chặn realtime user/role non-ACTIVE ở request kế tiếp; revoke session ở UC-97
+là lớp bổ sung để DB phản ánh đúng trạng thái bảo mật và refresh token cũ không dùng lại được.
 
 ## 7. CORS / HTTPS / cookie / CSRF
 
@@ -99,7 +99,40 @@ nên dù chưa revoke ở thời điểm khóa, user vẫn bị chặn realtime.
 
 - Tạo `sanitizeHtml()` (DOMParser allowlist, không thêm dependency): xóa `script/iframe/object/embed/style/...`, xóa attribute `on*`, lọc URL `javascript:/vbscript:/data:text\/html`.
 - Áp dụng cho 2 chỗ render News HTML (`NewsDetailPage`, `NewsDetailDashboard`).
-- Backend sanitize (Ganss.Xss) cho News content: **TODO** (cần thêm NuGet — xem Risks/TODO).
+- Backend sanitize (`IHtmlSanitizerService` / package `HtmlSanitizer`, namespace `Ganss.Xss`): **đã thêm service + DI**.
+  Wiring vào News create/edit còn chờ vì handlers News hiện vẫn là scaffold (xem mục Update + Risks/TODO).
+
+## 14. Update — UC-97 Account Status Session Revoke
+
+- Implement đầy đủ `ManageAccountStatusCommandHandler` (UC-97), trước đây là scaffold `NotImplementedException`.
+- Command nhận `UserId`, `Status` (`ACTIVE|INACTIVE|LOCKED`, khớp `users.status` ENUM), `Reason?`.
+- Scope: ADMIN/HO toàn hệ thống; Staff Leader chỉ trong campus của mình; chặn actor tự đổi status chính mình.
+- Khi `ACTIVE` → non-ACTIVE: gọi `RevokeAllActiveSessionsAsync(userId, ACCOUNT_DEACTIVATED, actorId)` +
+  ghi `security_events` (`ACCOUNT_LOCKED`, severity HIGH). Reactivate (→ACTIVE) reset `failed_login_count`/`locked_until`.
+- Ghi `audit_logs` (action `MANAGE_ACCOUNT_STATUS`, old/new status) cho mọi thay đổi.
+- Access token cũ → 401 (SessionValidationMiddleware), refresh token cũ → 401 (session đã revoked).
+- Không đổi flow đổi role / reset password / change password đang chạy.
+
+## 15. Update — Backend News HTML Sanitization
+
+- Thêm package `HtmlSanitizer` (namespace `Ganss.Xss`) vào `PEMS.Infrastructure`.
+- Thêm `IHtmlSanitizerService` (Application) + `HtmlSanitizerService` (Infrastructure), đăng ký Singleton.
+- Cấu hình: bỏ `script/iframe/object/embed/form/input/button/style/...`, bỏ event handler `on*`,
+  chỉ cho scheme `http/https/mailto/tel` (chặn `javascript:`, `data:text/html`, ...).
+- Frontend render-time sanitize giữ nguyên (lớp thứ 2).
+- **Lưu ý**: News create/edit handlers (`AddMultilingualNews`, `EditNews`) hiện là scaffold
+  `NotImplementedException` — chưa có luồng lưu DB để gọi sanitize. Service đã sẵn sàng; sẽ inject
+  `_htmlSanitizer.Sanitize(...)` khi News được implement. ⇒ Phần này là **PARTIAL**.
+
+## 16. Update — Upload File Guard
+
+- `IFileValidationService` + `FileValidationService` (denylist extension + MIME), đăng ký Singleton.
+- Chặn `.svg/.svgz/.html/.htm/.xhtml/.js/.mjs/.jsx/.ts/.tsx/.vbs/.php/.asp/.aspx/.jsp/.exe/.bat/.cmd/.ps1/.sh/.jar...`
+  và MIME `image/svg+xml`, `text/html`, `application/xhtml+xml`, `application/javascript`, `text/javascript`,
+  `application/x-msdownload`, `application/x-sh`, ...; kiểm tra size; không tin `ContentType` từ client.
+- Interface framework-agnostic (nhận `fileName`, `contentType`, `sizeBytes`) vì `PEMS.Application` không tham chiếu ASP.NET.
+- **Lưu ý**: hiện chưa có upload endpoint/handler nào gọi service (các FileStorage service khác vẫn là scaffold rỗng).
+  Service đã sẵn sàng để gọi từ upload flow khi Gallery/News/Documents được implement.
 
 ## 9. Database changes / SQL patch
 
@@ -118,15 +151,17 @@ Xem `AUTH_HARDENING_TEST_CASES.md`. Các case build/biên dịch đã verify; c�
 
 ## 12. Remaining TODOs
 
-1. `ManageAccountStatusCommandHandler` (UC-97) còn scaffold: khi implement, gọi `RevokeAllActiveSessionsAsync(userId, ACCOUNT_DEACTIVATED)`.
-2. Backend HTML sanitize cho News (thêm `Ganss.Xss`, tạo `IHtmlSanitizerService`, dùng trong `AddMultilingualNews`/`EditNews`).
+1. ~~`ManageAccountStatusCommandHandler` (UC-97) còn scaffold~~ — **DONE**: implement + revoke session `ACCOUNT_DEACTIVATED` (xem mục 14).
+2. Backend HTML sanitize cho News — **PARTIAL**: đã có `IHtmlSanitizerService` + `HtmlSanitizerService` + DI; còn chờ wire vào
+   `AddMultilingualNews`/`EditNews` khi 2 handler News (hiện scaffold) được implement (xem mục 15).
 3. Nâng cấp frontend từ `sanitizeHtml` hand-rolled sang `DOMPurify` khi có thể `npm install dompurify`.
-4. Upload file guard: xác nhận `FileValidationService` chặn `image/svg+xml`, `.html`, `.js` (kiểm tra extension + MIME + magic bytes).
+4. Upload file guard — **PARTIAL**: đã có `FileValidationService` chặn extension + MIME (SVG/HTML/JS/exec...);
+   còn chờ gọi từ upload flow thật (Gallery/News/Documents chưa implement) + bổ sung magic-bytes check cho ảnh (xem mục 16).
 5. Reuse-detection cho refresh token (rotation hiện thay hash in-place, không có chain → không phát hiện reuse token cũ; cân nhắc nếu cần mức cao hơn).
 6. Cấu hình cron/scheduled chạy `cleanup_expired_user_sessions.sql`.
 
 ## 13. Risks
 
-- **Secrets trong `appsettings.json` (dev)**: `JwtSettings.SecretKey`, DB password, SMTP password đang nằm trong file dev. Ở production PHẢI override bằng biến môi trường / secret manager, không commit secret thật. `appsettings.Production.json` cố tình KHÔNG chứa secret.
+- **Secrets trong `appsettings.json` (dev)**: `JwtSettings.SecretKey`, DB password, SMTP password đang nằm trong file dev. Ở production PHẢI override bằng biến môi trường / secret manager, không commit secret thật. `appsettings.Production.json` cố tình KHÔNG chứa secret. Danh sách env var + checklist: `docs/database/DATABASE_DEPLOYMENT.md`. ⚠️ SMTP app password đã bị commit trong git → **rotate trước khi deploy**.
 - **Token ở localStorage**: dễ bị đánh cắp nếu có XSS. Mitigation: access token short-lived (60'), refresh token hash + rotation, sanitize HTML. Cân nhắc chuyển refresh token sang HttpOnly cookie trong tương lai (kèm CSRF) — không làm ở phase này để không phá frontend.
 - **Domain production placeholder**: `pems.fpt.edu.vn` là ví dụ; phải thay bằng domain thật trước khi deploy.

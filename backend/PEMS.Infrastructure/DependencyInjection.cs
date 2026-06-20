@@ -2,14 +2,17 @@ using Application.Common.Interfaces;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Common.Security;
 using PEMS.Infrastructure.Common;
 using PEMS.Infrastructure.Email;
 using PEMS.Infrastructure.ExternalServices.FaceRecognition;
 using PEMS.Infrastructure.ExternalServices.Ocr;
+using PEMS.Infrastructure.FileStorage;
 using PEMS.Infrastructure.Identity;
 using PEMS.Infrastructure.Logging;
 using PEMS.Infrastructure.Persistence;
 using PEMS.Infrastructure.Persistence.Repositories;
+using PEMS.Infrastructure.Security;
 using PEMS.Infrastructure.Services;
 
 namespace PEMS.Infrastructure;
@@ -42,6 +45,10 @@ public static class DependencyInjection
         services.AddScoped<IEmailService, EmailService>();
         services.AddHttpContextAccessor();
         services.AddHttpClient();
+
+        // Content / upload security (defence in depth)
+        services.AddSingleton<IHtmlSanitizerService, HtmlSanitizerService>();
+        services.AddSingleton<IFileValidationService, FileValidationService>();
 
         // Visit request flow services (UC-17)
         services.AddScoped<IVisitRequestService, VisitRequestService>();

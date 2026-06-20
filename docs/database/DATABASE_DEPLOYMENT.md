@@ -38,12 +38,43 @@ DO
 
 ## Cấu hình production (không thuộc DB nhưng liên quan deploy)
 
-- `appsettings.Production.json` chỉ override `Cors:AllowedOrigins`, `AllowedHosts`, `Logging`.
-- Secrets (JWT `SecretKey`, `ConnectionStrings:DefaultConnection`, `Smtp:Password`) PHẢI set qua
-  biến môi trường / secret manager ở production — KHÔNG commit secret thật.
-  Ví dụ (env override key lồng nhau dùng `__`):
-  ```bash
-  ConnectionStrings__DefaultConnection="server=...;database=...;user=...;password=..."
-  JwtSettings__SecretKey="<random-32+ bytes>"
-  Smtp__Password="<app-password>"
-  ```
+- `appsettings.Production.json` chỉ override `Cors:AllowedOrigins`, `AllowedHosts`, `Logging` — KHÔNG chứa secret.
+- `appsettings.json` (base) đang chứa secret DEV (JWT secret, DB password, SMTP app password). Ở production
+  các giá trị này PHẢI bị override bằng biến môi trường / secret manager. `WebApplication.CreateBuilder`
+  đã nạp Environment Variables sau cùng nên env tự override file config — không cần đổi code.
+- Quy ước key lồng nhau: dấu `:` trong key config → `__` (double underscore) trong env var.
+
+### Biến môi trường bắt buộc set ở production
+
+```bash
+# Bắt buộc (secrets)
+ConnectionStrings__DefaultConnection="server=...;port=3306;database=pems_db;user=...;password=...;AllowUserVariables=True;GuidFormat=None"
+JwtSettings__SecretKey="<random >= 32 bytes, KHÔNG dùng giá trị dev>"
+Smtp__Password="<gmail-app-password / smtp password>"
+Smtp__User="<smtp user>"
+Smtp__FromEmail="<from email>"
+
+# Bắt buộc (môi trường + domain)
+ASPNETCORE_ENVIRONMENT="Production"
+AllowedHosts="pems.fpt.edu.vn;api.pems.fpt.edu.vn"       # thay domain thật
+Cors__AllowedOrigins__0="https://pems.fpt.edu.vn"        # thay domain frontend thật
+
+# Tuỳ chọn (nếu bật provider tương ứng)
+GoogleAuth__ClientId="<google-client-id-production>.apps.googleusercontent.com"
+Feid__ClientId="..."
+Feid__ClientSecret="..."        # chỉ khi FEID có provider thật; mặc định AllowFeid=false
+```
+
+> ⚠️ SMTP app password `Smtp:Password` đang nằm trong `appsettings.json` (dev) đã bị commit vào git.
+> Trước khi deploy production: **rotate (đổi) app password này**, set giá trị mới qua env, và không commit secret mới.
+
+### Checklist production
+
+- [ ] `ASPNETCORE_ENVIRONMENT=Production`.
+- [ ] Tất cả secret (JWT/DB/SMTP) đọc từ env/secret manager, không từ file commit.
+- [ ] `Cors:AllowedOrigins` = domain frontend thật (không `*`, không `AllowAnyOrigin`).
+- [ ] `AllowedHosts` = domain API thật.
+- [ ] Google OAuth Authorized JavaScript origins đã thêm domain frontend thật.
+- [ ] Backend chạy HTTPS; frontend gọi HTTPS API.
+- [ ] FEID vẫn `AllowFeid=false` nếu chưa có credential thật.
+- [ ] Production 500 không trả `stackTrace` (đã verify ở `ExceptionHandlingMiddleware`).

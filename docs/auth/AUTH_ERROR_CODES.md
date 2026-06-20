@@ -41,3 +41,12 @@ Hai file này phải luôn đồng bộ.
 
 > Quan trọng: KHÔNG dùng `401` cho wrong portal / campus mismatch — frontend interceptor có thể hiểu
 > nhầm là token hết hạn rồi refresh/logout sai.
+
+## Ghi chú hardening 2026-06-20 (TODO completion)
+
+- **UC-97 Manage Account Status** dùng status code chuẩn (không thêm errorCode auth mới): `404` (user không tồn tại),
+  `403` (Staff Leader ngoài campus / tự đổi status chính mình), `400` (status không thuộc `ACTIVE|INACTIVE|LOCKED`).
+  Sau khi khóa, request kế tiếp của user bị khóa trả `SESSION_REVOKED` (401) qua `SessionValidationMiddleware`;
+  session revoke ghi reason `ACCOUNT_DEACTIVATED`. Lần login lại trả `ACCOUNT_INACTIVE`/`ACCOUNT_LOCKED` (403).
+- **Upload guard** (`FileValidationService`) ném `BusinessRuleException` → `422` với message tiếng Việt
+  ("Loại tệp này không được phép tải lên." / "Tệp vượt quá kích thước..."), không thêm errorCode mới.

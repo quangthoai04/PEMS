@@ -1,10 +1,14 @@
-using System;
-
 namespace PEMS.Application.Accounts.Commands.ManageAccountStatus;
 
 public sealed class ManageAccountStatusResponse
 {
-    public Guid? Id { get; init; }
-    public string Status { get; init; } = "Scaffolded";
-    public string Message { get; init; } = "Use case scaffolded. Business logic is not implemented yet.";
+    public ulong UserId { get; init; }
+
+    /// <summary>The status now persisted on the account (ACTIVE | INACTIVE | LOCKED).</summary>
+    public string Status { get; init; } = default!;
+
+    /// <summary>How many active sessions were revoked as a result of this change.</summary>
+    public int RevokedSessions { get; init; }
+
+    public string Message { get; init; } = "Account status updated successfully.";
 }
