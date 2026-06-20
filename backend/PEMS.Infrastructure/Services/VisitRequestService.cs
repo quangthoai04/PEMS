@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.DTOs;
+using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Delegations;
@@ -28,18 +29,53 @@ public sealed class VisitRequestService : IVisitRequestService
         DateTime utcNow,
         CancellationToken cancellationToken = default)
     {
-        // Frontend sends campus codes (e.g. "HN", "HCM") — resolve to BIGINT campus_id
-        var requestedCodes = f.VisitSlots.Select(s => s.CampusId).Distinct().ToList();
-        var campusIdMap = await _db.Campuses
+        // ── Business validation: campus existence + ACTIVE state, planned times ──
+        // (Structural validation — required fields, scope↔count, end>start — already ran
+        //  in the FluentValidation pipeline. These checks need the database / clock.)
+        var requestedCodes = f.VisitSlots
+            .Select(s => s.CampusId?.Trim() ?? string.Empty)
+            .Where(c => c.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        // Frontend sends campus codes (e.g. "HN", "HCM") — resolve to BIGINT campus_id.
+        var campuses = await _db.Campuses
             .Where(c => requestedCodes.Contains(c.CampusCode))
-            .Select(c => new { c.CampusCode, c.CampusId })
-            .ToDictionaryAsync(c => c.CampusCode, c => c.CampusId, cancellationToken);
+            .Select(c => new { c.CampusCode, c.CampusId, c.Status })
+            .ToListAsync(cancellationToken);
+
+        var campusByCode = campuses.ToDictionary(c => c.CampusCode, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var code in requestedCodes)
+        {
+            if (!campusByCode.TryGetValue(code, out var campus))
+                throw new BusinessRuleException(
+                    $"Cơ sở '{code}' không tồn tại.", VisitRequestErrorCodes.CampusNotFound);
+
+            if (!string.Equals(campus.Status, EntityStatuses.Active, StringComparison.OrdinalIgnoreCase))
+                throw new BusinessRuleException(
+                    $"Cơ sở '{code}' hiện không hoạt động.", VisitRequestErrorCodes.CampusInactive);
+        }
+
+        // Planned start must not be in the past (1-day grace covers client/server timezone skew);
+        // end must be after start (also guarded by the SQL CHECK and form validation).
+        var earliestAllowedStart = utcNow.AddDays(-1);
+        foreach (var slot in f.VisitSlots)
+        {
+            if (slot.EndDatetime <= slot.StartDatetime)
+                throw new BusinessRuleException(
+                    "Thời gian kết thúc phải sau thời gian bắt đầu.", VisitRequestErrorCodes.InvalidVisitTime);
+
+            if (slot.StartDatetime < earliestAllowedStart)
+                throw new BusinessRuleException(
+                    "Thời gian thăm không được ở quá khứ.", VisitRequestErrorCodes.InvalidVisitTime);
+        }
 
         var requestCode = GenerateRequestCode(utcNow);
 
         var supportJson  = JsonSerializer.Serialize(f.SupportTeam, _json);
         var contactJson  = JsonSerializer.Serialize(f.ContactPoint, _json);
-        var visitScope   = f.VisitScope == "MULTI_CAMPUS"
+        var visitScope   = f.VisitScope == VisitScopes.MultiCampus
             ? VisitScopes.MultiCampus
             : VisitScopes.SingleCampus;
 
@@ -61,7 +97,12 @@ public sealed class VisitRequestService : IVisitRequestService
             ExpectedGuestCount   = f.Visitors.Count,
             SupportTeamJson      = supportJson,
             ContactPersonJson    = contactJson,
-            WorkingLanguage      = f.Language == "VI" ? WorkingLanguages.Vietnamese : WorkingLanguages.English,
+            WorkingLanguage      = f.Language switch
+            {
+                WorkingLanguages.Vietnamese => WorkingLanguages.Vietnamese,
+                WorkingLanguages.Other      => WorkingLanguages.Other,
+                _                           => WorkingLanguages.English
+            },
             TransportationNote   = f.Vehicle,
             NoteToFptu           = f.Notes,
             Status               = VisitRequestStatuses.PendingApproval, // overwritten by routing service
@@ -72,24 +113,32 @@ public sealed class VisitRequestService : IVisitRequestService
         };
 
         // ── Campus instances (added via navigation so EF sets the FK after insert) ──
+        // UC-17 leaves host assignment NULL and status WAITING_REQUEST_APPROVAL; host is
+        // assigned only after the request is approved (approval flow, not here).
         var idx = 0;
         foreach (var slot in f.VisitSlots)
         {
-            if (!campusIdMap.TryGetValue(slot.CampusId, out var campusId))
-                throw new InvalidOperationException($"Unknown campus code '{slot.CampusId}'.");
+            var code = slot.CampusId?.Trim() ?? string.Empty;
+            if (!campusByCode.TryGetValue(code, out var campus))
+                throw new BusinessRuleException(
+                    $"Cơ sở '{code}' không tồn tại.", VisitRequestErrorCodes.CampusNotFound);
 
             idx++;
             visitRequest.CampusInstances.Add(new VisitRequestCampus
             {
                 // VisitInstanceId / VisitRequestId are DB-generated / set via navigation.
-                CampusId         = campusId,
-                InstanceCode     = $"{requestCode}-C{idx:D2}",
-                PlannedStartAt   = slot.StartDatetime,
-                PlannedEndAt     = slot.EndDatetime,
-                Status           = "WAITING_REQUEST_APPROVAL",
-                RowVersion       = 0,
-                CreatedAt        = utcNow,
-                CreatedBy        = visitorUserId
+                CampusId             = campus.CampusId,
+                InstanceCode         = $"{requestCode}-C{idx:D2}",
+                PlannedStartAt       = slot.StartDatetime,
+                PlannedEndAt         = slot.EndDatetime,
+                Status               = VisitInstanceStatuses.WaitingRequestApproval,
+                CurrentHostUserId    = null,
+                HostAssignedBy       = null,
+                HostAssignedAt       = null,
+                HostAssignmentSource = null,
+                RowVersion           = 0,
+                CreatedAt            = utcNow,
+                CreatedBy            = visitorUserId
             });
         }
 

@@ -38,7 +38,6 @@ function mapToPayload(data: VisitRequestSchema) {
 
     visitors: data.visitors.map((v) => ({
       fullName: v.fullName,
-      passportId: v.passportId,
       email: v.email,
       nationality: v.nationality,
       jobTitle: v.jobTitle || null,

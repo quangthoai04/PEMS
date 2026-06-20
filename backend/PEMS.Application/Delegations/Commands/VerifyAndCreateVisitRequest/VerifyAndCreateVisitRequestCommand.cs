@@ -40,4 +40,4 @@ public sealed record VerifyAndCreateVisitRequestCommand(
 
     // ── Verification ───────────────────────────────────────
     string OtpCode
-) : IRequest<VerifyAndCreateVisitRequestResponse>;
+) : IRequest<VerifyAndCreateVisitRequestResponse>, IVisitRequestFormCommand;

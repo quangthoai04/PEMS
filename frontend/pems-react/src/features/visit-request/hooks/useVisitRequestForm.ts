@@ -9,7 +9,6 @@ const DEFAULT_VISITOR = {
   jobTitle: '',
   organization: '',
   nationality: '',
-  passportId: '',
   email: '',
 };
 

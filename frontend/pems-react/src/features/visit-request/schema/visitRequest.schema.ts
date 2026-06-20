@@ -28,7 +28,6 @@ const visitorSchema = z.object({
   jobTitle: z.string().optional().default(''),
   organization: z.string().optional().default(''),
   nationality: z.string().min(1, 'Quốc tịch không được để trống'),
-  passportId: z.string().min(1, 'Số hộ chiếu/CMND không được để trống'),
   email: emailSchema,
 });
 
@@ -104,6 +103,36 @@ export const visitRequestSchema = z.object({
   language: z.enum(['english', 'vietnamese'], 'Vui lòng chọn ngôn ngữ sử dụng'),
   vehicle: z.string().optional().default(''),
   notes: z.string().optional().default(''),
+}).superRefine((data, ctx) => {
+  // Campus count must match the chosen scope. MULTI_CAMPUS never auto-downgrades —
+  // it stays "Liên cơ sở" and the user is told to add a second campus.
+  const codes = data.visits.map((v) => v.campus?.trim()).filter(Boolean);
+  const distinct = new Set(codes);
+
+  if (data.visitMode === 'multiple' && distinct.size < 2) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['visits'],
+      message:
+        'Yêu cầu liên cơ sở cần ít nhất 2 cơ sở. Vui lòng thêm cơ sở thứ hai hoặc đổi sang Một cơ sở.',
+    });
+  }
+
+  if (data.visitMode === 'single' && distinct.size !== 1) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['visits'],
+      message: 'Yêu cầu một cơ sở chỉ được chọn đúng 1 cơ sở.',
+    });
+  }
+
+  if (codes.length !== distinct.size) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['visits'],
+      message: 'Không được chọn trùng cơ sở.',
+    });
+  }
 });
 
 export type VisitRequestSchema = z.infer<typeof visitRequestSchema>;

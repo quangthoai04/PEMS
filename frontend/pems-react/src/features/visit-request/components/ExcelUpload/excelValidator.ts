@@ -34,8 +34,8 @@ const mapHeaders = (headerRow: string[], names: string[]): Record<string, number
 
 // ─── Visitor list ────────────────────────────────────────────────────────────
 
-const VISITOR_REQUIRED = ['Họ và tên', 'Số HC/CMND', 'Email', 'Quốc tịch'];
-const VISITOR_ALL = ['Họ và tên', 'Số HC/CMND', 'Email', 'Quốc tịch', 'Chức vụ'];
+const VISITOR_REQUIRED = ['Họ và tên', 'Email', 'Quốc tịch'];
+const VISITOR_ALL = ['Họ và tên', 'Email', 'Quốc tịch', 'Chức vụ'];
 
 export const validateVisitorExcel = async (file: File): Promise<ExcelValidationResult> => {
   const rows = await readFirstSheet(file);
@@ -94,7 +94,6 @@ export const validateVisitorExcel = async (file: File): Promise<ExcelValidationR
     if (!errorRows.has(rowNum)) {
       data.push({
         fullName: get(row, 'Họ và tên'),
-        passportId: get(row, 'Số HC/CMND'),
         email: get(row, 'Email'),
         nationality: get(row, 'Quốc tịch'),
         jobTitle: get(row, 'Chức vụ'),

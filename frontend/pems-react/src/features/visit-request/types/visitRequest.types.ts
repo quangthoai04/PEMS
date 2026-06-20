@@ -3,7 +3,6 @@ export interface VisitorEntry {
   jobTitle: string;
   organization: string;
   nationality: string;
-  passportId: string;
   email: string;
 }
 

@@ -11,9 +11,9 @@ const makeSheet = (rows: (string | number)[][], colWidths: number[]): XLSX.WorkS
 };
 
 export const downloadVisitorTemplate = () => {
-  const header = ['STT', 'Họ và tên', 'Số HC/CMND', 'Email', 'Quốc tịch', 'Chức vụ'];
-  const sample = [1, 'Nguyễn Văn A', 'P123456789', 'nguyenvana@example.com', 'Vietnam', 'Giám đốc'];
-  const ws = makeSheet([header, sample], [6, 28, 18, 30, 18, 20]);
+  const header = ['STT', 'Họ và tên', 'Email', 'Quốc tịch', 'Chức vụ'];
+  const sample = [1, 'Nguyễn Văn A', 'nguyenvana@example.com', 'Vietnam', 'Giám đốc'];
+  const ws = makeSheet([header, sample], [6, 28, 30, 18, 20]);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Danh sách khách');
   saveWorkbook(wb, 'mau_danh_sach_khach.xlsx');

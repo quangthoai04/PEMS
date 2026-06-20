@@ -41,6 +41,7 @@ export const RegisterInfoSection: React.FC<Props> = ({ form }) => {
           required
           error={e?.nationality?.message}
           isValid={isValid('nationality')}
+          showValidIcon={false}
         >
           <Controller
             name="registerInfo.nationality"
@@ -61,6 +62,7 @@ export const RegisterInfoSection: React.FC<Props> = ({ form }) => {
           required
           error={e?.organization?.message}
           isValid={isValid('organization')}
+          showValidIcon={false}
         >
           <Controller
             name="registerInfo.organization"
@@ -114,6 +116,7 @@ export const RegisterInfoSection: React.FC<Props> = ({ form }) => {
           required
           error={e?.email?.message}
           isValid={isValid('email')}
+          subtitle="Email này chỉ dùng để nhận mã OTP xác thực việc gửi form. Tài khoản theo dõi yêu cầu sẽ được tạo theo email ở phần Thông tin đầu mối liên hệ."
         >
           <input
             {...register('registerInfo.email')}

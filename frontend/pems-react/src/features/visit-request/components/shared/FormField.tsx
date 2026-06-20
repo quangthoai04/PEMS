@@ -7,6 +7,12 @@ interface FormFieldProps {
   error?: string;
   isValid?: boolean;
   subtitle?: string;
+  /**
+   * Whether to render the green "valid" check inside the field.
+   * Pass false for Select/Combobox/DateTime wrappers that already render their
+   * own chevron/clear indicators — otherwise the icons overlap on the right edge.
+   */
+  showValidIcon?: boolean;
   children: React.ReactNode;
   className?: string;
 }
@@ -17,6 +23,7 @@ export const FormField: React.FC<FormFieldProps> = ({
   error,
   isValid,
   subtitle,
+  showValidIcon = true,
   children,
   className = '',
 }) => (
@@ -29,7 +36,7 @@ export const FormField: React.FC<FormFieldProps> = ({
     </div>
     <div className="relative">
       {children}
-      {isValid && !error && (
+      {showValidIcon && isValid && !error && (
         <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none z-10">
           <CheckCircle2 className="w-5 h-5 text-green-500" />
         </div>

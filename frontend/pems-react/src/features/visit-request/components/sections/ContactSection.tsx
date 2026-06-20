@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Controller, type UseFormReturn, type UseFieldArrayReturn } from 'react-hook-form';
 import { Plus, Trash2, Download, Upload, CheckCircle2, AlertCircle, X, FileSpreadsheet } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -41,6 +41,21 @@ export const ContactSection: React.FC<Props> = ({
   const [uploadResult, setUploadResult] = useState<SupportTeamExcelValidationResult | null>(null);
   const [uploadFileName, setUploadFileName] = useState('');
   const [addedCount, setAddedCount] = useState(0);
+
+  // Keep the contact point in sync with the registrant while "Tôi cũng là đầu mối liên hệ"
+  // is ticked, so editing the registrant afterwards still updates the contact — and therefore
+  // the VISITOR account, which is always created/linked from the contact email.
+  const registrant = form.watch('registerInfo');
+  useEffect(() => {
+    if (isContactSameAsRegister) onSyncContactFromRegister();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    isContactSameAsRegister,
+    registrant.fullName,
+    registrant.organization,
+    registrant.phone,
+    registrant.email,
+  ]);
 
   const handleSupportCheckbox = (checked: boolean) => {
     setIsSupportSameAsRegister(checked);
@@ -287,8 +302,19 @@ export const ContactSection: React.FC<Props> = ({
               onChange={(e) => handleContactCheckbox(e.target.checked)}
               className="w-4 h-4 rounded text-[#004c91] focus:ring-[#004c91] border-blue-300 cursor-pointer"
             />
-            Tôi là đầu mối liên hệ
+            Tôi cũng là đầu mối liên hệ
           </label>
+        </div>
+
+        <p className="text-xs text-slate-500 mb-2 -mt-1">
+          Khi chọn “Tôi cũng là đầu mối liên hệ”, hệ thống sẽ tự điền Thông tin đầu mối liên hệ từ Thông tin người đăng ký form.
+        </p>
+
+        <div className="mb-3 rounded-lg bg-blue-50/60 border border-blue-100 px-3 py-2">
+          <p className="text-xs text-[#004c91] leading-5">
+            Thông tin đầu mối liên hệ sẽ được FPTU sử dụng để trao đổi về yêu cầu tham quan. Email đầu mối liên hệ
+            cũng là email dùng để tạo tài khoản VISITOR và đăng nhập Google lần sau để theo dõi yêu cầu.
+          </p>
         </div>
 
         <div className="bg-white border border-gray-200 rounded-xl overflow-x-auto shadow-sm">
@@ -365,6 +391,11 @@ export const ContactSection: React.FC<Props> = ({
             </tbody>
           </table>
         </div>
+
+        <p className="mt-2 text-xs text-slate-500 leading-5">
+          Email đầu mối liên hệ sẽ được dùng để tạo tài khoản VISITOR. Lần sau, đầu mối liên hệ có thể đăng nhập
+          bằng Google với email này để theo dõi yêu cầu đã gửi.
+        </p>
       </div>
     </div>
   );

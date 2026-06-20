@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using PEMS.Domain.Entities.AgendaTemplates;
 using PEMS.Domain.Entities.ApiIntegrations;
 using PEMS.Domain.Entities.Calendar;
@@ -93,6 +94,9 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     public DbSet<ApiConfiguration> ApiConfigurations { get; set; }
     public DbSet<ApiUsageQuota> ApiUsageQuotas { get; set; }
     public DbSet<ApiRequestLog> ApiRequestLogs { get; set; }
+
+    public Task<IDbContextTransaction> BeginTransactionAsync(CancellationToken cancellationToken = default)
+        => Database.BeginTransactionAsync(cancellationToken);
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

@@ -2,17 +2,18 @@ using FluentValidation;
 
 namespace PEMS.Application.Delegations.Commands.VerifyAndCreateVisitRequest;
 
+/// <summary>
+/// Re-validates the FULL form server-side at the create boundary (the OTP step never
+/// trusts that the form was valid earlier) using the shared rule set, plus the OTP code.
+/// Campus existence/ACTIVE, planned-time-not-in-past and duplicate checks are business
+/// validation handled in the handler/service (they need the database).
+/// </summary>
 public sealed class VerifyAndCreateVisitRequestCommandValidator
     : AbstractValidator<VerifyAndCreateVisitRequestCommand>
 {
     public VerifyAndCreateVisitRequestCommandValidator()
     {
-        RuleFor(x => x.RegisterEmail)
-            .NotEmpty().WithMessage("Email đăng ký không được để trống.")
-            .EmailAddress().WithMessage("Email đăng ký không hợp lệ.");
-
-        RuleFor(x => x.RegisterFullName)
-            .NotEmpty().WithMessage("Họ và tên người đăng ký không được để trống.");
+        this.ApplyVisitRequestFormRules();
 
         RuleFor(x => x.OtpCode)
             .NotEmpty().WithMessage("Mã OTP không được để trống.")

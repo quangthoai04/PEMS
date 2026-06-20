@@ -11,9 +11,10 @@ public record VisitSlotDto(
     DateTime StartDatetime,
     DateTime EndDatetime);
 
+// Guest member fields mirror visit_guest_members in pems_full(3).sql — there is no
+// passport/identity column, so none is collected or sent.
 public record VisitorDto(
     string FullName,
-    string PassportId,
     string Email,
     string Nationality,
     string? JobTitle,

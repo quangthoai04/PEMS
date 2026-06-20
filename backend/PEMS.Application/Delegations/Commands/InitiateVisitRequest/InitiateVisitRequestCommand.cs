@@ -4,9 +4,9 @@ using PEMS.Application.Common.DTOs;
 namespace PEMS.Application.Delegations.Commands.InitiateVisitRequest;
 
 /// <summary>
-/// Step 1 of UC-17: stores the form data, generates a 6-digit OTP and sends it
-/// to the registrant's email. Returns a <c>SessionToken</c> (PendingId) the
-/// frontend must supply at the verify step.
+/// Step 1 of UC-17: validates the form, generates a 6-digit OTP and emails it to the
+/// registrant. Nothing is persisted except the OTP (otp_tokens) — the form draft stays
+/// on the frontend (sessionStorage) and is resubmitted at the verify step.
 /// </summary>
 public sealed record InitiateVisitRequestCommand(
     // ── Registration info ──────────────────────────────────
@@ -36,4 +36,4 @@ public sealed record InitiateVisitRequestCommand(
     string Language,
     string? Vehicle,
     string? Notes
-) : IRequest<InitiateVisitRequestResponse>;
+) : IRequest<InitiateVisitRequestResponse>, IVisitRequestFormCommand;

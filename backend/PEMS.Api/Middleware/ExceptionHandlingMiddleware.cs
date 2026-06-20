@@ -82,12 +82,12 @@ public sealed class ExceptionHandlingMiddleware
 
             case ConflictException conflict:
                 status = StatusCodes.Status409Conflict;
-                payload = new { success = false, message = conflict.Message, traceId };
+                payload = new { success = false, errorCode = conflict.ErrorCode, message = conflict.Message, traceId };
                 break;
 
             case BusinessRuleException business:
                 status = StatusCodes.Status422UnprocessableEntity;
-                payload = new { success = false, message = business.Message, traceId };
+                payload = new { success = false, errorCode = business.ErrorCode, message = business.Message, traceId };
                 break;
 
             default:

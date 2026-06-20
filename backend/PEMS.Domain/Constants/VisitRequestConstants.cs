@@ -23,3 +23,26 @@ public static class WorkingLanguages
     public const string English    = "EN";
     public const string Other      = "OTHER";
 }
+
+// Campus instance progress status (SQL v8.3 visit_request_campuses.status).
+public static class VisitInstanceStatuses
+{
+    public const string WaitingRequestApproval = "WAITING_REQUEST_APPROVAL";
+    public const string Assigned               = "ASSIGNED";
+    public const string BeforeVisit            = "BEFORE_VISIT";
+    public const string DuringVisit            = "DURING_VISIT";
+    public const string AfterVisit             = "AFTER_VISIT";
+    public const string Closed                 = "CLOSED";
+    public const string Cancelled              = "CANCELLED";
+}
+
+// Machine-readable error codes for the UC-17 public visit-request flow.
+// Surfaced to the client as response.errorCode (see ExceptionHandlingMiddleware).
+public static class VisitRequestErrorCodes
+{
+    public const string DuplicateVisitRequest = "DUPLICATE_VISIT_REQUEST";
+    public const string CampusNotFound        = "CAMPUS_NOT_FOUND";
+    public const string CampusInactive        = "CAMPUS_INACTIVE";
+    public const string InvalidVisitScope     = "INVALID_VISIT_SCOPE";
+    public const string InvalidVisitTime      = "INVALID_VISIT_TIME";
+}

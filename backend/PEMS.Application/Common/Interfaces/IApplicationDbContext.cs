@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using PEMS.Domain.Entities.AgendaTemplates;
 using PEMS.Domain.Entities.ApiIntegrations;
 using PEMS.Domain.Entities.Calendar;
@@ -64,4 +65,10 @@ public interface IApplicationDbContext
     DbSet<VisitStatusLog> VisitStatusLogs { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Begins an explicit database transaction so a multi-step write (e.g. UC-17 submit:
+    /// consume OTP → provision visitor → insert request + campuses + guests) commits atomically.
+    /// </summary>
+    Task<IDbContextTransaction> BeginTransactionAsync(CancellationToken cancellationToken = default);
 }

@@ -23,6 +23,8 @@ export const VisitInfoSection: React.FC<Props> = ({ form, visitFields }) => {
   const { register, control, watch, formState: { errors, touchedFields } } = form;
   const visitMode = watch('visitMode');
   const e = errors;
+  // Array-level error from the schema (scope ↔ campus count, no duplicate campus).
+  const visitsMessage = (e.visits as { message?: string } | undefined)?.message;
 
   return (
     <section>
@@ -87,7 +89,7 @@ export const VisitInfoSection: React.FC<Props> = ({ form, visitFields }) => {
                     return (
                       <div
                         key={field.id}
-                        className="flex flex-col xl:flex-row items-end gap-3 w-full pb-4 border-b border-gray-100 last:border-b-0 last:pb-0 relative"
+                        className="flex flex-col xl:flex-row items-start gap-3 w-full pb-4 border-b border-gray-100 last:border-b-0 last:pb-0 relative"
                       >
                         {visitMode === 'multiple' && visitFields.fields.length > 1 && (
                           <button
@@ -115,6 +117,12 @@ export const VisitInfoSection: React.FC<Props> = ({ form, visitFields }) => {
                             </select>
                             <ChevronDown className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
                           </div>
+                          {/* Reserved error slot keeps every column the same height → no row shift */}
+                          <div className="min-h-[20px] mt-1">
+                            {slotErrors?.campus && (
+                              <p className="text-xs text-red-600 font-medium leading-5">⚠ {slotErrors.campus.message}</p>
+                            )}
+                          </div>
                         </div>
 
                         {/* Start */}
@@ -135,9 +143,11 @@ export const VisitInfoSection: React.FC<Props> = ({ form, visitFields }) => {
                             />
                             <Calendar className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#004c91] pointer-events-none" />
                           </div>
-                          {slotErrors?.startDatetime && (
-                            <p className="mt-1 text-xs text-red-600 font-medium">⚠ {slotErrors.startDatetime.message}</p>
-                          )}
+                          <div className="min-h-[20px] mt-1">
+                            {slotErrors?.startDatetime && (
+                              <p className="text-xs text-red-600 font-medium leading-5">⚠ {slotErrors.startDatetime.message}</p>
+                            )}
+                          </div>
                         </div>
 
                         {/* End */}
@@ -158,20 +168,34 @@ export const VisitInfoSection: React.FC<Props> = ({ form, visitFields }) => {
                             />
                             <Clock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#004c91] pointer-events-none" />
                           </div>
-                          {slotErrors?.endDatetime && (
-                            <p className="mt-1 text-xs text-red-600 font-medium">⚠ {slotErrors.endDatetime.message}</p>
-                          )}
+                          <div className="min-h-[20px] mt-1">
+                            {slotErrors?.endDatetime && (
+                              <p className="text-xs text-red-600 font-medium leading-5">⚠ {slotErrors.endDatetime.message}</p>
+                            )}
+                          </div>
                         </div>
 
-                        {/* Timezone badge */}
-                        <div className="flex-[0.8] w-full xl:w-auto flex items-center justify-center h-[44px] px-3 bg-gray-50 rounded-xl border border-gray-200 select-none">
-                          <span className="text-[#004c91] text-sm font-bold whitespace-nowrap">VN (GMT+7)</span>
+                        {/* Timezone badge — labelled on the first row so it aligns with the inputs */}
+                        <div className="flex-[0.8] w-full xl:w-auto">
+                          {index === 0 && (
+                            <label className="block text-xs font-bold text-gray-600 mb-1 uppercase tracking-wider">Múi giờ</label>
+                          )}
+                          <div className="flex items-center justify-center h-[42px] px-3 bg-gray-50 rounded-xl border border-gray-200 select-none">
+                            <span className="text-[#004c91] text-sm font-bold whitespace-nowrap">VN (GMT+7)</span>
+                          </div>
+                          <div className="min-h-[20px] mt-1" />
                         </div>
                       </div>
                     );
                   })}
                 </div>
               </FormField>
+
+              {visitsMessage && (
+                <p className="mt-3 text-xs text-red-600 font-medium flex items-center gap-1">
+                  <span className="shrink-0">⚠</span>{visitsMessage}
+                </p>
+              )}
 
               {visitMode === 'multiple' && (
                 <button

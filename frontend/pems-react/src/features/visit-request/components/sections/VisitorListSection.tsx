@@ -98,12 +98,11 @@ export const VisitorListSection: React.FC<Props> = ({ form, visitorFields }) => 
         </label>
 
         <div className="bg-white border border-gray-200 rounded-xl overflow-x-auto shadow-sm">
-          <table className="w-full min-w-[860px] border-collapse text-sm">
+          <table className="w-full min-w-[680px] border-collapse text-sm">
             <thead className="bg-slate-50 border-b border-gray-200">
               <tr>
                 <th className="p-3 text-center font-bold text-slate-700 w-12">STT</th>
                 <th className="p-3 text-left font-bold text-slate-700 border-l border-gray-200">Họ và tên *</th>
-                <th className="p-3 text-left font-bold text-slate-700 border-l border-gray-200">Số HC/CMND *</th>
                 <th className="p-3 text-left font-bold text-slate-700 border-l border-gray-200">Email *</th>
                 <th className="p-3 text-left font-bold text-slate-700 border-l border-gray-200">Quốc tịch *</th>
                 <th className="p-3 text-left font-bold text-slate-700 border-l border-gray-200">Chức vụ</th>
@@ -114,7 +113,7 @@ export const VisitorListSection: React.FC<Props> = ({ form, visitorFields }) => 
               <AnimatePresence>
                 {visitorFields.fields.map((field, i) => {
                   const fe = visitorErrors?.[i];
-                  const rowHasError = !!(fe?.fullName || fe?.passportId || fe?.email || fe?.nationality);
+                  const rowHasError = !!(fe?.fullName || fe?.email || fe?.nationality);
                   return (
                     <motion.tr
                       key={field.id}
@@ -135,15 +134,6 @@ export const VisitorListSection: React.FC<Props> = ({ form, visitorFields }) => 
                           className={cellInputCls(!!fe?.fullName)}
                         />
                         {fe?.fullName && <CellError msg={fe.fullName.message} />}
-                      </td>
-
-                      <td className="p-0 border-l border-gray-100">
-                        <input
-                          {...register(`visitors.${i}.passportId`)}
-                          placeholder="HC / CMND..."
-                          className={cellInputCls(!!fe?.passportId)}
-                        />
-                        {fe?.passportId && <CellError msg={fe.passportId.message} />}
                       </td>
 
                       <td className="p-0 border-l border-gray-100">
@@ -207,7 +197,7 @@ export const VisitorListSection: React.FC<Props> = ({ form, visitorFields }) => 
           <button
             type="button"
             onClick={() =>
-              visitorFields.append({ fullName: '', jobTitle: '', organization: '', nationality: '', passportId: '', email: '' })
+              visitorFields.append({ fullName: '', jobTitle: '', organization: '', nationality: '', email: '' })
             }
             className="inline-flex items-center gap-2 px-4 py-2 bg-[#f37021]/10 text-[#f37021] text-sm font-bold rounded-xl hover:bg-[#f37021]/20 transition-colors"
           >

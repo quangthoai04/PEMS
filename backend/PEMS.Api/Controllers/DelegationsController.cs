@@ -16,12 +16,10 @@ namespace PEMS.Api.Controllers
         private readonly IMediator _mediator;
         public DelegationsController(IMediator mediator) => _mediator = mediator;
 
-        [HttpPost("submitvisitrequest")]
-        public async Task<IActionResult> SubmitVisitRequest([FromBody] PEMS.Application.Delegations.Commands.SubmitVisitRequest.SubmitVisitRequestCommand command, CancellationToken cancellationToken)
-        {
-            var result = await _mediator.Send(command, cancellationToken);
-            return Ok(result);
-        }
+        // UC-17 Submit Visit Request is the public, OTP-verified flow in VisitRequestsController:
+        //   POST /api/visit-requests/initiate | /verify | /resend-otp
+        // The former DelegationsController.submitvisitrequest scaffold (NotImplementedException)
+        // was removed — it was unused and conflicted with the real UC-17.
 
         [HttpPost("approvecrosscampusrequest")]
         public async Task<IActionResult> ApproveCrossCampusRequest([FromBody] PEMS.Application.Delegations.Commands.ApproveCrossCampusRequest.ApproveCrossCampusRequestCommand command, CancellationToken cancellationToken)
