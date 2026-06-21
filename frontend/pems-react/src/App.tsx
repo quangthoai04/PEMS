@@ -151,6 +151,7 @@ export default function App() {
             <Route path="faq/:id" element={<FAQDetail />} />
             <Route path="visit" element={<VisitRequestManagement />} />
             <Route path="visit/invitations/:participantId" element={<VisitParticipantInvitationDetail />} />
+            <Route path="visit/department-tasks/:participantId" element={<VisitParticipantInvitationDetail />} />
             <Route path="visit/create" element={<CreateVisitRequest />} />
             <Route path="visit/agenda-templates" element={<AgendaTemplateManagement />} />
             <Route path="visit/process/:id" element={<VisitProcess />} />

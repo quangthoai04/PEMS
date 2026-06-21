@@ -200,10 +200,10 @@ export interface CancelVisitRequestResult {
 }
 
 /** Invitation status as returned by GET /delegations/my-invitations (UC-27). */
-export type InvitationStatus = 'INVITED' | 'ACCEPTED' | 'DECLINED';
+export type InvitationStatus = 'INVITED' | 'ACCEPTED' | 'DECLINED' | 'ASSIGNED';
 
 /** Actions on the invitation-detail screen (NOT on the "Đơn mời tham dự" tab). */
-export type InvitationAction = 'VIEW_DETAIL' | 'ACCEPT_INVITATION' | 'DECLINE_INVITATION';
+export type InvitationAction = 'VIEW_DETAIL' | 'ACCEPT_INVITATION' | 'DECLINE_INVITATION' | 'ASSIGN_TO_DEPARTMENT_STAFF';
 
 /** One visit-participation invitation addressed to the signed-in user (UC-27). */
 export interface VisitInvitation {
@@ -225,6 +225,10 @@ export interface VisitInvitation {
   invitedByName: string | null;
   invitedAt: string | null;
   respondedAt: string | null;
+  assignedByName?: string | null;
+  assignedAt?: string | null;
+  visitRequestStatus?: string;
+  campusVisitStatus?: string;
   note: string | null;
   allowedActions: InvitationAction[];
 }

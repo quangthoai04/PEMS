@@ -56,6 +56,7 @@ export const API_ENDPOINTS = {
   },
   visitInvitations: {
     my: '/visit-invitations/my',
+    detail: (participantId: string | number) => `/visit-invitations/${participantId}`,
     accept: (participantId: string | number) => `/visit-invitations/${participantId}/accept`,
     decline: (participantId: string | number) => `/visit-invitations/${participantId}/decline`,
     assignDepartmentStaff: (participantId: string | number) => `/visit-invitations/${participantId}/assign-department-staff`,

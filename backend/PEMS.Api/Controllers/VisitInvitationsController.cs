@@ -30,6 +30,15 @@ public class VisitInvitationsController : ControllerBase
         return Ok(result);
     }
 
+    [HttpGet("{participantId}")]
+    public async Task<IActionResult> GetInvitationDetail(
+        ulong participantId, 
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new Application.Delegations.Queries.GetVisitInvitationDetail.GetVisitInvitationDetailQuery(participantId), cancellationToken);
+        return Ok(result);
+    }
+
     [HttpPost("{participantId}/accept")]
     public async Task<IActionResult> AcceptInvitation(ulong participantId, CancellationToken cancellationToken)
     {

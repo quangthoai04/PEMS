@@ -121,6 +121,10 @@ export const delegationsApi = {
       const { data } = await httpClient.get<any>(API_ENDPOINTS.visitInvitations.my, { params });
       return data;
     },
+    async getInvitationDetail(participantId: string | number): Promise<any> {
+      const { data } = await httpClient.get<any>(API_ENDPOINTS.visitInvitations.detail(participantId));
+      return data;
+    },
     async acceptInvitation(participantId: string | number): Promise<any> {
       const { data } = await httpClient.post<any>(API_ENDPOINTS.visitInvitations.accept(participantId));
       return data;

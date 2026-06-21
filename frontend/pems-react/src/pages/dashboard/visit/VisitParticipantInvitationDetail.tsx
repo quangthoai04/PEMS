@@ -19,6 +19,7 @@ import {
   PARTICIPANT_ROLE_LABELS,
   type VisitInvitation,
 } from '../../../features/delegations/types/delegations.types';
+import { useAuthContext } from '../../../shared/auth/AuthContext';
 
 const formatDateTime = (value?: string | null) => {
   if (!value) return '-';
@@ -34,6 +35,13 @@ export function VisitParticipantInvitationDetail() {
   const [invitation, setInvitation] = useState<VisitInvitation | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+
+  const { user } = useAuthContext();
+  const roleCode = (user?.roleCode || '').toUpperCase();
+  const subRole = (user?.subRole || '').toUpperCase();
+  const isDept = roleCode === 'DEPARTMENT' || roleCode === 'DEPT';
+  const isDeptLeader = isDept && subRole === 'LEADER';
+  const isDeptStaff = isDept && subRole === 'STAFF';
 
   const [submitting, setSubmitting] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -104,7 +112,23 @@ export function VisitParticipantInvitationDetail() {
     const base = 'inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-bold border';
     if (status === 'ACCEPTED') return <span className={`${base} bg-green-50 text-green-700 border-green-200`}><CheckCircle2 className="w-4 h-4" /> Đã tham gia</span>;
     if (status === 'DECLINED') return <span className={`${base} bg-red-50 text-red-700 border-red-200`}><XCircle className="w-4 h-4" /> Đã từ chối</span>;
+    if (status === 'ASSIGNED') return <span className={`${base} bg-blue-50 text-blue-700 border-blue-200`}><User className="w-4 h-4" /> Mới được giao</span>;
     return <span className={`${base} bg-orange-50 text-orange-700 border-orange-200`}><Clock className="w-4 h-4" /> Chờ phản hồi</span>;
+  };
+
+  const getSecondaryStatus = (req?: string, camp?: string) => {
+    if (camp === 'CANCELLED' || req === 'CANCELLED') return 'Đã hủy';
+    if (req === 'REJECTED') return 'Từ chối';
+    if (req === 'PENDING_APPROVAL') return 'Chờ duyệt';
+    if (req === 'APPROVED') {
+      if (camp === 'ASSIGNED') return 'Đã phân công Host';
+      if (camp === 'BEFORE_VISIT') return 'Trước tiếp khách';
+      if (camp === 'DURING_VISIT') return 'Trong tiếp khách';
+      if (camp === 'AFTER_VISIT') return 'Chờ đóng đoàn';
+      if (camp === 'CLOSED') return 'Đã đóng đoàn';
+      return 'Đã duyệt';
+    }
+    return req || '-';
   };
 
   return (
@@ -115,14 +139,14 @@ export function VisitParticipantInvitationDetail() {
         <span className="mx-2">/</span>
         <button onClick={() => navigate('/dashboard/visit')} className="hover:text-[#004c91] transition-colors outline-none">Quản lý tiếp khách</button>
         <span className="mx-2">/</span>
-        <span className="text-[#004c91] font-bold">Lời mời tham gia</span>
+        <span className="text-[#004c91] font-bold">{isDeptStaff ? 'Nhiệm vụ được giao' : 'Lời mời tham dự'}</span>
       </div>
 
       <div className="mb-6 flex items-center gap-4">
         <button onClick={() => navigate(-1)} className="flex items-center justify-center p-2.5 rounded-xl border border-slate-200 bg-white shadow-sm hover:border-[#004c91] hover:text-[#004c91] hover:bg-blue-50 transition-all outline-none">
           <ChevronLeft className="w-5 h-5" />
         </button>
-        <h1 className="text-2xl sm:text-3xl font-bold text-[#004c91]">Lời mời tham gia tiếp khách</h1>
+        <h1 className="text-2xl sm:text-3xl font-bold text-[#004c91]">{isDeptStaff ? 'Chi tiết nhiệm vụ được giao' : 'Lời mời tham dự tiếp khách'}</h1>
       </div>
 
       {isLoading ? (
@@ -141,13 +165,27 @@ export function VisitParticipantInvitationDetail() {
                 <p className="text-sm text-blue-100 truncate">{invitation.organizationName || '-'}</p>
               </div>
             </div>
-            {statusBadge(invitation.status)}
+            <div className="flex flex-col items-end gap-2">
+              {statusBadge(invitation.status)}
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-white/20 text-white border border-white/30">
+                {getSecondaryStatus(invitation.visitRequestStatus, invitation.campusVisitStatus)}
+              </span>
+            </div>
           </div>
 
           <div className="p-6 space-y-5">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Field icon={<User className="w-4 h-4" />} label="Người mời" value={invitation.invitedByName || '-'} />
-              <Field icon={<Clock className="w-4 h-4" />} label="Thời gian mời" value={formatDateTime(invitation.invitedAt)} />
+              {isDeptStaff ? (
+                 <>
+                   <Field icon={<User className="w-4 h-4" />} label="Người giao" value={invitation.assignedByName || '-'} />
+                   <Field icon={<Clock className="w-4 h-4" />} label="Thời gian giao" value={formatDateTime(invitation.assignedAt)} />
+                 </>
+              ) : (
+                 <>
+                   <Field icon={<User className="w-4 h-4" />} label="Người mời" value={invitation.invitedByName || '-'} />
+                   <Field icon={<Clock className="w-4 h-4" />} label="Thời gian mời" value={formatDateTime(invitation.invitedAt)} />
+                 </>
+              )}
               <Field icon={<Users className="w-4 h-4" />} label="Vai trò tham gia" value={PARTICIPANT_ROLE_LABELS[invitation.participantRole] ?? invitation.participantRole} />
               <Field icon={<MapPin className="w-4 h-4" />} label="Cơ sở" value={invitation.campusName || '-'} />
               <Field icon={<Calendar className="w-4 h-4" />} label="Bắt đầu" value={formatDateTime(invitation.plannedStartAt)} />
@@ -188,9 +226,30 @@ export function VisitParticipantInvitationDetail() {
                 {submitting ? 'Đang xử lý...' : 'Xác nhận tham gia'}
               </button>
             </div>
+          ) : invitation.allowedActions.includes('ASSIGN_TO_DEPARTMENT_STAFF') ? (
+            <div className="flex gap-3 px-6 py-5 border-t border-slate-100 bg-slate-50/60">
+              <button type="button" disabled={submitting} onClick={async () => {
+                 const staffIdStr = window.prompt('Nhập ID của Department Staff để giao việc:');
+                 if (!staffIdStr) return;
+                 const note = window.prompt('Nhập ghi chú/nhiệm vụ:');
+                 setSubmitting(true);
+                 try {
+                   await delegationsApi.visitInvitations.assignDepartmentStaff(participantId!, parseInt(staffIdStr, 10), note || '');
+                   alert('Giao việc thành công!');
+                   await fetchInvitation();
+                 } catch (e: any) {
+                   alert('Không thể giao việc: ' + (e?.response?.data?.message || e?.message));
+                 } finally {
+                   setSubmitting(false);
+                 }
+              }}
+                className="flex-1 py-3 rounded-xl bg-[#004c91] text-white font-bold hover:bg-[#003b70] shadow-sm transition-colors outline-none disabled:opacity-50">
+                Giao xuống nhân sự phòng ban
+              </button>
+            </div>
           ) : invitation.status === 'ACCEPTED' ? (
             <div className="px-6 py-5 border-t border-slate-100 bg-green-50/60 text-center text-sm font-semibold text-green-700">
-              Bạn đã xác nhận tham gia{invitation.respondedAt ? ` lúc ${formatDateTime(invitation.respondedAt)}` : ''}. Đơn này nằm trong tab "Đơn mời tham dự".
+              Bạn đã xác nhận tham gia{invitation.respondedAt ? ` lúc ${formatDateTime(invitation.respondedAt)}` : ''}.
             </div>
           ) : invitation.status === 'DECLINED' ? (
             <div className="px-6 py-5 border-t border-slate-100 bg-red-50/60 text-center text-sm font-semibold text-red-600">

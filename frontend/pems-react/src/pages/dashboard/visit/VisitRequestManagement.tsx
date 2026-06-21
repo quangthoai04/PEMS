@@ -328,7 +328,12 @@ export function VisitRequestManagement() {
       return;
     }
     if (activeTab === 'attending') {
-      navigate(`/dashboard/visit/reception-detail/${idForRoute}`);
+      const partId = (row as any).participantId;
+      if (isDept && subRole === 'STAFF') {
+        navigate(`/dashboard/visit/department-tasks/${partId}`);
+      } else {
+        navigate(`/dashboard/visit/invitations/${partId}`);
+      }
       return;
     }
     if (isVisitor) {
