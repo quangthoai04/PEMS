@@ -840,14 +840,14 @@ export function VisitProcess() {
                       )}
                     </div>
                   )}
-                  {participants.isMeHost && currentUser && (
+                  {participants.isMeHost && user && (
                     <div className={`flex items-center gap-3 p-3 bg-gray-50 rounded-lg border border-gray-100 mt-2`}>
                       <div className="w-8 h-8 rounded-full bg-[#004c91] text-white flex items-center justify-center font-bold text-xs">
-                        {currentUser.name?.charAt(0) || 'M'}
+                        {user.fullName?.charAt(0) || 'M'}
                       </div>
                       <div>
-                        <div className="text-sm font-bold text-gray-900">{currentUser.name}</div>
-                        <div className="text-xs text-gray-500">{currentUser.email}</div>
+                        <div className="text-sm font-bold text-gray-900">{user.fullName}</div>
+                        <div className="text-xs text-gray-500">{user.email}</div>
                       </div>
                     </div>
                   )}
