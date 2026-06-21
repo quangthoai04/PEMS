@@ -88,6 +88,7 @@ export function getVisitRequestFilterConfig({
       showStatus: true,
       showScope: true,
       showRelation: false,
+      showCampus: true,
       statusLabel: 'Trạng thái',
       scopeLabel: 'Phạm vi',
       scopeOptions: [

@@ -36,18 +36,20 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { VisitDuringTab } from './VisitDuringTab';
 import { VisitAfterTab } from './VisitAfterTab';
+import { useAuthContext } from '../../../shared/auth/AuthContext';
 
 export function VisitProcess() {
   const navigate = useNavigate();
   const location = useLocation();
   const { id } = useParams();
 
-  const userStr = localStorage.getItem("currentUser");
-  const currentUser = userStr ? JSON.parse(userStr) : null;
-  const isHO = currentUser?.role?.toUpperCase() === 'HO';
-  const isDept = currentUser?.role?.toUpperCase() === 'DEPARTMENT' || currentUser?.role?.toUpperCase() === 'STUDENT' || currentUser?.role?.toUpperCase() === 'VISITOR';
-  const isStudent = currentUser?.role?.toUpperCase() === 'STUDENT';
-  const isVisitor = currentUser?.role?.toUpperCase() === 'VISITOR';
+  const { user } = useAuthContext();
+  const roleCode = (user?.roleCode || '').toUpperCase();
+  
+  const isHO = roleCode === 'HO';
+  const isDept = roleCode === 'DEPARTMENT' || roleCode === 'DEPT' || roleCode === 'STUDENT' || roleCode === 'VISITOR';
+  const isStudent = roleCode === 'STUDENT';
+  const isVisitor = roleCode === 'VISITOR';
 
   const [currentStatus, setCurrentStatus] = useState(() => {
     if (location.state?.status) return location.state.status;
@@ -117,7 +119,7 @@ export function VisitProcess() {
 
   const [participants, setParticipants] = useState({
     isMeHost: true,
-    host: currentUser || null,
+    host: user || null,
     supporters: [] as any[],
     otherDepts: [] as any[],
     students: [] as any[]

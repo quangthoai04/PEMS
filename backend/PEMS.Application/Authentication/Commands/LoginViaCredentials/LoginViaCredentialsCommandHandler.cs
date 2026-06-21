@@ -141,6 +141,17 @@ public sealed class LoginviaCredentialsCommandHandler : IRequestHandler<Loginvia
                     request, AuthErrorCodes.CampusRequired,
                     "Please select a campus to continue.", 400, cancellationToken);
 
+            var selectedCampus = await _db.Campuses.FirstOrDefaultAsync(c => c.CampusId == request.SelectedCampusId.Value, cancellationToken);
+            if (selectedCampus is null)
+                await FailAsync(user, email, portal, LoginLogStatuses.Failed, "campus_not_found",
+                    request, AuthErrorCodes.CampusNotFound,
+                    "The selected campus does not exist.", 404, cancellationToken);
+
+            if (selectedCampus.Status != "ACTIVE")
+                await FailAsync(user, email, portal, LoginLogStatuses.Failed, "campus_inactive",
+                    request, AuthErrorCodes.CampusInactive,
+                    "The selected campus is not currently active.", 403, cancellationToken);
+
             if (user.PrimaryCampusId is not null
                 && request.SelectedCampusId != user.PrimaryCampusId)
                 await FailAsync(user, email, portal, LoginLogStatuses.Failed, "campus_mismatch",

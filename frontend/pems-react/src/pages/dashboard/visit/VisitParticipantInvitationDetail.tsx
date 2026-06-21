@@ -110,7 +110,7 @@ export function VisitParticipantInvitationDetail() {
 
   const statusBadge = (status: string) => {
     const base = 'inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-bold border';
-    if (status === 'ACCEPTED') return <span className={`${base} bg-green-50 text-green-700 border-green-200`}><CheckCircle2 className="w-4 h-4" /> Đã tham gia</span>;
+    if (status === 'ACCEPTED') return <span className={`${base} bg-green-50 text-green-700 border-green-200`}><CheckCircle2 className="w-4 h-4" /> {isDeptStaff ? 'Đã nhận' : 'Đã nhận lời'}</span>;
     if (status === 'DECLINED') return <span className={`${base} bg-red-50 text-red-700 border-red-200`}><XCircle className="w-4 h-4" /> Đã từ chối</span>;
     if (status === 'ASSIGNED') return <span className={`${base} bg-blue-50 text-blue-700 border-blue-200`}><User className="w-4 h-4" /> Mới được giao</span>;
     return <span className={`${base} bg-orange-50 text-orange-700 border-orange-200`}><Clock className="w-4 h-4" /> Chờ phản hồi</span>;
@@ -249,7 +249,7 @@ export function VisitParticipantInvitationDetail() {
             </div>
           ) : invitation.status === 'ACCEPTED' ? (
             <div className="px-6 py-5 border-t border-slate-100 bg-green-50/60 text-center text-sm font-semibold text-green-700">
-              Bạn đã xác nhận tham gia{invitation.respondedAt ? ` lúc ${formatDateTime(invitation.respondedAt)}` : ''}.
+              {isDeptStaff ? 'Bạn đã nhận nhiệm vụ này' : 'Bạn đã xác nhận tham gia'}{invitation.respondedAt ? ` lúc ${formatDateTime(invitation.respondedAt)}` : ''}.
             </div>
           ) : invitation.status === 'DECLINED' ? (
             <div className="px-6 py-5 border-t border-slate-100 bg-red-50/60 text-center text-sm font-semibold text-red-600">

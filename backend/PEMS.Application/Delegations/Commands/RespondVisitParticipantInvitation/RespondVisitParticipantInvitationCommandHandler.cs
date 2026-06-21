@@ -50,7 +50,7 @@ public sealed class RespondVisitParticipantInvitationCommandHandler
             throw new ForbiddenException("Loại lời mời không hợp lệ.");
 
         // Must still be pending — already-responded invitations are immutable here.
-        if (participant.Status != ParticipantStatuses.Invited)
+        if (participant.Status != ParticipantStatuses.Invited && participant.Status != ParticipantStatuses.Assigned)
             throw new ConflictException("Lời mời đã được phản hồi hoặc không còn hiệu lực.");
 
         var now = _clock.UtcNow;

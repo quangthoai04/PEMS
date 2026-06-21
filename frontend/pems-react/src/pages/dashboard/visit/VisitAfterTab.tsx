@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
+import { useAuthContext } from '../../../shared/auth/AuthContext';
 
 // Default Delegation Members for tag dropdown and display
 const DEFAULT_GUESTS = [
@@ -53,9 +54,9 @@ interface VisitAfterTabProps {
 
 export function VisitAfterTab({ onTourCloseSuccess, isReadOnly = false, isDept = false }: VisitAfterTabProps) {
   const navigate = useNavigate();
-  const userStr = localStorage.getItem('currentUser');
-  const user = userStr ? JSON.parse(userStr) : null;
-  const isStudent = user?.role?.toUpperCase() === 'STUDENT' || user?.role?.toUpperCase() === 'VISITOR';
+  const { user } = useAuthContext();
+  const roleCode = (user?.roleCode || '').toUpperCase();
+  const isStudent = roleCode === 'STUDENT' || roleCode === 'VISITOR';
 
   // Part 1: Images state
   const [uploadedImages, setUploadedImages] = useState<Array<{

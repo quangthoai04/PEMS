@@ -28,11 +28,7 @@ namespace PEMS.Api.Controllers
         [AllowAnonymous]
         public async Task<IActionResult> GetActiveCampuses(CancellationToken cancellationToken)
         {
-            var campuses = await _db.Campuses
-                .Where(c => c.Status == "ACTIVE")
-                .OrderBy(c => c.CampusCode)
-                .Select(c => new { campusId = c.CampusId, campusCode = c.CampusCode, campusName = c.Name })
-                .ToListAsync(cancellationToken);
+            var campuses = await _mediator.Send(new PEMS.Application.Campuses.Queries.GetActiveCampuses.GetActiveCampusesQuery(), cancellationToken);
             return Ok(campuses);
         }
 

@@ -275,6 +275,7 @@ export type VisitFilterConfig = {
   showStatus: boolean;
   showScope: boolean;
   showRelation: boolean;
+  showCampus?: boolean;
   statusLabel?: string;
   scopeLabel?: string;
   relationLabel?: string;

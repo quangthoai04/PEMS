@@ -120,7 +120,7 @@ public sealed class GetVisitInvitationDetailQueryHandler
         }
         else // Staff, Student
         {
-            if (data.p.Status == ParticipantStatuses.Invited && !isClosedOrCancelled)
+            if ((data.p.Status == ParticipantStatuses.Invited || data.p.Status == ParticipantStatuses.Assigned) && !isClosedOrCancelled)
             {
                 dto.AllowedActions.Add("ACCEPT_INVITATION");
                 dto.AllowedActions.Add("DECLINE_INVITATION");

@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Eye, EyeOff } from 'lucide-react';
+import { Eye, EyeOff, Mail, Lock, Building2 } from 'lucide-react';
 import { useAuth } from '../../../shared/hooks/useAuth';
 import { getDashboardRoute } from '../../../shared/auth/dashboardRoute';
 import { getAuthErrorMessage } from '../api/authError';
 import { authenticationApi } from '../api/authenticationApi';
+import { useActiveCampuses } from '../hooks/useActiveCampuses';
 import { AUTH_CONFIG } from '../../../shared/constants/auth';
 import type { CampusOption, LoginPortal } from '../types/authentication.types';
 
@@ -21,30 +22,17 @@ export function InternalLoginForm({ fromPath, onSuccess }: { fromPath?: string; 
   const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string; campus?: string }>({});
   const [formError, setFormError] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [campuses, setCampuses] = useState<CampusOption[]>([]);
-  const [loadingCampuses, setLoadingCampuses] = useState(true);
-
-  useEffect(() => {
-    let active = true;
-    authenticationApi.getActiveCampuses()
-      .then(data => {
-        if (active) {
-          setCampuses(Array.isArray(data) ? data : []);
-          setLoadingCampuses(false);
-        }
-      })
-      .catch(() => {
-        if (active) setLoadingCampuses(false);
-      });
-    return () => { active = false; };
-  }, []);
+  const { campuses, loading: loadingCampuses, error: campusError, reload: reloadCampuses } = useActiveCampuses('INTERNAL');
 
   const validate = () => {
     const errors: { email?: string; password?: string; campus?: string } = {};
     if (!email.trim()) errors.email = 'Vui lòng nhập email.';
     else if (!EMAIL_RE.test(email.trim())) errors.email = 'Email không hợp lệ.';
     if (!password) errors.password = 'Vui lòng nhập mật khẩu.';
-    if (!selectedCampusId) errors.campus = 'Vui lòng chọn cơ sở.';
+    
+    if (loadingCampuses) errors.campus = 'Vui lòng đợi hệ thống tải danh sách cơ sở.';
+    else if (campusError) errors.campus = 'Không thể đăng nhập vì chưa tải được danh sách cơ sở.';
+    else if (!selectedCampusId) errors.campus = 'Vui lòng chọn cơ sở.';
     
     setFieldErrors(errors);
     return Object.keys(errors).length === 0;
@@ -79,50 +67,83 @@ export function InternalLoginForm({ fromPath, onSuccess }: { fromPath?: string; 
         </div>
       )}
 
-      {/* Campus selector — always visible: required for both password and Google login. */}
-      <div className="mb-4">
-        <label className="block text-gray-700 font-semibold text-[13px] mb-1.5">Cơ sở (Campus)</label>
-        <select
-          value={selectedCampusId}
-          onChange={(e) => setSelectedCampusId(e.target.value)}
-          className="w-full px-4 py-2.5 rounded-xl border border-gray-300 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none bg-white text-[14px]"
-          disabled={loadingCampuses}
-        >
-          <option value="" disabled>-- Chọn cơ sở --</option>
-          {campuses.map((c) => (
-            <option key={c.campusId} value={c.campusId}>
-              {c.campusName} ({c.campusCode})
-            </option>
-          ))}
-        </select>
+      {/* Campus selector */}
+      <div className="mb-2.5">
+        <label className="block text-gray-700 font-semibold text-[13px] mb-0.5">Cơ sở (Campus)</label>
+        {campusError ? (
+          <div className="flex flex-col gap-2">
+            <p className="text-sm text-red-600">{campusError}</p>
+            <button
+              type="button"
+              onClick={reloadCampuses}
+              className="self-start px-3 py-1.5 text-sm bg-red-50 text-red-700 font-medium rounded-lg hover:bg-red-100 transition-colors"
+            >
+              Thử lại
+            </button>
+          </div>
+        ) : (
+          <div className="relative">
+            <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-400">
+              <Building2 className="w-[18px] h-[18px]" strokeWidth={1.5} />
+            </div>
+            <select
+              value={selectedCampusId}
+              onChange={(e) => setSelectedCampusId(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 rounded-xl border border-gray-300 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none bg-white text-[14px] disabled:bg-gray-50 disabled:text-gray-500 appearance-none shadow-sm transition-all"
+              disabled={loadingCampuses}
+              style={{ backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e")`, backgroundPosition: `right 0.5rem center`, backgroundRepeat: `no-repeat`, backgroundSize: `1.5em 1.5em` }}
+            >
+              {loadingCampuses ? (
+                <option value="" disabled>Đang tải danh sách cơ sở...</option>
+              ) : (
+                <>
+                  <option value="" disabled>-- Chọn cơ sở ({campuses.length}) --</option>
+                  {campuses.map((c) => (
+                    <option key={c.campusId} value={c.campusId}>
+                      {c.campusName} ({c.campusCode})
+                    </option>
+                  ))}
+                </>
+              )}
+            </select>
+          </div>
+        )}
         {fieldErrors.campus && <p className="mt-1 text-xs text-red-600">{fieldErrors.campus}</p>}
       </div>
 
       {AUTH_CONFIG.enablePasswordLogin && (
-        <form onSubmit={handleSubmit} noValidate className="space-y-4">
+        <form onSubmit={handleSubmit} noValidate className="space-y-2.5">
           <div>
-            <label className="block text-gray-700 font-semibold text-[13px] mb-1.5">Email</label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@fpt.edu.vn"
-              autoComplete="username"
-              className="w-full px-4 py-2.5 rounded-xl border border-gray-300 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none text-[14px]"
-            />
+            <label className="block text-gray-700 font-semibold text-[13px] mb-0.5">Email</label>
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
+                <Mail className="w-[18px] h-[18px]" strokeWidth={1.5} />
+              </div>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@fpt.edu.vn"
+                autoComplete="username"
+                className="w-full pl-9 pr-4 py-2 rounded-xl border border-gray-300 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none text-[14px] shadow-sm transition-all"
+              />
+            </div>
             {fieldErrors.email && <p className="mt-1 text-xs text-red-600">{fieldErrors.email}</p>}
           </div>
 
           <div>
-            <label className="block text-gray-700 font-semibold text-[13px] mb-1.5">Mật khẩu</label>
+            <label className="block text-gray-700 font-semibold text-[13px] mb-0.5">Mật khẩu</label>
             <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
+                <Lock className="w-[18px] h-[18px]" strokeWidth={1.5} />
+              </div>
               <input
                 type={showPassword ? 'text' : 'password'}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
                 autoComplete="current-password"
-                className="w-full px-4 py-2.5 pr-11 rounded-xl border border-gray-300 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none text-[14px]"
+                className="w-full pl-9 pr-11 py-2 rounded-xl border border-gray-300 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none text-[14px] shadow-sm transition-all"
               />
               <button
                 type="button"
@@ -130,7 +151,7 @@ export function InternalLoginForm({ fromPath, onSuccess }: { fromPath?: string; 
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
                 aria-label={showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
               >
-                {showPassword ? <Eye className="w-5 h-5" /> : <EyeOff className="w-5 h-5" />}
+                {showPassword ? <Eye className="w-[18px] h-[18px]" strokeWidth={1.5} /> : <EyeOff className="w-[18px] h-[18px]" strokeWidth={1.5} />}
               </button>
             </div>
             {fieldErrors.password && <p className="mt-1 text-xs text-red-600">{fieldErrors.password}</p>}
@@ -144,8 +165,8 @@ export function InternalLoginForm({ fromPath, onSuccess }: { fromPath?: string; 
 
           <button
             type="submit"
-            disabled={submitting}
-            className="w-full bg-[#004c91] hover:bg-[#003a6f] disabled:opacity-60 disabled:cursor-not-allowed text-white py-3 rounded-xl font-bold transition-colors shadow-sm text-[14px]"
+            disabled={submitting || loadingCampuses || !!campusError}
+            className="w-full bg-gradient-to-r from-[#004c91] to-[#005baa] hover:from-[#003a6f] hover:to-[#004c91] disabled:opacity-60 disabled:cursor-not-allowed text-white py-2.5 rounded-xl font-bold transition-all shadow-md text-[14px] flex justify-center items-center gap-2"
           >
             {submitting ? 'Đang xử lý...' : 'Đăng nhập'}
           </button>
@@ -153,7 +174,7 @@ export function InternalLoginForm({ fromPath, onSuccess }: { fromPath?: string; 
       )}
 
       {AUTH_CONFIG.enablePasswordLogin && AUTH_CONFIG.enableGoogleSso && (
-        <div className="my-5 flex items-center gap-3 text-gray-400 text-xs">
+        <div className="my-4 flex items-center gap-3 text-gray-400 text-xs">
           <div className="h-px flex-1 bg-gray-200" />
           <span>HOẶC</span>
           <div className="h-px flex-1 bg-gray-200" />
@@ -168,6 +189,14 @@ export function InternalLoginForm({ fromPath, onSuccess }: { fromPath?: string; 
           fromPath={fromPath}
           onSuccess={onSuccess}
           onValidateCampus={() => {
+            if (loadingCampuses) {
+              setFieldErrors(prev => ({ ...prev, campus: 'Vui lòng đợi hệ thống tải danh sách cơ sở.' }));
+              return false;
+            }
+            if (campusError) {
+              setFieldErrors(prev => ({ ...prev, campus: 'Không thể đăng nhập bằng Google vì chưa tải được danh sách cơ sở.' }));
+              return false;
+            }
             if (!selectedCampusId) {
               setFieldErrors(prev => ({ ...prev, campus: 'Vui lòng chọn cơ sở trước khi đăng nhập bằng Google.' }));
               return false;
@@ -231,30 +260,38 @@ export function VisitorLoginForm({ fromPath, onSuccess }: { fromPath?: string; o
       )}
 
       {AUTH_CONFIG.enablePasswordLogin && (
-        <form onSubmit={handleSubmit} noValidate className="space-y-4">
+        <form onSubmit={handleSubmit} noValidate className="space-y-2.5">
           <div>
-            <label className="block text-gray-700 font-semibold text-[13px] mb-1.5">Email</label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="guest@example.com"
-              autoComplete="username"
-              className="w-full px-4 py-2.5 rounded-xl border border-gray-300 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none text-[14px]"
-            />
+            <label className="block text-gray-700 font-semibold text-[13px] mb-0.5">Email</label>
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
+                <Mail className="w-[18px] h-[18px]" strokeWidth={1.5} />
+              </div>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="guest@example.com"
+                autoComplete="username"
+                className="w-full pl-9 pr-4 py-2 rounded-xl border border-gray-300 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none text-[14px] shadow-sm transition-all"
+              />
+            </div>
             {fieldErrors.email && <p className="mt-1 text-xs text-red-600">{fieldErrors.email}</p>}
           </div>
 
           <div>
-            <label className="block text-gray-700 font-semibold text-[13px] mb-1.5">Mật khẩu</label>
+            <label className="block text-gray-700 font-semibold text-[13px] mb-0.5">Mật khẩu</label>
             <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
+                <Lock className="w-[18px] h-[18px]" strokeWidth={1.5} />
+              </div>
               <input
                 type={showPassword ? 'text' : 'password'}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
                 autoComplete="current-password"
-                className="w-full px-4 py-2.5 pr-11 rounded-xl border border-gray-300 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none text-[14px]"
+                className="w-full pl-9 pr-11 py-2 rounded-xl border border-gray-300 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none text-[14px] shadow-sm transition-all"
               />
               <button
                 type="button"
@@ -262,7 +299,7 @@ export function VisitorLoginForm({ fromPath, onSuccess }: { fromPath?: string; o
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
                 aria-label={showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
               >
-                {showPassword ? <Eye className="w-5 h-5" /> : <EyeOff className="w-5 h-5" />}
+                {showPassword ? <Eye className="w-[18px] h-[18px]" strokeWidth={1.5} /> : <EyeOff className="w-[18px] h-[18px]" strokeWidth={1.5} />}
               </button>
             </div>
             {fieldErrors.password && <p className="mt-1 text-xs text-red-600">{fieldErrors.password}</p>}
@@ -277,7 +314,7 @@ export function VisitorLoginForm({ fromPath, onSuccess }: { fromPath?: string; o
           <button
             type="submit"
             disabled={submitting}
-            className="w-full bg-[#004c91] hover:bg-[#003a6f] disabled:opacity-60 disabled:cursor-not-allowed text-white py-3 rounded-xl font-bold transition-colors shadow-sm text-[14px]"
+            className="w-full bg-[#004c91] hover:bg-[#003a6f] disabled:opacity-60 disabled:cursor-not-allowed text-white py-2.5 rounded-xl font-bold transition-colors shadow-sm text-[14px]"
           >
             {submitting ? 'Đang xử lý...' : 'Đăng nhập'}
           </button>

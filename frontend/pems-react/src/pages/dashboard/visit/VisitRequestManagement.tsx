@@ -127,7 +127,7 @@ export function VisitRequestManagement() {
     isVisitor,
   });
 
-  const createEmptyFilters = () => ({ keyword: '', status: '', visitScopes: [] as string[], relation: '', fromDate: '', toDate: '' });
+  const createEmptyFilters = () => ({ keyword: '', status: '', visitScopes: [] as string[], relation: '', fromDate: '', toDate: '', campusId: '' });
   const [draftFilters, setDraftFilters] = useState(createEmptyFilters());
   const [appliedFilters, setAppliedFilters] = useState(createEmptyFilters());
   const [filterError, setFilterError] = useState<string | null>(null);
@@ -136,6 +136,7 @@ export function VisitRequestManagement() {
   const [isTypeFilterOpen, setIsTypeFilterOpen] = useState(false);
   const [isRelationFilterOpen, setIsRelationFilterOpen] = useState(false);
   const [isStatusFilterOpen, setIsStatusFilterOpen] = useState(false);
+  const [isCampusFilterOpen, setIsCampusFilterOpen] = useState(false);
   const [isDateFilterOpen, setIsDateFilterOpen] = useState(false);
 
   const [rows, setRows] = useState<Row[]>([]);
@@ -241,6 +242,7 @@ export function VisitRequestManagement() {
       
       if (targetFilters.fromDate) params.fromDate = targetFilters.fromDate;
       if (targetFilters.toDate) params.toDate = targetFilters.toDate;
+      if (targetFilters.campusId) params.campusId = targetFilters.campusId;
 
       if (effectiveTab === 'attending') {
         const invParams: Record<string, unknown> = {
@@ -782,6 +784,45 @@ export function VisitRequestManagement() {
                         )}
                         <span className="text-sm font-medium text-gray-700">{scope.label}</span>
                       </label>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Campus */}
+          {filterConfig.showCampus && (
+            <div className="relative min-w-[170px] flex-1 xl:flex-none">
+              <label className="block text-xs font-bold text-slate-500 mb-1">Cơ sở</label>
+              <button onClick={() => setIsCampusFilterOpen(!isCampusFilterOpen)} className="flex h-11 w-full min-w-0 items-center justify-between rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition-colors focus:border-[#004c91]">
+                <span className="min-w-0 truncate">{[
+                    { value: '', label: 'Tất cả cơ sở' },
+                    { value: '1', label: 'Hà Nội' },
+                    { value: '2', label: 'Hồ Chí Minh' },
+                    { value: '3', label: 'Đà Nẵng' },
+                    { value: '4', label: 'Cần Thơ' },
+                    { value: '5', label: 'Quy Nhơn' },
+                  ].find((o) => o.value === draftFilters.campusId)?.label ?? 'Tất cả cơ sở'}</span>
+                <ChevronDown className="w-4 h-4 text-gray-500 flex-shrink-0 ml-2 pointer-events-none" />
+              </button>
+              {isCampusFilterOpen && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setIsCampusFilterOpen(false)} />
+                  <div className="absolute left-0 top-full z-30 mt-1 w-full min-w-[210px] rounded-xl border border-slate-200 bg-white py-1 shadow-lg max-h-72 overflow-y-auto">
+                    {[
+                      { value: '', label: 'Tất cả cơ sở' },
+                      { value: '1', label: 'Hà Nội' },
+                      { value: '2', label: 'Hồ Chí Minh' },
+                      { value: '3', label: 'Đà Nẵng' },
+                      { value: '4', label: 'Cần Thơ' },
+                      { value: '5', label: 'Quy Nhơn' },
+                    ].map((option) => (
+                      <div key={option.value} className={`px-3 py-2 text-sm cursor-pointer hover:bg-slate-50 flex items-center ${draftFilters.campusId === option.value ? 'bg-blue-50 text-[#004c91] font-bold' : 'text-gray-700 font-medium'}`}
+                        onClick={() => { setDraftFilters({ ...draftFilters, campusId: option.value }); setIsCampusFilterOpen(false); }}>
+                        {option.label}
+                        {draftFilters.campusId === option.value && <Check className="w-4 h-4 ml-auto text-[#004c91]" />}
+                      </div>
                     ))}
                   </div>
                 </>
