@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, Mail, Lock, Building2 } from 'lucide-react';
 import { useAuth } from '../../../shared/hooks/useAuth';
@@ -22,7 +22,20 @@ export function InternalLoginForm({ fromPath, onSuccess }: { fromPath?: string; 
   const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string; campus?: string }>({});
   const [formError, setFormError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
   const { campuses, loading: loadingCampuses, error: campusError, reload: reloadCampuses } = useActiveCampuses('INTERNAL');
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const validate = () => {
     const errors: { email?: string; password?: string; campus?: string } = {};
@@ -82,30 +95,47 @@ export function InternalLoginForm({ fromPath, onSuccess }: { fromPath?: string; 
             </button>
           </div>
         ) : (
-          <div className="relative">
-            <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-400">
+          <div className="relative" ref={dropdownRef}>
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none z-10 text-gray-400">
               <Building2 className="w-[18px] h-[18px]" strokeWidth={1.5} />
             </div>
-            <select
-              value={selectedCampusId}
-              onChange={(e) => setSelectedCampusId(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 rounded-xl border border-gray-300 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none bg-white text-[14px] disabled:bg-gray-50 disabled:text-gray-500 appearance-none shadow-sm transition-all"
-              disabled={loadingCampuses}
-              style={{ backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e")`, backgroundPosition: `right 0.5rem center`, backgroundRepeat: `no-repeat`, backgroundSize: `1.5em 1.5em` }}
+            
+            <div 
+              onClick={() => !loadingCampuses && setIsDropdownOpen(!isDropdownOpen)}
+              className={`w-full pl-9 pr-4 py-2 rounded-xl border border-gray-300 ${isDropdownOpen ? 'border-[#004c91] ring-1 ring-[#004c91]' : ''} outline-none bg-white text-[14px] ${loadingCampuses ? 'bg-gray-50 text-gray-500 cursor-not-allowed' : 'cursor-pointer'} shadow-sm transition-all flex items-center justify-between`}
             >
-              {loadingCampuses ? (
-                <option value="" disabled>Đang tải danh sách cơ sở...</option>
-              ) : (
-                <>
-                  <option value="" disabled>-- Chọn cơ sở ({campuses.length}) --</option>
-                  {campuses.map((c) => (
-                    <option key={c.campusId} value={c.campusId}>
-                      {c.campusName} ({c.campusCode})
-                    </option>
-                  ))}
-                </>
-              )}
-            </select>
+              <span className={!selectedCampusId ? 'text-gray-500' : 'text-gray-900 truncate'}>
+                {loadingCampuses 
+                  ? 'Đang tải danh sách cơ sở...' 
+                  : selectedCampusId 
+                    ? campuses.find(c => c.campusId === selectedCampusId)?.campusName + ` (${campuses.find(c => c.campusId === selectedCampusId)?.campusCode})` 
+                    : `-- Chọn cơ sở (${campuses.length}) --`
+                }
+              </span>
+              <svg className={`w-4 h-4 text-gray-500 transition-transform duration-200 ${isDropdownOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+              </svg>
+            </div>
+
+            {isDropdownOpen && !loadingCampuses && (
+              <div className="absolute z-50 w-full mt-1 bg-white border border-gray-100 rounded-xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.1)] max-h-60 overflow-auto py-1.5 animate-in fade-in slide-in-from-top-2">
+                <div 
+                  onClick={() => { setSelectedCampusId(''); setIsDropdownOpen(false); }}
+                  className={`px-4 py-2 text-[14px] cursor-pointer transition-colors ${!selectedCampusId ? 'bg-blue-50 text-[#004c91] font-medium' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}
+                >
+                  -- Chọn cơ sở ({campuses.length}) --
+                </div>
+                {campuses.map((c) => (
+                  <div
+                    key={c.campusId}
+                    onClick={() => { setSelectedCampusId(c.campusId); setIsDropdownOpen(false); }}
+                    className={`px-4 py-2 text-[14px] cursor-pointer transition-colors ${selectedCampusId === c.campusId ? 'bg-[#004c91] text-white font-medium' : 'text-gray-600 hover:bg-blue-50 hover:text-[#004c91]'}`}
+                  >
+                    {c.campusName} ({c.campusCode})
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
         {fieldErrors.campus && <p className="mt-1 text-xs text-red-600">{fieldErrors.campus}</p>}
@@ -166,7 +196,7 @@ export function InternalLoginForm({ fromPath, onSuccess }: { fromPath?: string; 
           <button
             type="submit"
             disabled={submitting || loadingCampuses || !!campusError}
-            className="w-full bg-gradient-to-r from-[#004c91] to-[#005baa] hover:from-[#003a6f] hover:to-[#004c91] disabled:opacity-60 disabled:cursor-not-allowed text-white py-2.5 rounded-xl font-bold transition-all shadow-md text-[14px] flex justify-center items-center gap-2"
+            className="w-full h-[40px] bg-gradient-to-r from-[#004c91] to-[#005baa] hover:from-[#003a6f] hover:to-[#004c91] disabled:opacity-60 disabled:cursor-not-allowed text-white rounded-[4px] font-medium transition-all shadow-sm text-[14px] flex justify-center items-center gap-2"
           >
             {submitting ? 'Đang xử lý...' : 'Đăng nhập'}
           </button>
@@ -314,7 +344,7 @@ export function VisitorLoginForm({ fromPath, onSuccess }: { fromPath?: string; o
           <button
             type="submit"
             disabled={submitting}
-            className="w-full bg-[#004c91] hover:bg-[#003a6f] disabled:opacity-60 disabled:cursor-not-allowed text-white py-2.5 rounded-xl font-bold transition-colors shadow-sm text-[14px]"
+            className="w-full h-[40px] bg-gradient-to-r from-[#004c91] to-[#005baa] hover:from-[#003a6f] hover:to-[#004c91] disabled:opacity-60 disabled:cursor-not-allowed text-white rounded-[4px] font-medium transition-all shadow-sm text-[14px] flex justify-center items-center gap-2"
           >
             {submitting ? 'Đang xử lý...' : 'Đăng nhập'}
           </button>
@@ -401,7 +431,7 @@ export function GoogleSignInButton({
       const google = (window as any).google;
       if (!google?.accounts?.id || !containerRef.current) return;
       google.accounts.id.initialize({ client_id: clientId, callback: handleCredential });
-      google.accounts.id.renderButton(containerRef.current, { theme: 'outline', size: 'large', width: '100%' });
+      google.accounts.id.renderButton(containerRef.current, { theme: 'outline', size: 'large', width: '100%', shape: 'rectangular' });
     };
 
     if ((window as any).google?.accounts?.id) {
