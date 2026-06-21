@@ -137,6 +137,7 @@ export interface VisitRequestManagementItem {
 
   isCurrentUserParticipant: boolean;
   participantRole: string | null;
+  currentUserRelation: string;
 
   expectedStartAt: string | null;
   expectedEndAt: string | null;
@@ -236,3 +237,39 @@ export interface RespondInvitationResult {
   status: InvitationStatus;
   message: string;
 }
+
+export type VisitStatusFilterOption = {
+  value: string;
+  label: string;
+  requestStatus?: string;
+  campusStatus?: string;
+  visitScopes?: string[];
+  cancelledOnly?: boolean;
+  relation?: string;
+  readOnlyOnly?: boolean;
+  actionableOnly?: boolean;
+  timing?: 'UPCOMING' | 'ONGOING' | 'ENDED';
+};
+
+export type VisitScopeFilterOption = {
+  value: string;
+  label: string;
+};
+
+export type VisitRelationFilterOption = {
+  value: string;
+  label: string;
+};
+
+export type VisitFilterConfig = {
+  showKeyword: boolean;
+  showStatus: boolean;
+  showScope: boolean;
+  showRelation: boolean;
+  statusLabel?: string;
+  scopeLabel?: string;
+  relationLabel?: string;
+  statusOptions: VisitStatusFilterOption[];
+  scopeOptions: VisitScopeFilterOption[];
+  relationOptions: VisitRelationFilterOption[];
+};

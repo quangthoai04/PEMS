@@ -24,4 +24,8 @@ public class ViewGuestDelegationListQuery : IRequest<PaginatedResult<VisitReques
     public DateTime? FromDate { get; init; }
     public DateTime? ToDate { get; init; }
     public bool CancelledOnly { get; init; }
+    public string? Relation { get; init; }
+    public bool? ReadOnlyOnly { get; init; }
+    public bool? ActionableOnly { get; init; }
+    public string? Timing { get; init; }
 }

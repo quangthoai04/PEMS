@@ -32,6 +32,7 @@ export const DEFAULT_VISIT_REQUEST_VALUES: VisitRequestSchema = {
   language: 'english',
   vehicle: '',
   notes: '',
+  timeOverlapConfirmed: false,
 };
 
 import axios from 'axios';

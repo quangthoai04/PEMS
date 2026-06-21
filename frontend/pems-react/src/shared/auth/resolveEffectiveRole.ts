@@ -57,6 +57,7 @@ export function resolveEffectiveRole(user: AuthUser | null | undefined): Effecti
     case 'STAFF':
       if (subRole === 'LEADER' || subRole === 'STAFF') return 'STAFF';
       return null; // STAFF must have a valid sub-role — no implicit grant
+    case 'DEPT':
     case 'DEPARTMENT':
       if (subRole === 'LEADER' || subRole === 'STAFF') return 'DEPARTMENT';
       return null; // DEPARTMENT must have a valid sub-role — no implicit grant

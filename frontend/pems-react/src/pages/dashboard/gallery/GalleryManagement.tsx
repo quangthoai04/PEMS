@@ -168,7 +168,7 @@ export function GalleryManagement() {
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
       const files = Array.from(e.target.files);
-      const newImages = files.map(file => URL.createObjectURL(file));
+      const newImages = files.map((file: File) => URL.createObjectURL(file));
       setFormData({
         ...formData,
         images: [...formData.images, ...newImages].slice(0, 5)

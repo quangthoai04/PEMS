@@ -127,7 +127,8 @@ public sealed class ViewGuestDelegationListQueryHandler
                     pp.VisitInstanceId == x.c.VisitInstanceId &&
                     pp.UserId == userId &&
                     !pp.IsHost &&
-                    pp.ParticipantRole != ParticipantRoles.IcHost &&
+                    pp.Status == ParticipantStatuses.Accepted &&
+                    (pp.ParticipantRole == ParticipantRoles.IcSupport || pp.ParticipantRole == ParticipantRoles.DeptSupport || pp.ParticipantRole == ParticipantRoles.Student) &&
                     (pp.InvitedBy == null || pp.InvitedBy != userId)));
         }
         else
@@ -220,6 +221,50 @@ public sealed class ViewGuestDelegationListQueryHandler
         {
             var toDateEnd = request.ToDate.Value.Date.AddDays(1).AddTicks(-1);
             q = q.Where(x => x.c.PlannedStartAt <= toDateEnd);
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Timing))
+        {
+            var timing = request.Timing.ToUpperInvariant();
+            var nowUtc = _clock.UtcNow;
+            if (timing == "UPCOMING")
+                q = q.Where(x => x.c.PlannedStartAt > nowUtc && x.vr.Status != VisitRequestStatuses.Rejected && x.vr.Status != VisitRequestStatuses.Cancelled && x.c.Status != VisitInstanceStatus.Cancelled && x.c.Status != VisitInstanceStatus.Closed);
+            else if (timing == "ONGOING")
+                q = q.Where(x => x.c.Status == VisitInstanceStatus.DuringVisit);
+            else if (timing == "ENDED")
+                q = q.Where(x => x.c.Status == VisitInstanceStatus.Closed);
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Relation))
+        {
+            var rel = request.Relation.ToUpperInvariant();
+            if (rel == "HOST")
+                q = q.Where(x => x.c.CurrentHostUserId == userId);
+            else if (rel == "TASK_ASSIGNEE")
+                q = q.Where(x => x.c.CurrentHostUserId != userId); // simplified relation for staff
+        }
+
+        if (request.ActionableOnly == true)
+        {
+            var roleCode = _currentUser.RoleCode;
+            var subRole = _currentUser.SubRole;
+            if (roleCode == RoleCodes.Staff && subRole == SubRoles.Leader)
+            {
+                var nowUtc = _clock.UtcNow;
+                q = q.Where(x => (x.vr.VisitScope == VisitScopes.SingleCampus && x.vr.Status == VisitRequestStatuses.PendingApproval)
+                    || (x.vr.VisitScope == VisitScopes.MultiCampus && x.vr.Status == VisitRequestStatuses.Approved && x.c.Status == VisitInstanceStatus.Assigned && (x.c.PlannedStartAt == null || x.c.PlannedStartAt > nowUtc)));
+            }
+        }
+        if (request.ReadOnlyOnly == true)
+        {
+            var roleCode = _currentUser.RoleCode;
+            var subRole = _currentUser.SubRole;
+            if (roleCode == RoleCodes.Staff && subRole == SubRoles.Leader)
+            {
+                var nowUtc = _clock.UtcNow;
+                q = q.Where(x => !((x.vr.VisitScope == VisitScopes.SingleCampus && x.vr.Status == VisitRequestStatuses.PendingApproval)
+                    || (x.vr.VisitScope == VisitScopes.MultiCampus && x.vr.Status == VisitRequestStatuses.Approved && x.c.Status == VisitInstanceStatus.Assigned && (x.c.PlannedStartAt == null || x.c.PlannedStartAt > nowUtc))));
+            }
         }
 
         var total = await q.CountAsync(ct);
@@ -399,6 +444,34 @@ public sealed class ViewGuestDelegationListQueryHandler
             q = q.Where(vr => vr.CampusInstances.Any(i => i.PlannedStartAt <= to));
         }
 
+        if (!string.IsNullOrWhiteSpace(request.Timing))
+        {
+            var timing = request.Timing.ToUpperInvariant();
+            var nowUtc = _clock.UtcNow;
+            if (timing == "UPCOMING")
+                q = q.Where(vr => vr.CampusInstances.Any(i => i.PlannedStartAt > nowUtc) && vr.Status != VisitRequestStatuses.Rejected && vr.Status != VisitRequestStatuses.Cancelled && !vr.CampusInstances.All(i => i.Status == VisitInstanceStatus.Cancelled || i.Status == VisitInstanceStatus.Closed));
+            else if (timing == "ONGOING")
+                q = q.Where(vr => vr.CampusInstances.Any(i => i.Status == VisitInstanceStatus.DuringVisit));
+            else if (timing == "ENDED")
+                q = q.Where(vr => vr.CampusInstances.Any(i => i.Status == VisitInstanceStatus.Closed));
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Relation))
+        {
+            var rel = request.Relation.ToUpperInvariant();
+            if (rel == "VISITOR_OWNER")
+                q = q.Where(vr => vr.VisitorUserId == userId);
+        }
+
+        if (request.ActionableOnly == true && roleCode == RoleCodes.Ho)
+        {
+            q = q.Where(vr => vr.VisitScope == VisitScopes.MultiCampus && vr.Status == VisitRequestStatuses.PendingApproval);
+        }
+        if (request.ReadOnlyOnly == true && roleCode == RoleCodes.Ho)
+        {
+            q = q.Where(vr => vr.VisitScope == VisitScopes.SingleCampus || vr.Status != VisitRequestStatuses.PendingApproval);
+        }
+
         var total = await q.CountAsync(ct);
 
         // Load the page with instances + partner, then shape request-level rows in memory
@@ -539,7 +612,8 @@ public sealed class ViewGuestDelegationListQueryHandler
         }
 
         // Host — cancel the campus instance they own before it starts.
-        if (item.CurrentUserIsHost
+        bool isTempHost = item.CurrentUserIsHost && item.HostAssignmentSource == "AUTO_STAFF_LEADER";
+        if (item.CurrentUserIsHost && !isTempHost
             && (item.CampusStatus == VisitInstanceStatus.Assigned || item.CampusStatus == VisitInstanceStatus.BeforeVisit)
             && beforeStart)
         {
@@ -575,7 +649,7 @@ public sealed class ViewGuestDelegationListQueryHandler
         }
 
         if (item.CurrentUserIsHost)
-            return item.HostAssignmentSource == "AUTO_STAFF_LEADER" ? "TEMP_HOST" : "HOST";
+            return item.HostAssignmentSource == "AUTO_STAFF_LEADER" ? "PENDING_HOST_ASSIGNMENT" : "HOST";
         if (roleCode == RoleCodes.Visitor)
             return "VISITOR_OWNER";
         if (roleCode == RoleCodes.Ho)
