@@ -242,6 +242,11 @@ public sealed class ViewGuestDelegationListQueryHandler
                 q = q.Where(x => x.c.CurrentHostUserId == userId);
             else if (rel == "TASK_ASSIGNEE")
                 q = q.Where(x => x.c.CurrentHostUserId != userId); // simplified relation for staff
+            else if (rel == "PENDING_HOST_ASSIGNMENT")
+                q = q.Where(x => x.vr.VisitScope == VisitScopes.MultiCampus 
+                    && x.vr.Status == VisitRequestStatuses.Approved
+                    && x.c.HostAssignmentSource == "AUTO_STAFF_LEADER"
+                    && (x.c.Status == VisitInstanceStatus.Assigned || x.c.Status == VisitInstanceStatus.BeforeVisit));
         }
 
         if (request.ActionableOnly == true)
@@ -269,9 +274,22 @@ public sealed class ViewGuestDelegationListQueryHandler
 
         var total = await q.CountAsync(ct);
 
-        var page = await q
-            .OrderByDescending(x => x.vr.CreatedAt)
-            .ThenByDescending(x => x.c.VisitInstanceId)
+        var pageQuery = q;
+        if (request.SortBy?.ToLower() == "plannedstartat")
+        {
+            if (request.SortOrder?.ToLower() == "asc")
+                pageQuery = pageQuery.OrderBy(x => x.c.PlannedStartAt).ThenBy(x => x.c.VisitInstanceId);
+            else
+                pageQuery = pageQuery.OrderByDescending(x => x.c.PlannedStartAt).ThenByDescending(x => x.c.VisitInstanceId);
+        }
+        else if (request.SortOrder?.ToLower() == "asc")
+            pageQuery = pageQuery.OrderBy(x => x.c.PlannedStartAt).ThenBy(x => x.c.VisitInstanceId);
+        else if (request.SortOrder?.ToLower() == "desc")
+            pageQuery = pageQuery.OrderByDescending(x => x.c.PlannedStartAt).ThenByDescending(x => x.c.VisitInstanceId);
+        else
+            pageQuery = pageQuery.OrderByDescending(x => x.vr.CreatedAt).ThenByDescending(x => x.c.VisitInstanceId);
+
+        var page = await pageQuery
             .Skip((request.Page - 1) * request.PageSize)
             .Take(request.PageSize)
             .Select(x => new
@@ -286,6 +304,9 @@ public sealed class ViewGuestDelegationListQueryHandler
                 x.c.PlannedEndAt,
                 CampusCancelledAt = x.c.CancelledAt,
                 CampusCancellationReason = x.c.CancellationReason,
+                CampusCancellationActorType = x.c.CancellationActorType,
+                CampusCancellationSource = x.c.CancellationSource,
+                CampusCancelledBy = x.c.CancelledBy,
                 x.vr.RequestCode,
                 x.vr.DelegationName,
                 x.vr.PartnerId,
@@ -299,6 +320,9 @@ public sealed class ViewGuestDelegationListQueryHandler
                 x.vr.SubmittedAt,
                 RequestCancelledAt = x.vr.CancelledAt,
                 RequestCancellationReason = x.vr.CancellationReason,
+                RequestCancellationActorType = x.vr.CancellationActorType,
+                RequestCancellationSource = x.vr.CancellationSource,
+                RequestCancelledBy = x.vr.CancelledBy,
                 x.vr.DecisionNote,
             })
             .ToListAsync(ct);
@@ -377,6 +401,9 @@ public sealed class ViewGuestDelegationListQueryHandler
                 SubmittedAt = r.SubmittedAt,
                 CancelledAt = r.CampusCancelledAt ?? r.RequestCancelledAt,
                 CancellationReason = r.CampusCancellationReason ?? r.RequestCancellationReason,
+                CancellationActorType = r.CampusCancellationActorType ?? r.RequestCancellationActorType,
+                CancellationSource = r.CampusCancellationSource ?? r.RequestCancellationSource,
+                CancelledBy = r.CampusCancelledBy ?? r.RequestCancelledBy,
                 DecisionNote = r.DecisionNote,
             };
         }).ToList();
@@ -476,11 +503,24 @@ public sealed class ViewGuestDelegationListQueryHandler
 
         // Load the page with instances + partner, then shape request-level rows in memory
         // (avoids fragile conditional-subquery projection translation).
-        var requests = await q
+        var pageQuery = q;
+        if (request.SortBy?.ToLower() == "plannedstartat")
+        {
+            if (request.SortOrder?.ToLower() == "asc")
+                pageQuery = pageQuery.OrderBy(vr => vr.CampusInstances.Min(i => i.PlannedStartAt)).ThenBy(vr => vr.VisitRequestId);
+            else
+                pageQuery = pageQuery.OrderByDescending(vr => vr.CampusInstances.Max(i => i.PlannedStartAt)).ThenByDescending(vr => vr.VisitRequestId);
+        }
+        else if (request.SortOrder?.ToLower() == "asc")
+            pageQuery = pageQuery.OrderBy(vr => vr.CampusInstances.Min(i => i.PlannedStartAt)).ThenBy(vr => vr.VisitRequestId);
+        else if (request.SortOrder?.ToLower() == "desc")
+            pageQuery = pageQuery.OrderByDescending(vr => vr.CampusInstances.Max(i => i.PlannedStartAt)).ThenByDescending(vr => vr.VisitRequestId);
+        else
+            pageQuery = pageQuery.OrderByDescending(vr => vr.CreatedAt).ThenByDescending(vr => vr.VisitRequestId);
+
+        var requests = await pageQuery
             .Include(vr => vr.Partner)
             .Include(vr => vr.CampusInstances)
-            .OrderByDescending(vr => vr.CreatedAt)
-            .ThenByDescending(vr => vr.VisitRequestId)
             .Skip((request.Page - 1) * request.PageSize)
             .Take(request.PageSize)
             .ToListAsync(ct);
@@ -549,8 +589,11 @@ public sealed class ViewGuestDelegationListQueryHandler
                 ExpectedGuestCount = vr.ExpectedGuestCount,
                 CreatedAt = vr.CreatedAt,
                 SubmittedAt = vr.SubmittedAt,
-                CancelledAt = vr.CancelledAt,
-                CancellationReason = vr.CancellationReason,
+                CancelledAt = single?.CancelledAt ?? vr.CancelledAt,
+                CancellationReason = single?.CancellationReason ?? vr.CancellationReason,
+                CancellationActorType = single?.CancellationActorType ?? vr.CancellationActorType,
+                CancellationSource = single?.CancellationSource ?? vr.CancellationSource,
+                CancelledBy = single?.CancelledBy ?? vr.CancelledBy,
                 DecisionNote = vr.DecisionNote,
             };
         }).ToList();
@@ -597,7 +640,8 @@ public sealed class ViewGuestDelegationListQueryHandler
                 actions.Add("CAMPUS_REJECT");
             }
             else if (isMulti && item.RequestStatus == VisitRequestStatuses.Approved
-                     && item.CampusStatus == VisitInstanceStatus.Assigned && beforeStart)
+                     && (item.CampusStatus == VisitInstanceStatus.Assigned || item.CampusStatus == VisitInstanceStatus.BeforeVisit) && beforeStart
+                     && item.HostAssignmentSource == "AUTO_STAFF_LEADER")
             {
                 actions.Add("TRANSFER_HOST"); // HO already approved + auto-assigned the IC head; SL hands off to a real staff
             }
@@ -613,11 +657,20 @@ public sealed class ViewGuestDelegationListQueryHandler
 
         // Host — cancel the campus instance they own before it starts.
         bool isTempHost = item.CurrentUserIsHost && item.HostAssignmentSource == "AUTO_STAFF_LEADER";
-        if (item.CurrentUserIsHost && !isTempHost
+        if (!isStaffLeader && item.CurrentUserIsHost && !isTempHost
             && (item.CampusStatus == VisitInstanceStatus.Assigned || item.CampusStatus == VisitInstanceStatus.BeforeVisit)
             && beforeStart)
         {
             actions.Add("CANCEL_BY_HOST");
+        }
+
+        // If official host assigned, don't allow transfer for Staff Leader, unless we explicitly allow it later.
+        if (isStaffLeader && sameCampus && item.CampusStatus != VisitInstanceStatus.Cancelled)
+        {
+            if (item.HostAssignmentSource != "MANUAL_APPROVAL" && item.HostAssignmentSource != "TRANSFERRED")
+            {
+                // We handle transfer permission below, actually we already added TRANSFER_HOST for AUTO_STAFF_LEADER.
+            }
         }
 
         return actions;
@@ -658,7 +711,17 @@ public sealed class ViewGuestDelegationListQueryHandler
                 && item.RequestStatus == VisitRequestStatuses.PendingApproval
                 ? "HO_APPROVER" : "HO_MONITOR";
         if (isStaffLeader)
+        {
+            if (item.VisitScope == VisitScopes.MultiCampus
+                && item.RequestStatus == VisitRequestStatuses.Approved
+                && item.HostAssignmentSource == "AUTO_STAFF_LEADER"
+                && item.CurrentHostUserId == _currentUser.UserId
+                && (item.CampusStatus == VisitInstanceStatus.Assigned || item.CampusStatus == VisitInstanceStatus.BeforeVisit))
+            {
+                return "PENDING_HOST_ASSIGNMENT";
+            }
             return "CAMPUS_APPROVER";
+        }
         if (roleCode == RoleCodes.Department || roleCode == RoleCodes.Student)
             return "DEPARTMENT_TASK_OWNER";
         return "NONE";

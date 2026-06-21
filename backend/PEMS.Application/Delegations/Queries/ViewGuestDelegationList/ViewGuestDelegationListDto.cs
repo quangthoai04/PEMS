@@ -65,6 +65,11 @@ public sealed class VisitRequestManagementItemDto
     public DateTime? SubmittedAt { get; set; }
     public DateTime? CancelledAt { get; set; }
     public string? CancellationReason { get; set; }
+    public string? CancellationActorType { get; set; }
+    public string? CancellationSource { get; set; }
+    public ulong? CancelledBy { get; set; }
+    public string? DisplayStatusLabel { get; set; }
+    public string? DisplayProgressLabel { get; set; }
     /// <summary>Reason/note recorded when the request was approved or rejected (visit_requests.decision_note).</summary>
     public string? DecisionNote { get; set; }
 

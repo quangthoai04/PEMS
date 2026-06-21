@@ -106,6 +106,9 @@ export const VISIT_ALLOWED_ACTIONS = {
   TRANSFER_HOST: 'TRANSFER_HOST',
   CANCEL_BY_HOST: 'CANCEL_BY_HOST',
   CANCEL_BY_VISITOR: 'CANCEL_BY_VISITOR',
+  ACCEPT_INVITATION: 'ACCEPT_INVITATION',
+  DECLINE_INVITATION: 'DECLINE_INVITATION',
+  ASSIGN_TO_DEPARTMENT_STAFF: 'ASSIGN_TO_DEPARTMENT_STAFF',
 } as const;
 
 export type AllowedAction = (typeof VISIT_ALLOWED_ACTIONS)[keyof typeof VISIT_ALLOWED_ACTIONS];
@@ -241,8 +244,10 @@ export interface RespondInvitationResult {
 export type VisitStatusFilterOption = {
   value: string;
   label: string;
+  description?: string;
   requestStatus?: string;
   campusStatus?: string;
+  campusStatuses?: string[];
   visitScopes?: string[];
   cancelledOnly?: boolean;
   relation?: string;

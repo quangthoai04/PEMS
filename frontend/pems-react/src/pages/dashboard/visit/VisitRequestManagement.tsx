@@ -62,15 +62,15 @@ const ActionIconButton = ({
 // Map (requestStatus, campusStatus) → nhãn tiếng Việt. Request status quyết định trước.
 const getVietnameseStatus = (reqStatus?: string | null, campStatus?: string | null) => {
   if (campStatus === 'CANCELLED' || reqStatus === 'CANCELLED') return 'Đã hủy';
-  if (reqStatus === 'PENDING_APPROVAL') return 'Chờ duyệt';
   if (reqStatus === 'REJECTED') return 'Từ chối';
+  if (reqStatus === 'PENDING_APPROVAL') return 'Chờ duyệt';
   if (reqStatus === 'APPROVED') {
-    if (!campStatus || campStatus === 'WAITING_REQUEST_APPROVAL') return 'Chờ phân công';
-    if (campStatus === 'ASSIGNED') return 'Đã duyệt';
+    if (campStatus === 'ASSIGNED') return 'Đã phân công Host';
     if (campStatus === 'BEFORE_VISIT') return 'Trước tiếp khách';
     if (campStatus === 'DURING_VISIT') return 'Trong tiếp khách';
     if (campStatus === 'AFTER_VISIT') return 'Chờ đóng đoàn';
     if (campStatus === 'CLOSED') return 'Đã đóng đoàn';
+    return 'Đã duyệt';
   }
   return reqStatus ?? '-';
 };
@@ -105,12 +105,14 @@ export function VisitRequestManagement() {
   const isStudent = roleCode === 'STUDENT';
 
   // The "Đơn mời tham dự" (attending) tab is only for users who can be invited as a
-  // non-host participant: regular Staff, Dept, Student.
   const canUseAttendingTab = isRegularStaff || isDept || isStudent;
-  const canUseResponsibleTab = !isStudent && !isAdmin && !isVisitor;
-  const showTabs = canUseAttendingTab && canUseResponsibleTab; // Only staff/department have both tabs
+  const canUseResponsibleTab = !isStudent && !isDept && !isAdmin && !isVisitor;
+  const showTabs = canUseAttendingTab || canUseResponsibleTab;
   
-  const defaultTab: Tab = isStudent ? 'attending' : 'responsible';
+  const responsibleTabLabel = isHO ? 'Theo dõi đơn tiếp khách' : 'Đơn phụ trách';
+  const attendingTabLabel = (isDept && subRole === 'STAFF') ? 'Nhiệm vụ được giao' : 'Lời mời tham dự';
+  
+  const defaultTab: Tab = (isStudent || isDept) ? 'attending' : 'responsible';
   const [activeTab, setActiveTab] = useState<Tab>(defaultTab);
 
   // UC-27: pending participation invitations for invitee roles. This banner is the entry
@@ -141,6 +143,24 @@ export function VisitRequestManagement() {
   const [total, setTotal] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
+  const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
+  const [debouncedKeyword, setDebouncedKeyword] = useState(draftFilters.keyword);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedKeyword(draftFilters.keyword.trim());
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [draftFilters.keyword]);
+
+  useEffect(() => {
+    if (debouncedKeyword !== appliedFilters.keyword) {
+      const nextFilters = { ...appliedFilters, keyword: debouncedKeyword };
+      setAppliedFilters(nextFilters);
+      setCurrentPage(1);
+      loadDelegations(activeTab, 1, pageSize, nextFilters, sortOrder);
+    }
+  }, [debouncedKeyword]);
 
   // Modals
   const [view, setView] = useState<{ open: boolean; row: Row | null }>({ open: false, row: null });
@@ -169,7 +189,7 @@ export function VisitRequestManagement() {
     const nextFilters = { ...draftFilters };
     setAppliedFilters(nextFilters);
     setCurrentPage(1);
-    loadDelegations(activeTab, 1, pageSize, nextFilters);
+    loadDelegations(activeTab, 1, pageSize, nextFilters, sortOrder);
   };
   const handleResetFilters = () => {
     const empty = createEmptyFilters();
@@ -177,19 +197,21 @@ export function VisitRequestManagement() {
     setAppliedFilters(empty);
     setFilterError(null);
     setCurrentPage(1);
-    loadDelegations(activeTab, 1, pageSize, empty);
+    loadDelegations(activeTab, 1, pageSize, empty, sortOrder);
   };
 
-  const loadDelegations = async (targetTab: Tab, targetPage: number, targetSize: number, targetFilters: typeof appliedFilters) => {
+  const loadDelegations = async (targetTab: Tab, targetPage: number, targetSize: number, targetFilters: typeof appliedFilters, targetSort: string = sortOrder) => {
     if (isAdmin) return;
     try {
       setIsLoading(true);
       setListError(null);
-      const effectiveTab = isVisitor ? 'responsible' : isStudent ? 'attending' : targetTab;
+      const effectiveTab = isVisitor ? 'responsible' : (isStudent || isDept) ? 'attending' : targetTab;
       const params: Record<string, unknown> = {
         tab: effectiveTab,
         page: targetPage,
         pageSize: targetSize,
+        sortBy: 'plannedStartAt',
+        sortOrder: targetSort,
       };
       const keyword = targetFilters.keyword.trim();
       if (keyword) params.keyword = keyword;
@@ -203,6 +225,7 @@ export function VisitRequestManagement() {
         if (option?.readOnlyOnly) params.readOnlyOnly = true;
         if (option?.actionableOnly) params.actionableOnly = true;
         if (option?.timing) params.timing = option.timing;
+        if (option?.relation) params.relation = option.relation;
       }
       
       if (filterConfig.showScope && targetFilters.visitScopes.length > 0) {
@@ -219,22 +242,59 @@ export function VisitRequestManagement() {
       if (targetFilters.fromDate) params.fromDate = targetFilters.fromDate;
       if (targetFilters.toDate) params.toDate = targetFilters.toDate;
 
-      const response = await delegationsApi.getVisitRequestManagementList(params);
-      const items: VisitRequestManagementItem[] = response.items || [];
-      const mapped: Row[] = items.map((item) => ({
-        ...item,
-        id: item.visitInstanceId || item.visitRequestId,
-        name: item.delegationName || 'Không có tên',
-        org: item.partnerName || '-',
-        campus: item.campusName || '-',
-        host: item.hostName || '',
-        sender: item.visitorName || '',
-        time: formatDateTimeShort(item.plannedStartAt),
-        pax: item.expectedGuestCount,
-        statusText: getVietnameseStatus(item.requestStatus, item.campusStatus),
-      }));
-      setRows(mapped);
-      setTotal(response.totalItems || 0);
+      if (effectiveTab === 'attending') {
+        const invParams: Record<string, unknown> = {
+          page: targetPage,
+          pageSize: targetSize,
+        };
+        const keyword = targetFilters.keyword.trim();
+        if (keyword) invParams.keyword = keyword;
+        if (targetFilters.status) invParams.invitationStatus = targetFilters.status;
+        if (targetFilters.fromDate) invParams.fromDate = targetFilters.fromDate;
+        if (targetFilters.toDate) invParams.toDate = targetFilters.toDate;
+
+        const response = await delegationsApi.visitInvitations.getMyInvitations(invParams);
+        const items: any[] = response.items || [];
+        const mapped: Row[] = items.map((item) => {
+          let statusText = item.invitationStatus;
+          if (statusText === 'INVITED') statusText = 'Chờ phản hồi';
+          else if (statusText === 'ACCEPTED') statusText = (isDept && subRole === 'STAFF') ? 'Đã nhận' : 'Đã nhận lời';
+          else if (statusText === 'ASSIGNED') statusText = 'Mới được giao';
+          else if (statusText === 'DECLINED') statusText = 'Đã từ chối';
+
+          return {
+            ...item,
+            id: item.visitInstanceId || item.visitRequestId,
+            name: item.delegationName || 'Không có tên',
+            org: item.invitedByName ? `Người mời: ${item.invitedByName}` : '-',
+            campus: item.campusName || '-',
+            host: '-',
+            sender: '-',
+            time: formatDateTimeShort(item.plannedStartAt),
+            pax: null,
+            statusText,
+          };
+        });
+        setRows(mapped);
+        setTotal(response.totalItems || 0);
+      } else {
+        const response = await delegationsApi.getVisitRequestManagementList(params);
+        const items: VisitRequestManagementItem[] = response.items || [];
+        const mapped: Row[] = items.map((item) => ({
+          ...item,
+          id: item.visitInstanceId || item.visitRequestId,
+          name: item.delegationName || 'Không có tên',
+          org: item.partnerName || '-',
+          campus: item.campusName || '-',
+          host: item.hostName || '',
+          sender: item.visitorName || '',
+          time: formatDateTimeShort(item.plannedStartAt),
+          pax: item.expectedGuestCount,
+          statusText: getVietnameseStatus(item.requestStatus, item.campusStatus),
+        }));
+        setRows(mapped);
+        setTotal(response.totalItems || 0);
+      }
     } catch (e) {
       console.error('Failed to fetch visit requests', e);
       setListError('Không thể tải danh sách tiếp khách. Vui lòng thử lại.');
@@ -244,7 +304,7 @@ export function VisitRequestManagement() {
   };
 
   useEffect(() => {
-    loadDelegations(activeTab, currentPage, pageSize, appliedFilters);
+    loadDelegations(activeTab, currentPage, pageSize, appliedFilters, sortOrder);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -306,7 +366,7 @@ export function VisitRequestManagement() {
     try {
       await delegationsApi.hoApprove(approveConfirm.row.visitRequestId);
       setApproveConfirm({ open: false, row: null, submitting: false, error: null });
-      await loadDelegations(activeTab, currentPage, pageSize, appliedFilters);
+      await loadDelegations(activeTab, currentPage, pageSize, appliedFilters, sortOrder);
     } catch (e: any) {
       const msg = e?.response?.data?.message || e?.response?.data?.title || e?.message || 'Lỗi không xác định';
       setApproveConfirm((s) => ({ ...s, submitting: false, error: `Không thể duyệt đơn. ${msg}` }));
@@ -320,12 +380,34 @@ export function VisitRequestManagement() {
     setReject((s) => ({ ...s, submitting: true, error: null }));
     try {
       if (reject.action === 'HO_REJECT') await delegationsApi.hoReject(reject.row.visitRequestId, text);
+      else if (reject.action === 'DECLINE_INVITATION' as any) await delegationsApi.visitInvitations.declineInvitation((reject.row as any).participantId, text);
       else await delegationsApi.campusReject(reject.row.visitRequestId, text);
       setReject({ open: false, row: null, action: null, text: '', submitting: false, error: null });
-      await loadDelegations(activeTab, currentPage, pageSize, appliedFilters);
+      await loadDelegations(activeTab, currentPage, pageSize, appliedFilters, sortOrder);
     } catch (e: any) {
       const msg = e?.response?.data?.message || e?.response?.data?.title || e?.message || 'Lỗi không xác định';
-      setReject((s) => ({ ...s, submitting: false, error: `Không thể từ chối đơn. ${msg}` }));
+      setReject((s) => ({ ...s, submitting: false, error: `Không thể từ chối. ${msg}` }));
+    }
+  };
+
+  const submitAcceptInvitation = async (row: Row) => {
+    try {
+      await delegationsApi.visitInvitations.acceptInvitation((row as any).participantId);
+      await loadDelegations(activeTab, currentPage, pageSize, appliedFilters, sortOrder);
+    } catch (e: any) {
+      alert('Không thể chấp nhận lời mời: ' + (e?.response?.data?.message || e?.message));
+    }
+  };
+
+  const submitAssignDeptStaff = async (row: Row) => {
+    const staffIdStr = window.prompt('Nhập ID của Department Staff để giao việc:');
+    if (!staffIdStr) return;
+    const note = window.prompt('Nhập ghi chú/nhiệm vụ:');
+    try {
+      await delegationsApi.visitInvitations.assignDepartmentStaff((row as any).participantId, parseInt(staffIdStr, 10), note || '');
+      await loadDelegations(activeTab, currentPage, pageSize, appliedFilters, sortOrder);
+    } catch (e: any) {
+      alert('Không thể giao việc: ' + (e?.response?.data?.message || e?.message));
     }
   };
 
@@ -342,11 +424,32 @@ export function VisitRequestManagement() {
         await delegationsApi.cancelVisitRequest(cancel.row.visitRequestId, payload);
       }
       setCancel({ open: false, row: null, mode: null, text: '', submitting: false, error: null });
-      await loadDelegations(activeTab, currentPage, pageSize, appliedFilters);
+      await loadDelegations(activeTab, currentPage, pageSize, appliedFilters, sortOrder);
     } catch (e: any) {
       const msg = e?.response?.data?.message || e?.response?.data?.title || e?.message || 'Lỗi không xác định';
       setCancel((s) => ({ ...s, submitting: false, error: `Không thể hủy lịch thăm. ${msg}` }));
     }
+  };
+
+  const isPendingHostAssignment = (row: Row) => {
+    return isStaffLeader &&
+      row.visitScope === 'MULTI_CAMPUS' &&
+      row.requestStatus === 'APPROVED' &&
+      row.hostAssignmentSource === 'AUTO_STAFF_LEADER' &&
+      (row.currentUserRelation === 'PENDING_HOST_ASSIGNMENT' || row.currentUserRelation === 'TEMP_CAMPUS_RESPONSIBLE') &&
+      (row.campusStatus === 'ASSIGNED' || row.campusStatus === 'BEFORE_VISIT');
+  };
+
+  const isOperationalOrFinished = (row: Row) => {
+    return row.campusStatus === 'DURING_VISIT' ||
+      row.campusStatus === 'AFTER_VISIT' ||
+      row.campusStatus === 'CLOSED';
+  };
+
+  const isCancelledOrRejected = (row: Row) => {
+    return row.requestStatus === 'CANCELLED' ||
+      row.campusStatus === 'CANCELLED' ||
+      row.requestStatus === 'REJECTED';
   };
 
   // ── Badges ──
@@ -356,9 +459,13 @@ export function VisitRequestManagement() {
       <span key={key} className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-bold whitespace-nowrap ${cls}`}>{text}</span>
     );
     if (activeTab === 'attending') {
-      badges.push(chip('att', 'Đơn mời tham dự', 'bg-purple-50 text-purple-700 border-purple-200'));
+      badges.push(chip('att', attendingTabLabel, 'bg-purple-50 text-purple-700 border-purple-200'));
       if (row.participantRole) {
         badges.push(chip('prole', PARTICIPANT_ROLE_LABELS[row.participantRole] ?? 'Tham dự', 'bg-slate-50 text-slate-700 border-slate-200'));
+      }
+      const visitStatusText = getVietnameseStatus((row as any).visitRequestStatus, (row as any).campusVisitStatus);
+      if (visitStatusText && visitStatusText !== '-' && visitStatusText !== 'Không xác định') {
+         badges.push(chip('v-status', visitStatusText, 'bg-slate-100 text-slate-600 border-slate-300'));
       }
     } else if (row.visitScope === 'MULTI_CAMPUS' && row.requestStatus === 'APPROVED') {
       badges.push(chip('multi-approved', 'Liên cơ sở · HO đã duyệt', 'bg-indigo-50 text-indigo-700 border-indigo-200'));
@@ -367,42 +474,84 @@ export function VisitRequestManagement() {
       badges.push(chip('scope', VISIT_SCOPE_LABELS[row.visitScope] + (row.campusCount > 1 ? ` (${row.campusCount})` : ''),
         single ? 'bg-sky-50 text-sky-700 border-sky-200' : 'bg-indigo-50 text-indigo-700 border-indigo-200'));
     }
-    const isPendingHostAssignment =
-      row.currentUserRelation === 'PENDING_HOST_ASSIGNMENT' ||
-      row.currentUserRelation === 'TEMP_CAMPUS_RESPONSIBLE' ||
-      (isStaffLeader && row.hostAssignmentSource === 'AUTO_STAFF_LEADER' && row.currentUserIsHost);
 
-    if (isPendingHostAssignment) {
+    if (isPendingHostAssignment(row) && !isCancelledOrRejected(row) && !isOperationalOrFinished(row)) {
       badges.push(chip('pending-host', 'Cần chọn Host chính thức', 'bg-orange-50 text-orange-700 border-orange-200'));
-    } else if (row.currentUserIsHost && activeTab !== 'attending') {
+    } else if (!isStaffLeader && row.currentUserIsHost && activeTab !== 'attending') {
       badges.push(chip('host', 'Được giao làm host', 'bg-emerald-50 text-emerald-700 border-emerald-200'));
     }
     return badges.length ? <div className="flex flex-wrap gap-1 mt-1">{badges}</div> : null;
   };
 
-  const getStatusBadge = (statusText: string) => {
+  const getStatusBadge = (row: Row) => {
+    let statusText = 'Không xác định';
     const base = 'inline-flex min-w-[96px] max-w-[150px] justify-center whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-semibold';
-    switch (statusText) {
-      case 'Chờ duyệt':
-      case 'Chờ phân công':
-        return <span className={`${base} bg-yellow-50 text-yellow-700 border-yellow-200`}>{statusText}</span>;
-      case 'Đã duyệt':
-        return <span className={`${base} bg-cyan-50 text-cyan-700 border-cyan-200`}>Đã duyệt</span>;
-      case 'Trước tiếp khách':
-        return <span className={`${base} bg-blue-50 text-blue-700 border-blue-200`}>Trước tiếp khách</span>;
-      case 'Trong tiếp khách':
-        return <span className={`${base} bg-green-50 text-green-700 border-green-200`}>Trong tiếp khách</span>;
-      case 'Chờ đóng đoàn':
-        return <span className={`${base} bg-orange-50 text-orange-700 border-orange-200`}>Chờ đóng đoàn</span>;
-      case 'Đã đóng đoàn':
-        return <span className={`${base} bg-slate-100 text-slate-700 border-slate-300`}>Đã đóng đoàn</span>;
-      case 'Từ chối':
-        return <span className={`${base} bg-red-50 text-red-700 border-red-200`}>Từ chối</span>;
-      case 'Đã hủy':
-        return <span className={`${base} bg-gray-100 text-gray-600 border-gray-200`}>Đã hủy</span>;
-      default:
-        return <span className={`${base} bg-gray-100 text-gray-700 border-gray-200`}>{statusText}</span>;
+    
+    if (activeTab === 'attending') {
+      const text = row.statusText;
+      let cls = 'bg-gray-100 text-gray-700 border-gray-200';
+      if (text === 'Chờ phản hồi') cls = 'bg-yellow-50 text-yellow-700 border-yellow-200';
+      else if (text === 'Đã nhận lời' || text === 'Đã nhận') cls = 'bg-green-50 text-green-700 border-green-200';
+      else if (text === 'Mới được giao') cls = 'bg-blue-50 text-blue-700 border-blue-200';
+      else if (text === 'Đã từ chối') cls = 'bg-red-50 text-red-700 border-red-200';
+      return <span title={text} className={`${base} ${cls}`}>{text}</span>;
     }
+
+    // Compute synchronized status text
+    if (row.requestStatus === 'CANCELLED' || row.campusStatus === 'CANCELLED') {
+      if ((row as any).cancellationActorType === 'VISITOR') statusText = 'Khách đã hủy';
+      else if ((row as any).cancellationActorType === 'HOST') statusText = 'Host đã hủy';
+      else if ((row as any).cancellationActorType === 'SYSTEM') statusText = 'Hệ thống đã hủy';
+      else statusText = 'Đã hủy';
+    }
+    else if (row.requestStatus === 'REJECTED') statusText = 'Từ chối';
+    else if (row.requestStatus === 'PENDING_APPROVAL') statusText = 'Chờ duyệt';
+    else if (row.requestStatus === 'APPROVED') {
+      if (isPendingHostAssignment(row)) statusText = 'Đã duyệt · Chờ chọn Host';
+      else if (row.campusStatus === 'ASSIGNED') statusText = 'Đã duyệt · Đã phân công Host';
+      else if (row.campusStatus === 'BEFORE_VISIT') statusText = 'Đã duyệt · Đang chuẩn bị';
+      else if (row.campusStatus === 'DURING_VISIT') statusText = 'Đã duyệt · Đang tiếp khách';
+      else if (row.campusStatus === 'AFTER_VISIT') statusText = 'Đã duyệt · Chờ đóng đoàn';
+      else if (row.campusStatus === 'CLOSED') statusText = 'Đã duyệt · Đã đóng đoàn';
+      else statusText = 'Đã duyệt'; // Fallback for APPROVED without specific campus status
+    }
+
+    let titleStr = '';
+    switch (statusText) {
+      case 'Chờ duyệt': titleStr = 'Đơn đang chờ được phê duyệt'; break;
+      case 'Đã duyệt · Chờ chọn Host': titleStr = 'Đơn đã duyệt, chờ bổ nhiệm người phụ trách'; break;
+      case 'Đã duyệt · Đã phân công Host': titleStr = 'Đã phân công người phụ trách, chờ triển khai'; break;
+      case 'Đã duyệt': titleStr = 'Đơn đã duyệt (Chờ triển khai)'; break;
+      case 'Đã duyệt · Đang chuẩn bị': titleStr = 'Đơn đang trong giai đoạn chuẩn bị đón tiếp'; break;
+      case 'Đã duyệt · Đang tiếp khách': titleStr = 'Đoàn đang trong thời gian diễn ra tại cơ sở'; break;
+      case 'Đã duyệt · Chờ đóng đoàn': titleStr = 'Đoàn đã kết thúc, chờ hoàn tất thủ tục đóng đoàn'; break;
+      case 'Đã duyệt · Đã đóng đoàn': titleStr = 'Đoàn đã hoàn tất toàn bộ quy trình'; break;
+      case 'Từ chối': titleStr = 'Đơn đã bị từ chối'; break;
+      case 'Khách đã hủy': titleStr = 'Đoàn khách đã chủ động hủy chuyến thăm'; break;
+      case 'Host đã hủy': titleStr = 'Host phụ trách đã hủy chuyến thăm tại cơ sở'; break;
+      case 'Hệ thống đã hủy': titleStr = 'Hệ thống đã tự động hủy do quá hạn'; break;
+      case 'Đã hủy': titleStr = 'Đơn đã bị hủy bỏ'; break;
+      default: titleStr = statusText; break;
+    }
+
+    if (statusText === 'Chờ duyệt' || statusText === 'Đã duyệt · Chờ chọn Host')
+        return <span title={titleStr} className={`${base} bg-yellow-50 text-yellow-700 border-yellow-200`}>{statusText}</span>;
+    if (statusText === 'Đã duyệt · Đã phân công Host' || statusText === 'Đã duyệt')
+        return <span title={titleStr} className={`${base} bg-cyan-50 text-cyan-700 border-cyan-200`}>{statusText}</span>;
+    if (statusText === 'Đã duyệt · Đang chuẩn bị')
+        return <span title={titleStr} className={`${base} bg-blue-50 text-blue-700 border-blue-200`}>{statusText}</span>;
+    if (statusText === 'Đã duyệt · Đang tiếp khách')
+        return <span title={titleStr} className={`${base} bg-green-50 text-green-700 border-green-200`}>{statusText}</span>;
+    if (statusText === 'Đã duyệt · Chờ đóng đoàn')
+        return <span title={titleStr} className={`${base} bg-orange-50 text-orange-700 border-orange-200`}>{statusText}</span>;
+    if (statusText === 'Đã duyệt · Đã đóng đoàn')
+        return <span title={titleStr} className={`${base} bg-slate-100 text-slate-700 border-slate-300`}>{statusText}</span>;
+    if (statusText === 'Từ chối')
+        return <span title={titleStr} className={`${base} bg-red-50 text-red-700 border-red-200`}>{statusText}</span>;
+    if (statusText.includes('hủy'))
+        return <span title={titleStr} className={`${base} bg-gray-100 text-gray-600 border-gray-200`}>{statusText}</span>;
+
+    return <span title={titleStr} className={`${base} bg-gray-100 text-gray-700 border-gray-200`}>{statusText}</span>;
   };
 
   const renderRowActions = (row: Row) => {
@@ -415,18 +564,24 @@ export function VisitRequestManagement() {
         {/* Slot 1: View */}
         <ActionIconButton title="Xem chi tiết" tone="blue" icon={<Eye className="h-5 w-5" />} onClick={(e) => { e.stopPropagation(); handleView(row); }} />
 
-        {/* Slot 2: Approve / Transfer / Reason */}
+        {/* Slot 2: Approve / Transfer / Reason / Accept */}
         {can('HO_APPROVE') ? (
           <ActionIconButton title="Duyệt đơn liên cơ sở" tone="green" icon={<Check className="h-5 w-5" />}
             onClick={(e) => { e.stopPropagation(); setApproveConfirm({ open: true, row, submitting: false, error: null }); }} />
         ) : can('APPROVE_AND_ASSIGN_HOST') ? (
           <ActionIconButton title="Duyệt & chọn host" tone="green" icon={<Check className="h-5 w-5" />}
             onClick={(e) => { e.stopPropagation(); setAssign({ open: true, row, mode: 'approve' }); }} />
-        ) : can('TRANSFER_HOST') ? (
+        ) : (can('TRANSFER_HOST') && (!isStaffLeader || isPendingHostAssignment(row))) ? (
           <ActionIconButton 
-            title={(row.currentUserRelation === 'PENDING_HOST_ASSIGNMENT' || row.currentUserRelation === 'TEMP_CAMPUS_RESPONSIBLE' || (isStaffLeader && row.hostAssignmentSource === 'AUTO_STAFF_LEADER')) ? "Chọn Host chính thức" : "Chuyển host phụ trách"} 
+            title={isPendingHostAssignment(row) ? "Chọn Host chính thức" : "Chuyển host phụ trách"} 
             tone="blue" icon={<UserCog className="h-5 w-5" />}
             onClick={(e) => { e.stopPropagation(); setAssign({ open: true, row, mode: 'transfer' }); }} />
+        ) : can('ACCEPT_INVITATION') ? (
+          <ActionIconButton title="Chấp nhận lời mời" tone="green" icon={<Check className="h-5 w-5" />}
+            onClick={(e) => { e.stopPropagation(); submitAcceptInvitation(row); }} />
+        ) : can('ASSIGN_TO_DEPARTMENT_STAFF') ? (
+          <ActionIconButton title="Giao việc cho Staff" tone="blue" icon={<Users className="h-5 w-5" />}
+            onClick={(e) => { e.stopPropagation(); submitAssignDeptStaff(row); }} />
         ) : showReason ? (
           <ActionIconButton title="Xem lý do từ chối" tone="orange" icon={<AlertCircle className="h-5 w-5" />}
             onClick={(e) => { e.stopPropagation(); setReason({ open: true, row }); }} />
@@ -434,10 +589,13 @@ export function VisitRequestManagement() {
           <span className="h-9 w-9" aria-hidden="true" />
         )}
 
-        {/* Slot 3: Reject / Cancel */}
+        {/* Slot 3: Reject / Cancel / Decline */}
         {(can('HO_REJECT') || can('CAMPUS_REJECT')) ? (
           <ActionIconButton title="Từ chối" tone="red" icon={<X className="h-5 w-5" />}
             onClick={(e) => { e.stopPropagation(); setReject({ open: true, row, action: can('HO_REJECT') ? 'HO_REJECT' : 'CAMPUS_REJECT', text: '', submitting: false, error: null }); }} />
+        ) : can('DECLINE_INVITATION') ? (
+          <ActionIconButton title="Từ chối lời mời" tone="red" icon={<X className="h-5 w-5" />}
+            onClick={(e) => { e.stopPropagation(); setReject({ open: true, row, action: 'DECLINE_INVITATION' as any, text: '', submitting: false, error: null }); }} />
         ) : (can('CANCEL_BY_VISITOR') || can('CANCEL_BY_HOST')) ? (
           <ActionIconButton title="Hủy lịch thăm" tone="red" icon={<XCircle className="h-5 w-5" />}
             onClick={(e) => { e.stopPropagation(); setCancel({ open: true, row, mode: can('CANCEL_BY_HOST') ? 'host' : 'visitor', text: '', submitting: false, error: null }); }} />
@@ -526,9 +684,9 @@ export function VisitRequestManagement() {
       {showTabs && (
         <div className="flex w-full sm:w-max items-center gap-1 rounded-xl bg-slate-100 p-1">
           {([
-            { key: 'responsible' as Tab, label: 'Đơn phụ trách' },
-            { key: 'attending' as Tab, label: 'Đơn mời tham dự' },
-          ]).map((t) => (
+            { key: 'responsible' as Tab, label: responsibleTabLabel, show: canUseResponsibleTab },
+            { key: 'attending' as Tab, label: attendingTabLabel, show: canUseAttendingTab },
+          ]).filter(t => t.show).map((t) => (
             <button
               key={t.key}
               onClick={() => { 
@@ -538,7 +696,7 @@ export function VisitRequestManagement() {
                   setDraftFilters(nextEmptyFilters);
                   setAppliedFilters(nextEmptyFilters);
                   setCurrentPage(1); 
-                  loadDelegations(t.key, 1, pageSize, nextEmptyFilters); 
+                  loadDelegations(t.key, 1, pageSize, nextEmptyFilters, sortOrder); 
                 } 
               }}
               className={`flex-1 sm:flex-none px-5 py-2 rounded-lg text-sm font-bold transition-colors outline-none cursor-pointer ${activeTab === t.key ? 'bg-white text-[#004c91] shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
@@ -557,7 +715,10 @@ export function VisitRequestManagement() {
             <div className="relative w-full">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
               <input type="text" placeholder="Tìm tên đoàn, host, đối tác..." value={draftFilters.keyword}
-                onChange={(e) => setDraftFilters({ ...draftFilters, keyword: e.target.value })}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setDraftFilters({ ...draftFilters, keyword: val });
+                }}
                 onKeyDown={(e) => { if (e.key === 'Enter') handleApplyFilters(); }}
                 className="w-full pl-10 pr-4 h-11 bg-white border border-slate-300 rounded-xl text-sm font-semibold text-slate-700 outline-none focus:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/10 transition-colors min-w-0" />
             </div>
@@ -576,7 +737,7 @@ export function VisitRequestManagement() {
                   <div className="fixed inset-0 z-10" onClick={() => setIsStatusFilterOpen(false)} />
                   <div className="absolute left-0 top-full z-30 mt-1 w-full min-w-[210px] rounded-xl border border-slate-200 bg-white py-1 shadow-lg max-h-72 overflow-y-auto">
                     {filterConfig.statusOptions.map((option) => (
-                      <div key={option.value} className={`px-3 py-2 text-sm cursor-pointer hover:bg-slate-50 flex items-center ${draftFilters.status === option.value ? 'bg-blue-50 text-[#004c91] font-bold' : 'text-gray-700 font-medium'}`}
+                      <div key={option.value} title={option.description} className={`px-3 py-2 text-sm cursor-pointer hover:bg-slate-50 flex items-center ${draftFilters.status === option.value ? 'bg-blue-50 text-[#004c91] font-bold' : 'text-gray-700 font-medium'}`}
                         onClick={() => { setDraftFilters({ ...draftFilters, status: option.value }); setIsStatusFilterOpen(false); }}>
                         {option.label}
                         {draftFilters.status === option.value && <Check className="w-4 h-4 ml-auto text-[#004c91]" />}
@@ -693,7 +854,21 @@ export function VisitRequestManagement() {
           <div className="grid grid-cols-[52px_minmax(0,1fr)_210px_150px_140px] bg-[#004c91] text-white">
             <div className="p-3 text-[12px] font-bold text-center uppercase tracking-wider">STT</div>
             <div className="p-3 text-[12px] font-bold text-left uppercase tracking-wider">Thông tin đoàn</div>
-            <div className="p-3 text-[12px] font-bold text-left uppercase tracking-wider">Lịch tiếp</div>
+            <div 
+              className="p-3 text-[12px] font-bold text-left uppercase tracking-wider cursor-pointer hover:bg-[#003b70] transition-colors group flex items-center gap-1"
+              onClick={() => {
+                const nextSort = sortOrder === 'desc' ? 'asc' : 'desc';
+                setSortOrder(nextSort);
+                setCurrentPage(1);
+                loadDelegations(activeTab, 1, pageSize, appliedFilters, nextSort);
+              }}
+              title="Nhấn để sắp xếp theo thời gian tiếp khách"
+            >
+              Lịch tiếp
+              <span className="text-[10px] text-blue-200 opacity-0 group-hover:opacity-100 transition-opacity">
+                {sortOrder === 'desc' ? '▼' : '▲'}
+              </span>
+            </div>
             <div className="p-3 text-[12px] font-bold text-center uppercase tracking-wider">Trạng thái</div>
             <div className="p-3 text-[12px] font-bold text-center uppercase tracking-wider">Hành động</div>
           </div>
@@ -710,7 +885,7 @@ export function VisitRequestManagement() {
                   <p className="text-xs font-medium text-slate-500 truncate" title={row.org}>{row.org}</p>
                   {!isHO && (
                     <p className="text-xs font-medium text-slate-600 mt-0.5 truncate">
-                      <span className="text-slate-400">Host:</span> {row.host || (row.requestStatus === 'APPROVED' && isVisitor ? 'Đang phân công' : '-')}
+                      <span className="text-slate-400">{isPendingHostAssignment(row) ? 'Người tiếp nhận tạm:' : 'Host:'}</span> {row.host || (row.requestStatus === 'APPROVED' && isVisitor ? 'Đang phân công' : '-')}
                       <span className="mx-1 text-slate-300">|</span>
                       <span className="text-slate-400">Cơ sở:</span> {row.campus || '-'}
                     </p>
@@ -721,7 +896,7 @@ export function VisitRequestManagement() {
                   <div className="flex items-center gap-2 whitespace-nowrap"><span className="w-9 text-slate-400 font-medium">Từ:</span><span className="font-semibold text-slate-800">{formatDateTimeShort(row.plannedStartAt)}</span></div>
                   <div className="flex items-center gap-2 whitespace-nowrap"><span className="w-9 text-slate-400 font-medium">Đến:</span><span className="font-semibold text-slate-800">{formatDateTimeShort(row.plannedEndAt)}</span></div>
                 </div>
-                <div className="py-3 px-3 flex flex-col items-center justify-center gap-1">{getStatusBadge(row.statusText)}</div>
+                <div className="py-3 px-3 flex flex-col items-center justify-center gap-1">{getStatusBadge(row)}</div>
                 <div className="py-3 px-2 flex items-center justify-center" onClick={(e) => e.stopPropagation()}>{renderRowActions(row)}</div>
               </div>
             )) : (
@@ -741,7 +916,7 @@ export function VisitRequestManagement() {
                   <p className="font-bold text-[#004c91] text-sm line-clamp-2 leading-snug">{row.name}</p>
                   <p className="text-xs text-slate-500 truncate">{row.org}</p>
                 </div>
-                <div className="flex-shrink-0">{getStatusBadge(row.statusText)}</div>
+                <div className="flex-shrink-0">{getStatusBadge(row)}</div>
               </div>
               {renderBadges(row)}
               <div className="grid grid-cols-1 gap-1.5 text-xs text-slate-600 bg-slate-50 p-3 rounded-xl border border-slate-100 mt-3">
@@ -883,6 +1058,7 @@ export function VisitRequestManagement() {
           visitInstanceId={assign.row.visitInstanceId}
           delegationName={assign.row.name}
           currentHostUserId={assign.row.currentHostUserId}
+          customTitle={assign.mode === 'transfer' && (assign.row.currentUserRelation === 'PENDING_HOST_ASSIGNMENT' || assign.row.currentUserRelation === 'TEMP_CAMPUS_RESPONSIBLE' || (isStaffLeader && assign.row.hostAssignmentSource === 'AUTO_STAFF_LEADER')) ? "Chọn Host chính thức" : undefined}
           onClose={() => setAssign({ open: false, row: null, mode: 'approve' })}
           onConfirmed={() => { setAssign({ open: false, row: null, mode: 'approve' }); loadDelegations(activeTab, currentPage, pageSize, appliedFilters); }}
         />

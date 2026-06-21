@@ -28,4 +28,6 @@ public class ViewGuestDelegationListQuery : IRequest<PaginatedResult<VisitReques
     public bool? ReadOnlyOnly { get; init; }
     public bool? ActionableOnly { get; init; }
     public string? Timing { get; init; }
+    public string? SortBy { get; init; }
+    public string? SortOrder { get; init; }
 }

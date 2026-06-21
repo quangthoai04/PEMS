@@ -115,4 +115,23 @@ export const delegationsApi = {
     );
     return data;
   },
+
+  visitInvitations: {
+    async getMyInvitations(params?: Record<string, unknown>): Promise<any> {
+      const { data } = await httpClient.get<any>(API_ENDPOINTS.visitInvitations.my, { params });
+      return data;
+    },
+    async acceptInvitation(participantId: string | number): Promise<any> {
+      const { data } = await httpClient.post<any>(API_ENDPOINTS.visitInvitations.accept(participantId));
+      return data;
+    },
+    async declineInvitation(participantId: string | number, reason: string): Promise<any> {
+      const { data } = await httpClient.post<any>(API_ENDPOINTS.visitInvitations.decline(participantId), { reason });
+      return data;
+    },
+    async assignDepartmentStaff(participantId: string | number, departmentStaffUserId: number, note: string): Promise<any> {
+      const { data } = await httpClient.post<any>(API_ENDPOINTS.visitInvitations.assignDepartmentStaff(participantId), { departmentStaffUserId, note });
+      return data;
+    },
+  },
 };

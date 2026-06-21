@@ -54,4 +54,10 @@ export const API_ENDPOINTS = {
     verify: '/visit-requests/verify',
     resendOtp: '/visit-requests/resend-otp',
   },
+  visitInvitations: {
+    my: '/visit-invitations/my',
+    accept: (participantId: string | number) => `/visit-invitations/${participantId}/accept`,
+    decline: (participantId: string | number) => `/visit-invitations/${participantId}/decline`,
+    assignDepartmentStaff: (participantId: string | number) => `/visit-invitations/${participantId}/assign-department-staff`,
+  },
 };
