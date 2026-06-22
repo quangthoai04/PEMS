@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace PEMS.Domain.Entities.AgendaTemplates;
@@ -22,8 +22,6 @@ public class AgendaTemplate
     [Column("description")]
     public string? Description { get; set; }
 
-    [Column("items_json")]
-    public string? ItemsJson { get; set; }
 
     [Column("status")]
     public string Status { get; set; } = "ACTIVE";
@@ -45,4 +43,6 @@ public class AgendaTemplate
 
     [Column("deleted_by")]
     public ulong? DeletedBy { get; set; }
+
+    public virtual ICollection<AgendaTemplateItem> Items { get; set; } = new List<AgendaTemplateItem>();
 }

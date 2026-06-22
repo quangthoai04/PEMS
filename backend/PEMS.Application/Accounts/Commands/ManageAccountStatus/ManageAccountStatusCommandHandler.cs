@@ -97,8 +97,15 @@ public sealed class ManageAccountStatusCommandHandler : IRequestHandler<ManageAc
             Action = "MANAGE_ACCOUNT_STATUS",
             EntityType = "User",
             EntityId = user.UserId,
-            OldValuesJson = JsonSerializer.Serialize(new { status = previousStatus }),
-            NewValuesJson = JsonSerializer.Serialize(new { status = newStatus, reason = request.Reason }),
+            Changes = new List<AuditLogChange>
+            {
+                new AuditLogChange
+                {
+                    FieldName = "Status",
+                    OldValueText = previousStatus,
+                    NewValueText = JsonSerializer.Serialize(new { status = newStatus, reason = request.Reason })
+                }
+            },
             CreatedAt = now,
         });
 
@@ -112,21 +119,7 @@ public sealed class ManageAccountStatusCommandHandler : IRequestHandler<ManageAc
             revoked = await _sessionService.RevokeAllActiveSessionsAsync(
                 user.UserId, SessionRevokeReasons.AccountDeactivated, actorId, cancellationToken);
 
-            await _audit.WriteSecurityEventAsync(
-                user.UserId,
-                user.Email,
-                SecurityEventTypes.AccountLocked,
-                SecuritySeverities.High,
-                null,
-                null,
-                JsonSerializer.Serialize(new
-                {
-                    previousStatus,
-                    newStatus,
-                    revokedSessions = revoked,
-                    by = actorId,
-                }),
-                cancellationToken);
+
         }
 
         return new ManageAccountStatusResponse

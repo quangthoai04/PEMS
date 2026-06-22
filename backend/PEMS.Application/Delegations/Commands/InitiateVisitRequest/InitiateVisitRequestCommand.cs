@@ -10,30 +10,38 @@ namespace PEMS.Application.Delegations.Commands.InitiateVisitRequest;
 /// </summary>
 public sealed record InitiateVisitRequestCommand(
     // ── Registration info ──────────────────────────────────
-    string RegisterFullName,
-    string RegisterNationality,
-    string RegisterOrganization,
-    string RegisterJobTitle,
-    string RegisterPhone,
-    string RegisterEmail,
+    string RegistrantFullName,
+    string RegistrantNationality,
+    string RegistrantOrganization,
+    string RegistrantPosition,
+    string RegistrantPhone,
+    string RegistrantEmail,
 
     // ── Visit info ─────────────────────────────────────────
     string DelegationName,
     string VisitScope,
-    IList<VisitSlotDto> VisitSlots,
+    string VisitType,
+    string? VisitTypeOther,
+    IList<VisitSlotDto> CampusVisits,
     string Purpose,
     string? WorkingContent,
 
     // ── Attendees ──────────────────────────────────────────
+    int ExpectedGuestCount,
     IList<VisitorDto> Visitors,
-    IList<SupportTeamMemberDto> SupportTeam,
+    IList<SupportTeamMemberDto> SupportMembers,
 
     // ── Contact point ──────────────────────────────────────
-    ContactPointDto ContactPoint,
+    ContactPointDto ContactPerson,
     bool IsContactSelf,
 
     // ── Additional ─────────────────────────────────────────
-    string Language,
-    string? Vehicle,
+    string WorkingLanguage,
+    string? InterpreterNote,
+    string TransportationType,
+    string? TransportationDetail,
+    string MediaConsentStatus,
+    string? MediaConsentNote,
+    ulong? PartnerId,
     string? Notes
 ) : IRequest<InitiateVisitRequestResponse>, IVisitRequestFormCommand;

@@ -88,8 +88,7 @@ public sealed class ResetPasswordCommandHandler : IRequestHandler<ResetPasswordC
         // Invalidate every existing session after a password reset.
         await _sessionService.RevokeAllActiveSessionsAsync(user.UserId, SessionRevokeReasons.PasswordReset, null, cancellationToken);
 
-        await _audit.WriteSecurityEventAsync(user.UserId, email, SecurityEventTypes.PasswordResetSuccess,
-            SecuritySeverities.Medium, request.IpAddress, request.UserAgent, null, cancellationToken);
+
 
         return new MessageResponse("Your password has been reset. Please sign in with your new password.");
     }

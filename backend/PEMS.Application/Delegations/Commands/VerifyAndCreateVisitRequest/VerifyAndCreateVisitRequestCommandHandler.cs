@@ -45,16 +45,16 @@ public sealed class VerifyAndCreateVisitRequestCommandHandler
         VerifyAndCreateVisitRequestCommand request, CancellationToken cancellationToken)
     {
         var now = _clock.UtcNow;
-        var email = request.RegisterEmail.Trim().ToLowerInvariant();
+        var email = request.RegistrantEmail.Trim().ToLowerInvariant();
 
         var visitScope = request.VisitScope == VisitScopes.MultiCampus
             ? VisitScopes.MultiCampus
             : VisitScopes.SingleCampus;
 
         // Contact point is the account holder; falls back to registrant when IsContactSelf.
-        var contactEmail = request.IsContactSelf ? email : request.ContactPoint.Email;
-        var contactName  = request.IsContactSelf ? request.RegisterFullName : request.ContactPoint.FullName;
-        var contactPhone = request.IsContactSelf ? request.RegisterPhone : request.ContactPoint.Phone;
+        var contactEmail = request.IsContactSelf ? email : request.ContactPerson.Email;
+        var contactName  = request.IsContactSelf ? request.RegistrantFullName : request.ContactPerson.FullName;
+        var contactPhone = request.IsContactSelf ? request.RegistrantPhone : request.ContactPerson.Phone;
 
         // ── Atomic submit: consume OTP → dedupe → provision visitor → insert request +
         //    campuses + guests must all commit together, or nothing at all. ──
@@ -101,23 +101,31 @@ public sealed class VerifyAndCreateVisitRequestCommandHandler
 
             // ── 3. Rebuild the form payload from the resubmitted command ──────────
             var formData = new VisitRequestFormData(
-                request.RegisterFullName,
-                request.RegisterNationality,
-                request.RegisterOrganization,
-                request.RegisterJobTitle,
-                request.RegisterPhone,
+                request.RegistrantFullName,
+                request.RegistrantNationality,
+                request.RegistrantOrganization,
+                request.RegistrantPosition,
+                request.RegistrantPhone,
                 email,
                 request.DelegationName,
                 visitScope,
-                request.VisitSlots,
+                request.VisitType,
+                request.VisitTypeOther,
+                request.CampusVisits,
                 request.Purpose,
                 request.WorkingContent,
+                request.ExpectedGuestCount,
                 request.Visitors,
-                request.SupportTeam,
-                request.ContactPoint,
+                request.SupportMembers,
+                request.ContactPerson,
                 request.IsContactSelf,
-                request.Language,
-                request.Vehicle,
+                request.WorkingLanguage,
+                request.InterpreterNote,
+                request.TransportationType,
+                request.TransportationDetail,
+                request.MediaConsentStatus,
+                request.MediaConsentNote,
+                request.PartnerId,
                 request.Notes);
 
             // ── 4. Provision Visitor account (links existing or creates a new VISITOR) ──
@@ -129,7 +137,7 @@ public sealed class VerifyAndCreateVisitRequestCommandHandler
                 cancellationToken);
 
             // ── 5. Create VisitRequest + child aggregates (campuses, guests) ──────
-            visitRequest = await _visitRequestService.CreateAsync(formData, visitorUserId, now, cancellationToken);
+            visitRequest = await _visitRequestService.CreateAsync(formData, visitorUserId, "VISITOR_SUBMITTED", now, cancellationToken);
 
             // ── 6. Approval routing — request decision status only (PENDING_APPROVAL) ──
             visitRequest.Status          = _approvalRouting.DetermineInitialStatus(formData.VisitScope);
@@ -149,8 +157,8 @@ public sealed class VerifyAndCreateVisitRequestCommandHandler
         {
             try
             {
-                var minTime = request.VisitSlots.Min(s => s.StartDatetime);
-                var maxTime = request.VisitSlots.Max(s => s.EndDatetime);
+                var minTime = request.CampusVisits.Min(s => s.StartDatetime);
+                var maxTime = request.CampusVisits.Max(s => s.EndDatetime);
                 var plannedTimeText = minTime.Date == maxTime.Date 
                     ? $"{minTime:dd/MM/yyyy} ({minTime:HH:mm} - {maxTime:HH:mm})"
                     : $"{minTime:dd/MM/yyyy HH:mm} - {maxTime:dd/MM/yyyy HH:mm}";
@@ -168,7 +176,7 @@ public sealed class VerifyAndCreateVisitRequestCommandHandler
                 {
                     await _emailService.SendRegistrantConfirmationAsync(
                         email,
-                        request.RegisterFullName,
+                        request.RegistrantFullName,
                         contactName,
                         contactEmail,
                         request.DelegationName,

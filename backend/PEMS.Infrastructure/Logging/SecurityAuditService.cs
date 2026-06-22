@@ -52,23 +52,33 @@ public sealed class SecurityAuditService : ISecurityAuditService
 
     public async Task WriteSecurityEventAsync(
         ulong? userId,
-        string? email,
+        string? emailSnapshot,
         string eventType,
-        string severity,
-        string? ipAddress,
-        string? userAgent,
-        string? metadata = null,
+        string result,
+        string? failureReasonCode = null,
+        string? ipAddress = null,
+        string? userAgent = null,
+        string? loginPortal = null,
+        ulong? selectedCampusId = null,
+        string? providerType = null,
+        ulong? sessionId = null,
+        string? detailText = null,
         CancellationToken cancellationToken = default)
     {
         var entry = new SecurityEvent
         {
             UserId = userId,
-            Email = Truncate(email, 150),
+            EmailSnapshot = Truncate(emailSnapshot, 150),
             EventType = Truncate(eventType, 80) ?? eventType,
-            Severity = severity,
+            Result = result,
+            FailureReasonCode = failureReasonCode,
             IpAddress = Truncate(ipAddress, 45),
             UserAgent = Truncate(userAgent, 500),
-            Metadata = metadata,
+            LoginPortal = loginPortal,
+            SelectedCampusId = selectedCampusId,
+            ProviderType = providerType,
+            SessionId = sessionId,
+            DetailText = detailText,
             CreatedAt = _clock.UtcNow
         };
 

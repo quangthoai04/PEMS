@@ -54,8 +54,7 @@ public sealed class ForgotPasswordCommandHandler : IRequestHandler<ForgotPasswor
 
                 await _emailService.SendPasswordResetAsync(user.Email, user.FullName, code, cancellationToken);
 
-                await _audit.WriteSecurityEventAsync(user.UserId, email, SecurityEventTypes.PasswordResetRequested,
-                    SecuritySeverities.Low, request.IpAddress, request.UserAgent, null, cancellationToken);
+
             }
         }
         catch (Exception ex)

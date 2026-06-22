@@ -92,8 +92,7 @@ public sealed class ChangePasswordCommandHandler : IRequestHandler<ChangePasswor
 
         await _db.SaveChangesAsync(cancellationToken);
 
-        await _audit.WriteSecurityEventAsync(userId, user.Email, SecurityEventTypes.PasswordChanged,
-            SecuritySeverities.Medium, request.IpAddress, request.UserAgent, null, cancellationToken);
+
 
         return new ChangePasswordResponse 
         { 

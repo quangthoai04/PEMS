@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace PEMS.Domain.Entities.Emails;
@@ -25,11 +25,17 @@ public class SentEmail
     [Column("body_snapshot")]
     public string? BodySnapshot { get; set; }
 
-    [Column("recipients_json")]
-    public string? RecipientsJson { get; set; }
+    [Column("provider_thread_id")]
+    public string? ProviderThreadId { get; set; }
 
-    [Column("metadata_json")]
-    public string? MetadataJson { get; set; }
+    [Column("provider_message_id")]
+    public string? ProviderMessageId { get; set; }
+
+    [Column("retry_count")]
+    public uint RetryCount { get; set; }
+
+    [Column("last_attempt_at")]
+    public DateTime? LastAttemptAt { get; set; }
 
     [Column("status")]
     public string Status { get; set; } = "QUEUED";
@@ -43,8 +49,12 @@ public class SentEmail
     [Column("sent_at")]
     public DateTime? SentAt { get; set; }
 
+    [Column("delivered_at")]
+    public DateTime? DeliveredAt { get; set; }
+
     [Column("created_at")]
     public DateTime CreatedAt { get; set; }
 
     public virtual EmailTemplate? EmailTemplate { get; set; }
+    public virtual ICollection<SentEmailRecipient> Recipients { get; set; } = new List<SentEmailRecipient>();
 }

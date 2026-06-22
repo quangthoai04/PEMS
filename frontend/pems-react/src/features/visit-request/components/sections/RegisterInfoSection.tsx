@@ -5,6 +5,7 @@ import { FormField, inputCls } from '../shared/FormField';
 import { CountrySelect } from '../shared/CountrySelect';
 import { PhoneInput } from '../shared/PhoneInput';
 import { OrganizationSelect } from '../shared/OrganizationSelect';
+import { partnersData } from '../../../../pages/PartnersPage';
 
 interface Props {
   form: UseFormReturn<VisitRequestSchema>;
@@ -55,6 +56,27 @@ export const RegisterInfoSection: React.FC<Props> = ({ form }) => {
               />
             )}
           />
+        </FormField>
+
+        <FormField
+          label="Đối tác/Tổ chức đã có trong hệ thống"
+          error={e?.partnerId?.message as string | undefined}
+          isValid={t?.partnerId && !e?.partnerId}
+          subtitle="Nếu đơn vị của bạn đã là đối tác của FPTU, vui lòng chọn tại đây."
+        >
+          <div className="relative">
+            <select
+              {...register('partnerId', { setValueAs: v => v === "" ? null : Number(v) })}
+              className={inputCls(!!e?.partnerId, t?.partnerId && !e?.partnerId)}
+            >
+              <option value="">-- Tổ chức mới / Chưa có trong hệ thống --</option>
+              {partnersData.map(partner => (
+                <option key={partner.id} value={partner.id}>
+                  {partner.name}
+                </option>
+              ))}
+            </select>
+          </div>
         </FormField>
 
         <FormField

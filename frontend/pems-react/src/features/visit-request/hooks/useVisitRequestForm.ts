@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { visitRequestSchema, type VisitRequestSchema } from '../schema/visitRequest.schema';
@@ -23,14 +23,22 @@ export const DEFAULT_VISIT_REQUEST_VALUES: VisitRequestSchema = {
   registerInfo: { fullName: '', organization: '', jobTitle: '', phone: '', email: '', nationality: '' },
   delegationName: '',
   visitMode: 'single',
+  visitType: 'CAMPUS_TOUR',
+  visitTypeOther: '',
   visits: [{ campus: 'HN', startDatetime: '', endDatetime: '' }],
   purpose: '',
   workingContent: '',
+  expectedGuestCount: 1,
   visitors: [{ ...DEFAULT_VISITOR }],
-  supportTeam: [{ ...DEFAULT_SUPPORT }],
+  supportTeam: [],
   contactPoint: { fullName: '', organization: '', phone: '', email: '' },
-  language: 'english',
-  vehicle: '',
+  workingLanguage: 'EN',
+  interpreterNote: '',
+  transportationType: 'UNKNOWN',
+  transportationDetail: '',
+  mediaConsentStatus: 'UNKNOWN',
+  mediaConsentNote: '',
+  partnerId: null,
   notes: '',
   timeOverlapConfirmed: false,
 };
@@ -135,9 +143,14 @@ export const useVisitRequestForm = (onSuccess: (result: VerifyResponse) => void)
     ]);
   };
 
+  const addSupportMember = useCallback(() => {
+    const currentTeam = form.getValues('supportTeam') || [];
+    form.setValue('supportTeam', [...currentTeam, { ...DEFAULT_SUPPORT }]);
+  }, [form]);
+
   const clearSupportFirstRow = () => {
     const currentTeam = form.getValues('supportTeam');
-    form.setValue('supportTeam', [{ ...DEFAULT_SUPPORT }, ...currentTeam.slice(1)]);
+    form.setValue('supportTeam', currentTeam.slice(1));
   };
 
   const syncContactFromRegister = () => {
@@ -202,9 +215,11 @@ export const useVisitRequestForm = (onSuccess: (result: VerifyResponse) => void)
         setSubmitError(message);
         mapContactEmailError(err, message);
       } else {
-        setOtpError(
-          err?.response?.data?.message ?? 'Mã xác thực không đúng. Vui lòng thử lại.'
-        );
+        console.error('UC-17 OTP verify failed:', err?.response?.status, err?.response?.data);
+        const msg = err?.response?.data?.message
+          || err?.response?.data?.error
+          || 'Đã xảy ra lỗi hệ thống. Vui lòng thử lại sau.';
+        setOtpError(msg);
       }
     } finally {
       setIsVerifying(false);

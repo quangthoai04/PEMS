@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace PEMS.Domain.Entities.Minutes;
@@ -19,8 +19,6 @@ public class Minute
     [Column("content")]
     public string? Content { get; set; }
 
-    [Column("participants_json")]
-    public string? ParticipantsJson { get; set; }
 
     [Column("status")]
     public string Status { get; set; } = "DRAFT";
@@ -44,4 +42,5 @@ public class Minute
     public ulong? UpdatedBy { get; set; }
 
     public virtual ICollection<MinuteActionItem> ActionItems { get; set; } = new List<MinuteActionItem>();
+    public virtual ICollection<MinuteParticipant> Participants { get; set; } = new List<MinuteParticipant>();
 }

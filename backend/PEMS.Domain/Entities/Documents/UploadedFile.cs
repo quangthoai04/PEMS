@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace PEMS.Domain.Entities.Documents;
@@ -31,9 +31,20 @@ public class UploadedFile
     [Column("checksum_sha256")]
     public string? ChecksumSha256 { get; set; }
 
-    [Column("visibility")]
-    public string Visibility { get; set; } = "PRIVATE";
+    [Column("external_file_id")]
+    public string? ExternalFileId { get; set; }
 
+    [Column("web_view_url")]
+    public string? WebViewUrl { get; set; }
+
+    [Column("download_url")]
+    public string? DownloadUrl { get; set; }
+
+    [Column("thumbnail_url")]
+    public string? ThumbnailUrl { get; set; }
+
+    [Column("file_purpose")]
+    public string? FilePurpose { get; set; }
     [Column("uploaded_by")]
     public ulong? UploadedBy { get; set; }
 

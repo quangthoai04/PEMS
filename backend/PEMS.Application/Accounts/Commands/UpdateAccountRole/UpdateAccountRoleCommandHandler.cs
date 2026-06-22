@@ -78,14 +78,21 @@ public sealed class UpdateAccountRoleCommandHandler : IRequestHandler<UpdateAcco
             Action = "UPDATE_ACCOUNT_ROLE",
             EntityType = "User",
             EntityId = user.UserId,
-            OldValuesJson = oldValues,
-            NewValuesJson = JsonSerializer.Serialize(new
+            Changes = new List<AuditLogChange>
             {
-                roleCode = shape.RoleCode,
-                subRole = shape.SubRole,
-                campusId = shape.PrimaryCampusId,
-                departmentId = shape.DepartmentId,
-            }),
+                new AuditLogChange
+                {
+                    FieldName = "Role",
+                    OldValueText = oldValues,
+                    NewValueText = JsonSerializer.Serialize(new
+                    {
+                        roleCode = shape.RoleCode,
+                        subRole = shape.SubRole,
+                        campusId = shape.PrimaryCampusId,
+                        departmentId = shape.DepartmentId,
+                    })
+                }
+            },
             CreatedAt = now,
         });
 

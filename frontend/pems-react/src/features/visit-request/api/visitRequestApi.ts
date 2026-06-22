@@ -17,22 +17,34 @@ export interface VerifyResponse {
 
 function toVietnamIso(value: string) {
   if (!value) return '';
-  return `${value}:00+07:00`;
+  // datetime-local may return "2026-06-28T09:00" or "2026-06-28T09:00:00"
+  // We need to produce a valid ISO-8601 with timezone: "2026-06-28T09:00:00+07:00"
+  // Strip any existing timezone suffix first, then normalize to always have seconds.
+  const clean = value.replace(/([+-]\d{2}:\d{2}|Z)$/, '');
+  const parts = clean.split('T');
+  if (parts.length !== 2) return `${value}+07:00`;
+  const timeParts = parts[1].split(':');
+  const hh = timeParts[0] || '00';
+  const mm = timeParts[1] || '00';
+  const ss = timeParts[2]?.split('.')[0] || '00'; // strip ms if present
+  return `${parts[0]}T${hh}:${mm}:${ss}+07:00`;
 }
 
 function mapToPayload(data: VisitRequestSchema) {
   return {
-    registerFullName: data.registerInfo.fullName,
-    registerNationality: data.registerInfo.nationality,
-    registerOrganization: data.registerInfo.organization,
-    registerJobTitle: data.registerInfo.jobTitle,
-    registerPhone: data.registerInfo.phone,
-    registerEmail: data.registerInfo.email,
+    registrantFullName: data.registerInfo.fullName,
+    registrantNationality: data.registerInfo.nationality,
+    registrantOrganization: data.registerInfo.organization,
+    registrantPosition: data.registerInfo.jobTitle,
+    registrantPhone: data.registerInfo.phone,
+    registrantEmail: data.registerInfo.email,
+
+    partnerId: data.partnerId || null,
 
     delegationName: data.delegationName,
     visitScope: data.visitMode === 'multiple' ? 'MULTI_CAMPUS' : 'SINGLE_CAMPUS',
 
-    visitSlots: data.visits.map((v) => ({
+    campusVisits: data.visits.map((v) => ({
       campusId: v.campus,
       startDatetime: toVietnamIso(v.startDatetime),
       endDatetime: toVietnamIso(v.endDatetime),
@@ -40,6 +52,19 @@ function mapToPayload(data: VisitRequestSchema) {
 
     purpose: data.purpose,
     workingContent: data.workingContent,
+
+    expectedGuestCount: data.expectedGuestCount,
+    visitType: data.visitType,
+    visitTypeOther: data.visitType === 'OTHER' ? data.visitTypeOther : null,
+
+    workingLanguage: data.workingLanguage,
+    interpreterNote: data.interpreterNote || null,
+
+    transportationType: data.transportationType,
+    transportationDetail: (data.transportationType === 'FPTU_SUPPORT' || data.transportationType === 'OTHER') ? data.transportationDetail : null,
+
+    mediaConsentStatus: data.mediaConsentStatus,
+    mediaConsentNote: data.mediaConsentNote || null,
 
     visitors: data.visitors.map((v) => ({
       fullName: v.fullName,
@@ -49,14 +74,14 @@ function mapToPayload(data: VisitRequestSchema) {
       organization: v.organization || null,
     })),
 
-    supportTeam: data.supportTeam.map((s) => ({
+    supportMembers: data.supportTeam.map((s) => ({
       fullName: s.fullName,
       jobTitle: s.jobTitle,
       organization: s.organization,
       nationality: s.nationality,
     })),
 
-    contactPoint: {
+    contactPerson: {
       fullName: data.contactPoint.fullName,
       organization: data.contactPoint.organization,
       phone: data.contactPoint.phone,
@@ -66,8 +91,6 @@ function mapToPayload(data: VisitRequestSchema) {
     isContactSelf:
       data.contactPoint.email.toLowerCase() === data.registerInfo.email.toLowerCase(),
 
-    language: data.language === 'vietnamese' ? 'VI' : 'EN',
-    vehicle: data.vehicle || null,
     notes: data.notes || null,
   };
 }

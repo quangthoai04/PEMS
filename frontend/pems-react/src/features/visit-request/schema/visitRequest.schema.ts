@@ -121,22 +121,54 @@ export const visitRequestSchema = z.object({
   }),
   delegationName: z.string().min(1, 'Tên đoàn không được để trống'),
   visitMode: z.enum(['single', 'multiple']),
+  visitType: z.enum(['CAMPUS_TOUR', 'MEETING', 'WORKSHOP', 'SIGNING_CEREMONY', 'EXCHANGE', 'OTHER']),
+  visitTypeOther: z.string().optional().default(''),
   visits: z.array(visitSlotSchema).min(1),
   purpose: z.string().min(1, 'Mục đích thăm không được để trống'),
   workingContent: z.string().min(1, 'Nội dung làm việc không được để trống'),
-  visitors: z.array(visitorSchema).min(1, 'Phải có ít nhất 1 khách trong danh sách'),
-  supportTeam: z.array(supportTeamSchema).min(1, 'Phải có ít nhất 1 nhân sự hỗ trợ'),
+  expectedGuestCount: z.number().min(1, 'Số lượng khách dự kiến phải lớn hơn hoặc bằng 1'),
+  visitors: z.array(visitorSchema),
+  supportTeam: z.array(supportTeamSchema),
   contactPoint: z.object({
     fullName: z.string().min(1, 'Họ tên không được để trống'),
     organization: z.string().min(1, 'Đơn vị không được để trống'),
     phone: phoneSchema,
     email: emailSchema,
   }),
-  language: z.enum(['english', 'vietnamese'], 'Vui lòng chọn ngôn ngữ sử dụng'),
-  vehicle: z.string().optional().default(''),
+  workingLanguage: z.enum(['EN', 'VI']),
+  interpreterNote: z.string().optional().default(''),
+  transportationType: z.enum(['SELF_ARRANGED', 'FPTU_SUPPORT', 'UNKNOWN', 'OTHER']),
+  transportationDetail: z.string().optional().default(''),
+  mediaConsentStatus: z.enum(['AGREED', 'DECLINED', 'UNKNOWN']),
+  mediaConsentNote: z.string().optional().default(''),
+  partnerId: z.number().nullable().optional(),
   notes: z.string().optional().default(''),
   timeOverlapConfirmed: z.boolean().optional().default(false),
 }).superRefine((data, ctx) => {
+  if (data.expectedGuestCount < data.visitors.length) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['expectedGuestCount'],
+      message: 'Số lượng khách dự kiến không được nhỏ hơn số lượng khách trong danh sách',
+    });
+  }
+
+  if (data.visitType === 'OTHER' && (!data.visitTypeOther || data.visitTypeOther.trim() === '')) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['visitTypeOther'],
+      message: 'Vui lòng nhập chi tiết loại hình tham quan khác',
+    });
+  }
+
+  if ((data.transportationType === 'FPTU_SUPPORT' || data.transportationType === 'OTHER') && (!data.transportationDetail || data.transportationDetail.trim() === '')) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['transportationDetail'],
+      message: 'Vui lòng nhập chi tiết phương tiện di chuyển',
+    });
+  }
+
   // Campus count must match the chosen scope. MULTI_CAMPUS never auto-downgrades —
   // it stays "Liên cơ sở" and the user is told to add a second campus.
   const codes = data.visits.map((v) => v.campus?.trim()).filter(Boolean);

@@ -25,14 +25,15 @@ public sealed class VisitRequestService : IVisitRequestService
 
     public async Task<VisitRequest> CreateAsync(
         VisitRequestFormData f,
-        ulong visitorUserId,
+        ulong? visitorUserId,
+        string createdSource,
         DateTime utcNow,
         CancellationToken cancellationToken = default)
     {
         // ── Business validation: campus existence + ACTIVE state, planned times ──
         // (Structural validation — required fields, scope↔count, end>start — already ran
         //  in the FluentValidation pipeline. These checks need the database / clock.)
-        var requestedCodes = f.VisitSlots
+        var requestedCodes = f.CampusVisits
             .Select(s => s.CampusId?.Trim() ?? string.Empty)
             .Where(c => c.Length > 0)
             .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -60,7 +61,7 @@ public sealed class VisitRequestService : IVisitRequestService
         // Planned start must not be in the past (1-day grace covers client/server timezone skew);
         // end must be after start (also guarded by the SQL CHECK and form validation).
         var earliestAllowedStart = utcNow.AddDays(-1);
-        foreach (var slot in f.VisitSlots)
+        foreach (var slot in f.CampusVisits)
         {
             if (slot.EndDatetime <= slot.StartDatetime)
                 throw new BusinessRuleException(
@@ -73,8 +74,6 @@ public sealed class VisitRequestService : IVisitRequestService
 
         var requestCode = GenerateRequestCode(utcNow);
 
-        var supportJson  = JsonSerializer.Serialize(f.SupportTeam, _json);
-        var contactJson  = JsonSerializer.Serialize(f.ContactPoint, _json);
         var visitScope   = f.VisitScope == VisitScopes.MultiCampus
             ? VisitScopes.MultiCampus
             : VisitScopes.SingleCampus;
@@ -84,26 +83,31 @@ public sealed class VisitRequestService : IVisitRequestService
             // VisitRequestId is DB-generated (BIGINT AUTO_INCREMENT).
             RequestCode          = requestCode,
             VisitorUserId        = visitorUserId,
-            RegistrantFullName   = f.RegisterFullName,
-            RegistrantNationality = f.RegisterNationality,
-            RegistrantOrganization = f.RegisterOrganization,
-            RegistrantJobTitle   = f.RegisterJobTitle,
-            RegistrantPhone      = f.RegisterPhone,
-            RegistrantEmail      = f.RegisterEmail,
+            PartnerId            = f.PartnerId,
+            CreatedSource        = createdSource,
+            RegistrantFullName   = f.RegistrantFullName,
+            RegistrantNationality = f.RegistrantNationality,
+            RegistrantOrganization = f.RegistrantOrganization,
+            RegistrantJobTitle   = f.RegistrantPosition,
+            RegistrantPhone      = f.RegistrantPhone,
+            RegistrantEmail      = f.RegistrantEmail,
             DelegationName       = f.DelegationName,
             VisitScope           = visitScope,
+            VisitType            = f.VisitType,
+            VisitTypeOther       = f.VisitTypeOther,
             Purpose              = f.Purpose,
             WorkingContent       = f.WorkingContent,
-            ExpectedGuestCount   = f.Visitors.Count,
-            SupportTeamJson      = supportJson,
-            ContactPersonJson    = contactJson,
-            WorkingLanguage      = f.Language switch
-            {
-                WorkingLanguages.Vietnamese => WorkingLanguages.Vietnamese,
-                WorkingLanguages.Other      => WorkingLanguages.Other,
-                _                           => WorkingLanguages.English
-            },
-            TransportationNote   = f.Vehicle,
+            ExpectedGuestCount   = f.ExpectedGuestCount,
+            ContactPersonFullName = f.ContactPerson?.FullName,
+            ContactPersonOrganization = f.ContactPerson?.Organization,
+            ContactPersonPhone   = f.ContactPerson?.Phone,
+            ContactPersonEmail   = f.ContactPerson?.Email,
+            WorkingLanguage      = f.WorkingLanguage,
+            InterpreterNote      = f.InterpreterNote,
+            TransportationType   = f.TransportationType,
+            TransportationDetail = f.TransportationDetail,
+            MediaConsentStatus   = f.MediaConsentStatus,
+            MediaConsentNote     = f.MediaConsentNote,
             NoteToFptu           = f.Notes,
             Status               = VisitRequestStatuses.PendingApproval, // overwritten by routing service
             SubmittedAt          = utcNow,
@@ -116,7 +120,7 @@ public sealed class VisitRequestService : IVisitRequestService
         // UC-17 leaves host assignment NULL and status WAITING_REQUEST_APPROVAL; host is
         // assigned only after the request is approved (approval flow, not here).
         var idx = 0;
-        foreach (var slot in f.VisitSlots)
+        foreach (var slot in f.CampusVisits)
         {
             var code = slot.CampusId?.Trim() ?? string.Empty;
             if (!campusByCode.TryGetValue(code, out var campus))
@@ -143,6 +147,7 @@ public sealed class VisitRequestService : IVisitRequestService
         }
 
         // ── Guest members ─────────────────────────────────────────────────────
+        uint order = 1;
         foreach (var visitor in f.Visitors)
         {
             visitRequest.GuestMembers.Add(new VisitGuestMember
@@ -152,10 +157,32 @@ public sealed class VisitRequestService : IVisitRequestService
                 JobTitle         = visitor.JobTitle,
                 Nationality      = visitor.Nationality,
                 Email            = visitor.Email,
+                MemberType       = "GUEST",
+                DisplayOrder     = order++,
                 IsRepresentative = false,
                 CreatedAt        = utcNow,
                 CreatedBy        = visitorUserId
             });
+        }
+
+        if (f.SupportMembers != null)
+        {
+            foreach (var support in f.SupportMembers)
+            {
+                visitRequest.GuestMembers.Add(new VisitGuestMember
+                {
+                    FullName         = support.FullName,
+                    Organization     = support.Organization,
+                    JobTitle         = support.JobTitle,
+                    Nationality      = support.Nationality,
+                    Email            = null,
+                    MemberType       = "EXTERNAL_SUPPORT", // User explicitly requested EXTERNAL_SUPPORT
+                    DisplayOrder     = order++,
+                    IsRepresentative = false,
+                    CreatedAt        = utcNow,
+                    CreatedBy        = visitorUserId
+                });
+            }
         }
 
         _db.VisitRequests.Add(visitRequest);

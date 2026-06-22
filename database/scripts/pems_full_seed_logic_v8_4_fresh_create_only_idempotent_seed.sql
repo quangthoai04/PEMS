@@ -1,6 +1,11 @@
 -- =====================================================================
+-- HOTFIX: Idempotent seed build.
+-- Purpose: avoid duplicate seed errors such as Duplicate entry 'ADMIN' for roles.uq_roles_code
+-- while keeping schema fresh-create-only (no ALTER TABLE migration, no UPDATE migration).
+-- =====================================================================
+-- =====================================================================
 -- PATCH NOTE: Canonical role_code DEPARTMENT and uppercase sub_role values LEADER/STAFF/NONE.
--- PEMS v4.5 - FINAL INT AUTO_INCREMENT BUILD v8.2 CANCEL_DELEGATION
+-- PEMS v8.4 FRESH CREATE-ONLY BUILD - SQL source of truth
 -- Generated from FINAL STRICT VISIBILITY BUILD v5.
 -- Changes in this file:
 --   + PATCH: visit_participants participant_role reduced to IC_HOST/IC_SUPPORT/DEPT_SUPPORT/STUDENT.
@@ -18,7 +23,7 @@
 -- =====================================================================
 -- PEMS v4.5 - FINAL INT AUTO_INCREMENT BUILD (v8.2 request-status + host-assignment + cancel delegation)
 -- Generated rule set:
---   + 42 CREATE TABLE statements.
+--   + Fresh CREATE TABLE statements only; migration backfill statements are not used.
 --   + NO temporary pre-verification visit-form table.
 --   + visit_requests.registrant_nationality is kept.
 --   + visit_requests.status stores request decision status only:
@@ -308,15 +313,7 @@ CREATE TABLE users (
     ON UPDATE CASCADE ON DELETE RESTRICT) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Tài khoản chính. Production dùng SSO; LOCAL_PASSWORD chỉ dùng DEV/test.';
 
-ALTER TABLE campuses
-  ADD CONSTRAINT fk_campuses_ic_head
-  FOREIGN KEY (ic_head_user_id) REFERENCES users(user_id)
-  ON UPDATE CASCADE ON DELETE SET NULL;
 
-ALTER TABLE departments
-  ADD CONSTRAINT fk_departments_head
-  FOREIGN KEY (head_user_id) REFERENCES users(user_id)
-  ON UPDATE CASCADE ON DELETE SET NULL;
 
 
 CREATE TABLE user_auth_providers (
@@ -432,27 +429,94 @@ COMMENT='Lịch sử đăng nhập';
 CREATE TABLE security_events (
   security_event_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   user_id BIGINT UNSIGNED NULL,
-  email VARCHAR(150) NULL,
-  event_type VARCHAR(80) NOT NULL COMMENT 'LOGIN_LOCKED, OTP_FAILED, SUSPICIOUS_IP...',
+  email_snapshot VARCHAR(150) NULL COMMENT 'Email nhận từ SSO hoặc email đang được kiểm tra tại thời điểm xảy ra sự kiện',
+  event_type ENUM(
+    'SSO_LOGIN',
+    'PORTAL_VALIDATION',
+    'CAMPUS_VALIDATION',
+    'VISITOR_AUTO_PROVISION',
+    'SESSION_CREATED',
+    'SESSION_REVOKED',
+    'SESSION_EXPIRED',
+    'TOKEN_REFRESH',
+    'SECURITY_POLICY_CHECK'
+  ) NOT NULL COMMENT 'Loại sự kiện bảo mật theo mô hình SSO-only',
+  result ENUM('SUCCESS','FAILED','BLOCKED') NOT NULL DEFAULT 'SUCCESS' COMMENT 'Kết quả xử lý sự kiện',
+  failure_reason_code ENUM(
+    'ACCOUNT_NOT_FOUND',
+    'ACCOUNT_DISABLED',
+    'PORTAL_MISMATCH',
+    'CAMPUS_MISMATCH',
+    'ROLE_MISMATCH',
+    'SSO_PROVIDER_ERROR',
+    'INVALID_SSO_CLAIMS',
+    'VISITOR_AUTO_PROVISION_DISABLED',
+    'SESSION_EXPIRED',
+    'TOKEN_REVOKED',
+    'SUSPICIOUS_IP',
+    'UNKNOWN'
+  ) NULL COMMENT 'Mã lý do thất bại/chặn; NULL khi SUCCESS',
   severity ENUM('LOW','MEDIUM','HIGH','CRITICAL') NOT NULL DEFAULT 'LOW',
+  login_portal ENUM('VISITOR','INTERNAL') NULL COMMENT 'Portal được dùng khi phát sinh sự kiện',
+  selected_campus_id BIGINT UNSIGNED NULL COMMENT 'Campus người dùng chọn ở Internal Portal; NULL với Visitor Portal',
+  provider_type ENUM('GOOGLE_SSO','FEID') NULL COMMENT 'Nguồn định danh SSO; không dùng LOCAL_PASSWORD trong security_events',
   ip_address VARCHAR(45) NULL,
   user_agent VARCHAR(500) NULL,
-  metadata JSON NULL,
+  session_id BIGINT UNSIGNED NULL,
+  detail_text TEXT NULL COMMENT 'Ghi chú debug ngắn, không lưu JSON metadata',
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (security_event_id),
   KEY idx_security_user_time (user_id, created_at),
-  KEY idx_security_email_time (email, created_at),
-  KEY idx_security_type_time (event_type, created_at),
+  KEY idx_security_email_time (email_snapshot, created_at),
+  KEY idx_security_type_result_time (event_type, result, created_at),
+  KEY idx_security_portal_campus_time (login_portal, selected_campus_id, created_at),
+  KEY idx_security_failure_reason_time (failure_reason_code, created_at),
   KEY idx_security_ip_time (ip_address, created_at),
   KEY idx_security_severity_time (severity, created_at),
+  KEY idx_security_session_time (session_id, created_at),
   CONSTRAINT fk_security_events_user
     FOREIGN KEY (user_id) REFERENCES users(user_id)
-    ON UPDATE CASCADE ON DELETE SET NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-COMMENT='Security, abuse, lockout events';
+    ON UPDATE CASCADE ON DELETE SET NULL,
+  CONSTRAINT fk_security_events_selected_campus
+    FOREIGN KEY (selected_campus_id) REFERENCES campuses(campus_id)
+    ON UPDATE CASCADE ON DELETE SET NULL,
+  CONSTRAINT fk_security_events_session
+    FOREIGN KEY (session_id) REFERENCES user_sessions(session_id)
+    ON UPDATE CASCADE ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='SSO-only security events: portal/campus validation, Visitor auto-provisioning, and session lifecycle. No local password tracking and no metadata JSON.';
 
 -- =====================================================================
 -- 4. PARTNER + FILE
 -- =====================================================================
+
+CREATE TABLE files (
+  file_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  storage_provider ENUM('LOCAL','S3','AZURE','GCS','GOOGLE_DRIVE','OTHER') NOT NULL DEFAULT 'LOCAL',
+  bucket_name VARCHAR(150) NULL,
+  object_key VARCHAR(700) NOT NULL COMMENT 'Max 700 chars to keep UNIQUE index safe under utf8mb4',
+  original_filename VARCHAR(255) NOT NULL,
+  mime_type VARCHAR(150) NULL,
+  file_size BIGINT UNSIGNED NULL,
+  checksum_sha256 CHAR(64) NULL,
+  uploaded_by BIGINT UNSIGNED NULL,
+  uploaded_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  external_file_id VARCHAR(255) NULL COMMENT 'External provider file id, e.g., Google Drive file id',
+  web_view_url VARCHAR(700) NULL COMMENT 'Open/view URL from external storage provider',
+  download_url VARCHAR(700) NULL COMMENT 'Direct download URL when provider allows it',
+  thumbnail_url VARCHAR(700) NULL COMMENT 'Thumbnail URL for image/video preview',
+  file_purpose VARCHAR(100) NULL COMMENT 'Technical/business file purpose used by referencing entity',
+  PRIMARY KEY (file_id),
+  UNIQUE KEY uq_files_object_key (object_key),
+  KEY idx_files_uploaded_by (uploaded_by, uploaded_at),
+  KEY idx_files_mime_time (mime_type, uploaded_at),
+  KEY idx_files_checksum (checksum_sha256),
+  KEY idx_files_external_file_id (external_file_id),
+  KEY idx_files_purpose_time (file_purpose, uploaded_at),
+  CONSTRAINT fk_files_uploaded_by
+    FOREIGN KEY (uploaded_by) REFERENCES users(user_id)
+    ON UPDATE CASCADE ON DELETE SET NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='File metadata only. Binary file is stored outside DB.';
 
 CREATE TABLE partners (
   partner_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -465,6 +529,15 @@ CREATE TABLE partners (
   partner_type ENUM('UNIVERSITY','COMPANY','GOVERNMENT','NGO','OTHER') NOT NULL DEFAULT 'UNIVERSITY',
   cooperation_status ENUM('POTENTIAL','ACTIVE','INACTIVE','BLACKLISTED') NOT NULL DEFAULT 'POTENTIAL',
   description TEXT NULL,
+  logo_file_id BIGINT UNSIGNED NULL COMMENT 'Partner logo file, references files.file_id',
+  cover_file_id BIGINT UNSIGNED NULL COMMENT 'Partner cover/banner file, references files.file_id',
+  address VARCHAR(500) NULL,
+  public_slug VARCHAR(180) NULL COMMENT 'Public URL slug for partner profile',
+  profile_status ENUM('DRAFT','PENDING_APPROVAL','APPROVED','REJECTED') NOT NULL DEFAULT 'APPROVED',
+  review_note TEXT NULL,
+  reviewed_by BIGINT UNSIGNED NULL,
+  reviewed_at DATETIME NULL,
+  visibility ENUM('PRIVATE','INTERNAL','PUBLIC') NOT NULL DEFAULT 'PUBLIC',
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   created_by BIGINT UNSIGNED NULL,
   updated_at DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
@@ -475,7 +548,17 @@ CREATE TABLE partners (
   KEY idx_partners_status (cooperation_status),
   KEY idx_partners_type_status (partner_type, cooperation_status),
   KEY idx_partners_created_at (created_at),
-  FULLTEXT KEY ft_partners_search (name, short_name, description)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  UNIQUE KEY uq_partners_public_slug (public_slug),
+  KEY idx_partners_profile_status (profile_status),
+  KEY idx_partners_visibility (visibility),
+  KEY idx_partners_logo_file (logo_file_id),
+  KEY idx_partners_cover_file (cover_file_id),
+  KEY idx_partners_reviewed_by (reviewed_by, reviewed_at),
+  FULLTEXT KEY ft_partners_search (name, short_name, description),
+  CONSTRAINT fk_partners_logo_file FOREIGN KEY (logo_file_id) REFERENCES files(file_id) ON UPDATE CASCADE ON DELETE SET NULL,
+  CONSTRAINT fk_partners_cover_file FOREIGN KEY (cover_file_id) REFERENCES files(file_id) ON UPDATE CASCADE ON DELETE SET NULL,
+  CONSTRAINT fk_partners_reviewed_by FOREIGN KEY (reviewed_by) REFERENCES users(user_id) ON UPDATE CASCADE ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Hồ sơ đối tác';
 
 CREATE TABLE partner_contacts (
@@ -486,6 +569,9 @@ CREATE TABLE partner_contacts (
   phone VARCHAR(50) NULL,
   job_title VARCHAR(150) NULL,
   department_name VARCHAR(150) NULL,
+  source_type ENUM('MANUAL','BUSINESS_CARD_OCR','IMPORT') NOT NULL DEFAULT 'MANUAL',
+  scanned_card_file_id BIGINT UNSIGNED NULL,
+  ocr_confidence DECIMAL(5,2) NULL,
   note TEXT NULL,
   is_primary BOOLEAN NOT NULL DEFAULT FALSE,
   status ENUM('ACTIVE','INACTIVE') NOT NULL DEFAULT 'ACTIVE',
@@ -498,33 +584,16 @@ CREATE TABLE partner_contacts (
   KEY idx_partner_contacts_partner (partner_id),
   KEY idx_partner_contacts_email (email),
   KEY idx_partner_contacts_status (status),
+  KEY idx_partner_contacts_source_type (source_type),
+  KEY idx_partner_contacts_scanned_card (scanned_card_file_id),
   CONSTRAINT fk_partner_contacts_partner
     FOREIGN KEY (partner_id) REFERENCES partners(partner_id)
-    ON UPDATE CASCADE ON DELETE RESTRICT) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  CONSTRAINT fk_partner_contacts_scanned_card
+    FOREIGN KEY (scanned_card_file_id) REFERENCES files(file_id)
+    ON UPDATE CASCADE ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Người liên hệ đối tác. OCR final confirmed data saved here.';
-
-CREATE TABLE files (
-  file_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  storage_provider ENUM('LOCAL','S3','AZURE','GCS','GOOGLE_DRIVE','OTHER') NOT NULL DEFAULT 'LOCAL',
-  bucket_name VARCHAR(150) NULL,
-  object_key VARCHAR(700) NOT NULL COMMENT 'Max 700 chars to keep UNIQUE index safe under utf8mb4',
-  original_filename VARCHAR(255) NOT NULL,
-  mime_type VARCHAR(150) NULL,
-  file_size BIGINT UNSIGNED NULL,
-  checksum_sha256 CHAR(64) NULL,
-  visibility ENUM('PRIVATE','INTERNAL','PUBLIC') NOT NULL DEFAULT 'PRIVATE',
-  uploaded_by BIGINT UNSIGNED NULL,
-  uploaded_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (file_id),
-  UNIQUE KEY uq_files_object_key (object_key),
-  KEY idx_files_uploaded_by (uploaded_by, uploaded_at),
-  KEY idx_files_visibility (visibility),
-  KEY idx_files_mime_time (mime_type, uploaded_at),
-  KEY idx_files_checksum (checksum_sha256),
-  CONSTRAINT fk_files_uploaded_by
-    FOREIGN KEY (uploaded_by) REFERENCES users(user_id)
-    ON UPDATE CASCADE ON DELETE SET NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-COMMENT='File metadata only. Binary file is stored outside DB.';
 
 CREATE TABLE documents (
   document_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -571,8 +640,9 @@ COMMENT='Tài liệu nghiệp vụ. partner_documents/reports/logistics document
 CREATE TABLE visit_requests (
   visit_request_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   request_code VARCHAR(50) NOT NULL,
-  visitor_user_id BIGINT UNSIGNED NOT NULL COMMENT 'Visitor user/account created or linked for the registrant',
+  visitor_user_id BIGINT UNSIGNED NULL COMMENT 'Visitor user/account created or linked for the registrant',
   partner_id BIGINT UNSIGNED NULL,
+  created_source ENUM('VISITOR_SUBMITTED','STAFF_CREATED') NOT NULL DEFAULT 'VISITOR_SUBMITTED',
 
   -- 1. Registrant information from the Campus Visit form
   registrant_full_name VARCHAR(150) NOT NULL COMMENT 'Họ và tên người đăng ký',
@@ -586,16 +656,23 @@ CREATE TABLE visit_requests (
   delegation_name VARCHAR(200) NOT NULL COMMENT 'Tên đoàn khách',
   visit_scope ENUM('SINGLE_CAMPUS','MULTI_CAMPUS') NOT NULL DEFAULT 'SINGLE_CAMPUS'
     COMMENT 'SINGLE_CAMPUS: Staff Leader duyệt request tổng; MULTI_CAMPUS: HO duyệt request tổng. Frontend/backend suy ra người duyệt từ cột này.',
+  visit_type ENUM('CAMPUS_TOUR','MEETING','WORKSHOP','SIGNING_CEREMONY','EXCHANGE','OTHER') NOT NULL DEFAULT 'CAMPUS_TOUR',
+  visit_type_other VARCHAR(255) NULL,
   purpose TEXT NOT NULL COMMENT 'Mục đích thăm FPTU',
   working_content TEXT NULL COMMENT 'Nội dung làm việc tại FPTU',
   expected_guest_count INT UNSIGNED NOT NULL DEFAULT 1 COMMENT 'Số khách dự kiến; có thể đồng bộ từ danh sách khách',
 
-  support_team_json JSON NULL COMMENT 'Danh sách team hỗ trợ khách từ phía đoàn/đơn vị gửi',
-  contact_person_json JSON NULL COMMENT 'Thông tin đầu mối liên hệ: full_name, organization, phone, email',
+  contact_person_full_name VARCHAR(150) NULL,
+  contact_person_organization VARCHAR(255) NULL,
+  contact_person_phone VARCHAR(50) NULL,
+  contact_person_email VARCHAR(150) NULL,
 
-  working_language ENUM('VI','EN','OTHER') NOT NULL DEFAULT 'EN' COMMENT 'Ngôn ngữ sử dụng trong visit',
+  working_language ENUM('VI','EN') NOT NULL DEFAULT 'EN' COMMENT 'Ngôn ngữ sử dụng trong visit. Chỉ dùng VI/EN theo frontend hiện tại, không có lựa chọn OTHER',
   interpreter_note TEXT NULL COMMENT 'Ghi chú nếu ngôn ngữ khác VI/EN và đầu mối cần tự bố trí phiên dịch',
-  transportation_note TEXT NULL COMMENT 'Nhận diện phương tiện di chuyển tới FPTU',
+  transportation_type ENUM('SELF_ARRANGED','FPTU_SUPPORT','UNKNOWN','OTHER') NOT NULL DEFAULT 'UNKNOWN',
+  transportation_detail VARCHAR(500) NULL,
+  media_consent_status ENUM('AGREED','DECLINED','UNKNOWN') NOT NULL DEFAULT 'UNKNOWN',
+  media_consent_note TEXT NULL,
   note_to_fptu TEXT NULL COMMENT 'Ghi chú cho FPTU',
 
   status ENUM('PENDING_APPROVAL','APPROVED','REJECTED','CANCELLED') NOT NULL DEFAULT 'PENDING_APPROVAL' COMMENT 'Request decision status only. Visit progress is derived from visit_request_campuses.status',
@@ -610,7 +687,7 @@ CREATE TABLE visit_requests (
   cancelled_by BIGINT UNSIGNED NULL COMMENT 'Người thực hiện hủy request/delegation',
   cancelled_at DATETIME NULL COMMENT 'Thời điểm hủy request/delegation',
   cancellation_actor_type ENUM('VISITOR','HOST','STAFF_LEADER','HO','SYSTEM') NULL COMMENT 'Vai trò thực hiện thao tác hủy',
-  cancellation_source ENUM('SELF_SERVICE','EXTERNAL_CONFIRMATION') NULL COMMENT 'SELF_SERVICE=Visitor tự hủy sau khi đơn đã duyệt; EXTERNAL_CONFIRMATION=Host hủy sau khi khách xác nhận ngoài hệ thống',
+  cancellation_source ENUM('SELF_SERVICE','EXTERNAL_CONFIRMATION','INTERNAL_DECISION') NULL COMMENT 'SELF_SERVICE=Visitor tự hủy sau khi đơn đã duyệt; EXTERNAL_CONFIRMATION=Host hủy sau khi khách xác nhận ngoài hệ thống',
   cancellation_reason TEXT NULL COMMENT 'Lý do hủy; nếu EXTERNAL_CONFIRMATION thì ghi rõ kênh xác nhận, thời điểm, người xác nhận và lý do.',
 
   row_version INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'Optimistic concurrency token',
@@ -627,10 +704,16 @@ CREATE TABLE visit_requests (
   KEY idx_visit_requests_status_submitted (status, submitted_at),
   KEY idx_visit_requests_registrant_email (registrant_email),
   KEY idx_visit_requests_scope_status (visit_scope, status),
+  KEY idx_visit_requests_created_source (created_source),
+  KEY idx_visit_requests_visit_type (visit_type),
+  KEY idx_visit_requests_contact_email (contact_person_email),
+  KEY idx_visit_requests_media_consent (media_consent_status),
+  KEY idx_visit_requests_visibility_scope_status_decision (visit_scope, status, decision_actor_role, decided_at),
   KEY idx_visit_requests_decision (decided_by, decided_at),
   KEY idx_visit_requests_decision_role (decision_actor_role, decided_at),
   KEY idx_visit_requests_cancelled (cancelled_by, cancelled_at),
   KEY idx_visit_requests_cancel_actor (cancellation_actor_type, cancelled_at),
+  FULLTEXT KEY ft_visit_requests_frontend_search (request_code, delegation_name, registrant_full_name, registrant_organization, registrant_email, contact_person_full_name, contact_person_organization, contact_person_email),
 
   CHECK (expected_guest_count >= 1),
   CHECK (
@@ -698,7 +781,7 @@ CREATE TABLE visit_request_campuses (
   cancelled_by BIGINT UNSIGNED NULL COMMENT 'Người thực hiện hủy campus instance',
   cancelled_at DATETIME NULL COMMENT 'Thời điểm hủy campus instance',
   cancellation_actor_type ENUM('VISITOR','HOST','STAFF_LEADER','HO','SYSTEM') NULL COMMENT 'Vai trò thực hiện thao tác hủy campus instance',
-  cancellation_source ENUM('SELF_SERVICE','EXTERNAL_CONFIRMATION') NULL COMMENT 'SELF_SERVICE=Visitor tự hủy sau khi đơn đã duyệt; EXTERNAL_CONFIRMATION=Host hủy sau khi khách xác nhận ngoài hệ thống',
+  cancellation_source ENUM('SELF_SERVICE','EXTERNAL_CONFIRMATION','INTERNAL_DECISION') NULL COMMENT 'SELF_SERVICE=Visitor tự hủy sau khi đơn đã duyệt; EXTERNAL_CONFIRMATION=Host hủy sau khi khách xác nhận ngoài hệ thống',
   cancellation_reason TEXT NULL COMMENT 'Lý do hủy; nếu EXTERNAL_CONFIRMATION thì ghi rõ kênh xác nhận, thời điểm, người xác nhận và lý do.',
 
   row_version INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'Optimistic concurrency token',
@@ -720,6 +803,7 @@ CREATE TABLE visit_request_campuses (
   KEY idx_visit_instances_host_transfer (host_transferred_by, host_transferred_at),
   KEY idx_visit_instances_cancelled (cancelled_by, cancelled_at),
   KEY idx_visit_instances_cancel_actor (cancellation_actor_type, cancelled_at),
+  KEY idx_visit_instances_visibility_campus_request (campus_id, visit_request_id, status, current_host_user_id),
 
   CHECK (planned_end_at > planned_start_at),
 
@@ -749,6 +833,7 @@ COMMENT='Mỗi campus trong request có một instance riêng. WAITING_REQUEST_A
 CREATE TABLE visit_guest_members (
   guest_member_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   visit_request_id BIGINT UNSIGNED NOT NULL,
+  member_type ENUM('GUEST','EXTERNAL_SUPPORT') NOT NULL DEFAULT 'GUEST',
   full_name VARCHAR(150) NOT NULL,
   organization VARCHAR(200) NULL,
   job_title VARCHAR(150) NULL,
@@ -757,12 +842,14 @@ CREATE TABLE visit_guest_members (
   phone VARCHAR(50) NULL,
   is_representative BOOLEAN NOT NULL DEFAULT FALSE,
   note TEXT NULL,
+  display_order INT UNSIGNED NOT NULL DEFAULT 0,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   created_by BIGINT UNSIGNED NULL,
   updated_at DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
   updated_by BIGINT UNSIGNED NULL,
   PRIMARY KEY (guest_member_id),
   KEY idx_guest_members_request (visit_request_id),
+  KEY idx_guest_members_type_order (visit_request_id, member_type, display_order),
   KEY idx_guest_members_email (email),
   KEY idx_guest_members_representative (visit_request_id, is_representative),
   CONSTRAINT fk_guest_members_request
@@ -891,6 +978,13 @@ CREATE TABLE visit_logistics_items (
   proposal_response ENUM('ACCEPTED','REJECTED') NULL COMMENT 'Kết quả phản hồi đề xuất',
   proposal_response_note TEXT NULL COMMENT 'Ghi chú phản hồi đề xuất',
 
+  handover_confirmed_by BIGINT UNSIGNED NULL,
+  handover_confirmed_at DATETIME NULL,
+  handover_note TEXT NULL,
+  service_report_signed_by BIGINT UNSIGNED NULL,
+  service_report_signed_at DATETIME NULL,
+  service_report_file_id BIGINT UNSIGNED NULL,
+
   decision_note TEXT NULL COMMENT 'Lý do reject/cancel hoặc ghi chú xử lý',
 
   row_version INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'Optimistic concurrency token',
@@ -912,6 +1006,9 @@ CREATE TABLE visit_logistics_items (
   KEY idx_logistics_due (due_at),
   KEY idx_logistics_priority_due (priority, due_at),
   KEY idx_logistics_proposed_by_time (proposed_by, proposed_at),
+  KEY idx_logistics_handover (handover_confirmed_by, handover_confirmed_at),
+  KEY idx_logistics_service_report (service_report_signed_by, service_report_signed_at),
+  KEY idx_logistics_service_report_file (service_report_file_id),
 
   CHECK (quantity IS NULL OR quantity >= 1),
   CHECK (usage_end_at IS NULL OR usage_start_at IS NULL OR usage_end_at > usage_start_at),
@@ -941,7 +1038,17 @@ CREATE TABLE visit_logistics_items (
     ON UPDATE CASCADE ON DELETE SET NULL,
   CONSTRAINT fk_logistics_proposal_responded_by
     FOREIGN KEY (proposal_responded_by) REFERENCES users(user_id)
-    ON UPDATE CASCADE ON DELETE SET NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ON UPDATE CASCADE ON DELETE SET NULL,
+  CONSTRAINT fk_logistics_handover_by
+    FOREIGN KEY (handover_confirmed_by) REFERENCES users(user_id)
+    ON UPDATE CASCADE ON DELETE SET NULL,
+  CONSTRAINT fk_logistics_service_report_signed_by
+    FOREIGN KEY (service_report_signed_by) REFERENCES users(user_id)
+    ON UPDATE CASCADE ON DELETE SET NULL,
+  CONSTRAINT fk_logistics_service_report_file
+    FOREIGN KEY (service_report_file_id) REFERENCES files(file_id)
+    ON UPDATE CASCADE ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Yêu cầu hậu cần/resource cho visit: gửi yêu cầu, đề xuất thay đổi, tiếp nhận, phân công, xác nhận và hoàn thành. Thay thế tasks cho logistics/resource.';
 
 -- =====================================================================
@@ -959,8 +1066,6 @@ CREATE TABLE minutes (
 
   title VARCHAR(255) NOT NULL,
   content LONGTEXT NULL,
-
-  participants_json JSON NULL COMMENT 'Danh sách người tham gia trong biên bản, lưu dạng snapshot nếu cần hiển thị lại',
 
   status ENUM('DRAFT','FINAL') NOT NULL DEFAULT 'DRAFT'
     COMMENT 'DRAFT=đang soạn, FINAL=đã chốt',
@@ -997,6 +1102,33 @@ CREATE TABLE minutes (
     FOREIGN KEY (finalized_by) REFERENCES users(user_id)
     ON UPDATE CASCADE ON DELETE SET NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Biên bản chuyến thăm. Không lưu file đính kèm và không lưu action item dạng JSON; action item tách bảng riêng.';
+
+CREATE TABLE minute_participants (
+  minute_participant_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  minutes_id BIGINT UNSIGNED NOT NULL,
+  user_id BIGINT UNSIGNED NULL,
+  guest_member_id BIGINT UNSIGNED NULL,
+  full_name_snapshot VARCHAR(255) NOT NULL,
+  role_snapshot VARCHAR(120) NULL,
+  organization_snapshot VARCHAR(255) NULL,
+  email_snapshot VARCHAR(150) NULL,
+  display_order INT UNSIGNED NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (minute_participant_id),
+  KEY idx_minute_participants_minutes_order (minutes_id, display_order),
+  KEY idx_minute_participants_user (user_id),
+  KEY idx_minute_participants_guest_member (guest_member_id),
+  CONSTRAINT fk_minute_participants_minutes
+    FOREIGN KEY (minutes_id) REFERENCES minutes(minutes_id)
+    ON UPDATE CASCADE ON DELETE CASCADE,
+  CONSTRAINT fk_minute_participants_user
+    FOREIGN KEY (user_id) REFERENCES users(user_id)
+    ON UPDATE CASCADE ON DELETE SET NULL,
+  CONSTRAINT fk_minute_participants_guest_member
+    FOREIGN KEY (guest_member_id) REFERENCES visit_guest_members(guest_member_id)
+    ON UPDATE CASCADE ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Snapshot participant list for meeting minutes; replaces minutes.participants_json.';
 
 CREATE TABLE minute_action_items (
   action_item_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -1101,6 +1233,24 @@ CREATE TABLE feedbacks (
     FOREIGN KEY (target_user_id) REFERENCES users(user_id)
     ON UPDATE CASCADE ON DELETE RESTRICT) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Feedback đơn giản: mỗi dòng là một đánh giá giữa hai user trong một visit. Khách/logistics đánh giá host; host đánh giá khách hoặc logistics.';
+
+CREATE TABLE feedback_rating_items (
+  feedback_rating_item_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  feedback_id BIGINT UNSIGNED NOT NULL,
+  criterion_code VARCHAR(80) NOT NULL,
+  criterion_label VARCHAR(150) NOT NULL,
+  rating TINYINT UNSIGNED NOT NULL,
+  display_order INT UNSIGNED NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (feedback_rating_item_id),
+  UNIQUE KEY uq_feedback_rating_criterion (feedback_id, criterion_code),
+  KEY idx_feedback_rating_feedback (feedback_id),
+  CHECK (rating BETWEEN 1 AND 5),
+  CONSTRAINT fk_feedback_rating_items_feedback
+    FOREIGN KEY (feedback_id) REFERENCES feedbacks(feedback_id)
+    ON UPDATE CASCADE ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Normalized per-criterion ratings for a feedback submission.';
 
 -- =====================================================================
 -- 7. PUBLIC CONTENT
@@ -1215,7 +1365,8 @@ COMMENT='File/ảnh được dùng trong từng section của bài news';
 
 CREATE TABLE faqs (
   faq_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  category VARCHAR(100) NULL COMMENT 'Nhóm FAQ, ví dụ: Visit Request, Security, Logistics',
+  faq_type ENUM('PROGRAM','TUITION_FEE','VISA','DORMITORY','VISIT_REQUEST','SECURITY','LOGISTICS','OTHER') NOT NULL DEFAULT 'OTHER',
+  language_code ENUM('vi','en') NOT NULL DEFAULT 'vi',
   question VARCHAR(500) NOT NULL COMMENT 'Câu hỏi FAQ',
   answer TEXT NOT NULL COMMENT 'Câu trả lời FAQ',
   display_order INT UNSIGNED NOT NULL DEFAULT 0,
@@ -1227,7 +1378,8 @@ CREATE TABLE faqs (
   updated_by BIGINT UNSIGNED NULL,
   PRIMARY KEY (faq_id),
   KEY idx_faqs_status_order (status, display_order),
-  KEY idx_faqs_category_status (category, status),
+  KEY idx_faqs_type_status (faq_type, status),
+  KEY idx_faqs_language_status (language_code, status),
   FULLTEXT KEY ft_faqs_search (question, answer)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='FAQ một ngôn ngữ, chỉ dùng PUBLISHED/HIDDEN';
 
@@ -1238,7 +1390,9 @@ COMMENT='FAQ một ngôn ngữ, chỉ dùng PUBLISHED/HIDDEN';
 CREATE TABLE galleries (
   gallery_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   campus_id BIGINT UNSIGNED NOT NULL,
-  location_name VARCHAR(150) NOT NULL COMMENT 'Tên địa điểm trong campus, ví dụ: Sảnh Alpha, Green Lab, Thư viện',
+  area_name VARCHAR(150) NOT NULL DEFAULT 'Campus' COMMENT 'Khu vực trong campus, ví dụ: Academic Area, Lobby, Lab Zone',
+  specific_location_name VARCHAR(150) NOT NULL DEFAULT 'Campus location' COMMENT 'Vị trí cụ thể trong khu vực, ví dụ: Sảnh Alpha, Green Lab',
+  location_description TEXT NULL COMMENT 'Mô tả vị trí/khu vực hiển thị ở Gallery/Visit FPTU',
   title VARCHAR(255) NOT NULL COMMENT 'Tên hiển thị của gallery/địa điểm',
   description TEXT NULL COMMENT 'Mô tả ngắn về địa điểm',
   story_content TEXT NULL COMMENT 'Ý nghĩa hoặc câu chuyện giới thiệu về địa điểm',
@@ -1246,6 +1400,8 @@ CREATE TABLE galleries (
     COMMENT 'DRAFT=nháp, PUBLISHED=hiển thị theo visibility, HIDDEN=ẩn khỏi người xem thường nhưng Staff Leader vẫn quản lý được',
   visibility ENUM('PRIVATE','INTERNAL','PUBLIC') NOT NULL DEFAULT 'INTERNAL'
     COMMENT 'Phạm vi xem khi status=PUBLISHED: PRIVATE=chỉ quản lý, INTERNAL=user nội bộ, PUBLIC=công khai',
+  hero_file_id BIGINT UNSIGNED NULL,
+  virtual_tour_url VARCHAR(700) NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   created_by BIGINT UNSIGNED NULL,
   updated_at DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
@@ -1254,17 +1410,24 @@ CREATE TABLE galleries (
   deleted_by BIGINT UNSIGNED NULL,
   PRIMARY KEY (gallery_id),
   KEY idx_galleries_campus_status (campus_id, status, deleted_at),
-  KEY idx_galleries_location_name (location_name),
+  KEY idx_galleries_area_specific (campus_id, area_name, specific_location_name),
   KEY idx_galleries_visibility_status (visibility, status),
+  KEY idx_galleries_hero_file (hero_file_id),
   CONSTRAINT fk_galleries_campus
     FOREIGN KEY (campus_id) REFERENCES campuses(campus_id)
-    ON UPDATE CASCADE ON DELETE RESTRICT) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  CONSTRAINT fk_galleries_hero_file
+    FOREIGN KEY (hero_file_id) REFERENCES files(file_id)
+    ON UPDATE CASCADE ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Gallery địa điểm trong campus, có mô tả và câu chuyện';
 
 CREATE TABLE gallery_images (
   image_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   gallery_id BIGINT UNSIGNED NOT NULL,
   file_id BIGINT UNSIGNED NOT NULL,
+  media_type ENUM('IMAGE','VIDEO') NOT NULL DEFAULT 'IMAGE',
+  thumbnail_file_id BIGINT UNSIGNED NULL,
   caption VARCHAR(500) NULL COMMENT 'Chú thích riêng cho từng ảnh',
   display_order INT UNSIGNED NOT NULL DEFAULT 0,
   taken_at DATETIME NULL,
@@ -1280,12 +1443,18 @@ CREATE TABLE gallery_images (
   UNIQUE KEY uq_gallery_images_file (file_id),
   KEY idx_gallery_images_gallery_order (gallery_id, display_order),
   KEY idx_gallery_images_status_time (status, taken_at),
+  KEY idx_gallery_images_media_type (media_type),
+  KEY idx_gallery_images_thumbnail_file (thumbnail_file_id),
   CONSTRAINT fk_gallery_images_gallery
     FOREIGN KEY (gallery_id) REFERENCES galleries(gallery_id)
     ON UPDATE CASCADE ON DELETE RESTRICT,
   CONSTRAINT fk_gallery_images_file
     FOREIGN KEY (file_id) REFERENCES files(file_id)
-    ON UPDATE CASCADE ON DELETE RESTRICT) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  CONSTRAINT fk_gallery_images_thumbnail_file
+    FOREIGN KEY (thumbnail_file_id) REFERENCES files(file_id)
+    ON UPDATE CASCADE ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Ảnh thuộc gallery địa điểm campus';
 
 CREATE TABLE photo_face_tags (
@@ -1337,9 +1506,14 @@ CREATE TABLE email_templates (
   template_code VARCHAR(100) NOT NULL,
   name VARCHAR(150) NOT NULL,
   purpose VARCHAR(100) NOT NULL,
+  campus_id BIGINT UNSIGNED NULL,
+  description VARCHAR(500) NULL,
   status ENUM('ACTIVE','INACTIVE') NOT NULL DEFAULT 'ACTIVE',
-  translations_json JSON NOT NULL COMMENT 'Merged email_template_translations table',
-  variables_json JSON NULL COMMENT 'Allowed variables: FullName, OtpCode, Link...',
+  subject_vi VARCHAR(255) NULL,
+  body_vi LONGTEXT NULL,
+  subject_en VARCHAR(255) NULL,
+  body_en LONGTEXT NULL,
+  variables_text VARCHAR(700) NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   created_by BIGINT UNSIGNED NULL,
   updated_at DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
@@ -1347,8 +1521,13 @@ CREATE TABLE email_templates (
   PRIMARY KEY (email_template_id),
   UNIQUE KEY uq_email_templates_code (template_code),
   KEY idx_email_templates_status (status),
-  KEY idx_email_templates_purpose_status (purpose, status)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-COMMENT='Email templates with translations_json';
+  KEY idx_email_templates_purpose_status (purpose, status),
+  KEY idx_email_templates_campus_status (campus_id, status),
+  CONSTRAINT fk_email_templates_campus
+    FOREIGN KEY (campus_id) REFERENCES campuses(campus_id)
+    ON UPDATE CASCADE ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Email templates with explicit VI/EN subject/body fields';
 
 CREATE TABLE sent_emails (
   sent_email_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -1357,8 +1536,11 @@ CREATE TABLE sent_emails (
   related_id BIGINT UNSIGNED NULL,
   subject VARCHAR(255) NOT NULL,
   body_snapshot LONGTEXT NULL,
-  recipients_json JSON NOT NULL COMMENT 'Merged sent_email_recipients table',
-  metadata_json JSON NULL COMMENT 'provider message id, retry count, etc.',
+  provider_thread_id VARCHAR(255) NULL,
+  provider_message_id VARCHAR(255) NULL,
+  retry_count INT UNSIGNED NOT NULL DEFAULT 0,
+  last_attempt_at DATETIME NULL,
+  delivered_at DATETIME NULL,
   status ENUM('QUEUED','SENT','FAILED') NOT NULL DEFAULT 'QUEUED',
   error_message TEXT NULL,
   sent_by BIGINT UNSIGNED NULL,
@@ -1369,13 +1551,37 @@ CREATE TABLE sent_emails (
   KEY idx_sent_emails_related (related_type, related_id),
   KEY idx_sent_emails_status_time (status, created_at),
   KEY idx_sent_emails_sent_by_time (sent_by, sent_at),
+  KEY idx_sent_emails_provider_thread (provider_thread_id),
+  KEY idx_sent_emails_provider_message (provider_message_id),
   CONSTRAINT fk_sent_emails_template
     FOREIGN KEY (email_template_id) REFERENCES email_templates(email_template_id)
     ON UPDATE CASCADE ON DELETE SET NULL,
   CONSTRAINT fk_sent_emails_sent_by
     FOREIGN KEY (sent_by) REFERENCES users(user_id)
     ON UPDATE CASCADE ON DELETE SET NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-COMMENT='Sent email log with recipients_json';
+COMMENT='Sent email log; recipients stored in sent_email_recipients';
+
+CREATE TABLE sent_email_recipients (
+  sent_email_recipient_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  sent_email_id BIGINT UNSIGNED NOT NULL,
+  recipient_email VARCHAR(150) NOT NULL,
+  recipient_name VARCHAR(150) NULL,
+  recipient_type ENUM('TO','CC','BCC') NOT NULL DEFAULT 'TO',
+  delivery_status ENUM('QUEUED','SENT','DELIVERED','FAILED','BOUNCED') NOT NULL DEFAULT 'QUEUED',
+  provider_message_id VARCHAR(255) NULL,
+  error_message TEXT NULL,
+  sent_at DATETIME NULL,
+  delivered_at DATETIME NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (sent_email_recipient_id),
+  KEY idx_sent_email_recipients_sent_email (sent_email_id),
+  KEY idx_sent_email_recipients_email_status (recipient_email, delivery_status),
+  FULLTEXT KEY ft_sent_email_recipients_search (recipient_email, recipient_name),
+  CONSTRAINT fk_sent_email_recipients_email
+    FOREIGN KEY (sent_email_id) REFERENCES sent_emails(sent_email_id)
+    ON UPDATE CASCADE ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='One row per recipient; replaces sent_emails.recipients_json.';
 
 CREATE TABLE notifications (
   notification_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -1414,9 +1620,9 @@ CREATE TABLE calendar_events (
   start_at DATETIME NOT NULL,
   end_at DATETIME NOT NULL,
   timezone VARCHAR(50) NOT NULL DEFAULT 'Asia/Ho_Chi_Minh',
+  is_all_day BOOLEAN NOT NULL DEFAULT FALSE,
+  recurrence_rule VARCHAR(500) NULL,
   visibility ENUM('PRIVATE','INTERNAL') NOT NULL DEFAULT 'PRIVATE',
-  attendees_json JSON NULL COMMENT 'Merged calendar_event_attendees table',
-  reminders_json JSON NULL COMMENT 'Merged calendar_event_reminders table',
   status ENUM('ACTIVE','CANCELLED','DONE') NOT NULL DEFAULT 'ACTIVE',
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   created_by BIGINT UNSIGNED NULL,
@@ -1443,7 +1649,47 @@ CREATE TABLE calendar_events (
   CONSTRAINT fk_calendar_logistics
     FOREIGN KEY (logistics_item_id) REFERENCES visit_logistics_items(logistics_item_id)
     ON UPDATE CASCADE ON DELETE SET NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-COMMENT='Calendar events. Personal/visit/logistics/deadline events. Attendees/reminders merged into JSON fields.';
+COMMENT='Calendar events. Attendees/reminders are normalized in child tables.';
+
+CREATE TABLE calendar_event_attendees (
+  calendar_event_attendee_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  calendar_event_id BIGINT UNSIGNED NOT NULL,
+  user_id BIGINT UNSIGNED NULL,
+  attendee_email VARCHAR(150) NULL,
+  attendee_name VARCHAR(150) NULL,
+  attendee_role VARCHAR(80) NULL,
+  response_status ENUM('NEEDS_ACTION','ACCEPTED','DECLINED','TENTATIVE') NOT NULL DEFAULT 'NEEDS_ACTION',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (calendar_event_attendee_id),
+  KEY idx_calendar_attendees_event (calendar_event_id),
+  KEY idx_calendar_attendees_user (user_id),
+  KEY idx_calendar_attendees_email (attendee_email),
+  CONSTRAINT fk_calendar_attendees_event
+    FOREIGN KEY (calendar_event_id) REFERENCES calendar_events(calendar_event_id)
+    ON UPDATE CASCADE ON DELETE CASCADE,
+  CONSTRAINT fk_calendar_attendees_user
+    FOREIGN KEY (user_id) REFERENCES users(user_id)
+    ON UPDATE CASCADE ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Calendar attendees; replaces calendar_events.attendees_json.';
+
+CREATE TABLE calendar_event_reminders (
+  calendar_event_reminder_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  calendar_event_id BIGINT UNSIGNED NOT NULL,
+  reminder_type ENUM('EMAIL','POPUP','IN_APP') NOT NULL DEFAULT 'IN_APP',
+  minutes_before INT UNSIGNED NOT NULL DEFAULT 0,
+  scheduled_at DATETIME NULL,
+  sent_at DATETIME NULL,
+  status ENUM('PENDING','SENT','CANCELLED','FAILED') NOT NULL DEFAULT 'PENDING',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (calendar_event_reminder_id),
+  KEY idx_calendar_reminders_event (calendar_event_id),
+  KEY idx_calendar_reminders_status_schedule (status, scheduled_at),
+  CONSTRAINT fk_calendar_reminders_event
+    FOREIGN KEY (calendar_event_id) REFERENCES calendar_events(calendar_event_id)
+    ON UPDATE CASCADE ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Calendar reminders; replaces calendar_events.reminders_json.';
 
 CREATE TABLE api_configurations (
   api_config_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -1454,10 +1700,23 @@ CREATE TABLE api_configurations (
   base_url VARCHAR(500) NOT NULL,
   default_method ENUM('GET','POST','PUT','PATCH','DELETE') NOT NULL DEFAULT 'POST',
   auth_type ENUM('NONE','API_KEY','BEARER_TOKEN','BASIC','OAUTH2','CUSTOM') NOT NULL DEFAULT 'NONE',
-  credentials_json JSON NULL COMMENT 'Encrypted/masked credentials. Merged api_credentials table.',
-  headers_json JSON NULL,
-  body_template_json JSON NULL,
-  settings_json JSON NULL,
+  api_key_encrypted VARCHAR(700) NULL,
+  bearer_token_encrypted VARCHAR(700) NULL,
+  basic_username VARCHAR(150) NULL,
+  basic_password_encrypted VARCHAR(700) NULL,
+  oauth_client_id VARCHAR(255) NULL,
+  oauth_client_secret_encrypted VARCHAR(700) NULL,
+  oauth_token_url VARCHAR(700) NULL,
+  oauth_scope VARCHAR(500) NULL,
+  body_template_text LONGTEXT NULL,
+  rate_limit_per_minute INT UNSIGNED NULL,
+  monthly_quota INT UNSIGNED NULL,
+  retry_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  max_retries INT UNSIGNED NOT NULL DEFAULT 0,
+  cache_ttl_seconds INT UNSIGNED NULL,
+  last_test_status ENUM('SUCCESS','FAILED') NULL,
+  last_tested_at DATETIME NULL,
+  last_test_message TEXT NULL,
   timeout_seconds INT UNSIGNED NOT NULL DEFAULT 30,
   status ENUM('ACTIVE','INACTIVE','DISABLED') NOT NULL DEFAULT 'ACTIVE',
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -1469,8 +1728,25 @@ CREATE TABLE api_configurations (
   PRIMARY KEY (api_config_id),
   UNIQUE KEY uq_api_config_code (api_code),
   KEY idx_api_config_status (status),
+  KEY idx_api_config_test_status (last_test_status, last_tested_at),
   KEY idx_api_provider_status (provider_name, status)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='API config + encrypted credentials JSON';
+
+CREATE TABLE api_configuration_headers (
+  api_configuration_header_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  api_config_id BIGINT UNSIGNED NOT NULL,
+  header_name VARCHAR(150) NOT NULL,
+  header_value_encrypted VARCHAR(1000) NULL,
+  is_secret BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (api_configuration_header_id),
+  UNIQUE KEY uq_api_header_name (api_config_id, header_name),
+  KEY idx_api_headers_config (api_config_id),
+  CONSTRAINT fk_api_headers_config
+    FOREIGN KEY (api_config_id) REFERENCES api_configurations(api_config_id)
+    ON UPDATE CASCADE ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Explicit API request headers; replaces api_configurations.headers_json.';
 
 CREATE TABLE api_usage_quotas (
   api_usage_quota_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -1537,7 +1813,6 @@ CREATE TABLE agenda_templates (
   campus_scope_key VARCHAR(36) NOT NULL DEFAULT 'GLOBAL',
   name VARCHAR(150) NOT NULL,
   description TEXT NULL,
-  items_json JSON NOT NULL COMMENT 'Merged agenda_template_items table',
   status ENUM('ACTIVE','INACTIVE') NOT NULL DEFAULT 'ACTIVE',
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   created_by BIGINT UNSIGNED NULL,
@@ -1552,7 +1827,25 @@ CREATE TABLE agenda_templates (
   CONSTRAINT fk_agenda_templates_campus
     FOREIGN KEY (campus_id) REFERENCES campuses(campus_id)
     ON UPDATE CASCADE ON DELETE SET NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-COMMENT='Agenda template with items_json';
+COMMENT='Agenda template header; detailed items are stored in agenda_template_items';
+
+CREATE TABLE agenda_template_items (
+  agenda_template_item_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  agenda_template_id BIGINT UNSIGNED NOT NULL,
+  display_order INT UNSIGNED NOT NULL DEFAULT 0,
+  start_time TIME NULL,
+  end_time TIME NULL,
+  title VARCHAR(255) NOT NULL,
+  description TEXT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (agenda_template_item_id),
+  KEY idx_agenda_template_items_template_order (agenda_template_id, display_order),
+  CHECK (end_time IS NULL OR start_time IS NULL OR end_time > start_time),
+  CONSTRAINT fk_agenda_template_items_template
+    FOREIGN KEY (agenda_template_id) REFERENCES agenda_templates(agenda_template_id)
+    ON UPDATE CASCADE ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Detailed agenda rows; replaces agenda_templates.items_json.';
 
 -- =====================================================================
 -- 11. AUDIT
@@ -1565,8 +1858,6 @@ CREATE TABLE audit_logs (
   action VARCHAR(100) NOT NULL,
   entity_type VARCHAR(100) NOT NULL,
   entity_id BIGINT UNSIGNED NULL,
-  old_values_json JSON NULL,
-  new_values_json JSON NULL,
   ip_address VARCHAR(45) NULL,
   user_agent VARCHAR(500) NULL,
   request_id VARCHAR(100) NULL,
@@ -1584,6 +1875,22 @@ CREATE TABLE audit_logs (
     FOREIGN KEY (campus_id) REFERENCES campuses(campus_id)
     ON UPDATE CASCADE ON DELETE SET NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='General audit log';
+
+CREATE TABLE audit_log_changes (
+  audit_log_change_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  audit_log_id BIGINT UNSIGNED NOT NULL,
+  field_name VARCHAR(150) NOT NULL,
+  old_value_text LONGTEXT NULL,
+  new_value_text LONGTEXT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (audit_log_change_id),
+  KEY idx_audit_changes_log (audit_log_id),
+  KEY idx_audit_changes_field (field_name),
+  CONSTRAINT fk_audit_changes_log
+    FOREIGN KEY (audit_log_id) REFERENCES audit_logs(audit_log_id)
+    ON UPDATE CASCADE ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Field-level audit changes; replaces audit_logs old/new JSON values.';
 
 CREATE TABLE visit_status_logs (
   visit_status_log_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -2357,7 +2664,7 @@ DELIMITER ;
 -- 13. SEED BASIC DATA
 -- =====================================================================
 
-INSERT INTO roles (role_id, role_code, name, description)
+INSERT IGNORE INTO roles (role_id, role_code, name, description)
 VALUES
   (NULL, 'ADMIN', 'Admin', 'Quản trị kỹ thuật hệ thống'),
   (NULL, 'HO', 'Head Office', 'Quản lý cấp Head Office'),
@@ -2372,7 +2679,7 @@ SET @campus_dn = 100002;
 SET @campus_ct = 100003;
 SET @campus_qn = 100004;
 
-INSERT INTO campuses (campus_id, campus_code, name, city, status)
+INSERT IGNORE INTO campuses (campus_id, campus_code, name, city, status)
 VALUES
   (@campus_hn, 'HN', 'FPT University Hà Nội', 'Hà Nội', 'ACTIVE'),
   (@campus_hcm, 'HCM', 'FPT University TP. Hồ Chí Minh', 'TP. Hồ Chí Minh', 'ACTIVE'),
@@ -2380,7 +2687,7 @@ VALUES
   (@campus_ct, 'CT', 'FPT University Cần Thơ', 'Cần Thơ', 'ACTIVE'),
   (@campus_qn, 'QN', 'FPT University Quy Nhơn', 'Quy Nhơn', 'ACTIVE');
 
-INSERT INTO departments (department_id, campus_id, department_code, name, department_type, status)
+INSERT IGNORE INTO departments (department_id, campus_id, department_code, name, department_type, status)
 VALUES
   (NULL, @campus_hn, 'IC', 'International Cooperation', 'IC', 'ACTIVE'),
   (NULL, @campus_hcm, 'IC', 'International Cooperation', 'IC', 'ACTIVE'),
@@ -2429,7 +2736,6 @@ ORDER BY table_name;
 USE pems_db;
 SET NAMES utf8mb4;
 SET @OLD_SQL_SAFE_UPDATES = @@SQL_SAFE_UPDATES;
-SET SQL_SAFE_UPDATES = 0;
 SET @seed_now = NOW();
 
 SELECT role_id INTO @role_admin FROM roles WHERE role_code='ADMIN' LIMIT 1;
@@ -2444,84 +2750,80 @@ SELECT campus_id INTO @campus_dn FROM campuses WHERE campus_code='DN' LIMIT 1;
 SELECT campus_id INTO @campus_ct FROM campuses WHERE campus_code='CT' LIMIT 1;
 SELECT campus_id INTO @campus_qn FROM campuses WHERE campus_code='QN' LIMIT 1;
 
-UPDATE campuses SET address='Khu Giáo dục và Đào tạo, Khu Công nghệ cao Hòa Lạc, Thạch Thất, Hà Nội', phone='02473001866', email='ic.hn@company.vn', status='ACTIVE', updated_at=@seed_now WHERE campus_code='HN';
-UPDATE campuses SET address='Lô E2a-7, Đường D1, Khu Công nghệ cao, TP. Thủ Đức, TP. Hồ Chí Minh', phone='02873005588', email='ic.hcm@company.vn', status='ACTIVE', updated_at=@seed_now WHERE campus_code='HCM';
-UPDATE campuses SET address='Khu đô thị công nghệ FPT Đà Nẵng, phường Hòa Hải, quận Ngũ Hành Sơn, Đà Nẵng', phone='02367300999', email='ic.dn@company.vn', status='ACTIVE', updated_at=@seed_now WHERE campus_code='DN';
-UPDATE campuses SET address='Khu đô thị Nam Cần Thơ, phường Hưng Thạnh, quận Cái Răng, Cần Thơ', phone='02927300999', email='ic.ct@company.vn', status='ACTIVE', updated_at=@seed_now WHERE campus_code='CT';
-UPDATE campuses SET address='Khu đô thị giáo dục FPT Quy Nhơn, phường Nhơn Bình, TP. Quy Nhơn, Bình Định', phone='02567300999', email='ic.qn@company.vn', status='ACTIVE', updated_at=@seed_now WHERE campus_code='QN';
-UPDATE departments SET name='Phòng Hợp tác Quốc tế' WHERE department_code='IC';
+-- UPDATE migration statement removed in fresh create-only build.
+-- UPDATE migration statement removed in fresh create-only build.
+-- UPDATE migration statement removed in fresh create-only build.
+INSERT IGNORE INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_hn, 'ADMIN', 'Phòng Hành chính', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_hn AND department_code='ADMIN');
 
-INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_hn, 'ADMIN', 'Phòng Hành chính', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_hn AND department_code='ADMIN');
+INSERT IGNORE INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_hn, 'PLANNING', 'Phòng Kế hoạch', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_hn AND department_code='PLANNING');
 
-INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_hn, 'PLANNING', 'Phòng Kế hoạch', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_hn AND department_code='PLANNING');
+INSERT IGNORE INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_hn, 'IT', 'Phòng CNTT', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_hn AND department_code='IT');
 
-INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_hn, 'IT', 'Phòng CNTT', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_hn AND department_code='IT');
+INSERT IGNORE INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_hn, 'FINANCE', 'Phòng Tài chính', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_hn AND department_code='FINANCE');
 
-INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_hn, 'FINANCE', 'Phòng Tài chính', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_hn AND department_code='FINANCE');
+INSERT IGNORE INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_hn, 'OPERATIONS', 'Ban Điều hành', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_hn AND department_code='OPERATIONS');
 
-INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_hn, 'OPERATIONS', 'Ban Điều hành', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_hn AND department_code='OPERATIONS');
+INSERT IGNORE INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_hn, 'ACADEMIC', 'Phòng Đào tạo', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_hn AND department_code='ACADEMIC');
 
-INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_hn, 'ACADEMIC', 'Phòng Đào tạo', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_hn AND department_code='ACADEMIC');
+INSERT IGNORE INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_hn, 'MARKETING', 'Phòng Truyền thông', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_hn AND department_code='MARKETING');
 
-INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_hn, 'MARKETING', 'Phòng Truyền thông', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_hn AND department_code='MARKETING');
+INSERT IGNORE INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_hcm, 'ADMIN', 'Phòng Hành chính', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_hcm AND department_code='ADMIN');
 
-INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_hcm, 'ADMIN', 'Phòng Hành chính', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_hcm AND department_code='ADMIN');
+INSERT IGNORE INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_hcm, 'PLANNING', 'Phòng Kế hoạch', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_hcm AND department_code='PLANNING');
 
-INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_hcm, 'PLANNING', 'Phòng Kế hoạch', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_hcm AND department_code='PLANNING');
+INSERT IGNORE INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_hcm, 'IT', 'Phòng CNTT', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_hcm AND department_code='IT');
 
-INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_hcm, 'IT', 'Phòng CNTT', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_hcm AND department_code='IT');
+INSERT IGNORE INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_hcm, 'FINANCE', 'Phòng Tài chính', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_hcm AND department_code='FINANCE');
 
-INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_hcm, 'FINANCE', 'Phòng Tài chính', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_hcm AND department_code='FINANCE');
+INSERT IGNORE INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_hcm, 'OPERATIONS', 'Ban Điều hành', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_hcm AND department_code='OPERATIONS');
 
-INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_hcm, 'OPERATIONS', 'Ban Điều hành', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_hcm AND department_code='OPERATIONS');
+INSERT IGNORE INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_hcm, 'ACADEMIC', 'Phòng Đào tạo', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_hcm AND department_code='ACADEMIC');
 
-INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_hcm, 'ACADEMIC', 'Phòng Đào tạo', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_hcm AND department_code='ACADEMIC');
+INSERT IGNORE INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_hcm, 'MARKETING', 'Phòng Truyền thông', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_hcm AND department_code='MARKETING');
 
-INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_hcm, 'MARKETING', 'Phòng Truyền thông', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_hcm AND department_code='MARKETING');
+INSERT IGNORE INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_dn, 'ADMIN', 'Phòng Hành chính', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_dn AND department_code='ADMIN');
 
-INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_dn, 'ADMIN', 'Phòng Hành chính', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_dn AND department_code='ADMIN');
+INSERT IGNORE INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_dn, 'PLANNING', 'Phòng Kế hoạch', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_dn AND department_code='PLANNING');
 
-INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_dn, 'PLANNING', 'Phòng Kế hoạch', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_dn AND department_code='PLANNING');
+INSERT IGNORE INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_dn, 'IT', 'Phòng CNTT', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_dn AND department_code='IT');
 
-INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_dn, 'IT', 'Phòng CNTT', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_dn AND department_code='IT');
+INSERT IGNORE INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_dn, 'FINANCE', 'Phòng Tài chính', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_dn AND department_code='FINANCE');
 
-INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_dn, 'FINANCE', 'Phòng Tài chính', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_dn AND department_code='FINANCE');
+INSERT IGNORE INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_dn, 'OPERATIONS', 'Ban Điều hành', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_dn AND department_code='OPERATIONS');
 
-INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_dn, 'OPERATIONS', 'Ban Điều hành', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_dn AND department_code='OPERATIONS');
+INSERT IGNORE INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_dn, 'ACADEMIC', 'Phòng Đào tạo', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_dn AND department_code='ACADEMIC');
 
-INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_dn, 'ACADEMIC', 'Phòng Đào tạo', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_dn AND department_code='ACADEMIC');
+INSERT IGNORE INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_dn, 'MARKETING', 'Phòng Truyền thông', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_dn AND department_code='MARKETING');
 
-INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_dn, 'MARKETING', 'Phòng Truyền thông', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_dn AND department_code='MARKETING');
+INSERT IGNORE INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_ct, 'ADMIN', 'Phòng Hành chính', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_ct AND department_code='ADMIN');
 
-INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_ct, 'ADMIN', 'Phòng Hành chính', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_ct AND department_code='ADMIN');
+INSERT IGNORE INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_ct, 'PLANNING', 'Phòng Kế hoạch', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_ct AND department_code='PLANNING');
 
-INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_ct, 'PLANNING', 'Phòng Kế hoạch', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_ct AND department_code='PLANNING');
+INSERT IGNORE INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_ct, 'IT', 'Phòng CNTT', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_ct AND department_code='IT');
 
-INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_ct, 'IT', 'Phòng CNTT', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_ct AND department_code='IT');
+INSERT IGNORE INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_ct, 'FINANCE', 'Phòng Tài chính', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_ct AND department_code='FINANCE');
 
-INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_ct, 'FINANCE', 'Phòng Tài chính', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_ct AND department_code='FINANCE');
+INSERT IGNORE INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_ct, 'OPERATIONS', 'Ban Điều hành', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_ct AND department_code='OPERATIONS');
 
-INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_ct, 'OPERATIONS', 'Ban Điều hành', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_ct AND department_code='OPERATIONS');
+INSERT IGNORE INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_ct, 'ACADEMIC', 'Phòng Đào tạo', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_ct AND department_code='ACADEMIC');
 
-INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_ct, 'ACADEMIC', 'Phòng Đào tạo', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_ct AND department_code='ACADEMIC');
+INSERT IGNORE INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_ct, 'MARKETING', 'Phòng Truyền thông', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_ct AND department_code='MARKETING');
 
-INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_ct, 'MARKETING', 'Phòng Truyền thông', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_ct AND department_code='MARKETING');
+INSERT IGNORE INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_qn, 'ADMIN', 'Phòng Hành chính', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_qn AND department_code='ADMIN');
 
-INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_qn, 'ADMIN', 'Phòng Hành chính', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_qn AND department_code='ADMIN');
+INSERT IGNORE INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_qn, 'PLANNING', 'Phòng Kế hoạch', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_qn AND department_code='PLANNING');
 
-INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_qn, 'PLANNING', 'Phòng Kế hoạch', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_qn AND department_code='PLANNING');
+INSERT IGNORE INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_qn, 'IT', 'Phòng CNTT', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_qn AND department_code='IT');
 
-INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_qn, 'IT', 'Phòng CNTT', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_qn AND department_code='IT');
+INSERT IGNORE INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_qn, 'FINANCE', 'Phòng Tài chính', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_qn AND department_code='FINANCE');
 
-INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_qn, 'FINANCE', 'Phòng Tài chính', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_qn AND department_code='FINANCE');
+INSERT IGNORE INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_qn, 'OPERATIONS', 'Ban Điều hành', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_qn AND department_code='OPERATIONS');
 
-INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_qn, 'OPERATIONS', 'Ban Điều hành', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_qn AND department_code='OPERATIONS');
+INSERT IGNORE INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_qn, 'ACADEMIC', 'Phòng Đào tạo', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_qn AND department_code='ACADEMIC');
 
-INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_qn, 'ACADEMIC', 'Phòng Đào tạo', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_qn AND department_code='ACADEMIC');
+INSERT IGNORE INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_qn, 'MARKETING', 'Phòng Truyền thông', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_qn AND department_code='MARKETING');
 
-INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_qn, 'MARKETING', 'Phòng Truyền thông', 'GENERAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 330 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_qn AND department_code='MARKETING');
-
-INSERT INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_qn, 'ARCHIVE_FINANCE', 'Phòng Tài chính lưu trữ', 'GENERAL', 'INACTIVE', DATE_SUB(@seed_now, INTERVAL 280 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_qn AND department_code='ARCHIVE_FINANCE');
+INSERT IGNORE INTO departments (department_id,campus_id,department_code,name,department_type,status,created_at) SELECT NULL, @campus_qn, 'ARCHIVE_FINANCE', 'Phòng Tài chính lưu trữ', 'GENERAL', 'INACTIVE', DATE_SUB(@seed_now, INTERVAL 280 DAY) WHERE NOT EXISTS (SELECT 1 FROM departments WHERE campus_id=@campus_qn AND department_code='ARCHIVE_FINANCE');
 
 SELECT department_id INTO @dept_hn_ic FROM departments WHERE campus_id=@campus_hn AND department_code='IC' LIMIT 1;
 
@@ -2715,22 +3017,16 @@ VALUES
   (@v_short_name, 'An', 'an.short@partner.example', '0909555003', 'Việt Nam', @pwd_hash, @role_visitor, NULL, NULL, NULL, 'UNKNOWN', NULL, NULL, NULL, 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 113 DAY), '0', NULL, 'VISITOR_FORM', DATE_SUB(@seed_now, INTERVAL 103 DAY), DATE_SUB(@seed_now, INTERVAL 14 DAY), DATE_SUB(@seed_now, INTERVAL 153 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
   (@v_long_name, 'Nguyễn Thị Minh Anh Phương Khánh Linh Hoàng Bảo Trân Quốc Việt', 'long.name.visitor@partner.example', '0909555004', 'Việt Nam', @pwd_hash, @role_visitor, NULL, NULL, NULL, 'FEMALE', NULL, NULL, NULL, 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 114 DAY), '0', NULL, 'VISITOR_FORM', DATE_SUB(@seed_now, INTERVAL 104 DAY), DATE_SUB(@seed_now, INTERVAL 15 DAY), DATE_SUB(@seed_now, INTERVAL 154 DAY), @u_admin_minh, @seed_now, @u_admin_minh);
 
-UPDATE campuses SET ic_head_user_id=@u_stafflead_hn WHERE campus_id=@campus_hn;
-UPDATE campuses SET ic_head_user_id=@u_stafflead_hcm WHERE campus_id=@campus_hcm;
-UPDATE campuses SET ic_head_user_id=@u_stafflead_dn WHERE campus_id=@campus_dn;
-UPDATE campuses SET ic_head_user_id=@u_stafflead_ct WHERE campus_id=@campus_ct;
-UPDATE campuses SET ic_head_user_id=@u_stafflead_qn WHERE campus_id=@campus_qn;
-UPDATE departments SET head_user_id=@u_stafflead_hn WHERE department_id=@dept_hn_ic;
-UPDATE departments SET head_user_id=@u_stafflead_hcm WHERE department_id=@dept_hcm_ic;
-UPDATE departments SET head_user_id=@u_stafflead_dn WHERE department_id=@dept_dn_ic;
-UPDATE departments SET head_user_id=@u_stafflead_ct WHERE department_id=@dept_ct_ic;
-UPDATE departments SET head_user_id=@u_stafflead_qn WHERE department_id=@dept_qn_ic;
-UPDATE departments SET head_user_id=@u_deptlead_it_hn WHERE department_id=@dept_hn_it;
-UPDATE departments SET head_user_id=@u_deptlead_finance_hcm WHERE department_id=@dept_hcm_finance;
-UPDATE departments SET head_user_id=@u_deptlead_admin_ct WHERE department_id=@dept_ct_admin;
+-- UPDATE migration statement removed in fresh create-only build.
+-- UPDATE migration statement removed in fresh create-only build.
+-- UPDATE migration statement removed in fresh create-only build.
+-- UPDATE migration statement removed in fresh create-only build.
+-- UPDATE migration statement removed in fresh create-only build.
+-- UPDATE migration statement removed in fresh create-only build.
+-- UPDATE migration statement removed in fresh create-only build.
 
 
-INSERT INTO permissions (permission_id, permission_code, name, permission_group, description, is_system, created_at)
+INSERT IGNORE INTO permissions (permission_id, permission_code, name, permission_group, description, is_system, created_at)
 VALUES
   (NULL, 'UC-01.VIEW_HOMEPAGE', 'UC-01 - View Homepage', 'Common', 'Seeded from Role & Permission Matrix: View Homepage', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
   (NULL, 'UC-02.SEARCH_INFORMATION', 'UC-02 - Search Information', 'Common', 'Seeded from Role & Permission Matrix: Search Information', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
@@ -2879,7 +3175,7 @@ VALUES
 --   ADMIN/HO/STUDENT/VISITOR use sub_role = 'NONE'.
 -- =====================================================================
 
-INSERT INTO role_permissions
+INSERT IGNORE INTO role_permissions
   (role_id, sub_role, permission_id, permission_level, granted_at, granted_by)
 SELECT
   r.role_id,
@@ -3254,11 +3550,7 @@ FROM (
   UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-135.VIEW_AGENDA_TEMPLATE_DETAIL' AS permission_code, 'R' AS permission_level
 ) x
 JOIN roles r ON r.role_code = x.role_code
-JOIN permissions p ON p.permission_code = x.permission_code
-ON DUPLICATE KEY UPDATE
-  permission_level = VALUES(permission_level),
-  granted_at = VALUES(granted_at),
-  granted_by = VALUES(granted_by);
+JOIN permissions p ON p.permission_code = x.permission_code;
 
 -- Verification: permission totals by role + sub_role after matrix seed.
 SELECT r.role_code, rp.sub_role, COUNT(*) AS total_permissions
@@ -3344,13 +3636,12 @@ VALUES
   (NULL, 'unknown.person@company.vn', 'INTERNAL', NULL, 'LOCAL_PASSWORD', 'FAILED', 'Invalid credentials', '198.51.100.10', 'curl/8.0', NULL, DATE_SUB(@seed_now, INTERVAL 15 MINUTE)),
   (@u_student_anh, 'student@fpt.edu.vn', 'INTERNAL', @campus_hn, 'FEID', 'SUCCESS', NULL, '10.10.1.19', 'Mozilla/5.0', NULL, DATE_SUB(@seed_now, INTERVAL 1 DAY));
 
-INSERT INTO security_events (user_id, email, event_type, severity, ip_address, user_agent, metadata, created_at)
+INSERT INTO security_events (user_id, email_snapshot, event_type, result, failure_reason_code, severity, login_portal, selected_campus_id, provider_type, ip_address, user_agent, session_id, detail_text, created_at)
 VALUES
-  
-  (@u_admin_minh, 'admin@fpt.edu.vn', 'LOGIN_SUCCESS_REVIEWED', 'LOW', '10.10.1.15', 'Mozilla/5.0', JSON_OBJECT('portal','INTERNAL'), DATE_SUB(@seed_now, INTERVAL 1 HOUR)),
-  (@v_smith, 'emily.smith@greentech.example', 'OTP_FAILED', 'MEDIUM', '203.113.11.11', 'Mozilla/5.0', JSON_OBJECT('attempt_count',5), DATE_SUB(@seed_now, INTERVAL 30 MINUTE)),
-  (@u_locked_staff, 'huy.locked@company.vn', 'LOGIN_LOCKED', 'HIGH', '10.10.1.18', 'Mozilla/5.0', JSON_OBJECT('failed_login_count',7), DATE_SUB(@seed_now, INTERVAL 20 MINUTE)),
-  (NULL, 'unknown.person@company.vn', 'SUSPICIOUS_IP', 'CRITICAL', '198.51.100.10', 'curl/8.0', JSON_OBJECT('blocked',true), DATE_SUB(@seed_now, INTERVAL 10 MINUTE));
+  (@u_admin_minh, 'admin@fpt.edu.vn', 'SSO_LOGIN', 'SUCCESS', NULL, 'LOW', 'INTERNAL', @campus_hn, 'GOOGLE_SSO', '10.10.1.15', 'Mozilla/5.0', NULL, 'Internal portal SSO login reviewed successfully.', DATE_SUB(@seed_now, INTERVAL 1 HOUR)),
+  (@v_smith, 'emily.smith@greentech.example', 'PORTAL_VALIDATION', 'FAILED', 'PORTAL_MISMATCH', 'MEDIUM', 'INTERNAL', NULL, 'GOOGLE_SSO', '203.113.11.11', 'Mozilla/5.0', NULL, 'Visitor account attempted to access Internal Portal.', DATE_SUB(@seed_now, INTERVAL 30 MINUTE)),
+  (@u_locked_staff, 'huy.locked@company.vn', 'SSO_LOGIN', 'FAILED', 'ACCOUNT_DISABLED', 'HIGH', 'INTERNAL', @campus_hn, 'GOOGLE_SSO', '10.10.1.18', 'Mozilla/5.0', NULL, 'SSO identity matched an inactive/locked internal account.', DATE_SUB(@seed_now, INTERVAL 20 MINUTE)),
+  (NULL, 'unknown.person@company.vn', 'SECURITY_POLICY_CHECK', 'BLOCKED', 'SUSPICIOUS_IP', 'CRITICAL', 'INTERNAL', NULL, 'GOOGLE_SSO', '198.51.100.10', 'curl/8.0', NULL, 'Request blocked by security policy before session creation.', DATE_SUB(@seed_now, INTERVAL 10 MINUTE));
 
 SET @p_seoul = 100051;
 
@@ -3419,30 +3710,30 @@ SET @file_edge_small = 100074;
 
 SET @file_edge_large = 100075;
 
-INSERT INTO files (file_id, storage_provider, bucket_name, object_key, original_filename, mime_type, file_size, checksum_sha256, visibility, uploaded_by, uploaded_at)
+INSERT INTO files (file_id, storage_provider, bucket_name, object_key, original_filename, mime_type, file_size, checksum_sha256, uploaded_by, uploaded_at)
 VALUES
-  (@file_news_ai, 'LOCAL', NULL, 'public/news/ai-campus-tour-cover.jpg', 'ai-campus-tour-cover.jpg', 'image/jpeg', 524288, 'f586c69188453c3f2100f7a7d245e9a964fd09d12466c8a04988add5036ba001', 'PUBLIC', @u_staff_hn, DATE_SUB(@seed_now, INTERVAL 10 DAY)),
-  (@file_news_green, 'S3', 'pems-public', 'public/news/greentech-workshop.jpg', 'greentech-workshop.jpg', 'image/jpeg', 734003, '4f992863674222075dde7fd8314540c98b3a8f39953473fd55a32c375f62d2d5', 'PUBLIC', @u_staff_hcm, DATE_SUB(@seed_now, INTERVAL 11 DAY)),
-  (@file_news_policy, 'AZURE', 'pems-internal', 'internal/news/policy-update.pdf', 'policy-update.pdf', 'application/pdf', 102400, '138dbb72c41b237734e8dca2c79e09459f1b79e68617d1da4d79ef06c549d62f', 'INTERNAL', @u_ho_ha, DATE_SUB(@seed_now, INTERVAL 12 DAY)),
-  (@file_gallery_hn, 'GCS', 'pems-gallery', 'gallery/hn/innovation-hall-01.jpg', 'innovation-hall-01.jpg', 'image/jpeg', 2048576, '39cc86536893f391a16f5ed0311e7ab08f33ffd7fbc5143c8927584e077d38e6', 'PUBLIC', @u_staff_hn, DATE_SUB(@seed_now, INTERVAL 13 DAY)),
-  (@file_gallery_hcm, 'GOOGLE_DRIVE', 'pems-gallery', 'gallery/hcm/green-lab-01.jpg', 'green-lab-01.jpg', 'image/jpeg', 1900000, 'af843ca41b7aeb9bdd2e19840b067eee9127e4aa62ba0a4e1d0fa7087669d7ec', 'PUBLIC', @u_staff_hcm, DATE_SUB(@seed_now, INTERVAL 14 DAY)),
-  (@file_gallery_hidden, 'OTHER', 'legacy-drive', 'gallery/archive/private-briefing.jpg', 'private-briefing.jpg', 'image/jpeg', 777777, 'd785237c7b3067120caaa6926f1abbb7916af31557d16562c2edf9694cd53bd7', 'PRIVATE', @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 15 DAY)),
-  (@file_doc_general, 'LOCAL', NULL, 'documents/process/quy-trinh-tiep-doan-quoc-te.pdf', 'quy-trinh-tiep-doan-quoc-te.pdf', 'application/pdf', 409600, '9eb10c831b3e4b91cf347ac576794a27dbe2a3c2b21a3eab20800dc9430f2bac', 'INTERNAL', @u_ho_ha, DATE_SUB(@seed_now, INTERVAL 17 DAY)),
-  (@file_doc_partner, 'S3', 'pems-private', 'partners/seoultech/mou-draft-v3.docx', 'mou-draft-v3.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 256000, '059a10ad5a54b2632b692ca1edb742ec6deed22bb6f89a49d3729516caaf4cc1', 'PRIVATE', @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 18 DAY)),
-  (@file_doc_visit, 'LOCAL', NULL, 'visits/vr-approved-single/agenda-final.xlsx', 'agenda-final.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 88000, '5f79b35474e431e6c8b0fc191c3afde8cfa0f95d50538c1073bc5b335b02ab78', 'INTERNAL', @u_staff_hn, DATE_SUB(@seed_now, INTERVAL 19 DAY)),
-  (@file_doc_minutes, 'LOCAL', NULL, 'minutes/closed-visit/bien-ban-hop-final.pdf', 'bien-ban-hop-final.pdf', 'application/pdf', 180000, 'a78dbdcb521c741795e9114016d03f454964678e51d999824122d6d89496433f', 'INTERNAL', @u_staff_hn, DATE_SUB(@seed_now, INTERVAL 20 DAY)),
-  (@file_doc_logistics, 'LOCAL', NULL, 'logistics/room-layout-a101.png', 'room-layout-a101.png', 'image/png', 130000, '17a5a8bb0cd9f5912937e9f442b5a0de7a3cc1085d3f6a67d6639d4a297d0484', 'INTERNAL', @u_dept_it_hn, DATE_SUB(@seed_now, INTERVAL 21 DAY)),
-  (@file_doc_report, 'LOCAL', NULL, 'reports/monthly/bao-cao-doan-khach.xlsx', 'bao-cao-doan-khach.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 210000, '8c6254acb936079ce44fceee7b364bb963b8bc1b7a5227b0c7975d3a25c90f88', 'INTERNAL', @u_ho_ha, DATE_SUB(@seed_now, INTERVAL 22 DAY)),
-  (@file_edge_small, 'LOCAL', NULL, 'edge/empty-note.txt', 'empty-note.txt', 'text/plain', 0, '7fc40513bc72b25d2d77ae6fb014e837461925fcb31af067b121c247dba8a635', 'PRIVATE', @u_admin_minh, DATE_SUB(@seed_now, INTERVAL 23 DAY)),
-  (@file_edge_large, 'S3', 'pems-archive', 'edge/near-limit-object-key-long-name-for-testing-search-and-storage-behaviour.bin', 'near-limit-archive.bin', 'application/octet-stream', 4294967295, '40ade8b889b7733e8080a26a43c583fd5178b92017f3af0e50031fb613d6b0d5', 'PRIVATE', @u_admin_minh, DATE_SUB(@seed_now, INTERVAL 24 DAY));
+  (@file_news_ai, 'LOCAL', NULL, 'public/news/ai-campus-tour-cover.jpg', 'ai-campus-tour-cover.jpg', 'image/jpeg', 524288, 'f586c69188453c3f2100f7a7d245e9a964fd09d12466c8a04988add5036ba001', @u_staff_hn, DATE_SUB(@seed_now, INTERVAL 10 DAY)),
+  (@file_news_green, 'S3', 'pems-public', 'public/news/greentech-workshop.jpg', 'greentech-workshop.jpg', 'image/jpeg', 734003, '4f992863674222075dde7fd8314540c98b3a8f39953473fd55a32c375f62d2d5', @u_staff_hcm, DATE_SUB(@seed_now, INTERVAL 11 DAY)),
+  (@file_news_policy, 'AZURE', 'pems-internal', 'internal/news/policy-update.pdf', 'policy-update.pdf', 'application/pdf', 102400, '138dbb72c41b237734e8dca2c79e09459f1b79e68617d1da4d79ef06c549d62f', @u_ho_ha, DATE_SUB(@seed_now, INTERVAL 12 DAY)),
+  (@file_gallery_hn, 'GCS', 'pems-gallery', 'gallery/hn/innovation-hall-01.jpg', 'innovation-hall-01.jpg', 'image/jpeg', 2048576, '39cc86536893f391a16f5ed0311e7ab08f33ffd7fbc5143c8927584e077d38e6', @u_staff_hn, DATE_SUB(@seed_now, INTERVAL 13 DAY)),
+  (@file_gallery_hcm, 'GOOGLE_DRIVE', 'pems-gallery', 'gallery/hcm/green-lab-01.jpg', 'green-lab-01.jpg', 'image/jpeg', 1900000, 'af843ca41b7aeb9bdd2e19840b067eee9127e4aa62ba0a4e1d0fa7087669d7ec', @u_staff_hcm, DATE_SUB(@seed_now, INTERVAL 14 DAY)),
+  (@file_gallery_hidden, 'OTHER', 'legacy-drive', 'gallery/archive/private-briefing.jpg', 'private-briefing.jpg', 'image/jpeg', 777777, 'd785237c7b3067120caaa6926f1abbb7916af31557d16562c2edf9694cd53bd7', @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 15 DAY)),
+  (@file_doc_general, 'LOCAL', NULL, 'documents/process/quy-trinh-tiep-doan-quoc-te.pdf', 'quy-trinh-tiep-doan-quoc-te.pdf', 'application/pdf', 409600, '9eb10c831b3e4b91cf347ac576794a27dbe2a3c2b21a3eab20800dc9430f2bac', @u_ho_ha, DATE_SUB(@seed_now, INTERVAL 17 DAY)),
+  (@file_doc_partner, 'S3', 'pems-private', 'partners/seoultech/mou-draft-v3.docx', 'mou-draft-v3.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 256000, '059a10ad5a54b2632b692ca1edb742ec6deed22bb6f89a49d3729516caaf4cc1', @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 18 DAY)),
+  (@file_doc_visit, 'LOCAL', NULL, 'visits/vr-approved-single/agenda-final.xlsx', 'agenda-final.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 88000, '5f79b35474e431e6c8b0fc191c3afde8cfa0f95d50538c1073bc5b335b02ab78', @u_staff_hn, DATE_SUB(@seed_now, INTERVAL 19 DAY)),
+  (@file_doc_minutes, 'LOCAL', NULL, 'minutes/closed-visit/bien-ban-hop-final.pdf', 'bien-ban-hop-final.pdf', 'application/pdf', 180000, 'a78dbdcb521c741795e9114016d03f454964678e51d999824122d6d89496433f', @u_staff_hn, DATE_SUB(@seed_now, INTERVAL 20 DAY)),
+  (@file_doc_logistics, 'LOCAL', NULL, 'logistics/room-layout-a101.png', 'room-layout-a101.png', 'image/png', 130000, '17a5a8bb0cd9f5912937e9f442b5a0de7a3cc1085d3f6a67d6639d4a297d0484', @u_dept_it_hn, DATE_SUB(@seed_now, INTERVAL 21 DAY)),
+  (@file_doc_report, 'LOCAL', NULL, 'reports/monthly/bao-cao-doan-khach.xlsx', 'bao-cao-doan-khach.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 210000, '8c6254acb936079ce44fceee7b364bb963b8bc1b7a5227b0c7975d3a25c90f88', @u_ho_ha, DATE_SUB(@seed_now, INTERVAL 22 DAY)),
+  (@file_edge_small, 'LOCAL', NULL, 'edge/empty-note.txt', 'empty-note.txt', 'text/plain', 0, '7fc40513bc72b25d2d77ae6fb014e837461925fcb31af067b121c247dba8a635', @u_admin_minh, DATE_SUB(@seed_now, INTERVAL 23 DAY)),
+  (@file_edge_large, 'S3', 'pems-archive', 'edge/near-limit-object-key-long-name-for-testing-search-and-storage-behaviour.bin', 'near-limit-archive.bin', 'application/octet-stream', 4294967295, '40ade8b889b7733e8080a26a43c583fd5178b92017f3af0e50031fb613d6b0d5', @u_admin_minh, DATE_SUB(@seed_now, INTERVAL 24 DAY));
 
-INSERT INTO faqs (faq_id, category, question, answer, display_order, status, created_at, created_by, updated_at, updated_by)
+INSERT INTO faqs (faq_id, faq_type, language_code, question, answer, display_order, status, created_at, created_by, updated_at, updated_by)
 VALUES
-  (NULL, 'Visit Request', 'Làm thế nào để gửi yêu cầu thăm quan campus?', 'Khách chọn mục Gửi yêu cầu thăm quan, điền thông tin và xác thực email bằng OTP.', 1, 'PUBLISHED', DATE_SUB(@seed_now, INTERVAL 90 DAY), @u_staff_hn, @seed_now, @u_staff_hn),
-  (NULL, 'Visit Request', 'How can I update a submitted delegation request?', 'Only requests in editable workflow status can be updated.', 2, 'PUBLISHED', DATE_SUB(@seed_now, INTERVAL 88 DAY), @u_staff_hcm, @seed_now, @u_staff_hcm),
-  (NULL, 'Security', 'Khách có cần mang giấy tờ tùy thân không?', 'Có. Thành viên đoàn cần mang hộ chiếu hoặc căn cước.', 3, 'HIDDEN', DATE_SUB(@seed_now, INTERVAL 85 DAY), @u_stafflead_hn, @seed_now, @u_stafflead_hn),
-  (NULL, 'Logistics', 'Xe đoàn khách có được vào trong campus không?', 'Tùy từng campus và lịch bảo vệ.', 4, 'HIDDEN', DATE_SUB(@seed_now, INTERVAL 2 DAY), @u_staff_ct, NULL, NULL),
-  (NULL, 'Visit Request', 'Câu hỏi cũ về biểu mẫu giấy có còn áp dụng không?', 'Không. Quy trình đã chuyển sang biểu mẫu trực tuyến.', 99, 'HIDDEN', DATE_SUB(@seed_now, INTERVAL 400 DAY), @u_ho_ha, DATE_SUB(@seed_now, INTERVAL 200 DAY), @u_ho_ha);
+  (NULL, 'VISIT_REQUEST', 'vi', 'Làm thế nào để gửi yêu cầu thăm quan campus?', 'Khách chọn mục Gửi yêu cầu thăm quan, điền thông tin và xác thực email bằng OTP.', 1, 'PUBLISHED', DATE_SUB(@seed_now, INTERVAL 90 DAY), @u_staff_hn, @seed_now, @u_staff_hn),
+  (NULL, 'VISIT_REQUEST', 'vi', 'How can I update a submitted delegation request?', 'Only requests in editable workflow status can be updated.', 2, 'PUBLISHED', DATE_SUB(@seed_now, INTERVAL 88 DAY), @u_staff_hcm, @seed_now, @u_staff_hcm),
+  (NULL, 'SECURITY', 'vi', 'Khách có cần mang giấy tờ tùy thân không?', 'Có. Thành viên đoàn cần mang hộ chiếu hoặc căn cước.', 3, 'HIDDEN', DATE_SUB(@seed_now, INTERVAL 85 DAY), @u_stafflead_hn, @seed_now, @u_stafflead_hn),
+  (NULL, 'LOGISTICS', 'vi', 'Xe đoàn khách có được vào trong campus không?', 'Tùy từng campus và lịch bảo vệ.', 4, 'HIDDEN', DATE_SUB(@seed_now, INTERVAL 2 DAY), @u_staff_ct, NULL, NULL),
+  (NULL, 'VISIT_REQUEST', 'vi', 'Câu hỏi cũ về biểu mẫu giấy có còn áp dụng không?', 'Không. Quy trình đã chuyển sang biểu mẫu trực tuyến.', 99, 'HIDDEN', DATE_SUB(@seed_now, INTERVAL 400 DAY), @u_ho_ha, DATE_SUB(@seed_now, INTERVAL 200 DAY), @u_ho_ha);
 
 SET @news_pending = 100076;
 SET @news_rejected = 100077;
@@ -3499,13 +3790,13 @@ SET @tpl_task = 100093;
 
 SET @tpl_inactive = 100094;
 
-INSERT INTO email_templates (email_template_id, template_code, name, purpose, status, translations_json, variables_json, created_at, created_by, updated_at, updated_by)
+INSERT INTO email_templates (email_template_id, template_code, name, purpose, campus_id, description, status, subject_vi, body_vi, subject_en, body_en, variables_text, created_at, created_by, updated_at, updated_by)
 VALUES
-  (@tpl_verify, 'VISIT_REQUEST_VERIFY', 'Xác thực email yêu cầu thăm quan', 'VISIT_REQUEST_VERIFY', 'ACTIVE', JSON_OBJECT('vi',JSON_OBJECT('subject','Mã xác thực yêu cầu thăm quan','body','OTP {{OtpCode}}'),'en',JSON_OBJECT('subject','Verify visit request','body','OTP {{OtpCode}}')), JSON_ARRAY('FullName','OtpCode'), DATE_SUB(@seed_now, INTERVAL 200 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
-  (@tpl_approved, 'VISIT_REQUEST_APPROVED', 'Thông báo duyệt visit request', 'VISIT_DECISION', 'ACTIVE', JSON_OBJECT('vi',JSON_OBJECT('subject','Yêu cầu đã được duyệt','body','Request {{RequestCode}} approved')), JSON_ARRAY('RequestCode'), DATE_SUB(@seed_now, INTERVAL 200 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
-  (@tpl_rejected, 'VISIT_REQUEST_REJECTED', 'Thông báo từ chối visit request', 'VISIT_DECISION', 'ACTIVE', JSON_OBJECT('vi',JSON_OBJECT('subject','Yêu cầu chưa được duyệt','body','Reason {{Reason}}')), JSON_ARRAY('RequestCode','Reason'), DATE_SUB(@seed_now, INTERVAL 200 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
-  (@tpl_task, 'LOGISTICS_TASK_ASSIGNED', 'Thông báo phân công hậu cần', 'LOGISTICS', 'ACTIVE', JSON_OBJECT('vi',JSON_OBJECT('subject','Bạn được phân công hậu cần','body','Task {{ItemTitle}}')), JSON_ARRAY('ItemTitle'), DATE_SUB(@seed_now, INTERVAL 180 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
-  (@tpl_inactive, 'OLD_WEEKLY_DIGEST', 'Mẫu tổng hợp tuần cũ', 'DIGEST', 'INACTIVE', JSON_OBJECT('vi',JSON_OBJECT('subject','Tổng hợp tuần cũ','body','Inactive')), JSON_ARRAY('WeekRange'), DATE_SUB(@seed_now, INTERVAL 500 DAY), @u_admin_minh, DATE_SUB(@seed_now, INTERVAL 300 DAY), @u_admin_minh);
+  (@tpl_verify, 'VISIT_REQUEST_VERIFY', 'Xác thực email yêu cầu thăm quan', 'VISIT_REQUEST_VERIFY', NULL, NULL, 'ACTIVE', NULL, NULL, NULL, NULL, NULL, DATE_SUB(@seed_now, INTERVAL 200 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
+  (@tpl_approved, 'VISIT_REQUEST_APPROVED', 'Thông báo duyệt visit request', 'VISIT_DECISION', NULL, NULL, 'ACTIVE', NULL, NULL, NULL, NULL, NULL, DATE_SUB(@seed_now, INTERVAL 200 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
+  (@tpl_rejected, 'VISIT_REQUEST_REJECTED', 'Thông báo từ chối visit request', 'VISIT_DECISION', NULL, NULL, 'ACTIVE', NULL, NULL, NULL, NULL, NULL, DATE_SUB(@seed_now, INTERVAL 200 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
+  (@tpl_task, 'LOGISTICS_TASK_ASSIGNED', 'Thông báo phân công hậu cần', 'LOGISTICS', NULL, NULL, 'ACTIVE', NULL, NULL, NULL, NULL, NULL, DATE_SUB(@seed_now, INTERVAL 180 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
+  (@tpl_inactive, 'OLD_WEEKLY_DIGEST', 'Mẫu tổng hợp tuần cũ', 'DIGEST', NULL, NULL, 'INACTIVE', NULL, NULL, NULL, NULL, NULL, DATE_SUB(@seed_now, INTERVAL 500 DAY), @u_admin_minh, DATE_SUB(@seed_now, INTERVAL 300 DAY), @u_admin_minh);
 
 SET @vr_pending_approval_seed = 100095;
 
@@ -3647,63 +3938,63 @@ SET @vr_hist_43 = 100205; SET @vi_hist_43 = 100206;
 
 SET @vr_hist_44 = 100207; SET @vi_hist_44 = 100208;
 
-INSERT INTO visit_requests (visit_request_id, request_code, visitor_user_id, partner_id, registrant_full_name, registrant_organization, registrant_job_title, registrant_phone, registrant_email, delegation_name, visit_scope, purpose, working_content, expected_guest_count, support_team_json, contact_person_json, working_language, interpreter_note, transportation_note, note_to_fptu, status, submitted_at, email_verified_at, decided_by, decided_at, decision_actor_role, decision_note, cancelled_by, cancelled_at, cancellation_actor_type, cancellation_source, cancellation_reason, row_version, created_at, created_by, updated_at, updated_by)
+INSERT INTO visit_requests (visit_request_id, request_code, visitor_user_id, partner_id, created_source, registrant_full_name, registrant_organization, registrant_job_title, registrant_phone, registrant_email, delegation_name, visit_scope, visit_type, visit_type_other, purpose, working_content, expected_guest_count, contact_person_full_name, contact_person_organization, contact_person_phone, contact_person_email, working_language, interpreter_note, transportation_type, transportation_detail, media_consent_status, media_consent_note, note_to_fptu, status, submitted_at, email_verified_at, decided_by, decided_at, decision_actor_role, decision_note, cancelled_by, cancelled_at, cancellation_actor_type, cancellation_source, cancellation_reason, row_version, created_at, created_by, updated_at, updated_by)
 VALUES
-  (@vr_pending_approval_seed, 'VR-PA-001', @v_pending_approval_seed, @p_green, 'Nguyễn Thảo My', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'thaomy.pending.approval@partner.example', 'Đoàn GreenTech Asia khảo sát workshop bền vững', 'SINGLE_CAMPUS', 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, JSON_ARRAY(JSON_OBJECT('full_name','Điều phối viên đoàn','role','Coordinator')), JSON_OBJECT('full_name','Nguyễn Thảo My','organization','Tổ chức đối tác quốc tế','phone','0900000000','email','thaomy.pending.approval@partner.example'), 'EN', NULL, 'Đoàn tự túc xe 16 chỗ.', 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'PENDING_APPROVAL', DATE_SUB(@seed_now, INTERVAL 17 DAY), DATE_ADD(DATE_SUB(@seed_now, INTERVAL 17 DAY), INTERVAL 5 MINUTE), NULL, NULL, NULL, 'Đã xác thực email, chờ duyệt request.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 17 DAY), @v_pending_approval_seed, @seed_now, NULL),
-  (@vr_pending_approval_multi, 'VR-PA-002', @v_pending_approval, @p_ministry, 'Nguyễn Văn Nam', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'nam.pending.approval@partner.example', 'Đoàn Viện Phát triển Giáo dục Quốc tế làm việc liên cơ sở', 'MULTI_CAMPUS', 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 4, JSON_ARRAY(JSON_OBJECT('full_name','Điều phối viên đoàn','role','Coordinator')), JSON_OBJECT('full_name','Nguyễn Văn Nam','organization','Tổ chức đối tác quốc tế','phone','0900000000','email','nam.pending.approval@partner.example'), 'EN', NULL, 'Đoàn tự túc xe 16 chỗ.', 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'PENDING_APPROVAL', DATE_SUB(@seed_now, INTERVAL 24 DAY), DATE_SUB(@seed_now, INTERVAL 23 DAY), NULL, NULL, NULL, 'Chờ HO duyệt.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 24 DAY), @v_pending_approval, @seed_now, NULL),
-  (@vr_approved_single_before, 'VR-AS-003', @v_kim, @p_seoul, 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'kim.minseo@seoultech.example', 'Đoàn SeoulTech trao đổi học thuật tại Hà Nội', 'SINGLE_CAMPUS', 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, JSON_ARRAY(JSON_OBJECT('full_name','Điều phối viên đoàn','role','Coordinator')), JSON_OBJECT('full_name','Kim Min Seo','organization','Tổ chức đối tác quốc tế','phone','0900000000','email','kim.minseo@seoultech.example'), 'EN', NULL, 'Đoàn tự túc xe 16 chỗ.', 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 29 DAY), DATE_SUB(@seed_now, INTERVAL 28 DAY), @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 26 DAY), 'STAFF_LEADER', 'Đủ thông tin đoàn, lịch phù hợp.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 29 DAY), @v_kim, @seed_now, @u_stafflead_hn),
-  (@vr_approved_multi_during, 'VR-AM-004', @v_lee, @p_seoul, 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'lee.joonho@seoultech.example', 'Đoàn SeoulTech tham quan Hà Nội và TP.HCM', 'MULTI_CAMPUS', 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 4, JSON_ARRAY(JSON_OBJECT('full_name','Điều phối viên đoàn','role','Coordinator')), JSON_OBJECT('full_name','Lee Joon Ho','organization','Tổ chức đối tác quốc tế','phone','0900000000','email','lee.joonho@seoultech.example'), 'EN', NULL, 'Đoàn tự túc xe 16 chỗ.', 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 15 DAY), DATE_SUB(@seed_now, INTERVAL 14 DAY), @u_ho_ha, DATE_SUB(@seed_now, INTERVAL 12 DAY), 'HO', 'HO duyệt request liên cơ sở.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 15 DAY), @v_lee, @seed_now, @u_ho_ha),
-  (@vr_rejected_single, 'VR-RS-005', @v_smith, @p_green, 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'emily.smith@greentech.example', 'Đoàn GreenTech Asia đề xuất lịch gấp', 'SINGLE_CAMPUS', 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, JSON_ARRAY(JSON_OBJECT('full_name','Điều phối viên đoàn','role','Coordinator')), JSON_OBJECT('full_name','Emily Smith','organization','Tổ chức đối tác quốc tế','phone','0900000000','email','emily.smith@greentech.example'), 'EN', NULL, 'Đoàn tự túc xe 16 chỗ.', 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'REJECTED', DATE_SUB(@seed_now, INTERVAL 20 DAY), DATE_SUB(@seed_now, INTERVAL 19 DAY), @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 17 DAY), 'STAFF_LEADER', 'Ngày đề xuất quá sát.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 20 DAY), @v_smith, @seed_now, @u_stafflead_hcm),
-  (@vr_rejected_multi, 'VR-RM-006', @v_tanaka, @p_seoul, 'Tanaka Aoi', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'aoi.tanaka@kyoto-global.example', 'Đoàn học tập liên cơ sở chưa đủ hồ sơ', 'MULTI_CAMPUS', 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 4, JSON_ARRAY(JSON_OBJECT('full_name','Điều phối viên đoàn','role','Coordinator')), JSON_OBJECT('full_name','Tanaka Aoi','organization','Tổ chức đối tác quốc tế','phone','0900000000','email','aoi.tanaka@kyoto-global.example'), 'EN', NULL, 'Đoàn tự túc xe 16 chỗ.', 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'REJECTED', DATE_SUB(@seed_now, INTERVAL 35 DAY), DATE_SUB(@seed_now, INTERVAL 34 DAY), @u_ho_linh, DATE_SUB(@seed_now, INTERVAL 32 DAY), 'HO', 'Thiếu danh sách thành viên.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 35 DAY), @v_tanaka, @seed_now, @u_ho_linh),
-  (@vr_cancelled, 'VR-CN-007', @v_nguyen_no_dau, @p_ministry, 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'nguyen.van.nam@partner.example', 'Đoàn IED thay đổi kế hoạch công tác', 'SINGLE_CAMPUS', 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, JSON_ARRAY(JSON_OBJECT('full_name','Điều phối viên đoàn','role','Coordinator')), JSON_OBJECT('full_name','Nguyen Van Nam','organization','Tổ chức đối tác quốc tế','phone','0900000000','email','nguyen.van.nam@partner.example'), 'EN', NULL, 'Đoàn tự túc xe 16 chỗ.', 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'CANCELLED', DATE_SUB(@seed_now, INTERVAL 45 DAY), DATE_SUB(@seed_now, INTERVAL 44 DAY), @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 42 DAY), 'STAFF_LEADER', 'Đã được duyệt trước khi khách gửi yêu cầu hủy.', @v_nguyen_no_dau, DATE_ADD(DATE_SUB(@seed_now, INTERVAL 42 DAY), INTERVAL 1 DAY), 'VISITOR', 'SELF_SERVICE', 'Khách thay đổi kế hoạch và tự hủy sau khi đơn đã được duyệt.', 0, DATE_SUB(@seed_now, INTERVAL 45 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
-  (@vr_after_visit, 'VR-AV-008', @v_short_name, @p_ministry, 'An', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'an.short@partner.example', 'Đoàn chuyên đề tuyển sinh quốc tế đã hoàn tất', 'SINGLE_CAMPUS', 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, JSON_ARRAY(JSON_OBJECT('full_name','Điều phối viên đoàn','role','Coordinator')), JSON_OBJECT('full_name','An','organization','Tổ chức đối tác quốc tế','phone','0900000000','email','an.short@partner.example'), 'EN', NULL, 'Đoàn tự túc xe 16 chỗ.', 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 22 DAY), DATE_SUB(@seed_now, INTERVAL 21 DAY), @u_stafflead_ct, DATE_SUB(@seed_now, INTERVAL 20 DAY), 'STAFF_LEADER', 'Đang tổng hợp biên bản.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 22 DAY), @v_short_name, @seed_now, @u_stafflead_ct),
-  (@vr_closed, 'VR-CL-009', @v_long_name, @p_seoul, 'Nguyễn Thị Minh Anh Phương Khánh Linh Hoàng Bảo Trân Quốc Việt', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'long.name.visitor@partner.example', 'Đoàn nghiên cứu AI đã đóng hồ sơ', 'SINGLE_CAMPUS', 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, JSON_ARRAY(JSON_OBJECT('full_name','Điều phối viên đoàn','role','Coordinator')), JSON_OBJECT('full_name','Nguyễn Thị Minh Anh Phương Khánh Linh Hoàng Bảo Trân Quốc Việt','organization','Tổ chức đối tác quốc tế','phone','0900000000','email','long.name.visitor@partner.example'), 'EN', NULL, 'Đoàn tự túc xe 16 chỗ.', 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 50 DAY), DATE_SUB(@seed_now, INTERVAL 49 DAY), @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 48 DAY), 'STAFF_LEADER', 'Hồ sơ đã hoàn tất.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 50 DAY), @v_long_name, @seed_now, @u_stafflead_hn),
-  (@vr_cancelled_instance, 'VR-CI-010', @v_smith, @p_green, 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'emily.smith@greentech.example', 'Đoàn GreenTech chỉ giữ lịch TP.HCM', 'MULTI_CAMPUS', 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 4, JSON_ARRAY(JSON_OBJECT('full_name','Điều phối viên đoàn','role','Coordinator')), JSON_OBJECT('full_name','Emily Smith','organization','Tổ chức đối tác quốc tế','phone','0900000000','email','emily.smith@greentech.example'), 'EN', NULL, 'Đoàn tự túc xe 16 chỗ.', 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 40 DAY), DATE_SUB(@seed_now, INTERVAL 39 DAY), @u_ho_ha, DATE_SUB(@seed_now, INTERVAL 37 DAY), 'HO', 'Duyệt liên cơ sở; hủy instance Hà Nội.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 40 DAY), @v_smith, @seed_now, @u_ho_ha),
-  (@vr_assigned_only, 'VR-AO-011', @v_lee, @p_seoul, 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'lee.joonho@seoultech.example', 'Đoàn SeoulTech chờ host chốt kế hoạch', 'SINGLE_CAMPUS', 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, JSON_ARRAY(JSON_OBJECT('full_name','Điều phối viên đoàn','role','Coordinator')), JSON_OBJECT('full_name','Lee Joon Ho','organization','Tổ chức đối tác quốc tế','phone','0900000000','email','lee.joonho@seoultech.example'), 'EN', NULL, 'Đoàn tự túc xe 16 chỗ.', 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 26 DAY), DATE_SUB(@seed_now, INTERVAL 25 DAY), @u_stafflead_dn, DATE_SUB(@seed_now, INTERVAL 23 DAY), 'STAFF_LEADER', 'Đã gán host.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 26 DAY), @v_lee, @seed_now, @u_stafflead_dn),
-  (@vr_hist_01, 'VR-HIST-001', @v_kim, @p_seoul, 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'kim.minseo@seoultech.example', 'Seoul Future University - chuyến thăm campus HN', 'SINGLE_CAMPUS', 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, JSON_ARRAY(JSON_OBJECT('full_name','Điều phối viên đoàn','role','Coordinator')), JSON_OBJECT('full_name','Kim Min Seo','organization','Tổ chức đối tác quốc tế','phone','0900000000','email','kim.minseo@seoultech.example'), 'EN', NULL, 'Đoàn tự túc xe 16 chỗ.', 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 28 DAY), DATE_SUB(@seed_now, INTERVAL 27 DAY), @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 26 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 28 DAY), @v_kim, @seed_now, @u_stafflead_hn),
-  (@vr_hist_02, 'VR-HIST-002', @v_smith, @p_green, 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'emily.smith@greentech.example', 'GreenTech Asia Pte. Ltd. - chuyến thăm campus HCM', 'SINGLE_CAMPUS', 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, JSON_ARRAY(JSON_OBJECT('full_name','Điều phối viên đoàn','role','Coordinator')), JSON_OBJECT('full_name','Emily Smith','organization','Tổ chức đối tác quốc tế','phone','0900000000','email','emily.smith@greentech.example'), 'EN', NULL, 'Đoàn tự túc xe 16 chỗ.', 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 36 DAY), DATE_SUB(@seed_now, INTERVAL 35 DAY), @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 34 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 36 DAY), @v_smith, @seed_now, @u_stafflead_hcm),
-  (@vr_hist_03, 'VR-HIST-003', @v_nguyen_no_dau, @p_ministry, 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'nguyen.van.nam@partner.example', 'Viện Phát triển Giáo dục Quốc tế - chuyến thăm campus DN', 'SINGLE_CAMPUS', 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, JSON_ARRAY(JSON_OBJECT('full_name','Điều phối viên đoàn','role','Coordinator')), JSON_OBJECT('full_name','Nguyen Van Nam','organization','Tổ chức đối tác quốc tế','phone','0900000000','email','nguyen.van.nam@partner.example'), 'EN', NULL, 'Đoàn tự túc xe 16 chỗ.', 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'REJECTED', DATE_SUB(@seed_now, INTERVAL 44 DAY), DATE_SUB(@seed_now, INTERVAL 43 DAY), @u_stafflead_dn, DATE_SUB(@seed_now, INTERVAL 42 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 44 DAY), @v_nguyen_no_dau, @seed_now, @u_stafflead_dn),
-  (@vr_hist_04, 'VR-HIST-004', @v_lee, @p_asean, 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'lee.joonho@seoultech.example', 'ASEAN Future Skills Foundation - chuyến thăm campus CT', 'SINGLE_CAMPUS', 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, JSON_ARRAY(JSON_OBJECT('full_name','Điều phối viên đoàn','role','Coordinator')), JSON_OBJECT('full_name','Lee Joon Ho','organization','Tổ chức đối tác quốc tế','phone','0900000000','email','lee.joonho@seoultech.example'), 'EN', NULL, 'Đoàn tự túc xe 16 chỗ.', 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'CANCELLED', DATE_SUB(@seed_now, INTERVAL 52 DAY), DATE_SUB(@seed_now, INTERVAL 51 DAY), @u_stafflead_ct, DATE_SUB(@seed_now, INTERVAL 50 DAY), 'STAFF_LEADER', 'Đã được duyệt trước khi khách gửi yêu cầu hủy.', @v_lee, DATE_ADD(DATE_SUB(@seed_now, INTERVAL 50 DAY), INTERVAL 1 DAY), 'VISITOR', 'SELF_SERVICE', 'Khách thay đổi kế hoạch và tự hủy sau khi đơn đã được duyệt.', 0, DATE_SUB(@seed_now, INTERVAL 52 DAY), @v_lee, @seed_now, @v_lee),
-  (@vr_hist_05, 'VR-HIST-005', @v_kim, @p_seoul, 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'kim.minseo@seoultech.example', 'Seoul Future University - chuyến thăm campus QN', 'SINGLE_CAMPUS', 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, JSON_ARRAY(JSON_OBJECT('full_name','Điều phối viên đoàn','role','Coordinator')), JSON_OBJECT('full_name','Kim Min Seo','organization','Tổ chức đối tác quốc tế','phone','0900000000','email','kim.minseo@seoultech.example'), 'EN', NULL, 'Đoàn tự túc xe 16 chỗ.', 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'PENDING_APPROVAL', DATE_SUB(@seed_now, INTERVAL 60 DAY), DATE_SUB(@seed_now, INTERVAL 59 DAY), NULL, NULL, NULL, 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 60 DAY), @v_kim, @seed_now, NULL),
-  (@vr_hist_06, 'VR-HIST-006', @v_smith, @p_green, 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'emily.smith@greentech.example', 'GreenTech Asia Pte. Ltd. - chuyến thăm campus HN', 'SINGLE_CAMPUS', 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, JSON_ARRAY(JSON_OBJECT('full_name','Điều phối viên đoàn','role','Coordinator')), JSON_OBJECT('full_name','Emily Smith','organization','Tổ chức đối tác quốc tế','phone','0900000000','email','emily.smith@greentech.example'), 'EN', NULL, 'Đoàn tự túc xe 16 chỗ.', 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 68 DAY), DATE_SUB(@seed_now, INTERVAL 67 DAY), @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 66 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 68 DAY), @v_smith, @seed_now, @u_stafflead_hn),
-  (@vr_hist_07, 'VR-HIST-007', @v_nguyen_no_dau, @p_ministry, 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'nguyen.van.nam@partner.example', 'Viện Phát triển Giáo dục Quốc tế - chuyến thăm campus HCM', 'SINGLE_CAMPUS', 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, JSON_ARRAY(JSON_OBJECT('full_name','Điều phối viên đoàn','role','Coordinator')), JSON_OBJECT('full_name','Nguyen Van Nam','organization','Tổ chức đối tác quốc tế','phone','0900000000','email','nguyen.van.nam@partner.example'), 'EN', NULL, 'Đoàn tự túc xe 16 chỗ.', 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 76 DAY), DATE_SUB(@seed_now, INTERVAL 75 DAY), @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 74 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 76 DAY), @v_nguyen_no_dau, @seed_now, @u_stafflead_hcm),
-  (@vr_hist_08, 'VR-HIST-008', @v_lee, @p_asean, 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'lee.joonho@seoultech.example', 'ASEAN Future Skills Foundation - chuyến thăm campus DN', 'SINGLE_CAMPUS', 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, JSON_ARRAY(JSON_OBJECT('full_name','Điều phối viên đoàn','role','Coordinator')), JSON_OBJECT('full_name','Lee Joon Ho','organization','Tổ chức đối tác quốc tế','phone','0900000000','email','lee.joonho@seoultech.example'), 'EN', NULL, 'Đoàn tự túc xe 16 chỗ.', 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'REJECTED', DATE_SUB(@seed_now, INTERVAL 84 DAY), DATE_SUB(@seed_now, INTERVAL 83 DAY), @u_stafflead_dn, DATE_SUB(@seed_now, INTERVAL 82 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 84 DAY), @v_lee, @seed_now, @u_stafflead_dn),
-  (@vr_hist_09, 'VR-HIST-009', @v_kim, @p_seoul, 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'kim.minseo@seoultech.example', 'Seoul Future University - chuyến thăm campus CT', 'SINGLE_CAMPUS', 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, JSON_ARRAY(JSON_OBJECT('full_name','Điều phối viên đoàn','role','Coordinator')), JSON_OBJECT('full_name','Kim Min Seo','organization','Tổ chức đối tác quốc tế','phone','0900000000','email','kim.minseo@seoultech.example'), 'EN', NULL, 'Đoàn tự túc xe 16 chỗ.', 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'CANCELLED', DATE_SUB(@seed_now, INTERVAL 92 DAY), DATE_SUB(@seed_now, INTERVAL 91 DAY), @u_stafflead_ct, DATE_SUB(@seed_now, INTERVAL 90 DAY), 'STAFF_LEADER', 'Đã được duyệt trước khi khách gửi yêu cầu hủy.', @v_kim, DATE_ADD(DATE_SUB(@seed_now, INTERVAL 90 DAY), INTERVAL 1 DAY), 'VISITOR', 'SELF_SERVICE', 'Khách thay đổi kế hoạch và tự hủy sau khi đơn đã được duyệt.', 0, DATE_SUB(@seed_now, INTERVAL 92 DAY), @v_kim, @seed_now, @v_kim),
-  (@vr_hist_10, 'VR-HIST-010', @v_smith, @p_green, 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'emily.smith@greentech.example', 'GreenTech Asia Pte. Ltd. - chuyến thăm campus QN', 'SINGLE_CAMPUS', 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, JSON_ARRAY(JSON_OBJECT('full_name','Điều phối viên đoàn','role','Coordinator')), JSON_OBJECT('full_name','Emily Smith','organization','Tổ chức đối tác quốc tế','phone','0900000000','email','emily.smith@greentech.example'), 'EN', NULL, 'Đoàn tự túc xe 16 chỗ.', 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'PENDING_APPROVAL', DATE_SUB(@seed_now, INTERVAL 100 DAY), DATE_SUB(@seed_now, INTERVAL 99 DAY), NULL, NULL, NULL, 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 100 DAY), @v_smith, @seed_now, NULL),
-  (@vr_hist_11, 'VR-HIST-011', @v_nguyen_no_dau, @p_ministry, 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'nguyen.van.nam@partner.example', 'Viện Phát triển Giáo dục Quốc tế - chuyến thăm campus HN', 'SINGLE_CAMPUS', 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, JSON_ARRAY(JSON_OBJECT('full_name','Điều phối viên đoàn','role','Coordinator')), JSON_OBJECT('full_name','Nguyen Van Nam','organization','Tổ chức đối tác quốc tế','phone','0900000000','email','nguyen.van.nam@partner.example'), 'EN', NULL, 'Đoàn tự túc xe 16 chỗ.', 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 108 DAY), DATE_SUB(@seed_now, INTERVAL 107 DAY), @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 106 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 108 DAY), @v_nguyen_no_dau, @seed_now, @u_stafflead_hn),
-  (@vr_hist_12, 'VR-HIST-012', @v_lee, @p_asean, 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'lee.joonho@seoultech.example', 'ASEAN Future Skills Foundation - chuyến thăm campus HCM', 'SINGLE_CAMPUS', 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, JSON_ARRAY(JSON_OBJECT('full_name','Điều phối viên đoàn','role','Coordinator')), JSON_OBJECT('full_name','Lee Joon Ho','organization','Tổ chức đối tác quốc tế','phone','0900000000','email','lee.joonho@seoultech.example'), 'EN', NULL, 'Đoàn tự túc xe 16 chỗ.', 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 116 DAY), DATE_SUB(@seed_now, INTERVAL 115 DAY), @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 114 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 116 DAY), @v_lee, @seed_now, @u_stafflead_hcm),
-  (@vr_hist_13, 'VR-HIST-013', @v_kim, @p_seoul, 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'kim.minseo@seoultech.example', 'Seoul Future University - chuyến thăm campus DN', 'SINGLE_CAMPUS', 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, JSON_ARRAY(JSON_OBJECT('full_name','Điều phối viên đoàn','role','Coordinator')), JSON_OBJECT('full_name','Kim Min Seo','organization','Tổ chức đối tác quốc tế','phone','0900000000','email','kim.minseo@seoultech.example'), 'EN', NULL, 'Đoàn tự túc xe 16 chỗ.', 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'REJECTED', DATE_SUB(@seed_now, INTERVAL 124 DAY), DATE_SUB(@seed_now, INTERVAL 123 DAY), @u_stafflead_dn, DATE_SUB(@seed_now, INTERVAL 122 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 124 DAY), @v_kim, @seed_now, @u_stafflead_dn),
-  (@vr_hist_14, 'VR-HIST-014', @v_smith, @p_green, 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'emily.smith@greentech.example', 'GreenTech Asia Pte. Ltd. - chuyến thăm campus CT', 'SINGLE_CAMPUS', 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, JSON_ARRAY(JSON_OBJECT('full_name','Điều phối viên đoàn','role','Coordinator')), JSON_OBJECT('full_name','Emily Smith','organization','Tổ chức đối tác quốc tế','phone','0900000000','email','emily.smith@greentech.example'), 'EN', NULL, 'Đoàn tự túc xe 16 chỗ.', 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'CANCELLED', DATE_SUB(@seed_now, INTERVAL 132 DAY), DATE_SUB(@seed_now, INTERVAL 131 DAY), @u_stafflead_ct, DATE_SUB(@seed_now, INTERVAL 130 DAY), 'STAFF_LEADER', 'Đã được duyệt trước khi khách gửi yêu cầu hủy.', @v_smith, DATE_ADD(DATE_SUB(@seed_now, INTERVAL 130 DAY), INTERVAL 1 DAY), 'VISITOR', 'SELF_SERVICE', 'Khách thay đổi kế hoạch và tự hủy sau khi đơn đã được duyệt.', 0, DATE_SUB(@seed_now, INTERVAL 132 DAY), @v_smith, @seed_now, @v_smith),
-  (@vr_hist_15, 'VR-HIST-015', @v_nguyen_no_dau, @p_ministry, 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'nguyen.van.nam@partner.example', 'Viện Phát triển Giáo dục Quốc tế - chuyến thăm campus QN', 'SINGLE_CAMPUS', 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, JSON_ARRAY(JSON_OBJECT('full_name','Điều phối viên đoàn','role','Coordinator')), JSON_OBJECT('full_name','Nguyen Van Nam','organization','Tổ chức đối tác quốc tế','phone','0900000000','email','nguyen.van.nam@partner.example'), 'EN', NULL, 'Đoàn tự túc xe 16 chỗ.', 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'PENDING_APPROVAL', DATE_SUB(@seed_now, INTERVAL 140 DAY), DATE_SUB(@seed_now, INTERVAL 139 DAY), NULL, NULL, NULL, 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 140 DAY), @v_nguyen_no_dau, @seed_now, NULL),
-  (@vr_hist_16, 'VR-HIST-016', @v_lee, @p_asean, 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'lee.joonho@seoultech.example', 'ASEAN Future Skills Foundation - chuyến thăm campus HN', 'SINGLE_CAMPUS', 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, JSON_ARRAY(JSON_OBJECT('full_name','Điều phối viên đoàn','role','Coordinator')), JSON_OBJECT('full_name','Lee Joon Ho','organization','Tổ chức đối tác quốc tế','phone','0900000000','email','lee.joonho@seoultech.example'), 'EN', NULL, 'Đoàn tự túc xe 16 chỗ.', 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 148 DAY), DATE_SUB(@seed_now, INTERVAL 147 DAY), @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 146 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 148 DAY), @v_lee, @seed_now, @u_stafflead_hn),
-  (@vr_hist_17, 'VR-HIST-017', @v_kim, @p_seoul, 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'kim.minseo@seoultech.example', 'Seoul Future University - chuyến thăm campus HCM', 'SINGLE_CAMPUS', 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, JSON_ARRAY(JSON_OBJECT('full_name','Điều phối viên đoàn','role','Coordinator')), JSON_OBJECT('full_name','Kim Min Seo','organization','Tổ chức đối tác quốc tế','phone','0900000000','email','kim.minseo@seoultech.example'), 'EN', NULL, 'Đoàn tự túc xe 16 chỗ.', 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 156 DAY), DATE_SUB(@seed_now, INTERVAL 155 DAY), @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 154 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 156 DAY), @v_kim, @seed_now, @u_stafflead_hcm),
-  (@vr_hist_18, 'VR-HIST-018', @v_smith, @p_green, 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'emily.smith@greentech.example', 'GreenTech Asia Pte. Ltd. - chuyến thăm campus DN', 'SINGLE_CAMPUS', 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, JSON_ARRAY(JSON_OBJECT('full_name','Điều phối viên đoàn','role','Coordinator')), JSON_OBJECT('full_name','Emily Smith','organization','Tổ chức đối tác quốc tế','phone','0900000000','email','emily.smith@greentech.example'), 'EN', NULL, 'Đoàn tự túc xe 16 chỗ.', 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'REJECTED', DATE_SUB(@seed_now, INTERVAL 164 DAY), DATE_SUB(@seed_now, INTERVAL 163 DAY), @u_stafflead_dn, DATE_SUB(@seed_now, INTERVAL 162 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 164 DAY), @v_smith, @seed_now, @u_stafflead_dn),
-  (@vr_hist_19, 'VR-HIST-019', @v_nguyen_no_dau, @p_ministry, 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'nguyen.van.nam@partner.example', 'Viện Phát triển Giáo dục Quốc tế - chuyến thăm campus CT', 'SINGLE_CAMPUS', 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, JSON_ARRAY(JSON_OBJECT('full_name','Điều phối viên đoàn','role','Coordinator')), JSON_OBJECT('full_name','Nguyen Van Nam','organization','Tổ chức đối tác quốc tế','phone','0900000000','email','nguyen.van.nam@partner.example'), 'EN', NULL, 'Đoàn tự túc xe 16 chỗ.', 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'CANCELLED', DATE_SUB(@seed_now, INTERVAL 172 DAY), DATE_SUB(@seed_now, INTERVAL 171 DAY), @u_stafflead_ct, DATE_SUB(@seed_now, INTERVAL 170 DAY), 'STAFF_LEADER', 'Đã được duyệt trước khi khách gửi yêu cầu hủy.', @v_nguyen_no_dau, DATE_ADD(DATE_SUB(@seed_now, INTERVAL 170 DAY), INTERVAL 1 DAY), 'VISITOR', 'SELF_SERVICE', 'Khách thay đổi kế hoạch và tự hủy sau khi đơn đã được duyệt.', 0, DATE_SUB(@seed_now, INTERVAL 172 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
-  (@vr_hist_20, 'VR-HIST-020', @v_lee, @p_asean, 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'lee.joonho@seoultech.example', 'ASEAN Future Skills Foundation - chuyến thăm campus QN', 'SINGLE_CAMPUS', 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, JSON_ARRAY(JSON_OBJECT('full_name','Điều phối viên đoàn','role','Coordinator')), JSON_OBJECT('full_name','Lee Joon Ho','organization','Tổ chức đối tác quốc tế','phone','0900000000','email','lee.joonho@seoultech.example'), 'EN', NULL, 'Đoàn tự túc xe 16 chỗ.', 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'PENDING_APPROVAL', DATE_SUB(@seed_now, INTERVAL 180 DAY), DATE_SUB(@seed_now, INTERVAL 179 DAY), NULL, NULL, NULL, 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 180 DAY), @v_lee, @seed_now, NULL),
-  (@vr_hist_21, 'VR-HIST-021', @v_kim, @p_seoul, 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'kim.minseo@seoultech.example', 'Seoul Future University - chuyến thăm campus HN', 'SINGLE_CAMPUS', 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, JSON_ARRAY(JSON_OBJECT('full_name','Điều phối viên đoàn','role','Coordinator')), JSON_OBJECT('full_name','Kim Min Seo','organization','Tổ chức đối tác quốc tế','phone','0900000000','email','kim.minseo@seoultech.example'), 'EN', NULL, 'Đoàn tự túc xe 16 chỗ.', 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 188 DAY), DATE_SUB(@seed_now, INTERVAL 187 DAY), @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 186 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 188 DAY), @v_kim, @seed_now, @u_stafflead_hn),
-  (@vr_hist_22, 'VR-HIST-022', @v_smith, @p_green, 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'emily.smith@greentech.example', 'GreenTech Asia Pte. Ltd. - chuyến thăm campus HCM', 'SINGLE_CAMPUS', 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, JSON_ARRAY(JSON_OBJECT('full_name','Điều phối viên đoàn','role','Coordinator')), JSON_OBJECT('full_name','Emily Smith','organization','Tổ chức đối tác quốc tế','phone','0900000000','email','emily.smith@greentech.example'), 'EN', NULL, 'Đoàn tự túc xe 16 chỗ.', 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 196 DAY), DATE_SUB(@seed_now, INTERVAL 195 DAY), @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 194 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 196 DAY), @v_smith, @seed_now, @u_stafflead_hcm),
-  (@vr_hist_23, 'VR-HIST-023', @v_nguyen_no_dau, @p_ministry, 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'nguyen.van.nam@partner.example', 'Viện Phát triển Giáo dục Quốc tế - chuyến thăm campus DN', 'SINGLE_CAMPUS', 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, JSON_ARRAY(JSON_OBJECT('full_name','Điều phối viên đoàn','role','Coordinator')), JSON_OBJECT('full_name','Nguyen Van Nam','organization','Tổ chức đối tác quốc tế','phone','0900000000','email','nguyen.van.nam@partner.example'), 'EN', NULL, 'Đoàn tự túc xe 16 chỗ.', 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'REJECTED', DATE_SUB(@seed_now, INTERVAL 204 DAY), DATE_SUB(@seed_now, INTERVAL 203 DAY), @u_stafflead_dn, DATE_SUB(@seed_now, INTERVAL 202 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 204 DAY), @v_nguyen_no_dau, @seed_now, @u_stafflead_dn),
-  (@vr_hist_24, 'VR-HIST-024', @v_lee, @p_asean, 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'lee.joonho@seoultech.example', 'ASEAN Future Skills Foundation - chuyến thăm campus CT', 'SINGLE_CAMPUS', 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, JSON_ARRAY(JSON_OBJECT('full_name','Điều phối viên đoàn','role','Coordinator')), JSON_OBJECT('full_name','Lee Joon Ho','organization','Tổ chức đối tác quốc tế','phone','0900000000','email','lee.joonho@seoultech.example'), 'EN', NULL, 'Đoàn tự túc xe 16 chỗ.', 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'CANCELLED', DATE_SUB(@seed_now, INTERVAL 212 DAY), DATE_SUB(@seed_now, INTERVAL 211 DAY), @u_stafflead_ct, DATE_SUB(@seed_now, INTERVAL 210 DAY), 'STAFF_LEADER', 'Đã được duyệt trước khi khách gửi yêu cầu hủy.', @v_lee, DATE_ADD(DATE_SUB(@seed_now, INTERVAL 210 DAY), INTERVAL 1 DAY), 'VISITOR', 'SELF_SERVICE', 'Khách thay đổi kế hoạch và tự hủy sau khi đơn đã được duyệt.', 0, DATE_SUB(@seed_now, INTERVAL 212 DAY), @v_lee, @seed_now, @v_lee),
-  (@vr_hist_25, 'VR-HIST-025', @v_kim, @p_seoul, 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'kim.minseo@seoultech.example', 'Seoul Future University - chuyến thăm campus QN', 'SINGLE_CAMPUS', 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, JSON_ARRAY(JSON_OBJECT('full_name','Điều phối viên đoàn','role','Coordinator')), JSON_OBJECT('full_name','Kim Min Seo','organization','Tổ chức đối tác quốc tế','phone','0900000000','email','kim.minseo@seoultech.example'), 'EN', NULL, 'Đoàn tự túc xe 16 chỗ.', 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'PENDING_APPROVAL', DATE_SUB(@seed_now, INTERVAL 220 DAY), DATE_SUB(@seed_now, INTERVAL 219 DAY), NULL, NULL, NULL, 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 220 DAY), @v_kim, @seed_now, NULL),
-  (@vr_hist_26, 'VR-HIST-026', @v_smith, @p_green, 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'emily.smith@greentech.example', 'GreenTech Asia Pte. Ltd. - chuyến thăm campus HN', 'SINGLE_CAMPUS', 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, JSON_ARRAY(JSON_OBJECT('full_name','Điều phối viên đoàn','role','Coordinator')), JSON_OBJECT('full_name','Emily Smith','organization','Tổ chức đối tác quốc tế','phone','0900000000','email','emily.smith@greentech.example'), 'EN', NULL, 'Đoàn tự túc xe 16 chỗ.', 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 228 DAY), DATE_SUB(@seed_now, INTERVAL 227 DAY), @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 226 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 228 DAY), @v_smith, @seed_now, @u_stafflead_hn),
-  (@vr_hist_27, 'VR-HIST-027', @v_nguyen_no_dau, @p_ministry, 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'nguyen.van.nam@partner.example', 'Viện Phát triển Giáo dục Quốc tế - chuyến thăm campus HCM', 'SINGLE_CAMPUS', 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, JSON_ARRAY(JSON_OBJECT('full_name','Điều phối viên đoàn','role','Coordinator')), JSON_OBJECT('full_name','Nguyen Van Nam','organization','Tổ chức đối tác quốc tế','phone','0900000000','email','nguyen.van.nam@partner.example'), 'EN', NULL, 'Đoàn tự túc xe 16 chỗ.', 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 236 DAY), DATE_SUB(@seed_now, INTERVAL 235 DAY), @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 234 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 236 DAY), @v_nguyen_no_dau, @seed_now, @u_stafflead_hcm),
-  (@vr_hist_28, 'VR-HIST-028', @v_lee, @p_asean, 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'lee.joonho@seoultech.example', 'ASEAN Future Skills Foundation - chuyến thăm campus DN', 'SINGLE_CAMPUS', 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, JSON_ARRAY(JSON_OBJECT('full_name','Điều phối viên đoàn','role','Coordinator')), JSON_OBJECT('full_name','Lee Joon Ho','organization','Tổ chức đối tác quốc tế','phone','0900000000','email','lee.joonho@seoultech.example'), 'EN', NULL, 'Đoàn tự túc xe 16 chỗ.', 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'REJECTED', DATE_SUB(@seed_now, INTERVAL 244 DAY), DATE_SUB(@seed_now, INTERVAL 243 DAY), @u_stafflead_dn, DATE_SUB(@seed_now, INTERVAL 242 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 244 DAY), @v_lee, @seed_now, @u_stafflead_dn),
-  (@vr_hist_29, 'VR-HIST-029', @v_kim, @p_seoul, 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'kim.minseo@seoultech.example', 'Seoul Future University - chuyến thăm campus CT', 'SINGLE_CAMPUS', 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, JSON_ARRAY(JSON_OBJECT('full_name','Điều phối viên đoàn','role','Coordinator')), JSON_OBJECT('full_name','Kim Min Seo','organization','Tổ chức đối tác quốc tế','phone','0900000000','email','kim.minseo@seoultech.example'), 'EN', NULL, 'Đoàn tự túc xe 16 chỗ.', 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'CANCELLED', DATE_SUB(@seed_now, INTERVAL 252 DAY), DATE_SUB(@seed_now, INTERVAL 251 DAY), @u_stafflead_ct, DATE_SUB(@seed_now, INTERVAL 250 DAY), 'STAFF_LEADER', 'Đã được duyệt trước khi khách gửi yêu cầu hủy.', @v_kim, DATE_ADD(DATE_SUB(@seed_now, INTERVAL 250 DAY), INTERVAL 1 DAY), 'VISITOR', 'SELF_SERVICE', 'Khách thay đổi kế hoạch và tự hủy sau khi đơn đã được duyệt.', 0, DATE_SUB(@seed_now, INTERVAL 252 DAY), @v_kim, @seed_now, @v_kim),
-  (@vr_hist_30, 'VR-HIST-030', @v_smith, @p_green, 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'emily.smith@greentech.example', 'GreenTech Asia Pte. Ltd. - chuyến thăm campus QN', 'SINGLE_CAMPUS', 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, JSON_ARRAY(JSON_OBJECT('full_name','Điều phối viên đoàn','role','Coordinator')), JSON_OBJECT('full_name','Emily Smith','organization','Tổ chức đối tác quốc tế','phone','0900000000','email','emily.smith@greentech.example'), 'EN', NULL, 'Đoàn tự túc xe 16 chỗ.', 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'PENDING_APPROVAL', DATE_SUB(@seed_now, INTERVAL 260 DAY), DATE_SUB(@seed_now, INTERVAL 259 DAY), NULL, NULL, NULL, 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 260 DAY), @v_smith, @seed_now, NULL),
-  (@vr_hist_31, 'VR-HIST-031', @v_nguyen_no_dau, @p_ministry, 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'nguyen.van.nam@partner.example', 'Viện Phát triển Giáo dục Quốc tế - chuyến thăm campus HN', 'SINGLE_CAMPUS', 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, JSON_ARRAY(JSON_OBJECT('full_name','Điều phối viên đoàn','role','Coordinator')), JSON_OBJECT('full_name','Nguyen Van Nam','organization','Tổ chức đối tác quốc tế','phone','0900000000','email','nguyen.van.nam@partner.example'), 'EN', NULL, 'Đoàn tự túc xe 16 chỗ.', 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 268 DAY), DATE_SUB(@seed_now, INTERVAL 267 DAY), @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 266 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 268 DAY), @v_nguyen_no_dau, @seed_now, @u_stafflead_hn),
-  (@vr_hist_32, 'VR-HIST-032', @v_lee, @p_asean, 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'lee.joonho@seoultech.example', 'ASEAN Future Skills Foundation - chuyến thăm campus HCM', 'SINGLE_CAMPUS', 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, JSON_ARRAY(JSON_OBJECT('full_name','Điều phối viên đoàn','role','Coordinator')), JSON_OBJECT('full_name','Lee Joon Ho','organization','Tổ chức đối tác quốc tế','phone','0900000000','email','lee.joonho@seoultech.example'), 'EN', NULL, 'Đoàn tự túc xe 16 chỗ.', 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 276 DAY), DATE_SUB(@seed_now, INTERVAL 275 DAY), @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 274 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 276 DAY), @v_lee, @seed_now, @u_stafflead_hcm),
-  (@vr_hist_33, 'VR-HIST-033', @v_kim, @p_seoul, 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'kim.minseo@seoultech.example', 'Seoul Future University - chuyến thăm campus DN', 'SINGLE_CAMPUS', 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, JSON_ARRAY(JSON_OBJECT('full_name','Điều phối viên đoàn','role','Coordinator')), JSON_OBJECT('full_name','Kim Min Seo','organization','Tổ chức đối tác quốc tế','phone','0900000000','email','kim.minseo@seoultech.example'), 'EN', NULL, 'Đoàn tự túc xe 16 chỗ.', 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'REJECTED', DATE_SUB(@seed_now, INTERVAL 284 DAY), DATE_SUB(@seed_now, INTERVAL 283 DAY), @u_stafflead_dn, DATE_SUB(@seed_now, INTERVAL 282 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 284 DAY), @v_kim, @seed_now, @u_stafflead_dn),
-  (@vr_hist_34, 'VR-HIST-034', @v_smith, @p_green, 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'emily.smith@greentech.example', 'GreenTech Asia Pte. Ltd. - chuyến thăm campus CT', 'SINGLE_CAMPUS', 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, JSON_ARRAY(JSON_OBJECT('full_name','Điều phối viên đoàn','role','Coordinator')), JSON_OBJECT('full_name','Emily Smith','organization','Tổ chức đối tác quốc tế','phone','0900000000','email','emily.smith@greentech.example'), 'EN', NULL, 'Đoàn tự túc xe 16 chỗ.', 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'CANCELLED', DATE_SUB(@seed_now, INTERVAL 292 DAY), DATE_SUB(@seed_now, INTERVAL 291 DAY), @u_stafflead_ct, DATE_SUB(@seed_now, INTERVAL 290 DAY), 'STAFF_LEADER', 'Đã được duyệt trước khi khách gửi yêu cầu hủy.', @v_smith, DATE_ADD(DATE_SUB(@seed_now, INTERVAL 290 DAY), INTERVAL 1 DAY), 'VISITOR', 'SELF_SERVICE', 'Khách thay đổi kế hoạch và tự hủy sau khi đơn đã được duyệt.', 0, DATE_SUB(@seed_now, INTERVAL 292 DAY), @v_smith, @seed_now, @v_smith),
-  (@vr_hist_35, 'VR-HIST-035', @v_nguyen_no_dau, @p_ministry, 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'nguyen.van.nam@partner.example', 'Viện Phát triển Giáo dục Quốc tế - chuyến thăm campus QN', 'SINGLE_CAMPUS', 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, JSON_ARRAY(JSON_OBJECT('full_name','Điều phối viên đoàn','role','Coordinator')), JSON_OBJECT('full_name','Nguyen Van Nam','organization','Tổ chức đối tác quốc tế','phone','0900000000','email','nguyen.van.nam@partner.example'), 'EN', NULL, 'Đoàn tự túc xe 16 chỗ.', 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'PENDING_APPROVAL', DATE_SUB(@seed_now, INTERVAL 300 DAY), DATE_SUB(@seed_now, INTERVAL 299 DAY), NULL, NULL, NULL, 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 300 DAY), @v_nguyen_no_dau, @seed_now, NULL),
-  (@vr_hist_36, 'VR-HIST-036', @v_lee, @p_asean, 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'lee.joonho@seoultech.example', 'ASEAN Future Skills Foundation - chuyến thăm campus HN', 'SINGLE_CAMPUS', 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, JSON_ARRAY(JSON_OBJECT('full_name','Điều phối viên đoàn','role','Coordinator')), JSON_OBJECT('full_name','Lee Joon Ho','organization','Tổ chức đối tác quốc tế','phone','0900000000','email','lee.joonho@seoultech.example'), 'EN', NULL, 'Đoàn tự túc xe 16 chỗ.', 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 308 DAY), DATE_SUB(@seed_now, INTERVAL 307 DAY), @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 306 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 308 DAY), @v_lee, @seed_now, @u_stafflead_hn),
-  (@vr_hist_37, 'VR-HIST-037', @v_kim, @p_seoul, 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'kim.minseo@seoultech.example', 'Seoul Future University - chuyến thăm campus HCM', 'SINGLE_CAMPUS', 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, JSON_ARRAY(JSON_OBJECT('full_name','Điều phối viên đoàn','role','Coordinator')), JSON_OBJECT('full_name','Kim Min Seo','organization','Tổ chức đối tác quốc tế','phone','0900000000','email','kim.minseo@seoultech.example'), 'EN', NULL, 'Đoàn tự túc xe 16 chỗ.', 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 316 DAY), DATE_SUB(@seed_now, INTERVAL 315 DAY), @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 314 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 316 DAY), @v_kim, @seed_now, @u_stafflead_hcm),
-  (@vr_hist_38, 'VR-HIST-038', @v_smith, @p_green, 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'emily.smith@greentech.example', 'GreenTech Asia Pte. Ltd. - chuyến thăm campus DN', 'SINGLE_CAMPUS', 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, JSON_ARRAY(JSON_OBJECT('full_name','Điều phối viên đoàn','role','Coordinator')), JSON_OBJECT('full_name','Emily Smith','organization','Tổ chức đối tác quốc tế','phone','0900000000','email','emily.smith@greentech.example'), 'EN', NULL, 'Đoàn tự túc xe 16 chỗ.', 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'REJECTED', DATE_SUB(@seed_now, INTERVAL 324 DAY), DATE_SUB(@seed_now, INTERVAL 323 DAY), @u_stafflead_dn, DATE_SUB(@seed_now, INTERVAL 322 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 324 DAY), @v_smith, @seed_now, @u_stafflead_dn),
-  (@vr_hist_39, 'VR-HIST-039', @v_nguyen_no_dau, @p_ministry, 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'nguyen.van.nam@partner.example', 'Viện Phát triển Giáo dục Quốc tế - chuyến thăm campus CT', 'SINGLE_CAMPUS', 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, JSON_ARRAY(JSON_OBJECT('full_name','Điều phối viên đoàn','role','Coordinator')), JSON_OBJECT('full_name','Nguyen Van Nam','organization','Tổ chức đối tác quốc tế','phone','0900000000','email','nguyen.van.nam@partner.example'), 'EN', NULL, 'Đoàn tự túc xe 16 chỗ.', 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'CANCELLED', DATE_SUB(@seed_now, INTERVAL 332 DAY), DATE_SUB(@seed_now, INTERVAL 331 DAY), @u_stafflead_ct, DATE_SUB(@seed_now, INTERVAL 330 DAY), 'STAFF_LEADER', 'Đã được duyệt trước khi khách gửi yêu cầu hủy.', @v_nguyen_no_dau, DATE_ADD(DATE_SUB(@seed_now, INTERVAL 330 DAY), INTERVAL 1 DAY), 'VISITOR', 'SELF_SERVICE', 'Khách thay đổi kế hoạch và tự hủy sau khi đơn đã được duyệt.', 0, DATE_SUB(@seed_now, INTERVAL 332 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
-  (@vr_hist_40, 'VR-HIST-040', @v_lee, @p_asean, 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'lee.joonho@seoultech.example', 'ASEAN Future Skills Foundation - chuyến thăm campus QN', 'SINGLE_CAMPUS', 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, JSON_ARRAY(JSON_OBJECT('full_name','Điều phối viên đoàn','role','Coordinator')), JSON_OBJECT('full_name','Lee Joon Ho','organization','Tổ chức đối tác quốc tế','phone','0900000000','email','lee.joonho@seoultech.example'), 'EN', NULL, 'Đoàn tự túc xe 16 chỗ.', 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'PENDING_APPROVAL', DATE_SUB(@seed_now, INTERVAL 340 DAY), DATE_SUB(@seed_now, INTERVAL 339 DAY), NULL, NULL, NULL, 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 340 DAY), @v_lee, @seed_now, NULL),
-  (@vr_hist_41, 'VR-HIST-041', @v_kim, @p_seoul, 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'kim.minseo@seoultech.example', 'Seoul Future University - chuyến thăm campus HN', 'SINGLE_CAMPUS', 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, JSON_ARRAY(JSON_OBJECT('full_name','Điều phối viên đoàn','role','Coordinator')), JSON_OBJECT('full_name','Kim Min Seo','organization','Tổ chức đối tác quốc tế','phone','0900000000','email','kim.minseo@seoultech.example'), 'EN', NULL, 'Đoàn tự túc xe 16 chỗ.', 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 348 DAY), DATE_SUB(@seed_now, INTERVAL 347 DAY), @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 346 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 348 DAY), @v_kim, @seed_now, @u_stafflead_hn),
-  (@vr_hist_42, 'VR-HIST-042', @v_smith, @p_green, 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'emily.smith@greentech.example', 'GreenTech Asia Pte. Ltd. - chuyến thăm campus HCM', 'SINGLE_CAMPUS', 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, JSON_ARRAY(JSON_OBJECT('full_name','Điều phối viên đoàn','role','Coordinator')), JSON_OBJECT('full_name','Emily Smith','organization','Tổ chức đối tác quốc tế','phone','0900000000','email','emily.smith@greentech.example'), 'EN', NULL, 'Đoàn tự túc xe 16 chỗ.', 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 356 DAY), DATE_SUB(@seed_now, INTERVAL 355 DAY), @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 354 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 356 DAY), @v_smith, @seed_now, @u_stafflead_hcm),
-  (@vr_hist_43, 'VR-HIST-043', @v_nguyen_no_dau, @p_ministry, 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'nguyen.van.nam@partner.example', 'Viện Phát triển Giáo dục Quốc tế - chuyến thăm campus DN', 'SINGLE_CAMPUS', 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, JSON_ARRAY(JSON_OBJECT('full_name','Điều phối viên đoàn','role','Coordinator')), JSON_OBJECT('full_name','Nguyen Van Nam','organization','Tổ chức đối tác quốc tế','phone','0900000000','email','nguyen.van.nam@partner.example'), 'EN', NULL, 'Đoàn tự túc xe 16 chỗ.', 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'REJECTED', DATE_SUB(@seed_now, INTERVAL 364 DAY), DATE_SUB(@seed_now, INTERVAL 363 DAY), @u_stafflead_dn, DATE_SUB(@seed_now, INTERVAL 362 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 364 DAY), @v_nguyen_no_dau, @seed_now, @u_stafflead_dn),
-  (@vr_hist_44, 'VR-HIST-044', @v_lee, @p_asean, 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'lee.joonho@seoultech.example', 'ASEAN Future Skills Foundation - chuyến thăm campus CT', 'SINGLE_CAMPUS', 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, JSON_ARRAY(JSON_OBJECT('full_name','Điều phối viên đoàn','role','Coordinator')), JSON_OBJECT('full_name','Lee Joon Ho','organization','Tổ chức đối tác quốc tế','phone','0900000000','email','lee.joonho@seoultech.example'), 'EN', NULL, 'Đoàn tự túc xe 16 chỗ.', 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'CANCELLED', DATE_SUB(@seed_now, INTERVAL 372 DAY), DATE_SUB(@seed_now, INTERVAL 371 DAY), @u_stafflead_ct, DATE_SUB(@seed_now, INTERVAL 370 DAY), 'STAFF_LEADER', 'Đã được duyệt trước khi khách gửi yêu cầu hủy.', @v_lee, DATE_ADD(DATE_SUB(@seed_now, INTERVAL 370 DAY), INTERVAL 1 DAY), 'VISITOR', 'SELF_SERVICE', 'Khách thay đổi kế hoạch và tự hủy sau khi đơn đã được duyệt.', 0, DATE_SUB(@seed_now, INTERVAL 372 DAY), @v_lee, @seed_now, @v_lee);
+  (@vr_pending_approval_seed, 'VR-PA-001', @v_pending_approval_seed, @p_green, 'VISITOR_SUBMITTED', 'Nguyễn Thảo My', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'thaomy.pending.approval@partner.example', 'Đoàn GreenTech Asia khảo sát workshop bền vững', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, 'Nguyễn Thảo My', 'Tổ chức đối tác quốc tế', '0900000000', 'thaomy.pending.approval@partner.example', 'EN', NULL, CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'PENDING_APPROVAL', DATE_SUB(@seed_now, INTERVAL 17 DAY), DATE_ADD(DATE_SUB(@seed_now, INTERVAL 17 DAY), INTERVAL 5 MINUTE), NULL, NULL, NULL, 'Đã xác thực email, chờ duyệt request.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 17 DAY), @v_pending_approval_seed, @seed_now, NULL),
+  (@vr_pending_approval_multi, 'VR-PA-002', @v_pending_approval, @p_ministry, 'VISITOR_SUBMITTED', 'Nguyễn Văn Nam', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'nam.pending.approval@partner.example', 'Đoàn Viện Phát triển Giáo dục Quốc tế làm việc liên cơ sở', 'MULTI_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 4, 'Nguyễn Văn Nam', 'Tổ chức đối tác quốc tế', '0900000000', 'nam.pending.approval@partner.example', 'EN', NULL, CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'PENDING_APPROVAL', DATE_SUB(@seed_now, INTERVAL 24 DAY), DATE_SUB(@seed_now, INTERVAL 23 DAY), NULL, NULL, NULL, 'Chờ HO duyệt.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 24 DAY), @v_pending_approval, @seed_now, NULL),
+  (@vr_approved_single_before, 'VR-AS-003', @v_kim, @p_seoul, 'VISITOR_SUBMITTED', 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'kim.minseo@seoultech.example', 'Đoàn SeoulTech trao đổi học thuật tại Hà Nội', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, 'Kim Min Seo', 'Tổ chức đối tác quốc tế', '0900000000', 'kim.minseo@seoultech.example', 'EN', NULL, CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 29 DAY), DATE_SUB(@seed_now, INTERVAL 28 DAY), @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 26 DAY), 'STAFF_LEADER', 'Đủ thông tin đoàn, lịch phù hợp.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 29 DAY), @v_kim, @seed_now, @u_stafflead_hn),
+  (@vr_approved_multi_during, 'VR-AM-004', @v_lee, @p_seoul, 'VISITOR_SUBMITTED', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'lee.joonho@seoultech.example', 'Đoàn SeoulTech tham quan Hà Nội và TP.HCM', 'MULTI_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 4, 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', '0900000000', 'lee.joonho@seoultech.example', 'EN', NULL, CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 15 DAY), DATE_SUB(@seed_now, INTERVAL 14 DAY), @u_ho_ha, DATE_SUB(@seed_now, INTERVAL 12 DAY), 'HO', 'HO duyệt request liên cơ sở.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 15 DAY), @v_lee, @seed_now, @u_ho_ha),
+  (@vr_rejected_single, 'VR-RS-005', @v_smith, @p_green, 'VISITOR_SUBMITTED', 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'emily.smith@greentech.example', 'Đoàn GreenTech Asia đề xuất lịch gấp', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, 'Emily Smith', 'Tổ chức đối tác quốc tế', '0900000000', 'emily.smith@greentech.example', 'EN', NULL, CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'REJECTED', DATE_SUB(@seed_now, INTERVAL 20 DAY), DATE_SUB(@seed_now, INTERVAL 19 DAY), @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 17 DAY), 'STAFF_LEADER', 'Ngày đề xuất quá sát.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 20 DAY), @v_smith, @seed_now, @u_stafflead_hcm),
+  (@vr_rejected_multi, 'VR-RM-006', @v_tanaka, @p_seoul, 'VISITOR_SUBMITTED', 'Tanaka Aoi', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'aoi.tanaka@kyoto-global.example', 'Đoàn học tập liên cơ sở chưa đủ hồ sơ', 'MULTI_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 4, 'Tanaka Aoi', 'Tổ chức đối tác quốc tế', '0900000000', 'aoi.tanaka@kyoto-global.example', 'EN', NULL, CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'REJECTED', DATE_SUB(@seed_now, INTERVAL 35 DAY), DATE_SUB(@seed_now, INTERVAL 34 DAY), @u_ho_linh, DATE_SUB(@seed_now, INTERVAL 32 DAY), 'HO', 'Thiếu danh sách thành viên.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 35 DAY), @v_tanaka, @seed_now, @u_ho_linh),
+  (@vr_cancelled, 'VR-CN-007', @v_nguyen_no_dau, @p_ministry, 'VISITOR_SUBMITTED', 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'nguyen.van.nam@partner.example', 'Đoàn IED thay đổi kế hoạch công tác', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', '0900000000', 'nguyen.van.nam@partner.example', 'EN', NULL, CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'CANCELLED', DATE_SUB(@seed_now, INTERVAL 45 DAY), DATE_SUB(@seed_now, INTERVAL 44 DAY), @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 42 DAY), 'STAFF_LEADER', 'Đã được duyệt trước khi khách gửi yêu cầu hủy.', @v_nguyen_no_dau, DATE_ADD(DATE_SUB(@seed_now, INTERVAL 42 DAY), INTERVAL 1 DAY), 'VISITOR', 'SELF_SERVICE', 'Khách thay đổi kế hoạch và tự hủy sau khi đơn đã được duyệt.', 0, DATE_SUB(@seed_now, INTERVAL 45 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
+  (@vr_after_visit, 'VR-AV-008', @v_short_name, @p_ministry, 'VISITOR_SUBMITTED', 'An', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'an.short@partner.example', 'Đoàn chuyên đề tuyển sinh quốc tế đã hoàn tất', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, 'An', 'Tổ chức đối tác quốc tế', '0900000000', 'an.short@partner.example', 'EN', NULL, CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 22 DAY), DATE_SUB(@seed_now, INTERVAL 21 DAY), @u_stafflead_ct, DATE_SUB(@seed_now, INTERVAL 20 DAY), 'STAFF_LEADER', 'Đang tổng hợp biên bản.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 22 DAY), @v_short_name, @seed_now, @u_stafflead_ct),
+  (@vr_closed, 'VR-CL-009', @v_long_name, @p_seoul, 'VISITOR_SUBMITTED', 'Nguyễn Thị Minh Anh Phương Khánh Linh Hoàng Bảo Trân Quốc Việt', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'long.name.visitor@partner.example', 'Đoàn nghiên cứu AI đã đóng hồ sơ', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, 'Nguyễn Thị Minh Anh Phương Khánh Linh Hoàng Bảo Trân Quốc Việt', 'Tổ chức đối tác quốc tế', '0900000000', 'long.name.visitor@partner.example', 'EN', NULL, CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 50 DAY), DATE_SUB(@seed_now, INTERVAL 49 DAY), @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 48 DAY), 'STAFF_LEADER', 'Hồ sơ đã hoàn tất.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 50 DAY), @v_long_name, @seed_now, @u_stafflead_hn),
+  (@vr_cancelled_instance, 'VR-CI-010', @v_smith, @p_green, 'VISITOR_SUBMITTED', 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'emily.smith@greentech.example', 'Đoàn GreenTech chỉ giữ lịch TP.HCM', 'MULTI_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 4, 'Emily Smith', 'Tổ chức đối tác quốc tế', '0900000000', 'emily.smith@greentech.example', 'EN', NULL, CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 40 DAY), DATE_SUB(@seed_now, INTERVAL 39 DAY), @u_ho_ha, DATE_SUB(@seed_now, INTERVAL 37 DAY), 'HO', 'Duyệt liên cơ sở; hủy instance Hà Nội.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 40 DAY), @v_smith, @seed_now, @u_ho_ha),
+  (@vr_assigned_only, 'VR-AO-011', @v_lee, @p_seoul, 'VISITOR_SUBMITTED', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'lee.joonho@seoultech.example', 'Đoàn SeoulTech chờ host chốt kế hoạch', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', '0900000000', 'lee.joonho@seoultech.example', 'EN', NULL, CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 26 DAY), DATE_SUB(@seed_now, INTERVAL 25 DAY), @u_stafflead_dn, DATE_SUB(@seed_now, INTERVAL 23 DAY), 'STAFF_LEADER', 'Đã gán host.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 26 DAY), @v_lee, @seed_now, @u_stafflead_dn),
+  (@vr_hist_01, 'VR-HIST-001', @v_kim, @p_seoul, 'VISITOR_SUBMITTED', 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'kim.minseo@seoultech.example', 'Seoul Future University - chuyến thăm campus HN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, 'Kim Min Seo', 'Tổ chức đối tác quốc tế', '0900000000', 'kim.minseo@seoultech.example', 'EN', NULL, CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 28 DAY), DATE_SUB(@seed_now, INTERVAL 27 DAY), @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 26 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 28 DAY), @v_kim, @seed_now, @u_stafflead_hn),
+  (@vr_hist_02, 'VR-HIST-002', @v_smith, @p_green, 'VISITOR_SUBMITTED', 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'emily.smith@greentech.example', 'GreenTech Asia Pte. Ltd. - chuyến thăm campus HCM', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, 'Emily Smith', 'Tổ chức đối tác quốc tế', '0900000000', 'emily.smith@greentech.example', 'EN', NULL, CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 36 DAY), DATE_SUB(@seed_now, INTERVAL 35 DAY), @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 34 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 36 DAY), @v_smith, @seed_now, @u_stafflead_hcm),
+  (@vr_hist_03, 'VR-HIST-003', @v_nguyen_no_dau, @p_ministry, 'VISITOR_SUBMITTED', 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'nguyen.van.nam@partner.example', 'Viện Phát triển Giáo dục Quốc tế - chuyến thăm campus DN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', '0900000000', 'nguyen.van.nam@partner.example', 'EN', NULL, CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'REJECTED', DATE_SUB(@seed_now, INTERVAL 44 DAY), DATE_SUB(@seed_now, INTERVAL 43 DAY), @u_stafflead_dn, DATE_SUB(@seed_now, INTERVAL 42 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 44 DAY), @v_nguyen_no_dau, @seed_now, @u_stafflead_dn),
+  (@vr_hist_04, 'VR-HIST-004', @v_lee, @p_asean, 'VISITOR_SUBMITTED', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'lee.joonho@seoultech.example', 'ASEAN Future Skills Foundation - chuyến thăm campus CT', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', '0900000000', 'lee.joonho@seoultech.example', 'EN', NULL, CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'CANCELLED', DATE_SUB(@seed_now, INTERVAL 52 DAY), DATE_SUB(@seed_now, INTERVAL 51 DAY), @u_stafflead_ct, DATE_SUB(@seed_now, INTERVAL 50 DAY), 'STAFF_LEADER', 'Đã được duyệt trước khi khách gửi yêu cầu hủy.', @v_lee, DATE_ADD(DATE_SUB(@seed_now, INTERVAL 50 DAY), INTERVAL 1 DAY), 'VISITOR', 'SELF_SERVICE', 'Khách thay đổi kế hoạch và tự hủy sau khi đơn đã được duyệt.', 0, DATE_SUB(@seed_now, INTERVAL 52 DAY), @v_lee, @seed_now, @v_lee),
+  (@vr_hist_05, 'VR-HIST-005', @v_kim, @p_seoul, 'VISITOR_SUBMITTED', 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'kim.minseo@seoultech.example', 'Seoul Future University - chuyến thăm campus QN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, 'Kim Min Seo', 'Tổ chức đối tác quốc tế', '0900000000', 'kim.minseo@seoultech.example', 'EN', NULL, CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'PENDING_APPROVAL', DATE_SUB(@seed_now, INTERVAL 60 DAY), DATE_SUB(@seed_now, INTERVAL 59 DAY), NULL, NULL, NULL, 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 60 DAY), @v_kim, @seed_now, NULL),
+  (@vr_hist_06, 'VR-HIST-006', @v_smith, @p_green, 'VISITOR_SUBMITTED', 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'emily.smith@greentech.example', 'GreenTech Asia Pte. Ltd. - chuyến thăm campus HN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, 'Emily Smith', 'Tổ chức đối tác quốc tế', '0900000000', 'emily.smith@greentech.example', 'EN', NULL, CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 68 DAY), DATE_SUB(@seed_now, INTERVAL 67 DAY), @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 66 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 68 DAY), @v_smith, @seed_now, @u_stafflead_hn),
+  (@vr_hist_07, 'VR-HIST-007', @v_nguyen_no_dau, @p_ministry, 'VISITOR_SUBMITTED', 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'nguyen.van.nam@partner.example', 'Viện Phát triển Giáo dục Quốc tế - chuyến thăm campus HCM', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', '0900000000', 'nguyen.van.nam@partner.example', 'EN', NULL, CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 76 DAY), DATE_SUB(@seed_now, INTERVAL 75 DAY), @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 74 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 76 DAY), @v_nguyen_no_dau, @seed_now, @u_stafflead_hcm),
+  (@vr_hist_08, 'VR-HIST-008', @v_lee, @p_asean, 'VISITOR_SUBMITTED', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'lee.joonho@seoultech.example', 'ASEAN Future Skills Foundation - chuyến thăm campus DN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', '0900000000', 'lee.joonho@seoultech.example', 'EN', NULL, CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'REJECTED', DATE_SUB(@seed_now, INTERVAL 84 DAY), DATE_SUB(@seed_now, INTERVAL 83 DAY), @u_stafflead_dn, DATE_SUB(@seed_now, INTERVAL 82 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 84 DAY), @v_lee, @seed_now, @u_stafflead_dn),
+  (@vr_hist_09, 'VR-HIST-009', @v_kim, @p_seoul, 'VISITOR_SUBMITTED', 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'kim.minseo@seoultech.example', 'Seoul Future University - chuyến thăm campus CT', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, 'Kim Min Seo', 'Tổ chức đối tác quốc tế', '0900000000', 'kim.minseo@seoultech.example', 'EN', NULL, CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'CANCELLED', DATE_SUB(@seed_now, INTERVAL 92 DAY), DATE_SUB(@seed_now, INTERVAL 91 DAY), @u_stafflead_ct, DATE_SUB(@seed_now, INTERVAL 90 DAY), 'STAFF_LEADER', 'Đã được duyệt trước khi khách gửi yêu cầu hủy.', @v_kim, DATE_ADD(DATE_SUB(@seed_now, INTERVAL 90 DAY), INTERVAL 1 DAY), 'VISITOR', 'SELF_SERVICE', 'Khách thay đổi kế hoạch và tự hủy sau khi đơn đã được duyệt.', 0, DATE_SUB(@seed_now, INTERVAL 92 DAY), @v_kim, @seed_now, @v_kim),
+  (@vr_hist_10, 'VR-HIST-010', @v_smith, @p_green, 'VISITOR_SUBMITTED', 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'emily.smith@greentech.example', 'GreenTech Asia Pte. Ltd. - chuyến thăm campus QN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, 'Emily Smith', 'Tổ chức đối tác quốc tế', '0900000000', 'emily.smith@greentech.example', 'EN', NULL, CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'PENDING_APPROVAL', DATE_SUB(@seed_now, INTERVAL 100 DAY), DATE_SUB(@seed_now, INTERVAL 99 DAY), NULL, NULL, NULL, 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 100 DAY), @v_smith, @seed_now, NULL),
+  (@vr_hist_11, 'VR-HIST-011', @v_nguyen_no_dau, @p_ministry, 'VISITOR_SUBMITTED', 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'nguyen.van.nam@partner.example', 'Viện Phát triển Giáo dục Quốc tế - chuyến thăm campus HN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', '0900000000', 'nguyen.van.nam@partner.example', 'EN', NULL, CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 108 DAY), DATE_SUB(@seed_now, INTERVAL 107 DAY), @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 106 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 108 DAY), @v_nguyen_no_dau, @seed_now, @u_stafflead_hn),
+  (@vr_hist_12, 'VR-HIST-012', @v_lee, @p_asean, 'VISITOR_SUBMITTED', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'lee.joonho@seoultech.example', 'ASEAN Future Skills Foundation - chuyến thăm campus HCM', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', '0900000000', 'lee.joonho@seoultech.example', 'EN', NULL, CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 116 DAY), DATE_SUB(@seed_now, INTERVAL 115 DAY), @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 114 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 116 DAY), @v_lee, @seed_now, @u_stafflead_hcm),
+  (@vr_hist_13, 'VR-HIST-013', @v_kim, @p_seoul, 'VISITOR_SUBMITTED', 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'kim.minseo@seoultech.example', 'Seoul Future University - chuyến thăm campus DN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, 'Kim Min Seo', 'Tổ chức đối tác quốc tế', '0900000000', 'kim.minseo@seoultech.example', 'EN', NULL, CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'REJECTED', DATE_SUB(@seed_now, INTERVAL 124 DAY), DATE_SUB(@seed_now, INTERVAL 123 DAY), @u_stafflead_dn, DATE_SUB(@seed_now, INTERVAL 122 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 124 DAY), @v_kim, @seed_now, @u_stafflead_dn),
+  (@vr_hist_14, 'VR-HIST-014', @v_smith, @p_green, 'VISITOR_SUBMITTED', 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'emily.smith@greentech.example', 'GreenTech Asia Pte. Ltd. - chuyến thăm campus CT', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, 'Emily Smith', 'Tổ chức đối tác quốc tế', '0900000000', 'emily.smith@greentech.example', 'EN', NULL, CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'CANCELLED', DATE_SUB(@seed_now, INTERVAL 132 DAY), DATE_SUB(@seed_now, INTERVAL 131 DAY), @u_stafflead_ct, DATE_SUB(@seed_now, INTERVAL 130 DAY), 'STAFF_LEADER', 'Đã được duyệt trước khi khách gửi yêu cầu hủy.', @v_smith, DATE_ADD(DATE_SUB(@seed_now, INTERVAL 130 DAY), INTERVAL 1 DAY), 'VISITOR', 'SELF_SERVICE', 'Khách thay đổi kế hoạch và tự hủy sau khi đơn đã được duyệt.', 0, DATE_SUB(@seed_now, INTERVAL 132 DAY), @v_smith, @seed_now, @v_smith),
+  (@vr_hist_15, 'VR-HIST-015', @v_nguyen_no_dau, @p_ministry, 'VISITOR_SUBMITTED', 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'nguyen.van.nam@partner.example', 'Viện Phát triển Giáo dục Quốc tế - chuyến thăm campus QN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', '0900000000', 'nguyen.van.nam@partner.example', 'EN', NULL, CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'PENDING_APPROVAL', DATE_SUB(@seed_now, INTERVAL 140 DAY), DATE_SUB(@seed_now, INTERVAL 139 DAY), NULL, NULL, NULL, 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 140 DAY), @v_nguyen_no_dau, @seed_now, NULL),
+  (@vr_hist_16, 'VR-HIST-016', @v_lee, @p_asean, 'VISITOR_SUBMITTED', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'lee.joonho@seoultech.example', 'ASEAN Future Skills Foundation - chuyến thăm campus HN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', '0900000000', 'lee.joonho@seoultech.example', 'EN', NULL, CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 148 DAY), DATE_SUB(@seed_now, INTERVAL 147 DAY), @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 146 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 148 DAY), @v_lee, @seed_now, @u_stafflead_hn),
+  (@vr_hist_17, 'VR-HIST-017', @v_kim, @p_seoul, 'VISITOR_SUBMITTED', 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'kim.minseo@seoultech.example', 'Seoul Future University - chuyến thăm campus HCM', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, 'Kim Min Seo', 'Tổ chức đối tác quốc tế', '0900000000', 'kim.minseo@seoultech.example', 'EN', NULL, CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 156 DAY), DATE_SUB(@seed_now, INTERVAL 155 DAY), @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 154 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 156 DAY), @v_kim, @seed_now, @u_stafflead_hcm),
+  (@vr_hist_18, 'VR-HIST-018', @v_smith, @p_green, 'VISITOR_SUBMITTED', 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'emily.smith@greentech.example', 'GreenTech Asia Pte. Ltd. - chuyến thăm campus DN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, 'Emily Smith', 'Tổ chức đối tác quốc tế', '0900000000', 'emily.smith@greentech.example', 'EN', NULL, CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'REJECTED', DATE_SUB(@seed_now, INTERVAL 164 DAY), DATE_SUB(@seed_now, INTERVAL 163 DAY), @u_stafflead_dn, DATE_SUB(@seed_now, INTERVAL 162 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 164 DAY), @v_smith, @seed_now, @u_stafflead_dn),
+  (@vr_hist_19, 'VR-HIST-019', @v_nguyen_no_dau, @p_ministry, 'VISITOR_SUBMITTED', 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'nguyen.van.nam@partner.example', 'Viện Phát triển Giáo dục Quốc tế - chuyến thăm campus CT', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', '0900000000', 'nguyen.van.nam@partner.example', 'EN', NULL, CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'CANCELLED', DATE_SUB(@seed_now, INTERVAL 172 DAY), DATE_SUB(@seed_now, INTERVAL 171 DAY), @u_stafflead_ct, DATE_SUB(@seed_now, INTERVAL 170 DAY), 'STAFF_LEADER', 'Đã được duyệt trước khi khách gửi yêu cầu hủy.', @v_nguyen_no_dau, DATE_ADD(DATE_SUB(@seed_now, INTERVAL 170 DAY), INTERVAL 1 DAY), 'VISITOR', 'SELF_SERVICE', 'Khách thay đổi kế hoạch và tự hủy sau khi đơn đã được duyệt.', 0, DATE_SUB(@seed_now, INTERVAL 172 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
+  (@vr_hist_20, 'VR-HIST-020', @v_lee, @p_asean, 'VISITOR_SUBMITTED', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'lee.joonho@seoultech.example', 'ASEAN Future Skills Foundation - chuyến thăm campus QN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', '0900000000', 'lee.joonho@seoultech.example', 'EN', NULL, CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'PENDING_APPROVAL', DATE_SUB(@seed_now, INTERVAL 180 DAY), DATE_SUB(@seed_now, INTERVAL 179 DAY), NULL, NULL, NULL, 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 180 DAY), @v_lee, @seed_now, NULL),
+  (@vr_hist_21, 'VR-HIST-021', @v_kim, @p_seoul, 'VISITOR_SUBMITTED', 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'kim.minseo@seoultech.example', 'Seoul Future University - chuyến thăm campus HN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, 'Kim Min Seo', 'Tổ chức đối tác quốc tế', '0900000000', 'kim.minseo@seoultech.example', 'EN', NULL, CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 188 DAY), DATE_SUB(@seed_now, INTERVAL 187 DAY), @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 186 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 188 DAY), @v_kim, @seed_now, @u_stafflead_hn),
+  (@vr_hist_22, 'VR-HIST-022', @v_smith, @p_green, 'VISITOR_SUBMITTED', 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'emily.smith@greentech.example', 'GreenTech Asia Pte. Ltd. - chuyến thăm campus HCM', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, 'Emily Smith', 'Tổ chức đối tác quốc tế', '0900000000', 'emily.smith@greentech.example', 'EN', NULL, CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 196 DAY), DATE_SUB(@seed_now, INTERVAL 195 DAY), @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 194 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 196 DAY), @v_smith, @seed_now, @u_stafflead_hcm),
+  (@vr_hist_23, 'VR-HIST-023', @v_nguyen_no_dau, @p_ministry, 'VISITOR_SUBMITTED', 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'nguyen.van.nam@partner.example', 'Viện Phát triển Giáo dục Quốc tế - chuyến thăm campus DN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', '0900000000', 'nguyen.van.nam@partner.example', 'EN', NULL, CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'REJECTED', DATE_SUB(@seed_now, INTERVAL 204 DAY), DATE_SUB(@seed_now, INTERVAL 203 DAY), @u_stafflead_dn, DATE_SUB(@seed_now, INTERVAL 202 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 204 DAY), @v_nguyen_no_dau, @seed_now, @u_stafflead_dn),
+  (@vr_hist_24, 'VR-HIST-024', @v_lee, @p_asean, 'VISITOR_SUBMITTED', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'lee.joonho@seoultech.example', 'ASEAN Future Skills Foundation - chuyến thăm campus CT', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', '0900000000', 'lee.joonho@seoultech.example', 'EN', NULL, CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'CANCELLED', DATE_SUB(@seed_now, INTERVAL 212 DAY), DATE_SUB(@seed_now, INTERVAL 211 DAY), @u_stafflead_ct, DATE_SUB(@seed_now, INTERVAL 210 DAY), 'STAFF_LEADER', 'Đã được duyệt trước khi khách gửi yêu cầu hủy.', @v_lee, DATE_ADD(DATE_SUB(@seed_now, INTERVAL 210 DAY), INTERVAL 1 DAY), 'VISITOR', 'SELF_SERVICE', 'Khách thay đổi kế hoạch và tự hủy sau khi đơn đã được duyệt.', 0, DATE_SUB(@seed_now, INTERVAL 212 DAY), @v_lee, @seed_now, @v_lee),
+  (@vr_hist_25, 'VR-HIST-025', @v_kim, @p_seoul, 'VISITOR_SUBMITTED', 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'kim.minseo@seoultech.example', 'Seoul Future University - chuyến thăm campus QN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, 'Kim Min Seo', 'Tổ chức đối tác quốc tế', '0900000000', 'kim.minseo@seoultech.example', 'EN', NULL, CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'PENDING_APPROVAL', DATE_SUB(@seed_now, INTERVAL 220 DAY), DATE_SUB(@seed_now, INTERVAL 219 DAY), NULL, NULL, NULL, 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 220 DAY), @v_kim, @seed_now, NULL),
+  (@vr_hist_26, 'VR-HIST-026', @v_smith, @p_green, 'VISITOR_SUBMITTED', 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'emily.smith@greentech.example', 'GreenTech Asia Pte. Ltd. - chuyến thăm campus HN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, 'Emily Smith', 'Tổ chức đối tác quốc tế', '0900000000', 'emily.smith@greentech.example', 'EN', NULL, CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 228 DAY), DATE_SUB(@seed_now, INTERVAL 227 DAY), @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 226 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 228 DAY), @v_smith, @seed_now, @u_stafflead_hn),
+  (@vr_hist_27, 'VR-HIST-027', @v_nguyen_no_dau, @p_ministry, 'VISITOR_SUBMITTED', 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'nguyen.van.nam@partner.example', 'Viện Phát triển Giáo dục Quốc tế - chuyến thăm campus HCM', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', '0900000000', 'nguyen.van.nam@partner.example', 'EN', NULL, CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 236 DAY), DATE_SUB(@seed_now, INTERVAL 235 DAY), @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 234 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 236 DAY), @v_nguyen_no_dau, @seed_now, @u_stafflead_hcm),
+  (@vr_hist_28, 'VR-HIST-028', @v_lee, @p_asean, 'VISITOR_SUBMITTED', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'lee.joonho@seoultech.example', 'ASEAN Future Skills Foundation - chuyến thăm campus DN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', '0900000000', 'lee.joonho@seoultech.example', 'EN', NULL, CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'REJECTED', DATE_SUB(@seed_now, INTERVAL 244 DAY), DATE_SUB(@seed_now, INTERVAL 243 DAY), @u_stafflead_dn, DATE_SUB(@seed_now, INTERVAL 242 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 244 DAY), @v_lee, @seed_now, @u_stafflead_dn),
+  (@vr_hist_29, 'VR-HIST-029', @v_kim, @p_seoul, 'VISITOR_SUBMITTED', 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'kim.minseo@seoultech.example', 'Seoul Future University - chuyến thăm campus CT', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, 'Kim Min Seo', 'Tổ chức đối tác quốc tế', '0900000000', 'kim.minseo@seoultech.example', 'EN', NULL, CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'CANCELLED', DATE_SUB(@seed_now, INTERVAL 252 DAY), DATE_SUB(@seed_now, INTERVAL 251 DAY), @u_stafflead_ct, DATE_SUB(@seed_now, INTERVAL 250 DAY), 'STAFF_LEADER', 'Đã được duyệt trước khi khách gửi yêu cầu hủy.', @v_kim, DATE_ADD(DATE_SUB(@seed_now, INTERVAL 250 DAY), INTERVAL 1 DAY), 'VISITOR', 'SELF_SERVICE', 'Khách thay đổi kế hoạch và tự hủy sau khi đơn đã được duyệt.', 0, DATE_SUB(@seed_now, INTERVAL 252 DAY), @v_kim, @seed_now, @v_kim),
+  (@vr_hist_30, 'VR-HIST-030', @v_smith, @p_green, 'VISITOR_SUBMITTED', 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'emily.smith@greentech.example', 'GreenTech Asia Pte. Ltd. - chuyến thăm campus QN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, 'Emily Smith', 'Tổ chức đối tác quốc tế', '0900000000', 'emily.smith@greentech.example', 'EN', NULL, CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'PENDING_APPROVAL', DATE_SUB(@seed_now, INTERVAL 260 DAY), DATE_SUB(@seed_now, INTERVAL 259 DAY), NULL, NULL, NULL, 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 260 DAY), @v_smith, @seed_now, NULL),
+  (@vr_hist_31, 'VR-HIST-031', @v_nguyen_no_dau, @p_ministry, 'VISITOR_SUBMITTED', 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'nguyen.van.nam@partner.example', 'Viện Phát triển Giáo dục Quốc tế - chuyến thăm campus HN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', '0900000000', 'nguyen.van.nam@partner.example', 'EN', NULL, CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 268 DAY), DATE_SUB(@seed_now, INTERVAL 267 DAY), @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 266 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 268 DAY), @v_nguyen_no_dau, @seed_now, @u_stafflead_hn),
+  (@vr_hist_32, 'VR-HIST-032', @v_lee, @p_asean, 'VISITOR_SUBMITTED', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'lee.joonho@seoultech.example', 'ASEAN Future Skills Foundation - chuyến thăm campus HCM', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', '0900000000', 'lee.joonho@seoultech.example', 'EN', NULL, CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 276 DAY), DATE_SUB(@seed_now, INTERVAL 275 DAY), @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 274 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 276 DAY), @v_lee, @seed_now, @u_stafflead_hcm),
+  (@vr_hist_33, 'VR-HIST-033', @v_kim, @p_seoul, 'VISITOR_SUBMITTED', 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'kim.minseo@seoultech.example', 'Seoul Future University - chuyến thăm campus DN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, 'Kim Min Seo', 'Tổ chức đối tác quốc tế', '0900000000', 'kim.minseo@seoultech.example', 'EN', NULL, CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'REJECTED', DATE_SUB(@seed_now, INTERVAL 284 DAY), DATE_SUB(@seed_now, INTERVAL 283 DAY), @u_stafflead_dn, DATE_SUB(@seed_now, INTERVAL 282 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 284 DAY), @v_kim, @seed_now, @u_stafflead_dn),
+  (@vr_hist_34, 'VR-HIST-034', @v_smith, @p_green, 'VISITOR_SUBMITTED', 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'emily.smith@greentech.example', 'GreenTech Asia Pte. Ltd. - chuyến thăm campus CT', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, 'Emily Smith', 'Tổ chức đối tác quốc tế', '0900000000', 'emily.smith@greentech.example', 'EN', NULL, CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'CANCELLED', DATE_SUB(@seed_now, INTERVAL 292 DAY), DATE_SUB(@seed_now, INTERVAL 291 DAY), @u_stafflead_ct, DATE_SUB(@seed_now, INTERVAL 290 DAY), 'STAFF_LEADER', 'Đã được duyệt trước khi khách gửi yêu cầu hủy.', @v_smith, DATE_ADD(DATE_SUB(@seed_now, INTERVAL 290 DAY), INTERVAL 1 DAY), 'VISITOR', 'SELF_SERVICE', 'Khách thay đổi kế hoạch và tự hủy sau khi đơn đã được duyệt.', 0, DATE_SUB(@seed_now, INTERVAL 292 DAY), @v_smith, @seed_now, @v_smith),
+  (@vr_hist_35, 'VR-HIST-035', @v_nguyen_no_dau, @p_ministry, 'VISITOR_SUBMITTED', 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'nguyen.van.nam@partner.example', 'Viện Phát triển Giáo dục Quốc tế - chuyến thăm campus QN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', '0900000000', 'nguyen.van.nam@partner.example', 'EN', NULL, CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'PENDING_APPROVAL', DATE_SUB(@seed_now, INTERVAL 300 DAY), DATE_SUB(@seed_now, INTERVAL 299 DAY), NULL, NULL, NULL, 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 300 DAY), @v_nguyen_no_dau, @seed_now, NULL),
+  (@vr_hist_36, 'VR-HIST-036', @v_lee, @p_asean, 'VISITOR_SUBMITTED', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'lee.joonho@seoultech.example', 'ASEAN Future Skills Foundation - chuyến thăm campus HN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', '0900000000', 'lee.joonho@seoultech.example', 'EN', NULL, CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 308 DAY), DATE_SUB(@seed_now, INTERVAL 307 DAY), @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 306 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 308 DAY), @v_lee, @seed_now, @u_stafflead_hn),
+  (@vr_hist_37, 'VR-HIST-037', @v_kim, @p_seoul, 'VISITOR_SUBMITTED', 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'kim.minseo@seoultech.example', 'Seoul Future University - chuyến thăm campus HCM', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, 'Kim Min Seo', 'Tổ chức đối tác quốc tế', '0900000000', 'kim.minseo@seoultech.example', 'EN', NULL, CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 316 DAY), DATE_SUB(@seed_now, INTERVAL 315 DAY), @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 314 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 316 DAY), @v_kim, @seed_now, @u_stafflead_hcm),
+  (@vr_hist_38, 'VR-HIST-038', @v_smith, @p_green, 'VISITOR_SUBMITTED', 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'emily.smith@greentech.example', 'GreenTech Asia Pte. Ltd. - chuyến thăm campus DN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, 'Emily Smith', 'Tổ chức đối tác quốc tế', '0900000000', 'emily.smith@greentech.example', 'EN', NULL, CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'REJECTED', DATE_SUB(@seed_now, INTERVAL 324 DAY), DATE_SUB(@seed_now, INTERVAL 323 DAY), @u_stafflead_dn, DATE_SUB(@seed_now, INTERVAL 322 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 324 DAY), @v_smith, @seed_now, @u_stafflead_dn),
+  (@vr_hist_39, 'VR-HIST-039', @v_nguyen_no_dau, @p_ministry, 'VISITOR_SUBMITTED', 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'nguyen.van.nam@partner.example', 'Viện Phát triển Giáo dục Quốc tế - chuyến thăm campus CT', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', '0900000000', 'nguyen.van.nam@partner.example', 'EN', NULL, CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'CANCELLED', DATE_SUB(@seed_now, INTERVAL 332 DAY), DATE_SUB(@seed_now, INTERVAL 331 DAY), @u_stafflead_ct, DATE_SUB(@seed_now, INTERVAL 330 DAY), 'STAFF_LEADER', 'Đã được duyệt trước khi khách gửi yêu cầu hủy.', @v_nguyen_no_dau, DATE_ADD(DATE_SUB(@seed_now, INTERVAL 330 DAY), INTERVAL 1 DAY), 'VISITOR', 'SELF_SERVICE', 'Khách thay đổi kế hoạch và tự hủy sau khi đơn đã được duyệt.', 0, DATE_SUB(@seed_now, INTERVAL 332 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
+  (@vr_hist_40, 'VR-HIST-040', @v_lee, @p_asean, 'VISITOR_SUBMITTED', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'lee.joonho@seoultech.example', 'ASEAN Future Skills Foundation - chuyến thăm campus QN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', '0900000000', 'lee.joonho@seoultech.example', 'EN', NULL, CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'PENDING_APPROVAL', DATE_SUB(@seed_now, INTERVAL 340 DAY), DATE_SUB(@seed_now, INTERVAL 339 DAY), NULL, NULL, NULL, 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 340 DAY), @v_lee, @seed_now, NULL),
+  (@vr_hist_41, 'VR-HIST-041', @v_kim, @p_seoul, 'VISITOR_SUBMITTED', 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'kim.minseo@seoultech.example', 'Seoul Future University - chuyến thăm campus HN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, 'Kim Min Seo', 'Tổ chức đối tác quốc tế', '0900000000', 'kim.minseo@seoultech.example', 'EN', NULL, CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 348 DAY), DATE_SUB(@seed_now, INTERVAL 347 DAY), @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 346 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 348 DAY), @v_kim, @seed_now, @u_stafflead_hn),
+  (@vr_hist_42, 'VR-HIST-042', @v_smith, @p_green, 'VISITOR_SUBMITTED', 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'emily.smith@greentech.example', 'GreenTech Asia Pte. Ltd. - chuyến thăm campus HCM', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, 'Emily Smith', 'Tổ chức đối tác quốc tế', '0900000000', 'emily.smith@greentech.example', 'EN', NULL, CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 356 DAY), DATE_SUB(@seed_now, INTERVAL 355 DAY), @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 354 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 356 DAY), @v_smith, @seed_now, @u_stafflead_hcm),
+  (@vr_hist_43, 'VR-HIST-043', @v_nguyen_no_dau, @p_ministry, 'VISITOR_SUBMITTED', 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'nguyen.van.nam@partner.example', 'Viện Phát triển Giáo dục Quốc tế - chuyến thăm campus DN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', '0900000000', 'nguyen.van.nam@partner.example', 'EN', NULL, CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'REJECTED', DATE_SUB(@seed_now, INTERVAL 364 DAY), DATE_SUB(@seed_now, INTERVAL 363 DAY), @u_stafflead_dn, DATE_SUB(@seed_now, INTERVAL 362 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 364 DAY), @v_nguyen_no_dau, @seed_now, @u_stafflead_dn),
+  (@vr_hist_44, 'VR-HIST-044', @v_lee, @p_asean, 'VISITOR_SUBMITTED', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'lee.joonho@seoultech.example', 'ASEAN Future Skills Foundation - chuyến thăm campus CT', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 3, 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', '0900000000', 'lee.joonho@seoultech.example', 'EN', NULL, CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'CANCELLED', DATE_SUB(@seed_now, INTERVAL 372 DAY), DATE_SUB(@seed_now, INTERVAL 371 DAY), @u_stafflead_ct, DATE_SUB(@seed_now, INTERVAL 370 DAY), 'STAFF_LEADER', 'Đã được duyệt trước khi khách gửi yêu cầu hủy.', @v_lee, DATE_ADD(DATE_SUB(@seed_now, INTERVAL 370 DAY), INTERVAL 1 DAY), 'VISITOR', 'SELF_SERVICE', 'Khách thay đổi kế hoạch và tự hủy sau khi đơn đã được duyệt.', 0, DATE_SUB(@seed_now, INTERVAL 372 DAY), @v_lee, @seed_now, @v_lee);
 
 INSERT INTO visit_request_campuses (visit_instance_id, visit_request_id, campus_id, instance_code, planned_start_at, planned_end_at, status, current_host_user_id, host_assigned_by, host_assigned_at, host_assignment_source, host_transferred_by, host_transferred_at, host_transfer_note, closed_by, closed_at, close_note, cancelled_by, cancelled_at, cancellation_actor_type, cancellation_source, cancellation_reason, row_version, created_at, created_by, updated_at, updated_by)
 VALUES
@@ -3767,118 +4058,125 @@ VALUES
   (@vi_hist_43, @vr_hist_43, @campus_dn, 'VR-HIST-043-DN', DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -344 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -344 DAY), INTERVAL 990 MINUTE), 'WAITING_REQUEST_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 364 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
   (@vi_hist_44, @vr_hist_44, @campus_ct, 'VR-HIST-044-CT', DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -352 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -352 DAY), INTERVAL 990 MINUTE), 'CANCELLED', @u_staff_ct, @u_stafflead_ct, DATE_SUB(@seed_now, INTERVAL 372 DAY), 'MANUAL_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, @v_lee, DATE_ADD(DATE_SUB(@seed_now, INTERVAL 370 DAY), INTERVAL 1 DAY), 'VISITOR', 'SELF_SERVICE', 'Khách tự hủy chuyến thăm sau khi đơn đã được duyệt.', 0, DATE_SUB(@seed_now, INTERVAL 372 DAY), @v_lee, @seed_now, @v_lee);
 
-INSERT INTO visit_guest_members (guest_member_id, visit_request_id, full_name, organization, job_title, nationality, email, phone, is_representative, note, created_at, created_by, updated_at, updated_by)
+INSERT INTO visit_guest_members (guest_member_id, visit_request_id, member_type, full_name, organization, job_title, nationality, email, phone, is_representative, note, display_order, created_at, created_by, updated_at, updated_by)
 VALUES
-  (NULL, @vr_pending_approval_seed, 'Nguyễn Thảo My', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'thaomy.pending.approval@partner.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 17 DAY), @v_pending_approval_seed, @seed_now, @v_pending_approval_seed),
-  (NULL, @vr_pending_approval_seed, 'Trợ lý điều phối Nguyễn', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 17 DAY), @v_pending_approval_seed, @seed_now, @v_pending_approval_seed),
-  (NULL, @vr_pending_approval_multi, 'Nguyễn Văn Nam', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'nam.pending.approval@partner.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 24 DAY), @v_pending_approval, @seed_now, @v_pending_approval),
-  (NULL, @vr_pending_approval_multi, 'Trợ lý điều phối Nguyễn', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 24 DAY), @v_pending_approval, @seed_now, @v_pending_approval),
-  (NULL, @vr_approved_single_before, 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'kim.minseo@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 29 DAY), @v_kim, @seed_now, @v_kim),
-  (NULL, @vr_approved_single_before, 'Trợ lý điều phối Kim', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 29 DAY), @v_kim, @seed_now, @v_kim),
-  (NULL, @vr_approved_multi_during, 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'lee.joonho@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 15 DAY), @v_lee, @seed_now, @v_lee),
-  (NULL, @vr_approved_multi_during, 'Trợ lý điều phối Lee', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 15 DAY), @v_lee, @seed_now, @v_lee),
-  (NULL, @vr_rejected_single, 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'emily.smith@greentech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 20 DAY), @v_smith, @seed_now, @v_smith),
-  (NULL, @vr_rejected_single, 'Trợ lý điều phối Emily', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 20 DAY), @v_smith, @seed_now, @v_smith),
-  (NULL, @vr_rejected_multi, 'Tanaka Aoi', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'aoi.tanaka@kyoto-global.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 35 DAY), @v_tanaka, @seed_now, @v_tanaka),
-  (NULL, @vr_rejected_multi, 'Trợ lý điều phối Tanaka', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 35 DAY), @v_tanaka, @seed_now, @v_tanaka),
-  (NULL, @vr_cancelled, 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'nguyen.van.nam@partner.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 45 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
-  (NULL, @vr_cancelled, 'Trợ lý điều phối Nguyen', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 45 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
-  (NULL, @vr_after_visit, 'An', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'an.short@partner.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 22 DAY), @v_short_name, @seed_now, @v_short_name),
-  (NULL, @vr_after_visit, 'Trợ lý điều phối An', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 22 DAY), @v_short_name, @seed_now, @v_short_name),
-  (NULL, @vr_closed, 'Nguyễn Thị Minh Anh Phương Khánh Linh Hoàng Bảo Trân Quốc Việt', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'long.name.visitor@partner.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 50 DAY), @v_long_name, @seed_now, @v_long_name),
-  (NULL, @vr_closed, 'Trợ lý điều phối Nguyễn', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 50 DAY), @v_long_name, @seed_now, @v_long_name),
-  (NULL, @vr_cancelled_instance, 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'emily.smith@greentech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 40 DAY), @v_smith, @seed_now, @v_smith),
-  (NULL, @vr_cancelled_instance, 'Trợ lý điều phối Emily', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 40 DAY), @v_smith, @seed_now, @v_smith),
-  (NULL, @vr_assigned_only, 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'lee.joonho@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 26 DAY), @v_lee, @seed_now, @v_lee),
-  (NULL, @vr_assigned_only, 'Trợ lý điều phối Lee', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 26 DAY), @v_lee, @seed_now, @v_lee),
-  (NULL, @vr_hist_01, 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'kim.minseo@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 28 DAY), @v_kim, @seed_now, @v_kim),
-  (NULL, @vr_hist_01, 'Trợ lý điều phối Kim', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 28 DAY), @v_kim, @seed_now, @v_kim),
-  (NULL, @vr_hist_02, 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'emily.smith@greentech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 36 DAY), @v_smith, @seed_now, @v_smith),
-  (NULL, @vr_hist_02, 'Trợ lý điều phối Emily', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 36 DAY), @v_smith, @seed_now, @v_smith),
-  (NULL, @vr_hist_03, 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'nguyen.van.nam@partner.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 44 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
-  (NULL, @vr_hist_03, 'Trợ lý điều phối Nguyen', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 44 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
-  (NULL, @vr_hist_04, 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'lee.joonho@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 52 DAY), @v_lee, @seed_now, @v_lee),
-  (NULL, @vr_hist_04, 'Trợ lý điều phối Lee', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 52 DAY), @v_lee, @seed_now, @v_lee),
-  (NULL, @vr_hist_05, 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'kim.minseo@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 60 DAY), @v_kim, @seed_now, @v_kim),
-  (NULL, @vr_hist_05, 'Trợ lý điều phối Kim', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 60 DAY), @v_kim, @seed_now, @v_kim),
-  (NULL, @vr_hist_06, 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'emily.smith@greentech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 68 DAY), @v_smith, @seed_now, @v_smith),
-  (NULL, @vr_hist_06, 'Trợ lý điều phối Emily', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 68 DAY), @v_smith, @seed_now, @v_smith),
-  (NULL, @vr_hist_07, 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'nguyen.van.nam@partner.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 76 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
-  (NULL, @vr_hist_07, 'Trợ lý điều phối Nguyen', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 76 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
-  (NULL, @vr_hist_08, 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'lee.joonho@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 84 DAY), @v_lee, @seed_now, @v_lee),
-  (NULL, @vr_hist_08, 'Trợ lý điều phối Lee', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 84 DAY), @v_lee, @seed_now, @v_lee),
-  (NULL, @vr_hist_09, 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'kim.minseo@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 92 DAY), @v_kim, @seed_now, @v_kim),
-  (NULL, @vr_hist_09, 'Trợ lý điều phối Kim', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 92 DAY), @v_kim, @seed_now, @v_kim),
-  (NULL, @vr_hist_10, 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'emily.smith@greentech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 100 DAY), @v_smith, @seed_now, @v_smith),
-  (NULL, @vr_hist_10, 'Trợ lý điều phối Emily', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 100 DAY), @v_smith, @seed_now, @v_smith),
-  (NULL, @vr_hist_11, 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'nguyen.van.nam@partner.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 108 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
-  (NULL, @vr_hist_11, 'Trợ lý điều phối Nguyen', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 108 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
-  (NULL, @vr_hist_12, 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'lee.joonho@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 116 DAY), @v_lee, @seed_now, @v_lee),
-  (NULL, @vr_hist_12, 'Trợ lý điều phối Lee', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 116 DAY), @v_lee, @seed_now, @v_lee),
-  (NULL, @vr_hist_13, 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'kim.minseo@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 124 DAY), @v_kim, @seed_now, @v_kim),
-  (NULL, @vr_hist_13, 'Trợ lý điều phối Kim', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 124 DAY), @v_kim, @seed_now, @v_kim),
-  (NULL, @vr_hist_14, 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'emily.smith@greentech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 132 DAY), @v_smith, @seed_now, @v_smith),
-  (NULL, @vr_hist_14, 'Trợ lý điều phối Emily', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 132 DAY), @v_smith, @seed_now, @v_smith),
-  (NULL, @vr_hist_15, 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'nguyen.van.nam@partner.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 140 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
-  (NULL, @vr_hist_15, 'Trợ lý điều phối Nguyen', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 140 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
-  (NULL, @vr_hist_16, 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'lee.joonho@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 148 DAY), @v_lee, @seed_now, @v_lee),
-  (NULL, @vr_hist_16, 'Trợ lý điều phối Lee', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 148 DAY), @v_lee, @seed_now, @v_lee),
-  (NULL, @vr_hist_17, 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'kim.minseo@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 156 DAY), @v_kim, @seed_now, @v_kim),
-  (NULL, @vr_hist_17, 'Trợ lý điều phối Kim', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 156 DAY), @v_kim, @seed_now, @v_kim),
-  (NULL, @vr_hist_18, 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'emily.smith@greentech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 164 DAY), @v_smith, @seed_now, @v_smith),
-  (NULL, @vr_hist_18, 'Trợ lý điều phối Emily', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 164 DAY), @v_smith, @seed_now, @v_smith),
-  (NULL, @vr_hist_19, 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'nguyen.van.nam@partner.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 172 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
-  (NULL, @vr_hist_19, 'Trợ lý điều phối Nguyen', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 172 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
-  (NULL, @vr_hist_20, 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'lee.joonho@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 180 DAY), @v_lee, @seed_now, @v_lee),
-  (NULL, @vr_hist_20, 'Trợ lý điều phối Lee', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 180 DAY), @v_lee, @seed_now, @v_lee),
-  (NULL, @vr_hist_21, 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'kim.minseo@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 188 DAY), @v_kim, @seed_now, @v_kim),
-  (NULL, @vr_hist_21, 'Trợ lý điều phối Kim', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 188 DAY), @v_kim, @seed_now, @v_kim),
-  (NULL, @vr_hist_22, 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'emily.smith@greentech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 196 DAY), @v_smith, @seed_now, @v_smith),
-  (NULL, @vr_hist_22, 'Trợ lý điều phối Emily', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 196 DAY), @v_smith, @seed_now, @v_smith),
-  (NULL, @vr_hist_23, 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'nguyen.van.nam@partner.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 204 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
-  (NULL, @vr_hist_23, 'Trợ lý điều phối Nguyen', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 204 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
-  (NULL, @vr_hist_24, 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'lee.joonho@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 212 DAY), @v_lee, @seed_now, @v_lee),
-  (NULL, @vr_hist_24, 'Trợ lý điều phối Lee', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 212 DAY), @v_lee, @seed_now, @v_lee),
-  (NULL, @vr_hist_25, 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'kim.minseo@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 220 DAY), @v_kim, @seed_now, @v_kim),
-  (NULL, @vr_hist_25, 'Trợ lý điều phối Kim', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 220 DAY), @v_kim, @seed_now, @v_kim),
-  (NULL, @vr_hist_26, 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'emily.smith@greentech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 228 DAY), @v_smith, @seed_now, @v_smith),
-  (NULL, @vr_hist_26, 'Trợ lý điều phối Emily', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 228 DAY), @v_smith, @seed_now, @v_smith),
-  (NULL, @vr_hist_27, 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'nguyen.van.nam@partner.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 236 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
-  (NULL, @vr_hist_27, 'Trợ lý điều phối Nguyen', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 236 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
-  (NULL, @vr_hist_28, 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'lee.joonho@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 244 DAY), @v_lee, @seed_now, @v_lee),
-  (NULL, @vr_hist_28, 'Trợ lý điều phối Lee', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 244 DAY), @v_lee, @seed_now, @v_lee),
-  (NULL, @vr_hist_29, 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'kim.minseo@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 252 DAY), @v_kim, @seed_now, @v_kim),
-  (NULL, @vr_hist_29, 'Trợ lý điều phối Kim', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 252 DAY), @v_kim, @seed_now, @v_kim),
-  (NULL, @vr_hist_30, 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'emily.smith@greentech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 260 DAY), @v_smith, @seed_now, @v_smith),
-  (NULL, @vr_hist_30, 'Trợ lý điều phối Emily', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 260 DAY), @v_smith, @seed_now, @v_smith),
-  (NULL, @vr_hist_31, 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'nguyen.van.nam@partner.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 268 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
-  (NULL, @vr_hist_31, 'Trợ lý điều phối Nguyen', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 268 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
-  (NULL, @vr_hist_32, 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'lee.joonho@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 276 DAY), @v_lee, @seed_now, @v_lee),
-  (NULL, @vr_hist_32, 'Trợ lý điều phối Lee', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 276 DAY), @v_lee, @seed_now, @v_lee),
-  (NULL, @vr_hist_33, 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'kim.minseo@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 284 DAY), @v_kim, @seed_now, @v_kim),
-  (NULL, @vr_hist_33, 'Trợ lý điều phối Kim', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 284 DAY), @v_kim, @seed_now, @v_kim),
-  (NULL, @vr_hist_34, 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'emily.smith@greentech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 292 DAY), @v_smith, @seed_now, @v_smith),
-  (NULL, @vr_hist_34, 'Trợ lý điều phối Emily', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 292 DAY), @v_smith, @seed_now, @v_smith),
-  (NULL, @vr_hist_35, 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'nguyen.van.nam@partner.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 300 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
-  (NULL, @vr_hist_35, 'Trợ lý điều phối Nguyen', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 300 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
-  (NULL, @vr_hist_36, 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'lee.joonho@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 308 DAY), @v_lee, @seed_now, @v_lee),
-  (NULL, @vr_hist_36, 'Trợ lý điều phối Lee', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 308 DAY), @v_lee, @seed_now, @v_lee),
-  (NULL, @vr_hist_37, 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'kim.minseo@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 316 DAY), @v_kim, @seed_now, @v_kim),
-  (NULL, @vr_hist_37, 'Trợ lý điều phối Kim', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 316 DAY), @v_kim, @seed_now, @v_kim),
-  (NULL, @vr_hist_38, 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'emily.smith@greentech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 324 DAY), @v_smith, @seed_now, @v_smith),
-  (NULL, @vr_hist_38, 'Trợ lý điều phối Emily', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 324 DAY), @v_smith, @seed_now, @v_smith),
-  (NULL, @vr_hist_39, 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'nguyen.van.nam@partner.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 332 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
-  (NULL, @vr_hist_39, 'Trợ lý điều phối Nguyen', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 332 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
-  (NULL, @vr_hist_40, 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'lee.joonho@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 340 DAY), @v_lee, @seed_now, @v_lee),
-  (NULL, @vr_hist_40, 'Trợ lý điều phối Lee', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 340 DAY), @v_lee, @seed_now, @v_lee),
-  (NULL, @vr_hist_41, 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'kim.minseo@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 348 DAY), @v_kim, @seed_now, @v_kim),
-  (NULL, @vr_hist_41, 'Trợ lý điều phối Kim', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 348 DAY), @v_kim, @seed_now, @v_kim),
-  (NULL, @vr_hist_42, 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'emily.smith@greentech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 356 DAY), @v_smith, @seed_now, @v_smith),
-  (NULL, @vr_hist_42, 'Trợ lý điều phối Emily', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 356 DAY), @v_smith, @seed_now, @v_smith),
-  (NULL, @vr_hist_43, 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'nguyen.van.nam@partner.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 364 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
-  (NULL, @vr_hist_43, 'Trợ lý điều phối Nguyen', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 364 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
-  (NULL, @vr_hist_44, 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'lee.joonho@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', DATE_SUB(@seed_now, INTERVAL 372 DAY), @v_lee, @seed_now, @v_lee),
-  (NULL, @vr_hist_44, 'Trợ lý điều phối Lee', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', DATE_SUB(@seed_now, INTERVAL 372 DAY), @v_lee, @seed_now, @v_lee);
+  (NULL, @vr_pending_approval_seed, 'GUEST', 'Nguyễn Thảo My', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'thaomy.pending.approval@partner.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', 0, DATE_SUB(@seed_now, INTERVAL 17 DAY), @v_pending_approval_seed, @seed_now, @v_pending_approval_seed),
+  (NULL, @vr_pending_approval_seed, 'GUEST', 'Trợ lý điều phối Nguyễn', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', 0, DATE_SUB(@seed_now, INTERVAL 17 DAY), @v_pending_approval_seed, @seed_now, @v_pending_approval_seed),
+  (NULL, @vr_pending_approval_multi, 'GUEST', 'Nguyễn Văn Nam', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'nam.pending.approval@partner.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', 0, DATE_SUB(@seed_now, INTERVAL 24 DAY), @v_pending_approval, @seed_now, @v_pending_approval),
+  (NULL, @vr_pending_approval_multi, 'GUEST', 'Trợ lý điều phối Nguyễn', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', 0, DATE_SUB(@seed_now, INTERVAL 24 DAY), @v_pending_approval, @seed_now, @v_pending_approval),
+  (NULL, @vr_approved_single_before, 'GUEST', 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'kim.minseo@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', 0, DATE_SUB(@seed_now, INTERVAL 29 DAY), @v_kim, @seed_now, @v_kim),
+  (NULL, @vr_approved_single_before, 'GUEST', 'Trợ lý điều phối Kim', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', 0, DATE_SUB(@seed_now, INTERVAL 29 DAY), @v_kim, @seed_now, @v_kim),
+  (NULL, @vr_approved_multi_during, 'GUEST', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'lee.joonho@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', 0, DATE_SUB(@seed_now, INTERVAL 15 DAY), @v_lee, @seed_now, @v_lee),
+  (NULL, @vr_approved_multi_during, 'GUEST', 'Trợ lý điều phối Lee', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', 0, DATE_SUB(@seed_now, INTERVAL 15 DAY), @v_lee, @seed_now, @v_lee),
+  (NULL, @vr_rejected_single, 'GUEST', 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'emily.smith@greentech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', 0, DATE_SUB(@seed_now, INTERVAL 20 DAY), @v_smith, @seed_now, @v_smith),
+  (NULL, @vr_rejected_single, 'GUEST', 'Trợ lý điều phối Emily', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', 0, DATE_SUB(@seed_now, INTERVAL 20 DAY), @v_smith, @seed_now, @v_smith),
+  (NULL, @vr_rejected_multi, 'GUEST', 'Tanaka Aoi', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'aoi.tanaka@kyoto-global.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', 0, DATE_SUB(@seed_now, INTERVAL 35 DAY), @v_tanaka, @seed_now, @v_tanaka),
+  (NULL, @vr_rejected_multi, 'GUEST', 'Trợ lý điều phối Tanaka', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', 0, DATE_SUB(@seed_now, INTERVAL 35 DAY), @v_tanaka, @seed_now, @v_tanaka),
+  (NULL, @vr_cancelled, 'GUEST', 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'nguyen.van.nam@partner.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', 0, DATE_SUB(@seed_now, INTERVAL 45 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
+  (NULL, @vr_cancelled, 'GUEST', 'Trợ lý điều phối Nguyen', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', 0, DATE_SUB(@seed_now, INTERVAL 45 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
+  (NULL, @vr_after_visit, 'GUEST', 'An', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'an.short@partner.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', 0, DATE_SUB(@seed_now, INTERVAL 22 DAY), @v_short_name, @seed_now, @v_short_name),
+  (NULL, @vr_after_visit, 'GUEST', 'Trợ lý điều phối An', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', 0, DATE_SUB(@seed_now, INTERVAL 22 DAY), @v_short_name, @seed_now, @v_short_name),
+  (NULL, @vr_closed, 'GUEST', 'Nguyễn Thị Minh Anh Phương Khánh Linh Hoàng Bảo Trân Quốc Việt', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'long.name.visitor@partner.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', 0, DATE_SUB(@seed_now, INTERVAL 50 DAY), @v_long_name, @seed_now, @v_long_name),
+  (NULL, @vr_closed, 'GUEST', 'Trợ lý điều phối Nguyễn', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', 0, DATE_SUB(@seed_now, INTERVAL 50 DAY), @v_long_name, @seed_now, @v_long_name),
+  (NULL, @vr_cancelled_instance, 'GUEST', 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'emily.smith@greentech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', 0, DATE_SUB(@seed_now, INTERVAL 40 DAY), @v_smith, @seed_now, @v_smith),
+  (NULL, @vr_cancelled_instance, 'GUEST', 'Trợ lý điều phối Emily', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', 0, DATE_SUB(@seed_now, INTERVAL 40 DAY), @v_smith, @seed_now, @v_smith),
+  (NULL, @vr_assigned_only, 'GUEST', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'lee.joonho@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', 0, DATE_SUB(@seed_now, INTERVAL 26 DAY), @v_lee, @seed_now, @v_lee),
+  (NULL, @vr_assigned_only, 'GUEST', 'Trợ lý điều phối Lee', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', 0, DATE_SUB(@seed_now, INTERVAL 26 DAY), @v_lee, @seed_now, @v_lee),
+  (NULL, @vr_hist_01, 'GUEST', 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'kim.minseo@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', 0, DATE_SUB(@seed_now, INTERVAL 28 DAY), @v_kim, @seed_now, @v_kim),
+  (NULL, @vr_hist_01, 'GUEST', 'Trợ lý điều phối Kim', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', 0, DATE_SUB(@seed_now, INTERVAL 28 DAY), @v_kim, @seed_now, @v_kim),
+  (NULL, @vr_hist_02, 'GUEST', 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'emily.smith@greentech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', 0, DATE_SUB(@seed_now, INTERVAL 36 DAY), @v_smith, @seed_now, @v_smith),
+  (NULL, @vr_hist_02, 'GUEST', 'Trợ lý điều phối Emily', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', 0, DATE_SUB(@seed_now, INTERVAL 36 DAY), @v_smith, @seed_now, @v_smith),
+  (NULL, @vr_hist_03, 'GUEST', 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'nguyen.van.nam@partner.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', 0, DATE_SUB(@seed_now, INTERVAL 44 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
+  (NULL, @vr_hist_03, 'GUEST', 'Trợ lý điều phối Nguyen', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', 0, DATE_SUB(@seed_now, INTERVAL 44 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
+  (NULL, @vr_hist_04, 'GUEST', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'lee.joonho@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', 0, DATE_SUB(@seed_now, INTERVAL 52 DAY), @v_lee, @seed_now, @v_lee),
+  (NULL, @vr_hist_04, 'GUEST', 'Trợ lý điều phối Lee', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', 0, DATE_SUB(@seed_now, INTERVAL 52 DAY), @v_lee, @seed_now, @v_lee),
+  (NULL, @vr_hist_05, 'GUEST', 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'kim.minseo@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', 0, DATE_SUB(@seed_now, INTERVAL 60 DAY), @v_kim, @seed_now, @v_kim),
+  (NULL, @vr_hist_05, 'GUEST', 'Trợ lý điều phối Kim', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', 0, DATE_SUB(@seed_now, INTERVAL 60 DAY), @v_kim, @seed_now, @v_kim),
+  (NULL, @vr_hist_06, 'GUEST', 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'emily.smith@greentech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', 0, DATE_SUB(@seed_now, INTERVAL 68 DAY), @v_smith, @seed_now, @v_smith),
+  (NULL, @vr_hist_06, 'GUEST', 'Trợ lý điều phối Emily', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', 0, DATE_SUB(@seed_now, INTERVAL 68 DAY), @v_smith, @seed_now, @v_smith),
+  (NULL, @vr_hist_07, 'GUEST', 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'nguyen.van.nam@partner.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', 0, DATE_SUB(@seed_now, INTERVAL 76 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
+  (NULL, @vr_hist_07, 'GUEST', 'Trợ lý điều phối Nguyen', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', 0, DATE_SUB(@seed_now, INTERVAL 76 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
+  (NULL, @vr_hist_08, 'GUEST', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'lee.joonho@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', 0, DATE_SUB(@seed_now, INTERVAL 84 DAY), @v_lee, @seed_now, @v_lee),
+  (NULL, @vr_hist_08, 'GUEST', 'Trợ lý điều phối Lee', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', 0, DATE_SUB(@seed_now, INTERVAL 84 DAY), @v_lee, @seed_now, @v_lee),
+  (NULL, @vr_hist_09, 'GUEST', 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'kim.minseo@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', 0, DATE_SUB(@seed_now, INTERVAL 92 DAY), @v_kim, @seed_now, @v_kim),
+  (NULL, @vr_hist_09, 'GUEST', 'Trợ lý điều phối Kim', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', 0, DATE_SUB(@seed_now, INTERVAL 92 DAY), @v_kim, @seed_now, @v_kim),
+  (NULL, @vr_hist_10, 'GUEST', 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'emily.smith@greentech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', 0, DATE_SUB(@seed_now, INTERVAL 100 DAY), @v_smith, @seed_now, @v_smith),
+  (NULL, @vr_hist_10, 'GUEST', 'Trợ lý điều phối Emily', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', 0, DATE_SUB(@seed_now, INTERVAL 100 DAY), @v_smith, @seed_now, @v_smith),
+  (NULL, @vr_hist_11, 'GUEST', 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'nguyen.van.nam@partner.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', 0, DATE_SUB(@seed_now, INTERVAL 108 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
+  (NULL, @vr_hist_11, 'GUEST', 'Trợ lý điều phối Nguyen', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', 0, DATE_SUB(@seed_now, INTERVAL 108 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
+  (NULL, @vr_hist_12, 'GUEST', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'lee.joonho@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', 0, DATE_SUB(@seed_now, INTERVAL 116 DAY), @v_lee, @seed_now, @v_lee),
+  (NULL, @vr_hist_12, 'GUEST', 'Trợ lý điều phối Lee', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', 0, DATE_SUB(@seed_now, INTERVAL 116 DAY), @v_lee, @seed_now, @v_lee),
+  (NULL, @vr_hist_13, 'GUEST', 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'kim.minseo@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', 0, DATE_SUB(@seed_now, INTERVAL 124 DAY), @v_kim, @seed_now, @v_kim),
+  (NULL, @vr_hist_13, 'GUEST', 'Trợ lý điều phối Kim', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', 0, DATE_SUB(@seed_now, INTERVAL 124 DAY), @v_kim, @seed_now, @v_kim),
+  (NULL, @vr_hist_14, 'GUEST', 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'emily.smith@greentech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', 0, DATE_SUB(@seed_now, INTERVAL 132 DAY), @v_smith, @seed_now, @v_smith),
+  (NULL, @vr_hist_14, 'GUEST', 'Trợ lý điều phối Emily', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', 0, DATE_SUB(@seed_now, INTERVAL 132 DAY), @v_smith, @seed_now, @v_smith),
+  (NULL, @vr_hist_15, 'GUEST', 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'nguyen.van.nam@partner.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', 0, DATE_SUB(@seed_now, INTERVAL 140 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
+  (NULL, @vr_hist_15, 'GUEST', 'Trợ lý điều phối Nguyen', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', 0, DATE_SUB(@seed_now, INTERVAL 140 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
+  (NULL, @vr_hist_16, 'GUEST', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'lee.joonho@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', 0, DATE_SUB(@seed_now, INTERVAL 148 DAY), @v_lee, @seed_now, @v_lee),
+  (NULL, @vr_hist_16, 'GUEST', 'Trợ lý điều phối Lee', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', 0, DATE_SUB(@seed_now, INTERVAL 148 DAY), @v_lee, @seed_now, @v_lee),
+  (NULL, @vr_hist_17, 'GUEST', 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'kim.minseo@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', 0, DATE_SUB(@seed_now, INTERVAL 156 DAY), @v_kim, @seed_now, @v_kim),
+  (NULL, @vr_hist_17, 'GUEST', 'Trợ lý điều phối Kim', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', 0, DATE_SUB(@seed_now, INTERVAL 156 DAY), @v_kim, @seed_now, @v_kim),
+  (NULL, @vr_hist_18, 'GUEST', 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'emily.smith@greentech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', 0, DATE_SUB(@seed_now, INTERVAL 164 DAY), @v_smith, @seed_now, @v_smith),
+  (NULL, @vr_hist_18, 'GUEST', 'Trợ lý điều phối Emily', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', 0, DATE_SUB(@seed_now, INTERVAL 164 DAY), @v_smith, @seed_now, @v_smith),
+  (NULL, @vr_hist_19, 'GUEST', 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'nguyen.van.nam@partner.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', 0, DATE_SUB(@seed_now, INTERVAL 172 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
+  (NULL, @vr_hist_19, 'GUEST', 'Trợ lý điều phối Nguyen', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', 0, DATE_SUB(@seed_now, INTERVAL 172 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
+  (NULL, @vr_hist_20, 'GUEST', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'lee.joonho@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', 0, DATE_SUB(@seed_now, INTERVAL 180 DAY), @v_lee, @seed_now, @v_lee),
+  (NULL, @vr_hist_20, 'GUEST', 'Trợ lý điều phối Lee', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', 0, DATE_SUB(@seed_now, INTERVAL 180 DAY), @v_lee, @seed_now, @v_lee),
+  (NULL, @vr_hist_21, 'GUEST', 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'kim.minseo@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', 0, DATE_SUB(@seed_now, INTERVAL 188 DAY), @v_kim, @seed_now, @v_kim),
+  (NULL, @vr_hist_21, 'GUEST', 'Trợ lý điều phối Kim', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', 0, DATE_SUB(@seed_now, INTERVAL 188 DAY), @v_kim, @seed_now, @v_kim),
+  (NULL, @vr_hist_22, 'GUEST', 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'emily.smith@greentech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', 0, DATE_SUB(@seed_now, INTERVAL 196 DAY), @v_smith, @seed_now, @v_smith),
+  (NULL, @vr_hist_22, 'GUEST', 'Trợ lý điều phối Emily', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', 0, DATE_SUB(@seed_now, INTERVAL 196 DAY), @v_smith, @seed_now, @v_smith),
+  (NULL, @vr_hist_23, 'GUEST', 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'nguyen.van.nam@partner.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', 0, DATE_SUB(@seed_now, INTERVAL 204 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
+  (NULL, @vr_hist_23, 'GUEST', 'Trợ lý điều phối Nguyen', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', 0, DATE_SUB(@seed_now, INTERVAL 204 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
+  (NULL, @vr_hist_24, 'GUEST', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'lee.joonho@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', 0, DATE_SUB(@seed_now, INTERVAL 212 DAY), @v_lee, @seed_now, @v_lee),
+  (NULL, @vr_hist_24, 'GUEST', 'Trợ lý điều phối Lee', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', 0, DATE_SUB(@seed_now, INTERVAL 212 DAY), @v_lee, @seed_now, @v_lee),
+  (NULL, @vr_hist_25, 'GUEST', 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'kim.minseo@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', 0, DATE_SUB(@seed_now, INTERVAL 220 DAY), @v_kim, @seed_now, @v_kim),
+  (NULL, @vr_hist_25, 'GUEST', 'Trợ lý điều phối Kim', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', 0, DATE_SUB(@seed_now, INTERVAL 220 DAY), @v_kim, @seed_now, @v_kim),
+  (NULL, @vr_hist_26, 'GUEST', 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'emily.smith@greentech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', 0, DATE_SUB(@seed_now, INTERVAL 228 DAY), @v_smith, @seed_now, @v_smith),
+  (NULL, @vr_hist_26, 'GUEST', 'Trợ lý điều phối Emily', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', 0, DATE_SUB(@seed_now, INTERVAL 228 DAY), @v_smith, @seed_now, @v_smith),
+  (NULL, @vr_hist_27, 'GUEST', 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'nguyen.van.nam@partner.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', 0, DATE_SUB(@seed_now, INTERVAL 236 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
+  (NULL, @vr_hist_27, 'GUEST', 'Trợ lý điều phối Nguyen', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', 0, DATE_SUB(@seed_now, INTERVAL 236 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
+  (NULL, @vr_hist_28, 'GUEST', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'lee.joonho@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', 0, DATE_SUB(@seed_now, INTERVAL 244 DAY), @v_lee, @seed_now, @v_lee),
+  (NULL, @vr_hist_28, 'GUEST', 'Trợ lý điều phối Lee', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', 0, DATE_SUB(@seed_now, INTERVAL 244 DAY), @v_lee, @seed_now, @v_lee),
+  (NULL, @vr_hist_29, 'GUEST', 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'kim.minseo@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', 0, DATE_SUB(@seed_now, INTERVAL 252 DAY), @v_kim, @seed_now, @v_kim),
+  (NULL, @vr_hist_29, 'GUEST', 'Trợ lý điều phối Kim', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', 0, DATE_SUB(@seed_now, INTERVAL 252 DAY), @v_kim, @seed_now, @v_kim),
+  (NULL, @vr_hist_30, 'GUEST', 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'emily.smith@greentech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', 0, DATE_SUB(@seed_now, INTERVAL 260 DAY), @v_smith, @seed_now, @v_smith),
+  (NULL, @vr_hist_30, 'GUEST', 'Trợ lý điều phối Emily', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', 0, DATE_SUB(@seed_now, INTERVAL 260 DAY), @v_smith, @seed_now, @v_smith),
+  (NULL, @vr_hist_31, 'GUEST', 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'nguyen.van.nam@partner.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', 0, DATE_SUB(@seed_now, INTERVAL 268 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
+  (NULL, @vr_hist_31, 'GUEST', 'Trợ lý điều phối Nguyen', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', 0, DATE_SUB(@seed_now, INTERVAL 268 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
+  (NULL, @vr_hist_32, 'GUEST', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'lee.joonho@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', 0, DATE_SUB(@seed_now, INTERVAL 276 DAY), @v_lee, @seed_now, @v_lee),
+  (NULL, @vr_hist_32, 'GUEST', 'Trợ lý điều phối Lee', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', 0, DATE_SUB(@seed_now, INTERVAL 276 DAY), @v_lee, @seed_now, @v_lee),
+  (NULL, @vr_hist_33, 'GUEST', 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'kim.minseo@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', 0, DATE_SUB(@seed_now, INTERVAL 284 DAY), @v_kim, @seed_now, @v_kim),
+  (NULL, @vr_hist_33, 'GUEST', 'Trợ lý điều phối Kim', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', 0, DATE_SUB(@seed_now, INTERVAL 284 DAY), @v_kim, @seed_now, @v_kim),
+  (NULL, @vr_hist_34, 'GUEST', 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'emily.smith@greentech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', 0, DATE_SUB(@seed_now, INTERVAL 292 DAY), @v_smith, @seed_now, @v_smith),
+  (NULL, @vr_hist_34, 'GUEST', 'Trợ lý điều phối Emily', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', 0, DATE_SUB(@seed_now, INTERVAL 292 DAY), @v_smith, @seed_now, @v_smith),
+  (NULL, @vr_hist_35, 'GUEST', 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'nguyen.van.nam@partner.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', 0, DATE_SUB(@seed_now, INTERVAL 300 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
+  (NULL, @vr_hist_35, 'GUEST', 'Trợ lý điều phối Nguyen', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', 0, DATE_SUB(@seed_now, INTERVAL 300 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
+  (NULL, @vr_hist_36, 'GUEST', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'lee.joonho@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', 0, DATE_SUB(@seed_now, INTERVAL 308 DAY), @v_lee, @seed_now, @v_lee),
+  (NULL, @vr_hist_36, 'GUEST', 'Trợ lý điều phối Lee', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', 0, DATE_SUB(@seed_now, INTERVAL 308 DAY), @v_lee, @seed_now, @v_lee),
+  (NULL, @vr_hist_37, 'GUEST', 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'kim.minseo@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', 0, DATE_SUB(@seed_now, INTERVAL 316 DAY), @v_kim, @seed_now, @v_kim),
+  (NULL, @vr_hist_37, 'GUEST', 'Trợ lý điều phối Kim', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', 0, DATE_SUB(@seed_now, INTERVAL 316 DAY), @v_kim, @seed_now, @v_kim),
+  (NULL, @vr_hist_38, 'GUEST', 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'emily.smith@greentech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', 0, DATE_SUB(@seed_now, INTERVAL 324 DAY), @v_smith, @seed_now, @v_smith),
+  (NULL, @vr_hist_38, 'GUEST', 'Trợ lý điều phối Emily', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', 0, DATE_SUB(@seed_now, INTERVAL 324 DAY), @v_smith, @seed_now, @v_smith),
+  (NULL, @vr_hist_39, 'GUEST', 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'nguyen.van.nam@partner.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', 0, DATE_SUB(@seed_now, INTERVAL 332 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
+  (NULL, @vr_hist_39, 'GUEST', 'Trợ lý điều phối Nguyen', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', 0, DATE_SUB(@seed_now, INTERVAL 332 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
+  (NULL, @vr_hist_40, 'GUEST', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'lee.joonho@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', 0, DATE_SUB(@seed_now, INTERVAL 340 DAY), @v_lee, @seed_now, @v_lee),
+  (NULL, @vr_hist_40, 'GUEST', 'Trợ lý điều phối Lee', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', 0, DATE_SUB(@seed_now, INTERVAL 340 DAY), @v_lee, @seed_now, @v_lee),
+  (NULL, @vr_hist_41, 'GUEST', 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'kim.minseo@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', 0, DATE_SUB(@seed_now, INTERVAL 348 DAY), @v_kim, @seed_now, @v_kim),
+  (NULL, @vr_hist_41, 'GUEST', 'Trợ lý điều phối Kim', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', 0, DATE_SUB(@seed_now, INTERVAL 348 DAY), @v_kim, @seed_now, @v_kim),
+  (NULL, @vr_hist_42, 'GUEST', 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'emily.smith@greentech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', 0, DATE_SUB(@seed_now, INTERVAL 356 DAY), @v_smith, @seed_now, @v_smith),
+  (NULL, @vr_hist_42, 'GUEST', 'Trợ lý điều phối Emily', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', 0, DATE_SUB(@seed_now, INTERVAL 356 DAY), @v_smith, @seed_now, @v_smith),
+  (NULL, @vr_hist_43, 'GUEST', 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'nguyen.van.nam@partner.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', 0, DATE_SUB(@seed_now, INTERVAL 364 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
+  (NULL, @vr_hist_43, 'GUEST', 'Trợ lý điều phối Nguyen', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', 0, DATE_SUB(@seed_now, INTERVAL 364 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
+  (NULL, @vr_hist_44, 'GUEST', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Trưởng đoàn', 'Quốc tế', 'lee.joonho@seoultech.example', '0900000000', TRUE, 'Đại diện chính của đoàn.', 0, DATE_SUB(@seed_now, INTERVAL 372 DAY), @v_lee, @seed_now, @v_lee),
+  (NULL, @vr_hist_44, 'GUEST', 'Trợ lý điều phối Lee', 'Tổ chức đối tác quốc tế', 'Coordinator', 'Quốc tế', NULL, NULL, FALSE, 'Khách phụ kiểm thử null hợp lệ.', 0, DATE_SUB(@seed_now, INTERVAL 372 DAY), @v_lee, @seed_now, @v_lee);
+
+INSERT INTO visit_guest_members (visit_request_id, member_type, full_name, job_title, note, display_order, created_at)
+VALUES
+  (@vr_pending_approval_seed, 'EXTERNAL_SUPPORT', 'Điều phối viên đoàn', 'Coordinator', 'Seed external support member', 100, DATE_SUB(@seed_now, INTERVAL 17 DAY)),
+  (@vr_approved_single_before, 'EXTERNAL_SUPPORT', 'Điều phối viên đoàn', 'Coordinator', 'Seed external support member', 100, DATE_SUB(@seed_now, INTERVAL 29 DAY)),
+  (@vr_approved_multi_during, 'EXTERNAL_SUPPORT', 'Điều phối viên đoàn', 'Coordinator', 'Seed external support member', 100, DATE_SUB(@seed_now, INTERVAL 15 DAY));
+
 
 INSERT INTO visit_participants (participant_id, visit_instance_id, user_id, participant_role, is_host, status, invited_by, invited_at, responded_at, assigned_by, assigned_at, note, created_at, created_by, updated_at, updated_by)
 VALUES
@@ -3948,40 +4246,16 @@ VALUES
 SET @min_draft = 100220;
 SET @min_final = 100221;
 
-INSERT INTO minutes (
-  minutes_id, visit_instance_id, title, content, participants_json,
-  status, finalized_by, finalized_at,
-  created_at, created_by, updated_at, updated_by
-)
+INSERT INTO minutes (minutes_id, visit_instance_id, title, content, status, finalized_by, finalized_at, created_at, created_by, updated_at, updated_by)
 VALUES
-  (
-    @min_draft,
-    @vi_av_ct,
-    'Biên bản dự thảo sau chuyến thăm Cần Thơ',
-    'Nội dung đang rà soát.',
-    JSON_ARRAY(JSON_OBJECT('name','An','role','IC Support')),
-    'DRAFT',
-    NULL,
-    NULL,
-    DATE_SUB(@seed_now, INTERVAL 1 DAY),
-    @u_stafflead_ct,
-    @seed_now,
-    @u_stafflead_ct
-  ),
-  (
-    @min_final,
-    @vi_cl_hn,
-    'Biên bản chính thức đoàn nghiên cứu AI',
-    'Hai bên thống nhất tiếp tục trao đổi về MOU.',
-    JSON_ARRAY(JSON_OBJECT('name','Lê Hoàng Nam','role','Host')),
-    'FINAL',
-    @u_stafflead_hn,
-    DATE_SUB(@seed_now, INTERVAL 28 DAY),
-    DATE_SUB(@seed_now, INTERVAL 30 DAY),
-    @u_stafflead_hn,
-    DATE_SUB(@seed_now, INTERVAL 28 DAY),
-    @u_stafflead_hn
-  );
+  (@min_draft, @vi_av_ct, 'Biên bản dự thảo sau chuyến thăm Cần Thơ', 'Nội dung đang rà soát.', 'DRAFT', NULL, NULL, DATE_SUB(@seed_now, INTERVAL 1 DAY), @u_stafflead_ct, @seed_now, @u_stafflead_ct),
+  (@min_final, @vi_cl_hn, 'Biên bản chính thức đoàn nghiên cứu AI', 'Hai bên thống nhất tiếp tục trao đổi về MOU.', 'FINAL', @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 28 DAY), DATE_SUB(@seed_now, INTERVAL 30 DAY), @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 28 DAY), @u_stafflead_hn);
+
+INSERT INTO minute_participants (minutes_id, full_name_snapshot, role_snapshot, display_order, created_at)
+VALUES
+  (@min_draft, 'Nguyễn Thảo My', 'Host', 1, DATE_SUB(@seed_now, INTERVAL 1 DAY)),
+  (@min_final, 'Lê Hoàng Nam', 'Host', 1, DATE_SUB(@seed_now, INTERVAL 30 DAY));
+
 
 INSERT INTO minute_action_items (
   action_item_id, minutes_id, title, note, due_date, status, completed_at,
@@ -4113,6 +4387,11 @@ VALUES
     DATE_SUB(@seed_now, INTERVAL 27 DAY)
   );
 
+INSERT INTO feedback_rating_items (feedback_id, criterion_code, criterion_label, rating, display_order, created_at)
+SELECT feedback_id, 'OVERALL', 'Overall rating', rating, 1, submitted_at
+FROM feedbacks;
+
+
 SET @gal_public = 100222;
 SET @gal_internal = 100223;
 SET @gal_hidden = 100224;
@@ -4121,11 +4400,11 @@ SET @img_public = 100225;
 SET @img_hcm = 100226;
 SET @img_hidden = 100227;
 
-INSERT INTO galleries (gallery_id, campus_id, location_name, title, description, story_content, status, visibility, created_at, created_by, updated_at, updated_by, deleted_at, deleted_by)
+INSERT INTO galleries (gallery_id, campus_id, area_name, specific_location_name, location_description, title, description, story_content, status, visibility, created_at, created_by, updated_at, updated_by, deleted_at, deleted_by)
 VALUES
-  (@gal_public, @campus_hn, 'Sảnh Alpha', 'Sảnh Alpha', 'Không gian đón tiếp chính tại campus Hà Nội.', 'Sảnh Alpha là điểm chạm đầu tiên của nhiều đoàn khách khi đến FPT University, thể hiện tinh thần cởi mở và kết nối quốc tế.', 'PUBLISHED', 'PUBLIC', DATE_SUB(@seed_now, INTERVAL 27 DAY), @u_stafflead_hn, @seed_now, @u_stafflead_hn, NULL, NULL),
-  (@gal_internal, @campus_hcm, 'Green Lab', 'Green Lab', 'Không gian lab phục vụ hoạt động học tập và trải nghiệm công nghệ.', 'Green Lab thể hiện định hướng học qua trải nghiệm, đổi mới sáng tạo và phát triển bền vững tại campus.', 'DRAFT', 'INTERNAL', DATE_SUB(@seed_now, INTERVAL 3 DAY), @u_stafflead_hcm, NULL, NULL, NULL, NULL),
-  (@gal_hidden, @campus_hn, 'Phòng briefing', 'Phòng briefing', 'Không gian chuẩn bị và trao đổi nhanh trước buổi làm việc.', 'Đây là nơi host và team hỗ trợ thống nhất lịch trình, thông tin đoàn và các lưu ý trước khi tiếp đón.', 'HIDDEN', 'PRIVATE', DATE_SUB(@seed_now, INTERVAL 8 DAY), @u_stafflead_hn, @seed_now, @u_stafflead_hn, NULL, NULL);
+  (@gal_public, @campus_hn, 'Sảnh Alpha', 'Sảnh Alpha', 'Không gian đón tiếp chính tại campus Hà Nội.', 'Sảnh Alpha', 'Không gian đón tiếp chính tại campus Hà Nội.', 'Sảnh Alpha là điểm chạm đầu tiên của nhiều đoàn khách khi đến FPT University, thể hiện tinh thần cởi mở và kết nối quốc tế.', 'PUBLISHED', 'PUBLIC', DATE_SUB(@seed_now, INTERVAL 27 DAY), @u_stafflead_hn, @seed_now, @u_stafflead_hn, NULL, NULL),
+  (@gal_internal, @campus_hcm, 'Green Lab', 'Green Lab', 'Không gian lab phục vụ hoạt động học tập và trải nghiệm công nghệ.', 'Green Lab', 'Không gian lab phục vụ hoạt động học tập và trải nghiệm công nghệ.', 'Green Lab thể hiện định hướng học qua trải nghiệm, đổi mới sáng tạo và phát triển bền vững tại campus.', 'DRAFT', 'INTERNAL', DATE_SUB(@seed_now, INTERVAL 3 DAY), @u_stafflead_hcm, NULL, NULL, NULL, NULL),
+  (@gal_hidden, @campus_hn, 'Phòng briefing', 'Phòng briefing', 'Không gian chuẩn bị và trao đổi nhanh trước buổi làm việc.', 'Phòng briefing', 'Không gian chuẩn bị và trao đổi nhanh trước buổi làm việc.', 'Đây là nơi host và team hỗ trợ thống nhất lịch trình, thông tin đoàn và các lưu ý trước khi tiếp đón.', 'HIDDEN', 'PRIVATE', DATE_SUB(@seed_now, INTERVAL 8 DAY), @u_stafflead_hn, @seed_now, @u_stafflead_hn, NULL, NULL);
 
 INSERT INTO gallery_images (image_id, gallery_id, file_id, caption, display_order, taken_at, status, created_at, created_by, updated_at, updated_by, deleted_at, deleted_by)
 VALUES
@@ -4162,20 +4441,48 @@ SET @cal_cancelled = 100232;
 
 SET @cal_deleted = 100233;
 
-INSERT INTO calendar_events (calendar_event_id, owner_user_id, campus_id, visit_instance_id, logistics_item_id, source_type, title, description, location, start_at, end_at, timezone, visibility, attendees_json, reminders_json, status, created_at, created_by, updated_at, updated_by, deleted_at, deleted_by)
+INSERT INTO calendar_events (calendar_event_id, owner_user_id, campus_id, visit_instance_id, logistics_item_id, source_type, title, description, location, start_at, end_at, timezone, is_all_day, recurrence_rule, visibility, status, created_at, created_by, updated_at, updated_by, deleted_at, deleted_by)
 VALUES
-  (@cal_personal, @u_stafflead_hn, @campus_hn, NULL, NULL, 'PERSONAL', 'Chuẩn bị briefing SeoulTech', 'Ghi chú cá nhân.', 'Online', DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 13 DAY), INTERVAL 840 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 13 DAY), INTERVAL 900 MINUTE), 'Asia/Ho_Chi_Minh', 'PRIVATE', JSON_ARRAY(), JSON_ARRAY(JSON_OBJECT('method','popup','minutes',30)), 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 2 DAY), @u_stafflead_hn, @seed_now, @u_stafflead_hn, NULL, NULL),
-  (@cal_visit, @u_stafflead_hn, @campus_hn, @vi_as_hn, NULL, 'VISIT', 'Đón đoàn SeoulTech tại Hà Nội', 'Sự kiện visit chính thức.', 'FPTU Hà Nội', DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 14 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 14 DAY), INTERVAL 990 MINUTE), 'Asia/Ho_Chi_Minh', 'INTERNAL', JSON_ARRAY(JSON_OBJECT('user_id', @u_staff_hn)), JSON_ARRAY(JSON_OBJECT('method','email','minutes',1440)), 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 7 DAY), @u_stafflead_hn, @seed_now, @u_stafflead_hn, NULL, NULL),
-  (@cal_logistics, @u_dept_it_hn, @campus_hn, @vi_as_hn, @log_4, 'LOGISTICS', 'Kiểm tra màn hình và Wi-Fi khách', 'Deadline kỹ thuật.', 'AI Lab', DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 13 DAY), INTERVAL 900 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 13 DAY), INTERVAL 960 MINUTE), 'Asia/Ho_Chi_Minh', 'INTERNAL', JSON_ARRAY(JSON_OBJECT('user_id', @u_deptlead_it_hn)), JSON_ARRAY(JSON_OBJECT('method','popup','minutes',120)), 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 5 DAY), @u_deptlead_it_hn, @seed_now, @u_deptlead_it_hn, NULL, NULL),
-  (@cal_deadline, @u_stafflead_ct, @campus_ct, @vi_av_ct, NULL, 'DEADLINE', 'Chốt biên bản sau visit Cần Thơ', 'Hoàn thiện biên bản.', 'IC Office Cần Thơ', DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 1 DAY), INTERVAL 1020 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 1 DAY), INTERVAL 1080 MINUTE), 'Asia/Ho_Chi_Minh', 'INTERNAL', JSON_ARRAY(), JSON_ARRAY(JSON_OBJECT('method','email','minutes',240)), 'DONE', DATE_SUB(@seed_now, INTERVAL 1 DAY), @u_stafflead_ct, @seed_now, @u_stafflead_ct, NULL, NULL),
-  (@cal_cancelled, @u_staff_hn, @campus_hn, @vi_cn_hn, @log_11, 'VISIT', 'Lịch đã hủy - đoàn IED', 'Calendar hủy theo request.', 'FPTU Hà Nội', DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 30 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 30 DAY), INTERVAL 960 MINUTE), 'Asia/Ho_Chi_Minh', 'INTERNAL', JSON_ARRAY(), JSON_ARRAY(), 'CANCELLED', DATE_SUB(@seed_now, INTERVAL 20 DAY), @u_staff_hn, @seed_now, @u_staff_hn, NULL, NULL),
-  (@cal_deleted, @u_admin_minh, @campus_hn, NULL, NULL, 'PERSONAL', 'Sự kiện cá nhân đã xóa mềm', 'Kiểm thử deleted_at.', 'Online', DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -5 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -5 DAY), INTERVAL 600 MINUTE), 'Asia/Ho_Chi_Minh', 'PRIVATE', JSON_ARRAY(), JSON_ARRAY(), 'CANCELLED', DATE_SUB(@seed_now, INTERVAL 10 DAY), @u_admin_minh, DATE_SUB(@seed_now, INTERVAL 5 DAY), @u_admin_minh, DATE_SUB(@seed_now, INTERVAL 4 DAY), @u_admin_minh);
+  (@cal_personal, @u_stafflead_hn, @campus_hn, NULL, NULL, 'PERSONAL', 'Chuẩn bị briefing SeoulTech', 'Ghi chú cá nhân.', 'Online', DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 13 DAY), INTERVAL 840 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 13 DAY), INTERVAL 900 MINUTE), 'Asia/Ho_Chi_Minh', FALSE, NULL, 'PRIVATE', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 2 DAY), @u_stafflead_hn, @seed_now, @u_stafflead_hn, NULL, NULL),
+  (@cal_visit, @u_stafflead_hn, @campus_hn, @vi_as_hn, NULL, 'VISIT', 'Đón đoàn SeoulTech tại Hà Nội', 'Sự kiện visit chính thức.', 'FPTU Hà Nội', DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 14 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 14 DAY), INTERVAL 990 MINUTE), 'Asia/Ho_Chi_Minh', FALSE, NULL, 'INTERNAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 7 DAY), @u_stafflead_hn, @seed_now, @u_stafflead_hn, NULL, NULL),
+  (@cal_logistics, @u_dept_it_hn, @campus_hn, @vi_as_hn, @log_4, 'LOGISTICS', 'Kiểm tra màn hình và Wi-Fi khách', 'Deadline kỹ thuật.', 'AI Lab', DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 13 DAY), INTERVAL 900 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 13 DAY), INTERVAL 960 MINUTE), 'Asia/Ho_Chi_Minh', FALSE, NULL, 'INTERNAL', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 5 DAY), @u_deptlead_it_hn, @seed_now, @u_deptlead_it_hn, NULL, NULL),
+  (@cal_deadline, @u_stafflead_ct, @campus_ct, @vi_av_ct, NULL, 'DEADLINE', 'Chốt biên bản sau visit Cần Thơ', 'Hoàn thiện biên bản.', 'IC Office Cần Thơ', DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 1 DAY), INTERVAL 1020 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 1 DAY), INTERVAL 1080 MINUTE), 'Asia/Ho_Chi_Minh', FALSE, NULL, 'INTERNAL', 'DONE', DATE_SUB(@seed_now, INTERVAL 1 DAY), @u_stafflead_ct, @seed_now, @u_stafflead_ct, NULL, NULL),
+  (@cal_cancelled, @u_staff_hn, @campus_hn, @vi_cn_hn, @log_11, 'VISIT', 'Lịch đã hủy - đoàn IED', 'Calendar hủy theo request.', 'FPTU Hà Nội', DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 30 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 30 DAY), INTERVAL 960 MINUTE), 'Asia/Ho_Chi_Minh', FALSE, NULL, 'INTERNAL', 'CANCELLED', DATE_SUB(@seed_now, INTERVAL 20 DAY), @u_staff_hn, @seed_now, @u_staff_hn, NULL, NULL),
+  (@cal_deleted, @u_admin_minh, @campus_hn, NULL, NULL, 'PERSONAL', 'Sự kiện cá nhân đã xóa mềm', 'Kiểm thử deleted_at.', 'Online', DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -5 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -5 DAY), INTERVAL 600 MINUTE), 'Asia/Ho_Chi_Minh', FALSE, NULL, 'PRIVATE', 'CANCELLED', DATE_SUB(@seed_now, INTERVAL 10 DAY), @u_admin_minh, DATE_SUB(@seed_now, INTERVAL 5 DAY), @u_admin_minh, DATE_SUB(@seed_now, INTERVAL 4 DAY), @u_admin_minh);
 
-INSERT INTO sent_emails (sent_email_id, email_template_id, related_type, related_id, subject, body_snapshot, recipients_json, metadata_json, status, error_message, sent_by, sent_at, created_at)
+INSERT INTO calendar_event_attendees (calendar_event_id, user_id, attendee_role, created_at)
 VALUES
-  (NULL, @tpl_verify, 'VISIT_REQUEST', @vr_pending_approval_seed, 'Mã xác thực email trước khi gửi yêu cầu thăm quan VR-PA-001', 'OTP sẽ hết hạn sau 10 phút.', JSON_ARRAY(JSON_OBJECT('email','thaomy.pending.approval@partner.example')), JSON_OBJECT('provider','SMTP'), 'QUEUED', NULL, NULL, NULL, DATE_SUB(@seed_now, INTERVAL 1 HOUR)),
-  (NULL, @tpl_approved, 'VISIT_REQUEST', @vr_approved_single_before, 'Yêu cầu VR-AS-003 đã được duyệt', 'FPTU xác nhận lịch thăm Hà Nội.', JSON_ARRAY(JSON_OBJECT('email','kim.minseo@seoultech.example')), JSON_OBJECT('provider','SMTP','message_id','seed-approved-001'), 'SENT', NULL, @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 12 DAY), DATE_SUB(@seed_now, INTERVAL 12 DAY)),
-  (NULL, @tpl_rejected, 'VISIT_REQUEST', @vr_rejected_single, 'Yêu cầu VR-RS-005 chưa được duyệt', 'Lý do: lịch quá sát.', JSON_ARRAY(JSON_OBJECT('email','emily.smith@greentech.example')), JSON_OBJECT('provider','SMTP','retry_count',3), 'FAILED', 'Mailbox temporarily unavailable', @u_stafflead_hcm, NULL, DATE_SUB(@seed_now, INTERVAL 8 DAY));
+  (@cal_visit, @u_staff_hn, 'IC_SUPPORT', DATE_SUB(@seed_now, INTERVAL 7 DAY)),
+  (@cal_logistics, @u_deptlead_it_hn, 'DEPT_SUPPORT', DATE_SUB(@seed_now, INTERVAL 5 DAY));
+
+INSERT INTO calendar_event_reminders (calendar_event_id, reminder_type, minutes_before, status, created_at)
+VALUES
+  (@cal_personal, 'POPUP', 30, 'PENDING', DATE_SUB(@seed_now, INTERVAL 2 DAY)),
+  (@cal_visit, 'EMAIL', 1440, 'PENDING', DATE_SUB(@seed_now, INTERVAL 7 DAY)),
+  (@cal_logistics, 'POPUP', 120, 'PENDING', DATE_SUB(@seed_now, INTERVAL 5 DAY)),
+  (@cal_deadline, 'EMAIL', 240, 'PENDING', DATE_SUB(@seed_now, INTERVAL 1 DAY));
+
+
+INSERT INTO sent_emails (sent_email_id, email_template_id, related_type, related_id, subject, body_snapshot, provider_thread_id, provider_message_id, retry_count, last_attempt_at, delivered_at, status, error_message, sent_by, sent_at, created_at)
+VALUES
+  (NULL, @tpl_verify, 'VISIT_REQUEST', @vr_pending_approval_seed, 'Mã xác thực email trước khi gửi yêu cầu thăm quan VR-PA-001', 'OTP sẽ hết hạn sau 10 phút.', NULL, NULL, 0, NULL, NULL, 'QUEUED', NULL, NULL, NULL, DATE_SUB(@seed_now, INTERVAL 1 HOUR)),
+  (NULL, @tpl_approved, 'VISIT_REQUEST', @vr_approved_single_before, 'Yêu cầu VR-AS-003 đã được duyệt', 'FPTU xác nhận lịch thăm Hà Nội.', NULL, NULL, 0, NULL, NULL, 'SENT', NULL, @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 12 DAY), DATE_SUB(@seed_now, INTERVAL 12 DAY)),
+  (NULL, @tpl_rejected, 'VISIT_REQUEST', @vr_rejected_single, 'Yêu cầu VR-RS-005 chưa được duyệt', 'Lý do: lịch quá sát.', NULL, NULL, 0, NULL, NULL, 'FAILED', 'Mailbox temporarily unavailable', @u_stafflead_hcm, NULL, DATE_SUB(@seed_now, INTERVAL 8 DAY));
+
+INSERT INTO sent_email_recipients (sent_email_id, recipient_email, recipient_type, delivery_status, sent_at, created_at)
+SELECT sent_email_id,
+       CASE
+         WHEN email_template_id = @tpl_verify THEN 'thaomy.pending.approval@partner.example'
+         WHEN email_template_id = @tpl_approved THEN 'kim.minseo@seoultech.example'
+         WHEN email_template_id = @tpl_rejected THEN 'emily.smith@greentech.example'
+         ELSE 'unknown@example.com'
+       END,
+       'TO',
+       CASE WHEN status = 'SENT' THEN 'SENT' WHEN status = 'FAILED' THEN 'FAILED' ELSE 'QUEUED' END,
+       sent_at,
+       created_at
+FROM sent_emails;
+
 
 INSERT INTO notifications (notification_id, recipient_user_id, title, message, notification_type, related_type, related_id, is_read, read_at, created_at)
 VALUES
@@ -4204,14 +4511,23 @@ SET @agt_inactive = 100242;
 
 SET @agt_deleted = 100243;
 
-INSERT INTO api_configurations (api_config_id, api_code, name, provider_name, purpose, base_url, default_method, auth_type, credentials_json, headers_json, body_template_json, settings_json, timeout_seconds, status, created_at, created_by, updated_at, updated_by, deleted_at, deleted_by)
+INSERT INTO api_configurations (api_config_id, api_code, name, provider_name, purpose, base_url, default_method, auth_type, timeout_seconds, status, created_at, created_by, updated_at, updated_by, deleted_at, deleted_by)
 VALUES
-  (@api_email, 'SMTP_PRIMARY', 'Primary SMTP Gateway', 'Internal SMTP', 'Send transactional email', 'https://smtp-api.example/send', 'POST', 'API_KEY', JSON_OBJECT('api_key','***masked***'), JSON_OBJECT('Content-Type','application/json'), JSON_OBJECT('to','{{To}}'), JSON_OBJECT('retry',3), 30, 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 250 DAY), @u_admin_minh, @seed_now, @u_admin_minh, NULL, NULL),
-  (@api_ocr, 'BUSINESS_CARD_OCR', 'Business Card OCR', 'OCR Provider', 'Extract contact', 'https://ocr.example/v1/cards', 'POST', 'BEARER_TOKEN', JSON_OBJECT('token','***masked***'), JSON_OBJECT('Content-Type','multipart/form-data'), JSON_OBJECT('language','vi,en'), JSON_OBJECT('timeoutProfile','standard'), 60, 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 200 DAY), @u_admin_minh, @seed_now, @u_admin_minh, NULL, NULL),
-  (@api_calendar, 'GOOGLE_CALENDAR_SYNC', 'Google Calendar Sync', 'Google Calendar', 'Sync visit event', 'https://calendar.example/events', 'PATCH', 'OAUTH2', JSON_OBJECT('client_id','***masked***'), JSON_OBJECT('Content-Type','application/json'), JSON_OBJECT('summary','{{Title}}'), JSON_OBJECT('scope','calendar.events'), 45, 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 180 DAY), @u_admin_minh, @seed_now, @u_admin_minh, NULL, NULL),
-  (@api_sms, 'SMS_OTP_BACKUP', 'SMS OTP Backup', 'SMS Provider', 'Backup OTP', 'https://sms.example/messages', 'PUT', 'BASIC', JSON_OBJECT('username','***masked***'), JSON_OBJECT('Content-Type','application/json'), JSON_OBJECT('phone','{{Phone}}'), JSON_OBJECT('enabledFor','criticalOnly'), 20, 'INACTIVE', DATE_SUB(@seed_now, INTERVAL 150 DAY), @u_admin_minh, @seed_now, @u_admin_minh, NULL, NULL),
-  (@api_report, 'REPORT_EXPORT', 'Report Export Service', 'Internal Reporting', 'Generate dashboard export', 'https://report.example/export', 'GET', 'NONE', NULL, JSON_OBJECT('Accept','application/json'), NULL, JSON_OBJECT('cacheSeconds',60), 15, 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 120 DAY), @u_admin_minh, @seed_now, @u_admin_minh, NULL, NULL),
-  (@api_deleted, 'OLD_FEID_SYNC', 'Old FEID Sync API', 'Legacy FEID', 'Legacy account sync', 'https://legacy-feid.example/sync', 'DELETE', 'CUSTOM', JSON_OBJECT('customSecret','***masked***'), JSON_OBJECT('X-Legacy','true'), JSON_OBJECT('userId','{{UserId}}'), JSON_OBJECT('deprecated',true), 10, 'DISABLED', DATE_SUB(@seed_now, INTERVAL 500 DAY), @u_admin_minh, DATE_SUB(@seed_now, INTERVAL 200 DAY), @u_admin_minh, DATE_SUB(@seed_now, INTERVAL 90 DAY), @u_admin_minh);
+  (@api_email, 'SMTP_PRIMARY', 'Primary SMTP Gateway', 'Internal SMTP', 'Send transactional email', 'https://smtp-api.example/send', 'POST', 'API_KEY', 30, 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 250 DAY), @u_admin_minh, @seed_now, @u_admin_minh, NULL, NULL),
+  (@api_ocr, 'BUSINESS_CARD_OCR', 'Business Card OCR', 'OCR Provider', 'Extract contact', 'https://ocr.example/v1/cards', 'POST', 'BEARER_TOKEN', 60, 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 200 DAY), @u_admin_minh, @seed_now, @u_admin_minh, NULL, NULL),
+  (@api_calendar, 'GOOGLE_CALENDAR_SYNC', 'Google Calendar Sync', 'Google Calendar', 'Sync visit event', 'https://calendar.example/events', 'PATCH', 'OAUTH2', 45, 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 180 DAY), @u_admin_minh, @seed_now, @u_admin_minh, NULL, NULL),
+  (@api_sms, 'SMS_OTP_BACKUP', 'SMS OTP Backup', 'SMS Provider', 'Backup OTP', 'https://sms.example/messages', 'PUT', 'BASIC', 20, 'INACTIVE', DATE_SUB(@seed_now, INTERVAL 150 DAY), @u_admin_minh, @seed_now, @u_admin_minh, NULL, NULL),
+  (@api_report, 'REPORT_EXPORT', 'Report Export Service', 'Internal Reporting', 'Generate dashboard export', 'https://report.example/export', 'GET', 'NONE', 15, 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 120 DAY), @u_admin_minh, @seed_now, @u_admin_minh, NULL, NULL),
+  (@api_deleted, 'OLD_FEID_SYNC', 'Old FEID Sync API', 'Legacy FEID', 'Legacy account sync', 'https://legacy-feid.example/sync', 'DELETE', 'CUSTOM', 10, 'DISABLED', DATE_SUB(@seed_now, INTERVAL 500 DAY), @u_admin_minh, DATE_SUB(@seed_now, INTERVAL 200 DAY), @u_admin_minh, DATE_SUB(@seed_now, INTERVAL 90 DAY), @u_admin_minh);
+
+INSERT INTO api_configuration_headers (api_config_id, header_name, header_value_encrypted, is_secret, created_at)
+VALUES
+  (@api_email, 'Content-Type', 'application/json', FALSE, DATE_SUB(@seed_now, INTERVAL 200 DAY)),
+  (@api_ocr, 'X-API-Key', '***masked***', TRUE, DATE_SUB(@seed_now, INTERVAL 200 DAY)),
+  (@api_calendar, 'Content-Type', 'application/json', FALSE, DATE_SUB(@seed_now, INTERVAL 180 DAY)),
+  (@api_sms, 'Content-Type', 'application/json', FALSE, DATE_SUB(@seed_now, INTERVAL 150 DAY)),
+  (@api_report, 'Accept', 'application/json', FALSE, DATE_SUB(@seed_now, INTERVAL 120 DAY));
+
 
 INSERT INTO api_usage_quotas (api_usage_quota_id, api_config_id, campus_id, campus_scope_key, period_yyyymm, monthly_limit, used_count, last_used_at, created_at, created_by, updated_at, updated_by)
 VALUES
@@ -4230,27 +4546,39 @@ VALUES
   (@api_report, NULL, @u_ho_ha, 'REPORT', NULL, '/export?range=quarter', 'GET', 200, 240, 128, 65536, TRUE, NULL, NULL, DATE_SUB(@seed_now, INTERVAL 1 DAY)),
   (@api_deleted, NULL, @u_admin_minh, 'USER', @u_inactive_dept, '/sync', 'DELETE', 410, 80, 128, 64, FALSE, 'API_DISABLED', 'Legacy FEID sync disabled.', DATE_SUB(@seed_now, INTERVAL 90 DAY));
 
-INSERT INTO agenda_templates (agenda_template_id, campus_id, campus_scope_key, name, description, items_json, status, created_at, created_by, updated_at, updated_by, deleted_at, deleted_by)
+INSERT INTO agenda_templates (agenda_template_id, campus_id, campus_scope_key, name, description, status, created_at, created_by, updated_at, updated_by, deleted_at, deleted_by)
 VALUES
-  (@agt_global, NULL, 'GLOBAL', 'Mẫu agenda chuẩn cho đoàn quốc tế', 'Mẫu dùng chung.', JSON_ARRAY(JSON_OBJECT('order',1,'title','Welcome','durationMinutes',30)), 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 180 DAY), @u_ho_ha, @seed_now, @u_ho_ha, NULL, NULL),
-  (@agt_hn, @campus_hn, @campus_hn, 'Mẫu Hà Nội - AI Lab focus', 'Mẫu cho đoàn quan tâm AI.', JSON_ARRAY(JSON_OBJECT('order',1,'title','AI Lab visit','durationMinutes',90)), 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 120 DAY), @u_stafflead_hn, @seed_now, @u_stafflead_hn, NULL, NULL),
-  (@agt_inactive, @campus_hcm, @campus_hcm, 'Mẫu workshop cũ', 'Không còn dùng.', JSON_ARRAY(JSON_OBJECT('order',1,'title','Old workshop','durationMinutes',120)), 'INACTIVE', DATE_SUB(@seed_now, INTERVAL 360 DAY), @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 200 DAY), @u_stafflead_hcm, NULL, NULL),
-  (@agt_deleted, NULL, 'GLOBAL', 'Mẫu đã xóa mềm', 'Dùng kiểm thử soft delete.', JSON_ARRAY(JSON_OBJECT('order',1,'title','Deprecated','durationMinutes',30)), 'INACTIVE', DATE_SUB(@seed_now, INTERVAL 500 DAY), @u_admin_minh, DATE_SUB(@seed_now, INTERVAL 200 DAY), @u_admin_minh, DATE_SUB(@seed_now, INTERVAL 100 DAY), @u_admin_minh);
+  (@agt_global, NULL, 'GLOBAL', 'Mẫu agenda chuẩn cho đoàn quốc tế', 'Mẫu dùng chung.', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 180 DAY), @u_ho_ha, @seed_now, @u_ho_ha, NULL, NULL),
+  (@agt_hn, @campus_hn, @campus_hn, 'Mẫu Hà Nội - AI Lab focus', 'Mẫu cho đoàn quan tâm AI.', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 120 DAY), @u_stafflead_hn, @seed_now, @u_stafflead_hn, NULL, NULL),
+  (@agt_inactive, @campus_hcm, @campus_hcm, 'Mẫu workshop cũ', 'Không còn dùng.', 'INACTIVE', DATE_SUB(@seed_now, INTERVAL 360 DAY), @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 200 DAY), @u_stafflead_hcm, NULL, NULL),
+  (@agt_deleted, NULL, 'GLOBAL', 'Mẫu đã xóa mềm', 'Dùng kiểm thử soft delete.', 'INACTIVE', DATE_SUB(@seed_now, INTERVAL 500 DAY), @u_admin_minh, DATE_SUB(@seed_now, INTERVAL 200 DAY), @u_admin_minh, DATE_SUB(@seed_now, INTERVAL 100 DAY), @u_admin_minh);
 
-INSERT INTO audit_logs (actor_user_id, campus_id, action, entity_type, entity_id, old_values_json, new_values_json, ip_address, user_agent, request_id, created_at)
+INSERT INTO agenda_template_items (agenda_template_id, display_order, start_time, end_time, title, description, created_at)
 VALUES
-  
-  (@u_admin_minh, @campus_hn, 'CREATE', 'USER', @u_stafflead_hn, NULL, JSON_OBJECT('email','staff.leader.hn@fpt.edu.vn'), '10.10.1.15', 'Mozilla/5.0', 'req-seed-create-user', DATE_SUB(@seed_now, INTERVAL 340 DAY)),
-  (@u_stafflead_hn, @campus_hn, 'SUBMIT', 'VISIT_REQUEST', @vr_approved_single_before, JSON_OBJECT('status','PENDING_APPROVAL'), JSON_OBJECT('status','PENDING_APPROVAL'), '10.10.2.15', 'Mozilla/5.0', 'req-seed-submit', DATE_SUB(@seed_now, INTERVAL 13 DAY)),
-  (@u_stafflead_hn, @campus_hn, 'APPROVE', 'VISIT_REQUEST', @vr_approved_single_before, JSON_OBJECT('status','PENDING_APPROVAL'), JSON_OBJECT('status','APPROVED'), '10.10.2.15', 'Mozilla/5.0', 'req-seed-approve', DATE_SUB(@seed_now, INTERVAL 12 DAY)),
-  (@u_ho_ha, NULL, 'APPROVE', 'VISIT_REQUEST', @vr_approved_multi_during, JSON_OBJECT('status','PENDING_APPROVAL'), JSON_OBJECT('status','APPROVED','scope','MULTI_CAMPUS'), '10.10.1.16', 'Mozilla/5.0', 'req-seed-approve-multi', DATE_SUB(@seed_now, INTERVAL 12 DAY)),
-  (@u_stafflead_hcm, @campus_hcm, 'REJECT', 'VISIT_REQUEST', @vr_rejected_single, JSON_OBJECT('status','PENDING_APPROVAL'), JSON_OBJECT('status','REJECTED'), '10.10.2.16', 'Mozilla/5.0', 'req-seed-reject', DATE_SUB(@seed_now, INTERVAL 8 DAY)),
-  (@u_staff_hcm, @campus_hcm, 'UPDATE', 'VISIT_LOGISTICS_ITEM', @log_3, JSON_OBJECT('status','ASSIGNED'), JSON_OBJECT('status','CHANGE_PROPOSED'), '10.10.2.17', 'Mozilla/5.0', 'req-seed-update', DATE_SUB(@seed_now, INTERVAL 2 DAY)),
-  (@u_admin_minh, @campus_hn, 'DELETE', 'CALENDAR_EVENT', @cal_deleted, JSON_OBJECT('deleted_at',NULL), JSON_OBJECT('deleted_at','relative'), '10.10.1.15', 'Mozilla/5.0', 'req-seed-delete', DATE_SUB(@seed_now, INTERVAL 4 DAY)),
-  (@u_admin_minh, NULL, 'LOGIN', 'USER_SESSION', @sess_admin, NULL, JSON_OBJECT('status','SUCCESS'), '10.10.1.15', 'Mozilla/5.0', 'req-seed-login', DATE_SUB(@seed_now, INTERVAL 1 DAY)),
-  (@u_ho_ha, @campus_hn, 'LOGOUT', 'USER_SESSION', @sess_ho_revoked, JSON_OBJECT('revoked_at',NULL), JSON_OBJECT('revoked_reason','User logout'), '10.10.1.16', 'Mozilla/5.0', 'req-seed-logout', DATE_SUB(@seed_now, INTERVAL 1 DAY)),
-  (@u_admin_minh, @campus_hn, 'LOCK_ACCOUNT', 'USER', @u_locked_staff, JSON_OBJECT('status','ACTIVE'), JSON_OBJECT('status','LOCKED'), '10.10.1.15', 'Mozilla/5.0', 'req-seed-lock', DATE_SUB(@seed_now, INTERVAL 1 DAY)),
-  (@u_admin_minh, @campus_hn, 'UNLOCK_ACCOUNT', 'USER', @u_locked_staff, JSON_OBJECT('status','LOCKED'), JSON_OBJECT('status','ACTIVE'), '10.10.1.15', 'Mozilla/5.0', 'req-seed-unlock', DATE_SUB(@seed_now, INTERVAL 1 DAY));
+  (@agt_global, 1, '09:00:00', '09:30:00', 'Welcome', 'Welcome and introduction', DATE_SUB(@seed_now, INTERVAL 180 DAY)),
+  (@agt_hn, 1, '10:00:00', '11:30:00', 'AI Lab visit', 'Visit AI Lab and exchange academic topics', DATE_SUB(@seed_now, INTERVAL 120 DAY)),
+  (@agt_inactive, 1, '09:00:00', '11:00:00', 'Old workshop', 'Inactive workshop agenda item', DATE_SUB(@seed_now, INTERVAL 360 DAY)),
+  (@agt_deleted, 1, '09:00:00', '09:30:00', 'Deprecated', 'Deprecated agenda item', DATE_SUB(@seed_now, INTERVAL 500 DAY));
+
+
+INSERT INTO audit_logs (actor_user_id, campus_id, action, entity_type, entity_id, ip_address, user_agent, request_id, created_at)
+VALUES
+  (@u_admin_minh, @campus_hn, 'CREATE', 'USER', @u_stafflead_hn, '10.10.1.15', 'Mozilla/5.0', 'req-seed-create-user', DATE_SUB(@seed_now, INTERVAL 340 DAY)),
+  (@u_stafflead_hn, @campus_hn, 'SUBMIT', 'VISIT_REQUEST', @vr_approved_single_before, '10.10.2.15', 'Mozilla/5.0', 'req-seed-submit', DATE_SUB(@seed_now, INTERVAL 13 DAY)),
+  (@u_stafflead_hn, @campus_hn, 'APPROVE', 'VISIT_REQUEST', @vr_approved_single_before, '10.10.2.15', 'Mozilla/5.0', 'req-seed-approve', DATE_SUB(@seed_now, INTERVAL 12 DAY)),
+  (@u_ho_ha, NULL, 'APPROVE', 'VISIT_REQUEST', @vr_approved_multi_during, '10.10.1.16', 'Mozilla/5.0', 'req-seed-approve-multi', DATE_SUB(@seed_now, INTERVAL 12 DAY)),
+  (@u_stafflead_hcm, @campus_hcm, 'REJECT', 'VISIT_REQUEST', @vr_rejected_single, '10.10.2.16', 'Mozilla/5.0', 'req-seed-reject', DATE_SUB(@seed_now, INTERVAL 8 DAY)),
+  (@u_staff_hcm, @campus_hcm, 'UPDATE', 'VISIT_LOGISTICS_ITEM', @log_3, '10.10.2.17', 'Mozilla/5.0', 'req-seed-update', DATE_SUB(@seed_now, INTERVAL 2 DAY)),
+  (@u_admin_minh, @campus_hn, 'DELETE', 'CALENDAR_EVENT', @cal_deleted, '10.10.1.15', 'Mozilla/5.0', 'req-seed-delete', DATE_SUB(@seed_now, INTERVAL 4 DAY)),
+  (@u_admin_minh, NULL, 'LOGIN', 'USER_SESSION', @sess_admin, '10.10.1.15', 'Mozilla/5.0', 'req-seed-login', DATE_SUB(@seed_now, INTERVAL 1 DAY)),
+  (@u_ho_ha, @campus_hn, 'LOGOUT', 'USER_SESSION', @sess_ho_revoked, '10.10.1.16', 'Mozilla/5.0', 'req-seed-logout', DATE_SUB(@seed_now, INTERVAL 1 DAY)),
+  (@u_admin_minh, @campus_hn, 'LOCK_ACCOUNT', 'USER', @u_locked_staff, '10.10.1.15', 'Mozilla/5.0', 'req-seed-lock', DATE_SUB(@seed_now, INTERVAL 1 DAY)),
+  (@u_admin_minh, @campus_hn, 'UNLOCK_ACCOUNT', 'USER', @u_locked_staff, '10.10.1.15', 'Mozilla/5.0', 'req-seed-unlock', DATE_SUB(@seed_now, INTERVAL 1 DAY));
+
+INSERT INTO audit_log_changes (audit_log_id, field_name, old_value_text, new_value_text, created_at)
+SELECT audit_log_id, 'status', NULL, action, created_at
+FROM audit_logs;
+
 
 INSERT INTO visit_status_logs (visit_request_id, visit_instance_id, status_owner_type, old_status, new_status, changed_by, reason, changed_at)
 VALUES
@@ -4278,85 +4606,18 @@ VALUES
 --   + Không để logistics gắn vào request bị REJECTED hoặc lệch campus/phòng ban.
 -- =====================================================================
 
-UPDATE visit_logistics_items
-SET requested_by = @u_staff_hn,
-    requested_to_department_id = @dept_hn_it,
-    requested_at = DATE_SUB(@seed_now, INTERVAL 7 DAY),
-    received_by = NULL,
-    received_at = NULL,
-    assigned_to_user_id = NULL,
-    assigned_by = NULL,
-    assigned_at = NULL,
-    assignee_accepted_at = NULL,
-    assignee_response_note = NULL,
-    proposed_by = NULL,
-    proposed_at = NULL,
-    proposed_quantity = NULL,
-    proposed_usage_start_at = NULL,
-    proposed_usage_end_at = NULL,
-    proposed_description = NULL,
-    proposal_note = NULL,
-    proposal_responded_by = NULL,
-    proposal_responded_at = NULL,
-    proposal_response = NULL,
-    proposal_response_note = NULL,
-    decision_note = NULL,
-    updated_at = @seed_now,
-    updated_by = @u_staff_hn
-WHERE logistics_item_id IN (@log_1, @log_2);
+-- UPDATE migration statement removed in fresh create-only build.
 
-UPDATE visit_logistics_items
-SET visit_instance_id = @vi_ci_hcm,
-    requested_by = @u_staff_hcm,
-    requested_to_department_id = @dept_hcm_finance,
-    received_by = @u_deptlead_finance_hcm,
-    assigned_to_user_id = @u_dept_finance_hcm,
-    assigned_by = @u_deptlead_finance_hcm,
-    proposed_by = @u_dept_finance_hcm,
-    proposal_responded_by = @u_staff_hcm,
-    updated_at = @seed_now,
-    updated_by = @u_staff_hcm
-WHERE logistics_item_id = @log_3;
+-- UPDATE migration statement removed in fresh create-only build.
 
-UPDATE visit_logistics_items
-SET requested_by = @u_staff_hn,
-    requested_to_department_id = @dept_hn_it,
-    received_by = @u_deptlead_it_hn,
-    assigned_to_user_id = CASE WHEN status IN ('ASSIGNED','ACCEPTED','IN_PROGRESS','READY','DONE') THEN @u_dept_it_hn ELSE assigned_to_user_id END,
-    assigned_by = CASE WHEN status IN ('ASSIGNED','ACCEPTED','IN_PROGRESS','READY','DONE') THEN @u_deptlead_it_hn ELSE assigned_by END,
-    updated_at = @seed_now,
-    updated_by = @u_staff_hn
-WHERE logistics_item_id IN (@log_4, @log_5, @log_6, @log_7, @log_9, @log_10);
+-- UPDATE migration statement removed in fresh create-only build.
 
-UPDATE visit_logistics_items
-SET visit_instance_id = @vi_av_ct,
-    requested_by = @u_staff_ct,
-    requested_to_department_id = @dept_ct_admin,
-    received_by = @u_deptlead_admin_ct,
-    assigned_to_user_id = @u_dept_admin_ct,
-    assigned_by = @u_deptlead_admin_ct,
-    updated_at = @seed_now,
-    updated_by = @u_staff_ct
-WHERE logistics_item_id = @log_8;
+-- UPDATE migration statement removed in fresh create-only build.
 
-UPDATE visit_logistics_items
-SET requested_by = @u_staff_hn,
-    requested_to_department_id = @dept_hn_it,
-    decision_note = 'Hủy theo việc khách hủy đoàn đã duyệt.',
-    updated_at = @seed_now,
-    updated_by = @u_staff_hn
-WHERE logistics_item_id = @log_11;
+-- UPDATE migration statement removed in fresh create-only build.
 
 -- REJECTED logistics không được gắn vào request/campus đã bị từ chối.
-UPDATE visit_logistics_items
-SET visit_instance_id = @vi_as_hn,
-    requested_by = @u_staff_hn,
-    requested_to_department_id = @dept_hn_it,
-    received_by = @u_deptlead_it_hn,
-    decision_note = 'Department Leader từ chối hạng mục do phòng không phù hợp.',
-    updated_at = @seed_now,
-    updated_by = @u_deptlead_it_hn
-WHERE logistics_item_id = @log_10;
+-- UPDATE migration statement removed in fresh create-only build.
 
 -- Verification: invitation tab must be driven by visit_participants.status, not request/campus status.
 SELECT 'seed_check_invitations_by_participant_status' AS check_name,
@@ -4397,7 +4658,7 @@ JOIN roles r ON r.role_id = rp.role_id
 GROUP BY r.role_code, rp.sub_role
 ORDER BY r.role_code, rp.sub_role;
 
-SET SQL_SAFE_UPDATES = @OLD_SQL_SAFE_UPDATES;
+-- SET SQL_SAFE_UPDATES = @OLD_SQL_SAFE_UPDATES; -- moved to end by SAFE_UPDATES_FIXED
 
 -- =====================================================================
 -- Coverage verification queries
@@ -4453,20 +4714,14 @@ USE pems_db;
 
 START TRANSACTION;
 
-INSERT INTO roles (role_id, role_code, name, description, status, created_at, deleted_at, deleted_by)
+INSERT IGNORE INTO roles (role_id, role_code, name, description, status, created_at, deleted_at, deleted_by)
 VALUES
   (NULL, 'ADMIN',   'Admin',       'Quản trị kỹ thuật hệ thống', 'ACTIVE', NOW(), NULL, NULL),
   (NULL, 'HO',      'Head Office', 'Quản lý cấp Head Office', 'ACTIVE', NOW(), NULL, NULL),
   (NULL, 'STAFF',   'IC Staff',    'Nhân sự phòng Hợp tác Quốc tế, dùng users.sub_role = LEADER/STAFF', 'ACTIVE', NOW(), NULL, NULL),
   (NULL, 'DEPARTMENT',    'Department',  'Nhân sự phòng ban khác, dùng users.sub_role = LEADER/STAFF', 'ACTIVE', NOW(), NULL, NULL),
   (NULL, 'STUDENT', 'Student',     'Sinh viên hỗ trợ', 'ACTIVE', NOW(), NULL, NULL),
-  (NULL, 'VISITOR', 'Visitor',     'Khách gửi visit request và theo dõi thông tin của mình', 'ACTIVE', NOW(), NULL, NULL)
-ON DUPLICATE KEY UPDATE
-  name = VALUES(name),
-  description = VALUES(description),
-  status = VALUES(status),
-  deleted_at = NULL,
-  deleted_by = NULL;
+  (NULL, 'VISITOR', 'Visitor',     'Khách gửi visit request và theo dõi thông tin của mình', 'ACTIVE', NOW(), NULL, NULL);
 
 SELECT role_code, name, status, deleted_at
 FROM roles
@@ -4489,17 +4744,13 @@ USE pems_db;
 
 START TRANSACTION;
 
-INSERT INTO campuses (campus_id, campus_code, name, city, status, created_at)
+INSERT IGNORE INTO campuses (campus_id, campus_code, name, city, status, created_at)
 VALUES
   (NULL, 'HN',  'FPT University Hà Nội',          'Hà Nội',          'ACTIVE', NOW()),
   (NULL, 'HCM', 'FPT University TP. Hồ Chí Minh', 'TP. Hồ Chí Minh', 'ACTIVE', NOW()),
   (NULL, 'DN',  'FPT University Đà Nẵng',         'Đà Nẵng',         'ACTIVE', NOW()),
   (NULL, 'CT',  'FPT University Cần Thơ',         'Cần Thơ',         'ACTIVE', NOW()),
-  (NULL, 'QN',  'FPT University Quy Nhơn',        'Quy Nhơn',        'ACTIVE', NOW())
-ON DUPLICATE KEY UPDATE
-  name = VALUES(name),
-  city = VALUES(city),
-  status = VALUES(status);
+  (NULL, 'QN',  'FPT University Quy Nhơn',        'Quy Nhơn',        'ACTIVE', NOW());
 
 SELECT campus_code, name, city, status
 FROM campuses
@@ -4566,20 +4817,11 @@ VALUES
   ('QN',  'IT',        'Phòng CNTT',            'GENERAL', 'ACTIVE');
 
 -- Update rows that already exist by natural key (campus_id + department_code).
-UPDATE departments d
-JOIN campuses c ON c.campus_id = d.campus_id
-JOIN desired_departments dd
-  ON dd.campus_code = c.campus_code
- AND dd.department_code = d.department_code
-SET
-  d.name = dd.name,
-  d.department_type = dd.department_type,
-  d.status = dd.status,
-  d.updated_at = NOW();
+-- UPDATE migration statement removed in fresh create-only build.
 
 -- Insert only rows that do not exist yet. This avoids firing the one-active-IC
 -- trigger for duplicate IC departments.
-INSERT INTO departments (department_id, campus_id, department_code, name, department_type, status, created_at)
+INSERT IGNORE INTO departments (department_id, campus_id, department_code, name, department_type, status, created_at)
 SELECT NULL, c.campus_id, dd.department_code, dd.name, dd.department_type, dd.status, NOW()
 FROM desired_departments dd
 JOIN campuses c ON c.campus_code = dd.campus_code
@@ -4616,7 +4858,7 @@ USE pems_db;
 
 START TRANSACTION;
 
-INSERT INTO permissions
+INSERT IGNORE INTO permissions
   (permission_id, permission_code, name, permission_group, description, is_system, created_at)
 VALUES
   (NULL, 'UC-01.VIEW_HOMEPAGE', 'UC-01 - View Homepage', 'Common', 'Seeded from Permission Matrix v0.2: View Homepage', TRUE, NOW()),
@@ -4753,12 +4995,7 @@ VALUES
   (NULL, 'UC-132.UPDATE_AGENDA_TEMPLATE', 'UC-132 - Update Agenda Template', 'Agenda Templates Management', 'Seeded from Permission Matrix v0.2: Update Agenda Template', TRUE, NOW()),
   (NULL, 'UC-133.DELETE_AGENDA_TEMPLATE', 'UC-133 - Delete Agenda Template', 'Agenda Templates Management', 'Seeded from Permission Matrix v0.2: Delete Agenda Template', TRUE, NOW()),
   (NULL, 'UC-134.VIEW_AGENDA_TEMPLATE_LIST', 'UC-134 - View Agenda Template List', 'Agenda Templates Management', 'Seeded from Permission Matrix v0.2: View Agenda Template List', TRUE, NOW()),
-  (NULL, 'UC-135.VIEW_AGENDA_TEMPLATE_DETAIL', 'UC-135 - View Agenda Template Detail', 'Agenda Templates Management', 'Seeded from Permission Matrix v0.2: View Agenda Template Detail', TRUE, NOW())
-ON DUPLICATE KEY UPDATE
-  name = VALUES(name),
-  permission_group = VALUES(permission_group),
-  description = VALUES(description),
-  is_system = VALUES(is_system);
+  (NULL, 'UC-135.VIEW_AGENDA_TEMPLATE_DETAIL', 'UC-135 - View Agenda Template Detail', 'Agenda Templates Management', 'Seeded from Permission Matrix v0.2: View Agenda Template Detail', TRUE, NOW());
 
 SELECT COUNT(*) AS total_uc_permissions
 FROM permissions
@@ -4774,16 +5011,11 @@ COMMIT;
 
 
 -- v8.2: UC-136 Cancel Visit Request under Delegation Reception Management. Cancel is only allowed after approval; pending requests are ended by reject.
-INSERT INTO permissions
+INSERT IGNORE INTO permissions
   (permission_id, permission_code, name, permission_group, description, is_system, created_at)
 VALUES
   (NULL, 'UC-136.CANCEL_VISIT_REQUEST', 'UC-136 - Cancel Visit Request', 'Delegation Reception Management',
-   'Cancel an approved visit request/delegation within valid scope. Before approval, withdrawal is handled by reject in UC-18/UC-22. Visitor cancels own approved request; current Host cancels after external confirmation from guest.', TRUE, NOW())
-ON DUPLICATE KEY UPDATE
-  name = VALUES(name),
-  permission_group = VALUES(permission_group),
-  description = VALUES(description),
-  is_system = VALUES(is_system);
+   'Cancel an approved visit request/delegation within valid scope. Before approval, withdrawal is handled by reject in UC-18/UC-22. Visitor cancels own approved request; current Host cancels after external confirmation from guest.', TRUE, NOW());
 
 
 -- <<< END permissions.sql
@@ -4810,20 +5042,14 @@ USE pems_db;
 START TRANSACTION;
 
 -- 1. Ensure canonical roles exist. This does not replace roles.sql; it makes this seed safer to rerun.
-INSERT INTO roles (role_id, role_code, name, description, status, created_at, deleted_at, deleted_by)
+INSERT IGNORE INTO roles (role_id, role_code, name, description, status, created_at, deleted_at, deleted_by)
 VALUES
   (NULL, 'ADMIN',   'Admin',       'Quản trị kỹ thuật hệ thống', 'ACTIVE', NOW(), NULL, NULL),
   (NULL, 'HO',      'Head Office', 'Quản lý cấp Head Office', 'ACTIVE', NOW(), NULL, NULL),
   (NULL, 'STAFF',   'IC Staff',    'Nhân sự phòng Hợp tác Quốc tế, dùng users.sub_role = LEADER/STAFF', 'ACTIVE', NOW(), NULL, NULL),
   (NULL, 'DEPARTMENT',    'Department',  'Nhân sự phòng ban khác, dùng users.sub_role = LEADER/STAFF', 'ACTIVE', NOW(), NULL, NULL),
   (NULL, 'STUDENT', 'Student',     'Sinh viên hỗ trợ', 'ACTIVE', NOW(), NULL, NULL),
-  (NULL, 'VISITOR', 'Visitor',     'Khách gửi visit request và theo dõi thông tin của mình', 'ACTIVE', NOW(), NULL, NULL)
-ON DUPLICATE KEY UPDATE
-  name = VALUES(name),
-  description = VALUES(description),
-  status = VALUES(status),
-  deleted_at = NULL,
-  deleted_by = NULL;
+  (NULL, 'VISITOR', 'Visitor',     'Khách gửi visit request và theo dõi thông tin của mình', 'ACTIVE', NOW(), NULL, NULL);
 
 -- 2. Desired role-permission matrix. Explicit VALUES for easy visual review.
 DROP TEMPORARY TABLE IF EXISTS desired_role_permissions;
@@ -5211,9 +5437,7 @@ VALUES
   ('VISITOR', 'NONE', 'UC-136.CANCEL_VISIT_REQUEST', 'O'),
   ('STAFF', 'LEADER', 'UC-136.CANCEL_VISIT_REQUEST', 'E'),
   ('STAFF', 'STAFF',  'UC-136.CANCEL_VISIT_REQUEST', 'O'),
-  ('HO',    'NONE',   'UC-136.CANCEL_VISIT_REQUEST', 'E')
-ON DUPLICATE KEY UPDATE
-  permission_level = VALUES(permission_level);
+  ('HO',    'NONE',   'UC-136.CANCEL_VISIT_REQUEST', 'E');
 
 -- 3. Preview desired matrix before applying.
 SELECT
@@ -5245,7 +5469,7 @@ LEFT JOIN permissions p
 WHERE p.permission_id IS NULL;
 
 -- 6. Upsert matrix into role_permissions.
-INSERT INTO role_permissions
+INSERT IGNORE INTO role_permissions
   (role_id, sub_role, permission_id, permission_level, granted_at)
 SELECT
   r.role_id,
@@ -5258,10 +5482,7 @@ JOIN roles r
   ON r.role_code = d.role_code
  AND r.deleted_at IS NULL
 JOIN permissions p
-  ON p.permission_code = d.permission_code
-ON DUPLICATE KEY UPDATE
-  permission_level = VALUES(permission_level),
-  granted_at = VALUES(granted_at);
+  ON p.permission_code = d.permission_code;
 
 -- 7. Preview excess permissions. Review this before running cleanup.
 SELECT
@@ -5326,14 +5547,7 @@ COMMIT;
 -- - "HO_APPROVED" is a display/approval badge, not a lifecycle status.
 -- =====================================================================
 
--- Extra indexes for visibility queries. Keep existing indexes; these optimize the new access rules.
-ALTER TABLE visit_requests
-  ADD KEY idx_visit_requests_visibility_scope_status_decision
-    (visit_scope, status, decision_actor_role, decided_at);
-
-ALTER TABLE visit_request_campuses
-  ADD KEY idx_visit_instances_visibility_campus_request
-    (campus_id, visit_request_id, status, current_host_user_id);
+-- Visibility indexes are declared inside CREATE TABLE definitions.
 
 -- HO view: HO can see all inter-campus/multi-campus requests, including PENDING_APPROVAL.
 CREATE OR REPLACE VIEW vw_visit_requests_for_ho AS
@@ -5797,22 +6011,33 @@ WHERE table_schema = DATABASE()
 -- =====================================================================
 -- 1. Explicit Staff Leader seed accounts
 -- =====================================================================
-UPDATE users 
-SET sub_role = 'LEADER'
-WHERE email IN (
-  'staff.leader.hn@fpt.edu.vn',
-  'anh.vu@company.vn',
-  'nguyen.nam@company.vn',
-  'duyen.truong@company.vn',
-  'quan.hoang@company.vn'
-);
 
 -- =====================================================================
 -- 2. Remaining STAFF users are normal Staff
 -- =====================================================================
-UPDATE users u
-JOIN roles r ON r.role_id = u.role_id
-SET u.sub_role = 'STAFF'
-WHERE r.role_code = 'STAFF'
-  AND (u.sub_role IS NULL OR u.sub_role <> 'LEADER');
 
+
+
+-- =====================================================================
+
+
+-- =====================================================================
+-- FRESH CREATE-ONLY VERIFICATION
+-- =====================================================================
+SELECT 'PEMS v8.4 fresh create-only schema loaded' AS status;
+
+SELECT COUNT(*) AS table_count
+FROM information_schema.tables
+WHERE table_schema = DATABASE()
+  AND table_type = 'BASE TABLE';
+
+SELECT table_name, column_name
+FROM information_schema.columns
+WHERE table_schema = DATABASE()
+  AND column_name IN (
+    'support_team_json','contact_person_json','participants_json','translations_json','variables_json',
+    'recipients_json','metadata_json','attendees_json','reminders_json','credentials_json','headers_json',
+    'body_template_json','settings_json','items_json','old_values_json','new_values_json',
+    'location_name','category','working_language_other','visibility'
+  )
+  AND table_name IN ('visit_requests','minutes','email_templates','sent_emails','calendar_events','api_configurations','agenda_templates','audit_logs','galleries','faqs','files');

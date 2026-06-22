@@ -46,8 +46,17 @@ export function CreateVisitRequest() {
     workContent: '',
   });
 
-  const [visitTypes, setVisitTypes] = useState<string[]>([]);
+  const [visitType, setVisitType] = useState<string>('CAMPUS_TOUR');
   const [otherType, setOtherType] = useState('');
+  
+  // New fields from v8.4
+  const [expectedGuestCount, setExpectedGuestCount] = useState<number>(1);
+  const [workingLanguage, setWorkingLanguage] = useState<string>('EN');
+  const [interpreterNote, setInterpreterNote] = useState<string>('');
+  const [transportationType, setTransportationType] = useState<string>('UNKNOWN');
+  const [transportationDetail, setTransportationDetail] = useState<string>('');
+  const [mediaConsentStatus, setMediaConsentStatus] = useState<string>('UNKNOWN');
+  const [mediaConsentNote, setMediaConsentNote] = useState<string>('');
   
   const [agendaItems, setAgendaItems] = useState([{ startTime: '', endTime: '', content: '' }]);
 
@@ -91,15 +100,7 @@ export function CreateVisitRequest() {
   // Section completion checkers (for green border)
   const isSection1Complete = !!(hostInfo.name && hostInfo.org && hostInfo.title && hostInfo.phone && hostInfo.email);
   const isSection2Complete = !!(guestInfo.name && visits.every(v => v.date && v.startTime && v.endTime) && guestInfo.purpose && guestInfo.workContent);
-  const isSection3Complete = visitTypes.length > 0;
-
-  const handleVisitTypeChange = (type: string) => {
-    if (visitTypes.includes(type)) {
-      setVisitTypes(visitTypes.filter(t => t !== type));
-    } else {
-      setVisitTypes([...visitTypes, type]);
-    }
-  };
+  const isSection3Complete = !!visitType;
 
   return (
     <div className="p-4 sm:p-6 md:p-8 max-w-[95%] mx-auto pb-12 animate-in fade-in duration-300 relative">
@@ -316,20 +317,21 @@ export function CreateVisitRequest() {
                 1. Loại hình tham quan
               </h3>
               <div className="flex flex-wrap gap-4">
-                <label className="flex items-center gap-2 cursor-pointer group">
-                  <input type="checkbox" checked={visitTypes.includes('Campus Tour')} onChange={() => handleVisitTypeChange('Campus Tour')} className="w-5 h-5 rounded border-gray-300 text-[#004c91] focus:ring-[#004c91]" />
-                  <span className="text-sm font-medium text-gray-700 group-hover:text-gray-900">Campus tour</span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer group">
-                  <input type="checkbox" checked={visitTypes.includes('Họp trao đổi')} onChange={() => handleVisitTypeChange('Họp trao đổi')} className="w-5 h-5 rounded border-gray-300 text-[#004c91] focus:ring-[#004c91]" />
-                  <span className="text-sm font-medium text-gray-700 group-hover:text-gray-900">Họp trao đổi</span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer group">
-                  <input type="checkbox" checked={visitTypes.includes('Khác')} onChange={() => handleVisitTypeChange('Khác')} className="w-5 h-5 rounded border-gray-300 text-[#004c91] focus:ring-[#004c91]" />
-                  <span className="text-sm font-medium text-gray-700 group-hover:text-gray-900">Khác</span>
-                </label>
+                {[
+                  { value: 'CAMPUS_TOUR', label: 'Campus Tour' },
+                  { value: 'MEETING', label: 'Họp trao đổi' },
+                  { value: 'WORKSHOP', label: 'Workshop' },
+                  { value: 'SIGNING_CEREMONY', label: 'Lễ ký kết' },
+                  { value: 'EXCHANGE', label: 'Giao lưu' },
+                  { value: 'OTHER', label: 'Khác' },
+                ].map(type => (
+                  <label key={type.value} className="flex items-center gap-2 cursor-pointer group">
+                    <input type="radio" name="visitType" value={type.value} checked={visitType === type.value} onChange={() => setVisitType(type.value)} className="w-5 h-5 rounded-full border-gray-300 text-[#004c91] focus:ring-[#004c91]" />
+                    <span className="text-sm font-medium text-gray-700 group-hover:text-gray-900">{type.label}</span>
+                  </label>
+                ))}
               </div>
-              {visitTypes.includes('Khác') && (
+              {visitType === 'OTHER' && (
                 <div className="mt-4">
                   <input type="text" placeholder="Ghi chú loại hình khác..." className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:border-[#004c91] outline-none text-sm" value={otherType} onChange={e => setOtherType(e.target.value)} />
                 </div>
@@ -337,7 +339,7 @@ export function CreateVisitRequest() {
             </div>
 
             {/* 3.2 Agenda - chỉ hiện khi có loại hình tham quan */}
-            {visitTypes.length > 0 && <div className="p-6 border-b border-gray-100 bg-slate-50/50">
+            {visitType && <div className="p-6 border-b border-gray-100 bg-slate-50/50">
               <h3 className="text-base font-bold text-orange-900 bg-orange-50 w-max px-3 py-1.5 rounded-lg border border-orange-100 flex items-center gap-2 mb-2">
                 <span className="w-1.5 h-4 bg-[#f37021] rounded-full"></span>
                 2. Agenda dự kiến

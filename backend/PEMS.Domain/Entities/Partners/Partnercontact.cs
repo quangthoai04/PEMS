@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace PEMS.Domain.Entities.Partners;
@@ -30,6 +30,15 @@ public class PartnerContact
 
     [Column("note")]
     public string? Note { get; set; }
+
+    [Column("source_type")]
+    public string SourceType { get; set; } = "MANUAL";
+
+    [Column("scanned_card_file_id")]
+    public ulong? ScannedCardFileId { get; set; }
+
+    [Column("ocr_confidence")]
+    public decimal? OcrConfidence { get; set; }
 
     [Column("is_primary")]
     public bool IsPrimary { get; set; }

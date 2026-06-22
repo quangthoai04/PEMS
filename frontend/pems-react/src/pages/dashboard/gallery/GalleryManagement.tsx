@@ -197,12 +197,7 @@ export function GalleryManagement() {
           <p className="text-gray-500 mt-1 font-medium">Quản lý tài nguyên hình ảnh và video</p>
         </div>
         <div className="flex items-center gap-3">
-          <Link 
-            to="/dashboard/gallery/locations"
-            className="flex items-center gap-2 bg-[#004c91] hover:bg-[#00386b] text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-sm transition-all hover:shadow-md outline-none"
-          >
-            Quản lý khu vực
-          </Link>
+
           <button 
             onClick={handleOpenCreate}
             className="flex items-center gap-2 bg-[#f37021] hover:bg-[#e85c0d] text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-sm transition-all hover:shadow-md outline-none"

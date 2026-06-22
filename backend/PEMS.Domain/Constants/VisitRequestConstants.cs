@@ -21,7 +21,6 @@ public static class WorkingLanguages
 {
     public const string Vietnamese = "VI";
     public const string English    = "EN";
-    public const string Other      = "OTHER";
 }
 
 // Campus instance progress status (SQL v8.3 visit_request_campuses.status).

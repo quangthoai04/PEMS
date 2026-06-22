@@ -38,8 +38,8 @@ public sealed class LogoutCommandHandler : IRequestHandler<LogoutCommand, Messag
                 await _sessionService.RevokeSessionAsync(session.SessionId, SessionRevokeReasons.UserLogout, userId, cancellationToken);
         }
 
-        await _audit.WriteSecurityEventAsync(userId, _currentUser.Email, SecurityEventTypes.Logout,
-            SecuritySeverities.Low, request.IpAddress, request.UserAgent, null, cancellationToken);
+        await _audit.WriteSecurityEventAsync(userId, _currentUser.Email, SecurityEventTypes.SessionRevoked,
+            "SUCCESS", null, request.IpAddress, request.UserAgent, null, null, null, null, null, cancellationToken);
 
         return new MessageResponse("Logged out successfully.");
     }

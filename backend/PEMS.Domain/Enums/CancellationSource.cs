@@ -9,4 +9,7 @@ public static class CancellationSource
 
     /// <summary>Host hủy sau khi khách xác nhận hủy qua kênh ngoài hệ thống.</summary>
     public const string ExternalConfirmation = "EXTERNAL_CONFIRMATION";
+
+    /// <summary>HO/Staff Leader operational cancellation.</summary>
+    public const string InternalDecision = "INTERNAL_DECISION";
 }

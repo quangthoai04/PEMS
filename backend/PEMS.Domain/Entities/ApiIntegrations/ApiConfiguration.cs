@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace PEMS.Domain.Entities.ApiIntegrations;
@@ -31,23 +31,62 @@ public class ApiConfiguration
     [Column("auth_type")]
     public string AuthType { get; set; } = "NONE";
 
-    [Column("credentials_json")]
-    public string? CredentialsJson { get; set; }
+    [Column("api_key_encrypted")]
+    public string? ApiKeyEncrypted { get; set; }
 
-    [Column("headers_json")]
-    public string? HeadersJson { get; set; }
+    [Column("bearer_token_encrypted")]
+    public string? BearerTokenEncrypted { get; set; }
 
-    [Column("body_template_json")]
-    public string? BodyTemplateJson { get; set; }
+    [Column("basic_username")]
+    public string? BasicUsername { get; set; }
 
-    [Column("settings_json")]
-    public string? SettingsJson { get; set; }
+    [Column("basic_password_encrypted")]
+    public string? BasicPasswordEncrypted { get; set; }
+
+    [Column("oauth_client_id")]
+    public string? OauthClientId { get; set; }
+
+    [Column("oauth_client_secret_encrypted")]
+    public string? OauthClientSecretEncrypted { get; set; }
+
+    [Column("oauth_token_url")]
+    public string? OauthTokenUrl { get; set; }
+
+    [Column("oauth_scope")]
+    public string? OauthScope { get; set; }
+
+    [Column("body_template_text")]
+    public string? BodyTemplateText { get; set; }
+
+    [Column("rate_limit_per_minute")]
+    public uint? RateLimitPerMinute { get; set; }
+
+    [Column("monthly_quota")]
+    public uint? MonthlyQuota { get; set; }
+
+    [Column("retry_enabled")]
+    public bool RetryEnabled { get; set; }
+
+    [Column("max_retries")]
+    public uint MaxRetries { get; set; }
+
+    [Column("cache_ttl_seconds")]
+    public uint? CacheTtlSeconds { get; set; }
 
     [Column("timeout_seconds")]
     public int TimeoutSeconds { get; set; } = 30;
 
     [Column("status")]
     public string Status { get; set; } = "ACTIVE";
+
+    [Column("last_test_status")]
+    public string LastTestStatus { get; set; } = "NOT_TESTED";
+
+    [Column("last_tested_at")]
+    public DateTime? LastTestedAt { get; set; }
+
+    [Column("last_test_message")]
+    public string? LastTestMessage { get; set; }
 
     [Column("created_at")]
     public DateTime CreatedAt { get; set; }
@@ -69,4 +108,5 @@ public class ApiConfiguration
 
     public virtual ICollection<ApiUsageQuota> UsageQuotas { get; set; } = new List<ApiUsageQuota>();
     public virtual ICollection<ApiRequestLog> RequestLogs { get; set; } = new List<ApiRequestLog>();
+    public virtual ICollection<ApiConfigurationHeader> Headers { get; set; } = new List<ApiConfigurationHeader>();
 }

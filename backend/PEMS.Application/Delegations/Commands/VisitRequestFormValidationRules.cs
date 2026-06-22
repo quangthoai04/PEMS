@@ -17,26 +17,26 @@ public static class VisitRequestFormValidationRules
         where T : IVisitRequestFormCommand
     {
         // ── Registrant ────────────────────────────────────────────────────────
-        v.RuleFor(x => x.RegisterFullName)
+        v.RuleFor(x => x.RegistrantFullName)
             .NotEmpty().WithMessage("Họ tên người đăng ký không được để trống.")
             .MaximumLength(150);
 
-        v.RuleFor(x => x.RegisterOrganization)
+        v.RuleFor(x => x.RegistrantOrganization)
             .NotEmpty().WithMessage("Đơn vị công tác không được để trống.")
             .MaximumLength(200);
 
-        v.RuleFor(x => x.RegisterJobTitle)
+        v.RuleFor(x => x.RegistrantPosition)
             .MaximumLength(150);
 
-        v.RuleFor(x => x.RegisterPhone)
+        v.RuleFor(x => x.RegistrantPhone)
             .MaximumLength(50);
 
-        v.RuleFor(x => x.RegisterEmail)
+        v.RuleFor(x => x.RegistrantEmail)
             .NotEmpty().WithMessage("Email người đăng ký không được để trống.")
             .EmailAddress().WithMessage("Email không đúng định dạng.")
             .MaximumLength(150);
 
-        v.RuleFor(x => x.RegisterNationality)
+        v.RuleFor(x => x.RegistrantNationality)
             .MaximumLength(100);
 
         // ── Delegation / visit ────────────────────────────────────────────────
@@ -54,20 +54,20 @@ public static class VisitRequestFormValidationRules
             .MaximumLength(2000);
 
         // ── Campus slots ──────────────────────────────────────────────────────
-        v.RuleFor(x => x.VisitSlots)
+        v.RuleFor(x => x.CampusVisits)
             .NotEmpty().WithMessage("Phải có ít nhất 1 lịch thăm.");
 
-        v.RuleFor(x => x.VisitSlots)
+        v.RuleFor(x => x.CampusVisits)
             .Must((cmd, slots) => HasValidCampusCount(cmd.VisitScope, slots))
             .WithMessage("SINGLE_CAMPUS phải chọn đúng 1 cơ sở; MULTI_CAMPUS phải chọn từ 2 cơ sở trở lên.")
-            .When(x => x.VisitSlots is { Count: > 0 });
+            .When(x => x.CampusVisits is { Count: > 0 });
 
-        v.RuleFor(x => x.VisitSlots)
+        v.RuleFor(x => x.CampusVisits)
             .Must(NoDuplicateCampus)
             .WithMessage("Không được chọn trùng cơ sở.")
-            .When(x => x.VisitSlots is { Count: > 0 });
+            .When(x => x.CampusVisits is { Count: > 0 });
 
-        v.RuleForEach(x => x.VisitSlots).ChildRules(slot =>
+        v.RuleForEach(x => x.CampusVisits).ChildRules(slot =>
         {
             slot.RuleFor(s => s.CampusId)
                 .NotEmpty().WithMessage("Vui lòng chọn cơ sở.");
@@ -86,8 +86,13 @@ public static class VisitRequestFormValidationRules
         });
 
         // ── Guests ────────────────────────────────────────────────────────────
-        v.RuleFor(x => x.Visitors)
-            .NotEmpty().WithMessage("Phải có ít nhất 1 khách trong danh sách.");
+        v.RuleFor(x => x.ExpectedGuestCount)
+            .GreaterThanOrEqualTo(1).WithMessage("Số lượng khách dự kiến phải lớn hơn hoặc bằng 1.");
+
+        v.RuleFor(x => x.ExpectedGuestCount)
+            .Must((cmd, count) => count >= cmd.Visitors.Count)
+            .WithMessage("Số lượng khách dự kiến không được nhỏ hơn số lượng khách đã nhập danh sách.")
+            .When(x => x.Visitors != null && x.Visitors.Count > 0);
 
         v.RuleForEach(x => x.Visitors).ChildRules(guest =>
         {
@@ -107,25 +112,58 @@ public static class VisitRequestFormValidationRules
         });
 
         // ── Support team / contact ────────────────────────────────────────────
-        v.RuleFor(x => x.SupportTeam)
-            .NotEmpty().WithMessage("Phải có ít nhất 1 nhân sự hỗ trợ.");
+        v.RuleForEach(x => x.SupportMembers).ChildRules(support =>
+        {
+            support.RuleFor(s => s.FullName)
+                .NotEmpty().WithMessage("Họ tên nhân sự hỗ trợ không được để trống.")
+                .MaximumLength(150);
+            support.RuleFor(s => s.JobTitle)
+                .MaximumLength(150);
+            support.RuleFor(s => s.Organization)
+                .MaximumLength(200);
+            support.RuleFor(s => s.Nationality)
+                .MaximumLength(100);
+        });
 
-        v.RuleFor(x => x.ContactPoint).NotNull();
-        v.RuleFor(x => x.ContactPoint.FullName)
+        v.RuleFor(x => x.ContactPerson).NotNull();
+        v.RuleFor(x => x.ContactPerson.FullName)
             .NotEmpty().WithMessage("Họ tên đầu mối liên hệ không được để trống.")
-            .When(x => x.ContactPoint is not null);
-        v.RuleFor(x => x.ContactPoint.Email)
+            .When(x => x.ContactPerson is not null);
+        v.RuleFor(x => x.ContactPerson.Email)
             .NotEmpty().WithMessage("Email đầu mối liên hệ không được để trống.")
             .EmailAddress().WithMessage("Email đầu mối liên hệ không đúng định dạng.")
-            .When(x => x.ContactPoint is not null);
-        v.RuleFor(x => x.ContactPoint.Phone)
+            .When(x => x.ContactPerson is not null);
+        v.RuleFor(x => x.ContactPerson.Phone)
             .NotEmpty().WithMessage("Số điện thoại đầu mối liên hệ không được để trống.")
-            .When(x => x.ContactPoint is not null);
+            .When(x => x.ContactPerson is not null);
 
         // ── Additional ────────────────────────────────────────────────────────
-        v.RuleFor(x => x.Language)
-            .Must(l => l is WorkingLanguages.English or WorkingLanguages.Vietnamese or WorkingLanguages.Other)
-            .WithMessage("Ngôn ngữ phải là EN, VI hoặc OTHER.");
+        v.RuleFor(x => x.VisitType)
+            .NotEmpty().WithMessage("Loại hình tham quan không được để trống.")
+            .Must(t => t is "CAMPUS_TOUR" or "MEETING" or "WORKSHOP" or "SIGNING_CEREMONY" or "EXCHANGE" or "OTHER")
+            .WithMessage("Loại hình tham quan không hợp lệ.");
+
+        v.RuleFor(x => x.VisitTypeOther)
+            .NotEmpty().WithMessage("Vui lòng ghi rõ loại hình tham quan khác.")
+            .When(x => x.VisitType == "OTHER");
+
+        v.RuleFor(x => x.WorkingLanguage)
+            .Must(l => l is "EN" or "VI")
+            .WithMessage("Ngôn ngữ làm việc phải là EN hoặc VI.");
+
+        v.RuleFor(x => x.TransportationType)
+            .NotEmpty().WithMessage("Loại phương tiện di chuyển không được để trống.")
+            .Must(t => t is "SELF_ARRANGED" or "FPTU_SUPPORT" or "UNKNOWN" or "OTHER")
+            .WithMessage("Loại phương tiện di chuyển không hợp lệ.");
+
+        v.RuleFor(x => x.TransportationDetail)
+            .NotEmpty().WithMessage("Vui lòng nhập chi tiết phương tiện di chuyển.")
+            .When(x => x.TransportationType is "FPTU_SUPPORT" or "OTHER");
+
+        v.RuleFor(x => x.MediaConsentStatus)
+            .NotEmpty().WithMessage("Trạng thái truyền thông không được để trống.")
+            .Must(s => s is "AGREED" or "DECLINED" or "UNKNOWN")
+            .WithMessage("Trạng thái truyền thông không hợp lệ.");
     }
 
     /// <summary>Distinct (case-insensitive) campus count must match the visit scope.</summary>

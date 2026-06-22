@@ -38,29 +38,37 @@ public record ContactPointDto(
 /// </summary>
 public record VisitRequestFormData(
     // ── Registration info ────────────────────────────────
-    string RegisterFullName,
-    string RegisterNationality,
-    string RegisterOrganization,
-    string RegisterJobTitle,
-    string RegisterPhone,
-    string RegisterEmail,
+    string RegistrantFullName,
+    string RegistrantNationality,
+    string RegistrantOrganization,
+    string RegistrantPosition,
+    string RegistrantPhone,
+    string RegistrantEmail,
 
     // ── Visit info ───────────────────────────────────────
     string DelegationName,
     string VisitScope,               // SINGLE_CAMPUS | MULTI_CAMPUS
-    IList<VisitSlotDto> VisitSlots,
+    string VisitType,
+    string? VisitTypeOther,
+    IList<VisitSlotDto> CampusVisits,
     string Purpose,
     string? WorkingContent,
 
     // ── Attendees ────────────────────────────────────────
+    int ExpectedGuestCount,
     IList<VisitorDto> Visitors,
-    IList<SupportTeamMemberDto> SupportTeam,
+    IList<SupportTeamMemberDto> SupportMembers,
 
     // ── Contact ──────────────────────────────────────────
-    ContactPointDto ContactPoint,
+    ContactPointDto ContactPerson,
     bool IsContactSelf,              // true → contact email = register email
 
     // ── Additional ───────────────────────────────────────
-    string Language,                 // EN | VI
-    string? Vehicle,
+    string WorkingLanguage,          // EN | VI
+    string? InterpreterNote,
+    string TransportationType,
+    string? TransportationDetail,
+    string MediaConsentStatus,
+    string? MediaConsentNote,
+    ulong? PartnerId,
     string? Notes);

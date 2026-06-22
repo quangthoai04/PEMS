@@ -103,15 +103,15 @@ public static class OtpTokenTypes
 
 public static class SecurityEventTypes
 {
-    public const string LoginSuccess = "LOGIN_SUCCESS";
-    public const string LoginFailed = "LOGIN_FAILED";
-    public const string LoginBlocked = "LOGIN_BLOCKED";
-    public const string AccountLocked = "ACCOUNT_LOCKED";
-    public const string Logout = "LOGOUT";
-    public const string PasswordResetRequested = "PASSWORD_RESET_REQUESTED";
-    public const string PasswordResetSuccess = "PASSWORD_RESET_SUCCESS";
-    public const string PasswordChanged = "PASSWORD_CHANGED";
+    public const string SsoLogin = "SSO_LOGIN";
+    public const string PortalValidation = "PORTAL_VALIDATION";
+    public const string CampusValidation = "CAMPUS_VALIDATION";
+    public const string VisitorAutoProvision = "VISITOR_AUTO_PROVISION";
+    public const string SessionCreated = "SESSION_CREATED";
     public const string SessionRevoked = "SESSION_REVOKED";
+    public const string SessionExpired = "SESSION_EXPIRED";
+    public const string TokenRefresh = "TOKEN_REFRESH";
+    public const string SecurityPolicyCheck = "SECURITY_POLICY_CHECK";
 }
 
 public static class SecuritySeverities

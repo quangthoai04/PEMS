@@ -16,7 +16,8 @@ public interface IVisitRequestService
     /// </summary>
     Task<VisitRequest> CreateAsync(
         VisitRequestFormData formData,
-        ulong visitorUserId,
+        ulong? visitorUserId,
+        string createdSource,
         DateTime utcNow,
         CancellationToken cancellationToken = default);
 }

@@ -10,26 +10,34 @@ namespace PEMS.Application.Delegations.Commands;
 /// </summary>
 public interface IVisitRequestFormCommand
 {
-    string RegisterFullName { get; }
-    string RegisterNationality { get; }
-    string RegisterOrganization { get; }
-    string RegisterJobTitle { get; }
-    string RegisterPhone { get; }
-    string RegisterEmail { get; }
+    string RegistrantFullName { get; }
+    string RegistrantNationality { get; }
+    string RegistrantOrganization { get; }
+    string RegistrantPosition { get; }
+    string RegistrantPhone { get; }
+    string RegistrantEmail { get; }
 
     string DelegationName { get; }
     string VisitScope { get; }
-    IList<VisitSlotDto> VisitSlots { get; }
+    string VisitType { get; }
+    string? VisitTypeOther { get; }
+    IList<VisitSlotDto> CampusVisits { get; }
     string Purpose { get; }
     string? WorkingContent { get; }
-
+    
+    int ExpectedGuestCount { get; }
     IList<VisitorDto> Visitors { get; }
-    IList<SupportTeamMemberDto> SupportTeam { get; }
+    IList<SupportTeamMemberDto> SupportMembers { get; }
 
-    ContactPointDto ContactPoint { get; }
+    ContactPointDto ContactPerson { get; }
     bool IsContactSelf { get; }
 
-    string Language { get; }
-    string? Vehicle { get; }
+    string WorkingLanguage { get; }
+    string? InterpreterNote { get; }
+    string TransportationType { get; }
+    string? TransportationDetail { get; }
+    string MediaConsentStatus { get; }
+    string? MediaConsentNote { get; }
+    ulong? PartnerId { get; }
     string? Notes { get; }
 }

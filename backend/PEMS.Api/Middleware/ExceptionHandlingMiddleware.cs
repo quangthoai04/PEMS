@@ -90,13 +90,25 @@ public sealed class ExceptionHandlingMiddleware
                 payload = new { success = false, errorCode = business.ErrorCode, message = business.Message, traceId };
                 break;
 
+            case BadHttpRequestException badRequest:
+                status = StatusCodes.Status400BadRequest;
+                payload = new { success = false, message = "Dữ liệu không hợp lệ: " + badRequest.Message, traceId };
+                _logger.LogInformation("BadHttpRequestException: {Message}", badRequest.Message);
+                break;
+
+
             default:
                 status = StatusCodes.Status500InternalServerError;
                 _logger.LogError(ex, "Unhandled exception processing {Path} (traceId {TraceId}).", context.Request.Path, traceId);
 
                 // Generic, safe message for everyone. Only Development adds raw details.
                 // NOTE: never leak ex.Message / stackTrace / SQL / secrets outside Development.
-                const string genericMessage = "Đã xảy ra lỗi hệ thống. Vui lòng thử lại sau.";
+                var genericMessage = "Đã xảy ra lỗi hệ thống. Vui lòng thử lại sau.";
+                if (_environment.IsDevelopment())
+                {
+                    genericMessage = $"Lỗi HT (Dev): {ex.Message}";
+                }
+
                 payload = _environment.IsDevelopment()
                     ? new
                     {

@@ -9,6 +9,6 @@ namespace PEMS.Application.Delegations.Commands.ResendVisitRequestOtp;
 /// frontend (it still holds the draft in sessionStorage).
 /// </summary>
 public sealed record ResendVisitRequestOtpCommand(
-    string RegisterEmail,
-    string RegisterFullName
+    string RegistrantEmail,
+    string RegistrantFullName
 ) : IRequest<MessageResponse>;

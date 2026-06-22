@@ -367,7 +367,7 @@ public sealed class ViewGuestDelegationListQueryHandler
             string? partnerName = r.PartnerId.HasValue && partnerNames.TryGetValue(r.PartnerId.Value, out var pn) ? pn : r.RegistrantOrganization;
             string? campusName = campusNames.TryGetValue(r.CampusId, out var cn) ? cn : null;
             string? hostName = r.CurrentHostUserId.HasValue && userNames.TryGetValue(r.CurrentHostUserId.Value, out var hn) ? hn : null;
-            string? visitorName = userNames.TryGetValue(r.VisitorUserId, out var vn) ? vn : null;
+            string? visitorName = r.VisitorUserId.HasValue && userNames.TryGetValue(r.VisitorUserId.Value, out var vn) ? vn : null;
             myParticipationRole.TryGetValue(r.VisitInstanceId, out var participantRole);
 
             return new VisitRequestManagementItemDto
@@ -556,7 +556,7 @@ public sealed class ViewGuestDelegationListQueryHandler
                 : null;
             ulong? hostUserId = single?.CurrentHostUserId;
             string? hostName = hostUserId.HasValue && userNames.TryGetValue(hostUserId.Value, out var hnm) ? hnm : null;
-            string? visitorName = userNames.TryGetValue(vr.VisitorUserId, out var vnm) ? vnm : null;
+            string? visitorName = vr.VisitorUserId.HasValue && userNames.TryGetValue(vr.VisitorUserId.Value, out var vnm) ? vnm : null;
             DateTime? minStart = count > 0 ? instances.Min(i => i.PlannedStartAt) : (DateTime?)null;
             DateTime? maxEnd = count > 0 ? instances.Max(i => i.PlannedEndAt) : (DateTime?)null;
 

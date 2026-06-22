@@ -39,14 +39,22 @@ export interface VisitRequestFormData {
   registerInfo: RegisterInfoData;
   delegationName: string;
   visitMode: 'single' | 'multiple';
+  visitType: string;
+  visitTypeOther?: string;
   visits: VisitSlot[];
   purpose: string;
   workingContent: string;
+  expectedGuestCount: number;
   visitors: VisitorEntry[];
   supportTeam: SupportTeamEntry[];
   contactPoint: ContactPointData;
-  language: 'english' | 'vietnamese';
-  vehicle: string;
+  workingLanguage: 'EN' | 'VI';
+  interpreterNote?: string;
+  transportationType: string;
+  transportationDetail?: string;
+  mediaConsentStatus: string;
+  mediaConsentNote?: string;
+  partnerId?: number | null;
   notes: string;
 }
 

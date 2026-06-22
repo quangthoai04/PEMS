@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace PEMS.Domain.Entities.Delegations;
@@ -12,6 +12,12 @@ public class VisitGuestMember
 
     [Column("visit_request_id")]
     public ulong VisitRequestId { get; set; }
+
+    [Column("member_type")]
+    public string MemberType { get; set; } = "GUEST";
+
+    [Column("display_order")]
+    public uint DisplayOrder { get; set; }
 
     [Column("full_name")]
     public string FullName { get; set; } = null!;

@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace PEMS.Domain.Entities.Users;
@@ -25,11 +25,6 @@ public class AuditLog
     [Column("entity_id")]
     public ulong? EntityId { get; set; }
 
-    [Column("old_values_json")]
-    public string? OldValuesJson { get; set; }
-
-    [Column("new_values_json")]
-    public string? NewValuesJson { get; set; }
 
     [Column("ip_address")]
     public string? IpAddress { get; set; }
@@ -44,4 +39,5 @@ public class AuditLog
     public DateTime CreatedAt { get; set; }
 
     public virtual User? ActorUser { get; set; }
+    public virtual ICollection<AuditLogChange> Changes { get; set; } = new List<AuditLogChange>();
 }

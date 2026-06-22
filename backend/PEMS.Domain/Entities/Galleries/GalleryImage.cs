@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace PEMS.Domain.Entities.Galleries;
@@ -15,6 +15,12 @@ public class GalleryImage
 
     [Column("file_id")]
     public ulong FileId { get; set; }
+
+    [Column("media_type")]
+    public string MediaType { get; set; } = "IMAGE";
+
+    [Column("thumbnail_file_id")]
+    public ulong? ThumbnailFileId { get; set; }
 
     [Column("caption")]
     public string? Caption { get; set; }

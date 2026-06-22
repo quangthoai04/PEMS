@@ -264,6 +264,46 @@ export const VisitInfoSection: React.FC<Props> = ({ form, visitFields, showError
               )}
             </div>
 
+            {/* Visit Type */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+              <FormField
+                label="Loại hình thăm/làm việc"
+                required
+                error={e.visitType?.message}
+                isValid={touchedFields.visitType && !e.visitType}
+              >
+                <div className="relative">
+                  <select
+                    {...register('visitType')}
+                    className="w-full px-4 py-2.5 pr-9 rounded-xl border border-gray-300 focus:border-[#f37021] focus:ring-1 focus:ring-[#f37021] outline-none bg-white text-sm font-medium text-gray-900 shadow-sm appearance-none"
+                  >
+                    <option value="CAMPUS_TOUR">Campus Tour</option>
+                    <option value="MEETING">Họp trao đổi</option>
+                    <option value="WORKSHOP">Workshop</option>
+                    <option value="SIGNING_CEREMONY">Lễ ký kết</option>
+                    <option value="EXCHANGE">Giao lưu</option>
+                    <option value="OTHER">Khác</option>
+                  </select>
+                  <ChevronDown className="w-4 h-4 text-gray-500 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                </div>
+              </FormField>
+
+              {watch('visitType') === 'OTHER' && (
+                <FormField
+                  label="Chi tiết loại hình tham quan"
+                  required
+                  error={e.visitTypeOther?.message}
+                  isValid={touchedFields.visitTypeOther && !e.visitTypeOther}
+                >
+                  <input
+                    {...register('visitTypeOther')}
+                    placeholder="VD: Tham quan lab..."
+                    className={inputCls(!!e.visitTypeOther, touchedFields.visitTypeOther && !e.visitTypeOther)}
+                  />
+                </FormField>
+              )}
+            </div>
+
             {/* Purpose */}
             <FormField
               label="Mục đích thăm FPTU"
@@ -301,6 +341,22 @@ export const VisitInfoSection: React.FC<Props> = ({ form, visitFields, showError
                     ? 'border-red-400 focus:border-red-500 focus:ring-1 focus:ring-red-400'
                     : 'border-gray-300 focus:border-[#f37021] focus:ring-1 focus:ring-[#f37021]',
                 ].join(' ')}
+              />
+            </FormField>
+
+            {/* Expected Guest Count */}
+            <FormField
+              label="Số lượng khách dự kiến"
+              required
+              error={e.expectedGuestCount?.message}
+              isValid={touchedFields.expectedGuestCount && !e.expectedGuestCount}
+              subtitle="Nhập tổng số khách dự kiến. Có thể lớn hơn số người đã nhập ở danh sách."
+            >
+              <input
+                type="number"
+                min="1"
+                {...register('expectedGuestCount', { valueAsNumber: true })}
+                className={inputCls(!!e.expectedGuestCount, touchedFields.expectedGuestCount && !e.expectedGuestCount)}
               />
             </FormField>
           </div>

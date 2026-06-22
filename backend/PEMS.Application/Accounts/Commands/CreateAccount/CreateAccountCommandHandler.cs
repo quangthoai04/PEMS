@@ -98,14 +98,21 @@ public sealed class CreateAccountCommandHandler : IRequestHandler<CreateAccountC
             Action = "CREATE_ACCOUNT",
             EntityType = "User",
             EntityId = user.UserId,
-            NewValuesJson = JsonSerializer.Serialize(new
+            Changes = new List<AuditLogChange>
             {
-                email,
-                roleCode = shape.RoleCode,
-                subRole = shape.SubRole,
-                campusId = shape.PrimaryCampusId,
-                departmentId = shape.DepartmentId,
-            }),
+                new AuditLogChange
+                {
+                    FieldName = "Account",
+                    NewValueText = JsonSerializer.Serialize(new
+                    {
+                        email,
+                        roleCode = shape.RoleCode,
+                        subRole = shape.SubRole,
+                        campusId = shape.PrimaryCampusId,
+                        departmentId = shape.DepartmentId,
+                    })
+                }
+            },
             CreatedAt = now,
         });
 

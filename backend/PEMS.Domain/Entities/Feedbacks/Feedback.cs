@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace PEMS.Domain.Entities.Feedbacks;
@@ -48,4 +48,6 @@ public class Feedback
 
     [Column("submitted_at")]
     public DateTime SubmittedAt { get; set; }
+
+    public virtual ICollection<FeedbackRatingItem> RatingItems { get; set; } = new List<FeedbackRatingItem>();
 }

@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace PEMS.Domain.Entities.Emails;
@@ -19,11 +19,26 @@ public class EmailTemplate
     [Column("purpose")]
     public string? Purpose { get; set; }
 
-    [Column("translations_json")]
-    public string? TranslationsJson { get; set; }
+    [Column("campus_id")]
+    public ulong? CampusId { get; set; }
 
-    [Column("variables_json")]
-    public string? VariablesJson { get; set; }
+    [Column("description")]
+    public string? Description { get; set; }
+
+    [Column("subject_vi")]
+    public string? SubjectVi { get; set; }
+
+    [Column("body_vi")]
+    public string? BodyVi { get; set; }
+
+    [Column("subject_en")]
+    public string? SubjectEn { get; set; }
+
+    [Column("body_en")]
+    public string? BodyEn { get; set; }
+
+    [Column("variables_text")]
+    public string? VariablesText { get; set; }
 
     [Column("status")]
     public string Status { get; set; } = "ACTIVE";

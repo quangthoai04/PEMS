@@ -107,7 +107,7 @@ export const ContactSection: React.FC<Props> = ({
       <div>
         <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
           <label className="block text-base font-bold text-gray-900">
-            Danh sách team hỗ trợ khách <span className="text-red-500">*</span>
+            Danh sách team hỗ trợ khách
           </label>
           <label className="flex items-center gap-2.5 cursor-pointer text-sm text-[#004c91] font-bold select-none bg-blue-50/50 px-3 py-1.5 rounded-lg border border-blue-100 hover:bg-blue-50 transition-colors">
             <input
@@ -193,9 +193,8 @@ export const ContactSection: React.FC<Props> = ({
                       <td className="p-2 border-l border-gray-100 text-center">
                         <button
                           type="button"
-                          disabled={supportTeamFields.fields.length === 1}
                           onClick={() => supportTeamFields.remove(i)}
-                          className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-30"
+                          className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>

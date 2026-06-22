@@ -36,7 +36,6 @@ import { HoVisitProcessDetail } from './pages/dashboard/visit/HoVisitProcessDeta
 import { VisitRequestDetail } from './pages/dashboard/visit/VisitRequestDetail';
 import { DocumentManagement } from './pages/dashboard/documents/DocumentManagement';
 import { GalleryManagement } from './pages/dashboard/gallery/GalleryManagement';
-import { LocationManagement } from './pages/dashboard/gallery/LocationManagement';
 import { MinuteManagement } from './pages/dashboard/minutes/MinuteManagement';
 import { ReportManagement } from './pages/dashboard/reports/ReportManagement';
 import { FeedbackManagement } from './pages/dashboard/feedback/FeedbackManagement';
@@ -160,7 +159,6 @@ export default function App() {
             <Route path="visit/process/:id/request/:type" element={<VisitRequestDetail />} />
             <Route path="documents" element={<DocumentManagement />} />
             <Route path="gallery" element={<GalleryManagement />} />
-            <Route path="gallery/locations" element={<LocationManagement />} />
             <Route path="minutes" element={<MinuteManagement />} />
             <Route path="reports" element={<ProtectedRoute anyPermissions={[PERMISSIONS.VIEW_DASHBOARD_STATISTICS, PERMISSIONS.EXPORT_STATISTICS_REPORT]}><ReportManagement /></ProtectedRoute>} />
             <Route path="feedback" element={<FeedbackManagement />} />

@@ -43,8 +43,7 @@ public sealed class LoginviaFeidCommandHandler : IRequestHandler<LoginviaFeidCom
         // Provider gate — FEID must be explicitly enabled.
         if (!_options.AllowFeid)
         {
-            await WriteFailureAsync(portal, LoginLogStatuses.Blocked, "feid_disabled",
-                SecurityEventTypes.LoginBlocked, SecuritySeverities.Low, request, cancellationToken);
+            await WriteFailureAsync(portal, LoginLogStatuses.Blocked, "feid_disabled", request, cancellationToken);
             throw new AuthBusinessException(
                 AuthErrorCodes.FeidDisabled, "FEID sign-in is currently disabled.", 403);
         }
@@ -65,21 +64,20 @@ public sealed class LoginviaFeidCommandHandler : IRequestHandler<LoginviaFeidCom
         }
         catch (AuthBusinessException ex)
         {
-            await WriteFailureAsync(portal, LoginLogStatuses.Failed, ex.ErrorCode.ToLowerInvariant(),
-                SecurityEventTypes.LoginFailed, SecuritySeverities.Low, request, cancellationToken);
+            await WriteFailureAsync(portal, LoginLogStatuses.Failed, ex.ErrorCode.ToLowerInvariant(), request, cancellationToken);
             throw;
         }
     }
 
     private async Task WriteFailureAsync(
-        string portal, string logStatus, string reason, string eventType, string severity,
+        string portal, string logStatus, string reason,
         LoginviaFeidCommand request, CancellationToken cancellationToken)
     {
         // Email is unknown because no verified identity was obtained.
         // Awaited sequentially: both audit writes share the same scoped DbContext.
         await _audit.WriteLoginLogAsync(null, "unknown", portal, request.SelectedCampusId,
             ProviderTypes.FeId, logStatus, reason, request.IpAddress, request.UserAgent, null, cancellationToken);
-        await _audit.WriteSecurityEventAsync(null, null, eventType, severity,
-            request.IpAddress, request.UserAgent, $"{{\"provider\":\"FEID\",\"reason\":\"{reason}\"}}", cancellationToken);
+        await _audit.WriteSecurityEventAsync(null, null, SecurityEventTypes.SsoLogin, "FAILED", reason,
+            request.IpAddress, request.UserAgent, portal, request.SelectedCampusId, ProviderTypes.FeId, null, null, cancellationToken);
     }
 }

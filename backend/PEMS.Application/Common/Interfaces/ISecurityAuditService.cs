@@ -22,11 +22,16 @@ public interface ISecurityAuditService
 
     Task WriteSecurityEventAsync(
         ulong? userId,
-        string? email,
+        string? emailSnapshot,
         string eventType,
-        string severity,
-        string? ipAddress,
-        string? userAgent,
-        string? metadata = null,
+        string result,
+        string? failureReasonCode = null,
+        string? ipAddress = null,
+        string? userAgent = null,
+        string? loginPortal = null,
+        ulong? selectedCampusId = null,
+        string? providerType = null,
+        ulong? sessionId = null,
+        string? detailText = null,
         CancellationToken cancellationToken = default);
 }

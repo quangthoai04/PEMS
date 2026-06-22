@@ -109,9 +109,7 @@ public sealed class LoginviaCredentialsCommandHandler : IRequestHandler<Loginvia
             {
                 user.LockedUntil = now.AddMinutes(_lockoutMinutes);
                 await _db.SaveChangesAsync(cancellationToken);
-                await _audit.WriteSecurityEventAsync(user.UserId, email, SecurityEventTypes.AccountLocked,
-                    SecuritySeverities.High, request.IpAddress, request.UserAgent,
-                    $"{{\"failedAttempts\":{user.FailedLoginCount}}}", cancellationToken);
+
                 await FailAsync(user, email, portal, LoginLogStatuses.Blocked, "lockout_triggered",
                     request, AuthErrorCodes.AccountLocked,
                     "Your account is temporarily locked. Please try again later.", 403, cancellationToken);
@@ -174,8 +172,7 @@ public sealed class LoginviaCredentialsCommandHandler : IRequestHandler<Loginvia
         await _audit.WriteLoginLogAsync(user.UserId, email, portal, user.PrimaryCampusId,
             ProviderTypes.LocalPassword, LoginLogStatuses.Success, null,
             request.IpAddress, request.UserAgent, null, cancellationToken);
-        await _audit.WriteSecurityEventAsync(user.UserId, email, SecurityEventTypes.LoginSuccess,
-            SecuritySeverities.Low, request.IpAddress, request.UserAgent, null, cancellationToken);
+
 
         return response;
     }
@@ -189,14 +186,7 @@ public sealed class LoginviaCredentialsCommandHandler : IRequestHandler<Loginvia
         await _audit.WriteLoginLogAsync(user?.UserId, email, portal, user?.PrimaryCampusId,
             ProviderTypes.LocalPassword, logStatus, internalReason, request.IpAddress, request.UserAgent, null, cancellationToken);
 
-        if (logStatus == LoginLogStatuses.Blocked)
-            await _audit.WriteSecurityEventAsync(user?.UserId, email, SecurityEventTypes.LoginBlocked,
-                SecuritySeverities.Medium, request.IpAddress, request.UserAgent,
-                $"{{\"reason\":\"{internalReason}\"}}", cancellationToken);
-        else
-            await _audit.WriteSecurityEventAsync(user?.UserId, email, SecurityEventTypes.LoginFailed,
-                SecuritySeverities.Low, request.IpAddress, request.UserAgent,
-                $"{{\"reason\":\"{internalReason}\"}}", cancellationToken);
+
 
         throw new AuthBusinessException(errorCode, message, statusCode);
     }

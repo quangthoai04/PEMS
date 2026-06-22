@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace PEMS.Domain.Entities.Calendar;
@@ -46,11 +46,11 @@ public class CalendarEvent
     [Column("visibility")]
     public string Visibility { get; set; } = "PRIVATE";
 
-    [Column("attendees_json")]
-    public string? AttendeesJson { get; set; }
+    [Column("is_all_day")]
+    public bool IsAllDay { get; set; }
 
-    [Column("reminders_json")]
-    public string? RemindersJson { get; set; }
+    [Column("recurrence_rule")]
+    public string? RecurrenceRule { get; set; }
 
     [Column("status")]
     public string Status { get; set; } = "ACTIVE";
@@ -72,4 +72,7 @@ public class CalendarEvent
 
     [Column("deleted_by")]
     public ulong? DeletedBy { get; set; }
+
+    public virtual ICollection<CalendarEventAttendee> Attendees { get; set; } = new List<CalendarEventAttendee>();
+    public virtual ICollection<CalendarEventReminder> Reminders { get; set; } = new List<CalendarEventReminder>();
 }

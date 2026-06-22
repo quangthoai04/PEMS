@@ -249,8 +249,9 @@ public sealed class LoginviaSSOCommandHandler : IRequestHandler<LoginviaSSOComma
         await _audit.WriteLoginLogAsync(user.UserId, email, portal, user.PrimaryCampusId,
             ProviderTypes.GoogleSso, LoginLogStatuses.Success, null,
             request.IpAddress, request.UserAgent, null, cancellationToken);
-        await _audit.WriteSecurityEventAsync(user.UserId, email, SecurityEventTypes.LoginSuccess,
-            SecuritySeverities.Low, request.IpAddress, request.UserAgent, null, cancellationToken);
+        await _audit.WriteSecurityEventAsync(user.UserId, email, SecurityEventTypes.SsoLogin,
+            "SUCCESS", null, request.IpAddress, request.UserAgent, 
+            portal, request.SelectedCampusId, ProviderTypes.GoogleSso, null, null, cancellationToken);
 
         return response;
     }
@@ -264,9 +265,14 @@ public sealed class LoginviaSSOCommandHandler : IRequestHandler<LoginviaSSOComma
         await _audit.WriteLoginLogAsync(user?.UserId, email, portal, user?.PrimaryCampusId,
             ProviderTypes.GoogleSso, LoginLogStatuses.Failed, internalReason,
             request.IpAddress, request.UserAgent, null, cancellationToken);
-        await _audit.WriteSecurityEventAsync(user?.UserId, email, SecurityEventTypes.LoginFailed,
-            SecuritySeverities.Low, request.IpAddress, request.UserAgent,
-            $"{{\"reason\":\"{internalReason}\"}}", cancellationToken);
+        if (statusCode == 403)
+            await _audit.WriteSecurityEventAsync(user?.UserId, email, SecurityEventTypes.SecurityPolicyCheck,
+                "BLOCKED", internalReason, request.IpAddress, request.UserAgent,
+                portal, request.SelectedCampusId, ProviderTypes.GoogleSso, null, null, cancellationToken);
+        else
+            await _audit.WriteSecurityEventAsync(user?.UserId, email, SecurityEventTypes.SsoLogin,
+                "FAILED", internalReason, request.IpAddress, request.UserAgent,
+                portal, request.SelectedCampusId, ProviderTypes.GoogleSso, null, null, cancellationToken);
 
         throw new AuthBusinessException(errorCode, message, statusCode);
     }

@@ -15,11 +15,13 @@ public class VisitRequest
     public string RequestCode { get; set; } = null!;
 
     [Column("visitor_user_id")]
-    public ulong VisitorUserId { get; set; }
+    public ulong? VisitorUserId { get; set; }
 
     [Column("partner_id")]
     public ulong? PartnerId { get; set; }
 
+    [Column("created_source")]
+    public string CreatedSource { get; set; } = "VISITOR_SUBMITTED";
     [Column("registrant_full_name")]
     public string RegistrantFullName { get; set; } = null!;
 
@@ -44,6 +46,11 @@ public class VisitRequest
     [Column("visit_scope")]
     public string VisitScope { get; set; } = "SINGLE_CAMPUS";
 
+    [Column("visit_type")]
+    public string VisitType { get; set; } = "CAMPUS_TOUR";
+
+    [Column("visit_type_other")]
+    public string? VisitTypeOther { get; set; }
     [Column("purpose")]
     public string Purpose { get; set; } = null!;
 
@@ -53,11 +60,17 @@ public class VisitRequest
     [Column("expected_guest_count")]
     public int ExpectedGuestCount { get; set; } = 1;
 
-    [Column("support_team_json")]
-    public string? SupportTeamJson { get; set; }
+    [Column("contact_person_full_name")]
+    public string? ContactPersonFullName { get; set; }
 
-    [Column("contact_person_json")]
-    public string? ContactPersonJson { get; set; }
+    [Column("contact_person_organization")]
+    public string? ContactPersonOrganization { get; set; }
+
+    [Column("contact_person_phone")]
+    public string? ContactPersonPhone { get; set; }
+
+    [Column("contact_person_email")]
+    public string? ContactPersonEmail { get; set; }
 
     [Column("working_language")]
     public string WorkingLanguage { get; set; } = "EN";
@@ -65,8 +78,17 @@ public class VisitRequest
     [Column("interpreter_note")]
     public string? InterpreterNote { get; set; }
 
-    [Column("transportation_note")]
-    public string? TransportationNote { get; set; }
+    [Column("transportation_type")]
+    public string TransportationType { get; set; } = "UNKNOWN";
+
+    [Column("transportation_detail")]
+    public string? TransportationDetail { get; set; }
+
+    [Column("media_consent_status")]
+    public string MediaConsentStatus { get; set; } = "UNKNOWN";
+
+    [Column("media_consent_note")]
+    public string? MediaConsentNote { get; set; }
 
     [Column("note_to_fptu")]
     public string? NoteToFptu { get; set; }

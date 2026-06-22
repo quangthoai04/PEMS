@@ -24,12 +24,12 @@ public sealed class InitiateVisitRequestCommandHandler
     public async Task<InitiateVisitRequestResponse> Handle(
         InitiateVisitRequestCommand request, CancellationToken cancellationToken)
     {
-        var email = request.RegisterEmail.Trim().ToLowerInvariant();
+        var email = request.RegistrantEmail.Trim().ToLowerInvariant();
 
         // ── Fail fast: the contact email is what becomes the VISITOR account. If it already
         //    belongs to a non-VISITOR (or inactive VISITOR) account, reject BEFORE sending an
         //    OTP so the registrant can fix the contact email up front. ──
-        var contactEmail = request.IsContactSelf ? email : request.ContactPoint.Email;
+        var contactEmail = request.IsContactSelf ? email : request.ContactPerson.Email;
         await _userProvisionService.ValidateContactEmailCanBeUsedForVisitorAsync(
             contactEmail, cancellationToken);
 
@@ -45,7 +45,7 @@ public sealed class InitiateVisitRequestCommandHandler
 
         await _emailService.SendVisitRequestOtpAsync(
             email,
-            request.RegisterFullName,
+            request.RegistrantFullName,
             rawCode,
             cancellationToken);
 

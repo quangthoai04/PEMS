@@ -22,7 +22,7 @@ public sealed class ResendVisitRequestOtpCommandHandler
     public async Task<MessageResponse> Handle(
         ResendVisitRequestOtpCommand request, CancellationToken cancellationToken)
     {
-        var email = request.RegisterEmail.Trim().ToLowerInvariant();
+        var email = request.RegistrantEmail.Trim().ToLowerInvariant();
 
         // Issue a fresh OTP for the registrant email (old code, if any, is superseded).
         var rawCode = await _otpService.CreateForEmailAsync(
@@ -34,7 +34,7 @@ public sealed class ResendVisitRequestOtpCommandHandler
 
         await _emailService.SendVisitRequestOtpAsync(
             email,
-            request.RegisterFullName,
+            request.RegistrantFullName,
             rawCode,
             cancellationToken);
 

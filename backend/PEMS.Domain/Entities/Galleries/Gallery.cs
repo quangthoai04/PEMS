@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace PEMS.Domain.Entities.Galleries;
@@ -13,6 +13,12 @@ public class Gallery
     [Column("campus_id")]
     public ulong? CampusId { get; set; }
 
+    [Column("area_name")]
+    public string AreaName { get; set; } = null!;
+
+    [Column("specific_location_name")]
+    public string SpecificLocationName { get; set; } = null!;
+
     [Column("visit_instance_id")]
     public ulong? VisitInstanceId { get; set; }
 
@@ -21,6 +27,15 @@ public class Gallery
 
     [Column("description")]
     public string? Description { get; set; }
+
+    [Column("location_description")]
+    public string? LocationDescription { get; set; }
+
+    [Column("hero_file_id")]
+    public ulong? HeroFileId { get; set; }
+
+    [Column("virtual_tour_url")]
+    public string? VirtualTourUrl { get; set; }
 
     [Column("status")]
     public string Status { get; set; } = "ACTIVE";

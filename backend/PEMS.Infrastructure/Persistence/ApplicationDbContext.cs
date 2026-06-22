@@ -42,6 +42,7 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     public DbSet<LoginLog> LoginLogs { get; set; }
     public DbSet<SecurityEvent> SecurityEvents { get; set; }
     public DbSet<AuditLog> AuditLogs { get; set; }
+    public DbSet<AuditLogChange> AuditLogChanges { get; set; }
 
     // ── Partners ──────────────────────────────────────────────────────────
     public DbSet<Partner> Partners { get; set; }
@@ -64,7 +65,9 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     // ── Minutes + Feedback ────────────────────────────────────────────────
     public DbSet<Minute> Minutes { get; set; }
     public DbSet<MinuteActionItem> MinuteActionItems { get; set; }
+    public DbSet<MinuteParticipant> MinuteParticipants { get; set; }
     public DbSet<Feedback> Feedbacks { get; set; }
+    public DbSet<FeedbackRatingItem> FeedbackRatingItems { get; set; }
 
     // ── News ──────────────────────────────────────────────────────────────
     public DbSet<PEMS.Domain.Entities.News.News> News { get; set; }
@@ -84,14 +87,19 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     // ── Email + Notification ──────────────────────────────────────────────
     public DbSet<EmailTemplate> EmailTemplates { get; set; }
     public DbSet<SentEmail> SentEmails { get; set; }
+    public DbSet<SentEmailRecipient> SentEmailRecipients { get; set; }
     public DbSet<Notification> Notifications { get; set; }
 
     // ── Calendar + Agenda Template ────────────────────────────────────────
     public DbSet<CalendarEvent> CalendarEvents { get; set; }
+    public DbSet<CalendarEventAttendee> CalendarEventAttendees { get; set; }
+    public DbSet<CalendarEventReminder> CalendarEventReminders { get; set; }
     public DbSet<AgendaTemplate> AgendaTemplates { get; set; }
+    public DbSet<AgendaTemplateItem> AgendaTemplateItems { get; set; }
 
     // ── API Integrations ──────────────────────────────────────────────────
     public DbSet<ApiConfiguration> ApiConfigurations { get; set; }
+    public DbSet<ApiConfigurationHeader> ApiConfigurationHeaders { get; set; }
     public DbSet<ApiUsageQuota> ApiUsageQuotas { get; set; }
     public DbSet<ApiRequestLog> ApiRequestLogs { get; set; }
 
@@ -428,20 +436,54 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
             .HasForeignKey(rl => rl.RequestedBy).OnDelete(DeleteBehavior.SetNull);
 
         // ── JSON columns ──────────────────────────────────────────────────
-        modelBuilder.Entity<EmailTemplate>().Property(x => x.TranslationsJson).HasColumnType("json");
-        modelBuilder.Entity<SentEmail>().Property(x => x.RecipientsJson).HasColumnType("json");
-        modelBuilder.Entity<CalendarEvent>().Property(x => x.AttendeesJson).HasColumnType("json");
-        modelBuilder.Entity<CalendarEvent>().Property(x => x.RemindersJson).HasColumnType("json");
-        modelBuilder.Entity<ApiConfiguration>().Property(x => x.CredentialsJson).HasColumnType("json");
-        modelBuilder.Entity<ApiConfiguration>().Property(x => x.HeadersJson).HasColumnType("json");
-        modelBuilder.Entity<ApiConfiguration>().Property(x => x.BodyTemplateJson).HasColumnType("json");
-        modelBuilder.Entity<ApiConfiguration>().Property(x => x.SettingsJson).HasColumnType("json");
-        modelBuilder.Entity<AgendaTemplate>().Property(x => x.ItemsJson).HasColumnType("json");
+        // (Removed in v8.4 patch)
+
 
         // ── Remaining child relationships ─────────────────────────────────
         modelBuilder.Entity<MinuteActionItem>()
             .HasOne(a => a.Minute).WithMany(m => m.ActionItems)
             .HasForeignKey(a => a.MinutesId).OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<MinuteParticipant>()
+            .HasOne(a => a.Minute).WithMany(m => m.Participants)
+            .HasForeignKey(a => a.MinutesId).OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<MinuteParticipant>()
+            .HasOne(a => a.User).WithMany()
+            .HasForeignKey(a => a.UserId).OnDelete(DeleteBehavior.SetNull);
+        modelBuilder.Entity<MinuteParticipant>()
+            .HasOne(a => a.GuestMember).WithMany()
+            .HasForeignKey(a => a.GuestMemberId).OnDelete(DeleteBehavior.SetNull);
+
+        modelBuilder.Entity<FeedbackRatingItem>()
+            .HasOne(a => a.Feedback).WithMany(f => f.RatingItems)
+            .HasForeignKey(a => a.FeedbackId).OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<SentEmailRecipient>()
+            .HasOne(a => a.SentEmail).WithMany(e => e.Recipients)
+            .HasForeignKey(a => a.SentEmailId).OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<CalendarEventAttendee>()
+            .HasOne(a => a.CalendarEvent).WithMany(e => e.Attendees)
+            .HasForeignKey(a => a.CalendarEventId).OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<CalendarEventAttendee>()
+            .HasOne(a => a.User).WithMany()
+            .HasForeignKey(a => a.UserId).OnDelete(DeleteBehavior.SetNull);
+
+        modelBuilder.Entity<CalendarEventReminder>()
+            .HasOne(a => a.CalendarEvent).WithMany(e => e.Reminders)
+            .HasForeignKey(a => a.CalendarEventId).OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<ApiConfigurationHeader>()
+            .HasOne(a => a.ApiConfiguration).WithMany(c => c.Headers)
+            .HasForeignKey(a => a.ApiConfigId).OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<AgendaTemplateItem>()
+            .HasOne(a => a.AgendaTemplate).WithMany(t => t.Items)
+            .HasForeignKey(a => a.AgendaTemplateId).OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<AuditLogChange>()
+            .HasOne(a => a.AuditLog).WithMany(l => l.Changes)
+            .HasForeignKey(a => a.AuditLogId).OnDelete(DeleteBehavior.Cascade);
 
         modelBuilder.Entity<NewsContentSection>()
             .HasOne(s => s.News).WithMany(n => n.Sections)

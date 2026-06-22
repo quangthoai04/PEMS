@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace PEMS.Domain.Entities.Faqs;
@@ -16,9 +16,11 @@ public class Faq
     [Column("answer")]
     public string Answer { get; set; } = null!;
 
-    [Column("category")]
-    public string? Category { get; set; }
+    [Column("faq_type")]
+    public string FaqType { get; set; } = "OTHER";
 
+    [Column("language_code")]
+    public string LanguageCode { get; set; } = "vi";
     [Column("display_order")]
     public int DisplayOrder { get; set; }
 
