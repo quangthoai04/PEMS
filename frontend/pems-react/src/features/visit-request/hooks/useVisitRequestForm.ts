@@ -38,7 +38,7 @@ export const DEFAULT_VISIT_REQUEST_VALUES: VisitRequestSchema = {
   transportationDetail: '',
   mediaConsentStatus: 'UNKNOWN',
   mediaConsentNote: '',
-  partnerId: null,
+  partnerId: undefined,
   notes: '',
   timeOverlapConfirmed: false,
 };
@@ -81,7 +81,7 @@ function getApiErrorCode(error: unknown): string | null {
 const CONTACT_EMAIL_CONFLICT = 'CONTACT_EMAIL_CANNOT_BE_USED_FOR_VISITOR_ACCOUNT';
 const VISITOR_ACCOUNT_INACTIVE = 'VISITOR_ACCOUNT_INACTIVE';
 
-import { saveVisitRequestDraft } from '../utils/visitRequestDraftStorage';
+import { saveVisitRequestDraft, loadVisitRequestDraft, clearVisitRequestDraft } from '../utils/visitRequestDraftStorage';
 
 function debounce<T extends (...args: any[]) => void>(fn: T, delay = 700) {
   let timer: ReturnType<typeof setTimeout> | null = null;
@@ -114,6 +114,24 @@ export const useVisitRequestForm = (onSuccess: (result: VerifyResponse) => void)
     reValidateMode: 'onChange',
     defaultValues: DEFAULT_VISIT_REQUEST_VALUES,
   });
+
+  useEffect(() => {
+    const draft = loadVisitRequestDraft();
+    if (draft?.data) {
+      isRestoringDraftRef.current = true;
+      form.reset({
+        ...DEFAULT_VISIT_REQUEST_VALUES,
+        ...draft.data,
+      });
+      setTimeout(() => {
+        isRestoringDraftRef.current = false;
+        setDraftHydrated(true);
+      }, 100);
+    } else {
+      setDraftHydrated(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (!draftHydrated) return;
@@ -204,6 +222,7 @@ export const useVisitRequestForm = (onSuccess: (result: VerifyResponse) => void)
       // SQL v8.3: resubmit the full form (kept in the form state) together with the OTP.
       const result = await visitRequestApi.verify(form.getValues(), otpCode);
       setSessionToken(null);
+      clearVisitRequestDraft();
       onSuccess(result);
     } catch (err: any) {
       const code = getApiErrorCode(err);

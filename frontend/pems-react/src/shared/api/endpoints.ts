@@ -26,7 +26,9 @@ export const API_ENDPOINTS = {
     detail: (id: string | number) => `/partners/${id}`,
     create: '/partners',
     update: (id: string | number) => `/partners/${id}`,
-    search: '/partners/search',
+  },
+  publicPartners: {
+    search: '/public/partners/search',
   },
   delegations: {
     list: '/delegations',

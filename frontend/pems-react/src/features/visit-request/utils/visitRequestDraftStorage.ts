@@ -1,22 +1,52 @@
 import type { VisitRequestSchema } from '../schema/visitRequest.schema';
 
-const DRAFT_KEY = 'pems.uc17.visitRequestDraft.v1';
+const VISIT_FORM_DRAFT_KEY = 'pems_public_visit_registration_draft';
 
 export type VisitRequestDraft = {
-  savedAt: string;
+  version: 1;
+  savedAt: number;
+  expiresAt: number;
   data: Partial<VisitRequestSchema>;
 };
 
-export function saveVisitRequestDraft(data: Partial<VisitRequestSchema>) {
+export function hasAnyUserInput(values: Partial<VisitRequestSchema> | undefined | null): boolean {
+  if (!values) return false;
+  const reg = values.registerInfo;
+  const cp = values.contactPoint;
+
+  return Boolean(
+    reg?.fullName?.trim() ||
+    reg?.organization?.trim() ||
+    reg?.jobTitle?.trim() ||
+    reg?.phone?.trim() ||
+    reg?.email?.trim() ||
+    reg?.nationality?.trim() ||
+    (values.partnerId !== undefined && values.partnerId !== null) ||
+    values.delegationName?.trim() ||
+    values.purpose?.trim() ||
+    values.workingContent?.trim() ||
+    values.visits?.some(x => x.startDatetime || x.endDatetime) ||
+    values.visitors?.some(x => x.fullName?.trim() || x.email?.trim() || x.organization?.trim()) ||
+    values.supportTeam?.some(x => x.fullName?.trim() || x.organization?.trim()) ||
+    cp?.fullName?.trim() || cp?.email?.trim() || cp?.phone?.trim() ||
+    values.notes?.trim()
+  );
+}
+
+export function saveVisitRequestDraft(data: Partial<VisitRequestSchema>, expiresInMs: number = 30 * 60 * 1000) {
+  if (!hasAnyUserInput(data)) return;
+
   try {
     const sanitizedData = sanitizeDraftData(data);
 
     const payload: VisitRequestDraft = {
-      savedAt: new Date().toISOString(),
+      version: 1,
+      savedAt: Date.now(),
+      expiresAt: Date.now() + expiresInMs,
       data: sanitizedData,
     };
 
-    sessionStorage.setItem(DRAFT_KEY, JSON.stringify(payload));
+    localStorage.setItem(VISIT_FORM_DRAFT_KEY, JSON.stringify(payload));
   } catch (error) {
     console.warn('Failed to save UC-17 visit request draft', error);
   }
@@ -24,27 +54,28 @@ export function saveVisitRequestDraft(data: Partial<VisitRequestSchema>) {
 
 export function loadVisitRequestDraft(): VisitRequestDraft | null {
   try {
-    const raw = sessionStorage.getItem(DRAFT_KEY);
+    const raw = localStorage.getItem(VISIT_FORM_DRAFT_KEY);
     if (!raw) return null;
 
     const parsed = JSON.parse(raw) as VisitRequestDraft;
 
-    if (!parsed?.data || !parsed?.savedAt) {
-      sessionStorage.removeItem(DRAFT_KEY);
+    if (!parsed?.data || !parsed?.expiresAt || Date.now() > parsed.expiresAt) {
+      localStorage.removeItem(VISIT_FORM_DRAFT_KEY);
       return null;
     }
 
     return parsed;
   } catch (error) {
     console.warn('Failed to load UC-17 visit request draft', error);
-    sessionStorage.removeItem(DRAFT_KEY);
+    localStorage.removeItem(VISIT_FORM_DRAFT_KEY);
     return null;
   }
 }
 
 export function clearVisitRequestDraft() {
   try {
-    sessionStorage.removeItem(DRAFT_KEY);
+    localStorage.removeItem(VISIT_FORM_DRAFT_KEY);
+    sessionStorage.removeItem('pems.uc17.visitRequestDraft.v1'); // clear legacy draft
   } catch (error) {
     console.warn('Failed to clear UC-17 visit request draft', error);
   }

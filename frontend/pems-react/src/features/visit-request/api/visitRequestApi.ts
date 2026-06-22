@@ -15,6 +15,16 @@ export interface VerifyResponse {
   message: string;
 }
 
+export interface PublicPartnerOptionDto {
+  partnerId: number;
+  name: string;
+  shortName: string | null;
+  country: string | null;
+  city: string | null;
+  partnerType: string;
+  displayName: string;
+}
+
 function toVietnamIso(value: string) {
   if (!value) return '';
   // datetime-local may return "2026-06-28T09:00" or "2026-06-28T09:00:00"
@@ -122,10 +132,10 @@ export const visitRequestApi = {
     return res;
   },
 
-  async searchOrganizations(query: string): Promise<{ id: string; name: string }[]> {
-    const { data } = await httpClient.get<{ id: string; name: string }[]>(
-      API_ENDPOINTS.partners.search,
-      { params: { q: query, limit: 10 } }
+  async searchOrganizations(query: string): Promise<PublicPartnerOptionDto[]> {
+    const { data } = await httpClient.get<PublicPartnerOptionDto[]>(
+      API_ENDPOINTS.publicPartners.search,
+      { params: { keyword: query, limit: 20 } }
     );
     return data;
   },

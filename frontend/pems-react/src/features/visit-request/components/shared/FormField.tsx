@@ -27,12 +27,12 @@ export const FormField: React.FC<FormFieldProps> = ({
   children,
   className = '',
 }) => (
-  <div className={className}>
-    <div className="mb-2">
-      <label className="block text-base font-bold text-gray-900">
+  <div className={`space-y-2 ${className}`}>
+    <div>
+      <label className="block text-sm font-bold text-slate-900">
         {label} {required && <span className="text-red-500">*</span>}
       </label>
-      {subtitle && <p className="text-xs text-gray-500 mt-0.5">{subtitle}</p>}
+      {subtitle && <p className="text-xs font-medium text-slate-500 mt-1">{subtitle}</p>}
     </div>
     <div className="relative">
       {children}
@@ -43,20 +43,17 @@ export const FormField: React.FC<FormFieldProps> = ({
       )}
     </div>
     {error && (
-      <p className="mt-1.5 text-xs text-red-600 font-medium flex items-center gap-1">
-        <span className="shrink-0">⚠</span>
+      <p className="text-xs font-semibold text-red-600">
         {error}
       </p>
     )}
   </div>
 );
 
-export const inputCls = (hasError?: boolean, hasValue?: boolean) =>
+export const inputCls = (hasError?: boolean, hasValue?: boolean, hasIcon: boolean = true) =>
   [
-    'w-full px-4 py-2.5 rounded-xl border outline-none transition-all bg-white text-sm font-medium text-gray-900 shadow-sm',
+    `flex h-12 w-full min-w-0 items-center rounded-xl border bg-white pl-4 ${hasIcon ? 'pr-10' : 'pr-4'} text-sm font-semibold text-slate-800 outline-none transition-all shadow-sm`,
     hasError
-      ? 'border-red-400 focus:border-red-500 focus:ring-1 focus:ring-red-400'
-      : hasValue
-        ? 'border-green-400 focus:border-[#f37021] focus:ring-1 focus:ring-[#f37021]'
-        : 'border-gray-300 focus:border-[#f37021] focus:ring-1 focus:ring-[#f37021]',
+      ? 'border-red-400 focus:border-red-500 focus:ring-2 focus:ring-red-500/10'
+      : 'border-slate-300 focus:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/10',
   ].join(' ');

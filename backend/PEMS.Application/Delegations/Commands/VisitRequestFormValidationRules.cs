@@ -23,7 +23,8 @@ public static class VisitRequestFormValidationRules
 
         v.RuleFor(x => x.RegistrantOrganization)
             .NotEmpty().WithMessage("Đơn vị công tác không được để trống.")
-            .MaximumLength(200);
+            .MaximumLength(200)
+            .When(x => !x.PartnerId.HasValue);
 
         v.RuleFor(x => x.RegistrantPosition)
             .MaximumLength(150);

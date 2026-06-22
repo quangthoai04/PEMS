@@ -11,7 +11,7 @@ import { OtpVerificationModal } from '../../features/visit-request/components/Ot
 import { findCampusTimeOverlaps } from '../../features/visit-request/schema/visitRequest.schema';
 import type { VisitRequestSchema } from '../../features/visit-request/schema/visitRequest.schema';
 import type { VerifyResponse } from '../../features/visit-request/api/visitRequestApi';
-import { loadVisitRequestDraft, clearVisitRequestDraft } from '../../features/visit-request/utils/visitRequestDraftStorage';
+import { loadVisitRequestDraft, clearVisitRequestDraft, saveVisitRequestDraft, hasAnyUserInput } from '../../features/visit-request/utils/visitRequestDraftStorage';
 
 const STEPS = [
   { num: 1, label: 'Thông tin đăng ký' },
@@ -33,6 +33,16 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
 
   const [pendingDraft, setPendingDraft] = useState<ReturnType<typeof loadVisitRequestDraft> | null>(null);
   const [showRestoreDraftModal, setShowRestoreDraftModal] = useState(false);
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+  const [showSaveDraftConfirm, setShowSaveDraftConfirm] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (toastMessage) {
+      const timer = setTimeout(() => setToastMessage(null), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [toastMessage]);
 
   const handleSuccess = (result: VerifyResponse) => {
     clearVisitRequestDraft();
@@ -134,6 +144,7 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
 
       isRestoringDraftRef.current = false;
     }
+    setCurrentStep(1);
     setShowRestoreDraftModal(false);
     setPendingDraft(null);
     setDraftHydrated(true);
@@ -141,27 +152,38 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
 
   const handleDiscardDraft = () => {
     clearVisitRequestDraft();
+    form.reset(DEFAULT_VISIT_REQUEST_VALUES);
+    setCurrentStep(1);
+    setStepAttempted({});
     setShowRestoreDraftModal(false);
     setPendingDraft(null);
     setDraftHydrated(true);
   };
 
-  const handleCancelForm = () => {
-    const hasDraft = !!loadVisitRequestDraft();
-
-    if (!hasDraft) {
+  const requestCloseForm = () => {
+    const isDirty = hasAnyUserInput(form.getValues());
+    if (!isDirty) {
       onClose();
       return;
     }
+    setShowCancelConfirm(true);
+  };
 
-    const confirmed = window.confirm(
-      "Bạn có chắc muốn hủy form đăng ký? Thông tin đã nhập sẽ bị xóa."
-    );
-
-    if (!confirmed) return;
-
+  const handleConfirmCancel = () => {
     clearVisitRequestDraft();
+    form.reset(DEFAULT_VISIT_REQUEST_VALUES);
+    setShowCancelConfirm(false);
     onClose();
+  };
+
+  const handleSaveDraft = () => {
+    const isDirty = hasAnyUserInput(form.getValues());
+    if (!isDirty) {
+      setToastMessage('Chưa có thông tin để lưu tạm.');
+      return;
+    }
+    saveVisitRequestDraft(form.getValues());
+    setShowSaveDraftConfirm(true);
   };
 
   useEffect(() => {
@@ -211,7 +233,7 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6"
-            onClick={handleCancelForm}
+            onClick={requestCloseForm}
           >
             <motion.div
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
@@ -269,7 +291,7 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
                   </p>
                 </div>
                 <button
-                  onClick={handleCancelForm}
+                  onClick={requestCloseForm}
                   className="absolute top-4 right-4 sm:top-5 sm:right-6 p-2 text-white/70 hover:text-white hover:bg-white/20 rounded-full transition-all z-20"
                 >
                   <X className="w-5 h-5 sm:w-6 sm:h-6" />
@@ -341,7 +363,7 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
                         transition={{ duration: 0.2 }}
                         className="space-y-12"
                       >
-                        <RegisterInfoSection form={form} />
+                        <RegisterInfoSection form={form} showErrors={!!stepAttempted[1]} />
                         <VisitInfoSection form={form} visitFields={visitFields} showErrors={!!stepAttempted[1]} />
                       </motion.div>
                     )}
@@ -385,19 +407,18 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
               </div>
 
               {/* ── Footer ── */}
-              <div className="flex-none py-3 px-5 sm:py-4 sm:px-6 bg-white border-t border-gray-100 flex items-center justify-between gap-3 rounded-b-2xl shadow-[0_-4px_20px_rgba(0,0,0,0.02)] z-20">
+              <div className="flex-none py-4 px-6 bg-white border-t border-gray-100 flex items-center justify-between gap-3 rounded-b-2xl shadow-[0_-4px_20px_rgba(0,0,0,0.02)] z-20">
                 {/* Left side */}
-                <div>
-                  {currentStep === 1 ? (
-                    <button
-                      type="button"
-                      onClick={handleCancelForm}
-                      disabled={isSubmitting}
-                      className="px-6 py-3 rounded-xl font-bold text-gray-600 bg-white border-2 border-gray-200 hover:bg-gray-50 hover:text-gray-900 transition-colors disabled:opacity-50"
-                    >
-                      Hủy
-                    </button>
-                  ) : (
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={requestCloseForm}
+                    disabled={isSubmitting}
+                    className="px-6 py-3 rounded-xl font-bold text-gray-600 bg-white border-2 border-gray-200 hover:bg-gray-50 hover:text-gray-900 transition-colors disabled:opacity-50"
+                  >
+                    Hủy
+                  </button>
+                  {currentStep > 1 && (
                     <button
                       type="button"
                       onClick={() => { setStepError(null); setCurrentStep((s) => s - 1); }}
@@ -408,6 +429,14 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
                       Quay lại
                     </button>
                   )}
+                  <button
+                    type="button"
+                    onClick={handleSaveDraft}
+                    disabled={isSubmitting}
+                    className="px-4 py-3 rounded-xl font-bold text-[#004c91] bg-blue-50 border-2 border-transparent hover:bg-blue-100 transition-colors disabled:opacity-50"
+                  >
+                    Lưu tạm 30p
+                  </button>
                 </div>
 
                 {/* Right side */}
@@ -557,7 +586,7 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
                   onClick={handleDiscardDraft}
                   className="px-4 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-bold"
                 >
-                  Không, nhập lại
+                  Không khôi phục
                 </button>
                 <button
                   type="button"
@@ -571,6 +600,104 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Cancel Confirm Modal */}
+      <AnimatePresence>
+        {showCancelConfirm && (
+          <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="w-full max-w-md overflow-hidden rounded-3xl bg-white shadow-2xl"
+            >
+              <div className="border-b border-slate-200 px-6 py-5">
+                <h3 className="text-lg font-extrabold text-slate-900">
+                  Hủy form đăng ký?
+                </h3>
+                <p className="mt-2 text-sm font-medium text-slate-600">
+                  Bạn có chắc muốn hủy form đăng ký? Thông tin đã nhập sẽ bị xóa.
+                </p>
+              </div>
+              <div className="flex items-center justify-end gap-3 px-6 py-4">
+                <button
+                  type="button"
+                  onClick={() => setShowCancelConfirm(false)}
+                  className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-bold rounded-xl transition-colors"
+                >
+                  Không
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmCancel}
+                  className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white text-sm font-bold rounded-xl transition-colors shadow-lg shadow-red-500/30"
+                >
+                  OK
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Save Draft Confirm Modal */}
+      <AnimatePresence>
+        {showSaveDraftConfirm && (
+          <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="w-full max-w-md overflow-hidden rounded-3xl bg-white shadow-2xl"
+            >
+              <div className="border-b border-slate-200 px-6 py-5">
+                <h3 className="text-lg font-extrabold text-slate-900 flex items-center gap-2">
+                  <CheckCircle2 className="w-6 h-6 text-green-500" />
+                  Lưu tạm thành công
+                </h3>
+                <p className="mt-2 text-sm font-medium text-slate-600">
+                  Đã lưu tạm form trong 30 phút. Bạn có muốn thoát form ngay bây giờ không?
+                </p>
+              </div>
+              <div className="flex items-center justify-end gap-3 px-6 py-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowSaveDraftConfirm(false);
+                    onClose();
+                  }}
+                  className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-bold rounded-xl transition-colors"
+                >
+                  Lưu và thoát form
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowSaveDraftConfirm(false)}
+                  className="px-4 py-2 bg-[#004c91] hover:bg-[#013565] text-white text-sm font-bold rounded-xl transition-colors shadow-lg shadow-blue-900/30"
+                >
+                  Lưu và viết tiếp
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Toast */}
+      <AnimatePresence>
+        {toastMessage && (
+          <motion.div
+            initial={{ opacity: 0, y: 50, x: '-50%' }}
+            animate={{ opacity: 1, y: 0, x: '-50%' }}
+            exit={{ opacity: 0, y: 50, x: '-50%' }}
+            className="fixed bottom-6 left-1/2 z-[200] bg-gray-800 text-white px-6 py-3 rounded-full shadow-2xl font-semibold text-sm flex items-center gap-2"
+          >
+            <AlertCircle className="w-5 h-5 text-amber-400" />
+            {toastMessage}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
     </>
   );
 }

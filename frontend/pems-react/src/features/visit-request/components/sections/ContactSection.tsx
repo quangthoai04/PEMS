@@ -6,7 +6,6 @@ import type { VisitRequestSchema } from '../../schema/visitRequest.schema';
 import { CountrySelect } from '../shared/CountrySelect';
 import { PhoneInput } from '../shared/PhoneInput';
 import { inputCls } from '../shared/FormField';
-import { OrganizationSelect } from '../shared/OrganizationSelect';
 import { validateSupportTeamExcel, isAllowedExcelFile } from '../ExcelUpload/excelValidator';
 import { downloadSupportTeamTemplate } from '../ExcelUpload/excelDownload';
 import type { SupportTeamExcelValidationResult } from '../../types/visitRequest.types';
@@ -339,20 +338,10 @@ export const ContactSection: React.FC<Props> = ({
                   )}
                 </td>
                 <td className="p-0 border-l border-gray-100">
-                  <Controller
-                    name="contactPoint.organization"
-                    control={control}
-                    render={({ field }) => (
-                      <div className="p-1">
-                        <OrganizationSelect
-                          value={field.value}
-                          onChange={field.onChange}
-                          onBlur={field.onBlur}
-                          hasError={!!contactErrors?.organization}
-                          placeholder="Nhập đơn vị..."
-                        />
-                      </div>
-                    )}
+                  <input
+                    {...register('contactPoint.organization')}
+                    placeholder="Nhập đơn vị..."
+                    className="w-full p-3 bg-transparent outline-none font-medium placeholder:text-gray-300 text-sm"
                   />
                   {contactErrors?.organization && (
                     <p className="px-3 pb-1 text-[10px] text-red-600">{contactErrors.organization.message}</p>

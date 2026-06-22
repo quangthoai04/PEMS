@@ -4,17 +4,22 @@ import type { VisitRequestSchema } from '../../schema/visitRequest.schema';
 import { FormField, inputCls } from '../shared/FormField';
 import { CountrySelect } from '../shared/CountrySelect';
 import { PhoneInput } from '../shared/PhoneInput';
-import { OrganizationSelect } from '../shared/OrganizationSelect';
-import { partnersData } from '../../../../pages/PartnersPage';
+import { PartnerAsyncSelect } from '../shared/PartnerAsyncSelect';
 
 interface Props {
   form: UseFormReturn<VisitRequestSchema>;
+  showErrors?: boolean;
 }
 
-export const RegisterInfoSection: React.FC<Props> = ({ form }) => {
-  const { register, control, formState: { errors, touchedFields } } = form;
+export const RegisterInfoSection: React.FC<Props> = ({ form, showErrors }) => {
+  const { register, control, watch, setValue, formState: { errors, touchedFields, isSubmitted } } = form;
   const e = errors.registerInfo;
   const t = touchedFields.registerInfo;
+  const selectedPartnerId = watch('partnerId');
+
+  const shouldShowError = (field: keyof NonNullable<typeof t>, specificError?: any) => {
+    return !!specificError && (t?.[field] || showErrors || isSubmitted);
+  };
 
   const isValid = (field: keyof NonNullable<typeof t>) =>
     t?.[field] && !e?.[field];
@@ -22,25 +27,33 @@ export const RegisterInfoSection: React.FC<Props> = ({ form }) => {
   return (
     <section>
       <SectionTitle index={1} title="THÔNG TIN NGƯỜI ĐĂNG KÝ" />
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
+      
+      <div className="rounded-3xl border border-slate-200 border-l-4 border-l-[#F37021] bg-white/95 p-6 shadow-sm">
+        <div className="mb-6 border-b border-slate-200 pb-4">
+          <h3 className="text-lg font-extrabold text-slate-900">
+            I. THÔNG TIN NGƯỜI ĐĂNG KÝ
+          </h3>
+        </div>
+
+        <div className="grid grid-cols-1 gap-x-10 gap-y-6 lg:grid-cols-2">
 
         <FormField
           label="Họ và tên"
           required
-          error={e?.fullName?.message}
+          error={shouldShowError('fullName', e?.fullName) ? e?.fullName?.message : undefined}
           isValid={isValid('fullName')}
         >
           <input
             {...register('registerInfo.fullName')}
             placeholder="Nguyễn Văn A"
-            className={inputCls(!!e?.fullName, isValid('fullName'))}
+            className={inputCls(shouldShowError('fullName', e?.fullName), isValid('fullName'))}
           />
         </FormField>
 
         <FormField
           label="Quốc tịch"
           required
-          error={e?.nationality?.message}
+          error={shouldShowError('nationality', e?.nationality) ? e?.nationality?.message : undefined}
           isValid={isValid('nationality')}
           showValidIcon={false}
         >
@@ -52,71 +65,77 @@ export const RegisterInfoSection: React.FC<Props> = ({ form }) => {
                 value={field.value}
                 onChange={field.onChange}
                 onBlur={field.onBlur}
-                hasError={!!e?.nationality}
+                hasError={shouldShowError('nationality', e?.nationality)}
               />
             )}
           />
         </FormField>
 
-        <FormField
-          label="Đối tác/Tổ chức đã có trong hệ thống"
-          error={e?.partnerId?.message as string | undefined}
-          isValid={t?.partnerId && !e?.partnerId}
-          subtitle="Nếu đơn vị của bạn đã là đối tác của FPTU, vui lòng chọn tại đây."
-        >
-          <div className="relative">
-            <select
-              {...register('partnerId', { setValueAs: v => v === "" ? null : Number(v) })}
-              className={inputCls(!!e?.partnerId, t?.partnerId && !e?.partnerId)}
+        <div className="lg:col-span-2">
+          <FormField
+            label="Đối tác/Tổ chức đã có trong hệ thống"
+            error={(form.formState.touchedFields.partnerId || showErrors || isSubmitted) ? form.formState.errors.partnerId?.message as string | undefined : undefined}
+            isValid={form.formState.touchedFields.partnerId && !form.formState.errors.partnerId}
+            subtitle="Nếu đơn vị của bạn đã là đối tác của FPTU, vui lòng chọn tại đây."
+            showValidIcon={false}
+          >
+            <Controller
+              name="partnerId"
+              control={control}
+              render={({ field }) => (
+                <PartnerAsyncSelect
+                  value={field.value ?? null}
+                  partnerName={watch('registerInfo.organization')}
+                  onChange={(val, name) => {
+                    field.onChange(val);
+                    if (val !== null) {
+                      setValue('registerInfo.organization', name, { shouldValidate: true, shouldDirty: true });
+                    } else {
+                      setValue('registerInfo.organization', '', { shouldValidate: true, shouldDirty: true });
+                    }
+                  }}
+                  onBlur={field.onBlur}
+                  hasError={!!form.formState.errors.partnerId && (!!form.formState.touchedFields.partnerId || !!showErrors || isSubmitted)}
+                />
+              )}
+            />
+          </FormField>
+        </div>
+
+        {selectedPartnerId === null && (
+          <div className="lg:col-span-2">
+            <FormField
+              label="Đơn vị công tác"
+              required
+              error={shouldShowError('organization', e?.organization) ? e?.organization?.message : undefined}
+              isValid={isValid('organization')}
             >
-              <option value="">-- Tổ chức mới / Chưa có trong hệ thống --</option>
-              {partnersData.map(partner => (
-                <option key={partner.id} value={partner.id}>
-                  {partner.name}
-                </option>
-              ))}
-            </select>
-          </div>
-        </FormField>
-
-        <FormField
-          label="Đơn vị công tác"
-          required
-          error={e?.organization?.message}
-          isValid={isValid('organization')}
-          showValidIcon={false}
-        >
-          <Controller
-            name="registerInfo.organization"
-            control={control}
-            render={({ field }) => (
-              <OrganizationSelect
-                value={field.value}
-                onChange={field.onChange}
-                onBlur={field.onBlur}
-                hasError={!!e?.organization}
+              <input
+                {...register('registerInfo.organization')}
+                placeholder="Nhập tên đơn vị công tác của bạn..."
+                className={inputCls(shouldShowError('organization', e?.organization), isValid('organization'))}
               />
-            )}
-          />
-        </FormField>
+            </FormField>
+          </div>
+        )}
 
         <FormField
           label="Chức danh, phòng ban"
           required
-          error={e?.jobTitle?.message}
+          error={shouldShowError('jobTitle', e?.jobTitle) ? e?.jobTitle?.message : undefined}
           isValid={isValid('jobTitle')}
         >
           <input
             {...register('registerInfo.jobTitle')}
             placeholder="Giám đốc - Phòng Hợp tác Quốc tế"
-            className={inputCls(!!e?.jobTitle, isValid('jobTitle'))}
+            className={inputCls(shouldShowError('jobTitle', e?.jobTitle), isValid('jobTitle'))}
           />
         </FormField>
 
         <FormField
           label="Số điện thoại"
           required
-          error={e?.phone?.message}
+          error={shouldShowError('phone', e?.phone) ? e?.phone?.message : undefined}
           isValid={isValid('phone')}
         >
           <Controller
@@ -127,7 +146,7 @@ export const RegisterInfoSection: React.FC<Props> = ({ form }) => {
                 value={field.value}
                 onChange={field.onChange}
                 onBlur={field.onBlur}
-                hasError={!!e?.phone}
+                hasError={shouldShowError('phone', e?.phone)}
               />
             )}
           />
@@ -136,7 +155,7 @@ export const RegisterInfoSection: React.FC<Props> = ({ form }) => {
         <FormField
           label="Email"
           required
-          error={e?.email?.message}
+          error={shouldShowError('email', e?.email) ? e?.email?.message : undefined}
           isValid={isValid('email')}
           subtitle="Email này chỉ dùng để nhận mã OTP xác thực việc gửi form. Tài khoản theo dõi yêu cầu sẽ được tạo theo email ở phần Thông tin đầu mối liên hệ."
         >
@@ -144,10 +163,11 @@ export const RegisterInfoSection: React.FC<Props> = ({ form }) => {
             {...register('registerInfo.email')}
             type="email"
             placeholder="example@domain.com"
-            className={inputCls(!!e?.email, isValid('email'))}
+            className={inputCls(shouldShowError('email', e?.email), isValid('email'))}
           />
         </FormField>
 
+        </div>
       </div>
     </section>
   );

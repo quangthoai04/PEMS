@@ -113,7 +113,7 @@ const visitSlotSchema = z
 export const visitRequestSchema = z.object({
   registerInfo: z.object({
     fullName: z.string().min(1, 'Họ tên không được để trống').max(100),
-    organization: z.string().min(1, 'Đơn vị công tác không được để trống'),
+    organization: z.string().optional().default(''),
     jobTitle: z.string().min(1, 'Chức danh/phòng ban không được để trống'),
     phone: phoneSchema,
     email: emailSchema,
@@ -145,6 +145,26 @@ export const visitRequestSchema = z.object({
   notes: z.string().optional().default(''),
   timeOverlapConfirmed: z.boolean().optional().default(false),
 }).superRefine((data, ctx) => {
+  if (data.partnerId === undefined) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['partnerId'],
+      message: 'Vui lòng chọn tổ chức có sẵn hoặc chọn "Tổ chức mới / Chưa có trong hệ thống"',
+    });
+  } else if (data.partnerId === null && (!data.registerInfo.organization || data.registerInfo.organization.trim().length === 0)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['registerInfo', 'organization'],
+      message: 'Đơn vị công tác không được để trống',
+    });
+  } else if (data.partnerId !== null && data.partnerId !== undefined && (!data.registerInfo.organization || data.registerInfo.organization.trim().length === 0)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['partnerId'],
+      message: 'Không thể xác định tên tổ chức đã chọn. Vui lòng chọn lại.',
+    });
+  }
+
   if (data.expectedGuestCount < data.visitors.length) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
