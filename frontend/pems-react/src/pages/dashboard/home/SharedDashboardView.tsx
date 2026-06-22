@@ -36,7 +36,7 @@ interface Event {
   title: string;
   date: string; // YYYY-MM-DD
   time: string;
-  category: 'Lịch đón khách' | 'Thư mời' | 'Đơn yêu cầu';
+  category: 'Lời mời tham gia' | 'Đơn yêu cầu mượn đồ';
   color: string; // css color classes
   hoverColor: string;
   location: string;
@@ -53,54 +53,18 @@ interface Event {
 
 const INITIAL_EVENTS: Event[] = [
   {
-    id: 'e1',
-    title: 'Đón tiếp Đại học Swinburne (Úc)',
-    date: '2026-08-03',
-    time: '09:00 - 11:30',
-    category: 'Lịch đón khách',
-    color: 'bg-blue-50 text-blue-700 border-blue-300 hover:bg-blue-100',
-    hoverColor: 'border-blue-500',
-    location: 'Phòng họp Alpha, Tòa nhà Delta',
-    host: 'Phòng Hợp tác Quốc tế (ICD)',
-    guests: 'Đoàn đại biểu Swinburne (4 thành viên)',
-    checklist: ['Chuẩn bị quà lưu niệm', 'Đặt trà bánh', 'Đặt xe rước từ sân bay'],
-    purpose: 'Thảo luận chương trình hợp tác liên kết cử nhân CNTT 2+2 & Học bổng trao đổi hè.',
-    vipLevel: 'VVIP',
-    contactPerson: 'Trần Thị Hồng Hạnh (P. HTQT - 0904.556.789)',
-    hotelInfo: 'Khách sạn Sheraton Hanoi (Tây Hồ)',
-    bannerText: 'FPT University Warmly Welcomes Swinburne University delegation',
-    carBooking: 'Xe Ford Transit 16 chỗ đón tại Sheraton Hanoi lúc 08:00.'
-  },
-  {
-    id: 'e2',
-    title: 'Họp xét duyệt ASEAN Scholarship',
-    date: '2026-08-06',
-    time: '14:00 - 16:30',
-    category: 'Thư mời',
-    color: 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100',
-    hoverColor: 'border-emerald-500',
-    location: 'Phòng họp 102, Tòa Gamma',
-    host: 'Ban Kiểm định học bổng FPTU',
-    guests: 'Cán bộ quản lý học bổng',
-    checklist: ['Tổng hợp hồ sơ ứng viên', 'In biên bản họp', 'Kiểm tra ngân sách'],
-    purpose: 'Xét tuyển và phê duyệt danh sách chính thức 15 ứng viên học bổng ASEAN học tại FPTU.',
-    vipLevel: 'Standard',
-    contactPerson: 'Nguyễn Văn Hùng (Ban Tuyển sinh - 0989.123.456)',
-    hotelInfo: 'Ký túc xá quốc tế Dom A'
-  },
-  {
     id: 'e-invitation-8',
     title: 'Thư mời tham gia sự kiện',
     date: '2026-08-08',
     time: '14:00 - 16:30',
-    category: 'Thư mời',
+    category: 'Lời mời tham gia',
     color: 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100',
     hoverColor: 'border-emerald-500',
     location: 'Hội trường sảnh tòa nhà Alpha',
     host: 'Nguyễn Văn A',
     guests: 'Đoàn đối tác Nhật Bản',
     checklist: [],
-    purpose: 'Trân trọng kính mời anh/chị tham gia tiếp đón và giao lưu cùng đoàn đối tác từ Nhật Bản. Sự kiện diễn ra tại hội trường sảnh tòa nhà Alpha, sau đó di chuyển tham quan.\n\nVui lòng chuẩn bị tài liệu liên quan để trao đổi hợp tác.',
+    purpose: 'Trân trọng kính mời anh/chị tham gia tiếp đón và giao lưu cùng đoàn đối tác từ Nhật Bản.\n\nVui lòng chuẩn bị tài liệu liên quan để trao đổi hợp tác.',
     vipLevel: 'Standard',
     contactPerson: 'Nguyễn Văn A'
   },
@@ -109,7 +73,7 @@ const INITIAL_EVENTS: Event[] = [
     title: 'Yêu cầu mượn xe điện cho đoàn khách Safuri',
     date: '2026-08-08',
     time: '08:00 - 17:30',
-    category: 'Đơn yêu cầu',
+    category: 'Đơn yêu cầu mượn đồ',
     color: 'bg-orange-50 text-orange-700 border-orange-300 hover:bg-orange-100',
     hoverColor: 'border-orange-500',
     location: 'Campus Hòa Lạc, Đại học FPT',
@@ -119,116 +83,7 @@ const INITIAL_EVENTS: Event[] = [
     purpose: 'Mượn xe điện phục vụ di chuyển đoàn khách Safuri tham quan doanh nghiệp và campus.',
     vipLevel: 'VIP',
     contactPerson: 'Trần Văn Tuyến (Điều hành xe - 0914.555.666)'
-  },
-  {
-    id: 'e3',
-    title: 'Ký kết MOU OJT với FPT Software',
-    date: '2026-08-12',
-    time: '10:00 - 12:00',
-    category: 'Đơn yêu cầu',
-    color: 'bg-orange-50 text-orange-700 border-orange-300 hover:bg-orange-100',
-    hoverColor: 'border-orange-500',
-    location: 'Hội trường Beta, Tòa Beta',
-    host: 'Phòng Quan hệ Doanh nghiệp',
-    guests: 'Đại diện Ban Nhân sự FPT Software',
-    checklist: ['In ấn hợp đồng ký kết', 'Thiết kế backdrop', 'Chuẩn bị khay ký kết'],
-    purpose: 'Ký kết thỏa thuận hợp tác tiếp nhận 300 sinh viên thực tập doanh nghiệp toàn cầu.',
-    vipLevel: 'VIP',
-    contactPerson: 'Lê Hoàng Nam (Phòng QHDN - 0912.888.999)',
-    bannerText: 'Lễ Ký Kết MOU Hợp Tác Thực Tập Quốc Tế Giữa FPT University & FPT Software',
-    carBooking: 'Xe Camry 4 chỗ đón GĐ Nhân sự lúc 09:15.'
-  },
-  {
-    id: 'e4',
-    title: 'Campus Tour Chuyên THPT FPT',
-    date: '2026-08-15',
-    time: '08:30 - 11:30',
-    category: 'Đơn yêu cầu',
-    color: 'bg-orange-50 text-orange-700 border-orange-300 hover:bg-orange-100',
-    hoverColor: 'border-orange-500',
-    location: 'Toàn cảnh Campus Hòa Lạc',
-    host: 'Đội đại sứ sinh viên (SAs)',
-    guests: '120 học sinh THPT Chuyên FPT',
-    checklist: ['Phân công hướng dẫn viên', 'Kiểm tra hệ thống âm thanh di động', 'Nước uống đóng chai'],
-    purpose: 'Đại sứ sinh viên hướng dẫn đón tiếp học sinh khám phá và trải nghiệm văn hóa đại học tại Hòa Lạc.',
-    vipLevel: 'Standard',
-    contactPerson: 'Hồ Hoàng Anh (Đội Trưởng SAs - 0933.456.789)',
-    carBooking: '3 xe 45 chỗ đưa đón học sinh khởi hành từ cơ sở Mỹ Đình lúc 07:30.'
-  },
-  {
-    id: 'e5',
-    title: 'Lễ Đón Sinh Viên Quốc Tế Fall 2026',
-    date: '2026-08-20',
-    time: '15:00 - 17:30',
-    category: 'Lịch đón khách',
-    color: 'bg-blue-50 text-blue-700 border-blue-300 hover:bg-blue-100',
-    hoverColor: 'border-blue-500',
-    location: 'Sảnh tòa nhà Alpha',
-    host: 'Trải nghiệm Sinh viên Quốc tế (IX)',
-    guests: '25 sinh viên trao đổi quốc tế',
-    checklist: ['Chuẩn bị thẻ sinh viên tạm', 'Tài liệu đón chào (Welcome Kit)', 'MC tiếng Anh'],
-    purpose: 'Chào mừng đoàn 25 sinh viên trao đổi quốc tế kỳ Fall 2026 hội nhập văn hóa Việt Nam.',
-    vipLevel: 'VIP',
-    contactPerson: 'Vũ Minh Anh (IX Coordinator - 0978.654.321)',
-    hotelInfo: 'Khu nhà ở quốc tế Dom G - FPTU',
-    bannerText: 'WELCOME TO FPT UNIVERSITY - FALL INTERNATIONAL STUDENTS 2026'
-  },
-  {
-    id: 'viet-new-year-eve',
-    title: 'Vietnamese New Year\'s Eve',
-    date: '2026-08-26',
-    time: '18:00 - 22:00',
-    category: 'Lịch đón khách',
-    color: 'bg-blue-50 text-blue-700 border-blue-300 hover:bg-blue-100 font-extrabold shadow-xs',
-    hoverColor: 'border-blue-500 ring-2 ring-blue-200',
-    location: 'Grand Hall, Alpha Campus, FPT University',
-    host: 'Office of International Affairs (OIA) & Staff Leaders',
-    guests: '15+ International Professors & 40 inbound exchange students',
-    checklist: [
-      'Traditional Year-end Buffet setup',
-      'Lion Dance performance booking',
-      'FPTU Souvenirs & Lucky Money distributions',
-      'Lighting & Cultural music playlist'
-    ],
-    purpose: 'Giao lưu Tất niên đậm bản sắc văn hóa Việt dành cho đội ngũ giáo sư & sinh viên nước ngoài.',
-    vipLevel: 'VVIP',
-    contactPerson: 'Nguyễn Hữu Trí (Director of OIA - 0905.111.222)',
-    bannerText: 'FPT UNIVERSITY LUNAR NEW YEAR EVE CELEBRATION FOR INTERNATIONALS',
-    carBooking: 'Xe đón đoàn cán bộ tại nội thành lúc 17:00.'
-  },
-  {
-    id: 'e7',
-    title: 'Global Career Day Prep Meet',
-    date: '2026-08-28',
-    time: '11:00 - 12:30',
-    category: 'Đơn yêu cầu',
-    color: 'bg-orange-50 text-orange-700 border-orange-300 hover:bg-orange-100',
-    hoverColor: 'border-orange-500',
-    location: 'Phòng họp sáng tạo, Thư viện',
-    host: 'Staff Leader Logistics Group',
-    guests: 'Đội văn phòng & Nhà thầu sự kiện',
-    checklist: ['Duyệt thiết kế sơ đồ gian hàng', 'Thống kê danh sách doanh nghiệp tham gia'],
-    purpose: 'Họp rà soát kỹ thuật cùng nhà thầu chuẩn bị mặt bằng lễ hội việc làm quy mô 2000 sinh viên.',
-    vipLevel: 'Standard',
-    contactPerson: 'Phạm Tuấn Anh (Ban Hậu cần - 0915.222.333)'
-  },
-  {
-    id: 'e8',
-    title: 'Phê duyệt Student Exchange Fall',
-    date: '2026-08-31',
-    time: '09:00 - 10:30',
-    category: 'Thư mời',
-    color: 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100',
-    hoverColor: 'border-emerald-500',
-    location: 'Phòng họp Điều hành HO',
-    host: 'Ban Đào tạo & Khảo thí FPTU',
-    guests: 'Hội đồng xét tuyển danh sách',
-    checklist: ['Danh sách điểm GPA', 'Chứng chỉ tiếng Anh đối chiếu'],
-    purpose: 'Hội nghị xét chuyển học thuật và duyệt tài trợ kinh phí sinh viên trao đổi quốc tế.',
-    vipLevel: 'Standard',
-    contactPerson: 'Hoàng Thủy Trúc (Ban Đào tạo - 0944.777.888)'
-  }
-];
+  }];
 
 export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent, isVisitor }: { user?: any, isDeptLeader?: boolean, isDeptStaff?: boolean, isStudent?: boolean, isVisitor?: boolean }) {
   const [events, setEvents] = useState<Event[]>(() => {
@@ -241,7 +96,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
           title: 'Thư mời: Họp giao ban Quản lý Khối',
           date: '2026-08-25',
           time: '14:00 - 15:30',
-          category: 'Thư mời',
+          category: 'Lời mời tham gia',
           color: 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100',
           hoverColor: 'border-emerald-500',
           location: 'Phòng họp Beta, Tòa nhà Delta',
@@ -257,7 +112,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
           title: 'Yêu cầu: Phê duyệt mua sắm thiết bị phòng họp',
           date: '2026-08-26',
           time: '10:00 - 11:00',
-          category: 'Đơn yêu cầu',
+          category: 'Đơn yêu cầu mượn đồ',
           color: 'bg-orange-50 text-orange-700 border-orange-300 hover:bg-orange-100',
           hoverColor: 'border-orange-500',
           location: 'Hệ thống eProcurement',
@@ -271,10 +126,10 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
       ];
     }
     if (isStudent) {
-      return baseEvents.filter(e => e.category !== 'Đơn yêu cầu');
+      return baseEvents.filter(e => e.category !== 'Đơn yêu cầu mượn đồ');
     }
     if (isVisitor) {
-      return baseEvents.filter(e => e.category !== 'Đơn yêu cầu' && e.category !== 'Thư mời');
+      return baseEvents.filter(e => e.category !== 'Đơn yêu cầu mượn đồ' && e.category !== 'Lời mời tham gia');
     }
     return baseEvents;
   });
@@ -401,7 +256,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
   // New Event Form State
   const [newTitle, setNewTitle] = useState('');
   const [newTime, setNewTime] = useState('09:00 - 11:00');
-  const [newCategory, setNewCategory] = useState<Event['category']>('Lịch đón khách');
+  const [newCategory, setNewCategory] = useState<Event['category']>('Lời mời tham gia');
   const [newLocation, setNewLocation] = useState('Phòng họp Alpha, Hòa Lạc');
   const [newHost, setNewHost] = useState('Office of International Affairs');
   const [newGuests, setNewGuests] = useState('International Delegates');
@@ -633,11 +488,11 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
 
     let colorClasses = 'bg-orange-50 text-orange-700 border-orange-300 hover:bg-orange-100';
     let hoverColor = 'border-orange-500';
-    if (newCategory === 'Lịch đón khách') {
+    if (newCategory === 'Lời mời tham gia') {
        colorClasses = 'bg-blue-50 text-blue-700 border-blue-300 hover:bg-blue-100';
        hoverColor = 'border-blue-500';
     }
-    if (newCategory === 'Thư mời') {
+    if (newCategory === 'Lời mời tham gia') {
        colorClasses = 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100';
        hoverColor = 'border-emerald-500';
     }
@@ -1272,7 +1127,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
               <div className="bg-white rounded-2xl border-2 border-slate-200 shadow-lg overflow-hidden relative transition-all duration-300 animate-fade-in-quick">
                 
                 {/* Decorative Festive top banner card header for Festive category */}
-                {activePopoverEvent.category === 'Lịch đón khách' ? (
+                {activePopoverEvent.category === 'Lời mời tham gia' ? (
                   <div className="bg-gradient-to-r from-blue-700 to-[#004c91] p-4 text-white relative">
                     <div className="absolute top-0 right-0 p-8 bg-[radial-gradient(#ffffff_1px,transparent_1px)] opacity-10 pointer-events-none" style={{ backgroundSize: '12px 12px' }}></div>
                     <div className="flex justify-between items-start">
@@ -1554,9 +1409,9 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                       >
                         <div className="flex justify-between items-center gap-1.5 mb-2 leading-none">
                           <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded ${
-                            ev.category === 'Lịch đón khách' 
+                            ev.category === 'Lời mời tham gia' 
                               ? 'bg-blue-100 text-blue-800' 
-                              : ev.category === 'Thư mời'
+                              : ev.category === 'Lời mời tham gia'
                                 ? 'bg-emerald-100 text-emerald-800'
                                 : 'bg-orange-100 text-orange-800'
                           }`}>
@@ -1652,8 +1507,8 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                         onChange={e => setNewCategory(e.target.value as Event['category'])}
                         className="w-full text-xs px-3 py-2.5 border border-slate-200 rounded-xl focus:border-[#f37021] outline-none cursor-pointer"
                       >
-                        {!isVisitor && <option value="Thư mời">Thư mời</option>}
-                        {!(isStudent || isVisitor) && <option value="Đơn yêu cầu">Đơn yêu cầu</option>}
+                        {!isVisitor && <option value="Lời mời tham gia">Thư mời</option>}
+                        {!(isStudent || isVisitor) && <option value="Đơn yêu cầu mượn đồ">Đơn yêu cầu</option>}
                       </select>
                     </div>
                   </div>
@@ -1738,21 +1593,21 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
           <div className="bg-white rounded-2xl max-w-5xl w-full border border-slate-200 shadow-2xl overflow-hidden animate-fade-in-quick flex flex-col my-8">
             
             {/* Modal Title Banner */}
-            <div className={`${activePopoverEvent.category === 'Đơn yêu cầu' && requestStatus === 'accepted' ? 'bg-[#f37021]' : 'bg-[#004c91]'} px-6 py-5 text-white flex justify-between items-center relative shadow-sm border-b border-white/10`}>
+            <div className={`${activePopoverEvent.category === 'Đơn yêu cầu mượn đồ' && requestStatus === 'accepted' ? 'bg-[#f37021]' : 'bg-[#004c91]'} px-6 py-5 text-white flex justify-between items-center relative shadow-sm border-b border-white/10`}>
               <div className="flex items-center gap-3">
                 <div className="p-2.5 rounded-xl bg-white/10 border border-white/20 flex items-center justify-center">
-                  {activePopoverEvent.category === 'Thư mời' || (activePopoverEvent.category === 'Đơn yêu cầu' && requestStatus === 'pending') ? <Info className="w-5 h-5 text-white" /> : <FileText className="w-5 h-5 text-white" />}
+                  {activePopoverEvent.category === 'Lời mời tham gia' || (activePopoverEvent.category === 'Đơn yêu cầu mượn đồ' && requestStatus === 'pending') ? <Info className="w-5 h-5 text-white" /> : <FileText className="w-5 h-5 text-white" />}
                 </div>
                 <div>
-                  <h3 className={`font-extrabold tracking-tight text-white leading-tight font-sans ${activePopoverEvent.category === 'Thư mời' || (activePopoverEvent.category === 'Đơn yêu cầu' && requestStatus === 'pending') ? 'text-xl md:text-3xl' : 'text-base md:text-lg'}`}>
-                    {activePopoverEvent.category === 'Thư mời' ? 'Chi tiết thư mời' : activePopoverEvent.category === 'Đơn yêu cầu' && requestStatus === 'pending' ? 'Thông tin chi tiết' : activePopoverEvent.title}
+                  <h3 className={`font-extrabold tracking-tight text-white leading-tight font-sans ${activePopoverEvent.category === 'Lời mời tham gia' || (activePopoverEvent.category === 'Đơn yêu cầu mượn đồ' && requestStatus === 'pending') ? 'text-xl md:text-3xl' : 'text-base md:text-lg'}`}>
+                    {activePopoverEvent.category === 'Lời mời tham gia' ? 'Chi tiết thư mời' : activePopoverEvent.category === 'Đơn yêu cầu mượn đồ' && requestStatus === 'pending' ? 'Thông tin chi tiết' : activePopoverEvent.title}
                   </h3>
-                  <p className={`text-white/80 mt-1 ${activePopoverEvent.category === 'Thư mời' ? 'text-sm font-medium' : 'text-[11px] mt-0.5'}`}>
-                    {activePopoverEvent.category === 'Thư mời'
+                  <p className={`text-white/80 mt-1 ${activePopoverEvent.category === 'Lời mời tham gia' ? 'text-sm font-medium' : 'text-[11px] mt-0.5'}`}>
+                    {activePopoverEvent.category === 'Lời mời tham gia'
                       ? 'Thông tin sự kiện'
-                      : activePopoverEvent.category === 'Đơn yêu cầu' && requestStatus === 'pending'
+                      : activePopoverEvent.category === 'Đơn yêu cầu mượn đồ' && requestStatus === 'pending'
                         ? 'Nhiệm vụ được giao'
-                        : activePopoverEvent.category === 'Đơn yêu cầu' && requestStatus === 'accepted'
+                        : activePopoverEvent.category === 'Đơn yêu cầu mượn đồ' && requestStatus === 'accepted'
                         ? 'Hồ sơ pháp lý: Biên bản bàn giao kỹ thuật & Nghiệm thu xe điện đối ngoại' 
                         : 'Bảng chi tiết thông tin và phương án cơ sở vật chất đón tiếp phái đoàn'}
                   </p>
@@ -1769,8 +1624,169 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
 
             {/* Modal Contents in a clean wide Horizontal Table layout */}
             <div className="p-6 md:p-8 space-y-4 overflow-y-auto max-h-[70vh] no-scrollbar bg-slate-50/50">
+                {/* Xem chi tiết đoàn đón khách */}
+                <div className="w-full">
+                  <button
+                    onClick={() => setShowDetailSection(!showDetailSection)}
+                    className="w-full flex items-center justify-between px-5 py-3.5 bg-orange-50 hover:bg-orange-100 text-[#f37021] font-black rounded-xl transition-colors border border-orange-200"
+                  >
+                    <span className="flex items-center gap-2 text-sm uppercase tracking-wider">
+                      <Users className="w-5 h-5" /> Xem chi tiết đoàn đón khách
+                    </span>
+                    {showDetailSection ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+                  </button>
+                  
+                  {showDetailSection && (
+                    <div className="mt-4 bg-white border border-orange-100 rounded-2xl shadow-sm overflow-hidden animate-fade-in-quick text-sm">
+                      
+                      {/* 1. Thông tin người tạo */}
+                      <div className="p-5 border-b border-orange-100">
+                        <h4 className="font-bold text-[#004c91] mb-1 flex items-center gap-2">
+                          <span className="w-6 h-6 rounded-full bg-orange-100 text-[#f37021] flex items-center justify-center text-xs">1</span>
+                          Thông tin người tạo
+                        </h4>
+                        <p className="text-xs text-slate-500 mb-4">Chi tiết về người liên hệ, đơn vị phụ trách đăng ký lịch</p>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 bg-slate-50 p-4 rounded-xl text-xs">
+                          <div>
+                            <p className="text-slate-500 mb-1">Họ và tên</p>
+                            <p className="font-bold text-slate-800">Nguyễn Hữu Trí</p>
+                          </div>
+                          <div>
+                            <p className="text-slate-500 mb-1">Email</p>
+                            <p className="font-bold text-slate-800">tringuyenh@fpt.edu.vn</p>
+                          </div>
+                          <div>
+                            <p className="text-slate-500 mb-1">Đơn vị công tác</p>
+                            <p className="font-bold text-slate-800">Office of International Affairs (OIA) & Staff Leaders</p>
+                          </div>
+                          <div>
+                            <p className="text-slate-500 mb-1">Chức danh</p>
+                            <p className="font-bold text-slate-800">Director of OIA</p>
+                          </div>
+                          <div>
+                            <p className="text-slate-500 mb-1">Số điện thoại (SĐT)</p>
+                            <p className="font-bold text-slate-800">0905.111.222</p>
+                          </div>
+                        </div>
+                      </div>
 
-              {activePopoverEvent.category === 'Thư mời' && (
+                      {/* 2. Thông tin đoàn khách */}
+                      <div className="p-5 border-b border-orange-100">
+                        <h4 className="font-bold text-[#004c91] mb-1 flex items-center gap-2">
+                          <span className="w-6 h-6 rounded-full bg-orange-100 text-[#f37021] flex items-center justify-center text-xs">2</span>
+                          Thông tin đoàn khách
+                        </h4>
+                        <p className="text-xs text-slate-500 mb-4">Tên cơ quan, thời gian, cơ sở hoạt động và mục đích đối ngoại</p>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl text-xs mb-4">
+                          <div>
+                            <p className="text-slate-500 mb-1">Tên đoàn</p>
+                            <p className="font-bold text-slate-800">15+ International Professors & 40 inbound exchange students</p>
+                          </div>
+                          <div>
+                            <p className="text-slate-500 mb-1">Cơ sở đón tiếp</p>
+                            <p className="font-bold text-slate-800">Grand Hall, Alpha Campus, FPT University</p>
+                          </div>
+                          <div>
+                            <p className="text-slate-500 mb-1">Ngày bắt đầu</p>
+                            <p className="font-bold text-slate-800">Thứ Tư, 26/8/2026</p>
+                          </div>
+                          <div>
+                            <p className="text-slate-500 mb-1">Thời gian</p>
+                            <p className="font-bold text-slate-800">18:00 - 22:00</p>
+                          </div>
+                        </div>
+                        <div className="space-y-3 bg-slate-50 p-4 rounded-xl text-xs">
+                          <div>
+                            <p className="text-slate-500 mb-1 font-bold">Mục đích thăm</p>
+                            <p className="text-slate-800">Giao lưu Tất niên đậm bản sắc văn hóa Việt dành cho đội ngũ giáo sư & sinh viên nước ngoài.</p>
+                          </div>
+                          <div>
+                            <p className="text-slate-500 mb-1 font-bold">Nội dung làm việc</p>
+                            <p className="text-slate-800">Phiên làm việc phối hợp chặt chẽ giữa đơn vị chủ trì Đại học FPT cùng đoàn đối tác nhằm cụ thể hoá các hoạt động trao đổi văn hoá học thuật, rà soát chi tiết cơ sở vật chất hạ tầng của cơ sở Hòa Lạc phục vụ học viên quốc tế học tập, nghiên cứu và sinh hoạt đối ngoại.</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* 3. Setup */}
+                      <div className="p-5 border-b border-orange-100">
+                        <h4 className="font-bold text-[#004c91] mb-1 flex items-center gap-2">
+                          <span className="w-6 h-6 rounded-full bg-orange-100 text-[#f37021] flex items-center justify-center text-xs">3</span>
+                          Setup
+                        </h4>
+                        <p className="text-xs text-slate-500 mb-4">Tiêu chí bố trí tham quan, chương trình chi tiết & thành phần tham gia</p>
+                        <div className="bg-slate-50 p-4 rounded-xl text-xs space-y-4">
+                          <div>
+                            <p className="text-slate-500 mb-1">Loại hình tham quan</p>
+                            <p className="font-bold text-slate-800">Đón tiếp đoàn khách quốc tế và sự kiện</p>
+                          </div>
+                          <div>
+                            <p className="text-slate-500 mb-2 font-bold">Agenda chi tiết</p>
+                            <table className="w-full text-left bg-white border border-slate-200 rounded-lg overflow-hidden">
+                              <thead className="bg-[#004c91] text-white">
+                                <tr>
+                                  <th className="p-2 w-1/4">Khung Giờ</th>
+                                  <th className="p-2">Khung nội dung chi tiết đón tiếp & tham quan dự kiến</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                <tr className="border-b"><td className="p-2 font-bold">18:00 - 18:15</td><td className="p-2">Tập trung phái đoàn, đón tiếp xã giao sảnh Alpha, chụp hình lưu niệm check-in.</td></tr>
+                                <tr className="border-b"><td className="p-2 font-bold">18:15 - 19:30</td><td className="p-2">Làm việc trao đổi học thuật, thảo luận chi tiết hợp tác hành chính tại phòng họp VIP sảnh Alpha.</td></tr>
+                                <tr><td className="p-2 font-bold">19:30 - 22:00</td><td className="p-2">Campus Tour: Di chuyển bằng xe điện tham quan khu phát triển công nghệ cao, Thư viện số và chào tạm biệt đoàn.</td></tr>
+                              </tbody>
+                            </table>
+                          </div>
+                          <div>
+                            <p className="text-slate-500 mb-2 font-bold">Thành phần tham gia</p>
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                              <div className="bg-white p-2 rounded border"><p className="text-[10px] text-slate-400">Host</p><p className="font-bold">Nguyễn Văn A</p></div>
+                              <div className="bg-white p-2 rounded border"><p className="text-[10px] text-slate-400">Người hỗ trợ bên IC</p><p className="font-bold">Nguyễn Văn B</p></div>
+                              <div className="bg-white p-2 rounded border"><p className="text-[10px] text-slate-400">Người thuộc phòng ban khác</p><p className="font-bold">Nguyễn Văn C</p></div>
+                              <div className="bg-white p-2 rounded border"><p className="text-[10px] text-slate-400">Sinh viên hỗ trợ</p><p className="font-bold">Nguyễn Văn D</p></div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* 4. Detail setup */}
+                      <div className="p-5 bg-orange-50/50">
+                        <h4 className="font-bold text-[#004c91] mb-1 flex items-center gap-2">
+                          <span className="w-6 h-6 rounded-full bg-orange-100 text-[#f37021] flex items-center justify-center text-xs">4</span>
+                          Detail setup
+                        </h4>
+                        <p className="text-xs text-slate-500 mb-4">Yêu cầu kỹ thuật về khẩu hiệu trình chiếu LED và công tác chuẩn bị đón tiếp Campus Tour</p>
+                        <div className="space-y-4">
+                          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm text-xs">
+                            <h5 className="font-bold text-slate-800 border-b pb-2 mb-2 text-[13px]">Mục 1: Trình chiếu khẩu hiệu LED</h5>
+                            <p className="mb-1"><span className="font-bold text-[#0aa14f]">Có sử dụng</span> <span className="text-slate-500">(Hiển thị chạy tự động dọc theo màn hình LED lớn sảnh chính đón khách)</span></p>
+                            <p className="bg-slate-100 p-2 rounded text-[#f37021] font-bold text-center border border-slate-200 mt-2">"FPT UNIVERSITY LUNAR NEW YEAR EVE CELEBRATION FOR INTERNATIONALS"</p>
+                          </div>
+                          
+                          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm text-xs">
+                            <h5 className="font-bold text-slate-800 border-b pb-2 mb-3 text-[13px]">Mục 2: Chuẩn bị cho Campus Tour</h5>
+                            <div className="space-y-3">
+                              <div>
+                                <p className="font-bold text-[#004c91] mb-1">Phần 1: Người dẫn</p>
+                                <p className="text-slate-700 bg-slate-50 p-2 rounded border border-slate-100">Bố trí 02 Đại sứ sinh viên xuất sắc hướng dẫn dẫn đoàn và thuyết minh lưu loát bằng tiếng Anh/Việt.</p>
+                              </div>
+                              <div>
+                                <p className="font-bold text-[#004c91] mb-1">Phần 2: Xe điện</p>
+                                <p className="text-slate-700 bg-slate-50 p-2 rounded border border-slate-100">Chuẩn bị sẵn 01 xe điện sạc đầy pin 100%, bảo dưỡng lốp, lau dọn khu vực ghế tươm tất.</p>
+                              </div>
+                              <div>
+                                <p className="font-bold text-[#004c91] mb-1">Phần 3: Người lái</p>
+                                <p className="text-slate-700 bg-slate-50 p-2 rounded border border-slate-100">Cử cán bộ lái xe điện chuyên trách túc trực, trang phục lịch thiệp, an toàn.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                    </div>
+                  )}
+                </div>
+    
+
+              {activePopoverEvent.category === 'Lời mời tham gia' && (
                 <div className="bg-white rounded-2xl border border-slate-200/85 p-6 md:p-8 font-sans w-full max-w-4xl mx-auto space-y-6 relative overflow-visible">
                   
                   {/* BENTO GRID (Người gửi, Thời gian gửi, Đoàn khách, Thời gian diễn ra) */}
@@ -1815,40 +1831,6 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                       </div>
                     </div>
 
-                  </div>
-
-                  {/* Xem chi tiết đoàn đón khách */}
-                  <div className="pt-2">
-                    <button
-                      onClick={() => setShowDetailSection(!showDetailSection)}
-                      className="w-full flex items-center justify-between px-5 py-3.5 bg-orange-50 hover:bg-orange-100 text-[#f37021] font-black rounded-xl transition-colors border border-orange-200"
-                    >
-                      <span className="flex items-center gap-2 text-sm uppercase tracking-wider">
-                        <Users className="w-5 h-5" /> Xem chi tiết đoàn đón khách
-                      </span>
-                      {showDetailSection ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
-                    </button>
-                    
-                    {showDetailSection && (
-                      <div className="mt-3 p-5 bg-white border border-orange-100 rounded-xl shadow-sm space-y-4 animate-fade-in-quick">
-                        <div>
-                          <h4 className="text-xs font-bold text-slate-800 mb-1 border-b pb-1">1. Thông tin người tạo</h4>
-                          <p className="text-xs text-slate-600">Chi tiết về người liên hệ, đơn vị phụ trách đăng ký lịch</p>
-                        </div>
-                        <div>
-                          <h4 className="text-xs font-bold text-slate-800 mb-1 border-b pb-1">2. Thông tin đoàn khách</h4>
-                          <p className="text-xs text-slate-600">Tên cơ quan, thời gian, cơ sở hoạt động và mục đích đối ngoại</p>
-                        </div>
-                        <div>
-                          <h4 className="text-xs font-bold text-slate-800 mb-1 border-b pb-1">3. Setup</h4>
-                          <p className="text-xs text-slate-600">Tiêu chí bố trí tham quan, chương trình chi tiết & thành phần tham gia</p>
-                        </div>
-                        <div>
-                          <h4 className="text-xs font-bold text-slate-800 mb-1 border-b pb-1">4. Detail setup</h4>
-                          <p className="text-xs text-slate-600">Yêu cầu kỹ thuật về khẩu hiệu trình chiếu LED và công tác chuẩn bị đón tiếp Campus Tour</p>
-                        </div>
-                      </div>
-                    )}
                   </div>
 
                   <div className="flex flex-col gap-3 pt-4 transition-all cursor-default relative z-10">
@@ -2003,7 +1985,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                 </div>
               )}
 
-              {activePopoverEvent.category === 'Đơn yêu cầu' && (
+              {activePopoverEvent.category === 'Đơn yêu cầu mượn đồ' && (
                 <div className="bg-white rounded-2xl border border-slate-200/85 p-6 md:p-8 font-sans w-full max-w-4xl mx-auto space-y-6 relative overflow-visible">
                   
                   {/* BENTO GRID (Người gửi, Thời gian gửi, Đoàn khách, Thời gian sử dụng) */}
@@ -2067,40 +2049,6 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                       </div>
                     )}
 
-                  </div>
-
-                  {/* Xem chi tiết đoàn đón khách */}
-                  <div className="pt-2">
-                    <button
-                      onClick={() => setShowDetailSection(!showDetailSection)}
-                      className="w-full flex items-center justify-between px-5 py-3.5 bg-orange-50 hover:bg-orange-100 text-[#f37021] font-black rounded-xl transition-colors border border-orange-200"
-                    >
-                      <span className="flex items-center gap-2 text-sm uppercase tracking-wider">
-                        <Users className="w-5 h-5" /> Xem chi tiết đoàn đón khách
-                      </span>
-                      {showDetailSection ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
-                    </button>
-                    
-                    {showDetailSection && (
-                      <div className="mt-3 p-5 bg-white border border-orange-100 rounded-xl shadow-sm space-y-4 animate-fade-in-quick">
-                        <div>
-                          <h4 className="text-xs font-bold text-slate-800 mb-1 border-b pb-1">1. Thông tin người tạo</h4>
-                          <p className="text-xs text-slate-600">Chi tiết về người liên hệ, đơn vị phụ trách đăng ký lịch</p>
-                        </div>
-                        <div>
-                          <h4 className="text-xs font-bold text-slate-800 mb-1 border-b pb-1">2. Thông tin đoàn khách</h4>
-                          <p className="text-xs text-slate-600">Tên cơ quan, thời gian, cơ sở hoạt động và mục đích đối ngoại</p>
-                        </div>
-                        <div>
-                          <h4 className="text-xs font-bold text-slate-800 mb-1 border-b pb-1">3. Setup</h4>
-                          <p className="text-xs text-slate-600">Tiêu chí bố trí tham quan, chương trình chi tiết & thành phần tham gia</p>
-                        </div>
-                        <div>
-                          <h4 className="text-xs font-bold text-slate-800 mb-1 border-b pb-1">4. Detail setup</h4>
-                          <p className="text-xs text-slate-600">Yêu cầu kỹ thuật về khẩu hiệu trình chiếu LED và công tác chuẩn bị đón tiếp Campus Tour</p>
-                        </div>
-                      </div>
-                    )}
                   </div>
 
                   <div className="flex flex-col gap-3 pt-4 transition-all cursor-default relative z-10">
@@ -2324,7 +2272,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                 </div>
               )}
 
-              {activePopoverEvent.category === 'Đơn yêu cầu' && requestStatus === 'accepted' && (
+              {activePopoverEvent.category === 'Đơn yêu cầu mượn đồ' && requestStatus === 'accepted' && (
                 /* Safuri Event Layout */
                 <div className="bg-white rounded-2xl border border-slate-200/85 shadow-md p-6 md:p-10 font-sans max-w-4xl mx-auto space-y-6 relative overflow-hidden">
                   {/* Draft decorative watermark stamp */}
@@ -2646,389 +2594,9 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                 </div>
               )}
 
-              {activePopoverEvent.category === 'Lịch đón khách' && (
-                <div id="staff-leader-popover-regular-details" className="space-y-4">
-                  {(() => {
-                    // Parse Creator Info
-                    let creatorName = 'Nguyễn Minh Quân';
-                let creatorEmail = 'quannm8@fpt.edu.vn';
-                let creatorDept = activePopoverEvent.host || 'Ban Đào tạo';
-                let creatorTitle = 'Cán bộ kỹ thuật hậu cần & Đón tiếp';
-                let creatorPhone = '090.123.4567';
+              
 
-                if (activePopoverEvent.contactPerson) {
-                  const nameMatch = activePopoverEvent.contactPerson.match(/^([^(]+)/);
-                  if (nameMatch) {
-                    creatorName = nameMatch[1].trim();
-                  }
-                  const phoneMatch = activePopoverEvent.contactPerson.match(/(0\d{1,45}[\.\s\d\-]+)/);
-                  if (phoneMatch) {
-                    creatorPhone = phoneMatch[0].trim().replace(/\)$/, '');
-                  }
-                  const extraMatch = activePopoverEvent.contactPerson.match(/\(([^)]+)\)/);
-                  if (extraMatch) {
-                    const extraContent = extraMatch[1];
-                    const parts = extraContent.split('-').map(s => s.trim());
-                    if (parts.length > 0) {
-                      if (parts[0].startsWith('P.') || parts[0].includes('Ban') || parts[0].includes('Phòng') || parts[0].includes('Đội')) {
-                        creatorDept = parts[0];
-                        if (parts[1] && isNaN(Number(parts[1].replace(/[\.\s-]/g, '')))) {
-                          creatorTitle = parts[1];
-                        }
-                      } else {
-                        creatorTitle = parts[0];
-                      }
-                    }
-                  }
-                }
-
-                // Generate a clean professional email address based on creator name
-                const nameParts = creatorName.toLowerCase()
-                  .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-                  .replace(/[đĐ]/g, 'd')
-                  .replace(/[^a-z0-9\s]/g, '')
-                  .split(' ')
-                  .filter(Boolean);
-                if (nameParts.length > 0) {
-                  const emailName = nameParts[nameParts.length - 1] + (nameParts[0] || '') + (nameParts[1] ? nameParts[1][0] : '');
-                  creatorEmail = `${emailName.toLowerCase()}@fpt.edu.vn`;
-                }
-
-                // Parse Guest Info
-                const guestVisitor = activePopoverEvent.guests || 'Phái đoàn đối tác chiến lược';
-                const guestCampus = activePopoverEvent.location || 'Campus Hòa Lạc, Đại học FPT';
-                const guestDate = activePopoverEvent.date || '2026-08-01';
-                
-                let guestStart = '09:00';
-                let guestEnd = '11:00';
-                if (activePopoverEvent.time && activePopoverEvent.time.includes('-')) {
-                  const timeParts = activePopoverEvent.time.split('-').map(s => s.trim());
-                  guestStart = timeParts[0] || '09:00';
-                  guestEnd = timeParts[1] || '11:00';
-                } else if (activePopoverEvent.time) {
-                  guestStart = activePopoverEvent.time;
-                }
-                
-                const guestPurpose = activePopoverEvent.purpose || 'Chào thăm xã giao, trao đổi về công tác hậu cần và thiết lập quan hệ liên kết lâu dài.';
-                const guestWorkingContent = `Phiên làm việc phối hợp chặt chẽ giữa đơn vị chủ trì Đại học FPT cùng đoàn đối tác nhằm cụ thể hoá các hoạt động trao đổi văn hoá học thuật, rà soát chi tiết cơ sở vật chất hạ tầng của cơ sở Hòa Lạc phục vụ học viên quốc tế học tập, nghiên cứu và sinh hoạt đối ngoại.`;
-
-                return (
-                  <div className="space-y-4">
-                    
-                    {/* SECTION 1: THÔNG TIN NGƯỜI TẠO */}
-                    <div className="border border-slate-200 rounded-xl overflow-hidden shadow-xs bg-white transition-all hover:shadow-sm">
-                      <button
-                        type="button"
-                        onClick={() => toggleSection('creator')}
-                        className="w-full flex items-center justify-between p-4 bg-white hover:bg-slate-50 transition-colors text-left focus:outline-none"
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className="p-2.5 rounded-xl bg-slate-100 text-[#004c91] shrink-0">
-                            <Users className="w-4 h-4 text-[#004c91]" />
-                          </div>
-                          <div>
-                            <h4 className="font-extrabold text-[#004c91] text-xs sm:text-sm uppercase tracking-wide">
-                              1. Thông tin người tạo
-                            </h4>
-                            <p className="text-[11px] text-slate-400 mt-0.5">Chi tiết về người liên hệ, đơn vị phụ trách đăng ký lịch</p>
-                          </div>
-                        </div>
-                        <div className={`p-1.5 rounded-lg bg-slate-50 border border-slate-200 transition-transform duration-205 shrink-0 ${expandedSections.creator ? 'rotate-180' : ''}`}>
-                          <ChevronDown className="w-4 h-4 text-slate-500" />
-                        </div>
-                      </button>
-                      
-                      {expandedSections.creator && (
-                        <div className="p-5 border-t border-slate-150 bg-white grid grid-cols-1 md:grid-cols-2 gap-5 animate-slide-down">
-                          <div className="space-y-1">
-                            <span className="text-xs text-slate-400 font-sans tracking-normal block">Họ và tên</span>
-                            <p className="text-sm text-slate-705 font-sans tracking-normal font-normal">{creatorName}</p>
-                          </div>
-                          <div className="space-y-1">
-                            <span className="text-xs text-slate-400 font-sans tracking-normal block">Email</span>
-                            <p className="text-sm text-slate-705 font-sans tracking-normal font-normal">{creatorEmail}</p>
-                          </div>
-                          <div className="space-y-1">
-                            <span className="text-xs text-slate-400 font-sans tracking-normal block">Đơn vị công tác</span>
-                            <p className="text-sm text-slate-705 font-sans tracking-normal font-normal">{creatorDept}</p>
-                          </div>
-                          <div className="space-y-1">
-                            <span className="text-xs text-slate-400 font-sans tracking-normal block">Chức danh</span>
-                            <p className="text-sm text-slate-705 font-sans tracking-normal font-normal">{creatorTitle}</p>
-                          </div>
-                          <div className="space-y-1 md:col-span-2">
-                            <span className="text-xs text-slate-400 font-sans tracking-normal block">Số điện thoại (SĐT)</span>
-                            <p className="text-sm text-slate-705 font-sans tracking-normal font-normal">{creatorPhone}</p>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* SECTION 2: THÔNG TIN ĐOÀN KHÁCH */}
-                    <div className="border border-slate-200 rounded-xl overflow-hidden shadow-xs bg-white transition-all hover:shadow-sm">
-                      <button
-                        type="button"
-                        onClick={() => toggleSection('guests')}
-                        className="w-full flex items-center justify-between p-4 bg-white hover:bg-slate-50 transition-colors text-left focus:outline-none"
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className="p-2.5 rounded-xl bg-slate-100 text-[#004c91] shrink-0">
-                            <MapPin className="w-4 h-4 text-[#004c91]" />
-                          </div>
-                          <div>
-                            <h4 className="font-extrabold text-[#004c91] text-xs sm:text-sm uppercase tracking-wide">
-                              2. Thông tin đoàn khách
-                            </h4>
-                            <p className="text-[11px] text-slate-400 mt-0.5">Tên cơ quan, thời gian, cơ sở hoạt động và mục đích đối ngoại</p>
-                          </div>
-                        </div>
-                        <div className={`p-1.5 rounded-lg bg-slate-50 border border-slate-200 transition-transform duration-205 shrink-0 ${expandedSections.guests ? 'rotate-180' : ''}`}>
-                          <ChevronDown className="w-4 h-4 text-slate-500" />
-                        </div>
-                      </button>
-                      
-                      {expandedSections.guests && (
-                        <div className="p-5 border-t border-slate-150 bg-white space-y-4 animate-slide-down">
-                          <div className="space-y-1">
-                            <span className="text-xs text-slate-400 font-sans tracking-normal block">Tên đoàn</span>
-                            <p className="text-sm text-slate-705 font-sans tracking-normal font-normal">{guestVisitor}</p>
-                          </div>
-                          
-                          {/* Co-located row representing Campus, start date, start time and end time */}
-                          <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 grid grid-cols-1 md:grid-cols-4 gap-4">
-                            <div className="space-y-1">
-                              <span className="text-xs text-slate-400 font-sans tracking-normal block">Cơ sở đón tiếp</span>
-                              <p className="text-sm text-slate-705 font-sans font-normal">{guestCampus}</p>
-                            </div>
-                            <div className="space-y-1 border-t md:border-t-0 md:border-l border-slate-200 pt-2 md:pt-0 md:pl-4">
-                              <span className="text-xs text-slate-400 font-sans tracking-normal block">Ngày bắt đầu</span>
-                              <p className="text-sm text-slate-705 font-sans font-normal">
-                                {(() => {
-                                  const d = new Date(guestDate);
-                                  const weekdays = ['Chủ Nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy'];
-                                  return `${weekdays[d.getDay() || 0]}, ${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`;
-                                })()}
-                              </p>
-                            </div>
-                            <div className="space-y-1 border-t md:border-t-0 md:border-l border-slate-200 pt-2 md:pt-0 md:pl-4">
-                              <span className="text-xs text-slate-400 font-sans tracking-normal block">Thời gian bắt đầu</span>
-                              <p className="text-sm text-slate-705 font-sans font-normal">{guestStart}</p>
-                            </div>
-                            <div className="space-y-1 border-t md:border-t-0 md:border-l border-slate-200 pt-2 md:pt-0 md:pl-4">
-                              <span className="text-xs text-slate-400 font-sans tracking-normal block">Thời gian kết thúc</span>
-                              <p className="text-sm text-slate-705 font-sans font-normal">{guestEnd}</p>
-                            </div>
-                          </div>
-
-                          <div className="space-y-1 border-t border-slate-100 pt-4">
-                            <span className="text-xs text-slate-400 font-sans tracking-normal block mb-1">Mục đích thăm</span>
-                            <div className="text-xs text-slate-650 leading-relaxed font-normal bg-slate-50/50 p-3 rounded-lg border border-slate-150">{guestPurpose}</div>
-                          </div>
-
-                          <div className="space-y-1">
-                            <span className="text-xs text-slate-400 font-sans tracking-normal block mb-1">Nội dung làm việc</span>
-                            <div className="text-xs text-slate-650 leading-relaxed font-normal bg-slate-50/50 p-3 rounded-lg border border-slate-150">{guestWorkingContent}</div>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* SECTION 3: SETUP */}
-                    <div className="border border-slate-200 rounded-xl overflow-hidden shadow-xs bg-white transition-all hover:shadow-sm">
-                      <button
-                        type="button"
-                        onClick={() => toggleSection('setup')}
-                        className="w-full flex items-center justify-between p-4 bg-white hover:bg-slate-50 transition-colors text-left focus:outline-none"
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className="p-2.5 rounded-xl bg-slate-100 text-[#004c91] shrink-0">
-                            <FileText className="w-4 h-4 text-[#004c91]" />
-                          </div>
-                          <div>
-                            <h4 className="font-extrabold text-[#004c91] text-xs sm:text-sm uppercase tracking-wide">
-                              3. Setup
-                            </h4>
-                            <p className="text-[11px] text-slate-400 mt-0.5">Tiêu chí bố trí tham quan, chương trình chi tiết & thành phần tham gia</p>
-                          </div>
-                        </div>
-                        <div className={`p-1.5 rounded-lg bg-slate-50 border border-slate-200 transition-transform duration-205 shrink-0 ${expandedSections.setup ? 'rotate-180' : ''}`}>
-                          <ChevronDown className="w-4 h-4 text-slate-500" />
-                        </div>
-                      </button>
-                      
-                      {expandedSections.setup && (
-                        <div className="p-5 border-t border-slate-150 bg-white space-y-5 animate-slide-down">
-                          <div className="space-y-1">
-                            <span className="text-xs text-slate-400 font-sans tracking-normal block">Loại hình tham quan</span>
-                            <span className="inline-block px-3 py-1 bg-blue-50 text-[#004c91] border border-blue-200 rounded-lg text-xs font-normal mt-1">
-                              {(() => {
-                                if (activePopoverEvent.category === 'Lịch đón khách') return 'Đón tiếp đoàn khách quốc tế và sự kiện';
-                                return 'Chương trình làm việc đặc biệt & Hỗ trợ điều phối';
-                              })()}
-                            </span>
-                          </div>
-
-                          <div className="space-y-2 border-t border-slate-100 pt-4">
-                            <span className="text-xs text-slate-400 font-sans tracking-normal block mb-1">Agenda chi tiết</span>
-                            <div className="border border-slate-300 rounded-xl overflow-hidden bg-white">
-                              <table className="w-full text-left border-collapse text-xs">
-                                <thead>
-                                  <tr className="bg-slate-50 text-slate-600 font-black border-b border-slate-300 text-[10px] uppercase tracking-wide">
-                                    <th className="py-2.5 px-3 w-1/4 border-r border-slate-300">Khung Giờ</th>
-                                    <th className="py-2.5 px-3">Khung nội dung chi tiết đón tiếp & tham quan dự kiến</th>
-                                  </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-300 font-normal text-slate-650">
-                                  <tr className="border-b border-slate-300">
-                                    <td className="p-3 bg-slate-50/40 border-r border-slate-300 font-bold text-slate-800 text-center">{guestStart} - {(() => {
-                                      const parts = guestStart.split(':');
-                                      const hours = parseInt(parts[0], 10);
-                                      const minutes = parseInt(parts[1], 10);
-                                      const newMin = (minutes + 15) % 60;
-                                      const newHr = hours + Math.floor((minutes + 15) / 60);
-                                      return `${String(newHr).padStart(2, '0')}:${String(newMin).padStart(2, '0')}`;
-                                    })()}</td>
-                                    <td className="p-3 leading-relaxed text-slate-750">Tập trung phái đoàn, đón tiếp xã giao sảnh Alpha, chụp hình lưu niệm check-in.</td>
-                                  </tr>
-                                  <tr className="border-b border-slate-300">
-                                    <td className="p-3 bg-slate-50/40 border-r border-slate-300 font-bold text-slate-800 text-center">{(() => {
-                                      const parts = guestStart.split(':');
-                                      const hours = parseInt(parts[0], 10);
-                                      const minutes = parseInt(parts[1], 10);
-                                      const newMin = (minutes + 15) % 60;
-                                      const newHr = hours + Math.floor((minutes + 15) / 60);
-                                      return `${String(newHr).padStart(2, '0')}:${String(newMin).padStart(2, '0')}`;
-                                    })()} - {(() => {
-                                      const parts = guestStart.split(':');
-                                      const hours = parseInt(parts[0], 10);
-                                      return `${String(hours+1).padStart(2, '0')}:30`;
-                                    })()}</td>
-                                    <td className="p-3 leading-relaxed text-slate-750">Làm việc trao đổi học thuật, thảo luận chi tiết hợp tác hành chính tại phòng họp VIP sảnh Alpha.</td>
-                                  </tr>
-                                  <tr>
-                                    <td className="p-3 bg-slate-50/40 border-r border-slate-300 font-bold text-slate-800 text-center">{(() => {
-                                      const parts = guestStart.split(':');
-                                      const hours = parseInt(parts[0], 10);
-                                      return `${String(hours+1).padStart(2, '0')}:30`;
-                                    })()} - {guestEnd}</td>
-                                    <td className="p-3 leading-relaxed text-slate-750">Campus Tour: Di chuyển bằng xe điện tham quan khu phát triển công nghệ cao, Thư viện số và chào tạm biệt đoàn.</td>
-                                  </tr>
-                                </tbody>
-                              </table>
-                            </div>
-                          </div>
-
-                          <div className="space-y-2 border-t border-slate-100 pt-4">
-                            <span className="text-xs text-slate-400 font-sans tracking-normal block mb-1">Thành phần tham gia</span>
-                            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-                              <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
-                                <p className="text-[10px] text-slate-400 font-sans tracking-wide uppercase mb-1">Host</p>
-                                <p className="text-sm font-semibold text-[#004c91]">Nguyễn Văn A</p>
-                              </div>
-                              <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
-                                <p className="text-[10px] text-slate-400 font-sans tracking-wide uppercase mb-1">Người hỗ trợ bên IC</p>
-                                <p className="text-sm font-semibold text-[#004c91]">Nguyễn Văn B</p>
-                              </div>
-                              <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
-                                <p className="text-[10px] text-slate-400 font-sans tracking-wide uppercase mb-1">Người thuộc phòng ban khác</p>
-                                <p className="text-sm font-semibold text-[#004c91]">Nguyễn Văn C</p>
-                              </div>
-                              <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
-                                <p className="text-[10px] text-slate-400 font-sans tracking-wide uppercase mb-1">Sinh viên hỗ trợ</p>
-                                <p className="text-sm font-semibold text-[#004c91]">Nguyễn Văn D</p>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* SECTION 4: DETAIL SETUP */}
-                    <div className="border border-slate-200 rounded-xl overflow-hidden shadow-xs bg-white transition-all hover:shadow-sm">
-                      <button
-                        type="button"
-                        onClick={() => toggleSection('details')}
-                        className="w-full flex items-center justify-between p-4 bg-white hover:bg-slate-50 transition-colors text-left focus:outline-none"
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className="p-2.5 rounded-xl bg-slate-100 text-[#004c91] shrink-0">
-                            <Bell className="w-4 h-4 text-[#004c91]" />
-                          </div>
-                          <div>
-                            <h4 className="font-extrabold text-[#004c91] text-xs sm:text-sm uppercase tracking-wide">
-                              4. Detail setup
-                            </h4>
-                            <p className="text-[11px] text-slate-400 mt-0.5">Yêu cầu kỹ thuật về khẩu hiệu trình chiếu LED và công tác chuẩn bị đón tiếp Campus Tour</p>
-                          </div>
-                        </div>
-                        <div className={`p-1.5 rounded-lg bg-slate-50 border border-slate-200 transition-transform duration-205 shrink-0 ${expandedSections.details ? 'rotate-180' : ''}`}>
-                          <ChevronDown className="w-4 h-4 text-slate-500" />
-                        </div>
-                      </button>
-                      
-                      {expandedSections.details && (
-                        <div className="p-5 border-t border-slate-150 bg-white space-y-5 animate-slide-down">
-                          
-                          {/* Muc 1: LED */}
-                          <div className="p-4 bg-slate-50/50 border border-slate-200 rounded-xl space-y-1.5">
-                            <span className="text-xs text-slate-400 font-sans tracking-normal block">Mục 1: Trình chiếu khẩu hiệu LED</span>
-                            <div className="flex items-center gap-2">
-                              <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg text-xs font-semibold">
-                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                                Có sử dụng
-                              </span>
-                              <span className="text-xs text-slate-650 font-medium">
-                                (Hiển thị chạy tự động dọc theo màn hình LED lớn sảnh chính đón khách)
-                              </span>
-                            </div>
-                            <p className="text-[11px] text-slate-450 italic mt-1 font-normal">
-                              Khẩu hiệu: "{activePopoverEvent.bannerText || `Chào mừng đối tác di chuyển đến làm việc tại campus Đại học FPT`}"
-                            </p>
-                          </div>
-
-                          {/* Muc 2: Campus Tour */}
-                          <div className="p-4 bg-white border border-slate-200 rounded-xl space-y-4">
-                            <div className="pb-1 border-b border-slate-100">
-                              <span className="text-xs text-slate-400 font-sans tracking-normal block">Mục 2: Chuẩn bị cho Campus Tour</span>
-                            </div>
-                            
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                              {/* Phan 1: Nguoi dan */}
-                              <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-lg space-y-2">
-                                <p className="text-xs text-[#004c91] font-bold">Phần 1: Người dẫn</p>
-                                <p className="text-xs text-slate-600 leading-relaxed font-normal">
-                                  Bố trí 02 Đại sứ sinh viên xuất sắc hướng dẫn dẫn đoàn và thuyết minh lưu loát bằng tiếng Anh/Việt.
-                                </p>
-                              </div>
-
-                              {/* Phan 2: Xe dien */}
-                              <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-lg space-y-2">
-                                <p className="text-xs text-emerald-700 font-bold">Phần 2: Xe điện</p>
-                                <p className="text-xs text-slate-600 leading-relaxed font-normal">
-                                  Chuẩn bị sẵn 01 xe điện sạc đầy pin 100%, bảo dưỡng lốp, lau dọn khu vực ghế tươm tất.
-                                </p>
-                              </div>
-
-                              {/* Phan 3: Nguoi lai */}
-                              <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-lg space-y-2">
-                                <p className="text-xs text-[#f37021] font-bold">Phần 3: Người lái</p>
-                                <p className="text-xs text-slate-600 leading-relaxed font-normal">
-                                  Cử cán bộ lái xe điện chuyên trách túc trực, trang phục lịch thiệp, an toàn.
-                                </p>
-                              </div>
-                            </div>
-                          </div>
-
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })()}
-            </div>
-          )}
-
-            </div>
+              </div>
 
             {/* Footer controls inside modal */}
             <div className="bg-slate-50 px-6 py-4 flex justify-end items-center border-t border-slate-200 rounded-b-2xl">
@@ -3037,7 +2605,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                   onClick={() => setActivePopoverEvent(null)}
                   className="px-5 py-2.5 bg-[#004c91] text-white hover:opacity-90 text-[11px] font-bold rounded-xl transition-colors shadow-3xs"
                 >
-                  {activePopoverEvent.category === 'Đơn yêu cầu' && requestStatus === 'accepted' ? 'Đóng biên bản bàn giao & nghiệm thu' : 'Đóng bảng chi tiết'}
+                  {activePopoverEvent.category === 'Đơn yêu cầu mượn đồ' && requestStatus === 'accepted' ? 'Đóng biên bản bàn giao & nghiệm thu' : 'Đóng bảng chi tiết'}
                 </button>
               </div>
             </div>
