@@ -52,7 +52,7 @@ export interface PartnerItem {
 
 export const partnersData: PartnerItem[] = [
   { 
-    id: 1, 
+    id: 100051, 
     name: "Đại học Deakin (Deakin University)", 
     code: "DEAKIN", 
     country: "Úc", 
@@ -68,7 +68,7 @@ export const partnersData: PartnerItem[] = [
     coverImage: "https://images.unsplash.com/photo-1541339907198-e08756dedf3f?q=80&w=1200&auto=format&fit=crop"
   },
   { 
-    id: 2, 
+    id: 100052, 
     name: "Tập đoàn công nghệ Panasonic", 
     code: "PANASONIC", 
     country: "Nhật Bản", 
@@ -84,7 +84,7 @@ export const partnersData: PartnerItem[] = [
     coverImage: "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?q=80&w=1200&auto=format&fit=crop"
   },
   { 
-    id: 3, 
+    id: 100053, 
     name: "Đại học Chulalongkorn", 
     code: "CHULA", 
     country: "Thái Lan", 
@@ -100,7 +100,7 @@ export const partnersData: PartnerItem[] = [
     coverImage: "https://images.unsplash.com/photo-1523050854058-8df90110c9f1?q=80&w=1200&auto=format&fit=crop"
   },
   { 
-    id: 4, 
+    id: 100054, 
     name: "Yuan Ze University (Đại học Nguyên Trí)", 
     code: "YUANZE", 
     country: "Đài Loan", 
@@ -116,7 +116,7 @@ export const partnersData: PartnerItem[] = [
     coverImage: "https://images.unsplash.com/photo-1562774053-f5a02f68995b?q=80&w=1200&auto=format&fit=crop"
   },
   { 
-    id: 5, 
+    id: 100055, 
     name: "HELP University (Đại học HELP)", 
     code: "HELP", 
     country: "Malaysia", 
@@ -132,7 +132,7 @@ export const partnersData: PartnerItem[] = [
     coverImage: "https://images.unsplash.com/photo-1527891751199-7225231a68dd?q=80&w=1200&auto=format&fit=crop"
   },
   { 
-    id: 6, 
+    id: 100056, 
     name: "Học viện Ngôn ngữ FPT Japan (FJA)", 
     code: "FJA", 
     country: "Nhật Bản", 
@@ -148,7 +148,7 @@ export const partnersData: PartnerItem[] = [
     coverImage: "https://images.unsplash.com/photo-1503899036084-c55cdd92da26?q=80&w=1200&auto=format&fit=crop"
   },
   { 
-    id: 7, 
+    id: 100057, 
     name: "Đại học Sydney (USYD)", 
     code: "SYDNEY", 
     country: "Úc", 
@@ -164,7 +164,7 @@ export const partnersData: PartnerItem[] = [
     coverImage: "https://images.unsplash.com/photo-1510519138101-570d1dca3d66?q=80&w=1200&auto=format&fit=crop"
   },
   { 
-    id: 8, 
+    id: 100058, 
     name: "Đại học Swinburne (Swinburne University)", 
     code: "SWINBURNE", 
     country: "Úc", 
@@ -180,7 +180,7 @@ export const partnersData: PartnerItem[] = [
     coverImage: "https://images.unsplash.com/photo-1509062522246-3755977927d7?q=80&w=1200&auto=format&fit=crop"
   },
   { 
-    id: 9, 
+    id: 100059, 
     name: "Tập đoàn bán dẫn NVIDIA", 
     code: "NVIDIA", 
     country: "Mỹ", 
@@ -196,7 +196,7 @@ export const partnersData: PartnerItem[] = [
     coverImage: "https://images.unsplash.com/photo-1518770660439-4636190af475?q=80&w=1200&auto=format&fit=crop"
   },
   { 
-    id: 10, 
+    id: 100060, 
     name: "Tập đoàn công nghệ Microsoft", 
     code: "MICROSOFT", 
     country: "Mỹ", 
@@ -212,7 +212,7 @@ export const partnersData: PartnerItem[] = [
     coverImage: "https://images.unsplash.com/photo-1497366216548-37526070297c?q=80&w=1200&auto=format&fit=crop"
   },
   { 
-    id: 11, 
+    id: 100061, 
     name: "Singapore Management University (SMU)", 
     code: "SMU", 
     country: "Singapore", 
@@ -228,7 +228,7 @@ export const partnersData: PartnerItem[] = [
     coverImage: "https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?q=80&w=1200&auto=format&fit=crop"
   },
   { 
-    id: 12, 
+    id: 100062, 
     name: "Kyoto Computer Gakuin (KCG)", 
     code: "KCG", 
     country: "Nhật Bản", 
@@ -244,7 +244,7 @@ export const partnersData: PartnerItem[] = [
     coverImage: "https://images.unsplash.com/photo-1542051841857-5f90071e7989?q=80&w=1200&auto=format&fit=crop"
   },
   { 
-    id: 13, 
+    id: 100063, 
     name: "Đại học Quốc gia Singapore (NUS)", 
     code: "NUS", 
     country: "Singapore", 
@@ -260,7 +260,7 @@ export const partnersData: PartnerItem[] = [
     coverImage: "https://images.unsplash.com/photo-1558021211-6d1403321394?q=80&w=1200&auto=format&fit=crop"
   },
   { 
-    id: 14, 
+    id: 100064, 
     name: "Đại học Hàn Quốc (Korea University)", 
     code: "KOREA", 
     country: "Hàn Quốc", 
@@ -276,7 +276,7 @@ export const partnersData: PartnerItem[] = [
     coverImage: "https://images.unsplash.com/photo-1533105079780-92b9be482077?q=80&w=1200&auto=format&fit=crop"
   },
   { 
-    id: 15, 
+    id: 100065, 
     name: "Đại học Quốc gia Đông Hoa (NDHU)", 
     code: "NDHU", 
     country: "Đài Loan", 
@@ -292,7 +292,7 @@ export const partnersData: PartnerItem[] = [
     coverImage: "https://images.unsplash.com/photo-1519074002996-a69e7ac46a42?q=80&w=1200&auto=format&fit=crop"
   },
   { 
-    id: 16, 
+    id: 100066, 
     name: "Đại học Coimbra (University of Coimbra)", 
     code: "COIMBRA", 
     country: "Anh", 
@@ -308,7 +308,7 @@ export const partnersData: PartnerItem[] = [
     coverImage: "https://images.unsplash.com/photo-1506784983877-45594efa4cbe?q=80&w=1200&auto=format&fit=crop"
   },
   { 
-    id: 17, 
+    id: 100067, 
     name: "Taylor's University", 
     code: "TAYLORS", 
     country: "Malaysia", 
@@ -324,7 +324,7 @@ export const partnersData: PartnerItem[] = [
     coverImage: "https://images.unsplash.com/photo-1560523160-754a9e25c68f?q=80&w=1200&auto=format&fit=crop"
   },
   { 
-    id: 18, 
+    id: 100068, 
     name: "Nanyang Technological University (NTU)", 
     code: "NTU", 
     country: "Singapore", 
@@ -839,3 +839,4 @@ export function PartnersPage() {
     </>
   );
 }
+

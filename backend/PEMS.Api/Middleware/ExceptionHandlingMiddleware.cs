@@ -106,24 +106,34 @@ public sealed class ExceptionHandlingMiddleware
                 var genericMessage = "Đã xảy ra lỗi hệ thống. Vui lòng thử lại sau.";
                 if (_environment.IsDevelopment())
                 {
-                    genericMessage = $"Lỗi HT (Dev): {ex.Message}";
+                    // Walk the full InnerException chain to find the real root cause
+                    // (e.g. DbUpdateException → MySqlException → actual SQL error)
+                    var rootCause = ex;
+                    while (rootCause.InnerException is not null)
+                        rootCause = rootCause.InnerException;
+                    
+                    genericMessage = rootCause == ex
+                        ? $"Lỗi HT (Dev): {ex.Message}"
+                        : $"Lỗi HT (Dev): {ex.Message} → Root cause: {rootCause.Message}";
                 }
 
                 payload = _environment.IsDevelopment()
-                    ? new
+                    ? (object)new
                     {
                         success = false,
                         errorCode = AuthErrorCodes.InternalServerError,
                         message = genericMessage,
                         traceId,
                         error = ex.Message,
+                        innerError = ex.InnerException?.Message,
+                        rootCause = GetRootCauseMessage(ex),
                         stackTrace = ex.StackTrace
                     }
-                    : new
+                    : (object)new
                     {
                         success = false,
                         errorCode = AuthErrorCodes.InternalServerError,
-                        message = genericMessage,
+                        message = "Đã xảy ra lỗi hệ thống. Vui lòng thử lại sau.",
                         traceId
                     };
                 break;
@@ -140,5 +150,14 @@ public sealed class ExceptionHandlingMiddleware
         context.Response.StatusCode = status;
         context.Response.ContentType = "application/json";
         await context.Response.WriteAsync(JsonSerializer.Serialize(payload, JsonOptions));
+    }
+
+    /// <summary>Walk InnerException chain to find the deepest root cause message.</summary>
+    private static string? GetRootCauseMessage(Exception ex)
+    {
+        var current = ex;
+        while (current.InnerException is not null)
+            current = current.InnerException;
+        return current == ex ? null : current.Message;
     }
 }

@@ -201,16 +201,16 @@ public sealed class EmailService : IEmailService
       <p style=""color:#b3c8e8;margin:6px 0 0;font-size:13px"">FPT University</p>
     </div>
     <div style=""padding:32px"">
-      <p style=""color:#374151;font-size:14px"">Xin chào <strong>{{HE(registrantFullName)}}</strong>,</p>
+      <p style=""color:#374151;font-size:14px"">Xin chào <strong>{HE(registrantFullName)}</strong>,</p>
       <p style=""color:#374151;font-size:14px"">
-        Bạn đã gửi yêu cầu tham quan cho đoàn <strong>{{HE(delegationName)}}</strong> thành công với mã yêu cầu là <strong>{{HE(requestCode)}}</strong>.
+        Bạn đã gửi yêu cầu tham quan cho đoàn <strong>{HE(delegationName)}</strong> thành công với mã yêu cầu là <strong>{HE(requestCode)}</strong>.
       </p>
       
       <div style=""background:#f0f7ff;border-left:4px solid #004c91;border-radius:8px;padding:16px 20px;margin:20px 0"">
         <p style=""margin:0 0 8px;color:#374151;font-size:13px""><strong>Thông tin đầu mối liên hệ được ghi nhận:</strong></p>
         <ul style=""margin:0;padding-left:20px;color:#374151;font-size:13px"">
-          <li><strong>Họ và tên:</strong> {{HE(contactFullName)}}</li>
-          <li><strong>Email:</strong> {{HE(contactEmail)}}</li>
+          <li><strong>Họ và tên:</strong> {HE(contactFullName)}</li>
+          <li><strong>Email:</strong> {HE(contactEmail)}</li>
         </ul>
       </div>
 
