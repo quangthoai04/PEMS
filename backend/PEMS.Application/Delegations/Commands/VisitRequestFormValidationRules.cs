@@ -23,8 +23,7 @@ public static class VisitRequestFormValidationRules
 
         v.RuleFor(x => x.RegistrantOrganization)
             .NotEmpty().WithMessage("Đơn vị công tác không được để trống.")
-            .MaximumLength(200)
-            .When(x => !x.PartnerId.HasValue);
+            .MaximumLength(200);
 
         v.RuleFor(x => x.RegistrantPosition)
             .MaximumLength(150);
@@ -86,29 +85,21 @@ public static class VisitRequestFormValidationRules
                 .WithMessage("Thời gian tham quan tối thiểu 3 giờ.");
         });
 
+
         // ── Guests ────────────────────────────────────────────────────────────
-        v.RuleFor(x => x.ExpectedGuestCount)
-            .GreaterThanOrEqualTo(1).WithMessage("Số lượng khách dự kiến phải lớn hơn hoặc bằng 1.");
-
-        v.RuleFor(x => x.ExpectedGuestCount)
-            .Must((cmd, count) => count >= cmd.Visitors.Count)
-            .WithMessage("Số lượng khách dự kiến không được nhỏ hơn số lượng khách đã nhập danh sách.")
-            .When(x => x.Visitors != null && x.Visitors.Count > 0);
-
         v.RuleForEach(x => x.Visitors).ChildRules(guest =>
         {
             guest.RuleFor(g => g.FullName)
                 .NotEmpty().WithMessage("Họ tên khách không được để trống.")
                 .MaximumLength(150);
             guest.RuleFor(g => g.Nationality)
+                .NotEmpty().WithMessage("Quốc tịch khách không được để trống.")
                 .MaximumLength(100);
             guest.RuleFor(g => g.Organization)
+                .NotEmpty().WithMessage("Đơn vị công tác khách không được để trống.")
                 .MaximumLength(200);
             guest.RuleFor(g => g.JobTitle)
-                .MaximumLength(150);
-            guest.RuleFor(g => g.Email)
-                .NotEmpty().WithMessage("Email khách không được để trống.")
-                .EmailAddress().WithMessage("Email khách không đúng định dạng.")
+                .NotEmpty().WithMessage("Chức vụ khách không được để trống.")
                 .MaximumLength(150);
         });
 

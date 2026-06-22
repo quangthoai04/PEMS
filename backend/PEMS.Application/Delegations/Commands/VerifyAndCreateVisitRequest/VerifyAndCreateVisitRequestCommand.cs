@@ -28,7 +28,6 @@ public sealed record VerifyAndCreateVisitRequestCommand(
     string? WorkingContent,
 
     // ── Attendees ──────────────────────────────────────────
-    int ExpectedGuestCount,
     IList<VisitorDto> Visitors,
     IList<SupportTeamMemberDto> SupportMembers,
 
@@ -38,7 +37,6 @@ public sealed record VerifyAndCreateVisitRequestCommand(
 
     // ── Additional ─────────────────────────────────────────
     string WorkingLanguage,
-    string? InterpreterNote,
     string TransportationType,
     string? TransportationDetail,
     string MediaConsentStatus,

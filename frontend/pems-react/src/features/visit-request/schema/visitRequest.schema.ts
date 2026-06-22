@@ -57,10 +57,9 @@ const emailSchema = z
 
 const visitorSchema = z.object({
   fullName: z.string().min(1, 'Họ tên không được để trống').max(100, 'Tối đa 100 ký tự'),
-  jobTitle: z.string().optional().default(''),
-  organization: z.string().optional().default(''),
+  jobTitle: z.string().min(1, 'Chức vụ không được để trống'),
+  organization: z.string().min(1, 'Đơn vị công tác không được để trống'),
   nationality: z.string().min(1, 'Quốc tịch không được để trống'),
-  email: emailSchema,
 });
 
 const supportTeamSchema = z.object({
@@ -113,7 +112,7 @@ const visitSlotSchema = z
 export const visitRequestSchema = z.object({
   registerInfo: z.object({
     fullName: z.string().min(1, 'Họ tên không được để trống').max(100),
-    organization: z.string().optional().default(''),
+    organization: z.string().min(1, 'Đơn vị công tác không được để trống'),
     jobTitle: z.string().min(1, 'Chức danh/phòng ban không được để trống'),
     phone: phoneSchema,
     email: emailSchema,
@@ -126,9 +125,8 @@ export const visitRequestSchema = z.object({
   visits: z.array(visitSlotSchema).min(1),
   purpose: z.string().min(1, 'Mục đích thăm không được để trống'),
   workingContent: z.string().min(1, 'Nội dung làm việc không được để trống'),
-  expectedGuestCount: z.number().min(1, 'Số lượng khách dự kiến phải lớn hơn hoặc bằng 1'),
-  visitors: z.array(visitorSchema),
-  supportTeam: z.array(supportTeamSchema),
+  visitors: z.array(visitorSchema).min(1, 'Vui lòng thêm ít nhất 1 khách.'),
+  supportTeam: z.array(supportTeamSchema).min(1, 'Vui lòng thêm ít nhất 1 nhân sự hỗ trợ khách.'),
   contactPoint: z.object({
     fullName: z.string().min(1, 'Họ tên không được để trống'),
     organization: z.string().min(1, 'Đơn vị không được để trống'),
@@ -136,41 +134,35 @@ export const visitRequestSchema = z.object({
     email: emailSchema,
   }),
   workingLanguage: z.enum(['EN', 'VI']),
-  interpreterNote: z.string().optional().default(''),
   transportationType: z.enum(['SELF_ARRANGED', 'FPTU_SUPPORT', 'UNKNOWN', 'OTHER']),
   transportationDetail: z.string().optional().default(''),
   mediaConsentStatus: z.enum(['AGREED', 'DECLINED', 'UNKNOWN']),
   mediaConsentNote: z.string().optional().default(''),
   partnerId: z.number().nullable().optional(),
+  partnerSelectionMode: z.enum(['EXISTING_PARTNER', 'NEW_ORGANIZATION']).default('NEW_ORGANIZATION'),
   notes: z.string().optional().default(''),
   timeOverlapConfirmed: z.boolean().optional().default(false),
 }).superRefine((data, ctx) => {
-  if (data.partnerId === undefined) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ['partnerId'],
-      message: 'Vui lòng chọn tổ chức có sẵn hoặc chọn "Tổ chức mới / Chưa có trong hệ thống"',
-    });
-  } else if (data.partnerId === null && (!data.registerInfo.organization || data.registerInfo.organization.trim().length === 0)) {
+  if (data.partnerSelectionMode === 'NEW_ORGANIZATION' && (!data.registerInfo.organization || data.registerInfo.organization.trim().length === 0)) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ['registerInfo', 'organization'],
-      message: 'Đơn vị công tác không được để trống',
+      message: 'Vui lòng nhập tên đơn vị / tổ chức của bạn.',
     });
-  } else if (data.partnerId !== null && data.partnerId !== undefined && (!data.registerInfo.organization || data.registerInfo.organization.trim().length === 0)) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ['partnerId'],
-      message: 'Không thể xác định tên tổ chức đã chọn. Vui lòng chọn lại.',
-    });
-  }
-
-  if (data.expectedGuestCount < data.visitors.length) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ['expectedGuestCount'],
-      message: 'Số lượng khách dự kiến không được nhỏ hơn số lượng khách trong danh sách',
-    });
+  } else if (data.partnerSelectionMode === 'EXISTING_PARTNER') {
+    if (data.partnerId === null || data.partnerId === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['partnerId'],
+        message: 'Vui lòng chọn tổ chức có sẵn từ danh sách.',
+      });
+    } else if (!data.registerInfo.organization || data.registerInfo.organization.trim().length === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['partnerId'],
+        message: 'Không thể xác định tên tổ chức đã chọn. Vui lòng chọn lại.',
+      });
+    }
   }
 
   if (data.visitType === 'OTHER' && (!data.visitTypeOther || data.visitTypeOther.trim() === '')) {

@@ -23,11 +23,20 @@ public class Minute
     [Column("status")]
     public string Status { get; set; } = "DRAFT";
 
-    [Column("finalized_by")]
-    public ulong? FinalizedBy { get; set; }
+    [Column("edit_locked_by")]
+    public ulong? EditLockedBy { get; set; }
 
-    [Column("finalized_at")]
-    public DateTime? FinalizedAt { get; set; }
+    [Column("edit_locked_at")]
+    public DateTime? EditLockedAt { get; set; }
+
+    [Column("edit_lock_expires_at")]
+    public DateTime? EditLockExpiresAt { get; set; }
+
+    [Column("edit_lock_token")]
+    public string? EditLockToken { get; set; }
+
+    [Column("row_version")]
+    public uint RowVersion { get; set; }
 
     [Column("created_at")]
     public DateTime CreatedAt { get; set; }

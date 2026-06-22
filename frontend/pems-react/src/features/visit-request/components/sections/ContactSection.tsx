@@ -4,6 +4,7 @@ import { Plus, Trash2, Download, Upload, CheckCircle2, AlertCircle, X, FileSprea
 import { motion, AnimatePresence } from 'motion/react';
 import type { VisitRequestSchema } from '../../schema/visitRequest.schema';
 import { CountrySelect } from '../shared/CountrySelect';
+import { OrganizationCombobox } from '../shared/OrganizationCombobox';
 import { PhoneInput } from '../shared/PhoneInput';
 import { inputCls } from '../shared/FormField';
 import { validateSupportTeamExcel, isAllowedExcelFile } from '../ExcelUpload/excelValidator';
@@ -17,6 +18,7 @@ interface Props {
   onClearSupportFirstRow: () => void;
   onSyncContactFromRegister: () => void;
   onClearContactPoint: () => void;
+  showErrors?: boolean;
 }
 
 export const ContactSection: React.FC<Props> = ({
@@ -26,6 +28,7 @@ export const ContactSection: React.FC<Props> = ({
   onClearSupportFirstRow,
   onSyncContactFromRegister,
   onClearContactPoint,
+  showErrors,
 }) => {
   const { register, control, formState: { errors } } = form;
   const [isSupportSameAsRegister, setIsSupportSameAsRegister] = useState(false);
@@ -100,14 +103,20 @@ export const ContactSection: React.FC<Props> = ({
     e.target.value = '';
   };
 
+  const supportRootErrorMessage = (supportErrors as any)?.root?.message || (typeof supportErrors === 'object' && !Array.isArray(supportErrors) ? (supportErrors as any).message : null);
+  const hasSupportRootError = !!supportRootErrorMessage;
+  const hasAnySupportError = showErrors && (hasSupportRootError || (Array.isArray(supportErrors) && supportErrors.length > 0));
+
+  const hasAnyContactError = showErrors && !!contactErrors;
+
   return (
     <div className="space-y-8 mt-8">
       {/* ── Support team ─────────────────────────────────────────────────────── */}
-      <div>
-        <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-          <label className="block text-base font-bold text-gray-900">
-            Danh sách team hỗ trợ khách
-          </label>
+      <div className={`rounded-2xl border bg-white shadow-sm transition-colors ${hasAnySupportError ? 'border-red-300 shadow-red-500/10' : 'border-slate-200'}`}>
+        <div className={`border-b px-6 py-4 flex items-center justify-between flex-wrap gap-2 ${hasAnySupportError ? 'border-red-200 bg-red-50/50 rounded-t-2xl' : 'border-slate-200'}`}>
+          <h4 className="text-[#004c91] font-bold text-lg">
+            Danh sách team hỗ trợ khách <span className="text-red-500">*</span>
+          </h4>
           <label className="flex items-center gap-2.5 cursor-pointer text-sm text-[#004c91] font-bold select-none bg-blue-50/50 px-3 py-1.5 rounded-lg border border-blue-100 hover:bg-blue-50 transition-colors">
             <input
               type="checkbox"
@@ -119,7 +128,18 @@ export const ContactSection: React.FC<Props> = ({
           </label>
         </div>
 
-        <div className="bg-white border border-gray-200 rounded-xl overflow-x-auto shadow-sm">
+        {hasAnySupportError && (
+          <div className="bg-red-50 border border-red-200 rounded-lg p-3 mx-6 mt-4 flex items-start gap-2 error-scroll-target">
+            <AlertCircle className="w-5 h-5 text-red-500 shrink-0" />
+            <div>
+              <p className="text-sm font-bold text-red-700">Vui lòng kiểm tra lại thông tin trong phần này.</p>
+              {supportRootErrorMessage && <p className="text-xs text-red-600 mt-0.5">{supportRootErrorMessage}</p>}
+            </div>
+          </div>
+        )}
+
+        <div className="p-6">
+          <div className="bg-white border border-gray-200 rounded-xl overflow-x-auto shadow-sm">
           <table className="w-full min-w-[750px] border-collapse text-sm">
             <thead className="bg-slate-50 border-b border-gray-200">
               <tr>
@@ -149,27 +169,35 @@ export const ContactSection: React.FC<Props> = ({
                         <input
                           {...register(`supportTeam.${i}.fullName`)}
                           placeholder="Nhập tên..."
-                          className="w-full p-3 bg-transparent outline-none font-medium placeholder:text-gray-300 text-sm"
+                          className={cellInputCls(!!se?.fullName)}
                         />
-                        {se?.fullName && <p className="px-3 pb-1 text-[10px] text-red-600">{se.fullName.message}</p>}
+                        {se?.fullName && <CellError msg={se.fullName.message} />}
                       </td>
 
                       <td className="p-0 border-l border-gray-100">
                         <input
                           {...register(`supportTeam.${i}.jobTitle`)}
                           placeholder="Chức vụ..."
-                          className="w-full p-3 bg-transparent outline-none font-medium placeholder:text-gray-300 text-sm"
+                          className={cellInputCls(!!se?.jobTitle)}
                         />
-                        {se?.jobTitle && <p className="px-3 pb-1 text-[10px] text-red-600">{se.jobTitle.message}</p>}
+                        {se?.jobTitle && <CellError msg={se.jobTitle.message} />}
                       </td>
 
-                      <td className="p-0 border-l border-gray-100">
-                        <input
-                          {...register(`supportTeam.${i}.organization`)}
-                          placeholder="Đơn vị..."
-                          className="w-full p-3 bg-transparent outline-none font-medium placeholder:text-gray-300 text-sm"
+                      <td className="p-1 border-l border-gray-100 min-w-[200px]">
+                        <Controller
+                          name={`supportTeam.${i}.organization`}
+                          control={control}
+                          render={({ field }) => (
+                            <OrganizationCombobox
+                              value={field.value}
+                              onChange={field.onChange}
+                              onBlur={field.onBlur}
+                              hasError={!!se?.organization}
+                              placeholder="Đơn vị..."
+                            />
+                          )}
                         />
-                        {se?.organization && <p className="px-3 pb-1 text-[10px] text-red-600">{se.organization.message}</p>}
+                        {se?.organization && <CellError msg={se.organization.message} />}
                       </td>
 
                       <td className="p-1 border-l border-gray-100 min-w-[160px]">
@@ -186,7 +214,7 @@ export const ContactSection: React.FC<Props> = ({
                             />
                           )}
                         />
-                        {se?.nationality && <p className="px-1 pb-1 text-[10px] text-red-600">{se.nationality.message}</p>}
+                        {se?.nationality && <CellError msg={se.nationality.message} />}
                       </td>
 
                       <td className="p-2 border-l border-gray-100 text-center">
@@ -285,14 +313,15 @@ export const ContactSection: React.FC<Props> = ({
             </motion.div>
           )}
         </AnimatePresence>
+        </div>
       </div>
 
       {/* ── Contact point ─────────────────────────────────────────────────────── */}
-      <div>
-        <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-          <label className="block text-base font-bold text-gray-900">
+      <div className={`rounded-2xl border bg-white shadow-sm transition-colors ${hasAnyContactError ? 'border-red-300 shadow-red-500/10' : 'border-slate-200'}`}>
+        <div className={`border-b px-6 py-4 flex items-center justify-between flex-wrap gap-2 ${hasAnyContactError ? 'border-red-200 bg-red-50/50 rounded-t-2xl' : 'border-slate-200'}`}>
+          <h4 className="text-[#004c91] font-bold text-lg">
             Thông tin đầu mối liên hệ <span className="text-red-500">*</span>
-          </label>
+          </h4>
           <label className="flex items-center gap-2.5 cursor-pointer text-sm text-[#004c91] font-bold select-none bg-blue-50/80 px-3 py-1.5 rounded-lg border border-blue-200 hover:bg-blue-100 transition-colors">
             <input
               type="checkbox"
@@ -304,9 +333,19 @@ export const ContactSection: React.FC<Props> = ({
           </label>
         </div>
 
-        <p className="text-xs text-slate-500 mb-2 -mt-1">
-          Khi chọn “Tôi cũng là đầu mối liên hệ”, hệ thống sẽ tự điền Thông tin đầu mối liên hệ từ Thông tin người đăng ký form.
-        </p>
+        {hasAnyContactError && (
+          <div className="bg-red-50 border border-red-200 rounded-lg p-3 mx-6 mt-4 flex items-start gap-2 error-scroll-target">
+            <AlertCircle className="w-5 h-5 text-red-500 shrink-0" />
+            <div>
+              <p className="text-sm font-bold text-red-700">Vui lòng kiểm tra lại thông tin trong phần này.</p>
+            </div>
+          </div>
+        )}
+
+        <div className="p-6">
+          <p className="text-xs text-slate-500 mb-2 -mt-1">
+            Khi chọn “Tôi cũng là đầu mối liên hệ”, hệ thống sẽ tự điền Thông tin đầu mối liên hệ từ Thông tin người đăng ký form.
+          </p>
 
         <div className="mb-3 rounded-lg bg-blue-50/60 border border-blue-100 px-3 py-2">
           <p className="text-xs text-[#004c91] leading-5">
@@ -331,21 +370,25 @@ export const ContactSection: React.FC<Props> = ({
                   <input
                     {...register('contactPoint.fullName')}
                     placeholder="Nhập tên..."
-                    className="w-full p-3 bg-transparent outline-none font-medium placeholder:text-gray-300 text-sm"
+                    className={cellInputCls(!!contactErrors?.fullName)}
                   />
-                  {contactErrors?.fullName && (
-                    <p className="px-3 pb-1 text-[10px] text-red-600">{contactErrors.fullName.message}</p>
-                  )}
+                  {contactErrors?.fullName && <CellError msg={contactErrors.fullName.message} />}
                 </td>
-                <td className="p-0 border-l border-gray-100">
-                  <input
-                    {...register('contactPoint.organization')}
-                    placeholder="Nhập đơn vị..."
-                    className="w-full p-3 bg-transparent outline-none font-medium placeholder:text-gray-300 text-sm"
+                <td className="p-1 border-l border-gray-100 min-w-[200px]">
+                  <Controller
+                    name="contactPoint.organization"
+                    control={control}
+                    render={({ field }) => (
+                      <OrganizationCombobox
+                        value={field.value}
+                        onChange={field.onChange}
+                        onBlur={field.onBlur}
+                        hasError={!!contactErrors?.organization}
+                        placeholder="Nhập đơn vị..."
+                      />
+                    )}
                   />
-                  {contactErrors?.organization && (
-                    <p className="px-3 pb-1 text-[10px] text-red-600">{contactErrors.organization.message}</p>
-                  )}
+                  {contactErrors?.organization && <CellError msg={contactErrors.organization.message} />}
                 </td>
                 <td className="p-1 border-l border-gray-100">
                   <Controller
@@ -360,20 +403,16 @@ export const ContactSection: React.FC<Props> = ({
                       />
                     )}
                   />
-                  {contactErrors?.phone && (
-                    <p className="px-1 pb-1 text-[10px] text-red-600">{contactErrors.phone.message}</p>
-                  )}
+                  {contactErrors?.phone && <CellError msg={contactErrors.phone.message} />}
                 </td>
                 <td className="p-0 border-l border-gray-100">
                   <input
                     {...register('contactPoint.email')}
                     type="email"
                     placeholder="email@domain.com"
-                    className="w-full p-3 bg-transparent outline-none font-medium placeholder:text-gray-300 text-sm"
+                    className={cellInputCls(!!contactErrors?.email)}
                   />
-                  {contactErrors?.email && (
-                    <p className="px-3 pb-1 text-[10px] text-red-600">{contactErrors.email.message}</p>
-                  )}
+                  {contactErrors?.email && <CellError msg={contactErrors.email.message} />}
                 </td>
               </tr>
             </tbody>
@@ -381,7 +420,17 @@ export const ContactSection: React.FC<Props> = ({
         </div>
 
 
+        </div>
       </div>
     </div>
   );
 };
+
+const cellInputCls = (hasError: boolean) =>
+  [
+    'w-full p-3 bg-transparent outline-none font-medium placeholder:text-gray-300 text-sm border focus:ring-1 focus:outline-none transition-colors',
+    hasError ? 'text-red-700 border-red-300 bg-red-50/20 focus:border-red-400 focus:ring-red-300' : 'text-gray-900 border-transparent focus:border-blue-200 focus:ring-blue-200',
+  ].join(' ');
+
+const CellError: React.FC<{ msg?: string }> = ({ msg }) =>
+  msg ? <p className="px-3 pb-1 text-[10px] text-red-600 font-medium">{msg}</p> : null;

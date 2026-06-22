@@ -59,7 +59,6 @@ public sealed class VisitRequestManagementItemDto
     public DateTime? ExpectedEndAt { get; set; }
     public DateTime? PlannedStartAt { get; set; }
     public DateTime? PlannedEndAt { get; set; }
-    public int? ExpectedGuestCount { get; set; }
 
     public DateTime CreatedAt { get; set; }
     public DateTime? SubmittedAt { get; set; }

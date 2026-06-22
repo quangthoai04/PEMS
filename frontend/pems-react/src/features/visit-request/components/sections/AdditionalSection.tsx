@@ -45,15 +45,10 @@ export const AdditionalSection: React.FC<Props> = ({ form }) => {
           {errors.workingLanguage && (
             <p className="text-xs text-red-600 font-medium mb-2">⚠ {errors.workingLanguage.message}</p>
           )}
+          <p className="text-xs text-gray-500 italic mt-1">
+            PEMS hiện chỉ hỗ trợ làm việc bằng Tiếng Việt hoặc Tiếng Anh. Nếu đoàn cần sử dụng ngôn ngữ khác, vui lòng tự chuẩn bị phiên dịch.
+          </p>
 
-          <label className="block text-sm font-bold text-gray-900 mt-4 mb-2">
-            Ghi chú phiên dịch (Nếu có)
-          </label>
-          <input
-            {...register('interpreterNote')}
-            placeholder="VD: Cần hỗ trợ phiên dịch tiếng Nhật sang tiếng Việt..."
-            className={inputCls(false, !!(touchedFields.interpreterNote && form.getValues('interpreterNote')))}
-          />
         </div>
 
         {/* Transportation */}

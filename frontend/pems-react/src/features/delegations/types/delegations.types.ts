@@ -146,7 +146,6 @@ export interface VisitRequestManagementItem {
   expectedEndAt: string | null;
   plannedStartAt: string | null;
   plannedEndAt: string | null;
-  expectedGuestCount: number | null;
 
   createdAt: string;
   submittedAt: string | null;

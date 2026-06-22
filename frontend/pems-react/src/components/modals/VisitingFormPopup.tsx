@@ -208,6 +208,17 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
     const valid = await form.trigger(fields as any);
     if (!valid) {
       setStepError('Vui lòng điền đầy đủ và đúng các trường bắt buộc trước khi tiếp tục.');
+      setTimeout(() => {
+        const firstError = document.querySelector('.error-scroll-target');
+        if (firstError) {
+          firstError.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          // Optionally focus the first invalid input if it exists within the error boundary
+          const firstInput = firstError.querySelector('input[aria-invalid="true"], input.border-red-500, .border-red-500 input, .border-red-500');
+          if (firstInput && firstInput instanceof HTMLElement) {
+            firstInput.focus();
+          }
+        }
+      }, 100);
       return;
     }
 
@@ -375,10 +386,12 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
                         animate={{ opacity: 1, x: 0 }}
                         exit={{ opacity: 0, x: -20 }}
                         transition={{ duration: 0.2 }}
+                        className="space-y-8"
                       >
                         <VisitorListSection
                           form={form}
                           visitorFields={visitorFields}
+                          showErrors={!!stepAttempted[2]}
                         />
                         <ContactSection
                           form={form}
@@ -387,6 +400,7 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
                           onClearSupportFirstRow={clearSupportFirstRow}
                           onSyncContactFromRegister={syncContactFromRegister}
                           onClearContactPoint={clearContactPoint}
+                          showErrors={!!stepAttempted[2]}
                         />
                       </motion.div>
                     )}

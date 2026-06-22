@@ -111,13 +111,11 @@ public sealed class VisitRequestService : IVisitRequestService
             VisitTypeOther       = f.VisitTypeOther,
             Purpose              = f.Purpose,
             WorkingContent       = f.WorkingContent,
-            ExpectedGuestCount   = f.ExpectedGuestCount,
-            ContactPersonFullName = f.ContactPerson?.FullName,
-            ContactPersonOrganization = f.ContactPerson?.Organization,
-            ContactPersonPhone   = f.ContactPerson?.Phone,
-            ContactPersonEmail   = f.ContactPerson?.Email,
+            ContactPersonFullName = f.ContactPerson.FullName,
+            ContactPersonOrganization = f.ContactPerson.Organization,
+            ContactPersonPhone   = f.ContactPerson.Phone,
+            ContactPersonEmail   = f.ContactPerson.Email,
             WorkingLanguage      = f.WorkingLanguage,
-            InterpreterNote      = f.InterpreterNote,
             TransportationType   = f.TransportationType,
             TransportationDetail = f.TransportationDetail,
             MediaConsentStatus   = f.MediaConsentStatus,
@@ -146,7 +144,6 @@ public sealed class VisitRequestService : IVisitRequestService
             {
                 // VisitInstanceId / VisitRequestId are DB-generated / set via navigation.
                 CampusId             = campus.CampusId,
-                InstanceCode         = $"{requestCode}-C{idx:D2}",
                 PlannedStartAt       = slot.StartDatetime,
                 PlannedEndAt         = slot.EndDatetime,
                 Status               = VisitInstanceStatuses.WaitingRequestApproval,
@@ -170,10 +167,8 @@ public sealed class VisitRequestService : IVisitRequestService
                 Organization     = visitor.Organization,
                 JobTitle         = visitor.JobTitle,
                 Nationality      = visitor.Nationality,
-                Email            = visitor.Email,
                 MemberType       = "GUEST",
                 DisplayOrder     = order++,
-                IsRepresentative = false,
                 CreatedAt        = utcNow,
                 CreatedBy        = visitorUserId
             });
@@ -189,10 +184,8 @@ public sealed class VisitRequestService : IVisitRequestService
                     Organization     = support.Organization,
                     JobTitle         = support.JobTitle,
                     Nationality      = support.Nationality,
-                    Email            = null,
                     MemberType       = "EXTERNAL_SUPPORT", // User explicitly requested EXTERNAL_SUPPORT
                     DisplayOrder     = order++,
-                    IsRepresentative = false,
                     CreatedAt        = utcNow,
                     CreatedBy        = visitorUserId
                 });

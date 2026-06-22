@@ -16,8 +16,6 @@ public class VisitRequestCampus
     [Column("campus_id")]
     public ulong CampusId { get; set; }
 
-    [Column("instance_code")]
-    public string? InstanceCode { get; set; }
 
     [Column("planned_start_at")]
     public DateTime PlannedStartAt { get; set; }

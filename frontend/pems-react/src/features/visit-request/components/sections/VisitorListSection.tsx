@@ -4,6 +4,7 @@ import { Plus, Trash2, Download, Upload, CheckCircle2, AlertCircle, X, FileSprea
 import { motion, AnimatePresence } from 'motion/react';
 import type { VisitRequestSchema } from '../../schema/visitRequest.schema';
 import { CountrySelect } from '../shared/CountrySelect';
+import { OrganizationCombobox } from '../shared/OrganizationCombobox';
 import { validateVisitorExcel, isAllowedExcelFile } from '../ExcelUpload/excelValidator';
 import { downloadVisitorTemplate } from '../ExcelUpload/excelDownload';
 import type { ExcelValidationResult, ExcelValidationError } from '../../types/visitRequest.types';
@@ -11,9 +12,10 @@ import type { ExcelValidationResult, ExcelValidationError } from '../../types/vi
 interface Props {
   form: UseFormReturn<VisitRequestSchema>;
   visitorFields: UseFieldArrayReturn<VisitRequestSchema, 'visitors'>;
+  showErrors?: boolean;
 }
 
-export const VisitorListSection: React.FC<Props> = ({ form, visitorFields }) => {
+export const VisitorListSection: React.FC<Props> = ({ form, visitorFields, showErrors }) => {
   const { register, control, formState: { errors } } = form;
   const visitorErrors = errors.visitors;
 
@@ -45,27 +47,8 @@ export const VisitorListSection: React.FC<Props> = ({ form, visitorFields }) => 
     const result = await validateVisitorExcel(file);
 
     if (result.data.length > 0) {
-      // Cross-check emails against existing form entries
-      const existingEmails = new Set(
-        form.getValues('visitors')
-          .map((v) => v.email.toLowerCase().trim())
-          .filter(Boolean)
-      );
-
-      const crossDupErrors: ExcelValidationError[] = [];
-      const toAdd = result.data.filter((visitor) => {
-        const key = visitor.email.toLowerCase().trim();
-        if (existingEmails.has(key)) {
-          crossDupErrors.push({
-            row: 0,
-            column: 'Email',
-            message: `Email "${visitor.email}" đã có trong danh sách hiện tại — bỏ qua.`,
-          });
-          return false;
-        }
-        existingEmails.add(key);
-        return true;
-      });
+      // Email checking removed
+      const toAdd = result.data;
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       toAdd.forEach((v) => visitorFields.append(v as any));
@@ -73,9 +56,9 @@ export const VisitorListSection: React.FC<Props> = ({ form, visitorFields }) => 
 
       setUploadResult({
         ...result,
-        errors: [...result.errors, ...crossDupErrors],
-        errorRows: result.errorRows + crossDupErrors.length,
-        valid: result.errors.length === 0 && crossDupErrors.length === 0,
+        errors: [...result.errors],
+        errorRows: result.errorRows,
+        valid: result.errors.length === 0,
       });
     } else {
       setUploadResult(result);
@@ -85,27 +68,36 @@ export const VisitorListSection: React.FC<Props> = ({ form, visitorFields }) => 
     e.target.value = '';
   };
 
+  const rootErrorMessage = (visitorErrors as any)?.root?.message || (typeof visitorErrors === 'object' && !Array.isArray(visitorErrors) ? (visitorErrors as any).message : null);
+  const hasRootError = !!rootErrorMessage;
+  const hasAnyError = showErrors && (hasRootError || (Array.isArray(visitorErrors) && visitorErrors.length > 0));
+
   return (
-    <div className="bg-blue-50/20 rounded-2xl border-l-4 border-l-[#004c91] border border-gray-100 p-5 sm:p-7 shadow-sm mt-8">
-      <h4 className="text-[#004c91] font-bold text-base mb-5 border-b border-blue-100 pb-2 uppercase tracking-wide">
-        II. Thành phần tham dự & Liên hệ
-      </h4>
+    <div className={`rounded-2xl border bg-white shadow-sm mt-8 transition-colors ${hasAnyError ? 'border-red-300 shadow-red-500/10' : 'border-slate-200'}`}>
+      <div className={`border-b px-6 py-4 flex items-center justify-between ${hasAnyError ? 'border-red-200 bg-red-50/50 rounded-t-2xl' : 'border-slate-200'}`}>
+        <h4 className="text-[#004c91] font-bold text-lg">Danh sách khách <span className="text-red-500">*</span></h4>
+      </div>
 
-      {/* Visitor list */}
-      <div className="mb-8">
-        <label className="block text-base font-bold text-gray-900 mb-3">
-          Danh sách khách <span className="text-red-500">*</span>
-        </label>
+      {hasAnyError && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-3 mx-6 mt-4 flex items-start gap-2 error-scroll-target">
+          <AlertCircle className="w-5 h-5 text-red-500 shrink-0" />
+          <div>
+            <p className="text-sm font-bold text-red-700">Vui lòng kiểm tra lại thông tin trong phần này.</p>
+            {rootErrorMessage && <p className="text-xs text-red-600 mt-0.5">{rootErrorMessage}</p>}
+          </div>
+        </div>
+      )}
 
+      <div className="p-6">
         <div className="bg-white border border-gray-200 rounded-xl overflow-x-auto shadow-sm">
           <table className="w-full min-w-[680px] border-collapse text-sm">
             <thead className="bg-slate-50 border-b border-gray-200">
               <tr>
                 <th className="p-3 text-center font-bold text-slate-700 w-12">STT</th>
                 <th className="p-3 text-left font-bold text-slate-700 border-l border-gray-200">Họ và tên *</th>
-                <th className="p-3 text-left font-bold text-slate-700 border-l border-gray-200">Email *</th>
+                <th className="p-3 text-left font-bold text-slate-700 border-l border-gray-200">Chức vụ *</th>
+                <th className="p-3 text-left font-bold text-slate-700 border-l border-gray-200">Đơn vị công tác *</th>
                 <th className="p-3 text-left font-bold text-slate-700 border-l border-gray-200">Quốc tịch *</th>
-                <th className="p-3 text-left font-bold text-slate-700 border-l border-gray-200">Chức vụ</th>
                 <th className="p-3 text-center w-12 border-l border-gray-200" />
               </tr>
             </thead>
@@ -113,7 +105,7 @@ export const VisitorListSection: React.FC<Props> = ({ form, visitorFields }) => 
               <AnimatePresence>
                 {visitorFields.fields.map((field, i) => {
                   const fe = visitorErrors?.[i];
-                  const rowHasError = !!(fe?.fullName || fe?.email || fe?.nationality);
+                  const rowHasError = !!(fe?.fullName || fe?.nationality || fe?.organization || fe?.jobTitle);
                   return (
                     <motion.tr
                       key={field.id}
@@ -138,12 +130,28 @@ export const VisitorListSection: React.FC<Props> = ({ form, visitorFields }) => 
 
                       <td className="p-0 border-l border-gray-100">
                         <input
-                          {...register(`visitors.${i}.email`)}
-                          type="email"
-                          placeholder="email@domain.com"
-                          className={cellInputCls(!!fe?.email)}
+                          {...register(`visitors.${i}.jobTitle`)}
+                          placeholder="Chức vụ..."
+                          className={cellInputCls(!!fe?.jobTitle)}
                         />
-                        {fe?.email && <CellError msg={fe.email.message} />}
+                        {fe?.jobTitle && <CellError msg={fe.jobTitle.message} />}
+                      </td>
+
+                      <td className="p-1 border-l border-gray-100 min-w-[200px]">
+                        <Controller
+                          name={`visitors.${i}.organization`}
+                          control={control}
+                          render={({ field }) => (
+                            <OrganizationCombobox
+                              value={field.value}
+                              onChange={field.onChange}
+                              onBlur={field.onBlur}
+                              hasError={!!fe?.organization}
+                              placeholder="Đơn vị công tác..."
+                            />
+                          )}
+                        />
+                        {fe?.organization && <CellError msg={fe.organization.message} />}
                       </td>
 
                       <td className="p-1 border-l border-gray-100 min-w-[160px]">
@@ -163,20 +171,11 @@ export const VisitorListSection: React.FC<Props> = ({ form, visitorFields }) => 
                         {fe?.nationality && <CellError msg={fe.nationality.message} />}
                       </td>
 
-                      <td className="p-0 border-l border-gray-100">
-                        <input
-                          {...register(`visitors.${i}.jobTitle`)}
-                          placeholder="Chức vụ..."
-                          className={cellInputCls(false)}
-                        />
-                      </td>
-
                       <td className="p-2 border-l border-gray-100 text-center">
                         <button
                           type="button"
-                          disabled={visitorFields.fields.length === 1}
                           onClick={() => visitorFields.remove(i)}
-                          className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-30"
+                          className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -189,15 +188,11 @@ export const VisitorListSection: React.FC<Props> = ({ form, visitorFields }) => 
           </table>
         </div>
 
-        {typeof visitorErrors === 'object' && !Array.isArray(visitorErrors) && 'message' in (visitorErrors as any) && (
-          <p className="mt-2 text-xs text-red-600 font-medium">⚠ {(visitorErrors as any).message}</p>
-        )}
-
         <div className="flex flex-wrap items-center justify-between gap-3 mt-4">
           <button
             type="button"
             onClick={() =>
-              visitorFields.append({ fullName: '', jobTitle: '', organization: '', nationality: '', email: '' })
+              visitorFields.append({ fullName: '', jobTitle: '', organization: '', nationality: '' })
             }
             className="inline-flex items-center gap-2 px-4 py-2 bg-[#f37021]/10 text-[#f37021] text-sm font-bold rounded-xl hover:bg-[#f37021]/20 transition-colors"
           >
@@ -281,8 +276,8 @@ export const VisitorListSection: React.FC<Props> = ({ form, visitorFields }) => 
 
 const cellInputCls = (hasError: boolean) =>
   [
-    'w-full p-3 bg-transparent outline-none font-medium placeholder:text-gray-300 text-sm',
-    hasError ? 'text-red-700' : 'text-gray-900',
+    'w-full p-3 bg-transparent outline-none font-medium placeholder:text-gray-300 text-sm border focus:ring-1 focus:outline-none transition-colors',
+    hasError ? 'text-red-700 border-red-300 bg-red-50/20 focus:border-red-400 focus:ring-red-300' : 'text-gray-900 border-transparent focus:border-blue-200 focus:ring-blue-200',
   ].join(' ');
 
 const CellError: React.FC<{ msg?: string }> = ({ msg }) =>

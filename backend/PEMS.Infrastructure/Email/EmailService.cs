@@ -54,6 +54,7 @@ public sealed class EmailService : IEmailService
         message.To.Add(toEmail);
 
         using var client = new SmtpClient(host, port) { EnableSsl = enableSsl };
+        client.UseDefaultCredentials = false;
         if (!string.IsNullOrEmpty(user))
             client.Credentials = new NetworkCredential(user, password);
 
@@ -142,23 +143,23 @@ public sealed class EmailService : IEmailService
         <div style=""width:56px;height:56px;background:#d1fae5;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:28px"">✓</div>
       </div>
       <h2 style=""text-align:center;color:#065f46;font-size:18px;margin:0 0 16px"">Đơn đăng ký đã được ghi nhận!</h2>
-      <p style=""color:#374151;font-size:14px"">Xin chào <strong>{{HE(contactFullName)}}</strong>,</p>
+      <p style=""color:#374151;font-size:14px"">Xin chào <strong>{HE(contactFullName)}</strong>,</p>
       <p style=""color:#374151;font-size:14px"">
-        Yêu cầu tham quan của đoàn <strong>{{HE(delegationName)}}</strong> đã được hệ thống PEMS ghi nhận thành công.
+        Yêu cầu tham quan của đoàn <strong>{HE(delegationName)}</strong> đã được hệ thống PEMS ghi nhận thành công.
       </p>
       
       <div style=""background:#f0f7ff;border-left:4px solid #004c91;border-radius:8px;padding:16px 20px;margin:20px 0"">
         <p style=""margin:0 0 8px;color:#374151;font-size:14px""><strong>Thông tin yêu cầu:</strong></p>
         <ul style=""margin:0;padding-left:20px;color:#374151;font-size:13px;line-height:1.6"">
-          <li><strong>Mã yêu cầu:</strong> <span style=""color:#004c91;font-weight:bold"">{{HE(requestCode)}}</span></li>
+          <li><strong>Mã yêu cầu:</strong> <span style=""color:#004c91;font-weight:bold"">{HE(requestCode)}</span></li>
           <li><strong>Trạng thái:</strong> <span style=""color:#d97706;font-weight:bold"">Chờ duyệt</span></li>
-          <li><strong>Phạm vi tham quan:</strong> {{HE(visitScopeDisplay)}}</li>
-          <li><strong>Thời gian dự kiến:</strong> {{HE(plannedTime)}}</li>
+          <li><strong>Phạm vi tham quan:</strong> {HE(visitScopeDisplay)}</li>
+          <li><strong>Thời gian dự kiến:</strong> {HE(plannedTime)}</li>
         </ul>
       </div>
 
       <p style=""color:#374151;font-size:14px"">
-        Email <strong>{{HE(toEmail)}}</strong> đã được sử dụng làm tài khoản VISITOR để theo dõi yêu cầu này.
+        Email <strong>{HE(toEmail)}</strong> đã được sử dụng làm tài khoản VISITOR để theo dõi yêu cầu này.
       </p>
       
       <div style=""background:#fafafa;border:1px solid #e5e7eb;border-radius:8px;padding:14px 18px;margin:16px 0"">

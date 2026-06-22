@@ -10,15 +10,18 @@ public sealed class InitiateVisitRequestCommandHandler
     private readonly IOtpService _otpService;
     private readonly IEmailService _emailService;
     private readonly IUserProvisionService _userProvisionService;
+    private readonly Microsoft.Extensions.Configuration.IConfiguration _configuration;
 
     public InitiateVisitRequestCommandHandler(
         IOtpService otpService,
         IEmailService emailService,
-        IUserProvisionService userProvisionService)
+        IUserProvisionService userProvisionService,
+        Microsoft.Extensions.Configuration.IConfiguration configuration)
     {
         _otpService  = otpService;
         _emailService = emailService;
         _userProvisionService = userProvisionService;
+        _configuration = configuration;
     }
 
     public async Task<InitiateVisitRequestResponse> Handle(
@@ -43,15 +46,27 @@ public sealed class InitiateVisitRequestCommandHandler
             null,
             cancellationToken);
 
-        await _emailService.SendVisitRequestOtpAsync(
-            email,
-            request.RegistrantFullName,
-            rawCode,
-            cancellationToken);
+        try
+        {
+            await _emailService.SendVisitRequestOtpAsync(
+                email,
+                request.RegistrantFullName,
+                rawCode,
+                cancellationToken);
+        }
+        catch (Exception)
+        {
+            throw new PEMS.Application.Common.Exceptions.BusinessRuleException("Không thể gửi mã OTP. Vui lòng thử lại sau.");
+        }
+
+        var isEmailEnabled = bool.TryParse(_configuration["Smtp:Enabled"], out var e) && e;
+        var msg = isEmailEnabled 
+            ? "Mã xác thực đã được gửi tới email của bạn. Vui lòng kiểm tra hộp thư."
+            : "Hệ thống đang ở chế độ DEV (Smtp:Enabled=false). Mã xác thực đã được in ra log của backend.";
 
         return new InitiateVisitRequestResponse(
             SessionToken: email,
-            Message:      "Mã xác thực đã được gửi tới email của bạn. Vui lòng kiểm tra hộp thư.",
+            Message:      msg,
             MaskedEmail:  MaskEmail(email));
     }
 

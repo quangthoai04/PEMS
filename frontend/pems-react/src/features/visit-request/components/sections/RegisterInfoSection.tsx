@@ -15,7 +15,7 @@ export const RegisterInfoSection: React.FC<Props> = ({ form, showErrors }) => {
   const { register, control, watch, setValue, formState: { errors, touchedFields, isSubmitted } } = form;
   const e = errors.registerInfo;
   const t = touchedFields.registerInfo;
-  const selectedPartnerId = watch('partnerId');
+  const partnerSelectionMode = watch('partnerSelectionMode');
 
   const shouldShowError = (field: keyof NonNullable<typeof t>, specificError?: any) => {
     return !!specificError && (t?.[field] || showErrors || isSubmitted);
@@ -89,8 +89,10 @@ export const RegisterInfoSection: React.FC<Props> = ({ form, showErrors }) => {
                   onChange={(val, name) => {
                     field.onChange(val);
                     if (val !== null) {
+                      setValue('partnerSelectionMode', 'EXISTING_PARTNER');
                       setValue('registerInfo.organization', name, { shouldValidate: true, shouldDirty: true });
                     } else {
+                      setValue('partnerSelectionMode', 'NEW_ORGANIZATION');
                       setValue('registerInfo.organization', '', { shouldValidate: true, shouldDirty: true });
                     }
                   }}
@@ -102,17 +104,18 @@ export const RegisterInfoSection: React.FC<Props> = ({ form, showErrors }) => {
           </FormField>
         </div>
 
-        {selectedPartnerId === null && (
+        {partnerSelectionMode === 'NEW_ORGANIZATION' && (
           <div className="lg:col-span-2">
             <FormField
-              label="Đơn vị công tác"
+              label="Tên đơn vị / tổ chức của bạn"
               required
               error={shouldShowError('organization', e?.organization) ? e?.organization?.message : undefined}
               isValid={isValid('organization')}
+              subtitle="Nếu đơn vị của bạn chưa có trong hệ thống, vui lòng nhập tên đơn vị tại đây."
             >
               <input
                 {...register('registerInfo.organization')}
-                placeholder="Nhập tên đơn vị công tác của bạn..."
+                placeholder="Nhập tên đơn vị / tổ chức"
                 className={inputCls(shouldShowError('organization', e?.organization), isValid('organization'))}
               />
             </FormField>

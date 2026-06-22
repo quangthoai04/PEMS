@@ -3,7 +3,7 @@ import type { VisitRequestSchema } from '../schema/visitRequest.schema';
 const VISIT_FORM_DRAFT_KEY = 'pems_public_visit_registration_draft';
 
 export type VisitRequestDraft = {
-  version: 1;
+  version: 2;
   savedAt: number;
   expiresAt: number;
   data: Partial<VisitRequestSchema>;
@@ -26,7 +26,7 @@ export function hasAnyUserInput(values: Partial<VisitRequestSchema> | undefined 
     values.purpose?.trim() ||
     values.workingContent?.trim() ||
     values.visits?.some(x => x.startDatetime || x.endDatetime) ||
-    values.visitors?.some(x => x.fullName?.trim() || x.email?.trim() || x.organization?.trim()) ||
+    values.visitors?.some(x => x.fullName?.trim() || x.organization?.trim()) ||
     values.supportTeam?.some(x => x.fullName?.trim() || x.organization?.trim()) ||
     cp?.fullName?.trim() || cp?.email?.trim() || cp?.phone?.trim() ||
     values.notes?.trim()
@@ -40,7 +40,7 @@ export function saveVisitRequestDraft(data: Partial<VisitRequestSchema>, expires
     const sanitizedData = sanitizeDraftData(data);
 
     const payload: VisitRequestDraft = {
-      version: 1,
+      version: 2,
       savedAt: Date.now(),
       expiresAt: Date.now() + expiresInMs,
       data: sanitizedData,
@@ -59,9 +59,17 @@ export function loadVisitRequestDraft(): VisitRequestDraft | null {
 
     const parsed = JSON.parse(raw) as VisitRequestDraft;
 
-    if (!parsed?.data || !parsed?.expiresAt || Date.now() > parsed.expiresAt) {
+    if (!parsed?.data || !parsed?.expiresAt || Date.now() > parsed.expiresAt || parsed.version < 2) {
       localStorage.removeItem(VISIT_FORM_DRAFT_KEY);
       return null;
+    }
+
+    if (!parsed.data.partnerSelectionMode) {
+      if (parsed.data.partnerId !== null && parsed.data.partnerId !== undefined) {
+        parsed.data.partnerSelectionMode = 'EXISTING_PARTNER';
+      } else {
+        parsed.data.partnerSelectionMode = 'NEW_ORGANIZATION';
+      }
     }
 
     return parsed;
@@ -93,6 +101,28 @@ function sanitizeDraftData(data: Partial<VisitRequestSchema>): Partial<VisitRequ
   delete cloned.uploadedFile;
   delete cloned.uploadedFiles;
   delete cloned.excelFile;
+
+  // Xóa các trường cũ đã bị loại bỏ theo v8.4
+  delete (cloned as any).expectedGuestCount;
+  delete (cloned as any).interpreterNote;
+  
+  if (cloned.visitors) {
+    cloned.visitors.forEach((v: any) => {
+      delete v.email;
+      delete v.phone;
+      delete v.isRepresentative;
+      delete v.note;
+    });
+  }
+
+  if (cloned.supportTeam) {
+    cloned.supportTeam.forEach((s: any) => {
+      delete s.email;
+      delete s.phone;
+      delete s.isRepresentative;
+      delete s.note;
+    });
+  }
 
   return cloned;
 }

@@ -15,10 +15,9 @@ public record VisitSlotDto(
 // passport/identity column, so none is collected or sent.
 public record VisitorDto(
     string FullName,
-    string Email,
     string Nationality,
-    string? JobTitle,
-    string? Organization);
+    string JobTitle,
+    string Organization);
 
 public record SupportTeamMemberDto(
     string FullName,
@@ -55,7 +54,6 @@ public record VisitRequestFormData(
     string? WorkingContent,
 
     // ── Attendees ────────────────────────────────────────
-    int ExpectedGuestCount,
     IList<VisitorDto> Visitors,
     IList<SupportTeamMemberDto> SupportMembers,
 
@@ -65,7 +63,6 @@ public record VisitRequestFormData(
 
     // ── Additional ───────────────────────────────────────
     string WorkingLanguage,          // EN | VI
-    string? InterpreterNote,
     string TransportationType,
     string? TransportationDetail,
     string MediaConsentStatus,

@@ -3,7 +3,6 @@ export interface VisitorEntry {
   jobTitle: string;
   organization: string;
   nationality: string;
-  email: string;
 }
 
 export interface SupportTeamEntry {
@@ -44,12 +43,10 @@ export interface VisitRequestFormData {
   visits: VisitSlot[];
   purpose: string;
   workingContent: string;
-  expectedGuestCount: number;
   visitors: VisitorEntry[];
   supportTeam: SupportTeamEntry[];
   contactPoint: ContactPointData;
   workingLanguage: 'EN' | 'VI';
-  interpreterNote?: string;
   transportationType: string;
   transportationDetail?: string;
   mediaConsentStatus: string;

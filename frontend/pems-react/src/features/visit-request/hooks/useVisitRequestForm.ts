@@ -9,7 +9,6 @@ const DEFAULT_VISITOR = {
   jobTitle: '',
   organization: '',
   nationality: '',
-  email: '',
 };
 
 const DEFAULT_SUPPORT = {
@@ -28,17 +27,16 @@ export const DEFAULT_VISIT_REQUEST_VALUES: VisitRequestSchema = {
   visits: [{ campus: 'HN', startDatetime: '', endDatetime: '' }],
   purpose: '',
   workingContent: '',
-  expectedGuestCount: 1,
   visitors: [{ ...DEFAULT_VISITOR }],
   supportTeam: [],
   contactPoint: { fullName: '', organization: '', phone: '', email: '' },
-  workingLanguage: 'EN',
-  interpreterNote: '',
-  transportationType: 'UNKNOWN',
+  workingLanguage: 'VI',
+  transportationType: 'SELF_ARRANGED',
   transportationDetail: '',
   mediaConsentStatus: 'UNKNOWN',
   mediaConsentNote: '',
-  partnerId: undefined,
+  partnerSelectionMode: 'NEW_ORGANIZATION',
+  partnerId: null,
   notes: '',
   timeOverlapConfirmed: false,
 };
