@@ -11,8 +11,7 @@ public static class AuthErrorCodes
     public const string CampusMismatch = "CAMPUS_MISMATCH";
     public const string CampusNotFound = "CAMPUS_NOT_FOUND";
     public const string CampusInactive = "CAMPUS_INACTIVE";
-    public const string WrongPortalVisitorAccount = "WRONG_PORTAL_VISITOR_ACCOUNT";
-    public const string WrongPortalInternalAccount = "WRONG_PORTAL_INTERNAL_ACCOUNT";
+    public const string PortalMismatch = "PORTAL_MISMATCH";
     public const string InternalAccountNotFound = "INTERNAL_ACCOUNT_NOT_FOUND";
     public const string PasswordLoginDisabled = "PASSWORD_LOGIN_DISABLED";
     public const string InvalidCredentials = "INVALID_CREDENTIALS";

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -44,21 +44,21 @@ public sealed class GetVisitInvitationsQueryHandler
                 where p.UserId == userId && !p.IsHost && p.Status != ParticipantStatuses.Removed
                 select new { p, c, vr };
 
-        // Lọc theo Role
+        // Lá»c theo Role
         if (roleCode == RoleCodes.Staff && string.IsNullOrEmpty(subRole))
         {
             q = q.Where(x => x.p.ParticipantRole == ParticipantRoles.IcSupport);
         }
         else if (roleCode == RoleCodes.Department || roleCode == "DEPT")
         {
-            if (subRole == SubRoles.Leader)
+            if (subRole == UserSubRoles.Leader)
             {
-                // Nhận lời mời từ IC/Host
+                // Nháº­n lá»i má»i tá»« IC/Host
                 q = q.Where(x => x.p.ParticipantRole == ParticipantRoles.DeptSupport);
             }
             else // Staff
             {
-                // Chỉ nhận nhiệm vụ được giao
+                // Chá»‰ nháº­n nhiá»‡m vá»¥ Ä‘Æ°á»£c giao
                 q = q.Where(x => x.p.ParticipantRole == ParticipantRoles.DeptSupport && x.p.AssignedBy != null);
             }
         }
@@ -68,11 +68,11 @@ public sealed class GetVisitInvitationsQueryHandler
         }
         else
         {
-            // Các role khác không có dữ liệu
+            // CÃ¡c role khÃ¡c khÃ´ng cÃ³ dá»¯ liá»‡u
             return PaginatedResult<InvitationListItemDto>.Create(new List<InvitationListItemDto>(), request.Page, request.PageSize, 0);
         }
 
-        // Lọc theo keyword
+        // Lá»c theo keyword
         if (!string.IsNullOrWhiteSpace(request.Keyword))
         {
             var keyword = request.Keyword.ToLower();
@@ -81,7 +81,7 @@ public sealed class GetVisitInvitationsQueryHandler
                 (x.vr.RequestCode != null && x.vr.RequestCode.ToLower().Contains(keyword)));
         }
 
-        // Lọc theo date
+        // Lá»c theo date
         if (request.FromDate.HasValue)
         {
             var from = request.FromDate.Value.Date;
@@ -93,7 +93,7 @@ public sealed class GetVisitInvitationsQueryHandler
             q = q.Where(x => x.c.PlannedStartAt <= to);
         }
 
-        // Lọc theo trạng thái lời mời
+        // Lá»c theo tráº¡ng thÃ¡i lá»i má»i
         if (!string.IsNullOrWhiteSpace(request.InvitationStatus))
         {
             var statusStr = request.InvitationStatus.ToUpperInvariant();
@@ -179,7 +179,7 @@ public sealed class GetVisitInvitationsQueryHandler
 
             if (roleCode == RoleCodes.Department || roleCode == "DEPT")
             {
-                if (subRole == SubRoles.Leader)
+                if (subRole == UserSubRoles.Leader)
                 {
                     if (x.Status == ParticipantStatuses.Invited && !isClosedOrCancelled)
                     {
@@ -195,7 +195,7 @@ public sealed class GetVisitInvitationsQueryHandler
                 else // Staff
                 {
                     // Update progress / mark done etc. if needed later, but for now just VIEW_DETAIL.
-                    // The prompt says "Department Staff chỉ xác nhận/thực hiện nhiệm vụ, không làm lại luồng accept/decline giống lời mời từ IC."
+                    // The prompt says "Department Staff chá»‰ xÃ¡c nháº­n/thá»±c hiá»‡n nhiá»‡m vá»¥, khÃ´ng lÃ m láº¡i luá»“ng accept/decline giá»‘ng lá»i má»i tá»« IC."
                 }
             }
             else // Staff, Student

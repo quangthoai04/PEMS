@@ -57,7 +57,7 @@ public sealed class LoginviaCredentialsCommandHandler : IRequestHandler<Loginvia
 
         // 0. Password login is disabled entirely in ProductionSsoOnly mode (or by config).
         if (!_options.PasswordLoginEnabled)
-            await FailAsync(null, email, portal, LoginLogStatuses.Blocked, "password_login_disabled",
+            await FailAsync(null, email, portal, LoginLogStatuses.Blocked, "password_login_disabled", SecurityEventFailureReasonCodes.AccountDisabled,
                 request, AuthErrorCodes.PasswordLoginDisabled,
                 "Password sign-in is disabled. Please use SSO/FEID.", 403, cancellationToken);
 
@@ -70,33 +70,10 @@ public sealed class LoginviaCredentialsCommandHandler : IRequestHandler<Loginvia
 
         // Unknown email — generic to avoid account enumeration.
         if (user is null)
-            await FailAsync(null, email, portal, LoginLogStatuses.Failed, "user_not_found",
+            await FailAsync(null, email, portal, LoginLogStatuses.Failed, "user_not_found", SecurityEventFailureReasonCodes.AccountNotFound,
                 request, AuthErrorCodes.InvalidCredentials, GenericCredentialError, 401, cancellationToken);
 
         var now = _clock.UtcNow;
-
-        // Temporary lockout window.
-        if (user!.LockedUntil is not null && user.LockedUntil > now)
-            await FailAsync(user, email, portal, LoginLogStatuses.Blocked, "account_locked",
-                request, AuthErrorCodes.AccountLocked,
-                "Your account is temporarily locked. Please try again later.", 403, cancellationToken);
-
-        // Account status must be ACTIVE.
-        if (user.Status != UserStatuses.Active)
-            await FailAsync(user, email, portal, LoginLogStatuses.Blocked, $"status_{user.Status}",
-                request, AuthErrorCodes.AccountInactive, "Your account is not active.", 403, cancellationToken);
-
-        // Role must be active and not soft-deleted.
-        if (user.Role is null || user.Role.Status != EntityStatuses.Active || user.Role.DeletedAt is not null)
-            await FailAsync(user, email, portal, LoginLogStatuses.Blocked, "role_inactive",
-                request, AuthErrorCodes.AccountInactive, "Your account is not active.", 403, cancellationToken);
-
-        // Local password provider, if present, must be enabled.
-        var localProvider = user.AuthProviders.FirstOrDefault(p => p.ProviderType == ProviderTypes.LocalPassword);
-        if (localProvider is not null && !localProvider.IsEnabled)
-            await FailAsync(user, email, portal, LoginLogStatuses.Blocked, "local_provider_disabled",
-                request, AuthErrorCodes.PasswordLoginDisabled,
-                "Password sign-in is disabled for this account.", 403, cancellationToken);
 
         // Verify the password BEFORE revealing any portal/campus mismatch (anti-enumeration).
         var passwordOk = !string.IsNullOrEmpty(user.PasswordHash)
@@ -110,51 +87,74 @@ public sealed class LoginviaCredentialsCommandHandler : IRequestHandler<Loginvia
                 user.LockedUntil = now.AddMinutes(_lockoutMinutes);
                 await _db.SaveChangesAsync(cancellationToken);
 
-                await FailAsync(user, email, portal, LoginLogStatuses.Blocked, "lockout_triggered",
+                await FailAsync(user, email, portal, LoginLogStatuses.Blocked, "lockout_triggered", SecurityEventFailureReasonCodes.AccountDisabled,
                     request, AuthErrorCodes.AccountLocked,
                     "Your account is temporarily locked. Please try again later.", 403, cancellationToken);
             }
 
             await _db.SaveChangesAsync(cancellationToken);
-            await FailAsync(user, email, portal, LoginLogStatuses.Failed, "bad_password",
+            await FailAsync(user, email, portal, LoginLogStatuses.Failed, "bad_password", null,
                 request, AuthErrorCodes.InvalidCredentials, GenericCredentialError, 401, cancellationToken);
         }
+
+        // Temporary lockout window.
+        if (user!.LockedUntil is not null && user.LockedUntil > now)
+            await FailAsync(user, email, portal, LoginLogStatuses.Blocked, "account_locked", SecurityEventFailureReasonCodes.AccountDisabled,
+                request, AuthErrorCodes.AccountLocked,
+                "Your account is temporarily locked. Please try again later.", 403, cancellationToken);
+
+        // Account status must be ACTIVE.
+        if (user.Status != UserStatuses.Active)
+            await FailAsync(user, email, portal, LoginLogStatuses.Blocked, $"status_{user.Status}", SecurityEventFailureReasonCodes.AccountDisabled,
+                request, AuthErrorCodes.AccountInactive, "Your account is not active.", 403, cancellationToken);
+
+        // Role must be active and not soft-deleted.
+        if (user.Role is null || user.Role.Status != EntityStatuses.Active || user.Role.DeletedAt is not null)
+            await FailAsync(user, email, portal, LoginLogStatuses.Blocked, "role_inactive", SecurityEventFailureReasonCodes.AccountDisabled,
+                request, AuthErrorCodes.AccountInactive, "Your account is not active.", 403, cancellationToken);
+
+        // Local password provider, if present, must be enabled.
+        var localProvider = user.AuthProviders.FirstOrDefault(p => p.ProviderType == ProviderTypes.LocalPassword);
+        if (localProvider is not null && !localProvider.IsEnabled)
+            await FailAsync(user, email, portal, LoginLogStatuses.Blocked, "local_provider_disabled", SecurityEventFailureReasonCodes.AccountDisabled,
+                request, AuthErrorCodes.PasswordLoginDisabled,
+                "Password sign-in is disabled for this account.", 403, cancellationToken);
 
         // ── Same portal / role / campus policy as SSO (applied after password is verified) ──
         var isVisitor = user.Role!.RoleCode == RoleCodes.Visitor;
         if (portal == LoginPortals.Visitor && !isVisitor)
-            await FailAsync(user, email, portal, LoginLogStatuses.Failed, "wrong_portal_internal_in_visitor",
-                request, AuthErrorCodes.WrongPortalInternalAccount,
-                "Your account belongs to the internal portal.", 403, cancellationToken);
+            await FailAsync(user, email, portal, LoginLogStatuses.Failed, "wrong_portal_internal_in_visitor", SecurityEventFailureReasonCodes.PortalMismatch,
+                request, AuthErrorCodes.PortalMismatch,
+                "Tài khoản này không được phép đăng nhập tại cổng hiện tại. Vui lòng kiểm tra lại cổng đăng nhập phù hợp.", 403, cancellationToken);
 
         if (portal == LoginPortals.Internal && isVisitor)
-            await FailAsync(user, email, portal, LoginLogStatuses.Failed, "wrong_portal_visitor_in_internal",
-                request, AuthErrorCodes.WrongPortalVisitorAccount,
-                "Your Visitor account cannot use the internal portal.", 403, cancellationToken);
+            await FailAsync(user, email, portal, LoginLogStatuses.Failed, "wrong_portal_visitor_in_internal", SecurityEventFailureReasonCodes.PortalMismatch,
+                request, AuthErrorCodes.PortalMismatch,
+                "Tài khoản này không được phép đăng nhập tại cổng hiện tại. Vui lòng kiểm tra lại cổng đăng nhập phù hợp.", 403, cancellationToken);
 
         if (portal == LoginPortals.Internal)
         {
             if (!request.SelectedCampusId.HasValue)
-                await FailAsync(user, email, portal, LoginLogStatuses.Failed, "missing_campus",
+                await FailAsync(user, email, portal, LoginLogStatuses.Failed, "missing_campus", SecurityEventFailureReasonCodes.CampusMismatch,
                     request, AuthErrorCodes.CampusRequired,
-                    "Please select a campus to continue.", 400, cancellationToken);
+                    "Tài khoản của bạn không có quyền truy cập cơ sở đã chọn. Vui lòng chọn đúng cơ sở được phân quyền.", 400, cancellationToken);
 
             var selectedCampus = await _db.Campuses.FirstOrDefaultAsync(c => c.CampusId == request.SelectedCampusId.Value, cancellationToken);
             if (selectedCampus is null)
-                await FailAsync(user, email, portal, LoginLogStatuses.Failed, "campus_not_found",
+                await FailAsync(user, email, portal, LoginLogStatuses.Failed, "campus_not_found", SecurityEventFailureReasonCodes.CampusMismatch,
                     request, AuthErrorCodes.CampusNotFound,
-                    "The selected campus does not exist.", 404, cancellationToken);
+                    "Tài khoản của bạn không có quyền truy cập cơ sở đã chọn. Vui lòng chọn đúng cơ sở được phân quyền.", 404, cancellationToken);
 
             if (selectedCampus.Status != "ACTIVE")
-                await FailAsync(user, email, portal, LoginLogStatuses.Failed, "campus_inactive",
+                await FailAsync(user, email, portal, LoginLogStatuses.Failed, "campus_inactive", SecurityEventFailureReasonCodes.CampusMismatch,
                     request, AuthErrorCodes.CampusInactive,
-                    "The selected campus is not currently active.", 403, cancellationToken);
+                    "Tài khoản của bạn không có quyền truy cập cơ sở đã chọn. Vui lòng chọn đúng cơ sở được phân quyền.", 403, cancellationToken);
 
             if (user.PrimaryCampusId is not null
                 && request.SelectedCampusId != user.PrimaryCampusId)
-                await FailAsync(user, email, portal, LoginLogStatuses.Failed, "campus_mismatch",
+                await FailAsync(user, email, portal, LoginLogStatuses.Failed, "campus_mismatch", SecurityEventFailureReasonCodes.CampusMismatch,
                     request, AuthErrorCodes.CampusMismatch,
-                    "Your account does not belong to the selected campus.", 403, cancellationToken);
+                    "Tài khoản của bạn không có quyền truy cập cơ sở đã chọn. Vui lòng chọn đúng cơ sở được phân quyền.", 403, cancellationToken);
         }
 
         // ── Success ───────────────────────────────────────────────────────────
@@ -169,7 +169,7 @@ public sealed class LoginviaCredentialsCommandHandler : IRequestHandler<Loginvia
             user, portal, localProvider?.AuthProviderId, request.IpAddress, request.UserAgent,
             _sessionService, _jwtTokenService, _permissionChecker, cancellationToken);
 
-        await _audit.WriteLoginLogAsync(user.UserId, email, portal, user.PrimaryCampusId,
+        await _audit.WriteLoginLogAsync(user.UserId, email, portal, request.SelectedCampusId,
             ProviderTypes.LocalPassword, LoginLogStatuses.Success, null,
             request.IpAddress, request.UserAgent, null, cancellationToken);
 
@@ -179,14 +179,26 @@ public sealed class LoginviaCredentialsCommandHandler : IRequestHandler<Loginvia
 
     /// <summary>Writes a failed/blocked login log + security event, then throws a coded auth error. Never returns.</summary>
     private async Task FailAsync(
-        User? user, string email, string portal, string logStatus, string internalReason,
+        User? user, string email, string portal, string logStatus, string internalReason, string? failureReasonCode,
         LoginviaCredentialsCommand request, string errorCode, string message, int statusCode,
         CancellationToken cancellationToken)
     {
-        await _audit.WriteLoginLogAsync(user?.UserId, email, portal, user?.PrimaryCampusId,
+        await _audit.WriteLoginLogAsync(user?.UserId, email, portal, request.SelectedCampusId,
             ProviderTypes.LocalPassword, logStatus, internalReason, request.IpAddress, request.UserAgent, null, cancellationToken);
 
-
+        if (failureReasonCode != null)
+        {
+            var eventType = failureReasonCode switch
+            {
+                SecurityEventFailureReasonCodes.PortalMismatch => SecurityEventTypes.PortalValidation,
+                SecurityEventFailureReasonCodes.CampusMismatch => SecurityEventTypes.CampusValidation,
+                _ => SecurityEventTypes.SecurityPolicyCheck
+            };
+            
+            await _audit.WriteSecurityEventAsync(user?.UserId, email, eventType,
+                "BLOCKED", failureReasonCode, request.IpAddress, request.UserAgent,
+                portal, request.SelectedCampusId, null, null, internalReason, cancellationToken);
+        }
 
         throw new AuthBusinessException(errorCode, message, statusCode);
     }

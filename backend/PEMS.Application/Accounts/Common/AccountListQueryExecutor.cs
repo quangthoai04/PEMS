@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -19,7 +19,7 @@ namespace PEMS.Application.Accounts.Common;
 ///
 /// Responsibilities: enforce the caller's role/campus scope, apply whitelisted
 /// filters + sort, page the result, and project to <see cref="AccountListItemDto"/>
-/// (no sensitive columns). Read-only â€” always <c>AsNoTracking()</c>.
+/// (no sensitive columns). Read-only Ã¢â‚¬â€ always <c>AsNoTracking()</c>.
 /// </summary>
 internal static class AccountListQueryExecutor
 {
@@ -35,23 +35,23 @@ internal static class AccountListQueryExecutor
         IAccountListCriteria request,
         CancellationToken ct)
     {
-        // â”€â”€ Caller identity (defense in depth; the endpoint is also RBAC-gated) â”€â”€
+        // Ã¢â€â‚¬Ã¢â€â‚¬ Caller identity (defense in depth; the endpoint is also RBAC-gated) Ã¢â€â‚¬Ã¢â€â‚¬
         if (!currentUser.IsAuthenticated ||
             currentUser.UserId is null ||
             string.IsNullOrEmpty(currentUser.RoleCode))
         {
             throw new AuthBusinessException(
                 AccountErrorCodes.AccountListForbidden,
-                "Báº¡n khÃ´ng cÃ³ quyá»n xem danh sÃ¡ch tÃ i khoáº£n.", 403);
+                "BÃ¡ÂºÂ¡n khÃƒÂ´ng cÃƒÂ³ quyÃ¡Â»Ân xem danh sÃƒÂ¡ch tÃƒÂ i khoÃ¡ÂºÂ£n.", 403);
         }
 
         var roleCode = currentUser.RoleCode!;
         var myCampusId = currentUser.PrimaryCampusId;
         var privileged = AccountProvisioningRules.IsPrivileged(roleCode);   // ADMIN / HO
-        var isStaffLeader = roleCode == RoleCodes.Staff && currentUser.SubRole == SubRoles.Leader;
+        var isStaffLeader = roleCode == RoleCodes.Staff && currentUser.SubRole == UserSubRoles.Leader;
         var subRoleForCheck = roleCode is "STAFF" or "DEPARTMENT" ? currentUser.SubRole ?? "NONE" : "NONE";
 
-        // â”€â”€ Normalize paging / sort â”€â”€
+        // Ã¢â€â‚¬Ã¢â€â‚¬ Normalize paging / sort Ã¢â€â‚¬Ã¢â€â‚¬
         var page = request.Page < 1 ? 1 : request.Page;
         var pageSize = request.PageSize < 1 ? 20 : (request.PageSize > 100 ? 100 : request.PageSize);
 
@@ -61,7 +61,7 @@ internal static class AccountListQueryExecutor
         if (!AllowedSortColumns.Contains(sortBy))
         {
             throw new AuthBusinessException(
-                AccountErrorCodes.UnsupportedSortColumn, "Cá»™t sáº¯p xáº¿p khÃ´ng há»£p lá»‡.", 400);
+                AccountErrorCodes.UnsupportedSortColumn, "CÃ¡Â»â„¢t sÃ¡ÂºÂ¯p xÃ¡ÂºÂ¿p khÃƒÂ´ng hÃ¡Â»Â£p lÃ¡Â»â€¡.", 400);
         }
         var ascending = string.Equals(request.SortDirection, "asc", StringComparison.OrdinalIgnoreCase);
 
@@ -70,7 +70,7 @@ internal static class AccountListQueryExecutor
 
         var query = db.Users.AsNoTracking();
 
-        // â”€â”€ Row-level scope by role/campus (never trust client campusId) â”€â”€
+        // Ã¢â€â‚¬Ã¢â€â‚¬ Row-level scope by role/campus (never trust client campusId) Ã¢â€â‚¬Ã¢â€â‚¬
         if (privileged)
         {
             if (request.CampusId.HasValue)
@@ -82,7 +82,7 @@ internal static class AccountListQueryExecutor
             {
                 throw new AuthBusinessException(
                     AccountErrorCodes.CampusScopeForbidden,
-                    "Báº¡n khÃ´ng cÃ³ quyá»n xem tÃ i khoáº£n á»Ÿ cÆ¡ sá»Ÿ nÃ y.", 403);
+                    "BÃ¡ÂºÂ¡n khÃƒÂ´ng cÃƒÂ³ quyÃ¡Â»Ân xem tÃƒÂ i khoÃ¡ÂºÂ£n Ã¡Â»Å¸ cÃ†Â¡ sÃ¡Â»Å¸ nÃƒÂ y.", 403);
             }
 
             if (isStaffLeader)
@@ -105,7 +105,7 @@ internal static class AccountListQueryExecutor
             }
         }
 
-        // â”€â”€ Keyword search (safe fields only) â”€â”€
+        // Ã¢â€â‚¬Ã¢â€â‚¬ Keyword search (safe fields only) Ã¢â€â‚¬Ã¢â€â‚¬
         if (hasKeyword)
         {
             var kw = keyword!.ToLower();
@@ -121,7 +121,7 @@ internal static class AccountListQueryExecutor
                 (u.StudentCode != null && u.StudentCode.ToLower().Contains(kw)));
         }
 
-        // â”€â”€ Whitelisted filters â”€â”€
+        // Ã¢â€â‚¬Ã¢â€â‚¬ Whitelisted filters Ã¢â€â‚¬Ã¢â€â‚¬
         if (!string.IsNullOrWhiteSpace(request.RoleCode))
         {
             var rc = request.RoleCode.Trim().ToUpperInvariant();
@@ -162,7 +162,7 @@ internal static class AccountListQueryExecutor
                 query = query.Where(u => u.Role.RoleCode == RoleCodes.Visitor);
             else if (at == "INTERNAL")
                 query = query.Where(u => u.Role.RoleCode != RoleCodes.Visitor);
-            // ALL â†’ no filter
+            // ALL Ã¢â€ â€™ no filter
         }
 
         if (request.HasCampus.HasValue)
@@ -187,7 +187,7 @@ internal static class AccountListQueryExecutor
             query = query.Where(u => u.LastLoginAt < lastToExclusive);
         }
 
-        // â”€â”€ Sort (whitelist switch, never raw SQL) + stable tie-breaker â”€â”€
+        // Ã¢â€â‚¬Ã¢â€â‚¬ Sort (whitelist switch, never raw SQL) + stable tie-breaker Ã¢â€â‚¬Ã¢â€â‚¬
         IOrderedQueryable<User> ordered = (sortBy, ascending) switch
         {
             ("email", true) => query.OrderBy(u => u.Email),
@@ -241,7 +241,7 @@ internal static class AccountListQueryExecutor
             })
             .ToListAsync(ct);
 
-        // â”€â”€ Per-caller action permissions (evaluated once) â”€â”€
+        // Ã¢â€â‚¬Ã¢â€â‚¬ Per-caller action permissions (evaluated once) Ã¢â€â‚¬Ã¢â€â‚¬
         var roleId = currentUser.RoleId;
         var canViewDetailsPerm = roleId.HasValue &&
             await permissionChecker.HasPermissionAsync(roleId.Value, subRoleForCheck, PermissionCodes.ViewAccountDetails, PermissionLevels.Read, ct);

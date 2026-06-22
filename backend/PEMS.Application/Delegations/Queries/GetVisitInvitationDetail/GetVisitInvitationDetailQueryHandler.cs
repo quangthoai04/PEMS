@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -104,7 +104,7 @@ public sealed class GetVisitInvitationDetailQueryHandler
 
         if (roleCode == RoleCodes.Department || roleCode == "DEPT")
         {
-            if (subRole == SubRoles.Leader)
+            if (subRole == UserSubRoles.Leader)
             {
                 if (data.p.Status == ParticipantStatuses.Invited && !isClosedOrCancelled)
                 {

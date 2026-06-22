@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Domain.Constants;
@@ -63,7 +63,7 @@ internal static class AccountProvisioningRules
             case RoleCodes.Staff:
             case RoleCodes.Department:
             {
-                if (subRole != SubRoles.Leader && subRole != SubRoles.Staff)
+                if (subRole != UserSubRoles.Leader && subRole != UserSubRoles.Staff)
                     throw new ValidationException("Sub-role (Leader or Staff) is required for STAFF/DEPARTMENT roles.");
                 if (departmentId is null)
                     throw new ValidationException("Department is required for STAFF/DEPARTMENT roles.");
@@ -89,7 +89,7 @@ internal static class AccountProvisioningRules
                 return new ResolvedShape(role.RoleId, roleCode, subRole, dept.DepartmentId, dept.CampusId);
             }
 
-            default: // ADMIN, HO, STUDENT — require a campus, no sub-role / department.
+            default: // ADMIN, HO, STUDENT â€” require a campus, no sub-role / department.
             {
                 if (!string.IsNullOrWhiteSpace(subRole))
                     throw new ValidationException($"{roleCode} must not have a sub-role.");

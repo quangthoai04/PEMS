@@ -13,11 +13,9 @@ interface ApiErrorBody {
 export const AUTH_ERROR_MESSAGES: Record<string, string> = {
   CAMPUS_REQUIRED: 'Vui lòng chọn cơ sở trước khi đăng nhập.',
   CAMPUS_MISMATCH:
-    'Tài khoản của bạn không thuộc cơ sở đã chọn. Vui lòng chọn đúng cơ sở hoặc liên hệ quản trị viên.',
-  WRONG_PORTAL_VISITOR_ACCOUNT:
-    'Tài khoản của bạn hiện là Visitor nên không phù hợp với cổng nội bộ. Vui lòng liên hệ Staff Leader của cơ sở để được cập nhật vai trò.',
-  WRONG_PORTAL_INTERNAL_ACCOUNT:
-    'Tài khoản của bạn thuộc cổng nội bộ. Vui lòng đăng nhập tại cổng nội bộ và chọn đúng cơ sở.',
+    'Tài khoản của bạn không có quyền truy cập cơ sở đã chọn. Vui lòng chọn đúng cơ sở được phân quyền.',
+  PORTAL_MISMATCH:
+    'Tài khoản này không được phép đăng nhập tại cổng hiện tại. Vui lòng kiểm tra lại cổng đăng nhập phù hợp.',
   INTERNAL_ACCOUNT_NOT_FOUND:
     'Tài khoản của bạn chưa được tạo trong hệ thống nội bộ. Vui lòng liên hệ Staff Leader hoặc quản trị viên của cơ sở để được cấp quyền đăng nhập.',
   PASSWORD_LOGIN_DISABLED: 'Đăng nhập bằng mật khẩu đã bị tắt. Vui lòng sử dụng SSO/FEID.',

@@ -18,8 +18,8 @@ interface AuthContextValue {
   isAuthenticated: boolean;
   isLoading: boolean;
 
-  login: (email: string, password: string, loginPortal: LoginPortal, selectedCampusId?: string) => Promise<AuthUser>;
-  loginWithGoogle: (idToken: string, loginPortal: LoginPortal, selectedCampusId?: string) => Promise<AuthUser>;
+  login: (email: string, password: string, loginPortal: LoginPortal, selectedCampusId?: number | null) => Promise<AuthUser>;
+  loginWithGoogle: (idToken: string, loginPortal: LoginPortal, selectedCampusId?: number | null) => Promise<AuthUser>;
   logout: () => Promise<void>;
   refreshProfile: () => Promise<void>;
   changePassword: (payload: ChangePasswordRequest) => Promise<void>;
@@ -91,13 +91,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const login = useCallback(
-    async (email: string, password: string, portal: LoginPortal, campusId?: string) => {
+    async (email: string, password: string, portal: LoginPortal, campusId?: number | null) => {
       const result = await authenticationApi.login(email, password, portal, campusId);
       authStorage.setTokens(result.accessToken, result.refreshToken);
       authStorage.setLoginPortal(portal);
       if (portal === 'INTERNAL' && campusId) {
-        authStorage.setSelectedCampusId(campusId);
-        setSelectedCampusId(campusId);
+        authStorage.setSelectedCampusId(campusId.toString());
+        setSelectedCampusId(campusId.toString());
       } else {
         authStorage.clearSelectedCampusId();
         setSelectedCampusId(null);
@@ -110,13 +110,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const loginWithGoogle = useCallback(
-    async (idToken: string, portal: LoginPortal, campusId?: string) => {
+    async (idToken: string, portal: LoginPortal, campusId?: number | null) => {
       const result = await authenticationApi.loginWithGoogle(idToken, portal, campusId);
       authStorage.setTokens(result.accessToken, result.refreshToken);
       authStorage.setLoginPortal(portal);
       if (portal === 'INTERNAL' && campusId) {
-        authStorage.setSelectedCampusId(campusId);
-        setSelectedCampusId(campusId);
+        authStorage.setSelectedCampusId(campusId.toString());
+        setSelectedCampusId(campusId.toString());
       } else {
         authStorage.clearSelectedCampusId();
         setSelectedCampusId(null);

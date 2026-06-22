@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -29,15 +29,15 @@ public sealed class GetHostCandidatesQueryHandler
         if (!_currentUser.IsAuthenticated || _currentUser.UserId is null)
             throw new ForbiddenException();
 
-        if (!(_currentUser.RoleCode == RoleCodes.Staff && _currentUser.SubRole == SubRoles.Leader))
-            throw new ForbiddenException("Chỉ Staff Leader mới được xem danh sách host.");
+        if (!(_currentUser.RoleCode == RoleCodes.Staff && _currentUser.SubRole == UserSubRoles.Leader))
+            throw new ForbiddenException("Chá»‰ Staff Leader má»›i Ä‘Æ°á»£c xem danh sÃ¡ch host.");
 
         var instance = await _db.VisitRequestCampuses
             .FirstOrDefaultAsync(c => c.VisitInstanceId == request.VisitInstanceId, cancellationToken)
             ?? throw new NotFoundException("VisitRequestCampus", request.VisitInstanceId);
 
         if (_currentUser.PrimaryCampusId != instance.CampusId)
-            throw new ForbiddenException("Cơ sở này không thuộc phạm vi phụ trách của bạn.");
+            throw new ForbiddenException("CÆ¡ sá»Ÿ nÃ y khÃ´ng thuá»™c pháº¡m vi phá»¥ trÃ¡ch cá»§a báº¡n.");
 
         var campusId = instance.CampusId;
         var windowStart = instance.PlannedStartAt;
@@ -50,7 +50,7 @@ public sealed class GetHostCandidatesQueryHandler
             join d in _db.Departments on u.DepartmentId equals d.DepartmentId into depts
             from dep in depts.DefaultIfEmpty()
             where r.RoleCode == RoleCodes.Staff
-                  && u.SubRole == SubRoles.Staff
+                  && u.SubRole == UserSubRoles.Staff
                   && u.PrimaryCampusId == campusId
                   && u.Status == UserStatuses.Active
                   && u.UserId != _currentUser.UserId

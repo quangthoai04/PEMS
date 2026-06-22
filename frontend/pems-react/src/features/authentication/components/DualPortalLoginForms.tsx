@@ -17,14 +17,23 @@ export function InternalLoginForm({ fromPath, onSuccess }: { fromPath?: string; 
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [selectedCampusId, setSelectedCampusId] = useState('');
+  const [selectedCampusId, setSelectedCampusId] = useState<number | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string; campus?: string }>({});
   const [formError, setFormError] = useState('');
+  const [googleCampusError, setGoogleCampusError] = useState<string | null>(null);
+  const [googleLoginAttempted, setGoogleLoginAttempted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const { campuses, loading: loadingCampuses, error: campusError, reload: reloadCampuses } = useActiveCampuses('INTERNAL');
+
+  const clearLoginErrors = () => {
+    setFormError('');
+    setFieldErrors({});
+    setGoogleCampusError(null);
+    setGoogleLoginAttempted(false);
+  };
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -36,6 +45,21 @@ export function InternalLoginForm({ fromPath, onSuccess }: { fromPath?: string; 
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  // Clear form error when inputs change
+  useEffect(() => {
+    clearLoginErrors();
+  }, [email, password, selectedCampusId]);
+
+  // If there's a default campus (like HN), set it automatically
+  useEffect(() => {
+    if (campuses.length > 0 && !selectedCampusId && !loadingCampuses) {
+      const hnCampus = campuses.find(c => c.campusCode === 'HN');
+      if (hnCampus) {
+        setSelectedCampusId(hnCampus.campusId);
+      }
+    }
+  }, [campuses, loadingCampuses, selectedCampusId]);
 
   const validate = () => {
     const errors: { email?: string; password?: string; campus?: string } = {};
@@ -53,12 +77,12 @@ export function InternalLoginForm({ fromPath, onSuccess }: { fromPath?: string; 
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setFormError('');
+    clearLoginErrors();
     if (!validate()) return;
 
     setSubmitting(true);
     try {
-      const user = await login(email.trim(), password, 'INTERNAL', selectedCampusId);
+      const user = await login(email.trim(), password, 'INTERNAL', selectedCampusId?.toString());
       if (onSuccess) onSuccess();
       if (user.mustChangePassword || user.mustSetPassword) {
         navigate('/change-password', { replace: true });
@@ -120,7 +144,7 @@ export function InternalLoginForm({ fromPath, onSuccess }: { fromPath?: string; 
             {isDropdownOpen && !loadingCampuses && (
               <div className="absolute z-50 w-full mt-1 bg-white border border-gray-100 rounded-xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.1)] max-h-60 overflow-auto py-1.5 animate-in fade-in slide-in-from-top-2">
                 <div 
-                  onClick={() => { setSelectedCampusId(''); setIsDropdownOpen(false); }}
+                  onClick={() => { setSelectedCampusId(null); setIsDropdownOpen(false); clearLoginErrors(); }}
                   className={`px-4 py-2 text-[14px] cursor-pointer transition-colors ${!selectedCampusId ? 'bg-blue-50 text-[#004c91] font-medium' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}
                 >
                   -- Chọn cơ sở ({campuses.length}) --
@@ -128,7 +152,7 @@ export function InternalLoginForm({ fromPath, onSuccess }: { fromPath?: string; 
                 {campuses.map((c) => (
                   <div
                     key={c.campusId}
-                    onClick={() => { setSelectedCampusId(c.campusId); setIsDropdownOpen(false); }}
+                    onClick={() => { setSelectedCampusId(c.campusId); setIsDropdownOpen(false); clearLoginErrors(); }}
                     className={`px-4 py-2 text-[14px] cursor-pointer transition-colors ${selectedCampusId === c.campusId ? 'bg-[#004c91] text-white font-medium' : 'text-gray-600 hover:bg-blue-50 hover:text-[#004c91]'}`}
                   >
                     {c.campusName} ({c.campusCode})
@@ -139,6 +163,11 @@ export function InternalLoginForm({ fromPath, onSuccess }: { fromPath?: string; 
           </div>
         )}
         {fieldErrors.campus && <p className="mt-1 text-xs text-red-600">{fieldErrors.campus}</p>}
+        {googleCampusError && googleLoginAttempted && !selectedCampusId && (
+          <p className="mt-1 text-xs text-red-600">
+            {googleCampusError}
+          </p>
+        )}
       </div>
 
       {AUTH_CONFIG.enablePasswordLogin && (
@@ -219,18 +248,20 @@ export function InternalLoginForm({ fromPath, onSuccess }: { fromPath?: string; 
           fromPath={fromPath}
           onSuccess={onSuccess}
           onValidateCampus={() => {
+            setGoogleLoginAttempted(true);
             if (loadingCampuses) {
-              setFieldErrors(prev => ({ ...prev, campus: 'Vui lòng đợi hệ thống tải danh sách cơ sở.' }));
+              setGoogleCampusError('Vui lòng đợi hệ thống tải danh sách cơ sở.');
               return false;
             }
             if (campusError) {
-              setFieldErrors(prev => ({ ...prev, campus: 'Không thể đăng nhập bằng Google vì chưa tải được danh sách cơ sở.' }));
+              setGoogleCampusError('Không thể đăng nhập bằng Google vì chưa tải được danh sách cơ sở.');
               return false;
             }
             if (!selectedCampusId) {
-              setFieldErrors(prev => ({ ...prev, campus: 'Vui lòng chọn cơ sở trước khi đăng nhập bằng Google.' }));
+              setGoogleCampusError('Vui lòng chọn cơ sở trước khi đăng nhập bằng Google.');
               return false;
             }
+            setGoogleCampusError(null);
             return true;
           }}
         />
@@ -250,6 +281,16 @@ export function VisitorLoginForm({ fromPath, onSuccess }: { fromPath?: string; o
   const [formError, setFormError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
+  const clearLoginErrors = () => {
+    setFormError('');
+    setFieldErrors({});
+  };
+
+  // Clear form error when inputs change
+  useEffect(() => {
+    clearLoginErrors();
+  }, [email, password]);
+
   const validate = () => {
     const errors: { email?: string; password?: string } = {};
     if (!email.trim()) errors.email = 'Vui lòng nhập email.';
@@ -262,7 +303,7 @@ export function VisitorLoginForm({ fromPath, onSuccess }: { fromPath?: string; o
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setFormError('');
+    clearLoginErrors();
     if (!validate()) return;
 
     setSubmitting(true);
@@ -380,7 +421,7 @@ export function GoogleSignInButton({
   onValidateCampus,
 }: {
   portal: LoginPortal;
-  selectedCampusId?: string;
+  selectedCampusId?: number | null;
   onError: (msg: string) => void;
   fromPath?: string;
   onSuccess?: () => void;

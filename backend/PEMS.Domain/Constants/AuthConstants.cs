@@ -16,16 +16,17 @@ public static class RoleCodes
     public const string Visitor = "VISITOR";
 }
 
-public static class SubRoles
+public static class UserSubRoles
 {
     public const string Leader = "LEADER";
     public const string Staff = "STAFF";
+}
 
-    /// <summary>
-    /// Placeholder sub-role used by the permission matrix for roles that do not
-    /// carry a sub-role in the <c>users</c> table (ADMIN, HO, STUDENT, VISITOR).
-    /// </summary>
+public static class RolePermissionSubRoles
+{
     public const string None = "NONE";
+    public const string Leader = "LEADER";
+    public const string Staff = "STAFF";
 }
 
 public static class UserStatuses
@@ -112,6 +113,22 @@ public static class SecurityEventTypes
     public const string SessionExpired = "SESSION_EXPIRED";
     public const string TokenRefresh = "TOKEN_REFRESH";
     public const string SecurityPolicyCheck = "SECURITY_POLICY_CHECK";
+}
+
+public static class SecurityEventFailureReasonCodes
+{
+    public const string AccountNotFound = "ACCOUNT_NOT_FOUND";
+    public const string AccountDisabled = "ACCOUNT_DISABLED";
+    public const string PortalMismatch = "PORTAL_MISMATCH";
+    public const string CampusMismatch = "CAMPUS_MISMATCH";
+    public const string RoleMismatch = "ROLE_MISMATCH";
+    public const string SsoProviderError = "SSO_PROVIDER_ERROR";
+    public const string InvalidSsoClaims = "INVALID_SSO_CLAIMS";
+    public const string VisitorAutoProvisionDisabled = "VISITOR_AUTO_PROVISION_DISABLED";
+    public const string SessionExpired = "SESSION_EXPIRED";
+    public const string TokenRevoked = "TOKEN_REVOKED";
+    public const string SuspiciousIp = "SUSPICIOUS_IP";
+    public const string Unknown = "UNKNOWN";
 }
 
 public static class SecuritySeverities

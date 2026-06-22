@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -14,12 +14,12 @@ namespace PEMS.Application.Delegations.Queries.ViewGuestDelegationList;
 
 /// <summary>
 /// UC-20 View Guest Delegation List. Returns rows already filtered to the caller's
-/// responsibility scope (the backend is the single authority — the frontend never
+/// responsibility scope (the backend is the single authority â€” the frontend never
 /// post-filters by role). Two tabs:
-///   • "responsible" (Đơn phụ trách): requests the user creates / approves / hosts /
+///   â€¢ "responsible" (ÄÆ¡n phá»¥ trÃ¡ch): requests the user creates / approves / hosts /
 ///     is assigned a task on. Visitor &amp; HO see one row per request; campus actors
 ///     (Staff Leader/Staff, Dept, Student) see one row per relevant campus instance.
-///   • "attending" (Đơn mời tham dự): requests the user has ACCEPTED an invitation for.
+///   â€¢ "attending" (ÄÆ¡n má»i tham dá»±): requests the user has ACCEPTED an invitation for.
 /// Each row also carries <see cref="VisitRequestManagementItemDto.AllowedActions"/>.
 /// </summary>
 public sealed class ViewGuestDelegationListQueryHandler
@@ -48,13 +48,13 @@ public sealed class ViewGuestDelegationListQueryHandler
         var userId = _currentUser.UserId.Value;
         var roleCode = _currentUser.RoleCode;
         var subRole = _currentUser.SubRole;
-        var isStaffLeader = roleCode == RoleCodes.Staff && subRole == SubRoles.Leader;
+        var isStaffLeader = roleCode == RoleCodes.Staff && subRole == UserSubRoles.Leader;
         var tab = string.Equals(request.Tab, TabAttending, StringComparison.OrdinalIgnoreCase)
             ? TabAttending
             : "responsible";
 
         // Admin does not take part in the reception flow (also has no UC-20 grant).
-        // The "Đơn mời tham dự" (attending) tab is ONLY for users who can be invited as a
+        // The "ÄÆ¡n má»i tham dá»±" (attending) tab is ONLY for users who can be invited as a
         // non-host participant: regular Staff, Dept, Student. HO, Staff Leader/IC Head and
         // Visitor are never invitees (they approve / assign / own), so they have no Tab 2.
         if (roleCode == RoleCodes.Admin ||
@@ -97,9 +97,9 @@ public sealed class ViewGuestDelegationListQueryHandler
         return PaginatedResult<VisitRequestManagementItemDto>.Create(items, request.Page, request.PageSize, totalItems);
     }
 
-    // ── Instance-level (attending tab, or responsible tab for campus actors) ──────────
+    // â”€â”€ Instance-level (attending tab, or responsible tab for campus actors) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // Rooted on campus instances (INNER join to the request) and projected to flat columns,
-    // then enriched in memory. This keeps the SQL translatable on Pomelo/MySQL — correlated
+    // then enriched in memory. This keeps the SQL translatable on Pomelo/MySQL â€” correlated
     // subqueries over an optional LEFT-JOIN side or scalar subqueries in the projection
     // (the previous shape) fail to translate there.
     private async Task<(List<VisitRequestManagementItemDto> Items, int Total)> QueryInstanceLevelAsync(
@@ -112,7 +112,7 @@ public sealed class ViewGuestDelegationListQueryHandler
         if (attending)
         {
             var currentUserEmail = _currentUser.Email?.ToLower();
-            // Tab 2 — "Đơn mời tham dự": instances the user was INVITED to by someone else as a
+            // Tab 2 â€” "ÄÆ¡n má»i tham dá»±": instances the user was INVITED to by someone else as a
             // NON-host participant. Anything where the user is the host /
             // creator / visitor belongs in Tab 1, so it is excluded here.
             q = q.Where(x =>
@@ -136,7 +136,7 @@ public sealed class ViewGuestDelegationListQueryHandler
             var roleCode = _currentUser.RoleCode;
             var subRole = _currentUser.SubRole;
 
-            if (roleCode == RoleCodes.Staff && subRole == SubRoles.Leader)
+            if (roleCode == RoleCodes.Staff && subRole == UserSubRoles.Leader)
             {
                 var primaryCampusId = _currentUser.PrimaryCampusId
                     ?? throw new UnauthorizedAccessException("Staff Leader missing PrimaryCampusId");
@@ -159,7 +159,7 @@ public sealed class ViewGuestDelegationListQueryHandler
             else if (roleCode == RoleCodes.Department || roleCode == RoleCodes.Student)
             {
                 // Dept (incl. Dept Leader = DEPARTMENT + sub_role Leader) / Student appear in Tab 1
-                // only when given a concrete assignment — a logistics/agenda task, or an
+                // only when given a concrete assignment â€” a logistics/agenda task, or an
                 // ASSIGNED (not merely INVITED) participant slot. No throw; empty if none.
                 q = q.Where(x =>
                     _context.VisitLogisticsItems.Any(l => l.VisitInstanceId == x.c.VisitInstanceId && l.AssignedToUserId == userId)
@@ -168,12 +168,12 @@ public sealed class ViewGuestDelegationListQueryHandler
             }
             else
             {
-                // Unsupported role for the responsible tab → empty list (never throw).
+                // Unsupported role for the responsible tab â†’ empty list (never throw).
                 return (new List<VisitRequestManagementItemDto>(), 0);
             }
         }
 
-        // ── Common filters ──
+        // â”€â”€ Common filters â”€â”€
         if (!string.IsNullOrWhiteSpace(request.Keyword))
         {
             var keyword = request.Keyword.ToLower();
@@ -253,7 +253,7 @@ public sealed class ViewGuestDelegationListQueryHandler
         {
             var roleCode = _currentUser.RoleCode;
             var subRole = _currentUser.SubRole;
-            if (roleCode == RoleCodes.Staff && subRole == SubRoles.Leader)
+            if (roleCode == RoleCodes.Staff && subRole == UserSubRoles.Leader)
             {
                 var nowUtc = _clock.UtcNow;
                 q = q.Where(x => (x.vr.VisitScope == VisitScopes.SingleCampus && x.vr.Status == VisitRequestStatuses.PendingApproval)
@@ -264,7 +264,7 @@ public sealed class ViewGuestDelegationListQueryHandler
         {
             var roleCode = _currentUser.RoleCode;
             var subRole = _currentUser.SubRole;
-            if (roleCode == RoleCodes.Staff && subRole == SubRoles.Leader)
+            if (roleCode == RoleCodes.Staff && subRole == UserSubRoles.Leader)
             {
                 var nowUtc = _clock.UtcNow;
                 q = q.Where(x => !((x.vr.VisitScope == VisitScopes.SingleCampus && x.vr.Status == VisitRequestStatuses.PendingApproval)
@@ -330,7 +330,7 @@ public sealed class ViewGuestDelegationListQueryHandler
         if (page.Count == 0)
             return (new List<VisitRequestManagementItemDto>(), total);
 
-        // ── Enrich in memory via batched lookups (Pomelo-friendly: no projection subqueries) ──
+        // â”€â”€ Enrich in memory via batched lookups (Pomelo-friendly: no projection subqueries) â”€â”€
         var instanceIds = page.Select(r => r.VisitInstanceId).Distinct().ToList();
         var requestIds = page.Select(r => r.VisitRequestId).Distinct().ToList();
         var campusIds = page.Select(r => r.CampusId).Distinct().ToList();
@@ -411,7 +411,7 @@ public sealed class ViewGuestDelegationListQueryHandler
         return (items, total);
     }
 
-    // ── Request-level (responsible tab for Visitor &amp; HO): one row per delegation ──
+    // â”€â”€ Request-level (responsible tab for Visitor &amp; HO): one row per delegation â”€â”€
     private async Task<(List<VisitRequestManagementItemDto> Items, int Total)> QueryRequestLevelAsync(
         ViewGuestDelegationListQuery request, ulong userId, string? roleCode, CancellationToken ct)
     {
@@ -420,10 +420,10 @@ public sealed class ViewGuestDelegationListQueryHandler
         if (roleCode == RoleCodes.Visitor)
             q = q.Where(vr => vr.VisitorUserId == userId || vr.CreatedBy == userId);
         // HO sees every MULTI_CAMPUS request (they decide it) AND every SINGLE_CAMPUS request
-        // in read-only monitoring mode (business rule chốt 2026-06: HO theo dõi SINGLE_CAMPUS).
-        // No filter is applied for HO here — read-only is enforced via AllowedActions (the HO
+        // in read-only monitoring mode (business rule chá»‘t 2026-06: HO theo dÃµi SINGLE_CAMPUS).
+        // No filter is applied for HO here â€” read-only is enforced via AllowedActions (the HO
         // action builder only grants HO_APPROVE/HO_REJECT to MULTI_CAMPUS pending requests).
-        // else if (roleCode == RoleCodes.Ho)  → all requests visible.
+        // else if (roleCode == RoleCodes.Ho)  â†’ all requests visible.
 
         if (!string.IsNullOrWhiteSpace(request.Keyword))
         {
@@ -552,7 +552,7 @@ public sealed class ViewGuestDelegationListQueryHandler
             var single = count == 1 ? instances.First() : null;
 
             string? campusName = single != null && campusNames.TryGetValue(single.CampusId, out var cnm) ? cnm
-                : count > 1 ? $"{count} cơ sở"
+                : count > 1 ? $"{count} cÆ¡ sá»Ÿ"
                 : null;
             ulong? hostUserId = single?.CurrentHostUserId;
             string? hostName = hostUserId.HasValue && userNames.TryGetValue(hostUserId.Value, out var hnm) ? hnm : null;
@@ -617,21 +617,21 @@ public sealed class ViewGuestDelegationListQueryHandler
         var primaryCampusId = _currentUser.PrimaryCampusId;
 
         bool isHo = roleCode == RoleCodes.Ho;
-        bool isStaffLeader = roleCode == RoleCodes.Staff && string.Equals(subRole, SubRoles.Leader, StringComparison.OrdinalIgnoreCase);
+        bool isStaffLeader = roleCode == RoleCodes.Staff && string.Equals(subRole, UserSubRoles.Leader, StringComparison.OrdinalIgnoreCase);
         bool isVisitor = roleCode == RoleCodes.Visitor;
         bool isMulti = item.VisitScope == VisitScopes.MultiCampus;
         bool isSingle = item.VisitScope == VisitScopes.SingleCampus;
         bool beforeStart = !item.PlannedStartAt.HasValue || item.PlannedStartAt.Value > now;
         bool sameCampus = item.CampusId.HasValue && primaryCampusId.HasValue && item.CampusId == primaryCampusId;
 
-        // HO — multi-campus request decisions (whole request).
+        // HO â€” multi-campus request decisions (whole request).
         if (isHo && isMulti && item.RequestStatus == VisitRequestStatuses.PendingApproval)
         {
             actions.Add("HO_APPROVE");
             actions.Add("HO_REJECT");
         }
 
-        // Staff Leader — own campus only.
+        // Staff Leader â€” own campus only.
         if (isStaffLeader && sameCampus)
         {
             if (isSingle && item.RequestStatus == VisitRequestStatuses.PendingApproval)
@@ -647,7 +647,7 @@ public sealed class ViewGuestDelegationListQueryHandler
             }
         }
 
-        // Visitor — self-cancel own request (pending or approved) before it starts.
+        // Visitor â€” self-cancel own request (pending or approved) before it starts.
         if (isVisitor && item.VisitorUserId == userId
             && (item.RequestStatus == VisitRequestStatuses.PendingApproval || item.RequestStatus == VisitRequestStatuses.Approved)
             && beforeStart)
@@ -655,7 +655,7 @@ public sealed class ViewGuestDelegationListQueryHandler
             actions.Add("CANCEL_BY_VISITOR");
         }
 
-        // Host — cancel the campus instance they own before it starts.
+        // Host â€” cancel the campus instance they own before it starts.
         bool isTempHost = item.CurrentUserIsHost && item.HostAssignmentSource == "AUTO_STAFF_LEADER";
         if (!isStaffLeader && item.CurrentUserIsHost && !isTempHost
             && (item.CampusStatus == VisitInstanceStatus.Assigned || item.CampusStatus == VisitInstanceStatus.BeforeVisit)
@@ -685,7 +685,7 @@ public sealed class ViewGuestDelegationListQueryHandler
     }
 
     /// <summary>
-    /// Best-effort relation of the caller to a row (display/telemetry only — never an
+    /// Best-effort relation of the caller to a row (display/telemetry only â€” never an
     /// authorization input; every action is still re-validated server-side).
     /// </summary>
     private string ResolveRelation(VisitRequestManagementItemDto item, string tab, string? roleCode, bool isStaffLeader)

@@ -14,7 +14,7 @@ import type {
 export const authenticationApi = {
   // ── Portal-specific login methods ────────────────────────────────────
 
-  async loginInternal(email: string, password: string, selectedCampusId: string): Promise<AuthResponse> {
+  async loginInternal(email: string, password: string, selectedCampusId: number): Promise<AuthResponse> {
     const { data } = await httpClient.post<AuthResponse>(API_ENDPOINTS.auth.login, {
       email,
       password,
@@ -33,7 +33,7 @@ export const authenticationApi = {
     return data;
   },
 
-  async loginGoogleInternal(idToken: string, selectedCampusId: string): Promise<AuthResponse> {
+  async loginGoogleInternal(idToken: string, selectedCampusId: number): Promise<AuthResponse> {
     const { data } = await httpClient.post<AuthResponse>(API_ENDPOINTS.auth.google, {
       idToken,
       loginPortal: 'INTERNAL' as LoginPortal,
@@ -52,21 +52,21 @@ export const authenticationApi = {
 
   // ── Generic (kept for AuthContext backward compat) ───────────────────
 
-  async login(email: string, password: string, loginPortal: LoginPortal, selectedCampusId?: string): Promise<AuthResponse> {
+  async login(email: string, password: string, loginPortal: LoginPortal, selectedCampusId?: number | null): Promise<AuthResponse> {
     const { data } = await httpClient.post<AuthResponse>(API_ENDPOINTS.auth.login, {
       email,
       password,
       loginPortal,
-      ...(loginPortal === 'INTERNAL' && selectedCampusId ? { selectedCampusId } : {}),
+      selectedCampusId: loginPortal === 'INTERNAL' ? (selectedCampusId ?? null) : null,
     });
     return data;
   },
 
-  async loginWithGoogle(idToken: string, loginPortal: LoginPortal, selectedCampusId?: string): Promise<AuthResponse> {
+  async loginWithGoogle(idToken: string, loginPortal: LoginPortal, selectedCampusId?: number | null): Promise<AuthResponse> {
     const { data } = await httpClient.post<AuthResponse>(API_ENDPOINTS.auth.google, {
       idToken,
       loginPortal,
-      ...(loginPortal === 'INTERNAL' && selectedCampusId ? { selectedCampusId } : {}),
+      selectedCampusId: loginPortal === 'INTERNAL' ? (selectedCampusId ?? null) : null,
     });
     return data;
   },

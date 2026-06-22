@@ -1,4 +1,4 @@
-using MediatR;
+﻿using MediatR;
 using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
@@ -36,7 +36,7 @@ public sealed class CancelVisitRequestCommandHandler
 
         // Admin must NOT cancel delegations (also enforced by the missing RBAC grant).
         if (roleCode == RoleCodes.Admin)
-            throw new ForbiddenException("Admin không có quyền hủy đơn tham quan.");
+            throw new ForbiddenException("Admin khÃ´ng cÃ³ quyá»n há»§y Ä‘Æ¡n tham quan.");
 
         var visit = await _db.VisitRequests
             .Include(v => v.CampusInstances)
@@ -45,29 +45,29 @@ public sealed class CancelVisitRequestCommandHandler
 
         var isVisitorOwner = roleCode == RoleCodes.Visitor && visit.VisitorUserId == actorId;
         var isHo = roleCode == RoleCodes.Ho;
-        var isStaffLeader = roleCode == RoleCodes.Staff && subRole == SubRoles.Leader;
+        var isStaffLeader = roleCode == RoleCodes.Staff && subRole == UserSubRoles.Leader;
 
-        // HO has read-only monitoring on single-campus (chốt 2026-06): HO may cancel only
+        // HO has read-only monitoring on single-campus (chá»‘t 2026-06): HO may cancel only
         // MULTI_CAMPUS (handled below), never a single-campus request.
         if (isHo && visit.VisitScope == VisitScopes.SingleCampus)
             throw new BusinessRuleException(
-                "HO chỉ được xem đơn một cơ sở ở chế độ theo dõi, không được xử lý nghiệp vụ trên đơn này.",
+                "HO chá»‰ Ä‘Æ°á»£c xem Ä‘Æ¡n má»™t cÆ¡ sá»Ÿ á»Ÿ cháº¿ Ä‘á»™ theo dÃµi, khÃ´ng Ä‘Æ°á»£c xá»­ lÃ½ nghiá»‡p vá»¥ trÃªn Ä‘Æ¡n nÃ y.",
                 "HO_SINGLE_CAMPUS_READ_ONLY");
 
         // Status rules:
-        //  • Visitor may self-cancel (withdraw) their own request while PENDING or APPROVED.
-        //  • Everyone else cancels only after approval (pre-approval is ended via reject).
+        //  â€¢ Visitor may self-cancel (withdraw) their own request while PENDING or APPROVED.
+        //  â€¢ Everyone else cancels only after approval (pre-approval is ended via reject).
         if (isVisitorOwner)
         {
             if (visit.Status != VisitRequestStatuses.PendingApproval && visit.Status != VisitRequestStatuses.Approved)
-                throw new BusinessRuleException("Chỉ có thể hủy đơn đang chờ duyệt hoặc đã được duyệt.");
+                throw new BusinessRuleException("Chá»‰ cÃ³ thá»ƒ há»§y Ä‘Æ¡n Ä‘ang chá» duyá»‡t hoáº·c Ä‘Ã£ Ä‘Æ°á»£c duyá»‡t.");
         }
         else
         {
             if (visit.Status != VisitRequestStatuses.Approved)
                 throw new BusinessRuleException(visit.Status == VisitRequestStatuses.PendingApproval
-                    ? "Đơn chưa được duyệt. Trước khi duyệt hãy dùng chức năng từ chối (reject), không phải hủy."
-                    : "Chỉ có thể hủy đơn đã được duyệt.");
+                    ? "ÄÆ¡n chÆ°a Ä‘Æ°á»£c duyá»‡t. TrÆ°á»›c khi duyá»‡t hÃ£y dÃ¹ng chá»©c nÄƒng tá»« chá»‘i (reject), khÃ´ng pháº£i há»§y."
+                    : "Chá»‰ cÃ³ thá»ƒ há»§y Ä‘Æ¡n Ä‘Ã£ Ä‘Æ°á»£c duyá»‡t.");
         }
 
         // A visitor withdrawing a pending request cancels its still-waiting instances too.
@@ -113,7 +113,7 @@ public sealed class CancelVisitRequestCommandHandler
         }
         else
         {
-            throw new ForbiddenException("Bạn không có quyền hủy lịch thăm này.");
+            throw new ForbiddenException("Báº¡n khÃ´ng cÃ³ quyá»n há»§y lá»‹ch thÄƒm nÃ y.");
         }
 
         var now = _clock.UtcNow;
@@ -123,10 +123,10 @@ public sealed class CancelVisitRequestCommandHandler
         foreach (var instance in targets)
         {
             if (!cancellableStatuses.Contains(instance.Status))
-                throw new BusinessRuleException($"Không thể hủy cơ sở ở trạng thái '{instance.Status}'.");
+                throw new BusinessRuleException($"KhÃ´ng thá»ƒ há»§y cÆ¡ sá»Ÿ á»Ÿ tráº¡ng thÃ¡i '{instance.Status}'.");
 
             if (enforceBeforeStart && now >= instance.PlannedStartAt)
-                throw new BusinessRuleException("Đã đến hoặc qua thời gian bắt đầu, không thể hủy.");
+                throw new BusinessRuleException("ÄÃ£ Ä‘áº¿n hoáº·c qua thá»i gian báº¯t Ä‘áº§u, khÃ´ng thá»ƒ há»§y.");
 
             var oldStatus = instance.Status;
             instance.Status = VisitInstanceStatus.Cancelled;
@@ -155,9 +155,9 @@ public sealed class CancelVisitRequestCommandHandler
         }
 
         if (cancelled.Count == 0)
-            throw new BusinessRuleException("Không có cơ sở nào ở trạng thái có thể hủy.");
+            throw new BusinessRuleException("KhÃ´ng cÃ³ cÆ¡ sá»Ÿ nÃ o á»Ÿ tráº¡ng thÃ¡i cÃ³ thá»ƒ há»§y.");
 
-        // Single-campus, or all campuses now cancelled → the overall request becomes CANCELLED.
+        // Single-campus, or all campuses now cancelled â†’ the overall request becomes CANCELLED.
         var allCancelled = visit.CampusInstances.All(c => c.Status == VisitInstanceStatus.Cancelled);
         if (allCancelled)
         {
@@ -200,7 +200,7 @@ public sealed class CancelVisitRequestCommandHandler
             visit.Status,
             cancelled,
             allCancelled
-                ? "Đơn tham quan đã được hủy."
-                : "Cơ sở đã được hủy. Các cơ sở còn lại của đơn vẫn giữ nguyên.");
+                ? "ÄÆ¡n tham quan Ä‘Ã£ Ä‘Æ°á»£c há»§y."
+                : "CÆ¡ sá»Ÿ Ä‘Ã£ Ä‘Æ°á»£c há»§y. CÃ¡c cÆ¡ sá»Ÿ cÃ²n láº¡i cá»§a Ä‘Æ¡n váº«n giá»¯ nguyÃªn.");
     }
 }
