@@ -89,7 +89,7 @@ type Row = VisitRequestManagementItem & {
   statusText: string;
 };
 
-export function VisitRequestManagement() {
+export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: boolean } = {}) {
   const navigate = useNavigate();
   const { user } = useAuthContext();
 
@@ -638,23 +638,27 @@ export function VisitRequestManagement() {
   return (
     <div className="w-full max-w-[1320px] mx-auto p-4 sm:p-6 lg:p-8 flex flex-col space-y-6 pb-12 animate-in fade-in duration-300">
       {/* Header */}
-      <div className="mb-2 flex items-center text-sm font-medium text-gray-500">
-        <button onClick={() => navigate('/dashboard')} className="hover:text-[#004c91] transition-colors outline-none cursor-pointer">Dashboard</button>
-        <span className="mx-2">/</span>
-        <span className="text-[#004c91]">Quản lý tiếp khách</span>
-      </div>
-      <div className="border-b border-gray-100 pb-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <h1 className="text-3xl font-bold text-[#004c91]">{isVisitor ? 'Đơn của tôi' : 'Quản lý tiếp khách'}</h1>
-        {isRegularStaff ? (
-          <button onClick={() => navigate('/dashboard/visit/create')} className="flex items-center justify-center gap-2 bg-[#F37021] hover:bg-orange-600 outline-none text-white px-4 py-2 rounded-lg font-bold shadow-sm transition-colors whitespace-nowrap w-full md:w-auto">
-            <Plus className="w-5 h-5" /> Tạo đoàn khách
-          </button>
-        ) : isHO ? (
-          <button onClick={() => navigate('/dashboard/visit/agenda-templates')} className="flex items-center justify-center gap-2 bg-[#F37021] hover:bg-orange-600 outline-none text-white px-4 py-2 rounded-lg font-bold shadow-sm transition-colors whitespace-nowrap w-full md:w-auto">
-            <Plus className="w-5 h-5" /> Quản lý mẫu Agenda
-          </button>
-        ) : null}
-      </div>
+      {!isEmbedded && (
+        <>
+          <div className="mb-2 flex items-center text-sm font-medium text-gray-500">
+            <button onClick={() => navigate('/dashboard')} className="hover:text-[#004c91] transition-colors outline-none cursor-pointer">Dashboard</button>
+            <span className="mx-2">/</span>
+            <span className="text-[#004c91]">Quản lý tiếp khách</span>
+          </div>
+          <div className="border-b border-gray-100 pb-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <h1 className="text-3xl font-bold text-[#004c91]">{isVisitor ? 'Đơn của tôi' : 'Quản lý tiếp khách'}</h1>
+            {isRegularStaff ? (
+              <button onClick={() => navigate('/dashboard/visit/create')} className="flex items-center justify-center gap-2 bg-[#F37021] hover:bg-orange-600 outline-none text-white px-4 py-2 rounded-lg font-bold shadow-sm transition-colors whitespace-nowrap w-full md:w-auto">
+                <Plus className="w-5 h-5" /> Tạo đoàn khách
+              </button>
+            ) : isHO ? (
+              <button onClick={() => navigate('/dashboard/visit/agenda-templates')} className="flex items-center justify-center gap-2 bg-[#F37021] hover:bg-orange-600 outline-none text-white px-4 py-2 rounded-lg font-bold shadow-sm transition-colors whitespace-nowrap w-full md:w-auto">
+                <Plus className="w-5 h-5" /> Quản lý mẫu Agenda
+              </button>
+            ) : null}
+          </div>
+        </>
+      )}
 
       {/* UC-27: pending invitations entry point (accept/decline lives on the detail screen) */}
       {showTabs && pendingInvitations.length > 0 && (
@@ -688,7 +692,7 @@ export function VisitRequestManagement() {
       )}
 
       {/* Tabs */}
-      {showTabs && (
+      {showTabs && !isEmbedded && (
         <div className="flex w-full sm:w-max items-center gap-1 rounded-xl bg-slate-100 p-1">
           {([
             { key: 'responsible' as Tab, label: responsibleTabLabel, show: canUseResponsibleTab },

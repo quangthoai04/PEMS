@@ -29,6 +29,7 @@ import {
 import { HODashboardView } from './HODashboardView';
 import { SharedDashboardView } from './SharedDashboardView';
 import { AdminDashboardView } from './AdminDashboardView';
+import { DeptLeadDashboardView } from './DeptLeadDashboardView';
 import { useAuth } from '../../../shared/hooks/useAuth';
 import { PERMISSIONS } from '../../../shared/constants/permissions';
 
@@ -86,7 +87,7 @@ export function DashboardHome() {
   const isAdmin = user?.role?.toUpperCase() === 'ADMIN';
   // Đúng nghĩa: ai dùng SharedDashboardView (KHÔNG gom nhầm vào biến "isStaff").
   const shouldUseSharedDashboard =
-    isStaffMember || isStaffLeader || isDeptLeader || isDeptStaff || isStudent || isVisitor;
+    isStaffMember || isStaffLeader || isDeptStaff || isStudent || isVisitor;
 
   // State to handle Events Map (synchronized with localStorage)
   const [events, setEvents] = useState<Record<string, EventItem[]>>(() => {
@@ -341,6 +342,8 @@ export function DashboardHome() {
         <HODashboardView />
       ) : isAdmin ? (
         <AdminDashboardView />
+      ) : isDeptLeader ? (
+        <DeptLeadDashboardView user={user} />
       ) : shouldUseSharedDashboard ? (
         <SharedDashboardView user={user} isDeptLeader={isDeptLeader} isDeptStaff={isDeptStaff} isStudent={isStudent} isVisitor={isVisitor} />
       ) : (

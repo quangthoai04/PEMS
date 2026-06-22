@@ -9,6 +9,7 @@ import {
   Calendar,
   ChevronLeft, 
   ChevronRight, 
+  ChevronUp,
   Trash2, 
   MoreVertical, 
   X, 
@@ -405,7 +406,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
   const [newHost, setNewHost] = useState('Office of International Affairs');
   const [newGuests, setNewGuests] = useState('International Delegates');
   const [newChecklistStr, setNewChecklistStr] = useState('Chuẩn bị quà tặng\nĐặt bàn trà bánh');
-
+  const [showDetailSection, setShowDetailSection] = useState(false);
   const monthNames = [
     'Tháng 1', 'Tháng 2', 'Tháng 3', 'Tháng 4', 'Tháng 5', 'Tháng 6',
     'Tháng 7', 'Tháng 8', 'Tháng 9', 'Tháng 10', 'Tháng 11', 'Tháng 12'
@@ -671,76 +672,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
 
   return (
     <div className="space-y-6">
-      {/* Month Events Summary Table - Outer */}
-      <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 mb-8 font-sans overflow-hidden">
-        <div className="bg-[#004c91] relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full blur-3xl -mt-10 -mr-10 pointer-events-none"></div>
-          <div className="px-6 py-5 flex items-center justify-between relative z-10 w-full flex-wrap gap-4">
-            <div>
-              <h2 className="text-lg md:text-xl font-black uppercase tracking-widest text-white drop-shadow-sm line-clamp-1">
-                SỰ KIỆN THÁNG {currentMonth + 1}/{currentYear}
-              </h2>
-              <p className="text-xs text-blue-200/80 mt-1 font-medium">Danh sách các sự kiện được xếp lịch trong tháng</p>
-            </div>
-            
-            <div className="flex items-center gap-3">
-              <select 
-                value={selectedCategoryFilter} 
-                onChange={e => setSelectedCategoryFilter(e.target.value)}
-                className="bg-white/10 text-white text-[11px] uppercase tracking-wider font-bold border border-white/20 rounded-xl px-3 py-1.5 outline-none [&>option]:text-slate-800 focus:bg-white/20 transition-colors"
-              >
-                <option value="All">Tất cả sự kiện</option>
-                <option value="Lịch đón khách">Lịch đón khách</option>
-                {!isVisitor && <option value="Thư mời">Thư mời</option>}
-                {!(isStudent || isVisitor) && <option value="Đơn yêu cầu">Đơn yêu cầu</option>}
-              </select>
-              <span className="text-[11px] font-bold text-white bg-white/20 px-3 py-1.5 rounded-full backdrop-blur-sm shadow-inner shrink-0 border border-white/10">
-                {eventsInCurrentMonthAndYear.filter(e => selectedCategoryFilter === 'All' || e.category === selectedCategoryFilter).length} SỰ KIỆN
-              </span>
-            </div>
-          </div>
-        </div>
-        <div className="p-5 relative z-10 bg-slate-50">
-          {eventsInCurrentMonthAndYear.filter(e => selectedCategoryFilter === 'All' || e.category === selectedCategoryFilter).length > 0 ? (
-            <div className="flex flex-col gap-4 max-h-[300px] overflow-y-auto overflow-x-hidden !custom-scrollbar pr-2">
-              {[...eventsInCurrentMonthAndYear].filter(e => selectedCategoryFilter === 'All' || e.category === selectedCategoryFilter).sort((a,b) => {
-                const cmpDate = a.date.localeCompare(b.date);
-                if (cmpDate !== 0) return cmpDate;
-                return a.time.localeCompare(b.time);
-              }).map((ev, idx) => (
-                <div 
-                  key={ev.id} 
-                  className={`bg-white border border-slate-200 text-[#004c91] rounded-lg py-6 px-5 transition-all cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm hover:shadow-md hover:bg-slate-50 group relative overflow-hidden`}
-                  onClick={() => {
-                      setSelectedCellDate(ev.date);
-                      setActivePopoverEvent(ev);
-                  }}
-                >
-                  <div className="flex items-center gap-3 flex-1 min-w-0 pr-4">
-                    <div className="flex items-center gap-2 shrink-0">
-                      <span className="text-[15px] font-bold tracking-tight">{ev.date.split('-').reverse().join('/')}</span>
-                      <span className="text-[15px] font-medium opacity-30">|</span>
-                      <span className="text-[15px] font-bold tracking-tight">{ev.time}</span>
-                    </div>
-                    <span className="text-[16px] font-bold ml-1 line-clamp-1 flex-1">{ev.title}</span>
-                  </div>
 
-                  {/* Category Status */}
-                  <div className="shrink-0 mt-2 sm:mt-0">
-                    <span className={`inline-flex items-center justify-center px-3 py-1 rounded-md text-[10px] font-bold border uppercase tracking-wider ${ev.color.match(/text-[a-z]+-\d+/)?.[0]} ${ev.color.match(/border-[a-z]+-\d+/)?.[0]} ${ev.color.match(/bg-[a-z]+-\d+/)?.[0]}`}>
-                      {ev.category}
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="py-10 text-center text-slate-400 font-bold text-sm border-2 border-dashed border-slate-200 rounded-2xl">
-              Không có sự kiện nào trong tháng này
-            </div>
-          )}
-        </div>
-      </div>
 
     <div className="bg-white rounded-3xl border border-slate-200/85 shadow-md p-4 sm:p-6 md:p-8 font-sans">
       
@@ -1720,7 +1652,6 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                         onChange={e => setNewCategory(e.target.value as Event['category'])}
                         className="w-full text-xs px-3 py-2.5 border border-slate-200 rounded-xl focus:border-[#f37021] outline-none cursor-pointer"
                       >
-                        <option value="Lịch đón khách">Lịch đón khách</option>
                         {!isVisitor && <option value="Thư mời">Thư mời</option>}
                         {!(isStudent || isVisitor) && <option value="Đơn yêu cầu">Đơn yêu cầu</option>}
                       </select>
@@ -1884,6 +1815,40 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                       </div>
                     </div>
 
+                  </div>
+
+                  {/* Xem chi tiết đoàn đón khách */}
+                  <div className="pt-2">
+                    <button
+                      onClick={() => setShowDetailSection(!showDetailSection)}
+                      className="w-full flex items-center justify-between px-5 py-3.5 bg-orange-50 hover:bg-orange-100 text-[#f37021] font-black rounded-xl transition-colors border border-orange-200"
+                    >
+                      <span className="flex items-center gap-2 text-sm uppercase tracking-wider">
+                        <Users className="w-5 h-5" /> Xem chi tiết đoàn đón khách
+                      </span>
+                      {showDetailSection ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+                    </button>
+                    
+                    {showDetailSection && (
+                      <div className="mt-3 p-5 bg-white border border-orange-100 rounded-xl shadow-sm space-y-4 animate-fade-in-quick">
+                        <div>
+                          <h4 className="text-xs font-bold text-slate-800 mb-1 border-b pb-1">1. Thông tin người tạo</h4>
+                          <p className="text-xs text-slate-600">Chi tiết về người liên hệ, đơn vị phụ trách đăng ký lịch</p>
+                        </div>
+                        <div>
+                          <h4 className="text-xs font-bold text-slate-800 mb-1 border-b pb-1">2. Thông tin đoàn khách</h4>
+                          <p className="text-xs text-slate-600">Tên cơ quan, thời gian, cơ sở hoạt động và mục đích đối ngoại</p>
+                        </div>
+                        <div>
+                          <h4 className="text-xs font-bold text-slate-800 mb-1 border-b pb-1">3. Setup</h4>
+                          <p className="text-xs text-slate-600">Tiêu chí bố trí tham quan, chương trình chi tiết & thành phần tham gia</p>
+                        </div>
+                        <div>
+                          <h4 className="text-xs font-bold text-slate-800 mb-1 border-b pb-1">4. Detail setup</h4>
+                          <p className="text-xs text-slate-600">Yêu cầu kỹ thuật về khẩu hiệu trình chiếu LED và công tác chuẩn bị đón tiếp Campus Tour</p>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   <div className="flex flex-col gap-3 pt-4 transition-all cursor-default relative z-10">
@@ -2102,6 +2067,40 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                       </div>
                     )}
 
+                  </div>
+
+                  {/* Xem chi tiết đoàn đón khách */}
+                  <div className="pt-2">
+                    <button
+                      onClick={() => setShowDetailSection(!showDetailSection)}
+                      className="w-full flex items-center justify-between px-5 py-3.5 bg-orange-50 hover:bg-orange-100 text-[#f37021] font-black rounded-xl transition-colors border border-orange-200"
+                    >
+                      <span className="flex items-center gap-2 text-sm uppercase tracking-wider">
+                        <Users className="w-5 h-5" /> Xem chi tiết đoàn đón khách
+                      </span>
+                      {showDetailSection ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+                    </button>
+                    
+                    {showDetailSection && (
+                      <div className="mt-3 p-5 bg-white border border-orange-100 rounded-xl shadow-sm space-y-4 animate-fade-in-quick">
+                        <div>
+                          <h4 className="text-xs font-bold text-slate-800 mb-1 border-b pb-1">1. Thông tin người tạo</h4>
+                          <p className="text-xs text-slate-600">Chi tiết về người liên hệ, đơn vị phụ trách đăng ký lịch</p>
+                        </div>
+                        <div>
+                          <h4 className="text-xs font-bold text-slate-800 mb-1 border-b pb-1">2. Thông tin đoàn khách</h4>
+                          <p className="text-xs text-slate-600">Tên cơ quan, thời gian, cơ sở hoạt động và mục đích đối ngoại</p>
+                        </div>
+                        <div>
+                          <h4 className="text-xs font-bold text-slate-800 mb-1 border-b pb-1">3. Setup</h4>
+                          <p className="text-xs text-slate-600">Tiêu chí bố trí tham quan, chương trình chi tiết & thành phần tham gia</p>
+                        </div>
+                        <div>
+                          <h4 className="text-xs font-bold text-slate-800 mb-1 border-b pb-1">4. Detail setup</h4>
+                          <p className="text-xs text-slate-600">Yêu cầu kỹ thuật về khẩu hiệu trình chiếu LED và công tác chuẩn bị đón tiếp Campus Tour</p>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   <div className="flex flex-col gap-3 pt-4 transition-all cursor-default relative z-10">

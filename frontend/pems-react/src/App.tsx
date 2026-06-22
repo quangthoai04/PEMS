@@ -44,6 +44,7 @@ import { AccountManagement } from './pages/dashboard/accounts/AccountManagement'
 import { VisitFPTUPage } from './pages/VisitFPTUPage';
 import { CampusDetailVisitPage } from './pages/CampusDetailVisitPage';
 import { VisitRequestManagement } from './pages/dashboard/visit/VisitRequestManagement';
+import { DeptLeadVisitTasksPage } from './pages/dashboard/visit/DeptLeadVisitTasksPage';
 import { VisitParticipantInvitationDetail } from './pages/dashboard/visit/VisitParticipantInvitationDetail';
 import { AgendaTemplateManagement } from './pages/dashboard/visit/AgendaTemplateManagement';
 import { CreateVisitRequest } from './pages/dashboard/visit/CreateVisitRequest';
@@ -95,6 +96,10 @@ export default function App() {
   const location = useLocation();
   const isDashboardRoute = location.pathname.startsWith('/dashboard');
   const isBareRoute = isDashboardRoute || BARE_ROUTES.includes(location.pathname);
+
+  const userStr = localStorage.getItem("currentUser");
+  const user = userStr ? JSON.parse(userStr) : null;
+  const isDeptLeader = user?.role?.toUpperCase() === 'DEPARTMENT' && user?.subRole?.toUpperCase() === 'LEADER';
 
   return (
     <div className="font-sans text-gray-900 bg-white min-h-screen flex flex-col">
@@ -148,7 +153,7 @@ export default function App() {
             <Route path="campus/:id" element={<ProtectedRoute permission={PERMISSIONS.VIEW_CAMPUS_LIST}><CampusDetail /></ProtectedRoute>} />
             <Route path="faq" element={<FAQManagement />} />
             <Route path="faq/:id" element={<FAQDetail />} />
-            <Route path="visit" element={<VisitRequestManagement />} />
+            <Route path="visit" element={isDeptLeader ? <DeptLeadVisitTasksPage /> : <VisitRequestManagement />} />
             <Route path="visit/invitations/:participantId" element={<VisitParticipantInvitationDetail />} />
             <Route path="visit/department-tasks/:participantId" element={<VisitParticipantInvitationDetail />} />
             <Route path="visit/create" element={<CreateVisitRequest />} />

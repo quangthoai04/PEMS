@@ -4,6 +4,7 @@
  * Phân quyền hiển thị theo vai trò người dùng (Admin, HO, Dept, v.v.).
  */
 
+
 // Đây là component thanh bên (Sidebar) để điều hướng trong khu vực quản trị (Dashboard)
 import React, { useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
@@ -38,30 +39,35 @@ import { motion, AnimatePresence } from "motion/react";
 import { useAuth } from "../../shared/hooks/useAuth";
 import { PERMISSIONS } from "../../shared/constants/permissions";
 
+
 interface SidebarProps {
   isMobileOpen?: boolean;
   onCloseMobile?: () => void;
 }
+
 
 export function Sidebar({ isMobileOpen = false, onCloseMobile }: SidebarProps) {
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const navigate = useNavigate();
   const { logout, hasPermission, hasAnyPermission } = useAuth();
 
+
   // Get user from localStorage
   const userStr = localStorage.getItem("currentUser");
   const user = userStr
     ? JSON.parse(userStr)
     : {
-        name: "Khách",
-        campus: "Không rõ",
-        role: "GUEST",
-      };
+      name: "Khách",
+      campus: "Không rõ",
+      role: "GUEST",
+    };
+
 
   const isStaffLeader = user?.role?.toUpperCase() === 'STAFF' && user?.subRole?.toUpperCase() === 'LEADER';
   const roleForSidebar = user?.role?.toUpperCase() || 'GUEST';
   const isDeptLeader = roleForSidebar === 'DEPARTMENT' && user?.subRole?.toUpperCase() === 'LEADER';
   const isRealAdmin = roleForSidebar === 'ADMIN';
+
 
   const handleLogout = async () => {
     // Clear the real session (token + pems_user + legacy currentUser) via the
@@ -71,22 +77,25 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile }: SidebarProps) {
     if (onCloseMobile) onCloseMobile();
   };
 
+
   const navItemClass = ({ isActive }: { isActive: boolean }) =>
-    `flex items-center gap-3 px-4 py-3 rounded-xl transition-colors font-medium ${
-      isActive
-        ? "bg-[#d2e5f5] text-[#004c91]"
-        : "text-gray-600 hover:bg-[#d2e5f5] hover:text-[#004c91]"
+    `flex items-center gap-3 px-4 py-3 rounded-xl transition-colors font-medium ${isActive
+      ? "bg-[#d2e5f5] text-[#004c91]"
+      : "text-gray-600 hover:bg-[#d2e5f5] hover:text-[#004c91]"
     }`;
+
 
   const getRoleIcon = () => {
     return <ShieldCheck className="w-4 h-4 flex-shrink-0" />;
   };
+
 
   const handleLinkClick = () => {
     if (onCloseMobile) {
       onCloseMobile();
     }
   };
+
 
   return (
     <>
@@ -103,12 +112,13 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile }: SidebarProps) {
         )}
       </AnimatePresence>
 
+
       <aside className={`w-[290px] bg-white border-r border-gray-200 h-screen flex flex-col pt-6 pb-4 shadow-sm z-50 transition-all duration-300
         ${isMobileOpen ? "fixed top-0 left-0 h-full" : "hidden lg:flex lg:sticky lg:top-0"}
       `}>
         {/* Close mobile button */}
         {isMobileOpen && (
-          <button 
+          <button
             onClick={onCloseMobile}
             className="absolute top-4 right-4 p-2 text-gray-500 hover:bg-gray-100 rounded-full lg:hidden"
             aria-label="Đóng menu"
@@ -117,10 +127,12 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile }: SidebarProps) {
           </button>
         )}
 
+
         {/* Logo */}
         <div className="flex justify-center px-6 mb-8 flex-shrink-0">
           <img src={logo} alt="FPT University" className="h-20 object-contain" />
         </div>
+
 
         {/* Navigation */}
         <nav className="flex-grow px-4 space-y-2 overflow-y-auto">
@@ -141,21 +153,21 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile }: SidebarProps) {
               PERMISSIONS.VIEW_EMAIL,
               PERMISSIONS.REPLY_TO_EMAIL,
             ]) && (
-            <NavLink to="/dashboard/email" className={navItemClass} onClick={handleLinkClick}>
-              <Mail className="w-5 h-5 flex-shrink-0" />
-              <span>Quản lý email</span>
-            </NavLink>
-          )}
+              <NavLink to="/dashboard/email" className={navItemClass} onClick={handleLinkClick}>
+                <Mail className="w-5 h-5 flex-shrink-0" />
+                <span>Quản lý email</span>
+              </NavLink>
+            )}
           {["STAFF", "ADMIN", "HO"].includes(
             roleForSidebar,
           ) && !isRealAdmin && (
-            <NavLink to="/dashboard/partners" className={navItemClass} onClick={handleLinkClick}>
-              <Users className="w-5 h-5 flex-shrink-0" />
-              <span>Quản lý đối tác</span>
-            </NavLink>
-          )}
+              <NavLink to="/dashboard/partners" className={navItemClass} onClick={handleLinkClick}>
+                <Users className="w-5 h-5 flex-shrink-0" />
+                <span>Quản lý đối tác</span>
+              </NavLink>
+            )}
           {((["ADMIN", "DEPARTMENT"].includes(roleForSidebar) && !isRealAdmin) || isStaffLeader) && (
-            <NavLink to={roleForSidebar === "DEPARTMENT" ? `/dashboard/departments/${user.departmentId || '1'}` : "/dashboard/departments"} className={navItemClass} end={roleForSidebar !== "DEPARTMENT"} onClick={handleLinkClick}>
+            <NavLink to={roleForSidebar === "DEPARTMENT" ? `/dashboard/departments/${user?.departmentId || '1'}` : "/dashboard/departments"} className={navItemClass} end={roleForSidebar !== "DEPARTMENT"} onClick={handleLinkClick}>
               <Building2 className="w-5 h-5 flex-shrink-0" />
               <span>Quản lý phòng ban</span>
             </NavLink>
@@ -179,11 +191,11 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile }: SidebarProps) {
               PERMISSIONS.SEARCH_DELEGATIONS,
               PERMISSIONS.PROCESS_VISIT_REQUEST,
             ]) && (
-            <NavLink to="/dashboard/visit" className={navItemClass} onClick={handleLinkClick}>
-              <Briefcase className="w-5 h-5 flex-shrink-0" />
-              <span>Quản lý tiếp khách</span>
-            </NavLink>
-          )}
+              <NavLink to="/dashboard/visit" className={navItemClass} onClick={handleLinkClick}>
+                <Briefcase className="w-5 h-5 flex-shrink-0" />
+                <span>Quản lý tiếp khách</span>
+              </NavLink>
+            )}
           {(["HO", "STAFF"].includes(roleForSidebar)) && (
             <>
               <NavLink to="/dashboard/documents" className={navItemClass} onClick={handleLinkClick}>
@@ -238,6 +250,7 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile }: SidebarProps) {
           )}
         </nav>
 
+
         {/* User Info */}
         <div className="px-4 mt-6 relative flex-shrink-0">
           <div
@@ -274,6 +287,7 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile }: SidebarProps) {
               </div>
             </div>
           </div>
+
 
           {isProfileMenuOpen && (
             <div
@@ -328,3 +342,6 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile }: SidebarProps) {
     </>
   );
 }
+
+
+
