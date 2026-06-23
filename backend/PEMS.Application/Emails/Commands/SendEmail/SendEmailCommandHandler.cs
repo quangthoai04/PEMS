@@ -7,8 +7,22 @@ namespace PEMS.Application.Emails.Commands.SendEmail;
 
 public sealed class SendEmailCommandHandler : IRequestHandler<SendEmailCommand, SendEmailResponse>
 {
-    public Task<SendEmailResponse> Handle(SendEmailCommand request, CancellationToken cancellationToken)
+    private readonly PEMS.Application.Common.Interfaces.IEmailService _emailService;
+
+    public SendEmailCommandHandler(PEMS.Application.Common.Interfaces.IEmailService emailService)
     {
-        throw new NotImplementedException("UC Send Email has been scaffolded. Business rules must be implemented after UC specification is completed.");
+        _emailService = emailService;
+    }
+
+    public async Task<SendEmailResponse> Handle(SendEmailCommand request, CancellationToken cancellationToken)
+    {
+        foreach (var recipient in request.To)
+        {
+            if (!string.IsNullOrWhiteSpace(recipient.Email))
+            {
+                await _emailService.SendAsync(recipient.Email, request.Subject, request.Body, cancellationToken);
+            }
+        }
+        return new SendEmailResponse();
     }
 }

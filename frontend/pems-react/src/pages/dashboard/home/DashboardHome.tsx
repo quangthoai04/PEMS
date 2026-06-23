@@ -102,6 +102,8 @@ export function DashboardHome() {
   // States to filter events
   const [categoryFilter, setCategoryFilter] = useState<string>("All");
 
+  const [currentSystemTime, setCurrentSystemTime] = useState(new Date());
+
   // Add Event Form States
   const [isAddFormOpen, setIsAddFormOpen] = useState(false);
   const [formTitle, setFormTitle] = useState("");
@@ -114,6 +116,11 @@ export function DashboardHome() {
   useEffect(() => {
     localStorage.setItem("dashboardEvents", JSON.stringify(events));
   }, [events]);
+
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentSystemTime(new Date()), 60000);
+    return () => clearInterval(timer);
+  }, []);
 
   // Calendar Days generator helper
   const getCalendarDays = (year: number, month: number) => {
@@ -331,7 +338,7 @@ export function DashboardHome() {
             <div>
               <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Thời gian hệ thống</p>
               <p className="font-extrabold text-[#004c91] text-sm md:text-base tracking-wide mt-0.5">
-                Tháng 8, 2026
+                {currentSystemTime.toLocaleDateString('vi-VN', { day: '2-digit', month: 'long', year: 'numeric' })} - {currentSystemTime.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
               </p>
             </div>
           </div>
