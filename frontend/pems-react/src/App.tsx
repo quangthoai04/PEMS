@@ -52,7 +52,6 @@ import { FAQDetail } from './pages/dashboard/faq/FAQDetail';
 import { FAQPage } from './pages/FAQPage';
 import { CampusManagement } from './pages/dashboard/campus/CampusManagement';
 import { CampusDetail } from './pages/dashboard/campus/CampusDetail';
-import { PermissionManagement } from './pages/dashboard/permissions/PermissionManagement';
 
 import { ApiManagement } from './pages/dashboard/apis/ApiManagement.tsx';
 
@@ -63,7 +62,7 @@ import { ChangePasswordPage } from './pages/auth/ChangePasswordPage';
 import { ForbiddenPage } from './pages/ForbiddenPage';
 import { InvalidAccountPage } from './pages/InvalidAccountPage';
 import { ProtectedRoute } from './shared/auth/ProtectedRoute';
-import { PERMISSIONS } from './shared/constants/permissions';
+
 
 function ScrollToTop() {
   const { pathname } = useLocation();
@@ -131,11 +130,11 @@ export default function App() {
             <Route path="news/create" element={<CreateNews />} />
             <Route path="news/:id/edit" element={<EditNews />} />
             <Route path="news/:id" element={<NewsDetailDashboard />} />
-            <Route path="email" element={<ProtectedRoute permission={PERMISSIONS.VIEW_EMAIL} permissionLevel="O"><EmailManagement /></ProtectedRoute>} />
-            <Route path="email/create" element={<ProtectedRoute permission={PERMISSIONS.EDIT_EMAIL_CONTENT} permissionLevel="O"><CreateEmail /></ProtectedRoute>} />
-            <Route path="email/sent/:id" element={<ProtectedRoute permission={PERMISSIONS.VIEW_EMAIL} permissionLevel="O"><SentEmailDetail /></ProtectedRoute>} />
-            <Route path="email/:id" element={<ProtectedRoute permission={PERMISSIONS.VIEW_EMAIL} permissionLevel="O"><EmailDetail /></ProtectedRoute>} />
-            <Route path="email/:id/edit" element={<ProtectedRoute permission={PERMISSIONS.EDIT_EMAIL_CONTENT} permissionLevel="O"><EditEmail /></ProtectedRoute>} />
+            <Route path="email" element={<ProtectedRoute><EmailManagement /></ProtectedRoute>} />
+            <Route path="email/create" element={<ProtectedRoute><CreateEmail /></ProtectedRoute>} />
+            <Route path="email/sent/:id" element={<ProtectedRoute><SentEmailDetail /></ProtectedRoute>} />
+            <Route path="email/:id" element={<ProtectedRoute><EmailDetail /></ProtectedRoute>} />
+            <Route path="email/:id/edit" element={<ProtectedRoute><EditEmail /></ProtectedRoute>} />
             <Route path="partners" element={<PartnerManagement />} />
             <Route path="partners/create" element={<CreatePartner />} />
             <Route path="partners/:id" element={<PartnerDetail />} />
@@ -143,9 +142,9 @@ export default function App() {
             <Route path="departments/:id" element={<DepartmentDetailDashboard />} />
             <Route path="departments/:id/tasks/:taskId" element={<TaskDetail />} />
             <Route path="departments/:id/invitations/:taskId" element={<TaskInvitationDetail />} />
-            <Route path="accounts" element={<ProtectedRoute permission={PERMISSIONS.VIEW_ACCOUNT_LIST}><AccountManagement /></ProtectedRoute>} />
-            <Route path="campus" element={<ProtectedRoute permission={PERMISSIONS.VIEW_CAMPUS_LIST}><CampusManagement /></ProtectedRoute>} />
-            <Route path="campus/:id" element={<ProtectedRoute permission={PERMISSIONS.VIEW_CAMPUS_LIST}><CampusDetail /></ProtectedRoute>} />
+            <Route path="accounts" element={<ProtectedRoute><AccountManagement /></ProtectedRoute>} />
+            <Route path="campus" element={<ProtectedRoute><CampusManagement /></ProtectedRoute>} />
+            <Route path="campus/:id" element={<ProtectedRoute><CampusDetail /></ProtectedRoute>} />
             <Route path="faq" element={<FAQManagement />} />
             <Route path="faq/:id" element={<FAQDetail />} />
             <Route path="visit" element={<VisitRequestManagement />} />
@@ -160,11 +159,10 @@ export default function App() {
             <Route path="documents" element={<DocumentManagement />} />
             <Route path="gallery" element={<GalleryManagement />} />
             <Route path="minutes" element={<MinuteManagement />} />
-            <Route path="reports" element={<ProtectedRoute anyPermissions={[PERMISSIONS.VIEW_DASHBOARD_STATISTICS, PERMISSIONS.EXPORT_STATISTICS_REPORT]}><ReportManagement /></ProtectedRoute>} />
+            <Route path="reports" element={<ProtectedRoute><ReportManagement /></ProtectedRoute>} />
             <Route path="feedback" element={<FeedbackManagement />} />
             <Route path="feedback/:id" element={<FeedbackDetail />} />
-            <Route path="permissions" element={<ProtectedRoute roles={['ADMIN']} permission={PERMISSIONS.VIEW_ROLE_LIST}><PermissionManagement /></ProtectedRoute>} />
-            <Route path="apis" element={<ProtectedRoute roles={['ADMIN']} anyPermissions={[PERMISSIONS.VIEW_API_CONFIGURATION, PERMISSIONS.VIEW_API_LOGS]}><ApiManagement /></ProtectedRoute>} />
+            <Route path="apis" element={<ProtectedRoute roles={['ADMIN']}><ApiManagement /></ProtectedRoute>} />
           </Route>
         </Routes>
       </main>

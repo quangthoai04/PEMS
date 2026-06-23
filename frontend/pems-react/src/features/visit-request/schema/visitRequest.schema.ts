@@ -136,7 +136,7 @@ export const visitRequestSchema = z.object({
   workingLanguage: z.enum(['EN', 'VI']),
   transportationType: z.enum(['SELF_ARRANGED', 'FPTU_SUPPORT', 'UNKNOWN', 'OTHER']),
   transportationDetail: z.string().optional().default(''),
-  mediaConsentStatus: z.enum(['AGREED', 'DECLINED', 'UNKNOWN']),
+  mediaConsentStatus: z.enum(['AGREED', 'DECLINED']),
   mediaConsentNote: z.string().optional().default(''),
   partnerId: z.number().nullable().optional(),
   partnerSelectionMode: z.enum(['EXISTING_PARTNER', 'NEW_ORGANIZATION']).default('NEW_ORGANIZATION'),

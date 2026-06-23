@@ -15,6 +15,8 @@ public sealed class AuthUserDto
     public string RoleCode { get; init; } = null!;
     public string? RoleName { get; init; }
     public string? SubRole { get; init; }
+    public string EffectiveRole { get; init; } = null!;
+    public string Status { get; init; } = "ACTIVE";
 
     public ulong? PrimaryCampusId { get; init; }
     public string? CampusCode { get; init; }

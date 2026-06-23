@@ -1,4 +1,4 @@
-﻿using MediatR;
+using MediatR;
 
 namespace PEMS.Application.Accounts.Commands.CreateAccount;
 
@@ -16,7 +16,7 @@ public sealed class CreateAccountCommand : IRequest<CreateAccountResponse>
     public ulong? PrimaryCampusId { get; set; }
     public ulong? DepartmentId { get; set; }
     public string? Phone { get; set; }
-    public string? Gender { get; set; }
+    public PEMS.Domain.Enums.Gender? Gender { get; set; }
     public string? StudentCode { get; set; }
     public string? Nationality { get; set; }
 

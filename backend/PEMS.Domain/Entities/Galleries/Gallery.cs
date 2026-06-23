@@ -38,7 +38,7 @@ public class Gallery
     public string? VirtualTourUrl { get; set; }
 
     [Column("status")]
-    public string Status { get; set; } = "ACTIVE";
+    public string Status { get; set; } = "HIDDEN";
 
     [Column("visibility")]
     public string Visibility { get; set; } = "INTERNAL";

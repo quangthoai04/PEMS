@@ -1,4 +1,9 @@
 -- =====================================================================
+-- PEMS v8.4 REFINED V6 - NO DYNAMIC PERMISSIONS BUILD
+-- Change requested: remove DB-backed dynamic permission system.
+-- Kept roles as fixed account classification; removed permissions + role_permissions.
+-- Authorization must be implemented in backend/frontend by role_code/sub_role/scope policies.
+-- =====================================================================
 -- PEMS v8.4 REFINED BUILD - form/minutes/news schema update
 -- Updated for confirmed changes:
 --   + Removed departments.department_code and code-based department seed logic.
@@ -10,6 +15,14 @@
 --   + Changed minutes status FINAL -> SAVED.
 --   + Changed news_translations.language_code from fixed ENUM to VARCHAR(20).
 --   + Tightened NOT NULL constraints only for fields confirmed required by the form.
+-- =====================================================================
+-- PEMS v8.4 REFINED V6 - fresh create-only schema cleanup
+-- Changes from v5:
+--   + Removed visit_status_logs table and seed data; use audit_logs + audit_log_changes for status history/audit.
+--   + galleries.status removed DRAFT; Gallery supports only PUBLISHED/HIDDEN and defaults to HIDDEN.
+--   + Preserved previous confirmed updates: gender without UNKNOWN, decision_actor_role without SYSTEM,
+--     media_consent_status without UNKNOWN, coordinator/one-time official host assignment, simplified cancellation.
+-- =====================================================================
 -- =====================================================================
 -- =====================================================================
 -- HOTFIX: Idempotent seed build.
@@ -25,8 +38,6 @@
 --   + Converted UUID/CHAR(36) primary keys to BIGINT UNSIGNED AUTO_INCREMENT.
 --   + FIX v7.1: AUTO_INCREMENT is kept only on the real primary-key column; FK columns are plain BIGINT UNSIGNED.
 --   + Converted matching FK/id columns to BIGINT UNSIGNED.
---   + role_permissions now has role_permission_id as AUTO_INCREMENT PK and
---     keeps UNIQUE(role_id, sub_role, permission_id).
 --   + Rewrote seed IDs so MySQL can use numeric IDs instead of UUID strings.
 --   + Preserved seed content and demo/business scenario data from the v5 SQL.
 --   + Kept strict visit visibility guards and views.
@@ -75,7 +86,6 @@
 -- - Removed user_campuses; each internal user has exactly one primary_campus_id.
 -- - Removed redundant approval helper columns; backend derives approval display data from visit_scope.
 -- - Removed redundant visit_request_campuses.assigned_by/assigned_at; approval actor/time already stored in visit_requests + logs.
--- - Added role_permissions.sub_role to support STAFF LEADER/STAFF and DEPARTMENT LEADER/STAFF RBAC without overgrant.
 -- - Production auth is SSO-first; LOCAL_PASSWORD is kept only for DEV/test accounts.
 -- - Added users.created_via='SSO_AUTO_PROVISION' for Visitor portal auto-provisioning on first SSO login.
 -- - Locked approval flow:
@@ -83,7 +93,7 @@
 --   + MULTI_CAMPUS request tổng chỉ được HO quyết định.
 --   + Campus không còn duyệt/từ chối instance sau khi request tổng được duyệt.
 --   + Sau khi request tổng được duyệt, mỗi campus instance chuyển ASSIGNED và có current_host_user_id.
---   + Host mặc định là Staff Leader của campus; Staff Leader/current host có thể chuyển host cho IC Staff khác.
+--   + HO duyệt MULTI_CAMPUS thì gán Staff Leader làm coordinator; Staff Leader gán một Staff host chính thức đúng 1 lần; không hỗ trợ chuyển host.
 -- =====================================================================
 
 
@@ -101,7 +111,7 @@ CREATE DATABASE IF NOT EXISTS pems_db
   CHARACTER SET utf8mb4
   COLLATE utf8mb4_unicode_ci;
 
-USE pems_db;
+USE pems_db_test_no_permissions;
 
 SET FOREIGN_KEY_CHECKS = 0;
 
@@ -125,7 +135,6 @@ DROP TRIGGER IF EXISTS trg_agenda_templates_scope_bu;
 DROP TRIGGER IF EXISTS trg_feedbacks_not_self_bi;
 DROP TRIGGER IF EXISTS trg_feedbacks_not_self_bu;
 
-DROP TABLE IF EXISTS visit_status_logs;
 DROP TABLE IF EXISTS audit_logs;
 DROP TABLE IF EXISTS agenda_templates;
 DROP TABLE IF EXISTS api_request_logs;
@@ -164,8 +173,6 @@ DROP TABLE IF EXISTS user_auth_providers;
 DROP TABLE IF EXISTS users;
 DROP TABLE IF EXISTS departments;
 DROP TABLE IF EXISTS campuses;
-DROP TABLE IF EXISTS role_permissions;
-DROP TABLE IF EXISTS permissions;
 DROP TABLE IF EXISTS roles;
 
 SET FOREIGN_KEY_CHECKS = 1;
@@ -181,47 +188,12 @@ CREATE TABLE roles (
   description VARCHAR(255) NULL,
   status ENUM('ACTIVE','INACTIVE') NOT NULL DEFAULT 'ACTIVE',
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  deleted_at DATETIME NULL COMMENT 'Soft delete supported by UC-121 Disable/Delete Role',
-  deleted_by BIGINT UNSIGNED NULL COMMENT 'User who soft-deleted this role; no FK here because roles is created before users',
   PRIMARY KEY (role_id),
   UNIQUE KEY uq_roles_code (role_code),
-  KEY idx_roles_status_deleted (status, deleted_at),
-  CHECK (role_code IN ('ADMIN','HO','STAFF','DEPARTMENT','STUDENT','VISITOR'))) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-COMMENT='6 role chính của hệ thống';
-
-CREATE TABLE permissions (
-  permission_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  permission_code VARCHAR(100) NOT NULL COMMENT 'Example: UC-17.SUBMIT_VISIT_REQUEST',
-  name VARCHAR(150) NOT NULL,
-  permission_group VARCHAR(60) NOT NULL,
-  description VARCHAR(500) NULL,
-  is_system BOOLEAN NOT NULL DEFAULT FALSE,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (permission_id),
-  UNIQUE KEY uq_permissions_code (permission_code),
-  KEY idx_permissions_group (permission_group),
-  KEY idx_permissions_group_code (permission_group, permission_code)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-COMMENT='Danh mục quyền theo UC/action';
-
-CREATE TABLE role_permissions (
-  role_permission_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  role_id BIGINT UNSIGNED NOT NULL,
-  sub_role ENUM('NONE','LEADER','STAFF') NOT NULL DEFAULT 'NONE' COMMENT 'NONE for ADMIN/HO/STUDENT/VISITOR; LEADER/STAFF for STAFF and DEPARTMENT',
-  permission_id BIGINT UNSIGNED NOT NULL,
-  permission_level ENUM('F','E','R','O') NOT NULL COMMENT 'F=Full, E=Execute/Edit, R=Read, O=Own',
-  granted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  granted_by BIGINT UNSIGNED NULL,
-  PRIMARY KEY (role_permission_id),
-  UNIQUE KEY uq_role_permissions_role_sub_permission (role_id, sub_role, permission_id),
-  KEY idx_role_permissions_permission (permission_id),
-  KEY idx_role_permissions_role_sub_role (role_id, sub_role),
-  CONSTRAINT fk_role_permissions_role
-    FOREIGN KEY (role_id) REFERENCES roles(role_id)
-    ON UPDATE CASCADE ON DELETE CASCADE,
-  CONSTRAINT fk_role_permissions_permission
-    FOREIGN KEY (permission_id) REFERENCES permissions(permission_id)
-    ON UPDATE CASCADE ON DELETE CASCADE) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-COMMENT='Ma trận phân quyền theo role + sub_role + permission';
+  KEY idx_roles_status (status),
+  CHECK (role_code IN ('ADMIN','HO','STAFF','DEPARTMENT','STUDENT','VISITOR'))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Fixed system roles for account classification. No DB-backed dynamic permission matrix.';
 
 -- =====================================================================
 -- 2. ORGANIZATION
@@ -284,7 +256,7 @@ CREATE TABLE users (
   sub_role ENUM('LEADER','STAFF') NULL COMMENT 'Only for STAFF/DEPARTMENT',
   primary_campus_id BIGINT UNSIGNED NULL COMMENT 'Campus duy nhất của user nội bộ. VISITOR phải NULL.',
   department_id BIGINT UNSIGNED NULL COMMENT 'STAFF = IC department; DEPARTMENT = GENERAL department',
-  gender ENUM('MALE','FEMALE','OTHER','UNKNOWN') NULL,
+  gender ENUM('MALE','FEMALE','OTHER') NULL COMMENT 'NULL=chưa cung cấp; OTHER=khác Nam/Nữ',
   avatar_url VARCHAR(500) NULL,
   student_code VARCHAR(30) NULL,
   fe_id VARCHAR(100) NULL,
@@ -644,8 +616,8 @@ COMMENT='Tài liệu nghiệp vụ. partner_documents/reports/logistics document
 -- SINGLE_CAMPUS: Staff Leader of the selected campus approves/rejects the main visit request.
 -- MULTI_CAMPUS: HO approves/rejects the main visit request.
 -- Campus instances do NOT have their own approve/reject step anymore.
--- After the main request is approved, backend assigns each campus instance to its Staff Leader by setting current_host_user_id and status='ASSIGNED'.
--- Staff Leader/current host may transfer host to another IC Staff in the same campus.
+-- After HO approves a MULTI_CAMPUS request, backend assigns the Staff Leader as coordinator only.
+-- Staff Leader then assigns one official STAFF host. Host assignment is one-time only; no host transfer is supported.
 
 
 CREATE TABLE visit_requests (
@@ -680,7 +652,7 @@ CREATE TABLE visit_requests (
   working_language ENUM('VI','EN') NOT NULL DEFAULT 'EN' COMMENT 'Ngôn ngữ sử dụng trong visit. Chỉ dùng VI/EN theo frontend hiện tại, không có lựa chọn OTHER',
   transportation_type ENUM('SELF_ARRANGED','FPTU_SUPPORT','UNKNOWN','OTHER') NOT NULL DEFAULT 'UNKNOWN',
   transportation_detail VARCHAR(500) NULL,
-  media_consent_status ENUM('AGREED','DECLINED','UNKNOWN') NOT NULL DEFAULT 'UNKNOWN',
+  media_consent_status ENUM('AGREED','DECLINED') NOT NULL DEFAULT 'DECLINED',
   media_consent_note TEXT NULL,
   note_to_fptu TEXT NULL COMMENT 'Ghi chú cho FPTU',
 
@@ -690,14 +662,12 @@ CREATE TABLE visit_requests (
 
   decided_by BIGINT UNSIGNED NULL COMMENT 'Người approve/reject request tổng',
   decided_at DATETIME NULL COMMENT 'Thời điểm xử lý request tổng',
-  decision_actor_role ENUM('HO','STAFF_LEADER','SYSTEM') NULL COMMENT 'Vai trò người xử lý tại thời điểm quyết định',
+  decision_actor_role ENUM('HO','STAFF_LEADER') NULL COMMENT 'Vai trò người xử lý tại thời điểm quyết định',
   decision_note TEXT NULL COMMENT 'Lý do/ghi chú khi approve hoặc reject',
 
-  cancelled_by BIGINT UNSIGNED NULL COMMENT 'Người thực hiện hủy request/delegation',
-  cancelled_at DATETIME NULL COMMENT 'Thời điểm hủy request/delegation',
-  cancellation_actor_type ENUM('VISITOR','HOST','STAFF_LEADER','HO','SYSTEM') NULL COMMENT 'Vai trò thực hiện thao tác hủy',
-  cancellation_source ENUM('SELF_SERVICE','EXTERNAL_CONFIRMATION','INTERNAL_DECISION') NULL COMMENT 'SELF_SERVICE=Visitor tự hủy sau khi đơn đã duyệt; EXTERNAL_CONFIRMATION=Host hủy sau khi khách xác nhận ngoài hệ thống',
-  cancellation_reason TEXT NULL COMMENT 'Lý do hủy; nếu EXTERNAL_CONFIRMATION thì ghi rõ kênh xác nhận, thời điểm, người xác nhận và lý do.',
+  cancelled_by BIGINT UNSIGNED NULL COMMENT 'Visitor hủy toàn bộ request/delegation',
+  cancelled_at DATETIME NULL COMMENT 'Thời điểm visitor hủy toàn bộ request/delegation',
+  cancellation_reason TEXT NULL COMMENT 'Lý do visitor nhập khi tự hủy toàn bộ request/delegation. Bảng tổng không lưu actor/source vì chỉ Visitor được hủy tổng.',
 
   row_version INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'Optimistic concurrency token',
 
@@ -721,33 +691,18 @@ CREATE TABLE visit_requests (
   KEY idx_visit_requests_decision (decided_by, decided_at),
   KEY idx_visit_requests_decision_role (decision_actor_role, decided_at),
   KEY idx_visit_requests_cancelled (cancelled_by, cancelled_at),
-  KEY idx_visit_requests_cancel_actor (cancellation_actor_type, cancelled_at),
   FULLTEXT KEY ft_visit_requests_frontend_search (request_code, delegation_name, registrant_full_name, registrant_organization, registrant_email, contact_person_full_name, contact_person_organization, contact_person_email),
 
   CHECK (TRIM(registrant_job_title) <> ''),
   CHECK (TRIM(registrant_phone) <> ''),
   CHECK (TRIM(registrant_nationality) <> ''),
   CHECK (TRIM(contact_person_full_name) <> ''),
-  CHECK (TRIM(contact_person_organization) <> ''),
   CHECK (TRIM(contact_person_phone) <> ''),
   CHECK (TRIM(contact_person_email) <> ''),
-
-  CHECK (
-    decision_actor_role IS NULL
-    OR status NOT IN ('APPROVED','REJECTED')
-    OR (
-      visit_scope = 'SINGLE_CAMPUS'
-      AND decision_actor_role IN ('STAFF_LEADER','SYSTEM')
-    )
-    OR (
-      visit_scope = 'MULTI_CAMPUS'
-      AND decision_actor_role IN ('HO','SYSTEM')
-    )
-  ),
-
-  CONSTRAINT fk_visit_requests_visitor_user
+  CHECK (visit_type <> 'OTHER' OR (visit_type_other IS NOT NULL AND TRIM(visit_type_other) <> '')),
+  CONSTRAINT fk_visit_requests_visitor
     FOREIGN KEY (visitor_user_id) REFERENCES users(user_id)
-    ON UPDATE CASCADE ON DELETE RESTRICT,
+    ON UPDATE CASCADE ON DELETE SET NULL,
   CONSTRAINT fk_visit_requests_partner
     FOREIGN KEY (partner_id) REFERENCES partners(partner_id)
     ON UPDATE CASCADE ON DELETE SET NULL,
@@ -757,7 +712,7 @@ CREATE TABLE visit_requests (
   CONSTRAINT fk_visit_requests_cancelled_by
     FOREIGN KEY (cancelled_by) REFERENCES users(user_id)
     ON UPDATE CASCADE ON DELETE SET NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-COMMENT='Đơn đăng ký tham quan. Record chỉ được tạo sau khi email/OTP đã xác minh; nội dung form không sửa sau khi submit vào PENDING_APPROVAL; tiến trình thực tế theo visit_request_campuses.';
+COMMENT='Đơn đăng ký tham quan. Record chỉ được tạo sau khi email/OTP đã xác minh; bảng tổng chỉ cho Visitor tự hủy toàn bộ đơn; tiến trình thực tế theo visit_request_campuses.';
 
 CREATE TABLE visit_request_campuses (
   visit_instance_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -768,34 +723,34 @@ CREATE TABLE visit_request_campuses (
 
   status ENUM(
     'WAITING_REQUEST_APPROVAL',
+    'WAITING_HOST_ASSIGNMENT',
     'ASSIGNED',
     'BEFORE_VISIT',
     'DURING_VISIT',
     'AFTER_VISIT',
     'CLOSED',
     'CANCELLED'
-  ) NOT NULL DEFAULT 'WAITING_REQUEST_APPROVAL',
+  ) NOT NULL DEFAULT 'WAITING_REQUEST_APPROVAL'
+    COMMENT 'WAITING_REQUEST_APPROVAL=chờ duyệt request; WAITING_HOST_ASSIGNMENT=đã duyệt, Staff Leader đang điều phối và chờ gán host chính thức; ASSIGNED=đã có Staff host chính thức.',
+
+  coordinator_user_id BIGINT UNSIGNED NULL
+    COMMENT 'Staff Leader điều phối campus instance. Với MULTI_CAMPUS, HO duyệt xong thì hệ thống gán Staff Leader campus vào đây.',
+  coordinator_assigned_by BIGINT UNSIGNED NULL COMMENT 'Người gán coordinator, thường là HO khi duyệt MULTI_CAMPUS',
+  coordinator_assigned_at DATETIME NULL COMMENT 'Thời điểm gán coordinator',
 
   current_host_user_id BIGINT UNSIGNED NULL
-    COMMENT 'Host hiện tại chịu trách nhiệm campus instance. Sau khi request tổng được duyệt thì phải có host; nếu đổi host dùng chức năng Transfer Host',
-
-  host_assigned_by BIGINT UNSIGNED NULL COMMENT 'Người gây ra thao tác gán host: HO khi auto gán Staff Leader cho multi-campus, Staff Leader khi duyệt single-campus, hoặc người chuyển host',
-  host_assigned_at DATETIME NULL COMMENT 'Thời điểm host được gán',
-  host_assignment_source ENUM('AUTO_STAFF_LEADER','MANUAL_APPROVAL','TRANSFERRED') NULL
-    COMMENT 'AUTO_STAFF_LEADER=HO duyệt liên cơ sở và hệ thống tự gán Staff Leader; MANUAL_APPROVAL=Staff Leader duyệt đơn một cơ sở và chọn host; TRANSFERRED=host được chuyển sau đó',
-
-  host_transferred_by BIGINT UNSIGNED NULL COMMENT 'Người chuyển host gần nhất',
-  host_transferred_at DATETIME NULL COMMENT 'Thời điểm chuyển host gần nhất',
-  host_transfer_note TEXT NULL COMMENT 'Ghi chú/lý do chuyển host gần nhất',
+    COMMENT 'Staff host chính thức của campus instance. Chỉ set một lần khi Staff Leader gán host; không hỗ trợ chuyển host.',
+  host_assigned_by BIGINT UNSIGNED NULL COMMENT 'Staff Leader gán host chính thức',
+  host_assigned_at DATETIME NULL COMMENT 'Thời điểm host chính thức được gán',
 
   closed_by BIGINT UNSIGNED NULL,
   closed_at DATETIME NULL,
   close_note TEXT NULL,
 
-  cancelled_by BIGINT UNSIGNED NULL COMMENT 'Người thực hiện hủy campus instance',
+  cancelled_by BIGINT UNSIGNED NULL COMMENT 'Visitor hoặc Host thực hiện hủy campus instance',
   cancelled_at DATETIME NULL COMMENT 'Thời điểm hủy campus instance',
-  cancellation_actor_type ENUM('VISITOR','HOST','STAFF_LEADER','HO','SYSTEM') NULL COMMENT 'Vai trò thực hiện thao tác hủy campus instance',
-  cancellation_source ENUM('SELF_SERVICE','EXTERNAL_CONFIRMATION','INTERNAL_DECISION') NULL COMMENT 'SELF_SERVICE=Visitor tự hủy sau khi đơn đã duyệt; EXTERNAL_CONFIRMATION=Host hủy sau khi khách xác nhận ngoài hệ thống',
+  cancellation_actor_type ENUM('VISITOR','HOST') NULL COMMENT 'VISITOR=khách tự hủy; HOST=Staff được gán làm host hủy thay khách theo xác nhận ngoài hệ thống',
+  cancellation_source ENUM('SELF_SERVICE','EXTERNAL_CONFIRMATION') NULL COMMENT 'SELF_SERVICE=Visitor tự hủy; EXTERNAL_CONFIRMATION=Host hủy sau khi khách xác nhận ngoài hệ thống',
   cancellation_reason TEXT NULL COMMENT 'Lý do hủy; nếu EXTERNAL_CONFIRMATION thì ghi rõ kênh xác nhận, thời điểm, người xác nhận và lý do.',
 
   row_version INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'Optimistic concurrency token',
@@ -810,10 +765,10 @@ CREATE TABLE visit_request_campuses (
   KEY idx_visit_instances_campus_status_time (campus_id, status, planned_start_at),
   KEY idx_visit_instances_request (visit_request_id),
   KEY idx_visit_instances_status_time (status, planned_start_at),
+  KEY idx_visit_instances_coordinator (coordinator_user_id, status),
+  KEY idx_visit_instances_coordinator_assigned (coordinator_assigned_by, coordinator_assigned_at),
   KEY idx_visit_instances_current_host (current_host_user_id, status),
   KEY idx_visit_instances_host_assigned (host_assigned_by, host_assigned_at),
-  KEY idx_visit_instances_assignment_source (host_assignment_source, host_assigned_at),
-  KEY idx_visit_instances_host_transfer (host_transferred_by, host_transferred_at),
   KEY idx_visit_instances_cancelled (cancelled_by, cancelled_at),
   KEY idx_visit_instances_cancel_actor (cancellation_actor_type, cancelled_at),
   KEY idx_visit_instances_visibility_campus_request (campus_id, visit_request_id, status, current_host_user_id),
@@ -826,14 +781,17 @@ CREATE TABLE visit_request_campuses (
   CONSTRAINT fk_visit_instances_campus
     FOREIGN KEY (campus_id) REFERENCES campuses(campus_id)
     ON UPDATE CASCADE ON DELETE RESTRICT,
+  CONSTRAINT fk_visit_instances_coordinator
+    FOREIGN KEY (coordinator_user_id) REFERENCES users(user_id)
+    ON UPDATE CASCADE ON DELETE SET NULL,
+  CONSTRAINT fk_visit_instances_coordinator_assigned_by
+    FOREIGN KEY (coordinator_assigned_by) REFERENCES users(user_id)
+    ON UPDATE CASCADE ON DELETE SET NULL,
   CONSTRAINT fk_visit_instances_current_host
     FOREIGN KEY (current_host_user_id) REFERENCES users(user_id)
     ON UPDATE CASCADE ON DELETE SET NULL,
   CONSTRAINT fk_visit_instances_host_assigned_by
     FOREIGN KEY (host_assigned_by) REFERENCES users(user_id)
-    ON UPDATE CASCADE ON DELETE SET NULL,
-  CONSTRAINT fk_visit_instances_host_transferred_by
-    FOREIGN KEY (host_transferred_by) REFERENCES users(user_id)
     ON UPDATE CASCADE ON DELETE SET NULL,
   CONSTRAINT fk_visit_instances_closed_by
     FOREIGN KEY (closed_by) REFERENCES users(user_id)
@@ -841,7 +799,7 @@ CREATE TABLE visit_request_campuses (
   CONSTRAINT fk_visit_instances_cancelled_by
     FOREIGN KEY (cancelled_by) REFERENCES users(user_id)
     ON UPDATE CASCADE ON DELETE SET NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-COMMENT='Mỗi campus trong request có một instance riêng. WAITING_REQUEST_APPROVAL chỉ dùng trước khi đơn tổng được duyệt; sau duyệt phải gán host ngay và chuyển ASSIGNED. Không lưu actual_start_at/actual_end_at.';
+COMMENT='Mỗi campus trong request có một instance riêng. HO duyệt MULTI_CAMPUS thì chuyển WAITING_HOST_ASSIGNMENT và gán Staff Leader làm coordinator; Staff Leader gán Staff làm host chính thức một lần; không hỗ trợ transfer host.';
 
 CREATE TABLE visit_guest_members (
   guest_member_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -1419,8 +1377,8 @@ CREATE TABLE galleries (
   title VARCHAR(255) NOT NULL COMMENT 'Tên hiển thị của gallery/địa điểm',
   description TEXT NULL COMMENT 'Mô tả ngắn về địa điểm',
   story_content TEXT NULL COMMENT 'Ý nghĩa hoặc câu chuyện giới thiệu về địa điểm',
-  status ENUM('DRAFT','PUBLISHED','HIDDEN') NOT NULL DEFAULT 'DRAFT'
-    COMMENT 'DRAFT=nháp, PUBLISHED=hiển thị theo visibility, HIDDEN=ẩn khỏi người xem thường nhưng Staff Leader vẫn quản lý được',
+  status ENUM('PUBLISHED','HIDDEN') NOT NULL DEFAULT 'HIDDEN'
+    COMMENT 'PUBLISHED=hiển thị theo visibility, HIDDEN=ẩn khỏi public/người xem thường nhưng Staff Leader vẫn quản lý được',
   visibility ENUM('PRIVATE','INTERNAL','PUBLIC') NOT NULL DEFAULT 'INTERNAL'
     COMMENT 'Phạm vi xem khi status=PUBLISHED: PRIVATE=chỉ quản lý, INTERNAL=user nội bộ, PUBLIC=công khai',
   hero_file_id BIGINT UNSIGNED NULL,
@@ -1915,31 +1873,6 @@ CREATE TABLE audit_log_changes (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Field-level audit changes; replaces audit_logs old/new JSON values.';
 
-CREATE TABLE visit_status_logs (
-  visit_status_log_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  visit_request_id BIGINT UNSIGNED NULL,
-  visit_instance_id BIGINT UNSIGNED NULL,
-  status_owner_type ENUM('REQUEST','CAMPUS_INSTANCE') NOT NULL DEFAULT 'CAMPUS_INSTANCE' COMMENT 'REQUEST=visit_requests.status, CAMPUS_INSTANCE=visit_request_campuses.status',
-  old_status VARCHAR(50) NULL,
-  new_status VARCHAR(50) NOT NULL,
-  changed_by BIGINT UNSIGNED NULL,
-  reason TEXT NULL,
-  changed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (visit_status_log_id),
-  KEY idx_visit_status_request_time (visit_request_id, changed_at),
-  KEY idx_visit_status_instance_time (visit_instance_id, changed_at),
-  KEY idx_visit_status_owner_time (status_owner_type, changed_at),
-  KEY idx_visit_status_changed_by_time (changed_by, changed_at),
-  CONSTRAINT fk_visit_status_logs_request
-    FOREIGN KEY (visit_request_id) REFERENCES visit_requests(visit_request_id)
-    ON UPDATE CASCADE ON DELETE SET NULL,
-  CONSTRAINT fk_visit_status_logs_instance
-    FOREIGN KEY (visit_instance_id) REFERENCES visit_request_campuses(visit_instance_id)
-    ON UPDATE CASCADE ON DELETE SET NULL,
-  CONSTRAINT fk_visit_status_logs_changed_by
-    FOREIGN KEY (changed_by) REFERENCES users(user_id)
-    ON UPDATE CASCADE ON DELETE SET NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-COMMENT='Timeline trạng thái visit. Log rõ cấp REQUEST hoặc CAMPUS_INSTANCE để không nhầm request_status với campus_status.';
 
 -- =====================================================================
 -- 12. VALIDATION TRIGGERS
@@ -1997,7 +1930,7 @@ BEGIN
   SELECT role_code INTO v_role_code
   FROM roles
   WHERE role_id = NEW.role_id
-    AND deleted_at IS NULL;
+    AND status = 'ACTIVE';
 
   IF v_role_code IS NULL THEN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Invalid role_id';
@@ -2063,7 +1996,7 @@ BEGIN
   SELECT role_code INTO v_role_code
   FROM roles
   WHERE role_id = NEW.role_id
-    AND deleted_at IS NULL;
+    AND status = 'ACTIVE';
 
   IF v_role_code IS NULL THEN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Invalid role_id';
@@ -2194,40 +2127,38 @@ BEGIN
         SET MESSAGE_TEXT = 'decision_actor_role is required when visit request is approved/rejected';
     END IF;
 
-    IF NEW.decision_actor_role <> 'SYSTEM' AND NEW.decided_by IS NULL THEN
+    IF NEW.decided_by IS NULL THEN
       SIGNAL SQLSTATE '45000'
-        SET MESSAGE_TEXT = 'decided_by is required for non-system visit request decision';
+        SET MESSAGE_TEXT = 'decided_by is required when visit request is approved/rejected';
     END IF;
 
     IF NEW.visit_scope = 'SINGLE_CAMPUS'
-       AND NEW.decision_actor_role NOT IN ('STAFF_LEADER','SYSTEM') THEN
+       AND NEW.decision_actor_role <> 'STAFF_LEADER' THEN
       SIGNAL SQLSTATE '45000'
         SET MESSAGE_TEXT = 'Only STAFF_LEADER can decide SINGLE_CAMPUS request';
     END IF;
 
     IF NEW.visit_scope = 'MULTI_CAMPUS'
-       AND NEW.decision_actor_role NOT IN ('HO','SYSTEM') THEN
+       AND NEW.decision_actor_role <> 'HO' THEN
       SIGNAL SQLSTATE '45000'
         SET MESSAGE_TEXT = 'Only HO can decide MULTI_CAMPUS request';
     END IF;
 
-    IF NEW.decision_actor_role <> 'SYSTEM' THEN
-      SELECT r.role_code, u.sub_role
-        INTO v_actor_role_code, v_actor_sub_role
-      FROM users u
-      JOIN roles r ON r.role_id = u.role_id
-      WHERE u.user_id = NEW.decided_by;
+    SELECT r.role_code, u.sub_role
+      INTO v_actor_role_code, v_actor_sub_role
+    FROM users u
+    JOIN roles r ON r.role_id = u.role_id
+    WHERE u.user_id = NEW.decided_by;
 
-      IF NEW.decision_actor_role = 'HO' AND v_actor_role_code <> 'HO' THEN
-        SIGNAL SQLSTATE '45000'
-          SET MESSAGE_TEXT = 'decision_actor_role HO requires decided_by user with HO role';
-      END IF;
+    IF NEW.decision_actor_role = 'HO' AND v_actor_role_code <> 'HO' THEN
+      SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'decision_actor_role HO requires decided_by user with HO role';
+    END IF;
 
-      IF NEW.decision_actor_role = 'STAFF_LEADER'
-         AND NOT (v_actor_role_code = 'STAFF' AND v_actor_sub_role = 'LEADER') THEN
-        SIGNAL SQLSTATE '45000'
-          SET MESSAGE_TEXT = 'decision_actor_role STAFF_LEADER requires STAFF Leader user';
-      END IF;
+    IF NEW.decision_actor_role = 'STAFF_LEADER'
+       AND NOT (v_actor_role_code = 'STAFF' AND v_actor_sub_role = 'LEADER') THEN
+      SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'decision_actor_role STAFF_LEADER requires STAFF Leader user';
     END IF;
   END IF;
 END$$
@@ -2245,71 +2176,63 @@ BEGIN
         SET MESSAGE_TEXT = 'decision_actor_role is required when visit request is approved/rejected';
     END IF;
 
-    IF NEW.decision_actor_role <> 'SYSTEM' AND NEW.decided_by IS NULL THEN
+    IF NEW.decided_by IS NULL THEN
       SIGNAL SQLSTATE '45000'
-        SET MESSAGE_TEXT = 'decided_by is required for non-system visit request decision';
+        SET MESSAGE_TEXT = 'decided_by is required when visit request is approved/rejected';
     END IF;
 
     IF NEW.visit_scope = 'SINGLE_CAMPUS'
-       AND NEW.decision_actor_role NOT IN ('STAFF_LEADER','SYSTEM') THEN
+       AND NEW.decision_actor_role <> 'STAFF_LEADER' THEN
       SIGNAL SQLSTATE '45000'
         SET MESSAGE_TEXT = 'Only STAFF_LEADER can decide SINGLE_CAMPUS request';
     END IF;
 
     IF NEW.visit_scope = 'MULTI_CAMPUS'
-       AND NEW.decision_actor_role NOT IN ('HO','SYSTEM') THEN
+       AND NEW.decision_actor_role <> 'HO' THEN
       SIGNAL SQLSTATE '45000'
         SET MESSAGE_TEXT = 'Only HO can decide MULTI_CAMPUS request';
     END IF;
 
-    IF NEW.decision_actor_role <> 'SYSTEM' THEN
-      SELECT r.role_code, u.sub_role
-        INTO v_actor_role_code, v_actor_sub_role
-      FROM users u
-      JOIN roles r ON r.role_id = u.role_id
-      WHERE u.user_id = NEW.decided_by;
+    SELECT r.role_code, u.sub_role
+      INTO v_actor_role_code, v_actor_sub_role
+    FROM users u
+    JOIN roles r ON r.role_id = u.role_id
+    WHERE u.user_id = NEW.decided_by;
 
-      IF NEW.decision_actor_role = 'HO' AND v_actor_role_code <> 'HO' THEN
-        SIGNAL SQLSTATE '45000'
-          SET MESSAGE_TEXT = 'decision_actor_role HO requires decided_by user with HO role';
-      END IF;
+    IF NEW.decision_actor_role = 'HO' AND v_actor_role_code <> 'HO' THEN
+      SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'decision_actor_role HO requires decided_by user with HO role';
+    END IF;
 
-      IF NEW.decision_actor_role = 'STAFF_LEADER'
-         AND NOT (v_actor_role_code = 'STAFF' AND v_actor_sub_role = 'LEADER') THEN
-        SIGNAL SQLSTATE '45000'
-          SET MESSAGE_TEXT = 'decision_actor_role STAFF_LEADER requires STAFF Leader user';
-      END IF;
+    IF NEW.decision_actor_role = 'STAFF_LEADER'
+       AND NOT (v_actor_role_code = 'STAFF' AND v_actor_sub_role = 'LEADER') THEN
+      SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'decision_actor_role STAFF_LEADER requires STAFF Leader user';
     END IF;
   END IF;
 END$$
 
 -- ---------------------------------------------------------------------
 -- Cancellation validation triggers.
--- These triggers validate required metadata only. Detailed scope such as
--- ownership/current-host/campus filters must still be checked in backend.
+-- visit_requests total cancellation is Visitor self-service only.
+-- visit_request_campuses can be cancelled by Visitor or by the official Host.
 -- ---------------------------------------------------------------------
-
 
 CREATE TRIGGER trg_visit_requests_cancel_validate_bu
 BEFORE UPDATE ON visit_requests
 FOR EACH ROW
 BEGIN
+  DECLARE v_cancel_role_code VARCHAR(30);
+
   IF NEW.status = 'CANCELLED' AND OLD.status <> 'CANCELLED' THEN
     IF OLD.status <> 'APPROVED' THEN
       SIGNAL SQLSTATE '45000'
         SET MESSAGE_TEXT = 'Only approved request/delegation can be cancelled; pending requests must be rejected instead';
     END IF;
 
-    IF NEW.cancellation_actor_type IS NULL
-       OR NEW.cancellation_source IS NULL
-       OR NEW.cancelled_at IS NULL THEN
+    IF NEW.cancelled_by IS NULL OR NEW.cancelled_at IS NULL THEN
       SIGNAL SQLSTATE '45000'
-        SET MESSAGE_TEXT = 'cancellation_actor_type, cancellation_source and cancelled_at are required when request is cancelled';
-    END IF;
-
-    IF NEW.cancellation_actor_type <> 'SYSTEM' AND NEW.cancelled_by IS NULL THEN
-      SIGNAL SQLSTATE '45000'
-        SET MESSAGE_TEXT = 'cancelled_by is required for non-system cancellation';
+        SET MESSAGE_TEXT = 'cancelled_by and cancelled_at are required when request is cancelled';
     END IF;
 
     IF NEW.cancellation_reason IS NULL OR TRIM(NEW.cancellation_reason) = '' THEN
@@ -2317,16 +2240,14 @@ BEGIN
         SET MESSAGE_TEXT = 'cancellation_reason is required when approved request/delegation is cancelled';
     END IF;
 
-    IF NEW.cancellation_actor_type = 'VISITOR'
-       AND NEW.cancellation_source <> 'SELF_SERVICE' THEN
-      SIGNAL SQLSTATE '45000'
-        SET MESSAGE_TEXT = 'VISITOR cancellation must use SELF_SERVICE source';
-    END IF;
+    SELECT r.role_code INTO v_cancel_role_code
+    FROM users u
+    JOIN roles r ON r.role_id = u.role_id
+    WHERE u.user_id = NEW.cancelled_by;
 
-    IF NEW.cancellation_actor_type = 'HOST'
-       AND NEW.cancellation_source <> 'EXTERNAL_CONFIRMATION' THEN
+    IF v_cancel_role_code <> 'VISITOR' THEN
       SIGNAL SQLSTATE '45000'
-        SET MESSAGE_TEXT = 'HOST cancellation on behalf of visitor must use EXTERNAL_CONFIRMATION source';
+        SET MESSAGE_TEXT = 'Only VISITOR can cancel the main visit request';
     END IF;
   END IF;
 END$$
@@ -2352,16 +2273,10 @@ BEGIN
         SET MESSAGE_TEXT = 'Campus instance can be cancelled only after approval and before/during preparation; pending/during/after/closed instances cannot be cancelled';
     END IF;
 
-    IF NEW.cancellation_actor_type IS NULL
-       OR NEW.cancellation_source IS NULL
-       OR NEW.cancelled_at IS NULL THEN
+    IF NEW.cancelled_by IS NULL OR NEW.cancelled_at IS NULL
+       OR NEW.cancellation_actor_type IS NULL OR NEW.cancellation_source IS NULL THEN
       SIGNAL SQLSTATE '45000'
-        SET MESSAGE_TEXT = 'cancellation_actor_type, cancellation_source and cancelled_at are required when campus instance is cancelled';
-    END IF;
-
-    IF NEW.cancellation_actor_type <> 'SYSTEM' AND NEW.cancelled_by IS NULL THEN
-      SIGNAL SQLSTATE '45000'
-        SET MESSAGE_TEXT = 'cancelled_by is required for non-system campus cancellation';
+        SET MESSAGE_TEXT = 'cancelled_by, cancelled_at, cancellation_actor_type and cancellation_source are required when campus instance is cancelled';
     END IF;
 
     IF NEW.cancellation_reason IS NULL OR TRIM(NEW.cancellation_reason) = '' THEN
@@ -2369,24 +2284,31 @@ BEGIN
         SET MESSAGE_TEXT = 'cancellation_reason is required when approved campus instance is cancelled';
     END IF;
 
-    IF NEW.cancellation_actor_type = 'VISITOR'
-       AND NEW.cancellation_source <> 'SELF_SERVICE' THEN
+    IF NEW.cancellation_actor_type = 'VISITOR' THEN
+      IF NEW.cancellation_source <> 'SELF_SERVICE' THEN
+        SIGNAL SQLSTATE '45000'
+          SET MESSAGE_TEXT = 'VISITOR campus cancellation must use SELF_SERVICE source';
+      END IF;
+    ELSEIF NEW.cancellation_actor_type = 'HOST' THEN
+      IF NEW.cancellation_source <> 'EXTERNAL_CONFIRMATION' THEN
+        SIGNAL SQLSTATE '45000'
+          SET MESSAGE_TEXT = 'HOST cancellation on behalf of visitor must use EXTERNAL_CONFIRMATION source';
+      END IF;
+      IF NEW.current_host_user_id IS NULL OR NEW.cancelled_by <> NEW.current_host_user_id THEN
+        SIGNAL SQLSTATE '45000'
+          SET MESSAGE_TEXT = 'HOST cancellation requires cancelled_by to be the official current host of this campus instance';
+      END IF;
+    ELSE
       SIGNAL SQLSTATE '45000'
-        SET MESSAGE_TEXT = 'VISITOR campus cancellation must use SELF_SERVICE source';
-    END IF;
-
-    IF NEW.cancellation_actor_type = 'HOST'
-       AND NEW.cancellation_source <> 'EXTERNAL_CONFIRMATION' THEN
-      SIGNAL SQLSTATE '45000'
-        SET MESSAGE_TEXT = 'HOST campus cancellation must use EXTERNAL_CONFIRMATION source';
+        SET MESSAGE_TEXT = 'Only VISITOR or HOST can cancel a campus instance';
     END IF;
   END IF;
 END$$
 
 -- ---------------------------------------------------------------------
--- Campus instance assignment/host rules
+-- Campus instance coordinator/host rules.
+-- Staff Leader is stored as coordinator; official host is STAFF and can be assigned once only.
 -- ---------------------------------------------------------------------
-
 
 CREATE TRIGGER trg_visit_campuses_assignment_validate_bi
 BEFORE INSERT ON visit_request_campuses
@@ -2397,111 +2319,79 @@ BEGIN
   DECLARE v_host_role_code VARCHAR(30);
   DECLARE v_host_sub_role VARCHAR(30);
   DECLARE v_host_campus_id BIGINT UNSIGNED;
-  DECLARE v_assigned_by_role_code VARCHAR(30);
-  DECLARE v_assigned_by_sub_role VARCHAR(30);
-  DECLARE v_assigned_by_campus_id BIGINT UNSIGNED;
-  DECLARE v_transfer_role_code VARCHAR(30);
-  DECLARE v_transfer_sub_role VARCHAR(30);
-  DECLARE v_transfer_campus_id BIGINT UNSIGNED;
+  DECLARE v_assigner_role_code VARCHAR(30);
+  DECLARE v_assigner_sub_role VARCHAR(30);
+  DECLARE v_assigner_campus_id BIGINT UNSIGNED;
+  DECLARE v_coord_role_code VARCHAR(30);
+  DECLARE v_coord_sub_role VARCHAR(30);
+  DECLARE v_coord_campus_id BIGINT UNSIGNED;
+  DECLARE v_coord_by_role_code VARCHAR(30);
 
-  SELECT status, visit_scope
-    INTO v_request_status, v_request_scope
+  SELECT status, visit_scope INTO v_request_status, v_request_scope
   FROM visit_requests
   WHERE visit_request_id = NEW.visit_request_id;
 
   IF NEW.status = 'WAITING_REQUEST_APPROVAL' THEN
-    IF NEW.current_host_user_id IS NOT NULL
-       OR NEW.host_assigned_by IS NOT NULL
-       OR NEW.host_assigned_at IS NOT NULL
-       OR NEW.host_assignment_source IS NOT NULL THEN
-      SIGNAL SQLSTATE '45000'
-        SET MESSAGE_TEXT = 'WAITING_REQUEST_APPROVAL campus instance must not have host assignment data yet';
+    IF NEW.coordinator_user_id IS NOT NULL OR NEW.current_host_user_id IS NOT NULL
+       OR NEW.host_assigned_by IS NOT NULL OR NEW.host_assigned_at IS NOT NULL THEN
+      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'WAITING_REQUEST_APPROVAL campus instance must not have coordinator/host assignment data yet';
     END IF;
   END IF;
 
-  IF NEW.status NOT IN ('WAITING_REQUEST_APPROVAL','CANCELLED') THEN
+  IF NEW.status = 'WAITING_HOST_ASSIGNMENT' THEN
+    IF v_request_status <> 'APPROVED' OR v_request_scope <> 'MULTI_CAMPUS' THEN
+      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'WAITING_HOST_ASSIGNMENT is only valid after HO approves a MULTI_CAMPUS request';
+    END IF;
+    IF NEW.coordinator_user_id IS NULL OR NEW.coordinator_assigned_by IS NULL OR NEW.coordinator_assigned_at IS NULL THEN
+      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'coordinator_user_id, coordinator_assigned_by and coordinator_assigned_at are required for WAITING_HOST_ASSIGNMENT';
+    END IF;
+    IF NEW.current_host_user_id IS NOT NULL OR NEW.host_assigned_by IS NOT NULL OR NEW.host_assigned_at IS NOT NULL THEN
+      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'WAITING_HOST_ASSIGNMENT must not have official host assignment yet';
+    END IF;
+  END IF;
+
+  IF NEW.status NOT IN ('WAITING_REQUEST_APPROVAL','WAITING_HOST_ASSIGNMENT','CANCELLED') THEN
     IF v_request_status <> 'APPROVED' THEN
-      SIGNAL SQLSTATE '45000'
-        SET MESSAGE_TEXT = 'Campus instance can move to operational status only after main visit request is APPROVED';
+      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Campus instance can move to operational status only after main visit request is APPROVED';
     END IF;
-    IF NEW.current_host_user_id IS NULL THEN
-      SIGNAL SQLSTATE '45000'
-        SET MESSAGE_TEXT = 'current_host_user_id is required after main visit request is approved';
+    IF NEW.current_host_user_id IS NULL OR NEW.host_assigned_by IS NULL OR NEW.host_assigned_at IS NULL THEN
+      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'official host, host_assigned_by and host_assigned_at are required for operational campus instance';
     END IF;
-    IF NEW.host_assignment_source IS NULL OR NEW.host_assigned_at IS NULL THEN
-      SIGNAL SQLSTATE '45000'
-        SET MESSAGE_TEXT = 'host_assignment_source and host_assigned_at are required when campus instance has host';
+  END IF;
+
+  IF NEW.coordinator_user_id IS NOT NULL THEN
+    SELECT r.role_code, u.sub_role, u.primary_campus_id INTO v_coord_role_code, v_coord_sub_role, v_coord_campus_id
+    FROM users u JOIN roles r ON r.role_id = u.role_id
+    WHERE u.user_id = NEW.coordinator_user_id;
+    IF NOT (v_coord_role_code = 'STAFF' AND v_coord_sub_role = 'LEADER' AND v_coord_campus_id = NEW.campus_id) THEN
+      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'coordinator_user_id must be Staff Leader of the same campus';
+    END IF;
+  END IF;
+
+  IF NEW.status = 'WAITING_HOST_ASSIGNMENT' THEN
+    SELECT r.role_code INTO v_coord_by_role_code
+    FROM users u JOIN roles r ON r.role_id = u.role_id
+    WHERE u.user_id = NEW.coordinator_assigned_by;
+    IF v_coord_by_role_code <> 'HO' THEN
+      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'coordinator_assigned_by must be HO for WAITING_HOST_ASSIGNMENT';
     END IF;
   END IF;
 
   IF NEW.current_host_user_id IS NOT NULL THEN
-    SELECT r.role_code, u.sub_role, u.primary_campus_id
-      INTO v_host_role_code, v_host_sub_role, v_host_campus_id
-    FROM users u
-    JOIN roles r ON r.role_id = u.role_id
+    SELECT r.role_code, u.sub_role, u.primary_campus_id INTO v_host_role_code, v_host_sub_role, v_host_campus_id
+    FROM users u JOIN roles r ON r.role_id = u.role_id
     WHERE u.user_id = NEW.current_host_user_id;
-    IF NOT (v_host_role_code = 'STAFF' AND v_host_sub_role IN ('LEADER','STAFF')) THEN
-      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'current_host_user_id must be a STAFF user';
-    END IF;
-    IF v_host_campus_id <> NEW.campus_id THEN
-      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'current_host_user_id must belong to the same campus instance';
-    END IF;
-    IF NEW.host_assignment_source = 'AUTO_STAFF_LEADER'
-       AND NOT (v_host_role_code = 'STAFF' AND v_host_sub_role = 'LEADER') THEN
-      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'AUTO_STAFF_LEADER assignment requires current_host_user_id to be Staff Leader';
-    END IF;
-  END IF;
-
-  IF NEW.host_assignment_source = 'MANUAL_APPROVAL' THEN
-    IF v_request_scope <> 'SINGLE_CAMPUS' THEN
-      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'MANUAL_APPROVAL host assignment is only for SINGLE_CAMPUS request';
-    END IF;
-    IF NEW.host_assigned_by IS NULL THEN
-      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'host_assigned_by is required for MANUAL_APPROVAL host assignment';
-    END IF;
-  END IF;
-
-  IF NEW.host_assignment_source = 'AUTO_STAFF_LEADER' THEN
-    IF v_request_scope <> 'MULTI_CAMPUS' THEN
-      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'AUTO_STAFF_LEADER host assignment is only for MULTI_CAMPUS request';
+    IF NOT (v_host_role_code = 'STAFF' AND v_host_sub_role = 'STAFF' AND v_host_campus_id = NEW.campus_id) THEN
+      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'current_host_user_id must be STAFF (not Staff Leader) of the same campus';
     END IF;
   END IF;
 
   IF NEW.host_assigned_by IS NOT NULL THEN
-    SELECT r.role_code, u.sub_role, u.primary_campus_id
-      INTO v_assigned_by_role_code, v_assigned_by_sub_role, v_assigned_by_campus_id
-    FROM users u
-    JOIN roles r ON r.role_id = u.role_id
+    SELECT r.role_code, u.sub_role, u.primary_campus_id INTO v_assigner_role_code, v_assigner_sub_role, v_assigner_campus_id
+    FROM users u JOIN roles r ON r.role_id = u.role_id
     WHERE u.user_id = NEW.host_assigned_by;
-    IF NEW.host_assignment_source = 'MANUAL_APPROVAL'
-       AND NOT (v_assigned_by_role_code = 'STAFF' AND v_assigned_by_sub_role = 'LEADER' AND v_assigned_by_campus_id = NEW.campus_id) THEN
-      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'MANUAL_APPROVAL host_assigned_by must be Staff Leader of the same campus';
-    END IF;
-    IF NEW.host_assignment_source = 'AUTO_STAFF_LEADER'
-       AND v_assigned_by_role_code <> 'HO' THEN
-      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'AUTO_STAFF_LEADER host_assigned_by must be HO when provided';
-    END IF;
-  END IF;
-
-  IF NEW.host_assignment_source = 'TRANSFERRED'
-     OR NEW.host_transferred_at IS NOT NULL
-     OR NEW.host_transferred_by IS NOT NULL THEN
-    IF NEW.host_transferred_by IS NULL OR NEW.host_transferred_at IS NULL THEN
-      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'host_transferred_by and host_transferred_at are required when transferring host';
-    END IF;
-  END IF;
-
-  IF NEW.host_transferred_by IS NOT NULL THEN
-    SELECT r.role_code, u.sub_role, u.primary_campus_id
-      INTO v_transfer_role_code, v_transfer_sub_role, v_transfer_campus_id
-    FROM users u
-    JOIN roles r ON r.role_id = u.role_id
-    WHERE u.user_id = NEW.host_transferred_by;
-    IF NOT (v_transfer_role_code = 'STAFF' AND v_transfer_sub_role IN ('LEADER','STAFF')) THEN
-      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'host_transferred_by must be a STAFF user';
-    END IF;
-    IF v_transfer_campus_id <> NEW.campus_id THEN
-      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'host_transferred_by must belong to the same campus instance';
+    IF NOT (v_assigner_role_code = 'STAFF' AND v_assigner_sub_role = 'LEADER' AND v_assigner_campus_id = NEW.campus_id) THEN
+      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'host_assigned_by must be Staff Leader of the same campus';
     END IF;
   END IF;
 END$$
@@ -2515,120 +2405,86 @@ BEGIN
   DECLARE v_host_role_code VARCHAR(30);
   DECLARE v_host_sub_role VARCHAR(30);
   DECLARE v_host_campus_id BIGINT UNSIGNED;
-  DECLARE v_assigned_by_role_code VARCHAR(30);
-  DECLARE v_assigned_by_sub_role VARCHAR(30);
-  DECLARE v_assigned_by_campus_id BIGINT UNSIGNED;
-  DECLARE v_transfer_role_code VARCHAR(30);
-  DECLARE v_transfer_sub_role VARCHAR(30);
-  DECLARE v_transfer_campus_id BIGINT UNSIGNED;
+  DECLARE v_assigner_role_code VARCHAR(30);
+  DECLARE v_assigner_sub_role VARCHAR(30);
+  DECLARE v_assigner_campus_id BIGINT UNSIGNED;
+  DECLARE v_coord_role_code VARCHAR(30);
+  DECLARE v_coord_sub_role VARCHAR(30);
+  DECLARE v_coord_campus_id BIGINT UNSIGNED;
+  DECLARE v_coord_by_role_code VARCHAR(30);
 
-  SELECT status, visit_scope
-    INTO v_request_status, v_request_scope
+  SELECT status, visit_scope INTO v_request_status, v_request_scope
   FROM visit_requests
   WHERE visit_request_id = NEW.visit_request_id;
 
+  IF OLD.current_host_user_id IS NOT NULL AND NOT (NEW.current_host_user_id <=> OLD.current_host_user_id) THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Official host cannot be changed after first assignment';
+  END IF;
+
   IF NEW.status = 'WAITING_REQUEST_APPROVAL' THEN
-    IF NEW.current_host_user_id IS NOT NULL
-       OR NEW.host_assigned_by IS NOT NULL
-       OR NEW.host_assigned_at IS NOT NULL
-       OR NEW.host_assignment_source IS NOT NULL THEN
-      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'WAITING_REQUEST_APPROVAL campus instance must not have host assignment data yet';
+    IF NEW.coordinator_user_id IS NOT NULL OR NEW.current_host_user_id IS NOT NULL
+       OR NEW.host_assigned_by IS NOT NULL OR NEW.host_assigned_at IS NOT NULL THEN
+      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'WAITING_REQUEST_APPROVAL campus instance must not have coordinator/host assignment data yet';
     END IF;
   END IF;
 
-  IF NEW.status NOT IN ('WAITING_REQUEST_APPROVAL','CANCELLED') THEN
+  IF NEW.status = 'WAITING_HOST_ASSIGNMENT' THEN
+    IF v_request_status <> 'APPROVED' OR v_request_scope <> 'MULTI_CAMPUS' THEN
+      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'WAITING_HOST_ASSIGNMENT is only valid after HO approves a MULTI_CAMPUS request';
+    END IF;
+    IF NEW.coordinator_user_id IS NULL OR NEW.coordinator_assigned_by IS NULL OR NEW.coordinator_assigned_at IS NULL THEN
+      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'coordinator_user_id, coordinator_assigned_by and coordinator_assigned_at are required for WAITING_HOST_ASSIGNMENT';
+    END IF;
+    IF NEW.current_host_user_id IS NOT NULL OR NEW.host_assigned_by IS NOT NULL OR NEW.host_assigned_at IS NOT NULL THEN
+      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'WAITING_HOST_ASSIGNMENT must not have official host assignment yet';
+    END IF;
+  END IF;
+
+  IF NEW.status NOT IN ('WAITING_REQUEST_APPROVAL','WAITING_HOST_ASSIGNMENT','CANCELLED') THEN
     IF v_request_status <> 'APPROVED' THEN
       SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Campus instance can move to operational status only after main visit request is APPROVED';
     END IF;
-    IF NEW.current_host_user_id IS NULL THEN
-      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'current_host_user_id is required after main visit request is approved';
+    IF NEW.current_host_user_id IS NULL OR NEW.host_assigned_by IS NULL OR NEW.host_assigned_at IS NULL THEN
+      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'official host, host_assigned_by and host_assigned_at are required for operational campus instance';
     END IF;
-    IF NEW.host_assignment_source IS NULL OR NEW.host_assigned_at IS NULL THEN
-      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'host_assignment_source and host_assigned_at are required when campus instance has host';
+  END IF;
+
+  IF NEW.coordinator_user_id IS NOT NULL THEN
+    SELECT r.role_code, u.sub_role, u.primary_campus_id INTO v_coord_role_code, v_coord_sub_role, v_coord_campus_id
+    FROM users u JOIN roles r ON r.role_id = u.role_id
+    WHERE u.user_id = NEW.coordinator_user_id;
+    IF NOT (v_coord_role_code = 'STAFF' AND v_coord_sub_role = 'LEADER' AND v_coord_campus_id = NEW.campus_id) THEN
+      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'coordinator_user_id must be Staff Leader of the same campus';
+    END IF;
+  END IF;
+
+  IF NEW.status = 'WAITING_HOST_ASSIGNMENT' THEN
+    SELECT r.role_code INTO v_coord_by_role_code
+    FROM users u JOIN roles r ON r.role_id = u.role_id
+    WHERE u.user_id = NEW.coordinator_assigned_by;
+    IF v_coord_by_role_code <> 'HO' THEN
+      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'coordinator_assigned_by must be HO for WAITING_HOST_ASSIGNMENT';
     END IF;
   END IF;
 
   IF NEW.current_host_user_id IS NOT NULL THEN
-    SELECT r.role_code, u.sub_role, u.primary_campus_id
-      INTO v_host_role_code, v_host_sub_role, v_host_campus_id
-    FROM users u
-    JOIN roles r ON r.role_id = u.role_id
+    SELECT r.role_code, u.sub_role, u.primary_campus_id INTO v_host_role_code, v_host_sub_role, v_host_campus_id
+    FROM users u JOIN roles r ON r.role_id = u.role_id
     WHERE u.user_id = NEW.current_host_user_id;
-    IF NOT (v_host_role_code = 'STAFF' AND v_host_sub_role IN ('LEADER','STAFF')) THEN
-      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'current_host_user_id must be a STAFF user';
-    END IF;
-    IF v_host_campus_id <> NEW.campus_id THEN
-      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'current_host_user_id must belong to the same campus instance';
-    END IF;
-    IF NEW.host_assignment_source = 'AUTO_STAFF_LEADER'
-       AND NOT (v_host_role_code = 'STAFF' AND v_host_sub_role = 'LEADER') THEN
-      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'AUTO_STAFF_LEADER assignment requires current_host_user_id to be Staff Leader';
-    END IF;
-  END IF;
-
-  IF NOT (NEW.current_host_user_id <=> OLD.current_host_user_id)
-     AND OLD.current_host_user_id IS NOT NULL THEN
-    IF NEW.host_assignment_source <> 'TRANSFERRED'
-       OR NEW.host_transferred_by IS NULL
-       OR NEW.host_transferred_at IS NULL THEN
-      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'host transfer must set host_assignment_source=TRANSFERRED, host_transferred_by and host_transferred_at';
-    END IF;
-  END IF;
-
-  IF NEW.host_assignment_source = 'MANUAL_APPROVAL' THEN
-    IF v_request_scope <> 'SINGLE_CAMPUS' THEN
-      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'MANUAL_APPROVAL host assignment is only for SINGLE_CAMPUS request';
-    END IF;
-    IF NEW.host_assigned_by IS NULL THEN
-      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'host_assigned_by is required for MANUAL_APPROVAL host assignment';
-    END IF;
-  END IF;
-
-  IF NEW.host_assignment_source = 'AUTO_STAFF_LEADER' THEN
-    IF v_request_scope <> 'MULTI_CAMPUS' THEN
-      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'AUTO_STAFF_LEADER host assignment is only for MULTI_CAMPUS request';
+    IF NOT (v_host_role_code = 'STAFF' AND v_host_sub_role = 'STAFF' AND v_host_campus_id = NEW.campus_id) THEN
+      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'current_host_user_id must be STAFF (not Staff Leader) of the same campus';
     END IF;
   END IF;
 
   IF NEW.host_assigned_by IS NOT NULL THEN
-    SELECT r.role_code, u.sub_role, u.primary_campus_id
-      INTO v_assigned_by_role_code, v_assigned_by_sub_role, v_assigned_by_campus_id
-    FROM users u
-    JOIN roles r ON r.role_id = u.role_id
+    SELECT r.role_code, u.sub_role, u.primary_campus_id INTO v_assigner_role_code, v_assigner_sub_role, v_assigner_campus_id
+    FROM users u JOIN roles r ON r.role_id = u.role_id
     WHERE u.user_id = NEW.host_assigned_by;
-    IF NEW.host_assignment_source = 'MANUAL_APPROVAL'
-       AND NOT (v_assigned_by_role_code = 'STAFF' AND v_assigned_by_sub_role = 'LEADER' AND v_assigned_by_campus_id = NEW.campus_id) THEN
-      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'MANUAL_APPROVAL host_assigned_by must be Staff Leader of the same campus';
-    END IF;
-    IF NEW.host_assignment_source = 'AUTO_STAFF_LEADER'
-       AND v_assigned_by_role_code <> 'HO' THEN
-      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'AUTO_STAFF_LEADER host_assigned_by must be HO when provided';
-    END IF;
-  END IF;
-
-  IF NEW.host_assignment_source = 'TRANSFERRED'
-     OR NEW.host_transferred_at IS NOT NULL
-     OR NEW.host_transferred_by IS NOT NULL THEN
-    IF NEW.host_transferred_by IS NULL OR NEW.host_transferred_at IS NULL THEN
-      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'host_transferred_by and host_transferred_at are required when transferring host';
-    END IF;
-  END IF;
-
-  IF NEW.host_transferred_by IS NOT NULL THEN
-    SELECT r.role_code, u.sub_role, u.primary_campus_id
-      INTO v_transfer_role_code, v_transfer_sub_role, v_transfer_campus_id
-    FROM users u
-    JOIN roles r ON r.role_id = u.role_id
-    WHERE u.user_id = NEW.host_transferred_by;
-    IF NOT (v_transfer_role_code = 'STAFF' AND v_transfer_sub_role IN ('LEADER','STAFF')) THEN
-      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'host_transferred_by must be a STAFF user';
-    END IF;
-    IF v_transfer_campus_id <> NEW.campus_id THEN
-      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'host_transferred_by must belong to the same campus instance';
+    IF NOT (v_assigner_role_code = 'STAFF' AND v_assigner_sub_role = 'LEADER' AND v_assigner_campus_id = NEW.campus_id) THEN
+      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'host_assigned_by must be Staff Leader of the same campus';
     END IF;
   END IF;
 END$$
-
 
 CREATE TRIGGER trg_api_usage_quotas_scope_bi
 BEFORE INSERT ON api_usage_quotas
@@ -2756,7 +2612,7 @@ ORDER BY table_name;
 -- Run after PEMS_v4_5_schema_uc_based_soft_delete.sql on a clean database.
 -- Dynamic dates: all timestamps use @seed_now = NOW().
 -- =====================================================================
-USE pems_db;
+USE pems_db_test_no_permissions;
 SET NAMES utf8mb4;
 SET @OLD_SQL_SAFE_UPDATES = @@SQL_SAFE_UPDATES;
 SET @seed_now = NOW();
@@ -3004,11 +2860,11 @@ SET @pwd_hash = '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi';
 
 INSERT INTO users (user_id, full_name, email, phone, nationality, password_hash, role_id, sub_role, primary_campus_id, department_id, gender, avatar_url, student_code, fe_id, status, email_verified_at, failed_login_count, locked_until, created_via, first_login_at, last_login_at, created_at, created_by, updated_at, updated_by)
 VALUES
-  (@u_admin_minh, 'System Administrator', 'admin@fpt.edu.vn', '0901123456', NULL, @pwd_hash, @role_admin, NULL, @campus_hn, NULL, 'UNKNOWN', NULL, NULL, 'FE-SEED-000', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 80 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 70 DAY), DATE_SUB(@seed_now, INTERVAL 1 DAY), DATE_SUB(@seed_now, INTERVAL 120 DAY), NULL, @seed_now, NULL),
-  (@u_ho_ha, 'Head Office Manager', 'ho@fpt.edu.vn', '0912345678', NULL, @pwd_hash, @role_ho, NULL, @campus_hn, NULL, 'UNKNOWN', NULL, NULL, 'FE-SEED-001', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 81 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 71 DAY), DATE_SUB(@seed_now, INTERVAL 2 DAY), DATE_SUB(@seed_now, INTERVAL 121 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
-  (@u_ho_linh, 'Đỗ Gia Linh', 'linh.do@company.vn', '0902233445', NULL, @pwd_hash, @role_ho, NULL, @campus_hcm, NULL, 'UNKNOWN', NULL, NULL, 'FE-SEED-002', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 82 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 72 DAY), DATE_SUB(@seed_now, INTERVAL 3 DAY), DATE_SUB(@seed_now, INTERVAL 122 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
-  (@u_stafflead_hn, 'IC Staff Leader (HN)', 'staff.leader.hn@fpt.edu.vn', '0934567890', NULL, @pwd_hash, @role_staff, 'LEADER', @campus_hn, @dept_hn_ic, 'UNKNOWN', NULL, NULL, 'FE-SEED-003', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 83 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 73 DAY), DATE_SUB(@seed_now, INTERVAL 4 DAY), DATE_SUB(@seed_now, INTERVAL 123 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
-  (@u_staff_hn, 'IC Staff (HN)', 'staff.hn@fpt.edu.vn', '0945678901', NULL, @pwd_hash, @role_staff, 'STAFF', @campus_hn, @dept_hn_ic, 'UNKNOWN', NULL, NULL, 'FE-SEED-004', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 84 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 74 DAY), DATE_SUB(@seed_now, INTERVAL 5 DAY), DATE_SUB(@seed_now, INTERVAL 124 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
+  (@u_admin_minh, 'System Administrator', 'admin@fpt.edu.vn', '0901123456', NULL, @pwd_hash, @role_admin, NULL, @campus_hn, NULL, NULL, NULL, NULL, 'FE-SEED-000', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 80 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 70 DAY), DATE_SUB(@seed_now, INTERVAL 1 DAY), DATE_SUB(@seed_now, INTERVAL 120 DAY), NULL, @seed_now, NULL),
+  (@u_ho_ha, 'Head Office Manager', 'ho@fpt.edu.vn', '0912345678', NULL, @pwd_hash, @role_ho, NULL, @campus_hn, NULL, NULL, NULL, NULL, 'FE-SEED-001', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 81 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 71 DAY), DATE_SUB(@seed_now, INTERVAL 2 DAY), DATE_SUB(@seed_now, INTERVAL 121 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
+  (@u_ho_linh, 'Đỗ Gia Linh', 'linh.do@company.vn', '0902233445', NULL, @pwd_hash, @role_ho, NULL, @campus_hcm, NULL, NULL, NULL, NULL, 'FE-SEED-002', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 82 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 72 DAY), DATE_SUB(@seed_now, INTERVAL 3 DAY), DATE_SUB(@seed_now, INTERVAL 122 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
+  (@u_stafflead_hn, 'IC Staff Leader (HN)', 'staff.leader.hn@fpt.edu.vn', '0934567890', NULL, @pwd_hash, @role_staff, 'LEADER', @campus_hn, @dept_hn_ic, NULL, NULL, NULL, 'FE-SEED-003', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 83 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 73 DAY), DATE_SUB(@seed_now, INTERVAL 4 DAY), DATE_SUB(@seed_now, INTERVAL 123 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
+  (@u_staff_hn, 'IC Staff (HN)', 'staff.hn@fpt.edu.vn', '0945678901', NULL, @pwd_hash, @role_staff, 'STAFF', @campus_hn, @dept_hn_ic, NULL, NULL, NULL, 'FE-SEED-004', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 84 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 74 DAY), DATE_SUB(@seed_now, INTERVAL 5 DAY), DATE_SUB(@seed_now, INTERVAL 124 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
   (@u_stafflead_hcm, 'Vũ Lan Anh', 'anh.vu@company.vn', '0976543210', NULL, @pwd_hash, @role_staff, 'LEADER', @campus_hcm, @dept_hcm_ic, 'FEMALE', NULL, NULL, 'FE-SEED-005', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 85 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 75 DAY), DATE_SUB(@seed_now, INTERVAL 6 DAY), DATE_SUB(@seed_now, INTERVAL 125 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
   (@u_staff_hcm, 'Nguyễn Văn Nam', 'nam.nguyen@company.vn', '0987654321', NULL, @pwd_hash, @role_staff, 'STAFF', @campus_hcm, @dept_hcm_ic, 'MALE', NULL, NULL, 'FE-SEED-006', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 86 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 76 DAY), DATE_SUB(@seed_now, INTERVAL 7 DAY), DATE_SUB(@seed_now, INTERVAL 126 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
   (@u_stafflead_dn, 'Nguyễn Nam', 'nguyen.nam@company.vn', '0961234567', NULL, @pwd_hash, @role_staff, 'LEADER', @campus_dn, @dept_dn_ic, 'MALE', NULL, NULL, 'FE-SEED-007', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 87 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 77 DAY), DATE_SUB(@seed_now, INTERVAL 8 DAY), DATE_SUB(@seed_now, INTERVAL 127 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
@@ -3017,27 +2873,27 @@ VALUES
   (@u_staff_ct, 'Đặng Minh Châu', 'chau.dang@company.vn', '0925566778', NULL, @pwd_hash, @role_staff, 'STAFF', @campus_ct, @dept_ct_ic, 'OTHER', NULL, NULL, 'FE-SEED-010', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 90 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 80 DAY), DATE_SUB(@seed_now, INTERVAL 11 DAY), DATE_SUB(@seed_now, INTERVAL 130 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
   (@u_stafflead_qn, 'Hoàng Minh Quân', 'quan.hoang@company.vn', '0911002003', NULL, @pwd_hash, @role_staff, 'LEADER', @campus_qn, @dept_qn_ic, 'MALE', NULL, NULL, 'FE-SEED-011', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 91 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 81 DAY), DATE_SUB(@seed_now, INTERVAL 12 DAY), DATE_SUB(@seed_now, INTERVAL 131 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
   (@u_staff_qn, 'Lý Thanh Mai', 'mai.ly@company.vn', '0911222333', NULL, @pwd_hash, @role_staff, 'STAFF', @campus_qn, @dept_qn_ic, 'FEMALE', NULL, NULL, 'FE-SEED-012', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 92 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 82 DAY), DATE_SUB(@seed_now, INTERVAL 13 DAY), DATE_SUB(@seed_now, INTERVAL 132 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
-  (@u_deptlead_it_hn, 'Department Lead (HN)', 'dept.leader.hn@fpt.edu.vn', '0909988776', NULL, @pwd_hash, @role_department, 'LEADER', @campus_hn, @dept_hn_it, 'UNKNOWN', NULL, NULL, 'FE-SEED-013', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 93 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 83 DAY), DATE_SUB(@seed_now, INTERVAL 14 DAY), DATE_SUB(@seed_now, INTERVAL 133 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
-  (@u_dept_it_hn, 'Department Personnel (HN)', 'dept.hn@fpt.edu.vn', '0903344556', NULL, @pwd_hash, @role_department, 'STAFF', @campus_hn, @dept_hn_it, 'UNKNOWN', NULL, NULL, 'FE-SEED-014', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 94 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 84 DAY), DATE_SUB(@seed_now, INTERVAL 15 DAY), DATE_SUB(@seed_now, INTERVAL 134 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
+  (@u_deptlead_it_hn, 'Department Lead (HN)', 'dept.leader.hn@fpt.edu.vn', '0909988776', NULL, @pwd_hash, @role_department, 'LEADER', @campus_hn, @dept_hn_it, NULL, NULL, NULL, 'FE-SEED-013', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 93 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 83 DAY), DATE_SUB(@seed_now, INTERVAL 14 DAY), DATE_SUB(@seed_now, INTERVAL 133 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
+  (@u_dept_it_hn, 'Department Personnel (HN)', 'dept.hn@fpt.edu.vn', '0903344556', NULL, @pwd_hash, @role_department, 'STAFF', @campus_hn, @dept_hn_it, NULL, NULL, NULL, 'FE-SEED-014', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 94 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 84 DAY), DATE_SUB(@seed_now, INTERVAL 15 DAY), DATE_SUB(@seed_now, INTERVAL 134 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
   (@u_deptlead_finance_hcm, 'Ngô Thanh Hương', 'huong.ngo@company.vn', '0906677889', NULL, @pwd_hash, @role_department, 'LEADER', @campus_hcm, @dept_hcm_finance, 'FEMALE', NULL, NULL, 'FE-SEED-015', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 95 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 85 DAY), DATE_SUB(@seed_now, INTERVAL 16 DAY), DATE_SUB(@seed_now, INTERVAL 135 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
   (@u_dept_finance_hcm, 'Mai Anh Tuấn', 'tuan.mai@company.vn', '0907788990', NULL, @pwd_hash, @role_department, 'STAFF', @campus_hcm, @dept_hcm_finance, 'MALE', NULL, NULL, 'FE-SEED-016', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 96 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 86 DAY), DATE_SUB(@seed_now, INTERVAL 17 DAY), DATE_SUB(@seed_now, INTERVAL 136 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
   (@u_deptlead_admin_ct, 'Lâm Khánh Vy', 'vy.lam@company.vn', '0913456780', NULL, @pwd_hash, @role_department, 'LEADER', @campus_ct, @dept_ct_admin, 'FEMALE', NULL, NULL, 'FE-SEED-017', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 97 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 87 DAY), DATE_SUB(@seed_now, INTERVAL 18 DAY), DATE_SUB(@seed_now, INTERVAL 137 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
   (@u_dept_admin_ct, 'Phan Gia Phúc', 'phuc.phan@company.vn', '0919988776', NULL, @pwd_hash, @role_department, 'STAFF', @campus_ct, @dept_ct_admin, 'MALE', NULL, NULL, 'FE-SEED-018', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 98 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 88 DAY), DATE_SUB(@seed_now, INTERVAL 19 DAY), DATE_SUB(@seed_now, INTERVAL 138 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
-  (@u_student_anh, 'Support Student', 'student@fpt.edu.vn', '0866123456', NULL, @pwd_hash, @role_student, NULL, @campus_hn, NULL, 'UNKNOWN', NULL, 'SE190019', 'FE-SEED-019', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 99 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 89 DAY), DATE_SUB(@seed_now, INTERVAL 20 DAY), DATE_SUB(@seed_now, INTERVAL 139 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
+  (@u_student_anh, 'Support Student', 'student@fpt.edu.vn', '0866123456', NULL, @pwd_hash, @role_student, NULL, @campus_hn, NULL, NULL, NULL, 'SE190019', 'FE-SEED-019', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 99 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 89 DAY), DATE_SUB(@seed_now, INTERVAL 20 DAY), DATE_SUB(@seed_now, INTERVAL 139 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
   (@u_student_bao, 'Phạm Quốc Bảo Student', 'bao.student@company.vn', '0866543210', NULL, @pwd_hash, @role_student, NULL, @campus_hcm, NULL, 'MALE', NULL, 'SE190020', 'FE-SEED-020', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 100 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 90 DAY), DATE_SUB(@seed_now, INTERVAL 1 DAY), DATE_SUB(@seed_now, INTERVAL 140 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
-  (@u_student_long, 'Nguyễn Thị Minh Châu Hồng Phúc Gia Bảo Hoàng Anh Tuấn Kiệt', 'long.name.student@company.vn', '0866000001', NULL, @pwd_hash, @role_student, NULL, @campus_ct, NULL, 'UNKNOWN', NULL, 'SE190021', 'FE-SEED-021', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 101 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 91 DAY), DATE_SUB(@seed_now, INTERVAL 2 DAY), DATE_SUB(@seed_now, INTERVAL 141 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
+  (@u_student_long, 'Nguyễn Thị Minh Châu Hồng Phúc Gia Bảo Hoàng Anh Tuấn Kiệt', 'long.name.student@company.vn', '0866000001', NULL, @pwd_hash, @role_student, NULL, @campus_ct, NULL, NULL, NULL, 'SE190021', 'FE-SEED-021', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 101 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 91 DAY), DATE_SUB(@seed_now, INTERVAL 2 DAY), DATE_SUB(@seed_now, INTERVAL 141 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
   (@u_locked_staff, 'Tạ Quang Huy', 'huy.locked@company.vn', '0918000111', NULL, @pwd_hash, @role_staff, 'STAFF', @campus_hn, @dept_hn_ic, 'MALE', NULL, NULL, 'FE-SEED-022', 'LOCKED', DATE_SUB(@seed_now, INTERVAL 102 DAY), '7', DATE_ADD(@seed_now, INTERVAL 30 MINUTE), 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 92 DAY), DATE_SUB(@seed_now, INTERVAL 3 DAY), DATE_SUB(@seed_now, INTERVAL 142 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
   (@u_inactive_dept, 'Trịnh Hà My', 'my.inactive@company.vn', '0918111222', NULL, @pwd_hash, @role_department, 'STAFF', @campus_hcm, @dept_hcm_finance, 'FEMALE', NULL, NULL, 'FE-SEED-023', 'INACTIVE', DATE_SUB(@seed_now, INTERVAL 103 DAY), '0', NULL, 'MANUAL_CREATED', DATE_SUB(@seed_now, INTERVAL 93 DAY), DATE_SUB(@seed_now, INTERVAL 4 DAY), DATE_SUB(@seed_now, INTERVAL 143 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
   (@u_pending_internal, 'Nguyễn Quốc Khánh', 'khanh.pending@company.vn', '0918222333', NULL, @pwd_hash, @role_staff, 'STAFF', @campus_dn, @dept_dn_ic, 'MALE', NULL, NULL, 'FE-SEED-024', 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 104 DAY), '0', NULL, 'MANUAL_CREATED', NULL, NULL, DATE_SUB(@seed_now, INTERVAL 144 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
   (@u_rejected_internal, 'Lê Thảo Chi', 'chi.rejected@company.vn', '0918333444', NULL, @pwd_hash, @role_department, 'STAFF', @campus_qn, @dept_qn_archive_finance, 'FEMALE', NULL, NULL, 'FE-SEED-025', 'INACTIVE', DATE_SUB(@seed_now, INTERVAL 105 DAY), '0', NULL, 'MANUAL_CREATED', NULL, NULL, DATE_SUB(@seed_now, INTERVAL 145 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
-  (@v_kim, 'External Visitor', 'visitor@example.com', '+821012345678', 'Việt Nam', @pwd_hash, @role_visitor, NULL, NULL, NULL, 'UNKNOWN', NULL, NULL, NULL, 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 106 DAY), '0', NULL, 'VISITOR_FORM', DATE_SUB(@seed_now, INTERVAL 96 DAY), DATE_SUB(@seed_now, INTERVAL 7 DAY), DATE_SUB(@seed_now, INTERVAL 146 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
+  (@v_kim, 'External Visitor', 'visitor@example.com', '+821012345678', 'Việt Nam', @pwd_hash, @role_visitor, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 106 DAY), '0', NULL, 'VISITOR_FORM', DATE_SUB(@seed_now, INTERVAL 96 DAY), DATE_SUB(@seed_now, INTERVAL 7 DAY), DATE_SUB(@seed_now, INTERVAL 146 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
   (@v_lee, 'Lee Joon Ho', 'lee.joonho@seoultech.example', '+821055512345', 'Hàn Quốc', @pwd_hash, @role_visitor, NULL, NULL, NULL, 'MALE', NULL, NULL, NULL, 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 107 DAY), '0', NULL, 'VISITOR_FORM', DATE_SUB(@seed_now, INTERVAL 97 DAY), DATE_SUB(@seed_now, INTERVAL 8 DAY), DATE_SUB(@seed_now, INTERVAL 147 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
   (@v_tanaka, 'Tanaka Aoi', 'aoi.tanaka@kyoto-global.example', '+819012345678', 'Nhật Bản', @pwd_hash, @role_visitor, NULL, NULL, NULL, 'FEMALE', NULL, NULL, NULL, 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 108 DAY), '0', NULL, 'VISITOR_FORM', DATE_SUB(@seed_now, INTERVAL 98 DAY), DATE_SUB(@seed_now, INTERVAL 9 DAY), DATE_SUB(@seed_now, INTERVAL 148 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
   (@v_smith, 'Emily Smith', 'emily.smith@greentech.example', '+6591234567', 'Singapore', @pwd_hash, @role_visitor, NULL, NULL, NULL, 'FEMALE', NULL, NULL, NULL, 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 109 DAY), '0', NULL, 'VISITOR_FORM', DATE_SUB(@seed_now, INTERVAL 99 DAY), DATE_SUB(@seed_now, INTERVAL 10 DAY), DATE_SUB(@seed_now, INTERVAL 149 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
   (@v_nguyen_no_dau, 'Nguyen Van Nam', 'nguyen.van.nam@partner.example', '0909000009', 'Việt Nam', @pwd_hash, @role_visitor, NULL, NULL, NULL, 'MALE', NULL, NULL, NULL, 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 110 DAY), '0', NULL, 'VISITOR_FORM', DATE_SUB(@seed_now, INTERVAL 100 DAY), DATE_SUB(@seed_now, INTERVAL 11 DAY), DATE_SUB(@seed_now, INTERVAL 150 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
   (@v_pending_approval_seed, 'Nguyễn Thảo My', 'thaomy.pending.approval@partner.example', '0909555001', 'Việt Nam', @pwd_hash, @role_visitor, NULL, NULL, NULL, 'FEMALE', NULL, NULL, NULL, 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 17 DAY), '0', NULL, 'VISITOR_FORM', NULL, NULL, DATE_SUB(@seed_now, INTERVAL 151 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
   (@v_pending_approval, 'Nguyễn Văn Nam', 'nam.pending.approval@partner.example', '0909555002', 'Việt Nam', @pwd_hash, @role_visitor, NULL, NULL, NULL, 'MALE', NULL, NULL, NULL, 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 112 DAY), '0', NULL, 'VISITOR_FORM', NULL, NULL, DATE_SUB(@seed_now, INTERVAL 152 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
-  (@v_short_name, 'An', 'an.short@partner.example', '0909555003', 'Việt Nam', @pwd_hash, @role_visitor, NULL, NULL, NULL, 'UNKNOWN', NULL, NULL, NULL, 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 113 DAY), '0', NULL, 'VISITOR_FORM', DATE_SUB(@seed_now, INTERVAL 103 DAY), DATE_SUB(@seed_now, INTERVAL 14 DAY), DATE_SUB(@seed_now, INTERVAL 153 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
+  (@v_short_name, 'An', 'an.short@partner.example', '0909555003', 'Việt Nam', @pwd_hash, @role_visitor, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 113 DAY), '0', NULL, 'VISITOR_FORM', DATE_SUB(@seed_now, INTERVAL 103 DAY), DATE_SUB(@seed_now, INTERVAL 14 DAY), DATE_SUB(@seed_now, INTERVAL 153 DAY), @u_admin_minh, @seed_now, @u_admin_minh),
   (@v_long_name, 'Nguyễn Thị Minh Anh Phương Khánh Linh Hoàng Bảo Trân Quốc Việt', 'long.name.visitor@partner.example', '0909555004', 'Việt Nam', @pwd_hash, @role_visitor, NULL, NULL, NULL, 'FEMALE', NULL, NULL, NULL, 'ACTIVE', DATE_SUB(@seed_now, INTERVAL 114 DAY), '0', NULL, 'VISITOR_FORM', DATE_SUB(@seed_now, INTERVAL 104 DAY), DATE_SUB(@seed_now, INTERVAL 15 DAY), DATE_SUB(@seed_now, INTERVAL 154 DAY), @u_admin_minh, @seed_now, @u_admin_minh);
 
 -- UPDATE migration statement removed in fresh create-only build.
@@ -3049,538 +2905,8 @@ VALUES
 -- UPDATE migration statement removed in fresh create-only build.
 
 
-INSERT IGNORE INTO permissions (permission_id, permission_code, name, permission_group, description, is_system, created_at)
-VALUES
-  (NULL, 'UC-01.VIEW_HOMEPAGE', 'UC-01 - View Homepage', 'Common', 'Seeded from Role & Permission Matrix: View Homepage', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-02.SEARCH_INFORMATION', 'UC-02 - Search Information', 'Common', 'Seeded from Role & Permission Matrix: Search Information', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-03.VIEW_CONTACT_INFO', 'UC-03 - View Contact Info', 'Common', 'Seeded from Role & Permission Matrix: View Contact Info', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-04.VIEW_POLICY_AND_TERMS', 'UC-04 - View Policy & Terms', 'Common', 'Seeded from Role & Permission Matrix: View Policy & Terms', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-05.VIEW_FAQ', 'UC-05 - View FAQ', 'Common', 'Seeded from Role & Permission Matrix: View FAQ', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-06.VIEW_NEWS', 'UC-06 - View News', 'Common', 'Seeded from Role & Permission Matrix: View News', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-07.VIEW_PARTNERS', 'UC-07 - View Partners', 'Common', 'Seeded from Role & Permission Matrix: View Partners', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-08.VIEW_GALLERY', 'UC-08 - View Gallery', 'Common', 'Seeded from Role & Permission Matrix: View Gallery', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-09.VIEW_NOTIFICATIONS', 'UC-09 - View Notifications', 'Common', 'Seeded from Role & Permission Matrix: View Notifications', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-10.LOGIN_VIA_SSO', 'UC-10 - Login via SSO', 'Authentication', 'Seeded from Role & Permission Matrix: Login via SSO', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-11.LOGIN_VIA_CREDENTIALS', 'UC-11 - Login via Credentials', 'Authentication', 'Seeded from Role & Permission Matrix: Login via Credentials', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-12.LOGOUT', 'UC-12 - Logout', 'Authentication', 'Seeded from Role & Permission Matrix: Logout', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-13.FORGOT_PASSWORD', 'UC-13 - Forgot Password', 'Authentication', 'Seeded from Role & Permission Matrix: Forgot Password', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-14.VIEW_PROFILE', 'UC-14 - View Profile', 'Profile Management', 'Seeded from Role & Permission Matrix: View Profile', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-15.UPDATE_PROFILE', 'UC-15 - Update Profile', 'Profile Management', 'Seeded from Role & Permission Matrix: Update Profile', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-16.CHANGE_PASSWORD', 'UC-16 - Change Password', 'Profile Management', 'Seeded from Role & Permission Matrix: Change Password', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-17.SUBMIT_VISIT_REQUEST', 'UC-17 - Submit Visit Request', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: Submit Visit Request', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-18.APPROVE_CROSS_CAMPUS_REQUEST', 'UC-18 - Approve Cross-Campus Request', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: Approve Cross-Campus Request', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-19.VIEW_GUEST_DELEGATION_DETAILS', 'UC-19 - View Guest Delegation Details', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: View Guest Delegation Details', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-20.VIEW_GUEST_DELEGATION_LIST', 'UC-20 - View Guest Delegation List', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: View Guest Delegation List', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-21.SEARCH_DELEGATIONS', 'UC-21 - Search Delegations', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: Search Delegations', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-22.PROCESS_VISIT_REQUEST', 'UC-22 - Process Visit Request', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: Process Visit Request', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-23.CREATE_GUEST_DELEGATION', 'UC-23 - Create Guest Delegation', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: Create Guest Delegation', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-24.UPDATE_GUEST_DELEGATION', 'UC-24 - Update Guest Delegation', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: Update Guest Delegation', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-25.PREPARE_VISIT_LOGISTICS', 'UC-25 - Prepare Visit Logistics', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: Prepare Visit Logistics', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-26.UPDATE_VISIT_LOGISTICS', 'UC-26 - Update Visit Logistics', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: Update Visit Logistics', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-27.CONFIRM_PARTICIPATION', 'UC-27 - Confirm Participation', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: Confirm Participation', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-28.APPROVE_RESOURCE_REQUEST', 'UC-28 - Approve Resource Request', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: Approve Resource Request', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-29.PROPOSE_RESOURCE_MODIFICATION', 'UC-29 - Propose Resource Modification', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: Propose Resource Modification', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-30.CONFIRM_THE_CHANGE_PROPOSAL', 'UC-30 - Confirm The Change Proposal', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: Confirm The Change Proposal', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-31.CREATE_MEETING_MINUTES', 'UC-31 - Create Meeting Minutes', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: Create Meeting Minutes', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-32.EDIT_MEETING_MINUTES', 'UC-32 - Edit Meeting Minutes', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: Edit Meeting Minutes', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-33.VIEW_MEETING_MINUTES_DETAILS', 'UC-33 - View Meeting Minutes Details', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: View Meeting Minutes Details', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-34.SUBMIT_DELEGATION_FEEDBACK', 'UC-34 - Submit Delegation Feedback', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: Submit Delegation Feedback', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-35.SCAN_BUSINESS_CARD', 'UC-35 - Scan Business Card', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: Scan Business Card', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-36.CREATE_PARTNER_PROFILE', 'UC-36 - Create Partner Profile', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: Create Partner Profile', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-37.UPLOAD_ATTACHED_DOCUMENTS', 'UC-37 - Upload Attached Documents', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: Upload Attached Documents', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-38.UPLOAD_VISIT_PHOTOS', 'UC-38 - Upload Visit Photos', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: Upload Visit Photos', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-39.TAG_FACES_ON_PHOTOS', 'UC-39 - Tag Faces on Photos', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: Tag Faces on Photos', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-40.CREATE_NEWS_ARTICLE', 'UC-40 - Create News Article', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: Create News Article', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-41.CLOSE_DELEGATION', 'UC-41 - Close Delegation', 'Delegation Reception Management', 'Seeded from Role & Permission Matrix: Close Delegation', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-42.VIEW_EMAIL_TEMPLATE_LIST', 'UC-42 - View Email Template List', 'Email Management', 'Seeded from Role & Permission Matrix: View Email Template List', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-43.VIEW_EMAIL_TEMPLATE_DETAIL', 'UC-43 - View Email Template Detail', 'Email Management', 'Seeded from Role & Permission Matrix: View Email Template Detail', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-44.UPDATE_EMAIL_TEMPLATE', 'UC-44 - Update Email Template', 'Email Management', 'Seeded from Role & Permission Matrix: Update Email Template', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-45.CREATE_EMAIL_TEMPLATE', 'UC-45 - Create Email Template', 'Email Management', 'Seeded from Role & Permission Matrix: Create Email Template', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-46.EDIT_EMAIL_CONTENT', 'UC-46 - Edit Email Content', 'Email Management', 'Seeded from Role & Permission Matrix: Edit Email Content', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-47.SEND_EMAIL', 'UC-47 - Send Email', 'Email Management', 'Seeded from Role & Permission Matrix: Send Email', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-48.VIEW_EMAIL', 'UC-48 - View Email', 'Email Management', 'Seeded from Role & Permission Matrix: View Email', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-49.REPLY_TO_EMAIL', 'UC-49 - Reply to Email', 'Email Management', 'Seeded from Role & Permission Matrix: Reply to Email', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-50.PROCESS_PARTNER_CREATION_REQUEST', 'UC-50 - Process Partner Creation Request', 'Partner Management', 'Seeded from Role & Permission Matrix: Process Partner Creation Request', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-51.EDIT_PARTNER_INFORMATION', 'UC-51 - Edit Partner Information', 'Partner Management', 'Seeded from Role & Permission Matrix: Edit Partner Information', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-52.VIEW_PARTNER_LISTS', 'UC-52 - View Partner Lists', 'Partner Management', 'Seeded from Role & Permission Matrix: View Partner Lists', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-53.SEARCH_PARTNERS', 'UC-53 - Search Partners', 'Partner Management', 'Seeded from Role & Permission Matrix: Search Partners', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-54.VIEW_PARTNER_DETAILS', 'UC-54 - View Partner Details', 'Partner Management', 'Seeded from Role & Permission Matrix: View Partner Details', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-55.VIEW_DOCUMENT_LIST', 'UC-55 - View Document List', 'Document Management', 'Seeded from Role & Permission Matrix: View Document List', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-56.SEARCH_DOCUMENTS', 'UC-56 - Search Documents', 'Document Management', 'Seeded from Role & Permission Matrix: Search Documents', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-57.VIEW_GALLERY_ITEM_LIST', 'UC-57 - View Gallery Item List', 'Gallery Management', 'Seeded from Role & Permission Matrix: View Gallery Item List', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-58.SEARCH_GALLERY_ITEMS', 'UC-58 - Search Gallery Items', 'Gallery Management', 'Seeded from Role & Permission Matrix: Search Gallery Items', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-59.ADD_GALLERY_ITEM', 'UC-59 - Add Gallery Item', 'Gallery Management', 'Seeded from Role & Permission Matrix: Add Gallery Item', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-60.UPDATE_GALLERY_ITEM', 'UC-60 - Update Gallery Item', 'Gallery Management', 'Seeded from Role & Permission Matrix: Update Gallery Item', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-61.DELETE_GALLERY_ITEM', 'UC-61 - Delete Gallery Item', 'Gallery Management', 'Seeded from Role & Permission Matrix: Delete Gallery Item', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-62.VIEW_MINUTES_LIST', 'UC-62 - View Minutes List', 'Minutes Management', 'Seeded from Role & Permission Matrix: View Minutes List', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-63.SEARCH_FILTER_MINUTES', 'UC-63 - Search/Filter Minutes', 'Minutes Management', 'Seeded from Role & Permission Matrix: Search/Filter Minutes', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-64.VIEW_LIST_FAQ', 'UC-64 - View List FAQ', 'FAQ Management', 'Seeded from Role & Permission Matrix: View List FAQ', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-65.CREATE_FAQ', 'UC-65 - Create FAQ', 'FAQ Management', 'Seeded from Role & Permission Matrix: Create FAQ', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-66.UPDATE_FAQ', 'UC-66 - Update FAQ', 'FAQ Management', 'Seeded from Role & Permission Matrix: Update FAQ', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-67.CHANGE_FAQ_VISIBILITY', 'UC-67 - Change FAQ Visibility', 'FAQ Management', 'Seeded from Role & Permission Matrix: Change FAQ Visibility', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-68.SEARCH_FAQ', 'UC-68 - Search FAQ', 'FAQ Management', 'Seeded from Role & Permission Matrix: Search FAQ', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-69.VIEW_DASHBOARD_STATISTICS', 'UC-69 - View Dashboard Statistics', 'Report Management', 'Seeded from Role & Permission Matrix: View Dashboard Statistics', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-70.EXPORT_STATISTICS_REPORT', 'UC-70 - Export Statistics Report', 'Report Management', 'Seeded from Role & Permission Matrix: Export Statistics Report', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-71.FILTER_DASHBOARD_BY_TIME', 'UC-71 - Filter Dashboard By Time', 'Report Management', 'Seeded from Role & Permission Matrix: Filter Dashboard By Time', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-72.VIEW_MY_EVENTS', 'UC-72 - View My Events', 'Calendar Management', 'Seeded from Role & Permission Matrix: View My Events', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-73.VIEW_DEPARTMENT_CALENDAR', 'UC-73 - View Department Calendar', 'Calendar Management', 'Seeded from Role & Permission Matrix: View Department Calendar', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-74.SWITCH_VIEW_MODE', 'UC-74 - Switch View Mode', 'Calendar Management', 'Seeded from Role & Permission Matrix: Switch View Mode', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-75.ADD_PERSONAL_EVENT', 'UC-75 - Add Personal Event', 'Calendar Management', 'Seeded from Role & Permission Matrix: Add Personal Event', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-76.DELETE_PERSONAL_EVENT', 'UC-76 - Delete Personal Event', 'Calendar Management', 'Seeded from Role & Permission Matrix: Delete Personal Event', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-77.UPDATE_PERSONAL_EVENT', 'UC-77 - Update Personal Event', 'Calendar Management', 'Seeded from Role & Permission Matrix: Update Personal Event', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-78.VIEW_EVENT_DETAILS', 'UC-78 - View Event Details', 'Calendar Management', 'Seeded from Role & Permission Matrix: View Event Details', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-79.SEARCH_FILTER_FEEDBACK', 'UC-79 - Search/Filter Feedback', 'Feedback Management', 'Seeded from Role & Permission Matrix: Search/Filter Feedback', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-80.VIEW_FEEDBACK_SUMMARY', 'UC-80 - View Feedback Summary', 'Feedback Management', 'Seeded from Role & Permission Matrix: View Feedback Summary', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-81.ADD_NEW_CAMPUS', 'UC-81 - Add New Campus', 'Campus Management', 'Seeded from Role & Permission Matrix: Add New Campus', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-82.VIEW_CAMPUS_LIST', 'UC-82 - View Campus List', 'Campus Management', 'Seeded from Role & Permission Matrix: View Campus List', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-83.SEARCH_AND_FILTER_CAMPUS', 'UC-83 - Search and Filter Campus', 'Campus Management', 'Seeded from Role & Permission Matrix: Search and Filter Campus', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-84.VIEW_CAMPUS_DETAILS', 'UC-84 - View Campus Details', 'Campus Management', 'Seeded from Role & Permission Matrix: View Campus Details', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-85.UPDATE_CAMPUS', 'UC-85 - Update Campus', 'Campus Management', 'Seeded from Role & Permission Matrix: Update Campus', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-86.MANAGE_CAMPUS_STATUS', 'UC-86 - Manage Campus Status', 'Campus Management', 'Seeded from Role & Permission Matrix: Manage Campus Status', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-87.ASSIGN_CAMPUS_LEAD', 'UC-87 - Assign Campus Lead', 'Campus Management', 'Seeded from Role & Permission Matrix: Assign Campus Lead', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-88.APPROVE_NEWS', 'UC-88 - Approve News', 'News Management', 'Seeded from Role & Permission Matrix: Approve News', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-89.PUBLISH_NEWS', 'UC-89 - Publish News', 'News Management', 'Seeded from Role & Permission Matrix: Publish News', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-90.VIEW_NEWS_LIST', 'UC-90 - View News List', 'News Management', 'Seeded from Role & Permission Matrix: View News List', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-91.VIEW_NEWS_DETAILS', 'UC-91 - View News Details', 'News Management', 'Seeded from Role & Permission Matrix: View News Details', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-92.ADD_MULTILINGUAL_NEWS', 'UC-92 - Add Multilingual News', 'News Management', 'Seeded from Role & Permission Matrix: Add Multilingual News', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-93.MANAGE_NEWS_VISIBILITY', 'UC-93 - Manage News Visibility', 'News Management', 'Seeded from Role & Permission Matrix: Manage News Visibility', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-94.EDIT_NEWS', 'UC-94 - Edit News', 'News Management', 'Seeded from Role & Permission Matrix: Edit News', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-95.VIEW_ACCOUNT_LIST', 'UC-95 - View Account List', 'Account Management', 'Seeded from Role & Permission Matrix: View Account List', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-96.CREATE_ACCOUNT', 'UC-96 - Create Account', 'Account Management', 'Seeded from Role & Permission Matrix: Create Account', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-97.MANAGE_ACCOUNT_STATUS', 'UC-97 - Manage Account Status', 'Account Management', 'Seeded from Role & Permission Matrix: Manage Account Status', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-98.VIEW_ACCOUNT_DETAILS', 'UC-98 - View Account Details', 'Account Management', 'Seeded from Role & Permission Matrix: View Account Details', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-99.SEARCH_AND_FILTER_ACCOUNTS', 'UC-99 - Search and Filter Accounts', 'Account Management', 'Seeded from Role & Permission Matrix: Search and Filter Accounts', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-100.UPDATE_ACCOUNT_ROLE', 'UC-100 - Update Account Role', 'Account Management', 'Seeded from Role & Permission Matrix: Update Account Role', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-101.ADD_NEW_DEPARTMENT', 'UC-101 - Add New Department', 'Department Management', 'Seeded from Role & Permission Matrix: Add New Department', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-102.UPDATE_DEPARTMENT', 'UC-102 - Update Department', 'Department Management', 'Seeded from Role & Permission Matrix: Update Department', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-103.SEARCH_AND_FILTER_DEPARTMENTS', 'UC-103 - Search and Filter Departments', 'Department Management', 'Seeded from Role & Permission Matrix: Search and Filter Departments', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-104.VIEW_DEPARTMENT_LIST', 'UC-104 - View Department List', 'Department Management', 'Seeded from Role & Permission Matrix: View Department List', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-105.VIEW_DEPARTMENT_DETAILS', 'UC-105 - View Department Details', 'Department Management', 'Seeded from Role & Permission Matrix: View Department Details', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-106.MANAGE_DEPARTMENT_STATUS', 'UC-106 - Manage Department Status', 'Department Management', 'Seeded from Role & Permission Matrix: Manage Department Status', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-107.ADD_DEPARTMENT_PERSONNEL', 'UC-107 - Add Department Personnel', 'Department Management', 'Seeded from Role & Permission Matrix: Add Department Personnel', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-108.VIEW_PERSONNEL_DETAILS', 'UC-108 - View Personnel Details', 'Department Management', 'Seeded from Role & Permission Matrix: View Personnel Details', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-109.SEARCH_PERSONNEL', 'UC-109 - Search Personnel', 'Department Management', 'Seeded from Role & Permission Matrix: Search Personnel', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-110.REVIEW_ASSIGNED_TASKS', 'UC-110 - Review Assigned Tasks', 'Department Management', 'Seeded from Role & Permission Matrix: Review Assigned Tasks', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-111.ASSIGN_TASKS', 'UC-111 - Assign Tasks', 'Department Management', 'Seeded from Role & Permission Matrix: Assign Tasks', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-112.SIGN_THE_SERVICE_DELIVERY_REPORT', 'UC-112 - Sign The Service Delivery Report', 'Department Management', 'Seeded from Role & Permission Matrix: Sign The Service Delivery Report', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-113.REMOVE_PERSONNEL', 'UC-113 - Remove Personnel', 'Department Management', 'Seeded from Role & Permission Matrix: Remove Personnel', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-114.VIEW_COORDINATION_TASKS', 'UC-114 - View Coordination Tasks', 'Department Management', 'Seeded from Role & Permission Matrix: View Coordination Tasks', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-115.SEARCH_COORDINATION_TASKS', 'UC-115 - Search Coordination Tasks', 'Department Management', 'Seeded from Role & Permission Matrix: Search Coordination Tasks', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-116.REASSIGN_DEPARTMENT_LEAD', 'UC-116 - Reassign Department Lead', 'Department Management', 'Seeded from Role & Permission Matrix: Reassign Department Lead', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-117.VIEW_ROLE_LIST', 'UC-117 - View Role List', 'Role & Permission Management', 'Seeded from Role & Permission Matrix: View Role List', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-118.CREATE_NEW_ROLE', 'UC-118 - Create New Role', 'Role & Permission Management', 'Seeded from Role & Permission Matrix: Create New Role', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-119.CONFIGURE_ROLE_PERMISSIONS', 'UC-119 - Configure Role Permissions', 'Role & Permission Management', 'Seeded from Role & Permission Matrix: Configure Role Permissions', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-120.UPDATE_ROLE_DETAILS', 'UC-120 - Update Role Details', 'Role & Permission Management', 'Seeded from Role & Permission Matrix: Update Role Details', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-121.DISABLE_DELETE_ROLE', 'UC-121 - Disable/Delete Role', 'Role & Permission Management', 'Seeded from Role & Permission Matrix: Disable/Delete Role', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-122.VIEW_API_CONFIGURATION', 'UC-122 - View API Configuration', 'API Management', 'Seeded from Role & Permission Matrix: View API Configuration', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-123.CREATE_API_CONFIGURATION', 'UC-123 - Create API Configuration', 'API Management', 'Seeded from Role & Permission Matrix: Create API Configuration', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-124.UPDATE_API_CONFIGURATION', 'UC-124 - Update API Configuration', 'API Management', 'Seeded from Role & Permission Matrix: Update API Configuration', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-125.DELETE_API_CONFIGURATION', 'UC-125 - Delete API Configuration', 'API Management', 'Seeded from Role & Permission Matrix: Delete API Configuration', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-126.TEST_API_CONNECTION', 'UC-126 - Test API Connection', 'API Management', 'Seeded from Role & Permission Matrix: Test API Connection', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-127.MANAGE_API_STATUS', 'UC-127 - Manage API Status', 'API Management', 'Seeded from Role & Permission Matrix: Manage API Status', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-128.CONFIGURE_REQUEST_LIMIT', 'UC-128 - Configure Request Limit', 'API Management', 'Seeded from Role & Permission Matrix: Configure Request Limit', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-129.VIEW_API_LOGS', 'UC-129 - View API Logs', 'API Management', 'Seeded from Role & Permission Matrix: View API Logs', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-130.SEARCH_API_LOGS', 'UC-130 - Search API Logs', 'API Management', 'Seeded from Role & Permission Matrix: Search API Logs', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-131.CREATE_AGENDA_TEMPLATE', 'UC-131 - Create Agenda Template', 'Agenda Templates Management', 'Seeded from Role & Permission Matrix: Create Agenda Template', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-132.UPDATE_AGENDA_TEMPLATE', 'UC-132 - Update Agenda Template', 'Agenda Templates Management', 'Seeded from Role & Permission Matrix: Update Agenda Template', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-133.DELETE_AGENDA_TEMPLATE', 'UC-133 - Delete Agenda Template', 'Agenda Templates Management', 'Seeded from Role & Permission Matrix: Delete Agenda Template', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-134.VIEW_AGENDA_TEMPLATE_LIST', 'UC-134 - View Agenda Template List', 'Agenda Templates Management', 'Seeded from Role & Permission Matrix: View Agenda Template List', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY)),
-  (NULL, 'UC-135.VIEW_AGENDA_TEMPLATE_DETAIL', 'UC-135 - View Agenda Template Detail', 'Agenda Templates Management', 'Seeded from Role & Permission Matrix: View Agenda Template Detail', TRUE, DATE_SUB(@seed_now, INTERVAL 300 DAY));
-
--- =====================================================================
--- RBAC Permission Matrix v0.2 seed
--- Source of truth: Role & Permission Matrix v0.2.
--- IMPORTANT: No merged-role overgrant. STAFF/DEPARTMENT permissions are split by sub_role.
---   STAFF + Leader = Staff Leader
---   STAFF + Staff  = Staff
---   DEPARTMENT  + Leader = Department Lead
---   DEPARTMENT  + Staff  = Department
---   ADMIN/HO/STUDENT/VISITOR use sub_role = 'NONE'.
--- =====================================================================
-
-INSERT IGNORE INTO role_permissions
-  (role_id, sub_role, permission_id, permission_level, granted_at, granted_by)
-SELECT
-  r.role_id,
-  x.sub_role,
-  p.permission_id,
-  x.permission_level,
-  @seed_now,
-  @u_admin_minh
-FROM (
-  SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-01.VIEW_HOMEPAGE' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'ADMIN' AS role_code, 'NONE' AS sub_role, 'UC-01.VIEW_HOMEPAGE' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-01.VIEW_HOMEPAGE' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-01.VIEW_HOMEPAGE' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-01.VIEW_HOMEPAGE' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-01.VIEW_HOMEPAGE' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-01.VIEW_HOMEPAGE' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'VISITOR' AS role_code, 'NONE' AS sub_role, 'UC-01.VIEW_HOMEPAGE' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-02.SEARCH_INFORMATION' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'ADMIN' AS role_code, 'NONE' AS sub_role, 'UC-02.SEARCH_INFORMATION' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-02.SEARCH_INFORMATION' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-02.SEARCH_INFORMATION' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-02.SEARCH_INFORMATION' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-02.SEARCH_INFORMATION' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-02.SEARCH_INFORMATION' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'VISITOR' AS role_code, 'NONE' AS sub_role, 'UC-02.SEARCH_INFORMATION' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-03.VIEW_CONTACT_INFO' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'ADMIN' AS role_code, 'NONE' AS sub_role, 'UC-03.VIEW_CONTACT_INFO' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-03.VIEW_CONTACT_INFO' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-03.VIEW_CONTACT_INFO' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-03.VIEW_CONTACT_INFO' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-03.VIEW_CONTACT_INFO' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-03.VIEW_CONTACT_INFO' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'VISITOR' AS role_code, 'NONE' AS sub_role, 'UC-03.VIEW_CONTACT_INFO' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-04.VIEW_POLICY_AND_TERMS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'ADMIN' AS role_code, 'NONE' AS sub_role, 'UC-04.VIEW_POLICY_AND_TERMS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-04.VIEW_POLICY_AND_TERMS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-04.VIEW_POLICY_AND_TERMS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-04.VIEW_POLICY_AND_TERMS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-04.VIEW_POLICY_AND_TERMS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-04.VIEW_POLICY_AND_TERMS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'VISITOR' AS role_code, 'NONE' AS sub_role, 'UC-04.VIEW_POLICY_AND_TERMS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-05.VIEW_FAQ' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'ADMIN' AS role_code, 'NONE' AS sub_role, 'UC-05.VIEW_FAQ' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-05.VIEW_FAQ' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-05.VIEW_FAQ' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-05.VIEW_FAQ' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-05.VIEW_FAQ' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-05.VIEW_FAQ' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'VISITOR' AS role_code, 'NONE' AS sub_role, 'UC-05.VIEW_FAQ' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-06.VIEW_NEWS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'ADMIN' AS role_code, 'NONE' AS sub_role, 'UC-06.VIEW_NEWS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-06.VIEW_NEWS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-06.VIEW_NEWS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-06.VIEW_NEWS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-06.VIEW_NEWS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-06.VIEW_NEWS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'VISITOR' AS role_code, 'NONE' AS sub_role, 'UC-06.VIEW_NEWS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-07.VIEW_PARTNERS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'ADMIN' AS role_code, 'NONE' AS sub_role, 'UC-07.VIEW_PARTNERS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-07.VIEW_PARTNERS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-07.VIEW_PARTNERS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-07.VIEW_PARTNERS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-07.VIEW_PARTNERS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-07.VIEW_PARTNERS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'VISITOR' AS role_code, 'NONE' AS sub_role, 'UC-07.VIEW_PARTNERS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-08.VIEW_GALLERY' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'ADMIN' AS role_code, 'NONE' AS sub_role, 'UC-08.VIEW_GALLERY' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-08.VIEW_GALLERY' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-08.VIEW_GALLERY' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-08.VIEW_GALLERY' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-08.VIEW_GALLERY' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-08.VIEW_GALLERY' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'VISITOR' AS role_code, 'NONE' AS sub_role, 'UC-08.VIEW_GALLERY' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-09.VIEW_NOTIFICATIONS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'ADMIN' AS role_code, 'NONE' AS sub_role, 'UC-09.VIEW_NOTIFICATIONS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-09.VIEW_NOTIFICATIONS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-09.VIEW_NOTIFICATIONS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-09.VIEW_NOTIFICATIONS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-09.VIEW_NOTIFICATIONS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-09.VIEW_NOTIFICATIONS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'VISITOR' AS role_code, 'NONE' AS sub_role, 'UC-09.VIEW_NOTIFICATIONS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-10.LOGIN_VIA_SSO' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'ADMIN' AS role_code, 'NONE' AS sub_role, 'UC-10.LOGIN_VIA_SSO' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-10.LOGIN_VIA_SSO' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-10.LOGIN_VIA_SSO' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-10.LOGIN_VIA_SSO' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-10.LOGIN_VIA_SSO' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-10.LOGIN_VIA_SSO' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'VISITOR' AS role_code, 'NONE' AS sub_role, 'UC-10.LOGIN_VIA_SSO' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-11.LOGIN_VIA_CREDENTIALS' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'ADMIN' AS role_code, 'NONE' AS sub_role, 'UC-11.LOGIN_VIA_CREDENTIALS' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-11.LOGIN_VIA_CREDENTIALS' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-11.LOGIN_VIA_CREDENTIALS' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-11.LOGIN_VIA_CREDENTIALS' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-11.LOGIN_VIA_CREDENTIALS' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-11.LOGIN_VIA_CREDENTIALS' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'VISITOR' AS role_code, 'NONE' AS sub_role, 'UC-11.LOGIN_VIA_CREDENTIALS' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-12.LOGOUT' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'ADMIN' AS role_code, 'NONE' AS sub_role, 'UC-12.LOGOUT' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-12.LOGOUT' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-12.LOGOUT' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-12.LOGOUT' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-12.LOGOUT' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-12.LOGOUT' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'VISITOR' AS role_code, 'NONE' AS sub_role, 'UC-12.LOGOUT' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-13.FORGOT_PASSWORD' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'ADMIN' AS role_code, 'NONE' AS sub_role, 'UC-13.FORGOT_PASSWORD' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-13.FORGOT_PASSWORD' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-13.FORGOT_PASSWORD' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-13.FORGOT_PASSWORD' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-13.FORGOT_PASSWORD' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-13.FORGOT_PASSWORD' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'VISITOR' AS role_code, 'NONE' AS sub_role, 'UC-13.FORGOT_PASSWORD' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-14.VIEW_PROFILE' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'ADMIN' AS role_code, 'NONE' AS sub_role, 'UC-14.VIEW_PROFILE' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-14.VIEW_PROFILE' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-14.VIEW_PROFILE' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-14.VIEW_PROFILE' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-14.VIEW_PROFILE' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-14.VIEW_PROFILE' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'VISITOR' AS role_code, 'NONE' AS sub_role, 'UC-14.VIEW_PROFILE' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-15.UPDATE_PROFILE' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'ADMIN' AS role_code, 'NONE' AS sub_role, 'UC-15.UPDATE_PROFILE' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-15.UPDATE_PROFILE' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-15.UPDATE_PROFILE' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-15.UPDATE_PROFILE' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-15.UPDATE_PROFILE' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-15.UPDATE_PROFILE' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'VISITOR' AS role_code, 'NONE' AS sub_role, 'UC-15.UPDATE_PROFILE' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-16.CHANGE_PASSWORD' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'ADMIN' AS role_code, 'NONE' AS sub_role, 'UC-16.CHANGE_PASSWORD' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-16.CHANGE_PASSWORD' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-16.CHANGE_PASSWORD' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-16.CHANGE_PASSWORD' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-16.CHANGE_PASSWORD' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-16.CHANGE_PASSWORD' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'VISITOR' AS role_code, 'NONE' AS sub_role, 'UC-16.CHANGE_PASSWORD' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'VISITOR' AS role_code, 'NONE' AS sub_role, 'UC-17.SUBMIT_VISIT_REQUEST' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-18.APPROVE_CROSS_CAMPUS_REQUEST' AS permission_code, 'E' AS permission_level
-  UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-19.VIEW_GUEST_DELEGATION_DETAILS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-19.VIEW_GUEST_DELEGATION_DETAILS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-19.VIEW_GUEST_DELEGATION_DETAILS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-19.VIEW_GUEST_DELEGATION_DETAILS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-19.VIEW_GUEST_DELEGATION_DETAILS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-19.VIEW_GUEST_DELEGATION_DETAILS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'VISITOR' AS role_code, 'NONE' AS sub_role, 'UC-19.VIEW_GUEST_DELEGATION_DETAILS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-20.VIEW_GUEST_DELEGATION_LIST' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-20.VIEW_GUEST_DELEGATION_LIST' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-20.VIEW_GUEST_DELEGATION_LIST' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-20.VIEW_GUEST_DELEGATION_LIST' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-20.VIEW_GUEST_DELEGATION_LIST' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-20.VIEW_GUEST_DELEGATION_LIST' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'VISITOR' AS role_code, 'NONE' AS sub_role, 'UC-20.VIEW_GUEST_DELEGATION_LIST' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-21.SEARCH_DELEGATIONS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-21.SEARCH_DELEGATIONS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-21.SEARCH_DELEGATIONS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-21.SEARCH_DELEGATIONS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-21.SEARCH_DELEGATIONS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-21.SEARCH_DELEGATIONS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'VISITOR' AS role_code, 'NONE' AS sub_role, 'UC-21.SEARCH_DELEGATIONS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-22.PROCESS_VISIT_REQUEST' AS permission_code, 'E' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-23.CREATE_GUEST_DELEGATION' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-24.UPDATE_GUEST_DELEGATION' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-25.PREPARE_VISIT_LOGISTICS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-25.PREPARE_VISIT_LOGISTICS' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-26.UPDATE_VISIT_LOGISTICS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-26.UPDATE_VISIT_LOGISTICS' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-27.CONFIRM_PARTICIPATION' AS permission_code, 'E' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-27.CONFIRM_PARTICIPATION' AS permission_code, 'E' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-27.CONFIRM_PARTICIPATION' AS permission_code, 'E' AS permission_level
-  UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-27.CONFIRM_PARTICIPATION' AS permission_code, 'E' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-28.APPROVE_RESOURCE_REQUEST' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-29.PROPOSE_RESOURCE_MODIFICATION' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-29.PROPOSE_RESOURCE_MODIFICATION' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-30.CONFIRM_THE_CHANGE_PROPOSAL' AS permission_code, 'E' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-30.CONFIRM_THE_CHANGE_PROPOSAL' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-30.CONFIRM_THE_CHANGE_PROPOSAL' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-31.CREATE_MEETING_MINUTES' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-31.CREATE_MEETING_MINUTES' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-31.CREATE_MEETING_MINUTES' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-31.CREATE_MEETING_MINUTES' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-32.EDIT_MEETING_MINUTES' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-32.EDIT_MEETING_MINUTES' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-32.EDIT_MEETING_MINUTES' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-32.EDIT_MEETING_MINUTES' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-33.VIEW_MEETING_MINUTES_DETAILS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-33.VIEW_MEETING_MINUTES_DETAILS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-33.VIEW_MEETING_MINUTES_DETAILS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-33.VIEW_MEETING_MINUTES_DETAILS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-33.VIEW_MEETING_MINUTES_DETAILS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-33.VIEW_MEETING_MINUTES_DETAILS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-34.SUBMIT_DELEGATION_FEEDBACK' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-34.SUBMIT_DELEGATION_FEEDBACK' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-34.SUBMIT_DELEGATION_FEEDBACK' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-34.SUBMIT_DELEGATION_FEEDBACK' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-35.SCAN_BUSINESS_CARD' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-36.CREATE_PARTNER_PROFILE' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-37.UPLOAD_ATTACHED_DOCUMENTS' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-38.UPLOAD_VISIT_PHOTOS' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-38.UPLOAD_VISIT_PHOTOS' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-39.TAG_FACES_ON_PHOTOS' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-40.CREATE_NEWS_ARTICLE' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-40.CREATE_NEWS_ARTICLE' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-41.CLOSE_DELEGATION' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-42.VIEW_EMAIL_TEMPLATE_LIST' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-43.VIEW_EMAIL_TEMPLATE_DETAIL' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-44.UPDATE_EMAIL_TEMPLATE' AS permission_code, 'E' AS permission_level
-  UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-45.CREATE_EMAIL_TEMPLATE' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-46.EDIT_EMAIL_CONTENT' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-46.EDIT_EMAIL_CONTENT' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-46.EDIT_EMAIL_CONTENT' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-46.EDIT_EMAIL_CONTENT' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-46.EDIT_EMAIL_CONTENT' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-46.EDIT_EMAIL_CONTENT' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'VISITOR' AS role_code, 'NONE' AS sub_role, 'UC-46.EDIT_EMAIL_CONTENT' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-47.SEND_EMAIL' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-47.SEND_EMAIL' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-47.SEND_EMAIL' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-47.SEND_EMAIL' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-47.SEND_EMAIL' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-47.SEND_EMAIL' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'VISITOR' AS role_code, 'NONE' AS sub_role, 'UC-47.SEND_EMAIL' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-48.VIEW_EMAIL' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-48.VIEW_EMAIL' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-48.VIEW_EMAIL' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-48.VIEW_EMAIL' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-48.VIEW_EMAIL' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-48.VIEW_EMAIL' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'VISITOR' AS role_code, 'NONE' AS sub_role, 'UC-48.VIEW_EMAIL' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-49.REPLY_TO_EMAIL' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-49.REPLY_TO_EMAIL' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-49.REPLY_TO_EMAIL' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-49.REPLY_TO_EMAIL' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-49.REPLY_TO_EMAIL' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-49.REPLY_TO_EMAIL' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'VISITOR' AS role_code, 'NONE' AS sub_role, 'UC-49.REPLY_TO_EMAIL' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-50.PROCESS_PARTNER_CREATION_REQUEST' AS permission_code, 'E' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-51.EDIT_PARTNER_INFORMATION' AS permission_code, 'E' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-52.VIEW_PARTNER_LISTS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-52.VIEW_PARTNER_LISTS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-53.SEARCH_PARTNERS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-53.SEARCH_PARTNERS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-54.VIEW_PARTNER_DETAILS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-54.VIEW_PARTNER_DETAILS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-55.VIEW_DOCUMENT_LIST' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-55.VIEW_DOCUMENT_LIST' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-56.SEARCH_DOCUMENTS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-56.SEARCH_DOCUMENTS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-57.VIEW_GALLERY_ITEM_LIST' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-58.SEARCH_GALLERY_ITEMS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-59.ADD_GALLERY_ITEM' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-60.UPDATE_GALLERY_ITEM' AS permission_code, 'E' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-61.DELETE_GALLERY_ITEM' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-62.VIEW_MINUTES_LIST' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-62.VIEW_MINUTES_LIST' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-63.SEARCH_FILTER_MINUTES' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-63.SEARCH_FILTER_MINUTES' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-64.VIEW_LIST_FAQ' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-65.CREATE_FAQ' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-66.UPDATE_FAQ' AS permission_code, 'E' AS permission_level
-  UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-67.CHANGE_FAQ_VISIBILITY' AS permission_code, 'E' AS permission_level
-  UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-68.SEARCH_FAQ' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-69.VIEW_DASHBOARD_STATISTICS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-69.VIEW_DASHBOARD_STATISTICS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-69.VIEW_DASHBOARD_STATISTICS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-70.EXPORT_STATISTICS_REPORT' AS permission_code, 'E' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-70.EXPORT_STATISTICS_REPORT' AS permission_code, 'E' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-70.EXPORT_STATISTICS_REPORT' AS permission_code, 'E' AS permission_level
-  UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-71.FILTER_DASHBOARD_BY_TIME' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-71.FILTER_DASHBOARD_BY_TIME' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-71.FILTER_DASHBOARD_BY_TIME' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-72.VIEW_MY_EVENTS' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-72.VIEW_MY_EVENTS' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-72.VIEW_MY_EVENTS' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-72.VIEW_MY_EVENTS' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-72.VIEW_MY_EVENTS' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-73.VIEW_DEPARTMENT_CALENDAR' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-73.VIEW_DEPARTMENT_CALENDAR' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-74.SWITCH_VIEW_MODE' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-74.SWITCH_VIEW_MODE' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-74.SWITCH_VIEW_MODE' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-74.SWITCH_VIEW_MODE' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-74.SWITCH_VIEW_MODE' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-75.ADD_PERSONAL_EVENT' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-75.ADD_PERSONAL_EVENT' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-76.DELETE_PERSONAL_EVENT' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-76.DELETE_PERSONAL_EVENT' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-77.UPDATE_PERSONAL_EVENT' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-77.UPDATE_PERSONAL_EVENT' AS permission_code, 'O' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-78.VIEW_EVENT_DETAILS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-78.VIEW_EVENT_DETAILS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-78.VIEW_EVENT_DETAILS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-78.VIEW_EVENT_DETAILS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-78.VIEW_EVENT_DETAILS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-79.SEARCH_FILTER_FEEDBACK' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-79.SEARCH_FILTER_FEEDBACK' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-80.VIEW_FEEDBACK_SUMMARY' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-80.VIEW_FEEDBACK_SUMMARY' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-81.ADD_NEW_CAMPUS' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-82.VIEW_CAMPUS_LIST' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-83.SEARCH_AND_FILTER_CAMPUS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-84.VIEW_CAMPUS_DETAILS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-85.UPDATE_CAMPUS' AS permission_code, 'E' AS permission_level
-  UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-86.MANAGE_CAMPUS_STATUS' AS permission_code, 'E' AS permission_level
-  UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-87.ASSIGN_CAMPUS_LEAD' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-88.APPROVE_NEWS' AS permission_code, 'E' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-89.PUBLISH_NEWS' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-90.VIEW_NEWS_LIST' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-90.VIEW_NEWS_LIST' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-90.VIEW_NEWS_LIST' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-91.VIEW_NEWS_DETAILS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-91.VIEW_NEWS_DETAILS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-91.VIEW_NEWS_DETAILS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-92.ADD_MULTILINGUAL_NEWS' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-92.ADD_MULTILINGUAL_NEWS' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-93.MANAGE_NEWS_VISIBILITY' AS permission_code, 'E' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-94.EDIT_NEWS' AS permission_code, 'E' AS permission_level
-  UNION ALL SELECT 'STUDENT' AS role_code, 'NONE' AS sub_role, 'UC-94.EDIT_NEWS' AS permission_code, 'E' AS permission_level
-  UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-95.VIEW_ACCOUNT_LIST' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-95.VIEW_ACCOUNT_LIST' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-96.CREATE_ACCOUNT' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-96.CREATE_ACCOUNT' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-97.MANAGE_ACCOUNT_STATUS' AS permission_code, 'E' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-97.MANAGE_ACCOUNT_STATUS' AS permission_code, 'E' AS permission_level
-  UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-98.VIEW_ACCOUNT_DETAILS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-98.VIEW_ACCOUNT_DETAILS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-99.SEARCH_AND_FILTER_ACCOUNTS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-99.SEARCH_AND_FILTER_ACCOUNTS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-100.UPDATE_ACCOUNT_ROLE' AS permission_code, 'E' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-101.ADD_NEW_DEPARTMENT' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-102.UPDATE_DEPARTMENT' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-103.SEARCH_AND_FILTER_DEPARTMENTS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-104.VIEW_DEPARTMENT_LIST' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-105.VIEW_DEPARTMENT_DETAILS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-105.VIEW_DEPARTMENT_DETAILS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-105.VIEW_DEPARTMENT_DETAILS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'LEADER' AS sub_role, 'UC-106.MANAGE_DEPARTMENT_STATUS' AS permission_code, 'E' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-107.ADD_DEPARTMENT_PERSONNEL' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-108.VIEW_PERSONNEL_DETAILS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-108.VIEW_PERSONNEL_DETAILS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-109.SEARCH_PERSONNEL' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-109.SEARCH_PERSONNEL' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-110.REVIEW_ASSIGNED_TASKS' AS permission_code, 'E' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-111.ASSIGN_TASKS' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'STAFF' AS role_code, 'STAFF' AS sub_role, 'UC-112.SIGN_THE_SERVICE_DELIVERY_REPORT' AS permission_code, 'E' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-112.SIGN_THE_SERVICE_DELIVERY_REPORT' AS permission_code, 'E' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-112.SIGN_THE_SERVICE_DELIVERY_REPORT' AS permission_code, 'E' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-113.REMOVE_PERSONNEL' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-114.VIEW_COORDINATION_TASKS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-114.VIEW_COORDINATION_TASKS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-115.SEARCH_COORDINATION_TASKS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'STAFF' AS sub_role, 'UC-115.SEARCH_COORDINATION_TASKS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'DEPARTMENT' AS role_code, 'LEADER' AS sub_role, 'UC-116.REASSIGN_DEPARTMENT_LEAD' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'ADMIN' AS role_code, 'NONE' AS sub_role, 'UC-117.VIEW_ROLE_LIST' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'ADMIN' AS role_code, 'NONE' AS sub_role, 'UC-118.CREATE_NEW_ROLE' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'ADMIN' AS role_code, 'NONE' AS sub_role, 'UC-119.CONFIGURE_ROLE_PERMISSIONS' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'ADMIN' AS role_code, 'NONE' AS sub_role, 'UC-120.UPDATE_ROLE_DETAILS' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'ADMIN' AS role_code, 'NONE' AS sub_role, 'UC-121.DISABLE_DELETE_ROLE' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'ADMIN' AS role_code, 'NONE' AS sub_role, 'UC-122.VIEW_API_CONFIGURATION' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'ADMIN' AS role_code, 'NONE' AS sub_role, 'UC-123.CREATE_API_CONFIGURATION' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'ADMIN' AS role_code, 'NONE' AS sub_role, 'UC-124.UPDATE_API_CONFIGURATION' AS permission_code, 'E' AS permission_level
-  UNION ALL SELECT 'ADMIN' AS role_code, 'NONE' AS sub_role, 'UC-125.DELETE_API_CONFIGURATION' AS permission_code, 'E' AS permission_level
-  UNION ALL SELECT 'ADMIN' AS role_code, 'NONE' AS sub_role, 'UC-126.TEST_API_CONNECTION' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'ADMIN' AS role_code, 'NONE' AS sub_role, 'UC-127.MANAGE_API_STATUS' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'ADMIN' AS role_code, 'NONE' AS sub_role, 'UC-128.CONFIGURE_REQUEST_LIMIT' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'ADMIN' AS role_code, 'NONE' AS sub_role, 'UC-129.VIEW_API_LOGS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'ADMIN' AS role_code, 'NONE' AS sub_role, 'UC-130.SEARCH_API_LOGS' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-131.CREATE_AGENDA_TEMPLATE' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-132.UPDATE_AGENDA_TEMPLATE' AS permission_code, 'E' AS permission_level
-  UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-133.DELETE_AGENDA_TEMPLATE' AS permission_code, 'F' AS permission_level
-  UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-134.VIEW_AGENDA_TEMPLATE_LIST' AS permission_code, 'R' AS permission_level
-  UNION ALL SELECT 'HO' AS role_code, 'NONE' AS sub_role, 'UC-135.VIEW_AGENDA_TEMPLATE_DETAIL' AS permission_code, 'R' AS permission_level
-) x
-JOIN roles r ON r.role_code = x.role_code
-JOIN permissions p ON p.permission_code = x.permission_code;
-
--- Verification: permission totals by role + sub_role after matrix seed.
-SELECT r.role_code, rp.sub_role, COUNT(*) AS total_permissions
-FROM role_permissions rp
-JOIN roles r ON r.role_id = rp.role_id
-GROUP BY r.role_code, rp.sub_role
-ORDER BY r.role_code, rp.sub_role;
+-- DB-backed permissions and role_permissions seed removed.
+-- Authorization is now expected to use fixed role_code/sub_role/scope policies in application code.
 
 SET @ap_admin_local = 100040;
 
@@ -3961,125 +3287,125 @@ SET @vr_hist_43 = 100205; SET @vi_hist_43 = 100206;
 
 SET @vr_hist_44 = 100207; SET @vi_hist_44 = 100208;
 
-INSERT INTO visit_requests (visit_request_id, request_code, visitor_user_id, partner_id, created_source, registrant_full_name, registrant_organization, registrant_job_title, registrant_phone, registrant_email, registrant_nationality, delegation_name, visit_scope, visit_type, visit_type_other, purpose, working_content, contact_person_full_name, contact_person_organization, contact_person_phone, contact_person_email, working_language, transportation_type, transportation_detail, media_consent_status, media_consent_note, note_to_fptu, status, submitted_at, email_verified_at, decided_by, decided_at, decision_actor_role, decision_note, cancelled_by, cancelled_at, cancellation_actor_type, cancellation_source, cancellation_reason, row_version, created_at, created_by, updated_at, updated_by)
+INSERT INTO visit_requests (visit_request_id, request_code, visitor_user_id, partner_id, created_source, registrant_full_name, registrant_organization, registrant_job_title, registrant_phone, registrant_email, registrant_nationality, delegation_name, visit_scope, visit_type, visit_type_other, purpose, working_content, contact_person_full_name, contact_person_organization, contact_person_phone, contact_person_email, working_language, transportation_type, transportation_detail, media_consent_status, media_consent_note, note_to_fptu, status, submitted_at, email_verified_at, decided_by, decided_at, decision_actor_role, decision_note, cancelled_by, cancelled_at, cancellation_reason, row_version, created_at, created_by, updated_at, updated_by)
 VALUES
-  (@vr_pending_approval_seed, 'VR-PA-001', @v_pending_approval_seed, @p_green, 'VISITOR_SUBMITTED', 'Nguyễn Thảo My', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'thaomy.pending.approval@partner.example', 'Việt Nam', 'Đoàn GreenTech Asia khảo sát workshop bền vững', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Nguyễn Thảo My', 'Tổ chức đối tác quốc tế', '0900000000', 'thaomy.pending.approval@partner.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'PENDING_APPROVAL', DATE_SUB(@seed_now, INTERVAL 17 DAY), DATE_ADD(DATE_SUB(@seed_now, INTERVAL 17 DAY), INTERVAL 5 MINUTE), NULL, NULL, NULL, 'Đã xác thực email, chờ duyệt request.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 17 DAY), @v_pending_approval_seed, @seed_now, NULL),
-  (@vr_pending_approval_multi, 'VR-PA-002', @v_pending_approval, @p_ministry, 'VISITOR_SUBMITTED', 'Nguyễn Văn Nam', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'nam.pending.approval@partner.example', 'Việt Nam', 'Đoàn Viện Phát triển Giáo dục Quốc tế làm việc liên cơ sở', 'MULTI_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Nguyễn Văn Nam', 'Tổ chức đối tác quốc tế', '0900000000', 'nam.pending.approval@partner.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'PENDING_APPROVAL', DATE_SUB(@seed_now, INTERVAL 24 DAY), DATE_SUB(@seed_now, INTERVAL 23 DAY), NULL, NULL, NULL, 'Chờ HO duyệt.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 24 DAY), @v_pending_approval, @seed_now, NULL),
-  (@vr_approved_single_before, 'VR-AS-003', @v_kim, @p_seoul, 'VISITOR_SUBMITTED', 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'kim.minseo@seoultech.example', 'Hàn Quốc', 'Đoàn SeoulTech trao đổi học thuật tại Hà Nội', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Kim Min Seo', 'Tổ chức đối tác quốc tế', '0900000000', 'kim.minseo@seoultech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 29 DAY), DATE_SUB(@seed_now, INTERVAL 28 DAY), @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 26 DAY), 'STAFF_LEADER', 'Đủ thông tin đoàn, lịch phù hợp.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 29 DAY), @v_kim, @seed_now, @u_stafflead_hn),
-  (@vr_approved_multi_during, 'VR-AM-004', @v_lee, @p_seoul, 'VISITOR_SUBMITTED', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'lee.joonho@seoultech.example', 'Hàn Quốc', 'Đoàn SeoulTech tham quan Hà Nội và TP.HCM', 'MULTI_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', '0900000000', 'lee.joonho@seoultech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 15 DAY), DATE_SUB(@seed_now, INTERVAL 14 DAY), @u_ho_ha, DATE_SUB(@seed_now, INTERVAL 12 DAY), 'HO', 'HO duyệt request liên cơ sở.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 15 DAY), @v_lee, @seed_now, @u_ho_ha),
-  (@vr_rejected_single, 'VR-RS-005', @v_smith, @p_green, 'VISITOR_SUBMITTED', 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'emily.smith@greentech.example', 'Hoa Kỳ', 'Đoàn GreenTech Asia đề xuất lịch gấp', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Emily Smith', 'Tổ chức đối tác quốc tế', '0900000000', 'emily.smith@greentech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'REJECTED', DATE_SUB(@seed_now, INTERVAL 20 DAY), DATE_SUB(@seed_now, INTERVAL 19 DAY), @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 17 DAY), 'STAFF_LEADER', 'Ngày đề xuất quá sát.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 20 DAY), @v_smith, @seed_now, @u_stafflead_hcm),
-  (@vr_rejected_multi, 'VR-RM-006', @v_tanaka, @p_seoul, 'VISITOR_SUBMITTED', 'Tanaka Aoi', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'aoi.tanaka@kyoto-global.example', 'Nhật Bản', 'Đoàn học tập liên cơ sở chưa đủ hồ sơ', 'MULTI_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Tanaka Aoi', 'Tổ chức đối tác quốc tế', '0900000000', 'aoi.tanaka@kyoto-global.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'REJECTED', DATE_SUB(@seed_now, INTERVAL 35 DAY), DATE_SUB(@seed_now, INTERVAL 34 DAY), @u_ho_linh, DATE_SUB(@seed_now, INTERVAL 32 DAY), 'HO', 'Thiếu danh sách thành viên.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 35 DAY), @v_tanaka, @seed_now, @u_ho_linh),
-  (@vr_cancelled, 'VR-CN-007', @v_nguyen_no_dau, @p_ministry, 'VISITOR_SUBMITTED', 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'nguyen.van.nam@partner.example', 'Việt Nam', 'Đoàn IED thay đổi kế hoạch công tác', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', '0900000000', 'nguyen.van.nam@partner.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'CANCELLED', DATE_SUB(@seed_now, INTERVAL 45 DAY), DATE_SUB(@seed_now, INTERVAL 44 DAY), @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 42 DAY), 'STAFF_LEADER', 'Đã được duyệt trước khi khách gửi yêu cầu hủy.', @v_nguyen_no_dau, DATE_ADD(DATE_SUB(@seed_now, INTERVAL 42 DAY), INTERVAL 1 DAY), 'VISITOR', 'SELF_SERVICE', 'Khách thay đổi kế hoạch và tự hủy sau khi đơn đã được duyệt.', 0, DATE_SUB(@seed_now, INTERVAL 45 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
-  (@vr_after_visit, 'VR-AV-008', @v_short_name, @p_ministry, 'VISITOR_SUBMITTED', 'An', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'an.short@partner.example', 'Việt Nam', 'Đoàn chuyên đề tuyển sinh quốc tế đã hoàn tất', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'An', 'Tổ chức đối tác quốc tế', '0900000000', 'an.short@partner.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 22 DAY), DATE_SUB(@seed_now, INTERVAL 21 DAY), @u_stafflead_ct, DATE_SUB(@seed_now, INTERVAL 20 DAY), 'STAFF_LEADER', 'Đang tổng hợp biên bản.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 22 DAY), @v_short_name, @seed_now, @u_stafflead_ct),
-  (@vr_closed, 'VR-CL-009', @v_long_name, @p_seoul, 'VISITOR_SUBMITTED', 'Nguyễn Thị Minh Anh Phương Khánh Linh Hoàng Bảo Trân Quốc Việt', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'long.name.visitor@partner.example', 'Việt Nam', 'Đoàn nghiên cứu AI đã đóng hồ sơ', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Nguyễn Thị Minh Anh Phương Khánh Linh Hoàng Bảo Trân Quốc Việt', 'Tổ chức đối tác quốc tế', '0900000000', 'long.name.visitor@partner.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 50 DAY), DATE_SUB(@seed_now, INTERVAL 49 DAY), @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 48 DAY), 'STAFF_LEADER', 'Hồ sơ đã hoàn tất.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 50 DAY), @v_long_name, @seed_now, @u_stafflead_hn),
-  (@vr_cancelled_instance, 'VR-CI-010', @v_smith, @p_green, 'VISITOR_SUBMITTED', 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'emily.smith@greentech.example', 'Hoa Kỳ', 'Đoàn GreenTech chỉ giữ lịch TP.HCM', 'MULTI_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Emily Smith', 'Tổ chức đối tác quốc tế', '0900000000', 'emily.smith@greentech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 40 DAY), DATE_SUB(@seed_now, INTERVAL 39 DAY), @u_ho_ha, DATE_SUB(@seed_now, INTERVAL 37 DAY), 'HO', 'Duyệt liên cơ sở; hủy instance Hà Nội.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 40 DAY), @v_smith, @seed_now, @u_ho_ha),
-  (@vr_assigned_only, 'VR-AO-011', @v_lee, @p_seoul, 'VISITOR_SUBMITTED', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'lee.joonho@seoultech.example', 'Hàn Quốc', 'Đoàn SeoulTech chờ host chốt kế hoạch', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', '0900000000', 'lee.joonho@seoultech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 26 DAY), DATE_SUB(@seed_now, INTERVAL 25 DAY), @u_stafflead_dn, DATE_SUB(@seed_now, INTERVAL 23 DAY), 'STAFF_LEADER', 'Đã gán host.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 26 DAY), @v_lee, @seed_now, @u_stafflead_dn),
-  (@vr_hist_01, 'VR-HIST-001', @v_kim, @p_seoul, 'VISITOR_SUBMITTED', 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'kim.minseo@seoultech.example', 'Hàn Quốc', 'Seoul Future University - chuyến thăm campus HN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Kim Min Seo', 'Tổ chức đối tác quốc tế', '0900000000', 'kim.minseo@seoultech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 28 DAY), DATE_SUB(@seed_now, INTERVAL 27 DAY), @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 26 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 28 DAY), @v_kim, @seed_now, @u_stafflead_hn),
-  (@vr_hist_02, 'VR-HIST-002', @v_smith, @p_green, 'VISITOR_SUBMITTED', 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'emily.smith@greentech.example', 'Hoa Kỳ', 'GreenTech Asia Pte. Ltd. - chuyến thăm campus HCM', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Emily Smith', 'Tổ chức đối tác quốc tế', '0900000000', 'emily.smith@greentech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 36 DAY), DATE_SUB(@seed_now, INTERVAL 35 DAY), @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 34 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 36 DAY), @v_smith, @seed_now, @u_stafflead_hcm),
-  (@vr_hist_03, 'VR-HIST-003', @v_nguyen_no_dau, @p_ministry, 'VISITOR_SUBMITTED', 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'nguyen.van.nam@partner.example', 'Việt Nam', 'Viện Phát triển Giáo dục Quốc tế - chuyến thăm campus DN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', '0900000000', 'nguyen.van.nam@partner.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'REJECTED', DATE_SUB(@seed_now, INTERVAL 44 DAY), DATE_SUB(@seed_now, INTERVAL 43 DAY), @u_stafflead_dn, DATE_SUB(@seed_now, INTERVAL 42 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 44 DAY), @v_nguyen_no_dau, @seed_now, @u_stafflead_dn),
-  (@vr_hist_04, 'VR-HIST-004', @v_lee, @p_asean, 'VISITOR_SUBMITTED', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'lee.joonho@seoultech.example', 'Hàn Quốc', 'ASEAN Future Skills Foundation - chuyến thăm campus CT', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', '0900000000', 'lee.joonho@seoultech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'CANCELLED', DATE_SUB(@seed_now, INTERVAL 52 DAY), DATE_SUB(@seed_now, INTERVAL 51 DAY), @u_stafflead_ct, DATE_SUB(@seed_now, INTERVAL 50 DAY), 'STAFF_LEADER', 'Đã được duyệt trước khi khách gửi yêu cầu hủy.', @v_lee, DATE_ADD(DATE_SUB(@seed_now, INTERVAL 50 DAY), INTERVAL 1 DAY), 'VISITOR', 'SELF_SERVICE', 'Khách thay đổi kế hoạch và tự hủy sau khi đơn đã được duyệt.', 0, DATE_SUB(@seed_now, INTERVAL 52 DAY), @v_lee, @seed_now, @v_lee),
-  (@vr_hist_05, 'VR-HIST-005', @v_kim, @p_seoul, 'VISITOR_SUBMITTED', 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'kim.minseo@seoultech.example', 'Hàn Quốc', 'Seoul Future University - chuyến thăm campus QN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Kim Min Seo', 'Tổ chức đối tác quốc tế', '0900000000', 'kim.minseo@seoultech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'PENDING_APPROVAL', DATE_SUB(@seed_now, INTERVAL 60 DAY), DATE_SUB(@seed_now, INTERVAL 59 DAY), NULL, NULL, NULL, 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 60 DAY), @v_kim, @seed_now, NULL),
-  (@vr_hist_06, 'VR-HIST-006', @v_smith, @p_green, 'VISITOR_SUBMITTED', 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'emily.smith@greentech.example', 'Hoa Kỳ', 'GreenTech Asia Pte. Ltd. - chuyến thăm campus HN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Emily Smith', 'Tổ chức đối tác quốc tế', '0900000000', 'emily.smith@greentech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 68 DAY), DATE_SUB(@seed_now, INTERVAL 67 DAY), @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 66 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 68 DAY), @v_smith, @seed_now, @u_stafflead_hn),
-  (@vr_hist_07, 'VR-HIST-007', @v_nguyen_no_dau, @p_ministry, 'VISITOR_SUBMITTED', 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'nguyen.van.nam@partner.example', 'Việt Nam', 'Viện Phát triển Giáo dục Quốc tế - chuyến thăm campus HCM', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', '0900000000', 'nguyen.van.nam@partner.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 76 DAY), DATE_SUB(@seed_now, INTERVAL 75 DAY), @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 74 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 76 DAY), @v_nguyen_no_dau, @seed_now, @u_stafflead_hcm),
-  (@vr_hist_08, 'VR-HIST-008', @v_lee, @p_asean, 'VISITOR_SUBMITTED', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'lee.joonho@seoultech.example', 'Hàn Quốc', 'ASEAN Future Skills Foundation - chuyến thăm campus DN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', '0900000000', 'lee.joonho@seoultech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'REJECTED', DATE_SUB(@seed_now, INTERVAL 84 DAY), DATE_SUB(@seed_now, INTERVAL 83 DAY), @u_stafflead_dn, DATE_SUB(@seed_now, INTERVAL 82 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 84 DAY), @v_lee, @seed_now, @u_stafflead_dn),
-  (@vr_hist_09, 'VR-HIST-009', @v_kim, @p_seoul, 'VISITOR_SUBMITTED', 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'kim.minseo@seoultech.example', 'Hàn Quốc', 'Seoul Future University - chuyến thăm campus CT', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Kim Min Seo', 'Tổ chức đối tác quốc tế', '0900000000', 'kim.minseo@seoultech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'CANCELLED', DATE_SUB(@seed_now, INTERVAL 92 DAY), DATE_SUB(@seed_now, INTERVAL 91 DAY), @u_stafflead_ct, DATE_SUB(@seed_now, INTERVAL 90 DAY), 'STAFF_LEADER', 'Đã được duyệt trước khi khách gửi yêu cầu hủy.', @v_kim, DATE_ADD(DATE_SUB(@seed_now, INTERVAL 90 DAY), INTERVAL 1 DAY), 'VISITOR', 'SELF_SERVICE', 'Khách thay đổi kế hoạch và tự hủy sau khi đơn đã được duyệt.', 0, DATE_SUB(@seed_now, INTERVAL 92 DAY), @v_kim, @seed_now, @v_kim),
-  (@vr_hist_10, 'VR-HIST-010', @v_smith, @p_green, 'VISITOR_SUBMITTED', 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'emily.smith@greentech.example', 'Hoa Kỳ', 'GreenTech Asia Pte. Ltd. - chuyến thăm campus QN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Emily Smith', 'Tổ chức đối tác quốc tế', '0900000000', 'emily.smith@greentech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'PENDING_APPROVAL', DATE_SUB(@seed_now, INTERVAL 100 DAY), DATE_SUB(@seed_now, INTERVAL 99 DAY), NULL, NULL, NULL, 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 100 DAY), @v_smith, @seed_now, NULL),
-  (@vr_hist_11, 'VR-HIST-011', @v_nguyen_no_dau, @p_ministry, 'VISITOR_SUBMITTED', 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'nguyen.van.nam@partner.example', 'Việt Nam', 'Viện Phát triển Giáo dục Quốc tế - chuyến thăm campus HN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', '0900000000', 'nguyen.van.nam@partner.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 108 DAY), DATE_SUB(@seed_now, INTERVAL 107 DAY), @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 106 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 108 DAY), @v_nguyen_no_dau, @seed_now, @u_stafflead_hn),
-  (@vr_hist_12, 'VR-HIST-012', @v_lee, @p_asean, 'VISITOR_SUBMITTED', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'lee.joonho@seoultech.example', 'Hàn Quốc', 'ASEAN Future Skills Foundation - chuyến thăm campus HCM', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', '0900000000', 'lee.joonho@seoultech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 116 DAY), DATE_SUB(@seed_now, INTERVAL 115 DAY), @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 114 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 116 DAY), @v_lee, @seed_now, @u_stafflead_hcm),
-  (@vr_hist_13, 'VR-HIST-013', @v_kim, @p_seoul, 'VISITOR_SUBMITTED', 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'kim.minseo@seoultech.example', 'Hàn Quốc', 'Seoul Future University - chuyến thăm campus DN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Kim Min Seo', 'Tổ chức đối tác quốc tế', '0900000000', 'kim.minseo@seoultech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'REJECTED', DATE_SUB(@seed_now, INTERVAL 124 DAY), DATE_SUB(@seed_now, INTERVAL 123 DAY), @u_stafflead_dn, DATE_SUB(@seed_now, INTERVAL 122 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 124 DAY), @v_kim, @seed_now, @u_stafflead_dn),
-  (@vr_hist_14, 'VR-HIST-014', @v_smith, @p_green, 'VISITOR_SUBMITTED', 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'emily.smith@greentech.example', 'Hoa Kỳ', 'GreenTech Asia Pte. Ltd. - chuyến thăm campus CT', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Emily Smith', 'Tổ chức đối tác quốc tế', '0900000000', 'emily.smith@greentech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'CANCELLED', DATE_SUB(@seed_now, INTERVAL 132 DAY), DATE_SUB(@seed_now, INTERVAL 131 DAY), @u_stafflead_ct, DATE_SUB(@seed_now, INTERVAL 130 DAY), 'STAFF_LEADER', 'Đã được duyệt trước khi khách gửi yêu cầu hủy.', @v_smith, DATE_ADD(DATE_SUB(@seed_now, INTERVAL 130 DAY), INTERVAL 1 DAY), 'VISITOR', 'SELF_SERVICE', 'Khách thay đổi kế hoạch và tự hủy sau khi đơn đã được duyệt.', 0, DATE_SUB(@seed_now, INTERVAL 132 DAY), @v_smith, @seed_now, @v_smith),
-  (@vr_hist_15, 'VR-HIST-015', @v_nguyen_no_dau, @p_ministry, 'VISITOR_SUBMITTED', 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'nguyen.van.nam@partner.example', 'Việt Nam', 'Viện Phát triển Giáo dục Quốc tế - chuyến thăm campus QN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', '0900000000', 'nguyen.van.nam@partner.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'PENDING_APPROVAL', DATE_SUB(@seed_now, INTERVAL 140 DAY), DATE_SUB(@seed_now, INTERVAL 139 DAY), NULL, NULL, NULL, 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 140 DAY), @v_nguyen_no_dau, @seed_now, NULL),
-  (@vr_hist_16, 'VR-HIST-016', @v_lee, @p_asean, 'VISITOR_SUBMITTED', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'lee.joonho@seoultech.example', 'Hàn Quốc', 'ASEAN Future Skills Foundation - chuyến thăm campus HN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', '0900000000', 'lee.joonho@seoultech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 148 DAY), DATE_SUB(@seed_now, INTERVAL 147 DAY), @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 146 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 148 DAY), @v_lee, @seed_now, @u_stafflead_hn),
-  (@vr_hist_17, 'VR-HIST-017', @v_kim, @p_seoul, 'VISITOR_SUBMITTED', 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'kim.minseo@seoultech.example', 'Hàn Quốc', 'Seoul Future University - chuyến thăm campus HCM', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Kim Min Seo', 'Tổ chức đối tác quốc tế', '0900000000', 'kim.minseo@seoultech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 156 DAY), DATE_SUB(@seed_now, INTERVAL 155 DAY), @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 154 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 156 DAY), @v_kim, @seed_now, @u_stafflead_hcm),
-  (@vr_hist_18, 'VR-HIST-018', @v_smith, @p_green, 'VISITOR_SUBMITTED', 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'emily.smith@greentech.example', 'Hoa Kỳ', 'GreenTech Asia Pte. Ltd. - chuyến thăm campus DN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Emily Smith', 'Tổ chức đối tác quốc tế', '0900000000', 'emily.smith@greentech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'REJECTED', DATE_SUB(@seed_now, INTERVAL 164 DAY), DATE_SUB(@seed_now, INTERVAL 163 DAY), @u_stafflead_dn, DATE_SUB(@seed_now, INTERVAL 162 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 164 DAY), @v_smith, @seed_now, @u_stafflead_dn),
-  (@vr_hist_19, 'VR-HIST-019', @v_nguyen_no_dau, @p_ministry, 'VISITOR_SUBMITTED', 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'nguyen.van.nam@partner.example', 'Việt Nam', 'Viện Phát triển Giáo dục Quốc tế - chuyến thăm campus CT', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', '0900000000', 'nguyen.van.nam@partner.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'CANCELLED', DATE_SUB(@seed_now, INTERVAL 172 DAY), DATE_SUB(@seed_now, INTERVAL 171 DAY), @u_stafflead_ct, DATE_SUB(@seed_now, INTERVAL 170 DAY), 'STAFF_LEADER', 'Đã được duyệt trước khi khách gửi yêu cầu hủy.', @v_nguyen_no_dau, DATE_ADD(DATE_SUB(@seed_now, INTERVAL 170 DAY), INTERVAL 1 DAY), 'VISITOR', 'SELF_SERVICE', 'Khách thay đổi kế hoạch và tự hủy sau khi đơn đã được duyệt.', 0, DATE_SUB(@seed_now, INTERVAL 172 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
-  (@vr_hist_20, 'VR-HIST-020', @v_lee, @p_asean, 'VISITOR_SUBMITTED', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'lee.joonho@seoultech.example', 'Hàn Quốc', 'ASEAN Future Skills Foundation - chuyến thăm campus QN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', '0900000000', 'lee.joonho@seoultech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'PENDING_APPROVAL', DATE_SUB(@seed_now, INTERVAL 180 DAY), DATE_SUB(@seed_now, INTERVAL 179 DAY), NULL, NULL, NULL, 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 180 DAY), @v_lee, @seed_now, NULL),
-  (@vr_hist_21, 'VR-HIST-021', @v_kim, @p_seoul, 'VISITOR_SUBMITTED', 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'kim.minseo@seoultech.example', 'Hàn Quốc', 'Seoul Future University - chuyến thăm campus HN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Kim Min Seo', 'Tổ chức đối tác quốc tế', '0900000000', 'kim.minseo@seoultech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 188 DAY), DATE_SUB(@seed_now, INTERVAL 187 DAY), @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 186 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 188 DAY), @v_kim, @seed_now, @u_stafflead_hn),
-  (@vr_hist_22, 'VR-HIST-022', @v_smith, @p_green, 'VISITOR_SUBMITTED', 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'emily.smith@greentech.example', 'Hoa Kỳ', 'GreenTech Asia Pte. Ltd. - chuyến thăm campus HCM', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Emily Smith', 'Tổ chức đối tác quốc tế', '0900000000', 'emily.smith@greentech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 196 DAY), DATE_SUB(@seed_now, INTERVAL 195 DAY), @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 194 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 196 DAY), @v_smith, @seed_now, @u_stafflead_hcm),
-  (@vr_hist_23, 'VR-HIST-023', @v_nguyen_no_dau, @p_ministry, 'VISITOR_SUBMITTED', 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'nguyen.van.nam@partner.example', 'Việt Nam', 'Viện Phát triển Giáo dục Quốc tế - chuyến thăm campus DN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', '0900000000', 'nguyen.van.nam@partner.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'REJECTED', DATE_SUB(@seed_now, INTERVAL 204 DAY), DATE_SUB(@seed_now, INTERVAL 203 DAY), @u_stafflead_dn, DATE_SUB(@seed_now, INTERVAL 202 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 204 DAY), @v_nguyen_no_dau, @seed_now, @u_stafflead_dn),
-  (@vr_hist_24, 'VR-HIST-024', @v_lee, @p_asean, 'VISITOR_SUBMITTED', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'lee.joonho@seoultech.example', 'Hàn Quốc', 'ASEAN Future Skills Foundation - chuyến thăm campus CT', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', '0900000000', 'lee.joonho@seoultech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'CANCELLED', DATE_SUB(@seed_now, INTERVAL 212 DAY), DATE_SUB(@seed_now, INTERVAL 211 DAY), @u_stafflead_ct, DATE_SUB(@seed_now, INTERVAL 210 DAY), 'STAFF_LEADER', 'Đã được duyệt trước khi khách gửi yêu cầu hủy.', @v_lee, DATE_ADD(DATE_SUB(@seed_now, INTERVAL 210 DAY), INTERVAL 1 DAY), 'VISITOR', 'SELF_SERVICE', 'Khách thay đổi kế hoạch và tự hủy sau khi đơn đã được duyệt.', 0, DATE_SUB(@seed_now, INTERVAL 212 DAY), @v_lee, @seed_now, @v_lee),
-  (@vr_hist_25, 'VR-HIST-025', @v_kim, @p_seoul, 'VISITOR_SUBMITTED', 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'kim.minseo@seoultech.example', 'Hàn Quốc', 'Seoul Future University - chuyến thăm campus QN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Kim Min Seo', 'Tổ chức đối tác quốc tế', '0900000000', 'kim.minseo@seoultech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'PENDING_APPROVAL', DATE_SUB(@seed_now, INTERVAL 220 DAY), DATE_SUB(@seed_now, INTERVAL 219 DAY), NULL, NULL, NULL, 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 220 DAY), @v_kim, @seed_now, NULL),
-  (@vr_hist_26, 'VR-HIST-026', @v_smith, @p_green, 'VISITOR_SUBMITTED', 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'emily.smith@greentech.example', 'Hoa Kỳ', 'GreenTech Asia Pte. Ltd. - chuyến thăm campus HN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Emily Smith', 'Tổ chức đối tác quốc tế', '0900000000', 'emily.smith@greentech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 228 DAY), DATE_SUB(@seed_now, INTERVAL 227 DAY), @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 226 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 228 DAY), @v_smith, @seed_now, @u_stafflead_hn),
-  (@vr_hist_27, 'VR-HIST-027', @v_nguyen_no_dau, @p_ministry, 'VISITOR_SUBMITTED', 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'nguyen.van.nam@partner.example', 'Việt Nam', 'Viện Phát triển Giáo dục Quốc tế - chuyến thăm campus HCM', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', '0900000000', 'nguyen.van.nam@partner.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 236 DAY), DATE_SUB(@seed_now, INTERVAL 235 DAY), @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 234 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 236 DAY), @v_nguyen_no_dau, @seed_now, @u_stafflead_hcm),
-  (@vr_hist_28, 'VR-HIST-028', @v_lee, @p_asean, 'VISITOR_SUBMITTED', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'lee.joonho@seoultech.example', 'Hàn Quốc', 'ASEAN Future Skills Foundation - chuyến thăm campus DN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', '0900000000', 'lee.joonho@seoultech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'REJECTED', DATE_SUB(@seed_now, INTERVAL 244 DAY), DATE_SUB(@seed_now, INTERVAL 243 DAY), @u_stafflead_dn, DATE_SUB(@seed_now, INTERVAL 242 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 244 DAY), @v_lee, @seed_now, @u_stafflead_dn),
-  (@vr_hist_29, 'VR-HIST-029', @v_kim, @p_seoul, 'VISITOR_SUBMITTED', 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'kim.minseo@seoultech.example', 'Hàn Quốc', 'Seoul Future University - chuyến thăm campus CT', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Kim Min Seo', 'Tổ chức đối tác quốc tế', '0900000000', 'kim.minseo@seoultech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'CANCELLED', DATE_SUB(@seed_now, INTERVAL 252 DAY), DATE_SUB(@seed_now, INTERVAL 251 DAY), @u_stafflead_ct, DATE_SUB(@seed_now, INTERVAL 250 DAY), 'STAFF_LEADER', 'Đã được duyệt trước khi khách gửi yêu cầu hủy.', @v_kim, DATE_ADD(DATE_SUB(@seed_now, INTERVAL 250 DAY), INTERVAL 1 DAY), 'VISITOR', 'SELF_SERVICE', 'Khách thay đổi kế hoạch và tự hủy sau khi đơn đã được duyệt.', 0, DATE_SUB(@seed_now, INTERVAL 252 DAY), @v_kim, @seed_now, @v_kim),
-  (@vr_hist_30, 'VR-HIST-030', @v_smith, @p_green, 'VISITOR_SUBMITTED', 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'emily.smith@greentech.example', 'Hoa Kỳ', 'GreenTech Asia Pte. Ltd. - chuyến thăm campus QN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Emily Smith', 'Tổ chức đối tác quốc tế', '0900000000', 'emily.smith@greentech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'PENDING_APPROVAL', DATE_SUB(@seed_now, INTERVAL 260 DAY), DATE_SUB(@seed_now, INTERVAL 259 DAY), NULL, NULL, NULL, 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 260 DAY), @v_smith, @seed_now, NULL),
-  (@vr_hist_31, 'VR-HIST-031', @v_nguyen_no_dau, @p_ministry, 'VISITOR_SUBMITTED', 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'nguyen.van.nam@partner.example', 'Việt Nam', 'Viện Phát triển Giáo dục Quốc tế - chuyến thăm campus HN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', '0900000000', 'nguyen.van.nam@partner.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 268 DAY), DATE_SUB(@seed_now, INTERVAL 267 DAY), @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 266 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 268 DAY), @v_nguyen_no_dau, @seed_now, @u_stafflead_hn),
-  (@vr_hist_32, 'VR-HIST-032', @v_lee, @p_asean, 'VISITOR_SUBMITTED', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'lee.joonho@seoultech.example', 'Hàn Quốc', 'ASEAN Future Skills Foundation - chuyến thăm campus HCM', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', '0900000000', 'lee.joonho@seoultech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 276 DAY), DATE_SUB(@seed_now, INTERVAL 275 DAY), @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 274 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 276 DAY), @v_lee, @seed_now, @u_stafflead_hcm),
-  (@vr_hist_33, 'VR-HIST-033', @v_kim, @p_seoul, 'VISITOR_SUBMITTED', 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'kim.minseo@seoultech.example', 'Hàn Quốc', 'Seoul Future University - chuyến thăm campus DN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Kim Min Seo', 'Tổ chức đối tác quốc tế', '0900000000', 'kim.minseo@seoultech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'REJECTED', DATE_SUB(@seed_now, INTERVAL 284 DAY), DATE_SUB(@seed_now, INTERVAL 283 DAY), @u_stafflead_dn, DATE_SUB(@seed_now, INTERVAL 282 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 284 DAY), @v_kim, @seed_now, @u_stafflead_dn),
-  (@vr_hist_34, 'VR-HIST-034', @v_smith, @p_green, 'VISITOR_SUBMITTED', 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'emily.smith@greentech.example', 'Hoa Kỳ', 'GreenTech Asia Pte. Ltd. - chuyến thăm campus CT', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Emily Smith', 'Tổ chức đối tác quốc tế', '0900000000', 'emily.smith@greentech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'CANCELLED', DATE_SUB(@seed_now, INTERVAL 292 DAY), DATE_SUB(@seed_now, INTERVAL 291 DAY), @u_stafflead_ct, DATE_SUB(@seed_now, INTERVAL 290 DAY), 'STAFF_LEADER', 'Đã được duyệt trước khi khách gửi yêu cầu hủy.', @v_smith, DATE_ADD(DATE_SUB(@seed_now, INTERVAL 290 DAY), INTERVAL 1 DAY), 'VISITOR', 'SELF_SERVICE', 'Khách thay đổi kế hoạch và tự hủy sau khi đơn đã được duyệt.', 0, DATE_SUB(@seed_now, INTERVAL 292 DAY), @v_smith, @seed_now, @v_smith),
-  (@vr_hist_35, 'VR-HIST-035', @v_nguyen_no_dau, @p_ministry, 'VISITOR_SUBMITTED', 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'nguyen.van.nam@partner.example', 'Việt Nam', 'Viện Phát triển Giáo dục Quốc tế - chuyến thăm campus QN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', '0900000000', 'nguyen.van.nam@partner.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'PENDING_APPROVAL', DATE_SUB(@seed_now, INTERVAL 300 DAY), DATE_SUB(@seed_now, INTERVAL 299 DAY), NULL, NULL, NULL, 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 300 DAY), @v_nguyen_no_dau, @seed_now, NULL),
-  (@vr_hist_36, 'VR-HIST-036', @v_lee, @p_asean, 'VISITOR_SUBMITTED', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'lee.joonho@seoultech.example', 'Hàn Quốc', 'ASEAN Future Skills Foundation - chuyến thăm campus HN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', '0900000000', 'lee.joonho@seoultech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 308 DAY), DATE_SUB(@seed_now, INTERVAL 307 DAY), @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 306 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 308 DAY), @v_lee, @seed_now, @u_stafflead_hn),
-  (@vr_hist_37, 'VR-HIST-037', @v_kim, @p_seoul, 'VISITOR_SUBMITTED', 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'kim.minseo@seoultech.example', 'Hàn Quốc', 'Seoul Future University - chuyến thăm campus HCM', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Kim Min Seo', 'Tổ chức đối tác quốc tế', '0900000000', 'kim.minseo@seoultech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 316 DAY), DATE_SUB(@seed_now, INTERVAL 315 DAY), @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 314 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 316 DAY), @v_kim, @seed_now, @u_stafflead_hcm),
-  (@vr_hist_38, 'VR-HIST-038', @v_smith, @p_green, 'VISITOR_SUBMITTED', 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'emily.smith@greentech.example', 'Hoa Kỳ', 'GreenTech Asia Pte. Ltd. - chuyến thăm campus DN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Emily Smith', 'Tổ chức đối tác quốc tế', '0900000000', 'emily.smith@greentech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'REJECTED', DATE_SUB(@seed_now, INTERVAL 324 DAY), DATE_SUB(@seed_now, INTERVAL 323 DAY), @u_stafflead_dn, DATE_SUB(@seed_now, INTERVAL 322 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 324 DAY), @v_smith, @seed_now, @u_stafflead_dn),
-  (@vr_hist_39, 'VR-HIST-039', @v_nguyen_no_dau, @p_ministry, 'VISITOR_SUBMITTED', 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'nguyen.van.nam@partner.example', 'Việt Nam', 'Viện Phát triển Giáo dục Quốc tế - chuyến thăm campus CT', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', '0900000000', 'nguyen.van.nam@partner.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'CANCELLED', DATE_SUB(@seed_now, INTERVAL 332 DAY), DATE_SUB(@seed_now, INTERVAL 331 DAY), @u_stafflead_ct, DATE_SUB(@seed_now, INTERVAL 330 DAY), 'STAFF_LEADER', 'Đã được duyệt trước khi khách gửi yêu cầu hủy.', @v_nguyen_no_dau, DATE_ADD(DATE_SUB(@seed_now, INTERVAL 330 DAY), INTERVAL 1 DAY), 'VISITOR', 'SELF_SERVICE', 'Khách thay đổi kế hoạch và tự hủy sau khi đơn đã được duyệt.', 0, DATE_SUB(@seed_now, INTERVAL 332 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
-  (@vr_hist_40, 'VR-HIST-040', @v_lee, @p_asean, 'VISITOR_SUBMITTED', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'lee.joonho@seoultech.example', 'Hàn Quốc', 'ASEAN Future Skills Foundation - chuyến thăm campus QN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', '0900000000', 'lee.joonho@seoultech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'PENDING_APPROVAL', DATE_SUB(@seed_now, INTERVAL 340 DAY), DATE_SUB(@seed_now, INTERVAL 339 DAY), NULL, NULL, NULL, 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 340 DAY), @v_lee, @seed_now, NULL),
-  (@vr_hist_41, 'VR-HIST-041', @v_kim, @p_seoul, 'VISITOR_SUBMITTED', 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'kim.minseo@seoultech.example', 'Hàn Quốc', 'Seoul Future University - chuyến thăm campus HN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Kim Min Seo', 'Tổ chức đối tác quốc tế', '0900000000', 'kim.minseo@seoultech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 348 DAY), DATE_SUB(@seed_now, INTERVAL 347 DAY), @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 346 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 348 DAY), @v_kim, @seed_now, @u_stafflead_hn),
-  (@vr_hist_42, 'VR-HIST-042', @v_smith, @p_green, 'VISITOR_SUBMITTED', 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'emily.smith@greentech.example', 'Hoa Kỳ', 'GreenTech Asia Pte. Ltd. - chuyến thăm campus HCM', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Emily Smith', 'Tổ chức đối tác quốc tế', '0900000000', 'emily.smith@greentech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 356 DAY), DATE_SUB(@seed_now, INTERVAL 355 DAY), @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 354 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 356 DAY), @v_smith, @seed_now, @u_stafflead_hcm),
-  (@vr_hist_43, 'VR-HIST-043', @v_nguyen_no_dau, @p_ministry, 'VISITOR_SUBMITTED', 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'nguyen.van.nam@partner.example', 'Việt Nam', 'Viện Phát triển Giáo dục Quốc tế - chuyến thăm campus DN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', '0900000000', 'nguyen.van.nam@partner.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'REJECTED', DATE_SUB(@seed_now, INTERVAL 364 DAY), DATE_SUB(@seed_now, INTERVAL 363 DAY), @u_stafflead_dn, DATE_SUB(@seed_now, INTERVAL 362 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 364 DAY), @v_nguyen_no_dau, @seed_now, @u_stafflead_dn),
-  (@vr_hist_44, 'VR-HIST-044', @v_lee, @p_asean, 'VISITOR_SUBMITTED', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'lee.joonho@seoultech.example', 'Hàn Quốc', 'ASEAN Future Skills Foundation - chuyến thăm campus CT', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', '0900000000', 'lee.joonho@seoultech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'UNKNOWN', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'CANCELLED', DATE_SUB(@seed_now, INTERVAL 372 DAY), DATE_SUB(@seed_now, INTERVAL 371 DAY), @u_stafflead_ct, DATE_SUB(@seed_now, INTERVAL 370 DAY), 'STAFF_LEADER', 'Đã được duyệt trước khi khách gửi yêu cầu hủy.', @v_lee, DATE_ADD(DATE_SUB(@seed_now, INTERVAL 370 DAY), INTERVAL 1 DAY), 'VISITOR', 'SELF_SERVICE', 'Khách thay đổi kế hoạch và tự hủy sau khi đơn đã được duyệt.', 0, DATE_SUB(@seed_now, INTERVAL 372 DAY), @v_lee, @seed_now, @v_lee);
+  (@vr_pending_approval_seed, 'VR-PA-001', @v_pending_approval_seed, @p_green, 'VISITOR_SUBMITTED', 'Nguyễn Thảo My', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'thaomy.pending.approval@partner.example', 'Việt Nam', 'Đoàn GreenTech Asia khảo sát workshop bền vững', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Nguyễn Thảo My', 'Tổ chức đối tác quốc tế', '0900000000', 'thaomy.pending.approval@partner.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'DECLINED', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'PENDING_APPROVAL', DATE_SUB(@seed_now, INTERVAL 17 DAY), DATE_ADD(DATE_SUB(@seed_now, INTERVAL 17 DAY), INTERVAL 5 MINUTE), NULL, NULL, NULL, 'Đã xác thực email, chờ duyệt request.', NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 17 DAY), @v_pending_approval_seed, @seed_now, NULL),
+  (@vr_pending_approval_multi, 'VR-PA-002', @v_pending_approval, @p_ministry, 'VISITOR_SUBMITTED', 'Nguyễn Văn Nam', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'nam.pending.approval@partner.example', 'Việt Nam', 'Đoàn Viện Phát triển Giáo dục Quốc tế làm việc liên cơ sở', 'MULTI_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Nguyễn Văn Nam', 'Tổ chức đối tác quốc tế', '0900000000', 'nam.pending.approval@partner.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'DECLINED', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'PENDING_APPROVAL', DATE_SUB(@seed_now, INTERVAL 24 DAY), DATE_SUB(@seed_now, INTERVAL 23 DAY), NULL, NULL, NULL, 'Chờ HO duyệt.', NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 24 DAY), @v_pending_approval, @seed_now, NULL),
+  (@vr_approved_single_before, 'VR-AS-003', @v_kim, @p_seoul, 'VISITOR_SUBMITTED', 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'kim.minseo@seoultech.example', 'Hàn Quốc', 'Đoàn SeoulTech trao đổi học thuật tại Hà Nội', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Kim Min Seo', 'Tổ chức đối tác quốc tế', '0900000000', 'kim.minseo@seoultech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'DECLINED', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 29 DAY), DATE_SUB(@seed_now, INTERVAL 28 DAY), @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 26 DAY), 'STAFF_LEADER', 'Đủ thông tin đoàn, lịch phù hợp.', NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 29 DAY), @v_kim, @seed_now, @u_stafflead_hn),
+  (@vr_approved_multi_during, 'VR-AM-004', @v_lee, @p_seoul, 'VISITOR_SUBMITTED', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'lee.joonho@seoultech.example', 'Hàn Quốc', 'Đoàn SeoulTech tham quan Hà Nội và TP.HCM', 'MULTI_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', '0900000000', 'lee.joonho@seoultech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'DECLINED', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 15 DAY), DATE_SUB(@seed_now, INTERVAL 14 DAY), @u_ho_ha, DATE_SUB(@seed_now, INTERVAL 12 DAY), 'HO', 'HO duyệt request liên cơ sở.', NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 15 DAY), @v_lee, @seed_now, @u_ho_ha),
+  (@vr_rejected_single, 'VR-RS-005', @v_smith, @p_green, 'VISITOR_SUBMITTED', 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'emily.smith@greentech.example', 'Hoa Kỳ', 'Đoàn GreenTech Asia đề xuất lịch gấp', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Emily Smith', 'Tổ chức đối tác quốc tế', '0900000000', 'emily.smith@greentech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'DECLINED', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'REJECTED', DATE_SUB(@seed_now, INTERVAL 20 DAY), DATE_SUB(@seed_now, INTERVAL 19 DAY), @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 17 DAY), 'STAFF_LEADER', 'Ngày đề xuất quá sát.', NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 20 DAY), @v_smith, @seed_now, @u_stafflead_hcm),
+  (@vr_rejected_multi, 'VR-RM-006', @v_tanaka, @p_seoul, 'VISITOR_SUBMITTED', 'Tanaka Aoi', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'aoi.tanaka@kyoto-global.example', 'Nhật Bản', 'Đoàn học tập liên cơ sở chưa đủ hồ sơ', 'MULTI_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Tanaka Aoi', 'Tổ chức đối tác quốc tế', '0900000000', 'aoi.tanaka@kyoto-global.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'DECLINED', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'REJECTED', DATE_SUB(@seed_now, INTERVAL 35 DAY), DATE_SUB(@seed_now, INTERVAL 34 DAY), @u_ho_linh, DATE_SUB(@seed_now, INTERVAL 32 DAY), 'HO', 'Thiếu danh sách thành viên.', NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 35 DAY), @v_tanaka, @seed_now, @u_ho_linh),
+  (@vr_cancelled, 'VR-CN-007', @v_nguyen_no_dau, @p_ministry, 'VISITOR_SUBMITTED', 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'nguyen.van.nam@partner.example', 'Việt Nam', 'Đoàn IED thay đổi kế hoạch công tác', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', '0900000000', 'nguyen.van.nam@partner.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'DECLINED', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'CANCELLED', DATE_SUB(@seed_now, INTERVAL 45 DAY), DATE_SUB(@seed_now, INTERVAL 44 DAY), @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 42 DAY), 'STAFF_LEADER', 'Đã được duyệt trước khi khách gửi yêu cầu hủy.', @v_nguyen_no_dau, DATE_ADD(DATE_SUB(@seed_now, INTERVAL 42 DAY), INTERVAL 1 DAY), 'Khách thay đổi kế hoạch và tự hủy sau khi đơn đã được duyệt.', 0, DATE_SUB(@seed_now, INTERVAL 45 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
+  (@vr_after_visit, 'VR-AV-008', @v_short_name, @p_ministry, 'VISITOR_SUBMITTED', 'An', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'an.short@partner.example', 'Việt Nam', 'Đoàn chuyên đề tuyển sinh quốc tế đã hoàn tất', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'An', 'Tổ chức đối tác quốc tế', '0900000000', 'an.short@partner.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'DECLINED', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 22 DAY), DATE_SUB(@seed_now, INTERVAL 21 DAY), @u_stafflead_ct, DATE_SUB(@seed_now, INTERVAL 20 DAY), 'STAFF_LEADER', 'Đang tổng hợp biên bản.', NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 22 DAY), @v_short_name, @seed_now, @u_stafflead_ct),
+  (@vr_closed, 'VR-CL-009', @v_long_name, @p_seoul, 'VISITOR_SUBMITTED', 'Nguyễn Thị Minh Anh Phương Khánh Linh Hoàng Bảo Trân Quốc Việt', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'long.name.visitor@partner.example', 'Việt Nam', 'Đoàn nghiên cứu AI đã đóng hồ sơ', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Nguyễn Thị Minh Anh Phương Khánh Linh Hoàng Bảo Trân Quốc Việt', 'Tổ chức đối tác quốc tế', '0900000000', 'long.name.visitor@partner.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'DECLINED', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 50 DAY), DATE_SUB(@seed_now, INTERVAL 49 DAY), @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 48 DAY), 'STAFF_LEADER', 'Hồ sơ đã hoàn tất.', NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 50 DAY), @v_long_name, @seed_now, @u_stafflead_hn),
+  (@vr_cancelled_instance, 'VR-CI-010', @v_smith, @p_green, 'VISITOR_SUBMITTED', 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'emily.smith@greentech.example', 'Hoa Kỳ', 'Đoàn GreenTech chỉ giữ lịch TP.HCM', 'MULTI_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Emily Smith', 'Tổ chức đối tác quốc tế', '0900000000', 'emily.smith@greentech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'DECLINED', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 40 DAY), DATE_SUB(@seed_now, INTERVAL 39 DAY), @u_ho_ha, DATE_SUB(@seed_now, INTERVAL 37 DAY), 'HO', 'Duyệt liên cơ sở; hủy instance Hà Nội.', NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 40 DAY), @v_smith, @seed_now, @u_ho_ha),
+  (@vr_assigned_only, 'VR-AO-011', @v_lee, @p_seoul, 'VISITOR_SUBMITTED', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'lee.joonho@seoultech.example', 'Hàn Quốc', 'Đoàn SeoulTech chờ host chốt kế hoạch', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', '0900000000', 'lee.joonho@seoultech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'DECLINED', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 26 DAY), DATE_SUB(@seed_now, INTERVAL 25 DAY), @u_stafflead_dn, DATE_SUB(@seed_now, INTERVAL 23 DAY), 'STAFF_LEADER', 'Đã gán host.', NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 26 DAY), @v_lee, @seed_now, @u_stafflead_dn),
+  (@vr_hist_01, 'VR-HIST-001', @v_kim, @p_seoul, 'VISITOR_SUBMITTED', 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'kim.minseo@seoultech.example', 'Hàn Quốc', 'Seoul Future University - chuyến thăm campus HN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Kim Min Seo', 'Tổ chức đối tác quốc tế', '0900000000', 'kim.minseo@seoultech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'DECLINED', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 28 DAY), DATE_SUB(@seed_now, INTERVAL 27 DAY), @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 26 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 28 DAY), @v_kim, @seed_now, @u_stafflead_hn),
+  (@vr_hist_02, 'VR-HIST-002', @v_smith, @p_green, 'VISITOR_SUBMITTED', 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'emily.smith@greentech.example', 'Hoa Kỳ', 'GreenTech Asia Pte. Ltd. - chuyến thăm campus HCM', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Emily Smith', 'Tổ chức đối tác quốc tế', '0900000000', 'emily.smith@greentech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'DECLINED', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 36 DAY), DATE_SUB(@seed_now, INTERVAL 35 DAY), @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 34 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 36 DAY), @v_smith, @seed_now, @u_stafflead_hcm),
+  (@vr_hist_03, 'VR-HIST-003', @v_nguyen_no_dau, @p_ministry, 'VISITOR_SUBMITTED', 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'nguyen.van.nam@partner.example', 'Việt Nam', 'Viện Phát triển Giáo dục Quốc tế - chuyến thăm campus DN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', '0900000000', 'nguyen.van.nam@partner.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'DECLINED', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'REJECTED', DATE_SUB(@seed_now, INTERVAL 44 DAY), DATE_SUB(@seed_now, INTERVAL 43 DAY), @u_stafflead_dn, DATE_SUB(@seed_now, INTERVAL 42 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 44 DAY), @v_nguyen_no_dau, @seed_now, @u_stafflead_dn),
+  (@vr_hist_04, 'VR-HIST-004', @v_lee, @p_asean, 'VISITOR_SUBMITTED', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'lee.joonho@seoultech.example', 'Hàn Quốc', 'ASEAN Future Skills Foundation - chuyến thăm campus CT', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', '0900000000', 'lee.joonho@seoultech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'DECLINED', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'CANCELLED', DATE_SUB(@seed_now, INTERVAL 52 DAY), DATE_SUB(@seed_now, INTERVAL 51 DAY), @u_stafflead_ct, DATE_SUB(@seed_now, INTERVAL 50 DAY), 'STAFF_LEADER', 'Đã được duyệt trước khi khách gửi yêu cầu hủy.', @v_lee, DATE_ADD(DATE_SUB(@seed_now, INTERVAL 50 DAY), INTERVAL 1 DAY), 'Khách thay đổi kế hoạch và tự hủy sau khi đơn đã được duyệt.', 0, DATE_SUB(@seed_now, INTERVAL 52 DAY), @v_lee, @seed_now, @v_lee),
+  (@vr_hist_05, 'VR-HIST-005', @v_kim, @p_seoul, 'VISITOR_SUBMITTED', 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'kim.minseo@seoultech.example', 'Hàn Quốc', 'Seoul Future University - chuyến thăm campus QN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Kim Min Seo', 'Tổ chức đối tác quốc tế', '0900000000', 'kim.minseo@seoultech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'DECLINED', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'PENDING_APPROVAL', DATE_SUB(@seed_now, INTERVAL 60 DAY), DATE_SUB(@seed_now, INTERVAL 59 DAY), NULL, NULL, NULL, 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 60 DAY), @v_kim, @seed_now, NULL),
+  (@vr_hist_06, 'VR-HIST-006', @v_smith, @p_green, 'VISITOR_SUBMITTED', 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'emily.smith@greentech.example', 'Hoa Kỳ', 'GreenTech Asia Pte. Ltd. - chuyến thăm campus HN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Emily Smith', 'Tổ chức đối tác quốc tế', '0900000000', 'emily.smith@greentech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'DECLINED', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 68 DAY), DATE_SUB(@seed_now, INTERVAL 67 DAY), @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 66 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 68 DAY), @v_smith, @seed_now, @u_stafflead_hn),
+  (@vr_hist_07, 'VR-HIST-007', @v_nguyen_no_dau, @p_ministry, 'VISITOR_SUBMITTED', 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'nguyen.van.nam@partner.example', 'Việt Nam', 'Viện Phát triển Giáo dục Quốc tế - chuyến thăm campus HCM', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', '0900000000', 'nguyen.van.nam@partner.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'DECLINED', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 76 DAY), DATE_SUB(@seed_now, INTERVAL 75 DAY), @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 74 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 76 DAY), @v_nguyen_no_dau, @seed_now, @u_stafflead_hcm),
+  (@vr_hist_08, 'VR-HIST-008', @v_lee, @p_asean, 'VISITOR_SUBMITTED', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'lee.joonho@seoultech.example', 'Hàn Quốc', 'ASEAN Future Skills Foundation - chuyến thăm campus DN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', '0900000000', 'lee.joonho@seoultech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'DECLINED', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'REJECTED', DATE_SUB(@seed_now, INTERVAL 84 DAY), DATE_SUB(@seed_now, INTERVAL 83 DAY), @u_stafflead_dn, DATE_SUB(@seed_now, INTERVAL 82 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 84 DAY), @v_lee, @seed_now, @u_stafflead_dn),
+  (@vr_hist_09, 'VR-HIST-009', @v_kim, @p_seoul, 'VISITOR_SUBMITTED', 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'kim.minseo@seoultech.example', 'Hàn Quốc', 'Seoul Future University - chuyến thăm campus CT', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Kim Min Seo', 'Tổ chức đối tác quốc tế', '0900000000', 'kim.minseo@seoultech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'DECLINED', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'CANCELLED', DATE_SUB(@seed_now, INTERVAL 92 DAY), DATE_SUB(@seed_now, INTERVAL 91 DAY), @u_stafflead_ct, DATE_SUB(@seed_now, INTERVAL 90 DAY), 'STAFF_LEADER', 'Đã được duyệt trước khi khách gửi yêu cầu hủy.', @v_kim, DATE_ADD(DATE_SUB(@seed_now, INTERVAL 90 DAY), INTERVAL 1 DAY), 'Khách thay đổi kế hoạch và tự hủy sau khi đơn đã được duyệt.', 0, DATE_SUB(@seed_now, INTERVAL 92 DAY), @v_kim, @seed_now, @v_kim),
+  (@vr_hist_10, 'VR-HIST-010', @v_smith, @p_green, 'VISITOR_SUBMITTED', 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'emily.smith@greentech.example', 'Hoa Kỳ', 'GreenTech Asia Pte. Ltd. - chuyến thăm campus QN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Emily Smith', 'Tổ chức đối tác quốc tế', '0900000000', 'emily.smith@greentech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'DECLINED', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'PENDING_APPROVAL', DATE_SUB(@seed_now, INTERVAL 100 DAY), DATE_SUB(@seed_now, INTERVAL 99 DAY), NULL, NULL, NULL, 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 100 DAY), @v_smith, @seed_now, NULL),
+  (@vr_hist_11, 'VR-HIST-011', @v_nguyen_no_dau, @p_ministry, 'VISITOR_SUBMITTED', 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'nguyen.van.nam@partner.example', 'Việt Nam', 'Viện Phát triển Giáo dục Quốc tế - chuyến thăm campus HN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', '0900000000', 'nguyen.van.nam@partner.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'DECLINED', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 108 DAY), DATE_SUB(@seed_now, INTERVAL 107 DAY), @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 106 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 108 DAY), @v_nguyen_no_dau, @seed_now, @u_stafflead_hn),
+  (@vr_hist_12, 'VR-HIST-012', @v_lee, @p_asean, 'VISITOR_SUBMITTED', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'lee.joonho@seoultech.example', 'Hàn Quốc', 'ASEAN Future Skills Foundation - chuyến thăm campus HCM', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', '0900000000', 'lee.joonho@seoultech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'DECLINED', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 116 DAY), DATE_SUB(@seed_now, INTERVAL 115 DAY), @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 114 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 116 DAY), @v_lee, @seed_now, @u_stafflead_hcm),
+  (@vr_hist_13, 'VR-HIST-013', @v_kim, @p_seoul, 'VISITOR_SUBMITTED', 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'kim.minseo@seoultech.example', 'Hàn Quốc', 'Seoul Future University - chuyến thăm campus DN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Kim Min Seo', 'Tổ chức đối tác quốc tế', '0900000000', 'kim.minseo@seoultech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'DECLINED', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'REJECTED', DATE_SUB(@seed_now, INTERVAL 124 DAY), DATE_SUB(@seed_now, INTERVAL 123 DAY), @u_stafflead_dn, DATE_SUB(@seed_now, INTERVAL 122 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 124 DAY), @v_kim, @seed_now, @u_stafflead_dn),
+  (@vr_hist_14, 'VR-HIST-014', @v_smith, @p_green, 'VISITOR_SUBMITTED', 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'emily.smith@greentech.example', 'Hoa Kỳ', 'GreenTech Asia Pte. Ltd. - chuyến thăm campus CT', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Emily Smith', 'Tổ chức đối tác quốc tế', '0900000000', 'emily.smith@greentech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'DECLINED', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'CANCELLED', DATE_SUB(@seed_now, INTERVAL 132 DAY), DATE_SUB(@seed_now, INTERVAL 131 DAY), @u_stafflead_ct, DATE_SUB(@seed_now, INTERVAL 130 DAY), 'STAFF_LEADER', 'Đã được duyệt trước khi khách gửi yêu cầu hủy.', @v_smith, DATE_ADD(DATE_SUB(@seed_now, INTERVAL 130 DAY), INTERVAL 1 DAY), 'Khách thay đổi kế hoạch và tự hủy sau khi đơn đã được duyệt.', 0, DATE_SUB(@seed_now, INTERVAL 132 DAY), @v_smith, @seed_now, @v_smith),
+  (@vr_hist_15, 'VR-HIST-015', @v_nguyen_no_dau, @p_ministry, 'VISITOR_SUBMITTED', 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'nguyen.van.nam@partner.example', 'Việt Nam', 'Viện Phát triển Giáo dục Quốc tế - chuyến thăm campus QN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', '0900000000', 'nguyen.van.nam@partner.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'DECLINED', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'PENDING_APPROVAL', DATE_SUB(@seed_now, INTERVAL 140 DAY), DATE_SUB(@seed_now, INTERVAL 139 DAY), NULL, NULL, NULL, 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 140 DAY), @v_nguyen_no_dau, @seed_now, NULL),
+  (@vr_hist_16, 'VR-HIST-016', @v_lee, @p_asean, 'VISITOR_SUBMITTED', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'lee.joonho@seoultech.example', 'Hàn Quốc', 'ASEAN Future Skills Foundation - chuyến thăm campus HN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', '0900000000', 'lee.joonho@seoultech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'DECLINED', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 148 DAY), DATE_SUB(@seed_now, INTERVAL 147 DAY), @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 146 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 148 DAY), @v_lee, @seed_now, @u_stafflead_hn),
+  (@vr_hist_17, 'VR-HIST-017', @v_kim, @p_seoul, 'VISITOR_SUBMITTED', 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'kim.minseo@seoultech.example', 'Hàn Quốc', 'Seoul Future University - chuyến thăm campus HCM', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Kim Min Seo', 'Tổ chức đối tác quốc tế', '0900000000', 'kim.minseo@seoultech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'DECLINED', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 156 DAY), DATE_SUB(@seed_now, INTERVAL 155 DAY), @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 154 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 156 DAY), @v_kim, @seed_now, @u_stafflead_hcm),
+  (@vr_hist_18, 'VR-HIST-018', @v_smith, @p_green, 'VISITOR_SUBMITTED', 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'emily.smith@greentech.example', 'Hoa Kỳ', 'GreenTech Asia Pte. Ltd. - chuyến thăm campus DN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Emily Smith', 'Tổ chức đối tác quốc tế', '0900000000', 'emily.smith@greentech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'DECLINED', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'REJECTED', DATE_SUB(@seed_now, INTERVAL 164 DAY), DATE_SUB(@seed_now, INTERVAL 163 DAY), @u_stafflead_dn, DATE_SUB(@seed_now, INTERVAL 162 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 164 DAY), @v_smith, @seed_now, @u_stafflead_dn),
+  (@vr_hist_19, 'VR-HIST-019', @v_nguyen_no_dau, @p_ministry, 'VISITOR_SUBMITTED', 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'nguyen.van.nam@partner.example', 'Việt Nam', 'Viện Phát triển Giáo dục Quốc tế - chuyến thăm campus CT', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', '0900000000', 'nguyen.van.nam@partner.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'DECLINED', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'CANCELLED', DATE_SUB(@seed_now, INTERVAL 172 DAY), DATE_SUB(@seed_now, INTERVAL 171 DAY), @u_stafflead_ct, DATE_SUB(@seed_now, INTERVAL 170 DAY), 'STAFF_LEADER', 'Đã được duyệt trước khi khách gửi yêu cầu hủy.', @v_nguyen_no_dau, DATE_ADD(DATE_SUB(@seed_now, INTERVAL 170 DAY), INTERVAL 1 DAY), 'Khách thay đổi kế hoạch và tự hủy sau khi đơn đã được duyệt.', 0, DATE_SUB(@seed_now, INTERVAL 172 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
+  (@vr_hist_20, 'VR-HIST-020', @v_lee, @p_asean, 'VISITOR_SUBMITTED', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'lee.joonho@seoultech.example', 'Hàn Quốc', 'ASEAN Future Skills Foundation - chuyến thăm campus QN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', '0900000000', 'lee.joonho@seoultech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'DECLINED', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'PENDING_APPROVAL', DATE_SUB(@seed_now, INTERVAL 180 DAY), DATE_SUB(@seed_now, INTERVAL 179 DAY), NULL, NULL, NULL, 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 180 DAY), @v_lee, @seed_now, NULL),
+  (@vr_hist_21, 'VR-HIST-021', @v_kim, @p_seoul, 'VISITOR_SUBMITTED', 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'kim.minseo@seoultech.example', 'Hàn Quốc', 'Seoul Future University - chuyến thăm campus HN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Kim Min Seo', 'Tổ chức đối tác quốc tế', '0900000000', 'kim.minseo@seoultech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'DECLINED', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 188 DAY), DATE_SUB(@seed_now, INTERVAL 187 DAY), @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 186 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 188 DAY), @v_kim, @seed_now, @u_stafflead_hn),
+  (@vr_hist_22, 'VR-HIST-022', @v_smith, @p_green, 'VISITOR_SUBMITTED', 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'emily.smith@greentech.example', 'Hoa Kỳ', 'GreenTech Asia Pte. Ltd. - chuyến thăm campus HCM', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Emily Smith', 'Tổ chức đối tác quốc tế', '0900000000', 'emily.smith@greentech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'DECLINED', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 196 DAY), DATE_SUB(@seed_now, INTERVAL 195 DAY), @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 194 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 196 DAY), @v_smith, @seed_now, @u_stafflead_hcm),
+  (@vr_hist_23, 'VR-HIST-023', @v_nguyen_no_dau, @p_ministry, 'VISITOR_SUBMITTED', 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'nguyen.van.nam@partner.example', 'Việt Nam', 'Viện Phát triển Giáo dục Quốc tế - chuyến thăm campus DN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', '0900000000', 'nguyen.van.nam@partner.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'DECLINED', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'REJECTED', DATE_SUB(@seed_now, INTERVAL 204 DAY), DATE_SUB(@seed_now, INTERVAL 203 DAY), @u_stafflead_dn, DATE_SUB(@seed_now, INTERVAL 202 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 204 DAY), @v_nguyen_no_dau, @seed_now, @u_stafflead_dn),
+  (@vr_hist_24, 'VR-HIST-024', @v_lee, @p_asean, 'VISITOR_SUBMITTED', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'lee.joonho@seoultech.example', 'Hàn Quốc', 'ASEAN Future Skills Foundation - chuyến thăm campus CT', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', '0900000000', 'lee.joonho@seoultech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'DECLINED', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'CANCELLED', DATE_SUB(@seed_now, INTERVAL 212 DAY), DATE_SUB(@seed_now, INTERVAL 211 DAY), @u_stafflead_ct, DATE_SUB(@seed_now, INTERVAL 210 DAY), 'STAFF_LEADER', 'Đã được duyệt trước khi khách gửi yêu cầu hủy.', @v_lee, DATE_ADD(DATE_SUB(@seed_now, INTERVAL 210 DAY), INTERVAL 1 DAY), 'Khách thay đổi kế hoạch và tự hủy sau khi đơn đã được duyệt.', 0, DATE_SUB(@seed_now, INTERVAL 212 DAY), @v_lee, @seed_now, @v_lee),
+  (@vr_hist_25, 'VR-HIST-025', @v_kim, @p_seoul, 'VISITOR_SUBMITTED', 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'kim.minseo@seoultech.example', 'Hàn Quốc', 'Seoul Future University - chuyến thăm campus QN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Kim Min Seo', 'Tổ chức đối tác quốc tế', '0900000000', 'kim.minseo@seoultech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'DECLINED', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'PENDING_APPROVAL', DATE_SUB(@seed_now, INTERVAL 220 DAY), DATE_SUB(@seed_now, INTERVAL 219 DAY), NULL, NULL, NULL, 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 220 DAY), @v_kim, @seed_now, NULL),
+  (@vr_hist_26, 'VR-HIST-026', @v_smith, @p_green, 'VISITOR_SUBMITTED', 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'emily.smith@greentech.example', 'Hoa Kỳ', 'GreenTech Asia Pte. Ltd. - chuyến thăm campus HN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Emily Smith', 'Tổ chức đối tác quốc tế', '0900000000', 'emily.smith@greentech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'DECLINED', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 228 DAY), DATE_SUB(@seed_now, INTERVAL 227 DAY), @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 226 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 228 DAY), @v_smith, @seed_now, @u_stafflead_hn),
+  (@vr_hist_27, 'VR-HIST-027', @v_nguyen_no_dau, @p_ministry, 'VISITOR_SUBMITTED', 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'nguyen.van.nam@partner.example', 'Việt Nam', 'Viện Phát triển Giáo dục Quốc tế - chuyến thăm campus HCM', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', '0900000000', 'nguyen.van.nam@partner.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'DECLINED', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 236 DAY), DATE_SUB(@seed_now, INTERVAL 235 DAY), @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 234 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 236 DAY), @v_nguyen_no_dau, @seed_now, @u_stafflead_hcm),
+  (@vr_hist_28, 'VR-HIST-028', @v_lee, @p_asean, 'VISITOR_SUBMITTED', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'lee.joonho@seoultech.example', 'Hàn Quốc', 'ASEAN Future Skills Foundation - chuyến thăm campus DN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', '0900000000', 'lee.joonho@seoultech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'DECLINED', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'REJECTED', DATE_SUB(@seed_now, INTERVAL 244 DAY), DATE_SUB(@seed_now, INTERVAL 243 DAY), @u_stafflead_dn, DATE_SUB(@seed_now, INTERVAL 242 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 244 DAY), @v_lee, @seed_now, @u_stafflead_dn),
+  (@vr_hist_29, 'VR-HIST-029', @v_kim, @p_seoul, 'VISITOR_SUBMITTED', 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'kim.minseo@seoultech.example', 'Hàn Quốc', 'Seoul Future University - chuyến thăm campus CT', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Kim Min Seo', 'Tổ chức đối tác quốc tế', '0900000000', 'kim.minseo@seoultech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'DECLINED', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'CANCELLED', DATE_SUB(@seed_now, INTERVAL 252 DAY), DATE_SUB(@seed_now, INTERVAL 251 DAY), @u_stafflead_ct, DATE_SUB(@seed_now, INTERVAL 250 DAY), 'STAFF_LEADER', 'Đã được duyệt trước khi khách gửi yêu cầu hủy.', @v_kim, DATE_ADD(DATE_SUB(@seed_now, INTERVAL 250 DAY), INTERVAL 1 DAY), 'Khách thay đổi kế hoạch và tự hủy sau khi đơn đã được duyệt.', 0, DATE_SUB(@seed_now, INTERVAL 252 DAY), @v_kim, @seed_now, @v_kim),
+  (@vr_hist_30, 'VR-HIST-030', @v_smith, @p_green, 'VISITOR_SUBMITTED', 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'emily.smith@greentech.example', 'Hoa Kỳ', 'GreenTech Asia Pte. Ltd. - chuyến thăm campus QN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Emily Smith', 'Tổ chức đối tác quốc tế', '0900000000', 'emily.smith@greentech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'DECLINED', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'PENDING_APPROVAL', DATE_SUB(@seed_now, INTERVAL 260 DAY), DATE_SUB(@seed_now, INTERVAL 259 DAY), NULL, NULL, NULL, 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 260 DAY), @v_smith, @seed_now, NULL),
+  (@vr_hist_31, 'VR-HIST-031', @v_nguyen_no_dau, @p_ministry, 'VISITOR_SUBMITTED', 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'nguyen.van.nam@partner.example', 'Việt Nam', 'Viện Phát triển Giáo dục Quốc tế - chuyến thăm campus HN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', '0900000000', 'nguyen.van.nam@partner.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'DECLINED', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 268 DAY), DATE_SUB(@seed_now, INTERVAL 267 DAY), @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 266 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 268 DAY), @v_nguyen_no_dau, @seed_now, @u_stafflead_hn),
+  (@vr_hist_32, 'VR-HIST-032', @v_lee, @p_asean, 'VISITOR_SUBMITTED', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'lee.joonho@seoultech.example', 'Hàn Quốc', 'ASEAN Future Skills Foundation - chuyến thăm campus HCM', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', '0900000000', 'lee.joonho@seoultech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'DECLINED', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 276 DAY), DATE_SUB(@seed_now, INTERVAL 275 DAY), @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 274 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 276 DAY), @v_lee, @seed_now, @u_stafflead_hcm),
+  (@vr_hist_33, 'VR-HIST-033', @v_kim, @p_seoul, 'VISITOR_SUBMITTED', 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'kim.minseo@seoultech.example', 'Hàn Quốc', 'Seoul Future University - chuyến thăm campus DN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Kim Min Seo', 'Tổ chức đối tác quốc tế', '0900000000', 'kim.minseo@seoultech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'DECLINED', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'REJECTED', DATE_SUB(@seed_now, INTERVAL 284 DAY), DATE_SUB(@seed_now, INTERVAL 283 DAY), @u_stafflead_dn, DATE_SUB(@seed_now, INTERVAL 282 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 284 DAY), @v_kim, @seed_now, @u_stafflead_dn),
+  (@vr_hist_34, 'VR-HIST-034', @v_smith, @p_green, 'VISITOR_SUBMITTED', 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'emily.smith@greentech.example', 'Hoa Kỳ', 'GreenTech Asia Pte. Ltd. - chuyến thăm campus CT', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Emily Smith', 'Tổ chức đối tác quốc tế', '0900000000', 'emily.smith@greentech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'DECLINED', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'CANCELLED', DATE_SUB(@seed_now, INTERVAL 292 DAY), DATE_SUB(@seed_now, INTERVAL 291 DAY), @u_stafflead_ct, DATE_SUB(@seed_now, INTERVAL 290 DAY), 'STAFF_LEADER', 'Đã được duyệt trước khi khách gửi yêu cầu hủy.', @v_smith, DATE_ADD(DATE_SUB(@seed_now, INTERVAL 290 DAY), INTERVAL 1 DAY), 'Khách thay đổi kế hoạch và tự hủy sau khi đơn đã được duyệt.', 0, DATE_SUB(@seed_now, INTERVAL 292 DAY), @v_smith, @seed_now, @v_smith),
+  (@vr_hist_35, 'VR-HIST-035', @v_nguyen_no_dau, @p_ministry, 'VISITOR_SUBMITTED', 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'nguyen.van.nam@partner.example', 'Việt Nam', 'Viện Phát triển Giáo dục Quốc tế - chuyến thăm campus QN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', '0900000000', 'nguyen.van.nam@partner.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'DECLINED', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'PENDING_APPROVAL', DATE_SUB(@seed_now, INTERVAL 300 DAY), DATE_SUB(@seed_now, INTERVAL 299 DAY), NULL, NULL, NULL, 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 300 DAY), @v_nguyen_no_dau, @seed_now, NULL),
+  (@vr_hist_36, 'VR-HIST-036', @v_lee, @p_asean, 'VISITOR_SUBMITTED', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'lee.joonho@seoultech.example', 'Hàn Quốc', 'ASEAN Future Skills Foundation - chuyến thăm campus HN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', '0900000000', 'lee.joonho@seoultech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'DECLINED', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 308 DAY), DATE_SUB(@seed_now, INTERVAL 307 DAY), @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 306 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 308 DAY), @v_lee, @seed_now, @u_stafflead_hn),
+  (@vr_hist_37, 'VR-HIST-037', @v_kim, @p_seoul, 'VISITOR_SUBMITTED', 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'kim.minseo@seoultech.example', 'Hàn Quốc', 'Seoul Future University - chuyến thăm campus HCM', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Kim Min Seo', 'Tổ chức đối tác quốc tế', '0900000000', 'kim.minseo@seoultech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'DECLINED', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 316 DAY), DATE_SUB(@seed_now, INTERVAL 315 DAY), @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 314 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 316 DAY), @v_kim, @seed_now, @u_stafflead_hcm),
+  (@vr_hist_38, 'VR-HIST-038', @v_smith, @p_green, 'VISITOR_SUBMITTED', 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'emily.smith@greentech.example', 'Hoa Kỳ', 'GreenTech Asia Pte. Ltd. - chuyến thăm campus DN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Emily Smith', 'Tổ chức đối tác quốc tế', '0900000000', 'emily.smith@greentech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'DECLINED', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'REJECTED', DATE_SUB(@seed_now, INTERVAL 324 DAY), DATE_SUB(@seed_now, INTERVAL 323 DAY), @u_stafflead_dn, DATE_SUB(@seed_now, INTERVAL 322 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 324 DAY), @v_smith, @seed_now, @u_stafflead_dn),
+  (@vr_hist_39, 'VR-HIST-039', @v_nguyen_no_dau, @p_ministry, 'VISITOR_SUBMITTED', 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'nguyen.van.nam@partner.example', 'Việt Nam', 'Viện Phát triển Giáo dục Quốc tế - chuyến thăm campus CT', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', '0900000000', 'nguyen.van.nam@partner.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'DECLINED', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'CANCELLED', DATE_SUB(@seed_now, INTERVAL 332 DAY), DATE_SUB(@seed_now, INTERVAL 331 DAY), @u_stafflead_ct, DATE_SUB(@seed_now, INTERVAL 330 DAY), 'STAFF_LEADER', 'Đã được duyệt trước khi khách gửi yêu cầu hủy.', @v_nguyen_no_dau, DATE_ADD(DATE_SUB(@seed_now, INTERVAL 330 DAY), INTERVAL 1 DAY), 'Khách thay đổi kế hoạch và tự hủy sau khi đơn đã được duyệt.', 0, DATE_SUB(@seed_now, INTERVAL 332 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
+  (@vr_hist_40, 'VR-HIST-040', @v_lee, @p_asean, 'VISITOR_SUBMITTED', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'lee.joonho@seoultech.example', 'Hàn Quốc', 'ASEAN Future Skills Foundation - chuyến thăm campus QN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', '0900000000', 'lee.joonho@seoultech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'DECLINED', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'PENDING_APPROVAL', DATE_SUB(@seed_now, INTERVAL 340 DAY), DATE_SUB(@seed_now, INTERVAL 339 DAY), NULL, NULL, NULL, 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 340 DAY), @v_lee, @seed_now, NULL),
+  (@vr_hist_41, 'VR-HIST-041', @v_kim, @p_seoul, 'VISITOR_SUBMITTED', 'Kim Min Seo', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'kim.minseo@seoultech.example', 'Hàn Quốc', 'Seoul Future University - chuyến thăm campus HN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Kim Min Seo', 'Tổ chức đối tác quốc tế', '0900000000', 'kim.minseo@seoultech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'DECLINED', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 348 DAY), DATE_SUB(@seed_now, INTERVAL 347 DAY), @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 346 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 348 DAY), @v_kim, @seed_now, @u_stafflead_hn),
+  (@vr_hist_42, 'VR-HIST-042', @v_smith, @p_green, 'VISITOR_SUBMITTED', 'Emily Smith', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'emily.smith@greentech.example', 'Hoa Kỳ', 'GreenTech Asia Pte. Ltd. - chuyến thăm campus HCM', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Emily Smith', 'Tổ chức đối tác quốc tế', '0900000000', 'emily.smith@greentech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'DECLINED', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'APPROVED', DATE_SUB(@seed_now, INTERVAL 356 DAY), DATE_SUB(@seed_now, INTERVAL 355 DAY), @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 354 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 356 DAY), @v_smith, @seed_now, @u_stafflead_hcm),
+  (@vr_hist_43, 'VR-HIST-043', @v_nguyen_no_dau, @p_ministry, 'VISITOR_SUBMITTED', 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'nguyen.van.nam@partner.example', 'Việt Nam', 'Viện Phát triển Giáo dục Quốc tế - chuyến thăm campus DN', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Nguyen Van Nam', 'Tổ chức đối tác quốc tế', '0900000000', 'nguyen.van.nam@partner.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'DECLINED', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'REJECTED', DATE_SUB(@seed_now, INTERVAL 364 DAY), DATE_SUB(@seed_now, INTERVAL 363 DAY), @u_stafflead_dn, DATE_SUB(@seed_now, INTERVAL 362 DAY), 'STAFF_LEADER', 'Hồ sơ lịch sử phục vụ dashboard và báo cáo.', NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 364 DAY), @v_nguyen_no_dau, @seed_now, @u_stafflead_dn),
+  (@vr_hist_44, 'VR-HIST-044', @v_lee, @p_asean, 'VISITOR_SUBMITTED', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', 'Điều phối đoàn khách', '0900000000', 'lee.joonho@seoultech.example', 'Hàn Quốc', 'ASEAN Future Skills Foundation - chuyến thăm campus CT', 'SINGLE_CAMPUS', 'CAMPUS_TOUR', NULL, 'Trao đổi hợp tác, tham quan campus và làm việc với các phòng ban.', 'Làm việc với IC Office, tham quan khu học tập, phòng lab và trao đổi hợp tác.', 'Lee Joon Ho', 'Tổ chức đối tác quốc tế', '0900000000', 'lee.joonho@seoultech.example', 'EN', CASE WHEN 'Đoàn tự túc xe 16 chỗ.' IS NULL OR TRIM('Đoàn tự túc xe 16 chỗ.') = '' THEN 'UNKNOWN' ELSE 'SELF_ARRANGED' END, 'Đoàn tự túc xe 16 chỗ.', 'DECLINED', NULL, 'Vui lòng hỗ trợ bảng chào mừng và phòng họp.', 'CANCELLED', DATE_SUB(@seed_now, INTERVAL 372 DAY), DATE_SUB(@seed_now, INTERVAL 371 DAY), @u_stafflead_ct, DATE_SUB(@seed_now, INTERVAL 370 DAY), 'STAFF_LEADER', 'Đã được duyệt trước khi khách gửi yêu cầu hủy.', @v_lee, DATE_ADD(DATE_SUB(@seed_now, INTERVAL 370 DAY), INTERVAL 1 DAY), 'Khách thay đổi kế hoạch và tự hủy sau khi đơn đã được duyệt.', 0, DATE_SUB(@seed_now, INTERVAL 372 DAY), @v_lee, @seed_now, @v_lee);
 
-INSERT INTO visit_request_campuses (visit_instance_id, visit_request_id, campus_id, planned_start_at, planned_end_at, status, current_host_user_id, host_assigned_by, host_assigned_at, host_assignment_source, host_transferred_by, host_transferred_at, host_transfer_note, closed_by, closed_at, close_note, cancelled_by, cancelled_at, cancellation_actor_type, cancellation_source, cancellation_reason, row_version, created_at, created_by, updated_at, updated_by)
+INSERT INTO visit_request_campuses (visit_instance_id, visit_request_id, campus_id, planned_start_at, planned_end_at, status, coordinator_user_id, coordinator_assigned_by, coordinator_assigned_at, current_host_user_id, host_assigned_by, host_assigned_at, closed_by, closed_at, close_note, cancelled_by, cancelled_at, cancellation_actor_type, cancellation_source, cancellation_reason, row_version, created_at, created_by, updated_at, updated_by)
 VALUES
-  (@vi_pending_approval_hcm, @vr_pending_approval_seed, @campus_hcm, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 2 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 2 DAY), INTERVAL 990 MINUTE), 'WAITING_REQUEST_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 17 DAY), @v_pending_approval_seed, @seed_now, @v_pending_approval_seed),
-  (@vi_pa_hn, @vr_pending_approval_multi, @campus_hn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 9 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 9 DAY), INTERVAL 990 MINUTE), 'WAITING_REQUEST_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 24 DAY), @v_pending_approval, @seed_now, @v_pending_approval),
-  (@vi_pa_ct, @vr_pending_approval_multi, @campus_ct, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 9 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 9 DAY), INTERVAL 990 MINUTE), 'WAITING_REQUEST_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 24 DAY), @v_pending_approval, @seed_now, @v_pending_approval),
-  (@vi_as_hn, @vr_approved_single_before, @campus_hn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 14 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 14 DAY), INTERVAL 990 MINUTE), 'BEFORE_VISIT', @u_staff_hn, @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 29 DAY), 'MANUAL_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 29 DAY), @v_kim, @seed_now, @u_stafflead_hn),
-  (@vi_am_hn, @vr_approved_multi_during, @campus_hn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 0 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 0 DAY), INTERVAL 990 MINUTE), 'DURING_VISIT', @u_staff_hn, @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 15 DAY), 'TRANSFERRED', @u_stafflead_hn, DATE_ADD(DATE_SUB(@seed_now, INTERVAL 15 DAY), INTERVAL 1 DAY), 'Staff Leader đã chọn Host chính thức.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 15 DAY), @v_lee, @seed_now, @u_stafflead_hn),
-  (@vi_am_hcm, @vr_approved_multi_during, @campus_hcm, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 0 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 0 DAY), INTERVAL 990 MINUTE), 'ASSIGNED', @u_stafflead_hcm, @u_ho_ha, DATE_SUB(@seed_now, INTERVAL 15 DAY), 'AUTO_STAFF_LEADER', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 15 DAY), @v_lee, @seed_now, @u_stafflead_hcm),
-  (@vi_rs_hcm, @vr_rejected_single, @campus_hcm, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 5 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 5 DAY), INTERVAL 990 MINUTE), 'WAITING_REQUEST_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 20 DAY), @v_smith, @seed_now, @v_smith),
-  (@vi_rm_dn, @vr_rejected_multi, @campus_dn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 20 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 20 DAY), INTERVAL 990 MINUTE), 'WAITING_REQUEST_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 35 DAY), @v_tanaka, @seed_now, @v_tanaka),
-  (@vi_rm_ct, @vr_rejected_multi, @campus_ct, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 20 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 20 DAY), INTERVAL 990 MINUTE), 'WAITING_REQUEST_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 35 DAY), @v_tanaka, @seed_now, @v_tanaka),
-  (@vi_cn_hn, @vr_cancelled, @campus_hn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 30 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 30 DAY), INTERVAL 990 MINUTE), 'CANCELLED', @u_staff_hn, @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 45 DAY), 'MANUAL_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, @v_nguyen_no_dau, DATE_ADD(DATE_SUB(@seed_now, INTERVAL 42 DAY), INTERVAL 1 DAY), 'VISITOR', 'SELF_SERVICE', 'Khách tự hủy chuyến thăm sau khi đơn đã được duyệt.', 0, DATE_SUB(@seed_now, INTERVAL 45 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
-  (@vi_av_ct, @vr_after_visit, @campus_ct, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -2 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -2 DAY), INTERVAL 990 MINUTE), 'AFTER_VISIT', @u_staff_ct, @u_stafflead_ct, DATE_SUB(@seed_now, INTERVAL 22 DAY), 'MANUAL_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 22 DAY), @v_short_name, @seed_now, @u_stafflead_ct),
-  (@vi_cl_hn, @vr_closed, @campus_hn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -30 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -30 DAY), INTERVAL 990 MINUTE), 'CLOSED', @u_staff_hn, @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 50 DAY), 'MANUAL_APPROVAL', NULL, NULL, NULL, @u_staff_hn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -29 DAY), INTERVAL 600 MINUTE), 'Đã hoàn tất hồ sơ.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 50 DAY), @v_long_name, @seed_now, @u_stafflead_hn),
-  (@vi_ci_hcm, @vr_cancelled_instance, @campus_hcm, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 25 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 25 DAY), INTERVAL 990 MINUTE), 'BEFORE_VISIT', @u_staff_hcm, @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 2 DAY), 'TRANSFERRED', @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 2 DAY), 'Staff Leader đã chọn Host chính thức.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 40 DAY), @v_smith, @seed_now, @u_staff_hcm),
-  (@vi_ci_hn, @vr_cancelled_instance, @campus_hn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 25 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 25 DAY), INTERVAL 990 MINUTE), 'CANCELLED', @u_stafflead_hn, @u_ho_ha, DATE_SUB(@seed_now, INTERVAL 40 DAY), 'AUTO_STAFF_LEADER', NULL, NULL, NULL, NULL, NULL, NULL, @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 2 DAY), 'STAFF_LEADER', 'EXTERNAL_CONFIRMATION', 'Khách xác nhận ngoài hệ thống rằng campus này không còn tham gia lịch trình.', 0, DATE_SUB(@seed_now, INTERVAL 40 DAY), @v_smith, @seed_now, @v_smith),
-  (@vi_ao_dn, @vr_assigned_only, @campus_dn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 11 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 11 DAY), INTERVAL 990 MINUTE), 'ASSIGNED', @u_staff_dn, @u_stafflead_dn, DATE_SUB(@seed_now, INTERVAL 26 DAY), 'MANUAL_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 26 DAY), @v_lee, @seed_now, @u_stafflead_dn),
-  (@vi_hist_01, @vr_hist_01, @campus_hn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -8 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -8 DAY), INTERVAL 990 MINUTE), 'CLOSED', @u_staff_hn, @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 28 DAY), 'MANUAL_APPROVAL', NULL, NULL, NULL, @u_staff_hn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -7 DAY), INTERVAL 600 MINUTE), 'Đã hoàn tất hồ sơ.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 28 DAY), @v_kim, @seed_now, @u_stafflead_hn),
-  (@vi_hist_02, @vr_hist_02, @campus_hcm, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -16 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -16 DAY), INTERVAL 990 MINUTE), 'AFTER_VISIT', @u_staff_hcm, @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 36 DAY), 'MANUAL_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 36 DAY), @v_smith, @seed_now, @u_stafflead_hcm),
-  (@vi_hist_03, @vr_hist_03, @campus_dn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -24 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -24 DAY), INTERVAL 990 MINUTE), 'WAITING_REQUEST_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 44 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
-  (@vi_hist_04, @vr_hist_04, @campus_ct, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -32 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -32 DAY), INTERVAL 990 MINUTE), 'CANCELLED', @u_staff_ct, @u_stafflead_ct, DATE_SUB(@seed_now, INTERVAL 52 DAY), 'MANUAL_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, @v_lee, DATE_ADD(DATE_SUB(@seed_now, INTERVAL 50 DAY), INTERVAL 1 DAY), 'VISITOR', 'SELF_SERVICE', 'Khách tự hủy chuyến thăm sau khi đơn đã được duyệt.', 0, DATE_SUB(@seed_now, INTERVAL 52 DAY), @v_lee, @seed_now, @v_lee),
-  (@vi_hist_05, @vr_hist_05, @campus_qn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -40 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -40 DAY), INTERVAL 990 MINUTE), 'WAITING_REQUEST_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 60 DAY), @v_kim, @seed_now, @v_kim),
-  (@vi_hist_06, @vr_hist_06, @campus_hn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -48 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -48 DAY), INTERVAL 990 MINUTE), 'AFTER_VISIT', @u_staff_hn, @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 68 DAY), 'MANUAL_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 68 DAY), @v_smith, @seed_now, @u_stafflead_hn),
-  (@vi_hist_07, @vr_hist_07, @campus_hcm, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -56 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -56 DAY), INTERVAL 990 MINUTE), 'CLOSED', @u_staff_hcm, @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 76 DAY), 'MANUAL_APPROVAL', NULL, NULL, NULL, @u_staff_hcm, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -55 DAY), INTERVAL 600 MINUTE), 'Đã hoàn tất hồ sơ.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 76 DAY), @v_nguyen_no_dau, @seed_now, @u_stafflead_hcm),
-  (@vi_hist_08, @vr_hist_08, @campus_dn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -64 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -64 DAY), INTERVAL 990 MINUTE), 'WAITING_REQUEST_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 84 DAY), @v_lee, @seed_now, @v_lee),
-  (@vi_hist_09, @vr_hist_09, @campus_ct, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -72 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -72 DAY), INTERVAL 990 MINUTE), 'CANCELLED', @u_staff_ct, @u_stafflead_ct, DATE_SUB(@seed_now, INTERVAL 92 DAY), 'MANUAL_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, @v_kim, DATE_ADD(DATE_SUB(@seed_now, INTERVAL 90 DAY), INTERVAL 1 DAY), 'VISITOR', 'SELF_SERVICE', 'Khách tự hủy chuyến thăm sau khi đơn đã được duyệt.', 0, DATE_SUB(@seed_now, INTERVAL 92 DAY), @v_kim, @seed_now, @v_kim),
-  (@vi_hist_10, @vr_hist_10, @campus_qn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -80 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -80 DAY), INTERVAL 990 MINUTE), 'WAITING_REQUEST_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 100 DAY), @v_smith, @seed_now, @v_smith),
-  (@vi_hist_11, @vr_hist_11, @campus_hn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -88 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -88 DAY), INTERVAL 990 MINUTE), 'CLOSED', @u_staff_hn, @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 108 DAY), 'MANUAL_APPROVAL', NULL, NULL, NULL, @u_staff_hn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -87 DAY), INTERVAL 600 MINUTE), 'Đã hoàn tất hồ sơ.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 108 DAY), @v_nguyen_no_dau, @seed_now, @u_stafflead_hn),
-  (@vi_hist_12, @vr_hist_12, @campus_hcm, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -96 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -96 DAY), INTERVAL 990 MINUTE), 'AFTER_VISIT', @u_staff_hcm, @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 116 DAY), 'MANUAL_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 116 DAY), @v_lee, @seed_now, @u_stafflead_hcm),
-  (@vi_hist_13, @vr_hist_13, @campus_dn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -104 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -104 DAY), INTERVAL 990 MINUTE), 'WAITING_REQUEST_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 124 DAY), @v_kim, @seed_now, @v_kim),
-  (@vi_hist_14, @vr_hist_14, @campus_ct, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -112 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -112 DAY), INTERVAL 990 MINUTE), 'CANCELLED', @u_staff_ct, @u_stafflead_ct, DATE_SUB(@seed_now, INTERVAL 132 DAY), 'MANUAL_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, @v_smith, DATE_ADD(DATE_SUB(@seed_now, INTERVAL 130 DAY), INTERVAL 1 DAY), 'VISITOR', 'SELF_SERVICE', 'Khách tự hủy chuyến thăm sau khi đơn đã được duyệt.', 0, DATE_SUB(@seed_now, INTERVAL 132 DAY), @v_smith, @seed_now, @v_smith),
-  (@vi_hist_15, @vr_hist_15, @campus_qn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -120 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -120 DAY), INTERVAL 990 MINUTE), 'WAITING_REQUEST_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 140 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
-  (@vi_hist_16, @vr_hist_16, @campus_hn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -128 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -128 DAY), INTERVAL 990 MINUTE), 'AFTER_VISIT', @u_staff_hn, @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 148 DAY), 'MANUAL_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 148 DAY), @v_lee, @seed_now, @u_stafflead_hn),
-  (@vi_hist_17, @vr_hist_17, @campus_hcm, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -136 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -136 DAY), INTERVAL 990 MINUTE), 'CLOSED', @u_staff_hcm, @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 156 DAY), 'MANUAL_APPROVAL', NULL, NULL, NULL, @u_staff_hcm, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -135 DAY), INTERVAL 600 MINUTE), 'Đã hoàn tất hồ sơ.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 156 DAY), @v_kim, @seed_now, @u_stafflead_hcm),
-  (@vi_hist_18, @vr_hist_18, @campus_dn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -144 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -144 DAY), INTERVAL 990 MINUTE), 'WAITING_REQUEST_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 164 DAY), @v_smith, @seed_now, @v_smith),
-  (@vi_hist_19, @vr_hist_19, @campus_ct, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -152 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -152 DAY), INTERVAL 990 MINUTE), 'CANCELLED', @u_staff_ct, @u_stafflead_ct, DATE_SUB(@seed_now, INTERVAL 172 DAY), 'MANUAL_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, @v_nguyen_no_dau, DATE_ADD(DATE_SUB(@seed_now, INTERVAL 170 DAY), INTERVAL 1 DAY), 'VISITOR', 'SELF_SERVICE', 'Khách tự hủy chuyến thăm sau khi đơn đã được duyệt.', 0, DATE_SUB(@seed_now, INTERVAL 172 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
-  (@vi_hist_20, @vr_hist_20, @campus_qn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -160 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -160 DAY), INTERVAL 990 MINUTE), 'WAITING_REQUEST_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 180 DAY), @v_lee, @seed_now, @v_lee),
-  (@vi_hist_21, @vr_hist_21, @campus_hn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -168 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -168 DAY), INTERVAL 990 MINUTE), 'CLOSED', @u_staff_hn, @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 188 DAY), 'MANUAL_APPROVAL', NULL, NULL, NULL, @u_staff_hn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -167 DAY), INTERVAL 600 MINUTE), 'Đã hoàn tất hồ sơ.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 188 DAY), @v_kim, @seed_now, @u_stafflead_hn),
-  (@vi_hist_22, @vr_hist_22, @campus_hcm, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -176 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -176 DAY), INTERVAL 990 MINUTE), 'AFTER_VISIT', @u_staff_hcm, @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 196 DAY), 'MANUAL_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 196 DAY), @v_smith, @seed_now, @u_stafflead_hcm),
-  (@vi_hist_23, @vr_hist_23, @campus_dn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -184 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -184 DAY), INTERVAL 990 MINUTE), 'WAITING_REQUEST_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 204 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
-  (@vi_hist_24, @vr_hist_24, @campus_ct, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -192 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -192 DAY), INTERVAL 990 MINUTE), 'CANCELLED', @u_staff_ct, @u_stafflead_ct, DATE_SUB(@seed_now, INTERVAL 212 DAY), 'MANUAL_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, @v_lee, DATE_ADD(DATE_SUB(@seed_now, INTERVAL 210 DAY), INTERVAL 1 DAY), 'VISITOR', 'SELF_SERVICE', 'Khách tự hủy chuyến thăm sau khi đơn đã được duyệt.', 0, DATE_SUB(@seed_now, INTERVAL 212 DAY), @v_lee, @seed_now, @v_lee),
-  (@vi_hist_25, @vr_hist_25, @campus_qn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -200 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -200 DAY), INTERVAL 990 MINUTE), 'WAITING_REQUEST_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 220 DAY), @v_kim, @seed_now, @v_kim),
-  (@vi_hist_26, @vr_hist_26, @campus_hn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -208 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -208 DAY), INTERVAL 990 MINUTE), 'AFTER_VISIT', @u_staff_hn, @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 228 DAY), 'MANUAL_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 228 DAY), @v_smith, @seed_now, @u_stafflead_hn),
-  (@vi_hist_27, @vr_hist_27, @campus_hcm, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -216 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -216 DAY), INTERVAL 990 MINUTE), 'CLOSED', @u_staff_hcm, @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 236 DAY), 'MANUAL_APPROVAL', NULL, NULL, NULL, @u_staff_hcm, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -215 DAY), INTERVAL 600 MINUTE), 'Đã hoàn tất hồ sơ.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 236 DAY), @v_nguyen_no_dau, @seed_now, @u_stafflead_hcm),
-  (@vi_hist_28, @vr_hist_28, @campus_dn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -224 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -224 DAY), INTERVAL 990 MINUTE), 'WAITING_REQUEST_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 244 DAY), @v_lee, @seed_now, @v_lee),
-  (@vi_hist_29, @vr_hist_29, @campus_ct, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -232 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -232 DAY), INTERVAL 990 MINUTE), 'CANCELLED', @u_staff_ct, @u_stafflead_ct, DATE_SUB(@seed_now, INTERVAL 252 DAY), 'MANUAL_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, @v_kim, DATE_ADD(DATE_SUB(@seed_now, INTERVAL 250 DAY), INTERVAL 1 DAY), 'VISITOR', 'SELF_SERVICE', 'Khách tự hủy chuyến thăm sau khi đơn đã được duyệt.', 0, DATE_SUB(@seed_now, INTERVAL 252 DAY), @v_kim, @seed_now, @v_kim),
-  (@vi_hist_30, @vr_hist_30, @campus_qn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -240 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -240 DAY), INTERVAL 990 MINUTE), 'WAITING_REQUEST_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 260 DAY), @v_smith, @seed_now, @v_smith),
-  (@vi_hist_31, @vr_hist_31, @campus_hn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -248 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -248 DAY), INTERVAL 990 MINUTE), 'CLOSED', @u_staff_hn, @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 268 DAY), 'MANUAL_APPROVAL', NULL, NULL, NULL, @u_staff_hn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -247 DAY), INTERVAL 600 MINUTE), 'Đã hoàn tất hồ sơ.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 268 DAY), @v_nguyen_no_dau, @seed_now, @u_stafflead_hn),
-  (@vi_hist_32, @vr_hist_32, @campus_hcm, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -256 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -256 DAY), INTERVAL 990 MINUTE), 'AFTER_VISIT', @u_staff_hcm, @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 276 DAY), 'MANUAL_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 276 DAY), @v_lee, @seed_now, @u_stafflead_hcm),
-  (@vi_hist_33, @vr_hist_33, @campus_dn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -264 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -264 DAY), INTERVAL 990 MINUTE), 'WAITING_REQUEST_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 284 DAY), @v_kim, @seed_now, @v_kim),
-  (@vi_hist_34, @vr_hist_34, @campus_ct, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -272 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -272 DAY), INTERVAL 990 MINUTE), 'CANCELLED', @u_staff_ct, @u_stafflead_ct, DATE_SUB(@seed_now, INTERVAL 292 DAY), 'MANUAL_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, @v_smith, DATE_ADD(DATE_SUB(@seed_now, INTERVAL 290 DAY), INTERVAL 1 DAY), 'VISITOR', 'SELF_SERVICE', 'Khách tự hủy chuyến thăm sau khi đơn đã được duyệt.', 0, DATE_SUB(@seed_now, INTERVAL 292 DAY), @v_smith, @seed_now, @v_smith),
-  (@vi_hist_35, @vr_hist_35, @campus_qn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -280 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -280 DAY), INTERVAL 990 MINUTE), 'WAITING_REQUEST_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 300 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
-  (@vi_hist_36, @vr_hist_36, @campus_hn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -288 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -288 DAY), INTERVAL 990 MINUTE), 'AFTER_VISIT', @u_staff_hn, @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 308 DAY), 'MANUAL_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 308 DAY), @v_lee, @seed_now, @u_stafflead_hn),
-  (@vi_hist_37, @vr_hist_37, @campus_hcm, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -296 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -296 DAY), INTERVAL 990 MINUTE), 'CLOSED', @u_staff_hcm, @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 316 DAY), 'MANUAL_APPROVAL', NULL, NULL, NULL, @u_staff_hcm, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -295 DAY), INTERVAL 600 MINUTE), 'Đã hoàn tất hồ sơ.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 316 DAY), @v_kim, @seed_now, @u_stafflead_hcm),
-  (@vi_hist_38, @vr_hist_38, @campus_dn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -304 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -304 DAY), INTERVAL 990 MINUTE), 'WAITING_REQUEST_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 324 DAY), @v_smith, @seed_now, @v_smith),
-  (@vi_hist_39, @vr_hist_39, @campus_ct, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -312 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -312 DAY), INTERVAL 990 MINUTE), 'CANCELLED', @u_staff_ct, @u_stafflead_ct, DATE_SUB(@seed_now, INTERVAL 332 DAY), 'MANUAL_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, @v_nguyen_no_dau, DATE_ADD(DATE_SUB(@seed_now, INTERVAL 330 DAY), INTERVAL 1 DAY), 'VISITOR', 'SELF_SERVICE', 'Khách tự hủy chuyến thăm sau khi đơn đã được duyệt.', 0, DATE_SUB(@seed_now, INTERVAL 332 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
-  (@vi_hist_40, @vr_hist_40, @campus_qn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -320 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -320 DAY), INTERVAL 990 MINUTE), 'WAITING_REQUEST_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 340 DAY), @v_lee, @seed_now, @v_lee),
-  (@vi_hist_41, @vr_hist_41, @campus_hn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -328 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -328 DAY), INTERVAL 990 MINUTE), 'CLOSED', @u_staff_hn, @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 348 DAY), 'MANUAL_APPROVAL', NULL, NULL, NULL, @u_staff_hn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -327 DAY), INTERVAL 600 MINUTE), 'Đã hoàn tất hồ sơ.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 348 DAY), @v_kim, @seed_now, @u_stafflead_hn),
-  (@vi_hist_42, @vr_hist_42, @campus_hcm, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -336 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -336 DAY), INTERVAL 990 MINUTE), 'AFTER_VISIT', @u_staff_hcm, @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 356 DAY), 'MANUAL_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 356 DAY), @v_smith, @seed_now, @u_stafflead_hcm),
-  (@vi_hist_43, @vr_hist_43, @campus_dn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -344 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -344 DAY), INTERVAL 990 MINUTE), 'WAITING_REQUEST_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 364 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
-  (@vi_hist_44, @vr_hist_44, @campus_ct, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -352 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -352 DAY), INTERVAL 990 MINUTE), 'CANCELLED', @u_staff_ct, @u_stafflead_ct, DATE_SUB(@seed_now, INTERVAL 372 DAY), 'MANUAL_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, @v_lee, DATE_ADD(DATE_SUB(@seed_now, INTERVAL 370 DAY), INTERVAL 1 DAY), 'VISITOR', 'SELF_SERVICE', 'Khách tự hủy chuyến thăm sau khi đơn đã được duyệt.', 0, DATE_SUB(@seed_now, INTERVAL 372 DAY), @v_lee, @seed_now, @v_lee);
+  (@vi_pending_approval_hcm, @vr_pending_approval_seed, @campus_hcm, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 2 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 2 DAY), INTERVAL 990 MINUTE), 'WAITING_REQUEST_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 17 DAY), @v_pending_approval_seed, @seed_now, @v_pending_approval_seed),
+  (@vi_pa_hn, @vr_pending_approval_multi, @campus_hn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 9 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 9 DAY), INTERVAL 990 MINUTE), 'WAITING_REQUEST_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 24 DAY), @v_pending_approval, @seed_now, @v_pending_approval),
+  (@vi_pa_ct, @vr_pending_approval_multi, @campus_ct, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 9 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 9 DAY), INTERVAL 990 MINUTE), 'WAITING_REQUEST_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 24 DAY), @v_pending_approval, @seed_now, @v_pending_approval),
+  (@vi_as_hn, @vr_approved_single_before, @campus_hn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 14 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 14 DAY), INTERVAL 990 MINUTE), 'BEFORE_VISIT', @u_stafflead_hn, @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 29 DAY), @u_staff_hn, @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 29 DAY), NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 29 DAY), @v_kim, @seed_now, @u_stafflead_hn),
+  (@vi_am_hn, @vr_approved_multi_during, @campus_hn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 0 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 0 DAY), INTERVAL 990 MINUTE), 'DURING_VISIT', @u_stafflead_hn, @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 15 DAY), @u_staff_hn, @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 15 DAY), NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 15 DAY), @v_lee, @seed_now, @u_stafflead_hn),
+  (@vi_am_hcm, @vr_approved_multi_during, @campus_hcm, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 0 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 0 DAY), INTERVAL 990 MINUTE), 'WAITING_HOST_ASSIGNMENT', @u_stafflead_hcm, @u_ho_ha, DATE_SUB(@seed_now, INTERVAL 15 DAY), NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 15 DAY), @v_lee, @seed_now, @u_stafflead_hcm),
+  (@vi_rs_hcm, @vr_rejected_single, @campus_hcm, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 5 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 5 DAY), INTERVAL 990 MINUTE), 'WAITING_REQUEST_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 20 DAY), @v_smith, @seed_now, @v_smith),
+  (@vi_rm_dn, @vr_rejected_multi, @campus_dn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 20 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 20 DAY), INTERVAL 990 MINUTE), 'WAITING_REQUEST_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 35 DAY), @v_tanaka, @seed_now, @v_tanaka),
+  (@vi_rm_ct, @vr_rejected_multi, @campus_ct, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 20 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 20 DAY), INTERVAL 990 MINUTE), 'WAITING_REQUEST_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 35 DAY), @v_tanaka, @seed_now, @v_tanaka),
+  (@vi_cn_hn, @vr_cancelled, @campus_hn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 30 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 30 DAY), INTERVAL 990 MINUTE), 'CANCELLED', @u_stafflead_hn, @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 45 DAY), @u_staff_hn, @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 45 DAY), NULL, NULL, NULL, @v_nguyen_no_dau, DATE_ADD(DATE_SUB(@seed_now, INTERVAL 42 DAY), INTERVAL 1 DAY), 'VISITOR', 'SELF_SERVICE', 'Khách tự hủy chuyến thăm sau khi đơn đã được duyệt.', 0, DATE_SUB(@seed_now, INTERVAL 45 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
+  (@vi_av_ct, @vr_after_visit, @campus_ct, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -2 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -2 DAY), INTERVAL 990 MINUTE), 'AFTER_VISIT', @u_stafflead_ct, @u_stafflead_ct, DATE_SUB(@seed_now, INTERVAL 22 DAY), @u_staff_ct, @u_stafflead_ct, DATE_SUB(@seed_now, INTERVAL 22 DAY), NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 22 DAY), @v_short_name, @seed_now, @u_stafflead_ct),
+  (@vi_cl_hn, @vr_closed, @campus_hn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -30 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -30 DAY), INTERVAL 990 MINUTE), 'CLOSED', @u_stafflead_hn, @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 50 DAY), @u_staff_hn, @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 50 DAY), @u_staff_hn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -29 DAY), INTERVAL 600 MINUTE), 'Đã hoàn tất hồ sơ.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 50 DAY), @v_long_name, @seed_now, @u_stafflead_hn),
+  (@vi_ci_hcm, @vr_cancelled_instance, @campus_hcm, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 25 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 25 DAY), INTERVAL 990 MINUTE), 'BEFORE_VISIT', @u_stafflead_hcm, @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 2 DAY), @u_staff_hcm, @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 2 DAY), NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 40 DAY), @v_smith, @seed_now, @u_staff_hcm),
+  (@vi_ci_hn, @vr_cancelled_instance, @campus_hn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 25 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 25 DAY), INTERVAL 990 MINUTE), 'CANCELLED', @u_stafflead_hn, @u_ho_ha, DATE_SUB(@seed_now, INTERVAL 40 DAY), @u_staff_hn, @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 40 DAY), NULL, NULL, NULL, @u_staff_hn, DATE_SUB(@seed_now, INTERVAL 2 DAY), 'HOST', 'EXTERNAL_CONFIRMATION', 'Khách xác nhận ngoài hệ thống rằng campus này không còn tham gia lịch trình.', 0, DATE_SUB(@seed_now, INTERVAL 40 DAY), @v_smith, @seed_now, @v_smith),
+  (@vi_ao_dn, @vr_assigned_only, @campus_dn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 11 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL 11 DAY), INTERVAL 990 MINUTE), 'ASSIGNED', @u_stafflead_dn, @u_stafflead_dn, DATE_SUB(@seed_now, INTERVAL 26 DAY), @u_staff_dn, @u_stafflead_dn, DATE_SUB(@seed_now, INTERVAL 26 DAY), NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 26 DAY), @v_lee, @seed_now, @u_stafflead_dn),
+  (@vi_hist_01, @vr_hist_01, @campus_hn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -8 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -8 DAY), INTERVAL 990 MINUTE), 'CLOSED', @u_stafflead_hn, @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 28 DAY), @u_staff_hn, @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 28 DAY), @u_staff_hn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -7 DAY), INTERVAL 600 MINUTE), 'Đã hoàn tất hồ sơ.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 28 DAY), @v_kim, @seed_now, @u_stafflead_hn),
+  (@vi_hist_02, @vr_hist_02, @campus_hcm, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -16 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -16 DAY), INTERVAL 990 MINUTE), 'AFTER_VISIT', @u_stafflead_hcm, @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 36 DAY), @u_staff_hcm, @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 36 DAY), NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 36 DAY), @v_smith, @seed_now, @u_stafflead_hcm),
+  (@vi_hist_03, @vr_hist_03, @campus_dn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -24 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -24 DAY), INTERVAL 990 MINUTE), 'WAITING_REQUEST_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 44 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
+  (@vi_hist_04, @vr_hist_04, @campus_ct, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -32 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -32 DAY), INTERVAL 990 MINUTE), 'CANCELLED', @u_stafflead_ct, @u_stafflead_ct, DATE_SUB(@seed_now, INTERVAL 52 DAY), @u_staff_ct, @u_stafflead_ct, DATE_SUB(@seed_now, INTERVAL 52 DAY), NULL, NULL, NULL, @v_lee, DATE_ADD(DATE_SUB(@seed_now, INTERVAL 50 DAY), INTERVAL 1 DAY), 'VISITOR', 'SELF_SERVICE', 'Khách tự hủy chuyến thăm sau khi đơn đã được duyệt.', 0, DATE_SUB(@seed_now, INTERVAL 52 DAY), @v_lee, @seed_now, @v_lee),
+  (@vi_hist_05, @vr_hist_05, @campus_qn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -40 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -40 DAY), INTERVAL 990 MINUTE), 'WAITING_REQUEST_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 60 DAY), @v_kim, @seed_now, @v_kim),
+  (@vi_hist_06, @vr_hist_06, @campus_hn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -48 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -48 DAY), INTERVAL 990 MINUTE), 'AFTER_VISIT', @u_stafflead_hn, @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 68 DAY), @u_staff_hn, @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 68 DAY), NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 68 DAY), @v_smith, @seed_now, @u_stafflead_hn),
+  (@vi_hist_07, @vr_hist_07, @campus_hcm, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -56 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -56 DAY), INTERVAL 990 MINUTE), 'CLOSED', @u_stafflead_hcm, @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 76 DAY), @u_staff_hcm, @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 76 DAY), @u_staff_hcm, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -55 DAY), INTERVAL 600 MINUTE), 'Đã hoàn tất hồ sơ.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 76 DAY), @v_nguyen_no_dau, @seed_now, @u_stafflead_hcm),
+  (@vi_hist_08, @vr_hist_08, @campus_dn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -64 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -64 DAY), INTERVAL 990 MINUTE), 'WAITING_REQUEST_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 84 DAY), @v_lee, @seed_now, @v_lee),
+  (@vi_hist_09, @vr_hist_09, @campus_ct, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -72 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -72 DAY), INTERVAL 990 MINUTE), 'CANCELLED', @u_stafflead_ct, @u_stafflead_ct, DATE_SUB(@seed_now, INTERVAL 92 DAY), @u_staff_ct, @u_stafflead_ct, DATE_SUB(@seed_now, INTERVAL 92 DAY), NULL, NULL, NULL, @v_kim, DATE_ADD(DATE_SUB(@seed_now, INTERVAL 90 DAY), INTERVAL 1 DAY), 'VISITOR', 'SELF_SERVICE', 'Khách tự hủy chuyến thăm sau khi đơn đã được duyệt.', 0, DATE_SUB(@seed_now, INTERVAL 92 DAY), @v_kim, @seed_now, @v_kim),
+  (@vi_hist_10, @vr_hist_10, @campus_qn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -80 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -80 DAY), INTERVAL 990 MINUTE), 'WAITING_REQUEST_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 100 DAY), @v_smith, @seed_now, @v_smith),
+  (@vi_hist_11, @vr_hist_11, @campus_hn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -88 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -88 DAY), INTERVAL 990 MINUTE), 'CLOSED', @u_stafflead_hn, @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 108 DAY), @u_staff_hn, @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 108 DAY), @u_staff_hn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -87 DAY), INTERVAL 600 MINUTE), 'Đã hoàn tất hồ sơ.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 108 DAY), @v_nguyen_no_dau, @seed_now, @u_stafflead_hn),
+  (@vi_hist_12, @vr_hist_12, @campus_hcm, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -96 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -96 DAY), INTERVAL 990 MINUTE), 'AFTER_VISIT', @u_stafflead_hcm, @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 116 DAY), @u_staff_hcm, @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 116 DAY), NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 116 DAY), @v_lee, @seed_now, @u_stafflead_hcm),
+  (@vi_hist_13, @vr_hist_13, @campus_dn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -104 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -104 DAY), INTERVAL 990 MINUTE), 'WAITING_REQUEST_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 124 DAY), @v_kim, @seed_now, @v_kim),
+  (@vi_hist_14, @vr_hist_14, @campus_ct, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -112 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -112 DAY), INTERVAL 990 MINUTE), 'CANCELLED', @u_stafflead_ct, @u_stafflead_ct, DATE_SUB(@seed_now, INTERVAL 132 DAY), @u_staff_ct, @u_stafflead_ct, DATE_SUB(@seed_now, INTERVAL 132 DAY), NULL, NULL, NULL, @v_smith, DATE_ADD(DATE_SUB(@seed_now, INTERVAL 130 DAY), INTERVAL 1 DAY), 'VISITOR', 'SELF_SERVICE', 'Khách tự hủy chuyến thăm sau khi đơn đã được duyệt.', 0, DATE_SUB(@seed_now, INTERVAL 132 DAY), @v_smith, @seed_now, @v_smith),
+  (@vi_hist_15, @vr_hist_15, @campus_qn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -120 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -120 DAY), INTERVAL 990 MINUTE), 'WAITING_REQUEST_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 140 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
+  (@vi_hist_16, @vr_hist_16, @campus_hn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -128 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -128 DAY), INTERVAL 990 MINUTE), 'AFTER_VISIT', @u_stafflead_hn, @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 148 DAY), @u_staff_hn, @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 148 DAY), NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 148 DAY), @v_lee, @seed_now, @u_stafflead_hn),
+  (@vi_hist_17, @vr_hist_17, @campus_hcm, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -136 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -136 DAY), INTERVAL 990 MINUTE), 'CLOSED', @u_stafflead_hcm, @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 156 DAY), @u_staff_hcm, @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 156 DAY), @u_staff_hcm, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -135 DAY), INTERVAL 600 MINUTE), 'Đã hoàn tất hồ sơ.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 156 DAY), @v_kim, @seed_now, @u_stafflead_hcm),
+  (@vi_hist_18, @vr_hist_18, @campus_dn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -144 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -144 DAY), INTERVAL 990 MINUTE), 'WAITING_REQUEST_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 164 DAY), @v_smith, @seed_now, @v_smith),
+  (@vi_hist_19, @vr_hist_19, @campus_ct, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -152 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -152 DAY), INTERVAL 990 MINUTE), 'CANCELLED', @u_stafflead_ct, @u_stafflead_ct, DATE_SUB(@seed_now, INTERVAL 172 DAY), @u_staff_ct, @u_stafflead_ct, DATE_SUB(@seed_now, INTERVAL 172 DAY), NULL, NULL, NULL, @v_nguyen_no_dau, DATE_ADD(DATE_SUB(@seed_now, INTERVAL 170 DAY), INTERVAL 1 DAY), 'VISITOR', 'SELF_SERVICE', 'Khách tự hủy chuyến thăm sau khi đơn đã được duyệt.', 0, DATE_SUB(@seed_now, INTERVAL 172 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
+  (@vi_hist_20, @vr_hist_20, @campus_qn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -160 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -160 DAY), INTERVAL 990 MINUTE), 'WAITING_REQUEST_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 180 DAY), @v_lee, @seed_now, @v_lee),
+  (@vi_hist_21, @vr_hist_21, @campus_hn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -168 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -168 DAY), INTERVAL 990 MINUTE), 'CLOSED', @u_stafflead_hn, @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 188 DAY), @u_staff_hn, @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 188 DAY), @u_staff_hn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -167 DAY), INTERVAL 600 MINUTE), 'Đã hoàn tất hồ sơ.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 188 DAY), @v_kim, @seed_now, @u_stafflead_hn),
+  (@vi_hist_22, @vr_hist_22, @campus_hcm, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -176 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -176 DAY), INTERVAL 990 MINUTE), 'AFTER_VISIT', @u_stafflead_hcm, @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 196 DAY), @u_staff_hcm, @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 196 DAY), NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 196 DAY), @v_smith, @seed_now, @u_stafflead_hcm),
+  (@vi_hist_23, @vr_hist_23, @campus_dn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -184 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -184 DAY), INTERVAL 990 MINUTE), 'WAITING_REQUEST_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 204 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
+  (@vi_hist_24, @vr_hist_24, @campus_ct, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -192 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -192 DAY), INTERVAL 990 MINUTE), 'CANCELLED', @u_stafflead_ct, @u_stafflead_ct, DATE_SUB(@seed_now, INTERVAL 212 DAY), @u_staff_ct, @u_stafflead_ct, DATE_SUB(@seed_now, INTERVAL 212 DAY), NULL, NULL, NULL, @v_lee, DATE_ADD(DATE_SUB(@seed_now, INTERVAL 210 DAY), INTERVAL 1 DAY), 'VISITOR', 'SELF_SERVICE', 'Khách tự hủy chuyến thăm sau khi đơn đã được duyệt.', 0, DATE_SUB(@seed_now, INTERVAL 212 DAY), @v_lee, @seed_now, @v_lee),
+  (@vi_hist_25, @vr_hist_25, @campus_qn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -200 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -200 DAY), INTERVAL 990 MINUTE), 'WAITING_REQUEST_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 220 DAY), @v_kim, @seed_now, @v_kim),
+  (@vi_hist_26, @vr_hist_26, @campus_hn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -208 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -208 DAY), INTERVAL 990 MINUTE), 'AFTER_VISIT', @u_stafflead_hn, @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 228 DAY), @u_staff_hn, @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 228 DAY), NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 228 DAY), @v_smith, @seed_now, @u_stafflead_hn),
+  (@vi_hist_27, @vr_hist_27, @campus_hcm, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -216 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -216 DAY), INTERVAL 990 MINUTE), 'CLOSED', @u_stafflead_hcm, @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 236 DAY), @u_staff_hcm, @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 236 DAY), @u_staff_hcm, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -215 DAY), INTERVAL 600 MINUTE), 'Đã hoàn tất hồ sơ.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 236 DAY), @v_nguyen_no_dau, @seed_now, @u_stafflead_hcm),
+  (@vi_hist_28, @vr_hist_28, @campus_dn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -224 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -224 DAY), INTERVAL 990 MINUTE), 'WAITING_REQUEST_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 244 DAY), @v_lee, @seed_now, @v_lee),
+  (@vi_hist_29, @vr_hist_29, @campus_ct, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -232 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -232 DAY), INTERVAL 990 MINUTE), 'CANCELLED', @u_stafflead_ct, @u_stafflead_ct, DATE_SUB(@seed_now, INTERVAL 252 DAY), @u_staff_ct, @u_stafflead_ct, DATE_SUB(@seed_now, INTERVAL 252 DAY), NULL, NULL, NULL, @v_kim, DATE_ADD(DATE_SUB(@seed_now, INTERVAL 250 DAY), INTERVAL 1 DAY), 'VISITOR', 'SELF_SERVICE', 'Khách tự hủy chuyến thăm sau khi đơn đã được duyệt.', 0, DATE_SUB(@seed_now, INTERVAL 252 DAY), @v_kim, @seed_now, @v_kim),
+  (@vi_hist_30, @vr_hist_30, @campus_qn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -240 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -240 DAY), INTERVAL 990 MINUTE), 'WAITING_REQUEST_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 260 DAY), @v_smith, @seed_now, @v_smith),
+  (@vi_hist_31, @vr_hist_31, @campus_hn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -248 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -248 DAY), INTERVAL 990 MINUTE), 'CLOSED', @u_stafflead_hn, @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 268 DAY), @u_staff_hn, @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 268 DAY), @u_staff_hn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -247 DAY), INTERVAL 600 MINUTE), 'Đã hoàn tất hồ sơ.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 268 DAY), @v_nguyen_no_dau, @seed_now, @u_stafflead_hn),
+  (@vi_hist_32, @vr_hist_32, @campus_hcm, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -256 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -256 DAY), INTERVAL 990 MINUTE), 'AFTER_VISIT', @u_stafflead_hcm, @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 276 DAY), @u_staff_hcm, @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 276 DAY), NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 276 DAY), @v_lee, @seed_now, @u_stafflead_hcm),
+  (@vi_hist_33, @vr_hist_33, @campus_dn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -264 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -264 DAY), INTERVAL 990 MINUTE), 'WAITING_REQUEST_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 284 DAY), @v_kim, @seed_now, @v_kim),
+  (@vi_hist_34, @vr_hist_34, @campus_ct, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -272 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -272 DAY), INTERVAL 990 MINUTE), 'CANCELLED', @u_stafflead_ct, @u_stafflead_ct, DATE_SUB(@seed_now, INTERVAL 292 DAY), @u_staff_ct, @u_stafflead_ct, DATE_SUB(@seed_now, INTERVAL 292 DAY), NULL, NULL, NULL, @v_smith, DATE_ADD(DATE_SUB(@seed_now, INTERVAL 290 DAY), INTERVAL 1 DAY), 'VISITOR', 'SELF_SERVICE', 'Khách tự hủy chuyến thăm sau khi đơn đã được duyệt.', 0, DATE_SUB(@seed_now, INTERVAL 292 DAY), @v_smith, @seed_now, @v_smith),
+  (@vi_hist_35, @vr_hist_35, @campus_qn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -280 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -280 DAY), INTERVAL 990 MINUTE), 'WAITING_REQUEST_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 300 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
+  (@vi_hist_36, @vr_hist_36, @campus_hn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -288 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -288 DAY), INTERVAL 990 MINUTE), 'AFTER_VISIT', @u_stafflead_hn, @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 308 DAY), @u_staff_hn, @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 308 DAY), NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 308 DAY), @v_lee, @seed_now, @u_stafflead_hn),
+  (@vi_hist_37, @vr_hist_37, @campus_hcm, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -296 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -296 DAY), INTERVAL 990 MINUTE), 'CLOSED', @u_stafflead_hcm, @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 316 DAY), @u_staff_hcm, @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 316 DAY), @u_staff_hcm, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -295 DAY), INTERVAL 600 MINUTE), 'Đã hoàn tất hồ sơ.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 316 DAY), @v_kim, @seed_now, @u_stafflead_hcm),
+  (@vi_hist_38, @vr_hist_38, @campus_dn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -304 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -304 DAY), INTERVAL 990 MINUTE), 'WAITING_REQUEST_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 324 DAY), @v_smith, @seed_now, @v_smith),
+  (@vi_hist_39, @vr_hist_39, @campus_ct, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -312 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -312 DAY), INTERVAL 990 MINUTE), 'CANCELLED', @u_stafflead_ct, @u_stafflead_ct, DATE_SUB(@seed_now, INTERVAL 332 DAY), @u_staff_ct, @u_stafflead_ct, DATE_SUB(@seed_now, INTERVAL 332 DAY), NULL, NULL, NULL, @v_nguyen_no_dau, DATE_ADD(DATE_SUB(@seed_now, INTERVAL 330 DAY), INTERVAL 1 DAY), 'VISITOR', 'SELF_SERVICE', 'Khách tự hủy chuyến thăm sau khi đơn đã được duyệt.', 0, DATE_SUB(@seed_now, INTERVAL 332 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
+  (@vi_hist_40, @vr_hist_40, @campus_qn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -320 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -320 DAY), INTERVAL 990 MINUTE), 'WAITING_REQUEST_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 340 DAY), @v_lee, @seed_now, @v_lee),
+  (@vi_hist_41, @vr_hist_41, @campus_hn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -328 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -328 DAY), INTERVAL 990 MINUTE), 'CLOSED', @u_stafflead_hn, @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 348 DAY), @u_staff_hn, @u_stafflead_hn, DATE_SUB(@seed_now, INTERVAL 348 DAY), @u_staff_hn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -327 DAY), INTERVAL 600 MINUTE), 'Đã hoàn tất hồ sơ.', NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 348 DAY), @v_kim, @seed_now, @u_stafflead_hn),
+  (@vi_hist_42, @vr_hist_42, @campus_hcm, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -336 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -336 DAY), INTERVAL 990 MINUTE), 'AFTER_VISIT', @u_stafflead_hcm, @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 356 DAY), @u_staff_hcm, @u_stafflead_hcm, DATE_SUB(@seed_now, INTERVAL 356 DAY), NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 356 DAY), @v_smith, @seed_now, @u_stafflead_hcm),
+  (@vi_hist_43, @vr_hist_43, @campus_dn, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -344 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -344 DAY), INTERVAL 990 MINUTE), 'WAITING_REQUEST_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, DATE_SUB(@seed_now, INTERVAL 364 DAY), @v_nguyen_no_dau, @seed_now, @v_nguyen_no_dau),
+  (@vi_hist_44, @vr_hist_44, @campus_ct, DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -352 DAY), INTERVAL 540 MINUTE), DATE_ADD(DATE_ADD(DATE(@seed_now), INTERVAL -352 DAY), INTERVAL 990 MINUTE), 'CANCELLED', @u_stafflead_ct, @u_stafflead_ct, DATE_SUB(@seed_now, INTERVAL 372 DAY), @u_staff_ct, @u_stafflead_ct, DATE_SUB(@seed_now, INTERVAL 372 DAY), NULL, NULL, NULL, @v_lee, DATE_ADD(DATE_SUB(@seed_now, INTERVAL 370 DAY), INTERVAL 1 DAY), 'VISITOR', 'SELF_SERVICE', 'Khách tự hủy chuyến thăm sau khi đơn đã được duyệt.', 0, DATE_SUB(@seed_now, INTERVAL 372 DAY), @v_lee, @seed_now, @v_lee);
 
 INSERT INTO visit_guest_members (guest_member_id, visit_request_id, member_type, full_name, organization, job_title, nationality, display_order, created_at, created_by, updated_at, updated_by)
 VALUES
@@ -4426,7 +3752,7 @@ SET @img_hidden = 100227;
 INSERT INTO galleries (gallery_id, campus_id, area_name, specific_location_name, location_description, title, description, story_content, status, visibility, created_at, created_by, updated_at, updated_by, deleted_at, deleted_by)
 VALUES
   (@gal_public, @campus_hn, 'Sảnh Alpha', 'Sảnh Alpha', 'Không gian đón tiếp chính tại campus Hà Nội.', 'Sảnh Alpha', 'Không gian đón tiếp chính tại campus Hà Nội.', 'Sảnh Alpha là điểm chạm đầu tiên của nhiều đoàn khách khi đến FPT University, thể hiện tinh thần cởi mở và kết nối quốc tế.', 'PUBLISHED', 'PUBLIC', DATE_SUB(@seed_now, INTERVAL 27 DAY), @u_stafflead_hn, @seed_now, @u_stafflead_hn, NULL, NULL),
-  (@gal_internal, @campus_hcm, 'Green Lab', 'Green Lab', 'Không gian lab phục vụ hoạt động học tập và trải nghiệm công nghệ.', 'Green Lab', 'Không gian lab phục vụ hoạt động học tập và trải nghiệm công nghệ.', 'Green Lab thể hiện định hướng học qua trải nghiệm, đổi mới sáng tạo và phát triển bền vững tại campus.', 'DRAFT', 'INTERNAL', DATE_SUB(@seed_now, INTERVAL 3 DAY), @u_stafflead_hcm, NULL, NULL, NULL, NULL),
+  (@gal_internal, @campus_hcm, 'Green Lab', 'Green Lab', 'Không gian lab phục vụ hoạt động học tập và trải nghiệm công nghệ.', 'Green Lab', 'Không gian lab phục vụ hoạt động học tập và trải nghiệm công nghệ.', 'Green Lab thể hiện định hướng học qua trải nghiệm, đổi mới sáng tạo và phát triển bền vững tại campus.', 'HIDDEN', 'INTERNAL', DATE_SUB(@seed_now, INTERVAL 3 DAY), @u_stafflead_hcm, NULL, NULL, NULL, NULL),
   (@gal_hidden, @campus_hn, 'Phòng briefing', 'Phòng briefing', 'Không gian chuẩn bị và trao đổi nhanh trước buổi làm việc.', 'Phòng briefing', 'Không gian chuẩn bị và trao đổi nhanh trước buổi làm việc.', 'Đây là nơi host và team hỗ trợ thống nhất lịch trình, thông tin đoàn và các lưu ý trước khi tiếp đón.', 'HIDDEN', 'PRIVATE', DATE_SUB(@seed_now, INTERVAL 8 DAY), @u_stafflead_hn, @seed_now, @u_stafflead_hn, NULL, NULL);
 
 INSERT INTO gallery_images (image_id, gallery_id, file_id, caption, display_order, taken_at, status, created_at, created_by, updated_at, updated_by, deleted_at, deleted_by)
@@ -4603,27 +3929,12 @@ SELECT audit_log_id, 'status', NULL, action, created_at
 FROM audit_logs;
 
 
-INSERT INTO visit_status_logs (visit_request_id, visit_instance_id, status_owner_type, old_status, new_status, changed_by, reason, changed_at)
-VALUES
-  (@vr_pending_approval_seed, @vi_pending_approval_hcm, 'REQUEST', NULL, 'PENDING_APPROVAL', @v_pending_approval_seed, 'Visitor submitted single-campus request; waiting Staff Leader approval.', DATE_SUB(@seed_now, INTERVAL 17 DAY)),
-  (@vr_pending_approval_multi, @vi_pa_hn, 'REQUEST', NULL, 'PENDING_APPROVAL', @v_pending_approval, 'Visitor submitted multi-campus request; waiting HO approval.', DATE_SUB(@seed_now, INTERVAL 24 DAY)),
-  (@vr_approved_single_before, @vi_as_hn, 'REQUEST', 'PENDING_APPROVAL', 'APPROVED', @u_stafflead_hn, 'Staff Leader approved single-campus request and selected official Host.', DATE_SUB(@seed_now, INTERVAL 26 DAY)),
-  (@vr_approved_single_before, @vi_as_hn, 'CAMPUS_INSTANCE', 'WAITING_REQUEST_APPROVAL', 'BEFORE_VISIT', @u_staff_hn, 'Official Host started preparation.', DATE_SUB(@seed_now, INTERVAL 7 DAY)),
-  (@vr_approved_multi_during, @vi_am_hn, 'REQUEST', 'PENDING_APPROVAL', 'APPROVED', @u_ho_ha, 'HO approved multi-campus request.', DATE_SUB(@seed_now, INTERVAL 12 DAY)),
-  (@vr_approved_multi_during, @vi_am_hn, 'CAMPUS_INSTANCE', 'ASSIGNED', 'DURING_VISIT', @u_staff_hn, 'Official Host started the Hà Nội visit instance.', DATE_SUB(@seed_now, INTERVAL 1 HOUR)),
-  (@vr_rejected_single, @vi_rs_hcm, 'REQUEST', 'PENDING_APPROVAL', 'REJECTED', @u_stafflead_hcm, 'Staff Leader rejected single-campus request.', DATE_SUB(@seed_now, INTERVAL 17 DAY)),
-  (@vr_rejected_multi, @vi_rm_dn, 'REQUEST', 'PENDING_APPROVAL', 'REJECTED', @u_ho_linh, 'HO rejected multi-campus request.', DATE_SUB(@seed_now, INTERVAL 32 DAY)),
-  (@vr_cancelled, @vi_cn_hn, 'REQUEST', 'APPROVED', 'CANCELLED', @v_nguyen_no_dau, 'Visitor cancelled approved delegation through self-service.', DATE_SUB(@seed_now, INTERVAL 41 DAY)),
-  (@vr_after_visit, @vi_av_ct, 'CAMPUS_INSTANCE', 'DURING_VISIT', 'AFTER_VISIT', @u_staff_ct, 'Visit finished; Host is preparing minutes and feedback.', DATE_SUB(@seed_now, INTERVAL 1 DAY)),
-  (@vr_closed, @vi_cl_hn, 'CAMPUS_INSTANCE', 'AFTER_VISIT', 'CLOSED', @u_staff_hn, 'Closed after minutes, documents and feedback.', DATE_SUB(@seed_now, INTERVAL 28 DAY)),
-  (@vr_assigned_only, @vi_ao_dn, 'CAMPUS_INSTANCE', 'WAITING_REQUEST_APPROVAL', 'ASSIGNED', @u_stafflead_dn, 'Staff Leader approved and assigned official Host.', DATE_SUB(@seed_now, INTERVAL 23 DAY));
-
 
 -- =====================================================================
 -- SEED LOGIC FIX v8.3 - canonical visit state cleanup
 -- Không sửa bảng/schema. Block này chỉ chuẩn hóa seed để khớp nghiệp vụ:
 --   + Host chính thức là STAFF/STAFF, không phải Staff Leader.
---   + Staff Leader trong MULTI_CAMPUS ASSIGNED là người nhận tạm để chọn Host.
+--   + Staff Leader trong MULTI_CAMPUS được lưu tại coordinator_user_id để chọn Host chính thức.
 --   + Tab "Lời mời tham dự" dùng visit_participants.status.
 --   + Department Staff chỉ có nhiệm vụ được giao bởi Department Leader.
 --   + Không để logistics gắn vào request bị REJECTED hoặc lệch campus/phòng ban.
@@ -4673,13 +3984,7 @@ WHERE email IN (
 )
 ORDER BY email;
 
--- RBAC quick check: expected effective-role buckets are ADMIN/NONE, HO/NONE,
--- STAFF/Leader, STAFF/Staff, DEPARTMENT/Leader, DEPARTMENT/Staff, STUDENT/NONE, VISITOR/NONE.
-SELECT r.role_code, rp.sub_role, COUNT(*) AS total_permissions
-FROM role_permissions rp
-JOIN roles r ON r.role_id = rp.role_id
-GROUP BY r.role_code, rp.sub_role
-ORDER BY r.role_code, rp.sub_role;
+-- Effective role quick check is now handled by backend/frontend fixed policy code.
 
 -- SET SQL_SAFE_UPDATES = @OLD_SQL_SAFE_UPDATES; -- moved to end by SAFE_UPDATES_FIXED
 
@@ -4688,8 +3993,6 @@ ORDER BY r.role_code, rp.sub_role;
 -- =====================================================================
 SELECT 'PEMS v4.5 high-quality scenario seed completed' AS message, @seed_now AS seed_runtime;
 SELECT 'users' table_name, COUNT(*) row_count FROM users
-UNION ALL SELECT 'permissions', COUNT(*) FROM permissions
-UNION ALL SELECT 'role_permissions', COUNT(*) FROM role_permissions
 UNION ALL SELECT 'partners', COUNT(*) FROM partners
 UNION ALL SELECT 'visit_requests', COUNT(*) FROM visit_requests
 UNION ALL SELECT 'visit_request_campuses', COUNT(*) FROM visit_request_campuses
@@ -4711,8 +4014,8 @@ SELECT DATE_FORMAT(submitted_at, '%Y-%m') submitted_month, status, COUNT(*) tota
 --
 -- Purpose:
 -- - Re-apply canonical manual seed files after the full scenario seed.
--- - Keep RBAC, dev accounts, campuses, departments and permissions aligned
---   with Permission Matrix v0.2.
+-- - Keep fixed roles, dev accounts, campuses and departments aligned.
+-- - DB-backed permissions/permission matrix are intentionally removed.
 -- - This block is idempotent and safe for local/dev reruns.
 --
 -- Important:
@@ -4731,22 +4034,22 @@ SELECT DATE_FORMAT(submitted_at, '%Y-%m') submitted_month, status, COUNT(*) tota
 
 -- =====================================================================
 -- PEMS — Roles seed (idempotent)
--- Run AFTER pems_full.sql and BEFORE permissions/permission_matrix/dev_accounts.
+-- Run AFTER pems_full.sql and BEFORE dev_accounts.
 -- =====================================================================
-USE pems_db;
+USE pems_db_test_no_permissions;
 
 START TRANSACTION;
 
-INSERT IGNORE INTO roles (role_id, role_code, name, description, status, created_at, deleted_at, deleted_by)
+INSERT IGNORE INTO roles (role_id, role_code, name, description, status, created_at)
 VALUES
-  (NULL, 'ADMIN',   'Admin',       'Quản trị kỹ thuật hệ thống', 'ACTIVE', NOW(), NULL, NULL),
-  (NULL, 'HO',      'Head Office', 'Quản lý cấp Head Office', 'ACTIVE', NOW(), NULL, NULL),
-  (NULL, 'STAFF',   'IC Staff',    'Nhân sự phòng Hợp tác Quốc tế, dùng users.sub_role = LEADER/STAFF', 'ACTIVE', NOW(), NULL, NULL),
-  (NULL, 'DEPARTMENT',    'Department',  'Nhân sự phòng ban khác, dùng users.sub_role = LEADER/STAFF', 'ACTIVE', NOW(), NULL, NULL),
-  (NULL, 'STUDENT', 'Student',     'Sinh viên hỗ trợ', 'ACTIVE', NOW(), NULL, NULL),
-  (NULL, 'VISITOR', 'Visitor',     'Khách gửi visit request và theo dõi thông tin của mình', 'ACTIVE', NOW(), NULL, NULL);
+  (NULL, 'ADMIN',   'Admin',       'Quản trị kỹ thuật hệ thống', 'ACTIVE', NOW()),
+  (NULL, 'HO',      'Head Office', 'Quản lý cấp Head Office', 'ACTIVE', NOW()),
+  (NULL, 'STAFF',   'IC Staff',    'Nhân sự phòng Hợp tác Quốc tế, dùng users.sub_role = LEADER/STAFF', 'ACTIVE', NOW()),
+  (NULL, 'DEPARTMENT',    'Department',  'Nhân sự phòng ban khác, dùng users.sub_role = LEADER/STAFF', 'ACTIVE', NOW()),
+  (NULL, 'STUDENT', 'Student',     'Sinh viên hỗ trợ', 'ACTIVE', NOW()),
+  (NULL, 'VISITOR', 'Visitor',     'Khách gửi visit request và theo dõi thông tin của mình', 'ACTIVE', NOW());
 
-SELECT role_code, name, status, deleted_at
+SELECT role_code, name, status
 FROM roles
 WHERE role_code IN ('ADMIN','HO','STAFF','DEPARTMENT','STUDENT','VISITOR')
 ORDER BY FIELD(role_code, 'ADMIN','HO','STAFF','DEPARTMENT','STUDENT','VISITOR');
@@ -4763,7 +4066,7 @@ COMMIT;
 -- PEMS — Campuses seed (idempotent)
 -- Seeds 5 FPT campuses only. Run before departments.sql and dev_accounts.sql.
 -- =====================================================================
-USE pems_db;
+USE pems_db_test_no_permissions;
 
 START TRANSACTION;
 
@@ -4797,7 +4100,7 @@ COMMIT;
 --   before duplicate-key handling. Therefore existing rows are updated first,
 --   then only missing rows are inserted.
 -- =====================================================================
-USE pems_db;
+USE pems_db_test_no_permissions;
 
 START TRANSACTION;
 
@@ -4868,691 +4171,7 @@ COMMIT;
 -- <<< END departments.sql
 
 
--- >>> BEGIN permissions.sql
-
--- =====================================================================
--- PEMS — Permissions seed from docs/permissions/PERMISSION_MATRIX.md v0.2
--- Idempotent: permission_code is unique, so rerun updates name/group/description.
--- Run AFTER roles.sql and BEFORE permission_matrix.sql.
--- =====================================================================
-USE pems_db;
-
-START TRANSACTION;
-
-INSERT IGNORE INTO permissions
-  (permission_id, permission_code, name, permission_group, description, is_system, created_at)
-VALUES
-  (NULL, 'UC-01.VIEW_HOMEPAGE', 'UC-01 - View Homepage', 'Common', 'Seeded from Permission Matrix v0.2: View Homepage', TRUE, NOW()),
-  (NULL, 'UC-02.SEARCH_INFORMATION', 'UC-02 - Search Information', 'Common', 'Seeded from Permission Matrix v0.2: Search Information', TRUE, NOW()),
-  (NULL, 'UC-03.VIEW_CONTACT_INFO', 'UC-03 - View Contact Info', 'Common', 'Seeded from Permission Matrix v0.2: View Contact Info', TRUE, NOW()),
-  (NULL, 'UC-04.VIEW_POLICY_AND_TERMS', 'UC-04 - View Policy & Terms', 'Common', 'Seeded from Permission Matrix v0.2: View Policy & Terms', TRUE, NOW()),
-  (NULL, 'UC-05.VIEW_FAQ', 'UC-05 - View FAQ', 'Common', 'Seeded from Permission Matrix v0.2: View FAQ', TRUE, NOW()),
-  (NULL, 'UC-06.VIEW_NEWS', 'UC-06 - View News', 'Common', 'Seeded from Permission Matrix v0.2: View News', TRUE, NOW()),
-  (NULL, 'UC-07.VIEW_PARTNERS', 'UC-07 - View Partners', 'Common', 'Seeded from Permission Matrix v0.2: View Partners', TRUE, NOW()),
-  (NULL, 'UC-08.VIEW_GALLERY', 'UC-08 - View Gallery', 'Common', 'Seeded from Permission Matrix v0.2: View Gallery', TRUE, NOW()),
-  (NULL, 'UC-09.VIEW_NOTIFICATIONS', 'UC-09 - View Notifications', 'Common', 'Seeded from Permission Matrix v0.2: View Notifications', TRUE, NOW()),
-  (NULL, 'UC-10.LOGIN_VIA_SSO', 'UC-10 - Login via SSO', 'Authentication', 'Seeded from Permission Matrix v0.2: Login via SSO', TRUE, NOW()),
-  (NULL, 'UC-11.LOGIN_VIA_CREDENTIALS', 'UC-11 - Login via Credentials', 'Authentication', 'Seeded from Permission Matrix v0.2: Login via Credentials', TRUE, NOW()),
-  (NULL, 'UC-12.LOGOUT', 'UC-12 - Logout', 'Authentication', 'Seeded from Permission Matrix v0.2: Logout', TRUE, NOW()),
-  (NULL, 'UC-13.FORGOT_PASSWORD', 'UC-13 - Forgot Password', 'Authentication', 'Seeded from Permission Matrix v0.2: Forgot Password', TRUE, NOW()),
-  (NULL, 'UC-14.VIEW_PROFILE', 'UC-14 - View Profile', 'Profile Management', 'Seeded from Permission Matrix v0.2: View Profile', TRUE, NOW()),
-  (NULL, 'UC-15.UPDATE_PROFILE', 'UC-15 - Update Profile', 'Profile Management', 'Seeded from Permission Matrix v0.2: Update Profile', TRUE, NOW()),
-  (NULL, 'UC-16.CHANGE_PASSWORD', 'UC-16 - Change Password', 'Profile Management', 'Seeded from Permission Matrix v0.2: Change Password', TRUE, NOW()),
-  (NULL, 'UC-17.SUBMIT_VISIT_REQUEST', 'UC-17 - Submit Visit Request', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: Submit Visit Request', TRUE, NOW()),
-  (NULL, 'UC-18.APPROVE_CROSS_CAMPUS_REQUEST', 'UC-18 - Approve Cross-Campus Request', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: Approve Cross-Campus Request', TRUE, NOW()),
-  (NULL, 'UC-19.VIEW_GUEST_DELEGATION_DETAILS', 'UC-19 - View Guest Delegation Details', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: View Guest Delegation Details', TRUE, NOW()),
-  (NULL, 'UC-20.VIEW_GUEST_DELEGATION_LIST', 'UC-20 - View Guest Delegation List', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: View Guest Delegation List', TRUE, NOW()),
-  (NULL, 'UC-21.SEARCH_DELEGATIONS', 'UC-21 - Search Delegations', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: Search Delegations', TRUE, NOW()),
-  (NULL, 'UC-22.PROCESS_VISIT_REQUEST', 'UC-22 - Process Visit Request', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: Process Visit Request', TRUE, NOW()),
-  (NULL, 'UC-23.CREATE_GUEST_DELEGATION', 'UC-23 - Create Guest Delegation', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: Create Guest Delegation', TRUE, NOW()),
-  (NULL, 'UC-24.UPDATE_GUEST_DELEGATION', 'UC-24 - Update Guest Delegation', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: Update Guest Delegation', TRUE, NOW()),
-  (NULL, 'UC-25.PREPARE_VISIT_LOGISTICS', 'UC-25 - Prepare Visit Logistics', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: Prepare Visit Logistics', TRUE, NOW()),
-  (NULL, 'UC-26.UPDATE_VISIT_LOGISTICS', 'UC-26 - Update Visit Logistics', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: Update Visit Logistics', TRUE, NOW()),
-  (NULL, 'UC-27.CONFIRM_PARTICIPATION', 'UC-27 - Confirm Participation', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: Confirm Participation', TRUE, NOW()),
-  (NULL, 'UC-28.APPROVE_RESOURCE_REQUEST', 'UC-28 - Approve Resource Request', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: Approve Resource Request', TRUE, NOW()),
-  (NULL, 'UC-29.PROPOSE_RESOURCE_MODIFICATION', 'UC-29 - Propose Resource Modification', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: Propose Resource Modification', TRUE, NOW()),
-  (NULL, 'UC-30.CONFIRM_THE_CHANGE_PROPOSAL', 'UC-30 - Confirm The Change Proposal', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: Confirm The Change Proposal', TRUE, NOW()),
-  (NULL, 'UC-31.CREATE_MEETING_MINUTES', 'UC-31 - Create Meeting Minutes', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: Create Meeting Minutes', TRUE, NOW()),
-  (NULL, 'UC-32.EDIT_MEETING_MINUTES', 'UC-32 - Edit Meeting Minutes', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: Edit Meeting Minutes', TRUE, NOW()),
-  (NULL, 'UC-33.VIEW_MEETING_MINUTES_DETAILS', 'UC-33 - View Meeting Minutes Details', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: View Meeting Minutes Details', TRUE, NOW()),
-  (NULL, 'UC-34.SUBMIT_DELEGATION_FEEDBACK', 'UC-34 - Submit Delegation Feedback', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: Submit Delegation Feedback', TRUE, NOW()),
-  (NULL, 'UC-35.SCAN_BUSINESS_CARD', 'UC-35 - Scan Business Card', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: Scan Business Card', TRUE, NOW()),
-  (NULL, 'UC-36.CREATE_PARTNER_PROFILE', 'UC-36 - Create Partner Profile', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: Create Partner Profile', TRUE, NOW()),
-  (NULL, 'UC-37.UPLOAD_ATTACHED_DOCUMENTS', 'UC-37 - Upload Attached Documents', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: Upload Attached Documents', TRUE, NOW()),
-  (NULL, 'UC-38.UPLOAD_VISIT_PHOTOS', 'UC-38 - Upload Visit Photos', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: Upload Visit Photos', TRUE, NOW()),
-  (NULL, 'UC-39.TAG_FACES_ON_PHOTOS', 'UC-39 - Tag Faces on Photos', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: Tag Faces on Photos', TRUE, NOW()),
-  (NULL, 'UC-40.CREATE_NEWS_ARTICLE', 'UC-40 - Create News Article', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: Create News Article', TRUE, NOW()),
-  (NULL, 'UC-41.CLOSE_DELEGATION', 'UC-41 - Close Delegation', 'Delegation Reception Management', 'Seeded from Permission Matrix v0.2: Close Delegation', TRUE, NOW()),
-  (NULL, 'UC-42.VIEW_EMAIL_TEMPLATE_LIST', 'UC-42 - View Email Template List', 'Email Management', 'Seeded from Permission Matrix v0.2: View Email Template List', TRUE, NOW()),
-  (NULL, 'UC-43.VIEW_EMAIL_TEMPLATE_DETAIL', 'UC-43 - View Email Template Detail', 'Email Management', 'Seeded from Permission Matrix v0.2: View Email Template Detail', TRUE, NOW()),
-  (NULL, 'UC-44.UPDATE_EMAIL_TEMPLATE', 'UC-44 - Update Email Template', 'Email Management', 'Seeded from Permission Matrix v0.2: Update Email Template', TRUE, NOW()),
-  (NULL, 'UC-45.CREATE_EMAIL_TEMPLATE', 'UC-45 - Create Email Template', 'Email Management', 'Seeded from Permission Matrix v0.2: Create Email Template', TRUE, NOW()),
-  (NULL, 'UC-46.EDIT_EMAIL_CONTENT', 'UC-46 - Edit Email Content', 'Email Management', 'Seeded from Permission Matrix v0.2: Edit Email Content', TRUE, NOW()),
-  (NULL, 'UC-47.SEND_EMAIL', 'UC-47 - Send Email', 'Email Management', 'Seeded from Permission Matrix v0.2: Send Email', TRUE, NOW()),
-  (NULL, 'UC-48.VIEW_EMAIL', 'UC-48 - View Email', 'Email Management', 'Seeded from Permission Matrix v0.2: View Email', TRUE, NOW()),
-  (NULL, 'UC-49.REPLY_TO_EMAIL', 'UC-49 - Reply to Email', 'Email Management', 'Seeded from Permission Matrix v0.2: Reply to Email', TRUE, NOW()),
-  (NULL, 'UC-50.PROCESS_PARTNER_CREATION_REQUEST', 'UC-50 - Process Partner Creation Request', 'Partner Management', 'Seeded from Permission Matrix v0.2: Process Partner Creation Request', TRUE, NOW()),
-  (NULL, 'UC-51.EDIT_PARTNER_INFORMATION', 'UC-51 - Edit Partner Information', 'Partner Management', 'Seeded from Permission Matrix v0.2: Edit Partner Information', TRUE, NOW()),
-  (NULL, 'UC-52.VIEW_PARTNER_LISTS', 'UC-52 - View Partner Lists', 'Partner Management', 'Seeded from Permission Matrix v0.2: View Partner Lists', TRUE, NOW()),
-  (NULL, 'UC-53.SEARCH_PARTNERS', 'UC-53 - Search Partners', 'Partner Management', 'Seeded from Permission Matrix v0.2: Search Partners', TRUE, NOW()),
-  (NULL, 'UC-54.VIEW_PARTNER_DETAILS', 'UC-54 - View Partner Details', 'Partner Management', 'Seeded from Permission Matrix v0.2: View Partner Details', TRUE, NOW()),
-  (NULL, 'UC-55.VIEW_DOCUMENT_LIST', 'UC-55 - View Document List', 'Document Management', 'Seeded from Permission Matrix v0.2: View Document List', TRUE, NOW()),
-  (NULL, 'UC-56.SEARCH_DOCUMENTS', 'UC-56 - Search Documents', 'Document Management', 'Seeded from Permission Matrix v0.2: Search Documents', TRUE, NOW()),
-  (NULL, 'UC-57.VIEW_GALLERY_ITEM_LIST', 'UC-57 - View Gallery Item List', 'Gallery Management', 'Seeded from Permission Matrix v0.2: View Gallery Item List', TRUE, NOW()),
-  (NULL, 'UC-58.SEARCH_GALLERY_ITEMS', 'UC-58 - Search Gallery Items', 'Gallery Management', 'Seeded from Permission Matrix v0.2: Search Gallery Items', TRUE, NOW()),
-  (NULL, 'UC-59.ADD_GALLERY_ITEM', 'UC-59 - Add Gallery Item', 'Gallery Management', 'Seeded from Permission Matrix v0.2: Add Gallery Item', TRUE, NOW()),
-  (NULL, 'UC-60.UPDATE_GALLERY_ITEM', 'UC-60 - Update Gallery Item', 'Gallery Management', 'Seeded from Permission Matrix v0.2: Update Gallery Item', TRUE, NOW()),
-  (NULL, 'UC-61.DELETE_GALLERY_ITEM', 'UC-61 - Delete Gallery Item', 'Gallery Management', 'Seeded from Permission Matrix v0.2: Delete Gallery Item', TRUE, NOW()),
-  (NULL, 'UC-62.VIEW_MINUTES_LIST', 'UC-62 - View Minutes List', 'Minutes Management', 'Seeded from Permission Matrix v0.2: View Minutes List', TRUE, NOW()),
-  (NULL, 'UC-63.SEARCH_FILTER_MINUTES', 'UC-63 - Search/Filter Minutes', 'Minutes Management', 'Seeded from Permission Matrix v0.2: Search/Filter Minutes', TRUE, NOW()),
-  (NULL, 'UC-64.VIEW_LIST_FAQ', 'UC-64 - View List FAQ', 'FAQ Management', 'Seeded from Permission Matrix v0.2: View List FAQ', TRUE, NOW()),
-  (NULL, 'UC-65.CREATE_FAQ', 'UC-65 - Create FAQ', 'FAQ Management', 'Seeded from Permission Matrix v0.2: Create FAQ', TRUE, NOW()),
-  (NULL, 'UC-66.UPDATE_FAQ', 'UC-66 - Update FAQ', 'FAQ Management', 'Seeded from Permission Matrix v0.2: Update FAQ', TRUE, NOW()),
-  (NULL, 'UC-67.CHANGE_FAQ_VISIBILITY', 'UC-67 - Change FAQ Visibility', 'FAQ Management', 'Seeded from Permission Matrix v0.2: Change FAQ Visibility', TRUE, NOW()),
-  (NULL, 'UC-68.SEARCH_FAQ', 'UC-68 - Search FAQ', 'FAQ Management', 'Seeded from Permission Matrix v0.2: Search FAQ', TRUE, NOW()),
-  (NULL, 'UC-69.VIEW_DASHBOARD_STATISTICS', 'UC-69 - View Dashboard Statistics', 'Report Management', 'Seeded from Permission Matrix v0.2: View Dashboard Statistics', TRUE, NOW()),
-  (NULL, 'UC-70.EXPORT_STATISTICS_REPORT', 'UC-70 - Export Statistics Report', 'Report Management', 'Seeded from Permission Matrix v0.2: Export Statistics Report', TRUE, NOW()),
-  (NULL, 'UC-71.FILTER_DASHBOARD_BY_TIME', 'UC-71 - Filter Dashboard By Time', 'Report Management', 'Seeded from Permission Matrix v0.2: Filter Dashboard By Time', TRUE, NOW()),
-  (NULL, 'UC-72.VIEW_MY_EVENTS', 'UC-72 - View My Events', 'Calendar Management', 'Seeded from Permission Matrix v0.2: View My Events', TRUE, NOW()),
-  (NULL, 'UC-73.VIEW_DEPARTMENT_CALENDAR', 'UC-73 - View Department Calendar', 'Calendar Management', 'Seeded from Permission Matrix v0.2: View Department Calendar', TRUE, NOW()),
-  (NULL, 'UC-74.SWITCH_VIEW_MODE', 'UC-74 - Switch View Mode', 'Calendar Management', 'Seeded from Permission Matrix v0.2: Switch View Mode', TRUE, NOW()),
-  (NULL, 'UC-75.ADD_PERSONAL_EVENT', 'UC-75 - Add Personal Event', 'Calendar Management', 'Seeded from Permission Matrix v0.2: Add Personal Event', TRUE, NOW()),
-  (NULL, 'UC-76.DELETE_PERSONAL_EVENT', 'UC-76 - Delete Personal Event', 'Calendar Management', 'Seeded from Permission Matrix v0.2: Delete Personal Event', TRUE, NOW()),
-  (NULL, 'UC-77.UPDATE_PERSONAL_EVENT', 'UC-77 - Update Personal Event', 'Calendar Management', 'Seeded from Permission Matrix v0.2: Update Personal Event', TRUE, NOW()),
-  (NULL, 'UC-78.VIEW_EVENT_DETAILS', 'UC-78 - View Event Details', 'Calendar Management', 'Seeded from Permission Matrix v0.2: View Event Details', TRUE, NOW()),
-  (NULL, 'UC-79.SEARCH_FILTER_FEEDBACK', 'UC-79 - Search/Filter Feedback', 'Feedback Management', 'Seeded from Permission Matrix v0.2: Search/Filter Feedback', TRUE, NOW()),
-  (NULL, 'UC-80.VIEW_FEEDBACK_SUMMARY', 'UC-80 - View Feedback Summary', 'Feedback Management', 'Seeded from Permission Matrix v0.2: View Feedback Summary', TRUE, NOW()),
-  (NULL, 'UC-81.ADD_NEW_CAMPUS', 'UC-81 - Add New Campus', 'Campus Management', 'Seeded from Permission Matrix v0.2: Add New Campus', TRUE, NOW()),
-  (NULL, 'UC-82.VIEW_CAMPUS_LIST', 'UC-82 - View Campus List', 'Campus Management', 'Seeded from Permission Matrix v0.2: View Campus List', TRUE, NOW()),
-  (NULL, 'UC-83.SEARCH_AND_FILTER_CAMPUS', 'UC-83 - Search and Filter Campus', 'Campus Management', 'Seeded from Permission Matrix v0.2: Search and Filter Campus', TRUE, NOW()),
-  (NULL, 'UC-84.VIEW_CAMPUS_DETAILS', 'UC-84 - View Campus Details', 'Campus Management', 'Seeded from Permission Matrix v0.2: View Campus Details', TRUE, NOW()),
-  (NULL, 'UC-85.UPDATE_CAMPUS', 'UC-85 - Update Campus', 'Campus Management', 'Seeded from Permission Matrix v0.2: Update Campus', TRUE, NOW()),
-  (NULL, 'UC-86.MANAGE_CAMPUS_STATUS', 'UC-86 - Manage Campus Status', 'Campus Management', 'Seeded from Permission Matrix v0.2: Manage Campus Status', TRUE, NOW()),
-  (NULL, 'UC-87.ASSIGN_CAMPUS_LEAD', 'UC-87 - Assign Campus Lead', 'Campus Management', 'Seeded from Permission Matrix v0.2: Assign Campus Lead', TRUE, NOW()),
-  (NULL, 'UC-88.APPROVE_NEWS', 'UC-88 - Approve News', 'News Management', 'Seeded from Permission Matrix v0.2: Approve News', TRUE, NOW()),
-  (NULL, 'UC-89.PUBLISH_NEWS', 'UC-89 - Publish News', 'News Management', 'Seeded from Permission Matrix v0.2: Publish News', TRUE, NOW()),
-  (NULL, 'UC-90.VIEW_NEWS_LIST', 'UC-90 - View News List', 'News Management', 'Seeded from Permission Matrix v0.2: View News List', TRUE, NOW()),
-  (NULL, 'UC-91.VIEW_NEWS_DETAILS', 'UC-91 - View News Details', 'News Management', 'Seeded from Permission Matrix v0.2: View News Details', TRUE, NOW()),
-  (NULL, 'UC-92.ADD_MULTILINGUAL_NEWS', 'UC-92 - Add Multilingual News', 'News Management', 'Seeded from Permission Matrix v0.2: Add Multilingual News', TRUE, NOW()),
-  (NULL, 'UC-93.MANAGE_NEWS_VISIBILITY', 'UC-93 - Manage News Visibility', 'News Management', 'Seeded from Permission Matrix v0.2: Manage News Visibility', TRUE, NOW()),
-  (NULL, 'UC-94.EDIT_NEWS', 'UC-94 - Edit News', 'News Management', 'Seeded from Permission Matrix v0.2: Edit News', TRUE, NOW()),
-  (NULL, 'UC-95.VIEW_ACCOUNT_LIST', 'UC-95 - View Account List', 'Account Management', 'Seeded from Permission Matrix v0.2: View Account List', TRUE, NOW()),
-  (NULL, 'UC-96.CREATE_ACCOUNT', 'UC-96 - Create Account', 'Account Management', 'Seeded from Permission Matrix v0.2: Create Account', TRUE, NOW()),
-  (NULL, 'UC-97.MANAGE_ACCOUNT_STATUS', 'UC-97 - Manage Account Status', 'Account Management', 'Seeded from Permission Matrix v0.2: Manage Account Status', TRUE, NOW()),
-  (NULL, 'UC-98.VIEW_ACCOUNT_DETAILS', 'UC-98 - View Account Details', 'Account Management', 'Seeded from Permission Matrix v0.2: View Account Details', TRUE, NOW()),
-  (NULL, 'UC-99.SEARCH_AND_FILTER_ACCOUNTS', 'UC-99 - Search and Filter Accounts', 'Account Management', 'Seeded from Permission Matrix v0.2: Search and Filter Accounts', TRUE, NOW()),
-  (NULL, 'UC-100.UPDATE_ACCOUNT_ROLE', 'UC-100 - Update Account Role', 'Account Management', 'Seeded from Permission Matrix v0.2: Update Account Role', TRUE, NOW()),
-  (NULL, 'UC-101.ADD_NEW_DEPARTMENT', 'UC-101 - Add New Department', 'Department Management', 'Seeded from Permission Matrix v0.2: Add New Department', TRUE, NOW()),
-  (NULL, 'UC-102.UPDATE_DEPARTMENT', 'UC-102 - Update Department', 'Department Management', 'Seeded from Permission Matrix v0.2: Update Department', TRUE, NOW()),
-  (NULL, 'UC-103.SEARCH_AND_FILTER_DEPARTMENTS', 'UC-103 - Search and Filter Departments', 'Department Management', 'Seeded from Permission Matrix v0.2: Search and Filter Departments', TRUE, NOW()),
-  (NULL, 'UC-104.VIEW_DEPARTMENT_LIST', 'UC-104 - View Department List', 'Department Management', 'Seeded from Permission Matrix v0.2: View Department List', TRUE, NOW()),
-  (NULL, 'UC-105.VIEW_DEPARTMENT_DETAILS', 'UC-105 - View Department Details', 'Department Management', 'Seeded from Permission Matrix v0.2: View Department Details', TRUE, NOW()),
-  (NULL, 'UC-106.MANAGE_DEPARTMENT_STATUS', 'UC-106 - Manage Department Status', 'Department Management', 'Seeded from Permission Matrix v0.2: Manage Department Status', TRUE, NOW()),
-  (NULL, 'UC-107.ADD_DEPARTMENT_PERSONNEL', 'UC-107 - Add Department Personnel', 'Department Management', 'Seeded from Permission Matrix v0.2: Add Department Personnel', TRUE, NOW()),
-  (NULL, 'UC-108.VIEW_PERSONNEL_DETAILS', 'UC-108 - View Personnel Details', 'Department Management', 'Seeded from Permission Matrix v0.2: View Personnel Details', TRUE, NOW()),
-  (NULL, 'UC-109.SEARCH_PERSONNEL', 'UC-109 - Search Personnel', 'Department Management', 'Seeded from Permission Matrix v0.2: Search Personnel', TRUE, NOW()),
-  (NULL, 'UC-110.REVIEW_ASSIGNED_TASKS', 'UC-110 - Review Assigned Tasks', 'Department Management', 'Seeded from Permission Matrix v0.2: Review Assigned Tasks', TRUE, NOW()),
-  (NULL, 'UC-111.ASSIGN_TASKS', 'UC-111 - Assign Tasks', 'Department Management', 'Seeded from Permission Matrix v0.2: Assign Tasks', TRUE, NOW()),
-  (NULL, 'UC-112.SIGN_THE_SERVICE_DELIVERY_REPORT', 'UC-112 - Sign The Service Delivery Report', 'Department Management', 'Seeded from Permission Matrix v0.2: Sign The Service Delivery Report', TRUE, NOW()),
-  (NULL, 'UC-113.REMOVE_PERSONNEL', 'UC-113 - Remove Personnel', 'Department Management', 'Seeded from Permission Matrix v0.2: Remove Personnel', TRUE, NOW()),
-  (NULL, 'UC-114.VIEW_COORDINATION_TASKS', 'UC-114 - View Coordination Tasks', 'Department Management', 'Seeded from Permission Matrix v0.2: View Coordination Tasks', TRUE, NOW()),
-  (NULL, 'UC-115.SEARCH_COORDINATION_TASKS', 'UC-115 - Search Coordination Tasks', 'Department Management', 'Seeded from Permission Matrix v0.2: Search Coordination Tasks', TRUE, NOW()),
-  (NULL, 'UC-116.REASSIGN_DEPARTMENT_LEAD', 'UC-116 - Reassign Department Lead', 'Department Management', 'Seeded from Permission Matrix v0.2: Reassign Department Lead', TRUE, NOW()),
-  (NULL, 'UC-117.VIEW_ROLE_LIST', 'UC-117 - View Role List', 'Role & Permission Management', 'Seeded from Permission Matrix v0.2: View Role List', TRUE, NOW()),
-  (NULL, 'UC-118.CREATE_NEW_ROLE', 'UC-118 - Create New Role', 'Role & Permission Management', 'Seeded from Permission Matrix v0.2: Create New Role', TRUE, NOW()),
-  (NULL, 'UC-119.CONFIGURE_ROLE_PERMISSIONS', 'UC-119 - Configure Role Permissions', 'Role & Permission Management', 'Seeded from Permission Matrix v0.2: Configure Role Permissions', TRUE, NOW()),
-  (NULL, 'UC-120.UPDATE_ROLE_DETAILS', 'UC-120 - Update Role Details', 'Role & Permission Management', 'Seeded from Permission Matrix v0.2: Update Role Details', TRUE, NOW()),
-  (NULL, 'UC-121.DISABLE_DELETE_ROLE', 'UC-121 - Disable/Delete Role', 'Role & Permission Management', 'Seeded from Permission Matrix v0.2: Disable/Delete Role', TRUE, NOW()),
-  (NULL, 'UC-122.VIEW_API_CONFIGURATION', 'UC-122 - View API Configuration', 'API Management', 'Seeded from Permission Matrix v0.2: View API Configuration', TRUE, NOW()),
-  (NULL, 'UC-123.CREATE_API_CONFIGURATION', 'UC-123 - Create API Configuration', 'API Management', 'Seeded from Permission Matrix v0.2: Create API Configuration', TRUE, NOW()),
-  (NULL, 'UC-124.UPDATE_API_CONFIGURATION', 'UC-124 - Update API Configuration', 'API Management', 'Seeded from Permission Matrix v0.2: Update API Configuration', TRUE, NOW()),
-  (NULL, 'UC-125.DELETE_API_CONFIGURATION', 'UC-125 - Delete API Configuration', 'API Management', 'Seeded from Permission Matrix v0.2: Delete API Configuration', TRUE, NOW()),
-  (NULL, 'UC-126.TEST_API_CONNECTION', 'UC-126 - Test API Connection', 'API Management', 'Seeded from Permission Matrix v0.2: Test API Connection', TRUE, NOW()),
-  (NULL, 'UC-127.MANAGE_API_STATUS', 'UC-127 - Manage API Status', 'API Management', 'Seeded from Permission Matrix v0.2: Manage API Status', TRUE, NOW()),
-  (NULL, 'UC-128.CONFIGURE_REQUEST_LIMIT', 'UC-128 - Configure Request Limit', 'API Management', 'Seeded from Permission Matrix v0.2: Configure Request Limit', TRUE, NOW()),
-  (NULL, 'UC-129.VIEW_API_LOGS', 'UC-129 - View API Logs', 'API Management', 'Seeded from Permission Matrix v0.2: View API Logs', TRUE, NOW()),
-  (NULL, 'UC-130.SEARCH_API_LOGS', 'UC-130 - Search API Logs', 'API Management', 'Seeded from Permission Matrix v0.2: Search API Logs', TRUE, NOW()),
-  (NULL, 'UC-131.CREATE_AGENDA_TEMPLATE', 'UC-131 - Create Agenda Template', 'Agenda Templates Management', 'Seeded from Permission Matrix v0.2: Create Agenda Template', TRUE, NOW()),
-  (NULL, 'UC-132.UPDATE_AGENDA_TEMPLATE', 'UC-132 - Update Agenda Template', 'Agenda Templates Management', 'Seeded from Permission Matrix v0.2: Update Agenda Template', TRUE, NOW()),
-  (NULL, 'UC-133.DELETE_AGENDA_TEMPLATE', 'UC-133 - Delete Agenda Template', 'Agenda Templates Management', 'Seeded from Permission Matrix v0.2: Delete Agenda Template', TRUE, NOW()),
-  (NULL, 'UC-134.VIEW_AGENDA_TEMPLATE_LIST', 'UC-134 - View Agenda Template List', 'Agenda Templates Management', 'Seeded from Permission Matrix v0.2: View Agenda Template List', TRUE, NOW()),
-  (NULL, 'UC-135.VIEW_AGENDA_TEMPLATE_DETAIL', 'UC-135 - View Agenda Template Detail', 'Agenda Templates Management', 'Seeded from Permission Matrix v0.2: View Agenda Template Detail', TRUE, NOW());
-
-SELECT COUNT(*) AS total_uc_permissions
-FROM permissions
-WHERE permission_code REGEXP '^UC-[0-9]+\.';
-
-SELECT permission_group, COUNT(*) AS total_permissions
-FROM permissions
-WHERE permission_code REGEXP '^UC-[0-9]+\.'
-GROUP BY permission_group
-ORDER BY permission_group;
-
-COMMIT;
-
-
--- v8.2: UC-136 Cancel Visit Request under Delegation Reception Management. Cancel is only allowed after approval; pending requests are ended by reject.
-INSERT IGNORE INTO permissions
-  (permission_id, permission_code, name, permission_group, description, is_system, created_at)
-VALUES
-  (NULL, 'UC-136.CANCEL_VISIT_REQUEST', 'UC-136 - Cancel Visit Request', 'Delegation Reception Management',
-   'Cancel an approved visit request/delegation within valid scope. Before approval, withdrawal is handled by reject in UC-18/UC-22. Visitor cancels own approved request; current Host cancels after external confirmation from guest.', TRUE, NOW());
-
-
--- <<< END permissions.sql
-
-
--- >>> BEGIN permission_matrix.sql
-
--- =====================================================================
--- PEMS — Role ⇄ Permission Matrix seed from docs/permissions/PERMISSION_MATRIX.md v0.2
--- Idempotent, manual-review friendly, Database-First RBAC.
---
--- Run order:
---   1) roles.sql
---   2) permissions.sql
---   3) permission_matrix.sql
---
--- RBAC convention:
---   role_permissions.sub_role = 'NONE' for ADMIN/HO/STUDENT/VISITOR.
---   role_permissions.sub_role = 'LEADER' or 'STAFF' for STAFF/DEPARTMENT.
---   users.sub_role remains NULL for ADMIN/HO/STUDENT/VISITOR.
--- =====================================================================
-USE pems_db;
-
-START TRANSACTION;
-
--- 1. Ensure canonical roles exist. This does not replace roles.sql; it makes this seed safer to rerun.
-INSERT IGNORE INTO roles (role_id, role_code, name, description, status, created_at, deleted_at, deleted_by)
-VALUES
-  (NULL, 'ADMIN',   'Admin',       'Quản trị kỹ thuật hệ thống', 'ACTIVE', NOW(), NULL, NULL),
-  (NULL, 'HO',      'Head Office', 'Quản lý cấp Head Office', 'ACTIVE', NOW(), NULL, NULL),
-  (NULL, 'STAFF',   'IC Staff',    'Nhân sự phòng Hợp tác Quốc tế, dùng users.sub_role = LEADER/STAFF', 'ACTIVE', NOW(), NULL, NULL),
-  (NULL, 'DEPARTMENT',    'Department',  'Nhân sự phòng ban khác, dùng users.sub_role = LEADER/STAFF', 'ACTIVE', NOW(), NULL, NULL),
-  (NULL, 'STUDENT', 'Student',     'Sinh viên hỗ trợ', 'ACTIVE', NOW(), NULL, NULL),
-  (NULL, 'VISITOR', 'Visitor',     'Khách gửi visit request và theo dõi thông tin của mình', 'ACTIVE', NOW(), NULL, NULL);
-
--- 2. Desired role-permission matrix. Explicit VALUES for easy visual review.
-DROP TEMPORARY TABLE IF EXISTS desired_role_permissions;
-CREATE TEMPORARY TABLE desired_role_permissions (
-  role_code VARCHAR(50) NOT NULL,
-  sub_role VARCHAR(50) NOT NULL,
-  permission_code VARCHAR(100) NOT NULL,
-  permission_level CHAR(1) NOT NULL,
-  PRIMARY KEY (role_code, sub_role, permission_code)
-);
-
-INSERT INTO desired_role_permissions
-  (role_code, sub_role, permission_code, permission_level)
-VALUES
-  ('HO', 'NONE', 'UC-01.VIEW_HOMEPAGE', 'R'),
-  ('ADMIN', 'NONE', 'UC-01.VIEW_HOMEPAGE', 'R'),
-  ('STAFF', 'LEADER', 'UC-01.VIEW_HOMEPAGE', 'R'),
-  ('STAFF', 'STAFF', 'UC-01.VIEW_HOMEPAGE', 'R'),
-  ('DEPARTMENT', 'LEADER', 'UC-01.VIEW_HOMEPAGE', 'R'),
-  ('DEPARTMENT', 'STAFF', 'UC-01.VIEW_HOMEPAGE', 'R'),
-  ('STUDENT', 'NONE', 'UC-01.VIEW_HOMEPAGE', 'R'),
-  ('VISITOR', 'NONE', 'UC-01.VIEW_HOMEPAGE', 'R'),
-  ('HO', 'NONE', 'UC-02.SEARCH_INFORMATION', 'R'),
-  ('ADMIN', 'NONE', 'UC-02.SEARCH_INFORMATION', 'R'),
-  ('STAFF', 'LEADER', 'UC-02.SEARCH_INFORMATION', 'R'),
-  ('STAFF', 'STAFF', 'UC-02.SEARCH_INFORMATION', 'R'),
-  ('DEPARTMENT', 'LEADER', 'UC-02.SEARCH_INFORMATION', 'R'),
-  ('DEPARTMENT', 'STAFF', 'UC-02.SEARCH_INFORMATION', 'R'),
-  ('STUDENT', 'NONE', 'UC-02.SEARCH_INFORMATION', 'R'),
-  ('VISITOR', 'NONE', 'UC-02.SEARCH_INFORMATION', 'R'),
-  ('HO', 'NONE', 'UC-03.VIEW_CONTACT_INFO', 'R'),
-  ('ADMIN', 'NONE', 'UC-03.VIEW_CONTACT_INFO', 'R'),
-  ('STAFF', 'LEADER', 'UC-03.VIEW_CONTACT_INFO', 'R'),
-  ('STAFF', 'STAFF', 'UC-03.VIEW_CONTACT_INFO', 'R'),
-  ('DEPARTMENT', 'LEADER', 'UC-03.VIEW_CONTACT_INFO', 'R'),
-  ('DEPARTMENT', 'STAFF', 'UC-03.VIEW_CONTACT_INFO', 'R'),
-  ('STUDENT', 'NONE', 'UC-03.VIEW_CONTACT_INFO', 'R'),
-  ('VISITOR', 'NONE', 'UC-03.VIEW_CONTACT_INFO', 'R'),
-  ('HO', 'NONE', 'UC-04.VIEW_POLICY_AND_TERMS', 'R'),
-  ('ADMIN', 'NONE', 'UC-04.VIEW_POLICY_AND_TERMS', 'R'),
-  ('STAFF', 'LEADER', 'UC-04.VIEW_POLICY_AND_TERMS', 'R'),
-  ('STAFF', 'STAFF', 'UC-04.VIEW_POLICY_AND_TERMS', 'R'),
-  ('DEPARTMENT', 'LEADER', 'UC-04.VIEW_POLICY_AND_TERMS', 'R'),
-  ('DEPARTMENT', 'STAFF', 'UC-04.VIEW_POLICY_AND_TERMS', 'R'),
-  ('STUDENT', 'NONE', 'UC-04.VIEW_POLICY_AND_TERMS', 'R'),
-  ('VISITOR', 'NONE', 'UC-04.VIEW_POLICY_AND_TERMS', 'R'),
-  ('HO', 'NONE', 'UC-05.VIEW_FAQ', 'R'),
-  ('ADMIN', 'NONE', 'UC-05.VIEW_FAQ', 'R'),
-  ('STAFF', 'LEADER', 'UC-05.VIEW_FAQ', 'R'),
-  ('STAFF', 'STAFF', 'UC-05.VIEW_FAQ', 'R'),
-  ('DEPARTMENT', 'LEADER', 'UC-05.VIEW_FAQ', 'R'),
-  ('DEPARTMENT', 'STAFF', 'UC-05.VIEW_FAQ', 'R'),
-  ('STUDENT', 'NONE', 'UC-05.VIEW_FAQ', 'R'),
-  ('VISITOR', 'NONE', 'UC-05.VIEW_FAQ', 'R'),
-  ('HO', 'NONE', 'UC-06.VIEW_NEWS', 'R'),
-  ('ADMIN', 'NONE', 'UC-06.VIEW_NEWS', 'R'),
-  ('STAFF', 'LEADER', 'UC-06.VIEW_NEWS', 'R'),
-  ('STAFF', 'STAFF', 'UC-06.VIEW_NEWS', 'R'),
-  ('DEPARTMENT', 'LEADER', 'UC-06.VIEW_NEWS', 'R'),
-  ('DEPARTMENT', 'STAFF', 'UC-06.VIEW_NEWS', 'R'),
-  ('STUDENT', 'NONE', 'UC-06.VIEW_NEWS', 'R'),
-  ('VISITOR', 'NONE', 'UC-06.VIEW_NEWS', 'R'),
-  ('HO', 'NONE', 'UC-07.VIEW_PARTNERS', 'R'),
-  ('ADMIN', 'NONE', 'UC-07.VIEW_PARTNERS', 'R'),
-  ('STAFF', 'LEADER', 'UC-07.VIEW_PARTNERS', 'R'),
-  ('STAFF', 'STAFF', 'UC-07.VIEW_PARTNERS', 'R'),
-  ('DEPARTMENT', 'LEADER', 'UC-07.VIEW_PARTNERS', 'R'),
-  ('DEPARTMENT', 'STAFF', 'UC-07.VIEW_PARTNERS', 'R'),
-  ('STUDENT', 'NONE', 'UC-07.VIEW_PARTNERS', 'R'),
-  ('VISITOR', 'NONE', 'UC-07.VIEW_PARTNERS', 'R'),
-  ('HO', 'NONE', 'UC-08.VIEW_GALLERY', 'R'),
-  ('ADMIN', 'NONE', 'UC-08.VIEW_GALLERY', 'R'),
-  ('STAFF', 'LEADER', 'UC-08.VIEW_GALLERY', 'R'),
-  ('STAFF', 'STAFF', 'UC-08.VIEW_GALLERY', 'R'),
-  ('DEPARTMENT', 'LEADER', 'UC-08.VIEW_GALLERY', 'R'),
-  ('DEPARTMENT', 'STAFF', 'UC-08.VIEW_GALLERY', 'R'),
-  ('STUDENT', 'NONE', 'UC-08.VIEW_GALLERY', 'R'),
-  ('VISITOR', 'NONE', 'UC-08.VIEW_GALLERY', 'R'),
-  ('HO', 'NONE', 'UC-09.VIEW_NOTIFICATIONS', 'R'),
-  ('ADMIN', 'NONE', 'UC-09.VIEW_NOTIFICATIONS', 'R'),
-  ('STAFF', 'LEADER', 'UC-09.VIEW_NOTIFICATIONS', 'R'),
-  ('STAFF', 'STAFF', 'UC-09.VIEW_NOTIFICATIONS', 'R'),
-  ('DEPARTMENT', 'LEADER', 'UC-09.VIEW_NOTIFICATIONS', 'R'),
-  ('DEPARTMENT', 'STAFF', 'UC-09.VIEW_NOTIFICATIONS', 'R'),
-  ('STUDENT', 'NONE', 'UC-09.VIEW_NOTIFICATIONS', 'R'),
-  ('VISITOR', 'NONE', 'UC-09.VIEW_NOTIFICATIONS', 'R'),
-  ('HO', 'NONE', 'UC-10.LOGIN_VIA_SSO', 'O'),
-  ('ADMIN', 'NONE', 'UC-10.LOGIN_VIA_SSO', 'O'),
-  ('STAFF', 'LEADER', 'UC-10.LOGIN_VIA_SSO', 'O'),
-  ('STAFF', 'STAFF', 'UC-10.LOGIN_VIA_SSO', 'O'),
-  ('DEPARTMENT', 'LEADER', 'UC-10.LOGIN_VIA_SSO', 'O'),
-  ('DEPARTMENT', 'STAFF', 'UC-10.LOGIN_VIA_SSO', 'O'),
-  ('STUDENT', 'NONE', 'UC-10.LOGIN_VIA_SSO', 'O'),
-  ('VISITOR', 'NONE', 'UC-10.LOGIN_VIA_SSO', 'O'),
-  ('HO', 'NONE', 'UC-11.LOGIN_VIA_CREDENTIALS', 'O'),
-  ('ADMIN', 'NONE', 'UC-11.LOGIN_VIA_CREDENTIALS', 'O'),
-  ('STAFF', 'LEADER', 'UC-11.LOGIN_VIA_CREDENTIALS', 'O'),
-  ('STAFF', 'STAFF', 'UC-11.LOGIN_VIA_CREDENTIALS', 'O'),
-  ('DEPARTMENT', 'LEADER', 'UC-11.LOGIN_VIA_CREDENTIALS', 'O'),
-  ('DEPARTMENT', 'STAFF', 'UC-11.LOGIN_VIA_CREDENTIALS', 'O'),
-  ('STUDENT', 'NONE', 'UC-11.LOGIN_VIA_CREDENTIALS', 'O'),
-  ('VISITOR', 'NONE', 'UC-11.LOGIN_VIA_CREDENTIALS', 'O'),
-  ('HO', 'NONE', 'UC-12.LOGOUT', 'O'),
-  ('ADMIN', 'NONE', 'UC-12.LOGOUT', 'O'),
-  ('STAFF', 'LEADER', 'UC-12.LOGOUT', 'O'),
-  ('STAFF', 'STAFF', 'UC-12.LOGOUT', 'O'),
-  ('DEPARTMENT', 'LEADER', 'UC-12.LOGOUT', 'O'),
-  ('DEPARTMENT', 'STAFF', 'UC-12.LOGOUT', 'O'),
-  ('STUDENT', 'NONE', 'UC-12.LOGOUT', 'O'),
-  ('VISITOR', 'NONE', 'UC-12.LOGOUT', 'O'),
-  ('HO', 'NONE', 'UC-13.FORGOT_PASSWORD', 'O'),
-  ('ADMIN', 'NONE', 'UC-13.FORGOT_PASSWORD', 'O'),
-  ('STAFF', 'LEADER', 'UC-13.FORGOT_PASSWORD', 'O'),
-  ('STAFF', 'STAFF', 'UC-13.FORGOT_PASSWORD', 'O'),
-  ('DEPARTMENT', 'LEADER', 'UC-13.FORGOT_PASSWORD', 'O'),
-  ('DEPARTMENT', 'STAFF', 'UC-13.FORGOT_PASSWORD', 'O'),
-  ('STUDENT', 'NONE', 'UC-13.FORGOT_PASSWORD', 'O'),
-  ('VISITOR', 'NONE', 'UC-13.FORGOT_PASSWORD', 'O'),
-  ('HO', 'NONE', 'UC-14.VIEW_PROFILE', 'O'),
-  ('ADMIN', 'NONE', 'UC-14.VIEW_PROFILE', 'O'),
-  ('STAFF', 'LEADER', 'UC-14.VIEW_PROFILE', 'O'),
-  ('STAFF', 'STAFF', 'UC-14.VIEW_PROFILE', 'O'),
-  ('DEPARTMENT', 'LEADER', 'UC-14.VIEW_PROFILE', 'O'),
-  ('DEPARTMENT', 'STAFF', 'UC-14.VIEW_PROFILE', 'O'),
-  ('STUDENT', 'NONE', 'UC-14.VIEW_PROFILE', 'O'),
-  ('VISITOR', 'NONE', 'UC-14.VIEW_PROFILE', 'O'),
-  ('HO', 'NONE', 'UC-15.UPDATE_PROFILE', 'O'),
-  ('ADMIN', 'NONE', 'UC-15.UPDATE_PROFILE', 'O'),
-  ('STAFF', 'LEADER', 'UC-15.UPDATE_PROFILE', 'O'),
-  ('STAFF', 'STAFF', 'UC-15.UPDATE_PROFILE', 'O'),
-  ('DEPARTMENT', 'LEADER', 'UC-15.UPDATE_PROFILE', 'O'),
-  ('DEPARTMENT', 'STAFF', 'UC-15.UPDATE_PROFILE', 'O'),
-  ('STUDENT', 'NONE', 'UC-15.UPDATE_PROFILE', 'O'),
-  ('VISITOR', 'NONE', 'UC-15.UPDATE_PROFILE', 'O'),
-  ('HO', 'NONE', 'UC-16.CHANGE_PASSWORD', 'O'),
-  ('ADMIN', 'NONE', 'UC-16.CHANGE_PASSWORD', 'O'),
-  ('STAFF', 'LEADER', 'UC-16.CHANGE_PASSWORD', 'O'),
-  ('STAFF', 'STAFF', 'UC-16.CHANGE_PASSWORD', 'O'),
-  ('DEPARTMENT', 'LEADER', 'UC-16.CHANGE_PASSWORD', 'O'),
-  ('DEPARTMENT', 'STAFF', 'UC-16.CHANGE_PASSWORD', 'O'),
-  ('STUDENT', 'NONE', 'UC-16.CHANGE_PASSWORD', 'O'),
-  ('VISITOR', 'NONE', 'UC-16.CHANGE_PASSWORD', 'O'),
-  ('VISITOR', 'NONE', 'UC-17.SUBMIT_VISIT_REQUEST', 'F'),
-  ('HO', 'NONE', 'UC-18.APPROVE_CROSS_CAMPUS_REQUEST', 'E'),
-  ('HO', 'NONE', 'UC-19.VIEW_GUEST_DELEGATION_DETAILS', 'R'),
-  ('STAFF', 'LEADER', 'UC-19.VIEW_GUEST_DELEGATION_DETAILS', 'R'),
-  ('STAFF', 'STAFF', 'UC-19.VIEW_GUEST_DELEGATION_DETAILS', 'R'),
-  ('DEPARTMENT', 'LEADER', 'UC-19.VIEW_GUEST_DELEGATION_DETAILS', 'R'),
-  ('DEPARTMENT', 'STAFF', 'UC-19.VIEW_GUEST_DELEGATION_DETAILS', 'R'),
-  ('STUDENT', 'NONE', 'UC-19.VIEW_GUEST_DELEGATION_DETAILS', 'R'),
-  ('VISITOR', 'NONE', 'UC-19.VIEW_GUEST_DELEGATION_DETAILS', 'R'),
-  ('HO', 'NONE', 'UC-20.VIEW_GUEST_DELEGATION_LIST', 'R'),
-  ('STAFF', 'LEADER', 'UC-20.VIEW_GUEST_DELEGATION_LIST', 'R'),
-  ('STAFF', 'STAFF', 'UC-20.VIEW_GUEST_DELEGATION_LIST', 'R'),
-  ('DEPARTMENT', 'LEADER', 'UC-20.VIEW_GUEST_DELEGATION_LIST', 'R'),
-  ('DEPARTMENT', 'STAFF', 'UC-20.VIEW_GUEST_DELEGATION_LIST', 'R'),
-  ('STUDENT', 'NONE', 'UC-20.VIEW_GUEST_DELEGATION_LIST', 'R'),
-  ('VISITOR', 'NONE', 'UC-20.VIEW_GUEST_DELEGATION_LIST', 'R'),
-  ('HO', 'NONE', 'UC-21.SEARCH_DELEGATIONS', 'R'),
-  ('STAFF', 'LEADER', 'UC-21.SEARCH_DELEGATIONS', 'R'),
-  ('STAFF', 'STAFF', 'UC-21.SEARCH_DELEGATIONS', 'R'),
-  ('DEPARTMENT', 'LEADER', 'UC-21.SEARCH_DELEGATIONS', 'R'),
-  ('DEPARTMENT', 'STAFF', 'UC-21.SEARCH_DELEGATIONS', 'R'),
-  ('STUDENT', 'NONE', 'UC-21.SEARCH_DELEGATIONS', 'R'),
-  ('VISITOR', 'NONE', 'UC-21.SEARCH_DELEGATIONS', 'R'),
-  ('STAFF', 'LEADER', 'UC-22.PROCESS_VISIT_REQUEST', 'E'),
-  ('STAFF', 'STAFF', 'UC-23.CREATE_GUEST_DELEGATION', 'F'),
-  ('STAFF', 'STAFF', 'UC-24.UPDATE_GUEST_DELEGATION', 'F'),
-  ('STAFF', 'LEADER', 'UC-25.PREPARE_VISIT_LOGISTICS', 'R'),
-  ('STAFF', 'STAFF', 'UC-25.PREPARE_VISIT_LOGISTICS', 'F'),
-  ('STAFF', 'LEADER', 'UC-26.UPDATE_VISIT_LOGISTICS', 'R'),
-  ('STAFF', 'STAFF', 'UC-26.UPDATE_VISIT_LOGISTICS', 'F'),
-  ('STAFF', 'STAFF', 'UC-27.CONFIRM_PARTICIPATION', 'E'),
-  ('DEPARTMENT', 'LEADER', 'UC-27.CONFIRM_PARTICIPATION', 'E'),
-  ('DEPARTMENT', 'STAFF', 'UC-27.CONFIRM_PARTICIPATION', 'E'),
-  ('STUDENT', 'NONE', 'UC-27.CONFIRM_PARTICIPATION', 'E'),
-  ('DEPARTMENT', 'LEADER', 'UC-28.APPROVE_RESOURCE_REQUEST', 'F'),
-  ('DEPARTMENT', 'LEADER', 'UC-29.PROPOSE_RESOURCE_MODIFICATION', 'F'),
-  ('DEPARTMENT', 'STAFF', 'UC-29.PROPOSE_RESOURCE_MODIFICATION', 'F'),
-  ('STAFF', 'STAFF', 'UC-30.CONFIRM_THE_CHANGE_PROPOSAL', 'E'),
-  ('DEPARTMENT', 'LEADER', 'UC-30.CONFIRM_THE_CHANGE_PROPOSAL', 'R'),
-  ('DEPARTMENT', 'STAFF', 'UC-30.CONFIRM_THE_CHANGE_PROPOSAL', 'R'),
-  ('STAFF', 'STAFF', 'UC-31.CREATE_MEETING_MINUTES', 'F'),
-  ('DEPARTMENT', 'LEADER', 'UC-31.CREATE_MEETING_MINUTES', 'F'),
-  ('DEPARTMENT', 'STAFF', 'UC-31.CREATE_MEETING_MINUTES', 'F'),
-  ('STUDENT', 'NONE', 'UC-31.CREATE_MEETING_MINUTES', 'F'),
-  ('STAFF', 'STAFF', 'UC-32.EDIT_MEETING_MINUTES', 'F'),
-  ('DEPARTMENT', 'LEADER', 'UC-32.EDIT_MEETING_MINUTES', 'F'),
-  ('DEPARTMENT', 'STAFF', 'UC-32.EDIT_MEETING_MINUTES', 'F'),
-  ('STUDENT', 'NONE', 'UC-32.EDIT_MEETING_MINUTES', 'F'),
-  ('HO', 'NONE', 'UC-33.VIEW_MEETING_MINUTES_DETAILS', 'R'),
-  ('STAFF', 'LEADER', 'UC-33.VIEW_MEETING_MINUTES_DETAILS', 'R'),
-  ('STAFF', 'STAFF', 'UC-33.VIEW_MEETING_MINUTES_DETAILS', 'R'),
-  ('DEPARTMENT', 'LEADER', 'UC-33.VIEW_MEETING_MINUTES_DETAILS', 'R'),
-  ('DEPARTMENT', 'STAFF', 'UC-33.VIEW_MEETING_MINUTES_DETAILS', 'R'),
-  ('STUDENT', 'NONE', 'UC-33.VIEW_MEETING_MINUTES_DETAILS', 'R'),
-  ('STAFF', 'STAFF', 'UC-34.SUBMIT_DELEGATION_FEEDBACK', 'F'),
-  ('DEPARTMENT', 'LEADER', 'UC-34.SUBMIT_DELEGATION_FEEDBACK', 'F'),
-  ('DEPARTMENT', 'STAFF', 'UC-34.SUBMIT_DELEGATION_FEEDBACK', 'F'),
-  ('STUDENT', 'NONE', 'UC-34.SUBMIT_DELEGATION_FEEDBACK', 'F'),
-  ('STAFF', 'STAFF', 'UC-35.SCAN_BUSINESS_CARD', 'F'),
-  ('STAFF', 'STAFF', 'UC-36.CREATE_PARTNER_PROFILE', 'F'),
-  ('STAFF', 'STAFF', 'UC-37.UPLOAD_ATTACHED_DOCUMENTS', 'F'),
-  ('STAFF', 'STAFF', 'UC-38.UPLOAD_VISIT_PHOTOS', 'F'),
-  ('STUDENT', 'NONE', 'UC-38.UPLOAD_VISIT_PHOTOS', 'F'),
-  ('STAFF', 'STAFF', 'UC-39.TAG_FACES_ON_PHOTOS', 'F'),
-  ('STAFF', 'STAFF', 'UC-40.CREATE_NEWS_ARTICLE', 'F'),
-  ('STUDENT', 'NONE', 'UC-40.CREATE_NEWS_ARTICLE', 'F'),
-  ('STAFF', 'STAFF', 'UC-41.CLOSE_DELEGATION', 'F'),
-  ('HO', 'NONE', 'UC-42.VIEW_EMAIL_TEMPLATE_LIST', 'R'),
-  ('HO', 'NONE', 'UC-43.VIEW_EMAIL_TEMPLATE_DETAIL', 'R'),
-  ('HO', 'NONE', 'UC-44.UPDATE_EMAIL_TEMPLATE', 'E'),
-  ('HO', 'NONE', 'UC-45.CREATE_EMAIL_TEMPLATE', 'F'),
-  ('HO', 'NONE', 'UC-46.EDIT_EMAIL_CONTENT', 'O'),
-  ('STAFF', 'LEADER', 'UC-46.EDIT_EMAIL_CONTENT', 'O'),
-  ('STAFF', 'STAFF', 'UC-46.EDIT_EMAIL_CONTENT', 'O'),
-  ('DEPARTMENT', 'LEADER', 'UC-46.EDIT_EMAIL_CONTENT', 'O'),
-  ('DEPARTMENT', 'STAFF', 'UC-46.EDIT_EMAIL_CONTENT', 'O'),
-  ('STUDENT', 'NONE', 'UC-46.EDIT_EMAIL_CONTENT', 'O'),
-  ('VISITOR', 'NONE', 'UC-46.EDIT_EMAIL_CONTENT', 'O'),
-  ('HO', 'NONE', 'UC-47.SEND_EMAIL', 'O'),
-  ('STAFF', 'LEADER', 'UC-47.SEND_EMAIL', 'O'),
-  ('STAFF', 'STAFF', 'UC-47.SEND_EMAIL', 'O'),
-  ('DEPARTMENT', 'LEADER', 'UC-47.SEND_EMAIL', 'O'),
-  ('DEPARTMENT', 'STAFF', 'UC-47.SEND_EMAIL', 'O'),
-  ('STUDENT', 'NONE', 'UC-47.SEND_EMAIL', 'O'),
-  ('VISITOR', 'NONE', 'UC-47.SEND_EMAIL', 'O'),
-  ('HO', 'NONE', 'UC-48.VIEW_EMAIL', 'O'),
-  ('STAFF', 'LEADER', 'UC-48.VIEW_EMAIL', 'O'),
-  ('STAFF', 'STAFF', 'UC-48.VIEW_EMAIL', 'O'),
-  ('DEPARTMENT', 'LEADER', 'UC-48.VIEW_EMAIL', 'O'),
-  ('DEPARTMENT', 'STAFF', 'UC-48.VIEW_EMAIL', 'O'),
-  ('STUDENT', 'NONE', 'UC-48.VIEW_EMAIL', 'O'),
-  ('VISITOR', 'NONE', 'UC-48.VIEW_EMAIL', 'O'),
-  ('HO', 'NONE', 'UC-49.REPLY_TO_EMAIL', 'O'),
-  ('STAFF', 'LEADER', 'UC-49.REPLY_TO_EMAIL', 'O'),
-  ('STAFF', 'STAFF', 'UC-49.REPLY_TO_EMAIL', 'O'),
-  ('DEPARTMENT', 'LEADER', 'UC-49.REPLY_TO_EMAIL', 'O'),
-  ('DEPARTMENT', 'STAFF', 'UC-49.REPLY_TO_EMAIL', 'O'),
-  ('STUDENT', 'NONE', 'UC-49.REPLY_TO_EMAIL', 'O'),
-  ('VISITOR', 'NONE', 'UC-49.REPLY_TO_EMAIL', 'O'),
-  ('STAFF', 'LEADER', 'UC-50.PROCESS_PARTNER_CREATION_REQUEST', 'E'),
-  ('STAFF', 'STAFF', 'UC-51.EDIT_PARTNER_INFORMATION', 'E'),
-  ('STAFF', 'LEADER', 'UC-52.VIEW_PARTNER_LISTS', 'R'),
-  ('STAFF', 'STAFF', 'UC-52.VIEW_PARTNER_LISTS', 'R'),
-  ('STAFF', 'LEADER', 'UC-53.SEARCH_PARTNERS', 'R'),
-  ('STAFF', 'STAFF', 'UC-53.SEARCH_PARTNERS', 'R'),
-  ('STAFF', 'LEADER', 'UC-54.VIEW_PARTNER_DETAILS', 'R'),
-  ('STAFF', 'STAFF', 'UC-54.VIEW_PARTNER_DETAILS', 'R'),
-  ('STAFF', 'LEADER', 'UC-55.VIEW_DOCUMENT_LIST', 'R'),
-  ('STAFF', 'STAFF', 'UC-55.VIEW_DOCUMENT_LIST', 'R'),
-  ('STAFF', 'LEADER', 'UC-56.SEARCH_DOCUMENTS', 'R'),
-  ('STAFF', 'STAFF', 'UC-56.SEARCH_DOCUMENTS', 'R'),
-  ('STAFF', 'LEADER', 'UC-57.VIEW_GALLERY_ITEM_LIST', 'R'),
-  ('STAFF', 'LEADER', 'UC-58.SEARCH_GALLERY_ITEMS', 'R'),
-  ('STAFF', 'LEADER', 'UC-59.ADD_GALLERY_ITEM', 'F'),
-  ('STAFF', 'LEADER', 'UC-60.UPDATE_GALLERY_ITEM', 'E'),
-  ('STAFF', 'LEADER', 'UC-61.DELETE_GALLERY_ITEM', 'F'),
-  ('STAFF', 'LEADER', 'UC-62.VIEW_MINUTES_LIST', 'R'),
-  ('STAFF', 'STAFF', 'UC-62.VIEW_MINUTES_LIST', 'R'),
-  ('STAFF', 'LEADER', 'UC-63.SEARCH_FILTER_MINUTES', 'R'),
-  ('STAFF', 'STAFF', 'UC-63.SEARCH_FILTER_MINUTES', 'R'),
-  ('HO', 'NONE', 'UC-64.VIEW_LIST_FAQ', 'R'),
-  ('HO', 'NONE', 'UC-65.CREATE_FAQ', 'F'),
-  ('HO', 'NONE', 'UC-66.UPDATE_FAQ', 'E'),
-  ('HO', 'NONE', 'UC-67.CHANGE_FAQ_VISIBILITY', 'E'),
-  ('HO', 'NONE', 'UC-68.SEARCH_FAQ', 'R'),
-  ('HO', 'NONE', 'UC-69.VIEW_DASHBOARD_STATISTICS', 'R'),
-  ('STAFF', 'LEADER', 'UC-69.VIEW_DASHBOARD_STATISTICS', 'R'),
-  ('DEPARTMENT', 'LEADER', 'UC-69.VIEW_DASHBOARD_STATISTICS', 'R'),
-  ('HO', 'NONE', 'UC-70.EXPORT_STATISTICS_REPORT', 'E'),
-  ('STAFF', 'LEADER', 'UC-70.EXPORT_STATISTICS_REPORT', 'E'),
-  ('DEPARTMENT', 'LEADER', 'UC-70.EXPORT_STATISTICS_REPORT', 'E'),
-  ('HO', 'NONE', 'UC-71.FILTER_DASHBOARD_BY_TIME', 'R'),
-  ('STAFF', 'LEADER', 'UC-71.FILTER_DASHBOARD_BY_TIME', 'R'),
-  ('DEPARTMENT', 'LEADER', 'UC-71.FILTER_DASHBOARD_BY_TIME', 'R'),
-  ('STAFF', 'LEADER', 'UC-72.VIEW_MY_EVENTS', 'O'),
-  ('STAFF', 'STAFF', 'UC-72.VIEW_MY_EVENTS', 'O'),
-  ('DEPARTMENT', 'LEADER', 'UC-72.VIEW_MY_EVENTS', 'O'),
-  ('DEPARTMENT', 'STAFF', 'UC-72.VIEW_MY_EVENTS', 'O'),
-  ('STUDENT', 'NONE', 'UC-72.VIEW_MY_EVENTS', 'O'),
-  ('STAFF', 'LEADER', 'UC-73.VIEW_DEPARTMENT_CALENDAR', 'R'),
-  ('STAFF', 'STAFF', 'UC-73.VIEW_DEPARTMENT_CALENDAR', 'R'),
-  ('STAFF', 'LEADER', 'UC-74.SWITCH_VIEW_MODE', 'R'),
-  ('STAFF', 'STAFF', 'UC-74.SWITCH_VIEW_MODE', 'R'),
-  ('DEPARTMENT', 'LEADER', 'UC-74.SWITCH_VIEW_MODE', 'R'),
-  ('DEPARTMENT', 'STAFF', 'UC-74.SWITCH_VIEW_MODE', 'R'),
-  ('STUDENT', 'NONE', 'UC-74.SWITCH_VIEW_MODE', 'R'),
-  ('STAFF', 'LEADER', 'UC-75.ADD_PERSONAL_EVENT', 'O'),
-  ('STAFF', 'STAFF', 'UC-75.ADD_PERSONAL_EVENT', 'O'),
-  ('STAFF', 'LEADER', 'UC-76.DELETE_PERSONAL_EVENT', 'O'),
-  ('STAFF', 'STAFF', 'UC-76.DELETE_PERSONAL_EVENT', 'O'),
-  ('STAFF', 'LEADER', 'UC-77.UPDATE_PERSONAL_EVENT', 'O'),
-  ('STAFF', 'STAFF', 'UC-77.UPDATE_PERSONAL_EVENT', 'O'),
-  ('STAFF', 'LEADER', 'UC-78.VIEW_EVENT_DETAILS', 'R'),
-  ('STAFF', 'STAFF', 'UC-78.VIEW_EVENT_DETAILS', 'R'),
-  ('DEPARTMENT', 'LEADER', 'UC-78.VIEW_EVENT_DETAILS', 'R'),
-  ('DEPARTMENT', 'STAFF', 'UC-78.VIEW_EVENT_DETAILS', 'R'),
-  ('STUDENT', 'NONE', 'UC-78.VIEW_EVENT_DETAILS', 'R'),
-  ('STAFF', 'LEADER', 'UC-79.SEARCH_FILTER_FEEDBACK', 'R'),
-  ('STAFF', 'STAFF', 'UC-79.SEARCH_FILTER_FEEDBACK', 'R'),
-  ('STAFF', 'LEADER', 'UC-80.VIEW_FEEDBACK_SUMMARY', 'R'),
-  ('STAFF', 'STAFF', 'UC-80.VIEW_FEEDBACK_SUMMARY', 'R'),
-  ('HO', 'NONE', 'UC-81.ADD_NEW_CAMPUS', 'F'),
-  ('HO', 'NONE', 'UC-82.VIEW_CAMPUS_LIST', 'R'),
-  ('HO', 'NONE', 'UC-83.SEARCH_AND_FILTER_CAMPUS', 'R'),
-  ('HO', 'NONE', 'UC-84.VIEW_CAMPUS_DETAILS', 'R'),
-  ('HO', 'NONE', 'UC-85.UPDATE_CAMPUS', 'E'),
-  ('HO', 'NONE', 'UC-86.MANAGE_CAMPUS_STATUS', 'E'),
-  ('HO', 'NONE', 'UC-87.ASSIGN_CAMPUS_LEAD', 'F'),
-  ('STAFF', 'LEADER', 'UC-88.APPROVE_NEWS', 'E'),
-  ('STAFF', 'STAFF', 'UC-89.PUBLISH_NEWS', 'F'),
-  ('STAFF', 'LEADER', 'UC-90.VIEW_NEWS_LIST', 'R'),
-  ('STAFF', 'STAFF', 'UC-90.VIEW_NEWS_LIST', 'R'),
-  ('STUDENT', 'NONE', 'UC-90.VIEW_NEWS_LIST', 'R'),
-  ('STAFF', 'LEADER', 'UC-91.VIEW_NEWS_DETAILS', 'R'),
-  ('STAFF', 'STAFF', 'UC-91.VIEW_NEWS_DETAILS', 'R'),
-  ('STUDENT', 'NONE', 'UC-91.VIEW_NEWS_DETAILS', 'R'),
-  ('STAFF', 'STAFF', 'UC-92.ADD_MULTILINGUAL_NEWS', 'F'),
-  ('STUDENT', 'NONE', 'UC-92.ADD_MULTILINGUAL_NEWS', 'F'),
-  ('STAFF', 'LEADER', 'UC-93.MANAGE_NEWS_VISIBILITY', 'E'),
-  ('STAFF', 'STAFF', 'UC-94.EDIT_NEWS', 'E'),
-  ('STUDENT', 'NONE', 'UC-94.EDIT_NEWS', 'E'),
-  ('HO', 'NONE', 'UC-95.VIEW_ACCOUNT_LIST', 'R'),
-  ('STAFF', 'LEADER', 'UC-95.VIEW_ACCOUNT_LIST', 'R'),
-  ('HO', 'NONE', 'UC-96.CREATE_ACCOUNT', 'F'),
-  ('STAFF', 'LEADER', 'UC-96.CREATE_ACCOUNT', 'F'),
-  ('HO', 'NONE', 'UC-97.MANAGE_ACCOUNT_STATUS', 'E'),
-  ('STAFF', 'LEADER', 'UC-97.MANAGE_ACCOUNT_STATUS', 'E'),
-  ('HO', 'NONE', 'UC-98.VIEW_ACCOUNT_DETAILS', 'R'),
-  ('STAFF', 'LEADER', 'UC-98.VIEW_ACCOUNT_DETAILS', 'R'),
-  ('HO', 'NONE', 'UC-99.SEARCH_AND_FILTER_ACCOUNTS', 'R'),
-  ('STAFF', 'LEADER', 'UC-99.SEARCH_AND_FILTER_ACCOUNTS', 'R'),
-  ('STAFF', 'LEADER', 'UC-100.UPDATE_ACCOUNT_ROLE', 'E'),
-  ('STAFF', 'LEADER', 'UC-101.ADD_NEW_DEPARTMENT', 'F'),
-  ('STAFF', 'LEADER', 'UC-102.UPDATE_DEPARTMENT', 'F'),
-  ('STAFF', 'LEADER', 'UC-103.SEARCH_AND_FILTER_DEPARTMENTS', 'R'),
-  ('STAFF', 'LEADER', 'UC-104.VIEW_DEPARTMENT_LIST', 'R'),
-  ('STAFF', 'LEADER', 'UC-105.VIEW_DEPARTMENT_DETAILS', 'R'),
-  ('DEPARTMENT', 'LEADER', 'UC-105.VIEW_DEPARTMENT_DETAILS', 'R'),
-  ('DEPARTMENT', 'STAFF', 'UC-105.VIEW_DEPARTMENT_DETAILS', 'R'),
-  ('STAFF', 'LEADER', 'UC-106.MANAGE_DEPARTMENT_STATUS', 'E'),
-  ('DEPARTMENT', 'LEADER', 'UC-107.ADD_DEPARTMENT_PERSONNEL', 'F'),
-  ('DEPARTMENT', 'LEADER', 'UC-108.VIEW_PERSONNEL_DETAILS', 'R'),
-  ('DEPARTMENT', 'STAFF', 'UC-108.VIEW_PERSONNEL_DETAILS', 'R'),
-  ('DEPARTMENT', 'LEADER', 'UC-109.SEARCH_PERSONNEL', 'R'),
-  ('DEPARTMENT', 'STAFF', 'UC-109.SEARCH_PERSONNEL', 'R'),
-  ('DEPARTMENT', 'STAFF', 'UC-110.REVIEW_ASSIGNED_TASKS', 'E'),
-  ('DEPARTMENT', 'LEADER', 'UC-111.ASSIGN_TASKS', 'F'),
-  ('STAFF', 'STAFF', 'UC-112.SIGN_THE_SERVICE_DELIVERY_REPORT', 'E'),
-  ('DEPARTMENT', 'LEADER', 'UC-112.SIGN_THE_SERVICE_DELIVERY_REPORT', 'E'),
-  ('DEPARTMENT', 'STAFF', 'UC-112.SIGN_THE_SERVICE_DELIVERY_REPORT', 'E'),
-  ('DEPARTMENT', 'LEADER', 'UC-113.REMOVE_PERSONNEL', 'F'),
-  ('DEPARTMENT', 'LEADER', 'UC-114.VIEW_COORDINATION_TASKS', 'R'),
-  ('DEPARTMENT', 'STAFF', 'UC-114.VIEW_COORDINATION_TASKS', 'R'),
-  ('DEPARTMENT', 'LEADER', 'UC-115.SEARCH_COORDINATION_TASKS', 'R'),
-  ('DEPARTMENT', 'STAFF', 'UC-115.SEARCH_COORDINATION_TASKS', 'R'),
-  ('DEPARTMENT', 'LEADER', 'UC-116.REASSIGN_DEPARTMENT_LEAD', 'F'),
-  ('ADMIN', 'NONE', 'UC-117.VIEW_ROLE_LIST', 'R'),
-  ('ADMIN', 'NONE', 'UC-118.CREATE_NEW_ROLE', 'F'),
-  ('ADMIN', 'NONE', 'UC-119.CONFIGURE_ROLE_PERMISSIONS', 'F'),
-  ('ADMIN', 'NONE', 'UC-120.UPDATE_ROLE_DETAILS', 'F'),
-  ('ADMIN', 'NONE', 'UC-121.DISABLE_DELETE_ROLE', 'F'),
-  ('ADMIN', 'NONE', 'UC-122.VIEW_API_CONFIGURATION', 'R'),
-  ('ADMIN', 'NONE', 'UC-123.CREATE_API_CONFIGURATION', 'F'),
-  ('ADMIN', 'NONE', 'UC-124.UPDATE_API_CONFIGURATION', 'E'),
-  ('ADMIN', 'NONE', 'UC-125.DELETE_API_CONFIGURATION', 'E'),
-  ('ADMIN', 'NONE', 'UC-126.TEST_API_CONNECTION', 'F'),
-  ('ADMIN', 'NONE', 'UC-127.MANAGE_API_STATUS', 'F'),
-  ('ADMIN', 'NONE', 'UC-128.CONFIGURE_REQUEST_LIMIT', 'F'),
-  ('ADMIN', 'NONE', 'UC-129.VIEW_API_LOGS', 'R'),
-  ('ADMIN', 'NONE', 'UC-130.SEARCH_API_LOGS', 'R'),
-  ('HO', 'NONE', 'UC-131.CREATE_AGENDA_TEMPLATE', 'F'),
-  ('HO', 'NONE', 'UC-132.UPDATE_AGENDA_TEMPLATE', 'E'),
-  ('HO', 'NONE', 'UC-133.DELETE_AGENDA_TEMPLATE', 'F'),
-  ('HO', 'NONE', 'UC-134.VIEW_AGENDA_TEMPLATE_LIST', 'R'),
-  ('HO', 'NONE', 'UC-135.VIEW_AGENDA_TEMPLATE_DETAIL', 'R');
-
-
-
--- v8.2: desired grants for UC-136 Cancel Visit Request.
-INSERT INTO desired_role_permissions
-  (role_code, sub_role, permission_code, permission_level)
-VALUES
-  ('VISITOR', 'NONE', 'UC-136.CANCEL_VISIT_REQUEST', 'O'),
-  ('STAFF', 'LEADER', 'UC-136.CANCEL_VISIT_REQUEST', 'E'),
-  ('STAFF', 'STAFF',  'UC-136.CANCEL_VISIT_REQUEST', 'O'),
-  ('HO',    'NONE',   'UC-136.CANCEL_VISIT_REQUEST', 'E');
-
--- 3. Preview desired matrix before applying.
-SELECT
-  'PREVIEW_DESIRED_MATRIX' AS check_name,
-  d.role_code,
-  d.sub_role,
-  d.permission_code,
-  d.permission_level
-FROM desired_role_permissions d
-ORDER BY d.role_code, d.sub_role, d.permission_code;
-
-SELECT 'TOTAL_DESIRED_GRANTS' AS check_name, COUNT(*) AS total_rows
-FROM desired_role_permissions;
-
--- 4. Missing role check. Must return zero rows.
-SELECT d.*, 'MISSING_ROLE' AS status
-FROM desired_role_permissions d
-LEFT JOIN roles r
-  ON r.role_code = d.role_code
- AND r.deleted_at IS NULL
-WHERE r.role_id IS NULL;
-
--- 5. Missing permission check. Must return zero rows.
--- Note: permissions table in current schema does NOT have deleted_at.
-SELECT d.*, 'MISSING_PERMISSION' AS status
-FROM desired_role_permissions d
-LEFT JOIN permissions p
-  ON p.permission_code = d.permission_code
-WHERE p.permission_id IS NULL;
-
--- 6. Upsert matrix into role_permissions.
-INSERT IGNORE INTO role_permissions
-  (role_id, sub_role, permission_id, permission_level, granted_at)
-SELECT
-  r.role_id,
-  d.sub_role,
-  p.permission_id,
-  d.permission_level,
-  NOW()
-FROM desired_role_permissions d
-JOIN roles r
-  ON r.role_code = d.role_code
- AND r.deleted_at IS NULL
-JOIN permissions p
-  ON p.permission_code = d.permission_code;
-
--- 7. Preview excess permissions. Review this before running cleanup.
-SELECT
-  r.role_code,
-  rp.sub_role,
-  p.permission_code,
-  rp.permission_level AS current_db_level,
-  'WILL_BE_DELETED_IF_CLEANUP_RUNS' AS action
-FROM role_permissions rp
-JOIN roles r ON r.role_id = rp.role_id
-JOIN permissions p ON p.permission_id = rp.permission_id
-LEFT JOIN desired_role_permissions d
-  ON d.role_code = r.role_code
- AND d.sub_role = rp.sub_role
- AND d.permission_code = p.permission_code
-WHERE d.permission_code IS NULL
-  AND r.role_code IN ('ADMIN', 'HO', 'STAFF', 'DEPARTMENT', 'STUDENT', 'VISITOR')
-  AND p.permission_code REGEXP '^UC-[0-9]+\.'
-ORDER BY r.role_code, rp.sub_role, p.permission_code;
-
--- 8. Optional cleanup. Keep commented by default for safety.
-/*
-DELETE rp
-FROM role_permissions rp
-JOIN roles r ON r.role_id = rp.role_id
-JOIN permissions p ON p.permission_id = rp.permission_id
-LEFT JOIN desired_role_permissions d
-  ON d.role_code = r.role_code
- AND d.sub_role = rp.sub_role
- AND d.permission_code = p.permission_code
-WHERE d.permission_code IS NULL
-  AND r.role_code IN ('ADMIN', 'HO', 'STAFF', 'DEPARTMENT', 'STUDENT', 'VISITOR')
-  AND p.permission_code REGEXP '^UC-[0-9]+\.';
-*/
-
--- 9. Final verification.
-SELECT
-  r.role_code,
-  rp.sub_role,
-  COUNT(*) AS total_permissions
-FROM role_permissions rp
-JOIN roles r ON r.role_id = rp.role_id
-GROUP BY r.role_code, rp.sub_role
-ORDER BY FIELD(r.role_code, 'ADMIN','HO','STAFF','DEPARTMENT','STUDENT','VISITOR'), rp.sub_role;
-
-COMMIT;
-
-
--- <<< END permission_matrix.sql
+-- >>> permissions.sql and permission_matrix.sql removed: no DB-backed dynamic permissions.
 
 
 
@@ -5606,12 +4225,12 @@ SELECT
   vr.visit_request_id,
   vrc.visit_instance_id,
   vrc.campus_id AS visible_campus_id,
+  vrc.coordinator_user_id,
+  vrc.coordinator_assigned_by,
+  vrc.coordinator_assigned_at,
   vrc.current_host_user_id,
   vrc.host_assigned_by,
   vrc.host_assigned_at,
-  vrc.host_assignment_source,
-  vrc.host_transferred_by,
-  vrc.host_transferred_at,
   vr.request_code,
   vr.delegation_name,
   vr.visit_scope,
@@ -5675,15 +4294,7 @@ WHERE
 
 SELECT 'FINAL_MANUAL_SEED_STANDARDIZATION_COMPLETED' AS message, NOW() AS verified_at;
 
-SELECT
-  r.role_code,
-  rp.sub_role,
-  COUNT(*) AS total_permissions
-FROM role_permissions rp
-JOIN roles r ON r.role_id = rp.role_id
-WHERE r.role_code IN ('ADMIN','HO','STAFF','DEPARTMENT','STUDENT','VISITOR')
-GROUP BY r.role_code, rp.sub_role
-ORDER BY FIELD(r.role_code, 'ADMIN','HO','STAFF','DEPARTMENT','STUDENT','VISITOR'), rp.sub_role;
+-- DB-backed permission matrix verification removed.
 
 SELECT
   u.email,
@@ -5727,19 +4338,7 @@ ORDER BY FIELD(u.email,
 --                 of MULTI_CAMPUS requests only after HO approval.
 -- =====================================================================
 
--- 1) Hard-clean accidental ADMIN permissions for visit/delegation business UCs.
--- ADMIN remains a technical/system administrator, not a visit workflow actor.
-DELETE rp
-FROM role_permissions rp
-JOIN roles r
-  ON r.role_id = rp.role_id
-JOIN permissions p
-  ON p.permission_id = rp.permission_id
-WHERE r.role_code = 'ADMIN'
-  AND (
-    p.permission_group = 'Delegation Reception Management'
-    OR p.permission_code REGEXP '^UC-(17|18|19|20|21|22|23|24|25|26|27|28|29|30|31|32|33|34|35|36|37|38|39|40|41|42|43|44|45|46|47|48)\\.'
-  );
+-- 1) DB-backed permission cleanup removed because permissions/role_permissions tables are not used.
 
 -- 2) HO list/detail source: HO sees ONLY MULTI_CAMPUS requests.
 CREATE OR REPLACE VIEW vw_visit_requests_for_ho AS
@@ -5797,12 +4396,12 @@ SELECT
   vr.visit_request_id,
   vrc.visit_instance_id,
   vrc.campus_id AS visible_campus_id,
+  vrc.coordinator_user_id,
+  vrc.coordinator_assigned_by,
+  vrc.coordinator_assigned_at,
   vrc.current_host_user_id,
   vrc.host_assigned_by,
   vrc.host_assigned_at,
-  vrc.host_assignment_source,
-  vrc.host_transferred_by,
-  vrc.host_transferred_at,
   vr.request_code,
   vr.visitor_user_id,
   vr.partner_id,
@@ -5937,22 +4536,13 @@ FROM information_schema.tables
 WHERE table_schema = DATABASE()
   AND table_type = 'BASE TABLE';
 
+SELECT 'db_permission_tables_removed' AS check_name, COUNT(*) AS value
+FROM information_schema.tables
+WHERE table_schema = DATABASE()
+  AND table_name IN ('permissions','role_permissions');
 
-SELECT 'admin_delegation_permissions' AS check_name, COUNT(*) AS value
-FROM role_permissions rp
-JOIN roles r ON r.role_id = rp.role_id
-JOIN permissions p ON p.permission_id = rp.permission_id
-WHERE r.role_code = 'ADMIN'
-  AND (
-    p.permission_group = 'Delegation Reception Management'
-    OR p.permission_code REGEXP '^UC-(17|18|19|20|21|22|23|24|25|26|27|28|29|30|31|32|33|34|35|36|37|38|39|40|41|42|43|44|45|46|47|48)\\.'
-  );
 
-SELECT 'uc48_non_own_permissions' AS check_name, COUNT(*) AS value
-FROM role_permissions rp
-JOIN permissions p ON p.permission_id = rp.permission_id
-WHERE p.permission_code = 'UC-48.VIEW_EMAIL'
-  AND rp.permission_level <> 'O';
+
 
 SELECT 'ho_view_single_campus_rows' AS check_name, COUNT(*) AS value
 FROM vw_visit_requests_for_ho
@@ -5963,21 +4553,13 @@ FROM vw_visit_requests_for_admin;
 
 
 
--- v8.2 verification: UC-136 and cancellation metadata.
-SELECT 'uc136_permission_seeded' AS check_name, COUNT(*) AS value
-FROM permissions
-WHERE permission_code = 'UC-136.CANCEL_VISIT_REQUEST';
 
-SELECT 'uc136_role_grants' AS check_name, COUNT(*) AS value
-FROM role_permissions rp
-JOIN permissions p ON p.permission_id = rp.permission_id
-WHERE p.permission_code = 'UC-136.CANCEL_VISIT_REQUEST';
-
+-- v8.2 verification: cancellation metadata.
 SELECT 'cancellation_columns_present' AS check_name, COUNT(*) AS value
 FROM information_schema.columns
 WHERE table_schema = DATABASE()
   AND table_name IN ('visit_requests','visit_request_campuses')
-  AND column_name IN ('cancelled_by','cancelled_at','cancellation_actor_type','cancellation_source','cancellation_reason');
+  AND column_name IN ('cancelled_by','cancelled_at','cancellation_reason');
 
 
 -- =====================================================================
@@ -5995,12 +4577,6 @@ FROM information_schema.columns
 WHERE table_schema = DATABASE()
   AND extra LIKE '%auto_increment%';
 
-SELECT 'role_permissions_has_surrogate_pk' AS check_name, COUNT(*) AS value
-FROM information_schema.columns
-WHERE table_schema = DATABASE()
-  AND table_name = 'role_permissions'
-  AND column_name = 'role_permission_id'
-  AND extra LIKE '%auto_increment%';
 
 
 SELECT 'visit_request_status_values' AS check_name,
@@ -6020,7 +4596,7 @@ SELECT 'host_assignment_columns_present' AS check_name, COUNT(*) AS value
 FROM information_schema.columns
 WHERE table_schema = DATABASE()
   AND table_name = 'visit_request_campuses'
-  AND column_name IN ('host_assigned_by','host_assigned_at','host_assignment_source');
+  AND column_name IN ('host_assigned_by','host_assigned_at');
 
 -- =====================================================================
 

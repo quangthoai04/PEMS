@@ -24,8 +24,7 @@ public sealed class VisitRequestManagementItemDto
     public ulong? CreatedByUserId { get; set; }
     public ulong? CurrentHostUserId { get; set; }
     public string? HostName { get; set; }
-    /// <summary>How the current host was assigned (AUTO_STAFF_LEADER / MANUAL_APPROVAL / TRANSFERRED).</summary>
-    public string? HostAssignmentSource { get; set; }
+
     /// <summary>True when the signed-in user is the current host of this campus instance.</summary>
     public bool CurrentUserIsHost { get; set; }
 

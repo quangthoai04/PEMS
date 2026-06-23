@@ -30,7 +30,7 @@ import { HODashboardView } from './HODashboardView';
 import { SharedDashboardView } from './SharedDashboardView';
 import { AdminDashboardView } from './AdminDashboardView';
 import { useAuth } from '../../../shared/hooks/useAuth';
-import { PERMISSIONS } from '../../../shared/constants/permissions';
+
 
 interface EventItem {
   id: string;
@@ -70,9 +70,7 @@ export function DashboardHome() {
         role: "GUEST",
       };
 
-  // Permission gate for the business statistics dashboard (UC-69). Sourced from
-  // AuthContext (real backend permissions), not from the legacy localStorage user.
-  const { hasPermission } = useAuth();
+
 
   // Canonical Role + SubRole identification (xem docs/permissions/PERMISSION_RULES.md):
   //   STAFF      + STAFF  = Staff thường | STAFF      + LEADER = Staff Leader
@@ -337,7 +335,7 @@ export function DashboardHome() {
         </div>
       </div>
 
-      {user.role?.toUpperCase() === 'HO' && hasPermission(PERMISSIONS.VIEW_DASHBOARD_STATISTICS) ? (
+      {user.role?.toUpperCase() === 'HO' ? (
         <HODashboardView />
       ) : isAdmin ? (
         <AdminDashboardView />

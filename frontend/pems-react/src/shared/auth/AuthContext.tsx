@@ -4,15 +4,13 @@ import type {
   AuthUser,
   ChangePasswordRequest,
   LoginPortal,
-  PermissionLevel,
-  UserPermission,
 } from '../../features/authentication/types/authentication.types';
 import { authStorage, AUTH_EXPIRED_EVENT } from './authStorage';
-import { hasAnyPermission, hasPermission, hasRole } from './permissionChecker';
+import { hasRole } from './permissionChecker';
 
 interface AuthContextValue {
   user: AuthUser | null;
-  permissions: UserPermission[];
+
   loginPortal: LoginPortal | null;
   selectedCampusId: string | null;
   isAuthenticated: boolean;
@@ -24,8 +22,7 @@ interface AuthContextValue {
   refreshProfile: () => Promise<void>;
   changePassword: (payload: ChangePasswordRequest) => Promise<void>;
 
-  hasPermission: (code: string, minimumLevel?: PermissionLevel) => boolean;
-  hasAnyPermission: (codes: string[], minimumLevel?: PermissionLevel) => boolean;
+
   hasRole: (roles: string[]) => boolean;
 }
 
@@ -33,22 +30,20 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(() => authStorage.getUser());
-  const [permissions, setPermissions] = useState<UserPermission[]>(() => authStorage.getPermissions());
+
   const [loginPortal, setLoginPortal] = useState<LoginPortal | null>(() => authStorage.getLoginPortal());
   const [selectedCampusId, setSelectedCampusId] = useState<string | null>(() => authStorage.getSelectedCampusId());
   const [isLoading, setIsLoading] = useState<boolean>(() => !!authStorage.getAccessToken());
 
-  const applySession = useCallback((nextUser: AuthUser, nextPermissions: UserPermission[]) => {
+  const applySession = useCallback((nextUser: AuthUser) => {
     authStorage.setUser(nextUser);
-    authStorage.setPermissions(nextPermissions);
     setUser(nextUser);
-    setPermissions(nextPermissions);
   }, []);
 
   const clearSession = useCallback(() => {
     authStorage.clear();
     setUser(null);
-    setPermissions([]);
+
     setLoginPortal(null);
     setSelectedCampusId(null);
   }, []);
@@ -64,7 +59,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       try {
         const profile = await authenticationApi.getMe();
-        if (!cancelled) applySession(profile.user, profile.permissions);
+        if (!cancelled) applySession(profile.user);
       } catch {
         if (!cancelled) clearSession();
       } finally {
@@ -82,7 +77,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const handler = () => {
       setUser(null);
-      setPermissions([]);
+
       setLoginPortal(null);
       setSelectedCampusId(null);
     };
@@ -103,7 +98,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setSelectedCampusId(null);
       }
       setLoginPortal(portal);
-      applySession(result.user, result.permissions);
+      applySession(result.user);
       return result.user;
     },
     [applySession],
@@ -122,7 +117,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setSelectedCampusId(null);
       }
       setLoginPortal(portal);
-      applySession(result.user, result.permissions);
+      applySession(result.user);
       return result.user;
     },
     [applySession],
@@ -140,7 +135,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const refreshProfile = useCallback(async () => {
     const profile = await authenticationApi.getMe();
-    applySession(profile.user, profile.permissions);
+    applySession(profile.user);
   }, [applySession]);
 
   const changePassword = useCallback(async (payload: ChangePasswordRequest) => {
@@ -157,7 +152,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const value = useMemo<AuthContextValue>(
     () => ({
       user,
-      permissions,
+
       loginPortal,
       selectedCampusId,
       isAuthenticated: !!user,
@@ -167,11 +162,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       logout,
       refreshProfile,
       changePassword,
-      hasPermission: (code, minimumLevel) => hasPermission(permissions, code, minimumLevel),
-      hasAnyPermission: (codes, minimumLevel) => hasAnyPermission(permissions, codes, minimumLevel),
+
       hasRole: (roles) => hasRole(user?.roleCode, roles),
     }),
-    [user, permissions, loginPortal, selectedCampusId, isLoading, login, loginWithGoogle, logout, refreshProfile, changePassword],
+    [user, loginPortal, selectedCampusId, isLoading, login, loginWithGoogle, logout, refreshProfile, changePassword],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

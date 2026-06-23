@@ -53,7 +53,7 @@ export function CreateVisitRequest() {
   const [workingLanguage, setWorkingLanguage] = useState<string>('EN');
   const [transportationType, setTransportationType] = useState<string>('UNKNOWN');
   const [transportationDetail, setTransportationDetail] = useState<string>('');
-  const [mediaConsentStatus, setMediaConsentStatus] = useState<string>('UNKNOWN');
+  const [mediaConsentStatus, setMediaConsentStatus] = useState<string>('DECLINED');
   const [mediaConsentNote, setMediaConsentNote] = useState<string>('');
   
   const [agendaItems, setAgendaItems] = useState([{ startTime: '', endTime: '', content: '' }]);

@@ -4,6 +4,7 @@ using MediatR;
 using PEMS.Application.Accounts.Common;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Common.Models;
+using PEMS.Application.Common.Security;
 
 namespace PEMS.Application.Accounts.Queries.SearchandFilterAccounts;
 
@@ -16,19 +17,19 @@ public sealed class SearchandFilterAccountsQueryHandler
 {
     private readonly IApplicationDbContext _db;
     private readonly ICurrentUserService _currentUser;
-    private readonly IPermissionChecker _permissionChecker;
+    private readonly IRoleAccessPolicy _accessPolicy;
 
     public SearchandFilterAccountsQueryHandler(
         IApplicationDbContext db,
         ICurrentUserService currentUser,
-        IPermissionChecker permissionChecker)
+        IRoleAccessPolicy accessPolicy)
     {
         _db = db;
         _currentUser = currentUser;
-        _permissionChecker = permissionChecker;
+        _accessPolicy = accessPolicy;
     }
 
     public Task<PaginatedResult<AccountListItemDto>> Handle(
         SearchandFilterAccountsQuery request, CancellationToken cancellationToken)
-        => AccountListQueryExecutor.ExecuteAsync(_db, _currentUser, _permissionChecker, request, cancellationToken);
+        => AccountListQueryExecutor.ExecuteAsync(_db, _currentUser, _accessPolicy, request, cancellationToken);
 }

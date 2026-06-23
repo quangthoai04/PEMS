@@ -35,7 +35,7 @@ export function Profile() {
   const [profileData, setProfileData] = useState({
     name: user.name || 'Khách',
     phone: '0369182718',
-    gender: 'Nam',
+    gender: '' as string | null,
     email: getInitialEmail(),
     major: 'Công nghệ thông tin',
     facebook: 'https://facebook.com/hihi',
@@ -211,12 +211,15 @@ export function Profile() {
                           onChange={e => setProfileData({...profileData, gender: e.target.value})} 
                           className="text-gray-900 font-medium px-3 py-1.5 rounded-lg border border-[#b6d4f0] focus:outline-none focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] w-full bg-white"
                         >
-                          <option value="Nam">Nam</option>
-                          <option value="Nữ">Nữ</option>
-                          <option value="Khác">Khác</option>
+                          <option value="">Chưa cập nhật</option>
+                          <option value="MALE">Nam</option>
+                          <option value="FEMALE">Nữ</option>
+                          <option value="OTHER">Khác</option>
                         </select>
                       ) : (
-                        <p className="text-gray-900 font-medium">{profileData.gender}</p>
+                        <p className="text-gray-900 font-medium">
+                          {!profileData.gender ? 'Chưa cập nhật' : profileData.gender === 'MALE' ? 'Nam' : profileData.gender === 'FEMALE' ? 'Nữ' : 'Khác'}
+                        </p>
                       )}
                     </div>
                  </div>

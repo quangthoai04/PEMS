@@ -5,5 +5,4 @@ public static class DecisionActorRole
 {
     public const string Ho = "HO";
     public const string StaffLeader = "STAFF_LEADER";
-    public const string System = "SYSTEM";
 }

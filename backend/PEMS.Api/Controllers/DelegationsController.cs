@@ -30,7 +30,7 @@ namespace PEMS.Api.Controllers
         // ── UC-18 HO approve / reject a MULTI_CAMPUS request ──────────────────
         // Approve: request → APPROVED and every campus instance is auto-assigned to its IC head.
         [HttpPost("{visitRequestId}/ho-approve")]
-        [RequirePermission(PermissionCodes.ApproveCrossCampusRequest, PermissionLevels.Execute)]
+
         public async Task<IActionResult> HoApprove(ulong visitRequestId, CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(new ApproveCrossCampusRequestCommand(visitRequestId), cancellationToken);
@@ -38,7 +38,7 @@ namespace PEMS.Api.Controllers
         }
 
         [HttpPost("{visitRequestId}/ho-reject")]
-        [RequirePermission(PermissionCodes.ApproveCrossCampusRequest, PermissionLevels.Execute)]
+
         public async Task<IActionResult> HoReject(ulong visitRequestId, [FromBody] RejectVisitRequestBody body, CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(new RejectVisitRequestCommand(visitRequestId, body.Reason), cancellationToken);
@@ -53,7 +53,7 @@ namespace PEMS.Api.Controllers
         }
 
         [HttpGet("viewguestdelegationlist")]
-        [RequirePermission(PermissionCodes.ViewGuestDelegationList, PermissionLevels.Read)]
+
         public async Task<IActionResult> ViewGuestDelegationList([FromQuery] PEMS.Application.Delegations.Queries.ViewGuestDelegationList.ViewGuestDelegationListQuery query, CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(query, cancellationToken);
@@ -70,7 +70,7 @@ namespace PEMS.Api.Controllers
         // ── UC-22 Staff Leader: list host candidates, approve+assign host (single) /
         //    transfer host (multi), and reject own-campus single requests ─────────
         [HttpGet("campuses/{visitInstanceId}/host-candidates")]
-        [RequirePermission(PermissionCodes.ProcessVisitRequest, PermissionLevels.Read)]
+
         public async Task<IActionResult> GetHostCandidates(ulong visitInstanceId, CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(new GetHostCandidatesQuery(visitInstanceId), cancellationToken);
@@ -78,7 +78,7 @@ namespace PEMS.Api.Controllers
         }
 
         [HttpPost("{visitRequestId}/campuses/{visitInstanceId}/assign-host")]
-        [RequirePermission(PermissionCodes.ProcessVisitRequest, PermissionLevels.Execute)]
+
         public async Task<IActionResult> AssignHost(ulong visitRequestId, ulong visitInstanceId, [FromBody] AssignHostBody body, CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(new ProcessVisitRequestCommand(visitRequestId, visitInstanceId, body.HostUserId), cancellationToken);
@@ -86,7 +86,7 @@ namespace PEMS.Api.Controllers
         }
 
         [HttpPost("{visitRequestId}/campus-reject")]
-        [RequirePermission(PermissionCodes.ProcessVisitRequest, PermissionLevels.Execute)]
+
         public async Task<IActionResult> CampusReject(ulong visitRequestId, [FromBody] RejectVisitRequestBody body, CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(new RejectVisitRequestCommand(visitRequestId, body.Reason), cancellationToken);
@@ -131,7 +131,7 @@ namespace PEMS.Api.Controllers
         // ── UC-27 Confirm Participation: an invitee's own participation invitations ─────
         // The pending invitations to respond to (and optionally the responded history).
         [HttpGet("my-invitations")]
-        [RequirePermission(PermissionCodes.ConfirmParticipation, PermissionLevels.Read)]
+
         public async Task<IActionResult> GetMyInvitations([FromQuery] bool includeResponded, CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(new ViewMyVisitInvitationsQuery { IncludeResponded = includeResponded }, cancellationToken);
@@ -140,7 +140,7 @@ namespace PEMS.Api.Controllers
 
         // A single invitation for the invitation-detail screen (ownership enforced server-side).
         [HttpGet("invitations/{participantId}")]
-        [RequirePermission(PermissionCodes.ConfirmParticipation, PermissionLevels.Read)]
+
         public async Task<IActionResult> GetInvitation(ulong participantId, CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(new GetVisitInvitationByIdQuery(participantId), cancellationToken);
@@ -150,7 +150,7 @@ namespace PEMS.Api.Controllers
         // Accept / decline an invitation (decline requires a reason). Accepting makes the row
         // appear in the "Đơn mời tham dự" tab; this endpoint is NOT on that tab.
         [HttpPost("participants/{participantId}/respond")]
-        [RequirePermission(PermissionCodes.ConfirmParticipation, PermissionLevels.Execute)]
+
         public async Task<IActionResult> RespondInvitation(ulong participantId, [FromBody] RespondInvitationBody body, CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(
@@ -259,7 +259,7 @@ namespace PEMS.Api.Controllers
         // ── UC-136 Cancel Visit Request (post-approval only) ──────────────────
         // Cancel the whole approved request (Visitor self-cancel, or Staff Leader / HO).
         [HttpPost("{visitRequestId}/cancel")]
-        [RequirePermission(PermissionCodes.CancelVisitRequest, PermissionLevels.Own)]
+
         public async Task<IActionResult> CancelVisitRequest(
             ulong visitRequestId,
             [FromBody] CancelVisitRequestBody body,
@@ -272,7 +272,7 @@ namespace PEMS.Api.Controllers
 
         // Cancel a single campus instance (current Host, after external confirmation from the guest).
         [HttpPost("{visitRequestId}/campuses/{visitInstanceId}/cancel")]
-        [RequirePermission(PermissionCodes.CancelVisitRequest, PermissionLevels.Own)]
+
         public async Task<IActionResult> CancelVisitRequestCampus(
             ulong visitRequestId,
             ulong visitInstanceId,

@@ -1,10 +1,10 @@
-import type { AuthUser, LoginPortal, UserPermission } from '../../features/authentication/types/authentication.types';
+import type { AuthUser, LoginPortal } from '../../features/authentication/types/authentication.types';
 
 // localStorage keys.
 const ACCESS_TOKEN_KEY = 'token';
 const REFRESH_TOKEN_KEY = 'refreshToken';
 const USER_KEY = 'pems_user';
-const PERMISSIONS_KEY = 'pems_permissions';
+
 const LOGIN_PORTAL_KEY = 'pems_loginPortal';
 const SELECTED_CAMPUS_KEY = 'pems_selectedCampusId';
 const LEGACY_USER_KEY = 'currentUser';
@@ -51,9 +51,6 @@ export const authStorage = {
     writeLegacyUser(user);
   },
 
-  getPermissions: () => readJson<UserPermission[]>(PERMISSIONS_KEY) ?? [],
-  setPermissions: (permissions: UserPermission[]) =>
-    localStorage.setItem(PERMISSIONS_KEY, JSON.stringify(permissions)),
 
   getLoginPortal: (): LoginPortal | null =>
     localStorage.getItem(LOGIN_PORTAL_KEY) as LoginPortal | null,
@@ -76,7 +73,7 @@ export const authStorage = {
     localStorage.removeItem(ACCESS_TOKEN_KEY);
     localStorage.removeItem(REFRESH_TOKEN_KEY);
     localStorage.removeItem(USER_KEY);
-    localStorage.removeItem(PERMISSIONS_KEY);
+
     localStorage.removeItem(LOGIN_PORTAL_KEY);
     localStorage.removeItem(SELECTED_CAMPUS_KEY);
     localStorage.removeItem(LEGACY_USER_KEY);

@@ -150,7 +150,7 @@ public sealed class VisitRequestService : IVisitRequestService
                 CurrentHostUserId    = null,
                 HostAssignedBy       = null,
                 HostAssignedAt       = null,
-                HostAssignmentSource = null,
+
                 RowVersion           = 0,
                 CreatedAt            = utcNow,
                 CreatedBy            = visitorUserId

@@ -33,7 +33,7 @@ export const DEFAULT_VISIT_REQUEST_VALUES: VisitRequestSchema = {
   workingLanguage: 'VI',
   transportationType: 'SELF_ARRANGED',
   transportationDetail: '',
-  mediaConsentStatus: 'UNKNOWN',
+  mediaConsentStatus: 'DECLINED',
   mediaConsentNote: '',
   partnerSelectionMode: 'NEW_ORGANIZATION',
   partnerId: null,

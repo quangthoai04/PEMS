@@ -1,4 +1,6 @@
 // Types for the application
+export type Gender = 'MALE' | 'FEMALE' | 'OTHER' | null;
+
 export interface NewsItem {
   id: string;
   title: string;

@@ -13,6 +13,4 @@ public sealed class AuthResponse
     public DateTime ExpiresAt { get; init; }
 
     public AuthUserDto User { get; init; } = null!;
-
-    public IReadOnlyList<UserPermissionDto> Permissions { get; init; } = new List<UserPermissionDto>();
 }

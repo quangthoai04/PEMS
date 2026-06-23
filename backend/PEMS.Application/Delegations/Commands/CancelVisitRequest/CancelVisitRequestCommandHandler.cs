@@ -1,4 +1,4 @@
-﻿using MediatR;
+using MediatR;
 using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
@@ -44,15 +44,8 @@ public sealed class CancelVisitRequestCommandHandler
             ?? throw new NotFoundException("VisitRequest", request.VisitRequestId);
 
         var isVisitorOwner = roleCode == RoleCodes.Visitor && visit.VisitorUserId == actorId;
-        var isHo = roleCode == RoleCodes.Ho;
-        var isStaffLeader = roleCode == RoleCodes.Staff && subRole == UserSubRoles.Leader;
+        // HO/Staff Leader/Admin are NOT allowed to cancel.
 
-        // HO has read-only monitoring on single-campus (chá»‘t 2026-06): HO may cancel only
-        // MULTI_CAMPUS (handled below), never a single-campus request.
-        if (isHo && visit.VisitScope == VisitScopes.SingleCampus)
-            throw new BusinessRuleException(
-                "HO chá»‰ Ä‘Æ°á»£c xem Ä‘Æ¡n má»™t cÆ¡ sá»Ÿ á»Ÿ cháº¿ Ä‘á»™ theo dÃµi, khÃ´ng Ä‘Æ°á»£c xá»­ lÃ½ nghiá»‡p vá»¥ trÃªn Ä‘Æ¡n nÃ y.",
-                "HO_SINGLE_CAMPUS_READ_ONLY");
 
         // Status rules:
         //  â€¢ Visitor may self-cancel (withdraw) their own request while PENDING or APPROVED.
@@ -95,16 +88,6 @@ public sealed class CancelVisitRequestCommandHandler
             actorType = CancellationActorType.Visitor;
             source = CancellationSource.SelfService;
         }
-        else if (isHo && visit.VisitScope == VisitScopes.MultiCampus)
-        {
-            actorType = CancellationActorType.Ho;
-            source = CancellationSource.ExternalConfirmation;
-        }
-        else if (isStaffLeader && targets.All(t => t.CampusId == _currentUser.PrimaryCampusId))
-        {
-            actorType = CancellationActorType.StaffLeader;
-            source = CancellationSource.ExternalConfirmation;
-        }
         else if (targets.All(t => t.CurrentHostUserId == actorId))
         {
             // Current host cancels after the guest confirms via an external channel.
@@ -139,17 +122,7 @@ public sealed class CancelVisitRequestCommandHandler
             instance.UpdatedBy = actorId;
             instance.RowVersion += 1;
 
-            _db.VisitStatusLogs.Add(new VisitStatusLog
-            {
-                VisitInstanceId = instance.VisitInstanceId,
-                VisitRequestId = visit.VisitRequestId,
-                StatusOwnerType = StatusOwnerType.CampusInstance,
-                OldStatus = oldStatus,
-                NewStatus = VisitInstanceStatus.Cancelled,
-                ChangedBy = actorId,
-                Reason = request.CancellationReason,
-                ChangedAt = now
-            });
+
 
             cancelled.Add(new CancelledCampusDto(instance.VisitInstanceId, instance.Status));
         }
@@ -165,23 +138,10 @@ public sealed class CancelVisitRequestCommandHandler
             visit.Status = VisitRequestStatuses.Cancelled;
             visit.CancelledBy = actorId;
             visit.CancelledAt = now;
-            visit.CancellationActorType = actorType;
-            visit.CancellationSource = source;
             visit.CancellationReason = request.CancellationReason;
             visit.UpdatedAt = now;
             visit.UpdatedBy = actorId;
             visit.RowVersion += 1;
-
-            _db.VisitStatusLogs.Add(new VisitStatusLog
-            {
-                VisitRequestId = visit.VisitRequestId,
-                StatusOwnerType = StatusOwnerType.Request,
-                OldStatus = oldReqStatus,
-                NewStatus = VisitRequestStatuses.Cancelled,
-                ChangedBy = actorId,
-                Reason = request.CancellationReason,
-                ChangedAt = now
-            });
         }
 
         _db.AuditLogs.Add(new AuditLog

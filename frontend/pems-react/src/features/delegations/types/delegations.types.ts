@@ -14,6 +14,7 @@ export type VisitRequestStatus =
 /** visit_request_campuses.status — the actual visit progress per campus. */
 export const VisitInstanceStatus = {
   WaitingRequestApproval: 'WAITING_REQUEST_APPROVAL',
+  WaitingHostAssignment: 'WAITING_HOST_ASSIGNMENT',
   Assigned: 'ASSIGNED',
   BeforeVisit: 'BEFORE_VISIT',
   DuringVisit: 'DURING_VISIT',
@@ -34,6 +35,7 @@ export const REQUEST_STATUS_LABELS: Record<VisitRequestStatus, string> = {
 
 export const INSTANCE_STATUS_LABELS: Record<VisitInstanceStatus, string> = {
   WAITING_REQUEST_APPROVAL: 'Chờ duyệt đơn',
+  WAITING_HOST_ASSIGNMENT: 'Chờ phân công host',
   ASSIGNED: 'Đã phân công',
   BEFORE_VISIT: 'Đang chuẩn bị',
   DURING_VISIT: 'Đang diễn ra',
@@ -86,12 +88,7 @@ export const PARTICIPANT_ROLE_LABELS: Record<string, string> = {
   STUDENT: 'Sinh viên hỗ trợ',
 };
 
-/** How the current host was assigned (visit_request_campuses.host_assignment_source). */
-export const HOST_ASSIGNMENT_SOURCE_LABELS: Record<string, string> = {
-  AUTO_STAFF_LEADER: 'Tự gán Staff Leader',
-  MANUAL_APPROVAL: 'Được giao khi duyệt',
-  TRANSFERRED: 'Được chuyển host',
-};
+
 
 /**
  * Business actions the backend says the signed-in user may take on a row.
@@ -132,7 +129,6 @@ export interface VisitRequestManagementItem {
   createdByUserId: number | null;
   currentHostUserId: number | null;
   hostName: string | null;
-  hostAssignmentSource: string | null;
   currentUserIsHost: boolean;
 
   visitorUserId: number | null;

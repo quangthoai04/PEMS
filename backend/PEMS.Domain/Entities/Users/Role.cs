@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace PEMS.Domain.Entities.Users;
@@ -25,12 +25,7 @@ public class Role
     [Column("created_at")]
     public DateTime CreatedAt { get; set; }
 
-    [Column("deleted_at")]
-    public DateTime? DeletedAt { get; set; }
 
-    [Column("deleted_by")]
-    public ulong? DeletedBy { get; set; }
 
     public virtual ICollection<User> Users { get; set; } = new List<User>();
-    public virtual ICollection<RolePermission> RolePermissions { get; set; } = new List<RolePermission>();
 }

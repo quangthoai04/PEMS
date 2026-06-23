@@ -1,4 +1,4 @@
-﻿using System.Linq;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
@@ -80,46 +80,29 @@ public sealed class ProcessVisitRequestCommandHandler
             visit.UpdatedBy = actorId;
             visit.RowVersion += 1;
 
-            _db.VisitStatusLogs.Add(new VisitStatusLog
-            {
-                VisitRequestId = visit.VisitRequestId,
-                StatusOwnerType = StatusOwnerType.Request,
-                OldStatus = VisitRequestStatuses.PendingApproval,
-                NewStatus = VisitRequestStatuses.Approved,
-                ChangedBy = actorId,
-                ChangedAt = now
-            });
+
 
             var oldInstanceStatus = instance.Status;
             instance.Status = VisitInstanceStatus.Assigned;
             instance.CurrentHostUserId = request.HostUserId;
             instance.HostAssignedBy = actorId;
             instance.HostAssignedAt = now;
-            instance.HostAssignmentSource = HostAssignmentSource.ManualApproval;
             instance.UpdatedAt = now;
             instance.UpdatedBy = actorId;
             instance.RowVersion += 1;
-
-            _db.VisitStatusLogs.Add(new VisitStatusLog
-            {
-                VisitInstanceId = instance.VisitInstanceId,
-                VisitRequestId = visit.VisitRequestId,
-                StatusOwnerType = StatusOwnerType.CampusInstance,
-                OldStatus = oldInstanceStatus,
-                NewStatus = VisitInstanceStatus.Assigned,
-                ChangedBy = actorId,
-                ChangedAt = now
-            });
         }
-        else // MULTI_CAMPUS â€” HO has already approved; hand the interim host off to a real staff.
+        else // MULTI_CAMPUS â€” HO has already approved; Staff Leader assigns the actual staff.
         {
-            if (visit.Status != VisitRequestStatuses.Approved || instance.Status != VisitInstanceStatus.Assigned)
-                throw new ConflictException("ÄÆ¡n Ä‘Ã£ Ä‘Æ°á»£c ngÆ°á»i khÃ¡c xá»­ lÃ½ hoáº·c tráº¡ng thÃ¡i Ä‘Ã£ thay Ä‘á»•i.");
+            if (visit.Status != VisitRequestStatuses.Approved || instance.Status != "WAITING_HOST_ASSIGNMENT")
+                throw new ConflictException("Ä Æ¡n Ä‘Ã£ Ä‘Æ°á»£c ngÆ°á» i khÃ¡c xá»­ lÃ½ hoáº·c tráº¡ng thÃ¡i Ä‘Ã£ thay Ä‘á»•i.");
 
+            if (instance.CurrentHostUserId != null)
+                throw new ConflictException("Campus instance này đã có host chính thức, không thể thay đổi host.");
+
+            instance.Status = VisitInstanceStatus.Assigned;
             instance.CurrentHostUserId = request.HostUserId;
-            instance.HostTransferredBy = actorId;
-            instance.HostTransferredAt = now;
-            instance.HostAssignmentSource = HostAssignmentSource.Transferred;
+            instance.HostAssignedBy = actorId;
+            instance.HostAssignedAt = now;
             instance.UpdatedAt = now;
             instance.UpdatedBy = actorId;
             instance.RowVersion += 1;
@@ -128,7 +111,7 @@ public sealed class ProcessVisitRequestCommandHandler
         _db.AuditLogs.Add(new AuditLog
         {
             ActorUserId = actorId,
-            Action = visit.VisitScope == VisitScopes.SingleCampus ? "APPROVE_AND_ASSIGN_HOST" : "TRANSFER_HOST",
+            Action = "APPROVE_AND_ASSIGN_HOST",
             EntityType = "VisitRequestCampus",
             EntityId = instance.VisitInstanceId,
             CreatedAt = now
@@ -143,7 +126,7 @@ public sealed class ProcessVisitRequestCommandHandler
             instance.Status,
             request.HostUserId,
             visit.VisitScope == VisitScopes.SingleCampus
-                ? "ÄÃ£ duyá»‡t Ä‘Æ¡n vÃ  gÃ¡n host phá»¥ trÃ¡ch."
-                : "ÄÃ£ chuyá»ƒn host phá»¥ trÃ¡ch cho cÆ¡ sá»Ÿ.");
+                ? "Ä Ã£ duyá»‡t Ä‘Æ¡n vÃ  gÃ¡n host phá»¥ trÃ¡ch."
+                : "Ä Ã£ gán host phá»¥ trÃ¡ch cho cÆ¡ sá»Ÿ.");
     }
 }

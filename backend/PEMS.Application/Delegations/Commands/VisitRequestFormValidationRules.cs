@@ -154,7 +154,7 @@ public static class VisitRequestFormValidationRules
 
         v.RuleFor(x => x.MediaConsentStatus)
             .NotEmpty().WithMessage("Trạng thái truyền thông không được để trống.")
-            .Must(s => s is "AGREED" or "DECLINED" or "UNKNOWN")
+            .Must(s => s is "AGREED" or "DECLINED")
             .WithMessage("Trạng thái truyền thông không hợp lệ.");
     }
 

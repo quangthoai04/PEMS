@@ -22,8 +22,6 @@ namespace PEMS.Application.Common.Interfaces;
 public interface IApplicationDbContext
 {
     DbSet<Role> Roles { get; }
-    DbSet<Permission> Permissions { get; }
-    DbSet<RolePermission> RolePermissions { get; }
     DbSet<Campus> Campuses { get; }
     DbSet<Department> Departments { get; }
     DbSet<User> Users { get; }
@@ -62,7 +60,6 @@ public interface IApplicationDbContext
     DbSet<ApiRequestLog> ApiRequestLogs { get; }
     DbSet<AgendaTemplate> AgendaTemplates { get; }
     DbSet<AuditLog> AuditLogs { get; }
-    DbSet<VisitStatusLog> VisitStatusLogs { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 

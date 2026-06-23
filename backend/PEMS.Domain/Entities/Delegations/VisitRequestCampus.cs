@@ -24,13 +24,20 @@ public class VisitRequestCampus
     public DateTime PlannedEndAt { get; set; }
 
     // NOTE: actual_start_at / actual_end_at were removed in SQL v8.3.
-    // Real timing history is tracked via visit_status_logs, not on this row.
-
     [Column("status")]
     public string Status { get; set; } = "WAITING_REQUEST_APPROVAL";
 
     [Column("current_host_user_id")]
     public ulong? CurrentHostUserId { get; set; }
+
+    [Column("coordinator_user_id")]
+    public ulong? CoordinatorUserId { get; set; }
+
+    [Column("coordinator_assigned_by")]
+    public ulong? CoordinatorAssignedBy { get; set; }
+
+    [Column("coordinator_assigned_at")]
+    public DateTime? CoordinatorAssignedAt { get; set; }
 
     // --- Host assignment (set when the overall request is approved). ---
     [Column("host_assigned_by")]
@@ -38,19 +45,6 @@ public class VisitRequestCampus
 
     [Column("host_assigned_at")]
     public DateTime? HostAssignedAt { get; set; }
-
-    [Column("host_assignment_source")]
-    public string? HostAssignmentSource { get; set; }
-
-    // --- Host transfer (Transfer Host feature). ---
-    [Column("host_transferred_by")]
-    public ulong? HostTransferredBy { get; set; }
-
-    [Column("host_transferred_at")]
-    public DateTime? HostTransferredAt { get; set; }
-
-    [Column("host_transfer_note")]
-    public string? HostTransferNote { get; set; }
 
     [Column("closed_by")]
     public ulong? ClosedBy { get; set; }
@@ -96,5 +90,4 @@ public class VisitRequestCampus
     public virtual ICollection<VisitAgenda> Agendas { get; set; } = new List<VisitAgenda>();
     public virtual ICollection<VisitParticipant> Participants { get; set; } = new List<VisitParticipant>();
     public virtual ICollection<VisitLogisticsItem> LogisticsItems { get; set; } = new List<VisitLogisticsItem>();
-    public virtual ICollection<VisitStatusLog> StatusLogs { get; set; } = new List<VisitStatusLog>();
 }

@@ -1,4 +1,4 @@
-﻿using System.Linq;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
@@ -86,16 +86,7 @@ public sealed class RejectVisitRequestCommandHandler
         visit.UpdatedBy = actorId;
         visit.RowVersion += 1;
 
-        _db.VisitStatusLogs.Add(new VisitStatusLog
-        {
-            VisitRequestId = visit.VisitRequestId,
-            StatusOwnerType = StatusOwnerType.Request,
-            OldStatus = VisitRequestStatuses.PendingApproval,
-            NewStatus = VisitRequestStatuses.Rejected,
-            ChangedBy = actorId,
-            Reason = request.Reason,
-            ChangedAt = now
-        });
+
 
         _db.AuditLogs.Add(new AuditLog
         {

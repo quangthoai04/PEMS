@@ -242,11 +242,10 @@ public sealed class ViewGuestDelegationListQueryHandler
                 q = q.Where(x => x.c.CurrentHostUserId == userId);
             else if (rel == "TASK_ASSIGNEE")
                 q = q.Where(x => x.c.CurrentHostUserId != userId); // simplified relation for staff
-            else if (rel == "PENDING_HOST_ASSIGNMENT")
                 q = q.Where(x => x.vr.VisitScope == VisitScopes.MultiCampus 
                     && x.vr.Status == VisitRequestStatuses.Approved
-                    && x.c.HostAssignmentSource == "AUTO_STAFF_LEADER"
-                    && (x.c.Status == VisitInstanceStatus.Assigned || x.c.Status == VisitInstanceStatus.BeforeVisit));
+                    && x.c.CoordinatorUserId == userId
+                    && x.c.Status == "WAITING_HOST_ASSIGNMENT");
         }
 
         if (request.ActionableOnly == true)
@@ -299,7 +298,7 @@ public sealed class ViewGuestDelegationListQueryHandler
                 x.c.CampusId,
                 CampusStatus = x.c.Status,
                 x.c.CurrentHostUserId,
-                x.c.HostAssignmentSource,
+
                 x.c.PlannedStartAt,
                 x.c.PlannedEndAt,
                 CampusCancelledAt = x.c.CancelledAt,
@@ -319,8 +318,7 @@ public sealed class ViewGuestDelegationListQueryHandler
                 x.vr.SubmittedAt,
                 RequestCancelledAt = x.vr.CancelledAt,
                 RequestCancellationReason = x.vr.CancellationReason,
-                RequestCancellationActorType = x.vr.CancellationActorType,
-                RequestCancellationSource = x.vr.CancellationSource,
+
                 RequestCancelledBy = x.vr.CancelledBy,
                 x.vr.DecisionNote,
             })
@@ -385,7 +383,7 @@ public sealed class ViewGuestDelegationListQueryHandler
                 CreatedByUserId = r.CreatedBy,
                 CurrentHostUserId = r.CurrentHostUserId,
                 HostName = hostName,
-                HostAssignmentSource = r.HostAssignmentSource,
+
                 CurrentUserIsHost = r.CurrentHostUserId == userId,
                 VisitorUserId = r.VisitorUserId,
                 VisitorName = visitorName,
@@ -399,8 +397,8 @@ public sealed class ViewGuestDelegationListQueryHandler
                 SubmittedAt = r.SubmittedAt,
                 CancelledAt = r.CampusCancelledAt ?? r.RequestCancelledAt,
                 CancellationReason = r.CampusCancellationReason ?? r.RequestCancellationReason,
-                CancellationActorType = r.CampusCancellationActorType ?? r.RequestCancellationActorType,
-                CancellationSource = r.CampusCancellationSource ?? r.RequestCancellationSource,
+                CancellationActorType = r.CampusCancellationActorType,
+                CancellationSource = r.CampusCancellationSource,
                 CancelledBy = r.CampusCancelledBy ?? r.RequestCancelledBy,
                 DecisionNote = r.DecisionNote,
             };
@@ -574,7 +572,7 @@ public sealed class ViewGuestDelegationListQueryHandler
                 CreatedByUserId = vr.CreatedBy,
                 CurrentHostUserId = hostUserId,
                 HostName = hostName,
-                HostAssignmentSource = single?.HostAssignmentSource,
+
                 CurrentUserIsHost = false,
                 VisitorUserId = vr.VisitorUserId,
                 VisitorName = visitorName,
@@ -588,8 +586,8 @@ public sealed class ViewGuestDelegationListQueryHandler
                 SubmittedAt = vr.SubmittedAt,
                 CancelledAt = single?.CancelledAt ?? vr.CancelledAt,
                 CancellationReason = single?.CancellationReason ?? vr.CancellationReason,
-                CancellationActorType = single?.CancellationActorType ?? vr.CancellationActorType,
-                CancellationSource = single?.CancellationSource ?? vr.CancellationSource,
+                CancellationActorType = single?.CancellationActorType,
+                CancellationSource = single?.CancellationSource,
                 CancelledBy = single?.CancelledBy ?? vr.CancelledBy,
                 DecisionNote = vr.DecisionNote,
             };
@@ -637,10 +635,9 @@ public sealed class ViewGuestDelegationListQueryHandler
                 actions.Add("CAMPUS_REJECT");
             }
             else if (isMulti && item.RequestStatus == VisitRequestStatuses.Approved
-                     && (item.CampusStatus == VisitInstanceStatus.Assigned || item.CampusStatus == VisitInstanceStatus.BeforeVisit) && beforeStart
-                     && item.HostAssignmentSource == "AUTO_STAFF_LEADER")
+                     && item.CampusStatus == "WAITING_HOST_ASSIGNMENT" && beforeStart)
             {
-                actions.Add("TRANSFER_HOST"); // HO already approved + auto-assigned the IC head; SL hands off to a real staff
+                actions.Add("APPROVE_AND_ASSIGN_HOST"); // Multi-campus assignment
             }
         }
 
@@ -653,22 +650,13 @@ public sealed class ViewGuestDelegationListQueryHandler
         }
 
         // Host â€” cancel the campus instance they own before it starts.
-        bool isTempHost = item.CurrentUserIsHost && item.HostAssignmentSource == "AUTO_STAFF_LEADER";
-        if (!isStaffLeader && item.CurrentUserIsHost && !isTempHost
+        if (!isStaffLeader && item.CurrentUserIsHost
             && (item.CampusStatus == VisitInstanceStatus.Assigned || item.CampusStatus == VisitInstanceStatus.BeforeVisit)
             && beforeStart)
         {
             actions.Add("CANCEL_BY_HOST");
         }
 
-        // If official host assigned, don't allow transfer for Staff Leader, unless we explicitly allow it later.
-        if (isStaffLeader && sameCampus && item.CampusStatus != VisitInstanceStatus.Cancelled)
-        {
-            if (item.HostAssignmentSource != "MANUAL_APPROVAL" && item.HostAssignmentSource != "TRANSFERRED")
-            {
-                // We handle transfer permission below, actually we already added TRANSFER_HOST for AUTO_STAFF_LEADER.
-            }
-        }
 
         return actions;
     }
@@ -699,7 +687,7 @@ public sealed class ViewGuestDelegationListQueryHandler
         }
 
         if (item.CurrentUserIsHost)
-            return item.HostAssignmentSource == "AUTO_STAFF_LEADER" ? "PENDING_HOST_ASSIGNMENT" : "HOST";
+            return "HOST";
         if (roleCode == RoleCodes.Visitor)
             return "VISITOR_OWNER";
         if (roleCode == RoleCodes.Ho)
@@ -711,9 +699,7 @@ public sealed class ViewGuestDelegationListQueryHandler
         {
             if (item.VisitScope == VisitScopes.MultiCampus
                 && item.RequestStatus == VisitRequestStatuses.Approved
-                && item.HostAssignmentSource == "AUTO_STAFF_LEADER"
-                && item.CurrentHostUserId == _currentUser.UserId
-                && (item.CampusStatus == VisitInstanceStatus.Assigned || item.CampusStatus == VisitInstanceStatus.BeforeVisit))
+                && item.CampusStatus == "WAITING_HOST_ASSIGNMENT")
             {
                 return "PENDING_HOST_ASSIGNMENT";
             }
