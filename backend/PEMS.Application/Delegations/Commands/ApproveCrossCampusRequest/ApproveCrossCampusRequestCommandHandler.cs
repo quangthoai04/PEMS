@@ -72,15 +72,7 @@ public sealed class ApproveCrossCampusRequestCommandHandler
         visit.UpdatedBy = actorId;
         visit.RowVersion += 1;
 
-        _db.VisitStatusLogs.Add(new VisitStatusLog
-        {
-            VisitRequestId = visit.VisitRequestId,
-            StatusOwnerType = StatusOwnerType.Request,
-            OldStatus = VisitRequestStatuses.PendingApproval,
-            NewStatus = VisitRequestStatuses.Approved,
-            ChangedBy = actorId,
-            ChangedAt = now
-        });
+
 
         var assigned = new List<AssignedCampusDto>();
         foreach (var inst in visit.CampusInstances.Where(c => c.Status == VisitInstanceStatus.WaitingRequestApproval))
@@ -88,25 +80,16 @@ public sealed class ApproveCrossCampusRequestCommandHandler
             icHeads.TryGetValue(inst.CampusId, out var icHead);
 
             var oldStatus = inst.Status;
-            inst.Status = VisitInstanceStatus.Assigned;
-            inst.CurrentHostUserId = icHead; // interim host; SL hands off to a real staff via UC-22
-            inst.HostAssignedBy = actorId;
-            inst.HostAssignedAt = now;
-            inst.HostAssignmentSource = HostAssignmentSource.AutoStaffLeader;
+            inst.Status = "WAITING_HOST_ASSIGNMENT";
+            inst.CoordinatorUserId = icHead; 
+            inst.CoordinatorAssignedBy = actorId;
+            inst.CoordinatorAssignedAt = now;
+            inst.CurrentHostUserId = null;
+            inst.HostAssignedBy = null;
+            inst.HostAssignedAt = null;
             inst.UpdatedAt = now;
             inst.UpdatedBy = actorId;
             inst.RowVersion += 1;
-
-            _db.VisitStatusLogs.Add(new VisitStatusLog
-            {
-                VisitInstanceId = inst.VisitInstanceId,
-                VisitRequestId = visit.VisitRequestId,
-                StatusOwnerType = StatusOwnerType.CampusInstance,
-                OldStatus = oldStatus,
-                NewStatus = VisitInstanceStatus.Assigned,
-                ChangedBy = actorId,
-                ChangedAt = now
-            });
 
             assigned.Add(new AssignedCampusDto(inst.VisitInstanceId, inst.CampusId, icHead, inst.Status));
         }

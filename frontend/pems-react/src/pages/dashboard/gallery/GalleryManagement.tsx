@@ -31,16 +31,16 @@ const LOCATIONS: Record<string, string[]> = {
 };
 
 const MOCK_GALLERY = [
-  { id: 1, title: "Sảnh chờ sinh viên - Tòa Beta", type: "Hình ảnh", views: 2540, status: "Hiển thị", images: [bgHN, bgHN], date: "10/05/2026", description: "Khu vực sinh viên chờ và nghỉ ngơi giữa giờ học.", locationCategory: "TÒA BETA", locationDetail: "Sảnh chính" },
-  { id: 2, title: "View đường chân trời - Delta", type: "Hình ảnh", views: 1205, status: "Hiển thị", images: [bgHN], date: "11/05/2026", description: "Khu vực sân trước thoáng mát với bãi cỏ.", locationCategory: "TÒA DELTA", locationDetail: "Trước tòa nhà Delta" },
-  { id: 3, title: "Sân bóng AI hiện đại", type: "Video", views: 840, status: "Hiển thị", images: [bgHN], date: "15/05/2026", description: "Sân bóng tiêu chuẩn do AI hỗ trợ đo lường.", locationCategory: "KHU THỂ THAO", locationDetail: "Sân bóng đá" },
-  { id: 4, title: "Hồ sen Tòa Alpha", type: "Hình ảnh", views: 1650, status: "Đang ẩn", images: [bgHN], date: "16/05/2026", description: "Hồ sen check-in xịn xò", locationCategory: "TÒA ALPHA", locationDetail: "Trước tòa nhà Alpha" },
-  { id: 5, title: "Phòng LAB ERP-SAP", type: "Hình ảnh", views: 3120, status: "Hiển thị", images: [bgHN, bgHN], date: "18/05/2026", description: "Trang thiết bị đào tạo trực tiếp trên hệ thống SAP.", locationCategory: "TÒA DELTA", locationDetail: "Phòng thí nghiệm đổi mới & sáng tạo SAP" },
-  { id: 6, title: "Thư viện 3 tầng cực lộng lẫy", type: "Video", views: 2100, status: "Hiển thị", images: [bgHN], date: "20/05/2026", description: "Video tham quan thư viện đồ sộ bậc nhất.", locationCategory: "TÒA DELTA", locationDetail: "Thư viện" },
-  { id: 7, title: "Phòng học chuẩn quốc tế", type: "Hình ảnh", views: 1450, status: "Hiển thị", images: [bgHN], date: "22/05/2026", description: "Sĩ số 30 người, điều hòa mát rượi.", locationCategory: "TÒA DELTA", locationDetail: "Phòng học điển hình" },
-  { id: 8, title: "Không gian thực hành Khởi nghiệp", type: "Hình ảnh", views: 980, status: "Hiển thị", images: [bgHN], date: "25/05/2026", description: "Môi trường câm trải nghiệm startup.", locationCategory: "TÒA DELTA", locationDetail: "Trung tâm khởi nghiệp & nghiên cứu" },
-  { id: 9, title: "Góc phòng đàn tỳ bà", type: "Hình ảnh", views: 1100, status: "Hiển thị", images: [bgHN], date: "26/05/2026", description: "Môi trường gìn giữ văn hóa dân tộc.", locationCategory: "TÒA DELTA", locationDetail: "Phòng học Nhạc cụ dân tộc" },
-  { id: 10, title: "Khuôn viên flycam xịn", type: "Video", views: 4200, status: "Hiển thị", images: [bgHN], date: "28/05/2026", description: "Toàn cảnh campus siêu đẹp xanh biếc.", locationCategory: "TỔNG QUAN", locationDetail: "Toàn cảnh Hola Park" },
+  { id: 1, title: "Sảnh chờ sinh viên - Tòa Beta", type: "Hình ảnh", views: 2540, status: "PUBLISHED", images: [bgHN, bgHN], date: "10/05/2026", description: "Khu vực sinh viên chờ và nghỉ ngơi giữa giờ học.", locationCategory: "TÒA BETA", locationDetail: "Sảnh chính" },
+  { id: 2, title: "View đường chân trời - Delta", type: "Hình ảnh", views: 1205, status: "PUBLISHED", images: [bgHN], date: "11/05/2026", description: "Khu vực sân trước thoáng mát với bãi cỏ.", locationCategory: "TÒA DELTA", locationDetail: "Trước tòa nhà Delta" },
+  { id: 3, title: "Sân bóng AI hiện đại", type: "Video", views: 840, status: "PUBLISHED", images: [bgHN], date: "15/05/2026", description: "Sân bóng tiêu chuẩn do AI hỗ trợ đo lường.", locationCategory: "KHU THỂ THAO", locationDetail: "Sân bóng đá" },
+  { id: 4, title: "Hồ sen Tòa Alpha", type: "Hình ảnh", views: 1650, status: "HIDDEN", images: [bgHN], date: "16/05/2026", description: "Hồ sen check-in xịn xò", locationCategory: "TÒA ALPHA", locationDetail: "Trước tòa nhà Alpha" },
+  { id: 5, title: "Phòng LAB ERP-SAP", type: "Hình ảnh", views: 3120, status: "PUBLISHED", images: [bgHN, bgHN], date: "18/05/2026", description: "Trang thiết bị đào tạo trực tiếp trên hệ thống SAP.", locationCategory: "TÒA DELTA", locationDetail: "Phòng thí nghiệm đổi mới & sáng tạo SAP" },
+  { id: 6, title: "Thư viện 3 tầng cực lộng lẫy", type: "Video", views: 2100, status: "PUBLISHED", images: [bgHN], date: "20/05/2026", description: "Video tham quan thư viện đồ sộ bậc nhất.", locationCategory: "TÒA DELTA", locationDetail: "Thư viện" },
+  { id: 7, title: "Phòng học chuẩn quốc tế", type: "Hình ảnh", views: 1450, status: "PUBLISHED", images: [bgHN], date: "22/05/2026", description: "Sĩ số 30 người, điều hòa mát rượi.", locationCategory: "TÒA DELTA", locationDetail: "Phòng học điển hình" },
+  { id: 8, title: "Không gian thực hành Khởi nghiệp", type: "Hình ảnh", views: 980, status: "PUBLISHED", images: [bgHN], date: "25/05/2026", description: "Môi trường câm trải nghiệm startup.", locationCategory: "TÒA DELTA", locationDetail: "Trung tâm khởi nghiệp & nghiên cứu" },
+  { id: 9, title: "Góc phòng đàn tỳ bà", type: "Hình ảnh", views: 1100, status: "PUBLISHED", images: [bgHN], date: "26/05/2026", description: "Môi trường gìn giữ văn hóa dân tộc.", locationCategory: "TÒA DELTA", locationDetail: "Phòng học Nhạc cụ dân tộc" },
+  { id: 10, title: "Khuôn viên flycam xịn", type: "Video", views: 4200, status: "PUBLISHED", images: [bgHN], date: "28/05/2026", description: "Toàn cảnh campus siêu đẹp xanh biếc.", locationCategory: "TỔNG QUAN", locationDetail: "Toàn cảnh Hola Park" },
 ];
 
 export function GalleryManagement() {
@@ -59,7 +59,7 @@ export function GalleryManagement() {
   const [formData, setFormData] = useState<any>({
     title: '',
     type: 'Hình ảnh',
-    status: 'Hiển thị',
+    status: 'PUBLISHED',
     description: '',
     locationCategory: 'TÒA DELTA',
     locationDetail: 'Trước tòa nhà Delta',
@@ -102,7 +102,7 @@ export function GalleryManagement() {
   const paginatedGallery = filteredGallery.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   const handleToggleStatus = (item: any) => {
-    setGalleryList(prev => prev.map(g => g.id === item.id ? { ...g, status: g.status === 'Hiển thị' ? 'Đang ẩn' : 'Hiển thị' } : g));
+    setGalleryList(prev => prev.map(g => g.id === item.id ? { ...g, status: g.status === 'PUBLISHED' ? 'HIDDEN' : 'PUBLISHED' } : g));
   };
 
   const getTypeIcon = (type: string) => {
@@ -116,7 +116,7 @@ export function GalleryManagement() {
     setFormData({
       title: '',
       type: 'Hình ảnh',
-      status: 'Hiển thị',
+      status: 'PUBLISHED',
       description: '',
       locationCategory: 'TÒA DELTA',
       locationDetail: LOCATIONS['TÒA DELTA'][0],
@@ -283,8 +283,8 @@ export function GalleryManagement() {
                 className="w-full px-3 py-2.5 pr-8 rounded-xl border border-white/20 bg-white/10 text-white outline-none text-sm font-medium appearance-none"
               >
                 <option value="" className="text-slate-800">Trạng thái</option>
-                <option value="Hiển thị" className="text-slate-800">Hiển thị</option>
-                <option value="Đang ẩn" className="text-slate-800">Đang ẩn</option>
+                <option value="PUBLISHED" className="text-slate-800">Hiển thị</option>
+                <option value="HIDDEN" className="text-slate-800">Đang ẩn</option>
               </select>
               <ChevronDown className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-white pointer-events-none" />
             </div>
@@ -344,11 +344,11 @@ export function GalleryManagement() {
                     </td>
                     <td className="p-4 text-center">
                       <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-bold ${
-                        item.status === 'Hiển thị' 
+                        item.status === 'PUBLISHED' 
                           ? 'bg-green-100 text-green-700 border border-green-200' 
                           : 'bg-slate-100 text-slate-700 border border-slate-200'
                       }`}>
-                        {item.status}
+                        {item.status === 'PUBLISHED' ? 'Hiển thị' : 'Đang ẩn'}
                       </span>
                     </td>
                     <td className="p-4 text-slate-600 font-medium whitespace-nowrap text-center">
@@ -365,10 +365,10 @@ export function GalleryManagement() {
                         </button>
                         <button 
                           onClick={() => handleToggleStatus(item)}
-                          className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors duration-200 ease-in-out outline-none ${item.status === 'Hiển thị' ? 'bg-[#004c91]' : 'bg-gray-300'}`}
-                          title={item.status === 'Hiển thị' ? 'Ẩn' : 'Hiện'}
+                          className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors duration-200 ease-in-out outline-none ${item.status === 'PUBLISHED' ? 'bg-[#004c91]' : 'bg-gray-300'}`}
+                          title={item.status === 'PUBLISHED' ? 'Ẩn' : 'Hiện'}
                         >
-                          <span className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${item.status === 'Hiển thị' ? 'translate-x-2' : '-translate-x-2'}`} />
+                          <span className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${item.status === 'PUBLISHED' ? 'translate-x-2' : '-translate-x-2'}`} />
                         </button>
                       </div>
                     </td>
@@ -477,7 +477,7 @@ export function GalleryManagement() {
               <div className="w-full md:w-1/2 p-8 flex flex-col justify-center">
                 <div className="flex items-center gap-2 mb-4">
                   <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-bold bg-green-100 text-green-700 border border-green-200">
-                    {selectedItem.status}
+                    {selectedItem.status === 'PUBLISHED' ? 'Hiển thị' : 'Đang ẩn'}
                   </span>
                   <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-bold bg-green-100 text-green-700 border border-green-200">
                     Hà Nội

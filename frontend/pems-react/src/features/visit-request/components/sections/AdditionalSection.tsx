@@ -108,15 +108,7 @@ export const AdditionalSection: React.FC<Props> = ({ form }) => {
               />
               <span className="text-gray-800 font-bold text-sm group-hover:text-[#004c91] transition-colors">Từ chối</span>
             </label>
-            <label className="flex items-center gap-2.5 cursor-pointer group">
-              <input
-                type="radio"
-                {...register('mediaConsentStatus')}
-                value="UNKNOWN"
-                className="w-5 h-5 text-[#f37021] border-gray-300 focus:ring-[#f37021] cursor-pointer"
-              />
-              <span className="text-gray-800 font-bold text-sm group-hover:text-[#004c91] transition-colors">Chưa xác định</span>
-            </label>
+
           </div>
           {errors.mediaConsentStatus && (
             <p className="text-xs text-red-600 font-medium mb-2">⚠ {errors.mediaConsentStatus.message}</p>

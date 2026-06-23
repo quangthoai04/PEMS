@@ -2,17 +2,13 @@ import React from 'react';
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { resolveEffectiveRole } from './resolveEffectiveRole';
-import type { LoginPortal, PermissionLevel } from '../../features/authentication/types/authentication.types';
+import type { LoginPortal } from '../../features/authentication/types/authentication.types';
 
 interface ProtectedRouteProps {
   children?: React.ReactNode;
   /** Restrict to specific role codes (ADMIN, HO, STAFF, ...). */
   roles?: string[];
-  /** Require a single permission code (optionally at a minimum level, default R). */
-  permission?: string;
-  /** Require ANY ONE of these permission codes (at the minimum level, default R). */
-  anyPermissions?: string[];
-  permissionLevel?: PermissionLevel;
+
   /** Restrict by login portal */
   portals?: LoginPortal[];
 }
@@ -36,16 +32,14 @@ function FullScreenLoader() {
 export function ProtectedRoute({
   children,
   roles,
-  permission,
-  anyPermissions,
-  permissionLevel,
+
   portals,
 }: ProtectedRouteProps) {
   // All hooks must run unconditionally and before any early return — calling a
   // hook after a conditional `return` violates the Rules of Hooks and crashes
   // the whole tree ("Rendered more hooks than during the previous render"),
   // which is what blanked the screen after login.
-  const { isAuthenticated, isLoading, user, hasRole, hasPermission, hasAnyPermission, loginPortal } = useAuth();
+  const { isAuthenticated, isLoading, user, hasRole, loginPortal } = useAuth();
   const location = useLocation();
 
   if (isLoading) {
@@ -74,13 +68,6 @@ export function ProtectedRoute({
     return <Navigate to="/403" replace />;
   }
 
-  if (permission && !hasPermission(permission, permissionLevel ?? 'R')) {
-    return <Navigate to="/403" replace />;
-  }
-
-  if (anyPermissions && anyPermissions.length > 0 && !hasAnyPermission(anyPermissions, permissionLevel ?? 'R')) {
-    return <Navigate to="/403" replace />;
-  }
 
   if (portals && portals.length > 0 && loginPortal && !portals.includes(loginPortal)) {
     return <Navigate to="/403" replace />;

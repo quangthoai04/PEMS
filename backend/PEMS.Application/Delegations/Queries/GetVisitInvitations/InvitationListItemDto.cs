@@ -9,21 +9,21 @@ public class InvitationListItemDto
     public ulong VisitInstanceId { get; set; }
     public ulong VisitRequestId { get; set; }
 
-    public string RequestCode { get; set; }
-    public string DelegationName { get; set; }
-    public string CampusName { get; set; }
-    public string VisitScope { get; set; }
+    public string RequestCode { get; set; } = null!;
+    public string DelegationName { get; set; } = null!;
+    public string CampusName { get; set; } = null!;
+    public string VisitScope { get; set; } = null!;
 
     public DateTime? PlannedStartAt { get; set; }
     public DateTime? PlannedEndAt { get; set; }
 
-    public string ParticipantRole { get; set; }
-    public string InvitationStatus { get; set; }
+    public string ParticipantRole { get; set; } = null!;
+    public string InvitationStatus { get; set; } = null!;
 
-    public string VisitRequestStatus { get; set; }
-    public string CampusVisitStatus { get; set; }
+    public string VisitRequestStatus { get; set; } = null!;
+    public string CampusVisitStatus { get; set; } = null!;
 
-    public string InvitedByName { get; set; }
+    public string InvitedByName { get; set; } = null!;
     public DateTime? InvitedAt { get; set; }
     public DateTime? RespondedAt { get; set; }
     public DateTime? AssignedAt { get; set; }

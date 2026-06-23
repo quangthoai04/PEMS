@@ -101,6 +101,7 @@ export function getVisitRequestFilterConfig({
         { value: '', label: 'Tất cả trạng thái' },
         { value: 'PENDING_APPROVAL', label: 'Chờ duyệt', description: 'Các đơn đang chờ được phê duyệt', requestStatus: 'PENDING_APPROVAL' },
         { value: 'APPROVED', label: 'Tất cả đơn đã duyệt', description: 'Các đơn đã được phê duyệt (bao gồm chờ phân công, chuẩn bị, vận hành, đã đóng)', requestStatus: 'APPROVED' },
+        { value: 'WAITING_HOST_ASSIGNMENT', label: 'Chờ chọn Host', description: 'Bao gồm các đơn đã duyệt và đang chờ phân công người đón tiếp', requestStatus: 'APPROVED', campusStatus: 'WAITING_HOST_ASSIGNMENT' },
         { value: 'BEFORE_VISIT', label: 'Đang chuẩn bị tiếp khách', description: 'Bao gồm các đơn đã duyệt và đang trong giai đoạn chuẩn bị đón tiếp', requestStatus: 'APPROVED', campusStatus: 'BEFORE_VISIT' },
         { value: 'DURING_VISIT', label: 'Đang tiếp khách', description: 'Bao gồm các đoàn đang trong thời gian diễn ra', requestStatus: 'APPROVED', campusStatus: 'DURING_VISIT' },
         { value: 'AFTER_VISIT', label: 'Chờ đóng đoàn', description: 'Bao gồm các đoàn đã kết thúc chuyến thăm và chờ hoàn tất thủ tục đóng đoàn', requestStatus: 'APPROVED', campusStatus: 'AFTER_VISIT' },
@@ -139,6 +140,7 @@ export function getVisitRequestFilterConfig({
           relation: 'PENDING_HOST_ASSIGNMENT',
           description: 'Đơn liên cơ sở đã được HO duyệt, đang chờ Staff Leader chọn Host chính thức.'
         },
+        { value: 'WAITING_HOST_ASSIGNMENT', label: 'Chờ chọn Host', description: 'Các đoàn đang chờ chọn người phụ trách', requestStatus: 'APPROVED', campusStatus: 'WAITING_HOST_ASSIGNMENT' },
         { value: 'ASSIGNED', label: 'Đã phân công Host', description: 'Các đoàn đã được chọn Host nhưng chưa bắt đầu chuẩn bị', requestStatus: 'APPROVED', campusStatus: 'ASSIGNED' },
         { value: 'BEFORE_VISIT', label: 'Trước tiếp khách', description: 'Bao gồm các đơn đang trong giai đoạn chuẩn bị đón tiếp', requestStatus: 'APPROVED', campusStatus: 'BEFORE_VISIT' },
         { value: 'DURING_VISIT', label: 'Trong tiếp khách', description: 'Bao gồm các đoàn đang trong thời gian diễn ra', requestStatus: 'APPROVED', campusStatus: 'DURING_VISIT' },

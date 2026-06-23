@@ -11,16 +11,13 @@ public sealed class GetCurrentUserQueryHandler : IRequestHandler<GetCurrentUserQ
 {
     private readonly IApplicationDbContext _db;
     private readonly ICurrentUserService _currentUser;
-    private readonly IPermissionChecker _permissionChecker;
 
     public GetCurrentUserQueryHandler(
         IApplicationDbContext db,
-        ICurrentUserService currentUser,
-        IPermissionChecker permissionChecker)
+        ICurrentUserService currentUser)
     {
         _db = db;
         _currentUser = currentUser;
-        _permissionChecker = permissionChecker;
     }
 
     public async Task<UserProfileResponse> Handle(GetCurrentUserQuery request, CancellationToken cancellationToken)
@@ -39,13 +36,9 @@ public sealed class GetCurrentUserQueryHandler : IRequestHandler<GetCurrentUserQ
         if (user is null)
             throw new NotFoundException("User", userId);
 
-        var subRole = user.Role?.RoleCode is "STAFF" or "DEPARTMENT" ? (user.SubRole ?? "NONE") : "NONE";
-        var permissions = await _permissionChecker.GetPermissionsForRoleAsync(user.RoleId, subRole, cancellationToken);
-
         return new UserProfileResponse
         {
-            User = AuthUserMapper.ToDto(user),
-            Permissions = permissions
+            User = AuthUserMapper.ToDto(user)
         };
     }
 }

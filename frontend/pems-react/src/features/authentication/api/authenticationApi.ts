@@ -6,7 +6,7 @@ import type {
   ChangePasswordRequest,
   LoginPortal,
   MessageResponse,
-  PermissionsResponse,
+
   ResetPasswordRequest,
   UserProfileResponse,
 } from '../types/authentication.types';
@@ -85,10 +85,6 @@ export const authenticationApi = {
     return data;
   },
 
-  async getPermissions(): Promise<PermissionsResponse> {
-    const { data } = await httpClient.get<PermissionsResponse>(API_ENDPOINTS.auth.permissions);
-    return data;
-  },
 
   // ── Password management ─────────────────────────────────────────────
 

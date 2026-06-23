@@ -2,7 +2,6 @@
 
 export type LoginPortal = 'INTERNAL' | 'VISITOR';
 
-export type PermissionLevel = 'F' | 'E' | 'R' | 'O';
 
 export type RoleCode = 'ADMIN' | 'HO' | 'STAFF' | 'DEPARTMENT' | 'STUDENT' | 'VISITOR';
 
@@ -22,31 +21,22 @@ export interface AuthUser {
   departmentName?: string | null;
   mustChangePassword: boolean;
   mustSetPassword: boolean;
+  effectiveRole: string;
+  status: string;
 }
 
-export interface UserPermission {
-  permissionCode: string;
-  permissionLevel: PermissionLevel;
-  permissionGroup: string;
-}
 
 export interface AuthResponse {
   accessToken: string;
   refreshToken: string;
   expiresAt: string;
   user: AuthUser;
-  permissions: UserPermission[];
 }
 
 export interface UserProfileResponse {
   user: AuthUser;
-  permissions: UserPermission[];
 }
 
-export interface PermissionsResponse {
-  roleCode: string;
-  permissions: UserPermission[];
-}
 
 export interface MessageResponse {
   message: string;

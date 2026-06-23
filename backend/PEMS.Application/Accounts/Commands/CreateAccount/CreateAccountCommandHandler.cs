@@ -53,7 +53,7 @@ public sealed class CreateAccountCommandHandler : IRequestHandler<CreateAccountC
             FullName = request.FullName.Trim(),
             Email = email,
             Phone = Clean(request.Phone),
-            Gender = Clean(request.Gender),
+            Gender = request.Gender,
             Nationality = Clean(request.Nationality),
             StudentCode = shape.RoleCode == RoleCodes.Student ? Clean(request.StudentCode) : null,
             RoleId = shape.RoleId,

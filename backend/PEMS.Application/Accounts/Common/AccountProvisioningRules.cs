@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Domain.Constants;
@@ -38,7 +38,7 @@ internal static class AccountProvisioningRules
         roleCode = (roleCode ?? string.Empty).Trim().ToUpperInvariant();
 
         var role = await db.Roles.FirstOrDefaultAsync(
-            r => r.RoleCode == roleCode && r.Status == EntityStatuses.Active && r.DeletedAt == null,
+            r => r.RoleCode == roleCode && r.Status == EntityStatuses.Active,
             cancellationToken)
             ?? throw new ValidationException($"Role '{roleCode}' is not valid or not active.");
 

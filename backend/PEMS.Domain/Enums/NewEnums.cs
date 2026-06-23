@@ -28,7 +28,6 @@ public static class MediaConsentStatus
 {
     public const string Agreed = "AGREED";
     public const string Declined = "DECLINED";
-    public const string Unknown = "UNKNOWN";
 }
 
 public static class GuestMemberType

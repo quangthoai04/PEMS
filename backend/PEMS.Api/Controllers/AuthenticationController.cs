@@ -10,7 +10,7 @@ using PEMS.Application.Authentication.Commands.Logout;
 using PEMS.Application.Authentication.Commands.RefreshToken;
 using PEMS.Application.Authentication.Commands.ResetPassword;
 using PEMS.Application.Authentication.Queries.GetCurrentUser;
-using PEMS.Application.Authentication.Queries.GetCurrentUserPermissions;
+
 
 namespace PEMS.Api.Controllers;
 
@@ -68,10 +68,6 @@ public class AuthenticationController : ControllerBase
     public async Task<IActionResult> Me(CancellationToken cancellationToken)
         => Ok(await _mediator.Send(new GetCurrentUserQuery(), cancellationToken));
 
-    [HttpGet("permissions")]
-    [Authorize]
-    public async Task<IActionResult> Permissions(CancellationToken cancellationToken)
-        => Ok(await _mediator.Send(new GetCurrentUserPermissionsQuery(), cancellationToken));
 
     [HttpPost("forgot-password")]
     [AllowAnonymous]

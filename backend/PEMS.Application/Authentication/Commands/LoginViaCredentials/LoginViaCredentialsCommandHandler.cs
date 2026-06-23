@@ -20,7 +20,6 @@ public sealed class LoginviaCredentialsCommandHandler : IRequestHandler<Loginvia
     private readonly IPasswordHasher _passwordHasher;
     private readonly ISessionService _sessionService;
     private readonly IJwtTokenService _jwtTokenService;
-    private readonly IPermissionChecker _permissionChecker;
     private readonly ISecurityAuditService _audit;
     private readonly IDateTimeService _clock;
     private readonly AuthOptions _options;
@@ -32,7 +31,7 @@ public sealed class LoginviaCredentialsCommandHandler : IRequestHandler<Loginvia
         IPasswordHasher passwordHasher,
         ISessionService sessionService,
         IJwtTokenService jwtTokenService,
-        IPermissionChecker permissionChecker,
+
         ISecurityAuditService audit,
         IDateTimeService clock,
         AuthOptions options,
@@ -42,7 +41,7 @@ public sealed class LoginviaCredentialsCommandHandler : IRequestHandler<Loginvia
         _passwordHasher = passwordHasher;
         _sessionService = sessionService;
         _jwtTokenService = jwtTokenService;
-        _permissionChecker = permissionChecker;
+
         _audit = audit;
         _clock = clock;
         _options = options;
@@ -109,7 +108,7 @@ public sealed class LoginviaCredentialsCommandHandler : IRequestHandler<Loginvia
                 request, AuthErrorCodes.AccountInactive, "Your account is not active.", 403, cancellationToken);
 
         // Role must be active and not soft-deleted.
-        if (user.Role is null || user.Role.Status != EntityStatuses.Active || user.Role.DeletedAt is not null)
+        if (user.Role is null || user.Role.Status != EntityStatuses.Active)
             await FailAsync(user, email, portal, LoginLogStatuses.Blocked, "role_inactive", SecurityEventFailureReasonCodes.AccountDisabled,
                 request, AuthErrorCodes.AccountInactive, "Your account is not active.", 403, cancellationToken);
 
@@ -167,7 +166,7 @@ public sealed class LoginviaCredentialsCommandHandler : IRequestHandler<Loginvia
 
         var response = await AuthResultBuilder.IssueAsync(
             user, portal, localProvider?.AuthProviderId, request.IpAddress, request.UserAgent,
-            _sessionService, _jwtTokenService, _permissionChecker, cancellationToken);
+            _sessionService, _jwtTokenService, cancellationToken);
 
         await _audit.WriteLoginLogAsync(user.UserId, email, portal, request.SelectedCampusId,
             ProviderTypes.LocalPassword, LoginLogStatuses.Success, null,

@@ -31,7 +31,7 @@ internal static class AccountListQueryExecutor
     public static async Task<PaginatedResult<AccountListItemDto>> ExecuteAsync(
         IApplicationDbContext db,
         ICurrentUserService currentUser,
-        IPermissionChecker permissionChecker,
+        IRoleAccessPolicy accessPolicy,
         IAccountListCriteria request,
         CancellationToken ct)
     {
@@ -243,12 +243,9 @@ internal static class AccountListQueryExecutor
 
         // Ã¢â€â‚¬Ã¢â€â‚¬ Per-caller action permissions (evaluated once) Ã¢â€â‚¬Ã¢â€â‚¬
         var roleId = currentUser.RoleId;
-        var canViewDetailsPerm = roleId.HasValue &&
-            await permissionChecker.HasPermissionAsync(roleId.Value, subRoleForCheck, PermissionCodes.ViewAccountDetails, PermissionLevels.Read, ct);
-        var canUpdateRolePerm = roleId.HasValue &&
-            await permissionChecker.HasPermissionAsync(roleId.Value, subRoleForCheck, PermissionCodes.UpdateAccountRole, PermissionLevels.Execute, ct);
-        var canManageStatusPerm = roleId.HasValue &&
-            await permissionChecker.HasPermissionAsync(roleId.Value, subRoleForCheck, PermissionCodes.ManageAccountStatus, PermissionLevels.Execute, ct);
+        var canViewDetailsPerm = accessPolicy.CanAccessAccountManagement(currentUser);
+        var canUpdateRolePerm = accessPolicy.CanAccessAccountManagement(currentUser);
+        var canManageStatusPerm = accessPolicy.CanAccessAccountManagement(currentUser);
 
         var items = rows.Select(r =>
         {
@@ -301,7 +298,7 @@ internal static class AccountListQueryExecutor
         public string Email { get; init; } = default!;
         public string FullName { get; init; } = default!;
         public string? Phone { get; init; }
-        public string? Gender { get; init; }
+        public PEMS.Domain.Enums.Gender? Gender { get; init; }
         public string? AvatarUrl { get; init; }
         public string? Nationality { get; init; }
         public string? StudentCode { get; init; }

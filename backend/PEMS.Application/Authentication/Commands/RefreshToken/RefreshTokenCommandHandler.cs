@@ -14,16 +14,13 @@ public sealed class RefreshTokenCommandHandler : IRequestHandler<RefreshTokenCom
 
     private readonly ISessionService _sessionService;
     private readonly IJwtTokenService _jwtTokenService;
-    private readonly IPermissionChecker _permissionChecker;
 
     public RefreshTokenCommandHandler(
         ISessionService sessionService,
-        IJwtTokenService jwtTokenService,
-        IPermissionChecker permissionChecker)
+        IJwtTokenService jwtTokenService)
     {
         _sessionService = sessionService;
         _jwtTokenService = jwtTokenService;
-        _permissionChecker = permissionChecker;
     }
 
     public async Task<AuthResponse> Handle(RefreshTokenCommand request, CancellationToken cancellationToken)
@@ -38,8 +35,7 @@ public sealed class RefreshTokenCommandHandler : IRequestHandler<RefreshTokenCom
         if (user is null
             || user.Status != UserStatuses.Active
             || user.Role is null
-            || user.Role.Status != EntityStatuses.Active
-            || user.Role.DeletedAt is not null)
+            || user.Role.Status != EntityStatuses.Active)
         {
             await _sessionService.RevokeSessionAsync(session.SessionId, SessionRevokeReasons.AccountDeactivated, null, cancellationToken);
             throw new AuthenticationFailedException(ExpiredMessage, "account_or_role_inactive");
@@ -47,16 +43,13 @@ public sealed class RefreshTokenCommandHandler : IRequestHandler<RefreshTokenCom
 
         var rotated = await _sessionService.RotateRefreshTokenAsync(session, cancellationToken);
         var accessToken = _jwtTokenService.GenerateAccessToken(user, session.SessionId, session.LoginPortal);
-        var subRole = user.Role?.RoleCode is "STAFF" or "DEPARTMENT" ? (user.SubRole ?? "NONE") : "NONE";
-        var permissions = await _permissionChecker.GetPermissionsForRoleAsync(user.RoleId, subRole, cancellationToken);
 
         return new AuthResponse
         {
             AccessToken = accessToken.Token,
             RefreshToken = rotated.RefreshToken,
             ExpiresAt = accessToken.ExpiresAt,
-            User = AuthUserMapper.ToDto(user),
-            Permissions = permissions
+            User = AuthUserMapper.ToDto(user)
         };
     }
 }

@@ -81,7 +81,7 @@ public class VisitRequest
     public string? TransportationDetail { get; set; }
 
     [Column("media_consent_status")]
-    public string MediaConsentStatus { get; set; } = "UNKNOWN";
+    public string MediaConsentStatus { get; set; } = "DECLINED";
 
     [Column("media_consent_note")]
     public string? MediaConsentNote { get; set; }
@@ -120,12 +120,6 @@ public class VisitRequest
     [Column("cancelled_at")]
     public DateTime? CancelledAt { get; set; }
 
-    [Column("cancellation_actor_type")]
-    public string? CancellationActorType { get; set; }
-
-    [Column("cancellation_source")]
-    public string? CancellationSource { get; set; }
-
     [Column("cancellation_reason")]
     public string? CancellationReason { get; set; }
 
@@ -147,5 +141,4 @@ public class VisitRequest
     public virtual Partner? Partner { get; set; }
     public virtual ICollection<VisitRequestCampus> CampusInstances { get; set; } = new List<VisitRequestCampus>();
     public virtual ICollection<VisitGuestMember> GuestMembers { get; set; } = new List<VisitGuestMember>();
-    public virtual ICollection<VisitStatusLog> StatusLogs { get; set; } = new List<VisitStatusLog>();
 }

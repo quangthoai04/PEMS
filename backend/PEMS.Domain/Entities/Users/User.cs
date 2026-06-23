@@ -37,7 +37,7 @@ public class User
     public ulong? DepartmentId { get; set; }
 
     [Column("gender")]
-    public string? Gender { get; set; }
+    public PEMS.Domain.Enums.Gender? Gender { get; set; }
 
     [Column("avatar_url")]
     public string? AvatarUrl { get; set; }

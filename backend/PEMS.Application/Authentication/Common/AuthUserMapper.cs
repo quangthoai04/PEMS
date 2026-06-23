@@ -24,6 +24,8 @@ public static class AuthUserMapper
         CampusCode = user.PrimaryCampus?.CampusCode,
         CampusName = user.PrimaryCampus?.Name,
         DepartmentId = user.DepartmentId,
-        DepartmentName = user.Department?.Name
+        DepartmentName = user.Department?.Name,
+        EffectiveRole = PEMS.Application.Common.Security.EffectiveRole.Resolve(user.Role?.RoleCode ?? string.Empty, user.SubRole),
+        Status = user.Status
     };
 }

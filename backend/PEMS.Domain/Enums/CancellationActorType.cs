@@ -5,7 +5,4 @@ public static class CancellationActorType
 {
     public const string Visitor = "VISITOR";
     public const string Host = "HOST";
-    public const string StaffLeader = "STAFF_LEADER";
-    public const string Ho = "HO";
-    public const string System = "SYSTEM";
 }

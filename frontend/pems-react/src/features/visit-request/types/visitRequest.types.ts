@@ -49,7 +49,7 @@ export interface VisitRequestFormData {
   workingLanguage: 'EN' | 'VI';
   transportationType: string;
   transportationDetail?: string;
-  mediaConsentStatus: string;
+  mediaConsentStatus: 'AGREED' | 'DECLINED';
   mediaConsentNote?: string;
   partnerId?: number | null;
   notes: string;

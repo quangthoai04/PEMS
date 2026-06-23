@@ -53,15 +53,13 @@ public sealed class SessionValidationMiddleware
             .Select(u => new
             {
                 u.Status,
-                RoleStatus = u.Role!.Status,
-                RoleDeleted = u.Role.DeletedAt
+                RoleStatus = u.Role!.Status
             })
             .FirstOrDefaultAsync(context.RequestAborted);
 
         if (account is null
             || account.Status != UserStatuses.Active
-            || account.RoleStatus != EntityStatuses.Active
-            || account.RoleDeleted is not null)
+            || account.RoleStatus != EntityStatuses.Active)
         {
             await WriteUnauthorizedAsync(context, "Your account is not active. Please contact administrator.");
             return;

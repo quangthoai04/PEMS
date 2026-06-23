@@ -27,8 +27,6 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
 
     // ── RBAC ─────────────────────────────────────────────────────────────
     public DbSet<Role> Roles { get; set; }
-    public DbSet<Permission> Permissions { get; set; }
-    public DbSet<RolePermission> RolePermissions { get; set; }
 
     // ── Organisation ──────────────────────────────────────────────────────
     public DbSet<Campus> Campuses { get; set; }
@@ -60,7 +58,6 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     public DbSet<VisitParticipant> VisitParticipants { get; set; }
     public DbSet<VisitAgenda> VisitAgendas { get; set; }
     public DbSet<VisitLogisticsItem> VisitLogisticsItems { get; set; }
-    public DbSet<VisitStatusLog> VisitStatusLogs { get; set; }
 
     // ── Minutes + Feedback ────────────────────────────────────────────────
     public DbSet<Minute> Minutes { get; set; }
@@ -112,13 +109,13 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
             .UseCollation("utf8mb4_unicode_ci")
             .HasCharSet("utf8mb4");
 
-        // ── role_permissions: surrogate PK + UNIQUE(role_id, sub_role, permission_id) (SQL v8.3) ──
-        modelBuilder.Entity<RolePermission>(b =>
-        {
-            b.HasKey(rp => rp.RolePermissionId);
-            b.Property(rp => rp.RolePermissionId).ValueGeneratedOnAdd();
-            b.HasIndex(rp => new { rp.RoleId, rp.SubRole, rp.PermissionId }).IsUnique();
-        });
+        modelBuilder.Entity<User>()
+            .Property(u => u.Gender)
+            .HasConversion(
+                v => v.ToString().ToUpper(),
+                v => (PEMS.Domain.Enums.Gender)Enum.Parse(typeof(PEMS.Domain.Enums.Gender), v, true));
+
+
 
         // All other PKs are BIGINT UNSIGNED AUTO_INCREMENT and are treated as
         // store-generated identity by EF Core convention for integer keys.
@@ -126,13 +123,7 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
 
         // ── Relationships ─────────────────────────────────────────────────
 
-        // RolePermission
-        modelBuilder.Entity<RolePermission>()
-            .HasOne(rp => rp.Role).WithMany(r => r.RolePermissions)
-            .HasForeignKey(rp => rp.RoleId).OnDelete(DeleteBehavior.Cascade);
-        modelBuilder.Entity<RolePermission>()
-            .HasOne(rp => rp.Permission).WithMany(p => p.RolePermissions)
-            .HasForeignKey(rp => rp.PermissionId).OnDelete(DeleteBehavior.Cascade);
+
 
         // Campus ↔ User (ic_head_user_id)
         modelBuilder.Entity<Campus>()
@@ -235,7 +226,11 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
             .HasForeignKey(vc => vc.HostAssignedBy).OnDelete(DeleteBehavior.SetNull);
         modelBuilder.Entity<VisitRequestCampus>()
             .HasOne<User>().WithMany()
-            .HasForeignKey(vc => vc.HostTransferredBy).OnDelete(DeleteBehavior.SetNull);
+            .HasForeignKey(vc => vc.CoordinatorUserId).OnDelete(DeleteBehavior.SetNull);
+        modelBuilder.Entity<VisitRequestCampus>()
+            .HasOne<User>().WithMany()
+            .HasForeignKey(vc => vc.CoordinatorAssignedBy).OnDelete(DeleteBehavior.SetNull);
+
         modelBuilder.Entity<VisitRequestCampus>()
             .HasOne<User>().WithMany()
             .HasForeignKey(vc => vc.ClosedBy).OnDelete(DeleteBehavior.SetNull);
@@ -295,17 +290,6 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
         modelBuilder.Entity<VisitLogisticsItem>()
             .HasOne<User>().WithMany()
             .HasForeignKey(li => li.ProposalRespondedBy).OnDelete(DeleteBehavior.SetNull);
-
-        // VisitStatusLog → VisitRequest, VisitRequestCampus, ChangedBy
-        modelBuilder.Entity<VisitStatusLog>()
-            .HasOne(vsl => vsl.VisitRequest).WithMany(v => v.StatusLogs)
-            .HasForeignKey(vsl => vsl.VisitRequestId).OnDelete(DeleteBehavior.SetNull);
-        modelBuilder.Entity<VisitStatusLog>()
-            .HasOne(vsl => vsl.VisitInstance).WithMany(vc => vc.StatusLogs)
-            .HasForeignKey(vsl => vsl.VisitInstanceId).OnDelete(DeleteBehavior.SetNull);
-        modelBuilder.Entity<VisitStatusLog>()
-            .HasOne<User>().WithMany()
-            .HasForeignKey(vsl => vsl.ChangedBy).OnDelete(DeleteBehavior.SetNull);
 
         // Minute → VisitRequestCampus, CreatedBy, EditLockedBy
         modelBuilder.Entity<Minute>()

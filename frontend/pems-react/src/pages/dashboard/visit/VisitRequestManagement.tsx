@@ -65,6 +65,7 @@ const getVietnameseStatus = (reqStatus?: string | null, campStatus?: string | nu
   if (reqStatus === 'REJECTED') return 'Từ chối';
   if (reqStatus === 'PENDING_APPROVAL') return 'Chờ duyệt';
   if (reqStatus === 'APPROVED') {
+    if (campStatus === 'WAITING_HOST_ASSIGNMENT') return 'Chờ phân công Host';
     if (campStatus === 'ASSIGNED') return 'Đã phân công Host';
     if (campStatus === 'BEFORE_VISIT') return 'Trước tiếp khách';
     if (campStatus === 'DURING_VISIT') return 'Trong tiếp khách';
@@ -439,9 +440,8 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
     return isStaffLeader &&
       row.visitScope === 'MULTI_CAMPUS' &&
       row.requestStatus === 'APPROVED' &&
-      row.hostAssignmentSource === 'AUTO_STAFF_LEADER' &&
       (row.currentUserRelation === 'PENDING_HOST_ASSIGNMENT' || row.currentUserRelation === 'TEMP_CAMPUS_RESPONSIBLE') &&
-      (row.campusStatus === 'ASSIGNED' || row.campusStatus === 'BEFORE_VISIT');
+      (row.campusStatus === 'WAITING_HOST_ASSIGNMENT' || row.campusStatus === 'ASSIGNED' || row.campusStatus === 'BEFORE_VISIT');
   };
 
   const isOperationalOrFinished = (row: Row) => {
@@ -511,7 +511,8 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
     else if (row.requestStatus === 'REJECTED') statusText = 'Từ chối';
     else if (row.requestStatus === 'PENDING_APPROVAL') statusText = 'Chờ duyệt';
     else if (row.requestStatus === 'APPROVED') {
-      if (isPendingHostAssignment(row)) statusText = 'Đã duyệt · Chờ chọn Host';
+      if (row.campusStatus === 'WAITING_HOST_ASSIGNMENT') statusText = 'Đã duyệt · Chờ chọn Host';
+      else if (isPendingHostAssignment(row)) statusText = 'Đã duyệt · Chờ chọn Host';
       else if (row.campusStatus === 'ASSIGNED') statusText = 'Đã duyệt · Đã phân công Host';
       else if (row.campusStatus === 'BEFORE_VISIT') statusText = 'Đã duyệt · Đang chuẩn bị';
       else if (row.campusStatus === 'DURING_VISIT') statusText = 'Đã duyệt · Đang tiếp khách';

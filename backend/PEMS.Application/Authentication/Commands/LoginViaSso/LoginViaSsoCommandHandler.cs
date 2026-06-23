@@ -20,7 +20,6 @@ public sealed class LoginviaSSOCommandHandler : IRequestHandler<LoginviaSSOComma
     private readonly IGoogleTokenValidator _googleValidator;
     private readonly ISessionService _sessionService;
     private readonly IJwtTokenService _jwtTokenService;
-    private readonly IPermissionChecker _permissionChecker;
     private readonly ISecurityAuditService _audit;
     private readonly IDateTimeService _clock;
     private readonly AuthOptions _options;
@@ -30,7 +29,7 @@ public sealed class LoginviaSSOCommandHandler : IRequestHandler<LoginviaSSOComma
         IGoogleTokenValidator googleValidator,
         ISessionService sessionService,
         IJwtTokenService jwtTokenService,
-        IPermissionChecker permissionChecker,
+
         ISecurityAuditService audit,
         IDateTimeService clock,
         AuthOptions options)
@@ -39,7 +38,7 @@ public sealed class LoginviaSSOCommandHandler : IRequestHandler<LoginviaSSOComma
         _googleValidator = googleValidator;
         _sessionService = sessionService;
         _jwtTokenService = jwtTokenService;
-        _permissionChecker = permissionChecker;
+
         _audit = audit;
         _clock = clock;
         _options = options;
@@ -144,7 +143,7 @@ public sealed class LoginviaSSOCommandHandler : IRequestHandler<LoginviaSSOComma
         var role = await _db.Roles
             .FirstOrDefaultAsync(r => r.RoleCode == RoleCodes.Visitor
                                       && r.Status == EntityStatuses.Active
-                                      && r.DeletedAt == null, cancellationToken)
+                                      , cancellationToken)
             ?? throw new AuthBusinessException(AuthErrorCodes.ExternalAuthFailed,
                 "Visitor role is not configured.", 500);
 
@@ -228,7 +227,7 @@ public sealed class LoginviaSSOCommandHandler : IRequestHandler<LoginviaSSOComma
             await FailAsync(user, email, portal, $"status_{user.Status}", SecurityEventFailureReasonCodes.AccountDisabled,
                 request, AuthErrorCodes.AccountInactive, "Your account is not active.", 403, cancellationToken);
 
-        if (user.Role is null || user.Role.Status != EntityStatuses.Active || user.Role.DeletedAt is not null)
+        if (user.Role is null || user.Role.Status != EntityStatuses.Active)
             await FailAsync(user, email, portal, "role_inactive", SecurityEventFailureReasonCodes.AccountDisabled,
                 request, AuthErrorCodes.AccountInactive, "Your account is not active.", 403, cancellationToken);
     }
@@ -244,7 +243,7 @@ public sealed class LoginviaSSOCommandHandler : IRequestHandler<LoginviaSSOComma
 
         var response = await AuthResultBuilder.IssueAsync(
             user, portal, provider.AuthProviderId, request.IpAddress, request.UserAgent,
-            _sessionService, _jwtTokenService, _permissionChecker, cancellationToken);
+            _sessionService, _jwtTokenService, cancellationToken);
 
         await _audit.WriteLoginLogAsync(user.UserId, email, portal, request.SelectedCampusId,
             ProviderTypes.GoogleSso, LoginLogStatuses.Success, null,
