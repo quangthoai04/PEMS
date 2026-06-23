@@ -1,4 +1,4 @@
-﻿using PEMS.Domain.Entities.Campuses;
+using PEMS.Domain.Entities.Campuses;
 using PEMS.Domain.Entities.Users;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
@@ -15,8 +15,6 @@ public class Department
     [Column("campus_id")]
     public ulong CampusId { get; set; }
 
-    [Column("department_code")]
-    public string DepartmentCode { get; set; } = null!;
 
     [Column("name")]
     public string Name { get; set; } = null!;

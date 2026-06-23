@@ -17,24 +17,22 @@ const COUNTRY_OPTIONS: CountryOption[] = Object.entries(
   .map(([, name]) => ({ value: name, label: name }))
   .sort((a, b) => a.label.localeCompare(b.label));
 
-const buildStyles = (hasError?: boolean, hasValue?: boolean): StylesConfig<CountryOption> => ({
+const buildStyles = (hasError?: boolean): StylesConfig<CountryOption> => ({
   control: (base, state) => ({
     ...base,
     borderRadius: '0.75rem',
     borderColor: hasError
       ? '#f87171'
       : state.isFocused
-        ? '#f37021'
-        : hasValue
-          ? '#4ade80'
-          : '#d1d5db',
+        ? '#004c91'
+        : '#d1d5db',
     boxShadow: state.isFocused
       ? hasError
         ? '0 0 0 1px #f87171'
-        : '0 0 0 1px #f37021'
+        : '0 0 0 1px #004c91'
       : 'none',
-    '&:hover': { borderColor: hasError ? '#f87171' : '#f37021' },
-    minHeight: '42px',
+    '&:hover': { borderColor: hasError ? '#f87171' : '#004c91' },
+    minHeight: '48px',
     fontSize: '0.875rem',
     fontWeight: '500',
     backgroundColor: 'white',
@@ -43,9 +41,9 @@ const buildStyles = (hasError?: boolean, hasValue?: boolean): StylesConfig<Count
   option: (base, state) => ({
     ...base,
     backgroundColor: state.isSelected
-      ? '#f37021'
+      ? '#004c91'
       : state.isFocused
-        ? '#fff3ea'
+        ? '#f0f7ff'
         : 'white',
     color: state.isSelected ? 'white' : '#111827',
     fontSize: '0.875rem',
@@ -79,12 +77,12 @@ const buildStyles = (hasError?: boolean, hasValue?: boolean): StylesConfig<Count
   clearIndicator: (base) => ({
     ...base,
     cursor: 'pointer',
-    '&:hover': { color: '#f37021' },
+    '&:hover': { color: '#004c91' },
   }),
   dropdownIndicator: (base) => ({
     ...base,
     color: '#9ca3af',
-    '&:hover': { color: '#f37021' },
+    '&:hover': { color: '#004c91' },
   }),
   indicatorSeparator: () => ({ display: 'none' }),
 });
@@ -110,8 +108,8 @@ export const CountrySelect: React.FC<CountrySelectProps> = ({
   );
 
   const styles = useMemo(
-    () => buildStyles(hasError, !!value),
-    [hasError, value]
+    () => buildStyles(hasError),
+    [hasError]
   );
 
   return (

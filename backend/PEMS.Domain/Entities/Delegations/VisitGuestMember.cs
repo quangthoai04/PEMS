@@ -23,25 +23,14 @@ public class VisitGuestMember
     public string FullName { get; set; } = null!;
 
     [Column("organization")]
-    public string? Organization { get; set; }
+    public string Organization { get; set; } = null!;
 
     [Column("job_title")]
-    public string? JobTitle { get; set; }
+    public string JobTitle { get; set; } = null!;
 
     [Column("nationality")]
-    public string? Nationality { get; set; }
+    public string Nationality { get; set; } = null!;
 
-    [Column("email")]
-    public string? Email { get; set; }
-
-    [Column("phone")]
-    public string? Phone { get; set; }
-
-    [Column("is_representative")]
-    public bool IsRepresentative { get; set; }
-
-    [Column("note")]
-    public string? Note { get; set; }
 
     [Column("created_at")]
     public DateTime CreatedAt { get; set; }

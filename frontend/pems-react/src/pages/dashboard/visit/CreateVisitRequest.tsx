@@ -50,9 +50,7 @@ export function CreateVisitRequest() {
   const [otherType, setOtherType] = useState('');
   
   // New fields from v8.4
-  const [expectedGuestCount, setExpectedGuestCount] = useState<number>(1);
   const [workingLanguage, setWorkingLanguage] = useState<string>('EN');
-  const [interpreterNote, setInterpreterNote] = useState<string>('');
   const [transportationType, setTransportationType] = useState<string>('UNKNOWN');
   const [transportationDetail, setTransportationDetail] = useState<string>('');
   const [mediaConsentStatus, setMediaConsentStatus] = useState<string>('UNKNOWN');

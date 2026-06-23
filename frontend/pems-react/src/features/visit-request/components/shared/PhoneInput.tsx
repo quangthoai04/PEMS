@@ -130,10 +130,10 @@ export const PhoneInput: React.FC<PhoneInputProps> = ({ value, onChange, onBlur,
     <>
       <div
         className={[
-          'flex rounded-xl border bg-white overflow-hidden transition-colors',
+          'flex h-12 rounded-xl border bg-white overflow-hidden transition-colors shadow-sm',
           hasError
-            ? 'border-red-400 focus-within:border-red-500'
-            : 'border-gray-300 focus-within:border-[#f37021]',
+            ? 'border-red-400 focus-within:border-red-500 focus-within:ring-2 focus-within:ring-red-500/10'
+            : 'border-slate-300 focus-within:border-[#004c91] focus-within:ring-2 focus-within:ring-[#004c91]/10',
         ].join(' ')}
       >
         {/* Country code button */}
@@ -141,7 +141,7 @@ export const PhoneInput: React.FC<PhoneInputProps> = ({ value, onChange, onBlur,
           ref={buttonRef}
           type="button"
           onClick={openDropdown}
-          className="flex items-center gap-1.5 pl-3 pr-2 py-2.5 bg-gray-50 border-r border-gray-200 hover:bg-gray-100 transition-colors shrink-0"
+          className="flex h-full items-center gap-1.5 pl-4 pr-2 bg-slate-50 border-r border-slate-200 hover:bg-slate-100 transition-colors shrink-0"
         >
           <span className="text-base leading-none">{selectedOpt.flag}</span>
           <span className="text-sm font-semibold text-gray-700">+{selectedOpt.dialCode}</span>
@@ -157,7 +157,7 @@ export const PhoneInput: React.FC<PhoneInputProps> = ({ value, onChange, onBlur,
           onChange={handleNumberChange}
           onBlur={onBlur}
           placeholder="912 345 678"
-          className="flex-1 px-3 py-2.5 bg-white outline-none text-sm font-medium text-gray-900 min-w-0"
+          className="flex-1 px-4 h-full bg-white outline-none text-sm font-semibold text-slate-800 min-w-0"
         />
       </div>
 

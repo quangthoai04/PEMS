@@ -306,7 +306,7 @@ export const VisitInfoSection: React.FC<Props> = ({ form, visitFields, showError
 
             {/* Purpose */}
             <FormField
-              label="Mục đích thăm FPTU"
+              label="Mục tiêu chuyến thăm"
               required
               error={e.purpose?.message}
               isValid={touchedFields.purpose && !e.purpose}
@@ -344,21 +344,7 @@ export const VisitInfoSection: React.FC<Props> = ({ form, visitFields, showError
               />
             </FormField>
 
-            {/* Expected Guest Count */}
-            <FormField
-              label="Số lượng khách dự kiến"
-              required
-              error={e.expectedGuestCount?.message}
-              isValid={touchedFields.expectedGuestCount && !e.expectedGuestCount}
-              subtitle="Nhập tổng số khách dự kiến. Có thể lớn hơn số người đã nhập ở danh sách."
-            >
-              <input
-                type="number"
-                min="1"
-                {...register('expectedGuestCount', { valueAsNumber: true })}
-                className={inputCls(!!e.expectedGuestCount, touchedFields.expectedGuestCount && !e.expectedGuestCount)}
-              />
-            </FormField>
+
           </div>
         </div>
       </div>

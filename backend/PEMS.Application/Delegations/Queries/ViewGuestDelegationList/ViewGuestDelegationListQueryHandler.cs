@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -315,7 +315,6 @@ public sealed class ViewGuestDelegationListQueryHandler
                 x.vr.VisitScope,
                 x.vr.CreatedBy,
                 x.vr.VisitorUserId,
-                x.vr.ExpectedGuestCount,
                 x.vr.CreatedAt,
                 x.vr.SubmittedAt,
                 RequestCancelledAt = x.vr.CancelledAt,
@@ -396,7 +395,6 @@ public sealed class ViewGuestDelegationListQueryHandler
                 ExpectedEndAt = r.PlannedEndAt,
                 PlannedStartAt = r.PlannedStartAt,
                 PlannedEndAt = r.PlannedEndAt,
-                ExpectedGuestCount = r.ExpectedGuestCount,
                 CreatedAt = r.CreatedAt,
                 SubmittedAt = r.SubmittedAt,
                 CancelledAt = r.CampusCancelledAt ?? r.RequestCancelledAt,
@@ -586,7 +584,6 @@ public sealed class ViewGuestDelegationListQueryHandler
                 ExpectedEndAt = maxEnd,
                 PlannedStartAt = minStart,
                 PlannedEndAt = maxEnd,
-                ExpectedGuestCount = vr.ExpectedGuestCount,
                 CreatedAt = vr.CreatedAt,
                 SubmittedAt = vr.SubmittedAt,
                 CancelledAt = single?.CancelledAt ?? vr.CancelledAt,

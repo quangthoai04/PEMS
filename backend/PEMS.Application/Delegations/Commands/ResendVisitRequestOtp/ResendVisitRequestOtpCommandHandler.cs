@@ -10,13 +10,16 @@ public sealed class ResendVisitRequestOtpCommandHandler
 {
     private readonly IOtpService _otpService;
     private readonly IEmailService _emailService;
+    private readonly Microsoft.Extensions.Configuration.IConfiguration _configuration;
 
     public ResendVisitRequestOtpCommandHandler(
         IOtpService otpService,
-        IEmailService emailService)
+        IEmailService emailService,
+        Microsoft.Extensions.Configuration.IConfiguration configuration)
     {
         _otpService   = otpService;
         _emailService = emailService;
+        _configuration = configuration;
     }
 
     public async Task<MessageResponse> Handle(
@@ -32,12 +35,24 @@ public sealed class ResendVisitRequestOtpCommandHandler
             null,
             cancellationToken);
 
-        await _emailService.SendVisitRequestOtpAsync(
-            email,
-            request.RegistrantFullName,
-            rawCode,
-            cancellationToken);
+        try
+        {
+            await _emailService.SendVisitRequestOtpAsync(
+                email,
+                request.RegistrantFullName,
+                rawCode,
+                cancellationToken);
+        }
+        catch (Exception)
+        {
+            throw new PEMS.Application.Common.Exceptions.BusinessRuleException("Không thể gửi mã OTP. Vui lòng thử lại sau.");
+        }
 
-        return new MessageResponse("Mã xác thực mới đã được gửi tới email của bạn.");
+        var isEmailEnabled = bool.TryParse(_configuration["Smtp:Enabled"], out var e) && e;
+        var msg = isEmailEnabled 
+            ? "Mã xác thực mới đã được gửi tới email của bạn."
+            : "Hệ thống đang ở chế độ DEV (Smtp:Enabled=false). Mã xác thực mới đã được in ra log của backend.";
+
+        return new MessageResponse(msg);
     }
 }

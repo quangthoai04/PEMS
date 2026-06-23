@@ -25,7 +25,6 @@ public interface IVisitRequestFormCommand
     string Purpose { get; }
     string? WorkingContent { get; }
     
-    int ExpectedGuestCount { get; }
     IList<VisitorDto> Visitors { get; }
     IList<SupportTeamMemberDto> SupportMembers { get; }
 
@@ -33,7 +32,6 @@ public interface IVisitRequestFormCommand
     bool IsContactSelf { get; }
 
     string WorkingLanguage { get; }
-    string? InterpreterNote { get; }
     string TransportationType { get; }
     string? TransportationDetail { get; }
     string MediaConsentStatus { get; }

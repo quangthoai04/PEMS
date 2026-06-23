@@ -307,7 +307,7 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
             .HasOne<User>().WithMany()
             .HasForeignKey(vsl => vsl.ChangedBy).OnDelete(DeleteBehavior.SetNull);
 
-        // Minute → VisitRequestCampus, CreatedBy, FinalizedBy
+        // Minute → VisitRequestCampus, CreatedBy, EditLockedBy
         modelBuilder.Entity<Minute>()
             .HasOne<VisitRequestCampus>().WithMany()
             .HasForeignKey(m => m.VisitInstanceId).OnDelete(DeleteBehavior.Restrict);
@@ -316,7 +316,7 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
             .HasForeignKey(m => m.CreatedBy).OnDelete(DeleteBehavior.SetNull);
         modelBuilder.Entity<Minute>()
             .HasOne<User>().WithMany()
-            .HasForeignKey(m => m.FinalizedBy).OnDelete(DeleteBehavior.SetNull);
+            .HasForeignKey(m => m.EditLockedBy).OnDelete(DeleteBehavior.SetNull);
 
         // Feedback → VisitRequest, VisitRequestCampus, SubmittedBy, TargetUser
         modelBuilder.Entity<Feedback>()

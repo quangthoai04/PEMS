@@ -36,6 +36,15 @@ public class MinuteParticipant
     [Column("attendance_status")]
     public string AttendanceStatus { get; set; } = "PRESENT";
 
+    [Column("attendance_note")]
+    public string? AttendanceNote { get; set; }
+
+    [Column("checked_at")]
+    public DateTime? CheckedAt { get; set; }
+
+    [Column("checked_by")]
+    public ulong? CheckedBy { get; set; }
+
     [Column("display_order")]
     public uint DisplayOrder { get; set; }
 
@@ -44,5 +53,6 @@ public class MinuteParticipant
 
     public virtual Minute Minute { get; set; } = null!;
     public virtual User? User { get; set; }
+    public virtual User? CheckedByUser { get; set; }
     public virtual VisitGuestMember? GuestMember { get; set; }
 }

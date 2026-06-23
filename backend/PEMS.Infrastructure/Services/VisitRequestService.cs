@@ -61,6 +61,20 @@ public sealed class VisitRequestService : IVisitRequestService
         // Planned start must not be in the past (1-day grace covers client/server timezone skew);
         // end must be after start (also guarded by the SQL CHECK and form validation).
         var earliestAllowedStart = utcNow.AddDays(-1);
+
+        var registrantOrg = f.RegistrantOrganization;
+        if (f.PartnerId.HasValue)
+        {
+            var partner = await _db.Partners
+                .FirstOrDefaultAsync(p => p.PartnerId == f.PartnerId.Value, cancellationToken);
+            if (partner == null || partner.CooperationStatus != "ACTIVE" || partner.ProfileStatus != "APPROVED")
+            {
+                throw new BusinessRuleException(
+                    "Tổ chức/đối tác đã chọn không hợp lệ hoặc không còn hoạt động.", "INVALID_PARTNER");
+            }
+            registrantOrg = string.IsNullOrWhiteSpace(partner.ShortName) ? partner.Name : $"{partner.Name} ({partner.ShortName})";
+        }
+
         foreach (var slot in f.CampusVisits)
         {
             if (slot.EndDatetime <= slot.StartDatetime)
@@ -87,7 +101,7 @@ public sealed class VisitRequestService : IVisitRequestService
             CreatedSource        = createdSource,
             RegistrantFullName   = f.RegistrantFullName,
             RegistrantNationality = f.RegistrantNationality,
-            RegistrantOrganization = f.RegistrantOrganization,
+            RegistrantOrganization = registrantOrg,
             RegistrantJobTitle   = f.RegistrantPosition,
             RegistrantPhone      = f.RegistrantPhone,
             RegistrantEmail      = f.RegistrantEmail,
@@ -97,13 +111,11 @@ public sealed class VisitRequestService : IVisitRequestService
             VisitTypeOther       = f.VisitTypeOther,
             Purpose              = f.Purpose,
             WorkingContent       = f.WorkingContent,
-            ExpectedGuestCount   = f.ExpectedGuestCount,
-            ContactPersonFullName = f.ContactPerson?.FullName,
-            ContactPersonOrganization = f.ContactPerson?.Organization,
-            ContactPersonPhone   = f.ContactPerson?.Phone,
-            ContactPersonEmail   = f.ContactPerson?.Email,
+            ContactPersonFullName = f.ContactPerson.FullName,
+            ContactPersonOrganization = f.ContactPerson.Organization,
+            ContactPersonPhone   = f.ContactPerson.Phone,
+            ContactPersonEmail   = f.ContactPerson.Email,
             WorkingLanguage      = f.WorkingLanguage,
-            InterpreterNote      = f.InterpreterNote,
             TransportationType   = f.TransportationType,
             TransportationDetail = f.TransportationDetail,
             MediaConsentStatus   = f.MediaConsentStatus,
@@ -132,7 +144,6 @@ public sealed class VisitRequestService : IVisitRequestService
             {
                 // VisitInstanceId / VisitRequestId are DB-generated / set via navigation.
                 CampusId             = campus.CampusId,
-                InstanceCode         = $"{requestCode}-C{idx:D2}",
                 PlannedStartAt       = slot.StartDatetime,
                 PlannedEndAt         = slot.EndDatetime,
                 Status               = VisitInstanceStatuses.WaitingRequestApproval,
@@ -156,10 +167,8 @@ public sealed class VisitRequestService : IVisitRequestService
                 Organization     = visitor.Organization,
                 JobTitle         = visitor.JobTitle,
                 Nationality      = visitor.Nationality,
-                Email            = visitor.Email,
                 MemberType       = "GUEST",
                 DisplayOrder     = order++,
-                IsRepresentative = false,
                 CreatedAt        = utcNow,
                 CreatedBy        = visitorUserId
             });
@@ -175,10 +184,8 @@ public sealed class VisitRequestService : IVisitRequestService
                     Organization     = support.Organization,
                     JobTitle         = support.JobTitle,
                     Nationality      = support.Nationality,
-                    Email            = null,
                     MemberType       = "EXTERNAL_SUPPORT", // User explicitly requested EXTERNAL_SUPPORT
                     DisplayOrder     = order++,
-                    IsRepresentative = false,
                     CreatedAt        = utcNow,
                     CreatedBy        = visitorUserId
                 });

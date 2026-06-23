@@ -85,7 +85,6 @@ type Row = VisitRequestManagementItem & {
   host: string;
   sender: string;
   time: string;
-  pax: number | null;
   statusText: string;
 };
 
@@ -273,7 +272,6 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
             host: '-',
             sender: '-',
             time: formatDateTimeShort(item.plannedStartAt),
-            pax: null,
             statusText,
           };
         });
@@ -291,7 +289,6 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
           host: item.hostName || '',
           sender: item.visitorName || '',
           time: formatDateTimeShort(item.plannedStartAt),
-          pax: item.expectedGuestCount,
           statusText: getVietnameseStatus(item.requestStatus, item.campusStatus),
         }));
         setRows(mapped);

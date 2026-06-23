@@ -27,7 +27,6 @@ public sealed record InitiateVisitRequestCommand(
     string? WorkingContent,
 
     // ── Attendees ──────────────────────────────────────────
-    int ExpectedGuestCount,
     IList<VisitorDto> Visitors,
     IList<SupportTeamMemberDto> SupportMembers,
 
@@ -37,7 +36,6 @@ public sealed record InitiateVisitRequestCommand(
 
     // ── Additional ─────────────────────────────────────────
     string WorkingLanguage,
-    string? InterpreterNote,
     string TransportationType,
     string? TransportationDetail,
     string MediaConsentStatus,

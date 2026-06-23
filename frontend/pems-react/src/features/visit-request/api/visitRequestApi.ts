@@ -15,6 +15,16 @@ export interface VerifyResponse {
   message: string;
 }
 
+export interface PublicPartnerOptionDto {
+  partnerId: number;
+  name: string;
+  shortName: string | null;
+  country: string | null;
+  city: string | null;
+  partnerType: string;
+  displayName: string;
+}
+
 function toVietnamIso(value: string) {
   if (!value) return '';
   // datetime-local may return "2026-06-28T09:00" or "2026-06-28T09:00:00"
@@ -53,12 +63,10 @@ function mapToPayload(data: VisitRequestSchema) {
     purpose: data.purpose,
     workingContent: data.workingContent,
 
-    expectedGuestCount: data.expectedGuestCount,
     visitType: data.visitType,
     visitTypeOther: data.visitType === 'OTHER' ? data.visitTypeOther : null,
 
     workingLanguage: data.workingLanguage,
-    interpreterNote: data.interpreterNote || null,
 
     transportationType: data.transportationType,
     transportationDetail: (data.transportationType === 'FPTU_SUPPORT' || data.transportationType === 'OTHER') ? data.transportationDetail : null,
@@ -68,10 +76,9 @@ function mapToPayload(data: VisitRequestSchema) {
 
     visitors: data.visitors.map((v) => ({
       fullName: v.fullName,
-      email: v.email,
       nationality: v.nationality,
-      jobTitle: v.jobTitle || null,
-      organization: v.organization || null,
+      jobTitle: v.jobTitle,
+      organization: v.organization,
     })),
 
     supportMembers: data.supportTeam.map((s) => ({
@@ -114,18 +121,18 @@ export const visitRequestApi = {
     return res;
   },
 
-  async resendOtp(registerEmail: string, registerFullName: string): Promise<{ message: string }> {
+  async resendOtp(registrantEmail: string, registrantFullName: string): Promise<{ message: string }> {
     const { data: res } = await httpClient.post<{ message: string }>(
       API_ENDPOINTS.visitRequests.resendOtp,
-      { registerEmail, registerFullName }
+      { registrantEmail, registrantFullName }
     );
     return res;
   },
 
-  async searchOrganizations(query: string): Promise<{ id: string; name: string }[]> {
-    const { data } = await httpClient.get<{ id: string; name: string }[]>(
-      API_ENDPOINTS.partners.search,
-      { params: { q: query, limit: 10 } }
+  async searchOrganizations(query: string): Promise<PublicPartnerOptionDto[]> {
+    const { data } = await httpClient.get<PublicPartnerOptionDto[]>(
+      API_ENDPOINTS.publicPartners.search,
+      { params: { keyword: query, limit: 20 } }
     );
     return data;
   },

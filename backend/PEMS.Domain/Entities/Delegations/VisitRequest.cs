@@ -26,16 +26,16 @@ public class VisitRequest
     public string RegistrantFullName { get; set; } = null!;
 
     [Column("registrant_nationality")]
-    public string? RegistrantNationality { get; set; }
+    public string RegistrantNationality { get; set; } = null!;
 
     [Column("registrant_organization")]
     public string RegistrantOrganization { get; set; } = null!;
 
     [Column("registrant_job_title")]
-    public string? RegistrantJobTitle { get; set; }
+    public string RegistrantJobTitle { get; set; } = null!;
 
     [Column("registrant_phone")]
-    public string? RegistrantPhone { get; set; }
+    public string RegistrantPhone { get; set; } = null!;
 
     [Column("registrant_email")]
     public string RegistrantEmail { get; set; } = null!;
@@ -57,26 +57,22 @@ public class VisitRequest
     [Column("working_content")]
     public string? WorkingContent { get; set; }
 
-    [Column("expected_guest_count")]
-    public int ExpectedGuestCount { get; set; } = 1;
 
     [Column("contact_person_full_name")]
-    public string? ContactPersonFullName { get; set; }
+    public string ContactPersonFullName { get; set; } = null!;
 
     [Column("contact_person_organization")]
-    public string? ContactPersonOrganization { get; set; }
+    public string ContactPersonOrganization { get; set; } = null!;
 
     [Column("contact_person_phone")]
-    public string? ContactPersonPhone { get; set; }
+    public string ContactPersonPhone { get; set; } = null!;
 
     [Column("contact_person_email")]
-    public string? ContactPersonEmail { get; set; }
+    public string ContactPersonEmail { get; set; } = null!;
 
     [Column("working_language")]
     public string WorkingLanguage { get; set; } = "EN";
 
-    [Column("interpreter_note")]
-    public string? InterpreterNote { get; set; }
 
     [Column("transportation_type")]
     public string TransportationType { get; set; } = "UNKNOWN";
