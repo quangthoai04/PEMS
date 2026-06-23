@@ -10,6 +10,13 @@ namespace PEMS.Api.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
+    [RoleAuthorize(
+        EffectiveRole.StaffLeader, 
+        EffectiveRole.Staff, 
+        EffectiveRole.DepartmentLead, 
+        EffectiveRole.Department, 
+        EffectiveRole.Ho
+    )]
     public class EmailsController : ControllerBase
     {
         private readonly IMediator _mediator;

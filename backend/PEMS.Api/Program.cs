@@ -133,7 +133,10 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-app.UseHttpsRedirection();
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();
+}
 
 app.UseAuthentication();
 app.UseMiddleware<SessionValidationMiddleware>();
@@ -145,3 +148,4 @@ app.UseRateLimiter();
 app.MapControllers();
 
 app.Run();
+

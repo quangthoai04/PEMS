@@ -16,7 +16,7 @@ namespace PEMS.Api.Controllers
         public DashboardController(IMediator mediator) => _mediator = mediator;
 
         [HttpGet("department-leader/summary")]
-        [PEMS.Api.Filters.RequirePermission("UC-69.VIEW_DASHBOARD_STATISTICS", PEMS.Domain.Constants.PermissionLevels.Read)]
+        [PEMS.Api.Filters.RoleAuthorize(PEMS.Application.Common.Security.EffectiveRole.DepartmentLead)]
         public async Task<IActionResult> GetDepartmentLeaderDashboardSummary(CancellationToken cancellationToken)
         {
             var query = new GetDepartmentLeaderDashboardSummaryQuery();
@@ -53,3 +53,5 @@ namespace PEMS.Api.Controllers
         }
     }
 }
+
+

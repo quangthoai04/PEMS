@@ -53,7 +53,13 @@ httpClient.interceptors.response.use(
 
     const isAuthPath = NO_REFRESH_PATHS.some((p) => url.includes(p));
 
-    if (status === 401 && original && !original._retry && !isAuthPath && authStorage.getRefreshToken()) {
+    if (status === 401 && !isAuthPath) {
+      if (!original || original._retry || !authStorage.getRefreshToken()) {
+        authStorage.clear();
+        window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT));
+        return Promise.reject(error);
+      }
+
       original._retry = true;
 
       const pending = refreshPromise ?? (refreshPromise = performRefresh().finally(() => {
