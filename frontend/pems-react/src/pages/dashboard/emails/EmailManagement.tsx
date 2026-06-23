@@ -3,15 +3,12 @@ import { Search, Plus, Eye, Edit2, ChevronLeft, ChevronRight, Check, ArrowUpDown
 import { useNavigate, useLocation } from 'react-router-dom';
 import { SendEmailTab } from './SendEmailTab';
 
+import { emailsApi } from '../../../features/emails/api/emailsApi';
+import { format } from 'date-fns';
+
 const mockEmailData = [
   { id: 1, name: 'Thư mời đoàn đại biểu', subject: 'Thư mời tham quan và làm việc tại Đại học FPT', desc: 'Mẫu thư mời chính thức gửi cho các đoàn đại biểu đối tác quốc tế đến thăm trường.', content: '<p>Kính gửi Quý đại biểu,</p><p>Trân trọng kính mời Quý đại biểu đến tham quan cơ sở của chúng tôi.</p>', creator: 'Nguyễn Văn B', campus: 'Hà Nội', date: '01/05/2024', status: 'Sử dụng' },
   { id: 2, name: 'Thư cảm ơn sau chuyến thăm', subject: 'Cảm ơn chuyến thăm của quý vị đến Đại học FPT', desc: 'Mẫu email cảm ơn gửi sau khi cuộc gặp gỡ, đón tiếp kết thúc.', content: '<p>Kính gửi Quý vị,</p><p>Chúng tôi xin gửi lời cảm ơn chân thành nhất vì chuyến thăm vừa qua.</p>', creator: 'Nguyễn Văn C', campus: 'Quy Nhơn', date: '02/05/2024', status: 'Không sử dụng' },
-];
-
-const mockSentEmailData = [
-  { id: 1, program: 'Đón tiếp ĐH Deakin (Úc)', subject: 'Thư mời tham quan và làm việc tại ĐH FPT', sender: 'Nguyễn Văn B', campus: 'Hà Nội', sendTime: '01/05/2024 08:00', status: 'Thành công', hasNewReply: true, mailbox: 'sent' },
-  { id: 2, program: 'Chuyến thăm Panasonic', subject: 'Cảm ơn quý tập đoàn đã ghé thăm ĐH FPT', sender: 'Trần Thị C', campus: 'Hồ Chí Minh', sendTime: '02/05/2024 09:30', status: 'Thành công', hasNewReply: true, mailbox: 'received' },
-  { id: 3, program: 'Hợp tác ĐH Chulalongkorn', subject: 'Dự thảo Biên bản ghi nhớ hợp tác (MOU)', sender: 'Lê Văn D', campus: 'Đà Nẵng', sendTime: '03/05/2024 10:15', status: 'Đang xử lý', hasNewReply: false, mailbox: 'sent' },
 ];
 
 export function EmailManagement() {
@@ -39,11 +36,49 @@ export function EmailManagement() {
   const [statusFilter, setStatusFilter] = useState('');
 
   // Email List state
-  const [sentData, setSentData] = useState(mockSentEmailData);
+  const [sentData, setSentData] = useState<any[]>([]);
   const [pageSent, setPageSent] = useState(1);
   const [itemsPerPageSent, setItemsPerPageSent] = useState(10);
   const [searchQuerySent, setSearchQuerySent] = useState('');
   const [mailboxFilter, setMailboxFilter] = useState('all'); // all, sent, received
+  const [relatedTypeFilter, setRelatedTypeFilter] = useState(''); // VISIT_REQUEST, GENERAL
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [totalEmails, setTotalEmails] = useState(0);
+  const [isLoadingEmails, setIsLoadingEmails] = useState(false);
+
+  React.useEffect(() => {
+    if (activeTab === 'Danh sách email') {
+      const fetchEmails = async () => {
+        setIsLoadingEmails(true);
+        try {
+          const params: any = {
+            mailBox: mailboxFilter,
+            keyword: searchQuerySent,
+            page: pageSent,
+            pageSize: itemsPerPageSent
+          };
+          if (relatedTypeFilter) params.relatedType = relatedTypeFilter;
+          if (startDate) params.startDate = startDate;
+          if (endDate) params.endDate = endDate;
+          
+          const res = await emailsApi.getEmailList(params);
+          setSentData(res.data.items || []);
+          setTotalEmails(res.data.totalCount || 0);
+        } catch (error) {
+          console.error('Failed to fetch emails:', error);
+        } finally {
+          setIsLoadingEmails(false);
+        }
+      };
+      
+      const timeoutId = setTimeout(() => {
+        fetchEmails();
+      }, 300); // debounce search
+
+      return () => clearTimeout(timeoutId);
+    }
+  }, [activeTab, pageSent, itemsPerPageSent, searchQuerySent, mailboxFilter, relatedTypeFilter, startDate, endDate]);
 
   const toggleStatus = (id: number) => {
     setData(data.map(item => {
@@ -64,14 +99,8 @@ export function EmailManagement() {
   const totalPages = Math.ceil(filteredData.length / itemsPerPage);
   const currentItems = filteredData.slice((page - 1) * itemsPerPage, page * itemsPerPage);
 
-  // Filter emails
-  const filteredSentData = sentData.filter(item => {
-    const matchSearch = item.subject.toLowerCase().includes(searchQuerySent.toLowerCase());
-    const matchMailbox = mailboxFilter === 'all' ? true : item.mailbox === mailboxFilter;
-    return matchSearch && matchMailbox;
-  });
-  const totalPagesSent = Math.ceil(filteredSentData.length / itemsPerPageSent);
-  const currentItemsSent = filteredSentData.slice((pageSent - 1) * itemsPerPageSent, pageSent * itemsPerPageSent);
+  const totalPagesSent = Math.ceil(totalEmails / itemsPerPageSent);
+  const currentItemsSent = sentData;
 
   return (
     <div className="p-4 sm:p-6 md:p-8 max-w-[95%] mx-auto">
@@ -125,6 +154,34 @@ export function EmailManagement() {
               <option value="received">Đã nhận</option>
             </select>
 
+            <select 
+              value={relatedTypeFilter}
+              onChange={(e) => { setRelatedTypeFilter(e.target.value); setPageSent(1); }}
+              className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none hover:border-[#004c91] hover:text-[#004c91] focus:border-[#004c91] text-gray-600 bg-white font-medium shadow-sm transition-colors cursor-pointer outline-none"
+            >
+              <option value="">Tất cả phân loại</option>
+              <option value="VISIT_REQUEST">Tiếp khách</option>
+              <option value="GENERAL">Khác</option>
+            </select>
+
+            <div className="flex items-center gap-2 border border-gray-300 rounded-lg bg-white px-2 shadow-sm text-sm">
+               <input 
+                 type="date"
+                 value={startDate}
+                 onChange={(e) => { setStartDate(e.target.value); setPageSent(1); }}
+                 className="py-1.5 px-1 outline-none text-gray-600 bg-transparent"
+                 title="Từ ngày"
+               />
+               <span className="text-gray-400">-</span>
+               <input 
+                 type="date"
+                 value={endDate}
+                 onChange={(e) => { setEndDate(e.target.value); setPageSent(1); }}
+                 className="py-1.5 px-1 outline-none text-gray-600 bg-transparent"
+                 title="Đến ngày"
+               />
+            </div>
+
             {userRole !== 'VISITOR' && (
               <button 
                 onClick={() => setShowTemplateModal(true)}
@@ -157,27 +214,32 @@ export function EmailManagement() {
                         {(pageSent - 1) * itemsPerPageSent + index + 1}
                       </td>
                       <td className="p-3 align-middle text-center">
-                        <span className={`inline-flex px-2 py-1 rounded text-xs font-bold ${item.mailbox === 'sent' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'}`}>
-                          {item.mailbox === 'sent' ? 'Đã gửi' : 'Đã nhận'}
+                        <span className={`inline-flex px-2 py-1 rounded text-xs font-bold ${item.relatedType === 'VISIT_REQUEST' ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-700'}`}>
+                          {item.relatedType === 'VISIT_REQUEST' ? 'Tiếp khách' : 'Khác'}
                         </span>
                       </td>
                       <td className="p-3 align-middle text-gray-800 text-[14px] text-left pl-6 transition-colors font-medium">
                         <div className="line-clamp-2">{item.subject}</div>
                       </td>
                       <td className="p-3 align-middle whitespace-nowrap text-center text-[13px] text-gray-500 font-medium">
-                          {item.sendTime}
+                          {item.sentAt 
+                             ? format(new Date(item.sentAt.endsWith('Z') ? item.sentAt : item.sentAt + 'Z'), 'dd/MM/yyyy HH:mm') 
+                             : (item.createdAt ? format(new Date(item.createdAt.endsWith('Z') ? item.createdAt : item.createdAt + 'Z'), 'dd/MM/yyyy HH:mm') : '')}
                       </td>
                       <td className="p-3 align-middle text-center">
                         <span className={`inline-flex items-center justify-center px-2.5 py-1.5 rounded-full text-[12px] font-bold border whitespace-nowrap ${
-                            item.status === 'Thành công' ? 'bg-[#eaffe4] text-[#0aa14f] border-[#ceefda]' : 'bg-[#fff6e0] text-[#cf8e00] border-[#ffecba]'
+                            item.processStatus === 'COMPLETED' ? 'bg-[#eaffe4] text-[#0aa14f] border-[#ceefda]' : 
+                            item.processStatus === 'FAILED' ? 'bg-[#ffe4e4] text-[#a10a0a] border-[#efdada]' :
+                            'bg-[#fff6e0] text-[#cf8e00] border-[#ffecba]'
                         }`}>
-                          {item.status}
+                          {item.processStatus === 'COMPLETED' ? 'Hoàn thành' : 
+                           item.processStatus === 'FAILED' ? 'Thất bại' : 'Đang xử lý'}
                         </span>
                       </td>
                       <td className="p-3 align-middle whitespace-nowrap text-center">
                         <div className="flex items-center justify-center gap-2">
                           <button 
-                            onClick={() => navigate(`/dashboard/email/sent/${item.id}`)}
+                            onClick={() => navigate(`/dashboard/email/detail/${item.sourceType}/${item.id}`)}
                             className="p-1.5 rounded-lg hover:bg-[#e6eff7] hover:text-[#004c91] text-gray-400 transition-colors outline-none" 
                             title="Xem chi tiết"
                           >
@@ -187,7 +249,14 @@ export function EmailManagement() {
                       </td>
                     </tr>
                   ))}
-                  {currentItemsSent.length === 0 && (
+                  {isLoadingEmails && (
+                    <tr>
+                      <td colSpan={6} className="p-4 sm:p-6 md:p-8 text-center text-gray-500">
+                        Đang tải...
+                      </td>
+                    </tr>
+                  )}
+                  {!isLoadingEmails && currentItemsSent.length === 0 && (
                     <tr>
                       <td colSpan={6} className="p-4 sm:p-6 md:p-8 text-center text-gray-500">
                         Không tìm thấy dữ liệu phù hợp

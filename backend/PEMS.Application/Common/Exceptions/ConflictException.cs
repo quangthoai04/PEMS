@@ -14,7 +14,7 @@ public class ConflictException : Exception
     /// Staff Leader's id/name/email/status so the UI can render a specific warning). Never
     /// include sensitive fields here — it is serialized verbatim into the error response.
     /// </summary>
-    public object? Data { get; }
+    public new object? Data { get; }
 
     public ConflictException(string message) : base(message) { }
 

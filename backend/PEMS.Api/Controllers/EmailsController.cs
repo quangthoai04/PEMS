@@ -22,6 +22,13 @@ namespace PEMS.Api.Controllers
         private readonly IMediator _mediator;
         public EmailsController(IMediator mediator) => _mediator = mediator;
 
+        [HttpGet("viewemaillist")]
+        public async Task<IActionResult> ViewEmailList([FromQuery] PEMS.Application.Emails.Queries.ViewEmailList.ViewEmailListQuery query, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(query, cancellationToken);
+            return Ok(result);
+        }
+
         [HttpGet("viewemailtemplatelist")]
 
         public async Task<IActionResult> ViewEmailTemplateList([FromQuery] PEMS.Application.Emails.Queries.ViewEmailTemplateList.ViewEmailTemplateListQuery query, CancellationToken cancellationToken)
@@ -86,5 +93,18 @@ namespace PEMS.Api.Controllers
             return Ok(result);
         }
 
+        [HttpPost("{id}/mark-completed")]
+        public async Task<IActionResult> MarkCompleted(ulong id, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(new PEMS.Application.Emails.Commands.MarkEmailCompleted.MarkEmailCompletedCommand { SentEmailId = id }, cancellationToken);
+            return Ok(result);
+        }
+
+        [HttpGet("unprocessed-count")]
+        public async Task<IActionResult> GetUnprocessedCount(CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(new PEMS.Application.Emails.Queries.GetUnprocessedEmailCount.GetUnprocessedEmailCountQuery(), cancellationToken);
+            return Ok(result);
+        }
     }
 }
