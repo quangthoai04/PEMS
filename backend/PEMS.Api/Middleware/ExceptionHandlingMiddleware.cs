@@ -82,7 +82,9 @@ public sealed class ExceptionHandlingMiddleware
 
             case ConflictException conflict:
                 status = StatusCodes.Status409Conflict;
-                payload = new { success = false, errorCode = conflict.ErrorCode, message = conflict.Message, traceId };
+                payload = conflict.Data is null
+                    ? new { success = false, errorCode = conflict.ErrorCode, message = conflict.Message, traceId }
+                    : new { success = false, errorCode = conflict.ErrorCode, message = conflict.Message, data = conflict.Data, traceId };
                 break;
 
             case BusinessRuleException business:

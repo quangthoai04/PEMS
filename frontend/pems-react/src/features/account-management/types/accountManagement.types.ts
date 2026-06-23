@@ -45,6 +45,9 @@ export interface AccountListItem {
   canViewDetails: boolean;
   canUpdateRole: boolean;
   canManageStatus: boolean;
+  /** When canManageStatus is false, why the status toggle is hidden (e.g. HO_STATUS_CHANGE_REQUIRES_SPECIAL_FLOW). */
+  hideStatusToggleReason?: string | null;
+  isCurrentUser: boolean;
 }
 
 /** UC-95/UC-99 — query string params accepted by GET /accounts/viewaccountlist. */
@@ -76,6 +79,127 @@ export interface ActiveCampusOption {
   campusName: string;
 }
 
+/** UC-95-SL account statistics (scoped to the caller). Mirrors backend ViewAccountStatisticsDto. */
+export interface AccountStatistics {
+  totalAccounts: number;
+  activeAccounts: number;
+  lockedAccounts: number;
+  inactiveAccounts: number;
+}
+
+/** Active GENERAL department option for the Department-Leader dropdown (GET /accounts/campus-departments). */
+export interface CampusDepartmentOption {
+  departmentId: string;
+  name: string;
+  hasHead: boolean;
+}
+
+/** UC-96 — existing Staff Leader summary returned by the availability pre-check. */
+export interface ExistingLeaderInfo {
+  userId: string;
+  fullName: string;
+  email: string;
+  status: string;
+}
+
+/**
+ * UC-96 — Staff Leader availability pre-check result (GET /accounts/staff-leader-availability).
+ * Mirrors backend StaffLeaderAvailabilityDto. `canCreateStaffLeader=false` always comes with a
+ * `blockingReason` and a user-facing `message`; `existingLeader` is set for leader-exists cases.
+ */
+export interface StaffLeaderAvailability {
+  campusId: string;
+  campusName?: string | null;
+  canCreateStaffLeader: boolean;
+  icDepartmentId?: string | null;
+  icDepartmentName?: string | null;
+  existingLeader?: ExistingLeaderInfo | null;
+  blockingReason?: string | null;
+  message: string;
+}
+
+/** UC-96 — existing HO summary returned by the HO campus pre-check. */
+export interface ExistingHoInfo {
+  userId: string;
+  fullName: string;
+  email: string;
+  status: string;
+}
+
+/**
+ * UC-96 — HO campus pre-check result (GET /accounts/ho-campus-check). Mirrors backend
+ * HoCampusCheckDto. `canCreateHo=false` always comes with a `reasonCode` and a user-facing
+ * `message`; `existingHo` is set for the HO-exists cases (ACTIVE/INACTIVE/LOCKED).
+ */
+export interface HoCampusCheck {
+  campusId: string;
+  campusName?: string | null;
+  canCreateHo: boolean;
+  existingHo?: ExistingHoInfo | null;
+  reasonCode?: string | null;
+  message: string;
+}
+
+// ── Replace Staff Leader (REPLACE_STAFF_LEADER spec) ──
+
+export interface ReplacementLeader {
+  userId: string;
+  fullName: string;
+  email: string;
+  status: string;
+  roleCode: string;
+  subRole?: string | null;
+}
+
+export interface ReplacementCandidate {
+  userId: string;
+  fullName: string;
+  email: string;
+  status: string;
+  roleCode: string;
+  subRole?: string | null;
+}
+
+/** Preview for the Replace Staff Leader modal (GET /accounts/staff-leader-replacement-preview). */
+export interface StaffLeaderReplacementPreview {
+  campusId: string;
+  campusName?: string | null;
+  campusStatus?: string | null;
+  icDepartmentId?: string | null;
+  icDepartmentName?: string | null;
+  currentLeader?: ReplacementLeader | null;
+  eligibleCandidates: ReplacementCandidate[];
+  canReplace: boolean;
+  blockingReason?: string | null;
+  message: string;
+}
+
+export type ReplaceStaffLeaderMode = 'EXISTING_USER' | 'CREATE_NEW_USER';
+
+/** Replace Staff Leader request (POST /accounts/replacestaffleader). */
+export interface ReplaceStaffLeaderRequest {
+  campusId: string | number;
+  mode: ReplaceStaffLeaderMode;
+  /** EXISTING_USER only. */
+  newLeaderUserId?: string | number | null;
+  /** CREATE_NEW_USER only. */
+  fullName?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  gender?: string | null;
+  reason: string;
+}
+
+export interface ReplaceStaffLeaderResponse {
+  campusId: string;
+  icDepartmentId: string;
+  oldLeaderUserId: string;
+  newLeaderUserId: string;
+  newLeaderEmail: string;
+  emailNotificationStatus: string;
+  message: string;
+}
+
 /** UC-96 Create Account request. Mirrors backend CreateAccountCommand. */
 export interface CreateAccountRequest {
   email: string;
@@ -98,6 +222,45 @@ export interface CreateAccountResponse {
   roleCode: string;
   primaryCampusId?: string | null;
   passwordSet: boolean;
+  /** UC-96 notification email outcome: SENT | FAILED. */
+  emailNotificationStatus: string;
+  message: string;
+}
+
+/** UC-98 — account detail. Mirrors backend ViewAccountDetailsDto (no sensitive fields). */
+export interface AccountDetails {
+  userId: string;
+  fullName: string;
+  email: string;
+  phone?: string | null;
+  gender?: string | null;
+  roleCode: string;
+  roleName: string;
+  subRole?: string | null;
+  displayRole: string;
+  displayPosition?: string | null;
+  campusId?: string | null;
+  campusName?: string | null;
+  departmentId?: string | null;
+  departmentName?: string | null;
+  status: string;
+  createdVia?: string | null;
+  createdAt: string;
+  updatedAt?: string | null;
+  lastLoginAt?: string | null;
+}
+
+/** UC-97 — change account status request. Mirrors backend ManageAccountStatusCommand. */
+export interface ManageAccountStatusRequest {
+  userId: string | number;
+  status: 'ACTIVE' | 'INACTIVE';
+  reason?: string | null;
+}
+
+export interface ManageAccountStatusResponse {
+  userId: string;
+  status: string;
+  revokedSessions: number;
   message: string;
 }
 

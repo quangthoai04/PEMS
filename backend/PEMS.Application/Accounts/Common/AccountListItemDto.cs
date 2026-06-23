@@ -45,4 +45,14 @@ public sealed class AccountListItemDto
 
     /// <summary>True when the caller may lock/unlock this row (UC-97).</summary>
     public bool CanManageStatus { get; init; }
+
+    /// <summary>
+    /// When <see cref="CanManageStatus"/> is false, the machine-readable reason the status toggle
+    /// is hidden (e.g. SELF_ACCOUNT, HO_STATUS_CHANGE_REQUIRES_SPECIAL_FLOW, OTHER_CAMPUS_HO).
+    /// Null when the toggle is available. See HO_CREATE_HO_ACCOUNT spec §12.3.
+    /// </summary>
+    public string? HideStatusToggleReason { get; init; }
+
+    /// <summary>True when this row is the caller's own account (UI hides the status toggle).</summary>
+    public bool IsCurrentUser { get; init; }
 }

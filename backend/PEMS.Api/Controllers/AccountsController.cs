@@ -66,5 +66,64 @@ namespace PEMS.Api.Controllers
             return Ok(result);
         }
 
+        [HttpGet("statistics")]
+        [EnableRateLimiting("accounts-read")]
+        public async Task<IActionResult> GetStatistics(CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(new PEMS.Application.Accounts.Queries.ViewAccountStatistics.ViewAccountStatisticsQuery(), cancellationToken);
+            return Ok(result);
+        }
+
+        [HttpGet("campus-departments")]
+        public async Task<IActionResult> GetCampusDepartments(CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(new PEMS.Application.Accounts.Queries.GetCampusDepartments.GetCampusDepartmentsQuery(), cancellationToken);
+            return Ok(result);
+        }
+
+        // UC-96 — Staff Leader availability pre-check (HO only): can a Trưởng phòng IC be created
+        // for the chosen campus? Drives the create modal's warning/disable state.
+        [HttpGet("staff-leader-availability")]
+        [EnableRateLimiting("accounts-read")]
+        public async Task<IActionResult> GetStaffLeaderAvailability([FromQuery] ulong campusId, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(
+                new PEMS.Application.Accounts.Queries.StaffLeaderAvailability.GetStaffLeaderAvailabilityQuery { CampusId = campusId },
+                cancellationToken);
+            return Ok(result);
+        }
+
+        // UC-96 — HO campus pre-check (HO only): can a new HO account be created for the chosen
+        // campus? Drives the create modal's warning/disable state.
+        [HttpGet("ho-campus-check")]
+        [EnableRateLimiting("accounts-read")]
+        public async Task<IActionResult> GetHoCampusCheck([FromQuery] ulong campusId, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(
+                new PEMS.Application.Accounts.Queries.HoCampusCheck.GetHoCampusCheckQuery { CampusId = campusId },
+                cancellationToken);
+            return Ok(result);
+        }
+
+        // Replace Staff Leader (HO only) — preview: current IC Head + eligible replacement candidates.
+        [HttpGet("staff-leader-replacement-preview")]
+        [EnableRateLimiting("accounts-read")]
+        public async Task<IActionResult> GetStaffLeaderReplacementPreview([FromQuery] ulong campusId, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(
+                new PEMS.Application.Accounts.Queries.StaffLeaderReplacementPreview.GetStaffLeaderReplacementPreviewQuery { CampusId = campusId },
+                cancellationToken);
+            return Ok(result);
+        }
+
+        // Replace Staff Leader (HO only) — promote an existing IC Staff or create a new leader; the
+        // old leader is demoted to STAFF/STAFF, heads repointed, sessions revoked, all in one txn.
+        [HttpPost("replacestaffleader")]
+        public async Task<IActionResult> ReplaceStaffLeader([FromBody] PEMS.Application.Accounts.Commands.ReplaceStaffLeader.ReplaceStaffLeaderCommand command, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(command, cancellationToken);
+            return Ok(result);
+        }
+
     }
 }

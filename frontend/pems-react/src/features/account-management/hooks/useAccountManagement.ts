@@ -2,8 +2,11 @@ import { useState, useCallback } from 'react';
 import { accountManagementApi } from '../api/accountManagementApi';
 import { getAuthErrorMessage } from '../../authentication/api/authError';
 import type {
+  AccountDetails,
   CreateAccountRequest,
   CreateAccountResponse,
+  ManageAccountStatusRequest,
+  ManageAccountStatusResponse,
   UpdateAccountRoleRequest,
   UpdateAccountRoleResponse,
 } from '../types/accountManagement.types';
@@ -42,5 +45,34 @@ export const useAccountManagement = () => {
     }
   }, []);
 
-  return { submitting, error, setError, createAccount, updateAccountRole };
+  const manageAccountStatus = useCallback(
+    async (payload: ManageAccountStatusRequest): Promise<ManageAccountStatusResponse | null> => {
+      setSubmitting(true);
+      setError(null);
+      try {
+        return await accountManagementApi.manageAccountStatus(payload);
+      } catch (err) {
+        setError(getAuthErrorMessage(err, 'Không thể cập nhật trạng thái tài khoản. Vui lòng thử lại.'));
+        return null;
+      } finally {
+        setSubmitting(false);
+      }
+    },
+    [],
+  );
+
+  const getAccountDetails = useCallback(
+    async (userId: string | number): Promise<AccountDetails | null> => {
+      setError(null);
+      try {
+        return await accountManagementApi.getAccountDetails(userId);
+      } catch (err) {
+        setError(getAuthErrorMessage(err, 'Không thể tải chi tiết tài khoản. Vui lòng thử lại.'));
+        return null;
+      }
+    },
+    [],
+  );
+
+  return { submitting, error, setError, createAccount, updateAccountRole, manageAccountStatus, getAccountDetails };
 };
