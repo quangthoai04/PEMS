@@ -1,3 +1,712 @@
+# PEMS_UC_IMPLEMENTATION_RULEBOOK_FRONTEND_BACKEND_DATABASE_VALIDATION_SECURITY_v8_4_refined_v6_FULL_UPDATED
+
+> **Bản FULL-PRESERVED cập nhật theo PEMS v8.4 refined v6 no dynamic permissions.**  
+> File này gồm 2 phần:  
+> - **PHẦN A — Nội dung chuẩn hiện tại để code/triển khai.**  
+> - **PHẦN B — Nội dung gốc/legacy được giữ lại đầy đủ để đối chiếu lịch sử.**  
+>
+> Khi PHẦN A mâu thuẫn với PHẦN B, **luôn ưu tiên PHẦN A**. PHẦN B không được dùng làm nguồn code trực tiếp nếu có dấu hiệu legacy như `DEPT`, `STAFF_L`, `STAFF_P`, `Staff click nhận đón`, `auto Staff Leader làm host`, `Staff Leader/HO cancel sau APPROVED`, hoặc dynamic permissions.
+
+## 0. Cách đọc file này
+
+```text
+1. Đọc PEMS_CANONICAL_BUSINESS_RULES_v8_4_refined_v6.md trước.
+2. Đọc PHẦN A của file này để lấy nghiệp vụ/logic hiện hành.
+3. Chỉ dùng PHẦN B để hiểu nguồn gốc tài liệu cũ, không dùng để sinh code nếu mâu thuẫn với PHẦN A.
+4. Nếu cần code, backend phải kiểm tra lại bằng schema v8.4 refined v6 và seed v7/v6 dynamic time tương ứng.
+```
+
+---
+
+# PHẦN A — NỘI DUNG CHUẨN HIỆN TẠI / UPDATED CANONICAL CONTENT
+
+# PEMS_UC_IMPLEMENTATION_RULEBOOK_v8_4_refined_v6_UPDATED
+
+> Rulebook chuẩn cho AI/code agent triển khai Use Case PEMS.  
+> Phiên bản này đã bổ sung business rules mới: no dynamic permissions, role/subRole canonical, delegation lifecycle, multi-campus visibility, cancel rule, required guest/support team, dynamic planned time seed.
+
+## 0. Nguyên tắc tối cao
+
+Khi triển khai UC, không được chỉ scaffold. Phải code chạy thật, đúng schema, đúng nghiệp vụ, có build/test.
+
+Không được:
+
+```text
+Tạo file rỗng
+Để NotImplementedException
+Dùng mock data nếu UC cần DB thật
+Bỏ permission/scope
+Bỏ validation
+Query DB tùy tiện trong Controller
+Báo pass nếu build fail
+Sửa seed để che bug logic
+Thêm role/status/enum ngoài schema nếu chưa patch DB
+```
+
+---
+
+## 1. Workflow bắt buộc khi nhận UC
+
+```text
+[ ] Xác định UC ID, actor, module.
+[ ] Đọc PEMS_CANONICAL_BUSINESS_RULES_v8_4_refined_v6.md.
+[ ] Đọc schema/field dictionary liên quan.
+[ ] Quét code hiện tại trước khi sửa.
+[ ] Xác định API route, DTO, validation, business validation.
+[ ] Xác định role/subRole/scope.
+[ ] Xác định status transition.
+[ ] Xác định DB tables và indexes nếu cần.
+[ ] Xác định frontend page/hook/api/component.
+[ ] Viết hoặc cập nhật test/manual test checklist.
+[ ] Build backend.
+[ ] Build frontend nếu sửa frontend.
+[ ] Cập nhật docs/changelog.
+[ ] Báo cáo đầy đủ.
+```
+
+---
+
+## 2. Clean Architecture rules
+
+### 2.1 API layer
+
+Controller chỉ:
+
+```text
+Nhận route/query/body
+Gọi IMediator.Send()
+Trả response
+```
+
+Controller không:
+
+```text
+Không query DbContext
+Không xử lý business rule phức tạp
+Không tự map entity phức tạp
+Không try/catch lan man
+```
+
+### 2.2 Application layer
+
+Handler/service chịu trách nhiệm:
+
+```text
+Command/Query handling
+Business validation
+Scope/permission logic
+Status transition
+DTO projection
+Calling repository/db abstraction
+Notification/email/audit orchestration
+```
+
+### 2.3 Domain layer
+
+Domain chứa:
+
+```text
+Entity
+Enum/constants
+Core transition rule
+Invariant methods
+```
+
+### 2.4 Infrastructure layer
+
+Infrastructure chứa:
+
+```text
+EF Core DbContext/config
+Repository implementation
+Email/file/SSO/external API implementation
+```
+
+Read-only query:
+
+```text
+AsNoTracking
+Projection trực tiếp sang DTO
+Paging bắt buộc cho list
+Không Include dư
+Không N+1
+```
+
+---
+
+## 3. Database-first rules
+
+PEMS dùng database-first/manual SQL.
+
+Không được:
+
+```text
+Auto migration bừa
+Đổi schema trong code mà không có SQL patch
+Seed runtime trong Program.cs
+Xóa destructive nếu chưa có yêu cầu
+```
+
+Nếu cần schema change:
+
+```text
+Tạo SQL patch rõ tên
+Idempotent nếu có thể
+Không làm mất dữ liệu cũ
+Ghi rõ import order
+Cập nhật schema docs
+```
+
+---
+
+## 4. Permission model
+
+Schema hiện tại không dùng dynamic permissions DB.
+
+Không query:
+
+```text
+permissions
+role_permissions
+```
+
+Authorize bằng fixed policy dựa trên:
+
+```text
+role_code
+sub_role / effectiveRole
+primary_campus_id
+department_id
+ownership
+coordinator/host/participant relationship
+record status
+```
+
+Endpoint public có thể AllowAnonymous, nhưng handler vẫn phải validate policy/OTP/ownership nếu cần.
+
+---
+
+## 5. Role/SubRole rules
+
+Runtime values hợp lệ:
+
+```text
+ADMIN, HO, STAFF, DEPARTMENT, STUDENT, VISITOR
+sub_role: STAFF, LEADER hoặc NULL
+```
+
+Effective roles:
+
+```text
+Staff Leader = STAFF + LEADER
+IC Staff = STAFF + STAFF
+Department Leader = DEPARTMENT + LEADER
+Department Staff = DEPARTMENT + STAFF
+```
+
+Không dùng:
+
+```text
+DEPT
+STAFF_LEADER
+DEPARTMENT_LEADER
+STAFF_L
+DEPT_L
+```
+
+Host candidate:
+
+```text
+ACTIVE + STAFF + STAFF + same campus + IC department
+```
+
+---
+
+## 6. Account Management canonical rules
+
+### 6.1 User invariant
+
+```text
+Internal user phải có primary_campus_id.
+Visitor không có primary_campus_id/department_id/sub_role.
+STAFF phải thuộc IC department.
+DEPARTMENT phải thuộc GENERAL department.
+ADMIN/HO/STUDENT không dùng sub_role.
+```
+
+### 6.2 Status
+
+```text
+ACTIVE
+INACTIVE
+LOCKED
+```
+
+`INACTIVE` khác `LOCKED`:
+
+```text
+INACTIVE: disable/nghỉ việc/không còn dùng.
+LOCKED: khóa bảo mật/sai mật khẩu/security issue.
+```
+
+### 6.3 Create account
+
+Backend phải validate:
+
+```text
+Email unique
+Role hợp lệ
+SubRole hợp lệ theo role
+Campus active
+Department active và đúng type
+Actor có quyền tạo trong scope
+Uniqueness Staff Leader/Department Leader
+```
+
+Không xóa cứng user đã có history.
+
+---
+
+## 7. Delegation/Visit canonical rules
+
+### 7.1 `visit_requests.status`
+
+```text
+PENDING_APPROVAL
+APPROVED
+REJECTED
+CANCELLED
+```
+
+### 7.2 `visit_request_campuses.status`
+
+```text
+WAITING_REQUEST_APPROVAL
+WAITING_HOST_ASSIGNMENT
+ASSIGNED
+BEFORE_VISIT
+DURING_VISIT
+AFTER_VISIT
+CLOSED
+CANCELLED
+```
+
+### 7.3 Submit form
+
+Submit chỉ tạo request. Không approve/assign/cancel/close.
+
+Mỗi request phải có:
+
+```text
+>= 1 GUEST
+>= 1 EXTERNAL_SUPPORT
+```
+
+Nút “Là tôi” ở EXTERNAL_SUPPORT copy thông tin người đăng ký form.
+
+### 7.4 Single-campus
+
+```text
+PENDING_APPROVAL + WAITING_REQUEST_APPROVAL
+→ Staff Leader đúng campus approve/reject
+→ approve: request APPROVED, instance WAITING_HOST_ASSIGNMENT
+→ assign host: instance ASSIGNED
+```
+
+### 7.5 Multi-campus
+
+```text
+PENDING_APPROVAL + all instances WAITING_REQUEST_APPROVAL
+→ only HO sees request tổng
+→ HO approve/reject
+→ approve: request APPROVED, all instances WAITING_HOST_ASSIGNMENT
+→ coordinator_user_id = Staff Leader từng campus
+→ Staff Leader từng campus assign host
+```
+
+Khi HO chưa duyệt, campus con không thấy instance.
+
+### 7.6 Cancel
+
+Trước approve:
+
+```text
+Dùng REJECTED, không dùng CANCELLED.
+```
+
+Sau approve:
+
+```text
+Visitor self-service cancel.
+Host external-confirmation cancel.
+```
+
+Không cho cancel:
+
+```text
+DURING_VISIT
+AFTER_VISIT
+CLOSED
+CANCELLED
+```
+
+Không có Staff Leader/HO internal-decision cancel sau approved theo schema hiện tại.
+
+---
+
+## 8. API contract rules
+
+Success:
+
+```json
+{
+  "success": true,
+  "data": {},
+  "message": "Thành công"
+}
+```
+
+Error:
+
+```json
+{
+  "success": false,
+  "errorCode": "CAMPUS_SCOPE_FORBIDDEN",
+  "message": "Bạn không có quyền xem dữ liệu ở cơ sở này.",
+  "traceId": "optional"
+}
+```
+
+HTTP codes:
+
+```text
+200 query/action success
+201 created
+400 invalid input
+401 unauthenticated
+403 forbidden/scope denied
+404 not found in allowed scope
+409 conflict/status conflict/duplicate
+422 business validation failed nếu project dùng
+429 rate limit
+500 unexpected error without secret leakage
+```
+
+---
+
+## 9. DTO/security rules
+
+Không trả ra frontend:
+
+```text
+password_hash
+password_salt
+refresh_token
+provider_subject
+provider_uid
+security_stamp
+otp_token
+reset_token
+client_secret
+api secret
+```
+
+DTO list phải có action flags nếu UI cần:
+
+```text
+canViewDetails
+canApprove
+canReject
+canAssignHost
+canCancel
+canClose
+canEdit
+```
+
+Action flags chỉ để UI hiển thị. Backend vẫn check lại.
+
+---
+
+## 10. List/search/filter/sort rules
+
+Mọi list endpoint phải paging:
+
+```text
+page >= 1
+pageSize 1..100
+keyword max 100
+sortBy whitelist
+sortDirection asc/desc
+```
+
+Không cho:
+
+```text
+?pageSize=999999
+?all=true nếu không có UC/export riêng
+raw SQL sort string
+```
+
+Search phải debounce frontend 400-600ms.
+
+---
+
+## 11. Delegation visibility implementation guide
+
+### 11.1 HO
+
+```text
+WHERE vr.visit_scope = 'MULTI_CAMPUS'
+```
+
+HO không mặc định thấy single-campus.
+
+### 11.2 Staff Leader
+
+```text
+WHERE vrc.campus_id = currentUser.primary_campus_id
+AND (
+  vr.visit_scope = 'SINGLE_CAMPUS'
+  OR (vr.visit_scope = 'MULTI_CAMPUS' AND vr.status = 'APPROVED')
+)
+```
+
+Không thấy multi-campus pending HO.
+
+### 11.3 IC Staff
+
+```text
+WHERE vrc.current_host_user_id = currentUserId
+   OR EXISTS visit_participants where user_id = currentUserId and status not removed/declined as policy
+```
+
+### 11.4 Department
+
+```text
+WHERE logistics/participant/task department_id = currentUser.department_id
+```
+
+### 11.5 Student
+
+```text
+WHERE participant_role = STUDENT AND user_id = currentUserId
+```
+
+### 11.6 Visitor
+
+```text
+WHERE vr.visitor_user_id = currentUserId
+```
+
+---
+
+## 12. Validation examples
+
+### 12.1 Assign host
+
+```text
+[ ] Instance exists.
+[ ] Request status APPROVED.
+[ ] Actor is Staff Leader same campus.
+[ ] Instance status WAITING_HOST_ASSIGNMENT or allowed state.
+[ ] current_host_user_id is NULL.
+[ ] Candidate is ACTIVE STAFF + STAFF same campus IC department.
+[ ] Instance not CANCELLED/CLOSED.
+```
+
+### 12.2 Cancel
+
+```text
+[ ] Request exists in user scope.
+[ ] Request status APPROVED.
+[ ] Instance status not DURING/AFTER/CLOSED/CANCELLED.
+[ ] Visitor owner OR Host current_host_user_id.
+[ ] If Host: cancellation_source = EXTERNAL_CONFIRMATION and reason detailed.
+[ ] If Visitor: cancellation_source = SELF_SERVICE.
+```
+
+### 12.3 Submit form
+
+```text
+[ ] At least one selected campus.
+[ ] planned time valid.
+[ ] planned_end_at > planned_start_at.
+[ ] At least one GUEST.
+[ ] At least one EXTERNAL_SUPPORT.
+[ ] Required strings not blank.
+[ ] OTP verified if public visitor flow.
+```
+
+---
+
+## 13. Seed rules
+
+Manual rich seed được phép dùng dynamic time:
+
+```sql
+CURRENT_DATE
+CURRENT_TIMESTAMP
+DATE_ADD
+DATE_SUB
+INTERVAL
+```
+
+Không dùng:
+
+```text
+Stored procedure
+Loop
+Cursor
+RAND
+INSERT IGNORE
+copy-paste data chỉ thay vài chữ
+```
+
+Seed phải cover:
+
+```text
+All role/subRole
+All visit_requests.status
+All visit_request_campuses.status
+All enum values quan trọng
+Single-campus/multi-campus
+HO pending invisibility
+Visitor cancel full/partial
+Host external cancel
+Guest/support team required
+Dynamic planned_start_at/planned_end_at consistency
+Records for all campus accounts, not only HN
+```
+
+---
+
+## 14. Frontend convention
+
+Frontend phải có:
+
+```text
+API layer riêng
+Hooks riêng
+Types/constants enum chung
+Loading state
+Empty state
+Error state
+Pagination/search/filter/sort state
+Abort/ignore stale request nếu search debounce
+Button visibility theo canAction + role/scope/status
+```
+
+Không gọi fetch trực tiếp trong page nếu project đã có httpClient.
+
+Không giữ mock mặc định khi API thật có.
+
+---
+
+## 15. Test checklist mẫu cho delegation
+
+```text
+[ ] Visitor submit form thiếu GUEST -> 400/validation error.
+[ ] Visitor submit form thiếu EXTERNAL_SUPPORT -> 400/validation error.
+[ ] Multi-campus pending HO: Staff Leader không thấy instance.
+[ ] HO thấy multi-campus pending.
+[ ] HO approve: Staff Leader từng campus thấy WAITING_HOST_ASSIGNMENT.
+[ ] Staff Leader assign host: candidate list đúng.
+[ ] Staff Leader không thấy campus khác.
+[ ] IC Staff host thấy instance được gán.
+[ ] Department Leader thấy logistics department mình.
+[ ] Student thấy invitation của mình.
+[ ] Visitor self-cancel future approved request.
+[ ] Host external cancel with detailed reason.
+[ ] Cancel DURING_VISIT bị chặn.
+[ ] Pending request muốn dừng dùng reject.
+```
+
+---
+
+## 16. Build commands
+
+Backend:
+
+```bash
+dotnet restore
+dotnet build
+```
+
+Frontend:
+
+```bash
+cd frontend/pems-react
+npm install
+npm run build
+```
+
+Nếu có test/lint/typecheck:
+
+```bash
+dotnet test
+npm run lint
+npm run typecheck
+```
+
+Không báo PASS nếu chỉ build một project con mà solution fail.
+
+---
+
+## 17. Documentation/changelog required
+
+Mỗi UC hoàn thành phải có:
+
+```text
+docs/<module>/<UC_ID>_<UC_NAME>.md
+docs/architecture/REFACTOR_CHANGELOG.md hoặc changelog tương ứng
+```
+
+Format báo cáo:
+
+```markdown
+# Báo cáo hoàn thành UC-XX
+
+## 1. Summary
+## 2. Backend files changed
+## 3. Frontend files changed
+## 4. Database files changed
+## 5. API contract
+## 6. Validation rules
+## 7. Permission/scope rules
+## 8. Anti-spam/performance rules
+## 9. Manual test results
+## 10. Build results
+## 11. Known limitations
+## 12. TODO next phase
+```
+
+---
+
+## 18. Definition of Done
+
+```text
+[ ] Endpoint/API chạy thật.
+[ ] Backend permission/scope đúng.
+[ ] Input validation đúng.
+[ ] Business validation đúng.
+[ ] Status transition đúng.
+[ ] Không trả data nhạy cảm.
+[ ] Frontend nối API thật nếu có UI.
+[ ] Loading/empty/error state.
+[ ] Audit/notification/email nếu action cần.
+[ ] Manual test cases chạy.
+[ ] Backend build pass.
+[ ] Frontend build pass nếu sửa frontend.
+[ ] Docs/changelog cập nhật.
+[ ] Không còn mock/scaffold/NotImplementedException.
+```
+
+---
+
+# PHẦN B — NỘI DUNG GỐC / LEGACY PRESERVED CONTENT
+
+> Phần này được giữ nguyên để đối chiếu lịch sử. Không dùng phần này để code nếu mâu thuẫn với PHẦN A hoặc file canonical.
+
 # PEMS — QUY ƯỚC THỰC THI CODE UC THỐNG NHẤT
 
 > File này dùng làm **rulebook/prompt chuẩn** cho AI/code agent khi triển khai từng Use Case trong PEMS.  
@@ -281,7 +990,7 @@ Login/logout/public endpoint có thể `[AllowAnonymous]`, nhưng handler vẫn 
 ```text
 - Có thể xem toàn bộ account.
 - Có thể filter mọi campus/role/status/department.
-- Có thể thấy account ADMIN/HO/STAFF/DEPARTMENT/STUDENT/VISITOR.
+- Có thể thấy account ADMIN/HO/STAFF/DEPT/STUDENT/VISITOR.
 - Có thể quản trị kỹ thuật theo permission được cấp.
 ```
 
@@ -1081,7 +1790,7 @@ GET /api/accounts?page=1&pageSize=20&keyword=nguyen&roleCode=STAFF&status=ACTIVE
 ```text
 [ ] Không token gọi GET /accounts -> 401.
 [ ] VISITOR gọi GET /accounts -> 403.
-[ ] DEPARTMENT/STUDENT không có permission -> 403.
+[ ] DEPT/STUDENT không có permission -> 403.
 [ ] ADMIN gọi GET /accounts -> 200 toàn hệ thống.
 [ ] HO gọi GET /accounts -> 200 theo scope HO.
 [ ] STAFF_L campus HN -> chỉ thấy campus HN.
