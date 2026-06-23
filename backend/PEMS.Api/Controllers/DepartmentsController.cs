@@ -124,5 +124,12 @@ namespace PEMS.Api.Controllers
             return Ok(result);
         }
 
+        [HttpPut("updatedepartmentpersonnel")]
+        public async Task<IActionResult> UpdateDepartmentPersonnel([FromBody] PEMS.Application.Departments.Commands.UpdateDepartmentPersonnel.UpdateDepartmentPersonnelCommand command, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(command, cancellationToken);
+            return Ok(result);
+        }
+
     }
 }

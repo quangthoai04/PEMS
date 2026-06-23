@@ -4,6 +4,8 @@
  */
 
 import React, { useState } from "react";
+import { departmentManagementApi } from '../../../features/department-management/api/departmentManagementApi';
+import toast, { Toaster } from 'react-hot-toast';
 import { useNavigate, useParams } from "react-router-dom";
 import {
   ChevronLeft,
@@ -68,7 +70,8 @@ export function DepartmentDetailDashboard() {
 
   const leaders = mockMembers.filter(m => m.role === "Trưởng phòng");
 
-  const [tasks, setTasks] = useState([
+
+const [tasks, setTasks] = useState([
     {
       id: 1,
       delegation: "Đoàn ĐH Deakin",
@@ -116,7 +119,8 @@ export function DepartmentDetailDashboard() {
     }
   ]);
 
-  // Pagination for members
+
+// Pagination for members
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(5);
   const [memberSearch, setMemberSearch] = useState("");
@@ -148,6 +152,122 @@ export function DepartmentDetailDashboard() {
   const [isViewRejectReasonModalOpen, setIsViewRejectReasonModalOpen] = useState(false);
   const [selectedRejectReason, setSelectedRejectReason] = useState("");
 
+  const [members, setMembers] = useState<any[]>([]);
+  const [totalMembers, setTotalMembers] = useState(0);
+  const [isLoadingMembers, setIsLoadingMembers] = useState(false);
+  const [isCreatingMember, setIsCreatingMember] = useState(false);
+  const [newMemberData, setNewMemberData] = useState({ fullName: '', email: '', phone: '', gender: 'Nam', role: 'Nhân viên' });
+
+  const targetDeptId = Number(id) || Number(user?.departmentId);
+
+  const fetchMembers = async () => {
+    if (!targetDeptId) return;
+    setIsLoadingMembers(true);
+    try {
+      const res = await departmentManagementApi.searchPersonnel({
+        departmentId: targetDeptId,
+        keyword: memberSearch,
+        status: memberStatus,
+        pageNumber: currentPage,
+        pageSize: itemsPerPage
+      });
+      setMembers(res.data.items || []);
+      setTotalMembers(res.data.totalCount || 0);
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setIsLoadingMembers(false);
+    }
+  };
+
+  React.useEffect(() => {
+    fetchMembers();
+  }, [currentPage, itemsPerPage, memberSearch, memberStatus, targetDeptId]);
+
+  const handleUpdateMember = async () => {
+    try {
+      await departmentManagementApi.updateDepartmentPersonnel({
+        departmentId: targetDeptId,
+        userId: editingMemberData.id,
+        fullName: editingMemberData.name,
+        phone: editingMemberData.phone,
+        gender: editingMemberData.gender === "Nam" ? 0 : editingMemberData.gender === "Nữ" ? 1 : 2
+      });
+      toast.success('Đã cập nhật thông tin nhân sự thành công.');
+      setIsEditingMember(false);
+      fetchMembers();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Lỗi khi cập nhật');
+    }
+  };
+
+  const handleDeleteMember = async () => {
+    try {
+      await departmentManagementApi.removePersonnel({
+        departmentId: targetDeptId,
+        userId: memberToDelete.id
+      });
+      toast.success('Đã gỡ nhân sự khỏi danh sách hoạt động.');
+      setIsDeleteMemberModalOpen(false);
+      fetchMembers();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Lỗi khi xóa nhân sự');
+    }
+  };
+
+  const handleChangeLeader = async () => {
+    try {
+      await departmentManagementApi.reassignDepartmentLead({
+        departmentId: targetDeptId,
+        newLeaderUserId: newLeaderId
+      });
+      toast.success('Đã thay đổi trưởng phòng thành công.');
+      setIsChangeLeaderModalOpen(false);
+      fetchMembers();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Lỗi khi đổi trưởng phòng');
+    }
+  };
+
+  const handleCreateMember = async () => {
+    if (!newMemberData.fullName.trim() || !newMemberData.email.trim() || !newMemberData.phone.trim()) {
+      toast.error('Vui lòng điền đầy đủ các trường bắt buộc');
+      return;
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(newMemberData.email)) {
+      toast.error('Định dạng email không hợp lệ');
+      return;
+    }
+
+    const phoneRegex = /(0[3|5|7|8|9])+([0-9]{8})\b/;
+    if (!phoneRegex.test(newMemberData.phone)) {
+      toast.error('Số điện thoại không hợp lệ (10 số, bắt đầu bằng 03, 05, 07, 08, 09)');
+      return;
+    }
+
+    setIsCreatingMember(true);
+    try {
+      const data = {
+        departmentId: targetDeptId,
+        fullName: newMemberData.fullName,
+        email: newMemberData.email,
+        phone: newMemberData.phone,
+        gender: newMemberData.gender === "Nam" ? 0 : newMemberData.gender === "Nữ" ? 1 : 2,
+        role: newMemberData.role
+      };
+      await departmentManagementApi.addDepartmentPersonnel(data);
+      toast.success('Đã thêm nhân sự và gửi email thông báo thành công.');
+      setIsAddMemberModalOpen(false);
+      fetchMembers();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Lỗi khi thêm nhân sự');
+    } finally {
+      setIsCreatingMember(false);
+    }
+  };
+
   // Filter tasks based on role
   const roleFilteredTasks = tasks.filter(t => {
     if (isLeader) return true;
@@ -166,19 +286,12 @@ export function DepartmentDetailDashboard() {
     taskPage * tasksPerPage
   );
 
-  const filteredMembers = mockMembers.filter(m =>
-    (memberSearch === "" || m.name.toLowerCase().includes(memberSearch.toLowerCase()) || m.email.toLowerCase().includes(memberSearch.toLowerCase())) &&
-    (memberStatus === "" || (memberStatus === "active" ? m.status === "Đã cấp tài khoản" : m.status === "Chưa cấp tài khoản"))
-  );
-
-  const totalPages = Math.ceil(filteredMembers.length / itemsPerPage);
-  const paginatedMembers = filteredMembers.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
-  );
+  const paginatedMembers = members;
+  const totalPages = Math.ceil(totalMembers / itemsPerPage);
 
   return (
     <div className="p-4 sm:p-6 md:p-8 max-w-[95%] mx-auto pb-12 relative">
+      <Toaster position="top-right" />
       {/* Breadcrumb */}
       <div className="mb-4 flex items-center text-sm font-medium text-gray-500">
         <button
@@ -513,22 +626,22 @@ export function DepartmentDetailDashboard() {
             <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-bold text-[#004c91] mb-1.5">Họ và tên <span className="text-red-500">*</span></label>
-                <input type="text" placeholder="Nhập họ và tên" className="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#004c91]/20 focus:border-[#004c91] transition-all text-sm" />
+                <input type="text" value={newMemberData.fullName} onChange={e => setNewMemberData({...newMemberData, fullName: e.target.value})} placeholder="Nhập họ và tên" className="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#004c91]/20 focus:border-[#004c91] transition-all text-sm" />
               </div>
 
               <div>
                 <label className="block text-sm font-bold text-[#004c91] mb-1.5">Email <span className="text-red-500">*</span></label>
-                <input type="email" placeholder="Nhập địa chỉ email" className="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#004c91]/20 focus:border-[#004c91] transition-all text-sm" />
+                <input type="email" value={newMemberData.email} onChange={e => setNewMemberData({...newMemberData, email: e.target.value})} placeholder="Nhập địa chỉ email" className="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#004c91]/20 focus:border-[#004c91] transition-all text-sm" />
               </div>
 
               <div>
                 <label className="block text-sm font-bold text-[#004c91] mb-1.5">SĐT <span className="text-red-500">*</span></label>
-                <input type="tel" placeholder="Nhập số điện thoại" className="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#004c91]/20 focus:border-[#004c91] transition-all text-sm" />
+                <input type="tel" value={newMemberData.phone} onChange={e => setNewMemberData({...newMemberData, phone: e.target.value})} placeholder="Nhập số điện thoại" className="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#004c91]/20 focus:border-[#004c91] transition-all text-sm" />
               </div>
 
               <div>
                 <label className="block text-sm font-bold text-[#004c91] mb-1.5">Giới tính <span className="text-red-500">*</span></label>
-                <select className="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#004c91]/20 focus:border-[#004c91] transition-all text-sm">
+                <select value={newMemberData.gender} onChange={e => setNewMemberData({...newMemberData, gender: e.target.value})} className="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#004c91]/20 focus:border-[#004c91] transition-all text-sm">
                   <option value="">Chọn giới tính</option>
                   <option value="Nam">Nam</option>
                   <option value="Nữ">Nữ</option>
@@ -541,18 +654,9 @@ export function DepartmentDetailDashboard() {
                 <input type="text" disabled value="Phòng ban IT" className="w-full px-4 py-2 bg-gray-100 border border-gray-200 rounded-xl text-gray-500 text-sm font-medium cursor-not-allowed" />
               </div>
 
-              <div className="md:col-span-1">
-                <label className="block text-sm font-bold text-[#004c91] mb-2">Chọn chức vụ <span className="text-red-500">*</span></label>
-                <div className="flex gap-4">
-                  <label className="flex-1 flex items-center justify-center gap-2 p-3 border border-gray-200 rounded-xl cursor-pointer hover:bg-gray-50 transition-colors">
-                    <input type="radio" name="role" value="Trưởng phòng" className="w-4 h-4 text-[#004c91] focus:ring-[#004c91]" />
-                    <span className="text-sm font-medium text-gray-700 flex items-center gap-1.5"><Crown className="w-3.5 h-3.5 text-yellow-500" /> Trưởng phòng</span>
-                  </label>
-                  <label className="flex-1 flex items-center justify-center gap-2 p-3 border border-gray-200 rounded-xl cursor-pointer hover:bg-gray-50 transition-colors">
-                    <input type="radio" name="role" value="Nhân viên" defaultChecked className="w-4 h-4 text-[#004c91] focus:ring-[#004c91]" />
-                    <span className="text-sm font-medium text-gray-700">Nhân viên</span>
-                  </label>
-                </div>
+              <div>
+                <label className="block text-sm font-bold text-[#004c91] mb-1.5">Chức vụ</label>
+                <input type="text" disabled value="Nhân viên" className="w-full px-4 py-2 bg-gray-100 border border-gray-200 rounded-xl text-gray-500 text-sm font-medium cursor-not-allowed" />
               </div>
             </div>
 
@@ -564,10 +668,11 @@ export function DepartmentDetailDashboard() {
                 Hủy
               </button>
               <button
-                onClick={() => setIsAddMemberModalOpen(false)}
-                className="px-6 py-2.5 rounded-xl bg-[#f37021] text-white font-bold hover:bg-[#d9621a] transition-colors outline-none text-sm shadow-sm"
+                onClick={handleCreateMember}
+                disabled={isCreatingMember}
+                className={`px-6 py-2.5 rounded-xl font-bold transition-colors outline-none text-sm shadow-sm ${isCreatingMember ? 'bg-[#f37021]/50 text-white/80 cursor-not-allowed' : 'bg-[#f37021] text-white hover:bg-[#d9621a]'}`}
               >
-                Tạo
+                {isCreatingMember ? 'Đang tạo...' : 'Tạo'}
               </button>
             </div>
           </div>
@@ -591,10 +696,7 @@ export function DepartmentDetailDashboard() {
               {isEditingMember ? (
                 <div className="absolute top-4 right-14 flex gap-2 z-10">
                   <button
-                    onClick={() => {
-                      setSelectedMember(editingMemberData);
-                      setIsEditingMember(false);
-                    }}
+                    onClick={handleUpdateMember}
                     className="p-2 bg-[#004c91]/80 hover:bg-[#004c91] text-white backdrop-blur-md rounded-xl text-sm font-bold shadow-sm transition-colors outline-none"
                   >
                     Lưu
@@ -779,7 +881,7 @@ export function DepartmentDetailDashboard() {
             </div>
             <div className="p-6 bg-gray-50/30 overflow-y-auto flex-1">
               <div className="space-y-2">
-                {mockMembers.map(member => (
+                {members.map(member => (
                   <div
                     key={member.id}
                     onClick={() => setNewAssigneeId(member.id.toString())}
@@ -828,7 +930,7 @@ export function DepartmentDetailDashboard() {
             </div>
             <div className="p-6 bg-gray-50/30 overflow-y-auto flex-1">
               <div className="space-y-2">
-                {mockMembers.map(member => (
+                {members.map(member => (
                   <div
                     key={member.id}
                     onClick={() => setNewLeaderId(member.id.toString())}
@@ -853,9 +955,7 @@ export function DepartmentDetailDashboard() {
                 Hủy bỏ
               </button>
               <button
-                onClick={() => {
-                  setIsChangeLeaderModalOpen(false);
-                }}
+                onClick={handleChangeLeader}
                 disabled={!newLeaderId}
                 className="px-6 py-3 rounded-xl font-black text-white bg-[#004c91] hover:bg-[#003b73] transition-colors shadow-lg shadow-[#004c91]/20 disabled:opacity-50 disabled:cursor-not-allowed outline-none uppercase tracking-wider"
               >
@@ -892,10 +992,7 @@ export function DepartmentDetailDashboard() {
                   Hủy bỏ
                 </button>
                 <button
-                  onClick={() => {
-                    // TODO: Implement delete logic
-                    setIsDeleteMemberModalOpen(false);
-                  }}
+                  onClick={handleDeleteMember}
                   className="flex-1 px-4 py-3 rounded-xl font-black text-white bg-red-600 hover:bg-red-700 transition-colors shadow-lg shadow-red-600/20 outline-none"
                 >
                   Xác nhận xóa

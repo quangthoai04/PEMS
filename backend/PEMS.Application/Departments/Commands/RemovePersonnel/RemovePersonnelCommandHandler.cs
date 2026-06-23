@@ -2,13 +2,45 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
+using Microsoft.EntityFrameworkCore;
+using PEMS.Application.Common.Interfaces;
 
 namespace PEMS.Application.Departments.Commands.RemovePersonnel;
 
 public sealed class RemovePersonnelCommandHandler : IRequestHandler<RemovePersonnelCommand, RemovePersonnelResponse>
 {
-    public Task<RemovePersonnelResponse> Handle(RemovePersonnelCommand request, CancellationToken cancellationToken)
+    private readonly IApplicationDbContext _context;
+    private readonly ICurrentUserService _currentUserService;
+
+    public RemovePersonnelCommandHandler(IApplicationDbContext context, ICurrentUserService currentUserService)
     {
-        throw new NotImplementedException("UC Remove Personnel has been scaffolded. Business rules must be implemented after UC specification is completed.");
+        _context = context;
+        _currentUserService = currentUserService;
+    }
+
+    public async Task<RemovePersonnelResponse> Handle(RemovePersonnelCommand request, CancellationToken cancellationToken)
+    {
+        var user = await _context.Users.FirstOrDefaultAsync(u => u.UserId == request.UserId && u.DepartmentId == request.DepartmentId, cancellationToken);
+        if (user == null) return new RemovePersonnelResponse { Success = false, Message = "Không tìm thấy nhân sự." };
+
+        var dept = await _context.Departments.FirstOrDefaultAsync(d => d.DepartmentId == request.DepartmentId, cancellationToken);
+        
+        if (user.UserId == _currentUserService.UserId)
+        {
+            return new RemovePersonnelResponse { Success = false, Message = "Không thể tự gỡ chính mình." };
+        }
+
+        if (dept != null && dept.HeadUserId == user.UserId)
+        {
+            return new RemovePersonnelResponse { Success = false, Message = "Không thể gỡ trưởng phòng hiện tại khi chưa đổi trưởng phòng." };
+        }
+
+        user.Status = "INACTIVE";
+        user.UpdatedAt = DateTime.UtcNow;
+        user.UpdatedBy = _currentUserService.UserId;
+
+        await _context.SaveChangesAsync(cancellationToken);
+
+        return new RemovePersonnelResponse { Success = true, Message = "Đã gỡ nhân sự khỏi danh sách hoạt động." };
     }
 }

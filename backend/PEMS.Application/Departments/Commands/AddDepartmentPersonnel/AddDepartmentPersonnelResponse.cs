@@ -1,10 +1,8 @@
-using System;
-
 namespace PEMS.Application.Departments.Commands.AddDepartmentPersonnel;
 
-public sealed class AddDepartmentPersonnelResponse
+public class AddDepartmentPersonnelResponse
 {
-    public Guid? Id { get; init; }
-    public string Status { get; init; } = "Scaffolded";
-    public string Message { get; init; } = "Use case scaffolded. Business logic is not implemented yet.";
+    public bool Success { get; set; }
+    public string Message { get; set; } = string.Empty;
+    public ulong UserId { get; set; }
 }
