@@ -113,6 +113,9 @@ public static class SecurityEventTypes
     public const string SessionExpired = "SESSION_EXPIRED";
     public const string TokenRefresh = "TOKEN_REFRESH";
     public const string SecurityPolicyCheck = "SECURITY_POLICY_CHECK";
+
+    /// <summary>A LOCKED Staff Leader was replaced (REPLACE_STAFF_LEADER spec §18).</summary>
+    public const string StaffLeaderReplacedWhileLocked = "STAFF_LEADER_REPLACED_WHILE_LOCKED";
 }
 
 public static class SecurityEventFailureReasonCodes

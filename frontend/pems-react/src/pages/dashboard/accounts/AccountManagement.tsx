@@ -4,7 +4,7 @@
  * Bao gồm các chức năng phân trang, tìm kiếm, chỉnh sửa và tạo mới tài khoản.
  */
 
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Users, UserCheck, UserX, Clock, Search, MapPin,
@@ -14,15 +14,37 @@ import {
 } from 'lucide-react';
 import { useDebounce } from '../../../shared/hooks/useDebounce';
 import { useAccountList } from '../../../features/account-management/hooks/useAccountList';
+import { useAccountManagement } from '../../../features/account-management/hooks/useAccountManagement';
 import { accountManagementApi } from '../../../features/account-management/api/accountManagementApi';
+import { getAccountErrorMessage } from '../../../features/account-management/api/accountError';
 import type {
   AccountListItem,
   AccountListQueryParams,
+  AccountStatistics,
   ActiveCampusOption,
+  CampusDepartmentOption,
+  HoCampusCheck,
+  StaffLeaderAvailability,
 } from '../../../features/account-management/types/accountManagement.types';
+import { ReplaceStaffLeaderModal } from '../../../features/account-management/components/ReplaceStaffLeaderModal';
 
 const CAMPUSES = ["Hà Nội", "Hồ Chí Minh", "Đà Nẵng", "Cần Thơ", "Quy Nhơn"];
 const ROLES = ["ADMIN", "HO", "STAFF", "DEPARTMENT", "STUDENT", "VISITOR"];
+
+// Maps gender to its Vietnamese label. The backend exposes gender as the C# enum
+// Gender { Male=0, Female=1, Other=2 } and serializes it as a NUMBER, so we map both the
+// numeric codes (0/1/2) and the string ENUM names (MALE/FEMALE/OTHER/UNKNOWN).
+const GENDER_LABELS: Record<string, string> = {
+  '0': 'Nam', '1': 'Nữ', '2': 'Khác',
+  MALE: 'Nam', FEMALE: 'Nữ', OTHER: 'Khác', UNKNOWN: 'Không xác định',
+};
+// Case-insensitive + idempotent: 'MALE'/'male' → 'Nam', and an already-localized 'Nam' stays 'Nam'.
+// Tolerant of non-string inputs (the API/list may hand us null, numbers, etc.).
+const genderLabel = (g?: unknown): string => {
+  if (g === null || g === undefined || g === '') return '';
+  const raw = String(g);
+  return GENDER_LABELS[raw.trim().toUpperCase()] ?? raw;
+};
 
 export function AccountManagement() {
   const navigate = useNavigate();
@@ -69,6 +91,8 @@ export function AccountManagement() {
   const [isViewDrawerOpen, setIsViewDrawerOpen] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isResetPasswordModalOpen, setIsResetPasswordModalOpen] = useState(false);
+  // Replace Staff Leader modal (HO only): set to the campus of the Staff Leader being replaced.
+  const [replaceLeaderTarget, setReplaceLeaderTarget] = useState<{ campusId: string; campusName: string } | null>(null);
   const [selectedAccount, setSelectedAccount] = useState<any>(null);
   
   const [isEditingProfile, setIsEditingProfile] = useState(false);
@@ -137,9 +161,11 @@ export function AccountManagement() {
 
     const status = statusFilter === 'Active'
       ? 'ACTIVE'
-      : statusFilter === 'Deactive'
-        ? 'LOCKED'
-        : undefined;
+      : statusFilter === 'Inactive'
+        ? 'INACTIVE'
+        : statusFilter === 'Locked'
+          ? 'LOCKED'
+          : undefined;
 
     return {
       page: currentPage,
@@ -157,7 +183,106 @@ export function AccountManagement() {
     data: accountsData,
     loading: accountsLoading,
     error: accountsError,
+    refetch: refetchAccounts,
   } = useAccountList(listParams, activeTab === 'all');
+
+  // UC-97 / UC-98 mutations + detail fetch (create/update-role call the API directly
+  // so the modal can surface the backend's specific error message).
+  const { manageAccountStatus, getAccountDetails } = useAccountManagement();
+
+  // UC-96 create modal feedback.
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+
+  // UC-96 Staff Leader availability pre-check (HO picks a campus for role STAFF). Drives the
+  // warning panel + disabled submit so HO can't try to create a 2nd Trưởng phòng IC.
+  const [slAvailability, setSlAvailability] = useState<StaffLeaderAvailability | null>(null);
+  const [slAvailabilityLoading, setSlAvailabilityLoading] = useState(false);
+
+  // UC-96 HO campus pre-check (HO picks a campus for role HO). Drives the warning panel +
+  // disabled submit so HO can't try to create a 2nd HO for a campus that already has one.
+  const [hoCampusCheck, setHoCampusCheck] = useState<HoCampusCheck | null>(null);
+  const [hoCampusCheckLoading, setHoCampusCheckLoading] = useState(false);
+
+  // UC-97 enable/disable confirmation dialog.
+  const [statusTarget, setStatusTarget] = useState<any | null>(null);
+  const [statusError, setStatusError] = useState<string | null>(null);
+  const [statusSaving, setStatusSaving] = useState(false);
+
+  // UC-100 role-update feedback (detail drawer edit).
+  const [roleSaving, setRoleSaving] = useState(false);
+  const [roleError, setRoleError] = useState<string | null>(null);
+
+  // Lightweight toast notifications (create + email outcome, status, role update).
+  const [toasts, setToasts] = useState<{ id: number; type: 'success' | 'error' | 'warning'; msg: string }[]>([]);
+  const toastSeq = useRef(0);
+  const pushToast = useCallback((type: 'success' | 'error' | 'warning', msg: string) => {
+    const id = ++toastSeq.current;
+    setToasts((prev) => [...prev, { id, type, msg }]);
+    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 5000);
+  }, []);
+
+  // UC-95-SL statistics, scoped to the caller's campus by the backend.
+  const [statistics, setStatistics] = useState<AccountStatistics | null>(null);
+  const loadStatistics = useCallback(() => {
+    if (!isStaffLeader) return;
+    accountManagementApi.getStatistics().then(setStatistics).catch(() => { /* non-fatal */ });
+  }, [isStaffLeader]);
+  useEffect(() => { loadStatistics(); }, [loadStatistics]);
+
+  // Active GENERAL departments of the leader's campus (Department-Leader dropdown).
+  const [campusDepartments, setCampusDepartments] = useState<CampusDepartmentOption[]>([]);
+  useEffect(() => {
+    if (!isStaffLeader) return;
+    let active = true;
+    accountManagementApi
+      .getCampusDepartments()
+      .then((d) => { if (active) setCampusDepartments(d); })
+      .catch(() => { /* non-fatal: dropdown simply stays empty */ });
+    return () => { active = false; };
+  }, [isStaffLeader]);
+
+  // UC-96 — when HO picks a campus for role STAFF (Trưởng phòng IC), pre-check whether a Staff
+  // Leader can be created there. Mirrors the authoritative server check so the form can warn and
+  // disable submit before HO ever clicks "Xác nhận tạo". (Spec §11.1 / §12.)
+  useEffect(() => {
+    const shouldCheck = isHO && isCreateModalOpen && manualForm.role === 'STAFF' && !!createCampus;
+    if (!shouldCheck) { setSlAvailability(null); setSlAvailabilityLoading(false); return; }
+
+    const campusId = campusOptions.find((c) => c.campusName.includes(createCampus))?.campusId;
+    if (!campusId) { setSlAvailability(null); setSlAvailabilityLoading(false); return; }
+
+    let active = true;
+    setSlAvailabilityLoading(true);
+    setSlAvailability(null);
+    accountManagementApi
+      .getStaffLeaderAvailability(campusId)
+      .then((res) => { if (active) setSlAvailability(res); })
+      .catch(() => { if (active) setSlAvailability(null); /* non-fatal: server still re-checks on submit */ })
+      .finally(() => { if (active) setSlAvailabilityLoading(false); });
+    return () => { active = false; };
+  }, [isHO, isCreateModalOpen, manualForm.role, createCampus, campusOptions]);
+
+  // UC-96 — when HO picks a campus for role HO, pre-check whether a new HO can be created there.
+  // Mirrors the authoritative server check so the form can warn and disable submit before HO
+  // clicks "Xác nhận tạo". (HO_CREATE_HO_ACCOUNT spec §11.1 / §12.)
+  useEffect(() => {
+    const shouldCheck = isHO && isCreateModalOpen && manualForm.role === 'HO' && !!createCampus;
+    if (!shouldCheck) { setHoCampusCheck(null); setHoCampusCheckLoading(false); return; }
+
+    const campusId = campusOptions.find((c) => c.campusName.includes(createCampus))?.campusId;
+    if (!campusId) { setHoCampusCheck(null); setHoCampusCheckLoading(false); return; }
+
+    let active = true;
+    setHoCampusCheckLoading(true);
+    setHoCampusCheck(null);
+    accountManagementApi
+      .getHoCampusCheck(campusId)
+      .then((res) => { if (active) setHoCampusCheck(res); })
+      .catch(() => { if (active) setHoCampusCheck(null); /* non-fatal: server still re-checks on submit */ })
+      .finally(() => { if (active) setHoCampusCheckLoading(false); });
+    return () => { active = false; };
+  }, [isHO, isCreateModalOpen, manualForm.role, createCampus, campusOptions]);
 
   // Project API rows into the shape the existing table/drawer already expect.
   useEffect(() => {
@@ -173,9 +298,9 @@ export function AccountManagement() {
       role: a.roleCode,
       roleName: a.roleName,
       loginStatus: a.lastLoginAt ? 'Đã đăng nhập' : 'Chưa từng đăng nhập',
-      status: a.status === 'ACTIVE' ? 'Active' : 'Deactive',
+      status: a.status === 'ACTIVE' ? 'Active' : a.status === 'INACTIVE' ? 'Inactive' : 'Locked',
       rawStatus: a.status,
-      gender: a.gender,
+      gender: genderLabel(a.gender),
       phone: a.phone,
       avatar: a.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(a.fullName)}&background=random`,
       createdAt: a.createdAt ? a.createdAt.substring(0, 10) : '',
@@ -189,6 +314,7 @@ export function AccountManagement() {
       canViewDetails: a.canViewDetails,
       canUpdateRole: a.canUpdateRole,
       canManageStatus: a.canManageStatus,
+      isCurrentUser: a.isCurrentUser,
     })));
   }, [accountsData, activeTab]);
 
@@ -259,7 +385,7 @@ export function AccountManagement() {
   const statsBase = [
     { label: "Tổng số tài khoản", value: (accountsData?.totalItems ?? accounts.length).toString(), icon: Users, color: "text-[#004c91]", bg: "bg-white border-gray-100 shadow-sm outline-none", iconBg: "bg-blue-50", onClick: () => { setActiveTab('all'); setAllFilters(prev => ({ ...prev, status: '', role: '', search: '' })); scrollToTable(); } },
     { label: "Tài khoản hoạt động", value: accounts.filter(a => a.status === 'Active').length.toString(), icon: UserCheck, color: "text-[#0aa14f]", bg: "bg-white border-gray-100 shadow-sm outline-none", iconBg: "bg-green-50", onClick: () => { setActiveTab('all'); setAllFilters(prev => ({ ...prev, status: 'Active' })); scrollToTable(); } },
-    { label: "Tài khoản bị khóa", value: accounts.filter(a => a.status === 'Deactive').length.toString(), icon: XCircle, color: "text-red-500", bg: "bg-white border-gray-100 shadow-sm outline-none", iconBg: "bg-red-50", onClick: () => { setActiveTab('all'); setAllFilters(prev => ({ ...prev, status: 'Deactive' })); scrollToTable(); } },
+    { label: "Tài khoản bị khóa", value: accounts.filter(a => a.status !== 'Active').length.toString(), icon: XCircle, color: "text-red-500", bg: "bg-white border-gray-100 shadow-sm outline-none", iconBg: "bg-red-50", onClick: () => { setActiveTab('all'); setAllFilters(prev => ({ ...prev, status: 'Inactive' })); scrollToTable(); } },
     { label: "Chưa từng đăng nhập", value: accounts.filter(a => a.loginStatus === 'Chưa từng đăng nhập').length.toString(), icon: UserX, color: "text-gray-500", bg: "bg-white border-gray-100 shadow-sm outline-none", iconBg: "bg-gray-100", onClick: () => { setActiveTab('all'); setAllFilters(prev => ({ ...prev, status: 'NoLogin' })); scrollToTable(); } },
   ];
   
@@ -284,10 +410,18 @@ export function AccountManagement() {
     };
   });
 
-  const stats = isHO 
-    ? hoStats 
+  // UC-95-SL stat cards — campus-scoped totals from the statistics API.
+  const slStats = [
+    { label: "Tổng số tài khoản", value: (statistics?.totalAccounts ?? 0).toString(), icon: Users, color: "text-[#004c91]", bg: "bg-white border-gray-100 shadow-sm outline-none", iconBg: "bg-blue-50", onClick: () => { setActiveTab('all'); setAllFilters(prev => ({ ...prev, status: '', role: '', search: '' })); scrollToTable(); } },
+    { label: "Tài khoản hoạt động", value: (statistics?.activeAccounts ?? 0).toString(), icon: UserCheck, color: "text-[#0aa14f]", bg: "bg-white border-gray-100 shadow-sm outline-none", iconBg: "bg-green-50", onClick: () => { setActiveTab('all'); setAllFilters(prev => ({ ...prev, status: 'Active' })); scrollToTable(); } },
+    { label: "Tài khoản vô hiệu hóa", value: (statistics?.inactiveAccounts ?? 0).toString(), icon: UserX, color: "text-amber-500", bg: "bg-white border-gray-100 shadow-sm outline-none", iconBg: "bg-amber-50", onClick: () => { setActiveTab('all'); setAllFilters(prev => ({ ...prev, status: 'Inactive' })); scrollToTable(); } },
+    { label: "Tài khoản bị khóa", value: (statistics?.lockedAccounts ?? 0).toString(), icon: XCircle, color: "text-red-500", bg: "bg-white border-gray-100 shadow-sm outline-none", iconBg: "bg-red-50", onClick: () => { setActiveTab('all'); setAllFilters(prev => ({ ...prev, status: 'Locked' })); scrollToTable(); } },
+  ];
+
+  const stats = isHO
+    ? hoStats
     : isStaffLeader
-    ? statsBase
+    ? slStats
     : [...statsBase, { label: "Yêu cầu chờ duyệt", value: pendingAccounts.length.toString(), icon: Clock, color: "text-[#f37021]", bg: "bg-white border-gray-100 shadow-sm outline-none", iconBg: "bg-orange-50", onClick: () => { setActiveTab('pending'); setPendingFilters(prev => ({ ...prev, status: '', role: '', search: '' })); scrollToTable(); } }];
 
 
@@ -332,18 +466,168 @@ export function AccountManagement() {
     }
   };
 
-  const toggleAccountStatus = (id: number) => {
-    setAccounts(prev => prev.map(acc => {
-      if (acc.id === id) {
-        return { ...acc, status: acc.status === 'Active' ? 'Deactive' : 'Active' };
-      }
-      return acc;
+  // UC-97 — open the enable/disable confirmation for an account (real API call on confirm).
+  const requestToggleStatus = (acc: any) => {
+    if (isServerTab && acc.canManageStatus === false) return; // out of scope / self / locked
+    setStatusError(null);
+    setStatusTarget(acc);
+  };
+
+  const confirmToggleStatus = async () => {
+    if (!statusTarget) return;
+    const nextStatus = statusTarget.status === 'Active' ? 'INACTIVE' : 'ACTIVE';
+    setStatusSaving(true);
+    setStatusError(null);
+    const result = await manageAccountStatus({ userId: statusTarget.userId ?? statusTarget.id, status: nextStatus });
+    setStatusSaving(false);
+    if (!result) {
+      setStatusError('Không thể cập nhật trạng thái tài khoản. Vui lòng thử lại.');
+      return;
+    }
+    setStatusTarget(null);
+    pushToast('success', nextStatus === 'INACTIVE' ? 'Đã vô hiệu hóa tài khoản.' : 'Đã kích hoạt tài khoản.');
+    refetchAccounts();
+    loadStatistics();
+  };
+
+  // UC-98 — open the detail drawer, fetching the safe detail projection from the API.
+  const openViewDrawer = async (acc: any) => {
+    setSelectedAccount(acc);
+    setIsViewDrawerOpen(true);
+    if (!isServerTab) return;
+    const details = await getAccountDetails(acc.userId ?? acc.id);
+    if (!details) return;
+    setSelectedAccount((prev: any) => ({
+      ...prev,
+      name: details.fullName,
+      email: details.email,
+      phone: details.phone,
+      gender: genderLabel(details.gender),
+      role: details.roleCode,
+      roleName: details.roleName,
+      subRole: details.displayPosition ?? details.subRole,
+      campus: details.campusName || prev?.campus || '',
+      department: details.departmentName,
+      rawStatus: details.status,
+      lastLoginAt: details.lastLoginAt,
     }));
   };
 
-  const openViewDrawer = (acc: any) => {
-    setSelectedAccount(acc);
-    setIsViewDrawerOpen(true);
+  // UC-96 — create a new account. HO → HO/Staff Leader; Staff Leader → STAFF/STAFF,
+  // DEPARTMENT/LEADER (optional department) or STUDENT. The backend derives sub-role and
+  // forces campus; we only collect what the role needs.
+  const handleCreateAccount = async () => {
+    setCreateError(null);
+    const role = manualForm.role;
+    if (!role) { setCreateError('Vui lòng chọn vai trò.'); return; }
+    if (isHO && !createCampus) { setCreateError('Vui lòng chọn cơ sở.'); return; }
+    if (!manualForm.name.trim()) { setCreateError('Vui lòng nhập họ và tên.'); return; }
+    const email = manualForm.email.trim();
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setCreateError('Vui lòng nhập email hợp lệ.');
+      return;
+    }
+
+    const primaryCampusId = isHO && createCampus
+      ? campusOptions.find((c) => c.campusName.includes(createCampus))?.campusId
+      : undefined;
+    if (isHO && !primaryCampusId) { setCreateError('Cơ sở được chọn không hợp lệ.'); return; }
+
+    // UC-96: HO creating a Staff Leader — don't submit if the pre-check says the campus already
+    // has a leader / is in a blocking state. The backend re-checks regardless (BR-SL-22).
+    if (isHO && role === 'STAFF') {
+      if (slAvailabilityLoading) { setCreateError('Đang kiểm tra cơ sở, vui lòng đợi giây lát.'); return; }
+      if (slAvailability && !slAvailability.canCreateStaffLeader) {
+        setCreateError(slAvailability.message || 'Không thể tạo Staff Leader cho cơ sở này.');
+        return;
+      }
+    }
+
+    // UC-96: HO creating a new HO — don't submit if the pre-check says the campus already has an
+    // HO (any status) or has inconsistent data. The backend re-checks regardless (spec §10).
+    if (isHO && role === 'HO') {
+      if (hoCampusCheckLoading) { setCreateError('Đang kiểm tra cơ sở, vui lòng đợi giây lát.'); return; }
+      if (hoCampusCheck && !hoCampusCheck.canCreateHo) {
+        setCreateError(hoCampusCheck.message || 'Không thể tạo tài khoản HO cho cơ sở này.');
+        return;
+      }
+    }
+
+    // A Department Leader must have a department (enforced by the DB constraint).
+    if (isStaffLeader && role === 'DEPARTMENT' && !selectedDept) {
+      setCreateError('Vui lòng chọn phòng ban cho vai trò Trưởng phòng ban.');
+      return;
+    }
+    const departmentId = isStaffLeader && role === 'DEPARTMENT' ? selectedDept : null;
+
+    setCreating(true);
+    try {
+      const result = await accountManagementApi.createAccount({
+        roleCode: role as any,
+        fullName: manualForm.name.trim(),
+        email,
+        phone: manualForm.phone || null,
+        // The create form has no gender field; the column is an ENUM
+        // (MALE/FEMALE/OTHER/UNKNOWN), so leave it null rather than sending a label.
+        gender: null,
+        primaryCampusId: primaryCampusId ?? null,
+        departmentId,
+      });
+
+      // UC-96 requirement: toast for the email-notification outcome.
+      if (result.emailNotificationStatus === 'SENT')
+        pushToast('success', `Đã tạo tài khoản ${result.email} và gửi email thông báo thành công.`);
+      else
+        pushToast('warning', `Đã tạo tài khoản ${result.email} nhưng gửi email thông báo thất bại.`);
+
+      setIsCreateModalOpen(false);
+      setManualForm({ role: '', name: '', email: '', phone: '', gender: 'Nam' });
+      setCreateCampus('');
+      setSelectedDept('');
+      refetchAccounts();
+      loadStatistics();
+    } catch (err) {
+      const msg = getAccountErrorMessage(err, 'Không thể tạo tài khoản. Vui lòng thử lại.');
+      setCreateError(msg);
+      pushToast('error', msg);
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  // UC-100-SL — Staff Leader updates another account's role (and department for a
+  // Department Leader). Backend revokes the target's sessions and emails them.
+  const handleUpdateRole = async () => {
+    if (!selectedAccount) return;
+    setRoleError(null);
+    setRoleSaving(true);
+    const newRoleCode = editForm?.role;
+    if (newRoleCode === 'DEPARTMENT' && !selectedDept) {
+      setRoleSaving(false);
+      setRoleError('Vui lòng chọn phòng ban cho vai trò Trưởng phòng ban.');
+      return;
+    }
+    const departmentId = newRoleCode === 'DEPARTMENT' ? selectedDept : null;
+    try {
+      await accountManagementApi.updateAccountRole({
+        userId: (selectedAccount.userId ?? selectedAccount.id) as any,
+        newRoleCode: newRoleCode as any,
+        departmentId,
+      });
+      pushToast('success', 'Cập nhật vai trò thành công. Đã gửi email thông báo cho người dùng.');
+      setIsEditingProfile(false);
+      setEditForm(null);
+      setSelectedDept('');
+      closeViewDrawer();
+      refetchAccounts();
+      loadStatistics();
+    } catch (err) {
+      const msg = getAccountErrorMessage(err, 'Không thể cập nhật vai trò. Vui lòng kiểm tra lại dữ liệu và thử lại.');
+      setRoleError(msg);
+      pushToast('error', msg);
+    } finally {
+      setRoleSaving(false);
+    }
   };
 
   return (
@@ -412,8 +696,8 @@ export function AccountManagement() {
       )}
 
       <div className="flex justify-end mb-8">
-        <button 
-          onClick={() => setIsCreateModalOpen(true)}
+        <button
+          onClick={() => { setCreateError(null); setSelectedDept(''); setManualForm({ role: '', name: '', email: '', phone: '', gender: 'Nam' }); setIsCreateModalOpen(true); }}
           className="bg-[#f37021] hover:bg-[#e85c0d] text-white px-6 py-3.5 rounded-2xl font-bold flex items-center gap-2 shadow-sm shadow-orange-500/20 transition-all hover:shadow-md hover:shadow-orange-500/40 outline-none"
         >
           + Tạo tài khoản mới
@@ -470,7 +754,7 @@ export function AccountManagement() {
                 className="px-4 py-3 pr-10 rounded-2xl border-none text-sm font-medium focus:outline-none focus:ring-2 focus:ring-white/50 focus:bg-white/20 transition-all min-w-[140px] bg-white/10 text-white shadow-inner appearance-none custom-select"
               >
                 <option className="text-gray-900" value="">Toàn quốc</option>
-                {CAMPUSES.map(c => <option className="text-gray-900" key={c} value={c}>{c}</option>)}
+                {campusOptions.map(c => <option className="text-gray-900" key={c.campusId} value={c.campusName}>{c.campusName}</option>)}
               </select>
               <ChevronDown className="w-4 h-4 absolute right-4 top-1/2 -translate-y-1/2 text-white pointer-events-none opacity-70" />
             </div>
@@ -484,8 +768,8 @@ export function AccountManagement() {
             >
               <option className="text-gray-900" value="">Tất cả Vai trò</option>
               {ROLES.filter(r => {
-                if (isHO) return ['ADMIN', 'HO', 'STAFF'].includes(r);
-                if (isStaffLeader) return ['STAFF', 'DEPARTMENT', 'STUDENT', 'VISITOR'].includes(r);
+                if (isHO) return ['HO', 'STAFF'].includes(r);
+                if (isStaffLeader) return ['STAFF', 'DEPARTMENT', 'STUDENT'].includes(r);
                 return r !== 'HO';
               }).map(r => <option className="text-gray-900" key={r} value={r}>{r}</option>)}
             </select>
@@ -501,8 +785,8 @@ export function AccountManagement() {
               >
                 <option className="text-gray-900" value="">Tất cả trạng thái</option>
                 <option className="text-gray-900" value="Active">Hoạt động</option>
-                <option className="text-gray-900" value="Deactive">Khóa</option>
-                <option className="text-gray-900" value="NoLogin">Chưa từng đăng nhập</option>
+                <option className="text-gray-900" value="Inactive">Vô hiệu hóa</option>
+                <option className="text-gray-900" value="Locked">Bị khóa</option>
               </select>
               <ChevronDown className="w-4 h-4 absolute right-4 top-1/2 -translate-y-1/2 text-white pointer-events-none opacity-70" />
             </div>
@@ -534,8 +818,8 @@ export function AccountManagement() {
                 <th className="p-5 text-[11px] font-black text-center uppercase tracking-widest whitespace-nowrap">Tên đăng nhập (Email)</th>
                 {!(isAdmin || isStaff) && <th className="p-5 text-[11px] font-black text-center uppercase tracking-widest whitespace-nowrap">Cơ sở</th>}
                 <th className="p-5 text-[11px] font-black text-center uppercase tracking-widest whitespace-nowrap">Vai trò</th>
-                {!isHO && (
-                  <th 
+                {!isHO && !isStaffLeader && (
+                  <th
                     className={`p-5 text-[11px] font-black text-center uppercase tracking-widest whitespace-nowrap ${activeTab === 'pending' ? 'cursor-pointer hover:bg-gray-50 transition-colors select-none group' : ''}`}
                     onClick={() => activeTab === 'pending' && setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}
                   >
@@ -570,7 +854,7 @@ export function AccountManagement() {
                       {acc.role}
                     </span>
                   </td>
-                  {!isHO && (
+                  {!isHO && !isStaffLeader && (
                     <td className="p-5 text-center">
                       {activeTab === 'pending' ? (
                         <span className="text-[13px] font-bold text-gray-600 whitespace-nowrap tracking-wide">{acc.createdAt?.split('-').reverse().join('-')}</span>
@@ -583,6 +867,8 @@ export function AccountManagement() {
                   )}
                   <td className="p-5 text-center">
                     {acc.status === 'Active' && <span className="inline-flex items-center gap-1.5 text-[#0aa14f] bg-[#eaffe4] px-3 py-1.5 rounded-full text-[11px] font-bold border border-[#0aa14f]/30"><div className="w-1.5 h-1.5 rounded-full bg-[#0aa14f]"></div> Hoạt động</span>}
+                    {acc.status === 'Inactive' && <span className="inline-flex items-center gap-1.5 text-amber-600 bg-amber-50 px-3 py-1.5 rounded-full text-[11px] font-bold border border-amber-200"><div className="w-1.5 h-1.5 rounded-full bg-amber-500"></div> Vô hiệu hóa</span>}
+                    {acc.status === 'Locked' && <span className="inline-flex items-center gap-1.5 text-red-600 bg-red-50 px-3 py-1.5 rounded-full text-[11px] font-bold border border-red-200"><div className="w-1.5 h-1.5 rounded-full bg-red-600"></div> Bị khóa</span>}
                     {acc.status === 'Deactive' && <span className="inline-flex items-center gap-1.5 text-red-600 bg-red-50 px-3 py-1.5 rounded-full text-[11px] font-bold border border-red-200"><div className="w-1.5 h-1.5 rounded-full bg-red-600"></div> Khóa</span>}
                     {acc.status === 'Pending Approved' && <span className="inline-flex items-center gap-1.5 text-[#f37021] bg-[#fef1e8] px-3 py-1.5 rounded-full text-[11px] font-bold border border-[#f37021]/30"><div className="w-1.5 h-1.5 rounded-full bg-[#f37021]"></div> Chờ duyệt</span>}
                     {acc.status === 'Approved' && <span className="inline-flex items-center gap-1.5 text-[#0aa14f] bg-[#eaffe4] px-3 py-1.5 rounded-full text-[11px] font-bold border border-[#0aa14f]/30"><div className="w-1.5 h-1.5 rounded-full bg-[#0aa14f]"></div> Đã duyệt</span>}
@@ -616,13 +902,15 @@ export function AccountManagement() {
                                 </button>
                               </>
                             )
-                          ) : (
-                            <label className="relative flex items-center cursor-pointer ml-1" title={acc.status === 'Active' ? 'Khóa' : 'Hoạt động'}>
-                              <input type="checkbox" className="sr-only peer" checked={acc.status === 'Active'} onChange={() => toggleAccountStatus(acc.id)} />
+                          ) : (!isServerTab || acc.canManageStatus) ? (
+                            <label className="relative flex items-center cursor-pointer ml-1" title={acc.status === 'Active' ? 'Vô hiệu hóa' : 'Kích hoạt'}>
+                              <input type="checkbox" className="sr-only peer" checked={acc.status === 'Active'} onChange={() => requestToggleStatus(acc)} />
                               <div className="w-10 h-5 bg-gray-200 rounded-full peer-checked:bg-[#004c91] transition-colors relative">
                                 <div className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform ${acc.status === 'Active' ? 'translate-x-5' : 'translate-x-0'} shadow-sm`}></div>
                               </div>
                             </label>
+                          ) : (
+                            <span className="text-gray-300 text-sm">—</span>
                           )}
                         </>
                       ) : isStaff ? (
@@ -661,15 +949,17 @@ export function AccountManagement() {
                                 </button>
                               </>
                             )
-                          ) : (
+                          ) : (!isServerTab || acc.canManageStatus) ? (
                             <>
-                              <label className="relative flex items-center cursor-pointer mx-1" title={acc.status === 'Active' ? 'Khóa' : 'Hoạt động'}>
-                                <input type="checkbox" className="sr-only peer" checked={acc.status === 'Active'} onChange={() => toggleAccountStatus(acc.id)} />
+                              <label className="relative flex items-center cursor-pointer mx-1" title={acc.status === 'Active' ? 'Vô hiệu hóa' : 'Kích hoạt'}>
+                                <input type="checkbox" className="sr-only peer" checked={acc.status === 'Active'} onChange={() => requestToggleStatus(acc)} />
                                 <div className="w-10 h-5 bg-gray-200 rounded-full peer-checked:bg-[#004c91] transition-colors relative">
                                   <div className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform ${acc.status === 'Active' ? 'translate-x-5' : 'translate-x-0'} shadow-sm`}></div>
                                 </div>
                               </label>
                             </>
+                          ) : (
+                            <span className="text-gray-300 text-sm">—</span>
                           )}
                         </>
                       )}
@@ -774,6 +1064,20 @@ export function AccountManagement() {
               
               <div className="w-full space-y-3 mt-auto">
 
+                {/* Replace Staff Leader (HO only) — the HO list only shows HO + Staff Leaders, so a
+                    STAFF row here is the campus IC Head. */}
+                {isHO && selectedAccount.role === 'STAFF' && selectedAccount.campusId && (
+                  <button
+                    onClick={() => {
+                      setReplaceLeaderTarget({ campusId: String(selectedAccount.campusId), campusName: selectedAccount.campus || '' });
+                      closeViewDrawer();
+                    }}
+                    className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-orange-500 text-white font-bold hover:bg-orange-600 hover:shadow-[0_0_20px_rgba(249,115,22,0.5)] transition-all duration-300 border border-orange-400 outline-none group"
+                  >
+                    <UserCog className="w-4 h-4 group-hover:scale-110 transition-transform duration-300" /> Thay thế Staff Leader
+                  </button>
+                )}
+
                 {/*!isHO && activeTab === 'all' && (!isStaff || isStaffLeader) && (
                   <button 
                     onClick={() => setIsResetPasswordModalOpen(true)}
@@ -792,8 +1096,8 @@ export function AccountManagement() {
                   <UserCog className="w-6 h-6" /> Thông tin chi tiết
                 </h3>
                 <div className="flex items-center gap-3">
-                  {!isEditingProfile && (isAdmin || isStaffLeader) && (
-                    <button 
+                  {!isEditingProfile && (isAdmin || isStaffLeader) && !(isStaffLeader && (selectedAccount?.isCurrentUser || selectedAccount?.canUpdateRole === false)) && (
+                    <button
                       onClick={handleEditClick}
                       className="flex items-center gap-2 bg-[#f37021] hover:bg-[#e85c0d] text-white px-4 py-2 rounded-xl text-sm font-bold shadow-sm outline-none transition-colors relative z-10"
                     >
@@ -873,7 +1177,7 @@ export function AccountManagement() {
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-5 w-full">
                         <Input label="Họ và tên" value={data.name} field="name" disabled={isStaffLeader} />
                         <Input label="Email" value={data.email} field="email" type="email" disabled={isStaffLeader} />
-                        <Select label="Giới tính" value={data.gender} field="gender" options={[{value: 'Nam', label:'Nam'}, {value:'Nữ', label:'Nữ'}]} disabled={isStaffLeader} />
+                        <Select label="Giới tính" value={genderLabel(data.gender)} field="gender" options={[{value: 'Nam', label:'Nam'}, {value:'Nữ', label:'Nữ'}, {value:'Khác', label:'Khác'}, {value:'Không xác định', label:'Không xác định'}]} disabled={isStaffLeader} />
                         <Input label="Số điện thoại" value={data.phone} field="phone" disabled={isStaffLeader} />
                         {(isHO || isAdmin || isStaffLeader) && (
                           <Select 
@@ -883,14 +1187,12 @@ export function AccountManagement() {
                             disabled={false}
                             options={
                               isHO ? [
-                                {value:'ADMIN', label:'ADMIN'},
                                 {value:'HO', label:'HO (Head Office)'},
-                                {value:'STAFF', label:'STAFF (Leader of Campus)'}
+                                {value:'STAFF', label:'Staff Leader (Trưởng phòng IC)'}
                               ] : isStaffLeader ? [
                                 {value:'STAFF', label:'STAFF (Nhân sự IC)'},
-                                {value:'DEPARTMENT', label:'Department (phòng ban)'},
-                                {value:'STUDENT', label:'STUDENT (Sinh viên)'},
-                                {value:'VISITOR', label:'VISITOR (Khách)'}
+                                {value:'DEPARTMENT', label:'Department (Trưởng phòng ban)'},
+                                {value:'STUDENT', label:'STUDENT (Sinh viên)'}
                               ] : [
                                 {value:'ADMIN', label:'ADMIN'},
                                 {value:'HO', label:'HO (Head Office)'},
@@ -902,7 +1204,29 @@ export function AccountManagement() {
                             } 
                           />
                         )}
-                        
+
+                        {/* UC-100-SL: choose the department this user will lead (optional). */}
+                        {isEditingProfile && isStaffLeader && data.role === 'DEPARTMENT' && (
+                          <div className="flex flex-col">
+                            <span className="block text-[10px] font-bold uppercase tracking-wider mb-1 text-gray-500">Phòng ban (Trưởng phòng)</span>
+                            <div className="relative">
+                              <select
+                                value={selectedDept}
+                                onChange={(e) => setSelectedDept(e.target.value)}
+                                className="px-3 py-2 pr-8 border border-gray-200 rounded-lg text-sm font-medium text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#004c91] bg-gray-50 focus:bg-white transition-all appearance-none w-full"
+                              >
+                                <option value="">-- Chọn phòng ban --</option>
+                                {campusDepartments.map((d) => (
+                                  <option key={d.departmentId} value={d.departmentId} disabled={d.hasHead}>
+                                    {d.name}{d.hasHead ? ' (đã có trưởng phòng)' : ''}
+                                  </option>
+                                ))}
+                              </select>
+                              <ChevronDown className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                            </div>
+                          </div>
+                        )}
+
                         {data.role === 'STUDENT' && (
                           <>
                             <HighlightInput label="Mã số sinh viên (MSSV)" value={data.studentId} field="studentId" disabled={isStaffLeader} />
@@ -934,25 +1258,35 @@ export function AccountManagement() {
                       </div>
 
                       {isEditingProfile && (
-                        <div className="flex items-center justify-end gap-3 mt-4 pt-6 border-t border-gray-100 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                          <button 
-                            type="button"
-                            onClick={() => { setIsEditingProfile(false); setEditForm(null); }}
-                            className="px-5 py-2.5 rounded-xl font-bold text-sm text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-colors outline-none"
-                          >
-                            Hủy
-                          </button>
-                          <button 
-                            type="button"
-                            onClick={() => { 
-                              setIsEditingProfile(false); 
-                              setAccounts(accounts.map(acc => acc.id === selectedAccount.id ? editForm : acc));
-                              setSelectedAccount(editForm);
-                            }}
-                            className="px-6 py-2.5 rounded-xl text-white font-bold text-sm bg-[#0aa14f] hover:bg-[#088c44] shadow-[0_4px_12px_rgba(10,161,79,0.2)] hover:shadow-[0_6px_16px_rgba(10,161,79,0.3)] transition-all outline-none"
-                          >
-                            Cập nhật
-                          </button>
+                        <div className="mt-4 pt-6 border-t border-gray-100 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                          {roleError && (
+                            <div className="mb-3 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-bold text-red-700">
+                              {roleError}
+                            </div>
+                          )}
+                          <div className="flex items-center justify-end gap-3">
+                            <button
+                              type="button"
+                              onClick={() => { setIsEditingProfile(false); setEditForm(null); setRoleError(null); setSelectedDept(''); }}
+                              className="px-5 py-2.5 rounded-xl font-bold text-sm text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-colors outline-none"
+                            >
+                              Hủy
+                            </button>
+                            <button
+                              type="button"
+                              disabled={roleSaving}
+                              onClick={isStaffLeader
+                                ? handleUpdateRole
+                                : () => {
+                                    setIsEditingProfile(false);
+                                    setAccounts(accounts.map(acc => acc.id === selectedAccount.id ? editForm : acc));
+                                    setSelectedAccount(editForm);
+                                  }}
+                              className="px-6 py-2.5 rounded-xl text-white font-bold text-sm bg-[#0aa14f] hover:bg-[#088c44] shadow-[0_4px_12px_rgba(10,161,79,0.2)] hover:shadow-[0_6px_16px_rgba(10,161,79,0.3)] transition-all outline-none disabled:opacity-60 disabled:cursor-not-allowed"
+                            >
+                              {isStaffLeader && roleSaving ? 'Đang lưu...' : 'Cập nhật'}
+                            </button>
+                          </div>
                         </div>
                       )}
                     </>
@@ -1032,15 +1366,13 @@ export function AccountManagement() {
                       {isHO ? (
                         <>
                           <option value="HO">HO (Head Office)</option>
-                          <option value="STAFF">STAFF (Leader of Campus)</option>
-                          <option value="ADMIN">ADMIN</option>
+                          <option value="STAFF">Staff Leader (Trưởng phòng IC)</option>
                         </>
                       ) : isStaffLeader ? (
                         <>
-                          <option value="STAFF">STAFF (Nhân sự IC)</option>
-                          <option value="DEPARTMENT">Department (phòng ban)</option>
+                          <option value="STAFF">STAFF (Nhân sự phòng IC)</option>
+                          <option value="DEPARTMENT">Department (Trưởng phòng ban)</option>
                           <option value="STUDENT">STUDENT (Sinh viên)</option>
-                          <option value="VISITOR">VISITOR (Khách)</option>
                         </>
                       ) : (
                         <>
@@ -1062,8 +1394,117 @@ export function AccountManagement() {
                         className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none transition-shadow text-sm bg-gray-50 hover:bg-gray-100 cursor-pointer"
                       >
                         <option value="">-- Chọn cơ sở --</option>
-                        {CAMPUSES.map(c => <option key={c} value={c}>{c}</option>)}
+                        {campusOptions.map(c => <option key={c.campusId} value={c.campusName}>{c.campusName}</option>)}
                       </select>
+                    </div>
+                  )}
+
+                  {/* UC-96: Staff Leader availability for the chosen campus (HO + role STAFF). */}
+                  {isHO && manualForm.role === 'STAFF' && createCampus && (
+                    <div>
+                      {slAvailabilityLoading ? (
+                        <div className="flex items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm font-medium text-gray-500">
+                          <RefreshCw className="w-4 h-4 animate-spin" />
+                          Đang kiểm tra Trưởng phòng IC của cơ sở...
+                        </div>
+                      ) : slAvailability && slAvailability.canCreateStaffLeader ? (
+                        <div className="flex items-start gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+                          <CheckCircle className="w-5 h-5 shrink-0 mt-0.5" />
+                          <div>
+                            <p className="font-bold">Cơ sở này chưa có Trưởng phòng IC.</p>
+                            {slAvailability.icDepartmentName && (
+                              <p className="text-emerald-700 mt-0.5">Phòng ban: {slAvailability.icDepartmentName} — tự động gán.</p>
+                            )}
+                          </div>
+                        </div>
+                      ) : slAvailability ? (
+                        <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                          <XCircle className="w-5 h-5 shrink-0 mt-0.5 text-amber-600" />
+                          <div>
+                            <p className="font-bold leading-snug">{slAvailability.message}</p>
+                            {slAvailability.existingLeader && (
+                              <p className="mt-1 text-amber-700">
+                                <span className="font-bold">{slAvailability.existingLeader.fullName}</span>
+                                {' — '}{slAvailability.existingLeader.email}
+                                <span className="ml-2 inline-flex items-center rounded-full border border-amber-300 bg-amber-100 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide">
+                                  {slAvailability.existingLeader.status === 'ACTIVE' ? 'Đang hoạt động'
+                                    : slAvailability.existingLeader.status === 'INACTIVE' ? 'Vô hiệu hóa'
+                                    : slAvailability.existingLeader.status === 'LOCKED' ? 'Bị khóa'
+                                    : slAvailability.existingLeader.status}
+                                </span>
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  )}
+
+                  {/* UC-96: HO campus availability for the chosen campus (HO + role HO). */}
+                  {isHO && manualForm.role === 'HO' && createCampus && (
+                    <div>
+                      {hoCampusCheckLoading ? (
+                        <div className="flex items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm font-medium text-gray-500">
+                          <RefreshCw className="w-4 h-4 animate-spin" />
+                          Đang kiểm tra tài khoản HO của cơ sở...
+                        </div>
+                      ) : hoCampusCheck && hoCampusCheck.canCreateHo ? (
+                        <div className="flex items-start gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+                          <CheckCircle className="w-5 h-5 shrink-0 mt-0.5" />
+                          <p className="font-bold">Cơ sở này chưa có tài khoản HO. Có thể tiếp tục tạo.</p>
+                        </div>
+                      ) : hoCampusCheck ? (
+                        <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                          <XCircle className="w-5 h-5 shrink-0 mt-0.5 text-amber-600" />
+                          <div>
+                            <p className="font-bold leading-snug">{hoCampusCheck.message}</p>
+                            {hoCampusCheck.existingHo && (
+                              <p className="mt-1 text-amber-700">
+                                <span className="font-bold">{hoCampusCheck.existingHo.fullName}</span>
+                                {' — '}{hoCampusCheck.existingHo.email}
+                                <span className="ml-2 inline-flex items-center rounded-full border border-amber-300 bg-amber-100 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide">
+                                  {hoCampusCheck.existingHo.status === 'ACTIVE' ? 'Đang hoạt động'
+                                    : hoCampusCheck.existingHo.status === 'INACTIVE' ? 'Vô hiệu hóa'
+                                    : hoCampusCheck.existingHo.status === 'LOCKED' ? 'Bị khóa'
+                                    : hoCampusCheck.existingHo.status}
+                                </span>
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  )}
+
+                  {/* UC-96-SL: STAFF auto-assigned to the IC department (read-only hint). */}
+                  {isStaffLeader && manualForm.role === 'STAFF' && (
+                    <div>
+                      <label className="block text-sm font-bold text-gray-700 mb-2">Phòng ban</label>
+                      <input
+                        readOnly
+                        value="Phòng Hợp tác Quốc tế (IC) — tự động gán"
+                        className="w-full px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-100 text-sm text-gray-500 cursor-not-allowed outline-none"
+                      />
+                    </div>
+                  )}
+
+                  {/* UC-96-SL: Department Leader may optionally lead a department in the campus. */}
+                  {isStaffLeader && manualForm.role === 'DEPARTMENT' && (
+                    <div>
+                      <label className="block text-sm font-bold text-gray-700 mb-2">Phòng ban (Trưởng phòng) <span className="text-red-500">*</span></label>
+                      <select
+                        value={selectedDept}
+                        onChange={(e) => setSelectedDept(e.target.value)}
+                        className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none transition-shadow text-sm bg-gray-50 hover:bg-gray-100 cursor-pointer"
+                      >
+                        <option value="">-- Chọn phòng ban --</option>
+                        {campusDepartments.map((d) => (
+                          <option key={d.departmentId} value={d.departmentId} disabled={d.hasHead}>
+                            {d.name}{d.hasHead ? ' (đã có trưởng phòng)' : ''}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="mt-1.5 text-xs text-gray-500">Tài khoản này sẽ được gán làm trưởng phòng của phòng ban đã chọn. {campusDepartments.length === 0 && 'Cơ sở của bạn hiện chưa có phòng ban phù hợp.'}</p>
                     </div>
                   )}
 
@@ -1102,19 +1543,129 @@ export function AccountManagement() {
             </div>
 
             {/* Footer */}
+            <div className="px-6 py-4 border-t border-gray-100 bg-gray-50 rounded-b-2xl">
+              {createError && (
+                <div className="mb-3 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-bold text-red-700">
+                  {createError}
+                </div>
+              )}
+              <div className="flex items-center justify-end gap-3">
+                <button
+                  onClick={() => { setIsCreateModalOpen(false); setCreateError(null); }}
+                  className="px-5 py-2.5 rounded-xl font-bold text-gray-600 bg-white border border-gray-200 hover:bg-gray-100 transition-colors outline-none"
+                >
+                  Hủy bỏ
+                </button>
+                <button
+                  onClick={handleCreateAccount}
+                  disabled={
+                    creating ||
+                    (isHO && manualForm.role === 'STAFF' && !!createCampus &&
+                      (slAvailabilityLoading || (!!slAvailability && !slAvailability.canCreateStaffLeader))) ||
+                    (isHO && manualForm.role === 'HO' && !!createCampus &&
+                      (hoCampusCheckLoading || (!!hoCampusCheck && !hoCampusCheck.canCreateHo)))
+                  }
+                  className="px-5 py-2.5 rounded-xl font-bold text-white bg-orange-500 hover:bg-orange-600 shadow-[0_4px_12px_rgba(249,115,22,0.2)] hover:shadow-[0_6px_16px_rgba(249,115,22,0.4)] transition-all outline-none transform hover:-translate-y-0.5 disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {creating ? 'Đang tạo...' : 'Xác nhận tạo'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* UC-97: Xác nhận kích hoạt / vô hiệu hóa tài khoản */}
+      {statusTarget && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[60] flex items-center justify-center p-4 sm:p-6 animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-xl overflow-hidden animate-in zoom-in-95 duration-300 relative">
+            <div className="px-6 py-4 border-b border-gray-100 flex items-center gap-2">
+              <h2 className="text-xl font-black text-gray-800">
+                {statusTarget.status === 'Active' ? '⚠️ Xác nhận vô hiệu hóa' : '✅ Xác nhận kích hoạt'}
+              </h2>
+              <button
+                onClick={() => setStatusTarget(null)}
+                className="absolute top-4 right-4 w-8 h-8 rounded-full hover:bg-gray-100 flex items-center justify-center text-gray-500 transition-colors outline-none"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 text-gray-700 leading-relaxed text-[15px]">
+              {statusTarget.status === 'Active' ? (
+                <>Bạn có chắc muốn <strong className="text-red-600">vô hiệu hóa</strong> tài khoản <strong className="text-[#004c91]">{statusTarget.email}</strong>? Tất cả phiên đăng nhập của tài khoản này sẽ bị thu hồi ngay lập tức.</>
+              ) : (
+                <>Bạn có chắc muốn <strong className="text-[#0aa14f]">kích hoạt</strong> lại tài khoản <strong className="text-[#004c91]">{statusTarget.email}</strong>?</>
+              )}
+              {statusError && (
+                <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-bold text-red-700">
+                  {statusError}
+                </div>
+              )}
+            </div>
+
             <div className="px-6 py-4 border-t border-gray-100 bg-gray-50 flex items-center justify-end gap-3 rounded-b-2xl">
-              <button 
-                onClick={() => setIsCreateModalOpen(false)}
+              <button
+                onClick={() => setStatusTarget(null)}
                 className="px-5 py-2.5 rounded-xl font-bold text-gray-600 bg-white border border-gray-200 hover:bg-gray-100 transition-colors outline-none"
               >
-                Hủy bỏ
+                Hủy
               </button>
-              <button className="px-5 py-2.5 rounded-xl font-bold text-white bg-orange-500 hover:bg-orange-600 shadow-[0_4px_12px_rgba(249,115,22,0.2)] hover:shadow-[0_6px_16px_rgba(249,115,22,0.4)] transition-all outline-none transform hover:-translate-y-0.5">
-                Xác nhận tạo
+              <button
+                onClick={confirmToggleStatus}
+                disabled={statusSaving}
+                className={`px-5 py-2.5 rounded-xl font-bold text-white shadow-sm transition-all outline-none disabled:opacity-60 disabled:cursor-not-allowed ${statusTarget.status === 'Active' ? 'bg-red-500 hover:bg-red-600' : 'bg-[#0aa14f] hover:bg-[#088c44]'}`}
+              >
+                {statusSaving ? 'Đang xử lý...' : 'Xác nhận'}
               </button>
             </div>
           </div>
         </div>
+      )}
+
+      {/* Toast notifications (create + email outcome, status, role update) */}
+      {toasts.length > 0 && (
+        <div className="fixed top-6 right-6 z-[100] flex flex-col gap-3 w-[360px] max-w-[calc(100vw-2rem)]">
+          {toasts.map((t) => (
+            <div
+              key={t.id}
+              className={`flex items-start gap-3 rounded-2xl border px-4 py-3 shadow-lg animate-in slide-in-from-right-4 duration-300 ${
+                t.type === 'success' ? 'bg-emerald-50 border-emerald-200 text-emerald-800' :
+                t.type === 'warning' ? 'bg-amber-50 border-amber-200 text-amber-800' :
+                'bg-red-50 border-red-200 text-red-800'
+              }`}
+            >
+              {t.type === 'success' ? <CheckCircle className="w-5 h-5 shrink-0 mt-0.5" /> : <XCircle className="w-5 h-5 shrink-0 mt-0.5" />}
+              <span className="text-sm font-bold leading-snug">{t.msg}</span>
+              <button
+                onClick={() => setToasts((prev) => prev.filter((x) => x.id !== t.id))}
+                className="ml-auto opacity-60 hover:opacity-100 transition-opacity outline-none"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Replace Staff Leader modal (HO only) */}
+      {replaceLeaderTarget && (
+        <ReplaceStaffLeaderModal
+          campusId={replaceLeaderTarget.campusId}
+          campusName={replaceLeaderTarget.campusName}
+          onClose={() => setReplaceLeaderTarget(null)}
+          onReplaced={(result) => {
+            setReplaceLeaderTarget(null);
+            pushToast(
+              result.emailNotificationStatus === 'FAILED' ? 'warning' : 'success',
+              result.emailNotificationStatus === 'FAILED'
+                ? 'Đã thay thế Staff Leader nhưng gửi email thông báo thất bại.'
+                : 'Đã thay thế Staff Leader thành công.',
+            );
+            refetchAccounts();
+            loadStatistics();
+          }}
+        />
       )}
     </div>
   );

@@ -48,12 +48,39 @@ public sealed class ManageAccountStatusCommandHandler : IRequestHandler<ManageAc
         var newStatus = (request.Status ?? string.Empty).Trim().ToUpperInvariant();
 
         var user = await _db.Users
+            .Include(u => u.Role)
             .FirstOrDefaultAsync(u => u.UserId == request.UserId, cancellationToken)
             ?? throw new NotFoundException("Account", request.UserId);
 
         // An actor cannot change the status of their own account (prevents self-lockout).
         if (actorId is not null && user.UserId == actorId.Value)
             throw new ForbiddenException("You cannot change the status of your own account.");
+
+        // ── UC-97 HO scope: HO may only enable/disable HO and Staff-Leader accounts, only
+        //    between ACTIVE and INACTIVE, and never a LOCKED (security) account. ──
+        if (_currentUser.RoleCode == RoleCodes.Ho)
+        {
+            // HO accounts require a dedicated Re-enable/Unlock/Replace flow — never the generic
+            // toggle. Block every HO target regardless of campus (spec §7.3). The frontend hides
+            // the toggle, but the backend is the final gate against a direct API call.
+            if (user.Role.RoleCode == RoleCodes.Ho)
+                throw new AuthBusinessException(
+                    AccountErrorCodes.HoStatusChangeRequiresSpecialFlow,
+                    "Không thể thay đổi trạng thái tài khoản HO bằng thao tác thông thường. Vui lòng sử dụng luồng xử lý HO chuyên biệt.",
+                    403);
+
+            // HO may only enable/disable Staff-Leader accounts, only between ACTIVE and INACTIVE,
+            // and never a LOCKED (security) account.
+            if (!(user.Role.RoleCode == RoleCodes.Staff && user.SubRole == UserSubRoles.Leader))
+                throw new ForbiddenException("Tài khoản này nằm ngoài phạm vi quản lý của HO.");
+
+            if (newStatus == UserStatuses.Locked)
+                throw new BusinessRuleException("UC-97 chỉ cho phép kích hoạt hoặc vô hiệu hóa tài khoản.");
+
+            if (user.Status == UserStatuses.Locked)
+                throw new BusinessRuleException(
+                    "Tài khoản đang bị khóa vì lý do bảo mật và không thể thay đổi tại đây.");
+        }
 
         // Staff Leaders (non-privileged) may only manage users within their own campus.
         if (!privileged)
@@ -62,6 +89,26 @@ public sealed class ManageAccountStatusCommandHandler : IRequestHandler<ManageAc
                 throw new ForbiddenException("Your account is not assigned to a campus and cannot manage accounts.");
             if (user.PrimaryCampusId is null || user.PrimaryCampusId != actorCampus)
                 throw new ForbiddenException("You can only manage accounts within your own campus.");
+        }
+
+        // ── UC-97-SL Staff Leader scope: may only enable/disable STAFF/STAFF,
+        //    DEPARTMENT/LEADER and STUDENT, only between ACTIVE and INACTIVE, never a
+        //    LOCKED (security) account. ──
+        if (_currentUser.RoleCode == RoleCodes.Staff && _currentUser.SubRole == UserSubRoles.Leader)
+        {
+            var targetInScope =
+                (user.Role.RoleCode == RoleCodes.Staff && user.SubRole == UserSubRoles.Staff)
+                || (user.Role.RoleCode == RoleCodes.Department && user.SubRole == UserSubRoles.Leader)
+                || user.Role.RoleCode == RoleCodes.Student;
+            if (!targetInScope)
+                throw new ForbiddenException("Tài khoản này nằm ngoài phạm vi quản lý của bạn.");
+
+            if (newStatus == UserStatuses.Locked)
+                throw new BusinessRuleException("Chỉ cho phép kích hoạt hoặc vô hiệu hóa tài khoản.");
+
+            if (user.Status == UserStatuses.Locked)
+                throw new BusinessRuleException(
+                    "Tài khoản đang bị khóa vì lý do bảo mật và không thể thay đổi tại đây.");
         }
 
         var previousStatus = user.Status;

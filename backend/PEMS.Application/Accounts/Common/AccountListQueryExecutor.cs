@@ -48,6 +48,7 @@ internal static class AccountListQueryExecutor
         var roleCode = currentUser.RoleCode!;
         var myCampusId = currentUser.PrimaryCampusId;
         var privileged = AccountProvisioningRules.IsPrivileged(roleCode);   // ADMIN / HO
+        var isHoCaller = roleCode == RoleCodes.Ho;
         var isStaffLeader = roleCode == RoleCodes.Staff && currentUser.SubRole == UserSubRoles.Leader;
         var subRoleForCheck = roleCode is "STAFF" or "DEPARTMENT" ? currentUser.SubRole ?? "NONE" : "NONE";
 
@@ -106,6 +107,27 @@ internal static class AccountListQueryExecutor
         }
 
         // Ã¢â€â‚¬Ã¢â€â‚¬ Keyword search (safe fields only) Ã¢â€â‚¬Ã¢â€â‚¬
+        // HO Account Management scope (UC-95/UC-99): the HO screen manages ONLY
+        // HO accounts and Staff Leaders. ADMIN keeps the unrestricted privileged view.
+        if (isHoCaller)
+        {
+            query = query.Where(u =>
+                u.Role.RoleCode == RoleCodes.Ho ||
+                (u.Role.RoleCode == RoleCodes.Staff && u.SubRole == UserSubRoles.Leader));
+        }
+
+        // Staff Leader Account Management scope (UC-95-SL/UC-99-SL): combined with the
+        // own-campus row filter above, the Staff Leader screen manages ONLY STAFF (incl.
+        // themselves as STAFF/LEADER and IC staff as STAFF/STAFF), Department Leaders and
+        // Students. ADMIN/HO/VISITOR and DEPARTMENT/STAFF are never listed.
+        if (isStaffLeader)
+        {
+            query = query.Where(u =>
+                u.Role.RoleCode == RoleCodes.Staff ||
+                (u.Role.RoleCode == RoleCodes.Department && u.SubRole == UserSubRoles.Leader) ||
+                u.Role.RoleCode == RoleCodes.Student);
+        }
+
         if (hasKeyword)
         {
             var kw = keyword!.ToLower();
@@ -252,11 +274,33 @@ internal static class AccountListQueryExecutor
             var rowIsHigh = r.RoleCode == RoleCodes.Admin || r.RoleCode == RoleCodes.Ho;
             var rowIsVisitor = r.RoleCode == RoleCodes.Visitor;
             var sameCampus = myCampusId.HasValue && r.CampusId == myCampusId;
+            var isCurrentUser = currentUser.UserId.HasValue && r.UserId == currentUser.UserId.Value;
 
             // Privileged (ADMIN/HO) may act on any row; campus-scoped callers may act on
             // their own-campus rows or on a Visitor (e.g. to convert via UC-100), but
             // never on an ADMIN/HO row.
             var inActionScope = privileged || (!rowIsHigh && (sameCampus || rowIsVisitor));
+
+            // BR-HO-STATUS: an HO may view but never enable/disable an HO account from a
+            // different campus (deny too when campus data is missing on either side).
+            var hoCrossCampus = isHoCaller && r.RoleCode == RoleCodes.Ho
+                && (!myCampusId.HasValue || r.CampusId is null || r.CampusId != myCampusId);
+
+            // ── Status-toggle availability + reason (UC-97 / HO_CREATE_HO_ACCOUNT spec §7/§12.3) ──
+            // A user can never toggle their own status; an HO caller can never toggle ANY HO row
+            // (HO needs a dedicated Re-enable/Unlock/Replace flow); LOCKED rows are excluded
+            // because UC-97 only toggles ACTIVE↔INACTIVE. The reason lets the UI explain the hide.
+            string? hideStatusToggleReason = null;
+            if (!canManageStatusPerm)
+                hideStatusToggleReason = "NO_PERMISSION";
+            else if (isCurrentUser)
+                hideStatusToggleReason = "SELF_ACCOUNT";
+            else if (isHoCaller && r.RoleCode == RoleCodes.Ho)
+                hideStatusToggleReason = hoCrossCampus ? "OTHER_CAMPUS_HO" : "HO_STATUS_CHANGE_REQUIRES_SPECIAL_FLOW";
+            else if (!inActionScope)
+                hideStatusToggleReason = "TARGET_ROLE_NOT_MANAGEABLE";
+            else if (r.Status == UserStatuses.Locked)
+                hideStatusToggleReason = "ACCOUNT_LOCKED";
 
             return new AccountListItemDto
             {
@@ -283,8 +327,10 @@ internal static class AccountListQueryExecutor
                 CreatedAt = r.CreatedAt,
                 UpdatedAt = r.UpdatedAt,
                 CanViewDetails = canViewDetailsPerm && inActionScope,
-                CanUpdateRole = canUpdateRolePerm && inActionScope,
-                CanManageStatus = canManageStatusPerm && inActionScope
+                CanUpdateRole = canUpdateRolePerm && inActionScope && !isCurrentUser,
+                CanManageStatus = hideStatusToggleReason is null,
+                HideStatusToggleReason = hideStatusToggleReason,
+                IsCurrentUser = isCurrentUser
             };
         }).ToList();
 

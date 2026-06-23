@@ -20,6 +20,12 @@ export const API_ENDPOINTS = {
     details: '/accounts/viewaccountdetails',
     search: '/accounts/searchandfilteraccounts',
     updateRole: '/accounts/updateaccountrole',
+    statistics: '/accounts/statistics',
+    campusDepartments: '/accounts/campus-departments',
+    staffLeaderAvailability: '/accounts/staff-leader-availability',
+    hoCampusCheck: '/accounts/ho-campus-check',
+    staffLeaderReplacementPreview: '/accounts/staff-leader-replacement-preview',
+    replaceStaffLeader: '/accounts/replacestaffleader',
   },
   partners: {
     list: '/partners',

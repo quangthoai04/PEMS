@@ -25,6 +25,78 @@ internal static class AccountProvisioningRules
     public static bool IsPrivileged(string? roleCode)
         => roleCode == RoleCodes.Admin || roleCode == RoleCodes.Ho;
 
+    /// <summary>
+    /// Resolves the account shape for a Staff Leader create/update-role action (UC-96-SL /
+    /// UC-100-SL). Staff Leaders may only target STAFF/STAFF (auto IC department),
+    /// DEPARTMENT/LEADER (optional GENERAL department in their campus) or STUDENT, and the
+    /// campus is always forced to the leader's own campus. The actual head_user_id
+    /// assignment is performed by the caller (it needs the target user id).
+    /// </summary>
+    public static async Task<ResolvedShape> ResolveStaffLeaderTargetAsync(
+        IApplicationDbContext db,
+        string roleCode,
+        ulong? requestedDepartmentId,
+        ulong actorCampusId,
+        CancellationToken cancellationToken)
+    {
+        roleCode = (roleCode ?? string.Empty).Trim().ToUpperInvariant();
+
+        switch (roleCode)
+        {
+            case RoleCodes.Staff:
+            {
+                var role = await db.Roles.FirstOrDefaultAsync(
+                    r => r.RoleCode == RoleCodes.Staff && r.Status == EntityStatuses.Active,
+                    cancellationToken) ?? throw new ValidationException("Role 'STAFF' is not valid or not active.");
+
+                var ic = await db.Departments.FirstOrDefaultAsync(
+                    d => d.CampusId == actorCampusId && d.DepartmentType == "IC" && d.Status == EntityStatuses.Active,
+                    cancellationToken)
+                    ?? throw new ValidationException(
+                        "Không tìm thấy Phòng Hợp tác Quốc tế đang hoạt động cho cơ sở của bạn.");
+
+                return new ResolvedShape(role.RoleId, RoleCodes.Staff, UserSubRoles.Staff, ic.DepartmentId, actorCampusId);
+            }
+
+            case RoleCodes.Department:
+            {
+                var role = await db.Roles.FirstOrDefaultAsync(
+                    r => r.RoleCode == RoleCodes.Department && r.Status == EntityStatuses.Active,
+                    cancellationToken) ?? throw new ValidationException("Role 'DEPARTMENT' is not valid or not active.");
+
+                // The DB trigger trg_users_validate requires every STAFF/DEPARTMENT user to
+                // have a department_id, so a department must be chosen for a Department Leader.
+                if (requestedDepartmentId is null)
+                    throw new ValidationException("Vui lòng chọn phòng ban cho vai trò Trưởng phòng ban.");
+
+                var dept = await db.Departments.FirstOrDefaultAsync(
+                    d => d.DepartmentId == requestedDepartmentId, cancellationToken)
+                    ?? throw new ValidationException("Phòng ban được chọn không tồn tại.");
+                if (dept.Status != EntityStatuses.Active)
+                    throw new ValidationException("Phòng ban được chọn đang không hoạt động.");
+                if (dept.CampusId != actorCampusId)
+                    throw new ForbiddenException("Bạn chỉ được gán phòng ban thuộc cơ sở của mình.");
+                if (!string.Equals(dept.DepartmentType, "GENERAL", StringComparison.OrdinalIgnoreCase))
+                    throw new ValidationException("Phòng ban được chọn không hợp lệ cho vai trò Trưởng phòng ban.");
+
+                return new ResolvedShape(role.RoleId, RoleCodes.Department, UserSubRoles.Leader, dept.DepartmentId, actorCampusId);
+            }
+
+            case RoleCodes.Student:
+            {
+                var role = await db.Roles.FirstOrDefaultAsync(
+                    r => r.RoleCode == RoleCodes.Student && r.Status == EntityStatuses.Active,
+                    cancellationToken) ?? throw new ValidationException("Role 'STUDENT' is not valid or not active.");
+
+                return new ResolvedShape(role.RoleId, RoleCodes.Student, null, null, actorCampusId);
+            }
+
+            default:
+                throw new ForbiddenException(
+                    "Staff Leader chỉ được tạo hoặc cập nhật sang Staff, Department Leader hoặc Student.");
+        }
+    }
+
     public static async Task<ResolvedShape> ResolveAsync(
         IApplicationDbContext db,
         string roleCode,
