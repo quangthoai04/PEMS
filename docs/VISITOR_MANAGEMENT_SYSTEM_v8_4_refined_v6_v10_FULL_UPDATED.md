@@ -16,6 +16,79 @@
 4. Nếu cần code, backend phải kiểm tra lại bằng schema v8.4 refined v6 và seed v7/v6 dynamic time tương ứng.
 ```
 
+
+# V10 Visitor/Delegation Management Addendum
+
+> Áp dụng theo SQL v10 mới nhất. Nếu phần cũ mâu thuẫn, ưu tiên addendum này.
+
+## V10.1 Bảng liên quan bổ sung
+
+| Bảng | Vai trò |
+|---|---|
+| `visit_logistics_item_handovers` | Lưu ký mượn/ký trả đồ/resource theo BORROW/RETURN |
+| `email_action_tokens` | Lưu token một lần cho nút xác nhận/từ chối/thương lượng/ký trong email |
+| `sent_email_recipients` | Lưu tracking người nhận email gửi đi |
+
+Không có bảng inbox email thật trong v10.
+
+## V10.2 Logistics handover flow
+
+```text
+Logistics item được request/assigned/accepted trong visit_logistics_items
+→ Khi giao/mượn đồ: tạo hoặc cập nhật handover_type = BORROW
+→ Khi trả/nhận lại đồ: tạo hoặc cập nhật handover_type = RETURN
+```
+
+Ý nghĩa chữ ký:
+
+```text
+BORROW.borrower_signed_*  = bên mượn ký nhận
+BORROW.provider_signed_*  = bên cho mượn ký bàn giao
+RETURN.borrower_signed_*  = bên mượn ký trả
+RETURN.provider_signed_*  = bên cho mượn ký nhận lại
+```
+
+`visit_logistics_items` không còn các field ký cũ. Mọi UI/API ký mượn/ký trả phải dùng `visit_logistics_item_handovers`.
+
+## V10.3 Email button action flow
+
+Có thể gửi email cho người tham gia/department/logistics assignee với nút:
+
+```text
+Xác nhận
+Từ chối
+Thương lượng
+Chấp nhận đề xuất
+Từ chối đề xuất
+Ký nhận
+Ký trả
+```
+
+Người nhận không cần đăng nhập. Backend validate `email_action_tokens` rồi update bảng nghiệp vụ tương ứng.
+
+Nếu bấm lại email cũ hoặc bấm sang lựa chọn khác sau khi đã trả lời:
+
+```text
+Không update dữ liệu lần hai.
+Trả result_status = ALREADY_RESPONDED.
+Hiển thị: Bạn đã trả lời yêu cầu này rồi.
+```
+
+## V10.4 No inbound email phase
+
+Không đọc Gmail/mailbox của khách hoặc mailbox hệ thống trong v10. Kết quả phản hồi lấy từ:
+
+```text
+email_action_tokens
+visit_participants.status / responded_at
+visit_logistics_items.status / proposal fields
+visit_logistics_item_handovers signature fields
+```
+
+## V10.5 No logistics task transfer
+
+Không chuyển nhiệm vụ logistics từ người A sang người B. Nếu đã có `assigned_to_user_id`, backend không cho đổi sang user khác.
+
 ---
 
 # PHẦN A — NỘI DUNG CHUẨN HIỆN TẠI / UPDATED CANONICAL CONTENT

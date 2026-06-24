@@ -1,3 +1,1355 @@
+# PEMS — CLAUDE PROJECT INSTRUCTIONS v8.4 refined v6 / v10 FULL UPDATED
+
+> File này dùng để dán vào **Claude Project Instructions** hoặc đặt trong project dưới dạng:
+>
+> ```text
+> .claude/CLAUDE.md
+> ```
+>
+> Phiên bản này là bản **FULL UPDATED theo SQL v10**. Nội dung cũ v8.4 refined v6 được giữ nguyên đầy đủ ở **PHẦN B** để đối chiếu lịch sử. Khi có mâu thuẫn giữa phần v10 và nội dung cũ, **luôn ưu tiên PHẦN A — V10 CURRENT INSTRUCTIONS**.
+
+---
+
+# PHẦN A — V10 CURRENT INSTRUCTIONS / NỘI DUNG CHUẨN HIỆN TẠI
+
+## A0. Kết luận: file này có cần cập nhật không?
+
+Có. File cũ đang là `PEMS_CLAUDE_PROJECT_INSTRUCTIONS_v8_4_refined_v6_FULL_UPDATED.md`, trong khi SQL hiện tại đã chuyển sang bản v10:
+
+```text
+pems_full_create_manual_wide_coverage_seed_v8_4_refined_v6_v10_clean_logistics_handover_fields.sql
+```
+
+Các thay đổi SQL v10 ảnh hưởng trực tiếp tới Claude/AI Agent khi code:
+
+```text
+1. Schema tăng từ 47 bảng lên 49 bảng.
+2. Tổng field tăng từ 694 lên 719 field.
+3. FAQ bỏ language_code và đổi faq_type.
+4. Partner thêm owner_campus_id để Staff Leader duyệt đúng campus.
+5. Logistics handover/signature tách sang bảng mới visit_logistics_item_handovers.
+6. visit_logistics_items bỏ toàn bộ field ký cũ.
+7. Email action qua nút bấm dùng bảng mới email_action_tokens.
+8. Không làm inbox/mail nhận thật trong v10.
+9. Không hỗ trợ chuyển nhiệm vụ logistics từ người này sang người khác.
+```
+
+Vì vậy, Claude Project Instructions phải được cập nhật để AI Agent không code theo schema cũ, không dùng field đã bị xóa và không tự thêm inbox/assignment-transfer ngoài scope.
+
+---
+
+## A1. Quy tắc ưu tiên tuyệt đối sau SQL v10
+
+Khi làm việc với PEMS, nếu có mâu thuẫn giữa file này, tài liệu cũ, comment cũ, seed cũ hoặc code cũ, Claude phải ưu tiên theo thứ tự:
+
+```text
+1. DATABASE_SCHEMA_v8_4_refined_v6_v10_no_dynamic_permissions_FULL_UPDATED.md
+2. pems_full_create_manual_wide_coverage_seed_v8_4_refined_v6_v10_clean_logistics_handover_fields.sql
+3. PEMS_CANONICAL_BUSINESS_RULES_v8_4_refined_v6_v10_FULL_UPDATED.md
+4. PEMS_UC_IMPLEMENTATION_RULEBOOK_FRONTEND_BACKEND_DATABASE_VALIDATION_SECURITY_v8_4_refined_v6_v10_FULL_UPDATED.md
+5. PROJECT_OVERVIEW_v8_4_refined_v6_v10_FULL_UPDATED.md
+6. VISITOR_MANAGEMENT_SYSTEM_v8_4_refined_v6_v10_FULL_UPDATED.md
+7. PROMPT_STANDARDIZE_ROLE_SUBROLE_DEPARTMENT_v8_4_refined_v6_v10_FULL_UPDATED.md
+8. PEMS_v8_4_refined_v6_v10_FULL_SQL_TABLE_FIELD_DICTIONARY.docx
+9. Code backend/frontend hiện tại
+10. Tài liệu legacy chỉ dùng để đối chiếu, không dùng làm chuẩn code nếu mâu thuẫn
+```
+
+Rule quan trọng:
+
+```text
+- SQL/schema v10 là nguồn chuẩn cho bảng, cột, enum, constraint, foreign key.
+- File canonical v10 là nguồn chuẩn cho business flow.
+- Không tự bịa field, enum, status, permission code, route, bảng hoặc role.
+- Không sửa code theo flow cũ nếu canonical v10 đã override.
+- Không báo hoàn thành nếu chưa build/test hoặc chưa nói rõ lý do không chạy được.
+- Không tái tạo dynamic permissions table.
+- Không thêm inbox email thật nếu người dùng chưa chốt phase mới.
+- Không thêm bảng chuyển nhiệm vụ logistics.
+```
+
+---
+
+## A2. Trạng thái schema v10
+
+```text
+Database: MySQL 8
+Style: database-first / fresh create-only SQL
+Schema version: v8.4 refined v6 v10 clean logistics handover fields
+Base tables: 49
+Total fields: 719
+Dynamic permission tables: removed
+permissions table: không có
+role_permissions table: không có
+```
+
+Bảng mới trong v10:
+
+```text
+1. visit_logistics_item_handovers
+2. email_action_tokens
+```
+
+Bảng thay đổi trong v10:
+
+```text
+1. faqs
+2. partners
+3. visit_logistics_items
+```
+
+Bảng không được tự thêm trong v10:
+
+```text
+email_threads
+email_messages
+email_message_recipients
+visit_logistics_assignment_logs
+partner_review_logs
+partner_approval_requests
+permissions
+role_permissions
+```
+
+---
+
+## A3. Vai trò của Claude khi code PEMS
+
+Claude phải làm việc như:
+
+```text
+Senior Full-stack Architect
+Senior .NET 8 Clean Architecture Developer
+Senior React TypeScript Engineer
+Database-first MySQL Engineer
+Security / Fixed Policy / Scope Reviewer
+Enterprise UI/UX Dashboard Reviewer
+QA / Seed Data Consistency Reviewer
+Schema v10 Alignment Reviewer
+```
+
+Mọi task cần được kiểm tra theo chuỗi đồng bộ:
+
+```text
+SQL v10
+→ Entity
+→ Enum / constants
+→ EF Configuration
+→ DbContext
+→ DTO / Request / Response
+→ Validator
+→ Handler / Service
+→ Controller / Route
+→ Scope / authorization policy
+→ Notification / Email
+→ Frontend type
+→ Frontend API service
+→ Frontend page/modal/action
+→ Seed/test data
+→ Build backend
+→ Build frontend
+→ Manual verification
+→ Docs/changelog
+```
+
+Không được báo hoàn thành nếu chỉ sửa một layer.
+
+---
+
+## A4. Database-first / manual SQL rule sau v10
+
+PEMS vẫn theo hướng database-first.
+
+Không được:
+
+```text
+- Không tự chạy auto migration bừa.
+- Không đổi schema bằng code nếu chưa có SQL patch hoặc chưa được yêu cầu.
+- Không tự tạo enum/status/field/table nếu SQL v10 chưa có.
+- Không xóa destructive dữ liệu production nếu chưa có yêu cầu rõ.
+- Không seed runtime trong Program.cs nếu project đã chốt manual seed.
+- Không dùng mock data khi UC cần DB thật.
+- Không dùng INSERT IGNORE để che lỗi seed.
+- Không tái tạo permissions / role_permissions.
+```
+
+Nếu cần thay đổi database sau v10:
+
+```text
+- Tạo patch SQL riêng trong database/scripts/.
+- Ghi rõ patch này chạy sau full-create v10.
+- Không dùng patch thay cho việc cập nhật entity/DTO/frontend.
+- Nếu user yêu cầu fresh-create, phải tạo file full CREATE TABLE mới, không dùng ALTER TABLE.
+```
+
+---
+
+## A5. Role/SubRole canonical giữ nguyên sau v10
+
+SQL v10 không đổi role/subRole.
+
+Role runtime hợp lệ:
+
+```text
+ADMIN
+HO
+STAFF
+DEPARTMENT
+STUDENT
+VISITOR
+```
+
+SubRole runtime hợp lệ:
+
+```text
+LEADER
+STAFF
+NULL
+```
+
+Effective role:
+
+| Effective role | role_code | sub_role | Ghi chú |
+|---|---|---|---|
+| Admin | ADMIN | NULL | Quản trị kỹ thuật/config/audit/account theo policy |
+| HO | HO | NULL | Xử lý multi-campus |
+| Staff Leader | STAFF | LEADER | Trưởng IC campus |
+| IC Staff | STAFF | STAFF | Host/support |
+| Department Leader | DEPARTMENT | LEADER | Trưởng phòng ban GENERAL |
+| Department Staff | DEPARTMENT | STAFF | Nhân sự phòng ban GENERAL |
+| Student | STUDENT | NULL | Sinh viên hỗ trợ |
+| Visitor | VISITOR | NULL | Khách ngoài |
+
+Không dùng runtime:
+
+```text
+DEPT
+STAFF_LEADER as role_code
+DEPARTMENT_LEADER as role_code
+DEPT_LEADER
+STAFF_L
+STAFF_P
+DEPT_L
+DEPT_P
+LEADER as role_code
+```
+
+Các giá trị như `STAFF_LEADER`, `AUTO_STAFF_LEADER`, `DEPT_SUPPORT` nếu còn xuất hiện trong schema/logic là nhãn nghiệp vụ/audit/participant role, không phải `role_code`.
+
+---
+
+## A6. Dynamic permissions vẫn bị loại bỏ
+
+Không được query hoặc tạo lại:
+
+```text
+permissions
+role_permissions
+permission_code
+permission_level
+runtime DB permission matrix
+```
+
+Authorization phải dùng fixed policy:
+
+```text
+role_code
+sub_role / effectiveRole
+primary_campus_id
+department_id
+owner_campus_id
+ownership
+visitor_user_id
+coordinator_user_id
+current_host_user_id
+participant relationship
+logistics assignment
+record status
+```
+
+Frontend chỉ ẩn/hiện menu, route, button và tránh gọi API sai. Backend vẫn là lớp quyết định cuối cùng.
+
+---
+
+## A7. Thay đổi FAQ trong v10
+
+### A7.1 Schema mới
+
+`faqs` đã bỏ:
+
+```text
+language_code
+```
+
+`faqs.faq_type` chỉ còn các giá trị:
+
+```text
+ACCOUNT_ACCESS
+VISIT_REQUEST
+DELEGATION_MANAGEMENT
+LOGISTICS_RESOURCE
+DOCUMENT_MEDIA
+NOTIFICATION_EMAIL
+OTHER
+```
+
+### A7.2 Backend phải cập nhật
+
+Xóa khỏi entity/DTO/request/response/query:
+
+```text
+LanguageCode
+languageCode
+language_code
+```
+
+Cập nhật constants/enum:
+
+```csharp
+public static class FaqTypes
+{
+    public const string AccountAccess = "ACCOUNT_ACCESS";
+    public const string VisitRequest = "VISIT_REQUEST";
+    public const string DelegationManagement = "DELEGATION_MANAGEMENT";
+    public const string LogisticsResource = "LOGISTICS_RESOURCE";
+    public const string DocumentMedia = "DOCUMENT_MEDIA";
+    public const string NotificationEmail = "NOTIFICATION_EMAIL";
+    public const string Other = "OTHER";
+}
+```
+
+Validator chỉ cho phép các type trên.
+
+### A7.3 Frontend phải cập nhật
+
+Không còn dropdown ngôn ngữ FAQ.
+
+Không gửi/nhận:
+
+```text
+languageCode
+```
+
+FAQ type options:
+
+```ts
+export const FAQ_TYPES = {
+  ACCOUNT_ACCESS: 'ACCOUNT_ACCESS',
+  VISIT_REQUEST: 'VISIT_REQUEST',
+  DELEGATION_MANAGEMENT: 'DELEGATION_MANAGEMENT',
+  LOGISTICS_RESOURCE: 'LOGISTICS_RESOURCE',
+  DOCUMENT_MEDIA: 'DOCUMENT_MEDIA',
+  NOTIFICATION_EMAIL: 'NOTIFICATION_EMAIL',
+  OTHER: 'OTHER',
+} as const;
+```
+
+Không dùng type cũ:
+
+```text
+PROGRAM
+TUITION_FEE
+VISA
+DORMITORY
+SECURITY
+LOGISTICS
+```
+
+Nếu gặp data/label cũ trong code, phải migrate mapping sang type mới hoặc xóa khỏi runtime.
+
+---
+
+## A8. Thay đổi Partner trong v10
+
+### A8.1 Schema mới
+
+`partners` thêm:
+
+```text
+owner_campus_id BIGINT UNSIGNED NOT NULL
+FK -> campuses(campus_id)
+```
+
+Mục đích:
+
+```text
+Staff Leader duyệt partner đúng campus, không duyệt partner campus khác.
+```
+
+### A8.2 Rule tạo partner
+
+Khi Staff/IC Staff tạo partner:
+
+```text
+owner_campus_id = currentUser.primary_campus_id
+```
+
+Frontend không được tự truyền `owner_campus_id` từ form public/internal nếu không có rule rõ ràng, để tránh giả mạo campus.
+
+### A8.3 Rule duyệt partner
+
+Staff Leader chỉ được xem/duyệt/từ chối partner khi:
+
+```text
+currentUser.role_code = STAFF
+currentUser.sub_role = LEADER
+partners.owner_campus_id = currentUser.primary_campus_id
+partners.profile_status = PENDING_APPROVAL
+```
+
+Không suy luận campus từ `created_by` nếu đã có `owner_campus_id`.
+
+### A8.4 Không thêm lịch sử duyệt nhiều lần trong v10
+
+Không tạo thêm:
+
+```text
+partner_review_logs
+partner_approval_requests
+```
+
+Nếu cần lịch sử sau này, phải hỏi lại user và patch schema riêng.
+
+---
+
+## A9. Thay đổi Logistics trong v10
+
+### A9.1 `visit_logistics_items` chỉ còn lưu workflow
+
+`visit_logistics_items` dùng cho:
+
+```text
+request
+receive
+assign
+assignee response
+negotiation / proposed change
+proposal response
+due/completion
+status
+audit
+```
+
+### A9.2 Các field đã bị xóa khỏi `visit_logistics_items`
+
+Không được dùng trong entity, DTO, query, response, UI:
+
+```text
+handover_confirmed_by
+handover_confirmed_at
+handover_note
+service_report_signed_by
+service_report_signed_at
+service_report_file_id
+```
+
+Nếu code còn các property tương ứng, phải xóa:
+
+```csharp
+HandoverConfirmedBy
+HandoverConfirmedAt
+HandoverNote
+ServiceReportSignedBy
+ServiceReportSignedAt
+ServiceReportFileId
+```
+
+### A9.3 Bảng mới `visit_logistics_item_handovers`
+
+Bảng mới lưu ký mượn/ký trả:
+
+```text
+visit_logistics_item_handovers
+```
+
+Các field chính:
+
+```text
+handover_id
+logistics_item_id
+handover_type
+borrower_signed_by
+borrower_signed_at
+provider_signed_by
+provider_signed_at
+item_condition
+condition_note
+attachment_file_id
+created_at
+created_by
+```
+
+Enum:
+
+```text
+handover_type: BORROW, RETURN
+item_condition: GOOD, DAMAGED, MISSING, OTHER
+```
+
+Ý nghĩa chữ ký:
+
+| handover_type | borrower_signed_by/at | provider_signed_by/at |
+|---|---|---|
+| BORROW | Bên mượn ký nhận | Bên cho mượn ký bàn giao |
+| RETURN | Bên mượn ký trả | Bên cho mượn ký nhận lại |
+
+Constraint nghiệp vụ:
+
+```text
+Mỗi logistics_item_id tối đa có 1 row BORROW và 1 row RETURN.
+unique(logistics_item_id, handover_type)
+```
+
+### A9.4 Backend entity/config cần thêm
+
+Thêm entity:
+
+```csharp
+public class VisitLogisticsItemHandover
+{
+    public ulong HandoverId { get; set; }
+    public ulong LogisticsItemId { get; set; }
+    public string HandoverType { get; set; } = default!;
+    public ulong? BorrowerSignedBy { get; set; }
+    public DateTime? BorrowerSignedAt { get; set; }
+    public ulong? ProviderSignedBy { get; set; }
+    public DateTime? ProviderSignedAt { get; set; }
+    public string? ItemCondition { get; set; }
+    public string? ConditionNote { get; set; }
+    public ulong? AttachmentFileId { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public ulong? CreatedBy { get; set; }
+}
+```
+
+Thêm `DbSet`:
+
+```csharp
+public DbSet<VisitLogisticsItemHandover> VisitLogisticsItemHandovers => Set<VisitLogisticsItemHandover>();
+```
+
+Thêm constants:
+
+```csharp
+public static class LogisticsHandoverTypes
+{
+    public const string Borrow = "BORROW";
+    public const string Return = "RETURN";
+}
+
+public static class LogisticsItemConditions
+{
+    public const string Good = "GOOD";
+    public const string Damaged = "DAMAGED";
+    public const string Missing = "MISSING";
+    public const string Other = "OTHER";
+}
+```
+
+### A9.5 Không chuyển nhiệm vụ logistics
+
+Không triển khai transfer/reassign.
+
+Backend phải chặn:
+
+```text
+Nếu visit_logistics_items.assigned_to_user_id đã có giá trị
+và request muốn đổi sang user khác
+→ trả 409 Conflict hoặc BusinessRuleException
+→ message: "Nhiệm vụ đã được phân công, không thể chuyển sang người khác."
+```
+
+Không thêm bảng:
+
+```text
+visit_logistics_assignment_logs
+```
+
+Nếu gán nhầm, xử lý bằng từ chối/hủy item hiện tại hoặc tạo logistics item mới theo nghiệp vụ, không gọi là chuyển nhiệm vụ.
+
+---
+
+## A10. Email scope trong v10
+
+### A10.1 Không làm inbox/mail nhận thật
+
+Trong v10 không có:
+
+```text
+email_threads
+email_messages
+email_message_recipients
+```
+
+Không đọc Gmail inbox/mailbox ở phase này.
+
+Không code các tab sau nếu chưa có yêu cầu mới:
+
+```text
+Inbox thật
+Mail nhận thật
+Thread gửi/nhận đầy đủ
+Reply email tự do đọc từ mailbox
+Gmail API read-only sync
+IMAP inbox sync
+Webhook nhận Gmail message
+```
+
+### A10.2 Email module trong v10 gồm
+
+```text
+email_templates
+sent_emails
+sent_email_recipients
+email_action_tokens
+```
+
+Ý nghĩa:
+
+| Bảng | Vai trò |
+|---|---|
+| `email_templates` | Template email |
+| `sent_emails` | Lịch sử email gửi đi / outbox snapshot |
+| `sent_email_recipients` | Tracking người nhận và delivery status |
+| `email_action_tokens` | Token một lần cho nút bấm trong email |
+
+Màn Email Management nên hiển thị:
+
+```text
+Email đã gửi
+Trạng thái gửi
+Trạng thái từng người nhận
+Trạng thái phản hồi qua nút email
+```
+
+Không gọi là inbox nếu chưa có sync mail thật.
+
+---
+
+## A11. Bảng mới `email_action_tokens`
+
+### A11.1 Mục đích
+
+Dùng để xử lý các nút trong email mà không cần đăng nhập:
+
+```text
+Xác nhận
+Từ chối
+Thương lượng
+Chấp nhận đề xuất
+Từ chối đề xuất
+Ký nhận
+Ký trả
+```
+
+Người nhận bấm link trong email, backend validate token rồi update bảng nghiệp vụ tương ứng.
+
+### A11.2 Field chính
+
+```text
+email_action_token_id
+token_hash
+action_group_key
+action_context
+target_type
+target_id
+intended_action
+recipient_user_id
+recipient_email
+sent_email_id
+sent_email_recipient_id
+expires_at
+used_at
+used_action
+result_status
+result_message
+used_ip
+used_user_agent
+created_at
+```
+
+### A11.3 Enum hợp lệ
+
+`action_context`:
+
+```text
+PARTICIPATION_RESPONSE
+LOGISTICS_ASSIGNEE_RESPONSE
+LOGISTICS_NEGOTIATION
+LOGISTICS_PROPOSAL_RESPONSE
+LOGISTICS_HANDOVER_SIGNATURE
+```
+
+`target_type`:
+
+```text
+VISIT_PARTICIPANT
+LOGISTICS_ITEM
+LOGISTICS_HANDOVER
+```
+
+`intended_action`:
+
+```text
+ACCEPT
+DECLINE
+NEGOTIATE
+APPROVE_PROPOSAL
+REJECT_PROPOSAL
+CONFIRM_BORROW
+CONFIRM_RETURN
+```
+
+`result_status`:
+
+```text
+PENDING
+SUCCESS
+ALREADY_RESPONDED
+EXPIRED
+INVALID
+FAILED
+```
+
+### A11.4 Backend constants cần có
+
+```csharp
+public static class EmailActionContexts
+{
+    public const string ParticipationResponse = "PARTICIPATION_RESPONSE";
+    public const string LogisticsAssigneeResponse = "LOGISTICS_ASSIGNEE_RESPONSE";
+    public const string LogisticsNegotiation = "LOGISTICS_NEGOTIATION";
+    public const string LogisticsProposalResponse = "LOGISTICS_PROPOSAL_RESPONSE";
+    public const string LogisticsHandoverSignature = "LOGISTICS_HANDOVER_SIGNATURE";
+}
+
+public static class EmailActionTargetTypes
+{
+    public const string VisitParticipant = "VISIT_PARTICIPANT";
+    public const string LogisticsItem = "LOGISTICS_ITEM";
+    public const string LogisticsHandover = "LOGISTICS_HANDOVER";
+}
+
+public static class EmailActionIntendedActions
+{
+    public const string Accept = "ACCEPT";
+    public const string Decline = "DECLINE";
+    public const string Negotiate = "NEGOTIATE";
+    public const string ApproveProposal = "APPROVE_PROPOSAL";
+    public const string RejectProposal = "REJECT_PROPOSAL";
+    public const string ConfirmBorrow = "CONFIRM_BORROW";
+    public const string ConfirmReturn = "CONFIRM_RETURN";
+}
+
+public static class EmailActionResultStatuses
+{
+    public const string Pending = "PENDING";
+    public const string Success = "SUCCESS";
+    public const string AlreadyResponded = "ALREADY_RESPONDED";
+    public const string Expired = "EXPIRED";
+    public const string Invalid = "INVALID";
+    public const string Failed = "FAILED";
+}
+```
+
+### A11.5 Security rule
+
+Bắt buộc:
+
+```text
+1. Không lưu token raw trong DB.
+2. Chỉ lưu token_hash.
+3. Link email chứa raw token ngẫu nhiên đủ mạnh.
+4. Backend hash raw token trước khi lookup.
+5. Token phải có expires_at.
+6. Token chỉ dùng một lần.
+7. Ghi used_at, used_action, used_ip, used_user_agent.
+8. Nếu token hết hạn: result_status = EXPIRED.
+9. Nếu token không hợp lệ: trả INVALID, không lộ target.
+10. Nếu nghiệp vụ đã được phản hồi: trả ALREADY_RESPONDED, không update lần hai.
+```
+
+Khuyến nghị an toàn:
+
+```text
+GET /public/email-actions/{token}
+→ chỉ preview action/status và hiển thị nút xác nhận cuối.
+
+POST /public/email-actions/{token}
+→ mới update nghiệp vụ.
+```
+
+Lý do: tránh email security scanner tự mở link GET và làm thay user.
+
+Nếu người dùng yêu cầu "bấm một phát là lưu", vẫn phải đảm bảo one-time token, check status hiện tại và audit IP/User-Agent.
+
+---
+
+## A12. Public email action endpoint rule
+
+Endpoint gợi ý:
+
+```text
+GET  /public/email-actions/{token}
+POST /public/email-actions/{token}
+
+GET  /public/email-actions/{token}/negotiate
+POST /public/email-actions/{token}/negotiate
+```
+
+Controller:
+
+```text
+- Có thể AllowAnonymous.
+- Không xử lý business logic trong Controller.
+- Controller chỉ lấy token/body/IP/User-Agent rồi gọi MediatR.
+```
+
+Handler phải:
+
+```text
+[ ] Hash raw token rồi tìm email_action_tokens.token_hash.
+[ ] Check token tồn tại.
+[ ] Check expires_at.
+[ ] Check used_at/result_status.
+[ ] Load target theo target_type + target_id.
+[ ] Validate target hiện tại còn cho phép action không.
+[ ] Validate recipient_user_id/recipient_email nếu có.
+[ ] Update bảng nghiệp vụ trong transaction.
+[ ] Set used_at, used_action, result_status, result_message.
+[ ] Set used_ip, used_user_agent.
+[ ] Nếu đã trả lời rồi, set/return ALREADY_RESPONDED và không update nghiệp vụ lần hai.
+```
+
+Target handling:
+
+| target_type | Bảng nghiệp vụ | Action |
+|---|---|---|
+| VISIT_PARTICIPANT | `visit_participants` | ACCEPT/DECLINE participation |
+| LOGISTICS_ITEM | `visit_logistics_items` | ACCEPT/DECLINE/NEGOTIATE/APPROVE_PROPOSAL/REJECT_PROPOSAL |
+| LOGISTICS_HANDOVER | `visit_logistics_item_handovers` | CONFIRM_BORROW/CONFIRM_RETURN |
+
+---
+
+## A13. Participation via email action
+
+Khi gửi email mời tham gia đoàn:
+
+```text
+visit_participants.status = INVITED
+```
+
+Tạo token:
+
+```text
+action_context = PARTICIPATION_RESPONSE
+target_type = VISIT_PARTICIPANT
+target_id = visit_participant_id
+intended_action = ACCEPT hoặc DECLINE
+action_group_key = PARTICIPATION:{visit_participant_id}:{recipient_email}
+```
+
+Khi ACCEPT:
+
+```text
+visit_participants.status = ACCEPTED
+visit_participants.responded_at = NOW()
+email_action_tokens.used_at = NOW()
+email_action_tokens.used_action = ACCEPT
+email_action_tokens.result_status = SUCCESS
+```
+
+Khi DECLINE:
+
+```text
+visit_participants.status = DECLINED
+visit_participants.responded_at = NOW()
+email_action_tokens.used_at = NOW()
+email_action_tokens.used_action = DECLINE
+email_action_tokens.result_status = SUCCESS
+```
+
+Nếu bấm lại hoặc bấm link ngược sau khi đã trả lời:
+
+```text
+Không update visit_participants lần hai.
+Return result_status = ALREADY_RESPONDED.
+Message: "Bạn đã trả lời lời mời này rồi."
+```
+
+---
+
+## A14. Logistics assignee response via email action
+
+Khi Department Leader giao logistics item cho Department Staff:
+
+```text
+visit_logistics_items.assigned_to_user_id = department staff
+visit_logistics_items.status = ASSIGNED
+```
+
+Tạo token:
+
+```text
+action_context = LOGISTICS_ASSIGNEE_RESPONSE
+target_type = LOGISTICS_ITEM
+target_id = logistics_item_id
+intended_action = ACCEPT hoặc DECLINE hoặc NEGOTIATE
+action_group_key = LOGISTICS_ASSIGNEE:{logistics_item_id}:{recipient_email}
+```
+
+ACCEPT:
+
+```text
+visit_logistics_items.status = ACCEPTED
+visit_logistics_items.assignee_accepted_at = NOW()
+```
+
+DECLINE:
+
+```text
+visit_logistics_items.status = REJECTED
+visit_logistics_items.assignee_response_note = note nếu có
+decision_note = reason nếu nghiệp vụ cần
+```
+
+NEGOTIATE:
+
+```text
+Mở public negotiate form.
+Không update trực tiếp bằng GET.
+Submit form mới update proposal fields.
+```
+
+---
+
+## A15. Logistics negotiation / proposal flow
+
+Khi người nhận chọn thương lượng:
+
+```text
+GET /public/email-actions/{token}/negotiate
+→ hiển thị form nhập:
+   - proposed_quantity
+   - proposed_usage_start_at
+   - proposed_usage_end_at
+   - proposed_description
+   - proposal_note
+```
+
+Khi submit:
+
+```text
+visit_logistics_items.status = CHANGE_PROPOSED
+visit_logistics_items.proposed_by = recipient_user_id nếu có
+visit_logistics_items.proposed_at = NOW()
+visit_logistics_items.proposed_quantity = form.proposed_quantity
+visit_logistics_items.proposed_usage_start_at = form.proposed_usage_start_at
+visit_logistics_items.proposed_usage_end_at = form.proposed_usage_end_at
+visit_logistics_items.proposed_description = form.proposed_description
+visit_logistics_items.proposal_note = form.proposal_note
+email_action_tokens.result_status = SUCCESS
+```
+
+Bên yêu cầu phản hồi đề xuất:
+
+```text
+action_context = LOGISTICS_PROPOSAL_RESPONSE
+intended_action = APPROVE_PROPOSAL hoặc REJECT_PROPOSAL
+```
+
+APPROVE_PROPOSAL:
+
+```text
+proposal_response = ACCEPTED
+proposal_responded_by = current/action user
+proposal_responded_at = NOW()
+proposal_response_note = note nếu có
+```
+
+REJECT_PROPOSAL:
+
+```text
+proposal_response = REJECTED
+proposal_responded_by = current/action user
+proposal_responded_at = NOW()
+proposal_response_note = note bắt buộc nếu nghiệp vụ yêu cầu
+```
+
+---
+
+## A16. Logistics handover signing via email action
+
+Ký mượn/ký trả phải dùng `visit_logistics_item_handovers`.
+
+### A16.1 Borrow signing
+
+`handover_type = BORROW`
+
+```text
+borrower_signed_by / borrower_signed_at
+→ bên mượn ký nhận
+
+provider_signed_by / provider_signed_at
+→ bên cho mượn ký bàn giao
+```
+
+Action:
+
+```text
+action_context = LOGISTICS_HANDOVER_SIGNATURE
+target_type = LOGISTICS_HANDOVER
+intended_action = CONFIRM_BORROW
+```
+
+### A16.2 Return signing
+
+`handover_type = RETURN`
+
+```text
+borrower_signed_by / borrower_signed_at
+→ bên mượn ký trả
+
+provider_signed_by / provider_signed_at
+→ bên cho mượn ký nhận lại
+```
+
+Action:
+
+```text
+action_context = LOGISTICS_HANDOVER_SIGNATURE
+target_type = LOGISTICS_HANDOVER
+intended_action = CONFIRM_RETURN
+```
+
+Nếu cần file/ảnh biên bản:
+
+```text
+visit_logistics_item_handovers.attachment_file_id
+```
+
+Tình trạng đồ khi trả/giao:
+
+```text
+item_condition = GOOD / DAMAGED / MISSING / OTHER
+condition_note = ghi chú chi tiết
+```
+
+---
+
+## A17. Frontend cập nhật bắt buộc theo v10
+
+### A17.1 FAQ
+
+```text
+- Xóa languageCode khỏi type, form, query params, response mapping.
+- Cập nhật FAQ type enum/options mới.
+- Không hiển thị language switch cho FAQ.
+```
+
+### A17.2 Partner
+
+```text
+- List pending approval phải filter theo scope backend trả về.
+- Staff Leader không tự chọn ownerCampusId khi duyệt.
+- Detail/list nên hiển thị campus sở hữu nếu cần.
+```
+
+### A17.3 Logistics
+
+```text
+- Xóa UI/DTO field handoverConfirmedBy/At/Note.
+- Xóa UI/DTO field serviceReportSignedBy/At/FileId.
+- Thêm section/list ký mượn/ký trả từ visit_logistics_item_handovers.
+- Không có nút chuyển nhiệm vụ/reassign.
+- Nếu đã assigned, UI không cho đổi assigned user.
+```
+
+### A17.4 Email Management
+
+```text
+- Không hiển thị inbox thật.
+- Không hiển thị mail nhận/reply tự do nếu chưa có API sync.
+- Hiển thị email đã gửi, recipients, delivery status, email action response.
+- Badge "chưa phản hồi" lấy từ email_action_tokens.result_status = PENDING.
+```
+
+### A17.5 Public email action page
+
+Cần page public không cần login:
+
+```text
+/public/email-actions/:token
+/public/email-actions/:token/negotiate
+```
+
+UI states:
+
+```text
+Loading
+Invalid token
+Expired token
+Already responded
+Success
+Failed
+Negotiation form
+```
+
+Message chuẩn:
+
+```text
+"Bạn đã trả lời yêu cầu này rồi."
+"Liên kết đã hết hạn."
+"Liên kết không hợp lệ hoặc không còn khả dụng."
+"Phản hồi của bạn đã được ghi nhận."
+```
+
+---
+
+## A18. Backend cập nhật bắt buộc theo v10
+
+### A18.1 Entities phải cập nhật
+
+Update:
+
+```text
+Faq
+Partner
+VisitLogisticsItem
+```
+
+Add:
+
+```text
+VisitLogisticsItemHandover
+EmailActionToken
+```
+
+Remove properties from `VisitLogisticsItem`:
+
+```text
+HandoverConfirmedBy
+HandoverConfirmedAt
+HandoverNote
+ServiceReportSignedBy
+ServiceReportSignedAt
+ServiceReportFileId
+```
+
+Add property to `Partner`:
+
+```text
+OwnerCampusId
+OwnerCampus
+```
+
+Remove property from `Faq`:
+
+```text
+LanguageCode
+```
+
+### A18.2 DbContext phải cập nhật
+
+Add:
+
+```csharp
+public DbSet<VisitLogisticsItemHandover> VisitLogisticsItemHandovers => Set<VisitLogisticsItemHandover>();
+public DbSet<EmailActionToken> EmailActionTokens => Set<EmailActionToken>();
+```
+
+Update `OnModelCreating` / configurations:
+
+```text
+PartnerConfiguration
+FaqConfiguration
+VisitLogisticsItemConfiguration
+VisitLogisticsItemHandoverConfiguration
+EmailActionTokenConfiguration
+```
+
+### A18.3 DTO/Request/Response phải cập nhật
+
+FAQ:
+
+```text
+Remove languageCode
+Update faqType enum/options
+```
+
+Partner:
+
+```text
+Add ownerCampusId/ownerCampusName to response if screen needs display.
+Do not trust ownerCampusId from create request unless admin-level business explicitly exists.
+```
+
+Logistics:
+
+```text
+Remove old handover/service report fields.
+Add handovers collection or handover DTOs.
+```
+
+Email:
+
+```text
+Add email action token response status DTO.
+Do not add inbox/thread message DTOs in v10.
+```
+
+### A18.4 Controller/Handler rule
+
+Controller không chứa business logic.
+
+Handler phải xử lý:
+
+```text
+Business validation
+Status transition
+Scope check
+Transaction
+Audit
+Email/notification orchestration
+```
+
+---
+
+## A19. Test checklist v10
+
+### A19.1 Schema/compile
+
+```text
+[ ] Backend build pass.
+[ ] Frontend TypeScript build pass.
+[ ] No entity references deleted logistics fields.
+[ ] No DTO exposes faqs.languageCode.
+[ ] No query references permissions/role_permissions.
+[ ] No query references email_threads/email_messages.
+[ ] No query references visit_logistics_assignment_logs.
+```
+
+### A19.2 FAQ test
+
+```text
+[ ] Create FAQ with ACCOUNT_ACCESS.
+[ ] Search FAQ by keyword.
+[ ] Filter FAQ by LOGISTICS_RESOURCE.
+[ ] Public FAQ shows only PUBLISHED.
+[ ] No language dropdown/param exists.
+```
+
+### A19.3 Partner approval test
+
+```text
+[ ] Staff campus HN creates partner -> owner_campus_id = HN.
+[ ] Staff Leader HN sees PENDING_APPROVAL partner HN.
+[ ] Staff Leader HCM does not see/approve partner HN.
+[ ] Direct API approval from wrong campus returns 403/404/409 according to project error convention.
+```
+
+### A19.4 Logistics handover test
+
+```text
+[ ] Create/request logistics item.
+[ ] Assign once to Department Staff.
+[ ] Try change assigned_to_user_id after assignment -> conflict.
+[ ] Create BORROW handover.
+[ ] Borrower signs BORROW.
+[ ] Provider signs BORROW.
+[ ] Create RETURN handover.
+[ ] Borrower signs RETURN.
+[ ] Provider signs RETURN.
+[ ] item_condition DAMAGED/MISSING can be recorded with condition_note.
+```
+
+### A19.5 Email action test
+
+```text
+[ ] Generate token only stores token_hash.
+[ ] Raw token in URL can be resolved by hash.
+[ ] Expired token returns EXPIRED.
+[ ] Invalid token returns safe error.
+[ ] ACCEPT participation updates visit_participants.
+[ ] DECLINE after ACCEPT returns ALREADY_RESPONDED and does not update again.
+[ ] NEGOTIATE opens public form.
+[ ] Submit negotiation updates proposal fields.
+[ ] Email action records used_at, used_action, result_status, used_ip, used_user_agent.
+```
+
+### A19.6 Email management test
+
+```text
+[ ] Sent email list reads sent_emails.
+[ ] Recipient status reads sent_email_recipients.
+[ ] Action response reads email_action_tokens.
+[ ] No inbox/mail nhận tab claims to read Gmail replies.
+```
+
+---
+
+## A20. Definition of Done cho mọi task sau v10
+
+Một task chỉ được báo DONE khi:
+
+```text
+[ ] Đã đọc schema/docs v10 liên quan.
+[ ] Không dùng field/table cũ đã bị xóa.
+[ ] Không tự thêm table/enum ngoài SQL v10.
+[ ] Entity/config/DbContext khớp SQL.
+[ ] DTO/request/response khớp SQL.
+[ ] Backend build pass hoặc nêu rõ lỗi môi trường không thể chạy.
+[ ] Frontend build pass nếu có sửa frontend.
+[ ] Scope/authorization được check ở backend.
+[ ] Validation input và business validation đầy đủ.
+[ ] Có test/manual verification cụ thể.
+[ ] Báo cáo files changed, root cause, cách kiểm tra.
+```
+
+---
+
+## A21. Các lỗi AI Agent tuyệt đối tránh
+
+```text
+- Code theo schema v8.4 cũ khi SQL đã là v10.
+- Giữ faqs.language_code trong entity/frontend.
+- Gửi/nhận languageCode trong FAQ API.
+- Dùng FAQ type cũ PROGRAM/TUITION_FEE/VISA/DORMITORY.
+- Duyệt partner bằng created_by thay vì owner_campus_id.
+- Cho Staff Leader campus khác duyệt partner không cùng campus.
+- Update handover_confirmed_* trong visit_logistics_items.
+- Update service_report_* trong visit_logistics_items.
+- Tạo bảng inbox email khi chưa được yêu cầu.
+- Tự đọc Gmail inbox/mailbox ở phase v10.
+- Tạo visit_logistics_assignment_logs.
+- Cho chuyển assigned_to_user_id sau khi đã assigned.
+- Tái tạo permissions/role_permissions.
+- Báo hoàn thành khi chưa build/test.
+```
+
+---
+
+## A22. Ghi chú khi dùng với Claude Project Instructions
+
+Khi dán file này vào Claude Project Instructions:
+
+```text
+- Có thể dán toàn bộ file.
+- Nếu instruction bị giới hạn dung lượng, ưu tiên PHẦN A.
+- PHẦN B chỉ dùng khi cần đối chiếu lịch sử.
+- Mọi code mới phải theo PHẦN A.
+```
+
+---
+
+# PHẦN B — NỘI DUNG CŨ v8.4 refined v6 ĐƯỢC GIỮ NGUYÊN ĐỂ ĐỐI CHIẾU
+
+> Phần dưới đây là nội dung gốc của file `PEMS_CLAUDE_PROJECT_INSTRUCTIONS_v8_4_refined_v6_FULL_UPDATED.md`.  
+> Nó được giữ lại đầy đủ theo yêu cầu "đầy đủ nội dung cũ và nội dung cập nhật".  
+> Nếu có mâu thuẫn với PHẦN A, ưu tiên PHẦN A.
+
+---
+
 # PEMS — CLAUDE PROJECT INSTRUCTIONS v8.4 refined v6 FULL UPDATED
 
 > File này dùng để dán vào **Claude Project Instructions** hoặc đặt trong project dưới dạng:

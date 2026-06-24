@@ -16,6 +16,21 @@
 4. Nếu cần code, backend phải kiểm tra lại bằng schema v8.4 refined v6 và seed v7/v6 dynamic time tương ứng.
 ```
 
+
+# V10 Addendum — Scope Fields Added Outside Role/SubRole
+
+Role/subRole canonical rules không thay đổi trong SQL v10. Tuy nhiên, một số scope nghiệp vụ mới cần được AI/code agent ghi nhớ khi áp dụng role policy:
+
+```text
+1. Partner approval by Staff Leader must use partners.owner_campus_id.
+2. Email action token handling may use recipient_user_id, recipient_email and target_type/target_id, not role permission tables.
+3. Logistics handover signing uses visit_logistics_item_handovers and still follows participant/logistics assignment scope.
+4. FAQ type enum changed, but role/subRole rules are unaffected.
+5. No dynamic permissions tables are reintroduced.
+```
+
+Không sửa các helper role/subRole chuẩn. Chỉ bổ sung scope check tương ứng trong từng UC.
+
 ---
 
 # PHẦN A — NỘI DUNG CHUẨN HIỆN TẠI / UPDATED CANONICAL CONTENT

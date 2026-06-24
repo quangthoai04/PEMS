@@ -16,6 +16,91 @@
 4. Nếu cần code, backend phải kiểm tra lại bằng schema v8.4 refined v6 và seed v7/v6 dynamic time tương ứng.
 ```
 
+
+# V10 Implementation Addendum — SQL v10 Alignment
+
+> Áp dụng cho mọi UC được code sau khi SQL chuyển sang `pems_full_create_manual_wide_coverage_seed_v8_4_refined_v6_v10_clean_logistics_handover_fields.sql`.
+
+## V10.1 Files/schema phải đọc trước khi code
+
+```text
+1. DATABASE_SCHEMA_v8_4_refined_v6_v10_no_dynamic_permissions_FULL_UPDATED.md
+2. PEMS_CANONICAL_BUSINESS_RULES_v8_4_refined_v6_v10_FULL_UPDATED.md
+3. SQL fresh-create v10: pems_full_create_manual_wide_coverage_seed_v8_4_refined_v6_v10_clean_logistics_handover_fields.sql
+```
+
+Không dùng entity/DTO cũ nếu còn các field ký đã bị xóa khỏi `visit_logistics_items`.
+
+## V10.2 Backend/entity update bắt buộc
+
+Cập nhật entity/config/DTO theo schema v10:
+
+```text
+partners.owner_campus_id                      -> thêm
+faqs.language_code                            -> xóa
+visit_logistics_items.handover_confirmed_*    -> xóa
+visit_logistics_items.service_report_*        -> xóa
+visit_logistics_item_handovers                -> thêm entity/table
+email_action_tokens                           -> thêm entity/table
+```
+
+Không tạo entity/bảng cho inbox email thật trong phase này.
+
+## V10.3 Email action endpoints
+
+Email action là public-token flow, không phải authenticated portal flow:
+
+```text
+GET/POST /public/email-actions/{token}
+GET/POST /public/email-actions/{token}/negotiate
+```
+
+Controller vẫn chỉ gọi MediatR. Handler phải:
+
+```text
+[ ] Hash raw token rồi tìm email_action_tokens.token_hash.
+[ ] Check expires_at.
+[ ] Check used_at/result_status.
+[ ] Load target theo target_type.
+[ ] Check target status hiện tại còn cho phép action không.
+[ ] Update bảng nghiệp vụ trong transaction.
+[ ] Set used_at, used_action, result_status, result_message, used_ip, used_user_agent.
+[ ] Nếu target đã được phản hồi rồi, trả ALREADY_RESPONDED, không update lần hai.
+```
+
+## V10.4 Logistics handover implementation
+
+Ký nhận/ký trả không update `visit_logistics_items` nữa. Phải insert/update `visit_logistics_item_handovers`:
+
+```text
+BORROW  -> bên mượn ký nhận + bên cho mượn ký bàn giao
+RETURN  -> bên mượn ký trả + bên cho mượn ký nhận lại
+```
+
+Nếu cần đính kèm biên bản/ảnh, dùng `attachment_file_id` trong `visit_logistics_item_handovers`.
+
+## V10.5 Partner approval scope
+
+Staff Leader duyệt partner theo `owner_campus_id`, không suy luận từ `created_by` nếu cột này đã tồn tại.
+
+```text
+currentUser.role = STAFF + LEADER
+partners.owner_campus_id = currentUser.primary_campus_id
+partners.profile_status = PENDING_APPROVAL
+```
+
+## V10.6 FAQ implementation
+
+FAQ chỉ tiếng Việt. DTO không có `languageCode`. Enum frontend/backend phải khớp:
+
+```text
+ACCOUNT_ACCESS, VISIT_REQUEST, DELEGATION_MANAGEMENT, LOGISTICS_RESOURCE, DOCUMENT_MEDIA, NOTIFICATION_EMAIL, OTHER
+```
+
+## V10.7 No assignment transfer
+
+Không code chức năng chuyển nhiệm vụ logistics. Nếu request muốn đổi `assigned_to_user_id` khi đã phân công, trả conflict/status error.
+
 ---
 
 # PHẦN A — NỘI DUNG CHUẨN HIỆN TẠI / UPDATED CANONICAL CONTENT
