@@ -620,7 +620,9 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
   const renderRowActions = (row: Row) => {
     const actions = row.allowedActions || [];
     const can = (a: AllowedAction) => actions.includes(a);
-    const showReason = row.statusText === 'Từ chối' && !!row.decisionNote;
+    // Gate on the real status CODE (never the display label). statusText is for UI only,
+    // so the button survives label changes ("Từ chối" → "Đã từ chối"/"Rejected"/i18n).
+    const showReason = row.requestStatus === 'REJECTED' && !!row.decisionNote;
     // UC-136: any in-scope user (Host/Visitor/Staff Leader/HO) may review the cancel reason.
     // The list is already scoped server-side, so a cancelled row here is always one the user may see.
     const isCancelledRow = activeTab !== 'attending'
