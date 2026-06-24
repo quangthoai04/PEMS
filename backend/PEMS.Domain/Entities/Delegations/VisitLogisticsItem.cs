@@ -109,24 +109,6 @@ public class VisitLogisticsItem
     [Column("decision_note")]
     public string? DecisionNote { get; set; }
 
-    [Column("handover_confirmed_by")]
-    public ulong? HandoverConfirmedBy { get; set; }
-
-    [Column("handover_confirmed_at")]
-    public DateTime? HandoverConfirmedAt { get; set; }
-
-    [Column("handover_note")]
-    public string? HandoverNote { get; set; }
-
-    [Column("service_report_signed_by")]
-    public ulong? ServiceReportSignedBy { get; set; }
-
-    [Column("service_report_signed_at")]
-    public DateTime? ServiceReportSignedAt { get; set; }
-
-    [Column("service_report_file_id")]
-    public ulong? ServiceReportFileId { get; set; }
-
     [Column("row_version")]
     public int RowVersion { get; set; }
 
@@ -143,4 +125,7 @@ public class VisitLogisticsItem
     public ulong? UpdatedBy { get; set; }
 
     public virtual VisitRequestCampus VisitInstance { get; set; } = null!;
+
+    // PEMS v10: borrow/return signatures live in visit_logistics_item_handovers.
+    public virtual ICollection<VisitLogisticsItemHandover> Handovers { get; set; } = new List<VisitLogisticsItemHandover>();
 }

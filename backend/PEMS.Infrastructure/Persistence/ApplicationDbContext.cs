@@ -58,6 +58,7 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     public DbSet<VisitParticipant> VisitParticipants { get; set; }
     public DbSet<VisitAgenda> VisitAgendas { get; set; }
     public DbSet<VisitLogisticsItem> VisitLogisticsItems { get; set; }
+    public DbSet<VisitLogisticsItemHandover> VisitLogisticsItemHandovers { get; set; }
 
     // ── Minutes + Feedback ────────────────────────────────────────────────
     public DbSet<Minute> Minutes { get; set; }
@@ -85,6 +86,7 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     public DbSet<EmailTemplate> EmailTemplates { get; set; }
     public DbSet<SentEmail> SentEmails { get; set; }
     public DbSet<SentEmailRecipient> SentEmailRecipients { get; set; }
+    public DbSet<EmailActionToken> EmailActionTokens { get; set; }
     public DbSet<Notification> Notifications { get; set; }
 
     // ── Calendar + Agenda Template ────────────────────────────────────────
@@ -181,6 +183,17 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
         modelBuilder.Entity<AuditLog>()
             .HasOne(a => a.ActorUser).WithMany()
             .HasForeignKey(a => a.ActorUserId).OnDelete(DeleteBehavior.SetNull);
+
+        // Partner → OwnerCampus (v10)
+        modelBuilder.Entity<Partner>()
+            .HasOne(p => p.OwnerCampus).WithMany()
+            .HasForeignKey(p => p.OwnerCampusId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<Partner>()
+            .HasIndex(p => new { p.OwnerCampusId, p.ProfileStatus })
+            .HasDatabaseName("idx_partners_owner_status");
+        modelBuilder.Entity<Partner>()
+            .HasIndex(p => new { p.OwnerCampusId, p.CreatedAt })
+            .HasDatabaseName("idx_partners_owner_created");
 
         // PartnerContact → Partner
         modelBuilder.Entity<PartnerContact>()
@@ -291,6 +304,27 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
             .HasOne<User>().WithMany()
             .HasForeignKey(li => li.ProposalRespondedBy).OnDelete(DeleteBehavior.SetNull);
 
+        // VisitLogisticsItemHandover (v10) → LogisticsItem + signer users + attachment file
+        modelBuilder.Entity<VisitLogisticsItemHandover>()
+            .HasOne(h => h.LogisticsItem).WithMany(li => li.Handovers)
+            .HasForeignKey(h => h.LogisticsItemId).OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<VisitLogisticsItemHandover>()
+            .HasIndex(h => new { h.LogisticsItemId, h.HandoverType })
+            .IsUnique()
+            .HasDatabaseName("uq_logistics_handover_type");
+        modelBuilder.Entity<VisitLogisticsItemHandover>()
+            .HasOne(h => h.BorrowerSignedByUser).WithMany()
+            .HasForeignKey(h => h.BorrowerSignedBy).OnDelete(DeleteBehavior.SetNull);
+        modelBuilder.Entity<VisitLogisticsItemHandover>()
+            .HasOne(h => h.ProviderSignedByUser).WithMany()
+            .HasForeignKey(h => h.ProviderSignedBy).OnDelete(DeleteBehavior.SetNull);
+        modelBuilder.Entity<VisitLogisticsItemHandover>()
+            .HasOne(h => h.AttachmentFile).WithMany()
+            .HasForeignKey(h => h.AttachmentFileId).OnDelete(DeleteBehavior.SetNull);
+        modelBuilder.Entity<VisitLogisticsItemHandover>()
+            .HasOne(h => h.CreatedByUser).WithMany()
+            .HasForeignKey(h => h.CreatedBy).OnDelete(DeleteBehavior.SetNull);
+
         // Minute → VisitRequestCampus, CreatedBy, EditLockedBy
         modelBuilder.Entity<Minute>()
             .HasOne<VisitRequestCampus>().WithMany()
@@ -375,6 +409,20 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
         modelBuilder.Entity<SentEmail>()
             .HasOne<User>().WithMany()
             .HasForeignKey(se => se.SentBy).OnDelete(DeleteBehavior.SetNull);
+
+        // EmailActionToken (v10) → RecipientUser, SentEmail, SentEmailRecipient
+        modelBuilder.Entity<EmailActionToken>()
+            .HasOne(t => t.RecipientUser).WithMany()
+            .HasForeignKey(t => t.RecipientUserId).OnDelete(DeleteBehavior.SetNull);
+        modelBuilder.Entity<EmailActionToken>()
+            .HasOne(t => t.SentEmail).WithMany()
+            .HasForeignKey(t => t.SentEmailId).OnDelete(DeleteBehavior.SetNull);
+        modelBuilder.Entity<EmailActionToken>()
+            .HasOne(t => t.SentEmailRecipient).WithMany()
+            .HasForeignKey(t => t.SentEmailRecipientId).OnDelete(DeleteBehavior.SetNull);
+        modelBuilder.Entity<EmailActionToken>()
+            .HasIndex(t => t.TokenHash).IsUnique()
+            .HasDatabaseName("uq_email_action_token_hash");
 
         // Notification → RecipientUser
         modelBuilder.Entity<Notification>()

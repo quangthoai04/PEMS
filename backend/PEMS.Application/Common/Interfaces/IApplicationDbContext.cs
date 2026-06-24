@@ -40,6 +40,7 @@ public interface IApplicationDbContext
     DbSet<VisitParticipant> VisitParticipants { get; }
     DbSet<VisitAgenda> VisitAgendas { get; }
     DbSet<VisitLogisticsItem> VisitLogisticsItems { get; }
+    DbSet<VisitLogisticsItemHandover> VisitLogisticsItemHandovers { get; }
     DbSet<Minute> Minutes { get; }
     DbSet<MinuteActionItem> MinuteActionItems { get; }
     DbSet<Feedback> Feedbacks { get; }
@@ -53,6 +54,7 @@ public interface IApplicationDbContext
     DbSet<PhotoFaceTag> PhotoFaceTags { get; }
     DbSet<EmailTemplate> EmailTemplates { get; }
     DbSet<SentEmail> SentEmails { get; }
+    DbSet<EmailActionToken> EmailActionTokens { get; }
     DbSet<Notification> Notifications { get; }
     DbSet<CalendarEvent> CalendarEvents { get; }
     DbSet<ApiConfiguration> ApiConfigurations { get; }
