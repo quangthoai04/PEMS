@@ -549,25 +549,28 @@ public sealed class ViewGuestDelegationListQueryHandler
             .Take(request.PageSize)
             .ToListAsync(ct);
 
-        // Batch-resolve campus (single-campus rows) + host + visitor display names.
+        // Batch-resolve campus (name + code) + host/decider/canceller display names. We resolve
+        // EVERY instance's campus & host (not just single-campus rows) so the expandable accordion
+        // has all it needs without an N+1 query — campus instances are already Include()d above.
         var campusIds = requests
-            .Where(vr => vr.CampusInstances.Count == 1)
-            .Select(vr => vr.CampusInstances.First().CampusId)
+            .SelectMany(vr => vr.CampusInstances.Select(i => i.CampusId))
             .Distinct().ToList();
         var userIds = requests
-            .SelectMany(vr => new[]
-            {
-                vr.CampusInstances.Count == 1 ? vr.CampusInstances.First().CurrentHostUserId : null,
-                (ulong?)vr.VisitorUserId,
-                vr.CancelledBy,
-                vr.DecidedBy,
-                vr.CampusInstances.Where(i => i.Status == VisitInstanceStatus.Cancelled).Select(i => i.CancelledBy).FirstOrDefault(),
-            })
+            .SelectMany(vr => vr.CampusInstances.Select(i => i.CurrentHostUserId)
+                .Concat(vr.CampusInstances.Where(i => i.Status == VisitInstanceStatus.Cancelled).Select(i => i.CancelledBy))
+                .Append((ulong?)vr.VisitorUserId)
+                .Append(vr.CancelledBy)
+                .Append(vr.DecidedBy))
             .Where(id => id.HasValue).Select(id => id!.Value).Distinct().ToList();
 
-        var campusNames = campusIds.Count == 0
-            ? new Dictionary<ulong, string>()
-            : await _context.Campuses.Where(cc => campusIds.Contains(cc.CampusId)).ToDictionaryAsync(cc => cc.CampusId, cc => cc.Name, ct);
+        var campusRows = campusIds.Count == 0
+            ? new List<(ulong CampusId, string Name, string Code)>()
+            : (await _context.Campuses.Where(cc => campusIds.Contains(cc.CampusId))
+                    .Select(cc => new { cc.CampusId, cc.Name, cc.CampusCode })
+                    .ToListAsync(ct))
+                .Select(cc => (CampusId: cc.CampusId, Name: cc.Name, Code: cc.CampusCode)).ToList();
+        var campusNames = campusRows.ToDictionary(c => c.CampusId, c => c.Name);
+        var campusCodes = campusRows.ToDictionary(c => c.CampusId, c => c.Code);
         var userNames = userIds.Count == 0
             ? new Dictionary<ulong, string>()
             : await _context.Users.Where(u => userIds.Contains(u.UserId)).ToDictionaryAsync(u => u.UserId, u => u.FullName, ct);
@@ -617,6 +620,43 @@ public sealed class ViewGuestDelegationListQueryHandler
             string? cancellationActorType = cancelledInstance?.CancellationActorType;
             string? cancellationSource = cancelledInstance?.CancellationSource;
 
+            // ── Multi-campus expandable accordion (Phương án A). One progress row per campus
+            // instance, with backend-computed action booleans. Only the Visitor owner may cancel,
+            // and only when the request is APPROVED and the instance is still cancellable. ──
+            bool isVisitor = roleCode == RoleCodes.Visitor;
+            bool isVisitorOwner = isVisitor && vr.VisitorUserId == userId;
+            var campusProgressItems = instances
+                .OrderBy(i => i.PlannedStartAt)
+                .Select(i =>
+                {
+                    bool instanceCancellable = vr.Status == VisitRequestStatuses.Approved
+                        && (i.Status == VisitInstanceStatus.WaitingHostAssignment
+                            || i.Status == VisitInstanceStatus.Assigned
+                            || i.Status == VisitInstanceStatus.BeforeVisit)
+                        && i.PlannedStartAt > nowForCancel;
+                    return new CampusProgressItemDto
+                    {
+                        VisitInstanceId = i.VisitInstanceId,
+                        CampusId = i.CampusId,
+                        CampusCode = campusCodes.TryGetValue(i.CampusId, out var ccode) ? ccode : null,
+                        CampusName = campusNames.TryGetValue(i.CampusId, out var cnm2) ? cnm2 : null,
+                        PlannedStartAt = i.PlannedStartAt,
+                        PlannedEndAt = i.PlannedEndAt,
+                        InstanceStatus = i.Status,
+                        HostUserId = i.CurrentHostUserId,
+                        HostName = i.CurrentHostUserId.HasValue && userNames.TryGetValue(i.CurrentHostUserId.Value, out var ihn) ? ihn : null,
+                        CancellationReason = i.CancellationReason,
+                        CancelledBy = i.CancelledBy,
+                        CancelledByName = i.CancelledBy.HasValue && userNames.TryGetValue(i.CancelledBy.Value, out var icbn) ? icbn : null,
+                        CancelledAt = i.CancelledAt,
+                        CancellationActorType = i.CancellationActorType,
+                        CancellationSource = i.CancellationSource,
+                        CanViewCampusDetail = true,
+                        CanCancelCampusVisit = isVisitorOwner && instanceCancellable,
+                        CanViewCancelReason = i.Status == VisitInstanceStatus.Cancelled,
+                    };
+                }).ToList();
+
             return new VisitRequestManagementItemDto
             {
                 VisitRequestId = vr.VisitRequestId,
@@ -654,6 +694,11 @@ public sealed class ViewGuestDelegationListQueryHandler
                 CancelledBy = cancelledById,
                 CancelledByName = cancelledByName,
                 HasCancellableInstance = hasCancellableInstance,
+                CanExpandCampuses = count > 1,
+                CanViewRequestDetail = true,
+                CanViewRejectReason = vr.Status == VisitRequestStatuses.Rejected && !string.IsNullOrEmpty(vr.DecisionNote),
+                CanViewCancelReason = isCancelled,
+                CampusProgressItems = campusProgressItems,
                 DecisionNote = vr.DecisionNote,
                 DecidedBy = vr.DecidedBy,
                 DecidedByName = vr.DecidedBy.HasValue && userNames.TryGetValue(vr.DecidedBy.Value, out var dbn2) ? dbn2 : null,

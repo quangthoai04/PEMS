@@ -110,6 +110,36 @@ export const VISIT_ALLOWED_ACTIONS = {
 
 export type AllowedAction = (typeof VISIT_ALLOWED_ACTIONS)[keyof typeof VISIT_ALLOWED_ACTIONS];
 
+/**
+ * One campus instance inside a multi-campus request, used by the expandable-row accordion
+ * (Phương án A). Action visibility is backend-computed (booleans) — never gate on status text.
+ */
+export interface CampusProgressItem {
+  visitInstanceId: number;
+  campusId: number;
+  campusCode: string | null;
+  campusName: string | null;
+
+  plannedStartAt?: string | null;
+  plannedEndAt?: string | null;
+
+  instanceStatus: VisitInstanceStatus;
+
+  hostUserId?: number | null;
+  hostName?: string | null;
+
+  cancellationReason?: string | null;
+  cancelledBy?: number | null;
+  cancelledByName?: string | null;
+  cancelledAt?: string | null;
+  cancellationActorType?: string | null;
+  cancellationSource?: string | null;
+
+  canViewCampusDetail: boolean;
+  canCancelCampusVisit: boolean;
+  canViewCancelReason: boolean;
+}
+
 /** One row returned by GET /delegations/viewguestdelegationlist (camelCase JSON). */
 export interface VisitRequestManagementItem {
   visitRequestId: number;
@@ -168,6 +198,14 @@ export interface VisitRequestManagementItem {
   // WAITING_HOST_ASSIGNMENT/ASSIGNED/BEFORE_VISIT that hasn't started). Action visibility is
   // still driven by allowedActions (CANCEL_BY_VISITOR/CANCEL_BY_HOST); this is the underlying flag.
   hasCancellableInstance?: boolean;
+
+  // Multi-campus expandable row (Phương án A). Backend-computed action booleans + per-campus
+  // progress for the accordion. campusProgressItems is empty for single-campus / instance-level rows.
+  canExpandCampuses?: boolean;
+  canViewRequestDetail?: boolean;
+  canViewRejectReason?: boolean;
+  canViewCancelReason?: boolean;
+  campusProgressItems?: CampusProgressItem[];
 
   allowedActions: AllowedAction[];
 }

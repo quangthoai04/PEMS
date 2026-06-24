@@ -86,6 +86,20 @@ public sealed class VisitRequestManagementItemDto
     /// </summary>
     public bool HasCancellableInstance { get; set; }
 
+    // ── Multi-campus expandable row (Phương án A). Only meaningful on request-level rows
+    // (Visitor / HO): the per-campus progress used by the accordion + backend-computed
+    // action booleans so the frontend never gates on status text. ──
+    /// <summary>True when this row can show the per-campus progress accordion (request has &gt; 1 campus).</summary>
+    public bool CanExpandCampuses { get; set; }
+    /// <summary>True when the caller may open the overall request detail.</summary>
+    public bool CanViewRequestDetail { get; set; }
+    /// <summary>True when the row is REJECTED and a decision note exists (show "Xem lý do từ chối").</summary>
+    public bool CanViewRejectReason { get; set; }
+    /// <summary>True when the request/an instance is cancelled (show "Xem lý do hủy").</summary>
+    public bool CanViewCancelReason { get; set; }
+    /// <summary>Per-campus progress rows for the expandable accordion. Empty for single-campus / instance-level rows.</summary>
+    public List<CampusProgressItemDto> CampusProgressItems { get; set; } = new();
+
     // ── Decision info (UC-18/UC-22). Reject reason = decision_note, NEVER cancellation_reason.
     // Surfaced on the list so the "Xem lý do từ chối" popup can show full metadata (who/when/role)
     // without a second fetch. Only meaningful when RequestStatus = REJECTED (or APPROVED). ──
@@ -107,4 +121,40 @@ public sealed class VisitRequestManagementItemDto
     /// APPROVE_AND_ASSIGN_HOST, CAMPUS_REJECT, TRANSFER_HOST, CANCEL_BY_VISITOR, CANCEL_BY_HOST.
     /// </summary>
     public List<string> AllowedActions { get; set; } = new();
+}
+
+/// <summary>
+/// One campus instance of a (multi-campus) request, used by the expandable-row accordion on
+/// the management list. Action visibility is backend-computed (booleans) so the frontend never
+/// gates on status text. Visitor-safe: carries no internal logistics/participant data.
+/// </summary>
+public sealed class CampusProgressItemDto
+{
+    public ulong VisitInstanceId { get; set; }
+    public ulong CampusId { get; set; }
+    public string? CampusCode { get; set; }
+    public string? CampusName { get; set; }
+
+    public DateTime? PlannedStartAt { get; set; }
+    public DateTime? PlannedEndAt { get; set; }
+
+    /// <summary>Raw status code (WAITING_REQUEST_APPROVAL/.../CANCELLED); the frontend maps it to a label.</summary>
+    public string InstanceStatus { get; set; } = default!;
+
+    public ulong? HostUserId { get; set; }
+    public string? HostName { get; set; }
+
+    public string? CancellationReason { get; set; }
+    public ulong? CancelledBy { get; set; }
+    public string? CancelledByName { get; set; }
+    public DateTime? CancelledAt { get; set; }
+    public string? CancellationActorType { get; set; }
+    public string? CancellationSource { get; set; }
+
+    /// <summary>Always true for in-scope rows (the list is already scoped server-side).</summary>
+    public bool CanViewCampusDetail { get; set; }
+    /// <summary>True only for the Visitor owner when the request is APPROVED and this instance is still cancellable.</summary>
+    public bool CanCancelCampusVisit { get; set; }
+    /// <summary>True when this instance is CANCELLED (show "Xem lý do hủy").</summary>
+    public bool CanViewCancelReason { get; set; }
 }
