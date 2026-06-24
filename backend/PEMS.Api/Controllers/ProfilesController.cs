@@ -15,6 +15,7 @@ namespace PEMS.Api.Controllers
         public ProfilesController(IMediator mediator) => _mediator = mediator;
 
         [HttpGet("viewprofile")]
+        [Authorize]
         public async Task<IActionResult> ViewProfile([FromQuery] PEMS.Application.Profiles.Queries.ViewProfile.ViewProfileQuery query, CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(query, cancellationToken);
@@ -22,6 +23,7 @@ namespace PEMS.Api.Controllers
         }
 
         [HttpPost("updateprofile")]
+        [Authorize]
         public async Task<IActionResult> UpdateProfile([FromBody] PEMS.Application.Profiles.Commands.UpdateProfile.UpdateProfileCommand command, CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(command, cancellationToken);

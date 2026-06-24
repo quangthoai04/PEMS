@@ -10,6 +10,11 @@ export const API_ENDPOINTS = {
     resetPassword: '/auth/reset-password',
     changePassword: '/auth/change-password',
   },
+  profile: {
+    // UC-14 view my profile, UC-15 update my profile (self-service; user resolved from token).
+    me: '/profiles/viewprofile',
+    update: '/profiles/updateprofile',
+  },
   campuses: {
     active: '/campuses/active',
     // UC-82 list (also serves UC-83 search/filter), UC-83 filter options, UC-86 status toggle.

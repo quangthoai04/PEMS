@@ -48,6 +48,14 @@ export const AUTH_ERROR_MESSAGES: Record<string, string> = {
   CAMPUS_ADDRESS_ALREADY_EXISTS: 'Địa chỉ này đã được sử dụng cho campus khác.',
   CAMPUS_PHONE_ALREADY_EXISTS: 'Số điện thoại này đã được sử dụng cho campus khác.',
   CAMPUS_EMAIL_ALREADY_EXISTS: 'Email này đã được sử dụng cho campus khác.',
+
+  // Profile self-service (UC-14 / UC-15)
+  PROFILE_FORBIDDEN_FIELD: 'Yêu cầu chứa thông tin không được phép cập nhật.',
+  PROFILE_FULLNAME_REQUIRED: 'Họ và tên không được để trống.',
+  PROFILE_FULLNAME_TOO_LONG: 'Họ và tên quá dài.',
+  PROFILE_GENDER_INVALID: 'Giới tính không hợp lệ.',
+  PROFILE_PHONE_INVALID: 'Số điện thoại không hợp lệ. Vui lòng nhập 8–15 chữ số.',
+  PROFILE_NATIONALITY_TOO_LONG: 'Quốc tịch quá dài.',
 };
 
 /**
