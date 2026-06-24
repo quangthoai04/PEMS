@@ -64,8 +64,12 @@ export function FAQManagement() {
   const [selectedType, setSelectedType] = useState('');
   const [selectedStatus, setSelectedStatus] = useState('');
 
+  const [togglingIds, setTogglingIds] = useState<Set<number>>(new Set());
+
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [newFAQ, setNewFAQ] = useState({ question: '', answer: '', type: 'ACCOUNT_ACCESS' });
+  const [newFAQ, setNewFAQ] = useState({ question: '', answer: '', type: 'ACCOUNT_ACCESS', status: 'PUBLISHED' });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
 
   // Debounce search 400ms
   useEffect(() => {
@@ -114,6 +118,60 @@ export function FAQManagement() {
     return () => { cancelled = true; };
   }, [page, itemsPerPage, debouncedSearch, selectedType, selectedStatus]);
 
+  const closeCreateModal = () => {
+    setIsCreateModalOpen(false);
+    setNewFAQ({ question: '', answer: '', type: 'ACCOUNT_ACCESS', status: 'PUBLISHED' });
+    setCreateError(null);
+  };
+
+  const handleCreate = async () => {
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+    setCreateError(null);
+    try {
+      const { data } = await httpClient.post<FaqItem>('/faqs', {
+        faqType: newFAQ.type,
+        question: newFAQ.question.trim(),
+        answer: newFAQ.answer.trim(),
+        status: newFAQ.status,
+      });
+      closeCreateModal();
+      setPage(1);
+      setFaqs(prev => [data, ...prev].slice(0, itemsPerPage));
+      setTotalItems(t => t + 1);
+    } catch (err: any) {
+      const msg = err?.response?.data?.message
+        ?? err?.response?.data?.title
+        ?? 'Không thể tạo FAQ. Vui lòng thử lại.';
+      setCreateError(msg);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleToggleVisibility = async (item: FaqItem) => {
+    if (togglingIds.has(item.faqId)) return;
+    setTogglingIds(prev => new Set(prev).add(item.faqId));
+
+    // Optimistic update
+    const newStatus = item.status === 'PUBLISHED' ? 'HIDDEN' : 'PUBLISHED';
+    const newStatusLabel = newStatus === 'PUBLISHED' ? 'Hiển thị' : 'Ẩn';
+    setFaqs(prev => prev.map(f =>
+      f.faqId === item.faqId ? { ...f, status: newStatus, statusLabel: newStatusLabel } : f
+    ));
+
+    try {
+      await httpClient.patch('/faqs/visibility', { faqId: item.faqId });
+    } catch {
+      // Revert nếu lỗi
+      setFaqs(prev => prev.map(f =>
+        f.faqId === item.faqId ? { ...f, status: item.status, statusLabel: item.statusLabel } : f
+      ));
+    } finally {
+      setTogglingIds(prev => { const s = new Set(prev); s.delete(item.faqId); return s; });
+    }
+  };
+
   const getStatusBadge = (statusLabel: string) => {
     if (statusLabel === 'Hiển thị') {
       return <span className="inline-block px-3 py-1.5 bg-[#eaffe4] text-[#0aa14f] font-bold rounded-full text-[12px] border border-[#ceefda] whitespace-nowrap">Hiển thị</span>;
@@ -134,8 +192,10 @@ export function FAQManagement() {
         </button>
         {isFullAccess && (
           <button
-            className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ml-2 ${isPublished ? 'bg-[#004c91]' : 'bg-gray-300'}`}
+            className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ml-2 ${togglingIds.has(item.faqId) ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'} ${isPublished ? 'bg-[#004c91]' : 'bg-gray-300'}`}
             title={isPublished ? 'Ẩn FAQ' : 'Hiển thị FAQ'}
+            disabled={togglingIds.has(item.faqId)}
+            onClick={() => handleToggleVisibility(item)}
           >
             <span className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${isPublished ? 'translate-x-4' : 'translate-x-0'}`} />
           </button>
@@ -338,7 +398,7 @@ export function FAQManagement() {
               <h3 className="text-xl font-bold text-[#004c91] flex items-center gap-2">
                 <Plus className="w-5 h-5" /> Thêm mới FAQ
               </h3>
-              <button onClick={() => setIsCreateModalOpen(false)} className="p-1.5 text-gray-400 hover:text-gray-600 bg-gray-50 hover:bg-gray-100 rounded-lg">
+              <button onClick={closeCreateModal} className="p-1.5 text-gray-400 hover:text-gray-600 bg-gray-50 hover:bg-gray-100 rounded-lg">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -371,26 +431,50 @@ export function FAQManagement() {
               <div className="space-y-1.5">
                 <label className="text-sm font-bold text-gray-900 block">Trả lời<span className="text-red-500 ml-1">*</span></label>
                 <textarea
-                  rows={4}
+                  rows={3}
                   className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#004c91]/20 focus:border-[#004c91] resize-none"
                   placeholder="Nhập câu trả lời..."
                   value={newFAQ.answer}
                   onChange={(e) => setNewFAQ({ ...newFAQ, answer: e.target.value })}
                 />
               </div>
+
+              {/* Status toggle */}
+              <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-gray-200">
+                <div>
+                  <p className="text-sm font-bold text-gray-900">Trạng thái hiển thị<span className="text-red-500 ml-1">*</span></p>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    {newFAQ.status === 'PUBLISHED' ? 'Hiển thị trên trang FAQ công khai' : 'Ẩn khỏi trang FAQ công khai'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setNewFAQ({ ...newFAQ, status: newFAQ.status === 'PUBLISHED' ? 'HIDDEN' : 'PUBLISHED' })}
+                  className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${newFAQ.status === 'PUBLISHED' ? 'bg-[#004c91]' : 'bg-gray-300'}`}
+                >
+                  <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${newFAQ.status === 'PUBLISHED' ? 'translate-x-5' : 'translate-x-0'}`} />
+                </button>
+              </div>
+
+              {createError && (
+                <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-xl px-3 py-2">{createError}</p>
+              )}
             </div>
 
             <div className="p-5 border-t border-gray-100 bg-gray-50 flex items-center justify-end gap-3">
               <button
-                onClick={() => setIsCreateModalOpen(false)}
-                className="px-5 py-2 bg-white border border-gray-200 text-gray-600 font-bold rounded-xl hover:bg-gray-50"
+                onClick={closeCreateModal}
+                disabled={isSubmitting}
+                className="px-5 py-2 bg-white border border-gray-200 text-gray-600 font-bold rounded-xl hover:bg-gray-50 disabled:opacity-50"
               >
                 Hủy
               </button>
               <button
-                disabled={!newFAQ.question.trim() || !newFAQ.answer.trim()}
-                className="px-5 py-2 bg-[#004c91] text-white font-bold rounded-xl hover:bg-[#003366] disabled:opacity-50 disabled:cursor-not-allowed"
+                onClick={handleCreate}
+                disabled={!newFAQ.question.trim() || !newFAQ.answer.trim() || isSubmitting}
+                className="flex items-center gap-2 px-5 py-2 bg-[#004c91] text-white font-bold rounded-xl hover:bg-[#003366] disabled:opacity-50 disabled:cursor-not-allowed"
               >
+                {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
                 Tạo mới
               </button>
             </div>
