@@ -136,15 +136,6 @@ public sealed class GetSubmittedVisitRequestFormDetailQueryHandler
                 .Select(c => new { c.CampusId, c.CampusCode, c.Name })
                 .ToDictionaryAsync(c => c.CampusId, c => (Code: c.CampusCode, Name: c.Name), cancellationToken);
 
-        string? decidedByName = null;
-        if (visitRequest.DecidedBy.HasValue)
-        {
-            decidedByName = await _context.Users
-                .Where(u => u.UserId == visitRequest.DecidedBy.Value)
-                .Select(u => u.FullName)
-                .FirstOrDefaultAsync(cancellationToken);
-        }
-
         // For a Staff Leader on a MULTI_CAMPUS request we only surface their own campus instance
         // (they have no business with the other campuses). HO sees every campus; Visitor (owner)
         // sees all; Staff Leader on SINGLE_CAMPUS sees the single instance.
@@ -152,8 +143,28 @@ public sealed class GetSubmittedVisitRequestFormDetailQueryHandler
             ? visitRequest.CampusInstances.Where(c => c.CampusId == primaryCampusId).ToList()
             : visitRequest.CampusInstances.ToList();
 
+        // Resolve every "who decided / who cancelled" name in one round-trip (decision actor,
+        // request-level canceller, and each visible campus-instance canceller).
+        var actorIds = new List<ulong>();
+        if (visitRequest.DecidedBy.HasValue) actorIds.Add(visitRequest.DecidedBy.Value);
+        if (visitRequest.CancelledBy.HasValue) actorIds.Add(visitRequest.CancelledBy.Value);
+        actorIds.AddRange(visibleInstances.Where(c => c.CancelledBy.HasValue).Select(c => c.CancelledBy!.Value));
+        actorIds = actorIds.Distinct().ToList();
+
+        var actorNames = actorIds.Count == 0
+            ? new Dictionary<ulong, string>()
+            : await _context.Users
+                .Where(u => actorIds.Contains(u.UserId))
+                .Select(u => new { u.UserId, u.FullName })
+                .ToDictionaryAsync(u => u.UserId, u => u.FullName, cancellationToken);
+
+        string? NameOf(ulong? id) =>
+            id.HasValue && actorNames.TryGetValue(id.Value, out var n) ? n : null;
+
+        var decidedByName = NameOf(visitRequest.DecidedBy);
+
         // ── Footer action flags ──
-        bool canApprove = false, canReject = false, canAssignHost = false;
+        bool canApprove = false, canReject = false, canAssignHost = false, canCancel = false;
         if (status == VisitRequestStatuses.PendingApproval)
         {
             if (isHo && isMulti)
@@ -171,6 +182,62 @@ public sealed class GetSubmittedVisitRequestFormDetailQueryHandler
             && ownInstance.Status == VisitInstanceStatus.WaitingHostAssignment)
         {
             canAssignHost = true;
+        }
+
+        // Cancel (UC-136) is offered on this read-only form only to the Visitor owner of an
+        // approved request that still has an active (ASSIGNED/BEFORE_VISIT) instance. HO/Staff
+        // Leader never cancel here (pre-approval ⇒ reject; post-approval cancel is out of scope).
+        // The cancel command re-checks the time window and ownership — this flag is a UI hint only.
+        if (isVisitor && status == VisitRequestStatuses.Approved
+            && visibleInstances.Any(c => c.Status == VisitInstanceStatus.Assigned
+                || c.Status == VisitInstanceStatus.BeforeVisit))
+        {
+            canCancel = true;
+        }
+
+        // ── Cancellation info (request-level vs campus-instance-level) ──
+        bool isCancelled = false;
+        string? cancellationLevel = null;
+        long? cancelledByUserId = null;
+        string? cancelledByName = null;
+        DateTime? cancelledAt = null;
+        string? cancellationActorType = null;
+        string? cancellationSource = null;
+        string? cancellationReason = null;
+
+        if (status == VisitRequestStatuses.Cancelled)
+        {
+            // Whole request was cancelled. Actor type / source live on the cancelled instances
+            // (the request row only stores who/when/reason); borrow them from any cancelled one.
+            var sourceInstance = visibleInstances.FirstOrDefault(c => c.Status == VisitInstanceStatus.Cancelled);
+            isCancelled = true;
+            cancellationLevel = "REQUEST";
+            cancelledByUserId = visitRequest.CancelledBy.HasValue ? (long)visitRequest.CancelledBy.Value : null;
+            cancelledByName = NameOf(visitRequest.CancelledBy);
+            cancelledAt = visitRequest.CancelledAt;
+            cancellationReason = visitRequest.CancellationReason;
+            cancellationActorType = sourceInstance?.CancellationActorType;
+            cancellationSource = sourceInstance?.CancellationSource;
+        }
+        else
+        {
+            // Request still active but one of the visible campus instances may be cancelled
+            // (partial multi-campus cancel, or a host instance-cancel).
+            var cancelledInstance = visibleInstances
+                .Where(c => c.Status == VisitInstanceStatus.Cancelled)
+                .OrderByDescending(c => c.CancelledAt)
+                .FirstOrDefault();
+            if (cancelledInstance != null)
+            {
+                isCancelled = true;
+                cancellationLevel = "CAMPUS_INSTANCE";
+                cancelledByUserId = cancelledInstance.CancelledBy.HasValue ? (long)cancelledInstance.CancelledBy.Value : null;
+                cancelledByName = NameOf(cancelledInstance.CancelledBy);
+                cancelledAt = cancelledInstance.CancelledAt;
+                cancellationActorType = cancelledInstance.CancellationActorType;
+                cancellationSource = cancelledInstance.CancellationSource;
+                cancellationReason = cancelledInstance.CancellationReason;
+            }
         }
 
         var dto = new SubmittedVisitRequestFormDetailDto
@@ -227,6 +294,12 @@ public sealed class GetSubmittedVisitRequestFormDetailQueryHandler
                     CoordinatorUserId = c.CoordinatorUserId.HasValue ? (long)c.CoordinatorUserId.Value : null,
                     CurrentHostUserId = c.CurrentHostUserId.HasValue ? (long)c.CurrentHostUserId.Value : null,
                     IsOwnCampus = primaryCampusId.HasValue && c.CampusId == primaryCampusId.Value,
+                    CancelledByUserId = c.CancelledBy.HasValue ? (long)c.CancelledBy.Value : null,
+                    CancelledByName = NameOf(c.CancelledBy),
+                    CancelledAt = c.CancelledAt,
+                    CancellationActorType = c.CancellationActorType,
+                    CancellationSource = c.CancellationSource,
+                    CancellationReason = c.CancellationReason,
                 })
                 .ToList(),
 
@@ -247,11 +320,18 @@ public sealed class GetSubmittedVisitRequestFormDetailQueryHandler
             DecidedAt = visitRequest.DecidedAt,
             DecisionNote = visitRequest.DecisionNote,
 
-            CancelledAt = visitRequest.CancelledAt,
-            CancellationReason = visitRequest.CancellationReason,
+            IsCancelled = isCancelled,
+            CancellationLevel = cancellationLevel,
+            CancelledByUserId = cancelledByUserId,
+            CancelledByName = cancelledByName,
+            CancelledAt = cancelledAt,
+            CancellationActorType = cancellationActorType,
+            CancellationSource = cancellationSource,
+            CancellationReason = cancellationReason,
 
             CanApprove = canApprove,
             CanReject = canReject,
+            CanCancel = canCancel,
             CanAssignHost = canAssignHost,
         };
 

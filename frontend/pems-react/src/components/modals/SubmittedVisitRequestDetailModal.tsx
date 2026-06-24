@@ -17,6 +17,8 @@ import { delegationsApi } from '../../features/delegations/api/delegationsApi';
 import type { SubmittedVisitRequestFormDetail } from '../../features/delegations/types/delegations.types';
 import { VISIT_SCOPE_LABELS } from '../../features/delegations/types/delegations.types';
 import { SubmittedVisitRequestInfoPanel } from '../../features/delegations/components/SubmittedVisitRequestInfoPanel';
+import { DecisionReasonPanel } from '../../features/delegations/components/DecisionReasonPanel';
+import { CancellationReasonPanel } from '../../features/delegations/components/CancellationReasonPanel';
 
 interface Props {
   isOpen: boolean;
@@ -60,13 +62,6 @@ const headerTitle = (status?: string) => {
   if (status === 'REJECTED') return 'Chi tiết đơn bị từ chối';
   if (status === 'PENDING_APPROVAL') return 'Xem đơn đăng ký tham quan';
   return 'Chi tiết đơn đăng ký tham quan';
-};
-
-const decisionRoleLabel = (role?: string | null) => {
-  if (!role) return '-';
-  if (role === 'HO') return 'Head Office (HO)';
-  if (role === 'STAFF_LEADER' || role === 'STAFF') return 'Trưởng IC (Staff Leader)';
-  return role;
 };
 
 export function SubmittedVisitRequestDetailModal({
@@ -161,49 +156,47 @@ export function SubmittedVisitRequestDetailModal({
               </div>
             ) : data ? (
               <div className="space-y-10">
-                {/* Rejection / cancellation info (shown above the form for decided requests) */}
-                {isRejected && (
-                  <div className="rounded-2xl border border-red-200 bg-red-50/70 p-5">
-                    <h3 className="text-sm font-black text-red-700 uppercase tracking-wide mb-3 flex items-center gap-2">
-                      <AlertCircle className="w-4 h-4" /> Thông tin từ chối
-                    </h3>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-3">
-                      <div>
-                        <p className="text-xs font-bold text-slate-500">Người từ chối</p>
-                        <p className="mt-0.5 text-sm font-semibold text-slate-900">{data.decidedByName || '-'}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs font-bold text-slate-500">Vai trò</p>
-                        <p className="mt-0.5 text-sm font-semibold text-slate-900">{decisionRoleLabel(data.decisionActorRole)}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs font-bold text-slate-500">Thời gian</p>
-                        <p className="mt-0.5 text-sm font-semibold text-slate-900">{formatDateTime(data.decidedAt)}</p>
-                      </div>
-                    </div>
-                    <div className="rounded-xl border border-red-100 bg-white px-4 py-3">
-                      <p className="text-xs font-bold text-slate-500">Lý do từ chối</p>
-                      <p className="mt-1 text-sm font-semibold text-red-950 whitespace-pre-wrap italic">
-                        {data.decisionNote || 'Không có lý do chi tiết.'}
-                      </p>
-                    </div>
-                  </div>
+                {/* Lý do từ chối (pre-approval reject) — decision_note, never cancellation_reason. */}
+                {isRejected && data.decisionNote && (
+                  <DecisionReasonPanel
+                    decisionActorRole={data.decisionActorRole}
+                    decidedByName={data.decidedByName}
+                    decidedByUserId={data.decidedByUserId}
+                    decidedAt={data.decidedAt}
+                    decisionNote={data.decisionNote}
+                  />
                 )}
+
+                {/* Lý do hủy — whole-request cancel (one panel covers all campuses). */}
                 {isCancelled && (
-                  <div className="rounded-2xl border border-slate-300 bg-slate-50 p-5">
-                    <h3 className="text-sm font-black text-slate-700 uppercase tracking-wide mb-3">Thông tin hủy</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <p className="text-xs font-bold text-slate-500">Thời gian hủy</p>
-                        <p className="mt-0.5 text-sm font-semibold text-slate-900">{formatDateTime(data.cancelledAt)}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs font-bold text-slate-500">Lý do hủy</p>
-                        <p className="mt-0.5 text-sm font-semibold text-slate-900 whitespace-pre-wrap">{data.cancellationReason || '-'}</p>
-                      </div>
-                    </div>
-                  </div>
+                  <CancellationReasonPanel
+                    cancellationLevel={data.cancellationLevel ?? 'REQUEST'}
+                    cancelledByName={data.cancelledByName}
+                    cancelledByUserId={data.cancelledByUserId}
+                    cancelledAt={data.cancelledAt}
+                    cancellationActorType={data.cancellationActorType}
+                    cancellationSource={data.cancellationSource}
+                    cancellationReason={data.cancellationReason}
+                  />
                 )}
+
+                {/* Lý do hủy — instance-level cancel while the request is still active. */}
+                {!isCancelled &&
+                  data.campuses
+                    .filter((c) => c.instanceStatus === 'CANCELLED')
+                    .map((c) => (
+                      <CancellationReasonPanel
+                        key={c.visitInstanceId}
+                        cancellationLevel="CAMPUS_INSTANCE"
+                        contextLabel={c.campusName || c.campusCode || null}
+                        cancelledByName={c.cancelledByName}
+                        cancelledByUserId={c.cancelledByUserId}
+                        cancelledAt={c.cancelledAt}
+                        cancellationActorType={c.cancellationActorType}
+                        cancellationSource={c.cancellationSource}
+                        cancellationReason={c.cancellationReason}
+                      />
+                    ))}
 
                 <SubmittedVisitRequestInfoPanel data={data} />
               </div>

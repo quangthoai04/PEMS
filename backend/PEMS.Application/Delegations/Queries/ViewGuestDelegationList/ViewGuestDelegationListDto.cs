@@ -61,15 +61,35 @@ public sealed class VisitRequestManagementItemDto
 
     public DateTime CreatedAt { get; set; }
     public DateTime? SubmittedAt { get; set; }
+
+    // ── Cancellation info (UC-136). Instance-level is preferred (a Host usually owns one
+    // campus instance); falls back to request-level when the whole request was cancelled. ──
+    /// <summary>True when the request or this campus instance is cancelled.</summary>
+    public bool IsCancelled { get; set; }
+    /// <summary>"REQUEST" (whole request) or "CAMPUS_INSTANCE" (this campus only); null if not cancelled.</summary>
+    public string? CancellationLevel { get; set; }
     public DateTime? CancelledAt { get; set; }
     public string? CancellationReason { get; set; }
     public string? CancellationActorType { get; set; }
     public string? CancellationSource { get; set; }
     public ulong? CancelledBy { get; set; }
+    public string? CancelledByName { get; set; }
     public string? DisplayStatusLabel { get; set; }
     public string? DisplayProgressLabel { get; set; }
+
+    // ── Decision info (UC-18/UC-22). Reject reason = decision_note, NEVER cancellation_reason.
+    // Surfaced on the list so the "Xem lý do từ chối" popup can show full metadata (who/when/role)
+    // without a second fetch. Only meaningful when RequestStatus = REJECTED (or APPROVED). ──
     /// <summary>Reason/note recorded when the request was approved or rejected (visit_requests.decision_note).</summary>
     public string? DecisionNote { get; set; }
+    /// <summary>User id of who decided (approved/rejected) the request (visit_requests.decided_by).</summary>
+    public ulong? DecidedBy { get; set; }
+    /// <summary>Display name of the deciding user.</summary>
+    public string? DecidedByName { get; set; }
+    /// <summary>When the request was decided (visit_requests.decided_at).</summary>
+    public DateTime? DecidedAt { get; set; }
+    /// <summary>Role the decision was made under: HO | STAFF_LEADER (visit_requests.decision_actor_role).</summary>
+    public string? DecisionActorRole { get; set; }
 
     /// <summary>
     /// Business actions the signed-in user may take on this row, computed by the backend

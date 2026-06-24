@@ -45,7 +45,8 @@ public sealed class SubmittedVisitRequestFormDetailDto
     public List<SubmittedGuestMemberDto> GuestMembers { get; set; } = new();
     public List<SubmittedGuestMemberDto> ExternalSupportMembers { get; set; } = new();
 
-    // ── Decision info (only populated when the request has been decided) ──
+    // ── Decision info (only populated when the request has been decided / REJECTED) ──
+    // Reject reason = decision_note. NEVER cancellation_reason.
     public long? DecidedByUserId { get; set; }
     public string? DecidedByName { get; set; }
     public string? DecisionActorRole { get; set; }
@@ -53,12 +54,23 @@ public sealed class SubmittedVisitRequestFormDetailDto
     public string? DecisionNote { get; set; }
 
     // ── Cancellation info (UC-136, post-approval only) ──
+    // Reflects either a request-level cancel (whole request CANCELLED) or a campus-instance-level
+    // cancel (request still APPROVED, one campus cancelled). Cancel reason = cancellation_reason,
+    // NEVER decision_note. Per-campus cancel detail also rides on each SubmittedCampusScheduleDto.
+    public bool IsCancelled { get; set; }
+    /// <summary>"REQUEST" or "CAMPUS_INSTANCE" (null when nothing is cancelled).</summary>
+    public string? CancellationLevel { get; set; }
+    public long? CancelledByUserId { get; set; }
+    public string? CancelledByName { get; set; }
     public DateTime? CancelledAt { get; set; }
+    public string? CancellationActorType { get; set; }
+    public string? CancellationSource { get; set; }
     public string? CancellationReason { get; set; }
 
     // ── Footer action gating (recomputed server-side) ──
     public bool CanApprove { get; set; }
     public bool CanReject { get; set; }
+    public bool CanCancel { get; set; }
     public bool CanAssignHost { get; set; }
 }
 
@@ -93,6 +105,14 @@ public sealed class SubmittedCampusScheduleDto
     public long? CurrentHostUserId { get; set; }
     /// <summary>True for the campus instance that belongs to the calling Staff Leader's campus.</summary>
     public bool IsOwnCampus { get; set; }
+
+    // ── Per-campus cancellation info (UC-136 instance-level cancel) ──
+    public long? CancelledByUserId { get; set; }
+    public string? CancelledByName { get; set; }
+    public DateTime? CancelledAt { get; set; }
+    public string? CancellationActorType { get; set; }
+    public string? CancellationSource { get; set; }
+    public string? CancellationReason { get; set; }
 }
 
 public sealed class SubmittedGuestMemberDto

@@ -321,6 +321,9 @@ public sealed class ViewGuestDelegationListQueryHandler
 
                 RequestCancelledBy = x.vr.CancelledBy,
                 x.vr.DecisionNote,
+                x.vr.DecidedBy,
+                x.vr.DecidedAt,
+                x.vr.DecisionActorRole,
             })
             .ToListAsync(ct);
 
@@ -332,7 +335,7 @@ public sealed class ViewGuestDelegationListQueryHandler
         var requestIds = page.Select(r => r.VisitRequestId).Distinct().ToList();
         var campusIds = page.Select(r => r.CampusId).Distinct().ToList();
         var partnerIds = page.Where(r => r.PartnerId.HasValue).Select(r => r.PartnerId!.Value).Distinct().ToList();
-        var userIds = page.SelectMany(r => new[] { r.CurrentHostUserId, (ulong?)r.VisitorUserId })
+        var userIds = page.SelectMany(r => new[] { r.CurrentHostUserId, (ulong?)r.VisitorUserId, r.CampusCancelledBy, r.RequestCancelledBy, r.DecidedBy })
             .Where(id => id.HasValue).Select(id => id!.Value).Distinct().ToList();
 
         var campusCountByRequest = (await _context.VisitRequestCampuses
@@ -367,6 +370,12 @@ public sealed class ViewGuestDelegationListQueryHandler
             string? visitorName = r.VisitorUserId.HasValue && userNames.TryGetValue(r.VisitorUserId.Value, out var vn) ? vn : null;
             myParticipationRole.TryGetValue(r.VisitInstanceId, out var participantRole);
 
+            // Instance-level cancel preferred; fall back to request-level when the whole request was cancelled.
+            bool requestCancelled = r.RequestStatus == VisitRequestStatuses.Cancelled;
+            bool instanceCancelled = r.CampusStatus == VisitInstanceStatus.Cancelled;
+            var cancelledById = r.CampusCancelledBy ?? r.RequestCancelledBy;
+            string? cancelledByName = cancelledById.HasValue && userNames.TryGetValue(cancelledById.Value, out var cbn) ? cbn : null;
+
             return new VisitRequestManagementItemDto
             {
                 VisitRequestId = r.VisitRequestId,
@@ -395,12 +404,19 @@ public sealed class ViewGuestDelegationListQueryHandler
                 PlannedEndAt = r.PlannedEndAt,
                 CreatedAt = r.CreatedAt,
                 SubmittedAt = r.SubmittedAt,
+                IsCancelled = requestCancelled || instanceCancelled,
+                CancellationLevel = requestCancelled ? "REQUEST" : (instanceCancelled ? "CAMPUS_INSTANCE" : null),
                 CancelledAt = r.CampusCancelledAt ?? r.RequestCancelledAt,
                 CancellationReason = r.CampusCancellationReason ?? r.RequestCancellationReason,
                 CancellationActorType = r.CampusCancellationActorType,
                 CancellationSource = r.CampusCancellationSource,
-                CancelledBy = r.CampusCancelledBy ?? r.RequestCancelledBy,
+                CancelledBy = cancelledById,
+                CancelledByName = cancelledByName,
                 DecisionNote = r.DecisionNote,
+                DecidedBy = r.DecidedBy,
+                DecidedByName = r.DecidedBy.HasValue && userNames.TryGetValue(r.DecidedBy.Value, out var dbn) ? dbn : null,
+                DecidedAt = r.DecidedAt,
+                DecisionActorRole = r.DecisionActorRole,
             };
         }).ToList();
 
@@ -531,6 +547,9 @@ public sealed class ViewGuestDelegationListQueryHandler
             {
                 vr.CampusInstances.Count == 1 ? vr.CampusInstances.First().CurrentHostUserId : null,
                 (ulong?)vr.VisitorUserId,
+                vr.CancelledBy,
+                vr.DecidedBy,
+                vr.CampusInstances.Where(i => i.Status == VisitInstanceStatus.Cancelled).Select(i => i.CancelledBy).FirstOrDefault(),
             })
             .Where(id => id.HasValue).Select(id => id!.Value).Distinct().ToList();
 
@@ -555,6 +574,25 @@ public sealed class ViewGuestDelegationListQueryHandler
             string? visitorName = vr.VisitorUserId.HasValue && userNames.TryGetValue(vr.VisitorUserId.Value, out var vnm) ? vnm : null;
             DateTime? minStart = count > 0 ? instances.Min(i => i.PlannedStartAt) : (DateTime?)null;
             DateTime? maxEnd = count > 0 ? instances.Max(i => i.PlannedEndAt) : (DateTime?)null;
+
+            // Cancellation: whole-request cancel ⇒ REQUEST level (actor/source borrowed from a
+            // cancelled instance, since visit_requests has no actor_type/source columns);
+            // otherwise an instance-level cancel while the request is still active.
+            bool requestCancelled = vr.Status == VisitRequestStatuses.Cancelled;
+            var cancelledInstance = instances
+                .Where(i => i.Status == VisitInstanceStatus.Cancelled)
+                .OrderByDescending(i => i.CancelledAt)
+                .FirstOrDefault();
+            bool isCancelled = requestCancelled || cancelledInstance != null;
+            string? cancellationLevel = requestCancelled ? "REQUEST" : (cancelledInstance != null ? "CAMPUS_INSTANCE" : null);
+            ulong? cancelledById = requestCancelled
+                ? (vr.CancelledBy ?? cancelledInstance?.CancelledBy)
+                : cancelledInstance?.CancelledBy;
+            string? cancelledByName = cancelledById.HasValue && userNames.TryGetValue(cancelledById.Value, out var cbn2) ? cbn2 : null;
+            DateTime? cancelledAt = requestCancelled ? (vr.CancelledAt ?? cancelledInstance?.CancelledAt) : cancelledInstance?.CancelledAt;
+            string? cancellationReason = requestCancelled ? (vr.CancellationReason ?? cancelledInstance?.CancellationReason) : cancelledInstance?.CancellationReason;
+            string? cancellationActorType = cancelledInstance?.CancellationActorType;
+            string? cancellationSource = cancelledInstance?.CancellationSource;
 
             return new VisitRequestManagementItemDto
             {
@@ -584,12 +622,19 @@ public sealed class ViewGuestDelegationListQueryHandler
                 PlannedEndAt = maxEnd,
                 CreatedAt = vr.CreatedAt,
                 SubmittedAt = vr.SubmittedAt,
-                CancelledAt = single?.CancelledAt ?? vr.CancelledAt,
-                CancellationReason = single?.CancellationReason ?? vr.CancellationReason,
-                CancellationActorType = single?.CancellationActorType,
-                CancellationSource = single?.CancellationSource,
-                CancelledBy = single?.CancelledBy ?? vr.CancelledBy,
+                IsCancelled = isCancelled,
+                CancellationLevel = cancellationLevel,
+                CancelledAt = cancelledAt,
+                CancellationReason = cancellationReason,
+                CancellationActorType = cancellationActorType,
+                CancellationSource = cancellationSource,
+                CancelledBy = cancelledById,
+                CancelledByName = cancelledByName,
                 DecisionNote = vr.DecisionNote,
+                DecidedBy = vr.DecidedBy,
+                DecidedByName = vr.DecidedBy.HasValue && userNames.TryGetValue(vr.DecidedBy.Value, out var dbn2) ? dbn2 : null,
+                DecidedAt = vr.DecidedAt,
+                DecisionActorRole = vr.DecisionActorRole,
             };
         }).ToList();
 
