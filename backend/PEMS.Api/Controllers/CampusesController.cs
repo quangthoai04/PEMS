@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 namespace PEMS.Api.Controllers
 {
     [ApiController]
+    [Authorize]
     [Route("api/[controller]")]
     public class CampusesController : ControllerBase
     {
@@ -50,6 +51,13 @@ namespace PEMS.Api.Controllers
         public async Task<IActionResult> SearchandFilterCampus([FromQuery] PEMS.Application.Campuses.Queries.SearchandFilterCampus.SearchandFilterCampusQuery query, CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(query, cancellationToken);
+            return Ok(result);
+        }
+
+        [HttpGet("filter-options")]
+        public async Task<IActionResult> GetFilterOptions(CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(new PEMS.Application.Campuses.Queries.GetCampusFilterOptions.GetCampusFilterOptionsQuery(), cancellationToken);
             return Ok(result);
         }
 

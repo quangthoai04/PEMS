@@ -1,3 +1,403 @@
+# PROJECT_OVERVIEW_v8_4_refined_v6_FULL_UPDATED
+
+> **Bản FULL-PRESERVED cập nhật theo PEMS v8.4 refined v6 no dynamic permissions.**  
+> File này gồm 2 phần:  
+> - **PHẦN A — Nội dung chuẩn hiện tại để code/triển khai.**  
+> - **PHẦN B — Nội dung gốc/legacy được giữ lại đầy đủ để đối chiếu lịch sử.**  
+>
+> Khi PHẦN A mâu thuẫn với PHẦN B, **luôn ưu tiên PHẦN A**. PHẦN B không được dùng làm nguồn code trực tiếp nếu có dấu hiệu legacy như `DEPT`, `STAFF_L`, `STAFF_P`, `Staff click nhận đón`, `auto Staff Leader làm host`, `Staff Leader/HO cancel sau APPROVED`, hoặc dynamic permissions.
+
+## 0. Cách đọc file này
+
+```text
+1. Đọc PEMS_CANONICAL_BUSINESS_RULES_v8_4_refined_v6.md trước.
+2. Đọc PHẦN A của file này để lấy nghiệp vụ/logic hiện hành.
+3. Chỉ dùng PHẦN B để hiểu nguồn gốc tài liệu cũ, không dùng để sinh code nếu mâu thuẫn với PHẦN A.
+4. Nếu cần code, backend phải kiểm tra lại bằng schema v8.4 refined v6 và seed v7/v6 dynamic time tương ứng.
+```
+
+---
+
+# PHẦN A — NỘI DUNG CHUẨN HIỆN TẠI / UPDATED CANONICAL CONTENT
+
+# PROJECT_OVERVIEW_v8_4_refined_v6_UPDATED
+
+> **PEMS — Partnership Engagement Management System**  
+> Bản cập nhật theo logic v8.4 refined v6 no dynamic permissions.  
+> File này thay thế cách hiểu cũ về role, host assignment, multi-campus approval, cancellation và status lifecycle.
+
+## 0. Authoritative note
+
+Nguồn chuẩn nghiệp vụ hiện tại:
+
+```text
+PEMS_CANONICAL_BUSINESS_RULES_v8_4_refined_v6.md
+```
+
+Nếu file này hoặc tài liệu cũ còn nhắc `DEPT`, `STAFF_L`, `STAFF_P`, `Đã duyệt nhưng chưa có HOST`, `Staff click nhận đón`, `HO duyệt xong auto Staff Leader làm host`, hoặc `Staff Leader/HO cancel sau APPROVED`, hãy đối chiếu lại với canonical rules.
+
+---
+
+## 1. Tổng quan dự án
+
+PEMS là hệ thống quản lý hoạt động hợp tác quốc tế và tiếp đón đoàn khách của FPT University.
+
+Hệ thống số hóa toàn bộ vòng đời của một yêu cầu thăm:
+
+```text
+Submit request
+→ Approve/reject
+→ Assign coordinator/host
+→ Prepare logistics
+→ Receive visitors
+→ Meeting minutes / documents / photos / news
+→ Feedback
+→ Close delegation
+```
+
+PEMS phục vụ 5 campus:
+
+```text
+HN  - Hà Nội
+HCM - TP.HCM
+DN  - Đà Nẵng
+CT  - Cần Thơ
+QN  - Quy Nhơn
+```
+
+---
+
+## 2. Mục tiêu hệ thống
+
+PEMS hướng tới:
+
+```text
+1. Chuẩn hóa quy trình tiếp nhận và xử lý yêu cầu thăm.
+2. Tách rõ single-campus và multi-campus.
+3. Bảo vệ scope dữ liệu theo campus, department, role và ownership.
+4. Điều phối host, logistics, participant, student và department support rõ ràng.
+5. Lưu trữ tài liệu, biên bản, feedback, ảnh, tin tức sau chuyến thăm.
+6. Cung cấp dashboard/report cho HO và Staff Leader theo đúng scope.
+7. Tránh Admin trở thành business super-user của visit/delegation.
+```
+
+---
+
+## 3. Role và effective role
+
+PEMS chỉ dùng 6 `role_code` cố định:
+
+```text
+ADMIN
+HO
+STAFF
+DEPARTMENT
+STUDENT
+VISITOR
+```
+
+Các effective role được xác định như sau:
+
+| Effective role | role_code | sub_role | Phạm vi chính |
+|---|---|---|---|
+| Admin | ADMIN | NULL | Kỹ thuật/config/audit/account theo policy |
+| HO | HO | NULL | Multi-campus request/delegation |
+| Staff Leader | STAFF | LEADER | Một campus, IC department |
+| IC Staff | STAFF | STAFF | Host/support trong một campus |
+| Department Leader | DEPARTMENT | LEADER | Một GENERAL department |
+| Department Staff | DEPARTMENT | STAFF | Task/logistics trong department |
+| Student | STUDENT | NULL | Support khi được assign/invite |
+| Visitor | VISITOR | NULL | Request của chính mình |
+
+Không dùng role cũ:
+
+```text
+STAFF_L, STAFF_P, DEPT_L, DEPT_P, STAFF_LEADER, DEPT, DEPARTMENT_LEADER
+```
+
+Các từ này chỉ được dùng khi giải thích legacy mapping, không dùng trong DB/API/runtime.
+
+---
+
+## 4. Scope dữ liệu theo role
+
+| Actor | Scope dữ liệu |
+|---|---|
+| Admin | Không mặc định xem visit/delegation nghiệp vụ |
+| HO | Multi-campus request/delegation; không xử lý single-campus |
+| Staff Leader | Single-campus campus mình; multi-campus instance campus mình sau HO approve |
+| IC Staff | Instance mình là host/support/participant |
+| Department Leader | Logistics/task/resource thuộc department mình |
+| Department Staff | Task/logistics được assign |
+| Student | Delegation/task được invite/assign |
+| Visitor | Request của chính mình |
+
+Backend phải enforce scope trên mọi API list/detail/action.
+
+---
+
+## 5. Major features
+
+| FE | Tên | Ghi chú cập nhật |
+|---|---|---|
+| FE-01 | Partner & Contact Management | Quản lý đối tác, contact, scan card |
+| FE-02 | Delegation Reception Management | Core lifecycle của visit request/delegation |
+| FE-03 | Gallery Management | Public/internal gallery theo visibility |
+| FE-04 | Calendar & Deadline | Event cá nhân, visit, logistics, deadline |
+| FE-05 | Document & Archive | File, document, minutes archive |
+| FE-06 | Email & API Configuration | Template, sent email, API config/log |
+| FE-07 | Feedback & Rating | Feedback sau visit, không áp dụng cho cancel trước visit |
+| FE-08 | Dashboard & Statistics | Theo scope HO/Staff Leader |
+| FE-09 | News & FAQ | News review/publish, FAQ public/internal |
+| FE-10 | Account Management | Fixed role/subRole, no dynamic permissions DB |
+| FE-11 | Campus & Department Management | Campus, IC/GENERAL departments, personnel |
+| FE-12 | Profile/Auth/Notifications | SSO/local dev login, profile, notification |
+
+---
+
+## 6. Delegation status model
+
+### 6.1 Request-level status
+
+`visit_requests.status` chỉ biểu diễn kết quả xử lý request tổng:
+
+```text
+PENDING_APPROVAL
+APPROVED
+REJECTED
+CANCELLED
+```
+
+### 6.2 Campus-instance-level status
+
+`visit_request_campuses.status` biểu diễn lifecycle vận hành từng campus:
+
+```text
+WAITING_REQUEST_APPROVAL
+WAITING_HOST_ASSIGNMENT
+ASSIGNED
+BEFORE_VISIT
+DURING_VISIT
+AFTER_VISIT
+CLOSED
+CANCELLED
+```
+
+Không đưa `BEFORE_VISIT`, `DURING_VISIT`, `AFTER_VISIT`, `CLOSED` vào `visit_requests.status`.
+
+---
+
+## 7. Luồng single-campus
+
+```text
+Visitor/Staff submit request
+→ visit_requests.status = PENDING_APPROVAL
+→ campus instance = WAITING_REQUEST_APPROVAL
+→ Staff Leader đúng campus duyệt/từ chối
+```
+
+Nếu Staff Leader từ chối:
+
+```text
+visit_requests.status = REJECTED
+Ghi decided_by, decided_at, decision_actor_role = STAFF_LEADER, decision_note
+Thông báo/email cho Visitor
+```
+
+Nếu Staff Leader duyệt:
+
+```text
+visit_requests.status = APPROVED
+campus instance = WAITING_HOST_ASSIGNMENT nếu chưa chọn host
+```
+
+Khi Staff Leader gán host:
+
+```text
+current_host_user_id = IC Staff thường cùng campus
+host_assigned_by = Staff Leader
+host_assigned_at = now
+campus instance = ASSIGNED
+```
+
+Sau đó host vận hành:
+
+```text
+ASSIGNED → BEFORE_VISIT → DURING_VISIT → AFTER_VISIT → CLOSED
+```
+
+---
+
+## 8. Luồng multi-campus
+
+```text
+Visitor/Staff submit request chọn >= 2 campus
+→ visit_requests.status = PENDING_APPROVAL
+→ tất cả campus instance = WAITING_REQUEST_APPROVAL
+→ chỉ HO nhìn thấy request tổng
+```
+
+Khi HO chưa duyệt:
+
+```text
+Staff Leader/Staff/Department/Student của campus con không thấy đoàn con.
+Không tạo participant/logistics/calendar/minutes cho campus con.
+```
+
+Nếu HO từ chối:
+
+```text
+visit_requests.status = REJECTED
+Ghi decision_actor_role = HO, decision_note
+Thông báo/email cho Visitor
+```
+
+Nếu HO duyệt:
+
+```text
+visit_requests.status = APPROVED
+Mỗi campus instance = WAITING_HOST_ASSIGNMENT
+coordinator_user_id = Staff Leader của campus đó
+coordinator_assigned_by = HO
+coordinator_assigned_at = now
+```
+
+Sau HO approve, Staff Leader từng campus mới thấy instance của mình và gán host chính thức.
+
+Không có bước Staff Leader duyệt lại request tổng sau HO.
+
+---
+
+## 9. Host assignment
+
+Host phải là:
+
+```text
+role_code = STAFF
+sub_role = STAFF
+status = ACTIVE
+primary_campus_id = campus instance campus_id
+department_type = IC
+```
+
+Không chọn Staff Leader làm host mặc định. Staff Leader là coordinator/approver, không phải host nếu chưa được schema/UC cho phép.
+
+---
+
+## 10. Cancellation overview
+
+Trước duyệt:
+
+```text
+Không dùng CANCELLED.
+Dùng reject flow.
+```
+
+Sau approve:
+
+```text
+Visitor tự hủy → SELF_SERVICE.
+Host hủy thay khách → EXTERNAL_CONFIRMATION.
+```
+
+Không có luồng Staff Leader/HO cancel sau APPROVED theo schema hiện tại.
+
+Không cho cancel nếu campus instance đã:
+
+```text
+DURING_VISIT
+AFTER_VISIT
+CLOSED
+CANCELLED
+```
+
+---
+
+## 11. Submit form required data
+
+Mỗi request phải có:
+
+```text
+Ít nhất 1 GUEST trong visit_guest_members
+Ít nhất 1 EXTERNAL_SUPPORT trong visit_guest_members
+```
+
+Nút “Là tôi” trong UI team hỗ trợ khách:
+
+```text
+Copy thông tin người đăng ký form vào một dòng EXTERNAL_SUPPORT.
+```
+
+---
+
+## 12. Time-aware testing and seed expectation
+
+Seed hiện hành nên có dynamic planned time:
+
+```text
+WAITING_REQUEST_APPROVAL  → tương lai xa
+WAITING_HOST_ASSIGNMENT   → tương lai
+ASSIGNED                  → tương lai
+BEFORE_VISIT              → tương lai gần
+DURING_VISIT              → bao quanh CURRENT_TIMESTAMP
+AFTER_VISIT               → vừa kết thúc
+CLOSED                    → đã kết thúc lâu hơn
+CANCELLED                 → hủy trước planned_start_at
+```
+
+Cho phép dùng `CURRENT_DATE`, `CURRENT_TIMESTAMP`, `DATE_ADD`, `DATE_SUB` trong seed để mỗi lần import DB đều có dữ liệu đúng thời điểm.
+
+---
+
+## 13. Architecture overview
+
+PEMS triển khai theo hướng:
+
+```text
+Frontend: React/TypeScript
+Backend: ASP.NET Core Clean Architecture + MediatR
+Database: MySQL database-first/manual SQL
+Storage: File metadata in DB + physical/object storage
+Integration: Email, SSO, configured external APIs
+```
+
+Quy tắc:
+
+```text
+Controller chỉ nhận request/gọi mediator.
+Handler/service xử lý business rule.
+Domain chứa rule cốt lõi/status transition.
+Infrastructure xử lý DB/email/file/external service.
+Không seed runtime trong Program.cs.
+Không dùng auto migration bừa nếu project đã database-first.
+```
+
+---
+
+## 14. Documentation policy
+
+Mỗi UC khi code xong phải có:
+
+```text
+Backend files changed
+Frontend files changed
+DB scripts changed nếu có
+API contract
+Validation rules
+Scope/permission rules
+Manual test cases
+Build result
+Known limitations
+```
+
+Không chấp nhận báo cáo “đã làm xong” mà không có build/test.
+
+---
+
+# PHẦN B — NỘI DUNG GỐC / LEGACY PRESERVED CONTENT
+
+> Phần này được giữ nguyên để đối chiếu lịch sử. Không dùng phần này để code nếu mâu thuẫn với PHẦN A hoặc file canonical.
+
 <!-- =====================================================================
 PEMS DOC UPDATE v8.2-full-preserved-cancel-delegation-no-external-note
 Generated: 2026-06-19
@@ -462,7 +862,7 @@ B2: Ký kết biên bản bàn giao (4 lần: Bàn giao ×2 + Nghiệm thu ×2)
 
 #### Giai đoạn 3 — KẾT THÚC (Sau tiếp khách)
 
-| Chức năng | HOST | STAFF_P | Student | DEPARTMENT | Visitor |
+| Chức năng | HOST | STAFF_P | Student | DEPT | Visitor |
 |---|---|---|---|---|---|
 | Upload album ảnh | ✓ | ✓ | ✓ | ✗ | ✗ |
 | Gán tên lên khuôn mặt ảnh | ✓ | ✓ | ✗ | ✗ | ✗ |

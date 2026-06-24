@@ -1,3 +1,439 @@
+# PROMPT_STANDARDIZE_ROLE_SUBROLE_DEPARTMENT_v8_4_refined_v6_FULL_UPDATED
+
+> **Bản FULL-PRESERVED cập nhật theo PEMS v8.4 refined v6 no dynamic permissions.**  
+> File này gồm 2 phần:  
+> - **PHẦN A — Nội dung chuẩn hiện tại để code/triển khai.**  
+> - **PHẦN B — Nội dung gốc/legacy được giữ lại đầy đủ để đối chiếu lịch sử.**  
+>
+> Khi PHẦN A mâu thuẫn với PHẦN B, **luôn ưu tiên PHẦN A**. PHẦN B không được dùng làm nguồn code trực tiếp nếu có dấu hiệu legacy như `DEPT`, `STAFF_L`, `STAFF_P`, `Staff click nhận đón`, `auto Staff Leader làm host`, `Staff Leader/HO cancel sau APPROVED`, hoặc dynamic permissions.
+
+## 0. Cách đọc file này
+
+```text
+1. Đọc PEMS_CANONICAL_BUSINESS_RULES_v8_4_refined_v6.md trước.
+2. Đọc PHẦN A của file này để lấy nghiệp vụ/logic hiện hành.
+3. Chỉ dùng PHẦN B để hiểu nguồn gốc tài liệu cũ, không dùng để sinh code nếu mâu thuẫn với PHẦN A.
+4. Nếu cần code, backend phải kiểm tra lại bằng schema v8.4 refined v6 và seed v7/v6 dynamic time tương ứng.
+```
+
+---
+
+# PHẦN A — NỘI DUNG CHUẨN HIỆN TẠI / UPDATED CANONICAL CONTENT
+
+# PROMPT_STANDARDIZE_ROLE_SUBROLE_DEPARTMENT_v8_4_refined_v6_UPDATED
+
+## 0. Mục tiêu
+
+Chuẩn hóa toàn bộ Role/SubRole/Department trong PEMS để code và seed không còn lẫn giữa role cũ, label UI và runtime value.
+
+Áp dụng cho:
+
+```text
+SQL schema/seed
+Backend .NET
+Frontend React/TypeScript
+Docs
+Test scripts
+AI Agent prompts
+```
+
+---
+
+## 1. Quy ước role/subRole chuẩn
+
+| Nhóm người dùng | role_code | sub_role | Ghi chú |
+|---|---|---|---|
+| Admin | `ADMIN` | `NULL` | Quản trị kỹ thuật |
+| Head Office | `HO` | `NULL` | Multi-campus |
+| Staff Leader | `STAFF` | `LEADER` | Trưởng IC campus |
+| IC Staff | `STAFF` | `STAFF` | Nhân sự IC thường, có thể làm host |
+| Department Leader | `DEPARTMENT` | `LEADER` | Trưởng phòng ban GENERAL |
+| Department Staff | `DEPARTMENT` | `STAFF` | Nhân sự phòng ban GENERAL |
+| Student | `STUDENT` | `NULL` | Sinh viên hỗ trợ |
+| Visitor | `VISITOR` | `NULL` | Khách ngoài |
+
+---
+
+## 2. Giá trị bị cấm
+
+Không dùng trong DB/backend/frontend/docs runtime:
+
+```text
+DEPT
+STAFF_LEADER
+IC_STAFF_LEADER
+DEPT_LEADER
+DEPARTMENT_LEADER
+LEADER as role_code
+STAFF_L as role_code
+STAFF_P as role_code
+DEPT_L as role_code
+DEPT_P as role_code
+```
+
+Không phân biệt leader bằng email:
+
+```text
+email.Contains("leader")
+LIKE '%leader%'
+```
+
+Không tìm Staff thường bằng phủ định:
+
+```text
+subRole != LEADER
+```
+
+Phải dùng khẳng định:
+
+```text
+role_code = STAFF AND sub_role = STAFF
+```
+
+---
+
+## 3. Department type rules
+
+Department có 2 loại:
+
+```text
+IC
+GENERAL
+```
+
+Mapping bắt buộc:
+
+```text
+STAFF + LEADER  → department_type = IC
+STAFF + STAFF   → department_type = IC
+DEPARTMENT + LEADER → department_type = GENERAL
+DEPARTMENT + STAFF  → department_type = GENERAL
+```
+
+Không cho:
+
+```text
+Staff user thuộc GENERAL department
+Department user thuộc IC department
+Visitor có department_id
+Admin/HO/Student dùng sub_role
+```
+
+---
+
+## 4. Uniqueness business rules
+
+Backend phải enforce khi tạo/cập nhật account:
+
+```text
+1. Mỗi campus chỉ có một Staff Leader ACTIVE.
+2. Mỗi GENERAL department chỉ có một Department Leader ACTIVE.
+3. Staff Leader phải cùng campus với IC department.
+4. Department Leader/Staff phải cùng campus với GENERAL department.
+5. Không tạo account vào campus/department INACTIVE.
+6. Không xóa cứng user đã có lịch sử nghiệp vụ.
+```
+
+---
+
+## 5. SQL/seed rules
+
+Seed user phải set rõ:
+
+```text
+role_id/role_code
+sub_role
+primary_campus_id
+department_id
+status
+created_via
+```
+
+Không seed theo pattern email.
+
+Roles table chỉ nên có:
+
+```sql
+ADMIN, HO, STAFF, DEPARTMENT, STUDENT, VISITOR
+```
+
+Vì schema v8.4 refined v6 đã bỏ dynamic permissions, không seed/query các bảng:
+
+```text
+permissions
+role_permissions
+```
+
+Nếu file legacy còn các bảng đó, đánh dấu legacy/deprecated và không dùng runtime.
+
+---
+
+## 6. Backend constants chuẩn
+
+```csharp
+public static class RoleCodes
+{
+    public const string Admin = "ADMIN";
+    public const string HO = "HO";
+    public const string Staff = "STAFF";
+    public const string Department = "DEPARTMENT";
+    public const string Student = "STUDENT";
+    public const string Visitor = "VISITOR";
+}
+
+public static class SubRoles
+{
+    public const string Staff = "STAFF";
+    public const string Leader = "LEADER";
+}
+```
+
+Helper bắt buộc:
+
+```csharp
+IsStaffLeader     => role STAFF + subRole LEADER
+IsStaffMember     => role STAFF + subRole STAFF
+IsDepartmentLeader => role DEPARTMENT + subRole LEADER
+IsDepartmentStaff  => role DEPARTMENT + subRole STAFF
+```
+
+---
+
+## 7. Frontend constants chuẩn
+
+```ts
+export const ROLE_CODES = {
+  ADMIN: 'ADMIN',
+  HO: 'HO',
+  STAFF: 'STAFF',
+  DEPARTMENT: 'DEPARTMENT',
+  STUDENT: 'STUDENT',
+  VISITOR: 'VISITOR',
+} as const;
+
+export const SUB_ROLES = {
+  STAFF: 'STAFF',
+  LEADER: 'LEADER',
+} as const;
+```
+
+Helper frontend:
+
+```ts
+isStaffLeader(user)      // STAFF + LEADER
+isStaffMember(user)      // STAFF + STAFF
+isDepartmentLeader(user) // DEPARTMENT + LEADER
+isDepartmentStaff(user)  // DEPARTMENT + STAFF
+```
+
+Không dùng biến `isStaff` để gom cả Department/Student/Visitor.
+
+---
+
+## 8. Host candidate rule
+
+Khi Staff Leader gán host, backend/frontend chỉ hiện:
+
+```text
+user.status = ACTIVE
+role_code = STAFF
+sub_role = STAFF
+primary_campus_id = visit_instance.campus_id
+department_type = IC
+department.status = ACTIVE
+```
+
+Không hiện:
+
+```text
+STAFF + LEADER
+DEPARTMENT + STAFF/LEADER
+STUDENT
+HO
+ADMIN
+VISITOR
+Inactive/Locked user
+User khác campus
+```
+
+---
+
+## 9. Account creation rules
+
+### 9.1 HO tạo Staff Leader/IC Staff
+
+```text
+role_code = STAFF
+sub_role = LEADER hoặc STAFF
+campus_id bắt buộc
+department_id bắt buộc, department_type = IC
+```
+
+Nếu tạo Staff Leader:
+
+```text
+campus chưa có Staff Leader ACTIVE
+```
+
+### 9.2 Staff Leader tạo IC Staff
+
+Staff Leader chỉ được tạo:
+
+```text
+role_code = STAFF
+sub_role = STAFF
+primary_campus_id = campus của Staff Leader
+department_type = IC
+```
+
+Không được tạo Staff Leader khác.
+
+### 9.3 HO tạo Department Leader
+
+```text
+role_code = DEPARTMENT
+sub_role = LEADER
+department_type = GENERAL
+```
+
+Mỗi GENERAL department chỉ có một Department Leader ACTIVE.
+
+### 9.4 Department Leader tạo Department Staff
+
+```text
+role_code = DEPARTMENT
+sub_role = STAFF
+primary_campus_id = campus của Department Leader
+department_id = department của Department Leader
+```
+
+Staff Leader không tạo Department Staff.
+
+### 9.5 HO account
+
+Cần policy rõ:
+
+```text
+Mỗi campus chỉ một HO ACTIVE hay nhiều HO cùng campus?
+```
+
+Nếu chưa chốt, không tự tạo nhiều HO ACTIVE cùng campus.
+
+---
+
+## 10. DB verification queries
+
+### 10.1 Invalid role/subRole
+
+```sql
+SELECT u.user_id, u.email, r.role_code, u.sub_role, u.primary_campus_id, u.department_id
+FROM users u
+JOIN roles r ON r.role_id = u.role_id
+WHERE r.role_code IN ('DEPT','STAFF_LEADER','IC_STAFF_LEADER','DEPT_LEADER','DEPARTMENT_LEADER')
+   OR (r.role_code IN ('STAFF','DEPARTMENT') AND u.sub_role NOT IN ('STAFF','LEADER'))
+   OR (r.role_code NOT IN ('STAFF','DEPARTMENT') AND u.sub_role IS NOT NULL);
+```
+
+Expected: `0 rows`.
+
+### 10.2 Staff/Department wrong department type
+
+```sql
+SELECT u.user_id, u.email, r.role_code, u.sub_role, d.department_type
+FROM users u
+JOIN roles r ON r.role_id = u.role_id
+LEFT JOIN departments d ON d.department_id = u.department_id
+WHERE (r.role_code = 'STAFF' AND d.department_type <> 'IC')
+   OR (r.role_code = 'DEPARTMENT' AND d.department_type <> 'GENERAL');
+```
+
+Expected: `0 rows`.
+
+### 10.3 Multiple active Staff Leaders per campus
+
+```sql
+SELECT u.primary_campus_id, COUNT(*) AS active_staff_leader_count
+FROM users u
+JOIN roles r ON r.role_id = u.role_id
+WHERE r.role_code = 'STAFF'
+  AND u.sub_role = 'LEADER'
+  AND u.status = 'ACTIVE'
+GROUP BY u.primary_campus_id
+HAVING COUNT(*) > 1;
+```
+
+Expected: `0 rows`.
+
+### 10.4 Multiple active Department Leaders per department
+
+```sql
+SELECT u.department_id, COUNT(*) AS active_department_leader_count
+FROM users u
+JOIN roles r ON r.role_id = u.role_id
+WHERE r.role_code = 'DEPARTMENT'
+  AND u.sub_role = 'LEADER'
+  AND u.status = 'ACTIVE'
+GROUP BY u.department_id
+HAVING COUNT(*) > 1;
+```
+
+Expected: `0 rows`.
+
+---
+
+## 11. Search checklist khi sửa project
+
+Tìm toàn repo:
+
+```text
+DEPT
+STAFF_LEADER
+IC_STAFF_LEADER
+DEPT_LEADER
+DEPARTMENT_LEADER
+STAFF_L
+STAFF_P
+DEPT_L
+DEPT_P
+RoleCodes.Dept
+isDeptStaff
+isDeptLeader
+email.Contains("leader")
+LIKE '%leader%'
+subRole !=
+```
+
+Nếu xuất hiện trong legacy docs, ghi rõ legacy/deprecated. Nếu xuất hiện trong runtime code, phải sửa.
+
+---
+
+## 12. Build và báo cáo
+
+Sau khi sửa:
+
+```bash
+dotnet build
+npm run build
+```
+
+Báo cáo phải có:
+
+```text
+SQL files changed
+Backend files changed
+Frontend files changed
+Docs updated
+Invalid role/subRole query result
+Build result
+Manual test result cho Staff, Staff Leader, Department Staff, Department Leader, HO, Visitor
+```
+
+---
+
+# PHẦN B — NỘI DUNG GỐC / LEGACY PRESERVED CONTENT
+
+> Phần này được giữ nguyên để đối chiếu lịch sử. Không dùng phần này để code nếu mâu thuẫn với PHẦN A hoặc file canonical.
+
 # PROMPT CHO CLAUDE — Chuẩn hóa toàn bộ Role/SubRole PEMS
 
 ## 0. Bối cảnh
