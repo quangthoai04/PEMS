@@ -5,8 +5,8 @@
 
 import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Edit, Trash2, Search, X, Upload, CheckCircle2, ChevronRight, ChevronLeft, ChevronDown, ChevronUp, Plus, Image as ImageIcon, Film, Eye } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Edit, Trash2, Search, X, Upload, CheckCircle2, ChevronRight, ChevronLeft, ChevronDown, ChevronUp, Plus, Image as ImageIcon, Film, Eye, MapPin } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
 import bgHN from "../../../assets/FPTbanner_visit/hola_new.jpg";
 
 // Defined Locations from Visit FPTU
@@ -44,6 +44,11 @@ const MOCK_GALLERY = [
 ];
 
 export function GalleryManagement() {
+  const navigate = useNavigate();
+  const userStr = localStorage.getItem("currentUser");
+  const currentUser = userStr ? JSON.parse(userStr) : null;
+  const isStaffLeader = currentUser?.role?.toUpperCase() === 'STAFF' && currentUser?.subRole?.toUpperCase() === 'LEADER';
+
   const [galleryList, setGalleryList] = useState(MOCK_GALLERY);
   const [searchQuery, setSearchQuery] = useState('');
   
@@ -198,7 +203,16 @@ export function GalleryManagement() {
         </div>
         <div className="flex items-center gap-3">
 
-          <button 
+          {isStaffLeader && (
+            <button
+              onClick={() => navigate('/dashboard/gallery/locations')}
+              className="flex items-center gap-2 bg-white hover:bg-slate-50 text-[#004c91] border border-[#004c91] px-5 py-2.5 rounded-xl text-sm font-bold shadow-sm transition-all hover:shadow-md outline-none"
+            >
+              <MapPin className="w-5 h-5" /> Quản lý khu vực
+            </button>
+          )}
+
+          <button
             onClick={handleOpenCreate}
             className="flex items-center gap-2 bg-[#f37021] hover:bg-[#e85c0d] text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-sm transition-all hover:shadow-md outline-none"
           >

@@ -350,10 +350,13 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
             .HasOne<User>().WithMany()
             .HasForeignKey(f => f.TargetUserId).OnDelete(DeleteBehavior.SetNull);
 
-        // News → Campus, AuthorUser, CoverFile, DecidedBy
+        // News → Campus, VisitInstance, AuthorUser, CoverFile, ReviewedBy
         modelBuilder.Entity<PEMS.Domain.Entities.News.News>()
             .HasOne<Campus>().WithMany()
             .HasForeignKey(n => n.CampusId).OnDelete(DeleteBehavior.SetNull);
+        modelBuilder.Entity<PEMS.Domain.Entities.News.News>()
+            .HasOne<VisitRequestCampus>().WithMany()
+            .HasForeignKey(n => n.VisitInstanceId).OnDelete(DeleteBehavior.SetNull);
         modelBuilder.Entity<PEMS.Domain.Entities.News.News>()
             .HasOne<User>().WithMany()
             .HasForeignKey(n => n.AuthorUserId).OnDelete(DeleteBehavior.Restrict);
@@ -362,20 +365,17 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
             .HasForeignKey(n => n.CoverFileId).OnDelete(DeleteBehavior.SetNull);
         modelBuilder.Entity<PEMS.Domain.Entities.News.News>()
             .HasOne<User>().WithMany()
-            .HasForeignKey(n => n.DecidedBy).OnDelete(DeleteBehavior.SetNull);
+            .HasForeignKey(n => n.ReviewedBy).OnDelete(DeleteBehavior.SetNull);
 
         // NewsTranslation → News
         modelBuilder.Entity<NewsTranslation>()
             .HasOne(nt => nt.News).WithMany(n => n.Translations)
             .HasForeignKey(nt => nt.NewsId).OnDelete(DeleteBehavior.Cascade);
 
-        // Gallery → Campus, VisitRequestCampus
+        // Gallery → Campus
         modelBuilder.Entity<Gallery>()
             .HasOne<Campus>().WithMany()
             .HasForeignKey(g => g.CampusId).OnDelete(DeleteBehavior.SetNull);
-        modelBuilder.Entity<Gallery>()
-            .HasOne<VisitRequestCampus>().WithMany()
-            .HasForeignKey(g => g.VisitInstanceId).OnDelete(DeleteBehavior.SetNull);
 
         // GalleryImage → Gallery, File
         modelBuilder.Entity<GalleryImage>()
@@ -518,8 +518,8 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
             .HasForeignKey(a => a.AuditLogId).OnDelete(DeleteBehavior.Cascade);
 
         modelBuilder.Entity<NewsContentSection>()
-            .HasOne(s => s.News).WithMany(n => n.Sections)
-            .HasForeignKey(s => s.NewsId).OnDelete(DeleteBehavior.Cascade);
+            .HasOne(s => s.NewsTranslation).WithMany(t => t.Sections)
+            .HasForeignKey(s => s.NewsTranslationId).OnDelete(DeleteBehavior.Cascade);
 
         modelBuilder.Entity<NewsSectionFile>(b =>
         {

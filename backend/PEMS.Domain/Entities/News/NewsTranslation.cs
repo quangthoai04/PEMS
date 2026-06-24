@@ -25,9 +25,6 @@ public class NewsTranslation
     [Column("summary")]
     public string? Summary { get; set; }
 
-    [Column("body")]
-    public string? Body { get; set; }
-
     [Column("seo_title")]
     public string? SeoTitle { get; set; }
 
@@ -41,4 +38,5 @@ public class NewsTranslation
     public DateTime? UpdatedAt { get; set; }
 
     public virtual News News { get; set; } = null!;
+    public virtual ICollection<NewsContentSection> Sections { get; set; } = new List<NewsContentSection>();
 }

@@ -516,17 +516,22 @@ public sealed class ViewGuestDelegationListQueryHandler
         // Load the page with instances + partner, then shape request-level rows in memory
         // (avoids fragile conditional-subquery projection translation).
         var pageQuery = q;
+        // Aggregate the sort key as a NULLABLE DateTime: a request can have zero campus
+        // instances (or EF treats the navigation as possibly-empty), in which case Min/Max
+        // over a non-nullable DateTime throws at runtime. The (DateTime?) cast lets the
+        // empty case resolve to NULL instead of blowing up the whole query (was the cause
+        // of the 500 on the HO "Quản lý tiếp khách" list).
         if (request.SortBy?.ToLower() == "plannedstartat")
         {
             if (request.SortOrder?.ToLower() == "asc")
-                pageQuery = pageQuery.OrderBy(vr => vr.CampusInstances.Min(i => i.PlannedStartAt)).ThenBy(vr => vr.VisitRequestId);
+                pageQuery = pageQuery.OrderBy(vr => vr.CampusInstances.Min(i => (DateTime?)i.PlannedStartAt)).ThenBy(vr => vr.VisitRequestId);
             else
-                pageQuery = pageQuery.OrderByDescending(vr => vr.CampusInstances.Max(i => i.PlannedStartAt)).ThenByDescending(vr => vr.VisitRequestId);
+                pageQuery = pageQuery.OrderByDescending(vr => vr.CampusInstances.Max(i => (DateTime?)i.PlannedStartAt)).ThenByDescending(vr => vr.VisitRequestId);
         }
         else if (request.SortOrder?.ToLower() == "asc")
-            pageQuery = pageQuery.OrderBy(vr => vr.CampusInstances.Min(i => i.PlannedStartAt)).ThenBy(vr => vr.VisitRequestId);
+            pageQuery = pageQuery.OrderBy(vr => vr.CampusInstances.Min(i => (DateTime?)i.PlannedStartAt)).ThenBy(vr => vr.VisitRequestId);
         else if (request.SortOrder?.ToLower() == "desc")
-            pageQuery = pageQuery.OrderByDescending(vr => vr.CampusInstances.Max(i => i.PlannedStartAt)).ThenByDescending(vr => vr.VisitRequestId);
+            pageQuery = pageQuery.OrderByDescending(vr => vr.CampusInstances.Max(i => (DateTime?)i.PlannedStartAt)).ThenByDescending(vr => vr.VisitRequestId);
         else
             pageQuery = pageQuery.OrderByDescending(vr => vr.CreatedAt).ThenByDescending(vr => vr.VisitRequestId);
 

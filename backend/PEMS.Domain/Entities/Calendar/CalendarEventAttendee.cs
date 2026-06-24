@@ -29,9 +29,6 @@ public class CalendarEventAttendee
     [Column("response_status")]
     public string ResponseStatus { get; set; } = "NEEDS_ACTION";
 
-    [Column("responded_at")]
-    public DateTime? RespondedAt { get; set; }
-
     [Column("created_at")]
     public DateTime CreatedAt { get; set; }
 
