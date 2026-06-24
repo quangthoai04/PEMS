@@ -48,6 +48,16 @@ export function FAQPage() {
   const [totalItems, setTotalItems] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [fetchTick, setFetchTick] = useState(0);
+
+  // Re-fetch khi tab được focus lại (user có thể vừa tạo FAQ ở tab khác)
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (!document.hidden) setFetchTick(t => t + 1);
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+  }, []);
 
   // Debounce keyword 400ms
   useEffect(() => {
@@ -93,7 +103,7 @@ export function FAQPage() {
 
     fetchFaqs();
     return () => { cancelled = true; };
-  }, [debouncedKeyword, selectedType, currentPage]);
+  }, [debouncedKeyword, selectedType, currentPage, fetchTick]);
 
   const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
     setSearchQuery(e.target.value);

@@ -6,6 +6,8 @@ public sealed class ChangeFAQVisibilityCommandValidator : AbstractValidator<Chan
 {
     public ChangeFAQVisibilityCommandValidator()
     {
-        // TODO: Add validation rules after UC specification is completed.
+        RuleFor(x => x.FaqId)
+            .GreaterThan(0ul)
+            .WithMessage("FaqId phải lớn hơn 0.");
     }
 }

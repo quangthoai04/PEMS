@@ -24,6 +24,12 @@ public static class FaqConstants
         };
     }
 
+    public static class Status
+    {
+        public const string Published = "PUBLISHED";
+        public const string Hidden = "HIDDEN";
+    }
+
     public static string ToVietnameseTypeLabel(string faqType) => faqType switch
     {
         Type.AccountAccess => "Tài khoản và truy cập",
@@ -33,5 +39,12 @@ public static class FaqConstants
         Type.DocumentMedia => "Tài liệu và truyền thông",
         Type.NotificationEmail => "Thông báo và email",
         _ => "Khác"
+    };
+
+    public static string ToVietnameseStatusLabel(string status) => status switch
+    {
+        Status.Published => "Hiển thị",
+        Status.Hidden => "Ẩn",
+        _ => status
     };
 }
