@@ -1,14 +1,35 @@
-using System;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
+using PEMS.Application.Campuses.Common;
+using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Common.Models;
+using PEMS.Application.Common.Security;
 
 namespace PEMS.Application.Campuses.Queries.SearchandFilterCampus;
 
-public sealed class SearchandFilterCampusQueryHandler : IRequestHandler<SearchandFilterCampusQuery, SearchandFilterCampusDto>
+/// <summary>
+/// UC-83 handler. Shares <see cref="CampusListQueryExecutor"/> with UC-82, so search +
+/// filters (keyword/city/campus/status) combine with AND logic over the same read model.
+/// </summary>
+public sealed class SearchandFilterCampusQueryHandler
+    : IRequestHandler<SearchandFilterCampusQuery, PaginatedResult<CampusListItemDto>>
 {
-    public Task<SearchandFilterCampusDto> Handle(SearchandFilterCampusQuery request, CancellationToken cancellationToken)
+    private readonly IApplicationDbContext _db;
+    private readonly ICurrentUserService _currentUser;
+    private readonly IRoleAccessPolicy _accessPolicy;
+
+    public SearchandFilterCampusQueryHandler(
+        IApplicationDbContext db,
+        ICurrentUserService currentUser,
+        IRoleAccessPolicy accessPolicy)
     {
-        throw new NotImplementedException("UC Search and Filter Campus has been scaffolded. Business rules must be implemented after UC specification is completed.");
+        _db = db;
+        _currentUser = currentUser;
+        _accessPolicy = accessPolicy;
     }
+
+    public Task<PaginatedResult<CampusListItemDto>> Handle(
+        SearchandFilterCampusQuery request, CancellationToken cancellationToken)
+        => CampusListQueryExecutor.ExecuteAsync(_db, _currentUser, _accessPolicy, request, cancellationToken);
 }
