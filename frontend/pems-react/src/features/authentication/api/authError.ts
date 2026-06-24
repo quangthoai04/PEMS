@@ -34,6 +34,20 @@ export const AUTH_ERROR_MESSAGES: Record<string, string> = {
   TOKEN_EXPIRED: 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.',
   UNAUTHORIZED: 'Bạn cần đăng nhập để tiếp tục.',
   INTERNAL_SERVER_ERROR: 'Đã xảy ra lỗi hệ thống. Vui lòng thử lại sau.',
+
+  // Campus Management (UC-82/83/86)
+  CAMPUS_MANAGEMENT_FORBIDDEN: 'Bạn không có quyền quản lý campus.',
+  CAMPUS_NOT_FOUND: 'Không tìm thấy campus.',
+  INVALID_CAMPUS_STATUS: 'Trạng thái campus không hợp lệ.',
+  CAMPUS_ACTIVATION_MASTER_DATA_INCOMPLETE:
+    'Không thể kích hoạt campus vì còn thiếu thông tin bắt buộc (mã, tên, cơ sở, địa chỉ, số điện thoại, email).',
+  CAMPUS_ACTIVATION_MISSING_IC_DEPARTMENT:
+    'Không thể kích hoạt campus vì chưa có phòng ban IC đang hoạt động.',
+  CAMPUS_CODE_ALREADY_EXISTS: 'Mã campus đã tồn tại.',
+  CAMPUS_NAME_ALREADY_EXISTS: 'Tên campus đã tồn tại.',
+  CAMPUS_ADDRESS_ALREADY_EXISTS: 'Địa chỉ này đã được sử dụng cho campus khác.',
+  CAMPUS_PHONE_ALREADY_EXISTS: 'Số điện thoại này đã được sử dụng cho campus khác.',
+  CAMPUS_EMAIL_ALREADY_EXISTS: 'Email này đã được sử dụng cho campus khác.',
 };
 
 /**

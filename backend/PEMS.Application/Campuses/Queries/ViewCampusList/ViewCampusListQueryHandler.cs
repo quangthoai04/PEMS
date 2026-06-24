@@ -1,45 +1,35 @@
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
-using Microsoft.EntityFrameworkCore;
+using PEMS.Application.Campuses.Common;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Common.Models;
+using PEMS.Application.Common.Security;
 
 namespace PEMS.Application.Campuses.Queries.ViewCampusList;
 
-public sealed class ViewCampusListQueryHandler : IRequestHandler<ViewCampusListQuery, ViewCampusListDto>
+/// <summary>
+/// UC-82 handler. Delegates to <see cref="CampusListQueryExecutor"/> so it shares one
+/// scoped, paged, filtered read model with UC-83 (Search and Filter Campus).
+/// </summary>
+public sealed class ViewCampusListQueryHandler
+    : IRequestHandler<ViewCampusListQuery, PaginatedResult<CampusListItemDto>>
 {
     private readonly IApplicationDbContext _db;
+    private readonly ICurrentUserService _currentUser;
+    private readonly IRoleAccessPolicy _accessPolicy;
 
-    public ViewCampusListQueryHandler(IApplicationDbContext db)
+    public ViewCampusListQueryHandler(
+        IApplicationDbContext db,
+        ICurrentUserService currentUser,
+        IRoleAccessPolicy accessPolicy)
     {
         _db = db;
+        _currentUser = currentUser;
+        _accessPolicy = accessPolicy;
     }
 
-    public async Task<ViewCampusListDto> Handle(ViewCampusListQuery request, CancellationToken cancellationToken)
-    {
-        var campuses = await _db.Campuses
-            .AsNoTracking()
-            .Include(c => c.IcHeadUser)
-            .OrderBy(c => c.CampusCode)
-            .Select(c => new CampusItemDto
-            {
-                CampusId = c.CampusId,
-                CampusCode = c.CampusCode,
-                Name = c.Name,
-                City = c.City,
-                Address = c.Address,
-                Phone = c.Phone,
-                Email = c.Email,
-                IcHeadUserId = c.IcHeadUserId,
-                IcHeadUserName = c.IcHeadUser != null ? c.IcHeadUser.FullName : null,
-                Status = c.Status
-            })
-            .ToListAsync(cancellationToken);
-
-        return new ViewCampusListDto
-        {
-            Campuses = campuses
-        };
-    }
+    public Task<PaginatedResult<CampusListItemDto>> Handle(
+        ViewCampusListQuery request, CancellationToken cancellationToken)
+        => CampusListQueryExecutor.ExecuteAsync(_db, _currentUser, _accessPolicy, request, cancellationToken);
 }

@@ -4,7 +4,9 @@ namespace PEMS.Application.Campuses.Commands.ManageCampusStatus;
 
 public sealed class ManageCampusStatusResponse
 {
-    public Guid? Id { get; init; }
-    public string Status { get; init; } = "Scaffolded";
-    public string Message { get; init; } = "Use case scaffolded. Business logic is not implemented yet.";
+    public ulong CampusId { get; init; }
+    public string Status { get; init; } = null!;
+    public DateTime UpdatedAt { get; init; }
+    public ulong? UpdatedBy { get; init; }
+    public string Message { get; init; } = "Cập nhật trạng thái campus thành công.";
 }

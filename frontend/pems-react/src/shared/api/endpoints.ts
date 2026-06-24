@@ -12,6 +12,15 @@ export const API_ENDPOINTS = {
   },
   campuses: {
     active: '/campuses/active',
+    // UC-82 list (also serves UC-83 search/filter), UC-83 filter options, UC-86 status toggle.
+    list: '/campuses/viewcampuslist',
+    search: '/campuses/searchandfiltercampus',
+    filterOptions: '/campuses/filter-options',
+    manageStatus: '/campuses/managecampusstatus',
+    // UC-81 create (+ auto IC dept), UC-84 details, UC-85 update master data.
+    create: '/campuses/addnewcampus',
+    details: '/campuses/viewcampusdetails',
+    update: '/campuses/updatecampus',
   },
   accounts: {
     list: '/accounts/viewaccountlist',
