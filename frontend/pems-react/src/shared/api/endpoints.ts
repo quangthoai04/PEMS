@@ -78,4 +78,17 @@ export const API_ENDPOINTS = {
     decline: (participantId: string | number) => `/visit-invitations/${participantId}/decline`,
     assignDepartmentStaff: (participantId: string | number) => `/visit-invitations/${participantId}/assign-department-staff`,
   },
+  departmentReceptionTasks: {
+    calendar: '/department/reception-tasks/calendar',
+    invitationDetail: (participantId: string | number) => `/department/reception-tasks/invitations/${participantId}`,
+    acceptInvitation: (participantId: string | number) => `/department/reception-tasks/invitations/${participantId}/accept`,
+    declineInvitation: (participantId: string | number) => `/department/reception-tasks/invitations/${participantId}/decline`,
+    requestDetail: (logisticsItemId: string | number) => `/department/reception-tasks/requests/${logisticsItemId}`,
+    confirmRequest: (logisticsItemId: string | number) => `/department/reception-tasks/requests/${logisticsItemId}/confirm`,
+    rejectRequest: (logisticsItemId: string | number) => `/department/reception-tasks/requests/${logisticsItemId}/reject`,
+    proposeChange: (logisticsItemId: string | number) => `/department/reception-tasks/requests/${logisticsItemId}/propose-change`,
+    assignAssignee: (logisticsItemId: string | number) => `/department/reception-tasks/requests/${logisticsItemId}/assign`,
+    assigneeCandidates: '/department/reception-tasks/assignee-candidates',
+    personalEvents: '/department/reception-tasks/personal-events',
+  },
 };

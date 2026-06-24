@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { VisitRequestManagement } from './VisitRequestManagement';
-import { SharedDashboardView } from '../home/SharedDashboardView';
+import { SharedDashboardView } from '../departments/SharedDashboardView';
 import { DepartmentDetailDashboard } from '../departments/DepartmentDetailDashboard';
 import { DeptLeadAssignmentTab } from './DeptLeadAssignmentTab';
 
