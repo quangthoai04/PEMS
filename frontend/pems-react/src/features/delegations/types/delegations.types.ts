@@ -152,6 +152,98 @@ export interface VisitRequestManagementItem {
   allowedActions: AllowedAction[];
 }
 
+// ── Submitted visit-request form snapshot ─────────────────────────────────────
+// Read-only "what the guest submitted" detail, reused by the pre-approval review, the
+// approved/waiting-host detail and the rejected detail screens. Mirrors the backend
+// SubmittedVisitRequestFormDetailDto. Role/scope/status visibility is enforced server-side;
+// canApprove/canReject/canAssignHost only gate which footer actions the modal shows.
+// No agendas/participants/logistics here — those are host-created after approval.
+
+export interface SubmittedRegistrant {
+  fullName?: string | null;
+  organization?: string | null;
+  jobTitle?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  nationality?: string | null;
+}
+
+export interface SubmittedContactPerson {
+  fullName?: string | null;
+  organization?: string | null;
+  phone?: string | null;
+  email?: string | null;
+}
+
+export interface SubmittedCampusSchedule {
+  visitInstanceId: number;
+  campusId: number;
+  campusCode: string;
+  campusName: string;
+  plannedStartAt: string;
+  plannedEndAt: string;
+  instanceStatus: string;
+  coordinatorUserId?: number | null;
+  currentHostUserId?: number | null;
+  isOwnCampus: boolean;
+}
+
+export interface SubmittedGuestMember {
+  guestMemberId: number;
+  memberType: string;
+  fullName: string;
+  organization?: string | null;
+  jobTitle?: string | null;
+  nationality?: string | null;
+  displayOrder: number;
+}
+
+export interface SubmittedVisitRequestFormDetail {
+  visitRequestId: number;
+  requestCode: string;
+  createdSource?: string | null;
+  submittedAt?: string | null;
+  emailVerifiedAt?: string | null;
+  requestStatus: string;
+  visitScope: string;
+
+  delegationName: string;
+  visitType?: string | null;
+  visitTypeOther?: string | null;
+  purpose?: string | null;
+  workingContent?: string | null;
+
+  registrant: SubmittedRegistrant;
+  contactPerson: SubmittedContactPerson;
+
+  // "Yêu cầu & Xác nhận bổ sung" — guest-entered.
+  workingLanguage?: string | null;
+  mediaConsentStatus?: string | null;
+  mediaConsentNote?: string | null;
+  transportationType?: string | null;
+  transportationDetail?: string | null;
+  noteToFptu?: string | null;
+
+  campuses: SubmittedCampusSchedule[];
+  guestMembers: SubmittedGuestMember[];
+  externalSupportMembers: SubmittedGuestMember[];
+
+  // Decision info (populated once the request was decided).
+  decidedByUserId?: number | null;
+  decidedByName?: string | null;
+  decisionActorRole?: string | null;
+  decidedAt?: string | null;
+  decisionNote?: string | null;
+
+  // Cancellation info (UC-136).
+  cancelledAt?: string | null;
+  cancellationReason?: string | null;
+
+  canApprove: boolean;
+  canReject: boolean;
+  canAssignHost: boolean;
+}
+
 /** A staff member who can be picked as host, with any schedule conflict pre-computed. */
 export interface HostCandidate {
   userId: number;

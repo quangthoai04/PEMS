@@ -15,6 +15,7 @@ import {
 import { motion } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
 import { VisitDetailsModal } from '../../../components/modals/VisitDetailsModal';
+import { SubmittedVisitRequestDetailModal } from '../../../components/modals/SubmittedVisitRequestDetailModal';
 import { AssignHostModal } from '../../../components/modals/AssignHostModal';
 import { delegationsApi } from '../../../features/delegations/api/delegationsApi';
 import {
@@ -165,6 +166,8 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
 
   // Modals
   const [view, setView] = useState<{ open: boolean; row: Row | null }>({ open: false, row: null });
+  // "Xem đơn đăng ký tham quan trước khi duyệt" — read-only review of a PENDING_APPROVAL row.
+  const [review, setReview] = useState<{ open: boolean; row: Row | null }>({ open: false, row: null });
   const [reason, setReason] = useState<{ open: boolean; row: Row | null }>({ open: false, row: null });
   const [approveConfirm, setApproveConfirm] = useState<{ open: boolean; row: Row | null; submitting: boolean; error: string | null }>({ open: false, row: null, submitting: false, error: null });
   const [reject, setReject] = useState<{ open: boolean; row: Row | null; action: AllowedAction | null; text: string; submitting: boolean; error: string | null }>({ open: false, row: null, action: null, text: '', submitting: false, error: null });
@@ -321,8 +324,41 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   // Navigation when opening a row's detail (keeps existing detail routes).
+  // Whether the icon-mắt should open the shared submitted-form detail modal for this row, and
+  // the current user is in scope for it. Covers pre-approval review, rejected detail, and the
+  // approved multi-campus waiting-host detail. Backend re-enforces scope (403 on direct URL).
+  const opensSubmittedDetail = (row: Row) => {
+    if (activeTab === 'attending') return false;
+    const st = row.requestStatus;
+    // Pre-approval review
+    if (st === 'PENDING_APPROVAL'
+      && ((isHO && row.visitScope === 'MULTI_CAMPUS')
+        || (isStaffLeader && row.visitScope === 'SINGLE_CAMPUS' && row.campusStatus === 'WAITING_REQUEST_APPROVAL'))) {
+      return true;
+    }
+    // Rejected detail — single (Staff Leader own campus) / multi (HO) / visitor's own
+    if (st === 'REJECTED'
+      && ((isHO && row.visitScope === 'MULTI_CAMPUS')
+        || (isStaffLeader && row.visitScope === 'SINGLE_CAMPUS')
+        || isVisitor)) {
+      return true;
+    }
+    // Approved multi-campus waiting host (Staff Leader picks the official host)
+    if (st === 'APPROVED' && isStaffLeader && row.visitScope === 'MULTI_CAMPUS'
+      && row.campusStatus === 'WAITING_HOST_ASSIGNMENT') {
+      return true;
+    }
+    return false;
+  };
+
   const handleView = (row: Row) => {
     const idForRoute = row.id;
+    // Shared submitted-form detail (read-only) takes priority for in-scope reviewers — it must
+    // run BEFORE the rejected/cancelled fallback so rejected rows show the real form + reason.
+    if (opensSubmittedDetail(row)) {
+      setReview({ open: true, row });
+      return;
+    }
     if (row.requestStatus === 'CANCELLED' || row.campusStatus === 'CANCELLED' || row.requestStatus === 'REJECTED') {
       setView({ open: true, row });
       return;
@@ -362,6 +398,24 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
     } else {
       setView({ open: true, row });
     }
+  };
+
+  // ── Pre-approval review modal → reuse the existing approve/reject flows ──
+  // The review modal never calls approve/reject itself; it just routes to the same
+  // commands used by the row action buttons (HO: ho-approve / ho-reject, Staff Leader:
+  // approve-and-assign-host / campus-reject).
+  const handleReviewApprove = (row: Row) => {
+    setReview({ open: false, row: null });
+    if (isHO) setApproveConfirm({ open: true, row, submitting: false, error: null });
+    else setAssign({ open: true, row, mode: 'approve' });
+  };
+  const handleReviewReject = (row: Row) => {
+    setReview({ open: false, row: null });
+    setReject({ open: true, row, action: isHO ? 'HO_REJECT' : 'CAMPUS_REJECT', text: '', submitting: false, error: null });
+  };
+  const handleReviewAssignHost = (row: Row) => {
+    setReview({ open: false, row: null });
+    setAssign({ open: true, row, mode: 'approve' });
   };
 
   // ── Action handlers ──
@@ -1011,6 +1065,16 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
 
       {/* View modal */}
       <VisitDetailsModal isOpen={view.open} onClose={() => setView({ open: false, row: null })} guest={view.row} />
+
+      {/* Shared submitted-form detail modal (read-only): pre-approval / rejected / waiting-host */}
+      <SubmittedVisitRequestDetailModal
+        isOpen={review.open}
+        visitRequestId={review.row?.visitRequestId ?? null}
+        onClose={() => setReview({ open: false, row: null })}
+        onApprove={() => review.row && handleReviewApprove(review.row)}
+        onReject={() => review.row && handleReviewReject(review.row)}
+        onAssignHost={() => review.row && handleReviewAssignHost(review.row)}
+      />
 
       {/* Reason (rejection) modal */}
       {reason.open && reason.row && (
