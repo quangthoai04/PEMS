@@ -77,6 +77,15 @@ public sealed class VisitRequestManagementItemDto
     public string? DisplayStatusLabel { get; set; }
     public string? DisplayProgressLabel { get; set; }
 
+    /// <summary>
+    /// True when this row has at least one campus instance currently in a cancellable state:
+    /// the request is APPROVED and an instance is in WAITING_HOST_ASSIGNMENT / ASSIGNED /
+    /// BEFORE_VISIT and has not started yet. Precomputed by the backend so the frontend never
+    /// has to infer cancel-eligibility from a multi-campus summary row (which has no single
+    /// instance status). Drives whether CANCEL_BY_VISITOR is offered.
+    /// </summary>
+    public bool HasCancellableInstance { get; set; }
+
     // ── Decision info (UC-18/UC-22). Reject reason = decision_note, NEVER cancellation_reason.
     // Surfaced on the list so the "Xem lý do từ chối" popup can show full metadata (who/when/role)
     // without a second fetch. Only meaningful when RequestStatus = REJECTED (or APPROVED). ──

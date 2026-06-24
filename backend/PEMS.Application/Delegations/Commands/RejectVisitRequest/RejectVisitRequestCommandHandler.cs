@@ -40,38 +40,38 @@ public sealed class RejectVisitRequestCommandHandler
         var isStaffLeader = roleCode == RoleCodes.Staff && subRole == UserSubRoles.Leader;
 
         if (!isHo && !isStaffLeader)
-            throw new ForbiddenException("Báº¡n khÃ´ng cÃ³ quyá»n tá»« chá»‘i Ä‘Æ¡n tham quan.");
+            throw new ForbiddenException("Bạn không có quyền từ chối đơn tham quan.");
 
         var visit = await _db.VisitRequests
             .Include(v => v.CampusInstances)
             .FirstOrDefaultAsync(v => v.VisitRequestId == request.VisitRequestId, cancellationToken)
             ?? throw new NotFoundException("VisitRequest", request.VisitRequestId);
 
-        // HO has read-only monitoring on single-campus (chá»‘t 2026-06) â€” never processing.
+        // HO has read-only monitoring on single-campus (chốt 2026-06) — never processing.
         if (isHo && visit.VisitScope == VisitScopes.SingleCampus)
             throw new BusinessRuleException(
-                "HO chá»‰ Ä‘Æ°á»£c xem Ä‘Æ¡n má»™t cÆ¡ sá»Ÿ á»Ÿ cháº¿ Ä‘á»™ theo dÃµi, khÃ´ng Ä‘Æ°á»£c xá»­ lÃ½ nghiá»‡p vá»¥ trÃªn Ä‘Æ¡n nÃ y.",
+                "HO chỉ được xem đơn một cơ sở ở chế độ theo dõi, không được xử lý nghiệp vụ trên đơn này.",
                 "HO_SINGLE_CAMPUS_READ_ONLY");
 
         // Reject is a decision-stage action only.
         if (visit.Status != VisitRequestStatuses.PendingApproval)
-            throw new ConflictException("ÄÆ¡n Ä‘Ã£ Ä‘Æ°á»£c ngÆ°á»i khÃ¡c xá»­ lÃ½ hoáº·c tráº¡ng thÃ¡i Ä‘Ã£ thay Ä‘á»•i.");
+            throw new ConflictException("Đơn đã được người khác xử lý hoặc trạng thái đã thay đổi.");
 
         string actorRole;
         if (visit.VisitScope == VisitScopes.MultiCampus)
         {
             if (!isHo)
-                throw new ForbiddenException("ÄÆ¡n liÃªn cÆ¡ sá»Ÿ chá»‰ do HO tá»« chá»‘i.");
+                throw new ForbiddenException("Đơn liên cơ sở chỉ do HO từ chối.");
             actorRole = DecisionActorRole.Ho;
         }
         else
         {
             if (!isStaffLeader)
-                throw new ForbiddenException("ÄÆ¡n má»™t cÆ¡ sá»Ÿ chá»‰ do Staff Leader cá»§a cÆ¡ sá»Ÿ tá»« chá»‘i.");
+                throw new ForbiddenException("Đơn một cơ sở chỉ do Staff Leader của cơ sở từ chối.");
 
             var instance = visit.CampusInstances.FirstOrDefault();
             if (instance is null || _currentUser.PrimaryCampusId != instance.CampusId)
-                throw new ForbiddenException("ÄÆ¡n khÃ´ng thuá»™c cÆ¡ sá»Ÿ báº¡n phá»¥ trÃ¡ch.");
+                throw new ForbiddenException("Đơn không thuộc cơ sở bạn phụ trách.");
 
             actorRole = DecisionActorRole.StaffLeader;
         }
@@ -99,6 +99,6 @@ public sealed class RejectVisitRequestCommandHandler
 
         await _db.SaveChangesAsync(cancellationToken);
 
-        return new RejectVisitRequestResponse(visit.VisitRequestId, visit.Status, "ÄÃ£ tá»« chá»‘i Ä‘Æ¡n tham quan.");
+        return new RejectVisitRequestResponse(visit.VisitRequestId, visit.Status, "Đã từ chối đơn tham quan.");
     }
 }

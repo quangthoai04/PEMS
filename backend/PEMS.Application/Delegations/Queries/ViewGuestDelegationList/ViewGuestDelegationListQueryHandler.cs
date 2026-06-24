@@ -16,10 +16,10 @@ namespace PEMS.Application.Delegations.Queries.ViewGuestDelegationList;
 /// UC-20 View Guest Delegation List. Returns rows already filtered to the caller's
 /// responsibility scope (the backend is the single authority â€” the frontend never
 /// post-filters by role). Two tabs:
-///   â€¢ "responsible" (ÄÆ¡n phá»¥ trÃ¡ch): requests the user creates / approves / hosts /
+///   • "responsible" (Đơn phụ trách): requests the user creates / approves / hosts /
 ///     is assigned a task on. Visitor &amp; HO see one row per request; campus actors
 ///     (Staff Leader/Staff, Dept, Student) see one row per relevant campus instance.
-///   â€¢ "attending" (ÄÆ¡n má»i tham dá»±): requests the user has ACCEPTED an invitation for.
+///   • "attending" (Đơn mời tham dự): requests the user has ACCEPTED an invitation for.
 /// Each row also carries <see cref="VisitRequestManagementItemDto.AllowedActions"/>.
 /// </summary>
 public sealed class ViewGuestDelegationListQueryHandler
@@ -54,7 +54,7 @@ public sealed class ViewGuestDelegationListQueryHandler
             : "responsible";
 
         // Admin does not take part in the reception flow (also has no UC-20 grant).
-        // The "ÄÆ¡n má»i tham dá»±" (attending) tab is ONLY for users who can be invited as a
+        // The "Đơn mời tham dự" (attending) tab is ONLY for users who can be invited as a
         // non-host participant: regular Staff, Dept, Student. HO, Staff Leader/IC Head and
         // Visitor are never invitees (they approve / assign / own), so they have no Tab 2.
         if (roleCode == RoleCodes.Admin ||
@@ -112,7 +112,7 @@ public sealed class ViewGuestDelegationListQueryHandler
         if (attending)
         {
             var currentUserEmail = _currentUser.Email?.ToLower();
-            // Tab 2 â€” "ÄÆ¡n má»i tham dá»±": instances the user was INVITED to by someone else as a
+            // Tab 2 — "Đơn mời tham dự": instances the user was INVITED to by someone else as a
             // NON-host participant. Anything where the user is the host /
             // creator / visitor belongs in Tab 1, so it is excluded here.
             q = q.Where(x =>
@@ -362,9 +362,15 @@ public sealed class ViewGuestDelegationListQueryHandler
             ? new Dictionary<ulong, string>()
             : await _context.Users.Where(u => userIds.Contains(u.UserId)).ToDictionaryAsync(u => u.UserId, u => u.FullName, ct);
 
+        var nowForCancel = _clock.UtcNow;
         var items = page.Select(r =>
         {
             string? partnerName = r.PartnerId.HasValue && partnerNames.TryGetValue(r.PartnerId.Value, out var pn) ? pn : r.RegistrantOrganization;
+            bool hasCancellableInstance = r.RequestStatus == VisitRequestStatuses.Approved
+                && (r.CampusStatus == VisitInstanceStatus.WaitingHostAssignment
+                    || r.CampusStatus == VisitInstanceStatus.Assigned
+                    || r.CampusStatus == VisitInstanceStatus.BeforeVisit)
+                && r.PlannedStartAt > nowForCancel;
             string? campusName = campusNames.TryGetValue(r.CampusId, out var cn) ? cn : null;
             string? hostName = r.CurrentHostUserId.HasValue && userNames.TryGetValue(r.CurrentHostUserId.Value, out var hn) ? hn : null;
             string? visitorName = r.VisitorUserId.HasValue && userNames.TryGetValue(r.VisitorUserId.Value, out var vn) ? vn : null;
@@ -412,6 +418,7 @@ public sealed class ViewGuestDelegationListQueryHandler
                 CancellationSource = r.CampusCancellationSource,
                 CancelledBy = cancelledById,
                 CancelledByName = cancelledByName,
+                HasCancellableInstance = hasCancellableInstance,
                 DecisionNote = r.DecisionNote,
                 DecidedBy = r.DecidedBy,
                 DecidedByName = r.DecidedBy.HasValue && userNames.TryGetValue(r.DecidedBy.Value, out var dbn) ? dbn : null,
@@ -432,7 +439,7 @@ public sealed class ViewGuestDelegationListQueryHandler
         if (roleCode == RoleCodes.Visitor)
             q = q.Where(vr => vr.VisitorUserId == userId || vr.CreatedBy == userId);
         // HO sees every MULTI_CAMPUS request (they decide it) AND every SINGLE_CAMPUS request
-        // in read-only monitoring mode (business rule chá»‘t 2026-06: HO theo dÃµi SINGLE_CAMPUS).
+        // in read-only monitoring mode (business rule chốt 2026-06: HO theo dõi SINGLE_CAMPUS).
         // No filter is applied for HO here â€” read-only is enforced via AllowedActions (the HO
         // action builder only grants HO_APPROVE/HO_REJECT to MULTI_CAMPUS pending requests).
         // else if (roleCode == RoleCodes.Ho)  â†’ all requests visible.
@@ -565,14 +572,25 @@ public sealed class ViewGuestDelegationListQueryHandler
             ? new Dictionary<ulong, string>()
             : await _context.Users.Where(u => userIds.Contains(u.UserId)).ToDictionaryAsync(u => u.UserId, u => u.FullName, ct);
 
+        var nowForCancel = _clock.UtcNow;
         var items = requests.Select(vr =>
         {
             var instances = vr.CampusInstances;
             var count = instances.Count;
             var single = count == 1 ? instances.First() : null;
 
+            // Cancel-eligibility (UC-136): APPROVED request + an instance still in a cancellable
+            // status and not yet started. Computed here (we have all instances) so the frontend
+            // never has to infer it from a multi-campus summary row.
+            bool hasCancellableInstance = vr.Status == VisitRequestStatuses.Approved
+                && instances.Any(i =>
+                    (i.Status == VisitInstanceStatus.WaitingHostAssignment
+                        || i.Status == VisitInstanceStatus.Assigned
+                        || i.Status == VisitInstanceStatus.BeforeVisit)
+                    && i.PlannedStartAt > nowForCancel);
+
             string? campusName = single != null && campusNames.TryGetValue(single.CampusId, out var cnm) ? cnm
-                : count > 1 ? $"{count} cÆ¡ sá»Ÿ"
+                : count > 1 ? $"{count} cơ sở"
                 : null;
             ulong? hostUserId = single?.CurrentHostUserId;
             string? hostName = hostUserId.HasValue && userNames.TryGetValue(hostUserId.Value, out var hnm) ? hnm : null;
@@ -635,6 +653,7 @@ public sealed class ViewGuestDelegationListQueryHandler
                 CancellationSource = cancellationSource,
                 CancelledBy = cancelledById,
                 CancelledByName = cancelledByName,
+                HasCancellableInstance = hasCancellableInstance,
                 DecisionNote = vr.DecisionNote,
                 DecidedBy = vr.DecidedBy,
                 DecidedByName = vr.DecidedBy.HasValue && userNames.TryGetValue(vr.DecidedBy.Value, out var dbn2) ? dbn2 : null,
@@ -691,10 +710,13 @@ public sealed class ViewGuestDelegationListQueryHandler
             }
         }
 
-        // Visitor â€” self-cancel own request (pending or approved) before it starts.
+        // Visitor — self-cancel own request (UC-136). Cancellation is POST-APPROVAL only: a
+        // PENDING_APPROVAL request is ended via the reject flow, so the cancel action is NEVER
+        // offered while pending. HasCancellableInstance already encodes "APPROVED + an instance
+        // in WAITING_HOST_ASSIGNMENT/ASSIGNED/BEFORE_VISIT that hasn't started".
         if (isVisitor && item.VisitorUserId == userId
-            && (item.RequestStatus == VisitRequestStatuses.PendingApproval || item.RequestStatus == VisitRequestStatuses.Approved)
-            && beforeStart)
+            && item.RequestStatus == VisitRequestStatuses.Approved
+            && item.HasCancellableInstance)
         {
             actions.Add("CANCEL_BY_VISITOR");
         }

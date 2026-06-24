@@ -103,29 +103,21 @@ public sealed class ExceptionHandlingMiddleware
                 status = StatusCodes.Status500InternalServerError;
                 _logger.LogError(ex, "Unhandled exception processing {Path} (traceId {TraceId}).", context.Request.Path, traceId);
 
-                // Generic, safe message for everyone. Only Development adds raw details.
-                // NOTE: never leak ex.Message / stackTrace / SQL / secrets outside Development.
-                var genericMessage = "Đã xảy ra lỗi hệ thống. Vui lòng thử lại sau.";
-                if (_environment.IsDevelopment())
-                {
-                    // Walk the full InnerException chain to find the real root cause
-                    // (e.g. DbUpdateException → MySqlException → actual SQL error)
-                    var rootCause = ex;
-                    while (rootCause.InnerException is not null)
-                        rootCause = rootCause.InnerException;
-                    
-                    genericMessage = rootCause == ex
-                        ? $"Lỗi HT (Dev): {ex.Message}"
-                        : $"Lỗi HT (Dev): {ex.Message} → Root cause: {rootCause.Message}";
-                }
+                // The user-facing `message` is ALWAYS a safe, generic Vietnamese string — even in
+                // Development. Raw exception text / inner exception / SQL / stack traces are logged
+                // above and, in Development only, attached as SEPARATE diagnostic fields (error,
+                // innerError, rootCause, stackTrace) for the network tab. They must NEVER appear in
+                // `message`, because the frontend renders `message` to the user.
+                const string safeMessage = "Đã xảy ra lỗi hệ thống. Vui lòng thử lại sau.";
 
                 payload = _environment.IsDevelopment()
                     ? (object)new
                     {
                         success = false,
                         errorCode = AuthErrorCodes.InternalServerError,
-                        message = genericMessage,
+                        message = safeMessage,
                         traceId,
+                        // Developer-only diagnostics (logs / network tab) — never shown in the UI.
                         error = ex.Message,
                         innerError = ex.InnerException?.Message,
                         rootCause = GetRootCauseMessage(ex),
@@ -135,7 +127,7 @@ public sealed class ExceptionHandlingMiddleware
                     {
                         success = false,
                         errorCode = AuthErrorCodes.InternalServerError,
-                        message = "Đã xảy ra lỗi hệ thống. Vui lòng thử lại sau.",
+                        message = safeMessage,
                         traceId
                     };
                 break;

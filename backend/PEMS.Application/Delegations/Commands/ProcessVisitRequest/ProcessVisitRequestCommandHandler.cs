@@ -35,7 +35,7 @@ public sealed class ProcessVisitRequestCommandHandler
 
         // Only a Staff Leader processes/assigns hosts (also enforced by UC-22 RBAC).
         if (!(_currentUser.RoleCode == RoleCodes.Staff && _currentUser.SubRole == UserSubRoles.Leader))
-            throw new ForbiddenException("Chá»‰ Staff Leader má»›i Ä‘Æ°á»£c duyá»‡t/gÃ¡n host.");
+            throw new ForbiddenException("Chỉ Staff Leader mới được duyệt/gán host.");
 
         var actorId = _currentUser.UserId.Value;
 
@@ -49,7 +49,7 @@ public sealed class ProcessVisitRequestCommandHandler
 
         // Staff Leader may only act on their own campus.
         if (_currentUser.PrimaryCampusId != instance.CampusId)
-            throw new ForbiddenException("CÆ¡ sá»Ÿ nÃ y khÃ´ng thuá»™c pháº¡m vi phá»¥ trÃ¡ch cá»§a báº¡n.");
+            throw new ForbiddenException("Cơ sở này không thuộc phạm vi phụ trách của bạn.");
 
         // The chosen host must be an active STAFF of the same campus.
         var host = await _db.Users
@@ -61,7 +61,7 @@ public sealed class ProcessVisitRequestCommandHandler
             || host.PrimaryCampusId != instance.CampusId
             || host.Status != UserStatuses.Active)
         {
-            throw new BusinessRuleException("Host Ä‘Æ°á»£c chá»n pháº£i lÃ  nhÃ¢n sá»± (STAFF) Ä‘ang hoáº¡t Ä‘á»™ng thuá»™c Ä‘Ãºng cÆ¡ sá»Ÿ.");
+            throw new BusinessRuleException("Host được chọn phải là nhân sự (STAFF) đang hoạt động thuộc đúng cơ sở.");
         }
 
         var now = _clock.UtcNow;
@@ -70,7 +70,7 @@ public sealed class ProcessVisitRequestCommandHandler
         {
             // Approve + assign in one step.
             if (visit.Status != VisitRequestStatuses.PendingApproval || instance.Status != VisitInstanceStatus.WaitingRequestApproval)
-                throw new ConflictException("ÄÆ¡n Ä‘Ã£ Ä‘Æ°á»£c ngÆ°á»i khÃ¡c xá»­ lÃ½ hoáº·c tráº¡ng thÃ¡i Ä‘Ã£ thay Ä‘á»•i.");
+                throw new ConflictException("Đơn đã được người khác xử lý hoặc trạng thái đã thay đổi.");
 
             visit.Status = VisitRequestStatuses.Approved;
             visit.DecidedBy = actorId;
@@ -94,7 +94,7 @@ public sealed class ProcessVisitRequestCommandHandler
         else // MULTI_CAMPUS â€” HO has already approved; Staff Leader assigns the actual staff.
         {
             if (visit.Status != VisitRequestStatuses.Approved || instance.Status != "WAITING_HOST_ASSIGNMENT")
-                throw new ConflictException("Ä Æ¡n Ä‘Ã£ Ä‘Æ°á»£c ngÆ°á» i khÃ¡c xá»­ lÃ½ hoáº·c tráº¡ng thÃ¡i Ä‘Ã£ thay Ä‘á»•i.");
+                throw new ConflictException("Đơn đã được người khác xử lý hoặc trạng thái đã thay đổi.");
 
             if (instance.CurrentHostUserId != null)
                 throw new ConflictException("Campus instance này đã có host chính thức, không thể thay đổi host.");
@@ -126,7 +126,7 @@ public sealed class ProcessVisitRequestCommandHandler
             instance.Status,
             request.HostUserId,
             visit.VisitScope == VisitScopes.SingleCampus
-                ? "Ä Ã£ duyá»‡t Ä‘Æ¡n vÃ  gÃ¡n host phá»¥ trÃ¡ch."
-                : "Ä Ã£ gán host phá»¥ trÃ¡ch cho cÆ¡ sá»Ÿ.");
+                ? "Đã duyệt đơn và gán host phụ trách."
+                : "Đã gán host phụ trách cho cơ sở.");
     }
 }

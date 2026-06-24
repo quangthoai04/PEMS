@@ -164,6 +164,11 @@ export interface VisitRequestManagementItem {
   decidedAt?: string | null;
   decisionActorRole?: string | null;
 
+  // UC-136: backend-computed cancel-eligibility (APPROVED request + an instance in
+  // WAITING_HOST_ASSIGNMENT/ASSIGNED/BEFORE_VISIT that hasn't started). Action visibility is
+  // still driven by allowedActions (CANCEL_BY_VISITOR/CANCEL_BY_HOST); this is the underlying flag.
+  hasCancellableInstance?: boolean;
+
   allowedActions: AllowedAction[];
 }
 

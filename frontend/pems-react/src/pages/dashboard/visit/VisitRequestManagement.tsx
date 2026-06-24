@@ -489,8 +489,11 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
       setCancel({ open: false, row: null, mode: null, text: '', submitting: false, error: null });
       await loadDelegations(activeTab, currentPage, pageSize, appliedFilters, sortOrder);
     } catch (e: any) {
-      const msg = e?.response?.data?.message || e?.response?.data?.title || e?.message || 'Lỗi không xác định';
-      setCancel((s) => ({ ...s, submitting: false, error: `Không thể hủy lịch thăm. ${msg}` }));
+      // Show ONLY the backend's user-safe `message` (already a clean Vietnamese sentence such as
+      // "Không thể hủy lịch thăm. Đơn đang chờ duyệt..."). Never surface raw axios/EF technical
+      // text (e.message / details / stack); fall back to a generic safe message otherwise.
+      const safeMsg = e?.response?.data?.message;
+      setCancel((s) => ({ ...s, submitting: false, error: safeMsg || 'Không thể hủy lịch thăm. Vui lòng thử lại sau.' }));
     }
   };
 

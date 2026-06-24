@@ -30,13 +30,18 @@ public sealed class CancelVisitRequestCommandHandler
         if (!_currentUser.IsAuthenticated || _currentUser.UserId is null)
             throw new ForbiddenException();
 
+        // Reason is required (also enforced by the FluentValidation validator; re-checked here
+        // so a direct/internal caller can never persist an empty cancellation reason).
+        var reason = request.CancellationReason?.Trim();
+        if (string.IsNullOrEmpty(reason))
+            throw new BusinessRuleException("Không thể hủy lịch thăm. Vui lòng nhập lý do hủy.");
+
         var actorId = _currentUser.UserId.Value;
         var roleCode = _currentUser.RoleCode;
-        var subRole = _currentUser.SubRole;
 
         // Admin must NOT cancel delegations (also enforced by the missing RBAC grant).
         if (roleCode == RoleCodes.Admin)
-            throw new ForbiddenException("Admin khÃ´ng cÃ³ quyá»n há»§y Ä‘Æ¡n tham quan.");
+            throw new ForbiddenException("Admin không có quyền hủy đơn tham quan.");
 
         var visit = await _db.VisitRequests
             .Include(v => v.CampusInstances)
@@ -44,29 +49,29 @@ public sealed class CancelVisitRequestCommandHandler
             ?? throw new NotFoundException("VisitRequest", request.VisitRequestId);
 
         var isVisitorOwner = roleCode == RoleCodes.Visitor && visit.VisitorUserId == actorId;
-        // HO/Staff Leader/Admin are NOT allowed to cancel.
 
+        // Cancellation is a POST-APPROVAL action only. A request that is still PENDING_APPROVAL
+        // must be ended via the reject flow — the visit_request_campuses trigger likewise blocks
+        // cancelling an instance whose owning request is not APPROVED. We pre-validate and return
+        // a clean Vietnamese business error HERE, before any SaveChanges, so the user never sees a
+        // raw EF/MySQL trigger exception.
+        if (visit.Status == VisitRequestStatuses.PendingApproval)
+            throw new BusinessRuleException(
+                "Không thể hủy lịch thăm. Đơn đang chờ duyệt nên chưa thể hủy theo luồng hiện tại.");
 
-        // Status rules:
-        //  â€¢ Visitor may self-cancel (withdraw) their own request while PENDING or APPROVED.
-        //  â€¢ Everyone else cancels only after approval (pre-approval is ended via reject).
-        if (isVisitorOwner)
+        if (visit.Status != VisitRequestStatuses.Approved)
+            throw new BusinessRuleException(
+                "Không thể hủy lịch thăm. Chỉ có thể hủy đơn đã được duyệt.");
+
+        // Campus instances that may be cancelled: only after approval and before the visit starts.
+        // WAITING_REQUEST_APPROVAL (pending), DURING_VISIT / AFTER_VISIT / CLOSED / CANCELLED are
+        // never cancellable through this self-service / external-confirmation flow.
+        var cancellableStatuses = new[]
         {
-            if (visit.Status != VisitRequestStatuses.PendingApproval && visit.Status != VisitRequestStatuses.Approved)
-                throw new BusinessRuleException("Chá»‰ cÃ³ thá»ƒ há»§y Ä‘Æ¡n Ä‘ang chá» duyá»‡t hoáº·c Ä‘Ã£ Ä‘Æ°á»£c duyá»‡t.");
-        }
-        else
-        {
-            if (visit.Status != VisitRequestStatuses.Approved)
-                throw new BusinessRuleException(visit.Status == VisitRequestStatuses.PendingApproval
-                    ? "ÄÆ¡n chÆ°a Ä‘Æ°á»£c duyá»‡t. TrÆ°á»›c khi duyá»‡t hÃ£y dÃ¹ng chá»©c nÄƒng tá»« chá»‘i (reject), khÃ´ng pháº£i há»§y."
-                    : "Chá»‰ cÃ³ thá»ƒ há»§y Ä‘Æ¡n Ä‘Ã£ Ä‘Æ°á»£c duyá»‡t.");
-        }
-
-        // A visitor withdrawing a pending request cancels its still-waiting instances too.
-        var cancellableStatuses = isVisitorOwner
-            ? new[] { VisitInstanceStatus.WaitingRequestApproval, VisitInstanceStatus.Assigned, VisitInstanceStatus.BeforeVisit }
-            : new[] { VisitInstanceStatus.Assigned, VisitInstanceStatus.BeforeVisit };
+            VisitInstanceStatus.WaitingHostAssignment,
+            VisitInstanceStatus.Assigned,
+            VisitInstanceStatus.BeforeVisit,
+        };
 
         IReadOnlyList<VisitRequestCampus> targets;
         if (request.VisitInstanceId is { } instanceId)
@@ -88,7 +93,7 @@ public sealed class CancelVisitRequestCommandHandler
             actorType = CancellationActorType.Visitor;
             source = CancellationSource.SelfService;
         }
-        else if (targets.All(t => t.CurrentHostUserId == actorId))
+        else if (targets.Count > 0 && targets.All(t => t.CurrentHostUserId == actorId))
         {
             // Current host cancels after the guest confirms via an external channel.
             actorType = CancellationActorType.Host;
@@ -96,52 +101,49 @@ public sealed class CancelVisitRequestCommandHandler
         }
         else
         {
-            throw new ForbiddenException("Báº¡n khÃ´ng cÃ³ quyá»n há»§y lá»‹ch thÄƒm nÃ y.");
+            throw new ForbiddenException("Bạn không có quyền hủy lịch thăm này.");
         }
 
+        if (targets.Count == 0)
+            throw new BusinessRuleException(
+                "Không thể hủy lịch thăm. Không có cơ sở nào ở trạng thái có thể hủy.");
+
         var now = _clock.UtcNow;
-        var enforceBeforeStart = actorType == CancellationActorType.Visitor || actorType == CancellationActorType.Host;
+
+        // Pre-validate every target BEFORE any write, so a violation never reaches SaveChanges
+        // (and the user never sees a raw EF/MySQL exception).
+        foreach (var instance in targets)
+        {
+            if (!cancellableStatuses.Contains(instance.Status))
+                throw new BusinessRuleException(
+                    "Không thể hủy lịch thăm. Cơ sở đang ở trạng thái không thể hủy.");
+
+            if (now >= instance.PlannedStartAt)
+                throw new BusinessRuleException(
+                    "Không thể hủy lịch thăm. Đã đến hoặc quá thời gian bắt đầu.");
+        }
+
+        // ── Write phase. Child campus instances are cancelled and persisted FIRST, while the
+        // parent request is still APPROVED, because the visit_request_campuses trigger requires
+        // the owning request to be APPROVED at the moment a campus moves to CANCELLED. Only then
+        // is the parent request flipped to CANCELLED. The whole thing runs in one transaction so
+        // it commits atomically (no half-cancelled state if the second step fails). ──
+        await using var tx = await _db.BeginTransactionAsync(cancellationToken);
 
         var cancelled = new List<CancelledCampusDto>();
         foreach (var instance in targets)
         {
-            if (!cancellableStatuses.Contains(instance.Status))
-                throw new BusinessRuleException($"KhÃ´ng thá»ƒ há»§y cÆ¡ sá»Ÿ á»Ÿ tráº¡ng thÃ¡i '{instance.Status}'.");
-
-            if (enforceBeforeStart && now >= instance.PlannedStartAt)
-                throw new BusinessRuleException("ÄÃ£ Ä‘áº¿n hoáº·c qua thá»i gian báº¯t Ä‘áº§u, khÃ´ng thá»ƒ há»§y.");
-
-            var oldStatus = instance.Status;
             instance.Status = VisitInstanceStatus.Cancelled;
             instance.CancelledBy = actorId;
             instance.CancelledAt = now;
             instance.CancellationActorType = actorType;
             instance.CancellationSource = source;
-            instance.CancellationReason = request.CancellationReason;
+            instance.CancellationReason = reason;
             instance.UpdatedAt = now;
             instance.UpdatedBy = actorId;
             instance.RowVersion += 1;
 
-
-
             cancelled.Add(new CancelledCampusDto(instance.VisitInstanceId, instance.Status));
-        }
-
-        if (cancelled.Count == 0)
-            throw new BusinessRuleException("KhÃ´ng cÃ³ cÆ¡ sá»Ÿ nÃ o á»Ÿ tráº¡ng thÃ¡i cÃ³ thá»ƒ há»§y.");
-
-        // Single-campus, or all campuses now cancelled â†’ the overall request becomes CANCELLED.
-        var allCancelled = visit.CampusInstances.All(c => c.Status == VisitInstanceStatus.Cancelled);
-        if (allCancelled)
-        {
-            var oldReqStatus = visit.Status;
-            visit.Status = VisitRequestStatuses.Cancelled;
-            visit.CancelledBy = actorId;
-            visit.CancelledAt = now;
-            visit.CancellationReason = request.CancellationReason;
-            visit.UpdatedAt = now;
-            visit.UpdatedBy = actorId;
-            visit.RowVersion += 1;
         }
 
         _db.AuditLogs.Add(new AuditLog
@@ -153,14 +155,33 @@ public sealed class CancelVisitRequestCommandHandler
             CreatedAt = now
         });
 
+        // Persist the campus cancellations first (parent still APPROVED → trigger passes).
         await _db.SaveChangesAsync(cancellationToken);
+
+        // If every campus instance is now cancelled, the overall request becomes CANCELLED.
+        var allCancelled = visit.CampusInstances.All(c => c.Status == VisitInstanceStatus.Cancelled);
+        if (allCancelled)
+        {
+            visit.Status = VisitRequestStatuses.Cancelled;
+            visit.CancelledBy = actorId;
+            visit.CancelledAt = now;
+            // Cancel flow uses cancellation_reason — never decision_note / decided_by / decided_at.
+            visit.CancellationReason = reason;
+            visit.UpdatedAt = now;
+            visit.UpdatedBy = actorId;
+            visit.RowVersion += 1;
+
+            await _db.SaveChangesAsync(cancellationToken);
+        }
+
+        await tx.CommitAsync(cancellationToken);
 
         return new CancelVisitRequestResponse(
             visit.VisitRequestId,
             visit.Status,
             cancelled,
             allCancelled
-                ? "ÄÆ¡n tham quan Ä‘Ã£ Ä‘Æ°á»£c há»§y."
-                : "CÆ¡ sá»Ÿ Ä‘Ã£ Ä‘Æ°á»£c há»§y. CÃ¡c cÆ¡ sá»Ÿ cÃ²n láº¡i cá»§a Ä‘Æ¡n váº«n giá»¯ nguyÃªn.");
+                ? "Đơn tham quan đã được hủy."
+                : "Cơ sở đã được hủy. Các cơ sở còn lại của đơn vẫn giữ nguyên.");
     }
 }
