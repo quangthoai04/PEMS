@@ -79,13 +79,7 @@ export function SentEmailDetail() {
     }
   };
 
-  const toggleExpand = (replyId: number) => {
-    setExpandedReplies(prev => 
-      prev.includes(replyId) 
-        ? prev.filter(id => id !== replyId) 
-        : [...prev, replyId]
-    );
-  };
+
 
   const handleDelete = () => {
     // Navigation handling here

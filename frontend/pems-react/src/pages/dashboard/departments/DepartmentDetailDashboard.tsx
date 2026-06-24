@@ -28,7 +28,9 @@ import {
   X,
   Edit,
   Trash2,
-  XCircle
+  XCircle,
+  Lock,
+  Unlock
 } from "lucide-react";
 
 export function DepartmentDetailDashboard() {
@@ -426,7 +428,7 @@ const [tasks, setTasks] = useState([
                   Email
                 </th>
                 <th className="p-4 w-[15%] font-bold text-center whitespace-nowrap">
-                  Số điện thoại
+                  Trạng thái
                 </th>
                 <th className="p-4 w-[15%] font-bold text-center whitespace-nowrap">
                   Chức vụ
@@ -452,15 +454,37 @@ const [tasks, setTasks] = useState([
                       {(currentPage - 1) * itemsPerPage + index + 1}
                     </td>
                     <td className="p-4">
-                      <span className="font-bold text-gray-800 whitespace-nowrap">
-                        {member.name}
-                      </span>
+                      <div className="flex items-center gap-3">
+                        <img 
+                          src={member.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(member.name)}&background=random`} 
+                          alt={member.name} 
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).src = `https://ui-avatars.com/api/?name=${encodeURIComponent(member.name)}&background=random`;
+                          }}
+                          className="w-8 h-8 rounded-full border border-gray-200 shadow-sm"
+                        />
+                        <span className="font-bold text-gray-800 whitespace-nowrap">
+                          {member.name}
+                        </span>
+                      </div>
                     </td>
                     <td className="p-4 font-medium text-gray-700 whitespace-nowrap">
                       {member.email}
                     </td>
-                    <td className="p-4 font-medium text-center text-gray-700 whitespace-nowrap">
-                      {member.phone}
+                    <td className="p-4 text-center whitespace-nowrap">
+                      {member.rawStatus === 'ACTIVE' ? (
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-[#eaffe4] text-[#0aa14f] border border-[#ceefda]">
+                          Hoạt động
+                        </span>
+                      ) : member.rawStatus === 'LOCK' ? (
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-red-50 text-red-600 border border-red-200">
+                          Bị khóa
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-gray-100 text-gray-600 border border-gray-200">
+                          Vô hiệu hóa
+                        </span>
+                      )}
                     </td>
                     <td className="p-4 text-center whitespace-nowrap">
                       <span className={`inline-flex items-center px-2 py-1 rounded-md text-[11px] font-bold ${member.role === "Trưởng phòng"
@@ -509,18 +533,29 @@ const [tasks, setTasks] = useState([
                             >
                               <Crown className="w-5 h-5" />
                             </button>
-                          ) : (
-                            <button
-                              className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors flex items-center justify-center outline-none"
-                              title="Xóa nhân sự"
-                              onClick={() => {
-                                setMemberToDelete(member);
-                                setIsDeleteMemberModalOpen(true);
-                              }}
-                            >
-                              <Trash2 className="w-5 h-5" />
-                            </button>
-                          )
+                          ) : member.rawStatus === 'LOCK' ? (
+                              <button
+                                className="p-2 rounded-lg transition-colors flex items-center justify-center outline-none text-red-500 hover:text-green-600 hover:bg-green-50"
+                                title="Mở khóa tài khoản (Tài khoản đang bị khóa)"
+                                onClick={() => {
+                                  setMemberToDelete(member);
+                                  setIsDeleteMemberModalOpen(true);
+                                }}
+                              >
+                                <Unlock className="w-5 h-5" />
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => {
+                                  setMemberToDelete(member);
+                                  setIsDeleteMemberModalOpen(true);
+                                }}
+                                className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none ${member.rawStatus === 'ACTIVE' ? 'bg-green-500' : 'bg-gray-300'}`}
+                                title={member.rawStatus === 'ACTIVE' ? "Đang hoạt động - Nhấn để vô hiệu hóa" : "Vô hiệu hóa - Nhấn để kích hoạt"}
+                              >
+                                <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform shadow-sm ${member.rawStatus === 'ACTIVE' ? 'translate-x-[18px]' : 'translate-x-1'}`} />
+                              </button>
+                            )
                         )}
                         {member.status === "Chưa cấp tài khoản" && user?.role?.toUpperCase() !== 'DEPARTMENT' && !(isStaffRole || isHO) && (
                           <button
@@ -734,8 +769,11 @@ const [tasks, setTasks] = useState([
                 <div className="absolute -top-16 left-1/2 -translate-x-1/2">
                   <div className="relative">
                     <img
-                      src={isEditingMember ? editingMemberData?.avatarUrl : selectedMember.avatarUrl}
-                      alt={selectedMember.name}
+                      src={(isEditingMember ? editingMemberData?.avatarUrl : selectedMember?.avatarUrl) || `https://ui-avatars.com/api/?name=${encodeURIComponent(selectedMember?.name || 'User')}&background=random`}
+                      alt={selectedMember?.name}
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src = `https://ui-avatars.com/api/?name=${encodeURIComponent(selectedMember?.name || 'User')}&background=random`;
+                      }}
                       className="w-28 h-28 rounded-2xl border-[6px] border-[#f8fafc] shadow-lg bg-white object-cover relative z-10"
                     />
                     <div className="absolute inset-0 rounded-2xl border-[6px] border-[#f8fafc] shadow-[0_0_20px_rgba(0,0,0,0.15)] z-0"></div>
@@ -966,7 +1004,7 @@ const [tasks, setTasks] = useState([
         </div>
       )}
 
-      {/* Modal Confirm Delete Member */}
+      {/* Modal Confirm Lock/Unlock Member */}
       {isDeleteMemberModalOpen && memberToDelete && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-0">
           <div
@@ -976,12 +1014,14 @@ const [tasks, setTasks] = useState([
 
           <div className="bg-white rounded-[24px] shadow-2xl w-full max-w-md relative z-10 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
             <div className="p-6 text-center">
-              <div className="w-16 h-16 rounded-full bg-red-100 text-red-600 flex items-center justify-center mx-auto mb-4">
-                <Trash2 className="w-8 h-8" />
+              <div className="w-16 h-16 rounded-full bg-orange-100 text-orange-600 flex items-center justify-center mx-auto mb-4">
+                {memberToDelete.rawStatus === 'LOCK' ? <Unlock className="w-8 h-8" /> : (memberToDelete.rawStatus === 'ACTIVE' ? <XCircle className="w-8 h-8" /> : <CheckCircle2 className="w-8 h-8" />)}
               </div>
-              <h3 className="text-2xl font-black text-gray-900 tracking-tight mb-2">Xác nhận xóa tài khoản</h3>
+              <h3 className="text-2xl font-black text-gray-900 tracking-tight mb-2">
+                {memberToDelete.rawStatus === 'LOCK' ? "Xác nhận mở khóa tài khoản" : (memberToDelete.rawStatus === 'ACTIVE' ? "Xác nhận vô hiệu hóa" : "Xác nhận kích hoạt")}
+              </h3>
               <p className="text-gray-600 mb-6 font-medium leading-relaxed">
-                Bạn có chắc chắn muốn xóa nhân sự <span className="font-bold text-gray-900">{memberToDelete.name}</span> khỏi danh sách không? Hành động này không thể hoàn tác.
+                Bạn có chắc chắn muốn {memberToDelete.rawStatus === 'LOCK' ? "mở khóa" : (memberToDelete.rawStatus === 'ACTIVE' ? "vô hiệu hóa" : "kích hoạt")} tài khoản của nhân sự <span className="font-bold text-gray-900">{memberToDelete.name}</span> không?
               </p>
 
               <div className="flex gap-3">
@@ -993,9 +1033,9 @@ const [tasks, setTasks] = useState([
                 </button>
                 <button
                   onClick={handleDeleteMember}
-                  className="flex-1 px-4 py-3 rounded-xl font-black text-white bg-red-600 hover:bg-red-700 transition-colors shadow-lg shadow-red-600/20 outline-none"
+                  className="flex-1 px-4 py-3 rounded-xl font-black text-white bg-orange-600 hover:bg-orange-700 transition-colors shadow-lg shadow-orange-600/20 outline-none"
                 >
-                  Xác nhận xóa
+                  Xác nhận
                 </button>
               </div>
             </div>

@@ -36,7 +36,8 @@ public sealed class ViewPersonnelDetailsQueryHandler : IRequestHandler<ViewPerso
             Gender = u.Gender != null ? u.Gender.ToString() : "Khác",
             Campus = u.PrimaryCampus != null ? u.PrimaryCampus.Name : "",
             SystemRole = u.Role.RoleCode,
-            AvatarUrl = u.AvatarUrl
+            AvatarUrl = u.AvatarUrl,
+            RawStatus = u.Status
         };
     }
 }

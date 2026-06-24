@@ -14,4 +14,5 @@ public sealed class SearchPersonnelDto
     public string? Campus { get; set; }
     public string? SystemRole { get; set; }
     public string? AvatarUrl { get; set; }
+    public string RawStatus { get; set; } = null!;
 }
