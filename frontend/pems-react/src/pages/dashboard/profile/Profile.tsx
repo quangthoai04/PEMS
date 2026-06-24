@@ -1,82 +1,168 @@
 /**
- * Khai báo Component/Trang: Profile
- * Thuộc cấu trúc: profile
- * Chức năng: Hiển thị giao diện và logic liên quan đến Profile
+ * Trang Hồ sơ cá nhân (self-service profile).
+ * UC-14 View Profile + UC-15 Update Profile (text fields). Avatar upload chưa triển khai.
+ * Dữ liệu lấy từ backend qua GET /profiles/viewprofile; không hardcode cơ sở theo role.
  */
 
-// Đây là trang về thông tin cá nhân của người dùng
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
-import { Edit2, Phone, Facebook, School, ShieldCheck, User, Save, X, Mail, BookOpen } from 'lucide-react';
+import {
+  Edit2, Phone, School, ShieldCheck, User, Save, X, Mail, Briefcase, Globe, IdCard, Building2, CheckCircle2, AlertCircle,
+} from 'lucide-react';
 import avatarImg from '../../../assets/Avatar/AvatarDefault.png';
+import { useProfile } from '../../../features/profile/hooks/useProfile';
+import type { GenderValue, UpdateProfileRequest, ViewProfileResponse } from '../../../features/profile/types/profile.types';
+import { NationalitySearchableDropdown } from '../../../features/profile/components/NationalitySearchableDropdown';
+import { nationalityLabel } from '../../../features/profile/constants/nationalities';
+import { getAuthErrorMessage } from '../../../features/authentication/api/authError';
+
+const GENDER_LABELS: Record<GenderValue, string> = { MALE: 'Nam', FEMALE: 'Nữ', OTHER: 'Khác' };
+
+/** Validate a phone number (optional field). Returns an error message, or null when valid.
+ *  International-friendly: optional leading +, separators - . ( ) and spaces, 8–15 digits. */
+function validatePhone(raw: string): string | null {
+  const phone = raw.trim();
+  if (!phone) return null; // optional — empty clears it
+  if (!/^\+?[0-9\s.\-()]+$/.test(phone)) {
+    return 'Số điện thoại chỉ được chứa chữ số và các ký tự + - . ( ).';
+  }
+  const digits = phone.replace(/\D/g, '');
+  if (digits.length < 8 || digits.length > 15) {
+    return 'Số điện thoại phải có từ 8 đến 15 chữ số.';
+  }
+  return null;
+}
+
+interface EditForm {
+  fullName: string;
+  gender: GenderValue | '';
+  phone: string;
+  nationality: string;
+}
+
+function toForm(p: ViewProfileResponse): EditForm {
+  return {
+    fullName: p.fullName ?? '',
+    gender: p.gender ?? '',
+    phone: p.phone ?? '',
+    nationality: p.nationality ?? '',
+  };
+}
+
+/** Mirror name/phone into the legacy currentUser + pems_user so Header/Sidebar stay in sync. */
+function syncLocalUser(updated: ViewProfileResponse) {
+  try {
+    const cuRaw = localStorage.getItem('currentUser');
+    if (cuRaw) {
+      const cu = JSON.parse(cuRaw);
+      cu.name = updated.fullName;
+      localStorage.setItem('currentUser', JSON.stringify(cu));
+    }
+    const puRaw = localStorage.getItem('pems_user');
+    if (puRaw) {
+      const pu = JSON.parse(puRaw);
+      pu.fullName = updated.fullName;
+      pu.phone = updated.phone;
+      localStorage.setItem('pems_user', JSON.stringify(pu));
+    }
+  } catch {
+    /* ignore malformed local state */
+  }
+}
 
 export function Profile() {
   const navigate = useNavigate();
-
-  // Get user from localStorage
-  const userStr = localStorage.getItem('currentUser');
-  const user = userStr ? JSON.parse(userStr) : {
-    name: 'Khách',
-    campus: 'Không rõ',
-    role: 'GUEST'
-  };
+  const { profile, loading, error, update } = useProfile();
 
   const [isEditing, setIsEditing] = useState(false);
-  const userRole = user.role?.toUpperCase();
-  
-  const getInitialEmail = () => {
-    if (userRole === 'ADMIN') return 'admin@gmail.com';
-    if (userRole === 'STUDENT') return 'student@gmail.com';
-    if (userRole === 'STAFF') return 'staff@gmail.com';
-    return 'ho@gmail.com';
+  const [form, setForm] = useState<EditForm>({ fullName: '', gender: '', phone: '', nationality: '' });
+  const [fieldErrors, setFieldErrors] = useState<{ fullName?: string; phone?: string }>({});
+  const [saving, setSaving] = useState(false);
+  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  useEffect(() => {
+    if (toast) {
+      const t = setTimeout(() => setToast(null), 3500);
+      return () => clearTimeout(t);
+    }
+  }, [toast]);
+
+  const isVisitor = profile?.roleCode === 'VISITOR';
+  const isStudent = profile?.roleCode === 'STUDENT';
+  const isStaffOrDept = profile?.roleCode === 'STAFF' || profile?.roleCode === 'DEPARTMENT';
+
+  const startEdit = () => {
+    if (!profile) return;
+    setForm(toForm(profile));
+    setFieldErrors({});
+    setIsEditing(true);
   };
-  
-  const [profileData, setProfileData] = useState({
-    name: user.name || 'Khách',
-    phone: '0369182718',
-    gender: '' as string | null,
-    email: getInitialEmail(),
-    major: 'Công nghệ thông tin',
-    facebook: 'https://facebook.com/hihi',
-    facebookName: 'hihi',
-    studentId: 'HE150000',
-    avatar: avatarImg,
-    department: 'Phòng Đào tạo',
-    position: ((userRole === 'DEPARTMENT' || userRole === 'STAFF') && user.subRole?.toUpperCase() === 'LEADER') ? 'Trưởng phòng' : 'Nhân viên',
-    workplace: 'FPT University',
-    nationality: 'Việt Nam'
-  });
 
-  const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const cancelEdit = () => {
+    setIsEditing(false);
+    setFieldErrors({});
+  };
 
-  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        if (event.target?.result) {
-          setProfileData(prev => ({...prev, avatar: event.target!.result as string}));
-        }
-      };
-      reader.readAsDataURL(e.target.files[0]);
+  const validate = (): boolean => {
+    const errs: { fullName?: string; phone?: string } = {};
+    if (!form.fullName.trim()) errs.fullName = 'Họ và tên không được để trống.';
+    else if (form.fullName.trim().length > 150) errs.fullName = 'Họ và tên quá dài (tối đa 150 ký tự).';
+    const phoneErr = validatePhone(form.phone);
+    if (phoneErr) errs.phone = phoneErr;
+    setFieldErrors(errs);
+    return Object.keys(errs).length === 0;
+  };
+
+  const handleSave = async () => {
+    if (!profile || !validate()) return;
+    setSaving(true);
+    const payload: UpdateProfileRequest = {
+      fullName: form.fullName.trim(),
+      gender: form.gender ? form.gender : null,
+      phone: form.phone.trim() ? form.phone.trim() : null,
+    };
+    if (isVisitor) payload.nationality = form.nationality ? form.nationality : null;
+
+    try {
+      const updated = await update(payload);
+      syncLocalUser(updated);
+      setIsEditing(false);
+      setToast({ type: 'success', message: 'Cập nhật hồ sơ thành công.' });
+    } catch (err) {
+      // Keep edit mode + entered data on failure.
+      setToast({ type: 'error', message: getAuthErrorMessage(err, 'Không thể cập nhật hồ sơ. Vui lòng thử lại.') });
+    } finally {
+      setSaving(false);
     }
   };
 
-  const handleSave = () => {
-    setIsEditing(false);
-    // Logic lưu thông tin (call API, update localStorage...) sẽ ở đây
-  };
-
-  const roleColors = 'bg-[#fff0e6] text-[#f37021] border-[#fcd5ba]';
+  const roleBadge = 'bg-[#fff0e6] text-[#f37021] border-[#fcd5ba]';
 
   return (
-    <motion.div 
+    <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -20 }}
       transition={{ duration: 0.3 }}
       className="p-4 sm:p-6 md:p-8 pb-12 max-w-4xl mx-auto"
     >
+      {/* Toast */}
+      {toast && (
+        <div className="fixed top-6 right-6 z-50">
+          <div
+            className={`flex items-center gap-2 rounded-xl border px-4 py-3 shadow-md text-sm font-medium ${
+              toast.type === 'success'
+                ? 'bg-green-50 border-green-200 text-green-700'
+                : 'bg-red-50 border-red-200 text-red-700'
+            }`}
+          >
+            {toast.type === 'success' ? <CheckCircle2 className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
+            {toast.message}
+          </div>
+        </div>
+      )}
+
       <div className="mb-6 flex items-center text-sm font-medium text-gray-500">
         <button onClick={() => navigate('/dashboard')} className="hover:text-[#004c91] transition-colors">Dashboard</button>
         <span className="mx-2">/</span>
@@ -87,314 +173,212 @@ export function Profile() {
         <h1 className="text-3xl font-bold text-[#004c91]">Hồ sơ cá nhân</h1>
       </div>
 
-      <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden relative">
-        {/* Banner */}
-        <div className="h-40 bg-gradient-to-r from-[#004c91] to-[#0066c0] relative">
-          <div className="absolute inset-0 opacity-10 bg-[radial-gradient(circle_at_center,_white_1px,_transparent_1px)] bg-[length:20px_20px]"></div>
-          
-          {!isEditing ? (
-            <button 
-              onClick={() => setIsEditing(true)}
-              className="absolute top-6 right-6 flex items-center gap-2 bg-white/20 hover:bg-white/30 text-white border border-white/40 px-4 py-2 rounded-xl backdrop-blur-sm transition-all font-semibold shadow-sm text-sm"
-            >
-              <Edit2 className="w-4 h-4" />
-              Chỉnh sửa
-            </button>
-          ) : (
-            <div className="absolute top-6 right-6 flex items-center gap-2">
-              <button 
-                onClick={() => setIsEditing(false)}
-                className="flex items-center gap-1.5 bg-white/20 hover:bg-white/30 text-white border border-white/40 px-4 py-2 rounded-xl backdrop-blur-sm transition-all font-semibold shadow-sm text-sm"
-              >
-                <X className="w-4 h-4" />
-                Hủy
-              </button>
-              <button 
-                onClick={handleSave}
-                className="flex items-center gap-1.5 bg-white text-[#004c91] border border-white px-4 py-2 rounded-xl backdrop-blur-sm transition-all font-bold shadow-sm text-sm hover:bg-gray-50"
-              >
-                <Save className="w-4 h-4" />
-                Lưu
-              </button>
-            </div>
-          )}
+      {loading ? (
+        <ProfileSkeleton />
+      ) : error || !profile ? (
+        <div className="rounded-2xl border border-red-200 bg-red-50 p-8 text-center">
+          <AlertCircle className="mx-auto mb-3 h-8 w-8 text-red-500" />
+          <p className="font-medium text-red-700">{getAuthErrorMessage(error, 'Không thể tải hồ sơ cá nhân.')}</p>
         </div>
+      ) : (
+        <div className="relative overflow-hidden rounded-3xl border border-gray-100 bg-white shadow-sm">
+          {/* Banner */}
+          <div className="relative h-40 bg-gradient-to-r from-[#004c91] to-[#0066c0]">
+            <div className="absolute inset-0 opacity-10 bg-[radial-gradient(circle_at_center,_white_1px,_transparent_1px)] bg-[length:20px_20px]" />
 
-        {/* Profile Content */}
-        <div className="px-8 pb-10">
-          <div className="flex flex-col md:flex-row gap-8 items-start">
-            
-            {/* Avatar Section */}
-            <div className="-mt-16 relative flex-shrink-0 flex flex-col items-center">
-              <div className="w-36 h-36 bg-gray-100 rounded-full shadow-md overflow-hidden flex items-center justify-center relative group">
-                <img src={profileData.avatar} alt="Avatar" className="w-full h-full object-cover" />
-                {isEditing && (
-                  <div 
-                    onClick={() => fileInputRef.current?.click()}
-                    className="absolute inset-0 bg-black/40 flex items-center justify-center cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity"
-                  >
-                    <span className="text-white text-xs font-bold bg-black/50 px-2 py-1 rounded">Đổi ảnh</span>
+            {profile.status === 'ACTIVE' && !isEditing && (
+              <button
+                onClick={startEdit}
+                className="absolute top-6 right-6 flex items-center gap-2 rounded-xl border border-white/40 bg-white/20 px-4 py-2 text-sm font-semibold text-white shadow-sm backdrop-blur-sm transition-all hover:bg-white/30"
+              >
+                <Edit2 className="h-4 w-4" />
+                Chỉnh sửa hồ sơ
+              </button>
+            )}
+            {isEditing && (
+              <div className="absolute top-6 right-6 flex items-center gap-2">
+                <button
+                  onClick={cancelEdit}
+                  disabled={saving}
+                  className="flex items-center gap-1.5 rounded-xl border border-white/40 bg-white/20 px-4 py-2 text-sm font-semibold text-white shadow-sm backdrop-blur-sm transition-all hover:bg-white/30 disabled:opacity-60"
+                >
+                  <X className="h-4 w-4" />
+                  Hủy
+                </button>
+                <button
+                  onClick={handleSave}
+                  disabled={saving}
+                  className="flex items-center gap-1.5 rounded-xl border border-white bg-white px-4 py-2 text-sm font-bold text-[#004c91] shadow-sm transition-all hover:bg-gray-50 disabled:opacity-60"
+                >
+                  <Save className="h-4 w-4" />
+                  {saving ? 'Đang lưu...' : 'Lưu thay đổi'}
+                </button>
+              </div>
+            )}
+          </div>
+
+          <div className="px-8 pb-10">
+            <div className="flex flex-col items-start gap-8 md:flex-row">
+              {/* Avatar (upload chưa triển khai) */}
+              <div className="relative -mt-16 flex flex-shrink-0 flex-col items-center">
+                <div className="flex h-36 w-36 items-center justify-center overflow-hidden rounded-full bg-gray-100 shadow-md">
+                  <img
+                    src={avatarImg}
+                    alt="Avatar"
+                    className="h-full w-full object-cover"
+                  />
+                </div>
+                <div className="mt-4 flex flex-col items-center">
+                  <div className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-bold uppercase tracking-wide shadow-sm ${roleBadge}`}>
+                    <ShieldCheck className="h-3.5 w-3.5" />
+                    {profile.displayRole}
+                  </div>
+                </div>
+              </div>
+
+              {/* Info */}
+              <div className="w-full flex-1 pt-4">
+                {isEditing ? (
+                  <div className="mb-3">
+                    <input
+                      type="text"
+                      value={form.fullName}
+                      onChange={(e) => setForm({ ...form, fullName: e.target.value })}
+                      className="w-full rounded-xl border-2 border-[#b6d4f0] bg-[#f0f7fc] px-4 py-2 text-3xl font-bold tracking-tight text-gray-900 shadow-sm transition-all focus:border-[#004c91] focus:bg-white focus:outline-none focus:ring-4 focus:ring-[#004c91]/20"
+                    />
+                    {fieldErrors.fullName && <p className="mt-1 text-sm text-red-600">{fieldErrors.fullName}</p>}
+                  </div>
+                ) : (
+                  <div className="mb-3 border-b border-gray-300 pb-3">
+                    <h2 className="text-3xl font-bold tracking-tight text-gray-900">{profile.fullName}</h2>
                   </div>
                 )}
-                <input 
-                   type="file" 
-                   ref={fileInputRef} 
-                   onChange={handleAvatarChange} 
-                   accept="image/*" 
-                   className="hidden" 
-                />
-              </div>
-              
-              <div className="mt-4 flex flex-col items-center">
-                 <div className={`flex items-center gap-1.5 px-3 py-1 text-xs font-bold rounded-full border uppercase tracking-wide shadow-sm ${roleColors}`}>
-                    <ShieldCheck className="w-3.5 h-3.5" />
-                    {user.role}
-                 </div>
-              </div>
-            </div>
 
-            {/* User Info Section */}
-            <div className="pt-4 flex-1 w-full">
-              {isEditing ? (
-                <div className="relative mb-3">
-                  <input 
-                    type="text" 
-                    value={profileData.name} 
-                    onChange={e => setProfileData({...profileData, name: e.target.value})} 
-                    className="text-3xl font-bold text-gray-900 tracking-tight bg-[#f0f7fc] focus:bg-white border-2 border-[#b6d4f0] focus:border-[#004c91] rounded-xl px-4 py-2 focus:outline-none focus:ring-4 focus:ring-[#004c91]/20 w-full transition-all shadow-sm"
-                    title="Bạn có thể thay đổi tên của mình" 
-                  />
-                  <div className="absolute top-0 right-0 -mt-2 -mr-2 bg-[#004c91] text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm">Có thể sửa</div>
-                </div>
-              ) : (
-                <div className="border-b border-solid border-gray-300 pb-3 mb-3">
-                  <h2 className="text-3xl font-bold text-gray-900 tracking-tight">{profileData.name}</h2>
-                </div>
-              )}
+                {/* Cơ sở — không hiển thị cho VISITOR; không hardcode theo role */}
+                {!isVisitor && (
+                  <div className="mt-2 flex items-center gap-2 font-semibold text-[#f37021]">
+                    <School className="h-5 w-5" />
+                    <span>Cơ sở: {profile.displayCampusName ?? 'Chưa cấu hình'}</span>
+                  </div>
+                )}
 
-              <div className="flex items-center gap-2 mt-2 text-[#f37021] font-semibold">
-                <School className="w-5 h-5" />
-                <span>Campus: {userRole === 'HO' ? 'Toàn quốc' : user.campus}</span>
-              </div>
+                <div className="mt-8 grid grid-cols-1 gap-6 md:grid-cols-2">
+                  {/* Giới tính */}
+                  <InfoCard icon={<User className="h-5 w-5" />} label="Giới tính">
+                    {isEditing ? (
+                      <select
+                        value={form.gender}
+                        onChange={(e) => setForm({ ...form, gender: e.target.value as GenderValue | '' })}
+                        className="w-full rounded-lg border border-[#b6d4f0] bg-white px-3 py-1.5 font-medium text-gray-900 focus:border-[#004c91] focus:outline-none focus:ring-1 focus:ring-[#004c91]"
+                      >
+                        <option value="" disabled hidden>Chọn giới tính</option>
+                        <option value="MALE">Nam</option>
+                        <option value="FEMALE">Nữ</option>
+                        <option value="OTHER">Khác</option>
+                      </select>
+                    ) : (
+                      <ValueText>{profile.gender ? GENDER_LABELS[profile.gender] : 'Chưa cập nhật'}</ValueText>
+                    )}
+                  </InfoCard>
 
-              <div className="mt-8 grid grid-cols-1 md:grid-cols-2 gap-6">
-                 {/* Detail Item - Phone */}
-                 <div className="bg-[#f0f7fc] border border-[#d2e5f5] rounded-2xl p-4 flex items-center gap-4 hover:shadow-sm transition-all">
-                    <div className="w-10 h-10 rounded-full bg-white text-[#004c91] flex items-center justify-center flex-shrink-0 shadow-sm border border-[#eef5fa]">
-                      <Phone className="w-5 h-5" />
-                    </div>
-                    <div className="flex-1">
-                      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-0.5">Số điện thoại</p>
+                  {/* Số điện thoại */}
+                  <InfoCard icon={<Phone className="h-5 w-5" />} label="Số điện thoại">
+                    {isEditing ? (
+                      <>
+                        <input
+                          type="text"
+                          value={form.phone}
+                          onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                          placeholder="VD: 0912345678"
+                          className="w-full rounded-lg border border-[#b6d4f0] bg-white px-3 py-1.5 font-medium text-gray-900 focus:border-[#004c91] focus:outline-none focus:ring-1 focus:ring-[#004c91]"
+                        />
+                        {fieldErrors.phone && <p className="mt-1 text-sm text-red-600">{fieldErrors.phone}</p>}
+                      </>
+                    ) : (
+                      <ValueText>{profile.phone || 'Chưa cập nhật'}</ValueText>
+                    )}
+                  </InfoCard>
+
+                  {/* Email — readonly */}
+                  <InfoCard icon={<Mail className="h-5 w-5" />} label="Email" full>
+                    <ValueText>{profile.email}</ValueText>
+                  </InfoCard>
+
+                  {/* MSSV — STUDENT */}
+                  {isStudent && (
+                    <InfoCard icon={<IdCard className="h-5 w-5" />} label="MSSV" full>
+                      <ValueText className="uppercase">{profile.studentCode || '—'}</ValueText>
+                    </InfoCard>
+                  )}
+
+                  {/* Phòng ban + Chức vụ — STAFF / DEPARTMENT */}
+                  {isStaffOrDept && (
+                    <>
+                      <InfoCard icon={<Building2 className="h-5 w-5" />} label="Phòng ban">
+                        <ValueText>{profile.displayDepartmentName || '—'}</ValueText>
+                      </InfoCard>
+                      <InfoCard icon={<Briefcase className="h-5 w-5" />} label="Chức vụ">
+                        <ValueText>{profile.displayPosition || '—'}</ValueText>
+                      </InfoCard>
+                    </>
+                  )}
+
+                  {/* Quốc tịch — VISITOR */}
+                  {isVisitor && (
+                    <InfoCard icon={<Globe className="h-5 w-5" />} label="Quốc tịch" full>
                       {isEditing ? (
-                        <input 
-                          type="text" 
-                          value={profileData.phone} 
-                          onChange={e => setProfileData({...profileData, phone: e.target.value})} 
-                          className="text-gray-900 font-medium px-3 py-1.5 rounded-lg border border-[#b6d4f0] focus:outline-none focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] w-full bg-white" 
+                        <NationalitySearchableDropdown
+                          value={form.nationality || null}
+                          onChange={(v) => setForm({ ...form, nationality: v })}
                         />
                       ) : (
-                        <p className="text-gray-900 font-medium">{profileData.phone}</p>
+                        <ValueText>{nationalityLabel(profile.nationality) || 'Chưa cập nhật'}</ValueText>
                       )}
-                    </div>
-                 </div>
-
-                 {/* Detail Item - Gender */}
-                 <div className="bg-[#f0f7fc] border border-[#d2e5f5] rounded-2xl p-4 flex items-center gap-4 hover:shadow-sm transition-all">
-                    <div className="w-10 h-10 rounded-full bg-white text-[#004c91] flex items-center justify-center flex-shrink-0 shadow-sm border border-[#eef5fa]">
-                      <User className="w-5 h-5" />
-                    </div>
-                    <div className="flex-1">
-                      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-0.5">Giới tính</p>
-                      {isEditing ? (
-                        <select 
-                          value={profileData.gender} 
-                          onChange={e => setProfileData({...profileData, gender: e.target.value})} 
-                          className="text-gray-900 font-medium px-3 py-1.5 rounded-lg border border-[#b6d4f0] focus:outline-none focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] w-full bg-white"
-                        >
-                          <option value="">Chưa cập nhật</option>
-                          <option value="MALE">Nam</option>
-                          <option value="FEMALE">Nữ</option>
-                          <option value="OTHER">Khác</option>
-                        </select>
-                      ) : (
-                        <p className="text-gray-900 font-medium">
-                          {!profileData.gender ? 'Chưa cập nhật' : profileData.gender === 'MALE' ? 'Nam' : profileData.gender === 'FEMALE' ? 'Nữ' : 'Khác'}
-                        </p>
-                      )}
-                    </div>
-                 </div>
-
-                 {/* Detail Item - Email */}
-                 <div className="bg-[#f0f7fc] border border-[#d2e5f5] rounded-2xl p-4 flex items-center gap-4 hover:shadow-sm transition-all md:col-span-2">
-                    <div className="w-10 h-10 rounded-full bg-white text-[#004c91] flex items-center justify-center flex-shrink-0 shadow-sm border border-[#eef5fa]">
-                      <Mail className="w-5 h-5" />
-                    </div>
-                    <div className="flex-1">
-                      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-0.5">Email</p>
-                      {isEditing ? (
-                        <input 
-                          type="email" 
-                          value={profileData.email} 
-                          onChange={e => setProfileData({...profileData, email: e.target.value})} 
-                          className="text-gray-900 font-medium px-3 py-1.5 rounded-lg border border-[#b6d4f0] focus:outline-none focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] w-full bg-white" 
-                        />
-                      ) : (
-                        <p className="text-gray-900 font-medium">{profileData.email}</p>
-                      )}
-                    </div>
-                 </div>
-
-                 {/* Detail Item - Major */}
-                 {userRole === 'STUDENT' && (
-                   <div className="bg-[#f0f7fc] border border-[#d2e5f5] rounded-2xl p-4 flex items-center gap-4 hover:shadow-sm transition-all md:col-span-2">
-                      <div className="w-10 h-10 rounded-full bg-white text-[#004c91] flex items-center justify-center flex-shrink-0 shadow-sm border border-[#eef5fa]">
-                        <BookOpen className="w-5 h-5" />
-                      </div>
-                      <div className="flex-1">
-                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-0.5">Chuyên ngành</p>
-                        {isEditing ? (
-                          <select
-                            value={profileData.major} 
-                            onChange={e => setProfileData({...profileData, major: e.target.value})} 
-                            className="text-gray-900 font-medium px-3 py-1.5 rounded-lg border border-[#b6d4f0] focus:outline-none focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] w-full bg-white"
-                          >
-                            <option value="Công nghệ thông tin">Công nghệ thông tin</option>
-                            <option value="Công nghệ truyền thông">Công nghệ truyền thông</option>
-                            <option value="Ngôn ngữ">Ngôn ngữ</option>
-                            <option value="Quản trị kinh doanh">Quản trị kinh doanh</option>
-                          </select>
-                        ) : (
-                          <p className="text-gray-900 font-medium">{profileData.major}</p>
-                        )}
-                      </div>
-                   </div>
-                 )}
-
-                 {/* Detail Item - Facebook / MSSV */}
-                 {userRole === 'STUDENT' ? (
-                   <div className="bg-[#f0f7fc] border border-[#d2e5f5] rounded-2xl p-4 flex items-center gap-4 hover:shadow-sm transition-all md:col-span-2">
-                      <div className="w-10 h-10 rounded-full bg-white text-[#004c91] flex items-center justify-center flex-shrink-0 shadow-sm border border-[#eef5fa]">
-                        <User className="w-5 h-5" />
-                      </div>
-                      <div className="flex-1">
-                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-0.5">MSSV</p>
-                        {isEditing ? (
-                          <input 
-                            type="text" 
-                            value={profileData.studentId} 
-                            onChange={e => setProfileData({...profileData, studentId: e.target.value})} 
-                            className="text-gray-900 font-medium px-3 py-1.5 rounded-lg border border-[#b6d4f0] focus:outline-none focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] w-full bg-white" 
-                          />
-                        ) : (
-                          <p className="text-gray-900 font-medium uppercase">{profileData.studentId}</p>
-                        )}
-                      </div>
-                   </div>
-                 ) : (userRole === 'DEPARTMENT' || userRole === 'STAFF') ? (
-                   <>
-                     <div className="bg-[#f0f7fc] border border-[#d2e5f5] rounded-2xl p-4 flex items-center gap-4 hover:shadow-sm transition-all md:col-span-1">
-                        <div className="w-10 h-10 rounded-full bg-white text-[#004c91] flex items-center justify-center flex-shrink-0 shadow-sm border border-[#eef5fa]">
-                          <School className="w-5 h-5" />
-                        </div>
-                        <div className="flex-1">
-                          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-0.5">Phòng ban</p>
-                          <p className="text-gray-900 font-medium">{profileData.department}</p>
-                        </div>
-                     </div>
-                     <div className="bg-[#f0f7fc] border border-[#d2e5f5] rounded-2xl p-4 flex items-center gap-4 hover:shadow-sm transition-all md:col-span-1">
-                        <div className="w-10 h-10 rounded-full bg-white text-[#004c91] flex items-center justify-center flex-shrink-0 shadow-sm border border-[#eef5fa]">
-                          <User className="w-5 h-5" />
-                        </div>
-                        <div className="flex-1">
-                          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-0.5">Chức vụ</p>
-                          <p className="text-gray-900 font-medium">{profileData.position}</p>
-                        </div>
-                     </div>
-                   </>
-                 ) : (userRole === 'VISITOR') ? (
-                   <>
-                     <div className="bg-[#f0f7fc] border border-[#d2e5f5] rounded-2xl p-4 flex items-center gap-4 hover:shadow-sm transition-all md:col-span-1">
-                        <div className="w-10 h-10 rounded-full bg-white text-[#004c91] flex items-center justify-center flex-shrink-0 shadow-sm border border-[#eef5fa]">
-                          <School className="w-5 h-5" />
-                        </div>
-                        <div className="flex-1">
-                          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-0.5">Đơn vị công tác</p>
-                          {isEditing ? (
-                            <input 
-                              type="text" 
-                              value={profileData.workplace} 
-                              onChange={e => setProfileData({...profileData, workplace: e.target.value})} 
-                              className="text-gray-900 font-medium px-3 py-1.5 rounded-lg border border-[#b6d4f0] focus:outline-none focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] w-full bg-white" 
-                            />
-                          ) : (
-                            <p className="text-gray-900 font-medium">{profileData.workplace}</p>
-                          )}
-                        </div>
-                     </div>
-                     <div className="bg-[#f0f7fc] border border-[#d2e5f5] rounded-2xl p-4 flex items-center gap-4 hover:shadow-sm transition-all md:col-span-1">
-                        <div className="w-10 h-10 rounded-full bg-white text-[#004c91] flex items-center justify-center flex-shrink-0 shadow-sm border border-[#eef5fa]">
-                          <User className="w-5 h-5" />
-                        </div>
-                        <div className="flex-1">
-                          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-0.5">Quốc tịch</p>
-                          {isEditing ? (
-                            <input 
-                              type="text" 
-                              value={profileData.nationality} 
-                              onChange={e => setProfileData({...profileData, nationality: e.target.value})} 
-                              className="text-gray-900 font-medium px-3 py-1.5 rounded-lg border border-[#b6d4f0] focus:outline-none focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] w-full bg-white" 
-                            />
-                          ) : (
-                            <p className="text-gray-900 font-medium">{profileData.nationality}</p>
-                          )}
-                        </div>
-                     </div>
-                   </>
-                 ) : userRole !== 'ADMIN' && userRole !== 'HO' && userRole !== 'VISITOR' && (
-                   <div className="bg-[#f0f7fc] border border-[#d2e5f5] rounded-2xl p-4 flex items-start gap-4 hover:shadow-sm transition-all md:col-span-2">
-                      <div className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 text-white shadow-sm mt-0.5" style={{backgroundColor: '#1877F2'}}>
-                        <Facebook className="w-5 h-5 fill-current" />
-                      </div>
-                      <div className="flex-1">
-                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-0.5">Facebook</p>
-                        {isEditing ? (
-                          <div className="flex flex-col gap-3 mt-1">
-                            <div>
-                              <label className="text-xs text-gray-500 mb-1 block">Tên hiển thị</label>
-                              <input 
-                                type="text" 
-                                placeholder="VD: hihi" 
-                                value={profileData.facebookName} 
-                                onChange={e => setProfileData({...profileData, facebookName: e.target.value})} 
-                                className="text-gray-900 font-medium px-3 py-1.5 rounded-lg border border-[#b6d4f0] focus:outline-none focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] w-full bg-white" 
-                              />
-                            </div>
-                            <div>
-                              <label className="text-xs text-gray-500 mb-1 block">Liên kết (URL)</label>
-                              <input 
-                                type="text" 
-                                placeholder="https://facebook.com/..." 
-                                value={profileData.facebook} 
-                                onChange={e => setProfileData({...profileData, facebook: e.target.value})} 
-                                className="text-gray-900 font-medium px-3 py-1.5 rounded-lg border border-[#b6d4f0] focus:outline-none focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] w-full bg-white" 
-                              />
-                            </div>
-                          </div>
-                        ) : (
-                          <a href={profileData.facebook} target="_blank" rel="noreferrer" className="text-[#004c91] hover:underline font-medium break-all">
-                            {profileData.facebookName}
-                          </a>
-                        )}
-                      </div>
-                   </div>
-                 )}
-
+                    </InfoCard>
+                  )}
+                </div>
               </div>
-
             </div>
           </div>
         </div>
-      </div>
+      )}
     </motion.div>
+  );
+}
+
+function InfoCard({
+  icon, label, children, full,
+}: { icon: React.ReactNode; label: string; children: React.ReactNode; full?: boolean }) {
+  return (
+    <div className={`flex items-center gap-4 rounded-2xl border border-[#d2e5f5] bg-[#f0f7fc] p-4 transition-all hover:shadow-sm ${full ? 'md:col-span-2' : ''}`}>
+      <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full border border-[#eef5fa] bg-white text-[#004c91] shadow-sm">
+        {icon}
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="mb-0.5 text-xs font-semibold uppercase tracking-wider text-gray-500">{label}</p>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function ValueText({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+  return <p className={`font-medium text-gray-900 ${className}`}>{children}</p>;
+}
+
+function ProfileSkeleton() {
+  return (
+    <div className="overflow-hidden rounded-3xl border border-gray-100 bg-white shadow-sm">
+      <div className="h-40 animate-pulse bg-gradient-to-r from-slate-200 to-slate-100" />
+      <div className="px-8 pb-10">
+        <div className="-mt-16 h-36 w-36 animate-pulse rounded-full bg-slate-200" />
+        <div className="mt-6 h-8 w-64 animate-pulse rounded bg-slate-200" />
+        <div className="mt-8 grid grid-cols-1 gap-6 md:grid-cols-2">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="h-20 animate-pulse rounded-2xl bg-slate-100" />
+          ))}
+        </div>
+      </div>
+    </div>
   );
 }
