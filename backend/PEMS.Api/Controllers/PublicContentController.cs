@@ -1,79 +1,97 @@
 using MediatR;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using System.Threading;
-using System.Threading.Tasks;
 
 namespace PEMS.Api.Controllers
 {
     [ApiController]
-    [Route("api/[controller]")]
-    public class PublicContentController : ControllerBase
+    [Route("api/public")]
+    public sealed class PublicContentController : ControllerBase
     {
         private readonly IMediator _mediator;
+
         public PublicContentController(IMediator mediator) => _mediator = mediator;
 
-        [HttpGet("viewhomepage")]
-        public async Task<IActionResult> ViewHomepage([FromQuery] PEMS.Application.PublicContent.Queries.ViewHomepage.ViewHomepageQuery query, CancellationToken cancellationToken)
+        [HttpGet("homepage")]
+        public async Task<IActionResult> ViewHomepage(
+            [FromQuery] PEMS.Application.PublicContent.Queries.ViewHomepage.ViewHomepageQuery query,
+            CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(query, cancellationToken);
             return Ok(result);
         }
 
-        [HttpGet("searchinformation")]
-        public async Task<IActionResult> SearchInformation([FromQuery] PEMS.Application.PublicContent.Queries.SearchInformation.SearchInformationQuery query, CancellationToken cancellationToken)
+        [HttpGet("search")]
+        public async Task<IActionResult> SearchInformation(
+            [FromQuery] PEMS.Application.PublicContent.Queries.SearchInformation.SearchInformationQuery query,
+            CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(query, cancellationToken);
             return Ok(result);
         }
 
-        [HttpGet("viewcontactinfo")]
-        public async Task<IActionResult> ViewContactInfo([FromQuery] PEMS.Application.PublicContent.Queries.ViewContactInfo.ViewContactInfoQuery query, CancellationToken cancellationToken)
+        [HttpGet("contact")]
+        public async Task<IActionResult> ViewContactInfo(
+            [FromQuery] PEMS.Application.PublicContent.Queries.ViewContactInfo.ViewContactInfoQuery query,
+            CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(query, cancellationToken);
             return Ok(result);
         }
 
-        [HttpGet("viewpolicyandterms")]
-        public async Task<IActionResult> ViewPolicyAndTerms([FromQuery] PEMS.Application.PublicContent.Queries.ViewPolicyAndTerms.ViewPolicyAndTermsQuery query, CancellationToken cancellationToken)
+        [HttpGet("policy")]
+        public async Task<IActionResult> ViewPolicyAndTerms(
+            [FromQuery] PEMS.Application.PublicContent.Queries.ViewPolicyAndTerms.ViewPolicyAndTermsQuery query,
+            CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(query, cancellationToken);
             return Ok(result);
         }
 
-        [HttpGet("viewfaq")]
-        public async Task<IActionResult> ViewFAQ([FromQuery] PEMS.Application.PublicContent.Queries.ViewFAQ.ViewFAQQuery query, CancellationToken cancellationToken)
+        [HttpGet("faqs")]
+        [AllowAnonymous]
+        public async Task<IActionResult> GetFaqs(
+            [FromQuery] PEMS.Application.PublicContent.Queries.ViewFAQ.ViewFaqQuery query,
+            CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(query, cancellationToken);
             return Ok(result);
         }
 
-        [HttpGet("viewnews")]
-        public async Task<IActionResult> ViewNews([FromQuery] PEMS.Application.PublicContent.Queries.ViewNews.ViewNewsQuery query, CancellationToken cancellationToken)
+        [HttpGet("news")]
+        public async Task<IActionResult> ViewNews(
+            [FromQuery] PEMS.Application.PublicContent.Queries.ViewNews.ViewNewsQuery query,
+            CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(query, cancellationToken);
             return Ok(result);
         }
 
-        [HttpGet("viewpartners")]
-        public async Task<IActionResult> ViewPartners([FromQuery] PEMS.Application.PublicContent.Queries.ViewPartners.ViewPartnersQuery query, CancellationToken cancellationToken)
+        [HttpGet("partners")]
+        public async Task<IActionResult> ViewPartners(
+            [FromQuery] PEMS.Application.PublicContent.Queries.ViewPartners.ViewPartnersQuery query,
+            CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(query, cancellationToken);
             return Ok(result);
         }
 
-        [HttpGet("viewgallery")]
-        public async Task<IActionResult> ViewGallery([FromQuery] PEMS.Application.PublicContent.Queries.ViewGallery.ViewGalleryQuery query, CancellationToken cancellationToken)
+        [HttpGet("gallery")]
+        public async Task<IActionResult> ViewGallery(
+            [FromQuery] PEMS.Application.PublicContent.Queries.ViewGallery.ViewGalleryQuery query,
+            CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(query, cancellationToken);
             return Ok(result);
         }
 
-        [HttpGet("viewnotifications")]
-        public async Task<IActionResult> ViewNotifications([FromQuery] PEMS.Application.PublicContent.Queries.ViewNotifications.ViewNotificationsQuery query, CancellationToken cancellationToken)
+        [HttpGet("notifications")]
+        public async Task<IActionResult> ViewNotifications(
+            [FromQuery] PEMS.Application.PublicContent.Queries.ViewNotifications.ViewNotificationsQuery query,
+            CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(query, cancellationToken);
             return Ok(result);
         }
-
     }
 }
