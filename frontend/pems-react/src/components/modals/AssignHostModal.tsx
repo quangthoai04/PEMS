@@ -40,6 +40,8 @@ export function AssignHostModal({
   const [debouncedKeyword, setDebouncedKeyword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // Confirm overlay shown when assigning a host that has a schedule conflict.
+  const [confirmConflict, setConfirmConflict] = useState(false);
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedKeyword(keyword), 300);
@@ -73,8 +75,22 @@ export function AssignHostModal({
         `${c.fullName} ${c.email} ${c.departmentName ?? ''}`.toLowerCase().includes(debouncedKeyword.trim().toLowerCase()))
     : candidates;
 
-  const handleConfirm = async () => {
+  const selectedCandidate = candidates.find((c) => c.userId === selectedId) ?? null;
+
+  // Selecting confirm: if the chosen host has a schedule conflict, ask for explicit confirmation
+  // first (the backend still allows it — this is an advisory guard, not a hard block).
+  const attemptConfirm = () => {
     if (!selectedId || !visitInstanceId) return;
+    if (selectedCandidate?.hasScheduleConflict) {
+      setConfirmConflict(true);
+      return;
+    }
+    void doAssign();
+  };
+
+  const doAssign = async () => {
+    if (!selectedId || !visitInstanceId) return;
+    setConfirmConflict(false);
     setIsSubmitting(true);
     setSubmitError(null);
     try {
@@ -158,24 +174,27 @@ export function AssignHostModal({
                           {isCurrent && <span className="ml-2 text-[10px] font-semibold text-slate-600 bg-slate-100 rounded px-1.5 py-0.5">Host hiện tại</span>}
                         </p>
                         <p className="text-xs text-slate-500 truncate">{c.email}{c.departmentName ? ` · ${c.departmentName}` : ''}</p>
-                        <p className="text-[11px] text-slate-400 mt-0.5">Đang phụ trách {c.activeAssignmentCount} đoàn</p>
                       </div>
                       {selected && <Check className="w-5 h-5 text-[#004c91] flex-shrink-0" />}
                     </div>
 
-                    {c.hasScheduleConflict && (
+                    {!c.hasScheduleConflict ? (
+                      <p className="mt-1.5 text-[11px] font-semibold text-emerald-600 flex items-center gap-1">
+                        <Check className="w-3.5 h-3.5" /> Không trùng lịch với đơn này
+                      </p>
+                    ) : (
                       <div className="mt-2 rounded-xl bg-amber-50 border border-amber-200 p-2 text-[11px] text-amber-800">
                         <p className="font-bold flex items-center gap-1">
-                          <AlertTriangle className="w-3.5 h-3.5" /> Cảnh báo trùng lịch
+                          <AlertTriangle className="w-3.5 h-3.5" /> Trùng lịch với đơn này
                         </p>
-                        <p className="mt-0.5">Nhân sự này đang có lịch tiếp khách trùng/gần trùng thời gian của đoàn hiện tại. Bạn vẫn có thể chọn, nhưng nên kiểm tra lại lịch.</p>
-                        <ul className="mt-1 space-y-0.5">
-                          {c.conflicts.slice(0, 3).map((cf) => (
-                            <li key={cf.visitInstanceId} className="truncate">
-                              • {cf.delegationName || 'Đoàn khác'}: {formatDateTime(cf.startTime)} → {formatDateTime(cf.endTime)}
-                            </li>
-                          ))}
-                        </ul>
+                        {c.conflicts[0] && (
+                          <p className="mt-0.5 truncate">
+                            • {c.conflicts[0].title || (c.conflicts[0].source === 'CALENDAR' ? 'Lịch cá nhân' : 'Đoàn khách khác')}: {formatDateTime(c.conflicts[0].startAt)} → {formatDateTime(c.conflicts[0].endAt)}
+                          </p>
+                        )}
+                        {c.conflictCount > 1 && (
+                          <p className="mt-0.5 font-semibold">Trùng {c.conflictCount} lịch trong khung giờ này</p>
+                        )}
                       </div>
                     )}
                   </button>
@@ -198,7 +217,7 @@ export function AssignHostModal({
           </button>
           <button
             type="button"
-            onClick={handleConfirm}
+            onClick={attemptConfirm}
             disabled={!selectedId || isSubmitting}
             className="px-6 py-2 rounded-xl font-bold text-white bg-[#004c91] hover:bg-[#003b70] shadow-sm transition-all outline-none text-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
           >
@@ -206,6 +225,42 @@ export function AssignHostModal({
             {isSubmitting ? 'Đang xử lý...' : confirmLabel}
           </button>
         </div>
+
+        {/* Conflict confirmation overlay */}
+        {confirmConflict && (
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden border border-gray-100">
+              <div className="px-5 py-4 bg-amber-500 flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5 text-white" />
+                <h4 className="text-base font-bold text-white">Xác nhận gán host trùng lịch</h4>
+              </div>
+              <div className="p-5 text-sm text-slate-700">
+                <p>
+                  Nhân sự <span className="font-bold text-slate-900">{selectedCandidate?.fullName}</span> đang có lịch trùng với thời gian đón đoàn. Bạn vẫn muốn gán làm host?
+                </p>
+              </div>
+              <div className="px-5 py-4 bg-gray-50 flex items-center justify-end gap-3 border-t border-gray-100">
+                <button
+                  type="button"
+                  onClick={() => setConfirmConflict(false)}
+                  disabled={isSubmitting}
+                  className="px-4 py-2 rounded-xl font-bold text-gray-600 hover:bg-gray-200 transition-colors outline-none text-sm cursor-pointer"
+                >
+                  Quay lại
+                </button>
+                <button
+                  type="button"
+                  onClick={doAssign}
+                  disabled={isSubmitting}
+                  className="px-5 py-2 rounded-xl font-bold text-white bg-amber-600 hover:bg-amber-700 shadow-sm transition-all outline-none text-sm cursor-pointer disabled:opacity-50 flex items-center gap-2"
+                >
+                  {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                  Vẫn gán host
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </motion.div>
     </div>
   );

@@ -10,6 +10,11 @@ export const API_ENDPOINTS = {
     resetPassword: '/auth/reset-password',
     changePassword: '/auth/change-password',
   },
+  profile: {
+    // UC-14 view my profile, UC-15 update my profile (self-service; user resolved from token).
+    me: '/profiles/viewprofile',
+    update: '/profiles/updateprofile',
+  },
   campuses: {
     active: '/campuses/active',
     // UC-82 list (also serves UC-83 search/filter), UC-83 filter options, UC-86 status toggle.
@@ -49,6 +54,10 @@ export const API_ENDPOINTS = {
     list: '/delegations',
     managementList: '/delegations/viewguestdelegationlist',
     detail: (id: string | number) => `/delegations/${id}`,
+    // Read-only "what the guest submitted" snapshot, shared by pre-approval review,
+    // approved/waiting-host detail and rejected detail screens.
+    submittedFormDetail: (visitRequestId: string | number) =>
+      `/delegations/visit-requests/${visitRequestId}/submitted-form-detail`,
     // UC-18 HO approve / reject a MULTI_CAMPUS request (whole request).
     hoApprove: (visitRequestId: string | number) => `/delegations/${visitRequestId}/ho-approve`,
     hoReject: (visitRequestId: string | number) => `/delegations/${visitRequestId}/ho-reject`,

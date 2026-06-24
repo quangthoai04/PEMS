@@ -19,8 +19,8 @@ public class Gallery
     [Column("specific_location_name")]
     public string SpecificLocationName { get; set; } = null!;
 
-    [Column("visit_instance_id")]
-    public ulong? VisitInstanceId { get; set; }
+    [Column("location_description")]
+    public string? LocationDescription { get; set; }
 
     [Column("title")]
     public string Title { get; set; } = null!;
@@ -28,8 +28,8 @@ public class Gallery
     [Column("description")]
     public string? Description { get; set; }
 
-    [Column("location_description")]
-    public string? LocationDescription { get; set; }
+    [Column("story_content")]
+    public string? StoryContent { get; set; }
 
     [Column("hero_file_id")]
     public ulong? HeroFileId { get; set; }

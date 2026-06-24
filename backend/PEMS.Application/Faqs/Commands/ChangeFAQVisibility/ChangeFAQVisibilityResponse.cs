@@ -1,10 +1,8 @@
-using System;
-
 namespace PEMS.Application.Faqs.Commands.ChangeFAQVisibility;
 
 public sealed class ChangeFAQVisibilityResponse
 {
-    public Guid? Id { get; init; }
-    public string Status { get; init; } = "Scaffolded";
-    public string Message { get; init; } = "Use case scaffolded. Business logic is not implemented yet.";
+    public ulong FaqId { get; init; }
+    public string NewStatus { get; init; } = string.Empty;
+    public string NewStatusLabel { get; init; } = string.Empty;
 }

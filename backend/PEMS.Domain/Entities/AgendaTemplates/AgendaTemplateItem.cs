@@ -28,17 +28,8 @@ public class AgendaTemplateItem
     [Column("description")]
     public string? Description { get; set; }
 
-    [Column("responsible_role")]
-    public string? ResponsibleRole { get; set; }
-
-    [Column("location")]
-    public string? Location { get; set; }
-
     [Column("created_at")]
     public DateTime CreatedAt { get; set; }
-
-    [Column("updated_at")]
-    public DateTime? UpdatedAt { get; set; }
 
     public virtual AgendaTemplate AgendaTemplate { get; set; } = null!;
 }

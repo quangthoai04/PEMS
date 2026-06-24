@@ -25,9 +25,6 @@ public class GalleryImage
     [Column("caption")]
     public string? Caption { get; set; }
 
-    [Column("location_name")]
-    public string? LocationName { get; set; }
-
     [Column("display_order")]
     public int DisplayOrder { get; set; }
 

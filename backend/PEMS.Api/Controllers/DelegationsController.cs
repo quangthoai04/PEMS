@@ -45,6 +45,22 @@ namespace PEMS.Api.Controllers
             return Ok(result);
         }
 
+        // ── Submitted visit-request form snapshot (read-only, shared) ────────
+        // The "what the guest submitted" detail, reused by the pre-approval review, the
+        // approved/waiting-host detail and the rejected detail screens. Role/scope/status
+        // visibility is enforced in the handler (HO → MULTI_CAMPUS; Staff Leader → own-campus
+        // SINGLE_CAMPUS any status, or own-campus MULTI_CAMPUS only after HO approval; Visitor →
+        // own request). Never mutates anything; decisions use the ho-approve / assign-host /
+        // reject endpoints above.
+        [HttpGet("visit-requests/{visitRequestId}/submitted-form-detail")]
+        public async Task<IActionResult> GetSubmittedVisitRequestFormDetail(ulong visitRequestId, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(
+                new PEMS.Application.Delegations.Queries.GetSubmittedVisitRequestFormDetail.GetSubmittedVisitRequestFormDetailQuery(visitRequestId),
+                cancellationToken);
+            return Ok(result);
+        }
+
         [HttpGet("viewguestdelegationdetails")]
         public async Task<IActionResult> ViewGuestDelegationDetails([FromQuery] PEMS.Application.Delegations.Queries.ViewGuestDelegationDetails.ViewGuestDelegationDetailsQuery query, CancellationToken cancellationToken)
         {

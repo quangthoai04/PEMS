@@ -15,7 +15,10 @@ import {
 import { motion } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
 import { VisitDetailsModal } from '../../../components/modals/VisitDetailsModal';
+import { SubmittedVisitRequestDetailModal } from '../../../components/modals/SubmittedVisitRequestDetailModal';
 import { AssignHostModal } from '../../../components/modals/AssignHostModal';
+import { CancellationReasonModal } from '../../../features/delegations/components/CancellationReasonModal';
+import { RejectedReasonModal } from '../../../features/delegations/components/RejectedReasonModal';
 import { delegationsApi } from '../../../features/delegations/api/delegationsApi';
 import {
   VISIT_SCOPE_LABELS,
@@ -165,7 +168,11 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
 
   // Modals
   const [view, setView] = useState<{ open: boolean; row: Row | null }>({ open: false, row: null });
+  // "Xem đơn đăng ký tham quan trước khi duyệt" — read-only review of a PENDING_APPROVAL row.
+  const [review, setReview] = useState<{ open: boolean; row: Row | null }>({ open: false, row: null });
   const [reason, setReason] = useState<{ open: boolean; row: Row | null }>({ open: false, row: null });
+  // UC-136: read-only popup of the cancellation reason (Host / Visitor / Staff Leader / HO).
+  const [cancelReason, setCancelReason] = useState<{ open: boolean; row: Row | null }>({ open: false, row: null });
   const [approveConfirm, setApproveConfirm] = useState<{ open: boolean; row: Row | null; submitting: boolean; error: string | null }>({ open: false, row: null, submitting: false, error: null });
   const [reject, setReject] = useState<{ open: boolean; row: Row | null; action: AllowedAction | null; text: string; submitting: boolean; error: string | null }>({ open: false, row: null, action: null, text: '', submitting: false, error: null });
   const [cancel, setCancel] = useState<{ open: boolean; row: Row | null; mode: 'visitor' | 'host' | null; text: string; submitting: boolean; error: string | null }>({ open: false, row: null, mode: null, text: '', submitting: false, error: null });
@@ -321,8 +328,41 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   // Navigation when opening a row's detail (keeps existing detail routes).
+  // Whether the icon-mắt should open the shared submitted-form detail modal for this row, and
+  // the current user is in scope for it. Covers pre-approval review, rejected detail, and the
+  // approved multi-campus waiting-host detail. Backend re-enforces scope (403 on direct URL).
+  const opensSubmittedDetail = (row: Row) => {
+    if (activeTab === 'attending') return false;
+    const st = row.requestStatus;
+    // Pre-approval review
+    if (st === 'PENDING_APPROVAL'
+      && ((isHO && row.visitScope === 'MULTI_CAMPUS')
+        || (isStaffLeader && row.visitScope === 'SINGLE_CAMPUS' && row.campusStatus === 'WAITING_REQUEST_APPROVAL'))) {
+      return true;
+    }
+    // Rejected detail — single (Staff Leader own campus) / multi (HO) / visitor's own
+    if (st === 'REJECTED'
+      && ((isHO && row.visitScope === 'MULTI_CAMPUS')
+        || (isStaffLeader && row.visitScope === 'SINGLE_CAMPUS')
+        || isVisitor)) {
+      return true;
+    }
+    // Approved multi-campus waiting host (Staff Leader picks the official host)
+    if (st === 'APPROVED' && isStaffLeader && row.visitScope === 'MULTI_CAMPUS'
+      && row.campusStatus === 'WAITING_HOST_ASSIGNMENT') {
+      return true;
+    }
+    return false;
+  };
+
   const handleView = (row: Row) => {
     const idForRoute = row.id;
+    // Shared submitted-form detail (read-only) takes priority for in-scope reviewers — it must
+    // run BEFORE the rejected/cancelled fallback so rejected rows show the real form + reason.
+    if (opensSubmittedDetail(row)) {
+      setReview({ open: true, row });
+      return;
+    }
     if (row.requestStatus === 'CANCELLED' || row.campusStatus === 'CANCELLED' || row.requestStatus === 'REJECTED') {
       setView({ open: true, row });
       return;
@@ -362,6 +402,24 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
     } else {
       setView({ open: true, row });
     }
+  };
+
+  // ── Pre-approval review modal → reuse the existing approve/reject flows ──
+  // The review modal never calls approve/reject itself; it just routes to the same
+  // commands used by the row action buttons (HO: ho-approve / ho-reject, Staff Leader:
+  // approve-and-assign-host / campus-reject).
+  const handleReviewApprove = (row: Row) => {
+    setReview({ open: false, row: null });
+    if (isHO) setApproveConfirm({ open: true, row, submitting: false, error: null });
+    else setAssign({ open: true, row, mode: 'approve' });
+  };
+  const handleReviewReject = (row: Row) => {
+    setReview({ open: false, row: null });
+    setReject({ open: true, row, action: isHO ? 'HO_REJECT' : 'CAMPUS_REJECT', text: '', submitting: false, error: null });
+  };
+  const handleReviewAssignHost = (row: Row) => {
+    setReview({ open: false, row: null });
+    setAssign({ open: true, row, mode: 'approve' });
   };
 
   // ── Action handlers ──
@@ -562,7 +620,13 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
   const renderRowActions = (row: Row) => {
     const actions = row.allowedActions || [];
     const can = (a: AllowedAction) => actions.includes(a);
-    const showReason = row.statusText === 'Từ chối' && !!row.decisionNote;
+    // Gate on the real status CODE (never the display label). statusText is for UI only,
+    // so the button survives label changes ("Từ chối" → "Đã từ chối"/"Rejected"/i18n).
+    const showReason = row.requestStatus === 'REJECTED' && !!row.decisionNote;
+    // UC-136: any in-scope user (Host/Visitor/Staff Leader/HO) may review the cancel reason.
+    // The list is already scoped server-side, so a cancelled row here is always one the user may see.
+    const isCancelledRow = activeTab !== 'attending'
+      && (row.isCancelled === true || row.requestStatus === 'CANCELLED' || row.campusStatus === 'CANCELLED');
     
     return (
       <div className="mx-auto grid w-[108px] grid-cols-3 gap-2 place-items-center">
@@ -590,6 +654,9 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
         ) : showReason ? (
           <ActionIconButton title="Xem lý do từ chối" tone="orange" icon={<AlertCircle className="h-5 w-5" />}
             onClick={(e) => { e.stopPropagation(); setReason({ open: true, row }); }} />
+        ) : isCancelledRow ? (
+          <ActionIconButton title="Xem lý do hủy" tone="gray" icon={<XCircle className="h-5 w-5" />}
+            onClick={(e) => { e.stopPropagation(); setCancelReason({ open: true, row }); }} />
         ) : (
           <span className="h-9 w-9" aria-hidden="true" />
         )}
@@ -1012,24 +1079,29 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
       {/* View modal */}
       <VisitDetailsModal isOpen={view.open} onClose={() => setView({ open: false, row: null })} guest={view.row} />
 
-      {/* Reason (rejection) modal */}
-      {reason.open && reason.row && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
-          <motion.div initial={{ opacity: 0, scale: 0.95, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden relative border border-gray-100">
-            <div className="px-6 py-4 bg-[#004c91] flex items-center justify-between">
-              <h3 className="text-lg font-bold text-white flex items-center gap-2"><AlertCircle className="w-5 h-5 bg-white/20 rounded-full p-0.5" /> Lý do từ chối</h3>
-              <button type="button" onClick={() => setReason({ open: false, row: null })} className="text-white/85 hover:text-white hover:bg-white/10 rounded-full p-1.5 cursor-pointer"><X className="w-5 h-5" /></button>
-            </div>
-            <div className="p-6 space-y-3 text-left">
-              <div><span className="text-[11px] uppercase tracking-wider font-bold text-gray-400">Đoàn khách</span><p className="text-base font-bold text-slate-800 mt-0.5">{reason.row.name}</p></div>
-              <div className="bg-red-50 rounded-2xl p-4 border border-red-100"><span className="text-xs font-black text-red-600 uppercase tracking-wide block mb-1">Chi tiết lý do:</span><p className="text-sm font-semibold text-red-950 leading-relaxed italic">"{reason.row.decisionNote || 'Không có lý do chi tiết.'}"</p></div>
-            </div>
-            <div className="px-6 py-4 bg-gray-50 flex items-center justify-end border-t border-gray-100">
-              <button type="button" onClick={() => setReason({ open: false, row: null })} className="px-6 py-2 rounded-xl font-bold text-white bg-[#004c91] hover:bg-[#00386b] shadow-sm transition-all outline-none text-sm cursor-pointer">Đóng</button>
-            </div>
-          </motion.div>
-        </div>
-      )}
+      {/* Shared submitted-form detail modal (read-only): pre-approval / rejected / waiting-host */}
+      <SubmittedVisitRequestDetailModal
+        isOpen={review.open}
+        visitRequestId={review.row?.visitRequestId ?? null}
+        onClose={() => setReview({ open: false, row: null })}
+        onApprove={() => review.row && handleReviewApprove(review.row)}
+        onReject={() => review.row && handleReviewReject(review.row)}
+        onAssignHost={() => review.row && handleReviewAssignHost(review.row)}
+      />
+
+      {/* Reason (rejection) popup — full metadata: vai trò / người xử lý / thời gian / nội dung. */}
+      <RejectedReasonModal
+        isOpen={reason.open && !!reason.row}
+        onClose={() => setReason({ open: false, row: null })}
+        delegationName={reason.row?.name}
+        requestCode={reason.row?.requestCode}
+        visitScope={reason.row?.visitScope}
+        decisionActorRole={reason.row?.decisionActorRole}
+        decidedByName={reason.row?.decidedByName}
+        decidedByUserId={reason.row?.decidedBy}
+        decidedAt={reason.row?.decidedAt}
+        decisionNote={reason.row?.decisionNote}
+      />
 
       {/* Approve confirm modal (HO) */}
       {approveConfirm.open && approveConfirm.row && (
@@ -1096,6 +1168,21 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
           </motion.div>
         </div>
       )}
+
+      {/* Cancellation reason popup (read-only) */}
+      <CancellationReasonModal
+        isOpen={cancelReason.open}
+        onClose={() => setCancelReason({ open: false, row: null })}
+        delegationName={cancelReason.row?.name}
+        cancellationLevel={cancelReason.row?.cancellationLevel}
+        cancelledByName={cancelReason.row?.cancelledByName}
+        cancelledByUserId={cancelReason.row?.cancelledBy}
+        cancelledAt={cancelReason.row?.cancelledAt}
+        cancellationActorType={cancelReason.row?.cancellationActorType}
+        cancellationSource={cancelReason.row?.cancellationSource}
+        cancellationReason={cancelReason.row?.cancellationReason}
+        contextLabel={cancelReason.row?.cancellationLevel === 'CAMPUS_INSTANCE' ? (cancelReason.row?.campus || null) : null}
+      />
 
       {/* Assign / transfer host modal */}
       {assign.open && assign.row && (

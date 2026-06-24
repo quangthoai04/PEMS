@@ -40,19 +40,21 @@ public sealed class GetHostCandidatesQueryHandler
             throw new ForbiddenException("CÆ¡ sá»Ÿ nÃ y khÃ´ng thuá»™c pháº¡m vi phá»¥ trÃ¡ch cá»§a báº¡n.");
 
         var campusId = instance.CampusId;
+        // Target window comes from the current campus instance (planned_start_at / planned_end_at).
         var windowStart = instance.PlannedStartAt;
         var windowEnd = instance.PlannedEndAt;
 
-        // Active STAFF of the campus (Leader + Staff sub-roles are all eligible hosts).
+        // Eligible host = active IC-department STAFF of this campus (not the Staff Leader themself).
         var candidates = await (
             from u in _db.Users
             join r in _db.Roles on u.RoleId equals r.RoleId
-            join d in _db.Departments on u.DepartmentId equals d.DepartmentId into depts
-            from dep in depts.DefaultIfEmpty()
+            join d in _db.Departments on u.DepartmentId equals d.DepartmentId
             where r.RoleCode == RoleCodes.Staff
                   && u.SubRole == UserSubRoles.Staff
                   && u.PrimaryCampusId == campusId
                   && u.Status == UserStatuses.Active
+                  && d.DepartmentType == "IC"
+                  && d.Status == EntityStatuses.Active
                   && u.UserId != _currentUser.UserId
             select new HostCandidateDto
             {
@@ -60,7 +62,7 @@ public sealed class GetHostCandidatesQueryHandler
                 FullName = u.FullName,
                 Email = u.Email,
                 CampusId = u.PrimaryCampusId,
-                DepartmentName = dep != null ? dep.Name : null,
+                DepartmentName = d.Name,
                 SubRole = u.SubRole,
             }).ToListAsync(cancellationToken);
 
@@ -69,47 +71,83 @@ public sealed class GetHostCandidatesQueryHandler
 
         var candidateIds = candidates.Select(c => c.UserId).ToList();
 
-        // Every active hosting assignment for these candidates (excluding this instance).
+        // ── Conflict source A: personal/other calendar events overlapping the window ──
+        // Overlap rule: existing.start < target.end AND existing.end > target.start
+        // (an event that ends exactly when the visit starts — or starts when it ends — is NOT a conflict).
+        var calendarConflicts = await _db.CalendarEvents
+            .Where(e => candidateIds.Contains(e.OwnerUserId)
+                        && e.Status == "ACTIVE"
+                        && e.DeletedAt == null
+                        && e.StartAt < windowEnd
+                        && e.EndAt > windowStart)
+            .Select(e => new
+            {
+                e.OwnerUserId,
+                e.CalendarEventId,
+                e.Title,
+                e.SourceType,
+                e.Visibility,
+                e.StartAt,
+                e.EndAt,
+            })
+            .ToListAsync(cancellationToken);
+
+        // ── Conflict source B: other live hosting assignments overlapping the window ──
         var busy = await _db.VisitRequestCampuses
             .Where(c => c.CurrentHostUserId != null
                         && candidateIds.Contains(c.CurrentHostUserId.Value)
                         && c.VisitInstanceId != instance.VisitInstanceId
-                        && c.Status != VisitInstanceStatus.Cancelled
-                        && c.Status != VisitInstanceStatus.Closed)
+                        && (c.Status == VisitInstanceStatus.Assigned
+                            || c.Status == VisitInstanceStatus.BeforeVisit
+                            || c.Status == VisitInstanceStatus.DuringVisit)
+                        && c.PlannedStartAt < windowEnd
+                        && c.PlannedEndAt > windowStart)
             .Select(c => new
             {
-                c.VisitInstanceId,
-                c.VisitRequestId,
                 HostUserId = c.CurrentHostUserId!.Value,
+                c.VisitInstanceId,
                 c.PlannedStartAt,
                 c.PlannedEndAt,
-                DelegationName = c.VisitRequest.DelegationName
+                DelegationName = c.VisitRequest.DelegationName,
             })
             .ToListAsync(cancellationToken);
 
         foreach (var candidate in candidates)
         {
-            var mine = busy.Where(b => b.HostUserId == candidate.UserId).ToList();
-            candidate.ActiveAssignmentCount = mine.Count;
-
-            // Overlap: existing.start < new.end AND existing.end > new.start.
-            candidate.Conflicts = mine
-                .Where(b => b.PlannedStartAt < windowEnd && b.PlannedEndAt > windowStart)
+            var instanceConflicts = busy
+                .Where(b => b.HostUserId == candidate.UserId)
                 .Select(b => new HostConflictDto
                 {
-                    VisitRequestId = b.VisitRequestId,
+                    Source = "VISIT_INSTANCE",
+                    Title = b.DelegationName ?? "Đoàn khách khác",
+                    StartAt = b.PlannedStartAt,
+                    EndAt = b.PlannedEndAt,
                     VisitInstanceId = b.VisitInstanceId,
-                    DelegationName = b.DelegationName,
-                    StartTime = b.PlannedStartAt,
-                    EndTime = b.PlannedEndAt
-                })
+                });
+
+            var calConflicts = calendarConflicts
+                .Where(e => e.OwnerUserId == candidate.UserId)
+                .Select(e => new HostConflictDto
+                {
+                    Source = "CALENDAR",
+                    // Never leak the content of a private personal event.
+                    Title = (e.SourceType == "PERSONAL" && e.Visibility == "PRIVATE") ? "Lịch cá nhân" : e.Title,
+                    StartAt = e.StartAt,
+                    EndAt = e.EndAt,
+                    CalendarEventId = e.CalendarEventId,
+                });
+
+            candidate.Conflicts = instanceConflicts
+                .Concat(calConflicts)
+                .OrderBy(c => c.StartAt)
                 .ToList();
-            candidate.HasScheduleConflict = candidate.Conflicts.Count > 0;
+            candidate.ConflictCount = candidate.Conflicts.Count;
+            candidate.HasScheduleConflict = candidate.ConflictCount > 0;
         }
 
         return candidates
-            .OrderBy(c => c.HasScheduleConflict)        // conflict-free first
-            .ThenBy(c => c.ActiveAssignmentCount)        // least loaded first
+            .OrderBy(c => c.HasScheduleConflict)   // conflict-free first
+            .ThenBy(c => c.ConflictCount)          // fewer conflicts first
             .ThenBy(c => c.FullName)
             .ToList();
     }

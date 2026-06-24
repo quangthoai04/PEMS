@@ -145,11 +145,133 @@ export interface VisitRequestManagementItem {
 
   createdAt: string;
   submittedAt: string | null;
+
+  // Cancellation info (UC-136) — instance-level preferred, request-level fallback.
+  isCancelled?: boolean;
+  cancellationLevel?: 'REQUEST' | 'CAMPUS_INSTANCE' | null;
   cancelledAt: string | null;
   cancellationReason: string | null;
+  cancellationActorType?: string | null;
+  cancellationSource?: string | null;
+  cancelledBy?: number | null;
+  cancelledByName?: string | null;
+
+  // Decision info (UC-18/UC-22) — reject reason = decisionNote (never cancellationReason).
+  // Lets the "Xem lý do từ chối" popup show who/when/role without a second fetch.
   decisionNote: string | null;
+  decidedBy?: number | null;
+  decidedByName?: string | null;
+  decidedAt?: string | null;
+  decisionActorRole?: string | null;
 
   allowedActions: AllowedAction[];
+}
+
+// ── Submitted visit-request form snapshot ─────────────────────────────────────
+// Read-only "what the guest submitted" detail, reused by the pre-approval review, the
+// approved/waiting-host detail and the rejected detail screens. Mirrors the backend
+// SubmittedVisitRequestFormDetailDto. Role/scope/status visibility is enforced server-side;
+// canApprove/canReject/canAssignHost only gate which footer actions the modal shows.
+// No agendas/participants/logistics here — those are host-created after approval.
+
+export interface SubmittedRegistrant {
+  fullName?: string | null;
+  organization?: string | null;
+  jobTitle?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  nationality?: string | null;
+}
+
+export interface SubmittedContactPerson {
+  fullName?: string | null;
+  organization?: string | null;
+  phone?: string | null;
+  email?: string | null;
+}
+
+export interface SubmittedCampusSchedule {
+  visitInstanceId: number;
+  campusId: number;
+  campusCode: string;
+  campusName: string;
+  plannedStartAt: string;
+  plannedEndAt: string;
+  instanceStatus: string;
+  coordinatorUserId?: number | null;
+  currentHostUserId?: number | null;
+  isOwnCampus: boolean;
+
+  // Per-campus cancellation info (UC-136 instance-level cancel).
+  cancelledByUserId?: number | null;
+  cancelledByName?: string | null;
+  cancelledAt?: string | null;
+  cancellationActorType?: string | null;
+  cancellationSource?: string | null;
+  cancellationReason?: string | null;
+}
+
+export interface SubmittedGuestMember {
+  guestMemberId: number;
+  memberType: string;
+  fullName: string;
+  organization?: string | null;
+  jobTitle?: string | null;
+  nationality?: string | null;
+  displayOrder: number;
+}
+
+export interface SubmittedVisitRequestFormDetail {
+  visitRequestId: number;
+  requestCode: string;
+  createdSource?: string | null;
+  submittedAt?: string | null;
+  emailVerifiedAt?: string | null;
+  requestStatus: string;
+  visitScope: string;
+
+  delegationName: string;
+  visitType?: string | null;
+  visitTypeOther?: string | null;
+  purpose?: string | null;
+  workingContent?: string | null;
+
+  registrant: SubmittedRegistrant;
+  contactPerson: SubmittedContactPerson;
+
+  // "Yêu cầu & Xác nhận bổ sung" — guest-entered.
+  workingLanguage?: string | null;
+  mediaConsentStatus?: string | null;
+  mediaConsentNote?: string | null;
+  transportationType?: string | null;
+  transportationDetail?: string | null;
+  noteToFptu?: string | null;
+
+  campuses: SubmittedCampusSchedule[];
+  guestMembers: SubmittedGuestMember[];
+  externalSupportMembers: SubmittedGuestMember[];
+
+  // Decision info (populated once the request was decided / rejected). decisionNote = reject reason.
+  decidedByUserId?: number | null;
+  decidedByName?: string | null;
+  decisionActorRole?: string | null;
+  decidedAt?: string | null;
+  decisionNote?: string | null;
+
+  // Cancellation info (UC-136). cancellationReason = cancel reason (never the reject reason).
+  isCancelled?: boolean;
+  cancellationLevel?: 'REQUEST' | 'CAMPUS_INSTANCE' | null;
+  cancelledByUserId?: number | null;
+  cancelledByName?: string | null;
+  cancelledAt?: string | null;
+  cancellationActorType?: string | null;
+  cancellationSource?: string | null;
+  cancellationReason?: string | null;
+
+  canApprove: boolean;
+  canReject: boolean;
+  canCancel: boolean;
+  canAssignHost: boolean;
 }
 
 /** A staff member who can be picked as host, with any schedule conflict pre-computed. */
@@ -160,17 +282,18 @@ export interface HostCandidate {
   campusId: number | null;
   departmentName: string | null;
   subRole: string | null;
-  activeAssignmentCount: number;
   hasScheduleConflict: boolean;
+  conflictCount: number;
   conflicts: HostConflict[];
 }
 
 export interface HostConflict {
-  visitRequestId: number;
-  visitInstanceId: number;
-  delegationName: string | null;
-  startTime: string;
-  endTime: string;
+  source: 'CALENDAR' | 'VISIT_INSTANCE';
+  title: string | null;
+  startAt: string;
+  endAt: string;
+  visitInstanceId?: number | null;
+  calendarEventId?: number | null;
 }
 
 export interface RejectVisitRequestPayload {

@@ -1,10 +1,12 @@
-using System;
-
 namespace PEMS.Application.PublicContent.Queries.ViewFAQ;
 
-public sealed class ViewFAQDto
+public sealed class ViewFaqDto
 {
-    public Guid? Id { get; init; }
-    public string Status { get; init; } = "Scaffolded";
-    public string Message { get; init; } = "Use case scaffolded. Business logic is not implemented yet.";
+    public ulong FaqId { get; init; }
+    public string FaqType { get; init; } = default!;
+    public string FaqTypeLabel { get; init; } = default!;
+    public string Question { get; init; } = default!;
+    public string Answer { get; init; } = default!;
+    public int DisplayOrder { get; init; }
+    public DateTime CreatedAt { get; init; }
 }

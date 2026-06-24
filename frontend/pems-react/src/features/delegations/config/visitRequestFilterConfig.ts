@@ -99,7 +99,7 @@ export function getVisitRequestFilterConfig({
       relationOptions: [],
       statusOptions: [
         { value: '', label: 'Tất cả trạng thái' },
-        { value: 'PENDING_APPROVAL', label: 'Chờ duyệt', description: 'Các đơn đang chờ được phê duyệt', requestStatus: 'PENDING_APPROVAL' },
+        { value: 'PENDING_APPROVAL', label: 'Chờ duyệt', description: 'Các đơn đang chờ được phê duyệt', requestStatus: 'PENDING_APPROVAL', campusStatus: 'WAITING_REQUEST_APPROVAL' },
         { value: 'APPROVED', label: 'Tất cả đơn đã duyệt', description: 'Các đơn đã được phê duyệt (bao gồm chờ phân công, chuẩn bị, vận hành, đã đóng)', requestStatus: 'APPROVED' },
         { value: 'WAITING_HOST_ASSIGNMENT', label: 'Chờ chọn Host', description: 'Bao gồm các đơn đã duyệt và đang chờ phân công người đón tiếp', requestStatus: 'APPROVED', campusStatus: 'WAITING_HOST_ASSIGNMENT' },
         { value: 'BEFORE_VISIT', label: 'Đang chuẩn bị tiếp khách', description: 'Bao gồm các đơn đã duyệt và đang trong giai đoạn chuẩn bị đón tiếp', requestStatus: 'APPROVED', campusStatus: 'BEFORE_VISIT' },
@@ -129,7 +129,7 @@ export function getVisitRequestFilterConfig({
       relationOptions: [],
       statusOptions: [
         { value: '', label: 'Tất cả trạng thái' },
-        { value: 'PENDING_APPROVAL', label: 'Chờ duyệt', description: 'Các đơn đang chờ duyệt', requestStatus: 'PENDING_APPROVAL' },
+        { value: 'PENDING_APPROVAL', label: 'Chờ duyệt', description: 'Các đơn đang chờ duyệt', requestStatus: 'PENDING_APPROVAL', campusStatus: 'WAITING_REQUEST_APPROVAL' },
         { value: 'APPROVED', label: 'Tất cả đơn đã duyệt', description: 'Bao gồm mọi đơn đã được duyệt (cả những đơn đang chuẩn bị, vận hành hoặc đã đóng)', requestStatus: 'APPROVED' },
         { 
           value: 'PENDING_HOST_ASSIGNMENT',

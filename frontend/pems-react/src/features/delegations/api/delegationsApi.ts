@@ -7,6 +7,7 @@ import type {
   VisitInvitation,
   RespondInvitationPayload,
   RespondInvitationResult,
+  SubmittedVisitRequestFormDetail,
 } from '../types/delegations.types';
 
 export const delegationsApi = {
@@ -16,6 +17,22 @@ export const delegationsApi = {
    */
   async getVisitRequestManagementList(params?: Record<string, unknown>): Promise<any> {
     const { data } = await httpClient.get<any>(API_ENDPOINTS.delegations.managementList, { params });
+    return data;
+  },
+
+  /**
+   * Read-only "what the guest submitted" snapshot, shared by the pre-approval review,
+   * the approved/waiting-host detail and the rejected detail screens. The backend enforces
+   * role/scope/status visibility (HO → MULTI_CAMPUS; Staff Leader → own-campus SINGLE_CAMPUS
+   * any status, or own-campus MULTI_CAMPUS only after HO approval; Visitor → own request) and
+   * returns 403/404 otherwise.
+   */
+  async getSubmittedVisitRequestFormDetail(
+    visitRequestId: number | string,
+  ): Promise<SubmittedVisitRequestFormDetail> {
+    const { data } = await httpClient.get<SubmittedVisitRequestFormDetail>(
+      API_ENDPOINTS.delegations.submittedFormDetail(visitRequestId),
+    );
     return data;
   },
 

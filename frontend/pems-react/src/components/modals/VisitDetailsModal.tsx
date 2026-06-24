@@ -7,6 +7,7 @@
 import React, { useEffect } from 'react';
 import { X, Calendar, Clock, Download, ChevronDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { CancellationReasonPanel } from '../../features/delegations/components/CancellationReasonPanel';
 
 interface VisitDetailsModalProps {
   isOpen: boolean;
@@ -88,7 +89,21 @@ export function VisitDetailsModal({ isOpen, onClose, guest }: VisitDetailsModalP
             {/* Body */}
             <div className="flex-1 overflow-y-auto px-4 sm:px-10 py-8 bg-white custom-scrollbar">
               <div className="space-y-12">
-                
+
+                {/* UC-136: cancellation reason shown at the TOP for cancelled rows */}
+                {(guest.isCancelled || guest.requestStatus === 'CANCELLED' || guest.campusStatus === 'CANCELLED') && (
+                  <CancellationReasonPanel
+                    cancellationLevel={guest.cancellationLevel}
+                    cancelledByName={guest.cancelledByName}
+                    cancelledByUserId={guest.cancelledBy}
+                    cancelledAt={guest.cancelledAt}
+                    cancellationActorType={guest.cancellationActorType}
+                    cancellationSource={guest.cancellationSource}
+                    cancellationReason={guest.cancellationReason}
+                    contextLabel={guest.cancellationLevel === 'CAMPUS_INSTANCE' ? (guest.campus || null) : null}
+                  />
+                )}
+
                 {/* 1. Thông tin người đăng ký */}
                 <section>
                   <h3 className="text-lg sm:text-xl font-black text-[#004c91] border-b-2 border-[#f37021]/30 pb-2 mb-6 flex items-center gap-2 w-max pr-6">

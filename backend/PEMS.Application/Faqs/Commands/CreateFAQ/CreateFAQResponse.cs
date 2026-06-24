@@ -1,10 +1,17 @@
-using System;
-
 namespace PEMS.Application.Faqs.Commands.CreateFAQ;
 
 public sealed class CreateFAQResponse
 {
-    public Guid? Id { get; init; }
-    public string Status { get; init; } = "Scaffolded";
-    public string Message { get; init; } = "Use case scaffolded. Business logic is not implemented yet.";
+    public ulong FaqId { get; init; }
+    public string FaqType { get; init; } = string.Empty;
+    public string FaqTypeLabel { get; init; } = string.Empty;
+    public string Question { get; init; } = string.Empty;
+    public string Answer { get; init; } = string.Empty;
+    public int DisplayOrder { get; init; }
+    public string Status { get; init; } = string.Empty;
+    public string StatusLabel { get; init; } = string.Empty;
+    public DateTime CreatedAt { get; init; }
+    public ulong? CreatedBy { get; init; }
+    public DateTime? UpdatedAt { get; init; }
+    public ulong? UpdatedBy { get; init; }
 }
