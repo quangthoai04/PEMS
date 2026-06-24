@@ -63,7 +63,9 @@ export function VisitProcess() {
 
   const isReceptionDetail = window.location.pathname.includes('/reception-detail');
   const isReadOnlyRoute = location.state?.isReadOnly || isReceptionDetail || false;
-  const isClosed = currentStatus === 'Đã đóng đoàn' || currentStatus === 'Đã kết thúc' || isReadOnlyRoute;
+  // Campus đã hủy mở ở chế độ xem-lại read-only (nội bộ): khóa toàn bộ thao tác + hiện banner riêng.
+  const isCancelledView = location.state?.cancelled === true || location.state?.status === 'Đã hủy';
+  const isClosed = currentStatus === 'Đã đóng đoàn' || currentStatus === 'Đã kết thúc' || isReadOnlyRoute || isCancelledView;
 
   const renderEmptyState = () => (
     <div className="bg-white rounded-[2rem] border border-gray-200 p-16 text-center shadow-sm flex flex-col items-center justify-center min-h-[350px] animate-in fade-in duration-300">
@@ -350,7 +352,14 @@ export function VisitProcess() {
         </p>
       </div>
 
-      {isClosed && !isReceptionDetail && (
+      {(isCancelledView || perm?.instanceStatus === 'CANCELLED') && !isReceptionDetail ? (
+        <div className="mb-8 bg-rose-50 border-l-4 border-rose-500 p-5 rounded-2xl flex items-center gap-3 text-left shadow-sm">
+          <AlertCircle className="w-5 h-5 text-rose-600 shrink-0" />
+          <p className="text-sm font-bold text-rose-700">
+            Campus này đã bị hủy. Các thông tin chuẩn bị trước đó chỉ được hiển thị để tham khảo/lưu vết và không thể chỉnh sửa.
+          </p>
+        </div>
+      ) : isClosed && !isReceptionDetail && (
         <div className="mb-8 bg-slate-100 border-l-4 border-slate-500 p-5 rounded-2xl flex items-center gap-3 text-left shadow-sm">
           <AlertCircle className="w-5 h-5 text-slate-600 shrink-0" />
           <p className="text-sm font-bold text-slate-700">

@@ -62,7 +62,11 @@ public sealed class ProcessVisitRequestCommandHandler
             .FirstOrDefaultAsync(u => u.UserId == request.HostUserId, cancellationToken)
             ?? throw new NotFoundException("User", request.HostUserId);
 
+        // The DB triggers (trg_visit_campuses_assignment_validate_*) require the official host to be
+        // a STAFF with sub_role = STAFF (not a Staff Leader) of the same campus. Mirror that here so a
+        // bad HostUserId fails as a clean 422 instead of bubbling up the trigger SIGNAL as a 500.
         if (host.Role.RoleCode != RoleCodes.Staff
+            || host.SubRole != UserSubRoles.Staff
             || host.PrimaryCampusId != instance.CampusId
             || host.Status != UserStatuses.Active)
         {
@@ -71,12 +75,23 @@ public sealed class ProcessVisitRequestCommandHandler
 
         var now = _clock.UtcNow;
 
+        // The approve+assign writes touch two tables that have cross-row DB triggers: the
+        // visit_request_campuses BEFORE UPDATE trigger reads visit_requests.status and rejects the
+        // move to an operational status (ASSIGNED) unless the parent request is already APPROVED.
+        // EF Core orders UPDATE statements by table name, so within a single SaveChanges the
+        // campus row ("visit_request_campuses") is flushed BEFORE the request ("visit_requests"),
+        // making the trigger see the still-PENDING parent → SIGNAL 45000 → generic 500.
+        // Persist the approval FIRST, then the assignment, inside one transaction so the trigger
+        // always observes APPROVED and the two writes still commit atomically.
+        await using var tx = await _db.BeginTransactionAsync(cancellationToken);
+
         if (visit.VisitScope == VisitScopes.SingleCampus)
         {
             // Approve + assign in one step.
             if (visit.Status != VisitRequestStatuses.PendingApproval || instance.Status != VisitInstanceStatus.WaitingRequestApproval)
                 throw new ConflictException("Đơn đã được người khác xử lý hoặc trạng thái đã thay đổi.");
 
+            // Phase 1 — approve the request so the campus-instance trigger sees status = APPROVED.
             visit.Status = VisitRequestStatuses.Approved;
             visit.DecidedBy = actorId;
             visit.DecidedAt = now;
@@ -84,10 +99,9 @@ public sealed class ProcessVisitRequestCommandHandler
             visit.UpdatedAt = now;
             visit.UpdatedBy = actorId;
             visit.RowVersion += 1;
+            await _db.SaveChangesAsync(cancellationToken);
 
-
-
-            var oldInstanceStatus = instance.Status;
+            // Phase 2 — now flip the campus instance to ASSIGNED with the chosen host.
             instance.Status = VisitInstanceStatus.Assigned;
             instance.CurrentHostUserId = request.HostUserId;
             instance.HostAssignedBy = actorId;
@@ -101,6 +115,7 @@ public sealed class ProcessVisitRequestCommandHandler
             if (visit.Status != VisitRequestStatuses.Approved || instance.Status != "WAITING_HOST_ASSIGNMENT")
                 throw new ConflictException("Đơn đã được người khác xử lý hoặc trạng thái đã thay đổi.");
             // (One-time host guard already enforced above for both single & multi campus.)
+            // Request is already APPROVED, so a single update is safe for the trigger.
 
             instance.Status = VisitInstanceStatus.Assigned;
             instance.CurrentHostUserId = request.HostUserId;
@@ -121,6 +136,7 @@ public sealed class ProcessVisitRequestCommandHandler
         });
 
         await _db.SaveChangesAsync(cancellationToken);
+        await tx.CommitAsync(cancellationToken);
 
         return new ProcessVisitRequestResponse(
             visit.VisitRequestId,

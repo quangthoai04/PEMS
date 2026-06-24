@@ -35,6 +35,9 @@ type Tab = 'responsible' | 'attending';
 
 type ActionTone = 'blue' | 'green' | 'red' | 'gray' | 'orange';
 
+// Lightweight in-page toast (cùng pattern với CampusManagement — không thêm thư viện mới).
+type Toast = { id: number; type: 'success' | 'error'; msg: string };
+
 const ActionIconButton = ({
   title, icon, tone = 'blue', onClick,
 }: {
@@ -205,6 +208,30 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
   const [reject, setReject] = useState<{ open: boolean; row: Row | null; action: AllowedAction | null; text: string; submitting: boolean; error: string | null }>({ open: false, row: null, action: null, text: '', submitting: false, error: null });
   const [cancel, setCancel] = useState<{ open: boolean; row: Row | null; mode: 'visitor' | 'host' | null; instanceId?: number | null; text: string; submitting: boolean; error: string | null }>({ open: false, row: null, mode: null, instanceId: null, text: '', submitting: false, error: null });
   const [assign, setAssign] = useState<{ open: boolean; row: Row | null; mode: 'approve' | 'transfer' }>({ open: false, row: null, mode: 'approve' });
+
+  // ── Toasts (success/failure notification cho approve/reject/cancel/assign host) ──
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const pushToast = (type: Toast['type'], msg: string) => {
+    const id = Date.now() + Math.floor(Math.random() * 1000);
+    setToasts((prev) => [...prev, { id, type, msg }]);
+    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 4500);
+  };
+  // Lấy message lỗi nghiệp vụ thật từ backend (400/403/404/409/422). Ưu tiên message → error →
+  // errors (mảng/đối tượng từ FluentValidation) → title; chỉ fallback chung khi không có gì.
+  const apiErrorMessage = (e: any, fallback: string): string => {
+    const data = e?.response?.data;
+    if (!data) return fallback;
+    if (typeof data === 'string' && data.trim()) return data;
+    if (data.message) return data.message;
+    if (data.error) return data.error;
+    if (data.errors) {
+      const flat = Array.isArray(data.errors) ? data.errors : Object.values(data.errors).flat();
+      const first = (flat as any[]).find((x) => typeof x === 'string' && x.trim());
+      if (first) return first;
+    }
+    if (data.title) return data.title;
+    return fallback;
+  };
 
   // Phương án A: đơn liên cơ sở mở rộng để xem tiến trình từng campus. Mở tối đa 1 row tại 1 thời điểm.
   const [expandedRequestId, setExpandedRequestId] = useState<number | null>(null);
@@ -396,6 +423,14 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
       setReview({ open: true, row });
       return;
     }
+    // Instance-level cancel (campus CANCELLED while the request is still APPROVED): internal roles
+    // (not Visitor) review the prepared setup in a READ-ONLY VisitProcess when a host had been
+    // assigned. Whole-request CANCELLED / REJECTED still fall through to the read-only preview modal.
+    if (activeTab !== 'attending' && row.campusStatus === 'CANCELLED' && row.requestStatus !== 'CANCELLED'
+        && !isVisitor && row.currentHostUserId && row.visitInstanceId) {
+      navigate(`/dashboard/visit/process/${row.visitInstanceId}`, { state: { isReadOnly: true, cancelled: true, status: 'Đã hủy' } });
+      return;
+    }
     if (row.requestStatus === 'CANCELLED' || row.campusStatus === 'CANCELLED' || row.requestStatus === 'REJECTED') {
       setView({ open: true, row });
       return;
@@ -429,7 +464,8 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
     const displayStatus = row.statusText;
     if (rs === 'PENDING_APPROVAL' || (isStaffLeader && isApprovedGeneric)) {
       setView({ open: true, row });
-    } else if (cs === 'BEFORE_VISIT' || isApprovedGeneric) {
+    } else if (cs === 'ASSIGNED' || cs === 'BEFORE_VISIT' || isApprovedGeneric) {
+      // Staff Leader theo dõi tiến độ Host chuẩn bị (read-only) ngay từ khi ASSIGNED; Host vào để thao tác.
       navigate(`/dashboard/visit/process/${idForRoute}`, { state: { isPrep: true, status: displayStatus, isReadOnly: isStaffLeader } });
     } else if (cs === 'DURING_VISIT') {
       navigate(`/dashboard/visit/process/${idForRoute}`, { state: { defaultTab: 'during', status: displayStatus, isReadOnly: isStaffLeader } });
@@ -467,9 +503,10 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
     try {
       await delegationsApi.hoApprove(approveConfirm.row.visitRequestId);
       setApproveConfirm({ open: false, row: null, submitting: false, error: null });
+      pushToast('success', 'Duyệt đơn thành công.');
       await loadDelegations(activeTab, currentPage, pageSize, appliedFilters, sortOrder);
     } catch (e: any) {
-      const msg = e?.response?.data?.message || e?.response?.data?.title || e?.message || 'Lỗi không xác định';
+      const msg = apiErrorMessage(e, 'Đã xảy ra lỗi hệ thống. Vui lòng thử lại sau.');
       setApproveConfirm((s) => ({ ...s, submitting: false, error: `Không thể duyệt đơn. ${msg}` }));
     }
   };
@@ -483,10 +520,12 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
       if (reject.action === 'HO_REJECT') await delegationsApi.hoReject(reject.row.visitRequestId, text);
       else if (reject.action === 'DECLINE_INVITATION' as any) await delegationsApi.visitInvitations.declineInvitation((reject.row as any).participantId, text);
       else await delegationsApi.campusReject(reject.row.visitRequestId, text);
+      const wasDecline = reject.action === ('DECLINE_INVITATION' as any);
       setReject({ open: false, row: null, action: null, text: '', submitting: false, error: null });
+      pushToast('success', wasDecline ? 'Từ chối lời mời thành công.' : 'Từ chối đơn thành công.');
       await loadDelegations(activeTab, currentPage, pageSize, appliedFilters, sortOrder);
     } catch (e: any) {
-      const msg = e?.response?.data?.message || e?.response?.data?.title || e?.message || 'Lỗi không xác định';
+      const msg = apiErrorMessage(e, 'Đã xảy ra lỗi hệ thống. Vui lòng thử lại sau.');
       setReject((s) => ({ ...s, submitting: false, error: `Không thể từ chối. ${msg}` }));
     }
   };
@@ -494,9 +533,10 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
   const submitAcceptInvitation = async (row: Row) => {
     try {
       await delegationsApi.visitInvitations.acceptInvitation((row as any).participantId);
+      pushToast('success', 'Đã chấp nhận lời mời.');
       await loadDelegations(activeTab, currentPage, pageSize, appliedFilters, sortOrder);
     } catch (e: any) {
-      alert('Không thể chấp nhận lời mời: ' + (e?.response?.data?.message || e?.message));
+      pushToast('error', apiErrorMessage(e, 'Không thể chấp nhận lời mời. Vui lòng thử lại sau.'));
     }
   };
 
@@ -506,9 +546,10 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
     const note = window.prompt('Nhập ghi chú/nhiệm vụ:');
     try {
       await delegationsApi.visitInvitations.assignDepartmentStaff((row as any).participantId, parseInt(staffIdStr, 10), note || '');
+      pushToast('success', 'Đã giao việc cho nhân sự.');
       await loadDelegations(activeTab, currentPage, pageSize, appliedFilters, sortOrder);
     } catch (e: any) {
-      alert('Không thể giao việc: ' + (e?.response?.data?.message || e?.message));
+      pushToast('error', apiErrorMessage(e, 'Không thể giao việc. Vui lòng thử lại sau.'));
     }
   };
 
@@ -528,13 +569,13 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
         await delegationsApi.cancelVisitRequest(cancel.row.visitRequestId, payload);
       }
       setCancel({ open: false, row: null, mode: null, instanceId: null, text: '', submitting: false, error: null });
+      pushToast('success', 'Đã hủy lịch thăm thành công.');
       await loadDelegations(activeTab, currentPage, pageSize, appliedFilters, sortOrder);
     } catch (e: any) {
-      // Show ONLY the backend's user-safe `message` (already a clean Vietnamese sentence such as
-      // "Không thể hủy lịch thăm. Đơn đang chờ duyệt..."). Never surface raw axios/EF technical
-      // text (e.message / details / stack); fall back to a generic safe message otherwise.
-      const safeMsg = e?.response?.data?.message;
-      setCancel((s) => ({ ...s, submitting: false, error: safeMsg || 'Không thể hủy lịch thăm. Vui lòng thử lại sau.' }));
+      // Surface the backend's real business message (clean Vietnamese sentence such as
+      // "Không thể hủy lịch thăm. Đơn đang chờ duyệt..."); apiErrorMessage walks
+      // message → error → errors → title and only then a generic safe fallback.
+      setCancel((s) => ({ ...s, submitting: false, error: apiErrorMessage(e, 'Không thể hủy lịch thăm. Vui lòng thử lại sau.') }));
     }
   };
 
@@ -603,62 +644,74 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
       return <span title={text} className={`${base} ${cls}`}>{text}</span>;
     }
 
-    // Compute synchronized status text
-    if (row.requestStatus === 'CANCELLED' || row.campusStatus === 'CANCELLED') {
-      if ((row as any).cancellationActorType === 'VISITOR') statusText = 'Khách đã hủy';
-      else if ((row as any).cancellationActorType === 'HOST') statusText = 'Host đã hủy';
-      else if ((row as any).cancellationActorType === 'SYSTEM') statusText = 'Hệ thống đã hủy';
-      else statusText = 'Đã hủy';
-    }
-    else if (row.requestStatus === 'REJECTED') statusText = 'Từ chối';
-    else if (row.requestStatus === 'PENDING_APPROVAL') statusText = 'Chờ duyệt';
+    // Chuẩn hóa trạng thái hiển thị (AC-04): KHÔNG ghép request status với campus status
+    // (bỏ kiểu "Đã duyệt · Đã phân công Host"). Trong màn vận hành theo campus/role ưu tiên
+    // visit_request_campuses.status; request status chỉ dùng cho quyết định tổng. `kind` chọn
+    // màu badge, nhãn theo vai trò (Visitor xem ngôn ngữ thân thiện hơn nội bộ).
+    type StatusKind = 'pending' | 'rejected' | 'cancelled' | 'waiting_host' | 'assigned'
+      | 'before' | 'during' | 'after' | 'closed' | 'approved';
+    let kind: StatusKind;
+    if (row.requestStatus === 'CANCELLED' || row.campusStatus === 'CANCELLED') kind = 'cancelled';
+    else if (row.requestStatus === 'REJECTED') kind = 'rejected';
+    else if (row.requestStatus === 'PENDING_APPROVAL') kind = 'pending';
     else if (row.requestStatus === 'APPROVED') {
-      if (row.campusStatus === 'WAITING_HOST_ASSIGNMENT') statusText = 'Đã duyệt · Chờ chọn Host';
-      else if (isPendingHostAssignment(row)) statusText = 'Đã duyệt · Chờ chọn Host';
-      else if (row.campusStatus === 'ASSIGNED') statusText = 'Đã duyệt · Đã phân công Host';
-      else if (row.campusStatus === 'BEFORE_VISIT') statusText = 'Đã duyệt · Đang chuẩn bị';
-      else if (row.campusStatus === 'DURING_VISIT') statusText = 'Đã duyệt · Đang tiếp khách';
-      else if (row.campusStatus === 'AFTER_VISIT') statusText = 'Đã duyệt · Chờ đóng đoàn';
-      else if (row.campusStatus === 'CLOSED') statusText = 'Đã duyệt · Đã đóng đoàn';
-      else statusText = 'Đã duyệt'; // Fallback for APPROVED without specific campus status
+      if (row.campusStatus === 'WAITING_HOST_ASSIGNMENT' || isPendingHostAssignment(row)) kind = 'waiting_host';
+      else if (row.campusStatus === 'ASSIGNED') kind = 'assigned';
+      else if (row.campusStatus === 'BEFORE_VISIT') kind = 'before';
+      else if (row.campusStatus === 'DURING_VISIT') kind = 'during';
+      else if (row.campusStatus === 'AFTER_VISIT') kind = 'after';
+      else if (row.campusStatus === 'CLOSED') kind = 'closed';
+      else kind = 'approved';
+    } else kind = 'pending';
+
+    let cancelledText = 'Đã hủy';
+    if (kind === 'cancelled') {
+      const actor = (row as any).cancellationActorType;
+      if (actor === 'VISITOR') cancelledText = 'Khách đã hủy';
+      else if (actor === 'HOST') cancelledText = 'Host đã hủy';
+      else if (actor === 'SYSTEM') cancelledText = 'Hệ thống đã hủy';
     }
 
-    let titleStr = '';
-    switch (statusText) {
-      case 'Chờ duyệt': titleStr = 'Đơn đang chờ được phê duyệt'; break;
-      case 'Đã duyệt · Chờ chọn Host': titleStr = 'Đơn đã duyệt, chờ bổ nhiệm người phụ trách'; break;
-      case 'Đã duyệt · Đã phân công Host': titleStr = 'Đã phân công người phụ trách, chờ triển khai'; break;
-      case 'Đã duyệt': titleStr = 'Đơn đã duyệt (Chờ triển khai)'; break;
-      case 'Đã duyệt · Đang chuẩn bị': titleStr = 'Đơn đang trong giai đoạn chuẩn bị đón tiếp'; break;
-      case 'Đã duyệt · Đang tiếp khách': titleStr = 'Đoàn đang trong thời gian diễn ra tại cơ sở'; break;
-      case 'Đã duyệt · Chờ đóng đoàn': titleStr = 'Đoàn đã kết thúc, chờ hoàn tất thủ tục đóng đoàn'; break;
-      case 'Đã duyệt · Đã đóng đoàn': titleStr = 'Đoàn đã hoàn tất toàn bộ quy trình'; break;
-      case 'Từ chối': titleStr = 'Đơn đã bị từ chối'; break;
-      case 'Khách đã hủy': titleStr = 'Đoàn khách đã chủ động hủy chuyến thăm'; break;
-      case 'Host đã hủy': titleStr = 'Host phụ trách đã hủy chuyến thăm tại cơ sở'; break;
-      case 'Hệ thống đã hủy': titleStr = 'Hệ thống đã tự động hủy do quá hạn'; break;
-      case 'Đã hủy': titleStr = 'Đơn đã bị hủy bỏ'; break;
-      default: titleStr = statusText; break;
-    }
+    const labelByKind: Record<StatusKind, string> = isVisitor ? {
+      pending: 'Chờ duyệt', rejected: 'Đã bị từ chối', cancelled: cancelledText,
+      waiting_host: 'Đang sắp xếp người phụ trách', assigned: 'Đã phân công người phụ trách',
+      before: 'Sắp diễn ra', during: 'Đang diễn ra', after: 'Đã diễn ra',
+      closed: 'Đã hoàn tất', approved: 'Đã được duyệt',
+    } : {
+      pending: 'Chờ duyệt', rejected: 'Từ chối', cancelled: cancelledText,
+      waiting_host: 'Chờ gán host', assigned: 'Đã phân công host',
+      before: 'Đang chuẩn bị', during: 'Trong tiếp khách', after: 'Chờ hoàn tất',
+      closed: 'Đã đóng đoàn', approved: 'Đã duyệt',
+    };
 
-    if (statusText === 'Chờ duyệt' || statusText === 'Đã duyệt · Chờ chọn Host')
-        return <span title={titleStr} className={`${base} bg-yellow-50 text-yellow-700 border-yellow-200`}>{statusText}</span>;
-    if (statusText === 'Đã duyệt · Đã phân công Host' || statusText === 'Đã duyệt')
-        return <span title={titleStr} className={`${base} bg-cyan-50 text-cyan-700 border-cyan-200`}>{statusText}</span>;
-    if (statusText === 'Đã duyệt · Đang chuẩn bị')
-        return <span title={titleStr} className={`${base} bg-blue-50 text-blue-700 border-blue-200`}>{statusText}</span>;
-    if (statusText === 'Đã duyệt · Đang tiếp khách')
-        return <span title={titleStr} className={`${base} bg-green-50 text-green-700 border-green-200`}>{statusText}</span>;
-    if (statusText === 'Đã duyệt · Chờ đóng đoàn')
-        return <span title={titleStr} className={`${base} bg-orange-50 text-orange-700 border-orange-200`}>{statusText}</span>;
-    if (statusText === 'Đã duyệt · Đã đóng đoàn')
-        return <span title={titleStr} className={`${base} bg-slate-100 text-slate-700 border-slate-300`}>{statusText}</span>;
-    if (statusText === 'Từ chối')
-        return <span title={titleStr} className={`${base} bg-red-50 text-red-700 border-red-200`}>{statusText}</span>;
-    if (statusText.includes('hủy'))
-        return <span title={titleStr} className={`${base} bg-gray-100 text-gray-600 border-gray-200`}>{statusText}</span>;
+    const clsByKind: Record<StatusKind, string> = {
+      pending: 'bg-yellow-50 text-yellow-700 border-yellow-200',
+      waiting_host: 'bg-yellow-50 text-yellow-700 border-yellow-200',
+      assigned: 'bg-cyan-50 text-cyan-700 border-cyan-200',
+      approved: 'bg-cyan-50 text-cyan-700 border-cyan-200',
+      before: 'bg-blue-50 text-blue-700 border-blue-200',
+      during: 'bg-green-50 text-green-700 border-green-200',
+      after: 'bg-orange-50 text-orange-700 border-orange-200',
+      closed: 'bg-slate-100 text-slate-700 border-slate-300',
+      rejected: 'bg-red-50 text-red-700 border-red-200',
+      cancelled: 'bg-gray-100 text-gray-600 border-gray-200',
+    };
 
-    return <span title={titleStr} className={`${base} bg-gray-100 text-gray-700 border-gray-200`}>{statusText}</span>;
+    const titleByKind: Record<StatusKind, string> = {
+      pending: 'Đơn đang chờ được phê duyệt',
+      rejected: 'Đơn đã bị từ chối',
+      cancelled: 'Đơn/cơ sở đã bị hủy',
+      waiting_host: 'Đơn đã duyệt, chờ phân công người phụ trách',
+      assigned: 'Đã phân công người phụ trách, chờ triển khai',
+      before: 'Đang trong giai đoạn chuẩn bị đón tiếp',
+      during: 'Đoàn đang diễn ra tại cơ sở',
+      after: 'Đoàn đã kết thúc, chờ hoàn tất thủ tục',
+      closed: 'Đoàn đã hoàn tất toàn bộ quy trình',
+      approved: 'Đơn đã duyệt (chờ triển khai)',
+    };
+
+    statusText = labelByKind[kind];
+    return <span title={titleByKind[kind]} className={`${base} ${clsByKind[kind]}`}>{statusText}</span>;
   };
 
   const renderRowActions = (row: Row) => {
@@ -719,6 +772,12 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
 
   // ── Multi-campus accordion (Phương án A): per-campus progress + actions ──
   const openCampusDetail = (row: Row, item: CampusProgressItem) => {
+    // Campus đã hủy: nội bộ (không phải Visitor) xem lại setup cũ ở VisitProcess READ-ONLY nếu đã từng
+    // có Host/setup; Visitor luôn dùng modal public-safe (không thấy setup/logistics/minutes nội bộ).
+    if (item.instanceStatus === 'CANCELLED' && !isVisitor && item.hostUserId != null && item.visitInstanceId) {
+      navigate(`/dashboard/visit/process/${item.visitInstanceId}`, { state: { isReadOnly: true, cancelled: true, status: 'Đã hủy' } });
+      return;
+    }
     const startTime = item.plannedStartAt ? new Date(item.plannedStartAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : '';
     const endTime = item.plannedEndAt ? new Date(item.plannedEndAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : '';
     const campusRow = {
@@ -1326,9 +1385,17 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
             </div>
             <div className="p-6 space-y-3">
               <p className="text-sm text-gray-700">Bạn đang hủy lịch thăm của đoàn <span className="font-bold text-[#004c91]">{cancel.row.name}</span>. Hành động này không thể hoàn tác.</p>
+              {cancel.row.campus && cancel.row.campus !== '-' && (
+                <p className="text-sm text-gray-600"><span className="text-slate-400">Cơ sở:</span> <span className="font-semibold text-slate-700">{cancel.row.campus}</span></p>
+              )}
+              {cancel.mode === 'host' && (
+                <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700">
+                  Trường hợp Host hủy là do Visitor đã xác nhận hủy ngoài hệ thống.
+                </p>
+              )}
               <div>
                 <label className="block text-sm font-bold text-gray-700 mb-2">Lý do hủy <span className="text-red-500">*</span></label>
-                <textarea value={cancel.text} onChange={(e) => setCancel((s) => ({ ...s, text: e.target.value }))} placeholder="Nhập lý do hủy..." className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:border-red-500 focus:ring-4 focus:ring-red-500/10 outline-none transition-all text-sm min-h-[100px] resize-none bg-gray-50/50 focus:bg-white" disabled={cancel.submitting} />
+                <textarea value={cancel.text} onChange={(e) => setCancel((s) => ({ ...s, text: e.target.value }))} maxLength={2000} placeholder="Nhập lý do hủy..." className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:border-red-500 focus:ring-4 focus:ring-red-500/10 outline-none transition-all text-sm min-h-[100px] resize-none bg-gray-50/50 focus:bg-white" disabled={cancel.submitting} />
                 {cancel.error && <p className="text-red-500 text-sm mt-2">{cancel.error}</p>}
               </div>
             </div>
@@ -1366,8 +1433,42 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
           currentHostUserId={assign.row.currentHostUserId}
           customTitle={isPendingHostAssignment(assign.row) ? "Chọn Host chính thức" : undefined}
           onClose={() => setAssign({ open: false, row: null, mode: 'approve' })}
-          onConfirmed={() => { setAssign({ open: false, row: null, mode: 'approve' }); loadDelegations(activeTab, currentPage, pageSize, appliedFilters); }}
+          onConfirmed={() => {
+            const successMsg = isPendingHostAssignment(assign.row!)
+              ? 'Gán host thành công.'
+              : assign.mode === 'transfer'
+                ? 'Chuyển host thành công.'
+                : 'Duyệt đơn và gán host thành công.';
+            setAssign({ open: false, row: null, mode: 'approve' });
+            pushToast('success', successMsg);
+            loadDelegations(activeTab, currentPage, pageSize, appliedFilters);
+          }}
         />
+      )}
+
+      {/* Toast viewport (success/failure notifications) */}
+      {toasts.length > 0 && (
+        <div className="fixed bottom-5 right-5 z-[200] flex flex-col gap-2 w-[min(92vw,360px)]">
+          {toasts.map((t) => (
+            <motion.div
+              key={t.id}
+              initial={{ opacity: 0, x: 24 }}
+              animate={{ opacity: 1, x: 0 }}
+              role="status"
+              className={`flex items-start gap-2 rounded-xl border px-4 py-3 text-sm font-semibold shadow-lg ${
+                t.type === 'success'
+                  ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                  : 'bg-red-50 border-red-200 text-red-700'
+              }`}
+            >
+              {t.type === 'success' ? <Check className="mt-0.5 h-4 w-4 flex-shrink-0" /> : <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />}
+              <span className="flex-1">{t.msg}</span>
+              <button type="button" aria-label="Đóng" onClick={() => setToasts((prev) => prev.filter((x) => x.id !== t.id))} className="text-current/70 hover:text-current">
+                <X className="h-4 w-4" />
+              </button>
+            </motion.div>
+          ))}
+        </div>
       )}
     </div>
   );

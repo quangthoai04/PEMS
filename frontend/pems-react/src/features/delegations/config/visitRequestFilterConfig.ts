@@ -38,10 +38,17 @@ export function getVisitRequestFilterConfig({
     return {
       showKeyword: true,
       showStatus: true,
-      showScope: false,
+      showScope: true,
       showRelation: false,
       statusLabel: 'Trạng thái',
-      scopeOptions: [],
+      // Lọc theo loại đơn (một cơ sở / liên cơ sở). Backend vẫn enforce ownership
+      // (visit_requests.visitor_user_id = currentUser) — filter scope không lộ đơn người khác.
+      scopeLabel: 'Loại đơn',
+      scopeOptions: [
+        { value: '', label: 'Tất cả' },
+        { value: 'SINGLE_CAMPUS', label: 'Một cơ sở' },
+        { value: 'MULTI_CAMPUS', label: 'Liên cơ sở' },
+      ],
       relationOptions: [],
       statusOptions: [
         { value: '', label: 'Tất cả trạng thái' },

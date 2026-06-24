@@ -237,15 +237,25 @@ public sealed class ViewGuestDelegationListQueryHandler
 
         if (!string.IsNullOrWhiteSpace(request.Relation))
         {
+            // NOTE: a previous version had a missing-braces bug where the PENDING_HOST_ASSIGNMENT
+            // predicate below ran UNCONDITIONALLY for any non-empty Relation (and a no-op
+            // "TASK_ASSIGNEE" branch). In practice only 'PENDING_HOST_ASSIGNMENT' is ever sent
+            // (Staff Leader "Cần chọn Host chính thức" filter; the relation dropdown is disabled
+            // for every role), so the bug was latent. Each relation now scopes its own predicate.
             var rel = request.Relation.ToUpperInvariant();
             if (rel == "HOST")
+            {
                 q = q.Where(x => x.c.CurrentHostUserId == userId);
-            else if (rel == "TASK_ASSIGNEE")
-                q = q.Where(x => x.c.CurrentHostUserId != userId); // simplified relation for staff
-                q = q.Where(x => x.vr.VisitScope == VisitScopes.MultiCampus 
+            }
+            else if (rel == "PENDING_HOST_ASSIGNMENT")
+            {
+                // Staff Leader: multi-campus instances HO has approved that this leader (campus IC
+                // head / coordinator) still needs to pick the official host for.
+                q = q.Where(x => x.vr.VisitScope == VisitScopes.MultiCampus
                     && x.vr.Status == VisitRequestStatuses.Approved
                     && x.c.CoordinatorUserId == userId
                     && x.c.Status == "WAITING_HOST_ASSIGNMENT");
+            }
         }
 
         if (request.ActionableOnly == true)
@@ -653,7 +663,7 @@ public sealed class ViewGuestDelegationListQueryHandler
                         CancellationSource = i.CancellationSource,
                         CanViewCampusDetail = true,
                         CanCancelCampusVisit = isVisitorOwner && instanceCancellable,
-                        CanViewCancelReason = i.Status == VisitInstanceStatus.Cancelled,
+                        CanViewCancelReason = i.Status == VisitInstanceStatus.Cancelled && !string.IsNullOrEmpty(i.CancellationReason),
                     };
                 }).ToList();
 

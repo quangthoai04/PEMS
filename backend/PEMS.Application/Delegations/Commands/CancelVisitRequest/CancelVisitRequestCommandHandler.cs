@@ -158,9 +158,15 @@ public sealed class CancelVisitRequestCommandHandler
         // Persist the campus cancellations first (parent still APPROVED → trigger passes).
         await _db.SaveChangesAsync(cancellationToken);
 
-        // If every campus instance is now cancelled, the overall request becomes CANCELLED.
+        // Roll the whole request up to CANCELLED ONLY for the Visitor self-service flow. The
+        // visit_requests cancel trigger (trg_visit_requests_cancel_validate_bu) requires
+        // cancelled_by to have the VISITOR role — a HOST cancels a campus INSTANCE only (external
+        // confirmation) and must NEVER flip the parent request, otherwise the trigger SIGNALs and
+        // the whole operation surfaces as a generic 500. So a HOST cancel leaves the request
+        // APPROVED with the instance CANCELLED (the list shows an instance-level cancellation).
         var allCancelled = visit.CampusInstances.All(c => c.Status == VisitInstanceStatus.Cancelled);
-        if (allCancelled)
+        var requestRolledUp = allCancelled && isVisitorOwner;
+        if (requestRolledUp)
         {
             visit.Status = VisitRequestStatuses.Cancelled;
             visit.CancelledBy = actorId;
@@ -180,7 +186,7 @@ public sealed class CancelVisitRequestCommandHandler
             visit.VisitRequestId,
             visit.Status,
             cancelled,
-            allCancelled
+            requestRolledUp
                 ? "Đơn tham quan đã được hủy."
                 : "Cơ sở đã được hủy. Các cơ sở còn lại của đơn vẫn giữ nguyên.");
     }

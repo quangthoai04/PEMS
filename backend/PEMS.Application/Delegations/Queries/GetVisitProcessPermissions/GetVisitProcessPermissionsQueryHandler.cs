@@ -86,6 +86,14 @@ public sealed class GetVisitProcessPermissionsQueryHandler
                                           || acceptedParticipantRole == ParticipantRoles.Student)))
             && isLive;
 
+        // A pure Visitor owner must NEVER see the internal operational tabs (Before/During/After,
+        // Minutes) of a CANCELLED campus — only the public-safe original request / cancellation reason.
+        // Internal roles (Host / Staff Leader / HO / accepted participant) keep read-only visibility
+        // to review what had been prepared before the cancellation.
+        bool internalViewer = isHost || isStaffLeaderOfCampus || isHo || isAcceptedParticipant;
+        bool visitorInternalBlocked = isVisitorOwner && !internalViewer && isCancelled;
+        bool canViewInternalTabs = !visitorInternalBlocked;
+
         return new VisitProcessPermissionDto
         {
             VisitInstanceId = instance.VisitInstanceId,
@@ -95,22 +103,24 @@ public sealed class GetVisitProcessPermissionsQueryHandler
             Relation = relation,
             HostAssigned = hostAssigned,
 
+            // Original request + overview are public-safe (Visitor may see them even when cancelled).
             CanViewOriginalRequest = true,
             CanViewOverview = true,
 
-            CanViewBeforeVisit = true,
+            // Internal operational tabs: hidden from a Visitor on a CANCELLED campus.
+            CanViewBeforeVisit = canViewInternalTabs,
             CanEditBeforeVisit = hostCanEdit,
 
-            CanViewDuringVisit = true,
+            CanViewDuringVisit = canViewInternalTabs,
             CanEditDuringVisit = hostCanEdit,
 
-            CanViewAfterVisit = true,
+            CanViewAfterVisit = canViewInternalTabs,
             CanEditAfterVisit = hostCanEdit,
 
             CanAssignHost = isStaffLeaderOfCampus && isApproved
                 && instance.Status == VisitInstanceStatus.WaitingHostAssignment && !hostAssigned,
 
-            CanViewMinutes = true,
+            CanViewMinutes = canViewInternalTabs,
             CanCreateMinutes = minutesEditor,
             CanEditMinutes = minutesEditor,
 
