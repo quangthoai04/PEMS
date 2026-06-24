@@ -51,6 +51,11 @@ public sealed class ProcessVisitRequestCommandHandler
         if (_currentUser.PrimaryCampusId != instance.CampusId)
             throw new ForbiddenException("Cơ sở này không thuộc phạm vi phụ trách của bạn.");
 
+        // Host được gán MỘT lần cho mỗi cơ sở (UC chốt). Khi đã có host thì không cho gán lại
+        // (không có chức năng đổi/chuyển host trong phase này). Nếu sau này Host nghỉ/sai → tạo UC riêng.
+        if (instance.CurrentHostUserId != null)
+            throw new ConflictException("Cơ sở này đã có host phụ trách; không thể gán lại host.");
+
         // The chosen host must be an active STAFF of the same campus.
         var host = await _db.Users
             .Include(u => u.Role)
@@ -95,9 +100,7 @@ public sealed class ProcessVisitRequestCommandHandler
         {
             if (visit.Status != VisitRequestStatuses.Approved || instance.Status != "WAITING_HOST_ASSIGNMENT")
                 throw new ConflictException("Đơn đã được người khác xử lý hoặc trạng thái đã thay đổi.");
-
-            if (instance.CurrentHostUserId != null)
-                throw new ConflictException("Campus instance này đã có host chính thức, không thể thay đổi host.");
+            // (One-time host guard already enforced above for both single & multi campus.)
 
             instance.Status = VisitInstanceStatus.Assigned;
             instance.CurrentHostUserId = request.HostUserId;

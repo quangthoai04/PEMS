@@ -32,8 +32,9 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
+import { MinutesCard } from './MinutesCard';
 
-export function VisitDuringTab({ isReadOnly = false, isDept = false }: { isReadOnly?: boolean, isDept?: boolean }) {
+export function VisitDuringTab({ isReadOnly = false, isDept = false, visitInstanceId }: { isReadOnly?: boolean, isDept?: boolean, visitInstanceId?: number }) {
   const navigate = useNavigate();
   // Image Upload and Card Scanning States
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -489,9 +490,12 @@ export function VisitDuringTab({ isReadOnly = false, isDept = false }: { isReadO
         </AnimatePresence>
       </div>
 
-      {/* 2. Biên bản cuộc họp */}
+      {/* 2. Biên bản cuộc họp — bản thật (backend + cơ chế lock) khi có visitInstanceId; nếu không, dùng mock cũ */}
+      {visitInstanceId ? (
+        <MinutesCard visitInstanceId={visitInstanceId} />
+      ) : (
       <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm transition-all relative">
-        <div 
+        <div
           className="bg-[#004c91] px-6 py-4 flex items-center justify-between border-b border-[#003366] cursor-pointer"
           onClick={() => setIsSection2Expanded(!isSection2Expanded)}
         >
@@ -689,6 +693,7 @@ export function VisitDuringTab({ isReadOnly = false, isDept = false }: { isReadO
           )}
         </AnimatePresence>
       </div>
+      )}
 
        {/* 3. Đối tác & Tài liệu */}
        {!isDept && (

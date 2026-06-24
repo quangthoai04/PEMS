@@ -118,7 +118,8 @@ public sealed class VisitRequestManagementItemDto
     /// Business actions the signed-in user may take on this row, computed by the backend
     /// (single source of truth). The frontend renders buttons from this list; every action
     /// is still re-validated server-side. Possible values: VIEW_DETAIL, HO_APPROVE, HO_REJECT,
-    /// APPROVE_AND_ASSIGN_HOST, CAMPUS_REJECT, TRANSFER_HOST, CANCEL_BY_VISITOR, CANCEL_BY_HOST.
+    /// APPROVE_AND_ASSIGN_HOST, CAMPUS_REJECT, CANCEL_BY_VISITOR, CANCEL_BY_HOST.
+    /// (Host is assigned ONCE — there is intentionally no TRANSFER_HOST / reassign action.)
     /// </summary>
     public List<string> AllowedActions { get; set; } = new();
 }

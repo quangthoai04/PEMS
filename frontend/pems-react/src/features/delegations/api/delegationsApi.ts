@@ -8,6 +8,10 @@ import type {
   RespondInvitationPayload,
   RespondInvitationResult,
   SubmittedVisitRequestFormDetail,
+  VisitProcessPermission,
+  VisitMinute,
+  VisitNews,
+  VisitNewsList,
 } from '../types/delegations.types';
 
 export const delegationsApi = {
@@ -57,6 +61,17 @@ export const delegationsApi = {
   /** UC-22: list staff who can host a campus instance, each flagged with schedule conflicts. */
   async getHostCandidates(visitInstanceId: number | string): Promise<HostCandidate[]> {
     const { data } = await httpClient.get<HostCandidate[]>(API_ENDPOINTS.delegations.hostCandidates(visitInstanceId));
+    return data;
+  },
+
+  /**
+   * Phase 2: permission flags for a campus instance's process page (source of truth for which
+   * tabs the caller may view/edit). The backend enforces scope (403 if no relation to the instance).
+   */
+  async getVisitProcessPermissions(visitInstanceId: number | string): Promise<VisitProcessPermission> {
+    const { data } = await httpClient.get<VisitProcessPermission>(
+      API_ENDPOINTS.delegations.processPermissions(visitInstanceId),
+    );
     return data;
   },
 
@@ -131,6 +146,73 @@ export const delegationsApi = {
       payload,
     );
     return data;
+  },
+
+  /**
+   * Phase 3: meeting minutes (biên bản) for a campus instance — 1 record per instance with an
+   * edit-lock workflow. The backend enforces scope, the one-per-instance rule, lock ownership
+   * (token) and optimistic concurrency (rowVersion).
+   */
+  minutes: {
+    /** Read the single minutes record + lock state + action flags (no lock token returned). */
+    async get(visitInstanceId: number | string): Promise<VisitMinute> {
+      const { data } = await httpClient.get<VisitMinute>(API_ENDPOINTS.meetingMinutes.byInstance(visitInstanceId));
+      return data;
+    },
+    /** Open the editor: create-if-missing + acquire the edit lock (returns a lock token). */
+    async createOrLock(visitInstanceId: number | string, title?: string): Promise<VisitMinute> {
+      const { data } = await httpClient.post<VisitMinute>(
+        API_ENDPOINTS.meetingMinutes.createOrLock(visitInstanceId), { title });
+      return data;
+    },
+    /** Re-acquire the lock on an existing record (re-open for editing). */
+    async acquireLock(minutesId: number | string): Promise<VisitMinute> {
+      const { data } = await httpClient.post<VisitMinute>(API_ENDPOINTS.meetingMinutes.acquireLock(minutesId), {});
+      return data;
+    },
+    /** Save content (requires the caller's lock token + matching rowVersion); releases the lock. */
+    async save(
+      minutesId: number | string,
+      payload: { title: string; content: string | null; editLockToken: string; rowVersion: number },
+    ): Promise<VisitMinute> {
+      const { data } = await httpClient.put<VisitMinute>(API_ENDPOINTS.meetingMinutes.save(minutesId), payload);
+      return data;
+    },
+    /** Release the lock without saving (Hủy chỉnh sửa). */
+    async releaseLock(minutesId: number | string, editLockToken: string): Promise<VisitMinute> {
+      const { data } = await httpClient.post<VisitMinute>(
+        API_ENDPOINTS.meetingMinutes.releaseLock(minutesId), { editLockToken });
+      return data;
+    },
+  },
+
+  /**
+   * Phase 4: news (tin tức) attached to a campus instance — many posts allowed. Create/edit limited
+   * to Host / accepted IC-Staff / Student (backend-enforced); Visitor sees only published posts.
+   */
+  visitNews: {
+    async list(visitInstanceId: number | string): Promise<VisitNewsList> {
+      const { data } = await httpClient.get<VisitNewsList>(API_ENDPOINTS.visitNews.byInstance(visitInstanceId));
+      return data;
+    },
+    async create(
+      visitInstanceId: number | string,
+      payload: { title: string; summary: string | null; body: string | null },
+    ): Promise<VisitNews> {
+      const { data } = await httpClient.post<VisitNews>(API_ENDPOINTS.visitNews.create(visitInstanceId), payload);
+      return data;
+    },
+    async update(
+      newsId: number | string,
+      payload: { title: string; summary: string | null; body: string | null; rowVersion: number },
+    ): Promise<VisitNews> {
+      const { data } = await httpClient.put<VisitNews>(API_ENDPOINTS.visitNews.update(newsId), payload);
+      return data;
+    },
+    async submitReview(newsId: number | string): Promise<VisitNews> {
+      const { data } = await httpClient.post<VisitNews>(API_ENDPOINTS.visitNews.submitReview(newsId), {});
+      return data;
+    },
   },
 
   visitInvitations: {

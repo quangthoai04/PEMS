@@ -329,6 +329,10 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
         modelBuilder.Entity<Minute>()
             .HasOne<VisitRequestCampus>().WithMany()
             .HasForeignKey(m => m.VisitInstanceId).OnDelete(DeleteBehavior.Restrict);
+        // Exactly ONE minutes record per campus instance (see patch_minutes_unique_visit_instance.sql
+        // for the matching DB UNIQUE KEY; the create handler also re-checks inside a transaction).
+        modelBuilder.Entity<Minute>()
+            .HasIndex(m => m.VisitInstanceId).IsUnique();
         modelBuilder.Entity<Minute>()
             .HasOne<User>().WithMany()
             .HasForeignKey(m => m.CreatedBy).OnDelete(DeleteBehavior.SetNull);

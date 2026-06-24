@@ -694,7 +694,7 @@ public sealed class ViewGuestDelegationListQueryHandler
                 CancelledBy = cancelledById,
                 CancelledByName = cancelledByName,
                 HasCancellableInstance = hasCancellableInstance,
-                CanExpandCampuses = count > 1,
+                CanExpandCampuses = count > 1 && vr.Status == VisitRequestStatuses.Approved,
                 CanViewRequestDetail = true,
                 CanViewRejectReason = vr.Status == VisitRequestStatuses.Rejected && !string.IsNullOrEmpty(vr.DecisionNote),
                 CanViewCancelReason = isCancelled,

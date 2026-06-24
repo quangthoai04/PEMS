@@ -66,6 +66,9 @@ export const API_ENDPOINTS = {
     hostCandidates: (visitInstanceId: string | number) => `/delegations/campuses/${visitInstanceId}/host-candidates`,
     assignHost: (visitRequestId: string | number, visitInstanceId: string | number) =>
       `/delegations/${visitRequestId}/campuses/${visitInstanceId}/assign-host`,
+    // Phase 2: permission flags for the visit-process detail page (source of truth for tab view/edit).
+    processPermissions: (visitInstanceId: string | number) =>
+      `/delegations/visit-instances/${visitInstanceId}/process-permissions`,
     // UC-136 Cancel Visit Request.
     cancel: (visitRequestId: string | number) => `/delegations/${visitRequestId}/cancel`,
     cancelCampus: (visitRequestId: string | number, visitInstanceId: string | number) =>
@@ -74,6 +77,21 @@ export const API_ENDPOINTS = {
     myInvitations: '/delegations/my-invitations',
     invitationDetail: (participantId: string | number) => `/delegations/invitations/${participantId}`,
     respondInvitation: (participantId: string | number) => `/delegations/participants/${participantId}/respond`,
+  },
+  // Phase 3: meeting minutes (biên bản) — 1 per visit_instance with an edit-lock workflow.
+  meetingMinutes: {
+    byInstance: (visitInstanceId: string | number) => `/meetingminutes/visit-instances/${visitInstanceId}`,
+    createOrLock: (visitInstanceId: string | number) => `/meetingminutes/visit-instances/${visitInstanceId}/create-or-lock`,
+    acquireLock: (minutesId: string | number) => `/meetingminutes/${minutesId}/acquire-lock`,
+    save: (minutesId: string | number) => `/meetingminutes/${minutesId}`,
+    releaseLock: (minutesId: string | number) => `/meetingminutes/${minutesId}/release-lock`,
+  },
+  // Phase 4: news (tin tức) attached to a visit_instance — many posts per instance.
+  visitNews: {
+    byInstance: (visitInstanceId: string | number) => `/news/visit-instances/${visitInstanceId}`,
+    create: (visitInstanceId: string | number) => `/news/visit-instances/${visitInstanceId}`,
+    update: (newsId: string | number) => `/news/visit-instance-news/${newsId}`,
+    submitReview: (newsId: string | number) => `/news/visit-instance-news/${newsId}/submit-review`,
   },
   visitRequests: {
     initiate: '/visit-requests/initiate',

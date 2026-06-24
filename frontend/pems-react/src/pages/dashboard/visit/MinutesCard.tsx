@@ -4,6 +4,10 @@
  * Mỗi visit_instance chỉ có 1 biên bản. Chỉ Host hoặc participant đã ACCEPT mới tạo/sửa được, và
  * tại một thời điểm chỉ 1 người được sửa (cơ chế lock có token + hết hạn 10 phút). Mọi quyền do
  * backend quyết (canCreate/canEdit + trạng thái lock) — frontend chỉ render theo dữ liệu trả về.
+ *
+ * TODO (backlog) — điểm danh biên bản (minute_participants) chưa làm UI:
+ *   - Preload khách từ visit_guest_members + người nội bộ từ visit_participants (+ Host).
+ *   - Lưu snapshot vào minute_participants; cho người sửa tick ai có mặt (PRESENT/ABSENT/EXCUSED).
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ChevronUp, ChevronDown, FileText, Lock, Edit3, Save, X, Plus, Clock } from 'lucide-react';

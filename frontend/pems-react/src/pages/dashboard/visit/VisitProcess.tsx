@@ -37,6 +37,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import { VisitDuringTab } from './VisitDuringTab';
 import { VisitAfterTab } from './VisitAfterTab';
 import { useAuthContext } from '../../../shared/auth/AuthContext';
+import { delegationsApi } from '../../../features/delegations/api/delegationsApi';
+import type { VisitProcessPermission } from '../../../features/delegations/types/delegations.types';
 
 export function VisitProcess() {
   const navigate = useNavigate();
@@ -94,8 +96,32 @@ export function VisitProcess() {
   const [isInfoEditableState, setIsInfoEditable] = useState(false);
   const [isSetupEditableState, setIsSetupEditable] = useState(true);
   const [isSetupConfirmed, setIsSetupConfirmed] = useState(false);
-  const isInfoEditable = isInfoEditableState && !isClosed && !isDept;
-  const isSetupEditable = isSetupEditableState && !isClosed && !isDept;
+
+  // Phase 2: backend permission flags are the source of truth for tab view/edit. Fetched by
+  // visitInstanceId; if unavailable (e.g. prototype/mock id), we fall back to the legacy
+  // client-side role computation so the page still renders.
+  const [perm, setPerm] = useState<VisitProcessPermission | null>(null);
+  useEffect(() => {
+    const numericId = Number(id);
+    if (!Number.isFinite(numericId) || numericId <= 0) { setPerm(null); return; }
+    let active = true;
+    delegationsApi.getVisitProcessPermissions(numericId)
+      .then((p) => { if (active) setPerm(p); })
+      .catch(() => { if (active) setPerm(null); });
+    return () => { active = false; };
+  }, [id]);
+
+  // Edit-ability per tab: prefer backend flags; fall back to legacy "anyone but Dept/Visitor" rule.
+  const canEditBefore = perm ? perm.canEditBeforeVisit : !isDept;
+  const isInfoEditable = isInfoEditableState && !isClosed && canEditBefore;
+  const isSetupEditable = isSetupEditableState && !isClosed && canEditBefore;
+  // Tab visibility (backend says every in-scope role may at least view all tabs read-only).
+  const canViewBefore = perm ? perm.canViewBeforeVisit : true;
+  const canViewDuring = perm ? perm.canViewDuringVisit : true;
+  const canViewAfter = perm ? perm.canViewAfterVisit : true;
+  // During/After read-only unless backend grants edit (fallback: legacy isClosed gate).
+  const duringReadOnly = perm ? !perm.canEditDuringVisit : isClosed;
+  const afterReadOnly = perm ? !perm.canEditAfterVisit : isClosed;
 
   // States for forms
   const [needLED, setNeedLED] = useState(true);
@@ -339,28 +365,34 @@ export function VisitProcess() {
       {/* Tabs */}
       {!isReceptionDetail && (
         <div className="flex bg-white rounded-2xl p-1.5 shadow-sm border border-gray-200 mb-8 max-w-2xl">
-          <button
-            onClick={() => setActiveTab('before')}
-            className={`flex-1 py-3 text-sm font-bold rounded-xl transition-all outline-none ${activeTab === 'before' ? 'bg-[#004c91] text-white shadow-md' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-700'}`}
-          >
-            1. Trước tiếp khách
-          </button>
-          <button
-            onClick={() => setActiveTab('during')}
-            className={`flex-1 py-3 text-sm font-bold rounded-xl transition-all outline-none ${activeTab === 'during' ? 'bg-[#f37021] text-white shadow-md' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-700'}`}
-          >
-            2. Đang tiếp khách
-          </button>
-          <button
-            onClick={() => setActiveTab('after')}
-            className={`flex-1 py-3 text-sm font-bold rounded-xl transition-all outline-none ${activeTab === 'after' ? 'bg-[#00a651] text-white shadow-md' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-700'}`}
-          >
-            3. Sau tiếp khách
-          </button>
+          {canViewBefore && (
+            <button
+              onClick={() => setActiveTab('before')}
+              className={`flex-1 py-3 text-sm font-bold rounded-xl transition-all outline-none ${activeTab === 'before' ? 'bg-[#004c91] text-white shadow-md' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-700'}`}
+            >
+              1. Trước tiếp khách
+            </button>
+          )}
+          {canViewDuring && (
+            <button
+              onClick={() => setActiveTab('during')}
+              className={`flex-1 py-3 text-sm font-bold rounded-xl transition-all outline-none ${activeTab === 'during' ? 'bg-[#f37021] text-white shadow-md' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-700'}`}
+            >
+              2. Đang tiếp khách
+            </button>
+          )}
+          {canViewAfter && (
+            <button
+              onClick={() => setActiveTab('after')}
+              className={`flex-1 py-3 text-sm font-bold rounded-xl transition-all outline-none ${activeTab === 'after' ? 'bg-[#00a651] text-white shadow-md' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-700'}`}
+            >
+              3. Sau tiếp khách
+            </button>
+          )}
         </div>
       )}
 
-      {activeTab === 'before' && (
+      {activeTab === 'before' && canViewBefore && (
         <div className="space-y-6">
           {/* Phần 1: Thông tin chung */}
           <div className="bg-white rounded-[2rem] border border-gray-200 shadow-sm overflow-hidden transition-all duration-300">
@@ -2219,19 +2251,19 @@ export function VisitProcess() {
      </div>
       )}
 
-      {activeTab === 'during' && (
+      {activeTab === 'during' && canViewDuring && (
         isPrep ? (
           renderEmptyState()
         ) : (
-          <VisitDuringTab isReadOnly={isClosed} isDept={isDept} />
+          <VisitDuringTab isReadOnly={duringReadOnly} isDept={isDept} visitInstanceId={perm?.visitInstanceId} />
         )
       )}
 
-      {activeTab === 'after' && (
+      {activeTab === 'after' && canViewAfter && (
         (isPrep || currentStatus === 'Trong tiếp khách') ? (
           renderEmptyState()
         ) : (
-          <VisitAfterTab onTourCloseSuccess={() => navigate('/dashboard/visit')} isReadOnly={isClosed} isDept={isDept && !isStudent} />
+          <VisitAfterTab onTourCloseSuccess={() => navigate('/dashboard/visit')} isReadOnly={afterReadOnly} isDept={isDept && !isStudent} visitInstanceId={perm?.visitInstanceId} />
         )
       )}
 

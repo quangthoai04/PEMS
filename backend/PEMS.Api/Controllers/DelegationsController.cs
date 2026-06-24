@@ -76,6 +76,17 @@ namespace PEMS.Api.Controllers
             return Ok(result);
         }
 
+        // Permission flags for the visit-process detail page (source of truth for tab view/edit).
+        // Scope/relation enforced in the handler (403 if the caller has no relation to the instance).
+        [HttpGet("visit-instances/{visitInstanceId}/process-permissions")]
+        public async Task<IActionResult> GetVisitProcessPermissions(ulong visitInstanceId, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(
+                new PEMS.Application.Delegations.Queries.GetVisitProcessPermissions.GetVisitProcessPermissionsQuery(visitInstanceId),
+                cancellationToken);
+            return Ok(result);
+        }
+
         [HttpGet("searchdelegations")]
         public async Task<IActionResult> SearchDelegations([FromQuery] PEMS.Application.Delegations.Queries.SearchDelegations.SearchDelegationsQuery query, CancellationToken cancellationToken)
         {

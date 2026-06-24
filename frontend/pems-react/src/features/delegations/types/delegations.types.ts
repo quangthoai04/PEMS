@@ -100,7 +100,7 @@ export const VISIT_ALLOWED_ACTIONS = {
   HO_REJECT: 'HO_REJECT',
   APPROVE_AND_ASSIGN_HOST: 'APPROVE_AND_ASSIGN_HOST',
   CAMPUS_REJECT: 'CAMPUS_REJECT',
-  TRANSFER_HOST: 'TRANSFER_HOST',
+  // NOTE: Host được gán MỘT lần (UC chốt). Không có TRANSFER_HOST / đổi host trong phase này.
   CANCEL_BY_HOST: 'CANCEL_BY_HOST',
   CANCEL_BY_VISITOR: 'CANCEL_BY_VISITOR',
   ACCEPT_INVITATION: 'ACCEPT_INVITATION',
@@ -138,6 +138,92 @@ export interface CampusProgressItem {
   canViewCampusDetail: boolean;
   canCancelCampusVisit: boolean;
   canViewCancelReason: boolean;
+}
+
+/**
+ * Phase 2: permission flags for the visit-process detail page (GET process-permissions).
+ * Backend is the single source of truth — gate tab view/edit on these, never on status text.
+ */
+export interface VisitProcessPermission {
+  visitInstanceId: number;
+  visitRequestId: number;
+  requestStatus: VisitRequestStatus;
+  instanceStatus: VisitInstanceStatus;
+  relation: string; // HOST | STAFF_LEADER | HO | VISITOR_OWNER | IC_SUPPORT | DEPT_SUPPORT | STUDENT | NONE
+  hostAssigned: boolean;
+
+  canViewOriginalRequest: boolean;
+  canViewOverview: boolean;
+
+  canViewBeforeVisit: boolean;
+  canEditBeforeVisit: boolean;
+
+  canViewDuringVisit: boolean;
+  canEditDuringVisit: boolean;
+
+  canViewAfterVisit: boolean;
+  canEditAfterVisit: boolean;
+
+  canAssignHost: boolean;
+
+  canViewMinutes: boolean;
+  canCreateMinutes: boolean;
+  canEditMinutes: boolean;
+
+  canViewNews: boolean;
+  canCreateNews: boolean;
+
+  canCloseVisit: boolean;
+}
+
+/**
+ * Phase 3: the single meeting-minutes record for a campus instance (UC biên bản) with edit-lock
+ * state + backend action flags. `editLockToken` is only present for the lock holder.
+ */
+export interface VisitMinute {
+  exists: boolean;
+  minutesId: number | null;
+  visitInstanceId: number;
+  title: string | null;
+  content: string | null;
+  status: string | null;
+  rowVersion: number;
+  editLockedBy?: number | null;
+  editLockedByName?: string | null;
+  editLockedAt?: string | null;
+  editLockExpiresAt?: string | null;
+  isLockedByOther: boolean;
+  isLockedByMe: boolean;
+  editLockToken?: string | null;
+  canView: boolean;
+  canCreate: boolean;
+  canEdit: boolean;
+}
+
+/** Phase 4: one news post attached to a campus instance (UC tin tức). */
+export interface VisitNews {
+  newsId: number;
+  visitInstanceId: number;
+  title: string;
+  summary: string | null;
+  body: string | null;
+  status: string; // PENDING_REVIEW | REJECTED | PUBLISHED | HIDDEN
+  isPublished: boolean;
+  authorUserId: number;
+  authorName: string | null;
+  submittedAt: string;
+  publishedAt: string | null;
+  reviewNote: string | null;
+  rowVersion: number;
+  canEdit: boolean;
+}
+
+/** News list for a campus instance + whether the caller may add a post. */
+export interface VisitNewsList {
+  visitInstanceId: number;
+  canView: boolean;
+  canCreate: boolean;
+  items: VisitNews[];
 }
 
 /** One row returned by GET /delegations/viewguestdelegationlist (camelCase JSON). */

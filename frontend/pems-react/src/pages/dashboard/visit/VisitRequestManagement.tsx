@@ -10,7 +10,7 @@
 import React, { Fragment, useEffect, useState } from 'react';
 import {
   Search, Plus, Eye, AlertCircle, Users, MapPin, Calendar,
-  ChevronLeft, ChevronRight, ChevronDown, Check, X, XCircle, UserCog, Mail,
+  ChevronLeft, ChevronRight, ChevronDown, Check, X, XCircle, Mail,
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
@@ -421,17 +421,22 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
       else navigate(`/dashboard/visit/ho-detail/${idForRoute}`, { state: { guestData: row } });
       return;
     }
-    const st = row.statusText;
-    if (st === 'Chờ duyệt' || (isStaffLeader && st === 'Đã duyệt')) {
+    // Campus actors (Staff Leader / Staff host): điều hướng theo STATUS CODE thật, không dùng
+    // statusText. statusText chỉ truyền xuống trang process để hiển thị. Giữ đúng outcome cũ.
+    const rs = row.requestStatus;
+    const cs = row.campusStatus;
+    const isApprovedGeneric = rs === 'APPROVED' && cs == null; // tương đương nhãn cũ "Đã duyệt"
+    const displayStatus = row.statusText;
+    if (rs === 'PENDING_APPROVAL' || (isStaffLeader && isApprovedGeneric)) {
       setView({ open: true, row });
-    } else if (st === 'Trước tiếp khách' || st === 'Đã duyệt') {
-      navigate(`/dashboard/visit/process/${idForRoute}`, { state: { isPrep: true, status: st, isReadOnly: isStaffLeader } });
-    } else if (st === 'Trong tiếp khách') {
-      navigate(`/dashboard/visit/process/${idForRoute}`, { state: { defaultTab: 'during', status: st, isReadOnly: isStaffLeader } });
-    } else if (st === 'Chờ đóng đoàn') {
-      navigate(`/dashboard/visit/process/${idForRoute}`, { state: { defaultTab: 'after', status: st, isReadOnly: isStaffLeader } });
-    } else if (st === 'Đã đóng đoàn') {
-      navigate(`/dashboard/visit/process/${idForRoute}`, { state: { defaultTab: 'before', status: st, isReadOnly: isStaffLeader } });
+    } else if (cs === 'BEFORE_VISIT' || isApprovedGeneric) {
+      navigate(`/dashboard/visit/process/${idForRoute}`, { state: { isPrep: true, status: displayStatus, isReadOnly: isStaffLeader } });
+    } else if (cs === 'DURING_VISIT') {
+      navigate(`/dashboard/visit/process/${idForRoute}`, { state: { defaultTab: 'during', status: displayStatus, isReadOnly: isStaffLeader } });
+    } else if (cs === 'AFTER_VISIT') {
+      navigate(`/dashboard/visit/process/${idForRoute}`, { state: { defaultTab: 'after', status: displayStatus, isReadOnly: isStaffLeader } });
+    } else if (cs === 'CLOSED') {
+      navigate(`/dashboard/visit/process/${idForRoute}`, { state: { defaultTab: 'before', status: displayStatus, isReadOnly: isStaffLeader } });
     } else {
       setView({ open: true, row });
     }
@@ -672,18 +677,13 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
         {/* Slot 1: View */}
         <ActionIconButton title="Xem chi tiết" tone="blue" icon={<Eye className="h-5 w-5" />} onClick={(e) => { e.stopPropagation(); handleView(row); }} />
 
-        {/* Slot 2: Approve / Transfer / Reason / Accept */}
+        {/* Slot 2: Approve & assign host (one-time) / Accept / Reason. Host được gán MỘT lần — không có chuyển/đổi host. */}
         {can('HO_APPROVE') ? (
           <ActionIconButton title="Duyệt đơn liên cơ sở" tone="green" icon={<Check className="h-5 w-5" />}
             onClick={(e) => { e.stopPropagation(); setApproveConfirm({ open: true, row, submitting: false, error: null }); }} />
         ) : can('APPROVE_AND_ASSIGN_HOST') ? (
-          <ActionIconButton title="Duyệt & chọn host" tone="green" icon={<Check className="h-5 w-5" />}
+          <ActionIconButton title={isPendingHostAssignment(row) ? 'Chọn Host chính thức' : 'Duyệt & chọn host'} tone="green" icon={<Check className="h-5 w-5" />}
             onClick={(e) => { e.stopPropagation(); setAssign({ open: true, row, mode: 'approve' }); }} />
-        ) : (can('TRANSFER_HOST') && (!isStaffLeader || isPendingHostAssignment(row))) ? (
-          <ActionIconButton 
-            title={isPendingHostAssignment(row) ? "Chọn Host chính thức" : "Chuyển host phụ trách"} 
-            tone="blue" icon={<UserCog className="h-5 w-5" />}
-            onClick={(e) => { e.stopPropagation(); setAssign({ open: true, row, mode: 'transfer' }); }} />
         ) : can('ACCEPT_INVITATION') ? (
           <ActionIconButton title="Chấp nhận lời mời" tone="green" icon={<Check className="h-5 w-5" />}
             onClick={(e) => { e.stopPropagation(); submitAcceptInvitation(row); }} />
@@ -1140,7 +1140,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
                     </p>
                   )}
                   {renderBadges(row)}
-                  {row.canExpandCampuses && (
+                  {row.canExpandCampuses && row.requestStatus === 'APPROVED' && (
                     <button
                       type="button"
                       aria-expanded={isExpanded}
@@ -1161,7 +1161,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
                 <div className="py-3 px-3 flex flex-col items-center justify-center gap-1">{getStatusBadge(row)}</div>
                 <div className="py-3 px-2 flex items-center justify-center" onClick={(e) => e.stopPropagation()}>{renderRowActions(row)}</div>
               </div>
-              {isExpanded && row.canExpandCampuses && renderCampusAccordion(row)}
+              {isExpanded && row.canExpandCampuses && row.requestStatus === 'APPROVED' && renderCampusAccordion(row)}
               </Fragment>
               );
             }) : (
@@ -1196,7 +1196,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
                   </>
                 )}
               </div>
-              {row.canExpandCampuses && (
+              {row.canExpandCampuses && row.requestStatus === 'APPROVED' && (
                 <button
                   type="button"
                   aria-expanded={isExpanded}
@@ -1211,7 +1211,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
               )}
               <div className="mt-3 flex items-center justify-end border-t border-slate-100 pt-3" onClick={(e) => e.stopPropagation()}>{renderRowActions(row)}</div>
             </div>
-            {isExpanded && row.canExpandCampuses && (
+            {isExpanded && row.canExpandCampuses && row.requestStatus === 'APPROVED' && (
               <div className="overflow-hidden rounded-2xl border border-slate-200">{renderCampusAccordion(row)}</div>
             )}
             </Fragment>
@@ -1364,7 +1364,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
           visitInstanceId={assign.row.visitInstanceId}
           delegationName={assign.row.name}
           currentHostUserId={assign.row.currentHostUserId}
-          customTitle={assign.mode === 'transfer' && (assign.row.currentUserRelation === 'PENDING_HOST_ASSIGNMENT' || assign.row.currentUserRelation === 'TEMP_CAMPUS_RESPONSIBLE' || (isStaffLeader && assign.row.hostAssignmentSource === 'AUTO_STAFF_LEADER')) ? "Chọn Host chính thức" : undefined}
+          customTitle={isPendingHostAssignment(assign.row) ? "Chọn Host chính thức" : undefined}
           onClose={() => setAssign({ open: false, row: null, mode: 'approve' })}
           onConfirmed={() => { setAssign({ open: false, row: null, mode: 'approve' }); loadDelegations(activeTab, currentPage, pageSize, appliedFilters); }}
         />
