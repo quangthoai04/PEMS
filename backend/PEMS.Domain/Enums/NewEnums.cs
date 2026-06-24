@@ -38,14 +38,26 @@ public static class GuestMemberType
 
 public static class FaqType
 {
-    public const string Program = "PROGRAM";
-    public const string TuitionFee = "TUITION_FEE";
-    public const string Visa = "VISA";
-    public const string Dormitory = "DORMITORY";
+    // PEMS v10: FAQ grouped by system functional area (Vietnamese-only, no language_code).
+    public const string AccountAccess = "ACCOUNT_ACCESS";
     public const string VisitRequest = "VISIT_REQUEST";
-    public const string Security = "SECURITY";
-    public const string Logistics = "LOGISTICS";
+    public const string DelegationManagement = "DELEGATION_MANAGEMENT";
+    public const string LogisticsResource = "LOGISTICS_RESOURCE";
+    public const string DocumentMedia = "DOCUMENT_MEDIA";
+    public const string NotificationEmail = "NOTIFICATION_EMAIL";
     public const string Other = "OTHER";
+
+    public static readonly string[] All =
+    {
+        AccountAccess, VisitRequest, DelegationManagement,
+        LogisticsResource, DocumentMedia, NotificationEmail, Other,
+    };
+}
+
+public static class FaqStatus
+{
+    public const string Published = "PUBLISHED";
+    public const string Hidden = "HIDDEN";
 }
 
 public static class LanguageCode

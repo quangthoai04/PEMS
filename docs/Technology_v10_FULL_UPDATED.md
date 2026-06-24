@@ -1,3 +1,19 @@
+# Addendum — SQL v10 / Email Action Token / Logistics Handover Scope
+
+SQL mới nhất vẫn dùng MySQL 8 theo hướng database-first/fresh-create. Không cần thêm công nghệ mới cho các thay đổi v10.
+
+| Layer | Update |
+|---|---|
+| Database MySQL 8 | Schema v10 có 49 bảng và 719 trường. Thêm `visit_logistics_item_handovers`, `email_action_tokens`; bỏ các field ký cũ khỏi `visit_logistics_items`. |
+| Backend C#/.NET RESTful API | Thêm handlers cho public email action token, logistics handover signing, partner owner-campus approval scope, FAQ type mới. |
+| Email/SMTP | Gửi email đi và tracking người nhận. Không đọc inbox/mail nhận ở giai đoạn này. |
+| Frontend ReactJS | Màn email hiển thị lịch sử gửi/trạng thái gửi/trạng thái bấm nút; không hiển thị inbox thật. |
+| Security | Link email dùng token hash, expires_at, used_at, one-time validation, IP/User-Agent audit. |
+
+Không cần Gmail API read-only/inbox sync nếu chỉ dùng nút bấm trong email.
+
+---
+
 <!-- =====================================================================
 PEMS DOC UPDATE v8.2-full-preserved-cancel-delegation-no-external-note
 Generated: 2026-06-19

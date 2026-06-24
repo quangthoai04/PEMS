@@ -19,13 +19,11 @@ public class Faq
     [Column("faq_type")]
     public string FaqType { get; set; } = "OTHER";
 
-    [Column("language_code")]
-    public string LanguageCode { get; set; } = "vi";
     [Column("display_order")]
     public int DisplayOrder { get; set; }
 
     [Column("status")]
-    public string Status { get; set; } = "DRAFT";
+    public string Status { get; set; } = "HIDDEN";
 
     [Column("created_by")]
     public ulong? CreatedBy { get; set; }

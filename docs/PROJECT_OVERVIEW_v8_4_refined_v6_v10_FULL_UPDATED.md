@@ -16,6 +16,62 @@
 4. Nếu cần code, backend phải kiểm tra lại bằng schema v8.4 refined v6 và seed v7/v6 dynamic time tương ứng.
 ```
 
+
+# V10 Project Overview Addendum — Current Scope After SQL v10
+
+> Addendum này cập nhật phần tổng quan dự án theo schema v10 mới nhất.
+
+## V10.1 Data model changes impacting product scope
+
+```text
+- FAQ chỉ còn tiếng Việt, phân loại theo nhóm chức năng hệ thống.
+- Partner có owner_campus_id để Staff Leader duyệt đúng campus.
+- Logistics ký mượn/ký trả tách sang visit_logistics_item_handovers.
+- Email không có inbox/mail nhận trong giai đoạn này.
+- Phản hồi qua email dùng nút bấm/token trong email_action_tokens.
+- Không hỗ trợ chuyển nhiệm vụ logistics từ người này sang người khác.
+```
+
+## V10.2 Email feature scope
+
+FE-06 trong v10 là:
+
+```text
+Email template
+Email outbox/delivery tracking
+Per-recipient delivery status
+Email action button responses
+External API configuration/logs
+```
+
+FE-06 trong v10 không bao gồm:
+
+```text
+Inbox thật
+Đọc Gmail/mailbox phản hồi tự do
+Thread email gửi/nhận trong DB
+email_threads/email_messages/email_message_recipients
+```
+
+## V10.3 Logistics/resource scope
+
+`visit_logistics_items` quản lý yêu cầu và trạng thái xử lý. `visit_logistics_item_handovers` quản lý ký mượn/ký trả.
+
+Mượn/trả đồ có thể lưu đủ 4 chữ ký và 4 thời điểm:
+
+```text
+BORROW: bên mượn ký nhận, bên cho mượn ký bàn giao
+RETURN: bên mượn ký trả, bên cho mượn ký nhận lại
+```
+
+## V10.4 Partner approval scope
+
+Staff Leader chỉ duyệt partner cùng campus thông qua `partners.owner_campus_id`.
+
+## V10.5 FAQ scope
+
+FAQ public/internal chỉ dùng tiếng Việt, không còn language switch.
+
 ---
 
 # PHẦN A — NỘI DUNG CHUẨN HIỆN TẠI / UPDATED CANONICAL CONTENT

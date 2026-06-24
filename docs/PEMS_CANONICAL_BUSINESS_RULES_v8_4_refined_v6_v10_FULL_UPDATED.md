@@ -1,3 +1,145 @@
+# V10 Schema Alignment Addendum — Email Actions, Logistics Handovers, FAQ, Partner Campus Scope
+
+> Addendum này là phần cập nhật chuẩn theo SQL mới nhất: `pems_full_create_manual_wide_coverage_seed_v8_4_refined_v6_v10_clean_logistics_handover_fields.sql`.  
+> Nếu các mục cũ trong file này mâu thuẫn với phần V10 addendum, ưu tiên phần V10.
+
+## V10.1 Schema source of truth
+
+```text
+Schema: v8.4 refined v6 v10 clean logistics handover fields
+Fresh-create SQL: pems_full_create_manual_wide_coverage_seed_v8_4_refined_v6_v10_clean_logistics_handover_fields.sql
+Base table count: 49
+Total field count: 719
+Dynamic permissions: still removed
+```
+
+## V10.2 FAQ rules
+
+FAQ hiện tại chỉ dùng tiếng Việt. Không còn `faqs.language_code`.
+
+`faqs.faq_type` chỉ dùng các nhóm liên quan hệ thống:
+
+```text
+ACCOUNT_ACCESS
+VISIT_REQUEST
+DELEGATION_MANAGEMENT
+LOGISTICS_RESOURCE
+DOCUMENT_MEDIA
+NOTIFICATION_EMAIL
+OTHER
+```
+
+Frontend không hiển thị lựa chọn ngôn ngữ FAQ. Backend không nhận/không trả `languageCode` trong FAQ DTO. Public FAQ chỉ lấy `status = PUBLISHED`; màn quản lý có thể quản lý `PUBLISHED/HIDDEN`.
+
+## V10.3 Partner campus ownership rules
+
+`partners.owner_campus_id` là campus sở hữu hồ sơ đối tác và request duyệt đối tác.
+
+Rule bắt buộc:
+
+```text
+1. Khi Staff tạo partner, backend tự set owner_campus_id = currentUser.primary_campus_id.
+2. Frontend không được tự truyền owner_campus_id để tránh giả mạo campus.
+3. Staff Leader chỉ thấy/duyệt/từ chối partner nếu partners.owner_campus_id = currentUser.primary_campus_id.
+4. partners.profile_status vẫn dùng DRAFT / PENDING_APPROVAL / APPROVED / REJECTED.
+5. Không thêm partner_review_logs hoặc partner_approval_requests trong v10.
+```
+
+## V10.4 Logistics handover/signature rules
+
+`visit_logistics_items` chỉ lưu workflow yêu cầu hậu cần/resource: request, receive, assign, accept, negotiation/proposal, completion.
+
+Các field ký cũ đã bị loại bỏ khỏi `visit_logistics_items`:
+
+```text
+handover_confirmed_by
+handover_confirmed_at
+handover_note
+service_report_signed_by
+service_report_signed_at
+service_report_file_id
+```
+
+Toàn bộ ký mượn/ký trả lưu ở `visit_logistics_item_handovers`.
+
+```text
+handover_type = BORROW
+- borrower_signed_by / borrower_signed_at: bên mượn ký nhận
+- provider_signed_by / provider_signed_at: bên cho mượn ký bàn giao
+
+handover_type = RETURN
+- borrower_signed_by / borrower_signed_at: bên mượn ký trả
+- provider_signed_by / provider_signed_at: bên cho mượn ký nhận lại
+```
+
+Mỗi logistics item tối đa có một row `BORROW` và một row `RETURN` nhờ unique `(logistics_item_id, handover_type)`. Bảng này cũng lưu `item_condition`, `condition_note`, `attachment_file_id`.
+
+## V10.5 No task transfer rule
+
+Không triển khai chuyển nhiệm vụ từ người A sang người B trong v10. Không thêm bảng `visit_logistics_assignment_logs`.
+
+Backend phải chặn:
+
+```text
+Nếu visit_logistics_items.assigned_to_user_id đã có giá trị và item đã được phân công,
+không cho đổi sang user khác.
+```
+
+Nếu gán nhầm hoặc không thể xử lý, dùng quy trình hủy/từ chối item hiện tại hoặc tạo logistics item mới theo nghiệp vụ; không gọi là transfer/reassign.
+
+## V10.6 Email action button rules
+
+Không làm chức năng nhận mail/inbox thật trong v10. Không thêm các bảng:
+
+```text
+email_threads
+email_messages
+email_message_recipients
+```
+
+PEMS vẫn dùng:
+
+```text
+sent_emails              -> lịch sử email gửi đi / outbox snapshot
+sent_email_recipients    -> tracking người nhận và delivery status
+email_action_tokens      -> token một lần cho nút bấm trong email
+```
+
+`email_action_tokens` dùng cho các action không cần đăng nhập:
+
+```text
+PARTICIPATION_RESPONSE
+LOGISTICS_ASSIGNEE_RESPONSE
+LOGISTICS_NEGOTIATION
+LOGISTICS_PROPOSAL_RESPONSE
+LOGISTICS_HANDOVER_SIGNATURE
+```
+
+Action hợp lệ:
+
+```text
+ACCEPT
+DECLINE
+NEGOTIATE
+APPROVE_PROPOSAL
+REJECT_PROPOSAL
+CONFIRM_BORROW
+CONFIRM_RETURN
+```
+
+Security rule:
+
+```text
+1. Chỉ lưu token_hash, không lưu token raw.
+2. Token phải có expires_at.
+3. Token chỉ dùng một lần.
+4. Backend validate target_type + target_id vì đây là polymorphic reference.
+5. Nếu người dùng đã trả lời rồi rồi bấm link khác, không update nghiệp vụ lần hai; trả result_status = ALREADY_RESPONDED.
+6. Email action page có thể AllowAnonymous nhưng handler phải validate token, status hiện tại, recipient và target.
+```
+
+---
+
 # PEMS_CANONICAL_BUSINESS_RULES_v8_4_refined_v6
 
 > **Authoritative source of truth for PEMS business logic.**  

@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using PEMS.Domain.Entities.Campuses;
 
 namespace PEMS.Domain.Entities.Partners;
 
@@ -9,6 +10,10 @@ public class Partner
     [Key]
     [Column("partner_id")]
     public ulong PartnerId { get; set; }
+
+    // PEMS v10: campus owning/managing the partner; Staff Leader approves only own-campus partners.
+    [Column("owner_campus_id")]
+    public ulong OwnerCampusId { get; set; }
 
     [Column("partner_code")]
     public string PartnerCode { get; set; } = null!;
@@ -75,6 +80,8 @@ public class Partner
 
     [Column("updated_by")]
     public ulong? UpdatedBy { get; set; }
+
+    public virtual Campus OwnerCampus { get; set; } = null!;
 
     public virtual ICollection<PartnerContact> Contacts { get; set; } = new List<PartnerContact>();
 }
