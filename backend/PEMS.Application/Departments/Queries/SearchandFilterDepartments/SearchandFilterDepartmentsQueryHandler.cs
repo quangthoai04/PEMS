@@ -1,14 +1,26 @@
-using System;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
+using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Common.Models;
+using PEMS.Application.Departments.Common;
 
 namespace PEMS.Application.Departments.Queries.SearchandFilterDepartments;
 
-public sealed class SearchandFilterDepartmentsQueryHandler : IRequestHandler<SearchandFilterDepartmentsQuery, SearchandFilterDepartmentsDto>
+/// <summary>UC-103 handler. Delegates to the shared executor (one read model with UC-104).</summary>
+public sealed class SearchandFilterDepartmentsQueryHandler
+    : IRequestHandler<SearchandFilterDepartmentsQuery, PaginatedResult<DepartmentListItemDto>>
 {
-    public Task<SearchandFilterDepartmentsDto> Handle(SearchandFilterDepartmentsQuery request, CancellationToken cancellationToken)
+    private readonly IApplicationDbContext _db;
+    private readonly ICurrentUserService _currentUser;
+
+    public SearchandFilterDepartmentsQueryHandler(IApplicationDbContext db, ICurrentUserService currentUser)
     {
-        throw new NotImplementedException("UC Search and Filter Departments has been scaffolded. Business rules must be implemented after UC specification is completed.");
+        _db = db;
+        _currentUser = currentUser;
     }
+
+    public Task<PaginatedResult<DepartmentListItemDto>> Handle(
+        SearchandFilterDepartmentsQuery request, CancellationToken cancellationToken)
+        => DepartmentListQueryExecutor.ExecuteAsync(_db, _currentUser, request, cancellationToken);
 }

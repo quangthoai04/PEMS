@@ -23,6 +23,9 @@ public sealed class MinuteDto
     public DateTime? EditLockedAt { get; set; }
     public DateTime? EditLockExpiresAt { get; set; }
 
+    /// <summary>When the minutes was last saved (for the "Đã lưu · &lt;time&gt;" status line).</summary>
+    public DateTime? UpdatedAt { get; set; }
+
     /// <summary>True when an unexpired lock is held by someone other than the caller.</summary>
     public bool IsLockedByOther { get; set; }
     /// <summary>True when an unexpired lock is held by the caller.</summary>
@@ -34,4 +37,9 @@ public sealed class MinuteDto
     public bool CanView { get; set; }
     public bool CanCreate { get; set; }
     public bool CanEdit { get; set; }
+
+    /// <summary>Snapshot attendance list (minute_participants). Empty when the minutes does not exist yet.</summary>
+    public List<MinuteParticipantDto> Participants { get; set; } = new();
+    /// <summary>Action items (minute_action_items). Empty when the minutes does not exist yet.</summary>
+    public List<MinuteActionItemDto> ActionItems { get; set; } = new();
 }

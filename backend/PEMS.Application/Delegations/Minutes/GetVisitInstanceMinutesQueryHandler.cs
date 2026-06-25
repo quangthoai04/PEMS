@@ -72,12 +72,22 @@ public sealed class GetVisitInstanceMinutesQueryHandler
         dto.RowVersion = minute.RowVersion;
         dto.EditLockedBy = minute.EditLockedBy;
         dto.EditLockedByName = lockedByName;
-        dto.EditLockedAt = minute.EditLockedAt;
-        dto.EditLockExpiresAt = minute.EditLockExpiresAt;
+        // Lock + audit timestamps are stored UTC but MySQL reads them back as Unspecified. Tag them Utc so
+        // JSON emits the 'Z' suffix and the client converts to local consistently (countdown / "Đã lưu"
+        // line up whether the value came from a command response or this read path).
+        dto.EditLockedAt = AsUtc(minute.EditLockedAt);
+        dto.EditLockExpiresAt = AsUtc(minute.EditLockExpiresAt);
+        dto.UpdatedAt = AsUtc(minute.UpdatedAt);
         dto.IsLockedByOther = lockActive && minute.EditLockedBy != userId;
         dto.IsLockedByMe = lockActive && minute.EditLockedBy == userId;
         // Editing is offered only when the user may edit AND no one else holds the lock.
         dto.CanEdit = canEdit && !dto.IsLockedByOther;
+
+        await MinuteChildren.LoadInto(_db, dto, minute.MinutesId, cancellationToken);
         return dto;
     }
+
+    // MySQL DATETIME reads back as Unspecified; tag stored-UTC values Utc so JSON emits the 'Z' suffix.
+    private static DateTime? AsUtc(DateTime? value)
+        => value.HasValue ? DateTime.SpecifyKind(value.Value, DateTimeKind.Utc) : null;
 }

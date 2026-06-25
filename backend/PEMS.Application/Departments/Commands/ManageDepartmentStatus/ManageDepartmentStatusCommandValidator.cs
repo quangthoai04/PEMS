@@ -6,6 +6,9 @@ public sealed class ManageDepartmentStatusCommandValidator : AbstractValidator<M
 {
     public ManageDepartmentStatusCommandValidator()
     {
-        // TODO: Add validation rules after UC specification is completed.
+        RuleFor(x => x.DepartmentId).GreaterThan(0UL).WithMessage("Phòng ban không hợp lệ.");
+        RuleFor(x => x.Status)
+            .Must(s => s is "ACTIVE" or "INACTIVE")
+            .WithMessage("Trạng thái phòng ban không hợp lệ.");
     }
 }

@@ -42,7 +42,7 @@ public sealed class ReleaseMinutesLockCommandHandler
             await _db.SaveChangesAsync(cancellationToken);
         }
 
-        return new MinuteDto
+        var dto = new MinuteDto
         {
             Exists = true,
             MinutesId = minute.MinutesId,
@@ -56,5 +56,7 @@ public sealed class ReleaseMinutesLockCommandHandler
             CanView = true,
             CanCreate = false,
         };
+        await MinuteChildren.LoadInto(_db, dto, minute.MinutesId, cancellationToken);
+        return dto;
     }
 }

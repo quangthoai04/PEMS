@@ -2,6 +2,15 @@ using MediatR;
 
 namespace PEMS.Application.Faqs.Commands.UpdateFAQ;
 
-public class UpdateFAQCommand : IRequest<UpdateFAQResponse>
-{
-}
+public sealed record UpdateFAQCommand(
+    ulong FaqId,
+    string FaqType,
+    string Question,
+    string Answer
+) : IRequest<UpdateFAQResponse>;
+
+public sealed record UpdateFAQBody(
+    string FaqType,
+    string Question,
+    string Answer
+);

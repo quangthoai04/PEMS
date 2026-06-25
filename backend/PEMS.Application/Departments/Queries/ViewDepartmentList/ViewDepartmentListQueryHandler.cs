@@ -1,14 +1,26 @@
-using System;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
+using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Common.Models;
+using PEMS.Application.Departments.Common;
 
 namespace PEMS.Application.Departments.Queries.ViewDepartmentList;
 
-public sealed class ViewDepartmentListQueryHandler : IRequestHandler<ViewDepartmentListQuery, ViewDepartmentListDto>
+/// <summary>UC-104 handler. Delegates to the shared executor (one read model with UC-103).</summary>
+public sealed class ViewDepartmentListQueryHandler
+    : IRequestHandler<ViewDepartmentListQuery, PaginatedResult<DepartmentListItemDto>>
 {
-    public Task<ViewDepartmentListDto> Handle(ViewDepartmentListQuery request, CancellationToken cancellationToken)
+    private readonly IApplicationDbContext _db;
+    private readonly ICurrentUserService _currentUser;
+
+    public ViewDepartmentListQueryHandler(IApplicationDbContext db, ICurrentUserService currentUser)
     {
-        throw new NotImplementedException("UC View Department List has been scaffolded. Business rules must be implemented after UC specification is completed.");
+        _db = db;
+        _currentUser = currentUser;
     }
+
+    public Task<PaginatedResult<DepartmentListItemDto>> Handle(
+        ViewDepartmentListQuery request, CancellationToken cancellationToken)
+        => DepartmentListQueryExecutor.ExecuteAsync(_db, _currentUser, request, cancellationToken);
 }

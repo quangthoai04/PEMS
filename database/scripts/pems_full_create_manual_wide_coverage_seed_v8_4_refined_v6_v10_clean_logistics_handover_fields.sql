@@ -1185,7 +1185,7 @@ CREATE TABLE minute_action_items (
   title VARCHAR(255) NOT NULL COMMENT 'Tên đầu việc',
   note TEXT NULL COMMENT 'Ghi chú thêm cho đầu việc',
 
-  due_date DATE NULL COMMENT 'Deadline của đầu việc',
+  due_date DATETIME NULL COMMENT 'Deadline ngày giờ của đầu việc',
 
   status ENUM('TODO','IN_PROGRESS','DONE','CANCELLED') NOT NULL DEFAULT 'TODO'
     COMMENT 'TODO=chưa làm, IN_PROGRESS=đang làm, DONE=hoàn thành, CANCELLED=đã hủy/không cần làm nữa',

@@ -489,6 +489,11 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
         modelBuilder.Entity<MinuteParticipant>()
             .HasOne(a => a.GuestMember).WithMany()
             .HasForeignKey(a => a.GuestMemberId).OnDelete(DeleteBehavior.SetNull);
+        // Map the second User navigation (attendance checker) onto the real checked_by column;
+        // without this EF convention would invent a shadow FK column that does not exist in the DB.
+        modelBuilder.Entity<MinuteParticipant>()
+            .HasOne(a => a.CheckedByUser).WithMany()
+            .HasForeignKey(a => a.CheckedBy).OnDelete(DeleteBehavior.SetNull);
 
         modelBuilder.Entity<FeedbackRatingItem>()
             .HasOne(a => a.Feedback).WithMany(f => f.RatingItems)

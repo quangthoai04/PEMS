@@ -44,6 +44,16 @@ export const API_ENDPOINTS = {
     relatedVisitors: '/accounts/related-visitors',
     relatedVisitorDetails: '/accounts/related-visitor-details',
   },
+  departments: {
+    // UC-104 list (also serves UC-103 search/filter), UC-101 create, status toggle,
+    // UC-105 details, UC-102 update name. Campus scope is resolved server-side from the Staff Leader.
+    list: '/departments/viewdepartmentlist',
+    search: '/departments/searchandfilterdepartments',
+    create: '/departments/addnewdepartment',
+    manageStatus: '/departments/managedepartmentstatus',
+    details: '/departments/viewdepartmentdetails',
+    update: '/departments/updatedepartment',
+  },
   partners: {
     list: '/partners',
     detail: (id: string | number) => `/partners/${id}`,
@@ -100,6 +110,8 @@ export const API_ENDPOINTS = {
     acquireLock: (minutesId: string | number) => `/meetingminutes/${minutesId}/acquire-lock`,
     save: (minutesId: string | number) => `/meetingminutes/${minutesId}`,
     releaseLock: (minutesId: string | number) => `/meetingminutes/${minutesId}/release-lock`,
+    newParticipantCandidates: (minutesId: string | number) => `/meetingminutes/${minutesId}/new-participant-candidates`,
+    userSearch: (visitInstanceId: string | number) => `/meetingminutes/visit-instances/${visitInstanceId}/user-search`,
   },
   // Phase 4: news (tin tức) attached to a visit_instance — many posts per instance.
   visitNews: {

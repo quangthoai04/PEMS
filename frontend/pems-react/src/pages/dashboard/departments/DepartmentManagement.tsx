@@ -1,9 +1,12 @@
 /**
  * Trang DepartmentManagement
  * Hoạt động điều phối, theo dõi cấu trúc định biên của các phòng ban hiện hữu.
+ *
+ * Staff Leader (STAFF/LEADER) dùng API thật (UC-101 add / UC-102 update / UC-103 search /
+ * UC-104 list / UC-105 details). Các vai trò khác giữ nguyên giao diện mock hiện có.
  */
 
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Search,
@@ -14,10 +17,13 @@ import {
   Briefcase,
   Users,
   User,
-  Clock,
   MapPin,
   X,
 } from "lucide-react";
+import { useDebounce } from "../../../shared/hooks/useDebounce";
+import { useDepartmentList } from "../../../features/department-management/hooks/useDepartmentManagement";
+import { departmentManagementApi } from "../../../features/department-management/api/departmentManagementApi";
+import { getDepartmentErrorMessage } from "../../../features/department-management/api/departmentError";
 
 const CAMPUSES = ["Hà Nội", "Hồ Chí Minh", "Đà Nẵng", "Cần Thơ", "Quy Nhơn"];
 
@@ -34,7 +40,7 @@ export function DepartmentManagement() {
   const [campusFilter, setCampusFilter] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(5);
-  
+
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [newDepartmentName, setNewDepartmentName] = useState("");
 
@@ -47,35 +53,176 @@ export function DepartmentManagement() {
     { id: 6, name: "Phòng CTSV", staffCount: 15, waitingAccounts: 4, head: "Vũ Văn F", campus: "Quy Nhơn", status: "Hoạt động" },
   ]);
 
+  // ── Staff Leader real data (UC-101..UC-105). Other roles keep the mock view untouched. ──
+  const [toast, setToast] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const showToast = (type: 'success' | 'error', text: string) => {
+    setToast({ type, text });
+    window.setTimeout(() => setToast(null), 3500);
+  };
+
+  const debouncedSearch = useDebounce(searchQuery, 400);
+  const statusApi = statusFilter === 'Hoạt động' ? 'ACTIVE' : statusFilter === 'Ngừng hoạt động' ? 'INACTIVE' : '';
+
+  useEffect(() => {
+    if (isStaffLeader) setCurrentPage(1);
+  }, [debouncedSearch, statusApi, itemsPerPage, isStaffLeader]);
+
+  const slParams = useMemo(() => ({
+    page: currentPage,
+    pageSize: itemsPerPage,
+    keyword: debouncedSearch.trim() || undefined,
+    status: statusApi || undefined,
+    sortBy: 'name',
+    sortDirection: 'asc' as const,
+  }), [currentPage, itemsPerPage, debouncedSearch, statusApi]);
+
+  const { data: slData, departments: slDepartments, loading: slLoading, error: slError, refetch: slRefetch } =
+    useDepartmentList(slParams, isStaffLeader);
+
+  const slRows = slDepartments.map((d) => ({
+    id: d.departmentId,
+    name: d.name,
+    head: d.headFullName || 'Chưa gán trưởng phòng',
+    status: d.status === 'ACTIVE' ? 'Hoạt động' : 'Ngừng hoạt động',
+    campus: d.campusName,
+    staffCount: 0,
+    waitingAccounts: 0,
+    departmentType: d.departmentType,
+    canToggleStatus: d.canToggleStatus,
+  }));
+
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+
+  // UC-101 — create a GENERAL department in the Staff Leader's campus.
+  const handleCreateDepartmentApi = async () => {
+    const name = newDepartmentName.trim();
+    if (!name) { setCreateError('Tên phòng ban là bắt buộc.'); return; }
+    setCreating(true);
+    setCreateError(null);
+    try {
+      await departmentManagementApi.createDepartment({ name });
+      setNewDepartmentName('');
+      setIsAddModalOpen(false);
+      setCurrentPage(1);
+      slRefetch();
+      showToast('success', 'Đã thêm phòng ban mới.');
+    } catch (err) {
+      setCreateError(getDepartmentErrorMessage(err, 'Không thể tạo phòng ban. Vui lòng thử lại.'));
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  // Toggle a GENERAL department's status (IC departments are not toggleable).
+  const handleToggleStatusApi = async (row: { id: number; status: string; canToggleStatus?: boolean }) => {
+    if (row.canToggleStatus === false) return;
+    const next = row.status === 'Hoạt động' ? 'INACTIVE' : 'ACTIVE';
+    try {
+      await departmentManagementApi.manageDepartmentStatus({ departmentId: row.id, status: next });
+      slRefetch();
+      showToast('success', next === 'ACTIVE' ? 'Đã kích hoạt phòng ban.' : 'Đã ngừng hoạt động phòng ban.');
+    } catch (err) {
+      showToast('error', getDepartmentErrorMessage(err, 'Không thể thay đổi trạng thái phòng ban.'));
+    }
+  };
+
+  // ── UC-105 detail modal + UC-102 inline edit (Staff Leader) ──
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [detailData, setDetailData] = useState<any>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [editError, setEditError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const openDetail = async (departmentId: number) => {
+    setDetailOpen(true);
+    setDetailData(null);
+    setDetailError(null);
+    setIsEditMode(false);
+    setEditError(null);
+    setDetailLoading(true);
+    try {
+      const data = await departmentManagementApi.getDepartmentDetails(departmentId);
+      setDetailData(data);
+    } catch (err) {
+      setDetailError(getDepartmentErrorMessage(err, 'Không thể tải chi tiết phòng ban. Vui lòng thử lại.'));
+    } finally {
+      setDetailLoading(false);
+    }
+  };
+
+  const closeDetail = () => {
+    setDetailOpen(false);
+    setDetailData(null);
+    setDetailError(null);
+    setIsEditMode(false);
+    setEditError(null);
+  };
+
+  const startEdit = () => {
+    if (!detailData) return;
+    setEditName(detailData.name);
+    setEditError(null);
+    setIsEditMode(true);
+  };
+
+  const cancelEdit = () => {
+    setEditName(detailData?.name ?? '');
+    setEditError(null);
+    setIsEditMode(false);
+  };
+
+  // UC-102 — save the new department name.
+  const handleSaveName = async () => {
+    if (!detailData) return;
+    const name = editName.trim();
+    if (!name) { setEditError('Tên phòng ban không được để trống.'); return; }
+    if (name.length > 150) { setEditError('Tên phòng ban không được vượt quá 150 ký tự.'); return; }
+    setSaving(true);
+    setEditError(null);
+    try {
+      const res = await departmentManagementApi.updateDepartmentName({ departmentId: detailData.departmentId, name });
+      setDetailData((prev: any) => prev ? { ...prev, name: res.name } : prev);
+      setIsEditMode(false);
+      slRefetch();
+      showToast('success', res.changed ? 'Đã cập nhật tên phòng ban.' : 'Không có thay đổi nào để cập nhật.');
+    } catch (err) {
+      setEditError(getDepartmentErrorMessage(err, 'Không thể cập nhật tên phòng ban. Vui lòng thử lại.'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const stats = [
     { label: "Tổng số phòng", value: "06", icon: Briefcase, color: "text-[#004c91]", bg: "bg-[#e6eff7]" },
     { label: "Nhân sự", value: "54", icon: Users, color: "text-[#0aa14f]", bg: "bg-[#eaffe4]" },
   ];
 
-  // Lọc dữ liệu
+  // Lọc dữ liệu (mock, dùng cho vai trò không phải Staff Leader)
   const filteredData = departments.filter((item) => {
-    const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+    const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
                           item.head.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesStatus = statusFilter ? item.status === statusFilter : true;
     const matchesCampus = (!isHO || !campusFilter) ? true : item.campus === campusFilter;
     return matchesSearch && matchesStatus && matchesCampus;
   });
 
-  // Phân trang
-  const totalPages = Math.ceil(filteredData.length / itemsPerPage);
-  const paginatedData = filteredData.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
-  );
+  // Phân trang — Staff Leader dùng dữ liệu/phân trang từ server; vai trò khác giữ mock client-side.
+  const totalPages = isStaffLeader
+    ? (slData?.totalPages ?? 0)
+    : Math.ceil(filteredData.length / itemsPerPage);
+  const paginatedData = isStaffLeader
+    ? slRows
+    : filteredData.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
   const toggleStatus = (id: number) => {
     setDepartments((prev) =>
       prev.map((dept) =>
         dept.id === id
-          ? {
-              ...dept,
-              status: dept.status === "Hoạt động" ? "Ngừng hoạt động" : "Hoạt động",
-            }
+          ? { ...dept, status: dept.status === "Hoạt động" ? "Ngừng hoạt động" : "Hoạt động" }
           : dept
       )
     );
@@ -119,10 +266,7 @@ export function DepartmentManagement() {
     <div className="p-4 sm:p-6 md:p-8 max-w-[95%] mx-auto pb-12">
       {/* Breadcrumb */}
       <div className="mb-4 flex items-center text-sm font-medium text-gray-500">
-        <button
-          onClick={() => navigate("/dashboard")}
-          className="hover:text-[#004c91] transition-colors"
-        >
+        <button onClick={() => navigate("/dashboard")} className="hover:text-[#004c91] transition-colors">
           Dashboard
         </button>
         <span className="mx-2">/</span>
@@ -134,7 +278,7 @@ export function DepartmentManagement() {
         <h1 className="text-3xl font-bold text-[#004c91]">Quản lý phòng ban</h1>
       </div>
 
-      {/* Stats Cards */}
+      {/* Stats Cards (ẩn với Staff Leader) */}
       {!isStaffLeader && (
         isHO ? (
           <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-8">
@@ -142,11 +286,9 @@ export function DepartmentManagement() {
               const campusDepts = departments.filter((d) => d.campus === campus);
               const totalDepts = campusDepts.length;
               const totalStaff = campusDepts.reduce((sum, d) => sum + d.staffCount, 0);
-              const totalWait = campusDepts.reduce((sum, d) => sum + d.waitingAccounts, 0);
-
               return (
-                <div 
-                  key={campus} 
+                <div
+                  key={campus}
                   className={`bg-white rounded-2xl p-5 border cursor-pointer transition-all duration-300 ${campusFilter === campus ? 'border-[#004c91] bg-blue-50/40 ring-4 ring-[#004c91]/10 shadow-md scale-[1.02]' : 'border-gray-100 shadow-sm hover:border-[#004c91]/40 hover:shadow-md'}`}
                   onClick={() => setCampusFilter(campusFilter === campus ? "" : campus)}
                 >
@@ -226,8 +368,8 @@ export function DepartmentManagement() {
           <option value="Ngừng hoạt động">Ngừng hoạt động</option>
         </select>
 
-        <button 
-          onClick={() => setIsAddModalOpen(true)}
+        <button
+          onClick={() => { setCreateError(null); setNewDepartmentName(''); setIsAddModalOpen(true); }}
           className="ml-auto bg-[#f37021] hover:bg-[#d9621a] text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-1.5 transition-colors shadow-sm outline-none tracking-wide"
         >
           <Plus className="w-4 h-4" /> Thêm phòng ban mới
@@ -252,17 +394,12 @@ export function DepartmentManagement() {
             <tbody className="divide-y divide-gray-200">
               {paginatedData.length > 0 ? (
                 paginatedData.map((item, index) => (
-                  <tr
-                    key={item.id}
-                    className="hover:bg-gray-50/80 transition-colors group"
-                  >
+                  <tr key={item.id} className="hover:bg-gray-50/80 transition-colors group">
                     <td className="p-4 pl-6 font-medium text-gray-500">
                       {(currentPage - 1) * itemsPerPage + index + 1}
                     </td>
                     <td className="p-4">
-                      <span className="font-bold text-gray-800 whitespace-nowrap">
-                        {item.name}
-                      </span>
+                      <span className="font-bold text-gray-800 whitespace-nowrap">{item.name}</span>
                     </td>
                     {isHO && (
                       <td className="p-4 font-medium text-[#f37021] whitespace-nowrap">
@@ -280,7 +417,7 @@ export function DepartmentManagement() {
                         </div>
                       </td>
                     )}
-                    <td className="p-4 font-medium text-gray-700 whitespace-nowrap">
+                    <td className={`p-4 whitespace-nowrap ${item.head === 'Chưa gán trưởng phòng' ? 'font-medium text-gray-400 italic' : 'font-medium text-gray-700'}`}>
                       {item.head}
                     </td>
                     <td className="p-4 text-center whitespace-nowrap">
@@ -288,46 +425,53 @@ export function DepartmentManagement() {
                     </td>
                     <td className="p-4 text-center">
                       <div className="flex items-center justify-center gap-3">
-                        {!isStaffLeader && (
+                        <button
+                          onClick={() => isStaffLeader ? openDetail(item.id) : navigate(`/dashboard/departments/${item.id}`)}
+                          className="p-1.5 rounded-lg text-gray-400 hover:bg-[#e6eff7] hover:text-[#004c91] transition-colors outline-none cursor-pointer"
+                          title="Xem chi tiết"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </button>
+                        {isStaffLeader && (item as any).canToggleStatus === false ? (
+                          <span className="text-xs font-medium text-gray-400 italic">Phòng mặc định</span>
+                        ) : (
                           <button
-                            onClick={() => navigate(`/dashboard/departments/${item.id}`)}
-                            className="p-1.5 rounded-lg text-gray-400 hover:bg-[#e6eff7] hover:text-[#004c91] transition-colors outline-none cursor-pointer"
-                            title="Xem chi tiết"
+                            onClick={() => isStaffLeader ? handleToggleStatusApi(item as any) : toggleStatus(item.id)}
+                            className={`relative inline-flex h-[20px] w-[36px] items-center rounded-full transition-colors duration-300 focus:outline-none ${
+                              item.status === 'Hoạt động' ? 'bg-[#004c91]' : 'bg-gray-300'
+                            }`}
+                            title={item.status === 'Hoạt động' ? 'Ngừng hoạt động' : 'Kích hoạt'}
                           >
-                            <Eye className="w-4 h-4" />
+                            <span
+                              className={`inline-block h-[14px] w-[14px] transform rounded-full bg-white transition-transform duration-300 ${
+                                item.status === 'Hoạt động' ? 'translate-x-[19px]' : 'translate-x-[3px]'
+                              }`}
+                            />
                           </button>
                         )}
-                        <button
-                          onClick={() => toggleStatus(item.id)}
-                          className={`relative inline-flex h-[20px] w-[36px] items-center rounded-full transition-colors duration-300 focus:outline-none ${
-                            item.status === 'Hoạt động' ? 'bg-[#004c91]' : 'bg-gray-300'
-                          }`}
-                          title={item.status === 'Hoạt động' ? 'Ngừng hoạt động' : 'Kích hoạt'}
-                        >
-                          <span
-                            className={`inline-block h-[14px] w-[14px] transform rounded-full bg-white transition-transform duration-300 ${
-                              item.status === 'Hoạt động' ? 'translate-x-[19px]' : 'translate-x-[3px]'
-                            }`}
-                          />
-                        </button>
                       </div>
                     </td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td
-                    colSpan={isHO ? 7 : (isStaffLeader ? 5 : 6)}
-                    className="py-12 text-center text-gray-500 bg-white font-medium"
-                  >
-                    Không tìm thấy dữ liệu nào
+                  <td colSpan={isHO ? 7 : (isStaffLeader ? 5 : 6)} className="py-12 text-center text-gray-500 bg-white font-medium">
+                    {isStaffLeader
+                      ? (slLoading
+                          ? 'Đang tải danh sách phòng ban...'
+                          : slError
+                            ? slError
+                            : (debouncedSearch.trim() || statusApi)
+                              ? 'Không tìm thấy phòng ban phù hợp với điều kiện lọc.'
+                              : 'Chưa có phòng ban nào trong cơ sở này.')
+                      : 'Không tìm thấy dữ liệu nào'}
                   </td>
                 </tr>
               )}
             </tbody>
           </table>
         </div>
-        
+
         {/* Pagination */}
         <div className="flex items-center justify-between border-t border-gray-200 bg-white px-6 py-4">
           <div className="flex items-center gap-3 text-sm text-gray-600 font-medium">
@@ -336,10 +480,7 @@ export function DepartmentManagement() {
               title="Items per page"
               className="border border-gray-300 bg-white rounded-lg px-2 py-1 outline-none focus:border-[#004c91] hover:border-gray-400 transition-colors cursor-pointer text-gray-700"
               value={itemsPerPage}
-              onChange={(e) => {
-                setItemsPerPage(Number(e.target.value));
-                setCurrentPage(1);
-              }}
+              onChange={(e) => { setItemsPerPage(Number(e.target.value)); setCurrentPage(1); }}
             >
               <option value={5}>5</option>
               <option value={10}>10</option>
@@ -349,21 +490,21 @@ export function DepartmentManagement() {
             </select>
             <span>bản ghi / trang</span>
           </div>
-          
+
           <div className="flex items-center gap-1.5">
-            <button 
-              className="p-2 rounded-xl border border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-[#004c91] transition-colors disabled:opacity-50 disabled:cursor-not-allowed bg-white shadow-sm" 
-              onClick={() => setCurrentPage(currentPage - 1)} 
+            <button
+              className="p-2 rounded-xl border border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-[#004c91] transition-colors disabled:opacity-50 disabled:cursor-not-allowed bg-white shadow-sm"
+              onClick={() => setCurrentPage(currentPage - 1)}
               disabled={currentPage === 1}
             >
               <ChevronLeft className="w-4 h-4" />
             </button>
-            
+
             <div className="flex items-center gap-1">
               {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => (
-                <button 
+                <button
                   key={p}
-                  className={`w-9 h-9 rounded-xl font-bold text-sm transition-colors ${currentPage === p ? 'bg-[#004c91] text-white shadow-sm border border-[#004c91]' : 'text-gray-600 hover:bg-gray-100 border border-transparent'}`} 
+                  className={`w-9 h-9 rounded-xl font-bold text-sm transition-colors ${currentPage === p ? 'bg-[#004c91] text-white shadow-sm border border-[#004c91]' : 'text-gray-600 hover:bg-gray-100 border border-transparent'}`}
                   onClick={() => setCurrentPage(p)}
                 >
                   {p}
@@ -371,9 +512,9 @@ export function DepartmentManagement() {
               ))}
             </div>
 
-            <button 
-              className="p-2 rounded-xl border border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-[#004c91] transition-colors disabled:opacity-50 disabled:cursor-not-allowed bg-white shadow-sm" 
-              onClick={() => setCurrentPage(currentPage + 1)} 
+            <button
+              className="p-2 rounded-xl border border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-[#004c91] transition-colors disabled:opacity-50 disabled:cursor-not-allowed bg-white shadow-sm"
+              onClick={() => setCurrentPage(currentPage + 1)}
               disabled={currentPage === totalPages || totalPages === 0}
             >
               <ChevronRight className="w-4 h-4" />
@@ -385,83 +526,221 @@ export function DepartmentManagement() {
       {/* Add Department Modal */}
       {isAddModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div 
-            className="absolute inset-0 bg-black/40 backdrop-blur-sm"
-            onClick={() => setIsAddModalOpen(false)}
-          ></div>
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setIsAddModalOpen(false)}></div>
           <div className="relative bg-white rounded-3xl w-full max-w-md shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-300">
             {/* Header */}
             <div className="flex items-center justify-between p-6 py-4 bg-[#004c91] text-white">
               <h3 className="text-xl font-bold">Thêm phòng ban</h3>
-              <button 
+              <button
                 onClick={() => setIsAddModalOpen(false)}
                 className="text-white hover:text-gray-200 hover:bg-white/10 p-2 rounded-full transition-colors outline-none"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
-            
+
             {/* Body */}
             <div className="p-6">
               <label className="block text-sm font-bold text-gray-700 mb-2">
                 Tên phòng ban <span className="text-red-500">*</span>
               </label>
-              <input 
-                type="text" 
+              <input
+                type="text"
                 value={newDepartmentName}
-                onChange={(e) => setNewDepartmentName(e.target.value)}
+                onChange={(e) => { setNewDepartmentName(e.target.value); if (createError) setCreateError(null); }}
                 placeholder="Nhập tên phòng ban..."
                 className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] text-gray-800 transition-shadow outline-none shadow-sm pb-4"
                 autoFocus
               />
 
-              <div className="mt-4">
-                <label className="block text-sm font-bold text-gray-700 mb-2">
-                  Trưởng phòng <span className="text-red-500">*</span>
-                </label>
-                <select className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] text-gray-800 transition-shadow outline-none shadow-sm bg-white">
-                  <option value="">-- Chọn trưởng phòng --</option>
-                  <option value="user1">Người dùng 1</option>
-                  <option value="user2">Người dùng 2</option>
-                </select>
-              </div>
-              
-              {isHO && (
-                <div className="mt-4">
-                  <label className="block text-sm font-bold text-gray-700 mb-2">
-                    Cơ sở <span className="text-red-500">*</span>
-                  </label>
-                  <select
-                    className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] text-gray-800 transition-shadow outline-none shadow-sm bg-white"
-                  >
-                    {CAMPUSES.map((cs) => (
-                      <option key={cs} value={cs}>{cs}</option>
-                    ))}
-                  </select>
-                </div>
+              {isStaffLeader ? (
+                <>
+                  {createError && <p className="mt-2 text-sm font-bold text-red-600">{createError}</p>}
+                  <div className="mt-4">
+                    <label className="block text-sm font-bold text-gray-700 mb-2">Cơ sở</label>
+                    <div className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-gray-600 font-medium">
+                      {user?.campus || 'Cơ sở của bạn'}
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="mt-4">
+                    <label className="block text-sm font-bold text-gray-700 mb-2">
+                      Trưởng phòng <span className="text-red-500">*</span>
+                    </label>
+                    <select className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] text-gray-800 transition-shadow outline-none shadow-sm bg-white">
+                      <option value="">-- Chọn trưởng phòng --</option>
+                      <option value="user1">Người dùng 1</option>
+                      <option value="user2">Người dùng 2</option>
+                    </select>
+                  </div>
+
+                  {isHO && (
+                    <div className="mt-4">
+                      <label className="block text-sm font-bold text-gray-700 mb-2">
+                        Cơ sở <span className="text-red-500">*</span>
+                      </label>
+                      <select className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] text-gray-800 transition-shadow outline-none shadow-sm bg-white">
+                        {CAMPUSES.map((cs) => (
+                          <option key={cs} value={cs}>{cs}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </>
               )}
             </div>
-            
+
             {/* Footer */}
             <div className="flex items-center justify-end gap-3 p-6 pt-0">
-              <button 
+              <button
                 onClick={() => setIsAddModalOpen(false)}
                 className="px-5 py-2.5 rounded-xl font-bold text-gray-600 bg-white border border-gray-200 hover:bg-gray-50 hover:text-gray-800 transition-colors shadow-sm outline-none"
               >
                 Hủy
               </button>
-              <button 
-                onClick={handleCreateDepartment}
-                disabled={!newDepartmentName.trim()}
+              <button
+                onClick={isStaffLeader ? handleCreateDepartmentApi : handleCreateDepartment}
+                disabled={!newDepartmentName.trim() || (isStaffLeader && creating)}
                 className="px-5 py-2.5 rounded-xl font-bold text-white bg-[#f37021] hover:bg-[#d9621a] disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm outline-none"
               >
-                Tạo mới
+                {isStaffLeader && creating ? 'Đang lưu...' : 'Tạo mới'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Department Detail / Edit Modal (UC-105 / UC-102, Staff Leader) */}
+      {detailOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={closeDetail}></div>
+          <div className="relative bg-white rounded-3xl w-full max-w-md shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-300">
+            {/* Header */}
+            <div className="flex items-center justify-between p-6 py-4 bg-[#004c91] text-white">
+              <h3 className="text-xl font-bold flex items-center gap-2">
+                <Briefcase className="w-5 h-5" />
+                {isEditMode ? 'Chỉnh sửa phòng ban' : 'Chi tiết phòng ban'}
+              </h3>
+              <button
+                onClick={closeDetail}
+                className="text-white hover:text-gray-200 hover:bg-white/10 p-2 rounded-full transition-colors outline-none"
+                title="Đóng"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-6">
+              {detailLoading && (
+                <div className="py-10 text-center text-gray-400 font-medium">Đang tải chi tiết phòng ban...</div>
+              )}
+
+              {!detailLoading && detailError && (
+                <div className="py-6 text-center">
+                  <p className="text-sm font-bold text-red-600 mb-4">{detailError}</p>
+                  <button
+                    onClick={() => detailData?.departmentId && openDetail(detailData.departmentId)}
+                    className="px-4 py-2 rounded-lg border border-gray-200 text-sm font-bold text-gray-600 hover:text-[#004c91] hover:border-[#004c91] transition-colors"
+                  >
+                    Thử lại
+                  </button>
+                </div>
+              )}
+
+              {!detailLoading && !detailError && detailData && (
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1">Tên phòng ban</label>
+                    {isEditMode ? (
+                      <>
+                        <input
+                          type="text"
+                          value={editName}
+                          onChange={(e) => { setEditName(e.target.value); if (editError) setEditError(null); }}
+                          className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] text-gray-800 shadow-sm"
+                          autoFocus
+                        />
+                        {editError && <p className="mt-1.5 text-sm font-bold text-red-600">{editError}</p>}
+                      </>
+                    ) : (
+                      <p className="text-base font-bold text-gray-800">{detailData.name}</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1">Cơ sở</label>
+                    <p className="text-sm font-medium text-gray-700">{detailData.campusName}</p>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1">Trưởng phòng</label>
+                    {detailData.headFullName
+                      ? <p className="text-sm font-medium text-gray-700">{detailData.headFullName}</p>
+                      : <p className="text-sm font-medium text-gray-400 italic">Chưa gán trưởng phòng</p>}
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1">Trạng thái</label>
+                    <StatusBadge status={detailData.status === 'ACTIVE' ? 'Hoạt động' : 'Ngừng hoạt động'} />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            {!detailLoading && !detailError && detailData && (
+              <div className="flex items-center justify-end gap-3 p-6 pt-0">
+                {isEditMode ? (
+                  <>
+                    <button
+                      onClick={cancelEdit}
+                      className="px-5 py-2.5 rounded-xl font-bold text-gray-600 bg-white border border-gray-200 hover:bg-gray-50 hover:text-gray-800 transition-colors shadow-sm outline-none"
+                    >
+                      Hủy
+                    </button>
+                    <button
+                      onClick={handleSaveName}
+                      disabled={!editName.trim() || saving}
+                      className="px-5 py-2.5 rounded-xl font-bold text-white bg-[#0aa14f] hover:bg-[#088c44] disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm outline-none"
+                    >
+                      {saving ? 'Đang lưu...' : 'Lưu'}
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      onClick={closeDetail}
+                      className="px-5 py-2.5 rounded-xl font-bold text-gray-600 bg-white border border-gray-200 hover:bg-gray-50 hover:text-gray-800 transition-colors shadow-sm outline-none"
+                    >
+                      Đóng
+                    </button>
+                    {detailData.canEditName && (
+                      <button
+                        onClick={startEdit}
+                        className="px-5 py-2.5 rounded-xl font-bold text-white bg-[#f37021] hover:bg-[#d9621a] transition-colors shadow-sm outline-none"
+                      >
+                        Chỉnh sửa
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Toast (Staff Leader actions) — góc trên bên phải */}
+      {toast && (
+        <div className="fixed top-6 right-6 z-[60] animate-in fade-in slide-in-from-top-2 duration-300">
+          <div className={`px-5 py-3 rounded-xl shadow-lg text-sm font-bold text-white ${toast.type === 'success' ? 'bg-[#0aa14f]' : 'bg-red-600'}`}>
+            {toast.text}
           </div>
         </div>
       )}
     </div>
   );
 }
-

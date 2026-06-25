@@ -1,4 +1,5 @@
 using MediatR;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using PEMS.Application.Delegations.Minutes;
 using System.Threading;
@@ -7,6 +8,7 @@ using System.Threading.Tasks;
 namespace PEMS.Api.Controllers
 {
     [ApiController]
+    [Authorize]
     [Route("api/[controller]")]
     public class MeetingMinutesController : ControllerBase
     {
@@ -43,19 +45,38 @@ namespace PEMS.Api.Controllers
         public async Task<IActionResult> AcquireLock(ulong minutesId, CancellationToken cancellationToken)
             => Ok(await _mediator.Send(new AcquireMinutesLockCommand(minutesId), cancellationToken));
 
-        // Save content (requires the caller's lock token + matching row_version); releases the lock.
+        // Save content + attendance snapshot + action items (requires the caller's lock token +
+        // matching row_version); releases the lock.
         [HttpPut("{minutesId}")]
         public async Task<IActionResult> Save(ulong minutesId, [FromBody] SaveMinutesBody body, CancellationToken cancellationToken)
             => Ok(await _mediator.Send(
-                new SaveMinutesCommand(minutesId, body.Title, body.Content, body.EditLockToken, body.RowVersion), cancellationToken));
+                new SaveMinutesCommand(
+                    minutesId, body.Title, body.Content, body.EditLockToken, body.RowVersion,
+                    body.Participants, body.ActionItems), cancellationToken));
 
         // Release the lock without saving (Hủy chỉnh sửa).
         [HttpPost("{minutesId}/release-lock")]
         public async Task<IActionResult> ReleaseLock(ulong minutesId, [FromBody] ReleaseMinutesLockBody body, CancellationToken cancellationToken)
             => Ok(await _mediator.Send(new ReleaseMinutesLockCommand(minutesId, body.EditLockToken), cancellationToken));
+
+        // "Đồng bộ người mới": attendance rows that should exist but are missing (append-only candidates).
+        [HttpGet("{minutesId}/new-participant-candidates")]
+        public async Task<IActionResult> NewParticipantCandidates(ulong minutesId, CancellationToken cancellationToken)
+            => Ok(await _mediator.Send(new GetNewMinuteParticipantsQuery(minutesId), cancellationToken));
+
+        // Search system users to add a participant manually (scoped to editors of the instance).
+        [HttpGet("visit-instances/{visitInstanceId}/user-search")]
+        public async Task<IActionResult> UserSearch(ulong visitInstanceId, [FromQuery] string? query, CancellationToken cancellationToken)
+            => Ok(await _mediator.Send(new SearchMinuteUsersQuery(visitInstanceId, query), cancellationToken));
     }
 
     public sealed record CreateOrLockMinutesBody(string? Title);
-    public sealed record SaveMinutesBody(string Title, string? Content, string EditLockToken, uint RowVersion);
+    public sealed record SaveMinutesBody(
+        string Title,
+        string? Content,
+        string EditLockToken,
+        uint RowVersion,
+        List<SaveMinuteParticipantInput>? Participants,
+        List<SaveMinuteActionItemInput>? ActionItems);
     public sealed record ReleaseMinutesLockBody(string EditLockToken);
 }

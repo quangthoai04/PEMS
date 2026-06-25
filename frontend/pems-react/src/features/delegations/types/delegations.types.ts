@@ -206,6 +206,48 @@ export interface VisitProcessDetail {
 }
 
 /**
+ * One snapshot attendance row (minute_participants). The source is distinguished purely by the SQL
+ * columns: `userId` set → internal; `guestMemberId` set → guest; both null → manual. `participantKind`
+ * is a derived display value from the backend.
+ */
+export interface MinuteParticipant {
+  minuteParticipantId: number;
+  minutesId: number;
+  userId: number | null;
+  guestMemberId: number | null;
+  fullNameSnapshot: string;
+  roleSnapshot: string | null;
+  organizationSnapshot: string | null;
+  emailSnapshot: string | null;
+  attendanceStatus: string; // PRESENT | ABSENT | EXCUSED
+  attendanceNote: string | null;
+  checkedAt: string | null;
+  checkedBy: number | null;
+  displayOrder: number;
+  participantKind: string; // INTERNAL | GUEST | MANUAL
+}
+
+/** One action item (minute_action_items). No assignee column exists in SQL. */
+export interface MinuteActionItem {
+  actionItemId: number;
+  minutesId: number;
+  title: string;
+  note: string | null;
+  dueDate: string | null; // ISO; render with first 10 chars for a date input
+  status: string; // TODO | IN_PROGRESS | DONE | CANCELLED
+  completedAt: string | null;
+  displayOrder: number;
+}
+
+/** One picked-able system user for the manual-add dropdown. */
+export interface MinuteUserSearchItem {
+  userId: number;
+  fullName: string;
+  email: string | null;
+  organization: string | null;
+}
+
+/**
  * Phase 3: the single meeting-minutes record for a campus instance (UC biên bản) with edit-lock
  * state + backend action flags. `editLockToken` is only present for the lock holder.
  */
@@ -217,6 +259,8 @@ export interface VisitMinute {
   content: string | null;
   status: string | null;
   rowVersion: number;
+  /** When the minutes was last saved — drives the "Đã lưu · <time>" status line. */
+  updatedAt?: string | null;
   editLockedBy?: number | null;
   editLockedByName?: string | null;
   editLockedAt?: string | null;
@@ -227,6 +271,30 @@ export interface VisitMinute {
   canView: boolean;
   canCreate: boolean;
   canEdit: boolean;
+  participants: MinuteParticipant[];
+  actionItems: MinuteActionItem[];
+}
+
+/** Payload row for saving an attendance entry (matches SaveMinuteParticipantInput on the backend). */
+export interface SaveMinuteParticipantPayload {
+  minuteParticipantId: number | null;
+  userId: number | null;
+  guestMemberId: number | null;
+  fullNameSnapshot: string;
+  roleSnapshot: string | null;
+  organizationSnapshot: string | null;
+  emailSnapshot: string | null;
+  attendanceStatus: string;
+  attendanceNote: string | null;
+}
+
+/** Payload row for saving an action item (matches SaveMinuteActionItemInput on the backend). */
+export interface SaveMinuteActionItemPayload {
+  actionItemId: number | null;
+  title: string;
+  note: string | null;
+  dueDate: string | null; // business wall-clock datetime "YYYY-MM-DDTHH:mm:ss" (no timezone) or null
+  status: string;
 }
 
 /** Phase 4: one news post attached to a campus instance (UC tin tức). */

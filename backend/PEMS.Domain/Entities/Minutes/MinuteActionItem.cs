@@ -22,8 +22,9 @@ public class MinuteActionItem
     [Column("due_date")]
     public DateTime? DueDate { get; set; }
 
+    // minute_action_items.status ENUM('TODO','IN_PROGRESS','DONE','CANCELLED') DEFAULT 'TODO'
     [Column("status")]
-    public string Status { get; set; } = "PENDING";
+    public string Status { get; set; } = "TODO";
 
     [Column("completed_at")]
     public DateTime? CompletedAt { get; set; }
