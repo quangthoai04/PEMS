@@ -33,6 +33,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { departmentReceptionTasksApi } from '../../../features/department-reception-tasks/api/departmentReceptionTasksApi';
+import { delegationsApi } from '../../../features/delegations/api/delegationsApi';
 
 interface Event {
   id: string;
@@ -89,6 +90,9 @@ const INITIAL_EVENTS: Event[] = [
   }];
 
 export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent, isVisitor }: { user?: any, isDeptLeader?: boolean, isDeptStaff?: boolean, isStudent?: boolean, isVisitor?: boolean }) {
+  const today = new Date();
+  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
   const [events, setEvents] = useState<any[]>([]);
   const [candidates, setCandidates] = useState<any[]>([]);
   const navigate = useNavigate();
@@ -185,7 +189,11 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
           } else if (detail.status === 'DECLINED') {
             setInvitationStatus('rejected');
             setRejectReason(detail.rejectReason || '');
+          } else if (detail.status === 'ASSIGNED' || detail.assigneeName) {
+            setAssignedPerson(detail.assigneeName);
+            setInvitationStatus('assigned');
           } else {
+            setAssignedPerson(null);
             setInvitationStatus('pending');
           }
         } else if (activePopoverEvent.itemType === 'REQUEST') {
@@ -228,7 +236,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
            let isProcessed = false;
 
            if (item.itemType === 'INVITATION') {
-              if (item.status === 'ACCEPTED' || item.status === 'DECLINED') isProcessed = true;
+              if (item.status === 'ACCEPTED' || item.status === 'DECLINED' || item.status === 'ASSIGNED') isProcessed = true;
               cat = 'Lời mời tham gia';
            } else if (item.itemType === 'REQUEST') {
               if (item.status === 'ASSIGNED' || item.status === 'RECEIVED' || item.status === 'REJECTED' || item.status === 'CONFIRMED') isProcessed = true;
@@ -238,7 +246,9 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
            }
 
            if (isProcessed) {
-              cat = 'Lịch của tôi';
+              if (item.status !== 'ASSIGNED') {
+                 cat = 'Lịch của tôi';
+              }
               col = 'bg-blue-50 text-blue-700 border-blue-300 hover:bg-blue-100';
               hCol = 'border-blue-500';
            } else if (item.itemType === 'INVITATION') {
@@ -298,7 +308,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
   }, [fetchCalendarEvents, fetchCandidates, user?.departmentId]);
 
   const [showAddFormModal, setShowAddFormModal] = useState(false);
-  const [selectedCellDate, setSelectedCellDate] = useState<string | null>('2026-08-26');
+  const [selectedCellDate, setSelectedCellDate] = useState<string | null>(todayStr);
 
   // States for Vietnamese Miniature Date Picker & Views
   const [showMiniCalendar, setShowMiniCalendar] = useState(false);
@@ -316,6 +326,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
     if (calendarType === 'Lịch của tôi') {
       if (isStudent || isVisitor) return events;
       return events.filter(e => {
+        if (e.category === 'Lịch của tôi') return true;
         const eid = String(e.relatedUserId);
         return eid === String(user?.id) || eid === String(user?.userId) || eid === String(user?.account) || eid === String(user?.user_id);
       });
@@ -917,7 +928,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                         {/* Header of Date cell */}
                         <div className="flex justify-between items-center mb-1">
                           <span className={`text-xs font-extrabold px-1.5 py-0.5 rounded-md ${
-                            cell.dateString === '2026-08-26' && cell.isCurrent
+                            cell.dateString === todayStr && cell.isCurrent
                               ? 'bg-red-500 text-white shadow-xs'
                               : isSelected
                                 ? 'bg-[#f37021] text-white'
@@ -1005,7 +1016,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                       >
                         <div className="flex justify-between items-center mb-2">
                           <span className={`text-xs font-extrabold px-2 py-1 rounded-md ${
-                            cell.dateString === '2026-08-26' && cell.isCurrent
+                            cell.dateString === todayStr && cell.isCurrent
                               ? 'bg-red-500 text-white'
                               : isSelected 
                                 ? 'bg-[#f37021] text-white shadow-xs' 
@@ -1482,7 +1493,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                 ) : (
                   eventsInCurrentMonthAndYear.map((ev) => {
                     const isSelected = selectedCellDate === ev.date && activePopoverEvent?.id === ev.id;
-                    const isTodayHighlight = ev.date === '2026-08-26';
+                    const isTodayHighlight = ev.date === todayStr;
                     const parts = ev.date.split('-');
                     const displayDayNum = parts[2];
                     
@@ -1878,7 +1889,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                 </div>
     
 
-              {activePopoverEvent.category === 'Lời mời tham gia' && (
+              {(activePopoverEvent.category === 'Lời mời tham gia' || activePopoverEvent.itemType === 'INVITATION') && (
                 <div className="bg-white rounded-2xl border border-slate-200/85 p-6 md:p-8 font-sans w-full max-w-4xl mx-auto space-y-6 relative overflow-visible">
                   
                   {/* BENTO GRID (Người gửi, Thời gian gửi, Đoàn khách, Thời gian diễn ra) */}
@@ -2011,6 +2022,18 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                     </div>
                   )}
 
+                  {invitationStatus === 'assigned' && (
+                    <div className="animate-fade-in-quick pt-4">
+                       <div className="p-4 rounded-2xl border border-blue-200 bg-blue-50 flex items-start gap-3 relative mb-2">
+                         <Info className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
+                         <div className="flex-1">
+                           <span className="text-blue-800 font-bold text-sm block mb-1">Đã ủy quyền nhiệm vụ</span>
+                           <span className="text-blue-600/80 text-xs font-medium block">Người phụ trách hiện tại: <span className="font-extrabold">{assignedPerson}</span></span>
+                         </div>
+                       </div>
+                    </div>
+                  )}
+
                   {invitationStatus === 'pending' && (
                   <div className="flex gap-4 pt-6 mt-6 border-t border-gray-100 flex-col relative z-10 w-full animate-fade-in-quick">
                     
@@ -2065,18 +2088,23 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                              <div className="py-2">
                                {candidates.map((staff) => (
                                  <button
-                                   key={staff.id}
+                                   key={staff.id || staff.userId}
                                    className="w-full px-4 py-3 text-left hover:bg-slate-50 border-b border-slate-50 last:border-0 transition-colors group flex items-start justify-between"
                                    onClick={async () => {
                                      try {
                                        if (activePopoverEvent?.rawId) {
-                                         await departmentReceptionTasksApi.assignAssignee(activePopoverEvent.rawId, staff.id);
+                                         await delegationsApi.visitInvitations.assignDepartmentStaff(activePopoverEvent.rawId, Number(staff.id || staff.userId), '');
                                          toast.success('Phân công thành công');
                                          setAssignedPerson(staff.name);
+                                         setInvitationStatus('assigned');
                                          setShowAssignDropdown(false);
                                          await fetchCalendarEvents();
                                        }
-                                     } catch(e) { console.error(e); toast.error('Phân công thất bại'); }
+                                     } catch(e: any) { 
+                                       console.error(e); 
+                                       const errorMsg = e.response?.data?.message || e.response?.data?.title || e.message || 'Phân công thất bại';
+                                       toast.error('Lỗi: ' + errorMsg); 
+                                     }
                                    }}
                                  >
                                     <div>
@@ -2100,7 +2128,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                 </div>
               )}
 
-              {activePopoverEvent.category === 'Đơn yêu cầu mượn đồ' && (
+              {(activePopoverEvent.category === 'Đơn yêu cầu mượn đồ' || activePopoverEvent.itemType === 'REQUEST') && (
                 <div className="bg-white rounded-2xl border border-slate-200/85 p-6 md:p-8 font-sans w-full max-w-4xl mx-auto space-y-6 relative overflow-visible">
                   
                   {/* BENTO GRID (Người gửi, Thời gian gửi, Đoàn khách, Thời gian sử dụng) */}
@@ -2370,7 +2398,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                           </div>
                         )}
 
-                        {isDeptLeader && (requestStatus === 'pending' || requestStatus === 'assigned') && (
+                        {isDeptLeader && requestStatus === 'pending' && (
                          <div className="w-full relative mt-2">
                            <button 
                              onClick={() => setShowAssignDropdown(!showAssignDropdown)}
@@ -2386,14 +2414,15 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                                <div className="py-2">
                                  {candidates.map((staff) => (
                                    <button
-                                     key={staff.id}
+                                     key={staff.id || staff.userId}
                                      className="w-full px-4 py-3 text-left hover:bg-slate-50 border-b border-slate-50 last:border-0 transition-colors group flex items-start justify-between"
                                      onClick={async () => {
                                        try {
                                          if (activePopoverEvent?.rawId) {
-                                           await departmentReceptionTasksApi.assignAssignee(activePopoverEvent.rawId, staff.id);
+                                           await departmentReceptionTasksApi.assignAssignee(activePopoverEvent.rawId, staff.id || staff.userId);
                                            toast.success('Phân công thành công');
                                            setAssignedPerson(staff.name);
+                                           setRequestStatus('assigned');
                                            setShowAssignDropdown(false);
                                            await fetchCalendarEvents();
                                          }
@@ -2420,7 +2449,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                 </div>
               )}
 
-              {activePopoverEvent.category === 'Đơn yêu cầu mượn đồ' && requestStatus === 'accepted' && (
+              {(activePopoverEvent.category === 'Đơn yêu cầu mượn đồ' || activePopoverEvent.itemType === 'REQUEST') && requestStatus === 'accepted' && (
                 /* Safuri Event Layout */
                 <div className="bg-white rounded-2xl border border-slate-200/85 shadow-md p-6 md:p-10 font-sans max-w-4xl mx-auto space-y-6 relative overflow-hidden">
                   {/* Draft decorative watermark stamp */}

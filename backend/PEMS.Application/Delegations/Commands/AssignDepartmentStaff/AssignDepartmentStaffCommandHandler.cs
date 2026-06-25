@@ -38,11 +38,12 @@ public sealed class AssignDepartmentStaffCommandHandler : IRequestHandler<Assign
         if (_currentUser.RoleCode != RoleCodes.Department || _currentUser.SubRole != UserSubRoles.Leader)
             throw new ForbiddenException("Chỉ Department Leader mới được giao việc xuống Staff.");
 
-        if (leaderParticipant.UserId != userId)
-            throw new ForbiddenException("Bạn chỉ có thể giao nhiệm vụ từ lời mời của chính mình.");
+        var participantUser = await _db.Users.FirstOrDefaultAsync(u => u.UserId == leaderParticipant.UserId, cancellationToken);
+        if (participantUser?.DepartmentId != _currentUser.DepartmentId)
+            throw new ForbiddenException("Bạn chỉ có thể giao nhiệm vụ thuộc phòng ban của mình.");
 
-        if (leaderParticipant.ParticipantRole != ParticipantRoles.DeptSupport)
-            throw new ConflictException("Chỉ có thể giao nhiệm vụ từ vai trò DEPT_SUPPORT.");
+        // if (leaderParticipant.ParticipantRole != ParticipantRoles.DeptSupport)
+        //     throw new ConflictException("Chỉ có thể giao nhiệm vụ từ vai trò DEPT_SUPPORT.");
 
         var targetStaff = await _db.Users
             .Include(u => u.Role)
@@ -55,24 +56,47 @@ public sealed class AssignDepartmentStaffCommandHandler : IRequestHandler<Assign
 
         var now = _clock.UtcNow;
 
-        // Tạo participant mới cho Staff
-        var staffParticipant = new VisitParticipant
-        {
-            VisitInstanceId = leaderParticipant.VisitInstanceId,
-            UserId = targetStaff.UserId,
-            ParticipantRole = ParticipantRoles.DeptSupport,
-            IsHost = false,
-            Status = ParticipantStatuses.Assigned,
-            AssignedBy = userId,
-            AssignedAt = now,
-            Note = request.Note,
-            CreatedAt = now,
-            CreatedBy = userId
-        };
+        var existingParticipant = await _db.VisitParticipants
+            .FirstOrDefaultAsync(p => p.VisitInstanceId == leaderParticipant.VisitInstanceId && p.UserId == targetStaff.UserId, cancellationToken);
 
-        _db.VisitParticipants.Add(staffParticipant);
+        VisitParticipant assignedParticipant;
+        if (existingParticipant != null)
+        {
+            // Nếu đã tham gia, cập nhật role và status nếu cần thiết
+            existingParticipant.ParticipantRole = ParticipantRoles.DeptSupport;
+            existingParticipant.Status = ParticipantStatuses.Assigned;
+            existingParticipant.AssignedBy = userId;
+            existingParticipant.AssignedAt = now;
+            existingParticipant.UpdatedAt = now;
+            existingParticipant.UpdatedBy = userId;
+            assignedParticipant = existingParticipant;
+        }
+        else
+        {
+            // Tạo participant mới cho Staff
+            assignedParticipant = new VisitParticipant
+            {
+                VisitInstanceId = leaderParticipant.VisitInstanceId,
+                UserId = targetStaff.UserId,
+                ParticipantRole = ParticipantRoles.DeptSupport,
+                IsHost = false,
+                Status = ParticipantStatuses.Assigned,
+                AssignedBy = userId,
+                AssignedAt = now,
+                Note = request.Note,
+                CreatedAt = now,
+                CreatedBy = userId
+            };
+
+            _db.VisitParticipants.Add(assignedParticipant);
+        }
+
+        leaderParticipant.Status = ParticipantStatuses.Assigned;
+        leaderParticipant.UpdatedAt = now;
+        leaderParticipant.UpdatedBy = userId;
+
         await _db.SaveChangesAsync(cancellationToken);
 
-        return staffParticipant.ParticipantId;
+        return assignedParticipant.ParticipantId;
     }
 }
