@@ -31,7 +31,7 @@ import {
   Edit2
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import toast from 'react-hot-toast';
+import toast, { Toaster } from 'react-hot-toast';
 import { departmentReceptionTasksApi } from '../../../features/department-reception-tasks/api/departmentReceptionTasksApi';
 import { delegationsApi } from '../../../features/delegations/api/delegationsApi';
 
@@ -40,7 +40,7 @@ interface Event {
   title: string;
   date: string; // YYYY-MM-DD
   time: string;
-  category: 'Lời mời tham gia' | 'Đơn yêu cầu mượn đồ';
+  category: 'Lời mời tham gia' | 'Đơn yêu cầu mượn đồ' | 'Lịch của tôi';
   color: string; // css color classes
   hoverColor: string;
   location: string;
@@ -254,9 +254,12 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
            } else if (item.itemType === 'INVITATION') {
               col = 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100';
               hCol = 'border-emerald-500';
-           } else {
+           } else if (item.itemType === 'REQUEST') {
               col = 'bg-orange-50 text-orange-700 border-orange-300 hover:bg-orange-100';
               hCol = 'border-orange-500';
+           } else {
+              col = 'bg-purple-50 text-purple-700 border-purple-300 hover:bg-purple-100';
+              hCol = 'border-purple-500';
            }
 
            const sd = new Date(item.startAt);
@@ -347,11 +350,8 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
   // New Event Form State
   const [newTitle, setNewTitle] = useState('');
   const [newTime, setNewTime] = useState('09:00 - 11:00');
-  const [newCategory, setNewCategory] = useState<Event['category']>('Lời mời tham gia');
-  const [newLocation, setNewLocation] = useState('Phòng họp Alpha, Hòa Lạc');
-  const [newHost, setNewHost] = useState('Office of International Affairs');
-  const [newGuests, setNewGuests] = useState('International Delegates');
-  const [newChecklistStr, setNewChecklistStr] = useState('Chuẩn bị quà tặng\nĐặt bàn trà bánh');
+  const [newLocation, setNewLocation] = useState('');
+  const [newContent, setNewContent] = useState('');
   const [showDetailSection, setShowDetailSection] = useState(false);
   const monthNames = [
     'Tháng 1', 'Tháng 2', 'Tháng 3', 'Tháng 4', 'Tháng 5', 'Tháng 6',
@@ -417,17 +417,13 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
   };
 
   const handleResetToAugust2026 = () => {
-    setCurrentMonth(7);
-    setCurrentYear(2026);
+    setCurrentMonth(new Date().getMonth());
+    setCurrentYear(new Date().getFullYear());
     setActivePopoverEvent(null);
   };
 
   const daysGrid = useMemo(() => {
-    // Return grid of days, aligned Monday to Sunday.
-    // Monday is index 1, Sunday is 0 from getDay(), let's map Monday to 0, Sunday to 6
     const firstDayIndexRaw = new Date(currentYear, currentMonth, 1).getDay();
-    // Raw index: 0=Sun, 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat
-    // Mapped to 0=Mon, 1=Tue, 2=Wed, 3=Thu, 4=Fri, 5=Sat, 6=Sun
     const firstDayIndex = firstDayIndexRaw === 0 ? 6 : firstDayIndexRaw - 1;
 
     const totalDays = new Date(currentYear, currentMonth + 1, 0).getDate();
@@ -435,32 +431,35 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
 
     const days = [];
 
-    // July / Prior Month padding
-    for (let i = firstDayIndex - 1; i >= 0; i--) {
-      const d = prevMonthTotalDays - i;
+    for (let i = 0; i < firstDayIndex; i++) {
+      const d = prevMonthTotalDays - firstDayIndex + 1 + i;
       const m = currentMonth === 0 ? 11 : currentMonth - 1;
       const y = currentMonth === 0 ? currentYear - 1 : currentYear;
       const mStr = String(m + 1).padStart(2, '0');
       const dStr = String(d).padStart(2, '0');
       days.push({
         day: d,
-        dateString: `${y}-${mStr}-${dStr}`,
-        isCurrent: false
+        month: m,
+        year: y,
+        isCurrentMonth: false,
+        isCurrent: false,
+        dateString: `${y}-${mStr}-${dStr}`
       });
     }
 
-    // Current Month
     for (let i = 1; i <= totalDays; i++) {
       const mStr = String(currentMonth + 1).padStart(2, '0');
       const dStr = String(i).padStart(2, '0');
       days.push({
         day: i,
-        dateString: `${currentYear}-${mStr}-${dStr}`,
-        isCurrent: true
+        month: currentMonth,
+        year: currentYear,
+        isCurrentMonth: true,
+        isCurrent: true,
+        dateString: `${currentYear}-${mStr}-${dStr}`
       });
     }
 
-    // Remaining Cells (up to 42 / 6 rows)
     const remaining = 42 - days.length;
     for (let i = 1; i <= remaining; i++) {
       const m = currentMonth === 11 ? 0 : currentMonth + 1;
@@ -469,8 +468,11 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
       const dStr = String(i).padStart(2, '0');
       days.push({
         day: i,
-        dateString: `${y}-${mStr}-${dStr}`,
-        isCurrent: false
+        month: m,
+        year: y,
+        isCurrentMonth: false,
+        isCurrent: false,
+        dateString: `${y}-${mStr}-${dStr}`
       });
     }
 
@@ -488,9 +490,31 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
 
   // Find the sub-array of 7 days containing selectedCellDate
   const currentWeekDays = useMemo(() => {
-    const found = weeks.find(w => w.some(d => d.dateString === selectedCellDate));
-    return found || weeks[0] || [];
-  }, [weeks, selectedCellDate]);
+    if (!selectedCellDate) return [];
+    const d = new Date(selectedCellDate);
+    const day = d.getDay();
+    const diff = d.getDate() - day + (day === 0 ? -6 : 1); // adjust when day is sunday
+    
+    const startOfWeek = new Date(d.setDate(diff));
+    const week = [];
+    
+    for (let i = 0; i < 7; i++) {
+      const wDate = new Date(startOfWeek);
+      wDate.setDate(wDate.getDate() + i);
+      const y = wDate.getFullYear();
+      const m = wDate.getMonth();
+      const dt = wDate.getDate();
+      week.push({
+        day: dt,
+        month: m,
+        year: y,
+        isCurrentMonth: m === currentMonth,
+        isCurrent: true,
+        dateString: `${y}-${String(m + 1).padStart(2, '0')}-${String(dt).padStart(2, '0')}`
+      });
+    }
+    return week;
+  }, [selectedCellDate, currentMonth]);
 
   // Year view: helper to generate days for any specific month index of the current year (Monday-first)
   const getDaysForMonth = (year: number, monthIndex: number) => {
@@ -521,27 +545,24 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
   };
 
   const miniDaysGrid = useMemo(() => {
-    // Sunday-indexed first day of the month (0 = Sunday, 1 = Monday ...)
-    const firstDayIndex = new Date(miniYear, miniMonth, 1).getDay();
+    const firstDayIndexRaw = new Date(miniYear, miniMonth, 1).getDay();
+    const firstDayIndex = firstDayIndexRaw === 0 ? 6 : firstDayIndexRaw - 1;
     const totalDays = new Date(miniYear, miniMonth + 1, 0).getDate();
     const prevMonthTotalDays = new Date(miniYear, miniMonth, 0).getDate();
 
     const days = [];
 
-    // Prior Month padding (Sunday-indexed)
-    for (let i = firstDayIndex - 1; i >= 0; i--) {
-      const d = prevMonthTotalDays - i;
+    for (let i = 0; i < firstDayIndex; i++) {
       const m = miniMonth === 0 ? 11 : miniMonth - 1;
       const y = miniMonth === 0 ? miniYear - 1 : miniYear;
       days.push({
-        day: d,
+        day: prevMonthTotalDays - firstDayIndex + 1 + i,
         month: m,
         year: y,
         isCurrentMonth: false
       });
     }
 
-    // Current Month
     for (let i = 1; i <= totalDays; i++) {
       days.push({
         day: i,
@@ -551,7 +572,6 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
       });
     }
 
-    // Next Month padding
     const remaining = 42 - days.length;
     for (let i = 1; i <= remaining; i++) {
       const m = miniMonth === 11 ? 0 : miniMonth + 1;
@@ -568,45 +588,47 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
   }, [miniYear, miniMonth]);
 
   const handleOpenAddModal = (dateStr: string) => {
+    if (dateStr < todayStr) {
+      toast.error('Không thể tạo lịch trong quá khứ. Vui lòng chọn ngày từ hôm nay trở đi.');
+      return;
+    }
     setSelectedCellDate(dateStr);
     setNewTitle('');
+    setNewContent('');
+    setNewLocation('');
     setShowAddFormModal(true);
   };
 
-  const handleAddEventSubmit = (e: React.FormEvent) => {
+  const handleAddEventSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTitle.trim() || !selectedCellDate) return;
 
-    let colorClasses = 'bg-orange-50 text-orange-700 border-orange-300 hover:bg-orange-100';
-    let hoverColor = 'border-orange-500';
-    if (newCategory === 'Lời mời tham gia') {
-       colorClasses = 'bg-blue-50 text-blue-700 border-blue-300 hover:bg-blue-100';
-       hoverColor = 'border-blue-500';
-    }
-    if (newCategory === 'Lời mời tham gia') {
-       colorClasses = 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100';
-       hoverColor = 'border-emerald-500';
+    if (selectedCellDate < todayStr) {
+      toast.error('Không thể tạo lịch trong quá khứ. Vui lòng chọn ngày từ hôm nay trở đi.');
+      return;
     }
 
-    const checklist = newChecklistStr.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+    try {
+      const parts = newTime.split('-').map(s => s.trim());
+      const st = parts[0] || '08:00';
+      const et = parts[1] || '09:00';
 
-    const newEv: Event = {
-      id: 'e_' + Date.now(),
-      title: newTitle,
-      date: selectedCellDate,
-      time: newTime,
-      category: newCategory,
-      color: colorClasses,
-      hoverColor: hoverColor,
-      location: newLocation,
-      host: newHost,
-      guests: newGuests,
-      checklist
-    };
-
-    setEvents(p => [...p, newEv]);
-    setShowAddFormModal(false);
-    setActivePopoverEvent(newEv);
+      await departmentReceptionTasksApi.createPersonalEvent(
+        newTitle, 
+        newContent, 
+        selectedCellDate, 
+        st, 
+        et
+      );
+      
+      toast.success('Đã lưu lịch cá nhân vào hệ thống');
+      
+      await fetchCalendarEvents();
+      setShowAddFormModal(false);
+    } catch(err: any) {
+      console.error(err);
+      toast.error(err.response?.data?.message || err.response?.data?.title || err.message || 'Lỗi khi lưu lịch cá nhân');
+    }
   };
 
   const handleDeleteEvent = (id: string) => {
@@ -618,6 +640,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
 
   return (
     <div className="space-y-6">
+      <Toaster position="top-right" />
 
 
     <div className="bg-white rounded-3xl border border-slate-200/85 shadow-md p-4 sm:p-6 md:p-8 font-sans">
@@ -636,6 +659,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
           <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-emerald-50 border-2 border-emerald-400"></div>Thư mời</span>
           <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-orange-50 border-2 border-orange-400"></div>Đơn yêu cầu</span>
           <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-blue-50 border-2 border-blue-400"></div>Đã xử lý</span>
+          <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-purple-50 border-2 border-purple-400"></div>Tôi</span>
         </div>
 
         {/* Google-Calendar-style toolbar button group */}
@@ -1570,24 +1594,21 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
             </div>
 
             <form onSubmit={handleAddEventSubmit} className="p-6 space-y-4 text-xs text-slate-800">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                {/* Left Column */}
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-[10px] font-extrabold text-slate-450 uppercase tracking-wider mb-1">
-                      Tiêu đề sự kiện *
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="VD: Tiếp đón hiệu trưởng đại học đối tác"
-                      value={newTitle}
-                      onChange={e => setNewTitle(e.target.value)}
-                      className="w-full text-xs px-3.5 py-2.5 border border-slate-200 rounded-xl focus:border-[#f37021] outline-none bg-slate-50/20"
-                    />
-                  </div>
-
+              <div className="space-y-4">
                   <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[10px] font-extrabold text-slate-450 uppercase tracking-wider mb-1">
+                        Tiêu đề sự kiện *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="VD: Họp định kỳ"
+                        value={newTitle}
+                        onChange={e => setNewTitle(e.target.value)}
+                        className="w-full text-xs px-3.5 py-2.5 border border-slate-200 rounded-xl focus:border-[#f37021] outline-none bg-slate-50/20"
+                      />
+                    </div>
                     <div>
                       <label className="block text-[10px] font-extrabold text-slate-450 uppercase tracking-wider mb-1">
                         Khung giờ
@@ -1599,20 +1620,6 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                         onChange={e => setNewTime(e.target.value)}
                         className="w-full text-xs px-3.5 py-2.5 border border-[#f37021] md:border-slate-200 rounded-xl focus:border-[#f37021] outline-none"
                       />
-                    </div>
-
-                    <div>
-                      <label className="block text-[10px] font-extrabold text-slate-450 uppercase tracking-wider mb-1">
-                        Phân loại
-                      </label>
-                      <select
-                        value={newCategory}
-                        onChange={e => setNewCategory(e.target.value as Event['category'])}
-                        className="w-full text-xs px-3 py-2.5 border border-slate-200 rounded-xl focus:border-[#f37021] outline-none cursor-pointer"
-                      >
-                        {!isVisitor && <option value="Lời mời tham gia">Thư mời</option>}
-                        {!(isStudent || isVisitor) && <option value="Đơn yêu cầu mượn đồ">Đơn yêu cầu</option>}
-                      </select>
                     </div>
                   </div>
 
@@ -1627,46 +1634,18 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                       className="w-full text-xs px-3.5 py-2.5 border border-slate-200 rounded-xl focus:border-[#f37021] outline-none bg-slate-50/20"
                     />
                   </div>
-                </div>
-
-                {/* Right Column */}
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-[10px] font-extrabold text-slate-450 uppercase tracking-wider mb-1">
-                      Đơn vị FPTU Chủ trì / Host
-                    </label>
-                    <input
-                      type="text"
-                      value={newHost}
-                      onChange={e => setNewHost(e.target.value)}
-                      className="w-full text-xs px-3.5 py-2.5 border border-slate-200 rounded-xl focus:border-[#f37021] outline-none bg-slate-50/20"
-                    />
-                  </div>
 
                   <div>
                     <label className="block text-[10px] font-extrabold text-slate-450 uppercase tracking-wider mb-1">
-                      Chi tiết phái đoàn đối tác khách
-                    </label>
-                    <input
-                      type="text"
-                      value={newGuests}
-                      onChange={e => setNewGuests(e.target.value)}
-                      className="w-full text-xs px-3.5 py-2.5 border border-slate-200 rounded-xl focus:border-[#f37021] outline-none bg-slate-50/20"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] font-extrabold text-slate-450 uppercase tracking-wider mb-1">
-                      Logistics Checklist (Mỗi dòng một nhiệm vụ)
+                      Nội dung
                     </label>
                     <textarea
-                      rows={3}
-                      value={newChecklistStr}
-                      onChange={e => setNewChecklistStr(e.target.value)}
+                      rows={5}
+                      value={newContent}
+                      onChange={e => setNewContent(e.target.value)}
                       className="w-full text-xs px-3.5 py-2 border border-slate-200 rounded-xl focus:border-[#f37021] outline-none resize-none font-sans bg-slate-50/20"
                     />
                   </div>
-                </div>
               </div>
 
               <div className="flex justify-end gap-2.5 pt-4 border-t border-slate-100">
@@ -2768,10 +2747,59 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                     </div>
                   )}
 
-                </div>
+              </div>
               )}
 
-              
+              {activePopoverEvent.category === 'Lịch của tôi' && (
+                <div className="bg-white rounded-2xl border border-slate-200/85 p-6 md:p-8 font-sans w-full max-w-4xl mx-auto space-y-6 relative overflow-visible">
+                  
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    
+                    <div className="p-4 bg-purple-50/50 rounded-2xl border border-purple-100 cursor-default">
+                      <div className="flex items-center gap-2 text-purple-600 mb-2">
+                        <User className="w-4 h-4" />
+                        <span className="text-[11px] font-bold uppercase tracking-wider">Chủ tọa</span>
+                      </div>
+                      <div className="text-sm font-black text-purple-900">{activePopoverEvent.host}</div>
+                    </div>
+                    
+                    <div className="p-4 bg-gray-50/80 rounded-2xl border border-gray-100 cursor-default">
+                      <div className="flex items-center gap-2 text-gray-400 mb-2">
+                        <MapPin className="w-4 h-4" />
+                        <span className="text-[11px] font-bold uppercase tracking-wider">Địa điểm</span>
+                      </div>
+                      <div className="text-sm font-black text-slate-800">{activePopoverEvent.location || 'Chưa cập nhật'}</div>
+                    </div>
+
+                    <div className="col-span-1 sm:col-span-2 p-4 bg-gray-50/80 rounded-2xl border border-gray-100 cursor-default relative overflow-hidden flex flex-col justify-center">
+                      <div className="flex items-center gap-2 text-gray-400 mb-2 relative z-10">
+                        <Calendar className="w-4 h-4" />
+                        <span className="text-[11px] font-bold uppercase tracking-wider">Thời gian</span>
+                      </div>
+                      <div className="text-[15px] font-bold text-gray-800 relative z-10 flex items-center flex-wrap gap-2 sm:gap-3">
+                         <span className="px-3 py-1 bg-white rounded-lg border border-gray-200 shadow-sm text-purple-700">{activePopoverEvent.time?.split('-')[0]?.trim()}</span>
+                         <ChevronRight className="w-4 h-4 text-gray-400" />
+                         <span className="px-3 py-1 bg-white rounded-lg border border-gray-200 shadow-sm text-purple-700">{activePopoverEvent.time?.split('-')[1]?.trim()}</span>
+                         <span className="text-purple-800 font-bold ml-1">{activePopoverEvent.date?.split('-').reverse().join('-')}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-3 pt-4 transition-all cursor-default relative z-10">
+                    <div className="flex items-center gap-2 text-gray-400">
+                        <FileText className="w-4 h-4" />
+                        <span className="text-[11px] font-bold uppercase tracking-wider">Nội dung chi tiết</span>
+                    </div>
+                    <div className="text-[15px] font-medium text-gray-700 leading-relaxed transition-all relative">
+                      {typeof activePopoverEvent.purpose === 'string' && activePopoverEvent.purpose.split('\n').map((line: string, idx: number) => (
+                        <p key={idx} className={'mb-2'}>
+                          {line}
+                        </p>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
 
               </div>
 
