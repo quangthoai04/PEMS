@@ -25,6 +25,7 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetDepartmentCalenda
         public string StartAt { get; set; } // HH:mm
         public string EndAt { get; set; } // HH:mm
         public string Status { get; set; }
+        public string LatestAttemptStatus { get; set; }
         public ulong? VisitInstanceId { get; set; }
         public ulong? VisitRequestId { get; set; }
         public ulong? LogisticsItemId { get; set; }
@@ -116,9 +117,14 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetDepartmentCalenda
                                  join c in _context.VisitRequestCampuses on l.VisitInstanceId equals c.VisitInstanceId
                                  join vr in _context.VisitRequests on c.VisitRequestId equals vr.VisitRequestId
                                  let startAt = l.UsageStartAt ?? c.PlannedStartAt
+                                 let latestAttemptStatus = _context.VisitLogisticsAssignmentAttempts
+                                     .Where(a => a.LogisticsItemId == l.LogisticsItemId)
+                                     .OrderByDescending(a => a.AssignedAt)
+                                     .Select(a => a.Status)
+                                     .FirstOrDefault()
                                  where l.RequestedToDepartmentId == deptId
                                        && l.Status != "CANCELLED"
-                                 select new { l, c, vr, startAt };
+                                 select new { l, c, vr, startAt, latestAttemptStatus };
             
             var logisticsList = await logisticsQuery.ToListAsync(cancellationToken);
             var reqIds = logisticsList.Where(x => x.l.RequestedBy != null).Select(x => x.l.RequestedBy).Distinct().ToList();
@@ -140,6 +146,7 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetDepartmentCalenda
                     StartAt = item.startAt.ToString("o"),
                     EndAt = endAt.ToString("o"),
                     Status = l.Status,
+                    LatestAttemptStatus = item.latestAttemptStatus ?? "",
                     VisitInstanceId = item.c.VisitInstanceId,
                     VisitRequestId = item.c.VisitRequestId,
                     LogisticsItemId = l.LogisticsItemId,

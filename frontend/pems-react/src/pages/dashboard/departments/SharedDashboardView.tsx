@@ -247,7 +247,11 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
               if (item.status === 'ACCEPTED' || item.status === 'DECLINED' || item.status === 'ASSIGNED') isProcessed = true;
               cat = 'Lời mời tham gia';
            } else if (item.itemType === 'REQUEST') {
-              if (item.status === 'ASSIGNED' || item.status === 'RECEIVED' || item.status === 'REJECTED' || item.status === 'CONFIRMED') isProcessed = true;
+              if (item.status === 'RECEIVED' && item.latestAttemptStatus === 'DECLINED') {
+                 isProcessed = false;
+              } else if (item.status === 'ASSIGNED' || item.status === 'RECEIVED' || item.status === 'REJECTED' || item.status === 'CONFIRMED' || item.status === 'DONE' || item.status === 'ACCEPTED' || item.status === 'IN_PROGRESS') {
+                 isProcessed = true;
+              }
               cat = 'Đơn yêu cầu mượn đồ';
            } else {
               cat = 'Lịch của tôi';
@@ -281,6 +285,8 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
              visitRequestId: item.visitRequestId,
              itemType: item.itemType,
              status: item.itemStatus || item.status,
+             latestAttemptStatus: item.latestAttemptStatus,
+             isProcessed: isProcessed,
              title: item.title,
              fullTitle: item.fullTitle,
              delegationName: item.delegationName,
@@ -345,14 +351,14 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
     return events; // "Trong văn phòng" shows all
   }, [events, calendarType, isStudent, isVisitor]);
 
-  // All events within the selected month and year
   const eventsInCurrentMonthAndYear = useMemo(() => {
     return filteredEvents.filter(e => {
+      if (e.itemType === 'PERSONAL') return false;
       const parts = e.date.split('-');
       if (parts.length < 3) return false;
       const year = parseInt(parts[0], 10);
       const month = parseInt(parts[1], 10);
-      return month === (currentMonth + 1) && year === currentYear;
+      return month === (currentMonth + 1) && year === currentYear && !e.isProcessed;
     });
   }, [filteredEvents, currentMonth, currentYear]);
   // New Event Form State
@@ -469,7 +475,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
       });
     }
 
-    const remaining = 42 - days.length;
+    const remaining = 35 - days.length;
     for (let i = 1; i <= remaining; i++) {
       const m = currentMonth === 11 ? 0 : currentMonth + 1;
       const y = currentMonth === 11 ? currentYear + 1 : currentYear;
@@ -545,7 +551,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
       cells.push({ day: i, isCurrent: true, month: monthIndex });
     }
     // Next month padding alignment
-    const remaining = 42 - cells.length;
+    const remaining = 35 - cells.length;
     for (let i = 1; i <= remaining; i++) {
       const m = monthIndex === 11 ? 0 : monthIndex + 1;
       cells.push({ day: i, isCurrent: false, month: m });
@@ -581,7 +587,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
       });
     }
 
-    const remaining = 42 - days.length;
+    const remaining = 35 - days.length;
     for (let i = 1; i <= remaining; i++) {
       const m = miniMonth === 11 ? 0 : miniMonth + 1;
       const y = miniMonth === 11 ? miniYear + 1 : miniYear;
@@ -937,7 +943,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                 </div>
 
                 {/* Grid of Days */}
-                <div className="grid grid-cols-7 grid-rows-6 flex-grow h-[690px] divide-x divide-y divide-slate-100 bg-slate-50/20">
+                <div className="grid grid-cols-7 grid-rows-5 flex-grow min-h-[850px] divide-x divide-y divide-slate-200 border-l border-r border-b border-slate-200 bg-slate-50/20">
                   {daysGrid.map((cell, idx) => {
                     const dayEvents = filteredEvents.filter(e => e.date === cell.dateString);
                     const isSelected = selectedCellDate === cell.dateString;
@@ -951,7 +957,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                             setDisplayMode('Ngày');
                           }
                         }}
-                        className={`h-[115px] max-h-[115px] overflow-hidden p-2 flex flex-col justify-between transition-colors group relative cursor-pointer ${
+                        className={`h-[160px] max-h-[160px] overflow-hidden p-2 flex flex-col justify-between transition-colors group relative cursor-pointer ${
                           isSelected
                             ? 'bg-orange-50 ring-2 ring-inset ring-[#f37021] z-10 shadow-sm'
                             : cell.isCurrent
@@ -959,53 +965,57 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                               : 'bg-slate-50/30 hover:bg-orange-50/30 text-slate-350'
                         }`}
                       >
-                        {/* Header of Date cell */}
-                        <div className="flex justify-between items-center mb-1">
-                          <span className={`text-xs font-extrabold px-1.5 py-0.5 rounded-md ${
-                            cell.dateString === todayStr && cell.isCurrent
-                              ? 'bg-red-500 text-white shadow-xs'
-                              : isSelected
-                                ? 'bg-[#f37021] text-white'
-                                : cell.isCurrent ? 'text-slate-700' : 'text-slate-400'
-                          }`}>
-                            {cell.day}
-                          </span>
-                          
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleOpenAddModal(cell.dateString);
-                            }}
-                            className="opacity-0 group-hover:opacity-100 text-[#f37021] hover:text-[#004c91] transition-opacity p-0.5 hover:bg-orange-100 rounded-md cursor-pointer"
-                            title="Add Logistics Event"
-                          >
-                            <Plus className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-
-                        {/* Event cards space */}
-                        <div className="flex-grow space-y-1 overflow-y-auto no-scrollbar pt-1">
-                          {dayEvents.map(ev => {
-                            const isHighlighted = activePopoverEvent?.id === ev.id;
-                            return (
-                              <div
-                                key={ev.id}
-                                id={`event-card-${ev.id}`}
+                        {cell.isCurrent ? (
+                          <>
+                            {/* Header of Date cell */}
+                            <div className="flex justify-between items-center mb-1">
+                              <span className={`text-xs font-extrabold px-1.5 py-0.5 rounded-md ${
+                                cell.dateString === todayStr && cell.isCurrent
+                                  ? 'bg-red-500 text-white shadow-xs'
+                                  : isSelected
+                                    ? 'bg-[#f37021] text-white'
+                                    : 'text-slate-700'
+                              }`}>
+                                {cell.day}
+                              </span>
+                              
+                              <button
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  setSelectedCellDate(cell.dateString);
-                                  setActivePopoverEvent(ev);
+                                  handleOpenAddModal(cell.dateString);
                                 }}
-                                className={`px-2 py-1.5 rounded-lg border text-[10px] font-bold leading-tight cursor-pointer transition-all truncate selection:bg-transparent ${ev.color} ${ev.hoverColor} ${
-                                  isHighlighted ? 'ring-2 ring-orange-500/10 border-orange-400 shadow-sm' : ''
-                                }`}
+                                className="opacity-0 group-hover:opacity-100 text-[#f37021] hover:text-[#004c91] transition-opacity p-0.5 hover:bg-orange-100 rounded-md cursor-pointer"
+                                title="Add Logistics Event"
                               >
-                                <span className="inline-block w-1.5 h-1.5 rounded-full mr-1.5 bg-current" />
-                                {ev.title}
-                              </div>
-                            );
-                          })}
-                        </div>
+                                <Plus className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+
+                            {/* Event cards space */}
+                            <div className="flex-grow space-y-1 overflow-y-auto no-scrollbar pt-1">
+                              {dayEvents.map(ev => {
+                                const isHighlighted = activePopoverEvent?.id === ev.id;
+                                return (
+                                  <div
+                                    key={ev.id}
+                                    id={`event-card-${ev.id}`}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setSelectedCellDate(cell.dateString);
+                                      setActivePopoverEvent(ev);
+                                    }}
+                                    className={`px-2 py-1.5 rounded-lg border text-[10px] font-bold leading-tight cursor-pointer transition-all truncate selection:bg-transparent ${ev.color} ${ev.hoverColor} ${
+                                      isHighlighted ? 'ring-2 ring-orange-500/10 border-orange-400 shadow-sm' : ''
+                                    }`}
+                                  >
+                                    <span className="inline-block w-1.5 h-1.5 rounded-full mr-1.5 bg-current" />
+                                    {ev.title}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </>
+                        ) : null}
                       </div>
                     );
                   })}

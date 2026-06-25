@@ -12,6 +12,8 @@ export function DeptLeadVisitTasksPage() {
   // Read tab from query params, default to 'calendar'
   const tabParam = searchParams.get('tab');
   const activeTab = tabParam || 'calendar';
+  const visitInstanceIdParam = searchParams.get('visitInstanceId');
+  const selectedVisitInstanceId = visitInstanceIdParam ? Number(visitInstanceIdParam) : null;
 
   const handleTabChange = (tab: string) => {
     setSearchParams({ tab });
@@ -59,7 +61,11 @@ export function DeptLeadVisitTasksPage() {
              <style>{`
                .dept-lead-calendar-wrapper .grid.grid-cols-1.md\\:grid-cols-3.gap-6 { display: none !important; }
              `}</style>
-             <SharedDashboardView user={user} isDeptLeader={isDeptLeader} />
+             <SharedDashboardView
+               user={user}
+               isDeptLeader={isDeptLeader}
+               initialVisitInstanceId={selectedVisitInstanceId}
+             />
           </div>
         </div>
       )}

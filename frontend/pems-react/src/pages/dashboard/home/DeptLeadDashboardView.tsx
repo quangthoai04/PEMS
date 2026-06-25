@@ -40,6 +40,17 @@ export function DeptLeadDashboardView({ user }: { user: any }) {
     ? format(currentTime, "EEEE, dd/MM/yyyy - HH:mm", { locale: vi })
     : '';
 
+  const openCalendarItem = (visitInstanceId: number) => {
+    navigate(`/dashboard/visit?tab=calendar&visitInstanceId=${visitInstanceId}`);
+  };
+
+  const cleanDelegationName = (name: string) =>
+    name
+      .replace(/\b(WAITING_REQUEST_APPROVAL|PENDING_APPROVAL|APPROVED|ASSIGNED|BEFORE_VISIT|DURING_VISIT|AFTER_VISIT|CLOSED|CANCELLED|REJECTED)\b/g, '')
+      .replace(/\s{2,}/g, ' ')
+      .replace(/\s+campus/g, ' campus')
+      .trim();
+
   return (
     <div className="w-full max-w-[1400px] mx-auto p-4 sm:p-6 lg:p-8 flex flex-col space-y-6 pb-12 animate-in fade-in duration-300">
       {/* Header */}
@@ -124,27 +135,27 @@ export function DeptLeadDashboardView({ user }: { user: any }) {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
         {/* List: Tác vụ cần xử lý ngay */}
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
-          <div className="p-5 border-b border-slate-100 bg-slate-50/50 flex items-center gap-3">
+          <div className="p-5 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between gap-3">
             <div className="p-2 bg-orange-100 text-orange-600 rounded-xl">
               <Clock className="w-5 h-5" />
             </div>
             <h2 className="text-lg font-bold text-slate-800">Tác vụ cần xử lý nhanh</h2>
           </div>
-          <div className="p-0 flex-1 divide-y divide-slate-100">
+          <div className="p-0 flex-1 divide-y divide-slate-100 max-h-[540px] overflow-y-auto">
             {data?.quickTasks && data.quickTasks.length > 0 ? (
               data.quickTasks.map((task) => (
                 <div 
-                  key={task.logisticsItemId}
-                  className="p-5 hover:bg-slate-50 transition-colors cursor-pointer flex justify-between items-center"
+                  key={`${task.itemType || 'REQUEST'}-${task.participantId ?? task.logisticsItemId}`}
+                  className="p-5 hover:bg-slate-50 transition-colors cursor-pointer flex justify-between items-center gap-4"
                   onClick={() => navigate('/dashboard/visit?tab=assignment')}
                 >
                   <div>
-                    <p className="font-bold text-slate-800">{task.delegationName} - {task.taskTitle}</p>
+                    <p className="font-bold text-slate-800">{cleanDelegationName(task.delegationName)} - {task.taskTitle}</p>
                     <p className="text-sm text-slate-500 mt-1">
                       {task.dueAt ? `Hạn chót: ${format(parseISO(task.dueAt), 'dd/MM/yyyy')}` : 'Không có hạn chót'}
                     </p>
                   </div>
-                  {!task.assignedToUserId ? (
+                  {true ? (
                     <span className="px-3 py-1 bg-red-50 text-red-600 rounded-full text-xs font-bold whitespace-nowrap">Chưa phân công</span>
                   ) : (
                     <span className="px-3 py-1 bg-blue-50 text-blue-600 rounded-full text-xs font-bold whitespace-nowrap">Đã phân công: {task.assignedToName}</span>
@@ -167,25 +178,29 @@ export function DeptLeadDashboardView({ user }: { user: any }) {
 
         {/* List: Lịch tiếp đón sắp tới (Mini Calendar or List) */}
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
-          <div className="p-5 border-b border-slate-100 bg-slate-50/50 flex items-center gap-3">
+          <div className="p-5 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between gap-3">
             <div className="p-2 bg-blue-100 text-[#004c91] rounded-xl">
               <Calendar className="w-5 h-5" />
             </div>
             <h2 className="text-lg font-bold text-slate-800">Lịch tiếp đón sắp tới</h2>
           </div>
-          <div className="p-0 flex-1 divide-y divide-slate-100">
+          <div className="p-0 flex-1 divide-y divide-slate-100 max-h-[540px] overflow-y-auto">
              {data?.upcomingSchedules && data.upcomingSchedules.length > 0 ? (
                data.upcomingSchedules.map((schedule) => {
                  const startDate = parseISO(schedule.plannedStartAt);
                  const endDate = parseISO(schedule.plannedEndAt);
                  return (
-                   <div key={schedule.visitInstanceId} className="p-5 flex gap-4 items-start">
+                   <div
+                     key={`${schedule.itemType || 'REQUEST'}-${schedule.participantId ?? schedule.logisticsItemId ?? schedule.visitInstanceId}`}
+                     className="p-5 flex gap-4 items-start cursor-pointer hover:bg-slate-50 transition-colors"
+                     onClick={() => openCalendarItem(schedule.visitInstanceId)}
+                   >
                      <div className="flex flex-col items-center justify-center w-12 h-12 bg-blue-50 rounded-xl text-[#004c91] border border-blue-100 shrink-0">
                        <span className="text-[10px] font-bold uppercase">Thg {format(startDate, 'M')}</span>
                        <span className="text-lg font-black leading-none">{format(startDate, 'd')}</span>
                      </div>
                      <div>
-                       <p className="font-bold text-slate-800">{schedule.delegationName}</p>
+                       <p className="font-bold text-slate-800">{cleanDelegationName(schedule.delegationName)}</p>
                        <p className="text-sm text-slate-500 mt-1">
                          {format(startDate, 'HH:mm')} - {format(endDate, 'HH:mm')} • {schedule.campusName}
                        </p>
