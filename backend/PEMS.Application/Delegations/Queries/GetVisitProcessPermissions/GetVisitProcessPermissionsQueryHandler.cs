@@ -127,6 +127,10 @@ public sealed class GetVisitProcessPermissionsQueryHandler
             CanViewNews = true,
             CanCreateNews = newsCreator,
 
+            // Operational stage transitions — Host only, live instance (see CompleteVisitStageCommand).
+            CanStartVisit = isHost && isLive
+                && (instance.Status == VisitInstanceStatus.Assigned || instance.Status == VisitInstanceStatus.BeforeVisit),
+            CanCompleteVisit = isHost && isLive && instance.Status == VisitInstanceStatus.DuringVisit,
             // Đóng đoàn nằm ở tab "Sau tiếp khách": Host đóng khi đoàn đã kết thúc (AFTER_VISIT).
             CanCloseVisit = isHost && isLive && instance.Status == VisitInstanceStatus.AfterVisit,
         };

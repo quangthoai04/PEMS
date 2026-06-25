@@ -59,7 +59,11 @@ public sealed class GetSubmittedVisitRequestFormDetailQueryHandler
             && string.Equals(subRole, UserSubRoles.Leader, StringComparison.OrdinalIgnoreCase);
         var isVisitor = roleCode == RoleCodes.Visitor;
 
-        if (!isHo && !isStaffLeader && !isVisitor)
+        // Admin / Department / Student never see the guest form. HO, Staff Leader, Visitor, and a
+        // regular Staff who HOSTS an instance of this request may. The host relation needs the
+        // request's campus instances, so it is verified after the request loads (below).
+        var isStaff = roleCode == RoleCodes.Staff;
+        if (!isHo && !isVisitor && !isStaff)
             throw new ForbiddenException("Bạn không có quyền xem chi tiết đơn này.");
 
         var visitRequest = await _context.VisitRequests
@@ -87,6 +91,11 @@ public sealed class GetSubmittedVisitRequestFormDetailQueryHandler
         var ownInstance = isStaffLeader && primaryCampusId.HasValue
             ? visitRequest.CampusInstances.FirstOrDefault(c => c.CampusId == primaryCampusId.Value)
             : null;
+
+        // A regular Staff assigned as the official host of one (or more) of this request's campus
+        // instances may view the guest form read-only to set up. (Staff Leader handled above.)
+        var hostedInstances = visitRequest.CampusInstances.Where(c => c.CurrentHostUserId == userId).ToList();
+        var isHost = !isStaffLeader && hostedInstances.Count > 0;
 
         // ── Scope enforcement ──
         if (isHo)
@@ -120,11 +129,20 @@ public sealed class GetSubmittedVisitRequestFormDetailQueryHandler
                 throw new ForbiddenException("Phạm vi đơn không hợp lệ.");
             }
         }
-        else // isVisitor
+        else if (isVisitor)
         {
             var owns = visitRequest.VisitorUserId == userId || visitRequest.CreatedBy == userId;
             if (!owns)
                 throw new ForbiddenException("Bạn chỉ được xem đơn của chính mình.");
+        }
+        else if (isHost)
+        {
+            // Verified above: caller is the official host of ≥1 campus instance of this request.
+            // Allowed read-only; only their hosted instance(s) are surfaced (no other-campus leak).
+        }
+        else
+        {
+            throw new ForbiddenException("Bạn không có quyền xem chi tiết đơn này.");
         }
 
         // ── Resolve display names: campuses + decided-by user ──
@@ -141,7 +159,9 @@ public sealed class GetSubmittedVisitRequestFormDetailQueryHandler
         // sees all; Staff Leader on SINGLE_CAMPUS sees the single instance.
         var visibleInstances = (isStaffLeader && isMulti)
             ? visitRequest.CampusInstances.Where(c => c.CampusId == primaryCampusId).ToList()
-            : visitRequest.CampusInstances.ToList();
+            : isHost
+                ? hostedInstances
+                : visitRequest.CampusInstances.ToList();
 
         // Resolve every "who decided / who cancelled" name in one round-trip (decision actor,
         // request-level canceller, and each visible campus-instance canceller).

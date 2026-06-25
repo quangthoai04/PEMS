@@ -91,6 +91,49 @@ export const delegationsApi = {
     return data;
   },
 
+  /** VisitProcess "Trước tiếp khách": real setup detail (agenda + common) for an instance. */
+  async getVisitProcessDetail(
+    visitRequestId: number | string,
+    visitInstanceId: number | string,
+  ): Promise<import('../types/delegations.types').VisitProcessDetail> {
+    const { data } = await httpClient.get(
+      API_ENDPOINTS.delegations.processDetail(visitRequestId, visitInstanceId));
+    return data;
+  },
+
+  /** Upsert the instance's agenda (Host only, prep window). Saves setup only — never changes stage. */
+  async saveVisitAgenda(
+    visitRequestId: number | string,
+    visitInstanceId: number | string,
+    items: Array<{ agendaId?: number | null; title: string; startTime: string; endTime?: string | null; description?: string | null; location?: string | null }>,
+  ): Promise<any> {
+    const { data } = await httpClient.post<any>(
+      API_ENDPOINTS.delegations.saveAgenda(visitRequestId, visitInstanceId), { items });
+    return data;
+  },
+
+  /**
+   * Operational reception stage transitions (Host only). Each advances the campus instance one
+   * stage: complete-before → DURING_VISIT, complete-during → AFTER_VISIT, complete-after → CLOSED.
+   * The backend re-validates status (409) and host scope (403); callers should refetch the
+   * process permissions afterwards to unlock the next tab.
+   */
+  async completeBeforeVisit(visitRequestId: number | string, visitInstanceId: number | string): Promise<any> {
+    const { data } = await httpClient.post<any>(
+      API_ENDPOINTS.delegations.completeBeforeVisit(visitRequestId, visitInstanceId), {});
+    return data;
+  },
+  async completeDuringVisit(visitRequestId: number | string, visitInstanceId: number | string): Promise<any> {
+    const { data } = await httpClient.post<any>(
+      API_ENDPOINTS.delegations.completeDuringVisit(visitRequestId, visitInstanceId), {});
+    return data;
+  },
+  async completeAfterVisit(visitRequestId: number | string, visitInstanceId: number | string): Promise<any> {
+    const { data } = await httpClient.post<any>(
+      API_ENDPOINTS.delegations.completeAfterVisit(visitRequestId, visitInstanceId), {});
+    return data;
+  },
+
   /**
    * UC-136: cancel a visit request (Visitor self-cancel — incl. pending — or the assigned Host).
    * Cancels every still-cancellable campus instance; the request becomes CANCELLED when all are.

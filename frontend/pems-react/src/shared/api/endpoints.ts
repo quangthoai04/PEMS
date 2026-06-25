@@ -69,6 +69,18 @@ export const API_ENDPOINTS = {
     // Phase 2: permission flags for the visit-process detail page (source of truth for tab view/edit).
     processPermissions: (visitInstanceId: string | number) =>
       `/delegations/visit-instances/${visitInstanceId}/process-permissions`,
+    // VisitProcess "Trước tiếp khách": real setup detail + agenda upsert.
+    processDetail: (visitRequestId: string | number, visitInstanceId: string | number) =>
+      `/delegations/${visitRequestId}/campuses/${visitInstanceId}/process-detail`,
+    saveAgenda: (visitRequestId: string | number, visitInstanceId: string | number) =>
+      `/delegations/${visitRequestId}/campuses/${visitInstanceId}/agenda`,
+    // Operational reception stage transitions (Host only): Trước→Đang, Đang→Sau, Sau→Đóng đoàn.
+    completeBeforeVisit: (visitRequestId: string | number, visitInstanceId: string | number) =>
+      `/delegations/${visitRequestId}/campuses/${visitInstanceId}/process/complete-before-visit`,
+    completeDuringVisit: (visitRequestId: string | number, visitInstanceId: string | number) =>
+      `/delegations/${visitRequestId}/campuses/${visitInstanceId}/process/complete-during-visit`,
+    completeAfterVisit: (visitRequestId: string | number, visitInstanceId: string | number) =>
+      `/delegations/${visitRequestId}/campuses/${visitInstanceId}/process/complete-after-visit`,
     // UC-136 Cancel Visit Request.
     cancel: (visitRequestId: string | number) => `/delegations/${visitRequestId}/cancel`,
     cancelCampus: (visitRequestId: string | number, visitInstanceId: string | number) =>

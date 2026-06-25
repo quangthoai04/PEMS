@@ -31,14 +31,22 @@ import {
   ArrowRight,
   X,
   Check,
-  AlertCircle
+  AlertCircle,
+  Lock,
+  FileText,
+  Loader2,
+  ArrowRightCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { VisitDuringTab } from './VisitDuringTab';
 import { VisitAfterTab } from './VisitAfterTab';
+import { SubmittedVisitRequestDetailModal } from '../../../components/modals/SubmittedVisitRequestDetailModal';
 import { useAuthContext } from '../../../shared/auth/AuthContext';
 import { delegationsApi } from '../../../features/delegations/api/delegationsApi';
-import type { VisitProcessPermission } from '../../../features/delegations/types/delegations.types';
+import type { VisitProcessPermission, VisitProcessDetail } from '../../../features/delegations/types/delegations.types';
+
+// Lightweight in-page toast (top-right) — cùng pattern với CampusManagement/VisitRequestManagement.
+type ProcessToast = { id: number; type: 'success' | 'error'; msg: string };
 
 export function VisitProcess() {
   const navigate = useNavigate();
@@ -103,18 +111,55 @@ export function VisitProcess() {
   // visitInstanceId; if unavailable (e.g. prototype/mock id), we fall back to the legacy
   // client-side role computation so the page still renders.
   const [perm, setPerm] = useState<VisitProcessPermission | null>(null);
-  useEffect(() => {
-    const numericId = Number(id);
-    if (!Number.isFinite(numericId) || numericId <= 0) { setPerm(null); return; }
-    let active = true;
-    delegationsApi.getVisitProcessPermissions(numericId)
-      .then((p) => { if (active) setPerm(p); })
-      .catch(() => { if (active) setPerm(null); });
-    return () => { active = false; };
-  }, [id]);
+  const [permLoadFailed, setPermLoadFailed] = useState(false);
+  const numericId = Number(id);
+  const hasNumericId = Number.isFinite(numericId) && numericId > 0;
 
-  // Edit-ability per tab: prefer backend flags; fall back to legacy "anyone but Dept/Visitor" rule.
-  const canEditBefore = perm ? perm.canEditBeforeVisit : !isDept;
+  // Backend permission flags are the source of truth for tab view/edit + stage transitions.
+  // Reusable so we can refetch after a stage transition to unlock the next tab.
+  const loadPermissions = React.useCallback(async () => {
+    if (!hasNumericId) { setPerm(null); return; }
+    try {
+      const p = await delegationsApi.getVisitProcessPermissions(numericId);
+      setPerm(p);
+      setPermLoadFailed(false);
+    } catch {
+      setPerm(null);
+      setPermLoadFailed(true);
+    }
+  }, [numericId, hasNumericId]);
+
+  useEffect(() => { void loadPermissions(); }, [loadPermissions]);
+
+  // ── Toasts (top-right) ──
+  const [toasts, setToasts] = useState<ProcessToast[]>([]);
+  const pushToast = (type: ProcessToast['type'], msg: string) => {
+    const tid = Date.now() + Math.floor(Math.random() * 1000);
+    setToasts((prev) => [...prev, { id: tid, type, msg }]);
+    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== tid)), 4500);
+  };
+  const apiErrorMessage = (e: any, fallback: string): string => {
+    const data = e?.response?.data;
+    if (!data) return fallback;
+    if (typeof data === 'string' && data.trim()) return data;
+    if (data.message) return data.message;
+    if (data.error) return data.error;
+    if (data.errors) {
+      const flat = Array.isArray(data.errors) ? data.errors : Object.values(data.errors).flat();
+      const first = (flat as any[]).find((x) => typeof x === 'string' && x.trim());
+      if (first) return first;
+    }
+    if (data.title) return data.title;
+    return fallback;
+  };
+
+  // Before-tab setup/agenda/logistics/participants are NOT yet backed by a persistence API
+  // (PrepareVisitLogistics / UpdateVisitLogistics and the agenda/participant saves are still
+  // server stubs). They are therefore shown READ-ONLY — never fake-editable — so a Host can't
+  // type into a form that silently drops the data. Flip this to the backend flag once the real
+  // save endpoints exist (see report for the exact APIs required).
+  const SETUP_SAVE_AVAILABLE = false;
+  const canEditBefore = SETUP_SAVE_AVAILABLE && (perm ? perm.canEditBeforeVisit : !isDept);
   const isInfoEditable = isInfoEditableState && !isClosed && canEditBefore;
   const isSetupEditable = isSetupEditableState && !isClosed && canEditBefore;
   // Tab visibility (backend says every in-scope role may at least view all tabs read-only).
@@ -124,6 +169,163 @@ export function VisitProcess() {
   // During/After read-only unless backend grants edit (fallback: legacy isClosed gate).
   const duringReadOnly = perm ? !perm.canEditDuringVisit : isClosed;
   const afterReadOnly = perm ? !perm.canEditAfterVisit : isClosed;
+
+  // ── Status-driven tab lock/unlock (source of truth = instance status from backend). ──
+  // A tab unlocks only once the instance has actually advanced (status updated by the API),
+  // never by frontend state alone. When perm is unavailable (legacy/mock id) we fall back to the
+  // old "all tabs viewable" behavior so the prototype ids still render.
+  const stageRank = (s?: string | null): number => {
+    switch (s) {
+      case 'ASSIGNED':
+      case 'BEFORE_VISIT': return 1;
+      case 'DURING_VISIT': return 2;
+      case 'AFTER_VISIT': return 3;
+      case 'CLOSED': return 4;
+      default: return 0; // WAITING_*/CANCELLED
+    }
+  };
+  const instRank = stageRank(perm?.instanceStatus);
+  const duringUnlocked = perm ? instRank >= 2 : true;
+  const afterUnlocked = perm ? instRank >= 3 : true;
+
+  // Stage transition (Host only). Only unlocks the next tab AFTER the API confirms the new status.
+  const [stageSubmitting, setStageSubmitting] = useState(false);
+  const advanceStage = async (stage: 'before' | 'during' | 'after') => {
+    if (!perm || stageSubmitting) return;
+    setStageSubmitting(true);
+    try {
+      if (stage === 'before') {
+        await delegationsApi.completeBeforeVisit(perm.visitRequestId, perm.visitInstanceId);
+      } else if (stage === 'during') {
+        await delegationsApi.completeDuringVisit(perm.visitRequestId, perm.visitInstanceId);
+      } else {
+        await delegationsApi.completeAfterVisit(perm.visitRequestId, perm.visitInstanceId);
+      }
+      // Refetch permissions → instanceStatus advances → next tab unlocks.
+      await loadPermissions();
+      if (stage === 'before') { pushToast('success', 'Đã xác nhận hoàn thành chuẩn bị.'); setActiveTab('during'); setCurrentStatus('Trong tiếp khách'); }
+      else if (stage === 'during') { pushToast('success', 'Đã xác nhận hoàn thành tiếp khách.'); setActiveTab('after'); setCurrentStatus('Chờ đóng đoàn'); }
+      else { pushToast('success', 'Đã đóng đoàn thành công.'); setCurrentStatus('Đã đóng đoàn'); }
+    } catch (e: any) {
+      pushToast('error', apiErrorMessage(e, 'Đã xảy ra lỗi hệ thống. Vui lòng thử lại sau.'));
+      // On a 409 the status changed under us — refetch so the UI reflects the real state.
+      if (e?.response?.status === 409) { await loadPermissions(); }
+    } finally {
+      setStageSubmitting(false);
+    }
+  };
+
+  // Guest's original request preview (read-only) modal.
+  const [showGuestRequest, setShowGuestRequest] = useState(false);
+
+  // ── Real before-visit setup data (agenda). Loaded from the process-detail API; the Host edits
+  // and saves it independently of the still-prototype sections (this is a genuine real slice). ──
+  type AgendaRow = { agendaId: number | null; title: string; start: string; end: string; location: string };
+  const [detail, setDetail] = useState<VisitProcessDetail | null>(null);
+  const [agendaItems, setAgendaItems] = useState<AgendaRow[]>([]);
+  const [agendaSaving, setAgendaSaving] = useState(false);
+
+  const toTimeInput = (iso?: string | null): string => {
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '';
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  };
+  const combineDateTime = (baseIso: string, hhmm: string): string => {
+    const base = new Date(baseIso);
+    const [h, m] = hhmm.split(':').map((x) => Number(x));
+    return new Date(base.getFullYear(), base.getMonth(), base.getDate(), h || 0, m || 0, 0).toISOString();
+  };
+
+  const loadDetail = React.useCallback(async () => {
+    if (!perm) { setDetail(null); setAgendaItems([]); return; }
+    try {
+      const d = await delegationsApi.getVisitProcessDetail(perm.visitRequestId, perm.visitInstanceId);
+      setDetail(d);
+      setAgendaItems((d.agenda || []).map((a) => ({
+        agendaId: a.agendaId,
+        title: a.title,
+        start: toTimeInput(a.startTime),
+        end: toTimeInput(a.endTime),
+        location: a.location ?? '',
+      })));
+    } catch {
+      setDetail(null);
+      setAgendaItems([]);
+    }
+  }, [perm?.visitRequestId, perm?.visitInstanceId]);
+  useEffect(() => { void loadDetail(); }, [loadDetail]);
+
+  const canEditAgenda = !!detail?.canEditBefore;
+
+  const saveAgenda = async () => {
+    if (!perm || !detail || agendaSaving) return;
+    for (const it of agendaItems) {
+      if (!it.title.trim() || !it.start) {
+        pushToast('error', 'Vui lòng nhập nội dung và thời gian bắt đầu cho từng mục lịch trình.');
+        return;
+      }
+      if (it.end && it.end <= it.start) {
+        pushToast('error', 'Thời gian kết thúc phải sau thời gian bắt đầu.');
+        return;
+      }
+    }
+    setAgendaSaving(true);
+    try {
+      const items = agendaItems.map((it) => ({
+        agendaId: it.agendaId ?? undefined,
+        title: it.title.trim(),
+        startTime: combineDateTime(detail.plannedStartAt, it.start),
+        endTime: it.end ? combineDateTime(detail.plannedStartAt, it.end) : null,
+        location: it.location?.trim() || null,
+      }));
+      await delegationsApi.saveVisitAgenda(perm.visitRequestId, perm.visitInstanceId, items);
+      pushToast('success', 'Đã lưu lịch trình.');
+      await loadDetail();
+    } catch (e: any) {
+      pushToast('error', apiErrorMessage(e, 'Không thể lưu lịch trình. Vui lòng thử lại.'));
+    } finally {
+      setAgendaSaving(false);
+    }
+  };
+
+  // End-of-tab confirm bar: shows the primary confirm action, a "completed" badge once the stage
+  // has passed, or nothing when the caller has no update right. Only rendered for a real instance.
+  const renderStageBar = (opts: {
+    stage: 'before' | 'during' | 'after';
+    canDo: boolean;
+    done: boolean;
+    label: string;
+    doneLabel: string;
+  }) => {
+    if (!perm) return null;
+    if (opts.done) {
+      return (
+        <div className="mt-6 flex items-center justify-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-6 py-4">
+          <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+          <span className="text-sm font-bold text-emerald-700">{opts.doneLabel}</span>
+        </div>
+      );
+    }
+    if (!opts.canDo) return null;
+    return (
+      <div className="mt-6 rounded-2xl border border-gray-200 bg-white p-6 shadow-sm flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-sm font-medium text-slate-500 flex items-center gap-2">
+          <AlertCircle className="w-4 h-4 text-[#f37021] shrink-0" />
+          Sau khi xác nhận, hệ thống sẽ chuyển sang giai đoạn tiếp theo.
+        </p>
+        <button
+          type="button"
+          disabled={stageSubmitting}
+          onClick={() => advanceStage(opts.stage)}
+          className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#004c91] px-6 py-2.5 text-sm font-bold text-white shadow-sm outline-none transition-colors hover:bg-[#003b70] disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+        >
+          {stageSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRightCircle className="w-4 h-4" />}
+          {stageSubmitting ? 'Đang xử lý...' : opts.label}
+        </button>
+      </div>
+    );
+  };
 
   // States for forms
   const [needLED, setNeedLED] = useState(true);
@@ -328,6 +530,28 @@ export function VisitProcess() {
     setRejectReasonModal({ isOpen: false, targetId: null, targetName: null, reasonText: '' });
   };
 
+  // Visitor must never see the internal process screen. The backend returns 403 (no relation),
+  // which surfaces here as a failed permission load → show a clear access-denied state instead of
+  // the internal page. (Their own approved visit uses the separate read-only reception-detail route.)
+  if (isVisitor && !isReceptionDetail && hasNumericId && permLoadFailed) {
+    return (
+      <div className="p-4 sm:p-6 md:p-8 max-w-[95%] mx-auto">
+        <div className="bg-white rounded-[2rem] border border-gray-200 p-16 text-center shadow-sm flex flex-col items-center justify-center min-h-[350px]">
+          <div className="w-20 h-20 bg-rose-50 rounded-full flex items-center justify-center mb-6">
+            <Lock className="w-10 h-10 text-rose-400 stroke-[1.5]" />
+          </div>
+          <h2 className="text-xl font-bold text-slate-800 mb-2">Không có quyền truy cập</h2>
+          <p className="text-gray-500 font-medium max-w-sm mx-auto leading-relaxed text-sm mb-6">
+            Bạn không có quyền xem quy trình tiếp khách nội bộ của đoàn này.
+          </p>
+          <button onClick={() => navigate('/dashboard/visit')} className="px-6 py-2.5 rounded-xl bg-[#004c91] text-white text-sm font-bold hover:bg-[#003b70] transition-colors outline-none">
+            Về danh sách
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="p-4 sm:p-6 md:p-8 max-w-[95%] mx-auto pb-24">
       <div className="flex items-center gap-2 text-sm font-medium text-gray-500 mb-6">
@@ -345,12 +569,26 @@ export function VisitProcess() {
           {isReceptionDetail ? 'Chi tiết đón tiếp' : 'Quy trình tiếp khách'}
         </h1>
         <p className="text-gray-500 mt-1 font-medium">
-          {isReceptionDetail 
-            ? 'Thông tin chi tiết chuẩn bị đón tiếp đoàn khách (Trước tiếp khách)' 
+          {isReceptionDetail
+            ? 'Thông tin chi tiết chuẩn bị đón tiếp đoàn khách (Trước tiếp khách)'
             : 'Quản lý các bước chuẩn bị, đón tiếp và sau khi tiếp khách'
           }
         </p>
       </div>
+
+      {/* Bản yêu cầu của khách — xem read-only đơn đăng ký gốc để Host setup dễ hơn. */}
+      {perm?.visitRequestId ? (
+        <div className="mb-6">
+          <button
+            type="button"
+            onClick={() => setShowGuestRequest(true)}
+            className="inline-flex items-center gap-2 rounded-xl border border-[#004c91]/20 bg-white px-4 py-2.5 text-sm font-bold text-[#004c91] shadow-sm outline-none transition-colors hover:bg-blue-50 hover:border-[#004c91]/40"
+          >
+            <FileText className="w-4 h-4" /> Bản yêu cầu của khách
+          </button>
+          <p className="mt-1 text-xs font-medium text-slate-400">Xem lại bản đăng ký gốc của khách (chỉ đọc) để chuẩn bị đón tiếp.</p>
+        </div>
+      ) : null}
 
       {(isCancelledView || perm?.instanceStatus === 'CANCELLED') && !isReceptionDetail ? (
         <div className="mb-8 bg-rose-50 border-l-4 border-rose-500 p-5 rounded-2xl flex items-center gap-3 text-left shadow-sm">
@@ -384,17 +622,25 @@ export function VisitProcess() {
           )}
           {canViewDuring && (
             <button
-              onClick={() => setActiveTab('during')}
-              className={`flex-1 py-3 text-sm font-bold rounded-xl transition-all outline-none ${activeTab === 'during' ? 'bg-[#f37021] text-white shadow-md' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-700'}`}
+              onClick={() => duringUnlocked && setActiveTab('during')}
+              disabled={!duringUnlocked}
+              title={duringUnlocked ? undefined : 'Hoàn thành giai đoạn "Trước tiếp khách" để mở khóa.'}
+              aria-disabled={!duringUnlocked}
+              className={`flex-1 py-3 text-sm font-bold rounded-xl transition-all outline-none inline-flex items-center justify-center gap-1.5 ${activeTab === 'during' ? 'bg-[#f37021] text-white shadow-md' : duringUnlocked ? 'text-gray-500 hover:bg-gray-50 hover:text-gray-700' : 'text-slate-300 cursor-not-allowed'}`}
             >
+              {!duringUnlocked && <Lock className="w-3.5 h-3.5" />}
               2. Đang tiếp khách
             </button>
           )}
           {canViewAfter && (
             <button
-              onClick={() => setActiveTab('after')}
-              className={`flex-1 py-3 text-sm font-bold rounded-xl transition-all outline-none ${activeTab === 'after' ? 'bg-[#00a651] text-white shadow-md' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-700'}`}
+              onClick={() => afterUnlocked && setActiveTab('after')}
+              disabled={!afterUnlocked}
+              title={afterUnlocked ? undefined : 'Hoàn thành giai đoạn "Đang tiếp khách" để mở khóa.'}
+              aria-disabled={!afterUnlocked}
+              className={`flex-1 py-3 text-sm font-bold rounded-xl transition-all outline-none inline-flex items-center justify-center gap-1.5 ${activeTab === 'after' ? 'bg-[#00a651] text-white shadow-md' : afterUnlocked ? 'text-gray-500 hover:bg-gray-50 hover:text-gray-700' : 'text-slate-300 cursor-not-allowed'}`}
             >
+              {!afterUnlocked && <Lock className="w-3.5 h-3.5" />}
               3. Sau tiếp khách
             </button>
           )}
@@ -403,6 +649,18 @@ export function VisitProcess() {
 
       {activeTab === 'before' && canViewBefore && (
         <div className="space-y-6">
+          {/* Honest notice: Agenda is saved for real; the remaining setup sections are not yet
+              connected to a save API and must not be mistaken for persisted data. */}
+          {!isClosed && !isDept && (
+            <div className="bg-amber-50 border-l-4 border-amber-400 p-4 rounded-2xl flex items-start gap-3 shadow-sm">
+              <AlertCircle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+              <p className="text-sm font-semibold text-amber-800">
+                <span className="font-bold">Lịch trình (Agenda) được lưu thật.</span> Các phần còn lại (hậu cần,
+                thành phần tham gia, chuẩn bị chi tiết) hiện ở chế độ xem — chưa kết nối lưu trữ, thay đổi sẽ không được lưu.
+                Xem bản đăng ký gốc qua nút “Bản yêu cầu của khách”.
+              </p>
+            </div>
+          )}
           {/* Phần 1: Thông tin chung */}
           <div className="bg-white rounded-[2rem] border border-gray-200 shadow-sm overflow-hidden transition-all duration-300">
             <div 
@@ -414,7 +672,7 @@ export function VisitProcess() {
                 <p className="text-sm font-medium text-orange-100 mt-1 pl-4">Thông tin đoàn khách, thành phần tham dự và setup</p>
               </div>
               <div className="flex items-center gap-3">
-                {!isInfoEditable && !isClosed && !isDept && (
+                {canEditBefore && !isInfoEditable && !isClosed && !isDept && (
                   <button
                     type="button"
                     onClick={(e) => {
@@ -452,8 +710,13 @@ export function VisitProcess() {
                           <span className="flex items-center justify-center w-6 h-6 rounded-full bg-[#f37021] text-white font-black text-sm">1</span>
                           Thông tin người tạo
                         </h2>
-                        <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-white">
-                          {isInfoSection1Expanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+                        <div className="flex items-center gap-2">
+                          <span className="inline-flex items-center gap-1 rounded-md bg-white/15 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-white">
+                            <Lock className="w-3 h-3" /> Chỉ đọc
+                          </span>
+                          <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-white">
+                            {isInfoSection1Expanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+                          </div>
                         </div>
                       </div>
                       <AnimatePresence>
@@ -463,26 +726,29 @@ export function VisitProcess() {
                             animate={{ height: 'auto', opacity: 1 }}
                             exit={{ height: 0, opacity: 0 }}
                           >
+                            {/* Thông tin người đăng ký do KHÁCH nhập — luôn read-only với Host (không
+                                phải người tạo) và không có endpoint cập nhật. Xem bản gốc qua nút
+                                "Bản yêu cầu của khách". */}
                             <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6 bg-white">
                               <div>
                                 <label className="block text-sm font-bold text-gray-700 mb-2">Họ và tên</label>
-                                <input type="text" readOnly={!isInfoEditable} className={`w-full px-4 py-2.5 rounded-xl border border-gray-200 text-gray-800 font-medium text-sm outline-none ${!isInfoEditable ? 'bg-gray-50/50 cursor-not-allowed opacity-90' : 'bg-white hover:border-[#004c91] focus:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/20 transition-all'}`} defaultValue="Nguyễn Văn Tạo" />
+                                <input type="text" readOnly className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-gray-800 font-medium text-sm outline-none bg-gray-50/50 cursor-not-allowed opacity-90" defaultValue="Nguyễn Văn Tạo" />
                               </div>
                               <div>
                                 <label className="block text-sm font-bold text-gray-700 mb-2">Đơn vị công tác</label>
-                                <input type="text" readOnly={!isInfoEditable} className={`w-full px-4 py-2.5 rounded-xl border border-gray-200 text-gray-800 font-medium text-sm outline-none ${!isInfoEditable ? 'bg-gray-50/50 cursor-not-allowed opacity-90' : 'bg-white hover:border-[#004c91] focus:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/20 transition-all'}`} defaultValue="Đại học FPT" />
+                                <input type="text" readOnly className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-gray-800 font-medium text-sm outline-none bg-gray-50/50 cursor-not-allowed opacity-90" defaultValue="Đại học FPT" />
                               </div>
                               <div>
                                 <label className="block text-sm font-bold text-gray-700 mb-2">Chức danh, phòng ban</label>
-                                <input type="text" readOnly={!isInfoEditable} className={`w-full px-4 py-2.5 rounded-xl border border-gray-200 text-gray-800 font-medium text-sm outline-none ${!isInfoEditable ? 'bg-gray-50/50 cursor-not-allowed opacity-90' : 'bg-white hover:border-[#004c91] focus:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/20 transition-all'}`} defaultValue="Cán bộ phòng IC" />
+                                <input type="text" readOnly className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-gray-800 font-medium text-sm outline-none bg-gray-50/50 cursor-not-allowed opacity-90" defaultValue="Cán bộ phòng IC" />
                               </div>
                               <div>
                                 <label className="block text-sm font-bold text-gray-700 mb-2">Số điện thoại</label>
-                                <input type="text" readOnly={!isInfoEditable} className={`w-full px-4 py-2.5 rounded-xl border border-gray-200 text-gray-800 font-medium text-sm outline-none ${!isInfoEditable ? 'bg-gray-50/50 cursor-not-allowed opacity-90' : 'bg-white hover:border-[#004c91] focus:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/20 transition-all'}`} defaultValue="0987654321" />
+                                <input type="text" readOnly className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-gray-800 font-medium text-sm outline-none bg-gray-50/50 cursor-not-allowed opacity-90" defaultValue="0987654321" />
                               </div>
                               <div className="md:col-span-2">
                                 <label className="block text-sm font-bold text-gray-700 mb-2">Email</label>
-                                <input type="email" readOnly={!isInfoEditable} className={`w-full px-4 py-2.5 rounded-xl border border-gray-200 text-gray-800 font-medium text-sm outline-none ${!isInfoEditable ? 'bg-gray-50/50 cursor-not-allowed opacity-90' : 'bg-white hover:border-[#004c91] focus:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/20 transition-all'}`} defaultValue="taonv@fe.edu.vn" />
+                                <input type="email" readOnly className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-gray-800 font-medium text-sm outline-none bg-gray-50/50 cursor-not-allowed opacity-90" defaultValue="taonv@fe.edu.vn" />
                               </div>
                             </div>
                           </motion.div>
@@ -684,76 +950,66 @@ export function VisitProcess() {
                             <span className="w-1.5 h-4 bg-[#f37021] rounded-full"></span>
                             2. Agenda
                           </h3>
+                          {/* Real agenda editor (visit_agendas). Host edits while preparing; saved
+                              independently via "Lưu lịch trình" (does NOT change stage). */}
                           <div className="space-y-3">
-                            <div className="flex flex-col md:flex-row items-end gap-3">
-                              <div className="flex items-center gap-3 w-full md:w-auto shrink-0">
-                                <div className="flex flex-col">
-                                  <label className="text-[10px] uppercase font-bold text-gray-500 mb-1 ml-1">Thời gian bắt đầu</label>
-                                  <div className="border border-gray-200 rounded-xl bg-gray-50/50 p-1.5">
-                                    <input type="time" readOnly={!isInfoEditable} defaultValue="08:00" className="w-[124px] px-2 py-1.5 outline-none text-sm bg-transparent font-medium" />
+                            {agendaItems.length === 0 && (
+                              <p className="text-sm text-slate-500 italic">
+                                Chưa có mục lịch trình nào.{canEditAgenda ? ' Bấm “Thêm mục” để tạo.' : ''}
+                              </p>
+                            )}
+                            {agendaItems.map((it, idx) => (
+                              <div key={idx} className="flex flex-col md:flex-row items-end gap-3">
+                                <div className="flex items-center gap-3 w-full md:w-auto shrink-0">
+                                  <div className="flex flex-col">
+                                    <label className="text-[10px] uppercase font-bold text-gray-500 mb-1 ml-1">Bắt đầu</label>
+                                    <input type="time" value={it.start} disabled={!canEditAgenda}
+                                      onChange={(e) => setAgendaItems((prev) => prev.map((p, i) => i === idx ? { ...p, start: e.target.value } : p))}
+                                      className="w-[120px] px-2 py-2 rounded-xl border border-gray-200 text-sm bg-white disabled:bg-gray-50/50 disabled:cursor-not-allowed outline-none focus:border-[#004c91]" />
+                                  </div>
+                                  <span className="text-gray-400 font-bold mt-5">-</span>
+                                  <div className="flex flex-col">
+                                    <label className="text-[10px] uppercase font-bold text-gray-500 mb-1 ml-1">Kết thúc</label>
+                                    <input type="time" value={it.end} disabled={!canEditAgenda}
+                                      onChange={(e) => setAgendaItems((prev) => prev.map((p, i) => i === idx ? { ...p, end: e.target.value } : p))}
+                                      className="w-[120px] px-2 py-2 rounded-xl border border-gray-200 text-sm bg-white disabled:bg-gray-50/50 disabled:cursor-not-allowed outline-none focus:border-[#004c91]" />
                                   </div>
                                 </div>
-                                <span className="text-gray-400 font-bold mt-5">-</span>
-                                <div className="flex flex-col">
-                                  <label className="text-[10px] uppercase font-bold text-gray-500 mb-1 ml-1">Thời gian kết thúc</label>
-                                  <div className="border border-gray-200 rounded-xl bg-gray-50/50 p-1.5">
-                                    <input type="time" readOnly={!isInfoEditable} defaultValue="09:00" className="w-[124px] px-2 py-1.5 outline-none text-sm bg-transparent font-medium" />
-                                  </div>
+                                <div className="flex-1 w-full flex flex-col">
+                                  <label className="text-[10px] uppercase font-bold text-gray-500 mb-1 ml-1">Nội dung</label>
+                                  <input type="text" value={it.title} disabled={!canEditAgenda} placeholder="Nội dung mục lịch trình"
+                                    onChange={(e) => setAgendaItems((prev) => prev.map((p, i) => i === idx ? { ...p, title: e.target.value } : p))}
+                                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-gray-800 text-sm bg-white disabled:bg-gray-50/50 disabled:cursor-not-allowed outline-none focus:border-[#004c91]" />
                                 </div>
+                                <div className="w-full md:w-[150px] flex flex-col">
+                                  <label className="text-[10px] uppercase font-bold text-gray-500 mb-1 ml-1">Địa điểm</label>
+                                  <input type="text" value={it.location} disabled={!canEditAgenda} placeholder="(tuỳ chọn)"
+                                    onChange={(e) => setAgendaItems((prev) => prev.map((p, i) => i === idx ? { ...p, location: e.target.value } : p))}
+                                    className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-gray-800 text-sm bg-white disabled:bg-gray-50/50 disabled:cursor-not-allowed outline-none focus:border-[#004c91]" />
+                                </div>
+                                {canEditAgenda && (
+                                  <button type="button" title="Xoá mục"
+                                    onClick={() => setAgendaItems((prev) => prev.filter((_, i) => i !== idx))}
+                                    className="mb-1 w-9 h-9 rounded-lg bg-red-50 text-red-500 hover:bg-red-100 flex items-center justify-center shrink-0 outline-none">
+                                    <X className="w-4 h-4" />
+                                  </button>
+                                )}
                               </div>
-                              <div className="flex-1 w-full flex flex-col">
-                                <label className="text-[10px] uppercase font-bold text-gray-500 mb-1 ml-1">Nội dung</label>
-                                <div className="flex items-center gap-3">
-                                  <input type="text" readOnly={!isInfoEditable} defaultValue="Đón khách" className="flex-1 w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50/50 text-gray-800 font-medium text-sm shadow-sm opacity-90" />
-                                </div>
+                            ))}
+                            {canEditAgenda && (
+                              <div className="flex flex-wrap items-center gap-3 pt-2">
+                                <button type="button"
+                                  onClick={() => setAgendaItems((prev) => [...prev, { agendaId: null, title: '', start: '', end: '', location: '' }])}
+                                  className="inline-flex items-center gap-1.5 rounded-xl border-2 border-dashed border-[#f37021]/40 px-4 py-2 text-sm font-bold text-[#f37021] hover:bg-orange-50 outline-none">
+                                  <Plus className="w-4 h-4" /> Thêm mục
+                                </button>
+                                <button type="button" disabled={agendaSaving} onClick={saveAgenda}
+                                  className="inline-flex items-center gap-2 rounded-xl bg-[#10b981] px-5 py-2 text-sm font-bold text-white hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed outline-none">
+                                  {agendaSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                                  {agendaSaving ? 'Đang lưu...' : 'Lưu lịch trình'}
+                                </button>
                               </div>
-                            </div>
-                            <div className="flex flex-col md:flex-row items-end gap-3">
-                              <div className="flex items-center gap-3 w-full md:w-auto shrink-0">
-                                <div className="flex flex-col">
-                                  <label className="text-[10px] uppercase font-bold text-gray-500 mb-1 ml-1">Thời gian bắt đầu</label>
-                                  <div className="border border-gray-200 rounded-xl bg-gray-50/50 p-1.5">
-                                    <input type="time" readOnly={!isInfoEditable} defaultValue="09:00" className="w-[124px] px-2 py-1.5 outline-none text-sm bg-transparent font-medium" />
-                                  </div>
-                                </div>
-                                <span className="text-gray-400 font-bold mt-5">-</span>
-                                <div className="flex flex-col">
-                                  <label className="text-[10px] uppercase font-bold text-gray-500 mb-1 ml-1">Thời gian kết thúc</label>
-                                  <div className="border border-gray-200 rounded-xl bg-gray-50/50 p-1.5">
-                                    <input type="time" readOnly={!isInfoEditable} defaultValue="11:00" className="w-[124px] px-2 py-1.5 outline-none text-sm bg-transparent font-medium" />
-                                  </div>
-                                </div>
-                              </div>
-                              <div className="flex-1 w-full flex flex-col">
-                                <label className="text-[10px] uppercase font-bold text-gray-500 mb-1 ml-1">Nội dung</label>
-                                <div className="flex items-center gap-3">
-                                  <input type="text" readOnly={!isInfoEditable} defaultValue="Meeting trao đổi hợp tác" className="flex-1 w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50/50 text-gray-800 font-medium text-sm shadow-sm" />
-                                </div>
-                              </div>
-                            </div>
-                            <div className="flex flex-col md:flex-row items-end gap-3">
-                              <div className="flex items-center gap-3 w-full md:w-auto shrink-0">
-                                <div className="flex flex-col">
-                                  <label className="text-[10px] uppercase font-bold text-gray-500 mb-1 ml-1">Thời gian bắt đầu</label>
-                                  <div className="border border-gray-200 rounded-xl bg-gray-50/50 p-1.5">
-                                    <input type="time" readOnly={!isInfoEditable} defaultValue="11:00" className="w-[124px] px-2 py-1.5 outline-none text-sm bg-transparent font-medium" />
-                                  </div>
-                                </div>
-                                <span className="text-gray-400 font-bold mt-5">-</span>
-                                <div className="flex flex-col">
-                                  <label className="text-[10px] uppercase font-bold text-gray-500 mb-1 ml-1">Thời gian kết thúc</label>
-                                  <div className="border border-gray-200 rounded-xl bg-gray-50/50 p-1.5">
-                                    <input type="time" readOnly={!isInfoEditable} defaultValue="12:00" className="w-[124px] px-2 py-1.5 outline-none text-sm bg-transparent font-medium" />
-                                  </div>
-                                </div>
-                              </div>
-                              <div className="flex-1 w-full flex flex-col">
-                                <label className="text-[10px] uppercase font-bold text-gray-500 mb-1 ml-1">Nội dung</label>
-                                <div className="flex items-center gap-3">
-                                  <input type="text" readOnly={!isInfoEditable} defaultValue="Campus tour" className="flex-1 w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50/50 text-gray-800 font-medium text-sm shadow-sm" />
-                                </div>
-                              </div>
-                            </div>
+                            )}
                           </div>
                         </div>
 
@@ -1344,7 +1600,7 @@ export function VisitProcess() {
                 <p className="text-sm font-medium text-blue-100 mt-1 pl-4">Chuẩn bị cho từng loại hình tham quan</p>
               </div>
               <div className="flex items-center gap-3">
-                {!isSetupEditable && !isClosed && !isDept && (
+                {canEditBefore && !isSetupEditable && !isClosed && !isDept && (
                   <button
                     type="button"
                     onClick={(e) => {
@@ -2257,22 +2513,47 @@ export function VisitProcess() {
         </div>
       )}
 
+     {renderStageBar({
+       stage: 'before',
+       canDo: !!perm?.canStartVisit,
+       done: instRank >= 2,
+       label: 'Xác nhận hoàn thành chuẩn bị',
+       doneLabel: 'Đã hoàn thành chuẩn bị',
+     })}
      </div>
       )}
 
       {activeTab === 'during' && canViewDuring && (
-        isPrep ? (
+        (perm ? !duringUnlocked : isPrep) ? (
           renderEmptyState()
         ) : (
-          <VisitDuringTab isReadOnly={duringReadOnly} isDept={isDept} visitInstanceId={perm?.visitInstanceId} />
+          <>
+            <VisitDuringTab isReadOnly={duringReadOnly} isDept={isDept} visitInstanceId={perm?.visitInstanceId} />
+            {renderStageBar({
+              stage: 'during',
+              canDo: !!perm?.canCompleteVisit,
+              done: instRank >= 3,
+              label: 'Xác nhận hoàn thành tiếp khách',
+              doneLabel: 'Đã hoàn thành tiếp khách',
+            })}
+          </>
         )
       )}
 
       {activeTab === 'after' && canViewAfter && (
-        (isPrep || currentStatus === 'Trong tiếp khách') ? (
+        (perm ? !afterUnlocked : (isPrep || currentStatus === 'Trong tiếp khách')) ? (
           renderEmptyState()
         ) : (
-          <VisitAfterTab onTourCloseSuccess={() => navigate('/dashboard/visit')} isReadOnly={afterReadOnly} isDept={isDept && !isStudent} visitInstanceId={perm?.visitInstanceId} />
+          <>
+            <VisitAfterTab onTourCloseSuccess={() => navigate('/dashboard/visit')} isReadOnly={afterReadOnly} isDept={isDept && !isStudent} visitInstanceId={perm?.visitInstanceId} />
+            {renderStageBar({
+              stage: 'after',
+              canDo: !!perm?.canCloseVisit,
+              done: instRank >= 4,
+              label: 'Hoàn tất & đóng đoàn',
+              doneLabel: 'Đã đóng đoàn',
+            })}
+          </>
         )
       )}
 
@@ -2369,6 +2650,39 @@ export function VisitProcess() {
         )}
       </AnimatePresence>
 
+      {/* Bản yêu cầu của khách — tái sử dụng modal preview read-only của màn duyệt đơn. */}
+      {perm?.visitRequestId ? (
+        <SubmittedVisitRequestDetailModal
+          isOpen={showGuestRequest}
+          visitRequestId={perm.visitRequestId}
+          onClose={() => setShowGuestRequest(false)}
+        />
+      ) : null}
+
+      {/* Toasts (top-right) */}
+      {toasts.length > 0 && (
+        <div className="fixed top-5 right-5 z-[200] flex flex-col gap-2 w-[min(92vw,360px)]">
+          {toasts.map((t) => (
+            <motion.div
+              key={t.id}
+              initial={{ opacity: 0, x: 24 }}
+              animate={{ opacity: 1, x: 0 }}
+              role="status"
+              className={`flex items-start gap-2 rounded-xl border px-4 py-3 text-sm font-semibold shadow-lg ${
+                t.type === 'success'
+                  ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                  : 'bg-red-50 border-red-200 text-red-700'
+              }`}
+            >
+              {t.type === 'success' ? <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" /> : <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />}
+              <span className="flex-1">{t.msg}</span>
+              <button type="button" aria-label="Đóng" onClick={() => setToasts((prev) => prev.filter((x) => x.id !== t.id))} className="text-current/70 hover:text-current">
+                <X className="h-4 w-4" />
+              </button>
+            </motion.div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

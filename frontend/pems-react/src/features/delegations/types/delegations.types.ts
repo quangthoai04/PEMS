@@ -173,7 +173,36 @@ export interface VisitProcessPermission {
   canViewNews: boolean;
   canCreateNews: boolean;
 
-  canCloseVisit: boolean;
+  // Operational stage transitions (Host only, live instance).
+  canStartVisit: boolean;     // ASSIGNED/BEFORE_VISIT → DURING_VISIT
+  canCompleteVisit: boolean;  // DURING_VISIT → AFTER_VISIT
+  canCloseVisit: boolean;     // AFTER_VISIT → CLOSED
+}
+
+/** One agenda (lịch trình) item of a campus instance. */
+export interface VisitAgendaItem {
+  agendaId: number;
+  title: string;
+  startTime: string;
+  endTime?: string | null;
+  description?: string | null;
+  location?: string | null;
+}
+
+/** Real before-visit setup data for the VisitProcess page (from GET process-detail). */
+export interface VisitProcessDetail {
+  visitRequestId: number;
+  visitInstanceId: number;
+  delegationName: string;
+  instanceStatus: VisitInstanceStatus;
+  plannedStartAt: string;
+  plannedEndAt: string;
+  campusName?: string | null;
+  hostUserId?: number | null;
+  hostName?: string | null;
+  relation: string;
+  canEditBefore: boolean;
+  agenda: VisitAgendaItem[];
 }
 
 /**

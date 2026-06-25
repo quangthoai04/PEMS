@@ -10,7 +10,7 @@
  *   - Lưu snapshot vào minute_participants; cho người sửa tick ai có mặt (PRESENT/ABSENT/EXCUSED).
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ChevronUp, ChevronDown, FileText, Lock, Edit3, Save, X, Plus, Clock } from 'lucide-react';
+import { ChevronUp, ChevronDown, FileText, Lock, Edit3, Save, X, Plus, Clock, Users, ClipboardList } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { delegationsApi } from '../../../features/delegations/api/delegationsApi';
 import type { VisitMinute } from '../../../features/delegations/types/delegations.types';
@@ -20,7 +20,7 @@ const formatDateTime = (value?: string | null) =>
 
 const errMsg = (e: any, fallback: string) => e?.response?.data?.message || fallback;
 
-export function MinutesCard({ visitInstanceId }: { visitInstanceId: number }) {
+export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInstanceId: number; isReadOnly?: boolean }) {
   const [expanded, setExpanded] = useState(true);
   const [data, setData] = useState<VisitMinute | null>(null);
   const [loading, setLoading] = useState(true);
@@ -135,6 +135,7 @@ export function MinutesCard({ visitInstanceId }: { visitInstanceId: number }) {
 
   return (
     <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm transition-all relative">
+      {/* Header — mẫu cũ: nền xanh #004c91, badge số 2 màu cam */}
       <div
         className="bg-[#004c91] px-6 py-4 flex items-center justify-between border-b border-[#003366] cursor-pointer"
         onClick={() => setExpanded(!expanded)}
@@ -159,50 +160,29 @@ export function MinutesCard({ visitInstanceId }: { visitInstanceId: number }) {
               {loading ? (
                 <div className="py-8 text-center text-slate-500 font-medium">Đang tải biên bản...</div>
               ) : !data ? null : !data.exists ? (
-                /* Chưa có biên bản */
+                /* Chưa có biên bản — nút tạo màu cam như mẫu cũ */
                 <div className="text-center py-6">
                   <FileText className="w-10 h-10 mx-auto text-slate-300 mb-3" />
                   <p className="text-slate-600 font-medium mb-4">Chưa có biên bản cho chuyến thăm này.</p>
-                  {data.canCreate && (
+                  {data.canCreate && !isReadOnly && (
                     <button type="button" onClick={handleCreate} disabled={busy}
                       className="px-6 py-3 bg-[#f37021] text-white font-bold rounded-xl shadow-sm hover:bg-[#e0611d] transition-colors inline-flex items-center gap-2 disabled:opacity-50">
-                      <Plus className="w-5 h-5" /> {busy ? 'Đang tạo...' : 'Tạo biên bản'}
+                      <Plus className="w-5 h-5" /> {busy ? 'Đang tạo...' : 'Tạo biên bản cuộc họp'}
                     </button>
                   )}
                 </div>
-              ) : editing ? (
-                /* Chính mình đang chỉnh sửa */
-                <div className="space-y-4">
-                  <div className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm font-bold text-amber-800">
-                    <Clock className="w-4 h-4" /> Bạn đang chỉnh sửa biên bản. Phiên sửa còn {mm}:{ss}
-                  </div>
-                  <div>
-                    <label className="block text-sm font-bold text-gray-700 mb-2">Tên biên bản <span className="text-red-500">*</span></label>
-                    <input type="text" value={draftTitle} onChange={(e) => setDraftTitle(e.target.value)}
-                      className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-800 outline-none focus:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/20" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-bold text-gray-700 mb-2">Nội dung biên bản</label>
-                    <textarea value={draftContent} onChange={(e) => setDraftContent(e.target.value)} rows={10}
-                      placeholder="Nhập nội dung biên bản cuộc họp..."
-                      className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm text-gray-800 outline-none resize-y focus:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/20" />
-                  </div>
-                  <div className="flex items-center justify-end gap-3">
-                    <button type="button" onClick={handleCancel} disabled={busy}
-                      className="px-5 py-2.5 rounded-xl font-bold text-gray-600 bg-white border border-gray-200 hover:bg-gray-50 transition-colors inline-flex items-center gap-2 disabled:opacity-50">
-                      <X className="w-4 h-4" /> Hủy chỉnh sửa
-                    </button>
-                    <button type="button" onClick={handleSave} disabled={busy || !draftTitle.trim()}
-                      className="px-6 py-2.5 rounded-xl font-bold text-white bg-[#004c91] hover:bg-[#003b70] shadow-sm transition-colors inline-flex items-center gap-2 disabled:opacity-50">
-                      <Save className="w-4 h-4" /> {busy ? 'Đang lưu...' : 'Lưu'}
-                    </button>
-                  </div>
-                </div>
               ) : (
-                /* Đã có biên bản, không ở chế độ sửa */
-                <div className="space-y-4">
-                  {data.isLockedByOther ? (
-                    <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800">
+                /* Đã có biên bản — bố cục theo mẫu cũ (tên + trạng thái, bảng người tham gia,
+                   ghi chú/nội dung, đầu mục công việc). Tiêu đề & nội dung là dữ liệu THẬT
+                   (backend + lock); người tham gia/đầu mục công việc chưa có trong API biên bản
+                   nên hiển thị empty state read-only (không mock). */
+                <>
+                  {editing ? (
+                    <div className="mb-6 flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm font-bold text-amber-800">
+                      <Clock className="w-4 h-4" /> Bạn đang chỉnh sửa biên bản. Phiên sửa còn {mm}:{ss}
+                    </div>
+                  ) : data.isLockedByOther ? (
+                    <div className="mb-6 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800">
                       <Lock className="w-4 h-4 mt-0.5 shrink-0" />
                       <span>
                         Biên bản đang được chỉnh sửa bởi <b>{data.editLockedByName || 'người khác'}</b>. Bạn chỉ có thể xem nội dung hiện tại;
@@ -211,25 +191,102 @@ export function MinutesCard({ visitInstanceId }: { visitInstanceId: number }) {
                     </div>
                   ) : null}
 
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="min-w-0">
-                      <p className="text-base font-bold text-[#004c91] truncate">{data.title || 'Biên bản cuộc họp'}</p>
-                      <p className="text-xs text-slate-500">
-                        Trạng thái: {data.status === 'SAVED' ? 'Đã lưu' : 'Bản nháp'} · Cập nhật lần cuối: {formatDateTime(data.editLockedAt)}
-                      </p>
+                  {/* Tên biên bản + trạng thái */}
+                  <div className="flex flex-col sm:flex-row sm:items-start gap-6 mb-8">
+                    <div className="flex-1 w-full max-w-[450px]">
+                      <label className="block text-sm font-bold text-gray-700 mb-2 ml-1">
+                        Tên biên bản {editing && <span className="text-red-500">*</span>}
+                      </label>
+                      <input
+                        type="text"
+                        value={editing ? draftTitle : (data.title || 'Biên bản cuộc họp')}
+                        onChange={(e) => setDraftTitle(e.target.value)}
+                        readOnly={!editing}
+                        placeholder="Nhập tên biên bản..."
+                        className={`px-4 py-2.5 rounded-xl font-bold border outline-none w-full transition-all ${
+                          editing
+                            ? 'bg-blue-50 text-blue-900 border-blue-200 focus:ring-2 focus:ring-[#004c91]/20 focus:border-[#004c91]'
+                            : 'bg-gray-50 text-gray-800 border-gray-200 cursor-default'
+                        }`}
+                      />
                     </div>
-                    {data.canEdit && !data.isLockedByOther && (
-                      <button type="button" onClick={handleEdit} disabled={busy}
-                        className="px-5 py-2.5 rounded-xl font-bold text-white bg-[#f37021] hover:bg-[#e0611d] shadow-sm transition-colors inline-flex items-center gap-2 disabled:opacity-50">
-                        <Edit3 className="w-4 h-4" /> Sửa
-                      </button>
-                    )}
+                    <div>
+                      <label className="block text-sm font-bold text-gray-700 mb-2 ml-1">Trạng thái</label>
+                      <div className="bg-gray-50 text-gray-700 px-4 py-2.5 rounded-xl font-bold flex items-center gap-2 border border-gray-200">
+                        <FileText className="w-5 h-5 text-[#004c91] shrink-0" />
+                        <span className="whitespace-nowrap">
+                          {data.status === 'SAVED' ? 'Đã lưu' : 'Bản nháp'} · {formatDateTime(data.editLockedAt)}
+                        </span>
+                      </div>
+                    </div>
                   </div>
 
-                  <div className="rounded-xl border border-gray-200 bg-gray-50/60 px-4 py-3 min-h-[120px] whitespace-pre-wrap text-sm text-gray-800">
-                    {data.content?.trim() ? data.content : <span className="text-slate-400 italic">Chưa có nội dung.</span>}
+                  {/* Bảng người tham gia — chưa có trong API biên bản → empty state read-only */}
+                  <div className="mb-8 overflow-hidden rounded-xl border border-gray-200 bg-white">
+                    <div className="bg-gray-50/70 px-5 py-3 border-b border-gray-200 flex items-center justify-between">
+                      <h3 className="text-sm font-bold text-gray-800 flex items-center gap-2">
+                        <Users className="w-4 h-4 text-[#004c91]" />
+                        Bảng danh sách chi tiết người tham gia cuộc họp
+                      </h3>
+                      <span className="text-xs bg-[#004c91]/10 text-[#004c91] px-2.5 py-1 rounded-full font-bold">0 thành viên</span>
+                    </div>
+                    <div className="px-5 py-8 text-center text-sm text-slate-400 italic">
+                      Chưa có dữ liệu người tham gia.
+                    </div>
                   </div>
-                </div>
+
+                  {/* Ghi chú / Nội dung biên bản — dữ liệu THẬT */}
+                  <div className="space-y-6">
+                    <div>
+                      <h3 className="text-base font-bold text-gray-800 mb-3 ml-2 relative before:content-[''] before:absolute before:left-[-12px] before:top-[6px] before:w-1.5 before:h-1.5 before:bg-[#f37021] before:rounded-full">
+                        Ghi chú / Nội dung biên bản
+                      </h3>
+                      {editing ? (
+                        <textarea
+                          value={draftContent}
+                          onChange={(e) => setDraftContent(e.target.value)}
+                          placeholder="Nhập ghi chú hoặc nội dung biên bản cuộc họp..."
+                          className="w-full bg-gray-50/50 border border-gray-200 rounded-xl p-4 text-sm font-medium text-gray-800 min-h-[160px] focus:bg-white focus:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/20 transition-all outline-none resize-y"
+                        />
+                      ) : (
+                        <div className="w-full rounded-xl border border-gray-200 bg-gray-50/60 px-4 py-3 min-h-[120px] whitespace-pre-wrap text-sm text-gray-800">
+                          {data.content?.trim() ? data.content : <span className="text-slate-400 italic">Chưa có nội dung.</span>}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Đầu mục công việc — chưa có trong API biên bản → empty state read-only */}
+                    <div>
+                      <h3 className="text-base font-bold text-gray-800 mb-3 ml-2 relative before:content-[''] before:absolute before:left-[-12px] before:top-[6px] before:w-1.5 before:h-1.5 before:bg-[#004c91] before:rounded-full">
+                        Đầu mục công việc
+                      </h3>
+                      <div className="bg-gray-50/50 border border-gray-100 rounded-xl p-6 text-center text-sm text-slate-400 italic flex items-center justify-center gap-2">
+                        <ClipboardList className="w-5 h-5 text-slate-300" /> Chưa có đầu mục công việc.
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Nút lưu/hủy/sửa — logic backend thật + cơ chế lock */}
+                  <div className="mt-8 flex items-center justify-end gap-3">
+                    {editing ? (
+                      <>
+                        <button type="button" onClick={handleCancel} disabled={busy}
+                          className="px-5 py-2.5 rounded-xl font-bold text-gray-600 bg-white border border-gray-200 hover:bg-gray-50 transition-colors inline-flex items-center gap-2 disabled:opacity-50">
+                          <X className="w-4 h-4" /> Hủy chỉnh sửa
+                        </button>
+                        <button type="button" onClick={handleSave} disabled={busy || !draftTitle.trim()}
+                          className="px-6 py-2.5 rounded-xl font-bold text-white bg-[#004c91] hover:bg-[#003b70] shadow-sm transition-colors inline-flex items-center gap-2 disabled:opacity-50">
+                          <Save className="w-4 h-4" /> {busy ? 'Đang lưu...' : 'Lưu biên bản'}
+                        </button>
+                      </>
+                    ) : (data.canEdit && !data.isLockedByOther && !isReadOnly) ? (
+                      <button type="button" onClick={handleEdit} disabled={busy}
+                        className="px-6 py-2.5 rounded-xl font-bold text-white bg-[#f37021] hover:bg-[#e0611d] shadow-sm transition-colors inline-flex items-center gap-2 disabled:opacity-50">
+                        <Edit3 className="w-4 h-4" /> {busy ? 'Đang mở...' : 'Sửa biên bản'}
+                      </button>
+                    ) : null}
+                  </div>
+                </>
               )}
             </div>
           </motion.div>

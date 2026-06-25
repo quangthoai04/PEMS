@@ -4,12 +4,17 @@ using PEMS.Api.Filters;
 using PEMS.Application.Common.Security;
 using PEMS.Application.Delegations.Commands.ApproveCrossCampusRequest;
 using PEMS.Application.Delegations.Commands.CancelVisitRequest;
+using PEMS.Application.Delegations.Commands.CompleteVisitStage;
 using PEMS.Application.Delegations.Commands.ProcessVisitRequest;
 using PEMS.Application.Delegations.Commands.RejectVisitRequest;
+using PEMS.Application.Delegations.Commands.SaveVisitAgenda;
+using PEMS.Application.Delegations.Commands.UpdateRegistrantInfo;
+using PEMS.Application.Delegations.Queries.GetVisitProcessDetail;
 using PEMS.Application.Delegations.Commands.RespondVisitParticipantInvitation;
 using PEMS.Application.Delegations.Queries.GetHostCandidates;
 using PEMS.Application.Delegations.Queries.ViewMyVisitInvitations;
 using PEMS.Domain.Constants;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -109,6 +114,63 @@ namespace PEMS.Api.Controllers
         public async Task<IActionResult> AssignHost(ulong visitRequestId, ulong visitInstanceId, [FromBody] AssignHostBody body, CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(new ProcessVisitRequestCommand(visitRequestId, visitInstanceId, body.HostUserId), cancellationToken);
+            return Ok(result);
+        }
+
+        // ── VisitProcess "Trước tiếp khách": real setup detail + agenda save ──
+        // Real data for the process page (agenda + common). Scope enforced in the handler
+        // (Host/Staff Leader/HO/Visitor owner/accepted participant; 403 otherwise).
+        [HttpGet("{visitRequestId}/campuses/{visitInstanceId}/process-detail")]
+        public async Task<IActionResult> GetProcessDetail(ulong visitRequestId, ulong visitInstanceId, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(new GetVisitProcessDetailQuery(visitRequestId, visitInstanceId), cancellationToken);
+            return Ok(result);
+        }
+
+        // Upsert the instance's agenda (Host only, prep window). Saves setup ONLY — does not change stage.
+        [HttpPost("{visitRequestId}/campuses/{visitInstanceId}/agenda")]
+        public async Task<IActionResult> SaveVisitAgenda(ulong visitRequestId, ulong visitInstanceId, [FromBody] SaveVisitAgendaBody body, CancellationToken cancellationToken)
+        {
+            var items = (body.Items ?? new List<SaveVisitAgendaItem>());
+            var result = await _mediator.Send(new SaveVisitAgendaCommand(visitRequestId, visitInstanceId, items), cancellationToken);
+            return Ok(result);
+        }
+
+        // ── Operational reception stage transitions (Host only) ──────────────
+        // Trước → Đang (complete preparation), Đang → Sau (complete visit), Sau → Đóng (close).
+        // Status/scope re-validated in the handler (invalid status → 409, non-host → 403).
+        [HttpPost("{visitRequestId}/campuses/{visitInstanceId}/process/complete-before-visit")]
+        public async Task<IActionResult> CompleteBeforeVisit(ulong visitRequestId, ulong visitInstanceId, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(
+                new CompleteVisitStageCommand(visitRequestId, visitInstanceId, VisitStageKeys.Before), cancellationToken);
+            return Ok(result);
+        }
+
+        [HttpPost("{visitRequestId}/campuses/{visitInstanceId}/process/complete-during-visit")]
+        public async Task<IActionResult> CompleteDuringVisit(ulong visitRequestId, ulong visitInstanceId, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(
+                new CompleteVisitStageCommand(visitRequestId, visitInstanceId, VisitStageKeys.During), cancellationToken);
+            return Ok(result);
+        }
+
+        [HttpPost("{visitRequestId}/campuses/{visitInstanceId}/process/complete-after-visit")]
+        public async Task<IActionResult> CompleteAfterVisit(ulong visitRequestId, ulong visitInstanceId, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(
+                new CompleteVisitStageCommand(visitRequestId, visitInstanceId, VisitStageKeys.After), cancellationToken);
+            return Ok(result);
+        }
+
+        // Update the registrant block of an internally-created request (creator only; scope/status
+        // enforced in the handler → 403/409). Visitor-submitted requests are read-only here.
+        [HttpPost("{visitRequestId}/registrant-info")]
+        public async Task<IActionResult> UpdateRegistrantInfo(ulong visitRequestId, [FromBody] UpdateRegistrantInfoBody body, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(
+                new UpdateRegistrantInfoCommand(visitRequestId, body.FullName, body.Organization, body.JobTitle, body.Phone, body.Email),
+                cancellationToken);
             return Ok(result);
         }
 
@@ -320,6 +382,12 @@ namespace PEMS.Api.Controllers
 
     /// <summary>Request body for the UC-22 approve-and-assign / transfer-host endpoint.</summary>
     public sealed record AssignHostBody(ulong HostUserId);
+
+    /// <summary>Request body for updating an internally-created request's registrant block.</summary>
+    public sealed record UpdateRegistrantInfoBody(string FullName, string Organization, string? JobTitle, string Phone, string Email);
+
+    /// <summary>Request body for upserting a campus instance's agenda (full replace).</summary>
+    public sealed record SaveVisitAgendaBody(List<SaveVisitAgendaItem>? Items);
 
     /// <summary>Request body for the UC-27 respond-to-invitation endpoint (decline requires a reason).</summary>
     public sealed record RespondInvitationBody(bool Accept, string? DeclineReason);

@@ -492,7 +492,7 @@ export function VisitDuringTab({ isReadOnly = false, isDept = false, visitInstan
 
       {/* 2. Biên bản cuộc họp — bản thật (backend + cơ chế lock) khi có visitInstanceId; nếu không, dùng mock cũ */}
       {visitInstanceId ? (
-        <MinutesCard visitInstanceId={visitInstanceId} />
+        <MinutesCard visitInstanceId={visitInstanceId} isReadOnly={isReadOnly} />
       ) : (
       <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm transition-all relative">
         <div
