@@ -44,6 +44,16 @@ export const API_ENDPOINTS = {
     relatedVisitors: '/accounts/related-visitors',
     relatedVisitorDetails: '/accounts/related-visitor-details',
   },
+  departments: {
+    // UC-104 list (also serves UC-103 search/filter), UC-101 create, status toggle,
+    // UC-105 details, UC-102 update name. Campus scope is resolved server-side from the Staff Leader.
+    list: '/departments/viewdepartmentlist',
+    search: '/departments/searchandfilterdepartments',
+    create: '/departments/addnewdepartment',
+    manageStatus: '/departments/managedepartmentstatus',
+    details: '/departments/viewdepartmentdetails',
+    update: '/departments/updatedepartment',
+  },
   partners: {
     list: '/partners',
     detail: (id: string | number) => `/partners/${id}`,
