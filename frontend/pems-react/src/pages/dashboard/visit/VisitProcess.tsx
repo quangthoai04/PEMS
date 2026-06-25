@@ -3,7 +3,7 @@
  * Chu kỳ giám sát chung toàn trình quá trình đón tiếp theo giai đoạn (Trước/Trong/Sau).
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { 
   ChevronRight, 
@@ -35,7 +35,8 @@ import {
   Lock,
   FileText,
   Loader2,
-  ArrowRightCircle
+  ArrowRightCircle,
+  Wand2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { VisitDuringTab } from './VisitDuringTab';
@@ -43,7 +44,7 @@ import { VisitAfterTab } from './VisitAfterTab';
 import { SubmittedVisitRequestDetailModal } from '../../../components/modals/SubmittedVisitRequestDetailModal';
 import { useAuthContext } from '../../../shared/auth/AuthContext';
 import { delegationsApi } from '../../../features/delegations/api/delegationsApi';
-import type { VisitProcessPermission, VisitProcessDetail } from '../../../features/delegations/types/delegations.types';
+import type { VisitProcessPermission, VisitProcessDetail, AgendaResponsibleCandidate } from '../../../features/delegations/types/delegations.types';
 import { AgendaSetupPanel } from '../../../features/agenda-templates/components/AgendaSetupPanel';
 
 // Lightweight in-page toast (top-right) — cùng pattern với CampusManagement/VisitRequestManagement.
@@ -221,21 +222,41 @@ export function VisitProcess() {
 
   // ── Real before-visit setup data (agenda). Loaded from the process-detail API; the Host edits
   // and saves it independently of the still-prototype sections (this is a genuine real slice). ──
-  type AgendaRow = { agendaId: number | null; title: string; start: string; end: string; location: string };
+  // Each row keeps the FULL local wall-clock datetime (YYYY-MM-DDTHH:mm), not just HH:mm — agenda
+  // items can span multiple days, and storing only the time would force every item onto a single
+  // date on save. See the time helpers below for why we never touch Date()/toISOString() here.
+  type AgendaRow = {
+    agendaId: number | null;
+    title: string;
+    startLocal: string;
+    endLocal: string;
+    location: string;
+    // Concrete assigned person (real user). Null = unassigned. Distinct from the template's
+    // suggested role label below, which is display-only.
+    responsibleUserId: number | null;
+    responsibleUserName: string | null;
+    templateResponsibleRoleLabel: string | null;
+  };
   const [detail, setDetail] = useState<VisitProcessDetail | null>(null);
   const [agendaItems, setAgendaItems] = useState<AgendaRow[]>([]);
-  const [agendaSaving, setAgendaSaving] = useState(false);
+  const [isSavingAgenda, setIsSavingAgenda] = useState(false);
+  const [agendaResponsibleCandidates, setAgendaResponsibleCandidates] = useState<AgendaResponsibleCandidate[]>([]);
 
-  const toTimeInput = (iso?: string | null): string => {
-    if (!iso) return '';
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return '';
-    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  // ── Datetime serialization (PEMS rule: MySQL DATETIME is LOCAL wall-clock, never UTC). ──
+  // The API returns "YYYY-MM-DDTHH:mm:ss" (or "YYYY-MM-DD HH:mm:ss") with no timezone. We slice it
+  // straight into the <input type="datetime-local"> value WITHOUT new Date(): parsing to a Date and
+  // back (toISOString) would shift the value by the browser's UTC offset on every save — the root
+  // cause of the "time keeps drifting on repeated saves" bug.
+  const toDatetimeLocalInputValue = (value?: string | null): string => {
+    if (!value) return '';
+    const normalized = value.replace(' ', 'T');
+    return normalized.slice(0, 16); // -> "YYYY-MM-DDTHH:mm"
   };
-  const combineDateTime = (baseIso: string, hhmm: string): string => {
-    const base = new Date(baseIso);
-    const [h, m] = hhmm.split(':').map((x) => Number(x));
-    return new Date(base.getFullYear(), base.getMonth(), base.getDate(), h || 0, m || 0, 0).toISOString();
+  // Send the local wall-clock back verbatim (only padding seconds). No toISOString(), no UTC — so a
+  // save with no edits round-trips to the exact same DATETIME (idempotent).
+  const fromDatetimeLocalInputValueToApi = (value: string): string | null => {
+    if (!value) return null;
+    return value.length === 16 ? `${value}:00` : value; // "YYYY-MM-DDTHH:mm" -> "YYYY-MM-DDTHH:mm:ss"
   };
 
   const loadDetail = React.useCallback(async () => {
@@ -246,9 +267,12 @@ export function VisitProcess() {
       setAgendaItems((d.agenda || []).map((a) => ({
         agendaId: a.agendaId,
         title: a.title,
-        start: toTimeInput(a.startTime),
-        end: toTimeInput(a.endTime),
+        startLocal: toDatetimeLocalInputValue(a.startTime),
+        endLocal: toDatetimeLocalInputValue(a.endTime),
         location: a.location ?? '',
+        responsibleUserId: a.responsibleUserId ?? null,
+        responsibleUserName: a.responsibleUserName ?? null,
+        templateResponsibleRoleLabel: a.templateResponsibleRoleLabel ?? null,
       })));
     } catch {
       setDetail(null);
@@ -257,36 +281,98 @@ export function VisitProcess() {
   }, [perm?.visitRequestId, perm?.visitInstanceId]);
   useEffect(() => { void loadDetail(); }, [loadDetail]);
 
+  // Responsible-person candidates (active host + ACCEPTED supporting participants of THIS instance).
+  // Loaded once per instance; on failure we keep an empty list (dropdown just shows "Chưa chọn").
+  const loadAgendaResponsibleCandidates = React.useCallback(async () => {
+    if (!perm) { setAgendaResponsibleCandidates([]); return; }
+    try {
+      const list = await delegationsApi.getAgendaResponsibleCandidates(perm.visitInstanceId);
+      setAgendaResponsibleCandidates(Array.isArray(list) ? list : []);
+    } catch {
+      setAgendaResponsibleCandidates([]);
+    }
+  }, [perm?.visitInstanceId]);
+  useEffect(() => { void loadAgendaResponsibleCandidates(); }, [loadAgendaResponsibleCandidates]);
+
   const canEditAgenda = !!detail?.canEditBefore;
+  const hasCurrentAgenda = agendaItems.length > 0;
+
+  // ── "Áp dụng mẫu Agenda" panel visibility ──
+  // The apply-template panel is a heavy form (dropdown + preview table); leaving it always-open made
+  // the page very long. It now collapses by default once an agenda exists — the host only expands it
+  // to apply/replace a template. We init the open/closed state ONCE per visit instance (keyed ref)
+  // so a user who manually closes the panel is never re-opened by this effect on the next render.
+  const [isAgendaTemplatePanelOpen, setIsAgendaTemplatePanelOpen] = useState(false);
+  const agendaPanelInitRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!perm || detail === null) return; // wait until the agenda has actually loaded
+    const key = String(perm.visitInstanceId);
+    if (agendaPanelInitRef.current === key) return; // already initialised for this instance
+    agendaPanelInitRef.current = key;
+    setIsAgendaTemplatePanelOpen(!hasCurrentAgenda); // open by default only when there's no agenda yet
+  }, [perm, detail, hasCurrentAgenda]);
 
   const saveAgenda = async () => {
-    if (!perm || !detail || agendaSaving) return;
+    if (!perm || !detail) return;
+    // Double-submit guard: spamming the button must never fire a 2nd request while the 1st is in
+    // flight (a stale response could otherwise overwrite a newer one).
+    if (isSavingAgenda) return;
+
+    // ── Validation (front-end). On failure we NEVER hit the API. ──
     for (const it of agendaItems) {
-      if (!it.title.trim() || !it.start) {
-        pushToast('error', 'Vui lòng nhập nội dung và thời gian bắt đầu cho từng mục lịch trình.');
+      if (!it.title.trim()) {
+        pushToast('error', 'Vui lòng nhập tiêu đề / nội dung mục lịch trình.');
         return;
       }
-      if (it.end && it.end <= it.start) {
+      if (!it.startLocal) {
+        pushToast('error', 'Vui lòng nhập thời gian bắt đầu.');
+        return;
+      }
+      if (!it.endLocal) {
+        pushToast('error', 'Vui lòng nhập thời gian kết thúc.');
+        return;
+      }
+      // "YYYY-MM-DDTHH:mm" sorts lexically == chronologically, so a plain string compare is safe
+      // and (unlike new Date()) introduces no timezone shift.
+      if (it.endLocal <= it.startLocal) {
         pushToast('error', 'Thời gian kết thúc phải sau thời gian bắt đầu.');
         return;
       }
+      // Người phụ trách is optional, but if chosen it MUST be one of the valid candidates (the
+      // backend re-validates this too — we just fail fast and avoid a doomed API call).
+      if (it.responsibleUserId != null
+          && !agendaResponsibleCandidates.some((c) => c.userId === it.responsibleUserId)) {
+        pushToast('error', 'Người phụ trách đã chọn không hợp lệ. Vui lòng chọn lại.');
+        return;
+      }
     }
-    setAgendaSaving(true);
+
+    setIsSavingAgenda(true);
     try {
+      // Send local wall-clock verbatim — NO plannedStartAt re-basing, NO toISOString(). Each item
+      // keeps its own date, so multi-day agendas survive and repeated saves are idempotent.
       const items = agendaItems.map((it) => ({
         agendaId: it.agendaId ?? undefined,
         title: it.title.trim(),
-        startTime: combineDateTime(detail.plannedStartAt, it.start),
-        endTime: it.end ? combineDateTime(detail.plannedStartAt, it.end) : null,
+        startTime: fromDatetimeLocalInputValueToApi(it.startLocal)!,
+        endTime: fromDatetimeLocalInputValueToApi(it.endLocal),
         location: it.location?.trim() || null,
+        responsibleUserId: it.responsibleUserId ?? null,
       }));
       await delegationsApi.saveVisitAgenda(perm.visitRequestId, perm.visitInstanceId, items);
-      pushToast('success', 'Đã lưu lịch trình.');
+      pushToast('success', 'Lưu lịch trình thành công. Lịch trình và người phụ trách đã được cập nhật.');
       await loadDetail();
     } catch (e: any) {
-      pushToast('error', apiErrorMessage(e, 'Không thể lưu lịch trình. Vui lòng thử lại.'));
+      const status = e?.response?.status;
+      if (status === 403) {
+        pushToast('error', 'Bạn không có quyền cập nhật lịch trình của chuyến này.');
+      } else if (!status || status >= 500) {
+        pushToast('error', 'Đã xảy ra lỗi hệ thống. Không thể lưu lịch trình lúc này. Vui lòng thử lại sau.');
+      } else {
+        pushToast('error', apiErrorMessage(e, 'Không thể lưu lịch trình. Vui lòng kiểm tra lại dữ liệu và thử lại.'));
+      }
     } finally {
-      setAgendaSaving(false);
+      setIsSavingAgenda(false);
     }
   };
 
@@ -947,17 +1033,33 @@ export function VisitProcess() {
 
                         {/* 3.2 Agenda */}
                         <div className="p-6 border-b border-gray-100 bg-slate-50/50">
-                          <h3 className="text-base font-bold text-orange-900 bg-orange-50 w-max px-3 py-1.5 rounded-lg border border-orange-100 flex items-center gap-2 mb-4">
-                            <span className="w-1.5 h-4 bg-[#f37021] rounded-full"></span>
-                            2. Agenda
-                          </h3>
+                          {/* Compact header: title + a single toggle for the (heavy) apply-template panel,
+                              so "Lịch trình hiện tại" is the focus once an agenda exists. */}
+                          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                            <h3 className="text-base font-bold text-orange-900 bg-orange-50 w-max px-3 py-1.5 rounded-lg border border-orange-100 flex items-center gap-2">
+                              <span className="w-1.5 h-4 bg-[#f37021] rounded-full"></span>
+                              2. Agenda
+                            </h3>
+                            {perm && (
+                              <button
+                                type="button"
+                                onClick={() => setIsAgendaTemplatePanelOpen((prev) => !prev)}
+                                aria-expanded={isAgendaTemplatePanelOpen}
+                                className="inline-flex h-10 items-center justify-center gap-1.5 rounded-xl border border-slate-300 bg-white px-4 text-sm font-bold text-[#004c91] outline-none transition-colors hover:bg-blue-50"
+                              >
+                                {isAgendaTemplatePanelOpen
+                                  ? <><ChevronUp className="h-4 w-4" /> Ẩn mẫu Agenda</>
+                                  : <><Wand2 className="h-4 w-4" /> {hasCurrentAgenda ? 'Đổi / áp dụng mẫu Agenda' : 'Áp dụng mẫu Agenda'}</>}
+                              </button>
+                            )}
+                          </div>
                           {/* Apply an agenda template (auto-default by campus/visit_type → GLOBAL fallback).
                               Backend computes absolute times from planned_start_at + offsets and writes
-                              visit_agendas; on success we reload the agenda editor below. */}
-                          {perm && (
+                              visit_agendas; on success we reload the agenda editor below and auto-collapse. */}
+                          {perm && isAgendaTemplatePanelOpen && (
                             <AgendaSetupPanel
                               visitInstanceId={Number(perm.visitInstanceId)}
-                              onApplied={loadDetail}
+                              onApplied={async () => { await loadDetail(); setIsAgendaTemplatePanelOpen(false); }}
                               notify={pushToast}
                             />
                           )}
@@ -965,7 +1067,7 @@ export function VisitProcess() {
                               independently via "Lưu lịch trình" (does NOT change stage). */}
                           <div className="mb-2">
                             <h4 className="text-sm font-bold text-slate-800">Lịch trình hiện tại</h4>
-                            <p className="text-xs text-slate-500">Bạn có thể chỉnh sửa thủ công sau khi áp dụng mẫu.</p>
+                            <p className="text-xs text-slate-500">Mỗi mục hiển thị đầy đủ ngày &amp; giờ; bạn có thể chỉnh sửa thủ công sau khi áp dụng mẫu.</p>
                           </div>
                           <div className="space-y-3">
                             {agendaItems.length === 0 && (
@@ -973,55 +1075,100 @@ export function VisitProcess() {
                                 Chưa có mục lịch trình nào.{canEditAgenda ? ' Bấm “Thêm mục” để tạo.' : ''}
                               </p>
                             )}
-                            {agendaItems.map((it, idx) => (
-                              <div key={idx} className="flex flex-col md:flex-row items-end gap-3">
-                                <div className="flex items-center gap-3 w-full md:w-auto shrink-0">
-                                  <div className="flex flex-col">
-                                    <label className="text-[10px] uppercase font-bold text-gray-500 mb-1 ml-1">Bắt đầu</label>
-                                    <input type="time" value={it.start} disabled={!canEditAgenda}
-                                      onChange={(e) => setAgendaItems((prev) => prev.map((p, i) => i === idx ? { ...p, start: e.target.value } : p))}
-                                      className="w-[120px] px-2 py-2 rounded-xl border border-gray-200 text-sm bg-white disabled:bg-gray-50/50 disabled:cursor-not-allowed outline-none focus:border-[#004c91]" />
+                            {agendaItems.map((it, idx) => {
+                              // A previously-assigned responsible who is no longer a valid candidate
+                              // (e.g. later declined/removed) — keep them visible so the row doesn't
+                              // look unassigned; the host must re-pick before saving (validation guards it).
+                              const responsibleStale = it.responsibleUserId != null
+                                && !agendaResponsibleCandidates.some((c) => c.userId === it.responsibleUserId);
+                              return (
+                              <div key={idx} className="rounded-xl border border-gray-200 bg-white p-3 space-y-3">
+                                {/* Row 1 — time / content / location / delete */}
+                                <div className="flex flex-col md:flex-row md:items-end gap-3">
+                                  <div className="flex flex-col sm:flex-row sm:items-end gap-3 w-full md:w-auto shrink-0">
+                                    <div className="flex flex-col">
+                                      <label className="text-[10px] uppercase font-bold text-gray-500 mb-1 ml-1">Bắt đầu</label>
+                                      {/* datetime-local keeps date + time together so multi-day agendas stay correct. */}
+                                      <input type="datetime-local" value={it.startLocal} disabled={!canEditAgenda}
+                                        onChange={(e) => setAgendaItems((prev) => prev.map((p, i) => i === idx ? { ...p, startLocal: e.target.value } : p))}
+                                        className="w-full sm:w-[200px] px-2 py-2 rounded-xl border border-gray-200 text-sm bg-white disabled:bg-gray-50/50 disabled:cursor-not-allowed outline-none focus:border-[#004c91]" />
+                                    </div>
+                                    <span className="hidden sm:block text-gray-400 font-bold mb-2.5">-</span>
+                                    <div className="flex flex-col">
+                                      <label className="text-[10px] uppercase font-bold text-gray-500 mb-1 ml-1">Kết thúc</label>
+                                      <input type="datetime-local" value={it.endLocal} disabled={!canEditAgenda}
+                                        onChange={(e) => setAgendaItems((prev) => prev.map((p, i) => i === idx ? { ...p, endLocal: e.target.value } : p))}
+                                        className="w-full sm:w-[200px] px-2 py-2 rounded-xl border border-gray-200 text-sm bg-white disabled:bg-gray-50/50 disabled:cursor-not-allowed outline-none focus:border-[#004c91]" />
+                                    </div>
                                   </div>
-                                  <span className="text-gray-400 font-bold mt-5">-</span>
-                                  <div className="flex flex-col">
-                                    <label className="text-[10px] uppercase font-bold text-gray-500 mb-1 ml-1">Kết thúc</label>
-                                    <input type="time" value={it.end} disabled={!canEditAgenda}
-                                      onChange={(e) => setAgendaItems((prev) => prev.map((p, i) => i === idx ? { ...p, end: e.target.value } : p))}
-                                      className="w-[120px] px-2 py-2 rounded-xl border border-gray-200 text-sm bg-white disabled:bg-gray-50/50 disabled:cursor-not-allowed outline-none focus:border-[#004c91]" />
+                                  <div className="flex-1 w-full flex flex-col">
+                                    <label className="text-[10px] uppercase font-bold text-gray-500 mb-1 ml-1">Nội dung</label>
+                                    <input type="text" value={it.title} disabled={!canEditAgenda} placeholder="Nội dung mục lịch trình"
+                                      onChange={(e) => setAgendaItems((prev) => prev.map((p, i) => i === idx ? { ...p, title: e.target.value } : p))}
+                                      className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-gray-800 text-sm bg-white disabled:bg-gray-50/50 disabled:cursor-not-allowed outline-none focus:border-[#004c91]" />
                                   </div>
+                                  <div className="w-full md:w-[150px] flex flex-col">
+                                    <label className="text-[10px] uppercase font-bold text-gray-500 mb-1 ml-1">Địa điểm</label>
+                                    <input type="text" value={it.location} disabled={!canEditAgenda} placeholder="(tuỳ chọn)"
+                                      onChange={(e) => setAgendaItems((prev) => prev.map((p, i) => i === idx ? { ...p, location: e.target.value } : p))}
+                                      className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-gray-800 text-sm bg-white disabled:bg-gray-50/50 disabled:cursor-not-allowed outline-none focus:border-[#004c91]" />
+                                  </div>
+                                  {canEditAgenda && (
+                                    <button type="button" title="Xoá mục"
+                                      onClick={() => { setAgendaItems((prev) => prev.filter((_, i) => i !== idx)); pushToast('info', 'Đã xóa mục khỏi lịch trình. Bấm “Lưu lịch trình” để lưu thay đổi.'); }}
+                                      className="mb-1 w-9 h-9 rounded-lg bg-red-50 text-red-500 hover:bg-red-100 flex items-center justify-center shrink-0 outline-none">
+                                      <X className="w-4 h-4" />
+                                    </button>
+                                  )}
                                 </div>
-                                <div className="flex-1 w-full flex flex-col">
-                                  <label className="text-[10px] uppercase font-bold text-gray-500 mb-1 ml-1">Nội dung</label>
-                                  <input type="text" value={it.title} disabled={!canEditAgenda} placeholder="Nội dung mục lịch trình"
-                                    onChange={(e) => setAgendaItems((prev) => prev.map((p, i) => i === idx ? { ...p, title: e.target.value } : p))}
-                                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-gray-800 text-sm bg-white disabled:bg-gray-50/50 disabled:cursor-not-allowed outline-none focus:border-[#004c91]" />
+                                {/* Row 2 — responsible person (real user) + the template's suggested role hint */}
+                                <div className="flex flex-col sm:flex-row sm:items-end gap-2 border-t border-slate-100 pt-2.5">
+                                  <div className="flex flex-col w-full sm:w-[340px]">
+                                    <label className="text-[10px] uppercase font-bold text-gray-500 mb-1 ml-1">Người phụ trách</label>
+                                    <select
+                                      value={it.responsibleUserId ?? ''}
+                                      disabled={!canEditAgenda}
+                                      onChange={(e) => setAgendaItems((prev) => prev.map((p, i) => i === idx ? { ...p, responsibleUserId: e.target.value ? Number(e.target.value) : null } : p))}
+                                      className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-gray-800 text-sm bg-white disabled:bg-gray-50/50 disabled:cursor-not-allowed outline-none focus:border-[#004c91]"
+                                    >
+                                      <option value="">Chưa chọn người phụ trách</option>
+                                      {responsibleStale && (
+                                        <option value={it.responsibleUserId as number}>
+                                          {(it.responsibleUserName ?? `Người dùng #${it.responsibleUserId}`)} (không còn khả dụng)
+                                        </option>
+                                      )}
+                                      {agendaResponsibleCandidates.map((candidate) => (
+                                        <option key={candidate.userId} value={candidate.userId}>
+                                          {candidate.fullName} — {candidate.displayRole}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                  {it.templateResponsibleRoleLabel && (
+                                    <p className="text-xs font-medium text-slate-500 inline-flex items-center gap-1 sm:mb-2.5">
+                                      <Wand2 className="w-3.5 h-3.5 shrink-0 text-[#004c91]" /> Gợi ý từ mẫu: {it.templateResponsibleRoleLabel}
+                                    </p>
+                                  )}
                                 </div>
-                                <div className="w-full md:w-[150px] flex flex-col">
-                                  <label className="text-[10px] uppercase font-bold text-gray-500 mb-1 ml-1">Địa điểm</label>
-                                  <input type="text" value={it.location} disabled={!canEditAgenda} placeholder="(tuỳ chọn)"
-                                    onChange={(e) => setAgendaItems((prev) => prev.map((p, i) => i === idx ? { ...p, location: e.target.value } : p))}
-                                    className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-gray-800 text-sm bg-white disabled:bg-gray-50/50 disabled:cursor-not-allowed outline-none focus:border-[#004c91]" />
-                                </div>
-                                {canEditAgenda && (
-                                  <button type="button" title="Xoá mục"
-                                    onClick={() => { setAgendaItems((prev) => prev.filter((_, i) => i !== idx)); pushToast('info', 'Đã xóa mục khỏi lịch trình. Bấm “Lưu lịch trình” để lưu thay đổi.'); }}
-                                    className="mb-1 w-9 h-9 rounded-lg bg-red-50 text-red-500 hover:bg-red-100 flex items-center justify-center shrink-0 outline-none">
-                                    <X className="w-4 h-4" />
-                                  </button>
-                                )}
                               </div>
-                            ))}
+                              );
+                            })}
+                            {canEditAgenda && agendaResponsibleCandidates.filter((c) => !c.isMainHost).length === 0 && (
+                              <p className="text-xs font-medium text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+                                Chưa có người tham gia nào đã chấp nhận lời mời. Hiện tại chỉ Host chính có thể được chọn làm người phụ trách.
+                              </p>
+                            )}
                             {canEditAgenda && (
                               <div className="flex flex-wrap items-center gap-3 pt-2">
                                 <button type="button"
-                                  onClick={() => setAgendaItems((prev) => [...prev, { agendaId: null, title: '', start: '', end: '', location: '' }])}
+                                  onClick={() => setAgendaItems((prev) => [...prev, { agendaId: null, title: '', startLocal: toDatetimeLocalInputValue(detail?.plannedStartAt), endLocal: toDatetimeLocalInputValue(detail?.plannedEndAt), location: '', responsibleUserId: null, responsibleUserName: null, templateResponsibleRoleLabel: null }])}
                                   className="inline-flex items-center gap-1.5 rounded-xl border-2 border-dashed border-[#f37021]/40 px-4 py-2 text-sm font-bold text-[#f37021] hover:bg-orange-50 outline-none">
                                   <Plus className="w-4 h-4" /> Thêm mục
                                 </button>
-                                <button type="button" disabled={agendaSaving} onClick={saveAgenda}
+                                <button type="button" disabled={isSavingAgenda} onClick={saveAgenda}
                                   className="inline-flex items-center gap-2 rounded-xl bg-[#10b981] px-5 py-2 text-sm font-bold text-white hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed outline-none">
-                                  {agendaSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-                                  {agendaSaving ? 'Đang lưu...' : 'Lưu lịch trình'}
+                                  {isSavingAgenda ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                                  {isSavingAgenda ? 'Đang lưu...' : 'Lưu lịch trình'}
                                 </button>
                               </div>
                             )}

@@ -420,7 +420,7 @@ export function AgendaTemplateManagement() {
                               <h4 className="font-bold text-gray-900 mb-2">{item.title}</h4>
                               {item.description && <p className="text-sm text-gray-500 mb-2">{item.description}</p>}
                               <div className="flex flex-wrap gap-4 text-sm font-medium text-gray-500">
-                                {item.responsibleRoleLabel && <span className="flex items-center gap-1.5"><User className="w-4 h-4" /> {item.responsibleRoleLabel}</span>}
+                                {item.responsibleRoleLabel && <span className="flex items-center gap-1.5"><User className="w-4 h-4" /> Gợi ý phụ trách: {item.responsibleRoleLabel}</span>}
                                 {item.location && <span className="flex items-center gap-1.5"><MapPin className="w-4 h-4" /> {item.location}</span>}
                               </div>
                             </div>
@@ -571,9 +571,11 @@ function AgendaEditor({ editor, campuses, saving, onPatch, onPatchItem, onAddIte
                         className="h-11 w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-800 outline-none transition-colors focus:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/10" />
                     </div>
                     <div>
-                      <label className="mb-1.5 block min-h-[16px] text-xs font-bold leading-tight text-slate-500">Vai trò phụ trách</label>
+                      <label className="mb-1.5 block min-h-[16px] text-xs font-bold leading-tight text-slate-500">Vai trò phụ trách gợi ý</label>
                       <input type="text" value={item.responsibleRoleLabel} onChange={(e) => onPatchItem(item.uid, { responsibleRoleLabel: e.target.value })} maxLength={150}
+                        placeholder="VD: IC Host, IC Support, Student Support"
                         className="h-11 w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-800 outline-none transition-colors focus:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/10" />
+                      <p className="mt-1.5 text-xs font-medium text-slate-400">Nhập vai trò nên phụ trách mục này trong mẫu, ví dụ: IC Host, IC Support, Student Support. Đây chỉ là gợi ý, không phải phân công người cụ thể.</p>
                     </div>
                   </div>
 

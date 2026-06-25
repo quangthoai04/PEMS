@@ -10,6 +10,7 @@ using PEMS.Application.Delegations.Commands.RejectVisitRequest;
 using PEMS.Application.Delegations.Commands.SaveVisitAgenda;
 using PEMS.Application.Delegations.Commands.UpdateRegistrantInfo;
 using PEMS.Application.Delegations.Queries.GetVisitProcessDetail;
+using PEMS.Application.Delegations.Queries.GetAgendaResponsibleCandidates;
 using PEMS.Application.Delegations.Commands.RespondVisitParticipantInvitation;
 using PEMS.Application.Delegations.Queries.GetHostCandidates;
 using PEMS.Application.Delegations.Queries.ViewMyVisitInvitations;
@@ -124,6 +125,16 @@ namespace PEMS.Api.Controllers
         public async Task<IActionResult> GetProcessDetail(ulong visitRequestId, ulong visitInstanceId, CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(new GetVisitProcessDetailQuery(visitRequestId, visitInstanceId), cancellationToken);
+            return Ok(result);
+        }
+
+        // Valid "Người phụ trách" candidates for the agenda editor: the active host + ACCEPTED
+        // supporting participants of THIS instance only (never the whole-system user list). Scope
+        // enforced in the handler (403 if the caller has no relation to the instance).
+        [HttpGet("visit-instances/{visitInstanceId}/agenda-responsible-candidates")]
+        public async Task<IActionResult> GetAgendaResponsibleCandidates(ulong visitInstanceId, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(new GetAgendaResponsibleCandidatesQuery(visitInstanceId), cancellationToken);
             return Ok(result);
         }
 

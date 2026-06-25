@@ -87,6 +87,9 @@ export const API_ENDPOINTS = {
       `/delegations/${visitRequestId}/campuses/${visitInstanceId}/process-detail`,
     saveAgenda: (visitRequestId: string | number, visitInstanceId: string | number) =>
       `/delegations/${visitRequestId}/campuses/${visitInstanceId}/agenda`,
+    // Valid "Người phụ trách" candidates (active host + ACCEPTED supporting participants of the instance).
+    agendaResponsibleCandidates: (visitInstanceId: string | number) =>
+      `/delegations/visit-instances/${visitInstanceId}/agenda-responsible-candidates`,
     // Operational reception stage transitions (Host only): Trước→Đang, Đang→Sau, Sau→Đóng đoàn.
     completeBeforeVisit: (visitRequestId: string | number, visitInstanceId: string | number) =>
       `/delegations/${visitRequestId}/campuses/${visitInstanceId}/process/complete-before-visit`,
