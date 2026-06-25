@@ -44,6 +44,7 @@ import { SubmittedVisitRequestDetailModal } from '../../../components/modals/Sub
 import { useAuthContext } from '../../../shared/auth/AuthContext';
 import { delegationsApi } from '../../../features/delegations/api/delegationsApi';
 import type { VisitProcessPermission, VisitProcessDetail } from '../../../features/delegations/types/delegations.types';
+import { AgendaSetupPanel } from '../../../features/agenda-templates/components/AgendaSetupPanel';
 
 // Lightweight in-page toast (top-right) — cùng pattern với CampusManagement/VisitRequestManagement.
 type ProcessToast = { id: number; type: 'success' | 'error'; msg: string };
@@ -950,6 +951,15 @@ export function VisitProcess() {
                             <span className="w-1.5 h-4 bg-[#f37021] rounded-full"></span>
                             2. Agenda
                           </h3>
+                          {/* Apply an agenda template (auto-default by campus/visit_type → GLOBAL fallback).
+                              Backend computes absolute times from planned_start_at + offsets and writes
+                              visit_agendas; on success we reload the agenda editor below. */}
+                          {perm && (
+                            <AgendaSetupPanel
+                              visitInstanceId={Number(perm.visitInstanceId)}
+                              onApplied={loadDetail}
+                            />
+                          )}
                           {/* Real agenda editor (visit_agendas). Host edits while preparing; saved
                               independently via "Lưu lịch trình" (does NOT change stage). */}
                           <div className="space-y-3">

@@ -13,15 +13,22 @@ public class AgendaTemplate
     [Column("campus_id")]
     public ulong? CampusId { get; set; }
 
+    /// <summary>
+    /// Derived scope key: "GLOBAL" when <see cref="CampusId"/> is null, otherwise the campus id
+    /// as a string. The DB trigger trg_agenda_templates_scope_* normalises this on insert/update.
+    /// </summary>
     [Column("campus_scope_key")]
-    public string CampusScopeKey { get; set; } = null!;
+    public string CampusScopeKey { get; set; } = "GLOBAL";
+
+    /// <summary>One of <see cref="PEMS.Domain.Constants.VisitTypes"/> (mirrors visit_requests.visit_type).</summary>
+    [Column("visit_type")]
+    public string VisitType { get; set; } = default!;
 
     [Column("name")]
     public string Name { get; set; } = null!;
 
     [Column("description")]
     public string? Description { get; set; }
-
 
     [Column("status")]
     public string Status { get; set; } = "ACTIVE";

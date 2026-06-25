@@ -60,7 +60,7 @@
 | 15 | `visit_request_campuses` | Campus Visit Instance / Staff Leader Processing / Host Assignment / Lifecycle | 25 |
 | 16 | `visit_guest_members` | Guest Member List / Delegation Detail / Minutes Source | 12 |
 | 17 | `visit_participants` | Internal Participants / Host / Department / Student Assignments / Email Action Responses | 16 |
-| 18 | `visit_agendas` | Visit Agenda / Logistics Preparation / Delegation Detail | 13 |
+| 18 | `visit_agendas` | Visit Agenda / Logistics Preparation / Delegation Detail | 14 |
 | 19 | `visit_logistics_items` | Logistics / Resource Request / Assignment / Negotiation / Completion | 39 |
 | 20 | `visit_logistics_item_handovers` | Logistics Borrow/Return Handover Signatures | 12 |
 | 21 | `minutes` | Meeting Minutes / Close Delegation | 14 |
@@ -88,8 +88,9 @@
 | 43 | `api_configuration_headers` | External API Headers | 6 |
 | 44 | `api_usage_quotas` | API Quota / Usage Monitoring | 12 |
 | 45 | `api_request_logs` | API Logs / Debugging | 16 |
-| 46 | `agenda_templates` | Agenda Template Management | 12 |
-| 47 | `agenda_template_items` | Agenda Template Timeline Items | 8 |
+| 46 | `agenda_templates` | Agenda Template Management (by visit_type + campus/GLOBAL scope) | 13 |
+| 47 | `agenda_template_items` | Agenda Template Timeline Items (relative offset + duration) | 13 |
+| 47b | `agenda_template_defaults` | Default agenda template mapping by (campus_scope_key, visit_type) | 9 |
 | 48 | `audit_logs` | System Audit / Business Audit | 10 |
 | 49 | `audit_log_changes` | Audit Field-level Changes | 6 |
 
@@ -903,11 +904,11 @@
 - `CONSTRAINT fk_visit_participants_assigned_by FOREIGN KEY (assigned_by) REFERENCES users(user_id) ON UPDATE CASCADE ON DELETE SET NULL`
 
 ### 5.18. `visit_agendas`
-**Purpose / Table Comment:** Lịch trình tiếp khách
+**Purpose / Table Comment:** Concrete visit agenda rows per campus instance. `start_time`/`end_time` are absolute `DATETIME` computed from `visit_request_campuses.planned_start_at` + agenda template offsets when a template is applied (Apply Agenda Template), or entered manually. The source template (when applied) is traced via `source_template_item_id → agenda_template_items → agenda_templates`; `visit_request_campuses` never stores the applied template.
 
 **Main Screens / UC Area:** Visit Agenda / Logistics Preparation / Delegation Detail
 
-**Column Count:** `13`
+**Column Count:** `14`
 
 **Columns:**
 
@@ -922,6 +923,7 @@
 | `end_time` | `DATETIME` | YES |  |  |  |  | Field `end_time` used by `visit_agendas` business logic and screens. |
 | `location` | `VARCHAR(255)` | YES |  |  |  |  | Field `location` used by `visit_agendas` business logic and screens. |
 | `responsible_user_id` | `BIGINT UNSIGNED` | YES |  |  | IDX: idx_visit_agendas_responsible; FK: users(user_id) |  | Identifier/reference field used to join or scope `visit_agendas` records. |
+| `source_template_item_id` | `BIGINT UNSIGNED` | YES |  |  | IDX: idx_visit_agendas_source_template_item; FK: agenda_template_items(agenda_template_item_id) |  | The template item this row was generated from (Apply Agenda Template), or NULL for manual rows. Used to trace the source template. |
 | `created_at` | `DATETIME` | NO | CURRENT_TIMESTAMP |  |  |  | Business/audit timestamp used for timeline, SLA, filtering, or history. |
 | `created_by` | `BIGINT UNSIGNED` | YES |  |  |  |  | User reference used for audit and accountability. |
 | `updated_at` | `DATETIME` | YES | NULL ON UPDATE CURRENT_TIMESTAMP | ON UPDATE CURRENT_TIMESTAMP |  |  | Business/audit timestamp used for timeline, SLA, filtering, or history. |
@@ -936,10 +938,17 @@
 **Indexes:**
 - `KEY idx_visit_agendas_time (visit_instance_id, start_time)`
 - `KEY idx_visit_agendas_responsible (responsible_user_id, start_time)`
+- `KEY idx_visit_agendas_source_template_item (source_template_item_id)`
 
 **Foreign Keys:**
-- `CONSTRAINT fk_visit_agendas_instance FOREIGN KEY (visit_instance_id) REFERENCES visit_request_campuses(visit_instance_id) ON UPDATE CASCADE ON DELETE RESTRICT`
+- `CONSTRAINT fk_visit_agendas_instance FOREIGN KEY (visit_instance_id) REFERENCES visit_request_campuses(visit_instance_id) ON UPDATE CASCADE ON DELETE CASCADE`
 - `CONSTRAINT fk_visit_agendas_responsible_user FOREIGN KEY (responsible_user_id) REFERENCES users(user_id) ON UPDATE CASCADE ON DELETE SET NULL`
+- `CONSTRAINT fk_visit_agendas_source_template_item FOREIGN KEY (source_template_item_id) REFERENCES agenda_template_items(agenda_template_item_id) ON UPDATE CASCADE ON DELETE SET NULL`
+- `CONSTRAINT fk_visit_agendas_created_by FOREIGN KEY (created_by) REFERENCES users(user_id) ON UPDATE CASCADE ON DELETE SET NULL`
+- `CONSTRAINT fk_visit_agendas_updated_by FOREIGN KEY (updated_by) REFERENCES users(user_id) ON UPDATE CASCADE ON DELETE SET NULL`
+
+**Check Constraints:**
+- `CHECK (end_time IS NULL OR end_time > start_time)`
 
 ### 5.19. `visit_logistics_items`
 **Purpose / Table Comment:** Yêu cầu hậu cần/resource cho visit: gửi yêu cầu, đề xuất thay đổi, tiếp nhận, phân công, xác nhận và hoàn thành. Ký mượn/ký trả lưu ở visit_logistics_item_handovers.
@@ -2083,11 +2092,11 @@
 - `CONSTRAINT fk_api_logs_user FOREIGN KEY (requested_by) REFERENCES users(user_id) ON UPDATE CASCADE ON DELETE SET NULL`
 
 ### 5.46. `agenda_templates`
-**Purpose / Table Comment:** Agenda template header; detailed items are stored in agenda_template_items
+**Purpose / Table Comment:** Agenda template header by campus/global scope and visit type. `campus_scope_key` is derived by trigger (`GLOBAL` when `campus_id IS NULL`, else the campus id as text); the `campus_id ⇔ GLOBAL` invariant is enforced by the trigger (NOT a CHECK) because `campus_id` carries FK referential actions (MySQL 8 restriction).
 
-**Main Screens / UC Area:** Agenda Template Management
+**Main Screens / UC Area:** Agenda Template Management (configurable per `visit_type`)
 
-**Column Count:** `12`
+**Column Count:** `13`
 
 **Columns:**
 
@@ -2095,10 +2104,11 @@
 |---|---|---:|---|---|---|---|---|
 | `agenda_template_id` | `BIGINT UNSIGNED` | NO |  | AUTO_INCREMENT | PK |  | Identifier/reference field used to join or scope `agenda_templates` records. |
 | `campus_id` | `BIGINT UNSIGNED` | YES |  |  | IDX: idx_agenda_templates_campus_status; FK: campuses(campus_id) |  | Identifier/reference field used to join or scope `agenda_templates` records. |
-| `campus_scope_key` | `VARCHAR(36)` | NO | 'GLOBAL' |  | UNIQUE: uq_agenda_template_scope_name |  | Field `campus_scope_key` used by `agenda_templates` business logic and screens. |
-| `name` | `VARCHAR(150)` | NO |  |  | UNIQUE: uq_agenda_template_scope_name |  | Field `name` used by `agenda_templates` business logic and screens. |
+| `campus_scope_key` | `VARCHAR(36)` | NO | 'GLOBAL' |  | UNIQUE: uq_agenda_template_scope_type_name; IDX: idx_agenda_templates_scope_type_status |  | `GLOBAL` or the campus id as text; derived by trigger from `campus_id`. |
+| `visit_type` | `ENUM('CAMPUS_TOUR','MEETING','WORKSHOP','SIGNING_CEREMONY','EXCHANGE','OTHER')` | NO |  |  | UNIQUE: uq_agenda_template_scope_type_name; IDX: idx_agenda_templates_scope_type_status; IDX: idx_agenda_templates_campus_type_status | CAMPUS_TOUR, MEETING, WORKSHOP, SIGNING_CEREMONY, EXCHANGE, OTHER | Visit type the template applies to. Mirrors `visit_requests.visit_type`. |
+| `name` | `VARCHAR(150)` | NO |  |  | UNIQUE: uq_agenda_template_scope_type_name |  | Field `name` used by `agenda_templates` business logic and screens. |
 | `description` | `TEXT` | YES |  |  |  |  | Field `description` used by `agenda_templates` business logic and screens. |
-| `status` | `ENUM('ACTIVE','INACTIVE')` | NO | 'ACTIVE' |  | IDX: idx_agenda_templates_status; IDX: idx_agenda_templates_campus_status | ACTIVE, INACTIVE | Status field used for workflow state, filtering and UI badges. |
+| `status` | `ENUM('ACTIVE','INACTIVE')` | NO | 'ACTIVE' |  | IDX: idx_agenda_templates_status; IDX: idx_agenda_templates_scope_type_status; IDX: idx_agenda_templates_campus_type_status | ACTIVE, INACTIVE | Status field used for workflow state, filtering and UI badges. |
 | `created_at` | `DATETIME` | NO | CURRENT_TIMESTAMP |  |  |  | Business/audit timestamp used for timeline, SLA, filtering, or history. |
 | `created_by` | `BIGINT UNSIGNED` | YES |  |  |  |  | User reference used for audit and accountability. |
 | `updated_at` | `DATETIME` | YES | NULL ON UPDATE CURRENT_TIMESTAMP | ON UPDATE CURRENT_TIMESTAMP |  |  | Business/audit timestamp used for timeline, SLA, filtering, or history. |
@@ -2110,21 +2120,27 @@
 - `PRIMARY KEY (agenda_template_id)`
 
 **Unique Constraints:**
-- `UNIQUE KEY uq_agenda_template_scope_name (campus_scope_key, name)`
+- `UNIQUE KEY uq_agenda_template_scope_type_name (campus_scope_key, visit_type, name)`
 
 **Indexes:**
 - `KEY idx_agenda_templates_status (status)`
-- `KEY idx_agenda_templates_campus_status (campus_id, status)`
+- `KEY idx_agenda_templates_scope_type_status (campus_scope_key, visit_type, status)`
+- `KEY idx_agenda_templates_campus_type_status (campus_id, visit_type, status)`
 
 **Foreign Keys:**
 - `CONSTRAINT fk_agenda_templates_campus FOREIGN KEY (campus_id) REFERENCES campuses(campus_id) ON UPDATE CASCADE ON DELETE SET NULL`
+- `CONSTRAINT fk_agenda_templates_created_by FOREIGN KEY (created_by) REFERENCES users(user_id) ON UPDATE CASCADE ON DELETE SET NULL`
+- `CONSTRAINT fk_agenda_templates_updated_by FOREIGN KEY (updated_by) REFERENCES users(user_id) ON UPDATE CASCADE ON DELETE SET NULL`
+- `CONSTRAINT fk_agenda_templates_deleted_by FOREIGN KEY (deleted_by) REFERENCES users(user_id) ON UPDATE CASCADE ON DELETE SET NULL`
+
+**Scope trigger:** `trg_agenda_templates_scope_bi` / `_bu` set `campus_scope_key = IFNULL(CAST(campus_id AS CHAR), 'GLOBAL')` before insert/update.
 
 ### 5.47. `agenda_template_items`
-**Purpose / Table Comment:** Detailed agenda rows; replaces agenda_templates.items_json.
+**Purpose / Table Comment:** Agenda template timeline items using relative offset from campus `planned_start_at`. No absolute `TIME` columns — `start_offset_minutes` + `duration_minutes` only.
 
 **Main Screens / UC Area:** Agenda Template Timeline Items
 
-**Column Count:** `8`
+**Column Count:** `13`
 
 **Columns:**
 
@@ -2132,24 +2148,71 @@
 |---|---|---:|---|---|---|---|---|
 | `agenda_template_item_id` | `BIGINT UNSIGNED` | NO |  | AUTO_INCREMENT | PK |  | Identifier/reference field used to join or scope `agenda_template_items` records. |
 | `agenda_template_id` | `BIGINT UNSIGNED` | NO |  |  | IDX: idx_agenda_template_items_template_order; FK: agenda_templates(agenda_template_id) |  | Identifier/reference field used to join or scope `agenda_template_items` records. |
-| `display_order` | `INT UNSIGNED` | NO | 0 |  | IDX: idx_agenda_template_items_template_order |  | Field `display_order` used by `agenda_template_items` business logic and screens. |
-| `start_time` | `TIME` | YES |  |  |  |  | Field `start_time` used by `agenda_template_items` business logic and screens. |
-| `end_time` | `TIME` | YES |  |  |  |  | Field `end_time` used by `agenda_template_items` business logic and screens. |
+| `display_order` | `INT UNSIGNED` | NO | 0 |  | UNIQUE: uq_agenda_template_items_order |  | Display order within the template (unique per template). |
+| `start_offset_minutes` | `INT UNSIGNED` | NO | 0 |  | IDX: idx_agenda_template_items_template_offset |  | Minutes from the campus `planned_start_at` when this item begins. |
+| `duration_minutes` | `INT UNSIGNED` | NO |  |  |  |  | Length of this item in minutes (CHECK > 0). |
 | `title` | `VARCHAR(255)` | NO |  |  |  |  | Field `title` used by `agenda_template_items` business logic and screens. |
 | `description` | `TEXT` | YES |  |  |  |  | Field `description` used by `agenda_template_items` business logic and screens. |
+| `location` | `VARCHAR(255)` | YES |  |  |  |  | Optional default location for the item. |
+| `responsible_role_label` | `VARCHAR(150)` | YES |  |  |  |  | Default responsible-role label (free text, e.g. "IC Host"). |
 | `created_at` | `DATETIME` | NO | CURRENT_TIMESTAMP |  |  |  | Business/audit timestamp used for timeline, SLA, filtering, or history. |
+| `created_by` | `BIGINT UNSIGNED` | YES |  |  | FK: users(user_id) |  | User reference used for audit and accountability. |
+| `updated_at` | `DATETIME` | YES |  | ON UPDATE CURRENT_TIMESTAMP |  |  | Last-updated timestamp. |
+| `updated_by` | `BIGINT UNSIGNED` | YES |  |  | FK: users(user_id) |  | User reference used for audit and accountability. |
 
 **Primary Key:**
 - `PRIMARY KEY (agenda_template_item_id)`
 
+**Unique Constraints:**
+- `UNIQUE KEY uq_agenda_template_items_order (agenda_template_id, display_order)`
+
 **Indexes:**
-- `KEY idx_agenda_template_items_template_order (agenda_template_id, display_order)`
+- `KEY idx_agenda_template_items_template_offset (agenda_template_id, start_offset_minutes)`
 
 **Foreign Keys:**
 - `CONSTRAINT fk_agenda_template_items_template FOREIGN KEY (agenda_template_id) REFERENCES agenda_templates(agenda_template_id) ON UPDATE CASCADE ON DELETE CASCADE`
+- `CONSTRAINT fk_agenda_template_items_created_by FOREIGN KEY (created_by) REFERENCES users(user_id) ON UPDATE CASCADE ON DELETE SET NULL`
+- `CONSTRAINT fk_agenda_template_items_updated_by FOREIGN KEY (updated_by) REFERENCES users(user_id) ON UPDATE CASCADE ON DELETE SET NULL`
 
 **Check Constraints:**
-- `CHECK (end_time IS NULL OR start_time IS NULL OR end_time > start_time)`
+- `CHECK (duration_minutes > 0)`
+
+### 5.47b. `agenda_template_defaults`
+**Purpose / Table Comment:** Default agenda template mapping by campus/global scope and visit type. `campus_scope_key` is derived by trigger (`trg_agenda_template_defaults_scope_bi`/`_bu`). When a host opens agenda setup, the default is resolved campus-scope first, then GLOBAL fallback (ACTIVE, non-deleted templates only).
+
+**Main Screens / UC Area:** Agenda Template Default Management / Visit Agenda Setup
+
+**Column Count:** `9`
+
+**Columns:**
+
+| Column | Type | Null | Default | Extra | Key / FK / Index | Enum Values | Notes / Meaning |
+|---|---|---:|---|---|---|---|---|
+| `agenda_template_default_id` | `BIGINT UNSIGNED` | NO |  | AUTO_INCREMENT | PK |  | Identifier of the default mapping row. |
+| `campus_id` | `BIGINT UNSIGNED` | YES |  |  | IDX: idx_agenda_template_defaults_campus_type; FK: campuses(campus_id) |  | NULL = GLOBAL default; otherwise the campus the default applies to. |
+| `campus_scope_key` | `VARCHAR(36)` | NO | 'GLOBAL' |  | UNIQUE: uq_agenda_template_default_scope_type |  | `GLOBAL` or campus id as text; derived by trigger. |
+| `visit_type` | `ENUM('CAMPUS_TOUR','MEETING','WORKSHOP','SIGNING_CEREMONY','EXCHANGE','OTHER')` | NO |  |  | UNIQUE: uq_agenda_template_default_scope_type; IDX: idx_agenda_template_defaults_campus_type | CAMPUS_TOUR, MEETING, WORKSHOP, SIGNING_CEREMONY, EXCHANGE, OTHER | Visit type this default is for. |
+| `agenda_template_id` | `BIGINT UNSIGNED` | NO |  |  | IDX: idx_agenda_template_defaults_template; FK: agenda_templates(agenda_template_id) |  | The default template for the (scope, visit_type). |
+| `created_at` | `DATETIME` | NO | CURRENT_TIMESTAMP |  |  |  | Created timestamp. |
+| `created_by` | `BIGINT UNSIGNED` | YES |  |  | FK: users(user_id) |  | Audit. |
+| `updated_at` | `DATETIME` | YES |  | ON UPDATE CURRENT_TIMESTAMP |  |  | Last-updated timestamp. |
+| `updated_by` | `BIGINT UNSIGNED` | YES |  |  | FK: users(user_id) |  | Audit. |
+
+**Primary Key:**
+- `PRIMARY KEY (agenda_template_default_id)`
+
+**Unique Constraints:**
+- `UNIQUE KEY uq_agenda_template_default_scope_type (campus_scope_key, visit_type)`
+
+**Indexes:**
+- `KEY idx_agenda_template_defaults_template (agenda_template_id)`
+- `KEY idx_agenda_template_defaults_campus_type (campus_id, visit_type)`
+
+**Foreign Keys:**
+- `CONSTRAINT fk_agenda_template_defaults_template FOREIGN KEY (agenda_template_id) REFERENCES agenda_templates(agenda_template_id) ON UPDATE CASCADE ON DELETE RESTRICT`
+- `CONSTRAINT fk_agenda_template_defaults_campus FOREIGN KEY (campus_id) REFERENCES campuses(campus_id) ON UPDATE CASCADE ON DELETE SET NULL`
+- `CONSTRAINT fk_agenda_template_defaults_created_by FOREIGN KEY (created_by) REFERENCES users(user_id) ON UPDATE CASCADE ON DELETE SET NULL`
+- `CONSTRAINT fk_agenda_template_defaults_updated_by FOREIGN KEY (updated_by) REFERENCES users(user_id) ON UPDATE CASCADE ON DELETE SET NULL`
 
 ### 5.48. `audit_logs`
 **Purpose / Table Comment:** General audit log

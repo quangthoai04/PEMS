@@ -95,6 +95,7 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     public DbSet<CalendarEventReminder> CalendarEventReminders { get; set; }
     public DbSet<AgendaTemplate> AgendaTemplates { get; set; }
     public DbSet<AgendaTemplateItem> AgendaTemplateItems { get; set; }
+    public DbSet<AgendaTemplateDefault> AgendaTemplateDefaults { get; set; }
 
     // ── API Integrations ──────────────────────────────────────────────────
     public DbSet<ApiConfiguration> ApiConfigurations { get; set; }
@@ -271,9 +272,12 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
             .HasForeignKey(vp => vp.AssignedBy).OnDelete(DeleteBehavior.SetNull);
 
         // VisitAgenda → VisitRequestCampus, ResponsibleUser
+        // FK to instance is ON DELETE CASCADE in SQL (visit_agendas.fk_visit_agendas_instance).
+        // source_template_item_id / created_by / updated_by stay plain scalar columns (the DB owns
+        // their FKs); no EF navigation is needed and adding one would only invent shadow state.
         modelBuilder.Entity<VisitAgenda>()
             .HasOne(va => va.VisitInstance).WithMany(vc => vc.Agendas)
-            .HasForeignKey(va => va.VisitInstanceId).OnDelete(DeleteBehavior.Restrict);
+            .HasForeignKey(va => va.VisitInstanceId).OnDelete(DeleteBehavior.Cascade);
         modelBuilder.Entity<VisitAgenda>()
             .HasOne<User>().WithMany()
             .HasForeignKey(va => va.ResponsibleUserId).OnDelete(DeleteBehavior.SetNull);

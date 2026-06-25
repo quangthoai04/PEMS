@@ -120,6 +120,19 @@ export const API_ENDPOINTS = {
     update: (newsId: string | number) => `/news/visit-instance-news/${newsId}`,
     submitReview: (newsId: string | number) => `/news/visit-instance-news/${newsId}/submit-review`,
   },
+  // Agenda template module (4 tables). Template CRUD + default mapping + per-instance setup/apply.
+  agendaTemplates: {
+    list: '/agenda-templates',
+    create: '/agenda-templates',
+    detail: (id: string | number) => `/agenda-templates/${id}`,
+    update: (id: string | number) => `/agenda-templates/${id}`,
+    delete: (id: string | number) => `/agenda-templates/${id}`,
+    defaults: '/agenda-templates/defaults',
+    setDefault: '/agenda-templates/defaults',
+    resolveDefault: '/agenda-templates/default',
+    forInstance: (visitInstanceId: string | number) => `/agenda-templates/for-instance/${visitInstanceId}`,
+    apply: '/agenda-templates/apply',
+  },
   visitRequests: {
     initiate: '/visit-requests/initiate',
     verify: '/visit-requests/verify',

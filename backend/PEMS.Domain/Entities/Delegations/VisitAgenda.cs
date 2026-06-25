@@ -31,6 +31,14 @@ public class VisitAgenda
     [Column("responsible_user_id")]
     public ulong? ResponsibleUserId { get; set; }
 
+    /// <summary>
+    /// The agenda_template_items row this agenda row was generated from when a template was applied,
+    /// or null for manually-entered rows. The source template is traced via this FK
+    /// (visit_agendas → agenda_template_items → agenda_templates); visit_request_campuses never stores it.
+    /// </summary>
+    [Column("source_template_item_id")]
+    public ulong? SourceTemplateItemId { get; set; }
+
     [Column("sequence_order")]
     public int SequenceOrder { get; set; }
 

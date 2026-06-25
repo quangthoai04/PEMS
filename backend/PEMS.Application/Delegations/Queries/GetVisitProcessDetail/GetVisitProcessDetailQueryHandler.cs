@@ -98,6 +98,7 @@ public sealed class GetVisitProcessDetailQueryHandler
                 EndTime = a.EndTime,
                 Description = a.Description,
                 Location = a.Location,
+                SourceTemplateItemId = a.SourceTemplateItemId,
             })
             .ToListAsync(cancellationToken);
 

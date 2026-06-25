@@ -159,10 +159,14 @@ DROP TRIGGER IF EXISTS trg_api_usage_quotas_scope_bi;
 DROP TRIGGER IF EXISTS trg_api_usage_quotas_scope_bu;
 DROP TRIGGER IF EXISTS trg_agenda_templates_scope_bi;
 DROP TRIGGER IF EXISTS trg_agenda_templates_scope_bu;
+DROP TRIGGER IF EXISTS trg_agenda_template_defaults_scope_bi;
+DROP TRIGGER IF EXISTS trg_agenda_template_defaults_scope_bu;
 DROP TRIGGER IF EXISTS trg_feedbacks_not_self_bi;
 DROP TRIGGER IF EXISTS trg_feedbacks_not_self_bu;
 
 DROP TABLE IF EXISTS audit_logs;
+DROP TABLE IF EXISTS agenda_template_defaults;
+DROP TABLE IF EXISTS agenda_template_items;
 DROP TABLE IF EXISTS agenda_templates;
 DROP TABLE IF EXISTS api_request_logs;
 DROP TABLE IF EXISTS api_usage_quotas;
@@ -895,6 +899,112 @@ CREATE TABLE visit_participants (
     ON UPDATE CASCADE ON DELETE SET NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Người nội bộ tham gia visit instance. Chỉ gồm IC_HOST, IC_SUPPORT, DEPT_SUPPORT, STUDENT. Host chính lưu bằng is_host.';
 
+-- =====================================================================
+-- AGENDA TEMPLATE MODULE (4 tables: agenda_templates, agenda_template_items,
+-- agenda_template_defaults, visit_agendas).
+-- Created here (before visit_agendas) so visit_agendas.source_template_item_id
+-- can FK agenda_template_items. agenda_templates/agenda_template_defaults depend
+-- only on campuses + users, both created earlier.
+-- NOTE: the (campus_id NULL <=> campus_scope_key='GLOBAL') invariant is enforced
+-- by BEFORE INSERT/UPDATE triggers (see trg_agenda_templates_scope_* /
+-- trg_agenda_template_defaults_scope_*), NOT by a CHECK constraint, because
+-- MySQL 8.0 forbids a CHECK on a column that also carries FK referential actions
+-- (campus_id has ON UPDATE CASCADE / ON DELETE SET NULL). Same workaround as feedbacks.
+-- =====================================================================
+
+CREATE TABLE agenda_templates (
+  agenda_template_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  campus_id BIGINT UNSIGNED NULL,
+  campus_scope_key VARCHAR(36) NOT NULL DEFAULT 'GLOBAL',
+  visit_type ENUM('CAMPUS_TOUR','MEETING','WORKSHOP','SIGNING_CEREMONY','EXCHANGE','OTHER') NOT NULL,
+  name VARCHAR(150) NOT NULL,
+  description TEXT NULL,
+  status ENUM('ACTIVE','INACTIVE') NOT NULL DEFAULT 'ACTIVE',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_by BIGINT UNSIGNED NULL,
+  updated_at DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  updated_by BIGINT UNSIGNED NULL,
+  deleted_at DATETIME NULL,
+  deleted_by BIGINT UNSIGNED NULL,
+  PRIMARY KEY (agenda_template_id),
+  UNIQUE KEY uq_agenda_template_scope_type_name (campus_scope_key, visit_type, name),
+  KEY idx_agenda_templates_status (status),
+  KEY idx_agenda_templates_scope_type_status (campus_scope_key, visit_type, status),
+  KEY idx_agenda_templates_campus_type_status (campus_id, visit_type, status),
+  CONSTRAINT fk_agenda_templates_campus
+    FOREIGN KEY (campus_id) REFERENCES campuses(campus_id)
+    ON UPDATE CASCADE ON DELETE SET NULL,
+  CONSTRAINT fk_agenda_templates_created_by
+    FOREIGN KEY (created_by) REFERENCES users(user_id)
+    ON UPDATE CASCADE ON DELETE SET NULL,
+  CONSTRAINT fk_agenda_templates_updated_by
+    FOREIGN KEY (updated_by) REFERENCES users(user_id)
+    ON UPDATE CASCADE ON DELETE SET NULL,
+  CONSTRAINT fk_agenda_templates_deleted_by
+    FOREIGN KEY (deleted_by) REFERENCES users(user_id)
+    ON UPDATE CASCADE ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Agenda template header by campus/global scope and visit type. campus_scope_key derived by trigger.';
+
+CREATE TABLE agenda_template_items (
+  agenda_template_item_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  agenda_template_id BIGINT UNSIGNED NOT NULL,
+  display_order INT UNSIGNED NOT NULL DEFAULT 0,
+  start_offset_minutes INT UNSIGNED NOT NULL DEFAULT 0,
+  duration_minutes INT UNSIGNED NOT NULL,
+  title VARCHAR(255) NOT NULL,
+  description TEXT NULL,
+  location VARCHAR(255) NULL,
+  responsible_role_label VARCHAR(150) NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_by BIGINT UNSIGNED NULL,
+  updated_at DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  updated_by BIGINT UNSIGNED NULL,
+  PRIMARY KEY (agenda_template_item_id),
+  UNIQUE KEY uq_agenda_template_items_order (agenda_template_id, display_order),
+  KEY idx_agenda_template_items_template_offset (agenda_template_id, start_offset_minutes),
+  CONSTRAINT fk_agenda_template_items_template
+    FOREIGN KEY (agenda_template_id) REFERENCES agenda_templates(agenda_template_id)
+    ON UPDATE CASCADE ON DELETE CASCADE,
+  CONSTRAINT fk_agenda_template_items_created_by
+    FOREIGN KEY (created_by) REFERENCES users(user_id)
+    ON UPDATE CASCADE ON DELETE SET NULL,
+  CONSTRAINT fk_agenda_template_items_updated_by
+    FOREIGN KEY (updated_by) REFERENCES users(user_id)
+    ON UPDATE CASCADE ON DELETE SET NULL,
+  CHECK (duration_minutes > 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Agenda template timeline items using relative offset from campus planned_start_at.';
+
+CREATE TABLE agenda_template_defaults (
+  agenda_template_default_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  campus_id BIGINT UNSIGNED NULL,
+  campus_scope_key VARCHAR(36) NOT NULL DEFAULT 'GLOBAL',
+  visit_type ENUM('CAMPUS_TOUR','MEETING','WORKSHOP','SIGNING_CEREMONY','EXCHANGE','OTHER') NOT NULL,
+  agenda_template_id BIGINT UNSIGNED NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_by BIGINT UNSIGNED NULL,
+  updated_at DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  updated_by BIGINT UNSIGNED NULL,
+  PRIMARY KEY (agenda_template_default_id),
+  UNIQUE KEY uq_agenda_template_default_scope_type (campus_scope_key, visit_type),
+  KEY idx_agenda_template_defaults_template (agenda_template_id),
+  KEY idx_agenda_template_defaults_campus_type (campus_id, visit_type),
+  CONSTRAINT fk_agenda_template_defaults_template
+    FOREIGN KEY (agenda_template_id) REFERENCES agenda_templates(agenda_template_id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  CONSTRAINT fk_agenda_template_defaults_campus
+    FOREIGN KEY (campus_id) REFERENCES campuses(campus_id)
+    ON UPDATE CASCADE ON DELETE SET NULL,
+  CONSTRAINT fk_agenda_template_defaults_created_by
+    FOREIGN KEY (created_by) REFERENCES users(user_id)
+    ON UPDATE CASCADE ON DELETE SET NULL,
+  CONSTRAINT fk_agenda_template_defaults_updated_by
+    FOREIGN KEY (updated_by) REFERENCES users(user_id)
+    ON UPDATE CASCADE ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Default agenda template mapping by campus/global scope and visit type. campus_scope_key derived by trigger.';
+
 CREATE TABLE visit_agendas (
   agenda_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   visit_instance_id BIGINT UNSIGNED NOT NULL,
@@ -905,6 +1015,7 @@ CREATE TABLE visit_agendas (
   end_time DATETIME NULL,
   location VARCHAR(255) NULL,
   responsible_user_id BIGINT UNSIGNED NULL,
+  source_template_item_id BIGINT UNSIGNED NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   created_by BIGINT UNSIGNED NULL,
   updated_at DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
@@ -913,13 +1024,25 @@ CREATE TABLE visit_agendas (
   UNIQUE KEY uq_visit_agendas_order (visit_instance_id, sequence_order),
   KEY idx_visit_agendas_time (visit_instance_id, start_time),
   KEY idx_visit_agendas_responsible (responsible_user_id, start_time),
+  KEY idx_visit_agendas_source_template_item (source_template_item_id),
   CONSTRAINT fk_visit_agendas_instance
     FOREIGN KEY (visit_instance_id) REFERENCES visit_request_campuses(visit_instance_id)
-    ON UPDATE CASCADE ON DELETE RESTRICT,
+    ON UPDATE CASCADE ON DELETE CASCADE,
   CONSTRAINT fk_visit_agendas_responsible_user
     FOREIGN KEY (responsible_user_id) REFERENCES users(user_id)
-    ON UPDATE CASCADE ON DELETE SET NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-COMMENT='Lịch trình tiếp khách';
+    ON UPDATE CASCADE ON DELETE SET NULL,
+  CONSTRAINT fk_visit_agendas_source_template_item
+    FOREIGN KEY (source_template_item_id) REFERENCES agenda_template_items(agenda_template_item_id)
+    ON UPDATE CASCADE ON DELETE SET NULL,
+  CONSTRAINT fk_visit_agendas_created_by
+    FOREIGN KEY (created_by) REFERENCES users(user_id)
+    ON UPDATE CASCADE ON DELETE SET NULL,
+  CONSTRAINT fk_visit_agendas_updated_by
+    FOREIGN KEY (updated_by) REFERENCES users(user_id)
+    ON UPDATE CASCADE ON DELETE SET NULL,
+  CHECK (end_time IS NULL OR end_time > start_time)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Concrete visit agenda rows per campus instance. start_time/end_time are absolute DATETIME computed from visit_request_campuses.planned_start_at + template offsets.';
 
 CREATE TABLE visit_logistics_items (
   logistics_item_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -1950,45 +2073,9 @@ CREATE TABLE api_request_logs (
     ON UPDATE CASCADE ON DELETE SET NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='External API request logs. Never log full secret/token.';
 
-CREATE TABLE agenda_templates (
-  agenda_template_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  campus_id BIGINT UNSIGNED NULL,
-  campus_scope_key VARCHAR(36) NOT NULL DEFAULT 'GLOBAL',
-  name VARCHAR(150) NOT NULL,
-  description TEXT NULL,
-  status ENUM('ACTIVE','INACTIVE') NOT NULL DEFAULT 'ACTIVE',
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  created_by BIGINT UNSIGNED NULL,
-  updated_at DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
-  updated_by BIGINT UNSIGNED NULL,
-  deleted_at DATETIME NULL,
-  deleted_by BIGINT UNSIGNED NULL,
-  PRIMARY KEY (agenda_template_id),
-  UNIQUE KEY uq_agenda_template_scope_name (campus_scope_key, name),
-  KEY idx_agenda_templates_status (status),
-  KEY idx_agenda_templates_campus_status (campus_id, status),
-  CONSTRAINT fk_agenda_templates_campus
-    FOREIGN KEY (campus_id) REFERENCES campuses(campus_id)
-    ON UPDATE CASCADE ON DELETE SET NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-COMMENT='Agenda template header; detailed items are stored in agenda_template_items';
-
-CREATE TABLE agenda_template_items (
-  agenda_template_item_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  agenda_template_id BIGINT UNSIGNED NOT NULL,
-  display_order INT UNSIGNED NOT NULL DEFAULT 0,
-  start_time TIME NULL,
-  end_time TIME NULL,
-  title VARCHAR(255) NOT NULL,
-  description TEXT NULL,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (agenda_template_item_id),
-  KEY idx_agenda_template_items_template_order (agenda_template_id, display_order),
-  CHECK (end_time IS NULL OR start_time IS NULL OR end_time > start_time),
-  CONSTRAINT fk_agenda_template_items_template
-    FOREIGN KEY (agenda_template_id) REFERENCES agenda_templates(agenda_template_id)
-    ON UPDATE CASCADE ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-COMMENT='Detailed agenda rows; replaces agenda_templates.items_json.';
+-- agenda_templates / agenda_template_items / agenda_template_defaults are defined
+-- earlier (just before visit_agendas) so visit_agendas.source_template_item_id can
+-- reference agenda_template_items. See the AGENDA TEMPLATE MODULE block above.
 
 -- =====================================================================
 -- 11. AUDIT
@@ -2676,6 +2763,23 @@ BEGIN
   SET NEW.campus_scope_key = IFNULL(CAST(NEW.campus_id AS CHAR), 'GLOBAL');
 END$$
 
+-- agenda_template_defaults uses the same campus_scope_key derivation as agenda_templates.
+-- The (campus_id NULL <=> 'GLOBAL') invariant is enforced here (trigger), not by a CHECK,
+-- because campus_id carries FK referential actions (MySQL 8 forbids CHECK on such columns).
+CREATE TRIGGER trg_agenda_template_defaults_scope_bi
+BEFORE INSERT ON agenda_template_defaults
+FOR EACH ROW
+BEGIN
+  SET NEW.campus_scope_key = IFNULL(CAST(NEW.campus_id AS CHAR), 'GLOBAL');
+END$$
+
+CREATE TRIGGER trg_agenda_template_defaults_scope_bu
+BEFORE UPDATE ON agenda_template_defaults
+FOR EACH ROW
+BEGIN
+  SET NEW.campus_scope_key = IFNULL(CAST(NEW.campus_id AS CHAR), 'GLOBAL');
+END$$
+
 -- MySQL 8.0 does not allow a CHECK constraint on FK columns when those
 -- columns are also used by FK referential actions. Keep the same business
 -- rule with triggers instead of chk_feedbacks_not_self.
@@ -3220,19 +3324,58 @@ INSERT INTO api_request_logs (api_request_log_id, api_config_id, campus_id, requ
   (2, 3, 1, 4, 'PARTNER_CONTACT', 3, '/business-card/parse', 'POST', 200, 1260, 650000, 4300, TRUE, NULL, NULL, '2026-06-10 13:00:00'),
   (3, 2, 1, 4, 'LOGISTICS', 10, '/smtp/send', 'POST', 500, 3100, 2400, 980, FALSE, 'SMTP_TEMP_FAILURE', 'Gmail SMTP staging returned temporary failure.', '2026-06-20 10:05:00');
 
-INSERT INTO agenda_templates (agenda_template_id, campus_id, campus_scope_key, name, description, status, created_at, created_by, updated_at, updated_by, deleted_at, deleted_by) VALUES
-  (1, NULL, 'GLOBAL', 'Standard Half-day Campus Visit', 'Template toàn hệ thống cho đoàn thăm campus nửa ngày.', 'ACTIVE', '2026-03-05 09:00:00', 2, NULL, NULL, NULL, NULL),
-  (2, 1, '1', 'HN Green Campus Route', 'Template riêng HN cho chủ đề campus xanh và mobility.', 'ACTIVE', '2026-03-05 09:10:00', 3, NULL, NULL, NULL, NULL),
-  (3, 5, '5', 'QN Hospitality Showcase', 'Template Quy Nhơn cho đoàn hospitality và du lịch giáo dục.', 'ACTIVE', '2026-03-05 09:20:00', 15, NULL, NULL, NULL, NULL),
-  (4, 3, '3', 'DN Old Lab Route 2025', 'Template cũ của Đà Nẵng đã ngưng dùng.', 'INACTIVE', '2026-03-05 09:30:00', 11, '2026-04-01 09:00:00', 11, NULL, NULL);
+-- Agenda templates: one GLOBAL default per visit_type (ids 1-6) plus two campus-specific
+-- (campus 1 = Hòa Lạc) templates (ids 7-8) so campus-over-GLOBAL fallback can be tested.
+-- campus_scope_key is normalised by trg_agenda_templates_scope_* (GLOBAL when campus_id IS NULL,
+-- else CAST(campus_id AS CHAR)).
+INSERT INTO agenda_templates (agenda_template_id, campus_id, campus_scope_key, visit_type, name, description, status, created_at, created_by, updated_at, updated_by, deleted_at, deleted_by) VALUES
+  (1, NULL, 'GLOBAL', 'CAMPUS_TOUR', 'Global Campus Tour Standard', 'Default campus tour agenda template.', 'ACTIVE', '2026-03-05 09:00:00', NULL, NULL, NULL, NULL, NULL),
+  (2, NULL, 'GLOBAL', 'MEETING', 'Global Meeting Standard', 'Default meeting agenda template.', 'ACTIVE', '2026-03-05 09:00:00', NULL, NULL, NULL, NULL, NULL),
+  (3, NULL, 'GLOBAL', 'WORKSHOP', 'Global Workshop Standard', 'Default workshop agenda template.', 'ACTIVE', '2026-03-05 09:00:00', NULL, NULL, NULL, NULL, NULL),
+  (4, NULL, 'GLOBAL', 'SIGNING_CEREMONY', 'Global Signing Ceremony Standard', 'Default signing ceremony agenda template.', 'ACTIVE', '2026-03-05 09:00:00', NULL, NULL, NULL, NULL, NULL),
+  (5, NULL, 'GLOBAL', 'EXCHANGE', 'Global Exchange Standard', 'Default exchange agenda template.', 'ACTIVE', '2026-03-05 09:00:00', NULL, NULL, NULL, NULL, NULL),
+  (6, NULL, 'GLOBAL', 'OTHER', 'Global Other Visit Standard', 'Default generic agenda template.', 'ACTIVE', '2026-03-05 09:00:00', NULL, NULL, NULL, NULL, NULL),
+  (7, 1, '1', 'CAMPUS_TOUR', 'HN Green Campus Tour', 'Campus-specific tour template for Hòa Lạc (green campus & mobility).', 'ACTIVE', '2026-03-05 09:10:00', 3, NULL, NULL, NULL, NULL),
+  (8, 1, '1', 'MEETING', 'HN Partner Meeting', 'Campus-specific partner meeting template for Hòa Lạc.', 'ACTIVE', '2026-03-05 09:10:00', 3, NULL, NULL, NULL, NULL);
 
-INSERT INTO agenda_template_items (agenda_template_item_id, agenda_template_id, display_order, start_time, end_time, title, description, created_at) VALUES
-  (1, 1, 1, '09:00:00', '09:20:00', 'Welcome and safety briefing', 'Check-in, giới thiệu host và lưu ý an toàn campus.', '2026-03-05 09:00:00'),
-  (2, 1, 2, '09:20:00', '10:30:00', 'Campus route and facilities story', 'Tham quan khu học tập, thư viện và không gian student life.', '2026-03-05 09:00:00'),
-  (3, 1, 3, '10:30:00', '11:30:00', 'Partner discussion and Q&A', 'Trao đổi hợp tác và tổng hợp câu hỏi.', '2026-03-05 09:00:00'),
-  (4, 2, 1, '09:00:00', '09:25:00', 'Green mobility introduction', 'Giới thiệu tuyến xe điện và mục tiêu vận hành xanh tại HN.', '2026-03-05 09:10:00'),
-  (5, 2, 2, '09:25:00', '10:30:00', 'EV station and walking route', 'Dừng tại EV station, đường đi bộ xanh và khu vực check-in đoàn.', '2026-03-05 09:10:00'),
-  (6, 3, 1, '09:00:00', '09:45:00', 'Hospitality learning space', 'Giới thiệu không gian hospitality ven biển ở Quy Nhơn.', '2026-03-05 09:20:00');
+-- Template items use start_offset_minutes (relative to campus planned_start_at) + duration_minutes.
+INSERT INTO agenda_template_items (agenda_template_item_id, agenda_template_id, display_order, start_offset_minutes, duration_minutes, title, description, location, responsible_role_label, created_by) VALUES
+  (1, 1, 1, 0, 15, 'Đón đoàn tại sảnh', 'Host đón đoàn và xác nhận thành phần tham dự.', 'Sảnh chính', 'IC Host', NULL),
+  (2, 1, 2, 15, 30, 'Giới thiệu tổng quan FPT University', 'Giới thiệu campus, mô hình đào tạo và định hướng hợp tác.', 'Phòng họp', 'IC Host', NULL),
+  (3, 1, 3, 45, 60, 'Tham quan campus', 'Tham quan khu học tập, thư viện, phòng lab và khu sinh viên.', 'Campus', 'IC Staff', NULL),
+  (4, 1, 4, 105, 30, 'Trao đổi và Q&A', 'Trao đổi câu hỏi, tổng kết nội dung và chụp ảnh.', 'Phòng họp', 'IC Host', NULL),
+  (5, 2, 1, 0, 15, 'Đón tiếp và ổn định', 'Đón đoàn và hướng dẫn vào phòng họp.', 'Phòng họp', 'IC Host', NULL),
+  (6, 2, 2, 15, 60, 'Phiên làm việc chính', 'Trao đổi nội dung hợp tác theo mục tiêu buổi họp.', 'Phòng họp', 'IC Host', NULL),
+  (7, 2, 3, 75, 30, 'Tổng kết và bước tiếp theo', 'Thống nhất action items và kế hoạch tiếp theo.', 'Phòng họp', 'IC Host', NULL),
+  (8, 3, 1, 0, 20, 'Khai mạc workshop', 'Giới thiệu chương trình và diễn giả.', 'Hội trường', 'IC Host', NULL),
+  (9, 3, 2, 20, 90, 'Phiên chuyên đề', 'Trình bày chuyên đề và thảo luận nhóm.', 'Hội trường', 'IC Staff', NULL),
+  (10, 3, 3, 110, 30, 'Hỏi đáp và bế mạc', 'Q&A, tổng kết và chụp ảnh lưu niệm.', 'Hội trường', 'IC Host', NULL),
+  (11, 4, 1, 0, 15, 'Đón đại biểu', 'Đón và ổn định chỗ ngồi cho đại biểu hai bên.', 'Hội trường', 'IC Host', NULL),
+  (12, 4, 2, 15, 30, 'Lễ ký kết', 'Phát biểu, ký kết thỏa thuận và trao văn bản.', 'Hội trường', 'IC Host', NULL),
+  (13, 4, 3, 45, 30, 'Chụp ảnh và networking', 'Chụp ảnh lưu niệm và giao lưu nhẹ.', 'Sảnh tiệc', 'IC Staff', NULL),
+  (14, 5, 1, 0, 15, 'Đón đoàn giao lưu', 'Đón đoàn và giới thiệu thành phần.', 'Phòng họp', 'IC Host', NULL),
+  (15, 5, 2, 15, 60, 'Giao lưu và chia sẻ', 'Chia sẻ kinh nghiệm và thảo luận hợp tác.', 'Phòng họp', 'IC Staff', NULL),
+  (16, 5, 3, 75, 30, 'Tổng kết giao lưu', 'Tổng kết và thống nhất hướng hợp tác.', 'Phòng họp', 'IC Host', NULL),
+  (17, 6, 1, 0, 15, 'Đón tiếp', 'Đón đoàn và xác nhận chương trình.', 'Sảnh chính', 'IC Host', NULL),
+  (18, 6, 2, 15, 60, 'Nội dung chính', 'Thực hiện nội dung theo yêu cầu của đoàn.', 'Phòng họp', 'IC Host', NULL),
+  (19, 7, 1, 0, 20, 'Đón đoàn tại sảnh HN', 'Đón đoàn tại campus Hòa Lạc và brief an toàn.', 'Sảnh chính HN', 'IC Host', NULL),
+  (20, 7, 2, 20, 70, 'Tham quan khu campus xanh', 'Tham quan tuyến xe điện và không gian xanh.', 'Campus HN', 'IC Staff', NULL),
+  (21, 7, 3, 90, 30, 'Trao đổi và Q&A', 'Trao đổi và tổng kết.', 'Phòng họp HN', 'IC Host', NULL),
+  (22, 8, 1, 0, 15, 'Đón tiếp đối tác HN', 'Đón và ổn định phòng họp.', 'Phòng họp HN', 'IC Host', NULL),
+  (23, 8, 2, 15, 75, 'Họp nội dung hợp tác', 'Trao đổi nội dung hợp tác chi tiết.', 'Phòng họp HN', 'IC Host', NULL),
+  (24, 8, 3, 90, 30, 'Tổng kết', 'Thống nhất action items.', 'Phòng họp HN', 'IC Host', NULL);
+
+-- Default template mapping by (campus_scope_key, visit_type). GLOBAL defaults cover all 6 types;
+-- campus 1 overrides CAMPUS_TOUR and MEETING so campus-over-GLOBAL fallback resolves correctly.
+INSERT INTO agenda_template_defaults (campus_id, campus_scope_key, visit_type, agenda_template_id, created_by) VALUES
+  (NULL, 'GLOBAL', 'CAMPUS_TOUR', 1, NULL),
+  (NULL, 'GLOBAL', 'MEETING', 2, NULL),
+  (NULL, 'GLOBAL', 'WORKSHOP', 3, NULL),
+  (NULL, 'GLOBAL', 'SIGNING_CEREMONY', 4, NULL),
+  (NULL, 'GLOBAL', 'EXCHANGE', 5, NULL),
+  (NULL, 'GLOBAL', 'OTHER', 6, NULL),
+  (1, '1', 'CAMPUS_TOUR', 7, NULL),
+  (1, '1', 'MEETING', 8, NULL);
 
 INSERT INTO audit_logs (audit_log_id, actor_user_id, campus_id, action, entity_type, entity_id, ip_address, user_agent, request_id, created_at) VALUES
   (1, 1, 1, 'CREATE_USER', 'users', 3, '10.10.1.11', 'Chrome Windows Admin', 'REQ-AUD-0001', '2026-02-01 08:10:00'),
