@@ -1,0 +1,950 @@
+/**
+ * MinutesCard — biên bản cuộc họp cho 1 campus instance (Phase 3).
+ *
+ * Mỗi visit_instance chỉ có 1 biên bản. Chỉ Host hoặc participant đã ACCEPT mới tạo/sửa được, và
+ * tại một thời điểm chỉ 1 người được sửa (cơ chế lock có token + hết hạn 10 phút). Mọi quyền do
+ * backend quyết (canCreate/canEdit + trạng thái lock) — frontend chỉ render theo dữ liệu trả về.
+ *
+ * Khi tạo biên bản lần đầu backend tự fill người tham gia (Host + khách trong đơn + người nội bộ đã
+ * ACCEPTED/ASSIGNED) vào minute_participants; Host chỉ điểm danh có mặt/vắng mặt và có thể thêm người
+ * thủ công. Dữ liệu trong biên bản là snapshot riêng (không sửa ngược danh sách gốc).
+ */
+import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  ChevronUp, ChevronDown, FileText, Lock, Edit3, Save, X, Plus, Clock, Users, ClipboardList,
+  Trash2, UserPlus, RefreshCw, Search, Calendar, Building2, Mail, CheckCircle2, AlertCircle, Info,
+} from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import { delegationsApi } from '../../../features/delegations/api/delegationsApi';
+import type {
+  VisitMinute, MinuteUserSearchItem,
+  SaveMinuteParticipantPayload, SaveMinuteActionItemPayload,
+} from '../../../features/delegations/types/delegations.types';
+
+const formatDateTime = (value?: string | null) =>
+  value ? new Date(value).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' }) : '-';
+
+// Action-item deadline is a business wall-clock value (stored as MySQL DATETIME, no timezone). The
+// backend returns it WITHOUT a 'Z', so new Date() parses it as local — the round-trip stays WYSIWYG.
+const pad2 = (n: number) => String(n).padStart(2, '0');
+// ISO/DB value → "yyyy-MM-ddTHH:mm" for an <input type="datetime-local">.
+const toDateTimeLocalValue = (value?: string | null): string => {
+  if (!value) return '';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '';
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+};
+// datetime-local "yyyy-MM-ddTHH:mm" → payload "yyyy-MM-ddTHH:mm:ss" (keep the picked wall-clock as-is).
+const toPayloadDateTime = (value: string): string => (value.length === 16 ? `${value}:00` : value);
+
+// Same error-parsing shape as VisitProcess (handles message / errors[] / title envelopes).
+const errMsg = (e: any, fallback: string): string => {
+  const data = e?.response?.data;
+  if (!data) return fallback;
+  if (typeof data === 'string' && data.trim()) return data;
+  if (data.message) return data.message;
+  if (data.error) return data.error;
+  if (data.errors) {
+    const flat = Array.isArray(data.errors) ? data.errors : Object.values(data.errors).flat();
+    const first = (flat as any[]).find((x) => typeof x === 'string' && x.trim());
+    if (first) return first;
+  }
+  if (data.title) return data.title;
+  return fallback;
+};
+
+// Lightweight in-page toast (top-right) — same pattern as VisitProcess/VisitRequestManagement.
+type Toast = { id: number; type: 'success' | 'error' | 'info'; msg: string };
+
+type DraftParticipant = {
+  _key: string;
+  minuteParticipantId: number; // 0 = new
+  userId: number | null;
+  guestMemberId: number | null;
+  fullNameSnapshot: string;
+  roleSnapshot: string;
+  organizationSnapshot: string;
+  emailSnapshot: string;
+  attendanceStatus: string;
+  attendanceNote: string;
+  participantKind: string; // INTERNAL | GUEST | MANUAL
+};
+
+type DraftActionItem = {
+  _key: string;
+  actionItemId: number; // 0 = new
+  title: string;
+  note: string;
+  dueDate: string; // datetime-local "YYYY-MM-DDTHH:mm" or ''
+  status: string;
+};
+
+const KIND_META: Record<string, { label: string; cls: string }> = {
+  INTERNAL: { label: 'Nội bộ', cls: 'bg-blue-50 text-blue-700 border-blue-200' },
+  GUEST: { label: 'Khách', cls: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
+  MANUAL: { label: 'Thêm thủ công', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
+};
+const ATT_META: Record<string, { label: string; cls: string }> = {
+  PRESENT: { label: 'Có mặt', cls: 'bg-green-50 text-green-700 border-green-200' },
+  ABSENT: { label: 'Chưa xác nhận có mặt', cls: 'bg-red-50 text-red-700 border-red-200' },
+  EXCUSED: { label: 'Vắng có lý do', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
+};
+const ATT_OPTIONS = [
+  { value: 'PRESENT', label: 'Có mặt' },
+  { value: 'ABSENT', label: 'Chưa xác nhận có mặt' },
+  { value: 'EXCUSED', label: 'Vắng có lý do' },
+];
+const ACTION_STATUS_META: Record<string, { label: string; cls: string }> = {
+  TODO: { label: 'Chưa làm', cls: 'bg-gray-100 text-gray-600 border-gray-200' },
+  IN_PROGRESS: { label: 'Đang làm', cls: 'bg-blue-50 text-blue-700 border-blue-200' },
+  DONE: { label: 'Hoàn thành', cls: 'bg-green-50 text-green-700 border-green-200' },
+  CANCELLED: { label: 'Đã hủy', cls: 'bg-red-50 text-red-600 border-red-200' },
+};
+const ACTION_STATUS_OPTIONS = Object.keys(ACTION_STATUS_META).map((value) => ({ value, label: ACTION_STATUS_META[value].label }));
+
+export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInstanceId: number; isReadOnly?: boolean }) {
+  const [expanded, setExpanded] = useState(true);
+  const [data, setData] = useState<VisitMinute | null>(null);
+  const [loading, setLoading] = useState(true);
+  // Persistent banner ONLY for the initial-load failure (when there is no card body to show).
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  // Toasts (top-right) — reuses the approve/reject/cancel pattern; transient notifications go here.
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const toastSeq = useRef(0);
+  const pushToast = (type: Toast['type'], msg: string) => {
+    const id = ++toastSeq.current;
+    setToasts((prev) => [...prev, { id, type, msg }]);
+    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 4500);
+  };
+
+  // Inline field errors (rendered under the specific input/row that failed).
+  const [titleError, setTitleError] = useState<string | null>(null);
+  const [actionErrors, setActionErrors] = useState<Record<string, string>>({});
+  const [participantErrors, setParticipantErrors] = useState<Record<string, string>>({});
+  const [addUserError, setAddUserError] = useState<string | null>(null);
+  const clearActionError = (key: string) =>
+    setActionErrors((prev) => {
+      if (!prev[key]) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+
+  // Editing session (only set while this user holds the lock).
+  const [editing, setEditing] = useState(false);
+  const [draftTitle, setDraftTitle] = useState('');
+  const [draftContent, setDraftContent] = useState('');
+  const [draftParticipants, setDraftParticipants] = useState<DraftParticipant[]>([]);
+  const [draftActionItems, setDraftActionItems] = useState<DraftActionItem[]>([]);
+  const tokenRef = useRef<string | null>(null);
+  const minutesIdRef = useRef<number | null>(null);
+  const rowVersionRef = useRef<number>(0);
+  const expiresRef = useRef<string | null>(null);
+  const keyRef = useRef(0);
+  const [remainingMs, setRemainingMs] = useState<number>(0);
+
+  // Manual add-participant form.
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [addName, setAddName] = useState('');
+  const [addRole, setAddRole] = useState('');
+  const [addOrg, setAddOrg] = useState('');
+  const [addEmail, setAddEmail] = useState('');
+  const [addUserId, setAddUserId] = useState<number | null>(null);
+  const [userQuery, setUserQuery] = useState('');
+  const [userResults, setUserResults] = useState<MinuteUserSearchItem[]>([]);
+  const [userSearching, setUserSearching] = useState(false);
+
+  const nextKey = (prefix: string) => `${prefix}-new-${++keyRef.current}`;
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const d = await delegationsApi.minutes.get(visitInstanceId);
+      setData(d);
+      setLoadError(null);
+    } catch (e: any) {
+      setLoadError(errMsg(e, 'Không thể tải biên bản. Vui lòng thử lại.'));
+    } finally {
+      setLoading(false);
+    }
+  }, [visitInstanceId]);
+
+  useEffect(() => { load(); }, [load]);
+
+  // Countdown of the edit session; auto-exit when the lock expires.
+  useEffect(() => {
+    if (!editing) return;
+    const tick = () => {
+      const ms = expiresRef.current ? new Date(expiresRef.current).getTime() - Date.now() : 0;
+      setRemainingMs(ms);
+      if (ms <= 0) { setEditing(false); load(); }
+    };
+    tick();
+    const t = setInterval(tick, 1000);
+    return () => clearInterval(t);
+  }, [editing, load]);
+
+  // Debounced user search for the manual-add form.
+  useEffect(() => {
+    if (!showAddForm) return;
+    const q = userQuery.trim();
+    if (q.length < 2) { setUserResults([]); return; }
+    let active = true;
+    setUserSearching(true);
+    const t = setTimeout(async () => {
+      try {
+        const res = await delegationsApi.minutes.searchUsers(visitInstanceId, q);
+        if (active) setUserResults(res);
+      } catch { if (active) setUserResults([]); }
+      finally { if (active) setUserSearching(false); }
+    }, 300);
+    return () => { active = false; clearTimeout(t); };
+  }, [userQuery, showAddForm, visitInstanceId]);
+
+  const enterEditing = (d: VisitMinute) => {
+    tokenRef.current = d.editLockToken ?? null;
+    minutesIdRef.current = d.minutesId ?? null;
+    rowVersionRef.current = d.rowVersion;
+    expiresRef.current = d.editLockExpiresAt ?? null;
+    setDraftTitle(d.title ?? 'Biên bản cuộc họp');
+    setDraftContent(d.content ?? '');
+    setDraftParticipants((d.participants ?? []).map((p) => ({
+      _key: `p-${p.minuteParticipantId}`,
+      minuteParticipantId: p.minuteParticipantId,
+      userId: p.userId,
+      guestMemberId: p.guestMemberId,
+      fullNameSnapshot: p.fullNameSnapshot ?? '',
+      roleSnapshot: p.roleSnapshot ?? '',
+      organizationSnapshot: p.organizationSnapshot ?? '',
+      emailSnapshot: p.emailSnapshot ?? '',
+      attendanceStatus: p.attendanceStatus || 'ABSENT',
+      attendanceNote: p.attendanceNote ?? '',
+      participantKind: p.participantKind,
+    })));
+    setDraftActionItems((d.actionItems ?? []).map((a) => ({
+      _key: `a-${a.actionItemId}`,
+      actionItemId: a.actionItemId,
+      title: a.title ?? '',
+      note: a.note ?? '',
+      dueDate: toDateTimeLocalValue(a.dueDate),
+      status: a.status || 'TODO',
+    })));
+    setData(d);
+    setEditing(true);
+    setLoadError(null);
+    setTitleError(null);
+    setActionErrors({});
+    setParticipantErrors({});
+    resetAddForm();
+  };
+
+  const resetAddForm = () => {
+    setShowAddForm(false);
+    setAddName(''); setAddRole(''); setAddOrg(''); setAddEmail('');
+    setAddUserId(null); setUserQuery(''); setUserResults([]);
+    setAddUserError(null);
+  };
+
+  const handleCreate = async () => {
+    setBusy(true);
+    try { enterEditing(await delegationsApi.minutes.createOrLock(visitInstanceId)); }
+    catch (e: any) { pushToast('error', errMsg(e, 'Không thể tạo biên bản. Vui lòng thử lại.')); }
+    finally { setBusy(false); }
+  };
+
+  const handleEdit = async () => {
+    if (!data?.minutesId) return;
+    setBusy(true);
+    try { enterEditing(await delegationsApi.minutes.acquireLock(data.minutesId)); }
+    catch (e: any) { pushToast('error', errMsg(e, 'Không thể mở biên bản để chỉnh sửa.')); await load(); }
+    finally { setBusy(false); }
+  };
+
+  // A row the user never touched (default empty) — must NOT be sent to the backend.
+  const isBlankActionItem = (a: DraftActionItem) =>
+    !a.title.trim() && !a.note.trim() && !a.dueDate && a.status === 'TODO';
+
+  const handleSave = async () => {
+    if (!minutesIdRef.current || !tokenRef.current) return;
+
+    // Re-validate from a clean slate so stale field errors don't linger.
+    setTitleError(null);
+    setActionErrors({});
+    setParticipantErrors({});
+
+    // 1) Tiêu đề bắt buộc.
+    let titleErr: string | null = null;
+    if (!draftTitle.trim()) titleErr = 'Vui lòng nhập tên biên bản.';
+
+    // 2) Đầu mục công việc: bỏ qua dòng rỗng hoàn toàn; dòng đã nhập một phần phải có nội dung.
+    const filledActions = draftActionItems.filter((a) => !isBlankActionItem(a));
+    const nextActionErrors: Record<string, string> = {};
+    for (const a of filledActions) {
+      if (!a.title.trim()) nextActionErrors[a._key] = 'Vui lòng nhập nội dung công việc.';
+    }
+
+    const hasActionErr = Object.keys(nextActionErrors).length > 0;
+    if (titleErr || hasActionErr) {
+      if (titleErr) setTitleError(titleErr);
+      if (hasActionErr) setActionErrors(nextActionErrors);
+      // Inline error tại field + toast tổng quát ở góc phải trên; không gọi API.
+      pushToast('error', hasActionErr
+        ? 'Vui lòng kiểm tra lại các đầu mục công việc.'
+        : 'Vui lòng kiểm tra lại thông tin biên bản.');
+      return;
+    }
+
+    // 3) Build payload sạch: bỏ participant ngoài hệ thống + bỏ trùng userId/guestMemberId.
+    const seenUser = new Set<number>();
+    const seenGuest = new Set<number>();
+    const participants: SaveMinuteParticipantPayload[] = [];
+    for (const p of draftParticipants) {
+      const isNew = p.minuteParticipantId <= 0;
+      const isExternal = p.userId == null && p.guestMemberId == null;
+      if (isNew && isExternal) continue; // never create free-text/external participants
+      if (p.userId != null) {
+        if (seenUser.has(p.userId)) continue;
+        seenUser.add(p.userId);
+      } else if (p.guestMemberId != null) {
+        if (seenGuest.has(p.guestMemberId)) continue;
+        seenGuest.add(p.guestMemberId);
+      }
+      participants.push({
+        minuteParticipantId: p.minuteParticipantId > 0 ? p.minuteParticipantId : null,
+        userId: p.userId,
+        guestMemberId: p.guestMemberId,
+        fullNameSnapshot: p.fullNameSnapshot.trim(),
+        roleSnapshot: p.roleSnapshot.trim() || null,
+        organizationSnapshot: p.organizationSnapshot.trim() || null,
+        emailSnapshot: p.emailSnapshot.trim() || null,
+        attendanceStatus: p.attendanceStatus,
+        attendanceNote: p.attendanceNote.trim() || null,
+      });
+    }
+    const actionItems: SaveMinuteActionItemPayload[] = filledActions.map((a) => ({
+      actionItemId: a.actionItemId > 0 ? a.actionItemId : null,
+      title: a.title.trim(),
+      note: a.note.trim() || null,
+      dueDate: a.dueDate ? toPayloadDateTime(a.dueDate) : null,
+      status: a.status,
+    }));
+
+    setBusy(true);
+    try {
+      const d = await delegationsApi.minutes.save(minutesIdRef.current, {
+        title: draftTitle.trim(),
+        content: draftContent,
+        editLockToken: tokenRef.current,
+        rowVersion: rowVersionRef.current,
+        participants,
+        actionItems,
+      });
+      setEditing(false);
+      tokenRef.current = null;
+      resetAddForm();
+      setData(d);
+      setLoadError(null);
+      pushToast('success', 'Đã lưu biên bản cuộc họp.');
+    } catch (e: any) {
+      const code = e?.response?.data?.errorCode;
+      const msg = errMsg(e, 'Không thể lưu biên bản. Vui lòng thử lại.');
+      // Map known backend field errors back to the matching input where possible.
+      if (/tiêu đề|tên biên bản/i.test(msg)) setTitleError(msg);
+      // Guest scope error → flag the newly-synced guest rows so the user knows which to re-sync.
+      if (code === 'MINUTE_GUEST_NOT_IN_CURRENT_REQUEST') {
+        const marks: Record<string, string> = {};
+        for (const p of draftParticipants) {
+          if (p.minuteParticipantId <= 0 && p.guestMemberId != null && p.userId == null)
+            marks[p._key] = 'Khách này không thuộc đoàn hiện tại.';
+        }
+        if (Object.keys(marks).length > 0) setParticipantErrors(marks);
+      }
+      pushToast('error', msg);
+    } finally { setBusy(false); }
+  };
+
+  const handleCancel = async () => {
+    const id = minutesIdRef.current, token = tokenRef.current;
+    setEditing(false);
+    tokenRef.current = null;
+    resetAddForm();
+    if (id && token) {
+      try { await delegationsApi.minutes.releaseLock(id, token); } catch { /* lock will expire anyway */ }
+    }
+    await load();
+  };
+
+  // Best-effort: release the lock if the user navigates away mid-edit.
+  useEffect(() => {
+    return () => {
+      const id = minutesIdRef.current, token = tokenRef.current;
+      if (id && token) { delegationsApi.minutes.releaseLock(id, token).catch(() => {}); }
+    };
+  }, []);
+
+  const updateParticipant = (key: string, patch: Partial<DraftParticipant>) =>
+    setDraftParticipants((prev) => prev.map((p) => (p._key === key ? { ...p, ...patch } : p)));
+  const removeParticipant = (key: string) =>
+    setDraftParticipants((prev) => prev.filter((p) => p._key !== key));
+  const updateActionItem = (key: string, patch: Partial<DraftActionItem>) =>
+    setDraftActionItems((prev) => prev.map((a) => (a._key === key ? { ...a, ...patch } : a)));
+  const removeActionItem = (key: string) =>
+    setDraftActionItems((prev) => prev.filter((a) => a._key !== key));
+
+  const handleAddParticipant = () => {
+    // Chỉ cho phép thêm người tham gia là user có sẵn trong hệ thống (không hỗ trợ free-text).
+    if (!addUserId) {
+      setAddUserError('Vui lòng chọn một người dùng trong hệ thống.');
+      pushToast('error', 'Không hỗ trợ thêm người tham gia ngoài hệ thống. Vui lòng chọn một người dùng có sẵn.');
+      return;
+    }
+    if (draftParticipants.some((p) => p.userId === addUserId)) {
+      setAddUserError('Người dùng này đã có trong danh sách.');
+      pushToast('info', 'Người dùng này đã có trong danh sách điểm danh.');
+      return;
+    }
+    setDraftParticipants((prev) => [...prev, {
+      _key: nextKey('p'),
+      minuteParticipantId: 0,
+      userId: addUserId,
+      guestMemberId: null,
+      fullNameSnapshot: addName,
+      roleSnapshot: addRole,
+      organizationSnapshot: addOrg,
+      emailSnapshot: addEmail,
+      attendanceStatus: 'ABSENT',
+      attendanceNote: '',
+      participantKind: 'INTERNAL',
+    }]);
+    resetAddForm();
+  };
+
+  const handlePickUser = (u: MinuteUserSearchItem) => {
+    setAddUserId(u.userId);
+    setAddName(u.fullName);
+    setAddEmail(u.email ?? '');
+    setAddOrg(u.organization ?? '');
+    setUserQuery(u.fullName);
+    setUserResults([]);
+    setAddUserError(null);
+  };
+
+  const handleSyncNew = async () => {
+    const id = minutesIdRef.current;
+    if (!id) return;
+    setBusy(true);
+    try {
+      const candidates = await delegationsApi.minutes.newParticipantCandidates(id);
+      const haveUser = new Set(draftParticipants.filter((p) => p.userId != null).map((p) => p.userId));
+      const haveGuest = new Set(draftParticipants.filter((p) => p.guestMemberId != null).map((p) => p.guestMemberId));
+      const fresh = candidates.filter((c) =>
+        (c.userId != null && !haveUser.has(c.userId)) || (c.guestMemberId != null && !haveGuest.has(c.guestMemberId)));
+      // No-op sync is NOT an error and must not block saving — just an info toast.
+      if (fresh.length === 0) { pushToast('info', 'Không có người mới cần đồng bộ.'); return; }
+      setDraftParticipants((prev) => [...prev, ...fresh.map((c) => ({
+        _key: nextKey('sync'),
+        minuteParticipantId: 0,
+        userId: c.userId,
+        guestMemberId: c.guestMemberId,
+        fullNameSnapshot: c.fullNameSnapshot ?? '',
+        roleSnapshot: c.roleSnapshot ?? '',
+        organizationSnapshot: c.organizationSnapshot ?? '',
+        emailSnapshot: c.emailSnapshot ?? '',
+        attendanceStatus: c.attendanceStatus || 'ABSENT',
+        attendanceNote: c.attendanceNote ?? '',
+        participantKind: c.participantKind,
+      }))]);
+      pushToast('success', 'Đã đồng bộ người tham gia mới.');
+    } catch (e: any) {
+      // On failure keep the user's in-progress edits intact — only surface a toast.
+      pushToast('error', errMsg(e, 'Không thể đồng bộ người mới. Vui lòng thử lại.'));
+    } finally { setBusy(false); }
+  };
+
+  const mm = String(Math.max(0, Math.floor(remainingMs / 60000))).padStart(2, '0');
+  const ss = String(Math.max(0, Math.floor((remainingMs % 60000) / 1000))).padStart(2, '0');
+
+  // Unified render rows (same shape whether editing the draft or viewing the saved snapshot).
+  const participantRows: DraftParticipant[] = editing
+    ? draftParticipants
+    : (data?.participants ?? []).map((p) => ({
+        _key: `v-${p.minuteParticipantId}`,
+        minuteParticipantId: p.minuteParticipantId,
+        userId: p.userId,
+        guestMemberId: p.guestMemberId,
+        fullNameSnapshot: p.fullNameSnapshot ?? '',
+        roleSnapshot: p.roleSnapshot ?? '',
+        organizationSnapshot: p.organizationSnapshot ?? '',
+        emailSnapshot: p.emailSnapshot ?? '',
+        attendanceStatus: p.attendanceStatus || 'ABSENT',
+        attendanceNote: p.attendanceNote ?? '',
+        participantKind: p.participantKind,
+      }));
+  const actionRows: DraftActionItem[] = editing
+    ? draftActionItems
+    : (data?.actionItems ?? []).map((a) => ({
+        _key: `v-${a.actionItemId}`,
+        actionItemId: a.actionItemId,
+        title: a.title ?? '',
+        note: a.note ?? '',
+        dueDate: toDateTimeLocalValue(a.dueDate),
+        status: a.status || 'TODO',
+      }));
+
+  const presentCount = participantRows.filter((p) => p.attendanceStatus === 'PRESENT').length;
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm transition-all relative">
+      {/* Header — mẫu cũ: nền xanh #004c91, badge số 2 màu cam */}
+      <div
+        className="bg-[#004c91] px-6 py-4 flex items-center justify-between border-b border-[#003366] cursor-pointer"
+        onClick={() => setExpanded(!expanded)}
+      >
+        <h2 className="text-xl font-bold text-white flex items-center gap-2">
+          <span className="w-8 h-8 rounded-full bg-[#f37021] flex items-center justify-center text-sm">2</span>
+          Biên bản cuộc họp
+        </h2>
+        <button type="button" className="text-white hover:bg-white/20 p-1 rounded-full transition-colors">
+          {expanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+        </button>
+      </div>
+
+      <AnimatePresence>
+        {expanded && (
+          <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden">
+            <div className="p-4 sm:p-6 md:p-8">
+              {/* Chỉ giữ banner cho lỗi tải dữ liệu (khi không có gì để hiển thị). Mọi thông báo
+                  thao tác (lưu/đồng bộ/thêm người) dùng toast ở góc phải trên. */}
+              {loadError && (
+                <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{loadError}</div>
+              )}
+
+              {loading ? (
+                <div className="py-8 text-center text-slate-500 font-medium">Đang tải biên bản...</div>
+              ) : !data ? null : !data.exists ? (
+                /* Chưa có biên bản — nút tạo màu cam như mẫu cũ */
+                <div className="text-center py-6">
+                  <FileText className="w-10 h-10 mx-auto text-slate-300 mb-3" />
+                  <p className="text-slate-600 font-medium mb-4">Chưa có biên bản cho chuyến thăm này.</p>
+                  {data.canCreate && !isReadOnly && (
+                    <button type="button" onClick={handleCreate} disabled={busy}
+                      className="px-6 py-3 bg-[#f37021] text-white font-bold rounded-xl shadow-sm hover:bg-[#e0611d] transition-colors inline-flex items-center gap-2 disabled:opacity-50">
+                      <Plus className="w-5 h-5" /> {busy ? 'Đang tạo...' : 'Tạo biên bản cuộc họp'}
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <>
+                  {editing ? (
+                    <div className="mb-6 flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm font-bold text-amber-800">
+                      <Clock className="w-4 h-4" /> Bạn đang chỉnh sửa biên bản. Phiên sửa còn {mm}:{ss}
+                    </div>
+                  ) : data.isLockedByOther ? (
+                    <div className="mb-6 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800">
+                      <Lock className="w-4 h-4 mt-0.5 shrink-0" />
+                      <span>
+                        Biên bản đang được chỉnh sửa bởi <b>{data.editLockedByName || 'người khác'}</b>. Bạn chỉ có thể xem nội dung hiện tại;
+                        quyền sửa sẽ mở lại sau khi người này lưu hoặc phiên sửa hết hạn.
+                      </span>
+                    </div>
+                  ) : null}
+
+                  {/* Tên biên bản + trạng thái */}
+                  <div className="flex flex-col sm:flex-row sm:items-start gap-6 mb-8">
+                    <div className="flex-1 w-full max-w-[450px]">
+                      <label className="block text-sm font-bold text-gray-700 mb-2 ml-1">
+                        Tên biên bản {editing && <span className="text-red-500">*</span>}
+                      </label>
+                      <input
+                        type="text"
+                        value={editing ? draftTitle : (data.title || 'Biên bản cuộc họp')}
+                        onChange={(e) => { setDraftTitle(e.target.value); setTitleError(null); }}
+                        readOnly={!editing}
+                        placeholder="Nhập tên biên bản..."
+                        className={`px-4 py-2.5 rounded-xl font-bold border outline-none w-full transition-all ${
+                          editing
+                            ? (titleError
+                                ? 'bg-red-50 text-red-900 border-red-300 focus:ring-2 focus:ring-red-200 focus:border-red-500'
+                                : 'bg-blue-50 text-blue-900 border-blue-200 focus:ring-2 focus:ring-[#004c91]/20 focus:border-[#004c91]')
+                            : 'bg-gray-50 text-gray-800 border-gray-200 cursor-default'
+                        }`}
+                      />
+                      {editing && titleError && (
+                        <p className="mt-1.5 ml-1 text-xs font-semibold text-red-600">{titleError}</p>
+                      )}
+                    </div>
+                    <div>
+                      <label className="block text-sm font-bold text-gray-700 mb-2 ml-1">Trạng thái</label>
+                      <div className="bg-gray-50 text-gray-700 px-4 py-2.5 rounded-xl font-bold flex items-center gap-2 border border-gray-200">
+                        <FileText className="w-5 h-5 text-[#004c91] shrink-0" />
+                        <span className="whitespace-nowrap">
+                          {data.status === 'SAVED' ? 'Đã lưu' : 'Bản nháp'}{data.updatedAt ? ` · ${formatDateTime(data.updatedAt)}` : ''}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Bảng người tham gia — dữ liệu THẬT từ minute_participants */}
+                  <div className="mb-8 overflow-hidden rounded-xl border border-gray-200 bg-white">
+                    <div className="bg-gray-50/70 px-5 py-3 border-b border-gray-200 flex flex-wrap items-center justify-between gap-2">
+                      <h3 className="text-sm font-bold text-gray-800 flex items-center gap-2">
+                        <Users className="w-4 h-4 text-[#004c91]" />
+                        Bảng danh sách chi tiết người tham gia cuộc họp
+                      </h3>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs bg-green-50 text-green-700 border border-green-200 px-2.5 py-1 rounded-full font-bold">
+                          {presentCount} có mặt
+                        </span>
+                        <span className="text-xs bg-[#004c91]/10 text-[#004c91] px-2.5 py-1 rounded-full font-bold">
+                          {participantRows.length} thành viên
+                        </span>
+                      </div>
+                    </div>
+
+                    {participantRows.length === 0 && !editing ? (
+                      <div className="px-5 py-8 text-center text-sm text-slate-400 italic">
+                        Chưa có dữ liệu người tham gia.
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left border-collapse text-sm min-w-[760px]">
+                          <thead className="bg-gray-100/50 text-[11px] uppercase tracking-wider text-gray-500 font-extrabold">
+                            <tr className="border-b border-gray-200">
+                              <th className="px-4 py-3 w-36">Điểm danh</th>
+                              <th className="px-4 py-3">Họ tên</th>
+                              <th className="px-4 py-3">Vai trò / chức danh</th>
+                              <th className="px-4 py-3">Đơn vị</th>
+                              <th className="px-4 py-3">Email</th>
+                              <th className="px-4 py-3 w-28">Loại nguồn</th>
+                              <th className="px-4 py-3">Ghi chú</th>
+                              {editing && <th className="px-4 py-3 w-14 text-center">Xóa</th>}
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-100">
+                            {participantRows.map((p) => {
+                              const att = ATT_META[p.attendanceStatus] ?? ATT_META.ABSENT;
+                              const kind = KIND_META[p.participantKind] ?? KIND_META.MANUAL;
+                              const isManual = !p.userId && !p.guestMemberId;
+                              const rowError = participantErrors[p._key];
+                              return (
+                                <tr key={p._key} className={`transition-colors align-top ${rowError ? 'bg-red-50/70' : 'hover:bg-gray-50/55'}`}>
+                                  <td className="px-4 py-3">
+                                    {editing ? (
+                                      <select
+                                        value={p.attendanceStatus}
+                                        onChange={(e) => updateParticipant(p._key, { attendanceStatus: e.target.value })}
+                                        className="w-full text-xs font-bold rounded-lg border border-gray-300 px-2 py-1.5 outline-none focus:border-[#004c91] bg-white"
+                                      >
+                                        {ATT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                                      </select>
+                                    ) : (
+                                      <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold border ${att.cls}`}>{att.label}</span>
+                                    )}
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    {editing && isManual ? (
+                                      <input value={p.fullNameSnapshot} onChange={(e) => updateParticipant(p._key, { fullNameSnapshot: e.target.value })}
+                                        className="w-full text-sm font-semibold rounded-lg border border-gray-300 px-2 py-1.5 outline-none focus:border-[#004c91]" />
+                                    ) : (
+                                      <span className="font-semibold text-gray-900">{p.fullNameSnapshot || '-'}</span>
+                                    )}
+                                    {rowError && (
+                                      <p className="mt-1 text-xs font-semibold text-red-600">{rowError}</p>
+                                    )}
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    {editing && isManual ? (
+                                      <input value={p.roleSnapshot} onChange={(e) => updateParticipant(p._key, { roleSnapshot: e.target.value })}
+                                        placeholder="Vai trò..."
+                                        className="w-full text-sm rounded-lg border border-gray-300 px-2 py-1.5 outline-none focus:border-[#004c91]" />
+                                    ) : (
+                                      <span className="text-gray-700">{p.roleSnapshot || '-'}</span>
+                                    )}
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    {editing && isManual ? (
+                                      <input value={p.organizationSnapshot} onChange={(e) => updateParticipant(p._key, { organizationSnapshot: e.target.value })}
+                                        placeholder="Đơn vị..."
+                                        className="w-full text-sm rounded-lg border border-gray-300 px-2 py-1.5 outline-none focus:border-[#004c91]" />
+                                    ) : (
+                                      <span className="inline-flex items-center gap-1.5 text-gray-700">
+                                        <Building2 className="w-3.5 h-3.5 text-gray-400 shrink-0" />{p.organizationSnapshot || '-'}
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    {editing && isManual ? (
+                                      <input value={p.emailSnapshot} onChange={(e) => updateParticipant(p._key, { emailSnapshot: e.target.value })}
+                                        placeholder="Email..."
+                                        className="w-full text-sm rounded-lg border border-gray-300 px-2 py-1.5 outline-none focus:border-[#004c91]" />
+                                    ) : (
+                                      <span className="text-gray-600 break-all">{p.emailSnapshot || '-'}</span>
+                                    )}
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold border ${kind.cls}`}>{kind.label}</span>
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    {editing ? (
+                                      <input value={p.attendanceNote} onChange={(e) => updateParticipant(p._key, { attendanceNote: e.target.value })}
+                                        placeholder="Ghi chú điểm danh..."
+                                        className="w-full text-sm rounded-lg border border-gray-300 px-2 py-1.5 outline-none focus:border-[#004c91]" />
+                                    ) : (
+                                      <span className="text-gray-500 text-xs">{p.attendanceNote || '-'}</span>
+                                    )}
+                                  </td>
+                                  {editing && (
+                                    <td className="px-4 py-3 text-center">
+                                      <button type="button" onClick={() => removeParticipant(p._key)}
+                                        className="text-gray-400 hover:text-red-600 p-1.5 rounded-lg hover:bg-red-50 transition-colors">
+                                        <Trash2 className="w-4 h-4" />
+                                      </button>
+                                    </td>
+                                  )}
+                                </tr>
+                              );
+                            })}
+                            {editing && participantRows.length === 0 && (
+                              <tr><td colSpan={8} className="px-5 py-6 text-center text-sm text-slate-400 italic">Chưa có người tham gia. Dùng các nút bên dưới để thêm.</td></tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+
+                    {/* Hành động trên danh sách — chỉ khi đang edit */}
+                    {editing && (
+                      <div className="px-5 py-3 border-t border-gray-200 bg-gray-50/40 space-y-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button type="button" onClick={() => { setShowAddForm((s) => !s); setAddUserError(null); }}
+                            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold bg-[#004c91] hover:bg-[#00386b] text-white rounded-lg shadow-sm transition-colors">
+                            <UserPlus className="w-4 h-4" /> Thêm người tham gia
+                          </button>
+                          <button type="button" onClick={handleSyncNew} disabled={busy}
+                            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold bg-white border border-[#004c91]/30 text-[#004c91] hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-50">
+                            <RefreshCw className="w-4 h-4" /> Đồng bộ người mới
+                          </button>
+                        </div>
+
+                        {showAddForm && (
+                          <div className="rounded-xl border border-gray-200 bg-white p-4 space-y-3">
+                            <div className="relative">
+                              <label className="block text-xs font-bold text-gray-600 mb-1">Tìm người dùng trong hệ thống <span className="text-red-500">*</span></label>
+                              <div className="relative">
+                                <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                                <input value={userQuery}
+                                  onChange={(e) => { setUserQuery(e.target.value); setAddUserId(null); setAddUserError(null); }}
+                                  placeholder="Nhập tên hoặc email để tìm..."
+                                  className={`w-full text-sm rounded-lg border pl-9 pr-3 py-2 outline-none ${addUserError ? 'border-red-400 focus:border-red-500' : 'border-gray-300 focus:border-[#004c91]'}`} />
+                              </div>
+                              {addUserError && (
+                                <p className="mt-1.5 text-xs font-semibold text-red-600">{addUserError}</p>
+                              )}
+                              {userQuery.trim().length >= 2 && (userSearching || userResults.length > 0) && (
+                                <div className="absolute z-20 mt-1 w-full max-h-52 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg">
+                                  {userSearching ? (
+                                    <div className="px-3 py-2 text-xs text-gray-400">Đang tìm...</div>
+                                  ) : userResults.map((u) => (
+                                    <button type="button" key={u.userId} onClick={() => handlePickUser(u)}
+                                      className="w-full text-left px-3 py-2 hover:bg-blue-50 transition-colors">
+                                      <div className="text-sm font-semibold text-gray-800">{u.fullName}</div>
+                                      <div className="text-[11px] text-gray-500 flex items-center gap-2 flex-wrap">
+                                        {u.email && <span className="inline-flex items-center gap-1"><Mail className="w-3 h-3" />{u.email}</span>}
+                                        {u.organization && <span className="inline-flex items-center gap-1"><Building2 className="w-3 h-3" />{u.organization}</span>}
+                                      </div>
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+
+                            {addUserId ? (
+                              <div className="text-[11px] font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg px-2.5 py-1.5 flex flex-col gap-1">
+                                <div className="flex items-center justify-between gap-2">
+                                  <span>Đã chọn: <b>{addName}</b></span>
+                                  <button type="button" onClick={() => { setAddUserId(null); setUserQuery(''); }} className="text-blue-500 hover:text-blue-800"><X className="w-3.5 h-3.5" /></button>
+                                </div>
+                                {(addOrg || addEmail) && (
+                                  <div className="text-[10px] text-blue-600 flex items-center gap-2 opacity-80">
+                                    {addOrg && <span>{addOrg}</span>}
+                                    {addOrg && addEmail && <span>•</span>}
+                                    {addEmail && <span>{addEmail}</span>}
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              <p className="text-[11px] text-gray-400 italic">Bắt buộc chọn người dùng hệ thống để thêm vào biên bản.</p>
+                            )}
+                            <div className="flex items-center gap-2">
+                              <button type="button" onClick={handleAddParticipant}
+                                className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold bg-[#f37021] hover:bg-[#e0611d] text-white rounded-lg shadow-sm transition-colors">
+                                <Plus className="w-4 h-4" /> Thêm vào danh sách
+                              </button>
+                              <button type="button" onClick={resetAddForm}
+                                className="px-4 py-2 text-xs font-bold text-gray-600 bg-white border border-gray-200 hover:bg-gray-50 rounded-lg transition-colors">
+                                Hủy
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Ghi chú / Nội dung biên bản — dữ liệu THẬT */}
+                  <div className="space-y-6">
+                    <div>
+                      <h3 className="text-base font-bold text-gray-800 mb-3 ml-2 relative before:content-[''] before:absolute before:left-[-12px] before:top-[6px] before:w-1.5 before:h-1.5 before:bg-[#f37021] before:rounded-full">
+                        Ghi chú / Nội dung biên bản
+                      </h3>
+                      {editing ? (
+                        <textarea
+                          value={draftContent}
+                          onChange={(e) => setDraftContent(e.target.value)}
+                          placeholder="Nhập ghi chú hoặc nội dung biên bản cuộc họp..."
+                          className="w-full bg-gray-50/50 border border-gray-200 rounded-xl p-4 text-sm font-medium text-gray-800 min-h-[160px] focus:bg-white focus:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/20 transition-all outline-none resize-y"
+                        />
+                      ) : (
+                        <div className="w-full rounded-xl border border-gray-200 bg-gray-50/60 px-4 py-3 min-h-[120px] whitespace-pre-wrap text-sm text-gray-800">
+                          {data.content?.trim() ? data.content : <span className="text-slate-400 italic">Chưa có nội dung.</span>}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Đầu mục công việc — dữ liệu THẬT từ minute_action_items */}
+                    <div>
+                      <h3 className="text-base font-bold text-gray-800 mb-3 ml-2 relative before:content-[''] before:absolute before:left-[-12px] before:top-[6px] before:w-1.5 before:h-1.5 before:bg-[#004c91] before:rounded-full">
+                        Đầu mục công việc
+                      </h3>
+                      {actionRows.length === 0 && !editing ? (
+                        <div className="bg-gray-50/50 border border-gray-100 rounded-xl p-6 text-center text-sm text-slate-400 italic flex items-center justify-center gap-2">
+                          <ClipboardList className="w-5 h-5 text-slate-300" /> Chưa có đầu mục công việc.
+                        </div>
+                      ) : (
+                        <div className="space-y-3 bg-gray-50/50 border border-gray-100 rounded-xl p-4">
+                          {actionRows.map((a) => {
+                            const meta = ACTION_STATUS_META[a.status] ?? ACTION_STATUS_META.TODO;
+                            return (
+                              <div key={a._key} className="flex flex-col gap-3 bg-white p-3 rounded-lg border border-gray-200 shadow-sm">
+                                <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                                  {editing ? (
+                                    <div className="flex-1">
+                                      <input value={a.title} onChange={(e) => { updateActionItem(a._key, { title: e.target.value }); clearActionError(a._key); }}
+                                        placeholder="Nội dung công việc..."
+                                        className={`w-full bg-transparent text-sm font-medium rounded-lg border px-3 py-2 outline-none ${actionErrors[a._key] ? 'border-red-400 focus:border-red-500' : 'border-gray-300 focus:border-[#004c91]'} ${a.status === 'DONE' ? 'line-through text-gray-400' : 'text-gray-800'}`} />
+                                      {actionErrors[a._key] && (
+                                        <p className="mt-1 text-xs font-semibold text-red-600">{actionErrors[a._key]}</p>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <span className={`flex-1 text-sm font-medium ${a.status === 'DONE' ? 'line-through text-gray-400' : 'text-gray-800'}`}>{a.title || '-'}</span>
+                                  )}
+                                  <div className="flex items-center gap-2">
+                                    <Calendar className="w-4 h-4 text-orange-500 shrink-0" />
+                                    {editing ? (
+                                      <input type="datetime-local" value={a.dueDate} onChange={(e) => updateActionItem(a._key, { dueDate: e.target.value })}
+                                        className="text-xs font-bold text-orange-700 bg-orange-50 px-2 py-1.5 rounded-md border border-orange-200 outline-none hover:border-orange-300" />
+                                    ) : (
+                                      <span className="text-xs font-bold text-orange-700">{a.dueDate ? formatDateTime(a.dueDate) : 'Chưa đặt hạn'}</span>
+                                    )}
+                                  </div>
+                                  {editing ? (
+                                    <select value={a.status} onChange={(e) => updateActionItem(a._key, { status: e.target.value })}
+                                      className="text-xs font-bold rounded-md border border-gray-300 px-2 py-1.5 outline-none focus:border-[#004c91] bg-white">
+                                      {ACTION_STATUS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                                    </select>
+                                  ) : (
+                                    <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold border ${meta.cls}`}>{meta.label}</span>
+                                  )}
+                                  {editing && (
+                                    <button type="button" onClick={() => removeActionItem(a._key)}
+                                      disabled={a.actionItemId > 0 && a.status === 'DONE'}
+                                      title={a.actionItemId > 0 && a.status === 'DONE' ? 'Không thể xóa đầu mục đã hoàn thành' : 'Xóa'}
+                                      className="text-gray-400 hover:text-red-600 p-1.5 rounded-lg hover:bg-red-50 transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent">
+                                      <Trash2 className="w-4 h-4" />
+                                    </button>
+                                  )}
+                                </div>
+                                {editing ? (
+                                  <input value={a.note} onChange={(e) => updateActionItem(a._key, { note: e.target.value })}
+                                    placeholder="Ghi chú (tùy chọn)..."
+                                    className="w-full text-xs rounded-lg border border-gray-200 px-3 py-1.5 outline-none focus:border-[#004c91] text-gray-600" />
+                                ) : a.note ? (
+                                  <p className="text-xs text-gray-500 italic">{a.note}</p>
+                                ) : null}
+                              </div>
+                            );
+                          })}
+                          {editing && (
+                            <button type="button"
+                              onClick={() => setDraftActionItems((prev) => [...prev, { _key: nextKey('a'), actionItemId: 0, title: '', note: '', dueDate: '', status: 'TODO' }])}
+                              className="text-sm font-bold text-[#004c91] hover:text-[#003366] flex items-center gap-1.5 px-2 py-1 outline-none">
+                              <Plus className="w-4 h-4" /> Thêm đầu mục công việc
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Nút lưu/hủy/sửa — logic backend thật + cơ chế lock */}
+                  <div className="mt-8 flex items-center justify-end gap-3">
+                    {editing ? (
+                      <>
+                        <button type="button" onClick={handleCancel} disabled={busy}
+                          className="px-5 py-2.5 rounded-xl font-bold text-gray-600 bg-white border border-gray-200 hover:bg-gray-50 transition-colors inline-flex items-center gap-2 disabled:opacity-50">
+                          <X className="w-4 h-4" /> Hủy chỉnh sửa
+                        </button>
+                        {/* Không disable theo title rỗng — để click vẫn chạy validate (inline error + toast). */}
+                        <button type="button" onClick={handleSave} disabled={busy}
+                          className="px-6 py-2.5 rounded-xl font-bold text-white bg-[#004c91] hover:bg-[#003b70] shadow-sm transition-colors inline-flex items-center gap-2 disabled:opacity-50">
+                          <Save className="w-4 h-4" /> {busy ? 'Đang lưu...' : 'Lưu biên bản'}
+                        </button>
+                      </>
+                    ) : (data.canEdit && !data.isLockedByOther && !isReadOnly) ? (
+                      <button type="button" onClick={handleEdit} disabled={busy}
+                        className="px-6 py-2.5 rounded-xl font-bold text-white bg-[#f37021] hover:bg-[#e0611d] shadow-sm transition-colors inline-flex items-center gap-2 disabled:opacity-50">
+                        <Edit3 className="w-4 h-4" /> {busy ? 'Đang mở...' : 'Sửa biên bản'}
+                      </button>
+                    ) : null}
+                  </div>
+                </>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Toasts (góc phải trên) — cùng pattern với màn duyệt/từ chối/hủy đơn. */}
+      {toasts.length > 0 && (
+        <div className="fixed top-5 right-5 z-[200] flex flex-col gap-2 w-[min(92vw,360px)]">
+          {toasts.map((t) => (
+            <motion.div
+              key={t.id}
+              initial={{ opacity: 0, x: 24 }}
+              animate={{ opacity: 1, x: 0 }}
+              role="status"
+              className={`flex items-start gap-2 rounded-xl border px-4 py-3 text-sm font-semibold shadow-lg ${
+                t.type === 'success'
+                  ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                  : t.type === 'info'
+                  ? 'bg-blue-50 border-blue-200 text-blue-800'
+                  : 'bg-red-50 border-red-200 text-red-700'
+              }`}
+            >
+              {t.type === 'success' ? <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+                : t.type === 'info' ? <Info className="mt-0.5 h-4 w-4 shrink-0" />
+                : <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />}
+              <span className="flex-1">{t.msg}</span>
+              <button type="button" aria-label="Đóng" onClick={() => setToasts((prev) => prev.filter((x) => x.id !== t.id))} className="text-current/70 hover:text-current">
+                <X className="h-4 w-4" />
+              </button>
+            </motion.div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}

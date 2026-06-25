@@ -35,7 +35,7 @@ public sealed class ProcessVisitRequestCommandHandler
 
         // Only a Staff Leader processes/assigns hosts (also enforced by UC-22 RBAC).
         if (!(_currentUser.RoleCode == RoleCodes.Staff && _currentUser.SubRole == UserSubRoles.Leader))
-            throw new ForbiddenException("Chá»‰ Staff Leader má»›i Ä‘Æ°á»£c duyá»‡t/gÃ¡n host.");
+            throw new ForbiddenException("Chỉ Staff Leader mới được duyệt/gán host.");
 
         var actorId = _currentUser.UserId.Value;
 
@@ -49,7 +49,12 @@ public sealed class ProcessVisitRequestCommandHandler
 
         // Staff Leader may only act on their own campus.
         if (_currentUser.PrimaryCampusId != instance.CampusId)
-            throw new ForbiddenException("CÆ¡ sá»Ÿ nÃ y khÃ´ng thuá»™c pháº¡m vi phá»¥ trÃ¡ch cá»§a báº¡n.");
+            throw new ForbiddenException("Cơ sở này không thuộc phạm vi phụ trách của bạn.");
+
+        // Host được gán MỘT lần cho mỗi cơ sở (UC chốt). Khi đã có host thì không cho gán lại
+        // (không có chức năng đổi/chuyển host trong phase này). Nếu sau này Host nghỉ/sai → tạo UC riêng.
+        if (instance.CurrentHostUserId != null)
+            throw new ConflictException("Cơ sở này đã có host phụ trách; không thể gán lại host.");
 
         // The chosen host must be an active STAFF of the same campus.
         var host = await _db.Users
@@ -57,21 +62,36 @@ public sealed class ProcessVisitRequestCommandHandler
             .FirstOrDefaultAsync(u => u.UserId == request.HostUserId, cancellationToken)
             ?? throw new NotFoundException("User", request.HostUserId);
 
+        // The DB triggers (trg_visit_campuses_assignment_validate_*) require the official host to be
+        // a STAFF with sub_role = STAFF (not a Staff Leader) of the same campus. Mirror that here so a
+        // bad HostUserId fails as a clean 422 instead of bubbling up the trigger SIGNAL as a 500.
         if (host.Role.RoleCode != RoleCodes.Staff
+            || host.SubRole != UserSubRoles.Staff
             || host.PrimaryCampusId != instance.CampusId
             || host.Status != UserStatuses.Active)
         {
-            throw new BusinessRuleException("Host Ä‘Æ°á»£c chá»n pháº£i lÃ  nhÃ¢n sá»± (STAFF) Ä‘ang hoáº¡t Ä‘á»™ng thuá»™c Ä‘Ãºng cÆ¡ sá»Ÿ.");
+            throw new BusinessRuleException("Host được chọn phải là nhân sự (STAFF) đang hoạt động thuộc đúng cơ sở.");
         }
 
         var now = _clock.UtcNow;
+
+        // The approve+assign writes touch two tables that have cross-row DB triggers: the
+        // visit_request_campuses BEFORE UPDATE trigger reads visit_requests.status and rejects the
+        // move to an operational status (ASSIGNED) unless the parent request is already APPROVED.
+        // EF Core orders UPDATE statements by table name, so within a single SaveChanges the
+        // campus row ("visit_request_campuses") is flushed BEFORE the request ("visit_requests"),
+        // making the trigger see the still-PENDING parent → SIGNAL 45000 → generic 500.
+        // Persist the approval FIRST, then the assignment, inside one transaction so the trigger
+        // always observes APPROVED and the two writes still commit atomically.
+        await using var tx = await _db.BeginTransactionAsync(cancellationToken);
 
         if (visit.VisitScope == VisitScopes.SingleCampus)
         {
             // Approve + assign in one step.
             if (visit.Status != VisitRequestStatuses.PendingApproval || instance.Status != VisitInstanceStatus.WaitingRequestApproval)
-                throw new ConflictException("ÄÆ¡n Ä‘Ã£ Ä‘Æ°á»£c ngÆ°á»i khÃ¡c xá»­ lÃ½ hoáº·c tráº¡ng thÃ¡i Ä‘Ã£ thay Ä‘á»•i.");
+                throw new ConflictException("Đơn đã được người khác xử lý hoặc trạng thái đã thay đổi.");
 
+            // Phase 1 — approve the request so the campus-instance trigger sees status = APPROVED.
             visit.Status = VisitRequestStatuses.Approved;
             visit.DecidedBy = actorId;
             visit.DecidedAt = now;
@@ -79,10 +99,9 @@ public sealed class ProcessVisitRequestCommandHandler
             visit.UpdatedAt = now;
             visit.UpdatedBy = actorId;
             visit.RowVersion += 1;
+            await _db.SaveChangesAsync(cancellationToken);
 
-
-
-            var oldInstanceStatus = instance.Status;
+            // Phase 2 — now flip the campus instance to ASSIGNED with the chosen host.
             instance.Status = VisitInstanceStatus.Assigned;
             instance.CurrentHostUserId = request.HostUserId;
             instance.HostAssignedBy = actorId;
@@ -94,10 +113,9 @@ public sealed class ProcessVisitRequestCommandHandler
         else // MULTI_CAMPUS â€” HO has already approved; Staff Leader assigns the actual staff.
         {
             if (visit.Status != VisitRequestStatuses.Approved || instance.Status != "WAITING_HOST_ASSIGNMENT")
-                throw new ConflictException("Ä Æ¡n Ä‘Ã£ Ä‘Æ°á»£c ngÆ°á» i khÃ¡c xá»­ lÃ½ hoáº·c tráº¡ng thÃ¡i Ä‘Ã£ thay Ä‘á»•i.");
-
-            if (instance.CurrentHostUserId != null)
-                throw new ConflictException("Campus instance này đã có host chính thức, không thể thay đổi host.");
+                throw new ConflictException("Đơn đã được người khác xử lý hoặc trạng thái đã thay đổi.");
+            // (One-time host guard already enforced above for both single & multi campus.)
+            // Request is already APPROVED, so a single update is safe for the trigger.
 
             instance.Status = VisitInstanceStatus.Assigned;
             instance.CurrentHostUserId = request.HostUserId;
@@ -118,6 +136,7 @@ public sealed class ProcessVisitRequestCommandHandler
         });
 
         await _db.SaveChangesAsync(cancellationToken);
+        await tx.CommitAsync(cancellationToken);
 
         return new ProcessVisitRequestResponse(
             visit.VisitRequestId,
@@ -126,7 +145,7 @@ public sealed class ProcessVisitRequestCommandHandler
             instance.Status,
             request.HostUserId,
             visit.VisitScope == VisitScopes.SingleCampus
-                ? "Ä Ã£ duyá»‡t Ä‘Æ¡n vÃ  gÃ¡n host phá»¥ trÃ¡ch."
-                : "Ä Ã£ gán host phá»¥ trÃ¡ch cho cÆ¡ sá»Ÿ.");
+                ? "Đã duyệt đơn và gán host phụ trách."
+                : "Đã gán host phụ trách cho cơ sở.");
     }
 }

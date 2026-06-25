@@ -55,9 +55,9 @@ export function CancellationReasonPanel({
   const cancelledBy = cancelledByName || (cancelledByUserId ? `#${cancelledByUserId}` : '-');
 
   return (
-    <div className="rounded-2xl border border-slate-300 bg-slate-50 p-5">
-      <h3 className="text-sm font-black text-slate-700 uppercase tracking-wide mb-3 flex items-center gap-2">
-        <XCircle className="w-4 h-4" /> Lý do hủy{contextLabel ? ` — ${contextLabel}` : ''}
+    <div className="rounded-2xl border border-red-200 bg-red-50 p-5">
+      <h3 className="text-sm font-black text-red-700 uppercase tracking-wide mb-3 flex items-center gap-2">
+        <XCircle className="w-4 h-4 text-red-500" /> Lý do hủy{contextLabel ? ` — ${contextLabel}` : ''}
       </h3>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-3">
         <div>

@@ -43,6 +43,7 @@ public interface IApplicationDbContext
     DbSet<VisitLogisticsItemHandover> VisitLogisticsItemHandovers { get; }
     DbSet<Minute> Minutes { get; }
     DbSet<MinuteActionItem> MinuteActionItems { get; }
+    DbSet<MinuteParticipant> MinuteParticipants { get; }
     DbSet<Feedback> Feedbacks { get; }
     DbSet<PEMS.Domain.Entities.News.News> News { get; }
     DbSet<NewsTranslation> NewsTranslations { get; }

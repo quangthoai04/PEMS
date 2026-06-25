@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -30,14 +30,14 @@ public sealed class GetHostCandidatesQueryHandler
             throw new ForbiddenException();
 
         if (!(_currentUser.RoleCode == RoleCodes.Staff && _currentUser.SubRole == UserSubRoles.Leader))
-            throw new ForbiddenException("Chá»‰ Staff Leader má»›i Ä‘Æ°á»£c xem danh sÃ¡ch host.");
+            throw new ForbiddenException("Chỉ Staff Leader mới được xem danh sách host.");
 
         var instance = await _db.VisitRequestCampuses
             .FirstOrDefaultAsync(c => c.VisitInstanceId == request.VisitInstanceId, cancellationToken)
             ?? throw new NotFoundException("VisitRequestCampus", request.VisitInstanceId);
 
         if (_currentUser.PrimaryCampusId != instance.CampusId)
-            throw new ForbiddenException("CÆ¡ sá»Ÿ nÃ y khÃ´ng thuá»™c pháº¡m vi phá»¥ trÃ¡ch cá»§a báº¡n.");
+            throw new ForbiddenException("Cơ sở này không thuộc phạm vi phụ trách của bạn.");
 
         var campusId = instance.CampusId;
         // Target window comes from the current campus instance (planned_start_at / planned_end_at).

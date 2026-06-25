@@ -8,6 +8,14 @@ import type {
   RespondInvitationPayload,
   RespondInvitationResult,
   SubmittedVisitRequestFormDetail,
+  VisitProcessPermission,
+  VisitMinute,
+  MinuteParticipant,
+  MinuteUserSearchItem,
+  SaveMinuteParticipantPayload,
+  SaveMinuteActionItemPayload,
+  VisitNews,
+  VisitNewsList,
 } from '../types/delegations.types';
 
 export const delegationsApi = {
@@ -61,6 +69,17 @@ export const delegationsApi = {
   },
 
   /**
+   * Phase 2: permission flags for a campus instance's process page (source of truth for which
+   * tabs the caller may view/edit). The backend enforces scope (403 if no relation to the instance).
+   */
+  async getVisitProcessPermissions(visitInstanceId: number | string): Promise<VisitProcessPermission> {
+    const { data } = await httpClient.get<VisitProcessPermission>(
+      API_ENDPOINTS.delegations.processPermissions(visitInstanceId),
+    );
+    return data;
+  },
+
+  /**
    * UC-22: Staff Leader picks the host for a campus instance — approves+assigns for a
    * single-campus request, or transfers the host for an HO-approved multi-campus request.
    */
@@ -73,6 +92,49 @@ export const delegationsApi = {
       API_ENDPOINTS.delegations.assignHost(visitRequestId, visitInstanceId),
       { hostUserId },
     );
+    return data;
+  },
+
+  /** VisitProcess "Trước tiếp khách": real setup detail (agenda + common) for an instance. */
+  async getVisitProcessDetail(
+    visitRequestId: number | string,
+    visitInstanceId: number | string,
+  ): Promise<import('../types/delegations.types').VisitProcessDetail> {
+    const { data } = await httpClient.get(
+      API_ENDPOINTS.delegations.processDetail(visitRequestId, visitInstanceId));
+    return data;
+  },
+
+  /** Upsert the instance's agenda (Host only, prep window). Saves setup only — never changes stage. */
+  async saveVisitAgenda(
+    visitRequestId: number | string,
+    visitInstanceId: number | string,
+    items: Array<{ agendaId?: number | null; title: string; startTime: string; endTime?: string | null; description?: string | null; location?: string | null }>,
+  ): Promise<any> {
+    const { data } = await httpClient.post<any>(
+      API_ENDPOINTS.delegations.saveAgenda(visitRequestId, visitInstanceId), { items });
+    return data;
+  },
+
+  /**
+   * Operational reception stage transitions (Host only). Each advances the campus instance one
+   * stage: complete-before → DURING_VISIT, complete-during → AFTER_VISIT, complete-after → CLOSED.
+   * The backend re-validates status (409) and host scope (403); callers should refetch the
+   * process permissions afterwards to unlock the next tab.
+   */
+  async completeBeforeVisit(visitRequestId: number | string, visitInstanceId: number | string): Promise<any> {
+    const { data } = await httpClient.post<any>(
+      API_ENDPOINTS.delegations.completeBeforeVisit(visitRequestId, visitInstanceId), {});
+    return data;
+  },
+  async completeDuringVisit(visitRequestId: number | string, visitInstanceId: number | string): Promise<any> {
+    const { data } = await httpClient.post<any>(
+      API_ENDPOINTS.delegations.completeDuringVisit(visitRequestId, visitInstanceId), {});
+    return data;
+  },
+  async completeAfterVisit(visitRequestId: number | string, visitInstanceId: number | string): Promise<any> {
+    const { data } = await httpClient.post<any>(
+      API_ENDPOINTS.delegations.completeAfterVisit(visitRequestId, visitInstanceId), {});
     return data;
   },
 
@@ -131,6 +193,95 @@ export const delegationsApi = {
       payload,
     );
     return data;
+  },
+
+  /**
+   * Phase 3: meeting minutes (biên bản) for a campus instance — 1 record per instance with an
+   * edit-lock workflow. The backend enforces scope, the one-per-instance rule, lock ownership
+   * (token) and optimistic concurrency (rowVersion).
+   */
+  minutes: {
+    /** Read the single minutes record + lock state + action flags (no lock token returned). */
+    async get(visitInstanceId: number | string): Promise<VisitMinute> {
+      const { data } = await httpClient.get<VisitMinute>(API_ENDPOINTS.meetingMinutes.byInstance(visitInstanceId));
+      return data;
+    },
+    /** Open the editor: create-if-missing + acquire the edit lock (returns a lock token). */
+    async createOrLock(visitInstanceId: number | string, title?: string): Promise<VisitMinute> {
+      const { data } = await httpClient.post<VisitMinute>(
+        API_ENDPOINTS.meetingMinutes.createOrLock(visitInstanceId), { title });
+      return data;
+    },
+    /** Re-acquire the lock on an existing record (re-open for editing). */
+    async acquireLock(minutesId: number | string): Promise<VisitMinute> {
+      const { data } = await httpClient.post<VisitMinute>(API_ENDPOINTS.meetingMinutes.acquireLock(minutesId), {});
+      return data;
+    },
+    /**
+     * Save content + attendance snapshot + action items (requires the caller's lock token + matching
+     * rowVersion); releases the lock. `participants`/`actionItems` are reconciled server-side.
+     */
+    async save(
+      minutesId: number | string,
+      payload: {
+        title: string;
+        content: string | null;
+        editLockToken: string;
+        rowVersion: number;
+        participants: SaveMinuteParticipantPayload[];
+        actionItems: SaveMinuteActionItemPayload[];
+      },
+    ): Promise<VisitMinute> {
+      const { data } = await httpClient.put<VisitMinute>(API_ENDPOINTS.meetingMinutes.save(minutesId), payload);
+      return data;
+    },
+    /** Release the lock without saving (Hủy chỉnh sửa). */
+    async releaseLock(minutesId: number | string, editLockToken: string): Promise<VisitMinute> {
+      const { data } = await httpClient.post<VisitMinute>(
+        API_ENDPOINTS.meetingMinutes.releaseLock(minutesId), { editLockToken });
+      return data;
+    },
+    /** "Đồng bộ người mới": attendance rows that should exist but are missing (not yet persisted). */
+    async newParticipantCandidates(minutesId: number | string): Promise<MinuteParticipant[]> {
+      const { data } = await httpClient.get<MinuteParticipant[]>(
+        API_ENDPOINTS.meetingMinutes.newParticipantCandidates(minutesId));
+      return data;
+    },
+    /** Search system users to add a participant manually (scoped to editors of the instance). */
+    async searchUsers(visitInstanceId: number | string, query: string): Promise<MinuteUserSearchItem[]> {
+      const { data } = await httpClient.get<MinuteUserSearchItem[]>(
+        API_ENDPOINTS.meetingMinutes.userSearch(visitInstanceId), { params: { query } });
+      return data;
+    },
+  },
+
+  /**
+   * Phase 4: news (tin tức) attached to a campus instance — many posts allowed. Create/edit limited
+   * to Host / accepted IC-Staff / Student (backend-enforced); Visitor sees only published posts.
+   */
+  visitNews: {
+    async list(visitInstanceId: number | string): Promise<VisitNewsList> {
+      const { data } = await httpClient.get<VisitNewsList>(API_ENDPOINTS.visitNews.byInstance(visitInstanceId));
+      return data;
+    },
+    async create(
+      visitInstanceId: number | string,
+      payload: { title: string; summary: string | null; body: string | null },
+    ): Promise<VisitNews> {
+      const { data } = await httpClient.post<VisitNews>(API_ENDPOINTS.visitNews.create(visitInstanceId), payload);
+      return data;
+    },
+    async update(
+      newsId: number | string,
+      payload: { title: string; summary: string | null; body: string | null; rowVersion: number },
+    ): Promise<VisitNews> {
+      const { data } = await httpClient.put<VisitNews>(API_ENDPOINTS.visitNews.update(newsId), payload);
+      return data;
+    },
+    async submitReview(newsId: number | string): Promise<VisitNews> {
+      const { data } = await httpClient.post<VisitNews>(API_ENDPOINTS.visitNews.submitReview(newsId), {});
+      return data;
+    },
   },
 
   visitInvitations: {

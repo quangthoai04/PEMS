@@ -7,6 +7,7 @@
 --   + added visit_logistics_item_handovers for BORROW/RETURN signatures.
 --   + added email_action_tokens for email button actions; no inbound inbox tables.
 --   + no visit_logistics_assignment_logs because task transfer is not supported.
+--   + minutes: added UNIQUE KEY uq_minutes_visit_instance (visit_instance_id) directly in CREATE TABLE.
 -- =====================================================================
 
 -- =====================================================================
@@ -1117,6 +1118,7 @@ CREATE TABLE minutes (
 
   PRIMARY KEY (minutes_id),
 
+  UNIQUE KEY uq_minutes_visit_instance (visit_instance_id),
   KEY idx_minutes_visit_status (visit_instance_id, status),
   KEY idx_minutes_created_by_time (created_by, created_at),
   KEY idx_minutes_edit_lock (edit_locked_by, edit_lock_expires_at),
@@ -1183,7 +1185,7 @@ CREATE TABLE minute_action_items (
   title VARCHAR(255) NOT NULL COMMENT 'Tên đầu việc',
   note TEXT NULL COMMENT 'Ghi chú thêm cho đầu việc',
 
-  due_date DATE NULL COMMENT 'Deadline của đầu việc',
+  due_date DATETIME NULL COMMENT 'Deadline ngày giờ của đầu việc',
 
   status ENUM('TODO','IN_PROGRESS','DONE','CANCELLED') NOT NULL DEFAULT 'TODO'
     COMMENT 'TODO=chưa làm, IN_PROGRESS=đang làm, DONE=hoàn thành, CANCELLED=đã hủy/không cần làm nữa',
