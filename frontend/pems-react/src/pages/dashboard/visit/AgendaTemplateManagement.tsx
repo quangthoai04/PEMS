@@ -1,7 +1,8 @@
 /**
  * AgendaTemplateManagement
  * Quản lý mẫu Agenda theo loại hình visit (visit_type) và phạm vi (GLOBAL / theo cơ sở).
- * Mỗi mục lịch trình dùng offset (phút) từ giờ bắt đầu chuyến + thời lượng (phút) — không dùng giờ tuyệt đối.
+ * Mỗi mục lịch trình dùng "bắt đầu sau (phút)" tính từ giờ bắt đầu chuyến + thời lượng (phút) —
+ * không dùng giờ tuyệt đối.
  * Wired tới API thật: /api/agenda-templates (CRUD + đặt mặc định).
  */
 
@@ -11,7 +12,7 @@ import {
   Plus, Trash2, Edit2, Save, X, Settings2, Clock, MapPin, User, FileText,
   Star, Globe, Building2, Loader2, AlertCircle,
 } from 'lucide-react';
-import toast from 'react-hot-toast';
+import toast, { Toaster } from 'react-hot-toast';
 import httpClient from '../../../shared/api/httpClient';
 import { API_ENDPOINTS } from '../../../shared/api/endpoints';
 import agendaTemplatesApi from '../../../features/agenda-templates/api/agendaTemplatesApi';
@@ -25,8 +26,11 @@ import type {
 
 interface EditorItem {
   uid: string;
-  startOffsetMinutes: number;
-  durationMinutes: number;
+  // Kept as digit STRINGS while editing (see sanitizeDigits/normalizeNonNegativeInteger) so we fully
+  // control what can be typed and how leading zeros collapse. Converted to real numbers only in the
+  // save payload.
+  startOffsetMinutes: string;
+  durationMinutes: string;
   title: string;
   description: string;
   location: string;
@@ -50,6 +54,21 @@ function apiMessage(e: unknown, fallback: string): string {
   return anyErr?.response?.data?.message ?? fallback;
 }
 
+function httpStatus(e: unknown): number | undefined {
+  return (e as { response?: { status?: number } })?.response?.status;
+}
+
+// ── Numeric input normalization ──
+// Minute fields are kept as STRINGS in the editor so we fully control what the user can type
+// (digits only) and how leading zeros collapse. Without this, type="number" + Number() lets values
+// like "0002" / "003434" linger in the UI and slip into the payload.
+const sanitizeDigits = (value: string) => value.replace(/[^\d]/g, '');
+const normalizeNonNegativeInteger = (value: string): string => {
+  const digits = sanitizeDigits(value);
+  if (!digits) return '';
+  return String(Number(digits)); // "0002" -> "2", "0000" -> "0"
+};
+
 let uidSeq = 1;
 const newUid = () => `it-${uidSeq++}`;
 
@@ -59,7 +78,7 @@ const emptyEditor = (): EditorState => ({
   name: '',
   description: '',
   status: 'ACTIVE',
-  items: [{ uid: newUid(), startOffsetMinutes: 0, durationMinutes: 30, title: '', description: '', location: '', responsibleRoleLabel: '' }],
+  items: [{ uid: newUid(), startOffsetMinutes: '0', durationMinutes: '30', title: '', description: '', location: '', responsibleRoleLabel: '' }],
 });
 
 export function AgendaTemplateManagement() {
@@ -150,8 +169,8 @@ export function AgendaTemplateManagement() {
       status: detail.status,
       items: agendaTemplatesAdapter.toInputItems(detail.items).map((i) => ({
         uid: newUid(),
-        startOffsetMinutes: i.startOffsetMinutes,
-        durationMinutes: i.durationMinutes,
+        startOffsetMinutes: String(i.startOffsetMinutes),
+        durationMinutes: String(i.durationMinutes),
         title: i.title,
         description: i.description ?? '',
         location: i.location ?? '',
@@ -169,28 +188,47 @@ export function AgendaTemplateManagement() {
   const patchItem = (uid: string, patch: Partial<EditorItem>) =>
     setEditor((e) => (e ? { ...e, items: e.items.map((it) => (it.uid === uid ? { ...it, ...patch } : it)) } : e));
   const addItem = () =>
-    setEditor((e) => (e ? { ...e, items: [...e.items, { uid: newUid(), startOffsetMinutes: 0, durationMinutes: 30, title: '', description: '', location: '', responsibleRoleLabel: '' }] } : e));
+    setEditor((e) => (e ? { ...e, items: [...e.items, { uid: newUid(), startOffsetMinutes: '0', durationMinutes: '30', title: '', description: '', location: '', responsibleRoleLabel: '' }] } : e));
   const removeItem = (uid: string) =>
     setEditor((e) => (e ? { ...e, items: e.items.filter((it) => it.uid !== uid) } : e));
 
   const save = async () => {
     if (!editor) return;
-    if (!editor.name.trim()) { toast.error('Vui lòng nhập tên mẫu.'); return; }
-    if (editor.items.length === 0) { toast.error('Vui lòng thêm ít nhất một mục lịch trình.'); return; }
-    if (editor.items.some((i) => !i.title.trim())) { toast.error('Tiêu đề mục lịch trình không được để trống.'); return; }
-    if (editor.items.some((i) => i.durationMinutes <= 0)) { toast.error('Thời lượng phải lớn hơn 0 phút.'); return; }
-    if (editor.items.some((i) => i.startOffsetMinutes < 0)) { toast.error('Offset không được nhỏ hơn 0.'); return; }
+    if (saving) return; // guard against double-submit
 
+    // ── Front-end validation (no API call on failure) ──
+    const name = editor.name.trim();
+    if (!name) {
+      // Distinguish "empty" from "whitespace-only" so the message is precise.
+      toast.error(editor.name.length > 0
+        ? 'Tên mẫu Agenda không được chỉ chứa khoảng trắng.'
+        : 'Vui lòng nhập tên mẫu Agenda.');
+      return;
+    }
+    if (editor.items.length === 0) {
+      toast.error('Vui lòng thêm ít nhất 1 mục lịch trình.');
+      return;
+    }
+    for (const it of editor.items) {
+      const offset = normalizeNonNegativeInteger(it.startOffsetMinutes);
+      if (offset === '') { toast.error('Vui lòng nhập số phút bắt đầu.'); return; }
+      const duration = normalizeNonNegativeInteger(it.durationMinutes);
+      if (duration === '') { toast.error('Vui lòng nhập thời lượng.'); return; }
+      if (Number(duration) <= 0) { toast.error('Thời lượng phải là số nguyên lớn hơn 0.'); return; }
+      if (!it.title.trim()) { toast.error('Vui lòng nhập tiêu đề mục lịch trình.'); return; }
+    }
+
+    // Normalize to REAL numbers right before sending — never ship "0002" / "003434" strings.
     const payload = {
       campusId: editor.campusId,
       visitType: editor.visitType,
-      name: editor.name.trim(),
+      name,
       description: editor.description.trim() || null,
       status: editor.status,
       items: editor.items.map((i, idx) => ({
         displayOrder: idx + 1,
-        startOffsetMinutes: Math.max(0, Math.floor(i.startOffsetMinutes)),
-        durationMinutes: Math.max(1, Math.floor(i.durationMinutes)),
+        startOffsetMinutes: Number(normalizeNonNegativeInteger(i.startOffsetMinutes) || '0'),
+        durationMinutes: Number(normalizeNonNegativeInteger(i.durationMinutes) || '0'),
         title: i.title.trim(),
         description: i.description.trim() || null,
         location: i.location.trim() || null,
@@ -202,20 +240,30 @@ export function AgendaTemplateManagement() {
     try {
       if (editor.agendaTemplateId) {
         await agendaTemplatesApi.update(editor.agendaTemplateId, payload);
-        toast.success('Đã cập nhật mẫu lịch trình.');
+        toast.success('Cập nhật mẫu Agenda thành công. Các thay đổi của mẫu đã được lưu.');
         const id = editor.agendaTemplateId;
         setEditor(null);
         setActiveId(id);
         await Promise.all([loadList(), loadDetail(id)]);
       } else {
         const res = await agendaTemplatesApi.create(payload);
-        toast.success('Đã tạo mẫu lịch trình thành công.');
+        toast.success('Tạo mẫu Agenda thành công. Mẫu mới đã được thêm vào danh sách.');
         setEditor(null);
         setActiveId(res.agendaTemplateId);
         await Promise.all([loadList(), loadDetail(res.agendaTemplateId)]);
       }
     } catch (e) {
-      toast.error(apiMessage(e, 'Không thể thực hiện thao tác. Vui lòng thử lại.'));
+      // Keep the form intact on failure so the user can fix and retry.
+      const status = httpStatus(e);
+      if (status === 409) {
+        toast.error('Tên mẫu Agenda đã tồn tại. Vui lòng nhập tên khác.');
+      } else if (status === 403) {
+        toast.error('Bạn không có quyền lưu mẫu Agenda.');
+      } else if (status === 400 || status === 422) {
+        toast.error(apiMessage(e, 'Vui lòng kiểm tra lại thông tin mẫu Agenda.'));
+      } else {
+        toast.error('Đã xảy ra lỗi hệ thống. Không thể lưu mẫu Agenda lúc này. Vui lòng thử lại sau.');
+      }
     } finally {
       setSaving(false);
     }
@@ -276,6 +324,9 @@ export function AgendaTemplateManagement() {
 
   return (
     <div className="flex-1 w-full bg-[#f8fbff] min-h-[calc(100vh-64px)]">
+      {/* This page renders its own toasts — without a Toaster mounted here, every toast.success /
+          toast.error (save, validation, errors) is silently swallowed = "no feedback". */}
+      <Toaster position="top-right" />
       <div className="mb-4 flex items-center text-sm font-medium text-gray-500 px-4 md:px-8 mt-4">
         <button onClick={() => navigate('/dashboard')} className="hover:text-[#004c91] transition-colors outline-none cursor-pointer">Dashboard</button>
         <span className="mx-2">/</span>
@@ -412,15 +463,15 @@ export function AgendaTemplateManagement() {
                       <div className="space-y-4">
                         {[...detail.items].sort((a, b) => a.startOffsetMinutes - b.startOffsetMinutes || a.displayOrder - b.displayOrder).map((item) => (
                           <div key={item.agendaTemplateItemId} className="flex gap-4 p-4 rounded-xl border border-gray-100 bg-gray-50">
-                            <div className="shrink-0 w-32 flex flex-col pt-0.5">
-                              <span className="text-[#f37021] font-bold text-sm flex items-center gap-1.5"><Clock className="w-4 h-4" /> {agendaTemplatesAdapter.formatOffset(item.startOffsetMinutes)}</span>
-                              <span className="text-xs text-gray-400 mt-0.5 ml-5">{agendaTemplatesAdapter.formatDuration(item.durationMinutes)}</span>
+                            <div className="shrink-0 w-40 flex flex-col pt-0.5">
+                              <span className="text-[#f37021] font-bold text-sm flex items-center gap-1.5"><Clock className="w-4 h-4" /> Bắt đầu sau {item.startOffsetMinutes} phút</span>
+                              <span className="text-xs text-gray-400 mt-0.5 ml-5">Thời lượng {item.durationMinutes} phút</span>
                             </div>
                             <div className="flex-1">
                               <h4 className="font-bold text-gray-900 mb-2">{item.title}</h4>
                               {item.description && <p className="text-sm text-gray-500 mb-2">{item.description}</p>}
                               <div className="flex flex-wrap gap-4 text-sm font-medium text-gray-500">
-                                {item.responsibleRoleLabel && <span className="flex items-center gap-1.5"><User className="w-4 h-4" /> {item.responsibleRoleLabel}</span>}
+                                {item.responsibleRoleLabel && <span className="flex items-center gap-1.5"><User className="w-4 h-4" /> Gợi ý phụ trách: {item.responsibleRoleLabel}</span>}
                                 {item.location && <span className="flex items-center gap-1.5"><MapPin className="w-4 h-4" /> {item.location}</span>}
                               </div>
                             </div>
@@ -475,9 +526,9 @@ function AgendaEditor({ editor, campuses, saving, onPatch, onPatchItem, onAddIte
         <div className="flex justify-between items-center mb-6 border-b border-gray-100 pb-4">
           <h2 className="text-xl font-bold text-[#004c91]">{editor.agendaTemplateId ? 'Chỉnh sửa mẫu Agenda' : 'Tạo mẫu Agenda mới'}</h2>
           <div className="flex items-center gap-2">
-            <button onClick={onCancel} disabled={saving} className="px-4 py-2 rounded-xl font-bold text-gray-600 hover:bg-gray-100 transition-colors outline-none disabled:opacity-50">Hủy</button>
-            <button onClick={onSave} disabled={saving} className="px-5 py-2 flex items-center gap-2 bg-[#004c91] hover:bg-[#00386b] text-white font-bold rounded-xl shadow-sm transition-colors outline-none disabled:opacity-60">
-              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Lưu
+            <button type="button" onClick={onCancel} disabled={saving} className="px-4 py-2 rounded-xl font-bold text-gray-600 hover:bg-gray-100 transition-colors outline-none disabled:opacity-50">Hủy</button>
+            <button type="button" onClick={onSave} disabled={saving} className="px-5 py-2 flex items-center gap-2 bg-[#004c91] hover:bg-[#00386b] text-white font-bold rounded-xl shadow-sm transition-colors outline-none disabled:opacity-60">
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} {saving ? 'Đang lưu...' : 'Lưu'}
             </button>
           </div>
         </div>
@@ -530,20 +581,24 @@ function AgendaEditor({ editor, campuses, saving, onPatch, onPatchItem, onAddIte
                 <Plus className="w-4 h-4" /> Thêm mục
               </button>
             </div>
-            <p className="text-xs text-gray-400 mb-4">Offset (phút) tính từ giờ bắt đầu chuyến; thời lượng (phút) &gt; 0. Giờ thực tế được backend tính khi áp dụng vào cơ sở.</p>
+            <p className="text-xs text-gray-400 mb-4">“Bắt đầu sau” là số phút tính từ giờ bắt đầu dự kiến của chuyến. “Thời lượng” phải lớn hơn 0. Khi áp dụng mẫu vào chuyến thật, hệ thống sẽ tự tính giờ bắt đầu và giờ kết thúc.</p>
 
             <div className="space-y-3">
               {editor.items.map((item, idx) => (
                 <div key={item.uid} className="relative group rounded-2xl border border-slate-200 bg-slate-50/60 p-4 transition-colors">
-                  <div className="grid grid-cols-1 gap-4 lg:grid-cols-[110px_130px_minmax(0,1fr)_44px] lg:items-start">
+                  <div className="grid grid-cols-1 gap-4 lg:grid-cols-[140px_130px_minmax(0,1fr)_44px] lg:items-start">
                     <div>
-                      <label className="mb-1.5 block min-h-[32px] text-xs font-bold leading-tight text-slate-500">Offset (phút)</label>
-                      <input type="number" min={0} value={item.startOffsetMinutes} onChange={(e) => onPatchItem(item.uid, { startOffsetMinutes: Number(e.target.value) })}
+                      <label className="mb-1.5 block min-h-[32px] text-xs font-bold leading-tight text-slate-500">Bắt đầu sau (phút)</label>
+                      <input type="text" inputMode="numeric" value={item.startOffsetMinutes}
+                        onChange={(e) => onPatchItem(item.uid, { startOffsetMinutes: sanitizeDigits(e.target.value) })}
+                        onBlur={(e) => onPatchItem(item.uid, { startOffsetMinutes: normalizeNonNegativeInteger(e.target.value) })}
                         className="h-11 w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-800 outline-none transition-colors focus:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/10" />
                     </div>
                     <div>
                       <label className="mb-1.5 block min-h-[32px] text-xs font-bold leading-tight text-slate-500">Thời lượng (phút)</label>
-                      <input type="number" min={1} value={item.durationMinutes} onChange={(e) => onPatchItem(item.uid, { durationMinutes: Number(e.target.value) })}
+                      <input type="text" inputMode="numeric" value={item.durationMinutes}
+                        onChange={(e) => onPatchItem(item.uid, { durationMinutes: sanitizeDigits(e.target.value) })}
+                        onBlur={(e) => onPatchItem(item.uid, { durationMinutes: normalizeNonNegativeInteger(e.target.value) })}
                         className="h-11 w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-800 outline-none transition-colors focus:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/10" />
                     </div>
                     <div>
@@ -557,7 +612,7 @@ function AgendaEditor({ editor, campuses, saving, onPatch, onPatchItem, onAddIte
                       </button>
                     </div>
                   </div>
-                  
+
                   <div className="mt-4">
                     <label className="mb-1.5 block min-h-[16px] text-xs font-bold leading-tight text-slate-500">Mô tả</label>
                     <input type="text" value={item.description} onChange={(e) => onPatchItem(item.uid, { description: e.target.value })}
@@ -571,14 +626,16 @@ function AgendaEditor({ editor, campuses, saving, onPatch, onPatchItem, onAddIte
                         className="h-11 w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-800 outline-none transition-colors focus:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/10" />
                     </div>
                     <div>
-                      <label className="mb-1.5 block min-h-[16px] text-xs font-bold leading-tight text-slate-500">Vai trò phụ trách</label>
+                      <label className="mb-1.5 block min-h-[16px] text-xs font-bold leading-tight text-slate-500">Vai trò phụ trách gợi ý</label>
                       <input type="text" value={item.responsibleRoleLabel} onChange={(e) => onPatchItem(item.uid, { responsibleRoleLabel: e.target.value })} maxLength={150}
+                        placeholder="VD: IC Host, IC Support, Student Support"
                         className="h-11 w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-800 outline-none transition-colors focus:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/10" />
+                      <p className="mt-1.5 text-xs font-medium text-slate-400">Nhập vai trò nên phụ trách mục này trong mẫu, ví dụ: IC Host, IC Support, Student Support. Đây chỉ là gợi ý, không phải phân công người cụ thể.</p>
                     </div>
                   </div>
 
                   <div className="mt-3 text-xs font-medium text-slate-400">
-                    {agendaTemplatesAdapter.formatOffset(item.startOffsetMinutes)} · {agendaTemplatesAdapter.formatDuration(item.durationMinutes)} (mục #{idx + 1})
+                    Bắt đầu sau {normalizeNonNegativeInteger(item.startOffsetMinutes) || '0'} phút · Thời lượng {normalizeNonNegativeInteger(item.durationMinutes) || '0'} phút (mục #{idx + 1})
                   </div>
                 </div>
               ))}

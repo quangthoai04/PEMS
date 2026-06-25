@@ -187,6 +187,23 @@ export interface VisitAgendaItem {
   endTime?: string | null;
   description?: string | null;
   location?: string | null;
+  /** Concrete assigned person (visit_agendas.responsible_user_id). Null = unassigned. */
+  responsibleUserId?: number | null;
+  responsibleUserName?: string | null;
+  responsibleUserEmail?: string | null;
+  /** Suggested role text from the source template item (display-only hint, NOT a person). */
+  templateResponsibleRoleLabel?: string | null;
+}
+
+/** A person eligible to be the responsible person of an agenda item: the active host or an ACCEPTED
+ * supporting participant of the instance. Source for the "Người phụ trách" dropdown. */
+export interface AgendaResponsibleCandidate {
+  userId: number;
+  fullName: string;
+  email: string;
+  participantRole: string;
+  displayRole: string;
+  isMainHost: boolean;
 }
 
 /** Real before-visit setup data for the VisitProcess page (from GET process-detail). */

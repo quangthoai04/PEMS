@@ -109,10 +109,20 @@ export const delegationsApi = {
   async saveVisitAgenda(
     visitRequestId: number | string,
     visitInstanceId: number | string,
-    items: Array<{ agendaId?: number | null; title: string; startTime: string; endTime?: string | null; description?: string | null; location?: string | null }>,
+    items: Array<{ agendaId?: number | null; title: string; startTime: string; endTime?: string | null; description?: string | null; location?: string | null; responsibleUserId?: number | null }>,
   ): Promise<any> {
     const { data } = await httpClient.post<any>(
       API_ENDPOINTS.delegations.saveAgenda(visitRequestId, visitInstanceId), { items });
+    return data;
+  },
+
+  /** Valid responsible-person candidates for the agenda editor: the active host + ACCEPTED supporting
+   * participants of THIS instance only (never the whole-system user list). */
+  async getAgendaResponsibleCandidates(
+    visitInstanceId: number | string,
+  ): Promise<import('../types/delegations.types').AgendaResponsibleCandidate[]> {
+    const { data } = await httpClient.get(
+      API_ENDPOINTS.delegations.agendaResponsibleCandidates(visitInstanceId));
     return data;
   },
 

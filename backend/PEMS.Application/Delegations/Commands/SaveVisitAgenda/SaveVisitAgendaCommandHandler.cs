@@ -6,6 +6,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Delegations;
 using PEMS.Domain.Entities.Users;
 using PEMS.Shared;
@@ -53,6 +54,46 @@ public sealed class SaveVisitAgendaCommandHandler
         var now = _clock.UtcNow;
         var incoming = request.Items ?? new List<SaveVisitAgendaItem>();
 
+        // ── Responsible-user validation ──
+        // A responsible person (when provided) MUST be either the instance's current host or an
+        // ACCEPTED participant in a supporting role (IC_SUPPORT / DEPT_SUPPORT / STUDENT), and the
+        // user must be ACTIVE. We never trust an arbitrary user id (guards DevTools/Postman tampering);
+        // INVITED / ASSIGNED / DECLINED / REMOVED participants are NOT eligible.
+        var requestedResponsibleIds = incoming
+            .Where(i => i.ResponsibleUserId.HasValue)
+            .Select(i => i.ResponsibleUserId!.Value)
+            .Distinct()
+            .ToList();
+        if (requestedResponsibleIds.Count > 0)
+        {
+            var allowedRoles = new[]
+            {
+                ParticipantRoles.IcSupport, ParticipantRoles.DeptSupport, ParticipantRoles.Student,
+            };
+
+            var activeIds = (await _db.Users
+                    .Where(u => requestedResponsibleIds.Contains(u.UserId) && u.Status == UserStatuses.Active)
+                    .Select(u => u.UserId)
+                    .ToListAsync(cancellationToken))
+                .ToHashSet();
+
+            var acceptedParticipantIds = await _db.VisitParticipants
+                .Where(p => p.VisitInstanceId == instance.VisitInstanceId
+                            && p.Status == ParticipantStatuses.Accepted
+                            && allowedRoles.Contains(p.ParticipantRole)
+                            && requestedResponsibleIds.Contains(p.UserId))
+                .Select(p => p.UserId)
+                .ToListAsync(cancellationToken);
+
+            var allowed = new HashSet<ulong>(acceptedParticipantIds.Where(id => activeIds.Contains(id)));
+            if (instance.CurrentHostUserId.HasValue && activeIds.Contains(instance.CurrentHostUserId.Value))
+                allowed.Add(instance.CurrentHostUserId.Value);
+
+            if (requestedResponsibleIds.Any(id => !allowed.Contains(id)))
+                throw new BusinessRuleException(
+                    "Người phụ trách không hợp lệ hoặc chưa chấp nhận tham gia chuyến tiếp khách này.");
+        }
+
         var existing = await _db.VisitAgendas
             .Where(a => a.VisitInstanceId == instance.VisitInstanceId)
             .ToListAsync(cancellationToken);
@@ -93,6 +134,8 @@ public sealed class SaveVisitAgendaCommandHandler
             entity.EndTime = item.EndTime;
             entity.Description = string.IsNullOrWhiteSpace(item.Description) ? null : item.Description.Trim();
             entity.Location = string.IsNullOrWhiteSpace(item.Location) ? null : item.Location.Trim();
+            // Real assigned person (null = unassigned). Validated against the candidate set above.
+            entity.ResponsibleUserId = item.ResponsibleUserId;
             entity.SequenceOrder = seq++;
             saved.Add(entity);
         }

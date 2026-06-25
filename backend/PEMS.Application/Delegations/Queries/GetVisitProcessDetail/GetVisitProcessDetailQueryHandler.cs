@@ -99,8 +99,52 @@ public sealed class GetVisitProcessDetailQueryHandler
                 Description = a.Description,
                 Location = a.Location,
                 SourceTemplateItemId = a.SourceTemplateItemId,
+                ResponsibleUserId = a.ResponsibleUserId,
             })
             .ToListAsync(cancellationToken);
+
+        // Enrich in-memory (avoid correlated subqueries on optional FKs — Pomelo translation pitfall):
+        //   responsible_user_id            → users (real assigned person: name + email)
+        //   source_template_item_id        → agenda_template_items.responsible_role_label (suggested role)
+        var responsibleUserIds = agenda
+            .Where(a => a.ResponsibleUserId.HasValue)
+            .Select(a => a.ResponsibleUserId!.Value).Distinct().ToList();
+        if (responsibleUserIds.Count > 0)
+        {
+            var userById = (await _db.Users
+                    .Where(u => responsibleUserIds.Contains(u.UserId))
+                    .Select(u => new { u.UserId, u.FullName, u.Email })
+                    .ToListAsync(cancellationToken))
+                .ToDictionary(u => u.UserId);
+            foreach (var a in agenda)
+            {
+                if (a.ResponsibleUserId.HasValue && userById.TryGetValue(a.ResponsibleUserId.Value, out var u))
+                {
+                    a.ResponsibleUserName = u.FullName;
+                    a.ResponsibleUserEmail = u.Email;
+                }
+            }
+        }
+
+        var sourceTemplateItemIds = agenda
+            .Where(a => a.SourceTemplateItemId.HasValue)
+            .Select(a => a.SourceTemplateItemId!.Value).Distinct().ToList();
+        if (sourceTemplateItemIds.Count > 0)
+        {
+            var labelByItemId = (await _db.AgendaTemplateItems
+                    .Where(ti => sourceTemplateItemIds.Contains(ti.AgendaTemplateItemId))
+                    .Select(ti => new { ti.AgendaTemplateItemId, ti.ResponsibleRoleLabel })
+                    .ToListAsync(cancellationToken))
+                .ToDictionary(x => x.AgendaTemplateItemId, x => x.ResponsibleRoleLabel);
+            foreach (var a in agenda)
+            {
+                if (a.SourceTemplateItemId.HasValue
+                    && labelByItemId.TryGetValue(a.SourceTemplateItemId.Value, out var label))
+                {
+                    a.TemplateResponsibleRoleLabel = label;
+                }
+            }
+        }
 
         return new VisitProcessDetailDto
         {
