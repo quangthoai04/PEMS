@@ -61,5 +61,15 @@ export const departmentReceptionTasksApi = {
       title, description, date, startTime, endTime
     });
     return data;
+  },
+
+  acceptAssignment: async (logisticsItemId: number | string) => {
+    const { data } = await httpClient.post<any>(API_ENDPOINTS.departmentReceptionTasks.acceptAssignment(logisticsItemId));
+    return data;
+  },
+
+  declineAssignment: async (logisticsItemId: number | string, reason: string) => {
+    const { data } = await httpClient.post<any>(API_ENDPOINTS.departmentReceptionTasks.declineAssignment(logisticsItemId), { reason });
+    return data;
   }
 };

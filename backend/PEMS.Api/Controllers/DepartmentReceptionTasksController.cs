@@ -11,6 +11,8 @@ using PEMS.Application.DepartmentReceptionTasks.Commands.ConfirmRequest;
 using PEMS.Application.DepartmentReceptionTasks.Commands.RejectRequest;
 using PEMS.Application.DepartmentReceptionTasks.Commands.ProposeRequestChange;
 using PEMS.Application.DepartmentReceptionTasks.Commands.AssignRequestAssignee;
+using PEMS.Application.DepartmentReceptionTasks.Commands.AcceptAssignedLogisticsTask;
+using PEMS.Application.DepartmentReceptionTasks.Commands.DeclineAssignedLogisticsTask;
 using PEMS.Application.DepartmentReceptionTasks.Commands.CreatePersonalEvent;
 using PEMS.Application.DepartmentReceptionTasks.Queries.GetDepartmentAssigneeCandidates;
 
@@ -81,6 +83,19 @@ namespace PEMS.Api.Controllers
 
         [HttpPost("requests/{logisticsItemId}/assign")]
         public async Task<IActionResult> AssignAssignee(ulong logisticsItemId, [FromBody] AssignRequestAssigneeCommand command)
+        {
+            command.LogisticsItemId = logisticsItemId;
+            return Ok(await _mediator.Send(command));
+        }
+
+        [HttpPost("requests/{logisticsItemId}/accept-assignment")]
+        public async Task<IActionResult> AcceptAssignment(ulong logisticsItemId)
+        {
+            return Ok(await _mediator.Send(new AcceptAssignedLogisticsTaskCommand { LogisticsItemId = logisticsItemId }));
+        }
+
+        [HttpPost("requests/{logisticsItemId}/decline-assignment")]
+        public async Task<IActionResult> DeclineAssignment(ulong logisticsItemId, [FromBody] DeclineAssignedLogisticsTaskCommand command)
         {
             command.LogisticsItemId = logisticsItemId;
             return Ok(await _mediator.Send(command));

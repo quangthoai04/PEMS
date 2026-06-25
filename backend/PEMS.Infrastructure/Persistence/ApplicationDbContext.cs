@@ -59,6 +59,7 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     public DbSet<VisitAgenda> VisitAgendas { get; set; }
     public DbSet<VisitLogisticsItem> VisitLogisticsItems { get; set; }
     public DbSet<VisitLogisticsItemHandover> VisitLogisticsItemHandovers { get; set; }
+    public DbSet<VisitLogisticsAssignmentAttempt> VisitLogisticsAssignmentAttempts { get; set; }
 
     // ── Minutes + Feedback ────────────────────────────────────────────────
     public DbSet<Minute> Minutes { get; set; }
@@ -328,6 +329,14 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
         modelBuilder.Entity<VisitLogisticsItemHandover>()
             .HasOne(h => h.CreatedByUser).WithMany()
             .HasForeignKey(h => h.CreatedBy).OnDelete(DeleteBehavior.SetNull);
+
+        // VisitLogisticsAssignmentAttempt (v10) → LogisticsItem, AssigneeUser, AssignedBy
+        modelBuilder.Entity<VisitLogisticsAssignmentAttempt>()
+            .HasOne(a => a.LogisticsItem).WithMany()
+            .HasForeignKey(a => a.LogisticsItemId).OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<VisitLogisticsAssignmentAttempt>()
+            .HasIndex(a => new { a.LogisticsItemId, a.Status })
+            .HasDatabaseName("idx_vla_item_status");
 
         // Minute → VisitRequestCampus, CreatedBy, EditLockedBy
         modelBuilder.Entity<Minute>()

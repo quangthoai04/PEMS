@@ -108,7 +108,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
   const [assignedPerson, setAssignedPerson] = useState<string | null>(null);
 
   // Đơn yêu cầu interaction states
-  const [requestStatus, setRequestStatus] = useState<'pending' | 'rejecting' | 'rejected' | 'accepted' | 'assigned'>('pending');
+  const [requestStatus, setRequestStatus] = useState<'pending' | 'rejecting' | 'rejected' | 'accepted' | 'assigned' | 'awaiting-reassign'>('pending');
   const [requestAcceptSignature, setRequestAcceptSignature] = useState<{name: string, time: string} | null>(null);
   const [requestRejectReason, setRequestRejectReason] = useState('');
   const [isProposing, setIsProposing] = useState(false);
@@ -204,10 +204,18 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
              setAssignedPerson(detail.assigneeName);
              setRequestStatus('assigned');
              setRequestAcceptSignature({ name: detail.responderName || detail.assigneeName || detail.senderName, time: detail.actionTime });
+          } else if (detail.status === 'ACCEPTED' || detail.status === 'IN_PROGRESS' || detail.status === 'DONE') {
+             setAssignedPerson(detail.assigneeName);
+             setRequestStatus('accepted');
+             setRequestAcceptSignature({ name: detail.responderName || detail.assigneeName || detail.senderName, time: detail.actionTime });
+          } else if (detail.status === 'RECEIVED' && detail.latestAttemptStatus === 'DECLINED') {
+             // Staff declined — waiting for reassignment
+             setAssignedPerson(null);
+             setRequestStatus('awaiting-reassign');
           } else if (detail.status === 'RECEIVED' || detail.status === 'CONFIRMED') {
              setAssignedPerson(null);
              setRequestStatus('accepted');
-             setRequestAcceptSignature({ name: detail.responderName || detail.assigneeName || detail.senderName, time: detail.actionTime });
+             setRequestAcceptSignature({ name: detail.responderName || detail.senderName, time: detail.actionTime });
           } else if (detail.status === 'REJECTED') {
              setRequestStatus('rejected');
              setRequestRejectReason(detail.rejectReason || '');
@@ -349,7 +357,8 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
   }, [filteredEvents, currentMonth, currentYear]);
   // New Event Form State
   const [newTitle, setNewTitle] = useState('');
-  const [newTime, setNewTime] = useState('09:00 - 11:00');
+  const [newStartTime, setNewStartTime] = useState('09:00');
+  const [newEndTime, setNewEndTime] = useState('11:00');
   const [newLocation, setNewLocation] = useState('');
   const [newContent, setNewContent] = useState('');
   const [showDetailSection, setShowDetailSection] = useState(false);
@@ -596,6 +605,8 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
     setNewTitle('');
     setNewContent('');
     setNewLocation('');
+    setNewStartTime('09:00');
+    setNewEndTime('11:00');
     setShowAddFormModal(true);
   };
 
@@ -609,9 +620,8 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
     }
 
     try {
-      const parts = newTime.split('-').map(s => s.trim());
-      const st = parts[0] || '08:00';
-      const et = parts[1] || '09:00';
+      const st = newStartTime || '08:00';
+      const et = newEndTime || '09:00';
 
       await departmentReceptionTasksApi.createPersonalEvent(
         newTitle, 
@@ -1613,13 +1623,24 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                       <label className="block text-[10px] font-extrabold text-slate-450 uppercase tracking-wider mb-1">
                         Khung giờ
                       </label>
-                      <input
-                        type="text"
-                        required
-                        value={newTime}
-                        onChange={e => setNewTime(e.target.value)}
-                        className="w-full text-xs px-3.5 py-2.5 border border-[#f37021] md:border-slate-200 rounded-xl focus:border-[#f37021] outline-none"
-                      />
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="time"
+                          required
+                          value={newStartTime}
+                          onChange={e => setNewStartTime(e.target.value)}
+                          className="flex-1 text-xs px-3 py-2.5 border border-slate-200 rounded-xl focus:border-[#f37021] outline-none bg-slate-50/20"
+                        />
+                        <span className="text-slate-400 font-bold text-xs shrink-0">—</span>
+                        <input
+                          type="time"
+                          required
+                          value={newEndTime}
+                          min={newStartTime}
+                          onChange={e => setNewEndTime(e.target.value)}
+                          className="flex-1 text-xs px-3 py-2.5 border border-slate-200 rounded-xl focus:border-[#f37021] outline-none bg-slate-50/20"
+                        />
+                      </div>
                     </div>
                   </div>
 
@@ -2348,80 +2369,163 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                         </div>
                       )}
                       
-                      {requestStatus === 'accepted' && (
-                        <div className="p-4 rounded-2xl border border-green-200 bg-green-50 flex items-start gap-3 relative">
-                          <CheckSquare className="w-5 h-5 text-green-600 shrink-0 mt-0.5" />
-                          <div className="flex-1">
-                            <span className="text-green-800 font-bold text-sm block mb-2">Đã xác nhận nhiệm vụ</span>
-                            {requestAcceptSignature && (
-                                <div className="bg-green-100/50 px-3 py-1.5 rounded-lg inline-block w-full sm:w-auto mb-2">
-                                  <span className="text-green-800 text-[11px] font-medium flex flex-col sm:flex-row sm:items-center sm:gap-1">
-                                    <span>bởi: <span className="font-bold">{requestAcceptSignature.name}</span></span>
-                                    <span className="hidden sm:inline">-</span>
-                                    <span>{requestAcceptSignature.time}</span>
-                                  </span>
-                                </div>
-                            )}
-                            <span className="text-green-600/80 text-xs font-medium block">Bên dưới là biên bản bàn giao & nghiệm thu.</span>
-                          </div>
-                       </div>
-                      )}
+                       {requestStatus === 'accepted' && (
+                         <div className="p-4 rounded-2xl border border-green-200 bg-green-50 flex items-start gap-3 relative">
+                           <CheckSquare className="w-5 h-5 text-green-600 shrink-0 mt-0.5" />
+                           <div className="flex-1">
+                             <span className="text-green-800 font-bold text-sm block mb-2">Đã xác nhận nhiệm vụ</span>
+                             {requestAcceptSignature && (
+                               <div className="bg-green-100/50 px-3 py-1.5 rounded-lg inline-block w-full sm:w-auto mb-2">
+                                 <span className="text-green-800 text-[11px] font-medium flex flex-col sm:flex-row sm:items-center sm:gap-1">
+                                   <span>bởi: <span className="font-bold">{requestAcceptSignature.name}</span></span>
+                                   <span className="hidden sm:inline">-</span>
+                                   <span>{requestAcceptSignature.time}</span>
+                                 </span>
+                               </div>
+                             )}
+                             <span className="text-green-600/80 text-xs font-medium block">Bên dưới là biên bản bàn giao &amp; nghiệm thu.</span>
+                           </div>
+                         </div>
+                       )}
 
-                        {requestStatus === 'assigned' && (
-                          <div className="p-4 rounded-2xl border border-blue-200 bg-blue-50 flex items-start gap-3 relative mb-2">
-                            <Info className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
-                            <div className="flex-1">
-                              <span className="text-blue-800 font-bold text-sm block mb-1">Đã ủy quyền nhiệm vụ</span>
-                              <span className="text-blue-600/80 text-xs font-medium block">Người phụ trách hiện tại: <span className="font-extrabold">{assignedPerson}</span></span>
+                       {requestStatus === 'assigned' && (
+                         <div className="p-4 rounded-2xl border border-blue-200 bg-blue-50 flex items-start gap-3 relative mb-2">
+                           <Info className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
+                           <div className="flex-1">
+                             <span className="text-blue-800 font-bold text-sm block mb-1">Đã phân công người phụ trách</span>
+                             <span className="text-blue-600/80 text-xs font-medium block">Đang chờ nhân viên xác nhận: <span className="font-extrabold">{assignedPerson}</span></span>
+                           </div>
+                         </div>
+                       )}
+
+                       {/* DEPT LEADER: Assign / Reassign button */}
+                       {isDeptLeader && (requestStatus === 'pending' || requestStatus === 'awaiting-reassign') && (
+                        <div className="w-full relative mt-2">
+                          {requestStatus === 'awaiting-reassign' && (
+                            <div className="mb-2 p-3 rounded-xl border border-amber-200 bg-amber-50 flex items-center gap-2">
+                              <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                              <span className="text-amber-800 text-xs font-bold">Nhân viên đã từ chối — cần phân công lại</span>
                             </div>
+                          )}
+                          <button
+                            onClick={() => setShowAssignDropdown(!showAssignDropdown)}
+                            className="w-full py-3.5 px-6 rounded-2xl bg-slate-100 text-slate-700 font-black uppercase tracking-wider transition-all duration-300 outline-none text-xs text-center flex items-center justify-center gap-2 hover:bg-slate-200 border border-slate-200">
+                            <User className="w-4 h-4" />
+                            {requestStatus === 'awaiting-reassign' ? 'Phân công lại người phụ trách' : 'Phân công người phụ trách'}
+                          </button>
+                          {showAssignDropdown && (
+                            <div className="absolute bottom-full mb-2 left-0 right-0 bg-white border border-slate-200 rounded-xl shadow-[0_-8px_30px_-4px_rgba(0,0,0,0.1)] z-50 overflow-hidden">
+                              <div className="py-2">
+                                {candidates.map((staff) => (
+                                  <button
+                                    key={staff.id || staff.userId}
+                                    className="w-full px-4 py-3 text-left hover:bg-slate-50 border-b border-slate-50 last:border-0 transition-colors group flex items-start justify-between"
+                                    onClick={async () => {
+                                      try {
+                                        if (activePopoverEvent?.rawId) {
+                                          await departmentReceptionTasksApi.assignAssignee(activePopoverEvent.rawId, staff.id || staff.userId);
+                                          toast.success('Đã phân công người phụ trách thành công');
+                                          setAssignedPerson(staff.name);
+                                          setRequestStatus('assigned');
+                                          setShowAssignDropdown(false);
+                                          await fetchCalendarEvents();
+                                          const detail = await departmentReceptionTasksApi.getRequestDetail(activePopoverEvent.rawId);
+                                          setActiveEventDetail(detail);
+                                        }
+                                      } catch(e: any) {
+                                        toast.error(e.response?.data?.message || e.response?.data?.title || e.message || 'Phân công thất bại');
+                                      }
+                                    }}
+                                  >
+                                    <div>
+                                      <span className="block text-sm font-bold text-slate-800 group-hover:text-[#004c91]">{staff.name}</span>
+                                      <span className="block text-xs font-medium text-slate-500 mt-0.5">{staff.email}</span>
+                                    </div>
+                                    {assignedPerson === staff.name && (
+                                      <CheckSquare className="w-4 h-4 text-[#004c91]" />
+                                    )}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                       )}
+
+                        {/* ASSIGNED STAFF: Accept / Decline buttons */}
+                        {isDeptStaff && requestStatus === 'assigned' && activeEventDetail?.assigneeId === user?.userId && (
+                          <div className="flex flex-col sm:flex-row gap-3 w-full mt-2">
+                            <button
+                              onClick={async () => {
+                                try {
+                                  await departmentReceptionTasksApi.declineAssignment(activePopoverEvent.rawId, requestRejectReason || 'Không thể thực hiện nhiệm vụ này');
+                                  toast.success('Đã từ chối nhiệm vụ');
+                                  setRequestStatus('awaiting-reassign');
+                                  setAssignedPerson(null);
+                                  await fetchCalendarEvents();
+                                } catch(e: any) { toast.error(e.response?.data?.message || 'Từ chối thất bại'); }
+                              }}
+                              className="flex-1 py-3.5 px-5 rounded-2xl border-2 border-red-400 text-red-600 font-black uppercase tracking-wider text-xs hover:bg-red-50 transition-all"
+                            >
+                              Từ chối nhiệm vụ
+                            </button>
+                            <button
+                              onClick={async () => {
+                                try {
+                                  await departmentReceptionTasksApi.acceptAssignment(activePopoverEvent.rawId);
+                                  toast.success('Đã xác nhận nhiệm vụ thành công');
+                                  setRequestStatus('accepted');
+                                  const now = new Date();
+                                  const timeStr = `${String(now.getDate()).padStart(2,'0')}/${String(now.getMonth()+1).padStart(2,'0')}/${now.getFullYear()}, ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+                                  setRequestAcceptSignature({ name: user?.name || 'Nhân viên', time: timeStr });
+                                  await fetchCalendarEvents();
+                                } catch(e: any) { toast.error(e.response?.data?.message || 'Xác nhận thất bại'); }
+                              }}
+                              className="flex-1 py-3.5 px-5 rounded-2xl bg-[#004c91] text-white font-black uppercase tracking-wider text-xs hover:bg-[#003b73] shadow-lg transition-all"
+                            >
+                              Xác nhận nhận việc
+                            </button>
                           </div>
                         )}
 
-                        {isDeptLeader && requestStatus === 'pending' && (
-                         <div className="w-full relative mt-2">
-                           <button 
-                             onClick={() => setShowAssignDropdown(!showAssignDropdown)}
-                             disabled={isDeptStaff && deptPreliminaryStatus !== 'accepted'}
-                             className={`w-full py-3.5 px-6 rounded-2xl bg-slate-100 text-slate-700 font-black uppercase tracking-wider transition-all duration-300 outline-none text-xs text-center flex items-center justify-center gap-2 ${
-                               isDeptStaff && deptPreliminaryStatus !== 'accepted' ? 'opacity-50 cursor-not-allowed border-dashed' : 'hover:bg-slate-200 border border-slate-200'
-                             }`}>
-                             <User className="w-4 h-4" />
-                             {assignedPerson ? `Đã giao: ${assignedPerson}` : 'Ủy quyền / Đổi người phụ trách'}
-                           </button>
-                           {showAssignDropdown && (
-                             <div className="absolute bottom-full mb-2 left-0 right-0 bg-white border border-slate-200 rounded-xl shadow-[0_-8px_30px_-4px_rgba(0,0,0,0.1)] z-50 overflow-hidden">
-                               <div className="py-2">
-                                 {candidates.map((staff) => (
-                                   <button
-                                     key={staff.id || staff.userId}
-                                     className="w-full px-4 py-3 text-left hover:bg-slate-50 border-b border-slate-50 last:border-0 transition-colors group flex items-start justify-between"
-                                     onClick={async () => {
-                                       try {
-                                         if (activePopoverEvent?.rawId) {
-                                           await departmentReceptionTasksApi.assignAssignee(activePopoverEvent.rawId, staff.id || staff.userId);
-                                           toast.success('Phân công thành công');
-                                           setAssignedPerson(staff.name);
-                                           setRequestStatus('assigned');
-                                           setShowAssignDropdown(false);
-                                           await fetchCalendarEvents();
-                                         }
-                                       } catch(e) { console.error(e); toast.error('Phân công thất bại'); }
-                                     }}
-                                   >
-                                      <div>
-                                        <span className="block text-sm font-bold text-slate-800 group-hover:text-[#004c91]">{staff.name}</span>
-                                        <span className="block text-xs font-medium text-slate-500 mt-0.5">{staff.email}</span>
-                                      </div>
-                                      {assignedPerson === staff.name && (
-                                        <CheckSquare className="w-4 h-4 text-[#004c91]" />
-                                      )}
-                                   </button>
-                                 ))}
-                               </div>
-                             </div>
-                           )}
-                         </div>
-                      )}
+                        {/* Assignment History */}
+                        {activeEventDetail?.assignmentHistory?.length > 0 && (
+                          <div className="mt-4 pt-4 border-t border-slate-100">
+                            <div className="flex items-center gap-2 text-slate-400 mb-3">
+                              <Clock className="w-4 h-4" />
+                              <span className="text-[11px] font-bold uppercase tracking-wider">Lịch sử phân công</span>
+                            </div>
+                            <div className="flex flex-col gap-2">
+                              {activeEventDetail.assignmentHistory.map((att: any) => (
+                                <div key={att.attemptId} className={`flex items-start gap-3 p-3 rounded-xl border ${
+                                  att.status === 'DECLINED' ? 'bg-red-50 border-red-100' :
+                                  att.status === 'ACCEPTED' ? 'bg-green-50 border-green-100' :
+                                  'bg-slate-50 border-slate-100'
+                                }`}>
+                                  <div className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${
+                                    att.status === 'DECLINED' ? 'bg-red-400' :
+                                    att.status === 'ACCEPTED' ? 'bg-green-500' :
+                                    'bg-amber-400'
+                                  }`} />
+                                  <div className="flex-1 min-w-0">
+                                    <span className="block text-sm font-bold text-slate-800">{att.assigneeName}</span>
+                                    <span className={`text-[11px] font-semibold ${
+                                      att.status === 'DECLINED' ? 'text-red-600' :
+                                      att.status === 'ACCEPTED' ? 'text-green-600' :
+                                      'text-amber-600'
+                                    }`}>
+                                      {att.status === 'DECLINED' ? 'Đã từ chối' : att.status === 'ACCEPTED' ? 'Đã nhận' : 'Đang chờ phản hồi'}
+                                    </span>
+                                    <span className="block text-[10px] text-slate-400 font-mono mt-0.5">{att.assignedAt}</span>
+                                    {att.responseNote && (
+                                      <span className="block text-xs text-red-600 italic mt-1">Lý do: "{att.responseNote}"</span>
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                     </div>
                   )}
 

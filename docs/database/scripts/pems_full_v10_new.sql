@@ -1209,6 +1209,76 @@ CREATE TABLE visit_logistics_item_handovers (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Bảng lưu ký nhận/ký trả đồ mượn cho logistics item';
 
+
+-- =====================================================================
+-- ADDED 2026-06-25 — Department Leader logistics assignment attempts
+-- Purpose:
+--   - Lưu từng lần Department Leader phân công đơn yêu cầu logistics cho nhân sự phòng ban.
+--   - Cho phép phân công lại nếu nhân sự được giao trước đó DECLINED và có lý do.
+--   - Không phải task transfer sau khi ACCEPTED/IN_PROGRESS/DONE.
+--   - Giữ visit_logistics_items là trạng thái hiện tại; bảng này lưu lịch sử từng lần giao.
+-- Business flow:
+--   PENDING  = đã giao, đang chờ nhân sự phản hồi
+--   ACCEPTED = nhân sự đã nhận nhiệm vụ
+--   DECLINED = nhân sự từ chối, bắt buộc có response_note
+--   CANCELLED = lần giao bị hủy trước khi phản hồi, nếu cần
+-- =====================================================================
+CREATE TABLE visit_logistics_assignment_attempts (
+  assignment_attempt_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  logistics_item_id BIGINT UNSIGNED NOT NULL,
+
+  assignee_user_id BIGINT UNSIGNED NOT NULL
+    COMMENT 'Nhân sự phòng ban được Department Leader phân công trong lần giao này',
+  assigned_by BIGINT UNSIGNED NOT NULL
+    COMMENT 'Department Leader hoặc người có quyền đã phân công',
+  assigned_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    COMMENT 'Thời điểm phân công',
+
+  status ENUM('PENDING','ACCEPTED','DECLINED','CANCELLED') NOT NULL DEFAULT 'PENDING'
+    COMMENT 'Trạng thái phản hồi của riêng lần phân công này',
+
+  responded_at DATETIME NULL
+    COMMENT 'Thời điểm nhân sự phản hồi ACCEPTED/DECLINED',
+  response_note TEXT NULL
+    COMMENT 'Lý do từ chối hoặc ghi chú phản hồi; bắt buộc khi status=DECLINED',
+
+  response_source ENUM('PORTAL','EMAIL_TOKEN','SYSTEM') NULL
+    COMMENT 'Nguồn phản hồi: trong portal, nút email token, hoặc hệ thống',
+  cancelled_by BIGINT UNSIGNED NULL
+    COMMENT 'Người hủy lần phân công khi cần, không dùng cho transfer nhiệm vụ đã nhận',
+  cancelled_at DATETIME NULL
+    COMMENT 'Thời điểm hủy lần phân công',
+
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+
+  PRIMARY KEY (assignment_attempt_id),
+
+  KEY idx_vla_item_status (logistics_item_id, status),
+  KEY idx_vla_assignee_status (assignee_user_id, status),
+  KEY idx_vla_assigned_by_time (assigned_by, assigned_at),
+  KEY idx_vla_responded_at (responded_at),
+  KEY idx_vla_cancelled_by (cancelled_by),
+
+  CONSTRAINT fk_vla_item
+    FOREIGN KEY (logistics_item_id) REFERENCES visit_logistics_items(logistics_item_id)
+    ON UPDATE CASCADE ON DELETE CASCADE,
+
+  CONSTRAINT fk_vla_assignee
+    FOREIGN KEY (assignee_user_id) REFERENCES users(user_id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+
+  CONSTRAINT fk_vla_assigned_by
+    FOREIGN KEY (assigned_by) REFERENCES users(user_id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+
+  CONSTRAINT fk_vla_cancelled_by
+    FOREIGN KEY (cancelled_by) REFERENCES users(user_id)
+    ON UPDATE CASCADE ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Lịch sử từng lần phân công logistics item cho nhân sự phòng ban; cho phép phân công lại sau khi lần trước DECLINED.';
+
+
 -- =====================================================================
 -- 6. MINUTES + FEEDBACK
 -- =====================================================================
