@@ -1,6 +1,6 @@
-namespace PEMS.Application.Faqs.Commands.UpdateFAQ;
+namespace PEMS.Application.Faqs.Queries.ViewFAQDetail;
 
-public sealed class UpdateFAQResponse
+public sealed class ViewFAQDetailDto
 {
     public ulong FaqId { get; init; }
     public string FaqType { get; init; } = string.Empty;
@@ -16,5 +16,4 @@ public sealed class UpdateFAQResponse
     public DateTime? UpdatedAt { get; init; }
     public ulong? UpdatedBy { get; init; }
     public string? UpdatedByName { get; init; }
-    public bool Changed { get; init; }
 }
