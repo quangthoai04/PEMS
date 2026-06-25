@@ -200,6 +200,71 @@ export interface ReplaceStaffLeaderResponse {
   message: string;
 }
 
+// ── Staff Leader "Visitor liên quan" tab (read-only) — UC_StaffLeader_Related_Visitor_Accounts_Tab ──
+
+/** One Visitor row in the Staff Leader related-visitors tab. Mirrors RelatedVisitorAccountListItemDto. */
+export interface RelatedVisitorListItem {
+  userId: string;
+  fullName: string;
+  email: string;
+  phone?: string | null;
+  nationality?: string | null;
+  roleCode: string;
+  status: string;
+  createdVia?: string | null;
+  createdAt: string;
+  lastLoginAt?: string | null;
+  relatedRequestCount: number;
+  lastRelatedRequestAt?: string | null;
+  latestPlannedStartAt?: string | null;
+  canViewDetails: boolean;
+  canManageStatus: boolean;
+  canUpdateRole: boolean;
+  canResetPassword: boolean;
+}
+
+/** Query params for GET /accounts/related-visitors (campus scope resolved server-side). */
+export interface RelatedVisitorQueryParams {
+  page?: number;
+  pageSize?: number;
+  keyword?: string;
+  status?: string;
+  nationality?: string;
+  sortBy?: string;
+  sortDirection?: 'asc' | 'desc';
+}
+
+/** One visit request through which a Visitor is related to the caller's campus. */
+export interface RelatedVisitorRequest {
+  visitRequestId: string;
+  visitInstanceId: string;
+  requestCode: string;
+  delegationName: string;
+  visitScope: string;
+  requestStatus: string;
+  campusInstanceStatus: string;
+  plannedStartAt: string;
+  plannedEndAt: string;
+}
+
+/** Detail of a related Visitor account. Mirrors RelatedVisitorAccountDetailDto. */
+export interface RelatedVisitorDetail {
+  userId: string;
+  fullName: string;
+  email: string;
+  phone?: string | null;
+  nationality?: string | null;
+  gender?: string | null;
+  status: string;
+  createdVia?: string | null;
+  createdAt: string;
+  lastLoginAt?: string | null;
+  relatedRequests: RelatedVisitorRequest[];
+  canManageStatus: boolean;
+  canUpdateRole: boolean;
+  canResetPassword: boolean;
+}
+
 /** UC-96 Create Account request. Mirrors backend CreateAccountCommand. */
 export interface CreateAccountRequest {
   email: string;

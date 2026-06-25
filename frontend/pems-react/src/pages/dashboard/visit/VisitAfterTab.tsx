@@ -13,6 +13,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthContext } from '../../../shared/auth/AuthContext';
+import { VisitNewsSection } from './VisitNewsSection';
 
 // Default Delegation Members for tag dropdown and display
 const DEFAULT_GUESTS = [
@@ -50,9 +51,10 @@ interface VisitAfterTabProps {
   onTourCloseSuccess?: () => void;
   isReadOnly?: boolean;
   isDept?: boolean;
+  visitInstanceId?: number;
 }
 
-export function VisitAfterTab({ onTourCloseSuccess, isReadOnly = false, isDept = false }: VisitAfterTabProps) {
+export function VisitAfterTab({ onTourCloseSuccess, isReadOnly = false, isDept = false, visitInstanceId }: VisitAfterTabProps) {
   const navigate = useNavigate();
   const { user } = useAuthContext();
   const roleCode = (user?.roleCode || '').toUpperCase();
@@ -738,9 +740,12 @@ export function VisitAfterTab({ onTourCloseSuccess, isReadOnly = false, isDept =
 
     </div>
 
-      {/* SECTION 2: NEWS POST CREATION */}
+      {/* SECTION 2: NEWS — bản thật (backend, nhiều bài/instance) khi có visitInstanceId; nếu không, dùng mock cũ */}
+      {visitInstanceId ? (
+        <VisitNewsSection visitInstanceId={visitInstanceId} />
+      ) : (
       <div className="bg-white rounded-[2rem] border border-gray-200 shadow-sm overflow-hidden">
-        
+
         {/* Title layout with traditional blue background */}
         <div className="bg-[#004c91] p-6 sm:p-8 text-white flex justify-start items-center gap-3">
           <span className="w-8 h-8 rounded-full bg-[#f37021] flex items-center justify-center text-sm font-black text-white">2</span>
@@ -808,6 +813,7 @@ export function VisitAfterTab({ onTourCloseSuccess, isReadOnly = false, isDept =
         </div>
 
       </div>
+      )}
 
       {/* ACTION BLOCK: CRITICAL END ACTION */}
       {!isReadOnly && !isDept && !isStudent ? (

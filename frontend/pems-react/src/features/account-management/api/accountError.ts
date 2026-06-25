@@ -40,6 +40,10 @@ export const ACCOUNT_ERROR_MESSAGES: Record<string, string> = {
   // Replace Staff Leader — REPLACE_STAFF_LEADER spec §15.
   CAMPUS_HAS_NO_STAFF_LEADER: 'Cơ sở này chưa có Staff Leader. Vui lòng dùng chức năng tạo Staff Leader.',
   INVALID_REPLACEMENT_CANDIDATE: 'Nhân sự được chọn không hợp lệ để làm Staff Leader mới.',
+
+  // Related Visitor Accounts tab (Staff Leader) — UC_StaffLeader_Related_Visitor_Accounts_Tab.
+  RELATED_VISITOR_FORBIDDEN: 'Chỉ Trưởng phòng (Staff Leader) mới được xem danh sách Visitor liên quan đến cơ sở.',
+  VISITOR_SCOPE_FORBIDDEN: 'Bạn không có quyền xem tài khoản khách này.',
 };
 
 /**
