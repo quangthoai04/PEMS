@@ -1,10 +1,8 @@
-using System;
+using System.Collections.Generic;
+using PEMS.Application.AgendaTemplates.Common;
 
 namespace PEMS.Application.AgendaTemplates.Queries.ViewAgendaTemplateList;
 
-public sealed class ViewAgendaTemplateListDto
-{
-    public Guid? Id { get; init; }
-    public string Status { get; init; } = "Scaffolded";
-    public string Message { get; init; } = "Use case scaffolded. Business logic is not implemented yet.";
-}
+public sealed record ViewAgendaTemplateListDto(
+    IReadOnlyList<AgendaTemplateSummary> Templates,
+    int Total);

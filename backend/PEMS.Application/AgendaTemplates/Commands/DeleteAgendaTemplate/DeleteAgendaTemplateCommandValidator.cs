@@ -6,6 +6,6 @@ public sealed class DeleteAgendaTemplateCommandValidator : AbstractValidator<Del
 {
     public DeleteAgendaTemplateCommandValidator()
     {
-        // TODO: Add validation rules after UC specification is completed.
+        RuleFor(x => x.AgendaTemplateId).GreaterThan(0ul);
     }
 }

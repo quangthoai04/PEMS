@@ -932,3 +932,27 @@ WHERE vrc.current_host_user_id IS NOT NULL
 ```
 
 Kết quả đúng: `0 rows`.
+
+---
+
+## Agenda Template module canonical rules (v10 — 4 tables)
+
+Module Agenda chỉ dùng đúng 4 bảng: `agenda_templates`, `agenda_template_items`, `agenda_template_defaults`, `visit_agendas`. `visit_request_campuses` KHÔNG thuộc nhóm bảng agenda và KHÔNG được sửa schema — chỉ đọc `visit_instance_id`, `visit_request_id`, `campus_id`, `planned_start_at`, `planned_end_at`, `status`, `current_host_user_id`.
+
+Quy tắc chốt:
+
+- `visit_type` luôn lấy từ form gốc `visit_requests.visit_type` (join qua `visit_request_campuses.visit_request_id`); KHÔNG lưu/đọc `visit_type` ở `visit_request_campuses`. Enum: `CAMPUS_TOUR, MEETING, WORKSHOP, SIGNING_CEREMONY, EXCHANGE, OTHER`.
+- `agenda_templates` cấu hình theo `visit_type` + phạm vi (`campus_id` NULL = GLOBAL, ngược lại theo campus). `campus_scope_key` do trigger sinh ra (`GLOBAL` hoặc `CAST(campus_id AS CHAR)`); ràng buộc `campus_id ⇔ GLOBAL` enforce bằng trigger, không bằng CHECK (MySQL 8 cấm CHECK trên cột có FK referential actions).
+- `agenda_template_items` dùng `start_offset_minutes` + `duration_minutes` (KHÔNG dùng `TIME`). `duration_minutes > 0`.
+- `agenda_template_defaults` map mặc định theo `(campus_scope_key, visit_type)`. Khi host mở setup agenda: chọn default theo **campus hiện tại + visit_type**, nếu không có thì **fallback GLOBAL + visit_type**. Chỉ xét template `ACTIVE`, chưa `deleted`.
+- Default phải cùng `visit_type` và cùng scope với template; không cho dùng template `INACTIVE`/đã xóa làm default.
+- Apply template → ghi `visit_agendas` thật:
+  - `start_time = visit_request_campuses.planned_start_at + agenda_template_items.start_offset_minutes`
+  - `end_time = start_time + agenda_template_items.duration_minutes`
+  - `start_time`/`end_time` lưu `DATETIME` (đầy đủ ngày + giờ); backend là nguồn tính chính.
+  - Host vẫn được chọn template khác (kể cả khác `visit_type`); response/audit ghi rõ khi lệch `visit_type`.
+  - `replaceExisting=false` mà đã có agenda → 409 Conflict; `replaceExisting=true` → xóa agenda cũ rồi insert lại (không trùng `sequence_order`).
+  - Chỉ Host phụ trách (`current_host_user_id`) và chỉ trong giai đoạn chuẩn bị (`ASSIGNED`/`BEFORE_VISIT`) mới được apply.
+- Truy vết template nguồn (KHÔNG lưu ở `visit_request_campuses`): `visit_agendas.source_template_item_id → agenda_template_items.agenda_template_item_id → agenda_templates.agenda_template_id`.
+- KHÔNG tạo bảng thứ 5 kiểu `visit_agenda_template_applications`; KHÔNG thêm `applied_agenda_template_id`/`agenda_template_applied_at`/`agenda_template_applied_by` vào `visit_request_campuses`.
+- Phân quyền quản lý: HO quản lý scope GLOBAL; Staff Leader quản lý scope campus của mình. Backend luôn kiểm tra scope, không tin `campusId` từ frontend.

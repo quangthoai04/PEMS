@@ -62,6 +62,8 @@ public interface IApplicationDbContext
     DbSet<ApiUsageQuota> ApiUsageQuotas { get; }
     DbSet<ApiRequestLog> ApiRequestLogs { get; }
     DbSet<AgendaTemplate> AgendaTemplates { get; }
+    DbSet<AgendaTemplateItem> AgendaTemplateItems { get; }
+    DbSet<AgendaTemplateDefault> AgendaTemplateDefaults { get; }
     DbSet<AuditLog> AuditLogs { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);

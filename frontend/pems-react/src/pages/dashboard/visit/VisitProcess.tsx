@@ -44,9 +44,10 @@ import { SubmittedVisitRequestDetailModal } from '../../../components/modals/Sub
 import { useAuthContext } from '../../../shared/auth/AuthContext';
 import { delegationsApi } from '../../../features/delegations/api/delegationsApi';
 import type { VisitProcessPermission, VisitProcessDetail } from '../../../features/delegations/types/delegations.types';
+import { AgendaSetupPanel } from '../../../features/agenda-templates/components/AgendaSetupPanel';
 
 // Lightweight in-page toast (top-right) — cùng pattern với CampusManagement/VisitRequestManagement.
-type ProcessToast = { id: number; type: 'success' | 'error'; msg: string };
+type ProcessToast = { id: number; type: 'success' | 'error' | 'warning' | 'info'; msg: string };
 
 export function VisitProcess() {
   const navigate = useNavigate();
@@ -950,8 +951,22 @@ export function VisitProcess() {
                             <span className="w-1.5 h-4 bg-[#f37021] rounded-full"></span>
                             2. Agenda
                           </h3>
+                          {/* Apply an agenda template (auto-default by campus/visit_type → GLOBAL fallback).
+                              Backend computes absolute times from planned_start_at + offsets and writes
+                              visit_agendas; on success we reload the agenda editor below. */}
+                          {perm && (
+                            <AgendaSetupPanel
+                              visitInstanceId={Number(perm.visitInstanceId)}
+                              onApplied={loadDetail}
+                              notify={pushToast}
+                            />
+                          )}
                           {/* Real agenda editor (visit_agendas). Host edits while preparing; saved
                               independently via "Lưu lịch trình" (does NOT change stage). */}
+                          <div className="mb-2">
+                            <h4 className="text-sm font-bold text-slate-800">Lịch trình hiện tại</h4>
+                            <p className="text-xs text-slate-500">Bạn có thể chỉnh sửa thủ công sau khi áp dụng mẫu.</p>
+                          </div>
                           <div className="space-y-3">
                             {agendaItems.length === 0 && (
                               <p className="text-sm text-slate-500 italic">
@@ -989,7 +1004,7 @@ export function VisitProcess() {
                                 </div>
                                 {canEditAgenda && (
                                   <button type="button" title="Xoá mục"
-                                    onClick={() => setAgendaItems((prev) => prev.filter((_, i) => i !== idx))}
+                                    onClick={() => { setAgendaItems((prev) => prev.filter((_, i) => i !== idx)); pushToast('info', 'Đã xóa mục khỏi lịch trình. Bấm “Lưu lịch trình” để lưu thay đổi.'); }}
                                     className="mb-1 w-9 h-9 rounded-lg bg-red-50 text-red-500 hover:bg-red-100 flex items-center justify-center shrink-0 outline-none">
                                     <X className="w-4 h-4" />
                                   </button>
@@ -2661,7 +2676,7 @@ export function VisitProcess() {
 
       {/* Toasts (top-right) */}
       {toasts.length > 0 && (
-        <div className="fixed top-5 right-5 z-[200] flex flex-col gap-2 w-[min(92vw,360px)]">
+        <div className="fixed top-6 right-6 z-[9999] flex flex-col gap-3 w-[360px] max-w-[calc(100vw-32px)]">
           {toasts.map((t) => (
             <motion.div
               key={t.id}
@@ -2671,6 +2686,10 @@ export function VisitProcess() {
               className={`flex items-start gap-2 rounded-xl border px-4 py-3 text-sm font-semibold shadow-lg ${
                 t.type === 'success'
                   ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                  : t.type === 'warning'
+                  ? 'bg-amber-50 border-amber-200 text-amber-800'
+                  : t.type === 'info'
+                  ? 'bg-blue-50 border-blue-200 text-blue-800'
                   : 'bg-red-50 border-red-200 text-red-700'
               }`}
             >

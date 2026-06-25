@@ -14,13 +14,15 @@ public class AgendaTemplateItem
     public ulong AgendaTemplateId { get; set; }
 
     [Column("display_order")]
-    public uint DisplayOrder { get; set; } = 1;
+    public uint DisplayOrder { get; set; }
 
-    [Column("start_time")]
-    public TimeSpan StartTime { get; set; }
+    /// <summary>Minutes from the campus planned_start_at when this item begins.</summary>
+    [Column("start_offset_minutes")]
+    public uint StartOffsetMinutes { get; set; }
 
-    [Column("end_time")]
-    public TimeSpan? EndTime { get; set; }
+    /// <summary>Length of this item in minutes. Always &gt; 0 (DB CHECK).</summary>
+    [Column("duration_minutes")]
+    public uint DurationMinutes { get; set; }
 
     [Column("title")]
     public string Title { get; set; } = null!;
@@ -28,8 +30,23 @@ public class AgendaTemplateItem
     [Column("description")]
     public string? Description { get; set; }
 
+    [Column("location")]
+    public string? Location { get; set; }
+
+    [Column("responsible_role_label")]
+    public string? ResponsibleRoleLabel { get; set; }
+
     [Column("created_at")]
     public DateTime CreatedAt { get; set; }
+
+    [Column("created_by")]
+    public ulong? CreatedBy { get; set; }
+
+    [Column("updated_at")]
+    public DateTime? UpdatedAt { get; set; }
+
+    [Column("updated_by")]
+    public ulong? UpdatedBy { get; set; }
 
     public virtual AgendaTemplate AgendaTemplate { get; set; } = null!;
 }
