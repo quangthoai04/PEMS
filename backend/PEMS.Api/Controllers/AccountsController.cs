@@ -125,5 +125,31 @@ namespace PEMS.Api.Controllers
             return Ok(result);
         }
 
+        // Staff Leader "Related Visitor Accounts" tab (read-only). Lists the Visitor accounts related
+        // to the caller's campus via visit requests. Scope is resolved from the authenticated Staff
+        // Leader inside the handler (any client campusId is ignored); non-Staff-Leaders get 403.
+        [HttpGet("related-visitors")]
+        [EnableRateLimiting("accounts-read")]
+        public async Task<IActionResult> GetRelatedVisitors(
+            [FromQuery] PEMS.Application.Accounts.Queries.RelatedVisitors.GetRelatedVisitorsQuery query,
+            CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(query, cancellationToken);
+            return Ok(result);
+        }
+
+        // Staff Leader "Related Visitor Accounts" tab — detail of one related Visitor. The handler
+        // re-checks campus scope and returns 404 for an out-of-scope Visitor (existence not leaked).
+        [HttpGet("related-visitor-details")]
+        [EnableRateLimiting("accounts-read")]
+        public async Task<IActionResult> GetRelatedVisitorDetails(
+            [FromQuery] ulong visitorUserId, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(
+                new PEMS.Application.Accounts.Queries.RelatedVisitors.GetRelatedVisitorDetailsQuery { VisitorUserId = visitorUserId },
+                cancellationToken);
+            return Ok(result);
+        }
+
     }
 }

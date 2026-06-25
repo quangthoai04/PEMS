@@ -40,6 +40,9 @@ export const API_ENDPOINTS = {
     hoCampusCheck: '/accounts/ho-campus-check',
     staffLeaderReplacementPreview: '/accounts/staff-leader-replacement-preview',
     replaceStaffLeader: '/accounts/replacestaffleader',
+    // Staff Leader "Visitor liên quan" tab (read-only): list + detail of related Visitor accounts.
+    relatedVisitors: '/accounts/related-visitors',
+    relatedVisitorDetails: '/accounts/related-visitor-details',
   },
   partners: {
     list: '/partners',

@@ -81,4 +81,12 @@ public static class AccountErrorCodes
 
     /// <summary>The chosen replacement user is not a valid IC Staff for this campus. → 422.</summary>
     public const string InvalidReplacementCandidate = "INVALID_REPLACEMENT_CANDIDATE";
+
+    // ── Related Visitor Accounts tab (Staff Leader) — see UC_StaffLeader_Related_Visitor_Accounts_Tab. ──
+
+    /// <summary>Caller is not an active Staff Leader (STAFF/LEADER + campus) for this tab. → 403.</summary>
+    public const string RelatedVisitorForbidden = "RELATED_VISITOR_FORBIDDEN";
+
+    /// <summary>A Staff Leader tried to view a Visitor not related to their campus. → 403/404.</summary>
+    public const string VisitorScopeForbidden = "VISITOR_SCOPE_FORBIDDEN";
 }

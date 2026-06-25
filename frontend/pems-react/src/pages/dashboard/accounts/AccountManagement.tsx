@@ -27,6 +27,7 @@ import type {
   StaffLeaderAvailability,
 } from '../../../features/account-management/types/accountManagement.types';
 import { ReplaceStaffLeaderModal } from '../../../features/account-management/components/ReplaceStaffLeaderModal';
+import { RelatedVisitorsTab } from '../../../features/account-management/components/RelatedVisitorsTab';
 
 const CAMPUSES = ["Hà Nội", "Hồ Chí Minh", "Đà Nẵng", "Cần Thơ", "Quy Nhơn"];
 const ROLES = ["ADMIN", "HO", "STAFF", "DEPARTMENT", "STUDENT", "VISITOR"];
@@ -46,6 +47,19 @@ const genderLabel = (g?: unknown): string => {
   return GENDER_LABELS[raw.trim().toUpperCase()] ?? raw;
 };
 
+// Position label for STAFF/DEPARTMENT accounts: sub_role LEADER → Trưởng phòng, STAFF → Nhân viên.
+// Idempotent (an already-localized value stays put) so it is safe over either the raw sub_role
+// or the backend's displayPosition.
+const SUBROLE_LABELS: Record<string, string> = {
+  LEADER: 'Trưởng phòng', STAFF: 'Nhân viên',
+  'TRƯỞNG PHÒNG': 'Trưởng phòng', 'NHÂN VIÊN': 'Nhân viên',
+};
+const subRoleLabel = (s?: unknown): string => {
+  if (s === null || s === undefined || s === '') return '';
+  const raw = String(s).trim();
+  return SUBROLE_LABELS[raw.toUpperCase()] ?? raw;
+};
+
 export function AccountManagement() {
   const navigate = useNavigate();
   const userStr = localStorage.getItem("currentUser");
@@ -61,6 +75,8 @@ export function AccountManagement() {
   
   const [activeTab, setActiveTab] = useState<'all' | 'pending'>('all');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+  // Staff Leader top-level view switch: internal accounts vs the read-only "Visitor liên quan" tab.
+  const [slView, setSlView] = useState<'internal' | 'visitors'>('internal');
 
   const currentFilters = activeTab === 'all' ? allFilters : pendingFilters;
   const setCurrentFilters = activeTab === 'all' ? setAllFilters : setPendingFilters;
@@ -630,6 +646,45 @@ export function AccountManagement() {
     }
   };
 
+  // Staff-Leader-only top-level tabs: internal accounts vs the read-only "Visitor liên quan" tab.
+  const staffLeaderTabs = isStaffLeader ? (
+    <div className="flex gap-1 mb-8 bg-white rounded-2xl p-1.5 border border-gray-100 shadow-sm w-fit">
+      <button
+        onClick={() => setSlView('internal')}
+        className={`px-5 py-2.5 rounded-xl font-bold text-sm transition-colors outline-none ${slView === 'internal' ? 'bg-[#004c91] text-white shadow-sm' : 'text-gray-500 hover:text-[#004c91]'}`}
+      >
+        Tài khoản nội bộ
+      </button>
+      <button
+        onClick={() => setSlView('visitors')}
+        className={`px-5 py-2.5 rounded-xl font-bold text-sm transition-colors outline-none ${slView === 'visitors' ? 'bg-[#004c91] text-white shadow-sm' : 'text-gray-500 hover:text-[#004c91]'}`}
+      >
+        Tài khoản khách
+      </button>
+    </div>
+  ) : null;
+
+  // Read-only related-visitors view: a self-contained tab, scope resolved server-side.
+  if (isStaffLeader && slView === 'visitors') {
+    return (
+      <div className="p-4 sm:p-6 md:p-8 max-w-[95%] mx-auto pb-12 animate-in fade-in duration-300">
+        <div className="flex items-center gap-2 text-sm font-medium text-gray-500 mb-6">
+          <span>Dashboard</span>
+          <span>/</span>
+          <span className="text-[#004c91]">Quản lý tài khoản</span>
+        </div>
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h1 className="text-3xl font-bold text-[#004c91]">Quản lý tài khoản</h1>
+            <p className="text-gray-500 mt-1 font-medium">Danh sách tài khoản khách liên quan đến cơ sở của bạn</p>
+          </div>
+        </div>
+        {staffLeaderTabs}
+        <RelatedVisitorsTab />
+      </div>
+    );
+  }
+
   return (
     <div className="p-4 sm:p-6 md:p-8 max-w-[95%] mx-auto pb-12 animate-in fade-in duration-300">
       {/* Breadcrumb */}
@@ -645,6 +700,8 @@ export function AccountManagement() {
           <p className="text-gray-500 mt-1 font-medium">Tổng quan hệ thống và phân quyền truy cập</p>
         </div>
       </div>
+
+      {staffLeaderTabs}
 
       {/* I. Top Widgets */}
       {!isHO && (
@@ -1096,15 +1153,7 @@ export function AccountManagement() {
                   <UserCog className="w-6 h-6" /> Thông tin chi tiết
                 </h3>
                 <div className="flex items-center gap-3">
-                  {!isEditingProfile && (isAdmin || isStaffLeader) && !(isStaffLeader && (selectedAccount?.isCurrentUser || selectedAccount?.canUpdateRole === false)) && (
-                    <button
-                      onClick={handleEditClick}
-                      className="flex items-center gap-2 bg-[#f37021] hover:bg-[#e85c0d] text-white px-4 py-2 rounded-xl text-sm font-bold shadow-sm outline-none transition-colors relative z-10"
-                    >
-                      <Edit className="w-4 h-4" /> Chỉnh sửa
-                    </button>
-                  )}
-                  <button 
+                  <button
                     onClick={closeViewDrawer}
                     className="hidden md:flex w-8 h-8 rounded-full bg-white border border-gray-200 shadow-sm items-center justify-center text-gray-500 hover:text-red-500 hover:border-red-200 hover:bg-red-50 transition-all outline-none"
                   >
@@ -1119,10 +1168,10 @@ export function AccountManagement() {
                   const isEdit = isEditingProfile;
 
                   const Input = ({ label, value, field, type="text", disabled=false }: any) => (
-                    <div className="flex flex-col">
+                    <div className="flex flex-col min-w-0">
                       <span className="block text-[10px] font-bold uppercase tracking-wider mb-1 text-gray-500">{label}</span>
                       {isEdit ? (
-                        <input 
+                        <input
                           type={type}
                           value={value || ''}
                           onChange={(e) => setEditForm({...editForm, [field]: e.target.value})}
@@ -1130,13 +1179,13 @@ export function AccountManagement() {
                           className={`px-3 py-2 border border-gray-200 rounded-lg text-sm font-medium text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#004c91] bg-gray-50 transition-all w-full ${disabled ? 'opacity-70 cursor-not-allowed' : 'focus:bg-white'}`}
                         />
                       ) : (
-                        <span className="block text-sm font-bold text-gray-900 bg-gray-50/50 p-2.5 rounded-lg border border-gray-100">{value || '-'}</span>
+                        <span className="block text-sm font-bold text-gray-900 bg-gray-50/50 p-2.5 rounded-lg border border-gray-100 break-words">{value || '-'}</span>
                       )}
                     </div>
                   );
 
                   const Select = ({ label, value, field, options, disabled=false }: any) => (
-                    <div className="flex flex-col">
+                    <div className="flex flex-col min-w-0">
                       <span className="block text-[10px] font-bold uppercase tracking-wider mb-1 text-gray-500">{label}</span>
                       {isEdit ? (
                         <div className="relative">
@@ -1151,13 +1200,13 @@ export function AccountManagement() {
                           <ChevronDown className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
                         </div>
                       ) : (
-                        <span className="block text-sm font-bold text-gray-900 bg-gray-50/50 p-2.5 rounded-lg border border-gray-100">{value || '-'}</span>
+                        <span className="block text-sm font-bold text-gray-900 bg-gray-50/50 p-2.5 rounded-lg border border-gray-100 break-words">{value || '-'}</span>
                       )}
                     </div>
                   );
 
                   const HighlightInput = ({ label, value, field, colSpan, disabled=false }: any) => (
-                    <div className={`flex flex-col ${colSpan ? 'md:col-span-2' : ''}`}>
+                    <div className={`flex flex-col min-w-0 ${colSpan ? 'md:col-span-2' : ''}`}>
                       <span className="block text-[10px] font-bold uppercase tracking-wider mb-1 text-[#004c91]/80">{label}</span>
                       {isEdit ? (
                        <input 
@@ -1167,7 +1216,7 @@ export function AccountManagement() {
                           className={`px-3 py-2 border border-blue-200 rounded-lg text-sm font-black text-[#004c91] focus:outline-none focus:ring-2 focus:ring-[#004c91] bg-blue-50/30 transition-all w-full ${disabled ? 'opacity-70 cursor-not-allowed' : 'focus:bg-white'}`}
                         />
                       ) : (
-                        <span className="block text-sm font-black text-[#004c91] bg-blue-50/30 p-2.5 rounded-lg border border-blue-100">{value || '-'}</span>
+                        <span className="block text-sm font-black text-[#004c91] bg-blue-50/30 p-2.5 rounded-lg border border-blue-100 break-words">{value || '-'}</span>
                       )}
                     </div>
                   );
@@ -1231,14 +1280,13 @@ export function AccountManagement() {
                           <>
                             <HighlightInput label="Mã số sinh viên (MSSV)" value={data.studentId} field="studentId" disabled={isStaffLeader} />
                             <Select label="Cơ sở trực thuộc" value={data.campus} field="campus" options={CAMPUSES.map(c=>({value:c,label:c}))} disabled={isStaffLeader} />
-                            <Select label="Chuyên ngành học" value={data.major} field="major" options={[{value:'Công nghệ thông tin', label:'Công nghệ thông tin'}, {value:'Quản trị kinh doanh', label:'Quản trị kinh doanh'}, {value:'Công nghệ truyền thông', label:'Công nghệ truyền thông'}, {value:'Ngôn ngữ', label:'Ngôn ngữ'}]} disabled={isStaffLeader} />
                           </>
                         )}
 
                         {(data.role === 'STAFF' || data.role === 'DEPARTMENT') && (
                           <>
                             <Select label="Cơ sở trực thuộc" value={data.campus} field="campus" options={CAMPUSES.map(c=>({value:c,label:c}))} disabled={isStaffLeader} />
-                            <Select label="Chức vụ" value={data.subRole} field="subRole" options={[{value:'Trưởng phòng', label:'Trưởng phòng'}, {value:'Nhân viên', label:'Nhân viên'}]} disabled={isStaffLeader} />
+                            <Select label="Chức vụ" value={subRoleLabel(data.subRole)} field="subRole" options={[{value:'Trưởng phòng', label:'Trưởng phòng'}, {value:'Nhân viên', label:'Nhân viên'}]} disabled={isStaffLeader} />
                             <Select label="Phòng ban" value={data.department} field="department" options={[{value:'Phòng Hành chính', label:'Phòng Hành chính'}, {value:'Phòng Đào tạo', label:'Phòng Đào tạo'}, {value:'Phòng Công tác sinh viên', label:'Phòng Công tác sinh viên'}, {value:'Phòng Hợp tác quốc tế', label:'Phòng Hợp tác quốc tế'}, {value:'Phòng Tuyển sinh', label:'Phòng Tuyển sinh'}]} disabled={isStaffLeader} />
                           </>
                         )}

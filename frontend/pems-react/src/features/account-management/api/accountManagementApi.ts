@@ -13,6 +13,9 @@ import type {
   ManageAccountStatusRequest,
   ManageAccountStatusResponse,
   PaginatedResult,
+  RelatedVisitorDetail,
+  RelatedVisitorListItem,
+  RelatedVisitorQueryParams,
   ReplaceStaffLeaderRequest,
   ReplaceStaffLeaderResponse,
   StaffLeaderAvailability,
@@ -137,6 +140,33 @@ export const accountManagementApi = {
     const { data } = await httpClient.post<ReplaceStaffLeaderResponse>(
       API_ENDPOINTS.accounts.replaceStaffLeader,
       payload,
+    );
+    return data;
+  },
+
+  /**
+   * Staff Leader "Visitor liên quan" tab — paged, read-only list of Visitor accounts related to
+   * the caller's campus. The campus scope is resolved server-side from the authenticated Staff
+   * Leader; no campusId is sent (and any would be ignored by the backend).
+   */
+  async getRelatedVisitors(
+    params: RelatedVisitorQueryParams,
+  ): Promise<PaginatedResult<RelatedVisitorListItem>> {
+    const clean = Object.fromEntries(
+      Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ''),
+    );
+    const { data } = await httpClient.get<PaginatedResult<RelatedVisitorListItem>>(
+      API_ENDPOINTS.accounts.relatedVisitors,
+      { params: clean },
+    );
+    return data;
+  },
+
+  /** Staff Leader "Visitor liên quan" tab — detail of one related Visitor (scope re-checked server-side). */
+  async getRelatedVisitorDetails(visitorUserId: string | number): Promise<RelatedVisitorDetail> {
+    const { data } = await httpClient.get<RelatedVisitorDetail>(
+      API_ENDPOINTS.accounts.relatedVisitorDetails,
+      { params: { visitorUserId } },
     );
     return data;
   },
