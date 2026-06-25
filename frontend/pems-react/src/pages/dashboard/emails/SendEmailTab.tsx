@@ -4,9 +4,13 @@ import ReactQuill from 'react-quill-new';
 import 'react-quill-new/dist/quill.snow.css';
 import * as XLSX from 'xlsx';
 import { useLocalEmailDraft } from '../../../features/emails/hooks/useLocalEmailDraft';
-import httpClient from '../../../shared/api/httpClient';
+import { emailsApi } from '../../../features/emails/api/emailsApi';
 
-export function SendEmailTab() {
+type SendEmailTabProps = {
+  onSent?: (message?: string) => void;
+};
+
+export function SendEmailTab({ onSent }: SendEmailTabProps) {
   const userStr = localStorage.getItem('currentUser');
   const user = userStr ? JSON.parse(userStr) : null;
   const userRole = user?.role?.toUpperCase();
@@ -120,7 +124,7 @@ export function SendEmailTab() {
         return;
       }
 
-      await httpClient.post('/emails/sendemail', payload);
+      await emailsApi.sendEmail(payload);
       
       showToast('success', 'Gửi email thành công!');
       clearDraft();
@@ -131,6 +135,7 @@ export function SendEmailTab() {
       setContent('');
       setTo('');
       setExcelFile(null);
+      onSent?.('Gửi email thành công!');
     } catch (error: any) {
       showToast('error', error?.response?.data?.message || 'Gửi email thất bại.');
     } finally {

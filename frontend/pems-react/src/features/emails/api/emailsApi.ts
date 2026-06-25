@@ -1,7 +1,16 @@
 import httpClient from '../../../shared/api/httpClient';
 
 export const emailsApi = {
-  getEmailList: (params: { mailBox: string; keyword?: string; status?: string; page: number; pageSize: number }) => {
+  getEmailList: (params: {
+    mailBox: string;
+    keyword?: string;
+    status?: string;
+    relatedType?: string;
+    startDate?: string;
+    endDate?: string;
+    page: number;
+    pageSize: number;
+  }) => {
     return httpClient.get('/Emails/viewemaillist', { params });
   },
   getEmailDetail: (id: number, sourceType: string) => {
@@ -18,5 +27,11 @@ export const emailsApi = {
   },
   sendEmail: (data: any) => {
     return httpClient.post('/Emails/sendemail', data);
+  },
+  getEmailTemplateList: (params?: { keyword?: string; status?: string; page?: number; pageSize?: number }) => {
+    return httpClient.get('/Emails/viewemailtemplatelist', { params });
+  },
+  getEmailTemplateDetail: (id: number | string) => {
+    return httpClient.get('/Emails/viewemailtemplatedetail', { params: { id } });
   }
 };
