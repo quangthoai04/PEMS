@@ -59,9 +59,11 @@ public sealed class GetAgendaSetupForInstanceQueryHandler
             _db, instance.CampusId, visitType, cancellationToken);
 
         // Selectable templates: campus-scoped + GLOBAL, ACTIVE, not deleted (any visit type, so the host
-        // can deliberately pick a different one). Item counts via a set-based group query.
+        // can deliberately pick a different one). Items are EMBEDDED here so the host can preview each
+        // template without calling the management-gated detail endpoint (which a plain-Staff host can't).
         var scopeKey = AgendaScope.KeyFor(instance.CampusId);
         var templates = await _db.AgendaTemplates.AsNoTracking()
+            .Include(t => t.Items)
             .Where(t => t.DeletedAt == null
                         && t.Status == AgendaTemplateStatuses.Active
                         && (t.CampusScopeKey == scopeKey || t.CampusScopeKey == AgendaScope.Global))
@@ -70,19 +72,16 @@ public sealed class GetAgendaSetupForInstanceQueryHandler
             .ThenBy(t => t.Name)
             .ToListAsync(cancellationToken);
 
-        var ids = templates.Select(t => t.AgendaTemplateId).ToList();
-        var itemCounts = ids.Count == 0
-            ? new Dictionary<ulong, int>()
-            : await _db.AgendaTemplateItems.AsNoTracking()
-                .Where(i => ids.Contains(i.AgendaTemplateId))
-                .GroupBy(i => i.AgendaTemplateId)
-                .Select(g => new { g.Key, Count = g.Count() })
-                .ToDictionaryAsync(x => x.Key, x => x.Count, cancellationToken);
-
-        var selectable = templates.Select(t => new AgendaTemplateSummary(
+        var selectable = templates.Select(t => new AgendaSetupTemplateOption(
             t.AgendaTemplateId, t.CampusId, t.CampusScopeKey, t.VisitType, t.Name, t.Description, t.Status,
-            itemCounts.TryGetValue(t.AgendaTemplateId, out var c) ? c : 0,
-            defaultTemplateId == t.AgendaTemplateId)).ToList();
+            t.Items.Count,
+            defaultTemplateId == t.AgendaTemplateId,
+            t.Items
+                .OrderBy(i => i.StartOffsetMinutes).ThenBy(i => i.DisplayOrder)
+                .Select(i => new AgendaTemplateItemView(
+                    i.AgendaTemplateItemId, (int)i.DisplayOrder, (int)i.StartOffsetMinutes, (int)i.DurationMinutes,
+                    i.Title, i.Description, i.Location, i.ResponsibleRoleLabel))
+                .ToList())).ToList();
 
         var current = await _db.VisitAgendas.AsNoTracking()
             .Where(a => a.VisitInstanceId == instance.VisitInstanceId)

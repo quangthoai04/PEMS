@@ -76,6 +76,7 @@ export function AgendaTemplateManagement() {
 
   const [editor, setEditor] = useState<EditorState | null>(null);
   const [saving, setSaving] = useState(false);
+  const [settingDefaultId, setSettingDefaultId] = useState<number | null>(null);
 
   const [campuses, setCampuses] = useState<CampusOption[]>([]);
   const activeIdRef = useRef<number | null>(null);
@@ -175,9 +176,10 @@ export function AgendaTemplateManagement() {
   const save = async () => {
     if (!editor) return;
     if (!editor.name.trim()) { toast.error('Vui lòng nhập tên mẫu.'); return; }
-    if (editor.items.length === 0) { toast.error('Mẫu agenda phải có ít nhất một mục.'); return; }
-    if (editor.items.some((i) => !i.title.trim())) { toast.error('Mỗi mục lịch trình phải có tiêu đề.'); return; }
-    if (editor.items.some((i) => i.durationMinutes <= 0)) { toast.error('Thời lượng mỗi mục phải lớn hơn 0.'); return; }
+    if (editor.items.length === 0) { toast.error('Vui lòng thêm ít nhất một mục lịch trình.'); return; }
+    if (editor.items.some((i) => !i.title.trim())) { toast.error('Tiêu đề mục lịch trình không được để trống.'); return; }
+    if (editor.items.some((i) => i.durationMinutes <= 0)) { toast.error('Thời lượng phải lớn hơn 0 phút.'); return; }
+    if (editor.items.some((i) => i.startOffsetMinutes < 0)) { toast.error('Offset không được nhỏ hơn 0.'); return; }
 
     const payload = {
       campusId: editor.campusId,
@@ -200,20 +202,20 @@ export function AgendaTemplateManagement() {
     try {
       if (editor.agendaTemplateId) {
         await agendaTemplatesApi.update(editor.agendaTemplateId, payload);
-        toast.success('Đã cập nhật mẫu agenda.');
+        toast.success('Đã cập nhật mẫu lịch trình.');
         const id = editor.agendaTemplateId;
         setEditor(null);
         setActiveId(id);
         await Promise.all([loadList(), loadDetail(id)]);
       } else {
         const res = await agendaTemplatesApi.create(payload);
-        toast.success('Đã tạo mẫu agenda.');
+        toast.success('Đã tạo mẫu lịch trình thành công.');
         setEditor(null);
         setActiveId(res.agendaTemplateId);
         await Promise.all([loadList(), loadDetail(res.agendaTemplateId)]);
       }
     } catch (e) {
-      toast.error(apiMessage(e, 'Lưu mẫu agenda thất bại.'));
+      toast.error(apiMessage(e, 'Không thể thực hiện thao tác. Vui lòng thử lại.'));
     } finally {
       setSaving(false);
     }
@@ -224,12 +226,12 @@ export function AgendaTemplateManagement() {
     if (!window.confirm(`Xóa mẫu "${detail.name}"?`)) return;
     try {
       await agendaTemplatesApi.remove(detail.agendaTemplateId);
-      toast.success('Đã xóa mẫu agenda.');
+      toast.success('Đã xóa mẫu lịch trình.');
       setActiveId(null);
       setDetail(null);
       await loadList();
     } catch (e) {
-      toast.error(apiMessage(e, 'Xóa mẫu agenda thất bại.'));
+      toast.error(apiMessage(e, 'Không thể thực hiện thao tác. Vui lòng thử lại.'));
     }
   };
 
@@ -241,10 +243,32 @@ export function AgendaTemplateManagement() {
         visitType: detail.visitType,
         agendaTemplateId: detail.agendaTemplateId,
       });
-      toast.success('Đã đặt làm mẫu mặc định.');
+      toast.success('Đã đặt mẫu mặc định cho loại chuyến thăm này.');
       await Promise.all([loadList(), loadDetail(detail.agendaTemplateId)]);
     } catch (e) {
-      toast.error(apiMessage(e, 'Đặt mặc định thất bại.'));
+      toast.error(apiMessage(e, 'Không thể đặt mẫu mặc định. Vui lòng thử lại.'));
+    }
+  };
+
+  const handleSetDefaultFromList = async (template: AgendaTemplateSummary) => {
+    if (template.isDefault) return;
+    if (template.status === 'INACTIVE') {
+      toast.error('Không thể đặt template INACTIVE làm mặc định.');
+      return;
+    }
+    setSettingDefaultId(template.agendaTemplateId);
+    try {
+      await agendaTemplatesApi.setDefault({
+        campusId: template.campusId ?? null,
+        visitType: template.visitType,
+        agendaTemplateId: template.agendaTemplateId,
+      });
+      toast.success('Đã đặt mẫu mặc định cho loại chuyến thăm này.');
+      await Promise.all([loadList(), activeId === template.agendaTemplateId ? loadDetail(template.agendaTemplateId) : Promise.resolve()]);
+    } catch (e) {
+      toast.error(apiMessage(e, 'Không thể đặt mẫu mặc định. Vui lòng thử lại.'));
+    } finally {
+      setSettingDefaultId(null);
     }
   };
 
@@ -311,7 +335,23 @@ export function AgendaTemplateManagement() {
                     {activeId === t.agendaTemplateId && <div className="absolute left-0 top-0 bottom-0 w-1 bg-[#004c91]" />}
                     <div className="flex items-start justify-between gap-2">
                       <h4 className={`font-bold text-base mb-1 ${activeId === t.agendaTemplateId ? 'text-[#004c91]' : 'text-gray-800'}`}>{t.name}</h4>
-                      {t.isDefault && <span title="Mẫu mặc định" className="shrink-0"><Star className="w-4 h-4 text-[#f37021] fill-[#f37021]" /></span>}
+                      <button
+                        type="button"
+                        title={t.isDefault ? 'Mẫu mặc định hiện tại' : (t.status === 'INACTIVE' ? 'Không thể đặt mẫu inactive làm mặc định' : 'Đặt làm mẫu mặc định')}
+                        aria-label={t.isDefault ? 'Mẫu mặc định hiện tại' : 'Đặt làm mẫu mặc định'}
+                        disabled={settingDefaultId === t.agendaTemplateId || t.status === 'INACTIVE' || settingDefaultId != null}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          handleSetDefaultFromList(t);
+                        }}
+                        className={`inline-flex h-9 w-9 items-center justify-center rounded-xl transition-colors shrink-0 ${
+                          t.isDefault
+                            ? 'text-orange-400 hover:bg-orange-50'
+                            : 'text-slate-300 hover:bg-orange-50 hover:text-orange-400'
+                        } ${(settingDefaultId === t.agendaTemplateId || t.status === 'INACTIVE' || settingDefaultId != null) ? 'cursor-not-allowed opacity-50 hover:bg-transparent' : ''}`}
+                      >
+                        <Star className={`w-5 h-5 ${t.isDefault ? 'fill-orange-400 text-orange-400' : 'text-slate-300'}`} />
+                      </button>
                     </div>
                     <div className="flex flex-wrap items-center gap-1.5 text-xs font-medium text-gray-500 mb-1">
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-gray-100 rounded-full">{VISIT_TYPE_LABELS[t.visitType]}</span>
@@ -494,43 +534,52 @@ function AgendaEditor({ editor, campuses, saving, onPatch, onPatchItem, onAddIte
 
             <div className="space-y-3">
               {editor.items.map((item, idx) => (
-                <div key={item.uid} className="relative group bg-gray-50 border border-gray-200 rounded-xl p-4 pr-12 focus-within:border-[#004c91]/50 focus-within:bg-white transition-colors">
-                  <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
-                    <div className="md:col-span-2">
-                      <label className="block text-xs font-bold text-gray-500 mb-1">Offset (phút)</label>
+                <div key={item.uid} className="relative group rounded-2xl border border-slate-200 bg-slate-50/60 p-4 transition-colors">
+                  <div className="grid grid-cols-1 gap-4 lg:grid-cols-[110px_130px_minmax(0,1fr)_44px] lg:items-start">
+                    <div>
+                      <label className="mb-1.5 block min-h-[32px] text-xs font-bold leading-tight text-slate-500">Offset (phút)</label>
                       <input type="number" min={0} value={item.startOffsetMinutes} onChange={(e) => onPatchItem(item.uid, { startOffsetMinutes: Number(e.target.value) })}
-                        className="w-full px-3 py-2 bg-white rounded-lg border border-gray-300 focus:border-[#004c91] outline-none text-sm font-medium" />
+                        className="h-11 w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-800 outline-none transition-colors focus:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/10" />
                     </div>
-                    <div className="md:col-span-2">
-                      <label className="block text-xs font-bold text-gray-500 mb-1">Thời lượng (phút)</label>
+                    <div>
+                      <label className="mb-1.5 block min-h-[32px] text-xs font-bold leading-tight text-slate-500">Thời lượng (phút)</label>
                       <input type="number" min={1} value={item.durationMinutes} onChange={(e) => onPatchItem(item.uid, { durationMinutes: Number(e.target.value) })}
-                        className="w-full px-3 py-2 bg-white rounded-lg border border-gray-300 focus:border-[#004c91] outline-none text-sm font-medium" />
+                        className="h-11 w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-800 outline-none transition-colors focus:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/10" />
                     </div>
-                    <div className="md:col-span-8">
-                      <label className="block text-xs font-bold text-gray-500 mb-1">Tiêu đề <span className="text-red-500">*</span></label>
+                    <div>
+                      <label className="mb-1.5 block min-h-[32px] text-xs font-bold leading-tight text-slate-500">Tiêu đề <span className="text-red-500">*</span></label>
                       <input type="text" value={item.title} onChange={(e) => onPatchItem(item.uid, { title: e.target.value })} maxLength={255}
-                        className="w-full px-3 py-2 bg-white rounded-lg border border-gray-300 focus:border-[#004c91] outline-none text-sm font-medium" />
+                        className="h-11 w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-800 outline-none transition-colors focus:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/10" />
                     </div>
-                    <div className="md:col-span-12">
-                      <label className="block text-xs font-bold text-gray-500 mb-1">Mô tả</label>
-                      <input type="text" value={item.description} onChange={(e) => onPatchItem(item.uid, { description: e.target.value })}
-                        className="w-full px-3 py-2 bg-white rounded-lg border border-gray-300 focus:border-[#004c91] outline-none text-sm font-medium" />
-                    </div>
-                    <div className="md:col-span-6">
-                      <label className="block text-xs font-bold text-gray-500 mb-1">Địa điểm</label>
-                      <input type="text" value={item.location} onChange={(e) => onPatchItem(item.uid, { location: e.target.value })} maxLength={255}
-                        className="w-full px-3 py-2 bg-white rounded-lg border border-gray-300 focus:border-[#004c91] outline-none text-sm font-medium" />
-                    </div>
-                    <div className="md:col-span-6">
-                      <label className="block text-xs font-bold text-gray-500 mb-1">Vai trò phụ trách</label>
-                      <input type="text" value={item.responsibleRoleLabel} onChange={(e) => onPatchItem(item.uid, { responsibleRoleLabel: e.target.value })} maxLength={150}
-                        className="w-full px-3 py-2 bg-white rounded-lg border border-gray-300 focus:border-[#004c91] outline-none text-sm font-medium" />
+                    <div className="flex justify-end lg:block">
+                      <button type="button" onClick={() => onRemoveItem(item.uid)} className="lg:mt-[38px] inline-flex h-11 w-11 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-400 transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-50">
+                        <Trash2 className="w-5 h-5" />
+                      </button>
                     </div>
                   </div>
-                  <div className="mt-2 text-xs text-gray-400">{agendaTemplatesAdapter.formatOffset(item.startOffsetMinutes)} · {agendaTemplatesAdapter.formatDuration(item.durationMinutes)} (mục #{idx + 1})</div>
-                  <button onClick={() => onRemoveItem(item.uid)} className="absolute right-3 top-4 p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors outline-none">
-                    <Trash2 className="w-5 h-5" />
-                  </button>
+                  
+                  <div className="mt-4">
+                    <label className="mb-1.5 block min-h-[16px] text-xs font-bold leading-tight text-slate-500">Mô tả</label>
+                    <input type="text" value={item.description} onChange={(e) => onPatchItem(item.uid, { description: e.target.value })}
+                      className="h-11 w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-800 outline-none transition-colors focus:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/10" />
+                  </div>
+
+                  <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <div>
+                      <label className="mb-1.5 block min-h-[16px] text-xs font-bold leading-tight text-slate-500">Địa điểm</label>
+                      <input type="text" value={item.location} onChange={(e) => onPatchItem(item.uid, { location: e.target.value })} maxLength={255}
+                        className="h-11 w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-800 outline-none transition-colors focus:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/10" />
+                    </div>
+                    <div>
+                      <label className="mb-1.5 block min-h-[16px] text-xs font-bold leading-tight text-slate-500">Vai trò phụ trách</label>
+                      <input type="text" value={item.responsibleRoleLabel} onChange={(e) => onPatchItem(item.uid, { responsibleRoleLabel: e.target.value })} maxLength={150}
+                        className="h-11 w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-800 outline-none transition-colors focus:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/10" />
+                    </div>
+                  </div>
+
+                  <div className="mt-3 text-xs font-medium text-slate-400">
+                    {agendaTemplatesAdapter.formatOffset(item.startOffsetMinutes)} · {agendaTemplatesAdapter.formatDuration(item.durationMinutes)} (mục #{idx + 1})
+                  </div>
                 </div>
               ))}
               {editor.items.length === 0 && (

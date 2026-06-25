@@ -133,6 +133,12 @@ export interface AgendaRowView {
   sourceTemplateItemId?: number | null;
 }
 
+/** A selectable template in the setup dropdown — a summary plus its embedded items, so the host
+ * can preview it without a second (management-gated) detail call. */
+export interface AgendaSetupTemplateOption extends AgendaTemplateSummary {
+  items: AgendaTemplateItemDto[];
+}
+
 export interface AgendaSetupForInstance {
   visitInstanceId: number;
   visitRequestId: number;
@@ -145,7 +151,7 @@ export interface AgendaSetupForInstance {
   defaultTemplateId?: number | null;
   defaultScope?: 'CAMPUS' | 'GLOBAL' | null;
   hasExistingAgenda: boolean;
-  selectableTemplates: AgendaTemplateSummary[];
+  selectableTemplates: AgendaSetupTemplateOption[];
   currentAgenda: AgendaRowView[];
 }
 
