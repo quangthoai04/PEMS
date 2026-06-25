@@ -12,14 +12,14 @@ namespace PEMS.Application.Delegations.Minutes;
 /// (and again for the "đồng bộ người mới" sync). Rules (Phần 1):
 ///  1. Host chính — from <c>visit_request_campuses.current_host_user_id</c>.
 ///  2. Internal participants — from <c>visit_participants</c> that are confirmed-to-attend
-///     (status ACCEPTED or ASSIGNED, excluding the host row); INVITED/DECLINED/REMOVED are skipped.
+///     (status ACCEPTED, excluding the host row); ASSIGNED/INVITED/DECLINED/REMOVED are skipped.
 ///  3. Guests — every row of <c>visit_guest_members</c> for the request (no per-guest confirm status exists).
 /// De-dup is purely by (user_id) / (guest_member_id) against what already exists, so it is idempotent
 /// and append-only: it never resurrects or overwrites rows the Host has edited/checked.
 /// </summary>
 internal static class MinuteAutoFill
 {
-    private const string AttendanceDefault = "PRESENT";
+    private const string AttendanceDefault = "ABSENT";
 
     /// <summary>
     /// Computes the participant rows that SHOULD exist for this minutes but are not present in
@@ -57,7 +57,7 @@ internal static class MinuteAutoFill
         var parts = await db.VisitParticipants
             .Where(p => p.VisitInstanceId == instance.VisitInstanceId
                 && !p.IsHost
-                && (p.Status == ParticipantStatuses.Accepted || p.Status == ParticipantStatuses.Assigned))
+                && p.Status == ParticipantStatuses.Accepted)
             .OrderBy(p => p.ParticipantId)
             .ToListAsync(ct);
 

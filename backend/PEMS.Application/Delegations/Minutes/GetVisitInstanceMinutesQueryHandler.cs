@@ -78,6 +78,8 @@ public sealed class GetVisitInstanceMinutesQueryHandler
         dto.IsLockedByMe = lockActive && minute.EditLockedBy == userId;
         // Editing is offered only when the user may edit AND no one else holds the lock.
         dto.CanEdit = canEdit && !dto.IsLockedByOther;
+
+        await MinuteChildren.LoadInto(_db, dto, minute.MinutesId, cancellationToken);
         return dto;
     }
 }

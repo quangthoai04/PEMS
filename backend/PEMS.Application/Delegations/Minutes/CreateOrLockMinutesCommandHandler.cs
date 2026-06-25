@@ -74,6 +74,17 @@ public sealed class CreateOrLockMinutesCommandHandler
                 CreatedBy = userId,
             };
             _db.Minutes.Add(minute);
+            // Persist first so the record gets its identity, then auto-fill the attendance snapshot
+            // (Host + accepted internal participants + guests) inside the same transaction.
+            await _db.SaveChangesAsync(cancellationToken);
+
+            var autoFilled = await MinuteAutoFill.ComputeNewRowsAsync(
+                _db, instance, Array.Empty<MinuteParticipant>(), minute.MinutesId, now, cancellationToken);
+            if (autoFilled.Count > 0)
+            {
+                foreach (var row in autoFilled) _db.MinuteParticipants.Add(row);
+                await _db.SaveChangesAsync(cancellationToken);
+            }
         }
         else
         {
@@ -87,12 +98,12 @@ public sealed class CreateOrLockMinutesCommandHandler
             minute.EditLockToken = token;
             minute.UpdatedAt = now;
             minute.UpdatedBy = userId;
+            await _db.SaveChangesAsync(cancellationToken);
         }
 
-        await _db.SaveChangesAsync(cancellationToken);
         await tx.CommitAsync(cancellationToken);
 
-        return new MinuteDto
+        var dto = new MinuteDto
         {
             Exists = true,
             MinutesId = minute.MinutesId,
@@ -111,5 +122,7 @@ public sealed class CreateOrLockMinutesCommandHandler
             CanEdit = true,
             CanCreate = false,
         };
+        await MinuteChildren.LoadInto(_db, dto, minute.MinutesId, cancellationToken);
+        return dto;
     }
 }

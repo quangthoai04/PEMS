@@ -61,7 +61,7 @@ public sealed class AcquireMinutesLockCommandHandler
         minute.UpdatedBy = userId;
         await _db.SaveChangesAsync(cancellationToken);
 
-        return new MinuteDto
+        var dto = new MinuteDto
         {
             Exists = true,
             MinutesId = minute.MinutesId,
@@ -80,5 +80,7 @@ public sealed class AcquireMinutesLockCommandHandler
             CanEdit = true,
             CanCreate = false,
         };
+        await MinuteChildren.LoadInto(_db, dto, minute.MinutesId, cancellationToken);
+        return dto;
     }
 }

@@ -23,7 +23,7 @@ public sealed class MinuteParticipantDto
     public string? EmailSnapshot { get; set; }
 
     /// <summary>PRESENT | ABSENT | EXCUSED (matches the SQL enum).</summary>
-    public string AttendanceStatus { get; set; } = "PRESENT";
+    public string AttendanceStatus { get; set; } = "ABSENT";
     public string? AttendanceNote { get; set; }
     public DateTime? CheckedAt { get; set; }
     public ulong? CheckedBy { get; set; }

@@ -3,12 +3,17 @@ using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Domain.Constants;
+using PEMS.Domain.Entities.Minutes;
 
 namespace PEMS.Application.Delegations.Minutes;
 
 public sealed class SaveMinutesCommandHandler
     : IRequestHandler<SaveMinutesCommand, MinuteDto>
 {
+    private static readonly HashSet<string> AttendanceStatuses = new() { "PRESENT", "ABSENT", "EXCUSED" };
+    private static readonly HashSet<string> ActionStatuses = new() { "TODO", "IN_PROGRESS", "DONE", "CANCELLED" };
+    private const string ActionDone = "DONE";
+
     private readonly IApplicationDbContext _db;
     private readonly ICurrentUserService _currentUser;
     private readonly IDateTimeService _clock;
@@ -64,6 +69,8 @@ public sealed class SaveMinutesCommandHandler
         if (minute.RowVersion != request.RowVersion)
             throw new ConflictException("Biên bản đã được cập nhật bởi người khác. Vui lòng tải lại nội dung mới nhất.");
 
+        await using var tx = await _db.BeginTransactionAsync(cancellationToken);
+
         minute.Title = request.Title.Trim();
         minute.Content = request.Content;
         minute.Status = MinuteAccess.StatusSaved;
@@ -76,9 +83,16 @@ public sealed class SaveMinutesCommandHandler
         minute.EditLockExpiresAt = null;
         minute.EditLockToken = null;
 
-        await _db.SaveChangesAsync(cancellationToken);
+        if (request.Participants != null)
+            await ReconcileParticipants(minute.MinutesId, request.Participants, userId, now, cancellationToken);
 
-        return new MinuteDto
+        if (request.ActionItems != null)
+            await ReconcileActionItems(minute.MinutesId, request.ActionItems, userId, now, cancellationToken);
+
+        await _db.SaveChangesAsync(cancellationToken);
+        await tx.CommitAsync(cancellationToken);
+
+        var dto = new MinuteDto
         {
             Exists = true,
             MinutesId = minute.MinutesId,
@@ -93,5 +107,164 @@ public sealed class SaveMinutesCommandHandler
             CanEdit = canEdit,
             CanCreate = false,
         };
+        await MinuteChildren.LoadInto(_db, dto, minute.MinutesId, cancellationToken);
+        return dto;
     }
+
+    private async Task ReconcileParticipants(
+        ulong minutesId, IReadOnlyList<SaveMinuteParticipantInput> inputs, ulong userId, DateTime now, CancellationToken ct)
+    {
+        var existing = await _db.MinuteParticipants
+            .Where(p => p.MinutesId == minutesId)
+            .ToListAsync(ct);
+        var byId = existing.ToDictionary(p => p.MinuteParticipantId);
+        var processed = new HashSet<ulong>();
+        var liveUserIds = existing.Where(p => p.UserId != null).Select(p => p.UserId!.Value).ToHashSet();
+        uint maxOrder = existing.Count == 0 ? 0u : existing.Max(p => p.DisplayOrder);
+
+        foreach (var input in inputs)
+        {
+            var status = (input.AttendanceStatus ?? string.Empty).Trim().ToUpperInvariant();
+            if (!AttendanceStatuses.Contains(status))
+                throw new BusinessRuleException($"Trạng thái điểm danh không hợp lệ: '{input.AttendanceStatus}'.");
+            var note = string.IsNullOrWhiteSpace(input.AttendanceNote) ? null : input.AttendanceNote.Trim();
+
+            if (input.MinuteParticipantId is ulong id && byId.TryGetValue(id, out var row))
+            {
+                processed.Add(id);
+                bool isManual = row.UserId == null && row.GuestMemberId == null;
+
+                // Record who/when only when attendance actually changes.
+                if (row.AttendanceStatus != status || row.AttendanceNote != note)
+                {
+                    row.CheckedBy = userId;
+                    row.CheckedAt = now;
+                }
+                row.AttendanceStatus = status;
+                row.AttendanceNote = note;
+
+                // Snapshot is editable ONLY for manual rows (if any still exist)
+                if (isManual)
+                {
+                    var fullName = (input.FullNameSnapshot ?? string.Empty).Trim();
+                    if (fullName.Length == 0)
+                        throw new BusinessRuleException("Họ tên người tham gia không được để trống.");
+                    row.FullNameSnapshot = fullName;
+                    row.RoleSnapshot = Clean(input.RoleSnapshot);
+                    row.OrganizationSnapshot = Clean(input.OrganizationSnapshot);
+                    row.EmailSnapshot = Clean(input.EmailSnapshot);
+                }
+                continue;
+            }
+
+            // ── New row ──────────────────────────────────────────────────────
+            var newRow = new MinuteParticipant
+            {
+                MinutesId = minutesId,
+                GuestMemberId = null, // clients never create guest rows
+                AttendanceStatus = status,
+                AttendanceNote = note,
+                DisplayOrder = ++maxOrder,
+                CreatedAt = now,
+            };
+            if (status != "ABSENT" || note != null)
+            {
+                newRow.CheckedBy = userId;
+                newRow.CheckedAt = now;
+            }
+
+            if (input.UserId is ulong newUserId)
+            {
+                if (liveUserIds.Contains(newUserId)) continue; // already in the list → ignore duplicate
+                var u = await _db.Users
+                    .Include(x => x.Department).Include(x => x.PrimaryCampus).Include(x => x.Role)
+                    .FirstOrDefaultAsync(x => x.UserId == newUserId, ct);
+                if (u == null)
+                    throw new BusinessRuleException("Người dùng được chọn không tồn tại hoặc không còn hoạt động.");
+                if (u.Status != "ACTIVE")
+                    throw new BusinessRuleException("Người dùng được chọn đã bị vô hiệu hóa.");
+                newRow.UserId = newUserId;
+                newRow.FullNameSnapshot = u.FullName;
+                newRow.EmailSnapshot = u.Email;
+                newRow.RoleSnapshot = Clean(input.RoleSnapshot);
+                newRow.OrganizationSnapshot = u.Department?.Name ?? u.PrimaryCampus?.Name;
+                liveUserIds.Add(newUserId);
+            }
+            else
+            {
+                throw new BusinessRuleException("Không hỗ trợ thêm người tham gia ngoài hệ thống. Vui lòng chọn một người dùng có sẵn.");
+            }
+
+            _db.MinuteParticipants.Add(newRow);
+        }
+
+        // Rows omitted by the client are removed from the snapshot (never from the source tables).
+        foreach (var row in existing)
+            if (!processed.Contains(row.MinuteParticipantId))
+                _db.MinuteParticipants.Remove(row);
+    }
+
+    private async Task ReconcileActionItems(
+        ulong minutesId, IReadOnlyList<SaveMinuteActionItemInput> inputs, ulong userId, DateTime now, CancellationToken ct)
+    {
+        var existing = await _db.MinuteActionItems
+            .Where(a => a.MinutesId == minutesId)
+            .ToListAsync(ct);
+        var byId = existing.ToDictionary(a => a.ActionItemId);
+        var processed = new HashSet<ulong>();
+
+        for (int i = 0; i < inputs.Count; i++)
+        {
+            var input = inputs[i];
+            var title = (input.Title ?? string.Empty).Trim();
+            if (title.Length == 0)
+                throw new BusinessRuleException("Tên đầu mục công việc không được để trống.");
+            var status = (input.Status ?? string.Empty).Trim().ToUpperInvariant();
+            if (!ActionStatuses.Contains(status))
+                throw new BusinessRuleException($"Trạng thái đầu mục công việc không hợp lệ: '{input.Status}'.");
+            var note = Clean(input.Note);
+            int order = i + 1;
+
+            if (input.ActionItemId is ulong id && byId.TryGetValue(id, out var row))
+            {
+                processed.Add(id);
+                bool wasDone = row.Status == ActionDone;
+                row.Title = title;
+                row.Note = note;
+                row.DueDate = input.DueDate;
+                row.Status = status;
+                row.DisplayOrder = order;
+                row.UpdatedAt = now;
+                row.UpdatedBy = userId;
+                if (status == ActionDone && !wasDone) row.CompletedAt = now;
+                else if (status != ActionDone) row.CompletedAt = null;
+                continue;
+            }
+
+            var newItem = new MinuteActionItem
+            {
+                MinutesId = minutesId,
+                Title = title,
+                Note = note,
+                DueDate = input.DueDate,
+                Status = status,
+                DisplayOrder = order,
+                CompletedAt = status == ActionDone ? now : null,
+                CreatedAt = now,
+                CreatedBy = userId,
+            };
+            _db.MinuteActionItems.Add(newItem);
+        }
+
+        foreach (var row in existing)
+        {
+            if (processed.Contains(row.ActionItemId)) continue;
+            if (row.Status == ActionDone)
+                throw new BusinessRuleException("Không thể xóa đầu mục công việc đã hoàn thành.");
+            _db.MinuteActionItems.Remove(row);
+        }
+    }
+
+    private static string? Clean(string? value)
+        => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 }

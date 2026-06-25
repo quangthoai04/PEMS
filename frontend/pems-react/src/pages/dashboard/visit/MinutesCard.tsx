@@ -5,37 +5,106 @@
  * tại một thời điểm chỉ 1 người được sửa (cơ chế lock có token + hết hạn 10 phút). Mọi quyền do
  * backend quyết (canCreate/canEdit + trạng thái lock) — frontend chỉ render theo dữ liệu trả về.
  *
- * TODO (backlog) — điểm danh biên bản (minute_participants) chưa làm UI:
- *   - Preload khách từ visit_guest_members + người nội bộ từ visit_participants (+ Host).
- *   - Lưu snapshot vào minute_participants; cho người sửa tick ai có mặt (PRESENT/ABSENT/EXCUSED).
+ * Khi tạo biên bản lần đầu backend tự fill người tham gia (Host + khách trong đơn + người nội bộ đã
+ * ACCEPTED/ASSIGNED) vào minute_participants; Host chỉ điểm danh có mặt/vắng mặt và có thể thêm người
+ * thủ công. Dữ liệu trong biên bản là snapshot riêng (không sửa ngược danh sách gốc).
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ChevronUp, ChevronDown, FileText, Lock, Edit3, Save, X, Plus, Clock, Users, ClipboardList } from 'lucide-react';
+import {
+  ChevronUp, ChevronDown, FileText, Lock, Edit3, Save, X, Plus, Clock, Users, ClipboardList,
+  Trash2, UserPlus, RefreshCw, Search, Calendar, Building2, Mail,
+} from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { delegationsApi } from '../../../features/delegations/api/delegationsApi';
-import type { VisitMinute } from '../../../features/delegations/types/delegations.types';
+import type {
+  VisitMinute, MinuteUserSearchItem,
+  SaveMinuteParticipantPayload, SaveMinuteActionItemPayload,
+} from '../../../features/delegations/types/delegations.types';
 
 const formatDateTime = (value?: string | null) =>
   value ? new Date(value).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' }) : '-';
 
 const errMsg = (e: any, fallback: string) => e?.response?.data?.message || fallback;
 
+type DraftParticipant = {
+  _key: string;
+  minuteParticipantId: number; // 0 = new
+  userId: number | null;
+  guestMemberId: number | null;
+  fullNameSnapshot: string;
+  roleSnapshot: string;
+  organizationSnapshot: string;
+  emailSnapshot: string;
+  attendanceStatus: string;
+  attendanceNote: string;
+  participantKind: string; // INTERNAL | GUEST | MANUAL
+};
+
+type DraftActionItem = {
+  _key: string;
+  actionItemId: number; // 0 = new
+  title: string;
+  note: string;
+  dueDate: string; // YYYY-MM-DD or ''
+  status: string;
+};
+
+const KIND_META: Record<string, { label: string; cls: string }> = {
+  INTERNAL: { label: 'Nội bộ', cls: 'bg-blue-50 text-blue-700 border-blue-200' },
+  GUEST: { label: 'Khách', cls: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
+  MANUAL: { label: 'Thêm thủ công', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
+};
+const ATT_META: Record<string, { label: string; cls: string }> = {
+  PRESENT: { label: 'Có mặt', cls: 'bg-green-50 text-green-700 border-green-200' },
+  ABSENT: { label: 'Chưa xác nhận có mặt', cls: 'bg-red-50 text-red-700 border-red-200' },
+  EXCUSED: { label: 'Vắng có lý do', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
+};
+const ATT_OPTIONS = [
+  { value: 'PRESENT', label: 'Có mặt' },
+  { value: 'ABSENT', label: 'Chưa xác nhận có mặt' },
+  { value: 'EXCUSED', label: 'Vắng có lý do' },
+];
+const ACTION_STATUS_META: Record<string, { label: string; cls: string }> = {
+  TODO: { label: 'Chưa làm', cls: 'bg-gray-100 text-gray-600 border-gray-200' },
+  IN_PROGRESS: { label: 'Đang làm', cls: 'bg-blue-50 text-blue-700 border-blue-200' },
+  DONE: { label: 'Hoàn thành', cls: 'bg-green-50 text-green-700 border-green-200' },
+  CANCELLED: { label: 'Đã hủy', cls: 'bg-red-50 text-red-600 border-red-200' },
+};
+const ACTION_STATUS_OPTIONS = Object.keys(ACTION_STATUS_META).map((value) => ({ value, label: ACTION_STATUS_META[value].label }));
+
 export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInstanceId: number; isReadOnly?: boolean }) {
   const [expanded, setExpanded] = useState(true);
   const [data, setData] = useState<VisitMinute | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   // Editing session (only set while this user holds the lock).
   const [editing, setEditing] = useState(false);
   const [draftTitle, setDraftTitle] = useState('');
   const [draftContent, setDraftContent] = useState('');
+  const [draftParticipants, setDraftParticipants] = useState<DraftParticipant[]>([]);
+  const [draftActionItems, setDraftActionItems] = useState<DraftActionItem[]>([]);
   const tokenRef = useRef<string | null>(null);
   const minutesIdRef = useRef<number | null>(null);
   const rowVersionRef = useRef<number>(0);
   const expiresRef = useRef<string | null>(null);
+  const keyRef = useRef(0);
   const [remainingMs, setRemainingMs] = useState<number>(0);
+
+  // Manual add-participant form.
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [addName, setAddName] = useState('');
+  const [addRole, setAddRole] = useState('');
+  const [addOrg, setAddOrg] = useState('');
+  const [addEmail, setAddEmail] = useState('');
+  const [addUserId, setAddUserId] = useState<number | null>(null);
+  const [userQuery, setUserQuery] = useState('');
+  const [userResults, setUserResults] = useState<MinuteUserSearchItem[]>([]);
+  const [userSearching, setUserSearching] = useState(false);
+
+  const nextKey = (prefix: string) => `${prefix}-new-${++keyRef.current}`;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -65,6 +134,23 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
     return () => clearInterval(t);
   }, [editing, load]);
 
+  // Debounced user search for the manual-add form.
+  useEffect(() => {
+    if (!showAddForm) return;
+    const q = userQuery.trim();
+    if (q.length < 2) { setUserResults([]); return; }
+    let active = true;
+    setUserSearching(true);
+    const t = setTimeout(async () => {
+      try {
+        const res = await delegationsApi.minutes.searchUsers(visitInstanceId, q);
+        if (active) setUserResults(res);
+      } catch { if (active) setUserResults([]); }
+      finally { if (active) setUserSearching(false); }
+    }, 300);
+    return () => { active = false; clearTimeout(t); };
+  }, [userQuery, showAddForm, visitInstanceId]);
+
   const enterEditing = (d: VisitMinute) => {
     tokenRef.current = d.editLockToken ?? null;
     minutesIdRef.current = d.minutesId ?? null;
@@ -72,9 +158,38 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
     expiresRef.current = d.editLockExpiresAt ?? null;
     setDraftTitle(d.title ?? 'Biên bản cuộc họp');
     setDraftContent(d.content ?? '');
+    setDraftParticipants((d.participants ?? []).map((p) => ({
+      _key: `p-${p.minuteParticipantId}`,
+      minuteParticipantId: p.minuteParticipantId,
+      userId: p.userId,
+      guestMemberId: p.guestMemberId,
+      fullNameSnapshot: p.fullNameSnapshot ?? '',
+      roleSnapshot: p.roleSnapshot ?? '',
+      organizationSnapshot: p.organizationSnapshot ?? '',
+      emailSnapshot: p.emailSnapshot ?? '',
+      attendanceStatus: p.attendanceStatus || 'ABSENT',
+      attendanceNote: p.attendanceNote ?? '',
+      participantKind: p.participantKind,
+    })));
+    setDraftActionItems((d.actionItems ?? []).map((a) => ({
+      _key: `a-${a.actionItemId}`,
+      actionItemId: a.actionItemId,
+      title: a.title ?? '',
+      note: a.note ?? '',
+      dueDate: a.dueDate ? a.dueDate.slice(0, 10) : '',
+      status: a.status || 'TODO',
+    })));
     setData(d);
     setEditing(true);
     setError(null);
+    setInfo(null);
+    resetAddForm();
+  };
+
+  const resetAddForm = () => {
+    setShowAddForm(false);
+    setAddName(''); setAddRole(''); setAddOrg(''); setAddEmail('');
+    setAddUserId(null); setUserQuery(''); setUserResults([]);
   };
 
   const handleCreate = async () => {
@@ -95,6 +210,30 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
   const handleSave = async () => {
     if (!minutesIdRef.current || !tokenRef.current) return;
     if (!draftTitle.trim()) { setError('Tiêu đề biên bản không được để trống.'); return; }
+    if (draftParticipants.some((p) => !p.fullNameSnapshot.trim())) {
+      setError('Mỗi người tham gia phải có họ tên.'); return;
+    }
+    if (draftActionItems.some((a) => !a.title.trim())) {
+      setError('Mỗi đầu mục công việc phải có nội dung.'); return;
+    }
+    const participants: SaveMinuteParticipantPayload[] = draftParticipants.map((p) => ({
+      minuteParticipantId: p.minuteParticipantId > 0 ? p.minuteParticipantId : null,
+      userId: p.userId,
+      guestMemberId: p.guestMemberId,
+      fullNameSnapshot: p.fullNameSnapshot.trim(),
+      roleSnapshot: p.roleSnapshot.trim() || null,
+      organizationSnapshot: p.organizationSnapshot.trim() || null,
+      emailSnapshot: p.emailSnapshot.trim() || null,
+      attendanceStatus: p.attendanceStatus,
+      attendanceNote: p.attendanceNote.trim() || null,
+    }));
+    const actionItems: SaveMinuteActionItemPayload[] = draftActionItems.map((a) => ({
+      actionItemId: a.actionItemId > 0 ? a.actionItemId : null,
+      title: a.title.trim(),
+      note: a.note.trim() || null,
+      dueDate: a.dueDate || null,
+      status: a.status,
+    }));
     setBusy(true);
     try {
       const d = await delegationsApi.minutes.save(minutesIdRef.current, {
@@ -102,11 +241,15 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
         content: draftContent,
         editLockToken: tokenRef.current,
         rowVersion: rowVersionRef.current,
+        participants,
+        actionItems,
       });
       setEditing(false);
       tokenRef.current = null;
+      resetAddForm();
       setData(d);
       setError(null);
+      setInfo(null);
     } catch (e: any) {
       setError(errMsg(e, 'Không thể lưu biên bản. Vui lòng thử lại.'));
     } finally { setBusy(false); }
@@ -116,6 +259,7 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
     const id = minutesIdRef.current, token = tokenRef.current;
     setEditing(false);
     tokenRef.current = null;
+    resetAddForm();
     if (id && token) {
       try { await delegationsApi.minutes.releaseLock(id, token); } catch { /* lock will expire anyway */ }
     }
@@ -130,8 +274,104 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
     };
   }, []);
 
+  const updateParticipant = (key: string, patch: Partial<DraftParticipant>) =>
+    setDraftParticipants((prev) => prev.map((p) => (p._key === key ? { ...p, ...patch } : p)));
+  const removeParticipant = (key: string) =>
+    setDraftParticipants((prev) => prev.filter((p) => p._key !== key));
+  const updateActionItem = (key: string, patch: Partial<DraftActionItem>) =>
+    setDraftActionItems((prev) => prev.map((a) => (a._key === key ? { ...a, ...patch } : a)));
+  const removeActionItem = (key: string) =>
+    setDraftActionItems((prev) => prev.filter((a) => a._key !== key));
+
+  const handleAddParticipant = () => {
+    if (!addUserId) { setError('Vui lòng chọn người dùng trong hệ thống để thêm.'); return; }
+    setDraftParticipants((prev) => [...prev, {
+      _key: nextKey('p'),
+      minuteParticipantId: 0,
+      userId: addUserId,
+      guestMemberId: null,
+      fullNameSnapshot: addName,
+      roleSnapshot: addRole,
+      organizationSnapshot: addOrg,
+      emailSnapshot: addEmail,
+      attendanceStatus: 'ABSENT',
+      attendanceNote: '',
+      participantKind: 'INTERNAL',
+    }]);
+    resetAddForm();
+    setError(null);
+  };
+
+  const handlePickUser = (u: MinuteUserSearchItem) => {
+    setAddUserId(u.userId);
+    setAddName(u.fullName);
+    setAddEmail(u.email ?? '');
+    setAddOrg(u.organization ?? '');
+    setUserQuery(u.fullName);
+    setUserResults([]);
+  };
+
+  const handleSyncNew = async () => {
+    const id = minutesIdRef.current;
+    if (!id) return;
+    setBusy(true);
+    try {
+      const candidates = await delegationsApi.minutes.newParticipantCandidates(id);
+      const haveUser = new Set(draftParticipants.filter((p) => p.userId != null).map((p) => p.userId));
+      const haveGuest = new Set(draftParticipants.filter((p) => p.guestMemberId != null).map((p) => p.guestMemberId));
+      const fresh = candidates.filter((c) =>
+        (c.userId != null && !haveUser.has(c.userId)) || (c.guestMemberId != null && !haveGuest.has(c.guestMemberId)));
+      if (fresh.length === 0) { setInfo('Không có người mới cần đồng bộ.'); return; }
+      setDraftParticipants((prev) => [...prev, ...fresh.map((c) => ({
+        _key: nextKey('sync'),
+        minuteParticipantId: 0,
+        userId: c.userId,
+        guestMemberId: c.guestMemberId,
+        fullNameSnapshot: c.fullNameSnapshot ?? '',
+        roleSnapshot: c.roleSnapshot ?? '',
+        organizationSnapshot: c.organizationSnapshot ?? '',
+        emailSnapshot: c.emailSnapshot ?? '',
+        attendanceStatus: c.attendanceStatus || 'ABSENT',
+        attendanceNote: c.attendanceNote ?? '',
+        participantKind: c.participantKind,
+      }))]);
+      setInfo(`Đã thêm ${fresh.length} người mới vào danh sách. Nhớ bấm "Lưu biên bản" để lưu lại.`);
+    } catch (e: any) {
+      setError(errMsg(e, 'Không thể đồng bộ người mới.'));
+    } finally { setBusy(false); }
+  };
+
   const mm = String(Math.max(0, Math.floor(remainingMs / 60000))).padStart(2, '0');
   const ss = String(Math.max(0, Math.floor((remainingMs % 60000) / 1000))).padStart(2, '0');
+
+  // Unified render rows (same shape whether editing the draft or viewing the saved snapshot).
+  const participantRows: DraftParticipant[] = editing
+    ? draftParticipants
+    : (data?.participants ?? []).map((p) => ({
+        _key: `v-${p.minuteParticipantId}`,
+        minuteParticipantId: p.minuteParticipantId,
+        userId: p.userId,
+        guestMemberId: p.guestMemberId,
+        fullNameSnapshot: p.fullNameSnapshot ?? '',
+        roleSnapshot: p.roleSnapshot ?? '',
+        organizationSnapshot: p.organizationSnapshot ?? '',
+        emailSnapshot: p.emailSnapshot ?? '',
+        attendanceStatus: p.attendanceStatus || 'ABSENT',
+        attendanceNote: p.attendanceNote ?? '',
+        participantKind: p.participantKind,
+      }));
+  const actionRows: DraftActionItem[] = editing
+    ? draftActionItems
+    : (data?.actionItems ?? []).map((a) => ({
+        _key: `v-${a.actionItemId}`,
+        actionItemId: a.actionItemId,
+        title: a.title ?? '',
+        note: a.note ?? '',
+        dueDate: a.dueDate ? a.dueDate.slice(0, 10) : '',
+        status: a.status || 'TODO',
+      }));
+
+  const presentCount = participantRows.filter((p) => p.attendanceStatus === 'PRESENT').length;
 
   return (
     <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm transition-all relative">
@@ -156,6 +396,9 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
               {error && (
                 <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{error}</div>
               )}
+              {info && (
+                <div className="mb-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-700">{info}</div>
+              )}
 
               {loading ? (
                 <div className="py-8 text-center text-slate-500 font-medium">Đang tải biên bản...</div>
@@ -172,10 +415,6 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
                   )}
                 </div>
               ) : (
-                /* Đã có biên bản — bố cục theo mẫu cũ (tên + trạng thái, bảng người tham gia,
-                   ghi chú/nội dung, đầu mục công việc). Tiêu đề & nội dung là dữ liệu THẬT
-                   (backend + lock); người tham gia/đầu mục công việc chưa có trong API biên bản
-                   nên hiển thị empty state read-only (không mock). */
                 <>
                   {editing ? (
                     <div className="mb-6 flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm font-bold text-amber-800">
@@ -221,18 +460,204 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
                     </div>
                   </div>
 
-                  {/* Bảng người tham gia — chưa có trong API biên bản → empty state read-only */}
+                  {/* Bảng người tham gia — dữ liệu THẬT từ minute_participants */}
                   <div className="mb-8 overflow-hidden rounded-xl border border-gray-200 bg-white">
-                    <div className="bg-gray-50/70 px-5 py-3 border-b border-gray-200 flex items-center justify-between">
+                    <div className="bg-gray-50/70 px-5 py-3 border-b border-gray-200 flex flex-wrap items-center justify-between gap-2">
                       <h3 className="text-sm font-bold text-gray-800 flex items-center gap-2">
                         <Users className="w-4 h-4 text-[#004c91]" />
                         Bảng danh sách chi tiết người tham gia cuộc họp
                       </h3>
-                      <span className="text-xs bg-[#004c91]/10 text-[#004c91] px-2.5 py-1 rounded-full font-bold">0 thành viên</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs bg-green-50 text-green-700 border border-green-200 px-2.5 py-1 rounded-full font-bold">
+                          {presentCount} có mặt
+                        </span>
+                        <span className="text-xs bg-[#004c91]/10 text-[#004c91] px-2.5 py-1 rounded-full font-bold">
+                          {participantRows.length} thành viên
+                        </span>
+                      </div>
                     </div>
-                    <div className="px-5 py-8 text-center text-sm text-slate-400 italic">
-                      Chưa có dữ liệu người tham gia.
-                    </div>
+
+                    {participantRows.length === 0 && !editing ? (
+                      <div className="px-5 py-8 text-center text-sm text-slate-400 italic">
+                        Chưa có dữ liệu người tham gia.
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left border-collapse text-sm min-w-[760px]">
+                          <thead className="bg-gray-100/50 text-[11px] uppercase tracking-wider text-gray-500 font-extrabold">
+                            <tr className="border-b border-gray-200">
+                              <th className="px-4 py-3 w-36">Điểm danh</th>
+                              <th className="px-4 py-3">Họ tên</th>
+                              <th className="px-4 py-3">Vai trò / chức danh</th>
+                              <th className="px-4 py-3">Đơn vị</th>
+                              <th className="px-4 py-3">Email</th>
+                              <th className="px-4 py-3 w-28">Loại nguồn</th>
+                              <th className="px-4 py-3">Ghi chú</th>
+                              {editing && <th className="px-4 py-3 w-14 text-center">Xóa</th>}
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-100">
+                            {participantRows.map((p) => {
+                              const att = ATT_META[p.attendanceStatus] ?? ATT_META.ABSENT;
+                              const kind = KIND_META[p.participantKind] ?? KIND_META.MANUAL;
+                              const isManual = !p.userId && !p.guestMemberId;
+                              return (
+                                <tr key={p._key} className="hover:bg-gray-50/55 transition-colors align-top">
+                                  <td className="px-4 py-3">
+                                    {editing ? (
+                                      <select
+                                        value={p.attendanceStatus}
+                                        onChange={(e) => updateParticipant(p._key, { attendanceStatus: e.target.value })}
+                                        className="w-full text-xs font-bold rounded-lg border border-gray-300 px-2 py-1.5 outline-none focus:border-[#004c91] bg-white"
+                                      >
+                                        {ATT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                                      </select>
+                                    ) : (
+                                      <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold border ${att.cls}`}>{att.label}</span>
+                                    )}
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    {editing && isManual ? (
+                                      <input value={p.fullNameSnapshot} onChange={(e) => updateParticipant(p._key, { fullNameSnapshot: e.target.value })}
+                                        className="w-full text-sm font-semibold rounded-lg border border-gray-300 px-2 py-1.5 outline-none focus:border-[#004c91]" />
+                                    ) : (
+                                      <span className="font-semibold text-gray-900">{p.fullNameSnapshot || '-'}</span>
+                                    )}
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    {editing && isManual ? (
+                                      <input value={p.roleSnapshot} onChange={(e) => updateParticipant(p._key, { roleSnapshot: e.target.value })}
+                                        placeholder="Vai trò..."
+                                        className="w-full text-sm rounded-lg border border-gray-300 px-2 py-1.5 outline-none focus:border-[#004c91]" />
+                                    ) : (
+                                      <span className="text-gray-700">{p.roleSnapshot || '-'}</span>
+                                    )}
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    {editing && isManual ? (
+                                      <input value={p.organizationSnapshot} onChange={(e) => updateParticipant(p._key, { organizationSnapshot: e.target.value })}
+                                        placeholder="Đơn vị..."
+                                        className="w-full text-sm rounded-lg border border-gray-300 px-2 py-1.5 outline-none focus:border-[#004c91]" />
+                                    ) : (
+                                      <span className="inline-flex items-center gap-1.5 text-gray-700">
+                                        <Building2 className="w-3.5 h-3.5 text-gray-400 shrink-0" />{p.organizationSnapshot || '-'}
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    {editing && isManual ? (
+                                      <input value={p.emailSnapshot} onChange={(e) => updateParticipant(p._key, { emailSnapshot: e.target.value })}
+                                        placeholder="Email..."
+                                        className="w-full text-sm rounded-lg border border-gray-300 px-2 py-1.5 outline-none focus:border-[#004c91]" />
+                                    ) : (
+                                      <span className="text-gray-600 break-all">{p.emailSnapshot || '-'}</span>
+                                    )}
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold border ${kind.cls}`}>{kind.label}</span>
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    {editing ? (
+                                      <input value={p.attendanceNote} onChange={(e) => updateParticipant(p._key, { attendanceNote: e.target.value })}
+                                        placeholder="Ghi chú điểm danh..."
+                                        className="w-full text-sm rounded-lg border border-gray-300 px-2 py-1.5 outline-none focus:border-[#004c91]" />
+                                    ) : (
+                                      <span className="text-gray-500 text-xs">{p.attendanceNote || '-'}</span>
+                                    )}
+                                  </td>
+                                  {editing && (
+                                    <td className="px-4 py-3 text-center">
+                                      <button type="button" onClick={() => removeParticipant(p._key)}
+                                        className="text-gray-400 hover:text-red-600 p-1.5 rounded-lg hover:bg-red-50 transition-colors">
+                                        <Trash2 className="w-4 h-4" />
+                                      </button>
+                                    </td>
+                                  )}
+                                </tr>
+                              );
+                            })}
+                            {editing && participantRows.length === 0 && (
+                              <tr><td colSpan={8} className="px-5 py-6 text-center text-sm text-slate-400 italic">Chưa có người tham gia. Dùng các nút bên dưới để thêm.</td></tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+
+                    {/* Hành động trên danh sách — chỉ khi đang edit */}
+                    {editing && (
+                      <div className="px-5 py-3 border-t border-gray-200 bg-gray-50/40 space-y-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button type="button" onClick={() => { setShowAddForm((s) => !s); setError(null); }}
+                            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold bg-[#004c91] hover:bg-[#00386b] text-white rounded-lg shadow-sm transition-colors">
+                            <UserPlus className="w-4 h-4" /> Thêm người tham gia
+                          </button>
+                          <button type="button" onClick={handleSyncNew} disabled={busy}
+                            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold bg-white border border-[#004c91]/30 text-[#004c91] hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-50">
+                            <RefreshCw className="w-4 h-4" /> Đồng bộ người mới
+                          </button>
+                        </div>
+
+                        {showAddForm && (
+                          <div className="rounded-xl border border-gray-200 bg-white p-4 space-y-3">
+                            <div className="relative">
+                              <label className="block text-xs font-bold text-gray-600 mb-1">Tìm người dùng trong hệ thống <span className="text-red-500">*</span></label>
+                              <div className="relative">
+                                <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                                <input value={userQuery}
+                                  onChange={(e) => { setUserQuery(e.target.value); setAddUserId(null); }}
+                                  placeholder="Nhập tên hoặc email để tìm..."
+                                  className="w-full text-sm rounded-lg border border-gray-300 pl-9 pr-3 py-2 outline-none focus:border-[#004c91]" />
+                              </div>
+                              {userQuery.trim().length >= 2 && (userSearching || userResults.length > 0) && (
+                                <div className="absolute z-20 mt-1 w-full max-h-52 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg">
+                                  {userSearching ? (
+                                    <div className="px-3 py-2 text-xs text-gray-400">Đang tìm...</div>
+                                  ) : userResults.map((u) => (
+                                    <button type="button" key={u.userId} onClick={() => handlePickUser(u)}
+                                      className="w-full text-left px-3 py-2 hover:bg-blue-50 transition-colors">
+                                      <div className="text-sm font-semibold text-gray-800">{u.fullName}</div>
+                                      <div className="text-[11px] text-gray-500 flex items-center gap-2 flex-wrap">
+                                        {u.email && <span className="inline-flex items-center gap-1"><Mail className="w-3 h-3" />{u.email}</span>}
+                                        {u.organization && <span className="inline-flex items-center gap-1"><Building2 className="w-3 h-3" />{u.organization}</span>}
+                                      </div>
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+
+                            {addUserId ? (
+                              <div className="text-[11px] font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg px-2.5 py-1.5 flex flex-col gap-1">
+                                <div className="flex items-center justify-between gap-2">
+                                  <span>Đã chọn: <b>{addName}</b></span>
+                                  <button type="button" onClick={() => { setAddUserId(null); setUserQuery(''); }} className="text-blue-500 hover:text-blue-800"><X className="w-3.5 h-3.5" /></button>
+                                </div>
+                                {(addOrg || addEmail) && (
+                                  <div className="text-[10px] text-blue-600 flex items-center gap-2 opacity-80">
+                                    {addOrg && <span>{addOrg}</span>}
+                                    {addOrg && addEmail && <span>•</span>}
+                                    {addEmail && <span>{addEmail}</span>}
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              <p className="text-[11px] text-gray-400 italic">Bắt buộc chọn người dùng hệ thống để thêm vào biên bản.</p>
+                            )}
+                            <div className="flex items-center gap-2">
+                              <button type="button" onClick={handleAddParticipant}
+                                className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold bg-[#f37021] hover:bg-[#e0611d] text-white rounded-lg shadow-sm transition-colors">
+                                <Plus className="w-4 h-4" /> Thêm vào danh sách
+                              </button>
+                              <button type="button" onClick={resetAddForm}
+                                className="px-4 py-2 text-xs font-bold text-gray-600 bg-white border border-gray-200 hover:bg-gray-50 rounded-lg transition-colors">
+                                Hủy
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   {/* Ghi chú / Nội dung biên bản — dữ liệu THẬT */}
@@ -255,14 +680,74 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
                       )}
                     </div>
 
-                    {/* Đầu mục công việc — chưa có trong API biên bản → empty state read-only */}
+                    {/* Đầu mục công việc — dữ liệu THẬT từ minute_action_items */}
                     <div>
                       <h3 className="text-base font-bold text-gray-800 mb-3 ml-2 relative before:content-[''] before:absolute before:left-[-12px] before:top-[6px] before:w-1.5 before:h-1.5 before:bg-[#004c91] before:rounded-full">
                         Đầu mục công việc
                       </h3>
-                      <div className="bg-gray-50/50 border border-gray-100 rounded-xl p-6 text-center text-sm text-slate-400 italic flex items-center justify-center gap-2">
-                        <ClipboardList className="w-5 h-5 text-slate-300" /> Chưa có đầu mục công việc.
-                      </div>
+                      {actionRows.length === 0 && !editing ? (
+                        <div className="bg-gray-50/50 border border-gray-100 rounded-xl p-6 text-center text-sm text-slate-400 italic flex items-center justify-center gap-2">
+                          <ClipboardList className="w-5 h-5 text-slate-300" /> Chưa có đầu mục công việc.
+                        </div>
+                      ) : (
+                        <div className="space-y-3 bg-gray-50/50 border border-gray-100 rounded-xl p-4">
+                          {actionRows.map((a) => {
+                            const meta = ACTION_STATUS_META[a.status] ?? ACTION_STATUS_META.TODO;
+                            return (
+                              <div key={a._key} className="flex flex-col gap-3 bg-white p-3 rounded-lg border border-gray-200 shadow-sm">
+                                <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                                  {editing ? (
+                                    <input value={a.title} onChange={(e) => updateActionItem(a._key, { title: e.target.value })}
+                                      placeholder="Nội dung công việc..."
+                                      className={`flex-1 bg-transparent text-sm font-medium rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-[#004c91] ${a.status === 'DONE' ? 'line-through text-gray-400' : 'text-gray-800'}`} />
+                                  ) : (
+                                    <span className={`flex-1 text-sm font-medium ${a.status === 'DONE' ? 'line-through text-gray-400' : 'text-gray-800'}`}>{a.title || '-'}</span>
+                                  )}
+                                  <div className="flex items-center gap-2">
+                                    <Calendar className="w-4 h-4 text-orange-500 shrink-0" />
+                                    {editing ? (
+                                      <input type="date" value={a.dueDate} onChange={(e) => updateActionItem(a._key, { dueDate: e.target.value })}
+                                        className="text-xs font-bold text-orange-700 bg-orange-50 px-2 py-1.5 rounded-md border border-orange-200 outline-none hover:border-orange-300" />
+                                    ) : (
+                                      <span className="text-xs font-bold text-orange-700">{a.dueDate || 'Chưa đặt hạn'}</span>
+                                    )}
+                                  </div>
+                                  {editing ? (
+                                    <select value={a.status} onChange={(e) => updateActionItem(a._key, { status: e.target.value })}
+                                      className="text-xs font-bold rounded-md border border-gray-300 px-2 py-1.5 outline-none focus:border-[#004c91] bg-white">
+                                      {ACTION_STATUS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                                    </select>
+                                  ) : (
+                                    <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold border ${meta.cls}`}>{meta.label}</span>
+                                  )}
+                                  {editing && (
+                                    <button type="button" onClick={() => removeActionItem(a._key)}
+                                      disabled={a.actionItemId > 0 && a.status === 'DONE'}
+                                      title={a.actionItemId > 0 && a.status === 'DONE' ? 'Không thể xóa đầu mục đã hoàn thành' : 'Xóa'}
+                                      className="text-gray-400 hover:text-red-600 p-1.5 rounded-lg hover:bg-red-50 transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent">
+                                      <Trash2 className="w-4 h-4" />
+                                    </button>
+                                  )}
+                                </div>
+                                {editing ? (
+                                  <input value={a.note} onChange={(e) => updateActionItem(a._key, { note: e.target.value })}
+                                    placeholder="Ghi chú (tùy chọn)..."
+                                    className="w-full text-xs rounded-lg border border-gray-200 px-3 py-1.5 outline-none focus:border-[#004c91] text-gray-600" />
+                                ) : a.note ? (
+                                  <p className="text-xs text-gray-500 italic">{a.note}</p>
+                                ) : null}
+                              </div>
+                            );
+                          })}
+                          {editing && (
+                            <button type="button"
+                              onClick={() => setDraftActionItems((prev) => [...prev, { _key: nextKey('a'), actionItemId: 0, title: '', note: '', dueDate: '', status: 'TODO' }])}
+                              className="text-sm font-bold text-[#004c91] hover:text-[#003366] flex items-center gap-1.5 px-2 py-1 outline-none">
+                              <Plus className="w-4 h-4" /> Thêm đầu mục công việc
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
 

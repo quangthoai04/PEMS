@@ -34,4 +34,9 @@ public sealed class MinuteDto
     public bool CanView { get; set; }
     public bool CanCreate { get; set; }
     public bool CanEdit { get; set; }
+
+    /// <summary>Snapshot attendance list (minute_participants). Empty when the minutes does not exist yet.</summary>
+    public List<MinuteParticipantDto> Participants { get; set; } = new();
+    /// <summary>Action items (minute_action_items). Empty when the minutes does not exist yet.</summary>
+    public List<MinuteActionItemDto> ActionItems { get; set; } = new();
 }

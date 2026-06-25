@@ -100,6 +100,8 @@ export const API_ENDPOINTS = {
     acquireLock: (minutesId: string | number) => `/meetingminutes/${minutesId}/acquire-lock`,
     save: (minutesId: string | number) => `/meetingminutes/${minutesId}`,
     releaseLock: (minutesId: string | number) => `/meetingminutes/${minutesId}/release-lock`,
+    newParticipantCandidates: (minutesId: string | number) => `/meetingminutes/${minutesId}/new-participant-candidates`,
+    userSearch: (visitInstanceId: string | number) => `/meetingminutes/visit-instances/${visitInstanceId}/user-search`,
   },
   // Phase 4: news (tin tức) attached to a visit_instance — many posts per instance.
   visitNews: {

@@ -10,6 +10,10 @@ import type {
   SubmittedVisitRequestFormDetail,
   VisitProcessPermission,
   VisitMinute,
+  MinuteParticipant,
+  MinuteUserSearchItem,
+  SaveMinuteParticipantPayload,
+  SaveMinuteActionItemPayload,
   VisitNews,
   VisitNewsList,
 } from '../types/delegations.types';
@@ -213,10 +217,20 @@ export const delegationsApi = {
       const { data } = await httpClient.post<VisitMinute>(API_ENDPOINTS.meetingMinutes.acquireLock(minutesId), {});
       return data;
     },
-    /** Save content (requires the caller's lock token + matching rowVersion); releases the lock. */
+    /**
+     * Save content + attendance snapshot + action items (requires the caller's lock token + matching
+     * rowVersion); releases the lock. `participants`/`actionItems` are reconciled server-side.
+     */
     async save(
       minutesId: number | string,
-      payload: { title: string; content: string | null; editLockToken: string; rowVersion: number },
+      payload: {
+        title: string;
+        content: string | null;
+        editLockToken: string;
+        rowVersion: number;
+        participants: SaveMinuteParticipantPayload[];
+        actionItems: SaveMinuteActionItemPayload[];
+      },
     ): Promise<VisitMinute> {
       const { data } = await httpClient.put<VisitMinute>(API_ENDPOINTS.meetingMinutes.save(minutesId), payload);
       return data;
@@ -225,6 +239,18 @@ export const delegationsApi = {
     async releaseLock(minutesId: number | string, editLockToken: string): Promise<VisitMinute> {
       const { data } = await httpClient.post<VisitMinute>(
         API_ENDPOINTS.meetingMinutes.releaseLock(minutesId), { editLockToken });
+      return data;
+    },
+    /** "Đồng bộ người mới": attendance rows that should exist but are missing (not yet persisted). */
+    async newParticipantCandidates(minutesId: number | string): Promise<MinuteParticipant[]> {
+      const { data } = await httpClient.get<MinuteParticipant[]>(
+        API_ENDPOINTS.meetingMinutes.newParticipantCandidates(minutesId));
+      return data;
+    },
+    /** Search system users to add a participant manually (scoped to editors of the instance). */
+    async searchUsers(visitInstanceId: number | string, query: string): Promise<MinuteUserSearchItem[]> {
+      const { data } = await httpClient.get<MinuteUserSearchItem[]>(
+        API_ENDPOINTS.meetingMinutes.userSearch(visitInstanceId), { params: { query } });
       return data;
     },
   },
