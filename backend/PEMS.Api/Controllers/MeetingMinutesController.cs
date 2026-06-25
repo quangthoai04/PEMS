@@ -1,4 +1,5 @@
 using MediatR;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using PEMS.Application.Delegations.Minutes;
 using System.Threading;
@@ -7,6 +8,7 @@ using System.Threading.Tasks;
 namespace PEMS.Api.Controllers
 {
     [ApiController]
+    [Authorize]
     [Route("api/[controller]")]
     public class MeetingMinutesController : ControllerBase
     {

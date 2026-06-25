@@ -259,6 +259,8 @@ export interface VisitMinute {
   content: string | null;
   status: string | null;
   rowVersion: number;
+  /** When the minutes was last saved — drives the "Đã lưu · <time>" status line. */
+  updatedAt?: string | null;
   editLockedBy?: number | null;
   editLockedByName?: string | null;
   editLockedAt?: string | null;
@@ -291,7 +293,7 @@ export interface SaveMinuteActionItemPayload {
   actionItemId: number | null;
   title: string;
   note: string | null;
-  dueDate: string | null; // YYYY-MM-DD
+  dueDate: string | null; // business wall-clock datetime "YYYY-MM-DDTHH:mm:ss" (no timezone) or null
   status: string;
 }
 

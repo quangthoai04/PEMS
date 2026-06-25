@@ -43,4 +43,12 @@ internal static class MinuteAccess
     /// <summary>True when <paramref name="minute"/> currently has a non-expired edit lock.</summary>
     public static bool IsLockActive(Minute minute, DateTime now)
         => minute.EditLockedBy != null && minute.EditLockExpiresAt.HasValue && minute.EditLockExpiresAt.Value > now;
+
+    /// <summary>
+    /// True when <paramref name="userId"/> currently HOLDS an active (non-expired) edit lock on
+    /// <paramref name="minute"/>. Edit-mode side actions (sync candidates, user search) must require
+    /// this — not just <c>CanEdit</c> — so only the active editor can drive the session.
+    /// </summary>
+    public static bool IsLockHeldBy(Minute minute, ulong userId, DateTime now)
+        => IsLockActive(minute, now) && minute.EditLockedBy == userId;
 }

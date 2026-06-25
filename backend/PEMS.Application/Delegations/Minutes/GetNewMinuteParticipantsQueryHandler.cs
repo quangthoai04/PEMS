@@ -48,6 +48,11 @@ public sealed class GetNewMinuteParticipantsQueryHandler
         if (!canEdit)
             throw new ForbiddenException("Bạn không có quyền chỉnh sửa biên bản chuyến thăm này.");
 
+        // "Đồng bộ người mới" là thao tác trong phiên chỉnh sửa: chỉ người ĐANG GIỮ lock mới được gọi
+        // (không chỉ canEdit) — nhất quán với SaveMinutes (lớp kiểm tra cuối, không phụ thuộc frontend).
+        if (!MinuteAccess.IsLockHeldBy(minute, userId, _clock.UtcNow))
+            throw new ConflictException("Phiên chỉnh sửa biên bản đã hết hạn hoặc đang do người khác giữ. Vui lòng mở lại để chỉnh sửa.");
+
         var existing = await _db.MinuteParticipants
             .Where(p => p.MinutesId == minute.MinutesId)
             .ToListAsync(cancellationToken);

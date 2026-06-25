@@ -1171,7 +1171,7 @@
 | `minutes_id` | `BIGINT UNSIGNED` | NO |  |  | IDX: idx_action_items_minutes; IDX: idx_action_items_order; FK: minutes(minutes_id) |  | Identifier/reference field used to join or scope `minute_action_items` records. |
 | `title` | `VARCHAR(255)` | NO |  |  |  |  | Tên đầu việc |
 | `note` | `TEXT` | YES |  |  |  |  | Ghi chú thêm cho đầu việc |
-| `due_date` | `DATE` | YES |  |  | IDX: idx_action_items_status_due |  | Deadline của đầu việc |
+| `due_date` | `DATETIME` | YES |  |  | IDX: idx_action_items_status_due |  | Deadline ngày giờ của đầu việc |
 | `status` | `ENUM('TODO','IN_PROGRESS','DONE','CANCELLED')` | NO | 'TODO' |  | IDX: idx_action_items_status_due | TODO, IN_PROGRESS, DONE, CANCELLED | TODO=chưa làm, IN_PROGRESS=đang làm, DONE=hoàn thành, CANCELLED=đã hủy/không cần làm nữa |
 | `completed_at` | `DATETIME` | YES |  |  |  |  | Thời điểm hoàn thành; backend tự set khi status chuyển sang DONE |
 | `display_order` | `INT UNSIGNED` | NO | 1 |  | IDX: idx_action_items_order |  | Thứ tự hiển thị trong biên bản |

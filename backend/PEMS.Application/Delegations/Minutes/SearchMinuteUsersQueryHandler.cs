@@ -13,11 +13,13 @@ public sealed class SearchMinuteUsersQueryHandler
 
     private readonly IApplicationDbContext _db;
     private readonly ICurrentUserService _currentUser;
+    private readonly IDateTimeService _clock;
 
-    public SearchMinuteUsersQueryHandler(IApplicationDbContext db, ICurrentUserService currentUser)
+    public SearchMinuteUsersQueryHandler(IApplicationDbContext db, ICurrentUserService currentUser, IDateTimeService clock)
     {
         _db = db;
         _currentUser = currentUser;
+        _clock = clock;
     }
 
     public async Task<List<MinuteUserSearchDto>> Handle(SearchMinuteUsersQuery request, CancellationToken cancellationToken)
@@ -41,6 +43,13 @@ public sealed class SearchMinuteUsersQueryHandler
         var (inScope, canEdit) = MinuteAccess.Evaluate(instance, instance.VisitRequest, _currentUser, acceptedRole);
         if (!inScope || !canEdit)
             throw new ForbiddenException("Bạn không có quyền chỉnh sửa biên bản chuyến thăm này.");
+
+        // Typeahead chỉ phục vụ phiên chỉnh sửa (form "Thêm người tham gia"): yêu cầu người gọi ĐANG GIỮ
+        // lock của biên bản — không chỉ canEdit. Đây là endpoint riêng nên backend tự kiểm tra, không
+        // dựa vào việc frontend ẩn form.
+        var minute = await _db.Minutes.FirstOrDefaultAsync(m => m.VisitInstanceId == instance.VisitInstanceId, cancellationToken);
+        if (minute == null || !MinuteAccess.IsLockHeldBy(minute, userId, _clock.UtcNow))
+            throw new ConflictException("Phiên chỉnh sửa biên bản đã hết hạn hoặc đang do người khác giữ. Vui lòng mở lại để chỉnh sửa.");
 
         var term = (request.Query ?? string.Empty).Trim();
         if (term.Length < 2)

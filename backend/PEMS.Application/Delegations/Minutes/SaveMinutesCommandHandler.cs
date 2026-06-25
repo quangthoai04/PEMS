@@ -84,7 +84,7 @@ public sealed class SaveMinutesCommandHandler
         minute.EditLockToken = null;
 
         if (request.Participants != null)
-            await ReconcileParticipants(minute.MinutesId, request.Participants, userId, now, cancellationToken);
+            await ReconcileParticipants(minute.MinutesId, instance.VisitRequestId, request.Participants, userId, now, cancellationToken);
 
         if (request.ActionItems != null)
             await ReconcileActionItems(minute.MinutesId, request.ActionItems, userId, now, cancellationToken);
@@ -101,6 +101,7 @@ public sealed class SaveMinutesCommandHandler
             Content = minute.Content,
             Status = minute.Status,
             RowVersion = minute.RowVersion,
+            UpdatedAt = minute.UpdatedAt,
             IsLockedByMe = false,
             IsLockedByOther = false,
             CanView = true,
@@ -112,7 +113,7 @@ public sealed class SaveMinutesCommandHandler
     }
 
     private async Task ReconcileParticipants(
-        ulong minutesId, IReadOnlyList<SaveMinuteParticipantInput> inputs, ulong userId, DateTime now, CancellationToken ct)
+        ulong minutesId, ulong requestId, IReadOnlyList<SaveMinuteParticipantInput> inputs, ulong userId, DateTime now, CancellationToken ct)
     {
         var existing = await _db.MinuteParticipants
             .Where(p => p.MinutesId == minutesId)
@@ -120,6 +121,7 @@ public sealed class SaveMinutesCommandHandler
         var byId = existing.ToDictionary(p => p.MinuteParticipantId);
         var processed = new HashSet<ulong>();
         var liveUserIds = existing.Where(p => p.UserId != null).Select(p => p.UserId!.Value).ToHashSet();
+        var liveGuestIds = existing.Where(p => p.GuestMemberId != null).Select(p => p.GuestMemberId!.Value).ToHashSet();
         uint maxOrder = existing.Count == 0 ? 0u : existing.Max(p => p.DisplayOrder);
 
         foreach (var input in inputs)
@@ -161,7 +163,7 @@ public sealed class SaveMinutesCommandHandler
             var newRow = new MinuteParticipant
             {
                 MinutesId = minutesId,
-                GuestMemberId = null, // clients never create guest rows
+                GuestMemberId = null, // set below only for a validated synced delegation guest
                 AttendanceStatus = status,
                 AttendanceNote = note,
                 DisplayOrder = ++maxOrder,
@@ -189,6 +191,29 @@ public sealed class SaveMinutesCommandHandler
                 newRow.RoleSnapshot = Clean(input.RoleSnapshot);
                 newRow.OrganizationSnapshot = u.Department?.Name ?? u.PrimaryCampus?.Name;
                 liveUserIds.Add(newUserId);
+            }
+            else if (input.GuestMemberId is ulong newGuestId)
+            {
+                // A guest synced from the official delegation list (visit_guest_members of THIS request).
+                // This is in-system data (NOT a free-text/external person): the id is validated against the
+                // request's guests and the snapshot is taken from the guest record — mirroring the create-time
+                // auto-fill, never trusted from the client. This is what "Đồng bộ người mới" emits for guests.
+                if (liveGuestIds.Contains(newGuestId)) continue; // already in the list → ignore duplicate
+                // Scope check: the guest must belong to THIS minutes' visit_request. A non-existent id or
+                // an id from another request is a reference/scope error — NOT a free-text/external person,
+                // so it gets its own message + code (never the "ngoài hệ thống" one).
+                var guest = await _db.VisitGuestMembers
+                    .FirstOrDefaultAsync(g => g.GuestMemberId == newGuestId && g.VisitRequestId == requestId, ct);
+                if (guest == null)
+                    throw new BusinessRuleException(
+                        "Khách tham gia không thuộc đoàn hiện tại hoặc đã không còn hợp lệ. Vui lòng đồng bộ lại danh sách người tham gia.",
+                        "MINUTE_GUEST_NOT_IN_CURRENT_REQUEST");
+                newRow.GuestMemberId = newGuestId;
+                newRow.FullNameSnapshot = guest.FullName;
+                newRow.RoleSnapshot = guest.JobTitle;
+                newRow.OrganizationSnapshot = guest.Organization;
+                newRow.EmailSnapshot = null;
+                liveGuestIds.Add(newGuestId);
             }
             else
             {

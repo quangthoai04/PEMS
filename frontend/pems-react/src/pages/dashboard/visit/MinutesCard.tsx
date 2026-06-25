@@ -12,7 +12,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ChevronUp, ChevronDown, FileText, Lock, Edit3, Save, X, Plus, Clock, Users, ClipboardList,
-  Trash2, UserPlus, RefreshCw, Search, Calendar, Building2, Mail,
+  Trash2, UserPlus, RefreshCw, Search, Calendar, Building2, Mail, CheckCircle2, AlertCircle, Info,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { delegationsApi } from '../../../features/delegations/api/delegationsApi';
@@ -24,7 +24,37 @@ import type {
 const formatDateTime = (value?: string | null) =>
   value ? new Date(value).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' }) : '-';
 
-const errMsg = (e: any, fallback: string) => e?.response?.data?.message || fallback;
+// Action-item deadline is a business wall-clock value (stored as MySQL DATETIME, no timezone). The
+// backend returns it WITHOUT a 'Z', so new Date() parses it as local — the round-trip stays WYSIWYG.
+const pad2 = (n: number) => String(n).padStart(2, '0');
+// ISO/DB value → "yyyy-MM-ddTHH:mm" for an <input type="datetime-local">.
+const toDateTimeLocalValue = (value?: string | null): string => {
+  if (!value) return '';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '';
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+};
+// datetime-local "yyyy-MM-ddTHH:mm" → payload "yyyy-MM-ddTHH:mm:ss" (keep the picked wall-clock as-is).
+const toPayloadDateTime = (value: string): string => (value.length === 16 ? `${value}:00` : value);
+
+// Same error-parsing shape as VisitProcess (handles message / errors[] / title envelopes).
+const errMsg = (e: any, fallback: string): string => {
+  const data = e?.response?.data;
+  if (!data) return fallback;
+  if (typeof data === 'string' && data.trim()) return data;
+  if (data.message) return data.message;
+  if (data.error) return data.error;
+  if (data.errors) {
+    const flat = Array.isArray(data.errors) ? data.errors : Object.values(data.errors).flat();
+    const first = (flat as any[]).find((x) => typeof x === 'string' && x.trim());
+    if (first) return first;
+  }
+  if (data.title) return data.title;
+  return fallback;
+};
+
+// Lightweight in-page toast (top-right) — same pattern as VisitProcess/VisitRequestManagement.
+type Toast = { id: number; type: 'success' | 'error' | 'info'; msg: string };
 
 type DraftParticipant = {
   _key: string;
@@ -45,7 +75,7 @@ type DraftActionItem = {
   actionItemId: number; // 0 = new
   title: string;
   note: string;
-  dueDate: string; // YYYY-MM-DD or ''
+  dueDate: string; // datetime-local "YYYY-MM-DDTHH:mm" or ''
   status: string;
 };
 
@@ -76,9 +106,31 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
   const [expanded, setExpanded] = useState(true);
   const [data, setData] = useState<VisitMinute | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [info, setInfo] = useState<string | null>(null);
+  // Persistent banner ONLY for the initial-load failure (when there is no card body to show).
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // Toasts (top-right) — reuses the approve/reject/cancel pattern; transient notifications go here.
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const toastSeq = useRef(0);
+  const pushToast = (type: Toast['type'], msg: string) => {
+    const id = ++toastSeq.current;
+    setToasts((prev) => [...prev, { id, type, msg }]);
+    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 4500);
+  };
+
+  // Inline field errors (rendered under the specific input/row that failed).
+  const [titleError, setTitleError] = useState<string | null>(null);
+  const [actionErrors, setActionErrors] = useState<Record<string, string>>({});
+  const [participantErrors, setParticipantErrors] = useState<Record<string, string>>({});
+  const [addUserError, setAddUserError] = useState<string | null>(null);
+  const clearActionError = (key: string) =>
+    setActionErrors((prev) => {
+      if (!prev[key]) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
 
   // Editing session (only set while this user holds the lock).
   const [editing, setEditing] = useState(false);
@@ -111,9 +163,9 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
     try {
       const d = await delegationsApi.minutes.get(visitInstanceId);
       setData(d);
-      setError(null);
+      setLoadError(null);
     } catch (e: any) {
-      setError(errMsg(e, 'Không thể tải biên bản. Vui lòng thử lại.'));
+      setLoadError(errMsg(e, 'Không thể tải biên bản. Vui lòng thử lại.'));
     } finally {
       setLoading(false);
     }
@@ -176,13 +228,15 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
       actionItemId: a.actionItemId,
       title: a.title ?? '',
       note: a.note ?? '',
-      dueDate: a.dueDate ? a.dueDate.slice(0, 10) : '',
+      dueDate: toDateTimeLocalValue(a.dueDate),
       status: a.status || 'TODO',
     })));
     setData(d);
     setEditing(true);
-    setError(null);
-    setInfo(null);
+    setLoadError(null);
+    setTitleError(null);
+    setActionErrors({});
+    setParticipantErrors({});
     resetAddForm();
   };
 
@@ -190,12 +244,13 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
     setShowAddForm(false);
     setAddName(''); setAddRole(''); setAddOrg(''); setAddEmail('');
     setAddUserId(null); setUserQuery(''); setUserResults([]);
+    setAddUserError(null);
   };
 
   const handleCreate = async () => {
     setBusy(true);
     try { enterEditing(await delegationsApi.minutes.createOrLock(visitInstanceId)); }
-    catch (e: any) { setError(errMsg(e, 'Không thể tạo biên bản. Vui lòng thử lại.')); }
+    catch (e: any) { pushToast('error', errMsg(e, 'Không thể tạo biên bản. Vui lòng thử lại.')); }
     finally { setBusy(false); }
   };
 
@@ -203,37 +258,79 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
     if (!data?.minutesId) return;
     setBusy(true);
     try { enterEditing(await delegationsApi.minutes.acquireLock(data.minutesId)); }
-    catch (e: any) { setError(errMsg(e, 'Không thể mở biên bản để chỉnh sửa.')); await load(); }
+    catch (e: any) { pushToast('error', errMsg(e, 'Không thể mở biên bản để chỉnh sửa.')); await load(); }
     finally { setBusy(false); }
   };
 
+  // A row the user never touched (default empty) — must NOT be sent to the backend.
+  const isBlankActionItem = (a: DraftActionItem) =>
+    !a.title.trim() && !a.note.trim() && !a.dueDate && a.status === 'TODO';
+
   const handleSave = async () => {
     if (!minutesIdRef.current || !tokenRef.current) return;
-    if (!draftTitle.trim()) { setError('Tiêu đề biên bản không được để trống.'); return; }
-    if (draftParticipants.some((p) => !p.fullNameSnapshot.trim())) {
-      setError('Mỗi người tham gia phải có họ tên.'); return;
+
+    // Re-validate from a clean slate so stale field errors don't linger.
+    setTitleError(null);
+    setActionErrors({});
+    setParticipantErrors({});
+
+    // 1) Tiêu đề bắt buộc.
+    let titleErr: string | null = null;
+    if (!draftTitle.trim()) titleErr = 'Vui lòng nhập tên biên bản.';
+
+    // 2) Đầu mục công việc: bỏ qua dòng rỗng hoàn toàn; dòng đã nhập một phần phải có nội dung.
+    const filledActions = draftActionItems.filter((a) => !isBlankActionItem(a));
+    const nextActionErrors: Record<string, string> = {};
+    for (const a of filledActions) {
+      if (!a.title.trim()) nextActionErrors[a._key] = 'Vui lòng nhập nội dung công việc.';
     }
-    if (draftActionItems.some((a) => !a.title.trim())) {
-      setError('Mỗi đầu mục công việc phải có nội dung.'); return;
+
+    const hasActionErr = Object.keys(nextActionErrors).length > 0;
+    if (titleErr || hasActionErr) {
+      if (titleErr) setTitleError(titleErr);
+      if (hasActionErr) setActionErrors(nextActionErrors);
+      // Inline error tại field + toast tổng quát ở góc phải trên; không gọi API.
+      pushToast('error', hasActionErr
+        ? 'Vui lòng kiểm tra lại các đầu mục công việc.'
+        : 'Vui lòng kiểm tra lại thông tin biên bản.');
+      return;
     }
-    const participants: SaveMinuteParticipantPayload[] = draftParticipants.map((p) => ({
-      minuteParticipantId: p.minuteParticipantId > 0 ? p.minuteParticipantId : null,
-      userId: p.userId,
-      guestMemberId: p.guestMemberId,
-      fullNameSnapshot: p.fullNameSnapshot.trim(),
-      roleSnapshot: p.roleSnapshot.trim() || null,
-      organizationSnapshot: p.organizationSnapshot.trim() || null,
-      emailSnapshot: p.emailSnapshot.trim() || null,
-      attendanceStatus: p.attendanceStatus,
-      attendanceNote: p.attendanceNote.trim() || null,
-    }));
-    const actionItems: SaveMinuteActionItemPayload[] = draftActionItems.map((a) => ({
+
+    // 3) Build payload sạch: bỏ participant ngoài hệ thống + bỏ trùng userId/guestMemberId.
+    const seenUser = new Set<number>();
+    const seenGuest = new Set<number>();
+    const participants: SaveMinuteParticipantPayload[] = [];
+    for (const p of draftParticipants) {
+      const isNew = p.minuteParticipantId <= 0;
+      const isExternal = p.userId == null && p.guestMemberId == null;
+      if (isNew && isExternal) continue; // never create free-text/external participants
+      if (p.userId != null) {
+        if (seenUser.has(p.userId)) continue;
+        seenUser.add(p.userId);
+      } else if (p.guestMemberId != null) {
+        if (seenGuest.has(p.guestMemberId)) continue;
+        seenGuest.add(p.guestMemberId);
+      }
+      participants.push({
+        minuteParticipantId: p.minuteParticipantId > 0 ? p.minuteParticipantId : null,
+        userId: p.userId,
+        guestMemberId: p.guestMemberId,
+        fullNameSnapshot: p.fullNameSnapshot.trim(),
+        roleSnapshot: p.roleSnapshot.trim() || null,
+        organizationSnapshot: p.organizationSnapshot.trim() || null,
+        emailSnapshot: p.emailSnapshot.trim() || null,
+        attendanceStatus: p.attendanceStatus,
+        attendanceNote: p.attendanceNote.trim() || null,
+      });
+    }
+    const actionItems: SaveMinuteActionItemPayload[] = filledActions.map((a) => ({
       actionItemId: a.actionItemId > 0 ? a.actionItemId : null,
       title: a.title.trim(),
       note: a.note.trim() || null,
-      dueDate: a.dueDate || null,
+      dueDate: a.dueDate ? toPayloadDateTime(a.dueDate) : null,
       status: a.status,
     }));
+
     setBusy(true);
     try {
       const d = await delegationsApi.minutes.save(minutesIdRef.current, {
@@ -248,10 +345,23 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
       tokenRef.current = null;
       resetAddForm();
       setData(d);
-      setError(null);
-      setInfo(null);
+      setLoadError(null);
+      pushToast('success', 'Đã lưu biên bản cuộc họp.');
     } catch (e: any) {
-      setError(errMsg(e, 'Không thể lưu biên bản. Vui lòng thử lại.'));
+      const code = e?.response?.data?.errorCode;
+      const msg = errMsg(e, 'Không thể lưu biên bản. Vui lòng thử lại.');
+      // Map known backend field errors back to the matching input where possible.
+      if (/tiêu đề|tên biên bản/i.test(msg)) setTitleError(msg);
+      // Guest scope error → flag the newly-synced guest rows so the user knows which to re-sync.
+      if (code === 'MINUTE_GUEST_NOT_IN_CURRENT_REQUEST') {
+        const marks: Record<string, string> = {};
+        for (const p of draftParticipants) {
+          if (p.minuteParticipantId <= 0 && p.guestMemberId != null && p.userId == null)
+            marks[p._key] = 'Khách này không thuộc đoàn hiện tại.';
+        }
+        if (Object.keys(marks).length > 0) setParticipantErrors(marks);
+      }
+      pushToast('error', msg);
     } finally { setBusy(false); }
   };
 
@@ -284,7 +394,17 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
     setDraftActionItems((prev) => prev.filter((a) => a._key !== key));
 
   const handleAddParticipant = () => {
-    if (!addUserId) { setError('Vui lòng chọn người dùng trong hệ thống để thêm.'); return; }
+    // Chỉ cho phép thêm người tham gia là user có sẵn trong hệ thống (không hỗ trợ free-text).
+    if (!addUserId) {
+      setAddUserError('Vui lòng chọn một người dùng trong hệ thống.');
+      pushToast('error', 'Không hỗ trợ thêm người tham gia ngoài hệ thống. Vui lòng chọn một người dùng có sẵn.');
+      return;
+    }
+    if (draftParticipants.some((p) => p.userId === addUserId)) {
+      setAddUserError('Người dùng này đã có trong danh sách.');
+      pushToast('info', 'Người dùng này đã có trong danh sách điểm danh.');
+      return;
+    }
     setDraftParticipants((prev) => [...prev, {
       _key: nextKey('p'),
       minuteParticipantId: 0,
@@ -299,7 +419,6 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
       participantKind: 'INTERNAL',
     }]);
     resetAddForm();
-    setError(null);
   };
 
   const handlePickUser = (u: MinuteUserSearchItem) => {
@@ -309,6 +428,7 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
     setAddOrg(u.organization ?? '');
     setUserQuery(u.fullName);
     setUserResults([]);
+    setAddUserError(null);
   };
 
   const handleSyncNew = async () => {
@@ -321,7 +441,8 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
       const haveGuest = new Set(draftParticipants.filter((p) => p.guestMemberId != null).map((p) => p.guestMemberId));
       const fresh = candidates.filter((c) =>
         (c.userId != null && !haveUser.has(c.userId)) || (c.guestMemberId != null && !haveGuest.has(c.guestMemberId)));
-      if (fresh.length === 0) { setInfo('Không có người mới cần đồng bộ.'); return; }
+      // No-op sync is NOT an error and must not block saving — just an info toast.
+      if (fresh.length === 0) { pushToast('info', 'Không có người mới cần đồng bộ.'); return; }
       setDraftParticipants((prev) => [...prev, ...fresh.map((c) => ({
         _key: nextKey('sync'),
         minuteParticipantId: 0,
@@ -335,9 +456,10 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
         attendanceNote: c.attendanceNote ?? '',
         participantKind: c.participantKind,
       }))]);
-      setInfo(`Đã thêm ${fresh.length} người mới vào danh sách. Nhớ bấm "Lưu biên bản" để lưu lại.`);
+      pushToast('success', 'Đã đồng bộ người tham gia mới.');
     } catch (e: any) {
-      setError(errMsg(e, 'Không thể đồng bộ người mới.'));
+      // On failure keep the user's in-progress edits intact — only surface a toast.
+      pushToast('error', errMsg(e, 'Không thể đồng bộ người mới. Vui lòng thử lại.'));
     } finally { setBusy(false); }
   };
 
@@ -367,7 +489,7 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
         actionItemId: a.actionItemId,
         title: a.title ?? '',
         note: a.note ?? '',
-        dueDate: a.dueDate ? a.dueDate.slice(0, 10) : '',
+        dueDate: toDateTimeLocalValue(a.dueDate),
         status: a.status || 'TODO',
       }));
 
@@ -393,11 +515,10 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
         {expanded && (
           <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden">
             <div className="p-4 sm:p-6 md:p-8">
-              {error && (
-                <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{error}</div>
-              )}
-              {info && (
-                <div className="mb-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-700">{info}</div>
+              {/* Chỉ giữ banner cho lỗi tải dữ liệu (khi không có gì để hiển thị). Mọi thông báo
+                  thao tác (lưu/đồng bộ/thêm người) dùng toast ở góc phải trên. */}
+              {loadError && (
+                <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{loadError}</div>
               )}
 
               {loading ? (
@@ -439,22 +560,27 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
                       <input
                         type="text"
                         value={editing ? draftTitle : (data.title || 'Biên bản cuộc họp')}
-                        onChange={(e) => setDraftTitle(e.target.value)}
+                        onChange={(e) => { setDraftTitle(e.target.value); setTitleError(null); }}
                         readOnly={!editing}
                         placeholder="Nhập tên biên bản..."
                         className={`px-4 py-2.5 rounded-xl font-bold border outline-none w-full transition-all ${
                           editing
-                            ? 'bg-blue-50 text-blue-900 border-blue-200 focus:ring-2 focus:ring-[#004c91]/20 focus:border-[#004c91]'
+                            ? (titleError
+                                ? 'bg-red-50 text-red-900 border-red-300 focus:ring-2 focus:ring-red-200 focus:border-red-500'
+                                : 'bg-blue-50 text-blue-900 border-blue-200 focus:ring-2 focus:ring-[#004c91]/20 focus:border-[#004c91]')
                             : 'bg-gray-50 text-gray-800 border-gray-200 cursor-default'
                         }`}
                       />
+                      {editing && titleError && (
+                        <p className="mt-1.5 ml-1 text-xs font-semibold text-red-600">{titleError}</p>
+                      )}
                     </div>
                     <div>
                       <label className="block text-sm font-bold text-gray-700 mb-2 ml-1">Trạng thái</label>
                       <div className="bg-gray-50 text-gray-700 px-4 py-2.5 rounded-xl font-bold flex items-center gap-2 border border-gray-200">
                         <FileText className="w-5 h-5 text-[#004c91] shrink-0" />
                         <span className="whitespace-nowrap">
-                          {data.status === 'SAVED' ? 'Đã lưu' : 'Bản nháp'} · {formatDateTime(data.editLockedAt)}
+                          {data.status === 'SAVED' ? 'Đã lưu' : 'Bản nháp'}{data.updatedAt ? ` · ${formatDateTime(data.updatedAt)}` : ''}
                         </span>
                       </div>
                     </div>
@@ -501,8 +627,9 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
                               const att = ATT_META[p.attendanceStatus] ?? ATT_META.ABSENT;
                               const kind = KIND_META[p.participantKind] ?? KIND_META.MANUAL;
                               const isManual = !p.userId && !p.guestMemberId;
+                              const rowError = participantErrors[p._key];
                               return (
-                                <tr key={p._key} className="hover:bg-gray-50/55 transition-colors align-top">
+                                <tr key={p._key} className={`transition-colors align-top ${rowError ? 'bg-red-50/70' : 'hover:bg-gray-50/55'}`}>
                                   <td className="px-4 py-3">
                                     {editing ? (
                                       <select
@@ -522,6 +649,9 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
                                         className="w-full text-sm font-semibold rounded-lg border border-gray-300 px-2 py-1.5 outline-none focus:border-[#004c91]" />
                                     ) : (
                                       <span className="font-semibold text-gray-900">{p.fullNameSnapshot || '-'}</span>
+                                    )}
+                                    {rowError && (
+                                      <p className="mt-1 text-xs font-semibold text-red-600">{rowError}</p>
                                     )}
                                   </td>
                                   <td className="px-4 py-3">
@@ -588,7 +718,7 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
                     {editing && (
                       <div className="px-5 py-3 border-t border-gray-200 bg-gray-50/40 space-y-3">
                         <div className="flex flex-wrap items-center gap-2">
-                          <button type="button" onClick={() => { setShowAddForm((s) => !s); setError(null); }}
+                          <button type="button" onClick={() => { setShowAddForm((s) => !s); setAddUserError(null); }}
                             className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold bg-[#004c91] hover:bg-[#00386b] text-white rounded-lg shadow-sm transition-colors">
                             <UserPlus className="w-4 h-4" /> Thêm người tham gia
                           </button>
@@ -605,10 +735,13 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
                               <div className="relative">
                                 <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
                                 <input value={userQuery}
-                                  onChange={(e) => { setUserQuery(e.target.value); setAddUserId(null); }}
+                                  onChange={(e) => { setUserQuery(e.target.value); setAddUserId(null); setAddUserError(null); }}
                                   placeholder="Nhập tên hoặc email để tìm..."
-                                  className="w-full text-sm rounded-lg border border-gray-300 pl-9 pr-3 py-2 outline-none focus:border-[#004c91]" />
+                                  className={`w-full text-sm rounded-lg border pl-9 pr-3 py-2 outline-none ${addUserError ? 'border-red-400 focus:border-red-500' : 'border-gray-300 focus:border-[#004c91]'}`} />
                               </div>
+                              {addUserError && (
+                                <p className="mt-1.5 text-xs font-semibold text-red-600">{addUserError}</p>
+                              )}
                               {userQuery.trim().length >= 2 && (userSearching || userResults.length > 0) && (
                                 <div className="absolute z-20 mt-1 w-full max-h-52 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg">
                                   {userSearching ? (
@@ -697,19 +830,24 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
                               <div key={a._key} className="flex flex-col gap-3 bg-white p-3 rounded-lg border border-gray-200 shadow-sm">
                                 <div className="flex flex-col sm:flex-row sm:items-center gap-3">
                                   {editing ? (
-                                    <input value={a.title} onChange={(e) => updateActionItem(a._key, { title: e.target.value })}
-                                      placeholder="Nội dung công việc..."
-                                      className={`flex-1 bg-transparent text-sm font-medium rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-[#004c91] ${a.status === 'DONE' ? 'line-through text-gray-400' : 'text-gray-800'}`} />
+                                    <div className="flex-1">
+                                      <input value={a.title} onChange={(e) => { updateActionItem(a._key, { title: e.target.value }); clearActionError(a._key); }}
+                                        placeholder="Nội dung công việc..."
+                                        className={`w-full bg-transparent text-sm font-medium rounded-lg border px-3 py-2 outline-none ${actionErrors[a._key] ? 'border-red-400 focus:border-red-500' : 'border-gray-300 focus:border-[#004c91]'} ${a.status === 'DONE' ? 'line-through text-gray-400' : 'text-gray-800'}`} />
+                                      {actionErrors[a._key] && (
+                                        <p className="mt-1 text-xs font-semibold text-red-600">{actionErrors[a._key]}</p>
+                                      )}
+                                    </div>
                                   ) : (
                                     <span className={`flex-1 text-sm font-medium ${a.status === 'DONE' ? 'line-through text-gray-400' : 'text-gray-800'}`}>{a.title || '-'}</span>
                                   )}
                                   <div className="flex items-center gap-2">
                                     <Calendar className="w-4 h-4 text-orange-500 shrink-0" />
                                     {editing ? (
-                                      <input type="date" value={a.dueDate} onChange={(e) => updateActionItem(a._key, { dueDate: e.target.value })}
+                                      <input type="datetime-local" value={a.dueDate} onChange={(e) => updateActionItem(a._key, { dueDate: e.target.value })}
                                         className="text-xs font-bold text-orange-700 bg-orange-50 px-2 py-1.5 rounded-md border border-orange-200 outline-none hover:border-orange-300" />
                                     ) : (
-                                      <span className="text-xs font-bold text-orange-700">{a.dueDate || 'Chưa đặt hạn'}</span>
+                                      <span className="text-xs font-bold text-orange-700">{a.dueDate ? formatDateTime(a.dueDate) : 'Chưa đặt hạn'}</span>
                                     )}
                                   </div>
                                   {editing ? (
@@ -759,7 +897,8 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
                           className="px-5 py-2.5 rounded-xl font-bold text-gray-600 bg-white border border-gray-200 hover:bg-gray-50 transition-colors inline-flex items-center gap-2 disabled:opacity-50">
                           <X className="w-4 h-4" /> Hủy chỉnh sửa
                         </button>
-                        <button type="button" onClick={handleSave} disabled={busy || !draftTitle.trim()}
+                        {/* Không disable theo title rỗng — để click vẫn chạy validate (inline error + toast). */}
+                        <button type="button" onClick={handleSave} disabled={busy}
                           className="px-6 py-2.5 rounded-xl font-bold text-white bg-[#004c91] hover:bg-[#003b70] shadow-sm transition-colors inline-flex items-center gap-2 disabled:opacity-50">
                           <Save className="w-4 h-4" /> {busy ? 'Đang lưu...' : 'Lưu biên bản'}
                         </button>
@@ -777,6 +916,35 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Toasts (góc phải trên) — cùng pattern với màn duyệt/từ chối/hủy đơn. */}
+      {toasts.length > 0 && (
+        <div className="fixed top-5 right-5 z-[200] flex flex-col gap-2 w-[min(92vw,360px)]">
+          {toasts.map((t) => (
+            <motion.div
+              key={t.id}
+              initial={{ opacity: 0, x: 24 }}
+              animate={{ opacity: 1, x: 0 }}
+              role="status"
+              className={`flex items-start gap-2 rounded-xl border px-4 py-3 text-sm font-semibold shadow-lg ${
+                t.type === 'success'
+                  ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                  : t.type === 'info'
+                  ? 'bg-blue-50 border-blue-200 text-blue-800'
+                  : 'bg-red-50 border-red-200 text-red-700'
+              }`}
+            >
+              {t.type === 'success' ? <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+                : t.type === 'info' ? <Info className="mt-0.5 h-4 w-4 shrink-0" />
+                : <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />}
+              <span className="flex-1">{t.msg}</span>
+              <button type="button" aria-label="Đóng" onClick={() => setToasts((prev) => prev.filter((x) => x.id !== t.id))} className="text-current/70 hover:text-current">
+                <X className="h-4 w-4" />
+              </button>
+            </motion.div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

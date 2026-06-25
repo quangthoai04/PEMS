@@ -112,6 +112,7 @@ public sealed class CreateOrLockMinutesCommandHandler
             Content = minute.Content,
             Status = minute.Status,
             RowVersion = minute.RowVersion,
+            UpdatedAt = minute.UpdatedAt,
             EditLockedBy = minute.EditLockedBy,
             EditLockedAt = minute.EditLockedAt,
             EditLockExpiresAt = minute.EditLockExpiresAt,
