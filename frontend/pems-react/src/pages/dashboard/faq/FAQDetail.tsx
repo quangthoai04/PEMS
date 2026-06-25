@@ -207,10 +207,11 @@ export function FAQDetail() {
               {!isEditing && isHO && (
                 <button
                   onClick={handleEdit}
-                  className="p-2 text-white/90 hover:text-white border border-white/30 hover:bg-white/10 rounded-xl transition-all cursor-pointer"
+                  className="flex items-center gap-2 px-4 py-2 bg-white text-[#004c91] font-bold rounded-xl hover:bg-orange-50 hover:text-[#f37021] transition-all cursor-pointer shadow-sm"
                   title="Chỉnh sửa"
                 >
-                  <Edit2 className="w-5 h-5" />
+                  <Edit2 className="w-4 h-4" />
+                  <span className="text-sm">Chỉnh sửa</span>
                 </button>
               )}
             </div>

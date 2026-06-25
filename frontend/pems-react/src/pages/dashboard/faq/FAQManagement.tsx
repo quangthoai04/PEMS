@@ -59,7 +59,7 @@ export function FAQManagement() {
   const [error, setError] = useState<string | null>(null);
 
   const [page, setPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(5);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [selectedType, setSelectedType] = useState('');
