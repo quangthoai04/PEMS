@@ -39,13 +39,16 @@ export function getVisitRequestFilterConfig({
       showKeyword: true,
       showStatus: true,
       showScope: true,
+      // Visitor lọc "Đơn của tôi" với bộ filter tương tự HO (gồm cả Cơ sở). Backend LUÔN
+      // ép ownership (visit_requests.visitor_user_id/created_by = currentUser) bất kể filter
+      // params — campusId/scope/status chỉ thu hẹp TRONG tập đơn của chính Visitor, không thể
+      // dùng để lộ đơn của Visitor khác (xem ViewGuestDelegationListQueryHandler.QueryRequestLevelAsync).
+      showCampus: true,
       showRelation: false,
       statusLabel: 'Trạng thái',
-      // Lọc theo loại đơn (một cơ sở / liên cơ sở). Backend vẫn enforce ownership
-      // (visit_requests.visitor_user_id = currentUser) — filter scope không lộ đơn người khác.
-      scopeLabel: 'Loại đơn',
+      scopeLabel: 'Phạm vi',
       scopeOptions: [
-        { value: '', label: 'Tất cả' },
+        { value: '', label: 'Tất cả phạm vi' },
         { value: 'SINGLE_CAMPUS', label: 'Một cơ sở' },
         { value: 'MULTI_CAMPUS', label: 'Liên cơ sở' },
       ],
