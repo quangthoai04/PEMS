@@ -16,6 +16,11 @@ import type {
   SaveMinuteActionItemPayload,
   VisitNews,
   VisitNewsList,
+  VisitParticipantListItem,
+  ParticipantCandidate,
+  SupportDepartment,
+  InviteVisitParticipantPayload,
+  InviteVisitParticipantResult,
 } from '../types/delegations.types';
 
 export const delegationsApi = {
@@ -102,6 +107,61 @@ export const delegationsApi = {
   ): Promise<import('../types/delegations.types').VisitProcessDetail> {
     const { data } = await httpClient.get(
       API_ENDPOINTS.delegations.processDetail(visitRequestId, visitInstanceId));
+    return data;
+  },
+
+  /** VisitProcess "Thành phần tham gia": the instance's host snapshot + invited supporters. */
+  async getInstanceParticipants(visitInstanceId: number | string): Promise<VisitParticipantListItem[]> {
+    const { data } = await httpClient.get<VisitParticipantListItem[]>(
+      API_ENDPOINTS.delegations.instanceParticipants(visitInstanceId));
+    return data;
+  },
+
+  /** Candidate search for the host's invite dropdowns. type = IC_SUPPORT | STUDENT. */
+  async getParticipantCandidates(
+    visitInstanceId: number | string,
+    type: 'IC_SUPPORT' | 'STUDENT',
+    keyword?: string,
+  ): Promise<ParticipantCandidate[]> {
+    const { data } = await httpClient.get<ParticipantCandidate[]>(
+      API_ENDPOINTS.delegations.participantCandidates(visitInstanceId),
+      { params: { type, keyword: keyword || undefined } });
+    return data;
+  },
+
+  /** GENERAL departments of the instance's campus + their resolved active leader (the invitee). */
+  async getSupportDepartments(visitInstanceId: number | string, keyword?: string): Promise<SupportDepartment[]> {
+    const { data } = await httpClient.get<SupportDepartment[]>(
+      API_ENDPOINTS.delegations.supportDepartments(visitInstanceId),
+      { params: { keyword: keyword || undefined } });
+    return data;
+  },
+
+  /** Department staff the calling Department Leader may assign (own department/campus). */
+  async getDepartmentStaffCandidates(visitInstanceId: number | string, keyword?: string): Promise<ParticipantCandidate[]> {
+    const { data } = await httpClient.get<ParticipantCandidate[]>(
+      API_ENDPOINTS.delegations.departmentStaffCandidates(visitInstanceId),
+      { params: { keyword: keyword || undefined } });
+    return data;
+  },
+
+  /** Host invites a supporting participant (sends the invitation email with one-time tokens). */
+  async inviteVisitParticipant(
+    visitInstanceId: number | string,
+    payload: InviteVisitParticipantPayload,
+  ): Promise<InviteVisitParticipantResult> {
+    const { data } = await httpClient.post<InviteVisitParticipantResult>(
+      API_ENDPOINTS.delegations.inviteParticipant(visitInstanceId), payload);
+    return data;
+  },
+
+  /** Host withdraws a still-pending (INVITED) participant they invited. */
+  async removeVisitParticipant(
+    visitInstanceId: number | string,
+    participantId: number | string,
+  ): Promise<{ participantId: number; status: string; message: string }> {
+    const { data } = await httpClient.patch<{ participantId: number; status: string; message: string }>(
+      API_ENDPOINTS.delegations.removeParticipant(visitInstanceId, participantId), {});
     return data;
   },
 

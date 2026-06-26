@@ -105,6 +105,19 @@ export const API_ENDPOINTS = {
     myInvitations: '/delegations/my-invitations',
     invitationDetail: (participantId: string | number) => `/delegations/invitations/${participantId}`,
     respondInvitation: (participantId: string | number) => `/delegations/participants/${participantId}/respond`,
+    // VisitProcess "Thành phần tham gia": participant list, invite candidate searches, invite/remove.
+    instanceParticipants: (visitInstanceId: string | number) =>
+      `/delegations/visit-instances/${visitInstanceId}/participants`,
+    participantCandidates: (visitInstanceId: string | number) =>
+      `/delegations/visit-instances/${visitInstanceId}/participant-candidates`,
+    supportDepartments: (visitInstanceId: string | number) =>
+      `/delegations/visit-instances/${visitInstanceId}/support-departments`,
+    departmentStaffCandidates: (visitInstanceId: string | number) =>
+      `/delegations/visit-instances/${visitInstanceId}/department-staff-candidates`,
+    inviteParticipant: (visitInstanceId: string | number) =>
+      `/delegations/visit-instances/${visitInstanceId}/participants/invite`,
+    removeParticipant: (visitInstanceId: string | number, participantId: string | number) =>
+      `/delegations/visit-instances/${visitInstanceId}/participants/${participantId}/remove`,
   },
   // Phase 3: meeting minutes (biên bản) — 1 per visit_instance with an edit-lock workflow.
   meetingMinutes: {

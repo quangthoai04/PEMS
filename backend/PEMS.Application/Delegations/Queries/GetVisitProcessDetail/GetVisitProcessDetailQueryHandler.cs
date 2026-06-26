@@ -2,8 +2,11 @@ using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using System.Collections.Generic;
+using System.Linq;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Delegations.Common;
 using PEMS.Domain.Constants;
 using PEMS.Shared;
 
@@ -32,7 +35,8 @@ public sealed class GetVisitProcessDetailQueryHandler
         var subRole = _currentUser.SubRole;
 
         var instance = await _db.VisitRequestCampuses
-            .Include(c => c.VisitRequest)
+            .Include(c => c.VisitRequest).ThenInclude(v => v.CampusInstances)
+            .Include(c => c.VisitRequest).ThenInclude(v => v.GuestMembers)
             .FirstOrDefaultAsync(c => c.VisitInstanceId == request.VisitInstanceId
                                       && c.VisitRequestId == request.VisitRequestId, cancellationToken)
             ?? throw new NotFoundException("VisitRequestCampus", request.VisitInstanceId);
@@ -78,13 +82,34 @@ public sealed class GetVisitProcessDetailQueryHandler
             .Select(c => c.Name)
             .FirstOrDefaultAsync(cancellationToken);
 
+        // ── Host (read-only) ── current_host_user_id is the single source of truth; this screen never
+        // changes the host. Enrich with email/phone/department for the read-only host card.
         string? hostName = null;
+        VisitProcessHostDto? hostDto = null;
         if (instance.CurrentHostUserId.HasValue)
         {
-            hostName = await _db.Users
-                .Where(u => u.UserId == instance.CurrentHostUserId.Value)
-                .Select(u => u.FullName)
+            var host = await (
+                from u in _db.Users
+                where u.UserId == instance.CurrentHostUserId.Value
+                select new { u.UserId, u.FullName, u.Email, u.Phone, u.DepartmentId })
                 .FirstOrDefaultAsync(cancellationToken);
+            if (host != null)
+            {
+                hostName = host.FullName;
+                string? hostDeptName = host.DepartmentId.HasValue
+                    ? await _db.Departments.Where(d => d.DepartmentId == host.DepartmentId.Value)
+                        .Select(d => d.Name).FirstOrDefaultAsync(cancellationToken)
+                    : null;
+                hostDto = new VisitProcessHostDto
+                {
+                    UserId = host.UserId,
+                    FullName = host.FullName,
+                    Email = host.Email,
+                    Phone = host.Phone,
+                    DepartmentName = hostDeptName,
+                    StatusLabel = "Đã được phân công",
+                };
+            }
         }
 
         var agenda = await _db.VisitAgendas
@@ -146,6 +171,73 @@ public sealed class GetVisitProcessDetailQueryHandler
             }
         }
 
+        // ── Request summary (read-only mirror of the guest's original form) ──
+        // Campus names for every campus instance of the request (multi-campus aware).
+        var requestCampusIds = visit.CampusInstances.Select(c => c.CampusId).Distinct().ToList();
+        var campusNamesById = requestCampusIds.Count == 0
+            ? new Dictionary<ulong, string>()
+            : await _db.Campuses
+                .Where(c => requestCampusIds.Contains(c.CampusId))
+                .ToDictionaryAsync(c => c.CampusId, c => c.Name, cancellationToken);
+
+        var requestSummary = new VisitProcessRequestSummaryDto
+        {
+            RegistrantName = visit.RegistrantFullName,
+            RegistrantEmail = visit.RegistrantEmail,
+            RegistrantPhone = visit.RegistrantPhone,
+            RegistrantOrganization = visit.RegistrantOrganization,
+            RegistrantJobTitle = visit.RegistrantJobTitle,
+            RegistrantNationality = visit.RegistrantNationality,
+
+            DelegationName = visit.DelegationName,
+            VisitScope = visit.VisitScope,
+            VisitType = visit.VisitType,
+            VisitTypeOther = visit.VisitTypeOther,
+            Purpose = visit.Purpose,
+            WorkingContent = visit.WorkingContent,
+            WorkingLanguage = visit.WorkingLanguage,
+            MediaConsentStatus = visit.MediaConsentStatus,
+            MediaConsentNote = visit.MediaConsentNote,
+            TransportationType = visit.TransportationType,
+            TransportationDetail = visit.TransportationDetail,
+            NoteToFptu = visit.NoteToFptu,
+
+            ContactPersonFullName = visit.ContactPersonFullName,
+            ContactPersonOrganization = visit.ContactPersonOrganization,
+            ContactPersonPhone = visit.ContactPersonPhone,
+            ContactPersonEmail = visit.ContactPersonEmail,
+
+            Campuses = visit.CampusInstances
+                .OrderBy(c => c.PlannedStartAt)
+                .Select(c => new VisitProcessCampusDto
+                {
+                    VisitInstanceId = c.VisitInstanceId,
+                    CampusId = c.CampusId,
+                    CampusName = campusNamesById.TryGetValue(c.CampusId, out var cn) ? cn : string.Empty,
+                    PlannedStartAt = c.PlannedStartAt,
+                    PlannedEndAt = c.PlannedEndAt,
+                    IsCurrent = c.VisitInstanceId == instance.VisitInstanceId,
+                })
+                .ToList(),
+
+            GuestMembers = visit.GuestMembers
+                .Where(m => m.MemberType != "EXTERNAL_SUPPORT")
+                .OrderBy(m => m.DisplayOrder)
+                .Select(MapGuestMember)
+                .ToList(),
+            ExternalSupportMembers = visit.GuestMembers
+                .Where(m => m.MemberType == "EXTERNAL_SUPPORT")
+                .OrderBy(m => m.DisplayOrder)
+                .Select(MapGuestMember)
+                .ToList(),
+        };
+
+        // Participants: only for internal relations. The guest/visitor owner must not see the
+        // internal coordination list (the FE blocks them from this screen anyway).
+        var participants = VisitInstanceAccess.CanViewInternal(relation)
+            ? await VisitParticipantListBuilder.BuildAsync(_db, instance.VisitInstanceId, cancellationToken)
+            : new List<GetVisitInstanceParticipants.VisitParticipantListItemDto>();
+
         return new VisitProcessDetailDto
         {
             VisitRequestId = instance.VisitRequestId,
@@ -160,6 +252,20 @@ public sealed class GetVisitProcessDetailQueryHandler
             Relation = relation,
             CanEditBefore = canEditBefore,
             Agenda = agenda,
+            RequestSummary = requestSummary,
+            Host = hostDto,
+            Participants = participants,
         };
     }
+
+    private static VisitProcessGuestMemberDto MapGuestMember(Domain.Entities.Delegations.VisitGuestMember m) => new()
+    {
+        GuestMemberId = m.GuestMemberId,
+        MemberType = m.MemberType,
+        FullName = m.FullName,
+        Organization = m.Organization,
+        JobTitle = m.JobTitle,
+        Nationality = m.Nationality,
+        DisplayOrder = (int)m.DisplayOrder,
+    };
 }

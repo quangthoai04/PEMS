@@ -46,6 +46,8 @@ import { useAuthContext } from '../../../shared/auth/AuthContext';
 import { delegationsApi } from '../../../features/delegations/api/delegationsApi';
 import type { VisitProcessPermission, VisitProcessDetail, AgendaResponsibleCandidate } from '../../../features/delegations/types/delegations.types';
 import { AgendaSetupPanel } from '../../../features/agenda-templates/components/AgendaSetupPanel';
+import { ParticipantInvitationSection } from '../../../features/delegations/components/ParticipantInvitationSection';
+import { RegistrantInfoReadOnly, DelegationInfoReadOnly } from '../../../features/delegations/components/RequestInfoReadOnly';
 
 // Lightweight in-page toast (top-right) — cùng pattern với CampusManagement/VisitRequestManagement.
 type ProcessToast = { id: number; type: 'success' | 'error' | 'warning' | 'info'; msg: string };
@@ -787,7 +789,7 @@ export function VisitProcess() {
                   className="border-t border-gray-100 overflow-hidden"
                 >
                   <div className={`p-8 space-y-8 ${!isInfoEditable ? 'bg-slate-50/50 opacity-90' : 'bg-white'}`}>
-                    {/* Section 1: Thông tin người tạo */}
+                    {/* Section 1: Thông tin người đăng ký */}
                     <div className="bg-white rounded-2xl border border-[#004c91]/20 shadow-sm overflow-hidden">
                       <div 
                         className="bg-[#004c91] px-6 py-4 flex items-center justify-between cursor-pointer"
@@ -816,28 +818,7 @@ export function VisitProcess() {
                             {/* Thông tin người đăng ký do KHÁCH nhập — luôn read-only với Host (không
                                 phải người tạo) và không có endpoint cập nhật. Xem bản gốc qua nút
                                 "Bản yêu cầu của khách". */}
-                            <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6 bg-white">
-                              <div>
-                                <label className="block text-sm font-bold text-gray-700 mb-2">Họ và tên</label>
-                                <input type="text" readOnly className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-gray-800 font-medium text-sm outline-none bg-gray-50/50 cursor-not-allowed opacity-90" defaultValue="Nguyễn Văn Tạo" />
-                              </div>
-                              <div>
-                                <label className="block text-sm font-bold text-gray-700 mb-2">Đơn vị công tác</label>
-                                <input type="text" readOnly className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-gray-800 font-medium text-sm outline-none bg-gray-50/50 cursor-not-allowed opacity-90" defaultValue="Đại học FPT" />
-                              </div>
-                              <div>
-                                <label className="block text-sm font-bold text-gray-700 mb-2">Chức danh, phòng ban</label>
-                                <input type="text" readOnly className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-gray-800 font-medium text-sm outline-none bg-gray-50/50 cursor-not-allowed opacity-90" defaultValue="Cán bộ phòng IC" />
-                              </div>
-                              <div>
-                                <label className="block text-sm font-bold text-gray-700 mb-2">Số điện thoại</label>
-                                <input type="text" readOnly className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-gray-800 font-medium text-sm outline-none bg-gray-50/50 cursor-not-allowed opacity-90" defaultValue="0987654321" />
-                              </div>
-                              <div className="md:col-span-2">
-                                <label className="block text-sm font-bold text-gray-700 mb-2">Email</label>
-                                <input type="email" readOnly className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-gray-800 font-medium text-sm outline-none bg-gray-50/50 cursor-not-allowed opacity-90" defaultValue="taonv@fe.edu.vn" />
-                              </div>
-                            </div>
+                            <RegistrantInfoReadOnly summary={detail?.requestSummary} />
                           </motion.div>
                         )}
                       </AnimatePresence>
@@ -864,124 +845,7 @@ export function VisitProcess() {
                             animate={{ height: 'auto', opacity: 1 }}
                             exit={{ height: 0, opacity: 0 }}
                           >
-                            <div className="p-6 space-y-6 bg-white border-t border-gray-100">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                          <div>
-                            <label className="block text-sm font-bold text-gray-700 mb-2">Tên đoàn khách</label>
-                            <input type="text" readOnly={!isInfoEditable} className={`w-full px-4 py-2.5 rounded-xl border border-gray-200 text-gray-800 font-medium text-sm outline-none ${!isInfoEditable ? 'bg-gray-50/50 cursor-not-allowed opacity-90' : 'bg-white hover:border-[#004c91] focus:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/20 transition-all'}`} defaultValue="Đoàn đối tác từ Đại học Tokyo, Nhật Bản" />
-                          </div>
-                          <div className="relative">
-                            <label className="block text-sm font-bold text-gray-700 mb-2">Cơ sở tới thăm</label>
-                            <div className="relative">
-                              <select
-                                disabled={!isInfoEditable}
-                                value={visitMode}
-                                onChange={(e) => setVisitMode(e.target.value as 'single' | 'multiple')}
-                                className={`w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm font-medium outline-none appearance-none ${!isInfoEditable ? 'bg-gray-50/50 cursor-not-allowed opacity-90 text-gray-800' : 'bg-white hover:border-[#004c91] focus:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/20 transition-all text-gray-900'}`}
-                              >
-                                <option value="single">Chỉ một cơ sở</option>
-                                <option value="multiple">Liên cơ sở</option>
-                              </select>
-                              <ChevronDown className="w-4 h-4 text-gray-500 absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none" />
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="bg-orange-50/50 p-5 rounded-xl border border-orange-100 relative">
-                          <label className="block text-sm font-bold text-gray-800 mb-4">Thời gian dự kiến</label>
-                          <div className="space-y-4 mt-2">
-                            {visits.map((visit, index) => (
-                              <div key={visit.id} className="flex flex-col xl:flex-row items-end gap-3 w-full animate-in fade-in slide-in-from-top-2 duration-300 pb-4 border-b border-gray-100 last:border-b-0 last:pb-0 relative">
-                                {visitMode === 'multiple' && visits.length > 1 && isInfoEditable && (
-                                  <button
-                                    type="button"
-                                    onClick={() => setVisits(visits.filter(v => v.id !== visit.id))}
-                                    className="absolute -right-2 -top-2 w-6 h-6 bg-red-50 text-red-500 rounded-full flex items-center justify-center hover:bg-red-500 hover:text-white transition-colors"
-                                  >
-                                    <X className="w-3 h-3" />
-                                  </button>
-                                )}
-                                {/* Chọn Cơ sở */}
-                                <div className="flex-[1.2] w-full xl:w-auto relative">
-                                  {index === 0 && <label className="block text-xs font-medium text-gray-500 mb-1 uppercase tracking-wider">Cơ sở</label>}
-                                  <div className="relative">
-                                    <select
-                                      disabled={!isInfoEditable}
-                                      value={visit.campus}
-                                      onChange={(e) => {
-                                        const newVisits = [...visits];
-                                        newVisits[index].campus = e.target.value;
-                                        setVisits(newVisits);
-                                      }}
-                                      className={`w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm font-medium outline-none appearance-none pr-8 ${!isInfoEditable ? 'bg-gray-50/50 cursor-not-allowed opacity-90 text-gray-800' : 'bg-white hover:border-[#004c91] focus:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/20 transition-all text-gray-900'}`}
-                                    >
-                                      {campusOptions.map(c => <option key={c} value={c}>{c}</option>)}
-                                    </select>
-                                    <ChevronDown className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-                                  </div>
-                                </div>
-                                {/* Ngày bắt đầu */}
-                                <div className="flex-[1.5] w-full xl:w-auto relative">
-                                  {index === 0 && <label className="block text-xs font-medium text-gray-500 mb-1 uppercase tracking-wider">Ngày bắt đầu</label>}
-                                  <div className="relative">
-                                    <input type="date" disabled={!isInfoEditable} value={visit.date} onChange={(e) => {
-                                      const newVisits = [...visits];
-                                      newVisits[index].date = e.target.value;
-                                      setVisits(newVisits);
-                                    }} className={`w-full px-4 py-2.5 pl-10 rounded-xl border border-gray-200 text-sm font-medium outline-none ${!isInfoEditable ? 'bg-gray-50/50 cursor-not-allowed opacity-90 text-gray-800' : 'bg-white hover:border-[#004c91] focus:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/20 transition-all text-gray-900'}`} required />
-                                    <Calendar className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#004c91]" />
-                                  </div>
-                                </div>
-                                {/* Thời gian bắt đầu */}
-                                <div className="flex-1 w-full xl:w-auto relative">
-                                  {index === 0 && <label className="block text-xs font-medium text-gray-500 mb-1 uppercase tracking-wider">Thời gian bắt đầu</label>}
-                                  <div className="relative">
-                                    <input type="time" disabled={!isInfoEditable} value={visit.startTime} onChange={(e) => {
-                                      const newV = [...visits]; newV[index].startTime = e.target.value; setVisits(newV);
-                                    }} className={`w-full px-4 py-2.5 pl-10 rounded-xl border border-gray-200 text-sm font-medium outline-none ${!isInfoEditable ? 'bg-gray-50/50 cursor-not-allowed opacity-90 text-gray-800' : 'bg-white hover:border-[#004c91] focus:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/20 transition-all text-gray-900'}`} required />
-                                    <Clock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#004c91]" />
-                                  </div>
-                                </div>
-                                {/* Thời gian kết thúc */}
-                                <div className="flex-1 w-full xl:w-auto relative">
-                                  {index === 0 && <label className="block text-xs font-medium text-gray-500 mb-1 uppercase tracking-wider">Thời gian kết thúc</label>}
-                                  <div className="relative">
-                                    <input type="time" disabled={!isInfoEditable} value={visit.endTime} onChange={(e) => {
-                                      const newV = [...visits]; newV[index].endTime = e.target.value; setVisits(newV);
-                                    }} className={`w-full px-4 py-2.5 pl-10 rounded-xl border border-gray-200 text-sm font-medium outline-none ${!isInfoEditable ? 'bg-gray-50/50 cursor-not-allowed opacity-90 text-gray-800' : 'bg-white hover:border-[#004c91] focus:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/20 transition-all text-gray-900'}`} required />
-                                    <Clock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#004c91]" />
-                                  </div>
-                                </div>
-                                {/* Giờ Việt Nam */}
-                                <div className="flex-[0.8] w-full xl:w-auto flex items-center justify-center h-[44px] px-3 bg-white rounded-xl border border-gray-200 select-none cursor-default">
-                                  <span className="text-[#004c91] text-sm font-bold whitespace-nowrap">VN (GMT+7)</span>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-
-                          {visitMode === 'multiple' && isInfoEditable && (
-                            <button
-                              type="button"
-                              onClick={() => setVisits([...visits, { id: Date.now().toString(), campus: 'Hà Nội', date: '', startTime: '', endTime: '' }])}
-                              className="w-full mt-4 flex items-center justify-center gap-2 py-2.5 border-2 border-dashed border-[#f37021]/30 hover:border-[#f37021] text-[#f37021] rounded-xl text-sm font-bold transition-colors bg-white hover:bg-orange-50"
-                            >
-                              <Plus className="w-4 h-4" /> Thêm cơ sở
-                            </button>
-                          )}
-                        </div>
-
-                        <div className="space-y-6">
-                          <div>
-                            <label className="block text-sm font-bold text-gray-700 mb-2">Mục đích thăm</label>
-                            <textarea readOnly={!isInfoEditable} className={`w-full px-4 py-3 rounded-xl border border-gray-200 text-gray-800 font-medium text-sm min-h-[80px] outline-none resize-none ${!isInfoEditable ? 'bg-gray-50/50 cursor-not-allowed opacity-90' : 'bg-white hover:border-[#004c91] focus:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/20 transition-all'}`} defaultValue="Giao lưu và tham quan cơ sở vật chất, ký kết hợp tác đào tạo."></textarea>
-                          </div>
-                          <div>
-                            <label className="block text-sm font-bold text-gray-700 mb-2">Nội dung làm việc</label>
-                            <textarea readOnly={!isInfoEditable} className={`w-full px-4 py-3 rounded-xl border border-gray-200 text-gray-800 font-medium text-sm min-h-[80px] outline-none resize-none ${!isInfoEditable ? 'bg-gray-50/50 cursor-not-allowed opacity-90' : 'bg-white hover:border-[#004c91] focus:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/20 transition-all'}`} defaultValue="Meeting trao đổi về chương trình hợp tác, Campus Tour, và dùng cơm trưa, teabreak."></textarea>
-                          </div>
-                        </div>
-                            </div>
+                            <DelegationInfoReadOnly summary={detail?.requestSummary} />
                           </motion.div>
                         )}
                       </AnimatePresence>
@@ -1009,27 +873,6 @@ export function VisitProcess() {
                             exit={{ height: 0, opacity: 0 }}
                           >
                             <div className="p-0 bg-white border-t border-gray-100">
-                        {/* 3.1 Loại hình tham quan */}
-                        <div className="p-6 border-b border-gray-100">
-                          <h3 className="text-base font-bold text-orange-900 bg-orange-50 w-max px-3 py-1.5 rounded-lg border border-orange-100 flex items-center gap-2 mb-4">
-                            <span className="w-1.5 h-4 bg-[#f37021] rounded-full"></span>
-                            1. Loại hình tham quan
-                          </h3>
-                          <div className="flex flex-wrap gap-4">
-                            <label className="flex items-center gap-2">
-                              <input type="checkbox" disabled={!isInfoEditable} defaultChecked className="w-5 h-5 rounded border-gray-300 text-[#004c91]" />
-                              <span className="text-sm font-medium text-gray-700">Campus tour</span>
-                            </label>
-                            <label className="flex items-center gap-2">
-                              <input type="checkbox" disabled={!isInfoEditable} defaultChecked className="w-5 h-5 rounded border-gray-300 text-[#004c91]" />
-                              <span className="text-sm font-medium text-gray-700">Họp trao đổi</span>
-                            </label>
-                            <label className="flex items-center gap-2">
-                              <input type="checkbox" disabled={!isInfoEditable} defaultChecked={false} className="w-5 h-5 rounded border-gray-300 text-[#004c91]" />
-                              <span className="text-sm font-medium text-gray-700">Khác</span>
-                            </label>
-                          </div>
-                        </div>
 
                         {/* 3.2 Agenda */}
                         <div className="p-6 border-b border-gray-100 bg-slate-50/50">
@@ -1038,7 +881,7 @@ export function VisitProcess() {
                           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                             <h3 className="text-base font-bold text-orange-900 bg-orange-50 w-max px-3 py-1.5 rounded-lg border border-orange-100 flex items-center gap-2">
                               <span className="w-1.5 h-4 bg-[#f37021] rounded-full"></span>
-                              2. Agenda
+                              1. Agenda
                             </h3>
                             {perm && (
                               <button
@@ -1175,502 +1018,33 @@ export function VisitProcess() {
                           </div>
                         </div>
 
-                        {/* 3.3 Thành phần tham gia */}
-            <div className="p-6 border-b border-gray-100">
-              <h3 className={`text-base font-bold text-orange-900 bg-orange-50 w-max px-3 py-1.5 rounded-lg border border-orange-100 flex items-center gap-2 mb-6`}>
-                <span className="w-1.5 h-4 bg-[#f37021] rounded-full"></span>
-                3. Thành phần tham gia
-              </h3>
-              
-              <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-                {/* 1. Host */}
-                <div className={`bg-white border border-gray-200 border-l-[6px] border-l-[#004c91] rounded-xl p-5 shadow-sm bg-gradient-to-r from-[#004c91]/[0.03] to-transparent`}>
-                  <div className="flex items-center justify-between mb-4">
-                    <h4 className="font-bold text-[#004c91] text-base flex items-center gap-2">
-                      <UserX className="w-5 h-5" /> 1. Host (Bắt buộc)
-                    </h4>
-                    <label className={`flex items-center gap-2 cursor-pointer bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-100`}>
-                      <input disabled={!isInfoEditable} type="checkbox" checked={participants.isMeHost} onChange={e => setParticipants({...participants, isMeHost: e.target.checked})} className="w-4 h-4 rounded border-gray-300 text-[#004c91]" />
-                      <span className="text-xs font-bold text-[#004c91]">Là tôi</span>
-                    </label>
-                  </div>
-                  {!participants.isMeHost && (
-                    <div>
-                      {addedHost && !showNoAccountError && (
-                        <div className={`flex items-center p-3 bg-blue-50/80 rounded-xl border border-blue-200 mt-2 shadow-sm animate-in fade-in slide-in-from-top-2 ${isInfoEditable ? 'mb-4' : ''}`}>
-                          <div className="flex items-center gap-3 flex-1">
-                            <div className="w-8 h-8 rounded-full bg-[#004c91] text-white flex items-center justify-center font-bold text-xs ring-2 ring-blue-100">
-                              {addedHost.charAt(0)}
-                            </div>
-                            <div>
-                              <div className="text-sm font-bold text-[#004c91]">{addedHost}</div>
-                              <div className="text-[11px] text-blue-600 font-bold flex items-center gap-1 mt-0.5 uppercase tracking-wide">
-                                <CheckCircle className="w-3.5 h-3.5" /> Đã thêm
-                              </div>
-                            </div>
-                          </div>
-                          
-                          <div className="ml-auto flex items-center gap-3">
-                            <div className="flex flex-col items-end">
-                              <div className="flex items-center gap-2">
-                                {confirmations[`host-${addedHost}`] && (
-                                   <span className={`text-xs font-bold ${confirmations[`host-${addedHost}`].status === 'accepted' ? 'text-emerald-600' : 'text-red-600'}`}>
-                                     {confirmations[`host-${addedHost}`].name} {confirmations[`host-${addedHost}`].status === 'accepted' ? 'đồng ý' : 'từ chối'} lúc {confirmations[`host-${addedHost}`].time}
-                                   </span>
-                                )}
-                                <div className="flex items-center gap-2">
-                                  <button 
-                                    onClick={() => setConfirmStatus(`host-${addedHost}`, addedHost, 'accepted')} 
-                                    className={`p-1.5 rounded-lg border transition-all ${confirmations[`host-${addedHost}`]?.status === 'accepted' ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm font-bold scale-102' : 'bg-emerald-50 hover:bg-emerald-100/80 text-emerald-700 border-emerald-200 hover:border-emerald-300'}`} 
-                                    title="Đồng ý"
-                                  >
-                                    <Check className="w-4 h-4 text-inherit stroke-[3]" />
-                                  </button>
-                                  <button 
-                                    onClick={() => setConfirmStatus(`host-${addedHost}`, addedHost, 'rejected')} 
-                                    className={`p-1.5 rounded-lg border transition-all ${confirmations[`host-${addedHost}`]?.status === 'rejected' ? 'bg-red-600 text-white border-red-600 shadow-sm font-bold scale-102' : 'bg-red-50 hover:bg-red-100/80 text-red-700 border-red-200 hover:border-red-300'}`} 
-                                    title="Từ chối"
-                                  >
-                                    <X className="w-4 h-4 text-inherit stroke-[3]" />
-                                  </button>
-                                </div>
-                              </div>
-                              {confirmations[`host-${addedHost}`]?.status === 'rejected' && confirmations[`host-${addedHost}`]?.reason && (
-                                <button 
-                                  onClick={() => setViewReasonModal({ isOpen: true, targetName: addedHost, reasonText: confirmations[`host-${addedHost}`].reason! })} 
-                                  className="text-[11px] text-red-500 hover:text-red-700 underline mt-1 italic font-medium"
-                                >
-                                  Xem lý do
-                                </button>
-                              )}
-                            </div>
-
-                            {isInfoEditable && (
-                              <button
-                                onClick={() => setAddedHost(null)}
-                                className="p-1.5 text-[#004c91] hover:text-red-500 rounded-lg hover:bg-red-50 shadow-sm border border-blue-100 bg-white transition-colors ml-2"
-                              >
-                                <X className="w-4 h-4" />
-                              </button>
-                            )}
-                          </div>
+                        {/* 2. Thành phần tham gia — mời thật + trạng thái lấy từ DB (không fake phản hồi) */}
+                        <div className="p-6 border-b border-gray-100">
+                          <h3 className="text-base font-bold text-orange-900 bg-orange-50 w-max px-3 py-1.5 rounded-lg border border-orange-100 flex items-center gap-2 mb-6">
+                            <span className="w-1.5 h-4 bg-[#f37021] rounded-full"></span>
+                            2. Thành phần tham gia
+                          </h3>
+                          {perm && detail ? (
+                            <ParticipantInvitationSection
+                              visitInstanceId={Number(perm.visitInstanceId)}
+                              relation={detail.relation}
+                              instanceStatus={detail.instanceStatus}
+                              currentUserId={user?.userId ? Number(user.userId) : null}
+                              host={detail.host ?? null}
+                              participants={detail.participants ?? []}
+                              onChanged={loadDetail}
+                              pushToast={pushToast}
+                            />
+                          ) : (
+                            <p className="text-sm italic text-slate-400">Đang tải thành phần tham gia...</p>
+                          )}
                         </div>
-                      )}
-
-                      {isInfoEditable && (
-                        <>
-                          <label className="block text-xs font-medium text-gray-500 mb-1">Chọn người thuộc phòng IC thay thế</label>
-                          <div className="flex gap-2">
-                            <select disabled={!isInfoEditable} 
-                              className="flex-1 px-4 py-2 rounded-lg border border-gray-300 text-sm outline-none focus:border-[#004c91] hover:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/20 transition-all bg-white"
-                              value={selectedHostOption}
-                              onChange={(e) => setSelectedHostOption(e.target.value)}
-                            >
-                              <option value="">Chọn tài khoản IC...</option>
-                              <option value="Nguyễn Văn IC">Nguyễn Văn IC</option>
-                              <option value="Trần Thị IC">Trần Thị IC</option>
-                              <option value="Nguyễn Có TK">Nguyễn Có TK</option>
-                            </select>
-                            <button disabled={!isInfoEditable}
-                              onClick={() => {
-                                if (selectedHostOption) {
-                                  setAddedHost(selectedHostOption);
-                                  setShowNoAccountError(false);
-                                }
-                              }}
-                              className="px-4 py-2 bg-blue-50 hover:bg-blue-100 text-[#004c91] rounded-lg text-sm font-bold transition-colors flex items-center gap-1 shrink-0"
-                            >
-                              <Plus className="w-4 h-4" /> Thêm
-                            </button>
-                          </div>
-                        </>
-                      )}
-                      
-                      {showNoAccountError && (
-                        <p className="text-sm text-red-500 mt-2 font-medium">
-                          Nguyễn Không TK chưa có tài khoản <ArrowRight className="w-4 h-4 inline mx-1" /> 
-                          <span 
-                            className="underline cursor-pointer hover:text-red-600 font-bold"
-                            onClick={() => isInfoEditable && navigate('/dashboard/accounts?action=create')}
-                          >
-                            Tạo tài khoản
-                          </span>
-                        </p>
-                      )}
-                    </div>
-                  )}
-                  {participants.isMeHost && user && (
-                    <div className={`flex items-center gap-3 p-3 bg-gray-50 rounded-lg border border-gray-100 mt-2`}>
-                      <div className="w-8 h-8 rounded-full bg-[#004c91] text-white flex items-center justify-center font-bold text-xs">
-                        {user.fullName?.charAt(0) || 'M'}
-                      </div>
-                      <div>
-                        <div className="text-sm font-bold text-gray-900">{user.fullName}</div>
-                        <div className="text-xs text-gray-500">{user.email}</div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* 2. Người hỗ trợ */}
-                <div className={`bg-white border border-gray-300 border-l-[6px] border-l-[#004c91] rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow bg-gradient-to-r from-[#004c91]/[0.03] to-transparent`}>
-                  <h4 className="font-bold text-[#004c91] text-base flex items-center gap-2 mb-4">
-                    <Users className="w-5 h-5 text-[#004c91]" /> 2. Staff hỗ trợ IC
-                  </h4>
-                  <div>
-                    {addedSupporters.length > 0 && (
-                      <div className={`space-y-2 ${isInfoEditable ? 'mb-4' : ''}`}>
-                        {addedSupporters.map((supporter, idx) => (
-                          <div key={idx} className="flex items-center p-3 bg-blue-50/80 rounded-xl border border-blue-200 shadow-sm animate-in fade-in slide-in-from-top-2">
-                            <div className="flex items-center gap-3 flex-1">
-                              <div className="w-8 h-8 rounded-full bg-[#004c91] text-white flex items-center justify-center font-bold text-xs ring-2 ring-blue-100">
-                                {supporter.charAt(0)}
-                              </div>
-                              <div>
-                                <div className="text-sm font-bold text-[#004c91]">{supporter}</div>
-                                <div className="text-[11px] text-blue-600 font-bold flex items-center gap-1 mt-0.5 uppercase tracking-wide">
-                                  <CheckCircle className="w-3.5 h-3.5" /> Đã thêm
-                                </div>
-                              </div>
-                            </div>
-                            
-                            <div className="ml-auto flex items-center gap-3">
-                              <div className="flex flex-col items-end">
-                                <div className="flex items-center gap-2">
-                                  {confirmations[`supporter-${supporter}`] && (
-                                     <span className={`text-xs font-bold ${confirmations[`supporter-${supporter}`].status === 'accepted' ? 'text-emerald-600' : 'text-red-600'}`}>
-                                       {confirmations[`supporter-${supporter}`].name} {confirmations[`supporter-${supporter}`].status === 'accepted' ? 'đồng ý' : 'từ chối'} lúc {confirmations[`supporter-${supporter}`].time}
-                                     </span>
-                                  )}
-                                  <div className="flex items-center gap-2">
-                                    <button 
-                                      onClick={() => setConfirmStatus(`supporter-${supporter}`, supporter, 'accepted')} 
-                                      className={`p-1.5 rounded-lg border transition-all ${confirmations[`supporter-${supporter}`]?.status === 'accepted' ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm font-bold scale-102' : 'bg-emerald-50 hover:bg-emerald-100/80 text-emerald-700 border-emerald-200 hover:border-emerald-300'}`} 
-                                      title="Đồng ý"
-                                    >
-                                      <Check className="w-4 h-4 text-inherit stroke-[3]" />
-                                    </button>
-                                    <button 
-                                      onClick={() => setConfirmStatus(`supporter-${supporter}`, supporter, 'rejected')} 
-                                      className={`p-1.5 rounded-lg border transition-all ${confirmations[`supporter-${supporter}`]?.status === 'rejected' ? 'bg-red-600 text-white border-red-600 shadow-sm font-bold scale-102' : 'bg-red-50 hover:bg-red-100/80 text-red-700 border-red-200 hover:border-red-300'}`} 
-                                      title="Từ chối"
-                                    >
-                                      <X className="w-4 h-4 text-inherit stroke-[3]" />
-                                    </button>
-                                  </div>
-                                </div>
-                                {confirmations[`supporter-${supporter}`]?.status === 'rejected' && confirmations[`supporter-${supporter}`]?.reason && (
-                                  <button 
-                                    onClick={() => setViewReasonModal({ isOpen: true, targetName: supporter, reasonText: confirmations[`supporter-${supporter}`].reason! })} 
-                                    className="text-[11px] text-red-500 hover:text-red-700 underline mt-1 italic font-medium"
-                                  >
-                                    Xem lý do
-                                  </button>
-                                )}
-                              </div>
-
-                              {isInfoEditable && (
-                                <button
-                                  onClick={() => setAddedSupporters(addedSupporters.filter(s => s !== supporter))}
-                                  className="p-1.5 text-[#004c91] hover:text-red-500 rounded-lg hover:bg-red-50 shadow-sm border border-blue-100 bg-white transition-colors ml-2"
-                                >
-                                  <X className="w-4 h-4" />
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {isInfoEditable && (
-                      <div className="flex gap-2">
-                        <select disabled={!isInfoEditable} 
-                          className="flex-1 px-4 py-2 rounded-lg border border-gray-300 text-sm outline-none focus:border-[#004c91] hover:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/20 transition-all bg-white"
-                          value={selectedSupporterOption}
-                          onChange={(e) => setSelectedSupporterOption(e.target.value)}
-                        >
-                          <option value="">Chọn nhân sự phòng IC...</option>
-                          <option value="Thêm người A">Thêm người A</option>
-                          <option value="Nguyễn Có TK">Nguyễn Có TK</option>
-                        </select>
-                        <button disabled={!isInfoEditable}
-                          onClick={() => {
-                            if (selectedSupporterOption && !addedSupporters.includes(selectedSupporterOption)) {
-                              setAddedSupporters([...addedSupporters, selectedSupporterOption]);
-                              setShowSupporterNoAccountError(false);
-                              setSelectedSupporterOption('');
-                            }
-                          }}
-                          className="px-4 py-2 bg-blue-50 hover:bg-blue-100 text-[#004c91] rounded-lg text-sm font-bold transition-colors flex items-center gap-1 shrink-0"
-                        >
-                          <Plus className="w-4 h-4" /> Thêm
-                        </button>
-                      </div>
-                    )}
-
-                    {showSupporterNoAccountError && (
-                      <p className="text-sm text-red-500 mt-2 font-medium">
-                        Nguyễn Không TK chưa có tài khoản <ArrowRight className="w-4 h-4 inline mx-1" /> 
-                        <span 
-                          className="underline cursor-pointer hover:text-red-600 font-bold"
-                          onClick={() => isInfoEditable && navigate('/dashboard/accounts?action=create')}
-                        >
-                          Tạo tài khoản
-                        </span>
-                      </p>
-                    )}
-                  </div>
-                </div>
-
-                {/* 3. Người tham gia phòng khác */}
-                <div className={`bg-white border border-gray-300 border-l-[6px] border-l-[#004c91] rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow bg-gradient-to-r from-[#004c91]/[0.03] to-transparent`}>
-                  <h4 className="font-bold text-[#004c91] text-base flex items-center gap-2 mb-4">
-                    <Users className="w-5 h-5 text-[#004c91]" /> 3. Phòng ban hỗ trợ
-                  </h4>
-                  <div>
-                    {addedOtherDepts.length > 0 && (
-                      <div className={`space-y-2 ${isInfoEditable ? 'mb-4' : ''}`}>
-                        {addedOtherDepts.map((person, idx) => (
-                          <div key={idx} className="flex items-center p-3 bg-blue-50/80 rounded-xl border border-blue-200 shadow-sm animate-in fade-in slide-in-from-top-2">
-                            <div className="flex items-center gap-3 flex-1">
-                              <div className="w-8 h-8 rounded-full bg-[#004c91] text-white flex items-center justify-center font-bold text-xs ring-2 ring-blue-100">
-                                {person.charAt(0)}
-                              </div>
-                              <div>
-                                <div className="text-sm font-bold text-[#004c91]">{person}</div>
-                                <div className="text-[11px] text-blue-600 font-bold flex items-center gap-1 mt-0.5 uppercase tracking-wide">
-                                  <CheckCircle className="w-3.5 h-3.5" /> Đã thêm
-                                </div>
-                              </div>
-                            </div>
-
-                            <div className="ml-auto flex items-center gap-3">
-                              <div className="flex flex-col items-end">
-                                <div className="flex items-center gap-2">
-                                  {confirmations[`other-${person}`] && (
-                                     <span className={`text-xs font-bold ${confirmations[`other-${person}`].status === 'accepted' ? 'text-emerald-600' : 'text-red-600'}`}>
-                                       {confirmations[`other-${person}`].name} {confirmations[`other-${person}`].status === 'accepted' ? 'đồng ý' : 'từ chối'} lúc {confirmations[`other-${person}`].time}
-                                     </span>
-                                  )}
-                                   <div className="flex items-center gap-2">
-                                    <button 
-                                      onClick={() => setConfirmStatus(`other-${person}`, person, 'accepted')} 
-                                      className={`p-1.5 rounded-lg border transition-all ${confirmations[`other-${person}`]?.status === 'accepted' ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm font-bold scale-102' : 'bg-emerald-50 hover:bg-emerald-100/80 text-emerald-700 border-emerald-200 hover:border-emerald-300'}`} 
-                                      title="Đồng ý"
-                                    >
-                                      <Check className="w-4 h-4 text-inherit stroke-[3]" />
-                                    </button>
-                                    <button 
-                                      onClick={() => setConfirmStatus(`other-${person}`, person, 'rejected')} 
-                                      className={`p-1.5 rounded-lg border transition-all ${confirmations[`other-${person}`]?.status === 'rejected' ? 'bg-red-600 text-white border-red-600 shadow-sm font-bold scale-102' : 'bg-red-50 hover:bg-red-100/80 text-red-700 border-red-200 hover:border-red-300'}`} 
-                                      title="Từ chối"
-                                    >
-                                      <X className="w-4 h-4 text-inherit stroke-[3]" />
-                                    </button>
-                                  </div>
-                                </div>
-                                {confirmations[`other-${person}`]?.status === 'rejected' && confirmations[`other-${person}`]?.reason && (
-                                  <button 
-                                    onClick={() => setViewReasonModal({ isOpen: true, targetName: person, reasonText: confirmations[`other-${person}`].reason! })} 
-                                    className="text-[11px] text-red-500 hover:text-red-700 underline mt-1 italic font-medium"
-                                  >
-                                    Xem lý do
-                                  </button>
-                                )}
-                              </div>
-
-                              {isInfoEditable && (
-                                <button
-                                  onClick={() => setAddedOtherDepts(addedOtherDepts.filter(p => p !== person))}
-                                  className="p-1.5 text-[#004c91] hover:text-red-500 rounded-lg hover:bg-red-50 shadow-sm border border-blue-100 bg-white transition-colors ml-2"
-                                >
-                                  <X className="w-4 h-4" />
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {isInfoEditable && (
-                      <div className="flex gap-2 items-center">
-                        <select 
-                          disabled={!isInfoEditable} 
-                          className="w-[250px] px-4 py-2 rounded-lg border border-gray-300 text-sm outline-none focus:border-[#004c91] hover:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/20 transition-all bg-white"
-                          value={participantOtherDept}
-                          onChange={(e) => {
-                            const dept = e.target.value;
-                            setParticipantOtherDept(dept);
-                            if (dept && dept !== "Chọn Phòng ban...") {
-                              setSelectedOtherDeptOption(`Trưởng ${dept}`);
-                            } else {
-                              setSelectedOtherDeptOption('');
-                            }
-                          }}
-                        >
-                          <option value="">Chọn Phòng ban...</option>
-                          <option value="Phòng Tuyển sinh">Phòng Tuyển sinh</option>
-                          <option value="Phòng Đào tạo">Phòng Đào tạo</option>
-                        </select>
-                        
-                        <div className="flex-1 px-4 py-2 text-sm text-gray-700 bg-gray-50 border border-gray-200 rounded-lg whitespace-nowrap overflow-hidden text-ellipsis">
-                          {selectedOtherDeptOption || 'Chọn phòng ban để hiện trưởng phòng'}
-                        </div>
-
-                        <button 
-                          disabled={!isInfoEditable}
-                          onClick={() => {
-                            if (selectedOtherDeptOption && !addedOtherDepts.includes(selectedOtherDeptOption)) {
-                              setAddedOtherDepts([...addedOtherDepts, selectedOtherDeptOption]);
-                              setShowOtherDeptNoAccountError(false);
-                              setParticipantOtherDept('');
-                              setSelectedOtherDeptOption('');
-                            }
-                          }}
-                          className={`${!isInfoEditable ? 'opacity-50 cursor-not-allowed text-gray-400 bg-gray-100' : 'bg-blue-50 hover:bg-blue-100 text-[#004c91]'} px-4 py-2 rounded-lg text-sm font-bold transition-colors flex items-center gap-1 shrink-0 h-full`}
-                        >
-                          <Plus className="w-4 h-4" /> Thêm
-                        </button>
-                      </div>
-                    )}
-
-                    {showOtherDeptNoAccountError && (
-                      <p className="text-sm text-red-500 mt-2 font-medium">
-                        Nguyễn Không TK chưa có tài khoản <ArrowRight className="w-4 h-4 inline mx-1" /> 
-                        <span 
-                          className="underline cursor-pointer hover:text-red-600 font-bold"
-                          onClick={() => isInfoEditable && navigate('/dashboard/accounts?action=create')}
-                        >
-                          Tạo tài khoản
-                        </span>
-                      </p>
-                    )}
-                  </div>
-                </div>
-
-                {/* 4. Sinh viên hỗ trợ */}
-                <div className={`bg-white border border-gray-300 border-l-[6px] border-l-[#004c91] rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow bg-gradient-to-r from-[#004c91]/[0.03] to-transparent`}>
-                  <h4 className="font-bold text-[#004c91] text-base flex items-center gap-2 mb-4">
-                    <Users className="w-5 h-5 text-[#004c91]" /> 4. Sinh viên hỗ trợ
-                  </h4>
-                  <div>
-                    {addedStudents.length > 0 && (
-                      <div className={`space-y-2 ${isInfoEditable ? 'mb-4' : ''}`}>
-                        {addedStudents.map((student, idx) => (
-                          <div key={idx} className="flex items-center p-3 bg-blue-50/80 rounded-xl border border-blue-200 shadow-sm animate-in fade-in slide-in-from-top-2">
-                            <div className="flex items-center gap-3 flex-1">
-                              <div className="w-8 h-8 rounded-full bg-[#004c91] text-white flex items-center justify-center font-bold text-xs ring-2 ring-blue-100">
-                                S
-                              </div>
-                              <div>
-                                <div className="text-sm font-bold text-[#004c91]">{student}</div>
-                                <div className="text-[11px] text-blue-600 font-bold flex items-center gap-1 mt-0.5 uppercase tracking-wide">
-                                  <CheckCircle className="w-3.5 h-3.5" /> Đã thêm
-                                </div>
-                              </div>
-                            </div>
-
-                            <div className="ml-auto flex items-center gap-3">
-                              <div className="flex flex-col items-end">
-                                <div className="flex items-center gap-2">
-                                  {confirmations[`student-${student}`] && (
-                                     <span className={`text-xs font-bold ${confirmations[`student-${student}`].status === 'accepted' ? 'text-emerald-600' : 'text-red-600'}`}>
-                                       {confirmations[`student-${student}`].name} {confirmations[`student-${student}`].status === 'accepted' ? 'đồng ý' : 'từ chối'} lúc {confirmations[`student-${student}`].time}
-                                     </span>
-                                  )}
-                                   <div className="flex items-center gap-2">
-                                    <button 
-                                      onClick={() => setConfirmStatus(`student-${student}`, student, 'accepted')} 
-                                      className={`p-1.5 rounded-lg border transition-all ${confirmations[`student-${student}`]?.status === 'accepted' ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm font-bold scale-102' : 'bg-emerald-50 hover:bg-emerald-100/80 text-emerald-700 border-emerald-200 hover:border-emerald-300'}`} 
-                                      title="Đồng ý"
-                                    >
-                                      <Check className="w-4 h-4 text-inherit stroke-[3]" />
-                                    </button>
-                                    <button 
-                                      onClick={() => setConfirmStatus(`student-${student}`, student, 'rejected')} 
-                                      className={`p-1.5 rounded-lg border transition-all ${confirmations[`student-${student}`]?.status === 'rejected' ? 'bg-red-600 text-white border-red-600 shadow-sm font-bold scale-102' : 'bg-red-50 hover:bg-red-100/80 text-red-700 border-red-200 hover:border-red-300'}`} 
-                                      title="Từ chối"
-                                    >
-                                      <X className="w-4 h-4 text-inherit stroke-[3]" />
-                                    </button>
-                                  </div>
-                                </div>
-                                {confirmations[`student-${student}`]?.status === 'rejected' && confirmations[`student-${student}`]?.reason && (
-                                  <button 
-                                    onClick={() => setViewReasonModal({ isOpen: true, targetName: student, reasonText: confirmations[`student-${student}`].reason! })} 
-                                    className="text-[11px] text-red-500 hover:text-red-700 underline mt-1 italic font-medium"
-                                  >
-                                    Xem lý do
-                                  </button>
-                                )}
-                              </div>
-
-                              {isInfoEditable && (
-                                <button
-                                  onClick={() => setAddedStudents(addedStudents.filter(s => s !== student))}
-                                  className="p-1.5 text-[#004c91] hover:text-red-500 rounded-lg hover:bg-red-50 shadow-sm border border-blue-100 bg-white transition-colors ml-2"
-                                >
-                                  <X className="w-4 h-4" />
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {isInfoEditable && (
-                      <div className="flex gap-2 mb-3">
-                        <div className="flex-1 relative">
-                          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                          <input disabled={!isInfoEditable} 
-                            type="text" 
-                            placeholder="Tìm kiếm theo Email hoặc MSSV học sinh..." 
-                            className="w-full pl-9 pr-4 py-2 rounded-lg border border-gray-300 text-sm outline-none focus:border-[#004c91] hover:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/20 transition-all bg-white"
-                            value={studentSearchText}
-                            onChange={(e) => setStudentSearchText(e.target.value)}
-                          />
-                        </div>
-                        <button disabled={!isInfoEditable}
-                          onClick={() => {
-                            if (studentSearchText === '123') {
-                              if (!addedStudents.includes('Sinh viên 123 - Trịnh Thăng Bình')) {
-                                setAddedStudents([...addedStudents, 'Sinh viên 123 - Trịnh Thăng Bình']);
-                              }
-                              setShowStudentNoAccountError(false);
-                              setStudentSearchText('');
-                            } else {
-                              setShowStudentNoAccountError(true);
-                            }
-                          }}
-                          className="px-4 py-2 bg-blue-50 hover:bg-blue-100 text-[#004c91] rounded-lg text-sm font-bold transition-colors flex items-center gap-1 shrink-0"
-                        >
-                          <Search className="w-4 h-4" /> Tìm & Thêm
-                        </button>
-                      </div>
-                    )}
-
-                    {showStudentNoAccountError && (
-                      <p className="text-sm text-red-500 mt-2 font-medium">
-                        Sinh viên chưa có tài khoản trên hệ thống <ArrowRight className="w-4 h-4 inline mx-1" /> 
-                        <span className="font-bold">
-                          Liên hệ Trưởng phòng IC để cấp tài khoản
-                        </span>
-                      </p>
-                    )}
-                  </div>
-                </div>
-
-              </div>
-            </div>
 
             {/* 3.4 Cảnh báo */}
             <div className="p-6 border-b border-gray-100 bg-slate-50/50">
                <h3 className={`text-base font-bold text-orange-900 bg-orange-50 w-max px-3 py-1.5 rounded-lg border border-orange-100 flex items-center gap-2 mb-6`}>
                 <span className="w-1.5 h-4 bg-[#f37021] rounded-full"></span>
-                4. Cảnh báo & Thông báo
+                3. Cảnh báo & Thông báo
               </h3>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -1716,7 +1090,7 @@ export function VisitProcess() {
                         <div className="p-6">
                           <h3 className="text-base font-bold text-orange-900 bg-orange-50 w-max px-3 py-1.5 rounded-lg border border-orange-100 flex items-center gap-2 mb-3">
                             <span className="w-1.5 h-4 bg-[#f37021] rounded-full"></span>
-                            5. Ghi chú chung
+                            4. Ghi chú chung
                           </h3>
                           <textarea readOnly={!isInfoEditable} className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50/50 text-gray-800 font-medium text-sm min-h-[100px] resize-none" defaultValue="Không có ghi chú thêm..."></textarea>
                         </div>
