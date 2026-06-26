@@ -64,31 +64,57 @@ public sealed class PrepareVisitLogisticsCommandHandler
         if (instance.Status != VisitInstanceStatus.Assigned && instance.Status != VisitInstanceStatus.BeforeVisit)
             throw new ConflictException("Chỉ có thể gửi yêu cầu hậu cần trong giai đoạn chuẩn bị.");
 
-        var dept = await _db.Departments
-            .FirstOrDefaultAsync(d => d.DepartmentId == request.DepartmentId, cancellationToken)
-            ?? throw new NotFoundException("Department", request.DepartmentId);
-        if (dept.CampusId != instance.CampusId)
-            throw new ConflictException("Không thể gửi yêu cầu tới phòng ban ngoài cơ sở của chuyến tiếp khách.");
-        if (dept.DepartmentType != "GENERAL" || dept.Status != EntityStatuses.Active)
-            throw new ConflictException("Phòng ban được chọn không hợp lệ.");
+        var mode = string.IsNullOrWhiteSpace(request.CoordinationMode)
+            ? LogisticsCoordinationModes.SystemRequest
+            : request.CoordinationMode!.Trim().ToUpperInvariant();
+        var offline = mode == LogisticsCoordinationModes.OfflineCoordinated;
 
-        // Resolve the active Department Leader (the email recipient).
-        var leaders = await (
-            from u in _db.Users
-            join r in _db.Roles on u.RoleId equals r.RoleId
-            where r.RoleCode == RoleCodes.Department
-                  && u.SubRole == UserSubRoles.Leader
-                  && u.Status == UserStatuses.Active
-                  && u.PrimaryCampusId == instance.CampusId
-                  && u.DepartmentId == dept.DepartmentId
-            select new { u.UserId, u.FullName, u.Email }).ToListAsync(cancellationToken);
+        // Resolve the target department: REQUIRED for SYSTEM_REQUEST, OPTIONAL for OFFLINE_COORDINATED.
+        ulong? requestedDeptId = null;
+        ulong? leaderUserId = null;
+        string? leaderName = null;
+        string? leaderEmail = null;
+        if (request.DepartmentId is { } deptId && deptId > 0)
+        {
+            var dept = await _db.Departments
+                .FirstOrDefaultAsync(d => d.DepartmentId == deptId, cancellationToken)
+                ?? throw new NotFoundException("Department", deptId);
+            if (dept.CampusId != instance.CampusId)
+                throw new ConflictException("Không thể gửi yêu cầu tới phòng ban ngoài cơ sở của chuyến tiếp khách.");
+            if (dept.DepartmentType != "GENERAL" || dept.Status != EntityStatuses.Active)
+                throw new ConflictException("Phòng ban được chọn không hợp lệ.");
+            requestedDeptId = dept.DepartmentId;
 
-        var leader = (dept.HeadUserId.HasValue ? leaders.FirstOrDefault(l => l.UserId == dept.HeadUserId.Value) : null)
-                     ?? leaders.FirstOrDefault();
-        if (leader is null)
-            throw new ConflictException("Phòng này chưa có trưởng phòng đang hoạt động, không thể gửi yêu cầu.");
+            if (!offline)
+            {
+                // Resolve the active Department Leader (the email recipient).
+                var leaders = await (
+                    from u in _db.Users
+                    join r in _db.Roles on u.RoleId equals r.RoleId
+                    where r.RoleCode == RoleCodes.Department
+                          && u.SubRole == UserSubRoles.Leader
+                          && u.Status == UserStatuses.Active
+                          && u.PrimaryCampusId == instance.CampusId
+                          && u.DepartmentId == dept.DepartmentId
+                    select new { u.UserId, u.FullName, u.Email }).ToListAsync(cancellationToken);
 
-        var editedContent = ValidateAndSanitizeOverride(request.EmailOverride);
+                var leader = (dept.HeadUserId.HasValue ? leaders.FirstOrDefault(l => l.UserId == dept.HeadUserId.Value) : null)
+                             ?? leaders.FirstOrDefault();
+                if (leader is null)
+                    throw new ConflictException("Phòng này chưa có trưởng phòng đang hoạt động, không thể gửi yêu cầu.");
+                leaderUserId = leader.UserId;
+                leaderName = leader.FullName;
+                leaderEmail = leader.Email;
+            }
+        }
+
+        if (!offline && requestedDeptId is null)
+            throw new ConflictException("Vui lòng chọn phòng ban xử lý.");
+        if (offline && string.IsNullOrWhiteSpace(request.OfflineCoordinationNote))
+            throw new ValidationException("Vui lòng nhập ghi chú trao đổi bên ngoài (bắt buộc).");
+
+        // Offline-coordinated requests don't send an email, so any email override is ignored.
+        var editedContent = offline ? null : ValidateAndSanitizeOverride(request.EmailOverride);
 
         var delegationName = instance.VisitRequest?.DelegationName ?? "FPT University";
         var campusName = await _db.Campuses
@@ -111,10 +137,10 @@ public sealed class PrepareVisitLogisticsCommandHandler
         var dueAt = ParseLocal(request.DueAt);
 
         VisitLogisticsItem item;
-        ulong sentEmailId;
-        ulong sentEmailRecipientId;
-        string finalSubject;
-        string finalBody;
+        ulong sentEmailId = 0;
+        ulong sentEmailRecipientId = 0;
+        string finalSubject = string.Empty;
+        string finalBody = string.Empty;
 
         await using (var transaction = await _db.BeginTransactionAsync(cancellationToken))
         {
@@ -127,11 +153,16 @@ public sealed class PrepareVisitLogisticsCommandHandler
                 Quantity = request.Quantity,
                 UsageStartAt = usageStart,
                 UsageEndAt = usageEnd,
-                Status = LogisticsItemStatus.Requested,
+                // OFFLINE_COORDINATED is already handled outside the system → DONE (no further workflow);
+                // SYSTEM_REQUEST starts at REQUESTED for the department to process.
+                Status = offline ? LogisticsItemStatus.Done : LogisticsItemStatus.Requested,
                 Priority = priority,
+                CoordinationMode = offline ? LogisticsCoordinationModes.OfflineCoordinated : LogisticsCoordinationModes.SystemRequest,
+                OfflineCoordinationNote = offline ? request.OfflineCoordinationNote!.Trim() : null,
                 RequestedBy = actorId,
-                RequestedToDepartmentId = dept.DepartmentId,
+                RequestedToDepartmentId = requestedDeptId,
                 RequestedAt = now,
+                CompletedAt = offline ? now : (DateTime?)null,
                 DueAt = dueAt,
                 CreatedAt = now,
                 CreatedBy = actorId,
@@ -139,81 +170,90 @@ public sealed class PrepareVisitLogisticsCommandHandler
             _db.VisitLogisticsItems.Add(item);
             await _db.SaveChangesAsync(cancellationToken);
 
-            var detailUrl = _tokens.BuildLogisticsDetailUrl(item.LogisticsItemId);
-
-            if (editedContent != null)
+            // Email + notification only for SYSTEM_REQUEST. OFFLINE_COORDINATED leaves no email trail.
+            if (!offline)
             {
-                finalSubject = request.EmailOverride!.Subject!.Trim();
-                var content = EmailComposition.StripActionArtifacts(editedContent);
-                finalBody = EmailComposition.BrandedShell(content + EmailComposition.DetailLinkBlock(detailUrl));
+                var detailUrl = _tokens.BuildLogisticsDetailUrl(item.LogisticsItemId);
+
+                if (editedContent != null)
+                {
+                    finalSubject = request.EmailOverride!.Subject!.Trim();
+                    var content = EmailComposition.StripActionArtifacts(editedContent);
+                    finalBody = EmailComposition.BrandedShell(content + EmailComposition.DetailLinkBlock(detailUrl));
+                }
+                else
+                {
+                    finalSubject = $"[PEMS] Yêu cầu hậu cần mới — {item.Title}";
+                    finalBody = EmailComposition.BrandedShell(
+                        DefaultContentHtml(leaderName!, requesterName, delegationName, campusName, item, usageStart, usageEnd)
+                        + EmailComposition.DetailLinkBlock(detailUrl));
+                }
+
+                var sentEmail = new SentEmail
+                {
+                    EmailTemplateId = templateId,
+                    RelatedType = EmailActionTargetTypes.LogisticsItem,
+                    RelatedId = item.LogisticsItemId,
+                    Subject = finalSubject,
+                    BodySnapshot = finalBody,
+                    Status = "QUEUED",
+                    SentBy = actorId,
+                    CreatedAt = now,
+                };
+                _db.SentEmails.Add(sentEmail);
+                await _db.SaveChangesAsync(cancellationToken);
+
+                var sentRecipient = new SentEmailRecipient
+                {
+                    SentEmailId = sentEmail.SentEmailId,
+                    RecipientEmail = leaderEmail!,
+                    RecipientName = leaderName!,
+                    RecipientType = "TO",
+                    DeliveryStatus = "QUEUED",
+                    CreatedAt = now,
+                };
+                _db.SentEmailRecipients.Add(sentRecipient);
+
+                _db.Notifications.Add(new Notification
+                {
+                    RecipientUserId = leaderUserId!.Value,
+                    NotificationType = "VISIT_LOGISTICS_REQUESTED",
+                    Title = "Có yêu cầu hậu cần mới",
+                    Message = $"Host {requesterName} đã gửi yêu cầu \"{item.Title}\" cho đoàn {delegationName} tại {campusName}.",
+                    RelatedType = "LOGISTICS_ITEM",
+                    RelatedId = item.LogisticsItemId,
+                    IsRead = false,
+                    CreatedAt = now,
+                });
+
+                sentEmailId = sentEmail.SentEmailId;
+                sentEmailRecipientId = sentRecipient.SentEmailRecipientId;
             }
-            else
-            {
-                finalSubject = $"[PEMS] Yêu cầu hậu cần mới — {item.Title}";
-                finalBody = EmailComposition.BrandedShell(
-                    DefaultContentHtml(leader.FullName, requesterName, delegationName, campusName, item, usageStart, usageEnd)
-                    + EmailComposition.DetailLinkBlock(detailUrl));
-            }
-
-            var sentEmail = new SentEmail
-            {
-                EmailTemplateId = templateId,
-                RelatedType = EmailActionTargetTypes.LogisticsItem,
-                RelatedId = item.LogisticsItemId,
-                Subject = finalSubject,
-                BodySnapshot = finalBody,
-                Status = "QUEUED",
-                SentBy = actorId,
-                CreatedAt = now,
-            };
-            _db.SentEmails.Add(sentEmail);
-            await _db.SaveChangesAsync(cancellationToken);
-
-            var sentRecipient = new SentEmailRecipient
-            {
-                SentEmailId = sentEmail.SentEmailId,
-                RecipientEmail = leader.Email,
-                RecipientName = leader.FullName,
-                RecipientType = "TO",
-                DeliveryStatus = "QUEUED",
-                CreatedAt = now,
-            };
-            _db.SentEmailRecipients.Add(sentRecipient);
-
-            _db.Notifications.Add(new Notification
-            {
-                RecipientUserId = leader.UserId,
-                NotificationType = "VISIT_LOGISTICS_REQUESTED",
-                Title = "Có yêu cầu hậu cần mới",
-                Message = $"Host {requesterName} đã gửi yêu cầu \"{item.Title}\" cho đoàn {delegationName} tại {campusName}.",
-                RelatedType = "LOGISTICS_ITEM",
-                RelatedId = item.LogisticsItemId,
-                IsRead = false,
-                CreatedAt = now,
-            });
 
             _db.AuditLogs.Add(new AuditLog
             {
                 ActorUserId = actorId,
                 CampusId = instance.CampusId,
-                Action = "CREATE_VISIT_LOGISTICS_REQUEST",
+                Action = offline ? "CREATE_VISIT_LOGISTICS_OFFLINE" : "CREATE_VISIT_LOGISTICS_REQUEST",
                 EntityType = "VisitLogisticsItem",
                 EntityId = item.LogisticsItemId,
                 CreatedAt = now,
             });
 
             await _db.SaveChangesAsync(cancellationToken);
-
-            sentEmailId = sentEmail.SentEmailId;
-            sentEmailRecipientId = sentRecipient.SentEmailRecipientId;
-
             await transaction.CommitAsync(cancellationToken);
         }
+
+        // Offline: nothing to send — the item is recorded (DONE) for traceability.
+        if (offline)
+            return new PrepareVisitLogisticsResponse(
+                true, true, item.LogisticsItemId, "SKIPPED", 0,
+                "Đã lưu yêu cầu hậu cần (đã trao đổi bên ngoài hệ thống).");
 
         string emailStatus;
         try
         {
-            await _email.SendAsync(leader.Email, finalSubject, finalBody, cancellationToken);
+            await _email.SendAsync(leaderEmail!, finalSubject, finalBody, cancellationToken);
             emailStatus = "SENT";
             await UpdateEmailStatusAsync(sentEmailId, sentEmailRecipientId, "SENT", actorId, now, null, cancellationToken);
         }
@@ -237,11 +277,14 @@ public sealed class PrepareVisitLogisticsCommandHandler
             throw new ValidationException("Tiêu đề email không được để trống.");
         if (ov.Subject.Trim().Length > EmailOverrideLimits.SubjectMax)
             throw new ValidationException($"Tiêu đề email tối đa {EmailOverrideLimits.SubjectMax} ký tự.");
-        if (string.IsNullOrWhiteSpace(ov.BodyHtml))
+
+        // Prefer the host-edited plain text (bodyText) → safe HTML; fall back to legacy bodyHtml.
+        var rawHtml = EmailComposition.ResolveEditableHtml(ov);
+        if (string.IsNullOrWhiteSpace(rawHtml))
             throw new ValidationException("Nội dung email không được để trống.");
-        if (ov.BodyHtml.Length > EmailOverrideLimits.BodyMax)
+        if (rawHtml.Length > EmailOverrideLimits.BodyMax)
             throw new ValidationException($"Nội dung email vượt quá {EmailOverrideLimits.BodyMax} ký tự.");
-        var sanitized = _sanitizer.Sanitize(ov.BodyHtml);
+        var sanitized = _sanitizer.Sanitize(rawHtml);
         if (string.IsNullOrWhiteSpace(sanitized))
             throw new ValidationException("Nội dung email không hợp lệ sau khi lọc.");
         return sanitized;

@@ -10,7 +10,7 @@ namespace PEMS.Application.Delegations.Commands.PrepareVisitLogistics;
 /// </summary>
 public sealed record PrepareVisitLogisticsCommand(
     ulong VisitInstanceId,
-    ulong DepartmentId,
+    ulong? DepartmentId,        // required for SYSTEM_REQUEST; optional for OFFLINE_COORDINATED
     string ItemType,            // ROOM | TRANSPORT | MEAL | EQUIPMENT | BANNER | LED | OTHER
     string Title,
     string? Description,
@@ -19,11 +19,20 @@ public sealed record PrepareVisitLogisticsCommand(
     string? UsageEndAt,
     string? Priority,           // LOW | MEDIUM | HIGH | URGENT (default MEDIUM)
     string? DueAt,
+    string? CoordinationMode = null,        // SYSTEM_REQUEST (default) | OFFLINE_COORDINATED
+    string? OfflineCoordinationNote = null, // required when OFFLINE_COORDINATED
     EmailOverride? EmailOverride = null) : IRequest<PrepareVisitLogisticsResponse>;
 
 public static class LogisticsItemTypes
 {
     public static readonly string[] All = { "ROOM", "TRANSPORT", "MEAL", "EQUIPMENT", "BANNER", "LED", "OTHER" };
+}
+
+public static class LogisticsCoordinationModes
+{
+    public const string SystemRequest = "SYSTEM_REQUEST";
+    public const string OfflineCoordinated = "OFFLINE_COORDINATED";
+    public static readonly string[] All = { SystemRequest, OfflineCoordinated };
 }
 
 public static class LogisticsPriorities

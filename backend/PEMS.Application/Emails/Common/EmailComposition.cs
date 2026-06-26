@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text;
 using System.Text.RegularExpressions;
 
 namespace PEMS.Application.Emails.Common;
@@ -45,11 +46,11 @@ public static class EmailComposition
         <p style=""color:#9ca3af;font-size:12px;margin-top:12px"">Liên kết phản hồi sẽ hết hạn sau 14 ngày và chỉ sử dụng được một lần.</p>";
     }
 
-    public static string DetailLinkBlock(string detailUrl, string label = "Xem chi tiết yêu cầu")
+    public static string DetailLinkBlock(string detailUrl, string label = "Mở yêu cầu để xử lý")
         => $@"<div style=""text-align:center;margin:24px 0"">
             <a href=""{HE(detailUrl)}"" style=""display:inline-block;background:#004c91;color:#fff;text-decoration:none;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">{HE(label)}</a>
         </div>
-        <p style=""color:#6b7280;font-size:12px;margin-top:8px"">Lưu ý: thao tác xử lý yêu cầu yêu cầu đăng nhập hệ thống.</p>";
+        <p style=""color:#6b7280;font-size:12px;margin-top:8px"">Sau khi đăng nhập, Trưởng phòng có thể chấp nhận xử lý, từ chối yêu cầu, gán nhân sự hoặc đề xuất thay đổi. Thao tác xử lý yêu cầu yêu cầu đăng nhập hệ thống.</p>";
 
     // ── Disabled action blocks (preview only — no live URLs/tokens) ──
 
@@ -65,7 +66,7 @@ public static class EmailComposition
         </div>";
     }
 
-    public static string DisabledDetailLinkBlock(string label = "Xem chi tiết yêu cầu")
+    public static string DisabledDetailLinkBlock(string label = "Mở yêu cầu để xử lý")
         => $@"<div style=""text-align:center;margin:24px 0"">
             <span style=""display:inline-block;background:#9aa6b2;color:#fff;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">{HE(label)}</span>
         </div>";
@@ -88,4 +89,49 @@ public static class EmailComposition
         noAnchors = Regex.Replace(noAnchors, @"<p>(\s|\||&nbsp;|&amp;)*</p>", string.Empty, RegexOptions.IgnoreCase);
         return noAnchors.Trim();
     }
+
+    /// <summary>
+    /// Converts the editable message HTML to readable plain text for the "Xem trước email" editor, so
+    /// the host never sees raw &lt;p&gt;/&lt;br&gt;/&lt;strong&gt; tags. Block tags become line breaks,
+    /// list items get a bullet, remaining tags are stripped and HTML entities decoded.
+    /// </summary>
+    public static string HtmlToPlainText(string? html)
+    {
+        if (string.IsNullOrEmpty(html)) return string.Empty;
+        var s = html!;
+        s = Regex.Replace(s, @"<\s*br\s*/?\s*>", "\n", RegexOptions.IgnoreCase);
+        s = Regex.Replace(s, @"<\s*li[^>]*>", "• ", RegexOptions.IgnoreCase);
+        s = Regex.Replace(s, @"</\s*(p|div|li|tr|ul|ol|h[1-6])\s*>", "\n", RegexOptions.IgnoreCase);
+        s = Regex.Replace(s, @"<[^>]+>", string.Empty);
+        s = WebUtility.HtmlDecode(s);
+        s = Regex.Replace(s, @"[ \t]+\n", "\n");
+        s = Regex.Replace(s, @"\n{3,}", "\n\n");
+        return s.Trim();
+    }
+
+    /// <summary>
+    /// Converts host-edited plain text back to safe HTML: each blank-line-separated block becomes a
+    /// &lt;p&gt; and single newlines become &lt;br&gt;. The text is HTML-encoded first so it carries no
+    /// markup of its own (the result is still run through the HTML sanitizer before sending).
+    /// </summary>
+    public static string PlainTextToHtml(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return string.Empty;
+        var normalized = text!.Replace("\r\n", "\n").Replace("\r", "\n").Trim();
+        var blocks = Regex.Split(normalized, @"\n{2,}");
+        var sb = new StringBuilder();
+        foreach (var block in blocks)
+        {
+            if (string.IsNullOrWhiteSpace(block)) continue;
+            sb.Append("<p>").Append(HE(block).Replace("\n", "<br>")).Append("</p>");
+        }
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Resolves the raw HTML body from an override, preferring the plain text the host actually edited
+    /// (converted via <see cref="PlainTextToHtml"/>); falls back to a legacy bodyHtml if only that was sent.
+    /// </summary>
+    public static string ResolveEditableHtml(EmailOverride ov)
+        => !string.IsNullOrWhiteSpace(ov.BodyText) ? PlainTextToHtml(ov.BodyText) : (ov.BodyHtml ?? string.Empty);
 }

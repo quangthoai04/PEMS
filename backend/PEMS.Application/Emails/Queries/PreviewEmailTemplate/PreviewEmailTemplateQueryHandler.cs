@@ -59,7 +59,8 @@ public sealed class PreviewEmailTemplateQueryHandler
         {
             // Plain template: the whole body is editable, no system action block.
             return new PreviewEmailTemplateResponse(
-                code, renderedSubject, renderedBody, false, null, null, Array.Empty<string>(), true);
+                code, renderedSubject, renderedBody, EmailComposition.HtmlToPlainText(renderedBody),
+                false, null, null, Array.Empty<string>(), true);
         }
 
         // Action template: editable content is the body WITHOUT the action artifacts; the action
@@ -70,8 +71,8 @@ public sealed class PreviewEmailTemplateQueryHandler
             : EmailComposition.DisabledAcceptDeclineBlock(spec.HasAssignLink);
 
         return new PreviewEmailTemplateResponse(
-            code, renderedSubject, editableContent, true,
-            spec.SystemActionDescription, locked, spec.RequiredActionPlaceholders, true);
+            code, renderedSubject, editableContent, EmailComposition.HtmlToPlainText(editableContent),
+            true, spec.SystemActionDescription, locked, spec.RequiredActionPlaceholders, true);
     }
 
     private static string Render(string template, Dictionary<string, string> context)

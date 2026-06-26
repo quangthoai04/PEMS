@@ -26,7 +26,8 @@ public static class EmailActionTemplates
     private const string AcceptDeclineAssignDesc =
         "Nút Chấp nhận / Từ chối và liên kết Gán nhân sự sẽ được hệ thống tự gắn khi gửi email.";
     private const string DetailDesc =
-        "Nút Xem chi tiết yêu cầu (yêu cầu đăng nhập) sẽ được hệ thống tự gắn khi gửi email.";
+        "Nút \"Mở yêu cầu để xử lý\" (yêu cầu đăng nhập) sẽ được hệ thống tự gắn khi gửi email. " +
+        "Sau khi đăng nhập, Trưởng phòng có thể chấp nhận xử lý, từ chối yêu cầu, gán nhân sự hoặc đề xuất thay đổi.";
 
     public static EmailTemplateActionSpec? For(string templateCode) => templateCode switch
     {

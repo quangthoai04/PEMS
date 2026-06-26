@@ -37,6 +37,16 @@ public class VisitLogisticsItem
     [Column("priority")]
     public string Priority { get; set; } = "MEDIUM";
 
+    // PEMS v11: how this request is coordinated.
+    //   SYSTEM_REQUEST     = sent to a department through the system (email/notification + workflow).
+    //   OFFLINE_COORDINATED = discussed/handled outside the system, recorded for traceability only
+    //                         (no email/notification; usually created with status DONE).
+    [Column("coordination_mode")]
+    public string CoordinationMode { get; set; } = "SYSTEM_REQUEST";
+
+    [Column("offline_coordination_note")]
+    public string? OfflineCoordinationNote { get; set; }
+
     [Column("requested_by")]
     public ulong? RequestedBy { get; set; }
 

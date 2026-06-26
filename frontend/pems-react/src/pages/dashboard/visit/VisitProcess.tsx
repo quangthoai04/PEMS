@@ -37,6 +37,16 @@ import { RegistrantInfoReadOnly, DelegationInfoReadOnly } from '../../../feature
 // Lightweight in-page toast (top-right) — cùng pattern với CampusManagement/VisitRequestManagement.
 type ProcessToast = { id: number; type: 'success' | 'error' | 'warning' | 'info'; msg: string };
 
+// ── "Cảnh báo & Thông báo" (Part C): 4 independent configs = channel × target group. ──
+const REMINDER_CONFIGS = [
+  { key: 'sysHost', channel: 'IN_APP', targetGroup: 'HOST', title: 'Thông báo hệ thống cho Host', desc: 'Thông báo trên hệ thống tới Host phụ trách' },
+  { key: 'emailHost', channel: 'EMAIL', targetGroup: 'HOST', title: 'Email nhắc Host', desc: 'Gửi email nhắc nhở Host phụ trách' },
+  { key: 'sysParticipants', channel: 'IN_APP', targetGroup: 'PARTICIPANTS', title: 'Thông báo hệ thống cho thành phần tham gia', desc: 'Thông báo trên hệ thống tới thành phần tham gia' },
+  { key: 'emailParticipants', channel: 'EMAIL', targetGroup: 'PARTICIPANTS', title: 'Email nhắc thành phần tham gia', desc: 'Gửi email nhắc nhở thành phần tham gia' },
+] as const;
+type ReminderKey = typeof REMINDER_CONFIGS[number]['key'];
+type ReminderRow = { enabled: boolean; days: number; time: string };
+
 export function VisitProcess() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -249,6 +259,7 @@ export function VisitProcess() {
       const d = await delegationsApi.getVisitProcessDetail(perm.visitRequestId, perm.visitInstanceId);
       setDetail(d);
       setPreparationNote(d.preparationNote ?? '');
+      setPreparationNoteSaved(d.preparationNote ?? '');
       setAgendaItems((d.agenda || []).map((a) => ({
         agendaId: a.agendaId,
         title: a.title,
@@ -271,14 +282,17 @@ export function VisitProcess() {
     if (!perm) return;
     try {
       const res = await delegationsApi.getReminderSettings(perm.visitInstanceId);
-      const items = res.items || [];
-      const sys = items.find((i) => i.channel === 'IN_APP' && i.targetGroup === 'HOST_AND_PARTICIPANTS' && i.status !== 'CANCELLED');
-      const eml = items.find((i) => i.channel === 'EMAIL' && i.targetGroup === 'HOST' && i.status !== 'CANCELLED');
-      setAlerts((prev) => ({
-        system: sys ? { ...prev.system, days: sys.daysBefore, time: sys.reminderTime } : prev.system,
-        email: eml ? { ...prev.email, days: eml.daysBefore, time: eml.reminderTime } : prev.email,
-      }));
-      setRemindersEnabled({ system: !!sys, email: !!eml });
+      const rows = res.items || [];
+      setReminders((prev) => {
+        const next = { ...prev };
+        for (const cfg of REMINDER_CONFIGS) {
+          const row = rows.find((i) => i.channel === cfg.channel && i.targetGroup === cfg.targetGroup && i.status !== 'CANCELLED');
+          next[cfg.key] = row
+            ? { enabled: true, days: row.daysBefore, time: row.reminderTime }
+            : { ...prev[cfg.key], enabled: false };
+        }
+        return next;
+      });
     } catch {
       /* keep current defaults if the load fails */
     }
@@ -293,6 +307,7 @@ export function VisitProcess() {
       const trimmed = preparationNote.trim();
       const res = await delegationsApi.updatePreparationNote(perm.visitInstanceId, trimmed.length ? preparationNote : null);
       setPreparationNote(res.preparationNote ?? '');
+      setPreparationNoteSaved(res.preparationNote ?? '');
       pushToast('success', res.message || 'Đã lưu ghi chú chung.');
     } catch (e) {
       pushToast('error', apiErrorMessage(e, 'Không thể lưu ghi chú chung. Vui lòng thử lại.'));
@@ -306,10 +321,13 @@ export function VisitProcess() {
     if (!perm) return;
     setSavingReminders(true);
     try {
-      const items = [
-        { channel: 'IN_APP' as const, targetGroup: 'HOST_AND_PARTICIPANTS' as const, daysBefore: alerts.system.days, reminderTime: alerts.system.time, enabled: remindersEnabled.system },
-        { channel: 'EMAIL' as const, targetGroup: 'HOST' as const, daysBefore: alerts.email.days, reminderTime: alerts.email.time, enabled: remindersEnabled.email },
-      ];
+      const items = REMINDER_CONFIGS.map((cfg) => ({
+        channel: cfg.channel,
+        targetGroup: cfg.targetGroup,
+        daysBefore: reminders[cfg.key].days,
+        reminderTime: reminders[cfg.key].time,
+        enabled: reminders[cfg.key].enabled,
+      }));
       const res = await delegationsApi.saveReminderSettings(perm.visitInstanceId, items);
       pushToast('success', res.message || 'Đã lưu cấu hình cảnh báo.');
       await loadReminders();
@@ -327,7 +345,11 @@ export function VisitProcess() {
     try {
       const res = await delegationsApi.cancelReminderSettings(perm.visitInstanceId);
       pushToast('success', res.message || 'Đã hủy lịch gửi cảnh báo.');
-      setRemindersEnabled({ system: false, email: false });
+      setReminders((prev) => {
+        const next = { ...prev };
+        for (const cfg of REMINDER_CONFIGS) next[cfg.key] = { ...prev[cfg.key], enabled: false };
+        return next;
+      });
       await loadReminders();
     } catch (e) {
       pushToast('error', apiErrorMessage(e, 'Không thể hủy cảnh báo. Vui lòng thử lại.'));
@@ -351,6 +373,10 @@ export function VisitProcess() {
 
   const canEditAgenda = !!detail?.canEditBefore;
   const hasCurrentAgenda = agendaItems.length > 0;
+  // Reminders + preparation note are editable by the instance Host during the prep window. This is
+  // independent of the (always-false) SETUP_SAVE_AVAILABLE gate — the backend re-checks the same rule.
+  const canConfigurePrep = !isClosed && detail?.relation === 'HOST'
+    && (detail?.instanceStatus === 'ASSIGNED' || detail?.instanceStatus === 'BEFORE_VISIT');
 
   // ── "Áp dụng mẫu Agenda" panel visibility ──
   // The apply-template panel is a heavy form (dropdown + preview table); leaving it always-open made
@@ -494,16 +520,19 @@ export function VisitProcess() {
   const [addedStudents, setAddedStudents] = useState<string[]>(['Sinh viên 123 - Trịnh Thăng Bình']);
   const [showStudentNoAccountError, setShowStudentNoAccountError] = useState(false);
 
-  const [alerts, setAlerts] = useState({
-    system: { days: 1, time: '09:00', period: 'AM' },
-    email: { days: 2, time: '14:00', period: 'PM' }
+  // 4 reminder rows keyed by config; loaded from reminder-settings (enabled=false → no/CANCELLED row).
+  const [reminders, setReminders] = useState<Record<ReminderKey, ReminderRow>>({
+    sysHost: { enabled: false, days: 1, time: '09:00' },
+    emailHost: { enabled: false, days: 2, time: '08:00' },
+    sysParticipants: { enabled: false, days: 1, time: '09:00' },
+    emailParticipants: { enabled: false, days: 2, time: '08:00' },
   });
-  // Whether each reminder channel is active. Loaded from reminder-settings; enabled=false on save
-  // cancels the matching PENDING row. (system = IN_APP/HOST_AND_PARTICIPANTS, email = EMAIL/HOST.)
-  const [remindersEnabled, setRemindersEnabled] = useState({ system: true, email: true });
+  const setReminder = (key: ReminderKey, patch: Partial<ReminderRow>) =>
+    setReminders((prev) => ({ ...prev, [key]: { ...prev[key], ...patch } }));
   const [savingReminders, setSavingReminders] = useState(false);
-  // Host's "Ghi chú chung" (visit_request_campuses.preparation_note), loaded from process-detail.
+  // Host's "Ghi chú chung" (visit_request_campuses.preparation_note): editable draft + saved baseline (Part G).
   const [preparationNote, setPreparationNote] = useState('');
+  const [preparationNoteSaved, setPreparationNoteSaved] = useState('');
   const [savingNote, setSavingNote] = useState(false);
 
   const campusOptions = ['Hà Nội', 'Đà Nẵng', 'Cần Thơ', 'Hồ Chí Minh', 'Quy Nhơn'];
@@ -986,75 +1015,58 @@ export function VisitProcess() {
                           )}
                         </div>
 
-            {/* 3.4 Cảnh báo */}
+            {/* 3. Cảnh báo & Thông báo — 4 cấu hình riêng theo kênh × người nhận (Part C) */}
             <div className="p-6 border-b border-gray-100 bg-slate-50/50">
-               <h3 className={`text-base font-bold text-orange-900 bg-orange-50 w-max px-3 py-1.5 rounded-lg border border-orange-100 flex items-center gap-2 mb-6`}>
+              <h3 className="text-base font-bold text-orange-900 bg-orange-50 w-max px-3 py-1.5 rounded-lg border border-orange-100 flex items-center gap-2 mb-2">
                 <span className="w-1.5 h-4 bg-[#f37021] rounded-full"></span>
                 3. Cảnh báo & Thông báo
               </h3>
+              <p className="text-xs text-gray-500 mb-6">
+                Hệ thống chỉ đặt lịch — thông báo/email được gửi tự động khi tới thời điểm (phải trước thời điểm bắt đầu tiếp khách).
+              </p>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Thông báo hệ thống */}
-                <div className="bg-white border border-blue-100 rounded-xl p-4 shadow-sm">
-                  <h4 className="text-sm font-bold text-gray-700 flex items-center gap-2 mb-1">
-                    <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-[#004c91] shrink-0">
-                      <Bell className="w-4 h-4" />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {REMINDER_CONFIGS.map((cfg) => {
+                  const row = reminders[cfg.key];
+                  const isEmail = cfg.channel === 'EMAIL';
+                  return (
+                    <div key={cfg.key} className={`bg-white border rounded-xl p-4 shadow-sm ${isEmail ? 'border-orange-100' : 'border-blue-100'}`}>
+                      <h4 className="text-sm font-bold text-gray-700 flex items-center gap-2 mb-1">
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${isEmail ? 'bg-orange-100 text-[#f37021]' : 'bg-blue-100 text-[#004c91]'}`}>
+                          {isEmail ? <Mail className="w-4 h-4" /> : <Bell className="w-4 h-4" />}
+                        </div>
+                        {cfg.title}
+                      </h4>
+                      <p className="text-xs text-gray-500 mb-3 ml-10">{cfg.desc}</p>
+                      <label className="flex items-center gap-2 ml-10 mb-2 text-xs font-medium text-gray-600 select-none">
+                        <input disabled={!canConfigurePrep} type="checkbox" checked={row.enabled}
+                          onChange={(e) => setReminder(cfg.key, { enabled: e.target.checked })} />
+                        Bật cảnh báo này
+                      </label>
+                      <div className="flex flex-wrap items-center gap-2 ml-10">
+                        <input disabled={!canConfigurePrep || !row.enabled} type="number" min="0" max="31"
+                          className="w-16 px-2 py-2 text-center text-sm font-bold rounded-lg border border-gray-200 outline-none bg-gray-50 disabled:opacity-60"
+                          value={row.days}
+                          onChange={(e) => setReminder(cfg.key, { days: Math.max(0, Math.min(31, parseInt(e.target.value) || 0)) })} />
+                        <span className="text-xs text-gray-600 font-medium">ngày trước, vào lúc</span>
+                        <input disabled={!canConfigurePrep || !row.enabled} type="time"
+                          className="px-2 py-2 border border-gray-200 rounded-lg text-sm outline-none bg-white disabled:opacity-60"
+                          value={row.time}
+                          onChange={(e) => setReminder(cfg.key, { time: e.target.value })} />
+                      </div>
                     </div>
-                    1. Thông báo tới các thành phần tham gia
-                  </h4>
-                  <p className="text-xs text-gray-500 mb-3 ml-10">Thông báo trên hệ thống</p>
-                  <label className="flex items-center gap-2 ml-10 mb-2 text-xs font-medium text-gray-600 select-none">
-                    <input disabled={!isInfoEditable} type="checkbox" checked={remindersEnabled.system} onChange={e => setRemindersEnabled({ ...remindersEnabled, system: e.target.checked })} />
-                    Bật cảnh báo này
-                  </label>
-                  <div className="flex flex-wrap items-center gap-2 ml-10">
-                    <div className="flex items-center bg-gray-50 border border-gray-200 rounded-lg overflow-hidden">
-                      <input disabled={!isInfoEditable || !remindersEnabled.system} type="number" min="0" max="31" className="w-14 px-2 py-2 text-center text-sm font-bold outline-none bg-transparent" value={alerts.system.days} onChange={e => setAlerts({...alerts, system: {...alerts.system, days: parseInt(e.target.value)||0}})} />
-                    </div>
-                    <span className="text-xs text-gray-600 font-medium">ngày trước, vào lúc</span>
-                    <input disabled={!isInfoEditable || !remindersEnabled.system} type="time" className="px-2 py-2 border border-gray-200 rounded-lg text-sm outline-none bg-white" value={alerts.system.time} onChange={e => setAlerts({...alerts, system: {...alerts.system, time: e.target.value}})} />
-                  </div>
-                </div>
-
-                {/* Thông báo email */}
-                <div className="bg-white border border-orange-100 rounded-xl p-4 shadow-sm">
-                  <h4 className="text-sm font-bold text-gray-700 flex items-center gap-2 mb-1">
-                    <div className="w-8 h-8 rounded-full bg-orange-100 flex items-center justify-center text-[#f37021] shrink-0">
-                      <Mail className="w-4 h-4" />
-                    </div>
-                    2. Thông báo tới HOST
-                  </h4>
-                  <p className="text-xs text-gray-500 mb-3 ml-10">Gửi email nhắc nhở host</p>
-                  <label className="flex items-center gap-2 ml-10 mb-2 text-xs font-medium text-gray-600 select-none">
-                    <input disabled={!isInfoEditable} type="checkbox" checked={remindersEnabled.email} onChange={e => setRemindersEnabled({ ...remindersEnabled, email: e.target.checked })} />
-                    Bật cảnh báo này
-                  </label>
-                  <div className="flex flex-wrap items-center gap-2 ml-10">
-                    <div className="flex items-center bg-gray-50 border border-gray-200 rounded-lg overflow-hidden">
-                      <input disabled={!isInfoEditable || !remindersEnabled.email} type="number" min="0" max="31" className="w-14 px-2 py-2 text-center text-sm font-bold outline-none bg-transparent" value={alerts.email.days} onChange={e => setAlerts({...alerts, email: {...alerts.email, days: parseInt(e.target.value)||0}})} />
-                    </div>
-                    <span className="text-xs text-gray-600 font-medium">ngày trước, vào lúc</span>
-                    <input disabled={!isInfoEditable || !remindersEnabled.email} type="time" className="px-2 py-2 border border-gray-200 rounded-lg text-sm outline-none bg-white" value={alerts.email.time} onChange={e => setAlerts({...alerts, email: {...alerts.email, time: e.target.value}})} />
-                  </div>
-                </div>
+                  );
+                })}
               </div>
 
-              {isInfoEditable && (
+              {canConfigurePrep && (
                 <div className="flex flex-wrap justify-end gap-3 mt-5">
-                  <button
-                    type="button"
-                    onClick={handleCancelReminders}
-                    disabled={savingReminders}
-                    className="px-5 py-2.5 rounded-xl font-bold text-sm text-red-600 bg-white border border-red-200 hover:bg-red-50 transition-colors shadow-sm outline-none disabled:opacity-60"
-                  >
-                    Tắt cảnh báo
+                  <button type="button" onClick={handleCancelReminders} disabled={savingReminders}
+                    className="px-5 py-2.5 rounded-xl font-bold text-sm text-red-600 bg-white border border-red-200 hover:bg-red-50 transition-colors shadow-sm outline-none disabled:opacity-60">
+                    Tắt tất cả cảnh báo
                   </button>
-                  <button
-                    type="button"
-                    onClick={handleSaveReminders}
-                    disabled={savingReminders}
-                    className="px-5 py-2.5 rounded-xl font-bold text-sm text-white bg-[#004c91] hover:bg-[#013565] transition-colors shadow-sm outline-none disabled:opacity-60 flex items-center gap-2"
-                  >
+                  <button type="button" onClick={handleSaveReminders} disabled={savingReminders}
+                    className="px-5 py-2.5 rounded-xl font-bold text-sm text-white bg-[#004c91] hover:bg-[#013565] transition-colors shadow-sm outline-none disabled:opacity-60 flex items-center gap-2">
                     <Bell className="w-4 h-4" />
                     {savingReminders ? 'Đang lưu...' : 'Lưu cảnh báo'}
                   </button>
@@ -1069,26 +1081,28 @@ export function VisitProcess() {
                             4. Ghi chú chung
                           </h3>
                           <textarea
-                            readOnly={!isInfoEditable}
+                            readOnly={!canConfigurePrep}
                             maxLength={5000}
                             placeholder="Ghi chú chuẩn bị nội bộ cho chuyến tiếp khách..."
                             className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50/50 text-gray-800 font-medium text-sm min-h-[100px] resize-none"
                             value={preparationNote}
                             onChange={(e) => setPreparationNote(e.target.value)}
                           ></textarea>
-                          {isInfoEditable && (
-                            <div className="flex justify-end mt-3">
+                          <div className="flex items-center justify-between mt-2">
+                            <span className="text-[11px] text-gray-400">{preparationNote.length}/5000</span>
+                            {canConfigurePrep && (
                               <button
                                 type="button"
                                 onClick={handleSavePreparationNote}
-                                disabled={savingNote}
-                                className="px-5 py-2.5 rounded-xl font-bold text-sm text-white bg-[#004c91] hover:bg-[#013565] transition-colors shadow-sm outline-none disabled:opacity-60 flex items-center gap-2"
+                                disabled={savingNote || preparationNote === preparationNoteSaved}
+                                title={preparationNote === preparationNoteSaved ? 'Chưa có thay đổi để lưu' : undefined}
+                                className="px-5 py-2.5 rounded-xl font-bold text-sm text-white bg-[#004c91] hover:bg-[#013565] transition-colors shadow-sm outline-none disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                               >
                                 <CheckCircle2 className="w-4 h-4" />
                                 {savingNote ? 'Đang lưu...' : 'Lưu ghi chú'}
                               </button>
-                            </div>
-                          )}
+                            )}
+                          </div>
                         </div>
 
                             </div>

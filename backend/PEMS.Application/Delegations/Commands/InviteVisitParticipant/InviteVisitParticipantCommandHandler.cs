@@ -286,12 +286,15 @@ public sealed class InviteVisitParticipantCommandHandler
             throw new ValidationException("Tiêu đề email không được để trống.");
         if (ov.Subject.Trim().Length > EmailOverrideLimits.SubjectMax)
             throw new ValidationException($"Tiêu đề email tối đa {EmailOverrideLimits.SubjectMax} ký tự.");
-        if (string.IsNullOrWhiteSpace(ov.BodyHtml))
+
+        // Prefer the host-edited plain text (bodyText) → safe HTML; fall back to legacy bodyHtml.
+        var rawHtml = EmailComposition.ResolveEditableHtml(ov);
+        if (string.IsNullOrWhiteSpace(rawHtml))
             throw new ValidationException("Nội dung email không được để trống.");
-        if (ov.BodyHtml.Length > EmailOverrideLimits.BodyMax)
+        if (rawHtml.Length > EmailOverrideLimits.BodyMax)
             throw new ValidationException($"Nội dung email vượt quá {EmailOverrideLimits.BodyMax} ký tự.");
 
-        var sanitized = _sanitizer.Sanitize(ov.BodyHtml);
+        var sanitized = _sanitizer.Sanitize(rawHtml);
         if (string.IsNullOrWhiteSpace(sanitized))
             throw new ValidationException("Nội dung email không hợp lệ sau khi lọc.");
         return sanitized;

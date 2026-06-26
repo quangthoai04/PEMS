@@ -384,7 +384,10 @@ export interface InviteVisitParticipantResult {
 export interface EmailOverridePayload {
   useEditedContent: boolean;
   subject: string;
-  bodyHtml: string;
+  /** Preferred: the readable plain text the host edited (backend converts it to safe HTML). */
+  bodyText?: string;
+  /** Legacy: raw HTML body (kept for backward compatibility with older callers). */
+  bodyHtml?: string;
 }
 
 /**
@@ -843,9 +846,12 @@ export const LOGISTICS_STATUS_META: Record<LogisticsItemStatus, { label: string;
 export type LogisticsItemType = 'ROOM' | 'TRANSPORT' | 'MEAL' | 'EQUIPMENT' | 'BANNER' | 'LED' | 'OTHER';
 export type LogisticsPriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
 
+export type LogisticsCoordinationMode = 'SYSTEM_REQUEST' | 'OFFLINE_COORDINATED';
+
 export interface PrepareVisitLogisticsPayload {
   visitInstanceId: number;
-  departmentId: number;
+  /** Required for SYSTEM_REQUEST; may be null for OFFLINE_COORDINATED. */
+  departmentId?: number | null;
   itemType: LogisticsItemType;
   title: string;
   description?: string | null;
@@ -854,6 +860,10 @@ export interface PrepareVisitLogisticsPayload {
   usageEndAt?: string | null;
   priority?: LogisticsPriority | null;
   dueAt?: string | null;
+  /** SYSTEM_REQUEST (default) = send to department via system; OFFLINE_COORDINATED = handled outside. */
+  coordinationMode?: LogisticsCoordinationMode | null;
+  /** Required when coordinationMode = OFFLINE_COORDINATED. */
+  offlineCoordinationNote?: string | null;
   emailOverride?: EmailOverridePayload;
 }
 
@@ -875,6 +885,8 @@ export interface VisitInstanceLogisticsItem {
   quantity?: number | null;
   status: LogisticsItemStatus;
   priority: LogisticsPriority;
+  coordinationMode?: LogisticsCoordinationMode;        // SYSTEM_REQUEST | OFFLINE_COORDINATED
+  offlineCoordinationNote?: string | null;
   requestedToDepartmentId?: number | null;
   departmentName?: string | null;
   requestedAt?: string | null;
@@ -939,8 +951,10 @@ export interface PreviewEmailTemplatePayload {
 export interface PreviewEmailTemplateResult {
   templateCode: string;
   subject: string;
-  /** Editable message content (action buttons stripped for action templates). */
+  /** Editable message content as HTML (action buttons stripped) — for the rendered preview. */
   bodyHtml: string;
+  /** The same editable content as readable plain text (no HTML tags) — bind the editor to this. */
+  editableBodyText: string;
   isActionTemplate: boolean;
   systemActionDescription?: string | null;
   /** Read-only (disabled) preview of the system action block, if any. */

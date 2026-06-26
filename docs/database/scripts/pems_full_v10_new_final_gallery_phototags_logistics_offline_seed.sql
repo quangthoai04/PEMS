@@ -117,6 +117,8 @@
 --
 -- What is fixed in this version:
 -- - Added DROP TRIGGER IF EXISTS and DROP TABLE IF EXISTS in dependency order.
+-- - Final gallery update: normalized Gallery tables + file-based photo_face_tags (ACTIVE/REMOVED).
+-- - Logistics offline coordination added for LED/external handling use cases.
 -- - Removed generated-column unique tricks that may cause compatibility/FK issues.
 -- - Replaced those rules with normal columns + triggers.
 -- - Added/kept optimized indexes for login, campus, visit, logistics, audit, API, search.
@@ -196,6 +198,10 @@ DROP TABLE IF EXISTS notifications;
 DROP TABLE IF EXISTS sent_emails;
 DROP TABLE IF EXISTS email_templates;
 DROP TABLE IF EXISTS photo_face_tags;
+DROP TABLE IF EXISTS gallery_item_media;
+DROP TABLE IF EXISTS gallery_items;
+DROP TABLE IF EXISTS gallery_locations;
+DROP TABLE IF EXISTS gallery_areas;
 DROP TABLE IF EXISTS gallery_images;
 DROP TABLE IF EXISTS galleries;
 DROP TABLE IF EXISTS faqs;
@@ -1072,6 +1078,9 @@ CREATE TABLE visit_logistics_items (
   item_type ENUM('ROOM','TRANSPORT','MEAL','EQUIPMENT','BANNER','LED','OTHER') NOT NULL,
   title VARCHAR(255) NOT NULL,
   description TEXT NULL COMMENT 'Nội dung chi tiết công việc gốc',
+  coordination_mode ENUM('SYSTEM_REQUEST','OFFLINE_COORDINATED') NOT NULL DEFAULT 'SYSTEM_REQUEST'
+    COMMENT 'SYSTEM_REQUEST=gửi yêu cầu xử lý qua hệ thống, OFFLINE_COORDINATED=đã trao đổi/xử lý bên ngoài hệ thống',
+  offline_coordination_note TEXT NULL COMMENT 'Ghi chú khi yêu cầu đã được trao đổi/xử lý bên ngoài hệ thống',
   quantity INT UNSIGNED NULL COMMENT 'Số lượng yêu cầu gốc',
 
   usage_start_at DATETIME NULL COMMENT 'Thời gian bắt đầu sử dụng resource',
@@ -1657,105 +1666,209 @@ CREATE TABLE faqs (
 COMMENT='FAQ tiếng Việt theo nhóm chức năng hệ thống PEMS';
 
 -- =====================================================================
--- 8. GALLERY + FACE TAGGING
+-- 8. GALLERY + PHOTO TAGGING
 -- =====================================================================
+-- Gallery v10 final:
+-- - Do not recreate old galleries/gallery_images tables.
+-- - Use normalized gallery_areas/gallery_locations/gallery_items/gallery_item_media.
+-- - Keep photo_face_tags as a shared file-based photo tag module.
 
-CREATE TABLE galleries (
-  gallery_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+CREATE TABLE gallery_areas (
+  area_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   campus_id BIGINT UNSIGNED NOT NULL,
-  area_name VARCHAR(150) NOT NULL DEFAULT 'Campus' COMMENT 'Khu vực trong campus, ví dụ: Academic Area, Lobby, Lab Zone',
-  specific_location_name VARCHAR(150) NOT NULL DEFAULT 'Campus location' COMMENT 'Vị trí cụ thể trong khu vực, ví dụ: Sảnh Alpha, Green Lab',
-  location_description TEXT NULL COMMENT 'Mô tả vị trí/khu vực hiển thị ở Gallery/Visit FPTU',
-  title VARCHAR(255) NOT NULL COMMENT 'Tên hiển thị của gallery/địa điểm',
-  description TEXT NULL COMMENT 'Mô tả ngắn về địa điểm',
-  story_content TEXT NULL COMMENT 'Ý nghĩa hoặc câu chuyện giới thiệu về địa điểm',
-  status ENUM('PUBLISHED','HIDDEN') NOT NULL DEFAULT 'HIDDEN'
-    COMMENT 'PUBLISHED=hiển thị theo visibility, HIDDEN=ẩn khỏi public/người xem thường nhưng Staff Leader vẫn quản lý được',
-  visibility ENUM('PRIVATE','INTERNAL','PUBLIC') NOT NULL DEFAULT 'INTERNAL'
-    COMMENT 'Phạm vi xem khi status=PUBLISHED: PRIVATE=chỉ quản lý, INTERNAL=user nội bộ, PUBLIC=công khai',
-  hero_file_id BIGINT UNSIGNED NULL,
-  virtual_tour_url VARCHAR(700) NULL,
+
+  area_name VARCHAR(150) NOT NULL,
+  area_key VARCHAR(180) NOT NULL,
+
+  status ENUM('ACTIVE','INACTIVE') NOT NULL DEFAULT 'ACTIVE',
+  display_order INT UNSIGNED NOT NULL DEFAULT 0,
+
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   created_by BIGINT UNSIGNED NULL,
   updated_at DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
   updated_by BIGINT UNSIGNED NULL,
-  deleted_at DATETIME NULL,
-  deleted_by BIGINT UNSIGNED NULL,
-  PRIMARY KEY (gallery_id),
-  KEY idx_galleries_campus_status (campus_id, status, deleted_at),
-  KEY idx_galleries_area_specific (campus_id, area_name, specific_location_name),
-  KEY idx_galleries_visibility_status (visibility, status),
-  KEY idx_galleries_hero_file (hero_file_id),
-  CONSTRAINT fk_galleries_campus
+
+  PRIMARY KEY (area_id),
+  UNIQUE KEY uq_gallery_areas_campus_key (campus_id, area_key),
+  KEY idx_gallery_areas_campus_status (campus_id, status),
+  KEY idx_gallery_areas_order (campus_id, display_order),
+
+  CONSTRAINT fk_gallery_areas_campus
     FOREIGN KEY (campus_id) REFERENCES campuses(campus_id)
     ON UPDATE CASCADE ON DELETE RESTRICT,
-  CONSTRAINT fk_galleries_hero_file
-    FOREIGN KEY (hero_file_id) REFERENCES files(file_id)
+  CONSTRAINT fk_gallery_areas_created_by
+    FOREIGN KEY (created_by) REFERENCES users(user_id)
+    ON UPDATE CASCADE ON DELETE SET NULL,
+  CONSTRAINT fk_gallery_areas_updated_by
+    FOREIGN KEY (updated_by) REFERENCES users(user_id)
     ON UPDATE CASCADE ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-COMMENT='Gallery địa điểm trong campus, có mô tả và câu chuyện';
+COMMENT='Gallery master data: khu vực/tòa/khu lớn theo campus';
 
-CREATE TABLE gallery_images (
-  image_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  gallery_id BIGINT UNSIGNED NOT NULL,
-  file_id BIGINT UNSIGNED NOT NULL,
-  media_type ENUM('IMAGE','VIDEO') NOT NULL DEFAULT 'IMAGE',
-  thumbnail_file_id BIGINT UNSIGNED NULL,
-  caption VARCHAR(500) NULL COMMENT 'Chú thích riêng cho từng ảnh',
+CREATE TABLE gallery_locations (
+  location_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  area_id BIGINT UNSIGNED NOT NULL,
+
+  location_name VARCHAR(150) NOT NULL,
+  location_key VARCHAR(180) NOT NULL,
+
+  status ENUM('ACTIVE','INACTIVE') NOT NULL DEFAULT 'ACTIVE',
   display_order INT UNSIGNED NOT NULL DEFAULT 0,
-  taken_at DATETIME NULL,
-  status ENUM('ACTIVE','HIDDEN') NOT NULL DEFAULT 'ACTIVE'
-    COMMENT 'ACTIVE=ảnh đang dùng, HIDDEN=ảnh bị ẩn khỏi gallery thường',
+
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_by BIGINT UNSIGNED NULL,
+  updated_at DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  updated_by BIGINT UNSIGNED NULL,
+
+  PRIMARY KEY (location_id),
+  UNIQUE KEY uq_gallery_locations_area_key (area_id, location_key),
+  KEY idx_gallery_locations_area_status (area_id, status),
+  KEY idx_gallery_locations_order (area_id, display_order),
+
+  CONSTRAINT fk_gallery_locations_area
+    FOREIGN KEY (area_id) REFERENCES gallery_areas(area_id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  CONSTRAINT fk_gallery_locations_created_by
+    FOREIGN KEY (created_by) REFERENCES users(user_id)
+    ON UPDATE CASCADE ON DELETE SET NULL,
+  CONSTRAINT fk_gallery_locations_updated_by
+    FOREIGN KEY (updated_by) REFERENCES users(user_id)
+    ON UPDATE CASCADE ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Gallery master data: vị trí cụ thể thuộc khu vực';
+
+CREATE TABLE gallery_items (
+  gallery_item_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  location_id BIGINT UNSIGNED NOT NULL,
+
+  title VARCHAR(255) NOT NULL,
+  description TEXT NOT NULL,
+
+  media_kind ENUM('IMAGE','VIDEO','MIXED') NOT NULL DEFAULT 'IMAGE',
+  status ENUM('PUBLISHED','HIDDEN') NOT NULL DEFAULT 'PUBLISHED',
+  display_order INT UNSIGNED NOT NULL DEFAULT 0,
+
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   created_by BIGINT UNSIGNED NULL,
   updated_at DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
   updated_by BIGINT UNSIGNED NULL,
   deleted_at DATETIME NULL,
   deleted_by BIGINT UNSIGNED NULL,
-  PRIMARY KEY (image_id),
-  UNIQUE KEY uq_gallery_images_file (file_id),
-  KEY idx_gallery_images_gallery_order (gallery_id, display_order),
-  KEY idx_gallery_images_status_time (status, taken_at),
-  KEY idx_gallery_images_media_type (media_type),
-  KEY idx_gallery_images_thumbnail_file (thumbnail_file_id),
-  CONSTRAINT fk_gallery_images_gallery
-    FOREIGN KEY (gallery_id) REFERENCES galleries(gallery_id)
+
+  PRIMARY KEY (gallery_item_id),
+  KEY idx_gallery_items_location_status (location_id, status, deleted_at),
+  KEY idx_gallery_items_media_kind (media_kind),
+  KEY idx_gallery_items_created_at (created_at),
+  FULLTEXT KEY ft_gallery_items_search (title, description),
+
+  CONSTRAINT fk_gallery_items_location
+    FOREIGN KEY (location_id) REFERENCES gallery_locations(location_id)
     ON UPDATE CASCADE ON DELETE RESTRICT,
-  CONSTRAINT fk_gallery_images_file
-    FOREIGN KEY (file_id) REFERENCES files(file_id)
-    ON UPDATE CASCADE ON DELETE RESTRICT,
-  CONSTRAINT fk_gallery_images_thumbnail_file
-    FOREIGN KEY (thumbnail_file_id) REFERENCES files(file_id)
+  CONSTRAINT fk_gallery_items_created_by
+    FOREIGN KEY (created_by) REFERENCES users(user_id)
+    ON UPDATE CASCADE ON DELETE SET NULL,
+  CONSTRAINT fk_gallery_items_updated_by
+    FOREIGN KEY (updated_by) REFERENCES users(user_id)
+    ON UPDATE CASCADE ON DELETE SET NULL,
+  CONSTRAINT fk_gallery_items_deleted_by
+    FOREIGN KEY (deleted_by) REFERENCES users(user_id)
     ON UPDATE CASCADE ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-COMMENT='Ảnh thuộc gallery địa điểm campus';
+COMMENT='Gallery item/bài media thuộc một vị trí cụ thể';
+
+CREATE TABLE gallery_item_media (
+  media_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  gallery_item_id BIGINT UNSIGNED NOT NULL,
+
+  file_id BIGINT UNSIGNED NOT NULL,
+  media_type ENUM('IMAGE','VIDEO') NOT NULL,
+  thumbnail_file_id BIGINT UNSIGNED NULL,
+
+  caption VARCHAR(500) NULL,
+  alt_text VARCHAR(255) NULL,
+
+  is_primary TINYINT(1) NOT NULL DEFAULT 0,
+
+  display_order INT UNSIGNED NOT NULL DEFAULT 0,
+  taken_at DATETIME NULL,
+  status ENUM('ACTIVE','HIDDEN') NOT NULL DEFAULT 'ACTIVE',
+
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_by BIGINT UNSIGNED NULL,
+  updated_at DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  updated_by BIGINT UNSIGNED NULL,
+  deleted_at DATETIME NULL,
+  deleted_by BIGINT UNSIGNED NULL,
+
+  PRIMARY KEY (media_id),
+  UNIQUE KEY uq_gallery_item_media_file (file_id),
+  KEY idx_gallery_item_media_primary (gallery_item_id, is_primary),
+  KEY idx_gallery_item_media_item_order (gallery_item_id, display_order),
+  KEY idx_gallery_item_media_type (media_type),
+  KEY idx_gallery_item_media_status (status, deleted_at),
+  KEY idx_gallery_item_media_thumbnail (thumbnail_file_id),
+
+  CONSTRAINT fk_gallery_item_media_item
+    FOREIGN KEY (gallery_item_id) REFERENCES gallery_items(gallery_item_id)
+    ON UPDATE RESTRICT ON DELETE CASCADE,
+  CONSTRAINT fk_gallery_item_media_file
+    FOREIGN KEY (file_id) REFERENCES files(file_id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  CONSTRAINT fk_gallery_item_media_thumbnail
+    FOREIGN KEY (thumbnail_file_id) REFERENCES files(file_id)
+    ON UPDATE CASCADE ON DELETE SET NULL,
+  CONSTRAINT fk_gallery_item_media_created_by
+    FOREIGN KEY (created_by) REFERENCES users(user_id)
+    ON UPDATE CASCADE ON DELETE SET NULL,
+  CONSTRAINT fk_gallery_item_media_updated_by
+    FOREIGN KEY (updated_by) REFERENCES users(user_id)
+    ON UPDATE CASCADE ON DELETE SET NULL,
+  CONSTRAINT fk_gallery_item_media_deleted_by
+    FOREIGN KEY (deleted_by) REFERENCES users(user_id)
+    ON UPDATE CASCADE ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Ảnh/video thuộc gallery item, liên kết file metadata dùng chung';
 
 CREATE TABLE photo_face_tags (
   face_tag_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  image_id BIGINT UNSIGNED NOT NULL,
+  file_id BIGINT UNSIGNED NOT NULL,
+
+  tagged_user_id BIGINT UNSIGNED NULL COMMENT 'User nội bộ được tag nếu người này có tài khoản hệ thống',
   visit_request_id BIGINT UNSIGNED NULL,
   guest_member_id BIGINT UNSIGNED NULL,
   partner_contact_id BIGINT UNSIGNED NULL,
-  display_name VARCHAR(150) NOT NULL,
+
+  display_name VARCHAR(150) NOT NULL COMMENT 'Tên hiển thị của người được tag trong ảnh',
+  person_name_key VARCHAR(180) NULL COMMENT 'Tên đã normalize để tìm kiếm không phân biệt dấu/hoa thường',
+
   bounding_box_x DECIMAL(8,4) NULL,
   bounding_box_y DECIMAL(8,4) NULL,
   bounding_box_width DECIMAL(8,4) NULL,
   bounding_box_height DECIMAL(8,4) NULL,
-  tag_status ENUM('MANUALLY_TAGGED','CONFIRMED','REMOVED') NOT NULL DEFAULT 'MANUALLY_TAGGED',
-  confirmed_by BIGINT UNSIGNED NULL,
-  confirmed_at DATETIME NULL,
+
+  tag_status ENUM('ACTIVE','REMOVED') NOT NULL DEFAULT 'ACTIVE',
+
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   created_by BIGINT UNSIGNED NULL,
   removed_at DATETIME NULL,
   removed_by BIGINT UNSIGNED NULL,
+
   PRIMARY KEY (face_tag_id),
-  KEY idx_face_tags_image (image_id),
+  KEY idx_face_tags_file (file_id),
+  KEY idx_face_tags_display_name (display_name),
+  KEY idx_face_tags_name_key (person_name_key),
+  KEY idx_face_tags_user (tagged_user_id),
+  KEY idx_face_tags_visit_request (visit_request_id),
   KEY idx_face_tags_guest (guest_member_id),
   KEY idx_face_tags_partner_contact (partner_contact_id),
   KEY idx_face_tags_status (tag_status),
-  CONSTRAINT fk_face_tags_image
-    FOREIGN KEY (image_id) REFERENCES gallery_images(image_id)
+
+  CONSTRAINT fk_face_tags_file
+    FOREIGN KEY (file_id) REFERENCES files(file_id)
     ON UPDATE CASCADE ON DELETE CASCADE,
+  CONSTRAINT fk_face_tags_user
+    FOREIGN KEY (tagged_user_id) REFERENCES users(user_id)
+    ON UPDATE CASCADE ON DELETE SET NULL,
   CONSTRAINT fk_face_tags_visit_request
     FOREIGN KEY (visit_request_id) REFERENCES visit_requests(visit_request_id)
     ON UPDATE CASCADE ON DELETE SET NULL,
@@ -1765,11 +1878,14 @@ CREATE TABLE photo_face_tags (
   CONSTRAINT fk_face_tags_partner_contact
     FOREIGN KEY (partner_contact_id) REFERENCES partner_contacts(contact_id)
     ON UPDATE CASCADE ON DELETE SET NULL,
-  CONSTRAINT fk_face_tags_confirmed_by
-    FOREIGN KEY (confirmed_by) REFERENCES users(user_id)
-    ON UPDATE CASCADE ON DELETE SET NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-COMMENT='Confirmed face tag metadata only. No biometric vector.';
-
+  CONSTRAINT fk_face_tags_created_by
+    FOREIGN KEY (created_by) REFERENCES users(user_id)
+    ON UPDATE CASCADE ON DELETE SET NULL,
+  CONSTRAINT fk_face_tags_removed_by
+    FOREIGN KEY (removed_by) REFERENCES users(user_id)
+    ON UPDATE CASCADE ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Tag người xuất hiện trong ảnh theo file; dùng để tìm ảnh theo tên, không lưu vector sinh trắc học';
 -- =====================================================================
 -- 9. EMAIL + NOTIFICATION
 -- =====================================================================
@@ -3381,13 +3497,7 @@ INSERT INTO faqs (faq_id, faq_type, question, answer, display_order, status, cre
   (7, 'OTHER', 'Câu hỏi kiểm thử nhóm OTHER số 7?', 'Câu trả lời kiểm thử cho nhóm OTHER, trạng thái PUBLISHED; dùng để kiểm thử lọc, tìm kiếm và hiển thị FAQ tiếng Việt.', 7, 'PUBLISHED', '2026-03-10 09:30:00', 2, NULL, NULL),
   (8, 'OTHER', 'Câu hỏi kiểm thử nhóm OTHER số 8?', 'Câu trả lời kiểm thử cho nhóm OTHER, trạng thái PUBLISHED; dùng để kiểm thử lọc, tìm kiếm và hiển thị FAQ tiếng Việt.', 8, 'PUBLISHED', '2026-03-10 09:35:00', 1, NULL, NULL);
 
-INSERT INTO galleries (gallery_id, campus_id, area_name, specific_location_name, location_description, title, description, story_content, status, visibility, hero_file_id, virtual_tour_url, created_at, created_by, updated_at, updated_by, deleted_at, deleted_by) VALUES
-  (1, 1, 'Academic Area', 'Alpha Lobby', 'Sảnh chính đón khách, check-in và giới thiệu tổng quan campus Hòa Lạc.', 'HN Alpha Lobby', 'Không gian đầu tiên khách nhìn thấy khi vào campus Hà Nội.', 'Alpha Lobby thường được dùng làm điểm khởi động cho campus tour và check-in đoàn quốc tế.', 'PUBLISHED', 'PUBLIC', 7, 'https://tour.example/pems/hn-alpha-lobby', '2026-04-01 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (2, 1, 'Lab Zone', 'Innovation Lab', 'Không gian lab demo AI, robotics và IoT cho các buổi tham quan học thuật.', 'HN Innovation Lab', 'Khu lab dành cho demo học thuật và exchange chuyên môn.', 'Nhiều đoàn đối tác công nghệ muốn dừng tại lab để quan sát project của sinh viên.', 'PUBLISHED', 'INTERNAL', 8, NULL, '2026-04-01 09:30:00', 4, NULL, NULL, NULL, NULL),
-  (3, 2, 'Green Walkway', 'Central Walkway', 'Tuyến đường xanh giữa các khối học tập campus TP.HCM.', 'HCM Green Walkway', 'Điểm tour phù hợp cho chủ đề campus xanh và student life.', 'Green Walkway được dùng trong các visit về mobility, sustainability và trải nghiệm sinh viên.', 'PUBLISHED', 'PUBLIC', 9, 'https://tour.example/pems/hcm-green-walkway', '2026-04-02 09:00:00', 10, NULL, NULL, NULL, NULL),
-  (4, 3, 'Riverside Lab', 'Da Nang Lab View', 'Không gian lab ven sông, phù hợp các đoàn công nghệ và chuyển đổi số.', 'DN Riverside Lab', 'Gallery nội bộ cho đoàn công nghệ tại campus Đà Nẵng.', 'Khu lab nhấn mạnh môi trường học tập mở và gần gũi với thành phố biển.', 'HIDDEN', 'INTERNAL', 14, NULL, '2026-04-03 09:00:00', 12, NULL, NULL, NULL, NULL),
-  (5, 4, 'Mekong Workshop Zone', 'CT Workshop Room', 'Phòng workshop phục vụ chủ đề sustainability và cộng đồng địa phương.', 'CT Mekong Workshop', 'Không gian thảo luận nhóm tại Cần Thơ.', 'Địa điểm này thường được dùng cho hoạt động trao đổi về phát triển bền vững vùng Mekong.', 'PUBLISHED', 'PUBLIC', 15, NULL, '2026-04-04 09:00:00', 14, NULL, NULL, NULL, NULL),
-  (6, 5, 'Coastal Innovation Area', 'QN Hospitality Space', 'Không gian giới thiệu hospitality, du lịch và đổi mới sáng tạo ven biển.', 'QN Coastal Innovation Space', 'Điểm nhấn campus Quy Nhơn cho các đoàn du lịch - khách sạn.', 'Không gian liên kết câu chuyện địa phương với chương trình hospitality và công nghệ dịch vụ.', 'PUBLISHED', 'PUBLIC', 16, 'https://tour.example/pems/qn-coastal-space', '2026-04-05 09:00:00', 16, NULL, NULL, NULL, NULL);
+-- Removed old galleries seed; migrated to gallery_areas/gallery_locations/gallery_items below.
 
 -- ---------------------------------------------------------------------
 -- 7. Communication, calendar, API, documents and audit
@@ -5326,37 +5436,7 @@ INSERT INTO faqs (faq_id, faq_type, question, answer, display_order, status, cre
   (16031, 'OTHER', 'Câu hỏi kiểm thử nhóm OTHER số 31?', 'Câu trả lời kiểm thử cho nhóm OTHER, trạng thái PUBLISHED; dùng để kiểm thử lọc, tìm kiếm và hiển thị FAQ tiếng Việt.', 31, 'PUBLISHED', '2026-08-17 08:00:00', 2, NULL, NULL),
   (16032, 'OTHER', 'Câu hỏi kiểm thử nhóm OTHER số 32?', 'Câu trả lời kiểm thử cho nhóm OTHER, trạng thái HIDDEN; dùng để kiểm thử lọc, tìm kiếm và hiển thị FAQ tiếng Việt.', 32, 'HIDDEN', '2026-08-17 08:00:00', 2, NULL, NULL);
 
-INSERT INTO galleries (gallery_id, campus_id, area_name, specific_location_name, location_description, title, description, story_content, status, visibility, hero_file_id, virtual_tour_url, created_at, created_by, updated_at, updated_by, deleted_at, deleted_by) VALUES
-  (17001, 1, 'Coverage Zone', 'Coverage Location 17001', 'Mô tả địa điểm 17001 khác biệt cho campus 1.', 'Gallery PRIVATE PUBLISHED campus 1', 'Gallery coverage với visibility=PRIVATE, status=PUBLISHED.', 'Câu chuyện riêng của địa điểm 17001, không copy từ gallery khác.', 'PUBLISHED', 'PRIVATE', 212, 'https://tour.example/campus-1/gallery-17001', '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
-  (17002, 1, 'Coverage Zone', 'Coverage Location 17002', 'Mô tả địa điểm 17002 khác biệt cho campus 1.', 'Gallery PRIVATE HIDDEN campus 1', 'Gallery coverage với visibility=PRIVATE, status=HIDDEN.', 'Câu chuyện riêng của địa điểm 17002, không copy từ gallery khác.', 'HIDDEN', 'PRIVATE', 212, 'https://tour.example/campus-1/gallery-17002', '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
-  (17003, 1, 'Coverage Zone', 'Coverage Location 17003', 'Mô tả địa điểm 17003 khác biệt cho campus 1.', 'Gallery INTERNAL PUBLISHED campus 1', 'Gallery coverage với visibility=INTERNAL, status=PUBLISHED.', 'Câu chuyện riêng của địa điểm 17003, không copy từ gallery khác.', 'PUBLISHED', 'INTERNAL', 212, 'https://tour.example/campus-1/gallery-17003', '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
-  (17004, 1, 'Coverage Zone', 'Coverage Location 17004', 'Mô tả địa điểm 17004 khác biệt cho campus 1.', 'Gallery INTERNAL HIDDEN campus 1', 'Gallery coverage với visibility=INTERNAL, status=HIDDEN.', 'Câu chuyện riêng của địa điểm 17004, không copy từ gallery khác.', 'HIDDEN', 'INTERNAL', 212, 'https://tour.example/campus-1/gallery-17004', '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
-  (17005, 1, 'Coverage Zone', 'Coverage Location 17005', 'Mô tả địa điểm 17005 khác biệt cho campus 1.', 'Gallery PUBLIC PUBLISHED campus 1', 'Gallery coverage với visibility=PUBLIC, status=PUBLISHED.', 'Câu chuyện riêng của địa điểm 17005, không copy từ gallery khác.', 'PUBLISHED', 'PUBLIC', 212, 'https://tour.example/campus-1/gallery-17005', '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
-  (17006, 1, 'Coverage Zone', 'Coverage Location 17006', 'Mô tả địa điểm 17006 khác biệt cho campus 1.', 'Gallery PUBLIC HIDDEN campus 1', 'Gallery coverage với visibility=PUBLIC, status=HIDDEN.', 'Câu chuyện riêng của địa điểm 17006, không copy từ gallery khác.', 'HIDDEN', 'PUBLIC', 212, 'https://tour.example/campus-1/gallery-17006', '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
-  (17007, 2, 'Coverage Zone', 'Coverage Location 17007', 'Mô tả địa điểm 17007 khác biệt cho campus 2.', 'Gallery PRIVATE PUBLISHED campus 2', 'Gallery coverage với visibility=PRIVATE, status=PUBLISHED.', 'Câu chuyện riêng của địa điểm 17007, không copy từ gallery khác.', 'PUBLISHED', 'PRIVATE', 215, 'https://tour.example/campus-2/gallery-17007', '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
-  (17008, 2, 'Coverage Zone', 'Coverage Location 17008', 'Mô tả địa điểm 17008 khác biệt cho campus 2.', 'Gallery PRIVATE HIDDEN campus 2', 'Gallery coverage với visibility=PRIVATE, status=HIDDEN.', 'Câu chuyện riêng của địa điểm 17008, không copy từ gallery khác.', 'HIDDEN', 'PRIVATE', 215, 'https://tour.example/campus-2/gallery-17008', '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
-  (17009, 2, 'Coverage Zone', 'Coverage Location 17009', 'Mô tả địa điểm 17009 khác biệt cho campus 2.', 'Gallery INTERNAL PUBLISHED campus 2', 'Gallery coverage với visibility=INTERNAL, status=PUBLISHED.', 'Câu chuyện riêng của địa điểm 17009, không copy từ gallery khác.', 'PUBLISHED', 'INTERNAL', 215, 'https://tour.example/campus-2/gallery-17009', '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
-  (17010, 2, 'Coverage Zone', 'Coverage Location 17010', 'Mô tả địa điểm 17010 khác biệt cho campus 2.', 'Gallery INTERNAL HIDDEN campus 2', 'Gallery coverage với visibility=INTERNAL, status=HIDDEN.', 'Câu chuyện riêng của địa điểm 17010, không copy từ gallery khác.', 'HIDDEN', 'INTERNAL', 215, 'https://tour.example/campus-2/gallery-17010', '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
-  (17011, 2, 'Coverage Zone', 'Coverage Location 17011', 'Mô tả địa điểm 17011 khác biệt cho campus 2.', 'Gallery PUBLIC PUBLISHED campus 2', 'Gallery coverage với visibility=PUBLIC, status=PUBLISHED.', 'Câu chuyện riêng của địa điểm 17011, không copy từ gallery khác.', 'PUBLISHED', 'PUBLIC', 215, 'https://tour.example/campus-2/gallery-17011', '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
-  (17012, 2, 'Coverage Zone', 'Coverage Location 17012', 'Mô tả địa điểm 17012 khác biệt cho campus 2.', 'Gallery PUBLIC HIDDEN campus 2', 'Gallery coverage với visibility=PUBLIC, status=HIDDEN.', 'Câu chuyện riêng của địa điểm 17012, không copy từ gallery khác.', 'HIDDEN', 'PUBLIC', 215, 'https://tour.example/campus-2/gallery-17012', '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
-  (17013, 3, 'Coverage Zone', 'Coverage Location 17013', 'Mô tả địa điểm 17013 khác biệt cho campus 3.', 'Gallery PRIVATE PUBLISHED campus 3', 'Gallery coverage với visibility=PRIVATE, status=PUBLISHED.', 'Câu chuyện riêng của địa điểm 17013, không copy từ gallery khác.', 'PUBLISHED', 'PRIVATE', 212, 'https://tour.example/campus-3/gallery-17013', '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
-  (17014, 3, 'Coverage Zone', 'Coverage Location 17014', 'Mô tả địa điểm 17014 khác biệt cho campus 3.', 'Gallery PRIVATE HIDDEN campus 3', 'Gallery coverage với visibility=PRIVATE, status=HIDDEN.', 'Câu chuyện riêng của địa điểm 17014, không copy từ gallery khác.', 'HIDDEN', 'PRIVATE', 212, 'https://tour.example/campus-3/gallery-17014', '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
-  (17015, 3, 'Coverage Zone', 'Coverage Location 17015', 'Mô tả địa điểm 17015 khác biệt cho campus 3.', 'Gallery INTERNAL PUBLISHED campus 3', 'Gallery coverage với visibility=INTERNAL, status=PUBLISHED.', 'Câu chuyện riêng của địa điểm 17015, không copy từ gallery khác.', 'PUBLISHED', 'INTERNAL', 212, 'https://tour.example/campus-3/gallery-17015', '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
-  (17016, 3, 'Coverage Zone', 'Coverage Location 17016', 'Mô tả địa điểm 17016 khác biệt cho campus 3.', 'Gallery INTERNAL HIDDEN campus 3', 'Gallery coverage với visibility=INTERNAL, status=HIDDEN.', 'Câu chuyện riêng của địa điểm 17016, không copy từ gallery khác.', 'HIDDEN', 'INTERNAL', 212, 'https://tour.example/campus-3/gallery-17016', '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
-  (17017, 3, 'Coverage Zone', 'Coverage Location 17017', 'Mô tả địa điểm 17017 khác biệt cho campus 3.', 'Gallery PUBLIC PUBLISHED campus 3', 'Gallery coverage với visibility=PUBLIC, status=PUBLISHED.', 'Câu chuyện riêng của địa điểm 17017, không copy từ gallery khác.', 'PUBLISHED', 'PUBLIC', 212, 'https://tour.example/campus-3/gallery-17017', '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
-  (17018, 3, 'Coverage Zone', 'Coverage Location 17018', 'Mô tả địa điểm 17018 khác biệt cho campus 3.', 'Gallery PUBLIC HIDDEN campus 3', 'Gallery coverage với visibility=PUBLIC, status=HIDDEN.', 'Câu chuyện riêng của địa điểm 17018, không copy từ gallery khác.', 'HIDDEN', 'PUBLIC', 212, 'https://tour.example/campus-3/gallery-17018', '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
-  (17019, 4, 'Coverage Zone', 'Coverage Location 17019', 'Mô tả địa điểm 17019 khác biệt cho campus 4.', 'Gallery PRIVATE PUBLISHED campus 4', 'Gallery coverage với visibility=PRIVATE, status=PUBLISHED.', 'Câu chuyện riêng của địa điểm 17019, không copy từ gallery khác.', 'PUBLISHED', 'PRIVATE', 215, 'https://tour.example/campus-4/gallery-17019', '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
-  (17020, 4, 'Coverage Zone', 'Coverage Location 17020', 'Mô tả địa điểm 17020 khác biệt cho campus 4.', 'Gallery PRIVATE HIDDEN campus 4', 'Gallery coverage với visibility=PRIVATE, status=HIDDEN.', 'Câu chuyện riêng của địa điểm 17020, không copy từ gallery khác.', 'HIDDEN', 'PRIVATE', 215, 'https://tour.example/campus-4/gallery-17020', '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
-  (17021, 4, 'Coverage Zone', 'Coverage Location 17021', 'Mô tả địa điểm 17021 khác biệt cho campus 4.', 'Gallery INTERNAL PUBLISHED campus 4', 'Gallery coverage với visibility=INTERNAL, status=PUBLISHED.', 'Câu chuyện riêng của địa điểm 17021, không copy từ gallery khác.', 'PUBLISHED', 'INTERNAL', 215, 'https://tour.example/campus-4/gallery-17021', '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
-  (17022, 4, 'Coverage Zone', 'Coverage Location 17022', 'Mô tả địa điểm 17022 khác biệt cho campus 4.', 'Gallery INTERNAL HIDDEN campus 4', 'Gallery coverage với visibility=INTERNAL, status=HIDDEN.', 'Câu chuyện riêng của địa điểm 17022, không copy từ gallery khác.', 'HIDDEN', 'INTERNAL', 215, 'https://tour.example/campus-4/gallery-17022', '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
-  (17023, 4, 'Coverage Zone', 'Coverage Location 17023', 'Mô tả địa điểm 17023 khác biệt cho campus 4.', 'Gallery PUBLIC PUBLISHED campus 4', 'Gallery coverage với visibility=PUBLIC, status=PUBLISHED.', 'Câu chuyện riêng của địa điểm 17023, không copy từ gallery khác.', 'PUBLISHED', 'PUBLIC', 215, 'https://tour.example/campus-4/gallery-17023', '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
-  (17024, 4, 'Coverage Zone', 'Coverage Location 17024', 'Mô tả địa điểm 17024 khác biệt cho campus 4.', 'Gallery PUBLIC HIDDEN campus 4', 'Gallery coverage với visibility=PUBLIC, status=HIDDEN.', 'Câu chuyện riêng của địa điểm 17024, không copy từ gallery khác.', 'HIDDEN', 'PUBLIC', 215, 'https://tour.example/campus-4/gallery-17024', '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
-  (17025, 5, 'Coverage Zone', 'Coverage Location 17025', 'Mô tả địa điểm 17025 khác biệt cho campus 5.', 'Gallery PRIVATE PUBLISHED campus 5', 'Gallery coverage với visibility=PRIVATE, status=PUBLISHED.', 'Câu chuyện riêng của địa điểm 17025, không copy từ gallery khác.', 'PUBLISHED', 'PRIVATE', 212, 'https://tour.example/campus-5/gallery-17025', '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
-  (17026, 5, 'Coverage Zone', 'Coverage Location 17026', 'Mô tả địa điểm 17026 khác biệt cho campus 5.', 'Gallery PRIVATE HIDDEN campus 5', 'Gallery coverage với visibility=PRIVATE, status=HIDDEN.', 'Câu chuyện riêng của địa điểm 17026, không copy từ gallery khác.', 'HIDDEN', 'PRIVATE', 212, 'https://tour.example/campus-5/gallery-17026', '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
-  (17027, 5, 'Coverage Zone', 'Coverage Location 17027', 'Mô tả địa điểm 17027 khác biệt cho campus 5.', 'Gallery INTERNAL PUBLISHED campus 5', 'Gallery coverage với visibility=INTERNAL, status=PUBLISHED.', 'Câu chuyện riêng của địa điểm 17027, không copy từ gallery khác.', 'PUBLISHED', 'INTERNAL', 212, 'https://tour.example/campus-5/gallery-17027', '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
-  (17028, 5, 'Coverage Zone', 'Coverage Location 17028', 'Mô tả địa điểm 17028 khác biệt cho campus 5.', 'Gallery INTERNAL HIDDEN campus 5', 'Gallery coverage với visibility=INTERNAL, status=HIDDEN.', 'Câu chuyện riêng của địa điểm 17028, không copy từ gallery khác.', 'HIDDEN', 'INTERNAL', 212, 'https://tour.example/campus-5/gallery-17028', '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
-  (17029, 5, 'Coverage Zone', 'Coverage Location 17029', 'Mô tả địa điểm 17029 khác biệt cho campus 5.', 'Gallery PUBLIC PUBLISHED campus 5', 'Gallery coverage với visibility=PUBLIC, status=PUBLISHED.', 'Câu chuyện riêng của địa điểm 17029, không copy từ gallery khác.', 'PUBLISHED', 'PUBLIC', 212, 'https://tour.example/campus-5/gallery-17029', '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
-  (17030, 5, 'Coverage Zone', 'Coverage Location 17030', 'Mô tả địa điểm 17030 khác biệt cho campus 5.', 'Gallery PUBLIC HIDDEN campus 5', 'Gallery coverage với visibility=PUBLIC, status=HIDDEN.', 'Câu chuyện riêng của địa điểm 17030, không copy từ gallery khác.', 'HIDDEN', 'PUBLIC', 212, 'https://tour.example/campus-5/gallery-17030', '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL);
+-- Removed old galleries seed; migrated to gallery_areas/gallery_locations/gallery_items below.
 
 INSERT INTO sent_emails (sent_email_id, email_template_id, related_type, related_id, subject, body_snapshot, provider_thread_id, provider_message_id, retry_count, last_attempt_at, delivered_at, status, error_message, sent_by, sent_at, created_at) VALUES
   (18001, 1, 'VISIT_REQUEST', 3001, 'Email coverage QUEUED 18001', 'Body snapshot for email status QUEUED.', 'thread-18001', NULL, 0, NULL, NULL, 'QUEUED', NULL, 4, NULL, '2026-08-19 08:00:00'),
@@ -5914,257 +5994,353 @@ INSERT INTO minute_action_items (action_item_id, minutes_id, title, note, due_da
   (86, 10018, 'Action item IN_PROGRESS for minutes 10018', 'Ghi chú riêng cho action item status=IN_PROGRESS; không gán owner vì schema hiện tại không có owner_user_id.', '2026-08-12', 'IN_PROGRESS', NULL, 2, '2026-08-10 15:00:00', 4, NULL, NULL),
   (87, 10018, 'Action item DONE for minutes 10018', 'Ghi chú riêng cho action item status=DONE; không gán owner vì schema hiện tại không có owner_user_id.', '2026-08-13', 'DONE', '2026-08-14 16:00:00', 3, '2026-08-10 15:00:00', 4, '2026-08-14 16:00:00', 4),
   (88, 10018, 'Action item CANCELLED for minutes 10018', 'Ghi chú riêng cho action item status=CANCELLED; không gán owner vì schema hiện tại không có owner_user_id.', '2026-08-14', 'CANCELLED', NULL, 4, '2026-08-10 15:00:00', 4, NULL, NULL);
-INSERT INTO gallery_images (image_id, gallery_id, file_id, media_type, thumbnail_file_id, caption, display_order, taken_at, status, created_at, created_by, updated_at, updated_by, deleted_at, deleted_by) VALUES
-  (1, 1, 301, 'IMAGE', NULL, 'Gallery 1 media 1: caption riêng cho kiểm thử gallery.', 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (2, 1, 302, 'IMAGE', NULL, 'Gallery 1 media 2: caption riêng cho kiểm thử gallery.', 2, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (3, 2, 303, 'IMAGE', NULL, 'Gallery 2 media 1: caption riêng cho kiểm thử gallery.', 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (4, 2, 304, 'IMAGE', NULL, 'Gallery 2 media 2: caption riêng cho kiểm thử gallery.', 2, '2026-08-18 09:00:00', 'HIDDEN', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (5, 3, 305, 'IMAGE', NULL, 'Gallery 3 media 1: caption riêng cho kiểm thử gallery.', 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (6, 3, 306, 'VIDEO', NULL, 'Gallery 3 media 2: caption riêng cho kiểm thử gallery.', 2, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (7, 4, 307, 'IMAGE', NULL, 'Gallery 4 media 1: caption riêng cho kiểm thử gallery.', 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (8, 4, 308, 'IMAGE', NULL, 'Gallery 4 media 2: caption riêng cho kiểm thử gallery.', 2, '2026-08-18 09:00:00', 'HIDDEN', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (9, 5, 309, 'IMAGE', NULL, 'Gallery 5 media 1: caption riêng cho kiểm thử gallery.', 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (10, 5, 310, 'IMAGE', NULL, 'Gallery 5 media 2: caption riêng cho kiểm thử gallery.', 2, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (11, 6, 311, 'IMAGE', NULL, 'Gallery 6 media 1: caption riêng cho kiểm thử gallery.', 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (12, 6, 312, 'VIDEO', NULL, 'Gallery 6 media 2: caption riêng cho kiểm thử gallery.', 2, '2026-08-18 09:00:00', 'HIDDEN', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (13, 17001, 313, 'IMAGE', NULL, 'Gallery 17001 media 1: caption riêng cho kiểm thử gallery.', 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (14, 17001, 314, 'VIDEO', NULL, 'Gallery 17001 media 2: caption riêng cho kiểm thử gallery.', 2, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (15, 17002, 315, 'IMAGE', NULL, 'Gallery 17002 media 1: caption riêng cho kiểm thử gallery.', 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (16, 17002, 316, 'IMAGE', NULL, 'Gallery 17002 media 2: caption riêng cho kiểm thử gallery.', 2, '2026-08-18 09:00:00', 'HIDDEN', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (17, 17003, 317, 'IMAGE', NULL, 'Gallery 17003 media 1: caption riêng cho kiểm thử gallery.', 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (18, 17003, 318, 'IMAGE', NULL, 'Gallery 17003 media 2: caption riêng cho kiểm thử gallery.', 2, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (19, 17004, 319, 'IMAGE', NULL, 'Gallery 17004 media 1: caption riêng cho kiểm thử gallery.', 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (20, 17004, 320, 'VIDEO', NULL, 'Gallery 17004 media 2: caption riêng cho kiểm thử gallery.', 2, '2026-08-18 09:00:00', 'HIDDEN', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (21, 17005, 321, 'IMAGE', NULL, 'Gallery 17005 media 1: caption riêng cho kiểm thử gallery.', 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (22, 17005, 322, 'IMAGE', NULL, 'Gallery 17005 media 2: caption riêng cho kiểm thử gallery.', 2, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (23, 17006, 323, 'IMAGE', NULL, 'Gallery 17006 media 1: caption riêng cho kiểm thử gallery.', 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (24, 17006, 324, 'IMAGE', NULL, 'Gallery 17006 media 2: caption riêng cho kiểm thử gallery.', 2, '2026-08-18 09:00:00', 'HIDDEN', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (25, 17007, 325, 'IMAGE', NULL, 'Gallery 17007 media 1: caption riêng cho kiểm thử gallery.', 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (26, 17007, 326, 'VIDEO', NULL, 'Gallery 17007 media 2: caption riêng cho kiểm thử gallery.', 2, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (27, 17008, 327, 'IMAGE', NULL, 'Gallery 17008 media 1: caption riêng cho kiểm thử gallery.', 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (28, 17008, 328, 'IMAGE', NULL, 'Gallery 17008 media 2: caption riêng cho kiểm thử gallery.', 2, '2026-08-18 09:00:00', 'HIDDEN', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (29, 17009, 329, 'IMAGE', NULL, 'Gallery 17009 media 1: caption riêng cho kiểm thử gallery.', 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (30, 17009, 330, 'IMAGE', NULL, 'Gallery 17009 media 2: caption riêng cho kiểm thử gallery.', 2, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (31, 17010, 331, 'IMAGE', NULL, 'Gallery 17010 media 1: caption riêng cho kiểm thử gallery.', 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (32, 17010, 332, 'VIDEO', NULL, 'Gallery 17010 media 2: caption riêng cho kiểm thử gallery.', 2, '2026-08-18 09:00:00', 'HIDDEN', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (33, 17011, 333, 'IMAGE', NULL, 'Gallery 17011 media 1: caption riêng cho kiểm thử gallery.', 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (34, 17011, 334, 'IMAGE', NULL, 'Gallery 17011 media 2: caption riêng cho kiểm thử gallery.', 2, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (35, 17012, 335, 'IMAGE', NULL, 'Gallery 17012 media 1: caption riêng cho kiểm thử gallery.', 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (36, 17012, 336, 'IMAGE', NULL, 'Gallery 17012 media 2: caption riêng cho kiểm thử gallery.', 2, '2026-08-18 09:00:00', 'HIDDEN', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (37, 17013, 337, 'IMAGE', NULL, 'Gallery 17013 media 1: caption riêng cho kiểm thử gallery.', 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (38, 17013, 338, 'VIDEO', NULL, 'Gallery 17013 media 2: caption riêng cho kiểm thử gallery.', 2, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (39, 17014, 339, 'IMAGE', NULL, 'Gallery 17014 media 1: caption riêng cho kiểm thử gallery.', 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (40, 17014, 340, 'IMAGE', NULL, 'Gallery 17014 media 2: caption riêng cho kiểm thử gallery.', 2, '2026-08-18 09:00:00', 'HIDDEN', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (41, 17015, 341, 'IMAGE', NULL, 'Gallery 17015 media 1: caption riêng cho kiểm thử gallery.', 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (42, 17015, 342, 'IMAGE', NULL, 'Gallery 17015 media 2: caption riêng cho kiểm thử gallery.', 2, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (43, 17016, 343, 'IMAGE', NULL, 'Gallery 17016 media 1: caption riêng cho kiểm thử gallery.', 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (44, 17016, 344, 'VIDEO', NULL, 'Gallery 17016 media 2: caption riêng cho kiểm thử gallery.', 2, '2026-08-18 09:00:00', 'HIDDEN', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (45, 17017, 345, 'IMAGE', NULL, 'Gallery 17017 media 1: caption riêng cho kiểm thử gallery.', 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (46, 17017, 346, 'IMAGE', NULL, 'Gallery 17017 media 2: caption riêng cho kiểm thử gallery.', 2, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (47, 17018, 347, 'IMAGE', NULL, 'Gallery 17018 media 1: caption riêng cho kiểm thử gallery.', 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (48, 17018, 348, 'IMAGE', NULL, 'Gallery 17018 media 2: caption riêng cho kiểm thử gallery.', 2, '2026-08-18 09:00:00', 'HIDDEN', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (49, 17019, 349, 'IMAGE', NULL, 'Gallery 17019 media 1: caption riêng cho kiểm thử gallery.', 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (50, 17019, 350, 'VIDEO', NULL, 'Gallery 17019 media 2: caption riêng cho kiểm thử gallery.', 2, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (51, 17020, 351, 'IMAGE', NULL, 'Gallery 17020 media 1: caption riêng cho kiểm thử gallery.', 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (52, 17020, 352, 'IMAGE', NULL, 'Gallery 17020 media 2: caption riêng cho kiểm thử gallery.', 2, '2026-08-18 09:00:00', 'HIDDEN', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (53, 17021, 353, 'IMAGE', NULL, 'Gallery 17021 media 1: caption riêng cho kiểm thử gallery.', 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (54, 17021, 354, 'IMAGE', NULL, 'Gallery 17021 media 2: caption riêng cho kiểm thử gallery.', 2, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (55, 17022, 355, 'IMAGE', NULL, 'Gallery 17022 media 1: caption riêng cho kiểm thử gallery.', 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (56, 17022, 356, 'VIDEO', NULL, 'Gallery 17022 media 2: caption riêng cho kiểm thử gallery.', 2, '2026-08-18 09:00:00', 'HIDDEN', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (57, 17023, 357, 'IMAGE', NULL, 'Gallery 17023 media 1: caption riêng cho kiểm thử gallery.', 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (58, 17023, 358, 'IMAGE', NULL, 'Gallery 17023 media 2: caption riêng cho kiểm thử gallery.', 2, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (59, 17024, 359, 'IMAGE', NULL, 'Gallery 17024 media 1: caption riêng cho kiểm thử gallery.', 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (60, 17024, 360, 'IMAGE', NULL, 'Gallery 17024 media 2: caption riêng cho kiểm thử gallery.', 2, '2026-08-18 09:00:00', 'HIDDEN', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (61, 17025, 361, 'IMAGE', NULL, 'Gallery 17025 media 1: caption riêng cho kiểm thử gallery.', 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (62, 17025, 362, 'VIDEO', NULL, 'Gallery 17025 media 2: caption riêng cho kiểm thử gallery.', 2, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (63, 17026, 363, 'IMAGE', NULL, 'Gallery 17026 media 1: caption riêng cho kiểm thử gallery.', 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (64, 17026, 364, 'IMAGE', NULL, 'Gallery 17026 media 2: caption riêng cho kiểm thử gallery.', 2, '2026-08-18 09:00:00', 'HIDDEN', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (65, 17027, 365, 'IMAGE', NULL, 'Gallery 17027 media 1: caption riêng cho kiểm thử gallery.', 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (66, 17027, 366, 'IMAGE', NULL, 'Gallery 17027 media 2: caption riêng cho kiểm thử gallery.', 2, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (67, 17028, 367, 'IMAGE', NULL, 'Gallery 17028 media 1: caption riêng cho kiểm thử gallery.', 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (68, 17028, 368, 'VIDEO', NULL, 'Gallery 17028 media 2: caption riêng cho kiểm thử gallery.', 2, '2026-08-18 09:00:00', 'HIDDEN', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (69, 17029, 369, 'IMAGE', NULL, 'Gallery 17029 media 1: caption riêng cho kiểm thử gallery.', 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (70, 17029, 370, 'IMAGE', NULL, 'Gallery 17029 media 2: caption riêng cho kiểm thử gallery.', 2, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (71, 17030, 371, 'IMAGE', NULL, 'Gallery 17030 media 1: caption riêng cho kiểm thử gallery.', 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (72, 17030, 372, 'IMAGE', NULL, 'Gallery 17030 media 2: caption riêng cho kiểm thử gallery.', 2, '2026-08-18 09:00:00', 'HIDDEN', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL);
-INSERT INTO photo_face_tags (face_tag_id, image_id, visit_request_id, guest_member_id, partner_contact_id, display_name, bounding_box_x, bounding_box_y, bounding_box_width, bounding_box_height, tag_status, confirmed_by, confirmed_at, created_at, created_by, removed_at, removed_by) VALUES
-  (1, 1, 3002, 6002, 2, 'Face tag MANUALLY_TAGGED image 1', 11.5, 16.0, 120.0, 140.0, 'MANUALLY_TAGGED', NULL, NULL, '2026-08-18 10:00:00', 4, NULL, NULL),
-  (2, 1, 3002, 6002, 2, 'Face tag CONFIRMED image 1', 11.5, 16.0, 120.0, 140.0, 'CONFIRMED', 3, '2026-08-18 10:30:00', '2026-08-18 10:00:00', 4, NULL, NULL),
-  (3, 1, 3002, 6002, 2, 'Face tag REMOVED image 1', 11.5, 16.0, 120.0, 140.0, 'REMOVED', NULL, NULL, '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
-  (4, 2, 3003, 6003, 3, 'Face tag MANUALLY_TAGGED image 2', 12.5, 17.0, 120.0, 140.0, 'MANUALLY_TAGGED', NULL, NULL, '2026-08-18 10:00:00', 4, NULL, NULL),
-  (5, 2, 3003, 6003, 3, 'Face tag CONFIRMED image 2', 12.5, 17.0, 120.0, 140.0, 'CONFIRMED', 3, '2026-08-18 10:30:00', '2026-08-18 10:00:00', 4, NULL, NULL),
-  (6, 2, 3003, 6003, 3, 'Face tag REMOVED image 2', 12.5, 17.0, 120.0, 140.0, 'REMOVED', NULL, NULL, '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
-  (7, 3, 3004, 6004, 4, 'Face tag MANUALLY_TAGGED image 3', 13.5, 18.0, 120.0, 140.0, 'MANUALLY_TAGGED', NULL, NULL, '2026-08-18 10:00:00', 4, NULL, NULL),
-  (8, 3, 3004, 6004, 4, 'Face tag CONFIRMED image 3', 13.5, 18.0, 120.0, 140.0, 'CONFIRMED', 3, '2026-08-18 10:30:00', '2026-08-18 10:00:00', 4, NULL, NULL),
-  (9, 3, 3004, 6004, 4, 'Face tag REMOVED image 3', 13.5, 18.0, 120.0, 140.0, 'REMOVED', NULL, NULL, '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
-  (10, 4, 3005, 6005, 5, 'Face tag MANUALLY_TAGGED image 4', 14.5, 19.0, 120.0, 140.0, 'MANUALLY_TAGGED', NULL, NULL, '2026-08-18 10:00:00', 4, NULL, NULL),
-  (11, 4, 3005, 6005, 5, 'Face tag CONFIRMED image 4', 14.5, 19.0, 120.0, 140.0, 'CONFIRMED', 3, '2026-08-18 10:30:00', '2026-08-18 10:00:00', 4, NULL, NULL),
-  (12, 4, 3005, 6005, 5, 'Face tag REMOVED image 4', 14.5, 19.0, 120.0, 140.0, 'REMOVED', NULL, NULL, '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
-  (13, 5, 3006, 6006, 6, 'Face tag MANUALLY_TAGGED image 5', 15.5, 20.0, 120.0, 140.0, 'MANUALLY_TAGGED', NULL, NULL, '2026-08-18 10:00:00', 4, NULL, NULL),
-  (14, 5, 3006, 6006, 6, 'Face tag CONFIRMED image 5', 15.5, 20.0, 120.0, 140.0, 'CONFIRMED', 3, '2026-08-18 10:30:00', '2026-08-18 10:00:00', 4, NULL, NULL),
-  (15, 5, 3006, 6006, 6, 'Face tag REMOVED image 5', 15.5, 20.0, 120.0, 140.0, 'REMOVED', NULL, NULL, '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
-  (16, 6, 3007, 6007, 7, 'Face tag MANUALLY_TAGGED image 6', 16.5, 21.0, 120.0, 140.0, 'MANUALLY_TAGGED', NULL, NULL, '2026-08-18 10:00:00', 4, NULL, NULL),
-  (17, 6, 3007, 6007, 7, 'Face tag CONFIRMED image 6', 16.5, 21.0, 120.0, 140.0, 'CONFIRMED', 3, '2026-08-18 10:30:00', '2026-08-18 10:00:00', 4, NULL, NULL),
-  (18, 6, 3007, 6007, 7, 'Face tag REMOVED image 6', 16.5, 21.0, 120.0, 140.0, 'REMOVED', NULL, NULL, '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
-  (19, 7, 3008, 6008, 8, 'Face tag MANUALLY_TAGGED image 7', 17.5, 22.0, 120.0, 140.0, 'MANUALLY_TAGGED', NULL, NULL, '2026-08-18 10:00:00', 4, NULL, NULL),
-  (20, 7, 3008, 6008, 8, 'Face tag CONFIRMED image 7', 17.5, 22.0, 120.0, 140.0, 'CONFIRMED', 3, '2026-08-18 10:30:00', '2026-08-18 10:00:00', 4, NULL, NULL),
-  (21, 7, 3008, 6008, 8, 'Face tag REMOVED image 7', 17.5, 22.0, 120.0, 140.0, 'REMOVED', NULL, NULL, '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
-  (22, 8, 3009, 6009, 9, 'Face tag MANUALLY_TAGGED image 8', 18.5, 23.0, 120.0, 140.0, 'MANUALLY_TAGGED', NULL, NULL, '2026-08-18 10:00:00', 4, NULL, NULL),
-  (23, 8, 3009, 6009, 9, 'Face tag CONFIRMED image 8', 18.5, 23.0, 120.0, 140.0, 'CONFIRMED', 3, '2026-08-18 10:30:00', '2026-08-18 10:00:00', 4, NULL, NULL),
-  (24, 8, 3009, 6009, 9, 'Face tag REMOVED image 8', 18.5, 23.0, 120.0, 140.0, 'REMOVED', NULL, NULL, '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
-  (25, 9, 3010, 6010, 10, 'Face tag MANUALLY_TAGGED image 9', 19.5, 24.0, 120.0, 140.0, 'MANUALLY_TAGGED', NULL, NULL, '2026-08-18 10:00:00', 4, NULL, NULL),
-  (26, 9, 3010, 6010, 10, 'Face tag CONFIRMED image 9', 19.5, 24.0, 120.0, 140.0, 'CONFIRMED', 3, '2026-08-18 10:30:00', '2026-08-18 10:00:00', 4, NULL, NULL),
-  (27, 9, 3010, 6010, 10, 'Face tag REMOVED image 9', 19.5, 24.0, 120.0, 140.0, 'REMOVED', NULL, NULL, '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
-  (28, 10, 3011, 6011, 11, 'Face tag MANUALLY_TAGGED image 10', 20.5, 25.0, 120.0, 140.0, 'MANUALLY_TAGGED', NULL, NULL, '2026-08-18 10:00:00', 4, NULL, NULL),
-  (29, 10, 3011, 6011, 11, 'Face tag CONFIRMED image 10', 20.5, 25.0, 120.0, 140.0, 'CONFIRMED', 3, '2026-08-18 10:30:00', '2026-08-18 10:00:00', 4, NULL, NULL),
-  (30, 10, 3011, 6011, 11, 'Face tag REMOVED image 10', 20.5, 25.0, 120.0, 140.0, 'REMOVED', NULL, NULL, '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
-  (31, 11, 3012, 6012, 12, 'Face tag MANUALLY_TAGGED image 11', 21.5, 26.0, 120.0, 140.0, 'MANUALLY_TAGGED', NULL, NULL, '2026-08-18 10:00:00', 4, NULL, NULL),
-  (32, 11, 3012, 6012, 12, 'Face tag CONFIRMED image 11', 21.5, 26.0, 120.0, 140.0, 'CONFIRMED', 3, '2026-08-18 10:30:00', '2026-08-18 10:00:00', 4, NULL, NULL),
-  (33, 11, 3012, 6012, 12, 'Face tag REMOVED image 11', 21.5, 26.0, 120.0, 140.0, 'REMOVED', NULL, NULL, '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
-  (34, 12, 3013, 6013, 13, 'Face tag MANUALLY_TAGGED image 12', 22.5, 27.0, 120.0, 140.0, 'MANUALLY_TAGGED', NULL, NULL, '2026-08-18 10:00:00', 4, NULL, NULL),
-  (35, 12, 3013, 6013, 13, 'Face tag CONFIRMED image 12', 22.5, 27.0, 120.0, 140.0, 'CONFIRMED', 3, '2026-08-18 10:30:00', '2026-08-18 10:00:00', 4, NULL, NULL),
-  (36, 12, 3013, 6013, 13, 'Face tag REMOVED image 12', 22.5, 27.0, 120.0, 140.0, 'REMOVED', NULL, NULL, '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
-  (37, 13, 3014, 6014, 14, 'Face tag MANUALLY_TAGGED image 13', 23.5, 28.0, 120.0, 140.0, 'MANUALLY_TAGGED', NULL, NULL, '2026-08-18 10:00:00', 4, NULL, NULL),
-  (38, 13, 3014, 6014, 14, 'Face tag CONFIRMED image 13', 23.5, 28.0, 120.0, 140.0, 'CONFIRMED', 3, '2026-08-18 10:30:00', '2026-08-18 10:00:00', 4, NULL, NULL),
-  (39, 13, 3014, 6014, 14, 'Face tag REMOVED image 13', 23.5, 28.0, 120.0, 140.0, 'REMOVED', NULL, NULL, '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
-  (40, 14, 3015, 6015, 15, 'Face tag MANUALLY_TAGGED image 14', 24.5, 29.0, 120.0, 140.0, 'MANUALLY_TAGGED', NULL, NULL, '2026-08-18 10:00:00', 4, NULL, NULL),
-  (41, 14, 3015, 6015, 15, 'Face tag CONFIRMED image 14', 24.5, 29.0, 120.0, 140.0, 'CONFIRMED', 3, '2026-08-18 10:30:00', '2026-08-18 10:00:00', 4, NULL, NULL),
-  (42, 14, 3015, 6015, 15, 'Face tag REMOVED image 14', 24.5, 29.0, 120.0, 140.0, 'REMOVED', NULL, NULL, '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
-  (43, 15, 3016, 6016, 16, 'Face tag MANUALLY_TAGGED image 15', 25.5, 30.0, 120.0, 140.0, 'MANUALLY_TAGGED', NULL, NULL, '2026-08-18 10:00:00', 4, NULL, NULL),
-  (44, 15, 3016, 6016, 16, 'Face tag CONFIRMED image 15', 25.5, 30.0, 120.0, 140.0, 'CONFIRMED', 3, '2026-08-18 10:30:00', '2026-08-18 10:00:00', 4, NULL, NULL),
-  (45, 15, 3016, 6016, 16, 'Face tag REMOVED image 15', 25.5, 30.0, 120.0, 140.0, 'REMOVED', NULL, NULL, '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
-  (46, 16, 3017, 6017, 17, 'Face tag MANUALLY_TAGGED image 16', 26.5, 31.0, 120.0, 140.0, 'MANUALLY_TAGGED', NULL, NULL, '2026-08-18 10:00:00', 4, NULL, NULL),
-  (47, 16, 3017, 6017, 17, 'Face tag CONFIRMED image 16', 26.5, 31.0, 120.0, 140.0, 'CONFIRMED', 3, '2026-08-18 10:30:00', '2026-08-18 10:00:00', 4, NULL, NULL),
-  (48, 16, 3017, 6017, 17, 'Face tag REMOVED image 16', 26.5, 31.0, 120.0, 140.0, 'REMOVED', NULL, NULL, '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
-  (49, 17, 3018, 6018, 18, 'Face tag MANUALLY_TAGGED image 17', 27.5, 32.0, 120.0, 140.0, 'MANUALLY_TAGGED', NULL, NULL, '2026-08-18 10:00:00', 4, NULL, NULL),
-  (50, 17, 3018, 6018, 18, 'Face tag CONFIRMED image 17', 27.5, 32.0, 120.0, 140.0, 'CONFIRMED', 3, '2026-08-18 10:30:00', '2026-08-18 10:00:00', 4, NULL, NULL),
-  (51, 17, 3018, 6018, 18, 'Face tag REMOVED image 17', 27.5, 32.0, 120.0, 140.0, 'REMOVED', NULL, NULL, '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
-  (52, 18, 3019, 6019, 19, 'Face tag MANUALLY_TAGGED image 18', 28.5, 33.0, 120.0, 140.0, 'MANUALLY_TAGGED', NULL, NULL, '2026-08-18 10:00:00', 4, NULL, NULL),
-  (53, 18, 3019, 6019, 19, 'Face tag CONFIRMED image 18', 28.5, 33.0, 120.0, 140.0, 'CONFIRMED', 3, '2026-08-18 10:30:00', '2026-08-18 10:00:00', 4, NULL, NULL),
-  (54, 18, 3019, 6019, 19, 'Face tag REMOVED image 18', 28.5, 33.0, 120.0, 140.0, 'REMOVED', NULL, NULL, '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
-  (55, 19, 3020, 6020, 20, 'Face tag MANUALLY_TAGGED image 19', 29.5, 34.0, 120.0, 140.0, 'MANUALLY_TAGGED', NULL, NULL, '2026-08-18 10:00:00', 4, NULL, NULL),
-  (56, 19, 3020, 6020, 20, 'Face tag CONFIRMED image 19', 29.5, 34.0, 120.0, 140.0, 'CONFIRMED', 3, '2026-08-18 10:30:00', '2026-08-18 10:00:00', 4, NULL, NULL),
-  (57, 19, 3020, 6020, 20, 'Face tag REMOVED image 19', 29.5, 34.0, 120.0, 140.0, 'REMOVED', NULL, NULL, '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
-  (58, 20, 3021, 6021, 21, 'Face tag MANUALLY_TAGGED image 20', 30.5, 35.0, 120.0, 140.0, 'MANUALLY_TAGGED', NULL, NULL, '2026-08-18 10:00:00', 4, NULL, NULL),
-  (59, 20, 3021, 6021, 21, 'Face tag CONFIRMED image 20', 30.5, 35.0, 120.0, 140.0, 'CONFIRMED', 3, '2026-08-18 10:30:00', '2026-08-18 10:00:00', 4, NULL, NULL),
-  (60, 20, 3021, 6021, 21, 'Face tag REMOVED image 20', 30.5, 35.0, 120.0, 140.0, 'REMOVED', NULL, NULL, '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
-  (61, 21, 3022, 6022, 22, 'Face tag MANUALLY_TAGGED image 21', 31.5, 36.0, 120.0, 140.0, 'MANUALLY_TAGGED', NULL, NULL, '2026-08-18 10:00:00', 4, NULL, NULL),
-  (62, 21, 3022, 6022, 22, 'Face tag CONFIRMED image 21', 31.5, 36.0, 120.0, 140.0, 'CONFIRMED', 3, '2026-08-18 10:30:00', '2026-08-18 10:00:00', 4, NULL, NULL),
-  (63, 21, 3022, 6022, 22, 'Face tag REMOVED image 21', 31.5, 36.0, 120.0, 140.0, 'REMOVED', NULL, NULL, '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
-  (64, 22, 3023, 6023, 23, 'Face tag MANUALLY_TAGGED image 22', 32.5, 37.0, 120.0, 140.0, 'MANUALLY_TAGGED', NULL, NULL, '2026-08-18 10:00:00', 4, NULL, NULL),
-  (65, 22, 3023, 6023, 23, 'Face tag CONFIRMED image 22', 32.5, 37.0, 120.0, 140.0, 'CONFIRMED', 3, '2026-08-18 10:30:00', '2026-08-18 10:00:00', 4, NULL, NULL),
-  (66, 22, 3023, 6023, 23, 'Face tag REMOVED image 22', 32.5, 37.0, 120.0, 140.0, 'REMOVED', NULL, NULL, '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
-  (67, 23, 3024, 6024, 24, 'Face tag MANUALLY_TAGGED image 23', 33.5, 38.0, 120.0, 140.0, 'MANUALLY_TAGGED', NULL, NULL, '2026-08-18 10:00:00', 4, NULL, NULL),
-  (68, 23, 3024, 6024, 24, 'Face tag CONFIRMED image 23', 33.5, 38.0, 120.0, 140.0, 'CONFIRMED', 3, '2026-08-18 10:30:00', '2026-08-18 10:00:00', 4, NULL, NULL),
-  (69, 23, 3024, 6024, 24, 'Face tag REMOVED image 23', 33.5, 38.0, 120.0, 140.0, 'REMOVED', NULL, NULL, '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
-  (70, 24, 3025, 6025, 25, 'Face tag MANUALLY_TAGGED image 24', 34.5, 39.0, 120.0, 140.0, 'MANUALLY_TAGGED', NULL, NULL, '2026-08-18 10:00:00', 4, NULL, NULL),
-  (71, 24, 3025, 6025, 25, 'Face tag CONFIRMED image 24', 34.5, 39.0, 120.0, 140.0, 'CONFIRMED', 3, '2026-08-18 10:30:00', '2026-08-18 10:00:00', 4, NULL, NULL),
-  (72, 24, 3025, 6025, 25, 'Face tag REMOVED image 24', 34.5, 39.0, 120.0, 140.0, 'REMOVED', NULL, NULL, '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
-  (73, 25, 3026, 6026, 26, 'Face tag MANUALLY_TAGGED image 25', 35.5, 15.0, 120.0, 140.0, 'MANUALLY_TAGGED', NULL, NULL, '2026-08-18 10:00:00', 4, NULL, NULL),
-  (74, 25, 3026, 6026, 26, 'Face tag CONFIRMED image 25', 35.5, 15.0, 120.0, 140.0, 'CONFIRMED', 3, '2026-08-18 10:30:00', '2026-08-18 10:00:00', 4, NULL, NULL),
-  (75, 25, 3026, 6026, 26, 'Face tag REMOVED image 25', 35.5, 15.0, 120.0, 140.0, 'REMOVED', NULL, NULL, '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
-  (76, 26, 3027, 6027, 27, 'Face tag MANUALLY_TAGGED image 26', 36.5, 16.0, 120.0, 140.0, 'MANUALLY_TAGGED', NULL, NULL, '2026-08-18 10:00:00', 4, NULL, NULL),
-  (77, 26, 3027, 6027, 27, 'Face tag CONFIRMED image 26', 36.5, 16.0, 120.0, 140.0, 'CONFIRMED', 3, '2026-08-18 10:30:00', '2026-08-18 10:00:00', 4, NULL, NULL),
-  (78, 26, 3027, 6027, 27, 'Face tag REMOVED image 26', 36.5, 16.0, 120.0, 140.0, 'REMOVED', NULL, NULL, '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
-  (79, 27, 3028, 6028, 28, 'Face tag MANUALLY_TAGGED image 27', 37.5, 17.0, 120.0, 140.0, 'MANUALLY_TAGGED', NULL, NULL, '2026-08-18 10:00:00', 4, NULL, NULL),
-  (80, 27, 3028, 6028, 28, 'Face tag CONFIRMED image 27', 37.5, 17.0, 120.0, 140.0, 'CONFIRMED', 3, '2026-08-18 10:30:00', '2026-08-18 10:00:00', 4, NULL, NULL),
-  (81, 27, 3028, 6028, 28, 'Face tag REMOVED image 27', 37.5, 17.0, 120.0, 140.0, 'REMOVED', NULL, NULL, '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
-  (82, 28, 3029, 6029, 29, 'Face tag MANUALLY_TAGGED image 28', 38.5, 18.0, 120.0, 140.0, 'MANUALLY_TAGGED', NULL, NULL, '2026-08-18 10:00:00', 4, NULL, NULL),
-  (83, 28, 3029, 6029, 29, 'Face tag CONFIRMED image 28', 38.5, 18.0, 120.0, 140.0, 'CONFIRMED', 3, '2026-08-18 10:30:00', '2026-08-18 10:00:00', 4, NULL, NULL),
-  (84, 28, 3029, 6029, 29, 'Face tag REMOVED image 28', 38.5, 18.0, 120.0, 140.0, 'REMOVED', NULL, NULL, '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
-  (85, 29, 3030, 6030, 30, 'Face tag MANUALLY_TAGGED image 29', 39.5, 19.0, 120.0, 140.0, 'MANUALLY_TAGGED', NULL, NULL, '2026-08-18 10:00:00', 4, NULL, NULL),
-  (86, 29, 3030, 6030, 30, 'Face tag CONFIRMED image 29', 39.5, 19.0, 120.0, 140.0, 'CONFIRMED', 3, '2026-08-18 10:30:00', '2026-08-18 10:00:00', 4, NULL, NULL),
-  (87, 29, 3030, 6030, 30, 'Face tag REMOVED image 29', 39.5, 19.0, 120.0, 140.0, 'REMOVED', NULL, NULL, '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
-  (88, 30, 3031, 6031, 31, 'Face tag MANUALLY_TAGGED image 30', 10.5, 20.0, 120.0, 140.0, 'MANUALLY_TAGGED', NULL, NULL, '2026-08-18 10:00:00', 4, NULL, NULL),
-  (89, 30, 3031, 6031, 31, 'Face tag CONFIRMED image 30', 10.5, 20.0, 120.0, 140.0, 'CONFIRMED', 3, '2026-08-18 10:30:00', '2026-08-18 10:00:00', 4, NULL, NULL),
-  (90, 30, 3031, 6031, 31, 'Face tag REMOVED image 30', 10.5, 20.0, 120.0, 140.0, 'REMOVED', NULL, NULL, '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
-  (91, 31, 3032, 6032, 32, 'Face tag MANUALLY_TAGGED image 31', 11.5, 21.0, 120.0, 140.0, 'MANUALLY_TAGGED', NULL, NULL, '2026-08-18 10:00:00', 4, NULL, NULL),
-  (92, 31, 3032, 6032, 32, 'Face tag CONFIRMED image 31', 11.5, 21.0, 120.0, 140.0, 'CONFIRMED', 3, '2026-08-18 10:30:00', '2026-08-18 10:00:00', 4, NULL, NULL),
-  (93, 31, 3032, 6032, 32, 'Face tag REMOVED image 31', 11.5, 21.0, 120.0, 140.0, 'REMOVED', NULL, NULL, '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
-  (94, 32, 3033, 6033, 33, 'Face tag MANUALLY_TAGGED image 32', 12.5, 22.0, 120.0, 140.0, 'MANUALLY_TAGGED', NULL, NULL, '2026-08-18 10:00:00', 4, NULL, NULL),
-  (95, 32, 3033, 6033, 33, 'Face tag CONFIRMED image 32', 12.5, 22.0, 120.0, 140.0, 'CONFIRMED', 3, '2026-08-18 10:30:00', '2026-08-18 10:00:00', 4, NULL, NULL),
-  (96, 32, 3033, 6033, 33, 'Face tag REMOVED image 32', 12.5, 22.0, 120.0, 140.0, 'REMOVED', NULL, NULL, '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
-  (97, 33, 3034, 6034, 34, 'Face tag MANUALLY_TAGGED image 33', 13.5, 23.0, 120.0, 140.0, 'MANUALLY_TAGGED', NULL, NULL, '2026-08-18 10:00:00', 4, NULL, NULL),
-  (98, 33, 3034, 6034, 34, 'Face tag CONFIRMED image 33', 13.5, 23.0, 120.0, 140.0, 'CONFIRMED', 3, '2026-08-18 10:30:00', '2026-08-18 10:00:00', 4, NULL, NULL),
-  (99, 33, 3034, 6034, 34, 'Face tag REMOVED image 33', 13.5, 23.0, 120.0, 140.0, 'REMOVED', NULL, NULL, '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
-  (100, 34, 3035, 6035, 35, 'Face tag MANUALLY_TAGGED image 34', 14.5, 24.0, 120.0, 140.0, 'MANUALLY_TAGGED', NULL, NULL, '2026-08-18 10:00:00', 4, NULL, NULL),
-  (101, 34, 3035, 6035, 35, 'Face tag CONFIRMED image 34', 14.5, 24.0, 120.0, 140.0, 'CONFIRMED', 3, '2026-08-18 10:30:00', '2026-08-18 10:00:00', 4, NULL, NULL),
-  (102, 34, 3035, 6035, 35, 'Face tag REMOVED image 34', 14.5, 24.0, 120.0, 140.0, 'REMOVED', NULL, NULL, '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
-  (103, 35, 3036, 6036, 36, 'Face tag MANUALLY_TAGGED image 35', 15.5, 25.0, 120.0, 140.0, 'MANUALLY_TAGGED', NULL, NULL, '2026-08-18 10:00:00', 4, NULL, NULL),
-  (104, 35, 3036, 6036, 36, 'Face tag CONFIRMED image 35', 15.5, 25.0, 120.0, 140.0, 'CONFIRMED', 3, '2026-08-18 10:30:00', '2026-08-18 10:00:00', 4, NULL, NULL),
-  (105, 35, 3036, 6036, 36, 'Face tag REMOVED image 35', 15.5, 25.0, 120.0, 140.0, 'REMOVED', NULL, NULL, '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
-  (106, 36, 3037, 6037, 37, 'Face tag MANUALLY_TAGGED image 36', 16.5, 26.0, 120.0, 140.0, 'MANUALLY_TAGGED', NULL, NULL, '2026-08-18 10:00:00', 4, NULL, NULL),
-  (107, 36, 3037, 6037, 37, 'Face tag CONFIRMED image 36', 16.5, 26.0, 120.0, 140.0, 'CONFIRMED', 3, '2026-08-18 10:30:00', '2026-08-18 10:00:00', 4, NULL, NULL),
-  (108, 36, 3037, 6037, 37, 'Face tag REMOVED image 36', 16.5, 26.0, 120.0, 140.0, 'REMOVED', NULL, NULL, '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
-  (109, 37, 3038, 6038, 38, 'Face tag MANUALLY_TAGGED image 37', 17.5, 27.0, 120.0, 140.0, 'MANUALLY_TAGGED', NULL, NULL, '2026-08-18 10:00:00', 4, NULL, NULL),
-  (110, 37, 3038, 6038, 38, 'Face tag CONFIRMED image 37', 17.5, 27.0, 120.0, 140.0, 'CONFIRMED', 3, '2026-08-18 10:30:00', '2026-08-18 10:00:00', 4, NULL, NULL),
-  (111, 37, 3038, 6038, 38, 'Face tag REMOVED image 37', 17.5, 27.0, 120.0, 140.0, 'REMOVED', NULL, NULL, '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
-  (112, 38, 3039, 6039, 39, 'Face tag MANUALLY_TAGGED image 38', 18.5, 28.0, 120.0, 140.0, 'MANUALLY_TAGGED', NULL, NULL, '2026-08-18 10:00:00', 4, NULL, NULL),
-  (113, 38, 3039, 6039, 39, 'Face tag CONFIRMED image 38', 18.5, 28.0, 120.0, 140.0, 'CONFIRMED', 3, '2026-08-18 10:30:00', '2026-08-18 10:00:00', 4, NULL, NULL),
-  (114, 38, 3039, 6039, 39, 'Face tag REMOVED image 38', 18.5, 28.0, 120.0, 140.0, 'REMOVED', NULL, NULL, '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
-  (115, 39, 3040, 6040, 40, 'Face tag MANUALLY_TAGGED image 39', 19.5, 29.0, 120.0, 140.0, 'MANUALLY_TAGGED', NULL, NULL, '2026-08-18 10:00:00', 4, NULL, NULL),
-  (116, 39, 3040, 6040, 40, 'Face tag CONFIRMED image 39', 19.5, 29.0, 120.0, 140.0, 'CONFIRMED', 3, '2026-08-18 10:30:00', '2026-08-18 10:00:00', 4, NULL, NULL),
-  (117, 39, 3040, 6040, 40, 'Face tag REMOVED image 39', 19.5, 29.0, 120.0, 140.0, 'REMOVED', NULL, NULL, '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
-  (118, 40, 3041, 6041, 41, 'Face tag MANUALLY_TAGGED image 40', 20.5, 30.0, 120.0, 140.0, 'MANUALLY_TAGGED', NULL, NULL, '2026-08-18 10:00:00', 4, NULL, NULL),
-  (119, 40, 3041, 6041, 41, 'Face tag CONFIRMED image 40', 20.5, 30.0, 120.0, 140.0, 'CONFIRMED', 3, '2026-08-18 10:30:00', '2026-08-18 10:00:00', 4, NULL, NULL),
-  (120, 40, 3041, 6041, 41, 'Face tag REMOVED image 40', 20.5, 30.0, 120.0, 140.0, 'REMOVED', NULL, NULL, '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
-  (121, 41, 3042, 6042, 42, 'Face tag MANUALLY_TAGGED image 41', 21.5, 31.0, 120.0, 140.0, 'MANUALLY_TAGGED', NULL, NULL, '2026-08-18 10:00:00', 4, NULL, NULL),
-  (122, 41, 3042, 6042, 42, 'Face tag CONFIRMED image 41', 21.5, 31.0, 120.0, 140.0, 'CONFIRMED', 3, '2026-08-18 10:30:00', '2026-08-18 10:00:00', 4, NULL, NULL),
-  (123, 41, 3042, 6042, 42, 'Face tag REMOVED image 41', 21.5, 31.0, 120.0, 140.0, 'REMOVED', NULL, NULL, '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
-  (124, 42, 3043, 6043, 43, 'Face tag MANUALLY_TAGGED image 42', 22.5, 32.0, 120.0, 140.0, 'MANUALLY_TAGGED', NULL, NULL, '2026-08-18 10:00:00', 4, NULL, NULL),
-  (125, 42, 3043, 6043, 43, 'Face tag CONFIRMED image 42', 22.5, 32.0, 120.0, 140.0, 'CONFIRMED', 3, '2026-08-18 10:30:00', '2026-08-18 10:00:00', 4, NULL, NULL),
-  (126, 42, 3043, 6043, 43, 'Face tag REMOVED image 42', 22.5, 32.0, 120.0, 140.0, 'REMOVED', NULL, NULL, '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
-  (127, 43, 3044, 6044, 44, 'Face tag MANUALLY_TAGGED image 43', 23.5, 33.0, 120.0, 140.0, 'MANUALLY_TAGGED', NULL, NULL, '2026-08-18 10:00:00', 4, NULL, NULL),
-  (128, 43, 3044, 6044, 44, 'Face tag CONFIRMED image 43', 23.5, 33.0, 120.0, 140.0, 'CONFIRMED', 3, '2026-08-18 10:30:00', '2026-08-18 10:00:00', 4, NULL, NULL),
-  (129, 43, 3044, 6044, 44, 'Face tag REMOVED image 43', 23.5, 33.0, 120.0, 140.0, 'REMOVED', NULL, NULL, '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
-  (130, 44, 3045, 6045, 45, 'Face tag MANUALLY_TAGGED image 44', 24.5, 34.0, 120.0, 140.0, 'MANUALLY_TAGGED', NULL, NULL, '2026-08-18 10:00:00', 4, NULL, NULL),
-  (131, 44, 3045, 6045, 45, 'Face tag CONFIRMED image 44', 24.5, 34.0, 120.0, 140.0, 'CONFIRMED', 3, '2026-08-18 10:30:00', '2026-08-18 10:00:00', 4, NULL, NULL),
-  (132, 44, 3045, 6045, 45, 'Face tag REMOVED image 44', 24.5, 34.0, 120.0, 140.0, 'REMOVED', NULL, NULL, '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
-  (133, 45, 3046, 6046, 46, 'Face tag MANUALLY_TAGGED image 45', 25.5, 35.0, 120.0, 140.0, 'MANUALLY_TAGGED', NULL, NULL, '2026-08-18 10:00:00', 4, NULL, NULL),
-  (134, 45, 3046, 6046, 46, 'Face tag CONFIRMED image 45', 25.5, 35.0, 120.0, 140.0, 'CONFIRMED', 3, '2026-08-18 10:30:00', '2026-08-18 10:00:00', 4, NULL, NULL),
-  (135, 45, 3046, 6046, 46, 'Face tag REMOVED image 45', 25.5, 35.0, 120.0, 140.0, 'REMOVED', NULL, NULL, '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
-  (136, 46, 3047, 6047, 47, 'Face tag MANUALLY_TAGGED image 46', 26.5, 36.0, 120.0, 140.0, 'MANUALLY_TAGGED', NULL, NULL, '2026-08-18 10:00:00', 4, NULL, NULL),
-  (137, 46, 3047, 6047, 47, 'Face tag CONFIRMED image 46', 26.5, 36.0, 120.0, 140.0, 'CONFIRMED', 3, '2026-08-18 10:30:00', '2026-08-18 10:00:00', 4, NULL, NULL),
-  (138, 46, 3047, 6047, 47, 'Face tag REMOVED image 46', 26.5, 36.0, 120.0, 140.0, 'REMOVED', NULL, NULL, '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
-  (139, 47, 3048, 6048, 48, 'Face tag MANUALLY_TAGGED image 47', 27.5, 37.0, 120.0, 140.0, 'MANUALLY_TAGGED', NULL, NULL, '2026-08-18 10:00:00', 4, NULL, NULL),
-  (140, 47, 3048, 6048, 48, 'Face tag CONFIRMED image 47', 27.5, 37.0, 120.0, 140.0, 'CONFIRMED', 3, '2026-08-18 10:30:00', '2026-08-18 10:00:00', 4, NULL, NULL),
-  (141, 47, 3048, 6048, 48, 'Face tag REMOVED image 47', 27.5, 37.0, 120.0, 140.0, 'REMOVED', NULL, NULL, '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
-  (142, 48, 3049, 6049, 1, 'Face tag MANUALLY_TAGGED image 48', 28.5, 38.0, 120.0, 140.0, 'MANUALLY_TAGGED', NULL, NULL, '2026-08-18 10:00:00', 4, NULL, NULL),
-  (143, 48, 3049, 6049, 1, 'Face tag CONFIRMED image 48', 28.5, 38.0, 120.0, 140.0, 'CONFIRMED', 3, '2026-08-18 10:30:00', '2026-08-18 10:00:00', 4, NULL, NULL),
-  (144, 48, 3049, 6049, 1, 'Face tag REMOVED image 48', 28.5, 38.0, 120.0, 140.0, 'REMOVED', NULL, NULL, '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
-  (145, 49, 3050, 6050, 2, 'Face tag MANUALLY_TAGGED image 49', 29.5, 39.0, 120.0, 140.0, 'MANUALLY_TAGGED', NULL, NULL, '2026-08-18 10:00:00', 4, NULL, NULL),
-  (146, 49, 3050, 6050, 2, 'Face tag CONFIRMED image 49', 29.5, 39.0, 120.0, 140.0, 'CONFIRMED', 3, '2026-08-18 10:30:00', '2026-08-18 10:00:00', 4, NULL, NULL),
-  (147, 49, 3050, 6050, 2, 'Face tag REMOVED image 49', 29.5, 39.0, 120.0, 140.0, 'REMOVED', NULL, NULL, '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
-  (148, 50, 3001, 6051, 3, 'Face tag MANUALLY_TAGGED image 50', 30.5, 15.0, 120.0, 140.0, 'MANUALLY_TAGGED', NULL, NULL, '2026-08-18 10:00:00', 4, NULL, NULL),
-  (149, 50, 3001, 6051, 3, 'Face tag CONFIRMED image 50', 30.5, 15.0, 120.0, 140.0, 'CONFIRMED', 3, '2026-08-18 10:30:00', '2026-08-18 10:00:00', 4, NULL, NULL),
-  (150, 50, 3001, 6051, 3, 'Face tag REMOVED image 50', 30.5, 15.0, 120.0, 140.0, 'REMOVED', NULL, NULL, '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
-  (151, 51, 3002, 6052, 4, 'Face tag MANUALLY_TAGGED image 51', 31.5, 16.0, 120.0, 140.0, 'MANUALLY_TAGGED', NULL, NULL, '2026-08-18 10:00:00', 4, NULL, NULL),
-  (152, 51, 3002, 6052, 4, 'Face tag CONFIRMED image 51', 31.5, 16.0, 120.0, 140.0, 'CONFIRMED', 3, '2026-08-18 10:30:00', '2026-08-18 10:00:00', 4, NULL, NULL),
-  (153, 51, 3002, 6052, 4, 'Face tag REMOVED image 51', 31.5, 16.0, 120.0, 140.0, 'REMOVED', NULL, NULL, '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
-  (154, 52, 3003, 6053, 5, 'Face tag MANUALLY_TAGGED image 52', 32.5, 17.0, 120.0, 140.0, 'MANUALLY_TAGGED', NULL, NULL, '2026-08-18 10:00:00', 4, NULL, NULL),
-  (155, 52, 3003, 6053, 5, 'Face tag CONFIRMED image 52', 32.5, 17.0, 120.0, 140.0, 'CONFIRMED', 3, '2026-08-18 10:30:00', '2026-08-18 10:00:00', 4, NULL, NULL),
-  (156, 52, 3003, 6053, 5, 'Face tag REMOVED image 52', 32.5, 17.0, 120.0, 140.0, 'REMOVED', NULL, NULL, '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
-  (157, 53, 3004, 6054, 6, 'Face tag MANUALLY_TAGGED image 53', 33.5, 18.0, 120.0, 140.0, 'MANUALLY_TAGGED', NULL, NULL, '2026-08-18 10:00:00', 4, NULL, NULL),
-  (158, 53, 3004, 6054, 6, 'Face tag CONFIRMED image 53', 33.5, 18.0, 120.0, 140.0, 'CONFIRMED', 3, '2026-08-18 10:30:00', '2026-08-18 10:00:00', 4, NULL, NULL),
-  (159, 53, 3004, 6054, 6, 'Face tag REMOVED image 53', 33.5, 18.0, 120.0, 140.0, 'REMOVED', NULL, NULL, '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
-  (160, 54, 3005, 6055, 7, 'Face tag MANUALLY_TAGGED image 54', 34.5, 19.0, 120.0, 140.0, 'MANUALLY_TAGGED', NULL, NULL, '2026-08-18 10:00:00', 4, NULL, NULL),
-  (161, 54, 3005, 6055, 7, 'Face tag CONFIRMED image 54', 34.5, 19.0, 120.0, 140.0, 'CONFIRMED', 3, '2026-08-18 10:30:00', '2026-08-18 10:00:00', 4, NULL, NULL),
-  (162, 54, 3005, 6055, 7, 'Face tag REMOVED image 54', 34.5, 19.0, 120.0, 140.0, 'REMOVED', NULL, NULL, '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
-  (163, 55, 3006, 6056, 8, 'Face tag MANUALLY_TAGGED image 55', 35.5, 20.0, 120.0, 140.0, 'MANUALLY_TAGGED', NULL, NULL, '2026-08-18 10:00:00', 4, NULL, NULL),
-  (164, 55, 3006, 6056, 8, 'Face tag CONFIRMED image 55', 35.5, 20.0, 120.0, 140.0, 'CONFIRMED', 3, '2026-08-18 10:30:00', '2026-08-18 10:00:00', 4, NULL, NULL),
-  (165, 55, 3006, 6056, 8, 'Face tag REMOVED image 55', 35.5, 20.0, 120.0, 140.0, 'REMOVED', NULL, NULL, '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
-  (166, 56, 3007, 6057, 9, 'Face tag MANUALLY_TAGGED image 56', 36.5, 21.0, 120.0, 140.0, 'MANUALLY_TAGGED', NULL, NULL, '2026-08-18 10:00:00', 4, NULL, NULL),
-  (167, 56, 3007, 6057, 9, 'Face tag CONFIRMED image 56', 36.5, 21.0, 120.0, 140.0, 'CONFIRMED', 3, '2026-08-18 10:30:00', '2026-08-18 10:00:00', 4, NULL, NULL),
-  (168, 56, 3007, 6057, 9, 'Face tag REMOVED image 56', 36.5, 21.0, 120.0, 140.0, 'REMOVED', NULL, NULL, '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
-  (169, 57, 3008, 6058, 10, 'Face tag MANUALLY_TAGGED image 57', 37.5, 22.0, 120.0, 140.0, 'MANUALLY_TAGGED', NULL, NULL, '2026-08-18 10:00:00', 4, NULL, NULL),
-  (170, 57, 3008, 6058, 10, 'Face tag CONFIRMED image 57', 37.5, 22.0, 120.0, 140.0, 'CONFIRMED', 3, '2026-08-18 10:30:00', '2026-08-18 10:00:00', 4, NULL, NULL),
-  (171, 57, 3008, 6058, 10, 'Face tag REMOVED image 57', 37.5, 22.0, 120.0, 140.0, 'REMOVED', NULL, NULL, '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
-  (172, 58, 3009, 6059, 11, 'Face tag MANUALLY_TAGGED image 58', 38.5, 23.0, 120.0, 140.0, 'MANUALLY_TAGGED', NULL, NULL, '2026-08-18 10:00:00', 4, NULL, NULL),
-  (173, 58, 3009, 6059, 11, 'Face tag CONFIRMED image 58', 38.5, 23.0, 120.0, 140.0, 'CONFIRMED', 3, '2026-08-18 10:30:00', '2026-08-18 10:00:00', 4, NULL, NULL),
-  (174, 58, 3009, 6059, 11, 'Face tag REMOVED image 58', 38.5, 23.0, 120.0, 140.0, 'REMOVED', NULL, NULL, '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
-  (175, 59, 3010, 6060, 12, 'Face tag MANUALLY_TAGGED image 59', 39.5, 24.0, 120.0, 140.0, 'MANUALLY_TAGGED', NULL, NULL, '2026-08-18 10:00:00', 4, NULL, NULL),
-  (176, 59, 3010, 6060, 12, 'Face tag CONFIRMED image 59', 39.5, 24.0, 120.0, 140.0, 'CONFIRMED', 3, '2026-08-18 10:30:00', '2026-08-18 10:00:00', 4, NULL, NULL),
-  (177, 59, 3010, 6060, 12, 'Face tag REMOVED image 59', 39.5, 24.0, 120.0, 140.0, 'REMOVED', NULL, NULL, '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4);
+-- =====================================================================
+-- NEW GALLERY SEED (v10 final): areas, locations, items, item media
+-- Old galleries/gallery_images seed has been migrated to the normalized model.
+-- =====================================================================
+
+INSERT INTO gallery_areas (area_id, campus_id, area_name, area_key, status, display_order, created_at, created_by, updated_at, updated_by) VALUES
+  (1, 1, 'Academic Area', 'academic-area', 'ACTIVE', 0, '2026-04-01 09:00:00', 4, NULL, NULL),
+  (2, 1, 'Lab Zone', 'lab-zone', 'ACTIVE', 1, '2026-04-01 09:30:00', 4, NULL, NULL),
+  (3, 2, 'Green Walkway', 'green-walkway', 'ACTIVE', 2, '2026-04-02 09:00:00', 10, NULL, NULL),
+  (4, 3, 'Riverside Lab', 'riverside-lab', 'ACTIVE', 3, '2026-04-03 09:00:00', 12, NULL, NULL),
+  (5, 4, 'Mekong Workshop Zone', 'mekong-workshop-zone', 'ACTIVE', 4, '2026-04-04 09:00:00', 14, NULL, NULL),
+  (6, 5, 'Coastal Innovation Area', 'coastal-innovation-area', 'ACTIVE', 5, '2026-04-05 09:00:00', 16, NULL, NULL),
+  (7, 1, 'Coverage Zone', 'coverage-zone', 'ACTIVE', 6, '2026-08-18 08:00:00', 4, NULL, NULL),
+  (8, 2, 'Coverage Zone', 'coverage-zone', 'ACTIVE', 7, '2026-08-18 08:00:00', 4, NULL, NULL),
+  (9, 3, 'Coverage Zone', 'coverage-zone', 'ACTIVE', 8, '2026-08-18 08:00:00', 4, NULL, NULL),
+  (10, 4, 'Coverage Zone', 'coverage-zone', 'ACTIVE', 9, '2026-08-18 08:00:00', 4, NULL, NULL),
+  (11, 5, 'Coverage Zone', 'coverage-zone', 'ACTIVE', 10, '2026-08-18 08:00:00', 4, NULL, NULL);
+
+INSERT INTO gallery_locations (location_id, area_id, location_name, location_key, status, display_order, created_at, created_by, updated_at, updated_by) VALUES
+  (1, 1, 'Alpha Lobby', 'alpha-lobby', 'ACTIVE', 0, '2026-04-01 09:00:00', 4, NULL, NULL),
+  (2, 2, 'Innovation Lab', 'innovation-lab', 'ACTIVE', 0, '2026-04-01 09:30:00', 4, NULL, NULL),
+  (3, 3, 'Central Walkway', 'central-walkway', 'ACTIVE', 0, '2026-04-02 09:00:00', 10, NULL, NULL),
+  (4, 4, 'Da Nang Lab View', 'da-nang-lab-view', 'ACTIVE', 0, '2026-04-03 09:00:00', 12, NULL, NULL),
+  (5, 5, 'CT Workshop Room', 'ct-workshop-room', 'ACTIVE', 0, '2026-04-04 09:00:00', 14, NULL, NULL),
+  (6, 6, 'QN Hospitality Space', 'qn-hospitality-space', 'ACTIVE', 0, '2026-04-05 09:00:00', 16, NULL, NULL),
+  (7, 7, 'Coverage Location 17001', 'coverage-location-17001', 'ACTIVE', 0, '2026-08-18 08:00:00', 4, NULL, NULL),
+  (8, 7, 'Coverage Location 17002', 'coverage-location-17002', 'ACTIVE', 1, '2026-08-18 08:00:00', 4, NULL, NULL),
+  (9, 7, 'Coverage Location 17003', 'coverage-location-17003', 'ACTIVE', 2, '2026-08-18 08:00:00', 4, NULL, NULL),
+  (10, 7, 'Coverage Location 17004', 'coverage-location-17004', 'ACTIVE', 3, '2026-08-18 08:00:00', 4, NULL, NULL),
+  (11, 7, 'Coverage Location 17005', 'coverage-location-17005', 'ACTIVE', 4, '2026-08-18 08:00:00', 4, NULL, NULL),
+  (12, 7, 'Coverage Location 17006', 'coverage-location-17006', 'ACTIVE', 5, '2026-08-18 08:00:00', 4, NULL, NULL),
+  (13, 8, 'Coverage Location 17007', 'coverage-location-17007', 'ACTIVE', 0, '2026-08-18 08:00:00', 4, NULL, NULL),
+  (14, 8, 'Coverage Location 17008', 'coverage-location-17008', 'ACTIVE', 1, '2026-08-18 08:00:00', 4, NULL, NULL),
+  (15, 8, 'Coverage Location 17009', 'coverage-location-17009', 'ACTIVE', 2, '2026-08-18 08:00:00', 4, NULL, NULL),
+  (16, 8, 'Coverage Location 17010', 'coverage-location-17010', 'ACTIVE', 3, '2026-08-18 08:00:00', 4, NULL, NULL),
+  (17, 8, 'Coverage Location 17011', 'coverage-location-17011', 'ACTIVE', 4, '2026-08-18 08:00:00', 4, NULL, NULL),
+  (18, 8, 'Coverage Location 17012', 'coverage-location-17012', 'ACTIVE', 5, '2026-08-18 08:00:00', 4, NULL, NULL),
+  (19, 9, 'Coverage Location 17013', 'coverage-location-17013', 'ACTIVE', 0, '2026-08-18 08:00:00', 4, NULL, NULL),
+  (20, 9, 'Coverage Location 17014', 'coverage-location-17014', 'ACTIVE', 1, '2026-08-18 08:00:00', 4, NULL, NULL),
+  (21, 9, 'Coverage Location 17015', 'coverage-location-17015', 'ACTIVE', 2, '2026-08-18 08:00:00', 4, NULL, NULL),
+  (22, 9, 'Coverage Location 17016', 'coverage-location-17016', 'ACTIVE', 3, '2026-08-18 08:00:00', 4, NULL, NULL),
+  (23, 9, 'Coverage Location 17017', 'coverage-location-17017', 'ACTIVE', 4, '2026-08-18 08:00:00', 4, NULL, NULL),
+  (24, 9, 'Coverage Location 17018', 'coverage-location-17018', 'ACTIVE', 5, '2026-08-18 08:00:00', 4, NULL, NULL),
+  (25, 10, 'Coverage Location 17019', 'coverage-location-17019', 'ACTIVE', 0, '2026-08-18 08:00:00', 4, NULL, NULL),
+  (26, 10, 'Coverage Location 17020', 'coverage-location-17020', 'ACTIVE', 1, '2026-08-18 08:00:00', 4, NULL, NULL),
+  (27, 10, 'Coverage Location 17021', 'coverage-location-17021', 'ACTIVE', 2, '2026-08-18 08:00:00', 4, NULL, NULL),
+  (28, 10, 'Coverage Location 17022', 'coverage-location-17022', 'ACTIVE', 3, '2026-08-18 08:00:00', 4, NULL, NULL),
+  (29, 10, 'Coverage Location 17023', 'coverage-location-17023', 'ACTIVE', 4, '2026-08-18 08:00:00', 4, NULL, NULL),
+  (30, 10, 'Coverage Location 17024', 'coverage-location-17024', 'ACTIVE', 5, '2026-08-18 08:00:00', 4, NULL, NULL),
+  (31, 11, 'Coverage Location 17025', 'coverage-location-17025', 'ACTIVE', 0, '2026-08-18 08:00:00', 4, NULL, NULL),
+  (32, 11, 'Coverage Location 17026', 'coverage-location-17026', 'ACTIVE', 1, '2026-08-18 08:00:00', 4, NULL, NULL),
+  (33, 11, 'Coverage Location 17027', 'coverage-location-17027', 'ACTIVE', 2, '2026-08-18 08:00:00', 4, NULL, NULL),
+  (34, 11, 'Coverage Location 17028', 'coverage-location-17028', 'ACTIVE', 3, '2026-08-18 08:00:00', 4, NULL, NULL),
+  (35, 11, 'Coverage Location 17029', 'coverage-location-17029', 'ACTIVE', 4, '2026-08-18 08:00:00', 4, NULL, NULL),
+  (36, 11, 'Coverage Location 17030', 'coverage-location-17030', 'ACTIVE', 5, '2026-08-18 08:00:00', 4, NULL, NULL);
+
+INSERT INTO gallery_items (gallery_item_id, location_id, title, description, media_kind, status, display_order, created_at, created_by, updated_at, updated_by, deleted_at, deleted_by) VALUES
+  (1, 1, 'HN Alpha Lobby', 'Không gian đầu tiên khách nhìn thấy khi vào campus Hà Nội.', 'IMAGE', 'PUBLISHED', 0, '2026-04-01 09:00:00', 4, NULL, NULL, NULL, NULL),
+  (2, 2, 'HN Innovation Lab', 'Khu lab dành cho demo học thuật và exchange chuyên môn.', 'IMAGE', 'PUBLISHED', 0, '2026-04-01 09:30:00', 4, NULL, NULL, NULL, NULL),
+  (3, 3, 'HCM Green Walkway', 'Điểm tour phù hợp cho chủ đề campus xanh và student life.', 'MIXED', 'PUBLISHED', 0, '2026-04-02 09:00:00', 10, NULL, NULL, NULL, NULL),
+  (4, 4, 'DN Riverside Lab', 'Gallery nội bộ cho đoàn công nghệ tại campus Đà Nẵng.', 'IMAGE', 'HIDDEN', 0, '2026-04-03 09:00:00', 12, NULL, NULL, NULL, NULL),
+  (5, 5, 'CT Mekong Workshop', 'Không gian thảo luận nhóm tại Cần Thơ.', 'IMAGE', 'PUBLISHED', 0, '2026-04-04 09:00:00', 14, NULL, NULL, NULL, NULL),
+  (6, 6, 'QN Coastal Innovation Space', 'Điểm nhấn campus Quy Nhơn cho các đoàn du lịch - khách sạn.', 'MIXED', 'PUBLISHED', 0, '2026-04-05 09:00:00', 16, NULL, NULL, NULL, NULL),
+  (17001, 7, 'Gallery PRIVATE PUBLISHED campus 1', 'Gallery coverage với visibility=PRIVATE, status=PUBLISHED.', 'MIXED', 'PUBLISHED', 0, '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
+  (17002, 8, 'Gallery PRIVATE HIDDEN campus 1', 'Gallery coverage với visibility=PRIVATE, status=HIDDEN.', 'IMAGE', 'HIDDEN', 0, '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
+  (17003, 9, 'Gallery INTERNAL PUBLISHED campus 1', 'Gallery coverage với visibility=INTERNAL, status=PUBLISHED.', 'IMAGE', 'PUBLISHED', 0, '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
+  (17004, 10, 'Gallery INTERNAL HIDDEN campus 1', 'Gallery coverage với visibility=INTERNAL, status=HIDDEN.', 'MIXED', 'HIDDEN', 0, '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
+  (17005, 11, 'Gallery PUBLIC PUBLISHED campus 1', 'Gallery coverage với visibility=PUBLIC, status=PUBLISHED.', 'IMAGE', 'PUBLISHED', 0, '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
+  (17006, 12, 'Gallery PUBLIC HIDDEN campus 1', 'Gallery coverage với visibility=PUBLIC, status=HIDDEN.', 'IMAGE', 'HIDDEN', 0, '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
+  (17007, 13, 'Gallery PRIVATE PUBLISHED campus 2', 'Gallery coverage với visibility=PRIVATE, status=PUBLISHED.', 'MIXED', 'PUBLISHED', 0, '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
+  (17008, 14, 'Gallery PRIVATE HIDDEN campus 2', 'Gallery coverage với visibility=PRIVATE, status=HIDDEN.', 'IMAGE', 'HIDDEN', 0, '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
+  (17009, 15, 'Gallery INTERNAL PUBLISHED campus 2', 'Gallery coverage với visibility=INTERNAL, status=PUBLISHED.', 'IMAGE', 'PUBLISHED', 0, '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
+  (17010, 16, 'Gallery INTERNAL HIDDEN campus 2', 'Gallery coverage với visibility=INTERNAL, status=HIDDEN.', 'MIXED', 'HIDDEN', 0, '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
+  (17011, 17, 'Gallery PUBLIC PUBLISHED campus 2', 'Gallery coverage với visibility=PUBLIC, status=PUBLISHED.', 'IMAGE', 'PUBLISHED', 0, '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
+  (17012, 18, 'Gallery PUBLIC HIDDEN campus 2', 'Gallery coverage với visibility=PUBLIC, status=HIDDEN.', 'IMAGE', 'HIDDEN', 0, '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
+  (17013, 19, 'Gallery PRIVATE PUBLISHED campus 3', 'Gallery coverage với visibility=PRIVATE, status=PUBLISHED.', 'MIXED', 'PUBLISHED', 0, '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
+  (17014, 20, 'Gallery PRIVATE HIDDEN campus 3', 'Gallery coverage với visibility=PRIVATE, status=HIDDEN.', 'IMAGE', 'HIDDEN', 0, '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
+  (17015, 21, 'Gallery INTERNAL PUBLISHED campus 3', 'Gallery coverage với visibility=INTERNAL, status=PUBLISHED.', 'IMAGE', 'PUBLISHED', 0, '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
+  (17016, 22, 'Gallery INTERNAL HIDDEN campus 3', 'Gallery coverage với visibility=INTERNAL, status=HIDDEN.', 'MIXED', 'HIDDEN', 0, '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
+  (17017, 23, 'Gallery PUBLIC PUBLISHED campus 3', 'Gallery coverage với visibility=PUBLIC, status=PUBLISHED.', 'IMAGE', 'PUBLISHED', 0, '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
+  (17018, 24, 'Gallery PUBLIC HIDDEN campus 3', 'Gallery coverage với visibility=PUBLIC, status=HIDDEN.', 'IMAGE', 'HIDDEN', 0, '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
+  (17019, 25, 'Gallery PRIVATE PUBLISHED campus 4', 'Gallery coverage với visibility=PRIVATE, status=PUBLISHED.', 'MIXED', 'PUBLISHED', 0, '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
+  (17020, 26, 'Gallery PRIVATE HIDDEN campus 4', 'Gallery coverage với visibility=PRIVATE, status=HIDDEN.', 'IMAGE', 'HIDDEN', 0, '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
+  (17021, 27, 'Gallery INTERNAL PUBLISHED campus 4', 'Gallery coverage với visibility=INTERNAL, status=PUBLISHED.', 'IMAGE', 'PUBLISHED', 0, '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
+  (17022, 28, 'Gallery INTERNAL HIDDEN campus 4', 'Gallery coverage với visibility=INTERNAL, status=HIDDEN.', 'MIXED', 'HIDDEN', 0, '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
+  (17023, 29, 'Gallery PUBLIC PUBLISHED campus 4', 'Gallery coverage với visibility=PUBLIC, status=PUBLISHED.', 'IMAGE', 'PUBLISHED', 0, '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
+  (17024, 30, 'Gallery PUBLIC HIDDEN campus 4', 'Gallery coverage với visibility=PUBLIC, status=HIDDEN.', 'IMAGE', 'HIDDEN', 0, '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
+  (17025, 31, 'Gallery PRIVATE PUBLISHED campus 5', 'Gallery coverage với visibility=PRIVATE, status=PUBLISHED.', 'MIXED', 'PUBLISHED', 0, '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
+  (17026, 32, 'Gallery PRIVATE HIDDEN campus 5', 'Gallery coverage với visibility=PRIVATE, status=HIDDEN.', 'IMAGE', 'HIDDEN', 0, '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
+  (17027, 33, 'Gallery INTERNAL PUBLISHED campus 5', 'Gallery coverage với visibility=INTERNAL, status=PUBLISHED.', 'IMAGE', 'PUBLISHED', 0, '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
+  (17028, 34, 'Gallery INTERNAL HIDDEN campus 5', 'Gallery coverage với visibility=INTERNAL, status=HIDDEN.', 'MIXED', 'HIDDEN', 0, '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
+  (17029, 35, 'Gallery PUBLIC PUBLISHED campus 5', 'Gallery coverage với visibility=PUBLIC, status=PUBLISHED.', 'IMAGE', 'PUBLISHED', 0, '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
+  (17030, 36, 'Gallery PUBLIC HIDDEN campus 5', 'Gallery coverage với visibility=PUBLIC, status=HIDDEN.', 'IMAGE', 'HIDDEN', 0, '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL);
+
+INSERT INTO gallery_item_media (media_id, gallery_item_id, file_id, media_type, thumbnail_file_id, caption, alt_text, is_primary, display_order, taken_at, status, created_at, created_by, updated_at, updated_by, deleted_at, deleted_by) VALUES
+  (1, 1, 301, 'IMAGE', NULL, 'Gallery 1 media 1: caption riêng cho kiểm thử gallery.', NULL, 1, 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
+  (2, 1, 302, 'IMAGE', NULL, 'Gallery 1 media 2: caption riêng cho kiểm thử gallery.', NULL, 0, 2, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
+  (3, 2, 303, 'IMAGE', NULL, 'Gallery 2 media 1: caption riêng cho kiểm thử gallery.', NULL, 1, 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
+  (4, 2, 304, 'IMAGE', NULL, 'Gallery 2 media 2: caption riêng cho kiểm thử gallery.', NULL, 0, 2, '2026-08-18 09:00:00', 'HIDDEN', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
+  (5, 3, 305, 'IMAGE', NULL, 'Gallery 3 media 1: caption riêng cho kiểm thử gallery.', NULL, 1, 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
+  (6, 3, 306, 'VIDEO', NULL, 'Gallery 3 media 2: caption riêng cho kiểm thử gallery.', NULL, 0, 2, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
+  (7, 4, 307, 'IMAGE', NULL, 'Gallery 4 media 1: caption riêng cho kiểm thử gallery.', NULL, 1, 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
+  (8, 4, 308, 'IMAGE', NULL, 'Gallery 4 media 2: caption riêng cho kiểm thử gallery.', NULL, 0, 2, '2026-08-18 09:00:00', 'HIDDEN', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
+  (9, 5, 309, 'IMAGE', NULL, 'Gallery 5 media 1: caption riêng cho kiểm thử gallery.', NULL, 1, 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
+  (10, 5, 310, 'IMAGE', NULL, 'Gallery 5 media 2: caption riêng cho kiểm thử gallery.', NULL, 0, 2, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
+  (11, 6, 311, 'IMAGE', NULL, 'Gallery 6 media 1: caption riêng cho kiểm thử gallery.', NULL, 1, 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
+  (12, 6, 312, 'VIDEO', NULL, 'Gallery 6 media 2: caption riêng cho kiểm thử gallery.', NULL, 0, 2, '2026-08-18 09:00:00', 'HIDDEN', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
+  (13, 17001, 313, 'IMAGE', NULL, 'Gallery 17001 media 1: caption riêng cho kiểm thử gallery.', NULL, 1, 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
+  (14, 17001, 314, 'VIDEO', NULL, 'Gallery 17001 media 2: caption riêng cho kiểm thử gallery.', NULL, 0, 2, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
+  (15, 17002, 315, 'IMAGE', NULL, 'Gallery 17002 media 1: caption riêng cho kiểm thử gallery.', NULL, 1, 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
+  (16, 17002, 316, 'IMAGE', NULL, 'Gallery 17002 media 2: caption riêng cho kiểm thử gallery.', NULL, 0, 2, '2026-08-18 09:00:00', 'HIDDEN', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
+  (17, 17003, 317, 'IMAGE', NULL, 'Gallery 17003 media 1: caption riêng cho kiểm thử gallery.', NULL, 1, 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
+  (18, 17003, 318, 'IMAGE', NULL, 'Gallery 17003 media 2: caption riêng cho kiểm thử gallery.', NULL, 0, 2, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
+  (19, 17004, 319, 'IMAGE', NULL, 'Gallery 17004 media 1: caption riêng cho kiểm thử gallery.', NULL, 1, 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
+  (20, 17004, 320, 'VIDEO', NULL, 'Gallery 17004 media 2: caption riêng cho kiểm thử gallery.', NULL, 0, 2, '2026-08-18 09:00:00', 'HIDDEN', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
+  (21, 17005, 321, 'IMAGE', NULL, 'Gallery 17005 media 1: caption riêng cho kiểm thử gallery.', NULL, 1, 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
+  (22, 17005, 322, 'IMAGE', NULL, 'Gallery 17005 media 2: caption riêng cho kiểm thử gallery.', NULL, 0, 2, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
+  (23, 17006, 323, 'IMAGE', NULL, 'Gallery 17006 media 1: caption riêng cho kiểm thử gallery.', NULL, 1, 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
+  (24, 17006, 324, 'IMAGE', NULL, 'Gallery 17006 media 2: caption riêng cho kiểm thử gallery.', NULL, 0, 2, '2026-08-18 09:00:00', 'HIDDEN', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
+  (25, 17007, 325, 'IMAGE', NULL, 'Gallery 17007 media 1: caption riêng cho kiểm thử gallery.', NULL, 1, 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
+  (26, 17007, 326, 'VIDEO', NULL, 'Gallery 17007 media 2: caption riêng cho kiểm thử gallery.', NULL, 0, 2, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
+  (27, 17008, 327, 'IMAGE', NULL, 'Gallery 17008 media 1: caption riêng cho kiểm thử gallery.', NULL, 1, 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
+  (28, 17008, 328, 'IMAGE', NULL, 'Gallery 17008 media 2: caption riêng cho kiểm thử gallery.', NULL, 0, 2, '2026-08-18 09:00:00', 'HIDDEN', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
+  (29, 17009, 329, 'IMAGE', NULL, 'Gallery 17009 media 1: caption riêng cho kiểm thử gallery.', NULL, 1, 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
+  (30, 17009, 330, 'IMAGE', NULL, 'Gallery 17009 media 2: caption riêng cho kiểm thử gallery.', NULL, 0, 2, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
+  (31, 17010, 331, 'IMAGE', NULL, 'Gallery 17010 media 1: caption riêng cho kiểm thử gallery.', NULL, 1, 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
+  (32, 17010, 332, 'VIDEO', NULL, 'Gallery 17010 media 2: caption riêng cho kiểm thử gallery.', NULL, 0, 2, '2026-08-18 09:00:00', 'HIDDEN', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
+  (33, 17011, 333, 'IMAGE', NULL, 'Gallery 17011 media 1: caption riêng cho kiểm thử gallery.', NULL, 1, 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
+  (34, 17011, 334, 'IMAGE', NULL, 'Gallery 17011 media 2: caption riêng cho kiểm thử gallery.', NULL, 0, 2, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
+  (35, 17012, 335, 'IMAGE', NULL, 'Gallery 17012 media 1: caption riêng cho kiểm thử gallery.', NULL, 1, 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
+  (36, 17012, 336, 'IMAGE', NULL, 'Gallery 17012 media 2: caption riêng cho kiểm thử gallery.', NULL, 0, 2, '2026-08-18 09:00:00', 'HIDDEN', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
+  (37, 17013, 337, 'IMAGE', NULL, 'Gallery 17013 media 1: caption riêng cho kiểm thử gallery.', NULL, 1, 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
+  (38, 17013, 338, 'VIDEO', NULL, 'Gallery 17013 media 2: caption riêng cho kiểm thử gallery.', NULL, 0, 2, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
+  (39, 17014, 339, 'IMAGE', NULL, 'Gallery 17014 media 1: caption riêng cho kiểm thử gallery.', NULL, 1, 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
+  (40, 17014, 340, 'IMAGE', NULL, 'Gallery 17014 media 2: caption riêng cho kiểm thử gallery.', NULL, 0, 2, '2026-08-18 09:00:00', 'HIDDEN', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
+  (41, 17015, 341, 'IMAGE', NULL, 'Gallery 17015 media 1: caption riêng cho kiểm thử gallery.', NULL, 1, 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
+  (42, 17015, 342, 'IMAGE', NULL, 'Gallery 17015 media 2: caption riêng cho kiểm thử gallery.', NULL, 0, 2, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
+  (43, 17016, 343, 'IMAGE', NULL, 'Gallery 17016 media 1: caption riêng cho kiểm thử gallery.', NULL, 1, 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
+  (44, 17016, 344, 'VIDEO', NULL, 'Gallery 17016 media 2: caption riêng cho kiểm thử gallery.', NULL, 0, 2, '2026-08-18 09:00:00', 'HIDDEN', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
+  (45, 17017, 345, 'IMAGE', NULL, 'Gallery 17017 media 1: caption riêng cho kiểm thử gallery.', NULL, 1, 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
+  (46, 17017, 346, 'IMAGE', NULL, 'Gallery 17017 media 2: caption riêng cho kiểm thử gallery.', NULL, 0, 2, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
+  (47, 17018, 347, 'IMAGE', NULL, 'Gallery 17018 media 1: caption riêng cho kiểm thử gallery.', NULL, 1, 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
+  (48, 17018, 348, 'IMAGE', NULL, 'Gallery 17018 media 2: caption riêng cho kiểm thử gallery.', NULL, 0, 2, '2026-08-18 09:00:00', 'HIDDEN', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
+  (49, 17019, 349, 'IMAGE', NULL, 'Gallery 17019 media 1: caption riêng cho kiểm thử gallery.', NULL, 1, 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
+  (50, 17019, 350, 'VIDEO', NULL, 'Gallery 17019 media 2: caption riêng cho kiểm thử gallery.', NULL, 0, 2, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
+  (51, 17020, 351, 'IMAGE', NULL, 'Gallery 17020 media 1: caption riêng cho kiểm thử gallery.', NULL, 1, 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
+  (52, 17020, 352, 'IMAGE', NULL, 'Gallery 17020 media 2: caption riêng cho kiểm thử gallery.', NULL, 0, 2, '2026-08-18 09:00:00', 'HIDDEN', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
+  (53, 17021, 353, 'IMAGE', NULL, 'Gallery 17021 media 1: caption riêng cho kiểm thử gallery.', NULL, 1, 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
+  (54, 17021, 354, 'IMAGE', NULL, 'Gallery 17021 media 2: caption riêng cho kiểm thử gallery.', NULL, 0, 2, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
+  (55, 17022, 355, 'IMAGE', NULL, 'Gallery 17022 media 1: caption riêng cho kiểm thử gallery.', NULL, 1, 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
+  (56, 17022, 356, 'VIDEO', NULL, 'Gallery 17022 media 2: caption riêng cho kiểm thử gallery.', NULL, 0, 2, '2026-08-18 09:00:00', 'HIDDEN', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
+  (57, 17023, 357, 'IMAGE', NULL, 'Gallery 17023 media 1: caption riêng cho kiểm thử gallery.', NULL, 1, 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
+  (58, 17023, 358, 'IMAGE', NULL, 'Gallery 17023 media 2: caption riêng cho kiểm thử gallery.', NULL, 0, 2, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
+  (59, 17024, 359, 'IMAGE', NULL, 'Gallery 17024 media 1: caption riêng cho kiểm thử gallery.', NULL, 1, 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
+  (60, 17024, 360, 'IMAGE', NULL, 'Gallery 17024 media 2: caption riêng cho kiểm thử gallery.', NULL, 0, 2, '2026-08-18 09:00:00', 'HIDDEN', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
+  (61, 17025, 361, 'IMAGE', NULL, 'Gallery 17025 media 1: caption riêng cho kiểm thử gallery.', NULL, 1, 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
+  (62, 17025, 362, 'VIDEO', NULL, 'Gallery 17025 media 2: caption riêng cho kiểm thử gallery.', NULL, 0, 2, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
+  (63, 17026, 363, 'IMAGE', NULL, 'Gallery 17026 media 1: caption riêng cho kiểm thử gallery.', NULL, 1, 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
+  (64, 17026, 364, 'IMAGE', NULL, 'Gallery 17026 media 2: caption riêng cho kiểm thử gallery.', NULL, 0, 2, '2026-08-18 09:00:00', 'HIDDEN', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
+  (65, 17027, 365, 'IMAGE', NULL, 'Gallery 17027 media 1: caption riêng cho kiểm thử gallery.', NULL, 1, 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
+  (66, 17027, 366, 'IMAGE', NULL, 'Gallery 17027 media 2: caption riêng cho kiểm thử gallery.', NULL, 0, 2, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
+  (67, 17028, 367, 'IMAGE', NULL, 'Gallery 17028 media 1: caption riêng cho kiểm thử gallery.', NULL, 1, 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
+  (68, 17028, 368, 'VIDEO', NULL, 'Gallery 17028 media 2: caption riêng cho kiểm thử gallery.', NULL, 0, 2, '2026-08-18 09:00:00', 'HIDDEN', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
+  (69, 17029, 369, 'IMAGE', NULL, 'Gallery 17029 media 1: caption riêng cho kiểm thử gallery.', NULL, 1, 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
+  (70, 17029, 370, 'IMAGE', NULL, 'Gallery 17029 media 2: caption riêng cho kiểm thử gallery.', NULL, 0, 2, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
+  (71, 17030, 371, 'IMAGE', NULL, 'Gallery 17030 media 1: caption riêng cho kiểm thử gallery.', NULL, 1, 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
+  (72, 17030, 372, 'IMAGE', NULL, 'Gallery 17030 media 2: caption riêng cho kiểm thử gallery.', NULL, 0, 2, '2026-08-18 09:00:00', 'HIDDEN', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL);
+
+-- Photo face tags are kept as a shared photo-tag module, now linked directly to files.
+INSERT INTO photo_face_tags (face_tag_id, file_id, tagged_user_id, guest_member_id, partner_contact_id, display_name, person_name_key, bounding_box_x, bounding_box_y, bounding_box_width, bounding_box_height, tag_status, created_at, created_by, removed_at, removed_by) VALUES
+  (1, 301, NULL, 6002, 2, 'Người trong ảnh 1 - A', 'nguoi-trong-anh-1-a', 11.5, 16.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (2, 301, NULL, 6002, 2, 'Người trong ảnh 1 - B', 'nguoi-trong-anh-1-b', 11.5, 16.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (3, 301, NULL, 6002, 2, 'Người trong ảnh 1 - đã gỡ', 'nguoi-trong-anh-1-a-go', 11.5, 16.0, 120.0, 140.0, 'REMOVED', '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
+  (4, 302, NULL, 6003, 3, 'Người trong ảnh 2 - A', 'nguoi-trong-anh-2-a', 12.5, 17.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (5, 302, NULL, 6003, 3, 'Người trong ảnh 2 - B', 'nguoi-trong-anh-2-b', 12.5, 17.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (6, 302, NULL, 6003, 3, 'Người trong ảnh 2 - đã gỡ', 'nguoi-trong-anh-2-a-go', 12.5, 17.0, 120.0, 140.0, 'REMOVED', '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
+  (7, 303, NULL, 6004, 4, 'Người trong ảnh 3 - A', 'nguoi-trong-anh-3-a', 13.5, 18.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (8, 303, NULL, 6004, 4, 'Người trong ảnh 3 - B', 'nguoi-trong-anh-3-b', 13.5, 18.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (9, 303, NULL, 6004, 4, 'Người trong ảnh 3 - đã gỡ', 'nguoi-trong-anh-3-a-go', 13.5, 18.0, 120.0, 140.0, 'REMOVED', '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
+  (10, 304, NULL, 6005, 5, 'Người trong ảnh 4 - A', 'nguoi-trong-anh-4-a', 14.5, 19.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (11, 304, NULL, 6005, 5, 'Người trong ảnh 4 - B', 'nguoi-trong-anh-4-b', 14.5, 19.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (12, 304, NULL, 6005, 5, 'Người trong ảnh 4 - đã gỡ', 'nguoi-trong-anh-4-a-go', 14.5, 19.0, 120.0, 140.0, 'REMOVED', '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
+  (13, 305, NULL, 6006, 6, 'Người trong ảnh 5 - A', 'nguoi-trong-anh-5-a', 15.5, 20.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (14, 305, NULL, 6006, 6, 'Người trong ảnh 5 - B', 'nguoi-trong-anh-5-b', 15.5, 20.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (15, 305, NULL, 6006, 6, 'Người trong ảnh 5 - đã gỡ', 'nguoi-trong-anh-5-a-go', 15.5, 20.0, 120.0, 140.0, 'REMOVED', '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
+  (16, 306, NULL, 6007, 7, 'Người trong ảnh 6 - A', 'nguoi-trong-anh-6-a', 16.5, 21.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (17, 306, NULL, 6007, 7, 'Người trong ảnh 6 - B', 'nguoi-trong-anh-6-b', 16.5, 21.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (18, 306, NULL, 6007, 7, 'Người trong ảnh 6 - đã gỡ', 'nguoi-trong-anh-6-a-go', 16.5, 21.0, 120.0, 140.0, 'REMOVED', '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
+  (19, 307, NULL, 6008, 8, 'Người trong ảnh 7 - A', 'nguoi-trong-anh-7-a', 17.5, 22.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (20, 307, NULL, 6008, 8, 'Người trong ảnh 7 - B', 'nguoi-trong-anh-7-b', 17.5, 22.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (21, 307, NULL, 6008, 8, 'Người trong ảnh 7 - đã gỡ', 'nguoi-trong-anh-7-a-go', 17.5, 22.0, 120.0, 140.0, 'REMOVED', '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
+  (22, 308, NULL, 6009, 9, 'Người trong ảnh 8 - A', 'nguoi-trong-anh-8-a', 18.5, 23.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (23, 308, NULL, 6009, 9, 'Người trong ảnh 8 - B', 'nguoi-trong-anh-8-b', 18.5, 23.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (24, 308, NULL, 6009, 9, 'Người trong ảnh 8 - đã gỡ', 'nguoi-trong-anh-8-a-go', 18.5, 23.0, 120.0, 140.0, 'REMOVED', '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
+  (25, 309, NULL, 6010, 10, 'Người trong ảnh 9 - A', 'nguoi-trong-anh-9-a', 19.5, 24.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (26, 309, NULL, 6010, 10, 'Người trong ảnh 9 - B', 'nguoi-trong-anh-9-b', 19.5, 24.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (27, 309, NULL, 6010, 10, 'Người trong ảnh 9 - đã gỡ', 'nguoi-trong-anh-9-a-go', 19.5, 24.0, 120.0, 140.0, 'REMOVED', '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
+  (28, 310, NULL, 6011, 11, 'Người trong ảnh 10 - A', 'nguoi-trong-anh-10-a', 20.5, 25.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (29, 310, NULL, 6011, 11, 'Người trong ảnh 10 - B', 'nguoi-trong-anh-10-b', 20.5, 25.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (30, 310, NULL, 6011, 11, 'Người trong ảnh 10 - đã gỡ', 'nguoi-trong-anh-10-a-go', 20.5, 25.0, 120.0, 140.0, 'REMOVED', '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
+  (31, 311, NULL, 6012, 12, 'Người trong ảnh 11 - A', 'nguoi-trong-anh-11-a', 21.5, 26.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (32, 311, NULL, 6012, 12, 'Người trong ảnh 11 - B', 'nguoi-trong-anh-11-b', 21.5, 26.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (33, 311, NULL, 6012, 12, 'Người trong ảnh 11 - đã gỡ', 'nguoi-trong-anh-11-a-go', 21.5, 26.0, 120.0, 140.0, 'REMOVED', '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
+  (34, 312, NULL, 6013, 13, 'Người trong ảnh 12 - A', 'nguoi-trong-anh-12-a', 22.5, 27.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (35, 312, NULL, 6013, 13, 'Người trong ảnh 12 - B', 'nguoi-trong-anh-12-b', 22.5, 27.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (36, 312, NULL, 6013, 13, 'Người trong ảnh 12 - đã gỡ', 'nguoi-trong-anh-12-a-go', 22.5, 27.0, 120.0, 140.0, 'REMOVED', '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
+  (37, 313, NULL, 6014, 14, 'Người trong ảnh 13 - A', 'nguoi-trong-anh-13-a', 23.5, 28.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (38, 313, NULL, 6014, 14, 'Người trong ảnh 13 - B', 'nguoi-trong-anh-13-b', 23.5, 28.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (39, 313, NULL, 6014, 14, 'Người trong ảnh 13 - đã gỡ', 'nguoi-trong-anh-13-a-go', 23.5, 28.0, 120.0, 140.0, 'REMOVED', '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
+  (40, 314, NULL, 6015, 15, 'Người trong ảnh 14 - A', 'nguoi-trong-anh-14-a', 24.5, 29.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (41, 314, NULL, 6015, 15, 'Người trong ảnh 14 - B', 'nguoi-trong-anh-14-b', 24.5, 29.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (42, 314, NULL, 6015, 15, 'Người trong ảnh 14 - đã gỡ', 'nguoi-trong-anh-14-a-go', 24.5, 29.0, 120.0, 140.0, 'REMOVED', '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
+  (43, 315, NULL, 6016, 16, 'Người trong ảnh 15 - A', 'nguoi-trong-anh-15-a', 25.5, 30.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (44, 315, NULL, 6016, 16, 'Người trong ảnh 15 - B', 'nguoi-trong-anh-15-b', 25.5, 30.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (45, 315, NULL, 6016, 16, 'Người trong ảnh 15 - đã gỡ', 'nguoi-trong-anh-15-a-go', 25.5, 30.0, 120.0, 140.0, 'REMOVED', '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
+  (46, 316, NULL, 6017, 17, 'Người trong ảnh 16 - A', 'nguoi-trong-anh-16-a', 26.5, 31.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (47, 316, NULL, 6017, 17, 'Người trong ảnh 16 - B', 'nguoi-trong-anh-16-b', 26.5, 31.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (48, 316, NULL, 6017, 17, 'Người trong ảnh 16 - đã gỡ', 'nguoi-trong-anh-16-a-go', 26.5, 31.0, 120.0, 140.0, 'REMOVED', '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
+  (49, 317, NULL, 6018, 18, 'Người trong ảnh 17 - A', 'nguoi-trong-anh-17-a', 27.5, 32.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (50, 317, NULL, 6018, 18, 'Người trong ảnh 17 - B', 'nguoi-trong-anh-17-b', 27.5, 32.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (51, 317, NULL, 6018, 18, 'Người trong ảnh 17 - đã gỡ', 'nguoi-trong-anh-17-a-go', 27.5, 32.0, 120.0, 140.0, 'REMOVED', '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
+  (52, 318, NULL, 6019, 19, 'Người trong ảnh 18 - A', 'nguoi-trong-anh-18-a', 28.5, 33.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (53, 318, NULL, 6019, 19, 'Người trong ảnh 18 - B', 'nguoi-trong-anh-18-b', 28.5, 33.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (54, 318, NULL, 6019, 19, 'Người trong ảnh 18 - đã gỡ', 'nguoi-trong-anh-18-a-go', 28.5, 33.0, 120.0, 140.0, 'REMOVED', '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
+  (55, 319, NULL, 6020, 20, 'Người trong ảnh 19 - A', 'nguoi-trong-anh-19-a', 29.5, 34.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (56, 319, NULL, 6020, 20, 'Người trong ảnh 19 - B', 'nguoi-trong-anh-19-b', 29.5, 34.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (57, 319, NULL, 6020, 20, 'Người trong ảnh 19 - đã gỡ', 'nguoi-trong-anh-19-a-go', 29.5, 34.0, 120.0, 140.0, 'REMOVED', '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
+  (58, 320, NULL, 6021, 21, 'Người trong ảnh 20 - A', 'nguoi-trong-anh-20-a', 30.5, 35.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (59, 320, NULL, 6021, 21, 'Người trong ảnh 20 - B', 'nguoi-trong-anh-20-b', 30.5, 35.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (60, 320, NULL, 6021, 21, 'Người trong ảnh 20 - đã gỡ', 'nguoi-trong-anh-20-a-go', 30.5, 35.0, 120.0, 140.0, 'REMOVED', '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
+  (61, 321, NULL, 6022, 22, 'Người trong ảnh 21 - A', 'nguoi-trong-anh-21-a', 31.5, 36.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (62, 321, NULL, 6022, 22, 'Người trong ảnh 21 - B', 'nguoi-trong-anh-21-b', 31.5, 36.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (63, 321, NULL, 6022, 22, 'Người trong ảnh 21 - đã gỡ', 'nguoi-trong-anh-21-a-go', 31.5, 36.0, 120.0, 140.0, 'REMOVED', '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
+  (64, 322, NULL, 6023, 23, 'Người trong ảnh 22 - A', 'nguoi-trong-anh-22-a', 32.5, 37.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (65, 322, NULL, 6023, 23, 'Người trong ảnh 22 - B', 'nguoi-trong-anh-22-b', 32.5, 37.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (66, 322, NULL, 6023, 23, 'Người trong ảnh 22 - đã gỡ', 'nguoi-trong-anh-22-a-go', 32.5, 37.0, 120.0, 140.0, 'REMOVED', '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
+  (67, 323, NULL, 6024, 24, 'Người trong ảnh 23 - A', 'nguoi-trong-anh-23-a', 33.5, 38.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (68, 323, NULL, 6024, 24, 'Người trong ảnh 23 - B', 'nguoi-trong-anh-23-b', 33.5, 38.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (69, 323, NULL, 6024, 24, 'Người trong ảnh 23 - đã gỡ', 'nguoi-trong-anh-23-a-go', 33.5, 38.0, 120.0, 140.0, 'REMOVED', '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
+  (70, 324, NULL, 6025, 25, 'Người trong ảnh 24 - A', 'nguoi-trong-anh-24-a', 34.5, 39.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (71, 324, NULL, 6025, 25, 'Người trong ảnh 24 - B', 'nguoi-trong-anh-24-b', 34.5, 39.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (72, 324, NULL, 6025, 25, 'Người trong ảnh 24 - đã gỡ', 'nguoi-trong-anh-24-a-go', 34.5, 39.0, 120.0, 140.0, 'REMOVED', '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
+  (73, 325, NULL, 6026, 26, 'Người trong ảnh 25 - A', 'nguoi-trong-anh-25-a', 35.5, 15.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (74, 325, NULL, 6026, 26, 'Người trong ảnh 25 - B', 'nguoi-trong-anh-25-b', 35.5, 15.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (75, 325, NULL, 6026, 26, 'Người trong ảnh 25 - đã gỡ', 'nguoi-trong-anh-25-a-go', 35.5, 15.0, 120.0, 140.0, 'REMOVED', '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
+  (76, 326, NULL, 6027, 27, 'Người trong ảnh 26 - A', 'nguoi-trong-anh-26-a', 36.5, 16.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (77, 326, NULL, 6027, 27, 'Người trong ảnh 26 - B', 'nguoi-trong-anh-26-b', 36.5, 16.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (78, 326, NULL, 6027, 27, 'Người trong ảnh 26 - đã gỡ', 'nguoi-trong-anh-26-a-go', 36.5, 16.0, 120.0, 140.0, 'REMOVED', '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
+  (79, 327, NULL, 6028, 28, 'Người trong ảnh 27 - A', 'nguoi-trong-anh-27-a', 37.5, 17.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (80, 327, NULL, 6028, 28, 'Người trong ảnh 27 - B', 'nguoi-trong-anh-27-b', 37.5, 17.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (81, 327, NULL, 6028, 28, 'Người trong ảnh 27 - đã gỡ', 'nguoi-trong-anh-27-a-go', 37.5, 17.0, 120.0, 140.0, 'REMOVED', '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
+  (82, 328, NULL, 6029, 29, 'Người trong ảnh 28 - A', 'nguoi-trong-anh-28-a', 38.5, 18.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (83, 328, NULL, 6029, 29, 'Người trong ảnh 28 - B', 'nguoi-trong-anh-28-b', 38.5, 18.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (84, 328, NULL, 6029, 29, 'Người trong ảnh 28 - đã gỡ', 'nguoi-trong-anh-28-a-go', 38.5, 18.0, 120.0, 140.0, 'REMOVED', '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
+  (85, 329, NULL, 6030, 30, 'Người trong ảnh 29 - A', 'nguoi-trong-anh-29-a', 39.5, 19.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (86, 329, NULL, 6030, 30, 'Người trong ảnh 29 - B', 'nguoi-trong-anh-29-b', 39.5, 19.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (87, 329, NULL, 6030, 30, 'Người trong ảnh 29 - đã gỡ', 'nguoi-trong-anh-29-a-go', 39.5, 19.0, 120.0, 140.0, 'REMOVED', '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
+  (88, 330, NULL, 6031, 31, 'Người trong ảnh 30 - A', 'nguoi-trong-anh-30-a', 10.5, 20.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (89, 330, NULL, 6031, 31, 'Người trong ảnh 30 - B', 'nguoi-trong-anh-30-b', 10.5, 20.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (90, 330, NULL, 6031, 31, 'Người trong ảnh 30 - đã gỡ', 'nguoi-trong-anh-30-a-go', 10.5, 20.0, 120.0, 140.0, 'REMOVED', '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
+  (91, 331, NULL, 6032, 32, 'Người trong ảnh 31 - A', 'nguoi-trong-anh-31-a', 11.5, 21.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (92, 331, NULL, 6032, 32, 'Người trong ảnh 31 - B', 'nguoi-trong-anh-31-b', 11.5, 21.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (93, 331, NULL, 6032, 32, 'Người trong ảnh 31 - đã gỡ', 'nguoi-trong-anh-31-a-go', 11.5, 21.0, 120.0, 140.0, 'REMOVED', '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
+  (94, 332, NULL, 6033, 33, 'Người trong ảnh 32 - A', 'nguoi-trong-anh-32-a', 12.5, 22.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (95, 332, NULL, 6033, 33, 'Người trong ảnh 32 - B', 'nguoi-trong-anh-32-b', 12.5, 22.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (96, 332, NULL, 6033, 33, 'Người trong ảnh 32 - đã gỡ', 'nguoi-trong-anh-32-a-go', 12.5, 22.0, 120.0, 140.0, 'REMOVED', '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
+  (97, 333, NULL, 6034, 34, 'Người trong ảnh 33 - A', 'nguoi-trong-anh-33-a', 13.5, 23.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (98, 333, NULL, 6034, 34, 'Người trong ảnh 33 - B', 'nguoi-trong-anh-33-b', 13.5, 23.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (99, 333, NULL, 6034, 34, 'Người trong ảnh 33 - đã gỡ', 'nguoi-trong-anh-33-a-go', 13.5, 23.0, 120.0, 140.0, 'REMOVED', '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
+  (100, 334, NULL, 6035, 35, 'Người trong ảnh 34 - A', 'nguoi-trong-anh-34-a', 14.5, 24.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (101, 334, NULL, 6035, 35, 'Người trong ảnh 34 - B', 'nguoi-trong-anh-34-b', 14.5, 24.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (102, 334, NULL, 6035, 35, 'Người trong ảnh 34 - đã gỡ', 'nguoi-trong-anh-34-a-go', 14.5, 24.0, 120.0, 140.0, 'REMOVED', '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
+  (103, 335, NULL, 6036, 36, 'Người trong ảnh 35 - A', 'nguoi-trong-anh-35-a', 15.5, 25.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (104, 335, NULL, 6036, 36, 'Người trong ảnh 35 - B', 'nguoi-trong-anh-35-b', 15.5, 25.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (105, 335, NULL, 6036, 36, 'Người trong ảnh 35 - đã gỡ', 'nguoi-trong-anh-35-a-go', 15.5, 25.0, 120.0, 140.0, 'REMOVED', '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
+  (106, 336, NULL, 6037, 37, 'Người trong ảnh 36 - A', 'nguoi-trong-anh-36-a', 16.5, 26.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (107, 336, NULL, 6037, 37, 'Người trong ảnh 36 - B', 'nguoi-trong-anh-36-b', 16.5, 26.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (108, 336, NULL, 6037, 37, 'Người trong ảnh 36 - đã gỡ', 'nguoi-trong-anh-36-a-go', 16.5, 26.0, 120.0, 140.0, 'REMOVED', '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
+  (109, 337, NULL, 6038, 38, 'Người trong ảnh 37 - A', 'nguoi-trong-anh-37-a', 17.5, 27.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (110, 337, NULL, 6038, 38, 'Người trong ảnh 37 - B', 'nguoi-trong-anh-37-b', 17.5, 27.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (111, 337, NULL, 6038, 38, 'Người trong ảnh 37 - đã gỡ', 'nguoi-trong-anh-37-a-go', 17.5, 27.0, 120.0, 140.0, 'REMOVED', '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
+  (112, 338, NULL, 6039, 39, 'Người trong ảnh 38 - A', 'nguoi-trong-anh-38-a', 18.5, 28.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (113, 338, NULL, 6039, 39, 'Người trong ảnh 38 - B', 'nguoi-trong-anh-38-b', 18.5, 28.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (114, 338, NULL, 6039, 39, 'Người trong ảnh 38 - đã gỡ', 'nguoi-trong-anh-38-a-go', 18.5, 28.0, 120.0, 140.0, 'REMOVED', '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
+  (115, 339, NULL, 6040, 40, 'Người trong ảnh 39 - A', 'nguoi-trong-anh-39-a', 19.5, 29.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (116, 339, NULL, 6040, 40, 'Người trong ảnh 39 - B', 'nguoi-trong-anh-39-b', 19.5, 29.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (117, 339, NULL, 6040, 40, 'Người trong ảnh 39 - đã gỡ', 'nguoi-trong-anh-39-a-go', 19.5, 29.0, 120.0, 140.0, 'REMOVED', '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
+  (118, 340, NULL, 6041, 41, 'Người trong ảnh 40 - A', 'nguoi-trong-anh-40-a', 20.5, 30.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (119, 340, NULL, 6041, 41, 'Người trong ảnh 40 - B', 'nguoi-trong-anh-40-b', 20.5, 30.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (120, 340, NULL, 6041, 41, 'Người trong ảnh 40 - đã gỡ', 'nguoi-trong-anh-40-a-go', 20.5, 30.0, 120.0, 140.0, 'REMOVED', '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
+  (121, 341, NULL, 6042, 42, 'Người trong ảnh 41 - A', 'nguoi-trong-anh-41-a', 21.5, 31.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (122, 341, NULL, 6042, 42, 'Người trong ảnh 41 - B', 'nguoi-trong-anh-41-b', 21.5, 31.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (123, 341, NULL, 6042, 42, 'Người trong ảnh 41 - đã gỡ', 'nguoi-trong-anh-41-a-go', 21.5, 31.0, 120.0, 140.0, 'REMOVED', '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
+  (124, 342, NULL, 6043, 43, 'Người trong ảnh 42 - A', 'nguoi-trong-anh-42-a', 22.5, 32.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (125, 342, NULL, 6043, 43, 'Người trong ảnh 42 - B', 'nguoi-trong-anh-42-b', 22.5, 32.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (126, 342, NULL, 6043, 43, 'Người trong ảnh 42 - đã gỡ', 'nguoi-trong-anh-42-a-go', 22.5, 32.0, 120.0, 140.0, 'REMOVED', '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
+  (127, 343, NULL, 6044, 44, 'Người trong ảnh 43 - A', 'nguoi-trong-anh-43-a', 23.5, 33.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (128, 343, NULL, 6044, 44, 'Người trong ảnh 43 - B', 'nguoi-trong-anh-43-b', 23.5, 33.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (129, 343, NULL, 6044, 44, 'Người trong ảnh 43 - đã gỡ', 'nguoi-trong-anh-43-a-go', 23.5, 33.0, 120.0, 140.0, 'REMOVED', '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
+  (130, 344, NULL, 6045, 45, 'Người trong ảnh 44 - A', 'nguoi-trong-anh-44-a', 24.5, 34.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (131, 344, NULL, 6045, 45, 'Người trong ảnh 44 - B', 'nguoi-trong-anh-44-b', 24.5, 34.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (132, 344, NULL, 6045, 45, 'Người trong ảnh 44 - đã gỡ', 'nguoi-trong-anh-44-a-go', 24.5, 34.0, 120.0, 140.0, 'REMOVED', '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
+  (133, 345, NULL, 6046, 46, 'Người trong ảnh 45 - A', 'nguoi-trong-anh-45-a', 25.5, 35.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (134, 345, NULL, 6046, 46, 'Người trong ảnh 45 - B', 'nguoi-trong-anh-45-b', 25.5, 35.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (135, 345, NULL, 6046, 46, 'Người trong ảnh 45 - đã gỡ', 'nguoi-trong-anh-45-a-go', 25.5, 35.0, 120.0, 140.0, 'REMOVED', '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
+  (136, 346, NULL, 6047, 47, 'Người trong ảnh 46 - A', 'nguoi-trong-anh-46-a', 26.5, 36.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (137, 346, NULL, 6047, 47, 'Người trong ảnh 46 - B', 'nguoi-trong-anh-46-b', 26.5, 36.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (138, 346, NULL, 6047, 47, 'Người trong ảnh 46 - đã gỡ', 'nguoi-trong-anh-46-a-go', 26.5, 36.0, 120.0, 140.0, 'REMOVED', '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
+  (139, 347, NULL, 6048, 48, 'Người trong ảnh 47 - A', 'nguoi-trong-anh-47-a', 27.5, 37.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (140, 347, NULL, 6048, 48, 'Người trong ảnh 47 - B', 'nguoi-trong-anh-47-b', 27.5, 37.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (141, 347, NULL, 6048, 48, 'Người trong ảnh 47 - đã gỡ', 'nguoi-trong-anh-47-a-go', 27.5, 37.0, 120.0, 140.0, 'REMOVED', '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
+  (142, 348, NULL, 6049, 1, 'Người trong ảnh 48 - A', 'nguoi-trong-anh-48-a', 28.5, 38.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (143, 348, NULL, 6049, 1, 'Người trong ảnh 48 - B', 'nguoi-trong-anh-48-b', 28.5, 38.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (144, 348, NULL, 6049, 1, 'Người trong ảnh 48 - đã gỡ', 'nguoi-trong-anh-48-a-go', 28.5, 38.0, 120.0, 140.0, 'REMOVED', '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
+  (145, 349, NULL, 6050, 2, 'Người trong ảnh 49 - A', 'nguoi-trong-anh-49-a', 29.5, 39.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (146, 349, NULL, 6050, 2, 'Người trong ảnh 49 - B', 'nguoi-trong-anh-49-b', 29.5, 39.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (147, 349, NULL, 6050, 2, 'Người trong ảnh 49 - đã gỡ', 'nguoi-trong-anh-49-a-go', 29.5, 39.0, 120.0, 140.0, 'REMOVED', '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
+  (148, 350, NULL, 6051, 3, 'Người trong ảnh 50 - A', 'nguoi-trong-anh-50-a', 30.5, 15.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (149, 350, NULL, 6051, 3, 'Người trong ảnh 50 - B', 'nguoi-trong-anh-50-b', 30.5, 15.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (150, 350, NULL, 6051, 3, 'Người trong ảnh 50 - đã gỡ', 'nguoi-trong-anh-50-a-go', 30.5, 15.0, 120.0, 140.0, 'REMOVED', '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
+  (151, 351, NULL, 6052, 4, 'Người trong ảnh 51 - A', 'nguoi-trong-anh-51-a', 31.5, 16.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (152, 351, NULL, 6052, 4, 'Người trong ảnh 51 - B', 'nguoi-trong-anh-51-b', 31.5, 16.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (153, 351, NULL, 6052, 4, 'Người trong ảnh 51 - đã gỡ', 'nguoi-trong-anh-51-a-go', 31.5, 16.0, 120.0, 140.0, 'REMOVED', '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
+  (154, 352, NULL, 6053, 5, 'Người trong ảnh 52 - A', 'nguoi-trong-anh-52-a', 32.5, 17.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (155, 352, NULL, 6053, 5, 'Người trong ảnh 52 - B', 'nguoi-trong-anh-52-b', 32.5, 17.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (156, 352, NULL, 6053, 5, 'Người trong ảnh 52 - đã gỡ', 'nguoi-trong-anh-52-a-go', 32.5, 17.0, 120.0, 140.0, 'REMOVED', '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
+  (157, 353, NULL, 6054, 6, 'Người trong ảnh 53 - A', 'nguoi-trong-anh-53-a', 33.5, 18.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (158, 353, NULL, 6054, 6, 'Người trong ảnh 53 - B', 'nguoi-trong-anh-53-b', 33.5, 18.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (159, 353, NULL, 6054, 6, 'Người trong ảnh 53 - đã gỡ', 'nguoi-trong-anh-53-a-go', 33.5, 18.0, 120.0, 140.0, 'REMOVED', '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
+  (160, 354, NULL, 6055, 7, 'Người trong ảnh 54 - A', 'nguoi-trong-anh-54-a', 34.5, 19.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (161, 354, NULL, 6055, 7, 'Người trong ảnh 54 - B', 'nguoi-trong-anh-54-b', 34.5, 19.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (162, 354, NULL, 6055, 7, 'Người trong ảnh 54 - đã gỡ', 'nguoi-trong-anh-54-a-go', 34.5, 19.0, 120.0, 140.0, 'REMOVED', '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
+  (163, 355, NULL, 6056, 8, 'Người trong ảnh 55 - A', 'nguoi-trong-anh-55-a', 35.5, 20.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (164, 355, NULL, 6056, 8, 'Người trong ảnh 55 - B', 'nguoi-trong-anh-55-b', 35.5, 20.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (165, 355, NULL, 6056, 8, 'Người trong ảnh 55 - đã gỡ', 'nguoi-trong-anh-55-a-go', 35.5, 20.0, 120.0, 140.0, 'REMOVED', '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
+  (166, 356, NULL, 6057, 9, 'Người trong ảnh 56 - A', 'nguoi-trong-anh-56-a', 36.5, 21.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (167, 356, NULL, 6057, 9, 'Người trong ảnh 56 - B', 'nguoi-trong-anh-56-b', 36.5, 21.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (168, 356, NULL, 6057, 9, 'Người trong ảnh 56 - đã gỡ', 'nguoi-trong-anh-56-a-go', 36.5, 21.0, 120.0, 140.0, 'REMOVED', '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
+  (169, 357, NULL, 6058, 10, 'Người trong ảnh 57 - A', 'nguoi-trong-anh-57-a', 37.5, 22.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (170, 357, NULL, 6058, 10, 'Người trong ảnh 57 - B', 'nguoi-trong-anh-57-b', 37.5, 22.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (171, 357, NULL, 6058, 10, 'Người trong ảnh 57 - đã gỡ', 'nguoi-trong-anh-57-a-go', 37.5, 22.0, 120.0, 140.0, 'REMOVED', '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
+  (172, 358, NULL, 6059, 11, 'Người trong ảnh 58 - A', 'nguoi-trong-anh-58-a', 38.5, 23.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (173, 358, NULL, 6059, 11, 'Người trong ảnh 58 - B', 'nguoi-trong-anh-58-b', 38.5, 23.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (174, 358, NULL, 6059, 11, 'Người trong ảnh 58 - đã gỡ', 'nguoi-trong-anh-58-a-go', 38.5, 23.0, 120.0, 140.0, 'REMOVED', '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4),
+  (175, 359, NULL, 6060, 12, 'Người trong ảnh 59 - A', 'nguoi-trong-anh-59-a', 39.5, 24.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (176, 359, NULL, 6060, 12, 'Người trong ảnh 59 - B', 'nguoi-trong-anh-59-b', 39.5, 24.0, 120.0, 140.0, 'ACTIVE', '2026-08-18 10:00:00', 4, NULL, NULL),
+  (177, 359, NULL, 6060, 12, 'Người trong ảnh 59 - đã gỡ', 'nguoi-trong-anh-59-a-go', 39.5, 24.0, 120.0, 140.0, 'REMOVED', '2026-08-18 10:00:00', 4, '2026-08-18 11:00:00', 4);
 
 -- =============================================================
 -- PEMS v8.4 refined v6 manual wide coverage seed — v5 extension
@@ -6318,6 +6494,16 @@ INSERT INTO visit_logistics_items (logistics_item_id, visit_instance_id, item_ty
   (99006, 9913, 'BANNER', 'HN welcome banner cancelled by visitor', 'Banner chào mừng SeoulTech tại HN; bị hủy vì visitor@example.com hủy toàn bộ request.', 1, CURRENT_DATE + INTERVAL 8 DAY + INTERVAL 8 HOUR, CURRENT_DATE + INTERVAL 8 DAY + INTERVAL 9 HOUR, 'CANCELLED', 'LOW', 4, 103, CURRENT_TIMESTAMP - INTERVAL 12 DAY - INTERVAL 18 HOUR, 125, CURRENT_TIMESTAMP - INTERVAL 12 DAY - INTERVAL 16 HOUR, 126, 125, CURRENT_TIMESTAMP - INTERVAL 12 DAY - INTERVAL 15 HOUR, NULL, NULL, CURRENT_DATE + INTERVAL 7 DAY + INTERVAL 16 HOUR, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'Visitor hủy toàn bộ request, banner không in.', 2, CURRENT_TIMESTAMP - INTERVAL 12 DAY - INTERVAL 18 HOUR, 4, CURRENT_TIMESTAMP - INTERVAL 2 DAY - INTERVAL 8 HOUR, 8),
   (99007, 9914, 'LED', 'DN LED rehearsal cancelled by visitor', 'Màn hình LED cho workshop DN; dừng vì request tổng bị visitor hủy.', 1, CURRENT_DATE + INTERVAL 9 DAY + INTERVAL 8 HOUR + INTERVAL 15 MINUTE, CURRENT_DATE + INTERVAL 9 DAY + INTERVAL 9 HOUR + INTERVAL 15 MINUTE, 'CANCELLED', 'MEDIUM', 12, 109, CURRENT_TIMESTAMP - INTERVAL 12 DAY - INTERVAL 17 HOUR, 135, CURRENT_TIMESTAMP - INTERVAL 12 DAY - INTERVAL 15 HOUR, 136, 135, CURRENT_TIMESTAMP - INTERVAL 12 DAY - INTERVAL 14 HOUR, NULL, NULL, CURRENT_DATE + INTERVAL 8 DAY + INTERVAL 16 HOUR, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'Visitor@example.com hủy toàn bộ multi-campus, dừng rehearsal.', 2, CURRENT_TIMESTAMP - INTERVAL 12 DAY - INTERVAL 17 HOUR, 12, CURRENT_TIMESTAMP - INTERVAL 2 DAY - INTERVAL 8 HOUR, 8)
 ;
+
+
+-- Seed examples for logistics items handled outside the system, especially LED cases.
+UPDATE visit_logistics_items
+SET coordination_mode = 'OFFLINE_COORDINATED',
+    offline_coordination_note = 'Đã trao đổi ngoài hệ thống về ảnh/banner LED; không gửi yêu cầu xử lý qua email.',
+    status = 'DONE',
+    completed_at = COALESCE(completed_at, NOW()),
+    updated_at = NOW()
+WHERE logistics_item_id IN (7, 9006, 9013);
 
 INSERT INTO notifications (notification_id, recipient_user_id, title, message, notification_type, related_type, related_id, is_read, read_at, created_at) VALUES
   (99001, 9, 'Visitor đã hủy chặng HCM', 'VR7-SC-HCM-VISITOR-CANCEL-01 bị visitor tự hủy sau khi duyệt.', 'VISITOR_CANCELLED', 'VISIT_REQUEST', 9001, FALSE, NULL, CURRENT_TIMESTAMP - INTERVAL 2 DAY - INTERVAL 4 HOUR),

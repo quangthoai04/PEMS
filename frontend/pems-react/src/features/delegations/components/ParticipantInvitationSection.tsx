@@ -200,7 +200,7 @@ export function ParticipantInvitationSection({
       const res = await delegationsApi.previewEmailTemplate({ templateCode, context: previewContext() });
       setPreview((p) => ({
         ...p, open: true, loading: false, error: null,
-        templateCode, subject: res.subject, body: res.bodyHtml,
+        templateCode, subject: res.subject, body: res.editableBodyText,
         isActionTemplate: res.isActionTemplate,
         systemActionDescription: res.systemActionDescription ?? null,
         lockedActionBlockHtml: res.lockedActionBlockHtml ?? null,
@@ -225,7 +225,7 @@ export function ParticipantInvitationSection({
     try {
       const res = await delegationsApi.inviteVisitParticipant(visitInstanceId, {
         ...preview.target.payload,
-        emailOverride: { useEditedContent: true, subject: preview.subject.trim(), bodyHtml: preview.body },
+        emailOverride: { useEditedContent: true, subject: preview.subject.trim(), bodyText: preview.body },
       });
       pushToast(res.emailStatus === 'FAILED' ? 'warning' : 'success',
         res.message || `Đã gửi lời mời tới ${preview.target.displayName}.`);

@@ -18,8 +18,12 @@ public sealed record PreviewEmailTemplateQuery(
 public sealed record PreviewEmailTemplateResponse(
     string TemplateCode,
     string Subject,
-    /// <summary>Editable message content (action buttons stripped for action templates).</summary>
+    /// <summary>Editable message content as HTML (action buttons stripped for action templates). Kept
+    /// for the read-only rendered preview; the editor binds to <see cref="EditableBodyText"/>.</summary>
     string BodyHtml,
+    /// <summary>The same editable content as readable plain text (no &lt;p&gt;/&lt;br&gt; tags) — what
+    /// the host edits in the modal. Sent back as emailOverride.bodyText.</summary>
+    string EditableBodyText,
     bool IsActionTemplate,
     string? SystemActionDescription,
     /// <summary>Read-only (disabled) preview of the system action block, if any.</summary>

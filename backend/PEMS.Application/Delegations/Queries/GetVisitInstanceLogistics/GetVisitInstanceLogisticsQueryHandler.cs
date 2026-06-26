@@ -47,6 +47,8 @@ public sealed class GetVisitInstanceLogisticsQueryHandler
                 Quantity = l.Quantity,
                 Status = l.Status,
                 Priority = l.Priority,
+                CoordinationMode = l.CoordinationMode,
+                OfflineCoordinationNote = l.OfflineCoordinationNote,
                 RequestedToDepartmentId = l.RequestedToDepartmentId,
                 AssignedToUserId = l.AssignedToUserId,
             })

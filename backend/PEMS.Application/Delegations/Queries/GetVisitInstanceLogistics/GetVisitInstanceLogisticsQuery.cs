@@ -25,6 +25,8 @@ public sealed class VisitInstanceLogisticsItemDto
     public int? Quantity { get; set; }
     public string Status { get; set; } = default!;     // REQUESTED | ASSIGNED | ACCEPTED | ...
     public string Priority { get; set; } = default!;
+    public string CoordinationMode { get; set; } = default!;  // SYSTEM_REQUEST | OFFLINE_COORDINATED
+    public string? OfflineCoordinationNote { get; set; }
     public ulong? RequestedToDepartmentId { get; set; }
     public string? DepartmentName { get; set; }
     public string? RequestedAt { get; set; }           // "yyyy-MM-ddTHH:mm:ss" wall-clock

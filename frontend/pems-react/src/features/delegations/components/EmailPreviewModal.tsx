@@ -70,12 +70,23 @@ export function EmailPreviewModal({
                 />
               </div>
               <div>
-                <label className="text-xs font-bold uppercase tracking-wide text-gray-400">Nội dung (HTML)</label>
+                <label className="text-xs font-bold uppercase tracking-wide text-gray-400">Nội dung email</label>
+                <p className="mt-0.5 mb-1 text-[11px] text-gray-400">
+                  Soạn nội dung dạng văn bản dễ đọc — hệ thống tự định dạng khi gửi. Để dòng trống để tách đoạn.
+                </p>
                 <textarea
                   value={body}
                   onChange={(e) => onBodyChange(e.target.value)}
-                  className="mt-1 w-full min-h-[200px] resize-y rounded-xl border border-gray-200 bg-white px-3 py-2 font-mono text-[13px] leading-relaxed text-gray-800 outline-none focus:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/20"
+                  placeholder="Soạn nội dung email..."
+                  className="mt-1 w-full min-h-[200px] resize-y rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm leading-relaxed text-gray-800 outline-none focus:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/20"
                 />
+              </div>
+              {/* Read-only "what the email will look like" preview — escaped text, never raw HTML. */}
+              <div>
+                <label className="text-xs font-bold uppercase tracking-wide text-gray-400">Xem trước</label>
+                <div className="mt-1 whitespace-pre-wrap break-words rounded-xl border border-gray-200 bg-gray-50/60 px-4 py-3 text-sm leading-relaxed text-gray-700">
+                  {body.trim() ? body : <span className="italic text-gray-400">Nội dung email sẽ hiển thị ở đây.</span>}
+                </div>
               </div>
               {isActionTemplate && (
                 <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-4">
