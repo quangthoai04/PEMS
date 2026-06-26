@@ -130,6 +130,8 @@ export const API_ENDPOINTS = {
     instanceLogistics: (visitInstanceId: string | number) =>
       `/delegations/visit-instances/${visitInstanceId}/logistics`,
     prepareVisitLogistics: '/delegations/preparevisitlogistics',
+    cancelLogisticsItem: (visitInstanceId: string | number, logisticsItemId: string | number) =>
+      `/delegations/visit-instances/${visitInstanceId}/logistics/${logisticsItemId}/cancel`,
   },
   // Email template preview (read-only render for the "Xem trước email" modal — never sends).
   emailTemplates: {

@@ -64,10 +64,10 @@ function ConflictBadge({ count, allPrivate }: { count: number; allPrivate: boole
 /** Generic debounced search dropdown.
  *
  * UX rules:
- * - Dropdown only renders when the user has focused the input (`open === true`).
- * - Content only shows when a keyword is entered, or while loading/error.
- * - Click outside the wrapper → closes.
- * - Escape key → closes.
+ * - Focus/click the input → dropdown opens AND fetches candidates with an empty keyword (shows the
+ *   first page of valid users immediately; the list is scrollable + filters as you type).
+ * - Click outside the wrapper → closes. Escape key → closes. Clicking an option does NOT close (the
+ *   option is inside the wrapper, and close happens explicitly after a successful invite).
  * - Parent can call `closeDropdown` (via `onCloseRef`) after a successful invite to close + clear.
  */
 function SearchDropdown<T>({
@@ -125,8 +125,9 @@ function SearchDropdown<T>({
     return () => clearTimeout(t);
   }, [kw, open, search]);
 
-  // Determine whether to show the dropdown panel.
-  const showPanel = open && (loading || error || kw.trim().length > 0);
+  // Show the panel whenever the input is focused — including an empty keyword (lists the first page
+  // of valid candidates so the host can scroll/pick without typing).
+  const showPanel = open;
 
   return (
     <div ref={wrapperRef} className="relative">

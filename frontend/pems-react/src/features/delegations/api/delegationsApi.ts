@@ -221,6 +221,16 @@ export const delegationsApi = {
     return data;
   },
 
+  /** Host soft-cancels one of their logistics requests (status → CANCELLED). */
+  async cancelLogisticsItem(
+    visitInstanceId: number | string,
+    logisticsItemId: number | string,
+  ): Promise<{ success: boolean; logisticsItemId: number; status: string; message: string }> {
+    const { data } = await httpClient.patch<{ success: boolean; logisticsItemId: number; status: string; message: string }>(
+      API_ENDPOINTS.delegations.cancelLogisticsItem(visitInstanceId, logisticsItemId), {});
+    return data;
+  },
+
   /** Host withdraws a still-pending (INVITED) participant they invited. */
   async removeVisitParticipant(
     visitInstanceId: number | string,

@@ -269,6 +269,16 @@ namespace PEMS.Api.Controllers
             return Ok(result);
         }
 
+        // Host soft-cancels one of their logistics requests (e.g. "Không cần màn LED"). Sets CANCELLED.
+        [HttpPatch("visit-instances/{visitInstanceId}/logistics/{logisticsItemId}/cancel")]
+        public async Task<IActionResult> CancelVisitLogisticsItem(ulong visitInstanceId, ulong logisticsItemId, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(
+                new PEMS.Application.Delegations.Commands.CancelVisitLogisticsItem.CancelVisitLogisticsItemCommand(visitInstanceId, logisticsItemId),
+                cancellationToken);
+            return Ok(result);
+        }
+
         // ── Operational reception stage transitions (Host only) ──────────────
         // Trước → Đang (complete preparation), Đang → Sau (complete visit), Sau → Đóng (close).
         // Status/scope re-validated in the handler (invalid status → 409, non-host → 403).
