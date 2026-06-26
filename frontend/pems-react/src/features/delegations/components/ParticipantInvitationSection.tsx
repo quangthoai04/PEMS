@@ -7,7 +7,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Search, Loader2, AlertCircle, Mail, Phone, Building2,
-  Users, UserCheck, GraduationCap, Trash2, Send,
+  Users, UserCheck, GraduationCap, Trash2, Send, Eye, X,
 } from 'lucide-react';
 import { delegationsApi } from '../api/delegationsApi';
 import type {
@@ -60,15 +60,24 @@ function ConflictBadge({ count, allPrivate }: { count: number; allPrivate: boole
   );
 }
 
-/** Generic debounced search dropdown. Loads results for the typed keyword and renders one row per
- * result via `renderRow`. Stays open while focused; the parent owns the "invite" action. */
+/** Generic debounced search dropdown.
+ *
+ * UX rules:
+ * - Dropdown only renders when the user has focused the input (`open === true`).
+ * - Content only shows when a keyword is entered, or while loading/error.
+ * - Click outside the wrapper → closes.
+ * - Escape key → closes.
+ * - Parent can call `closeDropdown` (via `onCloseRef`) after a successful invite to close + clear.
+ */
 function SearchDropdown<T>({
-  placeholder, search, renderRow, emptyText,
+  placeholder, search, renderRow, emptyText, onCloseRef,
 }: {
   placeholder: string;
   search: (keyword: string) => Promise<T[]>;
-  renderRow: (item: T, index: number) => React.ReactNode;
+  renderRow: (item: T, index: number, close: () => void) => React.ReactNode;
   emptyText: string;
+  /** Optional: parent passes a ref that gets a close() function so it can close the dropdown after invite. */
+  onCloseRef?: React.MutableRefObject<(() => void) | null>;
 }) {
   const [kw, setKw] = useState('');
   const [open, setOpen] = useState(false);
@@ -76,7 +85,27 @@ function SearchDropdown<T>({
   const [error, setError] = useState(false);
   const [items, setItems] = useState<T[]>([]);
   const reqId = useRef(0);
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
 
+  // Expose close function to parent if requested.
+  const close = () => { setOpen(false); setKw(''); setItems([]); };
+  useEffect(() => {
+    if (onCloseRef) onCloseRef.current = close;
+  });
+
+  // Click-outside handler.
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  // Debounced fetch — only runs while open.
   useEffect(() => {
     if (!open) return;
     const id = ++reqId.current;
@@ -95,8 +124,11 @@ function SearchDropdown<T>({
     return () => clearTimeout(t);
   }, [kw, open, search]);
 
+  // Determine whether to show the dropdown panel.
+  const showPanel = open && (loading || error || kw.trim().length > 0);
+
   return (
-    <div className="relative">
+    <div ref={wrapperRef} className="relative">
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
         <input
@@ -105,12 +137,13 @@ function SearchDropdown<T>({
           placeholder={placeholder}
           onFocus={() => setOpen(true)}
           onChange={(e) => setKw(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Escape') { setOpen(false); } }}
           className="w-full rounded-xl border border-gray-200 bg-white py-2.5 pl-9 pr-3 text-sm outline-none focus:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/20"
         />
-        {loading && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin text-gray-400" />}
+        {loading && open && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin text-gray-400" />}
       </div>
-      {open && (
-        <div className="mt-2 max-h-72 overflow-y-auto rounded-xl border border-gray-200 bg-white shadow-sm">
+      {showPanel && (
+        <div className="absolute left-0 top-full z-40 mt-1.5 w-full max-h-72 overflow-y-auto rounded-xl border border-gray-200 bg-white shadow-lg">
           {loading && items.length === 0 ? (
             <div className="px-4 py-3 text-sm text-gray-400">Đang tải...</div>
           ) : error ? (
@@ -118,7 +151,7 @@ function SearchDropdown<T>({
           ) : items.length === 0 ? (
             <div className="px-4 py-3 text-sm text-gray-400">{emptyText}</div>
           ) : (
-            items.map((it, i) => renderRow(it, i))
+            items.map((it, i) => renderRow(it, i, close))
           )}
         </div>
       )}
@@ -133,18 +166,57 @@ export function ParticipantInvitationSection({
   const canManage = relation === 'HOST' && (instanceStatus === 'ASSIGNED' || instanceStatus === 'BEFORE_VISIT');
   const [busyId, setBusyId] = useState<string | null>(null);
 
+  // "Xem trước email" modal — read-only render of the invitation template (never sends).
+  const [preview, setPreview] = useState<{ open: boolean; loading: boolean; subject: string; bodyHtml: string; error: string | null }>(
+    { open: false, loading: false, subject: '', bodyHtml: '', error: null });
+
+  const openEmailPreview = async (templateCode: string) => {
+    setPreview({ open: true, loading: true, subject: '', bodyHtml: '', error: null });
+    try {
+      const res = await delegationsApi.previewEmailTemplate({
+        templateCode,
+        context: {
+          recipientName: 'Người được mời',
+          DelegationName: 'Đoàn khách (mẫu)',
+          CampusName: 'FPT University',
+          plannedStartAt: '08:00 01/07/2026',
+          plannedEndAt: '11:00 01/07/2026',
+          hostName: host?.fullName ?? 'Host',
+          departmentLeaderName: 'Trưởng phòng',
+          requesterName: host?.fullName ?? 'Host',
+          acceptUrl: '#', declineUrl: '#', assignUrl: '#',
+        },
+      });
+      setPreview({ open: true, loading: false, subject: res.subject, bodyHtml: res.bodyHtml, error: null });
+    } catch (e: any) {
+      setPreview({ open: true, loading: false, subject: '', bodyHtml: '', error: apiError(e, 'Không thể tải bản xem trước email.') });
+    }
+  };
+  const closePreview = () => setPreview((p) => ({ ...p, open: false }));
+
+  // Refs to close each search dropdown after a successful invite.
+  const closeStaffDropdown = useRef<(() => void) | null>(null);
+  const closeStudentDropdown = useRef<(() => void) | null>(null);
+  const closeDeptDropdown = useRef<(() => void) | null>(null);
+
   const active = participants.filter((p) => p.status !== 'REMOVED');
   const supporters = active.filter((p) => p.participantRole === 'IC_SUPPORT' && !p.isHost);
   const students = active.filter((p) => p.participantRole === 'STUDENT');
   const departments = active.filter((p) => p.participantRole === 'DEPT_SUPPORT'
     && (p.subRole == null || p.subRole.toUpperCase() === 'LEADER'));
 
-  const invite = async (key: string, payload: Parameters<typeof delegationsApi.inviteVisitParticipant>[1], displayName: string) => {
+  const invite = async (
+    key: string,
+    payload: Parameters<typeof delegationsApi.inviteVisitParticipant>[1],
+    displayName: string,
+    onSuccess?: () => void,
+  ) => {
     if (busyId) return;
     setBusyId(key);
     try {
       const res = await delegationsApi.inviteVisitParticipant(visitInstanceId, payload);
       pushToast(res.emailQueued ? 'success' : 'info', res.message || `Đã gửi lời mời tới ${displayName}.`);
+      onSuccess?.();
       await onChanged();
     } catch (e: any) {
       pushToast('error', apiError(e, 'Không thể gửi lời mời. Vui lòng thử lại.'));
@@ -217,16 +289,18 @@ export function ParticipantInvitationSection({
               placeholder="Tìm theo tên / email..."
               emptyText="Không tìm thấy nhân sự phù hợp."
               search={(kw) => delegationsApi.getParticipantCandidates(visitInstanceId, 'IC_SUPPORT', kw)}
-              renderRow={(c) => (
+              onCloseRef={closeStaffDropdown}
+              renderRow={(c, _i, close) => (
                 <CandidateRow
                   key={c.userId}
                   candidate={c}
                   busy={busyId === `ic-${c.userId}`}
-                  onInvite={() => invite(`ic-${c.userId}`, { participantType: 'IC_SUPPORT', userId: c.userId }, c.fullName)}
+                  onInvite={() => invite(`ic-${c.userId}`, { participantType: 'IC_SUPPORT', userId: c.userId }, c.fullName, close)}
                 />
               )}
             />
           )}
+          {canManage && <PreviewLink onClick={() => openEmailPreview('VISIT_PARTICIPANT_INVITATION')} />}
           <ParticipantList
             rows={supporters}
             canManage={canManage}
@@ -243,17 +317,19 @@ export function ParticipantInvitationSection({
               placeholder="Tìm theo tên / email / mã SV..."
               emptyText="Không tìm thấy sinh viên hợp lệ trong campus này."
               search={(kw) => delegationsApi.getParticipantCandidates(visitInstanceId, 'STUDENT', kw)}
-              renderRow={(c) => (
+              onCloseRef={closeStudentDropdown}
+              renderRow={(c, _i, close) => (
                 <CandidateRow
                   key={c.userId}
                   candidate={c}
                   subtitle={c.studentCode ? `MSSV: ${c.studentCode}` : undefined}
                   busy={busyId === `st-${c.userId}`}
-                  onInvite={() => invite(`st-${c.userId}`, { participantType: 'STUDENT', userId: c.userId }, c.fullName)}
+                  onInvite={() => invite(`st-${c.userId}`, { participantType: 'STUDENT', userId: c.userId }, c.fullName, close)}
                 />
               )}
             />
           )}
+          {canManage && <PreviewLink onClick={() => openEmailPreview('VISIT_STUDENT_INVITATION')} />}
           <ParticipantList
             rows={students}
             canManage={canManage}
@@ -270,7 +346,8 @@ export function ParticipantInvitationSection({
               placeholder="Tìm phòng ban (GENERAL) cùng cơ sở..."
               emptyText="Không tìm thấy phòng ban phù hợp."
               search={(kw) => delegationsApi.getSupportDepartments(visitInstanceId, kw)}
-              renderRow={(d) => (
+              onCloseRef={closeDeptDropdown}
+              renderRow={(d, _i, close) => (
                 <div key={d.departmentId} className="flex items-center justify-between gap-3 border-b border-gray-100 px-4 py-2.5 last:border-b-0">
                   <div className="min-w-0">
                     <div className="truncate text-sm font-bold text-gray-800">{d.departmentName}</div>
@@ -290,7 +367,12 @@ export function ParticipantInvitationSection({
                         pushToast('warning', d.disabledReason || 'Không thể mời phòng ban này.');
                         return;
                       }
-                      invite(`dept-${d.departmentId}`, { participantType: 'DEPT_SUPPORT', departmentId: d.departmentId }, `trưởng phòng ${d.departmentName}`);
+                      invite(
+                        `dept-${d.departmentId}`,
+                        { participantType: 'DEPT_SUPPORT', departmentId: d.departmentId },
+                        `trưởng phòng ${d.departmentName}`,
+                        close,
+                      );
                     }}
                     className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-[#004c91] px-3 py-1.5 text-xs font-bold text-white outline-none transition-colors hover:bg-[#003b70] disabled:cursor-not-allowed disabled:opacity-40"
                   >
@@ -301,6 +383,7 @@ export function ParticipantInvitationSection({
               )}
             />
           )}
+          {canManage && <PreviewLink onClick={() => openEmailPreview('VISIT_DEPARTMENT_LEADER_INVITATION')} />}
           <div className="mt-3 space-y-2">
             {departments.length === 0 ? (
               <p className="text-sm italic text-slate-400">Chưa mời phòng ban hỗ trợ nào.</p>
@@ -333,7 +416,69 @@ export function ParticipantInvitationSection({
           </div>
         </Panel>
       </div>
+
+      {/* ── "Xem trước email" modal — read-only render; the real send still needs the "Mời" button ── */}
+      {preview.open && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4" onMouseDown={closePreview}>
+          <div
+            className="w-full max-w-2xl max-h-[85vh] overflow-hidden rounded-2xl bg-white shadow-2xl flex flex-col"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
+              <h3 className="flex items-center gap-2 text-base font-bold text-[#004c91]">
+                <Eye className="w-5 h-5" /> Xem trước email
+              </h3>
+              <button type="button" onClick={closePreview} className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600 outline-none">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="overflow-y-auto px-6 py-4">
+              {preview.loading ? (
+                <div className="flex items-center gap-2 py-8 text-sm text-gray-500">
+                  <Loader2 className="w-4 h-4 animate-spin" /> Đang tải bản xem trước...
+                </div>
+              ) : preview.error ? (
+                <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-600">
+                  <AlertCircle className="w-4 h-4 shrink-0" /> {preview.error}
+                </div>
+              ) : (
+                <>
+                  <div className="mb-3">
+                    <div className="text-xs font-bold uppercase tracking-wide text-gray-400">Tiêu đề</div>
+                    <div className="mt-1 text-sm font-bold text-gray-800">{preview.subject}</div>
+                  </div>
+                  <div className="text-xs font-bold uppercase tracking-wide text-gray-400">Nội dung</div>
+                  <div
+                    className="mt-1 rounded-xl border border-gray-200 bg-gray-50/60 p-4 text-sm text-gray-700 prose prose-sm max-w-none"
+                    dangerouslySetInnerHTML={{ __html: preview.bodyHtml }}
+                  />
+                  <p className="mt-3 text-[11px] italic text-gray-400">
+                    Đây chỉ là bản xem trước. Email chỉ được gửi khi bạn bấm “Mời”.
+                  </p>
+                </>
+              )}
+            </div>
+            <div className="flex justify-end border-t border-gray-100 px-6 py-3">
+              <button type="button" onClick={closePreview} className="rounded-xl bg-[#004c91] px-5 py-2 text-sm font-bold text-white outline-none hover:bg-[#013565]">
+                Đóng
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
+  );
+}
+
+function PreviewLink({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-[#004c91] outline-none hover:underline"
+    >
+      <Eye className="w-3.5 h-3.5" /> Xem trước email mời
+    </button>
   );
 }
 

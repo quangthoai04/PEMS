@@ -20,6 +20,10 @@ public sealed class VisitProcessDetailDto
     /// <summary>True only for the official host while the instance is in the editable prep window.</summary>
     public bool CanEditBefore { get; set; }
 
+    /// <summary>Host's internal preparation note (visit_request_campuses.preparation_note). Bound to the
+    /// "Ghi chú chung" textarea. Null/empty when not set.</summary>
+    public string? PreparationNote { get; set; }
+
     public List<AgendaItemDto> Agenda { get; set; } = new();
 
     /// <summary>Read-only snapshot of the guest's original registration (registrant + delegation +

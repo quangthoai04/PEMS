@@ -251,6 +251,7 @@ public sealed class GetVisitProcessDetailQueryHandler
             HostName = hostName,
             Relation = relation,
             CanEditBefore = canEditBefore,
+            PreparationNote = instance.PreparationNote,
             Agenda = agenda,
             RequestSummary = requestSummary,
             Host = hostDto,

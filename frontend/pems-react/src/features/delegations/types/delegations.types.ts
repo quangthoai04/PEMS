@@ -219,6 +219,8 @@ export interface VisitProcessDetail {
   hostName?: string | null;
   relation: string;
   canEditBefore: boolean;
+  /** Host's internal "Ghi chú chung" (visit_request_campuses.preparation_note). Null/empty when unset. */
+  preparationNote?: string | null;
   agenda: VisitAgendaItem[];
   /** Read-only mirror of the guest's original registration (registrant + delegation + campuses +
    * guests). Null only for callers not allowed to see it. */
@@ -794,3 +796,84 @@ export type VisitFilterConfig = {
   scopeOptions: VisitScopeFilterOption[];
   relationOptions: VisitRelationFilterOption[];
 };
+
+// ── Logistics item status (visit_logistics_items.status), SQL v10 2026-06-26. ──
+// PLANNED / RECEIVED / READY were removed — never reintroduce them.
+export type LogisticsItemStatus =
+  | 'REQUESTED'
+  | 'CHANGE_PROPOSED'
+  | 'ASSIGNED'
+  | 'ACCEPTED'
+  | 'IN_PROGRESS'
+  | 'DONE'
+  | 'REJECTED'
+  | 'DECLINED'
+  | 'CANCELLED';
+
+/** Statuses that admit no further workflow action. */
+export const LOGISTICS_TERMINAL_STATUSES: LogisticsItemStatus[] = ['DONE', 'REJECTED', 'DECLINED', 'CANCELLED'];
+
+/** Vietnamese badge label + tailwind classes for each logistics status. */
+export const LOGISTICS_STATUS_META: Record<LogisticsItemStatus, { label: string; cls: string }> = {
+  REQUESTED:       { label: 'Đã gửi yêu cầu', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
+  CHANGE_PROPOSED: { label: 'Đề xuất thay đổi', cls: 'bg-violet-50 text-violet-700 border-violet-200' },
+  ASSIGNED:        { label: 'Đã phân công', cls: 'bg-blue-50 text-blue-700 border-blue-200' },
+  ACCEPTED:        { label: 'Đã nhận nhiệm vụ', cls: 'bg-sky-50 text-sky-700 border-sky-200' },
+  IN_PROGRESS:     { label: 'Đang xử lý', cls: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
+  DONE:            { label: 'Hoàn tất', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  REJECTED:        { label: 'Từ chối yêu cầu', cls: 'bg-red-50 text-red-700 border-red-200' },
+  DECLINED:        { label: 'Nhân sự từ chối', cls: 'bg-rose-50 text-rose-700 border-rose-200' },
+  CANCELLED:       { label: 'Đã hủy', cls: 'bg-slate-100 text-slate-500 border-slate-200' },
+};
+
+// ── VisitProcess scheduled reminders (visit_instance_reminder_settings), SQL v10. ──
+export type VisitReminderChannel = 'IN_APP' | 'EMAIL';
+export type VisitReminderTargetGroup = 'HOST' | 'PARTICIPANTS' | 'HOST_AND_PARTICIPANTS';
+export type VisitReminderStatus = 'PENDING' | 'SENT' | 'CANCELLED' | 'FAILED';
+
+/** One saved reminder schedule row (GET/PUT reminder-settings). */
+export interface VisitReminderSetting {
+  reminderSettingId: number;
+  channel: VisitReminderChannel;
+  targetGroup: VisitReminderTargetGroup;
+  daysBefore: number;
+  reminderTime: string;   // "HH:mm"
+  scheduledAt: string;    // "yyyy-MM-ddTHH:mm:ss" wall-clock
+  status: VisitReminderStatus;
+}
+
+export interface GetVisitReminderSettingsResult {
+  items: VisitReminderSetting[];
+}
+
+/** One desired reminder configuration sent on PUT (enabled=false cancels the matching PENDING row). */
+export interface SaveVisitReminderSettingItem {
+  channel: VisitReminderChannel;
+  targetGroup: VisitReminderTargetGroup;
+  daysBefore: number;
+  reminderTime: string;   // "HH:mm"
+  enabled: boolean;
+}
+
+export interface SaveVisitReminderSettingsResult {
+  items: VisitReminderSetting[];
+  message: string;
+}
+
+export interface UpdatePreparationNoteResult {
+  visitInstanceId: number;
+  preparationNote: string | null;
+  message: string;
+}
+
+// ── Email template preview (read-only render for "Xem trước email"). ──
+export interface PreviewEmailTemplatePayload {
+  templateCode: string;
+  context?: Record<string, string>;
+  language?: 'VI' | 'EN';
+}
+
+export interface PreviewEmailTemplateResult {
+  subject: string;
+  bodyHtml: string;
+}

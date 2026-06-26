@@ -11,6 +11,10 @@ using PEMS.Application.Delegations.Commands.SaveVisitAgenda;
 using PEMS.Application.Delegations.Commands.UpdateRegistrantInfo;
 using PEMS.Application.Delegations.Commands.InviteVisitParticipant;
 using PEMS.Application.Delegations.Commands.RemoveVisitParticipant;
+using PEMS.Application.Delegations.Commands.UpdateVisitInstancePreparationNote;
+using PEMS.Application.Delegations.Commands.SaveVisitInstanceReminderSettings;
+using PEMS.Application.Delegations.Commands.CancelVisitInstanceReminderSettings;
+using PEMS.Application.Delegations.Queries.GetVisitInstanceReminderSettings;
 using PEMS.Application.Delegations.Queries.GetVisitProcessDetail;
 using PEMS.Application.Delegations.Queries.GetAgendaResponsibleCandidates;
 using PEMS.Application.Delegations.Commands.RespondVisitParticipantInvitation;
@@ -214,6 +218,44 @@ namespace PEMS.Api.Controllers
         {
             var items = (body.Items ?? new List<SaveVisitAgendaItem>());
             var result = await _mediator.Send(new SaveVisitAgendaCommand(visitRequestId, visitInstanceId, items), cancellationToken);
+            return Ok(result);
+        }
+
+        // ── VisitProcess "Ghi chú chung" (preparation note) — Host only, prep window ──
+        // Saves visit_request_campuses.preparation_note. note may be null/empty (clears it).
+        [HttpPut("visit-instances/{visitInstanceId}/preparation-note")]
+        public async Task<IActionResult> UpdatePreparationNote(
+            ulong visitInstanceId, [FromBody] UpdatePreparationNoteBody body, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(
+                new UpdateVisitInstancePreparationNoteCommand(visitInstanceId, body?.Note), cancellationToken);
+            return Ok(result);
+        }
+
+        // ── VisitProcess "Cảnh báo & Thông báo" (scheduled reminder settings) — Host only, prep window ──
+        // GET loads the saved schedule rows; PUT upserts the full set (enabled=false cancels a PENDING row);
+        // PATCH .../cancel cancels every PENDING row. Nothing is sent on save — dispatch is a background job.
+        [HttpGet("visit-instances/{visitInstanceId}/reminder-settings")]
+        public async Task<IActionResult> GetReminderSettings(ulong visitInstanceId, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(new GetVisitInstanceReminderSettingsQuery(visitInstanceId), cancellationToken);
+            return Ok(result);
+        }
+
+        [HttpPut("visit-instances/{visitInstanceId}/reminder-settings")]
+        public async Task<IActionResult> SaveReminderSettings(
+            ulong visitInstanceId, [FromBody] SaveReminderSettingsBody body, CancellationToken cancellationToken)
+        {
+            var items = (body?.Items ?? new List<SaveVisitReminderSettingItem>());
+            var result = await _mediator.Send(
+                new SaveVisitInstanceReminderSettingsCommand(visitInstanceId, items), cancellationToken);
+            return Ok(result);
+        }
+
+        [HttpPatch("visit-instances/{visitInstanceId}/reminder-settings/cancel")]
+        public async Task<IActionResult> CancelReminderSettings(ulong visitInstanceId, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(new CancelVisitInstanceReminderSettingsCommand(visitInstanceId), cancellationToken);
             return Ok(result);
         }
 
@@ -476,4 +518,10 @@ namespace PEMS.Api.Controllers
     /// <summary>Request body for inviting a supporting participant. userId is required for
     /// IC_SUPPORT/STUDENT; departmentId for DEPT_SUPPORT (backend resolves the leader).</summary>
     public sealed record InviteVisitParticipantBody(string ParticipantType, ulong? UserId, ulong? DepartmentId, string? Message);
+
+    /// <summary>Request body for saving the host's "Ghi chú chung" (preparation note). Null clears it.</summary>
+    public sealed record UpdatePreparationNoteBody(string? Note);
+
+    /// <summary>Request body for upserting the reminder schedule (full set; enabled=false cancels a row).</summary>
+    public sealed record SaveReminderSettingsBody(List<SaveVisitReminderSettingItem>? Items);
 }

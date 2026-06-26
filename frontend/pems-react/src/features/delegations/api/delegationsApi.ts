@@ -21,6 +21,12 @@ import type {
   SupportDepartment,
   InviteVisitParticipantPayload,
   InviteVisitParticipantResult,
+  UpdatePreparationNoteResult,
+  GetVisitReminderSettingsResult,
+  SaveVisitReminderSettingItem,
+  SaveVisitReminderSettingsResult,
+  PreviewEmailTemplatePayload,
+  PreviewEmailTemplateResult,
 } from '../types/delegations.types';
 
 export const delegationsApi = {
@@ -152,6 +158,49 @@ export const delegationsApi = {
   ): Promise<InviteVisitParticipantResult> {
     const { data } = await httpClient.post<InviteVisitParticipantResult>(
       API_ENDPOINTS.delegations.inviteParticipant(visitInstanceId), payload);
+    return data;
+  },
+
+  /** VisitProcess "Ghi chú chung": save the host's preparation note (null clears it). Host-only. */
+  async updatePreparationNote(
+    visitInstanceId: number | string,
+    note: string | null,
+  ): Promise<UpdatePreparationNoteResult> {
+    const { data } = await httpClient.put<UpdatePreparationNoteResult>(
+      API_ENDPOINTS.delegations.preparationNote(visitInstanceId), { note });
+    return data;
+  },
+
+  /** VisitProcess "Cảnh báo & Thông báo": load the saved reminder schedule rows. */
+  async getReminderSettings(visitInstanceId: number | string): Promise<GetVisitReminderSettingsResult> {
+    const { data } = await httpClient.get<GetVisitReminderSettingsResult>(
+      API_ENDPOINTS.delegations.reminderSettings(visitInstanceId));
+    return data;
+  },
+
+  /** VisitProcess "Cảnh báo & Thông báo": upsert the full reminder schedule (enabled=false cancels). */
+  async saveReminderSettings(
+    visitInstanceId: number | string,
+    items: SaveVisitReminderSettingItem[],
+  ): Promise<SaveVisitReminderSettingsResult> {
+    const { data } = await httpClient.put<SaveVisitReminderSettingsResult>(
+      API_ENDPOINTS.delegations.reminderSettings(visitInstanceId), { items });
+    return data;
+  },
+
+  /** VisitProcess "Cảnh báo & Thông báo": cancel every still-PENDING reminder. */
+  async cancelReminderSettings(
+    visitInstanceId: number | string,
+  ): Promise<{ cancelledCount: number; message: string }> {
+    const { data } = await httpClient.patch<{ cancelledCount: number; message: string }>(
+      API_ENDPOINTS.delegations.cancelReminderSettings(visitInstanceId), {});
+    return data;
+  },
+
+  /** Render an email template for the "Xem trước email" modal (read-only — never sends). */
+  async previewEmailTemplate(payload: PreviewEmailTemplatePayload): Promise<PreviewEmailTemplateResult> {
+    const { data } = await httpClient.post<PreviewEmailTemplateResult>(
+      API_ENDPOINTS.emailTemplates.preview, payload);
     return data;
   },
 

@@ -42,6 +42,7 @@ public interface IApplicationDbContext
     DbSet<VisitLogisticsItem> VisitLogisticsItems { get; }
     DbSet<VisitLogisticsItemHandover> VisitLogisticsItemHandovers { get; }
     DbSet<VisitLogisticsAssignmentAttempt> VisitLogisticsAssignmentAttempts { get; }
+    DbSet<VisitInstanceReminderSetting> VisitInstanceReminderSettings { get; }
     DbSet<Minute> Minutes { get; }
     DbSet<MinuteActionItem> MinuteActionItems { get; }
     DbSet<MinuteParticipant> MinuteParticipants { get; }

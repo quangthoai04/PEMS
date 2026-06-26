@@ -266,6 +266,7 @@ export function VisitProcess() {
     try {
       const d = await delegationsApi.getVisitProcessDetail(perm.visitRequestId, perm.visitInstanceId);
       setDetail(d);
+      setPreparationNote(d.preparationNote ?? '');
       setAgendaItems((d.agenda || []).map((a) => ({
         agendaId: a.agendaId,
         title: a.title,
@@ -282,6 +283,76 @@ export function VisitProcess() {
     }
   }, [perm?.visitRequestId, perm?.visitInstanceId]);
   useEffect(() => { void loadDetail(); }, [loadDetail]);
+
+  // ── "Cảnh báo & Thông báo": load saved reminder schedule and map onto the two UI rows ──
+  const loadReminders = React.useCallback(async () => {
+    if (!perm) return;
+    try {
+      const res = await delegationsApi.getReminderSettings(perm.visitInstanceId);
+      const items = res.items || [];
+      const sys = items.find((i) => i.channel === 'IN_APP' && i.targetGroup === 'HOST_AND_PARTICIPANTS' && i.status !== 'CANCELLED');
+      const eml = items.find((i) => i.channel === 'EMAIL' && i.targetGroup === 'HOST' && i.status !== 'CANCELLED');
+      setAlerts((prev) => ({
+        system: sys ? { ...prev.system, days: sys.daysBefore, time: sys.reminderTime } : prev.system,
+        email: eml ? { ...prev.email, days: eml.daysBefore, time: eml.reminderTime } : prev.email,
+      }));
+      setRemindersEnabled({ system: !!sys, email: !!eml });
+    } catch {
+      /* keep current defaults if the load fails */
+    }
+  }, [perm?.visitInstanceId]);
+  useEffect(() => { void loadReminders(); }, [loadReminders]);
+
+  // Save the host's preparation note (null clears it). Toast on success/failure.
+  const handleSavePreparationNote = async () => {
+    if (!perm) return;
+    setSavingNote(true);
+    try {
+      const trimmed = preparationNote.trim();
+      const res = await delegationsApi.updatePreparationNote(perm.visitInstanceId, trimmed.length ? preparationNote : null);
+      setPreparationNote(res.preparationNote ?? '');
+      pushToast('success', res.message || 'Đã lưu ghi chú chung.');
+    } catch (e) {
+      pushToast('error', apiErrorMessage(e, 'Không thể lưu ghi chú chung. Vui lòng thử lại.'));
+    } finally {
+      setSavingNote(false);
+    }
+  };
+
+  // Save the scheduled reminder configuration (nothing is sent now — a background job dispatches later).
+  const handleSaveReminders = async () => {
+    if (!perm) return;
+    setSavingReminders(true);
+    try {
+      const items = [
+        { channel: 'IN_APP' as const, targetGroup: 'HOST_AND_PARTICIPANTS' as const, daysBefore: alerts.system.days, reminderTime: alerts.system.time, enabled: remindersEnabled.system },
+        { channel: 'EMAIL' as const, targetGroup: 'HOST' as const, daysBefore: alerts.email.days, reminderTime: alerts.email.time, enabled: remindersEnabled.email },
+      ];
+      const res = await delegationsApi.saveReminderSettings(perm.visitInstanceId, items);
+      pushToast('success', res.message || 'Đã lưu cấu hình cảnh báo.');
+      await loadReminders();
+    } catch (e) {
+      pushToast('error', apiErrorMessage(e, 'Bạn không có quyền cập nhật cảnh báo.'));
+    } finally {
+      setSavingReminders(false);
+    }
+  };
+
+  // Turn off every still-pending reminder.
+  const handleCancelReminders = async () => {
+    if (!perm) return;
+    setSavingReminders(true);
+    try {
+      const res = await delegationsApi.cancelReminderSettings(perm.visitInstanceId);
+      pushToast('success', res.message || 'Đã hủy lịch gửi cảnh báo.');
+      setRemindersEnabled({ system: false, email: false });
+      await loadReminders();
+    } catch (e) {
+      pushToast('error', apiErrorMessage(e, 'Không thể hủy cảnh báo. Vui lòng thử lại.'));
+    } finally {
+      setSavingReminders(false);
+    }
+  };
 
   // Responsible-person candidates (active host + ACCEPTED supporting participants of THIS instance).
   // Loaded once per instance; on failure we keep an empty list (dropdown just shows "Chưa chọn").
@@ -465,6 +536,13 @@ export function VisitProcess() {
     system: { days: 1, time: '09:00', period: 'AM' },
     email: { days: 2, time: '14:00', period: 'PM' }
   });
+  // Whether each reminder channel is active. Loaded from reminder-settings; enabled=false on save
+  // cancels the matching PENDING row. (system = IN_APP/HOST_AND_PARTICIPANTS, email = EMAIL/HOST.)
+  const [remindersEnabled, setRemindersEnabled] = useState({ system: true, email: true });
+  const [savingReminders, setSavingReminders] = useState(false);
+  // Host's "Ghi chú chung" (visit_request_campuses.preparation_note), loaded from process-detail.
+  const [preparationNote, setPreparationNote] = useState('');
+  const [savingNote, setSavingNote] = useState(false);
 
   const [setupDetails, setSetupDetails] = useState({
     electricCar: { borrowerName: '', quantity: '', date: '', startTime: '', endTime: '', note: '', confirmed: false, collapsed: false },
@@ -1057,12 +1135,16 @@ export function VisitProcess() {
                     1. Thông báo tới các thành phần tham gia
                   </h4>
                   <p className="text-xs text-gray-500 mb-3 ml-10">Thông báo trên hệ thống</p>
+                  <label className="flex items-center gap-2 ml-10 mb-2 text-xs font-medium text-gray-600 select-none">
+                    <input disabled={!isInfoEditable} type="checkbox" checked={remindersEnabled.system} onChange={e => setRemindersEnabled({ ...remindersEnabled, system: e.target.checked })} />
+                    Bật cảnh báo này
+                  </label>
                   <div className="flex flex-wrap items-center gap-2 ml-10">
                     <div className="flex items-center bg-gray-50 border border-gray-200 rounded-lg overflow-hidden">
-                      <input disabled={!isInfoEditable} type="number" min="1" max="31" className="w-14 px-2 py-2 text-center text-sm font-bold outline-none bg-transparent" value={alerts.system.days} onChange={e => setAlerts({...alerts, system: {...alerts.system, days: parseInt(e.target.value)||1}})} />
+                      <input disabled={!isInfoEditable || !remindersEnabled.system} type="number" min="0" max="31" className="w-14 px-2 py-2 text-center text-sm font-bold outline-none bg-transparent" value={alerts.system.days} onChange={e => setAlerts({...alerts, system: {...alerts.system, days: parseInt(e.target.value)||0}})} />
                     </div>
                     <span className="text-xs text-gray-600 font-medium">ngày trước, vào lúc</span>
-                    <input disabled={!isInfoEditable} type="time" className="px-2 py-2 border border-gray-200 rounded-lg text-sm outline-none bg-white" value={alerts.system.time} onChange={e => setAlerts({...alerts, system: {...alerts.system, time: e.target.value}})} />
+                    <input disabled={!isInfoEditable || !remindersEnabled.system} type="time" className="px-2 py-2 border border-gray-200 rounded-lg text-sm outline-none bg-white" value={alerts.system.time} onChange={e => setAlerts({...alerts, system: {...alerts.system, time: e.target.value}})} />
                   </div>
                 </div>
 
@@ -1075,15 +1157,41 @@ export function VisitProcess() {
                     2. Thông báo tới HOST
                   </h4>
                   <p className="text-xs text-gray-500 mb-3 ml-10">Gửi email nhắc nhở host</p>
+                  <label className="flex items-center gap-2 ml-10 mb-2 text-xs font-medium text-gray-600 select-none">
+                    <input disabled={!isInfoEditable} type="checkbox" checked={remindersEnabled.email} onChange={e => setRemindersEnabled({ ...remindersEnabled, email: e.target.checked })} />
+                    Bật cảnh báo này
+                  </label>
                   <div className="flex flex-wrap items-center gap-2 ml-10">
                     <div className="flex items-center bg-gray-50 border border-gray-200 rounded-lg overflow-hidden">
-                      <input disabled={!isInfoEditable} type="number" min="1" max="31" className="w-14 px-2 py-2 text-center text-sm font-bold outline-none bg-transparent" value={alerts.email.days} onChange={e => setAlerts({...alerts, email: {...alerts.email, days: parseInt(e.target.value)||1}})} />
+                      <input disabled={!isInfoEditable || !remindersEnabled.email} type="number" min="0" max="31" className="w-14 px-2 py-2 text-center text-sm font-bold outline-none bg-transparent" value={alerts.email.days} onChange={e => setAlerts({...alerts, email: {...alerts.email, days: parseInt(e.target.value)||0}})} />
                     </div>
                     <span className="text-xs text-gray-600 font-medium">ngày trước, vào lúc</span>
-                    <input disabled={!isInfoEditable} type="time" className="px-2 py-2 border border-gray-200 rounded-lg text-sm outline-none bg-white" value={alerts.email.time} onChange={e => setAlerts({...alerts, email: {...alerts.email, time: e.target.value}})} />
+                    <input disabled={!isInfoEditable || !remindersEnabled.email} type="time" className="px-2 py-2 border border-gray-200 rounded-lg text-sm outline-none bg-white" value={alerts.email.time} onChange={e => setAlerts({...alerts, email: {...alerts.email, time: e.target.value}})} />
                   </div>
                 </div>
               </div>
+
+              {isInfoEditable && (
+                <div className="flex flex-wrap justify-end gap-3 mt-5">
+                  <button
+                    type="button"
+                    onClick={handleCancelReminders}
+                    disabled={savingReminders}
+                    className="px-5 py-2.5 rounded-xl font-bold text-sm text-red-600 bg-white border border-red-200 hover:bg-red-50 transition-colors shadow-sm outline-none disabled:opacity-60"
+                  >
+                    Tắt cảnh báo
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSaveReminders}
+                    disabled={savingReminders}
+                    className="px-5 py-2.5 rounded-xl font-bold text-sm text-white bg-[#004c91] hover:bg-[#013565] transition-colors shadow-sm outline-none disabled:opacity-60 flex items-center gap-2"
+                  >
+                    <Bell className="w-4 h-4" />
+                    {savingReminders ? 'Đang lưu...' : 'Lưu cảnh báo'}
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* 3.5 Ghi chú */}
@@ -1092,7 +1200,27 @@ export function VisitProcess() {
                             <span className="w-1.5 h-4 bg-[#f37021] rounded-full"></span>
                             4. Ghi chú chung
                           </h3>
-                          <textarea readOnly={!isInfoEditable} className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50/50 text-gray-800 font-medium text-sm min-h-[100px] resize-none" defaultValue="Không có ghi chú thêm..."></textarea>
+                          <textarea
+                            readOnly={!isInfoEditable}
+                            maxLength={5000}
+                            placeholder="Ghi chú chuẩn bị nội bộ cho chuyến tiếp khách..."
+                            className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50/50 text-gray-800 font-medium text-sm min-h-[100px] resize-none"
+                            value={preparationNote}
+                            onChange={(e) => setPreparationNote(e.target.value)}
+                          ></textarea>
+                          {isInfoEditable && (
+                            <div className="flex justify-end mt-3">
+                              <button
+                                type="button"
+                                onClick={handleSavePreparationNote}
+                                disabled={savingNote}
+                                className="px-5 py-2.5 rounded-xl font-bold text-sm text-white bg-[#004c91] hover:bg-[#013565] transition-colors shadow-sm outline-none disabled:opacity-60 flex items-center gap-2"
+                              >
+                                <CheckCircle2 className="w-4 h-4" />
+                                {savingNote ? 'Đang lưu...' : 'Lưu ghi chú'}
+                              </button>
+                            </div>
+                          )}
                         </div>
 
                             </div>

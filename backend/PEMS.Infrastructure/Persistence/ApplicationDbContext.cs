@@ -60,6 +60,7 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     public DbSet<VisitLogisticsItem> VisitLogisticsItems { get; set; }
     public DbSet<VisitLogisticsItemHandover> VisitLogisticsItemHandovers { get; set; }
     public DbSet<VisitLogisticsAssignmentAttempt> VisitLogisticsAssignmentAttempts { get; set; }
+    public DbSet<VisitInstanceReminderSetting> VisitInstanceReminderSettings { get; set; }
 
     // ── Minutes + Feedback ────────────────────────────────────────────────
     public DbSet<Minute> Minutes { get; set; }
@@ -337,6 +338,26 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
         modelBuilder.Entity<VisitLogisticsAssignmentAttempt>()
             .HasIndex(a => new { a.LogisticsItemId, a.Status })
             .HasDatabaseName("idx_vla_item_status");
+
+        // VisitInstanceReminderSetting (v10 2026-06-26) → VisitRequestCampus + created/updated users.
+        // Enum columns persist as their SQL ENUM string (name maps 1:1). Unique per
+        // (instance, channel, target_group); index on (status, scheduled_at) drives the dispatch job.
+        modelBuilder.Entity<VisitInstanceReminderSetting>(b =>
+        {
+            b.HasOne(r => r.VisitInstance).WithMany()
+                .HasForeignKey(r => r.VisitInstanceId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne<User>().WithMany()
+                .HasForeignKey(r => r.CreatedBy).OnDelete(DeleteBehavior.SetNull);
+            b.HasOne<User>().WithMany()
+                .HasForeignKey(r => r.UpdatedBy).OnDelete(DeleteBehavior.SetNull);
+            b.Property(r => r.Channel).HasConversion<string>();
+            b.Property(r => r.TargetGroup).HasConversion<string>();
+            b.Property(r => r.Status).HasConversion<string>();
+            b.HasIndex(r => new { r.VisitInstanceId, r.Channel, r.TargetGroup })
+                .IsUnique().HasDatabaseName("uq_visit_reminder_channel_target");
+            b.HasIndex(r => new { r.Status, r.ScheduledAt })
+                .HasDatabaseName("idx_visit_reminder_schedule");
+        });
 
         // Minute → VisitRequestCampus, CreatedBy, EditLockedBy
         modelBuilder.Entity<Minute>()

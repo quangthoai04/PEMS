@@ -60,6 +60,9 @@ public static class DependencyInjection
         services.AddScoped<IFaceRecognitionService, FaceRecognitionService>();
         services.AddScoped<IOcrService, OcrService>();
 
+        // Background jobs — scheduled visit reminder dispatch (visit_instance_reminder_settings).
+        services.AddHostedService<PEMS.Infrastructure.BackgroundJobs.VisitReminderDispatchHostedService>();
+
         return services;
     }
 }

@@ -118,6 +118,18 @@ export const API_ENDPOINTS = {
       `/delegations/visit-instances/${visitInstanceId}/participants/invite`,
     removeParticipant: (visitInstanceId: string | number, participantId: string | number) =>
       `/delegations/visit-instances/${visitInstanceId}/participants/${participantId}/remove`,
+    // VisitProcess "Ghi chú chung" (preparation note) — Host only, prep window.
+    preparationNote: (visitInstanceId: string | number) =>
+      `/delegations/visit-instances/${visitInstanceId}/preparation-note`,
+    // VisitProcess "Cảnh báo & Thông báo" (scheduled reminder settings) — Host only, prep window.
+    reminderSettings: (visitInstanceId: string | number) =>
+      `/delegations/visit-instances/${visitInstanceId}/reminder-settings`,
+    cancelReminderSettings: (visitInstanceId: string | number) =>
+      `/delegations/visit-instances/${visitInstanceId}/reminder-settings/cancel`,
+  },
+  // Email template preview (read-only render for the "Xem trước email" modal — never sends).
+  emailTemplates: {
+    preview: '/email-templates/preview',
   },
   // Phase 3: meeting minutes (biên bản) — 1 per visit_instance with an edit-lock workflow.
   meetingMinutes: {
