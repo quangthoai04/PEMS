@@ -6,6 +6,8 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Common.Security;
+using PEMS.Application.Emails.Common;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Delegations;
 using PEMS.Domain.Entities.Emails;
@@ -31,16 +33,18 @@ public sealed class InviteVisitParticipantCommandHandler
     private readonly IDateTimeService _clock;
     private readonly IEmailService _email;
     private readonly IEmailActionTokenService _tokens;
+    private readonly IHtmlSanitizerService _sanitizer;
 
     public InviteVisitParticipantCommandHandler(
         IApplicationDbContext db, ICurrentUserService currentUser, IDateTimeService clock,
-        IEmailService email, IEmailActionTokenService tokens)
+        IEmailService email, IEmailActionTokenService tokens, IHtmlSanitizerService sanitizer)
     {
         _db = db;
         _currentUser = currentUser;
         _clock = clock;
         _email = email;
         _tokens = tokens;
+        _sanitizer = sanitizer;
     }
 
     public async Task<InviteVisitParticipantResponse> Handle(
@@ -95,10 +99,25 @@ public sealed class InviteVisitParticipantCommandHandler
 
         var now = _clock.UtcNow;
 
+        // ── Validate the optional host-edited email content (Part C) ──
+        var editedContent = ValidateAndSanitizeOverride(request.EmailOverride);
+
+        // Link the sent_email back to its source template for traceability.
+        var templateCode = participantRole == ParticipantRoles.DeptSupport
+            ? EmailActionTemplates.DepartmentLeaderInvitation
+            : participantRole == ParticipantRoles.Student
+                ? EmailActionTemplates.StudentInvitation
+                : EmailActionTemplates.ParticipantInvitation;
+        var templateId = await _db.EmailTemplates
+            .Where(t => t.TemplateCode == templateCode)
+            .Select(t => (ulong?)t.EmailTemplateId)
+            .FirstOrDefaultAsync(cancellationToken);
+
         VisitParticipant participant;
         ulong sentEmailId;
         ulong sentEmailRecipientId;
-        string acceptRaw, declineRaw;
+        string finalSubject;
+        string finalBody;
 
         await using (var transaction = await _db.BeginTransactionAsync(cancellationToken))
         {
@@ -136,14 +155,50 @@ public sealed class InviteVisitParticipantCommandHandler
             }
             await _db.SaveChangesAsync(cancellationToken);
 
-            // 2) sent_emails + recipient (QUEUED until the send attempt below).
+            // 2) Mint the real one-time tokens FIRST so the body can carry the live URLs, then build
+            //    the final subject/body (edited content + system action block, or the default email).
+            var acceptRaw = _tokens.GenerateRawToken();
+            var declineRaw = _tokens.GenerateRawToken();
+            var groupKey = Guid.NewGuid().ToString("N");
+
+            var acceptUrl = _tokens.BuildPublicActionUrl(acceptRaw);
+            var declineUrl = _tokens.BuildPublicActionUrl(declineRaw);
+            var assignUrl = participantRole == ParticipantRoles.DeptSupport
+                ? _tokens.BuildDepartmentAssignmentUrl(instance.VisitInstanceId, participant.ParticipantId)
+                : null;
+
+            if (editedContent != null)
+            {
+                // Host-edited: trust only the content; the backend injects the real action block.
+                finalSubject = request.EmailOverride!.Subject!.Trim();
+                var content = EmailComposition.StripActionArtifacts(editedContent);
+                finalBody = EmailComposition.BrandedShell(
+                    content + EmailComposition.AcceptDeclineBlock(acceptUrl, declineUrl, assignUrl));
+            }
+            else
+            {
+                var mail = ParticipantInvitationEmailBuilder.Build(
+                    recipientName: recipient.FullName,
+                    participantRoleLabel: roleLabel,
+                    delegationName: delegationName,
+                    campusName: campusName,
+                    plannedTimeText: FormatWindow(instance.PlannedStartAt, instance.PlannedEndAt),
+                    hostName: hostName,
+                    acceptUrl: acceptUrl, declineUrl: declineUrl, assignStaffUrl: assignUrl, message: request.Message);
+                finalSubject = mail.Subject;
+                finalBody = mail.HtmlBody;
+            }
+
+            // 3) sent_emails + recipient — body_snapshot is the FINAL content actually sent.
             var sentEmail = new SentEmail
             {
+                EmailTemplateId = templateId,
                 RelatedType = EmailActionTargetTypes.VisitParticipant,
                 RelatedId = participant.ParticipantId,
-                Subject = ParticipantInvitationEmailBuilder.BuildSubject(
-                    participantRole == ParticipantRoles.DeptSupport, delegationName),
+                Subject = finalSubject,
+                BodySnapshot = finalBody,
                 Status = "QUEUED",
+                SentBy = actorId,
                 CreatedAt = now,
             };
             _db.SentEmails.Add(sentEmail);
@@ -161,16 +216,11 @@ public sealed class InviteVisitParticipantCommandHandler
             _db.SentEmailRecipients.Add(sentRecipient);
             await _db.SaveChangesAsync(cancellationToken);
 
-            // 3) ACCEPT + DECLINE one-time tokens (share an action_group_key so using one consumes
-            //    the pair). Only the hash is stored.
-            acceptRaw = _tokens.GenerateRawToken();
-            declineRaw = _tokens.GenerateRawToken();
-            var groupKey = Guid.NewGuid().ToString("N");
-
+            // 4) ACCEPT + DECLINE one-time tokens (share an action_group_key). Only the hash is stored.
             _db.EmailActionTokens.Add(NewToken(_tokens.Hash(acceptRaw), EmailIntendedActions.Accept, groupKey, participant.ParticipantId, targetUserId, recipient.Email, sentEmail.SentEmailId, sentRecipient.SentEmailRecipientId, now));
             _db.EmailActionTokens.Add(NewToken(_tokens.Hash(declineRaw), EmailIntendedActions.Decline, groupKey, participant.ParticipantId, targetUserId, recipient.Email, sentEmail.SentEmailId, sentRecipient.SentEmailRecipientId, now));
 
-            // 4) audit + an in-app notification for the invitee.
+            // 5) audit + an in-app notification for the invitee.
             _db.AuditLogs.Add(new AuditLog
             {
                 ActorUserId = actorId,
@@ -199,43 +249,52 @@ public sealed class InviteVisitParticipantCommandHandler
             await transaction.CommitAsync(cancellationToken);
         }
 
-        // ── Send the email AFTER the participant + tokens are durably committed ──
-        var acceptUrl = _tokens.BuildPublicActionUrl(acceptRaw);
-        var declineUrl = _tokens.BuildPublicActionUrl(declineRaw);
-        var assignUrl = participantRole == ParticipantRoles.DeptSupport
-            ? _tokens.BuildDepartmentAssignmentUrl(instance.VisitInstanceId, participant.ParticipantId)
-            : null;
-
-        var mail = ParticipantInvitationEmailBuilder.Build(
-            recipientName: recipient.FullName,
-            participantRoleLabel: roleLabel,
-            delegationName: delegationName,
-            campusName: campusName,
-            plannedTimeText: FormatWindow(instance.PlannedStartAt, instance.PlannedEndAt),
-            hostName: hostName,
-            acceptUrl: acceptUrl, declineUrl: declineUrl, assignStaffUrl: assignUrl, message: request.Message);
-
+        // ── Send the FINAL body AFTER the participant + tokens are durably committed ──
         bool emailQueued;
+        string emailStatus;
         try
         {
-            await _email.SendAsync(recipient.Email, mail.Subject, mail.HtmlBody, cancellationToken);
+            await _email.SendAsync(recipient.Email, finalSubject, finalBody, cancellationToken);
             emailQueued = true;
+            emailStatus = "SENT";
             await UpdateEmailStatusAsync(sentEmailId, sentEmailRecipientId, "SENT", actorId, now, null, cancellationToken);
         }
         catch (Exception ex)
         {
             // The invitation is already persisted; record the failure so it can be retried/resent.
             emailQueued = false;
+            emailStatus = "FAILED";
             await UpdateEmailStatusAsync(sentEmailId, sentEmailRecipientId, "FAILED", actorId, now, ex.Message, cancellationToken);
         }
 
         var message = emailQueued
-            ? $"Đã gửi lời mời tới {recipient.FullName}. Trạng thái hiện tại: Chờ phản hồi."
-            : $"Đã tạo lời mời cho {recipient.FullName}. Email đang được hệ thống gửi đi.";
+            ? "Đã gửi lời mời."
+            : "Đã tạo lời mời nhưng gửi email thất bại.";
 
         return new InviteVisitParticipantResponse(
             participant.ParticipantId, targetUserId, participantRole, participant.Status,
-            emailQueued, recipient.Email, message);
+            emailQueued, recipient.Email, message, emailStatus, sentEmailId);
+    }
+
+    /// <summary>Validates + sanitizes the optional host-edited email; returns the sanitized content
+    /// HTML, or null when no override was supplied.</summary>
+    private string? ValidateAndSanitizeOverride(EmailOverride? ov)
+    {
+        if (ov is null || !ov.UseEditedContent) return null;
+
+        if (string.IsNullOrWhiteSpace(ov.Subject))
+            throw new ValidationException("Tiêu đề email không được để trống.");
+        if (ov.Subject.Trim().Length > EmailOverrideLimits.SubjectMax)
+            throw new ValidationException($"Tiêu đề email tối đa {EmailOverrideLimits.SubjectMax} ký tự.");
+        if (string.IsNullOrWhiteSpace(ov.BodyHtml))
+            throw new ValidationException("Nội dung email không được để trống.");
+        if (ov.BodyHtml.Length > EmailOverrideLimits.BodyMax)
+            throw new ValidationException($"Nội dung email vượt quá {EmailOverrideLimits.BodyMax} ký tự.");
+
+        var sanitized = _sanitizer.Sanitize(ov.BodyHtml);
+        if (string.IsNullOrWhiteSpace(sanitized))
+            throw new ValidationException("Nội dung email không hợp lệ sau khi lọc.");
+        return sanitized;
     }
 
     // ── helpers ──

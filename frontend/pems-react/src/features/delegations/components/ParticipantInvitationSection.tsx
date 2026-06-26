@@ -7,9 +7,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Search, Loader2, AlertCircle, Mail, Phone, Building2,
-  Users, UserCheck, GraduationCap, Trash2, Send, Eye, X,
+  Users, UserCheck, GraduationCap, Trash2, Send, Eye,
 } from 'lucide-react';
 import { delegationsApi } from '../api/delegationsApi';
+import { EmailPreviewModal } from './EmailPreviewModal';
 import type {
   VisitParticipantListItem, VisitProcessHost, ParticipantCandidate, SupportDepartment,
 } from '../types/delegations.types';
@@ -166,33 +167,79 @@ export function ParticipantInvitationSection({
   const canManage = relation === 'HOST' && (instanceStatus === 'ASSIGNED' || instanceStatus === 'BEFORE_VISIT');
   const [busyId, setBusyId] = useState<string | null>(null);
 
-  // "Xem trước email" modal — read-only render of the invitation template (never sends).
-  const [preview, setPreview] = useState<{ open: boolean; loading: boolean; subject: string; bodyHtml: string; error: string | null }>(
-    { open: false, loading: false, subject: '', bodyHtml: '', error: null });
+  // Editable "Xem trước email" modal. When `target` is set the host can send the (edited) email with
+  // "Mời với nội dung này"; the system action block (accept/decline tokens) is injected by the backend.
+  type PreviewTarget = { key: string; payload: Parameters<typeof delegationsApi.inviteVisitParticipant>[1]; displayName: string };
+  type PreviewState = {
+    open: boolean; loading: boolean; sending: boolean; error: string | null;
+    templateCode: string; subject: string; body: string;
+    isActionTemplate: boolean; systemActionDescription: string | null; lockedActionBlockHtml: string | null;
+    target: PreviewTarget | null;
+  };
+  const EMPTY_PREVIEW: PreviewState = {
+    open: false, loading: false, sending: false, error: null,
+    templateCode: '', subject: '', body: '',
+    isActionTemplate: false, systemActionDescription: null, lockedActionBlockHtml: null, target: null,
+  };
+  const [preview, setPreview] = useState<PreviewState>(EMPTY_PREVIEW);
 
-  const openEmailPreview = async (templateCode: string) => {
-    setPreview({ open: true, loading: true, subject: '', bodyHtml: '', error: null });
+  const previewContext = (): Record<string, string> => ({
+    recipientName: 'Người được mời',
+    DelegationName: 'Đoàn khách (mẫu)',
+    CampusName: 'FPT University',
+    plannedStartAt: '08:00 01/07/2026',
+    plannedEndAt: '11:00 01/07/2026',
+    hostName: host?.fullName ?? 'Host',
+    departmentLeaderName: 'Trưởng phòng',
+    requesterName: host?.fullName ?? 'Host',
+  });
+
+  const loadPreview = async (templateCode: string, target: PreviewTarget | null) => {
+    setPreview((p) => ({ ...p, open: true, loading: true, error: null, templateCode, target }));
     try {
-      const res = await delegationsApi.previewEmailTemplate({
-        templateCode,
-        context: {
-          recipientName: 'Người được mời',
-          DelegationName: 'Đoàn khách (mẫu)',
-          CampusName: 'FPT University',
-          plannedStartAt: '08:00 01/07/2026',
-          plannedEndAt: '11:00 01/07/2026',
-          hostName: host?.fullName ?? 'Host',
-          departmentLeaderName: 'Trưởng phòng',
-          requesterName: host?.fullName ?? 'Host',
-          acceptUrl: '#', declineUrl: '#', assignUrl: '#',
-        },
-      });
-      setPreview({ open: true, loading: false, subject: res.subject, bodyHtml: res.bodyHtml, error: null });
+      const res = await delegationsApi.previewEmailTemplate({ templateCode, context: previewContext() });
+      setPreview((p) => ({
+        ...p, open: true, loading: false, error: null,
+        templateCode, subject: res.subject, body: res.bodyHtml,
+        isActionTemplate: res.isActionTemplate,
+        systemActionDescription: res.systemActionDescription ?? null,
+        lockedActionBlockHtml: res.lockedActionBlockHtml ?? null,
+      }));
     } catch (e: any) {
-      setPreview({ open: true, loading: false, subject: '', bodyHtml: '', error: apiError(e, 'Không thể tải bản xem trước email.') });
+      setPreview((p) => ({ ...p, open: true, loading: false, error: apiError(e, 'Không thể tải bản xem trước email.') }));
     }
   };
-  const closePreview = () => setPreview((p) => ({ ...p, open: false }));
+
+  // Pure template preview (no candidate) — opened from each panel header.
+  const openEmailPreview = (templateCode: string) => { void loadPreview(templateCode, null); };
+  // Editable preview bound to a candidate — "Mời với nội dung này" sends with the edited content.
+  const openEmailPreviewFor = (templateCode: string, target: PreviewTarget) => { void loadPreview(templateCode, target); };
+  const restoreTemplate = () => { if (preview.templateCode) void loadPreview(preview.templateCode, preview.target); };
+  const closePreview = () => setPreview(EMPTY_PREVIEW);
+
+  const sendWithEditedContent = async () => {
+    if (!preview.target) return;
+    if (!preview.subject.trim()) { pushToast('error', 'Tiêu đề email không được để trống.'); return; }
+    if (!preview.body.trim()) { pushToast('error', 'Nội dung email không được để trống.'); return; }
+    setPreview((p) => ({ ...p, sending: true }));
+    try {
+      const res = await delegationsApi.inviteVisitParticipant(visitInstanceId, {
+        ...preview.target.payload,
+        emailOverride: { useEditedContent: true, subject: preview.subject.trim(), bodyHtml: preview.body },
+      });
+      pushToast(res.emailStatus === 'FAILED' ? 'warning' : 'success',
+        res.message || `Đã gửi lời mời tới ${preview.target.displayName}.`);
+      closePreview();
+      closeStaffDropdown.current?.();
+      closeStudentDropdown.current?.();
+      closeDeptDropdown.current?.();
+      await onChanged();
+    } catch (e: any) {
+      // Keep the modal open with the user's edits so they can fix and retry.
+      setPreview((p) => ({ ...p, sending: false }));
+      pushToast('error', apiError(e, 'Không thể gửi lời mời. Vui lòng thử lại.'));
+    }
+  };
 
   // Refs to close each search dropdown after a successful invite.
   const closeStaffDropdown = useRef<(() => void) | null>(null);
@@ -296,6 +343,7 @@ export function ParticipantInvitationSection({
                   candidate={c}
                   busy={busyId === `ic-${c.userId}`}
                   onInvite={() => invite(`ic-${c.userId}`, { participantType: 'IC_SUPPORT', userId: c.userId }, c.fullName, close)}
+                  onPreview={() => openEmailPreviewFor('VISIT_PARTICIPANT_INVITATION', { key: `ic-${c.userId}`, payload: { participantType: 'IC_SUPPORT', userId: c.userId }, displayName: c.fullName })}
                 />
               )}
             />
@@ -325,6 +373,7 @@ export function ParticipantInvitationSection({
                   subtitle={c.studentCode ? `MSSV: ${c.studentCode}` : undefined}
                   busy={busyId === `st-${c.userId}`}
                   onInvite={() => invite(`st-${c.userId}`, { participantType: 'STUDENT', userId: c.userId }, c.fullName, close)}
+                  onPreview={() => openEmailPreviewFor('VISIT_STUDENT_INVITATION', { key: `st-${c.userId}`, payload: { participantType: 'STUDENT', userId: c.userId }, displayName: c.fullName })}
                 />
               )}
             />
@@ -359,26 +408,38 @@ export function ParticipantInvitationSection({
                       <div className="mt-0.5 text-[11px] font-medium text-amber-600">{d.disabledReason}</div>
                     )}
                   </div>
-                  <button
-                    type="button"
-                    disabled={!d.canInvite || busyId === `dept-${d.departmentId}`}
-                    onClick={() => {
-                      if (!d.canInvite) {
-                        pushToast('warning', d.disabledReason || 'Không thể mời phòng ban này.');
-                        return;
-                      }
-                      invite(
-                        `dept-${d.departmentId}`,
-                        { participantType: 'DEPT_SUPPORT', departmentId: d.departmentId },
-                        `trưởng phòng ${d.departmentName}`,
-                        close,
-                      );
-                    }}
-                    className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-[#004c91] px-3 py-1.5 text-xs font-bold text-white outline-none transition-colors hover:bg-[#003b70] disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    {busyId === `dept-${d.departmentId}` ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-                    Mời
-                  </button>
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    {d.canInvite && (
+                      <button
+                        type="button"
+                        title="Xem trước & sửa email"
+                        onClick={() => openEmailPreviewFor('VISIT_DEPARTMENT_LEADER_INVITATION', { key: `dept-${d.departmentId}`, payload: { participantType: 'DEPT_SUPPORT', departmentId: d.departmentId }, displayName: `trưởng phòng ${d.departmentName}` })}
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 bg-white text-[#004c91] outline-none transition-colors hover:bg-gray-50"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      disabled={!d.canInvite || busyId === `dept-${d.departmentId}`}
+                      onClick={() => {
+                        if (!d.canInvite) {
+                          pushToast('warning', d.disabledReason || 'Không thể mời phòng ban này.');
+                          return;
+                        }
+                        invite(
+                          `dept-${d.departmentId}`,
+                          { participantType: 'DEPT_SUPPORT', departmentId: d.departmentId },
+                          `trưởng phòng ${d.departmentName}`,
+                          close,
+                        );
+                      }}
+                      className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-[#004c91] px-3 py-1.5 text-xs font-bold text-white outline-none transition-colors hover:bg-[#003b70] disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      {busyId === `dept-${d.departmentId}` ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                      Mời
+                    </button>
+                  </div>
                 </div>
               )}
             />
@@ -417,55 +478,25 @@ export function ParticipantInvitationSection({
         </Panel>
       </div>
 
-      {/* ── "Xem trước email" modal — read-only render; the real send still needs the "Mời" button ── */}
-      {preview.open && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4" onMouseDown={closePreview}>
-          <div
-            className="w-full max-w-2xl max-h-[85vh] overflow-hidden rounded-2xl bg-white shadow-2xl flex flex-col"
-            onMouseDown={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
-              <h3 className="flex items-center gap-2 text-base font-bold text-[#004c91]">
-                <Eye className="w-5 h-5" /> Xem trước email
-              </h3>
-              <button type="button" onClick={closePreview} className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600 outline-none">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="overflow-y-auto px-6 py-4">
-              {preview.loading ? (
-                <div className="flex items-center gap-2 py-8 text-sm text-gray-500">
-                  <Loader2 className="w-4 h-4 animate-spin" /> Đang tải bản xem trước...
-                </div>
-              ) : preview.error ? (
-                <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-600">
-                  <AlertCircle className="w-4 h-4 shrink-0" /> {preview.error}
-                </div>
-              ) : (
-                <>
-                  <div className="mb-3">
-                    <div className="text-xs font-bold uppercase tracking-wide text-gray-400">Tiêu đề</div>
-                    <div className="mt-1 text-sm font-bold text-gray-800">{preview.subject}</div>
-                  </div>
-                  <div className="text-xs font-bold uppercase tracking-wide text-gray-400">Nội dung</div>
-                  <div
-                    className="mt-1 rounded-xl border border-gray-200 bg-gray-50/60 p-4 text-sm text-gray-700 prose prose-sm max-w-none"
-                    dangerouslySetInnerHTML={{ __html: preview.bodyHtml }}
-                  />
-                  <p className="mt-3 text-[11px] italic text-gray-400">
-                    Đây chỉ là bản xem trước. Email chỉ được gửi khi bạn bấm “Mời”.
-                  </p>
-                </>
-              )}
-            </div>
-            <div className="flex justify-end border-t border-gray-100 px-6 py-3">
-              <button type="button" onClick={closePreview} className="rounded-xl bg-[#004c91] px-5 py-2 text-sm font-bold text-white outline-none hover:bg-[#013565]">
-                Đóng
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Editable "Xem trước email" modal (shared component). */}
+      <EmailPreviewModal
+        open={preview.open}
+        loading={preview.loading}
+        sending={preview.sending}
+        error={preview.error}
+        subject={preview.subject}
+        body={preview.body}
+        isActionTemplate={preview.isActionTemplate}
+        systemActionDescription={preview.systemActionDescription}
+        lockedActionBlockHtml={preview.lockedActionBlockHtml}
+        canSend={!!preview.target}
+        sendLabel="Mời với nội dung này"
+        onSubjectChange={(v) => setPreview((p) => ({ ...p, subject: v }))}
+        onBodyChange={(v) => setPreview((p) => ({ ...p, body: v }))}
+        onClose={closePreview}
+        onRestore={restoreTemplate}
+        onSend={sendWithEditedContent}
+      />
     </div>
   );
 }
@@ -492,8 +523,8 @@ function Panel({ title, icon, wide, children }: { title: string; icon: React.Rea
 }
 
 function CandidateRow({
-  candidate, subtitle, busy, onInvite,
-}: { candidate: ParticipantCandidate; subtitle?: string; busy: boolean; onInvite: () => void }) {
+  candidate, subtitle, busy, onInvite, onPreview,
+}: { candidate: ParticipantCandidate; subtitle?: string; busy: boolean; onInvite: () => void; onPreview?: () => void }) {
   return (
     <div className="flex items-center justify-between gap-3 border-b border-gray-100 px-4 py-2.5 last:border-b-0">
       <div className="min-w-0">
@@ -508,15 +539,28 @@ function CandidateRow({
           />
         </div>
       </div>
-      <button
-        type="button"
-        disabled={!candidate.canInvite || busy}
-        onClick={onInvite}
-        className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-[#004c91] px-3 py-1.5 text-xs font-bold text-white outline-none transition-colors hover:bg-[#003b70] disabled:cursor-not-allowed disabled:opacity-40"
-      >
-        {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-        Mời
-      </button>
+      <div className="flex shrink-0 items-center gap-1.5">
+        {onPreview && candidate.canInvite && (
+          <button
+            type="button"
+            title="Xem trước & sửa email"
+            disabled={busy}
+            onClick={onPreview}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 bg-white text-[#004c91] outline-none transition-colors hover:bg-gray-50 disabled:opacity-40"
+          >
+            <Eye className="w-3.5 h-3.5" />
+          </button>
+        )}
+        <button
+          type="button"
+          disabled={!candidate.canInvite || busy}
+          onClick={onInvite}
+          className="inline-flex items-center gap-1 rounded-lg bg-[#004c91] px-3 py-1.5 text-xs font-bold text-white outline-none transition-colors hover:bg-[#003b70] disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+          Mời
+        </button>
+      </div>
     </div>
   );
 }

@@ -235,7 +235,7 @@ export function DepartmentDetailDashboard() {
     try {
       await departmentManagementApi.reassignDepartmentLead({
         departmentId: targetDeptId,
-        newLeaderUserId: newLeaderId
+        newLeaderUserId: Number(newLeaderId)
       });
       toast.success('Đã thay đổi trưởng phòng thành công.');
       setIsChangeLeaderModalOpen(false);

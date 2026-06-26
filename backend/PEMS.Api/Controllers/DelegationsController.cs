@@ -15,6 +15,8 @@ using PEMS.Application.Delegations.Commands.UpdateVisitInstancePreparationNote;
 using PEMS.Application.Delegations.Commands.SaveVisitInstanceReminderSettings;
 using PEMS.Application.Delegations.Commands.CancelVisitInstanceReminderSettings;
 using PEMS.Application.Delegations.Queries.GetVisitInstanceReminderSettings;
+using PEMS.Application.Delegations.Queries.GetVisitInstanceLogistics;
+using PEMS.Application.Emails.Common;
 using PEMS.Application.Delegations.Queries.GetVisitProcessDetail;
 using PEMS.Application.Delegations.Queries.GetAgendaResponsibleCandidates;
 using PEMS.Application.Delegations.Commands.RespondVisitParticipantInvitation;
@@ -195,7 +197,7 @@ namespace PEMS.Api.Controllers
             ulong visitInstanceId, [FromBody] InviteVisitParticipantBody body, CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(
-                new InviteVisitParticipantCommand(visitInstanceId, body.ParticipantType, body.UserId, body.DepartmentId, body.Message),
+                new InviteVisitParticipantCommand(visitInstanceId, body.ParticipantType, body.UserId, body.DepartmentId, body.Message, body.EmailOverride),
                 cancellationToken);
             return Ok(result);
         }
@@ -256,6 +258,14 @@ namespace PEMS.Api.Controllers
         public async Task<IActionResult> CancelReminderSettings(ulong visitInstanceId, CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(new CancelVisitInstanceReminderSettingsCommand(visitInstanceId), cancellationToken);
+            return Ok(result);
+        }
+
+        // VisitProcess "Chuẩn bị chi tiết": the campus instance's logistics/resource requests (read).
+        [HttpGet("visit-instances/{visitInstanceId}/logistics")]
+        public async Task<IActionResult> GetVisitInstanceLogistics(ulong visitInstanceId, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(new GetVisitInstanceLogisticsQuery(visitInstanceId), cancellationToken);
             return Ok(result);
         }
 
@@ -516,8 +526,10 @@ namespace PEMS.Api.Controllers
     public sealed record RespondInvitationBody(bool Accept, string? DeclineReason);
 
     /// <summary>Request body for inviting a supporting participant. userId is required for
-    /// IC_SUPPORT/STUDENT; departmentId for DEPT_SUPPORT (backend resolves the leader).</summary>
-    public sealed record InviteVisitParticipantBody(string ParticipantType, ulong? UserId, ulong? DepartmentId, string? Message);
+    /// IC_SUPPORT/STUDENT; departmentId for DEPT_SUPPORT (backend resolves the leader). emailOverride
+    /// carries the host-edited subject/body from the "Xem trước email" modal (optional).</summary>
+    public sealed record InviteVisitParticipantBody(
+        string ParticipantType, ulong? UserId, ulong? DepartmentId, string? Message, EmailOverride? EmailOverride);
 
     /// <summary>Request body for saving the host's "Ghi chú chung" (preparation note). Null clears it.</summary>
     public sealed record UpdatePreparationNoteBody(string? Note);

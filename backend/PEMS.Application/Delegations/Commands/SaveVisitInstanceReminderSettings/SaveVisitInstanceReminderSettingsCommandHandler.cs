@@ -55,6 +55,9 @@ public sealed class SaveVisitInstanceReminderSettingsCommandHandler
             throw new ConflictException("Chỉ có thể cấu hình cảnh báo trong giai đoạn chuẩn bị.");
 
         var now = _clock.UtcNow;
+        // scheduled_at is Vietnam wall-clock (derived from planned_start_at) — validate "in the past"
+        // against Vietnam-local now, not UtcNow.
+        var nowVn = _clock.VietnamNow;
 
         var existingRows = await _db.VisitInstanceReminderSettings
             .Where(r => r.VisitInstanceId == instance.VisitInstanceId)
@@ -87,7 +90,7 @@ public sealed class SaveVisitInstanceReminderSettingsCommandHandler
                 throw new ValidationException(
                     $"Thời điểm gửi cảnh báo ({scheduledAt:HH:mm dd/MM/yyyy}) phải trước thời điểm bắt đầu tiếp khách.");
 
-            if (scheduledAt <= now)
+            if (scheduledAt <= nowVn)
                 throw new ValidationException(
                     $"Thời điểm gửi cảnh báo ({scheduledAt:HH:mm dd/MM/yyyy}) đã qua, không thể đặt lịch.");
 

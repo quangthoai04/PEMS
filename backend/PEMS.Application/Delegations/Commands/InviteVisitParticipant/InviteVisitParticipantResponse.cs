@@ -9,4 +9,7 @@ public sealed record InviteVisitParticipantResponse(
     /// (the participant row still exists — the host can resend later).</summary>
     bool EmailQueued,
     string EmailRecipient,
-    string Message);
+    string Message,
+    /// <summary>SENT | FAILED — explicit email delivery outcome for the toast.</summary>
+    string EmailStatus,
+    ulong SentEmailId);

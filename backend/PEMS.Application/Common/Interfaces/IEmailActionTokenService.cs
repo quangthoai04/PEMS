@@ -21,4 +21,8 @@ public interface IEmailActionTokenService
     /// <summary>Internal, login-required URL for the Department-Leader "Gán nhân sự" action (never a
     /// public token — assignment requires authentication).</summary>
     string BuildDepartmentAssignmentUrl(ulong visitInstanceId, ulong participantId);
+
+    /// <summary>Internal, login-required URL to a logistics request's detail page (Department flow).
+    /// Used by the logistics-request email — no public token (reject/assign require authentication).</summary>
+    string BuildLogisticsDetailUrl(ulong logisticsItemId);
 }

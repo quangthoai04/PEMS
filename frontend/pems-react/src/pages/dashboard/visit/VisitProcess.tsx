@@ -5,32 +5,16 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
-import { 
-  ChevronRight, 
-  ChevronDown, 
-  ChevronUp, 
-  Clock, 
-  Calendar, 
-  Users, 
+import {
+  ChevronDown,
+  ChevronUp,
+  Clock,
   CheckCircle2,
-  Phone,
   Mail,
-  MapPin,
-  Building2,
-  Car,
-  Coffee,
-  MoreHorizontal,
-  MonitorPlay,
-  UserCheck,
-  UserX,
-  CheckCircle,
   Bell,
   Plus,
-  Search,
   Edit3,
-  ArrowRight,
   X,
-  Check,
   AlertCircle,
   Lock,
   FileText,
@@ -47,6 +31,7 @@ import { delegationsApi } from '../../../features/delegations/api/delegationsApi
 import type { VisitProcessPermission, VisitProcessDetail, AgendaResponsibleCandidate } from '../../../features/delegations/types/delegations.types';
 import { AgendaSetupPanel } from '../../../features/agenda-templates/components/AgendaSetupPanel';
 import { ParticipantInvitationSection } from '../../../features/delegations/components/ParticipantInvitationSection';
+import { LogisticsRequestSection } from '../../../features/delegations/components/LogisticsRequestSection';
 import { RegistrantInfoReadOnly, DelegationInfoReadOnly } from '../../../features/delegations/components/RequestInfoReadOnly';
 
 // Lightweight in-page toast (top-right) — cùng pattern với CampusManagement/VisitRequestManagement.
@@ -108,8 +93,6 @@ export function VisitProcess() {
   const [isInfoSection3Expanded, setIsInfoSection3Expanded] = useState(false);
   
   const [isInfoEditableState, setIsInfoEditable] = useState(false);
-  const [isSetupEditableState, setIsSetupEditable] = useState(true);
-  const [isSetupConfirmed, setIsSetupConfirmed] = useState(false);
 
   // Phase 2: backend permission flags are the source of truth for tab view/edit. Fetched by
   // visitInstanceId; if unavailable (e.g. prototype/mock id), we fall back to the legacy
@@ -165,7 +148,6 @@ export function VisitProcess() {
   const SETUP_SAVE_AVAILABLE = false;
   const canEditBefore = SETUP_SAVE_AVAILABLE && (perm ? perm.canEditBeforeVisit : !isDept);
   const isInfoEditable = isInfoEditableState && !isClosed && canEditBefore;
-  const isSetupEditable = isSetupEditableState && !isClosed && canEditBefore;
   // Tab visibility (backend says every in-scope role may at least view all tabs read-only).
   const canViewBefore = perm ? perm.canViewBeforeVisit : true;
   const canViewDuring = perm ? perm.canViewDuringVisit : true;
@@ -487,26 +469,6 @@ export function VisitProcess() {
     );
   };
 
-  // States for forms
-  const [needLED, setNeedLED] = useState(true);
-  const [sentImage, setSentImage] = useState(false);
-
-  const [tourGuide, setTourGuide] = useState<'me' | 'other' | null>(null);
-  
-  const [selectedElectricCarDept, setSelectedElectricCarDept] = useState('');
-  const [selectedDriverDept, setSelectedDriverDept] = useState('');
-  const [selectedRoomDept, setSelectedRoomDept] = useState('');
-  const [selectedTeabreakDept, setSelectedTeabreakDept] = useState('');
-  const [selectedOtherDept, setSelectedOtherDept] = useState('');
-
-  const [selectedTourGuide, setSelectedTourGuide] = useState('');
-  const [addedTourGuides, setAddedTourGuides] = useState<string[]>([]);
-  const [sentRequests, setSentRequests] = useState<Record<string, boolean>>({});
-
-  const handleSendRequest = (type: string) => {
-    setSentRequests(prev => ({ ...prev, [type]: true }));
-  };
-
   const [participants, setParticipants] = useState({
     isMeHost: true,
     host: user || null,
@@ -544,25 +506,6 @@ export function VisitProcess() {
   const [preparationNote, setPreparationNote] = useState('');
   const [savingNote, setSavingNote] = useState(false);
 
-  const [setupDetails, setSetupDetails] = useState({
-    electricCar: { borrowerName: '', quantity: '', date: '', startTime: '', endTime: '', note: '', confirmed: false, collapsed: false },
-    driver: { borrowerName: '', quantity: '', date: '', startTime: '', endTime: '', note: '', confirmed: false, collapsed: false },
-    room: { borrowerName: '', quantity: '', date: '', startTime: '', endTime: '', note: '', confirmed: false, collapsed: false },
-    teabreak: { borrowerName: '', quantity: '', date: '', startTime: '', endTime: '', note: '', confirmed: false, collapsed: false }
-  });
-
-  const getLeaderName = (dept: string) => {
-    if (!dept) return '';
-    if (dept === "Tuyển sinh") {
-      return "Nguyễn Văn Tuấn";
-    } else if (dept === 'Hành chính') {
-      return "Trần Thị Bích";
-    } else if (dept === 'Các bộ môn liên quan') {
-      return "Lê Văn Cường";
-    }
-    return "Leader " + dept;
-  };
-
   const campusOptions = ['Hà Nội', 'Đà Nẵng', 'Cần Thơ', 'Hồ Chí Minh', 'Quy Nhơn'];
   const [visitMode, setVisitMode] = useState<'single' | 'multiple'>('single');
   const [visits, setVisits] = useState([
@@ -574,82 +517,6 @@ export function VisitProcess() {
       setVisits([visits[0]]);
     }
   }, [visitMode]);
-
-  const formatDetailSummary = (type: 'electricCar' | 'driver' | 'room' | 'teabreak', detail: any) => {
-    const nameStr = detail.borrowerName ? `Người mượn: ${detail.borrowerName}` : 'Người mượn: Chưa nhập';
-    let qtyStr = '';
-    if (type === 'room') {
-      qtyStr = detail.quantity ? `Phòng: ${detail.quantity}` : 'Phòng: Chưa nhập';
-    } else if (type === 'teabreak') {
-      qtyStr = detail.quantity ? `Số lượng suất: ${detail.quantity}` : 'Số lượng suất: 0';
-    } else {
-      qtyStr = detail.quantity ? `Số lượng: ${detail.quantity}` : 'Số lượng: 0';
-    }
-
-    let dateStr = 'Chưa chọn ngày';
-    if (detail.date) {
-      const parts = detail.date.split('-');
-      if (parts.length === 3) {
-        dateStr = `${parts[2]}/${parts[1]}/${parts[0]}`;
-      } else {
-        dateStr = detail.date;
-      }
-    }
-
-    const start = detail.startTime || '--:--';
-    const end = detail.endTime || '--:--';
-    const timeStr = `${dateStr} từ ${start} - ${end}`;
-
-    return { nameStr, qtyStr, timeStr };
-  };
-
-  const renderLeaderInfo = (dept: string, type: string) => {
-    if (!dept) return null;
-    let name = "Leader " + dept;
-    if (dept === "Tuyển sinh") {
-      name = "Nguyễn Văn Tuấn";
-    } else if (dept === 'Hành chính') {
-      name = "Trần Thị Bích";
-    } else if (dept === 'Các bộ môn liên quan') {
-      name = "Lê Văn Cường";
-    }
-
-    const isSent = sentRequests[type];
-
-    return (
-      <div className="mt-3 p-3 bg-yellow-50/80 border border-yellow-200 rounded-xl flex flex-col sm:flex-row sm:items-center gap-3 animate-in fade-in slide-in-from-top-2">
-        <div className="w-10 h-10 rounded-full bg-yellow-500 text-white flex items-center justify-center font-bold text-lg">
-          {name.charAt(0)}
-        </div>
-        <div className="flex-1">
-          <div className="text-sm font-bold text-yellow-900 flex items-center gap-2 flex-wrap">
-            {name} 
-            <span className="text-[11px] font-bold uppercase tracking-wider text-yellow-700 bg-white px-2 py-0.5 rounded-md border border-yellow-200 shadow-sm">Trưởng phòng</span>
-          </div>
-          {isSent && (
-            <div className="text-[13px] font-bold text-[#10b981] flex items-center gap-1 mt-1 animate-in fade-in slide-in-from-bottom-1"><CheckCircle2 className="w-3.5 h-3.5" /> Đã gửi yêu cầu tới "{name}"</div>
-          )}
-        </div>
-        {!isSent ? (
-          <button 
-            type="button"
-            onClick={() => handleSendRequest(type)}
-            className="ml-auto px-4 py-2 bg-yellow-100 text-yellow-800 text-xs font-bold rounded-xl hover:bg-yellow-200 transition-all active:scale-[0.98] outline-none shadow-sm flex items-center gap-1"
-          >
-            Gửi yêu cầu
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={() => navigate(`/dashboard/visit/process/${id}/request/${type}`)}
-            className="ml-auto px-4 py-2 bg-[#10b981]/10 text-[#10b981] text-xs font-bold rounded-xl hover:bg-[#10b981]/20 transition-all active:scale-[0.98] outline-none shadow-sm flex items-center gap-1 border border-[#10b981]/20"
-          >
-            Xem chi tiết <ArrowRight className="w-3.5 h-3.5" />
-          </button>
-        )}
-      </div>
-    );
-  };
 
   const [rejectReasonModal, setRejectReasonModal] = useState<{ isOpen: boolean, targetId: string | null, targetName: string | null, reasonText: string }>({ isOpen: false, targetId: null, targetName: null, reasonText: '' });
   const [viewReasonModal, setViewReasonModal] = useState<{isOpen: boolean, targetName: string | null, reasonText: string}>({isOpen: false, targetName: null, reasonText: ''});
@@ -816,14 +683,15 @@ export function VisitProcess() {
 
       {activeTab === 'before' && canViewBefore && (
         <div className="space-y-6">
-          {/* Honest notice: Agenda is saved for real; the remaining setup sections are not yet
-              connected to a save API and must not be mistaken for persisted data. */}
+          {/* Honest notice: the "Thông tin chung" registrant/delegation block is read-only
+              reference data (what the guest registered). Lịch trình, thành phần tham gia and
+              hậu cần (Chuẩn bị chi tiết) are all wired to real save APIs. */}
           {!isClosed && !isDept && (
             <div className="bg-amber-50 border-l-4 border-amber-400 p-4 rounded-2xl flex items-start gap-3 shadow-sm">
               <AlertCircle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
               <p className="text-sm font-semibold text-amber-800">
-                <span className="font-bold">Lịch trình (Agenda) được lưu thật.</span> Các phần còn lại (hậu cần,
-                thành phần tham gia, chuẩn bị chi tiết) hiện ở chế độ xem — chưa kết nối lưu trữ, thay đổi sẽ không được lưu.
+                <span className="font-bold">Thông tin chung (người tạo &amp; đoàn khách) chỉ đọc</span> — đây là dữ liệu
+                khách đã đăng ký. Lịch trình, thành phần tham gia và hậu cần (Chuẩn bị chi tiết) được lưu trực tiếp vào hệ thống.
                 Xem bản đăng ký gốc qua nút “Bản yêu cầu của khách”.
               </p>
             </div>
@@ -1261,22 +1129,9 @@ export function VisitProcess() {
             >
               <div>
                 <h2 className="text-xl font-bold text-white border-l-4 border-[#f37021] pl-3">2. Chuẩn bị chi tiết</h2>
-                <p className="text-sm font-medium text-blue-100 mt-1 pl-4">Chuẩn bị cho từng loại hình tham quan</p>
+                <p className="text-sm font-medium text-blue-100 mt-1 pl-4">Gửi yêu cầu hậu cần &amp; điều phối nhân sự cho chuyến tiếp khách</p>
               </div>
               <div className="flex items-center gap-3">
-                {canEditBefore && !isSetupEditable && !isClosed && !isDept && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setIsSetupEditable(true);
-                      setIsSetupExpanded(true);
-                    }}
-                    className="w-10 h-10 rounded-full hover:bg-white/20 flex items-center justify-center text-white transition-colors"
-                  >
-                    <Edit3 className="w-5 h-5" />
-                  </button>
-                )}
                 <div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white">
                   {isSetupExpanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
                 </div>
@@ -1291,808 +1146,24 @@ export function VisitProcess() {
                   exit={{ height: 0, opacity: 0 }}
                   className="border-t border-gray-100 overflow-hidden"
                 >
-                  <div className={`p-8 space-y-12 ${!isSetupEditable ? 'bg-slate-50/50 opacity-90' : 'bg-white'}`}>
-               {/* Mục 1: Welcome LED */}
-               <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
-                 <div 
-                   className="flex items-center justify-between px-6 py-4 cursor-pointer hover:bg-orange-50/50 transition-colors bg-white"
-                   onClick={() => setIsSection1Expanded(!isSection1Expanded)}
-                 >
-                    <h3 className="text-xl font-bold text-orange-900 flex items-center gap-2">
-                       <div className="p-1.5 bg-orange-100 rounded-lg"><MonitorPlay className="w-5 h-5 text-[#f37021]" /></div>
-                       Mục 1: Welcome LED
-                    </h3>
-                    <div className="w-8 h-8 rounded-full bg-gray-50 flex items-center justify-center text-gray-500">
-                      {isSection1Expanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
-                    </div>
-                 </div>
-
-                 <AnimatePresence>
-                   {isSection1Expanded && (
-                     <motion.div
-                       initial={{ height: 0, opacity: 0 }}
-                       animate={{ height: 'auto', opacity: 1 }}
-                       exit={{ height: 0, opacity: 0 }}
-                     >
-                       <div className="p-6 pt-2 border-t border-gray-100 bg-white">
-                         <div className="space-y-4 mb-4">
-                           <label className="flex items-center gap-3 cursor-pointer">
-                             <input 
-                               type="radio" 
-                               name="needLED"
-                               checked={needLED === false} 
-                               disabled={!isSetupEditable} onChange={() => setNeedLED(false)} 
-                               className="w-5 h-5 rounded-full border-gray-300 text-[#004c91] focus:ring-[#004c91]"
-                             />
-                             <span className="text-[15px] font-bold text-gray-700">Không cần màn LED</span>
-                           </label>
-                           <label className="flex items-center gap-3 cursor-pointer">
-                             <input 
-                               type="radio" 
-                               name="needLED"
-                               checked={needLED === true} 
-                               disabled={!isSetupEditable} onChange={() => setNeedLED(true)} 
-                               className="w-5 h-5 rounded-full border-gray-300 text-[#004c91] focus:ring-[#004c91]"
-                             />
-                             <span className="text-[15px] font-bold text-gray-700">Cần màn LED</span>
-                           </label>
-                         </div>
-
-                         {needLED && (
-                           <div className="pl-8 pt-4 border-t border-gray-100 animate-in fade-in slide-in-from-top-2">
-                             <label className="flex items-center gap-3 cursor-pointer">
-                               <input 
-                                 type="checkbox" 
-                                 checked={sentImage} 
-                                 disabled={!isSetupEditable} onChange={(e) => setSentImage(e.target.checked)} 
-                                 className="w-5 h-5 rounded border-gray-300 text-green-600 focus:ring-green-600"
-                               />
-                               <span className="text-[15px] font-bold text-gray-700">Xác nhận đã gửi ảnh</span>
-                             </label>
-                           </div>
-                         )}
-                       </div>
-                     </motion.div>
-                   )}
-                 </AnimatePresence>
-               </div>
-
-               {/* Mục 2: Chuẩn bị cho Campus Tour */}
-               <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
-                 <div 
-                   className="flex items-center justify-between px-6 py-4 cursor-pointer hover:bg-orange-50/50 transition-colors bg-white"
-                   onClick={() => setIsSection2Expanded(!isSection2Expanded)}
-                 >
-                    <h3 className="text-xl font-bold text-orange-900 flex items-center gap-2">
-                       <div className="p-1.5 bg-orange-100 rounded-lg"><MapPin className="w-5 h-5 text-[#f37021]" /></div>
-                       Mục 2: Chuẩn bị cho Campus Tour
-                    </h3>
-                    <div className="w-8 h-8 rounded-full bg-gray-50 flex items-center justify-center text-gray-500">
-                      {isSection2Expanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
-                    </div>
-                 </div>
-
-                 <AnimatePresence>
-                   {isSection2Expanded && (
-                     <motion.div
-                       initial={{ height: 0, opacity: 0 }}
-                       animate={{ height: 'auto', opacity: 1 }}
-                       exit={{ height: 0, opacity: 0 }}
-                     >
-                       <div className="p-6 pt-2 border-t border-gray-100 bg-white">
-                         <div className="space-y-8">
-                    {/* Người dẫn */}
-                    <div>
-                      <h4 className="text-lg font-bold text-[#004c91] mb-3 flex items-center gap-2">
-                        <UserCheck className="w-6 h-6 text-[#f37021]"/> Người dẫn <span className="text-red-500">*</span>
-                      </h4>
-                      <div className="flex flex-col gap-4 p-4 bg-blue-50/50 rounded-xl border border-blue-100">
-                        <label className="flex items-center gap-2 cursor-pointer w-max">
-                          <input 
-                            type="radio" 
-                            name="tourGuide"
-                            checked={tourGuide === 'me'}
-                            disabled={!isSetupEditable} onChange={() => setTourGuide('me')}
-                            className="w-4 h-4 text-[#004c91] focus:ring-[#004c91]"
-                          />
-                          <span className="font-medium text-gray-700">Là tôi</span>
-                        </label>
-                        <div className="flex flex-col sm:flex-row gap-3 sm:items-start">
-                          <label className="flex items-center gap-2 cursor-pointer shrink-0 sm:mt-2.5">
-                            <input 
-                              type="radio" 
-                              name="tourGuide"
-                              checked={tourGuide === 'other'}
-                              disabled={!isSetupEditable} onChange={() => setTourGuide('other')}
-                              className="w-4 h-4 text-[#004c91] focus:ring-[#004c91]"
-                            />
-                            <span className="font-medium text-gray-700">Người khác:</span>
-                          </label>
-                          <div className="flex-1 flex flex-col gap-2 w-full">
-                            <div className="flex gap-2 items-center w-full">
-                              <select 
-                                value={selectedTourGuide}
-                                onChange={(e) => setSelectedTourGuide(e.target.value)}
-                                disabled={!isSetupEditable || tourGuide !== 'other'}
-                                className="w-full max-w-sm px-3 py-2 rounded-lg border border-gray-300 focus:border-[#004c91] hover:border-gray-400 transition-colors disabled:bg-gray-100 disabled:opacity-50 outline-none text-sm bg-white"
-                              >
-                                <option value="">Chọn từ danh sách tham dự...</option>
-                                <option value="Trần Văn B (Phòng Hành chính)">Trần Văn B (Phòng Hành chính)</option>
-                                <option value="Lê Thị C (Phòng Tuyển sinh)">Lê Thị C (Phòng Tuyển sinh)</option>
-                              </select>
-                              <button 
-                                type="button"
-                                onClick={() => {
-                                  if (selectedTourGuide && !addedTourGuides.includes(selectedTourGuide)) {
-                                    setAddedTourGuides([...addedTourGuides, selectedTourGuide]);
-                                    setSelectedTourGuide('');
-                                  }
-                                }}
-                                disabled={!isSetupEditable || tourGuide !== 'other' || !selectedTourGuide} 
-                                className="flex items-center gap-1 px-3 py-2 bg-orange-50/80 text-orange-600 border border-orange-200 font-bold rounded-lg text-sm hover:bg-orange-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed outline-none cursor-pointer shrink-0"
-                              >
-                                <Plus className="w-4 h-4" /> Thêm
-                              </button>
-                            </div>
-                            {addedTourGuides.length > 0 && tourGuide === 'other' && (
-                              <div className="mt-2 space-y-2 max-w-[460px]">
-                                {addedTourGuides.map((guide, idx) => (
-                                  <div key={idx} className="flex items-center justify-between p-3 bg-emerald-50/80 rounded-lg border border-emerald-200 shadow-sm animate-in fade-in slide-in-from-top-2">
-                                    <div className="flex items-center gap-3">
-                                      <div className="w-8 h-8 rounded-full bg-emerald-500 text-white flex items-center justify-center font-bold text-xs shadow-sm border border-emerald-600">
-                                        {guide.charAt(0)}
-                                      </div>
-                                      <div>
-                                        <div className="text-sm font-bold text-emerald-900">{guide}</div>
-                                        <div className="text-[11px] text-emerald-600 font-bold flex items-center gap-1 mt-0.5 uppercase tracking-wide">
-                                           <CheckCircle2 className="w-3.5 h-3.5" /> Đã thêm
-                                        </div>
-                                      </div>
-                                    </div>
-                                    {isSetupEditable && (
-                                      <button
-                                        type="button" 
-                                        onClick={() => setAddedTourGuides(addedTourGuides.filter((g) => g !== guide))}
-                                        className="p-1.5 text-emerald-600 hover:text-red-500 rounded-md hover:bg-red-50 transition-colors bg-white shadow-sm border border-emerald-100"
-                                      >
-                                        <X className="w-4 h-4" />
-                                      </button>
-                                    )}
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <hr className="border-t-[2px] border-gray-200" />
-
-                    {/* Xe điện */}
-                    <div>
-                      <h4 className="text-lg font-bold text-[#004c91] mb-3 flex items-center gap-2">
-                        <Car className="w-6 h-6 text-[#f37021]"/> Xe điện
-                        {sentRequests["electricCar"] && (
-                          <span className="ml-2 text-xs font-bold text-amber-700 bg-amber-100 px-2 py-1 rounded-md flex items-center gap-1 border border-amber-300 shadow-sm animate-in fade-in">
-                             <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span> Chờ xác nhận
-                          </span>
-                        )}
-                      </h4>
-                      <div className="p-1">
-                        {setupDetails.electricCar.collapsed ? (
-                          <div 
-                            className="flex items-center justify-between p-3 sm:p-3 bg-blue-50/40 hover:bg-blue-100/30 border border-blue-200 rounded-xl transition-all cursor-pointer shadow-sm"
-                            onClick={() => setSetupDetails(p => ({...p, electricCar: {...p.electricCar, collapsed: false}}))}
-                          >
-                            <div className="flex items-center gap-3">
-                              <CheckCircle className="w-5 h-5 text-[#004c91] shrink-0" />
-                              <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-4 text-sm">
-                                <span className="font-bold text-[#004c91] bg-white px-2 py-0.5 rounded border border-blue-100 text-xs">
-                                  {getLeaderName(selectedElectricCarDept) || "Chưa chọn"}
-                                </span>
-                                <span className="font-bold text-[#004c91] bg-blue-50 px-2 py-0.5 rounded border border-blue-100 text-xs">
-                                  Số lượng: {setupDetails.electricCar.quantity || "0"}
-                                </span>
-                                <span className="text-gray-600 flex items-center gap-1.5 font-medium text-xs">
-                                  <Calendar className="w-4 h-4 text-[#004c91]" />
-                                  {formatDetailSummary('electricCar', setupDetails.electricCar).timeStr}
-                                </span>
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-1 text-gray-500 font-bold hover:text-[#004c91] transition-colors text-xs">
-                              <span className="hidden sm:inline">Chi tiết</span>
-                              <ChevronDown className="w-5 h-5" />
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="flex flex-col gap-4 p-5 bg-white border border-gray-200 rounded-xl shadow-sm">
-                            <div className="flex items-center justify-between pb-3 border-b border-gray-100">
-                              <span className="text-sm font-bold text-[#004c91] flex items-center gap-1.5">
-                                <CheckCircle className="w-4 h-4 text-[#004c91]" />
-                                {setupDetails.electricCar.confirmed ? "Đã xác nhận (Không thể chỉnh sửa)" : "Cấu hình chi tiết"}
-                              </span>
-                              <button 
-                                type="button" 
-                                onClick={() => setSetupDetails(p => ({...p, electricCar: {...p.electricCar, collapsed: true}}))}
-                                className="p-1 px-2 rounded-lg hover:bg-gray-100 text-gray-500 hover:text-gray-800 transition-colors flex items-center gap-1 text-xs font-bold"
-                              >
-                                Thu gọn
-                                <ChevronUp className="w-4 h-4" />
-                              </button>
-                            </div>
-
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                              <div className="space-y-4">
-                                <div>
-                                  <label className="block text-xs font-bold text-gray-600 mb-1">Số lượng cần mượn</label>
-                                  <input 
-                                    type="number" 
-                                    min="1" 
-                                    className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-[#004c91] hover:border-gray-450 transition-colors outline-none text-sm disabled:bg-gray-50 disabled:text-gray-400" 
-                                    placeholder="VD: 2" 
-                                    disabled={!isSetupEditable || setupDetails.electricCar.confirmed} 
-                                    value={setupDetails.electricCar.quantity} 
-                                    onChange={e => setSetupDetails(p => ({...p, electricCar: {...p.electricCar, quantity: e.target.value}}))} 
-                                  />
-                                </div>
-                                <div>
-                                  <label className="block text-xs font-bold text-gray-600 mb-1">Thời gian sử dụng</label>
-                                  <div className="flex flex-col sm:flex-row gap-2 w-full">
-                                    <input 
-                                      type="date" 
-                                      className="flex-1 px-3 py-2 rounded-lg border border-gray-300 text-sm hover:border-gray-450 focus:border-[#004c91] transition-colors outline-none disabled:bg-gray-50 disabled:text-gray-400" 
-                                      disabled={!isSetupEditable || setupDetails.electricCar.confirmed} 
-                                      value={setupDetails.electricCar.date}
-                                      onChange={e => setSetupDetails(p => ({...p, electricCar: {...p.electricCar, date: e.target.value}}))}
-                                    />
-                                    <div className="flex items-center gap-2 flex-1">
-                                      <input 
-                                        type="time" 
-                                        className="flex-1 w-full min-w-[80px] px-2 py-2 rounded-lg border border-gray-300 text-sm hover:border-gray-450 focus:border-[#004c91] transition-colors outline-none disabled:bg-gray-50 disabled:text-gray-400" 
-                                        disabled={!isSetupEditable || setupDetails.electricCar.confirmed} 
-                                        value={setupDetails.electricCar.startTime}
-                                        onChange={e => setSetupDetails(p => ({...p, electricCar: {...p.electricCar, startTime: e.target.value}}))}
-                                      /> 
-                                      <span className="text-gray-400 font-bold text-xs uppercase shrink-0">Đến</span>
-                                      <input 
-                                        type="time" 
-                                        className="flex-1 w-full min-w-[80px] px-2 py-2 rounded-lg border border-gray-300 text-sm hover:border-gray-450 focus:border-[#004c91] transition-colors outline-none disabled:bg-gray-50 disabled:text-gray-400" 
-                                        disabled={!isSetupEditable || setupDetails.electricCar.confirmed} 
-                                        value={setupDetails.electricCar.endTime}
-                                        onChange={e => setSetupDetails(p => ({...p, electricCar: {...p.electricCar, endTime: e.target.value}}))}
-                                      />
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-                              <div className="space-y-4">
-                                <div>
-                                  <label className="block text-xs font-bold text-gray-600 mb-1">Ghi chú (Note)</label>
-                                  <textarea 
-                                    className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-[#004c91] hover:border-gray-450 transition-colors outline-none text-sm resize-none h-[100px] disabled:bg-gray-50 disabled:text-gray-400" 
-                                    placeholder="Ghi chú thêm..." 
-                                    disabled={!isSetupEditable || setupDetails.electricCar.confirmed} 
-                                    value={setupDetails.electricCar.note}
-                                    onChange={e => setSetupDetails(p => ({...p, electricCar: {...p.electricCar, note: e.target.value}}))}
-                                  ></textarea>
-                                </div>
-                                <div>
-                                  <label className="block text-xs font-bold text-gray-600 mb-1">Chọn phòng ban xử lý</label>
-                                  <select 
-                                    className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-[#004c91] hover:border-[#004c91] transition-colors outline-none text-sm bg-white disabled:bg-gray-50 disabled:text-gray-400"
-                                    value={selectedElectricCarDept}
-                                    disabled={!isSetupEditable || setupDetails.electricCar.confirmed} 
-                                    onChange={(e) => setSelectedElectricCarDept(e.target.value)}
-                                  >
-                                    <option value="">-- Chọn phòng ban --</option>
-                                    <option value="Tuyển sinh">Phòng Tuyển sinh</option>
-                                    <option value="Hành chính">Phòng Hành chính</option>
-                                  </select>
-                                  {renderLeaderInfo(selectedElectricCarDept, "electricCar")}
-                                </div>
-                              </div>
-                            </div>
-
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    <hr className="border-t-[2px] border-gray-200" />
-
-                    {/* Người lái */}
-                    <div>
-                      <h4 className="text-lg font-bold text-[#004c91] mb-3 flex items-center gap-2">
-                        <UserCheck className="w-6 h-6 text-[#f37021]"/> Người lái
-                        {sentRequests["driver"] && (
-                          <span className="ml-2 text-xs font-bold text-amber-700 bg-amber-100 px-2 py-1 rounded-md flex items-center gap-1 border border-amber-300 shadow-sm animate-in fade-in">
-                             <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span> Chờ xác nhận
-                          </span>
-                        )}
-                      </h4>
-                      <div className="p-1">
-                        {setupDetails.driver.collapsed ? (
-                          <div 
-                            className="flex items-center justify-between p-3 sm:p-3 bg-blue-50/40 hover:bg-blue-100/30 border border-blue-200 rounded-xl transition-all cursor-pointer shadow-sm"
-                            onClick={() => setSetupDetails(p => ({...p, driver: {...p.driver, collapsed: false}}))}
-                          >
-                            <div className="flex items-center gap-3">
-                              <CheckCircle className="w-5 h-5 text-[#004c91] shrink-0" />
-                              <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-4 text-sm">
-                                <span className="font-bold text-[#004c91] bg-white px-2 py-0.5 rounded border border-blue-100 text-xs">
-                                  {getLeaderName(selectedDriverDept) || "Chưa chọn"}
-                                </span>
-                                <span className="font-bold text-[#004c91] bg-blue-50 px-2 py-0.5 rounded border border-blue-100 text-xs">
-                                  Số lượng: {setupDetails.driver.quantity || "0"}
-                                </span>
-                                <span className="text-gray-600 flex items-center gap-1.5 font-medium text-xs">
-                                  <Calendar className="w-4 h-4 text-[#004c91]" />
-                                  {formatDetailSummary('driver', setupDetails.driver).timeStr}
-                                </span>
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-1 text-gray-500 font-bold hover:text-[#004c91] transition-colors text-xs">
-                              <span className="hidden sm:inline">Chi tiết</span>
-                              <ChevronDown className="w-5 h-5" />
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="flex flex-col gap-4 p-5 bg-white border border-gray-200 rounded-xl shadow-sm">
-                            <div className="flex items-center justify-between pb-3 border-b border-gray-100">
-                              <span className="text-sm font-bold text-[#004c91] flex items-center gap-1.5">
-                                <CheckCircle className="w-4 h-4 text-[#004c91]" />
-                                {setupDetails.driver.confirmed ? "Đã xác nhận (Không thể chỉnh sửa)" : "Cấu hình chi tiết"}
-                              </span>
-                              <button 
-                                type="button" 
-                                onClick={() => setSetupDetails(p => ({...p, driver: {...p.driver, collapsed: true}}))}
-                                className="p-1 px-2 rounded-lg hover:bg-gray-100 text-gray-500 hover:text-gray-800 transition-colors flex items-center gap-1 text-xs font-bold"
-                              >
-                                Thu gọn
-                                <ChevronUp className="w-4 h-4" />
-                              </button>
-                            </div>
-
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                              <div className="md:col-span-2">
-                                 <label className="block text-xs font-bold text-gray-600 mb-1">Số lượng</label>
-                                 <input 
-                                   type="number" 
-                                   min="1" 
-                                   className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-[#004c91] hover:border-gray-450 transition-colors outline-none text-sm disabled:bg-gray-50 disabled:text-gray-400" 
-                                   placeholder="VD: 2" 
-                                   disabled={!isSetupEditable || setupDetails.driver.confirmed} 
-                                   value={setupDetails.driver.quantity} 
-                                   onChange={e => setSetupDetails(p => ({...p, driver: {...p.driver, quantity: e.target.value}}))} 
-                                 />
-                              </div>
-                              <div className="md:col-span-2">
-                                 <label className="block text-xs font-bold text-gray-600 mb-1">Thời gian hỗ trợ</label>
-                                 <div className="flex flex-col sm:flex-row gap-2 w-full">
-                                    <input 
-                                      type="date" 
-                                      className="flex-1 px-3 py-2 rounded-lg border border-gray-300 text-sm hover:border-gray-450 focus:border-[#004c91] transition-colors outline-none disabled:bg-gray-50 disabled:text-gray-400 focus:ring-1 focus:ring-[#004c91]" 
-                                      disabled={!isSetupEditable || setupDetails.driver.confirmed} 
-                                      value={setupDetails.driver.date}
-                                      onChange={e => setSetupDetails(p => ({...p, driver: {...p.driver, date: e.target.value}}))}
-                                    />
-                                    <div className="flex items-center gap-2 flex-1">
-                                      <input 
-                                        type="time" 
-                                        className="flex-1 w-full min-w-[80px] px-2 py-2 rounded-lg border border-gray-300 text-sm hover:border-gray-450 focus:border-[#004c91] transition-colors outline-none disabled:bg-gray-50 disabled:text-gray-400" 
-                                        disabled={!isSetupEditable || setupDetails.driver.confirmed} 
-                                        value={setupDetails.driver.startTime}
-                                        onChange={e => setSetupDetails(p => ({...p, driver: {...p.driver, startTime: e.target.value}}))}
-                                      /> 
-                                      <span className="text-gray-400 font-bold text-xs uppercase shrink-0">Đến</span>
-                                      <input 
-                                        type="time" 
-                                        className="flex-1 w-full min-w-[80px] px-2 py-2 rounded-lg border border-gray-300 text-sm hover:border-gray-450 focus:border-[#004c91] transition-colors outline-none disabled:bg-gray-50 disabled:text-gray-400" 
-                                        disabled={!isSetupEditable || setupDetails.driver.confirmed} 
-                                        value={setupDetails.driver.endTime}
-                                        onChange={e => setSetupDetails(p => ({...p, driver: {...p.driver, endTime: e.target.value}}))}
-                                      />
-                                    </div>
-                                 </div>
-                              </div>
-                              <div className="md:col-span-2 mt-2">
-                                 <label className="block text-xs font-bold text-gray-600 mb-1">Chọn phòng ban</label>
-                                 <select 
-                                   className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-[#004c91] hover:border-[#004c91] transition-colors outline-none text-sm bg-white disabled:bg-gray-50 disabled:text-gray-400"
-                                   value={selectedDriverDept}
-                                   disabled={!isSetupEditable || setupDetails.driver.confirmed} 
-                                   onChange={(e) => setSelectedDriverDept(e.target.value)}
-                                 >
-                                  <option value="">-- Chọn --</option>
-                                  <option value="Hành chính">Phòng Hành chính</option>
-                                 </select>
-                                 {renderLeaderInfo(selectedDriverDept, "driver")}
-                              </div>
-                            </div>
-
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                         </div>
-                       </div>
-                     </motion.div>
-                   )}
-                 </AnimatePresence>
-               </div>
-
-               {/* Mục 3: Chuẩn bị cho họp */}
-               <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
-                 <div 
-                   className="flex items-center justify-between px-6 py-4 cursor-pointer hover:bg-orange-50/50 transition-colors bg-white"
-                   onClick={() => setIsSection3Expanded(!isSection3Expanded)}
-                 >
-                    <h3 className="text-xl font-bold text-orange-900 flex items-center gap-2">
-                       <div className="p-1.5 bg-orange-100 rounded-lg"><Building2 className="w-5 h-5 text-[#f37021]" /></div>
-                       Mục 3: Chuẩn bị cho họp
-                    </h3>
-                    <div className="w-8 h-8 rounded-full bg-gray-50 flex items-center justify-center text-gray-500">
-                      {isSection3Expanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
-                    </div>
-                 </div>
-
-                 <AnimatePresence>
-                   {isSection3Expanded && (
-                     <motion.div
-                       initial={{ height: 0, opacity: 0 }}
-                       animate={{ height: 'auto', opacity: 1 }}
-                       exit={{ height: 0, opacity: 0 }}
-                     >
-                       <div className="p-6 pt-2 border-t border-gray-100 bg-white">
-                         <div className="space-y-8">
-                    {/* Phòng họp */}
-                    <div>
-                      <h4 className="text-lg font-bold text-[#004c91] mb-3 flex items-center gap-2">
-                         Phòng họp <span className="text-red-500">*</span>
-                         {sentRequests["room"] && (
-                          <span className="ml-2 text-xs font-bold text-amber-700 bg-amber-100 px-2 py-1 rounded-md flex items-center gap-1 border border-amber-300 shadow-sm animate-in fade-in">
-                             <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span> Chờ xác nhận
-                          </span>
-                        )}
-                      </h4>
-                      <div className="p-1">
-                        {setupDetails.room.collapsed ? (
-                          <div 
-                            className="flex items-center justify-between p-3 sm:p-3 bg-blue-50/40 hover:bg-blue-100/30 border border-blue-200 rounded-xl transition-all cursor-pointer shadow-sm"
-                            onClick={() => setSetupDetails(p => ({...p, room: {...p.room, collapsed: false}}))}
-                          >
-                            <div className="flex items-center gap-3">
-                              <CheckCircle className="w-5 h-5 text-[#004c91] shrink-0" />
-                              <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-4 text-sm">
-                                <span className="font-bold text-[#004c91] bg-white px-2 py-0.5 rounded border border-blue-200 text-xs shadow-sm">
-                                  {getLeaderName(selectedRoomDept) || "Chưa chọn"}
-                                </span>
-                                <span className="font-bold text-[#004c91] bg-blue-50 px-2 py-0.5 rounded border border-blue-100 text-xs">
-                                  Phòng: {setupDetails.room.quantity || "Chưa chọn"}
-                                </span>
-                                <span className="text-gray-600 flex items-center gap-1.5 font-medium text-xs">
-                                  <Calendar className="w-4 h-4 text-[#004c91]" />
-                                  {formatDetailSummary('room', setupDetails.room).timeStr}
-                                </span>
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-1 text-gray-500 font-bold hover:text-[#004c91] transition-colors text-xs">
-                              <span className="hidden sm:inline">Chi tiết</span>
-                              <ChevronDown className="w-5 h-5" />
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="flex flex-col gap-4 p-5 bg-white border border-gray-200 rounded-xl shadow-sm">
-                            <div className="flex items-center justify-between pb-3 border-b border-gray-100">
-                              <span className="text-sm font-bold text-[#004c91] flex items-center gap-1.5">
-                                <CheckCircle className="w-4 h-4 text-[#004c91]" />
-                                {setupDetails.room.confirmed ? "Đã xác nhận (Không thể chỉnh sửa)" : "Cấu hình chi tiết"}
-                              </span>
-                              <button 
-                                type="button" 
-                                onClick={() => setSetupDetails(p => ({...p, room: {...p.room, collapsed: true}}))}
-                                className="p-1 px-2 rounded-lg hover:bg-gray-100 text-gray-500 hover:text-gray-800 transition-colors flex items-center gap-1 text-xs font-bold"
-                              >
-                                Thu gọn
-                                <ChevronUp className="w-4 h-4" />
-                              </button>
-                            </div>
-
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                              <div className="md:col-span-2">
-                                <label className="block text-xs font-bold text-gray-600 mb-1">Phòng</label>
-                                <input 
-                                  type="text" 
-                                  className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-[#004c91] hover:border-gray-450 transition-colors outline-none text-sm disabled:bg-gray-50 disabled:text-gray-400" 
-                                  placeholder="VD: Tòa Alpha, Phòng 101" 
-                                  disabled={!isSetupEditable || setupDetails.room.confirmed} 
-                                  value={setupDetails.room.quantity} 
-                                  onChange={e => setSetupDetails(p => ({...p, room: {...p.room, quantity: e.target.value}}))} 
-                                />
-                              </div>
-                              <div className="md:col-span-2">
-                                <label className="block text-xs font-bold text-gray-600 mb-1">Thời gian</label>
-                                <div className="flex flex-col sm:flex-row gap-2 w-full">
-                                  <input 
-                                    type="date" 
-                                    className="flex-1 px-3 py-2 rounded-lg border border-gray-300 text-sm hover:border-gray-450 focus:border-[#004c91] transition-colors outline-none disabled:bg-gray-50 disabled:text-gray-400" 
-                                    disabled={!isSetupEditable || setupDetails.room.confirmed} 
-                                    value={setupDetails.room.date}
-                                    onChange={e => setSetupDetails(p => ({...p, room: {...p.room, date: e.target.value}}))}
-                                  />
-                                  <div className="flex items-center gap-2 flex-1">
-                                    <input 
-                                      type="time" 
-                                      className="flex-1 w-full min-w-[80px] px-2 py-2 rounded-lg border border-gray-300 text-sm hover:border-gray-450 focus:border-[#004c91] transition-colors outline-none disabled:bg-gray-50 disabled:text-gray-400" 
-                                      disabled={!isSetupEditable || setupDetails.room.confirmed} 
-                                      value={setupDetails.room.startTime}
-                                      onChange={e => setSetupDetails(p => ({...p, room: {...p.room, startTime: e.target.value}}))}
-                                    /> 
-                                    <span className="text-gray-400 font-bold text-xs uppercase shrink-0">Đến</span>
-                                    <input 
-                                      type="time" 
-                                      className="flex-1 w-full min-w-[80px] px-2 py-2 rounded-lg border border-gray-300 text-sm hover:border-gray-450 focus:border-[#004c91] transition-colors outline-none disabled:bg-gray-50 disabled:text-gray-400" 
-                                      disabled={!isSetupEditable || setupDetails.room.confirmed} 
-                                      value={setupDetails.room.endTime}
-                                      onChange={e => setSetupDetails(p => ({...p, room: {...p.room, endTime: e.target.value}}))}
-                                    />
-                                  </div>
-                                </div>
-                              </div>
-                              <div className="md:col-span-2 mt-2">
-                                 <label className="block text-xs font-bold text-gray-600 mb-1">Phòng ban</label>
-                                 <select 
-                                   className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-[#004c91] hover:border-[#004c91] transition-colors outline-none text-sm bg-white disabled:bg-gray-50 disabled:text-gray-400"
-                                   value={selectedRoomDept}
-                                   disabled={!isSetupEditable || setupDetails.room.confirmed} 
-                                   onChange={(e) => setSelectedRoomDept(e.target.value)}
-                                 >
-                                  <option value="">-- Chọn --</option>
-                                  <option value="Hành chính">Phòng Hành chính</option>
-                                 </select>
-                                 {renderLeaderInfo(selectedRoomDept, "room")}
-                              </div>
-                            </div>
-
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    <hr className="border-t-[2px] border-gray-200" />
-
-                    {/* Teabreak */}
-                    <div>
-                      <h4 className="text-lg font-bold text-[#004c91] mb-3 flex items-center gap-2">
-                         <Coffee className="w-6 h-6 text-[#f37021]"/> Teabreak
-                         {sentRequests["teabreak"] && (
-                          <span className="ml-2 text-xs font-bold text-amber-700 bg-amber-100 px-2 py-1 rounded-md flex items-center gap-1 border border-amber-300 shadow-sm animate-in fade-in">
-                             <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span> Chờ xác nhận
-                          </span>
-                        )}
-                      </h4>
-                      <div className="p-1">
-                        {setupDetails.teabreak.collapsed ? (
-                          <div 
-                            className="flex items-center justify-between p-3 sm:p-3 bg-blue-50/40 hover:bg-blue-100/30 border border-blue-200 rounded-xl transition-all cursor-pointer shadow-sm"
-                            onClick={() => setSetupDetails(p => ({...p, teabreak: {...p.teabreak, collapsed: false}}))}
-                          >
-                            <div className="flex items-center gap-3">
-                              <CheckCircle className="w-5 h-5 text-[#004c91] shrink-0" />
-                              <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-4 text-sm">
-                                <span className="font-bold text-[#004c91] bg-white px-2 py-0.5 rounded border border-blue-100 text-xs">
-                                  {getLeaderName(selectedTeabreakDept) || "Chưa chọn"}
-                                </span>
-                                <span className="font-bold text-[#004c91] bg-blue-50 px-2 py-0.5 rounded border border-blue-100 text-xs">
-                                  Số lượng suất: {setupDetails.teabreak.quantity || "0"}
-                                </span>
-                                <span className="text-gray-600 flex items-center gap-1.5 font-medium text-xs">
-                                  <Calendar className="w-4 h-4 text-[#004c91]" />
-                                  {formatDetailSummary('teabreak', setupDetails.teabreak).timeStr}
-                                </span>
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-1 text-gray-500 font-bold hover:text-[#004c91] transition-colors text-xs">
-                              <span className="hidden sm:inline">Chi tiết</span>
-                              <ChevronDown className="w-5 h-5" />
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="flex flex-col gap-4 p-5 bg-white border border-gray-200 rounded-xl shadow-sm">
-                            <div className="flex items-center justify-between pb-3 border-b border-gray-100">
-                              <span className="text-sm font-bold text-[#004c91] flex items-center gap-1.5">
-                                <CheckCircle className="w-4 h-4 text-[#004c91]" />
-                                {setupDetails.teabreak.confirmed ? "Đã xác nhận (Không thể chỉnh sửa)" : "Cấu hình chi tiết"}
-                              </span>
-                              <button 
-                                type="button" 
-                                onClick={() => setSetupDetails(p => ({...p, teabreak: {...p.teabreak, collapsed: true}}))}
-                                className="p-1 px-2 rounded-lg hover:bg-gray-100 text-gray-500 hover:text-gray-800 transition-colors flex items-center gap-1 text-xs font-bold"
-                              >
-                                Thu gọn
-                                <ChevronUp className="w-4 h-4" />
-                              </button>
-                            </div>
-
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                              <div className="md:col-span-2">
-                                <label className="block text-xs font-bold text-gray-600 mb-1">Số lượng (suất)</label>
-                                <input 
-                                  type="number" 
-                                  min="0" 
-                                  className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-[#004c91] hover:border-gray-450 transition-colors outline-none text-sm disabled:bg-gray-50 disabled:text-gray-400" 
-                                  placeholder="VD: 15" 
-                                  disabled={!isSetupEditable || setupDetails.teabreak.confirmed} 
-                                  value={setupDetails.teabreak.quantity} 
-                                  onChange={e => setSetupDetails(p => ({...p, teabreak: {...p.teabreak, quantity: e.target.value}}))} 
-                                />
-                              </div>
-                              <div>
-                                <label className="block text-xs font-bold text-gray-600 mb-1">Thời gian</label>
-                                <div className="flex flex-col sm:flex-row gap-2 w-full">
-                                  <input 
-                                    type="date" 
-                                    className="flex-1 px-3 py-2 rounded-lg border border-gray-300 text-sm hover:border-gray-450 focus:border-[#004c91] transition-colors outline-none disabled:bg-gray-50 disabled:text-gray-400" 
-                                    disabled={!isSetupEditable || setupDetails.teabreak.confirmed} 
-                                    value={setupDetails.teabreak.date}
-                                    onChange={e => setSetupDetails(p => ({...p, teabreak: {...p.teabreak, date: e.target.value}}))}
-                                  />
-                                  <div className="flex items-center gap-2 flex-1">
-                                    <input 
-                                      type="time" 
-                                      className="flex-1 w-full min-w-[80px] px-2 py-2 rounded-lg border border-gray-300 text-sm hover:border-gray-450 focus:border-[#004c91] transition-colors outline-none disabled:bg-gray-50 disabled:text-gray-400" 
-                                      disabled={!isSetupEditable || setupDetails.teabreak.confirmed} 
-                                      value={setupDetails.teabreak.startTime}
-                                      onChange={e => setSetupDetails(p => ({...p, teabreak: {...p.teabreak, startTime: e.target.value}}))}
-                                    /> 
-                                    <span className="text-gray-400 font-bold text-xs uppercase shrink-0">Đến</span>
-                                    <input 
-                                      type="time" 
-                                      className="flex-1 w-full min-w-[80px] px-2 py-2 rounded-lg border border-gray-300 text-sm hover:border-gray-450 focus:border-[#004c91] transition-colors outline-none disabled:bg-gray-50 disabled:text-gray-400" 
-                                      disabled={!isSetupEditable || setupDetails.teabreak.confirmed} 
-                                      value={setupDetails.teabreak.endTime}
-                                      onChange={e => setSetupDetails(p => ({...p, teabreak: {...p.teabreak, endTime: e.target.value}}))}
-                                    />
-                                  </div>
-                                </div>
-                              </div>
-                              <div>
-                                 <label className="block text-xs font-bold text-gray-600 mb-1">Phòng ban</label>
-                                 <select 
-                                   className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-[#004c91] hover:border-[#004c91] transition-colors outline-none text-sm bg-white disabled:bg-gray-50 disabled:text-gray-400"
-                                   value={selectedTeabreakDept}
-                                   disabled={!isSetupEditable || setupDetails.teabreak.confirmed} 
-                                   onChange={(e) => setSelectedTeabreakDept(e.target.value)}
-                                 >
-                                  <option value="">-- Chọn --</option>
-                                  <option value="Hành chính">Phòng Hành chính</option>
-                                 </select>
-                                 {renderLeaderInfo(selectedTeabreakDept, "teabreak")}
-                              </div>
-                              <div className="md:col-span-2">
-                                <label className="block text-xs font-bold text-gray-600 mb-1">Ghi chú (Layout, khăn trải bàn, biển tên, kỹ thuật đặc biệt...)</label>
-                                <textarea 
-                                  className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-[#004c91] hover:border-gray-450 transition-colors outline-none text-sm resize-none h-[80px] disabled:bg-gray-50 disabled:text-gray-400" 
-                                  placeholder="Yêu cầu chi tiết..." 
-                                  disabled={!isSetupEditable || setupDetails.teabreak.confirmed}
-                                  value={setupDetails.teabreak.note}
-                                  onChange={e => setSetupDetails(p => ({...p, teabreak: {...p.teabreak, note: e.target.value}}))}
-                                ></textarea>
-                              </div>
-                            </div>
-
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                         </div>
-                       </div>
-                     </motion.div>
-                   )}
-                 </AnimatePresence>
-               </div>
-
-               {/* Mục 4: Khác */}
-               <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
-                 <div 
-                   className="flex items-center justify-between px-6 py-4 cursor-pointer hover:bg-orange-50/50 transition-colors bg-white"
-                   onClick={() => setIsSection4Expanded(!isSection4Expanded)}
-                 >
-                    <h3 className="text-xl font-bold text-orange-900 flex items-center gap-2">
-                       <div className="p-1.5 bg-orange-100 rounded-lg"><MoreHorizontal className="w-5 h-5 text-[#f37021]" /></div>
-                       Mục 4: Khác
-                       {sentRequests["other"] && (
-                         <span className="ml-2 text-xs font-bold text-amber-700 bg-amber-100 px-2 py-1 rounded-md flex items-center gap-1 border border-amber-300 shadow-sm animate-in fade-in">
-                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span> Chờ xác nhận
-                         </span>
-                       )}
-                    </h3>
-                    <div className="w-8 h-8 rounded-full bg-gray-50 flex items-center justify-center text-gray-500">
-                      {isSection4Expanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
-                    </div>
-                 </div>
-
-                 <AnimatePresence>
-                   {isSection4Expanded && (
-                     <motion.div
-                       initial={{ height: 0, opacity: 0 }}
-                       animate={{ height: 'auto', opacity: 1 }}
-                       exit={{ height: 0, opacity: 0 }}
-                     >
-                       <div className="p-6 pt-2 border-t border-gray-100 bg-white">
-                         <div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-4 bg-blue-50/50 rounded-xl border border-blue-100">
-                      <div>
-                        <label className="block text-xs font-bold text-gray-600 mb-1">Nội dung công việc</label>
-                        <textarea className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-[#004c91] hover:border-gray-400 transition-colors outline-none text-sm resize-none h-[100px]" placeholder="Chi tiết..." disabled={!isSetupEditable}></textarea>
-                      </div>
-                      <div className="space-y-4">
-                        <div>
-                          <label className="block text-xs font-bold text-gray-600 mb-1">Thời gian dự kiến</label>
-                          <div className="flex flex-col xl:flex-row gap-2 w-full">
-                              <input type="date" className="w-full xl:w-auto px-3 py-2 rounded-lg border border-gray-300 text-sm hover:border-gray-400 focus:border-[#004c91] transition-colors outline-none bg-white" disabled={!isSetupEditable} />
-                              <div className="flex items-center gap-2 w-full">
-                                <input type="time" className="flex-1 w-full min-w-[90px] px-2 py-2 rounded-lg border border-gray-300 text-sm hover:border-gray-400 focus:border-[#004c91] transition-colors outline-none bg-white" disabled={!isSetupEditable} /> 
-                                <span className="text-gray-400 font-bold text-xs uppercase shrink-0">Đến</span>
-                                <input type="time" className="flex-1 w-full min-w-[90px] px-2 py-2 rounded-lg border border-gray-300 text-sm hover:border-gray-400 focus:border-[#004c91] transition-colors outline-none bg-white" disabled={!isSetupEditable} />
-                              </div>
-                          </div>
-                        </div>
-                        <div>
-                           <label className="block text-xs font-bold text-gray-600 mb-1">Phòng ban liên quan</label>
-                           <select 
-                             className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-[#004c91] hover:border-gray-400 transition-colors outline-none text-sm bg-white"
-                             value={selectedOtherDept}
-                             disabled={!isSetupEditable} onChange={(e) => setSelectedOtherDept(e.target.value)}
-                           >
-                            <option value="">-- Chọn --</option>
-                            <option value="Hành chính">Phòng Hành chính</option>
-                            <option value="Các bộ môn liên quan">Các bộ môn liên quan</option>
-                           </select>
-                           {renderLeaderInfo(selectedOtherDept, "other")}
-                        </div>
-                      </div>
-                    </div>
-                         </div>
-                       </div>
-                     </motion.div>
-                   )}
-                 </AnimatePresence>
-               </div>
-
-                 {isSetupEditable ? (
-                   <div className="flex justify-end gap-3 pt-6 border-t border-gray-100 pb-4">
-                     <button 
-                       onClick={() => setIsSetupEditable(false)}
-                       className="px-8 py-3 rounded-xl font-bold text-gray-600 bg-white border border-gray-200 hover:bg-gray-50 transition-colors shadow-sm outline-none"
-                     >
-                       Hủy
-                     </button>
-                     <button 
-                       onClick={() => { setIsSetupEditable(false); setIsSetupConfirmed(true); }} className="px-8 py-3 rounded-xl font-bold text-white bg-[#10b981] hover:bg-emerald-600 transition-all shadow-md hover:shadow-lg active:scale-[0.98] flex items-center gap-2 outline-none uppercase tracking-wider"
-                     >
-                       <CheckCircle2 className="w-5 h-5"/>
-                       Hoàn thành
-                     </button>
-                   </div>
-                 ) : (
-                     !isClosed && isSetupConfirmed && (
-                       <div className="flex justify-center pt-8 pb-4 border-t border-gray-100 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                        <button
-                          onClick={() => {
-                            setCurrentStatus('Trong tiếp khách');
-                            setActiveTab('during');
-                          }}
-                          className="px-10 py-4 rounded-xl font-bold text-white bg-[#004c91] hover:bg-[#00386b] transition-all shadow-md hover:shadow-lg active:scale-[0.98] flex items-center gap-3 outline-none text-base uppercase tracking-wider cursor-pointer font-sans"
-                        >
-                          Chuyển sang bước tiếp theo
-                          <ArrowRight className="w-5 h-5 text-white animate-pulse" />
-                        </button>
-                      </div>
-                    )
-                  )}
-
+                  <div className="p-8 space-y-12 bg-white">
+                    {/* "Chuẩn bị chi tiết": the ORIGINAL styled card UI (Welcome LED / Campus Tour /
+                        Họp / Khác) restored from commit da14fba, but fully wired to the REAL logistics
+                        backend — real departments, prepareVisitLogistics, status enum, email
+                        preview/edit. No mock data, no hard-coded leader names. See LogisticsRequestSection. */}
+                    {perm && detail ? (
+                      <LogisticsRequestSection
+                        visitInstanceId={Number(perm.visitInstanceId)}
+                        relation={detail.relation}
+                        instanceStatus={detail.instanceStatus}
+                        delegationName={detail.delegationName}
+                        campusName={detail.campusName ?? 'FPT University'}
+                        hostName={detail.hostName ?? 'Host'}
+                        pushToast={pushToast}
+                      />
+                    ) : (
+                      <p className="text-sm italic text-slate-400">Đang tải thông tin chuẩn bị chi tiết...</p>
+                    )}
              </div>
            </motion.div>
          )}

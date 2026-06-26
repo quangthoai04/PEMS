@@ -34,6 +34,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import toast, { Toaster } from 'react-hot-toast';
 import { departmentReceptionTasksApi } from '../../../features/department-reception-tasks/api/departmentReceptionTasksApi';
 import { delegationsApi } from '../../../features/delegations/api/delegationsApi';
+import { EmailPreviewModal } from '../../../features/delegations/components/EmailPreviewModal';
 
 interface Event {
   id: string;
@@ -150,11 +151,75 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>('All');
 
   // Thư mời interaction states
-  const [invitationStatus, setInvitationStatus] = useState<'pending' | 'rejecting' | 'rejected' | 'accepted'>('pending');
+  const [invitationStatus, setInvitationStatus] = useState<'pending' | 'rejecting' | 'rejected' | 'accepted' | 'assigned'>('pending');
   const [rejectReason, setRejectReason] = useState('');
   const [acceptSignature, setAcceptSignature] = useState<{name: string, time: string} | null>(null);
   const [showAssignDropdown, setShowAssignDropdown] = useState(false);
   const [assignedPerson, setAssignedPerson] = useState<string | null>(null);
+
+  // Editable "Xem trước email" before assigning a logistics task to a staff member.
+  const [assignPreview, setAssignPreview] = useState({
+    open: false, loading: false, sending: false, error: null as string | null,
+    subject: '', body: '', isActionTemplate: false,
+    systemActionDescription: null as string | null, lockedActionBlockHtml: null as string | null,
+  });
+  const [pendingAssign, setPendingAssign] = useState<{ logisticsItemId: number | string; staffId: number | string; staffName: string; title?: string; delegationName?: string } | null>(null);
+
+  const openLogisticsAssignPreview = async (p: { logisticsItemId: number | string; staffId: number | string; staffName: string; title?: string; delegationName?: string }) => {
+    setPendingAssign(p);
+    setAssignPreview((s) => ({ ...s, open: true, loading: true, error: null }));
+    try {
+      const res = await delegationsApi.previewEmailTemplate({
+        templateCode: 'LOGISTICS_ASSIGNEE_ASSIGNMENT',
+        context: {
+          assigneeName: p.staffName,
+          DelegationName: p.delegationName ?? 'đoàn khách',
+          logisticsTitle: p.title ?? 'hạng mục hậu cần',
+          dueAt: '—',
+        },
+      });
+      setAssignPreview((s) => ({
+        ...s, open: true, loading: false, error: null,
+        subject: res.subject, body: res.bodyHtml,
+        isActionTemplate: res.isActionTemplate,
+        systemActionDescription: res.systemActionDescription ?? null,
+        lockedActionBlockHtml: res.lockedActionBlockHtml ?? null,
+      }));
+    } catch (e: any) {
+      setAssignPreview((s) => ({ ...s, open: true, loading: false, error: e?.response?.data?.message || e?.message || 'Không thể tải bản xem trước email.' }));
+    }
+  };
+
+  const reloadAssignPreview = async () => {
+    if (!pendingAssign) return;
+    await openLogisticsAssignPreview(pendingAssign);
+  };
+  const closeAssignPreview = () => setAssignPreview((s) => ({ ...s, open: false }));
+
+  const confirmLogisticsAssign = async () => {
+    if (!pendingAssign) return;
+    if (!assignPreview.subject.trim()) { toast.error('Tiêu đề email không được để trống.'); return; }
+    if (!assignPreview.body.trim()) { toast.error('Nội dung email không được để trống.'); return; }
+    setAssignPreview((s) => ({ ...s, sending: true }));
+    try {
+      await departmentReceptionTasksApi.assignAssignee(
+        pendingAssign.logisticsItemId, pendingAssign.staffId,
+        { useEditedContent: true, subject: assignPreview.subject.trim(), bodyHtml: assignPreview.body },
+      );
+      toast.success('Đã phân công người phụ trách và gửi email.');
+      setAssignPreview((s) => ({ ...s, open: false, sending: false }));
+      setAssignedPerson(pendingAssign.staffName);
+      setRequestStatus('assigned');
+      setShowAssignDropdown(false);
+      setAssigningTaskItem(null);
+      setPendingAssign(null);
+      try { await refetchAfterTaskAction(); } catch { /* ignore */ }
+      try { await fetchCalendarEvents(); } catch { /* ignore */ }
+    } catch (e: any) {
+      setAssignPreview((s) => ({ ...s, sending: false }));
+      toast.error(e?.response?.data?.message || e?.response?.data?.title || e?.message || 'Phân công thất bại');
+    }
+  };
 
   // Đơn yêu cầu interaction states
   const [requestStatus, setRequestStatus] = useState<'pending' | 'rejecting' | 'rejected' | 'accepted' | 'assigned' | 'awaiting-reassign'>('pending');
@@ -902,13 +967,21 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
 
   const handleSelectAssignee = async (staff: any) => {
     if (!assigningTaskItem) return;
+    const staffId = staff.id || staff.userId;
+    const staffName = staff.name || staff.fullName || 'Nhân sự';
+    // Logistics assignment → open the editable email preview first (sends with emailOverride on confirm).
+    if (assigningTaskItem.itemType !== 'INVITATION') {
+      await openLogisticsAssignPreview({
+        logisticsItemId: assigningTaskItem.logisticsItemId || assigningTaskItem.itemId,
+        staffId, staffName,
+        title: assigningTaskItem.title,
+        delegationName: (assigningTaskItem as any).delegationName,
+      });
+      return;
+    }
+    // Invitation assignment stays a direct action (no email override here).
     try {
-      const staffId = staff.id || staff.userId;
-      if (assigningTaskItem.itemType === 'INVITATION') {
-        await departmentReceptionTasksApi.assignInvitation(assigningTaskItem.participantId || assigningTaskItem.itemId, staffId);
-      } else {
-        await departmentReceptionTasksApi.assignAssignee(assigningTaskItem.logisticsItemId || assigningTaskItem.itemId, staffId);
-      }
+      await departmentReceptionTasksApi.assignInvitation(assigningTaskItem.participantId || assigningTaskItem.itemId, staffId);
       toast.success('Đổi người phụ trách thành công');
       setAssigningTaskItem(null);
       await refetchAfterTaskAction();
@@ -2831,7 +2904,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                     </div>
                   )}
 
-                  {(requestStatus === 'pending' || requestStatus === 'accepted' || requestStatus === 'assigned') && !isProposing && !proposalSubmitted && (
+                  {(requestStatus === 'pending' || requestStatus === 'accepted' || requestStatus === 'assigned' || requestStatus === 'awaiting-reassign') && !isProposing && !proposalSubmitted && (
                     <div className="flex gap-4 pt-6 mt-6 border-t border-gray-100 flex-col relative z-10 w-full animate-fade-in-quick">
                       {requestStatus === 'pending' && (
                         <div className="flex flex-col sm:flex-row gap-4 w-full">
@@ -2922,19 +2995,14 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                                     key={staff.id || staff.userId}
                                     className="w-full px-4 py-3 text-left hover:bg-slate-50 border-b border-slate-50 last:border-0 transition-colors group flex items-start justify-between"
                                     onClick={async () => {
-                                      try {
-                                        if (activePopoverEvent?.rawId) {
-                                          await departmentReceptionTasksApi.assignAssignee(activePopoverEvent.rawId, staff.id || staff.userId);
-                                          toast.success('Đã phân công người phụ trách thành công');
-                                          setAssignedPerson(staff.name);
-                                          setRequestStatus('assigned');
-                                          setShowAssignDropdown(false);
-                                          await fetchCalendarEvents();
-                                          const detail = await departmentReceptionTasksApi.getRequestDetail(activePopoverEvent.rawId);
-                                          setActiveEventDetail(detail);
-                                        }
-                                      } catch(e: any) {
-                                        toast.error(e.response?.data?.message || e.response?.data?.title || e.message || 'Phân công thất bại');
+                                      if (activePopoverEvent?.rawId) {
+                                        await openLogisticsAssignPreview({
+                                          logisticsItemId: activePopoverEvent.rawId,
+                                          staffId: staff.id || staff.userId,
+                                          staffName: staff.name || staff.fullName || 'Nhân sự',
+                                          title: activePopoverEvent?.fullTitle || activePopoverEvent?.title,
+                                          delegationName: activePopoverEvent?.delegationName,
+                                        });
                                       }
                                     }}
                                   >
@@ -3423,6 +3491,26 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
           </div>
         </div>
       )}
+
+      {/* Editable email preview before assigning a logistics task. */}
+      <EmailPreviewModal
+        open={assignPreview.open}
+        loading={assignPreview.loading}
+        sending={assignPreview.sending}
+        error={assignPreview.error}
+        subject={assignPreview.subject}
+        body={assignPreview.body}
+        isActionTemplate={assignPreview.isActionTemplate}
+        systemActionDescription={assignPreview.systemActionDescription}
+        lockedActionBlockHtml={assignPreview.lockedActionBlockHtml}
+        canSend
+        sendLabel="Gán với nội dung này"
+        onSubjectChange={(v) => setAssignPreview((s) => ({ ...s, subject: v }))}
+        onBodyChange={(v) => setAssignPreview((s) => ({ ...s, body: v }))}
+        onClose={closeAssignPreview}
+        onRestore={reloadAssignPreview}
+        onSend={confirmLogisticsAssign}
+      />
 
     </div>
     </div>

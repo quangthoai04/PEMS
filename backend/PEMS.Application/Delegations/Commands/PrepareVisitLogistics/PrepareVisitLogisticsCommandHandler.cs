@@ -1,14 +1,305 @@
 using System;
+using System.Globalization;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
+using Microsoft.EntityFrameworkCore;
+using PEMS.Application.Common.Exceptions;
+using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Common.Security;
+using PEMS.Application.Emails.Common;
+using PEMS.Domain.Constants;
+using PEMS.Domain.Entities.Delegations;
+using PEMS.Domain.Entities.Emails;
+using PEMS.Domain.Entities.Notifications;
+using PEMS.Domain.Entities.Users;
+using PEMS.Shared;
 
 namespace PEMS.Application.Delegations.Commands.PrepareVisitLogistics;
 
-public sealed class PrepareVisitLogisticsCommandHandler : IRequestHandler<PrepareVisitLogisticsCommand, PrepareVisitLogisticsResponse>
+/// <summary>
+/// Implements the Host → Department logistics request: creates the REQUESTED item, notifies the
+/// department's active leader, and emails them a login-required detail link (no public token). The
+/// logistics item is committed BEFORE the email is sent, so a transient SMTP failure never loses it.
+/// </summary>
+public sealed class PrepareVisitLogisticsCommandHandler
+    : IRequestHandler<PrepareVisitLogisticsCommand, PrepareVisitLogisticsResponse>
 {
-    public Task<PrepareVisitLogisticsResponse> Handle(PrepareVisitLogisticsCommand request, CancellationToken cancellationToken)
+    private readonly IApplicationDbContext _db;
+    private readonly ICurrentUserService _currentUser;
+    private readonly IDateTimeService _clock;
+    private readonly IEmailService _email;
+    private readonly IEmailActionTokenService _tokens;
+    private readonly IHtmlSanitizerService _sanitizer;
+
+    public PrepareVisitLogisticsCommandHandler(
+        IApplicationDbContext db, ICurrentUserService currentUser, IDateTimeService clock,
+        IEmailService email, IEmailActionTokenService tokens, IHtmlSanitizerService sanitizer)
     {
-        throw new NotImplementedException("UC Prepare Visit Logistics has been scaffolded. Business rules must be implemented after UC specification is completed.");
+        _db = db;
+        _currentUser = currentUser;
+        _clock = clock;
+        _email = email;
+        _tokens = tokens;
+        _sanitizer = sanitizer;
     }
+
+    public async Task<PrepareVisitLogisticsResponse> Handle(
+        PrepareVisitLogisticsCommand request, CancellationToken cancellationToken)
+    {
+        if (!_currentUser.IsAuthenticated || _currentUser.UserId is null)
+            throw new ForbiddenException();
+
+        var actorId = _currentUser.UserId.Value;
+
+        var instance = await _db.VisitRequestCampuses
+            .Include(c => c.VisitRequest)
+            .FirstOrDefaultAsync(c => c.VisitInstanceId == request.VisitInstanceId, cancellationToken)
+            ?? throw new NotFoundException("VisitRequestCampus", request.VisitInstanceId);
+
+        // Host-only, prep window.
+        if (instance.CurrentHostUserId != actorId)
+            throw new ForbiddenException("Chỉ Host phụ trách cơ sở này mới được gửi yêu cầu hậu cần.");
+        if (instance.Status != VisitInstanceStatus.Assigned && instance.Status != VisitInstanceStatus.BeforeVisit)
+            throw new ConflictException("Chỉ có thể gửi yêu cầu hậu cần trong giai đoạn chuẩn bị.");
+
+        var dept = await _db.Departments
+            .FirstOrDefaultAsync(d => d.DepartmentId == request.DepartmentId, cancellationToken)
+            ?? throw new NotFoundException("Department", request.DepartmentId);
+        if (dept.CampusId != instance.CampusId)
+            throw new ConflictException("Không thể gửi yêu cầu tới phòng ban ngoài cơ sở của chuyến tiếp khách.");
+        if (dept.DepartmentType != "GENERAL" || dept.Status != EntityStatuses.Active)
+            throw new ConflictException("Phòng ban được chọn không hợp lệ.");
+
+        // Resolve the active Department Leader (the email recipient).
+        var leaders = await (
+            from u in _db.Users
+            join r in _db.Roles on u.RoleId equals r.RoleId
+            where r.RoleCode == RoleCodes.Department
+                  && u.SubRole == UserSubRoles.Leader
+                  && u.Status == UserStatuses.Active
+                  && u.PrimaryCampusId == instance.CampusId
+                  && u.DepartmentId == dept.DepartmentId
+            select new { u.UserId, u.FullName, u.Email }).ToListAsync(cancellationToken);
+
+        var leader = (dept.HeadUserId.HasValue ? leaders.FirstOrDefault(l => l.UserId == dept.HeadUserId.Value) : null)
+                     ?? leaders.FirstOrDefault();
+        if (leader is null)
+            throw new ConflictException("Phòng này chưa có trưởng phòng đang hoạt động, không thể gửi yêu cầu.");
+
+        var editedContent = ValidateAndSanitizeOverride(request.EmailOverride);
+
+        var delegationName = instance.VisitRequest?.DelegationName ?? "FPT University";
+        var campusName = await _db.Campuses
+            .Where(c => c.CampusId == instance.CampusId).Select(c => c.Name)
+            .FirstOrDefaultAsync(cancellationToken) ?? "FPT University";
+        var requesterName = await _db.Users
+            .Where(u => u.UserId == actorId).Select(u => u.FullName)
+            .FirstOrDefaultAsync(cancellationToken) ?? "Host";
+
+        var templateId = await _db.EmailTemplates
+            .Where(t => t.TemplateCode == EmailActionTemplates.LogisticsRequestToDepartment)
+            .Select(t => (ulong?)t.EmailTemplateId)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        var now = _clock.UtcNow;
+        var itemType = request.ItemType.Trim().ToUpperInvariant();
+        var priority = string.IsNullOrWhiteSpace(request.Priority) ? "MEDIUM" : request.Priority!.Trim().ToUpperInvariant();
+        var usageStart = ParseLocal(request.UsageStartAt);
+        var usageEnd = ParseLocal(request.UsageEndAt);
+        var dueAt = ParseLocal(request.DueAt);
+
+        VisitLogisticsItem item;
+        ulong sentEmailId;
+        ulong sentEmailRecipientId;
+        string finalSubject;
+        string finalBody;
+
+        await using (var transaction = await _db.BeginTransactionAsync(cancellationToken))
+        {
+            item = new VisitLogisticsItem
+            {
+                VisitInstanceId = instance.VisitInstanceId,
+                ItemType = itemType,
+                Title = request.Title.Trim(),
+                Description = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim(),
+                Quantity = request.Quantity,
+                UsageStartAt = usageStart,
+                UsageEndAt = usageEnd,
+                Status = LogisticsItemStatus.Requested,
+                Priority = priority,
+                RequestedBy = actorId,
+                RequestedToDepartmentId = dept.DepartmentId,
+                RequestedAt = now,
+                DueAt = dueAt,
+                CreatedAt = now,
+                CreatedBy = actorId,
+            };
+            _db.VisitLogisticsItems.Add(item);
+            await _db.SaveChangesAsync(cancellationToken);
+
+            var detailUrl = _tokens.BuildLogisticsDetailUrl(item.LogisticsItemId);
+
+            if (editedContent != null)
+            {
+                finalSubject = request.EmailOverride!.Subject!.Trim();
+                var content = EmailComposition.StripActionArtifacts(editedContent);
+                finalBody = EmailComposition.BrandedShell(content + EmailComposition.DetailLinkBlock(detailUrl));
+            }
+            else
+            {
+                finalSubject = $"[PEMS] Yêu cầu hậu cần mới — {item.Title}";
+                finalBody = EmailComposition.BrandedShell(
+                    DefaultContentHtml(leader.FullName, requesterName, delegationName, campusName, item, usageStart, usageEnd)
+                    + EmailComposition.DetailLinkBlock(detailUrl));
+            }
+
+            var sentEmail = new SentEmail
+            {
+                EmailTemplateId = templateId,
+                RelatedType = EmailActionTargetTypes.LogisticsItem,
+                RelatedId = item.LogisticsItemId,
+                Subject = finalSubject,
+                BodySnapshot = finalBody,
+                Status = "QUEUED",
+                SentBy = actorId,
+                CreatedAt = now,
+            };
+            _db.SentEmails.Add(sentEmail);
+            await _db.SaveChangesAsync(cancellationToken);
+
+            var sentRecipient = new SentEmailRecipient
+            {
+                SentEmailId = sentEmail.SentEmailId,
+                RecipientEmail = leader.Email,
+                RecipientName = leader.FullName,
+                RecipientType = "TO",
+                DeliveryStatus = "QUEUED",
+                CreatedAt = now,
+            };
+            _db.SentEmailRecipients.Add(sentRecipient);
+
+            _db.Notifications.Add(new Notification
+            {
+                RecipientUserId = leader.UserId,
+                NotificationType = "VISIT_LOGISTICS_REQUESTED",
+                Title = "Có yêu cầu hậu cần mới",
+                Message = $"Host {requesterName} đã gửi yêu cầu \"{item.Title}\" cho đoàn {delegationName} tại {campusName}.",
+                RelatedType = "LOGISTICS_ITEM",
+                RelatedId = item.LogisticsItemId,
+                IsRead = false,
+                CreatedAt = now,
+            });
+
+            _db.AuditLogs.Add(new AuditLog
+            {
+                ActorUserId = actorId,
+                CampusId = instance.CampusId,
+                Action = "CREATE_VISIT_LOGISTICS_REQUEST",
+                EntityType = "VisitLogisticsItem",
+                EntityId = item.LogisticsItemId,
+                CreatedAt = now,
+            });
+
+            await _db.SaveChangesAsync(cancellationToken);
+
+            sentEmailId = sentEmail.SentEmailId;
+            sentEmailRecipientId = sentRecipient.SentEmailRecipientId;
+
+            await transaction.CommitAsync(cancellationToken);
+        }
+
+        string emailStatus;
+        try
+        {
+            await _email.SendAsync(leader.Email, finalSubject, finalBody, cancellationToken);
+            emailStatus = "SENT";
+            await UpdateEmailStatusAsync(sentEmailId, sentEmailRecipientId, "SENT", actorId, now, null, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            emailStatus = "FAILED";
+            await UpdateEmailStatusAsync(sentEmailId, sentEmailRecipientId, "FAILED", actorId, now, ex.Message, cancellationToken);
+        }
+
+        var message = emailStatus == "SENT"
+            ? "Đã gửi yêu cầu hậu cần."
+            : "Đã tạo yêu cầu hậu cần nhưng gửi email thất bại.";
+
+        return new PrepareVisitLogisticsResponse(true, true, item.LogisticsItemId, emailStatus, sentEmailId, message);
+    }
+
+    private string? ValidateAndSanitizeOverride(EmailOverride? ov)
+    {
+        if (ov is null || !ov.UseEditedContent) return null;
+        if (string.IsNullOrWhiteSpace(ov.Subject))
+            throw new ValidationException("Tiêu đề email không được để trống.");
+        if (ov.Subject.Trim().Length > EmailOverrideLimits.SubjectMax)
+            throw new ValidationException($"Tiêu đề email tối đa {EmailOverrideLimits.SubjectMax} ký tự.");
+        if (string.IsNullOrWhiteSpace(ov.BodyHtml))
+            throw new ValidationException("Nội dung email không được để trống.");
+        if (ov.BodyHtml.Length > EmailOverrideLimits.BodyMax)
+            throw new ValidationException($"Nội dung email vượt quá {EmailOverrideLimits.BodyMax} ký tự.");
+        var sanitized = _sanitizer.Sanitize(ov.BodyHtml);
+        if (string.IsNullOrWhiteSpace(sanitized))
+            throw new ValidationException("Nội dung email không hợp lệ sau khi lọc.");
+        return sanitized;
+    }
+
+    private static string DefaultContentHtml(
+        string leaderName, string requesterName, string delegationName, string campusName,
+        VisitLogisticsItem item, DateTime? usageStart, DateTime? usageEnd)
+    {
+        string HE(string? s) => EmailComposition.HE(s);
+        var usage = (usageStart.HasValue || usageEnd.HasValue)
+            ? $"<li><strong>Thời gian sử dụng:</strong> {HE(usageStart?.ToString("HH:mm dd/MM/yyyy") ?? "—")} - {HE(usageEnd?.ToString("HH:mm dd/MM/yyyy") ?? "—")}</li>"
+            : string.Empty;
+        var qty = item.Quantity.HasValue ? $"<li><strong>Số lượng:</strong> {item.Quantity}</li>" : string.Empty;
+        return $@"<p>Xin chào <strong>{HE(leaderName)}</strong>,</p>
+<p>Host <strong>{HE(requesterName)}</strong> đã gửi một yêu cầu hậu cần cho đoàn <strong>{HE(delegationName)}</strong> tại {HE(campusName)}.</p>
+<div style=""background:#f0f7ff;border-left:4px solid #004c91;border-radius:8px;padding:16px 20px;margin:20px 0"">
+  <ul style=""margin:0;padding-left:20px;line-height:1.7"">
+    <li><strong>Hạng mục:</strong> {HE(item.Title)} ({HE(item.ItemType)})</li>
+    {qty}
+    {usage}
+    <li><strong>Mức ưu tiên:</strong> {HE(item.Priority)}</li>
+  </ul>
+</div>
+<p>Vui lòng đăng nhập hệ thống để tiếp nhận, đề xuất thay đổi hoặc phân công nhân sự xử lý.</p>";
+    }
+
+    private static DateTime? ParseLocal(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        return DateTime.TryParse(value.Trim(), CultureInfo.InvariantCulture, DateTimeStyles.None, out var dt)
+            ? DateTime.SpecifyKind(dt, DateTimeKind.Unspecified)
+            : (DateTime?)null;
+    }
+
+    private async Task UpdateEmailStatusAsync(
+        ulong sentEmailId, ulong sentEmailRecipientId, string status, ulong actorId, DateTime now,
+        string? error, CancellationToken ct)
+    {
+        var sentEmail = await _db.SentEmails.FirstOrDefaultAsync(e => e.SentEmailId == sentEmailId, ct);
+        if (sentEmail != null)
+        {
+            sentEmail.Status = status;
+            sentEmail.LastAttemptAt = now;
+            sentEmail.RetryCount += 1;
+            if (status == "SENT") { sentEmail.SentBy = actorId; sentEmail.SentAt = now; }
+            else { sentEmail.ErrorMessage = Truncate(error, 1000); }
+        }
+        var rec = await _db.SentEmailRecipients.FirstOrDefaultAsync(r => r.SentEmailRecipientId == sentEmailRecipientId, ct);
+        if (rec != null)
+        {
+            rec.DeliveryStatus = status;
+            if (status == "SENT") rec.SentAt = now;
+            else rec.ErrorMessage = Truncate(error, 1000);
+        }
+        await _db.SaveChangesAsync(ct);
+    }
+
+    private static string? Truncate(string? s, int max)
+        => string.IsNullOrEmpty(s) ? s : (s.Length <= max ? s : s.Substring(0, max));
 }

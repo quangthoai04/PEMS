@@ -1409,9 +1409,9 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                       >
                         <div className="flex justify-between items-center gap-1.5 mb-2 leading-none">
                           <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded ${
-                            ev.category === 'Lời mời tham gia' 
-                              ? 'bg-blue-100 text-blue-800' 
-                              : ev.category === 'Lời mời tham gia'
+                            ev.category === 'Lời mời tham gia'
+                              ? 'bg-blue-100 text-blue-800'
+                              : ev.category === 'Đơn yêu cầu mượn đồ'
                                 ? 'bg-emerald-100 text-emerald-800'
                                 : 'bg-orange-100 text-orange-800'
                           }`}>

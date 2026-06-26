@@ -70,7 +70,9 @@ public sealed class VisitReminderDispatchHostedService : BackgroundService
         var email = scope.ServiceProvider.GetRequiredService<IEmailService>();
         var clock = scope.ServiceProvider.GetRequiredService<IDateTimeService>();
 
-        var now = clock.UtcNow;
+        // scheduled_at is stored as Vietnam wall-clock, so compare against Vietnam-local "now"
+        // (never UtcNow — that would fire reminders ~7h off).
+        var now = clock.VietnamNow;
 
         var due = await db.VisitInstanceReminderSettings
             .Where(r => r.Status == VisitReminderStatus.PENDING && r.ScheduledAt <= now)

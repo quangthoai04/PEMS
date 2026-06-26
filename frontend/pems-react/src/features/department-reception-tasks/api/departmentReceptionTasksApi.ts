@@ -66,8 +66,14 @@ export const departmentReceptionTasksApi = {
     return data;
   },
 
-  assignAssignee: async (logisticsItemId: number | string, assigneeUserId: number | string) => {
-    const { data } = await httpClient.post<any>(API_ENDPOINTS.departmentReceptionTasks.assignAssignee(logisticsItemId), { assigneeUserId });
+  assignAssignee: async (
+    logisticsItemId: number | string,
+    assigneeUserId: number | string,
+    emailOverride?: { useEditedContent: boolean; subject: string; bodyHtml: string },
+  ) => {
+    const { data } = await httpClient.post<any>(
+      API_ENDPOINTS.departmentReceptionTasks.assignAssignee(logisticsItemId),
+      { assigneeUserId, emailOverride });
     return data;
   },
 

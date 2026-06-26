@@ -126,6 +126,10 @@ export const API_ENDPOINTS = {
       `/delegations/visit-instances/${visitInstanceId}/reminder-settings`,
     cancelReminderSettings: (visitInstanceId: string | number) =>
       `/delegations/visit-instances/${visitInstanceId}/reminder-settings/cancel`,
+    // VisitProcess "Chuẩn bị chi tiết": Host logistics requests (list + create).
+    instanceLogistics: (visitInstanceId: string | number) =>
+      `/delegations/visit-instances/${visitInstanceId}/logistics`,
+    prepareVisitLogistics: '/delegations/preparevisitlogistics',
   },
   // Email template preview (read-only render for the "Xem trước email" modal — never sends).
   emailTemplates: {

@@ -362,6 +362,8 @@ export interface InviteVisitParticipantPayload {
   userId?: number;
   departmentId?: number;
   message?: string | null;
+  /** Optional host-edited email content from the "Xem trước email" modal. */
+  emailOverride?: EmailOverridePayload;
 }
 
 export interface InviteVisitParticipantResult {
@@ -372,6 +374,17 @@ export interface InviteVisitParticipantResult {
   emailQueued: boolean;
   emailRecipient: string;
   message: string;
+  /** SENT | FAILED. */
+  emailStatus?: string;
+  sentEmailId?: number;
+}
+
+/** Host-edited email content carried on send/invite commands (Part C). When useEditedContent is
+ * true the backend uses this subject/body and injects the real system action block itself. */
+export interface EmailOverridePayload {
+  useEditedContent: boolean;
+  subject: string;
+  bodyHtml: string;
 }
 
 /**
@@ -826,6 +839,56 @@ export const LOGISTICS_STATUS_META: Record<LogisticsItemStatus, { label: string;
   CANCELLED:       { label: 'Đã hủy', cls: 'bg-slate-100 text-slate-500 border-slate-200' },
 };
 
+// ── VisitProcess logistics requests (visit_logistics_items), Host → Department. ──
+export type LogisticsItemType = 'ROOM' | 'TRANSPORT' | 'MEAL' | 'EQUIPMENT' | 'BANNER' | 'LED' | 'OTHER';
+export type LogisticsPriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
+
+export interface PrepareVisitLogisticsPayload {
+  visitInstanceId: number;
+  departmentId: number;
+  itemType: LogisticsItemType;
+  title: string;
+  description?: string | null;
+  quantity?: number | null;
+  usageStartAt?: string | null;   // "yyyy-MM-ddTHH:mm[:ss]" wall-clock
+  usageEndAt?: string | null;
+  priority?: LogisticsPriority | null;
+  dueAt?: string | null;
+  emailOverride?: EmailOverridePayload;
+}
+
+export interface PrepareVisitLogisticsResult {
+  success: boolean;
+  businessCreated: boolean;
+  logisticsItemId: number;
+  emailStatus: string;            // SENT | FAILED
+  sentEmailId: number;
+  message: string;
+}
+
+/** One logistics request row of a campus instance (GET .../logistics). */
+export interface VisitInstanceLogisticsItem {
+  logisticsItemId: number;
+  itemType: LogisticsItemType;
+  title: string;
+  description?: string | null;
+  quantity?: number | null;
+  status: LogisticsItemStatus;
+  priority: LogisticsPriority;
+  requestedToDepartmentId?: number | null;
+  departmentName?: string | null;
+  requestedAt?: string | null;
+  usageStartAt?: string | null;
+  usageEndAt?: string | null;
+  dueAt?: string | null;
+  assignedToUserId?: number | null;
+  assignedToName?: string | null;
+}
+
+export interface GetVisitInstanceLogisticsResult {
+  items: VisitInstanceLogisticsItem[];
+}
+
 // ── VisitProcess scheduled reminders (visit_instance_reminder_settings), SQL v10. ──
 export type VisitReminderChannel = 'IN_APP' | 'EMAIL';
 export type VisitReminderTargetGroup = 'HOST' | 'PARTICIPANTS' | 'HOST_AND_PARTICIPANTS';
@@ -874,6 +937,14 @@ export interface PreviewEmailTemplatePayload {
 }
 
 export interface PreviewEmailTemplateResult {
+  templateCode: string;
   subject: string;
+  /** Editable message content (action buttons stripped for action templates). */
   bodyHtml: string;
+  isActionTemplate: boolean;
+  systemActionDescription?: string | null;
+  /** Read-only (disabled) preview of the system action block, if any. */
+  lockedActionBlockHtml?: string | null;
+  requiredActionPlaceholders: string[];
+  editable: boolean;
 }

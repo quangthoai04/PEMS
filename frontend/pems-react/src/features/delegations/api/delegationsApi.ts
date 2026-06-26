@@ -27,6 +27,9 @@ import type {
   SaveVisitReminderSettingsResult,
   PreviewEmailTemplatePayload,
   PreviewEmailTemplateResult,
+  PrepareVisitLogisticsPayload,
+  PrepareVisitLogisticsResult,
+  GetVisitInstanceLogisticsResult,
 } from '../types/delegations.types';
 
 export const delegationsApi = {
@@ -201,6 +204,20 @@ export const delegationsApi = {
   async previewEmailTemplate(payload: PreviewEmailTemplatePayload): Promise<PreviewEmailTemplateResult> {
     const { data } = await httpClient.post<PreviewEmailTemplateResult>(
       API_ENDPOINTS.emailTemplates.preview, payload);
+    return data;
+  },
+
+  /** VisitProcess "Chuẩn bị chi tiết": list the campus instance's logistics requests. */
+  async getInstanceLogistics(visitInstanceId: number | string): Promise<GetVisitInstanceLogisticsResult> {
+    const { data } = await httpClient.get<GetVisitInstanceLogisticsResult>(
+      API_ENDPOINTS.delegations.instanceLogistics(visitInstanceId));
+    return data;
+  },
+
+  /** Host sends a logistics/resource request to a department (optionally with an edited email). */
+  async prepareVisitLogistics(payload: PrepareVisitLogisticsPayload): Promise<PrepareVisitLogisticsResult> {
+    const { data } = await httpClient.post<PrepareVisitLogisticsResult>(
+      API_ENDPOINTS.delegations.prepareVisitLogistics, payload);
     return data;
   },
 

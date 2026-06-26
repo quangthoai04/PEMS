@@ -1,4 +1,5 @@
 using MediatR;
+using PEMS.Application.Emails.Common;
 
 namespace PEMS.Application.Delegations.Commands.InviteVisitParticipant;
 
@@ -13,7 +14,11 @@ public sealed record InviteVisitParticipantCommand(
     string ParticipantType,   // IC_SUPPORT | STUDENT | DEPT_SUPPORT
     ulong? UserId,            // required for IC_SUPPORT / STUDENT
     ulong? DepartmentId,      // required for DEPT_SUPPORT
-    string? Message) : IRequest<InviteVisitParticipantResponse>;
+    string? Message,
+    /// <summary>Optional host-edited subject/body from the "Xem trước email" modal. When
+    /// UseEditedContent is true the edited content is used and the system action block (real
+    /// accept/decline tokens) is injected by the backend.</summary>
+    EmailOverride? EmailOverride = null) : IRequest<InviteVisitParticipantResponse>;
 
 public static class InviteParticipantTypes
 {

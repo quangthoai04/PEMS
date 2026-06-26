@@ -42,4 +42,7 @@ public sealed class EmailActionTokenService : IEmailActionTokenService
 
     public string BuildDepartmentAssignmentUrl(ulong visitInstanceId, ulong participantId)
         => $"{_frontendBaseUrl}/dashboard/visit/department-tasks/{participantId}";
+
+    public string BuildLogisticsDetailUrl(ulong logisticsItemId)
+        => $"{_frontendBaseUrl}/dashboard/departments/tasks/{logisticsItemId}";
 }
