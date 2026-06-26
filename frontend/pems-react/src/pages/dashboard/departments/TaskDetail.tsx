@@ -61,7 +61,7 @@ export function TaskDetail() {
       setDetailData(data);
       if (data) {
         if (data.status === 'REQUESTED') setTaskActionStatus('pending');
-        else if (data.status === 'RECEIVED') setTaskActionStatus('confirmed');
+        else if (data.status === 'ACCEPTED' || data.status === 'IN_PROGRESS' || data.status === 'DONE') setTaskActionStatus('confirmed');
         else if (data.status === 'REJECTED') {
           setTaskActionStatus('rejected');
           setRejectReason(data.rejectReason || '');

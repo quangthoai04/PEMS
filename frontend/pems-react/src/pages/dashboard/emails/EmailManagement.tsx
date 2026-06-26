@@ -6,11 +6,6 @@ import { SendEmailTab } from './SendEmailTab';
 import { emailsApi } from '../../../features/emails/api/emailsApi';
 import { format } from 'date-fns';
 
-const mockEmailData = [
-  { id: 1, name: 'Thư mời đoàn đại biểu', subject: 'Thư mời tham quan và làm việc tại Đại học FPT', desc: 'Mẫu thư mời chính thức gửi cho các đoàn đại biểu đối tác quốc tế đến thăm trường.', content: '<p>Kính gửi Quý đại biểu,</p><p>Trân trọng kính mời Quý đại biểu đến tham quan cơ sở của chúng tôi.</p>', creator: 'Nguyễn Văn B', campus: 'Hà Nội', date: '01/05/2024', status: 'Sử dụng' },
-  { id: 2, name: 'Thư cảm ơn sau chuyến thăm', subject: 'Cảm ơn chuyến thăm của quý vị đến Đại học FPT', desc: 'Mẫu email cảm ơn gửi sau khi cuộc gặp gỡ, đón tiếp kết thúc.', content: '<p>Kính gửi Quý vị,</p><p>Chúng tôi xin gửi lời cảm ơn chân thành nhất vì chuyến thăm vừa qua.</p>', creator: 'Nguyễn Văn C', campus: 'Quy Nhơn', date: '02/05/2024', status: 'Không sử dụng' },
-];
-
 export function EmailManagement() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -21,79 +16,105 @@ export function EmailManagement() {
   const isStaff = userRole === 'STAFF' || userRole === 'DEPARTMENT' || userRole === 'STUDENT' || userRole === 'VISITOR';
   const isVisitor = userRole === 'VISITOR';
 
+  const tabParam = new URLSearchParams(location.search).get('tab');
   const defaultTab = 'Danh sách email';
-  const initialTab = new URLSearchParams(location.search).get('tab') === 'send' ? 'Gửi email' : defaultTab;
+  const initialTab = tabParam === 'send' ? 'Gửi email' : defaultTab;
+  const initialMailbox = tabParam === 'sent' ? 'sent' : tabParam === 'received' ? 'received' : 'all';
   
   const [activeTab, setActiveTab] = useState(initialTab);
   const [showTemplateModal, setShowTemplateModal] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<any>(null);
 
   // Template Data state
-  const [data, setData] = useState(mockEmailData);
+  const [data, setData] = useState<any[]>([]);
   const [page, setPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(5);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [isLoadingTemplates, setIsLoadingTemplates] = useState(false);
 
   // Email List state
   const [sentData, setSentData] = useState<any[]>([]);
   const [pageSent, setPageSent] = useState(1);
   const [itemsPerPageSent, setItemsPerPageSent] = useState(10);
   const [searchQuerySent, setSearchQuerySent] = useState('');
-  const [mailboxFilter, setMailboxFilter] = useState('all'); // all, sent, received
+  const [mailboxFilter, setMailboxFilter] = useState(initialMailbox); // all, sent, received
   const [relatedTypeFilter, setRelatedTypeFilter] = useState(''); // VISIT_REQUEST, GENERAL
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [totalEmails, setTotalEmails] = useState(0);
   const [isLoadingEmails, setIsLoadingEmails] = useState(false);
+  const [toastMessage, setToastMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
+
+  const showPageToast = (type: 'success' | 'error' | 'info', text: string) => {
+    setToastMessage({ type, text });
+    setTimeout(() => setToastMessage(null), 3000);
+  };
+
+  const fetchEmails = React.useCallback(async () => {
+    setIsLoadingEmails(true);
+    try {
+      const params: any = {
+        mailBox: mailboxFilter,
+        keyword: searchQuerySent,
+        page: pageSent,
+        pageSize: itemsPerPageSent
+      };
+      if (relatedTypeFilter) params.relatedType = relatedTypeFilter;
+      if (startDate) params.startDate = startDate;
+      if (endDate) params.endDate = endDate;
+
+      const res = await emailsApi.getEmailList(params);
+      setSentData(res.data.items || []);
+      setTotalEmails(res.data.totalCount || 0);
+    } catch (error) {
+      console.error('Failed to fetch emails:', error);
+    } finally {
+      setIsLoadingEmails(false);
+    }
+  }, [pageSent, itemsPerPageSent, searchQuerySent, mailboxFilter, relatedTypeFilter, startDate, endDate]);
 
   React.useEffect(() => {
-    if (activeTab === 'Danh sách email') {
-      const fetchEmails = async () => {
-        setIsLoadingEmails(true);
-        try {
-          const params: any = {
-            mailBox: mailboxFilter,
-            keyword: searchQuerySent,
-            page: pageSent,
-            pageSize: itemsPerPageSent
-          };
-          if (relatedTypeFilter) params.relatedType = relatedTypeFilter;
-          if (startDate) params.startDate = startDate;
-          if (endDate) params.endDate = endDate;
-          
-          const res = await emailsApi.getEmailList(params);
-          setSentData(res.data.items || []);
-          setTotalEmails(res.data.totalCount || 0);
-        } catch (error) {
-          console.error('Failed to fetch emails:', error);
-        } finally {
-          setIsLoadingEmails(false);
-        }
-      };
-      
-      const timeoutId = setTimeout(() => {
-        fetchEmails();
-      }, 300); // debounce search
+    if (activeTab !== 'Danh sách email') return;
 
-      return () => clearTimeout(timeoutId);
-    }
-  }, [activeTab, pageSent, itemsPerPageSent, searchQuerySent, mailboxFilter, relatedTypeFilter, startDate, endDate]);
+    const timeoutId = setTimeout(fetchEmails, 300);
+    return () => clearTimeout(timeoutId);
+  }, [activeTab, fetchEmails]);
 
-  const toggleStatus = (id: number) => {
-    setData(data.map(item => {
-      if (item.id === id) {
-        return { ...item, status: item.status === 'Sử dụng' ? 'Không sử dụng' : 'Sử dụng' };
+  React.useEffect(() => {
+    if (!showTemplateModal || selectedTemplate) return;
+
+    const fetchTemplates = async () => {
+      setIsLoadingTemplates(true);
+      try {
+        const res = await emailsApi.getEmailTemplateList({
+          keyword: searchQuery,
+          status: statusFilter,
+          page,
+          pageSize: itemsPerPage,
+        });
+        const items = res.data.items || res.data.templates || [];
+        setData(Array.isArray(items) ? items : []);
+      } catch (error) {
+        console.error('Failed to fetch email templates:', error);
+        setData([]);
+      } finally {
+        setIsLoadingTemplates(false);
       }
-      return item;
-    }));
-  };
+    };
+
+    const timeoutId = setTimeout(fetchTemplates, 300);
+    return () => clearTimeout(timeoutId);
+  }, [showTemplateModal, selectedTemplate, searchQuery, statusFilter, page, itemsPerPage]);
 
   // Filter templates
   const filteredData = data.filter(item => {
-    const matchSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                       item.subject.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchStatus = statusFilter ? item.status === statusFilter : true;
+    const name = item.name || item.templateName || item.templateCode || '';
+    const subject = item.subject || '';
+    const status = item.status || '';
+    const matchSearch = name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                       subject.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchStatus = statusFilter ? status === statusFilter : true;
     return matchSearch && matchStatus;
   });
   const totalPages = Math.ceil(filteredData.length / itemsPerPage);
@@ -104,6 +125,15 @@ export function EmailManagement() {
 
   return (
     <div className="p-4 sm:p-6 md:p-8 max-w-[95%] mx-auto">
+      {toastMessage && (
+        <div className={`fixed top-4 right-4 z-[120] px-6 py-3 rounded-lg shadow-lg text-white font-medium animate-in fade-in slide-in-from-top-2 ${
+          toastMessage.type === 'success' ? 'bg-green-600' :
+          toastMessage.type === 'error' ? 'bg-red-600' : 'bg-blue-600'
+        }`}>
+          {toastMessage.text}
+        </div>
+      )}
+
       <div className="mb-4 flex items-center text-sm font-medium text-gray-500">
         <button onClick={() => navigate('/dashboard')} className="hover:text-[#004c91] transition-colors">Dashboard</button>
         <span className="mx-2">/</span>
@@ -294,7 +324,18 @@ export function EmailManagement() {
       )}
 
       {activeTab === 'Gửi email' && (
-        <SendEmailTab />
+        <SendEmailTab
+          onSent={(message) => {
+            showPageToast('success', message || 'Gửi email thành công!');
+            setSearchQuerySent('');
+            setRelatedTypeFilter('');
+            setStartDate('');
+            setEndDate('');
+            setMailboxFilter('sent');
+            setPageSent(1);
+            setActiveTab('Danh sách email');
+          }}
+        />
       )}
 
       {/* Template Modal */}

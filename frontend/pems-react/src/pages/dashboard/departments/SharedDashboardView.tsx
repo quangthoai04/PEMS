@@ -30,7 +30,7 @@ import {
   ChevronDown,
   Edit2
 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import toast, { Toaster } from 'react-hot-toast';
 import { departmentReceptionTasksApi } from '../../../features/department-reception-tasks/api/departmentReceptionTasksApi';
 import { delegationsApi } from '../../../features/delegations/api/delegationsApi';
@@ -54,6 +54,40 @@ interface Event {
   bannerText?: string;    // Băng rôn LED
   carBooking?: string;    // Xe đưa đón
 }
+
+type AssignmentProgressItem = {
+  itemType: 'INVITATION' | 'REQUEST';
+  itemId: number;
+  visitRequestId: number;
+  visitInstanceId: number;
+  logisticsItemId?: number;
+  participantId?: number;
+  delegationName: string;
+  requestCode: string;
+  organizationName?: string;
+  title: string;
+  description?: string;
+  currentResponsibleUserId?: number;
+  currentResponsibleName?: string;
+  isLeaderSelfAccepted?: boolean;
+  rawStatus: string;
+  uiStatus: string;
+  statusLabel: string;
+  startAt: string;
+  endAt: string;
+  canViewDelegationDetail: boolean;
+  canAssign: boolean;
+  canAccept: boolean;
+  canDecline: boolean;
+  canRejectRequest: boolean;
+  canProposeChange: boolean;
+  canSignBorrow: boolean;
+  canSignReturn: boolean;
+  latestDeclineReason?: string;
+  needsAttention: boolean;
+  attentionReason?: string;
+  cancelReason?: string;
+};
 
 const INITIAL_EVENTS: Event[] = [
   {
@@ -89,13 +123,28 @@ const INITIAL_EVENTS: Event[] = [
     contactPerson: 'Trần Văn Tuyến (Điều hành xe - 0914.555.666)'
   }];
 
-export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent, isVisitor }: { user?: any, isDeptLeader?: boolean, isDeptStaff?: boolean, isStudent?: boolean, isVisitor?: boolean }) {
+export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent, isVisitor, initialVisitInstanceId, viewMode = 'calendar' }: { user?: any, isDeptLeader?: boolean, isDeptStaff?: boolean, isStudent?: boolean, isVisitor?: boolean, initialVisitInstanceId?: number | null, viewMode?: 'calendar' | 'assignments' }) {
   const today = new Date();
   const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
 
   const [events, setEvents] = useState<any[]>([]);
   const [candidates, setCandidates] = useState<any[]>([]);
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const [assignmentItems, setAssignmentItems] = useState<AssignmentProgressItem[]>([]);
+  const [attentionItems, setAttentionItems] = useState<AssignmentProgressItem[]>([]);
+  const [assignmentTotal, setAssignmentTotal] = useState(0);
+  const [assignmentLoading, setAssignmentLoading] = useState(false);
+  const [assignmentSearch, setAssignmentSearch] = useState('');
+  const [assignmentItemType, setAssignmentItemType] = useState('ALL');
+  const [assignmentStatus, setAssignmentStatus] = useState('ALL');
+  const [assignmentOwnerScope, setAssignmentOwnerScope] = useState('DEPARTMENT');
+  const [assignmentFromDate, setAssignmentFromDate] = useState('');
+  const [assignmentToDate, setAssignmentToDate] = useState('');
+  const [assignmentSortDirection, setAssignmentSortDirection] = useState<'ASC' | 'DESC'>('ASC');
+  const [assignmentPage, setAssignmentPage] = useState(1);
+  const assignmentPageSize = 8;
+  const [assigningTaskItem, setAssigningTaskItem] = useState<AssignmentProgressItem | null>(null);
 
   const [activePopoverEvent, setActivePopoverEvent] = useState<any>(null);
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>('All');
@@ -183,10 +232,13 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
           const detail = await departmentReceptionTasksApi.getInvitationDetail(activePopoverEvent.rawId);
           setActiveEventDetail(detail);
           
-          if (detail.status === 'ACCEPTED') {
+          if (detail.status === 'CANCELLED') {
+            setInvitationStatus('rejected');
+            setRejectReason(`Đơn yêu cầu / thư mời đã bị hủy do đoàn khách hủy.${detail.cancelReason ? ` Lý do: ${detail.cancelReason}` : ''}`);
+          } else if (detail.status === 'ACCEPTED' || detail.status === 'IN_PROGRESS' || detail.status === 'DONE') {
             setInvitationStatus('accepted');
             setAcceptSignature({ name: detail.responderName || detail.senderName, time: detail.actionTime });
-          } else if (detail.status === 'DECLINED') {
+          } else if (detail.status === 'REJECTED' || detail.status === 'DECLINED') {
             setInvitationStatus('rejected');
             setRejectReason(detail.rejectReason || '');
           } else if (detail.status === 'ASSIGNED' || detail.assigneeName) {
@@ -200,7 +252,10 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
           const detail = await departmentReceptionTasksApi.getRequestDetail(activePopoverEvent.rawId);
           setActiveEventDetail(detail);
 
-          if (detail.status === 'ASSIGNED') {
+          if (detail.status === 'CANCELLED') {
+             setRequestStatus('rejected');
+             setRequestRejectReason(`Đơn yêu cầu / thư mời đã bị hủy do đoàn khách hủy.${detail.cancelReason ? ` Lý do: ${detail.cancelReason}` : ''}`);
+          } else if (detail.status === 'ASSIGNED') {
              setAssignedPerson(detail.assigneeName);
              setRequestStatus('assigned');
              setRequestAcceptSignature({ name: detail.responderName || detail.assigneeName || detail.senderName, time: detail.actionTime });
@@ -208,14 +263,13 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
              setAssignedPerson(detail.assigneeName);
              setRequestStatus('accepted');
              setRequestAcceptSignature({ name: detail.responderName || detail.assigneeName || detail.senderName, time: detail.actionTime });
-          } else if (detail.status === 'RECEIVED' && detail.latestAttemptStatus === 'DECLINED') {
+          } else if (detail.status === 'DECLINED') {
              // Staff declined — waiting for reassignment
              setAssignedPerson(null);
              setRequestStatus('awaiting-reassign');
-          } else if (detail.status === 'RECEIVED' || detail.status === 'CONFIRMED') {
+          } else if (detail.status === 'REQUESTED') {
              setAssignedPerson(null);
-             setRequestStatus('accepted');
-             setRequestAcceptSignature({ name: detail.responderName || detail.senderName, time: detail.actionTime });
+             setRequestStatus('pending');
           } else if (detail.status === 'REJECTED') {
              setRequestStatus('rejected');
              setRequestRejectReason(detail.rejectReason || '');
@@ -242,18 +296,24 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
            let col = '';
            let hCol = '';
            let isProcessed = false;
+           const itemStatus = item.itemStatus || item.status;
+           const itemEndTime = item.endAt ? new Date(item.endAt).getTime() : 0;
+           const isPast = itemEndTime > 0 && itemEndTime < Date.now();
 
            if (item.itemType === 'INVITATION') {
-              if (item.status === 'ACCEPTED' || item.status === 'DECLINED' || item.status === 'ASSIGNED') isProcessed = true;
+              isProcessed = itemStatus !== 'REQUESTED';
               cat = 'Lời mời tham gia';
            } else if (item.itemType === 'REQUEST') {
-              if (item.status === 'ASSIGNED' || item.status === 'RECEIVED' || item.status === 'REJECTED' || item.status === 'CONFIRMED') isProcessed = true;
+              isProcessed = itemStatus !== 'REQUESTED';
               cat = 'Đơn yêu cầu mượn đồ';
            } else {
               cat = 'Lịch của tôi';
            }
 
-           if (isProcessed) {
+           if (itemStatus === 'CANCELLED' || isPast) {
+              col = 'bg-slate-100 text-slate-500 border-slate-300 hover:bg-slate-200';
+              hCol = 'border-slate-400';
+           } else if (isProcessed) {
               if (item.status !== 'ASSIGNED') {
                  cat = 'Lịch của tôi';
               }
@@ -280,9 +340,12 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
              rawId: item.itemId || item.id,
              visitRequestId: item.visitRequestId,
              itemType: item.itemType,
-             status: item.itemStatus || item.status,
-             title: item.title,
-             fullTitle: item.fullTitle,
+             status: itemStatus,
+             latestAttemptStatus: item.latestAttemptStatus,
+             cancelReason: item.cancelReason,
+             isProcessed: isProcessed,
+             title: itemStatus === 'CANCELLED' ? `${item.title} (đã hủy)` : item.title,
+             fullTitle: itemStatus === 'CANCELLED' ? `${item.fullTitle || item.title} - Đã hủy${item.cancelReason ? `: ${item.cancelReason}` : ''}` : item.fullTitle,
              delegationName: item.delegationName,
              date: dateStr,
              time: timeStr,
@@ -292,7 +355,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
              location: item.campusName || 'Hòa Lạc',
              host: item.senderName || 'Hệ thống',
              guests: item.delegationName || item.title,
-             purpose: item.title || '',
+             purpose: itemStatus === 'CANCELLED' ? `Đơn yêu cầu / thư mời đã bị hủy do đoàn khách hủy.${item.cancelReason ? ` Lý do: ${item.cancelReason}` : ''}` : item.title || '',
              vipLevel: 'Standard',
              contactPerson: item.relatedUserName || 'N/A',
              relatedUserId: item.relatedUserId,
@@ -313,10 +376,75 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
     } catch(e) { console.error(e); }
   }, [isDeptLeader, isDeptStaff]);
 
+  const fetchAssignmentsProgress = React.useCallback(async () => {
+    if (!(isDeptLeader || isDeptStaff)) return;
+    setAssignmentLoading(true);
+    try {
+      const params: Record<string, any> = {
+        search: assignmentSearch || undefined,
+        itemType: assignmentItemType,
+        status: assignmentStatus,
+        ownerScope: assignmentOwnerScope,
+        fromDate: assignmentFromDate || undefined,
+        toDate: assignmentToDate || undefined,
+        sortBy: 'date',
+        sortDirection: assignmentSortDirection,
+        page: assignmentPage,
+        pageSize: assignmentPageSize
+      };
+      const res = await departmentReceptionTasksApi.getAssignmentsProgress(params);
+      setAssignmentItems(res?.items || []);
+      setAssignmentTotal(res?.totalItems || 0);
+      const attention = await departmentReceptionTasksApi.getAttentionItems();
+      setAttentionItems(Array.isArray(attention) ? attention : []);
+    } catch (e) {
+      console.error(e);
+      toast.error('Không tải được danh sách phân công và tiến độ');
+    } finally {
+      setAssignmentLoading(false);
+    }
+  }, [
+    isDeptLeader,
+    isDeptStaff,
+    assignmentSearch,
+    assignmentItemType,
+    assignmentStatus,
+    assignmentOwnerScope,
+    assignmentFromDate,
+    assignmentToDate,
+    assignmentSortDirection,
+    assignmentPage
+  ]);
+
+  React.useEffect(() => {
+    setAssignmentPage(1);
+  }, [
+    assignmentSearch,
+    assignmentItemType,
+    assignmentStatus,
+    assignmentOwnerScope,
+    assignmentFromDate,
+    assignmentToDate,
+    assignmentSortDirection
+  ]);
+
+  React.useEffect(() => {
+    const statusFromUrl = searchParams.get('status');
+    if (viewMode === 'assignments' && statusFromUrl) {
+      setAssignmentStatus(statusFromUrl);
+    }
+  }, [searchParams, viewMode]);
+
   React.useEffect(() => {
     fetchCalendarEvents();
     fetchCandidates();
   }, [fetchCalendarEvents, fetchCandidates, user?.departmentId]);
+
+  React.useEffect(() => {
+    if (viewMode === 'assignments') {
+      fetchAssignmentsProgress();
+    }
+  }, [viewMode, fetchAssignmentsProgress]);
 
   const [showAddFormModal, setShowAddFormModal] = useState(false);
   const [selectedCellDate, setSelectedCellDate] = useState<string | null>(todayStr);
@@ -345,14 +473,14 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
     return events; // "Trong văn phòng" shows all
   }, [events, calendarType, isStudent, isVisitor]);
 
-  // All events within the selected month and year
   const eventsInCurrentMonthAndYear = useMemo(() => {
     return filteredEvents.filter(e => {
+      if (e.itemType === 'PERSONAL') return false;
       const parts = e.date.split('-');
       if (parts.length < 3) return false;
       const year = parseInt(parts[0], 10);
       const month = parseInt(parts[1], 10);
-      return month === (currentMonth + 1) && year === currentYear;
+      return month === (currentMonth + 1) && year === currentYear && !e.isProcessed;
     });
   }, [filteredEvents, currentMonth, currentYear]);
   // New Event Form State
@@ -469,7 +597,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
       });
     }
 
-    const remaining = 42 - days.length;
+    const remaining = 35 - days.length;
     for (let i = 1; i <= remaining; i++) {
       const m = currentMonth === 11 ? 0 : currentMonth + 1;
       const y = currentMonth === 11 ? currentYear + 1 : currentYear;
@@ -545,7 +673,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
       cells.push({ day: i, isCurrent: true, month: monthIndex });
     }
     // Next month padding alignment
-    const remaining = 42 - cells.length;
+    const remaining = 35 - cells.length;
     for (let i = 1; i <= remaining; i++) {
       const m = monthIndex === 11 ? 0 : monthIndex + 1;
       cells.push({ day: i, isCurrent: false, month: m });
@@ -581,7 +709,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
       });
     }
 
-    const remaining = 42 - days.length;
+    const remaining = 35 - days.length;
     for (let i = 1; i <= remaining; i++) {
       const m = miniMonth === 11 ? 0 : miniMonth + 1;
       const y = miniMonth === 11 ? miniYear + 1 : miniYear;
@@ -648,14 +776,366 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
     }
   };
 
+  const formatDateTime = (value?: string) => {
+    if (!value) return '';
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return value;
+    return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  };
+
+  const getStatusClass = (status: string) => {
+    switch (status) {
+      case 'REQUESTED': return 'bg-red-50 text-red-700 border-red-100';
+      case 'ASSIGNED': return 'bg-blue-50 text-blue-700 border-blue-100';
+      case 'ACCEPTED': return 'bg-emerald-50 text-emerald-700 border-emerald-100';
+      case 'REJECTED': return 'bg-rose-50 text-rose-700 border-rose-100';
+      case 'DECLINED': return 'bg-rose-50 text-rose-700 border-rose-100';
+      case 'CHANGE_PROPOSED': return 'bg-amber-50 text-amber-700 border-amber-100';
+      case 'IN_PROGRESS': return 'bg-cyan-50 text-cyan-700 border-cyan-100';
+      case 'DONE': return 'bg-slate-100 text-slate-700 border-slate-200';
+      case 'CANCELLED': return 'bg-gray-100 text-gray-500 border-gray-200';
+      default: return 'bg-slate-50 text-slate-700 border-slate-100';
+    }
+  };
+
+  const canShowChangeResponsible = (item: AssignmentProgressItem) => {
+    const currentUserId = user?.id ?? user?.userId ?? user?.user_id ?? user?.account;
+    const isSelfHandled = String(item.currentResponsibleUserId || '') === String(currentUserId || '')
+      && (item.uiStatus === 'ACCEPTED' || item.uiStatus === 'REJECTED');
+    if (item.isLeaderSelfAccepted) return false;
+    if (isSelfHandled) return false;
+    if (item.uiStatus === 'REJECTED') return false;
+    if (item.uiStatus === 'DONE' || item.uiStatus === 'CANCELLED') return false;
+    return !!isDeptLeader && (item.uiStatus === 'REQUESTED' || item.uiStatus === 'DECLINED');
+  };
+
+  const openAssignmentDetail = (item: AssignmentProgressItem) => {
+    const event = events.find(e =>
+      (item.itemType === 'INVITATION' && String(e.rawId) === String(item.participantId || item.itemId) && e.itemType === 'INVITATION') ||
+      (item.itemType === 'REQUEST' && String(e.rawId) === String(item.logisticsItemId || item.itemId) && e.itemType === 'REQUEST')
+    );
+
+    if (event) {
+      setActivePopoverEvent(event);
+      setSelectedCellDate(event.date);
+      setCurrentMonth(new Date(event.date).getMonth());
+      setCurrentYear(new Date(event.date).getFullYear());
+      setDisplayMode('Tháng');
+      return;
+    }
+
+    if (item.itemType === 'INVITATION') {
+      setActivePopoverEvent({
+        id: `invitation_${item.itemId}`,
+        rawId: item.participantId || item.itemId,
+        itemType: 'INVITATION',
+        category: 'Lời mời tham gia',
+        title: item.title,
+        delegationName: item.delegationName,
+        guests: item.delegationName,
+        purpose: item.description,
+        date: item.startAt?.slice(0, 10),
+        time: `${formatDateTime(item.startAt)} - ${formatDateTime(item.endAt)}`,
+        location: item.organizationName || '',
+        host: item.currentResponsibleName || 'Department Leader'
+      });
+    } else {
+      setActivePopoverEvent({
+        id: `request_${item.itemId}`,
+        rawId: item.logisticsItemId || item.itemId,
+        itemType: 'REQUEST',
+        category: 'Đơn yêu cầu mượn đồ',
+        title: item.title,
+        delegationName: item.delegationName,
+        guests: item.delegationName,
+        purpose: item.description,
+        date: item.startAt?.slice(0, 10),
+        time: `${formatDateTime(item.startAt)} - ${formatDateTime(item.endAt)}`,
+        location: item.organizationName || '',
+        host: item.currentResponsibleName || 'Chưa phân công'
+      });
+    }
+  };
+
+  const refetchAfterTaskAction = async () => {
+    await Promise.all([fetchAssignmentsProgress(), fetchCalendarEvents()]);
+  };
+
+  const handleAcceptSelf = async (item: AssignmentProgressItem) => {
+    try {
+      if (item.itemType === 'INVITATION') {
+        await departmentReceptionTasksApi.acceptInvitation(item.participantId || item.itemId);
+        toast.success('Đã chấp nhận thư mời.');
+      } else {
+        await departmentReceptionTasksApi.acceptRequestSelf(item.logisticsItemId || item.itemId);
+        toast.success('Đã tự nhận đơn yêu cầu.');
+      }
+      await refetchAfterTaskAction();
+    } catch (e: any) {
+      toast.error(e.response?.data?.message || e.response?.data?.title || e.message || 'Thao tác thất bại');
+    }
+  };
+
+  const handleRejectOrDecline = async (item: AssignmentProgressItem) => {
+    const reason = window.prompt(item.itemType === 'INVITATION' ? 'Nhập lý do từ chối thư mời:' : 'Nhập lý do từ chối đơn yêu cầu:');
+    if (!reason?.trim()) return;
+    try {
+      if (item.itemType === 'INVITATION') {
+        await departmentReceptionTasksApi.declineInvitation(item.participantId || item.itemId, reason.trim());
+        toast.success('Đã từ chối thư mời.');
+      } else if (item.canDecline) {
+        await departmentReceptionTasksApi.declineAssignment(item.logisticsItemId || item.itemId, reason.trim());
+        toast.success('Đã từ chối nhiệm vụ.');
+      } else {
+        await departmentReceptionTasksApi.rejectRequest(item.logisticsItemId || item.itemId, reason.trim());
+        toast.success('Đã từ chối đơn yêu cầu.');
+      }
+      await refetchAfterTaskAction();
+    } catch (e: any) {
+      toast.error(e.response?.data?.message || e.response?.data?.title || e.message || 'Thao tác thất bại');
+    }
+  };
+
+  const handleAssignTask = async (item: AssignmentProgressItem) => {
+    setAssigningTaskItem(item);
+  };
+
+  const handleSelectAssignee = async (staff: any) => {
+    if (!assigningTaskItem) return;
+    try {
+      const staffId = staff.id || staff.userId;
+      if (assigningTaskItem.itemType === 'INVITATION') {
+        await departmentReceptionTasksApi.assignInvitation(assigningTaskItem.participantId || assigningTaskItem.itemId, staffId);
+      } else {
+        await departmentReceptionTasksApi.assignAssignee(assigningTaskItem.logisticsItemId || assigningTaskItem.itemId, staffId);
+      }
+      toast.success('Đổi người phụ trách thành công');
+      setAssigningTaskItem(null);
+      await refetchAfterTaskAction();
+    } catch (e: any) {
+      toast.error(e.response?.data?.message || e.response?.data?.title || e.message || 'Đổi người phụ trách thất bại');
+    }
+  };
+
+  const renderAssignmentsProgressPanel = () => (
+    <div className="space-y-5">
+      {attentionItems.length > 0 && (
+        <div className="rounded-2xl border border-orange-200 bg-orange-50/80 p-4 shadow-3xs">
+          <div className="flex items-center gap-2 text-[#f37021] font-black text-sm mb-3">
+            <AlertCircle className="w-4 h-4" />
+            <span>Đơn yêu cầu đang làm / Cần chú ý</span>
+          </div>
+          <div className="space-y-2">
+            {attentionItems.slice(0, 5).map(item => (
+              <div key={`${item.itemType}_${item.itemId}`} className="flex items-center justify-between gap-3 bg-white/80 border border-orange-100 rounded-xl px-3 py-2">
+                <div className="min-w-0">
+                  <p className="text-xs font-black text-slate-850 truncate">{item.delegationName} - {item.title}</p>
+                  <p className="text-[11px] text-orange-700 font-semibold">{item.attentionReason || item.statusLabel}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => openAssignmentDetail(item)}
+                  className="px-3 py-1.5 rounded-lg border border-orange-200 bg-white text-[#f37021] text-[11px] font-black hover:bg-orange-100 transition-colors"
+                >
+                  Xem chi tiết
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
+        <div className="flex items-center gap-3 px-6 pt-6 pb-5">
+          <div className="w-12 h-12 rounded-2xl bg-blue-50 text-[#004c91] flex items-center justify-center">
+            <CheckSquare className="w-6 h-6" />
+          </div>
+          <h3 className="text-xl md:text-2xl font-black text-[#004c91] uppercase tracking-tight">Nhiệm vụ điều phối & thư mời tham gia</h3>
+        </div>
+
+        <div className="bg-[#005594] rounded-t-2xl px-6 py-5 flex flex-wrap items-center justify-between gap-4">
+          <input
+            value={assignmentSearch}
+            onChange={e => setAssignmentSearch(e.target.value)}
+            placeholder="Tìm kiếm nhiệm vụ..."
+            className="w-full lg:w-[420px] px-4 py-3 bg-white/10 border border-white/10 rounded-xl text-sm font-semibold text-white placeholder:text-white/70 outline-none focus:bg-white/15"
+          />
+          <div className="flex flex-wrap items-center gap-3">
+            <select value={assignmentItemType} onChange={e => setAssignmentItemType(e.target.value)} className="px-3 py-2.5 bg-white border border-white/20 rounded-xl text-sm font-bold text-slate-800">
+              <option value="ALL">Tất cả loại</option>
+              <option value="INVITATION">Thư mời</option>
+              <option value="REQUEST">Đơn yêu cầu</option>
+            </select>
+            <select value={assignmentStatus} onChange={e => setAssignmentStatus(e.target.value)} className="px-3 py-2.5 bg-white border border-white/20 rounded-xl text-sm font-bold text-slate-800">
+              <option value="ALL">Tất cả trạng thái</option>
+              <option value="REQUESTED">Chưa phân công</option>
+              <option value="ASSIGNED">Đã giao</option>
+              <option value="ACCEPTED">Chấp nhận</option>
+              <option value="REJECTED">Từ chối</option>
+              <option value="DECLINED">Từ chối phân công</option>
+              <option value="CHANGE_PROPOSED">Đang đề xuất</option>
+              <option value="IN_PROGRESS">Trong tiến trình</option>
+              <option value="DONE">Hoàn thành</option>
+              <option value="CANCELLED">Đã hủy</option>
+            </select>
+            <select value={assignmentOwnerScope} onChange={e => setAssignmentOwnerScope(e.target.value)} className="px-3 py-2.5 bg-white border border-white/20 rounded-xl text-sm font-bold text-slate-800">
+              <option value="DEPARTMENT">Văn phòng</option>
+              <option value="ME">Tôi</option>
+            </select>
+            <div className="flex items-center gap-2">
+              <input type="date" value={assignmentFromDate} onChange={e => setAssignmentFromDate(e.target.value)} className="px-3 py-2.5 bg-white border border-white/20 rounded-xl text-sm font-bold text-slate-800" />
+              <span className="text-white font-black">-</span>
+              <input type="date" value={assignmentToDate} onChange={e => setAssignmentToDate(e.target.value)} className="px-3 py-2.5 bg-white border border-white/20 rounded-xl text-sm font-bold text-slate-800" />
+            </div>
+            <button
+              type="button"
+              onClick={() => setAssignmentSortDirection(v => v === 'ASC' ? 'DESC' : 'ASC')}
+              className="px-3 py-2.5 bg-white border border-white/20 rounded-xl text-sm font-black text-[#004c91] hover:bg-blue-50"
+            >
+              {assignmentSortDirection === 'DESC' ? 'Đơn mới nhất' : 'Đơn cũ nhất'}
+            </button>
+          </div>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[980px] text-left border-x border-b border-slate-100 rounded-b-2xl overflow-hidden">
+            <thead className="bg-[#005594] text-white text-[11px] uppercase font-black">
+              <tr>
+                <th className="px-7 py-4">Đoàn khách</th>
+                <th className="px-5 py-4">Nhiệm vụ được giao</th>
+                <th className="px-5 py-4">Người phụ trách</th>
+                <th className="px-5 py-4 w-[170px]">Trạng thái</th>
+                <th className="px-5 py-4 text-center">Hành động</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {assignmentItems.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="px-4 py-10 text-center text-sm font-semibold text-slate-400">Không có dữ liệu phù hợp</td>
+                </tr>
+              )}
+              {assignmentItems.map(item => (
+                <tr key={`${item.itemType}_${item.itemId}`} className="hover:bg-slate-50/80 transition-colors">
+                  <td className="px-7 py-5">
+                    <p className="text-sm font-black text-slate-900 line-clamp-2">{item.delegationName}</p>
+                    <p className="text-[11px] text-slate-450 font-semibold">{item.itemType === 'INVITATION' ? 'Thư mời' : 'Đơn yêu cầu'} {item.requestCode ? `• ${item.requestCode}` : ''}</p>
+                  </td>
+                  <td className="px-5 py-5 max-w-[360px]">
+                    <p className="text-sm font-bold text-slate-800 line-clamp-2" title={item.description || item.title}>{item.title}</p>
+                    {item.description && <p className="text-[11px] text-slate-500 line-clamp-1">{item.description}</p>}
+                  </td>
+                  <td className="px-5 py-5 text-sm font-black text-[#004c91] text-center">
+                    <div>{item.currentResponsibleName || 'Department Leader'}</div>
+                    {canShowChangeResponsible(item) && (
+                      <button
+                        type="button"
+                        onClick={() => handleAssignTask(item)}
+                        className="mt-1 text-[11px] font-semibold text-blue-600 underline underline-offset-2 hover:text-[#004c91]"
+                      >
+                        Đổi người phụ trách
+                      </button>
+                    )}
+                  </td>
+                  <td className="px-5 py-5 w-[170px]">
+                    <span className={`px-2.5 py-1 rounded-full border text-[11px] font-black ${getStatusClass(item.uiStatus)}`}>
+                      {item.statusLabel}
+                    </span>
+                    {item.latestDeclineReason && <p className="text-[10px] text-rose-500 mt-1 line-clamp-1">{item.latestDeclineReason}</p>}
+                  </td>
+                  <td className="px-5 py-5 text-center">
+                    {item.uiStatus === 'CANCELLED' ? (
+                      <span className="text-[11px] font-bold text-slate-500">
+                        Đơn đã hủy vì đoàn khách đã hủy{item.cancelReason ? `: ${item.cancelReason}` : ''}
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => openAssignmentDetail(item)}
+                        className="inline-flex items-center justify-center w-9 h-9 rounded-full text-slate-400 hover:text-[#004c91] hover:bg-blue-50 transition-colors"
+                        title="Xem chi tiết"
+                      >
+                        <Eye className="w-5 h-5" />
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-4 border-t border-slate-100 text-xs font-bold text-slate-500">
+          <span>{assignmentLoading ? 'Đang tải...' : `${assignmentTotal} mục`}</span>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setAssignmentPage(page => Math.max(1, page - 1))}
+              disabled={assignmentPage <= 1}
+              className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-black text-[#004c91] hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Trước
+            </button>
+            <span className="px-3 py-2 rounded-xl bg-[#004c91] text-white">
+              {assignmentPage} / {Math.max(1, Math.ceil(assignmentTotal / assignmentPageSize))}
+            </span>
+            <button
+              type="button"
+              onClick={() => setAssignmentPage(page => Math.min(Math.max(1, Math.ceil(assignmentTotal / assignmentPageSize)), page + 1))}
+              disabled={assignmentPage >= Math.max(1, Math.ceil(assignmentTotal / assignmentPageSize))}
+              className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-black text-[#004c91] hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Sau
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <div className="space-y-6">
       <Toaster position="top-right" />
 
+      {assigningTaskItem && (
+        <div className="fixed inset-0 z-[80] bg-slate-900/35 flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+              <div>
+                <h3 className="text-base font-black text-[#004c91]">Chọn người phụ trách</h3>
+                <p className="text-xs text-slate-500 mt-0.5 line-clamp-1">{assigningTaskItem.title}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAssigningTaskItem(null)}
+                className="w-8 h-8 rounded-full hover:bg-slate-100 flex items-center justify-center text-slate-400"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="max-h-[360px] overflow-y-auto py-2">
+              {candidates.length === 0 ? (
+                <div className="px-5 py-8 text-center text-sm font-semibold text-slate-400">Không có nhân sự phù hợp</div>
+              ) : candidates.map((staff) => (
+                <button
+                  key={staff.id || staff.userId}
+                  type="button"
+                  onClick={() => handleSelectAssignee(staff)}
+                  className="w-full px-5 py-3 text-left hover:bg-blue-50 transition-colors flex items-center justify-between gap-3"
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm font-black text-slate-800 truncate">{staff.name}</p>
+                    <p className="text-xs font-medium text-slate-500 truncate">{staff.email}</p>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-slate-300" />
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
-    <div className="bg-white rounded-3xl border border-slate-200/85 shadow-md p-4 sm:p-6 md:p-8 font-sans">
+
+    <div className={viewMode === 'calendar' ? 'bg-white rounded-3xl border border-slate-200/85 shadow-md p-4 sm:p-6 md:p-8 font-sans' : 'font-sans'}>
       
       {/* Shared Header Bar */}
+      {viewMode === 'calendar' && (
       <header className="pb-5 border-b border-slate-100 flex flex-wrap items-center justify-between gap-4 mb-6">
         <div>
           <span className="text-[10px] font-bold text-[#f37021] uppercase tracking-widest block mb-0.5">FPT University • PEMS v3.0</span>
@@ -669,10 +1149,12 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
           <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-emerald-50 border-2 border-emerald-400"></div>Thư mời</span>
           <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-orange-50 border-2 border-orange-400"></div>Đơn yêu cầu</span>
           <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-blue-50 border-2 border-blue-400"></div>Đã xử lý</span>
+          <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-slate-100 border-2 border-slate-400"></div>Bị hủy / Đã hết hạn</span>
           <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-purple-50 border-2 border-purple-400"></div>Tôi</span>
         </div>
 
         {/* Google-Calendar-style toolbar button group */}
+        {viewMode === 'calendar' && (
         <div className="flex items-center gap-4 flex-wrap">
           <div className="bg-slate-100 p-0.5 rounded-xl border border-slate-200 flex items-center gap-1">
             <button
@@ -913,9 +1395,14 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
             )}
           </div>
         </div>
+        )}
       </header>
+      )}
+
+      {viewMode === 'assignments' && renderAssignmentsProgressPanel()}
 
       {/* Grid of Calendar (Full Width) */}
+      {viewMode === 'calendar' && (
       <div className="relative">
         <div className="w-full">
           
@@ -937,7 +1424,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                 </div>
 
                 {/* Grid of Days */}
-                <div className="grid grid-cols-7 grid-rows-6 flex-grow h-[690px] divide-x divide-y divide-slate-100 bg-slate-50/20">
+                <div className="grid grid-cols-7 grid-rows-5 flex-grow min-h-[850px] divide-x divide-y divide-slate-200 border-l border-r border-b border-slate-200 bg-slate-50/20">
                   {daysGrid.map((cell, idx) => {
                     const dayEvents = filteredEvents.filter(e => e.date === cell.dateString);
                     const isSelected = selectedCellDate === cell.dateString;
@@ -951,7 +1438,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                             setDisplayMode('Ngày');
                           }
                         }}
-                        className={`h-[115px] max-h-[115px] overflow-hidden p-2 flex flex-col justify-between transition-colors group relative cursor-pointer ${
+                        className={`h-[160px] max-h-[160px] overflow-hidden p-2 flex flex-col justify-between transition-colors group relative cursor-pointer ${
                           isSelected
                             ? 'bg-orange-50 ring-2 ring-inset ring-[#f37021] z-10 shadow-sm'
                             : cell.isCurrent
@@ -959,53 +1446,57 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                               : 'bg-slate-50/30 hover:bg-orange-50/30 text-slate-350'
                         }`}
                       >
-                        {/* Header of Date cell */}
-                        <div className="flex justify-between items-center mb-1">
-                          <span className={`text-xs font-extrabold px-1.5 py-0.5 rounded-md ${
-                            cell.dateString === todayStr && cell.isCurrent
-                              ? 'bg-red-500 text-white shadow-xs'
-                              : isSelected
-                                ? 'bg-[#f37021] text-white'
-                                : cell.isCurrent ? 'text-slate-700' : 'text-slate-400'
-                          }`}>
-                            {cell.day}
-                          </span>
-                          
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleOpenAddModal(cell.dateString);
-                            }}
-                            className="opacity-0 group-hover:opacity-100 text-[#f37021] hover:text-[#004c91] transition-opacity p-0.5 hover:bg-orange-100 rounded-md cursor-pointer"
-                            title="Add Logistics Event"
-                          >
-                            <Plus className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-
-                        {/* Event cards space */}
-                        <div className="flex-grow space-y-1 overflow-y-auto no-scrollbar pt-1">
-                          {dayEvents.map(ev => {
-                            const isHighlighted = activePopoverEvent?.id === ev.id;
-                            return (
-                              <div
-                                key={ev.id}
-                                id={`event-card-${ev.id}`}
+                        {cell.isCurrent ? (
+                          <>
+                            {/* Header of Date cell */}
+                            <div className="flex justify-between items-center mb-1">
+                              <span className={`text-xs font-extrabold px-1.5 py-0.5 rounded-md ${
+                                cell.dateString === todayStr && cell.isCurrent
+                                  ? 'bg-red-500 text-white shadow-xs'
+                                  : isSelected
+                                    ? 'bg-[#f37021] text-white'
+                                    : 'text-slate-700'
+                              }`}>
+                                {cell.day}
+                              </span>
+                              
+                              <button
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  setSelectedCellDate(cell.dateString);
-                                  setActivePopoverEvent(ev);
+                                  handleOpenAddModal(cell.dateString);
                                 }}
-                                className={`px-2 py-1.5 rounded-lg border text-[10px] font-bold leading-tight cursor-pointer transition-all truncate selection:bg-transparent ${ev.color} ${ev.hoverColor} ${
-                                  isHighlighted ? 'ring-2 ring-orange-500/10 border-orange-400 shadow-sm' : ''
-                                }`}
+                                className="opacity-0 group-hover:opacity-100 text-[#f37021] hover:text-[#004c91] transition-opacity p-0.5 hover:bg-orange-100 rounded-md cursor-pointer"
+                                title="Add Logistics Event"
                               >
-                                <span className="inline-block w-1.5 h-1.5 rounded-full mr-1.5 bg-current" />
-                                {ev.title}
-                              </div>
-                            );
-                          })}
-                        </div>
+                                <Plus className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+
+                            {/* Event cards space */}
+                            <div className="flex-grow space-y-1 overflow-y-auto no-scrollbar pt-1">
+                              {dayEvents.map(ev => {
+                                const isHighlighted = activePopoverEvent?.id === ev.id;
+                                return (
+                                  <div
+                                    key={ev.id}
+                                    id={`event-card-${ev.id}`}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setSelectedCellDate(cell.dateString);
+                                      setActivePopoverEvent(ev);
+                                    }}
+                                    className={`px-2 py-1.5 rounded-lg border text-[10px] font-bold leading-tight cursor-pointer transition-all truncate selection:bg-transparent ${ev.color} ${ev.hoverColor} ${
+                                      isHighlighted ? 'ring-2 ring-orange-500/10 border-orange-400 shadow-sm' : ''
+                                    }`}
+                                  >
+                                    <span className="inline-block w-1.5 h-1.5 rounded-full mr-1.5 bg-current" />
+                                    {ev.title}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </>
+                        ) : null}
                       </div>
                     );
                   })}
@@ -1584,6 +2075,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
           </div>
         </div>
       </div>
+      )}
 
       {/* Add event modal */}
       {showAddFormModal && (
@@ -2245,9 +2737,18 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                            Hủy
                          </button>
                          <button
-                           onClick={() => {
-                             setIsProposing(false);
-                             setProposalSubmitted(true);
+                           onClick={async () => {
+                             try {
+                               if (activePopoverEvent?.rawId) {
+                                 await departmentReceptionTasksApi.proposeChange(activePopoverEvent.rawId, null, null, proposalNote.trim());
+                                 toast.success('Đã gửi đề xuất thay đổi');
+                                 setIsProposing(false);
+                                 setProposalSubmitted(true);
+                                 await refetchAfterTaskAction();
+                               }
+                             } catch (e: any) {
+                               toast.error(e.response?.data?.message || e.response?.data?.title || e.message || 'Gửi đề xuất thất bại');
+                             }
                            }}
                            disabled={!proposalNote.trim()}
                            className="px-5 py-2.5 rounded-xl bg-[#de703b] text-white hover:bg-[#c9602c] font-bold text-xs disabled:opacity-50"

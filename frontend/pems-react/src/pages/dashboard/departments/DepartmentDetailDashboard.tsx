@@ -5,6 +5,8 @@
 
 import React, { useState } from "react";
 import { departmentManagementApi } from '../../../features/department-management/api/departmentManagementApi';
+import { departmentLeaderDashboardApi } from '../../../features/dashboard/api/departmentLeaderDashboardApi';
+import { departmentReceptionTasksApi } from '../../../features/department-reception-tasks/api/departmentReceptionTasksApi';
 import toast, { Toaster } from 'react-hot-toast';
 import { useNavigate, useParams } from "react-router-dom";
 import {
@@ -49,77 +51,31 @@ export function DepartmentDetailDashboard() {
   const canEditMember = isDeptLeader || isStaffLeader || isHO;
   const isStaffOrHO = user?.role?.toUpperCase() === 'STAFF' || isHO;
 
-  // Mock data
-  const departmentInfo = {
-    name: "Phòng IT",
-    totalStaff: 12,
-    activeAccounts: 10,
-    processingTasks: 3,
+  type DepartmentTask = {
+    id: number;
+    delegation: string;
+    task: string;
+    status: string;
+    assigneeId: string;
+    originalAssigneeId?: string;
+    rejectReason?: string;
   };
 
-  const mockMembers = Array.from({ length: 15 }, (_, i) => ({
-    id: i === 0 ? "dept_leader" : i === 1 ? "dept_staff" : (i + 1).toString(),
-    name: i === 0 ? "Nguyễn Văn Trưởng Phòng" : i === 1 ? "Nguyễn Văn Nhân Viên" : `Nhân viên ${i + 1}`,
-    email: i === 0 ? "leader@fpt.edu.vn" : i === 1 ? "staff@fpt.edu.vn" : `nhanvien${i + 1}@fpt.edu.vn`,
-    phone: `09000000${i.toString().padStart(2, "0")}`,
-    status: i % 4 === 0 ? "Chưa cấp tài khoản" : "Đã cấp tài khoản",
-    role: i === 0 ? "Trưởng phòng" : "Nhân viên",
-    gender: i % 2 === 0 ? "Nam" : "Nữ",
-    campus: "Hà Nội",
-    systemRole: "Dept",
-    avatarUrl: `https://ui-avatars.com/api/?name=${i === 0 ? "Nguyễn+Văn+Trưởng+Phòng" : i === 1 ? "Nguyễn+Văn+Nhân+Viên" : `Nhân+viên+${i + 1}`}&background=random`
-  }));
+  const [departmentDetail, setDepartmentDetail] = useState<any>(null);
+  const [departmentStats, setDepartmentStats] = useState({
+    totalStaff: 0,
+    activeAccounts: 0,
+    processingTasks: 0,
+  });
 
-  const leaders = mockMembers.filter(m => m.role === "Trưởng phòng");
+  const departmentInfo = {
+    name: departmentDetail?.name || user?.departmentName || "Phòng ban",
+    totalStaff: departmentStats.totalStaff,
+    activeAccounts: departmentStats.activeAccounts,
+    processingTasks: departmentStats.processingTasks,
+  };
 
-
-const [tasks, setTasks] = useState([
-    {
-      id: 1,
-      delegation: "Đoàn ĐH Deakin",
-      task: "Chuẩn bị hệ thống mạng phòng họp VIP",
-      status: "Chưa làm",
-      assigneeId: "dept_staff",
-      originalAssigneeId: "dept_staff",
-      rejectReason: undefined
-    },
-    {
-      id: 2,
-      delegation: "Đoàn đối tác Nhật Bản",
-      task: "Setup thiết bị trình chiếu",
-      status: "Chưa làm",
-      assigneeId: "dept_staff",
-      originalAssigneeId: "dept_staff",
-      rejectReason: undefined
-    },
-    {
-      id: 3,
-      delegation: "Đoàn học sinh THPT",
-      task: "Hỗ trợ kỹ thuật hội trường",
-      status: "Chưa làm",
-      assigneeId: "dept_leader",
-      originalAssigneeId: "dept_leader",
-      rejectReason: undefined
-    },
-    {
-      id: 4,
-      delegation: "Đoàn khách quan trọng",
-      task: "Khảo sát và chụp ảnh sự kiện",
-      status: "Chưa làm",
-      assigneeId: "dept_staff",
-      originalAssigneeId: "dept_staff",
-      rejectReason: undefined
-    },
-    {
-      id: 5,
-      delegation: "Đoàn khách quan chức năng",
-      task: "Dự đón đoàn VIP",
-      status: "Chưa làm",
-      assigneeId: "dept_leader",
-      originalAssigneeId: "dept_leader",
-      rejectReason: ""
-    }
-  ]);
+  const [tasks, setTasks] = useState<DepartmentTask[]>([]);
 
 
 // Pagination for members
@@ -175,6 +131,10 @@ const [tasks, setTasks] = useState([
       });
       setMembers(res.data.items || []);
       setTotalMembers(res.data.totalCount || 0);
+      setDepartmentStats(prev => ({
+        ...prev,
+        totalStaff: res.data.totalCount || 0,
+      }));
     } catch (error) {
       console.error(error);
     } finally {
@@ -185,6 +145,60 @@ const [tasks, setTasks] = useState([
   React.useEffect(() => {
     fetchMembers();
   }, [currentPage, itemsPerPage, memberSearch, memberStatus, targetDeptId]);
+
+  React.useEffect(() => {
+    if (!targetDeptId) return;
+
+    const fetchDepartmentOverview = async () => {
+      try {
+        const [detailResult, activeResult, summaryResult] = await Promise.allSettled([
+          departmentManagementApi.getDepartmentDetails(targetDeptId),
+          departmentManagementApi.searchPersonnel({
+            departmentId: targetDeptId,
+            status: 'active',
+            pageNumber: 1,
+            pageSize: 1,
+          }),
+          isDeptLeader ? departmentLeaderDashboardApi.getSummary() : Promise.resolve(null),
+        ]);
+
+        if (detailResult.status === 'fulfilled') {
+          setDepartmentDetail(detailResult.value);
+        }
+
+        const activeAccounts =
+          activeResult.status === 'fulfilled'
+            ? activeResult.value.data.totalCount || 0
+            : 0;
+
+        if (summaryResult.status === 'fulfilled' && summaryResult.value) {
+          setDepartmentStats(prev => ({
+            ...prev,
+            activeAccounts: summaryResult.value.activePersonnelCount || activeAccounts,
+            processingTasks: summaryResult.value.processingDelegationCount || 0,
+          }));
+          setTasks((summaryResult.value.quickTasks || []).map(task => ({
+            id: task.logisticsItemId,
+            delegation: task.delegationName,
+            task: task.taskTitle,
+            status: task.status,
+            assigneeId: task.assignedToUserId?.toString() || '',
+            originalAssigneeId: task.assignedToUserId?.toString() || '',
+          })));
+        } else {
+          setDepartmentStats(prev => ({
+            ...prev,
+            activeAccounts,
+          }));
+          setTasks([]);
+        }
+      } catch (error) {
+        console.error('Failed to fetch department overview:', error);
+      }
+    };
+
+    fetchDepartmentOverview();
+  }, [targetDeptId, isDeptLeader]);
 
   const handleUpdateMember = async () => {
     try {
@@ -944,9 +958,15 @@ const [tasks, setTasks] = useState([
                 Hủy bỏ
               </button>
               <button
-                onClick={() => {
-                  setTasks(tasks.map(t => t.id === selectedTaskForAssigneeChange?.id ? { ...t, assigneeId: newAssigneeId } : t));
-                  setIsChangeAssigneeModalOpen(false);
+                onClick={async () => {
+                  try {
+                    await departmentReceptionTasksApi.assignAssignee(selectedTaskForAssigneeChange?.id, newAssigneeId);
+                    setTasks(tasks.map(t => t.id === selectedTaskForAssigneeChange?.id ? { ...t, assigneeId: newAssigneeId } : t));
+                    toast.success('Đã đổi người phụ trách.');
+                    setIsChangeAssigneeModalOpen(false);
+                  } catch (err: any) {
+                    toast.error(err.response?.data?.message || 'Lỗi khi đổi người phụ trách');
+                  }
                 }}
                 disabled={!newAssigneeId}
                 className="px-6 py-3 rounded-xl font-black text-white bg-[#004c91] hover:bg-[#003b73] transition-colors shadow-lg shadow-[#004c91]/20 disabled:opacity-50 disabled:cursor-not-allowed outline-none uppercase tracking-wider"
@@ -1075,9 +1095,16 @@ const [tasks, setTasks] = useState([
                 Hủy
               </button>
               <button
-                onClick={() => {
-                  setTasks(tasks.map(t => t.id === taskToReject ? { ...t, status: "Từ chối", rejectReason: rejectTaskReason } : t));
-                  setIsRejectTaskModalOpen(false);
+                onClick={async () => {
+                  try {
+                    if (taskToReject == null) return;
+                    await departmentReceptionTasksApi.rejectRequest(taskToReject, rejectTaskReason);
+                    setTasks(tasks.map(t => t.id === taskToReject ? { ...t, status: "Từ chối", rejectReason: rejectTaskReason } : t));
+                    toast.success('Đã từ chối nhiệm vụ.');
+                    setIsRejectTaskModalOpen(false);
+                  } catch (err: any) {
+                    toast.error(err.response?.data?.message || 'Lỗi khi từ chối nhiệm vụ');
+                  }
                 }}
                 disabled={!rejectTaskReason.trim()}
                 className="px-6 py-2.5 text-sm font-bold text-white bg-red-600 hover:bg-red-700 rounded-xl shadow-sm hover:shadow transition-all disabled:opacity-50 disabled:cursor-not-allowed"

@@ -32,7 +32,7 @@ public class VisitLogisticsItem
     public DateTime? UsageEndAt { get; set; }
 
     [Column("status")]
-    public string Status { get; set; } = "PLANNED";
+    public string Status { get; set; } = "REQUESTED";
 
     [Column("priority")]
     public string Priority { get; set; } = "MEDIUM";

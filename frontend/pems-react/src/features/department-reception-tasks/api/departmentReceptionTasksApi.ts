@@ -7,6 +7,16 @@ export const departmentReceptionTasksApi = {
     return data;
   },
 
+  getAssignmentsProgress: async (params: Record<string, any>) => {
+    const { data } = await httpClient.get<any>(API_ENDPOINTS.departmentReceptionTasks.assignmentsProgress, { params });
+    return data;
+  },
+
+  getAttentionItems: async () => {
+    const { data } = await httpClient.get<any>(API_ENDPOINTS.departmentReceptionTasks.attentionItems);
+    return data;
+  },
+
   getInvitationDetail: async (participantId: number | string) => {
     const { data } = await httpClient.get<any>(API_ENDPOINTS.departmentReceptionTasks.invitationDetail(participantId));
     return data;
@@ -22,6 +32,11 @@ export const departmentReceptionTasksApi = {
     return data;
   },
 
+  assignInvitation: async (participantId: number | string, assigneeUserId: number | string, note = '') => {
+    const { data } = await httpClient.post<any>(API_ENDPOINTS.departmentReceptionTasks.assignInvitation(participantId), { assigneeUserId, note });
+    return data;
+  },
+
   getRequestDetail: async (logisticsItemId: number | string) => {
     const { data } = await httpClient.get<any>(API_ENDPOINTS.departmentReceptionTasks.requestDetail(logisticsItemId));
     return data;
@@ -29,6 +44,11 @@ export const departmentReceptionTasksApi = {
 
   confirmRequest: async (logisticsItemId: number | string) => {
     const { data } = await httpClient.post<any>(API_ENDPOINTS.departmentReceptionTasks.confirmRequest(logisticsItemId));
+    return data;
+  },
+
+  acceptRequestSelf: async (logisticsItemId: number | string) => {
+    const { data } = await httpClient.post<any>(API_ENDPOINTS.departmentReceptionTasks.acceptRequestSelf(logisticsItemId));
     return data;
   },
 
