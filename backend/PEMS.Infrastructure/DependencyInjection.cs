@@ -51,6 +51,12 @@ public static class DependencyInjection
         services.AddSingleton<IHtmlSanitizerService, HtmlSanitizerService>();
         services.AddSingleton<IFileValidationService, FileValidationService>();
 
+        // File storage (Google Drive via OAuth user refresh token)
+        services.Configure<PEMS.Infrastructure.FileStorage.GoogleDrive.GoogleDriveOptions>(
+            configuration.GetSection(PEMS.Infrastructure.FileStorage.GoogleDrive.GoogleDriveOptions.SectionName));
+        services.AddScoped<IFileStorageService, PEMS.Infrastructure.FileStorage.GoogleDrive.GoogleDriveStorageService>();
+        services.AddScoped<IFileStorageFolders, PEMS.Infrastructure.FileStorage.GoogleDrive.GoogleDriveFolders>();
+
         // Visit request flow services (UC-17)
         services.AddScoped<IVisitRequestService, VisitRequestService>();
         services.AddScoped<IUserProvisionService, UserProvisionService>();

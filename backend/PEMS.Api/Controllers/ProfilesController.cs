@@ -4,6 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using PEMS.Application.Profiles.Commands.ChangePassword;
+using PEMS.Application.Profiles.Commands.UploadProfileAvatar;
 
 namespace PEMS.Api.Controllers
 {
@@ -27,6 +28,25 @@ namespace PEMS.Api.Controllers
         public async Task<IActionResult> UpdateProfile([FromBody] PEMS.Application.Profiles.Commands.UpdateProfile.UpdateProfileCommand command, CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(command, cancellationToken);
+            return Ok(result);
+        }
+
+        /// <summary>UC-15 — replace the current user's avatar. multipart/form-data, field name "avatar".</summary>
+        [HttpPut("me/avatar")]
+        [Authorize]
+        [Consumes("multipart/form-data")]
+        [RequestSizeLimit(5 * 1024 * 1024)]
+        public async Task<IActionResult> UploadAvatar(IFormFile avatar, CancellationToken cancellationToken)
+        {
+            if (avatar is null || avatar.Length == 0)
+                return BadRequest(new { success = false, errorCode = "AVATAR_FILE_REQUIRED", message = "Vui lòng chọn ảnh đại diện." });
+
+            await using var stream = avatar.OpenReadStream();
+
+            var result = await _mediator.Send(
+                new UploadProfileAvatarCommand(stream, avatar.FileName, avatar.ContentType, avatar.Length),
+                cancellationToken);
+
             return Ok(result);
         }
 
