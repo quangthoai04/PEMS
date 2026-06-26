@@ -32,8 +32,6 @@ public class GetDepartmentLeaderDashboardSummaryQueryHandler
         var departmentId = _currentUserService.DepartmentId.Value;
         var now = DateTime.UtcNow;
         var todayStart = now.AddHours(7).Date.AddHours(-7);
-        var closedRequestStatuses = new[] { "CANCELLED", "REJECTED", "DONE" };
-        var pendingLeaderRequestStatuses = new[] { "REQUESTED", "PLANNED", "CHANGE_PROPOSED" };
         var closedInstanceStatuses = new[] { "CANCELLED", "CLOSED" };
 
         var dto = new DepartmentLeaderDashboardSummaryDto
@@ -59,12 +57,7 @@ public class GetDepartmentLeaderDashboardSummaryQueryHandler
 
         var pendingRequestCount = await requestItemsQuery
             .Where(li => li.AssignedToUserId == null
-                         && (pendingLeaderRequestStatuses.Contains(li.Status) || 
-                             (li.Status == "RECEIVED" && _context.VisitLogisticsAssignmentAttempts
-                                 .Where(a => a.LogisticsItemId == li.LogisticsItemId)
-                                 .OrderByDescending(a => a.AssignedAt)
-                                 .Select(a => a.Status)
-                                 .FirstOrDefault() == "DECLINED"))
+                         && li.Status == "REQUESTED"
                          && (li.UsageStartAt ?? li.DueAt ?? li.VisitInstance.PlannedStartAt) >= now)
             .CountAsync(cancellationToken);
 
@@ -79,20 +72,25 @@ public class GetDepartmentLeaderDashboardSummaryQueryHandler
 
         var upcomingRequestCount = await requestItemsQuery
             .Where(li => (li.UsageStartAt ?? li.VisitInstance.PlannedStartAt) >= now
-                         && !closedRequestStatuses.Contains(li.Status))
+                         && li.Status == "ACCEPTED")
             .CountAsync(cancellationToken);
 
         var upcomingInvitationCount = await invitationItemsQuery
-            .Where(x => x.c.PlannedStartAt >= now && x.p.Status != ParticipantStatuses.Declined)
+            .Where(x => x.c.PlannedStartAt >= now && x.p.Status == ParticipantStatuses.Accepted)
             .CountAsync(cancellationToken);
 
         dto.UpcomingDelegationCount = upcomingRequestCount + upcomingInvitationCount;
 
         dto.ProcessingDelegationCount = await requestItemsQuery
-            .Where(li => li.AssignedToUserId != null
-                         && li.VisitInstance.PlannedStartAt <= now
-                         && li.VisitInstance.PlannedEndAt >= now
-                         && new[] { "ASSIGNED", "BEFORE_VISIT", "DURING_VISIT" }.Contains(li.VisitInstance.Status))
+            .Where(li => (li.UsageStartAt ?? li.VisitInstance.PlannedStartAt) <= now
+                         && (li.UsageEndAt ?? li.VisitInstance.PlannedEndAt) >= now
+                         && li.Status == "IN_PROGRESS")
+            .CountAsync(cancellationToken);
+
+        dto.ProcessingDelegationCount += await invitationItemsQuery
+            .Where(x => x.p.Status == ParticipantStatuses.Accepted
+                        && x.c.PlannedStartAt <= now
+                        && x.c.PlannedEndAt >= now)
             .CountAsync(cancellationToken);
 
         dto.ActivePersonnelCount = await _context.Users
@@ -101,12 +99,7 @@ public class GetDepartmentLeaderDashboardSummaryQueryHandler
 
         var requestQuickTasks = await requestItemsQuery
             .Where(li => li.AssignedToUserId == null
-                         && (pendingLeaderRequestStatuses.Contains(li.Status) || 
-                             (li.Status == "RECEIVED" && _context.VisitLogisticsAssignmentAttempts
-                                 .Where(a => a.LogisticsItemId == li.LogisticsItemId)
-                                 .OrderByDescending(a => a.AssignedAt)
-                                 .Select(a => a.Status)
-                                 .FirstOrDefault() == "DECLINED"))
+                         && li.Status == "REQUESTED"
                          && (li.UsageStartAt ?? li.DueAt ?? li.VisitInstance.PlannedStartAt) >= now)
             .OrderBy(li => li.UsageStartAt ?? li.DueAt ?? li.VisitInstance.PlannedStartAt)
             .Select(li => new DepartmentLeaderQuickTaskDto
@@ -156,7 +149,7 @@ public class GetDepartmentLeaderDashboardSummaryQueryHandler
 
         var requestUpcomingSchedules = await requestItemsQuery
             .Where(li => (li.UsageStartAt ?? li.VisitInstance.PlannedStartAt) >= now
-                         && !closedRequestStatuses.Contains(li.Status))
+                         && li.Status == "ACCEPTED")
             .OrderBy(li => li.UsageStartAt ?? li.VisitInstance.PlannedStartAt)
             .Select(li => new DepartmentLeaderUpcomingScheduleDto
             {
@@ -177,7 +170,7 @@ public class GetDepartmentLeaderDashboardSummaryQueryHandler
             .ToListAsync(cancellationToken);
 
         var invitationUpcomingSchedules = await invitationItemsQuery
-            .Where(x => x.c.PlannedStartAt >= now && x.p.Status != ParticipantStatuses.Declined)
+            .Where(x => x.c.PlannedStartAt >= now && x.p.Status == ParticipantStatuses.Accepted)
             .OrderBy(x => x.c.PlannedStartAt)
             .Select(x => new DepartmentLeaderUpcomingScheduleDto
             {

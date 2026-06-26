@@ -33,6 +33,7 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetDepartmentCalenda
         public string DelegationName { get; set; }
         public ulong? RelatedUserId { get; set; }
         public string SenderName { get; set; }
+        public string? CancelReason { get; set; }
     }
 
     public class GetDepartmentCalendarQueryHandler : IRequestHandler<GetDepartmentCalendarQuery, List<DepartmentCalendarItemDto>>
@@ -93,6 +94,14 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetDepartmentCalenda
                 var camp = item.c;
                 string senderName = item.p.InvitedBy != null && senders.ContainsKey(item.p.InvitedBy.Value) ? senders[item.p.InvitedBy.Value] : "Hệ thống";
                 
+                var status = NormalizeInvitationStatus(
+                    item.p.Status,
+                    item.p.AssignedBy != null,
+                    camp.Status,
+                    camp.PlannedStartAt,
+                    camp.PlannedEndAt,
+                    DateTime.UtcNow);
+
                 items.Add(new DepartmentCalendarItemDto
                 {
                     Id = item.p.ParticipantId,
@@ -102,13 +111,14 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetDepartmentCalenda
                     Date = camp.PlannedStartAt.ToString("yyyy-MM-dd"),
                     StartAt = camp.PlannedStartAt.ToString("o"),
                     EndAt = camp.PlannedEndAt.ToString("o"),
-                    Status = item.p.Status,
+                    Status = status,
                     VisitInstanceId = camp.VisitInstanceId, // This is visit_instance_id ! SQL says vrc.visit_instance_id
                     VisitRequestId = camp.VisitRequestId,
                     ParticipantId = item.p.ParticipantId,
                     DelegationName = item.vr.DelegationName,
                     RelatedUserId = item.p.UserId,
-                    SenderName = senderName
+                    SenderName = senderName,
+                    CancelReason = camp.CancellationReason ?? item.vr.CancellationReason
                 });
             }
 
@@ -122,9 +132,18 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetDepartmentCalenda
                                      .OrderByDescending(a => a.AssignedAt)
                                      .Select(a => a.Status)
                                      .FirstOrDefault()
+                                 let borrowSigned = _context.VisitLogisticsItemHandovers
+                                     .Any(h => h.LogisticsItemId == l.LogisticsItemId
+                                               && h.HandoverType == "BORROW"
+                                               && h.BorrowerSignedAt != null
+                                               && h.ProviderSignedAt != null)
+                                 let returnSigned = _context.VisitLogisticsItemHandovers
+                                     .Any(h => h.LogisticsItemId == l.LogisticsItemId
+                                               && h.HandoverType == "RETURN"
+                                               && h.BorrowerSignedAt != null
+                                               && h.ProviderSignedAt != null)
                                  where l.RequestedToDepartmentId == deptId
-                                       && l.Status != "CANCELLED"
-                                 select new { l, c, vr, startAt, latestAttemptStatus };
+                                 select new { l, c, vr, startAt, latestAttemptStatus, borrowSigned, returnSigned };
             
             var logisticsList = await logisticsQuery.ToListAsync(cancellationToken);
             var reqIds = logisticsList.Where(x => x.l.RequestedBy != null).Select(x => x.l.RequestedBy).Distinct().ToList();
@@ -145,14 +164,15 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetDepartmentCalenda
                     Date = item.startAt.ToString("yyyy-MM-dd"),
                     StartAt = item.startAt.ToString("o"),
                     EndAt = endAt.ToString("o"),
-                    Status = l.Status,
+                    Status = NormalizeRequestStatus(l.Status, item.c.Status, item.vr.Status, item.borrowSigned, item.returnSigned),
                     LatestAttemptStatus = item.latestAttemptStatus ?? "",
                     VisitInstanceId = item.c.VisitInstanceId,
                     VisitRequestId = item.c.VisitRequestId,
                     LogisticsItemId = l.LogisticsItemId,
                     DelegationName = item.vr.DelegationName ?? "N/A",
                     RelatedUserId = l.AssignedToUserId ?? l.ReceivedBy ?? l.UpdatedBy,
-                    SenderName = senderName
+                    SenderName = senderName,
+                    CancelReason = item.c.CancellationReason ?? item.vr.CancellationReason
                 });
             }
 
@@ -180,6 +200,29 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetDepartmentCalenda
             }
 
             return items;
+        }
+
+        private static string NormalizeRequestStatus(string status, string instanceStatus, string requestStatus, bool borrowSigned, bool returnSigned)
+        {
+            if (requestStatus == "CANCELLED" || instanceStatus == "CANCELLED" || status == "CANCELLED") return "CANCELLED";
+            if (returnSigned || status == "DONE") return "DONE";
+            if (borrowSigned || status == "IN_PROGRESS") return "IN_PROGRESS";
+            return status;
+        }
+
+        private static string NormalizeInvitationStatus(string status, bool isStaffAssignment, string instanceStatus, DateTime startAt, DateTime endAt, DateTime now)
+        {
+            if (instanceStatus == "CANCELLED") return "CANCELLED";
+            if (status == "INVITED") return "REQUESTED";
+            if (status == "ASSIGNED") return "ASSIGNED";
+            if (status == "DECLINED") return isStaffAssignment ? "DECLINED" : "REJECTED";
+            if (status == "ACCEPTED")
+            {
+                if (instanceStatus == "CLOSED" || now > endAt) return "DONE";
+                if (now >= startAt && now <= endAt) return "IN_PROGRESS";
+                return "ACCEPTED";
+            }
+            return status;
         }
     }
 }

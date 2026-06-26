@@ -44,6 +44,7 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetRequestDetail
         public string ResponderName { get; set; }
         public ulong VisitInstanceId { get; set; }
         public ulong VisitRequestId { get; set; }
+        public string? CancelReason { get; set; }
 
         // Full Details
         public string RegistrantFullName { get; set; }
@@ -77,7 +78,7 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetRequestDetail
             var l = await _context.VisitLogisticsItems
                 .Include(l => l.VisitInstance)
                     .ThenInclude(c => c.VisitRequest)
-                .FirstOrDefaultAsync(l => l.LogisticsItemId == request.LogisticsItemId && l.Status != "CANCELLED", cancellationToken);
+                .FirstOrDefaultAsync(l => l.LogisticsItemId == request.LogisticsItemId, cancellationToken);
 
             if (l == null) return null;
 
@@ -131,6 +132,19 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetRequestDetail
             string latestAttemptStatus = attempts.OrderByDescending(a => a.AssignedAt).FirstOrDefault()?.Status ?? "";
 
             var camp = l.VisitInstance;
+            var borrowSigned = await _context.VisitLogisticsItemHandovers.AnyAsync(h =>
+                h.LogisticsItemId == l.LogisticsItemId
+                && h.HandoverType == "BORROW"
+                && h.BorrowerSignedAt != null
+                && h.ProviderSignedAt != null,
+                cancellationToken);
+            var returnSigned = await _context.VisitLogisticsItemHandovers.AnyAsync(h =>
+                h.LogisticsItemId == l.LogisticsItemId
+                && h.HandoverType == "RETURN"
+                && h.BorrowerSignedAt != null
+                && h.ProviderSignedAt != null,
+                cancellationToken);
+            var unifiedStatus = NormalizeStatus(l.Status, camp.Status, camp.VisitRequest.Status, borrowSigned, returnSigned);
 
             return new RequestDetailDto
             {
@@ -145,12 +159,13 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetRequestDetail
                 Description = l.Description ?? "",
                 AssigneeId = l.AssignedToUserId,
                 AssigneeName = assigneeName,
-                Status = l.Status,
+                Status = unifiedStatus,
                 RejectReason = l.Status == "REJECTED" ? l.DecisionNote ?? l.AssigneeResponseNote : "",
                 ActionTime = l.UpdatedAt?.ToString("HH:mm:ss dd-MM-yyyy") ?? "",
                 ResponderName = responderName,
                 VisitInstanceId = camp.VisitInstanceId,
                 VisitRequestId = camp.VisitRequestId,
+                CancelReason = camp.CancellationReason ?? camp.VisitRequest.CancellationReason,
 
                 RegistrantFullName = camp.VisitRequest.RegistrantFullName ?? "",
                 RegistrantEmail = camp.VisitRequest.RegistrantEmail ?? "",
@@ -165,6 +180,14 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetRequestDetail
                 AssignmentHistory = historyDtos,
                 LatestAttemptStatus = latestAttemptStatus
             };
+        }
+
+        private static string NormalizeStatus(string status, string instanceStatus, string requestStatus, bool borrowSigned, bool returnSigned)
+        {
+            if (requestStatus == "CANCELLED" || instanceStatus == "CANCELLED" || status == "CANCELLED") return "CANCELLED";
+            if (returnSigned || status == "DONE") return "DONE";
+            if (borrowSigned || status == "IN_PROGRESS") return "IN_PROGRESS";
+            return status;
         }
     }
 }

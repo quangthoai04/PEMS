@@ -1,6 +1,7 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Domain.Entities.Delegations;
 using System;
 using System.Threading;
 using System.Threading.Tasks;
@@ -36,16 +37,31 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.ConfirmRequest
             if (user == null || l.RequestedToDepartmentId != user.DepartmentId) 
                 throw new Exception("Không có quyền xác nhận đơn yêu cầu của phòng ban khác");
 
-            // if (l.Status == "REQUESTED")
-            // {
-                l.Status = "RECEIVED";
-                l.ReceivedBy = userId;
-                l.ReceivedAt = DateTime.UtcNow;
-                l.UpdatedBy = userId;
-                l.UpdatedAt = DateTime.UtcNow;
+            var now = DateTime.UtcNow;
 
-                await _context.SaveChangesAsync(cancellationToken);
-            // }
+            l.Status = "ACCEPTED";
+            l.ReceivedBy ??= userId;
+            l.ReceivedAt ??= now;
+            l.AssignedToUserId = userId;
+            l.AssignedBy = userId;
+            l.AssignedAt = now;
+            l.AssigneeAcceptedAt = now;
+            l.UpdatedBy = userId;
+            l.UpdatedAt = now;
+
+            _context.VisitLogisticsAssignmentAttempts.Add(new VisitLogisticsAssignmentAttempt
+            {
+                LogisticsItemId = request.LogisticsItemId,
+                AssigneeUserId = userId,
+                AssignedBy = userId,
+                AssignedAt = now,
+                Status = "ACCEPTED",
+                RespondedAt = now,
+                ResponseSource = "PORTAL",
+                CreatedAt = now
+            });
+
+            await _context.SaveChangesAsync(cancellationToken);
 
             return true;
         }

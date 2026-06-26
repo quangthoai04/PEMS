@@ -43,7 +43,7 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AssignRequestAssign
                 throw new Exception("Không có quyền phân công đơn yêu cầu của phòng ban khác");
 
             // Block assignment in terminal statuses
-            var blockedStatuses = new[] { "ACCEPTED", "IN_PROGRESS", "READY", "DONE", "CANCELLED", "REJECTED" };
+            var blockedStatuses = new[] { "ASSIGNED", "ACCEPTED", "CHANGE_PROPOSED", "IN_PROGRESS", "DONE", "CANCELLED", "REJECTED" };
             if (blockedStatuses.Contains(l.Status))
                 throw new Exception("Không thể phân công khi nhiệm vụ đang ở trạng thái: " + l.Status);
 

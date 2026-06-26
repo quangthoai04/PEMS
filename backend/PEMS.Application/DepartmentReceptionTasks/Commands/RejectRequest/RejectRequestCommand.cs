@@ -38,8 +38,10 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.RejectRequest
             if (user == null || l.RequestedToDepartmentId != user.DepartmentId) 
                 throw new Exception("Không có quyền từ chối đơn yêu cầu của phòng ban khác");
 
-            // if (l.Status != "REQUESTED" && l.Status != "RECEIVED" && l.Status != "CHANGE_PROPOSED")
             //     throw new Exception("Trạng thái đơn yêu cầu không hợp lệ để từ chối");
+
+            if (l.Status != "REQUESTED" && l.Status != "CHANGE_PROPOSED")
+                throw new Exception("Trạng thái đơn yêu cầu không hợp lệ để từ chối");
 
             l.Status = "REJECTED";
             l.DecisionNote = request.Reason;

@@ -1,6 +1,7 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Domain.Constants;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -28,6 +29,7 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetInvitationDetail
         public string ResponderName { get; set; }
         public ulong VisitInstanceId { get; set; }
         public ulong VisitRequestId { get; set; }
+        public string? CancelReason { get; set; }
         
         // Full Details
         public string RegistrantFullName { get; set; }
@@ -73,6 +75,7 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetInvitationDetail
             if (responder != null) responderName = $"{responder.FullName} - {responder.SubRole ?? "Chuyên viên"}";
 
             var camp = p.VisitInstance;
+            var unifiedStatus = NormalizeStatus(p.Status, p.AssignedBy != null, camp.Status, camp.PlannedStartAt, camp.PlannedEndAt);
 
             return new InvitationDetailDto
             {
@@ -84,12 +87,13 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetInvitationDetail
                 EndTime = camp.PlannedEndAt.ToString("HH:mm"),
                 Date = camp.PlannedStartAt.ToString("dd-MM-yyyy"),
                 Note = p.Note ?? "Trân trọng kính mời anh/chị tham gia tiếp đón đoàn khách.",
-                Status = p.Status,
+                Status = unifiedStatus,
                 RejectReason = p.Status == "DECLINED" ? p.Note : "",
                 ActionTime = p.RespondedAt?.ToString("HH:mm:ss dd-MM-yyyy") ?? "",
                 ResponderName = responderName,
                 VisitInstanceId = camp.VisitInstanceId,
                 VisitRequestId = camp.VisitRequestId,
+                CancelReason = camp.CancellationReason ?? camp.VisitRequest.CancellationReason,
                 
                 RegistrantFullName = camp.VisitRequest.RegistrantFullName ?? "",
                 RegistrantEmail = camp.VisitRequest.RegistrantEmail ?? "",
@@ -101,6 +105,22 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetInvitationDetail
                 ContactPersonFullName = camp.VisitRequest.ContactPersonFullName ?? "",
                 ContactPersonPhone = camp.VisitRequest.ContactPersonPhone ?? ""
             };
+        }
+
+        private static string NormalizeStatus(string status, bool isStaffAssignment, string instanceStatus, System.DateTime startAt, System.DateTime endAt)
+        {
+            var now = System.DateTime.UtcNow;
+            if (instanceStatus == "CANCELLED") return "CANCELLED";
+            if (status == ParticipantStatuses.Invited) return "REQUESTED";
+            if (status == ParticipantStatuses.Assigned) return "ASSIGNED";
+            if (status == ParticipantStatuses.Declined) return isStaffAssignment ? "DECLINED" : "REJECTED";
+            if (status == ParticipantStatuses.Accepted)
+            {
+                if (instanceStatus == "CLOSED" || now > endAt) return "DONE";
+                if (now >= startAt && now <= endAt) return "IN_PROGRESS";
+                return "ACCEPTED";
+            }
+            return status;
         }
     }
 }

@@ -62,8 +62,8 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.DeclineAssignedLogi
             attempt.ResponseSource = "PORTAL";
             attempt.UpdatedAt = DateTime.UtcNow;
 
-            // Reset item: back to RECEIVED, clear assignment fields
-            l.Status = "RECEIVED";
+            // Staff declines the assignment attempt; leader can reassign while history is kept.
+            l.Status = "DECLINED";
             l.AssignedToUserId = null;
             l.AssignedBy = null;
             l.AssignedAt = null;

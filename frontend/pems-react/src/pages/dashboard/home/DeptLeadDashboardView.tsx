@@ -76,7 +76,7 @@ export function DeptLeadDashboardView({ user }: { user: any }) {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
         {/* Card: Chờ phân công */}
         <div 
-          onClick={() => navigate('/dashboard/visit?tab=assignment&status=pending')}
+          onClick={() => navigate('/dashboard/visit?tab=assignment&status=REQUESTED')}
           className="bg-white border border-orange-100 rounded-2xl p-5 lg:p-6 shadow-sm hover:shadow-md hover:-translate-y-1 transition-all duration-300 flex items-center gap-4 cursor-pointer group"
         >
           <div className="w-12 h-12 lg:w-14 lg:h-14 rounded-2xl bg-orange-50 text-orange-500 flex items-center justify-center group-hover:bg-orange-500 group-hover:text-white transition-colors shrink-0">
@@ -104,7 +104,7 @@ export function DeptLeadDashboardView({ user }: { user: any }) {
 
         {/* Card: Đang xử lý */}
         <div 
-          onClick={() => navigate('/dashboard/visit?tab=progress&status=in_progress')}
+          onClick={() => navigate('/dashboard/visit?tab=assignment&status=IN_PROGRESS')}
           className="bg-white border border-emerald-100 rounded-2xl p-5 lg:p-6 shadow-sm hover:shadow-md hover:-translate-y-1 transition-all duration-300 flex items-center gap-4 cursor-pointer group"
         >
           <div className="w-12 h-12 lg:w-14 lg:h-14 rounded-2xl bg-emerald-50 text-emerald-500 flex items-center justify-center group-hover:bg-emerald-500 group-hover:text-white transition-colors shrink-0">
@@ -147,7 +147,7 @@ export function DeptLeadDashboardView({ user }: { user: any }) {
                 <div 
                   key={`${task.itemType || 'REQUEST'}-${task.participantId ?? task.logisticsItemId}`}
                   className="p-5 hover:bg-slate-50 transition-colors cursor-pointer flex justify-between items-center gap-4"
-                  onClick={() => navigate('/dashboard/visit?tab=assignment')}
+                  onClick={() => navigate('/dashboard/visit?tab=assignment&status=REQUESTED')}
                 >
                   <div>
                     <p className="font-bold text-slate-800">{cleanDelegationName(task.delegationName)} - {task.taskTitle}</p>
@@ -170,7 +170,7 @@ export function DeptLeadDashboardView({ user }: { user: any }) {
           </div>
           <div 
             className="p-4 border-t border-slate-100 bg-slate-50 text-center cursor-pointer hover:bg-slate-100 transition-colors text-[#004c91] font-bold text-sm"
-            onClick={() => navigate('/dashboard/visit?tab=assignment')}
+            onClick={() => navigate('/dashboard/visit?tab=assignment&status=REQUESTED')}
           >
             Xem tất cả
           </div>
