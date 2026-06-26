@@ -16,6 +16,11 @@ import type {
   SaveMinuteActionItemPayload,
   VisitNews,
   VisitNewsList,
+  VisitParticipantListItem,
+  ParticipantCandidate,
+  SupportDepartment,
+  InviteVisitParticipantPayload,
+  InviteVisitParticipantResult,
 } from '../types/delegations.types';
 
 export const delegationsApi = {
@@ -105,14 +110,79 @@ export const delegationsApi = {
     return data;
   },
 
+  /** VisitProcess "Thành phần tham gia": the instance's host snapshot + invited supporters. */
+  async getInstanceParticipants(visitInstanceId: number | string): Promise<VisitParticipantListItem[]> {
+    const { data } = await httpClient.get<VisitParticipantListItem[]>(
+      API_ENDPOINTS.delegations.instanceParticipants(visitInstanceId));
+    return data;
+  },
+
+  /** Candidate search for the host's invite dropdowns. type = IC_SUPPORT | STUDENT. */
+  async getParticipantCandidates(
+    visitInstanceId: number | string,
+    type: 'IC_SUPPORT' | 'STUDENT',
+    keyword?: string,
+  ): Promise<ParticipantCandidate[]> {
+    const { data } = await httpClient.get<ParticipantCandidate[]>(
+      API_ENDPOINTS.delegations.participantCandidates(visitInstanceId),
+      { params: { type, keyword: keyword || undefined } });
+    return data;
+  },
+
+  /** GENERAL departments of the instance's campus + their resolved active leader (the invitee). */
+  async getSupportDepartments(visitInstanceId: number | string, keyword?: string): Promise<SupportDepartment[]> {
+    const { data } = await httpClient.get<SupportDepartment[]>(
+      API_ENDPOINTS.delegations.supportDepartments(visitInstanceId),
+      { params: { keyword: keyword || undefined } });
+    return data;
+  },
+
+  /** Department staff the calling Department Leader may assign (own department/campus). */
+  async getDepartmentStaffCandidates(visitInstanceId: number | string, keyword?: string): Promise<ParticipantCandidate[]> {
+    const { data } = await httpClient.get<ParticipantCandidate[]>(
+      API_ENDPOINTS.delegations.departmentStaffCandidates(visitInstanceId),
+      { params: { keyword: keyword || undefined } });
+    return data;
+  },
+
+  /** Host invites a supporting participant (sends the invitation email with one-time tokens). */
+  async inviteVisitParticipant(
+    visitInstanceId: number | string,
+    payload: InviteVisitParticipantPayload,
+  ): Promise<InviteVisitParticipantResult> {
+    const { data } = await httpClient.post<InviteVisitParticipantResult>(
+      API_ENDPOINTS.delegations.inviteParticipant(visitInstanceId), payload);
+    return data;
+  },
+
+  /** Host withdraws a still-pending (INVITED) participant they invited. */
+  async removeVisitParticipant(
+    visitInstanceId: number | string,
+    participantId: number | string,
+  ): Promise<{ participantId: number; status: string; message: string }> {
+    const { data } = await httpClient.patch<{ participantId: number; status: string; message: string }>(
+      API_ENDPOINTS.delegations.removeParticipant(visitInstanceId, participantId), {});
+    return data;
+  },
+
   /** Upsert the instance's agenda (Host only, prep window). Saves setup only — never changes stage. */
   async saveVisitAgenda(
     visitRequestId: number | string,
     visitInstanceId: number | string,
-    items: Array<{ agendaId?: number | null; title: string; startTime: string; endTime?: string | null; description?: string | null; location?: string | null }>,
+    items: Array<{ agendaId?: number | null; title: string; startTime: string; endTime?: string | null; description?: string | null; location?: string | null; responsibleUserId?: number | null }>,
   ): Promise<any> {
     const { data } = await httpClient.post<any>(
       API_ENDPOINTS.delegations.saveAgenda(visitRequestId, visitInstanceId), { items });
+    return data;
+  },
+
+  /** Valid responsible-person candidates for the agenda editor: the active host + ACCEPTED supporting
+   * participants of THIS instance only (never the whole-system user list). */
+  async getAgendaResponsibleCandidates(
+    visitInstanceId: number | string,
+  ): Promise<import('../types/delegations.types').AgendaResponsibleCandidate[]> {
+    const { data } = await httpClient.get(
+      API_ENDPOINTS.delegations.agendaResponsibleCandidates(visitInstanceId));
     return data;
   },
 

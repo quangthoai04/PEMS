@@ -187,6 +187,23 @@ export interface VisitAgendaItem {
   endTime?: string | null;
   description?: string | null;
   location?: string | null;
+  /** Concrete assigned person (visit_agendas.responsible_user_id). Null = unassigned. */
+  responsibleUserId?: number | null;
+  responsibleUserName?: string | null;
+  responsibleUserEmail?: string | null;
+  /** Suggested role text from the source template item (display-only hint, NOT a person). */
+  templateResponsibleRoleLabel?: string | null;
+}
+
+/** A person eligible to be the responsible person of an agenda item: the active host or an ACCEPTED
+ * supporting participant of the instance. Source for the "Người phụ trách" dropdown. */
+export interface AgendaResponsibleCandidate {
+  userId: number;
+  fullName: string;
+  email: string;
+  participantRole: string;
+  displayRole: string;
+  isMainHost: boolean;
 }
 
 /** Real before-visit setup data for the VisitProcess page (from GET process-detail). */
@@ -203,6 +220,156 @@ export interface VisitProcessDetail {
   relation: string;
   canEditBefore: boolean;
   agenda: VisitAgendaItem[];
+  /** Read-only mirror of the guest's original registration (registrant + delegation + campuses +
+   * guests). Null only for callers not allowed to see it. */
+  requestSummary?: VisitProcessRequestSummary | null;
+  /** Assigned official host (read-only). Null when none assigned yet. */
+  host?: VisitProcessHost | null;
+  /** Host snapshot + invited supporters of this instance. */
+  participants?: VisitParticipantListItem[];
+}
+
+/** Read-only snapshot of what the guest submitted (shown on the VisitProcess "Thông tin" sections). */
+export interface VisitProcessRequestSummary {
+  registrantName?: string | null;
+  registrantEmail?: string | null;
+  registrantPhone?: string | null;
+  registrantOrganization?: string | null;
+  registrantJobTitle?: string | null;
+  registrantNationality?: string | null;
+
+  delegationName: string;
+  visitScope: string;            // SINGLE_CAMPUS | MULTI_CAMPUS
+  visitType?: string | null;     // CAMPUS_TOUR | MEETING | ... | OTHER
+  visitTypeOther?: string | null;
+  purpose?: string | null;
+  workingContent?: string | null;
+  workingLanguage?: string | null;
+  mediaConsentStatus?: string | null;
+  mediaConsentNote?: string | null;
+  transportationType?: string | null;
+  transportationDetail?: string | null;
+  noteToFptu?: string | null;
+
+  contactPersonFullName?: string | null;
+  contactPersonOrganization?: string | null;
+  contactPersonPhone?: string | null;
+  contactPersonEmail?: string | null;
+
+  campuses: VisitProcessCampus[];
+  guestMembers: VisitProcessGuestMember[];
+  externalSupportMembers: VisitProcessGuestMember[];
+}
+
+export interface VisitProcessCampus {
+  visitInstanceId: number;
+  campusId: number;
+  campusName: string;
+  plannedStartAt: string;
+  plannedEndAt: string;
+  isCurrent: boolean;
+}
+
+export interface VisitProcessGuestMember {
+  guestMemberId: number;
+  memberType: string;            // GUEST | EXTERNAL_SUPPORT
+  fullName: string;
+  organization?: string | null;
+  jobTitle?: string | null;
+  nationality?: string | null;
+  displayOrder: number;
+}
+
+export interface VisitProcessHost {
+  userId: number;
+  fullName: string;
+  email: string;
+  phone?: string | null;
+  departmentName?: string | null;
+  statusLabel: string;
+}
+
+/** One participant row of a campus instance (host snapshot + invited supporters). */
+export interface VisitParticipantListItem {
+  participantId: number;
+  userId: number;
+  fullName: string;
+  email: string;
+  phone?: string | null;
+  roleCode: string;
+  subRole?: string | null;
+  departmentId?: number | null;
+  departmentName?: string | null;
+  participantRole: ParticipantRole;     // IC_HOST | IC_SUPPORT | DEPT_SUPPORT | STUDENT
+  isHost: boolean;
+  status: InvitationStatus | 'REMOVED'; // INVITED | ACCEPTED | DECLINED | ASSIGNED | REMOVED
+  invitedByUserId?: number | null;
+  invitedByName?: string | null;
+  invitedAt?: string | null;
+  respondedAt?: string | null;
+  assignedByUserId?: number | null;
+  assignedByName?: string | null;
+  assignedAt?: string | null;
+  note?: string | null;
+  departmentAssignment?: {
+    departmentId: number;
+    departmentName: string;
+    leaderUserId: number;
+    assignedStaffUserId?: number | null;
+    assignedStaffName?: string | null;
+  } | null;
+}
+
+/** A user eligible to be invited/assigned as a supporting participant, with conflict info. */
+export interface ParticipantCandidate {
+  userId: number;
+  fullName: string;
+  email: string;
+  phone?: string | null;
+  studentCode?: string | null;
+  roleCode: string;
+  subRole?: string | null;
+  departmentId?: number | null;
+  departmentName?: string | null;
+  campusId?: number | null;
+  campusName?: string | null;
+  conflictCount: number;
+  hasPrivateConflict: boolean;
+  conflictSummary?: string | null;
+  canInvite: boolean;
+  disabledReason?: string | null;
+}
+
+/** A GENERAL department the host can invite to support, with its resolved active leader. */
+export interface SupportDepartment {
+  departmentId: number;
+  departmentName: string;
+  campusId: number;
+  campusName?: string | null;
+  leaderUserId?: number | null;
+  leaderName?: string | null;
+  leaderEmail?: string | null;
+  canInvite: boolean;
+  disabledReason?: string | null;
+}
+
+export type InviteParticipantType = 'IC_SUPPORT' | 'STUDENT' | 'DEPT_SUPPORT';
+
+export interface InviteVisitParticipantPayload {
+  participantType: InviteParticipantType;
+  userId?: number;
+  departmentId?: number;
+  message?: string | null;
+}
+
+export interface InviteVisitParticipantResult {
+  participantId: number;
+  userId: number;
+  participantRole: string;
+  status: string;
+  emailQueued: boolean;
+  emailRecipient: string;
+  message: string;
 }
 
 /**

@@ -9,9 +9,16 @@ using PEMS.Application.Delegations.Commands.ProcessVisitRequest;
 using PEMS.Application.Delegations.Commands.RejectVisitRequest;
 using PEMS.Application.Delegations.Commands.SaveVisitAgenda;
 using PEMS.Application.Delegations.Commands.UpdateRegistrantInfo;
+using PEMS.Application.Delegations.Commands.InviteVisitParticipant;
+using PEMS.Application.Delegations.Commands.RemoveVisitParticipant;
 using PEMS.Application.Delegations.Queries.GetVisitProcessDetail;
+using PEMS.Application.Delegations.Queries.GetAgendaResponsibleCandidates;
 using PEMS.Application.Delegations.Commands.RespondVisitParticipantInvitation;
 using PEMS.Application.Delegations.Queries.GetHostCandidates;
+using PEMS.Application.Delegations.Queries.GetVisitInstanceParticipants;
+using PEMS.Application.Delegations.Queries.GetParticipantCandidates;
+using PEMS.Application.Delegations.Queries.GetSupportDepartments;
+using PEMS.Application.Delegations.Queries.GetDepartmentStaffCandidates;
 using PEMS.Application.Delegations.Queries.ViewMyVisitInvitations;
 using PEMS.Domain.Constants;
 using System.Collections.Generic;
@@ -126,6 +133,80 @@ namespace PEMS.Api.Controllers
             var result = await _mediator.Send(new GetVisitProcessDetailQuery(visitRequestId, visitInstanceId), cancellationToken);
             return Ok(result);
         }
+
+        // Valid "Người phụ trách" candidates for the agenda editor: the active host + ACCEPTED
+        // supporting participants of THIS instance only (never the whole-system user list). Scope
+        // enforced in the handler (403 if the caller has no relation to the instance).
+        [HttpGet("visit-instances/{visitInstanceId}/agenda-responsible-candidates")]
+        public async Task<IActionResult> GetAgendaResponsibleCandidates(ulong visitInstanceId, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(new GetAgendaResponsibleCandidatesQuery(visitInstanceId), cancellationToken);
+            return Ok(result);
+        }
+
+        // ── VisitProcess "Thành phần tham gia": participant list + invite candidate searches ──
+        // The instance's host snapshot + invited supporters (scope enforced in the handler: internal
+        // relation only). Used on first load and for cheap refetch after invite/remove/assign.
+        [HttpGet("visit-instances/{visitInstanceId}/participants")]
+        public async Task<IActionResult> GetVisitInstanceParticipants(ulong visitInstanceId, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(new GetVisitInstanceParticipantsQuery(visitInstanceId), cancellationToken);
+            return Ok(result);
+        }
+
+        // Candidate search for the host's invite dropdowns. type = IC_SUPPORT | STUDENT. Each candidate
+        // carries schedule-conflict info against the instance window. Host-only (re-validated server-side).
+        [HttpGet("visit-instances/{visitInstanceId}/participant-candidates")]
+        public async Task<IActionResult> GetParticipantCandidates(
+            ulong visitInstanceId, [FromQuery] string type, [FromQuery] string? keyword, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(new GetParticipantCandidatesQuery(visitInstanceId, type, keyword), cancellationToken);
+            return Ok(result);
+        }
+
+        // GENERAL departments of the instance's campus + their resolved active leader (the real
+        // invitee). Host-only (re-validated server-side).
+        [HttpGet("visit-instances/{visitInstanceId}/support-departments")]
+        public async Task<IActionResult> GetSupportDepartments(
+            ulong visitInstanceId, [FromQuery] string? keyword, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(new GetSupportDepartmentsQuery(visitInstanceId, keyword), cancellationToken);
+            return Ok(result);
+        }
+
+        // Department staff the calling Department Leader may assign (own department/campus). Leader-only.
+        [HttpGet("visit-instances/{visitInstanceId}/department-staff-candidates")]
+        public async Task<IActionResult> GetDepartmentStaffCandidates(
+            ulong visitInstanceId, [FromQuery] string? keyword, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(new GetDepartmentStaffCandidatesQuery(visitInstanceId, keyword), cancellationToken);
+            return Ok(result);
+        }
+
+        // Host invites a supporting participant (IC_SUPPORT/STUDENT by userId, DEPT_SUPPORT by
+        // departmentId → backend resolves the leader). Inserts the participant, sends the invitation
+        // email with one-time Accept/Decline tokens, and audits. Host-only (re-validated server-side).
+        [HttpPost("visit-instances/{visitInstanceId}/participants/invite")]
+        public async Task<IActionResult> InviteVisitParticipant(
+            ulong visitInstanceId, [FromBody] InviteVisitParticipantBody body, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(
+                new InviteVisitParticipantCommand(visitInstanceId, body.ParticipantType, body.UserId, body.DepartmentId, body.Message),
+                cancellationToken);
+            return Ok(result);
+        }
+
+        // Host withdraws a still-pending (INVITED) participant they invited. Host-only; never the main host.
+        [HttpPatch("visit-instances/{visitInstanceId}/participants/{participantId}/remove")]
+        public async Task<IActionResult> RemoveVisitParticipant(
+            ulong visitInstanceId, ulong participantId, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(new RemoveVisitParticipantCommand(visitInstanceId, participantId), cancellationToken);
+            return Ok(result);
+        }
+        // NB: Department-Leader staff assignment is served by the existing
+        // VisitInvitationsController: POST /api/visit-invitations/{participantId}/assign-department-staff
+        // (login required). Candidate list: GET visit-instances/{id}/department-staff-candidates above.
 
         // Upsert the instance's agenda (Host only, prep window). Saves setup ONLY — does not change stage.
         [HttpPost("{visitRequestId}/campuses/{visitInstanceId}/agenda")]
@@ -391,4 +472,8 @@ namespace PEMS.Api.Controllers
 
     /// <summary>Request body for the UC-27 respond-to-invitation endpoint (decline requires a reason).</summary>
     public sealed record RespondInvitationBody(bool Accept, string? DeclineReason);
+
+    /// <summary>Request body for inviting a supporting participant. userId is required for
+    /// IC_SUPPORT/STUDENT; departmentId for DEPT_SUPPORT (backend resolves the leader).</summary>
+    public sealed record InviteVisitParticipantBody(string ParticipantType, ulong? UserId, ulong? DepartmentId, string? Message);
 }

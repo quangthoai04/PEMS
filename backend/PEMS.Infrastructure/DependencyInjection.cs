@@ -43,6 +43,7 @@ public static class DependencyInjection
         // Cross-cutting
         services.AddSingleton<IDateTimeService, DateTimeService>();
         services.AddScoped<IEmailService, EmailService>();
+        services.AddScoped<IEmailActionTokenService, EmailActionTokenService>();
         services.AddHttpContextAccessor();
         services.AddHttpClient();
 

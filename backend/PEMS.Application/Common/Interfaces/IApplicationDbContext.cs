@@ -56,6 +56,7 @@ public interface IApplicationDbContext
     DbSet<PhotoFaceTag> PhotoFaceTags { get; }
     DbSet<EmailTemplate> EmailTemplates { get; }
     DbSet<SentEmail> SentEmails { get; }
+    DbSet<SentEmailRecipient> SentEmailRecipients { get; }
     DbSet<EmailActionToken> EmailActionTokens { get; }
     DbSet<Notification> Notifications { get; }
     DbSet<CalendarEvent> CalendarEvents { get; }
