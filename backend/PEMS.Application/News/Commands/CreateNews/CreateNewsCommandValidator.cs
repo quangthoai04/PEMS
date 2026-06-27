@@ -18,8 +18,7 @@ public sealed class CreateNewsCommandValidator : AbstractValidator<CreateNewsCom
             .MaximumLength(150).WithMessage("Tiêu đề không được vượt quá 150 ký tự.");
 
         RuleFor(x => x.Summary)
-            .NotEmpty().WithMessage("Mô tả ngắn không được để trống.")
-            .MaximumLength(250).WithMessage("Mô tả ngắn không được vượt quá 250 ký tự.");
+            .NotEmpty().WithMessage("Mô tả ngắn không được để trống.");
 
         RuleFor(x => x.ContentSections)
             .NotNull().WithMessage("Nội dung chi tiết là bắt buộc.")

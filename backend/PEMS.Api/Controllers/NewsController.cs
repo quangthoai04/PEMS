@@ -1,5 +1,6 @@
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using PEMS.Api.Filters;
 using PEMS.Application.Common.Security;
@@ -37,6 +38,29 @@ namespace PEMS.Api.Controllers
         [HttpPost("visit-instance-news/{newsId}/submit-review")]
         public async Task<IActionResult> SubmitVisitInstanceNews(ulong newsId, CancellationToken cancellationToken)
             => Ok(await _mediator.Send(new SubmitVisitInstanceNewsCommand(newsId), cancellationToken));
+
+        // UC Upload News Cover Image: POST /api/news/cover-upload
+        [HttpPost("cover-upload")]
+        [RoleAuthorize(EffectiveRole.Staff, EffectiveRole.Student)]
+        [RequestSizeLimit(6 * 1024 * 1024)]
+        [Consumes("multipart/form-data")]
+        public async Task<IActionResult> UploadNewsCoverImage(
+            [FromForm] IFormFile file,
+            CancellationToken cancellationToken)
+        {
+            if (file is null || file.Length == 0)
+                return BadRequest(new { message = "Tệp tải lên rỗng hoặc không hợp lệ." });
+
+            using var ms = new MemoryStream();
+            await file.CopyToAsync(ms, cancellationToken);
+
+            var result = await _mediator.Send(
+                new PEMS.Application.News.Commands.UploadNewsCoverImage.UploadNewsCoverImageCommand(
+                    ms.ToArray(), file.FileName, file.ContentType),
+                cancellationToken);
+
+            return Ok(result);
+        }
 
         // UC-88: View News List
         [HttpGet]
@@ -157,12 +181,26 @@ namespace PEMS.Api.Controllers
             return Ok(result);
         }
 
-        [HttpPost("editnews")]
+        // UC Edit News: PUT /api/news/{newsId}
+        [HttpPut("{newsId}")]
+        [RoleAuthorize(EffectiveRole.Staff, EffectiveRole.Student)]
         public async Task<IActionResult> EditNews(
-            [FromBody] PEMS.Application.News.Commands.EditNews.EditNewsCommand command,
+            ulong newsId,
+            [FromBody] EditNewsBody body,
             CancellationToken cancellationToken)
         {
+            var command = new PEMS.Application.News.Commands.EditNews.EditNewsCommand
+            {
+                NewsId          = newsId,
+                RowVersion      = body.RowVersion,
+                CoverFileId     = body.CoverFileId,
+                Title           = body.Title ?? string.Empty,
+                Summary         = body.Summary,
+                ContentSections = body.ContentSections
+                    ?? Array.Empty<PEMS.Application.News.Commands.EditNews.EditNewsContentSectionDto>()
+            };
             var result = await _mediator.Send(command, cancellationToken);
+            if (!result.Success) return Conflict(result);
             return Ok(result);
         }
     }
@@ -171,4 +209,10 @@ namespace PEMS.Api.Controllers
     public sealed record UpdateVisitInstanceNewsBody(string Title, string? Summary, string? Body, int RowVersion);
     public sealed record ReviewNewsBody(string Action, string? Reason, int RowVersion);
     public sealed record ChangeVisibilityBody(string TargetStatus, int RowVersion);
+    public sealed record EditNewsBody(
+        int    RowVersion,
+        ulong? CoverFileId,
+        string? Title,
+        string? Summary,
+        IReadOnlyList<PEMS.Application.News.Commands.EditNews.EditNewsContentSectionDto>? ContentSections);
 }

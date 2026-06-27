@@ -109,7 +109,7 @@ public sealed class ViewNewsDetailsQueryHandler
                 .Select(f => new NewsFileDto
                 {
                     FileId       = f.FileId,
-                    Url          = f.WebViewUrl,
+                    Url          = $"/api/files/{f.FileId}/content",
                     ThumbnailUrl = f.ThumbnailUrl,
                     FileName     = f.OriginalFilename,
                     MimeType     = f.MimeType
@@ -166,7 +166,7 @@ public sealed class ViewNewsDetailsQueryHandler
                     {
                         SectionFileId = f.SectionFileId,
                         FileId        = f.FileId,
-                        Url           = f.WebViewUrl,
+                        Url           = $"/api/files/{f.FileId}/content",
                         ThumbnailUrl  = f.ThumbnailUrl,
                         FileName      = f.OriginalFilename,
                         MimeType      = f.MimeType,

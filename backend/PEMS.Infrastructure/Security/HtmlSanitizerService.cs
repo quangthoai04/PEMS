@@ -65,11 +65,14 @@ public sealed class HtmlSanitizerService : IHtmlSanitizerService
         sanitizer.AllowedSchemes.Add("tel");
 
         // Allow data:image/* (ReactQuill embeds images as base64) but block all other data: payloads.
-        sanitizer.RemovingUrlAttribute += (_, args) =>
+        sanitizer.RemovingAttribute += (_, args) =>
         {
-            var v = args.Value?.TrimStart() ?? string.Empty;
-            if (v.StartsWith("data:image/", StringComparison.OrdinalIgnoreCase))
-                args.Cancel = true; // cancel removal → keep the attribute
+            if (args.Reason == RemoveReason.NotAllowedUrlValue)
+            {
+                var v = args.Attribute.Value?.TrimStart() ?? string.Empty;
+                if (v.StartsWith("data:image/", StringComparison.OrdinalIgnoreCase))
+                    args.Cancel = true; // cancel removal → keep the attribute
+            }
         };
 
         return sanitizer;

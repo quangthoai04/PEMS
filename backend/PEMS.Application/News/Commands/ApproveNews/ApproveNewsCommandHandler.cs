@@ -77,8 +77,6 @@ public sealed class ApproveNewsCommandHandler
 
         news.ReviewedBy = currentUserId;
         news.ReviewedAt = now;
-        news.UpdatedAt  = now;
-        news.UpdatedBy  = currentUserId;
         news.RowVersion++;
 
         // Notify author

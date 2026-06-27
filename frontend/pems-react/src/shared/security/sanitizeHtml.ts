@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Dependency-free HTML sanitizer for rich-text we render via
  * `dangerouslySetInnerHTML` (e.g. News article body).
  *
@@ -25,6 +25,16 @@ const URL_ATTRS = ['href', 'src', 'xlink:href', 'srcset', 'action', 'formaction'
 
 // Whitespace/control chars stripped before the scheme test (defeats "java\tscript:").
 const WHITESPACE = /\s+/g;
+
+// Invisible Unicode characters that Quill or Vietnamese IMEs (e.g. Unikey) can
+// silently insert mid-word. Browsers treat these as line-break opportunities,
+// causing Vietnamese syllables to split across lines even with word-break: normal.
+//   U+200B  ZERO WIDTH SPACE         — explicit break opportunity
+//   U+200C  ZERO WIDTH NON-JOINER    — may create break opportunity
+//   U+200D  ZERO WIDTH JOINER        — safe to strip from plain text
+//   U+FEFF  ZERO WIDTH NO-BREAK SPACE / BOM — stray BOM from Quill internals
+//   U+00AD  SOFT HYPHEN              — causes hyphen-break even with hyphens:none
+const INVISIBLE_CHARS = /[​‌‍﻿­]/g;
 
 function cleanElement(el: Element): void {
   // Remove inline event handlers and unsafe URL attributes.
@@ -59,13 +69,24 @@ function cleanElement(el: Element): void {
  */
 export function sanitizeHtml(input: string | null | undefined): string {
   if (!input) return '';
+
+  // Quill replaces every regular space with &nbsp; (U+00A0) in its HTML output.
+  // &nbsp; is a non-breaking space — browsers cannot wrap lines at it regardless of CSS.
+  // This turns each paragraph into one unbreakable block, forcing overflow-wrap to cut
+  // mid-syllable. Convert back to regular spaces before any further processing.
+  // Also strip invisible break characters (ZWSP etc.) that IMEs may insert mid-syllable.
+  const cleaned = input
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/ /g, ' ')
+    .replace(INVISIBLE_CHARS, '');
+
   if (typeof window === 'undefined' || typeof window.DOMParser === 'undefined') {
-    return input
+    return cleaned
       .replace(/<\s*(script|iframe|object|embed|style)[\s\S]*?<\s*\/\s*\1\s*>/gi, '')
       .replace(/\son\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '');
   }
 
-  const doc = new window.DOMParser().parseFromString(input, 'text/html');
+  const doc = new window.DOMParser().parseFromString(cleaned, 'text/html');
 
   for (const node of Array.from(doc.body.querySelectorAll('*'))) {
     if (FORBIDDEN_TAGS.has(node.tagName)) {

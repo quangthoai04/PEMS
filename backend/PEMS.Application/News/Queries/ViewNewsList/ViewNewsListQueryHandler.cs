@@ -274,20 +274,12 @@ public sealed class ViewNewsListQueryHandler
         return query.Where(n => n.Status == status);
     }
 
-    private async Task<bool> ResolveCanCreateNewsAsync(
+    private static Task<bool> ResolveCanCreateNewsAsync(
         string viewerMode,
         ulong currentUserId,
         CancellationToken cancellationToken)
     {
-        if (viewerMode != NewsConstants.ViewerMode.Author)
-            return false;
-
-        return await _dbContext.VisitParticipants
-            .AsNoTracking()
-            .AnyAsync(vp =>
-                vp.UserId == currentUserId &&
-                vp.Status == ParticipantStatuses.Accepted,
-                cancellationToken);
+        return Task.FromResult(viewerMode == NewsConstants.ViewerMode.Author);
     }
 
     private static NewsAvailableActionsDto BuildActions(

@@ -5,6 +5,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import toast, { Toaster } from 'react-hot-toast';
 import { sanitizeHtml } from '../../../shared/security/sanitizeHtml';
 import httpClient from '../../../shared/api/httpClient';
+import { useAuthenticatedImage } from '../../../shared/hooks/useAuthenticatedImage';
+import { useAuth } from '../../../shared/hooks/useAuth';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -171,11 +173,32 @@ function RejectPopup({ onConfirm, onCancel, loading }: { onConfirm: (reason: str
   );
 }
 
+// ─── Authenticated image wrapper ─────────────────────────────────────────────
+
+function AuthenticatedImage({ url, alt, className, style }: {
+  url?: string | null;
+  alt?: string;
+  className?: string;
+  style?: React.CSSProperties;
+}) {
+  // External URLs (Google Drive, CDN, etc.) must NOT be fetched through httpClient
+  // because it would attach our JWT and trigger a spurious 401 → logout cycle.
+  const isExternal = !!url && (url.startsWith('http://') || url.startsWith('https://'));
+  const authSrc = useAuthenticatedImage(isExternal ? null : (url ?? null));
+
+  if (!url) return null;
+  if (isExternal) return <img src={url} alt={alt ?? ''} className={className} style={style} />;
+  if (!authSrc) return null;
+  return <img src={authSrc} alt={alt ?? ''} className={className} style={style} />;
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export function NewsDetailDashboard() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const isStaffLeader = user?.roleCode === 'STAFF' && user?.subRole === 'LEADER';
 
   const [news, setNews] = useState<NewsDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -350,7 +373,7 @@ export function NewsDetailDashboard() {
           </div>
         </div>
 
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 sm:p-12">
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 sm:p-12 overflow-hidden">
 
           {/* Title */}
           <h1 className="text-3xl md:text-4xl font-bold text-gray-900 leading-tight mb-6 mt-0">
@@ -373,7 +396,7 @@ export function NewsDetailDashboard() {
               </div>
             )}
             <StatusBadge status={news.status} label={news.statusLabel} />
-            {news.updatedAt && (
+            {news.updatedAt && !isStaffLeader && news.updatedAt !== news.reviewedAt && (
               <>
                 <span className="text-gray-300">|</span>
                 <div className="flex items-center gap-1 text-gray-500 text-[14px] font-medium italic">
@@ -408,7 +431,7 @@ export function NewsDetailDashboard() {
           {/* Cover image */}
           {news.coverFile?.url && (
             <div className="mb-10 rounded-lg overflow-hidden border border-gray-100 shadow-sm">
-              <img src={news.coverFile.url} alt={news.title} className="w-full h-auto object-cover" />
+              <AuthenticatedImage url={news.coverFile.url} alt={news.title} className="w-full h-auto object-cover" />
             </div>
           )}
 
@@ -419,11 +442,11 @@ export function NewsDetailDashboard() {
                 <h3 className="text-2xl font-bold text-gray-900 mb-4">{section.sectionTitle}</h3>
                 <div dangerouslySetInnerHTML={{ __html: sanitizeHtml(section.sectionBodyHtml) }} />
                 {section.files.filter(f => f.usageType === 'INLINE_IMAGE' && f.url).map(f => (
-                  <img
+                  <AuthenticatedImage
                     key={f.sectionFileId}
-                    src={f.url}
+                    url={f.url}
                     alt={f.fileName ?? ''}
-                    className="w-full rounded-lg mt-4 mb-2 border border-gray-100 shadow-sm"
+                    className="rounded-lg mt-4 mb-2 border border-gray-100 shadow-sm mx-auto block" style={{ maxWidth: '65%', maxHeight: '380px', objectFit: 'contain' }}
                   />
                 ))}
               </div>
@@ -431,8 +454,24 @@ export function NewsDetailDashboard() {
           </div>
 
           <style>{`
+            .news-content { max-width: 100%; min-width: 0; overflow-x: hidden; }
+            .news-content p,
+            .news-content span,
+            .news-content strong,
+            .news-content b,
+            .news-content em,
+            .news-content i,
+            .news-content u,
+            .news-content s,
+            .news-content li,
+            .news-content h1,
+            .news-content h2,
+            .news-content h3,
+            .news-content h4 { white-space: normal !important; word-break: normal !important; overflow-wrap: break-word !important; hyphens: none !important; }
             .news-content p { font-size: 1.05rem; margin-bottom: 1.25rem; line-height: 1.8; }
             .news-content blockquote { border-left: 4px solid #f37021; padding: 1.25rem; font-style: italic; color: #4b5563; margin: 2rem 0; background-color: #fff7ed; border-radius: 0 0.5rem 0.5rem 0; }
+            .news-content img { max-width: 100%; height: auto; object-fit: contain; border-radius: 0.5rem; display: block; margin: 1rem auto; }
+            .news-content a { word-break: normal !important; overflow-wrap: break-word !important; white-space: normal !important; hyphens: none !important; }
           `}</style>
 
           <div className="h-[1px] bg-gray-200 w-full mt-12 mb-6" />
