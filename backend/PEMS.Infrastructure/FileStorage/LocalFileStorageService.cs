@@ -78,9 +78,9 @@ public sealed class LocalFileStorageService : IFileStorageService
             return null;
         }
 
-        if (string.Equals(file.StorageProvider, "GOOGLE_DRIVE", StringComparison.OrdinalIgnoreCase)
-            && !string.IsNullOrWhiteSpace(file.ExternalFileId))
+        if (string.Equals(file.StorageProvider, "GOOGLE_DRIVE", StringComparison.OrdinalIgnoreCase))
         {
+            if (string.IsNullOrWhiteSpace(file.ExternalFileId)) return null;
             try
             {
                 using var scope = _serviceProvider.CreateScope();
@@ -94,7 +94,7 @@ public sealed class LocalFileStorageService : IFileStorageService
             }
         }
 
-        // Remote provider (e.g. Google Drive without external_file_id or other): fetch the file bytes over HTTP.
+        // Remote provider (e.g. other than Google Drive): fetch the file bytes over HTTP.
         var url = !string.IsNullOrWhiteSpace(file.DownloadUrl) ? file.DownloadUrl : file.WebViewUrl;
         if (string.IsNullOrWhiteSpace(url)) return null;
         try

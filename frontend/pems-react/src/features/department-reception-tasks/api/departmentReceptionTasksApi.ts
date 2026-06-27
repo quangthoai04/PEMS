@@ -97,5 +97,19 @@ export const departmentReceptionTasksApi = {
   declineAssignment: async (logisticsItemId: number | string, reason: string) => {
     const { data } = await httpClient.post<any>(API_ENDPOINTS.departmentReceptionTasks.declineAssignment(logisticsItemId), { reason });
     return data;
+  },
+
+  signHandover: async (
+    logisticsItemId: number | string,
+    handoverType: 'BORROW' | 'RETURN',
+    signerSide: 'BORROWER' | 'PROVIDER',
+    note?: string
+  ) => {
+    const { data } = await httpClient.post<any>(API_ENDPOINTS.departmentReceptionTasks.signHandover(logisticsItemId), {
+      handoverType,
+      signerSide,
+      note
+    });
+    return data;
   }
 };

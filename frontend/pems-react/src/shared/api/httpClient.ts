@@ -6,9 +6,6 @@ const baseURL = import.meta.env.VITE_API_BASE_URL || '/api';
 
 const httpClient = axios.create({
   baseURL,
-  headers: {
-    'Content-Type': 'application/json',
-  },
 });
 
 httpClient.interceptors.request.use(authInterceptor);

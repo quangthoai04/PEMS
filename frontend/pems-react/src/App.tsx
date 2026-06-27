@@ -5,6 +5,7 @@
 
 import React, { useEffect } from 'react';
 import { Routes, Route, useLocation } from 'react-router-dom';
+import { Toaster } from 'react-hot-toast';
 import { Header } from './components/layout/Header';
 import { Footer } from './components/layout/Footer';
 import { HomePage } from './pages/HomePage';
@@ -29,6 +30,7 @@ import { CreatePartner } from './pages/dashboard/partners/CreatePartner';
 import { PartnerDetail } from './pages/dashboard/partners/PartnerDetail';
 import { DepartmentManagement } from './pages/dashboard/departments/DepartmentManagement';
 import { DepartmentDetailDashboard } from './pages/dashboard/departments/DepartmentDetailDashboard';
+import { DepartmentReportDashboard } from './pages/dashboard/departments/DepartmentReportDashboard';
 import { TaskDetail } from './pages/dashboard/departments/TaskDetail';
 import { TaskInvitationDetail } from './pages/dashboard/departments/TaskInvitationDetail';
 import { VisitProcess } from './pages/dashboard/visit/VisitProcess';
@@ -103,6 +105,7 @@ export default function App() {
 
   return (
     <div className="font-sans text-gray-900 bg-white min-h-screen flex flex-col">
+      <Toaster position="top-right" containerStyle={{ zIndex: 9999 }} />
       <ScrollToTop />
 
       {/* Conditionally render Header and Footer based on route */}
@@ -166,7 +169,7 @@ export default function App() {
             <Route path="gallery" element={<GalleryManagement />} />
             <Route path="gallery/locations" element={<LocationManagement />} />
             <Route path="minutes" element={<MinuteManagement />} />
-            <Route path="reports" element={<ProtectedRoute><ReportManagement /></ProtectedRoute>} />
+            <Route path="reports" element={<ProtectedRoute>{isDeptLeader ? <DepartmentReportDashboard /> : <ReportManagement />}</ProtectedRoute>} />
             <Route path="feedback" element={<FeedbackManagement />} />
             <Route path="feedback/:id" element={<FeedbackDetail />} />
             <Route path="apis" element={<ProtectedRoute roles={['ADMIN']}><ApiManagement /></ProtectedRoute>} />

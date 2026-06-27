@@ -12,10 +12,13 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 // @ts-ignore - react-quill-new ships without bundled types in this project
 import ReactQuill from 'react-quill-new';
 import 'react-quill-new/dist/quill.snow.css';
-import { X, Loader2, Paperclip, Send, Trash2, Image as ImageIcon } from 'lucide-react';
+import { X, Loader2, Paperclip, Send, Trash2, Image as ImageIcon, Eye, ChevronLeft } from 'lucide-react';
 import { emailDraftsApi, type EmailDraftAttachmentInput } from '../api/emailDraftsApi';
+import { emailsApi } from '../api/emailsApi';
 import { filesApi } from '../../../shared/api/filesApi';
+import { authStorage } from '../../../shared/auth/authStorage';
 import { contentIdForFile } from '../utils/inlineImages';
+import { ConfirmModal } from '../../../components/modals/ConfirmModal';
 
 type Toast = (type: 'success' | 'error' | 'warning' | 'info', msg: string) => void;
 
@@ -88,6 +91,10 @@ export function EmailComposeModal({
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
+  const [templates, setTemplates] = useState<{ emailTemplateId: number; name: string; templateCode?: string }[]>([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<number | null>(emailTemplateId || null);
+  const [confirmState, setConfirmState] = useState<{isOpen: boolean; onConfirm: () => void; message: string; title: string; variant?: 'warning' | 'danger' | 'default'}>({isOpen: false, onConfirm: () => {}, message: '', title: ''});
 
   const quillRef = useRef<any>(null);
   // src (data: URL) -> inline image identity, since quill strips data-* attributes off <img>.
@@ -107,8 +114,15 @@ export function EmailComposeModal({
     setAttachments([]);
     setDraftId(null);
     setSavedAt(null);
+    setShowPreview(false);
+    setSelectedTemplateId(emailTemplateId || null);
     inlineMapRef.current = new Map();
     dirtyRef.current = false;
+    
+    // Fetch ACTIVE templates
+    emailsApi.getEmailTemplateList({ page: 1, pageSize: 100, mode: 'use' })
+      .then(res => setTemplates(res.data.items || res.data.templates || []))
+      .catch(() => pushToast?.('info', 'Không tải được danh sách mẫu email. Bạn vẫn có thể soạn thủ công.'));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
@@ -140,7 +154,7 @@ export function EmailComposeModal({
       fileId: im.fileId, attachmentType: 'INLINE_IMAGE', contentId: im.contentId, displayOrder: 1000 + i,
     }));
     return {
-      emailTemplateId: emailTemplateId ?? null,
+      emailTemplateId: selectedTemplateId ?? null,
       relatedType: relatedType ?? null,
       relatedId: relatedId ?? null,
       subject,
@@ -193,16 +207,21 @@ export function EmailComposeModal({
       try {
         const uploaded = await filesApi.upload(file, 'EMAIL_INLINE');
         const cid = contentIdForFile(uploaded.fileId);
-        const dataUrl = await readAsDataUrl(file);
-        inlineMapRef.current.set(dataUrl, { fileId: uploaded.fileId, contentId: cid });
+        
+        const token = authStorage.getAccessToken();
+        const proxyUrl = `/api/files/${uploaded.fileId}/content?access_token=${token}`;
+        
+        inlineMapRef.current.set(proxyUrl, { fileId: uploaded.fileId, contentId: cid });
         const editor = quillRef.current?.getEditor?.();
         const range = editor?.getSelection?.(true);
         const index = range ? range.index : (editor?.getLength?.() ?? 0);
-        editor?.insertEmbed(index, 'image', dataUrl, 'user');
+        editor?.insertEmbed(index, 'image', proxyUrl, 'user');
         editor?.setSelection(index + 1, 0);
         scheduleSave();
-      } catch {
-        pushToast?.('error', 'Không thể tải ảnh lên. Vui lòng thử lại.');
+      } catch (err: any) {
+        const status = err.response?.status || 'Unknown';
+        const msg = err.response?.data?.message || err.message || 'Không có chi tiết lỗi';
+        pushToast?.('error', `Lỗi tải ảnh [${status}]: ${msg}`);
       } finally {
         setUploading(false);
       }
@@ -227,19 +246,38 @@ export function EmailComposeModal({
         }]);
       }
       scheduleSave();
-    } catch {
-      pushToast?.('error', 'Không thể tải tệp đính kèm. Vui lòng thử lại.');
+    } catch (err: any) {
+      const status = err.response?.status || 'Unknown';
+      const msg = err.response?.data?.message || err.message || 'Không có chi tiết lỗi';
+      pushToast?.('error', `Lỗi tải tệp đính kèm [${status}]: ${msg}`);
     } finally {
       setUploading(false);
     }
   }, [pushToast, scheduleSave]);
 
   const removeAttachment = (fileId: number) => {
-    setAttachments((prev) => prev.filter((a) => a.fileId !== fileId));
-    scheduleSave();
+    setConfirmState({
+      isOpen: true,
+      title: 'Xóa tệp đính kèm',
+      message: 'Bạn có chắc chắn muốn gỡ tệp đính kèm này?',
+      variant: 'danger',
+      onConfirm: () => {
+        setConfirmState(prev => ({...prev, isOpen: false}));
+        setAttachments((prev) => prev.filter((a) => a.fileId !== fileId));
+        scheduleSave();
+      }
+    });
   };
 
-  // ── Send ──────────────────────────────────────────────────────────────────
+  // ── Preview & Send ────────────────────────────────────────────────────────
+  const handlePreview = useCallback(() => {
+    const recipients = parseRecipients(toInput);
+    if (recipients.length === 0) { pushToast?.('error', 'Vui lòng nhập ít nhất một email người nhận hợp lệ.'); return; }
+    if (!subject.trim()) { pushToast?.('error', 'Tiêu đề email không được để trống.'); return; }
+    if (uploading) { pushToast?.('error', 'Vui lòng đợi tệp đính kèm tải lên xong.'); return; }
+    setShowPreview(true);
+  }, [toInput, subject, uploading, pushToast]);
+
   const handleSend = useCallback(async () => {
     const recipients = parseRecipients(toInput);
     if (recipients.length === 0) { pushToast?.('error', 'Vui lòng nhập ít nhất một email người nhận hợp lệ.'); return; }
@@ -272,10 +310,19 @@ export function EmailComposeModal({
   }, [toInput, subject, buildPayload, pushToast, onSent, onClose]);
 
   const handleDiscard = useCallback(async () => {
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    const id = draftIdRef.current;
-    if (id != null) { try { await emailDraftsApi.discardDraft(id); } catch { /* ignore */ } }
-    onClose();
+    setConfirmState({
+      isOpen: true,
+      title: 'Hủy email',
+      message: 'Email đang soạn sẽ bị hủy. Bạn có chắc chắn muốn hủy bỏ?',
+      variant: 'danger',
+      onConfirm: async () => {
+        setConfirmState(prev => ({...prev, isOpen: false}));
+        if (saveTimer.current) clearTimeout(saveTimer.current);
+        const id = draftIdRef.current;
+        if (id != null) { try { await emailDraftsApi.discardDraft(id); } catch { /* ignore */ } }
+        onClose();
+      }
+    });
   }, [onClose]);
 
   if (!open) return null;
@@ -302,100 +349,230 @@ export function EmailComposeModal({
           </div>
         </div>
 
-        <div className="space-y-4 overflow-y-auto px-6 py-4">
-          {/* Recipients */}
-          <div>
-            <label className="mb-1 block text-xs font-bold uppercase tracking-wide text-gray-500">
-              Người nhận {recipientCount > 0 && <span className="text-gray-400">({recipientCount})</span>}
-            </label>
-            <textarea
-              value={toInput}
-              onChange={(e) => { setToInput(e.target.value); scheduleSave(); }}
-              placeholder="email1@fpt.edu.vn, email2@fpt.edu.vn"
-              rows={2}
-              className="w-full resize-y rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 outline-none focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91]"
-            />
-          </div>
-
-          {/* Subject */}
-          <div>
-            <label className="mb-1 block text-xs font-bold uppercase tracking-wide text-gray-500">Tiêu đề</label>
-            <input
-              type="text"
-              value={subject}
-              maxLength={255}
-              onChange={(e) => { setSubject(e.target.value); scheduleSave(); }}
-              placeholder="Tiêu đề email…"
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 outline-none focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91]"
-            />
-          </div>
-
-          {/* Body (rich text) */}
-          <div>
-            <label className="mb-1 block text-xs font-bold uppercase tracking-wide text-gray-500">Nội dung</label>
-            <div className="rounded-lg border border-gray-200">
-              <ReactQuill
-                ref={quillRef}
-                theme="snow"
-                value={bodyHtml}
-                onChange={(v: string) => { setBodyHtml(v); scheduleSave(); }}
-                placeholder="Nhập nội dung email… (định dạng, chèn ảnh inline, liên kết)"
-                modules={modules}
-              />
-            </div>
-            <p className="mt-1 text-[11px] text-gray-400">
-              Ảnh chèn trong nội dung sẽ hiển thị inline trong email (qua cid). Tệp đính kèm thêm ở dưới.
-            </p>
-          </div>
-
-          {/* Attachments */}
-          <div>
-            <div className="mb-1 flex items-center justify-between">
-              <label className="text-xs font-bold uppercase tracking-wide text-gray-500">Tệp đính kèm</label>
-              <label className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-gray-300 px-2.5 py-1 text-xs font-semibold text-[#004c91] hover:bg-blue-50">
-                <Paperclip className="w-3.5 h-3.5" /> Thêm tệp
-                <input type="file" multiple className="hidden" onChange={(e) => { void onPickFiles(e.target.files); e.target.value = ''; }} />
-              </label>
-            </div>
-            {attachments.length === 0 ? (
-              <p className="text-xs text-gray-400">Chưa có tệp đính kèm.</p>
-            ) : (
-              <div className="flex flex-wrap gap-2">
-                {attachments.map((a) => (
-                  <span key={a.fileId} className="inline-flex max-w-[220px] items-center gap-2 rounded-lg border border-gray-200 bg-gray-50/70 px-2.5 py-1.5 text-xs">
-                    {a.mimeType?.startsWith('image/') ? <ImageIcon className="h-4 w-4 shrink-0 text-violet-500" /> : <Paperclip className="h-4 w-4 shrink-0 text-gray-400" />}
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate font-semibold text-gray-700">{a.name}</span>
-                      {a.size != null && <span className="block text-[10px] text-gray-400">{formatBytes(a.size)}</span>}
-                    </span>
-                    <button type="button" onClick={() => removeAttachment(a.fileId)} className="shrink-0 text-gray-400 hover:text-red-500" title="Xoá">
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  </span>
-                ))}
+        {showPreview ? (
+          <div className="flex flex-col h-full overflow-hidden">
+            <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+              <div className="bg-blue-50 border border-blue-100 rounded-lg p-4 mb-4">
+                <h4 className="text-sm font-bold text-[#004c91] mb-2">Xem trước email</h4>
+                <p className="text-xs text-gray-600">Kiểm tra kỹ nội dung và người nhận trước khi gửi chính thức.</p>
               </div>
-            )}
-          </div>
-        </div>
 
-        <div className="flex items-center justify-between gap-3 border-t border-gray-100 px-6 py-4">
-          <button type="button" onClick={handleDiscard} className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold text-gray-500 hover:bg-gray-100">
-            <Trash2 className="w-4 h-4" /> Huỷ nháp
-          </button>
-          <div className="flex items-center gap-2">
-            {uploading && <span className="inline-flex items-center gap-1 text-xs text-gray-400"><Loader2 className="w-3.5 h-3.5 animate-spin" /> Đang tải tệp…</span>}
-            <button
-              type="button"
-              onClick={handleSend}
-              disabled={sending || uploading}
-              className="inline-flex items-center gap-2 rounded-lg bg-[#004c91] px-5 py-2 text-sm font-bold text-white shadow-sm hover:bg-[#013565] disabled:opacity-60"
-            >
-              {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-              {sending ? 'Đang gửi…' : 'Gửi email'}
-            </button>
+              <div>
+                <label className="text-xs font-bold text-gray-500 uppercase">Người nhận:</label>
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {parseRecipients(toInput).map(email => (
+                    <span key={email} className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                      {email}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-gray-500 uppercase">Tiêu đề:</label>
+                <div className="mt-1 text-sm font-medium text-gray-900">{subject}</div>
+              </div>
+
+              {attachments.length > 0 && (
+                <div>
+                  <label className="text-xs font-bold text-gray-500 uppercase">Tệp đính kèm ({attachments.length}):</label>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {attachments.map(a => (
+                      <span key={a.fileId} className="inline-flex max-w-[220px] items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1.5 text-xs">
+                        {a.mimeType?.startsWith('image/') ? <ImageIcon className="h-4 w-4 shrink-0 text-violet-500" /> : <Paperclip className="h-4 w-4 shrink-0 text-gray-400" />}
+                        <span className="min-w-0 flex-1 block truncate font-medium text-gray-700">{a.name}</span>
+                        {a.size != null && <span className="text-[10px] text-gray-400 shrink-0">{formatBytes(a.size)}</span>}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="border-t border-gray-200 pt-4 mt-2">
+                <label className="text-xs font-bold text-gray-500 uppercase mb-2 block">Nội dung (HTML):</label>
+                <div className="bg-white rounded-lg border border-gray-200 p-4 min-h-[200px] text-sm text-gray-800 prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: bodyHtml }} />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between gap-3 border-t border-gray-100 px-6 py-4 bg-gray-50">
+              <button type="button" onClick={() => setShowPreview(false)} disabled={sending} className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-bold text-gray-600 border border-gray-300 hover:bg-white bg-gray-50 transition-colors disabled:opacity-50">
+                <ChevronLeft className="w-4 h-4" /> Quay lại sửa
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setConfirmState({
+                    isOpen: true,
+                    title: 'Xác nhận gửi',
+                    message: 'Bạn có chắc chắn muốn gửi email này?',
+                    variant: 'default',
+                    onConfirm: () => {
+                      setConfirmState(prev => ({...prev, isOpen: false}));
+                      handleSend();
+                    }
+                  });
+                }}
+                disabled={sending}
+                className="inline-flex items-center gap-2 rounded-lg bg-[#004c91] px-6 py-2 text-sm font-bold text-white shadow-sm hover:bg-[#013565] disabled:opacity-60 transition-colors"
+              >
+                {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                {sending ? 'Đang gửi…' : 'Xác nhận gửi'}
+              </button>
+            </div>
           </div>
-        </div>
+        ) : (
+          <>
+            <div className="space-y-4 overflow-y-auto px-6 py-4">
+              {/* Template Select */}
+              <div>
+                <label className="mb-1 block text-xs font-bold uppercase tracking-wide text-gray-500">Chọn mẫu email</label>
+                <select 
+                  value={selectedTemplateId || ''}
+                  onChange={(e) => {
+                    const tid = e.target.value ? Number(e.target.value) : null;
+                    const changeTemplate = async (targetId: number | null) => {
+                      if (targetId) {
+                        try {
+                          const res = await emailsApi.getEmailTemplateDetail(targetId);
+                          setSubject(res.data.subjectVi || res.data.subject || '');
+                          setBodyHtml(res.data.bodyVi || res.data.content || '');
+                          setSelectedTemplateId(targetId);
+                          scheduleSave();
+                        } catch (err: any) {
+                          const msg = err?.response?.data?.message || 'Không tải được mẫu email. Bạn vẫn có thể soạn thủ công.';
+                          pushToast?.('error', msg);
+                        }
+                      } else {
+                        setSelectedTemplateId(null);
+                      }
+                    };
+
+                    if (tid && (subject.trim() || bodyHtml.trim()) && tid !== selectedTemplateId) {
+                      setConfirmState({
+                        isOpen: true,
+                        title: 'Thay đổi mẫu email',
+                        message: 'Nội dung hiện tại sẽ được thay bằng mẫu đã chọn. Bạn có muốn tiếp tục?',
+                        variant: 'warning',
+                        onConfirm: () => {
+                          setConfirmState(prev => ({...prev, isOpen: false}));
+                          changeTemplate(tid);
+                        }
+                      });
+                    } else {
+                      changeTemplate(tid);
+                    }
+                  }}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 outline-none focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] bg-white cursor-pointer"
+                >
+                  <option value="">Không dùng mẫu / Soạn thủ công</option>
+                  {templates.map(t => (
+                    <option key={t.emailTemplateId} value={t.emailTemplateId}>{t.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Recipients */}
+              <div>
+                <label className="mb-1 block text-xs font-bold uppercase tracking-wide text-gray-500">
+                  Người nhận {recipientCount > 0 && <span className="text-gray-400">({recipientCount})</span>}
+                </label>
+                <textarea
+                  value={toInput}
+                  onChange={(e) => { setToInput(e.target.value); scheduleSave(); }}
+                  placeholder="email1@fpt.edu.vn, email2@fpt.edu.vn"
+                  rows={2}
+                  className="w-full resize-y rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 outline-none focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91]"
+                />
+              </div>
+
+              {/* Subject */}
+              <div>
+                <label className="mb-1 block text-xs font-bold uppercase tracking-wide text-gray-500">Tiêu đề</label>
+                <input
+                  type="text"
+                  value={subject}
+                  maxLength={255}
+                  onChange={(e) => { setSubject(e.target.value); scheduleSave(); }}
+                  placeholder="Tiêu đề email…"
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 outline-none focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91]"
+                />
+              </div>
+
+              {/* Body (rich text) */}
+              <div>
+                <label className="mb-1 block text-xs font-bold uppercase tracking-wide text-gray-500">Nội dung</label>
+                <div className="rounded-lg border border-gray-200">
+                  <ReactQuill
+                    ref={quillRef}
+                    theme="snow"
+                    value={bodyHtml}
+                    onChange={(v: string) => { setBodyHtml(v); scheduleSave(); }}
+                    placeholder="Nhập nội dung email… (định dạng, chèn ảnh inline, liên kết)"
+                    modules={modules}
+                  />
+                </div>
+                <p className="mt-1 text-[11px] text-gray-400">
+                  Ảnh chèn trong nội dung sẽ hiển thị inline trong email (qua cid). Tệp đính kèm thêm ở dưới.
+                </p>
+              </div>
+
+              {/* Attachments */}
+              <div>
+                <div className="mb-1 flex items-center justify-between">
+                  <label className="text-xs font-bold uppercase tracking-wide text-gray-500">Tệp đính kèm</label>
+                  <label className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-gray-300 px-2.5 py-1 text-xs font-semibold text-[#004c91] hover:bg-blue-50">
+                    <Paperclip className="w-3.5 h-3.5" /> Thêm tệp
+                    <input type="file" multiple className="hidden" onChange={(e) => { void onPickFiles(e.target.files); e.target.value = ''; }} />
+                  </label>
+                </div>
+                {attachments.length === 0 ? (
+                  <p className="text-xs text-gray-400">Chưa có tệp đính kèm.</p>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {attachments.map((a) => (
+                      <span key={a.fileId} className="inline-flex max-w-[220px] items-center gap-2 rounded-lg border border-gray-200 bg-gray-50/70 px-2.5 py-1.5 text-xs">
+                        {a.mimeType?.startsWith('image/') ? <ImageIcon className="h-4 w-4 shrink-0 text-violet-500" /> : <Paperclip className="h-4 w-4 shrink-0 text-gray-400" />}
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate font-semibold text-gray-700">{a.name}</span>
+                          {a.size != null && <span className="block text-[10px] text-gray-400">{formatBytes(a.size)}</span>}
+                        </span>
+                        <button type="button" onClick={() => removeAttachment(a.fileId)} className="shrink-0 text-gray-400 hover:text-red-500" title="Xoá">
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between gap-3 border-t border-gray-100 px-6 py-4">
+              <button type="button" onClick={handleDiscard} className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold text-gray-500 hover:bg-gray-100">
+                <Trash2 className="w-4 h-4" /> Huỷ nháp
+              </button>
+              <div className="flex items-center gap-2">
+                {uploading && <span className="inline-flex items-center gap-1 text-xs text-gray-400"><Loader2 className="w-3.5 h-3.5 animate-spin" /> Đang tải tệp…</span>}
+                <button
+                  type="button"
+                  onClick={handlePreview}
+                  disabled={uploading}
+                  className="inline-flex items-center gap-2 rounded-lg bg-[#004c91] px-5 py-2 text-sm font-bold text-white shadow-sm hover:bg-[#013565] disabled:opacity-60 transition-colors"
+                >
+                  <Eye className="w-4 h-4" /> Xem trước
+                </button>
+              </div>
+            </div>
+          </>
+        )}
       </div>
+      <ConfirmModal
+        isOpen={confirmState.isOpen}
+        onClose={() => setConfirmState(prev => ({...prev, isOpen: false}))}
+        onConfirm={confirmState.onConfirm}
+        title={confirmState.title}
+        message={confirmState.message}
+        variant={confirmState.variant}
+      />
     </div>
   );
 }

@@ -204,5 +204,6 @@ export const API_ENDPOINTS = {
     personalEvents: '/department/reception-tasks/personal-events',
     acceptAssignment: (logisticsItemId: string | number) => `/department/reception-tasks/requests/${logisticsItemId}/accept-assignment`,
     declineAssignment: (logisticsItemId: string | number) => `/department/reception-tasks/requests/${logisticsItemId}/decline-assignment`,
+    signHandover: (logisticsItemId: string | number) => `/department/reception-tasks/requests/${logisticsItemId}/handovers/sign`,
   },
 };

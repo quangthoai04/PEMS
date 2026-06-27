@@ -124,10 +124,10 @@ public sealed class PrepareVisitLogisticsCommandHandler
             .Where(u => u.UserId == actorId).Select(u => u.FullName)
             .FirstOrDefaultAsync(cancellationToken) ?? "Host";
 
-        var templateId = await _db.EmailTemplates
+        var template = await _db.EmailTemplates
             .Where(t => t.TemplateCode == EmailActionTemplates.LogisticsRequestToDepartment)
-            .Select(t => (ulong?)t.EmailTemplateId)
             .FirstOrDefaultAsync(cancellationToken);
+        var templateId = template?.EmailTemplateId;
 
         var now = _clock.UtcNow;
         var itemType = request.ItemType.Trim().ToUpperInvariant();
@@ -195,20 +195,54 @@ public sealed class PrepareVisitLogisticsCommandHandler
             // Email + notification only for SYSTEM_REQUEST. OFFLINE_COORDINATED leaves no email trail.
             if (!offline)
             {
+                var acceptRaw = _tokens.GenerateRawToken();
+                var declineRaw = _tokens.GenerateRawToken();
+                var groupKey = Guid.NewGuid().ToString("N");
+
+                var acceptUrl = _tokens.BuildPublicActionUrl(acceptRaw);
+                var declineUrl = _tokens.BuildPublicActionUrl(declineRaw);
                 var detailUrl = _tokens.BuildLogisticsDetailUrl(item.LogisticsItemId);
 
                 if (editedContent != null)
                 {
                     finalSubject = request.EmailOverride!.Subject!.Trim();
                     var content = EmailComposition.StripActionArtifacts(editedContent);
-                    finalBody = EmailComposition.BrandedShell(content + EmailComposition.DetailLinkBlock(detailUrl));
+                    finalBody = EmailComposition.BrandedShell(content + EmailComposition.LogisticsActionBlock(acceptUrl, declineUrl, detailUrl));
+                }
+                else if (template != null)
+                {
+                    var context = new System.Collections.Generic.Dictionary<string, string>
+                    {
+                        { "departmentLeaderName", leaderName ?? string.Empty },
+                        { "departmentHeadName", leaderName ?? string.Empty },
+                        { "requesterName", requesterName },
+                        { "DelegationName", delegationName },
+                        { "visitName", delegationName },
+                        { "CampusName", campusName },
+                        { "campusName", campusName },
+                        { "logisticsTitle", item.Title },
+                        { "logisticsItemTitle", item.Title },
+                        { "itemType", item.ItemType },
+                        { "quantity", item.Quantity?.ToString() ?? "—" },
+                        { "usageStartAt", usageStart?.ToString("HH:mm dd/MM/yyyy") ?? "—" },
+                        { "usageEndAt", usageEnd?.ToString("HH:mm dd/MM/yyyy") ?? "—" },
+                        { "detailUrl", detailUrl }
+                    };
+                    finalSubject = EmailComposition.RenderTemplate(template.SubjectVi ?? $"[PEMS] Yêu cầu hậu cần mới — {item.Title}", context, "LOGISTICS_REQUEST");
+                    var contentHtml = EmailComposition.RenderTemplate(template.BodyVi ?? string.Empty, context, "LOGISTICS_REQUEST");
+                    
+                    // The DB template might contain old detail link HTML. We strip it and always append the full 3-button logistics action block.
+                    contentHtml = EmailComposition.StripActionArtifacts(contentHtml);
+                    contentHtml += EmailComposition.LogisticsActionBlock(acceptUrl, declineUrl, detailUrl);
+
+                    finalBody = EmailComposition.BrandedShell(contentHtml);
                 }
                 else
                 {
                     finalSubject = $"[PEMS] Yêu cầu hậu cần mới — {item.Title}";
                     finalBody = EmailComposition.BrandedShell(
                         DefaultContentHtml(leaderName!, requesterName, delegationName, campusName, item, usageStart, usageEnd)
-                        + EmailComposition.DetailLinkBlock(detailUrl));
+                        + EmailComposition.LogisticsActionBlock(acceptUrl, declineUrl, detailUrl));
                 }
 
                 var sentEmail = new SentEmail
@@ -236,6 +270,7 @@ public sealed class PrepareVisitLogisticsCommandHandler
                     CreatedAt = now,
                 };
                 _db.SentEmailRecipients.Add(sentRecipient);
+                await _db.SaveChangesAsync(cancellationToken);
 
                 _db.Notifications.Add(new Notification
                 {
@@ -249,6 +284,14 @@ public sealed class PrepareVisitLogisticsCommandHandler
                     CreatedAt = now,
                 });
 
+                // Flush changes so sentEmail and sentRecipient get their autoincrement IDs
+                await _db.SaveChangesAsync(cancellationToken);
+
+                // Insert Email Action Tokens for Accept/Decline using the generated IDs
+                _db.EmailActionTokens.Add(NewToken(_tokens.Hash(acceptRaw), EmailIntendedActions.Accept, groupKey, item.LogisticsItemId, leaderUserId.Value, leaderEmail!, sentEmail.SentEmailId, sentRecipient.SentEmailRecipientId, now));
+                _db.EmailActionTokens.Add(NewToken(_tokens.Hash(declineRaw), EmailIntendedActions.Decline, groupKey, item.LogisticsItemId, leaderUserId.Value, leaderEmail!, sentEmail.SentEmailId, sentRecipient.SentEmailRecipientId, now));
+
+                await _db.SaveChangesAsync(cancellationToken);
                 sentEmailId = sentEmail.SentEmailId;
                 sentEmailRecipientId = sentRecipient.SentEmailRecipientId;
             }
@@ -376,4 +419,27 @@ public sealed class PrepareVisitLogisticsCommandHandler
 
     private static string? Truncate(string? s, int max)
         => string.IsNullOrEmpty(s) ? s : (s.Length <= max ? s : s.Substring(0, max));
+
+    private static EmailActionToken NewToken(
+        string tokenHash, string intendedAction, string groupKey,
+        ulong targetId, ulong targetUserId, string recipientEmail,
+        ulong sentEmailId, ulong sentEmailRecipientId, DateTime now)
+    {
+        return new EmailActionToken
+        {
+            TokenHash = tokenHash,
+            ActionContext = EmailActionContexts.LogisticsAssigneeResponse,
+            IntendedAction = intendedAction,
+            ActionGroupKey = groupKey,
+            TargetType = EmailActionTargetTypes.LogisticsItem,
+            TargetId = targetId,
+            RecipientUserId = targetUserId,
+            RecipientEmail = recipientEmail,
+            SentEmailId = sentEmailId,
+            SentEmailRecipientId = sentEmailRecipientId,
+            ExpiresAt = now.AddDays(14),
+            ResultStatus = "PENDING",
+            CreatedAt = now,
+        };
+    }
 }

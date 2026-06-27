@@ -41,7 +41,27 @@ public sealed class PrepareVisitLogisticsCommandValidator : AbstractValidator<Pr
             .MaximumLength(255);
 
         RuleFor(x => x.Quantity)
-            .Must(q => q is null || q >= 1).WithMessage("Số lượng phải lớn hơn hoặc bằng 1.");
+            .NotNull()
+            .When(x => !IsOffline(x) && (x.ItemType == "ROOM" || x.ItemType == "TRANSPORT" || x.ItemType == "MEAL" || x.ItemType == "EQUIPMENT"))
+            .WithMessage("LOGISTICS_QUANTITY_REQUIRED")
+            .Must(q => q is null || q >= 1)
+            .WithMessage("LOGISTICS_QUANTITY_INVALID");
+
+        RuleFor(x => x.UsageStartAt)
+            .NotNull()
+            .When(x => !IsOffline(x))
+            .WithMessage("LOGISTICS_USAGE_TIME_REQUIRED")
+            .Must(s => string.Compare(s, System.DateTime.Now.AddMinutes(-10).ToString("yyyy-MM-ddTHH:mm")) >= 0)
+            .When(x => !string.IsNullOrEmpty(x.UsageStartAt) && !IsOffline(x))
+            .WithMessage("LOGISTICS_USAGE_START_IN_PAST");
+
+        RuleFor(x => x.UsageEndAt)
+            .NotNull()
+            .When(x => !IsOffline(x))
+            .WithMessage("LOGISTICS_USAGE_TIME_REQUIRED")
+            .Must((x, end) => string.Compare(end, x.UsageStartAt) > 0)
+            .When(x => !string.IsNullOrEmpty(x.UsageStartAt) && !string.IsNullOrEmpty(x.UsageEndAt) && !IsOffline(x))
+            .WithMessage("LOGISTICS_USAGE_END_BEFORE_START");
 
         RuleFor(x => x.Priority)
             .Must(p => string.IsNullOrWhiteSpace(p) || LogisticsPriorities.All.Contains(p!.Trim().ToUpperInvariant()))

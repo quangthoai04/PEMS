@@ -83,7 +83,7 @@ export function SentEmailDetail() {
 
   const handleDelete = () => {
     // Navigation handling here
-    navigate('/dashboard/email?tab=sent');
+    navigate(-1);
   };
 
   if (isLoading) {
@@ -106,7 +106,7 @@ export function SentEmailDetail() {
       <div className="mb-6 flex items-center text-sm font-medium text-gray-500">
         <button onClick={() => navigate('/dashboard')} className="hover:text-[#004c91] transition-colors outline-none cursor-pointer">Dashboard</button>
         <span className="mx-2">/</span>
-        <button onClick={() => navigate('/dashboard/email?tab=sent')} className="hover:text-[#004c91] transition-colors outline-none cursor-pointer">Quản lý email</button>
+        <button onClick={() => navigate(-1)} className="hover:text-[#004c91] transition-colors outline-none cursor-pointer">Quản lý email</button>
         <span className="mx-2">/</span>
         <span className="text-[#004c91] font-bold">Chi tiết email đã gửi</span>
       </div>
@@ -115,7 +115,7 @@ export function SentEmailDetail() {
       <div className="flex items-center justify-between mb-6 pb-4 border-b border-gray-200">
         <div className="flex items-center gap-4">
           <button 
-            onClick={() => navigate('/dashboard/email?tab=sent')}
+            onClick={() => navigate(-1)}
             className="flex items-center gap-2 px-3 py-2 text-gray-500 hover:bg-gray-100 hover:text-[#004c91] rounded-lg transition-colors font-medium outline-none cursor-pointer"
           >
             <ChevronLeft className="w-5 h-5" />
@@ -158,11 +158,17 @@ export function SentEmailDetail() {
           <div className="flex items-start justify-between mb-8">
             <div className="flex items-start gap-4">
               <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-100 to-blue-200 shadow-sm flex items-center justify-center text-[#004c91] font-bold text-xl uppercase shrink-0">
-                {emailData.senderName ? emailData.senderName.charAt(0).toUpperCase() : '?'}
+                {emailData.sender?.fullName ? emailData.sender.fullName.charAt(0).toUpperCase() : '?'}
               </div>
               <div className="mt-0.5">
-                <div className="font-bold text-gray-900 text-[15px]">{emailData.senderName} <span className="text-gray-500 font-normal">&lt;{emailData.senderEmail}&gt;</span></div>
-                <div className="text-sm text-gray-500 mt-1">Đến: <span className="text-gray-700 font-medium">{emailData.to?.map((t: any) => t.email).join(', ') || 'N/A'}</span></div>
+                <div className="font-bold text-gray-900 text-[15px]">{emailData.sender?.fullName || 'Hệ thống'} <span className="text-gray-500 font-normal">&lt;{emailData.sender?.email || 'N/A'}&gt;</span></div>
+                <div className="text-sm text-gray-500 mt-1">Đến: <span className="text-gray-700 font-medium">{emailData.recipients?.filter((r: any) => r.recipientType === 'TO').map((r: any) => r.recipientEmail).join(', ') || 'N/A'}</span></div>
+                {emailData.recipients?.some((r: any) => r.recipientType === 'CC') && (
+                  <div className="text-sm text-gray-500">CC: <span className="text-gray-700 font-medium">{emailData.recipients.filter((r: any) => r.recipientType === 'CC').map((r: any) => r.recipientEmail).join(', ')}</span></div>
+                )}
+                {emailData.recipients?.some((r: any) => r.recipientType === 'BCC') && (
+                  <div className="text-sm text-gray-500">BCC: <span className="text-gray-700 font-medium">{emailData.recipients.filter((r: any) => r.recipientType === 'BCC').map((r: any) => r.recipientEmail).join(', ')}</span></div>
+                )}
               </div>
             </div>
             <div className="flex items-center gap-2 text-orange-800 font-bold text-sm bg-[#ffe4c4] px-4 py-2 rounded-xl border border-[#ffd2a0] shadow-[0_2px_10px_-4px_rgba(255,165,0,0.3)]">
@@ -173,9 +179,38 @@ export function SentEmailDetail() {
 
           <div 
             className="text-gray-800 text-[15px] p-6 rounded-xl border border-gray-100 bg-[#fbfcfd] mb-6 whitespace-pre-wrap"
-            dangerouslySetInnerHTML={{ __html: emailData.body || '' }}
+            dangerouslySetInnerHTML={{ __html: emailData.bodySnapshot || '' }}
           >
           </div>
+
+          {emailData.errorMessage && (
+            <div className="mb-6 p-4 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm font-medium">
+              <span className="font-bold block mb-1">Lỗi hệ thống:</span>
+              {emailData.errorMessage}
+            </div>
+          )}
+
+          {emailData.recipients && emailData.recipients.length > 0 && (
+            <div className="mb-6">
+              <h4 className="text-sm font-bold text-gray-700 mb-3 flex items-center gap-2"><List className="w-4 h-4" /> Chi tiết gửi tới người nhận:</h4>
+              <div className="flex flex-col gap-2">
+                {emailData.recipients.map((r: any, idx: number) => (
+                  <div key={idx} className="flex items-center justify-between bg-gray-50 rounded-lg p-3 text-sm border border-gray-100">
+                    <div>
+                      <span className="font-semibold text-gray-800">{r.recipientEmail}</span>
+                      <span className="ml-2 text-xs text-gray-500">({r.recipientType})</span>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      {r.errorMessage && <span className="text-xs text-red-500 max-w-xs truncate" title={r.errorMessage}>{r.errorMessage}</span>}
+                      <span className={`px-2 py-1 text-xs font-bold rounded-full ${r.deliveryStatus === 'SENT' ? 'bg-green-100 text-green-700' : r.deliveryStatus === 'FAILED' || r.deliveryStatus === 'BOUNCED' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                        {r.deliveryStatus}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {emailData.attachments && emailData.attachments.length > 0 && (
             <div className="mt-8 border-t border-dashed border-gray-200 pt-6">
@@ -184,15 +219,15 @@ export function SentEmailDetail() {
               </div>
               <div className="flex flex-wrap gap-4">
                 {emailData.attachments.map((file: any, i: number) => (
-                  <div key={i} className="flex items-center gap-3.5 p-3 border border-gray-200 rounded-xl bg-white hover:bg-blue-50 hover:border-blue-200 hover:shadow-sm transition-all group cursor-pointer w-[300px]">
+                  <a key={i} href={file.downloadUrl || `/api/files/${file.fileId}/download`} target="_blank" rel="noreferrer" className="flex items-center gap-3.5 p-3 border border-gray-200 rounded-xl bg-white hover:bg-blue-50 hover:border-blue-200 hover:shadow-sm transition-all group cursor-pointer w-[300px]">
                     <div className="w-10 h-10 rounded-lg bg-[#e6eff7] flex items-center justify-center text-[#004c91] group-hover:bg-[#004c91] group-hover:text-white transition-colors">
                       <FileText className="w-5 h-5" />
                     </div>
                     <div className="flex-1 overflow-hidden">
-                      <div className="text-sm font-semibold text-gray-800 truncate group-hover:text-[#004c91] transition-colors">{file.name}</div>
-                      <div className="text-xs text-gray-500 mt-0.5">{file.size}</div>
+                      <div className="text-sm font-semibold text-gray-800 truncate group-hover:text-[#004c91] transition-colors" title={file.fileName}>{file.fileName}</div>
+                      <div className="text-xs text-gray-500 mt-0.5">{file.sizeBytes != null ? (file.sizeBytes / 1024).toFixed(1) + ' KB' : 'N/A'}</div>
                     </div>
-                  </div>
+                  </a>
                 ))}
               </div>
             </div>

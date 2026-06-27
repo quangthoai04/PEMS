@@ -40,6 +40,17 @@ public static class AuthenticationExtensions
                 // Return a JSON body for 401 / 403 instead of an empty response.
                 options.Events = new JwtBearerEvents
                 {
+                    OnMessageReceived = context =>
+                    {
+                        var accessToken = context.Request.Query["access_token"];
+                        var path = context.HttpContext.Request.Path;
+                        if (!string.IsNullOrEmpty(accessToken) && 
+                            path.StartsWithSegments("/api/files"))
+                        {
+                            context.Token = accessToken;
+                        }
+                        return Task.CompletedTask;
+                    },
                     OnChallenge = async ctx =>
                     {
                         ctx.HandleResponse();

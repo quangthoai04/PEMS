@@ -36,6 +36,7 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetRequestDetail
         public string Date { get; set; }
         public string Title { get; set; }
         public string Description { get; set; }
+        public int Quantity { get; set; }
         public ulong? AssigneeId { get; set; }
         public string AssigneeName { get; set; }
         public string Status { get; set; }
@@ -45,6 +46,23 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetRequestDetail
         public ulong VisitInstanceId { get; set; }
         public ulong VisitRequestId { get; set; }
         public string? CancelReason { get; set; }
+        public string? ProposedUsageStartAt { get; set; }
+        public string? ProposedUsageEndAt { get; set; }
+        public string? ProposedDescription { get; set; }
+        public string? ProposedAt { get; set; }
+        public string? ProposedByName { get; set; }
+        public string? ProposedByRole { get; set; }
+        public string? ProposalResponse { get; set; }
+        public string? ProposalRespondedAt { get; set; }
+        public string? ProposalRespondedByName { get; set; }
+        public string? ProposalRespondedByRole { get; set; }
+        public string? ProposalResponseNote { get; set; }
+        public HandoverSignatureDto? BorrowProviderSignature { get; set; }
+        public HandoverSignatureDto? BorrowBorrowerSignature { get; set; }
+        public HandoverSignatureDto? ReturnProviderSignature { get; set; }
+        public HandoverSignatureDto? ReturnBorrowerSignature { get; set; }
+        public string? BorrowNote { get; set; }
+        public string? ReturnNote { get; set; }
 
         // Full Details
         public string RegistrantFullName { get; set; }
@@ -62,6 +80,13 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetRequestDetail
 
         // Latest attempt status for UI state decisions
         public string LatestAttemptStatus { get; set; }
+    }
+
+    public class HandoverSignatureDto
+    {
+        public ulong? UserId { get; set; }
+        public string? Name { get; set; }
+        public string? SignedAt { get; set; }
     }
 
     public class GetRequestDetailQueryHandler : IRequestHandler<GetRequestDetailQuery, RequestDetailDto>
@@ -132,6 +157,28 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetRequestDetail
             string latestAttemptStatus = attempts.OrderByDescending(a => a.AssignedAt).FirstOrDefault()?.Status ?? "";
 
             var camp = l.VisitInstance;
+            string? proposedByName = null;
+            string? proposedByRole = null;
+            if (l.ProposedBy.HasValue)
+            {
+                var proposedBy = await _context.Users
+                    .Include(u => u.Role)
+                    .FirstOrDefaultAsync(u => u.UserId == l.ProposedBy.Value, cancellationToken);
+                proposedByName = proposedBy?.FullName;
+                proposedByRole = proposedBy == null ? null : $"{proposedBy.Role?.RoleCode ?? ""}{(string.IsNullOrWhiteSpace(proposedBy.SubRole) ? "" : $" - {proposedBy.SubRole}")}";
+            }
+
+            string? responseByName = null;
+            string? responseByRole = null;
+            if (l.ProposalRespondedBy.HasValue)
+            {
+                var responseBy = await _context.Users
+                    .Include(u => u.Role)
+                    .FirstOrDefaultAsync(u => u.UserId == l.ProposalRespondedBy.Value, cancellationToken);
+                responseByName = responseBy?.FullName;
+                responseByRole = responseBy == null ? null : $"{responseBy.Role?.RoleCode ?? ""}{(string.IsNullOrWhiteSpace(responseBy.SubRole) ? "" : $" - {responseBy.SubRole}")}";
+            }
+
             var borrowSigned = await _context.VisitLogisticsItemHandovers.AnyAsync(h =>
                 h.LogisticsItemId == l.LogisticsItemId
                 && h.HandoverType == "BORROW"
@@ -145,6 +192,20 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetRequestDetail
                 && h.ProviderSignedAt != null,
                 cancellationToken);
             var unifiedStatus = NormalizeStatus(l.Status, camp.Status, camp.VisitRequest.Status, borrowSigned, returnSigned);
+            var handovers = await _context.VisitLogisticsItemHandovers
+                .Where(h => h.LogisticsItemId == l.LogisticsItemId)
+                .ToListAsync(cancellationToken);
+            var signerIds = handovers
+                .SelectMany(h => new[] { h.BorrowerSignedBy, h.ProviderSignedBy })
+                .Where(id => id.HasValue)
+                .Select(id => id!.Value)
+                .Distinct()
+                .ToList();
+            var signerNames = await _context.Users
+                .Where(u => signerIds.Contains(u.UserId))
+                .ToDictionaryAsync(u => u.UserId, u => u.FullName, cancellationToken);
+            var borrowHandover = handovers.FirstOrDefault(h => h.HandoverType == "BORROW");
+            var returnHandover = handovers.FirstOrDefault(h => h.HandoverType == "RETURN");
 
             return new RequestDetailDto
             {
@@ -157,6 +218,7 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetRequestDetail
                 Date = l.UsageStartAt?.ToString("dd-MM-yyyy") ?? "",
                 Title = l.Title,
                 Description = l.Description ?? "",
+                Quantity = l.Quantity ?? 1,
                 AssigneeId = l.AssignedToUserId,
                 AssigneeName = assigneeName,
                 Status = unifiedStatus,
@@ -166,6 +228,23 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetRequestDetail
                 VisitInstanceId = camp.VisitInstanceId,
                 VisitRequestId = camp.VisitRequestId,
                 CancelReason = camp.CancellationReason ?? camp.VisitRequest.CancellationReason,
+                ProposedUsageStartAt = l.ProposedUsageStartAt?.ToString("O"),
+                ProposedUsageEndAt = l.ProposedUsageEndAt?.ToString("O"),
+                ProposedDescription = l.ProposedDescription,
+                ProposedAt = l.ProposedAt?.ToString("O"),
+                ProposedByName = proposedByName,
+                ProposedByRole = proposedByRole,
+                ProposalResponse = l.ProposalResponse,
+                ProposalRespondedAt = l.ProposalRespondedAt?.ToString("O"),
+                ProposalRespondedByName = responseByName,
+                ProposalRespondedByRole = responseByRole,
+                ProposalResponseNote = l.ProposalResponseNote,
+                BorrowProviderSignature = ToSignature(borrowHandover?.ProviderSignedBy, borrowHandover?.ProviderSignedAt, signerNames),
+                BorrowBorrowerSignature = ToSignature(borrowHandover?.BorrowerSignedBy, borrowHandover?.BorrowerSignedAt, signerNames),
+                ReturnProviderSignature = ToSignature(returnHandover?.ProviderSignedBy, returnHandover?.ProviderSignedAt, signerNames),
+                ReturnBorrowerSignature = ToSignature(returnHandover?.BorrowerSignedBy, returnHandover?.BorrowerSignedAt, signerNames),
+                BorrowNote = borrowHandover?.ConditionNote,
+                ReturnNote = returnHandover?.ConditionNote,
 
                 RegistrantFullName = camp.VisitRequest.RegistrantFullName ?? "",
                 RegistrantEmail = camp.VisitRequest.RegistrantEmail ?? "",
@@ -188,6 +267,17 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetRequestDetail
             if (returnSigned || status == "DONE") return "DONE";
             if (borrowSigned || status == "IN_PROGRESS") return "IN_PROGRESS";
             return status;
+        }
+
+        private static HandoverSignatureDto? ToSignature(ulong? userId, DateTime? signedAt, Dictionary<ulong, string> signerNames)
+        {
+            if (userId == null || signedAt == null) return null;
+            return new HandoverSignatureDto
+            {
+                UserId = userId,
+                Name = signerNames.TryGetValue(userId.Value, out var name) ? name : $"User #{userId.Value}",
+                SignedAt = signedAt.Value.ToString("O")
+            };
         }
     }
 }
