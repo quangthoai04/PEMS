@@ -16,6 +16,7 @@ using PEMS.Application.Delegations.Commands.SaveVisitInstanceReminderSettings;
 using PEMS.Application.Delegations.Commands.CancelVisitInstanceReminderSettings;
 using PEMS.Application.Delegations.Queries.GetVisitInstanceReminderSettings;
 using PEMS.Application.Delegations.Queries.GetVisitInstanceLogistics;
+using PEMS.Application.Delegations.Queries.GetVisitInstanceSentEmails;
 using PEMS.Application.Emails.Common;
 using PEMS.Application.Delegations.Queries.GetVisitProcessDetail;
 using PEMS.Application.Delegations.Queries.GetAgendaResponsibleCandidates;
@@ -275,6 +276,27 @@ namespace PEMS.Api.Controllers
         {
             var result = await _mediator.Send(
                 new PEMS.Application.Delegations.Commands.CancelVisitLogisticsItem.CancelVisitLogisticsItemCommand(visitInstanceId, logisticsItemId),
+                cancellationToken);
+            return Ok(result);
+        }
+
+        // ── "Xem mail đã gửi": the sent-email history for one target of a campus instance ─────
+        // Read-only; the handler scopes to the instance (host / campus Staff Leader / HO) and never
+        // returns another instance's emails. Joins sent_emails + sent_email_recipients + email_templates.
+        [HttpGet("visit-instances/{visitInstanceId}/participants/{participantId}/sent-emails")]
+        public async Task<IActionResult> GetParticipantSentEmails(ulong visitInstanceId, ulong participantId, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(
+                new GetVisitInstanceSentEmailsQuery(visitInstanceId, EmailActionTargetTypes.VisitParticipant, participantId),
+                cancellationToken);
+            return Ok(result);
+        }
+
+        [HttpGet("visit-instances/{visitInstanceId}/logistics/{logisticsItemId}/sent-emails")]
+        public async Task<IActionResult> GetLogisticsSentEmails(ulong visitInstanceId, ulong logisticsItemId, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(
+                new GetVisitInstanceSentEmailsQuery(visitInstanceId, EmailActionTargetTypes.LogisticsItem, logisticsItemId),
                 cancellationToken);
             return Ok(result);
         }

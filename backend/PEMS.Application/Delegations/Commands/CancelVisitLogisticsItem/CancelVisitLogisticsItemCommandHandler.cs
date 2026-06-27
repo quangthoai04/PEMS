@@ -66,6 +66,7 @@ public sealed class CancelVisitLogisticsItemCommandHandler
         item.DecisionNote = "Hủy bởi Host (Chuẩn bị chi tiết).";
         item.UpdatedAt = now;
         item.UpdatedBy = actorId;
+        item.RowVersion += 1;   // bump the optimistic-concurrency token on every state change
 
         _db.AuditLogs.Add(new AuditLog
         {

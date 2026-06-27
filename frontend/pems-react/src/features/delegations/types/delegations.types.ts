@@ -901,6 +901,37 @@ export interface GetVisitInstanceLogisticsResult {
   items: VisitInstanceLogisticsItem[];
 }
 
+// ── "Xem mail đã gửi" (sent_emails + sent_email_recipients) for one target. ──
+export interface SentEmailRecipientItem {
+  recipientName?: string | null;
+  recipientEmail: string;
+  recipientType: string;            // TO | CC | BCC
+  deliveryStatus: string;           // QUEUED | SENT | FAILED | DELIVERED
+  sentAt?: string | null;
+  deliveredAt?: string | null;
+  errorMessage?: string | null;
+}
+
+export interface SentEmailHistoryItem {
+  sentEmailId: number;
+  templateCode?: string | null;
+  templateName?: string | null;
+  subject: string;
+  bodySnapshot?: string | null;
+  emailStatus: string;              // QUEUED | SENT | FAILED | DELIVERED
+  sentByName?: string | null;
+  sentAt?: string | null;           // "yyyy-MM-ddTHH:mm:ss" wall-clock
+  deliveredAt?: string | null;
+  createdAt?: string | null;
+  relatedType?: string | null;
+  relatedId?: number | null;
+  recipients: SentEmailRecipientItem[];
+}
+
+export interface GetSentEmailsResult {
+  items: SentEmailHistoryItem[];
+}
+
 // ── VisitProcess scheduled reminders (visit_instance_reminder_settings), SQL v10. ──
 export type VisitReminderChannel = 'IN_APP' | 'EMAIL';
 export type VisitReminderTargetGroup = 'HOST' | 'PARTICIPANTS' | 'HOST_AND_PARTICIPANTS';

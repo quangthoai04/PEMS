@@ -17,10 +17,11 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Loader2, Send, Eye, Plus, Trash2, ChevronUp, ChevronDown, CheckCircle, CheckCircle2, AlertCircle, X,
-  MonitorPlay, MapPin, Building2, MoreHorizontal, Car, UserCheck, Coffee,
+  MonitorPlay, MapPin, Building2, MoreHorizontal, Car, UserCheck, Coffee, History,
 } from 'lucide-react';
 import { delegationsApi } from '../api/delegationsApi';
-import { EmailPreviewModal } from './EmailPreviewModal';
+import { EmailPreviewModal, type EmailPreviewRecipient } from './EmailPreviewModal';
+import { SentEmailsModal } from './SentEmailsModal';
 import {
   LOGISTICS_STATUS_META,
   type LogisticsItemType,
@@ -110,13 +111,20 @@ export function LogisticsRequestSection({
   const [otherIds, setOtherIds] = useState<number[]>([1]);
 
   const [preview, setPreview] = useState({
-    open: false, loading: false, sending: false, error: null as string | null,
+    open: false, loading: false, sending: false, restoring: false, error: null as string | null,
     subject: '', body: '', isActionTemplate: false,
     systemActionDescription: null as string | null, lockedActionBlockHtml: null as string | null,
+    recipient: null as EmailPreviewRecipient | null,
   });
   const previewPayload = useRef<PrepareVisitLogisticsPayload | null>(null);
   const previewCtx = useRef<{ leaderName: string } | null>(null);
   const previewResetRef = useRef<(() => void) | null>(null);
+
+  // "Xem mail đã gửi" history modal — bound to one logistics item at a time.
+  const [sentModal, setSentModal] = useState<{ open: boolean; item: VisitInstanceLogisticsItem | null }>(
+    { open: false, item: null });
+  const openSentEmails = (item: VisitInstanceLogisticsItem) => setSentModal({ open: true, item });
+  const closeSentEmails = () => setSentModal((s) => ({ ...s, open: false }));
 
   const loadList = useCallback(async () => {
     setLoadingList(true);
@@ -147,11 +155,16 @@ export function LogisticsRequestSection({
     return () => { alive = false; };
   }, [visitInstanceId, canManage]);
 
-  // The single ACTIVE (non-cancelled) item for a fixed category, matched by itemType + canonical title.
+  // The single ACTIVE item for a fixed category, matched by itemType + canonical title. "Active" =
+  // not in a closed state: CANCELLED/REJECTED/DECLINED items stay visible (read-only) in the request
+  // list below but must NOT lock the create form, so the host can re-request after a rejection. This
+  // mirrors the server-side duplicate guard in PrepareVisitLogisticsCommandHandler.
   // items come newest-first from the backend, so .find() returns the most recent one.
+  const isActive = (i: VisitInstanceLogisticsItem): boolean =>
+    i.status !== 'CANCELLED' && i.status !== 'REJECTED' && i.status !== 'DECLINED';
   const activeItem = (itemType: LogisticsItemType, title: string): VisitInstanceLogisticsItem | null =>
-    items.find((i) => i.itemType === itemType && i.title === title && i.status !== 'CANCELLED') ?? null;
-  const activeLedItem = items.find((i) => i.itemType === 'LED' && i.status !== 'CANCELLED') ?? null;
+    items.find((i) => i.itemType === itemType && i.title === title && isActive(i)) ?? null;
+  const activeLedItem = items.find((i) => i.itemType === 'LED' && isActive(i)) ?? null;
 
   const ctxFor = (payload: PrepareVisitLogisticsPayload, leaderName: string) => ({
     departmentLeaderName: leaderName,
@@ -200,33 +213,48 @@ export function LogisticsRequestSection({
     previewPayload.current = payload;
     previewCtx.current = { leaderName: dept?.leaderName ?? 'Trưởng phòng' };
     previewResetRef.current = onReset;
-    setPreview((p) => ({ ...p, open: true, loading: true, error: null }));
+    setPreview((p) => ({
+      ...p, open: true, loading: true, error: null,
+      recipient: {
+        name: dept?.leaderName ?? null,
+        email: dept?.leaderEmail ?? null,
+        roleLabel: 'Trưởng phòng',
+        departmentName: dept?.departmentName ?? null,
+        campusName,
+      },
+    }));
     await fetchPreview(payload, dept?.leaderName ?? 'Trưởng phòng');
   };
 
-  const fetchPreview = async (payload: PrepareVisitLogisticsPayload, leaderName: string) => {
+  const fetchPreview = async (payload: PrepareVisitLogisticsPayload, leaderName: string): Promise<boolean> => {
     try {
       const res = await delegationsApi.previewEmailTemplate({
         templateCode: 'LOGISTICS_REQUEST_TO_DEPARTMENT',
         context: ctxFor(payload, leaderName),
       });
       setPreview((p) => ({
-        ...p, open: true, loading: false, error: null,
+        ...p, open: true, loading: false, restoring: false, error: null,
         subject: res.subject, body: res.editableBodyText, // text, not raw HTML (Part A)
         isActionTemplate: res.isActionTemplate,
         systemActionDescription: res.systemActionDescription ?? null,
         lockedActionBlockHtml: res.lockedActionBlockHtml ?? null,
       }));
+      return true;
     } catch (e: any) {
-      setPreview((p) => ({ ...p, open: true, loading: false, error: apiError(e, 'Không thể tải bản xem trước email.') }));
+      setPreview((p) => ({ ...p, open: true, loading: false, restoring: false, error: apiError(e, 'Không thể tải bản xem trước email.') }));
+      return false;
     }
   };
 
-  const restorePreview = () => {
+  // "Khôi phục mẫu gốc": re-fetch the original template from the DB and reset subject/body — without
+  // closing the modal or losing the bound recipient/context. Clear toast on success/failure.
+  const restorePreview = async () => {
     const pl = previewPayload.current; const ctx = previewCtx.current;
     if (!pl || !ctx) return;
-    setPreview((p) => ({ ...p, loading: true, error: null }));
-    void fetchPreview(pl, ctx.leaderName);
+    setPreview((p) => ({ ...p, restoring: true, error: null }));
+    const ok = await fetchPreview(pl, ctx.leaderName);
+    pushToast(ok ? 'success' : 'error',
+      ok ? 'Đã khôi phục nội dung email theo mẫu gốc.' : 'Không thể khôi phục mẫu gốc. Vui lòng thử lại.');
   };
   const closePreview = () => setPreview((p) => ({ ...p, open: false }));
 
@@ -291,7 +319,7 @@ export function LogisticsRequestSection({
             )}
             {ledChoice === 'offline' && (
               <div className="pt-4 border-t border-gray-100 animate-in fade-in slide-in-from-top-2">
-                <OfflineCard {...shared} cardKey="led-offline" itemType="LED" label="Welcome LED (trao đổi bên ngoài)" />
+                <OfflineCard {...shared} cardKey="led-offline" itemType="LED" title="Welcome LED" label="Welcome LED (trao đổi bên ngoài)" />
               </div>
             )}
           </>
@@ -392,6 +420,12 @@ export function LogisticsRequestSection({
                             {COORD_LABEL[it.coordinationMode]}
                           </span>
                         )}
+                        {it.coordinationMode === 'SYSTEM_REQUEST' && (
+                          <button type="button" onClick={() => openSentEmails(it)}
+                            className="mt-0.5 inline-flex h-7 items-center gap-1 rounded-lg border border-gray-200 bg-white px-2 text-[11px] font-bold text-[#004c91] outline-none transition-colors hover:bg-gray-50">
+                            <History className="w-3.5 h-3.5" /> Mail đã gửi
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -406,12 +440,14 @@ export function LogisticsRequestSection({
         open={preview.open}
         loading={preview.loading}
         sending={preview.sending}
+        restoring={preview.restoring}
         error={preview.error}
         subject={preview.subject}
         body={preview.body}
         isActionTemplate={preview.isActionTemplate}
         systemActionDescription={preview.systemActionDescription}
         lockedActionBlockHtml={preview.lockedActionBlockHtml}
+        recipient={preview.recipient}
         canSend
         sendLabel="Gửi với nội dung này"
         onSubjectChange={(v) => setPreview((p) => ({ ...p, subject: v }))}
@@ -419,6 +455,16 @@ export function LogisticsRequestSection({
         onClose={closePreview}
         onRestore={restorePreview}
         onSend={sendWithEditedContent}
+      />
+
+      {/* "Xem mail đã gửi" history (per logistics request). */}
+      <SentEmailsModal
+        open={sentModal.open}
+        title={sentModal.item?.title ?? ''}
+        subtitle={sentModal.item ? (ITEM_TYPE_LABEL[sentModal.item.itemType] ?? sentModal.item.itemType) : null}
+        targetKey={sentModal.item?.logisticsItemId ?? null}
+        load={() => delegationsApi.getLogisticsSentEmails(visitInstanceId, sentModal.item!.logisticsItemId)}
+        onClose={closeSentEmails}
       />
     </div>
   );
@@ -710,11 +756,15 @@ interface OfflineCardProps extends SharedCardProps {
   cardKey: string;
   itemType: LogisticsItemType;
   label: string;
+  /** Canonical DB title for the category (e.g. 'Welcome LED'). Defaults to `label`. Kept distinct so
+   * the persisted title matches the system-request item of the same category — both the FE active-item
+   * lookup and the server-side duplicate guard key on (itemType, title). */
+  title?: string;
 }
 
 /** "Đã trao đổi bên ngoài" form (Part D) — required note, optional department, NO email; status DONE. */
 function OfflineCard({
-  cardKey, itemType, label, visitInstanceId, departments, canManage, busyKey, onSubmit,
+  cardKey, itemType, label, title, visitInstanceId, departments, canManage, busyKey, onSubmit,
 }: OfflineCardProps) {
   const [note, setNote] = useState('');
   const [departmentId, setDepartmentId] = useState('');
@@ -727,7 +777,7 @@ function OfflineCard({
       visitInstanceId,
       departmentId: departmentId ? Number(departmentId) : null,
       itemType,
-      title: label,
+      title: (title ?? label).trim(),
       description: note.trim(),
       coordinationMode: 'OFFLINE_COORDINATED',
       offlineCoordinationNote: note.trim(),

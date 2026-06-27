@@ -30,6 +30,7 @@ import type {
   PrepareVisitLogisticsPayload,
   PrepareVisitLogisticsResult,
   GetVisitInstanceLogisticsResult,
+  GetSentEmailsResult,
 } from '../types/delegations.types';
 
 export const delegationsApi = {
@@ -228,6 +229,26 @@ export const delegationsApi = {
   ): Promise<{ success: boolean; logisticsItemId: number; status: string; message: string }> {
     const { data } = await httpClient.patch<{ success: boolean; logisticsItemId: number; status: string; message: string }>(
       API_ENDPOINTS.delegations.cancelLogisticsItem(visitInstanceId, logisticsItemId), {});
+    return data;
+  },
+
+  /** "Xem mail đã gửi": sent-email history for one invited participant (subject/body/recipients/status). */
+  async getParticipantSentEmails(
+    visitInstanceId: number | string,
+    participantId: number | string,
+  ): Promise<GetSentEmailsResult> {
+    const { data } = await httpClient.get<GetSentEmailsResult>(
+      API_ENDPOINTS.delegations.participantSentEmails(visitInstanceId, participantId));
+    return data;
+  },
+
+  /** "Xem mail đã gửi": sent-email history for one logistics request. */
+  async getLogisticsSentEmails(
+    visitInstanceId: number | string,
+    logisticsItemId: number | string,
+  ): Promise<GetSentEmailsResult> {
+    const { data } = await httpClient.get<GetSentEmailsResult>(
+      API_ENDPOINTS.delegations.logisticsSentEmails(visitInstanceId, logisticsItemId));
     return data;
   },
 

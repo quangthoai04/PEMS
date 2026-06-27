@@ -135,6 +135,28 @@ public sealed class PrepareVisitLogisticsCommandHandler
         var usageStart = ParseLocal(request.UsageStartAt);
         var usageEnd = ParseLocal(request.UsageEndAt);
         var dueAt = ParseLocal(request.DueAt);
+        var title = request.Title.Trim();
+
+        // One active item per fixed category. The "Chuẩn bị chi tiết" screen identifies a fixed
+        // category by (item_type, title) and shows a single active card each (Welcome LED, Xe điện,
+        // Người lái, Phòng họp, Teabreak…); only "OTHER" may have many. We re-check on the server so a
+        // double-click or a direct API call can't create a duplicate active item — the UI hiding the
+        // create form is never enough. "Active" = any status that is not closed
+        // (CANCELLED/REJECTED/DECLINED), matching the frontend's notion of an active item.
+        if (itemType != "OTHER")
+        {
+            var hasActiveDuplicate = await _db.VisitLogisticsItems.AnyAsync(
+                l => l.VisitInstanceId == instance.VisitInstanceId
+                     && l.ItemType == itemType
+                     && l.Title == title
+                     && l.Status != LogisticsItemStatus.Cancelled
+                     && l.Status != LogisticsItemStatus.Rejected
+                     && l.Status != LogisticsItemStatus.Declined,
+                cancellationToken);
+            if (hasActiveDuplicate)
+                throw new ConflictException(
+                    $"Đã tồn tại một yêu cầu hậu cần đang xử lý cho \"{title}\". Vui lòng hủy yêu cầu hiện tại trước khi tạo mới.");
+        }
 
         VisitLogisticsItem item;
         ulong sentEmailId = 0;
@@ -148,7 +170,7 @@ public sealed class PrepareVisitLogisticsCommandHandler
             {
                 VisitInstanceId = instance.VisitInstanceId,
                 ItemType = itemType,
-                Title = request.Title.Trim(),
+                Title = title,
                 Description = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim(),
                 Quantity = request.Quantity,
                 UsageStartAt = usageStart,

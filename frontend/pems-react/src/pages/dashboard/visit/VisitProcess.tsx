@@ -1009,6 +1009,10 @@ export function VisitProcess() {
                               participants={detail.participants ?? []}
                               onChanged={loadDetail}
                               pushToast={pushToast}
+                              delegationName={detail.delegationName}
+                              campusName={detail.campusName}
+                              plannedStartAt={detail.plannedStartAt}
+                              plannedEndAt={detail.plannedEndAt}
                             />
                           ) : (
                             <p className="text-sm italic text-slate-400">Đang tải thành phần tham gia...</p>

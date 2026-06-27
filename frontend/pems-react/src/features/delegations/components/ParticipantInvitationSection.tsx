@@ -7,10 +7,11 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Search, Loader2, AlertCircle, Mail, Phone, Building2,
-  Users, UserCheck, GraduationCap, Trash2, Send, Eye,
+  Users, UserCheck, GraduationCap, Trash2, Send, Eye, History,
 } from 'lucide-react';
 import { delegationsApi } from '../api/delegationsApi';
-import { EmailPreviewModal } from './EmailPreviewModal';
+import { EmailPreviewModal, type EmailPreviewRecipient } from './EmailPreviewModal';
+import { SentEmailsModal } from './SentEmailsModal';
 import type {
   VisitParticipantListItem, VisitProcessHost, ParticipantCandidate, SupportDepartment,
 } from '../types/delegations.types';
@@ -26,6 +27,11 @@ interface Props {
   participants: VisitParticipantListItem[];
   onChanged: () => void | Promise<void>;
   pushToast: ToastFn;
+  // Real context for the email preview merge (so the body is not a mock).
+  delegationName?: string | null;
+  campusName?: string | null;
+  plannedStartAt?: string | null;   // "yyyy-MM-ddTHH:mm[:ss]" wall-clock
+  plannedEndAt?: string | null;
 }
 
 const STATUS_META: Record<string, { label: string; cls: string }> = {
@@ -163,49 +169,74 @@ function SearchDropdown<T>({
 
 export function ParticipantInvitationSection({
   visitInstanceId, relation, instanceStatus, currentUserId, host, participants, onChanged, pushToast,
+  delegationName, campusName, plannedStartAt, plannedEndAt,
 }: Props) {
   // The host manages invitations only while the instance is in the prep window.
   const canManage = relation === 'HOST' && (instanceStatus === 'ASSIGNED' || instanceStatus === 'BEFORE_VISIT');
   const [busyId, setBusyId] = useState<string | null>(null);
 
+  // "Xem mail đã gửi" history modal — bound to one participant at a time.
+  const [sentModal, setSentModal] = useState<{ open: boolean; participantId: number | null; title: string; subtitle: string | null }>(
+    { open: false, participantId: null, title: '', subtitle: null });
+  const openSentEmails = (p: VisitParticipantListItem) =>
+    setSentModal({ open: true, participantId: p.participantId, title: p.fullName, subtitle: p.email });
+  const closeSentEmails = () => setSentModal((s) => ({ ...s, open: false }));
+
   // Editable "Xem trước email" modal. When `target` is set the host can send the (edited) email with
   // "Mời với nội dung này"; the system action block (accept/decline tokens) is injected by the backend.
-  type PreviewTarget = { key: string; payload: Parameters<typeof delegationsApi.inviteVisitParticipant>[1]; displayName: string };
+  type PreviewTarget = {
+    key: string;
+    payload: Parameters<typeof delegationsApi.inviteVisitParticipant>[1];
+    displayName: string;
+    recipient: EmailPreviewRecipient;
+  };
   type PreviewState = {
-    open: boolean; loading: boolean; sending: boolean; error: string | null;
+    open: boolean; loading: boolean; sending: boolean; restoring: boolean; error: string | null;
     templateCode: string; subject: string; body: string;
     isActionTemplate: boolean; systemActionDescription: string | null; lockedActionBlockHtml: string | null;
     target: PreviewTarget | null;
   };
   const EMPTY_PREVIEW: PreviewState = {
-    open: false, loading: false, sending: false, error: null,
+    open: false, loading: false, sending: false, restoring: false, error: null,
     templateCode: '', subject: '', body: '',
     isActionTemplate: false, systemActionDescription: null, lockedActionBlockHtml: null, target: null,
   };
   const [preview, setPreview] = useState<PreviewState>(EMPTY_PREVIEW);
 
-  const previewContext = (): Record<string, string> => ({
-    recipientName: 'Người được mời',
-    DelegationName: 'Đoàn khách (mẫu)',
-    CampusName: 'FPT University',
-    plannedStartAt: '08:00 01/07/2026',
-    plannedEndAt: '11:00 01/07/2026',
-    hostName: host?.fullName ?? 'Host',
-    departmentLeaderName: 'Trưởng phòng',
-    requesterName: host?.fullName ?? 'Host',
-  });
+  // Real merge context from the actual instance + the bound recipient (no mock values). Empty fields
+  // fall back to a friendly label instead of "undefined"/"null".
+  const FB = 'Chưa có thông tin';
+  const previewContext = (target: PreviewTarget | null): Record<string, string> => {
+    const r = target?.recipient;
+    return {
+      recipientName: r?.name || FB,
+      recipientEmail: r?.email || FB,
+      DelegationName: delegationName || FB,
+      CampusName: campusName || r?.campusName || 'FPT University',
+      plannedStartAt: fmtDateTime(plannedStartAt),
+      plannedEndAt: fmtDateTime(plannedEndAt),
+      hostName: host?.fullName ?? 'Host',
+      requesterName: host?.fullName ?? 'Host',
+      participantRoleLabel: r?.roleLabel || FB,
+      departmentName: r?.departmentName || FB,
+      departmentLeaderName: r?.roleLabel === 'Trưởng phòng' ? (r?.name || FB) : (host?.fullName ?? 'Host'),
+    };
+  };
+
+  const applyTemplate = (res: import('../types/delegations.types').PreviewEmailTemplateResult) =>
+    setPreview((p) => ({
+      ...p, open: true, loading: false, restoring: false, error: null,
+      subject: res.subject, body: res.editableBodyText,
+      isActionTemplate: res.isActionTemplate,
+      systemActionDescription: res.systemActionDescription ?? null,
+      lockedActionBlockHtml: res.lockedActionBlockHtml ?? null,
+    }));
 
   const loadPreview = async (templateCode: string, target: PreviewTarget | null) => {
     setPreview((p) => ({ ...p, open: true, loading: true, error: null, templateCode, target }));
     try {
-      const res = await delegationsApi.previewEmailTemplate({ templateCode, context: previewContext() });
-      setPreview((p) => ({
-        ...p, open: true, loading: false, error: null,
-        templateCode, subject: res.subject, body: res.editableBodyText,
-        isActionTemplate: res.isActionTemplate,
-        systemActionDescription: res.systemActionDescription ?? null,
-        lockedActionBlockHtml: res.lockedActionBlockHtml ?? null,
-      }));
+      const res = await delegationsApi.previewEmailTemplate({ templateCode, context: previewContext(target) });
+      applyTemplate(res);
     } catch (e: any) {
       setPreview((p) => ({ ...p, open: true, loading: false, error: apiError(e, 'Không thể tải bản xem trước email.') }));
     }
@@ -215,7 +246,20 @@ export function ParticipantInvitationSection({
   const openEmailPreview = (templateCode: string) => { void loadPreview(templateCode, null); };
   // Editable preview bound to a candidate — "Mời với nội dung này" sends with the edited content.
   const openEmailPreviewFor = (templateCode: string, target: PreviewTarget) => { void loadPreview(templateCode, target); };
-  const restoreTemplate = () => { if (preview.templateCode) void loadPreview(preview.templateCode, preview.target); };
+  // "Khôi phục mẫu gốc": re-fetch the original template from the DB (picks up any seed patch) and
+  // reset subject/body/preview — without closing the modal or losing the bound recipient.
+  const restoreTemplate = async () => {
+    if (!preview.templateCode) return;
+    setPreview((p) => ({ ...p, restoring: true, error: null }));
+    try {
+      const res = await delegationsApi.previewEmailTemplate({ templateCode: preview.templateCode, context: previewContext(preview.target) });
+      applyTemplate(res);
+      pushToast('success', 'Đã khôi phục nội dung email theo mẫu gốc.');
+    } catch {
+      setPreview((p) => ({ ...p, restoring: false }));
+      pushToast('error', 'Không thể khôi phục mẫu gốc. Vui lòng thử lại.');
+    }
+  };
   const closePreview = () => setPreview(EMPTY_PREVIEW);
 
   const sendWithEditedContent = async () => {
@@ -228,8 +272,13 @@ export function ParticipantInvitationSection({
         ...preview.target.payload,
         emailOverride: { useEditedContent: true, subject: preview.subject.trim(), bodyText: preview.body },
       });
-      pushToast(res.emailStatus === 'FAILED' ? 'warning' : 'success',
-        res.message || `Đã gửi lời mời tới ${preview.target.displayName}.`);
+      {
+        const who = res.emailRecipient ? `${preview.target.displayName} (${res.emailRecipient})` : preview.target.displayName;
+        pushToast(res.emailStatus === 'FAILED' ? 'warning' : 'success',
+          res.emailStatus === 'FAILED'
+            ? `Đã tạo lời mời cho ${who} nhưng gửi email thất bại.`
+            : `Đã gửi email mời tới ${who}.`);
+      }
       closePreview();
       closeStaffDropdown.current?.();
       closeStudentDropdown.current?.();
@@ -263,7 +312,11 @@ export function ParticipantInvitationSection({
     setBusyId(key);
     try {
       const res = await delegationsApi.inviteVisitParticipant(visitInstanceId, payload);
-      pushToast(res.emailQueued ? 'success' : 'info', res.message || `Đã gửi lời mời tới ${displayName}.`);
+      const who = res.emailRecipient ? `${displayName} (${res.emailRecipient})` : displayName;
+      pushToast(res.emailStatus === 'FAILED' ? 'warning' : 'success',
+        res.emailStatus === 'FAILED'
+          ? `Đã tạo lời mời cho ${who} nhưng gửi email thất bại. Xem chi tiết trong “Mail đã gửi”.`
+          : `Đã gửi email mời tới ${who}.`);
       onSuccess?.();
       await onChanged();
     } catch (e: any) {
@@ -342,9 +395,10 @@ export function ParticipantInvitationSection({
                 <CandidateRow
                   key={c.userId}
                   candidate={c}
+                  roleLabel="Staff hỗ trợ IC"
                   busy={busyId === `ic-${c.userId}`}
                   onInvite={() => invite(`ic-${c.userId}`, { participantType: 'IC_SUPPORT', userId: c.userId }, c.fullName, close)}
-                  onPreview={() => openEmailPreviewFor('VISIT_PARTICIPANT_INVITATION', { key: `ic-${c.userId}`, payload: { participantType: 'IC_SUPPORT', userId: c.userId }, displayName: c.fullName })}
+                  onPreview={() => openEmailPreviewFor('VISIT_PARTICIPANT_INVITATION', { key: `ic-${c.userId}`, payload: { participantType: 'IC_SUPPORT', userId: c.userId }, displayName: c.fullName, recipient: { name: c.fullName, email: c.email, roleLabel: 'Staff hỗ trợ IC', departmentName: c.departmentName, campusName: c.campusName } })}
                 />
               )}
             />
@@ -355,6 +409,7 @@ export function ParticipantInvitationSection({
             canManage={canManage}
             busyId={busyId}
             onRemove={remove}
+            onViewSent={openSentEmails}
             emptyText="Chưa mời Staff hỗ trợ IC nào."
           />
         </Panel>
@@ -371,10 +426,11 @@ export function ParticipantInvitationSection({
                 <CandidateRow
                   key={c.userId}
                   candidate={c}
+                  roleLabel="Sinh viên hỗ trợ"
                   subtitle={c.studentCode ? `MSSV: ${c.studentCode}` : undefined}
                   busy={busyId === `st-${c.userId}`}
                   onInvite={() => invite(`st-${c.userId}`, { participantType: 'STUDENT', userId: c.userId }, c.fullName, close)}
-                  onPreview={() => openEmailPreviewFor('VISIT_STUDENT_INVITATION', { key: `st-${c.userId}`, payload: { participantType: 'STUDENT', userId: c.userId }, displayName: c.fullName })}
+                  onPreview={() => openEmailPreviewFor('VISIT_STUDENT_INVITATION', { key: `st-${c.userId}`, payload: { participantType: 'STUDENT', userId: c.userId }, displayName: c.fullName, recipient: { name: c.fullName, email: c.email, roleLabel: 'Sinh viên hỗ trợ', campusName: c.campusName } })}
                 />
               )}
             />
@@ -385,6 +441,7 @@ export function ParticipantInvitationSection({
             canManage={canManage}
             busyId={busyId}
             onRemove={remove}
+            onViewSent={openSentEmails}
             emptyText="Chưa mời sinh viên hỗ trợ nào."
           />
         </Panel>
@@ -414,7 +471,7 @@ export function ParticipantInvitationSection({
                       <button
                         type="button"
                         title="Xem trước & sửa email"
-                        onClick={() => openEmailPreviewFor('VISIT_DEPARTMENT_LEADER_INVITATION', { key: `dept-${d.departmentId}`, payload: { participantType: 'DEPT_SUPPORT', departmentId: d.departmentId }, displayName: `trưởng phòng ${d.departmentName}` })}
+                        onClick={() => openEmailPreviewFor('VISIT_DEPARTMENT_LEADER_INVITATION', { key: `dept-${d.departmentId}`, payload: { participantType: 'DEPT_SUPPORT', departmentId: d.departmentId }, displayName: `trưởng phòng ${d.departmentName}`, recipient: { name: d.leaderName, email: d.leaderEmail, roleLabel: 'Trưởng phòng', departmentName: d.departmentName, campusName: d.campusName } })}
                         className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 bg-white text-[#004c91] outline-none transition-colors hover:bg-gray-50"
                       >
                         <Eye className="w-3.5 h-3.5" />
@@ -460,6 +517,7 @@ export function ParticipantInvitationSection({
                   </div>
                   <div className="flex items-center gap-2">
                     <StatusBadge status={p.status} />
+                    <ViewSentButton onClick={() => openSentEmails(p)} />
                     {canManage && p.status === 'INVITED' && (
                       <RemoveButton busy={busyId === `rm-${p.participantId}`} onClick={() => remove(p)} />
                     )}
@@ -484,12 +542,14 @@ export function ParticipantInvitationSection({
         open={preview.open}
         loading={preview.loading}
         sending={preview.sending}
+        restoring={preview.restoring}
         error={preview.error}
         subject={preview.subject}
         body={preview.body}
         isActionTemplate={preview.isActionTemplate}
         systemActionDescription={preview.systemActionDescription}
         lockedActionBlockHtml={preview.lockedActionBlockHtml}
+        recipient={preview.target?.recipient ?? null}
         canSend={!!preview.target}
         sendLabel="Mời với nội dung này"
         onSubjectChange={(v) => setPreview((p) => ({ ...p, subject: v }))}
@@ -497,6 +557,16 @@ export function ParticipantInvitationSection({
         onClose={closePreview}
         onRestore={restoreTemplate}
         onSend={sendWithEditedContent}
+      />
+
+      {/* "Xem mail đã gửi" history (per participant). */}
+      <SentEmailsModal
+        open={sentModal.open}
+        title={sentModal.title}
+        subtitle={sentModal.subtitle}
+        targetKey={sentModal.participantId}
+        load={() => delegationsApi.getParticipantSentEmails(visitInstanceId, sentModal.participantId!)}
+        onClose={closeSentEmails}
       />
     </div>
   );
@@ -524,24 +594,39 @@ function Panel({ title, icon, wide, children }: { title: string; icon: React.Rea
 }
 
 function CandidateRow({
-  candidate, subtitle, busy, onInvite, onPreview,
-}: { candidate: ParticipantCandidate; subtitle?: string; busy: boolean; onInvite: () => void; onPreview?: () => void }) {
+  candidate, roleLabel, subtitle, busy, onInvite, onPreview,
+}: { candidate: ParticipantCandidate; roleLabel?: string; subtitle?: string; busy: boolean; onInvite: () => void; onPreview?: () => void }) {
+  const hasEmail = !!candidate.email && candidate.email.trim().length > 0;
+  const canInvite = candidate.canInvite && hasEmail;
   return (
     <div className="flex items-center justify-between gap-3 border-b border-gray-100 px-4 py-2.5 last:border-b-0">
       <div className="min-w-0">
         <div className="truncate text-sm font-bold text-gray-800">{candidate.fullName}</div>
-        <div className="truncate text-xs text-gray-500">
-          {candidate.email}{candidate.departmentName ? ` · ${candidate.departmentName}` : ''}{subtitle ? ` · ${subtitle}` : ''}
+        {/* Full email shown (not truncated away) so the host knows exactly who they email. */}
+        <div className="flex items-center gap-1 text-xs text-gray-600">
+          <Mail className="w-3 h-3 shrink-0 text-gray-400" />
+          {hasEmail ? <span className="break-all">{candidate.email}</span> : <span className="font-semibold text-red-500">Chưa có email</span>}
         </div>
-        <div className="mt-1">
+        <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-gray-500">
+          {roleLabel && <span>{roleLabel}</span>}
+          {candidate.departmentName && <span>{candidate.departmentName}</span>}
+          {candidate.campusName && <span>{candidate.campusName}</span>}
+          {subtitle && <span>{subtitle}</span>}
+        </div>
+        <div className="mt-1 flex flex-wrap items-center gap-1.5">
           <ConflictBadge
             count={candidate.conflictCount}
             allPrivate={candidate.hasPrivateConflict && candidate.conflictCount > 0}
           />
+          {!hasEmail && (
+            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-red-500">
+              <AlertCircle className="w-3 h-3" /> Không thể gửi lời mời
+            </span>
+          )}
         </div>
       </div>
       <div className="flex shrink-0 items-center gap-1.5">
-        {onPreview && candidate.canInvite && (
+        {onPreview && canInvite && (
           <button
             type="button"
             title="Xem trước & sửa email"
@@ -554,7 +639,8 @@ function CandidateRow({
         )}
         <button
           type="button"
-          disabled={!candidate.canInvite || busy}
+          disabled={!canInvite || busy}
+          title={!hasEmail ? 'Người nhận chưa có email, không thể gửi lời mời.' : undefined}
           onClick={onInvite}
           className="inline-flex items-center gap-1 rounded-lg bg-[#004c91] px-3 py-1.5 text-xs font-bold text-white outline-none transition-colors hover:bg-[#003b70] disabled:cursor-not-allowed disabled:opacity-40"
         >
@@ -566,13 +652,28 @@ function CandidateRow({
   );
 }
 
+/** Small "Xem mail đã gửi" icon button (opens the sent-email history modal for a target). */
+function ViewSentButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      title="Xem mail đã gửi"
+      onClick={onClick}
+      className="inline-flex h-7 items-center gap-1 rounded-lg border border-gray-200 bg-white px-2 text-[11px] font-bold text-[#004c91] outline-none transition-colors hover:bg-gray-50"
+    >
+      <History className="w-3.5 h-3.5" /> Mail đã gửi
+    </button>
+  );
+}
+
 function ParticipantList({
-  rows, canManage, busyId, onRemove, emptyText,
+  rows, canManage, busyId, onRemove, onViewSent, emptyText,
 }: {
   rows: VisitParticipantListItem[];
   canManage: boolean;
   busyId: string | null;
   onRemove: (p: VisitParticipantListItem) => void;
+  onViewSent: (p: VisitParticipantListItem) => void;
   emptyText: string;
 }) {
   if (rows.length === 0) return <p className="mt-3 text-sm italic text-slate-400">{emptyText}</p>;
@@ -582,13 +683,19 @@ function ParticipantList({
         <div key={p.participantId} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-gray-200 bg-white p-3">
           <div className="min-w-0">
             <div className="truncate text-sm font-bold text-gray-800">{p.fullName}</div>
-            <div className="truncate text-xs text-gray-500">{p.email}</div>
+            <div className="flex items-center gap-1 text-xs text-gray-500">
+              <Mail className="w-3 h-3 shrink-0 text-gray-400" /> <span className="break-all">{p.email}</span>
+            </div>
+            {p.invitedAt && (
+              <div className="mt-0.5 text-[11px] text-gray-400">Đã gửi email lúc {fmtDateTime(p.invitedAt)}</div>
+            )}
             {p.status === 'DECLINED' && p.note && (
               <div className="mt-1 text-xs italic text-red-500">Lý do từ chối: {p.note}</div>
             )}
           </div>
           <div className="flex items-center gap-2">
             <StatusBadge status={p.status} />
+            <ViewSentButton onClick={() => onViewSent(p)} />
             {canManage && p.status === 'INVITED' && (
               <RemoveButton busy={busyId === `rm-${p.participantId}`} onClick={() => onRemove(p)} />
             )}
@@ -619,4 +726,15 @@ function apiError(e: any, fallback: string): string {
   if (typeof data === 'string' && data.trim()) return data;
   if (data.message) return data.message;
   return fallback;
+}
+
+// "yyyy-MM-ddTHH:mm[:ss]" → "HH:mm dd/MM/yyyy" via pure string slicing (no Date / no TZ shift).
+function fmtDateTime(value?: string | null): string {
+  if (!value) return '—';
+  const [d, t] = value.replace(' ', 'T').split('T');
+  if (!d) return value;
+  const [y, m, day] = d.split('-');
+  const hm = (t || '').slice(0, 5);
+  if (!y || !m || !day) return value;
+  return hm ? `${hm} ${day}/${m}/${y}` : `${day}/${m}/${y}`;
 }
