@@ -1,6 +1,4 @@
-using System.IO;
-using System.Threading;
-using System.Threading.Tasks;
+
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Exceptions;
@@ -8,40 +6,50 @@ using PEMS.Application.Common.Interfaces;
 
 namespace PEMS.Application.Files.Queries.GetFileContent;
 
-public sealed class GetFileContentQueryHandler : IRequestHandler<GetFileContentQuery, FileContentDto>
+/// <summary>
+/// Loads the file metadata, then streams the binary from the storage provider. The caller is
+/// already authenticated (controller-level <c>[Authorize]</c>); any signed-in user may view an
+/// avatar that another user references. Stricter per-file policies would be layered here for
+/// non-avatar purposes.
+/// </summary>
+public sealed class GetFileContentQueryHandler : IRequestHandler<GetFileContentQuery, FileContentResult>
 {
     private readonly IApplicationDbContext _db;
-    private readonly ICurrentUserService _currentUser;
     private readonly IFileStorageService _storage;
 
-    public GetFileContentQueryHandler(
-        IApplicationDbContext db, ICurrentUserService currentUser, IFileStorageService storage)
+    public GetFileContentQueryHandler(IApplicationDbContext db, IFileStorageService storage)
     {
         _db = db;
-        _currentUser = currentUser;
         _storage = storage;
     }
 
-    public async Task<FileContentDto> Handle(GetFileContentQuery request, CancellationToken cancellationToken)
+    public async Task<FileContentResult> Handle(GetFileContentQuery request, CancellationToken cancellationToken)
     {
-        if (!_currentUser.IsAuthenticated || _currentUser.UserId is null)
-            throw new ForbiddenException();
+        var fileId = (ulong)request.FileId;
 
-        var file = await _db.Files
-            .FirstOrDefaultAsync(f => f.FileId == request.FileId, cancellationToken)
+        var file = await _db.Files.AsNoTracking()
+            .Where(f => f.FileId == fileId)
+            .Select(f => new
+            {
+                f.StorageProvider,
+                f.ExternalFileId,
+                f.MimeType,
+                f.OriginalFilename,
+            })
+            .FirstOrDefaultAsync(cancellationToken)
             ?? throw new NotFoundException("File", request.FileId);
 
-        await using var stream = await _storage.OpenReadAsync(file, cancellationToken)
-            ?? throw new NotFoundException("FileContent", request.FileId);
+        if (string.IsNullOrWhiteSpace(file.ExternalFileId))
+            throw new NotFoundException("File", request.FileId);
 
-        using var ms = new MemoryStream();
-        await stream.CopyToAsync(ms, cancellationToken);
+        // Only the Google Drive provider is wired today; metadata-only rows would 404 above.
+        var stream = await _storage.DownloadAsync(file.ExternalFileId, cancellationToken);
 
-        return new FileContentDto
+        return new FileContentResult
         {
-            Content = ms.ToArray(),
-            ContentType = string.IsNullOrWhiteSpace(file.MimeType) ? "application/octet-stream" : file.MimeType!,
-            FileName = file.OriginalFilename,
+            Content = stream,
+            ContentType = string.IsNullOrWhiteSpace(file.MimeType) ? "application/octet-stream" : file.MimeType,
+            FileName = string.IsNullOrWhiteSpace(file.OriginalFilename) ? "file" : file.OriginalFilename,
         };
     }
 }

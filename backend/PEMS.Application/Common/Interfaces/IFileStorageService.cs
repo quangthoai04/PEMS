@@ -1,32 +1,32 @@
-using PEMS.Domain.Entities.Documents;
+using PEMS.Application.Common.Models;
 
 namespace PEMS.Application.Common.Interfaces;
 
 /// <summary>
-/// Binary storage for uploaded files (attachments, inline images, documents). The DB row in
-/// <c>files</c> holds the metadata; the bytes live here. The default implementation stores on the
-/// local disk; <see cref="OpenReadAsync"/> also fetches remote providers (e.g. Google Drive) via the
-/// file's download URL so the email pipeline can stream any file by its <c>file_id</c>.
+/// Abstraction over the external file storage provider (currently Google Drive).
+/// Handlers depend only on this seam so the binary never touches the database and the
+/// concrete provider can be swapped without touching application code.
 /// </summary>
 public interface IFileStorageService
 {
-    /// <summary>Persists <paramref name="content"/> and returns where it landed (provider + object key + size + checksum).</summary>
-    Task<StoredFileInfo> SaveAsync(
-        Stream content, string originalFilename, string? contentType, string? purpose,
-        CancellationToken cancellationToken = default);
-
     /// <summary>
-    /// Opens a readable stream for an already-stored file. For LOCAL files it reads from disk; for
-    /// remote providers it fetches the file's download/web-view URL. Returns null when the bytes
-    /// cannot be located.
+    /// Uploads <paramref name="stream"/> into <paramref name="folderId"/> on the provider and
+    /// returns the stored object's metadata (external id, view/download/thumbnail URLs, ...).
     /// </summary>
-    Task<Stream?> OpenReadAsync(UploadedFile file, CancellationToken cancellationToken = default);
-}
+    Task<FileStorageUploadResult> UploadAsync(
+        Stream stream,
+        string fileName,
+        string contentType,
+        string folderId,
+        CancellationToken cancellationToken);
 
-/// <summary>Result of persisting a file's bytes.</summary>
-public sealed record StoredFileInfo(
-    string StorageProvider,
-    string ObjectKey,
-    long FileSize,
-    string? ChecksumSha256,
-    string? BucketName = null);
+    /// <summary>Opens a read stream for the object identified by <paramref name="externalFileId"/>.</summary>
+    Task<Stream> DownloadAsync(
+        string externalFileId,
+        CancellationToken cancellationToken);
+
+    /// <summary>Best-effort delete used to roll back an upload when the following DB write fails.</summary>
+    Task DeleteAsync(
+        string externalFileId,
+        CancellationToken cancellationToken);
+}

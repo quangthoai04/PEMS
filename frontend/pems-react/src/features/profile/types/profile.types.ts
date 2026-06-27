@@ -44,3 +44,12 @@ export interface UpdateProfileRequest {
   phone?: string | null;
   nationality?: string | null;
 }
+
+/** UC-15 — result of a successful avatar upload (mirrors UploadProfileAvatarResponse). */
+export interface UploadAvatarResponse {
+  fileId: number;
+  /** Backend proxy path, e.g. /api/files/123/content. */
+  avatarUrl: string;
+  webViewUrl?: string | null;
+  thumbnailUrl?: string | null;
+}

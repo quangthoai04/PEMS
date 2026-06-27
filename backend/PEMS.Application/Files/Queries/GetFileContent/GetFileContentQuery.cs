@@ -3,14 +3,8 @@ using MediatR;
 namespace PEMS.Application.Files.Queries.GetFileContent;
 
 /// <summary>
-/// Streams a stored file's bytes by file_id (for download links + inline-image preview). Any
-/// authenticated user may read it; the controller wraps the result in a FileResult.
+/// Proxies a stored file's binary back to the caller. Used by <c>GET /api/files/{fileId}/content</c>
+/// so the frontend never talks to the storage provider directly and <c>users.avatar_url</c> can stay
+/// a stable backend path.
 /// </summary>
-public sealed record GetFileContentQuery(ulong FileId) : IRequest<FileContentDto>;
-
-public sealed class FileContentDto
-{
-    public byte[] Content { get; set; } = System.Array.Empty<byte>();
-    public string ContentType { get; set; } = "application/octet-stream";
-    public string FileName { get; set; } = "file";
-}
+public sealed record GetFileContentQuery(long FileId) : IRequest<FileContentResult>;
