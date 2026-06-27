@@ -24,6 +24,9 @@ public interface IGoogleDriveStorageService
     Task<GoogleDriveUploadResult> UploadAvatarAsync(
         byte[] content, string driveFileName, string contentType, CancellationToken cancellationToken = default);
 
+    Task<GoogleDriveUploadResult> UploadFileAsync(
+        byte[] content, string driveFileName, string contentType, string? folderId = null, CancellationToken cancellationToken = default);
+
     /// <summary>Downloads a Drive file's bytes by its external id (authorized request).</summary>
     Task<Stream> DownloadAsync(string externalFileId, CancellationToken cancellationToken = default);
 

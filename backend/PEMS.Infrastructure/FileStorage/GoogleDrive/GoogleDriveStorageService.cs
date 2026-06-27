@@ -116,6 +116,81 @@ public sealed class GoogleDriveStorageService : IGoogleDriveStorageService
         };
     }
 
+    public async Task<GoogleDriveUploadResult> UploadFileAsync(
+        byte[] content, string driveFileName, string contentType, string? folderId = null, CancellationToken cancellationToken = default)
+    {
+        var targetFolderId = folderId ?? _options.RootFolderId;
+        if (string.IsNullOrWhiteSpace(targetFolderId))
+            throw new BusinessRuleException(
+                "Google Drive chưa được cấu hình thư mục RootFolderId.", "GOOGLE_DRIVE_NOT_CONNECTED");
+
+        var accessToken = await GetAccessTokenAsync(cancellationToken);
+        var client = _httpClientFactory.CreateClient();
+
+        var metadata = JsonSerializer.Serialize(new
+        {
+            name = driveFileName,
+            parents = new[] { targetFolderId },
+        });
+
+        using var multipart = new MultipartContent("related");
+        var metaPart = new StringContent(metadata, Encoding.UTF8);
+        metaPart.Headers.ContentType = new MediaTypeHeaderValue("application/json") { CharSet = "UTF-8" };
+        multipart.Add(metaPart);
+
+        var mediaPart = new ByteArrayContent(content);
+        mediaPart.Headers.ContentType = new MediaTypeHeaderValue(
+            string.IsNullOrWhiteSpace(contentType) ? "application/octet-stream" : contentType);
+        multipart.Add(mediaPart);
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, UploadEndpoint) { Content = multipart };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+
+        HttpResponseMessage response;
+        try
+        {
+            response = await client.SendAsync(request, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Google Drive file upload request failed.");
+            throw new BusinessRuleException(
+                "Không thể tải tệp lên Google Drive. Vui lòng thử lại.", "UPLOAD_FILE_FAILED");
+        }
+
+        var body = await response.Content.ReadAsStringAsync(cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            _logger.LogError("Google Drive upload returned {Status}: {Body}", (int)response.StatusCode, body);
+            throw new BusinessRuleException(
+                "Không thể tải tệp lên Google Drive. Vui lòng thử lại.", "UPLOAD_FILE_FAILED");
+        }
+
+        using var doc = JsonDocument.Parse(body);
+        var root = doc.RootElement;
+        var id = root.TryGetProperty("id", out var idEl) ? idEl.GetString() : null;
+        if (string.IsNullOrWhiteSpace(id))
+        {
+            _logger.LogError("Google Drive upload succeeded but returned no file id: {Body}", body);
+            throw new BusinessRuleException(
+                "Không thể tải tệp lên Google Drive. Vui lòng thử lại.", "UPLOAD_FILE_FAILED");
+        }
+
+        long size = content.LongLength;
+        if (root.TryGetProperty("size", out var sizeEl) && sizeEl.ValueKind == JsonValueKind.String
+            && long.TryParse(sizeEl.GetString(), out var parsedSize))
+            size = parsedSize;
+
+        return new GoogleDriveUploadResult
+        {
+            ExternalFileId = id!,
+            WebViewUrl = root.TryGetProperty("webViewLink", out var wv) ? wv.GetString() : null,
+            DownloadUrl = root.TryGetProperty("webContentLink", out var wc) ? wc.GetString() : null,
+            ThumbnailUrl = root.TryGetProperty("thumbnailLink", out var tn) ? tn.GetString() : null,
+            FileSize = size,
+        };
+    }
+
     public async Task<Stream> DownloadAsync(string externalFileId, CancellationToken cancellationToken = default)
     {
         var accessToken = await GetAccessTokenAsync(cancellationToken);
