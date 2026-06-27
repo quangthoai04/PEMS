@@ -134,6 +134,8 @@ export const API_ENDPOINTS = {
     prepareVisitLogistics: '/delegations/preparevisitlogistics',
     cancelLogisticsItem: (visitInstanceId: string | number, logisticsItemId: string | number) =>
       `/delegations/visit-instances/${visitInstanceId}/logistics/${logisticsItemId}/cancel`,
+    // Host responds to a Department's change proposal (accept commits effective; reject keeps planned).
+    confirmChangeProposal: '/delegations/confirmthechangeproposal',
     // "Xem mail đã gửi": sent-email history for one target (participant invitation / logistics request).
     participantSentEmails: (visitInstanceId: string | number, participantId: string | number) =>
       `/delegations/visit-instances/${visitInstanceId}/participants/${participantId}/sent-emails`,

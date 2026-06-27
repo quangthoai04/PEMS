@@ -75,6 +75,18 @@ export function VisitParticipantInvitationDetail() {
   const canRespond = invitation?.status === 'INVITED'
     && invitation.allowedActions.includes('ACCEPT_INVITATION');
 
+  // Decline-reason validation (mirrors backend: mandatory, 5–1000 chars after trim).
+  const trimmedReason = rejectReason.trim();
+  const declineError =
+    trimmedReason.length === 0
+      ? null // empty: guided by placeholder + disabled button (no noisy error)
+      : trimmedReason.length < 5
+        ? 'Lý do từ chối phải có ít nhất 5 ký tự.'
+        : rejectReason.length > 1000
+          ? 'Lý do từ chối không được vượt quá 1000 ký tự.'
+          : null;
+  const canSubmitDecline = trimmedReason.length >= 5 && rejectReason.length <= 1000;
+
   const handleAccept = async () => {
     if (!participantId) return;
     setSubmitting(true);
@@ -93,7 +105,8 @@ export function VisitParticipantInvitationDetail() {
   const handleDecline = async () => {
     if (!participantId) return;
     const reason = rejectReason.trim();
-    if (!reason) return;
+    // Mirror the backend rule: reason is mandatory, 5–1000 chars after trim.
+    if (reason.length < 5 || reason.length > 1000) return;
     setSubmitting(true);
     setActionError(null);
     try {
@@ -268,13 +281,18 @@ export function VisitParticipantInvitationDetail() {
               <button type="button" disabled={submitting} onClick={() => setRejectOpen(false)} className="text-white/85 hover:text-white hover:bg-white/10 rounded-full p-1.5"><X className="w-5 h-5" /></button>
             </div>
             <div className="p-6">
+              <p className="text-sm text-gray-500 mb-3">Vui lòng nhập lý do từ chối để Host/IC có thể nắm thông tin và điều phối lại.</p>
               <label className="block text-sm font-bold text-gray-700 mb-2">Lý do từ chối <span className="text-red-500">*</span></label>
-              <textarea value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} placeholder="Nhập lý do từ chối tham gia..." disabled={submitting}
-                className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:border-[#F37021] focus:ring-4 focus:ring-orange-500/10 outline-none transition-all text-sm min-h-[120px] resize-none bg-gray-50/50 focus:bg-white" />
+              <textarea value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} placeholder="Ví dụ: Tôi bận lịch cá nhân vào thời gian này..." disabled={submitting} maxLength={1000}
+                className={`w-full px-4 py-3 rounded-2xl border focus:ring-4 focus:ring-orange-500/10 outline-none transition-all text-sm min-h-[120px] resize-none bg-gray-50/50 focus:bg-white ${declineError ? 'border-red-300 focus:border-red-400' : 'border-gray-200 focus:border-[#F37021]'}`} />
+              <div className="mt-1.5 flex items-center justify-between gap-2">
+                <span className="text-xs font-medium text-red-500">{declineError || ''}</span>
+                <span className="text-xs text-gray-400 shrink-0">{trimmedReason.length}/1000</span>
+              </div>
             </div>
             <div className="px-6 py-4 bg-gray-50 flex items-center justify-end gap-3 border-t border-gray-100">
               <button type="button" disabled={submitting} onClick={() => setRejectOpen(false)} className="px-5 py-2 rounded-xl font-bold text-gray-600 hover:bg-gray-200 transition-colors outline-none text-sm">Hủy bỏ</button>
-              <button type="button" disabled={!rejectReason.trim() || submitting} onClick={handleDecline} className="px-6 py-2 rounded-xl font-bold text-white bg-[#F37021] hover:bg-orange-600 shadow-sm transition-all outline-none text-sm disabled:opacity-50 disabled:cursor-not-allowed">{submitting ? 'Đang xử lý...' : 'Xác nhận từ chối'}</button>
+              <button type="button" disabled={!canSubmitDecline || submitting} onClick={handleDecline} className="px-6 py-2 rounded-xl font-bold text-white bg-[#F37021] hover:bg-orange-600 shadow-sm transition-all outline-none text-sm disabled:opacity-50 disabled:cursor-not-allowed">{submitting ? 'Đang xử lý...' : 'Xác nhận từ chối'}</button>
             </div>
           </motion.div>
         </div>

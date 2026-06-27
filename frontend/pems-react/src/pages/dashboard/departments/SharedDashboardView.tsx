@@ -34,7 +34,8 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import toast, { Toaster } from 'react-hot-toast';
 import { departmentReceptionTasksApi } from '../../../features/department-reception-tasks/api/departmentReceptionTasksApi';
 import { delegationsApi } from '../../../features/delegations/api/delegationsApi';
-import { EmailPreviewModal } from '../../../features/delegations/components/EmailPreviewModal';
+import { EmailPreviewModal, type EmailPreviewSendPayload } from '../../../features/delegations/components/EmailPreviewModal';
+import { stripLegacyActionHtml } from '../../../features/emails/utils/actionLinks';
 
 interface Event {
   id: string;
@@ -183,7 +184,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
       });
       setAssignPreview((s) => ({
         ...s, open: true, loading: false, error: null,
-        subject: res.subject, body: res.bodyHtml,
+        subject: res.subject, body: stripLegacyActionHtml(res.bodyHtml),
         isActionTemplate: res.isActionTemplate,
         systemActionDescription: res.systemActionDescription ?? null,
         lockedActionBlockHtml: res.lockedActionBlockHtml ?? null,
@@ -199,15 +200,15 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
   };
   const closeAssignPreview = () => setAssignPreview((s) => ({ ...s, open: false }));
 
-  const confirmLogisticsAssign = async () => {
+  const confirmLogisticsAssign = async (payload: EmailPreviewSendPayload) => {
     if (!pendingAssign) return;
-    if (!assignPreview.subject.trim()) { toast.error('Tiêu đề email không được để trống.'); return; }
-    if (!assignPreview.body.trim()) { toast.error('Nội dung email không được để trống.'); return; }
+    if (!payload.subject.trim()) { toast.error('Tiêu đề email không được để trống.'); return; }
+    if (!payload.bodyHtml.trim()) { toast.error('Nội dung email không được để trống.'); return; }
     setAssignPreview((s) => ({ ...s, sending: true }));
     try {
       await departmentReceptionTasksApi.assignAssignee(
         pendingAssign.logisticsItemId, pendingAssign.staffId,
-        { useEditedContent: true, subject: assignPreview.subject.trim(), bodyHtml: assignPreview.body },
+        { useEditedContent: true, subject: payload.subject.trim(), bodyHtml: payload.bodyHtml, attachments: payload.attachments },
       );
       toast.success('Đã phân công người phụ trách và gửi email.');
       setAssignPreview((s) => ({ ...s, open: false, sending: false }));
@@ -2956,12 +2957,15 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                                    toast.error('Giờ kết thúc phải sau giờ bắt đầu');
                                    return;
                                  }
-                                 await departmentReceptionTasksApi.proposeChange(
-                                   activePopoverEvent.rawId,
-                                   buildProposalDateTime(proposalStartTime),
-                                   buildProposalDateTime(proposalEndTime),
-                                   proposalNote.trim()
-                                 );
+                                 if (!proposalNote.trim()) {
+                                   toast.error('Vui lòng nhập lý do/ghi chú đề xuất.');
+                                   return;
+                                 }
+                                 await departmentReceptionTasksApi.proposeChange(activePopoverEvent.rawId, {
+                                   proposedUsageStartAt: buildProposalDateTime(proposalStartTime),
+                                   proposedUsageEndAt: buildProposalDateTime(proposalEndTime),
+                                   proposalNote: proposalNote.trim(),
+                                 });
                                  toast.success('Đã gửi đề xuất thay đổi');
                                  setIsProposing(false);
                                  setProposalSubmitted(true);
@@ -3685,6 +3689,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
         lockedActionBlockHtml={assignPreview.lockedActionBlockHtml}
         canSend
         sendLabel="Gán với nội dung này"
+        pushToast={(type, msg) => { if (type === 'error') toast.error(msg); else if (type === 'success') toast.success(msg); else toast(msg); }}
         onSubjectChange={(v) => setAssignPreview((s) => ({ ...s, subject: v }))}
         onBodyChange={(v) => setAssignPreview((s) => ({ ...s, body: v }))}
         onClose={closeAssignPreview}

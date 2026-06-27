@@ -10,9 +10,14 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.ProposeRequestChang
     public class ProposeRequestChangeCommand : IRequest<bool>
     {
         public ulong LogisticsItemId { get; set; }
+        /// <summary>Proposed quantity (optional). When set, must be >= 1. Stored on proposed_quantity —
+        /// the original quantity (PLANNED figure) is never overwritten.</summary>
+        public int? ProposedQuantity { get; set; }
         public string? ProposedUsageStartAt { get; set; } // YYYY-MM-DDTHH:mm:ss
         public string? ProposedUsageEndAt { get; set; } // YYYY-MM-DDTHH:mm:ss
-        public string ProposedDescription { get; set; }
+        public string? ProposedDescription { get; set; }
+        /// <summary>Reason/note for the proposal — REQUIRED.</summary>
+        public string? ProposalNote { get; set; }
     }
 
     public class ProposeRequestChangeCommandHandler : IRequestHandler<ProposeRequestChangeCommand, bool>
@@ -28,7 +33,11 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.ProposeRequestChang
 
         public async Task<bool> Handle(ProposeRequestChangeCommand request, CancellationToken cancellationToken)
         {
-            if (string.IsNullOrWhiteSpace(request.ProposedDescription)) throw new Exception("Vui lòng nhập nội dung đề xuất");
+            // proposal_note is the mandatory rationale; proposed quantity/time/description are optional.
+            var note = (request.ProposalNote ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(note)) note = (request.ProposedDescription ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(note)) throw new Exception("Vui lòng nhập lý do/ghi chú đề xuất.");
+            if (request.ProposedQuantity is { } pq && pq < 1) throw new Exception("Số lượng đề xuất phải là số nguyên ≥ 1.");
 
             var l = await _context.VisitLogisticsItems
                 .FirstOrDefaultAsync(x => x.LogisticsItemId == request.LogisticsItemId, cancellationToken);
@@ -37,19 +46,23 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.ProposeRequestChang
 
             ulong userId = _currentUserService.UserId.Value;
             var user = await _context.Users.FirstOrDefaultAsync(u => u.UserId == userId, cancellationToken);
-            if (user == null || l.RequestedToDepartmentId != user.DepartmentId) 
+            if (user == null || l.RequestedToDepartmentId != user.DepartmentId)
                 throw new Exception("Không có quyền đề xuất thay đổi đơn yêu cầu của phòng ban khác");
 
-            l.ProposedDescription = request.ProposedDescription;
-            l.ProposalNote = request.ProposedDescription;
+            DateTime? ps = null, pe = null;
             if (!string.IsNullOrEmpty(request.ProposedUsageStartAt) && DateTime.TryParse(request.ProposedUsageStartAt, out var s))
-            {
-                l.ProposedUsageStartAt = s;
-            }
+                ps = DateTime.SpecifyKind(s, DateTimeKind.Unspecified);
             if (!string.IsNullOrEmpty(request.ProposedUsageEndAt) && DateTime.TryParse(request.ProposedUsageEndAt, out var e))
-            {
-                l.ProposedUsageEndAt = e;
-            }
+                pe = DateTime.SpecifyKind(e, DateTimeKind.Unspecified);
+            if (ps.HasValue && pe.HasValue && pe.Value <= ps.Value)
+                throw new Exception("Thời gian kết thúc đề xuất phải sau thời gian bắt đầu.");
+
+            // Never overwrite the original quantity (the PLANNED figure) — only the proposed_* columns.
+            l.ProposedQuantity = request.ProposedQuantity;
+            l.ProposedDescription = string.IsNullOrWhiteSpace(request.ProposedDescription) ? null : request.ProposedDescription.Trim();
+            l.ProposalNote = note;
+            l.ProposedUsageStartAt = ps;
+            l.ProposedUsageEndAt = pe;
 
             l.Status = "CHANGE_PROPOSED";
             l.ProposedBy = userId;

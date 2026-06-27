@@ -65,7 +65,8 @@ public sealed class RespondVisitParticipantInvitationCommandHandler
         {
             participant.Status = ParticipantStatuses.Declined;
             // No decline_reason column on visit_participants — record it on note (per schema).
-            participant.Note = request.DeclineReason;
+            // Validator guarantees a non-empty 5–1000 char reason here; store it trimmed.
+            participant.Note = request.DeclineReason!.Trim();
             newStatus = ParticipantStatuses.Declined;
         }
 

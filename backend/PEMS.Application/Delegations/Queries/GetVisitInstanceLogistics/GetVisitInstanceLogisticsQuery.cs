@@ -35,4 +35,16 @@ public sealed class VisitInstanceLogisticsItemDto
     public string? DueAt { get; set; }
     public ulong? AssignedToUserId { get; set; }
     public string? AssignedToName { get; set; }
+
+    // ── Change-proposal (Department negotiates the Host's PLANNED quantity/time/content) ──
+    // Quantity above is the PLANNED/requested figure; the FINAL ("chốt") quantity is computed:
+    // ProposedQuantity when ProposalResponse == "ACCEPTED", otherwise Quantity. No actual_quantity
+    // column exists, so the original Quantity is never overwritten.
+    public int? ProposedQuantity { get; set; }
+    public string? ProposedUsageStartAt { get; set; }
+    public string? ProposedUsageEndAt { get; set; }
+    public string? ProposedDescription { get; set; }
+    public string? ProposalNote { get; set; }
+    public string? ProposalResponse { get; set; }      // ACCEPTED | REJECTED | null
+    public string? ProposalResponseNote { get; set; }
 }

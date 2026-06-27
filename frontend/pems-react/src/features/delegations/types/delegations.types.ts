@@ -384,10 +384,23 @@ export interface InviteVisitParticipantResult {
 export interface EmailOverridePayload {
   useEditedContent: boolean;
   subject: string;
-  /** Preferred: the readable plain text the host edited (backend converts it to safe HTML). */
+  /** Plain-text edit (legacy plain-text editor): backend converts it to safe HTML. */
   bodyText?: string;
-  /** Legacy: raw HTML body (kept for backward compatibility with older callers). */
+  /** Rich editor: sanitized HTML body (inline images already rewritten to cid:). Preferred when set. */
   bodyHtml?: string;
+  /** File + inline-image references for the rich editor (validated + sent as real MIME parts). */
+  attachments?: EmailAttachmentRefInput[];
+}
+
+/** A file/inline-image reference carried by the rich email editor (mirrors backend EmailDraftAttachmentInput). */
+export interface EmailAttachmentRefInput {
+  fileId: number;
+  /** ATTACHMENT | INLINE_IMAGE (defaults to ATTACHMENT). */
+  attachmentType?: 'ATTACHMENT' | 'INLINE_IMAGE';
+  /** Required for INLINE_IMAGE (the cid the HTML body references). */
+  contentId?: string | null;
+  displayName?: string | null;
+  displayOrder?: number;
 }
 
 /**
@@ -895,6 +908,15 @@ export interface VisitInstanceLogisticsItem {
   dueAt?: string | null;
   assignedToUserId?: number | null;
   assignedToName?: string | null;
+  // Change-proposal: `quantity` is the PLANNED figure; the FINAL ("chốt") quantity is
+  // proposedQuantity when proposalResponse === 'ACCEPTED', else quantity.
+  proposedQuantity?: number | null;
+  proposedUsageStartAt?: string | null;
+  proposedUsageEndAt?: string | null;
+  proposedDescription?: string | null;
+  proposalNote?: string | null;
+  proposalResponse?: 'ACCEPTED' | 'REJECTED' | null;
+  proposalResponseNote?: string | null;
 }
 
 export interface GetVisitInstanceLogisticsResult {

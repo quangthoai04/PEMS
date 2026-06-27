@@ -34,10 +34,12 @@ public sealed class InviteVisitParticipantCommandHandler
     private readonly IEmailService _email;
     private readonly IEmailActionTokenService _tokens;
     private readonly IHtmlSanitizerService _sanitizer;
+    private readonly IFileStorageService _storage;
 
     public InviteVisitParticipantCommandHandler(
         IApplicationDbContext db, ICurrentUserService currentUser, IDateTimeService clock,
-        IEmailService email, IEmailActionTokenService tokens, IHtmlSanitizerService sanitizer)
+        IEmailService email, IEmailActionTokenService tokens, IHtmlSanitizerService sanitizer,
+        IFileStorageService storage)
     {
         _db = db;
         _currentUser = currentUser;
@@ -45,6 +47,7 @@ public sealed class InviteVisitParticipantCommandHandler
         _email = email;
         _tokens = tokens;
         _sanitizer = sanitizer;
+        _storage = storage;
     }
 
     public async Task<InviteVisitParticipantResponse> Handle(
@@ -99,8 +102,10 @@ public sealed class InviteVisitParticipantCommandHandler
 
         var now = _clock.UtcNow;
 
-        // ── Validate the optional host-edited email content (Part C) ──
+        // ── Validate the optional host-edited email content + attachments (Part C / rich editor) ──
         var editedContent = ValidateAndSanitizeOverride(request.EmailOverride);
+        var attachInputs = OutboundEmailAttachments.From(request.EmailOverride);
+        await OutboundEmailAttachments.ValidateAsync(_db, actorId, attachInputs, cancellationToken);
 
         // Link the sent_email back to its source template for traceability.
         var templateCode = participantRole == ParticipantRoles.DeptSupport
@@ -202,6 +207,8 @@ public sealed class InviteVisitParticipantCommandHandler
                 SentBy = actorId,
                 CreatedAt = now,
             };
+            // Inline images + file attachments (cascade-insert with the sent_emails row).
+            OutboundEmailAttachments.Attach(sentEmail, attachInputs, now);
             _db.SentEmails.Add(sentEmail);
             await _db.SaveChangesAsync(cancellationToken);
 
@@ -255,14 +262,16 @@ public sealed class InviteVisitParticipantCommandHandler
         string emailStatus;
         try
         {
-            // Real MIME path (HTML body). Action emails carry no file attachments today, but this
-            // unifies on the rich sender so attachments/inline images can be added later.
+            // Real MIME path (HTML body) with the host's inline images (cid) + file attachments
+            // streamed from storage (Google Drive / local) once and reused.
+            var outboundAttachments = await OutboundEmailAttachments.LoadAsync(_db, _storage, attachInputs, cancellationToken);
             await _email.SendAsync(new PEMS.Application.Common.Interfaces.OutboundEmail
             {
                 ToEmail = recipient.Email,
                 Subject = finalSubject,
                 Body = finalBody,
                 IsHtml = true,
+                Attachments = outboundAttachments,
             }, cancellationToken);
             emailQueued = true;
             emailStatus = "SENT";
@@ -303,7 +312,8 @@ public sealed class InviteVisitParticipantCommandHandler
         if (rawHtml.Length > EmailOverrideLimits.BodyMax)
             throw new ValidationException($"Nội dung email vượt quá {EmailOverrideLimits.BodyMax} ký tự.");
 
-        var sanitized = _sanitizer.Sanitize(rawHtml);
+        // Email-profile sanitize so inline-image <img src="cid:..."> + data-* refs survive.
+        var sanitized = _sanitizer.SanitizeEmailHtml(rawHtml);
         if (string.IsNullOrWhiteSpace(sanitized))
             throw new ValidationException("Nội dung email không hợp lệ sau khi lọc.");
         return sanitized;

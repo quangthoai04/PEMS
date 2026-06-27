@@ -7,17 +7,21 @@ namespace PEMS.Application.EmailActions;
 /// Applies ACCEPT/DECLINE to the participant, marks the token (and its sibling) used, notifies the
 /// host, and audits — all idempotently: a second click reports ALREADY_RESPONDED and never mutates
 /// twice. Never throws for token problems (returns a status) so the public page can render cleanly.
+/// A DECLINE must carry <see cref="DeclineReason"/> (5–1000 chars after trim); a missing/invalid
+/// reason returns REASON_REQUIRED and leaves the token untouched so the user can retry.
 /// </summary>
-public sealed record ExecuteEmailActionCommand(string RawToken, string? Ip, string? UserAgent)
+public sealed record ExecuteEmailActionCommand(string RawToken, string? Ip, string? UserAgent, string? DeclineReason = null)
     : IRequest<EmailActionExecuteResult>;
 
 public sealed class EmailActionExecuteResult
 {
-    /// <summary>SUCCESS | ALREADY_RESPONDED | EXPIRED | INVALID.</summary>
+    /// <summary>SUCCESS | ALREADY_RESPONDED | EXPIRED | INVALID | REASON_REQUIRED.</summary>
     public string Status { get; set; } = EmailActionViewStatuses.Invalid;
     /// <summary>ACCEPT | DECLINE.</summary>
     public string? Action { get; set; }
     public string? RecipientName { get; set; }
     public string? DelegationName { get; set; }
     public string Message { get; set; } = "Liên kết không hợp lệ.";
+    /// <summary>On REASON_REQUIRED: the reason the user just submitted, echoed back to re-fill the form.</summary>
+    public string? SubmittedReason { get; set; }
 }

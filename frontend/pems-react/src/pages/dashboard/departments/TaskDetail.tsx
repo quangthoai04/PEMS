@@ -96,6 +96,8 @@ export function TaskDetail() {
   const [proposedTime, setProposedTime] = useState(() => inMemoryTaskStore[`taskDetail_${taskId}_proposedTime`] || "");
   const [proposedContent, setProposedContent] = useState(() => inMemoryTaskStore[`taskDetail_${taskId}_proposedContent`] || "");
   const [proposedBy, setProposedBy] = useState(() => inMemoryTaskStore[`taskDetail_${taskId}_proposedBy`] || "DEPARTMENT");
+  const [proposedQuantity, setProposedQuantity] = useState('');
+  const [proposalNote, setProposalNote] = useState('');
   const [isSubmitProposalModalOpen, setIsSubmitProposalModalOpen] = useState(false);
 
 
@@ -138,8 +140,19 @@ export function TaskDetail() {
   };
 
   const handleProposeChange = async () => {
+    // proposal_note (lý do) is mandatory; proposed quantity/time/content are optional.
+    const note = proposalNote.trim() || proposedContent.trim();
+    if (!note) { toast.error('Vui lòng nhập lý do/ghi chú đề xuất.'); return; }
+    const qty = proposedQuantity.trim() ? Number(proposedQuantity.trim()) : null;
+    if (qty != null && (Number.isNaN(qty) || qty < 1)) { toast.error('Số lượng đề xuất phải là số nguyên ≥ 1.'); return; }
     try {
-      await departmentReceptionTasksApi.proposeChange(taskId!, proposedTime, null, proposedContent);
+      await departmentReceptionTasksApi.proposeChange(taskId!, {
+        proposedQuantity: qty,
+        proposedUsageStartAt: proposedTime || null,
+        proposedUsageEndAt: null,
+        proposedDescription: proposedContent || null,
+        proposalNote: note,
+      });
       toast.success('Gửi đề xuất thay đổi thành công');
       setIsSubmitProposalModalOpen(false);
       setIsProposing(false);
@@ -291,6 +304,19 @@ export function TaskDetail() {
                     placeholder="Nhập đề xuất thời gian..."
                     className="w-full px-4 py-2.5 rounded-xl border border-[#ffc288] bg-white text-sm focus:outline-none focus:border-[#e85c0d] focus:ring-1 focus:ring-[#e85c0d] text-gray-800 transition-shadow outline-none shadow-sm disabled:bg-orange-50/50 disabled:text-gray-500 disabled:cursor-not-allowed"
                   />
+                  <div className="flex items-center gap-2 text-[#e85c0d] mb-2 mt-4 relative z-10">
+                    <FileText className="w-4 h-4" />
+                    <span className="text-[11px] font-bold uppercase tracking-wider">Số lượng (Đề xuất)</span>
+                  </div>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={proposedQuantity}
+                    onChange={(e) => setProposedQuantity(e.target.value.replace(/\D/g, ''))}
+                    disabled={taskActionStatus === 'waiting_for_approval'}
+                    placeholder="Để trống nếu không đổi số lượng"
+                    className="w-full px-4 py-2.5 rounded-xl border border-[#ffc288] bg-white text-sm focus:outline-none focus:border-[#e85c0d] focus:ring-1 focus:ring-[#e85c0d] text-gray-800 transition-shadow outline-none shadow-sm disabled:bg-orange-50/50 disabled:text-gray-500 disabled:cursor-not-allowed"
+                  />
                 </div>
               )}
             </div>
@@ -321,6 +347,19 @@ export function TaskDetail() {
                   placeholder="Nhập đề xuất nội dung..."
                   rows={4}
                   className="p-6 bg-[#fff1e0] rounded-2xl text-[15px] font-medium text-gray-700 leading-relaxed border border-[#ffc288] focus:outline-none focus:border-[#e85c0d] focus:ring-1 focus:ring-[#e85c0d] transition-all shadow-inner relative overflow-hidden w-full resize-none disabled:bg-orange-50/50 disabled:text-gray-500 disabled:cursor-not-allowed"
+                />
+                <div className="flex items-center gap-2 text-[#e85c0d] mt-2">
+                  <FileText className="w-4 h-4" />
+                  <span className="text-[11px] font-bold uppercase tracking-wider">Lý do đề xuất <span className="text-red-500">*</span></span>
+                </div>
+                <textarea
+                  value={proposalNote}
+                  onChange={(e) => setProposalNote(e.target.value)}
+                  disabled={taskActionStatus === 'waiting_for_approval'}
+                  placeholder="Vì sao cần thay đổi (bắt buộc)..."
+                  rows={2}
+                  maxLength={1000}
+                  className="p-4 bg-[#fff1e0] rounded-2xl text-sm font-medium text-gray-700 leading-relaxed border border-[#ffc288] focus:outline-none focus:border-[#e85c0d] focus:ring-1 focus:ring-[#e85c0d] transition-all shadow-inner w-full resize-none disabled:bg-orange-50/50 disabled:text-gray-500 disabled:cursor-not-allowed"
                 />
               </div>
             )}

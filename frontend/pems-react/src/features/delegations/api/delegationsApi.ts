@@ -232,6 +232,20 @@ export const delegationsApi = {
     return data;
   },
 
+  /** Host accepts/rejects a Department's change proposal (status CHANGE_PROPOSED). Accept commits the
+   * proposed time/content; the PLANNED quantity is never overwritten (final qty is computed on display). */
+  async confirmChangeProposal(
+    logisticsItemId: number | string,
+    accepted: boolean,
+    note?: string | null,
+  ): Promise<{ logisticsItemId: number; status: string; message: string }> {
+    const { data } = await httpClient.post<{ logisticsItemId: number; status: string; message: string }>(
+      API_ENDPOINTS.delegations.confirmChangeProposal,
+      { logisticsItemId: Number(logisticsItemId), accepted, note: note ?? null },
+    );
+    return data;
+  },
+
   /** "Xem mail đã gửi": sent-email history for one invited participant (subject/body/recipients/status). */
   async getParticipantSentEmails(
     visitInstanceId: number | string,

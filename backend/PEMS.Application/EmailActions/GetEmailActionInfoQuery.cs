@@ -10,7 +10,8 @@ namespace PEMS.Application.EmailActions;
 /// </summary>
 public sealed record GetEmailActionInfoQuery(string RawToken) : IRequest<EmailActionInfoResult>;
 
-/// <summary>View states the public pages render. VALID = ready to confirm; the rest are terminal.</summary>
+/// <summary>View states the public pages render. VALID = ready to confirm; the rest are terminal,
+/// except REASON_REQUIRED which re-renders the decline form with a validation error (token untouched).</summary>
 public static class EmailActionViewStatuses
 {
     public const string Valid = "VALID";
@@ -18,6 +19,7 @@ public static class EmailActionViewStatuses
     public const string AlreadyResponded = "ALREADY_RESPONDED";
     public const string Expired = "EXPIRED";
     public const string Invalid = "INVALID";
+    public const string ReasonRequired = "REASON_REQUIRED";
 }
 
 public sealed class EmailActionInfoResult

@@ -96,9 +96,27 @@ public sealed class ExecuteEmailActionCommandHandler
 
         var isAccept = token.IntendedAction == EmailIntendedActions.Accept;
 
+        // A decline must carry a reason (5–1000 chars after trim). If it's missing/invalid we DON'T
+        // consume the token — return REASON_REQUIRED so the public page re-renders the form to retry.
+        string? declineNote = null;
+        if (!isAccept)
+        {
+            var reasonError = ValidateDeclineReason(request.DeclineReason);
+            if (reasonError != null)
+            {
+                result.Status = EmailActionViewStatuses.ReasonRequired;
+                result.Message = reasonError;
+                result.SubmittedReason = request.DeclineReason;
+                return result; // token untouched, no DB write
+            }
+            declineNote = request.DeclineReason!.Trim();
+        }
+
         await using var transaction = await _db.BeginTransactionAsync(cancellationToken);
 
         participant.Status = isAccept ? ParticipantStatuses.Accepted : ParticipantStatuses.Declined;
+        if (!isAccept)
+            participant.Note = declineNote; // store the decline reason on visit_participants.note
         participant.RespondedAt = now;
         participant.UpdatedAt = now;
 
@@ -248,6 +266,17 @@ public sealed class ExecuteEmailActionCommandHandler
     }
 
     // ── shared helpers ──
+
+    /// <summary>Returns a Vietnamese error message when the decline reason is missing/too short/too
+    /// long (validated on the trimmed value), or null when it is acceptable.</summary>
+    private static string? ValidateDeclineReason(string? reason)
+    {
+        var trimmed = reason?.Trim() ?? string.Empty;
+        if (trimmed.Length == 0) return "Vui lòng nhập lý do từ chối.";
+        if (trimmed.Length < 5) return "Lý do từ chối phải có ít nhất 5 ký tự.";
+        if (trimmed.Length > 1000) return "Lý do từ chối không được vượt quá 1000 ký tự.";
+        return null;
+    }
 
     private static EmailActionExecuteResult AlreadyResponded(EmailActionExecuteResult result)
     {

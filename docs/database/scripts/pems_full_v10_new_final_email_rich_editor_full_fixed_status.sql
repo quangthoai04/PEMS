@@ -3243,7 +3243,7 @@ INSERT INTO users (user_id, full_name, email, phone, nationality, password_hash,
   (4, 'IC Staff Hà Nội', 'staff.hn@fpt.edu.vn', '0901000004', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 3, 'STAFF', 1, 1, 'FEMALE', NULL, NULL, 'FE-MANUAL-004', 'ACTIVE', '2026-02-01 08:15:00', 0, NULL, 'MANUAL_CREATED', '2026-02-03 10:30:00', '2026-06-23 11:05:00', '2026-02-01 08:15:00', 3, '2026-06-23 11:05:00', 3),
   (5, 'Department Lead Đào tạo HN', 'dept.leader.hn@fpt.edu.vn', '0901000005', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 4, 'LEADER', 1, 2, 'MALE', NULL, NULL, 'FE-MANUAL-005', 'ACTIVE', '2026-02-01 08:20:00', 0, NULL, 'MANUAL_CREATED', '2026-02-03 11:00:00', '2026-06-22 16:50:00', '2026-02-01 08:20:00', 2, '2026-06-22 16:50:00', 2),
   (6, 'Department Staff Đào tạo HN', 'dept.hn@fpt.edu.vn', '0901000006', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 4, 'STAFF', 1, 2, 'FEMALE', NULL, NULL, 'FE-MANUAL-006', 'ACTIVE', '2026-02-01 08:25:00', 0, NULL, 'MANUAL_CREATED', '2026-02-03 11:20:00', '2026-06-20 14:10:00', '2026-02-01 08:25:00', 5, '2026-06-20 14:10:00', 5),
-  (7, 'Student Buddy Hà Nội', 'student@fpt.edu.vn', '0901000007', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 5, NULL, 1, NULL, 'OTHER', NULL, 'SE190001', 'FE-MANUAL-007', 'ACTIVE', '2026-02-01 08:30:00', 0, NULL, 'MANUAL_CREATED', '2026-02-05 08:30:00', '2026-06-21 18:40:00', '2026-02-01 08:30:00', 3, '2026-06-21 18:40:00', 3),
+  (7, 'Student Buddy Hà Nội', 'Canhnvthe186121@fpt.edu.vn', '0901000007', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 5, NULL, 1, NULL, 'OTHER', NULL, 'SE190001', 'FE-MANUAL-007', 'ACTIVE', '2026-02-01 08:30:00', 0, NULL, 'MANUAL_CREATED', '2026-02-05 08:30:00', '2026-06-21 18:40:00', '2026-02-01 08:30:00', 3, '2026-06-21 18:40:00', 3),
   (8, 'External Visitor Main', 'visitor@example.com', '+821012340001', 'Hàn Quốc', '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 6, NULL, NULL, NULL, 'MALE', NULL, NULL, NULL, 'ACTIVE', '2026-02-01 08:35:00', 0, NULL, 'VISITOR_FORM', '2026-02-05 09:00:00', '2026-06-23 07:30:00', '2026-02-01 08:35:00', NULL, '2026-06-23 07:30:00', NULL),
   (9, 'IC Staff Leader TP.HCM', 'staff.leader.hcm@fpt.edu.vn', '0901000009', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 3, 'LEADER', 2, 6, 'FEMALE', NULL, NULL, 'FE-MANUAL-009', 'ACTIVE', '2026-02-01 08:40:00', 0, NULL, 'MANUAL_CREATED', '2026-02-05 09:45:00', '2026-06-22 09:00:00', '2026-02-01 08:40:00', 2, '2026-06-22 09:00:00', 2),
   (10, 'IC Staff TP.HCM', 'staff.hcm@fpt.edu.vn', '0901000010', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 3, 'STAFF', 2, 6, 'MALE', NULL, NULL, 'FE-MANUAL-010', 'ACTIVE', '2026-02-01 08:45:00', 0, NULL, 'MANUAL_CREATED', '2026-02-05 10:10:00', '2026-06-22 09:20:00', '2026-02-01 08:45:00', 9, '2026-06-22 09:20:00', 9),
@@ -3621,11 +3621,11 @@ INSERT INTO email_templates (email_template_id, template_code, name, purpose, ca
 
 -- Additional templates for VisitProcess invitation, logistics request, and scheduled reminders.
 INSERT INTO email_templates (email_template_id, template_code, name, purpose, campus_id, description, status, subject_vi, body_vi, subject_en, body_en, variables_text, created_at, created_by, updated_at, updated_by) VALUES
-  (8, 'VISIT_PARTICIPANT_INVITATION', 'Mời nhân sự IC tham gia tiếp khách', 'VISIT_PARTICIPANT', NULL, 'Email mời IC Staff tham gia hỗ trợ visit instance; có nút chấp nhận/từ chối qua email_action_tokens.', 'ACTIVE', 'Mời tham gia hỗ trợ đoàn {{DelegationName}}', '<p>Xin chào {{recipientName}},</p><p>Bạn được mời hỗ trợ đoàn <strong>{{DelegationName}}</strong> tại {{CampusName}} từ {{plannedStartAt}} đến {{plannedEndAt}}.</p><p>Host phụ trách: {{hostName}}.</p><p>Vui lòng chọn Chấp nhận hoặc Từ chối bằng nút trong email.</p><p><a href="{{acceptUrl}}">Chấp nhận</a> | <a href="{{declineUrl}}">Từ chối</a></p>', 'Invitation to support {{DelegationName}}', '<p>Hello {{recipientName}},</p><p>You are invited to support <strong>{{DelegationName}}</strong> at {{CampusName}} from {{plannedStartAt}} to {{plannedEndAt}}.</p><p>Host: {{hostName}}.</p><p>Please accept or decline using the email buttons.</p><p><a href="{{acceptUrl}}">Accept</a> | <a href="{{declineUrl}}">Decline</a></p>', 'recipientName,DelegationName,CampusName,plannedStartAt,plannedEndAt,hostName,acceptUrl,declineUrl', '2026-06-26 09:00:00', 1, NULL, NULL),
-  (9, 'VISIT_DEPARTMENT_LEADER_INVITATION', 'Mời Department Leader phối hợp tiếp khách', 'VISIT_PARTICIPANT', NULL, 'Email mời Department Leader phối hợp; chấp nhận/từ chối bằng token, gán nhân sự qua link đăng nhập.', 'ACTIVE', 'Mời phòng ban phối hợp đoàn {{DelegationName}}', '<p>Xin chào {{recipientName}},</p><p>Phòng ban của bạn được mời phối hợp đoàn <strong>{{DelegationName}}</strong> tại {{CampusName}}.</p><p>Thời gian: {{plannedStartAt}} - {{plannedEndAt}}.</p><p><a href="{{acceptUrl}}">Chấp nhận</a> | <a href="{{declineUrl}}">Từ chối</a> | <a href="{{assignUrl}}">Gán nhân sự</a></p>', 'Department coordination invitation for {{DelegationName}}', '<p>Hello {{recipientName}},</p><p>Your department is invited to coordinate <strong>{{DelegationName}}</strong> at {{CampusName}}.</p><p>Time: {{plannedStartAt}} - {{plannedEndAt}}.</p><p><a href="{{acceptUrl}}">Accept</a> | <a href="{{declineUrl}}">Decline</a> | <a href="{{assignUrl}}">Assign staff</a></p>', 'recipientName,DelegationName,CampusName,plannedStartAt,plannedEndAt,acceptUrl,declineUrl,assignUrl', '2026-06-26 09:05:00', 1, NULL, NULL),
-  (10, 'VISIT_STUDENT_INVITATION', 'Mời sinh viên hỗ trợ tiếp khách', 'VISIT_PARTICIPANT', NULL, 'Email mời Student hỗ trợ đoàn; có nút chấp nhận/từ chối qua email_action_tokens.', 'ACTIVE', 'Mời sinh viên hỗ trợ đoàn {{DelegationName}}', '<p>Xin chào {{recipientName}},</p><p>Bạn được mời hỗ trợ đoàn <strong>{{DelegationName}}</strong> tại {{CampusName}}.</p><p>Thời gian: {{plannedStartAt}} - {{plannedEndAt}}.</p><p><a href="{{acceptUrl}}">Chấp nhận</a> | <a href="{{declineUrl}}">Từ chối</a></p>', 'Student support invitation for {{DelegationName}}', '<p>Hello {{recipientName}},</p><p>You are invited to support <strong>{{DelegationName}}</strong> at {{CampusName}}.</p><p>Time: {{plannedStartAt}} - {{plannedEndAt}}.</p><p><a href="{{acceptUrl}}">Accept</a> | <a href="{{declineUrl}}">Decline</a></p>', 'recipientName,DelegationName,CampusName,plannedStartAt,plannedEndAt,acceptUrl,declineUrl', '2026-06-26 09:10:00', 1, NULL, NULL),
-  (11, 'LOGISTICS_REQUEST_TO_DEPARTMENT', 'Gửi yêu cầu hậu cần tới phòng ban', 'LOGISTICS', NULL, 'Email gửi Department Leader khi Host tạo yêu cầu logistics.', 'ACTIVE', 'Yêu cầu hậu cần mới: {{logisticsTitle}}', '<p>Xin chào {{departmentLeaderName}},</p><p>Host {{requesterName}} đã gửi yêu cầu hậu cần <strong>{{logisticsTitle}}</strong> cho đoàn {{DelegationName}} tại {{CampusName}}.</p><p>Loại: {{itemType}}. Số lượng: {{quantity}}. Thời gian sử dụng: {{usageStartAt}} - {{usageEndAt}}.</p><p><a href="{{detailUrl}}">Xem chi tiết trong PEMS</a></p>', 'New logistics request: {{logisticsTitle}}', '<p>Hello {{departmentLeaderName}},</p><p>Host {{requesterName}} submitted logistics request <strong>{{logisticsTitle}}</strong> for {{DelegationName}} at {{CampusName}}.</p><p>Type: {{itemType}}. Quantity: {{quantity}}. Usage time: {{usageStartAt}} - {{usageEndAt}}.</p><p><a href="{{detailUrl}}">View in PEMS</a></p>', 'departmentLeaderName,requesterName,DelegationName,CampusName,logisticsTitle,itemType,quantity,usageStartAt,usageEndAt,detailUrl', '2026-06-26 09:15:00', 1, NULL, NULL),
-  (12, 'LOGISTICS_ASSIGNEE_ASSIGNMENT', 'Phân công nhân sự xử lý hậu cần', 'LOGISTICS', NULL, 'Email gửi nhân sự phòng ban khi Department Leader phân công xử lý logistics; có nút nhận/từ chối.', 'ACTIVE', 'Bạn được phân công xử lý: {{logisticsTitle}}', '<p>Xin chào {{assigneeName}},</p><p>Bạn được phân công xử lý hạng mục <strong>{{logisticsTitle}}</strong> cho đoàn {{DelegationName}}.</p><p>Deadline: {{dueAt}}.</p><p><a href="{{acceptUrl}}">Nhận nhiệm vụ</a> | <a href="{{declineUrl}}">Từ chối</a></p>', 'You have been assigned: {{logisticsTitle}}', '<p>Hello {{assigneeName}},</p><p>You have been assigned to handle <strong>{{logisticsTitle}}</strong> for {{DelegationName}}.</p><p>Due: {{dueAt}}.</p><p><a href="{{acceptUrl}}">Accept</a> | <a href="{{declineUrl}}">Decline</a></p>', 'assigneeName,DelegationName,logisticsTitle,dueAt,acceptUrl,declineUrl', '2026-06-26 09:20:00', 1, NULL, NULL),
+  (8, 'VISIT_PARTICIPANT_INVITATION', 'Mời nhân sự IC tham gia tiếp khách', 'VISIT_PARTICIPANT', NULL, 'Email mời IC Staff tham gia hỗ trợ visit instance; có nút chấp nhận/từ chối qua email_action_tokens.', 'ACTIVE', 'Mời tham gia hỗ trợ đoàn {{DelegationName}}', '<p>Xin chào {{recipientName}},</p><p>Bạn được mời hỗ trợ đoàn <strong>{{DelegationName}}</strong> tại {{CampusName}} từ {{plannedStartAt}} đến {{plannedEndAt}}.</p><p>Host phụ trách: {{hostName}}.</p><p>Vui lòng chọn Chấp nhận hoặc Từ chối bằng nút trong email.</p>', 'Invitation to support {{DelegationName}}', '<p>Hello {{recipientName}},</p><p>You are invited to support <strong>{{DelegationName}}</strong> at {{CampusName}} from {{plannedStartAt}} to {{plannedEndAt}}.</p><p>Host: {{hostName}}.</p><p>Please accept or decline using the email buttons.</p>', 'recipientName,DelegationName,CampusName,plannedStartAt,plannedEndAt,hostName,acceptUrl,declineUrl', '2026-06-26 09:00:00', 1, NULL, NULL),
+  (9, 'VISIT_DEPARTMENT_LEADER_INVITATION', 'Mời Department Leader phối hợp tiếp khách', 'VISIT_PARTICIPANT', NULL, 'Email mời Department Leader phối hợp; chấp nhận/từ chối bằng token, gán nhân sự qua link đăng nhập.', 'ACTIVE', 'Mời phòng ban phối hợp đoàn {{DelegationName}}', '<p>Xin chào {{recipientName}},</p><p>Phòng ban của bạn được mời phối hợp đoàn <strong>{{DelegationName}}</strong> tại {{CampusName}}.</p><p>Thời gian: {{plannedStartAt}} - {{plannedEndAt}}.</p>', 'Department coordination invitation for {{DelegationName}}', '<p>Hello {{recipientName}},</p><p>Your department is invited to coordinate <strong>{{DelegationName}}</strong> at {{CampusName}}.</p><p>Time: {{plannedStartAt}} - {{plannedEndAt}}.</p>', 'recipientName,DelegationName,CampusName,plannedStartAt,plannedEndAt,acceptUrl,declineUrl,assignUrl', '2026-06-26 09:05:00', 1, NULL, NULL),
+  (10, 'VISIT_STUDENT_INVITATION', 'Mời sinh viên hỗ trợ tiếp khách', 'VISIT_PARTICIPANT', NULL, 'Email mời Student hỗ trợ đoàn; có nút chấp nhận/từ chối qua email_action_tokens.', 'ACTIVE', 'Mời sinh viên hỗ trợ đoàn {{DelegationName}}', '<p>Xin chào {{recipientName}},</p><p>Bạn được mời hỗ trợ đoàn <strong>{{DelegationName}}</strong> tại {{CampusName}}.</p><p>Thời gian: {{plannedStartAt}} - {{plannedEndAt}}.</p>', 'Student support invitation for {{DelegationName}}', '<p>Hello {{recipientName}},</p><p>You are invited to support <strong>{{DelegationName}}</strong> at {{CampusName}}.</p><p>Time: {{plannedStartAt}} - {{plannedEndAt}}.</p>', 'recipientName,DelegationName,CampusName,plannedStartAt,plannedEndAt,acceptUrl,declineUrl', '2026-06-26 09:10:00', 1, NULL, NULL),
+  (11, 'LOGISTICS_REQUEST_TO_DEPARTMENT', 'Gửi yêu cầu hậu cần tới phòng ban', 'LOGISTICS', NULL, 'Email gửi Department Leader khi Host tạo yêu cầu logistics.', 'ACTIVE', 'Yêu cầu hậu cần mới: {{logisticsTitle}}', '<p>Xin chào {{departmentLeaderName}},</p><p>Host {{requesterName}} đã gửi yêu cầu hậu cần <strong>{{logisticsTitle}}</strong> cho đoàn {{DelegationName}} tại {{CampusName}}.</p><p>Loại: {{itemType}}. Số lượng dự kiến: {{quantity}}. Thời gian sử dụng: {{usageStartAt}} - {{usageEndAt}}.</p>', 'New logistics request: {{logisticsTitle}}', '<p>Hello {{departmentLeaderName}},</p><p>Host {{requesterName}} submitted logistics request <strong>{{logisticsTitle}}</strong> for {{DelegationName}} at {{CampusName}}.</p><p>Type: {{itemType}}. Planned quantity: {{quantity}}. Usage time: {{usageStartAt}} - {{usageEndAt}}.</p>', 'departmentLeaderName,requesterName,DelegationName,CampusName,logisticsTitle,itemType,quantity,usageStartAt,usageEndAt,detailUrl', '2026-06-26 09:15:00', 1, NULL, NULL),
+  (12, 'LOGISTICS_ASSIGNEE_ASSIGNMENT', 'Phân công nhân sự xử lý hậu cần', 'LOGISTICS', NULL, 'Email gửi nhân sự phòng ban khi Department Leader phân công xử lý logistics; có nút nhận/từ chối.', 'ACTIVE', 'Bạn được phân công xử lý: {{logisticsTitle}}', '<p>Xin chào {{assigneeName}},</p><p>Bạn được phân công xử lý hạng mục <strong>{{logisticsTitle}}</strong> cho đoàn {{DelegationName}}.</p><p>Deadline: {{dueAt}}.</p>', 'You have been assigned: {{logisticsTitle}}', '<p>Hello {{assigneeName}},</p><p>You have been assigned to handle <strong>{{logisticsTitle}}</strong> for {{DelegationName}}.</p><p>Due: {{dueAt}}.</p>', 'assigneeName,DelegationName,logisticsTitle,dueAt,acceptUrl,declineUrl', '2026-06-26 09:20:00', 1, NULL, NULL),
   (13, 'VISIT_REMINDER_HOST', 'Nhắc lịch tiếp khách cho Host', 'VISIT_REMINDER', NULL, 'Email nhắc Host trước thời điểm tiếp khách theo visit_instance_reminder_settings.', 'ACTIVE', 'Nhắc lịch tiếp khách: {{DelegationName}}', '<p>Xin chào {{hostName}},</p><p>Đoàn <strong>{{DelegationName}}</strong> sẽ diễn ra tại {{CampusName}} vào {{plannedStartAt}}.</p><p>Vui lòng kiểm tra agenda, thành phần tham gia, hậu cần và ghi chú chuẩn bị.</p><p><a href="{{detailUrl}}">Mở trang điều phối</a></p>', 'Visit reminder: {{DelegationName}}', '<p>Hello {{hostName}},</p><p><strong>{{DelegationName}}</strong> will take place at {{CampusName}} on {{plannedStartAt}}.</p><p>Please review agenda, participants, logistics and preparation note.</p><p><a href="{{detailUrl}}">Open coordination page</a></p>', 'hostName,DelegationName,CampusName,plannedStartAt,detailUrl', '2026-06-26 09:25:00', 1, NULL, NULL),
   (14, 'VISIT_REMINDER_PARTICIPANTS', 'Nhắc lịch tiếp khách cho người tham gia', 'VISIT_REMINDER', NULL, 'Email nhắc người tham gia đã nhận/gán trước chuyến tiếp khách.', 'ACTIVE', 'Nhắc lịch tham gia hỗ trợ đoàn {{DelegationName}}', '<p>Xin chào {{recipientName}},</p><p>Bạn có lịch tham gia hỗ trợ đoàn <strong>{{DelegationName}}</strong> tại {{CampusName}} vào {{plannedStartAt}}.</p><p>Vui lòng có mặt đúng giờ và kiểm tra thông tin trên PEMS nếu cần.</p>', 'Reminder to support {{DelegationName}}', '<p>Hello {{recipientName}},</p><p>You are scheduled to support <strong>{{DelegationName}}</strong> at {{CampusName}} on {{plannedStartAt}}.</p><p>Please arrive on time and check PEMS if needed.</p>', 'recipientName,DelegationName,CampusName,plannedStartAt,detailUrl', '2026-06-26 09:30:00', 1, NULL, NULL),
   (15, 'VISIT_REQUEST_SUBMITTED_NOTIFY', 'Thông báo có yêu cầu tham quan mới', 'VISIT_REQUEST', NULL, 'Email thông báo Staff Leader/HO khi có visit request mới cần xử lý.', 'ACTIVE', 'Có yêu cầu tham quan mới: {{RequestCode}}', '<p>Hệ thống vừa ghi nhận yêu cầu tham quan <strong>{{RequestCode}}</strong> từ {{DelegationName}}.</p><p><a href="{{detailUrl}}">Xem và xử lý yêu cầu</a></p>', 'New visit request: {{RequestCode}}', '<p>A new visit request <strong>{{RequestCode}}</strong> from {{DelegationName}} has been submitted.</p><p><a href="{{detailUrl}}">View and process</a></p>', 'RequestCode,DelegationName,SubmittedAt,detailUrl', '2026-06-26 09:35:00', 1, NULL, NULL),
@@ -3862,7 +3862,7 @@ INSERT INTO users (user_id, full_name, email, phone, nationality, password_hash,
   (123, 'Student Affairs Lead HN', 'student.affairs.leader.hn@fpt.edu.vn', '0902000123', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 4, 'LEADER', 1, 102, 'FEMALE', NULL, NULL, 'FE-EXTRA-123', 'ACTIVE', '2026-02-11 09:00:00', 0, NULL, 'MANUAL_CREATED', '2026-02-13 09:00:00', '2026-06-21 09:00:00', '2026-02-11 09:00:00', 2, '2026-06-21 09:00:00', 2),
   (124, 'Student Affairs Staff HN', 'student.affairs.staff.hn@fpt.edu.vn', '0902000124', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 4, 'STAFF', 1, 102, 'MALE', NULL, NULL, 'FE-EXTRA-124', 'ACTIVE', '2026-02-11 09:00:00', 0, NULL, 'MANUAL_CREATED', '2026-02-13 09:00:00', '2026-06-21 09:00:00', '2026-02-11 09:00:00', 2, '2026-06-21 09:00:00', 2),
   (125, 'Library Lead HN', 'library.leader.hn@fpt.edu.vn', '0902000125', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 4, 'LEADER', 1, 103, 'FEMALE', NULL, NULL, 'FE-EXTRA-125', 'ACTIVE', '2026-02-11 09:00:00', 0, NULL, 'MANUAL_CREATED', '2026-02-13 09:00:00', '2026-06-21 09:00:00', '2026-02-11 09:00:00', 2, '2026-06-21 09:00:00', 2),
-  (126, 'Library Staff HN', 'library.staff.hn@fpt.edu.vn', '0902000126', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 4, 'STAFF', 1, 103, 'MALE', NULL, NULL, 'FE-EXTRA-126', 'ACTIVE', '2026-02-11 09:00:00', 0, NULL, 'MANUAL_CREATED', '2026-02-13 09:00:00', '2026-06-21 09:00:00', '2026-02-11 09:00:00', 2, '2026-06-21 09:00:00', 2),
+  (126, 'Library Staff HN', 'nguyencanhslt@gmail.com', '0902000126', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 4, 'STAFF', 1, 103, 'MALE', NULL, NULL, 'FE-EXTRA-126', 'ACTIVE', '2026-02-11 09:00:00', 0, NULL, 'MANUAL_CREATED', '2026-02-13 09:00:00', '2026-06-21 09:00:00', '2026-02-11 09:00:00', 2, '2026-06-21 09:00:00', 2),
   (127, 'Student Service Lead HCM', 'student.service.leader.hcm@fpt.edu.vn', '0902000127', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 4, 'LEADER', 2, 105, 'MALE', NULL, NULL, 'FE-EXTRA-127', 'ACTIVE', '2026-02-11 09:00:00', 0, NULL, 'MANUAL_CREATED', '2026-02-13 09:00:00', '2026-06-21 09:00:00', '2026-02-11 09:00:00', 2, '2026-06-21 09:00:00', 2),
   (128, 'Student Service Staff HCM', 'student.service.staff.hcm@fpt.edu.vn', '0902000128', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 4, 'STAFF', 2, 105, 'FEMALE', NULL, NULL, 'FE-EXTRA-128', 'ACTIVE', '2026-02-11 09:00:00', 0, NULL, 'MANUAL_CREATED', '2026-02-13 09:00:00', '2026-06-21 09:00:00', '2026-02-11 09:00:00', 2, '2026-06-21 09:00:00', 2),
   (129, 'Facility Lead HCM', 'facility.leader.hcm@fpt.edu.vn', '0902000129', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 4, 'LEADER', 2, 106, 'FEMALE', NULL, NULL, 'FE-EXTRA-129', 'ACTIVE', '2026-02-11 09:00:00', 0, NULL, 'MANUAL_CREATED', '2026-02-13 09:00:00', '2026-06-21 09:00:00', '2026-02-11 09:00:00', 2, '2026-06-21 09:00:00', 2),
@@ -6921,7 +6921,7 @@ SET
 <strong>Thời gian sử dụng:</strong> {{UsageStartAt}} - {{UsageEndAt}}<br/>
 <strong>Người gửi yêu cầu:</strong> {{RequesterName}}</p>
 <p>Vui lòng kiểm tra chi tiết và phản hồi trên PEMS trong thời gian sớm nhất.</p>
-<p><a href="{{DetailUrl}}">Xem yêu cầu hậu cần</a></p>
+
 <p>Trân trọng,<br/>PEMS - FPT University</p>',
   subject_en = '[PEMS] New logistics request: {{LogisticsTitle}}',
   body_en = '<p>Hello {{DepartmentLeaderName}},</p>
@@ -6932,7 +6932,7 @@ SET
 <strong>Usage time:</strong> {{UsageStartAt}} - {{UsageEndAt}}<br/>
 <strong>Requested by:</strong> {{RequesterName}}</p>
 <p>Please review the details and respond in PEMS as soon as possible.</p>
-<p><a href="{{DetailUrl}}">View logistics request</a></p>
+
 <p>Best regards,<br/>PEMS - FPT University</p>',
   variables_text = 'DepartmentLeaderName,RequesterName,DelegationName,CampusName,LogisticsTitle,UsageStartAt,UsageEndAt,DetailUrl',
   updated_at = CURRENT_TIMESTAMP,
@@ -6969,7 +6969,7 @@ SET
 <strong>Host chính:</strong> {{hostName}}<br/>
 <strong>Vai trò dự kiến:</strong> {{participantRoleLabel}}</p>
 <p>Vui lòng phản hồi lời mời bằng một trong hai nút bên dưới. Phản hồi của bạn sẽ được ghi nhận trực tiếp trên hệ thống PEMS.</p>
-<p><a href="{{acceptUrl}}">Chấp nhận tham gia</a> &nbsp; | &nbsp; <a href="{{declineUrl}}">Từ chối</a></p>
+
 <p>Nếu cần thêm thông tin, vui lòng liên hệ Host chính hoặc mở trang chi tiết đoàn trên PEMS.</p>
 <p>Trân trọng,<br/>PEMS - FPT University</p>',
   subject_en = '[PEMS] Invitation to support {{DelegationName}}',
@@ -6979,7 +6979,7 @@ SET
 <strong>Main host:</strong> {{hostName}}<br/>
 <strong>Expected role:</strong> {{participantRoleLabel}}</p>
 <p>Please respond to this invitation using one of the buttons below. Your response will be recorded directly in PEMS.</p>
-<p><a href="{{acceptUrl}}">Accept invitation</a> &nbsp; | &nbsp; <a href="{{declineUrl}}">Decline</a></p>
+
 <p>If you need more information, please contact the main host or open the visit detail page in PEMS.</p>
 <p>Best regards,<br/>PEMS - FPT University</p>',
   variables_text = 'recipientName,DelegationName,CampusName,plannedStartAt,plannedEndAt,hostName,participantRoleLabel,acceptUrl,declineUrl,detailUrl',
@@ -6995,7 +6995,7 @@ SET
 <p><strong>Thời gian:</strong> {{plannedStartAt}} - {{plannedEndAt}}<br/>
 <strong>Host chính:</strong> {{hostName}}</p>
 <p>Vui lòng phản hồi lời mời hoặc gán nhân sự phụ trách trực tiếp trên PEMS.</p>
-<p><a href="{{acceptUrl}}">Chấp nhận phối hợp</a> &nbsp; | &nbsp; <a href="{{declineUrl}}">Từ chối</a> &nbsp; | &nbsp; <a href="{{assignUrl}}">Gán nhân sự</a></p>
+
 <p>Trân trọng,<br/>PEMS - FPT University</p>',
   subject_en = '[PEMS] Department coordination invitation for {{DelegationName}}',
   body_en = '<p>Hello {{recipientName}},</p>
@@ -7003,7 +7003,7 @@ SET
 <p><strong>Time:</strong> {{plannedStartAt}} - {{plannedEndAt}}<br/>
 <strong>Main host:</strong> {{hostName}}</p>
 <p>Please respond to the invitation or assign responsible staff directly in PEMS.</p>
-<p><a href="{{acceptUrl}}">Accept coordination</a> &nbsp; | &nbsp; <a href="{{declineUrl}}">Decline</a> &nbsp; | &nbsp; <a href="{{assignUrl}}">Assign staff</a></p>
+
 <p>Best regards,<br/>PEMS - FPT University</p>',
   variables_text = 'recipientName,departmentName,DelegationName,CampusName,plannedStartAt,plannedEndAt,hostName,acceptUrl,declineUrl,assignUrl,detailUrl',
   updated_at = CURRENT_TIMESTAMP,
@@ -7019,7 +7019,7 @@ SET
 <strong>Host chính:</strong> {{hostName}}<br/>
 <strong>Vai trò dự kiến:</strong> {{participantRoleLabel}}</p>
 <p>Vui lòng phản hồi bằng nút bên dưới để Host có thể hoàn tất danh sách thành phần tham gia.</p>
-<p><a href="{{acceptUrl}}">Chấp nhận tham gia</a> &nbsp; | &nbsp; <a href="{{declineUrl}}">Từ chối</a></p>
+
 <p>Trân trọng,<br/>PEMS - FPT University</p>',
   subject_en = '[PEMS] Student support invitation for {{DelegationName}}',
   body_en = '<p>Hello {{recipientName}},</p>
@@ -7028,7 +7028,7 @@ SET
 <strong>Main host:</strong> {{hostName}}<br/>
 <strong>Expected role:</strong> {{participantRoleLabel}}</p>
 <p>Please respond using the buttons below so the host can finalize the participant list.</p>
-<p><a href="{{acceptUrl}}">Accept invitation</a> &nbsp; | &nbsp; <a href="{{declineUrl}}">Decline</a></p>
+
 <p>Best regards,<br/>PEMS - FPT University</p>',
   variables_text = 'recipientName,DelegationName,CampusName,plannedStartAt,plannedEndAt,hostName,participantRoleLabel,acceptUrl,declineUrl,detailUrl',
   updated_at = CURRENT_TIMESTAMP,
@@ -7046,7 +7046,7 @@ SET
 <strong>Thời gian sử dụng:</strong> {{usageStartAt}} - {{usageEndAt}}<br/>
 <strong>Ghi chú:</strong> {{description}}</p>
 <p>Vui lòng kiểm tra chi tiết trên PEMS, tiếp nhận yêu cầu và phân công nhân sự xử lý nếu cần.</p>
-<p><a href="{{detailUrl}}">Xem yêu cầu hậu cần</a></p>
+
 <p>Trân trọng,<br/>PEMS - FPT University</p>',
   subject_en = '[PEMS] New logistics request: {{logisticsTitle}}',
   body_en = '<p>Hello {{departmentLeaderName}},</p>
@@ -7057,7 +7057,7 @@ SET
 <strong>Usage time:</strong> {{usageStartAt}} - {{usageEndAt}}<br/>
 <strong>Note:</strong> {{description}}</p>
 <p>Please review the request in PEMS, receive it and assign responsible staff if needed.</p>
-<p><a href="{{detailUrl}}">View logistics request</a></p>
+
 <p>Best regards,<br/>PEMS - FPT University</p>',
   variables_text = 'departmentLeaderName,requesterName,DelegationName,CampusName,logisticsTitle,itemType,quantity,usageStartAt,usageEndAt,description,detailUrl',
   updated_at = CURRENT_TIMESTAMP,
@@ -7073,7 +7073,7 @@ SET
 <strong>Người phân công:</strong> {{assignedByName}}<br/>
 <strong>Ghi chú:</strong> {{assignmentNote}}</p>
 <p>Vui lòng phản hồi nhận nhiệm vụ hoặc từ chối bằng nút bên dưới. Phản hồi sẽ được ghi nhận trực tiếp trên PEMS.</p>
-<p><a href="{{acceptUrl}}">Nhận nhiệm vụ</a> &nbsp; | &nbsp; <a href="{{declineUrl}}">Từ chối</a></p>
+
 <p>Trân trọng,<br/>PEMS - FPT University</p>',
   subject_en = '[PEMS] Logistics assignment: {{logisticsTitle}}',
   body_en = '<p>Hello {{assigneeName}},</p>
@@ -7082,7 +7082,7 @@ SET
 <strong>Assigned by:</strong> {{assignedByName}}<br/>
 <strong>Note:</strong> {{assignmentNote}}</p>
 <p>Please accept or decline the assignment using the buttons below. Your response will be recorded directly in PEMS.</p>
-<p><a href="{{acceptUrl}}">Accept assignment</a> &nbsp; | &nbsp; <a href="{{declineUrl}}">Decline</a></p>
+
 <p>Best regards,<br/>PEMS - FPT University</p>',
   variables_text = 'assigneeName,DelegationName,logisticsTitle,dueAt,assignedByName,assignmentNote,acceptUrl,declineUrl,detailUrl',
   updated_at = CURRENT_TIMESTAMP,

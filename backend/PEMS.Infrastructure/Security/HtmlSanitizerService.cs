@@ -25,6 +25,20 @@ public sealed class HtmlSanitizerService : IHtmlSanitizerService
         _emailSanitizer.AllowedSchemes.Add("cid");
         _emailSanitizer.AllowedAttributes.Add("data-content-id");
         _emailSanitizer.AllowedAttributes.Add("data-file-id");
+        // Email links must open in a new tab and not leak the opener. Allow the attributes and force
+        // them onto every <a href> after sanitize, so user-inserted links are safe by construction.
+        _emailSanitizer.AllowedAttributes.Add("target");
+        _emailSanitizer.AllowedAttributes.Add("rel");
+        _emailSanitizer.PostProcessNode += (_, e) =>
+        {
+            if (e.Node is AngleSharp.Dom.IElement el
+                && string.Equals(el.TagName, "A", System.StringComparison.OrdinalIgnoreCase)
+                && el.HasAttribute("href"))
+            {
+                el.SetAttribute("target", "_blank");
+                el.SetAttribute("rel", "noopener noreferrer");
+            }
+        };
     }
 
     private static HtmlSanitizer BuildBase()

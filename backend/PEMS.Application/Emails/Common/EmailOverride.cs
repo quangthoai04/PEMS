@@ -6,16 +6,19 @@ namespace PEMS.Application.Emails.Common;
 /// the message content, then ALWAYS injects the system action block with real tokens — the edited body
 /// is never trusted to contain live action URLs.
 /// <para>
-/// Preferred: <see cref="BodyText"/> — the readable plain text the host edited in the modal (the
-/// backend converts it to safe HTML). <see cref="BodyHtml"/> is the legacy field kept for backward
-/// compatibility; <see cref="EmailComposition.ResolveEditableHtml"/> picks BodyText first.
+/// Preferred for plain-text edits: <see cref="BodyText"/> — the readable plain text the host edited
+/// (the backend converts it to safe HTML). For the rich editor the host sends <see cref="BodyHtml"/>
+/// (already cid-rewritten for inline images); <see cref="EmailComposition.ResolveEditableHtml"/> picks
+/// BodyText first, falling back to BodyHtml. <see cref="Attachments"/> carries the file/inline-image
+/// references (validated + streamed to real MIME parts at send time, same rules as email drafts).
 /// </para>
 /// </summary>
 public sealed record EmailOverride(
     bool UseEditedContent,
     string? Subject,
     string? BodyHtml,
-    string? BodyText = null);
+    string? BodyText = null,
+    System.Collections.Generic.IReadOnlyList<EmailDraftAttachmentInput>? Attachments = null);
 
 public static class EmailOverrideLimits
 {

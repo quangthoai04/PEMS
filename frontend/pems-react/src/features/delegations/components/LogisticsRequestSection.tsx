@@ -20,7 +20,8 @@ import {
   MonitorPlay, MapPin, Building2, MoreHorizontal, Car, UserCheck, Coffee, History, Mail,
 } from 'lucide-react';
 import { delegationsApi } from '../api/delegationsApi';
-import { EmailPreviewModal, type EmailPreviewRecipient } from './EmailPreviewModal';
+import { EmailPreviewModal, type EmailPreviewRecipient, type EmailPreviewSendPayload } from './EmailPreviewModal';
+import { stripLegacyActionHtml } from '../../emails/utils/actionLinks';
 import { SentEmailsModal } from './SentEmailsModal';
 import { SearchDropdown } from './ParticipantInvitationSection';
 import {
@@ -204,6 +205,21 @@ export function LogisticsRequestSection({
     }
   };
 
+  // Host accepts/rejects a Department's change proposal (status CHANGE_PROPOSED).
+  const respondToProposal = async (item: VisitInstanceLogisticsItem, accepted: boolean, note: string) => {
+    const key = `proposal-${item.logisticsItemId}`;
+    setBusyKey(key);
+    try {
+      const res = await delegationsApi.confirmChangeProposal(item.logisticsItemId, accepted, note || null);
+      pushToast('success', res.message || (accepted ? 'Đã chấp nhận đề xuất thay đổi.' : 'Đã từ chối đề xuất thay đổi.'));
+      await loadList();
+    } catch (e: any) {
+      pushToast('error', apiError(e, 'Không thể phản hồi đề xuất. Vui lòng thử lại.'));
+    } finally {
+      setBusyKey(null);
+    }
+  };
+
   const cancelItem = async (key: string, item: VisitInstanceLogisticsItem) => {
     setBusyKey(key);
     try {
@@ -243,7 +259,7 @@ export function LogisticsRequestSection({
       });
       setPreview((p) => ({
         ...p, open: true, loading: false, restoring: false, error: null,
-        subject: res.subject, body: res.editableBodyText, // text, not raw HTML (Part A)
+        subject: res.subject, body: stripLegacyActionHtml(res.bodyHtml), // editable HTML, legacy action links stripped
         isActionTemplate: res.isActionTemplate,
         systemActionDescription: res.systemActionDescription ?? null,
         lockedActionBlockHtml: res.lockedActionBlockHtml ?? null,
@@ -268,16 +284,16 @@ export function LogisticsRequestSection({
   };
   const closePreview = () => setPreview((p) => ({ ...p, open: false }));
 
-  const sendWithEditedContent = async () => {
+  const sendWithEditedContent = async (payload: EmailPreviewSendPayload) => {
     const pl = previewPayload.current;
     if (!pl) return;
-    if (!preview.subject.trim()) { pushToast('error', 'Tiêu đề email không được để trống.'); return; }
-    if (!preview.body.trim()) { pushToast('error', 'Nội dung email không được để trống.'); return; }
+    if (!payload.subject.trim()) { pushToast('error', 'Tiêu đề email không được để trống.'); return; }
+    if (!payload.bodyHtml.trim()) { pushToast('error', 'Nội dung email không được để trống.'); return; }
     setPreview((p) => ({ ...p, sending: true }));
     try {
       const res = await delegationsApi.prepareVisitLogistics({
         ...pl,
-        emailOverride: { useEditedContent: true, subject: preview.subject.trim(), bodyText: preview.body },
+        emailOverride: { useEditedContent: true, subject: payload.subject.trim(), bodyHtml: payload.bodyHtml, attachments: payload.attachments },
       });
       setPreview((p) => ({ ...p, open: false, sending: false }));
       pushToast(res.emailStatus === 'FAILED' ? 'warning' : 'success', res.message || 'Đã gửi yêu cầu hậu cần.');
@@ -291,7 +307,7 @@ export function LogisticsRequestSection({
 
   const shared = {
     visitInstanceId, departments, canManage, busyKey, loadedOnce,
-    onSubmit: submitRequest, onPreview: openPreview, onCancel: cancelItem,
+    onSubmit: submitRequest, onPreview: openPreview, onCancel: cancelItem, pushToast,
   };
 
   return (
@@ -412,45 +428,16 @@ export function LogisticsRequestSection({
             <p className="py-2 text-sm italic text-slate-400">Chưa có yêu cầu hậu cần nào.</p>
           ) : (
             <div className="space-y-2">
-              {items.map((it) => {
-                const meta = LOGISTICS_STATUS_META[it.status] ?? { label: it.status, cls: 'bg-slate-100 text-slate-600 border-slate-200' };
-                const offline = it.coordinationMode === 'OFFLINE_COORDINATED';
-                return (
-                  <div key={it.logisticsItemId} className={`rounded-xl border p-3 shadow-sm ${it.status === 'CANCELLED' ? 'border-gray-200 bg-gray-50 opacity-70' : 'border-gray-200 bg-white'}`}>
-                    <div className="flex flex-wrap items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <div className="truncate text-sm font-bold text-gray-800">{it.title}</div>
-                        <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-gray-500">
-                          <span>{ITEM_TYPE_LABEL[it.itemType] ?? it.itemType}</span>
-                          {it.quantity != null && <span>SL: {it.quantity}</span>}
-                          {it.departmentName && <span>Phòng ban: {it.departmentName}</span>}
-                          {it.assignedToName && <span>Nhân sự: {it.assignedToName}</span>}
-                          {(it.usageStartAt || it.usageEndAt) && <span>{fmtDateTime(it.usageStartAt)} – {fmtDateTime(it.usageEndAt)}</span>}
-                        </div>
-                        {offline && it.offlineCoordinationNote && (
-                          <div className="mt-1 text-[11px] italic text-amber-700">Ghi chú: {it.offlineCoordinationNote}</div>
-                        )}
-                      </div>
-                      <div className="flex flex-col items-end gap-1">
-                        <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide ${meta.cls}`}>
-                          {meta.label}
-                        </span>
-                        {it.coordinationMode && (
-                          <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[10px] font-bold ${offline ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-slate-200 bg-slate-50 text-slate-500'}`}>
-                            {COORD_LABEL[it.coordinationMode]}
-                          </span>
-                        )}
-                        {it.coordinationMode === 'SYSTEM_REQUEST' && (
-                          <button type="button" onClick={() => openSentEmails(it)}
-                            className="mt-0.5 inline-flex h-7 items-center gap-1 rounded-lg border border-gray-200 bg-white px-2 text-[11px] font-bold text-[#004c91] outline-none transition-colors hover:bg-gray-50">
-                            <History className="w-3.5 h-3.5" /> Mail đã gửi
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
+              {items.map((it) => (
+                <LogisticsListRow
+                  key={it.logisticsItemId}
+                  it={it}
+                  canManage={canManage}
+                  busy={busyKey === `proposal-${it.logisticsItemId}`}
+                  onRespond={respondToProposal}
+                  onViewSent={openSentEmails}
+                />
+              ))}
             </div>
           )}
         </div>
@@ -470,6 +457,7 @@ export function LogisticsRequestSection({
         recipient={preview.recipient}
         canSend
         sendLabel="Gửi với nội dung này"
+        pushToast={pushToast}
         onSubjectChange={(v) => setPreview((p) => ({ ...p, subject: v }))}
         onBodyChange={(v) => setPreview((p) => ({ ...p, body: v }))}
         onClose={closePreview}
@@ -584,6 +572,7 @@ interface SharedCardProps {
   onSubmit: (key: string, payload: PrepareVisitLogisticsPayload) => Promise<boolean>;
   onPreview: (payload: PrepareVisitLogisticsPayload, onReset: () => void) => void;
   onCancel: (key: string, item: VisitInstanceLogisticsItem) => void;
+  pushToast: ToastFn;
 }
 
 interface ResourceCardProps extends SharedCardProps {
@@ -601,7 +590,7 @@ interface ResourceCardProps extends SharedCardProps {
 /** SYSTEM_REQUEST resource form (datetime range, dept required), or a summary when already saved. */
 function ResourceCard({
   cardKey, icon, label, itemType, qtyLabel, notePlaceholder, editableTitle, existingItem, onRemove,
-  visitInstanceId, departments, canManage, busyKey, loadedOnce, onSubmit, onPreview, onCancel,
+  visitInstanceId, departments, canManage, busyKey, loadedOnce, onSubmit, onPreview, onCancel, pushToast,
 }: ResourceCardProps) {
   const [form, setForm] = useState<ResourceForm>(() => {
     if (existingItem) {
@@ -695,9 +684,10 @@ function ResourceCard({
     coordinationMode: 'SYSTEM_REQUEST',
   });
 
+  // Inline error stays at the field; a single toast surfaces the first error (no spam).
   const doSend = async () => {
     const v = validate();
-    if (v) { setErr(v); return; }
+    if (v) { setErr(v); pushToast('error', v); return; }
     const payload = buildPayload();
     if (await onSubmit(cardKey, payload)) {
       setLocalSubmitted(true);
@@ -705,7 +695,7 @@ function ResourceCard({
   };
   const doPreview = () => {
     const v = validate();
-    if (v) { setErr(v); return; }
+    if (v) { setErr(v); pushToast('error', v); return; }
     onPreview(buildPayload(), reset);
   };
 
@@ -739,9 +729,9 @@ function ResourceCard({
               </div>
             )}
             <div>
-              <label className="block text-xs font-bold text-gray-600 mb-1">{qtyLabel}</label>
+              <label className="block text-xs font-bold text-gray-600 mb-1">{qtyLabel} <span className="font-normal text-gray-400">(dự kiến)</span></label>
               <input type="text" inputMode="numeric" disabled={isFormDisabled} value={form.quantity} onChange={(e) => handleQuantityChange(e.target.value)}
-                placeholder="VD: 2"
+                placeholder="VD: 2 (có thể điều chỉnh sau khi phòng ban phản hồi)"
                 className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-[#004c91] hover:border-gray-400 transition-colors outline-none text-sm disabled:bg-gray-50 disabled:text-gray-400" />
             </div>
             <div>
@@ -874,7 +864,7 @@ interface OfflineCardProps extends SharedCardProps {
 
 /** "Đã trao đổi bên ngoài" form (Part D) — required note, optional department, NO email; status DONE. */
 function OfflineCard({
-  cardKey, itemType, label, title, visitInstanceId, departments, canManage, busyKey, onSubmit, existingItem, onCancel
+  cardKey, itemType, label, title, visitInstanceId, departments, canManage, busyKey, onSubmit, existingItem, onCancel, pushToast,
 }: OfflineCardProps) {
   const [note, setNote] = useState(() => existingItem?.offlineCoordinationNote || existingItem?.description || '');
   const [departmentId, setDepartmentId] = useState(() => existingItem?.requestedToDepartmentId?.toString() || '');
@@ -898,7 +888,7 @@ function OfflineCard({
   const isFormDisabled = !canManage || isSubmitted;
 
   const doSave = async () => {
-    if (!note.trim()) { setErr('Vui lòng nhập ghi chú trao đổi bên ngoài (bắt buộc).'); return; }
+    if (!note.trim()) { const m = 'Vui lòng nhập ghi chú trao đổi bên ngoài (bắt buộc).'; setErr(m); pushToast('error', m); return; }
     const payload: PrepareVisitLogisticsPayload = {
       visitInstanceId,
       departmentId: departmentId ? Number(departmentId) : null,
@@ -963,6 +953,103 @@ function OfflineCard({
               {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />} Lưu (đã trao đổi bên ngoài)
             </button>
           )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Final ("chốt") quantity: the proposed figure once the Host ACCEPTED, else the planned figure. */
+function finalQuantity(it: VisitInstanceLogisticsItem): number | null | undefined {
+  return it.proposalResponse === 'ACCEPTED' && it.proposedQuantity != null ? it.proposedQuantity : it.quantity;
+}
+
+/** One row of the logistics request list. Shows planned/proposed/final quantity and, for a pending
+ * department change proposal (status CHANGE_PROPOSED), the Host's accept/reject controls. */
+function LogisticsListRow({ it, canManage, busy, onRespond, onViewSent }: {
+  it: VisitInstanceLogisticsItem;
+  canManage: boolean;
+  busy: boolean;
+  onRespond: (item: VisitInstanceLogisticsItem, accepted: boolean, note: string) => void;
+  onViewSent: (item: VisitInstanceLogisticsItem) => void;
+}) {
+  const meta = LOGISTICS_STATUS_META[it.status] ?? { label: it.status, cls: 'bg-slate-100 text-slate-600 border-slate-200' };
+  const offline = it.coordinationMode === 'OFFLINE_COORDINATED';
+  const proposed = it.status === 'CHANGE_PROPOSED';
+  const finalQty = finalQuantity(it);
+  const [rejecting, setRejecting] = useState(false);
+  const [rejectNote, setRejectNote] = useState('');
+
+  return (
+    <div className={`rounded-xl border p-3 shadow-sm ${it.status === 'CANCELLED' ? 'border-gray-200 bg-gray-50 opacity-70' : proposed ? 'border-violet-200 bg-violet-50/30' : 'border-gray-200 bg-white'}`}>
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="truncate text-sm font-bold text-gray-800">{it.title}</div>
+          <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-gray-500">
+            <span>{ITEM_TYPE_LABEL[it.itemType] ?? it.itemType}</span>
+            {it.quantity != null && <span>SL dự kiến: {it.quantity}</span>}
+            {it.proposedQuantity != null && <span className="font-semibold text-violet-700">đề xuất: {it.proposedQuantity}</span>}
+            {it.proposalResponse && finalQty != null && <span className="font-semibold text-emerald-700">chốt: {finalQty}</span>}
+            {it.departmentName && <span>Phòng ban: {it.departmentName}</span>}
+            {it.assignedToName && <span>Nhân sự: {it.assignedToName}</span>}
+            {(it.usageStartAt || it.usageEndAt) && <span>{fmtDateTime(it.usageStartAt)} – {fmtDateTime(it.usageEndAt)}</span>}
+          </div>
+          {offline && it.offlineCoordinationNote && (
+            <div className="mt-1 text-[11px] italic text-amber-700">Ghi chú: {it.offlineCoordinationNote}</div>
+          )}
+        </div>
+        <div className="flex flex-col items-end gap-1">
+          <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide ${meta.cls}`}>{meta.label}</span>
+          {it.coordinationMode && (
+            <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[10px] font-bold ${offline ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-slate-200 bg-slate-50 text-slate-500'}`}>
+              {COORD_LABEL[it.coordinationMode]}
+            </span>
+          )}
+          {it.coordinationMode === 'SYSTEM_REQUEST' && (
+            <button type="button" onClick={() => onViewSent(it)}
+              className="mt-0.5 inline-flex h-7 items-center gap-1 rounded-lg border border-gray-200 bg-white px-2 text-[11px] font-bold text-[#004c91] outline-none transition-colors hover:bg-gray-50">
+              <History className="w-3.5 h-3.5" /> Mail đã gửi
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Department change proposal — Host reviews planned vs proposed and accepts/rejects. */}
+      {proposed && (
+        <div className="mt-3 rounded-lg border border-violet-200 bg-white p-3">
+          <div className="text-[11px] font-bold uppercase tracking-wide text-violet-700">Phòng ban đề xuất thay đổi</div>
+          <div className="mt-1 grid grid-cols-1 gap-0.5 text-xs text-gray-700">
+            {it.proposedQuantity != null && <div>Số lượng đề xuất: <b>{it.proposedQuantity}</b> (dự kiến: {it.quantity ?? '—'})</div>}
+            {(it.proposedUsageStartAt || it.proposedUsageEndAt) && <div>Thời gian đề xuất: {fmtDateTime(it.proposedUsageStartAt)} – {fmtDateTime(it.proposedUsageEndAt)}</div>}
+            {it.proposedDescription && <div>Nội dung đề xuất: {it.proposedDescription}</div>}
+            {it.proposalNote && <div className="italic text-violet-800">Lý do: {it.proposalNote}</div>}
+          </div>
+          {canManage && (!rejecting ? (
+            <div className="mt-2 flex items-center gap-2">
+              <button type="button" disabled={busy} onClick={() => onRespond(it, true, '')}
+                className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white outline-none hover:bg-emerald-700 disabled:opacity-50">
+                {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />} Chấp nhận đề xuất
+              </button>
+              <button type="button" disabled={busy} onClick={() => setRejecting(true)}
+                className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-bold text-red-600 outline-none hover:bg-red-50 disabled:opacity-50">
+                <X className="w-3.5 h-3.5" /> Từ chối đề xuất
+              </button>
+            </div>
+          ) : (
+            <div className="mt-2 space-y-2">
+              <textarea value={rejectNote} onChange={(e) => setRejectNote(e.target.value)} maxLength={1000}
+                placeholder="Lý do từ chối đề xuất (bắt buộc)..."
+                className="w-full h-[70px] resize-none rounded-lg border border-gray-300 px-3 py-2 text-xs outline-none focus:border-red-400" />
+              <div className="flex items-center justify-end gap-2">
+                <button type="button" disabled={busy} onClick={() => { setRejecting(false); setRejectNote(''); }}
+                  className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-bold text-gray-600 outline-none hover:bg-gray-50 disabled:opacity-50">Hủy</button>
+                <button type="button" disabled={busy || !rejectNote.trim()} onClick={() => onRespond(it, false, rejectNote.trim())}
+                  className="inline-flex items-center gap-1 rounded-lg bg-red-600 px-3 py-1.5 text-xs font-bold text-white outline-none hover:bg-red-700 disabled:opacity-50">
+                  {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <X className="w-3.5 h-3.5" />} Xác nhận từ chối
+                </button>
+              </div>
+            </div>
+          ))}
         </div>
       )}
     </div>

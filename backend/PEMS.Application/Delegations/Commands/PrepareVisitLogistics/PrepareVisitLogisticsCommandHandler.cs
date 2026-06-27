@@ -32,10 +32,12 @@ public sealed class PrepareVisitLogisticsCommandHandler
     private readonly IEmailService _email;
     private readonly IEmailActionTokenService _tokens;
     private readonly IHtmlSanitizerService _sanitizer;
+    private readonly IFileStorageService _storage;
 
     public PrepareVisitLogisticsCommandHandler(
         IApplicationDbContext db, ICurrentUserService currentUser, IDateTimeService clock,
-        IEmailService email, IEmailActionTokenService tokens, IHtmlSanitizerService sanitizer)
+        IEmailService email, IEmailActionTokenService tokens, IHtmlSanitizerService sanitizer,
+        IFileStorageService storage)
     {
         _db = db;
         _currentUser = currentUser;
@@ -43,6 +45,7 @@ public sealed class PrepareVisitLogisticsCommandHandler
         _email = email;
         _tokens = tokens;
         _sanitizer = sanitizer;
+        _storage = storage;
     }
 
     public async Task<PrepareVisitLogisticsResponse> Handle(
@@ -115,6 +118,10 @@ public sealed class PrepareVisitLogisticsCommandHandler
 
         // Offline-coordinated requests don't send an email, so any email override is ignored.
         var editedContent = offline ? null : ValidateAndSanitizeOverride(request.EmailOverride);
+        var attachInputs = offline
+            ? System.Array.Empty<EmailDraftAttachmentInput>()
+            : OutboundEmailAttachments.From(request.EmailOverride);
+        await OutboundEmailAttachments.ValidateAsync(_db, actorId, attachInputs, cancellationToken);
 
         var delegationName = instance.VisitRequest?.DelegationName ?? "FPT University";
         var campusName = await _db.Campuses
@@ -257,6 +264,8 @@ public sealed class PrepareVisitLogisticsCommandHandler
                     SentBy = actorId,
                     CreatedAt = now,
                 };
+                // Inline images + file attachments (cascade-insert with the sent_emails row).
+                OutboundEmailAttachments.Attach(sentEmail, attachInputs, now);
                 _db.SentEmails.Add(sentEmail);
                 await _db.SaveChangesAsync(cancellationToken);
 
@@ -319,14 +328,16 @@ public sealed class PrepareVisitLogisticsCommandHandler
         string emailStatus;
         try
         {
-            // Real MIME path (HTML body). Logistics request emails are action emails (no file
-            // attachments today); unified on the rich sender for consistency/extensibility.
+            // Real MIME path (HTML body) with the host's inline images (cid) + file attachments
+            // streamed from storage (Google Drive / local) once and reused.
+            var outboundAttachments = await OutboundEmailAttachments.LoadAsync(_db, _storage, attachInputs, cancellationToken);
             await _email.SendAsync(new PEMS.Application.Common.Interfaces.OutboundEmail
             {
                 ToEmail = leaderEmail!,
                 Subject = finalSubject,
                 Body = finalBody,
                 IsHtml = true,
+                Attachments = outboundAttachments,
             }, cancellationToken);
             emailStatus = "SENT";
             await UpdateEmailStatusAsync(sentEmailId, sentEmailRecipientId, "SENT", actorId, now, null, cancellationToken);
@@ -358,7 +369,8 @@ public sealed class PrepareVisitLogisticsCommandHandler
             throw new ValidationException("Nội dung email không được để trống.");
         if (rawHtml.Length > EmailOverrideLimits.BodyMax)
             throw new ValidationException($"Nội dung email vượt quá {EmailOverrideLimits.BodyMax} ký tự.");
-        var sanitized = _sanitizer.Sanitize(rawHtml);
+        // Email-profile sanitize so inline-image <img src="cid:..."> + data-* refs survive.
+        var sanitized = _sanitizer.SanitizeEmailHtml(rawHtml);
         if (string.IsNullOrWhiteSpace(sanitized))
             throw new ValidationException("Nội dung email không hợp lệ sau khi lọc.");
         return sanitized;
@@ -372,7 +384,7 @@ public sealed class PrepareVisitLogisticsCommandHandler
         var usage = (usageStart.HasValue || usageEnd.HasValue)
             ? $"<li><strong>Thời gian sử dụng:</strong> {HE(usageStart?.ToString("HH:mm dd/MM/yyyy") ?? "—")} - {HE(usageEnd?.ToString("HH:mm dd/MM/yyyy") ?? "—")}</li>"
             : string.Empty;
-        var qty = item.Quantity.HasValue ? $"<li><strong>Số lượng:</strong> {item.Quantity}</li>" : string.Empty;
+        var qty = item.Quantity.HasValue ? $"<li><strong>Số lượng dự kiến:</strong> {item.Quantity}</li>" : string.Empty;
         return $@"<p>Xin chào <strong>{HE(leaderName)}</strong>,</p>
 <p>Host <strong>{HE(requesterName)}</strong> đã gửi một yêu cầu hậu cần cho đoàn <strong>{HE(delegationName)}</strong> tại {HE(campusName)}.</p>
 <div style=""background:#f0f7ff;border-left:4px solid #004c91;border-radius:8px;padding:16px 20px;margin:20px 0"">

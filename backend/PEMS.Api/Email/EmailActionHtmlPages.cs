@@ -10,7 +10,9 @@ namespace PEMS.Api.Email;
 /// </summary>
 public static class EmailActionHtmlPages
 {
-    /// <summary>The GET landing: a confirm page for a still-valid token, or a terminal message.</summary>
+    /// <summary>The GET landing: a confirm page for a still-valid token, or a terminal message.
+    /// ACCEPT shows a one-click confirm button; DECLINE shows a form requiring a reason (so a GET
+    /// click never mutates data — only the POST with a valid reason does).</summary>
     public static string RenderLanding(EmailActionInfoResult info)
     {
         if (info.Status != EmailActionViewStatuses.Valid)
@@ -19,8 +21,6 @@ public static class EmailActionHtmlPages
 
         var isAccept = info.Action == "ACCEPT";
         var accent = isAccept ? "#10b981" : "#ef4444";
-        var actionWord = isAccept ? "chấp nhận" : "từ chối";
-        var buttonLabel = isAccept ? "Xác nhận chấp nhận" : "Xác nhận từ chối";
 
         var details = $@"
       <div style=""background:#f0f7ff;border-left:4px solid #004c91;border-radius:8px;padding:16px 20px;margin:20px 0;text-align:left"">
@@ -32,21 +32,42 @@ public static class EmailActionHtmlPages
         </ul>
       </div>";
 
+        // DECLINE: render the reason form. The reason is mandatory and only the POST applies it.
+        if (!isAccept)
+        {
+            var declineContent = $@"
+      <p style=""color:#374151;font-size:15px"">Xin chào <strong>{HE(info.RecipientName)}</strong>,</p>
+      <p style=""color:#374151;font-size:14px"">Bạn sắp <strong>từ chối</strong> lời mời tham gia hỗ trợ tiếp khách dưới đây. Vui lòng cho biết lý do từ chối để bộ phận điều phối cập nhật kế hoạch.</p>
+      {details}
+      {DeclineForm(null, null)}";
+            return Layout("Từ chối lời mời tham gia", declineContent, accent);
+        }
+
+        // ACCEPT: one-click confirm.
         var content = $@"
       <p style=""color:#374151;font-size:15px"">Xin chào <strong>{HE(info.RecipientName)}</strong>,</p>
-      <p style=""color:#374151;font-size:14px"">Bạn sắp <strong>{actionWord}</strong> lời mời tham gia hỗ trợ tiếp khách dưới đây.</p>
+      <p style=""color:#374151;font-size:14px"">Bạn sắp <strong>chấp nhận</strong> lời mời tham gia hỗ trợ tiếp khách dưới đây.</p>
       {details}
       <form method=""post"" style=""margin-top:8px"">
-        <button type=""submit"" style=""display:inline-block;background:{accent};color:#fff;border:none;cursor:pointer;font-weight:bold;font-size:15px;padding:14px 28px;border-radius:10px"">{buttonLabel}</button>
+        <button type=""submit"" style=""display:inline-block;background:{accent};color:#fff;border:none;cursor:pointer;font-weight:bold;font-size:15px;padding:14px 28px;border-radius:10px"">Xác nhận chấp nhận</button>
       </form>
       <p style=""color:#9ca3af;font-size:12px;margin-top:14px"">Liên kết này chỉ sử dụng được một lần.</p>";
 
-        return Layout("Xác nhận phản hồi lời mời", content, accent);
+        return Layout("Xác nhận chấp nhận lời mời", content, accent);
     }
 
     /// <summary>The POST result page after the token is consumed.</summary>
     public static string RenderResult(EmailActionExecuteResult res)
     {
+        // Decline reason missing/invalid → token was NOT consumed; re-render the form with the error.
+        if (res.Status == EmailActionViewStatuses.ReasonRequired)
+        {
+            var content = $@"
+      <p style=""color:#374151;font-size:14px"">Vui lòng cho biết lý do từ chối để bộ phận điều phối cập nhật kế hoạch.</p>
+      {DeclineForm(res.SubmittedReason, res.Message)}";
+            return Layout("Từ chối lời mời tham gia", content, "#ef4444");
+        }
+
         var accent = res.Status switch
         {
             EmailActionViewStatuses.Success => res.Action == "DECLINE" ? "#ef4444" : "#10b981",
@@ -71,6 +92,25 @@ public static class EmailActionHtmlPages
     }
 
     // ── helpers ──
+
+    /// <summary>The decline-reason form, shared by the GET landing and the validation-error re-render.
+    /// Posts <c>declineReason</c> back to the same URL (method=post, no action). Server-side validation
+    /// in the handler is the real gate; the HTML5 attributes are a best-effort client hint.</summary>
+    private static string DeclineForm(string? reason, string? error)
+    {
+        var borderColor = string.IsNullOrEmpty(error) ? "#d1d5db" : "#ef4444";
+        var errorHtml = string.IsNullOrEmpty(error)
+            ? string.Empty
+            : $@"<p style=""color:#ef4444;font-size:13px;font-weight:bold;margin:8px 0 0"">{HE(error)}</p>";
+        return $@"
+      <form method=""post"" style=""margin-top:8px;text-align:left"">
+        <label style=""display:block;font-size:13px;font-weight:bold;color:#374151;margin-bottom:6px"">Lý do từ chối <span style=""color:#ef4444"">*</span></label>
+        <textarea name=""declineReason"" required minlength=""5"" maxlength=""1000"" rows=""4"" placeholder=""Ví dụ: Tôi bận lịch cá nhân vào thời gian này..."" style=""width:100%;box-sizing:border-box;padding:12px;border:1px solid {borderColor};border-radius:10px;font-size:14px;font-family:inherit;resize:vertical;outline:none"">{HE(reason)}</textarea>
+        {errorHtml}
+        <button type=""submit"" style=""margin-top:14px;display:block;width:100%;background:#ef4444;color:#fff;border:none;cursor:pointer;font-weight:bold;font-size:15px;padding:14px 28px;border-radius:10px"">Gửi phản hồi từ chối</button>
+        <p style=""color:#9ca3af;font-size:12px;margin-top:12px;text-align:center"">Lý do cần từ 5 đến 1000 ký tự. Liên kết này chỉ sử dụng được một lần.</p>
+      </form>";
+    }
 
     private static string TerminalTitle(string status, string? action, string? currentResponse) => status switch
     {
