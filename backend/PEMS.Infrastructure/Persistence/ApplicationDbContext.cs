@@ -59,6 +59,8 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     public DbSet<VisitAgenda> VisitAgendas { get; set; }
     public DbSet<VisitLogisticsItem> VisitLogisticsItems { get; set; }
     public DbSet<VisitLogisticsItemHandover> VisitLogisticsItemHandovers { get; set; }
+    public DbSet<VisitLogisticsAssignmentAttempt> VisitLogisticsAssignmentAttempts { get; set; }
+    public DbSet<VisitInstanceReminderSetting> VisitInstanceReminderSettings { get; set; }
 
     // ── Minutes + Feedback ────────────────────────────────────────────────
     public DbSet<Minute> Minutes { get; set; }
@@ -86,6 +88,10 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     public DbSet<EmailTemplate> EmailTemplates { get; set; }
     public DbSet<SentEmail> SentEmails { get; set; }
     public DbSet<SentEmailRecipient> SentEmailRecipients { get; set; }
+    public DbSet<SentEmailAttachment> SentEmailAttachments { get; set; }
+    public DbSet<EmailDraft> EmailDrafts { get; set; }
+    public DbSet<EmailDraftRecipient> EmailDraftRecipients { get; set; }
+    public DbSet<EmailDraftAttachment> EmailDraftAttachments { get; set; }
     public DbSet<EmailActionToken> EmailActionTokens { get; set; }
     public DbSet<Notification> Notifications { get; set; }
 
@@ -329,6 +335,34 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
             .HasOne(h => h.CreatedByUser).WithMany()
             .HasForeignKey(h => h.CreatedBy).OnDelete(DeleteBehavior.SetNull);
 
+        // VisitLogisticsAssignmentAttempt (v10) → LogisticsItem, AssigneeUser, AssignedBy
+        modelBuilder.Entity<VisitLogisticsAssignmentAttempt>()
+            .HasOne(a => a.LogisticsItem).WithMany()
+            .HasForeignKey(a => a.LogisticsItemId).OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<VisitLogisticsAssignmentAttempt>()
+            .HasIndex(a => new { a.LogisticsItemId, a.Status })
+            .HasDatabaseName("idx_vla_item_status");
+
+        // VisitInstanceReminderSetting (v10 2026-06-26) → VisitRequestCampus + created/updated users.
+        // Enum columns persist as their SQL ENUM string (name maps 1:1). Unique per
+        // (instance, channel, target_group); index on (status, scheduled_at) drives the dispatch job.
+        modelBuilder.Entity<VisitInstanceReminderSetting>(b =>
+        {
+            b.HasOne(r => r.VisitInstance).WithMany()
+                .HasForeignKey(r => r.VisitInstanceId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne<User>().WithMany()
+                .HasForeignKey(r => r.CreatedBy).OnDelete(DeleteBehavior.SetNull);
+            b.HasOne<User>().WithMany()
+                .HasForeignKey(r => r.UpdatedBy).OnDelete(DeleteBehavior.SetNull);
+            b.Property(r => r.Channel).HasConversion<string>();
+            b.Property(r => r.TargetGroup).HasConversion<string>();
+            b.Property(r => r.Status).HasConversion<string>();
+            b.HasIndex(r => new { r.VisitInstanceId, r.Channel, r.TargetGroup })
+                .IsUnique().HasDatabaseName("uq_visit_reminder_channel_target");
+            b.HasIndex(r => new { r.Status, r.ScheduledAt })
+                .HasDatabaseName("idx_visit_reminder_schedule");
+        });
+
         // Minute → VisitRequestCampus, CreatedBy, EditLockedBy
         modelBuilder.Entity<Minute>()
             .HasOne<VisitRequestCampus>().WithMany()
@@ -417,6 +451,71 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
         modelBuilder.Entity<SentEmail>()
             .HasOne<User>().WithMany()
             .HasForeignKey(se => se.SentBy).OnDelete(DeleteBehavior.SetNull);
+
+        // ── Email rich-text / attachments / drafts (v10 email_rich_editor) ────
+        // body_format ENUM persists as its SQL string (PLAIN_TEXT / HTML); name maps 1:1.
+        modelBuilder.Entity<EmailTemplate>()
+            .Property(t => t.BodyFormat).HasConversion<string>();
+        modelBuilder.Entity<SentEmail>()
+            .Property(se => se.BodyFormat).HasConversion<string>();
+
+        // sent_email_attachments → sent_emails (CASCADE), files (RESTRICT)
+        modelBuilder.Entity<SentEmailAttachment>(b =>
+        {
+            b.Property(a => a.AttachmentType).HasConversion<string>();
+            b.HasOne(a => a.SentEmail).WithMany(e => e.Attachments)
+                .HasForeignKey(a => a.SentEmailId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(a => a.File).WithMany()
+                .HasForeignKey(a => a.FileId).OnDelete(DeleteBehavior.Restrict);
+            // SQL: UNIQUE KEY uq_sent_email_attachments_content (sent_email_id, content_id)
+            b.HasIndex(a => new { a.SentEmailId, a.ContentId })
+                .IsUnique().HasDatabaseName("uq_sent_email_attachments_content");
+            b.HasIndex(a => new { a.SentEmailId, a.AttachmentType })
+                .HasDatabaseName("idx_sent_email_attachments_type");
+        });
+
+        // email_drafts → template (SET NULL), sent_email (SET NULL), created_by/last_edited_by (SET NULL)
+        modelBuilder.Entity<EmailDraft>(b =>
+        {
+            b.Property(d => d.BodyFormat).HasConversion<string>();
+            b.Property(d => d.Status).HasConversion<string>();
+            b.HasOne(d => d.EmailTemplate).WithMany()
+                .HasForeignKey(d => d.EmailTemplateId).OnDelete(DeleteBehavior.SetNull);
+            b.HasOne(d => d.SentEmail).WithMany()
+                .HasForeignKey(d => d.SentEmailId).OnDelete(DeleteBehavior.SetNull);
+            b.HasOne<User>().WithMany()
+                .HasForeignKey(d => d.CreatedBy).OnDelete(DeleteBehavior.SetNull);
+            b.HasOne<User>().WithMany()
+                .HasForeignKey(d => d.LastEditedBy).OnDelete(DeleteBehavior.SetNull);
+            b.HasIndex(d => new { d.Status, d.UpdatedAt }).HasDatabaseName("idx_email_drafts_status_updated");
+            b.HasIndex(d => new { d.CreatedBy, d.Status }).HasDatabaseName("idx_email_drafts_created_by_status");
+            b.HasIndex(d => new { d.RelatedType, d.RelatedId }).HasDatabaseName("idx_email_drafts_related");
+        });
+
+        // email_draft_recipients → email_drafts (CASCADE)
+        modelBuilder.Entity<EmailDraftRecipient>(b =>
+        {
+            b.HasOne(r => r.EmailDraft).WithMany(d => d.Recipients)
+                .HasForeignKey(r => r.EmailDraftId).OnDelete(DeleteBehavior.Cascade);
+            // SQL: UNIQUE KEY uq_email_draft_recipients_unique (email_draft_id, recipient_email, recipient_type)
+            b.HasIndex(r => new { r.EmailDraftId, r.RecipientEmail, r.RecipientType })
+                .IsUnique().HasDatabaseName("uq_email_draft_recipients_unique");
+        });
+
+        // email_draft_attachments → email_drafts (CASCADE), files (RESTRICT)
+        modelBuilder.Entity<EmailDraftAttachment>(b =>
+        {
+            b.Property(a => a.AttachmentType).HasConversion<string>();
+            b.HasOne(a => a.EmailDraft).WithMany(d => d.Attachments)
+                .HasForeignKey(a => a.EmailDraftId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(a => a.File).WithMany()
+                .HasForeignKey(a => a.FileId).OnDelete(DeleteBehavior.Restrict);
+            // SQL: UNIQUE KEY uq_email_draft_attachments_content (email_draft_id, content_id)
+            b.HasIndex(a => new { a.EmailDraftId, a.ContentId })
+                .IsUnique().HasDatabaseName("uq_email_draft_attachments_content");
+            b.HasIndex(a => new { a.EmailDraftId, a.AttachmentType })
+                .HasDatabaseName("idx_email_draft_attachments_type");
+        });
 
         // EmailActionToken (v10) → RecipientUser, SentEmail, SentEmailRecipient
         modelBuilder.Entity<EmailActionToken>()

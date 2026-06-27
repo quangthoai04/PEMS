@@ -1,7 +1,9 @@
 import httpClient from '../../../shared/api/httpClient';
 
 export type DepartmentLeaderQuickTask = {
+  itemType?: 'REQUEST' | 'INVITATION';
   logisticsItemId: number;
+  participantId?: number | null;
   visitInstanceId: number;
   visitRequestId: number;
   delegationName: string;
@@ -13,6 +15,9 @@ export type DepartmentLeaderQuickTask = {
 };
 
 export type DepartmentLeaderUpcomingSchedule = {
+  itemType?: 'REQUEST' | 'INVITATION';
+  logisticsItemId?: number | null;
+  participantId?: number | null;
   visitInstanceId: number;
   visitRequestId: number;
   delegationName: string;

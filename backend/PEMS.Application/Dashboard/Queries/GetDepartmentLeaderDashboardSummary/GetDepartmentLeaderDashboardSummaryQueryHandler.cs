@@ -1,126 +1,199 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
-using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Common.Exceptions;
-using System;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
-using System.Collections.Generic;
+using PEMS.Application.Common.Interfaces;
+using PEMS.Domain.Constants;
 
 namespace PEMS.Application.Dashboard.Queries.GetDepartmentLeaderDashboardSummary;
 
-public class GetDepartmentLeaderDashboardSummaryQueryHandler : IRequestHandler<GetDepartmentLeaderDashboardSummaryQuery, DepartmentLeaderDashboardSummaryDto>
+public class GetDepartmentLeaderDashboardSummaryQueryHandler
+    : IRequestHandler<GetDepartmentLeaderDashboardSummaryQuery, DepartmentLeaderDashboardSummaryDto>
 {
     private readonly IApplicationDbContext _context;
     private readonly ICurrentUserService _currentUserService;
 
-    public GetDepartmentLeaderDashboardSummaryQueryHandler(IApplicationDbContext context, ICurrentUserService currentUserService)
+    public GetDepartmentLeaderDashboardSummaryQueryHandler(
+        IApplicationDbContext context,
+        ICurrentUserService currentUserService)
     {
         _context = context;
         _currentUserService = currentUserService;
     }
 
-    public async Task<DepartmentLeaderDashboardSummaryDto> Handle(GetDepartmentLeaderDashboardSummaryQuery request, CancellationToken cancellationToken)
+    public async Task<DepartmentLeaderDashboardSummaryDto> Handle(
+        GetDepartmentLeaderDashboardSummaryQuery request,
+        CancellationToken cancellationToken)
     {
         if (_currentUserService.RoleCode != "DEPARTMENT" || _currentUserService.DepartmentId == null)
         {
             throw new ForbiddenException("Only department users can access this dashboard.");
         }
 
-        ulong departmentId = _currentUserService.DepartmentId.Value;
+        var departmentId = _currentUserService.DepartmentId.Value;
         var now = DateTime.UtcNow;
+        var todayStart = now.AddHours(7).Date.AddHours(-7);
+        var closedInstanceStatuses = new[] { "CANCELLED", "CLOSED" };
+
         var dto = new DepartmentLeaderDashboardSummaryDto
         {
             ServerNow = now.ToString("O")
         };
 
-        // KPI 1: Chờ phân công
-        dto.PendingAssignmentCount = await _context.VisitLogisticsItems
-            .Where(li => li.RequestedToDepartmentId == departmentId 
-                         && li.AssignedToUserId == null 
-                         && new[] { "REQUESTED", "RECEIVED", "PLANNED" }.Contains(li.Status)
-                         && li.VisitInstance.Status != "CANCELLED" && li.VisitInstance.Status != "CLOSED"
-                         && li.VisitInstance.VisitRequest.Status == "APPROVED")
-            .Select(li => li.VisitInstanceId)
-            .Distinct()
+        var requestItemsQuery = _context.VisitLogisticsItems
+            .Where(li => li.RequestedToDepartmentId == departmentId
+                         && !closedInstanceStatuses.Contains(li.VisitInstance.Status)
+                         && li.VisitInstance.VisitRequest.Status == "APPROVED");
+
+        var invitationItemsQuery =
+            from p in _context.VisitParticipants
+            join u in _context.Users on p.UserId equals u.UserId
+            join c in _context.VisitRequestCampuses on p.VisitInstanceId equals c.VisitInstanceId
+            where u.DepartmentId == departmentId
+                  && p.ParticipantRole == ParticipantRoles.DeptSupport
+                  && p.Status != ParticipantStatuses.Removed
+                  && !closedInstanceStatuses.Contains(c.Status)
+                  && c.VisitRequest.Status == "APPROVED"
+            select new { p, c };
+
+        var pendingRequestCount = await requestItemsQuery
+            .Where(li => li.AssignedToUserId == null
+                         && li.Status == "REQUESTED"
+                         && (li.UsageStartAt ?? li.DueAt ?? li.VisitInstance.PlannedStartAt) >= now)
             .CountAsync(cancellationToken);
 
-        // KPI 2: Đoàn sắp tới
-        dto.UpcomingDelegationCount = await _context.VisitLogisticsItems
-            .Where(li => li.RequestedToDepartmentId == departmentId 
-                         && li.AssignedToUserId != null
-                         && li.VisitInstance.PlannedStartAt > now
-                         && new[] { "ASSIGNED", "BEFORE_VISIT" }.Contains(li.VisitInstance.Status)
-                         && li.VisitInstance.VisitRequest.Status == "APPROVED")
-            .Select(li => li.VisitInstanceId)
-            .Distinct()
+        var pendingInvitationCount = await invitationItemsQuery
+            .Where(x => x.p.AssignedBy == null
+                        && x.p.AssignedAt == null
+                        && x.p.Status == ParticipantStatuses.Invited
+                        && x.c.PlannedStartAt >= now)
             .CountAsync(cancellationToken);
 
-        // KPI 3: Đang xử lý
-        dto.ProcessingDelegationCount = await _context.VisitLogisticsItems
-            .Where(li => li.RequestedToDepartmentId == departmentId 
-                         && li.AssignedToUserId != null
-                         && li.VisitInstance.PlannedStartAt <= now
-                         && li.VisitInstance.PlannedEndAt >= now
-                         && new[] { "ASSIGNED", "BEFORE_VISIT", "DURING_VISIT" }.Contains(li.VisitInstance.Status)
-                         && li.VisitInstance.VisitRequest.Status == "APPROVED")
-            .Select(li => li.VisitInstanceId)
-            .Distinct()
+        dto.PendingAssignmentCount = pendingRequestCount + pendingInvitationCount;
+
+        var upcomingRequestCount = await requestItemsQuery
+            .Where(li => (li.UsageStartAt ?? li.VisitInstance.PlannedStartAt) >= now
+                         && li.Status == "ACCEPTED")
             .CountAsync(cancellationToken);
 
-        // KPI 4: Nhân sự
+        var upcomingInvitationCount = await invitationItemsQuery
+            .Where(x => x.c.PlannedStartAt >= now && x.p.Status == ParticipantStatuses.Accepted)
+            .CountAsync(cancellationToken);
+
+        dto.UpcomingDelegationCount = upcomingRequestCount + upcomingInvitationCount;
+
+        dto.ProcessingDelegationCount = await requestItemsQuery
+            .Where(li => (li.UsageStartAt ?? li.VisitInstance.PlannedStartAt) <= now
+                         && (li.UsageEndAt ?? li.VisitInstance.PlannedEndAt) >= now
+                         && li.Status == "IN_PROGRESS")
+            .CountAsync(cancellationToken);
+
+        dto.ProcessingDelegationCount += await invitationItemsQuery
+            .Where(x => x.p.Status == ParticipantStatuses.Accepted
+                        && x.c.PlannedStartAt <= now
+                        && x.c.PlannedEndAt >= now)
+            .CountAsync(cancellationToken);
+
         dto.ActivePersonnelCount = await _context.Users
             .Where(u => u.DepartmentId == departmentId && u.Status == "ACTIVE")
             .CountAsync(cancellationToken);
 
-        // Tác vụ cần xử lý nhanh (Quick Tasks)
-        var quickTasks = await _context.VisitLogisticsItems
-            .Where(li => li.RequestedToDepartmentId == departmentId 
-                         && new[] { "REQUESTED", "RECEIVED", "PLANNED" }.Contains(li.Status)
-                         && li.VisitInstance.Status != "CANCELLED" && li.VisitInstance.Status != "CLOSED"
-                         && li.VisitInstance.VisitRequest.Status == "APPROVED")
-            .OrderBy(li => li.DueAt ?? DateTime.MaxValue)
-            .Take(5)
+        var requestQuickTasks = await requestItemsQuery
+            .Where(li => li.AssignedToUserId == null
+                         && li.Status == "REQUESTED"
+                         && (li.UsageStartAt ?? li.DueAt ?? li.VisitInstance.PlannedStartAt) >= now)
+            .OrderBy(li => li.UsageStartAt ?? li.DueAt ?? li.VisitInstance.PlannedStartAt)
             .Select(li => new DepartmentLeaderQuickTaskDto
             {
+                ItemType = "REQUEST",
                 LogisticsItemId = li.LogisticsItemId,
+                ParticipantId = null,
                 VisitInstanceId = li.VisitInstanceId,
                 VisitRequestId = li.VisitInstance.VisitRequestId,
                 DelegationName = li.VisitInstance.VisitRequest.DelegationName,
                 TaskTitle = li.Title,
-                DueAt = li.DueAt.HasValue ? li.DueAt.Value.ToString("O") : null,
+                DueAt = (li.UsageStartAt ?? li.DueAt ?? li.VisitInstance.PlannedStartAt).ToString("O"),
                 Status = li.Status,
                 AssignedToUserId = li.AssignedToUserId,
-                AssignedToName = li.AssignedToUserId != null ? _context.Users.FirstOrDefault(u => u.UserId == li.AssignedToUserId).FullName : null
+                AssignedToName = li.AssignedToUserId != null
+                    ? _context.Users.FirstOrDefault(u => u.UserId == li.AssignedToUserId)!.FullName
+                    : null
             })
             .ToListAsync(cancellationToken);
-        
-        dto.QuickTasks = quickTasks;
 
-        // Lịch tiếp đón sắp tới
-        var upcomingSchedules = await _context.VisitRequestCampuses
-            .Where(vc => vc.LogisticsItems.Any(li => li.RequestedToDepartmentId == departmentId)
-                         && vc.PlannedStartAt > now
-                         && new[] { "ASSIGNED", "BEFORE_VISIT" }.Contains(vc.Status)
-                         && vc.VisitRequest.Status == "APPROVED")
-            .OrderBy(vc => vc.PlannedStartAt)
-            .Take(5)
-            .Select(vc => new DepartmentLeaderUpcomingScheduleDto
+        var invitationQuickTasks = await invitationItemsQuery
+            .Where(x => x.p.AssignedBy == null
+                        && x.p.AssignedAt == null
+                        && x.p.Status == ParticipantStatuses.Invited
+                        && x.c.PlannedStartAt >= now)
+            .OrderBy(x => x.c.PlannedStartAt)
+            .Select(x => new DepartmentLeaderQuickTaskDto
             {
-                VisitInstanceId = vc.VisitInstanceId,
-                VisitRequestId = vc.VisitRequestId,
-                DelegationName = vc.VisitRequest.DelegationName,
-                OrganizationName = vc.VisitRequest.RegistrantOrganization,
-                PlannedStartAt = vc.PlannedStartAt.ToString("O"),
-                PlannedEndAt = vc.PlannedEndAt.ToString("O"),
-                CampusName = _context.Campuses.FirstOrDefault(c => c.CampusId == vc.CampusId).Name ?? "Unknown Campus",
-                Location = null, // Can fetch from agenda if needed
-                Status = vc.Status
+                ItemType = "INVITATION",
+                LogisticsItemId = 0,
+                ParticipantId = x.p.ParticipantId,
+                VisitInstanceId = x.c.VisitInstanceId,
+                VisitRequestId = x.c.VisitRequestId,
+                DelegationName = x.c.VisitRequest.DelegationName,
+                TaskTitle = "Thu moi tham gia don tiep",
+                DueAt = x.c.PlannedStartAt.ToString("O"),
+                Status = x.p.Status,
+                AssignedToUserId = null,
+                AssignedToName = null
             })
             .ToListAsync(cancellationToken);
 
-        dto.UpcomingSchedules = upcomingSchedules;
+        dto.QuickTasks = requestQuickTasks
+            .Concat(invitationQuickTasks)
+            .OrderBy(t => t.DueAt ?? DateTime.MaxValue.ToString("O"))
+            .ToList();
+
+        var requestUpcomingSchedules = await requestItemsQuery
+            .Where(li => (li.UsageStartAt ?? li.VisitInstance.PlannedStartAt) >= now
+                         && li.Status == "ACCEPTED")
+            .OrderBy(li => li.UsageStartAt ?? li.VisitInstance.PlannedStartAt)
+            .Select(li => new DepartmentLeaderUpcomingScheduleDto
+            {
+                ItemType = "REQUEST",
+                LogisticsItemId = li.LogisticsItemId,
+                ParticipantId = null,
+                VisitInstanceId = li.VisitInstanceId,
+                VisitRequestId = li.VisitInstance.VisitRequestId,
+                DelegationName = li.VisitInstance.VisitRequest.DelegationName,
+                OrganizationName = li.VisitInstance.VisitRequest.RegistrantOrganization,
+                PlannedStartAt = (li.UsageStartAt ?? li.VisitInstance.PlannedStartAt).ToString("O"),
+                PlannedEndAt = (li.UsageEndAt ?? li.VisitInstance.PlannedEndAt).ToString("O"),
+                CampusName = _context.Campuses.FirstOrDefault(c => c.CampusId == li.VisitInstance.CampusId)!.Name
+                             ?? "Unknown Campus",
+                Location = null,
+                Status = li.VisitInstance.Status
+            })
+            .ToListAsync(cancellationToken);
+
+        var invitationUpcomingSchedules = await invitationItemsQuery
+            .Where(x => x.c.PlannedStartAt >= now && x.p.Status == ParticipantStatuses.Accepted)
+            .OrderBy(x => x.c.PlannedStartAt)
+            .Select(x => new DepartmentLeaderUpcomingScheduleDto
+            {
+                ItemType = "INVITATION",
+                LogisticsItemId = null,
+                ParticipantId = x.p.ParticipantId,
+                VisitInstanceId = x.c.VisitInstanceId,
+                VisitRequestId = x.c.VisitRequestId,
+                DelegationName = x.c.VisitRequest.DelegationName,
+                OrganizationName = x.c.VisitRequest.RegistrantOrganization,
+                PlannedStartAt = x.c.PlannedStartAt.ToString("O"),
+                PlannedEndAt = x.c.PlannedEndAt.ToString("O"),
+                CampusName = _context.Campuses.FirstOrDefault(c => c.CampusId == x.c.CampusId)!.Name
+                             ?? "Unknown Campus",
+                Location = null,
+                Status = x.p.Status
+            })
+            .ToListAsync(cancellationToken);
+
+        dto.UpcomingSchedules = requestUpcomingSchedules
+            .Concat(invitationUpcomingSchedules)
+            .OrderBy(s => s.PlannedStartAt)
+            .ToList();
 
         return dto;
     }

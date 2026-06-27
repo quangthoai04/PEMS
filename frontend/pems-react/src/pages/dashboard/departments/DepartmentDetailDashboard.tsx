@@ -5,6 +5,8 @@
 
 import React, { useState } from "react";
 import { departmentManagementApi } from '../../../features/department-management/api/departmentManagementApi';
+import { departmentLeaderDashboardApi } from '../../../features/dashboard/api/departmentLeaderDashboardApi';
+import { departmentReceptionTasksApi } from '../../../features/department-reception-tasks/api/departmentReceptionTasksApi';
 import toast, { Toaster } from 'react-hot-toast';
 import { useNavigate, useParams } from "react-router-dom";
 import {
@@ -28,7 +30,9 @@ import {
   X,
   Edit,
   Trash2,
-  XCircle
+  XCircle,
+  Lock,
+  Unlock
 } from "lucide-react";
 
 export function DepartmentDetailDashboard() {
@@ -47,77 +51,31 @@ export function DepartmentDetailDashboard() {
   const canEditMember = isDeptLeader || isStaffLeader || isHO;
   const isStaffOrHO = user?.role?.toUpperCase() === 'STAFF' || isHO;
 
-  // Mock data
-  const departmentInfo = {
-    name: "Phòng IT",
-    totalStaff: 12,
-    activeAccounts: 10,
-    processingTasks: 3,
+  type DepartmentTask = {
+    id: number;
+    delegation: string;
+    task: string;
+    status: string;
+    assigneeId: string;
+    originalAssigneeId?: string;
+    rejectReason?: string;
   };
 
-  const mockMembers = Array.from({ length: 15 }, (_, i) => ({
-    id: i === 0 ? "dept_leader" : i === 1 ? "dept_staff" : (i + 1).toString(),
-    name: i === 0 ? "Nguyễn Văn Trưởng Phòng" : i === 1 ? "Nguyễn Văn Nhân Viên" : `Nhân viên ${i + 1}`,
-    email: i === 0 ? "leader@fpt.edu.vn" : i === 1 ? "staff@fpt.edu.vn" : `nhanvien${i + 1}@fpt.edu.vn`,
-    phone: `09000000${i.toString().padStart(2, "0")}`,
-    status: i % 4 === 0 ? "Chưa cấp tài khoản" : "Đã cấp tài khoản",
-    role: i === 0 ? "Trưởng phòng" : "Nhân viên",
-    gender: i % 2 === 0 ? "Nam" : "Nữ",
-    campus: "Hà Nội",
-    systemRole: "Dept",
-    avatarUrl: `https://ui-avatars.com/api/?name=${i === 0 ? "Nguyễn+Văn+Trưởng+Phòng" : i === 1 ? "Nguyễn+Văn+Nhân+Viên" : `Nhân+viên+${i + 1}`}&background=random`
-  }));
+  const [departmentDetail, setDepartmentDetail] = useState<any>(null);
+  const [departmentStats, setDepartmentStats] = useState({
+    totalStaff: 0,
+    activeAccounts: 0,
+    processingTasks: 0,
+  });
 
-  const leaders = mockMembers.filter(m => m.role === "Trưởng phòng");
+  const departmentInfo = {
+    name: departmentDetail?.name || user?.departmentName || "Phòng ban",
+    totalStaff: departmentStats.totalStaff,
+    activeAccounts: departmentStats.activeAccounts,
+    processingTasks: departmentStats.processingTasks,
+  };
 
-
-const [tasks, setTasks] = useState([
-    {
-      id: 1,
-      delegation: "Đoàn ĐH Deakin",
-      task: "Chuẩn bị hệ thống mạng phòng họp VIP",
-      status: "Chưa làm",
-      assigneeId: "dept_staff",
-      originalAssigneeId: "dept_staff",
-      rejectReason: undefined
-    },
-    {
-      id: 2,
-      delegation: "Đoàn đối tác Nhật Bản",
-      task: "Setup thiết bị trình chiếu",
-      status: "Chưa làm",
-      assigneeId: "dept_staff",
-      originalAssigneeId: "dept_staff",
-      rejectReason: undefined
-    },
-    {
-      id: 3,
-      delegation: "Đoàn học sinh THPT",
-      task: "Hỗ trợ kỹ thuật hội trường",
-      status: "Chưa làm",
-      assigneeId: "dept_leader",
-      originalAssigneeId: "dept_leader",
-      rejectReason: undefined
-    },
-    {
-      id: 4,
-      delegation: "Đoàn khách quan trọng",
-      task: "Khảo sát và chụp ảnh sự kiện",
-      status: "Chưa làm",
-      assigneeId: "dept_staff",
-      originalAssigneeId: "dept_staff",
-      rejectReason: undefined
-    },
-    {
-      id: 5,
-      delegation: "Đoàn khách quan chức năng",
-      task: "Dự đón đoàn VIP",
-      status: "Chưa làm",
-      assigneeId: "dept_leader",
-      originalAssigneeId: "dept_leader",
-      rejectReason: ""
-    }
-  ]);
+  const [tasks, setTasks] = useState<DepartmentTask[]>([]);
 
 
 // Pagination for members
@@ -173,6 +131,10 @@ const [tasks, setTasks] = useState([
       });
       setMembers(res.data.items || []);
       setTotalMembers(res.data.totalCount || 0);
+      setDepartmentStats(prev => ({
+        ...prev,
+        totalStaff: res.data.totalCount || 0,
+      }));
     } catch (error) {
       console.error(error);
     } finally {
@@ -183,6 +145,60 @@ const [tasks, setTasks] = useState([
   React.useEffect(() => {
     fetchMembers();
   }, [currentPage, itemsPerPage, memberSearch, memberStatus, targetDeptId]);
+
+  React.useEffect(() => {
+    if (!targetDeptId) return;
+
+    const fetchDepartmentOverview = async () => {
+      try {
+        const [detailResult, activeResult, summaryResult] = await Promise.allSettled([
+          departmentManagementApi.getDepartmentDetails(targetDeptId),
+          departmentManagementApi.searchPersonnel({
+            departmentId: targetDeptId,
+            status: 'active',
+            pageNumber: 1,
+            pageSize: 1,
+          }),
+          isDeptLeader ? departmentLeaderDashboardApi.getSummary() : Promise.resolve(null),
+        ]);
+
+        if (detailResult.status === 'fulfilled') {
+          setDepartmentDetail(detailResult.value);
+        }
+
+        const activeAccounts =
+          activeResult.status === 'fulfilled'
+            ? activeResult.value.data.totalCount || 0
+            : 0;
+
+        if (summaryResult.status === 'fulfilled' && summaryResult.value) {
+          setDepartmentStats(prev => ({
+            ...prev,
+            activeAccounts: summaryResult.value.activePersonnelCount || activeAccounts,
+            processingTasks: summaryResult.value.processingDelegationCount || 0,
+          }));
+          setTasks((summaryResult.value.quickTasks || []).map(task => ({
+            id: task.logisticsItemId,
+            delegation: task.delegationName,
+            task: task.taskTitle,
+            status: task.status,
+            assigneeId: task.assignedToUserId?.toString() || '',
+            originalAssigneeId: task.assignedToUserId?.toString() || '',
+          })));
+        } else {
+          setDepartmentStats(prev => ({
+            ...prev,
+            activeAccounts,
+          }));
+          setTasks([]);
+        }
+      } catch (error) {
+        console.error('Failed to fetch department overview:', error);
+      }
+    };
+
+    fetchDepartmentOverview();
+  }, [targetDeptId, isDeptLeader]);
 
   const handleUpdateMember = async () => {
     try {
@@ -219,7 +235,7 @@ const [tasks, setTasks] = useState([
     try {
       await departmentManagementApi.reassignDepartmentLead({
         departmentId: targetDeptId,
-        newLeaderUserId: newLeaderId
+        newLeaderUserId: Number(newLeaderId)
       });
       toast.success('Đã thay đổi trưởng phòng thành công.');
       setIsChangeLeaderModalOpen(false);
@@ -426,7 +442,7 @@ const [tasks, setTasks] = useState([
                   Email
                 </th>
                 <th className="p-4 w-[15%] font-bold text-center whitespace-nowrap">
-                  Số điện thoại
+                  Trạng thái
                 </th>
                 <th className="p-4 w-[15%] font-bold text-center whitespace-nowrap">
                   Chức vụ
@@ -452,15 +468,37 @@ const [tasks, setTasks] = useState([
                       {(currentPage - 1) * itemsPerPage + index + 1}
                     </td>
                     <td className="p-4">
-                      <span className="font-bold text-gray-800 whitespace-nowrap">
-                        {member.name}
-                      </span>
+                      <div className="flex items-center gap-3">
+                        <img 
+                          src={member.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(member.name)}&background=random`} 
+                          alt={member.name} 
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).src = `https://ui-avatars.com/api/?name=${encodeURIComponent(member.name)}&background=random`;
+                          }}
+                          className="w-8 h-8 rounded-full border border-gray-200 shadow-sm"
+                        />
+                        <span className="font-bold text-gray-800 whitespace-nowrap">
+                          {member.name}
+                        </span>
+                      </div>
                     </td>
                     <td className="p-4 font-medium text-gray-700 whitespace-nowrap">
                       {member.email}
                     </td>
-                    <td className="p-4 font-medium text-center text-gray-700 whitespace-nowrap">
-                      {member.phone}
+                    <td className="p-4 text-center whitespace-nowrap">
+                      {member.rawStatus === 'ACTIVE' ? (
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-[#eaffe4] text-[#0aa14f] border border-[#ceefda]">
+                          Hoạt động
+                        </span>
+                      ) : member.rawStatus === 'LOCK' ? (
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-red-50 text-red-600 border border-red-200">
+                          Bị khóa
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-gray-100 text-gray-600 border border-gray-200">
+                          Vô hiệu hóa
+                        </span>
+                      )}
                     </td>
                     <td className="p-4 text-center whitespace-nowrap">
                       <span className={`inline-flex items-center px-2 py-1 rounded-md text-[11px] font-bold ${member.role === "Trưởng phòng"
@@ -509,18 +547,29 @@ const [tasks, setTasks] = useState([
                             >
                               <Crown className="w-5 h-5" />
                             </button>
-                          ) : (
-                            <button
-                              className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors flex items-center justify-center outline-none"
-                              title="Xóa nhân sự"
-                              onClick={() => {
-                                setMemberToDelete(member);
-                                setIsDeleteMemberModalOpen(true);
-                              }}
-                            >
-                              <Trash2 className="w-5 h-5" />
-                            </button>
-                          )
+                          ) : member.rawStatus === 'LOCK' ? (
+                              <button
+                                className="p-2 rounded-lg transition-colors flex items-center justify-center outline-none text-red-500 hover:text-green-600 hover:bg-green-50"
+                                title="Mở khóa tài khoản (Tài khoản đang bị khóa)"
+                                onClick={() => {
+                                  setMemberToDelete(member);
+                                  setIsDeleteMemberModalOpen(true);
+                                }}
+                              >
+                                <Unlock className="w-5 h-5" />
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => {
+                                  setMemberToDelete(member);
+                                  setIsDeleteMemberModalOpen(true);
+                                }}
+                                className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none ${member.rawStatus === 'ACTIVE' ? 'bg-green-500' : 'bg-gray-300'}`}
+                                title={member.rawStatus === 'ACTIVE' ? "Đang hoạt động - Nhấn để vô hiệu hóa" : "Vô hiệu hóa - Nhấn để kích hoạt"}
+                              >
+                                <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform shadow-sm ${member.rawStatus === 'ACTIVE' ? 'translate-x-[18px]' : 'translate-x-1'}`} />
+                              </button>
+                            )
                         )}
                         {member.status === "Chưa cấp tài khoản" && user?.role?.toUpperCase() !== 'DEPARTMENT' && !(isStaffRole || isHO) && (
                           <button
@@ -734,8 +783,11 @@ const [tasks, setTasks] = useState([
                 <div className="absolute -top-16 left-1/2 -translate-x-1/2">
                   <div className="relative">
                     <img
-                      src={isEditingMember ? editingMemberData?.avatarUrl : selectedMember.avatarUrl}
-                      alt={selectedMember.name}
+                      src={(isEditingMember ? editingMemberData?.avatarUrl : selectedMember?.avatarUrl) || `https://ui-avatars.com/api/?name=${encodeURIComponent(selectedMember?.name || 'User')}&background=random`}
+                      alt={selectedMember?.name}
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src = `https://ui-avatars.com/api/?name=${encodeURIComponent(selectedMember?.name || 'User')}&background=random`;
+                      }}
                       className="w-28 h-28 rounded-2xl border-[6px] border-[#f8fafc] shadow-lg bg-white object-cover relative z-10"
                     />
                     <div className="absolute inset-0 rounded-2xl border-[6px] border-[#f8fafc] shadow-[0_0_20px_rgba(0,0,0,0.15)] z-0"></div>
@@ -906,9 +958,15 @@ const [tasks, setTasks] = useState([
                 Hủy bỏ
               </button>
               <button
-                onClick={() => {
-                  setTasks(tasks.map(t => t.id === selectedTaskForAssigneeChange?.id ? { ...t, assigneeId: newAssigneeId } : t));
-                  setIsChangeAssigneeModalOpen(false);
+                onClick={async () => {
+                  try {
+                    await departmentReceptionTasksApi.assignAssignee(selectedTaskForAssigneeChange?.id, newAssigneeId);
+                    setTasks(tasks.map(t => t.id === selectedTaskForAssigneeChange?.id ? { ...t, assigneeId: newAssigneeId } : t));
+                    toast.success('Đã đổi người phụ trách.');
+                    setIsChangeAssigneeModalOpen(false);
+                  } catch (err: any) {
+                    toast.error(err.response?.data?.message || 'Lỗi khi đổi người phụ trách');
+                  }
                 }}
                 disabled={!newAssigneeId}
                 className="px-6 py-3 rounded-xl font-black text-white bg-[#004c91] hover:bg-[#003b73] transition-colors shadow-lg shadow-[#004c91]/20 disabled:opacity-50 disabled:cursor-not-allowed outline-none uppercase tracking-wider"
@@ -966,7 +1024,7 @@ const [tasks, setTasks] = useState([
         </div>
       )}
 
-      {/* Modal Confirm Delete Member */}
+      {/* Modal Confirm Lock/Unlock Member */}
       {isDeleteMemberModalOpen && memberToDelete && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-0">
           <div
@@ -976,12 +1034,14 @@ const [tasks, setTasks] = useState([
 
           <div className="bg-white rounded-[24px] shadow-2xl w-full max-w-md relative z-10 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
             <div className="p-6 text-center">
-              <div className="w-16 h-16 rounded-full bg-red-100 text-red-600 flex items-center justify-center mx-auto mb-4">
-                <Trash2 className="w-8 h-8" />
+              <div className="w-16 h-16 rounded-full bg-orange-100 text-orange-600 flex items-center justify-center mx-auto mb-4">
+                {memberToDelete.rawStatus === 'LOCK' ? <Unlock className="w-8 h-8" /> : (memberToDelete.rawStatus === 'ACTIVE' ? <XCircle className="w-8 h-8" /> : <CheckCircle2 className="w-8 h-8" />)}
               </div>
-              <h3 className="text-2xl font-black text-gray-900 tracking-tight mb-2">Xác nhận xóa tài khoản</h3>
+              <h3 className="text-2xl font-black text-gray-900 tracking-tight mb-2">
+                {memberToDelete.rawStatus === 'LOCK' ? "Xác nhận mở khóa tài khoản" : (memberToDelete.rawStatus === 'ACTIVE' ? "Xác nhận vô hiệu hóa" : "Xác nhận kích hoạt")}
+              </h3>
               <p className="text-gray-600 mb-6 font-medium leading-relaxed">
-                Bạn có chắc chắn muốn xóa nhân sự <span className="font-bold text-gray-900">{memberToDelete.name}</span> khỏi danh sách không? Hành động này không thể hoàn tác.
+                Bạn có chắc chắn muốn {memberToDelete.rawStatus === 'LOCK' ? "mở khóa" : (memberToDelete.rawStatus === 'ACTIVE' ? "vô hiệu hóa" : "kích hoạt")} tài khoản của nhân sự <span className="font-bold text-gray-900">{memberToDelete.name}</span> không?
               </p>
 
               <div className="flex gap-3">
@@ -993,9 +1053,9 @@ const [tasks, setTasks] = useState([
                 </button>
                 <button
                   onClick={handleDeleteMember}
-                  className="flex-1 px-4 py-3 rounded-xl font-black text-white bg-red-600 hover:bg-red-700 transition-colors shadow-lg shadow-red-600/20 outline-none"
+                  className="flex-1 px-4 py-3 rounded-xl font-black text-white bg-orange-600 hover:bg-orange-700 transition-colors shadow-lg shadow-orange-600/20 outline-none"
                 >
-                  Xác nhận xóa
+                  Xác nhận
                 </button>
               </div>
             </div>
@@ -1035,9 +1095,16 @@ const [tasks, setTasks] = useState([
                 Hủy
               </button>
               <button
-                onClick={() => {
-                  setTasks(tasks.map(t => t.id === taskToReject ? { ...t, status: "Từ chối", rejectReason: rejectTaskReason } : t));
-                  setIsRejectTaskModalOpen(false);
+                onClick={async () => {
+                  try {
+                    if (taskToReject == null) return;
+                    await departmentReceptionTasksApi.rejectRequest(taskToReject, rejectTaskReason);
+                    setTasks(tasks.map(t => t.id === taskToReject ? { ...t, status: "Từ chối", rejectReason: rejectTaskReason } : t));
+                    toast.success('Đã từ chối nhiệm vụ.');
+                    setIsRejectTaskModalOpen(false);
+                  } catch (err: any) {
+                    toast.error(err.response?.data?.message || 'Lỗi khi từ chối nhiệm vụ');
+                  }
                 }}
                 disabled={!rejectTaskReason.trim()}
                 className="px-6 py-2.5 text-sm font-bold text-white bg-red-600 hover:bg-red-700 rounded-xl shadow-sm hover:shadow transition-all disabled:opacity-50 disabled:cursor-not-allowed"

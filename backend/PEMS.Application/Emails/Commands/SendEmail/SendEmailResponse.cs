@@ -5,6 +5,7 @@ namespace PEMS.Application.Emails.Commands.SendEmail;
 public sealed class SendEmailResponse
 {
     public Guid? Id { get; init; }
-    public string Status { get; init; } = "Scaffolded";
-    public string Message { get; init; } = "Use case scaffolded. Business logic is not implemented yet.";
+    public ulong? SentEmailId { get; init; }
+    public string Status { get; init; } = "QUEUED";
+    public string Message { get; init; } = string.Empty;
 }

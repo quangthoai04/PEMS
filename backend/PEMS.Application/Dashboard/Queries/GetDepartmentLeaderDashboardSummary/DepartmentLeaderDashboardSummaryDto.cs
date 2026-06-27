@@ -5,7 +5,9 @@ namespace PEMS.Application.Dashboard.Queries.GetDepartmentLeaderDashboardSummary
 
 public class DepartmentLeaderQuickTaskDto
 {
+    public string ItemType { get; set; } = "REQUEST";
     public ulong LogisticsItemId { get; set; }
+    public ulong? ParticipantId { get; set; }
     public ulong VisitInstanceId { get; set; }
     public ulong VisitRequestId { get; set; }
     public string DelegationName { get; set; } = null!;
@@ -18,6 +20,9 @@ public class DepartmentLeaderQuickTaskDto
 
 public class DepartmentLeaderUpcomingScheduleDto
 {
+    public string ItemType { get; set; } = "REQUEST";
+    public ulong? LogisticsItemId { get; set; }
+    public ulong? ParticipantId { get; set; }
     public ulong VisitInstanceId { get; set; }
     public ulong VisitRequestId { get; set; }
     public string DelegationName { get; set; } = null!;

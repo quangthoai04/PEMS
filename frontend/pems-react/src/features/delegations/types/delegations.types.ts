@@ -187,6 +187,23 @@ export interface VisitAgendaItem {
   endTime?: string | null;
   description?: string | null;
   location?: string | null;
+  /** Concrete assigned person (visit_agendas.responsible_user_id). Null = unassigned. */
+  responsibleUserId?: number | null;
+  responsibleUserName?: string | null;
+  responsibleUserEmail?: string | null;
+  /** Suggested role text from the source template item (display-only hint, NOT a person). */
+  templateResponsibleRoleLabel?: string | null;
+}
+
+/** A person eligible to be the responsible person of an agenda item: the active host or an ACCEPTED
+ * supporting participant of the instance. Source for the "Người phụ trách" dropdown. */
+export interface AgendaResponsibleCandidate {
+  userId: number;
+  fullName: string;
+  email: string;
+  participantRole: string;
+  displayRole: string;
+  isMainHost: boolean;
 }
 
 /** Real before-visit setup data for the VisitProcess page (from GET process-detail). */
@@ -202,7 +219,175 @@ export interface VisitProcessDetail {
   hostName?: string | null;
   relation: string;
   canEditBefore: boolean;
+  /** Host's internal "Ghi chú chung" (visit_request_campuses.preparation_note). Null/empty when unset. */
+  preparationNote?: string | null;
   agenda: VisitAgendaItem[];
+  /** Read-only mirror of the guest's original registration (registrant + delegation + campuses +
+   * guests). Null only for callers not allowed to see it. */
+  requestSummary?: VisitProcessRequestSummary | null;
+  /** Assigned official host (read-only). Null when none assigned yet. */
+  host?: VisitProcessHost | null;
+  /** Host snapshot + invited supporters of this instance. */
+  participants?: VisitParticipantListItem[];
+}
+
+/** Read-only snapshot of what the guest submitted (shown on the VisitProcess "Thông tin" sections). */
+export interface VisitProcessRequestSummary {
+  registrantName?: string | null;
+  registrantEmail?: string | null;
+  registrantPhone?: string | null;
+  registrantOrganization?: string | null;
+  registrantJobTitle?: string | null;
+  registrantNationality?: string | null;
+
+  delegationName: string;
+  visitScope: string;            // SINGLE_CAMPUS | MULTI_CAMPUS
+  visitType?: string | null;     // CAMPUS_TOUR | MEETING | ... | OTHER
+  visitTypeOther?: string | null;
+  purpose?: string | null;
+  workingContent?: string | null;
+  workingLanguage?: string | null;
+  mediaConsentStatus?: string | null;
+  mediaConsentNote?: string | null;
+  transportationType?: string | null;
+  transportationDetail?: string | null;
+  noteToFptu?: string | null;
+
+  contactPersonFullName?: string | null;
+  contactPersonOrganization?: string | null;
+  contactPersonPhone?: string | null;
+  contactPersonEmail?: string | null;
+
+  campuses: VisitProcessCampus[];
+  guestMembers: VisitProcessGuestMember[];
+  externalSupportMembers: VisitProcessGuestMember[];
+}
+
+export interface VisitProcessCampus {
+  visitInstanceId: number;
+  campusId: number;
+  campusName: string;
+  plannedStartAt: string;
+  plannedEndAt: string;
+  isCurrent: boolean;
+}
+
+export interface VisitProcessGuestMember {
+  guestMemberId: number;
+  memberType: string;            // GUEST | EXTERNAL_SUPPORT
+  fullName: string;
+  organization?: string | null;
+  jobTitle?: string | null;
+  nationality?: string | null;
+  displayOrder: number;
+}
+
+export interface VisitProcessHost {
+  userId: number;
+  fullName: string;
+  email: string;
+  phone?: string | null;
+  departmentName?: string | null;
+  statusLabel: string;
+}
+
+/** One participant row of a campus instance (host snapshot + invited supporters). */
+export interface VisitParticipantListItem {
+  participantId: number;
+  userId: number;
+  fullName: string;
+  email: string;
+  phone?: string | null;
+  roleCode: string;
+  subRole?: string | null;
+  departmentId?: number | null;
+  departmentName?: string | null;
+  participantRole: ParticipantRole;     // IC_HOST | IC_SUPPORT | DEPT_SUPPORT | STUDENT
+  isHost: boolean;
+  status: InvitationStatus | 'REMOVED'; // INVITED | ACCEPTED | DECLINED | ASSIGNED | REMOVED
+  invitedByUserId?: number | null;
+  invitedByName?: string | null;
+  invitedAt?: string | null;
+  respondedAt?: string | null;
+  assignedByUserId?: number | null;
+  assignedByName?: string | null;
+  assignedAt?: string | null;
+  note?: string | null;
+  departmentAssignment?: {
+    departmentId: number;
+    departmentName: string;
+    leaderUserId: number;
+    assignedStaffUserId?: number | null;
+    assignedStaffName?: string | null;
+  } | null;
+}
+
+/** A user eligible to be invited/assigned as a supporting participant, with conflict info. */
+export interface ParticipantCandidate {
+  userId: number;
+  fullName: string;
+  email: string;
+  phone?: string | null;
+  studentCode?: string | null;
+  roleCode: string;
+  subRole?: string | null;
+  departmentId?: number | null;
+  departmentName?: string | null;
+  campusId?: number | null;
+  campusName?: string | null;
+  conflictCount: number;
+  hasPrivateConflict: boolean;
+  conflictSummary?: string | null;
+  canInvite: boolean;
+  disabledReason?: string | null;
+}
+
+/** A GENERAL department the host can invite to support, with its resolved active leader. */
+export interface SupportDepartment {
+  departmentId: number;
+  departmentName: string;
+  campusId: number;
+  campusName?: string | null;
+  leaderUserId?: number | null;
+  leaderName?: string | null;
+  leaderEmail?: string | null;
+  canInvite: boolean;
+  disabledReason?: string | null;
+}
+
+export type InviteParticipantType = 'IC_SUPPORT' | 'STUDENT' | 'DEPT_SUPPORT';
+
+export interface InviteVisitParticipantPayload {
+  participantType: InviteParticipantType;
+  userId?: number;
+  departmentId?: number;
+  message?: string | null;
+  /** Optional host-edited email content from the "Xem trước email" modal. */
+  emailOverride?: EmailOverridePayload;
+}
+
+export interface InviteVisitParticipantResult {
+  participantId: number;
+  userId: number;
+  participantRole: string;
+  status: string;
+  emailQueued: boolean;
+  emailRecipient: string;
+  message: string;
+  /** SENT | FAILED. */
+  emailStatus?: string;
+  sentEmailId?: number;
+}
+
+/** Host-edited email content carried on send/invite commands (Part C). When useEditedContent is
+ * true the backend uses this subject/body and injects the real system action block itself. */
+export interface EmailOverridePayload {
+  useEditedContent: boolean;
+  subject: string;
+  /** Preferred: the readable plain text the host edited (backend converts it to safe HTML). */
+  bodyText?: string;
+  /** Legacy: raw HTML body (kept for backward compatibility with older callers). */
+  bodyHtml?: string;
 }
 
 /**
@@ -627,3 +812,207 @@ export type VisitFilterConfig = {
   scopeOptions: VisitScopeFilterOption[];
   relationOptions: VisitRelationFilterOption[];
 };
+
+// ── Logistics item status (visit_logistics_items.status), SQL v10 2026-06-26. ──
+// PLANNED / RECEIVED / READY were removed — never reintroduce them.
+export type LogisticsItemStatus =
+  | 'REQUESTED'
+  | 'CHANGE_PROPOSED'
+  | 'ASSIGNED'
+  | 'ACCEPTED'
+  | 'IN_PROGRESS'
+  | 'DONE'
+  | 'REJECTED'
+  | 'DECLINED'
+  | 'CANCELLED';
+
+/** Statuses that admit no further workflow action. */
+export const LOGISTICS_TERMINAL_STATUSES: LogisticsItemStatus[] = ['DONE', 'REJECTED', 'DECLINED', 'CANCELLED'];
+
+/** Vietnamese badge label + tailwind classes for each logistics status. */
+export const LOGISTICS_STATUS_META: Record<LogisticsItemStatus, { label: string; cls: string }> = {
+  REQUESTED:       { label: 'Đã gửi yêu cầu', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
+  CHANGE_PROPOSED: { label: 'Đề xuất thay đổi', cls: 'bg-violet-50 text-violet-700 border-violet-200' },
+  ASSIGNED:        { label: 'Đã phân công', cls: 'bg-blue-50 text-blue-700 border-blue-200' },
+  ACCEPTED:        { label: 'Đã nhận nhiệm vụ', cls: 'bg-sky-50 text-sky-700 border-sky-200' },
+  IN_PROGRESS:     { label: 'Đang xử lý', cls: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
+  DONE:            { label: 'Hoàn tất', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  REJECTED:        { label: 'Từ chối yêu cầu', cls: 'bg-red-50 text-red-700 border-red-200' },
+  DECLINED:        { label: 'Nhân sự từ chối', cls: 'bg-rose-50 text-rose-700 border-rose-200' },
+  CANCELLED:       { label: 'Đã hủy', cls: 'bg-slate-100 text-slate-500 border-slate-200' },
+};
+
+// ── VisitProcess logistics requests (visit_logistics_items), Host → Department. ──
+export type LogisticsItemType = 'ROOM' | 'TRANSPORT' | 'MEAL' | 'EQUIPMENT' | 'BANNER' | 'LED' | 'OTHER';
+export type LogisticsPriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
+
+export type LogisticsCoordinationMode = 'SYSTEM_REQUEST' | 'OFFLINE_COORDINATED';
+
+export interface PrepareVisitLogisticsPayload {
+  visitInstanceId: number;
+  /** Required for SYSTEM_REQUEST; may be null for OFFLINE_COORDINATED. */
+  departmentId?: number | null;
+  itemType: LogisticsItemType;
+  title: string;
+  description?: string | null;
+  quantity?: number | null;
+  usageStartAt?: string | null;   // "yyyy-MM-ddTHH:mm[:ss]" wall-clock
+  usageEndAt?: string | null;
+  priority?: LogisticsPriority | null;
+  dueAt?: string | null;
+  /** SYSTEM_REQUEST (default) = send to department via system; OFFLINE_COORDINATED = handled outside. */
+  coordinationMode?: LogisticsCoordinationMode | null;
+  /** Required when coordinationMode = OFFLINE_COORDINATED. */
+  offlineCoordinationNote?: string | null;
+  emailOverride?: EmailOverridePayload;
+}
+
+export interface PrepareVisitLogisticsResult {
+  success: boolean;
+  businessCreated: boolean;
+  logisticsItemId: number;
+  emailStatus: string;            // SENT | FAILED
+  sentEmailId: number;
+  message: string;
+}
+
+/** One logistics request row of a campus instance (GET .../logistics). */
+export interface VisitInstanceLogisticsItem {
+  logisticsItemId: number;
+  itemType: LogisticsItemType;
+  title: string;
+  description?: string | null;
+  quantity?: number | null;
+  status: LogisticsItemStatus;
+  priority: LogisticsPriority;
+  coordinationMode?: LogisticsCoordinationMode;        // SYSTEM_REQUEST | OFFLINE_COORDINATED
+  offlineCoordinationNote?: string | null;
+  requestedToDepartmentId?: number | null;
+  departmentName?: string | null;
+  requestedAt?: string | null;
+  usageStartAt?: string | null;
+  usageEndAt?: string | null;
+  dueAt?: string | null;
+  assignedToUserId?: number | null;
+  assignedToName?: string | null;
+}
+
+export interface GetVisitInstanceLogisticsResult {
+  items: VisitInstanceLogisticsItem[];
+}
+
+// ── Email rich-editor shared enums (mirror SQL v10 email_rich_editor). ──
+export type EmailBodyFormat = 'PLAIN_TEXT' | 'HTML';
+export type EmailAttachmentType = 'ATTACHMENT' | 'INLINE_IMAGE';
+export type EmailDraftStatus = 'DRAFT' | 'SENT' | 'DISCARDED';
+
+// ── "Xem mail đã gửi" (sent_emails + sent_email_recipients + sent_email_attachments). ──
+export interface SentEmailRecipientItem {
+  recipientName?: string | null;
+  recipientEmail: string;
+  recipientType: string;            // TO | CC | BCC
+  deliveryStatus: string;           // QUEUED | SENT | FAILED | DELIVERED
+  sentAt?: string | null;
+  deliveredAt?: string | null;
+  errorMessage?: string | null;
+}
+
+export interface SentEmailAttachmentItem {
+  sentEmailAttachmentId: number;
+  fileId: number;
+  attachmentType: EmailAttachmentType;  // ATTACHMENT | INLINE_IMAGE
+  contentId?: string | null;
+  displayName?: string | null;
+  originalFilename?: string | null;
+  mimeType?: string | null;
+  fileSize?: number | null;
+  webViewUrl?: string | null;
+  downloadUrl?: string | null;
+  thumbnailUrl?: string | null;
+}
+
+export interface SentEmailHistoryItem {
+  sentEmailId: number;
+  templateCode?: string | null;
+  templateName?: string | null;
+  subject: string;
+  bodySnapshot?: string | null;
+  bodyFormat?: EmailBodyFormat;     // PLAIN_TEXT | HTML — how bodySnapshot renders
+  emailStatus: string;              // QUEUED | SENT | FAILED | DELIVERED
+  sentByName?: string | null;
+  sentAt?: string | null;           // "yyyy-MM-ddTHH:mm:ss" wall-clock
+  deliveredAt?: string | null;
+  createdAt?: string | null;
+  relatedType?: string | null;
+  relatedId?: number | null;
+  recipients: SentEmailRecipientItem[];
+  attachments?: SentEmailAttachmentItem[];
+}
+
+export interface GetSentEmailsResult {
+  items: SentEmailHistoryItem[];
+}
+
+// ── VisitProcess scheduled reminders (visit_instance_reminder_settings), SQL v10. ──
+export type VisitReminderChannel = 'IN_APP' | 'EMAIL';
+export type VisitReminderTargetGroup = 'HOST' | 'PARTICIPANTS' | 'HOST_AND_PARTICIPANTS';
+export type VisitReminderStatus = 'PENDING' | 'SENT' | 'CANCELLED' | 'FAILED';
+
+/** One saved reminder schedule row (GET/PUT reminder-settings). */
+export interface VisitReminderSetting {
+  reminderSettingId: number;
+  channel: VisitReminderChannel;
+  targetGroup: VisitReminderTargetGroup;
+  daysBefore: number;
+  reminderTime: string;   // "HH:mm"
+  scheduledAt: string;    // "yyyy-MM-ddTHH:mm:ss" wall-clock
+  status: VisitReminderStatus;
+}
+
+export interface GetVisitReminderSettingsResult {
+  items: VisitReminderSetting[];
+}
+
+/** One desired reminder configuration sent on PUT (enabled=false cancels the matching PENDING row). */
+export interface SaveVisitReminderSettingItem {
+  channel: VisitReminderChannel;
+  targetGroup: VisitReminderTargetGroup;
+  daysBefore: number;
+  reminderTime: string;   // "HH:mm"
+  enabled: boolean;
+}
+
+export interface SaveVisitReminderSettingsResult {
+  items: VisitReminderSetting[];
+  message: string;
+}
+
+export interface UpdatePreparationNoteResult {
+  visitInstanceId: number;
+  preparationNote: string | null;
+  message: string;
+}
+
+// ── Email template preview (read-only render for "Xem trước email"). ──
+export interface PreviewEmailTemplatePayload {
+  templateCode: string;
+  context?: Record<string, string>;
+  language?: 'VI' | 'EN';
+}
+
+export interface PreviewEmailTemplateResult {
+  templateCode: string;
+  subject: string;
+  /** Editable message content as HTML (action buttons stripped) — for the rendered preview. */
+  bodyHtml: string;
+  /** The same editable content as readable plain text (no HTML tags) — bind the editor to this. */
+  editableBodyText: string;
+  isActionTemplate: boolean;
+  systemActionDescription?: string | null;
+  /** Read-only (disabled) preview of the system action block, if any. */
+  lockedActionBlockHtml?: string | null;
+  requiredActionPlaceholders: string[];
+  editable: boolean;
+  /** Body format of the source template: 'PLAIN_TEXT' | 'HTML' (email_templates.body_format). */
+  bodyFormat: EmailBodyFormat;
+}

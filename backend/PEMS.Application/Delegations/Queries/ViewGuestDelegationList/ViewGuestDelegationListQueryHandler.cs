@@ -266,7 +266,7 @@ public sealed class ViewGuestDelegationListQueryHandler
             {
                 var nowUtc = _clock.UtcNow;
                 q = q.Where(x => (x.vr.VisitScope == VisitScopes.SingleCampus && x.vr.Status == VisitRequestStatuses.PendingApproval)
-                    || (x.vr.VisitScope == VisitScopes.MultiCampus && x.vr.Status == VisitRequestStatuses.Approved && x.c.Status == VisitInstanceStatus.Assigned && (x.c.PlannedStartAt == null || x.c.PlannedStartAt > nowUtc)));
+                    || (x.vr.VisitScope == VisitScopes.MultiCampus && x.vr.Status == VisitRequestStatuses.Approved && x.c.Status == VisitInstanceStatus.Assigned && x.c.PlannedStartAt > nowUtc));
             }
         }
         if (request.ReadOnlyOnly == true)
@@ -277,7 +277,7 @@ public sealed class ViewGuestDelegationListQueryHandler
             {
                 var nowUtc = _clock.UtcNow;
                 q = q.Where(x => !((x.vr.VisitScope == VisitScopes.SingleCampus && x.vr.Status == VisitRequestStatuses.PendingApproval)
-                    || (x.vr.VisitScope == VisitScopes.MultiCampus && x.vr.Status == VisitRequestStatuses.Approved && x.c.Status == VisitInstanceStatus.Assigned && (x.c.PlannedStartAt == null || x.c.PlannedStartAt > nowUtc))));
+                    || (x.vr.VisitScope == VisitScopes.MultiCampus && x.vr.Status == VisitRequestStatuses.Approved && x.c.Status == VisitInstanceStatus.Assigned && x.c.PlannedStartAt > nowUtc)));
             }
         }
 

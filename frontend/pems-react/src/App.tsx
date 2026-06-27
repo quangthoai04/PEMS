@@ -138,7 +138,7 @@ export default function App() {
             <Route path="news/:id" element={<NewsDetailDashboard />} />
             <Route path="email" element={<ProtectedRoute><EmailManagement /></ProtectedRoute>} />
             <Route path="email/create" element={<ProtectedRoute><CreateEmail /></ProtectedRoute>} />
-            <Route path="email/sent/:id" element={<ProtectedRoute><SentEmailDetail /></ProtectedRoute>} />
+            <Route path="email/detail/:sourceType/:id" element={<ProtectedRoute><SentEmailDetail /></ProtectedRoute>} />
             <Route path="email/:id" element={<ProtectedRoute><EmailDetail /></ProtectedRoute>} />
             <Route path="email/:id/edit" element={<ProtectedRoute><EditEmail /></ProtectedRoute>} />
             <Route path="partners" element={<PartnerManagement />} />

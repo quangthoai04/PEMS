@@ -20,4 +20,7 @@ public sealed record SaveVisitAgendaItem(
     DateTime StartTime,
     DateTime? EndTime,
     string? Description,
-    string? Location);
+    string? Location,
+    // The concrete user assigned to run this item. Optional (null = unassigned). Validated in the
+    // handler against the instance's responsible-candidate set (active host or ACCEPTED participant).
+    ulong? ResponsibleUserId = null);

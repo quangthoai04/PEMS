@@ -14,6 +14,8 @@ export const API_ENDPOINTS = {
     // UC-14 view my profile, UC-15 update my profile (self-service; user resolved from token).
     me: '/profiles/viewprofile',
     update: '/profiles/updateprofile',
+    // UC-15 avatar upload (multipart field "avatar"); user resolved from token.
+    avatar: '/profiles/me/avatar',
   },
   campuses: {
     active: '/campuses/active',
@@ -87,6 +89,9 @@ export const API_ENDPOINTS = {
       `/delegations/${visitRequestId}/campuses/${visitInstanceId}/process-detail`,
     saveAgenda: (visitRequestId: string | number, visitInstanceId: string | number) =>
       `/delegations/${visitRequestId}/campuses/${visitInstanceId}/agenda`,
+    // Valid "Người phụ trách" candidates (active host + ACCEPTED supporting participants of the instance).
+    agendaResponsibleCandidates: (visitInstanceId: string | number) =>
+      `/delegations/visit-instances/${visitInstanceId}/agenda-responsible-candidates`,
     // Operational reception stage transitions (Host only): Trước→Đang, Đang→Sau, Sau→Đóng đoàn.
     completeBeforeVisit: (visitRequestId: string | number, visitInstanceId: string | number) =>
       `/delegations/${visitRequestId}/campuses/${visitInstanceId}/process/complete-before-visit`,
@@ -102,6 +107,42 @@ export const API_ENDPOINTS = {
     myInvitations: '/delegations/my-invitations',
     invitationDetail: (participantId: string | number) => `/delegations/invitations/${participantId}`,
     respondInvitation: (participantId: string | number) => `/delegations/participants/${participantId}/respond`,
+    // VisitProcess "Thành phần tham gia": participant list, invite candidate searches, invite/remove.
+    instanceParticipants: (visitInstanceId: string | number) =>
+      `/delegations/visit-instances/${visitInstanceId}/participants`,
+    participantCandidates: (visitInstanceId: string | number) =>
+      `/delegations/visit-instances/${visitInstanceId}/participant-candidates`,
+    supportDepartments: (visitInstanceId: string | number) =>
+      `/delegations/visit-instances/${visitInstanceId}/support-departments`,
+    departmentStaffCandidates: (visitInstanceId: string | number) =>
+      `/delegations/visit-instances/${visitInstanceId}/department-staff-candidates`,
+    inviteParticipant: (visitInstanceId: string | number) =>
+      `/delegations/visit-instances/${visitInstanceId}/participants/invite`,
+    removeParticipant: (visitInstanceId: string | number, participantId: string | number) =>
+      `/delegations/visit-instances/${visitInstanceId}/participants/${participantId}/remove`,
+    // VisitProcess "Ghi chú chung" (preparation note) — Host only, prep window.
+    preparationNote: (visitInstanceId: string | number) =>
+      `/delegations/visit-instances/${visitInstanceId}/preparation-note`,
+    // VisitProcess "Cảnh báo & Thông báo" (scheduled reminder settings) — Host only, prep window.
+    reminderSettings: (visitInstanceId: string | number) =>
+      `/delegations/visit-instances/${visitInstanceId}/reminder-settings`,
+    cancelReminderSettings: (visitInstanceId: string | number) =>
+      `/delegations/visit-instances/${visitInstanceId}/reminder-settings/cancel`,
+    // VisitProcess "Chuẩn bị chi tiết": Host logistics requests (list + create).
+    instanceLogistics: (visitInstanceId: string | number) =>
+      `/delegations/visit-instances/${visitInstanceId}/logistics`,
+    prepareVisitLogistics: '/delegations/preparevisitlogistics',
+    cancelLogisticsItem: (visitInstanceId: string | number, logisticsItemId: string | number) =>
+      `/delegations/visit-instances/${visitInstanceId}/logistics/${logisticsItemId}/cancel`,
+    // "Xem mail đã gửi": sent-email history for one target (participant invitation / logistics request).
+    participantSentEmails: (visitInstanceId: string | number, participantId: string | number) =>
+      `/delegations/visit-instances/${visitInstanceId}/participants/${participantId}/sent-emails`,
+    logisticsSentEmails: (visitInstanceId: string | number, logisticsItemId: string | number) =>
+      `/delegations/visit-instances/${visitInstanceId}/logistics/${logisticsItemId}/sent-emails`,
+  },
+  // Email template preview (read-only render for the "Xem trước email" modal — never sends).
+  emailTemplates: {
+    preview: '/email-templates/preview',
   },
   // Phase 3: meeting minutes (biên bản) — 1 per visit_instance with an edit-lock workflow.
   meetingMinutes: {
@@ -144,5 +185,24 @@ export const API_ENDPOINTS = {
     accept: (participantId: string | number) => `/visit-invitations/${participantId}/accept`,
     decline: (participantId: string | number) => `/visit-invitations/${participantId}/decline`,
     assignDepartmentStaff: (participantId: string | number) => `/visit-invitations/${participantId}/assign-department-staff`,
+  },
+  departmentReceptionTasks: {
+    calendar: '/department/reception-tasks/calendar',
+    assignmentsProgress: '/department/reception-tasks/assignments-progress',
+    attentionItems: '/department/reception-tasks/attention-items',
+    invitationDetail: (participantId: string | number) => `/department/reception-tasks/invitations/${participantId}`,
+    acceptInvitation: (participantId: string | number) => `/department/reception-tasks/invitations/${participantId}/accept`,
+    declineInvitation: (participantId: string | number) => `/department/reception-tasks/invitations/${participantId}/decline`,
+    assignInvitation: (participantId: string | number) => `/department/reception-tasks/invitations/${participantId}/assign`,
+    requestDetail: (logisticsItemId: string | number) => `/department/reception-tasks/requests/${logisticsItemId}`,
+    acceptRequestSelf: (logisticsItemId: string | number) => `/department/reception-tasks/requests/${logisticsItemId}/accept-self`,
+    confirmRequest: (logisticsItemId: string | number) => `/department/reception-tasks/requests/${logisticsItemId}/confirm`,
+    rejectRequest: (logisticsItemId: string | number) => `/department/reception-tasks/requests/${logisticsItemId}/reject`,
+    proposeChange: (logisticsItemId: string | number) => `/department/reception-tasks/requests/${logisticsItemId}/propose-change`,
+    assignAssignee: (logisticsItemId: string | number) => `/department/reception-tasks/requests/${logisticsItemId}/assign`,
+    assigneeCandidates: '/department/reception-tasks/assignee-candidates',
+    personalEvents: '/department/reception-tasks/personal-events',
+    acceptAssignment: (logisticsItemId: string | number) => `/department/reception-tasks/requests/${logisticsItemId}/accept-assignment`,
+    declineAssignment: (logisticsItemId: string | number) => `/department/reception-tasks/requests/${logisticsItemId}/decline-assignment`,
   },
 };

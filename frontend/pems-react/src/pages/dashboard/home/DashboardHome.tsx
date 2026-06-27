@@ -27,7 +27,7 @@ import {
 } from "lucide-react";
 
 import { HODashboardView } from './HODashboardView';
-import { SharedDashboardView } from './SharedDashboardView';
+import { SharedDashboardView } from '../departments/SharedDashboardView';
 import { AdminDashboardView } from './AdminDashboardView';
 import { DeptLeadDashboardView } from './DeptLeadDashboardView';
 import { useAuth } from '../../../shared/hooks/useAuth';

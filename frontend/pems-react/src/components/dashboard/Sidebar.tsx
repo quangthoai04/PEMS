@@ -7,7 +7,7 @@
 
 // Đây là component thanh bên (Sidebar) để điều hướng trong khu vực quản trị (Dashboard)
 import React, { useState } from "react";
-import { NavLink, useNavigate } from "react-router-dom";
+import { Link, NavLink, useNavigate } from "react-router-dom";
 import {
   Home,
   Newspaper,
@@ -37,6 +37,7 @@ import logo from "../../assets/images/2021-FPTU-Eng.png";
 import avatarImg from "../../assets/Avatar/AvatarDefault.png";
 import { motion, AnimatePresence } from "motion/react";
 import { useAuth } from "../../shared/hooks/useAuth";
+import { useAuthenticatedImage } from "../../shared/hooks/useAuthenticatedImage";
 
 
 interface SidebarProps {
@@ -48,9 +49,9 @@ interface SidebarProps {
 export function Sidebar({ isMobileOpen = false, onCloseMobile }: SidebarProps) {
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const navigate = useNavigate();
-  const { logout } = useAuth();
+  const { logout, user: authUser } = useAuth();
 
-  // Get user from localStorage
+  // Get user from localStorage (name / campus / role display — unchanged).
   const userStr = localStorage.getItem("currentUser");
   const user = userStr
     ? JSON.parse(userStr)
@@ -59,6 +60,11 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile }: SidebarProps) {
       campus: "Không rõ",
       role: "GUEST",
     };
+
+  // Avatar comes from the shared AuthContext so it updates reactively right after an upload.
+  // It lives behind an authenticated endpoint, so fetch it as a blob; fall back to the default.
+  const fetchedAvatar = useAuthenticatedImage(authUser?.avatarUrl ?? null);
+  const avatarSrc = fetchedAvatar ?? avatarImg;
 
 
   const isStaffLeader = user?.role?.toUpperCase() === 'STAFF' && user?.subRole?.toUpperCase() === 'LEADER';
@@ -126,9 +132,11 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile }: SidebarProps) {
         )}
 
 
-        {/* Logo */}
+        {/* Logo — click to go back to the public home page */}
         <div className="flex justify-center px-6 mb-8 flex-shrink-0">
-          <img src={logo} alt="FPT University" className="h-20 object-contain" />
+          <Link to="/" className="block cursor-pointer" aria-label="Về trang chủ" title="Về trang chủ">
+            <img src={logo} alt="FPT University" className="h-20 object-contain" />
+          </Link>
         </div>
 
 
@@ -238,9 +246,10 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile }: SidebarProps) {
             <div className="flex items-center gap-3">
               <div className="w-14 h-14 rounded-full overflow-hidden border-2 border-gray-100 bg-gray-50 flex-shrink-0 flex items-center justify-center">
                 <img
-                  src={avatarImg}
+                  src={avatarSrc}
                   alt="Avatar"
                   className="w-[115%] h-[115%] object-cover max-w-none"
+                  onError={(e) => { e.currentTarget.src = avatarImg; }}
                 />
               </div>
               <div className="flex-1 min-w-0">

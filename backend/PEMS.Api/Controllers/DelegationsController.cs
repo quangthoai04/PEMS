@@ -9,9 +9,23 @@ using PEMS.Application.Delegations.Commands.ProcessVisitRequest;
 using PEMS.Application.Delegations.Commands.RejectVisitRequest;
 using PEMS.Application.Delegations.Commands.SaveVisitAgenda;
 using PEMS.Application.Delegations.Commands.UpdateRegistrantInfo;
+using PEMS.Application.Delegations.Commands.InviteVisitParticipant;
+using PEMS.Application.Delegations.Commands.RemoveVisitParticipant;
+using PEMS.Application.Delegations.Commands.UpdateVisitInstancePreparationNote;
+using PEMS.Application.Delegations.Commands.SaveVisitInstanceReminderSettings;
+using PEMS.Application.Delegations.Commands.CancelVisitInstanceReminderSettings;
+using PEMS.Application.Delegations.Queries.GetVisitInstanceReminderSettings;
+using PEMS.Application.Delegations.Queries.GetVisitInstanceLogistics;
+using PEMS.Application.Delegations.Queries.GetVisitInstanceSentEmails;
+using PEMS.Application.Emails.Common;
 using PEMS.Application.Delegations.Queries.GetVisitProcessDetail;
+using PEMS.Application.Delegations.Queries.GetAgendaResponsibleCandidates;
 using PEMS.Application.Delegations.Commands.RespondVisitParticipantInvitation;
 using PEMS.Application.Delegations.Queries.GetHostCandidates;
+using PEMS.Application.Delegations.Queries.GetVisitInstanceParticipants;
+using PEMS.Application.Delegations.Queries.GetParticipantCandidates;
+using PEMS.Application.Delegations.Queries.GetSupportDepartments;
+using PEMS.Application.Delegations.Queries.GetDepartmentStaffCandidates;
 using PEMS.Application.Delegations.Queries.ViewMyVisitInvitations;
 using PEMS.Domain.Constants;
 using System.Collections.Generic;
@@ -127,12 +141,163 @@ namespace PEMS.Api.Controllers
             return Ok(result);
         }
 
+        // Valid "Người phụ trách" candidates for the agenda editor: the active host + ACCEPTED
+        // supporting participants of THIS instance only (never the whole-system user list). Scope
+        // enforced in the handler (403 if the caller has no relation to the instance).
+        [HttpGet("visit-instances/{visitInstanceId}/agenda-responsible-candidates")]
+        public async Task<IActionResult> GetAgendaResponsibleCandidates(ulong visitInstanceId, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(new GetAgendaResponsibleCandidatesQuery(visitInstanceId), cancellationToken);
+            return Ok(result);
+        }
+
+        // ── VisitProcess "Thành phần tham gia": participant list + invite candidate searches ──
+        // The instance's host snapshot + invited supporters (scope enforced in the handler: internal
+        // relation only). Used on first load and for cheap refetch after invite/remove/assign.
+        [HttpGet("visit-instances/{visitInstanceId}/participants")]
+        public async Task<IActionResult> GetVisitInstanceParticipants(ulong visitInstanceId, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(new GetVisitInstanceParticipantsQuery(visitInstanceId), cancellationToken);
+            return Ok(result);
+        }
+
+        // Candidate search for the host's invite dropdowns. type = IC_SUPPORT | STUDENT. Each candidate
+        // carries schedule-conflict info against the instance window. Host-only (re-validated server-side).
+        [HttpGet("visit-instances/{visitInstanceId}/participant-candidates")]
+        public async Task<IActionResult> GetParticipantCandidates(
+            ulong visitInstanceId, [FromQuery] string type, [FromQuery] string? keyword, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(new GetParticipantCandidatesQuery(visitInstanceId, type, keyword), cancellationToken);
+            return Ok(result);
+        }
+
+        // GENERAL departments of the instance's campus + their resolved active leader (the real
+        // invitee). Host-only (re-validated server-side).
+        [HttpGet("visit-instances/{visitInstanceId}/support-departments")]
+        public async Task<IActionResult> GetSupportDepartments(
+            ulong visitInstanceId, [FromQuery] string? keyword, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(new GetSupportDepartmentsQuery(visitInstanceId, keyword), cancellationToken);
+            return Ok(result);
+        }
+
+        // Department staff the calling Department Leader may assign (own department/campus). Leader-only.
+        [HttpGet("visit-instances/{visitInstanceId}/department-staff-candidates")]
+        public async Task<IActionResult> GetDepartmentStaffCandidates(
+            ulong visitInstanceId, [FromQuery] string? keyword, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(new GetDepartmentStaffCandidatesQuery(visitInstanceId, keyword), cancellationToken);
+            return Ok(result);
+        }
+
+        // Host invites a supporting participant (IC_SUPPORT/STUDENT by userId, DEPT_SUPPORT by
+        // departmentId → backend resolves the leader). Inserts the participant, sends the invitation
+        // email with one-time Accept/Decline tokens, and audits. Host-only (re-validated server-side).
+        [HttpPost("visit-instances/{visitInstanceId}/participants/invite")]
+        public async Task<IActionResult> InviteVisitParticipant(
+            ulong visitInstanceId, [FromBody] InviteVisitParticipantBody body, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(
+                new InviteVisitParticipantCommand(visitInstanceId, body.ParticipantType, body.UserId, body.DepartmentId, body.Message, body.EmailOverride),
+                cancellationToken);
+            return Ok(result);
+        }
+
+        // Host withdraws a still-pending (INVITED) participant they invited. Host-only; never the main host.
+        [HttpPatch("visit-instances/{visitInstanceId}/participants/{participantId}/remove")]
+        public async Task<IActionResult> RemoveVisitParticipant(
+            ulong visitInstanceId, ulong participantId, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(new RemoveVisitParticipantCommand(visitInstanceId, participantId), cancellationToken);
+            return Ok(result);
+        }
+        // NB: Department-Leader staff assignment is served by the existing
+        // VisitInvitationsController: POST /api/visit-invitations/{participantId}/assign-department-staff
+        // (login required). Candidate list: GET visit-instances/{id}/department-staff-candidates above.
+
         // Upsert the instance's agenda (Host only, prep window). Saves setup ONLY — does not change stage.
         [HttpPost("{visitRequestId}/campuses/{visitInstanceId}/agenda")]
         public async Task<IActionResult> SaveVisitAgenda(ulong visitRequestId, ulong visitInstanceId, [FromBody] SaveVisitAgendaBody body, CancellationToken cancellationToken)
         {
             var items = (body.Items ?? new List<SaveVisitAgendaItem>());
             var result = await _mediator.Send(new SaveVisitAgendaCommand(visitRequestId, visitInstanceId, items), cancellationToken);
+            return Ok(result);
+        }
+
+        // ── VisitProcess "Ghi chú chung" (preparation note) — Host only, prep window ──
+        // Saves visit_request_campuses.preparation_note. note may be null/empty (clears it).
+        [HttpPut("visit-instances/{visitInstanceId}/preparation-note")]
+        public async Task<IActionResult> UpdatePreparationNote(
+            ulong visitInstanceId, [FromBody] UpdatePreparationNoteBody body, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(
+                new UpdateVisitInstancePreparationNoteCommand(visitInstanceId, body?.Note), cancellationToken);
+            return Ok(result);
+        }
+
+        // ── VisitProcess "Cảnh báo & Thông báo" (scheduled reminder settings) — Host only, prep window ──
+        // GET loads the saved schedule rows; PUT upserts the full set (enabled=false cancels a PENDING row);
+        // PATCH .../cancel cancels every PENDING row. Nothing is sent on save — dispatch is a background job.
+        [HttpGet("visit-instances/{visitInstanceId}/reminder-settings")]
+        public async Task<IActionResult> GetReminderSettings(ulong visitInstanceId, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(new GetVisitInstanceReminderSettingsQuery(visitInstanceId), cancellationToken);
+            return Ok(result);
+        }
+
+        [HttpPut("visit-instances/{visitInstanceId}/reminder-settings")]
+        public async Task<IActionResult> SaveReminderSettings(
+            ulong visitInstanceId, [FromBody] SaveReminderSettingsBody body, CancellationToken cancellationToken)
+        {
+            var items = (body?.Items ?? new List<SaveVisitReminderSettingItem>());
+            var result = await _mediator.Send(
+                new SaveVisitInstanceReminderSettingsCommand(visitInstanceId, items), cancellationToken);
+            return Ok(result);
+        }
+
+        [HttpPatch("visit-instances/{visitInstanceId}/reminder-settings/cancel")]
+        public async Task<IActionResult> CancelReminderSettings(ulong visitInstanceId, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(new CancelVisitInstanceReminderSettingsCommand(visitInstanceId), cancellationToken);
+            return Ok(result);
+        }
+
+        // VisitProcess "Chuẩn bị chi tiết": the campus instance's logistics/resource requests (read).
+        [HttpGet("visit-instances/{visitInstanceId}/logistics")]
+        public async Task<IActionResult> GetVisitInstanceLogistics(ulong visitInstanceId, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(new GetVisitInstanceLogisticsQuery(visitInstanceId), cancellationToken);
+            return Ok(result);
+        }
+
+        // Host soft-cancels one of their logistics requests (e.g. "Không cần màn LED"). Sets CANCELLED.
+        [HttpPatch("visit-instances/{visitInstanceId}/logistics/{logisticsItemId}/cancel")]
+        public async Task<IActionResult> CancelVisitLogisticsItem(ulong visitInstanceId, ulong logisticsItemId, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(
+                new PEMS.Application.Delegations.Commands.CancelVisitLogisticsItem.CancelVisitLogisticsItemCommand(visitInstanceId, logisticsItemId),
+                cancellationToken);
+            return Ok(result);
+        }
+
+        // ── "Xem mail đã gửi": the sent-email history for one target of a campus instance ─────
+        // Read-only; the handler scopes to the instance (host / campus Staff Leader / HO) and never
+        // returns another instance's emails. Joins sent_emails + sent_email_recipients + email_templates.
+        [HttpGet("visit-instances/{visitInstanceId}/participants/{participantId}/sent-emails")]
+        public async Task<IActionResult> GetParticipantSentEmails(ulong visitInstanceId, ulong participantId, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(
+                new GetVisitInstanceSentEmailsQuery(visitInstanceId, EmailActionTargetTypes.VisitParticipant, participantId),
+                cancellationToken);
+            return Ok(result);
+        }
+
+        [HttpGet("visit-instances/{visitInstanceId}/logistics/{logisticsItemId}/sent-emails")]
+        public async Task<IActionResult> GetLogisticsSentEmails(ulong visitInstanceId, ulong logisticsItemId, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(
+                new GetVisitInstanceSentEmailsQuery(visitInstanceId, EmailActionTargetTypes.LogisticsItem, logisticsItemId),
+                cancellationToken);
             return Ok(result);
         }
 
@@ -391,4 +556,16 @@ namespace PEMS.Api.Controllers
 
     /// <summary>Request body for the UC-27 respond-to-invitation endpoint (decline requires a reason).</summary>
     public sealed record RespondInvitationBody(bool Accept, string? DeclineReason);
+
+    /// <summary>Request body for inviting a supporting participant. userId is required for
+    /// IC_SUPPORT/STUDENT; departmentId for DEPT_SUPPORT (backend resolves the leader). emailOverride
+    /// carries the host-edited subject/body from the "Xem trước email" modal (optional).</summary>
+    public sealed record InviteVisitParticipantBody(
+        string ParticipantType, ulong? UserId, ulong? DepartmentId, string? Message, EmailOverride? EmailOverride);
+
+    /// <summary>Request body for saving the host's "Ghi chú chung" (preparation note). Null clears it.</summary>
+    public sealed record UpdatePreparationNoteBody(string? Note);
+
+    /// <summary>Request body for upserting the reminder schedule (full set; enabled=false cancels a row).</summary>
+    public sealed record SaveReminderSettingsBody(List<SaveVisitReminderSettingItem>? Items);
 }

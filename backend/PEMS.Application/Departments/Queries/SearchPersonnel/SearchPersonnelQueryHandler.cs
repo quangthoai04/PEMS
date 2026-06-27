@@ -21,7 +21,7 @@ public sealed class SearchPersonnelQueryHandler : IRequestHandler<SearchPersonne
         var query = _context.Users
             .Include(u => u.Role)
             .Include(u => u.PrimaryCampus)
-            .Where(u => u.DepartmentId == request.DepartmentId && u.Role.RoleCode == "DEPARTMENT" && u.Status != "INACTIVE");
+            .Where(u => u.DepartmentId == request.DepartmentId && u.Role.RoleCode == "DEPARTMENT");
 
         if (!string.IsNullOrWhiteSpace(request.Keyword))
         {
@@ -34,6 +34,10 @@ public sealed class SearchPersonnelQueryHandler : IRequestHandler<SearchPersonne
             if (request.Status.ToLower() == "active")
             {
                 query = query.Where(u => u.Status == "ACTIVE");
+            }
+            else if (request.Status.ToLower() == "inactive")
+            {
+                query = query.Where(u => u.Status == "INACTIVE" || u.Status == "LOCK");
             }
         }
 
@@ -54,7 +58,8 @@ public sealed class SearchPersonnelQueryHandler : IRequestHandler<SearchPersonne
                 Gender = u.Gender != null ? u.Gender.ToString() : "Khác",
                 Campus = u.PrimaryCampus != null ? u.PrimaryCampus.Name : "",
                 SystemRole = u.Role.RoleCode,
-                AvatarUrl = u.AvatarUrl
+                AvatarUrl = u.AvatarUrl,
+                RawStatus = u.Status
             })
             .ToListAsync(cancellationToken);
 

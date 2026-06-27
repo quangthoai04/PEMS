@@ -16,6 +16,21 @@ import type {
   SaveMinuteActionItemPayload,
   VisitNews,
   VisitNewsList,
+  VisitParticipantListItem,
+  ParticipantCandidate,
+  SupportDepartment,
+  InviteVisitParticipantPayload,
+  InviteVisitParticipantResult,
+  UpdatePreparationNoteResult,
+  GetVisitReminderSettingsResult,
+  SaveVisitReminderSettingItem,
+  SaveVisitReminderSettingsResult,
+  PreviewEmailTemplatePayload,
+  PreviewEmailTemplateResult,
+  PrepareVisitLogisticsPayload,
+  PrepareVisitLogisticsResult,
+  GetVisitInstanceLogisticsResult,
+  GetSentEmailsResult,
 } from '../types/delegations.types';
 
 export const delegationsApi = {
@@ -105,14 +120,166 @@ export const delegationsApi = {
     return data;
   },
 
+  /** VisitProcess "Thành phần tham gia": the instance's host snapshot + invited supporters. */
+  async getInstanceParticipants(visitInstanceId: number | string): Promise<VisitParticipantListItem[]> {
+    const { data } = await httpClient.get<VisitParticipantListItem[]>(
+      API_ENDPOINTS.delegations.instanceParticipants(visitInstanceId));
+    return data;
+  },
+
+  /** Candidate search for the host's invite dropdowns. type = IC_SUPPORT | STUDENT. */
+  async getParticipantCandidates(
+    visitInstanceId: number | string,
+    type: 'IC_SUPPORT' | 'STUDENT',
+    keyword?: string,
+  ): Promise<ParticipantCandidate[]> {
+    const { data } = await httpClient.get<ParticipantCandidate[]>(
+      API_ENDPOINTS.delegations.participantCandidates(visitInstanceId),
+      { params: { type, keyword: keyword || undefined } });
+    return data;
+  },
+
+  /** GENERAL departments of the instance's campus + their resolved active leader (the invitee). */
+  async getSupportDepartments(visitInstanceId: number | string, keyword?: string): Promise<SupportDepartment[]> {
+    const { data } = await httpClient.get<SupportDepartment[]>(
+      API_ENDPOINTS.delegations.supportDepartments(visitInstanceId),
+      { params: { keyword: keyword || undefined } });
+    return data;
+  },
+
+  /** Department staff the calling Department Leader may assign (own department/campus). */
+  async getDepartmentStaffCandidates(visitInstanceId: number | string, keyword?: string): Promise<ParticipantCandidate[]> {
+    const { data } = await httpClient.get<ParticipantCandidate[]>(
+      API_ENDPOINTS.delegations.departmentStaffCandidates(visitInstanceId),
+      { params: { keyword: keyword || undefined } });
+    return data;
+  },
+
+  /** Host invites a supporting participant (sends the invitation email with one-time tokens). */
+  async inviteVisitParticipant(
+    visitInstanceId: number | string,
+    payload: InviteVisitParticipantPayload,
+  ): Promise<InviteVisitParticipantResult> {
+    const { data } = await httpClient.post<InviteVisitParticipantResult>(
+      API_ENDPOINTS.delegations.inviteParticipant(visitInstanceId), payload);
+    return data;
+  },
+
+  /** VisitProcess "Ghi chú chung": save the host's preparation note (null clears it). Host-only. */
+  async updatePreparationNote(
+    visitInstanceId: number | string,
+    note: string | null,
+  ): Promise<UpdatePreparationNoteResult> {
+    const { data } = await httpClient.put<UpdatePreparationNoteResult>(
+      API_ENDPOINTS.delegations.preparationNote(visitInstanceId), { note });
+    return data;
+  },
+
+  /** VisitProcess "Cảnh báo & Thông báo": load the saved reminder schedule rows. */
+  async getReminderSettings(visitInstanceId: number | string): Promise<GetVisitReminderSettingsResult> {
+    const { data } = await httpClient.get<GetVisitReminderSettingsResult>(
+      API_ENDPOINTS.delegations.reminderSettings(visitInstanceId));
+    return data;
+  },
+
+  /** VisitProcess "Cảnh báo & Thông báo": upsert the full reminder schedule (enabled=false cancels). */
+  async saveReminderSettings(
+    visitInstanceId: number | string,
+    items: SaveVisitReminderSettingItem[],
+  ): Promise<SaveVisitReminderSettingsResult> {
+    const { data } = await httpClient.put<SaveVisitReminderSettingsResult>(
+      API_ENDPOINTS.delegations.reminderSettings(visitInstanceId), { items });
+    return data;
+  },
+
+  /** VisitProcess "Cảnh báo & Thông báo": cancel every still-PENDING reminder. */
+  async cancelReminderSettings(
+    visitInstanceId: number | string,
+  ): Promise<{ cancelledCount: number; message: string }> {
+    const { data } = await httpClient.patch<{ cancelledCount: number; message: string }>(
+      API_ENDPOINTS.delegations.cancelReminderSettings(visitInstanceId), {});
+    return data;
+  },
+
+  /** Render an email template for the "Xem trước email" modal (read-only — never sends). */
+  async previewEmailTemplate(payload: PreviewEmailTemplatePayload): Promise<PreviewEmailTemplateResult> {
+    const { data } = await httpClient.post<PreviewEmailTemplateResult>(
+      API_ENDPOINTS.emailTemplates.preview, payload);
+    return data;
+  },
+
+  /** VisitProcess "Chuẩn bị chi tiết": list the campus instance's logistics requests. */
+  async getInstanceLogistics(visitInstanceId: number | string): Promise<GetVisitInstanceLogisticsResult> {
+    const { data } = await httpClient.get<GetVisitInstanceLogisticsResult>(
+      API_ENDPOINTS.delegations.instanceLogistics(visitInstanceId));
+    return data;
+  },
+
+  /** Host sends a logistics/resource request to a department (optionally with an edited email). */
+  async prepareVisitLogistics(payload: PrepareVisitLogisticsPayload): Promise<PrepareVisitLogisticsResult> {
+    const { data } = await httpClient.post<PrepareVisitLogisticsResult>(
+      API_ENDPOINTS.delegations.prepareVisitLogistics, payload);
+    return data;
+  },
+
+  /** Host soft-cancels one of their logistics requests (status → CANCELLED). */
+  async cancelLogisticsItem(
+    visitInstanceId: number | string,
+    logisticsItemId: number | string,
+  ): Promise<{ success: boolean; logisticsItemId: number; status: string; message: string }> {
+    const { data } = await httpClient.patch<{ success: boolean; logisticsItemId: number; status: string; message: string }>(
+      API_ENDPOINTS.delegations.cancelLogisticsItem(visitInstanceId, logisticsItemId), {});
+    return data;
+  },
+
+  /** "Xem mail đã gửi": sent-email history for one invited participant (subject/body/recipients/status). */
+  async getParticipantSentEmails(
+    visitInstanceId: number | string,
+    participantId: number | string,
+  ): Promise<GetSentEmailsResult> {
+    const { data } = await httpClient.get<GetSentEmailsResult>(
+      API_ENDPOINTS.delegations.participantSentEmails(visitInstanceId, participantId));
+    return data;
+  },
+
+  /** "Xem mail đã gửi": sent-email history for one logistics request. */
+  async getLogisticsSentEmails(
+    visitInstanceId: number | string,
+    logisticsItemId: number | string,
+  ): Promise<GetSentEmailsResult> {
+    const { data } = await httpClient.get<GetSentEmailsResult>(
+      API_ENDPOINTS.delegations.logisticsSentEmails(visitInstanceId, logisticsItemId));
+    return data;
+  },
+
+  /** Host withdraws a still-pending (INVITED) participant they invited. */
+  async removeVisitParticipant(
+    visitInstanceId: number | string,
+    participantId: number | string,
+  ): Promise<{ participantId: number; status: string; message: string }> {
+    const { data } = await httpClient.patch<{ participantId: number; status: string; message: string }>(
+      API_ENDPOINTS.delegations.removeParticipant(visitInstanceId, participantId), {});
+    return data;
+  },
+
   /** Upsert the instance's agenda (Host only, prep window). Saves setup only — never changes stage. */
   async saveVisitAgenda(
     visitRequestId: number | string,
     visitInstanceId: number | string,
-    items: Array<{ agendaId?: number | null; title: string; startTime: string; endTime?: string | null; description?: string | null; location?: string | null }>,
+    items: Array<{ agendaId?: number | null; title: string; startTime: string; endTime?: string | null; description?: string | null; location?: string | null; responsibleUserId?: number | null }>,
   ): Promise<any> {
     const { data } = await httpClient.post<any>(
       API_ENDPOINTS.delegations.saveAgenda(visitRequestId, visitInstanceId), { items });
+    return data;
+  },
+
+  /** Valid responsible-person candidates for the agenda editor: the active host + ACCEPTED supporting
+   * participants of THIS instance only (never the whole-system user list). */
+  async getAgendaResponsibleCandidates(
+    visitInstanceId: number | string,
+  ): Promise<import('../types/delegations.types').AgendaResponsibleCandidate[]> {
+    const { data } = await httpClient.get(
+      API_ENDPOINTS.delegations.agendaResponsibleCandidates(visitInstanceId));
     return data;
   },
 

@@ -35,12 +35,20 @@ public sealed class RemovePersonnelCommandHandler : IRequestHandler<RemovePerson
             return new RemovePersonnelResponse { Success = false, Message = "Không thể gỡ trưởng phòng hiện tại khi chưa đổi trưởng phòng." };
         }
 
-        user.Status = "INACTIVE";
+        if (user.Status == "ACTIVE")
+        {
+            user.Status = "INACTIVE";
+        }
+        else
+        {
+            user.Status = "ACTIVE";
+        }
+
         user.UpdatedAt = DateTime.UtcNow;
         user.UpdatedBy = _currentUserService.UserId;
 
         await _context.SaveChangesAsync(cancellationToken);
 
-        return new RemovePersonnelResponse { Success = true, Message = "Đã gỡ nhân sự khỏi danh sách hoạt động." };
+        return new RemovePersonnelResponse { Success = true, Message = user.Status == "ACTIVE" ? "Đã mở khóa tài khoản." : "Đã khóa tài khoản." };
     }
 }

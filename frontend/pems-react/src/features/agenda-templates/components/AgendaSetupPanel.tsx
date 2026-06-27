@@ -9,7 +9,7 @@
  * HO / Staff Leader, while the setup user is usually a plain-Staff Host. Backend remains the
  * source of truth for the computed times. Notifications use the parent's top-right toast.
  */
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Wand2, Clock, MapPin, Loader2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import agendaTemplatesApi from '../api/agendaTemplatesApi';
@@ -54,21 +54,29 @@ export function AgendaSetupPanel({ visitInstanceId, onApplied, notify: propNotif
   const [replaceExisting, setReplaceExisting] = useState(false);
   const [applying, setApplying] = useState(false);
 
+  // Stabilise notify. The parent passes a FRESH pushToast fn on every render; if notify (and thus
+  // loadSetup) depended on it, the load effect would re-run on every parent re-render — e.g. each
+  // time a toast is pushed or auto-dismissed — silently resetting selectedId + replaceExisting.
+  // That was the root cause of "tick lost / dropdown jumps to default". We read the latest fn via a
+  // ref so notify keeps a stable identity for the lifetime of the panel.
+  const notifyRef = useRef(propNotify);
+  useEffect(() => { notifyRef.current = propNotify; }, [propNotify]);
   const notify = useCallback((type: NotifyType, msg: string) => {
-    if (propNotify) { propNotify(type, msg); return; }
+    const fn = notifyRef.current;
+    if (fn) { fn(type, msg); return; }
     if (type === 'success') toast.success(msg);
     else if (type === 'error') toast.error(msg);
     else toast(msg, { icon: type === 'warning' ? '⚠️' : 'ℹ️' });
-  }, [propNotify]);
+  }, []);
 
+  // Fetch the setup. Depends ONLY on visitInstanceId (notify is now stable) so it runs on mount and
+  // when the instance changes — not on every parent render. It NEVER touches selectedId /
+  // replaceExisting, so a refetch can never wipe out the host's current selection.
   const loadSetup = useCallback(async () => {
     setLoading(true);
     try {
       const s = await agendaTemplatesApi.getSetupForInstance(visitInstanceId);
       setSetup(s);
-      setSelectedId(s.defaultTemplateId ?? (s.selectableTemplates[0]?.agendaTemplateId ?? null));
-      // Never pre-check replace — host must opt in to overwriting an existing agenda.
-      setReplaceExisting(false);
     } catch (e) {
       notify('error', apiMessage(e, 'Không tải được thiết lập lịch trình.'));
       setSetup(null);
@@ -79,8 +87,37 @@ export function AgendaSetupPanel({ visitInstanceId, onApplied, notify: propNotif
 
   useEffect(() => { void loadSetup(); }, [loadSetup]);
 
+  // Initialise the selection ONCE per visitInstanceId, the first time setup loads. After that the
+  // host's manual choices (template / replace) are never overwritten — not by a re-render, a
+  // refetch, a 409, or a toast. Only a genuine change of visitInstanceId re-initialises.
+  const initializedForInstanceRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!setup) return;
+    if (initializedForInstanceRef.current === visitInstanceId) return;
+    const defaultTemplate =
+      setup.selectableTemplates.find((t) => t.isDefault)
+      ?? setup.selectableTemplates[0]
+      ?? null;
+    setSelectedId(setup.defaultTemplateId ?? defaultTemplate?.agendaTemplateId ?? null);
+    setReplaceExisting(false); // host must opt in to overwriting an existing agenda
+    initializedForInstanceRef.current = visitInstanceId;
+  }, [setup, visitInstanceId]);
+
+  // Tick/untick "Thay thế" — fully independent of selectedId. Warns only on the false→true
+  // transition (never on re-render, never resets the selected template).
+  const handleReplaceChange = (checked: boolean) => {
+    setReplaceExisting(checked);
+    if (checked && setup?.hasExistingAgenda) {
+      notify('warning', 'Bạn đang chọn thay thế lịch trình hiện tại. Agenda cũ sẽ bị thay bằng mẫu mới.');
+    }
+  };
+
   const apply = async () => {
-    if (!setup || selectedId == null || applying) return;
+    if (!setup || applying) return;
+    if (selectedId == null) {
+      notify('warning', 'Vui lòng chọn mẫu Agenda trước khi áp dụng.');
+      return;
+    }
 
     // Guard before hitting the API: an existing agenda is only overwritten when the host opts in.
     if (setup.hasExistingAgenda && !replaceExisting) {
@@ -90,14 +127,21 @@ export function AgendaSetupPanel({ visitInstanceId, onApplied, notify: propNotif
 
     setApplying(true);
     try {
+      // Payload built from the LIVE state (no stale closure): the currently-selected template +
+      // the current replaceExisting tick.
       const res = await agendaTemplatesApi.apply({ visitInstanceId, agendaTemplateId: selectedId, replaceExisting });
-      notify('success', 'Đã áp dụng mẫu lịch trình vào chuyến tiếp khách.');
+      notify('success', 'Áp dụng mẫu Agenda thành công. Lịch trình hiện tại đã được cập nhật từ mẫu đã chọn.');
       if (res.visitTypeMismatch) {
         notify('warning', `Lưu ý: mẫu thuộc loại “${VISIT_TYPE_LABELS[res.templateVisitType]}”, khác loại hình “${VISIT_TYPE_LABELS[res.requestVisitType]}” khách đã chọn.`);
       }
-      await loadSetup();
+      // ONLY on success: clear the opt-in and let the parent refresh "Lịch trình hiện tại" (and
+      // close the panel). We never reset selectedId before the request has actually succeeded.
+      setReplaceExisting(false);
       if (onApplied) await onApplied();
     } catch (e) {
+      // 409 (or any error): keep selectedId + replaceExisting INTACT and keep the panel open, so the
+      // host can simply tick "Thay thế" and retry without re-picking. We only surface a toast here —
+      // no state is reset, no refetch, no remount.
       if (statusOf(e) === 409) {
         notify('error', 'Cơ sở này đã có lịch trình. Vui lòng chọn “Thay thế lịch trình hiện tại”.');
       } else {
@@ -180,11 +224,7 @@ export function AgendaSetupPanel({ visitInstanceId, onApplied, notify: propNotif
                   type="checkbox"
                   checked={replaceExisting}
                   disabled={disabled}
-                  onChange={(e) => {
-                    const v = e.target.checked;
-                    setReplaceExisting(v);
-                    if (v) notify('warning', 'Bạn đang chọn thay thế lịch trình hiện tại. Agenda cũ sẽ bị thay bằng mẫu mới.');
-                  }}
+                  onChange={(e) => handleReplaceChange(e.target.checked)}
                 />
                 <span>Thay thế lịch trình hiện tại</span>
               </label>

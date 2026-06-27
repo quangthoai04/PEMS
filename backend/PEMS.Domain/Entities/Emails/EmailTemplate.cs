@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using PEMS.Domain.Enums;
 
 namespace PEMS.Domain.Entities.Emails;
 
@@ -36,6 +37,10 @@ public class EmailTemplate
 
     [Column("body_en")]
     public string? BodyEn { get; set; }
+
+    /// <summary>SQL: body_format ENUM('PLAIN_TEXT','HTML') NOT NULL DEFAULT 'HTML'.</summary>
+    [Column("body_format")]
+    public EmailBodyFormat BodyFormat { get; set; } = EmailBodyFormat.HTML;
 
     [Column("variables_text")]
     public string? VariablesText { get; set; }

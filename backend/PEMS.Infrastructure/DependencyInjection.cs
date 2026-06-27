@@ -43,12 +43,22 @@ public static class DependencyInjection
         // Cross-cutting
         services.AddSingleton<IDateTimeService, DateTimeService>();
         services.AddScoped<IEmailService, EmailService>();
+        services.AddScoped<IEmailActionTokenService, EmailActionTokenService>();
         services.AddHttpContextAccessor();
         services.AddHttpClient();
 
         // Content / upload security (defence in depth)
         services.AddSingleton<IHtmlSanitizerService, HtmlSanitizerService>();
         services.AddSingleton<IFileValidationService, FileValidationService>();
+
+        // File storage (uploads / email attachments / inline images) — disk-backed by default.
+        services.AddScoped<IFileStorageService, PEMS.Infrastructure.FileStorage.LocalFileStorageService>();
+
+        // Google Drive integration (UC-15 avatar upload): config + REST storage client.
+        services.Configure<PEMS.Application.Common.Storage.GoogleDriveOptions>(
+            configuration.GetSection(PEMS.Application.Common.Storage.GoogleDriveOptions.SectionName));
+        services.AddScoped<IGoogleDriveStorageService,
+            PEMS.Infrastructure.FileStorage.GoogleDrive.GoogleDriveStorageService>();
 
         // Visit request flow services (UC-17)
         services.AddScoped<IVisitRequestService, VisitRequestService>();
@@ -58,6 +68,9 @@ public static class DependencyInjection
         // External services (scaffolded)
         services.AddScoped<IFaceRecognitionService, FaceRecognitionService>();
         services.AddScoped<IOcrService, OcrService>();
+
+        // Background jobs — scheduled visit reminder dispatch (visit_instance_reminder_settings).
+        services.AddHostedService<PEMS.Infrastructure.BackgroundJobs.VisitReminderDispatchHostedService>();
 
         return services;
     }

@@ -17,7 +17,9 @@ export function InternalLoginForm({ fromPath, onSuccess }: { fromPath?: string; 
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [selectedCampusId, setSelectedCampusId] = useState<number | null>(null);
+  // Campus list items expose campusId as a string; keep the selection a string and convert to a
+  // number only at the login() boundary (which expects a numeric campus id).
+  const [selectedCampusId, setSelectedCampusId] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string; campus?: string }>({});
   const [formError, setFormError] = useState('');
@@ -82,7 +84,7 @@ export function InternalLoginForm({ fromPath, onSuccess }: { fromPath?: string; 
 
     setSubmitting(true);
     try {
-      const user = await login(email.trim(), password, 'INTERNAL', selectedCampusId?.toString());
+      const user = await login(email.trim(), password, 'INTERNAL', selectedCampusId ? Number(selectedCampusId) : undefined);
       if (onSuccess) onSuccess();
       if (user.mustChangePassword || user.mustSetPassword) {
         navigate('/change-password', { replace: true });
@@ -243,7 +245,7 @@ export function InternalLoginForm({ fromPath, onSuccess }: { fromPath?: string; 
       {AUTH_CONFIG.enableGoogleSso && (
         <GoogleSignInButton
           portal="INTERNAL"
-          selectedCampusId={selectedCampusId}
+          selectedCampusId={selectedCampusId ? Number(selectedCampusId) : null}
           onError={setFormError}
           fromPath={fromPath}
           onSuccess={onSuccess}

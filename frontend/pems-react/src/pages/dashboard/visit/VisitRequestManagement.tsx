@@ -161,6 +161,17 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
     isVisitor,
   });
 
+  // Desktop (xl) single-row grid template — column count MUST match the rendered filter
+  // children, which varies by role: showScope (Visitor/HO/Staff Leader) and showCampus (HO
+  // only) toggle extra columns. Static literal strings so Tailwind JIT picks them up. Search
+  // uses minmax(0,1fr) so it absorbs leftover space yet shrinks (never forces horizontal
+  // scroll) on the tight 1366px + 290px-sidebar layout; long values truncate via span/truncate.
+  const filterGridClass = filterConfig.showCampus
+    ? 'xl:grid-cols-[minmax(0,1fr)_200px_150px_160px_185px_112px_44px]' // search·status·scope·campus·date·apply·reset
+    : filterConfig.showScope
+      ? 'xl:grid-cols-[minmax(0,1fr)_210px_160px_200px_112px_44px]'     // search·status·scope·date·apply·reset
+      : 'xl:grid-cols-[minmax(0,1fr)_220px_200px_112px_44px]';          // search·status·date·apply·reset
+
   const createEmptyFilters = () => ({ keyword: '', status: '', visitScopes: [] as string[], relation: '', fromDate: '', toDate: '', campusId: '' });
   const [draftFilters, setDraftFilters] = useState(createEmptyFilters());
   const [appliedFilters, setAppliedFilters] = useState(createEmptyFilters());
@@ -975,11 +986,11 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
 
       {/* Filters */}
       <div className="w-full rounded-2xl border border-slate-200 bg-white p-4 shadow-sm overflow-visible">
-        <div className="flex flex-wrap items-end gap-3 w-full">
-          <div className="min-w-[200px] flex-1">
-            <label className="block text-xs font-bold text-slate-500 mb-1">Tìm kiếm</label>
+        <div className={`grid grid-cols-1 gap-3 md:grid-cols-2 ${filterGridClass} xl:items-end`}>
+          <div className="min-w-0 md:col-span-2 xl:col-span-1">
+            <label className="block h-5 mb-1 truncate text-xs font-bold text-slate-500">Tìm kiếm</label>
             <div className="relative w-full">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5 shrink-0" />
               <input type="text" placeholder="Tìm tên đoàn, host, đối tác..." value={draftFilters.keyword}
                 onChange={(e) => {
                   const val = e.target.value;
@@ -992,8 +1003,8 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
 
           {/* Status */}
           {filterConfig.showStatus && (
-            <div className="relative min-w-[170px] flex-1 xl:flex-none">
-              <label className="block text-xs font-bold text-slate-500 mb-1">{filterConfig.statusLabel || 'Trạng thái'}</label>
+            <div className="relative min-w-0">
+              <label className="block h-5 mb-1 truncate text-xs font-bold text-slate-500">{filterConfig.statusLabel || 'Trạng thái'}</label>
               <button onClick={() => setIsStatusFilterOpen(!isStatusFilterOpen)} className="flex h-11 w-full min-w-0 items-center justify-between rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition-colors focus:border-[#004c91]">
                 <span className="min-w-0 truncate">{filterConfig.statusOptions.find((o) => o.value === draftFilters.status)?.label ?? 'Tất cả trạng thái'}</span>
                 <ChevronDown className="w-4 h-4 text-gray-500 flex-shrink-0 ml-2 pointer-events-none" />
@@ -1017,8 +1028,8 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
 
           {/* Scope */}
           {filterConfig.showScope && (
-            <div className="relative min-w-[170px] flex-1 xl:flex-none">
-              <label className="block text-xs font-bold text-slate-500 mb-1">{filterConfig.scopeLabel || 'Phạm vi'}</label>
+            <div className="relative min-w-0">
+              <label className="block h-5 mb-1 truncate text-xs font-bold text-slate-500">{filterConfig.scopeLabel || 'Phạm vi'}</label>
               <button onClick={() => setIsTypeFilterOpen(!isTypeFilterOpen)} className="flex h-11 w-full min-w-0 items-center justify-between rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition-colors focus:border-[#004c91]">
                 <span className="min-w-0 truncate">{draftFilters.visitScopes.length === 0 ? filterConfig.scopeOptions[0]?.label || 'Tất cả phạm vi' : draftFilters.visitScopes.length === 1 ? (filterConfig.scopeOptions.find((x) => x.value === draftFilters.visitScopes[0])?.label ?? '1 phạm vi') : `${draftFilters.visitScopes.length} phạm vi`}</span>
                 <ChevronDown className="w-4 h-4 text-gray-500 flex-shrink-0 ml-2 pointer-events-none" />
@@ -1052,8 +1063,8 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
 
           {/* Campus */}
           {filterConfig.showCampus && (
-            <div className="relative min-w-[170px] flex-1 xl:flex-none">
-              <label className="block text-xs font-bold text-slate-500 mb-1">Cơ sở</label>
+            <div className="relative min-w-0">
+              <label className="block h-5 mb-1 truncate text-xs font-bold text-slate-500">Cơ sở</label>
               <button onClick={() => setIsCampusFilterOpen(!isCampusFilterOpen)} className="flex h-11 w-full min-w-0 items-center justify-between rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition-colors focus:border-[#004c91]">
                 <span className="min-w-0 truncate">{[
                     { value: '', label: 'Tất cả cơ sở' },
@@ -1091,8 +1102,8 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
 
           {/* Relation */}
           {filterConfig.showRelation && (
-            <div className="relative min-w-[170px] flex-1 xl:flex-none">
-              <label className="block text-xs font-bold text-slate-500 mb-1">{filterConfig.relationLabel || 'Loại xử lý'}</label>
+            <div className="relative min-w-0">
+              <label className="block h-5 mb-1 truncate text-xs font-bold text-slate-500">{filterConfig.relationLabel || 'Loại xử lý'}</label>
               <button onClick={() => setIsRelationFilterOpen(!isRelationFilterOpen)} className="flex h-11 w-full min-w-0 items-center justify-between rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition-colors focus:border-[#004c91]">
                 <span className="min-w-0 truncate">{filterConfig.relationOptions.find((o) => o.value === draftFilters.relation)?.label ?? 'Tất cả'}</span>
                 <ChevronDown className="w-4 h-4 text-gray-500 flex-shrink-0 ml-2 pointer-events-none" />
@@ -1115,8 +1126,8 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
           )}
 
           {/* Date range */}
-          <div className="relative min-w-[180px] flex-1 xl:flex-none">
-            <label className="block text-xs font-bold text-slate-500 mb-1">Khoảng ngày</label>
+          <div className="relative min-w-0">
+            <label className="block h-5 mb-1 truncate text-xs font-bold text-slate-500">Khoảng ngày</label>
             <button onClick={() => setIsDateFilterOpen(!isDateFilterOpen)} className="flex h-11 w-full min-w-0 items-center justify-between rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition-colors focus:border-[#004c91]">
               <span className="min-w-0 truncate">
                 {!draftFilters.fromDate && !draftFilters.toDate ? 'Chọn khoảng ngày'
@@ -1146,8 +1157,12 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
             )}
           </div>
 
-          <button onClick={handleApplyFilters} className="inline-flex h-11 w-full xl:w-[112px] items-center justify-center rounded-xl bg-[#004c91] px-4 text-sm font-bold text-white transition-colors hover:bg-[#003b70] whitespace-nowrap flex-1 xl:flex-none">Áp dụng</button>
-          <button onClick={handleResetFilters} title="Xóa bộ lọc" aria-label="Xóa bộ lọc" className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-slate-300 bg-white text-slate-500 transition-colors hover:bg-slate-50 hover:text-red-500 flex-shrink-0"><X className="h-5 w-5" /></button>
+          {/* Buttons: full-width row on mobile/tablet; at xl `contents` dissolves the wrapper so
+              Áp dụng / reset map onto the grid's last two tracks (112px / 44px) in the single row. */}
+          <div className="flex gap-3 md:col-span-2 xl:contents">
+            <button onClick={handleApplyFilters} className="inline-flex h-11 w-full flex-1 items-center justify-center rounded-xl bg-[#004c91] px-4 text-sm font-bold text-white transition-colors hover:bg-[#003b70] whitespace-nowrap xl:flex-none">Áp dụng</button>
+            <button onClick={handleResetFilters} title="Xóa bộ lọc" aria-label="Xóa bộ lọc" className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-300 bg-white text-slate-500 transition-colors hover:bg-slate-50 hover:text-red-500"><X className="h-5 w-5" /></button>
+          </div>
         </div>
         {filterError && <div className="text-red-500 text-sm font-medium mt-2"><AlertCircle className="w-4 h-4 inline-block mr-1" />{filterError}</div>}
       </div>

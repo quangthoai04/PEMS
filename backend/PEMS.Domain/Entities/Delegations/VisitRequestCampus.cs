@@ -71,6 +71,11 @@ public class VisitRequestCampus
     [Column("cancellation_reason")]
     public string? CancellationReason { get; set; }
 
+    // --- Host's internal preparation note (PEMS v10 2026-06-26). Free text shown on the
+    // VisitProcess "Ghi chú chung". Who/when last edited is traced via audit_logs, not extra columns. ---
+    [Column("preparation_note")]
+    public string? PreparationNote { get; set; }
+
     [Column("row_version")]
     public int RowVersion { get; set; }
 

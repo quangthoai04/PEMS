@@ -20,6 +20,8 @@ import {
   PenLine,
   FileText
 } from 'lucide-react';
+import { departmentReceptionTasksApi } from '../../../features/department-reception-tasks/api/departmentReceptionTasksApi';
+import toast from 'react-hot-toast';
 
 const inMemoryTaskStore: Record<string, any> = {};
 
@@ -49,14 +51,45 @@ export function TaskDetail() {
   };
   const isButtonsDisabled = shouldDisableButtons();
 
-  const [taskActionStatus, setTaskActionStatus] = useState<'pending' | 'confirmed' | 'rejected' | 'waiting_for_approval'>(() => {
-    if (taskStatusFromState === "Chưa làm") return "pending";
-    if (taskStatusFromState === "Từ chối") return "rejected";
-    return inMemoryTaskStore[`taskDetail_${taskId}_actionStatus`] || 'pending';
-  });
+  const [detailData, setDetailData] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const fetchDetail = async () => {
+    try {
+      setIsLoading(true);
+      const data = await departmentReceptionTasksApi.getRequestDetail(taskId!);
+      setDetailData(data);
+      if (data) {
+        if (data.status === 'REQUESTED') setTaskActionStatus('pending');
+        else if (data.status === 'ACCEPTED' || data.status === 'IN_PROGRESS' || data.status === 'DONE') setTaskActionStatus('confirmed');
+        else if (data.status === 'REJECTED') {
+          setTaskActionStatus('rejected');
+          setRejectReason(data.rejectReason || '');
+        }
+        else if (data.status === 'CHANGE_PROPOSED') {
+          setTaskActionStatus('waiting_for_approval');
+        }
+        if (data.actionTime) setActionTime(data.actionTime);
+        if (data.proposedTime) setProposedTime(data.proposedTime);
+        if (data.proposedContent) setProposedContent(data.proposedContent);
+        if (data.proposedByRole) setProposedBy(data.proposedByRole);
+      }
+    } catch (e) {
+      console.error(e);
+      toast.error('Lỗi khi tải chi tiết nhiệm vụ');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (taskId) fetchDetail();
+  }, [taskId]);
+
+  const [taskActionStatus, setTaskActionStatus] = useState<'pending' | 'confirmed' | 'rejected' | 'waiting_for_approval'>('pending');
   const [rejectReason, setRejectReason] = useState("");
   const [tempRejectReason, setTempRejectReason] = useState("");
-  const [actionTime, setActionTime] = useState<string | null>(() => inMemoryTaskStore[`taskDetail_${taskId}_actionTime`] || null);
+  const [actionTime, setActionTime] = useState<string | null>(null);
   const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
 
   const [isProposing, setIsProposing] = useState(false);
@@ -65,27 +98,7 @@ export function TaskDetail() {
   const [proposedBy, setProposedBy] = useState(() => inMemoryTaskStore[`taskDetail_${taskId}_proposedBy`] || "DEPARTMENT");
   const [isSubmitProposalModalOpen, setIsSubmitProposalModalOpen] = useState(false);
 
-  useEffect(() => {
-    inMemoryTaskStore[`taskDetail_${taskId}_actionStatus`] = taskActionStatus;
-  }, [taskActionStatus, taskId]);
 
-  useEffect(() => {
-    inMemoryTaskStore[`taskDetail_${taskId}_proposedBy`] = proposedBy;
-  }, [proposedBy, taskId]);
-
-  useEffect(() => {
-    inMemoryTaskStore[`taskDetail_${taskId}_proposedTime`] = proposedTime;
-  }, [proposedTime, taskId]);
-
-  useEffect(() => {
-    inMemoryTaskStore[`taskDetail_${taskId}_proposedContent`] = proposedContent;
-  }, [proposedContent, taskId]);
-
-  useEffect(() => {
-    if (actionTime) {
-      inMemoryTaskStore[`taskDetail_${taskId}_actionTime`] = actionTime;
-    }
-  }, [actionTime, taskId]);
 
   const [bg1Signed, setBg1Signed] = useState<string|null>(null);
   const [bg2Signed, setBg2Signed] = useState<string|null>(null);
@@ -102,10 +115,42 @@ export function TaskDetail() {
 
   const isTaskComplete = bg1Signed && bg2Signed && nt1Signed && nt2Signed;
 
-  // Mock data
-  const taskStatus = taskStatusFromState;
-  const coordinatorName = "Nguyễn Văn Trưởng Phòng";
-  const supporterName = isStaff ? user?.name : "Trần B Hỗ Trợ";
+  const handleConfirm = async () => {
+    try {
+      await departmentReceptionTasksApi.confirmRequest(taskId!);
+      toast.success('Xác nhận nhiệm vụ thành công');
+      fetchDetail();
+    } catch (e: any) {
+      toast.error(e.response?.data?.message || 'Có lỗi xảy ra');
+    }
+  };
+
+  const handleReject = async () => {
+    if (!tempRejectReason.trim()) return;
+    try {
+      await departmentReceptionTasksApi.rejectRequest(taskId!, tempRejectReason);
+      toast.success('Từ chối thành công');
+      setIsRejectModalOpen(false);
+      fetchDetail();
+    } catch (e: any) {
+      toast.error(e.response?.data?.message || 'Có lỗi xảy ra');
+    }
+  };
+
+  const handleProposeChange = async () => {
+    try {
+      await departmentReceptionTasksApi.proposeChange(taskId!, proposedTime, null, proposedContent);
+      toast.success('Gửi đề xuất thay đổi thành công');
+      setIsSubmitProposalModalOpen(false);
+      setIsProposing(false);
+      fetchDetail();
+    } catch (e: any) {
+      toast.error(e.response?.data?.message || 'Có lỗi xảy ra');
+    }
+  };
+
+  if (isLoading) return <div className="p-8 text-center">Đang tải...</div>;
+  if (!detailData) return <div className="p-8 text-center">Không tìm thấy chi tiết</div>;
 
   return (
     <div className="p-4 sm:p-6 md:p-8 max-w-[95%] mx-auto pb-24 relative animate-in fade-in duration-500">
@@ -155,12 +200,12 @@ export function TaskDetail() {
             <h1 className="text-3xl lg:text-4xl font-black text-[#004c91] tracking-tight uppercase flex items-center gap-4">
               CHI TIẾT NHIỆM VỤ ĐIỀU PHỐI
               <span className={`inline-flex items-center px-4 py-1.5 rounded-full text-sm font-bold shadow-sm ${
-                taskStatus === 'Đang làm' 
+                taskActionStatus === 'pending' 
                   ? 'bg-gradient-to-r from-orange-50 to-orange-100 text-orange-600 border border-orange-200' 
                   : 'bg-gradient-to-r from-gray-50 to-gray-100 text-gray-600 border border-gray-200'
               }`}>
                 <div className="w-2 h-2 rounded-full bg-orange-500 mr-2 animate-pulse"></div>
-                {taskStatus}
+                {taskActionStatus === 'pending' ? 'Chưa tiếp nhận' : taskActionStatus === 'confirmed' ? 'Đang thực hiện' : taskActionStatus === 'rejected' ? 'Từ chối' : 'Chờ duyệt'}
               </span>
             </h1>
           </div>
@@ -197,7 +242,7 @@ export function TaskDetail() {
                   <User className="w-4 h-4" />
                   <span className="text-[11px] font-bold uppercase tracking-wider">Người gửi</span>
                 </div>
-                <div className="text-sm font-black text-[#004c91]">Nguyễn Văn A</div>
+                <div className="text-sm font-black text-[#004c91]">{detailData.senderName}</div>
               </div>
               
               <div className="p-4 bg-gray-50/80 rounded-2xl border border-gray-100 hover:border-[#004c91]/30 hover:shadow-md hover:bg-white transition-all cursor-default">
@@ -205,7 +250,7 @@ export function TaskDetail() {
                   <Clock className="w-4 h-4" />
                   <span className="text-[11px] font-bold uppercase tracking-wider">Thời gian gửi</span>
                 </div>
-                <div className="text-sm font-black text-[#004c91]">08:30 15-10-2023</div>
+                <div className="text-sm font-black text-[#004c91]">{detailData.requestedAt}</div>
               </div>
 
               <div className="col-span-2 p-4 bg-gray-50/80 rounded-2xl border border-gray-100 hover:border-[#f37021]/30 hover:shadow-md hover:bg-white transition-all cursor-default">
@@ -214,7 +259,7 @@ export function TaskDetail() {
                   <span className="text-[11px] font-bold uppercase tracking-wider">Đoàn khách</span>
                 </div>
                 <div className="text-base font-black text-[#004c91] border-l-4 border-[#f37021] pl-3 py-1 bg-transparent">
-                  ĐOÀN TRƯỜNG ĐẠI HỌC CÔNG NGHỆ SYDNEY (UTS)
+                  {detailData.delegationName}
                 </div>
               </div>
 
@@ -225,10 +270,10 @@ export function TaskDetail() {
                   <span className="text-[11px] font-bold uppercase tracking-wider">Thời gian sử dụng</span>
                 </div>
                 <div className="text-[15px] font-bold text-gray-800 relative z-10 flex items-center gap-3">
-                   <span className="px-3 py-1 bg-white rounded-lg border border-gray-200 shadow-sm text-[#004c91]">14:00</span>
+                   <span className="px-3 py-1 bg-white rounded-lg border border-gray-200 shadow-sm text-[#004c91]">{detailData.startTime}</span>
                    <ChevronRight className="w-4 h-4 text-gray-400" />
-                   <span className="px-3 py-1 bg-white rounded-lg border border-gray-200 shadow-sm text-[#004c91]">16:30</span>
-                   <span className="text-[#004c91] font-bold ml-1">16-10-2023</span>
+                   <span className="px-3 py-1 bg-white rounded-lg border border-gray-200 shadow-sm text-[#004c91]">{detailData.endTime}</span>
+                   <span className="text-[#004c91] font-bold ml-1">{detailData.date}</span>
                 </div>
               </div>
 
@@ -257,10 +302,9 @@ export function TaskDetail() {
               </div>
               <div className="p-6 bg-gradient-to-br from-[#f8fafc] to-[#f1f5f9] rounded-2xl text-[15px] font-medium text-gray-700 leading-relaxed border border-gray-200 hover:border-[#004c91]/30 hover:shadow-md hover:bg-white transition-all shadow-inner relative overflow-hidden">
                 <div className="absolute left-0 top-0 bottom-0 w-1 bg-[#004c91]"></div>
-                Yêu cầu mượn 2 xe điện loại 8 chỗ phục vụ đoàn di chuyển quanh khuôn viên trường đại học FPT. 
-                Đón khách tại sảnh tòa nhà Alpha, sau đó di chuyển qua Beta và Gamma. 
-                <br/><br/>
-                <span className="font-bold text-gray-900">* Yêu cầu tài xế có mặt trước 15 phút tại điểm xuất phát, trang phục lịch sự theo chuẩn FPT.</span>
+                <div className="whitespace-pre-line">
+                  {detailData.note}
+                </div>
               </div>
             </div>
 
@@ -303,7 +347,7 @@ export function TaskDetail() {
                 Từ chối
               </button>
               <button 
-                onClick={() => { setTaskActionStatus('confirmed'); setActionTime(getCurrentTime()); }}
+                onClick={handleConfirm}
                 disabled={isButtonsDisabled}
                 className={`flex-1 py-4 rounded-2xl font-black uppercase tracking-wider transition-all duration-300 outline-none text-sm text-center ${isButtonsDisabled ? 'bg-gray-100 text-gray-400 border border-gray-200 cursor-not-allowed' : 'bg-[#004c91] text-white hover:bg-[#003b73] shadow-lg shadow-[#004c91]/20 active:scale-[0.98] border border-blue-600 cursor-pointer'}`}>
                 Xác nhận nhiệm vụ
@@ -334,7 +378,7 @@ export function TaskDetail() {
                    <span>Đã xác nhận nhiệm vụ</span>
                  </div>
                  <div className="text-xs font-medium text-green-100 lowercase tracking-normal bg-green-800/20 px-3 py-1 rounded-full mt-1">
-                    Bởi: {supporterName} - {actionTime}
+                    Lúc: {detailData.actionTime}
                  </div>
                </button>
             </div>
@@ -347,16 +391,13 @@ export function TaskDetail() {
                    <AlertCircle className="w-5 h-5" /> 
                    <span>Đã từ chối</span>
                  </div>
-                 <div className="text-xs font-bold text-red-700 mt-1 capitalize tracking-normal">
-                    {supporterName}
-                 </div>
-                 <div className="text-[10px] font-bold text-red-500 mt-0.5 tracking-normal">
-                    {actionTime}
-                 </div>
+                  <div className="text-[10px] font-bold text-red-500 mt-0.5 tracking-normal">
+                    {detailData.actionTime}
+                  </div>
                </div>
                <div className="w-2/3 bg-white border border-red-100 rounded-2xl p-4 shadow-sm flex flex-col justify-center">
                  <span className="text-xs font-bold text-gray-400 uppercase mb-1">Lý do từ chối:</span>
-                 <span className="text-sm font-medium text-gray-700 italic">"{rejectReason}"</span>
+                 <span className="text-sm font-medium text-gray-700 italic">"{detailData.rejectReason}"</span>
                </div>
             </div>
           )}
@@ -369,10 +410,7 @@ export function TaskDetail() {
                 Từ chối
               </button>
               <button 
-                onClick={() => {
-                   setTaskActionStatus('confirmed');
-                   setActionTime(getCurrentTime());
-                }}
+                onClick={handleConfirm}
                 className="flex-1 py-4 rounded-2xl bg-[#004c91] text-white font-black uppercase tracking-wider hover:bg-[#00386b] transition-all duration-300 shadow-lg shadow-blue-500/20 outline-none hover:shadow-[0_8px_25px_rgba(0,76,145,0.3)] active:scale-[0.98]">
                 Xác nhận
               </button>
@@ -387,7 +425,7 @@ export function TaskDetail() {
                    <span>Chờ xác nhận (Đề xuất thay đổi)</span>
                  </div>
                  <div className="text-xs font-medium text-orange-100 lowercase tracking-normal bg-orange-800/20 px-3 py-1 rounded-full mt-1">
-                    Bởi: {supporterName} - {actionTime}
+                    Lúc: {detailData.actionTime}
                  </div>
                </button>
             </div>
@@ -450,13 +488,13 @@ export function TaskDetail() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-50/80 p-5 rounded-2xl border border-slate-200/50">
                   <div className="space-y-2 border-slate-200/45 md:border-r md:pr-2 pb-4 md:pb-0 border-b md:border-b-0">
                     <p className="font-black text-[#004c91] text-[11px] uppercase tracking-wide">BÊN GIAO VIỆC (Người phân công)</p>
-                    <div className="flex items-center gap-1.5 pt-1">• <strong>Người phân công</strong>: <span className="text-[#004c91] font-bold">{coordinatorName}</span></div>
+                    <div className="flex items-center gap-1.5 pt-1">• <strong>Người phân công</strong>: <span className="text-[#004c91] font-bold">{detailData?.senderName}</span></div>
                     <div className="flex items-center gap-1.5">• <strong>Chức danh</strong>: <span className="text-slate-850 font-bold">Lãnh đạo đơn vị / Host</span></div>
                     <div className="flex items-center gap-1.5">• <strong>Nhiệm vụ</strong>: <span className="text-slate-850 font-bold">Giám sát và kiểm tra tiến độ</span></div>
                   </div>
                   <div className="space-y-2 md:pl-2">
                     <p className="font-black text-[#f37021] text-[11px] uppercase tracking-wide">BÊN NHẬN VIỆC (Người Hỗ trợ)</p>
-                    <div className="flex items-center gap-1.5 pt-1">• <strong>Người nhận nhiệm vụ</strong>: <span className="text-[#f37021] font-bold">{supporterName}</span></div>
+                    <div className="flex items-center gap-1.5 pt-1">• <strong>Người nhận nhiệm vụ</strong>: <span className="text-[#f37021] font-bold">{(user?.name || 'Người Hỗ Trợ')}</span></div>
                     <div className="flex items-center gap-1.5">• <strong>Chức danh</strong>: <span className="text-slate-850 font-bold">Cán bộ / Tình nguyện viên</span></div>
                     <div className="flex items-center gap-1.5">• <strong>Nhiệm vụ</strong>: <span className="text-slate-850 font-bold">Thực hiện công tác được giao</span></div>
                   </div>
@@ -494,7 +532,7 @@ export function TaskDetail() {
                       bg1Signed ? 'border-solid border-emerald-500 bg-emerald-50/20' : 'border-dashed border-slate-300 bg-white hover:border-[#004c91]/40'
                     }`}
                     onClick={() => {
-                      if (!bg1Signed) setBg1Signed(`${coordinatorName} - ${getCurrentTime()}`);
+                      if (!bg1Signed) setBg1Signed(`${detailData?.senderName} - ${getCurrentTime()}`);
                       else setBg1Signed(null);
                     }}
                   >
@@ -530,7 +568,7 @@ export function TaskDetail() {
                       bg2Signed ? 'border-solid border-emerald-500 bg-emerald-50/20' : 'border-dashed border-slate-300 bg-white hover:border-[#f37021]/40'
                     }`}
                     onClick={() => {
-                      if (!bg2Signed) setBg2Signed(`${supporterName} - ${getCurrentTime()}`);
+                      if (!bg2Signed) setBg2Signed(`${(user?.name || 'Người Hỗ Trợ')} - ${getCurrentTime()}`);
                       else setBg2Signed(null);
                     }}
                   >
@@ -586,7 +624,7 @@ export function TaskDetail() {
                           nt1Signed ? 'border-solid border-emerald-500 bg-emerald-50/20' : 'border-dashed border-slate-300 bg-white hover:border-[#004c91]/40'
                         }`}
                         onClick={() => {
-                          if (!nt1Signed) setNt1Signed(`${coordinatorName} - ${getCurrentTime()}`);
+                          if (!nt1Signed) setNt1Signed(`${detailData?.senderName} - ${getCurrentTime()}`);
                           else setNt1Signed(null);
                         }}
                       >
@@ -622,7 +660,7 @@ export function TaskDetail() {
                           nt2Signed ? 'border-solid border-emerald-500 bg-emerald-50/20' : 'border-dashed border-slate-300 bg-white hover:border-[#f37021]/40'
                         }`}
                         onClick={() => {
-                          if (!nt2Signed) setNt2Signed(`${supporterName} - ${getCurrentTime()}`);
+                          if (!nt2Signed) setNt2Signed(`${(user?.name || 'Người Hỗ Trợ')} - ${getCurrentTime()}`);
                           else setNt2Signed(null);
                         }}
                       >
@@ -703,14 +741,7 @@ export function TaskDetail() {
                 Hủy bỏ
               </button>
               <button 
-                onClick={() => {
-                  if (tempRejectReason.trim()) {
-                    setRejectReason(tempRejectReason);
-                    setTaskActionStatus('rejected');
-                    setActionTime(getCurrentTime());
-                    setIsRejectModalOpen(false);
-                  }
-                }}
+                onClick={handleReject}
                 disabled={!tempRejectReason.trim()}
                 className="px-6 py-3 rounded-xl font-black text-white bg-[#f37021] hover:bg-orange-600 transition-colors shadow-lg shadow-orange-500/20 disabled:opacity-50 disabled:cursor-not-allowed outline-none uppercase tracking-wider"
               >
@@ -743,13 +774,7 @@ export function TaskDetail() {
                 Hủy bỏ
               </button>
               <button 
-                onClick={() => {
-                   setTaskActionStatus('waiting_for_approval');
-                   setProposedBy(user?.role?.toUpperCase() || 'DEPARTMENT');
-                   setIsProposing(false);
-                   setActionTime(getCurrentTime());
-                   setIsSubmitProposalModalOpen(false);
-                }}
+                onClick={handleProposeChange}
                 className="px-6 py-3 rounded-xl font-black text-white bg-[#16a34a] hover:bg-green-700 transition-colors shadow-lg shadow-green-500/20 outline-none uppercase tracking-wider"
               >
                 Gửi đề xuất
