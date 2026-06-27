@@ -2,6 +2,8 @@ using FluentValidation;
 using MediatR;
 using Microsoft.Extensions.DependencyInjection;
 using PEMS.Application.Common.Behaviours;
+using PEMS.Application.Common.Files;
+using PEMS.Application.Common.Interfaces;
 using System.Reflection;
 
 namespace PEMS.Application;
@@ -17,6 +19,13 @@ public static class DependencyInjection
 
         // FluentValidation runs as a MediatR pipeline behaviour for every request.
         services.AddTransient(typeof(IPipelineBehavior<,>), typeof(ValidationBehaviour<,>));
+
+        // Shared file-upload foundation (reused by avatar / gallery / news / document / minutes …).
+        // The folder resolver + low-level Drive client are registered in Infrastructure.
+        services.AddSingleton<IFileChecksumService, FileChecksumService>();
+        services.AddSingleton<IFileValidationPolicy, FileValidationPolicy>();
+        services.AddScoped<IFileObjectKeyBuilder, FileObjectKeyBuilder>();
+        services.AddScoped<IFileUploadService, FileUploadService>();
 
         return services;
     }
