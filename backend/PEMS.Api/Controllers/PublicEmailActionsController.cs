@@ -27,12 +27,15 @@ public sealed class PublicEmailActionsController : ControllerBase
         return Content(EmailActionHtmlPages.RenderLanding(info), "text/html; charset=utf-8");
     }
 
+    // The decline form posts `declineReason` here (url-encoded). ACCEPT submits with no field.
     [HttpPost("{token}")]
-    public async Task<IActionResult> Execute(string token, CancellationToken cancellationToken)
+    public async Task<IActionResult> Execute(
+        string token, [FromForm] string? declineReason, CancellationToken cancellationToken)
     {
         var ip = HttpContext.Connection.RemoteIpAddress?.ToString();
         var userAgent = Request.Headers.UserAgent.ToString();
-        var result = await _mediator.Send(new ExecuteEmailActionCommand(token, ip, userAgent), cancellationToken);
+        var result = await _mediator.Send(
+            new ExecuteEmailActionCommand(token, ip, userAgent, declineReason), cancellationToken);
         return Content(EmailActionHtmlPages.RenderResult(result), "text/html; charset=utf-8");
     }
 }
