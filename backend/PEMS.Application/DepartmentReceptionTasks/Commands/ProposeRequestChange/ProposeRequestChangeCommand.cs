@@ -10,8 +10,8 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.ProposeRequestChang
     public class ProposeRequestChangeCommand : IRequest<bool>
     {
         public ulong LogisticsItemId { get; set; }
-        public string ProposedUsageStartAt { get; set; } // YYYY-MM-DDTHH:mm:ss
-        public string ProposedUsageEndAt { get; set; } // YYYY-MM-DDTHH:mm:ss
+        public string? ProposedUsageStartAt { get; set; } // YYYY-MM-DDTHH:mm:ss
+        public string? ProposedUsageEndAt { get; set; } // YYYY-MM-DDTHH:mm:ss
         public string ProposedDescription { get; set; }
     }
 
@@ -41,6 +41,7 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.ProposeRequestChang
                 throw new Exception("Không có quyền đề xuất thay đổi đơn yêu cầu của phòng ban khác");
 
             l.ProposedDescription = request.ProposedDescription;
+            l.ProposalNote = request.ProposedDescription;
             if (!string.IsNullOrEmpty(request.ProposedUsageStartAt) && DateTime.TryParse(request.ProposedUsageStartAt, out var s))
             {
                 l.ProposedUsageStartAt = s;
@@ -53,6 +54,10 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.ProposeRequestChang
             l.Status = "CHANGE_PROPOSED";
             l.ProposedBy = userId;
             l.ProposedAt = DateTime.UtcNow;
+            l.ProposalResponse = null;
+            l.ProposalRespondedBy = null;
+            l.ProposalRespondedAt = null;
+            l.ProposalResponseNote = null;
             l.UpdatedBy = userId;
             l.UpdatedAt = DateTime.UtcNow;
 

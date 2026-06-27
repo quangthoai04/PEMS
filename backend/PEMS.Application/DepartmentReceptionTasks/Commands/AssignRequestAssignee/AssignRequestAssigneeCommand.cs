@@ -67,12 +67,14 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AssignRequestAssign
             if (l.RequestedToDepartmentId != user.DepartmentId)
                 throw new Exception("Không có quyền phân công đơn yêu cầu của phòng ban khác");
 
-            // Block assignment in terminal/in-flight statuses (DECLINED via email is terminal).
-            var blockedStatuses = new[] { "ASSIGNED", "ACCEPTED", "CHANGE_PROPOSED", "IN_PROGRESS", "DONE", "CANCELLED", "REJECTED", "DECLINED" };
+            // Block assignment in terminal/in-flight statuses.
+            // DECLINED is allowed: the leader is reassigning after the previous assignee declined.
+            var blockedStatuses = new[] { "ASSIGNED", "ACCEPTED", "CHANGE_PROPOSED", "IN_PROGRESS", "DONE", "CANCELLED", "REJECTED" };
             if (blockedStatuses.Contains(l.Status))
                 throw new Exception("Không thể phân công khi nhiệm vụ đang ở trạng thái: " + l.Status);
 
-            bool hasPendingAttempt = await _context.VisitLogisticsAssignmentAttempts
+            // If previous assignee declined, allow reassignment: no pending attempts should block this.
+            bool hasPendingAttempt = l.Status != "DECLINED" && await _context.VisitLogisticsAssignmentAttempts
                 .AnyAsync(a => a.LogisticsItemId == request.LogisticsItemId && a.Status == "PENDING", cancellationToken);
             if (hasPendingAttempt)
                 throw new ConflictException("Nhiệm vụ đã được phân công và đang chờ phản hồi hoặc đã được nhận.");

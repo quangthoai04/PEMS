@@ -43,6 +43,7 @@ public sealed class AssignmentsProgressItemDto
     public string? Description { get; set; }
     public ulong? CurrentResponsibleUserId { get; set; }
     public string? CurrentResponsibleName { get; set; }
+    public string? CurrentResponsibleRole { get; set; }  // "Leader" hoặc "Nhân viên"
     public bool IsCurrentUserResponsible { get; set; }
     public bool IsLeaderSelfAccepted { get; set; }
     public string RawStatus { get; set; } = "";
@@ -60,10 +61,18 @@ public sealed class AssignmentsProgressItemDto
     public bool CanSignBorrow { get; set; }
     public bool CanSignReturn { get; set; }
     public string? LatestDeclineReason { get; set; }
+    public string? LatestDeclinedByName { get; set; }
+    public string? LatestDeclinedAt { get; set; }
     public string? LatestAssignmentAttemptStatus { get; set; }
     public bool NeedsAttention { get; set; }
     public string? AttentionReason { get; set; }
     public string? CancelReason { get; set; }
+    // Audit trail
+    public string? ActionByName { get; set; }     // Người thực hiện hành động gần nhất
+    public string? ActionByRole { get; set; }
+    public DateTime? ActionAt { get; set; }
+    /// <summary>True nếu chính current user là người đã xử lý (đồng ý / từ chối) đơn này.</summary>
+    public bool IsActedByCurrentUser { get; set; }
 }
 
 public sealed class GetAssignmentsProgressListQueryHandler
@@ -92,11 +101,12 @@ public sealed class GetAssignmentsProgressListQueryHandler
             .FirstOrDefaultAsync(d => d.DepartmentId == departmentId, cancellationToken);
         var leaderUserId = department?.HeadUserId;
 
-        var userNames = await _db.Users
+        var userDetails = await _db.Users
             .AsNoTracking()
             .Where(u => u.DepartmentId == departmentId)
             .Select(u => new { u.UserId, u.FullName })
             .ToDictionaryAsync(u => u.UserId, u => u.FullName, cancellationToken);
+        var userNames = userDetails;
 
         var requestRows = await (
             from li in _db.VisitLogisticsItems.AsNoTracking()
@@ -130,6 +140,27 @@ public sealed class GetAssignmentsProgressListQueryHandler
             })
             .ToListAsync(cancellationToken);
 
+        // Fetch latest attempt with actor info for audit trail
+        var logisticsIds = requestRows.Select(r => r.li.LogisticsItemId).ToList();
+        var latestAttemptDetails = await _db.VisitLogisticsAssignmentAttempts
+            .AsNoTracking()
+            .Where(a => logisticsIds.Contains(a.LogisticsItemId))
+            .GroupBy(a => a.LogisticsItemId)
+            .Select(g => g.OrderByDescending(a => a.AssignedAt).First())
+            .ToListAsync(cancellationToken);
+        var attemptByItem = latestAttemptDetails.ToDictionary(a => a.LogisticsItemId);
+
+        // Fetch assignee user IDs to get names outside the department (e.g. declined by staff)
+        var allAssigneeIds = requestRows
+            .Where(r => r.li.AssignedToUserId.HasValue)
+            .Select(r => r.li.AssignedToUserId!.Value)
+            .Distinct().ToList();
+        var assigneeNames = await _db.Users
+            .AsNoTracking()
+            .Where(u => allAssigneeIds.Contains(u.UserId))
+            .Select(u => new { u.UserId, u.FullName })
+            .ToDictionaryAsync(u => u.UserId, u => u.FullName, cancellationToken);
+
         var items = requestRows.Select(row =>
         {
             var startAt = row.li.UsageStartAt ?? row.inst.PlannedStartAt;
@@ -141,6 +172,24 @@ public sealed class GetAssignmentsProgressListQueryHandler
                 && row.li.Status != "REQUESTED"
                 && row.li.Status != "DECLINED"
                 && row.LatestStatus != "DECLINED";
+
+            var responsibleUserId = row.li.AssignedToUserId;
+            var responsibleName = responsibleUserId.HasValue && userNames.TryGetValue(responsibleUserId.Value, out var aName)
+                ? aName
+                : (responsibleUserId.HasValue && assigneeNames.TryGetValue(responsibleUserId.Value, out var aName2) ? aName2 : null);
+            var responsibleRole = responsibleUserId.HasValue && responsibleUserId == leaderUserId ? "Trưởng phòng" : "Nhân viên";
+
+            // Audit trail: latest attempt actor
+            attemptByItem.TryGetValue(row.li.LogisticsItemId, out var latestAttemptDetail);
+            string? declinedByName = null;
+            string? declinedAt = null;
+            if (row.LatestStatus == "DECLINED" && latestAttemptDetail != null)
+            {
+                var declinedUserId2 = latestAttemptDetail.AssigneeUserId;
+                declinedByName = userNames.TryGetValue(declinedUserId2, out var dn) ? dn
+                    : (assigneeNames.TryGetValue(declinedUserId2, out var dn2) ? dn2 : null);
+                declinedAt = latestAttemptDetail.AssignedAt.ToString("HH:mm dd/MM/yyyy");
+            }
 
             return new AssignmentsProgressItemDto
             {
@@ -154,12 +203,13 @@ public sealed class GetAssignmentsProgressListQueryHandler
                 OrganizationName = row.vr.RegistrantOrganization,
                 Title = row.li.Title,
                 Description = row.li.Description,
-                CurrentResponsibleUserId = row.li.AssignedToUserId,
-                CurrentResponsibleName = row.li.AssignedToUserId.HasValue && userNames.TryGetValue(row.li.AssignedToUserId.Value, out var assigneeName)
-                    ? assigneeName
-                    : null,
+                CurrentResponsibleUserId = responsibleUserId,
+                CurrentResponsibleName = hasActiveAssignee ? responsibleName : null,
+                CurrentResponsibleRole = hasActiveAssignee ? responsibleRole : null,
                 IsCurrentUserResponsible = row.li.AssignedToUserId == currentUserId,
                 IsLeaderSelfAccepted = isSelfAccepted && leaderUserId == currentUserId,
+                // True khi leader đã chính tay từ chối (được ghi vào UpdatedBy khi REJECTED)
+                IsActedByCurrentUser = (row.li.Status == "REJECTED" && row.li.UpdatedBy == currentUserId),
                 RawStatus = row.li.Status,
                 UiStatus = uiStatus,
                 StatusLabel = ToStatusLabel(uiStatus),
@@ -168,13 +218,16 @@ public sealed class GetAssignmentsProgressListQueryHandler
                 CanViewDetail = true,
                 CanViewDelegationDetail = true,
                 CanAssign = uiStatus is "REQUESTED" or "DECLINED",
-                CanAccept = !hasActiveAssignee && row.li.Status is "REQUESTED" or "DECLINED",
+                // Leader có thể tự Xác nhận hoặc Từ chối cả khi REQUESTED và DECLINED
+                CanAccept = !hasActiveAssignee && (row.li.Status == "REQUESTED" || row.li.Status == "DECLINED"),
                 CanDecline = row.li.AssignedToUserId == currentUserId && row.li.Status == "ASSIGNED",
-                CanRejectRequest = uiStatus == "REQUESTED",
+                CanRejectRequest = uiStatus is "REQUESTED" or "DECLINED",
                 CanProposeChange = row.li.AssignedToUserId == currentUserId && row.li.Status is "ACCEPTED" or "IN_PROGRESS",
                 CanSignBorrow = row.li.AssignedToUserId == currentUserId && row.li.Status == "ACCEPTED",
                 CanSignReturn = row.li.AssignedToUserId == currentUserId && row.li.Status == "IN_PROGRESS",
                 LatestDeclineReason = row.LatestStatus == "DECLINED" ? row.LatestNote ?? row.li.AssigneeResponseNote : null,
+                LatestDeclinedByName = declinedByName,
+                LatestDeclinedAt = declinedAt,
                 LatestAssignmentAttemptStatus = row.LatestStatus,
                 NeedsAttention = IsRequestNeedsAttention(row.li.Status, row.li.AssignedToUserId, currentUserId, startAt, now),
                 AttentionReason = uiStatus == "CANCELLED" ? "Đơn đã hủy vì đoàn khách đã hủy" : BuildAttentionReason(row.li.Status, startAt, now),
@@ -238,8 +291,11 @@ public sealed class GetAssignmentsProgressListQueryHandler
                 Description = row.p.Note ?? row.vr.WorkingContent,
                 CurrentResponsibleUserId = activeStaff?.p.UserId ?? row.p.UserId,
                 CurrentResponsibleName = activeStaff?.u.FullName ?? row.u.FullName,
+                CurrentResponsibleRole = (activeStaff?.p.UserId ?? row.p.UserId) == leaderUserId ? "Trưởng phòng" : "Nhân viên",
                 IsCurrentUserResponsible = (activeStaff?.p.UserId ?? row.p.UserId) == currentUserId,
                 IsLeaderSelfAccepted = isLeaderSelfAccepted,
+                // True khi chính current user là participant (đã đồng ý hoặc từ chối thư mời)
+                IsActedByCurrentUser = row.p.UserId == currentUserId,
                 RawStatus = row.p.Status,
                 UiStatus = uiStatus,
                 StatusLabel = ToStatusLabel(uiStatus),
@@ -282,7 +338,10 @@ public sealed class GetAssignmentsProgressListQueryHandler
             query = query.Where(x => x.UiStatus.Equals(request.Status, StringComparison.OrdinalIgnoreCase));
 
         if (!string.IsNullOrWhiteSpace(request.OwnerScope) && request.OwnerScope.Equals("ME", StringComparison.OrdinalIgnoreCase))
-            query = query.Where(x => x.CurrentResponsibleUserId == currentUserId || x.IsLeaderSelfAccepted);
+            query = query.Where(x =>
+                x.CurrentResponsibleUserId == currentUserId ||
+                x.IsLeaderSelfAccepted ||
+                x.IsActedByCurrentUser);
 
         if (request.FromDate.HasValue)
             query = query.Where(x => x.EndAt >= request.FromDate.Value.Date);

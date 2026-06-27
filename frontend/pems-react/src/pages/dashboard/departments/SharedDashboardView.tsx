@@ -70,6 +70,7 @@ type AssignmentProgressItem = {
   description?: string;
   currentResponsibleUserId?: number;
   currentResponsibleName?: string;
+  currentResponsibleRole?: string;
   isLeaderSelfAccepted?: boolean;
   rawStatus: string;
   uiStatus: string;
@@ -85,6 +86,8 @@ type AssignmentProgressItem = {
   canSignBorrow: boolean;
   canSignReturn: boolean;
   latestDeclineReason?: string;
+  latestDeclinedByName?: string;
+  latestDeclinedAt?: string;
   needsAttention: boolean;
   attentionReason?: string;
   cancelReason?: string;
@@ -225,8 +228,11 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
   const [requestStatus, setRequestStatus] = useState<'pending' | 'rejecting' | 'rejected' | 'accepted' | 'assigned' | 'awaiting-reassign'>('pending');
   const [requestAcceptSignature, setRequestAcceptSignature] = useState<{name: string, time: string} | null>(null);
   const [requestRejectReason, setRequestRejectReason] = useState('');
+  const [requestRejectSignature, setRequestRejectSignature] = useState<{name: string, time: string} | null>(null);
   const [isProposing, setIsProposing] = useState(false);
   const [proposalNote, setProposalNote] = useState('');
+  const [proposalStartTime, setProposalStartTime] = useState('');
+  const [proposalEndTime, setProposalEndTime] = useState('');
   const [proposalSubmitted, setProposalSubmitted] = useState(false);
 
   // Dept preliminary states
@@ -242,8 +248,11 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
     setRequestStatus('pending');
     setRequestAcceptSignature(null);
     setRequestRejectReason('');
+    setRequestRejectSignature(null);
     setIsProposing(false);
     setProposalNote('');
+    setProposalStartTime('');
+    setProposalEndTime('');
     setProposalSubmitted(false);
     setDeptPreliminaryStatus('pending');
     setDeptRejectReason('');
@@ -335,9 +344,14 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
           } else if (detail.status === 'REQUESTED') {
              setAssignedPerson(null);
              setRequestStatus('pending');
+          } else if (detail.status === 'CHANGE_PROPOSED') {
+             setAssignedPerson(detail.assigneeName);
+             setRequestStatus('pending');
+             setProposalSubmitted(true);
           } else if (detail.status === 'REJECTED') {
              setRequestStatus('rejected');
              setRequestRejectReason(detail.rejectReason || '');
+             setRequestRejectSignature({ name: detail.responderName || detail.senderName, time: detail.actionTime });
           } else {
              setAssignedPerson(null);
              setRequestStatus('pending');
@@ -965,6 +979,38 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
     setAssigningTaskItem(item);
   };
 
+  const normalizeEventDate = () => {
+    const value = activePopoverEvent?.date || activeEventDetail?.date;
+    if (!value) return '';
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+    const parts = String(value).split(/[-/]/);
+    if (parts.length === 3 && parts[2]?.length === 4) {
+      return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+    }
+    return '';
+  };
+
+  const extractTimeRange = () => {
+    const start = activeEventDetail?.startTime || activePopoverEvent?.time?.split('-')[0]?.trim() || '';
+    const end = activeEventDetail?.endTime || activePopoverEvent?.time?.split('-')[1]?.trim() || '';
+    return {
+      start: start.match(/\d{2}:\d{2}/)?.[0] || '',
+      end: end.match(/\d{2}:\d{2}/)?.[0] || ''
+    };
+  };
+
+  const handleOpenProposal = () => {
+    const current = extractTimeRange();
+    setProposalStartTime(current.start);
+    setProposalEndTime(current.end);
+    setIsProposing(true);
+  };
+
+  const buildProposalDateTime = (time: string) => {
+    const date = normalizeEventDate();
+    return date && time ? `${date}T${time}:00` : null;
+  };
+
   const handleSelectAssignee = async (staff: any) => {
     if (!assigningTaskItem) return;
     const staffId = staff.id || staff.userId;
@@ -1074,6 +1120,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
               <tr>
                 <th className="px-7 py-4">Đoàn khách</th>
                 <th className="px-5 py-4">Nhiệm vụ được giao</th>
+                <th className="px-5 py-4">Thời gian</th>
                 <th className="px-5 py-4">Người phụ trách</th>
                 <th className="px-5 py-4 w-[170px]">Trạng thái</th>
                 <th className="px-5 py-4 text-center">Hành động</th>
@@ -1082,7 +1129,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
             <tbody className="divide-y divide-slate-100">
               {assignmentItems.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-4 py-10 text-center text-sm font-semibold text-slate-400">Không có dữ liệu phù hợp</td>
+                  <td colSpan={6} className="px-4 py-10 text-center text-sm font-semibold text-slate-400">Không có dữ liệu phù hợp</td>
                 </tr>
               )}
               {assignmentItems.map(item => (
@@ -1091,19 +1138,36 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                     <p className="text-sm font-black text-slate-900 line-clamp-2">{item.delegationName}</p>
                     <p className="text-[11px] text-slate-450 font-semibold">{item.itemType === 'INVITATION' ? 'Thư mời' : 'Đơn yêu cầu'} {item.requestCode ? `• ${item.requestCode}` : ''}</p>
                   </td>
-                  <td className="px-5 py-5 max-w-[360px]">
-                    <p className="text-sm font-bold text-slate-800 line-clamp-2" title={item.description || item.title}>{item.title}</p>
-                    {item.description && <p className="text-[11px] text-slate-500 line-clamp-1">{item.description}</p>}
+                  <td className="px-5 py-5 max-w-[280px]">
+                    <p className="text-sm font-bold text-slate-800 line-clamp-2" title={item.title}>{item.title}</p>
                   </td>
-                  <td className="px-5 py-5 text-sm font-black text-[#004c91] text-center">
-                    <div>{item.currentResponsibleName || 'Department Leader'}</div>
+                  <td className="px-5 py-5 text-xs text-slate-600 font-semibold whitespace-nowrap">
+                    {(() => {
+                      const sd = item.startAt ? new Date(item.startAt) : null;
+                      const ed = item.endAt ? new Date(item.endAt) : null;
+                      if (!sd) return '—';
+                      const fmt = (d: Date) => `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')} ${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
+                      return <><span className="block">{fmt(sd)}</span>{ed && <span className="block text-slate-400">→ {fmt(ed)}</span>}</>;
+                    })()}
+                  </td>
+                  <td className="px-5 py-5 text-sm text-[#004c91] text-center">
+                    {item.currentResponsibleName ? (
+                      <div>
+                        <p className="font-black">{item.currentResponsibleName}</p>
+                        {item.currentResponsibleRole && <p className="text-[11px] font-semibold text-slate-500">{item.currentResponsibleRole}</p>}
+                      </div>
+                    ) : (
+                      item.uiStatus === 'REQUESTED'
+                        ? <span className="text-slate-400 font-semibold text-xs">Chưa phân công</span>
+                        : <span className="text-rose-400 font-semibold text-xs">—</span>
+                    )}
                     {canShowChangeResponsible(item) && (
                       <button
                         type="button"
                         onClick={() => handleAssignTask(item)}
                         className="mt-1 text-[11px] font-semibold text-blue-600 underline underline-offset-2 hover:text-[#004c91]"
                       >
-                        Đổi người phụ trách
+                        {item.uiStatus === 'DECLINED' ? 'Đổi người phụ trách' : 'Phân công người phụ trách'}
                       </button>
                     )}
                   </td>
@@ -1111,7 +1175,14 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                     <span className={`px-2.5 py-1 rounded-full border text-[11px] font-black ${getStatusClass(item.uiStatus)}`}>
                       {item.statusLabel}
                     </span>
-                    {item.latestDeclineReason && <p className="text-[10px] text-rose-500 mt-1 line-clamp-1">{item.latestDeclineReason}</p>}
+                    {item.uiStatus === 'DECLINED' && item.latestDeclinedByName && (
+                      <p className="text-[10px] text-rose-500 mt-1">
+                        Từ chối bởi: {item.latestDeclinedByName}{item.latestDeclinedAt ? ` • ${item.latestDeclinedAt}` : ''}
+                      </p>
+                    )}
+                    {item.uiStatus === 'DECLINED' && item.latestDeclineReason && (
+                      <p className="text-[10px] text-rose-400 mt-0.5 line-clamp-2">Lý do: {item.latestDeclineReason}</p>
+                    )}
                   </td>
                   <td className="px-5 py-5 text-center">
                     {item.uiStatus === 'CANCELLED' ? (
@@ -2599,7 +2670,8 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                     </div>
                   )}
 
-                  {invitationStatus === 'pending' && (
+                  {/* Ch? hi?n n?t T? ch?i / Xc nh?n tham gia khi: khng ph?i leader, ho?c l leader nhng i t? invitation chnh mnh (chng ph i ?y quy?n) */}
+                  {invitationStatus === 'pending' && (!isDeptLeader) && (
                   <div className="flex gap-4 pt-6 mt-6 border-t border-gray-100 flex-col relative z-10 w-full animate-fade-in-quick">
                     
                     <div className="flex flex-col sm:flex-row gap-4 w-full">
@@ -2623,7 +2695,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                               const timeStr = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}, ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
                               setAcceptSignature({ name: user?.name || 'Khách', time: timeStr });
                               setInvitationStatus('accepted');
-                              await fetchCalendarEvents();
+                              await Promise.all([fetchCalendarEvents(), fetchAssignmentsProgress()]);
                             }
                           } catch(e) { console.error(e); toast.error('Xác nhận thất bại'); }
                         }}
@@ -2749,11 +2821,21 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                           <Calendar className="w-4 h-4" />
                           <span className="text-[11px] font-bold uppercase tracking-wider">Thời gian sử dụng (Đề xuất)</span>
                         </div>
-                        <input
-                          type="text"
-                          className="w-full text-sm p-3.5 border border-orange-200 rounded-xl focus:border-orange-500 focus:ring-1 focus:ring-orange-200 outline-none bg-white font-medium text-slate-800 placeholder:font-normal placeholder:text-gray-400"
-                          placeholder="Nhập đề xuất thời gian..."
-                        />
+                        <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr] items-center gap-3">
+                          <input
+                            type="time"
+                            value={proposalStartTime}
+                            onChange={(e) => setProposalStartTime(e.target.value)}
+                            className="w-full text-sm p-3.5 border border-orange-200 rounded-xl focus:border-orange-500 focus:ring-1 focus:ring-orange-200 outline-none bg-white font-bold text-slate-800"
+                          />
+                          <span className="text-center text-[#de703b] font-black">-</span>
+                          <input
+                            type="time"
+                            value={proposalEndTime}
+                            onChange={(e) => setProposalEndTime(e.target.value)}
+                            className="w-full text-sm p-3.5 border border-orange-200 rounded-xl focus:border-orange-500 focus:ring-1 focus:ring-orange-200 outline-none bg-white font-bold text-slate-800"
+                          />
+                        </div>
                       </div>
                     )}
 
@@ -2773,10 +2855,10 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                     </div>
                   </div>
 
-                  {requestStatus === 'pending' && !isProposing && !proposalSubmitted && (
+                  {(requestStatus === 'pending' || requestStatus === 'awaiting-reassign') && !isProposing && !proposalSubmitted && (
                     <div className="flex justify-end pt-2">
                       <button 
-                        onClick={() => setIsProposing(true)}
+                        onClick={handleOpenProposal}
                         disabled={!!assignedPerson}
                         className={`px-5 py-2.5 rounded-xl border border-orange-200 text-[#f37021] bg-orange-50 font-bold text-xs flex items-center gap-2 transition-colors ${(!!assignedPerson) ? 'opacity-50 cursor-not-allowed' : 'hover:bg-orange-100'}`}>
                         <Edit2 className="w-4 h-4" />
@@ -2804,6 +2886,8 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                            onClick={() => {
                              setIsProposing(false);
                              setProposalNote('');
+                             setProposalStartTime('');
+                             setProposalEndTime('');
                            }}
                            className="px-5 py-2.5 rounded-xl text-gray-500 hover:bg-gray-100 font-bold text-xs"
                          >
@@ -2813,17 +2897,30 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                            onClick={async () => {
                              try {
                                if (activePopoverEvent?.rawId) {
-                                 await departmentReceptionTasksApi.proposeChange(activePopoverEvent.rawId, null, null, proposalNote.trim());
+                                 if (proposalStartTime && proposalEndTime && proposalStartTime >= proposalEndTime) {
+                                   toast.error('Giờ kết thúc phải sau giờ bắt đầu');
+                                   return;
+                                 }
+                                 await departmentReceptionTasksApi.proposeChange(
+                                   activePopoverEvent.rawId,
+                                   buildProposalDateTime(proposalStartTime),
+                                   buildProposalDateTime(proposalEndTime),
+                                   proposalNote.trim()
+                                 );
                                  toast.success('Đã gửi đề xuất thay đổi');
                                  setIsProposing(false);
                                  setProposalSubmitted(true);
+                                 setProposalStartTime('');
+                                 setProposalEndTime('');
                                  await refetchAfterTaskAction();
+                                 const detail = await departmentReceptionTasksApi.getRequestDetail(activePopoverEvent.rawId);
+                                 setActiveEventDetail(detail);
                                }
                              } catch (e: any) {
                                toast.error(e.response?.data?.message || e.response?.data?.title || e.message || 'Gửi đề xuất thất bại');
                              }
                            }}
-                           disabled={!proposalNote.trim()}
+                           disabled={!proposalNote.trim() || !proposalStartTime || !proposalEndTime}
                            className="px-5 py-2.5 rounded-xl bg-[#de703b] text-white hover:bg-[#c9602c] font-bold text-xs disabled:opacity-50"
                          >
                            Gửi đề xuất
@@ -2841,8 +2938,17 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                           </div>
                           <div className="bg-black/15 px-4 py-1.5 rounded-full inline-block">
                              <span className="text-white/95 text-xs font-medium">
-                               bởi: {user?.name || 'trần b hỗ trợ'} - {new Date().toLocaleString('vi-VN')}
+                               bởi: {activeEventDetail?.proposedByName || user?.name || 'Người xử lý'}
+                               {activeEventDetail?.proposedByRole ? ` - ${activeEventDetail.proposedByRole}` : ''}
+                               {' - '}
+                               {activeEventDetail?.proposedAt ? formatDateTime(activeEventDetail.proposedAt) : new Date().toLocaleString('vi-VN')}
                              </span>
+                             <div className="mt-2 space-y-1 text-white/95 text-xs">
+                               {activeEventDetail?.proposedUsageStartAt && activeEventDetail?.proposedUsageEndAt && (
+                                 <p>Đề xuất giờ: {formatDateTime(activeEventDetail.proposedUsageStartAt)} - {formatDateTime(activeEventDetail.proposedUsageEndAt)}</p>
+                               )}
+                               <p>Ghi chú: {activeEventDetail?.proposedDescription || proposalNote}</p>
+                             </div>
                           </div>
                         </div>
                      </div>
@@ -2879,7 +2985,10 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                                 await departmentReceptionTasksApi.rejectRequest(activePopoverEvent.rawId, requestRejectReason);
                                 toast.success('Đã từ chối nhiệm vụ');
                                 setRequestStatus('rejected');
-                                await fetchCalendarEvents();
+                                const now = new Date();
+                                const timeStr = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}, ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+                                setRequestRejectSignature({ name: (user?.name || 'Khách') + (isDeptLeader ? ' - Trưởng phòng' : ' - Nhân viên'), time: timeStr });
+                                await Promise.all([fetchCalendarEvents(), fetchAssignmentsProgress()]);
                               }
                             } catch(e) { console.error(e); toast.error('Từ chối thất bại'); }
                           }}
@@ -2894,19 +3003,31 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
 
                   {requestStatus === 'rejected' && (
                     <div className="animate-fade-in-quick pt-4">
-                       <div className="p-4 rounded-2xl border border-red-200 bg-red-50 flex items-start gap-3">
-                          <Info className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
-                          <div>
-                            <span className="text-red-800 font-bold text-sm block mb-1">Đã từ chối nhiệm vụ</span>
-                            <span className="text-red-600/80 text-xs italic">"{requestRejectReason}"</span>
+                       <div className="p-4 rounded-2xl border border-red-200 bg-red-50 flex flex-col gap-3 relative">
+                          <div className="flex items-start gap-3">
+                            <Info className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+                            <div>
+                              <span className="text-red-800 font-bold text-sm block mb-1">Đã từ chối nhiệm vụ</span>
+                              <span className="text-red-600/80 text-xs italic">"{requestRejectReason}"</span>
+                            </div>
                           </div>
+                          {requestRejectSignature && (
+                            <div className="bg-red-100/50 px-3 py-1.5 rounded-lg inline-block self-start sm:ml-8">
+                              <span className="text-red-800 text-[11px] font-medium flex flex-col sm:flex-row sm:items-center sm:gap-1">
+                                <span>bởi: <span className="font-bold">{requestRejectSignature.name}</span></span>
+                                <span className="hidden sm:inline">-</span>
+                                <span>{requestRejectSignature.time}</span>
+                              </span>
+                            </div>
+                          )}
                        </div>
                     </div>
                   )}
 
                   {(requestStatus === 'pending' || requestStatus === 'accepted' || requestStatus === 'assigned' || requestStatus === 'awaiting-reassign') && !isProposing && !proposalSubmitted && (
                     <div className="flex gap-4 pt-6 mt-6 border-t border-gray-100 flex-col relative z-10 w-full animate-fade-in-quick">
-                      {requestStatus === 'pending' && (
+                      {/* Nút Xác nhận/Từ chối hiện cho cả REQUESTED (pending) và DECLINED (awaiting-reassign) */}
+                      {(requestStatus === 'pending' || requestStatus === 'awaiting-reassign') && (
                         <div className="flex flex-col sm:flex-row gap-4 w-full">
                           <button 
                             onClick={() => setRequestStatus('rejecting')}
@@ -2928,7 +3049,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                                   const timeStr = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}, ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
                                   setRequestAcceptSignature({ name: user?.name || 'Khách', time: timeStr });
                                   setRequestStatus('accepted');
-                                  await fetchCalendarEvents();
+                                  await Promise.all([fetchCalendarEvents(), fetchAssignmentsProgress()]);
                                 }
                               } catch(e) { console.error(e); toast.error('Xác nhận thất bại'); }
                             }}
@@ -2976,9 +3097,29 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                        {isDeptLeader && (requestStatus === 'pending' || requestStatus === 'awaiting-reassign') && (
                         <div className="w-full relative mt-2">
                           {requestStatus === 'awaiting-reassign' && (
-                            <div className="mb-2 p-3 rounded-xl border border-amber-200 bg-amber-50 flex items-center gap-2">
-                              <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
-                              <span className="text-amber-800 text-xs font-bold">Nhân viên đã từ chối — cần phân công lại</span>
+                            <div className="mb-2 p-3 rounded-xl border border-amber-200 bg-amber-50 flex flex-col gap-2">
+                              <div className="flex items-start gap-2">
+                                <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                                <div>
+                                  <span className="text-amber-800 text-xs font-bold block mb-1">Nhân viên đã từ chối — cần phân công lại</span>
+                                  {(() => {
+                                    const latestDeclinedAttempt = activeEventDetail?.assignmentHistory?.find((att: any) => att.status === 'DECLINED');
+                                    if (!latestDeclinedAttempt) return null;
+                                    return (
+                                      <>
+                                        <span className="text-amber-700/80 text-[11px] italic block mb-1.5">Lý do: "{latestDeclinedAttempt.responseNote || 'Không có lý do'}"</span>
+                                        <div className="bg-amber-100/60 px-2.5 py-1 rounded-md inline-block">
+                                          <span className="text-amber-800 text-[10px] font-medium flex items-center gap-1">
+                                            <span>bởi: <span className="font-bold">{latestDeclinedAttempt.assigneeName}</span></span>
+                                            <span>-</span>
+                                            <span>{latestDeclinedAttempt.respondedAt || latestDeclinedAttempt.assignedAt}</span>
+                                          </span>
+                                        </div>
+                                      </>
+                                    );
+                                  })()}
+                                </div>
+                              </div>
                             </div>
                           )}
                           <button
@@ -3031,7 +3172,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                                   toast.success('Đã từ chối nhiệm vụ');
                                   setRequestStatus('awaiting-reassign');
                                   setAssignedPerson(null);
-                                  await fetchCalendarEvents();
+                                  await Promise.all([fetchCalendarEvents(), fetchAssignmentsProgress()]);
                                 } catch(e: any) { toast.error(e.response?.data?.message || 'Từ chối thất bại'); }
                               }}
                               className="flex-1 py-3.5 px-5 rounded-2xl border-2 border-red-400 text-red-600 font-black uppercase tracking-wider text-xs hover:bg-red-50 transition-all"
@@ -3047,7 +3188,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                                   const now = new Date();
                                   const timeStr = `${String(now.getDate()).padStart(2,'0')}/${String(now.getMonth()+1).padStart(2,'0')}/${now.getFullYear()}, ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
                                   setRequestAcceptSignature({ name: user?.name || 'Nhân viên', time: timeStr });
-                                  await fetchCalendarEvents();
+                                  await Promise.all([fetchCalendarEvents(), fetchAssignmentsProgress()]);
                                 } catch(e: any) { toast.error(e.response?.data?.message || 'Xác nhận thất bại'); }
                               }}
                               className="flex-1 py-3.5 px-5 rounded-2xl bg-[#004c91] text-white font-black uppercase tracking-wider text-xs hover:bg-[#003b73] shadow-lg transition-all"

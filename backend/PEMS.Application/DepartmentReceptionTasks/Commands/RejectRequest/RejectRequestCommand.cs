@@ -40,7 +40,7 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.RejectRequest
 
             //     throw new Exception("Trạng thái đơn yêu cầu không hợp lệ để từ chối");
 
-            if (l.Status != "REQUESTED" && l.Status != "CHANGE_PROPOSED")
+            if (l.Status != "REQUESTED" && l.Status != "CHANGE_PROPOSED" && l.Status != "DECLINED")
                 throw new Exception("Trạng thái đơn yêu cầu không hợp lệ để từ chối");
 
             l.Status = "REJECTED";
