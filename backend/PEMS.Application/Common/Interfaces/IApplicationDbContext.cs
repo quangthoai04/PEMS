@@ -52,8 +52,10 @@ public interface IApplicationDbContext
     DbSet<NewsContentSection> NewsContentSections { get; }
     DbSet<NewsSectionFile> NewsSectionFiles { get; }
     DbSet<Faq> Faqs { get; }
-    DbSet<Gallery> Galleries { get; }
-    DbSet<GalleryImage> GalleryImages { get; }
+    DbSet<GalleryArea> GalleryAreas { get; }
+    DbSet<GalleryLocation> GalleryLocations { get; }
+    DbSet<GalleryItem> GalleryItems { get; }
+    DbSet<GalleryItemMedia> GalleryItemMedia { get; }
     DbSet<PhotoFaceTag> PhotoFaceTags { get; }
     DbSet<EmailTemplate> EmailTemplates { get; }
     DbSet<SentEmail> SentEmails { get; }

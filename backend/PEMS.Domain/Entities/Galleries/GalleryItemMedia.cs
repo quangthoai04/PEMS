@@ -1,23 +1,24 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using PEMS.Domain.Entities.Documents;
 
 namespace PEMS.Domain.Entities.Galleries;
 
-[Table("gallery_images")]
-public class GalleryImage
+[Table("gallery_item_media")]
+public class GalleryItemMedia
 {
     [Key]
-    [Column("image_id")]
-    public ulong ImageId { get; set; }
+    [Column("media_id")]
+    public ulong MediaId { get; set; }
 
-    [Column("gallery_id")]
-    public ulong GalleryId { get; set; }
+    [Column("gallery_item_id")]
+    public ulong GalleryItemId { get; set; }
 
     [Column("file_id")]
     public ulong FileId { get; set; }
 
     [Column("media_type")]
-    public string MediaType { get; set; } = "IMAGE";
+    public string MediaType { get; set; } = null!;
 
     [Column("thumbnail_file_id")]
     public ulong? ThumbnailFileId { get; set; }
@@ -25,8 +26,14 @@ public class GalleryImage
     [Column("caption")]
     public string? Caption { get; set; }
 
+    [Column("alt_text")]
+    public string? AltText { get; set; }
+
+    [Column("is_primary")]
+    public bool IsPrimary { get; set; }
+
     [Column("display_order")]
-    public int DisplayOrder { get; set; }
+    public uint DisplayOrder { get; set; }
 
     [Column("taken_at")]
     public DateTime? TakenAt { get; set; }
@@ -52,5 +59,7 @@ public class GalleryImage
     [Column("deleted_by")]
     public ulong? DeletedBy { get; set; }
 
-    public virtual Gallery Gallery { get; set; } = null!;
+    public virtual GalleryItem GalleryItem { get; set; } = null!;
+    public virtual UploadedFile File { get; set; } = null!;
+    public virtual UploadedFile? ThumbnailFile { get; set; }
 }

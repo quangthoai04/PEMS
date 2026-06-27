@@ -87,7 +87,8 @@ export type UpdateEmailDraftPayload = CreateEmailDraftPayload;
 export interface SendEmailDraftResult {
   emailDraftId: number;
   sentEmailId: number;
-  status: 'SENT' | 'FAILED';
+  status: 'SENT' | 'PARTIAL_FAILED' | 'FAILED';
+  success: boolean;
   draftStatus: EmailDraftStatus;
   message: string;
 }

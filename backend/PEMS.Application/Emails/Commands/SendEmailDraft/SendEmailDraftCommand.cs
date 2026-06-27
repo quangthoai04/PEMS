@@ -13,8 +13,10 @@ public sealed class SendEmailDraftResponse
 {
     public ulong EmailDraftId { get; init; }
     public ulong SentEmailId { get; init; }
-    /// <summary>SENT | FAILED — overall send outcome.</summary>
+    /// <summary>SENT | PARTIAL_FAILED | FAILED — overall send outcome.</summary>
     public string Status { get; init; } = "SENT";
+    /// <summary>True only when every recipient was delivered successfully (Status == SENT).</summary>
+    public bool Success { get; init; }
     public string DraftStatus { get; init; } = "SENT";
     public string Message { get; init; } = string.Empty;
 }

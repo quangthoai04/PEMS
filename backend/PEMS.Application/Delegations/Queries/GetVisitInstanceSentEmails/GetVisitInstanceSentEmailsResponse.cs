@@ -17,7 +17,7 @@ public sealed class SentEmailHistoryDto
     public string? BodySnapshot { get; set; }
     /// <summary>PLAIN_TEXT | HTML — how BodySnapshot should be rendered.</summary>
     public string BodyFormat { get; set; } = "HTML";
-    /// <summary>QUEUED | SENT | FAILED | DELIVERED.</summary>
+    /// <summary>QUEUED | SENT | PARTIAL_FAILED | FAILED | DELIVERED.</summary>
     public string EmailStatus { get; set; } = string.Empty;
     public string? SentByName { get; set; }
     public string? SentAt { get; set; }         // "yyyy-MM-ddTHH:mm:ss" wall-clock

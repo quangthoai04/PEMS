@@ -158,9 +158,27 @@ public sealed class SendEmailDraftCommandHandler
 
         sentEmail.SentAt = DateTime.Now;
         sentEmail.LastAttemptAt = sentEmail.SentAt;
-        sentEmail.Status = hasFailure ? "FAILED" : "SENT";
-        sentEmail.DeliveredAt = hasFailure ? null : sentEmail.SentAt;
-        sentEmail.ErrorMessage = hasFailure ? "Một hoặc nhiều người nhận gửi thất bại." : null;
+
+        // Compute aggregated status: ALL ok → SENT; ALL failed → FAILED; mixed → PARTIAL_FAILED.
+        var allFailed = sentEmail.Recipients.All(r => r.DeliveryStatus == "FAILED");
+        if (!hasFailure)
+        {
+            sentEmail.Status = "SENT";
+            sentEmail.DeliveredAt = sentEmail.SentAt;
+            sentEmail.ErrorMessage = null;
+        }
+        else if (allFailed)
+        {
+            sentEmail.Status = "FAILED";
+            sentEmail.DeliveredAt = null;
+            sentEmail.ErrorMessage = "Tất cả người nhận gửi thất bại.";
+        }
+        else
+        {
+            sentEmail.Status = "PARTIAL_FAILED";
+            sentEmail.DeliveredAt = null;
+            sentEmail.ErrorMessage = "Một hoặc nhiều người nhận gửi thất bại.";
+        }
 
         draft.Status = EmailDraftStatus.SENT;
         draft.SentEmailId = sentEmail.SentEmailId;
@@ -170,15 +188,21 @@ public sealed class SendEmailDraftCommandHandler
         await _db.SaveChangesAsync(cancellationToken);
         await tx.CommitAsync(cancellationToken);
 
+        var message = sentEmail.Status switch
+        {
+            "SENT" => "Đã gửi email từ nháp thành công.",
+            "FAILED" => "Gửi email thất bại với tất cả người nhận.",
+            _ => "Gửi email thất bại với một hoặc nhiều người nhận.",
+        };
+
         return new SendEmailDraftResponse
         {
             EmailDraftId = draft.EmailDraftId,
             SentEmailId = sentEmail.SentEmailId,
             Status = sentEmail.Status,
+            Success = sentEmail.Status == "SENT",
             DraftStatus = draft.Status.ToString(),
-            Message = hasFailure
-                ? "Gửi email thất bại với một hoặc nhiều người nhận."
-                : "Đã gửi email từ nháp thành công.",
+            Message = message,
         };
     }
 }

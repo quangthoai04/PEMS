@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Domain.Entities.Documents;
@@ -17,14 +18,17 @@ public sealed class LocalFileStorageService : IFileStorageService
 {
     private readonly string _root;
     private readonly IHttpClientFactory _httpClientFactory;
+    private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<LocalFileStorageService> _logger;
 
     public LocalFileStorageService(
         IConfiguration configuration,
         IHttpClientFactory httpClientFactory,
+        IServiceProvider serviceProvider,
         ILogger<LocalFileStorageService> logger)
     {
         _httpClientFactory = httpClientFactory;
+        _serviceProvider = serviceProvider;
         _logger = logger;
         var configured = configuration["FileStorage:LocalRoot"];
         _root = string.IsNullOrWhiteSpace(configured)
@@ -74,7 +78,23 @@ public sealed class LocalFileStorageService : IFileStorageService
             return null;
         }
 
-        // Remote provider (e.g. Google Drive): fetch the file bytes over HTTP.
+        if (string.Equals(file.StorageProvider, "GOOGLE_DRIVE", StringComparison.OrdinalIgnoreCase)
+            && !string.IsNullOrWhiteSpace(file.ExternalFileId))
+        {
+            try
+            {
+                using var scope = _serviceProvider.CreateScope();
+                var googleDrive = scope.ServiceProvider.GetRequiredService<IGoogleDriveStorageService>();
+                return await googleDrive.DownloadAsync(file.ExternalFileId, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to fetch Google Drive file bytes: fileId={FileId} externalFileId={ExternalFileId}", file.FileId, file.ExternalFileId);
+                return null;
+            }
+        }
+
+        // Remote provider (e.g. Google Drive without external_file_id or other): fetch the file bytes over HTTP.
         var url = !string.IsNullOrWhiteSpace(file.DownloadUrl) ? file.DownloadUrl : file.WebViewUrl;
         if (string.IsNullOrWhiteSpace(url)) return null;
         try

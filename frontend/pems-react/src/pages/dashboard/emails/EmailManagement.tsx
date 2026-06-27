@@ -337,7 +337,8 @@ export function EmailManagement() {
       {activeTab === 'Gửi email' && (
         <SendEmailTab
           onSent={(message) => {
-            showPageToast('success', message || 'Gửi email thành công!');
+            const isFailure = message?.includes('thất bại');
+            showPageToast(isFailure ? 'error' : 'success', message || 'Gửi email thành công!');
             setSearchQuerySent('');
             setRelatedTypeFilter('');
             setStartDate('');
