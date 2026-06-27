@@ -80,8 +80,10 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     public DbSet<Faq> Faqs { get; set; }
 
     // ── Gallery ───────────────────────────────────────────────────────────
-    public DbSet<Gallery> Galleries { get; set; }
-    public DbSet<GalleryImage> GalleryImages { get; set; }
+    public DbSet<GalleryArea> GalleryAreas { get; }
+    public DbSet<GalleryLocation> GalleryLocations { get; }
+    public DbSet<GalleryItem> GalleryItems { get; }
+    public DbSet<GalleryItemMedia> GalleryItemMedia { get; }
     public DbSet<PhotoFaceTag> PhotoFaceTags { get; set; }
 
     // ── Email + Notification ──────────────────────────────────────────────
@@ -414,35 +416,84 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
             .HasOne(nt => nt.News).WithMany(n => n.Translations)
             .HasForeignKey(nt => nt.NewsId).OnDelete(DeleteBehavior.Cascade);
 
-        // Gallery → Campus
-        modelBuilder.Entity<Gallery>()
-            .HasOne<Campus>().WithMany()
-            .HasForeignKey(g => g.CampusId).OnDelete(DeleteBehavior.SetNull);
+        // GalleryArea → Campus, CreatedBy, UpdatedBy
+        modelBuilder.Entity<GalleryArea>()
+            .HasOne(a => a.Campus).WithMany()
+            .HasForeignKey(a => a.CampusId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<GalleryArea>()
+            .HasOne<User>().WithMany()
+            .HasForeignKey(a => a.CreatedBy).OnDelete(DeleteBehavior.SetNull);
+        modelBuilder.Entity<GalleryArea>()
+            .HasOne<User>().WithMany()
+            .HasForeignKey(a => a.UpdatedBy).OnDelete(DeleteBehavior.SetNull);
 
-        // GalleryImage → Gallery, File
-        modelBuilder.Entity<GalleryImage>()
-            .HasOne(gi => gi.Gallery).WithMany(g => g.Images)
-            .HasForeignKey(gi => gi.GalleryId).OnDelete(DeleteBehavior.Restrict);
-        modelBuilder.Entity<GalleryImage>()
-            .HasOne<UploadedFile>().WithMany()
-            .HasForeignKey(gi => gi.FileId).OnDelete(DeleteBehavior.Restrict);
+        // GalleryLocation → Area, CreatedBy, UpdatedBy
+        modelBuilder.Entity<GalleryLocation>()
+            .HasOne(l => l.Area).WithMany(a => a.Locations)
+            .HasForeignKey(l => l.AreaId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<GalleryLocation>()
+            .HasOne<User>().WithMany()
+            .HasForeignKey(l => l.CreatedBy).OnDelete(DeleteBehavior.SetNull);
+        modelBuilder.Entity<GalleryLocation>()
+            .HasOne<User>().WithMany()
+            .HasForeignKey(l => l.UpdatedBy).OnDelete(DeleteBehavior.SetNull);
 
-        // PhotoFaceTag → GalleryImage, VisitRequest, GuestMember, PartnerContact, ConfirmedBy
+        // GalleryItem → Location, CreatedBy, UpdatedBy, DeletedBy
+        modelBuilder.Entity<GalleryItem>()
+            .HasOne(i => i.Location).WithMany(l => l.Items)
+            .HasForeignKey(i => i.LocationId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<GalleryItem>()
+            .HasOne<User>().WithMany()
+            .HasForeignKey(i => i.CreatedBy).OnDelete(DeleteBehavior.SetNull);
+        modelBuilder.Entity<GalleryItem>()
+            .HasOne<User>().WithMany()
+            .HasForeignKey(i => i.UpdatedBy).OnDelete(DeleteBehavior.SetNull);
+        modelBuilder.Entity<GalleryItem>()
+            .HasOne<User>().WithMany()
+            .HasForeignKey(i => i.DeletedBy).OnDelete(DeleteBehavior.SetNull);
+
+        // GalleryItemMedia → GalleryItem, File, ThumbnailFile, CreatedBy, UpdatedBy, DeletedBy
+        modelBuilder.Entity<GalleryItemMedia>()
+            .HasOne(m => m.GalleryItem).WithMany(i => i.Media)
+            .HasForeignKey(m => m.GalleryItemId).OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<GalleryItemMedia>()
+            .HasOne(m => m.File).WithMany()
+            .HasForeignKey(m => m.FileId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<GalleryItemMedia>()
+            .HasOne(m => m.ThumbnailFile).WithMany()
+            .HasForeignKey(m => m.ThumbnailFileId).OnDelete(DeleteBehavior.SetNull);
+        modelBuilder.Entity<GalleryItemMedia>()
+            .HasOne<User>().WithMany()
+            .HasForeignKey(m => m.CreatedBy).OnDelete(DeleteBehavior.SetNull);
+        modelBuilder.Entity<GalleryItemMedia>()
+            .HasOne<User>().WithMany()
+            .HasForeignKey(m => m.UpdatedBy).OnDelete(DeleteBehavior.SetNull);
+        modelBuilder.Entity<GalleryItemMedia>()
+            .HasOne<User>().WithMany()
+            .HasForeignKey(m => m.DeletedBy).OnDelete(DeleteBehavior.SetNull);
+
+        // PhotoFaceTag → File, TaggedUser, VisitRequest, GuestMember, PartnerContact, CreatedBy, RemovedBy
         modelBuilder.Entity<PhotoFaceTag>()
-            .HasOne(ft => ft.Image).WithMany()
-            .HasForeignKey(ft => ft.ImageId).OnDelete(DeleteBehavior.Cascade);
+            .HasOne(ft => ft.File).WithMany()
+            .HasForeignKey(ft => ft.FileId).OnDelete(DeleteBehavior.Cascade);
         modelBuilder.Entity<PhotoFaceTag>()
-            .HasOne<VisitRequest>().WithMany()
+            .HasOne(ft => ft.TaggedUser).WithMany()
+            .HasForeignKey(ft => ft.TaggedUserId).OnDelete(DeleteBehavior.SetNull);
+        modelBuilder.Entity<PhotoFaceTag>()
+            .HasOne(ft => ft.VisitRequest).WithMany()
             .HasForeignKey(ft => ft.VisitRequestId).OnDelete(DeleteBehavior.SetNull);
         modelBuilder.Entity<PhotoFaceTag>()
-            .HasOne<VisitGuestMember>().WithMany()
+            .HasOne(ft => ft.GuestMember).WithMany()
             .HasForeignKey(ft => ft.GuestMemberId).OnDelete(DeleteBehavior.SetNull);
         modelBuilder.Entity<PhotoFaceTag>()
-            .HasOne<PartnerContact>().WithMany()
+            .HasOne(ft => ft.PartnerContact).WithMany()
             .HasForeignKey(ft => ft.PartnerContactId).OnDelete(DeleteBehavior.SetNull);
         modelBuilder.Entity<PhotoFaceTag>()
             .HasOne<User>().WithMany()
-            .HasForeignKey(ft => ft.ConfirmedBy).OnDelete(DeleteBehavior.SetNull);
+            .HasForeignKey(ft => ft.CreatedBy).OnDelete(DeleteBehavior.SetNull);
+        modelBuilder.Entity<PhotoFaceTag>()
+            .HasOne<User>().WithMany()
+            .HasForeignKey(ft => ft.RemovedBy).OnDelete(DeleteBehavior.SetNull);
 
         // SentEmail → EmailTemplate, SentBy
         modelBuilder.Entity<SentEmail>()

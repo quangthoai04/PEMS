@@ -1,5 +1,9 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using PEMS.Domain.Entities.Delegations;
+using PEMS.Domain.Entities.Documents;
+using PEMS.Domain.Entities.Partners;
+using PEMS.Domain.Entities.Users;
 
 namespace PEMS.Domain.Entities.Galleries;
 
@@ -10,8 +14,11 @@ public class PhotoFaceTag
     [Column("face_tag_id")]
     public ulong FaceTagId { get; set; }
 
-    [Column("image_id")]
-    public ulong ImageId { get; set; }
+    [Column("file_id")]
+    public ulong FileId { get; set; }
+
+    [Column("tagged_user_id")]
+    public ulong? TaggedUserId { get; set; }
 
     [Column("visit_request_id")]
     public ulong? VisitRequestId { get; set; }
@@ -24,6 +31,9 @@ public class PhotoFaceTag
 
     [Column("display_name")]
     public string DisplayName { get; set; } = null!;
+
+    [Column("person_name_key")]
+    public string? PersonNameKey { get; set; }
 
     [Column("bounding_box_x")]
     public decimal? BoundingBoxX { get; set; }
@@ -38,13 +48,7 @@ public class PhotoFaceTag
     public decimal? BoundingBoxHeight { get; set; }
 
     [Column("tag_status")]
-    public string TagStatus { get; set; } = "MANUALLY_TAGGED";
-
-    [Column("confirmed_by")]
-    public ulong? ConfirmedBy { get; set; }
-
-    [Column("confirmed_at")]
-    public DateTime? ConfirmedAt { get; set; }
+    public string TagStatus { get; set; } = "ACTIVE";
 
     [Column("created_at")]
     public DateTime CreatedAt { get; set; }
@@ -58,5 +62,9 @@ public class PhotoFaceTag
     [Column("removed_by")]
     public ulong? RemovedBy { get; set; }
 
-    public virtual GalleryImage Image { get; set; } = null!;
+    public virtual UploadedFile File { get; set; } = null!;
+    public virtual User? TaggedUser { get; set; }
+    public virtual VisitRequest? VisitRequest { get; set; }
+    public virtual VisitGuestMember? GuestMember { get; set; }
+    public virtual PartnerContact? PartnerContact { get; set; }
 }
