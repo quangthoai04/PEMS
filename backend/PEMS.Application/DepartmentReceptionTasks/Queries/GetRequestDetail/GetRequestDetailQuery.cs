@@ -36,6 +36,7 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetRequestDetail
         public string Date { get; set; }
         public string Title { get; set; }
         public string Description { get; set; }
+        public int Quantity { get; set; }
         public ulong? AssigneeId { get; set; }
         public string AssigneeName { get; set; }
         public string Status { get; set; }
@@ -217,6 +218,7 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetRequestDetail
                 Date = l.UsageStartAt?.ToString("dd-MM-yyyy") ?? "",
                 Title = l.Title,
                 Description = l.Description ?? "",
+                Quantity = l.Quantity ?? 1,
                 AssigneeId = l.AssignedToUserId,
                 AssigneeName = assigneeName,
                 Status = unifiedStatus,
