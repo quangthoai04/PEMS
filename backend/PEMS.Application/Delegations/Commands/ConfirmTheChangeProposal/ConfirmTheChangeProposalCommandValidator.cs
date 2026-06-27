@@ -6,6 +6,10 @@ public sealed class ConfirmTheChangeProposalCommandValidator : AbstractValidator
 {
     public ConfirmTheChangeProposalCommandValidator()
     {
-        // TODO: Add validation rules after UC specification is completed.
+        RuleFor(x => x.LogisticsItemId).NotEmpty();
+        When(x => !x.Accepted, () =>
+        {
+            RuleFor(x => x.Note).NotEmpty().MaximumLength(1000);
+        });
     }
 }

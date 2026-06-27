@@ -7,17 +7,9 @@ import React, { useState } from 'react';
 import { Download, Calendar, Filter, Users, TrendingUp, Star, CalendarDays, Eye, FileText } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
 import { REPORT_STATISTICS, VISITS_OVER_TIME, VISITOR_TYPES, TOP_RATED_VISITS } from './mockReportData';
-import { DeptReportManagement } from './DeptReportManagement';
 
 export function ReportManagement() {
   const [timeFilter, setTimeFilter] = useState('this_year');
-  const userStr = localStorage.getItem('currentUser');
-  const user = userStr ? JSON.parse(userStr) : null;
-  const isDept = user?.role?.toUpperCase() === 'DEPARTMENT';
-  
-  if (isDept) {
-    return <DeptReportManagement />;
-  }
 
   const currentStats = REPORT_STATISTICS;
   const currentOverTime = VISITS_OVER_TIME;
