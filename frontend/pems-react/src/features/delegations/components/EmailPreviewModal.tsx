@@ -258,6 +258,16 @@ export function EmailPreviewModal({
                   Định dạng văn bản, chèn ảnh và liên kết. Ảnh chèn trong nội dung hiển thị inline trong email (qua cid).
                 </p>
                 <div className="mt-1 rounded-xl border border-gray-200">
+                  <style>{`
+                    .ql-editor img {
+                      max-width: 560px;
+                      max-height: 420px;
+                      width: auto;
+                      height: auto;
+                      display: block;
+                      margin: 16px auto;
+                    }
+                  `}</style>
                   <ReactQuill
                     ref={quillRef}
                     theme="snow"

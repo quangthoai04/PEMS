@@ -35,11 +35,12 @@ public sealed class InviteVisitParticipantCommandHandler
     private readonly IEmailActionTokenService _tokens;
     private readonly IHtmlSanitizerService _sanitizer;
     private readonly IFileStorageService _storage;
+    private readonly PEMS.Application.Emails.Utils.IEmailImageLayoutNormalizer _normalizer;
 
     public InviteVisitParticipantCommandHandler(
         IApplicationDbContext db, ICurrentUserService currentUser, IDateTimeService clock,
         IEmailService email, IEmailActionTokenService tokens, IHtmlSanitizerService sanitizer,
-        IFileStorageService storage)
+        IFileStorageService storage, PEMS.Application.Emails.Utils.IEmailImageLayoutNormalizer normalizer)
     {
         _db = db;
         _currentUser = currentUser;
@@ -48,6 +49,7 @@ public sealed class InviteVisitParticipantCommandHandler
         _tokens = tokens;
         _sanitizer = sanitizer;
         _storage = storage;
+        _normalizer = normalizer;
     }
 
     public async Task<InviteVisitParticipantResponse> Handle(
@@ -193,6 +195,8 @@ public sealed class InviteVisitParticipantCommandHandler
                 finalSubject = mail.Subject;
                 finalBody = mail.HtmlBody;
             }
+            
+            finalBody = await _normalizer.NormalizeHtmlAsync(finalBody, cancellationToken);
 
             // 3) sent_emails + recipient — body_snapshot is the FINAL content actually sent.
             var sentEmail = new SentEmail

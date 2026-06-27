@@ -27,6 +27,8 @@ public static class DependencyInjection
         services.AddScoped<IFileObjectKeyBuilder, FileObjectKeyBuilder>();
         services.AddScoped<IFileUploadService, FileUploadService>();
 
+        services.AddScoped<PEMS.Application.Emails.Utils.IEmailImageLayoutNormalizer, PEMS.Application.Emails.Utils.EmailImageLayoutNormalizer>();
+
         return services;
     }
 }

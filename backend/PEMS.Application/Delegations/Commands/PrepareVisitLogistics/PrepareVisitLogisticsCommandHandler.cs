@@ -33,11 +33,12 @@ public sealed class PrepareVisitLogisticsCommandHandler
     private readonly IEmailActionTokenService _tokens;
     private readonly IHtmlSanitizerService _sanitizer;
     private readonly IFileStorageService _storage;
+    private readonly PEMS.Application.Emails.Utils.IEmailImageLayoutNormalizer _normalizer;
 
     public PrepareVisitLogisticsCommandHandler(
         IApplicationDbContext db, ICurrentUserService currentUser, IDateTimeService clock,
         IEmailService email, IEmailActionTokenService tokens, IHtmlSanitizerService sanitizer,
-        IFileStorageService storage)
+        IFileStorageService storage, PEMS.Application.Emails.Utils.IEmailImageLayoutNormalizer normalizer)
     {
         _db = db;
         _currentUser = currentUser;
@@ -46,6 +47,7 @@ public sealed class PrepareVisitLogisticsCommandHandler
         _tokens = tokens;
         _sanitizer = sanitizer;
         _storage = storage;
+        _normalizer = normalizer;
     }
 
     public async Task<PrepareVisitLogisticsResponse> Handle(
@@ -251,6 +253,8 @@ public sealed class PrepareVisitLogisticsCommandHandler
                         DefaultContentHtml(leaderName!, requesterName, delegationName, campusName, item, usageStart, usageEnd)
                         + EmailComposition.LogisticsActionBlock(acceptUrl, declineUrl, detailUrl));
                 }
+
+                finalBody = await _normalizer.NormalizeHtmlAsync(finalBody, cancellationToken);
 
                 var sentEmail = new SentEmail
                 {

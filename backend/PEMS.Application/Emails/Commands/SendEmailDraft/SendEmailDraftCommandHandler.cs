@@ -21,19 +21,22 @@ public sealed class SendEmailDraftCommandHandler
     private readonly IEmailService _email;
     private readonly IHtmlSanitizerService _sanitizer;
     private readonly IFileStorageService _storage;
+    private readonly PEMS.Application.Emails.Utils.IEmailImageLayoutNormalizer _normalizer;
 
     public SendEmailDraftCommandHandler(
         IApplicationDbContext db,
         ICurrentUserService currentUser,
         IEmailService email,
         IHtmlSanitizerService sanitizer,
-        IFileStorageService storage)
+        IFileStorageService storage,
+        PEMS.Application.Emails.Utils.IEmailImageLayoutNormalizer normalizer)
     {
         _db = db;
         _currentUser = currentUser;
         _email = email;
         _sanitizer = sanitizer;
         _storage = storage;
+        _normalizer = normalizer;
     }
 
     public async Task<SendEmailDraftResponse> Handle(
@@ -78,9 +81,13 @@ public sealed class SendEmailDraftCommandHandler
 
         var now = DateTime.Now;
         var subject = draft.Subject!.Trim();
-        var body = draft.BodyFormat == EmailBodyFormat.HTML
+        var rawBody = draft.BodyFormat == EmailBodyFormat.HTML
             ? _sanitizer.SanitizeEmailHtml(draft.BodyContent)
             : (draft.BodyContent ?? string.Empty);
+        
+        var body = draft.BodyFormat == EmailBodyFormat.HTML
+            ? await _normalizer.NormalizeHtmlAsync(rawBody, cancellationToken)
+            : rawBody;
 
         await using var tx = await _db.BeginTransactionAsync(cancellationToken);
 
