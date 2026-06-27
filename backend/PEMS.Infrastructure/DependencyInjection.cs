@@ -54,6 +54,12 @@ public static class DependencyInjection
         // File storage (uploads / email attachments / inline images) — disk-backed by default.
         services.AddScoped<IFileStorageService, PEMS.Infrastructure.FileStorage.LocalFileStorageService>();
 
+        // Google Drive integration (UC-15 avatar upload): config + REST storage client.
+        services.Configure<PEMS.Application.Common.Storage.GoogleDriveOptions>(
+            configuration.GetSection(PEMS.Application.Common.Storage.GoogleDriveOptions.SectionName));
+        services.AddScoped<IGoogleDriveStorageService,
+            PEMS.Infrastructure.FileStorage.GoogleDrive.GoogleDriveStorageService>();
+
         // Visit request flow services (UC-17)
         services.AddScoped<IVisitRequestService, VisitRequestService>();
         services.AddScoped<IUserProvisionService, UserProvisionService>();

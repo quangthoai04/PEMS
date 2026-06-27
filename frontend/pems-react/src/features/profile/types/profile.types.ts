@@ -44,3 +44,11 @@ export interface UpdateProfileRequest {
   phone?: string | null;
   nationality?: string | null;
 }
+
+/** UC-15 — response of PUT /profiles/me/avatar. avatarUrl is a backend proxy path. */
+export interface UploadAvatarResponse {
+  fileId: number;
+  avatarUrl: string;
+  webViewUrl?: string | null;
+  thumbnailUrl?: string | null;
+}

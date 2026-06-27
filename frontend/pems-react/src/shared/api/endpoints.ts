@@ -14,6 +14,8 @@ export const API_ENDPOINTS = {
     // UC-14 view my profile, UC-15 update my profile (self-service; user resolved from token).
     me: '/profiles/viewprofile',
     update: '/profiles/updateprofile',
+    // UC-15 avatar upload (multipart field "avatar"); user resolved from token.
+    avatar: '/profiles/me/avatar',
   },
   campuses: {
     active: '/campuses/active',

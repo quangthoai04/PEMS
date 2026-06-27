@@ -54,5 +54,18 @@ namespace PEMS.Api.Controllers
             var result = await _mediator.Send(new GetFileContentQuery(id), cancellationToken);
             return File(result.Content, result.ContentType, result.FileName);
         }
+
+        /// <summary>
+        /// Inline content stream for a stored file (used as <c>users.avatar_url</c> =
+        /// <c>/api/files/{id}/content</c>). Same bytes as <c>download</c> but rendered inline (no
+        /// attachment filename) with a short private cache so avatars don't refetch on every render.
+        /// </summary>
+        [HttpGet("{id}/content")]
+        public async Task<IActionResult> Content(ulong id, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(new GetFileContentQuery(id), cancellationToken);
+            Response.Headers.CacheControl = "private, max-age=3600";
+            return File(result.Content, result.ContentType);
+        }
     }
 }

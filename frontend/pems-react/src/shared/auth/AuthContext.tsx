@@ -21,6 +21,8 @@ interface AuthContextValue {
   logout: () => Promise<void>;
   refreshProfile: () => Promise<void>;
   changePassword: (payload: ChangePasswordRequest) => Promise<void>;
+  /** Patch the current user in place (e.g. after an avatar upload) and persist to storage. */
+  updateUser: (patch: Partial<AuthUser>) => void;
 
 
   hasRole: (roles: string[]) => boolean;
@@ -149,6 +151,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  const updateUser = useCallback((patch: Partial<AuthUser>) => {
+    setUser((prev) => {
+      if (!prev) return prev;
+      const next = { ...prev, ...patch };
+      authStorage.setUser(next); // persists pems_user + the legacy currentUser mirror
+      return next;
+    });
+  }, []);
+
   const value = useMemo<AuthContextValue>(
     () => ({
       user,
@@ -162,10 +173,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       logout,
       refreshProfile,
       changePassword,
+      updateUser,
 
       hasRole: (roles) => hasRole(user?.roleCode, roles),
     }),
-    [user, loginPortal, selectedCampusId, isLoading, login, loginWithGoogle, logout, refreshProfile, changePassword],
+    [user, loginPortal, selectedCampusId, isLoading, login, loginWithGoogle, logout, refreshProfile, changePassword, updateUser],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
