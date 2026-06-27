@@ -41,11 +41,12 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AssignRequestAssign
         private readonly IEmailActionTokenService _tokens;
         private readonly IHtmlSanitizerService _sanitizer;
         private readonly IFileStorageService _storage;
+        private readonly PEMS.Application.Emails.Utils.IEmailImageLayoutNormalizer _normalizer;
 
         public AssignRequestAssigneeCommandHandler(
             IApplicationDbContext context, ICurrentUserService currentUserService, IDateTimeService clock,
             IEmailService email, IEmailActionTokenService tokens, IHtmlSanitizerService sanitizer,
-            IFileStorageService storage)
+            IFileStorageService storage, PEMS.Application.Emails.Utils.IEmailImageLayoutNormalizer normalizer)
         {
             _context = context;
             _currentUserService = currentUserService;
@@ -54,6 +55,7 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AssignRequestAssign
             _tokens = tokens;
             _sanitizer = sanitizer;
             _storage = storage;
+            _normalizer = normalizer;
         }
 
         public async Task<bool> Handle(AssignRequestAssigneeCommand request, CancellationToken cancellationToken)
@@ -71,13 +73,11 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AssignRequestAssign
                 throw new Exception("Không có quyền phân công đơn yêu cầu của phòng ban khác");
 
             // Block assignment in terminal/in-flight statuses.
-            // DECLINED is allowed: the leader is reassigning after the previous assignee declined.
-            var blockedStatuses = new[] { "ASSIGNED", "ACCEPTED", "CHANGE_PROPOSED", "IN_PROGRESS", "DONE", "CANCELLED", "REJECTED" };
+            var blockedStatuses = new[] { "ASSIGNED", "ACCEPTED", "CHANGE_PROPOSED", "IN_PROGRESS", "DONE", "CANCELLED", "REJECTED", "DECLINED" };
             if (blockedStatuses.Contains(l.Status))
                 throw new Exception("Không thể phân công khi nhiệm vụ đang ở trạng thái: " + l.Status);
 
-            // If previous assignee declined, allow reassignment: no pending attempts should block this.
-            bool hasPendingAttempt = l.Status != "DECLINED" && await _context.VisitLogisticsAssignmentAttempts
+            bool hasPendingAttempt = await _context.VisitLogisticsAssignmentAttempts
                 .AnyAsync(a => a.LogisticsItemId == request.LogisticsItemId && a.Status == "PENDING", cancellationToken);
             if (hasPendingAttempt)
                 throw new ConflictException("Nhiệm vụ đã được phân công và đang chờ phản hồi hoặc đã được nhận.");
@@ -131,6 +131,10 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AssignRequestAssign
                 l.Status = "ASSIGNED";
                 l.UpdatedBy = userId;
                 l.UpdatedAt = now;
+
+                await PEMS.Application.EmailActions.EmailTokenInvalidationHelper.InvalidatePendingEmailActionTokensAsync(
+                    _context, EmailActionTargetTypes.LogisticsItem, request.LogisticsItemId, "Yêu cầu đã được phân công cho nhân sự khác.", now, cancellationToken);
+
                 await _context.SaveChangesAsync(cancellationToken);
 
                 // One-time ACCEPT/DECLINE tokens for the email buttons.
@@ -140,18 +144,22 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AssignRequestAssign
                 var acceptUrl = _tokens.BuildPublicActionUrl(acceptRaw);
                 var declineUrl = _tokens.BuildPublicActionUrl(declineRaw);
 
+                var detailUrl = _tokens.BuildLogisticsDetailUrl(l.LogisticsItemId);
+
                 if (editedContent != null)
                 {
                     finalSubject = request.EmailOverride!.Subject!.Trim();
                     var content = EmailComposition.StripActionArtifacts(editedContent);
-                    finalBody = EmailComposition.BrandedShell(content + EmailComposition.AcceptDeclineBlock(acceptUrl, declineUrl));
+                    finalBody = EmailComposition.BrandedShell(content + EmailComposition.LogisticsAssigneeActionBlock(acceptUrl, declineUrl, detailUrl));
                 }
                 else
                 {
                     finalSubject = $"[PEMS] Bạn được phân công xử lý hậu cần — {l.Title}";
                     finalBody = EmailComposition.BrandedShell(
-                        DefaultContentHtml(assignee.FullName, delegationName, l) + EmailComposition.AcceptDeclineBlock(acceptUrl, declineUrl));
+                        DefaultContentHtml(assignee.FullName, delegationName, l) + EmailComposition.LogisticsAssigneeActionBlock(acceptUrl, declineUrl, detailUrl));
                 }
+
+                finalBody = await _normalizer.NormalizeHtmlAsync(finalBody, cancellationToken);
 
                 var sentEmail = new SentEmail
                 {

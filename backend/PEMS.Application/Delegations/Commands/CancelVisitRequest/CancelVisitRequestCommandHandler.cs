@@ -144,6 +144,9 @@ public sealed class CancelVisitRequestCommandHandler
             instance.RowVersion += 1;
 
             cancelled.Add(new CancelledCampusDto(instance.VisitInstanceId, instance.Status));
+
+            await PEMS.Application.EmailActions.EmailTokenInvalidationHelper.InvalidateTokensForVisitInstanceAsync(
+                _db, instance.VisitInstanceId, "Chuyến tiếp khách này đã bị hủy.", now, cancellationToken);
         }
 
         _db.AuditLogs.Add(new AuditLog

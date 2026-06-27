@@ -54,6 +54,10 @@ public sealed class ExecuteEmailActionCommandHandler
             && token.TargetType == EmailActionTargetTypes.VisitParticipant)
             return await HandleParticipantAsync(request, token, result, cancellationToken);
 
+        if (token.ActionContext == EmailActionContexts.LogisticsRequestResponse
+            && token.TargetType == EmailActionTargetTypes.LogisticsItem)
+            return await HandleLogisticsRequestAsync(request, token, result, cancellationToken);
+
         if (token.ActionContext == EmailActionContexts.LogisticsAssigneeResponse
             && token.TargetType == EmailActionTargetTypes.LogisticsItem)
             return await HandleLogisticsAssigneeAsync(request, token, result, cancellationToken);
@@ -80,6 +84,7 @@ public sealed class ExecuteEmailActionCommandHandler
         var instance = await _db.VisitRequestCampuses
             .Include(c => c.VisitRequest)
             .FirstOrDefaultAsync(c => c.VisitInstanceId == participant.VisitInstanceId, cancellationToken);
+        
         result.DelegationName = instance?.VisitRequest?.DelegationName;
         result.RecipientName = await _db.Users
             .Where(u => u.UserId == participant.UserId).Select(u => u.FullName)
@@ -87,17 +92,34 @@ public sealed class ExecuteEmailActionCommandHandler
 
         var now = _clock.UtcNow;
 
-        if (token.UsedAt != null || token.ResultStatus != EmailActionResultStatuses.Pending)
-            return AlreadyResponded(result);
-        if (token.ExpiresAt < now)
+        if (token.ResultStatus == EmailActionResultStatuses.Invalid)
+        {
+            result.Status = EmailActionViewStatuses.Invalid;
+            result.Message = token.ResultMessage ?? "Lời mời này đã bị thu hồi hoặc không còn hiệu lực.";
+            return result;
+        }
+        if (token.ResultStatus == EmailActionResultStatuses.Expired || token.ExpiresAt < now)
             return await ExpireAsync(token, result, cancellationToken);
-        if (participant.Status != ParticipantStatuses.Invited)
+        if (token.ResultStatus == EmailActionResultStatuses.AlreadyResponded || token.UsedAt != null || token.ResultStatus == EmailActionResultStatuses.Success)
+            return AlreadyResponded(result);
+
+        // Parent validation
+        if (instance == null || instance.Status == VisitInstanceStatus.Cancelled || instance.Status == VisitInstanceStatus.Closed)
+            return await MarkInvalidAsync(token, request, now, result, "Đoàn khách đã bị hủy hoặc đã đóng, không thể thao tác.", cancellationToken);
+
+        // Strict target status validation
+        if (participant.Status == ParticipantStatuses.Removed)
+            return await MarkInvalidAsync(token, request, now, result, "Lời mời này đã bị thu hồi hoặc không còn hiệu lực.", cancellationToken);
+        if (participant.Status == ParticipantStatuses.Assigned)
+            return await MarkInvalidAsync(token, request, now, result, "Thành phần tham gia đã được phân công trực tiếp, không thể phản hồi qua email.", cancellationToken);
+        if (participant.Status == ParticipantStatuses.Accepted || participant.Status == ParticipantStatuses.Declined)
             return await MarkAlreadyRespondedAsync(token, request, now, result, cancellationToken);
+        if (participant.Status != ParticipantStatuses.Invited)
+            return await MarkInvalidAsync(token, request, now, result, "Trạng thái lời mời không hợp lệ.", cancellationToken);
 
         var isAccept = token.IntendedAction == EmailIntendedActions.Accept;
 
-        // A decline must carry a reason (5–1000 chars after trim). If it's missing/invalid we DON'T
-        // consume the token — return REASON_REQUIRED so the public page re-renders the form to retry.
+        // A decline must carry a reason
         string? declineNote = null;
         if (!isAccept)
         {
@@ -116,7 +138,7 @@ public sealed class ExecuteEmailActionCommandHandler
 
         participant.Status = isAccept ? ParticipantStatuses.Accepted : ParticipantStatuses.Declined;
         if (!isAccept)
-            participant.Note = declineNote; // store the decline reason on visit_participants.note
+            participant.Note = declineNote; // store the decline reason
         participant.RespondedAt = now;
         participant.UpdatedAt = now;
 
@@ -161,6 +183,105 @@ public sealed class ExecuteEmailActionCommandHandler
         return result;
     }
 
+    // ── Logistics request accept/decline (Sent to Department) ──
+    private async Task<EmailActionExecuteResult> HandleLogisticsRequestAsync(
+        ExecuteEmailActionCommand request, Domain.Entities.Emails.EmailActionToken token,
+        EmailActionExecuteResult result, CancellationToken cancellationToken)
+    {
+        var item = await _db.VisitLogisticsItems
+            .FirstOrDefaultAsync(x => x.LogisticsItemId == token.TargetId, cancellationToken);
+        if (item is null)
+        {
+            result.Status = EmailActionViewStatuses.Invalid;
+            result.Message = "Không tìm thấy yêu cầu hậu cần tương ứng.";
+            return result;
+        }
+
+        var instance = await _db.VisitRequestCampuses
+            .Include(c => c.VisitRequest)
+            .FirstOrDefaultAsync(c => c.VisitInstanceId == item.VisitInstanceId, cancellationToken);
+
+        result.DelegationName = instance?.VisitRequest?.DelegationName;
+        result.RecipientName = token.RecipientUserId.HasValue
+            ? await _db.Users.Where(u => u.UserId == token.RecipientUserId.Value).Select(u => u.FullName).FirstOrDefaultAsync(cancellationToken)
+            : null;
+
+        var now = _clock.UtcNow;
+
+        if (token.ResultStatus == EmailActionResultStatuses.Invalid)
+        {
+            result.Status = EmailActionViewStatuses.Invalid;
+            result.Message = token.ResultMessage ?? "Yêu cầu này không còn hiệu lực.";
+            return result;
+        }
+        if (token.ResultStatus == EmailActionResultStatuses.Expired || token.ExpiresAt < now)
+            return await ExpireAsync(token, result, cancellationToken);
+        if (token.ResultStatus == EmailActionResultStatuses.AlreadyResponded || token.UsedAt != null || token.ResultStatus == EmailActionResultStatuses.Success)
+            return AlreadyResponded(result);
+
+        if (instance == null || instance.Status == VisitInstanceStatus.Cancelled || instance.Status == VisitInstanceStatus.Closed)
+            return await MarkInvalidAsync(token, request, now, result, "Chuyến tiếp khách này đã bị hủy hoặc đã đóng, liên kết không còn hiệu lực.", cancellationToken);
+
+        if (item.Status != LogisticsItemStatus.Requested)
+        {
+            if (item.Status == LogisticsItemStatus.Assigned || item.Status == LogisticsItemStatus.Accepted || item.Status == LogisticsItemStatus.Done)
+                return await MarkAlreadyRespondedAsync(token, request, now, result, cancellationToken);
+            return await MarkInvalidAsync(token, request, now, result, "Yêu cầu hậu cần này không còn ở trạng thái chờ phòng ban phản hồi.", cancellationToken);
+        }
+
+        var isAccept = token.IntendedAction == EmailIntendedActions.Accept;
+
+        await using var transaction = await _db.BeginTransactionAsync(cancellationToken);
+
+        if (isAccept)
+        {
+            item.Status = LogisticsItemStatus.Accepted;
+        }
+        else
+        {
+            item.Status = LogisticsItemStatus.Rejected;
+        }
+        item.UpdatedAt = now;
+        item.UpdatedBy = token.RecipientUserId;
+
+        ConsumeToken(token, now, request, isAccept ? "Phòng ban đã tiếp nhận yêu cầu." : "Phòng ban đã từ chối yêu cầu.");
+        await BurnSiblingsAsync(token, now, cancellationToken);
+
+        if (item.RequestedBy.HasValue)
+        {
+            var verb = isAccept ? "đã tiếp nhận" : "đã từ chối";
+            _db.Notifications.Add(new Notification
+            {
+                RecipientUserId = item.RequestedBy.Value,
+                NotificationType = isAccept ? "VISIT_LOGISTICS_ACCEPTED" : "VISIT_LOGISTICS_REJECTED",
+                Title = isAccept ? "Yêu cầu hậu cần được tiếp nhận" : "Yêu cầu hậu cần bị từ chối",
+                Message = $"{result.RecipientName ?? "Phòng ban"} {verb} yêu cầu \"{item.Title}\".",
+                RelatedType = "LOGISTICS_ITEM",
+                RelatedId = item.LogisticsItemId,
+                IsRead = false,
+                CreatedAt = now,
+            });
+        }
+
+        _db.AuditLogs.Add(new AuditLog
+        {
+            ActorUserId = token.RecipientUserId,
+            Action = isAccept ? "LOGISTICS_REQUEST_ACCEPT" : "LOGISTICS_REQUEST_REJECT",
+            EntityType = "VisitLogisticsItem",
+            EntityId = item.LogisticsItemId,
+            IpAddress = request.Ip,
+            UserAgent = Truncate(request.UserAgent, 500),
+            CreatedAt = now,
+        });
+
+        await _db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+
+        result.Status = EmailActionViewStatuses.Success;
+        result.Message = isAccept ? "Phòng ban đã tiếp nhận yêu cầu thành công." : "Phòng ban đã từ chối yêu cầu.";
+        return result;
+    }
+
     // ── Logistics assignee accept/decline (Part B2 email path) ──
     private async Task<EmailActionExecuteResult> HandleLogisticsAssigneeAsync(
         ExecuteEmailActionCommand request, Domain.Entities.Emails.EmailActionToken token,
@@ -175,24 +296,47 @@ public sealed class ExecuteEmailActionCommandHandler
             return result;
         }
 
-        result.DelegationName = await (
-            from c in _db.VisitRequestCampuses
-            join v in _db.VisitRequests on c.VisitRequestId equals v.VisitRequestId
-            where c.VisitInstanceId == item.VisitInstanceId
-            select v.DelegationName).FirstOrDefaultAsync(cancellationToken);
+        var instance = await _db.VisitRequestCampuses
+            .Include(c => c.VisitRequest)
+            .FirstOrDefaultAsync(c => c.VisitInstanceId == item.VisitInstanceId, cancellationToken);
+
+        result.DelegationName = instance?.VisitRequest?.DelegationName;
         result.RecipientName = token.RecipientUserId.HasValue
             ? await _db.Users.Where(u => u.UserId == token.RecipientUserId.Value).Select(u => u.FullName).FirstOrDefaultAsync(cancellationToken)
             : null;
 
         var now = _clock.UtcNow;
 
-        if (token.UsedAt != null || token.ResultStatus != EmailActionResultStatuses.Pending)
-            return AlreadyResponded(result);
-        if (token.ExpiresAt < now)
+        if (token.ResultStatus == EmailActionResultStatuses.Invalid)
+        {
+            result.Status = EmailActionViewStatuses.Invalid;
+            result.Message = token.ResultMessage ?? "Liên kết không còn hiệu lực.";
+            return result;
+        }
+        if (token.ResultStatus == EmailActionResultStatuses.Expired || token.ExpiresAt < now)
             return await ExpireAsync(token, result, cancellationToken);
-        // The item must still be awaiting a response (either requested to the department or assigned to staff).
-        if (item.Status != LogisticsItemStatus.Assigned && item.Status != LogisticsItemStatus.Requested)
+        if (token.ResultStatus == EmailActionResultStatuses.AlreadyResponded || token.UsedAt != null || token.ResultStatus == EmailActionResultStatuses.Success)
+            return AlreadyResponded(result);
+
+        // Parent validation
+        if (instance == null || instance.Status == VisitInstanceStatus.Cancelled || instance.Status == VisitInstanceStatus.Closed)
+            return await MarkInvalidAsync(token, request, now, result, "Chuyến tiếp khách này đã bị hủy hoặc đã đóng, liên kết không còn hiệu lực.", cancellationToken);
+
+        // Strict validation based on action context
+        if (item.Status == LogisticsItemStatus.Accepted)
             return await MarkAlreadyRespondedAsync(token, request, now, result, cancellationToken);
+        if (item.Status == LogisticsItemStatus.Cancelled || item.Status == LogisticsItemStatus.Rejected || item.Status == LogisticsItemStatus.Done)
+            return await MarkInvalidAsync(token, request, now, result, "Nhiệm vụ hậu cần đã bị hủy, từ chối hoặc đã hoàn thành.", cancellationToken);
+
+        // Enforce recipient matching for Assigned items
+        if (item.Status != LogisticsItemStatus.Assigned)
+        {
+            return await MarkInvalidAsync(token, request, now, result, "Trạng thái nhiệm vụ hậu cần không hợp lệ để phản hồi.", cancellationToken);
+        }
+        if (item.AssignedToUserId != token.RecipientUserId)
+        {
+            return await MarkInvalidAsync(token, request, now, result, "Bạn không còn là người phụ trách yêu cầu này.", cancellationToken);
+        }
 
         var isAccept = token.IntendedAction == EmailIntendedActions.Accept;
 
@@ -200,17 +344,16 @@ public sealed class ExecuteEmailActionCommandHandler
 
         if (isAccept)
         {
-            item.Status = LogisticsItemStatus.Accepted;          // "ACCEPTED"
+            item.Status = LogisticsItemStatus.Accepted;
             item.AssigneeAcceptedAt = now;
         }
         else
         {
-            item.Status = LogisticsItemStatus.Rejected;          // "REJECTED" (terminal — no reassign)
+            item.Status = LogisticsItemStatus.Declined; // terminal
         }
         item.UpdatedAt = now;
         item.UpdatedBy = token.RecipientUserId;
 
-        // Mirror onto the latest PENDING attempt for this assignee.
         var attempt = await _db.VisitLogisticsAssignmentAttempts
             .Where(a => a.LogisticsItemId == item.LogisticsItemId
                         && a.AssigneeUserId == token.RecipientUserId
@@ -221,14 +364,13 @@ public sealed class ExecuteEmailActionCommandHandler
         {
             attempt.Status = isAccept ? "ACCEPTED" : "DECLINED";
             attempt.RespondedAt = now;
-            attempt.ResponseSource = "EMAIL";
+            attempt.ResponseSource = "EMAIL_TOKEN";
             attempt.UpdatedAt = now;
         }
 
         ConsumeToken(token, now, request, isAccept ? "Đã xác nhận yêu cầu/nhiệm vụ." : "Đã từ chối yêu cầu/nhiệm vụ.");
         await BurnSiblingsAsync(token, now, cancellationToken);
 
-        // Notify the appropriate person (the Assigner if assigned, or the Requester/Host if it was just requested).
         var notifyUserId = item.AssignedBy ?? item.RequestedBy;
         if (notifyUserId.HasValue)
         {
@@ -292,6 +434,21 @@ public sealed class ExecuteEmailActionCommandHandler
         await _db.SaveChangesAsync(ct);
         result.Status = EmailActionViewStatuses.Expired;
         result.Message = "Liên kết phản hồi đã hết hạn. Vui lòng liên hệ người gửi.";
+        return result;
+    }
+
+    private async Task<EmailActionExecuteResult> MarkInvalidAsync(
+        Domain.Entities.Emails.EmailActionToken token, ExecuteEmailActionCommand request, System.DateTime now,
+        EmailActionExecuteResult result, string message, CancellationToken ct)
+    {
+        token.UsedAt = now;
+        token.ResultStatus = EmailActionResultStatuses.Invalid;
+        token.ResultMessage = message;
+        token.UsedIp = request.Ip;
+        token.UsedUserAgent = Truncate(request.UserAgent, 500);
+        await _db.SaveChangesAsync(ct);
+        result.Status = EmailActionViewStatuses.Invalid;
+        result.Message = message;
         return result;
     }
 
