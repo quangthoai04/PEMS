@@ -83,7 +83,7 @@ export function SentEmailDetail() {
 
   const handleDelete = () => {
     // Navigation handling here
-    navigate('/dashboard/email?tab=sent');
+    navigate(-1);
   };
 
   if (isLoading) {
@@ -106,7 +106,7 @@ export function SentEmailDetail() {
       <div className="mb-6 flex items-center text-sm font-medium text-gray-500">
         <button onClick={() => navigate('/dashboard')} className="hover:text-[#004c91] transition-colors outline-none cursor-pointer">Dashboard</button>
         <span className="mx-2">/</span>
-        <button onClick={() => navigate('/dashboard/email?tab=sent')} className="hover:text-[#004c91] transition-colors outline-none cursor-pointer">Quản lý email</button>
+        <button onClick={() => navigate(-1)} className="hover:text-[#004c91] transition-colors outline-none cursor-pointer">Quản lý email</button>
         <span className="mx-2">/</span>
         <span className="text-[#004c91] font-bold">Chi tiết email đã gửi</span>
       </div>
@@ -115,7 +115,7 @@ export function SentEmailDetail() {
       <div className="flex items-center justify-between mb-6 pb-4 border-b border-gray-200">
         <div className="flex items-center gap-4">
           <button 
-            onClick={() => navigate('/dashboard/email?tab=sent')}
+            onClick={() => navigate(-1)}
             className="flex items-center gap-2 px-3 py-2 text-gray-500 hover:bg-gray-100 hover:text-[#004c91] rounded-lg transition-colors font-medium outline-none cursor-pointer"
           >
             <ChevronLeft className="w-5 h-5" />
