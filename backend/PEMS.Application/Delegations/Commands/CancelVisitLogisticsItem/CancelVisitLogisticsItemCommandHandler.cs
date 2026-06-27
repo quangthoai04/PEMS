@@ -78,6 +78,9 @@ public sealed class CancelVisitLogisticsItemCommandHandler
             CreatedAt = now,
         });
 
+        await PEMS.Application.EmailActions.EmailTokenInvalidationHelper.InvalidatePendingEmailActionTokensAsync(
+            _db, EmailActionTargetTypes.LogisticsItem, item.LogisticsItemId, "Yêu cầu hậu cần này đã bị hủy.", now, cancellationToken);
+
         await _db.SaveChangesAsync(cancellationToken);
 
         return new CancelVisitLogisticsItemResponse(true, item.LogisticsItemId, item.Status, "Đã hủy yêu cầu hậu cần.");

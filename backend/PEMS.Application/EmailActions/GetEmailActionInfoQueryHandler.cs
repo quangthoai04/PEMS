@@ -46,6 +46,12 @@ public sealed class GetEmailActionInfoQueryHandler
             return await HandleParticipantAsync(token, result, cancellationToken);
         }
 
+        if (token.ActionContext == EmailActionContexts.LogisticsRequestResponse
+            && token.TargetType == EmailActionTargetTypes.LogisticsItem)
+        {
+            return await HandleLogisticsRequestAsync(token, result, cancellationToken);
+        }
+
         if (token.ActionContext == EmailActionContexts.LogisticsAssigneeResponse
             && token.TargetType == EmailActionTargetTypes.LogisticsItem)
         {
@@ -63,24 +69,10 @@ public sealed class GetEmailActionInfoQueryHandler
         if (participant is null)
             return new EmailActionInfoResult { Status = EmailActionViewStatuses.Invalid };
 
-        // Determine the actionable state. (Token already consumed → already-responded; expired →
-        // expired; the participant already responded another way → already-responded; else valid.)
-        if (token.UsedAt != null || token.ResultStatus != EmailActionResultStatuses.Pending)
-            result.Status = EmailActionViewStatuses.AlreadyResponded;
-        else if (token.ExpiresAt < _clock.UtcNow)
-            result.Status = EmailActionViewStatuses.Expired;
-        else if (participant.Status != ParticipantStatuses.Invited)
-            result.Status = EmailActionViewStatuses.AlreadyResponded;
-        else
-            result.Status = EmailActionViewStatuses.Valid;
-
-        if (participant.Status == ParticipantStatuses.Accepted || participant.Status == ParticipantStatuses.Declined)
-            result.CurrentResponse = EmailActionDisplay.ResponseLabel(participant.Status);
-
-        // Display context (best-effort — never blocks rendering).
         var instance = await _db.VisitRequestCampuses
             .Include(c => c.VisitRequest)
             .FirstOrDefaultAsync(c => c.VisitInstanceId == participant.VisitInstanceId, cancellationToken);
+
         if (instance != null)
         {
             result.DelegationName = instance.VisitRequest?.DelegationName;
@@ -94,6 +86,103 @@ public sealed class GetEmailActionInfoQueryHandler
             .FirstOrDefaultAsync(cancellationToken);
         result.ParticipantRoleLabel = EmailActionDisplay.RoleLabel(participant.ParticipantRole);
 
+        // State machine validation
+        if (token.ResultStatus == EmailActionResultStatuses.Invalid)
+        {
+            result.Status = EmailActionViewStatuses.Invalid;
+        }
+        else if (token.ResultStatus == EmailActionResultStatuses.Expired || token.ExpiresAt < _clock.UtcNow)
+        {
+            result.Status = EmailActionViewStatuses.Expired;
+        }
+        else if (token.ResultStatus == EmailActionResultStatuses.AlreadyResponded || token.UsedAt != null || token.ResultStatus == EmailActionResultStatuses.Success)
+        {
+            result.Status = EmailActionViewStatuses.AlreadyResponded;
+        }
+        else if (instance == null || instance.Status == VisitInstanceStatus.Cancelled || instance.Status == VisitInstanceStatus.Closed)
+        {
+            result.Status = EmailActionViewStatuses.Invalid; // Parent invalid
+        }
+        else if (participant.Status == ParticipantStatuses.Removed || participant.Status == ParticipantStatuses.Assigned)
+        {
+            result.Status = EmailActionViewStatuses.Invalid;
+        }
+        else if (participant.Status == ParticipantStatuses.Accepted || participant.Status == ParticipantStatuses.Declined)
+        {
+            result.Status = EmailActionViewStatuses.AlreadyResponded;
+        }
+        else if (participant.Status != ParticipantStatuses.Invited)
+        {
+            result.Status = EmailActionViewStatuses.Invalid;
+        }
+        else
+        {
+            result.Status = EmailActionViewStatuses.Valid;
+        }
+
+        if (participant.Status == ParticipantStatuses.Accepted || participant.Status == ParticipantStatuses.Declined)
+            result.CurrentResponse = EmailActionDisplay.ResponseLabel(participant.Status);
+
+        return result;
+    }
+
+    private async Task<EmailActionInfoResult> HandleLogisticsRequestAsync(
+        Domain.Entities.Emails.EmailActionToken token, EmailActionInfoResult result, CancellationToken cancellationToken)
+    {
+        var item = await _db.VisitLogisticsItems
+            .FirstOrDefaultAsync(x => x.LogisticsItemId == token.TargetId, cancellationToken);
+        if (item is null)
+            return new EmailActionInfoResult { Status = EmailActionViewStatuses.Invalid };
+
+        var instance = await _db.VisitRequestCampuses
+            .Include(c => c.VisitRequest)
+            .FirstOrDefaultAsync(c => c.VisitInstanceId == item.VisitInstanceId, cancellationToken);
+        if (instance != null)
+        {
+            result.DelegationName = instance.VisitRequest?.DelegationName;
+            result.PlannedTimeText = EmailActionDisplay.FormatWindow(instance.PlannedStartAt, instance.PlannedEndAt);
+            result.CampusName = await _db.Campuses
+                .Where(c => c.CampusId == instance.CampusId).Select(c => c.Name)
+                .FirstOrDefaultAsync(cancellationToken);
+        }
+        result.RecipientName = token.RecipientUserId.HasValue
+            ? await _db.Users.Where(u => u.UserId == token.RecipientUserId.Value).Select(u => u.FullName).FirstOrDefaultAsync(cancellationToken)
+            : null;
+        result.ParticipantRoleLabel = $"Yêu cầu: {item.Title}";
+
+        if (token.ResultStatus == EmailActionResultStatuses.Invalid)
+        {
+            result.Status = EmailActionViewStatuses.Invalid;
+        }
+        else if (token.ResultStatus == EmailActionResultStatuses.Expired || token.ExpiresAt < _clock.UtcNow)
+        {
+            result.Status = EmailActionViewStatuses.Expired;
+        }
+        else if (token.ResultStatus == EmailActionResultStatuses.AlreadyResponded || token.UsedAt != null || token.ResultStatus == EmailActionResultStatuses.Success)
+        {
+            result.Status = EmailActionViewStatuses.AlreadyResponded;
+        }
+        else if (instance == null || instance.Status == VisitInstanceStatus.Cancelled || instance.Status == VisitInstanceStatus.Closed)
+        {
+            result.Status = EmailActionViewStatuses.Invalid;
+        }
+        else if (item.Status != LogisticsItemStatus.Requested)
+        {
+            if (item.Status == LogisticsItemStatus.Received || item.Status == LogisticsItemStatus.Assigned || item.Status == LogisticsItemStatus.Accepted || item.Status == LogisticsItemStatus.Done)
+                result.Status = EmailActionViewStatuses.AlreadyResponded;
+            else
+                result.Status = EmailActionViewStatuses.Invalid;
+        }
+        else
+        {
+            result.Status = EmailActionViewStatuses.Valid;
+        }
+
+        if (item.Status == LogisticsItemStatus.Received || item.Status == LogisticsItemStatus.Assigned || item.Status == LogisticsItemStatus.Accepted || item.Status == LogisticsItemStatus.Done)
+            result.CurrentResponse = "Đã tiếp nhận";
+        else if (item.Status == LogisticsItemStatus.Rejected || item.Status == LogisticsItemStatus.Cancelled)
+            result.CurrentResponse = "Đã từ chối / hủy";
+
         return result;
     }
 
@@ -104,18 +193,6 @@ public sealed class GetEmailActionInfoQueryHandler
             .FirstOrDefaultAsync(x => x.LogisticsItemId == token.TargetId, cancellationToken);
         if (item is null)
             return new EmailActionInfoResult { Status = EmailActionViewStatuses.Invalid };
-
-        if (token.UsedAt != null || token.ResultStatus != EmailActionResultStatuses.Pending)
-            result.Status = EmailActionViewStatuses.AlreadyResponded;
-        else if (token.ExpiresAt < _clock.UtcNow)
-            result.Status = EmailActionViewStatuses.Expired;
-        else if (item.Status != LogisticsItemStatus.Assigned && item.Status != LogisticsItemStatus.Requested)
-            result.Status = EmailActionViewStatuses.AlreadyResponded;
-        else
-            result.Status = EmailActionViewStatuses.Valid;
-
-        if (item.Status == LogisticsItemStatus.Accepted || item.Status == LogisticsItemStatus.Rejected)
-            result.CurrentResponse = item.Status == LogisticsItemStatus.Accepted ? "Đã xác nhận" : "Đã từ chối";
 
         var instance = await _db.VisitRequestCampuses
             .Include(c => c.VisitRequest)
@@ -132,6 +209,46 @@ public sealed class GetEmailActionInfoQueryHandler
             ? await _db.Users.Where(u => u.UserId == token.RecipientUserId.Value).Select(u => u.FullName).FirstOrDefaultAsync(cancellationToken)
             : null;
         result.ParticipantRoleLabel = $"Yêu cầu: {item.Title}"; // Repurpose this field for display
+
+        if (token.ResultStatus == EmailActionResultStatuses.Invalid)
+        {
+            result.Status = EmailActionViewStatuses.Invalid;
+        }
+        else if (token.ResultStatus == EmailActionResultStatuses.Expired || token.ExpiresAt < _clock.UtcNow)
+        {
+            result.Status = EmailActionViewStatuses.Expired;
+        }
+        else if (token.ResultStatus == EmailActionResultStatuses.AlreadyResponded || token.UsedAt != null || token.ResultStatus == EmailActionResultStatuses.Success)
+        {
+            result.Status = EmailActionViewStatuses.AlreadyResponded;
+        }
+        else if (instance == null || instance.Status == VisitInstanceStatus.Cancelled || instance.Status == VisitInstanceStatus.Closed)
+        {
+            result.Status = EmailActionViewStatuses.Invalid;
+        }
+        else if (item.Status == LogisticsItemStatus.Cancelled || item.Status == LogisticsItemStatus.Rejected || item.Status == LogisticsItemStatus.Done)
+        {
+            result.Status = EmailActionViewStatuses.Invalid;
+        }
+        else if (item.Status == LogisticsItemStatus.Accepted)
+        {
+            result.Status = EmailActionViewStatuses.AlreadyResponded;
+        }
+        else if (item.Status == LogisticsItemStatus.Assigned && item.AssignedToUserId != token.RecipientUserId)
+        {
+            result.Status = EmailActionViewStatuses.Invalid;
+        }
+        else if (item.Status != LogisticsItemStatus.Assigned)
+        {
+            result.Status = EmailActionViewStatuses.Invalid;
+        }
+        else
+        {
+            result.Status = EmailActionViewStatuses.Valid;
+        }
+
+        if (item.Status == LogisticsItemStatus.Accepted || item.Status == LogisticsItemStatus.Rejected)
+            result.CurrentResponse = item.Status == LogisticsItemStatus.Accepted ? "Đã xác nhận" : "Đã từ chối";
 
         return result;
     }

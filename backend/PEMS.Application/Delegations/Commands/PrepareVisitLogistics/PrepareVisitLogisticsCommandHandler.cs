@@ -444,7 +444,7 @@ public sealed class PrepareVisitLogisticsCommandHandler
         return new EmailActionToken
         {
             TokenHash = tokenHash,
-            ActionContext = EmailActionContexts.LogisticsAssigneeResponse,
+            ActionContext = EmailActionContexts.LogisticsRequestResponse,
             IntendedAction = intendedAction,
             ActionGroupKey = groupKey,
             TargetType = EmailActionTargetTypes.LogisticsItem,

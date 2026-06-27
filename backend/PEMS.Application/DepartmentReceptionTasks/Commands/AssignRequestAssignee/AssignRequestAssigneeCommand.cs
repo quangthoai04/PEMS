@@ -133,6 +133,10 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AssignRequestAssign
                 l.Status = "ASSIGNED";
                 l.UpdatedBy = userId;
                 l.UpdatedAt = now;
+
+                await PEMS.Application.EmailActions.EmailTokenInvalidationHelper.InvalidatePendingEmailActionTokensAsync(
+                    _context, EmailActionTargetTypes.LogisticsItem, request.LogisticsItemId, "Yêu cầu đã được phân công cho nhân sự khác.", now, cancellationToken);
+
                 await _context.SaveChangesAsync(cancellationToken);
 
                 // One-time ACCEPT/DECLINE tokens for the email buttons.
