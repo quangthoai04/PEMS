@@ -80,15 +80,19 @@ public sealed class GoogleDriveStorageService : IGoogleDriveStorageService
         {
             _logger.LogError(ex, "Google Drive avatar upload request failed.");
             throw new BusinessRuleException(
-                "Không thể cập nhật ảnh đại diện. Vui lòng thử lại.", "UPLOAD_AVATAR_FAILED");
+                "Không thể kết nối hoặc tải ảnh lên Google Drive (Authentication/Network failed).", "GOOGLE_DRIVE_AUTH_FAILED");
         }
 
         var body = await response.Content.ReadAsStringAsync(cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
             _logger.LogError("Google Drive upload returned {Status}: {Body}", (int)response.StatusCode, body);
+            if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+            {
+                throw new BusinessRuleException("Thư mục Google Drive không tồn tại hoặc không có quyền truy cập.", "GOOGLE_DRIVE_FOLDER_NOT_FOUND_OR_NO_PERMISSION");
+            }
             throw new BusinessRuleException(
-                "Không thể cập nhật ảnh đại diện. Vui lòng thử lại.", "UPLOAD_AVATAR_FAILED");
+                "Không thể tải ảnh lên Google Drive.", "GOOGLE_DRIVE_UPLOAD_FAILED");
         }
 
         using var doc = JsonDocument.Parse(body);
@@ -98,7 +102,7 @@ public sealed class GoogleDriveStorageService : IGoogleDriveStorageService
         {
             _logger.LogError("Google Drive upload succeeded but returned no file id: {Body}", body);
             throw new BusinessRuleException(
-                "Không thể cập nhật ảnh đại diện. Vui lòng thử lại.", "UPLOAD_AVATAR_FAILED");
+                "Google Drive không trả về URL của file.", "GOOGLE_DRIVE_FILE_URL_MISSING");
         }
 
         long size = content.LongLength;
@@ -155,15 +159,19 @@ public sealed class GoogleDriveStorageService : IGoogleDriveStorageService
         {
             _logger.LogError(ex, "Google Drive file upload request failed.");
             throw new BusinessRuleException(
-                "Không thể tải tệp lên Google Drive. Vui lòng thử lại.", "UPLOAD_FILE_FAILED");
+                "Không thể kết nối hoặc tải tệp lên Google Drive (Authentication/Network failed).", "GOOGLE_DRIVE_AUTH_FAILED");
         }
 
         var body = await response.Content.ReadAsStringAsync(cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
             _logger.LogError("Google Drive upload returned {Status}: {Body}", (int)response.StatusCode, body);
+            if (response.StatusCode == System.Net.HttpStatusCode.NotFound || body.Contains("notFound"))
+            {
+                throw new BusinessRuleException("Thư mục Google Drive không tồn tại hoặc không có quyền truy cập.", "GOOGLE_DRIVE_FOLDER_NOT_FOUND_OR_NO_PERMISSION");
+            }
             throw new BusinessRuleException(
-                "Không thể tải tệp lên Google Drive. Vui lòng thử lại.", "UPLOAD_FILE_FAILED");
+                $"Không thể tải tệp lên Google Drive.", "GOOGLE_DRIVE_UPLOAD_FAILED");
         }
 
         using var doc = JsonDocument.Parse(body);
@@ -173,7 +181,7 @@ public sealed class GoogleDriveStorageService : IGoogleDriveStorageService
         {
             _logger.LogError("Google Drive upload succeeded but returned no file id: {Body}", body);
             throw new BusinessRuleException(
-                "Không thể tải tệp lên Google Drive. Vui lòng thử lại.", "UPLOAD_FILE_FAILED");
+                "Google Drive không trả về URL của file.", "GOOGLE_DRIVE_FILE_URL_MISSING");
         }
 
         long size = content.LongLength;
@@ -205,8 +213,12 @@ public sealed class GoogleDriveStorageService : IGoogleDriveStorageService
         {
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
             _logger.LogError("Google Drive download returned {Status}: {Body}", (int)response.StatusCode, body);
+            if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+            {
+                throw new BusinessRuleException("Không tìm thấy tệp đính kèm trên Google Drive (Đã bị xóa hoặc không có quyền).", "EMAIL_ATTACHMENT_FILE_NOT_FOUND");
+            }
             throw new BusinessRuleException(
-                "Không thể tải ảnh từ Google Drive.", "UPLOAD_AVATAR_FAILED");
+                "Không thể tải tệp từ Google Drive.", "EMAIL_ATTACHMENT_DOWNLOAD_FAILED");
         }
 
         // Buffer to memory: avatars are small and the HttpResponseMessage would otherwise be disposed
@@ -242,12 +254,12 @@ public sealed class GoogleDriveStorageService : IGoogleDriveStorageService
         if (string.IsNullOrWhiteSpace(_options.RefreshToken))
             throw new BusinessRuleException(
                 "Google Drive chưa được kết nối. Vui lòng liên hệ người phụ trách cấu hình.",
-                "GOOGLE_DRIVE_NOT_CONNECTED");
+                "GOOGLE_DRIVE_CONFIG_MISSING");
 
         if (string.IsNullOrWhiteSpace(_options.ClientId) || string.IsNullOrWhiteSpace(_options.ClientSecret))
             throw new BusinessRuleException(
                 "Google Drive chưa được cấu hình đầy đủ (ClientId/ClientSecret).",
-                "GOOGLE_DRIVE_NOT_CONNECTED");
+                "GOOGLE_DRIVE_CONFIG_MISSING");
 
         var client = _httpClientFactory.CreateClient();
         using var form = new FormUrlEncodedContent(new Dictionary<string, string>
@@ -267,7 +279,7 @@ public sealed class GoogleDriveStorageService : IGoogleDriveStorageService
         {
             _logger.LogError(ex, "Google Drive token request failed.");
             throw new BusinessRuleException(
-                "Không thể kết nối Google Drive. Vui lòng thử lại.", "UPLOAD_AVATAR_FAILED");
+                "Không thể kết nối Google Drive. Vui lòng thử lại.", "GOOGLE_DRIVE_AUTH_FAILED");
         }
 
         var body = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -284,7 +296,7 @@ public sealed class GoogleDriveStorageService : IGoogleDriveStorageService
 
             _logger.LogError("Google Drive token endpoint returned {Status}: {Body}", (int)response.StatusCode, body);
             throw new BusinessRuleException(
-                "Không thể kết nối Google Drive. Vui lòng thử lại.", "UPLOAD_AVATAR_FAILED");
+                "Không thể kết nối Google Drive. Vui lòng thử lại.", "GOOGLE_DRIVE_AUTH_FAILED");
         }
 
         using var doc = JsonDocument.Parse(body);

@@ -18,6 +18,7 @@ import { emailsApi } from '../api/emailsApi';
 import { filesApi } from '../../../shared/api/filesApi';
 import { authStorage } from '../../../shared/auth/authStorage';
 import { contentIdForFile } from '../utils/inlineImages';
+import { ConfirmModal } from '../../../components/modals/ConfirmModal';
 
 type Toast = (type: 'success' | 'error' | 'warning' | 'info', msg: string) => void;
 
@@ -93,6 +94,7 @@ export function EmailComposeModal({
   const [showPreview, setShowPreview] = useState(false);
   const [templates, setTemplates] = useState<{ emailTemplateId: number; name: string; templateCode?: string }[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState<number | null>(emailTemplateId || null);
+  const [confirmState, setConfirmState] = useState<{isOpen: boolean; onConfirm: () => void; message: string; title: string; variant?: 'warning' | 'danger' | 'default'}>({isOpen: false, onConfirm: () => {}, message: '', title: ''});
 
   const quillRef = useRef<any>(null);
   // src (data: URL) -> inline image identity, since quill strips data-* attributes off <img>.
@@ -118,7 +120,7 @@ export function EmailComposeModal({
     dirtyRef.current = false;
     
     // Fetch ACTIVE templates
-    emailsApi.getEmailTemplateList({ page: 1, pageSize: 100 })
+    emailsApi.getEmailTemplateList({ page: 1, pageSize: 100, mode: 'use' })
       .then(res => setTemplates(res.data.items || res.data.templates || []))
       .catch(() => pushToast?.('info', 'Không tải được danh sách mẫu email. Bạn vẫn có thể soạn thủ công.'));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -252,8 +254,17 @@ export function EmailComposeModal({
   }, [pushToast, scheduleSave]);
 
   const removeAttachment = (fileId: number) => {
-    setAttachments((prev) => prev.filter((a) => a.fileId !== fileId));
-    scheduleSave();
+    setConfirmState({
+      isOpen: true,
+      title: 'Xóa tệp đính kèm',
+      message: 'Bạn có chắc chắn muốn gỡ tệp đính kèm này?',
+      variant: 'danger',
+      onConfirm: () => {
+        setConfirmState(prev => ({...prev, isOpen: false}));
+        setAttachments((prev) => prev.filter((a) => a.fileId !== fileId));
+        scheduleSave();
+      }
+    });
   };
 
   // ── Preview & Send ────────────────────────────────────────────────────────
@@ -297,10 +308,19 @@ export function EmailComposeModal({
   }, [toInput, subject, buildPayload, pushToast, onSent, onClose]);
 
   const handleDiscard = useCallback(async () => {
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    const id = draftIdRef.current;
-    if (id != null) { try { await emailDraftsApi.discardDraft(id); } catch { /* ignore */ } }
-    onClose();
+    setConfirmState({
+      isOpen: true,
+      title: 'Hủy email',
+      message: 'Email đang soạn sẽ bị hủy. Bạn có chắc chắn muốn hủy bỏ?',
+      variant: 'danger',
+      onConfirm: async () => {
+        setConfirmState(prev => ({...prev, isOpen: false}));
+        if (saveTimer.current) clearTimeout(saveTimer.current);
+        const id = draftIdRef.current;
+        if (id != null) { try { await emailDraftsApi.discardDraft(id); } catch { /* ignore */ } }
+        onClose();
+      }
+    });
   }, [onClose]);
 
   if (!open) return null;
@@ -378,7 +398,18 @@ export function EmailComposeModal({
               </button>
               <button
                 type="button"
-                onClick={handleSend}
+                onClick={() => {
+                  setConfirmState({
+                    isOpen: true,
+                    title: 'Xác nhận gửi',
+                    message: 'Bạn có chắc chắn muốn gửi email này?',
+                    variant: 'default',
+                    onConfirm: () => {
+                      setConfirmState(prev => ({...prev, isOpen: false}));
+                      handleSend();
+                    }
+                  });
+                }}
                 disabled={sending}
                 className="inline-flex items-center gap-2 rounded-lg bg-[#004c91] px-6 py-2 text-sm font-bold text-white shadow-sm hover:bg-[#013565] disabled:opacity-60 transition-colors"
               >
@@ -395,23 +426,38 @@ export function EmailComposeModal({
                 <label className="mb-1 block text-xs font-bold uppercase tracking-wide text-gray-500">Chọn mẫu email</label>
                 <select 
                   value={selectedTemplateId || ''}
-                  onChange={async (e) => {
+                  onChange={(e) => {
                     const tid = e.target.value ? Number(e.target.value) : null;
-                    if (tid) {
-                      if (subject.trim() || bodyHtml.trim()) {
-                        if (!window.confirm('Nội dung hiện tại sẽ được thay bằng mẫu đã chọn. Bạn có muốn tiếp tục?')) return;
+                    const changeTemplate = async (targetId: number | null) => {
+                      if (targetId) {
+                        try {
+                          const res = await emailsApi.getEmailTemplateDetail(targetId);
+                          setSubject(res.data.subjectVi || res.data.subject || '');
+                          setBodyHtml(res.data.bodyVi || res.data.content || '');
+                          setSelectedTemplateId(targetId);
+                          scheduleSave();
+                        } catch (err: any) {
+                          const msg = err?.response?.data?.message || 'Không tải được mẫu email. Bạn vẫn có thể soạn thủ công.';
+                          pushToast?.('error', msg);
+                        }
+                      } else {
+                        setSelectedTemplateId(null);
                       }
-                      try {
-                        const res = await emailsApi.getEmailTemplateDetail(tid);
-                        setSubject(res.data.subjectVi || res.data.subject || '');
-                        setBodyHtml(res.data.bodyVi || res.data.content || '');
-                        setSelectedTemplateId(tid);
-                        scheduleSave();
-                      } catch {
-                        pushToast?.('error', 'Không thể tải nội dung mẫu email.');
-                      }
+                    };
+
+                    if (tid && (subject.trim() || bodyHtml.trim()) && tid !== selectedTemplateId) {
+                      setConfirmState({
+                        isOpen: true,
+                        title: 'Thay đổi mẫu email',
+                        message: 'Nội dung hiện tại sẽ được thay bằng mẫu đã chọn. Bạn có muốn tiếp tục?',
+                        variant: 'warning',
+                        onConfirm: () => {
+                          setConfirmState(prev => ({...prev, isOpen: false}));
+                          changeTemplate(tid);
+                        }
+                      });
                     } else {
-                      setSelectedTemplateId(null);
+                      changeTemplate(tid);
                     }
                   }}
                   className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 outline-none focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] bg-white cursor-pointer"
@@ -517,6 +563,14 @@ export function EmailComposeModal({
           </>
         )}
       </div>
+      <ConfirmModal
+        isOpen={confirmState.isOpen}
+        onClose={() => setConfirmState(prev => ({...prev, isOpen: false}))}
+        onConfirm={confirmState.onConfirm}
+        title={confirmState.title}
+        message={confirmState.message}
+        variant={confirmState.variant}
+      />
     </div>
   );
 }

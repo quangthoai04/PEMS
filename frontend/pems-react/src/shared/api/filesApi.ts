@@ -22,9 +22,7 @@ export const filesApi = {
     const fd = new FormData();
     fd.append('file', file);
     if (purpose) fd.append('purpose', purpose);
-    const { data } = await httpClient.post('/files/upload', fd, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    });
+    const { data } = await httpClient.post('/files/upload', fd);
     return data;
   },
 

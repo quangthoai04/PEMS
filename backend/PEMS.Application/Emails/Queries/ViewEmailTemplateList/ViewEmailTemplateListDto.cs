@@ -6,6 +6,8 @@ namespace PEMS.Application.Emails.Queries.ViewEmailTemplateList;
 public sealed class ViewEmailTemplateListDto
 {
     public List<EmailTemplateListItemDto> Templates { get; set; } = new();
+    public int TotalItems { get; set; }
+    public int TotalPages { get; set; }
 }
 
 public sealed class EmailTemplateListItemDto

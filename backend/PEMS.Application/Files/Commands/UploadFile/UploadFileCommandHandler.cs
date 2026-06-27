@@ -83,18 +83,37 @@ public sealed class UploadFileCommandHandler : IRequestHandler<UploadFileCommand
         }
 
         _db.Files.Add(file);
-        await _db.SaveChangesAsync(cancellationToken);
 
-        if (file.StorageProvider != "GOOGLE_DRIVE")
+        try
         {
-            // Stable URL pointing at our authenticated download endpoint (used by email MIME + UI).
-            var baseUrl = (_configuration["App:PublicApiBaseUrl"] ?? string.Empty).TrimEnd('/');
-            var downloadUrl = string.IsNullOrEmpty(baseUrl) ? null : $"{baseUrl}/api/files/{file.FileId}/download";
-            var isImage = request.ContentType is { } m && m.StartsWith("image/", StringComparison.OrdinalIgnoreCase);
-            file.DownloadUrl = downloadUrl;
-            file.WebViewUrl = downloadUrl;
-            file.ThumbnailUrl = isImage ? downloadUrl : null;
             await _db.SaveChangesAsync(cancellationToken);
+
+            if (file.StorageProvider != "GOOGLE_DRIVE")
+            {
+                // Stable URL pointing at our authenticated download endpoint (used by email MIME + UI).
+                var baseUrl = (_configuration["App:PublicApiBaseUrl"] ?? string.Empty).TrimEnd('/');
+                var downloadUrl = string.IsNullOrEmpty(baseUrl) ? null : $"{baseUrl}/api/files/{file.FileId}/download";
+                var isImage = request.ContentType is { } m && m.StartsWith("image/", StringComparison.OrdinalIgnoreCase);
+                file.DownloadUrl = downloadUrl;
+                file.WebViewUrl = downloadUrl;
+                file.ThumbnailUrl = isImage ? downloadUrl : null;
+                await _db.SaveChangesAsync(cancellationToken);
+            }
+        }
+        catch (Exception ex)
+        {
+            if (file.StorageProvider == "GOOGLE_DRIVE" && !string.IsNullOrEmpty(file.ExternalFileId))
+            {
+                try
+                {
+                    await _googleDrive.DeleteAsync(file.ExternalFileId, cancellationToken);
+                }
+                catch
+                {
+                    // Ignore delete errors during rollback, file remains orphaned in Drive
+                }
+            }
+            throw new BusinessRuleException("Lưu metadata file thất bại.", "FILE_METADATA_SAVE_FAILED");
         }
 
         return new UploadedFileDto

@@ -28,7 +28,7 @@ export const emailsApi = {
   sendEmail: (data: any) => {
     return httpClient.post('/Emails/sendemail', data);
   },
-  getEmailTemplateList: (params?: { keyword?: string; status?: string; page?: number; pageSize?: number }) => {
+  getEmailTemplateList: (params?: { keyword?: string; status?: string; page?: number; pageSize?: number; mode?: string }) => {
     return httpClient.get('/email-templates', { params });
   },
   getEmailTemplateDetail: (id: number | string) => {

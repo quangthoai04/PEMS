@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Search, Plus, Eye, Edit2, ChevronLeft, ChevronRight, Check, ArrowUpDown, Send } from 'lucide-react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { EmailComposeModal } from '../../../features/emails/components/EmailComposeModal';
 import { TemplateManagement } from './TemplateManagement';
 
@@ -17,8 +17,16 @@ export function EmailManagement() {
   const isStaff = userRole === 'STAFF' || userRole === 'DEPARTMENT' || userRole === 'STUDENT' || userRole === 'VISITOR';
   const isVisitor = userRole === 'VISITOR';
 
-  const tabParam = new URLSearchParams(location.search).get('tab');
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const tabParam = searchParams.get('tab');
   const initialMailbox = tabParam === 'sent' ? 'sent' : tabParam === 'received' ? 'received' : 'all';
+  const initialPage = parseInt(searchParams.get('page') || '1', 10);
+  const initialSearch = searchParams.get('search') || '';
+  const initialRelated = searchParams.get('related') || '';
+  const initialStart = searchParams.get('start') || '';
+  const initialEnd = searchParams.get('end') || '';
+
   const [activeTab, setActiveTab] = useState<'emails' | 'templates'>('emails');
   const [showTemplateModal, setShowTemplateModal] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<any>(null);
@@ -35,20 +43,38 @@ export function EmailManagement() {
   const [itemsPerPage, setItemsPerPage] = useState(5);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [purposeFilter, setPurposeFilter] = useState('');
   const [isLoadingTemplates, setIsLoadingTemplates] = useState(false);
+  const [totalTemplates, setTotalTemplates] = useState(0);
 
   // Email List state
   const [sentData, setSentData] = useState<any[]>([]);
-  const [pageSent, setPageSent] = useState(1);
+  const [pageSent, setPageSent] = useState(initialPage);
   const [itemsPerPageSent, setItemsPerPageSent] = useState(10);
-  const [searchQuerySent, setSearchQuerySent] = useState('');
+  const [searchQuerySent, setSearchQuerySent] = useState(initialSearch);
   const [mailboxFilter, setMailboxFilter] = useState(initialMailbox); // all, sent, received
-  const [relatedTypeFilter, setRelatedTypeFilter] = useState(''); // VISIT_REQUEST, GENERAL
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
+  const [relatedTypeFilter, setRelatedTypeFilter] = useState(initialRelated); // VISIT_REQUEST, GENERAL
+  const [startDate, setStartDate] = useState(initialStart);
+  const [endDate, setEndDate] = useState(initialEnd);
   const [totalEmails, setTotalEmails] = useState(0);
   const [isLoadingEmails, setIsLoadingEmails] = useState(false);
   const [toastMessage, setToastMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
+
+  React.useEffect(() => {
+    const params = new URLSearchParams(searchParams);
+    let changed = false;
+    
+    if (pageSent !== 1) { params.set('page', pageSent.toString()); changed = true; } else { params.delete('page'); }
+    if (searchQuerySent) { params.set('search', searchQuerySent); changed = true; } else { params.delete('search'); }
+    if (mailboxFilter !== 'all') { params.set('tab', mailboxFilter); changed = true; } else { params.delete('tab'); }
+    if (relatedTypeFilter) { params.set('related', relatedTypeFilter); changed = true; } else { params.delete('related'); }
+    if (startDate) { params.set('start', startDate); changed = true; } else { params.delete('start'); }
+    if (endDate) { params.set('end', endDate); changed = true; } else { params.delete('end'); }
+
+    if (params.toString() !== searchParams.toString()) {
+      setSearchParams(params, { replace: true });
+    }
+  }, [pageSent, searchQuerySent, mailboxFilter, relatedTypeFilter, startDate, endDate, searchParams, setSearchParams]);
 
   const showPageToast = (type: 'success' | 'error' | 'info', text: string) => {
     setToastMessage({ type, text });
@@ -92,14 +118,18 @@ export function EmailManagement() {
         const res = await emailsApi.getEmailTemplateList({
           keyword: searchQuery,
           status: statusFilter,
+          purpose: purposeFilter,
+          mode: 'use',
           page,
           pageSize: itemsPerPage,
         });
         const items = res.data.items || res.data.templates || [];
         setData(Array.isArray(items) ? items : []);
+        setTotalTemplates(res.data.totalCount || res.data.totalItems || 0);
       } catch (error) {
         console.error('Failed to fetch email templates:', error);
         setData([]);
+        setTotalTemplates(0);
       } finally {
         setIsLoadingTemplates(false);
       }
@@ -107,20 +137,7 @@ export function EmailManagement() {
 
     const timeoutId = setTimeout(fetchTemplates, 300);
     return () => clearTimeout(timeoutId);
-  }, [showTemplateModal, selectedTemplate, searchQuery, statusFilter, page, itemsPerPage]);
-
-  // Filter templates
-  const filteredData = data.filter(item => {
-    const name = item.name || item.templateName || item.templateCode || '';
-    const subject = item.subject || '';
-    const status = item.status || '';
-    const matchSearch = name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                       subject.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchStatus = statusFilter ? status === statusFilter : true;
-    return matchSearch && matchStatus;
-  });
-  const totalPages = Math.ceil(filteredData.length / itemsPerPage);
-  const currentItems = filteredData.slice((page - 1) * itemsPerPage, page * itemsPerPage);
+  }, [showTemplateModal, selectedTemplate, searchQuery, statusFilter, purposeFilter, page, itemsPerPage]);
 
   const totalPagesSent = Math.ceil(totalEmails / itemsPerPageSent);
   const currentItemsSent = sentData;
@@ -419,18 +436,37 @@ export function EmailManagement() {
                 </div>
               </div>
             ) : (
-              <>
-                <div className="flex items-center gap-3 mb-4">
+              <div className="flex flex-col h-[calc(90vh-140px)]">
+                <div className="flex items-center gap-3 mb-4 shrink-0">
                   <div className="relative flex-1">
                     <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
                     <input 
                       type="text" 
                       value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
+                      onChange={(e) => { setSearchQuery(e.target.value); setPage(1); }}
                       placeholder="Tìm kiếm mẫu email..." 
                       className="w-full pl-10 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-[#004c91]" 
                     />
                   </div>
+                  <select
+                    value={purposeFilter}
+                    onChange={(e) => { setPurposeFilter(e.target.value); setPage(1); }}
+                    className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#004c91] bg-white outline-none"
+                  >
+                    <option value="">Tất cả mục đích</option>
+                    <option value="VISIT_REQUEST">Lịch thăm</option>
+                    <option value="LOGISTICS">Hậu cần</option>
+                    <option value="GENERAL">Khác</option>
+                  </select>
+                  <select
+                    value={itemsPerPage}
+                    onChange={(e) => { setItemsPerPage(Number(e.target.value)); setPage(1); }}
+                    className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#004c91] bg-white outline-none"
+                  >
+                    <option value="5">5 dòng/trang</option>
+                    <option value="10">10 dòng/trang</option>
+                    <option value="20">20 dòng/trang</option>
+                  </select>
                 </div>
 
                 <div className="overflow-y-auto flex-1 rounded-lg border border-gray-200">
@@ -445,16 +481,16 @@ export function EmailManagement() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                      {currentItems.length === 0 ? (
+                      {data.length === 0 ? (
                         <tr>
                           <td colSpan={5} className="p-8 text-center text-gray-500">
-                            Chưa có mẫu email khả dụng.
+                            Không tìm thấy mẫu email phù hợp.
                           </td>
                         </tr>
                       ) : (
-                        currentItems.map((item, index) => (
+                        data.map((item, index) => (
                           <tr key={item.id || item.emailTemplateId} className="hover:bg-gray-50">
-                            <td className="p-3 align-middle text-center text-[13px]">{index + 1}</td>
+                            <td className="p-3 align-middle text-center text-[13px]">{index + 1 + (page - 1) * itemsPerPage}</td>
                             <td className="p-3 align-middle font-bold text-[#004c91] text-[13px] pl-4">{item.name}</td>
                             <td className="p-3 align-middle text-gray-600 text-[13px] pl-4">{item.purpose || item.description || ''}</td>
                             <td className="p-3 align-middle text-center">
@@ -480,7 +516,43 @@ export function EmailManagement() {
                     </tbody>
                   </table>
                 </div>
-              </>
+                
+                {/* Pagination for Template List */}
+                {totalTemplates > 0 && (
+                  <div className="flex items-center justify-between border-t border-slate-200 pt-4 mt-4 shrink-0">
+                    <p className="text-sm font-medium text-slate-500">
+                      Hiển thị {(page - 1) * itemsPerPage + 1}-{Math.min(page * itemsPerPage, totalTemplates)} / {totalTemplates} mẫu
+                    </p>
+                    <div className="flex items-center gap-1.5">
+                      <button 
+                        onClick={() => setPage(p => Math.max(1, p - 1))}
+                        disabled={page === 1}
+                        className="px-3 py-1.5 rounded-md border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:hover:bg-transparent outline-none"
+                      >
+                        Trước
+                      </button>
+                      <div className="flex items-center gap-1">
+                        {Array.from({ length: Math.ceil(totalTemplates / itemsPerPage) }, (_, i) => i + 1).map(p => (
+                          <button
+                            key={p}
+                            onClick={() => setPage(p)}
+                            className={`w-8 h-8 rounded-md text-sm font-medium transition-colors outline-none ${page === p ? 'bg-[#004c91] text-white' : 'text-gray-600 hover:bg-gray-100 border border-transparent'}`}
+                          >
+                            {p}
+                          </button>
+                        ))}
+                      </div>
+                      <button 
+                        onClick={() => setPage(p => Math.min(Math.ceil(totalTemplates / itemsPerPage), p + 1))}
+                        disabled={page === Math.ceil(totalTemplates / itemsPerPage)}
+                        className="px-3 py-1.5 rounded-md border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:hover:bg-transparent outline-none"
+                      >
+                        Sau
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             )}
           </div>
         </div>
