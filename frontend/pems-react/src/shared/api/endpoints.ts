@@ -14,8 +14,6 @@ export const API_ENDPOINTS = {
     // UC-14 view my profile, UC-15 update my profile (self-service; user resolved from token).
     me: '/profiles/viewprofile',
     update: '/profiles/updateprofile',
-    // UC-15 upload avatar (multipart/form-data, field "avatar"). Backend uploads to Google Drive.
-    avatar: '/profiles/me/avatar',
   },
   campuses: {
     active: '/campuses/active',

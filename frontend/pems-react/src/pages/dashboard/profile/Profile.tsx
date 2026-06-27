@@ -1,24 +1,21 @@
 /**
  * Trang Hồ sơ cá nhân (self-service profile).
- * UC-14 View Profile + UC-15 Update Profile (text fields + avatar upload).
+ * UC-14 View Profile + UC-15 Update Profile (text fields). Avatar upload chưa triển khai.
  * Dữ liệu lấy từ backend qua GET /profiles/viewprofile; không hardcode cơ sở theo role.
  */
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
 import {
-  Edit2, Phone, School, ShieldCheck, User, Save, X, Mail, Briefcase, Globe, IdCard, Building2, CheckCircle2, AlertCircle, Camera, Loader2,
+  Edit2, Phone, School, ShieldCheck, User, Save, X, Mail, Briefcase, Globe, IdCard, Building2, CheckCircle2, AlertCircle,
 } from 'lucide-react';
 import avatarImg from '../../../assets/Avatar/AvatarDefault.png';
 import { useProfile } from '../../../features/profile/hooks/useProfile';
-import { profileApi, validateAvatarFile } from '../../../features/profile/api/profileApi';
 import type { GenderValue, UpdateProfileRequest, ViewProfileResponse } from '../../../features/profile/types/profile.types';
 import { NationalitySearchableDropdown } from '../../../features/profile/components/NationalitySearchableDropdown';
 import { nationalityLabel } from '../../../features/profile/constants/nationalities';
 import { getAuthErrorMessage } from '../../../features/authentication/api/authError';
-import { useAuthenticatedImage } from '../../../shared/hooks/useAuthenticatedImage';
-import { AVATAR_UPDATED_EVENT } from '../../../shared/hooks/useCurrentUserAvatar';
 
 const GENDER_LABELS: Record<GenderValue, string> = { MALE: 'Nam', FEMALE: 'Nữ', OTHER: 'Khác' };
 
@@ -74,29 +71,9 @@ function syncLocalUser(updated: ViewProfileResponse) {
   }
 }
 
-/** Mirror the new avatar URL into the legacy local user objects (Header/Sidebar pick it up later). */
-function syncLocalAvatar(avatarUrl: string) {
-  try {
-    const cuRaw = localStorage.getItem('currentUser');
-    if (cuRaw) {
-      const cu = JSON.parse(cuRaw);
-      cu.avatarUrl = avatarUrl;
-      localStorage.setItem('currentUser', JSON.stringify(cu));
-    }
-    const puRaw = localStorage.getItem('pems_user');
-    if (puRaw) {
-      const pu = JSON.parse(puRaw);
-      pu.avatarUrl = avatarUrl;
-      localStorage.setItem('pems_user', JSON.stringify(pu));
-    }
-  } catch {
-    /* ignore malformed local state */
-  }
-}
-
 export function Profile() {
   const navigate = useNavigate();
-  const { profile, loading, error, update, applyAvatar } = useProfile();
+  const { profile, loading, error, update } = useProfile();
 
   const [isEditing, setIsEditing] = useState(false);
   const [form, setForm] = useState<EditForm>({ fullName: '', gender: '', phone: '', nationality: '' });
@@ -104,72 +81,12 @@ export function Profile() {
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
-  // ── Avatar upload (UC-15) ──────────────────────────────────────────────────
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [avatarFile, setAvatarFile] = useState<File | null>(null);
-  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
-  const [avatarUploading, setAvatarUploading] = useState(false);
-
-  // Real avatar is served by an authenticated proxy endpoint — fetch it as a blob.
-  const { src: fetchedAvatar } = useAuthenticatedImage(profile?.avatarUrl ?? null);
-  // Local preview (just-picked or just-saved image) wins, then the fetched avatar, then default.
-  const displayedAvatar = avatarPreview ?? fetchedAvatar ?? avatarImg;
-
-  // Revoke the preview object URL when it changes or on unmount.
-  useEffect(() => {
-    if (!avatarPreview) return;
-    return () => URL.revokeObjectURL(avatarPreview);
-  }, [avatarPreview]);
-
   useEffect(() => {
     if (toast) {
       const t = setTimeout(() => setToast(null), 3500);
       return () => clearTimeout(t);
     }
   }, [toast]);
-
-  const openFilePicker = () => fileInputRef.current?.click();
-
-  const onAvatarSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = ''; // allow re-picking the same file
-    if (!file) return;
-
-    const err = validateAvatarFile(file);
-    if (err) {
-      setToast({ type: 'error', message: err });
-      return;
-    }
-    if (avatarPreview) URL.revokeObjectURL(avatarPreview);
-    setAvatarFile(file);
-    setAvatarPreview(URL.createObjectURL(file));
-  };
-
-  const cancelAvatar = () => {
-    if (avatarPreview) URL.revokeObjectURL(avatarPreview);
-    setAvatarFile(null);
-    setAvatarPreview(null);
-  };
-
-  const saveAvatar = async () => {
-    if (!avatarFile) return;
-    setAvatarUploading(true);
-    try {
-      const res = await profileApi.uploadAvatar(avatarFile);
-      applyAvatar(res.avatarUrl);
-      syncLocalAvatar(res.avatarUrl);
-      // Tell the Sidebar/Header avatars to refresh immediately.
-      window.dispatchEvent(new Event(AVATAR_UPDATED_EVENT));
-      // Keep showing the just-uploaded image (preview) so there's no flash; clear the pending state.
-      setAvatarFile(null);
-      setToast({ type: 'success', message: 'Cập nhật ảnh đại diện thành công.' });
-    } catch (err) {
-      // Keep the picked file so the user can retry; old avatar stays untouched on the server.
-      setToast({ type: 'error', message: getAuthErrorMessage(err, 'Không thể cập nhật ảnh đại diện. Vui lòng thử lại.') });
-    } finally {
-      setAvatarUploading(false);
-    }
-  };
 
   const isVisitor = profile?.roleCode === 'VISITOR';
   const isStudent = profile?.roleCode === 'STUDENT';
@@ -302,68 +219,15 @@ export function Profile() {
 
           <div className="px-8 pb-10">
             <div className="flex flex-col items-start gap-8 md:flex-row">
-              {/* Avatar — UC-15 upload */}
+              {/* Avatar (upload chưa triển khai) */}
               <div className="relative -mt-16 flex flex-shrink-0 flex-col items-center">
-                <div className="group relative h-36 w-36">
-                  <div className="flex h-36 w-36 items-center justify-center overflow-hidden rounded-full bg-gray-100 shadow-md ring-4 ring-white">
-                    <img src={displayedAvatar} alt="Avatar" className="h-full w-full object-cover" />
-                  </div>
-
-                  {/* Uploading overlay */}
-                  {avatarUploading && (
-                    <div className="absolute inset-0 flex items-center justify-center rounded-full bg-black/40">
-                      <Loader2 className="h-7 w-7 animate-spin text-white" />
-                    </div>
-                  )}
-
-                  {/* "Đổi ảnh" button — only when the account is ACTIVE and not mid-upload */}
-                  {profile.status === 'ACTIVE' && !avatarUploading && (
-                    <button
-                      type="button"
-                      onClick={openFilePicker}
-                      title="Đổi ảnh đại diện"
-                      className="absolute bottom-1 right-1 flex h-10 w-10 items-center justify-center rounded-full border-2 border-white bg-[#004c91] text-white shadow-md transition-all hover:bg-[#0066c0]"
-                    >
-                      <Camera className="h-5 w-5" />
-                    </button>
-                  )}
-
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp"
-                    className="hidden"
-                    onChange={onAvatarSelected}
+                <div className="flex h-36 w-36 items-center justify-center overflow-hidden rounded-full bg-gray-100 shadow-md">
+                  <img
+                    src={avatarImg}
+                    alt="Avatar"
+                    className="h-full w-full object-cover"
                   />
                 </div>
-
-                {/* Pending save/cancel — shown after a valid file is picked */}
-                {avatarFile && (
-                  <div className="mt-3 flex flex-col items-center gap-2">
-                    <span className="text-xs font-medium text-amber-600">Ảnh chưa được lưu</span>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={saveAvatar}
-                        disabled={avatarUploading}
-                        className="flex items-center gap-1.5 rounded-lg bg-[#004c91] px-3 py-1.5 text-xs font-bold text-white shadow-sm transition-all hover:bg-[#0066c0] disabled:opacity-60"
-                      >
-                        <Save className="h-3.5 w-3.5" />
-                        {avatarUploading ? 'Đang lưu...' : 'Lưu ảnh'}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={cancelAvatar}
-                        disabled={avatarUploading}
-                        className="flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-600 transition-all hover:bg-gray-50 disabled:opacity-60"
-                      >
-                        <X className="h-3.5 w-3.5" />
-                        Hủy
-                      </button>
-                    </div>
-                  </div>
-                )}
-
                 <div className="mt-4 flex flex-col items-center">
                   <div className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-bold uppercase tracking-wide shadow-sm ${roleBadge}`}>
                     <ShieldCheck className="h-3.5 w-3.5" />

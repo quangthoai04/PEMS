@@ -13,7 +13,6 @@ import avatarImg from '../../assets/Avatar/AvatarDefault.png';
 import { SearchPopup } from '../modals/SearchPopup';
 import { LoginModal } from '../modals/LoginModal';
 import { motion, AnimatePresence } from 'motion/react';
-import { useCurrentUserAvatar } from '../../shared/hooks/useCurrentUserAvatar';
 
 export function Header() {
   const [lang, setLang] = React.useState('VI');
@@ -23,7 +22,6 @@ export function Header() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
-  const avatarSrc = useCurrentUserAvatar();
 
   // Close mobile menu on navigate
   useEffect(() => {
@@ -116,7 +114,7 @@ export function Header() {
                     onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)}
                     className="flex items-center justify-between gap-1.5 px-2 py-1.5 rounded-full hover:bg-gray-50 transition-colors border border-transparent hover:border-gray-200 max-w-[100px] lg:max-w-[130px] xl:max-w-[180px]"
                   >
-                    <img src={avatarSrc ?? avatarImg} alt="Avatar" className="w-8 h-8 flex-shrink-0 rounded-full border border-gray-200 object-cover" />
+                    <img src={avatarImg} alt="Avatar" className="w-8 h-8 flex-shrink-0 rounded-full border border-gray-200 object-cover" />
                     <span className="font-bold text-[#004c91] text-sm truncate flex-1 block overflow-hidden">{user.name}</span>
                     <ChevronDown className="w-4 h-4 flex-shrink-0 text-gray-500" />
                   </button>
@@ -256,7 +254,7 @@ export function Header() {
               {user ? (
                 <div className="space-y-3">
                   <div className="flex items-center gap-3 px-3 py-2 bg-white rounded-xl border border-slate-100 shadow-xs">
-                    <img src={avatarSrc ?? avatarImg} alt="Avatar" className="w-10 h-10 rounded-full border border-slate-250 object-cover" />
+                    <img src={avatarImg} alt="Avatar" className="w-10 h-10 rounded-full border border-slate-250 object-cover" />
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-bold text-[#004c91] truncate">{user.name}</p>
                       <p className="text-xs text-slate-405 truncate">{user.role || 'Đối tác / Khách'}</p>

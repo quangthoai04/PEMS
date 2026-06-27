@@ -37,7 +37,6 @@ import logo from "../../assets/images/2021-FPTU-Eng.png";
 import avatarImg from "../../assets/Avatar/AvatarDefault.png";
 import { motion, AnimatePresence } from "motion/react";
 import { useAuth } from "../../shared/hooks/useAuth";
-import { useCurrentUserAvatar } from "../../shared/hooks/useCurrentUserAvatar";
 
 
 interface SidebarProps {
@@ -50,7 +49,6 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile }: SidebarProps) {
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const navigate = useNavigate();
   const { logout } = useAuth();
-  const avatarSrc = useCurrentUserAvatar();
 
   // Get user from localStorage
   const userStr = localStorage.getItem("currentUser");
@@ -128,16 +126,9 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile }: SidebarProps) {
         )}
 
 
-        {/* Logo — click để quay về trang chủ */}
+        {/* Logo */}
         <div className="flex justify-center px-6 mb-8 flex-shrink-0">
-          <button
-            type="button"
-            onClick={() => { navigate("/"); handleLinkClick(); }}
-            className="cursor-pointer transition-opacity hover:opacity-80"
-            aria-label="Về trang chủ"
-          >
-            <img src={logo} alt="FPT University" className="h-20 object-contain" />
-          </button>
+          <img src={logo} alt="FPT University" className="h-20 object-contain" />
         </div>
 
 
@@ -247,7 +238,7 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile }: SidebarProps) {
             <div className="flex items-center gap-3">
               <div className="w-14 h-14 rounded-full overflow-hidden border-2 border-gray-100 bg-gray-50 flex-shrink-0 flex items-center justify-center">
                 <img
-                  src={avatarSrc ?? avatarImg}
+                  src={avatarImg}
                   alt="Avatar"
                   className="w-[115%] h-[115%] object-cover max-w-none"
                 />

@@ -9,8 +9,6 @@ interface UseProfileResult {
   refetch: () => Promise<void>;
   /** Updates allowed fields; on success refreshes local state and returns the new profile. */
   update: (payload: UpdateProfileRequest) => Promise<ViewProfileResponse>;
-  /** Patches just the avatar URL in local state after a successful upload (no refetch flash). */
-  applyAvatar: (avatarUrl: string) => void;
 }
 
 /** UC-14 + UC-15 — loads the current user's profile and exposes an update action. */
@@ -42,9 +40,5 @@ export function useProfile(): UseProfileResult {
     return updated;
   }, []);
 
-  const applyAvatar = useCallback((avatarUrl: string) => {
-    setProfile((prev) => (prev ? { ...prev, avatarUrl } : prev));
-  }, []);
-
-  return { profile, loading, error, refetch, update, applyAvatar };
+  return { profile, loading, error, refetch, update };
 }
