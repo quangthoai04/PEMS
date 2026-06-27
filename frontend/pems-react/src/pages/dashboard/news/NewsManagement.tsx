@@ -259,10 +259,9 @@ export function NewsManagement() {
           <table className="w-full border-collapse min-w-[1000px]">
             <thead>
               <tr className="bg-[#004c91] text-white text-[12px] tracking-wide uppercase text-center">
-                <th className="p-3 font-bold w-[26%] text-left pl-6">TIÊU ĐỀ</th>
-                <th className="p-3 font-bold w-[20%] text-left pl-6">MÔ TẢ</th>
-                <th className="p-3 font-bold w-[90px]">ẢNH</th>
-                <th className="p-3 font-bold w-[120px] whitespace-nowrap">NGƯỜI TẠO</th>
+                <th className="p-3 font-bold w-[30%] text-left pl-6">TIÊU ĐỀ</th>
+                <th className="p-3 font-bold w-[25%] text-left pl-6">MÔ TẢ</th>
+                <th className="p-3 font-bold w-[130px] whitespace-nowrap">NGƯỜI TẠO</th>
                 <th
                   className="p-3 font-bold w-[150px] whitespace-nowrap cursor-pointer hover:bg-[#003a70] bg-[#004c91] text-white transition-colors select-none group"
                   onClick={() => {
@@ -282,7 +281,7 @@ export function NewsManagement() {
             <tbody className="divide-y divide-gray-200">
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="py-16 text-center text-gray-400">
+                  <td colSpan={6} className="py-16 text-center text-gray-400">
                     <div className="flex items-center justify-center gap-2">
                       <div className="w-5 h-5 border-2 border-[#004c91] border-t-transparent rounded-full animate-spin"></div>
                       <span>Đang tải...</span>
@@ -291,11 +290,11 @@ export function NewsManagement() {
                 </tr>
               ) : error ? (
                 <tr>
-                  <td colSpan={7} className="py-16 text-center text-red-500">{error}</td>
+                  <td colSpan={6} className="py-16 text-center text-red-500">{error}</td>
                 </tr>
               ) : items.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-16 text-center text-gray-400">Không có dữ liệu.</td>
+                  <td colSpan={6} className="py-16 text-center text-gray-400">Không có dữ liệu.</td>
                 </tr>
               ) : (
                 items.map(item => (
@@ -305,19 +304,6 @@ export function NewsManagement() {
                     </td>
                     <td className="p-3 align-middle text-gray-500 text-[12px] leading-relaxed text-left pl-6">
                       <div className="line-clamp-2">{item.description}</div>
-                    </td>
-                    <td className="p-3 align-middle">
-                      <div className="w-[72px] h-[50px] mx-auto rounded border border-gray-100 bg-gray-50 p-1 shadow-sm overflow-hidden flex items-center justify-center">
-                        {item.coverThumbnailUrl ?? item.coverImageUrl ? (
-                          <img
-                            src={item.coverThumbnailUrl ?? item.coverImageUrl}
-                            alt=""
-                            className="max-w-full max-h-full object-contain"
-                          />
-                        ) : (
-                          <span className="text-gray-300 text-xs">—</span>
-                        )}
-                      </div>
                     </td>
                     <td className="p-3 align-middle whitespace-nowrap">
                       <div className="font-bold text-[#004c91] text-[13px]">{item.authorName}</div>

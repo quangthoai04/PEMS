@@ -49,6 +49,34 @@ namespace PEMS.Api.Controllers
             return Ok(result);
         }
 
+        // Create News support: get eligible closed visit instances
+        [HttpGet("eligible-visit-instances")]
+        [RoleAuthorize(EffectiveRole.Staff, EffectiveRole.Student)]
+        public async Task<IActionResult> GetEligibleVisitInstances(
+            [FromQuery] bool includeAlreadyHasNews = false,
+            CancellationToken cancellationToken = default)
+        {
+            var q = new PEMS.Application.News.Queries.GetEligibleVisitInstancesForNews
+                .GetEligibleVisitInstancesForNewsQuery
+            {
+                IncludeAlreadyHasNews = includeAlreadyHasNews
+            };
+            var result = await _mediator.Send(q, cancellationToken);
+            return Ok(result);
+        }
+
+        // UC-Create News: POST /api/news
+        [HttpPost]
+        [RoleAuthorize(EffectiveRole.Staff, EffectiveRole.Student)]
+        public async Task<IActionResult> CreateNews(
+            [FromBody] PEMS.Application.News.Commands.CreateNews.CreateNewsCommand command,
+            CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(command, cancellationToken);
+            if (!result.Success) return Conflict(result);
+            return StatusCode(201, result);
+        }
+
         [HttpPost("approvenews")]
         public async Task<IActionResult> ApproveNews(
             [FromBody] PEMS.Application.News.Commands.ApproveNews.ApproveNewsCommand command,
