@@ -256,6 +256,10 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
     setProposalSubmitted(false);
     setDeptPreliminaryStatus('pending');
     setDeptRejectReason('');
+    setSafuriBG1Signed(null);
+    setSafuriBG2Signed(null);
+    setSafuriNT1Signed(null);
+    setSafuriNT2Signed(null);
   }, [activePopoverEvent?.id]);
 
   // States for interactive handover & acceptance of Safuri event
@@ -325,6 +329,20 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
         } else if (activePopoverEvent.itemType === 'REQUEST') {
           const detail = await departmentReceptionTasksApi.getRequestDetail(activePopoverEvent.rawId);
           setActiveEventDetail(detail);
+          setSafuriBG1Signed(toHandoverSignatureText(detail.borrowProviderSignature));
+          setSafuriBG2Signed(toHandoverSignatureText(detail.borrowBorrowerSignature));
+          setSafuriNT1Signed(toHandoverSignatureText(detail.returnProviderSignature));
+          setSafuriNT2Signed(toHandoverSignatureText(detail.returnBorrowerSignature));
+          if (detail.borrowNote) {
+            const notes = parseHandoverNotes(detail.borrowNote);
+            setSafuriBG1Note(notes.provider || detail.borrowNote);
+            setSafuriBG2Note(notes.borrower || detail.borrowNote);
+          }
+          if (detail.returnNote) {
+            const notes = parseHandoverNotes(detail.returnNote);
+            setSafuriNT1Note(notes.provider || detail.returnNote);
+            setSafuriNT2Note(notes.borrower || detail.returnNote);
+          }
 
           if (detail.status === 'CANCELLED') {
              setRequestStatus('rejected');
@@ -860,6 +878,43 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
     const d = new Date(value);
     if (Number.isNaN(d.getTime())) return value;
     return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  };
+
+  const toHandoverSignatureText = (signature?: { name?: string; signedAt?: string } | null) => {
+    if (!signature?.signedAt) return null;
+    return `${signature.name || 'Người ký'} - ${formatDateTime(signature.signedAt)}`;
+  };
+
+  const parseHandoverNotes = (note?: string) => {
+    const result: { borrower?: string; provider?: string } = {};
+    if (!note) return result;
+    note.split('\n').forEach((line) => {
+      if (line.startsWith('Bên nhận:')) result.borrower = line.replace('Bên nhận:', '').trim();
+      if (line.startsWith('Bên giao:')) result.provider = line.replace('Bên giao:', '').trim();
+    });
+    return result;
+  };
+
+  const handleSignHandover = async (
+    handoverType: 'BORROW' | 'RETURN',
+    signerSide: 'BORROWER' | 'PROVIDER',
+    note: string,
+    setSigned: React.Dispatch<React.SetStateAction<string | null>>,
+    successMessage: string
+  ) => {
+    if (!activePopoverEvent?.rawId) return;
+    try {
+      const result = await departmentReceptionTasksApi.signHandover(activePopoverEvent.rawId, handoverType, signerSide, note);
+      setSigned(`${result.signedByName || user?.name || 'Người ký'} - ${formatDateTime(result.signedAt)}`);
+      toast.success(successMessage);
+      const detail = await departmentReceptionTasksApi.getRequestDetail(activePopoverEvent.rawId);
+      setActiveEventDetail(detail);
+      if (result.status === 'IN_PROGRESS' || detail.status === 'IN_PROGRESS') setRequestStatus('accepted');
+      if (result.status === 'DONE' || detail.status === 'DONE') setRequestStatus('accepted');
+      await Promise.all([fetchCalendarEvents(), fetchAssignmentsProgress()]);
+    } catch (e: any) {
+      toast.error(e.response?.data?.message || e.response?.data?.title || e.message || 'Ký biên bản thất bại');
+    }
   };
 
   const getStatusClass = (status: string) => {
@@ -3355,11 +3410,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                             </div>
                             <button
                               type="button"
-                              onClick={() => {
-                                const now = new Date();
-                                const timeStr = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/2026, ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-                                setSafuriBG1Signed(`Nguyễn Văn Lái (Tổ Xe Điện) - ${timeStr}`);
-                              }}
+                              onClick={() => handleSignHandover('BORROW', 'PROVIDER', safuriBG1Note, setSafuriBG1Signed, 'Đã ký bàn giao. Đơn yêu cầu đã chuyển sang đang xử lý.')}
                               className="py-2 px-3 bg-orange-50 hover:bg-orange-100 hover:text-[#f37021] text-slate-705 font-extrabold text-[11px] rounded-xl border border-slate-200 transition-all flex items-center gap-1.5 cursor-pointer shadow-3xs shrink-0"
                             >
                               <FileText className="w-3.5 h-3.5" />
@@ -3410,11 +3461,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                             </div>
                             <button
                               type="button"
-                              onClick={() => {
-                                const now = new Date();
-                                const timeStr = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/2026, ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-                                setSafuriBG2Signed(`Nguyễn Văn Trưởng Phòng CTSV - ${timeStr}`);
-                              }}
+                              onClick={() => handleSignHandover('BORROW', 'BORROWER', safuriBG2Note, setSafuriBG2Signed, 'Đã ký xác nhận bên nhận bàn giao.')}
                               className="py-2 px-3 bg-orange-50 hover:bg-orange-100 hover:text-[#f37021] text-slate-705 font-extrabold text-[11px] rounded-xl border border-slate-200 transition-all flex items-center gap-1.5 cursor-pointer shadow-3xs shrink-0"
                             >
                               <FileText className="w-3.5 h-3.5" />
@@ -3482,11 +3529,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                                 </div>
                                 <button
                                   type="button"
-                                  onClick={() => {
-                                    const now = new Date();
-                                    const timeStr = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/2026, ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-                                    setSafuriNT1Signed(`Nguyễn Văn Lái (Tổ Xe Điện) - ${timeStr}`);
-                                  }}
+                                  onClick={() => handleSignHandover('RETURN', 'PROVIDER', safuriNT1Note, setSafuriNT1Signed, 'Đã ký nghiệm thu bên giao.')}
                                   className="py-2 px-3 bg-blue-50 hover:bg-blue-100 hover:text-[#004c91] text-slate-705 font-extrabold text-[11px] rounded-xl border border-slate-200 transition-all flex items-center gap-1.5 cursor-pointer shadow-3xs shrink-0"
                                 >
                                   <FileText className="w-3.5 h-3.5" />
@@ -3537,11 +3580,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                                 </div>
                                 <button
                                   type="button"
-                                  onClick={() => {
-                                    const now = new Date();
-                                    const timeStr = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/2026, ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-                                    setSafuriNT2Signed(`Nguyễn Văn Trưởng Phòng CTSV - ${timeStr}`);
-                                  }}
+                                  onClick={() => handleSignHandover('RETURN', 'BORROWER', safuriNT2Note, setSafuriNT2Signed, 'Đã ký nghiệm thu. Đơn yêu cầu đã hoàn thành.')}
                                   className="py-2 px-3 bg-blue-50 hover:bg-blue-100 hover:text-[#004c91] text-slate-705 font-extrabold text-[11px] rounded-xl border border-slate-200 transition-all flex items-center gap-1.5 cursor-pointer shadow-3xs shrink-0"
                                 >
                                   <FileText className="w-3.5 h-3.5" />

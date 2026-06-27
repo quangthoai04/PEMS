@@ -56,6 +56,12 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetRequestDetail
         public string? ProposalRespondedByName { get; set; }
         public string? ProposalRespondedByRole { get; set; }
         public string? ProposalResponseNote { get; set; }
+        public HandoverSignatureDto? BorrowProviderSignature { get; set; }
+        public HandoverSignatureDto? BorrowBorrowerSignature { get; set; }
+        public HandoverSignatureDto? ReturnProviderSignature { get; set; }
+        public HandoverSignatureDto? ReturnBorrowerSignature { get; set; }
+        public string? BorrowNote { get; set; }
+        public string? ReturnNote { get; set; }
 
         // Full Details
         public string RegistrantFullName { get; set; }
@@ -73,6 +79,13 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetRequestDetail
 
         // Latest attempt status for UI state decisions
         public string LatestAttemptStatus { get; set; }
+    }
+
+    public class HandoverSignatureDto
+    {
+        public ulong? UserId { get; set; }
+        public string? Name { get; set; }
+        public string? SignedAt { get; set; }
     }
 
     public class GetRequestDetailQueryHandler : IRequestHandler<GetRequestDetailQuery, RequestDetailDto>
@@ -178,6 +191,20 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetRequestDetail
                 && h.ProviderSignedAt != null,
                 cancellationToken);
             var unifiedStatus = NormalizeStatus(l.Status, camp.Status, camp.VisitRequest.Status, borrowSigned, returnSigned);
+            var handovers = await _context.VisitLogisticsItemHandovers
+                .Where(h => h.LogisticsItemId == l.LogisticsItemId)
+                .ToListAsync(cancellationToken);
+            var signerIds = handovers
+                .SelectMany(h => new[] { h.BorrowerSignedBy, h.ProviderSignedBy })
+                .Where(id => id.HasValue)
+                .Select(id => id!.Value)
+                .Distinct()
+                .ToList();
+            var signerNames = await _context.Users
+                .Where(u => signerIds.Contains(u.UserId))
+                .ToDictionaryAsync(u => u.UserId, u => u.FullName, cancellationToken);
+            var borrowHandover = handovers.FirstOrDefault(h => h.HandoverType == "BORROW");
+            var returnHandover = handovers.FirstOrDefault(h => h.HandoverType == "RETURN");
 
             return new RequestDetailDto
             {
@@ -210,6 +237,12 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetRequestDetail
                 ProposalRespondedByName = responseByName,
                 ProposalRespondedByRole = responseByRole,
                 ProposalResponseNote = l.ProposalResponseNote,
+                BorrowProviderSignature = ToSignature(borrowHandover?.ProviderSignedBy, borrowHandover?.ProviderSignedAt, signerNames),
+                BorrowBorrowerSignature = ToSignature(borrowHandover?.BorrowerSignedBy, borrowHandover?.BorrowerSignedAt, signerNames),
+                ReturnProviderSignature = ToSignature(returnHandover?.ProviderSignedBy, returnHandover?.ProviderSignedAt, signerNames),
+                ReturnBorrowerSignature = ToSignature(returnHandover?.BorrowerSignedBy, returnHandover?.BorrowerSignedAt, signerNames),
+                BorrowNote = borrowHandover?.ConditionNote,
+                ReturnNote = returnHandover?.ConditionNote,
 
                 RegistrantFullName = camp.VisitRequest.RegistrantFullName ?? "",
                 RegistrantEmail = camp.VisitRequest.RegistrantEmail ?? "",
@@ -232,6 +265,17 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetRequestDetail
             if (returnSigned || status == "DONE") return "DONE";
             if (borrowSigned || status == "IN_PROGRESS") return "IN_PROGRESS";
             return status;
+        }
+
+        private static HandoverSignatureDto? ToSignature(ulong? userId, DateTime? signedAt, Dictionary<ulong, string> signerNames)
+        {
+            if (userId == null || signedAt == null) return null;
+            return new HandoverSignatureDto
+            {
+                UserId = userId,
+                Name = signerNames.TryGetValue(userId.Value, out var name) ? name : $"User #{userId.Value}",
+                SignedAt = signedAt.Value.ToString("O")
+            };
         }
     }
 }
