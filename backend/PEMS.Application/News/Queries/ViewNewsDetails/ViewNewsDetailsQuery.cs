@@ -2,6 +2,4 @@ using MediatR;
 
 namespace PEMS.Application.News.Queries.ViewNewsDetails;
 
-public class ViewNewsDetailsQuery : IRequest<ViewNewsDetailsDto>
-{
-}
+public sealed record ViewNewsDetailsQuery(ulong NewsId) : IRequest<ViewNewsDetailsDto>;

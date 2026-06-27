@@ -77,6 +77,48 @@ namespace PEMS.Api.Controllers
             return StatusCode(201, result);
         }
 
+        // UC View News Details: GET /api/news/{newsId}
+        [HttpGet("{newsId}")]
+        [RoleAuthorize(EffectiveRole.Ho, EffectiveRole.StaffLeader, EffectiveRole.Staff, EffectiveRole.Student)]
+        public async Task<IActionResult> GetNewsDetails(ulong newsId, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(
+                new PEMS.Application.News.Queries.ViewNewsDetails.ViewNewsDetailsQuery(newsId),
+                cancellationToken);
+            return Ok(result);
+        }
+
+        // UC Review News: PATCH /api/news/{newsId}/review (approve or reject)
+        [HttpPatch("{newsId}/review")]
+        [RoleAuthorize(EffectiveRole.StaffLeader)]
+        public async Task<IActionResult> ReviewNews(ulong newsId, [FromBody] ReviewNewsBody body, CancellationToken cancellationToken)
+        {
+            var command = new PEMS.Application.News.Commands.ApproveNews.ApproveNewsCommand
+            {
+                NewsId     = newsId,
+                Action     = body.Action,
+                Reason     = body.Reason,
+                RowVersion = body.RowVersion
+            };
+            var result = await _mediator.Send(command, cancellationToken);
+            return Ok(result);
+        }
+
+        // UC Change Visibility: PATCH /api/news/{newsId}/visibility (hide or show)
+        [HttpPatch("{newsId}/visibility")]
+        [RoleAuthorize(EffectiveRole.StaffLeader)]
+        public async Task<IActionResult> ChangeNewsVisibility(ulong newsId, [FromBody] ChangeVisibilityBody body, CancellationToken cancellationToken)
+        {
+            var command = new PEMS.Application.News.Commands.ManageNewsVisibility.ManageNewsVisibilityCommand
+            {
+                NewsId       = newsId,
+                TargetStatus = body.TargetStatus,
+                RowVersion   = body.RowVersion
+            };
+            var result = await _mediator.Send(command, cancellationToken);
+            return Ok(result);
+        }
+
         [HttpPost("approvenews")]
         public async Task<IActionResult> ApproveNews(
             [FromBody] PEMS.Application.News.Commands.ApproveNews.ApproveNewsCommand command,
@@ -95,14 +137,7 @@ namespace PEMS.Api.Controllers
             return Ok(result);
         }
 
-        [HttpGet("viewnewsdetails")]
-        public async Task<IActionResult> ViewNewsDetails(
-            [FromQuery] PEMS.Application.News.Queries.ViewNewsDetails.ViewNewsDetailsQuery query,
-            CancellationToken cancellationToken)
-        {
-            var result = await _mediator.Send(query, cancellationToken);
-            return Ok(result);
-        }
+        // [HttpGet("viewnewsdetails")] removed — replaced by GET /api/news/{newsId}
 
         [HttpPost("addmultilingualnews")]
         public async Task<IActionResult> AddMultilingualNews(
@@ -134,4 +169,6 @@ namespace PEMS.Api.Controllers
 
     public sealed record CreateVisitInstanceNewsBody(string Title, string? Summary, string? Body);
     public sealed record UpdateVisitInstanceNewsBody(string Title, string? Summary, string? Body, int RowVersion);
+    public sealed record ReviewNewsBody(string Action, string? Reason, int RowVersion);
+    public sealed record ChangeVisibilityBody(string TargetStatus, int RowVersion);
 }

@@ -45,8 +45,10 @@ export function CreateNews() {
   const [title, setTitle] = useState('');
   const [summary, setSummary] = useState('');
 
-  // Step 2: Cover image (local preview only — coverFileId optional)
+  // Step 2: Cover image
   const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [coverFileId, setCoverFileId] = useState<number | null>(null);
+  const [coverUploading, setCoverUploading] = useState(false);
 
   // Step 3: Content sections
   const [contents, setContents] = useState<ContentSection[]>([
@@ -89,7 +91,7 @@ export function CreateNews() {
     setShowVisitList(true);
   };
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     if (file.size > 5 * 1024 * 1024) {
@@ -97,6 +99,19 @@ export function CreateNews() {
       return;
     }
     setImagePreview(URL.createObjectURL(file));
+    setCoverFileId(null);
+    setCoverUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('purpose', 'NEWS_COVER');
+      const { data } = await httpClient.post<{ fileId: number }>('/files/upload', formData);
+      setCoverFileId(data.fileId);
+    } catch {
+      toast.error('Không thể tải ảnh đại diện lên. Bài viết sẽ được tạo không có ảnh đại diện.');
+    } finally {
+      setCoverUploading(false);
+    }
   };
 
   const addContent = () => {
@@ -134,11 +149,16 @@ export function CreateNews() {
       if (!stripped) { toast.error(`Nội dung chi tiết ${c.sectionOrder} không được để trống.`); return; }
     }
 
+    if (coverUploading) {
+      toast.error('Ảnh đại diện đang được tải lên, vui lòng chờ.');
+      return;
+    }
+
     setSubmitting(true);
     try {
       const payload = {
         visitInstanceId: selectedVisit.visitInstanceId,
-        coverFileId: null,
+        coverFileId: coverFileId,
         title: title.trim(),
         summary: summary.trim(),
         contentSections: contents.map(c => ({
@@ -352,7 +372,17 @@ export function CreateNews() {
               <input type="file" accept="image/png, image/jpeg, image/jpg" className="hidden" onChange={handleImageUpload} disabled={formDisabled} />
               <div className={`bg-[#eef5fa] border-2 border-dashed border-[#b6d4f0] rounded-xl flex flex-col items-center justify-center text-center cursor-pointer hover:bg-[#e4f0fa] transition-colors group relative overflow-hidden ${imagePreview ? 'p-2' : 'p-12 min-h-[200px]'}`}>
                 {imagePreview ? (
-                  <img src={imagePreview} alt="Preview" className="w-full max-h-[300px] object-contain rounded-lg" />
+                  <div className="relative w-full">
+                    <img src={imagePreview} alt="Preview" className="w-full max-h-[300px] object-contain rounded-lg" />
+                    {coverUploading && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/30 rounded-lg">
+                        <div className="flex items-center gap-2 text-white font-bold text-sm">
+                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                          Đang tải lên...
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 ) : (
                   <>
                     <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center mb-4 shadow-sm group-hover:scale-110 transition-transform">

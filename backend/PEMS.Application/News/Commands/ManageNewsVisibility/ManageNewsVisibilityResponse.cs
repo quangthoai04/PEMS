@@ -1,10 +1,9 @@
-using System;
-
 namespace PEMS.Application.News.Commands.ManageNewsVisibility;
 
 public sealed class ManageNewsVisibilityResponse
 {
-    public Guid? Id { get; init; }
-    public string Status { get; init; } = "Scaffolded";
-    public string Message { get; init; } = "Use case scaffolded. Business logic is not implemented yet.";
+    public bool Success { get; init; }
+    public string Message { get; init; } = string.Empty;
+    public string? NewStatus { get; init; }
+    public string? NewStatusLabel { get; init; }
 }
