@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { delegationsApi } from '../api/delegationsApi';
 import { EmailPreviewModal, type EmailPreviewRecipient, type EmailPreviewSendPayload } from './EmailPreviewModal';
+import { stripLegacyActionHtml } from '../../emails/utils/actionLinks';
 import { SentEmailsModal } from './SentEmailsModal';
 import type {
   VisitParticipantListItem, VisitProcessHost, ParticipantCandidate, SupportDepartment,
@@ -228,7 +229,7 @@ export function ParticipantInvitationSection({
   const applyTemplate = (res: import('../types/delegations.types').PreviewEmailTemplateResult) =>
     setPreview((p) => ({
       ...p, open: true, loading: false, restoring: false, error: null,
-      subject: res.subject, body: res.bodyHtml,
+      subject: res.subject, body: stripLegacyActionHtml(res.bodyHtml),
       isActionTemplate: res.isActionTemplate,
       systemActionDescription: res.systemActionDescription ?? null,
       lockedActionBlockHtml: res.lockedActionBlockHtml ?? null,

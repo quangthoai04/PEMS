@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { delegationsApi } from '../api/delegationsApi';
 import { EmailPreviewModal, type EmailPreviewRecipient, type EmailPreviewSendPayload } from './EmailPreviewModal';
+import { stripLegacyActionHtml } from '../../emails/utils/actionLinks';
 import { SentEmailsModal } from './SentEmailsModal';
 import { SearchDropdown } from './ParticipantInvitationSection';
 import {
@@ -243,7 +244,7 @@ export function LogisticsRequestSection({
       });
       setPreview((p) => ({
         ...p, open: true, loading: false, restoring: false, error: null,
-        subject: res.subject, body: res.bodyHtml, // editable HTML for the rich editor
+        subject: res.subject, body: stripLegacyActionHtml(res.bodyHtml), // editable HTML, legacy action links stripped
         isActionTemplate: res.isActionTemplate,
         systemActionDescription: res.systemActionDescription ?? null,
         lockedActionBlockHtml: res.lockedActionBlockHtml ?? null,

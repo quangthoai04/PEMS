@@ -14,6 +14,28 @@ public static class EmailComposition
 {
     public static string HE(string? value) => WebUtility.HtmlEncode(value ?? string.Empty);
 
+    // ── Canonical action block markers ──
+    // Every backend-injected action block is wrapped in these so the cleaner can find + remove an
+    // already-injected block before re-injecting (idempotent on re-send/re-edit). The block is the
+    // ONE source of truth for accept/decline/etc buttons — templates must not carry their own.
+    public const string ActionBlockStart = "<!-- PEMS_ACTION_BLOCK_START -->";
+    public const string ActionBlockEnd = "<!-- PEMS_ACTION_BLOCK_END -->";
+    private static string WrapActionBlock(string inner) => ActionBlockStart + inner + ActionBlockEnd;
+
+    /// <summary>System action-URL variables the backend ALWAYS injects itself (never rendered into the
+    /// editable body). Note: detailUrl is intentionally absent — it is also used by non-action emails
+    /// (e.g. reminders) which legitimately render a real link.</summary>
+    private static readonly System.Collections.Generic.HashSet<string> ActionUrlVarNames =
+        new(System.StringComparer.OrdinalIgnoreCase)
+        {
+            "acceptUrl", "declineUrl", "negotiateUrl", "approveProposalUrl",
+            "rejectProposalUrl", "confirmBorrowUrl", "confirmReturnUrl", "assignUrl",
+        };
+
+    /// <summary>Regex alternation of every action-URL var name (incl. detailUrl) used by the cleaner.</summary>
+    private const string ActionVarAlternation =
+        "acceptUrl|declineUrl|negotiateUrl|approveProposalUrl|rejectProposalUrl|confirmBorrowUrl|confirmReturnUrl|assignUrl|detailUrl";
+
     /// <summary>Wrap inner content HTML in the branded PEMS card (the final sent body).</summary>
     public static string BrandedShell(string innerHtml) => $@"<!DOCTYPE html>
 <html lang=""vi""><head><meta charset=""UTF-8""></head>
@@ -38,29 +60,29 @@ public static class EmailComposition
             : $@"<a href=""{HE(assignUrl)}"" style=""display:inline-block;background:#004c91;color:#fff;text-decoration:none;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">Gán nhân sự</a>";
         var assignNote = string.IsNullOrEmpty(assignUrl) ? string.Empty
             : @"<p style=""color:#6b7280;font-size:12px;margin-top:8px"">Lưu ý: thao tác <strong>Gán nhân sự</strong> yêu cầu đăng nhập hệ thống.</p>";
-        return $@"<div style=""text-align:center;margin:24px 0"">
+        return WrapActionBlock($@"<div style=""text-align:center;margin:24px 0"">
             <a href=""{HE(acceptUrl)}"" style=""display:inline-block;background:#10b981;color:#fff;text-decoration:none;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">Chấp nhận</a>
             <a href=""{HE(declineUrl)}"" style=""display:inline-block;background:#ef4444;color:#fff;text-decoration:none;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">Từ chối</a>
             {assign}
         </div>{assignNote}
-        <p style=""color:#9ca3af;font-size:12px;margin-top:12px"">Liên kết phản hồi sẽ hết hạn sau 14 ngày và chỉ sử dụng được một lần.</p>";
+        <p style=""color:#9ca3af;font-size:12px;margin-top:12px"">Liên kết phản hồi sẽ hết hạn sau 14 ngày và chỉ sử dụng được một lần.</p>");
     }
 
     public static string DetailLinkBlock(string detailUrl, string label = "Mở yêu cầu để xử lý")
-        => $@"<div style=""text-align:center;margin:24px 0"">
+        => WrapActionBlock($@"<div style=""text-align:center;margin:24px 0"">
             <a href=""{HE(detailUrl)}"" style=""display:inline-block;background:#004c91;color:#fff;text-decoration:none;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">{HE(label)}</a>
         </div>
-        <p style=""color:#6b7280;font-size:12px;margin-top:8px"">Sau khi đăng nhập, Trưởng phòng có thể chấp nhận xử lý, từ chối yêu cầu, gán nhân sự hoặc đề xuất thay đổi. Thao tác xử lý yêu cầu yêu cầu đăng nhập hệ thống.</p>";
+        <p style=""color:#6b7280;font-size:12px;margin-top:8px"">Sau khi đăng nhập, Trưởng phòng có thể chấp nhận xử lý, từ chối yêu cầu, gán nhân sự hoặc đề xuất thay đổi. Thao tác xử lý yêu cầu yêu cầu đăng nhập hệ thống.</p>");
 
     public static string LogisticsActionBlock(string acceptUrl, string declineUrl, string detailUrl, string detailLabel = "Hành động khác")
     {
-        return $@"<div style=""text-align:center;margin:24px 0"">
+        return WrapActionBlock($@"<div style=""text-align:center;margin:24px 0"">
             <a href=""{HE(acceptUrl)}"" style=""display:inline-block;background:#10b981;color:#fff;text-decoration:none;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">Đồng ý</a>
             <a href=""{HE(declineUrl)}"" style=""display:inline-block;background:#ef4444;color:#fff;text-decoration:none;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">Từ chối</a>
             <a href=""{HE(detailUrl)}"" style=""display:inline-block;background:#004c91;color:#fff;text-decoration:none;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">{HE(detailLabel)}</a>
         </div>
         <p style=""color:#6b7280;font-size:12px;margin-top:8px"">Lưu ý: <strong>Đồng ý / Từ chối</strong> là thao tác trực tiếp (không yêu cầu đăng nhập). <strong>Hành động khác</strong> (như gán nhân sự, thảo luận thêm) yêu cầu đăng nhập hệ thống.</p>
-        <p style=""color:#9ca3af;font-size:12px;margin-top:12px"">Liên kết phản hồi trực tiếp sẽ hết hạn sau 14 ngày và chỉ sử dụng được một lần.</p>";
+        <p style=""color:#9ca3af;font-size:12px;margin-top:12px"">Liên kết phản hồi trực tiếp sẽ hết hạn sau 14 ngày và chỉ sử dụng được một lần.</p>");
     }
 
     // ── Disabled action blocks (preview only — no live URLs/tokens) ──
@@ -92,22 +114,54 @@ public static class EmailComposition
     }
 
     /// <summary>
-    /// Removes any &lt;a&gt; that points at an action placeholder ({{acceptUrl}}/{{declineUrl}}/
-    /// {{assignUrl}}/{{detailUrl}}) plus the bare placeholders, so a template body can be reduced to
-    /// its editable message content. Idempotent and safe on already-clean content.
+    /// Reduces a template/edited body to its editable message content by removing every system action
+    /// artifact, so the backend can inject exactly ONE canonical action block. Idempotent and safe on
+    /// already-clean content. Removes, in order:
+    ///   0. any already-injected canonical block (PEMS_ACTION_BLOCK_START..END);
+    ///   1. &lt;a&gt; whose href targets a system action — a {{xxxUrl}} placeholder (raw OR URL-encoded
+    ///      %7B%7B..%7D%7D) OR the real public email-action endpoint (/public/email-actions/) a user
+    ///      may have pasted;
+    ///   2. leftover bare placeholders (raw + URL-encoded);
+    ///   3. legacy plain-text button pairs joined by a pipe (e.g. "Chấp nhận tham gia | Từ chối");
+    ///   4. a lone pipe separator stranded between tags after its anchors were removed;
+    ///   5. a &lt;p&gt;/&lt;div&gt; left holding only separators/whitespace.
+    /// Normal user links (school website, Google Drive, docs) are untouched — only action hrefs match.
     /// </summary>
     public static string StripActionArtifacts(string html)
     {
         if (string.IsNullOrEmpty(html)) return html ?? string.Empty;
-        // Drop anchors whose href references an action placeholder.
-        var noAnchors = Regex.Replace(html,
-            @"<a\b[^>]*href\s*=\s*[""']?\{\{\s*(acceptUrl|declineUrl|assignUrl|detailUrl)\s*\}\}[""']?[^>]*>.*?</a>",
+        var s = html;
+
+        // 0) Drop any previously-injected canonical action block (idempotent re-send/re-edit).
+        s = Regex.Replace(s,
+            @"<!--\s*PEMS_ACTION_BLOCK_START\s*-->.*?<!--\s*PEMS_ACTION_BLOCK_END\s*-->",
             string.Empty, RegexOptions.IgnoreCase | RegexOptions.Singleline);
-        // Drop separators / leftover bare placeholders.
-        noAnchors = Regex.Replace(noAnchors, @"\{\{\s*(acceptUrl|declineUrl|assignUrl|detailUrl)\s*\}\}", string.Empty, RegexOptions.IgnoreCase);
-        // Collapse a paragraph that is now empty/only separators.
-        noAnchors = Regex.Replace(noAnchors, @"<p>(\s|\||&nbsp;|&amp;)*</p>", string.Empty, RegexOptions.IgnoreCase);
-        return noAnchors.Trim();
+
+        // 1) Drop anchors whose href targets a system action (placeholder raw/encoded, or token URL).
+        const string hrefNeedle =
+            @"(?:\{\{\s*(?:" + ActionVarAlternation + @")\s*\}\}"
+            + @"|%7[Bb]%7[Bb]\s*(?:" + ActionVarAlternation + @")\s*%7[Dd]%7[Dd]"
+            + @"|/public/email-actions/|api/public/email-actions)";
+        s = Regex.Replace(s,
+            @"<a\b[^>]*\bhref\s*=\s*(?:""[^""]*" + hrefNeedle + @"[^""]*""|'[^']*" + hrefNeedle + @"[^']*'|[^\s>]*" + hrefNeedle + @"[^\s>]*)[^>]*>.*?</a>",
+            string.Empty, RegexOptions.IgnoreCase | RegexOptions.Singleline);
+
+        // 2) Drop leftover bare placeholders (raw + URL-encoded).
+        s = Regex.Replace(s, @"\{\{\s*(?:" + ActionVarAlternation + @")\s*\}\}", string.Empty, RegexOptions.IgnoreCase);
+        s = Regex.Replace(s, @"%7[Bb]%7[Bb]\s*(?:" + ActionVarAlternation + @")\s*%7[Dd]%7[Dd]", string.Empty, RegexOptions.IgnoreCase);
+
+        // 3) Drop legacy plain-text button pairs joined by a pipe (the old text buttons).
+        s = Regex.Replace(s,
+            @"(?:&nbsp;|\s)*(?:Chấp nhận tham gia|Chấp nhận phối hợp|Chấp nhận|Đồng ý|Nhận nhiệm vụ|Accept invitation|Accept coordination|Accept assignment|Accept)(?:&nbsp;|\s)*\|(?:&nbsp;|\s)*(?:Từ chối|Decline)(?:(?:&nbsp;|\s)*\|(?:&nbsp;|\s)*(?:Gán nhân sự|Assign staff))?",
+            string.Empty, RegexOptions.IgnoreCase);
+
+        // 4) Clean a lone pipe stranded between tags after its anchors were removed.
+        s = Regex.Replace(s, @">(?:\s|&nbsp;)*\|(?:\s|&nbsp;|\|)*<", "><", RegexOptions.IgnoreCase);
+
+        // 5) Collapse a block (<p>/<div>) now holding only separators/whitespace.
+        s = Regex.Replace(s, @"<(p|div)(?:\s[^>]*)?>(?:\s|\||&nbsp;|&amp;|<br\s*/?>)*</\1>", string.Empty, RegexOptions.IgnoreCase);
+
+        return s.Trim();
     }
 
     /// <summary>
@@ -187,7 +241,14 @@ public static class EmailComposition
         return Regex.Replace(template, @"\{\{\s*([\w]+)\s*\}\}", match =>
         {
             var key = match.Groups[1].Value;
-            
+
+            // System action-URL vars are NEVER substituted into the editable body — leave the
+            // placeholder intact so StripActionArtifacts removes the whole anchor afterwards (the
+            // backend injects the real action block). This prevents the generic "Chưa có thông tin"
+            // fallback from blanking the placeholder and leaving the legacy anchor behind (duplicate).
+            if (ActionUrlVarNames.Contains(key))
+                return match.Value;
+
             // Check provided context first (case-insensitive)
             foreach (var kvp in context)
             {

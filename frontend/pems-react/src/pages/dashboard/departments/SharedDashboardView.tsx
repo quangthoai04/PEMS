@@ -35,6 +35,7 @@ import toast, { Toaster } from 'react-hot-toast';
 import { departmentReceptionTasksApi } from '../../../features/department-reception-tasks/api/departmentReceptionTasksApi';
 import { delegationsApi } from '../../../features/delegations/api/delegationsApi';
 import { EmailPreviewModal, type EmailPreviewSendPayload } from '../../../features/delegations/components/EmailPreviewModal';
+import { stripLegacyActionHtml } from '../../../features/emails/utils/actionLinks';
 
 interface Event {
   id: string;
@@ -183,7 +184,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
       });
       setAssignPreview((s) => ({
         ...s, open: true, loading: false, error: null,
-        subject: res.subject, body: res.bodyHtml,
+        subject: res.subject, body: stripLegacyActionHtml(res.bodyHtml),
         isActionTemplate: res.isActionTemplate,
         systemActionDescription: res.systemActionDescription ?? null,
         lockedActionBlockHtml: res.lockedActionBlockHtml ?? null,
