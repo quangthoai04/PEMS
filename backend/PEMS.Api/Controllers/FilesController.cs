@@ -27,7 +27,7 @@ namespace PEMS.Api.Controllers
         [HttpPost("upload")]
         [RequestSizeLimit(30 * 1024 * 1024)] // a little above the 25 MB per-file business limit
         [Consumes("multipart/form-data")]
-        public async Task<IActionResult> Upload([FromForm] IFormFile file, [FromForm] string? purpose, CancellationToken cancellationToken)
+        public async Task<IActionResult> Upload(IFormFile file, [FromForm] string? purpose, CancellationToken cancellationToken)
         {
             if (file is null || file.Length == 0)
                 return BadRequest(new { message = "Tệp tải lên rỗng hoặc không hợp lệ." });
