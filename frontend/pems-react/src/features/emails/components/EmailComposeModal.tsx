@@ -219,8 +219,9 @@ export function EmailComposeModal({
         editor?.setSelection(index + 1, 0);
         scheduleSave();
       } catch (err: any) {
-        const msg = err.response?.data?.message || 'Không thể tải ảnh lên. Vui lòng thử lại.';
-        pushToast?.('error', msg);
+        const status = err.response?.status || 'Unknown';
+        const msg = err.response?.data?.message || err.message || 'Không có chi tiết lỗi';
+        pushToast?.('error', `Lỗi tải ảnh [${status}]: ${msg}`);
       } finally {
         setUploading(false);
       }
@@ -246,8 +247,9 @@ export function EmailComposeModal({
       }
       scheduleSave();
     } catch (err: any) {
-      const msg = err.response?.data?.message || 'Không thể tải tệp đính kèm. Vui lòng thử lại.';
-      pushToast?.('error', msg);
+      const status = err.response?.status || 'Unknown';
+      const msg = err.response?.data?.message || err.message || 'Không có chi tiết lỗi';
+      pushToast?.('error', `Lỗi tải tệp đính kèm [${status}]: ${msg}`);
     } finally {
       setUploading(false);
     }
@@ -388,7 +390,7 @@ export function EmailComposeModal({
 
               <div className="border-t border-gray-200 pt-4 mt-2">
                 <label className="text-xs font-bold text-gray-500 uppercase mb-2 block">Nội dung (HTML):</label>
-                <div className="bg-white rounded-lg border border-gray-200 p-4 min-h-[200px] text-sm text-gray-800 prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: finalizeBody(bodyHtml).html }} />
+                <div className="bg-white rounded-lg border border-gray-200 p-4 min-h-[200px] text-sm text-gray-800 prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: bodyHtml }} />
               </div>
             </div>
 

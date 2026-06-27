@@ -63,6 +63,7 @@ public sealed class UploadFileCommandHandler : IRequestHandler<UploadFileCommand
             var uploadResult = await _googleDrive.UploadFileAsync(request.Content, fileName, request.ContentType ?? "application/octet-stream", null, cancellationToken);
             file.StorageProvider = "GOOGLE_DRIVE";
             file.ExternalFileId = uploadResult.ExternalFileId;
+            file.ObjectKey = uploadResult.ExternalFileId; // Ensure ObjectKey is set
             file.FileSize = uploadResult.FileSize;
             file.WebViewUrl = uploadResult.WebViewUrl;
             file.DownloadUrl = uploadResult.DownloadUrl;
