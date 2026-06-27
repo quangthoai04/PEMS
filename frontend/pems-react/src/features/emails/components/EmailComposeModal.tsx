@@ -258,10 +258,10 @@ export function EmailComposeModal({
         await emailDraftsApi.updateDraft(id, payload);
       }
       const res = await emailDraftsApi.sendDraft(id!);
-      pushToast?.(res.status === 'FAILED' ? 'warning' : 'success',
-        res.status === 'FAILED'
-          ? 'Đã tạo email nhưng gửi thất bại với một hoặc nhiều người nhận.'
-          : `Đã gửi email tới ${recipients.length} người nhận.`);
+      pushToast?.(res.success ? 'success' : 'warning',
+        res.success
+          ? `Đã gửi email tới ${recipients.length} người nhận.`
+          : (res.message || 'Đã tạo email nhưng gửi thất bại với một hoặc nhiều người nhận.'));
       onSent?.();
       onClose();
     } catch (e: any) {

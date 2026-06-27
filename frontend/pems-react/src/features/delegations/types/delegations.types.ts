@@ -938,7 +938,7 @@ export interface SentEmailHistoryItem {
   subject: string;
   bodySnapshot?: string | null;
   bodyFormat?: EmailBodyFormat;     // PLAIN_TEXT | HTML — how bodySnapshot renders
-  emailStatus: string;              // QUEUED | SENT | FAILED | DELIVERED
+  emailStatus: string;              // QUEUED | SENT | PARTIAL_FAILED | FAILED | DELIVERED
   sentByName?: string | null;
   sentAt?: string | null;           // "yyyy-MM-ddTHH:mm:ss" wall-clock
   deliveredAt?: string | null;

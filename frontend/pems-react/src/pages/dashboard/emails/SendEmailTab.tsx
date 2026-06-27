@@ -124,9 +124,17 @@ export function SendEmailTab({ onSent }: SendEmailTabProps) {
         return;
       }
 
-      await emailsApi.sendEmail(payload);
-      
-      showToast('success', 'Gửi email thành công!');
+      const res = await emailsApi.sendEmail(payload);
+      const resData = res.data;
+
+      if (resData.status === 'FAILED') {
+        showToast('error', resData.message || 'Gửi email thất bại với tất cả người nhận.');
+      } else if (resData.status === 'PARTIAL_FAILED') {
+        showToast('error', resData.message || 'Gửi email thất bại với một hoặc nhiều người nhận.');
+      } else {
+        showToast('success', resData.message || 'Gửi email thành công!');
+      }
+
       clearDraft();
       
       // Clear form
@@ -135,7 +143,9 @@ export function SendEmailTab({ onSent }: SendEmailTabProps) {
       setContent('');
       setTo('');
       setExcelFile(null);
-      onSent?.('Gửi email thành công!');
+      onSent?.(resData.success === false
+        ? (resData.message || 'Gửi email thất bại.')
+        : (resData.message || 'Gửi email thành công!'));
     } catch (error: any) {
       showToast('error', error?.response?.data?.message || 'Gửi email thất bại.');
     } finally {

@@ -76,17 +76,43 @@ public sealed class SendEmailCommandHandler : IRequestHandler<SendEmailCommand, 
 
         sentEmail.SentAt = DateTime.UtcNow;
         sentEmail.LastAttemptAt = sentEmail.SentAt;
-        sentEmail.Status = hasFailure ? "FAILED" : "SENT";
-        sentEmail.DeliveredAt = hasFailure ? null : sentEmail.SentAt;
-        sentEmail.ErrorMessage = hasFailure ? "Một hoặc nhiều người nhận gửi thất bại." : null;
+
+        // Compute aggregated status: ALL ok → SENT; ALL failed → FAILED; mixed → PARTIAL_FAILED.
+        var allFailed = sentEmail.Recipients.All(r => r.DeliveryStatus == "FAILED");
+        if (!hasFailure)
+        {
+            sentEmail.Status = "SENT";
+            sentEmail.DeliveredAt = sentEmail.SentAt;
+            sentEmail.ErrorMessage = null;
+        }
+        else if (allFailed)
+        {
+            sentEmail.Status = "FAILED";
+            sentEmail.DeliveredAt = null;
+            sentEmail.ErrorMessage = "Tất cả người nhận gửi thất bại.";
+        }
+        else
+        {
+            sentEmail.Status = "PARTIAL_FAILED";
+            sentEmail.DeliveredAt = null;
+            sentEmail.ErrorMessage = "Một hoặc nhiều người nhận gửi thất bại.";
+        }
 
         await _context.SaveChangesAsync(cancellationToken);
+
+        var message = sentEmail.Status switch
+        {
+            "SENT" => "Gửi email thành công.",
+            "FAILED" => "Gửi email thất bại với tất cả người nhận.",
+            _ => "Gửi email thất bại với một hoặc nhiều người nhận.",
+        };
 
         return new SendEmailResponse
         {
             SentEmailId = sentEmail.SentEmailId,
             Status = sentEmail.Status,
-            Message = hasFailure ? "Gửi email thất bại với một hoặc nhiều người nhận." : "Gửi email thành công."
+            Success = sentEmail.Status == "SENT",
+            Message = message,
         };
     }
 }

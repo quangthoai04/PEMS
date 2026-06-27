@@ -22,10 +22,12 @@ interface Props {
 
 // Delivery / send status → Vietnamese label + tailwind classes.
 const STATUS_META: Record<string, { label: string; cls: string }> = {
-  QUEUED:    { label: 'Đang chờ gửi', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
-  SENT:      { label: 'Đã gửi', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
-  DELIVERED: { label: 'Đã nhận', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
-  FAILED:    { label: 'Gửi lỗi', cls: 'bg-red-50 text-red-700 border-red-200' },
+  QUEUED:          { label: 'Đang chờ gửi', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
+  SENT:            { label: 'Đã gửi', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  DELIVERED:       { label: 'Đã nhận', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  PARTIAL_FAILED:  { label: 'Gửi lỗi 1 phần', cls: 'bg-orange-50 text-orange-700 border-orange-200' },
+  FAILED:          { label: 'Gửi lỗi', cls: 'bg-red-50 text-red-700 border-red-200' },
+  BOUNCED:         { label: 'Bị trả về', cls: 'bg-red-50 text-red-700 border-red-200' },
 };
 
 function StatusBadge({ status }: { status: string }) {
@@ -173,10 +175,19 @@ function SentEmailCard({ item }: { item: SentEmailHistoryItem }) {
         </div>
       )}
 
-      {/* Error (if the send failed) */}
-      {(item.emailStatus?.toUpperCase() === 'FAILED' || item.recipients.some((r) => r.errorMessage)) && (
-        <div className="mt-2 rounded-lg border border-red-100 bg-red-50/60 px-3 py-1.5 text-[11px] text-red-600">
-          {item.recipients.find((r) => r.errorMessage)?.errorMessage || 'Gửi email thất bại.'}
+      {/* Error (if the send failed or partially failed) */}
+      {(['FAILED', 'PARTIAL_FAILED'].includes(item.emailStatus?.toUpperCase()) || item.recipients.some((r) => r.errorMessage)) && (
+        <div className="mt-2 space-y-1">
+          {item.recipients.filter((r) => r.errorMessage).map((r, i) => (
+            <div key={i} className="rounded-lg border border-red-100 bg-red-50/60 px-3 py-1.5 text-[11px] text-red-600">
+              <span className="font-semibold">{r.recipientEmail}:</span> {r.errorMessage}
+            </div>
+          ))}
+          {item.recipients.filter((r) => r.errorMessage).length === 0 && (
+            <div className="rounded-lg border border-red-100 bg-red-50/60 px-3 py-1.5 text-[11px] text-red-600">
+              Gửi email thất bại.
+            </div>
+          )}
         </div>
       )}
 
