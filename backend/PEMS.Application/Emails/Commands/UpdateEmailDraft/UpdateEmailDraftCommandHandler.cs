@@ -44,7 +44,7 @@ public sealed class UpdateEmailDraftCommandHandler : IRequestHandler<UpdateEmail
         var now = DateTime.Now;
         var bodyFormat = EmailDraftWriter.ParseBodyFormat(request.BodyFormat);
         var body = bodyFormat == EmailBodyFormat.HTML
-            ? _sanitizer.Sanitize(request.BodyContent)
+            ? _sanitizer.SanitizeEmailHtml(request.BodyContent)
             : request.BodyContent;
 
         var attachmentInputs = request.Attachments ?? new();

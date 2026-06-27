@@ -13,4 +13,12 @@ public interface IHtmlSanitizerService
     /// returns <see cref="string.Empty"/>.
     /// </summary>
     string Sanitize(string? html);
+
+    /// <summary>
+    /// Sanitizes an email body. Same XSS protections as <see cref="Sanitize"/> but additionally
+    /// permits inline-image references — the <c>cid:</c> URL scheme and the
+    /// <c>data-content-id</c>/<c>data-file-id</c> attributes — so <c>&lt;img src="cid:..."&gt;</c>
+    /// survives and resolves to a MIME linked resource when sent.
+    /// </summary>
+    string SanitizeEmailHtml(string? html);
 }

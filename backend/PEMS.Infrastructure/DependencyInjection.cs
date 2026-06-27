@@ -51,6 +51,9 @@ public static class DependencyInjection
         services.AddSingleton<IHtmlSanitizerService, HtmlSanitizerService>();
         services.AddSingleton<IFileValidationService, FileValidationService>();
 
+        // File storage (uploads / email attachments / inline images) — disk-backed by default.
+        services.AddScoped<IFileStorageService, PEMS.Infrastructure.FileStorage.LocalFileStorageService>();
+
         // Visit request flow services (UC-17)
         services.AddScoped<IVisitRequestService, VisitRequestService>();
         services.AddScoped<IUserProvisionService, UserProvisionService>();

@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { Search, Plus, Eye, Edit2, ChevronLeft, ChevronRight, Check, ArrowUpDown } from 'lucide-react';
+import { Search, Plus, Eye, Edit2, ChevronLeft, ChevronRight, Check, ArrowUpDown, Send } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { SendEmailTab } from './SendEmailTab';
+import { EmailComposeModal } from '../../../features/emails/components/EmailComposeModal';
 
 import { emailsApi } from '../../../features/emails/api/emailsApi';
 import { format } from 'date-fns';
@@ -24,6 +25,7 @@ export function EmailManagement() {
   const [activeTab, setActiveTab] = useState(initialTab);
   const [showTemplateModal, setShowTemplateModal] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<any>(null);
+  const [showCompose, setShowCompose] = useState(false);
 
   // Template Data state
   const [data, setData] = useState<any[]>([]);
@@ -213,13 +215,22 @@ export function EmailManagement() {
             </div>
 
             {userRole !== 'VISITOR' && (
-              <button 
-                onClick={() => setShowTemplateModal(true)}
-                className="ml-auto bg-white border border-[#004c91] hover:bg-blue-50 text-[#004c91] px-4 py-2 rounded-lg font-bold flex items-center gap-1.5 transition-colors shadow-sm text-sm tracking-wide"
-              >
-                <Eye className="w-4 h-4 flex-shrink-0" />
-                Xem mẫu mail
-              </button>
+              <div className="ml-auto flex items-center gap-2">
+                <button
+                  onClick={() => setShowCompose(true)}
+                  className="bg-[#004c91] hover:bg-[#013565] text-white px-4 py-2 rounded-lg font-bold flex items-center gap-1.5 transition-colors shadow-sm text-sm tracking-wide"
+                >
+                  <Send className="w-4 h-4 flex-shrink-0" />
+                  Soạn email
+                </button>
+                <button
+                  onClick={() => setShowTemplateModal(true)}
+                  className="bg-white border border-[#004c91] hover:bg-blue-50 text-[#004c91] px-4 py-2 rounded-lg font-bold flex items-center gap-1.5 transition-colors shadow-sm text-sm tracking-wide"
+                >
+                  <Eye className="w-4 h-4 flex-shrink-0" />
+                  Xem mẫu mail
+                </button>
+              </div>
             )}
           </div>
 
@@ -337,6 +348,14 @@ export function EmailManagement() {
           }}
         />
       )}
+
+      {/* Rich compose (react-quill + attachments + inline images + autosave draft) */}
+      <EmailComposeModal
+        open={showCompose}
+        onClose={() => setShowCompose(false)}
+        pushToast={(type, msg) => showPageToast(type === 'warning' ? 'info' : type, msg)}
+        onSent={() => { setMailboxFilter('sent'); setPageSent(1); setActiveTab('Danh sách email'); }}
+      />
 
       {/* Template Modal */}
       {showTemplateModal && (

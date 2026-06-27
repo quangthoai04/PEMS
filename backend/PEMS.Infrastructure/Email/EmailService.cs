@@ -1,5 +1,8 @@
+using System.IO;
+using System.Linq;
 using System.Net;
 using System.Net.Mail;
+using System.Net.Mime;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using PEMS.Application.Common.Interfaces;
@@ -23,16 +26,79 @@ public sealed class EmailService : IEmailService
 
     // ── Generic send ──────────────────────────────────────────────────────────
 
-    public async Task SendAsync(string toEmail, string subject, string htmlBody,
+    public Task SendAsync(string toEmail, string subject, string htmlBody,
         CancellationToken cancellationToken = default)
+    {
+        using var message = new MailMessage { Subject = subject, Body = htmlBody, IsBodyHtml = true };
+        message.To.Add(toEmail);
+        return SendCoreAsync(message, cancellationToken);
+    }
+
+    // ── Rich send: real MIME with attachments + inline (cid) images ─────────────
+
+    public async Task SendAsync(OutboundEmail email, CancellationToken cancellationToken = default)
+    {
+        using var message = new MailMessage { Subject = email.Subject };
+        message.To.Add(email.ToEmail);
+
+        var inline = email.Attachments.Where(a => a.IsInline && !string.IsNullOrWhiteSpace(a.ContentId)).ToList();
+        var files  = email.Attachments.Where(a => !a.IsInline || string.IsNullOrWhiteSpace(a.ContentId)).ToList();
+
+        if (email.IsHtml)
+        {
+            // HTML alternate view carries the inline images as linked resources so <img src="cid:..">
+            // resolves in Gmail/Outlook. A MemoryStream per resource — disposed with the MailMessage.
+            var htmlView = AlternateView.CreateAlternateViewFromString(
+                email.Body ?? string.Empty, null, MediaTypeNames.Text.Html);
+            foreach (var img in inline)
+            {
+                var lr = new LinkedResource(new MemoryStream(img.Content), img.ContentType ?? "application/octet-stream")
+                {
+                    ContentId = img.ContentId,
+                    TransferEncoding = TransferEncoding.Base64,
+                };
+                lr.ContentType.Name = img.FileName;
+                htmlView.LinkedResources.Add(lr);
+            }
+            message.AlternateViews.Add(htmlView);
+        }
+        else
+        {
+            message.Body = email.Body;
+            message.IsBodyHtml = false;
+        }
+
+        foreach (var f in files)
+        {
+            var att = new Attachment(new MemoryStream(f.Content), f.FileName, f.ContentType ?? "application/octet-stream");
+            message.Attachments.Add(att);
+        }
+
+        await SendCoreAsync(message, cancellationToken);
+    }
+
+    /// <summary>Reads SMTP config, logs-instead-of-sends in dev, otherwise dispatches the message.</summary>
+    private async Task SendCoreAsync(MailMessage message, CancellationToken cancellationToken)
     {
         var smtp    = _configuration.GetSection("Smtp");
         var enabled = bool.TryParse(smtp["Enabled"], out var e) && e;
 
+        var fromEmail = smtp["FromEmail"] ?? smtp["User"] ?? "no-reply@pems.local";
+        var fromName  = smtp["FromName"] ?? "PEMS";
+        message.From = new MailAddress(fromEmail, fromName);
+
+        var to = message.To.Count > 0 ? message.To[0].Address : "(none)";
+
         if (!enabled)
         {
+            var bodyPreview = message.Body;
+            if (string.IsNullOrEmpty(bodyPreview) && message.AlternateViews.Count > 0)
+                bodyPreview = "[HTML alternate view]";
             _logger.LogInformation(
-                "[EmailService-DEV] To:{To} Subject:{Subject}\n{Body}", toEmail, subject, htmlBody);
+                "[EmailService-DEV] To:{To} Subject:{Subject} Attachments:{Att} Inline:{Inline}\n{Body}",
+                to, message.Subject, message.Attachments.Count,
+                message.AlternateViews.Count > 0 ? message.AlternateViews[0].LinkedResources.Count : 0,
+                bodyPreview);
             return;
         }
 
@@ -40,18 +106,7 @@ public sealed class EmailService : IEmailService
         var port      = int.TryParse(smtp["Port"], out var p) ? p : 587;
         var user      = smtp["User"];
         var password  = smtp["Password"];
-        var fromEmail = smtp["FromEmail"] ?? user ?? "no-reply@pems.local";
-        var fromName  = smtp["FromName"] ?? "PEMS";
         var enableSsl = !bool.TryParse(smtp["EnableSsl"], out var ssl) || ssl;
-
-        using var message = new MailMessage
-        {
-            From      = new MailAddress(fromEmail, fromName),
-            Subject   = subject,
-            Body      = htmlBody,
-            IsBodyHtml = true
-        };
-        message.To.Add(toEmail);
 
         using var client = new SmtpClient(host, port) { EnableSsl = enableSsl };
         client.UseDefaultCredentials = false;
@@ -59,7 +114,9 @@ public sealed class EmailService : IEmailService
             client.Credentials = new NetworkCredential(user, password);
 
         await client.SendMailAsync(message, cancellationToken);
-        _logger.LogInformation("Sent email to {To} (subject: {Subject}).", toEmail, subject);
+        _logger.LogInformation(
+            "Sent email to {To} (subject: {Subject}, attachments: {Att}).",
+            to, message.Subject, message.Attachments.Count);
     }
 
     // ── Password reset ────────────────────────────────────────────────────────

@@ -8,6 +8,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Mail, X, Loader2, AlertCircle, Clock, User2, ChevronDown, ChevronUp, Paperclip, Image as ImageIcon, Download, ExternalLink } from 'lucide-react';
 import type { GetSentEmailsResult, SentEmailHistoryItem, SentEmailAttachmentItem } from '../types/delegations.types';
 import { sanitizeHtml } from '../../../shared/security/sanitizeHtml';
+import { resolveCidImages } from '../../emails/utils/inlineImages';
 
 interface Props {
   open: boolean;
@@ -125,6 +126,23 @@ export function SentEmailsModal({ open, title, subtitle, targetKey, load, onClos
 
 function SentEmailCard({ item }: { item: SentEmailHistoryItem }) {
   const [showBody, setShowBody] = useState(false);
+  const isHtml = (item.bodyFormat ?? 'HTML') === 'HTML';
+  const sanitizedBody = isHtml ? sanitizeHtml(item.bodySnapshot) : (item.bodySnapshot ?? '');
+  const [renderedBody, setRenderedBody] = useState(sanitizedBody);
+
+  // Resolve inline <img src="cid:.."> back to authenticated blob URLs once the body is expanded.
+  useEffect(() => {
+    setRenderedBody(sanitizedBody);
+    if (!showBody || !isHtml) return;
+    const map: Record<string, number> = {};
+    (item.attachments || []).forEach((a) => {
+      if (a.attachmentType === 'INLINE_IMAGE' && a.contentId) map[a.contentId] = a.fileId;
+    });
+    if (Object.keys(map).length === 0) return;
+    let alive = true;
+    resolveCidImages(sanitizedBody, map).then((html) => { if (alive) setRenderedBody(html); });
+    return () => { alive = false; };
+  }, [showBody, isHtml, sanitizedBody, item.attachments]);
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-2">
@@ -187,12 +205,12 @@ function SentEmailCard({ item }: { item: SentEmailHistoryItem }) {
           </button>
           {showBody && (
             <div className="mt-2 max-h-72 overflow-y-auto rounded-lg border border-gray-200 bg-white p-2">
-              {(item.bodyFormat ?? 'HTML') === 'PLAIN_TEXT' ? (
+              {!isHtml ? (
                 // Plain text: keep line breaks, never interpret as HTML.
                 <div className="whitespace-pre-wrap break-words text-sm text-gray-700">{item.bodySnapshot}</div>
               ) : (
-                // HTML: always sanitize before rendering (defence-in-depth, Part F).
-                <div className="select-text" dangerouslySetInnerHTML={{ __html: sanitizeHtml(item.bodySnapshot) }} />
+                // HTML: sanitized + inline cid images resolved to blob URLs.
+                <div className="select-text" dangerouslySetInnerHTML={{ __html: renderedBody }} />
               )}
             </div>
           )}

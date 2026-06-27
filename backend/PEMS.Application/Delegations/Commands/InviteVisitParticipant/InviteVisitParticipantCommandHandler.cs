@@ -255,7 +255,15 @@ public sealed class InviteVisitParticipantCommandHandler
         string emailStatus;
         try
         {
-            await _email.SendAsync(recipient.Email, finalSubject, finalBody, cancellationToken);
+            // Real MIME path (HTML body). Action emails carry no file attachments today, but this
+            // unifies on the rich sender so attachments/inline images can be added later.
+            await _email.SendAsync(new PEMS.Application.Common.Interfaces.OutboundEmail
+            {
+                ToEmail = recipient.Email,
+                Subject = finalSubject,
+                Body = finalBody,
+                IsHtml = true,
+            }, cancellationToken);
             emailQueued = true;
             emailStatus = "SENT";
             await UpdateEmailStatusAsync(sentEmailId, sentEmailRecipientId, "SENT", actorId, now, null, cancellationToken);

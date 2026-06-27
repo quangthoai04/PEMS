@@ -276,7 +276,15 @@ public sealed class PrepareVisitLogisticsCommandHandler
         string emailStatus;
         try
         {
-            await _email.SendAsync(leaderEmail!, finalSubject, finalBody, cancellationToken);
+            // Real MIME path (HTML body). Logistics request emails are action emails (no file
+            // attachments today); unified on the rich sender for consistency/extensibility.
+            await _email.SendAsync(new PEMS.Application.Common.Interfaces.OutboundEmail
+            {
+                ToEmail = leaderEmail!,
+                Subject = finalSubject,
+                Body = finalBody,
+                IsHtml = true,
+            }, cancellationToken);
             emailStatus = "SENT";
             await UpdateEmailStatusAsync(sentEmailId, sentEmailRecipientId, "SENT", actorId, now, null, cancellationToken);
         }

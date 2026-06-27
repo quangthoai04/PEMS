@@ -20,17 +20,20 @@ public sealed class SendEmailDraftCommandHandler
     private readonly ICurrentUserService _currentUser;
     private readonly IEmailService _email;
     private readonly IHtmlSanitizerService _sanitizer;
+    private readonly IFileStorageService _storage;
 
     public SendEmailDraftCommandHandler(
         IApplicationDbContext db,
         ICurrentUserService currentUser,
         IEmailService email,
-        IHtmlSanitizerService sanitizer)
+        IHtmlSanitizerService sanitizer,
+        IFileStorageService storage)
     {
         _db = db;
         _currentUser = currentUser;
         _email = email;
         _sanitizer = sanitizer;
+        _storage = storage;
     }
 
     public async Task<SendEmailDraftResponse> Handle(
@@ -76,7 +79,7 @@ public sealed class SendEmailDraftCommandHandler
         var now = DateTime.Now;
         var subject = draft.Subject!.Trim();
         var body = draft.BodyFormat == EmailBodyFormat.HTML
-            ? _sanitizer.Sanitize(draft.BodyContent)
+            ? _sanitizer.SanitizeEmailHtml(draft.BodyContent)
             : (draft.BodyContent ?? string.Empty);
 
         await using var tx = await _db.BeginTransactionAsync(cancellationToken);
@@ -120,15 +123,28 @@ public sealed class SendEmailDraftCommandHandler
         _db.SentEmails.Add(sentEmail);
         await _db.SaveChangesAsync(cancellationToken);
 
-        // Dispatch. NOTE: IEmailService has no attachment/inline-image support yet, so files are
-        // persisted as metadata but not yet streamed as MIME parts (see known limitations).
+        // Resolve attachment bytes ONCE (reused per recipient): real MIME parts — files as downloadable
+        // attachments, INLINE_IMAGE as cid linked resources matching <img src="cid:..."> in the body.
+        var isHtml = draft.BodyFormat == EmailBodyFormat.HTML;
+        var outboundAttachments = await EmailAttachmentLoader.LoadAsync(
+            _db, _storage,
+            attachmentRows.Select(a => (a.FileId, a.AttachmentType, a.ContentId, a.DisplayName)).ToList(),
+            cancellationToken);
+
         var hasFailure = false;
         foreach (var recipient in sentEmail.Recipients)
         {
             recipient.SentAt = DateTime.Now;
             try
             {
-                await _email.SendAsync(recipient.RecipientEmail, subject, body, cancellationToken);
+                await _email.SendAsync(new OutboundEmail
+                {
+                    ToEmail = recipient.RecipientEmail,
+                    Subject = subject,
+                    Body = body,
+                    IsHtml = isHtml,
+                    Attachments = outboundAttachments,
+                }, cancellationToken);
                 recipient.DeliveryStatus = "DELIVERED";
                 recipient.DeliveredAt = DateTime.Now;
             }

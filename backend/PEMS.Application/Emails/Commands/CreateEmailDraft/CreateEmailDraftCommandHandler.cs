@@ -34,7 +34,7 @@ public sealed class CreateEmailDraftCommandHandler : IRequestHandler<CreateEmail
         var now = DateTime.Now;
         var bodyFormat = EmailDraftWriter.ParseBodyFormat(request.BodyFormat);
         var body = bodyFormat == EmailBodyFormat.HTML
-            ? _sanitizer.Sanitize(request.BodyContent)
+            ? _sanitizer.SanitizeEmailHtml(request.BodyContent)
             : request.BodyContent;
 
         // Validate attachments BEFORE inserting anything (no orphan draft on a bad file).

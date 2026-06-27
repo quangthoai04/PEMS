@@ -1,4 +1,36 @@
+using System.Collections.Generic;
+
 namespace PEMS.Application.Common.Interfaces;
+
+/// <summary>
+/// A ready-to-send email with optional attachments / inline images. The caller has already resolved
+/// each file's bytes (e.g. via <see cref="IFileStorageService"/>) so the email service stays free of
+/// DB/storage concerns and only builds MIME.
+/// </summary>
+public sealed class OutboundEmail
+{
+    public string ToEmail { get; init; } = string.Empty;
+    public string Subject { get; init; } = string.Empty;
+    public string Body { get; init; } = string.Empty;
+    /// <summary>True = HTML body (text/html), false = PLAIN_TEXT.</summary>
+    public bool IsHtml { get; init; } = true;
+    public IReadOnlyList<OutboundAttachment> Attachments { get; init; } = new List<OutboundAttachment>();
+}
+
+/// <summary>
+/// One attachment. <see cref="IsInline"/> images are referenced from the HTML body via
+/// <c>&lt;img src="cid:{ContentId}"&gt;</c> and become MIME linked resources; plain attachments show
+/// in the recipient's client as downloadable files.
+/// </summary>
+public sealed class OutboundAttachment
+{
+    public byte[] Content { get; init; } = System.Array.Empty<byte>();
+    public string FileName { get; init; } = "attachment";
+    public string? ContentType { get; init; }
+    public bool IsInline { get; init; }
+    /// <summary>Content-ID for inline images (required when <see cref="IsInline"/> is true).</summary>
+    public string? ContentId { get; init; }
+}
 
 /// <summary>
 /// Outbound email. When no SMTP server is configured the implementation logs
@@ -8,6 +40,12 @@ public interface IEmailService
 {
     /// <summary>Generic send — caller provides the full HTML body.</summary>
     Task SendAsync(string toEmail, string subject, string htmlBody, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Rich send: builds a real MIME message with the given body format, file attachments and inline
+    /// (cid) images. Used by the email rich-editor send flows (drafts, participant invite, logistics).
+    /// </summary>
+    Task SendAsync(OutboundEmail message, CancellationToken cancellationToken = default);
 
     /// <summary>Sends a password-reset / forgot-password OTP email.</summary>
     Task SendPasswordResetAsync(string toEmail, string fullName, string code, CancellationToken cancellationToken = default);
