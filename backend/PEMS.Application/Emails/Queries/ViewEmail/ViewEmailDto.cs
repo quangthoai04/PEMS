@@ -5,25 +5,54 @@ namespace PEMS.Application.Emails.Queries.ViewEmail;
 
 public class ViewEmailDto
 {
-    public ulong Id { get; set; }
+    public ulong SentEmailId { get; set; }
+    public ulong? EmailTemplateId { get; set; }
+    public string? TemplateName { get; set; }
+    public string? TemplateCode { get; set; }
+    public string? RelatedType { get; set; }
+    public ulong? RelatedId { get; set; }
     public string Subject { get; set; } = null!;
-    public string Body { get; set; } = null!;
-    public string SenderName { get; set; } = null!;
-    public string SenderEmail { get; set; } = null!;
-    public List<EmailRecipientDto> To { get; set; } = new();
-    public List<EmailRecipientDto> Cc { get; set; } = new();
-    public List<EmailRecipientDto> Bcc { get; set; } = new();
-    public DateTime? SentAt { get; set; }
+    public string BodySnapshot { get; set; } = null!;
     public string Status { get; set; } = null!;
-    public string ProcessStatus { get; set; } = null!;
-    public bool CanReply { get; set; }
-    public bool CanConfirm { get; set; }
-    public bool CanMarkComplete { get; set; }
+    public string? ErrorMessage { get; set; }
+    public uint RetryCount { get; set; }
+    public DateTime? LastAttemptAt { get; set; }
+    public DateTime? DeliveredAt { get; set; }
+    public DateTime? SentAt { get; set; }
+    public DateTime CreatedAt { get; set; }
+
+    public SentEmailSenderDto? Sender { get; set; }
+    public List<SentEmailRecipientDto> Recipients { get; set; } = new();
+    public List<SentEmailAttachmentDto> Attachments { get; set; } = new();
 }
 
-public class EmailRecipientDto
+public class SentEmailSenderDto
 {
-    public string Name { get; set; } = null!;
-    public string Email { get; set; } = null!;
-    public string? DeliveryStatus { get; set; }
+    public ulong? UserId { get; set; }
+    public string? FullName { get; set; }
+    public string? Email { get; set; }
+}
+
+public class SentEmailRecipientDto
+{
+    public string RecipientEmail { get; set; } = null!;
+    public string? RecipientName { get; set; }
+    public string RecipientType { get; set; } = null!;
+    public string DeliveryStatus { get; set; } = null!;
+    public string? ProviderMessageId { get; set; }
+    public string? ErrorMessage { get; set; }
+    public DateTime? SentAt { get; set; }
+    public DateTime? DeliveredAt { get; set; }
+}
+
+public class SentEmailAttachmentDto
+{
+    public ulong FileId { get; set; }
+    public string FileName { get; set; } = null!;
+    public string? MimeType { get; set; }
+    public long? SizeBytes { get; set; }
+    public bool IsInline { get; set; }
+    public string? ContentId { get; set; }
+    public string? PreviewUrl { get; set; }
+    public string? DownloadUrl { get; set; }
 }

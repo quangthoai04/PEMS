@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { Search, Plus, Eye, Edit2, ChevronLeft, ChevronRight, Check, ArrowUpDown, Send } from 'lucide-react';
-import { useNavigate, useLocation } from 'react-router-dom';
-import { SendEmailTab } from './SendEmailTab';
+import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { EmailComposeModal } from '../../../features/emails/components/EmailComposeModal';
+import { TemplateManagement } from './TemplateManagement';
 
 import { emailsApi } from '../../../features/emails/api/emailsApi';
 import { format } from 'date-fns';
@@ -17,15 +17,25 @@ export function EmailManagement() {
   const isStaff = userRole === 'STAFF' || userRole === 'DEPARTMENT' || userRole === 'STUDENT' || userRole === 'VISITOR';
   const isVisitor = userRole === 'VISITOR';
 
-  const tabParam = new URLSearchParams(location.search).get('tab');
-  const defaultTab = 'Danh sách email';
-  const initialTab = tabParam === 'send' ? 'Gửi email' : defaultTab;
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const tabParam = searchParams.get('tab');
   const initialMailbox = tabParam === 'sent' ? 'sent' : tabParam === 'received' ? 'received' : 'all';
-  
-  const [activeTab, setActiveTab] = useState(initialTab);
+  const initialPage = parseInt(searchParams.get('page') || '1', 10);
+  const initialSearch = searchParams.get('search') || '';
+  const initialRelated = searchParams.get('related') || '';
+  const initialStart = searchParams.get('start') || '';
+  const initialEnd = searchParams.get('end') || '';
+
+  const [activeTab, setActiveTab] = useState<'emails' | 'templates'>('emails');
   const [showTemplateModal, setShowTemplateModal] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<any>(null);
   const [showCompose, setShowCompose] = useState(false);
+  const [composeInitialData, setComposeInitialData] = useState<{
+    subject: string;
+    bodyHtml: string;
+    templateId: number | null;
+  }>({ subject: '', bodyHtml: '', templateId: null });
 
   // Template Data state
   const [data, setData] = useState<any[]>([]);
@@ -33,20 +43,38 @@ export function EmailManagement() {
   const [itemsPerPage, setItemsPerPage] = useState(5);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [purposeFilter, setPurposeFilter] = useState('');
   const [isLoadingTemplates, setIsLoadingTemplates] = useState(false);
+  const [totalTemplates, setTotalTemplates] = useState(0);
 
   // Email List state
   const [sentData, setSentData] = useState<any[]>([]);
-  const [pageSent, setPageSent] = useState(1);
+  const [pageSent, setPageSent] = useState(initialPage);
   const [itemsPerPageSent, setItemsPerPageSent] = useState(10);
-  const [searchQuerySent, setSearchQuerySent] = useState('');
+  const [searchQuerySent, setSearchQuerySent] = useState(initialSearch);
   const [mailboxFilter, setMailboxFilter] = useState(initialMailbox); // all, sent, received
-  const [relatedTypeFilter, setRelatedTypeFilter] = useState(''); // VISIT_REQUEST, GENERAL
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
+  const [relatedTypeFilter, setRelatedTypeFilter] = useState(initialRelated); // VISIT_REQUEST, GENERAL
+  const [startDate, setStartDate] = useState(initialStart);
+  const [endDate, setEndDate] = useState(initialEnd);
   const [totalEmails, setTotalEmails] = useState(0);
   const [isLoadingEmails, setIsLoadingEmails] = useState(false);
   const [toastMessage, setToastMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
+
+  React.useEffect(() => {
+    const params = new URLSearchParams(searchParams);
+    let changed = false;
+    
+    if (pageSent !== 1) { params.set('page', pageSent.toString()); changed = true; } else { params.delete('page'); }
+    if (searchQuerySent) { params.set('search', searchQuerySent); changed = true; } else { params.delete('search'); }
+    if (mailboxFilter !== 'all') { params.set('tab', mailboxFilter); changed = true; } else { params.delete('tab'); }
+    if (relatedTypeFilter) { params.set('related', relatedTypeFilter); changed = true; } else { params.delete('related'); }
+    if (startDate) { params.set('start', startDate); changed = true; } else { params.delete('start'); }
+    if (endDate) { params.set('end', endDate); changed = true; } else { params.delete('end'); }
+
+    if (params.toString() !== searchParams.toString()) {
+      setSearchParams(params, { replace: true });
+    }
+  }, [pageSent, searchQuerySent, mailboxFilter, relatedTypeFilter, startDate, endDate, searchParams, setSearchParams]);
 
   const showPageToast = (type: 'success' | 'error' | 'info', text: string) => {
     setToastMessage({ type, text });
@@ -77,11 +105,9 @@ export function EmailManagement() {
   }, [pageSent, itemsPerPageSent, searchQuerySent, mailboxFilter, relatedTypeFilter, startDate, endDate]);
 
   React.useEffect(() => {
-    if (activeTab !== 'Danh sách email') return;
-
     const timeoutId = setTimeout(fetchEmails, 300);
     return () => clearTimeout(timeoutId);
-  }, [activeTab, fetchEmails]);
+  }, [fetchEmails]);
 
   React.useEffect(() => {
     if (!showTemplateModal || selectedTemplate) return;
@@ -92,14 +118,18 @@ export function EmailManagement() {
         const res = await emailsApi.getEmailTemplateList({
           keyword: searchQuery,
           status: statusFilter,
+          purpose: purposeFilter,
+          mode: 'use',
           page,
           pageSize: itemsPerPage,
         });
         const items = res.data.items || res.data.templates || [];
         setData(Array.isArray(items) ? items : []);
+        setTotalTemplates(res.data.totalCount || res.data.totalItems || 0);
       } catch (error) {
         console.error('Failed to fetch email templates:', error);
         setData([]);
+        setTotalTemplates(0);
       } finally {
         setIsLoadingTemplates(false);
       }
@@ -107,20 +137,7 @@ export function EmailManagement() {
 
     const timeoutId = setTimeout(fetchTemplates, 300);
     return () => clearTimeout(timeoutId);
-  }, [showTemplateModal, selectedTemplate, searchQuery, statusFilter, page, itemsPerPage]);
-
-  // Filter templates
-  const filteredData = data.filter(item => {
-    const name = item.name || item.templateName || item.templateCode || '';
-    const subject = item.subject || '';
-    const status = item.status || '';
-    const matchSearch = name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                       subject.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchStatus = statusFilter ? status === statusFilter : true;
-    return matchSearch && matchStatus;
-  });
-  const totalPages = Math.ceil(filteredData.length / itemsPerPage);
-  const currentItems = filteredData.slice((page - 1) * itemsPerPage, page * itemsPerPage);
+  }, [showTemplateModal, selectedTemplate, searchQuery, statusFilter, purposeFilter, page, itemsPerPage]);
 
   const totalPagesSent = Math.ceil(totalEmails / itemsPerPageSent);
   const currentItemsSent = sentData;
@@ -141,31 +158,31 @@ export function EmailManagement() {
         <span className="mx-2">/</span>
         <span className="text-[#004c91]">Quản lý email</span>
       </div>
-      <div className="border-b border-gray-100 pb-4 mb-6 text-left flex justify-start">
+      <div className="border-b border-gray-100 pb-4 mb-6 text-left flex justify-between items-end">
         <h1 className="text-3xl font-bold text-[#004c91]">Quản lý email</h1>
+        {userRole === 'HO' && (
+          <div className="flex gap-4">
+            <button 
+              className={`pb-4 -mb-[17px] border-b-2 px-1 font-medium text-sm transition-colors ${activeTab === 'emails' ? 'border-[#004c91] text-[#004c91]' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+              onClick={() => setActiveTab('emails')}
+            >
+              Danh sách email
+            </button>
+            <button 
+              className={`pb-4 -mb-[17px] border-b-2 px-1 font-medium text-sm transition-colors ${activeTab === 'templates' ? 'border-[#004c91] text-[#004c91]' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+              onClick={() => setActiveTab('templates')}
+            >
+              Cấu hình mẫu email
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* Tabs */}
-      <div className="flex items-center gap-6 border-b border-gray-200 mb-6">
-        <button 
-          onClick={() => setActiveTab('Danh sách email')}
-          className={`pb-3 font-bold text-[15px] border-b-2 transition-colors ${activeTab === 'Danh sách email' ? 'border-[#004c91] text-[#004c91]' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
-        >
-          Danh sách email
-        </button>
-        <button 
-          onClick={() => setActiveTab('Gửi email')}
-          className={`pb-3 font-bold text-[15px] border-b-2 transition-colors ${activeTab === 'Gửi email' ? 'border-[#004c91] text-[#004c91]' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
-        >
-          Gửi email
-        </button>
-      </div>
-
-      {activeTab === 'Danh sách email' && (
+      {activeTab === 'emails' ? (
         <>
           {/* Toolbar */}
-          <div className="flex items-center flex-wrap gap-3 mb-6">
-            <div className="relative flex-1 min-w-[200px] max-w-sm">
+      <div className="flex items-center flex-wrap gap-3 mb-6">
+        <div className="relative flex-1 min-w-[200px] max-w-sm">
               <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
               <input 
                 type="text" 
@@ -217,14 +234,20 @@ export function EmailManagement() {
             {userRole !== 'VISITOR' && (
               <div className="ml-auto flex items-center gap-2">
                 <button
-                  onClick={() => setShowCompose(true)}
+                  onClick={() => {
+                    setComposeInitialData({ subject: '', bodyHtml: '', templateId: null });
+                    setShowCompose(true);
+                  }}
                   className="bg-[#004c91] hover:bg-[#013565] text-white px-4 py-2 rounded-lg font-bold flex items-center gap-1.5 transition-colors shadow-sm text-sm tracking-wide"
                 >
                   <Send className="w-4 h-4 flex-shrink-0" />
                   Soạn email
                 </button>
                 <button
-                  onClick={() => setShowTemplateModal(true)}
+                  onClick={() => {
+                    setShowTemplateModal(true);
+                    setSelectedTemplate(null);
+                  }}
                   className="bg-white border border-[#004c91] hover:bg-blue-50 text-[#004c91] px-4 py-2 rounded-lg font-bold flex items-center gap-1.5 transition-colors shadow-sm text-sm tracking-wide"
                 >
                   <Eye className="w-4 h-4 flex-shrink-0" />
@@ -332,30 +355,22 @@ export function EmailManagement() {
             </div>
           </div>
         </>
-      )}
-
-      {activeTab === 'Gửi email' && (
-        <SendEmailTab
-          onSent={(message) => {
-            const isFailure = message?.includes('thất bại');
-            showPageToast(isFailure ? 'error' : 'success', message || 'Gửi email thành công!');
-            setSearchQuerySent('');
-            setRelatedTypeFilter('');
-            setStartDate('');
-            setEndDate('');
-            setMailboxFilter('sent');
-            setPageSent(1);
-            setActiveTab('Danh sách email');
-          }}
-        />
-      )}
+      ) : activeTab === 'templates' && userRole === 'HO' ? (
+        <TemplateManagement pushToast={showPageToast} />
+      ) : null}
 
       {/* Rich compose (react-quill + attachments + inline images + autosave draft) */}
       <EmailComposeModal
         open={showCompose}
-        onClose={() => setShowCompose(false)}
+        onClose={() => {
+          setShowCompose(false);
+          setComposeInitialData({ subject: '', bodyHtml: '', templateId: null });
+        }}
+        initialSubject={composeInitialData.subject}
+        initialBodyHtml={composeInitialData.bodyHtml}
+        emailTemplateId={composeInitialData.templateId}
         pushToast={(type, msg) => showPageToast(type === 'warning' ? 'info' : type, msg)}
-        onSent={() => { setMailboxFilter('sent'); setPageSent(1); setActiveTab('Danh sách email'); }}
+        onSent={() => { setMailboxFilter('sent'); setPageSent(1); }}
       />
 
       {/* Template Modal */}
@@ -385,38 +400,73 @@ export function EmailManagement() {
                     <div className="text-[15px] font-bold text-[#004c91]">{selectedTemplate.name}</div>
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Tiêu đề email</label>
-                    <div className="text-[14px] font-medium text-gray-800">{selectedTemplate.subject}</div>
-                  </div>
-                  <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Mục đích/Mô tả</label>
-                    <div className="text-[14px] text-gray-600">{selectedTemplate.desc}</div>
+                    <div className="text-[14px] text-gray-600">{selectedTemplate.purpose || selectedTemplate.description}</div>
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Trạng thái</label>
-                    <span className={`inline-flex px-2 py-1 rounded-full text-[11px] font-bold border ${selectedTemplate.status === 'Sử dụng' ? 'bg-[#eaffe4] text-[#0aa14f] border-[#ceefda]' : 'bg-gray-100 text-gray-500 border-gray-200'}`}>
-                      {selectedTemplate.status}
+                    <span className={`inline-flex px-2 py-1 rounded-full text-[11px] font-bold border ${selectedTemplate.status === 'ACTIVE' ? 'bg-[#eaffe4] text-[#0aa14f] border-[#ceefda]' : 'bg-gray-100 text-gray-500 border-gray-200'}`}>
+                      {selectedTemplate.status === 'ACTIVE' ? 'Đang hoạt động' : 'Tạm khóa'}
                     </span>
                   </div>
+                  <div className="pt-4 border-t border-gray-200 flex justify-end">
+                     <button
+                       onClick={() => {
+                         setComposeInitialData({
+                           subject: selectedTemplate.subjectVi || selectedTemplate.subject || '',
+                           bodyHtml: selectedTemplate.bodyVi || selectedTemplate.content || '',
+                           templateId: selectedTemplate.emailTemplateId || selectedTemplate.id || null
+                         });
+                         setShowTemplateModal(false);
+                         setSelectedTemplate(null);
+                         setShowCompose(true);
+                       }}
+                       className="bg-[#004c91] text-white px-5 py-2 rounded-lg font-bold hover:bg-[#013565] transition-colors"
+                     >
+                       Dùng mẫu này
+                     </button>
+                  </div>
                   <div className="pt-4 border-t border-gray-200">
+                    <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Tiêu đề (Tiếng Việt)</label>
+                    <div className="text-[14px] font-medium text-gray-800 mb-4">{selectedTemplate.subjectVi || selectedTemplate.subject}</div>
+                    
                     <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Nội dung mẫu (Preview)</label>
-                    <div className="bg-white p-4 border border-gray-200 rounded min-h-[200px] text-sm text-gray-700" dangerouslySetInnerHTML={{ __html: selectedTemplate.content }} />
+                    <div className="bg-white p-4 border border-gray-200 rounded min-h-[200px] text-sm text-gray-700" dangerouslySetInnerHTML={{ __html: selectedTemplate.bodyVi || selectedTemplate.content || '' }} />
                   </div>
                 </div>
               </div>
             ) : (
-              <>
-                <div className="flex items-center gap-3 mb-4">
+              <div className="flex flex-col h-[calc(90vh-140px)]">
+                <div className="flex items-center gap-3 mb-4 shrink-0">
                   <div className="relative flex-1">
                     <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
                     <input 
                       type="text" 
                       value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
+                      onChange={(e) => { setSearchQuery(e.target.value); setPage(1); }}
                       placeholder="Tìm kiếm mẫu email..." 
                       className="w-full pl-10 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-[#004c91]" 
                     />
                   </div>
+                  <select
+                    value={purposeFilter}
+                    onChange={(e) => { setPurposeFilter(e.target.value); setPage(1); }}
+                    className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#004c91] bg-white outline-none"
+                  >
+                    <option value="">Tất cả mục đích</option>
+                    <option value="VISIT_REQUEST">Lịch thăm</option>
+                    <option value="LOGISTICS">Hậu cần</option>
+                    <option value="GENERAL">Khác</option>
+                  </select>
+                  <select
+                    value={itemsPerPage}
+                    onChange={(e) => { setItemsPerPage(Number(e.target.value)); setPage(1); }}
+                    className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#004c91] bg-white outline-none"
+                  >
+                    <option value="5">5 dòng/trang</option>
+                    <option value="10">10 dòng/trang</option>
+                    <option value="20">20 dòng/trang</option>
+                  </select>
                 </div>
 
                 <div className="overflow-y-auto flex-1 rounded-lg border border-gray-200">
@@ -431,27 +481,78 @@ export function EmailManagement() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                      {currentItems.map((item, index) => (
-                        <tr key={item.id} className="hover:bg-gray-50">
-                          <td className="p-3 align-middle text-center text-[13px]">{index + 1}</td>
-                          <td className="p-3 align-middle font-bold text-[#004c91] text-[13px] pl-4">{item.name}</td>
-                          <td className="p-3 align-middle text-gray-600 text-[13px] pl-4">{item.desc}</td>
-                          <td className="p-3 align-middle text-center">
-                            <span className={`inline-flex px-2 py-1 rounded-full text-[11px] font-bold border ${item.status === 'Sử dụng' ? 'bg-[#eaffe4] text-[#0aa14f] border-[#ceefda]' : 'bg-gray-100 text-gray-500 border-gray-200'}`}>
-                              {item.status}
-                            </span>
-                          </td>
-                          <td className="p-3 align-middle text-center">
-                            <button onClick={() => setSelectedTemplate(item)} className="p-1.5 text-gray-500 hover:text-[#004c91] transition-colors" title="Xem chi tiết">
-                              <Eye className="w-[16px] h-[16px]" />
-                            </button>
+                      {data.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="p-8 text-center text-gray-500">
+                            Không tìm thấy mẫu email phù hợp.
                           </td>
                         </tr>
-                      ))}
+                      ) : (
+                        data.map((item, index) => (
+                          <tr key={item.id || item.emailTemplateId} className="hover:bg-gray-50">
+                            <td className="p-3 align-middle text-center text-[13px]">{index + 1 + (page - 1) * itemsPerPage}</td>
+                            <td className="p-3 align-middle font-bold text-[#004c91] text-[13px] pl-4">{item.name}</td>
+                            <td className="p-3 align-middle text-gray-600 text-[13px] pl-4">{item.purpose || item.description || ''}</td>
+                            <td className="p-3 align-middle text-center">
+                              <span className={`inline-flex px-2 py-1 rounded-full text-[11px] font-bold border ${item.status === 'ACTIVE' ? 'bg-[#eaffe4] text-[#0aa14f] border-[#ceefda]' : 'bg-gray-100 text-gray-500 border-gray-200'}`}>
+                                {item.status === 'ACTIVE' ? 'Đang hoạt động' : 'Tạm khóa'}
+                              </span>
+                            </td>
+                            <td className="p-3 align-middle text-center">
+                              <button onClick={async () => {
+                                try {
+                                  const res = await emailsApi.getEmailTemplateDetail(item.emailTemplateId);
+                                  setSelectedTemplate(res.data);
+                                } catch (e) {
+                                  showPageToast('error', 'Không thể tải mẫu email');
+                                }
+                              }} className="p-1.5 text-gray-500 hover:text-[#004c91] transition-colors" title="Xem chi tiết">
+                                <Eye className="w-[16px] h-[16px]" />
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      )}
                     </tbody>
                   </table>
                 </div>
-              </>
+                
+                {/* Pagination for Template List */}
+                {totalTemplates > 0 && (
+                  <div className="flex items-center justify-between border-t border-slate-200 pt-4 mt-4 shrink-0">
+                    <p className="text-sm font-medium text-slate-500">
+                      Hiển thị {(page - 1) * itemsPerPage + 1}-{Math.min(page * itemsPerPage, totalTemplates)} / {totalTemplates} mẫu
+                    </p>
+                    <div className="flex items-center gap-1.5">
+                      <button 
+                        onClick={() => setPage(p => Math.max(1, p - 1))}
+                        disabled={page === 1}
+                        className="px-3 py-1.5 rounded-md border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:hover:bg-transparent outline-none"
+                      >
+                        Trước
+                      </button>
+                      <div className="flex items-center gap-1">
+                        {Array.from({ length: Math.ceil(totalTemplates / itemsPerPage) }, (_, i) => i + 1).map(p => (
+                          <button
+                            key={p}
+                            onClick={() => setPage(p)}
+                            className={`w-8 h-8 rounded-md text-sm font-medium transition-colors outline-none ${page === p ? 'bg-[#004c91] text-white' : 'text-gray-600 hover:bg-gray-100 border border-transparent'}`}
+                          >
+                            {p}
+                          </button>
+                        ))}
+                      </div>
+                      <button 
+                        onClick={() => setPage(p => Math.min(Math.ceil(totalTemplates / itemsPerPage), p + 1))}
+                        disabled={page === Math.ceil(totalTemplates / itemsPerPage)}
+                        className="px-3 py-1.5 rounded-md border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:hover:bg-transparent outline-none"
+                      >
+                        Sau
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             )}
           </div>
         </div>

@@ -1,8 +1,6 @@
-using System;
+namespace PEMS.Application.Emails.Commands.ToggleEmailTemplateStatus;
 
-namespace PEMS.Application.Emails.Commands.UpdateEmailTemplate;
-
-public sealed class UpdateEmailTemplateResponse
+public sealed class ToggleEmailTemplateStatusResponse
 {
     public ulong EmailTemplateId { get; set; }
     public bool Success { get; set; } = true;

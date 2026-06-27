@@ -28,10 +28,19 @@ export const emailsApi = {
   sendEmail: (data: any) => {
     return httpClient.post('/Emails/sendemail', data);
   },
-  getEmailTemplateList: (params?: { keyword?: string; status?: string; page?: number; pageSize?: number }) => {
-    return httpClient.get('/Emails/viewemailtemplatelist', { params });
+  getEmailTemplateList: (params?: { keyword?: string; status?: string; purpose?: string; page?: number; pageSize?: number; mode?: string }) => {
+    return httpClient.get('/email-templates', { params });
   },
   getEmailTemplateDetail: (id: number | string) => {
-    return httpClient.get('/Emails/viewemailtemplatedetail', { params: { id } });
+    return httpClient.get(`/email-templates/${id}`);
+  },
+  createEmailTemplate: (data: any) => {
+    return httpClient.post('/email-templates', data);
+  },
+  updateEmailTemplate: (id: number | string, data: any) => {
+    return httpClient.put(`/email-templates/${id}`, data);
+  },
+  toggleEmailTemplateStatus: (id: number | string, status: string) => {
+    return httpClient.patch(`/email-templates/${id}/status`, { status });
   }
 };

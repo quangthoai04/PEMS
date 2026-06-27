@@ -51,7 +51,7 @@ export function EmailDetail() {
       <div className="flex items-center text-sm text-gray-500 mb-6 font-medium">
         <Link to="/dashboard" className="hover:text-[#004c91] transition-colors">Dashboard</Link>
         <span className="mx-2">/</span>
-        <Link to="/dashboard/email" className="hover:text-[#004c91] transition-colors">Quản lý email</Link>
+        <button onClick={() => navigate(-1)} className="hover:text-[#004c91] transition-colors outline-none cursor-pointer">Quản lý email</button>
         <span className="mx-2">/</span>
         <span className="text-[#004c91]">Chi tiết mẫu email</span>
       </div>
@@ -61,7 +61,7 @@ export function EmailDetail() {
         <div className="bg-[#004c91] px-6 py-4 border-b border-[#004c91] flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <button 
-              onClick={() => navigate('/dashboard/email')}
+              onClick={() => navigate(-1)}
               className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-white/10 transition-colors text-white"
             >
               <ArrowLeft className="w-5 h-5" />

@@ -5,6 +5,7 @@
 
 import React, { useEffect } from 'react';
 import { Routes, Route, useLocation } from 'react-router-dom';
+import { Toaster } from 'react-hot-toast';
 import { Header } from './components/layout/Header';
 import { Footer } from './components/layout/Footer';
 import { HomePage } from './pages/HomePage';
@@ -104,6 +105,7 @@ export default function App() {
 
   return (
     <div className="font-sans text-gray-900 bg-white min-h-screen flex flex-col">
+      <Toaster position="top-right" containerStyle={{ zIndex: 9999 }} />
       <ScrollToTop />
 
       {/* Conditionally render Header and Footer based on route */}

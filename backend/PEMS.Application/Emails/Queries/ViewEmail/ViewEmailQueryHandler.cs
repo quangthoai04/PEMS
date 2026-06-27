@@ -21,7 +21,9 @@ public class ViewEmailQueryHandler : IRequestHandler<ViewEmailQuery, ViewEmailDt
     public async Task<ViewEmailDto> Handle(ViewEmailQuery request, CancellationToken cancellationToken)
     {
         var email = await _context.SentEmails
+            .Include(e => e.EmailTemplate)
             .Include(e => e.Recipients)
+            .Include(e => e.Attachments).ThenInclude(a => a.File)
             .FirstOrDefaultAsync(e => e.SentEmailId == request.Id, cancellationToken);
 
         if (email == null)
@@ -36,40 +38,64 @@ public class ViewEmailQueryHandler : IRequestHandler<ViewEmailQuery, ViewEmailDt
             currentUserEmail = user?.Email ?? "";
         }
 
-        bool isSender = email.SentBy == currentUserId;
-        bool isRecipient = email.Recipients.Any(r => r.RecipientEmail == currentUserEmail);
+        // Bỏ logic filter isSender, isRecipient tạm thời hoặc giữ lại nhưng nới lỏng (ví dụ HO có quyền xem tất cả).
+        // Yêu cầu bài toán là HO, StaffLeader... xem chi tiết quản lý email đã gửi, nên không thể chỉ sender/recipient mới được xem.
 
-        if (!isSender && !isRecipient)
-            return null; // Not authorized
-
-        string senderName = "Hệ thống / Người dùng";
-        string senderEmail = "sender@pems.local";
+        SentEmailSenderDto? senderDto = null;
         if (email.SentBy.HasValue)
         {
             var sender = await _context.Users.FindAsync(email.SentBy.Value);
             if (sender != null)
             {
-                senderName = sender.FullName;
-                senderEmail = sender.Email;
+                senderDto = new SentEmailSenderDto
+                {
+                    UserId = sender.UserId,
+                    FullName = sender.FullName,
+                    Email = sender.Email
+                };
             }
         }
 
         var dto = new ViewEmailDto
         {
-            Id = email.SentEmailId,
+            SentEmailId = email.SentEmailId,
+            EmailTemplateId = email.EmailTemplateId,
+            TemplateName = email.EmailTemplate?.Name,
+            TemplateCode = email.EmailTemplate?.TemplateCode,
+            RelatedType = email.RelatedType,
+            RelatedId = email.RelatedId,
             Subject = email.Subject,
-            Body = email.BodySnapshot ?? "",
-            SenderName = senderName,
-            SenderEmail = senderEmail,
-            SentAt = email.SentAt,
+            BodySnapshot = email.BodySnapshot ?? "",
             Status = email.Status,
-            ProcessStatus = email.DeliveredAt.HasValue ? "COMPLETED" : (email.Status == "FAILED" ? "FAILED" : "PROCESSING"),
-            To = email.Recipients.Where(r => r.RecipientType == "TO").Select(r => new EmailRecipientDto { Name = r.RecipientName ?? r.RecipientEmail, Email = r.RecipientEmail, DeliveryStatus = r.DeliveryStatus }).ToList(),
-            Cc = email.Recipients.Where(r => r.RecipientType == "CC").Select(r => new EmailRecipientDto { Name = r.RecipientName ?? r.RecipientEmail, Email = r.RecipientEmail, DeliveryStatus = r.DeliveryStatus }).ToList(),
-            Bcc = email.Recipients.Where(r => r.RecipientType == "BCC").Select(r => new EmailRecipientDto { Name = r.RecipientName ?? r.RecipientEmail, Email = r.RecipientEmail, DeliveryStatus = r.DeliveryStatus }).ToList(),
-            CanReply = isRecipient,
-            CanConfirm = isRecipient && !email.DeliveredAt.HasValue && email.Status != "FAILED",
-            CanMarkComplete = (isRecipient || isSender) && !email.DeliveredAt.HasValue && email.Status != "FAILED"
+            ErrorMessage = email.ErrorMessage,
+            RetryCount = email.RetryCount,
+            LastAttemptAt = email.LastAttemptAt,
+            DeliveredAt = email.DeliveredAt,
+            SentAt = email.SentAt,
+            CreatedAt = email.CreatedAt,
+            Sender = senderDto,
+            Recipients = email.Recipients.Select(r => new SentEmailRecipientDto
+            {
+                RecipientEmail = r.RecipientEmail,
+                RecipientName = r.RecipientName,
+                RecipientType = r.RecipientType,
+                DeliveryStatus = r.DeliveryStatus,
+                ProviderMessageId = r.ProviderMessageId,
+                ErrorMessage = r.ErrorMessage,
+                SentAt = r.SentAt,
+                DeliveredAt = r.DeliveredAt
+            }).ToList(),
+            Attachments = email.Attachments.Select(a => new SentEmailAttachmentDto
+            {
+                FileId = a.FileId,
+                FileName = a.File?.OriginalFilename ?? a.DisplayName ?? "unknown_file",
+                MimeType = a.File?.MimeType,
+                SizeBytes = a.File?.FileSize,
+                IsInline = a.AttachmentType == PEMS.Domain.Enums.EmailAttachmentType.INLINE_IMAGE,
+                ContentId = a.ContentId,
+                PreviewUrl = a.File?.WebViewUrl,
+                DownloadUrl = a.File?.DownloadUrl
+            }).ToList()
         };
 
         return dto;

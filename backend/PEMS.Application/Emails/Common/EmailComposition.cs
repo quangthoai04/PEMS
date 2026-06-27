@@ -52,6 +52,17 @@ public static class EmailComposition
         </div>
         <p style=""color:#6b7280;font-size:12px;margin-top:8px"">Sau khi đăng nhập, Trưởng phòng có thể chấp nhận xử lý, từ chối yêu cầu, gán nhân sự hoặc đề xuất thay đổi. Thao tác xử lý yêu cầu yêu cầu đăng nhập hệ thống.</p>";
 
+    public static string LogisticsActionBlock(string acceptUrl, string declineUrl, string detailUrl, string detailLabel = "Hành động khác")
+    {
+        return $@"<div style=""text-align:center;margin:24px 0"">
+            <a href=""{HE(acceptUrl)}"" style=""display:inline-block;background:#10b981;color:#fff;text-decoration:none;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">Đồng ý</a>
+            <a href=""{HE(declineUrl)}"" style=""display:inline-block;background:#ef4444;color:#fff;text-decoration:none;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">Từ chối</a>
+            <a href=""{HE(detailUrl)}"" style=""display:inline-block;background:#004c91;color:#fff;text-decoration:none;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">{HE(detailLabel)}</a>
+        </div>
+        <p style=""color:#6b7280;font-size:12px;margin-top:8px"">Lưu ý: <strong>Đồng ý / Từ chối</strong> là thao tác trực tiếp (không yêu cầu đăng nhập). <strong>Hành động khác</strong> (như gán nhân sự, thảo luận thêm) yêu cầu đăng nhập hệ thống.</p>
+        <p style=""color:#9ca3af;font-size:12px;margin-top:12px"">Liên kết phản hồi trực tiếp sẽ hết hạn sau 14 ngày và chỉ sử dụng được một lần.</p>";
+    }
+
     // ── Disabled action blocks (preview only — no live URLs/tokens) ──
 
     public static string DisabledAcceptDeclineBlock(bool withAssign = false)
@@ -70,6 +81,15 @@ public static class EmailComposition
         => $@"<div style=""text-align:center;margin:24px 0"">
             <span style=""display:inline-block;background:#9aa6b2;color:#fff;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">{HE(label)}</span>
         </div>";
+
+    public static string DisabledLogisticsActionBlock(string detailLabel = "Hành động khác")
+    {
+        return $@"<div style=""text-align:center;margin:24px 0"">
+            <span style=""display:inline-block;background:#9aa6b2;color:#fff;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">Đồng ý</span>
+            <span style=""display:inline-block;background:#9aa6b2;color:#fff;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">Từ chối</span>
+            <span style=""display:inline-block;background:#9aa6b2;color:#fff;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">{HE(detailLabel)}</span>
+        </div>";
+    }
 
     /// <summary>
     /// Removes any &lt;a&gt; that points at an action placeholder ({{acceptUrl}}/{{declineUrl}}/
@@ -134,4 +154,69 @@ public static class EmailComposition
     /// </summary>
     public static string ResolveEditableHtml(EmailOverride ov)
         => !string.IsNullOrWhiteSpace(ov.BodyText) ? PlainTextToHtml(ov.BodyText) : (ov.BodyHtml ?? string.Empty);
+
+    /// <summary>
+    /// Replaces {{variable}} placeholders with context values, applying fallbacks for missing values.
+    /// </summary>
+    public static string RenderTemplate(string template, System.Collections.Generic.Dictionary<string, string> context, string contextType = "GENERAL")
+    {
+        if (string.IsNullOrEmpty(template)) return template;
+
+        var fallbacks = new System.Collections.Generic.Dictionary<string, string>(System.StringComparer.OrdinalIgnoreCase)
+        {
+            { "coordinationNote", "Không có ghi chú phối hợp." },
+            { "quantity", "Chưa nhập" },
+            { "usageStartAt", "Chưa chọn thời gian" },
+            { "usageEndAt", "Chưa chọn thời gian" },
+            { "departmentName", "Chưa chọn phòng ban" },
+            { "departmentHeadName", "Chưa chọn phòng ban" },
+            { "departmentHeadEmail", "Chưa chọn phòng ban" },
+            { "headName", "Chưa chọn phòng ban" },
+            { "headEmail", "Chưa chọn phòng ban" },
+            { "logisticsItemTitle", "Chưa có thông tin" },
+            { "logisticsItemType", "Chưa có thông tin" },
+            { "logisticsDescription", "Chưa có thông tin" }
+        };
+
+        return Regex.Replace(template, @"\{\{\s*([\w]+)\s*\}\}", match =>
+        {
+            var key = match.Groups[1].Value;
+            
+            // Check provided context first (case-insensitive)
+            foreach (var kvp in context)
+            {
+                if (string.Equals(kvp.Key, key, System.StringComparison.OrdinalIgnoreCase))
+                {
+                    if (!string.IsNullOrWhiteSpace(kvp.Value) && kvp.Value != "Chưa có thông tin")
+                        return kvp.Value;
+                }
+            }
+
+            // Apply specific fallback based on contextType
+            if (contextType == "PARTICIPANT_INVITATION")
+            {
+                if (string.Equals(key, "coordinationNote", System.StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(key, "LogisticsNote", System.StringComparison.OrdinalIgnoreCase))
+                {
+                    // Log warning here if possible, but we don't have logger inject. Just return empty string to strip it.
+                    return string.Empty;
+                }
+            }
+
+            if (contextType == "LOGISTICS_REQUEST" || contextType == "GENERAL")
+            {
+                if (string.Equals(key, "coordinationNote", System.StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(key, "LogisticsNote", System.StringComparison.OrdinalIgnoreCase))
+                {
+                    return "Không có ghi chú phối hợp.";
+                }
+            }
+
+            if (fallbacks.TryGetValue(key, out var fallbackValue))
+                return fallbackValue;
+                
+            // Generic fallback so no token is exposed
+            return "Chưa có thông tin";
+        });
+    }
 }
