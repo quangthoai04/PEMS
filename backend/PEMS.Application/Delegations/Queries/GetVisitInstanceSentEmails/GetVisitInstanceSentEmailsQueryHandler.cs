@@ -82,6 +82,7 @@ public sealed class GetVisitInstanceSentEmailsQueryHandler
                 e.RelatedId,
                 e.Subject,
                 e.BodySnapshot,
+                e.BodyFormat,
                 e.Status,
                 e.SentBy,
                 e.SentAt,
@@ -110,6 +111,32 @@ public sealed class GetVisitInstanceSentEmailsQueryHandler
             })
             .ToListAsync(cancellationToken);
         var recipientsByEmail = recipientRows.GroupBy(r => r.SentEmailId)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
+        // Attachments (files/inline images). Root on sent_email_attachments, resolve file metadata via a
+        // separate keyed lookup (Pomelo: avoid correlated subqueries / projections on optional FKs).
+        var attachmentRows = await _db.SentEmailAttachments
+            .Where(a => emailIds.Contains(a.SentEmailId))
+            .OrderBy(a => a.DisplayOrder).ThenBy(a => a.SentEmailAttachmentId)
+            .Select(a => new
+            {
+                a.SentEmailAttachmentId,
+                a.SentEmailId,
+                a.FileId,
+                a.AttachmentType,
+                a.ContentId,
+                a.DisplayName,
+            })
+            .ToListAsync(cancellationToken);
+        var attachmentFileIds = attachmentRows.Select(a => a.FileId).Distinct().ToList();
+        var fileMeta = attachmentFileIds.Count == 0
+            ? new Dictionary<ulong, (string? Original, string? Mime, long? Size, string? WebView, string? Download, string? Thumb)>()
+            : await _db.Files.Where(f => attachmentFileIds.Contains(f.FileId))
+                .ToDictionaryAsync(
+                    f => f.FileId,
+                    f => (Original: f.OriginalFilename, Mime: f.MimeType, Size: f.FileSize, WebView: f.WebViewUrl, Download: f.DownloadUrl, Thumb: f.ThumbnailUrl),
+                    cancellationToken);
+        var attachmentsByEmail = attachmentRows.GroupBy(a => a.SentEmailId)
             .ToDictionary(g => g.Key, g => g.ToList());
 
         var templateIds = emails.Where(e => e.EmailTemplateId.HasValue)
@@ -144,6 +171,8 @@ public sealed class GetVisitInstanceSentEmailsQueryHandler
                 name = tpl.Name;
             }
 
+            var attachments = attachmentsByEmail.TryGetValue(e.SentEmailId, out var ats) ? ats : new();
+
             items.Add(new SentEmailHistoryDto
             {
                 SentEmailId = e.SentEmailId,
@@ -151,6 +180,7 @@ public sealed class GetVisitInstanceSentEmailsQueryHandler
                 TemplateName = name,
                 Subject = e.Subject,
                 BodySnapshot = e.BodySnapshot,
+                BodyFormat = e.BodyFormat.ToString(),
                 EmailStatus = e.Status,
                 SentByName = e.SentBy.HasValue && senderNames.TryGetValue(e.SentBy.Value, out var sn) ? sn : null,
                 SentAt = e.SentAt?.ToString("yyyy-MM-ddTHH:mm:ss"),
@@ -167,6 +197,24 @@ public sealed class GetVisitInstanceSentEmailsQueryHandler
                     SentAt = r.SentAt?.ToString("yyyy-MM-ddTHH:mm:ss"),
                     DeliveredAt = r.DeliveredAt?.ToString("yyyy-MM-ddTHH:mm:ss"),
                     ErrorMessage = r.ErrorMessage,
+                }).ToList(),
+                Attachments = attachments.Select(a =>
+                {
+                    fileMeta.TryGetValue(a.FileId, out var fm);
+                    return new SentEmailAttachmentDto
+                    {
+                        SentEmailAttachmentId = a.SentEmailAttachmentId,
+                        FileId = a.FileId,
+                        AttachmentType = a.AttachmentType.ToString(),
+                        ContentId = a.ContentId,
+                        DisplayName = a.DisplayName,
+                        OriginalFilename = fm.Original,
+                        MimeType = fm.Mime,
+                        FileSize = fm.Size,
+                        WebViewUrl = fm.WebView,
+                        DownloadUrl = fm.Download,
+                        ThumbnailUrl = fm.Thumb,
+                    };
                 }).ToList(),
             });
         }

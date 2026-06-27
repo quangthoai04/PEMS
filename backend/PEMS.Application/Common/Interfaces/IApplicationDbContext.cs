@@ -58,6 +58,10 @@ public interface IApplicationDbContext
     DbSet<EmailTemplate> EmailTemplates { get; }
     DbSet<SentEmail> SentEmails { get; }
     DbSet<SentEmailRecipient> SentEmailRecipients { get; }
+    DbSet<SentEmailAttachment> SentEmailAttachments { get; }
+    DbSet<EmailDraft> EmailDrafts { get; }
+    DbSet<EmailDraftRecipient> EmailDraftRecipients { get; }
+    DbSet<EmailDraftAttachment> EmailDraftAttachments { get; }
     DbSet<EmailActionToken> EmailActionTokens { get; }
     DbSet<Notification> Notifications { get; }
     DbSet<CalendarEvent> CalendarEvents { get; }

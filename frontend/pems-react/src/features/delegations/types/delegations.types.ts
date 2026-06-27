@@ -901,7 +901,12 @@ export interface GetVisitInstanceLogisticsResult {
   items: VisitInstanceLogisticsItem[];
 }
 
-// ── "Xem mail đã gửi" (sent_emails + sent_email_recipients) for one target. ──
+// ── Email rich-editor shared enums (mirror SQL v10 email_rich_editor). ──
+export type EmailBodyFormat = 'PLAIN_TEXT' | 'HTML';
+export type EmailAttachmentType = 'ATTACHMENT' | 'INLINE_IMAGE';
+export type EmailDraftStatus = 'DRAFT' | 'SENT' | 'DISCARDED';
+
+// ── "Xem mail đã gửi" (sent_emails + sent_email_recipients + sent_email_attachments). ──
 export interface SentEmailRecipientItem {
   recipientName?: string | null;
   recipientEmail: string;
@@ -912,12 +917,27 @@ export interface SentEmailRecipientItem {
   errorMessage?: string | null;
 }
 
+export interface SentEmailAttachmentItem {
+  sentEmailAttachmentId: number;
+  fileId: number;
+  attachmentType: EmailAttachmentType;  // ATTACHMENT | INLINE_IMAGE
+  contentId?: string | null;
+  displayName?: string | null;
+  originalFilename?: string | null;
+  mimeType?: string | null;
+  fileSize?: number | null;
+  webViewUrl?: string | null;
+  downloadUrl?: string | null;
+  thumbnailUrl?: string | null;
+}
+
 export interface SentEmailHistoryItem {
   sentEmailId: number;
   templateCode?: string | null;
   templateName?: string | null;
   subject: string;
   bodySnapshot?: string | null;
+  bodyFormat?: EmailBodyFormat;     // PLAIN_TEXT | HTML — how bodySnapshot renders
   emailStatus: string;              // QUEUED | SENT | FAILED | DELIVERED
   sentByName?: string | null;
   sentAt?: string | null;           // "yyyy-MM-ddTHH:mm:ss" wall-clock
@@ -926,6 +946,7 @@ export interface SentEmailHistoryItem {
   relatedType?: string | null;
   relatedId?: number | null;
   recipients: SentEmailRecipientItem[];
+  attachments?: SentEmailAttachmentItem[];
 }
 
 export interface GetSentEmailsResult {
@@ -992,4 +1013,6 @@ export interface PreviewEmailTemplateResult {
   lockedActionBlockHtml?: string | null;
   requiredActionPlaceholders: string[];
   editable: boolean;
+  /** Body format of the source template: 'PLAIN_TEXT' | 'HTML' (email_templates.body_format). */
+  bodyFormat: EmailBodyFormat;
 }

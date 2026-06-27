@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using PEMS.Domain.Enums;
 
 namespace PEMS.Domain.Entities.Emails;
 
@@ -24,6 +25,10 @@ public class SentEmail
 
     [Column("body_snapshot")]
     public string? BodySnapshot { get; set; }
+
+    /// <summary>SQL: body_format ENUM('PLAIN_TEXT','HTML') NOT NULL DEFAULT 'HTML'.</summary>
+    [Column("body_format")]
+    public EmailBodyFormat BodyFormat { get; set; } = EmailBodyFormat.HTML;
 
     [Column("provider_thread_id")]
     public string? ProviderThreadId { get; set; }
@@ -57,4 +62,5 @@ public class SentEmail
 
     public virtual EmailTemplate? EmailTemplate { get; set; }
     public virtual ICollection<SentEmailRecipient> Recipients { get; set; } = new List<SentEmailRecipient>();
+    public virtual ICollection<SentEmailAttachment> Attachments { get; set; } = new List<SentEmailAttachment>();
 }

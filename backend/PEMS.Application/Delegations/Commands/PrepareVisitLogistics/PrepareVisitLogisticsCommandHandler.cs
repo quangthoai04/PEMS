@@ -218,6 +218,7 @@ public sealed class PrepareVisitLogisticsCommandHandler
                     RelatedId = item.LogisticsItemId,
                     Subject = finalSubject,
                     BodySnapshot = finalBody,
+                    BodyFormat = PEMS.Domain.Enums.EmailBodyFormat.HTML,
                     Status = "QUEUED",
                     SentBy = actorId,
                     CreatedAt = now,

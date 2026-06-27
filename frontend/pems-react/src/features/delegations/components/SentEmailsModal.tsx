@@ -5,8 +5,9 @@
  * exact body_snapshot that was sent. Newest first (the backend orders by sent_email_id desc).
  */
 import React, { useEffect, useRef, useState } from 'react';
-import { Mail, X, Loader2, AlertCircle, Clock, User2, ChevronDown, ChevronUp } from 'lucide-react';
-import type { GetSentEmailsResult, SentEmailHistoryItem } from '../types/delegations.types';
+import { Mail, X, Loader2, AlertCircle, Clock, User2, ChevronDown, ChevronUp, Paperclip, Image as ImageIcon, Download, ExternalLink } from 'lucide-react';
+import type { GetSentEmailsResult, SentEmailHistoryItem, SentEmailAttachmentItem } from '../types/delegations.types';
+import { sanitizeHtml } from '../../../shared/security/sanitizeHtml';
 
 interface Props {
   open: boolean;
@@ -33,6 +34,14 @@ function StatusBadge({ status }: { status: string }) {
       {meta.label}
     </span>
   );
+}
+
+function formatBytes(bytes?: number | null): string {
+  if (bytes == null || bytes < 0) return '';
+  if (bytes < 1024) return `${bytes} B`;
+  const kb = bytes / 1024;
+  if (kb < 1024) return `${kb.toFixed(kb < 10 ? 1 : 0)} KB`;
+  return `${(kb / 1024).toFixed(1)} MB`;
 }
 
 // "yyyy-MM-ddTHH:mm[:ss]" → "HH:mm dd/MM/yyyy" via pure string slicing (no Date / no TZ shift).
@@ -153,6 +162,18 @@ function SentEmailCard({ item }: { item: SentEmailHistoryItem }) {
         </div>
       )}
 
+      {/* Attachments (files + inline images). */}
+      {(item.attachments?.length ?? 0) > 0 && (
+        <div className="mt-3">
+          <div className="mb-1.5 flex items-center gap-1 text-[11px] font-bold uppercase tracking-wide text-gray-400">
+            <Paperclip className="w-3 h-3" /> Tệp đính kèm ({item.attachments!.length})
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {item.attachments!.map((a) => <AttachmentChip key={a.sentEmailAttachmentId} att={a} />)}
+          </div>
+        </div>
+      )}
+
       {/* Body snapshot (the exact content that was sent) — collapsed by default. */}
       {item.bodySnapshot && (
         <div className="mt-3">
@@ -166,11 +187,49 @@ function SentEmailCard({ item }: { item: SentEmailHistoryItem }) {
           </button>
           {showBody && (
             <div className="mt-2 max-h-72 overflow-y-auto rounded-lg border border-gray-200 bg-white p-2">
-              <div className="pointer-events-none select-text" dangerouslySetInnerHTML={{ __html: item.bodySnapshot }} />
+              {(item.bodyFormat ?? 'HTML') === 'PLAIN_TEXT' ? (
+                // Plain text: keep line breaks, never interpret as HTML.
+                <div className="whitespace-pre-wrap break-words text-sm text-gray-700">{item.bodySnapshot}</div>
+              ) : (
+                // HTML: always sanitize before rendering (defence-in-depth, Part F).
+                <div className="select-text" dangerouslySetInnerHTML={{ __html: sanitizeHtml(item.bodySnapshot) }} />
+              )}
             </div>
           )}
         </div>
       )}
     </div>
+  );
+}
+
+/** One attachment as a chip: inline images show a thumbnail, files show an icon + size. */
+function AttachmentChip({ att }: { att: SentEmailAttachmentItem }) {
+  const name = att.displayName || att.originalFilename || `Tệp #${att.fileId}`;
+  const url = att.downloadUrl || att.webViewUrl || null;
+  const isInlineImage = att.attachmentType === 'INLINE_IMAGE';
+  const thumb = att.thumbnailUrl || att.webViewUrl;
+  return (
+    <a
+      href={url || undefined}
+      target={url ? '_blank' : undefined}
+      rel="noopener noreferrer"
+      className={`group inline-flex max-w-[220px] items-center gap-2 rounded-lg border border-gray-200 bg-gray-50/70 px-2.5 py-1.5 text-xs ${url ? 'hover:border-[#004c91]/40 hover:bg-blue-50/50' : 'cursor-default'}`}
+      title={name}
+    >
+      {isInlineImage && thumb ? (
+        <img src={thumb} alt={att.displayName || ''} className="h-7 w-7 shrink-0 rounded object-cover" />
+      ) : isInlineImage ? (
+        <ImageIcon className="h-4 w-4 shrink-0 text-violet-500" />
+      ) : (
+        <Paperclip className="h-4 w-4 shrink-0 text-gray-400" />
+      )}
+      <span className="min-w-0 flex-1">
+        <span className="block truncate font-semibold text-gray-700">{name}</span>
+        <span className="block text-[10px] text-gray-400">
+          {isInlineImage ? 'Ảnh trong nội dung' : 'Đính kèm'}{att.fileSize ? ` · ${formatBytes(att.fileSize)}` : ''}
+        </span>
+      </span>
+      {url && (att.downloadUrl ? <Download className="h-3.5 w-3.5 shrink-0 text-gray-400 group-hover:text-[#004c91]" /> : <ExternalLink className="h-3.5 w-3.5 shrink-0 text-gray-400 group-hover:text-[#004c91]" />)}
+    </a>
   );
 }

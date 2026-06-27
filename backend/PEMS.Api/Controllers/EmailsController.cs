@@ -106,5 +106,45 @@ namespace PEMS.Api.Controllers
             var result = await _mediator.Send(new PEMS.Application.Emails.Queries.GetUnprocessedEmailCount.GetUnprocessedEmailCountQuery(), cancellationToken);
             return Ok(result);
         }
+
+        // ── Editable email drafts / autosave (DB-backed, owner-scoped) ────────
+        // Draft → Sent/Discarded; never hard-deleted. Recipients/attachments stored in
+        // email_draft_recipients / email_draft_attachments; the handlers enforce owner + status rules.
+
+        [HttpPost("drafts")]
+        public async Task<IActionResult> CreateDraft([FromBody] PEMS.Application.Emails.Commands.CreateEmailDraft.CreateEmailDraftCommand command, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(command, cancellationToken);
+            return Ok(result);
+        }
+
+        [HttpGet("drafts/{draftId}")]
+        public async Task<IActionResult> GetDraft(ulong draftId, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(new PEMS.Application.Emails.Queries.GetEmailDraft.GetEmailDraftQuery(draftId), cancellationToken);
+            return Ok(result);
+        }
+
+        [HttpPut("drafts/{draftId}")]
+        public async Task<IActionResult> UpdateDraft(ulong draftId, [FromBody] PEMS.Application.Emails.Commands.UpdateEmailDraft.UpdateEmailDraftCommand command, CancellationToken cancellationToken)
+        {
+            command.EmailDraftId = draftId; // route is authoritative
+            var result = await _mediator.Send(command, cancellationToken);
+            return Ok(result);
+        }
+
+        [HttpPatch("drafts/{draftId}/discard")]
+        public async Task<IActionResult> DiscardDraft(ulong draftId, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(new PEMS.Application.Emails.Commands.DiscardEmailDraft.DiscardEmailDraftCommand(draftId), cancellationToken);
+            return Ok(result);
+        }
+
+        [HttpPost("drafts/{draftId}/send")]
+        public async Task<IActionResult> SendDraft(ulong draftId, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(new PEMS.Application.Emails.Commands.SendEmailDraft.SendEmailDraftCommand(draftId), cancellationToken);
+            return Ok(result);
+        }
     }
 }

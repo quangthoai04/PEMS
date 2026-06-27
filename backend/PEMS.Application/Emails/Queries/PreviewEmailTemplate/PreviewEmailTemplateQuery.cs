@@ -29,4 +29,6 @@ public sealed record PreviewEmailTemplateResponse(
     /// <summary>Read-only (disabled) preview of the system action block, if any.</summary>
     string? LockedActionBlockHtml,
     string[] RequiredActionPlaceholders,
-    bool Editable);
+    bool Editable,
+    /// <summary>Body format of the source template: "PLAIN_TEXT" | "HTML" (from email_templates.body_format).</summary>
+    string BodyFormat);

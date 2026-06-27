@@ -197,6 +197,7 @@ public sealed class InviteVisitParticipantCommandHandler
                 RelatedId = participant.ParticipantId,
                 Subject = finalSubject,
                 BodySnapshot = finalBody,
+                BodyFormat = PEMS.Domain.Enums.EmailBodyFormat.HTML,
                 Status = "QUEUED",
                 SentBy = actorId,
                 CreatedAt = now,
