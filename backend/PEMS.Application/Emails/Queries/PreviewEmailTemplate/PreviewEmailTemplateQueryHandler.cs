@@ -51,8 +51,22 @@ public sealed class PreviewEmailTemplateQueryHandler
         var body = useEnglish ? (template.BodyEn ?? template.BodyVi) : (template.BodyVi ?? template.BodyEn);
 
         var context = request.Context ?? new Dictionary<string, string>();
-        var renderedSubject = Render(subject ?? string.Empty, context);
-        var renderedBody = Render(body ?? string.Empty, context);
+
+        string contextType = "GENERAL";
+        if (code == "VISIT_PARTICIPANT_INVITATION" || code == "VISIT_DEPARTMENT_LEADER_INVITATION" || code == "VISIT_STUDENT_SUPPORT_INVITATION")
+        {
+            contextType = "PARTICIPANT_INVITATION";
+            // Strip the entire coordination note line if present in the legacy DB template
+            body = Regex.Replace(body ?? string.Empty, @"<br/>\s*<strong>Nội dung phối hợp:</strong>\s*\{\{coordinationNote\}\}", "", RegexOptions.IgnoreCase);
+            body = Regex.Replace(body ?? string.Empty, @"<br/>\s*<strong>Coordination note:</strong>\s*\{\{coordinationNote\}\}", "", RegexOptions.IgnoreCase);
+        }
+        else if (code == "LOGISTICS_REQUEST_TO_DEPARTMENT")
+        {
+            contextType = "LOGISTICS_REQUEST";
+        }
+
+        var renderedSubject = EmailComposition.RenderTemplate(subject ?? string.Empty, context, contextType);
+        var renderedBody = EmailComposition.RenderTemplate(body ?? string.Empty, context, contextType);
 
         var spec = EmailActionTemplates.For(code);
         if (spec is null)
@@ -66,25 +80,15 @@ public sealed class PreviewEmailTemplateQueryHandler
         // Action template: editable content is the body WITHOUT the action artifacts; the action
         // block is shown read-only (disabled). Real tokens are only minted on the actual send.
         var editableContent = EmailComposition.StripActionArtifacts(renderedBody);
-        var locked = spec.HasDetailLink
-            ? EmailComposition.DisabledDetailLinkBlock()
-            : EmailComposition.DisabledAcceptDeclineBlock(spec.HasAssignLink);
+        var locked = spec.HasLogisticsAction
+            ? EmailComposition.DisabledLogisticsActionBlock()
+            : spec.HasDetailLink
+                ? EmailComposition.DisabledDetailLinkBlock()
+                : EmailComposition.DisabledAcceptDeclineBlock(spec.HasAssignLink);
 
         return new PreviewEmailTemplateResponse(
             code, renderedSubject, editableContent, EmailComposition.HtmlToPlainText(editableContent),
             true, spec.SystemActionDescription, locked, spec.RequiredActionPlaceholders, true, template.BodyFormat.ToString());
     }
 
-    private static string Render(string template, Dictionary<string, string> context)
-    {
-        if (string.IsNullOrEmpty(template) || context.Count == 0) return template;
-        return Regex.Replace(template, @"\{\{\s*([\w]+)\s*\}\}", match =>
-        {
-            var key = match.Groups[1].Value;
-            foreach (var kvp in context)
-                if (string.Equals(kvp.Key, key, StringComparison.OrdinalIgnoreCase))
-                    return kvp.Value ?? string.Empty;
-            return match.Value; // leave unresolved placeholders intact
-        });
-    }
 }

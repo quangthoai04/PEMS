@@ -10,6 +10,7 @@ public sealed record EmailTemplateActionSpec(
     bool HasAcceptDecline,
     bool HasAssignLink,
     bool HasDetailLink,
+    bool HasLogisticsAction,
     string SystemActionDescription,
     string[] RequiredActionPlaceholders);
 
@@ -28,17 +29,19 @@ public static class EmailActionTemplates
     private const string DetailDesc =
         "Nút \"Mở yêu cầu để xử lý\" (yêu cầu đăng nhập) sẽ được hệ thống tự gắn khi gửi email. " +
         "Sau khi đăng nhập, Trưởng phòng có thể chấp nhận xử lý, từ chối yêu cầu, gán nhân sự hoặc đề xuất thay đổi.";
+    private const string LogisticsActionDesc =
+        "Nút Đồng ý / Từ chối / Hành động khác sẽ được hệ thống tự gắn (kèm liên kết một lần) khi gửi email.";
 
     public static EmailTemplateActionSpec? For(string templateCode) => templateCode switch
     {
-        ParticipantInvitation or StudentInvitation => new(true, true, false, false, AcceptDeclineDesc,
+        ParticipantInvitation or StudentInvitation => new(true, true, false, false, false, AcceptDeclineDesc,
             new[] { "{{acceptUrl}}", "{{declineUrl}}" }),
-        DepartmentLeaderInvitation => new(true, true, true, false, AcceptDeclineAssignDesc,
+        DepartmentLeaderInvitation => new(true, true, true, false, false, AcceptDeclineAssignDesc,
             new[] { "{{acceptUrl}}", "{{declineUrl}}", "{{assignUrl}}" }),
-        LogisticsAssigneeAssignment => new(true, true, false, false, AcceptDeclineDesc,
+        LogisticsAssigneeAssignment => new(true, true, false, false, false, AcceptDeclineDesc,
             new[] { "{{acceptUrl}}", "{{declineUrl}}" }),
-        LogisticsRequestToDepartment => new(true, false, false, true, DetailDesc,
-            new[] { "{{detailUrl}}" }),
+        LogisticsRequestToDepartment => new(true, false, false, true, true, LogisticsActionDesc,
+            new[] { "{{acceptUrl}}", "{{declineUrl}}", "{{detailUrl}}" }),
         _ => null,
     };
 }

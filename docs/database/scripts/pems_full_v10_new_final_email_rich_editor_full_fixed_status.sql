@@ -6993,8 +6993,7 @@ SET
   body_vi = '<p>Xin chào {{recipientName}},</p>
 <p>Phòng ban <strong>{{departmentName}}</strong> được mời phối hợp hỗ trợ đoàn <strong>{{DelegationName}}</strong> tại <strong>{{CampusName}}</strong>.</p>
 <p><strong>Thời gian:</strong> {{plannedStartAt}} - {{plannedEndAt}}<br/>
-<strong>Host chính:</strong> {{hostName}}<br/>
-<strong>Nội dung phối hợp:</strong> {{coordinationNote}}</p>
+<strong>Host chính:</strong> {{hostName}}</p>
 <p>Vui lòng phản hồi lời mời hoặc gán nhân sự phụ trách trực tiếp trên PEMS.</p>
 <p><a href="{{acceptUrl}}">Chấp nhận phối hợp</a> &nbsp; | &nbsp; <a href="{{declineUrl}}">Từ chối</a> &nbsp; | &nbsp; <a href="{{assignUrl}}">Gán nhân sự</a></p>
 <p>Trân trọng,<br/>PEMS - FPT University</p>',
@@ -7002,12 +7001,11 @@ SET
   body_en = '<p>Hello {{recipientName}},</p>
 <p><strong>{{departmentName}}</strong> is invited to coordinate support for <strong>{{DelegationName}}</strong> at <strong>{{CampusName}}</strong>.</p>
 <p><strong>Time:</strong> {{plannedStartAt}} - {{plannedEndAt}}<br/>
-<strong>Main host:</strong> {{hostName}}<br/>
-<strong>Coordination note:</strong> {{coordinationNote}}</p>
+<strong>Main host:</strong> {{hostName}}</p>
 <p>Please respond to the invitation or assign responsible staff directly in PEMS.</p>
 <p><a href="{{acceptUrl}}">Accept coordination</a> &nbsp; | &nbsp; <a href="{{declineUrl}}">Decline</a> &nbsp; | &nbsp; <a href="{{assignUrl}}">Assign staff</a></p>
 <p>Best regards,<br/>PEMS - FPT University</p>',
-  variables_text = 'recipientName,departmentName,DelegationName,CampusName,plannedStartAt,plannedEndAt,hostName,coordinationNote,acceptUrl,declineUrl,assignUrl,detailUrl',
+  variables_text = 'recipientName,departmentName,DelegationName,CampusName,plannedStartAt,plannedEndAt,hostName,acceptUrl,declineUrl,assignUrl,detailUrl',
   updated_at = CURRENT_TIMESTAMP,
   updated_by = COALESCE(updated_by, created_by)
 WHERE email_template_id = 9;

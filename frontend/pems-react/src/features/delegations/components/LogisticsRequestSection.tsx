@@ -17,11 +17,12 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Loader2, Send, Eye, Plus, Trash2, ChevronUp, ChevronDown, CheckCircle, CheckCircle2, AlertCircle, X,
-  MonitorPlay, MapPin, Building2, MoreHorizontal, Car, UserCheck, Coffee, History,
+  MonitorPlay, MapPin, Building2, MoreHorizontal, Car, UserCheck, Coffee, History, Mail,
 } from 'lucide-react';
 import { delegationsApi } from '../api/delegationsApi';
 import { EmailPreviewModal, type EmailPreviewRecipient } from './EmailPreviewModal';
 import { SentEmailsModal } from './SentEmailsModal';
+import { SearchDropdown } from './ParticipantInvitationSection';
 import {
   LOGISTICS_STATUS_META,
   type LogisticsItemType,
@@ -166,16 +167,24 @@ export function LogisticsRequestSection({
     items.find((i) => i.itemType === itemType && i.title === title && isActive(i)) ?? null;
   const activeLedItem = items.find((i) => i.itemType === 'LED' && isActive(i)) ?? null;
 
-  const ctxFor = (payload: PrepareVisitLogisticsPayload, leaderName: string) => ({
-    departmentLeaderName: leaderName,
+  const ctxFor = (payload: PrepareVisitLogisticsPayload, dept: SupportDepartment | null) => ({
+    visitName: delegationName,
+    campusName: campusName,
+    hostName: hostName,
     requesterName: hostName,
-    DelegationName: delegationName,
-    CampusName: campusName,
+    departmentName: dept?.departmentName || '',
+    departmentHeadName: dept?.leaderName || '',
+    departmentLeaderName: dept?.leaderName || '',
+    departmentHeadEmail: dept?.leaderEmail || '',
     logisticsTitle: payload.title,
+    logisticsItemTitle: payload.title,
+    logisticsItemType: ITEM_TYPE_LABEL[payload.itemType] ?? payload.itemType,
     itemType: ITEM_TYPE_LABEL[payload.itemType] ?? payload.itemType,
-    quantity: payload.quantity != null ? String(payload.quantity) : '—',
-    usageStartAt: payload.usageStartAt || '—',
-    usageEndAt: payload.usageEndAt || '—',
+    logisticsDescription: payload.description || '',
+    quantity: payload.quantity != null ? String(payload.quantity) : '',
+    usageStartAt: fmtDateTime(payload.usageStartAt) || '',
+    usageEndAt: fmtDateTime(payload.usageEndAt) || '',
+    coordinationNote: payload.offlineCoordinationNote || '',
   });
 
   const submitRequest = async (key: string, payload: PrepareVisitLogisticsPayload): Promise<boolean> => {
@@ -223,14 +232,14 @@ export function LogisticsRequestSection({
         campusName,
       },
     }));
-    await fetchPreview(payload, dept?.leaderName ?? 'Trưởng phòng');
+    await fetchPreview(payload, dept || null);
   };
 
-  const fetchPreview = async (payload: PrepareVisitLogisticsPayload, leaderName: string): Promise<boolean> => {
+  const fetchPreview = async (payload: PrepareVisitLogisticsPayload, dept: SupportDepartment | null): Promise<boolean> => {
     try {
       const res = await delegationsApi.previewEmailTemplate({
         templateCode: 'LOGISTICS_REQUEST_TO_DEPARTMENT',
-        context: ctxFor(payload, leaderName),
+        context: ctxFor(payload, dept),
       });
       setPreview((p) => ({
         ...p, open: true, loading: false, restoring: false, error: null,
@@ -252,7 +261,8 @@ export function LogisticsRequestSection({
     const pl = previewPayload.current; const ctx = previewCtx.current;
     if (!pl || !ctx) return;
     setPreview((p) => ({ ...p, restoring: true, error: null }));
-    const ok = await fetchPreview(pl, ctx.leaderName);
+    const dept = departments.find((d) => String(d.departmentId) === String(pl.departmentId)) || null;
+    const ok = await fetchPreview(pl, dept);
     pushToast(ok ? 'success' : 'error',
       ok ? 'Đã khôi phục nội dung email theo mẫu gốc.' : 'Không thể khôi phục mẫu gốc. Vui lòng thử lại.');
   };
@@ -292,8 +302,18 @@ export function LogisticsRequestSection({
         {!loadedOnce ? (
           <LoadingRow />
         ) : activeLedItem ? (
-          <ItemSummary item={activeLedItem} label="Welcome LED" departments={departments}
-            canManage={canManage} busy={busyKey === 'led'} onCancel={() => cancelItem('led', activeLedItem)} />
+          activeLedItem.coordinationMode === 'OFFLINE_COORDINATED' ? (
+            <div className="pt-4 border-t border-gray-100">
+              <OfflineCard {...shared} cardKey="led-offline" itemType="LED" title="Welcome LED" label="Welcome LED (trao đổi bên ngoài)" 
+                existingItem={activeLedItem} onCancel={() => cancelItem('led-offline', activeLedItem)} />
+            </div>
+          ) : (
+            <div className="pt-4 border-t border-gray-100">
+              <ResourceCard {...shared} cardKey="led" icon={<MonitorPlay className="w-6 h-6 text-[#f37021]" />}
+                label="Welcome LED" itemType="LED" qtyLabel="Số lượng màn" existingItem={activeLedItem}
+                notePlaceholder="Kích thước, nội dung hiển thị, đã gửi ảnh thiết kế..." />
+            </div>
+          )
         ) : (
           <>
             <div className="space-y-3 mb-4">
@@ -479,7 +499,7 @@ function MucCard({ title, icon, open, onToggle, children }: {
   title: string; icon: React.ReactNode; open: boolean; onToggle: () => void; children: React.ReactNode;
 }) {
   return (
-    <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
+    <div className="bg-white border border-gray-200 rounded-2xl shadow-sm">
       <div className="flex items-center justify-between px-6 py-4 cursor-pointer hover:bg-orange-50/50 transition-colors bg-white" onClick={onToggle}>
         <h3 className="text-xl font-bold text-orange-900 flex items-center gap-2">
           <div className="p-1.5 bg-orange-100 rounded-lg">{icon}</div>
@@ -583,14 +603,49 @@ function ResourceCard({
   cardKey, icon, label, itemType, qtyLabel, notePlaceholder, editableTitle, existingItem, onRemove,
   visitInstanceId, departments, canManage, busyKey, loadedOnce, onSubmit, onPreview, onCancel,
 }: ResourceCardProps) {
-  const [form, setForm] = useState<ResourceForm>(() => emptyForm(editableTitle ? '' : label));
+  const [form, setForm] = useState<ResourceForm>(() => {
+    if (existingItem) {
+      return {
+        title: existingItem.title || label,
+        quantity: existingItem.quantity?.toString() || '',
+        usageStartAt: existingItem.usageStartAt ? existingItem.usageStartAt.slice(0, 16) : '',
+        usageEndAt: existingItem.usageEndAt ? existingItem.usageEndAt.slice(0, 16) : '',
+        note: existingItem.description || '',
+        departmentId: existingItem.requestedToDepartmentId?.toString() || '',
+      };
+    }
+    return emptyForm(editableTitle ? '' : label);
+  });
   const [err, setErr] = useState<string | null>(null);
+  const [localSubmitted, setLocalSubmitted] = useState(false);
   const set = (k: keyof ResourceForm, v: string) => { setForm((f) => ({ ...f, [k]: v })); setErr(null); };
-  const reset = () => { setForm(emptyForm(editableTitle ? '' : label)); setErr(null); };
+  const reset = () => { setForm(emptyForm(editableTitle ? '' : label)); setErr(null); setLocalSubmitted(false); };
+
+  useEffect(() => {
+    if (existingItem) {
+      setForm({
+        title: existingItem.title || label,
+        quantity: existingItem.quantity?.toString() || '',
+        usageStartAt: existingItem.usageStartAt ? existingItem.usageStartAt.slice(0, 16) : '',
+        usageEndAt: existingItem.usageEndAt ? existingItem.usageEndAt.slice(0, 16) : '',
+        note: existingItem.description || '',
+        departmentId: existingItem.requestedToDepartmentId?.toString() || '',
+      });
+      setErr(null);
+      setLocalSubmitted(true);
+    } else {
+      setLocalSubmitted(false);
+    }
+  }, [existingItem, label]);
 
   const busy = busyKey === cardKey;
-  const dept = departments.find((d) => String(d.departmentId) === form.departmentId);
+  // If departmentId is set in form, find it. If it was already submitted but the API didn't return the full department object, we fallback to showing the departmentName from the item if available.
+  const dept = departments.find((d) => String(d.departmentId) === form.departmentId) || (existingItem && existingItem.departmentName ? { departmentId: Number(form.departmentId), departmentName: existingItem.departmentName, leaderName: '', leaderEmail: '', canInvite: true } as SupportDepartment : undefined);
   const title = editableTitle ? form.title.trim() : label;
+  
+  const isSubmitted = !!existingItem || localSubmitted;
+  const locked = existingItem ? LOCKED_STATUSES.has(existingItem.status) : false;
+  const isFormDisabled = !canManage || isSubmitted;
 
   // Loading guard so we never flash the empty create form before the saved item arrives.
   if (!loadedOnce) {
@@ -602,25 +657,29 @@ function ResourceCard({
     );
   }
 
-  // Already saved → show the summary + cancel (the "configured" state).
-  if (existingItem) {
-    return (
-      <div>
-        <h4 className="text-lg font-bold text-[#004c91] mb-3 flex items-center gap-2">{icon} {label}</h4>
-        <ItemSummary item={existingItem} label={label} departments={departments}
-          canManage={canManage} busy={busy} onCancel={() => onCancel(cardKey, existingItem)} />
-      </div>
-    );
-  }
-
   const validate = (): string | null => {
     if (editableTitle && !title) return 'Vui lòng nhập tiêu đề / nội dung công việc.';
     if (!form.departmentId) return 'Vui lòng chọn phòng ban xử lý.';
-    if (form.quantity && (Number.isNaN(Number(form.quantity)) || Number(form.quantity) < 1)) return 'Số lượng phải là số ≥ 1.';
+    
+    const qtyRequiredTypes: LogisticsItemType[] = ['ROOM', 'TRANSPORT', 'MEAL', 'EQUIPMENT'];
+    if (qtyRequiredTypes.includes(itemType) && !form.quantity) return 'Vui lòng nhập số lượng.';
+    if (form.quantity && (Number.isNaN(Number(form.quantity)) || Number(form.quantity) < 1)) return 'Số lượng phải là số nguyên ≥ 1.';
+    
     if (!form.usageStartAt) return 'Vui lòng nhập thời gian bắt đầu sử dụng.';
     if (!form.usageEndAt) return 'Vui lòng nhập thời gian kết thúc sử dụng.';
+
+    const nowStr = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    if (form.usageStartAt < nowStr) return 'Thời gian bắt đầu không được trong quá khứ.';
     if (form.usageEndAt <= form.usageStartAt) return 'Thời gian kết thúc phải sau thời gian bắt đầu.';
+    
     return null;
+  };
+
+  const handleQuantityChange = (val: string) => {
+    if (val === '') { set('quantity', ''); return; }
+    const digits = val.replace(/\D/g, ''); // strip non-digits
+    const normalized = digits ? parseInt(digits, 10).toString() : '';
+    set('quantity', normalized);
   };
 
   const buildPayload = (): PrepareVisitLogisticsPayload => ({
@@ -639,7 +698,10 @@ function ResourceCard({
   const doSend = async () => {
     const v = validate();
     if (v) { setErr(v); return; }
-    if (await onSubmit(cardKey, buildPayload())) reset();
+    const payload = buildPayload();
+    if (await onSubmit(cardKey, payload)) {
+      setLocalSubmitted(true);
+    }
   };
   const doPreview = () => {
     const v = validate();
@@ -671,71 +733,118 @@ function ResourceCard({
             {editableTitle && (
               <div>
                 <label className="block text-xs font-bold text-gray-600 mb-1">Tiêu đề / nội dung công việc <span className="text-red-500">*</span></label>
-                <input type="text" maxLength={255} disabled={!canManage} value={form.title} onChange={(e) => set('title', e.target.value)}
+                <input type="text" maxLength={255} disabled={isFormDisabled} value={form.title} onChange={(e) => set('title', e.target.value)}
                   placeholder="VD: Hỗ trợ kỹ thuật âm thanh"
                   className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-[#004c91] hover:border-gray-400 transition-colors outline-none text-sm disabled:bg-gray-50 disabled:text-gray-400" />
               </div>
             )}
             <div>
               <label className="block text-xs font-bold text-gray-600 mb-1">{qtyLabel}</label>
-              <input type="number" min="1" disabled={!canManage} value={form.quantity} onChange={(e) => set('quantity', e.target.value)}
+              <input type="text" inputMode="numeric" disabled={isFormDisabled} value={form.quantity} onChange={(e) => handleQuantityChange(e.target.value)}
                 placeholder="VD: 2"
                 className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-[#004c91] hover:border-gray-400 transition-colors outline-none text-sm disabled:bg-gray-50 disabled:text-gray-400" />
             </div>
             <div>
               <label className="block text-xs font-bold text-gray-600 mb-1">Thời gian bắt đầu sử dụng <span className="text-red-500">*</span></label>
-              <input type="datetime-local" disabled={!canManage} value={form.usageStartAt} onChange={(e) => set('usageStartAt', e.target.value)}
+              <input type="datetime-local" disabled={isFormDisabled} value={form.usageStartAt} onChange={(e) => set('usageStartAt', e.target.value)}
                 className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-[#004c91] hover:border-gray-400 transition-colors outline-none text-sm disabled:bg-gray-50 disabled:text-gray-400" />
             </div>
             <div>
               <label className="block text-xs font-bold text-gray-600 mb-1">Thời gian kết thúc sử dụng <span className="text-red-500">*</span></label>
-              <input type="datetime-local" disabled={!canManage} value={form.usageEndAt} onChange={(e) => set('usageEndAt', e.target.value)}
+              <input type="datetime-local" disabled={isFormDisabled} value={form.usageEndAt} onChange={(e) => set('usageEndAt', e.target.value)}
                 className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-[#004c91] hover:border-gray-400 transition-colors outline-none text-sm disabled:bg-gray-50 disabled:text-gray-400" />
             </div>
           </div>
           <div className="space-y-4">
             <div>
               <label className="block text-xs font-bold text-gray-600 mb-1">Ghi chú (Note)</label>
-              <textarea disabled={!canManage} value={form.note} onChange={(e) => set('note', e.target.value)} placeholder={notePlaceholder ?? 'Ghi chú thêm...'}
+              <textarea disabled={isFormDisabled} value={form.note} onChange={(e) => set('note', e.target.value)} placeholder={notePlaceholder ?? 'Ghi chú thêm...'}
                 className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-[#004c91] hover:border-gray-400 transition-colors outline-none text-sm resize-none h-[120px] disabled:bg-gray-50 disabled:text-gray-400" />
             </div>
             <div>
               <label className="block text-xs font-bold text-gray-600 mb-1">Chọn phòng ban xử lý <span className="text-red-500">*</span></label>
-              <select disabled={!canManage} value={form.departmentId} onChange={(e) => set('departmentId', e.target.value)}
-                className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-[#004c91] hover:border-[#004c91] transition-colors outline-none text-sm bg-white disabled:bg-gray-50 disabled:text-gray-400">
-                <option value="">-- Chọn phòng ban --</option>
-                {departments.map((d) => (
-                  <option key={d.departmentId} value={d.departmentId} disabled={!d.canInvite}>
-                    {d.departmentName}{!d.canInvite ? ' — không khả dụng' : ''}
-                  </option>
-                ))}
-              </select>
-
-              {form.departmentId && dept && (
-                <div className="mt-3 p-3 bg-yellow-50/80 border border-yellow-200 rounded-xl flex flex-col gap-3 animate-in fade-in slide-in-from-top-2">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-yellow-500 text-white flex items-center justify-center font-bold text-lg shrink-0">
-                      {(dept.leaderName ?? dept.departmentName).charAt(0)}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-bold text-yellow-900 flex items-center gap-2 flex-wrap">
-                        {dept.leaderName ?? 'Chưa có trưởng phòng đang hoạt động'}
-                        {dept.leaderName && <span className="text-[11px] font-bold uppercase tracking-wider text-yellow-700 bg-white px-2 py-0.5 rounded-md border border-yellow-200 shadow-sm">Trưởng phòng</span>}
+              {!form.departmentId ? (
+                <SearchDropdown<SupportDepartment>
+                  placeholder="Tìm phòng ban (GENERAL) cùng cơ sở..."
+                  emptyText="Không tìm thấy phòng ban phù hợp."
+                  search={(kw) => delegationsApi.getSupportDepartments(visitInstanceId, kw)}
+                  disabled={isFormDisabled}
+                  renderRow={(d, _i, close) => (
+                    <div
+                      key={d.departmentId}
+                      onClick={() => {
+                        if (!d.canInvite || isFormDisabled) return;
+                        set('departmentId', d.departmentId.toString());
+                        close();
+                      }}
+                      className={`flex items-center justify-between gap-3 border-b border-gray-100 px-4 py-2.5 last:border-b-0 transition-colors ${d.canInvite && !isFormDisabled ? 'cursor-pointer hover:bg-[#f0f7ff]' : 'opacity-60 cursor-not-allowed'}`}
+                    >
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-bold text-gray-800">{d.departmentName}</div>
+                        <div className="truncate text-xs text-gray-500">
+                          {d.leaderName ? `Trưởng phòng: ${d.leaderName}` : 'Chưa có trưởng phòng đang hoạt động'}
+                          {d.leaderEmail ? ` · ${d.leaderEmail}` : ''}
+                        </div>
+                        {!d.canInvite && d.disabledReason && (
+                          <div className="mt-0.5 text-[11px] font-medium text-amber-600">{d.disabledReason}</div>
+                        )}
                       </div>
-                    </div>
-                  </div>
-                  {canManage && (
-                    <div className="flex flex-wrap justify-end gap-2">
-                      <button type="button" disabled={busy} onClick={doPreview}
-                        className="inline-flex items-center gap-1.5 rounded-lg border border-yellow-300 bg-white px-3 py-2 text-xs font-bold text-[#004c91] outline-none transition-colors hover:bg-yellow-100 disabled:opacity-50">
-                        <Eye className="w-4 h-4" /> Xem trước & sửa email
-                      </button>
-                      <button type="button" disabled={busy} onClick={doSend}
-                        className="inline-flex items-center gap-1.5 rounded-lg bg-[#004c91] px-4 py-2 text-xs font-bold text-white outline-none transition-colors hover:bg-[#013565] disabled:opacity-50">
-                        {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />} Gửi yêu cầu
-                      </button>
+                      {d.canInvite && (
+                        <button type="button" className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-[#004c91] px-2 py-1 text-xs font-bold text-[#004c91]">
+                          Chọn
+                        </button>
+                      )}
                     </div>
                   )}
+                />
+              ) : null}
+
+              {form.departmentId && dept && (
+                <div className="mt-3 p-4 bg-white border border-gray-200 rounded-xl flex flex-col gap-3 animate-in fade-in slide-in-from-top-2 shadow-sm">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <div className="truncate text-sm font-bold text-gray-800">{dept.departmentName}</div>
+                        <button type="button" onClick={() => set('departmentId', '')} className="text-xs text-[#004c91] hover:underline font-semibold">
+                          Đổi phòng ban
+                        </button>
+                      </div>
+                      <div className="flex items-center gap-1 text-[11px] font-bold text-gray-500 uppercase tracking-wider mt-1">
+                        <Building2 className="w-3 h-3 shrink-0" />
+                        <span>Phòng ban: GENERAL</span>
+                      </div>
+                      <div className="flex items-center gap-1 text-xs text-gray-600 mt-1">
+                        <UserCheck className="w-3.5 h-3.5 shrink-0 text-gray-400" />
+                        <span>Trưởng phòng: <span className="font-semibold">{dept.leaderName || 'Chưa có'}</span></span>
+                      </div>
+                      <div className="flex items-center gap-1 text-xs text-gray-600 mt-0.5">
+                        <Mail className="w-3.5 h-3.5 shrink-0 text-gray-400" />
+                        {dept.leaderEmail ? <span className="break-all">{dept.leaderEmail}</span> : <span className="font-semibold text-red-500">Chưa có email</span>}
+                      </div>
+                      {!dept.canInvite && dept.disabledReason && (
+                        <div className="mt-1.5 text-[11px] font-medium text-amber-600 flex items-center gap-1">
+                          <AlertCircle className="w-3 h-3" /> {dept.disabledReason}
+                        </div>
+                      )}
+                    </div>
+                    {canManage && (
+                      <div className="flex flex-col items-end gap-1.5 shrink-0">
+                        {dept.canInvite && (
+                          <button type="button" disabled={busy} onClick={doPreview}
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 bg-white text-[#004c91] outline-none transition-colors hover:bg-gray-50 disabled:opacity-50"
+                            title="Xem trước & sửa email">
+                            <Eye className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                        <button type="button" disabled={!dept.canInvite || busy} onClick={doSend}
+                          className="inline-flex items-center gap-1 rounded-lg bg-[#004c91] px-3 py-1.5 text-xs font-bold text-white outline-none transition-colors hover:bg-[#003b70] disabled:cursor-not-allowed disabled:opacity-40"
+                          title={!dept.canInvite ? 'Không thể gửi yêu cầu' : undefined}>
+                          {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                          Gửi yêu cầu
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
@@ -760,16 +869,33 @@ interface OfflineCardProps extends SharedCardProps {
    * the persisted title matches the system-request item of the same category — both the FE active-item
    * lookup and the server-side duplicate guard key on (itemType, title). */
   title?: string;
+  existingItem?: VisitInstanceLogisticsItem | null;
 }
 
 /** "Đã trao đổi bên ngoài" form (Part D) — required note, optional department, NO email; status DONE. */
 function OfflineCard({
-  cardKey, itemType, label, title, visitInstanceId, departments, canManage, busyKey, onSubmit,
+  cardKey, itemType, label, title, visitInstanceId, departments, canManage, busyKey, onSubmit, existingItem, onCancel
 }: OfflineCardProps) {
-  const [note, setNote] = useState('');
-  const [departmentId, setDepartmentId] = useState('');
+  const [note, setNote] = useState(() => existingItem?.offlineCoordinationNote || existingItem?.description || '');
+  const [departmentId, setDepartmentId] = useState(() => existingItem?.requestedToDepartmentId?.toString() || '');
   const [err, setErr] = useState<string | null>(null);
+  const [localSubmitted, setLocalSubmitted] = useState(false);
   const busy = busyKey === cardKey;
+
+  useEffect(() => {
+    if (existingItem) {
+      setNote(existingItem.offlineCoordinationNote || existingItem.description || '');
+      setDepartmentId(existingItem.requestedToDepartmentId?.toString() || '');
+      setErr(null);
+      setLocalSubmitted(true);
+    } else {
+      setLocalSubmitted(false);
+    }
+  }, [existingItem]);
+
+  const isSubmitted = !!existingItem || localSubmitted;
+  const locked = existingItem ? LOCKED_STATUSES.has(existingItem.status) : false;
+  const isFormDisabled = !canManage || isSubmitted;
 
   const doSave = async () => {
     if (!note.trim()) { setErr('Vui lòng nhập ghi chú trao đổi bên ngoài (bắt buộc).'); return; }
@@ -783,7 +909,10 @@ function OfflineCard({
       offlineCoordinationNote: note.trim(),
       priority: 'MEDIUM',
     };
-    if (await onSubmit(cardKey, payload)) { setNote(''); setDepartmentId(''); setErr(null); }
+    if (await onSubmit(cardKey, payload)) {
+      setLocalSubmitted(true);
+      setErr(null);
+    }
   };
 
   return (
@@ -793,13 +922,13 @@ function OfflineCard({
       </div>
       <div>
         <label className="block text-xs font-bold text-gray-600 mb-1">Ghi chú trao đổi bên ngoài <span className="text-red-500">*</span></label>
-        <textarea disabled={!canManage} value={note} onChange={(e) => { setNote(e.target.value); setErr(null); }} maxLength={5000}
+        <textarea disabled={isFormDisabled} value={note} onChange={(e) => { setNote(e.target.value); setErr(null); }} maxLength={5000}
           placeholder="VD: Đã liên hệ trực tiếp phòng Truyền thông qua điện thoại, ảnh LED gửi qua email nội bộ..."
           className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-[#004c91] hover:border-gray-400 transition-colors outline-none text-sm resize-none h-[100px] disabled:bg-gray-50 disabled:text-gray-400" />
       </div>
       <div>
         <label className="block text-xs font-bold text-gray-600 mb-1">Phòng ban liên quan (tùy chọn)</label>
-        <select disabled={!canManage} value={departmentId} onChange={(e) => setDepartmentId(e.target.value)}
+        <select disabled={isFormDisabled} value={departmentId} onChange={(e) => setDepartmentId(e.target.value)}
           className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-[#004c91] hover:border-[#004c91] transition-colors outline-none text-sm bg-white disabled:bg-gray-50 disabled:text-gray-400">
           <option value="">-- Không gắn phòng ban --</option>
           {departments.map((d) => (
@@ -812,12 +941,28 @@ function OfflineCard({
           <AlertCircle className="w-3.5 h-3.5 shrink-0" /> {err}
         </p>
       )}
-      {canManage && (
-        <div className="flex justify-end">
-          <button type="button" disabled={busy} onClick={doSave}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-[#f37021] px-4 py-2 text-xs font-bold text-white outline-none transition-colors hover:bg-[#d95f12] disabled:opacity-50">
-            {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />} Lưu (đã trao đổi bên ngoài)
+      
+      {isSubmitted ? (
+        <div className="flex items-center justify-end gap-3 mt-2">
+          <button type="button" disabled
+            className="inline-flex items-center gap-1.5 rounded-xl bg-gray-100 px-4 py-2.5 text-sm font-bold text-gray-500 outline-none">
+            <CheckCircle className="w-4 h-4" /> Đã lưu yêu cầu
           </button>
+          {canManage && existingItem && !locked && onCancel && (
+            <button type="button" disabled={busy} onClick={() => onCancel(cardKey, existingItem)}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-red-200 bg-white px-4 py-2.5 text-sm font-bold text-red-600 outline-none transition-colors hover:bg-red-50 disabled:opacity-50">
+              {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />} Hủy yêu cầu
+            </button>
+          )}
+        </div>
+      ) : (
+        <div className="flex items-center justify-end mt-2">
+          {canManage && (
+            <button type="button" disabled={busy} onClick={doSave}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-[#004c91] px-6 py-2.5 text-sm font-bold text-white outline-none transition-colors hover:bg-[#003d73] disabled:opacity-50">
+              {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />} Lưu (đã trao đổi bên ngoài)
+            </button>
+          )}
         </div>
       )}
     </div>

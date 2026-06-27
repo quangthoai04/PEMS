@@ -172,8 +172,8 @@ public sealed class ExecuteEmailActionCommandHandler
             return AlreadyResponded(result);
         if (token.ExpiresAt < now)
             return await ExpireAsync(token, result, cancellationToken);
-        // The assignment must still be awaiting a response.
-        if (item.Status != "ASSIGNED")
+        // The item must still be awaiting a response (either requested to the department or assigned to staff).
+        if (item.Status != LogisticsItemStatus.Assigned && item.Status != LogisticsItemStatus.Requested)
             return await MarkAlreadyRespondedAsync(token, request, now, result, cancellationToken);
 
         var isAccept = token.IntendedAction == EmailIntendedActions.Accept;
@@ -187,7 +187,7 @@ public sealed class ExecuteEmailActionCommandHandler
         }
         else
         {
-            item.Status = LogisticsItemStatus.Declined;          // "DECLINED" (terminal — no reassign)
+            item.Status = LogisticsItemStatus.Rejected;          // "REJECTED" (terminal — no reassign)
         }
         item.UpdatedAt = now;
         item.UpdatedBy = token.RecipientUserId;
@@ -207,19 +207,20 @@ public sealed class ExecuteEmailActionCommandHandler
             attempt.UpdatedAt = now;
         }
 
-        ConsumeToken(token, now, request, isAccept ? "Đã nhận nhiệm vụ." : "Đã từ chối nhiệm vụ.");
+        ConsumeToken(token, now, request, isAccept ? "Đã xác nhận yêu cầu/nhiệm vụ." : "Đã từ chối yêu cầu/nhiệm vụ.");
         await BurnSiblingsAsync(token, now, cancellationToken);
 
-        // Notify the leader who assigned the task.
-        if (item.AssignedBy is { } assignerId)
+        // Notify the appropriate person (the Assigner if assigned, or the Requester/Host if it was just requested).
+        var notifyUserId = item.AssignedBy ?? item.RequestedBy;
+        if (notifyUserId.HasValue)
         {
-            var verb = isAccept ? "đã nhận" : "đã từ chối";
+            var verb = isAccept ? "đã nhận/chấp nhận" : "đã từ chối";
             _db.Notifications.Add(new Notification
             {
-                RecipientUserId = assignerId,
+                RecipientUserId = notifyUserId.Value,
                 NotificationType = isAccept ? "VISIT_LOGISTICS_ACCEPTED" : "VISIT_LOGISTICS_DECLINED",
-                Title = isAccept ? "Nhân sự đã nhận nhiệm vụ hậu cần" : "Nhân sự từ chối nhiệm vụ hậu cần",
-                Message = $"{result.RecipientName ?? "Nhân sự"} {verb} nhiệm vụ \"{item.Title}\".",
+                Title = isAccept ? "Phản hồi yêu cầu hậu cần (Đồng ý)" : "Phản hồi yêu cầu hậu cần (Từ chối)",
+                Message = $"{result.RecipientName ?? "Phòng ban/Nhân sự"} {verb} yêu cầu \"{item.Title}\".",
                 RelatedType = "LOGISTICS_ITEM",
                 RelatedId = item.LogisticsItemId,
                 IsRead = false,
@@ -242,7 +243,7 @@ public sealed class ExecuteEmailActionCommandHandler
         await transaction.CommitAsync(cancellationToken);
 
         result.Status = EmailActionViewStatuses.Success;
-        result.Message = isAccept ? "Cảm ơn bạn đã nhận nhiệm vụ hậu cần." : "Bạn đã từ chối nhiệm vụ hậu cần.";
+        result.Message = isAccept ? "Cảm ơn bạn đã xác nhận yêu cầu hậu cần." : "Bạn đã từ chối yêu cầu hậu cần.";
         return result;
     }
 

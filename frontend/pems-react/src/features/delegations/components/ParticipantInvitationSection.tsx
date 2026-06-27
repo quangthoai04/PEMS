@@ -76,8 +76,8 @@ function ConflictBadge({ count, allPrivate }: { count: number; allPrivate: boole
  *   option is inside the wrapper, and close happens explicitly after a successful invite).
  * - Parent can call `closeDropdown` (via `onCloseRef`) after a successful invite to close + clear.
  */
-function SearchDropdown<T>({
-  placeholder, search, renderRow, emptyText, onCloseRef,
+export function SearchDropdown<T>({
+  placeholder, search, renderRow, emptyText, onCloseRef, disabled
 }: {
   placeholder: string;
   search: (keyword: string) => Promise<T[]>;
@@ -85,6 +85,7 @@ function SearchDropdown<T>({
   emptyText: string;
   /** Optional: parent passes a ref that gets a close() function so it can close the dropdown after invite. */
   onCloseRef?: React.MutableRefObject<(() => void) | null>;
+  disabled?: boolean;
 }) {
   const [kw, setKw] = useState('');
   const [open, setOpen] = useState(false);
@@ -142,16 +143,17 @@ function SearchDropdown<T>({
         <input
           type="text"
           value={kw}
+          disabled={disabled}
           placeholder={placeholder}
-          onFocus={() => setOpen(true)}
+          onFocus={() => { if (!disabled) setOpen(true); }}
           onChange={(e) => setKw(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Escape') { setOpen(false); } }}
-          className="w-full rounded-xl border border-gray-200 bg-white py-2.5 pl-9 pr-3 text-sm outline-none focus:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/20"
+          className="w-full rounded-xl border border-gray-200 bg-white py-2.5 pl-9 pr-3 text-sm outline-none focus:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/20 disabled:bg-gray-50 disabled:text-gray-400"
         />
         {loading && open && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin text-gray-400" />}
       </div>
       {showPanel && (
-        <div className="absolute left-0 top-full z-40 mt-1.5 w-full max-h-72 overflow-y-auto rounded-xl border border-gray-200 bg-white shadow-lg">
+        <div className="absolute left-0 top-full z-[100] mt-1.5 w-full max-h-72 overflow-y-auto rounded-xl border border-gray-200 bg-white shadow-lg">
           {loading && items.length === 0 ? (
             <div className="px-4 py-3 text-sm text-gray-400">Đang tải...</div>
           ) : error ? (
