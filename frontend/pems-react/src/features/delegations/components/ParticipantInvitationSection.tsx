@@ -10,7 +10,7 @@ import {
   Users, UserCheck, GraduationCap, Trash2, Send, Eye, History,
 } from 'lucide-react';
 import { delegationsApi } from '../api/delegationsApi';
-import { EmailPreviewModal, type EmailPreviewRecipient } from './EmailPreviewModal';
+import { EmailPreviewModal, type EmailPreviewRecipient, type EmailPreviewSendPayload } from './EmailPreviewModal';
 import { SentEmailsModal } from './SentEmailsModal';
 import type {
   VisitParticipantListItem, VisitProcessHost, ParticipantCandidate, SupportDepartment,
@@ -228,7 +228,7 @@ export function ParticipantInvitationSection({
   const applyTemplate = (res: import('../types/delegations.types').PreviewEmailTemplateResult) =>
     setPreview((p) => ({
       ...p, open: true, loading: false, restoring: false, error: null,
-      subject: res.subject, body: res.editableBodyText,
+      subject: res.subject, body: res.bodyHtml,
       isActionTemplate: res.isActionTemplate,
       systemActionDescription: res.systemActionDescription ?? null,
       lockedActionBlockHtml: res.lockedActionBlockHtml ?? null,
@@ -264,15 +264,15 @@ export function ParticipantInvitationSection({
   };
   const closePreview = () => setPreview(EMPTY_PREVIEW);
 
-  const sendWithEditedContent = async () => {
+  const sendWithEditedContent = async (payload: EmailPreviewSendPayload) => {
     if (!preview.target) return;
-    if (!preview.subject.trim()) { pushToast('error', 'Tiêu đề email không được để trống.'); return; }
-    if (!preview.body.trim()) { pushToast('error', 'Nội dung email không được để trống.'); return; }
+    if (!payload.subject.trim()) { pushToast('error', 'Tiêu đề email không được để trống.'); return; }
+    if (!payload.bodyHtml.trim()) { pushToast('error', 'Nội dung email không được để trống.'); return; }
     setPreview((p) => ({ ...p, sending: true }));
     try {
       const res = await delegationsApi.inviteVisitParticipant(visitInstanceId, {
         ...preview.target.payload,
-        emailOverride: { useEditedContent: true, subject: preview.subject.trim(), bodyText: preview.body },
+        emailOverride: { useEditedContent: true, subject: payload.subject.trim(), bodyHtml: payload.bodyHtml, attachments: payload.attachments },
       });
       {
         const who = res.emailRecipient ? `${preview.target.displayName} (${res.emailRecipient})` : preview.target.displayName;
@@ -554,6 +554,7 @@ export function ParticipantInvitationSection({
         recipient={preview.target?.recipient ?? null}
         canSend={!!preview.target}
         sendLabel="Mời với nội dung này"
+        pushToast={pushToast}
         onSubjectChange={(v) => setPreview((p) => ({ ...p, subject: v }))}
         onBodyChange={(v) => setPreview((p) => ({ ...p, body: v }))}
         onClose={closePreview}

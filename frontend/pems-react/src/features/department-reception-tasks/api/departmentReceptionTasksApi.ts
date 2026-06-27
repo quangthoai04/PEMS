@@ -69,7 +69,12 @@ export const departmentReceptionTasksApi = {
   assignAssignee: async (
     logisticsItemId: number | string,
     assigneeUserId: number | string,
-    emailOverride?: { useEditedContent: boolean; subject: string; bodyHtml: string },
+    emailOverride?: {
+      useEditedContent: boolean;
+      subject: string;
+      bodyHtml: string;
+      attachments?: { fileId: number; attachmentType?: 'ATTACHMENT' | 'INLINE_IMAGE'; contentId?: string | null; displayName?: string | null; displayOrder?: number }[];
+    },
   ) => {
     const { data } = await httpClient.post<any>(
       API_ENDPOINTS.departmentReceptionTasks.assignAssignee(logisticsItemId),

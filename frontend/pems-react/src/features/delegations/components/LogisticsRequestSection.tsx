@@ -20,7 +20,7 @@ import {
   MonitorPlay, MapPin, Building2, MoreHorizontal, Car, UserCheck, Coffee, History, Mail,
 } from 'lucide-react';
 import { delegationsApi } from '../api/delegationsApi';
-import { EmailPreviewModal, type EmailPreviewRecipient } from './EmailPreviewModal';
+import { EmailPreviewModal, type EmailPreviewRecipient, type EmailPreviewSendPayload } from './EmailPreviewModal';
 import { SentEmailsModal } from './SentEmailsModal';
 import { SearchDropdown } from './ParticipantInvitationSection';
 import {
@@ -243,7 +243,7 @@ export function LogisticsRequestSection({
       });
       setPreview((p) => ({
         ...p, open: true, loading: false, restoring: false, error: null,
-        subject: res.subject, body: res.editableBodyText, // text, not raw HTML (Part A)
+        subject: res.subject, body: res.bodyHtml, // editable HTML for the rich editor
         isActionTemplate: res.isActionTemplate,
         systemActionDescription: res.systemActionDescription ?? null,
         lockedActionBlockHtml: res.lockedActionBlockHtml ?? null,
@@ -268,16 +268,16 @@ export function LogisticsRequestSection({
   };
   const closePreview = () => setPreview((p) => ({ ...p, open: false }));
 
-  const sendWithEditedContent = async () => {
+  const sendWithEditedContent = async (payload: EmailPreviewSendPayload) => {
     const pl = previewPayload.current;
     if (!pl) return;
-    if (!preview.subject.trim()) { pushToast('error', 'Tiêu đề email không được để trống.'); return; }
-    if (!preview.body.trim()) { pushToast('error', 'Nội dung email không được để trống.'); return; }
+    if (!payload.subject.trim()) { pushToast('error', 'Tiêu đề email không được để trống.'); return; }
+    if (!payload.bodyHtml.trim()) { pushToast('error', 'Nội dung email không được để trống.'); return; }
     setPreview((p) => ({ ...p, sending: true }));
     try {
       const res = await delegationsApi.prepareVisitLogistics({
         ...pl,
-        emailOverride: { useEditedContent: true, subject: preview.subject.trim(), bodyText: preview.body },
+        emailOverride: { useEditedContent: true, subject: payload.subject.trim(), bodyHtml: payload.bodyHtml, attachments: payload.attachments },
       });
       setPreview((p) => ({ ...p, open: false, sending: false }));
       pushToast(res.emailStatus === 'FAILED' ? 'warning' : 'success', res.message || 'Đã gửi yêu cầu hậu cần.');
@@ -470,6 +470,7 @@ export function LogisticsRequestSection({
         recipient={preview.recipient}
         canSend
         sendLabel="Gửi với nội dung này"
+        pushToast={pushToast}
         onSubjectChange={(v) => setPreview((p) => ({ ...p, subject: v }))}
         onBodyChange={(v) => setPreview((p) => ({ ...p, body: v }))}
         onClose={closePreview}

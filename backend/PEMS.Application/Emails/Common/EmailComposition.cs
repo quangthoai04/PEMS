@@ -162,6 +162,12 @@ public static class EmailComposition
     {
         if (string.IsNullOrEmpty(template)) return template;
 
+        // Rich editors (Quill) URL-encode braces inside href attributes, so a template link like
+        // href="{{AcceptUrl}}" comes back as href="%7B%7BAcceptUrl%7D%7D". Normalize the encoded
+        // double-brace form back to {{ }} (both upper/lower hex) before matching so it still resolves.
+        template = Regex.Replace(template, "%7[Bb]\\s*%7[Bb]", "{{");
+        template = Regex.Replace(template, "%7[Dd]\\s*%7[Dd]", "}}");
+
         var fallbacks = new System.Collections.Generic.Dictionary<string, string>(System.StringComparer.OrdinalIgnoreCase)
         {
             { "coordinationNote", "Không có ghi chú phối hợp." },

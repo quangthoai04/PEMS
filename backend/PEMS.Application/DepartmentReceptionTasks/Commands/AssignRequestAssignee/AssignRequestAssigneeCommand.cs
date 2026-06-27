@@ -40,10 +40,12 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AssignRequestAssign
         private readonly IEmailService _email;
         private readonly IEmailActionTokenService _tokens;
         private readonly IHtmlSanitizerService _sanitizer;
+        private readonly IFileStorageService _storage;
 
         public AssignRequestAssigneeCommandHandler(
             IApplicationDbContext context, ICurrentUserService currentUserService, IDateTimeService clock,
-            IEmailService email, IEmailActionTokenService tokens, IHtmlSanitizerService sanitizer)
+            IEmailService email, IEmailActionTokenService tokens, IHtmlSanitizerService sanitizer,
+            IFileStorageService storage)
         {
             _context = context;
             _currentUserService = currentUserService;
@@ -51,6 +53,7 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AssignRequestAssign
             _email = email;
             _tokens = tokens;
             _sanitizer = sanitizer;
+            _storage = storage;
         }
 
         public async Task<bool> Handle(AssignRequestAssigneeCommand request, CancellationToken cancellationToken)
@@ -94,6 +97,8 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AssignRequestAssign
                 throw new Exception("Người phụ trách không hợp lệ hoặc không thuộc phòng ban");
 
             var editedContent = ValidateAndSanitizeOverride(request.EmailOverride);
+            var attachInputs = OutboundEmailAttachments.From(request.EmailOverride);
+            await OutboundEmailAttachments.ValidateAsync(_context, userId, attachInputs, cancellationToken);
             var now = _clock.UtcNow;
             var delegationName = await (
                 from c in _context.VisitRequestCampuses
@@ -159,6 +164,8 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AssignRequestAssign
                     SentBy = userId,
                     CreatedAt = now,
                 };
+                // Inline images + file attachments (cascade-insert with the sent_emails row).
+                OutboundEmailAttachments.Attach(sentEmail, attachInputs, now);
                 _context.SentEmails.Add(sentEmail);
                 await _context.SaveChangesAsync(cancellationToken);
 
@@ -197,7 +204,16 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AssignRequestAssign
 
             try
             {
-                await _email.SendAsync(assignee.Email, finalSubject, finalBody, cancellationToken);
+                // Real MIME path with the leader's inline images (cid) + file attachments.
+                var outboundAttachments = await OutboundEmailAttachments.LoadAsync(_context, _storage, attachInputs, cancellationToken);
+                await _email.SendAsync(new OutboundEmail
+                {
+                    ToEmail = assignee.Email,
+                    Subject = finalSubject,
+                    Body = finalBody,
+                    IsHtml = true,
+                    Attachments = outboundAttachments,
+                }, cancellationToken);
                 await UpdateEmailStatusAsync(sentEmailId, sentEmailRecipientId, "SENT", userId, now, null, cancellationToken);
             }
             catch (Exception ex)
@@ -219,7 +235,8 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AssignRequestAssign
                 throw new ValidationException("Nội dung email không được để trống.");
             if (ov.BodyHtml.Length > EmailOverrideLimits.BodyMax)
                 throw new ValidationException($"Nội dung email vượt quá {EmailOverrideLimits.BodyMax} ký tự.");
-            var sanitized = _sanitizer.Sanitize(ov.BodyHtml);
+            // Email-profile sanitize so inline-image <img src="cid:..."> + data-* refs survive.
+            var sanitized = _sanitizer.SanitizeEmailHtml(ov.BodyHtml);
             if (string.IsNullOrWhiteSpace(sanitized))
                 throw new ValidationException("Nội dung email không hợp lệ sau khi lọc.");
             return sanitized;
