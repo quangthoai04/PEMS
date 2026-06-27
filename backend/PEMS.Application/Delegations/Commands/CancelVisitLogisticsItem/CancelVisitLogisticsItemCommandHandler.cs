@@ -7,6 +7,7 @@ using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Delegations.Commands.PrepareVisitLogistics;
 using PEMS.Domain.Entities.Users;
 using PEMS.Shared;
+using PEMS.Domain.Constants;
 
 namespace PEMS.Application.Delegations.Commands.CancelVisitLogisticsItem;
 

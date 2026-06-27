@@ -224,7 +224,7 @@ public sealed class ExecuteEmailActionCommandHandler
 
         if (item.Status != LogisticsItemStatus.Requested)
         {
-            if (item.Status == LogisticsItemStatus.Received || item.Status == LogisticsItemStatus.Assigned || item.Status == LogisticsItemStatus.Accepted || item.Status == LogisticsItemStatus.Done)
+            if (item.Status == LogisticsItemStatus.Assigned || item.Status == LogisticsItemStatus.Accepted || item.Status == LogisticsItemStatus.Done)
                 return await MarkAlreadyRespondedAsync(token, request, now, result, cancellationToken);
             return await MarkInvalidAsync(token, request, now, result, "Yêu cầu hậu cần này không còn ở trạng thái chờ phòng ban phản hồi.", cancellationToken);
         }
@@ -235,7 +235,7 @@ public sealed class ExecuteEmailActionCommandHandler
 
         if (isAccept)
         {
-            item.Status = LogisticsItemStatus.Received;
+            item.Status = LogisticsItemStatus.Accepted;
         }
         else
         {
@@ -253,7 +253,7 @@ public sealed class ExecuteEmailActionCommandHandler
             _db.Notifications.Add(new Notification
             {
                 RecipientUserId = item.RequestedBy.Value,
-                NotificationType = isAccept ? "VISIT_LOGISTICS_RECEIVED" : "VISIT_LOGISTICS_DECLINED",
+                NotificationType = isAccept ? "VISIT_LOGISTICS_ACCEPTED" : "VISIT_LOGISTICS_REJECTED",
                 Title = isAccept ? "Yêu cầu hậu cần được tiếp nhận" : "Yêu cầu hậu cần bị từ chối",
                 Message = $"{result.RecipientName ?? "Phòng ban"} {verb} yêu cầu \"{item.Title}\".",
                 RelatedType = "LOGISTICS_ITEM",
@@ -266,7 +266,7 @@ public sealed class ExecuteEmailActionCommandHandler
         _db.AuditLogs.Add(new AuditLog
         {
             ActorUserId = token.RecipientUserId,
-            Action = isAccept ? "LOGISTICS_REQUEST_ACCEPT" : "LOGISTICS_REQUEST_DECLINE",
+            Action = isAccept ? "LOGISTICS_REQUEST_ACCEPT" : "LOGISTICS_REQUEST_REJECT",
             EntityType = "VisitLogisticsItem",
             EntityId = item.LogisticsItemId,
             IpAddress = request.Ip,
@@ -349,7 +349,7 @@ public sealed class ExecuteEmailActionCommandHandler
         }
         else
         {
-            item.Status = LogisticsItemStatus.Rejected; // terminal
+            item.Status = LogisticsItemStatus.Declined; // terminal
         }
         item.UpdatedAt = now;
         item.UpdatedBy = token.RecipientUserId;
@@ -364,7 +364,7 @@ public sealed class ExecuteEmailActionCommandHandler
         {
             attempt.Status = isAccept ? "ACCEPTED" : "DECLINED";
             attempt.RespondedAt = now;
-            attempt.ResponseSource = "EMAIL";
+            attempt.ResponseSource = "EMAIL_TOKEN";
             attempt.UpdatedAt = now;
         }
 

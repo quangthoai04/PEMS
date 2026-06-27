@@ -168,7 +168,7 @@ public sealed class GetEmailActionInfoQueryHandler
         }
         else if (item.Status != LogisticsItemStatus.Requested)
         {
-            if (item.Status == LogisticsItemStatus.Received || item.Status == LogisticsItemStatus.Assigned || item.Status == LogisticsItemStatus.Accepted || item.Status == LogisticsItemStatus.Done)
+            if (item.Status == LogisticsItemStatus.Assigned || item.Status == LogisticsItemStatus.Accepted || item.Status == LogisticsItemStatus.Done)
                 result.Status = EmailActionViewStatuses.AlreadyResponded;
             else
                 result.Status = EmailActionViewStatuses.Invalid;
@@ -178,7 +178,7 @@ public sealed class GetEmailActionInfoQueryHandler
             result.Status = EmailActionViewStatuses.Valid;
         }
 
-        if (item.Status == LogisticsItemStatus.Received || item.Status == LogisticsItemStatus.Assigned || item.Status == LogisticsItemStatus.Accepted || item.Status == LogisticsItemStatus.Done)
+        if (item.Status == LogisticsItemStatus.Assigned || item.Status == LogisticsItemStatus.Accepted || item.Status == LogisticsItemStatus.Done)
             result.CurrentResponse = "Đã tiếp nhận";
         else if (item.Status == LogisticsItemStatus.Rejected || item.Status == LogisticsItemStatus.Cancelled)
             result.CurrentResponse = "Đã từ chối / hủy";
@@ -230,7 +230,7 @@ public sealed class GetEmailActionInfoQueryHandler
         {
             result.Status = EmailActionViewStatuses.Invalid;
         }
-        else if (item.Status == LogisticsItemStatus.Accepted)
+        else if (item.Status == LogisticsItemStatus.Accepted || item.Status == LogisticsItemStatus.Declined)
         {
             result.Status = EmailActionViewStatuses.AlreadyResponded;
         }
@@ -247,7 +247,7 @@ public sealed class GetEmailActionInfoQueryHandler
             result.Status = EmailActionViewStatuses.Valid;
         }
 
-        if (item.Status == LogisticsItemStatus.Accepted || item.Status == LogisticsItemStatus.Rejected)
+        if (item.Status == LogisticsItemStatus.Accepted || item.Status == LogisticsItemStatus.Declined)
             result.CurrentResponse = item.Status == LogisticsItemStatus.Accepted ? "Đã xác nhận" : "Đã từ chối";
 
         return result;
