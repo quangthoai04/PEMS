@@ -384,7 +384,7 @@ public sealed class PrepareVisitLogisticsCommandHandler
         var usage = (usageStart.HasValue || usageEnd.HasValue)
             ? $"<li><strong>Thời gian sử dụng:</strong> {HE(usageStart?.ToString("HH:mm dd/MM/yyyy") ?? "—")} - {HE(usageEnd?.ToString("HH:mm dd/MM/yyyy") ?? "—")}</li>"
             : string.Empty;
-        var qty = item.Quantity.HasValue ? $"<li><strong>Số lượng:</strong> {item.Quantity}</li>" : string.Empty;
+        var qty = item.Quantity.HasValue ? $"<li><strong>Số lượng dự kiến:</strong> {item.Quantity}</li>" : string.Empty;
         return $@"<p>Xin chào <strong>{HE(leaderName)}</strong>,</p>
 <p>Host <strong>{HE(requesterName)}</strong> đã gửi một yêu cầu hậu cần cho đoàn <strong>{HE(delegationName)}</strong> tại {HE(campusName)}.</p>
 <div style=""background:#f0f7ff;border-left:4px solid #004c91;border-radius:8px;padding:16px 20px;margin:20px 0"">

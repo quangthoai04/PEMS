@@ -908,6 +908,15 @@ export interface VisitInstanceLogisticsItem {
   dueAt?: string | null;
   assignedToUserId?: number | null;
   assignedToName?: string | null;
+  // Change-proposal: `quantity` is the PLANNED figure; the FINAL ("chốt") quantity is
+  // proposedQuantity when proposalResponse === 'ACCEPTED', else quantity.
+  proposedQuantity?: number | null;
+  proposedUsageStartAt?: string | null;
+  proposedUsageEndAt?: string | null;
+  proposedDescription?: string | null;
+  proposalNote?: string | null;
+  proposalResponse?: 'ACCEPTED' | 'REJECTED' | null;
+  proposalResponseNote?: string | null;
 }
 
 export interface GetVisitInstanceLogisticsResult {

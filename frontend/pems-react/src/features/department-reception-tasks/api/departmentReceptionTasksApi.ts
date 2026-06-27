@@ -57,12 +57,17 @@ export const departmentReceptionTasksApi = {
     return data;
   },
 
-  proposeChange: async (logisticsItemId: number | string, proposedUsageStartAt: string | null, proposedUsageEndAt: string | null, proposedDescription: string) => {
-    const { data } = await httpClient.post<any>(API_ENDPOINTS.departmentReceptionTasks.proposeChange(logisticsItemId), {
-      proposedUsageStartAt,
-      proposedUsageEndAt,
-      proposedDescription
-    });
+  proposeChange: async (
+    logisticsItemId: number | string,
+    payload: {
+      proposedQuantity?: number | null;
+      proposedUsageStartAt?: string | null;
+      proposedUsageEndAt?: string | null;
+      proposedDescription?: string | null;
+      proposalNote: string;
+    },
+  ) => {
+    const { data } = await httpClient.post<any>(API_ENDPOINTS.departmentReceptionTasks.proposeChange(logisticsItemId), payload);
     return data;
   },
 

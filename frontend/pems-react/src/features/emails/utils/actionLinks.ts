@@ -17,6 +17,10 @@ const ACTION_HREF = new RegExp(
   `(\\{\\{\\s*(?:${ACTION_VARS})Url\\s*\\}\\}|%7[bB]%7[bB]\\s*(?:${ACTION_VARS})Url\\s*%7[dD]%7[dD]|/public/email-actions/|api/public/email-actions)`,
   'i',
 );
+// Known system "view detail" link labels. An anchor with this text is dropped only when its href is
+// NOT a real external link (so a user's real "Xem chi tiết" → https://... link is preserved).
+const SYSTEM_LINK_TEXT = /^(?:Xem yêu cầu hậu cần|Xem chi tiết yêu cầu|Xem chi tiết trong PEMS|Xem chi tiết|View logistics request|View request details|View request|View detail|View details|Details|Detail)$/i;
+const REAL_HREF = /^(?:https?:|mailto:|tel:)/i;
 
 export function stripLegacyActionHtml(html: string): string {
   if (!html) return html;
@@ -25,7 +29,10 @@ export function stripLegacyActionHtml(html: string): string {
   if (typeof window !== 'undefined' && window.DOMParser) {
     const doc = new window.DOMParser().parseFromString(html, 'text/html');
     doc.querySelectorAll('a[href]').forEach((a) => {
-      if (ACTION_HREF.test(a.getAttribute('href') || '')) a.remove();
+      const href = a.getAttribute('href') || '';
+      if (ACTION_HREF.test(href)) { a.remove(); return; }
+      // System "view detail" label whose href is not a real external link → legacy system link.
+      if (SYSTEM_LINK_TEXT.test((a.textContent || '').trim()) && !REAL_HREF.test(href.trim())) a.remove();
     });
     s = doc.body.innerHTML;
   }

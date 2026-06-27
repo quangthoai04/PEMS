@@ -2957,12 +2957,15 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                                    toast.error('Giờ kết thúc phải sau giờ bắt đầu');
                                    return;
                                  }
-                                 await departmentReceptionTasksApi.proposeChange(
-                                   activePopoverEvent.rawId,
-                                   buildProposalDateTime(proposalStartTime),
-                                   buildProposalDateTime(proposalEndTime),
-                                   proposalNote.trim()
-                                 );
+                                 if (!proposalNote.trim()) {
+                                   toast.error('Vui lòng nhập lý do/ghi chú đề xuất.');
+                                   return;
+                                 }
+                                 await departmentReceptionTasksApi.proposeChange(activePopoverEvent.rawId, {
+                                   proposedUsageStartAt: buildProposalDateTime(proposalStartTime),
+                                   proposedUsageEndAt: buildProposalDateTime(proposalEndTime),
+                                   proposalNote: proposalNote.trim(),
+                                 });
                                  toast.success('Đã gửi đề xuất thay đổi');
                                  setIsProposing(false);
                                  setProposalSubmitted(true);

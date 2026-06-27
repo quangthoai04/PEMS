@@ -22,19 +22,22 @@ public static class EmailComposition
     public const string ActionBlockEnd = "<!-- PEMS_ACTION_BLOCK_END -->";
     private static string WrapActionBlock(string inner) => ActionBlockStart + inner + ActionBlockEnd;
 
-    /// <summary>System action-URL variables the backend ALWAYS injects itself (never rendered into the
-    /// editable body). Note: detailUrl is intentionally absent — it is also used by non-action emails
-    /// (e.g. reminders) which legitimately render a real link.</summary>
+    /// <summary>System action/detail-URL variables the backend ALWAYS injects itself (via the canonical
+    /// action block) — they are NEVER rendered into the editable body. Includes detailUrl: in the action
+    /// email flows (logistics request / assignee) the detail button lives in the action block, so the
+    /// body's {{detailUrl}} must be stripped. Reminders use their OWN renderer + provide a real detailUrl,
+    /// so they are unaffected by this set.</summary>
     private static readonly System.Collections.Generic.HashSet<string> ActionUrlVarNames =
         new(System.StringComparer.OrdinalIgnoreCase)
         {
             "acceptUrl", "declineUrl", "negotiateUrl", "approveProposalUrl",
             "rejectProposalUrl", "confirmBorrowUrl", "confirmReturnUrl", "assignUrl",
+            "detailUrl", "DETAIL_URL",
         };
 
-    /// <summary>Regex alternation of every action-URL var name (incl. detailUrl) used by the cleaner.</summary>
+    /// <summary>Regex alternation of every action/detail-URL var name used by the cleaner.</summary>
     private const string ActionVarAlternation =
-        "acceptUrl|declineUrl|negotiateUrl|approveProposalUrl|rejectProposalUrl|confirmBorrowUrl|confirmReturnUrl|assignUrl|detailUrl";
+        "acceptUrl|declineUrl|negotiateUrl|approveProposalUrl|rejectProposalUrl|confirmBorrowUrl|confirmReturnUrl|assignUrl|detailUrl|detail_url";
 
     /// <summary>Wrap inner content HTML in the branded PEMS card (the final sent body).</summary>
     public static string BrandedShell(string innerHtml) => $@"<!DOCTYPE html>
@@ -144,6 +147,13 @@ public static class EmailComposition
             + @"|/public/email-actions/|api/public/email-actions)";
         s = Regex.Replace(s,
             @"<a\b[^>]*\bhref\s*=\s*(?:""[^""]*" + hrefNeedle + @"[^""]*""|'[^']*" + hrefNeedle + @"[^']*'|[^\s>]*" + hrefNeedle + @"[^\s>]*)[^>]*>.*?</a>",
+            string.Empty, RegexOptions.IgnoreCase | RegexOptions.Singleline);
+
+        // 1b) Drop anchors whose VISIBLE TEXT is a known system "view detail" label AND whose href is
+        //     NOT a real external link — catches a legacy detail anchor whose {{detailUrl}} href was
+        //     blanked to a fallback string. Real user links (href=http/https/mailto/tel) are kept.
+        s = Regex.Replace(s,
+            @"<a\b(?![^>]*\bhref\s*=\s*[""']?(?:https?:|mailto:|tel:))[^>]*>\s*(?:Xem yêu cầu hậu cần|Xem chi tiết yêu cầu|Xem chi tiết trong PEMS|Xem chi tiết|View logistics request|View request details|View request|View detail|View details|Details|Detail)\s*</a>",
             string.Empty, RegexOptions.IgnoreCase | RegexOptions.Singleline);
 
         // 2) Drop leftover bare placeholders (raw + URL-encoded).
