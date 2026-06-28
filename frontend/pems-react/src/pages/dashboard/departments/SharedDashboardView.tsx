@@ -167,10 +167,18 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
     subject: '', body: '', isActionTemplate: false,
     systemActionDescription: null as string | null, lockedActionBlockHtml: null as string | null,
   });
-  const [pendingAssign, setPendingAssign] = useState<{ logisticsItemId: number | string; staffId: number | string; staffName: string; title?: string; delegationName?: string } | null>(null);
+  const [pendingAssign, setPendingAssign] = useState<{
+    itemType: 'REQUEST' | 'INVITATION';
+    logisticsItemId?: number | string;
+    participantId?: number | string;
+    staffId: number | string;
+    staffName: string;
+    title?: string;
+    delegationName?: string;
+  } | null>(null);
 
   const openLogisticsAssignPreview = async (p: { logisticsItemId: number | string; staffId: number | string; staffName: string; title?: string; delegationName?: string }) => {
-    setPendingAssign(p);
+    setPendingAssign({ ...p, itemType: 'REQUEST' });
     setAssignPreview((s) => ({ ...s, open: true, loading: true, error: null }));
     try {
       const res = await delegationsApi.previewEmailTemplate({
@@ -194,9 +202,51 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
     }
   };
 
+  const openInvitationAssignPreview = async (p: { participantId: number | string; staffId: number | string; staffName: string; title?: string; delegationName?: string }) => {
+    setPendingAssign({ ...p, itemType: 'INVITATION' });
+    setAssignPreview((s) => ({ ...s, open: true, loading: true, error: null }));
+    try {
+      const res = await delegationsApi.previewEmailTemplate({
+        templateCode: 'VISIT_PARTICIPANT_INVITATION',
+        context: {
+          recipientName: p.staffName,
+          assigneeName: p.staffName,
+          DelegationName: p.delegationName ?? p.title ?? 'đoàn khách',
+          eventTitle: p.title ?? p.delegationName ?? 'lịch tiếp khách',
+          coordinationNote: 'Bạn được Trưởng phòng ủy quyền tham gia đón tiếp.',
+        },
+      });
+      setAssignPreview((s) => ({
+        ...s, open: true, loading: false, error: null,
+        subject: res.subject, body: stripLegacyActionHtml(res.bodyHtml),
+        isActionTemplate: res.isActionTemplate,
+        systemActionDescription: res.systemActionDescription ?? null,
+        lockedActionBlockHtml: res.lockedActionBlockHtml ?? null,
+      }));
+    } catch (e: any) {
+      setAssignPreview((s) => ({ ...s, open: true, loading: false, error: e?.response?.data?.message || e?.message || 'Không thể tải bản xem trước email.' }));
+    }
+  };
+
   const reloadAssignPreview = async () => {
     if (!pendingAssign) return;
-    await openLogisticsAssignPreview(pendingAssign);
+    if (pendingAssign.itemType === 'INVITATION') {
+      await openInvitationAssignPreview({
+        participantId: pendingAssign.participantId!,
+        staffId: pendingAssign.staffId,
+        staffName: pendingAssign.staffName,
+        title: pendingAssign.title,
+        delegationName: pendingAssign.delegationName,
+      });
+      return;
+    }
+    await openLogisticsAssignPreview({
+      logisticsItemId: pendingAssign.logisticsItemId!,
+      staffId: pendingAssign.staffId,
+      staffName: pendingAssign.staffName,
+      title: pendingAssign.title,
+      delegationName: pendingAssign.delegationName,
+    });
   };
   const closeAssignPreview = () => setAssignPreview((s) => ({ ...s, open: false }));
 
@@ -206,13 +256,24 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
     if (!payload.bodyHtml.trim()) { toast.error('Nội dung email không được để trống.'); return; }
     setAssignPreview((s) => ({ ...s, sending: true }));
     try {
-      await departmentReceptionTasksApi.assignAssignee(
-        pendingAssign.logisticsItemId, pendingAssign.staffId,
-        { useEditedContent: true, subject: payload.subject.trim(), bodyHtml: payload.bodyHtml, attachments: payload.attachments },
-      );
+      const emailOverride = { useEditedContent: true, subject: payload.subject.trim(), bodyHtml: payload.bodyHtml, attachments: payload.attachments };
+      if (pendingAssign.itemType === 'INVITATION') {
+        await delegationsApi.visitInvitations.assignDepartmentStaff(
+          pendingAssign.participantId!,
+          Number(pendingAssign.staffId),
+          '',
+          emailOverride,
+        );
+      } else {
+        await departmentReceptionTasksApi.assignAssignee(
+          pendingAssign.logisticsItemId!, pendingAssign.staffId,
+          emailOverride,
+        );
+      }
       toast.success('Đã phân công người phụ trách và gửi email.');
       setAssignPreview((s) => ({ ...s, open: false, sending: false }));
       setAssignedPerson(pendingAssign.staffName);
+      if (pendingAssign.itemType === 'INVITATION') setInvitationStatus('assigned');
       setRequestStatus('assigned');
       setShowAssignDropdown(false);
       setAssigningTaskItem(null);
@@ -1071,25 +1132,23 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
     if (!assigningTaskItem) return;
     const staffId = staff.id || staff.userId;
     const staffName = staff.name || staff.fullName || 'Nhân sự';
-    // Logistics assignment → open the editable email preview first (sends with emailOverride on confirm).
     if (assigningTaskItem.itemType !== 'INVITATION') {
       await openLogisticsAssignPreview({
         logisticsItemId: assigningTaskItem.logisticsItemId || assigningTaskItem.itemId,
-        staffId, staffName,
+        staffId,
+        staffName,
         title: assigningTaskItem.title,
         delegationName: (assigningTaskItem as any).delegationName,
       });
       return;
     }
-    // Invitation assignment stays a direct action (no email override here).
-    try {
-      await departmentReceptionTasksApi.assignInvitation(assigningTaskItem.participantId || assigningTaskItem.itemId, staffId);
-      toast.success('Đổi người phụ trách thành công');
-      setAssigningTaskItem(null);
-      await refetchAfterTaskAction();
-    } catch (e: any) {
-      toast.error(e.response?.data?.message || e.response?.data?.title || e.message || 'Đổi người phụ trách thất bại');
-    }
+    await openInvitationAssignPreview({
+      participantId: assigningTaskItem.participantId || assigningTaskItem.itemId,
+      staffId,
+      staffName,
+      title: assigningTaskItem.title,
+      delegationName: (assigningTaskItem as any).delegationName,
+    });
   };
 
   const renderAssignmentsProgressPanel = () => (
@@ -2726,8 +2785,8 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                     </div>
                   )}
 
-                  {/* Ch? hi?n n?t T? ch?i / Xc nh?n tham gia khi: khng ph?i leader, ho?c l leader nhng i t? invitation chnh mnh (chng ph i ?y quy?n) */}
-                  {invitationStatus === 'pending' && (!isDeptLeader) && (
+                  {/* Hiển thị nút Từ chối / Xác nhận tham gia cho lời mời đang chờ phản hồi. */}
+                  {invitationStatus === 'pending' && (
                   <div className="flex gap-4 pt-6 mt-6 border-t border-gray-100 flex-col relative z-10 w-full animate-fade-in-quick">
                     
                     <div className="flex flex-col sm:flex-row gap-4 w-full">
@@ -2784,19 +2843,14 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                                    key={staff.id || staff.userId}
                                    className="w-full px-4 py-3 text-left hover:bg-slate-50 border-b border-slate-50 last:border-0 transition-colors group flex items-start justify-between"
                                    onClick={async () => {
-                                     try {
-                                       if (activePopoverEvent?.rawId) {
-                                         await delegationsApi.visitInvitations.assignDepartmentStaff(activePopoverEvent.rawId, Number(staff.id || staff.userId), '');
-                                         toast.success('Phân công thành công');
-                                         setAssignedPerson(staff.name);
-                                         setInvitationStatus('assigned');
-                                         setShowAssignDropdown(false);
-                                         await fetchCalendarEvents();
-                                       }
-                                     } catch(e: any) { 
-                                       console.error(e); 
-                                       const errorMsg = e.response?.data?.message || e.response?.data?.title || e.message || 'Phân công thất bại';
-                                       toast.error('Lỗi: ' + errorMsg); 
+                                     if (activePopoverEvent?.rawId) {
+                                       await openInvitationAssignPreview({
+                                         participantId: activePopoverEvent.rawId,
+                                         staffId: staff.id || staff.userId,
+                                         staffName: staff.name || staff.fullName || 'Nhân sự',
+                                         title: activePopoverEvent?.fullTitle || activePopoverEvent?.title,
+                                         delegationName: activePopoverEvent?.delegationName,
+                                       });
                                      }
                                    }}
                                  >

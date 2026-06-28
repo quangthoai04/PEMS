@@ -57,13 +57,15 @@ public sealed class GetSubmittedVisitRequestFormDetailQueryHandler
         var isHo = roleCode == RoleCodes.Ho;
         var isStaffLeader = roleCode == RoleCodes.Staff
             && string.Equals(subRole, UserSubRoles.Leader, StringComparison.OrdinalIgnoreCase);
+        var isDepartmentStaff = roleCode == RoleCodes.Department
+            && string.Equals(subRole, UserSubRoles.Staff, StringComparison.OrdinalIgnoreCase);
         var isVisitor = roleCode == RoleCodes.Visitor;
 
         // Admin / Department / Student never see the guest form. HO, Staff Leader, Visitor, and a
         // regular Staff who HOSTS an instance of this request may. The host relation needs the
         // request's campus instances, so it is verified after the request loads (below).
         var isStaff = roleCode == RoleCodes.Staff;
-        if (!isHo && !isVisitor && !isStaff)
+        if (!isHo && !isVisitor && !isStaff && !isDepartmentStaff)
             throw new ForbiddenException("Bạn không có quyền xem chi tiết đơn này.");
 
         var visitRequest = await _context.VisitRequests
@@ -85,6 +87,23 @@ public sealed class GetSubmittedVisitRequestFormDetailQueryHandler
         var isMulti = visitRequest.VisitScope == VisitScopes.MultiCampus;
         var isSingle = visitRequest.VisitScope == VisitScopes.SingleCampus;
         var status = visitRequest.Status;
+        var instanceIds = visitRequest.CampusInstances.Select(c => c.VisitInstanceId).ToList();
+        var departmentStaffAssignedInstanceIds = new HashSet<ulong>();
+        if (isDepartmentStaff)
+        {
+            var logisticsInstanceIds = await _context.VisitLogisticsItems
+                .Where(l => instanceIds.Contains(l.VisitInstanceId) && l.AssignedToUserId == userId)
+                .Select(l => l.VisitInstanceId)
+                .ToListAsync(cancellationToken);
+            var participantInstanceIds = await _context.VisitParticipants
+                .Where(p => instanceIds.Contains(p.VisitInstanceId)
+                    && p.UserId == userId
+                    && p.AssignedBy != null
+                    && p.Status != ParticipantStatuses.Removed)
+                .Select(p => p.VisitInstanceId)
+                .ToListAsync(cancellationToken);
+            departmentStaffAssignedInstanceIds = logisticsInstanceIds.Concat(participantInstanceIds).ToHashSet();
+        }
 
         // The Staff Leader's own-campus instance (if any). Used for both scope checks and flags.
         var primaryCampusId = _currentUser.PrimaryCampusId;
@@ -140,6 +159,11 @@ public sealed class GetSubmittedVisitRequestFormDetailQueryHandler
             // Verified above: caller is the official host of ≥1 campus instance of this request.
             // Allowed read-only; only their hosted instance(s) are surfaced (no other-campus leak).
         }
+        else if (isDepartmentStaff)
+        {
+            if (departmentStaffAssignedInstanceIds.Count == 0)
+                throw new ForbiddenException("Bạn chỉ được xem đoàn đã được giao cho mình.");
+        }
         else
         {
             throw new ForbiddenException("Bạn không có quyền xem chi tiết đơn này.");
@@ -161,7 +185,9 @@ public sealed class GetSubmittedVisitRequestFormDetailQueryHandler
             ? visitRequest.CampusInstances.Where(c => c.CampusId == primaryCampusId).ToList()
             : isHost
                 ? hostedInstances
-                : visitRequest.CampusInstances.ToList();
+                : isDepartmentStaff
+                    ? visitRequest.CampusInstances.Where(c => departmentStaffAssignedInstanceIds.Contains(c.VisitInstanceId)).ToList()
+                    : visitRequest.CampusInstances.ToList();
 
         // Resolve every "who decided / who cancelled" name in one round-trip (decision actor,
         // request-level canceller, and each visible campus-instance canceller).

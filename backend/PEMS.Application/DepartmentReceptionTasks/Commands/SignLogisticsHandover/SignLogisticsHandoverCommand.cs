@@ -61,6 +61,11 @@ public class SignLogisticsHandoverCommandHandler : IRequestHandler<SignLogistics
         if (item.RequestedToDepartmentId.HasValue && user.DepartmentId != item.RequestedToDepartmentId)
             throw new Exception("Bạn không có quyền ký biên bản của phòng ban khác.");
 
+        var isDepartmentStaff = string.Equals(_currentUserService.RoleCode, RoleCodes.Department, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(_currentUserService.SubRole, UserSubRoles.Staff, StringComparison.OrdinalIgnoreCase);
+        if (isDepartmentStaff && item.AssignedToUserId != userId)
+            throw new Exception("Ban chi co the ky bien ban cua don yeu cau duoc giao cho minh.");
+
         var now = DateTime.UtcNow;
         var handover = await _context.VisitLogisticsItemHandovers
             .FirstOrDefaultAsync(h => h.LogisticsItemId == request.LogisticsItemId && h.HandoverType == handoverType, cancellationToken);

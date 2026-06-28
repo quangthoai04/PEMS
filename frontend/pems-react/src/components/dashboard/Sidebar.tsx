@@ -70,6 +70,8 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile }: SidebarProps) {
   const isStaffLeader = user?.role?.toUpperCase() === 'STAFF' && user?.subRole?.toUpperCase() === 'LEADER';
   const roleForSidebar = user?.role?.toUpperCase() || 'GUEST';
   const isDeptLeader = roleForSidebar === 'DEPARTMENT' && user?.subRole?.toUpperCase() === 'LEADER';
+  // isDeptStaff: DEPARTMENT + không phải LEADER (bao gồm subRole null/undefined)
+  const isDeptStaff = roleForSidebar === 'DEPARTMENT' && !isDeptLeader;
   const isRealAdmin = roleForSidebar === 'ADMIN';
 
 
@@ -152,7 +154,7 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile }: SidebarProps) {
               <span>Quản lý tin tức</span>
             </NavLink>
           )}
-          {(["HO", "STAFF", "DEPARTMENT"].includes(roleForSidebar)) && !isRealAdmin && (
+          {(["HO", "STAFF", "DEPARTMENT"].includes(roleForSidebar)) && !isRealAdmin && !isDeptStaff && (
             <NavLink to="/dashboard/email" className={navItemClass} onClick={handleLinkClick}>
               <Mail className="w-5 h-5 flex-shrink-0" />
               <span>Quản lý email</span>
@@ -166,7 +168,7 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile }: SidebarProps) {
                 <span>Quản lý đối tác</span>
               </NavLink>
             )}
-          {((["ADMIN", "DEPARTMENT"].includes(roleForSidebar) && !isRealAdmin) || isStaffLeader) && (
+          {(((["ADMIN", "DEPARTMENT"].includes(roleForSidebar) && !isRealAdmin) || isStaffLeader) && !isDeptStaff) && (
             <NavLink to={roleForSidebar === "DEPARTMENT" ? `/dashboard/departments/${user?.departmentId || '1'}` : "/dashboard/departments"} className={navItemClass} end={roleForSidebar !== "DEPARTMENT"} onClick={handleLinkClick}>
               <Building2 className="w-5 h-5 flex-shrink-0" />
               <span>Quản lý phòng ban</span>
@@ -184,7 +186,7 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile }: SidebarProps) {
               <span>Quản lý campus</span>
             </NavLink>
           )}
-          {(["HO", "STAFF", "DEPARTMENT", "STUDENT", "VISITOR"].includes(roleForSidebar)) && (
+          {(["HO", "STAFF", "DEPARTMENT", "STUDENT", "VISITOR"].includes(roleForSidebar)) && !isDeptStaff && (
             <NavLink to="/dashboard/visit" className={navItemClass} onClick={handleLinkClick}>
               <Briefcase className="w-5 h-5 flex-shrink-0" />
               <span>Quản lý tiếp khách</span>

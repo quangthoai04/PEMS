@@ -482,8 +482,18 @@ export const delegationsApi = {
       const { data } = await httpClient.post<any>(API_ENDPOINTS.visitInvitations.decline(participantId), { reason });
       return data;
     },
-    async assignDepartmentStaff(participantId: string | number, departmentStaffUserId: number, note: string): Promise<any> {
-      const { data } = await httpClient.post<any>(API_ENDPOINTS.visitInvitations.assignDepartmentStaff(participantId), { departmentStaffUserId, note });
+    async assignDepartmentStaff(
+      participantId: string | number,
+      departmentStaffUserId: number,
+      note: string,
+      emailOverride?: {
+        useEditedContent: boolean;
+        subject: string;
+        bodyHtml: string;
+        attachments?: { fileId: number; attachmentType?: 'ATTACHMENT' | 'INLINE_IMAGE'; contentId?: string | null; displayName?: string | null; displayOrder?: number }[];
+      },
+    ): Promise<any> {
+      const { data } = await httpClient.post<any>(API_ENDPOINTS.visitInvitations.assignDepartmentStaff(participantId), { departmentStaffUserId, note, emailOverride });
       return data;
     },
   },
