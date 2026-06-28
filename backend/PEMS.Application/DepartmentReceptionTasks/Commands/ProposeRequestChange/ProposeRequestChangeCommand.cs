@@ -1,7 +1,10 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Emails.Common;
 using PEMS.Domain.Constants;
+using PEMS.Domain.Entities.Emails;
+using PEMS.Domain.Entities.Notifications;
 using System;
 using System.Threading;
 using System.Threading.Tasks;
@@ -23,13 +26,24 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.ProposeRequestChang
 
     public class ProposeRequestChangeCommandHandler : IRequestHandler<ProposeRequestChangeCommand, bool>
     {
+        private static readonly TimeSpan TokenTtl = TimeSpan.FromDays(14);
+
         private readonly IApplicationDbContext _context;
         private readonly ICurrentUserService _currentUserService;
+        private readonly IEmailService _email;
+        private readonly IEmailActionTokenService _tokens;
+        private readonly PEMS.Application.Emails.Utils.IEmailImageLayoutNormalizer _normalizer;
 
-        public ProposeRequestChangeCommandHandler(IApplicationDbContext context, ICurrentUserService currentUserService)
+        public ProposeRequestChangeCommandHandler(
+            IApplicationDbContext context, ICurrentUserService currentUserService,
+            IEmailService email, IEmailActionTokenService tokens,
+            PEMS.Application.Emails.Utils.IEmailImageLayoutNormalizer normalizer)
         {
             _context = context;
             _currentUserService = currentUserService;
+            _email = email;
+            _tokens = tokens;
+            _normalizer = normalizer;
         }
 
         public async Task<bool> Handle(ProposeRequestChangeCommand request, CancellationToken cancellationToken)
@@ -63,6 +77,8 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.ProposeRequestChang
             if (ps.HasValue && pe.HasValue && pe.Value <= ps.Value)
                 throw new Exception("Thời gian kết thúc đề xuất phải sau thời gian bắt đầu.");
 
+            var now = DateTime.UtcNow;
+
             // Never overwrite the original quantity (the PLANNED figure) — only the proposed_* columns.
             l.ProposedQuantity = request.ProposedQuantity;
             l.ProposedDescription = string.IsNullOrWhiteSpace(request.ProposedDescription) ? null : request.ProposedDescription.Trim();
@@ -72,16 +88,191 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.ProposeRequestChang
 
             l.Status = "CHANGE_PROPOSED";
             l.ProposedBy = userId;
-            l.ProposedAt = DateTime.UtcNow;
+            l.ProposedAt = now;
             l.ProposalResponse = null;
             l.ProposalRespondedBy = null;
             l.ProposalRespondedAt = null;
             l.ProposalResponseNote = null;
             l.UpdatedBy = userId;
-            l.UpdatedAt = DateTime.UtcNow;
+            l.UpdatedAt = now;
+
+            // Invalidate any older pending tokens on this item (e.g. a prior request accept/decline) so a
+            // stale email can't act on the item while it now awaits the Host's proposal decision.
+            await PEMS.Application.EmailActions.EmailTokenInvalidationHelper.InvalidatePendingEmailActionTokensAsync(
+                _context, EmailActionTargetTypes.LogisticsItem, l.LogisticsItemId,
+                "Yêu cầu đang chờ Host phản hồi đề xuất thay đổi.", now, cancellationToken);
 
             await _context.SaveChangesAsync(cancellationToken);
+
+            // Email the Host (the requester) with APPROVE/REJECT proposal buttons. The proposal is already
+            // persisted; an SMTP failure never rolls it back (the Host can still respond from the portal).
+            await SendProposalEmailAsync(l, userId, now, cancellationToken);
             return true;
         }
+
+        private async Task SendProposalEmailAsync(
+            Domain.Entities.Delegations.VisitLogisticsItem l, ulong proposerUserId, DateTime now, CancellationToken cancellationToken)
+        {
+            if (!l.RequestedBy.HasValue) return; // no Host on record → portal-only proposal
+            var host = await _context.Users.FirstOrDefaultAsync(u => u.UserId == l.RequestedBy.Value, cancellationToken);
+            if (host == null || string.IsNullOrWhiteSpace(host.Email)) return;
+
+            var delegationName = await (
+                from c in _context.VisitRequestCampuses
+                join v in _context.VisitRequests on c.VisitRequestId equals v.VisitRequestId
+                where c.VisitInstanceId == l.VisitInstanceId
+                select v.DelegationName).FirstOrDefaultAsync(cancellationToken) ?? "FPT University";
+
+            ulong sentEmailId, sentEmailRecipientId;
+            string finalSubject, finalBody;
+
+            await using (var transaction = await _context.BeginTransactionAsync(cancellationToken))
+            {
+                var approveRaw = _tokens.GenerateRawToken();
+                var rejectRaw = _tokens.GenerateRawToken();
+                var groupKey = Guid.NewGuid().ToString("N");
+                var approveUrl = _tokens.BuildPublicActionUrl(approveRaw);
+                var rejectUrl = _tokens.BuildPublicActionUrl(rejectRaw);
+                var detailUrl = _tokens.BuildLogisticsDetailUrl(l.LogisticsItemId);
+
+                finalSubject = $"[PEMS] Phòng ban đề xuất thay đổi hậu cần — {l.Title}";
+                finalBody = EmailComposition.BrandedShell(
+                    ProposalContentHtml(host.FullName, delegationName, l)
+                    + EmailComposition.LogisticsProposalActionBlock(approveUrl, rejectUrl, detailUrl));
+                finalBody = await _normalizer.NormalizeHtmlAsync(finalBody, cancellationToken);
+
+                var sentEmail = new SentEmail
+                {
+                    EmailTemplateId = null,
+                    RelatedType = EmailActionTargetTypes.LogisticsItem,
+                    RelatedId = l.LogisticsItemId,
+                    Subject = finalSubject,
+                    BodySnapshot = finalBody,
+                    Status = "QUEUED",
+                    SentBy = proposerUserId,
+                    CreatedAt = now,
+                };
+                _context.SentEmails.Add(sentEmail);
+                await _context.SaveChangesAsync(cancellationToken);
+
+                var sentRecipient = new SentEmailRecipient
+                {
+                    SentEmailId = sentEmail.SentEmailId,
+                    RecipientEmail = host.Email,
+                    RecipientName = host.FullName,
+                    RecipientType = "TO",
+                    DeliveryStatus = "QUEUED",
+                    CreatedAt = now,
+                };
+                _context.SentEmailRecipients.Add(sentRecipient);
+                await _context.SaveChangesAsync(cancellationToken);
+
+                _context.EmailActionTokens.Add(NewProposalToken(_tokens.Hash(approveRaw), EmailIntendedActions.ApproveProposal, groupKey, l.LogisticsItemId, host.UserId, host.Email, sentEmail.SentEmailId, sentRecipient.SentEmailRecipientId, now));
+                _context.EmailActionTokens.Add(NewProposalToken(_tokens.Hash(rejectRaw), EmailIntendedActions.RejectProposal, groupKey, l.LogisticsItemId, host.UserId, host.Email, sentEmail.SentEmailId, sentRecipient.SentEmailRecipientId, now));
+
+                _context.Notifications.Add(new Notification
+                {
+                    RecipientUserId = host.UserId,
+                    NotificationType = "VISIT_LOGISTICS_PROPOSAL",
+                    Title = "Phòng ban đề xuất thay đổi hậu cần",
+                    Message = $"Phòng ban đề xuất thay đổi cho yêu cầu \"{l.Title}\" của đoàn {delegationName}.",
+                    RelatedType = "LOGISTICS_ITEM",
+                    RelatedId = l.LogisticsItemId,
+                    IsRead = false,
+                    CreatedAt = now,
+                });
+                await _context.SaveChangesAsync(cancellationToken);
+
+                sentEmailId = sentEmail.SentEmailId;
+                sentEmailRecipientId = sentRecipient.SentEmailRecipientId;
+                await transaction.CommitAsync(cancellationToken);
+            }
+
+            try
+            {
+                await _email.SendAsync(new OutboundEmail
+                {
+                    ToEmail = host.Email,
+                    Subject = finalSubject,
+                    Body = finalBody,
+                    IsHtml = true,
+                }, cancellationToken);
+                await UpdateEmailStatusAsync(sentEmailId, sentEmailRecipientId, "SENT", proposerUserId, now, null, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                await UpdateEmailStatusAsync(sentEmailId, sentEmailRecipientId, "FAILED", proposerUserId, now, ex.Message, cancellationToken);
+            }
+        }
+
+        private static string ProposalContentHtml(string hostName, string delegationName, Domain.Entities.Delegations.VisitLogisticsItem l)
+        {
+            string HE(string? s) => EmailComposition.HE(s);
+            string Fmt(DateTime? d) => d.HasValue ? HE(d.Value.ToString("HH:mm dd/MM/yyyy")) : "—";
+            var rows = string.Empty;
+            if (l.ProposedQuantity.HasValue)
+                rows += $"<li><strong>Số lượng đề xuất:</strong> {l.ProposedQuantity} (dự kiến: {(l.Quantity?.ToString() ?? "—")})</li>";
+            if (l.ProposedUsageStartAt.HasValue || l.ProposedUsageEndAt.HasValue)
+                rows += $"<li><strong>Thời gian đề xuất:</strong> {Fmt(l.ProposedUsageStartAt)} – {Fmt(l.ProposedUsageEndAt)}</li>";
+            if (!string.IsNullOrWhiteSpace(l.ProposedDescription))
+                rows += $"<li><strong>Nội dung đề xuất:</strong> {HE(l.ProposedDescription)}</li>";
+            if (!string.IsNullOrWhiteSpace(l.ProposalNote))
+                rows += $"<li><strong>Lý do:</strong> {HE(l.ProposalNote)}</li>";
+
+            return $@"<p>Xin chào <strong>{HE(hostName)}</strong>,</p>
+<p>Phòng ban xử lý đã đề xuất thay đổi cho hạng mục hậu cần <strong>{HE(l.Title)}</strong> của đoàn <strong>{HE(delegationName)}</strong>.</p>
+<div style=""background:#f5f3ff;border-left:4px solid #7c3aed;border-radius:8px;padding:16px 20px;margin:20px 0"">
+  <ul style=""margin:0;padding-left:20px;line-height:1.7"">
+    {rows}
+  </ul>
+</div>
+<p>Vui lòng chấp nhận hoặc từ chối đề xuất bằng một trong các nút dưới đây.</p>";
+        }
+
+        private static EmailActionToken NewProposalToken(
+            string tokenHash, string intendedAction, string groupKey, ulong logisticsItemId,
+            ulong recipientUserId, string recipientEmail, ulong sentEmailId, ulong sentEmailRecipientId, DateTime now)
+            => new()
+            {
+                TokenHash = tokenHash,
+                ActionGroupKey = groupKey,
+                ActionContext = EmailActionContexts.LogisticsProposalResponse,
+                TargetType = EmailActionTargetTypes.LogisticsItem,
+                TargetId = logisticsItemId,
+                IntendedAction = intendedAction,
+                RecipientUserId = recipientUserId,
+                RecipientEmail = recipientEmail,
+                SentEmailId = sentEmailId,
+                SentEmailRecipientId = sentEmailRecipientId,
+                ExpiresAt = now.Add(TokenTtl),
+                ResultStatus = EmailActionResultStatuses.Pending,
+                CreatedAt = now,
+            };
+
+        private async Task UpdateEmailStatusAsync(
+            ulong sentEmailId, ulong sentEmailRecipientId, string status, ulong actorId, DateTime now,
+            string? error, CancellationToken ct)
+        {
+            var sentEmail = await _context.SentEmails.FirstOrDefaultAsync(e => e.SentEmailId == sentEmailId, ct);
+            if (sentEmail != null)
+            {
+                sentEmail.Status = status;
+                sentEmail.LastAttemptAt = now;
+                sentEmail.RetryCount += 1;
+                if (status == "SENT") { sentEmail.SentBy = actorId; sentEmail.SentAt = now; }
+                else { sentEmail.ErrorMessage = Truncate(error, 1000); }
+            }
+            var rec = await _context.SentEmailRecipients.FirstOrDefaultAsync(r => r.SentEmailRecipientId == sentEmailRecipientId, ct);
+            if (rec != null)
+            {
+                rec.DeliveryStatus = status;
+                if (status == "SENT") rec.SentAt = now;
+                else rec.ErrorMessage = Truncate(error, 1000);
+            }
+            await _context.SaveChangesAsync(ct);
+        }
+
+        private static string? Truncate(string? s, int max)
+            => string.IsNullOrEmpty(s) ? s : (s.Length <= max ? s : s.Substring(0, max));
     }
 }

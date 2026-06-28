@@ -28,6 +28,7 @@ import {
   LOGISTICS_STATUS_META,
   type LogisticsItemType,
   type LogisticsCoordinationMode,
+  type LogisticsPriority,
   type PrepareVisitLogisticsPayload,
   type SupportDepartment,
   type VisitInstanceLogisticsItem,
@@ -53,19 +54,40 @@ const COORD_LABEL: Record<LogisticsCoordinationMode, string> = {
   SYSTEM_REQUEST: 'Xử lý qua hệ thống',
   OFFLINE_COORDINATED: 'Trao đổi bên ngoài',
 };
+// Priority dropdown options + read-only badge styling (visit_logistics_items.priority).
+const PRIORITY_OPTIONS: { value: LogisticsPriority; label: string }[] = [
+  { value: 'LOW', label: 'Thấp' },
+  { value: 'MEDIUM', label: 'Trung bình' },
+  { value: 'HIGH', label: 'Cao' },
+  { value: 'URGENT', label: 'Khẩn cấp' },
+];
+const PRIORITY_META: Record<LogisticsPriority, { label: string; cls: string }> = {
+  LOW:    { label: 'Thấp', cls: 'border-slate-200 bg-slate-50 text-slate-500' },
+  MEDIUM: { label: 'Trung bình', cls: 'border-sky-200 bg-sky-50 text-sky-700' },
+  HIGH:   { label: 'Cao', cls: 'border-amber-200 bg-amber-50 text-amber-700' },
+  URGENT: { label: 'Khẩn cấp', cls: 'border-red-200 bg-red-50 text-red-700' },
+};
 // Statuses where the department has taken the item → host can no longer cancel/replace it.
 const LOCKED_STATUSES = new Set(['ASSIGNED', 'ACCEPTED', 'IN_PROGRESS']);
+// Statuses whose decision/decline reason should surface as the closing reason.
+const REASON_STATUSES = new Set(['REJECTED', 'CANCELLED', 'DECLINED']);
 
 type ResourceForm = {
   quantity: string;
   usageStartAt: string;  // datetime-local "YYYY-MM-DDTHH:mm"
   usageEndAt: string;
+  dueAt: string;         // optional response/completion deadline
+  priority: string;      // LOW | MEDIUM | HIGH | URGENT (default MEDIUM)
   note: string;
   departmentId: string;
   title: string;         // editable only for "Khác"
 };
 const emptyForm = (title = ''): ResourceForm =>
-  ({ quantity: '', usageStartAt: '', usageEndAt: '', note: '', departmentId: '', title });
+  ({ quantity: '', usageStartAt: '', usageEndAt: '', dueAt: '', priority: 'MEDIUM', note: '', departmentId: '', title });
+
+// datetime-local string of "now" (local wall-clock, minute precision) for past-date guards.
+const nowLocalMinute = (): string =>
+  new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 
 function apiError(e: any, fallback: string): string {
   const data = e?.response?.data;
@@ -104,9 +126,6 @@ export function LogisticsRequestSection({
 
   const [openSection, setOpenSection] = useState<Record<number, boolean>>({ 1: true, 2: true, 3: true, 4: true });
   const toggleSection = (n: number) => setOpenSection((p) => ({ ...p, [n]: !p[n] }));
-
-  // Welcome LED: which create-form to show WHEN there is no active LED item yet.
-  const [ledChoice, setLedChoice] = useState<'none' | 'system' | 'offline'>('none');
 
   // Mục 4 "Khác": dynamic list of independent create-cards (Part F).
   const otherIdRef = useRef(1);
@@ -166,7 +185,6 @@ export function LogisticsRequestSection({
     i.status !== 'CANCELLED' && i.status !== 'REJECTED' && i.status !== 'DECLINED';
   const activeItem = (itemType: LogisticsItemType, title: string): VisitInstanceLogisticsItem | null =>
     items.find((i) => i.itemType === itemType && i.title === title && isActive(i)) ?? null;
-  const activeLedItem = items.find((i) => i.itemType === 'LED' && isActive(i)) ?? null;
 
   const ctxFor = (payload: PrepareVisitLogisticsPayload, dept: SupportDepartment | null) => ({
     visitName: delegationName,
@@ -312,66 +330,24 @@ export function LogisticsRequestSection({
 
   return (
     <div className="space-y-8">
-      {/* Mục 1: Welcome LED — 3 lựa chọn (Part D); state suy ra từ logistics item đã lưu (Part 1/2) */}
+      {/* Mục 1: Welcome LED — 3 lựa chọn (none / hệ thống / trao đổi ngoài), state suy ra từ item đã lưu */}
       <MucCard title="Mục 1: Welcome LED" icon={<MonitorPlay className="w-5 h-5 text-[#f37021]" />}
         open={openSection[1]} onToggle={() => toggleSection(1)}>
-        {!loadedOnce ? (
-          <LoadingRow />
-        ) : activeLedItem ? (
-          activeLedItem.coordinationMode === 'OFFLINE_COORDINATED' ? (
-            <div className="pt-4 border-t border-gray-100">
-              <OfflineCard {...shared} cardKey="led-offline" itemType="LED" title="Welcome LED" label="Welcome LED (trao đổi bên ngoài)" 
-                existingItem={activeLedItem} onCancel={() => cancelItem('led-offline', activeLedItem)} />
-            </div>
-          ) : (
-            <div className="pt-4 border-t border-gray-100">
-              <ResourceCard {...shared} cardKey="led" icon={<MonitorPlay className="w-6 h-6 text-[#f37021]" />}
-                label="Welcome LED" itemType="LED" qtyLabel="Số lượng màn" existingItem={activeLedItem}
-                notePlaceholder="Kích thước, nội dung hiển thị, đã gửi ảnh thiết kế..." />
-            </div>
-          )
-        ) : (
-          <>
-            <div className="space-y-3 mb-4">
-              {([
-                ['none', 'Không cần màn LED'],
-                ['system', 'Cần màn LED — gửi yêu cầu qua hệ thống'],
-                ['offline', 'Cần màn LED — đã trao đổi bên ngoài'],
-              ] as const).map(([val, label]) => (
-                <label key={val} className="flex items-center gap-3 cursor-pointer">
-                  <input type="radio" name="ledChoice" checked={ledChoice === val} disabled={!canManage}
-                    onChange={() => setLedChoice(val)}
-                    className="w-5 h-5 border-gray-300 text-[#004c91] focus:ring-[#004c91]" />
-                  <span className="text-[15px] font-bold text-gray-700">{label}</span>
-                </label>
-              ))}
-            </div>
-            {ledChoice === 'system' && (
-              <div className="pt-4 border-t border-gray-100 animate-in fade-in slide-in-from-top-2">
-                <ResourceCard {...shared} cardKey="led" icon={<MonitorPlay className="w-6 h-6 text-[#f37021]" />}
-                  label="Welcome LED" itemType="LED" qtyLabel="Số lượng màn" existingItem={null}
-                  notePlaceholder="Kích thước, nội dung hiển thị, đã gửi ảnh thiết kế..." />
-              </div>
-            )}
-            {ledChoice === 'offline' && (
-              <div className="pt-4 border-t border-gray-100 animate-in fade-in slide-in-from-top-2">
-                <OfflineCard {...shared} cardKey="led-offline" itemType="LED" title="Welcome LED" label="Welcome LED (trao đổi bên ngoài)" />
-              </div>
-            )}
-          </>
-        )}
+        <CategoryCard {...shared} cardKey="led" icon={<MonitorPlay className="w-6 h-6 text-[#f37021]" />}
+          label="Welcome LED" itemType="LED" qtyLabel="Số lượng màn" activeItem={activeItem('LED', 'Welcome LED')}
+          notePlaceholder="Kích thước, nội dung hiển thị, đã gửi ảnh thiết kế..." />
       </MucCard>
 
       {/* Mục 2: Chuẩn bị cho Campus Tour */}
       <MucCard title="Mục 2: Chuẩn bị cho Campus Tour" icon={<MapPin className="w-5 h-5 text-[#f37021]" />}
         open={openSection[2]} onToggle={() => toggleSection(2)}>
         <div className="space-y-8">
-          <ResourceCard {...shared} cardKey="electricCar" icon={<Car className="w-6 h-6 text-[#f37021]" />}
-            label="Xe điện" itemType="TRANSPORT" qtyLabel="Số lượng cần mượn" existingItem={activeItem('TRANSPORT', 'Xe điện')}
+          <CategoryCard {...shared} cardKey="electricCar" icon={<Car className="w-6 h-6 text-[#f37021]" />}
+            label="Xe điện" itemType="TRANSPORT" qtyLabel="Số lượng cần mượn" activeItem={activeItem('TRANSPORT', 'Xe điện')}
             notePlaceholder="Ghi chú thêm..." />
           <hr className="border-t-[2px] border-gray-200" />
-          <ResourceCard {...shared} cardKey="driver" icon={<UserCheck className="w-6 h-6 text-[#f37021]" />}
-            label="Người lái" itemType="TRANSPORT" qtyLabel="Số lượng" existingItem={activeItem('TRANSPORT', 'Người lái')}
+          <CategoryCard {...shared} cardKey="driver" icon={<UserCheck className="w-6 h-6 text-[#f37021]" />}
+            label="Người lái" itemType="TRANSPORT" qtyLabel="Số lượng" activeItem={activeItem('TRANSPORT', 'Người lái')}
             notePlaceholder="Yêu cầu về tài xế, thời gian hỗ trợ..." />
         </div>
       </MucCard>
@@ -380,25 +356,24 @@ export function LogisticsRequestSection({
       <MucCard title="Mục 3: Chuẩn bị cho họp" icon={<Building2 className="w-5 h-5 text-[#f37021]" />}
         open={openSection[3]} onToggle={() => toggleSection(3)}>
         <div className="space-y-8">
-          <ResourceCard {...shared} cardKey="room" icon={<Building2 className="w-6 h-6 text-[#f37021]" />}
-            label="Phòng họp" itemType="ROOM" qtyLabel="Số phòng" existingItem={activeItem('ROOM', 'Phòng họp')}
+          <CategoryCard {...shared} cardKey="room" icon={<Building2 className="w-6 h-6 text-[#f37021]" />}
+            label="Phòng họp" itemType="ROOM" qtyLabel="Số phòng" activeItem={activeItem('ROOM', 'Phòng họp')}
             notePlaceholder="Tên phòng / vị trí (VD: Tòa Alpha, P.101), layout, thiết bị..." />
           <hr className="border-t-[2px] border-gray-200" />
-          <ResourceCard {...shared} cardKey="teabreak" icon={<Coffee className="w-6 h-6 text-[#f37021]" />}
-            label="Teabreak" itemType="MEAL" qtyLabel="Số lượng (suất)" existingItem={activeItem('MEAL', 'Teabreak')}
+          <CategoryCard {...shared} cardKey="teabreak" icon={<Coffee className="w-6 h-6 text-[#f37021]" />}
+            label="Teabreak" itemType="MEAL" qtyLabel="Số lượng (suất)" activeItem={activeItem('MEAL', 'Teabreak')}
             notePlaceholder="Layout, khăn trải bàn, biển tên, yêu cầu đặc biệt..." />
         </div>
       </MucCard>
 
-      {/* Mục 4: Khác — thêm nhiều yêu cầu (Part F); create-only, hiển thị trong danh sách bên dưới */}
+      {/* Mục 4: Khác — thêm nhiều yêu cầu (Part F); mỗi dòng chọn gửi qua hệ thống / trao đổi ngoài */}
       <MucCard title="Mục 4: Khác" icon={<MoreHorizontal className="w-5 h-5 text-[#f37021]" />}
         open={openSection[4]} onToggle={() => toggleSection(4)}>
         <div className="space-y-6">
           {otherIds.map((id, idx) => (
             <div key={id} className={idx > 0 ? 'pt-6 border-t border-gray-100' : ''}>
-              <ResourceCard {...shared} cardKey={`other-${id}`} icon={<MoreHorizontal className="w-6 h-6 text-[#f37021]" />}
-                label={`Yêu cầu khác ${otherIds.length > 1 ? `#${idx + 1}` : ''}`.trim()} itemType="OTHER"
-                qtyLabel="Số lượng" editableTitle existingItem={null} notePlaceholder="Mô tả chi tiết công việc cần hỗ trợ..."
+              <OtherCard {...shared} cardKey={`other-${id}`}
+                label={`Yêu cầu khác ${otherIds.length > 1 ? `#${idx + 1}` : ''}`.trim()}
                 onRemove={otherIds.length > 1 ? () => setOtherIds((p) => p.filter((x) => x !== id)) : undefined} />
             </div>
           ))}
@@ -599,6 +574,8 @@ function ResourceCard({
         quantity: existingItem.quantity?.toString() || '',
         usageStartAt: existingItem.usageStartAt ? existingItem.usageStartAt.slice(0, 16) : '',
         usageEndAt: existingItem.usageEndAt ? existingItem.usageEndAt.slice(0, 16) : '',
+        dueAt: existingItem.dueAt ? existingItem.dueAt.slice(0, 16) : '',
+        priority: existingItem.priority || 'MEDIUM',
         note: existingItem.description || '',
         departmentId: existingItem.requestedToDepartmentId?.toString() || '',
       };
@@ -617,6 +594,8 @@ function ResourceCard({
         quantity: existingItem.quantity?.toString() || '',
         usageStartAt: existingItem.usageStartAt ? existingItem.usageStartAt.slice(0, 16) : '',
         usageEndAt: existingItem.usageEndAt ? existingItem.usageEndAt.slice(0, 16) : '',
+        dueAt: existingItem.dueAt ? existingItem.dueAt.slice(0, 16) : '',
+        priority: existingItem.priority || 'MEDIUM',
         note: existingItem.description || '',
         departmentId: existingItem.requestedToDepartmentId?.toString() || '',
       });
@@ -657,10 +636,13 @@ function ResourceCard({
     if (!form.usageStartAt) return 'Vui lòng nhập thời gian bắt đầu sử dụng.';
     if (!form.usageEndAt) return 'Vui lòng nhập thời gian kết thúc sử dụng.';
 
-    const nowStr = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    const nowStr = nowLocalMinute();
     if (form.usageStartAt < nowStr) return 'Thời gian bắt đầu không được trong quá khứ.';
     if (form.usageEndAt <= form.usageStartAt) return 'Thời gian kết thúc phải sau thời gian bắt đầu.';
-    
+
+    // due_at is optional; if set it must not be in the past.
+    if (form.dueAt && form.dueAt < nowStr) return 'Hạn phản hồi/hoàn thành không được trong quá khứ.';
+
     return null;
   };
 
@@ -680,14 +662,22 @@ function ResourceCard({
     quantity: form.quantity ? Number(form.quantity) : null,
     usageStartAt: form.usageStartAt || null,
     usageEndAt: form.usageEndAt || null,
-    priority: 'MEDIUM',
+    dueAt: form.dueAt || null,
+    priority: (form.priority || 'MEDIUM') as LogisticsPriority,
     coordinationMode: 'SYSTEM_REQUEST',
   });
+
+  // Non-blocking advisory: a deadline after the usage start is unusual (rule not enforced server-side).
+  const warnDueAfterStart = () => {
+    if (form.dueAt && form.usageStartAt && form.dueAt > form.usageStartAt)
+      pushToast('warning', 'Hạn phản hồi/hoàn thành đang muộn hơn thời gian bắt đầu sử dụng — vui lòng kiểm tra lại.');
+  };
 
   // Inline error stays at the field; a single toast surfaces the first error (no spam).
   const doSend = async () => {
     const v = validate();
     if (v) { setErr(v); pushToast('error', v); return; }
+    warnDueAfterStart();
     const payload = buildPayload();
     if (await onSubmit(cardKey, payload)) {
       setLocalSubmitted(true);
@@ -696,6 +686,7 @@ function ResourceCard({
   const doPreview = () => {
     const v = validate();
     if (v) { setErr(v); pushToast('error', v); return; }
+    warnDueAfterStart();
     onPreview(buildPayload(), reset);
   };
 
@@ -743,6 +734,20 @@ function ResourceCard({
               <label className="block text-xs font-bold text-gray-600 mb-1">Thời gian kết thúc sử dụng <span className="text-red-500">*</span></label>
               <input type="datetime-local" disabled={isFormDisabled} value={form.usageEndAt} onChange={(e) => set('usageEndAt', e.target.value)}
                 className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-[#004c91] hover:border-gray-400 transition-colors outline-none text-sm disabled:bg-gray-50 disabled:text-gray-400" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-bold text-gray-600 mb-1">Mức ưu tiên <span className="text-red-500">*</span></label>
+                <select disabled={isFormDisabled} value={form.priority} onChange={(e) => set('priority', e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-[#004c91] hover:border-[#004c91] transition-colors outline-none text-sm bg-white disabled:bg-gray-50 disabled:text-gray-400">
+                  {PRIORITY_OPTIONS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-gray-600 mb-1">Hạn phản hồi / hoàn thành</label>
+                <input type="datetime-local" disabled={isFormDisabled} value={form.dueAt} onChange={(e) => set('dueAt', e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-[#004c91] hover:border-gray-400 transition-colors outline-none text-sm disabled:bg-gray-50 disabled:text-gray-400" />
+              </div>
             </div>
           </div>
           <div className="space-y-4">
@@ -817,7 +822,7 @@ function ResourceCard({
                         </div>
                       )}
                     </div>
-                    {canManage && (
+                    {canManage && !isSubmitted && (
                       <div className="flex flex-col items-end gap-1.5 shrink-0">
                         {dept.canInvite && (
                           <button type="button" disabled={busy} onClick={doPreview}
@@ -832,6 +837,22 @@ function ResourceCard({
                           {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
                           Gửi yêu cầu
                         </button>
+                      </div>
+                    )}
+                    {/* Already submitted: no re-send (server dedupe guards anyway); offer soft-cancel. */}
+                    {canManage && isSubmitted && existingItem && (
+                      <div className="flex flex-col items-end gap-1.5 shrink-0">
+                        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-600">
+                          <CheckCircle2 className="w-3.5 h-3.5" /> Đã gửi yêu cầu
+                        </span>
+                        {locked ? (
+                          <span className="text-[11px] italic text-gray-400">Phòng ban đang xử lý</span>
+                        ) : (
+                          <button type="button" disabled={busy} onClick={() => onCancel(cardKey, existingItem)}
+                            className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-bold text-red-600 outline-none transition-colors hover:bg-red-50 disabled:opacity-50">
+                            {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <X className="w-3.5 h-3.5" />} Hủy yêu cầu
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>
@@ -859,15 +880,20 @@ interface OfflineCardProps extends SharedCardProps {
    * the persisted title matches the system-request item of the same category — both the FE active-item
    * lookup and the server-side duplicate guard key on (itemType, title). */
   title?: string;
+  /** "Khác": let the user type the title (otherwise the canonical category title is used). */
+  editableTitle?: boolean;
+  onRemove?: () => void;
   existingItem?: VisitInstanceLogisticsItem | null;
 }
 
 /** "Đã trao đổi bên ngoài" form (Part D) — required note, optional department, NO email; status DONE. */
 function OfflineCard({
-  cardKey, itemType, label, title, visitInstanceId, departments, canManage, busyKey, onSubmit, existingItem, onCancel, pushToast,
+  cardKey, itemType, label, title, editableTitle, onRemove, visitInstanceId, departments, canManage, busyKey, onSubmit, existingItem, onCancel, pushToast,
 }: OfflineCardProps) {
   const [note, setNote] = useState(() => existingItem?.offlineCoordinationNote || existingItem?.description || '');
   const [departmentId, setDepartmentId] = useState(() => existingItem?.requestedToDepartmentId?.toString() || '');
+  const [titleVal, setTitleVal] = useState(() => existingItem?.title || '');
+  const [priority, setPriority] = useState<string>(() => existingItem?.priority || 'MEDIUM');
   const [err, setErr] = useState<string | null>(null);
   const [localSubmitted, setLocalSubmitted] = useState(false);
   const busy = busyKey === cardKey;
@@ -876,6 +902,8 @@ function OfflineCard({
     if (existingItem) {
       setNote(existingItem.offlineCoordinationNote || existingItem.description || '');
       setDepartmentId(existingItem.requestedToDepartmentId?.toString() || '');
+      setTitleVal(existingItem.title || '');
+      setPriority(existingItem.priority || 'MEDIUM');
       setErr(null);
       setLocalSubmitted(true);
     } else {
@@ -888,16 +916,17 @@ function OfflineCard({
   const isFormDisabled = !canManage || isSubmitted;
 
   const doSave = async () => {
+    if (editableTitle && !titleVal.trim()) { const m = 'Vui lòng nhập tiêu đề / nội dung công việc.'; setErr(m); pushToast('error', m); return; }
     if (!note.trim()) { const m = 'Vui lòng nhập ghi chú trao đổi bên ngoài (bắt buộc).'; setErr(m); pushToast('error', m); return; }
     const payload: PrepareVisitLogisticsPayload = {
       visitInstanceId,
       departmentId: departmentId ? Number(departmentId) : null,
       itemType,
-      title: (title ?? label).trim(),
+      title: (editableTitle ? titleVal.trim() : (title ?? label)).trim() || label,
       description: note.trim(),
       coordinationMode: 'OFFLINE_COORDINATED',
       offlineCoordinationNote: note.trim(),
-      priority: 'MEDIUM',
+      priority: (priority || 'MEDIUM') as LogisticsPriority,
     };
     if (await onSubmit(cardKey, payload)) {
       setLocalSubmitted(true);
@@ -909,6 +938,27 @@ function OfflineCard({
     <div className="flex flex-col gap-4 p-5 bg-amber-50/40 border border-amber-200 rounded-xl shadow-sm">
       <div className="flex items-center gap-2 text-sm font-bold text-amber-800">
         <AlertCircle className="w-4 h-4" /> Đã trao đổi/xử lý bên ngoài hệ thống — chỉ lưu dấu vết, không gửi email.
+        {onRemove && canManage && !isSubmitted && (
+          <button type="button" onClick={onRemove} title="Xóa dòng"
+            className="ml-auto inline-flex h-7 w-7 items-center justify-center rounded-lg bg-red-50 text-red-500 outline-none hover:bg-red-100">
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        )}
+      </div>
+      {editableTitle && (
+        <div>
+          <label className="block text-xs font-bold text-gray-600 mb-1">Tiêu đề / nội dung công việc <span className="text-red-500">*</span></label>
+          <input type="text" maxLength={255} disabled={isFormDisabled} value={titleVal} onChange={(e) => { setTitleVal(e.target.value); setErr(null); }}
+            placeholder="VD: Hỗ trợ kỹ thuật âm thanh"
+            className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-[#004c91] hover:border-gray-400 transition-colors outline-none text-sm disabled:bg-gray-50 disabled:text-gray-400" />
+        </div>
+      )}
+      <div>
+        <label className="block text-xs font-bold text-gray-600 mb-1">Mức ưu tiên</label>
+        <select disabled={isFormDisabled} value={priority} onChange={(e) => setPriority(e.target.value)}
+          className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-[#004c91] hover:border-[#004c91] transition-colors outline-none text-sm bg-white disabled:bg-gray-50 disabled:text-gray-400">
+          {PRIORITY_OPTIONS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
+        </select>
       </div>
       <div>
         <label className="block text-xs font-bold text-gray-600 mb-1">Ghi chú trao đổi bên ngoài <span className="text-red-500">*</span></label>
@@ -959,6 +1009,109 @@ function OfflineCard({
   );
 }
 
+interface CategoryCardProps extends SharedCardProps {
+  cardKey: string;
+  icon: React.ReactNode;
+  label: string;
+  itemType: LogisticsItemType;
+  qtyLabel: string;
+  notePlaceholder?: string;
+  /** The single active (non-closed) item for this fixed category, if any. */
+  activeItem: VisitInstanceLogisticsItem | null;
+}
+
+/**
+ * A fixed logistics category (Welcome LED, Xe điện, Người lái, Phòng họp, Teabreak). When no active
+ * item exists it offers the 3-way choice — Không cần / Cần (gửi qua hệ thống) / Cần (đã trao đổi bên
+ * ngoài) — generalising the original Welcome-LED pattern to every card. When an active item exists it
+ * renders the matching read-only card (system form summary or offline summary).
+ */
+function CategoryCard({
+  cardKey, icon, label, itemType, qtyLabel, notePlaceholder, activeItem, ...shared
+}: CategoryCardProps) {
+  const [choice, setChoice] = useState<'none' | 'system' | 'offline'>('none');
+
+  if (!shared.loadedOnce) {
+    return (
+      <div>
+        <h4 className="text-lg font-bold text-[#004c91] mb-3 flex items-center gap-2">{icon} {label}</h4>
+        <LoadingRow />
+      </div>
+    );
+  }
+
+  if (activeItem) {
+    return activeItem.coordinationMode === 'OFFLINE_COORDINATED' ? (
+      <OfflineCard {...shared} cardKey={`${cardKey}-offline`} itemType={itemType} title={label}
+        label={`${label} (trao đổi bên ngoài)`} existingItem={activeItem}
+        onCancel={() => shared.onCancel(`${cardKey}-offline`, activeItem)} />
+    ) : (
+      <ResourceCard {...shared} cardKey={cardKey} icon={icon} label={label} itemType={itemType}
+        qtyLabel={qtyLabel} existingItem={activeItem} notePlaceholder={notePlaceholder} />
+    );
+  }
+
+  return (
+    <div>
+      <div className="space-y-3 mb-1">
+        {([
+          ['none', `Không cần ${label}`],
+          ['system', `Cần ${label} — gửi yêu cầu qua hệ thống`],
+          ['offline', `Cần ${label} — đã trao đổi bên ngoài`],
+        ] as const).map(([val, lbl]) => (
+          <label key={val} className="flex items-center gap-3 cursor-pointer">
+            <input type="radio" name={`choice-${cardKey}`} checked={choice === val} disabled={!shared.canManage}
+              onChange={() => setChoice(val)}
+              className="w-5 h-5 border-gray-300 text-[#004c91] focus:ring-[#004c91]" />
+            <span className="text-[15px] font-bold text-gray-700">{lbl}</span>
+          </label>
+        ))}
+      </div>
+      {choice === 'system' && (
+        <div className="pt-4 mt-3 border-t border-gray-100 animate-in fade-in slide-in-from-top-2">
+          <ResourceCard {...shared} cardKey={cardKey} icon={icon} label={label} itemType={itemType}
+            qtyLabel={qtyLabel} existingItem={null} notePlaceholder={notePlaceholder} />
+        </div>
+      )}
+      {choice === 'offline' && (
+        <div className="pt-4 mt-3 border-t border-gray-100 animate-in fade-in slide-in-from-top-2">
+          <OfflineCard {...shared} cardKey={`${cardKey}-offline`} itemType={itemType} title={label}
+            label={`${label} (trao đổi bên ngoài)`} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** A "Mục 4: Khác" create row: pick coordination mode (system / offline), then the matching create form. */
+function OtherCard({ cardKey, label, onRemove, ...shared }: SharedCardProps & {
+  cardKey: string; label: string; onRemove?: () => void;
+}) {
+  const [mode, setMode] = useState<'system' | 'offline'>('system');
+  return (
+    <div>
+      <div className="mb-3 flex flex-wrap items-center gap-x-6 gap-y-2">
+        {([['system', 'Gửi yêu cầu qua hệ thống'], ['offline', 'Đã trao đổi bên ngoài']] as const).map(([val, lbl]) => (
+          <label key={val} className="flex items-center gap-2 cursor-pointer">
+            <input type="radio" name={`mode-${cardKey}`} checked={mode === val} disabled={!shared.canManage}
+              onChange={() => setMode(val)}
+              className="w-4 h-4 border-gray-300 text-[#004c91] focus:ring-[#004c91]" />
+            <span className="text-sm font-bold text-gray-700">{lbl}</span>
+          </label>
+        ))}
+      </div>
+      {mode === 'system' ? (
+        <ResourceCard {...shared} cardKey={cardKey} icon={<MoreHorizontal className="w-6 h-6 text-[#f37021]" />}
+          label={label} itemType="OTHER" qtyLabel="Số lượng" editableTitle existingItem={null}
+          notePlaceholder="Mô tả chi tiết công việc cần hỗ trợ..." onRemove={onRemove} />
+      ) : (
+        <OfflineCard {...shared} cardKey={`${cardKey}-offline`} itemType="OTHER" label={label}
+          editableTitle existingItem={null} onRemove={onRemove} />
+      )}
+    </div>
+  );
+}
+
 /** Final ("chốt") quantity: the proposed figure once the Host ACCEPTED, else the planned figure. */
 function finalQuantity(it: VisitInstanceLogisticsItem): number | null | undefined {
   return it.proposalResponse === 'ACCEPTED' && it.proposedQuantity != null ? it.proposedQuantity : it.quantity;
@@ -991,15 +1144,27 @@ function LogisticsListRow({ it, canManage, busy, onRespond, onViewSent }: {
             {it.proposedQuantity != null && <span className="font-semibold text-violet-700">đề xuất: {it.proposedQuantity}</span>}
             {it.proposalResponse && finalQty != null && <span className="font-semibold text-emerald-700">chốt: {finalQty}</span>}
             {it.departmentName && <span>Phòng ban: {it.departmentName}</span>}
+            {it.requestedByName && <span>Người gửi: {it.requestedByName}</span>}
             {it.assignedToName && <span>Nhân sự: {it.assignedToName}</span>}
             {(it.usageStartAt || it.usageEndAt) && <span>{fmtDateTime(it.usageStartAt)} – {fmtDateTime(it.usageEndAt)}</span>}
+            {it.dueAt && <span>Hạn: {fmtDateTime(it.dueAt)}</span>}
+            {it.completedAt && <span className="text-emerald-700">Hoàn tất: {fmtDateTime(it.completedAt)}</span>}
           </div>
           {offline && it.offlineCoordinationNote && (
             <div className="mt-1 text-[11px] italic text-amber-700">Ghi chú: {it.offlineCoordinationNote}</div>
           )}
+          {it.assigneeResponseNote && (
+            <div className="mt-1 text-[11px] italic text-slate-500">Phản hồi nhân sự: {it.assigneeResponseNote}</div>
+          )}
+          {REASON_STATUSES.has(it.status) && it.decisionNote && (
+            <div className="mt-1 text-[11px] italic text-red-600">Lý do: {it.decisionNote}</div>
+          )}
         </div>
         <div className="flex flex-col items-end gap-1">
           <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide ${meta.cls}`}>{meta.label}</span>
+          <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[10px] font-bold ${PRIORITY_META[it.priority]?.cls ?? PRIORITY_META.MEDIUM.cls}`}>
+            Ưu tiên: {PRIORITY_META[it.priority]?.label ?? it.priority}
+          </span>
           {it.coordinationMode && (
             <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[10px] font-bold ${offline ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-slate-200 bg-slate-50 text-slate-500'}`}>
               {COORD_LABEL[it.coordinationMode]}

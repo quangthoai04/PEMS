@@ -30,6 +30,8 @@ import type {
   PrepareVisitLogisticsPayload,
   PrepareVisitLogisticsResult,
   GetVisitInstanceLogisticsResult,
+  SignHandoverBorrowerPayload,
+  SignHandoverResult,
   GetSentEmailsResult,
 } from '../types/delegations.types';
 
@@ -243,6 +245,17 @@ export const delegationsApi = {
       API_ENDPOINTS.delegations.confirmChangeProposal,
       { logisticsItemId: Number(logisticsItemId), accepted, note: note ?? null },
     );
+    return data;
+  },
+
+  /** VisitProcess "Đang/Sau tiếp khách": Host signs the BORROWER side of a borrow/return handover. */
+  async signLogisticsHandoverBorrower(
+    visitInstanceId: number | string,
+    logisticsItemId: number | string,
+    payload: SignHandoverBorrowerPayload,
+  ): Promise<SignHandoverResult> {
+    const { data } = await httpClient.post<SignHandoverResult>(
+      API_ENDPOINTS.delegations.signLogisticsHandoverBorrower(visitInstanceId, logisticsItemId), payload);
     return data;
   },
 

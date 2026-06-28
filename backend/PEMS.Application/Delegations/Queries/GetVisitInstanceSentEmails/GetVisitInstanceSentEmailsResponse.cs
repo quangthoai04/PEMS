@@ -27,6 +27,23 @@ public sealed class SentEmailHistoryDto
     public ulong? RelatedId { get; set; }
     public List<SentEmailRecipientDto> Recipients { get; set; } = new();
     public List<SentEmailAttachmentDto> Attachments { get; set; } = new();
+    /// <summary>Action buttons in this email (accept/decline/…) with their one-time-token status.</summary>
+    public List<SentEmailActionTokenDto> ActionTokens { get; set; } = new();
+}
+
+/// <summary>One email_action_tokens row — the live status of an action button embedded in the email.</summary>
+public sealed class SentEmailActionTokenDto
+{
+    public string ActionContext { get; set; } = string.Empty;   // PARTICIPATION_RESPONSE | LOGISTICS_*
+    public string IntendedAction { get; set; } = string.Empty;  // ACCEPT | DECLINE | APPROVE_PROPOSAL | ...
+    public string? RecipientEmail { get; set; }
+    /// <summary>PENDING | SUCCESS | ALREADY_RESPONDED | EXPIRED | INVALID | FAILED (effective: PENDING past
+    /// expiry is reported as EXPIRED).</summary>
+    public string ResultStatus { get; set; } = "PENDING";
+    public string? UsedAction { get; set; }
+    public string? UsedAt { get; set; }
+    public string? ExpiresAt { get; set; }
+    public string? ResultMessage { get; set; }
 }
 
 public sealed class SentEmailRecipientDto

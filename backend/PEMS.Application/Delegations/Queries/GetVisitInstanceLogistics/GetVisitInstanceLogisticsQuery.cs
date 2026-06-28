@@ -30,11 +30,16 @@ public sealed class VisitInstanceLogisticsItemDto
     public ulong? RequestedToDepartmentId { get; set; }
     public string? DepartmentName { get; set; }
     public string? RequestedAt { get; set; }           // "yyyy-MM-ddTHH:mm:ss" wall-clock
+    public ulong? RequestedBy { get; set; }
+    public string? RequestedByName { get; set; }
     public string? UsageStartAt { get; set; }
     public string? UsageEndAt { get; set; }
     public string? DueAt { get; set; }
+    public string? CompletedAt { get; set; }
     public ulong? AssignedToUserId { get; set; }
     public string? AssignedToName { get; set; }
+    public string? AssigneeResponseNote { get; set; }
+    public string? DecisionNote { get; set; }          // close reason for REJECTED / CANCELLED / DECLINED
 
     // ── Change-proposal (Department negotiates the Host's PLANNED quantity/time/content) ──
     // Quantity above is the PLANNED/requested figure; the FINAL ("chốt") quantity is computed:
@@ -47,4 +52,18 @@ public sealed class VisitInstanceLogisticsItemDto
     public string? ProposalNote { get; set; }
     public string? ProposalResponse { get; set; }      // ACCEPTED | REJECTED | null
     public string? ProposalResponseNote { get; set; }
+
+    // ── Borrow/return handover signatures (visit_logistics_item_handovers) ──
+    public List<LogisticsHandoverDto> Handovers { get; set; } = new();
+}
+
+public sealed class LogisticsHandoverDto
+{
+    public string HandoverType { get; set; } = default!;   // BORROW | RETURN
+    public string? BorrowerSignedByName { get; set; }
+    public string? BorrowerSignedAt { get; set; }
+    public string? ProviderSignedByName { get; set; }
+    public string? ProviderSignedAt { get; set; }
+    public string? ItemCondition { get; set; }             // GOOD | DAMAGED | MISSING | OTHER
+    public string? ConditionNote { get; set; }
 }

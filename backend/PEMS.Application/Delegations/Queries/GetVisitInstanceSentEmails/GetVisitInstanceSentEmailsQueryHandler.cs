@@ -16,11 +16,13 @@ public sealed class GetVisitInstanceSentEmailsQueryHandler
 {
     private readonly IApplicationDbContext _db;
     private readonly ICurrentUserService _currentUser;
+    private readonly IDateTimeService _clock;
 
-    public GetVisitInstanceSentEmailsQueryHandler(IApplicationDbContext db, ICurrentUserService currentUser)
+    public GetVisitInstanceSentEmailsQueryHandler(IApplicationDbContext db, ICurrentUserService currentUser, IDateTimeService clock)
     {
         _db = db;
         _currentUser = currentUser;
+        _clock = clock;
     }
 
     public async Task<GetVisitInstanceSentEmailsResponse> Handle(
@@ -139,6 +141,28 @@ public sealed class GetVisitInstanceSentEmailsQueryHandler
         var attachmentsByEmail = attachmentRows.GroupBy(a => a.SentEmailId)
             .ToDictionary(g => g.Key, g => g.ToList());
 
+        // Action-button tokens (accept/decline/approve…) keyed by sent_email_id — their live result_status
+        // tells the host whether the recipient has clicked / let the link expire.
+        var tokenRows = await _db.EmailActionTokens
+            .Where(t => t.SentEmailId != null && emailIds.Contains(t.SentEmailId.Value))
+            .Select(t => new
+            {
+                t.SentEmailId,
+                t.EmailActionTokenId,
+                t.ActionContext,
+                t.IntendedAction,
+                t.RecipientEmail,
+                t.ResultStatus,
+                t.UsedAction,
+                t.UsedAt,
+                t.ExpiresAt,
+                t.ResultMessage,
+            })
+            .ToListAsync(cancellationToken);
+        var tokensByEmail = tokenRows.GroupBy(t => t.SentEmailId!.Value)
+            .ToDictionary(g => g.Key, g => g.OrderBy(t => t.EmailActionTokenId).ToList());
+        var now = _clock.UtcNow;
+
         var templateIds = emails.Where(e => e.EmailTemplateId.HasValue)
             .Select(e => e.EmailTemplateId!.Value).Distinct().ToList();
         var templates = templateIds.Count == 0
@@ -172,6 +196,7 @@ public sealed class GetVisitInstanceSentEmailsQueryHandler
             }
 
             var attachments = attachmentsByEmail.TryGetValue(e.SentEmailId, out var ats) ? ats : new();
+            var tokens = tokensByEmail.TryGetValue(e.SentEmailId, out var tks) ? tks : new();
 
             items.Add(new SentEmailHistoryDto
             {
@@ -214,6 +239,24 @@ public sealed class GetVisitInstanceSentEmailsQueryHandler
                         WebViewUrl = fm.WebView,
                         DownloadUrl = fm.Download,
                         ThumbnailUrl = fm.Thumb,
+                    };
+                }).ToList(),
+                ActionTokens = tokens.Select(t =>
+                {
+                    // A token still PENDING past its expiry is effectively EXPIRED for display.
+                    var effective = t.ResultStatus == EmailActionResultStatuses.Pending && t.ExpiresAt < now
+                        ? EmailActionResultStatuses.Expired
+                        : t.ResultStatus;
+                    return new SentEmailActionTokenDto
+                    {
+                        ActionContext = t.ActionContext,
+                        IntendedAction = t.IntendedAction,
+                        RecipientEmail = t.RecipientEmail,
+                        ResultStatus = effective,
+                        UsedAction = t.UsedAction,
+                        UsedAt = t.UsedAt?.ToString("yyyy-MM-ddTHH:mm:ss"),
+                        ExpiresAt = t.ExpiresAt.ToString("yyyy-MM-ddTHH:mm:ss"),
+                        ResultMessage = t.ResultMessage,
                     };
                 }).ToList(),
             });

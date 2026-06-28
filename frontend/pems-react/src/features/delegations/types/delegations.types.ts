@@ -903,11 +903,16 @@ export interface VisitInstanceLogisticsItem {
   requestedToDepartmentId?: number | null;
   departmentName?: string | null;
   requestedAt?: string | null;
+  requestedBy?: number | null;
+  requestedByName?: string | null;
   usageStartAt?: string | null;
   usageEndAt?: string | null;
   dueAt?: string | null;
+  completedAt?: string | null;
   assignedToUserId?: number | null;
   assignedToName?: string | null;
+  assigneeResponseNote?: string | null;
+  decisionNote?: string | null;        // close reason for REJECTED / CANCELLED / DECLINED
   // Change-proposal: `quantity` is the PLANNED figure; the FINAL ("chốt") quantity is
   // proposedQuantity when proposalResponse === 'ACCEPTED', else quantity.
   proposedQuantity?: number | null;
@@ -917,6 +922,37 @@ export interface VisitInstanceLogisticsItem {
   proposalNote?: string | null;
   proposalResponse?: 'ACCEPTED' | 'REJECTED' | null;
   proposalResponseNote?: string | null;
+  // Borrow/return handover signatures (visit_logistics_item_handovers).
+  handovers?: LogisticsHandover[];
+}
+
+export type LogisticsHandoverType = 'BORROW' | 'RETURN';
+export type LogisticsItemCondition = 'GOOD' | 'DAMAGED' | 'MISSING' | 'OTHER';
+
+export interface LogisticsHandover {
+  handoverType: LogisticsHandoverType;
+  borrowerSignedByName?: string | null;
+  borrowerSignedAt?: string | null;
+  providerSignedByName?: string | null;
+  providerSignedAt?: string | null;
+  itemCondition?: LogisticsItemCondition | null;
+  conditionNote?: string | null;
+}
+
+export interface SignHandoverBorrowerPayload {
+  handoverType: LogisticsHandoverType;
+  itemCondition?: LogisticsItemCondition | null;
+  note?: string | null;
+}
+
+export interface SignHandoverResult {
+  logisticsItemId: number;
+  handoverId: number;
+  handoverType: LogisticsHandoverType;
+  status: LogisticsItemStatus;
+  signedByName: string;
+  signedAt: string;
+  message: string;
 }
 
 export interface GetVisitInstanceLogisticsResult {
@@ -953,6 +989,20 @@ export interface SentEmailAttachmentItem {
   thumbnailUrl?: string | null;
 }
 
+/** One email_action_tokens row — the live status of an action button embedded in the email. */
+export type EmailActionResultStatus = 'PENDING' | 'SUCCESS' | 'ALREADY_RESPONDED' | 'EXPIRED' | 'INVALID' | 'FAILED';
+
+export interface SentEmailActionTokenItem {
+  actionContext: string;            // PARTICIPATION_RESPONSE | LOGISTICS_*
+  intendedAction: string;           // ACCEPT | DECLINE | APPROVE_PROPOSAL | ...
+  recipientEmail?: string | null;
+  resultStatus: EmailActionResultStatus;
+  usedAction?: string | null;
+  usedAt?: string | null;
+  expiresAt?: string | null;
+  resultMessage?: string | null;
+}
+
 export interface SentEmailHistoryItem {
   sentEmailId: number;
   templateCode?: string | null;
@@ -969,6 +1019,7 @@ export interface SentEmailHistoryItem {
   relatedId?: number | null;
   recipients: SentEmailRecipientItem[];
   attachments?: SentEmailAttachmentItem[];
+  actionTokens?: SentEmailActionTokenItem[];
 }
 
 export interface GetSentEmailsResult {

@@ -50,7 +50,10 @@ public sealed class GetVisitInstanceLogisticsQueryHandler
                 CoordinationMode = l.CoordinationMode,
                 OfflineCoordinationNote = l.OfflineCoordinationNote,
                 RequestedToDepartmentId = l.RequestedToDepartmentId,
+                RequestedBy = l.RequestedBy,
                 AssignedToUserId = l.AssignedToUserId,
+                AssigneeResponseNote = l.AssigneeResponseNote,
+                DecisionNote = l.DecisionNote,
                 ProposedQuantity = l.ProposedQuantity,
                 ProposedDescription = l.ProposedDescription,
                 ProposalNote = l.ProposalNote,
@@ -66,7 +69,7 @@ public sealed class GetVisitInstanceLogisticsQueryHandler
         // subqueries on optional FKs — Pomelo translation pitfall).
         var rows = await _db.VisitLogisticsItems
             .Where(l => l.VisitInstanceId == instance.VisitInstanceId)
-            .Select(l => new { l.LogisticsItemId, l.RequestedAt, l.UsageStartAt, l.UsageEndAt, l.DueAt, l.ProposedUsageStartAt, l.ProposedUsageEndAt })
+            .Select(l => new { l.LogisticsItemId, l.RequestedAt, l.UsageStartAt, l.UsageEndAt, l.DueAt, l.CompletedAt, l.ProposedUsageStartAt, l.ProposedUsageEndAt })
             .ToListAsync(cancellationToken);
         var timeById = rows.ToDictionary(r => r.LogisticsItemId);
 
@@ -77,25 +80,60 @@ public sealed class GetVisitInstanceLogisticsQueryHandler
             : await _db.Departments.Where(d => deptIds.Contains(d.DepartmentId))
                 .ToDictionaryAsync(d => d.DepartmentId, d => d.Name, cancellationToken);
 
-        var userIds = items.Where(i => i.AssignedToUserId.HasValue)
-            .Select(i => i.AssignedToUserId!.Value).Distinct().ToList();
+        // Borrow/return handover signatures for these items, mapped in-memory below.
+        var itemIds = items.Select(i => i.LogisticsItemId).ToList();
+        var handovers = await _db.VisitLogisticsItemHandovers
+            .Where(h => itemIds.Contains(h.LogisticsItemId))
+            .Select(h => new
+            {
+                h.LogisticsItemId, h.HandoverType, h.BorrowerSignedBy, h.BorrowerSignedAt,
+                h.ProviderSignedBy, h.ProviderSignedAt, h.ItemCondition, h.ConditionNote,
+            })
+            .ToListAsync(cancellationToken);
+
+        // Resolve assignee + requester + handover-signer names in one batch (avoid correlated
+        // subqueries — Pomelo pitfall).
+        var userIds = items.Where(i => i.AssignedToUserId.HasValue).Select(i => i.AssignedToUserId!.Value)
+            .Concat(items.Where(i => i.RequestedBy.HasValue).Select(i => i.RequestedBy!.Value))
+            .Concat(handovers.Where(h => h.BorrowerSignedBy.HasValue).Select(h => h.BorrowerSignedBy!.Value))
+            .Concat(handovers.Where(h => h.ProviderSignedBy.HasValue).Select(h => h.ProviderSignedBy!.Value))
+            .Distinct().ToList();
         var userNames = userIds.Count == 0
             ? new Dictionary<ulong, string>()
             : await _db.Users.Where(u => userIds.Contains(u.UserId))
                 .ToDictionaryAsync(u => u.UserId, u => u.FullName, cancellationToken);
 
+        string? NameOf(ulong? id) => id.HasValue && userNames.TryGetValue(id.Value, out var n) ? n : null;
+        var handoversByItem = handovers
+            .GroupBy(h => h.LogisticsItemId)
+            .ToDictionary(g => g.Key, g => g.Select(h => new LogisticsHandoverDto
+            {
+                HandoverType = h.HandoverType,
+                BorrowerSignedByName = NameOf(h.BorrowerSignedBy),
+                BorrowerSignedAt = h.BorrowerSignedAt?.ToString("yyyy-MM-ddTHH:mm:ss"),
+                ProviderSignedByName = NameOf(h.ProviderSignedBy),
+                ProviderSignedAt = h.ProviderSignedAt?.ToString("yyyy-MM-ddTHH:mm:ss"),
+                ItemCondition = h.ItemCondition,
+                ConditionNote = h.ConditionNote,
+            }).ToList());
+
         foreach (var i in items)
         {
+            if (handoversByItem.TryGetValue(i.LogisticsItemId, out var hs))
+                i.Handovers = hs;
             if (i.RequestedToDepartmentId.HasValue && deptNames.TryGetValue(i.RequestedToDepartmentId.Value, out var dn))
                 i.DepartmentName = dn;
             if (i.AssignedToUserId.HasValue && userNames.TryGetValue(i.AssignedToUserId.Value, out var un))
                 i.AssignedToName = un;
+            if (i.RequestedBy.HasValue && userNames.TryGetValue(i.RequestedBy.Value, out var rn))
+                i.RequestedByName = rn;
             if (timeById.TryGetValue(i.LogisticsItemId, out var t))
             {
                 i.RequestedAt = t.RequestedAt?.ToString("yyyy-MM-ddTHH:mm:ss");
                 i.UsageStartAt = t.UsageStartAt?.ToString("yyyy-MM-ddTHH:mm:ss");
                 i.UsageEndAt = t.UsageEndAt?.ToString("yyyy-MM-ddTHH:mm:ss");
                 i.DueAt = t.DueAt?.ToString("yyyy-MM-ddTHH:mm:ss");
+                i.CompletedAt = t.CompletedAt?.ToString("yyyy-MM-ddTHH:mm:ss");
                 i.ProposedUsageStartAt = t.ProposedUsageStartAt?.ToString("yyyy-MM-ddTHH:mm:ss");
                 i.ProposedUsageEndAt = t.ProposedUsageEndAt?.ToString("yyyy-MM-ddTHH:mm:ss");
             }

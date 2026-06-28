@@ -33,6 +33,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
 import { MinutesCard } from './MinutesCard';
+import { LogisticsHandoverSection } from '../../../features/delegations/components/LogisticsHandoverSection';
 
 export function VisitDuringTab({ isReadOnly = false, isDept = false, visitInstanceId }: { isReadOnly?: boolean, isDept?: boolean, visitInstanceId?: number }) {
   const navigate = useNavigate();
@@ -489,6 +490,11 @@ export function VisitDuringTab({ isReadOnly = false, isDept = false, visitInstan
           )}
         </AnimatePresence>
       </div>
+
+      {/* Ký mượn / ký trả tài sản hậu cần — Host ký bên nhận (real handover API). */}
+      {visitInstanceId && (
+        <LogisticsHandoverSection visitInstanceId={visitInstanceId} canManage={!isReadOnly && !isDept} />
+      )}
 
       {/* 2. Biên bản cuộc họp — bản thật (backend + cơ chế lock) khi có visitInstanceId; nếu không, dùng mock cũ */}
       {visitInstanceId ? (

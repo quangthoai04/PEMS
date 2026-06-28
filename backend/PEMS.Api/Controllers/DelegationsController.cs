@@ -16,6 +16,7 @@ using PEMS.Application.Delegations.Commands.SaveVisitInstanceReminderSettings;
 using PEMS.Application.Delegations.Commands.CancelVisitInstanceReminderSettings;
 using PEMS.Application.Delegations.Queries.GetVisitInstanceReminderSettings;
 using PEMS.Application.Delegations.Queries.GetVisitInstanceLogistics;
+using PEMS.Application.Delegations.Commands.SignVisitLogisticsHandover;
 using PEMS.Application.Delegations.Queries.GetVisitInstanceSentEmails;
 using PEMS.Application.Emails.Common;
 using PEMS.Application.Delegations.Queries.GetVisitProcessDetail;
@@ -299,6 +300,25 @@ namespace PEMS.Api.Controllers
                 new GetVisitInstanceSentEmailsQuery(visitInstanceId, EmailActionTargetTypes.LogisticsItem, logisticsItemId),
                 cancellationToken);
             return Ok(result);
+        }
+
+        // VisitProcess "Đang/Sau tiếp khách": Host signs the BORROWER side of a borrow/return handover.
+        // Host-only & status re-validated in the handler (non-host → 403, invalid state → 409/422).
+        [HttpPost("visit-instances/{visitInstanceId}/logistics/{logisticsItemId}/handovers/sign-borrower")]
+        public async Task<IActionResult> SignVisitLogisticsHandover(
+            ulong visitInstanceId, ulong logisticsItemId, [FromBody] SignVisitLogisticsHandoverBody body, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(
+                new SignVisitLogisticsHandoverCommand(visitInstanceId, logisticsItemId, body.HandoverType, body.ItemCondition, body.Note),
+                cancellationToken);
+            return Ok(result);
+        }
+
+        public sealed class SignVisitLogisticsHandoverBody
+        {
+            public string HandoverType { get; set; } = default!;   // BORROW | RETURN
+            public string? ItemCondition { get; set; }
+            public string? Note { get; set; }
         }
 
         // ── Operational reception stage transitions (Host only) ──────────────

@@ -62,6 +62,10 @@ public sealed class ExecuteEmailActionCommandHandler
             && token.TargetType == EmailActionTargetTypes.LogisticsItem)
             return await HandleLogisticsAssigneeAsync(request, token, result, cancellationToken);
 
+        if (token.ActionContext == EmailActionContexts.LogisticsProposalResponse
+            && token.TargetType == EmailActionTargetTypes.LogisticsItem)
+            return await HandleLogisticsProposalAsync(request, token, result, cancellationToken);
+
         result.Status = EmailActionViewStatuses.Invalid;
         result.Message = "Liên kết không hợp lệ.";
         return result;
@@ -404,6 +408,119 @@ public sealed class ExecuteEmailActionCommandHandler
 
         result.Status = EmailActionViewStatuses.Success;
         result.Message = isAccept ? "Cảm ơn bạn đã xác nhận yêu cầu hậu cần." : "Bạn đã từ chối yêu cầu hậu cần.";
+        return result;
+    }
+
+    // ── Host approve/reject of a Department change proposal (LOGISTICS_PROPOSAL_RESPONSE email path) ──
+    // Mirrors ConfirmTheChangeProposalCommandHandler so the email and portal paths behave identically.
+    private async Task<EmailActionExecuteResult> HandleLogisticsProposalAsync(
+        ExecuteEmailActionCommand request, Domain.Entities.Emails.EmailActionToken token,
+        EmailActionExecuteResult result, CancellationToken cancellationToken)
+    {
+        var item = await _db.VisitLogisticsItems
+            .FirstOrDefaultAsync(x => x.LogisticsItemId == token.TargetId, cancellationToken);
+        if (item is null)
+        {
+            result.Status = EmailActionViewStatuses.Invalid;
+            result.Message = "Không tìm thấy yêu cầu hậu cần tương ứng.";
+            return result;
+        }
+
+        var instance = await _db.VisitRequestCampuses
+            .Include(c => c.VisitRequest)
+            .FirstOrDefaultAsync(c => c.VisitInstanceId == item.VisitInstanceId, cancellationToken);
+
+        result.DelegationName = instance?.VisitRequest?.DelegationName;
+        result.RecipientName = token.RecipientUserId.HasValue
+            ? await _db.Users.Where(u => u.UserId == token.RecipientUserId.Value).Select(u => u.FullName).FirstOrDefaultAsync(cancellationToken)
+            : null;
+
+        var now = _clock.UtcNow;
+
+        if (token.ResultStatus == EmailActionResultStatuses.Invalid)
+        {
+            result.Status = EmailActionViewStatuses.Invalid;
+            result.Message = token.ResultMessage ?? "Liên kết không còn hiệu lực.";
+            return result;
+        }
+        if (token.ResultStatus == EmailActionResultStatuses.Expired || token.ExpiresAt < now)
+            return await ExpireAsync(token, result, cancellationToken);
+        if (token.ResultStatus == EmailActionResultStatuses.AlreadyResponded || token.UsedAt != null || token.ResultStatus == EmailActionResultStatuses.Success)
+            return AlreadyResponded(result);
+
+        if (instance == null || instance.Status == VisitInstanceStatus.Cancelled || instance.Status == VisitInstanceStatus.Closed)
+            return await MarkInvalidAsync(token, request, now, result, "Chuyến tiếp khách này đã bị hủy hoặc đã đóng, liên kết không còn hiệu lực.", cancellationToken);
+
+        // The proposal must still be pending a Host decision.
+        if (item.Status != LogisticsItemStatus.ChangeProposed)
+        {
+            if (item.ProposalResponse != null)
+                return await MarkAlreadyRespondedAsync(token, request, now, result, cancellationToken);
+            return await MarkInvalidAsync(token, request, now, result, "Đề xuất thay đổi này không còn ở trạng thái chờ phản hồi.", cancellationToken);
+        }
+
+        var isApprove = token.IntendedAction == EmailIntendedActions.ApproveProposal;
+
+        await using var transaction = await _db.BeginTransactionAsync(cancellationToken);
+
+        item.ProposalResponse = isApprove ? "ACCEPTED" : "REJECTED";
+        item.ProposalRespondedBy = token.RecipientUserId;
+        item.ProposalRespondedAt = now;
+        item.UpdatedBy = token.RecipientUserId;
+        item.UpdatedAt = now;
+
+        if (isApprove)
+        {
+            // Apply the proposed time/description onto the originals (quantity stays the PLANNED figure;
+            // the final quantity is derived from proposed_quantity when accepted — never overwritten).
+            if (item.ProposedUsageStartAt.HasValue) item.UsageStartAt = item.ProposedUsageStartAt.Value;
+            if (item.ProposedUsageEndAt.HasValue) item.UsageEndAt = item.ProposedUsageEndAt.Value;
+            if (!string.IsNullOrWhiteSpace(item.ProposedDescription)) item.Description = item.ProposedDescription;
+            item.Status = LogisticsItemStatus.Accepted;
+        }
+        else
+        {
+            item.Status = LogisticsItemStatus.Rejected;
+            item.DecisionNote = "Host từ chối đề xuất thay đổi (qua email).";
+        }
+
+        ConsumeToken(token, now, request, isApprove ? "Host đã chấp nhận đề xuất thay đổi." : "Host đã từ chối đề xuất thay đổi.");
+        await BurnSiblingsAsync(token, now, cancellationToken);
+
+        // Notify whoever raised the proposal (department side).
+        var notifyUserId = item.ProposedBy ?? item.AssignedToUserId ?? item.AssignedBy;
+        if (notifyUserId.HasValue)
+        {
+            var verb = isApprove ? "đã chấp nhận" : "đã từ chối";
+            _db.Notifications.Add(new Notification
+            {
+                RecipientUserId = notifyUserId.Value,
+                NotificationType = isApprove ? "VISIT_LOGISTICS_PROPOSAL_ACCEPTED" : "VISIT_LOGISTICS_PROPOSAL_REJECTED",
+                Title = isApprove ? "Đề xuất thay đổi được chấp nhận" : "Đề xuất thay đổi bị từ chối",
+                Message = $"{result.RecipientName ?? "Host"} {verb} đề xuất thay đổi cho yêu cầu \"{item.Title}\".",
+                RelatedType = "LOGISTICS_ITEM",
+                RelatedId = item.LogisticsItemId,
+                IsRead = false,
+                CreatedAt = now,
+            });
+        }
+
+        _db.AuditLogs.Add(new AuditLog
+        {
+            ActorUserId = token.RecipientUserId,
+            Action = isApprove ? "LOGISTICS_PROPOSAL_APPROVE" : "LOGISTICS_PROPOSAL_REJECT",
+            EntityType = "VisitLogisticsItem",
+            EntityId = item.LogisticsItemId,
+            IpAddress = request.Ip,
+            UserAgent = Truncate(request.UserAgent, 500),
+            CreatedAt = now,
+        });
+
+        await _db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+
+        result.Status = EmailActionViewStatuses.Success;
+        result.Message = isApprove ? "Bạn đã chấp nhận đề xuất thay đổi." : "Bạn đã từ chối đề xuất thay đổi.";
         return result;
     }
 

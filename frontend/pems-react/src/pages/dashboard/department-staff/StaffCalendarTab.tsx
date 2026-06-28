@@ -54,6 +54,16 @@ function buildDaysGrid(year: number, month: number) {
   return days;
 }
 
+/**
+ * The Staff-Leader task modal only handles assigned work items (an INVITATION or a REQUEST); a
+ * PERSONAL calendar event has no task workflow. This narrows CalendarItem so a PERSONAL event is
+ * never passed to <StaffLeaderTaskModal/> — the narrowed item is structurally a StaffLeaderTaskModalItem.
+ */
+const isTaskModalItem = (
+  item: CalendarItem | null,
+): item is CalendarItem & { itemType: 'INVITATION' | 'REQUEST' } =>
+  !!item && item.itemType !== 'PERSONAL';
+
 export function StaffCalendarTab({ year, onYearChange, calendarItems, calendarLoading, onRefresh }: Props) {
   const today = todayStr();
   const now = new Date();
@@ -408,7 +418,7 @@ export function StaffCalendarTab({ year, onYearChange, calendarItems, calendarLo
         </div>
 
         <StaffLeaderTaskModal
-          item={activeEvent?.itemType === 'PERSONAL' ? null : activeEvent}
+          item={isTaskModalItem(activeEvent) ? activeEvent : null}
           onClose={() => setActiveEvent(null)}
           onRefresh={onRefresh}
         />

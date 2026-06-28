@@ -5,8 +5,8 @@
  * exact body_snapshot that was sent. Newest first (the backend orders by sent_email_id desc).
  */
 import React, { useEffect, useRef, useState } from 'react';
-import { Mail, X, Loader2, AlertCircle, Clock, User2, ChevronDown, ChevronUp, Paperclip, Image as ImageIcon, Download, ExternalLink } from 'lucide-react';
-import type { GetSentEmailsResult, SentEmailHistoryItem, SentEmailAttachmentItem } from '../types/delegations.types';
+import { Mail, X, Loader2, AlertCircle, Clock, User2, ChevronDown, ChevronUp, Paperclip, Image as ImageIcon, Download, ExternalLink, MousePointerClick } from 'lucide-react';
+import type { GetSentEmailsResult, SentEmailHistoryItem, SentEmailAttachmentItem, SentEmailActionTokenItem } from '../types/delegations.types';
 import { sanitizeHtml } from '../../../shared/security/sanitizeHtml';
 import { resolveCidImages } from '../../emails/utils/inlineImages';
 
@@ -32,6 +32,31 @@ const STATUS_META: Record<string, { label: string; cls: string }> = {
 
 function StatusBadge({ status }: { status: string }) {
   const meta = STATUS_META[status?.toUpperCase()] ?? { label: status || '—', cls: 'bg-slate-100 text-slate-600 border-slate-200' };
+  return (
+    <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide ${meta.cls}`}>
+      {meta.label}
+    </span>
+  );
+}
+
+// email_action_tokens.result_status → Vietnamese label + classes (the action-button state).
+const TOKEN_STATUS_META: Record<string, { label: string; cls: string }> = {
+  PENDING:           { label: 'Chưa phản hồi', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
+  SUCCESS:           { label: 'Đã phản hồi', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  ALREADY_RESPONDED: { label: 'Đã phản hồi trước đó', cls: 'bg-slate-100 text-slate-500 border-slate-200' },
+  EXPIRED:           { label: 'Hết hạn', cls: 'bg-gray-100 text-gray-500 border-gray-200' },
+  INVALID:           { label: 'Không hợp lệ', cls: 'bg-red-50 text-red-700 border-red-200' },
+  FAILED:            { label: 'Lỗi xử lý', cls: 'bg-red-50 text-red-700 border-red-200' },
+};
+// intended_action → button label shown in the email.
+const ACTION_LABEL: Record<string, string> = {
+  ACCEPT: 'Chấp nhận', DECLINE: 'Từ chối', NEGOTIATE: 'Đề xuất thay đổi',
+  APPROVE_PROPOSAL: 'Chấp nhận đề xuất', REJECT_PROPOSAL: 'Từ chối đề xuất',
+  CONFIRM_BORROW: 'Xác nhận ký mượn', CONFIRM_RETURN: 'Xác nhận ký trả',
+};
+
+function TokenStatusBadge({ status }: { status: string }) {
+  const meta = TOKEN_STATUS_META[status?.toUpperCase()] ?? { label: status || '—', cls: 'bg-slate-100 text-slate-600 border-slate-200' };
   return (
     <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide ${meta.cls}`}>
       {meta.label}
@@ -203,6 +228,18 @@ function SentEmailCard({ item }: { item: SentEmailHistoryItem }) {
         </div>
       )}
 
+      {/* Action-button tokens — whether the recipient has clicked / let the link expire. */}
+      {(item.actionTokens?.length ?? 0) > 0 && (
+        <div className="mt-3">
+          <div className="mb-1.5 flex items-center gap-1 text-[11px] font-bold uppercase tracking-wide text-gray-400">
+            <MousePointerClick className="w-3 h-3" /> Nút thao tác trong email
+          </div>
+          <div className="space-y-1.5">
+            {item.actionTokens!.map((t, i) => <ActionTokenRow key={i} token={t} />)}
+          </div>
+        </div>
+      )}
+
       {/* Body snapshot (the exact content that was sent) — collapsed by default. */}
       {item.bodySnapshot && (
         <div className="mt-3">
@@ -227,6 +264,21 @@ function SentEmailCard({ item }: { item: SentEmailHistoryItem }) {
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+/** One action button embedded in the email + its one-time-token status (clicked / pending / expired). */
+function ActionTokenRow({ token }: { token: SentEmailActionTokenItem }) {
+  const label = ACTION_LABEL[token.intendedAction?.toUpperCase()] ?? token.intendedAction;
+  const respondedAt = token.resultStatus === 'SUCCESS' ? token.usedAt : null;
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-gray-50/70 px-3 py-1.5 text-xs">
+      <span className="font-semibold text-gray-700">{label}</span>
+      <div className="flex items-center gap-2">
+        {respondedAt && <span className="text-gray-400">{fmtDateTime(respondedAt)}</span>}
+        <TokenStatusBadge status={token.resultStatus} />
+      </div>
     </div>
   );
 }

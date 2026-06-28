@@ -88,6 +88,18 @@ public static class EmailComposition
         <p style=""color:#9ca3af;font-size:12px;margin-top:12px"">Liên kết phản hồi trực tiếp sẽ hết hạn sau 14 ngày và chỉ sử dụng được một lần.</p>");
     }
 
+    /// <summary>Host approve/reject of a Department change proposal (LOGISTICS_PROPOSAL_RESPONSE).</summary>
+    public static string LogisticsProposalActionBlock(string approveUrl, string rejectUrl, string detailUrl, string detailLabel = "Xem chi tiết trong hệ thống")
+    {
+        return WrapActionBlock($@"<div style=""text-align:center;margin:24px 0"">
+            <a href=""{HE(approveUrl)}"" style=""display:inline-block;background:#10b981;color:#fff;text-decoration:none;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">Chấp nhận đề xuất</a>
+            <a href=""{HE(rejectUrl)}"" style=""display:inline-block;background:#ef4444;color:#fff;text-decoration:none;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">Từ chối đề xuất</a>
+            <a href=""{HE(detailUrl)}"" style=""display:inline-block;background:#004c91;color:#fff;text-decoration:none;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">{HE(detailLabel)}</a>
+        </div>
+        <p style=""color:#6b7280;font-size:12px;margin-top:8px"">Lưu ý: <strong>Chấp nhận / Từ chối đề xuất</strong> là thao tác trực tiếp (không yêu cầu đăng nhập). <strong>Xem chi tiết</strong> yêu cầu đăng nhập hệ thống.</p>
+        <p style=""color:#9ca3af;font-size:12px;margin-top:12px"">Liên kết phản hồi trực tiếp sẽ hết hạn sau 14 ngày và chỉ sử dụng được một lần.</p>");
+    }
+
     public static string LogisticsAssigneeActionBlock(string acceptUrl, string declineUrl, string detailUrl, string detailLabel = "Xem chi tiết trong hệ thống")
     {
         return WrapActionBlock($@"<div style=""text-align:center;margin:24px 0"">
