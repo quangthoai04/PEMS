@@ -80,10 +80,10 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     public DbSet<Faq> Faqs { get; set; }
 
     // ── Gallery ───────────────────────────────────────────────────────────
-    public DbSet<GalleryArea> GalleryAreas { get; }
-    public DbSet<GalleryLocation> GalleryLocations { get; }
-    public DbSet<GalleryItem> GalleryItems { get; }
-    public DbSet<GalleryItemMedia> GalleryItemMedia { get; }
+    public DbSet<GalleryArea> GalleryAreas { get; set; }
+    public DbSet<GalleryLocation> GalleryLocations { get; set; }
+    public DbSet<GalleryItem> GalleryItems { get; set; }
+    public DbSet<GalleryItemMedia> GalleryItemMedia { get; set; }
     public DbSet<PhotoFaceTag> PhotoFaceTags { get; set; }
 
     // ── Email + Notification ──────────────────────────────────────────────
