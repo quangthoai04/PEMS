@@ -11,6 +11,7 @@ public sealed class GetAssignmentsProgressListQuery : IRequest<AssignmentsProgre
     public string? Search { get; set; }
     public string? ItemType { get; set; }
     public string? Status { get; set; }
+    public string? StatusGroup { get; set; }
     public string? OwnerScope { get; set; }
     public DateTime? FromDate { get; set; }
     public DateTime? ToDate { get; set; }
@@ -97,6 +98,8 @@ public sealed class GetAssignmentsProgressListQueryHandler
         var currentUserId = _currentUser.UserId.Value;
         var departmentId = _currentUser.DepartmentId.Value;
         var now = DateTime.UtcNow;
+        var isDepartmentStaff = string.Equals(_currentUser.RoleCode, RoleCodes.Department, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(_currentUser.SubRole, UserSubRoles.Staff, StringComparison.OrdinalIgnoreCase);
 
         var department = await _db.Departments
             .AsNoTracking()
@@ -115,6 +118,7 @@ public sealed class GetAssignmentsProgressListQueryHandler
             join inst in _db.VisitRequestCampuses.AsNoTracking() on li.VisitInstanceId equals inst.VisitInstanceId
             join vr in _db.VisitRequests.AsNoTracking() on inst.VisitRequestId equals vr.VisitRequestId
             where li.RequestedToDepartmentId == departmentId
+                  && (!isDepartmentStaff || li.AssignedToUserId == currentUserId)
             let latestAttempt = _db.VisitLogisticsAssignmentAttempts
                 .Where(a => a.LogisticsItemId == li.LogisticsItemId)
                 .OrderByDescending(a => a.AssignedAt)
@@ -221,12 +225,14 @@ public sealed class GetAssignmentsProgressListQueryHandler
                 EndAt = endAt,
                 CanViewDetail = true,
                 CanViewDelegationDetail = true,
-                CanAssign = uiStatus is "REQUESTED" or "DECLINED",
+                CanAssign = !isDepartmentStaff && (uiStatus is "REQUESTED" or "DECLINED"),
                 // Leader có thể tự Xác nhận hoặc Từ chối cả khi REQUESTED và DECLINED
-                CanAccept = !hasActiveAssignee && (row.li.Status == "REQUESTED" || row.li.Status == "DECLINED"),
+                CanAccept = isDepartmentStaff
+                    ? row.li.AssignedToUserId == currentUserId && row.li.Status == "ASSIGNED"
+                    : !hasActiveAssignee && (row.li.Status == "REQUESTED" || row.li.Status == "DECLINED"),
                 CanDecline = row.li.AssignedToUserId == currentUserId && row.li.Status == "ASSIGNED",
-                CanRejectRequest = uiStatus is "REQUESTED" or "DECLINED",
-                CanProposeChange = row.li.AssignedToUserId == currentUserId && row.li.Status is "ACCEPTED" or "IN_PROGRESS",
+                CanRejectRequest = !isDepartmentStaff && (uiStatus is "REQUESTED" or "DECLINED"),
+                CanProposeChange = row.li.AssignedToUserId == currentUserId && row.li.Status == "ASSIGNED",
                 CanSignBorrow = row.li.AssignedToUserId == currentUserId && row.li.Status == "ACCEPTED",
                 CanSignReturn = row.li.AssignedToUserId == currentUserId && row.li.Status == "IN_PROGRESS",
                 LatestDeclineReason = row.LatestStatus == "DECLINED" ? row.LatestNote ?? row.li.AssigneeResponseNote : null,
@@ -247,6 +253,7 @@ public sealed class GetAssignmentsProgressListQueryHandler
             where u.DepartmentId == departmentId
                   && p.ParticipantRole == ParticipantRoles.DeptSupport
                   && p.Status != ParticipantStatuses.Removed
+                  && (!isDepartmentStaff || (p.UserId == currentUserId && p.AssignedBy != null))
             select new { p, u, inst, vr })
             .ToListAsync(cancellationToken);
 
@@ -307,8 +314,8 @@ public sealed class GetAssignmentsProgressListQueryHandler
                 EndAt = row.inst.PlannedEndAt,
                 CanViewDetail = true,
                 CanViewDelegationDetail = true,
-                CanAssign = canLeaderHandle,
-                CanAccept = row.p.UserId == currentUserId && row.p.Status == ParticipantStatuses.Invited,
+                CanAssign = !isDepartmentStaff && canLeaderHandle,
+                CanAccept = row.p.UserId == currentUserId && row.p.Status is ParticipantStatuses.Invited or ParticipantStatuses.Assigned,
                 CanDecline = row.p.UserId == currentUserId && row.p.Status is ParticipantStatuses.Invited or ParticipantStatuses.Assigned,
                 CanRejectRequest = row.p.UserId == currentUserId && row.p.Status == ParticipantStatuses.Invited,
                 CanProposeChange = false,
@@ -340,6 +347,8 @@ public sealed class GetAssignmentsProgressListQueryHandler
 
         if (!string.IsNullOrWhiteSpace(request.Status) && !request.Status.Equals("ALL", StringComparison.OrdinalIgnoreCase))
             query = query.Where(x => x.UiStatus.Equals(request.Status, StringComparison.OrdinalIgnoreCase));
+        else if (!string.IsNullOrWhiteSpace(request.StatusGroup) && request.StatusGroup.Equals("STAFF_HISTORY", StringComparison.OrdinalIgnoreCase))
+            query = query.Where(x => x.UiStatus is "ACCEPTED" or "DECLINED" or "CHANGE_PROPOSED" or "IN_PROGRESS" or "DONE" or "CANCELLED");
 
         if (!string.IsNullOrWhiteSpace(request.OwnerScope) && request.OwnerScope.Equals("ME", StringComparison.OrdinalIgnoreCase))
             query = query.Where(x =>
@@ -407,8 +416,8 @@ public sealed class GetAssignmentsProgressListQueryHandler
         DateTime now)
     {
         if (instanceStatus == "CANCELLED") return "CANCELLED";
-        if (hasActiveStaffAssignment && status != ParticipantStatuses.Accepted) return "ASSIGNED";
         if (status == ParticipantStatuses.Declined) return hasActiveStaffAssignment ? "DECLINED" : "REJECTED";
+        if (hasActiveStaffAssignment && status != ParticipantStatuses.Accepted) return "ASSIGNED";
         if (status == ParticipantStatuses.Assigned) return "ASSIGNED";
         if (status == ParticipantStatuses.Invited) return "REQUESTED";
         if (status == ParticipantStatuses.Accepted)
