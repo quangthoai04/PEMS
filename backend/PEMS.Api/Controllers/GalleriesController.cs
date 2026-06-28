@@ -8,12 +8,16 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using PEMS.Application.Galleries.Commands.AddGalleryItem;
 using PEMS.Application.Galleries.Commands.ChangeGalleryItemStatus;
+using PEMS.Application.Galleries.Commands.ChangeGalleryLocationStatus;
+using PEMS.Application.Galleries.Commands.CreateGalleryLocation;
 using PEMS.Application.Galleries.Commands.UpdateGalleryItem;
+using PEMS.Application.Galleries.Commands.UpdateGalleryLocation;
 using PEMS.Application.Galleries.Common;
 using PEMS.Application.Galleries.Queries.GetGalleryFilterOptions;
 using PEMS.Application.Galleries.Queries.SearchGalleryItems;
 using PEMS.Application.Galleries.Queries.ViewGalleryItemDetails;
 using PEMS.Application.Galleries.Queries.ViewGalleryItemList;
+using PEMS.Application.Galleries.Queries.ViewGalleryLocationList;
 
 namespace PEMS.Api.Controllers
 {
@@ -101,6 +105,28 @@ namespace PEMS.Api.Controllers
         // UC-GAL-05 Enable / UC-GAL-06 Disable.
         [HttpPost("changegalleryitemstatus")]
         public async Task<IActionResult> ChangeGalleryItemStatus([FromBody] ChangeGalleryItemStatusCommand command, CancellationToken cancellationToken)
+            => Ok(await _mediator.Send(command, cancellationToken));
+
+        // ── Quản lý khu vực (area/location management, UC-LOC-01..09) ──
+
+        // UC-LOC-01 List / UC-LOC-02 Search / UC-LOC-03 Filter.
+        [HttpGet("viewgallerylocationlist")]
+        public async Task<IActionResult> ViewGalleryLocationList([FromQuery] ViewGalleryLocationListQuery query, CancellationToken cancellationToken)
+            => Ok(await _mediator.Send(query, cancellationToken));
+
+        // UC-LOC-04 Add location into existing area / UC-LOC-05 New area + first location.
+        [HttpPost("creategallerylocation")]
+        public async Task<IActionResult> CreateGalleryLocation([FromBody] CreateGalleryLocationCommand command, CancellationToken cancellationToken)
+            => Ok(await _mediator.Send(command, cancellationToken));
+
+        // UC-LOC-06 Edit (existing area) / UC-LOC-07 Edit (new area).
+        [HttpPost("updategallerylocation")]
+        public async Task<IActionResult> UpdateGalleryLocation([FromBody] UpdateGalleryLocationCommand command, CancellationToken cancellationToken)
+            => Ok(await _mediator.Send(command, cancellationToken));
+
+        // UC-LOC-08 Enable / UC-LOC-09 Disable.
+        [HttpPost("changegallerylocationstatus")]
+        public async Task<IActionResult> ChangeGalleryLocationStatus([FromBody] ChangeGalleryLocationStatusCommand command, CancellationToken cancellationToken)
             => Ok(await _mediator.Send(command, cancellationToken));
 
         /// <summary>Buffers each uploaded file's bytes so the handler can sniff its type and hand it to
