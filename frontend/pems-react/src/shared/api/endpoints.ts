@@ -68,6 +68,11 @@ export const API_ENDPOINTS = {
     create: '/galleries/addgalleryitem',
     update: '/galleries/updategalleryitem',
     changeStatus: '/galleries/changegalleryitemstatus',
+    // UC-LOC-01..09 — area/location management ("Quản lý khu vực").
+    locationList: '/galleries/viewgallerylocationlist',
+    locationCreate: '/galleries/creategallerylocation',
+    locationUpdate: '/galleries/updategallerylocation',
+    locationChangeStatus: '/galleries/changegallerylocationstatus',
   },
   partners: {
     list: '/partners',

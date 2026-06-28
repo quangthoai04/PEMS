@@ -1,18 +1,24 @@
 import httpClient from '../../../shared/api/httpClient';
 import { API_ENDPOINTS } from '../../../shared/api/endpoints';
 import type {
+  ChangeGalleryLocationStatusInput,
   ChangeGalleryStatusInput,
   CreateGalleryItemInput,
+  CreateGalleryLocationInput,
   GalleryFilterOptions,
   GalleryItemDetail,
   GalleryListItem,
   GalleryListQueryParams,
+  GalleryLocationDetail,
+  GalleryLocationListItem,
+  GalleryLocationListQueryParams,
   PaginatedResult,
   UpdateGalleryItemInput,
+  UpdateGalleryLocationInput,
 } from '../types/galleryManagement.types';
 
 /** Drops undefined/null/'' so they never reach the query string. */
-function cleanParams(params: GalleryListQueryParams): Record<string, unknown> {
+function cleanParams(params: Record<string, unknown>): Record<string, unknown> {
   return Object.fromEntries(
     Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ''),
   );
@@ -77,6 +83,35 @@ export const galleryManagementApi = {
   /** UC-GAL-05 / UC-GAL-06 — enable/disable (toggle status only). */
   async changeStatus(input: ChangeGalleryStatusInput): Promise<{ galleryItemId: number; status: string; message: string }> {
     const { data } = await httpClient.post(API_ENDPOINTS.gallery.changeStatus, input);
+    return data;
+  },
+
+  // ── Quản lý khu vực (UC-LOC-01..09) ──
+
+  /** UC-LOC-01/02/03 — paged area/location list for the caller's campus. */
+  async getLocations(params: GalleryLocationListQueryParams): Promise<PaginatedResult<GalleryLocationListItem>> {
+    const { data } = await httpClient.get<PaginatedResult<GalleryLocationListItem>>(
+      API_ENDPOINTS.gallery.locationList,
+      { params: cleanParams(params) },
+    );
+    return data;
+  },
+
+  /** UC-LOC-04/05 — add a location (into an existing area or a brand-new one). */
+  async createLocation(input: CreateGalleryLocationInput): Promise<GalleryLocationDetail> {
+    const { data } = await httpClient.post<GalleryLocationDetail>(API_ENDPOINTS.gallery.locationCreate, input);
+    return data;
+  },
+
+  /** UC-LOC-06/07 — rename a location and/or move it to another area. */
+  async updateLocation(input: UpdateGalleryLocationInput): Promise<GalleryLocationDetail> {
+    const { data } = await httpClient.post<GalleryLocationDetail>(API_ENDPOINTS.gallery.locationUpdate, input);
+    return data;
+  },
+
+  /** UC-LOC-08/09 — enable/disable a location. */
+  async changeLocationStatus(input: ChangeGalleryLocationStatusInput): Promise<GalleryLocationDetail> {
+    const { data } = await httpClient.post<GalleryLocationDetail>(API_ENDPOINTS.gallery.locationChangeStatus, input);
     return data;
   },
 };

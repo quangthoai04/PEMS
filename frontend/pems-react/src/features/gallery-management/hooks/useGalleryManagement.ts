@@ -5,6 +5,8 @@ import type {
   GalleryFilterOptions,
   GalleryListItem,
   GalleryListQueryParams,
+  GalleryLocationListItem,
+  GalleryLocationListQueryParams,
   PaginatedResult,
 } from '../types/galleryManagement.types';
 
@@ -89,6 +91,60 @@ export function useGalleryFilterOptions(enabled = true) {
   }, [enabled]);
 
   return { options, areas: options?.areas ?? [], loading };
+}
+
+interface UseLocationListResult {
+  data: PaginatedResult<GalleryLocationListItem> | null;
+  items: GalleryLocationListItem[];
+  loading: boolean;
+  error: string | null;
+  refetch: () => void;
+}
+
+/**
+ * UC-LOC-01/02/03 — fetches the campus-scoped, paged area/location list whenever `params` changes.
+ * Stale responses are dropped (last request wins).
+ */
+export function useGalleryLocationList(
+  params: GalleryLocationListQueryParams,
+  enabled = true,
+): UseLocationListResult {
+  const [data, setData] = useState<PaginatedResult<GalleryLocationListItem> | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const requestIdRef = useRef(0);
+
+  const refetch = useCallback(async () => {
+    if (!enabled) return;
+    const requestId = ++requestIdRef.current;
+    setLoading(true);
+    setError(null);
+
+    try {
+      const result = await galleryManagementApi.getLocations(params);
+      if (requestId === requestIdRef.current) setData(result);
+    } catch (err) {
+      if (requestId === requestIdRef.current) {
+        setError(getGalleryErrorMessage(err, 'Đã có lỗi xảy ra khi tải danh sách khu vực. Vui lòng thử lại.'));
+        setData(null);
+      }
+    } finally {
+      if (requestId === requestIdRef.current) setLoading(false);
+    }
+  }, [params, enabled]);
+
+  useEffect(() => {
+    void refetch();
+  }, [refetch]);
+
+  return {
+    data,
+    items: data?.items ?? [],
+    loading,
+    error,
+    refetch,
+  };
 }
 
 export default useGalleryList;
