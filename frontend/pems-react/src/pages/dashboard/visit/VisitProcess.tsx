@@ -197,6 +197,10 @@ export function VisitProcess() {
   const duringUnlocked = perm ? instRank >= 2 : true;
   const afterUnlocked = perm ? instRank >= 3 : true;
 
+  // §10: Host xác nhận chuyến này không cần bài tin tức — gửi kèm khi đóng đoàn (tab Sau). Backend
+  // chỉ chấp nhận đóng đoàn khi có bài tin tức đã duyệt HOẶC cờ này = true.
+  const [confirmNoNews, setConfirmNoNews] = useState(false);
+
   // Stage transition (Host only). Only unlocks the next tab AFTER the API confirms the new status.
   const [stageSubmitting, setStageSubmitting] = useState(false);
   const advanceStage = async (stage: 'before' | 'during' | 'after') => {
@@ -208,13 +212,16 @@ export function VisitProcess() {
       } else if (stage === 'during') {
         await delegationsApi.completeDuringVisit(perm.visitRequestId, perm.visitInstanceId);
       } else {
-        await delegationsApi.completeAfterVisit(perm.visitRequestId, perm.visitInstanceId);
+        await delegationsApi.completeAfterVisit(perm.visitRequestId, perm.visitInstanceId, confirmNoNews);
       }
       // Refetch permissions → instanceStatus advances → next tab unlocks.
       await loadPermissions();
-      if (stage === 'before') { pushToast('success', 'Đã xác nhận hoàn thành chuẩn bị.'); setActiveTab('during'); setCurrentStatus('Trong tiếp khách'); }
-      else if (stage === 'during') { pushToast('success', 'Đã xác nhận hoàn thành tiếp khách.'); setActiveTab('after'); setCurrentStatus('Chờ đóng đoàn'); }
-      else { pushToast('success', 'Đã đóng đoàn thành công.'); setCurrentStatus('Đã đóng đoàn'); }
+      // After moving to the next stage, jump the user to the TOP of the new tab so they never stay
+      // stranded at the bottom of the page where the confirm button was (đặc tả mục 8.5).
+      const scrollTabToTop = () => window.scrollTo({ top: 0, behavior: 'smooth' });
+      if (stage === 'before') { pushToast('success', 'Đã xác nhận hoàn thành chuẩn bị.'); setActiveTab('during'); setCurrentStatus('Trong tiếp khách'); scrollTabToTop(); }
+      else if (stage === 'during') { pushToast('success', 'Đã xác nhận kết thúc tiếp khách.'); setActiveTab('after'); setCurrentStatus('Chờ đóng đoàn'); scrollTabToTop(); }
+      else { pushToast('success', 'Đã đóng đoàn thành công.'); setCurrentStatus('Đã đóng đoàn'); scrollTabToTop(); }
     } catch (e: any) {
       pushToast('error', apiErrorMessage(e, 'Đã xảy ra lỗi hệ thống. Vui lòng thử lại sau.'));
       // On a 409 the status changed under us — refetch so the UI reflects the real state.
@@ -479,18 +486,26 @@ export function VisitProcess() {
     if (!perm) return null;
     if (opts.done) {
       return (
-        <div className="mt-6 flex items-center justify-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-6 py-4">
-          <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-          <span className="text-sm font-bold text-emerald-700">{opts.doneLabel}</span>
+        <div className="mt-4 flex items-center justify-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-3 text-sm font-bold text-emerald-700">
+          <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+          <span>{opts.doneLabel}</span>
         </div>
       );
     }
     if (!opts.canDo) return null;
+    // Tab-specific guidance (đặc tả mục 8.6): the "before" notice must warn that the prep tab will
+    // be locked; "during" announces the move to the after stage; "after" warns the whole flow goes
+    // read-only once closed.
+    const stageNotice = opts.stage === 'before'
+      ? 'Sau khi xác nhận, thông tin ở tab Trước tiếp khách sẽ được khóa và quy trình chuyển sang giai đoạn Trong tiếp khách.'
+      : opts.stage === 'during'
+        ? 'Sau khi xác nhận, quy trình sẽ chuyển sang giai đoạn Sau tiếp khách.'
+        : 'Sau khi đóng đoàn, toàn bộ quy trình sẽ chuyển sang chế độ chỉ xem.';
     return (
       <div className="mt-6 rounded-2xl border border-gray-200 bg-white p-6 shadow-sm flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm font-medium text-slate-500 flex items-center gap-2">
           <AlertCircle className="w-4 h-4 text-[#f37021] shrink-0" />
-          Sau khi xác nhận, hệ thống sẽ chuyển sang giai đoạn tiếp theo.
+          {stageNotice}
         </p>
         <button
           type="button"
@@ -1280,8 +1295,8 @@ export function VisitProcess() {
               stage: 'during',
               canDo: !!perm?.canCompleteVisit,
               done: instRank >= 3,
-              label: 'Xác nhận hoàn thành tiếp khách',
-              doneLabel: 'Đã hoàn thành tiếp khách',
+              label: 'Xác nhận kết thúc tiếp khách',
+              doneLabel: 'Đã kết thúc tiếp khách',
             })}
           </>
         )
@@ -1293,6 +1308,24 @@ export function VisitProcess() {
         ) : (
           <>
             <VisitAfterTab onTourCloseSuccess={() => navigate('/dashboard/visit')} isReadOnly={afterReadOnly} isDept={isDept && !isStudent} visitInstanceId={perm?.visitInstanceId} />
+            {/* §10 điều kiện đóng đoàn: nếu chuyến không có bài tin tức được duyệt, Host phải tích xác
+                nhận "không cần tin tức" thì mới đóng được (backend re-validate). */}
+            {perm?.canCloseVisit && (
+              <label className="mt-6 flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={confirmNoNews}
+                  onChange={(e) => setConfirmNoNews(e.target.checked)}
+                  className="mt-0.5 w-4 h-4 shrink-0"
+                />
+                <span className="text-sm font-semibold text-amber-800">
+                  Chuyến này không cần tạo/duyệt bài tin tức.{' '}
+                  <span className="font-normal text-amber-700">
+                    Tích chọn nếu đoàn không có bài tin tức. Nếu đã có bài tin tức được duyệt thì không cần tích.
+                  </span>
+                </span>
+              </label>
+            )}
             {renderStageBar({
               stage: 'after',
               canDo: !!perm?.canCloseVisit,

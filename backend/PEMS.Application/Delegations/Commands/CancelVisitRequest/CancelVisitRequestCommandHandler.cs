@@ -50,14 +50,47 @@ public sealed class CancelVisitRequestCommandHandler
 
         var isVisitorOwner = roleCode == RoleCodes.Visitor && visit.VisitorUserId == actorId;
 
-        // Cancellation is a POST-APPROVAL action only. A request that is still PENDING_APPROVAL
-        // must be ended via the reject flow — the visit_request_campuses trigger likewise blocks
-        // cancelling an instance whose owning request is not APPROVED. We pre-validate and return
-        // a clean Vietnamese business error HERE, before any SaveChanges, so the user never sees a
-        // raw EF/MySQL trigger exception.
+        // §1.1/§4.1: the Visitor owner may cancel a request that is still PENDING_APPROVAL. At this
+        // point NO campus instance has a valid lifecycle yet (they stay WAITING_REQUEST_APPROVAL), so
+        // we ONLY flip the parent request to CANCELLED and never touch campus instances / logistics.
+        // The DB trigger trg_visit_requests_cancel_validate_bu (after the lifecycle patch) permits
+        // PENDING→CANCELLED only when the canceller has the VISITOR role — matching this guard.
         if (visit.Status == VisitRequestStatuses.PendingApproval)
-            throw new BusinessRuleException(
-                "Không thể hủy lịch thăm. Đơn đang chờ duyệt nên chưa thể hủy theo luồng hiện tại.");
+        {
+            if (!isVisitorOwner)
+                throw new ForbiddenException("Chỉ khách sở hữu đơn mới được hủy đơn đang chờ duyệt.");
+
+            var nowPending = _clock.UtcNow;
+            await using var txPending = await _db.BeginTransactionAsync(cancellationToken);
+
+            visit.Status = VisitRequestStatuses.Cancelled;
+            visit.CancelledBy = actorId;
+            visit.CancelledAt = nowPending;
+            visit.CancellationReason = reason;
+            visit.UpdatedAt = nowPending;
+            visit.UpdatedBy = actorId;
+            visit.RowVersion += 1;
+
+            _db.AuditLogs.Add(new AuditLog
+            {
+                ActorUserId = actorId,
+                Action = "CANCEL_VISIT_REQUEST",
+                EntityType = "VisitRequest",
+                EntityId = visit.VisitRequestId,
+                CreatedAt = nowPending
+            });
+
+            await _db.SaveChangesAsync(cancellationToken);
+            await txPending.CommitAsync(cancellationToken);
+
+            // No campus instance is cancelled in the pre-approval flow (đặc tả §1.1: không sinh/đụng
+            // campus lifecycle) → empty cancelled-campus list.
+            return new CancelVisitRequestResponse(
+                visit.VisitRequestId,
+                visit.Status,
+                new List<CancelledCampusDto>(),
+                "Đơn tham quan đã được hủy.");
+        }
 
         if (visit.Status != VisitRequestStatuses.Approved)
             throw new BusinessRuleException(
@@ -147,6 +180,33 @@ public sealed class CancelVisitRequestCommandHandler
 
             await PEMS.Application.EmailActions.EmailTokenInvalidationHelper.InvalidateTokensForVisitInstanceAsync(
                 _db, instance.VisitInstanceId, "Chuyến tiếp khách này đã bị hủy.", now, cancellationToken);
+        }
+
+        // Cascade: when a campus instance is cancelled, every NON-terminal logistics item of that
+        // instance must follow it to CANCELLED so no department keeps preparing for a dead visit
+        // (đặc tả mục 4.4 / 11). Terminal items (DONE/REJECTED/DECLINED/CANCELLED) are left as-is.
+        // Pending logistics email-action tokens are already invalidated above via
+        // InvalidateTokensForVisitInstanceAsync, so a later token click returns INVALID_STATE.
+        var targetInstanceIds = targets.Select(t => t.VisitInstanceId).ToList();
+        var terminalLogisticsStatuses = new[]
+        {
+            LogisticsItemStatus.Done,
+            LogisticsItemStatus.Rejected,
+            LogisticsItemStatus.Declined,
+            LogisticsItemStatus.Cancelled,
+        };
+        var logisticsToCancel = await _db.VisitLogisticsItems
+            .Where(l => targetInstanceIds.Contains(l.VisitInstanceId)
+                        && !terminalLogisticsStatuses.Contains(l.Status))
+            .ToListAsync(cancellationToken);
+        foreach (var item in logisticsToCancel)
+        {
+            item.Status = LogisticsItemStatus.Cancelled;
+            // decision_note nối lý do hủy cụ thể của campus (reason luôn bắt buộc ở luồng này).
+            item.DecisionNote = $"Hủy logistics do campus instance đã hủy. Lý do: {reason}";
+            item.UpdatedAt = now;
+            item.UpdatedBy = actorId;
+            item.RowVersion += 1;
         }
 
         _db.AuditLogs.Add(new AuditLog

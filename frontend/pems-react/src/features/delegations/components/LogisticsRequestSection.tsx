@@ -62,9 +62,9 @@ const PRIORITY_OPTIONS: { value: LogisticsPriority; label: string }[] = [
   { value: 'URGENT', label: 'Khẩn cấp' },
 ];
 const PRIORITY_META: Record<LogisticsPriority, { label: string; cls: string }> = {
-  LOW:    { label: 'Thấp', cls: 'border-slate-200 bg-slate-50 text-slate-500' },
-  MEDIUM: { label: 'Trung bình', cls: 'border-sky-200 bg-sky-50 text-sky-700' },
-  HIGH:   { label: 'Cao', cls: 'border-amber-200 bg-amber-50 text-amber-700' },
+  LOW:    { label: 'Thấp', cls: 'border-slate-200 bg-slate-50 text-slate-600' },
+  MEDIUM: { label: 'Trung bình', cls: 'border-slate-200 bg-slate-50 text-slate-600' },
+  HIGH:   { label: 'Cao', cls: 'border-orange-200 bg-orange-50 text-orange-700' },
   URGENT: { label: 'Khẩn cấp', cls: 'border-red-200 bg-red-50 text-red-700' },
 };
 // Statuses where the department has taken the item → host can no longer cancel/replace it.
@@ -405,32 +405,30 @@ export function LogisticsRequestSection({
       </MucCard>
 
       {/* Danh sách yêu cầu hậu cần thật (Part H: badge coordination + status enum) */}
-      <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
-        <div className="flex items-center justify-between px-6 py-4 bg-white border-b border-gray-100">
-          <h3 className="text-xl font-bold text-orange-900 flex items-center gap-2">
-            <div className="p-1.5 bg-orange-100 rounded-lg"><Plus className="w-5 h-5 text-[#f37021]" /></div>
+      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+          <h3 className="text-lg font-bold text-orange-900 flex items-center gap-2">
+            <Plus className="w-5 h-5 text-orange-900" />
             Danh sách yêu cầu hậu cần
           </h3>
           {loadingList && <Loader2 className="w-4 h-4 animate-spin text-gray-400" />}
         </div>
-        <div className="p-6 pt-4">
+        <div className="p-5 space-y-3">
           {!loadedOnce ? (
             <LoadingRow />
           ) : items.length === 0 ? (
             <p className="py-2 text-sm italic text-slate-400">Chưa có yêu cầu hậu cần nào.</p>
           ) : (
-            <div className="space-y-2">
-              {items.map((it) => (
-                <LogisticsListRow
-                  key={it.logisticsItemId}
-                  it={it}
-                  canManage={canManage}
-                  busy={busyKey === `proposal-${it.logisticsItemId}`}
-                  onRespond={respondToProposal}
-                  onViewSent={openSentEmails}
-                />
-              ))}
-            </div>
+            items.map((it) => (
+              <LogisticsListRow
+                key={it.logisticsItemId}
+                it={it}
+                canManage={canManage}
+                busy={busyKey === `proposal-${it.logisticsItemId}`}
+                onRespond={respondToProposal}
+                onViewSent={openSentEmails}
+              />
+            ))
           )}
         </div>
       </div>
@@ -1178,8 +1176,14 @@ function finalQuantity(it: VisitInstanceLogisticsItem): number | null | undefine
   return it.proposalResponse === 'ACCEPTED' && it.proposedQuantity != null ? it.proposedQuantity : it.quantity;
 }
 
-/** One row of the logistics request list. Shows planned/proposed/final quantity and, for a pending
- * department change proposal (status CHANGE_PROPOSED), the Host's accept/reject controls. */
+function getStatusBadgeCls(status: string, fallback: string) {
+  if (['ASSIGNED', 'ACCEPTED', 'IN_PROGRESS'].includes(status)) return 'bg-blue-50 text-blue-700 border-blue-200';
+  if (status === 'DONE') return 'bg-green-50 text-green-700 border-green-200';
+  if (['REJECTED', 'DECLINED'].includes(status)) return 'bg-red-50 text-red-700 border-red-200';
+  if (status === 'CANCELLED') return 'bg-slate-100 text-slate-600 border-slate-200';
+  return fallback;
+}
+
 function LogisticsListRow({ it, canManage, busy, onRespond, onViewSent }: {
   it: VisitInstanceLogisticsItem;
   canManage: boolean;
@@ -1188,93 +1192,166 @@ function LogisticsListRow({ it, canManage, busy, onRespond, onViewSent }: {
   onViewSent: (item: VisitInstanceLogisticsItem) => void;
 }) {
   const meta = LOGISTICS_STATUS_META[it.status] ?? { label: it.status, cls: 'bg-slate-100 text-slate-600 border-slate-200' };
+  const statusCls = getStatusBadgeCls(it.status, meta.cls);
   const offline = it.coordinationMode === 'OFFLINE_COORDINATED';
   const proposed = it.status === 'CHANGE_PROPOSED';
   const finalQty = finalQuantity(it);
   const [rejecting, setRejecting] = useState(false);
   const [rejectNote, setRejectNote] = useState('');
 
+  const isTerminal = it.status === 'CANCELLED' || it.status === 'REJECTED' || it.status === 'DECLINED' || it.status === 'DONE';
+  let reasonLabel = '';
+  let reasonText = '';
+  if (it.status === 'CANCELLED') { reasonLabel = 'Lý do hủy'; reasonText = it.decisionNote || ''; }
+  else if (it.status === 'REJECTED') { reasonLabel = 'Lý do từ chối'; reasonText = it.decisionNote || ''; }
+  else if (it.status === 'DECLINED') { reasonLabel = 'Lý do từ chối nhận nhiệm vụ'; reasonText = it.assigneeResponseNote || ''; }
+
   return (
-    <div className={`rounded-xl border p-3 shadow-sm ${it.status === 'CANCELLED' ? 'border-gray-200 bg-gray-50 opacity-70' : proposed ? 'border-violet-200 bg-violet-50/30' : 'border-gray-200 bg-white'}`}>
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className="truncate text-sm font-bold text-gray-800">{it.title}</div>
-          <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-gray-500">
-            <span>{ITEM_TYPE_LABEL[it.itemType] ?? it.itemType}</span>
-            {it.quantity != null && <span>SL dự kiến: {it.quantity}</span>}
-            {it.proposedQuantity != null && <span className="font-semibold text-violet-700">đề xuất: {it.proposedQuantity}</span>}
-            {it.proposalResponse && finalQty != null && <span className="font-semibold text-emerald-700">chốt: {finalQty}</span>}
-            {it.departmentName && <span>Phòng ban: {it.departmentName}</span>}
-            {it.requestedByName && <span>Người gửi: {it.requestedByName}</span>}
-            {it.assignedToName && <span>Nhân sự: {it.assignedToName}</span>}
-            {(it.usageStartAt || it.usageEndAt) && <span>{fmtDateTime(it.usageStartAt)} – {fmtDateTime(it.usageEndAt)}</span>}
-            {it.dueAt && <span>Hạn: {fmtDateTime(it.dueAt)}</span>}
-            {it.completedAt && <span className="text-emerald-700">Hoàn tất: {fmtDateTime(it.completedAt)}</span>}
+    <div className={`rounded-2xl border bg-white px-4 py-4 shadow-sm transition-colors hover:bg-slate-50 ${proposed ? 'border-violet-200 bg-violet-50/30 hover:bg-violet-50' : 'border-slate-200'}`}>
+      <div className="flex flex-col lg:grid lg:grid-cols-[minmax(0,1.4fr)_minmax(280px,0.9fr)_190px] gap-4 lg:gap-5 items-start">
+        {/* Vùng A */}
+        <div className="min-w-0 w-full">
+          <h4 className="text-sm font-bold text-slate-900 line-clamp-1" title={it.title}>{it.title}</h4>
+          <div className="mt-1 flex flex-wrap items-center gap-2 text-xs font-medium text-slate-500">
+            <span className="truncate">{ITEM_TYPE_LABEL[it.itemType] ?? it.itemType}</span>
+            {it.quantity != null && (
+              <>
+                <span className="text-slate-300">•</span>
+                <span>SL dự kiến: {it.quantity}</span>
+              </>
+            )}
+            {it.proposedQuantity != null && (
+              <>
+                <span className="text-slate-300">•</span>
+                <span className="font-semibold text-violet-700">đề xuất: {it.proposedQuantity}</span>
+              </>
+            )}
+            {it.proposalResponse && finalQty != null && (
+              <>
+                <span className="text-slate-300">•</span>
+                <span className="font-semibold text-emerald-700">chốt: {finalQty}</span>
+              </>
+            )}
           </div>
           {offline && it.offlineCoordinationNote && (
-            <div className="mt-1 text-[11px] italic text-amber-700">Ghi chú trao đổi ngoài: {it.offlineCoordinationNote}</div>
+            <div className="mt-2 text-xs italic text-slate-500 line-clamp-2" title={it.offlineCoordinationNote}>
+              <span className="font-semibold text-amber-700/80 mr-1">Ghi chú ngoài:</span>
+              {it.offlineCoordinationNote}
+            </div>
           )}
           {it.description && !offline && (
-            <div className="mt-1 text-[11px] italic text-slate-500">Mô tả chi tiết: {it.description}</div>
+            <div className="mt-2 text-xs italic text-slate-500 line-clamp-2" title={it.description}>
+              {it.description}
+            </div>
           )}
-          {it.assigneeResponseNote && (
-            <div className="mt-1 text-[11px] italic text-slate-500">Phản hồi nhân sự: {it.assigneeResponseNote}</div>
-          )}
-          {REASON_STATUSES.has(it.status) && it.decisionNote && (
-            <div className="mt-1 text-[11px] italic text-red-600">Lý do: {it.decisionNote}</div>
+          {it.proposalResponseNote && (
+            <div className="mt-1 text-xs italic text-slate-500 line-clamp-2">
+              <span className="font-semibold mr-1">Phản hồi:</span>{it.proposalResponseNote}
+            </div>
           )}
         </div>
-        <div className="flex flex-col items-end gap-1">
-          <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide ${meta.cls}`}>{meta.label}</span>
-          <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[10px] font-bold ${PRIORITY_META[it.priority]?.cls ?? PRIORITY_META.MEDIUM.cls}`}>
+
+        {/* Vùng B - Xử lý */}
+        <div className="w-full grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-50 rounded-xl p-3 border border-slate-100 lg:bg-transparent lg:p-0 lg:border-none">
+          <div className="space-y-3">
+            {it.departmentName && (
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Phòng ban</p>
+                <p className="mt-0.5 text-xs font-semibold text-slate-700 truncate" title={it.departmentName}>{it.departmentName}</p>
+              </div>
+            )}
+            {it.requestedByName && (
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Người gửi</p>
+                <p className="mt-0.5 text-xs font-semibold text-slate-700 truncate" title={it.requestedByName}>{it.requestedByName}</p>
+              </div>
+            )}
+            {it.assignedToName && (
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Nhân sự</p>
+                <p className="mt-0.5 text-xs font-semibold text-slate-700 truncate" title={it.assignedToName}>{it.assignedToName}</p>
+              </div>
+            )}
+          </div>
+          <div className="space-y-3">
+            {(it.usageStartAt || it.usageEndAt) && (
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Thời gian sử dụng</p>
+                <div className="mt-0.5 text-xs font-semibold text-slate-700 whitespace-nowrap">
+                  {it.usageStartAt && <div>Từ: {fmtDateTime(it.usageStartAt)}</div>}
+                  {it.usageEndAt && <div>Đến: {fmtDateTime(it.usageEndAt)}</div>}
+                </div>
+              </div>
+            )}
+            {it.dueAt && (
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Hạn hoàn thành</p>
+                <p className="mt-0.5 text-xs font-semibold text-slate-700 truncate">{fmtDateTime(it.dueAt)}</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Vùng C - Trạng thái & Action */}
+        <div className="w-full flex flex-row flex-wrap lg:flex-col items-start lg:items-end gap-2 shrink-0">
+          <span className={`inline-flex items-center justify-center rounded-full border px-2.5 py-1 text-xs font-semibold whitespace-nowrap ${statusCls}`}>
+            {meta.label}
+          </span>
+          <span className={`inline-flex items-center justify-center rounded-full border px-2.5 py-1 text-xs font-semibold whitespace-nowrap ${PRIORITY_META[it.priority]?.cls ?? PRIORITY_META.MEDIUM.cls}`}>
             Ưu tiên: {PRIORITY_META[it.priority]?.label ?? it.priority}
           </span>
           {it.coordinationMode && (
-            <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[10px] font-bold ${offline ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-slate-200 bg-slate-50 text-slate-500'}`}>
+            <span className={`inline-flex items-center justify-center rounded-full border px-2.5 py-1 text-xs font-semibold whitespace-nowrap ${offline ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-slate-200 bg-slate-50 text-slate-600'}`}>
               {COORD_LABEL[it.coordinationMode]}
             </span>
           )}
           {it.coordinationMode === 'SYSTEM_REQUEST' && (
             <button type="button" onClick={() => onViewSent(it)}
-              className="mt-0.5 inline-flex h-7 items-center gap-1 rounded-lg border border-gray-200 bg-white px-2 text-[11px] font-bold text-[#004c91] outline-none transition-colors hover:bg-gray-50">
-              <History className="w-3.5 h-3.5" /> Mail đã gửi
+              className="mt-1 lg:mt-2 inline-flex items-center justify-center gap-1.5 rounded-full border border-blue-100 bg-white px-3 py-1.5 text-[11px] font-bold text-[#004c91] outline-none hover:bg-blue-50 transition-colors">
+              <Mail className="w-3.5 h-3.5" /> Mail đã gửi
             </button>
           )}
         </div>
       </div>
 
-      {/* Department change proposal — Host reviews planned vs proposed and accepts/rejects. */}
+      {isTerminal && it.status !== 'DONE' && reasonText && (
+        <div className="mt-4 rounded-xl border border-red-100 bg-red-50/70 p-3 text-sm text-red-700">
+          <div className="mb-1 font-bold">{reasonLabel}:</div>
+          <div className="text-xs">{reasonText}</div>
+        </div>
+      )}
+
       {proposed && (
-        <div className="mt-3 rounded-lg border border-violet-200 bg-white p-3">
-          <div className="text-[11px] font-bold uppercase tracking-wide text-violet-700">Phòng ban đề xuất thay đổi</div>
-          <div className="mt-1 grid grid-cols-1 gap-0.5 text-xs text-gray-700">
-            {it.proposedQuantity != null && <div>Số lượng đề xuất: <b>{it.proposedQuantity}</b> (dự kiến: {it.quantity ?? '—'})</div>}
-            {(it.proposedUsageStartAt || it.proposedUsageEndAt) && <div>Thời gian đề xuất: {fmtDateTime(it.proposedUsageStartAt)} – {fmtDateTime(it.proposedUsageEndAt)}</div>}
-            {it.proposedDescription && <div>Nội dung đề xuất: {it.proposedDescription}</div>}
-            {it.proposalNote && <div className="italic text-violet-800">Lý do: {it.proposalNote}</div>}
+        <div className="mt-4 rounded-xl border border-violet-200 bg-white p-3 lg:p-4">
+          <div className="text-xs font-bold uppercase tracking-wide text-violet-700 mb-3">Phòng ban đề xuất thay đổi</div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm text-gray-700">
+            {it.proposedQuantity != null && <div><span className="text-slate-500">Số lượng đề xuất:</span> <b className="text-violet-900">{it.proposedQuantity}</b></div>}
+            {(it.proposedUsageStartAt || it.proposedUsageEndAt) && <div><span className="text-slate-500">Thời gian đề xuất:</span> <span className="font-semibold text-slate-800">{fmtDateTime(it.proposedUsageStartAt)} – {fmtDateTime(it.proposedUsageEndAt)}</span></div>}
+            {it.proposedDescription && <div className="sm:col-span-2"><span className="text-slate-500">Nội dung đề xuất:</span> {it.proposedDescription}</div>}
+            {it.proposalNote && <div className="sm:col-span-2 text-violet-800 font-medium">Lý do: {it.proposalNote}</div>}
           </div>
           {canManage && (!rejecting ? (
-            <div className="mt-2 flex items-center gap-2">
+            <div className="mt-4 flex flex-wrap items-center gap-2">
               <button type="button" disabled={busy} onClick={() => onRespond(it, true, '')}
-                className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white outline-none hover:bg-emerald-700 disabled:opacity-50">
+                className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-4 py-2 text-xs font-bold text-white outline-none hover:bg-emerald-700 transition-colors disabled:opacity-50">
                 {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />} Chấp nhận đề xuất
               </button>
               <button type="button" disabled={busy} onClick={() => setRejecting(true)}
-                className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-bold text-red-600 outline-none hover:bg-red-50 disabled:opacity-50">
+                className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-white px-4 py-2 text-xs font-bold text-red-600 outline-none hover:bg-red-50 transition-colors disabled:opacity-50">
                 <X className="w-3.5 h-3.5" /> Từ chối đề xuất
               </button>
             </div>
           ) : (
-            <div className="mt-2 space-y-2">
+            <div className="mt-4 space-y-3">
               <textarea value={rejectNote} onChange={(e) => setRejectNote(e.target.value)} maxLength={1000}
                 placeholder="Lý do từ chối đề xuất (bắt buộc)..."
-                className="w-full h-[70px] resize-none rounded-lg border border-gray-300 px-3 py-2 text-xs outline-none focus:border-red-400" />
+                className="w-full h-[80px] resize-none rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-red-400 transition-colors" />
               <div className="flex items-center justify-end gap-2">
                 <button type="button" disabled={busy} onClick={() => { setRejecting(false); setRejectNote(''); }}
-                  className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-bold text-gray-600 outline-none hover:bg-gray-50 disabled:opacity-50">Hủy</button>
+                  className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-xs font-bold text-gray-600 outline-none hover:bg-gray-50 transition-colors disabled:opacity-50">Hủy</button>
                 <button type="button" disabled={busy || !rejectNote.trim()} onClick={() => onRespond(it, false, rejectNote.trim())}
-                  className="inline-flex items-center gap-1 rounded-lg bg-red-600 px-3 py-1.5 text-xs font-bold text-white outline-none hover:bg-red-700 disabled:opacity-50">
-                  {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <X className="w-3.5 h-3.5" />} Xác nhận từ chối
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-4 py-2 text-xs font-bold text-white outline-none hover:bg-red-700 transition-colors disabled:opacity-50">
+                  {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <X className="w-4 h-4" />} Xác nhận từ chối
                 </button>
               </div>
             </div>

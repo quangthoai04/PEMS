@@ -11,6 +11,7 @@ import React, { Fragment, useEffect, useState } from 'react';
 import {
   Search, Plus, Eye, AlertCircle, Users, MapPin, Calendar,
   ChevronLeft, ChevronRight, ChevronDown, Check, X, XCircle, Mail,
+  FileText, ArrowRightCircle, Info,
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
@@ -39,19 +40,20 @@ type ActionTone = 'blue' | 'green' | 'red' | 'gray' | 'orange';
 type Toast = { id: number; type: 'success' | 'error'; msg: string };
 
 const ActionIconButton = ({
-  title, icon, tone = 'blue', onClick,
+  title, icon, tone = 'blue', onClick, label,
 }: {
   title: string;
   icon: React.ReactNode;
   tone?: ActionTone;
   onClick: (e: React.MouseEvent<HTMLButtonElement>) => void;
+  label?: string;
 }) => {
   const toneClassMap: Record<ActionTone, string> = {
-    blue: 'text-slate-500 hover:text-[#004c91] hover:bg-blue-50',
-    green: 'text-green-500 hover:text-green-600 hover:bg-green-50',
-    red: 'text-red-500 hover:text-red-600 hover:bg-red-50',
-    gray: 'text-slate-400 hover:text-slate-600 hover:bg-slate-100',
-    orange: 'text-orange-500 hover:text-orange-600 hover:bg-orange-50',
+    blue: 'text-slate-500 hover:text-[#004c91] hover:bg-blue-50 border-transparent hover:border-blue-100 lg:border-none lg:bg-transparent',
+    green: 'text-green-500 hover:text-green-600 hover:bg-green-50 border-transparent hover:border-green-100 lg:border-none lg:bg-transparent',
+    red: 'text-red-500 hover:text-red-600 hover:bg-red-50 border-transparent hover:border-red-100 lg:border-none lg:bg-transparent',
+    gray: 'text-slate-400 hover:text-slate-600 hover:bg-slate-100 border-transparent hover:border-slate-200 lg:border-none lg:bg-transparent',
+    orange: 'text-orange-500 hover:text-orange-600 hover:bg-orange-50 border-transparent hover:border-orange-100 lg:border-none lg:bg-transparent',
   };
   return (
     <button
@@ -59,9 +61,10 @@ const ActionIconButton = ({
       title={title}
       aria-label={title}
       onClick={onClick}
-      className={`inline-flex h-9 w-9 items-center justify-center rounded-lg transition-colors outline-none cursor-pointer ${toneClassMap[tone]}`}
+      className={`inline-flex h-9 ${label ? 'px-2 w-auto lg:w-9 lg:px-0 bg-white border border-slate-200 shadow-sm lg:shadow-none lg:border-transparent' : 'w-9'} items-center justify-center gap-1.5 rounded-lg transition-colors outline-none cursor-pointer ${toneClassMap[tone]}`}
     >
       {icon}
+      {label && <span className="text-[11px] font-bold lg:hidden whitespace-nowrap">{label}</span>}
     </button>
   );
 };
@@ -210,6 +213,8 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
 
   // Modals
   const [view, setView] = useState<{ open: boolean; row: Row | null }>({ open: false, row: null });
+  const [requestForm, setRequestForm] = useState<{ open: boolean; row: Row | null }>({ open: false, row: null });
+  const openRequestForm = (row: Row) => setRequestForm({ open: true, row });
   // "Xem đơn đăng ký tham quan trước khi duyệt" — read-only review of a PENDING_APPROVAL row.
   const [review, setReview] = useState<{ open: boolean; row: Row | null }>({ open: false, row: null });
   const [reason, setReason] = useState<{ open: boolean; row: Row | null }>({ open: false, row: null });
@@ -402,50 +407,69 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
   // Whether the icon-mắt should open the shared submitted-form detail modal for this row, and
   // the current user is in scope for it. Covers pre-approval review, rejected detail, and the
   // approved multi-campus waiting-host detail. Backend re-enforces scope (403 on direct URL).
-  const opensSubmittedDetail = (row: Row) => {
-    if (activeTab === 'attending') return false;
-    const st = row.requestStatus;
-    // Pre-approval review
-    if (st === 'PENDING_APPROVAL'
-      && ((isHO && row.visitScope === 'MULTI_CAMPUS')
-        || (isStaffLeader && row.visitScope === 'SINGLE_CAMPUS' && row.campusStatus === 'WAITING_REQUEST_APPROVAL'))) {
-      return true;
-    }
-    // Rejected detail — single (Staff Leader own campus) / multi (HO) / visitor's own
-    if (st === 'REJECTED'
-      && ((isHO && row.visitScope === 'MULTI_CAMPUS')
-        || (isStaffLeader && row.visitScope === 'SINGLE_CAMPUS')
-        || isVisitor)) {
-      return true;
-    }
-    // Approved multi-campus waiting host (Staff Leader picks the official host)
-    if (st === 'APPROVED' && isStaffLeader && row.visitScope === 'MULTI_CAMPUS'
-      && row.campusStatus === 'WAITING_HOST_ASSIGNMENT') {
-      return true;
-    }
-    return false;
+  const hasSetupProcess = (row: Row) => {
+    return !!row.visitInstanceId && (!!row.currentHostUserId || !!row.host);
   };
 
-  const handleView = (row: Row) => {
+  const canOpenProcess = (row: Row) => {
+    if (activeTab === 'attending') return true;
+
+    if (isVisitor) {
+      return !!row.host && row.requestStatus === 'APPROVED';
+    }
+
+    if (isHO && row.visitScope === 'MULTI_CAMPUS') {
+      const rs = row.requestStatus;
+      if (rs === 'PENDING_APPROVAL' || rs === 'REJECTED') return false;
+      return true;
+    }
+
+    if (!row.visitInstanceId) return false;
+    if (row.requestStatus === 'REJECTED') return false;
+
+    const isCancelled = row.requestStatus === 'CANCELLED' || row.campusStatus === 'CANCELLED';
+
+    // Hủy trước khi duyệt/chưa có setup thì không vào process
+    if (isCancelled && !hasSetupProcess(row)) {
+      return false;
+    }
+
+    // Đã từng có host/setup thì vẫn cho xem lại quy trình ở chế độ read-only dù đã hủy
+    if (isCancelled && hasSetupProcess(row)) {
+      return true;
+    }
+
+    return (
+      row.campusStatus === 'ASSIGNED' ||
+      row.campusStatus === 'BEFORE_VISIT' ||
+      row.campusStatus === 'DURING_VISIT' ||
+      row.campusStatus === 'AFTER_VISIT' ||
+      row.campusStatus === 'CLOSED'
+    );
+  };
+
+  const getProcessActionTitle = (row: Row) => {
+    const isCancelled = row.requestStatus === 'CANCELLED' || row.campusStatus === 'CANCELLED';
+
+    if (activeTab === 'attending') {
+      return isDept && subRole === 'STAFF' ? 'Xem nhiệm vụ' : 'Xem lời mời';
+    }
+
+    if (isVisitor) return 'Xem thông tin tiếp khách';
+    if (isHO && row.visitScope === 'MULTI_CAMPUS') return 'Xử lý đơn liên cơ sở';
+
+    if (isCancelled && hasSetupProcess(row)) return 'Xem quy trình đã hủy';
+
+    if (row.campusStatus === 'DURING_VISIT') return 'Tiếp tục xử lý đang tiếp khách';
+    if (row.campusStatus === 'AFTER_VISIT') return 'Hoàn tất sau tiếp khách';
+    if (row.campusStatus === 'CLOSED') return 'Xem quy trình đã đóng';
+
+    return 'Xử lý quy trình tiếp khách';
+  };
+
+  const handleProcess = (row: Row) => {
     const idForRoute = row.id;
-    // Shared submitted-form detail (read-only) takes priority for in-scope reviewers — it must
-    // run BEFORE the rejected/cancelled fallback so rejected rows show the real form + reason.
-    if (opensSubmittedDetail(row)) {
-      setReview({ open: true, row });
-      return;
-    }
-    // Instance-level cancel (campus CANCELLED while the request is still APPROVED): internal roles
-    // (not Visitor) review the prepared setup in a READ-ONLY VisitProcess when a host had been
-    // assigned. Whole-request CANCELLED / REJECTED still fall through to the read-only preview modal.
-    if (activeTab !== 'attending' && row.campusStatus === 'CANCELLED' && row.requestStatus !== 'CANCELLED'
-        && !isVisitor && row.currentHostUserId && row.visitInstanceId) {
-      navigate(`/dashboard/visit/process/${row.visitInstanceId}`, { state: { isReadOnly: true, cancelled: true, status: 'Đã hủy' } });
-      return;
-    }
-    if (row.requestStatus === 'CANCELLED' || row.campusStatus === 'CANCELLED' || row.requestStatus === 'REJECTED') {
-      setView({ open: true, row });
-      return;
-    }
+
     if (activeTab === 'attending') {
       const partId = (row as any).participantId;
       if (isDept && subRole === 'STAFF') {
@@ -455,37 +479,55 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
       }
       return;
     }
+
     if (isVisitor) {
-      if (row.host && row.requestStatus === 'APPROVED') navigate(`/dashboard/visit/reception-detail/${idForRoute}`);
-      else setView({ open: true, row });
+      if (row.host && row.requestStatus === 'APPROVED') {
+        navigate(`/dashboard/visit/reception-detail/${idForRoute}`);
+      }
       return;
     }
-    if (isHO) {
-      // HO processes MULTI_CAMPUS on the dedicated HO detail page; SINGLE_CAMPUS is
-      // read-only monitoring (chốt 2026-06) → show the read-only details modal instead.
-      if (row.visitScope === 'SINGLE_CAMPUS') setView({ open: true, row });
-      else navigate(`/dashboard/visit/ho-detail/${idForRoute}`, { state: { guestData: row } });
+
+    if (isHO && row.visitScope === 'MULTI_CAMPUS') {
+      navigate(`/dashboard/visit/ho-detail/${idForRoute}`, { state: { guestData: row } });
       return;
     }
-    // Campus actors (Staff Leader / Staff host): điều hướng theo STATUS CODE thật, không dùng
-    // statusText. statusText chỉ truyền xuống trang process để hiển thị. Giữ đúng outcome cũ.
-    const rs = row.requestStatus;
-    const cs = row.campusStatus;
-    const isApprovedGeneric = rs === 'APPROVED' && cs == null; // tương đương nhãn cũ "Đã duyệt"
+
+    const isCancelled = row.requestStatus === 'CANCELLED' || row.campusStatus === 'CANCELLED';
+    if (isCancelled && hasSetupProcess(row)) {
+      navigate(`/dashboard/visit/process/${row.visitInstanceId}`, {
+        state: { isReadOnly: true, cancelled: true, status: 'Đã hủy' }
+      });
+      return;
+    }
+
     const displayStatus = row.statusText;
-    if (rs === 'PENDING_APPROVAL' || (isStaffLeader && isApprovedGeneric)) {
-      setView({ open: true, row });
-    } else if (cs === 'ASSIGNED' || cs === 'BEFORE_VISIT' || isApprovedGeneric) {
-      // Staff Leader theo dõi tiến độ Host chuẩn bị (read-only) ngay từ khi ASSIGNED; Host vào để thao tác.
-      navigate(`/dashboard/visit/process/${idForRoute}`, { state: { isPrep: true, status: displayStatus, isReadOnly: isStaffLeader } });
-    } else if (cs === 'DURING_VISIT') {
-      navigate(`/dashboard/visit/process/${idForRoute}`, { state: { defaultTab: 'during', status: displayStatus, isReadOnly: isStaffLeader } });
-    } else if (cs === 'AFTER_VISIT') {
-      navigate(`/dashboard/visit/process/${idForRoute}`, { state: { defaultTab: 'after', status: displayStatus, isReadOnly: isStaffLeader } });
-    } else if (cs === 'CLOSED') {
-      navigate(`/dashboard/visit/process/${idForRoute}`, { state: { defaultTab: 'before', status: displayStatus, isReadOnly: isStaffLeader } });
-    } else {
-      setView({ open: true, row });
+    
+    if (row.campusStatus === 'ASSIGNED' || row.campusStatus === 'BEFORE_VISIT') {
+      navigate(`/dashboard/visit/process/${row.visitInstanceId}`, {
+        state: { isPrep: true, status: displayStatus, isReadOnly: isStaffLeader }
+      });
+      return;
+    }
+
+    if (row.campusStatus === 'DURING_VISIT') {
+      navigate(`/dashboard/visit/process/${row.visitInstanceId}`, {
+        state: { defaultTab: 'during', status: displayStatus, isReadOnly: isStaffLeader }
+      });
+      return;
+    }
+
+    if (row.campusStatus === 'AFTER_VISIT') {
+      navigate(`/dashboard/visit/process/${row.visitInstanceId}`, {
+        state: { defaultTab: 'after', status: displayStatus, isReadOnly: isStaffLeader }
+      });
+      return;
+    }
+
+    if (row.campusStatus === 'CLOSED') {
+      navigate(`/dashboard/visit/process/${row.visitInstanceId}`, {
+        state: { defaultTab: 'before', status: displayStatus, isReadOnly: true }
+      });
+      return;
     }
   };
 
@@ -678,10 +720,12 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
     let cancelledText = 'Đã hủy';
     if (kind === 'cancelled') {
       const actor = (row as any).cancellationActorType;
-      if (actor === 'VISITOR') cancelledText = 'Khách đã hủy';
-      else if (actor === 'HOST') cancelledText = 'Host đã hủy';
+      if (actor === 'VISITOR') cancelledText = 'Đã hủy bởi khách';
+      else if (actor === 'HOST') cancelledText = 'Đã hủy bởi Host';
       else if (actor === 'SYSTEM') cancelledText = 'Hệ thống đã hủy';
     }
+
+    const assignedText = isStaffLeader ? 'Đã phân công Host' : 'Đã được phân công';
 
     const labelByKind: Record<StatusKind, string> = isVisitor ? {
       pending: 'Chờ duyệt', rejected: 'Đã bị từ chối', cancelled: cancelledText,
@@ -689,9 +733,9 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
       before: 'Sắp diễn ra', during: 'Đang diễn ra', after: 'Đã diễn ra',
       closed: 'Đã hoàn tất', approved: 'Đã được duyệt',
     } : {
-      pending: 'Chờ duyệt', rejected: 'Từ chối', cancelled: cancelledText,
-      waiting_host: 'Chờ gán host', assigned: 'Đã phân công host',
-      before: 'Đang chuẩn bị', during: 'Trong tiếp khách', after: 'Chờ hoàn tất',
+      pending: 'Chờ duyệt', rejected: 'Đã bị từ chối', cancelled: cancelledText,
+      waiting_host: 'Chờ phân công Host', assigned: assignedText,
+      before: 'Đang chuẩn bị', during: 'Đang tiếp khách', after: 'Chờ đóng đoàn',
       closed: 'Đã đóng đoàn', approved: 'Đã duyệt',
     };
 
@@ -715,8 +759,8 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
       waiting_host: 'Đơn đã duyệt, chờ phân công người phụ trách',
       assigned: 'Đã phân công người phụ trách, chờ triển khai',
       before: 'Đang trong giai đoạn chuẩn bị đón tiếp',
-      during: 'Đoàn đang diễn ra tại cơ sở',
-      after: 'Đoàn đã kết thúc, chờ hoàn tất thủ tục',
+      during: 'Đoàn đang được tiếp khách tại cơ sở',
+      after: 'Đoàn đã kết thúc, chờ đóng đoàn/hoàn tất hồ sơ',
       closed: 'Đoàn đã hoàn tất toàn bộ quy trình',
       approved: 'Đơn đã duyệt (chờ triển khai)',
     };
@@ -737,11 +781,22 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
       && (row.isCancelled === true || row.requestStatus === 'CANCELLED' || row.campusStatus === 'CANCELLED');
     
     return (
-      <div className="mx-auto grid w-[108px] grid-cols-3 gap-2 place-items-center">
-        {/* Slot 1: View */}
-        <ActionIconButton title="Xem chi tiết" tone="blue" icon={<Eye className="h-5 w-5" />} onClick={(e) => { e.stopPropagation(); handleView(row); }} />
+      <div className="mx-auto grid w-[184px] grid-cols-4 gap-2 place-items-center">
+        {/* Slot 1: Xem form yêu cầu */}
+        {row.visitRequestId ? (
+          <ActionIconButton title="Xem form yêu cầu" tone="blue" icon={<FileText className="h-5 w-5" />} onClick={(e) => { e.stopPropagation(); openRequestForm(row); }} />
+        ) : (
+          <span className="h-9 w-9" aria-hidden="true" />
+        )}
 
-        {/* Slot 2: Approve & assign host (one-time) / Accept / Reason. Host được gán MỘT lần — không có chuyển/đổi host. */}
+        {/* Slot 2: Xử lý / Theo dõi quy trình */}
+        {canOpenProcess(row) ? (
+          <ActionIconButton title={getProcessActionTitle(row)} tone="blue" icon={<ArrowRightCircle className="h-5 w-5" />} onClick={(e) => { e.stopPropagation(); handleProcess(row); }} />
+        ) : (
+          <span className="h-9 w-9" aria-hidden="true" />
+        )}
+
+        {/* Slot 3: Approve & assign host (one-time) / Accept / Reason. Host được gán MỘT lần — không có chuyển/đổi host. */}
         {can('HO_APPROVE') ? (
           <ActionIconButton title="Duyệt đơn liên cơ sở" tone="green" icon={<Check className="h-5 w-5" />}
             onClick={(e) => { e.stopPropagation(); setApproveConfirm({ open: true, row, submitting: false, error: null }); }} />
@@ -758,13 +813,13 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
           <ActionIconButton title="Xem lý do từ chối" tone="orange" icon={<AlertCircle className="h-5 w-5" />}
             onClick={(e) => { e.stopPropagation(); setReason({ open: true, row }); }} />
         ) : isCancelledRow ? (
-          <ActionIconButton title="Xem lý do hủy" tone="gray" icon={<XCircle className="h-5 w-5" />}
+          <ActionIconButton title="Xem lý do hủy" tone="gray" icon={<Info className="h-5 w-5" />}
             onClick={(e) => { e.stopPropagation(); setCancelReason({ open: true, row }); }} />
         ) : (
           <span className="h-9 w-9" aria-hidden="true" />
         )}
 
-        {/* Slot 3: Reject / Cancel / Decline */}
+        {/* Slot 4: Reject / Cancel / Decline */}
         {(can('HO_REJECT') || can('CAMPUS_REJECT')) ? (
           <ActionIconButton title="Từ chối" tone="red" icon={<X className="h-5 w-5" />}
             onClick={(e) => { e.stopPropagation(); setReject({ open: true, row, action: can('HO_REJECT') ? 'HO_REJECT' : 'CAMPUS_REJECT', text: '', submitting: false, error: null }); }} />
@@ -1171,7 +1226,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
       <div className="w-full overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm flex flex-col">
         {/* Desktop */}
         <div className="hidden lg:block w-full">
-          <div className="grid grid-cols-[52px_minmax(0,1fr)_210px_150px_140px] bg-[#004c91] text-white">
+          <div className="grid grid-cols-[52px_minmax(0,1fr)_210px_150px_200px] bg-[#004c91] text-white">
             <div className="p-3 text-[12px] font-bold text-center uppercase tracking-wider">STT</div>
             <div className="p-3 text-[12px] font-bold text-left uppercase tracking-wider">Thông tin đoàn</div>
             <div 
@@ -1201,7 +1256,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
               const isExpanded = expandedRequestId === row.visitRequestId;
               return (
               <Fragment key={row.id}>
-              <div className={`grid grid-cols-[52px_minmax(0,1fr)_210px_150px_140px] items-center min-h-[78px] border-b border-slate-200/70 transition-colors duration-150 cursor-pointer ${isExpanded ? 'bg-blue-50' : index % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-blue-50 group`} onClick={() => handleView(row)}>
+              <div className={`grid grid-cols-[52px_minmax(0,1fr)_210px_150px_200px] items-center min-h-[78px] border-b border-slate-200/70 transition-colors duration-150 ${isExpanded ? 'bg-blue-50' : index % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-blue-50 group`}>
                 <div className="py-3 px-3 text-center font-bold text-[#004c91] text-sm">{(currentPage - 1) * pageSize + index + 1}</div>
                 <div className="py-3 px-3 min-w-0 flex flex-col justify-center pr-4">
                   <p className="text-sm font-bold text-[#004c91] line-clamp-2 break-words" title={row.name}>{row.name}</p>
@@ -1252,7 +1307,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
             const isExpanded = expandedRequestId === row.visitRequestId;
             return (
             <Fragment key={row.id}>
-            <div className={`rounded-2xl border bg-white p-4 shadow-sm transition-colors cursor-pointer ${isExpanded ? 'border-[#004c91]/40' : 'border-slate-200 hover:border-[#004c91]/30'}`} onClick={() => handleView(row)}>
+            <div className={`rounded-2xl border bg-white p-4 shadow-sm transition-colors ${isExpanded ? 'border-[#004c91]/40' : 'border-slate-200 hover:border-[#004c91]/30'}`}>
               <div className="flex items-start justify-between gap-3 mb-2">
                 <div className="min-w-0 flex-1">
                   <p className="font-bold text-[#004c91] text-sm line-clamp-2 leading-snug">{row.name}</p>
@@ -1324,7 +1379,14 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
       {/* View modal */}
       <VisitDetailsModal isOpen={view.open} onClose={() => setView({ open: false, row: null })} guest={view.row} />
 
-      {/* Shared submitted-form detail modal (read-only): pre-approval / rejected / waiting-host */}
+      {/* Xem form yêu cầu (readonly view of original request form) */}
+      <SubmittedVisitRequestDetailModal
+        isOpen={requestForm.open}
+        visitRequestId={requestForm.row?.visitRequestId ?? null}
+        onClose={() => setRequestForm({ open: false, row: null })}
+      />
+
+      {/* Shared submitted-form detail modal (with actions): pre-approval / rejected / waiting-host */}
       <SubmittedVisitRequestDetailModal
         isOpen={review.open}
         visitRequestId={review.row?.visitRequestId ?? null}

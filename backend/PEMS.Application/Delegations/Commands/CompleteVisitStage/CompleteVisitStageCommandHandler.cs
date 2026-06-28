@@ -104,6 +104,74 @@ public sealed class CompleteVisitStageCommandHandler
             case VisitStageKeys.After:
                 if (instance.Status != VisitInstanceStatus.AfterVisit)
                     throw new ConflictException("Không thể đóng đoàn. Cơ sở chưa ở giai đoạn sau tiếp khách.");
+
+                // §10: điều kiện đóng đoàn — gom mọi hạng mục còn thiếu và trả 409 rõ ràng. Không
+                // update status nếu chưa đủ điều kiện.
+                var blockers = new List<string>();
+
+                // 1. Đã qua thời điểm kết thúc theo kế hoạch. planned_end_at là DATETIME wall-clock
+                //    nên so với VietnamNow (KHÔNG dùng UtcNow để tránh lệch múi giờ).
+                if (_clock.VietnamNow < instance.PlannedEndAt)
+                    blockers.Add("chưa qua thời điểm kết thúc theo kế hoạch");
+
+                // 2. Không còn logistics item đang xử lý/chưa hoàn tất (terminal =
+                //    DONE/REJECTED/DECLINED/CANCELLED).
+                var activeLogistics = await _db.VisitLogisticsItems
+                    .CountAsync(l => l.VisitInstanceId == instance.VisitInstanceId
+                                     && l.Status != LogisticsItemStatus.Done
+                                     && l.Status != LogisticsItemStatus.Rejected
+                                     && l.Status != LogisticsItemStatus.Declined
+                                     && l.Status != LogisticsItemStatus.Cancelled, cancellationToken);
+                if (activeLogistics > 0)
+                    blockers.Add($"{activeLogistics} yêu cầu hậu cần chưa hoàn tất/hủy");
+
+                // 3. Mọi phiếu bàn giao (BORROW/RETURN) đã ký đủ hai bên (bên mượn + bên giao).
+                //    Tách 2 truy vấn (ids → handovers) để Pomelo dịch an toàn, tránh subquery tương quan.
+                var instanceLogisticsIds = await _db.VisitLogisticsItems
+                    .Where(l => l.VisitInstanceId == instance.VisitInstanceId)
+                    .Select(l => l.LogisticsItemId)
+                    .ToListAsync(cancellationToken);
+                if (instanceLogisticsIds.Count > 0)
+                {
+                    var unsignedHandovers = await _db.VisitLogisticsItemHandovers
+                        .CountAsync(h => instanceLogisticsIds.Contains(h.LogisticsItemId)
+                                         && (h.BorrowerSignedAt == null || h.ProviderSignedAt == null),
+                            cancellationToken);
+                    if (unsignedHandovers > 0)
+                        blockers.Add($"{unsignedHandovers} phiếu bàn giao tài sản chưa ký đủ hai bên");
+                }
+
+                // 4. Mọi đầu mục công việc trong biên bản đã DONE/CANCELLED (không còn TODO/IN_PROGRESS).
+                //    minute_action_items.status ENUM('TODO','IN_PROGRESS','DONE','CANCELLED').
+                var instanceMinuteIds = await _db.Minutes
+                    .Where(m => m.VisitInstanceId == instance.VisitInstanceId)
+                    .Select(m => m.MinutesId)
+                    .ToListAsync(cancellationToken);
+                if (instanceMinuteIds.Count > 0)
+                {
+                    var openActionItems = await _db.MinuteActionItems
+                        .CountAsync(ai => instanceMinuteIds.Contains(ai.MinutesId)
+                                          && ai.Status != "DONE" && ai.Status != "CANCELLED", cancellationToken);
+                    if (openActionItems > 0)
+                        blockers.Add($"{openActionItems} đầu mục công việc trong biên bản chưa hoàn tất");
+                }
+
+                // 5. Có ít nhất 1 bài tin tức ĐÃ DUYỆT (PUBLISHED) HOẶC Host xác nhận không cần tin tức.
+                //    Xác nhận của Host được ghi nhận (persist) lên instance để đóng đoàn lần sau không hỏi lại.
+                if (request.ConfirmNoNews && !instance.NewsNotRequired)
+                    instance.NewsNotRequired = true;
+                if (!instance.NewsNotRequired)
+                {
+                    var hasPublishedNews = await _db.News
+                        .AnyAsync(n => n.VisitInstanceId == instance.VisitInstanceId
+                                       && n.Status == NewsConstants.Status.Published, cancellationToken);
+                    if (!hasPublishedNews)
+                        blockers.Add("chưa có bài tin tức được duyệt (hoặc Host chưa xác nhận chuyến này không cần tin tức)");
+                }
+
+                if (blockers.Count > 0)
+                    throw new ConflictException("Chưa thể đóng đoàn vì: " + string.Join("; ", blockers) + ".");
+
                 newStatus = VisitInstanceStatus.Closed;
                 action = "CLOSE_VISIT_INSTANCE";
                 message = "Đã đóng đoàn. Hồ sơ tiếp khách được lưu trữ.";

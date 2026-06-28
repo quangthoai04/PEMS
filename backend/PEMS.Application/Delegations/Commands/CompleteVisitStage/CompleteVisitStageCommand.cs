@@ -13,10 +13,16 @@ namespace PEMS.Application.Delegations.Commands.CompleteVisitStage;
 /// Only the official current host of the instance may advance it; every transition is
 /// re-validated server-side (invalid status → 409, wrong actor → 403).
 /// </summary>
+/// <param name="ConfirmNoNews">
+/// Only meaningful for the <c>AFTER</c> (đóng đoàn) stage: Host xác nhận chuyến này không cần bài
+/// tin tức. When true the close condition về tin tức is satisfied and the confirmation is persisted
+/// onto the instance (visit_request_campuses.news_not_required). Ignored for BEFORE/DURING.
+/// </param>
 public sealed record CompleteVisitStageCommand(
     ulong VisitRequestId,
     ulong VisitInstanceId,
-    string Stage) : IRequest<CompleteVisitStageResponse>;
+    string Stage,
+    bool ConfirmNoNews = false) : IRequest<CompleteVisitStageResponse>;
 
 /// <summary>The stage the caller is completing (the FROM side of the transition).</summary>
 public static class VisitStageKeys

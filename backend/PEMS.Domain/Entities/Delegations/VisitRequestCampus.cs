@@ -55,6 +55,11 @@ public class VisitRequestCampus
     [Column("close_note")]
     public string? CloseNote { get; set; }
 
+    // --- §10 đóng đoàn: Host xác nhận chuyến này KHÔNG cần bài tin tức. Điều kiện đóng đoàn về
+    // tin tức = có ít nhất 1 news PUBLISHED của instance HOẶC cờ này = true. ---
+    [Column("news_not_required")]
+    public bool NewsNotRequired { get; set; }
+
     // --- Cancellation (UC-136). cancellation_reason carries both reason and external-confirmation details. ---
     [Column("cancelled_by")]
     public ulong? CancelledBy { get; set; }

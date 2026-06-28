@@ -328,9 +328,10 @@ export const delegationsApi = {
       API_ENDPOINTS.delegations.completeDuringVisit(visitRequestId, visitInstanceId), {});
     return data;
   },
-  async completeAfterVisit(visitRequestId: number | string, visitInstanceId: number | string): Promise<any> {
+  // §10: confirmNoNews = Host xác nhận chuyến này không cần bài tin tức (một điều kiện đóng đoàn).
+  async completeAfterVisit(visitRequestId: number | string, visitInstanceId: number | string, confirmNoNews = false): Promise<any> {
     const { data } = await httpClient.post<any>(
-      API_ENDPOINTS.delegations.completeAfterVisit(visitRequestId, visitInstanceId), {});
+      API_ENDPOINTS.delegations.completeAfterVisit(visitRequestId, visitInstanceId), { confirmNoNews });
     return data;
   },
 

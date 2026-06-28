@@ -78,6 +78,12 @@ public sealed class GetVisitProcessPermissionsQueryHandler
 
         // Only the Host edits the operational tabs (Trước/Trong/Sau), and only while the visit is live.
         bool hostCanEdit = isHost && isLive;
+        // Rule (đặc tả 1.5 / 8.4): ONLY the "Trước tiếp khách" tab locks once preparation is done.
+        // It is editable while ASSIGNED/BEFORE_VISIT; the moment the instance advances to
+        // DURING_VISIT (or beyond) the prep tab becomes read-only — while Trong/Sau stay editable
+        // until the instance is CLOSED (handled by isLive). We never lock all three tabs at once.
+        bool beforeTabOpen = instance.Status == VisitInstanceStatus.Assigned
+            || instance.Status == VisitInstanceStatus.BeforeVisit;
         // Minutes: Host OR an accepted (IC/Dept/Student) participant — never Visitor/HO/Staff Leader.
         bool minutesEditor = (isHost || isAcceptedParticipant) && isLive;
         // News: Host, accepted IC Staff, or accepted Student. Department participant does NOT create news.
@@ -109,7 +115,8 @@ public sealed class GetVisitProcessPermissionsQueryHandler
 
             // Internal operational tabs: hidden from a Visitor on a CANCELLED campus.
             CanViewBeforeVisit = canViewInternalTabs,
-            CanEditBeforeVisit = hostCanEdit,
+            // Before tab is locked once the visit has started (DURING_VISIT+); see beforeTabOpen.
+            CanEditBeforeVisit = hostCanEdit && beforeTabOpen,
 
             CanViewDuringVisit = canViewInternalTabs,
             CanEditDuringVisit = hostCanEdit,

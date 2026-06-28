@@ -346,11 +346,18 @@ namespace PEMS.Api.Controllers
             return Ok(result);
         }
 
+        // §10: body tùy chọn { confirmNoNews } — Host xác nhận chuyến này không cần bài tin tức
+        // (một trong các điều kiện đóng đoàn). Body rỗng vẫn hợp lệ (confirmNoNews = false).
+        public sealed class CompleteAfterVisitRequest
+        {
+            public bool ConfirmNoNews { get; set; }
+        }
+
         [HttpPost("{visitRequestId}/campuses/{visitInstanceId}/process/complete-after-visit")]
-        public async Task<IActionResult> CompleteAfterVisit(ulong visitRequestId, ulong visitInstanceId, CancellationToken cancellationToken)
+        public async Task<IActionResult> CompleteAfterVisit(ulong visitRequestId, ulong visitInstanceId, [FromBody] CompleteAfterVisitRequest? body, CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(
-                new CompleteVisitStageCommand(visitRequestId, visitInstanceId, VisitStageKeys.After), cancellationToken);
+                new CompleteVisitStageCommand(visitRequestId, visitInstanceId, VisitStageKeys.After, body?.ConfirmNoNews ?? false), cancellationToken);
             return Ok(result);
         }
 

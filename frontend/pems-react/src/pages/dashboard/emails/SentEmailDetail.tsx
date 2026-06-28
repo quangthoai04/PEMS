@@ -13,6 +13,7 @@ import 'react-quill-new/dist/quill.snow.css';
 import { emailsApi } from '../../../features/emails/api/emailsApi';
 import { format } from 'date-fns';
 import { toast } from 'react-hot-toast';
+import { sanitizeHtml, sanitizeSentEmailPreviewHtml } from '../../../shared/security/sanitizeHtml';
 
 export function SentEmailDetail() {
   const navigate = useNavigate();
@@ -177,10 +178,15 @@ export function SentEmailDetail() {
             </div>
           </div>
 
-          <div 
-            className="text-gray-800 text-[15px] p-6 rounded-xl border border-gray-100 bg-[#fbfcfd] mb-6 whitespace-pre-wrap"
-            dangerouslySetInnerHTML={{ __html: emailData.bodySnapshot || '' }}
-          >
+          <div className="relative mb-6">
+            <div className="mb-2 rounded bg-blue-50 px-3 py-2 text-sm font-medium text-[#004c91] border border-blue-100 flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0" /> Đây là bản xem lại email đã gửi. Các nút thao tác đã bị vô hiệu hóa trong chế độ xem trước.
+            </div>
+            <div 
+              className="text-gray-800 text-[15px] p-6 rounded-xl border border-gray-100 bg-[#fbfcfd] whitespace-pre-wrap select-text pointer-events-none"
+              dangerouslySetInnerHTML={{ __html: sanitizeSentEmailPreviewHtml(sanitizeHtml(emailData.bodySnapshot || '')) }}
+            >
+            </div>
           </div>
 
           {emailData.errorMessage && (

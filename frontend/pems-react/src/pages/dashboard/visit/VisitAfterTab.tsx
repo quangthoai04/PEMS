@@ -116,9 +116,9 @@ export function VisitAfterTab({ onTourCloseSuccess, isReadOnly = false, isDept =
   const [fbPostLink, setFbPostLink] = useState('');
   const [attachedImageIds, setAttachedImageIds] = useState<string[]>(['img-1']);
 
-  // Success closure screen
-  const [isSuccessfullyClosed, setIsSuccessfullyClosed] = useState(false);
-  const [showConfirmClose, setShowConfirmClose] = useState(false);
+  // "Lưu ý" info modal + the dept article-preview modal. The real "đóng đoàn" CTA lives ONLY in the
+  // VisitProcess stage bar (single source of truth); this tab no longer owns a close button so the
+  // same action can never appear twice on one tab (đặc tả mục 1.6 / 8.3).
   const [showNoticeModal, setShowNoticeModal] = useState(false);
   const [isArticleModalOpen, setIsArticleModalOpen] = useState(false);
 
@@ -256,72 +256,6 @@ export function VisitAfterTab({ onTourCloseSuccess, isReadOnly = false, isDept =
       setAttachedImageIds(prev => [...prev, imgId]);
     }
   };
-
-  // Submit Closure of Visit Activity (Kết thúc tất cả)
-  const handleCloseVisitActivity = () => {
-    // Validate minimum 1 image required
-    if (uploadedImages.length === 0) {
-      alert("Bắt buộc phải tải lên tối thiểu 1 ảnh chụp đoàn khách trước khi Đóng hoạt động tiếp khách!");
-      return;
-    }
-
-    setShowConfirmClose(true);
-  };
-
-  const executeCloseVisitActivity = () => {
-    setShowConfirmClose(false);
-    setIsSuccessfullyClosed(true);
-  };
-
-  if (isSuccessfullyClosed) {
-    return (
-      <div className="bg-white rounded-[2rem] border border-gray-200 shadow-xl overflow-hidden p-10 max-w-3xl mx-auto text-center animate-in fade-in zoom-in-95 duration-500">
-        <div className="w-24 h-24 rounded-full bg-emerald-100 flex items-center justify-center mx-auto mb-8 text-emerald-600 shadow-inner">
-          <CheckCircle2 className="w-14 h-14 stroke-[2.5]" />
-        </div>
-        
-        <h2 className="text-3xl font-extrabold text-[#004c91] mb-4">Đóng hoạt động tiếp khách thành công!</h2>
-        <p className="text-gray-600 font-medium text-base max-w-xl mx-auto mb-8">
-          Hệ thống đã chính thức đổi trạng thái đoàn khách sang <span className="text-emerald-600 font-bold bg-emerald-50 px-3 py-1 rounded-full border border-emerald-100">Đã đóng đoàn</span>. Tin tức sự kiện và lưu trữ album ảnh đã được phê duyệt tự động.
-        </p>
-
-        <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 text-left space-y-4 mb-8">
-          <h3 className="font-bold text-slate-800 text-sm uppercase tracking-wide">Nhật ký tác vụ đóng đoàn:</h3>
-          <div className="space-y-2.5 text-sm font-medium text-slate-600">
-            <div className="flex items-center gap-2">
-              <Check className="w-4 h-4 text-emerald-500" /> Tối ưu lưu trữ: Album được mã hoá và tải lên thư mục <span className="font-bold text-slate-800">{driveConfig.folderName}</span> trên Google Drive.
-            </div>
-            <div className="flex items-center gap-2">
-              <Check className="w-4 h-4 text-emerald-500" /> Nhận diện định danh: Đã hoàn tất gán nhãn {uploadedImages.reduce((sum, img) => sum + img.faces.filter(f => f.taggedUser).length, 0)} khuôn mặt thành viên trong đoàn.
-            </div>
-            <div className="flex items-center gap-2">
-              <Check className="w-4 h-4 text-emerald-500" /> Bản tin tức nội bộ: Đã xuất bản bản song ngữ (Việt - Anh) kèm {attachedImageIds.length} ảnh minh họa thực tế sang cổng thông tin nội bộ.
-            </div>
-            {fbPostLink && (
-              <div className="flex items-center gap-2">
-                <Check className="w-4 h-4 text-emerald-500" /> Kết nối mạng xã hội: Lưu vết liên kết bài đăng Facebook chính thức.
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="flex items-center justify-center gap-4">
-          <button
-            onClick={() => {
-              if (onTourCloseSuccess) {
-                onTourCloseSuccess();
-              } else {
-                navigate('/dashboard/visit');
-              }
-            }}
-            className="px-8 py-3 bg-[#004c91] hover:bg-[#003566] text-white font-bold rounded-xl shadow-lg transition-colors active:scale-95 outline-none flex items-center gap-2"
-          >
-            Quay lại Quản lý tiếp khách <ArrowRight className="w-5 h-5" />
-          </button>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="space-y-8 text-left">
@@ -815,7 +749,9 @@ export function VisitAfterTab({ onTourCloseSuccess, isReadOnly = false, isDept =
       </div>
       )}
 
-      {/* ACTION BLOCK: CRITICAL END ACTION */}
+      {/* ACTION BLOCK: chỉ còn nút thông tin "Lưu ý". Việc đóng đoàn (AFTER_VISIT → CLOSED) được
+          thực hiện qua DUY NHẤT một CTA ở stage bar của VisitProcess ("Hoàn tất & đóng đoàn") để
+          không có 2 nút cùng tác dụng trên một tab (đặc tả mục 1.6 / 8.3). */}
       {!isReadOnly && !isDept && !isStudent ? (
         <div className="border-t border-gray-200 pt-8 flex flex-col md:flex-row justify-center md:justify-end items-center gap-4 pb-12">
           <button
@@ -823,14 +759,7 @@ export function VisitAfterTab({ onTourCloseSuccess, isReadOnly = false, isDept =
             onClick={() => setShowNoticeModal(true)}
             className="px-6 py-4 bg-amber-50 hover:bg-amber-100 text-amber-700 font-bold rounded-2xl border border-amber-300 shadow-sm active:scale-95 transition-all text-sm outline-none flex items-center gap-2 cursor-pointer"
           >
-            <AlertCircle className="w-5 h-5" /> Lưu ý
-          </button>
-          <button
-            type="button"
-            onClick={handleCloseVisitActivity}
-            className="px-10 py-4 bg-[#00a651] hover:bg-emerald-600 hover:shadow-emerald-200 text-white font-extrabold rounded-2xl shadow-lg active:scale-95 transition-all text-sm whitespace-nowrap outline-none border border-emerald-500 flex items-center justify-center gap-2.5 z-10 duration-200 cursor-pointer"
-          >
-            Đồng ý chốt đoàn và lưu trữ <CheckCircle2 className="w-5 h-5 stroke-[2.5]" />
+            <AlertCircle className="w-5 h-5" /> Lưu ý trước khi đóng đoàn
           </button>
         </div>
       ) : (
@@ -844,61 +773,6 @@ export function VisitAfterTab({ onTourCloseSuccess, isReadOnly = false, isDept =
           </button>
         </div>
       )}
-
-      {/* CUSTOM CONFIRMATION MODAL */}
-      <AnimatePresence>
-        {showConfirmClose && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            {/* Backdrop */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setShowConfirmClose(false)}
-              className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
-            />
-            
-            {/* Modal Box */}
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0, y: 15 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.95, opacity: 0, y: 15 }}
-              className="bg-white rounded-3xl shadow-xl w-full max-w-md overflow-hidden relative border border-gray-100 z-10 text-left font-sans"
-            >
-              <div className="p-6">
-                <div className="w-12 h-12 bg-amber-100 rounded-full flex items-center justify-center text-amber-600 mb-4">
-                  <AlertCircle className="w-6 h-6 stroke-[2]" />
-                </div>
-                
-                <h3 className="text-lg font-bold text-gray-900 mb-2">
-                  Xác nhận chốt đoàn khách?
-                </h3>
-                
-                <p className="text-sm text-gray-500 leading-relaxed mb-6">
-                  Bạn có chắc chắn muốn chốt toàn bộ dữ liệu và kết thúc hoạt động tiếp đón cho đoàn khách này? Sau khi chốt, hồ sơ sẽ được lưu vào trạng thái lưu trữ vĩnh viễn và không thể chỉnh sửa.
-                </p>
-                
-                <div className="flex items-center gap-3 justify-end">
-                  <button
-                    type="button"
-                    onClick={() => setShowConfirmClose(false)}
-                    className="px-4 py-2.5 rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50 font-bold text-xs transition-colors outline-none cursor-pointer"
-                  >
-                    Hủy thao tác
-                  </button>
-                  <button
-                    type="button"
-                    onClick={executeCloseVisitActivity}
-                    className="px-5 py-2.5 rounded-xl bg-[#00a651] hover:bg-emerald-600 text-white font-bold text-xs shadow-md shadow-emerald-100 transition-all active:scale-98 outline-none cursor-pointer"
-                  >
-                    Xác nhận kết thúc
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
 
       {/* NOTICE MODAL */}
       <AnimatePresence>

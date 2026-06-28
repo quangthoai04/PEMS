@@ -7,7 +7,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Mail, X, Loader2, AlertCircle, Clock, User2, ChevronDown, ChevronUp, Paperclip, Image as ImageIcon, Download, ExternalLink, MousePointerClick } from 'lucide-react';
 import type { GetSentEmailsResult, SentEmailHistoryItem, SentEmailAttachmentItem, SentEmailActionTokenItem } from '../types/delegations.types';
-import { sanitizeHtml } from '../../../shared/security/sanitizeHtml';
+import { sanitizeHtml, sanitizeSentEmailPreviewHtml } from '../../../shared/security/sanitizeHtml';
 import { resolveCidImages } from '../../emails/utils/inlineImages';
 
 interface Props {
@@ -155,11 +155,12 @@ function SentEmailCard({ item }: { item: SentEmailHistoryItem }) {
   const [showBody, setShowBody] = useState(false);
   const isHtml = (item.bodyFormat ?? 'HTML') === 'HTML';
   const sanitizedBody = isHtml ? sanitizeHtml(item.bodySnapshot) : (item.bodySnapshot ?? '');
-  const [renderedBody, setRenderedBody] = useState(sanitizedBody);
+  const neutralizedBody = isHtml ? sanitizeSentEmailPreviewHtml(sanitizedBody) : sanitizedBody;
+  const [renderedBody, setRenderedBody] = useState(neutralizedBody);
 
   // Resolve inline <img src="cid:.."> back to authenticated blob URLs once the body is expanded.
   useEffect(() => {
-    setRenderedBody(sanitizedBody);
+    setRenderedBody(neutralizedBody);
     if (!showBody || !isHtml) return;
     const map: Record<string, number> = {};
     (item.attachments || []).forEach((a) => {
@@ -167,9 +168,9 @@ function SentEmailCard({ item }: { item: SentEmailHistoryItem }) {
     });
     if (Object.keys(map).length === 0) return;
     let alive = true;
-    resolveCidImages(sanitizedBody, map).then((html) => { if (alive) setRenderedBody(html); });
+    resolveCidImages(neutralizedBody, map).then((html) => { if (alive) setRenderedBody(html); });
     return () => { alive = false; };
-  }, [showBody, isHtml, sanitizedBody, item.attachments]);
+  }, [showBody, isHtml, neutralizedBody, item.attachments]);
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-2">
@@ -257,8 +258,13 @@ function SentEmailCard({ item }: { item: SentEmailHistoryItem }) {
                 // Plain text: keep line breaks, never interpret as HTML.
                 <div className="whitespace-pre-wrap break-words text-sm text-gray-700">{item.bodySnapshot}</div>
               ) : (
-                // HTML: sanitized + inline cid images resolved to blob URLs.
-                <div className="select-text" dangerouslySetInnerHTML={{ __html: renderedBody }} />
+                // HTML: sanitized + neutralized action tokens + inline cid images resolved to blob URLs.
+                <div className="relative">
+                  <div className="mb-2 rounded bg-blue-50 px-2 py-1 text-[11px] font-medium text-[#004c91] border border-blue-100 flex items-center gap-1.5">
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0" /> Đây là bản xem lại email đã gửi. Các nút thao tác đã bị vô hiệu hóa trong chế độ xem trước.
+                  </div>
+                  <div className="select-text pointer-events-none" dangerouslySetInnerHTML={{ __html: renderedBody }} />
+                </div>
               )}
             </div>
           )}

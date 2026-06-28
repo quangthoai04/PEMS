@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Dependency-free HTML sanitizer for rich-text we render via
  * `dangerouslySetInnerHTML` (e.g. News article body).
  *
@@ -94,6 +94,40 @@ export function sanitizeHtml(input: string | null | undefined): string {
     }
   }
   cleanElement(doc.body);
+
+  return doc.body.innerHTML;
+}
+
+/**
+ * Specifically neutralizes actionable links (e.g., action tokens) and buttons 
+ * to prevent internal users from triggering recipient actions when previewing 
+ * sent emails in the dashboard.
+ */
+export function sanitizeSentEmailPreviewHtml(html: string): string {
+  if (typeof window === 'undefined' || typeof window.DOMParser === 'undefined') {
+    return html.replace(/href="[^"]*\/public\/email-actions\/[^"]*"/gi, 'href="javascript:void(0)" aria-disabled="true" tabindex="-1" style="pointer-events:none;opacity:0.6"');
+  }
+  const doc = new window.DOMParser().parseFromString(html, 'text/html');
+  
+  const links = doc.querySelectorAll('a');
+  links.forEach((a) => {
+    const href = a.getAttribute('href') || '';
+    if (href.includes('/public/email-actions/')) {
+      a.setAttribute('href', 'javascript:void(0)');
+      a.setAttribute('aria-disabled', 'true');
+      a.setAttribute('tabindex', '-1');
+      const currentStyle = a.getAttribute('style') || '';
+      a.setAttribute('style', `${currentStyle}${currentStyle && !currentStyle.endsWith(';') ? ';' : ''} pointer-events: none; opacity: 0.7;`);
+    }
+  });
+
+  const buttons = doc.querySelectorAll('button');
+  buttons.forEach((btn) => {
+    btn.setAttribute('disabled', 'true');
+    btn.setAttribute('aria-disabled', 'true');
+    const currentStyle = btn.getAttribute('style') || '';
+    btn.setAttribute('style', `${currentStyle}${currentStyle && !currentStyle.endsWith(';') ? ';' : ''} pointer-events: none; opacity: 0.7;`);
+  });
 
   return doc.body.innerHTML;
 }
