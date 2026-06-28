@@ -17,7 +17,6 @@ import {
   X,
   AlertCircle,
   Lock,
-  FileText,
   Loader2,
   ArrowRightCircle,
   Wand2
@@ -25,7 +24,6 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { VisitDuringTab } from './VisitDuringTab';
 import { VisitAfterTab } from './VisitAfterTab';
-import { SubmittedVisitRequestDetailModal } from '../../../components/modals/SubmittedVisitRequestDetailModal';
 import { useAuthContext } from '../../../shared/auth/AuthContext';
 import { delegationsApi } from '../../../features/delegations/api/delegationsApi';
 import type { VisitProcessPermission, VisitProcessDetail, AgendaResponsibleCandidate } from '../../../features/delegations/types/delegations.types';
@@ -88,8 +86,10 @@ export function VisitProcess() {
 
   const [activeTab, setActiveTab] = useState(isReceptionDetail ? 'before' : (location.state?.defaultTab || 'before'));
   const isPrep = (currentStatus === 'Đang chuẩn bị' || currentStatus === 'Trước tiếp khách') && !isClosed;
-  const [isInfoExpanded, setIsInfoExpanded] = useState(false);
-  const [isSetupExpanded, setIsSetupExpanded] = useState(!isVisitor);
+  // Vào tab "Trước tiếp khách" ưu tiên mở "1. Thông tin chung" (bản đăng ký gốc của khách,
+  // chỉ đọc); "2. Chuẩn bị chi tiết" không mở mặc định. Effect bên dưới đồng bộ lại khi đổi tab.
+  const [isInfoExpanded, setIsInfoExpanded] = useState(true);
+  const [isSetupExpanded, setIsSetupExpanded] = useState(false);
   const [isAlbumExpanded, setIsAlbumExpanded] = useState(false);
   const [isNewsExpanded, setIsNewsExpanded] = useState(false);
   
@@ -98,11 +98,24 @@ export function VisitProcess() {
   const [isSection3Expanded, setIsSection3Expanded] = useState(true);
   const [isSection4Expanded, setIsSection4Expanded] = useState(true);
 
-  const [isInfoSection1Expanded, setIsInfoSection1Expanded] = useState(false);
-  const [isInfoSection2Expanded, setIsInfoSection2Expanded] = useState(false);
+  const [isInfoSection1Expanded, setIsInfoSection1Expanded] = useState(true);
+  const [isInfoSection2Expanded, setIsInfoSection2Expanded] = useState(true);
   const [isInfoSection3Expanded, setIsInfoSection3Expanded] = useState(false);
-  
+
   const [isInfoEditableState, setIsInfoEditable] = useState(false);
+
+  // Mỗi khi vào (hoặc quay lại) tab "Trước tiếp khách": mở mặc định "1. Thông tin chung"
+  // cùng 2 accordion con (Thông tin người tạo + Thông tin đoàn khách) để Host xem lại bản
+  // đăng ký gốc của khách; "2. Chuẩn bị chi tiết" giữ trạng thái đóng. Chỉ chạy khi activeTab
+  // đổi nên không reset trải nghiệm khi user đang tự mở/đóng trong cùng tab.
+  useEffect(() => {
+    if (activeTab === 'before') {
+      setIsInfoExpanded(true);
+      setIsSetupExpanded(false);
+      setIsInfoSection1Expanded(true);
+      setIsInfoSection2Expanded(true);
+    }
+  }, [activeTab]);
 
   // Phase 2: backend permission flags are the source of truth for tab view/edit. Fetched by
   // visitInstanceId; if unavailable (e.g. prototype/mock id), we fall back to the legacy
@@ -210,9 +223,6 @@ export function VisitProcess() {
       setStageSubmitting(false);
     }
   };
-
-  // Guest's original request preview (read-only) modal.
-  const [showGuestRequest, setShowGuestRequest] = useState(false);
 
   // ── Real before-visit setup data (agenda). Loaded from the process-detail API; the Host edits
   // and saves it independently of the still-prototype sections (this is a genuine real slice). ──
@@ -639,20 +649,6 @@ export function VisitProcess() {
         </p>
       </div>
 
-      {/* Bản yêu cầu của khách — xem read-only đơn đăng ký gốc để Host setup dễ hơn. */}
-      {perm?.visitRequestId ? (
-        <div className="mb-6">
-          <button
-            type="button"
-            onClick={() => setShowGuestRequest(true)}
-            className="inline-flex items-center gap-2 rounded-xl border border-[#004c91]/20 bg-white px-4 py-2.5 text-sm font-bold text-[#004c91] shadow-sm outline-none transition-colors hover:bg-blue-50 hover:border-[#004c91]/40"
-          >
-            <FileText className="w-4 h-4" /> Bản yêu cầu của khách
-          </button>
-          <p className="mt-1 text-xs font-medium text-slate-400">Xem lại bản đăng ký gốc của khách (chỉ đọc) để chuẩn bị đón tiếp.</p>
-        </div>
-      ) : null}
-
       {(isCancelledView || perm?.instanceStatus === 'CANCELLED') && !isReceptionDetail ? (
         <div className="mb-8 bg-rose-50 border-l-4 border-rose-500 p-5 rounded-2xl flex items-center gap-3 text-left shadow-sm">
           <AlertCircle className="w-5 h-5 text-rose-600 shrink-0" />
@@ -721,7 +717,6 @@ export function VisitProcess() {
               <p className="text-sm font-semibold text-amber-800">
                 <span className="font-bold">Thông tin chung (người tạo &amp; đoàn khách) chỉ đọc</span> — đây là dữ liệu
                 khách đã đăng ký. Lịch trình, thành phần tham gia và hậu cần (Chuẩn bị chi tiết) được lưu trực tiếp vào hệ thống.
-                Xem bản đăng ký gốc qua nút “Bản yêu cầu của khách”.
               </p>
             </div>
           )}
@@ -791,8 +786,7 @@ export function VisitProcess() {
                             exit={{ height: 0, opacity: 0 }}
                           >
                             {/* Thông tin người đăng ký do KHÁCH nhập — luôn read-only với Host (không
-                                phải người tạo) và không có endpoint cập nhật. Xem bản gốc qua nút
-                                "Bản yêu cầu của khách". */}
+                                phải người tạo) và không có endpoint cập nhật. */}
                             <RegistrantInfoReadOnly summary={detail?.requestSummary} />
                           </motion.div>
                         )}
@@ -1402,15 +1396,6 @@ export function VisitProcess() {
           </div>
         )}
       </AnimatePresence>
-
-      {/* Bản yêu cầu của khách — tái sử dụng modal preview read-only của màn duyệt đơn. */}
-      {perm?.visitRequestId ? (
-        <SubmittedVisitRequestDetailModal
-          isOpen={showGuestRequest}
-          visitRequestId={perm.visitRequestId}
-          onClose={() => setShowGuestRequest(false)}
-        />
-      ) : null}
 
       {/* Toasts (top-right) */}
       {toasts.length > 0 && (

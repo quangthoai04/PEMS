@@ -951,6 +951,19 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
     return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
   };
 
+  // Hiển thị thời gian theo định dạng thống nhất "HH:mm dd/MM/yyyy" (ví dụ 08:30 15/10/2026).
+  const formatDateTimeDisplay = (value?: string | null) => {
+    if (!value) return 'Chưa có';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return value;
+    const hh = String(date.getHours()).padStart(2, '0');
+    const mm = String(date.getMinutes()).padStart(2, '0');
+    const dd = String(date.getDate()).padStart(2, '0');
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const yyyy = date.getFullYear();
+    return `${hh}:${mm} ${dd}/${month}/${yyyy}`;
+  };
+
   const toHandoverSignatureText = (signature?: { name?: string; signedAt?: string } | null) => {
     if (!signature?.signedAt) return null;
     return `${signature.name || 'Người ký'} - ${formatDateTime(signature.signedAt)}`;
@@ -2703,7 +2716,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                         <Clock className="w-4 h-4" />
                         <span className="text-[11px] font-bold uppercase tracking-wider">Thời gian gửi</span>
                       </div>
-                      <div className="text-sm font-black text-[#004c91]">{activeEventDetail?.requestedAt || 'Chưa có'}</div>
+                      <div className="text-sm font-black text-[#004c91]">{formatDateTimeDisplay(activeEventDetail?.requestedAt)}</div>
                     </div>
 
                     <div className="col-span-1 sm:col-span-2 p-4 bg-gray-50/80 rounded-2xl border border-gray-100 cursor-default flex flex-col justify-center">
@@ -2938,7 +2951,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                         <Clock className="w-4 h-4" />
                         <span className="text-[11px] font-bold uppercase tracking-wider">Thời gian gửi</span>
                       </div>
-                      <div className="text-sm font-black text-[#004c91]">{activeEventDetail?.requestedAt || 'Chưa có'}</div>
+                      <div className="text-sm font-black text-[#004c91]">{formatDateTimeDisplay(activeEventDetail?.requestedAt)}</div>
                     </div>
 
                     {activePopoverEvent.guests && (
