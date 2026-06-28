@@ -4,7 +4,7 @@
  */
 
 import React, { useEffect } from 'react';
-import { Routes, Route, useLocation } from 'react-router-dom';
+import { Navigate, Routes, Route, useLocation } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { Header } from './components/layout/Header';
 import { Footer } from './components/layout/Footer';
@@ -102,6 +102,7 @@ export default function App() {
   const userStr = localStorage.getItem("currentUser");
   const user = userStr ? JSON.parse(userStr) : null;
   const isDeptLeader = user?.role?.toUpperCase() === 'DEPARTMENT' && user?.subRole?.toUpperCase() === 'LEADER';
+  const isDeptStaff = user?.role?.toUpperCase() === 'DEPARTMENT' && !isDeptLeader;
 
   return (
     <div className="font-sans text-gray-900 bg-white min-h-screen flex flex-col">
@@ -139,11 +140,11 @@ export default function App() {
             <Route path="news/create" element={<CreateNews />} />
             <Route path="news/:id/edit" element={<EditNews />} />
             <Route path="news/:id" element={<NewsDetailDashboard />} />
-            <Route path="email" element={<ProtectedRoute><EmailManagement /></ProtectedRoute>} />
-            <Route path="email/create" element={<ProtectedRoute><CreateEmail /></ProtectedRoute>} />
-            <Route path="email/detail/:sourceType/:id" element={<ProtectedRoute><SentEmailDetail /></ProtectedRoute>} />
-            <Route path="email/:id" element={<ProtectedRoute><EmailDetail /></ProtectedRoute>} />
-            <Route path="email/:id/edit" element={<ProtectedRoute><EditEmail /></ProtectedRoute>} />
+            <Route path="email" element={isDeptStaff ? <Navigate to="/dashboard" replace /> : <ProtectedRoute><EmailManagement /></ProtectedRoute>} />
+            <Route path="email/create" element={isDeptStaff ? <Navigate to="/dashboard" replace /> : <ProtectedRoute><CreateEmail /></ProtectedRoute>} />
+            <Route path="email/detail/:sourceType/:id" element={isDeptStaff ? <Navigate to="/dashboard" replace /> : <ProtectedRoute><SentEmailDetail /></ProtectedRoute>} />
+            <Route path="email/:id" element={isDeptStaff ? <Navigate to="/dashboard" replace /> : <ProtectedRoute><EmailDetail /></ProtectedRoute>} />
+            <Route path="email/:id/edit" element={isDeptStaff ? <Navigate to="/dashboard" replace /> : <ProtectedRoute><EditEmail /></ProtectedRoute>} />
             <Route path="partners" element={<PartnerManagement />} />
             <Route path="partners/create" element={<CreatePartner />} />
             <Route path="partners/:id" element={<PartnerDetail />} />
@@ -156,7 +157,7 @@ export default function App() {
             <Route path="campus/:id" element={<ProtectedRoute><CampusDetail /></ProtectedRoute>} />
             <Route path="faq" element={<FAQManagement />} />
             <Route path="faq/:id" element={<FAQDetail />} />
-            <Route path="visit" element={isDeptLeader ? <DeptLeadVisitTasksPage /> : <VisitRequestManagement />} />
+            <Route path="visit" element={isDeptStaff ? <Navigate to="/dashboard" replace /> : isDeptLeader ? <DeptLeadVisitTasksPage /> : <VisitRequestManagement />} />
             <Route path="visit/invitations/:participantId" element={<VisitParticipantInvitationDetail />} />
             <Route path="visit/department-tasks/:participantId" element={<VisitParticipantInvitationDetail />} />
             <Route path="visit/create" element={<CreateVisitRequest />} />

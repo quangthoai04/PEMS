@@ -1,6 +1,7 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Domain.Constants;
 using PEMS.Domain.Entities;
 using System;
 using System.Collections.Generic;
@@ -74,6 +75,8 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetDepartmentCalenda
             var user = await _context.Users.FirstOrDefaultAsync(u => u.UserId == userId, cancellationToken);
             if (user == null || user.DepartmentId == null) return items;
             ulong deptId = user.DepartmentId.Value;
+            var isDepartmentStaff = string.Equals(_currentUserService.RoleCode, RoleCodes.Department, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(_currentUserService.SubRole, UserSubRoles.Staff, StringComparison.OrdinalIgnoreCase);
 
             // 1. INVITATIONS (visit_participants)
             var invitationsQuery = from p in _context.VisitParticipants
@@ -84,6 +87,10 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetDepartmentCalenda
                                    where u.DepartmentId == deptId
                                          && r.RoleCode == "DEPARTMENT"
                                          && p.Status != "REMOVED"
+                                         && (!isDepartmentStaff || p.UserId == userId)
+                                         && (!isDepartmentStaff || p.AssignedBy != null)
+                                         && c.PlannedStartAt >= startDate
+                                         && c.PlannedStartAt < endDate
                                    select new { p, u, r, c, vr };
             var invitationsList = await invitationsQuery.ToListAsync(cancellationToken);
             var senderIds = invitationsList.Where(x => x.p.InvitedBy != null).Select(x => x.p.InvitedBy).Distinct().ToList();
@@ -143,6 +150,9 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetDepartmentCalenda
                                                && h.BorrowerSignedAt != null
                                                && h.ProviderSignedAt != null)
                                  where l.RequestedToDepartmentId == deptId
+                                       && (!isDepartmentStaff || l.AssignedToUserId == userId)
+                                       && startAt >= startDate
+                                       && startAt < endDate
                                  select new { l, c, vr, startAt, latestAttemptStatus, borrowSigned, returnSigned };
             
             var logisticsList = await logisticsQuery.ToListAsync(cancellationToken);
@@ -177,26 +187,29 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetDepartmentCalenda
             }
 
             // 3. PERSONAL (calendar_events)
-            var events = await _context.CalendarEvents
-                .Where(e => e.OwnerUserId == userId 
-                            && e.Status == "ACTIVE" 
-                            && e.StartAt >= startDate 
-                            && e.StartAt < endDate)
-                .ToListAsync(cancellationToken);
-
-            foreach (var e in events)
+            if (!isDepartmentStaff)
             {
-                items.Add(new DepartmentCalendarItemDto
+                var events = await _context.CalendarEvents
+                    .Where(e => e.OwnerUserId == userId
+                                && e.Status == "ACTIVE"
+                                && e.StartAt >= startDate
+                                && e.StartAt < endDate)
+                    .ToListAsync(cancellationToken);
+
+                foreach (var e in events)
                 {
-                    Id = e.CalendarEventId,
-                    ItemType = "PERSONAL",
-                    Title = e.Title,
-                    FullTitle = e.Title + (string.IsNullOrEmpty(e.Description) ? "" : " - " + e.Description),
-                    Date = e.StartAt.ToString("yyyy-MM-dd"),
-                    StartAt = e.StartAt.ToString("o"),
-                    EndAt = e.EndAt.ToString("o"),
-                    Status = e.Status
-                });
+                    items.Add(new DepartmentCalendarItemDto
+                    {
+                        Id = e.CalendarEventId,
+                        ItemType = "PERSONAL",
+                        Title = e.Title,
+                        FullTitle = e.Title + (string.IsNullOrEmpty(e.Description) ? "" : " - " + e.Description),
+                        Date = e.StartAt.ToString("yyyy-MM-dd"),
+                        StartAt = e.StartAt.ToString("o"),
+                        EndAt = e.EndAt.ToString("o"),
+                        Status = e.Status
+                    });
+                }
             }
 
             return items;

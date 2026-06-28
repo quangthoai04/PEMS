@@ -38,18 +38,20 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AcceptAssignedLogis
             // Get latest PENDING attempt for this user
             var attempt = await _context.VisitLogisticsAssignmentAttempts
                 .Where(a => a.LogisticsItemId == request.LogisticsItemId
-                         && a.AssigneeUserId == userId
-                         && a.Status == "PENDING")
+                         && a.AssigneeUserId == userId)
                 .OrderByDescending(a => a.AssignedAt)
                 .FirstOrDefaultAsync(cancellationToken);
 
-            if (attempt == null) throw new Exception("Không tìm thấy lần phân công hợp lệ");
+            // Legacy rows may not have an assignment-attempt record; the item assignment above is authoritative.
 
             // Update attempt
-            attempt.Status = "ACCEPTED";
-            attempt.RespondedAt = DateTime.UtcNow;
-            attempt.ResponseSource = "PORTAL";
-            attempt.UpdatedAt = DateTime.UtcNow;
+            if (attempt != null)
+            {
+                attempt.Status = "ACCEPTED";
+                attempt.RespondedAt = DateTime.UtcNow;
+                attempt.ResponseSource = "PORTAL";
+                attempt.UpdatedAt = DateTime.UtcNow;
+            }
 
             // Update item
             l.Status = "ACCEPTED";

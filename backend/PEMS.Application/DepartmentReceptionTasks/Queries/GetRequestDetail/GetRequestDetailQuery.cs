@@ -52,6 +52,7 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetRequestDetail
         public string? ProposedAt { get; set; }
         public string? ProposedByName { get; set; }
         public string? ProposedByRole { get; set; }
+        public string? ProposalNote { get; set; }
         public string? ProposalResponse { get; set; }
         public string? ProposalRespondedAt { get; set; }
         public string? ProposalRespondedByName { get; set; }
@@ -234,6 +235,7 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetRequestDetail
                 ProposedAt = l.ProposedAt?.ToString("O"),
                 ProposedByName = proposedByName,
                 ProposedByRole = proposedByRole,
+                ProposalNote = l.ProposalNote,
                 ProposalResponse = l.ProposalResponse,
                 ProposalRespondedAt = l.ProposalRespondedAt?.ToString("O"),
                 ProposalRespondedByName = responseByName,

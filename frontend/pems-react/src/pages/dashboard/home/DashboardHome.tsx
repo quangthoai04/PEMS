@@ -30,6 +30,7 @@ import { HODashboardView } from './HODashboardView';
 import { SharedDashboardView } from '../departments/SharedDashboardView';
 import { AdminDashboardView } from './AdminDashboardView';
 import { DeptLeadDashboardView } from './DeptLeadDashboardView';
+import { DeptStaffDashboard } from '../department-staff/DeptStaffDashboard';
 import { useAuth } from '../../../shared/hooks/useAuth';
 
 
@@ -79,13 +80,14 @@ export function DashboardHome() {
   const isStaffMember = user?.role?.toUpperCase() === 'STAFF' && user?.subRole?.toUpperCase() === 'STAFF';
   const isStaffLeader = user?.role?.toUpperCase() === 'STAFF' && user?.subRole?.toUpperCase() === 'LEADER';
   const isDeptLeader = user?.role?.toUpperCase() === 'DEPARTMENT' && user?.subRole?.toUpperCase() === 'LEADER';
-  const isDeptStaff = user?.role?.toUpperCase() === 'DEPARTMENT' && user?.subRole?.toUpperCase() === 'STAFF';
+  // isDeptStaff: DEPARTMENT role mà không phải LEADER → bao gồm subRole='STAFF' hoặc null
+  const isDeptStaff = user?.role?.toUpperCase() === 'DEPARTMENT' && !isDeptLeader;
   const isStudent = user?.role?.toUpperCase() === 'STUDENT';
   const isVisitor = user?.role?.toUpperCase() === 'VISITOR';
   const isAdmin = user?.role?.toUpperCase() === 'ADMIN';
   // Đúng nghĩa: ai dùng SharedDashboardView (KHÔNG gom nhầm vào biến "isStaff").
   const shouldUseSharedDashboard =
-    isStaffMember || isStaffLeader || isDeptStaff || isStudent || isVisitor;
+    isStaffMember || isStaffLeader || isStudent || isVisitor;
 
   // State to handle Events Map (synchronized with localStorage)
   const [events, setEvents] = useState<Record<string, EventItem[]>>(() => {
@@ -349,6 +351,8 @@ export function DashboardHome() {
         <AdminDashboardView />
       ) : isDeptLeader ? (
         <DeptLeadDashboardView user={user} />
+      ) : isDeptStaff ? (
+        <DeptStaffDashboard />
       ) : shouldUseSharedDashboard ? (
         <SharedDashboardView user={user} isDeptLeader={isDeptLeader} isDeptStaff={isDeptStaff} isStudent={isStudent} isVisitor={isVisitor} />
       ) : (

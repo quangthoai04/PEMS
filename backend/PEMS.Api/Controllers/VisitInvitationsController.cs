@@ -6,6 +6,7 @@ using PEMS.Api.Filters;
 using PEMS.Application.Delegations.Commands.AssignDepartmentStaff;
 using PEMS.Application.Delegations.Commands.RespondVisitParticipantInvitation;
 using PEMS.Application.Delegations.Queries.GetVisitInvitations;
+using PEMS.Application.Emails.Common;
 using PEMS.Domain.Constants;
 
 namespace PEMS.Api.Controllers;
@@ -67,7 +68,7 @@ public class VisitInvitationsController : ControllerBase
         CancellationToken cancellationToken)
     {
         var result = await _mediator.Send(
-            new AssignDepartmentStaffCommand(participantId, body.DepartmentStaffUserId, body.Note), 
+            new AssignDepartmentStaffCommand(participantId, body.DepartmentStaffUserId, body.Note, body.EmailOverride),
             cancellationToken);
         return Ok(result);
     }
@@ -75,4 +76,4 @@ public class VisitInvitationsController : ControllerBase
 
 public sealed record DeclineInvitationBody(string Reason);
 
-public sealed record AssignDepartmentStaffBody(ulong DepartmentStaffUserId, string Note);
+public sealed record AssignDepartmentStaffBody(ulong DepartmentStaffUserId, string Note, EmailOverride? EmailOverride = null);

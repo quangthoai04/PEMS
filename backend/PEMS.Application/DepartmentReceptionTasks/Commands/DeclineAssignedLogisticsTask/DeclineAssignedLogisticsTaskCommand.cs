@@ -49,18 +49,20 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.DeclineAssignedLogi
                          && a.Status == "PENDING")
                 .OrderByDescending(a => a.AssignedAt)
                 .FirstOrDefaultAsync(cancellationToken);
-
-            if (attempt == null) throw new Exception("Không tìm thấy lần phân công hợp lệ");
+            // Legacy/seeded rows may not have a PENDING attempt, but AssignedToUserId
+            // still proves this staff member is the current assignee.
 
             var decliningUser = await _context.Users.FirstOrDefaultAsync(u => u.UserId == userId, cancellationToken);
             string decliningName = decliningUser?.FullName ?? "Nhân viên";
 
-            // Update attempt
-            attempt.Status = "DECLINED";
-            attempt.RespondedAt = DateTime.UtcNow;
-            attempt.ResponseNote = request.Reason.Trim();
-            attempt.ResponseSource = "PORTAL";
-            attempt.UpdatedAt = DateTime.UtcNow;
+            if (attempt != null)
+            {
+                attempt.Status = "DECLINED";
+                attempt.RespondedAt = DateTime.UtcNow;
+                attempt.ResponseNote = request.Reason.Trim();
+                attempt.ResponseSource = "PORTAL";
+                attempt.UpdatedAt = DateTime.UtcNow;
+            }
 
             // Staff declines the assignment attempt; leader can reassign while history is kept.
             l.Status = "DECLINED";

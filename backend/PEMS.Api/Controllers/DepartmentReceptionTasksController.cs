@@ -19,6 +19,7 @@ using PEMS.Application.DepartmentReceptionTasks.Queries.GetDepartmentAssigneeCan
 using PEMS.Application.DepartmentReceptionTasks.Queries.GetAssignmentsProgressList;
 using PEMS.Application.DepartmentReceptionTasks.Queries.GetAttentionItems;
 using PEMS.Application.Delegations.Commands.AssignDepartmentStaff;
+using PEMS.Application.Emails.Common;
 
 namespace PEMS.Api.Controllers
 {
@@ -74,7 +75,7 @@ namespace PEMS.Api.Controllers
         [HttpPost("invitations/{participantId}/assign")]
         public async Task<IActionResult> AssignInvitation(ulong participantId, [FromBody] DepartmentInvitationAssignBody body)
         {
-            return Ok(await _mediator.Send(new AssignDepartmentStaffCommand(participantId, body.AssigneeUserId, body.Note ?? "")));
+            return Ok(await _mediator.Send(new AssignDepartmentStaffCommand(participantId, body.AssigneeUserId, body.Note ?? "", body.EmailOverride)));
         }
 
         [HttpGet("requests/{logisticsItemId}")]
@@ -149,5 +150,5 @@ namespace PEMS.Api.Controllers
         }
     }
 
-    public sealed record DepartmentInvitationAssignBody(ulong AssigneeUserId, string? Note);
+    public sealed record DepartmentInvitationAssignBody(ulong AssigneeUserId, string? Note, EmailOverride? EmailOverride = null);
 }
