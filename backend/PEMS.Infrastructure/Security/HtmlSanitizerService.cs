@@ -64,6 +64,17 @@ public sealed class HtmlSanitizerService : IHtmlSanitizerService
         sanitizer.AllowedSchemes.Add("mailto");
         sanitizer.AllowedSchemes.Add("tel");
 
+        // Allow data:image/* (ReactQuill embeds images as base64) but block all other data: payloads.
+        sanitizer.RemovingAttribute += (_, args) =>
+        {
+            if (args.Reason == RemoveReason.NotAllowedUrlValue)
+            {
+                var v = args.Attribute.Value?.TrimStart() ?? string.Empty;
+                if (v.StartsWith("data:image/", StringComparison.OrdinalIgnoreCase))
+                    args.Cancel = true; // cancel removal → keep the attribute
+            }
+        };
+
         return sanitizer;
     }
 

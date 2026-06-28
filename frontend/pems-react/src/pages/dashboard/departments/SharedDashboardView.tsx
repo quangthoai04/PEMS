@@ -1002,7 +1002,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
     if (isSelfHandled) return false;
     if (item.uiStatus === 'REJECTED') return false;
     if (item.uiStatus === 'DONE' || item.uiStatus === 'CANCELLED') return false;
-    return !!isDeptLeader && (item.uiStatus === 'REQUESTED' || item.uiStatus === 'DECLINED');
+    return !!isDeptLeader && item.uiStatus === 'REQUESTED';
   };
 
   const openAssignmentDetail = (item: AssignmentProgressItem) => {
@@ -1282,7 +1282,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                         onClick={() => handleAssignTask(item)}
                         className="mt-1 text-[11px] font-semibold text-blue-600 underline underline-offset-2 hover:text-[#004c91]"
                       >
-                        {item.uiStatus === 'DECLINED' ? 'Đổi người phụ trách' : 'Phân công người phụ trách'}
+                        Phân công người phụ trách
                       </button>
                     )}
                   </td>

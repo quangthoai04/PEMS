@@ -4,6 +4,7 @@ namespace PEMS.Domain.Constants;
 public static class EmailActionContexts
 {
     public const string ParticipationResponse = "PARTICIPATION_RESPONSE";
+    public const string LogisticsRequestResponse = "LOGISTICS_REQUEST_RESPONSE";
     public const string LogisticsAssigneeResponse = "LOGISTICS_ASSIGNEE_RESPONSE";
     public const string LogisticsNegotiation = "LOGISTICS_NEGOTIATION";
     public const string LogisticsProposalResponse = "LOGISTICS_PROPOSAL_RESPONSE";
@@ -11,7 +12,7 @@ public static class EmailActionContexts
 
     public static readonly string[] All =
     {
-        ParticipationResponse, LogisticsAssigneeResponse, LogisticsNegotiation,
+        ParticipationResponse, LogisticsRequestResponse, LogisticsAssigneeResponse, LogisticsNegotiation,
         LogisticsProposalResponse, LogisticsHandoverSignature,
     };
 }

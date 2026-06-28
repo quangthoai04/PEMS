@@ -7,6 +7,7 @@ using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Delegations.Commands.PrepareVisitLogistics;
 using PEMS.Domain.Entities.Users;
 using PEMS.Shared;
+using PEMS.Domain.Constants;
 
 namespace PEMS.Application.Delegations.Commands.CancelVisitLogisticsItem;
 
@@ -77,6 +78,9 @@ public sealed class CancelVisitLogisticsItemCommandHandler
             EntityId = item.LogisticsItemId,
             CreatedAt = now,
         });
+
+        await PEMS.Application.EmailActions.EmailTokenInvalidationHelper.InvalidatePendingEmailActionTokensAsync(
+            _db, EmailActionTargetTypes.LogisticsItem, item.LogisticsItemId, "Yêu cầu hậu cần này đã bị hủy.", now, cancellationToken);
 
         await _db.SaveChangesAsync(cancellationToken);
 

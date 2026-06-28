@@ -86,12 +86,33 @@ namespace PEMS.Api.Controllers
         }
 
         [HttpGet("notifications")]
+        [Microsoft.AspNetCore.Authorization.Authorize]
         public async Task<IActionResult> ViewNotifications(
             [FromQuery] PEMS.Application.PublicContent.Queries.ViewNotifications.ViewNotificationsQuery query,
             CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(query, cancellationToken);
             return Ok(result);
+        }
+
+        [HttpPatch("notifications/{notificationId}/read")]
+        [Microsoft.AspNetCore.Authorization.Authorize]
+        public async Task<IActionResult> MarkNotificationRead(ulong notificationId, CancellationToken cancellationToken)
+        {
+            await _mediator.Send(
+                new PEMS.Application.PublicContent.Commands.MarkNotificationsRead.MarkNotificationsReadCommand(notificationId),
+                cancellationToken);
+            return NoContent();
+        }
+
+        [HttpPatch("notifications/read-all")]
+        [Microsoft.AspNetCore.Authorization.Authorize]
+        public async Task<IActionResult> MarkAllNotificationsRead(CancellationToken cancellationToken)
+        {
+            await _mediator.Send(
+                new PEMS.Application.PublicContent.Commands.MarkNotificationsRead.MarkNotificationsReadCommand(null),
+                cancellationToken);
+            return NoContent();
         }
     }
 }

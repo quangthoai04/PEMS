@@ -2,50 +2,45 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Bell } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
+import { useNotifications } from '../../features/notifications/hooks/useNotifications';
+import { NotificationItem } from '../../features/notifications/api/notificationsApi';
 
-interface NotificationInfo {
-  id: string;
-  title: string;
-  desc: string;
-  time: string;
-  isRead: boolean;
-  link?: string;
+function timeAgo(dateStr: string): string {
+  const date = new Date(dateStr.endsWith('Z') ? dateStr : dateStr + 'Z');
+  const diffMs = Date.now() - date.getTime();
+  const diffMin = Math.floor(diffMs / 60000);
+  if (diffMin < 1) return 'Vừa xong';
+  if (diffMin < 60) return `${diffMin} phút trước`;
+  const diffHour = Math.floor(diffMin / 60);
+  if (diffHour < 24) return `${diffHour} giờ trước`;
+  const diffDay = Math.floor(diffHour / 24);
+  if (diffDay < 7) return `${diffDay} ngày trước`;
+  return date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
-const mockNotifications: NotificationInfo[] = [
-  {
-    id: 'n1',
-    title: 'Yêu cầu tham quan mới',
-    desc: 'Đoàn trường THPT Chuyên Sư phạm vừa đăng ký.',
-    time: '5 phút trước',
-    isRead: false,
-    link: '/dashboard/visit/request'
-  },
-  {
-    id: 'n2',
-    title: 'Cập nhật trạng thái',
-    desc: 'HO đã phê duyệt lịch trình cho đoàn A.',
-    time: '2 giờ trước',
-    isRead: false,
-    link: '/dashboard/visit/process'
-  },
-  {
-    id: 'n3',
-    title: 'Đánh giá mới',
-    desc: 'Bạn nhận được 1 đánh giá 5 sao từ khách.',
-    time: '1 ngày trước',
-    isRead: true,
-    link: '/dashboard/feedback'
+function getNotificationLink(item: NotificationItem): string | undefined {
+  if (item.relatedType === 'NEWS' && item.relatedId) {
+    return `/dashboard/news/${item.relatedId}`;
   }
-];
+  return undefined;
+}
 
 export function NotificationBell() {
   const [isOpen, setIsOpen] = useState(false);
-  const [notifications, setNotifications] = useState<NotificationInfo[]>(mockNotifications);
   const popoverRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
 
-  const unreadCount = notifications.filter(n => !n.isRead).length;
+  const { items, unreadCount, loading, fetchNotifications, markAsRead, markAllAsRead } = useNotifications();
+
+  // Fetch on mount to show unread badge
+  useEffect(() => {
+    fetchNotifications();
+  }, [fetchNotifications]);
+
+  // Re-fetch when bell is opened
+  useEffect(() => {
+    if (isOpen) fetchNotifications();
+  }, [isOpen, fetchNotifications]);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -53,22 +48,19 @@ export function NotificationBell() {
         setIsOpen(false);
       }
     }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const markAllAsRead = () => {
-    setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
-  };
-  
-  const handleItemClick = (n: NotificationInfo) => {
-    setNotifications(prev => prev.map(item => item.id === n.id ? { ...item, isRead: true } : item));
+  const handleItemClick = async (item: NotificationItem) => {
+    if (!item.isRead) await markAsRead(item.notificationId);
     setIsOpen(false);
-    if (n.link) {
-      navigate(n.link);
-    }
+    const link = getNotificationLink(item);
+    if (link) navigate(link);
+  };
+
+  const handleMarkAllAsRead = async () => {
+    await markAllAsRead();
   };
 
   return (
@@ -81,7 +73,7 @@ export function NotificationBell() {
         <Bell className="w-6 h-6" />
         {unreadCount > 0 && (
           <span className="absolute top-1 right-1.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">
-            {unreadCount}
+            {unreadCount > 9 ? '9+' : unreadCount}
           </span>
         )}
       </button>
@@ -98,8 +90,8 @@ export function NotificationBell() {
             <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-gray-50/50">
               <h3 className="font-semibold text-gray-800">Thông báo</h3>
               {unreadCount > 0 && (
-                <button 
-                  onClick={markAllAsRead}
+                <button
+                  onClick={handleMarkAllAsRead}
                   className="text-xs font-medium text-[#004c91] hover:underline"
                 >
                   Đánh dấu đã đọc
@@ -108,41 +100,45 @@ export function NotificationBell() {
             </div>
 
             <div className="max-h-[70vh] overflow-y-auto">
-              {notifications.length === 0 ? (
+              {loading && items.length === 0 ? (
+                <div className="flex items-center justify-center gap-2 py-8 text-gray-400">
+                  <div className="w-4 h-4 border-2 border-[#004c91] border-t-transparent rounded-full animate-spin" />
+                  <span className="text-sm">Đang tải...</span>
+                </div>
+              ) : items.length === 0 ? (
                 <div className="p-6 text-center text-gray-500">
                   <p className="text-sm">Không có thông báo nào</p>
                 </div>
               ) : (
                 <div className="flex flex-col divide-y divide-gray-50">
-                  {notifications.map((notif) => (
+                  {items.map((item: NotificationItem) => (
                     <button
-                      key={notif.id}
-                      onClick={() => handleItemClick(notif)}
-                      className={`flex flex-col gap-1 p-4 text-left transition-colors hover:bg-gray-50 \${
-                        !notif.isRead ? 'bg-blue-50/30' : ''
+                      key={item.notificationId}
+                      onClick={() => handleItemClick(item)}
+                      className={`flex flex-col gap-1 p-4 text-left transition-colors hover:bg-gray-50 w-full ${
+                        !item.isRead ? 'bg-blue-50/40' : ''
                       }`}
                     >
                       <div className="flex items-start justify-between gap-2">
-                        <span className={`text-sm font-medium \${!notif.isRead ? 'text-gray-900' : 'text-gray-700'}`}>
-                          {notif.title}
+                        <span className={`text-sm font-medium ${!item.isRead ? 'text-gray-900' : 'text-gray-600'}`}>
+                          {!item.isRead && (
+                            <span className="inline-block w-1.5 h-1.5 bg-blue-500 rounded-full mr-1.5 mb-0.5 align-middle" />
+                          )}
+                          {item.title}
                         </span>
-                        <span className="text-[10px] text-gray-500 shrink-0 mt-0.5">
-                          {notif.time}
+                        <span className="text-[10px] text-gray-400 shrink-0 mt-0.5 whitespace-nowrap">
+                          {timeAgo(item.createdAt)}
                         </span>
                       </div>
-                      <p className="text-xs text-gray-600 line-clamp-2">
-                        {notif.desc}
-                      </p>
+                      {item.message && (
+                        <p className="text-xs text-gray-500 line-clamp-2 pl-0">
+                          {item.message}
+                        </p>
+                      )}
                     </button>
                   ))}
                 </div>
               )}
-            </div>
-            
-            <div className="p-2 border-t border-gray-100 bg-gray-50 text-center">
-              <button className="text-xs font-medium text-gray-500 hover:text-gray-900 transition-colors">
-                Xem tất cả thông báo
-              </button>
             </div>
           </motion.div>
         )}

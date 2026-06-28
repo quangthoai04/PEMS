@@ -83,6 +83,9 @@ public sealed class RespondVisitParticipantInvitationCommandHandler
             CreatedAt = now
         });
 
+        await PEMS.Application.EmailActions.EmailTokenInvalidationHelper.InvalidatePendingEmailActionTokensAsync(
+            _db, EmailActionTargetTypes.VisitParticipant, participant.ParticipantId, "Lời mời này đã được phản hồi.", now, cancellationToken);
+
         await _db.SaveChangesAsync(cancellationToken);
 
         var message = request.Accept

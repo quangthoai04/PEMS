@@ -12,26 +12,31 @@ public sealed class SendEmailCommandHandler : IRequestHandler<SendEmailCommand, 
     private readonly IApplicationDbContext _context;
     private readonly ICurrentUserService _currentUserService;
     private readonly IEmailService _emailService;
+    private readonly PEMS.Application.Emails.Utils.IEmailImageLayoutNormalizer _normalizer;
 
     public SendEmailCommandHandler(
         IApplicationDbContext context,
         ICurrentUserService currentUserService,
-        IEmailService emailService)
+        IEmailService emailService,
+        PEMS.Application.Emails.Utils.IEmailImageLayoutNormalizer normalizer)
     {
         _context = context;
         _currentUserService = currentUserService;
         _emailService = emailService;
+        _normalizer = normalizer;
     }
 
     public async Task<SendEmailResponse> Handle(SendEmailCommand request, CancellationToken cancellationToken)
     {
         var now = DateTime.UtcNow;
+        var normalizedBody = await _normalizer.NormalizeHtmlAsync(request.Body, cancellationToken);
+
         var sentEmail = new SentEmail
         {
             EmailTemplateId = request.TemplateId.HasValue ? (ulong?)request.TemplateId.Value : null,
             RelatedType = "GENERAL",
             Subject = request.Subject,
-            BodySnapshot = request.Body,
+            BodySnapshot = normalizedBody,
             Status = "QUEUED",
             SentBy = _currentUserService.UserId,
             CreatedAt = now,
@@ -62,7 +67,7 @@ public sealed class SendEmailCommandHandler : IRequestHandler<SendEmailCommand, 
             recipient.SentAt = DateTime.UtcNow;
             try
             {
-                await _emailService.SendAsync(recipient.RecipientEmail, request.Subject, request.Body, cancellationToken);
+                await _emailService.SendAsync(recipient.RecipientEmail, request.Subject, normalizedBody, cancellationToken);
                 recipient.DeliveryStatus = "DELIVERED";
                 recipient.DeliveredAt = DateTime.UtcNow;
             }

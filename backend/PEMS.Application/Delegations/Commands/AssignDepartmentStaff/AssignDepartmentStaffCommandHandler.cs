@@ -141,6 +141,15 @@ public sealed class AssignDepartmentStaffCommandHandler : IRequestHandler<Assign
         leaderParticipant.UpdatedAt = now;
         leaderParticipant.UpdatedBy = userId;
 
+        if (existingParticipant != null)
+        {
+            await PEMS.Application.EmailActions.EmailTokenInvalidationHelper.InvalidatePendingEmailActionTokensAsync(
+                _db, EmailActionTargetTypes.VisitParticipant, existingParticipant.ParticipantId, "Thành phần tham gia đã được phân công trực tiếp.", now, cancellationToken);
+        }
+
+        await PEMS.Application.EmailActions.EmailTokenInvalidationHelper.InvalidatePendingEmailActionTokensAsync(
+            _db, EmailActionTargetTypes.VisitParticipant, leaderParticipant.ParticipantId, "Thành phần tham gia đã được phân công trực tiếp.", now, cancellationToken);
+
         await _db.SaveChangesAsync(cancellationToken);
 
         var acceptRaw = _tokens.GenerateRawToken();
