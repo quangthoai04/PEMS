@@ -412,13 +412,15 @@ public sealed class GetAssignmentsProgressListQueryHandler
 
     private static readonly HashSet<string> ValidPriorities = new() { "LOW", "MEDIUM", "HIGH", "URGENT" };
 
-    /// <summary>Sort weight for urgency (higher = more urgent). Null/unknown (e.g. invitations) → MEDIUM.</summary>
+    /// <summary>Sort weight for urgency (higher = more urgent). Items without a real priority
+    /// (invitations) get 0 so they sink below every logistics request when sorting by priority.</summary>
     private static int PriorityWeight(string? priority) => priority?.ToUpperInvariant() switch
     {
         "URGENT" => 4,
         "HIGH" => 3,
+        "MEDIUM" => 2,
         "LOW" => 1,
-        _ => 2,
+        _ => 0,
     };
 
     /// <summary>Deadline sort key: parsed due_at, or DateTime.MaxValue so missing deadlines sort last.</summary>

@@ -10,7 +10,8 @@ namespace PEMS.Application.Delegations.Commands.CancelVisitLogisticsItem;
 /// </summary>
 public sealed record CancelVisitLogisticsItemCommand(
     ulong VisitInstanceId,
-    ulong LogisticsItemId) : IRequest<CancelVisitLogisticsItemResponse>;
+    ulong LogisticsItemId,
+    string? Reason = null) : IRequest<CancelVisitLogisticsItemResponse>;
 
 public sealed record CancelVisitLogisticsItemResponse(
     bool Success,

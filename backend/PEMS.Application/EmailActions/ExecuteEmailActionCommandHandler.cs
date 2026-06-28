@@ -49,6 +49,7 @@ public sealed class ExecuteEmailActionCommandHandler
         }
 
         result.Action = token.IntendedAction;
+        result.Context = token.ActionContext;
 
         if (token.ActionContext == EmailActionContexts.ParticipationResponse
             && token.TargetType == EmailActionTargetTypes.VisitParticipant)
@@ -235,6 +236,23 @@ public sealed class ExecuteEmailActionCommandHandler
 
         var isAccept = token.IntendedAction == EmailIntendedActions.Accept;
 
+        // A DECLINE must carry a reason (saved to decision_note) — same gate as the participant flow.
+        // A missing/invalid reason returns REASON_REQUIRED and leaves the token untouched so the public
+        // page re-renders the form (no second mutation).
+        string? declineNote = null;
+        if (!isAccept)
+        {
+            var reasonError = ValidateLogisticsDeclineReason(request.DeclineReason);
+            if (reasonError != null)
+            {
+                result.Status = EmailActionViewStatuses.ReasonRequired;
+                result.Message = reasonError;
+                result.SubmittedReason = request.DeclineReason;
+                return result; // token untouched, no DB write
+            }
+            declineNote = request.DeclineReason!.Trim();
+        }
+
         await using var transaction = await _db.BeginTransactionAsync(cancellationToken);
 
         if (isAccept)
@@ -244,6 +262,7 @@ public sealed class ExecuteEmailActionCommandHandler
         else
         {
             item.Status = LogisticsItemStatus.Rejected;
+            item.DecisionNote = declineNote;   // lý do từ chối (decision_note) — validated above
         }
         item.UpdatedAt = now;
         item.UpdatedBy = token.RecipientUserId;
@@ -532,6 +551,16 @@ public sealed class ExecuteEmailActionCommandHandler
     {
         var trimmed = reason?.Trim() ?? string.Empty;
         if (trimmed.Length == 0) return "Vui lòng nhập lý do từ chối.";
+        if (trimmed.Length < 5) return "Lý do từ chối phải có ít nhất 5 ký tự.";
+        if (trimmed.Length > 1000) return "Lý do từ chối không được vượt quá 1000 ký tự.";
+        return null;
+    }
+
+    /// <summary>Same 5–1000 rule as the participant decline, with a logistics-specific empty message.</summary>
+    private static string? ValidateLogisticsDeclineReason(string? reason)
+    {
+        var trimmed = reason?.Trim() ?? string.Empty;
+        if (trimmed.Length == 0) return "Vui lòng nhập lý do từ chối yêu cầu logistics.";
         if (trimmed.Length < 5) return "Lý do từ chối phải có ít nhất 5 ký tự.";
         if (trimmed.Length > 1000) return "Lý do từ chối không được vượt quá 1000 ký tự.";
         return null;

@@ -141,6 +141,11 @@ export function LogisticsRequestSection({
   const previewCtx = useRef<{ leaderName: string } | null>(null);
   const previewResetRef = useRef<(() => void) | null>(null);
 
+  // Cancel-reason modal — a cancellation must record a reason (decision_note).
+  const [cancelModal, setCancelModal] = useState<{
+    open: boolean; key: string; item: VisitInstanceLogisticsItem | null; reason: string; busy: boolean; err: string | null;
+  }>({ open: false, key: '', item: null, reason: '', busy: false, err: null });
+
   // "Xem mail đã gửi" history modal — bound to one logistics item at a time.
   const [sentModal, setSentModal] = useState<{ open: boolean; item: VisitInstanceLogisticsItem | null }>(
     { open: false, item: null });
@@ -238,14 +243,26 @@ export function LogisticsRequestSection({
     }
   };
 
-  const cancelItem = async (key: string, item: VisitInstanceLogisticsItem) => {
+  // Cancelling requires a reason (saved to decision_note) → open the modal; the API call runs on confirm.
+  const cancelItem = (key: string, item: VisitInstanceLogisticsItem) => {
+    setCancelModal({ open: true, key, item, reason: '', busy: false, err: null });
+  };
+
+  const confirmCancel = async () => {
+    const { key, item, reason } = cancelModal;
+    if (!item) return;
+    if (!reason.trim()) { setCancelModal((m) => ({ ...m, err: 'Vui lòng nhập lý do hủy yêu cầu logistics.' })); return; }
+    setCancelModal((m) => ({ ...m, busy: true, err: null }));
     setBusyKey(key);
     try {
-      const res = await delegationsApi.cancelLogisticsItem(visitInstanceId, item.logisticsItemId);
+      const res = await delegationsApi.cancelLogisticsItem(visitInstanceId, item.logisticsItemId, reason.trim());
       pushToast('success', res.message || 'Đã hủy yêu cầu hậu cần.');
+      setCancelModal({ open: false, key: '', item: null, reason: '', busy: false, err: null });
       await loadList();
     } catch (e: any) {
-      pushToast('error', apiError(e, 'Không thể hủy yêu cầu hậu cần.'));
+      const m = apiError(e, 'Không thể hủy yêu cầu hậu cần.');
+      setCancelModal((cm) => ({ ...cm, busy: false, err: m }));
+      pushToast('error', m);
     } finally {
       setBusyKey(null);
     }
@@ -449,6 +466,45 @@ export function LogisticsRequestSection({
         load={() => delegationsApi.getLogisticsSentEmails(visitInstanceId, sentModal.item!.logisticsItemId)}
         onClose={closeSentEmails}
       />
+
+      {/* Cancel-reason modal — a cancellation must record its reason (decision_note). */}
+      {cancelModal.open && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/40 p-4"
+          onMouseDown={() => { if (!cancelModal.busy) setCancelModal((m) => ({ ...m, open: false })); }}>
+          <div className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between bg-[#004c91] px-5 py-4">
+              <h3 className="text-base font-bold text-white">Hủy yêu cầu logistics</h3>
+              <button type="button" disabled={cancelModal.busy} onClick={() => setCancelModal((m) => ({ ...m, open: false }))}
+                className="rounded-full p-1 text-white/85 outline-none hover:bg-white/10 hover:text-white disabled:opacity-50">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="space-y-3 p-5">
+              {cancelModal.item && <p className="text-sm text-gray-600">Hạng mục: <b className="text-gray-800">{cancelModal.item.title}</b></p>}
+              <div>
+                <label className="mb-1 block text-xs font-bold text-gray-600">Lý do hủy <span className="text-red-500">*</span></label>
+                <textarea autoFocus value={cancelModal.reason} maxLength={1000}
+                  onChange={(e) => setCancelModal((m) => ({ ...m, reason: e.target.value, err: null }))}
+                  placeholder="Nhập lý do hủy yêu cầu logistics..."
+                  className="h-[100px] w-full resize-none rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-[#004c91]" />
+                {cancelModal.err && (
+                  <p className="mt-1 flex items-center gap-1 text-xs font-semibold text-red-600">
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0" /> {cancelModal.err}
+                  </p>
+                )}
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-2 border-t border-gray-100 bg-gray-50 px-5 py-4">
+              <button type="button" disabled={cancelModal.busy} onClick={() => setCancelModal((m) => ({ ...m, open: false }))}
+                className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-bold text-gray-600 outline-none hover:bg-gray-50 disabled:opacity-50">Đóng</button>
+              <button type="button" disabled={cancelModal.busy || !cancelModal.reason.trim()} onClick={confirmCancel}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-4 py-2 text-sm font-bold text-white outline-none hover:bg-red-700 disabled:opacity-50">
+                {cancelModal.busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <X className="w-4 h-4" />} Xác nhận hủy
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -753,9 +809,10 @@ function ResourceCard({
           </div>
           <div className="space-y-4">
             <div>
-              <label className="block text-xs font-bold text-gray-600 mb-1">Ghi chú (Note)</label>
-              <textarea disabled={isFormDisabled} value={form.note} onChange={(e) => set('note', e.target.value)} placeholder={notePlaceholder ?? 'Ghi chú thêm...'}
+              <label className="block text-xs font-bold text-gray-600 mb-1">Mô tả chi tiết</label>
+              <textarea disabled={isFormDisabled} value={form.note} onChange={(e) => set('note', e.target.value)} placeholder={notePlaceholder ?? 'Nhập mô tả chi tiết yêu cầu cần chuẩn bị...'}
                 className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-[#004c91] hover:border-gray-400 transition-colors outline-none text-sm resize-none h-[120px] disabled:bg-gray-50 disabled:text-gray-400" />
+              <p className="mt-1 text-[11px] text-gray-400">Mô tả rõ yêu cầu, cách setup, lưu ý đặc biệt hoặc nội dung cần phòng ban xử lý.</p>
             </div>
             <div>
               <label className="block text-xs font-bold text-gray-600 mb-1">Chọn phòng ban xử lý <span className="text-red-500">*</span></label>
@@ -1155,7 +1212,10 @@ function LogisticsListRow({ it, canManage, busy, onRespond, onViewSent }: {
             {it.completedAt && <span className="text-emerald-700">Hoàn tất: {fmtDateTime(it.completedAt)}</span>}
           </div>
           {offline && it.offlineCoordinationNote && (
-            <div className="mt-1 text-[11px] italic text-amber-700">Ghi chú: {it.offlineCoordinationNote}</div>
+            <div className="mt-1 text-[11px] italic text-amber-700">Ghi chú trao đổi ngoài: {it.offlineCoordinationNote}</div>
+          )}
+          {it.description && !offline && (
+            <div className="mt-1 text-[11px] italic text-slate-500">Mô tả chi tiết: {it.description}</div>
           )}
           {it.assigneeResponseNote && (
             <div className="mt-1 text-[11px] italic text-slate-500">Phản hồi nhân sự: {it.assigneeResponseNote}</div>

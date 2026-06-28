@@ -34,6 +34,13 @@ public sealed class CancelVisitLogisticsItemCommandHandler
 
         var actorId = _currentUser.UserId.Value;
 
+        // A cancellation must carry a reason — it is the decision_note (lý do hủy) of the item.
+        var reason = request.Reason?.Trim();
+        if (string.IsNullOrWhiteSpace(reason))
+            throw new BusinessRuleException("Vui lòng nhập lý do hủy yêu cầu logistics.");
+        if (reason.Length > 1000)
+            throw new BusinessRuleException("Lý do hủy không được vượt quá 1000 ký tự.");
+
         var instance = await _db.VisitRequestCampuses
             .FirstOrDefaultAsync(c => c.VisitInstanceId == request.VisitInstanceId, cancellationToken)
             ?? throw new NotFoundException("VisitRequestCampus", request.VisitInstanceId);
@@ -64,7 +71,7 @@ public sealed class CancelVisitLogisticsItemCommandHandler
 
         var now = _clock.UtcNow;
         item.Status = LogisticsItemStatus.Cancelled;
-        item.DecisionNote = "Hủy bởi Host (Chuẩn bị chi tiết).";
+        item.DecisionNote = reason;   // lý do hủy (decision_note) — required, validated above
         item.UpdatedAt = now;
         item.UpdatedBy = actorId;
         item.RowVersion += 1;   // bump the optimistic-concurrency token on every state change

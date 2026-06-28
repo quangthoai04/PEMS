@@ -271,14 +271,20 @@ namespace PEMS.Api.Controllers
             return Ok(result);
         }
 
-        // Host soft-cancels one of their logistics requests (e.g. "Không cần màn LED"). Sets CANCELLED.
+        // Host soft-cancels one of their logistics requests (e.g. "Không cần màn LED"). Sets CANCELLED
+        // and stores the required cancellation reason into decision_note (validated in the handler).
         [HttpPatch("visit-instances/{visitInstanceId}/logistics/{logisticsItemId}/cancel")]
-        public async Task<IActionResult> CancelVisitLogisticsItem(ulong visitInstanceId, ulong logisticsItemId, CancellationToken cancellationToken)
+        public async Task<IActionResult> CancelVisitLogisticsItem(ulong visitInstanceId, ulong logisticsItemId, [FromBody] CancelLogisticsItemBody? body, CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(
-                new PEMS.Application.Delegations.Commands.CancelVisitLogisticsItem.CancelVisitLogisticsItemCommand(visitInstanceId, logisticsItemId),
+                new PEMS.Application.Delegations.Commands.CancelVisitLogisticsItem.CancelVisitLogisticsItemCommand(visitInstanceId, logisticsItemId, body?.Reason),
                 cancellationToken);
             return Ok(result);
+        }
+
+        public sealed class CancelLogisticsItemBody
+        {
+            public string? Reason { get; set; }
         }
 
         // ── "Xem mail đã gửi": the sent-email history for one target of a campus instance ─────

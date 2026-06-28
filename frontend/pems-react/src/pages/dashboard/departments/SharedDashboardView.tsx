@@ -2703,7 +2703,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                         <Clock className="w-4 h-4" />
                         <span className="text-[11px] font-bold uppercase tracking-wider">Thời gian gửi</span>
                       </div>
-                      <div className="text-sm font-black text-[#004c91]">08:30 15-10-2023</div>
+                      <div className="text-sm font-black text-[#004c91]">{activeEventDetail?.requestedAt || 'Chưa có'}</div>
                     </div>
 
                     <div className="col-span-1 sm:col-span-2 p-4 bg-gray-50/80 rounded-2xl border border-gray-100 cursor-default flex flex-col justify-center">
@@ -2938,7 +2938,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                         <Clock className="w-4 h-4" />
                         <span className="text-[11px] font-bold uppercase tracking-wider">Thời gian gửi</span>
                       </div>
-                      <div className="text-sm font-black text-[#004c91]">08:30 15-10-2023</div>
+                      <div className="text-sm font-black text-[#004c91]">{activeEventDetail?.requestedAt || 'Chưa có'}</div>
                     </div>
 
                     {activePopoverEvent.guests && (
@@ -2966,6 +2966,27 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                       </div>
                       <div className="absolute right-0 top-1/2 -translate-y-1/2 opacity-[0.02] pointer-events-none scale-150 mr-4">
                         <Calendar className="w-24 h-24 text-gray-900" />
+                      </div>
+                    </div>
+
+                    {/* Mức ưu tiên + Hạn phản hồi (visit_logistics_items.priority / due_at) */}
+                    <div className="p-4 bg-gray-50/80 rounded-2xl border border-gray-100 cursor-default">
+                      <div className="flex items-center gap-2 text-gray-400 mb-2">
+                        <AlertCircle className="w-4 h-4" />
+                        <span className="text-[11px] font-bold uppercase tracking-wider">Mức ưu tiên</span>
+                      </div>
+                      <span className={`inline-flex px-2.5 py-1 rounded-full border text-[11px] font-black ${getPriorityClass(activeEventDetail?.priority)}`}>
+                        {getPriorityLabel(activeEventDetail?.priority)}
+                      </span>
+                    </div>
+
+                    <div className="p-4 bg-gray-50/80 rounded-2xl border border-gray-100 cursor-default">
+                      <div className="flex items-center gap-2 text-gray-400 mb-2">
+                        <Clock className="w-4 h-4" />
+                        <span className="text-[11px] font-bold uppercase tracking-wider">Hạn phản hồi</span>
+                      </div>
+                      <div className="text-sm font-black text-[#004c91]">
+                        {activeEventDetail?.dueAt ? formatDateTime(activeEventDetail.dueAt) : 'Chưa có'}
                       </div>
                     </div>
 

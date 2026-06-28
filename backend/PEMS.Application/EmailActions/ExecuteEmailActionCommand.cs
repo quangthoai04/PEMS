@@ -19,6 +19,9 @@ public sealed class EmailActionExecuteResult
     public string Status { get; set; } = EmailActionViewStatuses.Invalid;
     /// <summary>ACCEPT | DECLINE.</summary>
     public string? Action { get; set; }
+    /// <summary>The token's action_context (e.g. PARTICIPATION_RESPONSE | LOGISTICS_REQUEST_RESPONSE) so
+    /// the public pages can render context-appropriate wording.</summary>
+    public string? Context { get; set; }
     public string? RecipientName { get; set; }
     public string? DelegationName { get; set; }
     public string Message { get; set; } = "Liên kết không hợp lệ.";

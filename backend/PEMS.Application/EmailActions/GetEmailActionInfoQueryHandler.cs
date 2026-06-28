@@ -38,7 +38,7 @@ public sealed class GetEmailActionInfoQueryHandler
         if (token is null)
             return invalid;
 
-        var result = new EmailActionInfoResult { Action = token.IntendedAction };
+        var result = new EmailActionInfoResult { Action = token.IntendedAction, Context = token.ActionContext };
 
         if (token.ActionContext == EmailActionContexts.ParticipationResponse
             && token.TargetType == EmailActionTargetTypes.VisitParticipant)
@@ -148,7 +148,7 @@ public sealed class GetEmailActionInfoQueryHandler
         result.RecipientName = token.RecipientUserId.HasValue
             ? await _db.Users.Where(u => u.UserId == token.RecipientUserId.Value).Select(u => u.FullName).FirstOrDefaultAsync(cancellationToken)
             : null;
-        result.ParticipantRoleLabel = $"Yêu cầu: {item.Title}";
+        result.ParticipantRoleLabel = item.Title;   // shown as "Hạng mục" on the logistics landing
 
         if (token.ResultStatus == EmailActionResultStatuses.Invalid)
         {

@@ -1,5 +1,6 @@
 using System.Net;
 using PEMS.Application.EmailActions;
+using PEMS.Domain.Constants;
 
 namespace PEMS.Api.Email;
 
@@ -21,6 +22,8 @@ public static class EmailActionHtmlPages
 
         var isAccept = info.Action == "ACCEPT";
         var accent = isAccept ? "#10b981" : "#ef4444";
+        var isLogisticsRequest = info.Context == EmailActionContexts.LogisticsRequestResponse;
+        var roleLineLabel = isLogisticsRequest ? "Hạng mục" : "Vai trò";
 
         var details = $@"
       <div style=""background:#f0f7ff;border-left:4px solid #004c91;border-radius:8px;padding:16px 20px;margin:20px 0;text-align:left"">
@@ -28,32 +31,45 @@ public static class EmailActionHtmlPages
           <li><strong>Đoàn khách:</strong> {HE(info.DelegationName)}</li>
           <li><strong>Cơ sở:</strong> {HE(info.CampusName)}</li>
           <li><strong>Thời gian:</strong> {HE(info.PlannedTimeText)}</li>
-          <li><strong>Vai trò:</strong> {HE(info.ParticipantRoleLabel)}</li>
+          <li><strong>{roleLineLabel}:</strong> {HE(info.ParticipantRoleLabel)}</li>
         </ul>
       </div>";
 
         // DECLINE: render the reason form. The reason is mandatory and only the POST applies it.
         if (!isAccept)
         {
+            var declineTitle = isLogisticsRequest ? "Từ chối yêu cầu logistics" : "Từ chối lời mời tham gia";
+            var declineIntro = isLogisticsRequest
+                ? "Bạn sắp <strong>từ chối</strong> yêu cầu hậu cần dưới đây. Vui lòng cho biết lý do từ chối để Host/bộ phận điều phối cập nhật kế hoạch."
+                : "Bạn sắp <strong>từ chối</strong> lời mời tham gia hỗ trợ tiếp khách dưới đây. Vui lòng cho biết lý do từ chối để bộ phận điều phối cập nhật kế hoạch.";
+            var declinePlaceholder = isLogisticsRequest
+                ? "Nhập lý do từ chối yêu cầu logistics..."
+                : "Ví dụ: Tôi bận lịch cá nhân vào thời gian này...";
+            var declineButton = isLogisticsRequest ? "Xác nhận từ chối" : "Gửi phản hồi từ chối";
             var declineContent = $@"
       <p style=""color:#374151;font-size:15px"">Xin chào <strong>{HE(info.RecipientName)}</strong>,</p>
-      <p style=""color:#374151;font-size:14px"">Bạn sắp <strong>từ chối</strong> lời mời tham gia hỗ trợ tiếp khách dưới đây. Vui lòng cho biết lý do từ chối để bộ phận điều phối cập nhật kế hoạch.</p>
+      <p style=""color:#374151;font-size:14px"">{declineIntro}</p>
       {details}
-      {DeclineForm(null, null)}";
-            return Layout("Từ chối lời mời tham gia", declineContent, accent);
+      {DeclineForm(null, null, declinePlaceholder, declineButton)}";
+            return Layout(declineTitle, declineContent, accent);
         }
 
         // ACCEPT: one-click confirm.
+        var acceptTitle = isLogisticsRequest ? "Xác nhận tiếp nhận yêu cầu logistics" : "Xác nhận chấp nhận lời mời";
+        var acceptIntro = isLogisticsRequest
+            ? "Bạn sắp <strong>tiếp nhận</strong> yêu cầu hậu cần dưới đây."
+            : "Bạn sắp <strong>chấp nhận</strong> lời mời tham gia hỗ trợ tiếp khách dưới đây.";
+        var acceptButton = isLogisticsRequest ? "Xác nhận tiếp nhận" : "Xác nhận chấp nhận";
         var content = $@"
       <p style=""color:#374151;font-size:15px"">Xin chào <strong>{HE(info.RecipientName)}</strong>,</p>
-      <p style=""color:#374151;font-size:14px"">Bạn sắp <strong>chấp nhận</strong> lời mời tham gia hỗ trợ tiếp khách dưới đây.</p>
+      <p style=""color:#374151;font-size:14px"">{acceptIntro}</p>
       {details}
       <form method=""post"" style=""margin-top:8px"">
-        <button type=""submit"" style=""display:inline-block;background:{accent};color:#fff;border:none;cursor:pointer;font-weight:bold;font-size:15px;padding:14px 28px;border-radius:10px"">Xác nhận chấp nhận</button>
+        <button type=""submit"" style=""display:inline-block;background:{accent};color:#fff;border:none;cursor:pointer;font-weight:bold;font-size:15px;padding:14px 28px;border-radius:10px"">{HE(acceptButton)}</button>
       </form>
       <p style=""color:#9ca3af;font-size:12px;margin-top:14px"">Liên kết này chỉ sử dụng được một lần.</p>";
 
-        return Layout("Xác nhận chấp nhận lời mời", content, accent);
+        return Layout(acceptTitle, content, accent);
     }
 
     /// <summary>The POST result page after the token is consumed.</summary>
@@ -62,10 +78,14 @@ public static class EmailActionHtmlPages
         // Decline reason missing/invalid → token was NOT consumed; re-render the form with the error.
         if (res.Status == EmailActionViewStatuses.ReasonRequired)
         {
+            var isLogisticsRequest = res.Context == EmailActionContexts.LogisticsRequestResponse;
+            var reasonTitle = isLogisticsRequest ? "Từ chối yêu cầu logistics" : "Từ chối lời mời tham gia";
+            var reasonPlaceholder = isLogisticsRequest ? "Nhập lý do từ chối yêu cầu logistics..." : "Ví dụ: Tôi bận lịch cá nhân vào thời gian này...";
+            var reasonButton = isLogisticsRequest ? "Xác nhận từ chối" : "Gửi phản hồi từ chối";
             var content = $@"
       <p style=""color:#374151;font-size:14px"">Vui lòng cho biết lý do từ chối để bộ phận điều phối cập nhật kế hoạch.</p>
-      {DeclineForm(res.SubmittedReason, res.Message)}";
-            return Layout("Từ chối lời mời tham gia", content, "#ef4444");
+      {DeclineForm(res.SubmittedReason, res.Message, reasonPlaceholder, reasonButton)}";
+            return Layout(reasonTitle, content, "#ef4444");
         }
 
         var accent = res.Status switch
@@ -96,7 +116,9 @@ public static class EmailActionHtmlPages
     /// <summary>The decline-reason form, shared by the GET landing and the validation-error re-render.
     /// Posts <c>declineReason</c> back to the same URL (method=post, no action). Server-side validation
     /// in the handler is the real gate; the HTML5 attributes are a best-effort client hint.</summary>
-    private static string DeclineForm(string? reason, string? error)
+    private static string DeclineForm(string? reason, string? error,
+        string placeholder = "Ví dụ: Tôi bận lịch cá nhân vào thời gian này...",
+        string submitLabel = "Gửi phản hồi từ chối")
     {
         var borderColor = string.IsNullOrEmpty(error) ? "#d1d5db" : "#ef4444";
         var errorHtml = string.IsNullOrEmpty(error)
@@ -105,9 +127,9 @@ public static class EmailActionHtmlPages
         return $@"
       <form method=""post"" style=""margin-top:8px;text-align:left"">
         <label style=""display:block;font-size:13px;font-weight:bold;color:#374151;margin-bottom:6px"">Lý do từ chối <span style=""color:#ef4444"">*</span></label>
-        <textarea name=""declineReason"" required minlength=""5"" maxlength=""1000"" rows=""4"" placeholder=""Ví dụ: Tôi bận lịch cá nhân vào thời gian này..."" style=""width:100%;box-sizing:border-box;padding:12px;border:1px solid {borderColor};border-radius:10px;font-size:14px;font-family:inherit;resize:vertical;outline:none"">{HE(reason)}</textarea>
+        <textarea name=""declineReason"" required minlength=""5"" maxlength=""1000"" rows=""4"" placeholder=""{HE(placeholder)}"" style=""width:100%;box-sizing:border-box;padding:12px;border:1px solid {borderColor};border-radius:10px;font-size:14px;font-family:inherit;resize:vertical;outline:none"">{HE(reason)}</textarea>
         {errorHtml}
-        <button type=""submit"" style=""margin-top:14px;display:block;width:100%;background:#ef4444;color:#fff;border:none;cursor:pointer;font-weight:bold;font-size:15px;padding:14px 28px;border-radius:10px"">Gửi phản hồi từ chối</button>
+        <button type=""submit"" style=""margin-top:14px;display:block;width:100%;background:#ef4444;color:#fff;border:none;cursor:pointer;font-weight:bold;font-size:15px;padding:14px 28px;border-radius:10px"">{HE(submitLabel)}</button>
         <p style=""color:#9ca3af;font-size:12px;margin-top:12px;text-align:center"">Lý do cần từ 5 đến 1000 ký tự. Liên kết này chỉ sử dụng được một lần.</p>
       </form>";
     }

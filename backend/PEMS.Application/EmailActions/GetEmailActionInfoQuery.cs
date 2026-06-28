@@ -27,6 +27,9 @@ public sealed class EmailActionInfoResult
     public string Status { get; set; } = EmailActionViewStatuses.Invalid;
     /// <summary>ACCEPT | DECLINE (the action this specific token performs).</summary>
     public string? Action { get; set; }
+    /// <summary>The token's action_context (PARTICIPATION_RESPONSE | LOGISTICS_REQUEST_RESPONSE | …) so
+    /// the public landing page can render context-appropriate wording.</summary>
+    public string? Context { get; set; }
     public string? RecipientName { get; set; }
     public string? DelegationName { get; set; }
     public string? CampusName { get; set; }

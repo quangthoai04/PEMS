@@ -224,13 +224,15 @@ export const delegationsApi = {
     return data;
   },
 
-  /** Host soft-cancels one of their logistics requests (status → CANCELLED). */
+  /** Host soft-cancels one of their logistics requests (status → CANCELLED). Reason is required and
+   * stored in decision_note (validated server-side). */
   async cancelLogisticsItem(
     visitInstanceId: number | string,
     logisticsItemId: number | string,
+    reason?: string | null,
   ): Promise<{ success: boolean; logisticsItemId: number; status: string; message: string }> {
     const { data } = await httpClient.patch<{ success: boolean; logisticsItemId: number; status: string; message: string }>(
-      API_ENDPOINTS.delegations.cancelLogisticsItem(visitInstanceId, logisticsItemId), {});
+      API_ENDPOINTS.delegations.cancelLogisticsItem(visitInstanceId, logisticsItemId), { reason: reason ?? null });
     return data;
   },
 
