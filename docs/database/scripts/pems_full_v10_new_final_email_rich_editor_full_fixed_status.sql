@@ -1756,6 +1756,7 @@ CREATE TABLE gallery_items (
   deleted_by BIGINT UNSIGNED NULL,
 
   PRIMARY KEY (gallery_item_id),
+  UNIQUE KEY uq_gallery_items_location (location_id),
   KEY idx_gallery_items_location_status (location_id, status, deleted_at),
   KEY idx_gallery_items_media_kind (media_kind),
   KEY idx_gallery_items_created_at (created_at),

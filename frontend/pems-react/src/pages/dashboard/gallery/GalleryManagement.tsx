@@ -8,6 +8,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Edit, Trash2, Search, X, Upload, CheckCircle2, ChevronRight, ChevronLeft, ChevronDown, ChevronUp, Plus, Image as ImageIcon, Film, Eye, MapPin } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import bgHN from "../../../assets/FPTbanner_visit/hola_new.jpg";
+import { GalleryManagementStaffLeader } from './GalleryManagementStaffLeader';
 
 // Defined Locations from Visit FPTU
 const LOCATIONS: Record<string, string[]> = {
@@ -44,6 +45,20 @@ const MOCK_GALLERY = [
 ];
 
 export function GalleryManagement() {
+  const userStr = localStorage.getItem("currentUser");
+  const currentUser = userStr ? JSON.parse(userStr) : null;
+  const isStaffLeader = currentUser?.role?.toUpperCase() === 'STAFF' && currentUser?.subRole?.toUpperCase() === 'LEADER';
+
+  // Staff Leader (sub_role LEADER) gets the real, server-driven gallery management (UC-GAL-01..07).
+  // Other roles keep the legacy mock below untouched. Early return before any hooks keeps hook order stable.
+  if (isStaffLeader) {
+    return <GalleryManagementStaffLeader />;
+  }
+
+  return <GalleryManagementMock />;
+}
+
+function GalleryManagementMock() {
   const navigate = useNavigate();
   const userStr = localStorage.getItem("currentUser");
   const currentUser = userStr ? JSON.parse(userStr) : null;

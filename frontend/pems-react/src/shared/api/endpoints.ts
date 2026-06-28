@@ -56,6 +56,19 @@ export const API_ENDPOINTS = {
     details: '/departments/viewdepartmentdetails',
     update: '/departments/updatedepartment',
   },
+  // VisitFPTU Gallery management (Staff Leader). Campus scope resolved server-side from the JWT.
+  gallery: {
+    // UC-GAL-01 list (also serves UC-GAL-02 search/filter), UC-GAL-03 detail.
+    list: '/galleries/viewgalleryitemlist',
+    search: '/galleries/searchgalleryitems',
+    details: '/galleries/viewgalleryitemdetails',
+    // Area/location reference data for filter dropdowns + upload picker.
+    filterOptions: '/galleries/galleryfilteroptions',
+    // UC-GAL-04 add (multipart), UC-GAL-07 edit (multipart), UC-GAL-05/06 enable/disable.
+    create: '/galleries/addgalleryitem',
+    update: '/galleries/updategalleryitem',
+    changeStatus: '/galleries/changegalleryitemstatus',
+  },
   partners: {
     list: '/partners',
     detail: (id: string | number) => `/partners/${id}`,
