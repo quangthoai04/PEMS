@@ -9,6 +9,10 @@ public sealed class PrepareVisitLogisticsCommandValidator : AbstractValidator<Pr
         => string.Equals(c.CoordinationMode?.Trim(), LogisticsCoordinationModes.OfflineCoordinated,
             System.StringComparison.OrdinalIgnoreCase);
 
+    private static bool IsHighOrUrgent(string? p)
+        => string.Equals(p?.Trim(), "HIGH", System.StringComparison.OrdinalIgnoreCase)
+           || string.Equals(p?.Trim(), "URGENT", System.StringComparison.OrdinalIgnoreCase);
+
     public PrepareVisitLogisticsCommandValidator()
     {
         RuleFor(x => x.VisitInstanceId).GreaterThan(0ul);
@@ -66,5 +70,23 @@ public sealed class PrepareVisitLogisticsCommandValidator : AbstractValidator<Pr
         RuleFor(x => x.Priority)
             .Must(p => string.IsNullOrWhiteSpace(p) || LogisticsPriorities.All.Contains(p!.Trim().ToUpperInvariant()))
             .WithMessage("Mức ưu tiên không hợp lệ.");
+
+        // due_at is mandatory for HIGH/URGENT system requests (offline items are recorded DONE → skip).
+        RuleFor(x => x.DueAt)
+            .NotEmpty()
+            .When(x => !IsOffline(x) && IsHighOrUrgent(x.Priority))
+            .WithMessage("Mức ưu tiên Cao/Khẩn cấp cần có hạn phản hồi.");
+
+        // due_at must not be in the past.
+        RuleFor(x => x.DueAt)
+            .Must(d => string.Compare(d, System.DateTime.Now.AddMinutes(-10).ToString("yyyy-MM-ddTHH:mm")) >= 0)
+            .When(x => !string.IsNullOrEmpty(x.DueAt) && !IsOffline(x))
+            .WithMessage("Hạn phản hồi không được nằm trong quá khứ.");
+
+        // due_at must be before (or at) the usage start.
+        RuleFor(x => x)
+            .Must(c => string.Compare(c.DueAt, c.UsageStartAt) <= 0)
+            .When(x => !string.IsNullOrEmpty(x.DueAt) && !string.IsNullOrEmpty(x.UsageStartAt) && !IsOffline(x))
+            .WithMessage("Hạn phản hồi phải trước thời gian bắt đầu sử dụng.");
     }
 }

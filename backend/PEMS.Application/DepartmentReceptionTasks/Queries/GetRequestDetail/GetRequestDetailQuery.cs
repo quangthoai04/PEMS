@@ -37,6 +37,8 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetRequestDetail
         public string Title { get; set; }
         public string Description { get; set; }
         public int Quantity { get; set; }
+        public string? Priority { get; set; }   // LOW | MEDIUM | HIGH | URGENT
+        public string? DueAt { get; set; }      // "yyyy-MM-ddTHH:mm:ss" wall-clock, null if none
         public ulong? AssigneeId { get; set; }
         public string AssigneeName { get; set; }
         public string Status { get; set; }
@@ -220,6 +222,8 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetRequestDetail
                 Title = l.Title,
                 Description = l.Description ?? "",
                 Quantity = l.Quantity ?? 1,
+                Priority = l.Priority,
+                DueAt = l.DueAt?.ToString("yyyy-MM-ddTHH:mm:ss"),
                 AssigneeId = l.AssignedToUserId,
                 AssigneeName = assigneeName,
                 Status = unifiedStatus,

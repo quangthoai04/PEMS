@@ -135,7 +135,7 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.ProposeRequestChang
                 var rejectUrl = _tokens.BuildPublicActionUrl(rejectRaw);
                 var detailUrl = _tokens.BuildLogisticsDetailUrl(l.LogisticsItemId);
 
-                finalSubject = $"[PEMS] Phòng ban đề xuất thay đổi hậu cần — {l.Title}";
+                finalSubject = LogisticsPriorityText.ApplySubjectPrefix(l.Priority, $"[PEMS] Phòng ban đề xuất thay đổi hậu cần — {l.Title}");
                 finalBody = EmailComposition.BrandedShell(
                     ProposalContentHtml(host.FullName, delegationName, l)
                     + EmailComposition.LogisticsProposalActionBlock(approveUrl, rejectUrl, detailUrl));
@@ -174,8 +174,8 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.ProposeRequestChang
                 {
                     RecipientUserId = host.UserId,
                     NotificationType = "VISIT_LOGISTICS_PROPOSAL",
-                    Title = "Phòng ban đề xuất thay đổi hậu cần",
-                    Message = $"Phòng ban đề xuất thay đổi cho yêu cầu \"{l.Title}\" của đoàn {delegationName}.",
+                    Title = LogisticsPriorityText.SubjectPrefix(l.Priority) + "Phòng ban đề xuất thay đổi hậu cần",
+                    Message = $"Phòng ban đề xuất thay đổi cho yêu cầu \"{l.Title}\" (ưu tiên {LogisticsPriorityText.LabelVi(l.Priority)}) của đoàn {delegationName}.",
                     RelatedType = "LOGISTICS_ITEM",
                     RelatedId = l.LogisticsItemId,
                     IsRead = false,
@@ -209,7 +209,8 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.ProposeRequestChang
         {
             string HE(string? s) => EmailComposition.HE(s);
             string Fmt(DateTime? d) => d.HasValue ? HE(d.Value.ToString("HH:mm dd/MM/yyyy")) : "—";
-            var rows = string.Empty;
+            var rows = $"<li><strong>Mức ưu tiên:</strong> {HE(LogisticsPriorityText.LabelVi(l.Priority))}</li>";
+            if (l.DueAt.HasValue) rows += $"<li><strong>Hạn phản hồi:</strong> {Fmt(l.DueAt)}</li>";
             if (l.ProposedQuantity.HasValue)
                 rows += $"<li><strong>Số lượng đề xuất:</strong> {l.ProposedQuantity} (dự kiến: {(l.Quantity?.ToString() ?? "—")})</li>";
             if (l.ProposedUsageStartAt.HasValue || l.ProposedUsageEndAt.HasValue)

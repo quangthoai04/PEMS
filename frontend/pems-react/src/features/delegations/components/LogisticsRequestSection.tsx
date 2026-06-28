@@ -640,8 +640,12 @@ function ResourceCard({
     if (form.usageStartAt < nowStr) return 'Thời gian bắt đầu không được trong quá khứ.';
     if (form.usageEndAt <= form.usageStartAt) return 'Thời gian kết thúc phải sau thời gian bắt đầu.';
 
-    // due_at is optional; if set it must not be in the past.
-    if (form.dueAt && form.dueAt < nowStr) return 'Hạn phản hồi/hoàn thành không được trong quá khứ.';
+    // due_at: required for HIGH/URGENT, never in the past, and must be before the usage start.
+    const highPriority = form.priority === 'HIGH' || form.priority === 'URGENT';
+    if (highPriority && !form.dueAt) return 'Mức ưu tiên Cao/Khẩn cấp cần có hạn phản hồi.';
+    if (form.dueAt && form.dueAt < nowStr) return 'Hạn phản hồi không được nằm trong quá khứ.';
+    if (form.dueAt && form.usageStartAt && form.dueAt > form.usageStartAt)
+      return 'Hạn phản hồi phải trước thời gian bắt đầu sử dụng.';
 
     return null;
   };
@@ -667,17 +671,12 @@ function ResourceCard({
     coordinationMode: 'SYSTEM_REQUEST',
   });
 
-  // Non-blocking advisory: a deadline after the usage start is unusual (rule not enforced server-side).
-  const warnDueAfterStart = () => {
-    if (form.dueAt && form.usageStartAt && form.dueAt > form.usageStartAt)
-      pushToast('warning', 'Hạn phản hồi/hoàn thành đang muộn hơn thời gian bắt đầu sử dụng — vui lòng kiểm tra lại.');
-  };
+  const dueRequired = form.priority === 'HIGH' || form.priority === 'URGENT';
 
   // Inline error stays at the field; a single toast surfaces the first error (no spam).
   const doSend = async () => {
     const v = validate();
     if (v) { setErr(v); pushToast('error', v); return; }
-    warnDueAfterStart();
     const payload = buildPayload();
     if (await onSubmit(cardKey, payload)) {
       setLocalSubmitted(true);
@@ -686,7 +685,6 @@ function ResourceCard({
   const doPreview = () => {
     const v = validate();
     if (v) { setErr(v); pushToast('error', v); return; }
-    warnDueAfterStart();
     onPreview(buildPayload(), reset);
   };
 
@@ -744,9 +742,12 @@ function ResourceCard({
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-bold text-gray-600 mb-1">Hạn phản hồi / hoàn thành</label>
+                <label className="block text-xs font-bold text-gray-600 mb-1">
+                  Hạn phản hồi / hoàn thành {dueRequired && <span className="text-red-500">*</span>}
+                </label>
                 <input type="datetime-local" disabled={isFormDisabled} value={form.dueAt} onChange={(e) => set('dueAt', e.target.value)}
                   className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-[#004c91] hover:border-gray-400 transition-colors outline-none text-sm disabled:bg-gray-50 disabled:text-gray-400" />
+                <p className="mt-1 text-[11px] text-gray-400">Bắt buộc khi mức ưu tiên là Cao hoặc Khẩn cấp.</p>
               </div>
             </div>
           </div>
@@ -844,6 +845,9 @@ function ResourceCard({
                       <div className="flex flex-col items-end gap-1.5 shrink-0">
                         <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-600">
                           <CheckCircle2 className="w-3.5 h-3.5" /> Đã gửi yêu cầu
+                        </span>
+                        <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[10px] font-bold ${PRIORITY_META[existingItem.priority]?.cls ?? PRIORITY_META.MEDIUM.cls}`}>
+                          Ưu tiên: {PRIORITY_META[existingItem.priority]?.label ?? existingItem.priority}
                         </span>
                         {locked ? (
                           <span className="text-[11px] italic text-gray-400">Phòng ban đang xử lý</span>

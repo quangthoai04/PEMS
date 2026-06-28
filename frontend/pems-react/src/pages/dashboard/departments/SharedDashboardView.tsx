@@ -76,6 +76,8 @@ type AssignmentProgressItem = {
   rawStatus: string;
   uiStatus: string;
   statusLabel: string;
+  priority?: string | null;     // LOW | MEDIUM | HIGH | URGENT (REQUEST items only)
+  dueAt?: string | null;
   startAt: string;
   endAt: string;
   canViewDelegationDetail: boolean;
@@ -143,6 +145,8 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
   const [assignmentSearch, setAssignmentSearch] = useState('');
   const [assignmentItemType, setAssignmentItemType] = useState('ALL');
   const [assignmentStatus, setAssignmentStatus] = useState('ALL');
+  const [assignmentPriority, setAssignmentPriority] = useState('ALL');
+  const [assignmentSortBy, setAssignmentSortBy] = useState<'PRIORITY' | 'DATE'>('PRIORITY');
   const [assignmentOwnerScope, setAssignmentOwnerScope] = useState('DEPARTMENT');
   const [assignmentFromDate, setAssignmentFromDate] = useState('');
   const [assignmentToDate, setAssignmentToDate] = useState('');
@@ -543,10 +547,11 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
         search: assignmentSearch || undefined,
         itemType: assignmentItemType,
         status: assignmentStatus,
+        priority: assignmentPriority !== 'ALL' ? assignmentPriority : undefined,
         ownerScope: assignmentOwnerScope,
         fromDate: assignmentFromDate || undefined,
         toDate: assignmentToDate || undefined,
-        sortBy: 'date',
+        sortBy: assignmentSortBy === 'PRIORITY' ? 'priority' : 'date',
         sortDirection: assignmentSortDirection,
         page: assignmentPage,
         pageSize: assignmentPageSize
@@ -568,6 +573,8 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
     assignmentSearch,
     assignmentItemType,
     assignmentStatus,
+    assignmentPriority,
+    assignmentSortBy,
     assignmentOwnerScope,
     assignmentFromDate,
     assignmentToDate,
@@ -581,6 +588,8 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
     assignmentSearch,
     assignmentItemType,
     assignmentStatus,
+    assignmentPriority,
+    assignmentSortBy,
     assignmentOwnerScope,
     assignmentFromDate,
     assignmentToDate,
@@ -979,6 +988,23 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
     }
   };
 
+  const getPriorityClass = (priority?: string | null) => {
+    switch ((priority || '').toUpperCase()) {
+      case 'URGENT': return 'bg-red-50 text-red-700 border-red-200';
+      case 'HIGH': return 'bg-amber-50 text-amber-700 border-amber-200';
+      case 'LOW': return 'bg-slate-50 text-slate-500 border-slate-200';
+      default: return 'bg-sky-50 text-sky-700 border-sky-200'; // MEDIUM
+    }
+  };
+  const getPriorityLabel = (priority?: string | null) => {
+    switch ((priority || '').toUpperCase()) {
+      case 'URGENT': return 'Khẩn cấp';
+      case 'HIGH': return 'Cao';
+      case 'LOW': return 'Thấp';
+      default: return 'Trung bình';
+    }
+  };
+
   const getStatusClass = (status: string) => {
     switch (status) {
       case 'REQUESTED': return 'bg-red-50 text-red-700 border-red-100';
@@ -1211,6 +1237,13 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
               <option value="DONE">Hoàn thành</option>
               <option value="CANCELLED">Đã hủy</option>
             </select>
+            <select value={assignmentPriority} onChange={e => setAssignmentPriority(e.target.value)} className="px-3 py-2.5 bg-white border border-white/20 rounded-xl text-sm font-bold text-slate-800">
+              <option value="ALL">Mọi mức ưu tiên</option>
+              <option value="URGENT">Khẩn cấp</option>
+              <option value="HIGH">Cao</option>
+              <option value="MEDIUM">Trung bình</option>
+              <option value="LOW">Thấp</option>
+            </select>
             <select value={assignmentOwnerScope} onChange={e => setAssignmentOwnerScope(e.target.value)} className="px-3 py-2.5 bg-white border border-white/20 rounded-xl text-sm font-bold text-slate-800">
               <option value="DEPARTMENT">Văn phòng</option>
               <option value="ME">Tôi</option>
@@ -1220,13 +1253,19 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
               <span className="text-white font-black">-</span>
               <input type="date" value={assignmentToDate} onChange={e => setAssignmentToDate(e.target.value)} className="px-3 py-2.5 bg-white border border-white/20 rounded-xl text-sm font-bold text-slate-800" />
             </div>
-            <button
-              type="button"
-              onClick={() => setAssignmentSortDirection(v => v === 'ASC' ? 'DESC' : 'ASC')}
-              className="px-3 py-2.5 bg-white border border-white/20 rounded-xl text-sm font-black text-[#004c91] hover:bg-blue-50"
-            >
-              {assignmentSortDirection === 'DESC' ? 'Đơn mới nhất' : 'Đơn cũ nhất'}
-            </button>
+            <select value={assignmentSortBy} onChange={e => setAssignmentSortBy(e.target.value as 'PRIORITY' | 'DATE')} className="px-3 py-2.5 bg-white border border-white/20 rounded-xl text-sm font-bold text-slate-800">
+              <option value="PRIORITY">Sắp xếp: Ưu tiên</option>
+              <option value="DATE">Sắp xếp: Thời gian</option>
+            </select>
+            {assignmentSortBy === 'DATE' && (
+              <button
+                type="button"
+                onClick={() => setAssignmentSortDirection(v => v === 'ASC' ? 'DESC' : 'ASC')}
+                className="px-3 py-2.5 bg-white border border-white/20 rounded-xl text-sm font-black text-[#004c91] hover:bg-blue-50"
+              >
+                {assignmentSortDirection === 'DESC' ? 'Đơn mới nhất' : 'Đơn cũ nhất'}
+              </button>
+            )}
           </div>
         </div>
         <div className="overflow-x-auto">
@@ -1290,6 +1329,11 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                     <span className={`px-2.5 py-1 rounded-full border text-[11px] font-black ${getStatusClass(item.uiStatus)}`}>
                       {item.statusLabel}
                     </span>
+                    {item.priority && (
+                      <span className={`mt-1 inline-flex px-2.5 py-1 rounded-full border text-[10px] font-black ${getPriorityClass(item.priority)}`}>
+                        {getPriorityLabel(item.priority)}
+                      </span>
+                    )}
                     {item.uiStatus === 'DECLINED' && item.latestDeclinedByName && (
                       <p className="text-[10px] text-rose-500 mt-1">
                         Từ chối bởi: {item.latestDeclinedByName}{item.latestDeclinedAt ? ` • ${item.latestDeclinedAt}` : ''}

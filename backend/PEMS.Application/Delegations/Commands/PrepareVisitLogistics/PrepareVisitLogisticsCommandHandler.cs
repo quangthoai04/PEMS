@@ -235,6 +235,10 @@ public sealed class PrepareVisitLogisticsCommandHandler
                         { "quantity", item.Quantity?.ToString() ?? "—" },
                         { "usageStartAt", usageStart?.ToString("HH:mm dd/MM/yyyy") ?? "—" },
                         { "usageEndAt", usageEnd?.ToString("HH:mm dd/MM/yyyy") ?? "—" },
+                        { "priority", LogisticsPriorityText.LabelVi(item.Priority) },
+                        { "Priority", LogisticsPriorityText.LabelVi(item.Priority) },
+                        { "dueAt", dueAt?.ToString("HH:mm dd/MM/yyyy") ?? "—" },
+                        { "DueAt", dueAt?.ToString("HH:mm dd/MM/yyyy") ?? "—" },
                         { "detailUrl", detailUrl }
                     };
                     finalSubject = EmailComposition.RenderTemplate(template.SubjectVi ?? $"[PEMS] Yêu cầu hậu cần mới — {item.Title}", context, "LOGISTICS_REQUEST");
@@ -254,6 +258,8 @@ public sealed class PrepareVisitLogisticsCommandHandler
                         + EmailComposition.LogisticsActionBlock(acceptUrl, declineUrl, detailUrl));
                 }
 
+                // High-urgency items get a subject prefix ([KHẨN] / [ƯU TIÊN CAO]).
+                finalSubject = LogisticsPriorityText.ApplySubjectPrefix(item.Priority, finalSubject);
                 finalBody = await _normalizer.NormalizeHtmlAsync(finalBody, cancellationToken);
 
                 var sentEmail = new SentEmail
@@ -289,8 +295,8 @@ public sealed class PrepareVisitLogisticsCommandHandler
                 {
                     RecipientUserId = leaderUserId!.Value,
                     NotificationType = "VISIT_LOGISTICS_REQUESTED",
-                    Title = "Có yêu cầu hậu cần mới",
-                    Message = $"Host {requesterName} đã gửi yêu cầu \"{item.Title}\" cho đoàn {delegationName} tại {campusName}.",
+                    Title = LogisticsPriorityText.SubjectPrefix(item.Priority) + "Có yêu cầu hậu cần mới",
+                    Message = $"Host {requesterName} đã gửi yêu cầu \"{item.Title}\" (ưu tiên {LogisticsPriorityText.LabelVi(item.Priority)}) cho đoàn {delegationName} tại {campusName}.",
                     RelatedType = "LOGISTICS_ITEM",
                     RelatedId = item.LogisticsItemId,
                     IsRead = false,

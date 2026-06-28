@@ -13,6 +13,8 @@ public sealed class GetAssignmentsProgressListQuery : IRequest<AssignmentsProgre
     public string? Status { get; set; }
     public string? StatusGroup { get; set; }
     public string? OwnerScope { get; set; }
+    /// <summary>Optional filter on logistics priority: LOW | MEDIUM | HIGH | URGENT (null/empty = all).</summary>
+    public string? Priority { get; set; }
     public DateTime? FromDate { get; set; }
     public DateTime? ToDate { get; set; }
     public string? SortBy { get; set; }
@@ -50,6 +52,9 @@ public sealed class AssignmentsProgressItemDto
     public string RawStatus { get; set; } = "";
     public string UiStatus { get; set; } = "";
     public string StatusLabel { get; set; } = "";
+    /// <summary>Logistics priority (REQUEST items only): LOW | MEDIUM | HIGH | URGENT. Null for invitations.</summary>
+    public string? Priority { get; set; }
+    public string? DueAt { get; set; }   // "yyyy-MM-ddTHH:mm:ss" wall-clock, null for invitations / no deadline
     public DateTime StartAt { get; set; }
     public DateTime EndAt { get; set; }
     public bool CanViewDetail { get; set; }
@@ -221,6 +226,8 @@ public sealed class GetAssignmentsProgressListQueryHandler
                 RawStatus = row.li.Status,
                 UiStatus = uiStatus,
                 StatusLabel = ToStatusLabel(uiStatus),
+                Priority = row.li.Priority,
+                DueAt = row.li.DueAt?.ToString("yyyy-MM-ddTHH:mm:ss"),
                 StartAt = startAt,
                 EndAt = endAt,
                 CanViewDetail = true,
@@ -362,8 +369,32 @@ public sealed class GetAssignmentsProgressListQueryHandler
         if (request.ToDate.HasValue)
             query = query.Where(x => x.StartAt < request.ToDate.Value.Date.AddDays(1));
 
+        // Optional priority filter (REQUEST items only — invitations carry no priority). Invalid values
+        // are rejected so the dropdown can't smuggle an out-of-enum value.
+        if (!string.IsNullOrWhiteSpace(request.Priority) && !request.Priority.Equals("ALL", StringComparison.OrdinalIgnoreCase))
+        {
+            var p = request.Priority.Trim().ToUpperInvariant();
+            if (!ValidPriorities.Contains(p))
+                throw new BusinessRuleException("Mức ưu tiên không hợp lệ.");
+            query = query.Where(x => x.Priority == p);
+        }
+
+        // Sort: when the client passes no SortBy (or asks for PRIORITY), default to urgency first
+        // (URGENT→HIGH→MEDIUM→LOW), then nearest deadline (due_at asc, nulls last), then soonest start.
+        // Any explicit SortBy keeps the legacy start-time ordering so existing screens are unchanged.
+        var sortBy = request.SortBy?.Trim().ToUpperInvariant();
         var desc = request.SortDirection?.Equals("DESC", StringComparison.OrdinalIgnoreCase) == true;
-        query = desc ? query.OrderByDescending(x => x.StartAt) : query.OrderBy(x => x.StartAt);
+        if (string.IsNullOrEmpty(sortBy) || sortBy == "PRIORITY")
+        {
+            query = query
+                .OrderByDescending(x => PriorityWeight(x.Priority))
+                .ThenBy(x => DueSortKey(x.DueAt))
+                .ThenBy(x => x.StartAt);
+        }
+        else
+        {
+            query = desc ? query.OrderByDescending(x => x.StartAt) : query.OrderBy(x => x.StartAt);
+        }
 
         var page = Math.Max(request.Page, 1);
         var pageSize = Math.Clamp(request.PageSize, 1, 100);
@@ -378,6 +409,21 @@ public sealed class GetAssignmentsProgressListQueryHandler
             Items = pageItems
         };
     }
+
+    private static readonly HashSet<string> ValidPriorities = new() { "LOW", "MEDIUM", "HIGH", "URGENT" };
+
+    /// <summary>Sort weight for urgency (higher = more urgent). Null/unknown (e.g. invitations) → MEDIUM.</summary>
+    private static int PriorityWeight(string? priority) => priority?.ToUpperInvariant() switch
+    {
+        "URGENT" => 4,
+        "HIGH" => 3,
+        "LOW" => 1,
+        _ => 2,
+    };
+
+    /// <summary>Deadline sort key: parsed due_at, or DateTime.MaxValue so missing deadlines sort last.</summary>
+    private static DateTime DueSortKey(string? dueAt)
+        => DateTime.TryParse(dueAt, out var d) ? d : DateTime.MaxValue;
 
     private static bool Contains(string? value, string keyword)
         => !string.IsNullOrWhiteSpace(value) && value.ToLowerInvariant().Contains(keyword);
