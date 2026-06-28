@@ -19,13 +19,15 @@ public sealed class SignVisitLogisticsHandoverCommandHandler
     private readonly IApplicationDbContext _db;
     private readonly ICurrentUserService _currentUser;
     private readonly IDateTimeService _clock;
+    private readonly PEMS.Application.Notifications.Common.INotificationService _notificationService;
 
     public SignVisitLogisticsHandoverCommandHandler(
-        IApplicationDbContext db, ICurrentUserService currentUser, IDateTimeService clock)
+        IApplicationDbContext db, ICurrentUserService currentUser, IDateTimeService clock, PEMS.Application.Notifications.Common.INotificationService notificationService)
     {
         _db = db;
         _currentUser = currentUser;
         _clock = clock;
+        _notificationService = notificationService;
     }
 
     public async Task<SignVisitLogisticsHandoverResponse> Handle(
@@ -139,6 +141,19 @@ public sealed class SignVisitLogisticsHandoverCommandHandler
         });
 
         await _db.SaveChangesAsync(cancellationToken);
+
+        if (item.AssignedToUserId.HasValue)
+        {
+            await _notificationService.CreateAsync(
+                item.AssignedToUserId.Value,
+                "Ký biên bản bàn giao",
+                $"Host {actorName} đã ký biên bản bàn giao (Bên nhận) cho nhiệm vụ \"{item.Title}\".",
+                PEMS.Application.Notifications.Common.NotificationTypes.LogisticsHandoverSigned,
+                PEMS.Application.Notifications.Common.NotificationRelatedTypes.LogisticsHandover,
+                handover.HandoverId,
+                cancellationToken
+            );
+        }
 
         return new SignVisitLogisticsHandoverResponse
         {

@@ -24,19 +24,22 @@ public sealed class ManageAccountStatusCommandHandler : IRequestHandler<ManageAc
     private readonly ISessionService _sessionService;
     private readonly ISecurityAuditService _audit;
     private readonly IDateTimeService _clock;
+    private readonly PEMS.Application.Notifications.Common.INotificationService _notificationService;
 
     public ManageAccountStatusCommandHandler(
         IApplicationDbContext db,
         ICurrentUserService currentUser,
         ISessionService sessionService,
         ISecurityAuditService audit,
-        IDateTimeService clock)
+        IDateTimeService clock,
+        PEMS.Application.Notifications.Common.INotificationService notificationService)
     {
         _db = db;
         _currentUser = currentUser;
         _sessionService = sessionService;
         _audit = audit;
         _clock = clock;
+        _notificationService = notificationService;
     }
 
     public async Task<ManageAccountStatusResponse> Handle(ManageAccountStatusCommand request, CancellationToken cancellationToken)
@@ -157,6 +160,17 @@ public sealed class ManageAccountStatusCommandHandler : IRequestHandler<ManageAc
         });
 
         await _db.SaveChangesAsync(cancellationToken);
+
+        string statusText = newStatus == UserStatuses.Active ? "kích hoạt" : (newStatus == UserStatuses.Inactive ? "vô hiệu hóa" : "khóa");
+        await _notificationService.CreateAsync(
+            user.UserId,
+            "Cập nhật trạng thái tài khoản",
+            $"Tài khoản của bạn đã được {statusText}.",
+            PEMS.Application.Notifications.Common.NotificationTypes.AccountStatusChanged,
+            PEMS.Application.Notifications.Common.NotificationRelatedTypes.Account,
+            user.UserId,
+            cancellationToken
+        );
 
         // Revoke all active sessions when the account leaves the ACTIVE state.
         var revoked = 0;

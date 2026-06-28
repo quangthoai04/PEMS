@@ -17,13 +17,15 @@ public sealed class SaveMinutesCommandHandler
     private readonly IApplicationDbContext _db;
     private readonly ICurrentUserService _currentUser;
     private readonly IDateTimeService _clock;
+    private readonly PEMS.Application.Notifications.Common.INotificationService _notificationService;
 
     public SaveMinutesCommandHandler(
-        IApplicationDbContext db, ICurrentUserService currentUser, IDateTimeService clock)
+        IApplicationDbContext db, ICurrentUserService currentUser, IDateTimeService clock, PEMS.Application.Notifications.Common.INotificationService notificationService)
     {
         _db = db;
         _currentUser = currentUser;
         _clock = clock;
+        _notificationService = notificationService;
     }
 
     public async Task<MinuteDto> Handle(SaveMinutesCommand request, CancellationToken cancellationToken)
@@ -91,6 +93,54 @@ public sealed class SaveMinutesCommandHandler
 
         await _db.SaveChangesAsync(cancellationToken);
         await tx.CommitAsync(cancellationToken);
+
+        var notifications = new System.Collections.Generic.List<PEMS.Application.Notifications.Common.CreateNotificationItem>();
+        string delegationName = instance.VisitRequest?.DelegationName ?? "Đoàn khách";
+        string title = request.Title.Trim();
+
+        // Notify Accepted participants
+        var notifyParticipantIds = await _db.VisitParticipants
+            .Where(p => p.VisitInstanceId == instance.VisitInstanceId && p.Status == ParticipantStatuses.Accepted && p.UserId != userId)
+            .Select(p => p.UserId)
+            .ToListAsync(cancellationToken);
+
+        foreach (var pId in notifyParticipantIds)
+        {
+            notifications.Add(new PEMS.Application.Notifications.Common.CreateNotificationItem(
+                pId,
+                "Biên bản cuộc họp cập nhật",
+                $"Biên bản cuộc họp \"{title}\" của đoàn {delegationName} đã được lưu.",
+                PEMS.Application.Notifications.Common.NotificationTypes.MinutesUpdated,
+                PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitInstance,
+                instance.VisitInstanceId
+            ));
+        }
+
+        // Notify Staff Leader of the campus
+        var staffLeaders = await _db.Users
+            .Where(u => u.Role.RoleCode == RoleCodes.Staff && u.SubRole == UserSubRoles.Leader && u.PrimaryCampusId == instance.CampusId && u.Status == UserStatuses.Active && u.UserId != userId)
+            .Select(u => u.UserId)
+            .ToListAsync(cancellationToken);
+
+        foreach (var leaderId in staffLeaders)
+        {
+            if (!notifyParticipantIds.Contains(leaderId))
+            {
+                notifications.Add(new PEMS.Application.Notifications.Common.CreateNotificationItem(
+                    leaderId,
+                    "Biên bản cuộc họp cập nhật",
+                    $"Biên bản cuộc họp \"{title}\" của đoàn {delegationName} đã được lưu.",
+                    PEMS.Application.Notifications.Common.NotificationTypes.MinutesUpdated,
+                    PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitInstance,
+                    instance.VisitInstanceId
+                ));
+            }
+        }
+
+        if (notifications.Count > 0)
+        {
+            await _notificationService.CreateManyAsync(notifications, cancellationToken);
+        }
 
         var dto = new MinuteDto
         {

@@ -65,16 +65,37 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AcceptAssignedLogis
 
             await _context.SaveChangesAsync(cancellationToken);
 
-            if (l.VisitInstance?.CurrentHostUserId != null)
+            var notifications = new System.Collections.Generic.List<PEMS.Application.Notifications.Common.CreateNotificationItem>();
+            var assignedBy = l.AssignedBy; // Department Leader who assigned this
+            var hostId = l.VisitInstance?.CurrentHostUserId;
+
+            if (assignedBy.HasValue && assignedBy.Value != userId)
             {
-                await _notificationService.CreateAsync(
-                    recipientUserId: l.VisitInstance.CurrentHostUserId.Value,
-                    title: "Logistics được tiếp nhận",
-                    message: "Nhiệm vụ logistics của bạn đã được tiếp nhận.",
-                    notificationType: PEMS.Domain.Constants.NotificationTypes.LogisticsAssigneeResponded,
-                    relatedType: PEMS.Domain.Constants.NotificationRelatedTypes.LogisticsItem,
-                    relatedId: request.LogisticsItemId,
-                    cancellationToken: cancellationToken);
+                notifications.Add(new PEMS.Application.Notifications.Common.CreateNotificationItem(
+                    assignedBy.Value,
+                    "Logistics được tiếp nhận",
+                    $"Nhân sự đã tiếp nhận nhiệm vụ hậu cần: {l.Title}.",
+                    PEMS.Application.Notifications.Common.NotificationTypes.LogisticsAssigneeResponded,
+                    PEMS.Application.Notifications.Common.NotificationRelatedTypes.LogisticsItem,
+                    request.LogisticsItemId
+                ));
+            }
+
+            if (hostId.HasValue && hostId.Value != userId && hostId.Value != assignedBy)
+            {
+                notifications.Add(new PEMS.Application.Notifications.Common.CreateNotificationItem(
+                    hostId.Value,
+                    "Logistics được tiếp nhận",
+                    $"Nhân sự phòng ban đã tiếp nhận nhiệm vụ hậu cần: {l.Title}.",
+                    PEMS.Application.Notifications.Common.NotificationTypes.LogisticsAssigneeResponded,
+                    PEMS.Application.Notifications.Common.NotificationRelatedTypes.LogisticsItem,
+                    request.LogisticsItemId
+                ));
+            }
+
+            if (notifications.Any())
+            {
+                await _notificationService.CreateManyAsync(notifications, cancellationToken);
             }
 
             return true;

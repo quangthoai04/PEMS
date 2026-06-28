@@ -15,13 +15,15 @@ public sealed class RespondVisitParticipantInvitationCommandHandler
     private readonly IApplicationDbContext _db;
     private readonly ICurrentUserService _currentUser;
     private readonly IDateTimeService _clock;
+    private readonly PEMS.Application.Notifications.Common.INotificationService _notificationService;
 
     public RespondVisitParticipantInvitationCommandHandler(
-        IApplicationDbContext db, ICurrentUserService currentUser, IDateTimeService clock)
+        IApplicationDbContext db, ICurrentUserService currentUser, IDateTimeService clock, PEMS.Application.Notifications.Common.INotificationService notificationService)
     {
         _db = db;
         _currentUser = currentUser;
         _clock = clock;
+        _notificationService = notificationService;
     }
 
     public async Task<RespondVisitParticipantInvitationResponse> Handle(
@@ -33,6 +35,7 @@ public sealed class RespondVisitParticipantInvitationCommandHandler
         var userId = _currentUser.UserId.Value;
 
         var participant = await _db.VisitParticipants
+            .Include(p => p.VisitInstance).ThenInclude(v => v.VisitRequest)
             .FirstOrDefaultAsync(p => p.ParticipantId == request.ParticipantId, cancellationToken)
             ?? throw new NotFoundException("VisitParticipant", request.ParticipantId);
 
@@ -87,6 +90,24 @@ public sealed class RespondVisitParticipantInvitationCommandHandler
             _db, EmailActionTargetTypes.VisitParticipant, participant.ParticipantId, "Lời mời này đã được phản hồi.", now, cancellationToken);
 
         await _db.SaveChangesAsync(cancellationToken);
+
+        if (participant.VisitInstance?.CurrentHostUserId != null)
+        {
+            var user = await _db.Users.FirstOrDefaultAsync(u => u.UserId == userId, cancellationToken);
+            string participantName = user?.FullName ?? "Người được mời";
+            string delegationName = participant.VisitInstance.VisitRequest?.DelegationName ?? "Đoàn khách";
+            string responseText = request.Accept ? "chấp nhận" : "từ chối";
+            
+            await _notificationService.CreateAsync(
+                participant.VisitInstance.CurrentHostUserId.Value,
+                "Phản hồi lời mời tham gia",
+                $"{participantName} đã {responseText} lời mời hỗ trợ đoàn {delegationName}.",
+                PEMS.Application.Notifications.Common.NotificationTypes.ParticipationResponded,
+                PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitParticipant,
+                participant.ParticipantId,
+                cancellationToken
+            );
+        }
 
         var message = request.Accept
             ? "Đã xác nhận tham gia. Đơn sẽ xuất hiện trong tab Đơn mời tham dự."

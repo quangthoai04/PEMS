@@ -19,6 +19,7 @@ public sealed class CreateAccountCommandHandler : IRequestHandler<CreateAccountC
     private readonly IDateTimeService _clock;
     private readonly AuthOptions _options;
     private readonly IEmailService _emailService;
+    private readonly PEMS.Application.Notifications.Common.INotificationService _notificationService;
 
     public CreateAccountCommandHandler(
         IApplicationDbContext db,
@@ -26,7 +27,8 @@ public sealed class CreateAccountCommandHandler : IRequestHandler<CreateAccountC
         IPasswordHasher passwordHasher,
         IDateTimeService clock,
         AuthOptions options,
-        IEmailService emailService)
+        IEmailService emailService,
+        PEMS.Application.Notifications.Common.INotificationService notificationService)
     {
         _db = db;
         _currentUser = currentUser;
@@ -34,6 +36,7 @@ public sealed class CreateAccountCommandHandler : IRequestHandler<CreateAccountC
         _clock = clock;
         _options = options;
         _emailService = emailService;
+        _notificationService = notificationService;
     }
 
     public async Task<CreateAccountResponse> Handle(CreateAccountCommand request, CancellationToken cancellationToken)
@@ -275,6 +278,16 @@ public sealed class CreateAccountCommandHandler : IRequestHandler<CreateAccountC
             });
 
             await _db.SaveChangesAsync(cancellationToken);
+
+            await _notificationService.CreateAsync(
+                user.UserId,
+                "Tài khoản được tạo",
+                $"Tài khoản PEMS của bạn đã được khởi tạo thành công với vai trò {shape.RoleCode}.",
+                PEMS.Application.Notifications.Common.NotificationTypes.AccountCreated,
+                PEMS.Application.Notifications.Common.NotificationRelatedTypes.Account,
+                user.UserId,
+                cancellationToken
+            );
 
             if (transaction is not null)
                 await transaction.CommitAsync(cancellationToken);

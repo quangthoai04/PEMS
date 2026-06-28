@@ -34,11 +34,13 @@ public sealed class PrepareVisitLogisticsCommandHandler
     private readonly IHtmlSanitizerService _sanitizer;
     private readonly IFileStorageService _storage;
     private readonly PEMS.Application.Emails.Utils.IEmailImageLayoutNormalizer _normalizer;
+    private readonly PEMS.Application.Notifications.Common.INotificationService _notificationService;
 
     public PrepareVisitLogisticsCommandHandler(
         IApplicationDbContext db, ICurrentUserService currentUser, IDateTimeService clock,
         IEmailService email, IEmailActionTokenService tokens, IHtmlSanitizerService sanitizer,
-        IFileStorageService storage, PEMS.Application.Emails.Utils.IEmailImageLayoutNormalizer normalizer)
+        IFileStorageService storage, PEMS.Application.Emails.Utils.IEmailImageLayoutNormalizer normalizer,
+        PEMS.Application.Notifications.Common.INotificationService notificationService)
     {
         _db = db;
         _currentUser = currentUser;
@@ -48,6 +50,7 @@ public sealed class PrepareVisitLogisticsCommandHandler
         _sanitizer = sanitizer;
         _storage = storage;
         _normalizer = normalizer;
+        _notificationService = notificationService;
     }
 
     public async Task<PrepareVisitLogisticsResponse> Handle(
@@ -291,17 +294,15 @@ public sealed class PrepareVisitLogisticsCommandHandler
                 _db.SentEmailRecipients.Add(sentRecipient);
                 await _db.SaveChangesAsync(cancellationToken);
 
-                _db.Notifications.Add(new Notification
-                {
-                    RecipientUserId = leaderUserId!.Value,
-                    NotificationType = "VISIT_LOGISTICS_REQUESTED",
-                    Title = LogisticsPriorityText.SubjectPrefix(item.Priority) + "Có yêu cầu hậu cần mới",
-                    Message = $"Host {requesterName} đã gửi yêu cầu \"{item.Title}\" (ưu tiên {LogisticsPriorityText.LabelVi(item.Priority)}) cho đoàn {delegationName} tại {campusName}.",
-                    RelatedType = "LOGISTICS_ITEM",
-                    RelatedId = item.LogisticsItemId,
-                    IsRead = false,
-                    CreatedAt = now,
-                });
+                await _notificationService.CreateAsync(
+                    leaderUserId!.Value,
+                    LogisticsPriorityText.SubjectPrefix(item.Priority) + "Có yêu cầu hậu cần mới",
+                    $"Host {requesterName} đã gửi yêu cầu \"{item.Title}\" (ưu tiên {LogisticsPriorityText.LabelVi(item.Priority)}) cho đoàn {delegationName} tại {campusName}.",
+                    PEMS.Application.Notifications.Common.NotificationTypes.LogisticsRequestCreated,
+                    PEMS.Application.Notifications.Common.NotificationRelatedTypes.LogisticsItem,
+                    item.LogisticsItemId,
+                    cancellationToken
+                );
 
                 // Flush changes so sentEmail and sentRecipient get their autoincrement IDs
                 await _db.SaveChangesAsync(cancellationToken);

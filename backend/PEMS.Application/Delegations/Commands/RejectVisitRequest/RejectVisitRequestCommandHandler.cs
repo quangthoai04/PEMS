@@ -18,13 +18,15 @@ public sealed class RejectVisitRequestCommandHandler
     private readonly IApplicationDbContext _db;
     private readonly ICurrentUserService _currentUser;
     private readonly IDateTimeService _clock;
+    private readonly PEMS.Application.Notifications.Common.INotificationService _notificationService;
 
     public RejectVisitRequestCommandHandler(
-        IApplicationDbContext db, ICurrentUserService currentUser, IDateTimeService clock)
+        IApplicationDbContext db, ICurrentUserService currentUser, IDateTimeService clock, PEMS.Application.Notifications.Common.INotificationService notificationService)
     {
         _db = db;
         _currentUser = currentUser;
         _clock = clock;
+        _notificationService = notificationService;
     }
 
     public async Task<RejectVisitRequestResponse> Handle(
@@ -98,6 +100,19 @@ public sealed class RejectVisitRequestCommandHandler
         });
 
         await _db.SaveChangesAsync(cancellationToken);
+
+        // --- Notifications ---
+        if (visit.VisitorUserId.HasValue)
+        {
+            await _notificationService.CreateAsync(
+                visit.VisitorUserId.Value,
+                "Yêu cầu bị từ chối",
+                $"Yêu cầu tham quan {visit.RequestCode} của bạn đã bị từ chối. Vui lòng xem lý do trong chi tiết đơn.",
+                PEMS.Application.Notifications.Common.NotificationTypes.VisitRequestRejected,
+                PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitRequest,
+                visit.VisitRequestId,
+                cancellationToken);
+        }
 
         return new RejectVisitRequestResponse(visit.VisitRequestId, visit.Status, "Đã từ chối đơn tham quan.");
     }

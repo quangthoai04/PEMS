@@ -19,13 +19,15 @@ public sealed class SaveVisitAgendaCommandHandler
     private readonly IApplicationDbContext _db;
     private readonly ICurrentUserService _currentUser;
     private readonly IDateTimeService _clock;
+    private readonly PEMS.Application.Notifications.Common.INotificationService _notificationService;
 
     public SaveVisitAgendaCommandHandler(
-        IApplicationDbContext db, ICurrentUserService currentUser, IDateTimeService clock)
+        IApplicationDbContext db, ICurrentUserService currentUser, IDateTimeService clock, PEMS.Application.Notifications.Common.INotificationService notificationService)
     {
         _db = db;
         _currentUser = currentUser;
         _clock = clock;
+        _notificationService = notificationService;
     }
 
     public async Task<SaveVisitAgendaResponse> Handle(
@@ -37,6 +39,7 @@ public sealed class SaveVisitAgendaCommandHandler
         var actorId = _currentUser.UserId.Value;
 
         var instance = await _db.VisitRequestCampuses
+            .Include(c => c.VisitRequest)
             .FirstOrDefaultAsync(c => c.VisitInstanceId == request.VisitInstanceId
                                       && c.VisitRequestId == request.VisitRequestId, cancellationToken)
             ?? throw new NotFoundException("VisitRequestCampus", request.VisitInstanceId);
@@ -151,6 +154,53 @@ public sealed class SaveVisitAgendaCommandHandler
 
         await _db.SaveChangesAsync(cancellationToken);
         await tx.CommitAsync(cancellationToken);
+
+        var notifications = new System.Collections.Generic.List<PEMS.Application.Notifications.Common.CreateNotificationItem>();
+        string delegationName = instance.VisitRequest?.DelegationName ?? "Đoàn khách";
+        
+        // Notify Accepted participants
+        var notifyParticipantIds = await _db.VisitParticipants
+            .Where(p => p.VisitInstanceId == instance.VisitInstanceId && p.Status == ParticipantStatuses.Accepted && p.UserId != actorId)
+            .Select(p => p.UserId)
+            .ToListAsync(cancellationToken);
+
+        foreach (var pId in notifyParticipantIds)
+        {
+            notifications.Add(new PEMS.Application.Notifications.Common.CreateNotificationItem(
+                pId,
+                "Lịch trình được cập nhật",
+                $"Lịch trình của đoàn {delegationName} đã được cập nhật.",
+                PEMS.Application.Notifications.Common.NotificationTypes.AgendaUpdated,
+                PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitInstance,
+                instance.VisitInstanceId
+            ));
+        }
+
+        // Notify Staff Leader of the campus
+        var staffLeaders = await _db.Users
+            .Where(u => u.Role.RoleCode == RoleCodes.Staff && u.SubRole == UserSubRoles.Leader && u.PrimaryCampusId == instance.CampusId && u.Status == UserStatuses.Active && u.UserId != actorId)
+            .Select(u => u.UserId)
+            .ToListAsync(cancellationToken);
+
+        foreach (var leaderId in staffLeaders)
+        {
+            if (!notifyParticipantIds.Contains(leaderId))
+            {
+                notifications.Add(new PEMS.Application.Notifications.Common.CreateNotificationItem(
+                    leaderId,
+                    "Lịch trình được cập nhật",
+                    $"Lịch trình của đoàn {delegationName} đã được cập nhật.",
+                    PEMS.Application.Notifications.Common.NotificationTypes.AgendaUpdated,
+                    PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitInstance,
+                    instance.VisitInstanceId
+                ));
+            }
+        }
+
+        if (notifications.Count > 0)
+        {
+            await _notificationService.CreateManyAsync(notifications, cancellationToken);
+        }
 
         var items = saved
             .OrderBy(a => a.SequenceOrder)
