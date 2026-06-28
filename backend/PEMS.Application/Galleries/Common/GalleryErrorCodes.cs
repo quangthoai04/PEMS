@@ -51,4 +51,39 @@ public static class GalleryErrorCodes
 
     /// <summary>Tried to enable an item that has no active media. → 422.</summary>
     public const string NoActiveMedia = "GALLERY_NO_ACTIVE_MEDIA";
+
+    // ── Area / Location management (UC-LOC-01..09) ──
+
+    /// <summary>The caller is not allowed to manage this area/location (wrong campus). → 403.</summary>
+    public const string LocationManageForbidden = "GALLERY_LOCATION_MANAGE_FORBIDDEN";
+
+    /// <summary>The target area does not exist (or not in the caller's campus). → 404.</summary>
+    public const string AreaNotFound = "GALLERY_AREA_NOT_FOUND";
+
+    /// <summary><c>areaId</c> is required when mode = EXISTING_AREA. → 422.</summary>
+    public const string AreaRequired = "GALLERY_AREA_REQUIRED";
+
+    /// <summary><c>newAreaName</c> is required when mode = NEW_AREA. → 422.</summary>
+    public const string NewAreaNameRequired = "GALLERY_NEW_AREA_NAME_REQUIRED";
+
+    /// <summary><c>locationName</c> is required (empty after trim). → 422.</summary>
+    public const string LocationNameRequired = "GALLERY_LOCATION_NAME_REQUIRED";
+
+    /// <summary>An area with the same normalized key already exists in this campus. → 409.</summary>
+    public const string AreaDuplicate = "GALLERY_AREA_DUPLICATE";
+
+    /// <summary>A location with the same normalized key already exists in this area. → 409.</summary>
+    public const string LocationDuplicate = "GALLERY_LOCATION_DUPLICATE";
+
+    /// <summary>The target area is INACTIVE so a location cannot be added/moved into it. → 422.</summary>
+    public const string AreaInactive = "GALLERY_AREA_INACTIVE";
+
+    /// <summary><c>mode</c> is neither EXISTING_AREA nor NEW_AREA. → 422.</summary>
+    public const string InvalidMode = "GALLERY_INVALID_MODE";
+
+    /// <summary>Tried to publish an item whose location is INACTIVE. → 409.</summary>
+    public const string ItemPublishBlockedLocationInactive = "GALLERY_ITEM_PUBLISH_BLOCKED_LOCATION_INACTIVE";
+
+    /// <summary>Tried to publish an item whose area is INACTIVE. → 409.</summary>
+    public const string ItemPublishBlockedAreaInactive = "GALLERY_ITEM_PUBLISH_BLOCKED_AREA_INACTIVE";
 }
