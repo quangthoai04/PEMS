@@ -1,14 +1,26 @@
-using System;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
+using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Common.Models;
+using PEMS.Application.Galleries.Common;
 
 namespace PEMS.Application.Galleries.Queries.ViewGalleryItemList;
 
-public sealed class ViewGalleryItemListQueryHandler : IRequestHandler<ViewGalleryItemListQuery, ViewGalleryItemListDto>
+/// <summary>UC-GAL-01 handler — delegates to the shared <see cref="GalleryItemListQueryExecutor"/>.</summary>
+public sealed class ViewGalleryItemListQueryHandler
+    : IRequestHandler<ViewGalleryItemListQuery, PaginatedResult<GalleryItemListItemDto>>
 {
-    public Task<ViewGalleryItemListDto> Handle(ViewGalleryItemListQuery request, CancellationToken cancellationToken)
+    private readonly IApplicationDbContext _db;
+    private readonly ICurrentUserService _currentUser;
+
+    public ViewGalleryItemListQueryHandler(IApplicationDbContext db, ICurrentUserService currentUser)
     {
-        throw new NotImplementedException("UC View Gallery Item List has been scaffolded. Business rules must be implemented after UC specification is completed.");
+        _db = db;
+        _currentUser = currentUser;
     }
+
+    public Task<PaginatedResult<GalleryItemListItemDto>> Handle(
+        ViewGalleryItemListQuery request, CancellationToken cancellationToken)
+        => GalleryItemListQueryExecutor.ExecuteAsync(_db, _currentUser, request, cancellationToken);
 }
