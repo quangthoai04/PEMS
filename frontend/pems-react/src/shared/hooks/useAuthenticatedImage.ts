@@ -45,3 +45,48 @@ export function useAuthenticatedImage(path: string | null | undefined): string |
 
   return objectUrl;
 }
+
+export type AuthenticatedMediaStatus = 'idle' | 'loading' | 'loaded' | 'error';
+
+export interface AuthenticatedMediaResult {
+  url: string | null;
+  status: AuthenticatedMediaStatus;
+}
+
+/**
+ * Like {@link useAuthenticatedImage} but exposes a load status so callers can render a placeholder
+ * instead of spinning forever when the underlying file can't be fetched (e.g. a Drive object that no
+ * longer exists / isn't configured → the backend returns 422). Fetches at most once per `path`.
+ */
+export function useAuthenticatedMedia(path: string | null | undefined): AuthenticatedMediaResult {
+  const [state, setState] = useState<AuthenticatedMediaResult>({ url: null, status: 'idle' });
+
+  useEffect(() => {
+    if (!path) {
+      setState({ url: null, status: 'idle' });
+      return;
+    }
+
+    let cancelled = false;
+    let created: string | null = null;
+    setState({ url: null, status: 'loading' });
+
+    (async () => {
+      try {
+        const { data } = await httpClient.get<Blob>(path, { baseURL: '', responseType: 'blob' });
+        if (cancelled) return;
+        created = URL.createObjectURL(data);
+        setState({ url: created, status: 'loaded' });
+      } catch {
+        if (!cancelled) setState({ url: null, status: 'error' });
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (created) URL.revokeObjectURL(created);
+    };
+  }, [path]);
+
+  return state;
+}
