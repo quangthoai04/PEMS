@@ -83,6 +83,15 @@ export const API_ENDPOINTS = {
   publicPartners: {
     search: '/public/partners/search',
   },
+  // Public VisitFPTU Gallery (anonymous display layer over the Staff-Leader-managed gallery).
+  publicVisitFptu: {
+    campuses: '/public/visit-fptu/campuses',
+    navigation: (campusCode: string) => `/public/visit-fptu/campuses/${campusCode}/navigation`,
+    locationGalleryItem: (locationId: string | number) =>
+      `/public/visit-fptu/locations/${locationId}/gallery-item`,
+    // Anonymous, gallery-scoped media proxy. URLs are returned absolute (e.g. "/api/public/visit-fptu/media/123/content").
+    mediaContent: (fileId: string | number) => `/public/visit-fptu/media/${fileId}/content`,
+  },
   delegations: {
     list: '/delegations',
     managementList: '/delegations/viewguestdelegationlist',
