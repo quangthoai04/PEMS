@@ -2,8 +2,9 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Bell } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
+import toast from 'react-hot-toast';
 import { useNotifications } from '../../features/notifications/hooks/useNotifications';
-import { NotificationItem } from '../../features/notifications/api/notificationsApi';
+import { NotificationItem } from '../../features/notifications/types/notification.types';
 
 function timeAgo(dateStr: string): string {
   const date = new Date(dateStr.endsWith('Z') ? dateStr : dateStr + 'Z');
@@ -19,10 +20,7 @@ function timeAgo(dateStr: string): string {
 }
 
 function getNotificationLink(item: NotificationItem): string | undefined {
-  if (item.relatedType === 'NEWS' && item.relatedId) {
-    return `/dashboard/news/${item.relatedId}`;
-  }
-  return undefined;
+  return item.targetUrl || undefined;
 }
 
 export function NotificationBell() {
@@ -54,6 +52,19 @@ export function NotificationBell() {
 
   const handleItemClick = async (item: NotificationItem) => {
     if (!item.isRead) await markAsRead(item.notificationId);
+
+    if (!item.canOpen || !item.targetUrl) {
+      toast.error(item.disabledReason || "Không thể mở nội dung này.", {
+        icon: '⚠️',
+        style: {
+          borderRadius: '10px',
+          background: '#333',
+          color: '#fff',
+        },
+      });
+      return;
+    }
+
     setIsOpen(false);
     const link = getNotificationLink(item);
     if (link) navigate(link);

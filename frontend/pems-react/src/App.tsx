@@ -65,7 +65,9 @@ import { ResetPasswordPage } from './pages/auth/ResetPasswordPage';
 import { ChangePasswordPage } from './pages/auth/ChangePasswordPage';
 import { ForbiddenPage } from './pages/ForbiddenPage';
 import { InvalidAccountPage } from './pages/InvalidAccountPage';
+import { NotFoundPage } from './pages/NotFoundPage';
 import { ProtectedRoute } from './shared/auth/ProtectedRoute';
+import { ErrorBoundary } from './components/layout/ErrorBoundary';
 
 
 function ScrollToTop() {
@@ -133,7 +135,7 @@ export default function App() {
           <Route path="/invalid-account" element={<InvalidAccountPage />} />
 
           {/* Dashboard Routes (require authentication) */}
-          <Route path="/dashboard" element={<ProtectedRoute><DashboardLayout /></ProtectedRoute>}>
+          <Route path="/dashboard" element={<ProtectedRoute><ErrorBoundary><DashboardLayout /></ErrorBoundary></ProtectedRoute>}>
             <Route index element={<DashboardHome />} />
             <Route path="profile" element={<Profile />} />
             <Route path="news" element={<NewsManagement />} />
@@ -175,6 +177,8 @@ export default function App() {
             <Route path="feedback/:id" element={<FeedbackDetail />} />
             <Route path="apis" element={<ProtectedRoute roles={['ADMIN']}><ApiManagement /></ProtectedRoute>} />
           </Route>
+          
+          <Route path="*" element={<NotFoundPage />} />
         </Routes>
       </main>
 

@@ -1,0 +1,15 @@
+export const NotificationRelatedTypes = {
+  VisitRequest: "VISIT_REQUEST",
+  VisitInstance: "VISIT_INSTANCE",
+  VisitParticipant: "VISIT_PARTICIPANT",
+  LogisticsItem: "LOGISTICS_ITEM",
+  LogisticsHandover: "LOGISTICS_HANDOVER",
+  Agenda: "AGENDA",
+  Minutes: "MINUTES",
+  MinuteActionItem: "MINUTE_ACTION_ITEM",
+  News: "NEWS",
+  Partner: "PARTNER",
+  CalendarEvent: "CALENDAR_EVENT",
+  Account: "ACCOUNT",
+  System: "SYSTEM",
+} as const;
