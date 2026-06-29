@@ -62,17 +62,9 @@ public sealed class UpdateGalleryItemCommandHandler
                 "Bạn không có quyền chỉnh sửa gallery item này.", 403);
 
         // New location must be ACTIVE and in the caller's campus (BR-GAL-EDIT-02/03; throws 404/403/422).
+        // A location may hold many items, so moving an item into an already-used location is allowed.
         await GalleryLocationGuard.LoadActiveLocationInCurrentCampusAsync(
             _db, (ulong)request.LocationId, campusId, cancellationToken);
-
-        // One gallery item per location: the chosen location must not belong to a DIFFERENT item.
-        var locationTaken = await _db.GalleryItems.AnyAsync(
-            i => i.LocationId == (ulong)request.LocationId && i.GalleryItemId != itemId && i.DeletedAt == null,
-            cancellationToken);
-        if (locationTaken)
-            throw new ConflictException(
-                "Vị trí này đã có gallery item khác. Mỗi vị trí chỉ được dùng cho một gallery item.",
-                GalleryErrorCodes.LocationAlreadyUsed);
 
         var now = _clock.UtcNow;
         var keepSet = new HashSet<ulong>((request.KeepMediaIds ?? Array.Empty<long>()).Select(id => (ulong)id));

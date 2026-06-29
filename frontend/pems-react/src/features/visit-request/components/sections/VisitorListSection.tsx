@@ -7,7 +7,16 @@ import { CountrySelect } from '../shared/CountrySelect';
 import { OrganizationCombobox } from '../shared/OrganizationCombobox';
 import { validateVisitorExcel, isAllowedExcelFile } from '../ExcelUpload/excelValidator';
 import { downloadVisitorTemplate } from '../ExcelUpload/excelDownload';
-import type { ExcelValidationResult, ExcelValidationError } from '../../types/visitRequest.types';
+import type { ExcelValidationResult, ExcelValidationError, VisitorEntry } from '../../types/visitRequest.types';
+
+function hasRealError(error: unknown): boolean {
+  if (!error) return false;
+  if (Array.isArray(error)) return error.some(hasRealError);
+  if (typeof error === 'object') {
+    return Object.values(error as Record<string, unknown>).some(hasRealError);
+  }
+  return true;
+}
 
 interface Props {
   form: UseFormReturn<VisitRequestSchema>;
@@ -35,7 +44,7 @@ export const VisitorListSection: React.FC<Props> = ({ form, visitorFields, showE
 
     if (!isAllowedExcelFile(file)) {
       setUploadResult({
-        valid: false, totalRows: 0, errorRows: 0,
+        valid: false, totalRows: 0, errorRows: 0, skippedDuplicates: 0,
         errors: [{ row: 0, column: '', message: 'Chỉ chấp nhận file .xlsx hoặc .xls' }],
         data: [],
       });
@@ -44,7 +53,13 @@ export const VisitorListSection: React.FC<Props> = ({ form, visitorFields, showE
       return;
     }
 
-    const result = await validateVisitorExcel(file);
+    const existingData = visitorFields.fields.map(f => ({
+      fullName: f.fullName,
+      jobTitle: f.jobTitle,
+      organization: f.organization,
+      nationality: f.nationality
+    }));
+    const result = await validateVisitorExcel(file, existingData as VisitorEntry[]);
 
     if (result.data.length > 0) {
       // Email checking removed
@@ -70,7 +85,7 @@ export const VisitorListSection: React.FC<Props> = ({ form, visitorFields, showE
 
   const rootErrorMessage = (visitorErrors as any)?.root?.message || (typeof visitorErrors === 'object' && !Array.isArray(visitorErrors) ? (visitorErrors as any).message : null);
   const hasRootError = !!rootErrorMessage;
-  const hasAnyError = showErrors && (hasRootError || (Array.isArray(visitorErrors) && visitorErrors.length > 0));
+  const hasAnyError = showErrors && (hasRootError || hasRealError(visitorErrors));
 
   return (
     <div className={`rounded-2xl border bg-white shadow-sm mt-8 transition-colors ${hasAnyError ? 'border-red-300 shadow-red-500/10' : 'border-slate-200'}`}>
@@ -247,7 +262,7 @@ export const VisitorListSection: React.FC<Props> = ({ form, visitorFields, showE
                     </p>
                     {uploadResult.totalRows > 0 && (
                       <p className="text-[10px] text-gray-600 mt-0.5">
-                        Tổng {uploadResult.totalRows} dòng · {uploadResult.errorRows} dòng lỗi/bỏ qua
+                        Tổng {uploadResult.totalRows} dòng · {uploadResult.errorRows} dòng lỗi/bỏ qua{uploadResult.skippedDuplicates > 0 ? ` · ${uploadResult.skippedDuplicates} dòng trùng đã bỏ qua` : ''}.
                       </p>
                     )}
                   </div>

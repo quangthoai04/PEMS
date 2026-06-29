@@ -13,13 +13,15 @@ public sealed class SubmitVisitInstanceNewsCommandHandler
     private readonly IApplicationDbContext _db;
     private readonly ICurrentUserService _currentUser;
     private readonly IDateTimeService _clock;
+    private readonly PEMS.Application.Notifications.Common.INotificationService _notificationService;
 
     public SubmitVisitInstanceNewsCommandHandler(
-        IApplicationDbContext db, ICurrentUserService currentUser, IDateTimeService clock)
+        IApplicationDbContext db, ICurrentUserService currentUser, IDateTimeService clock, PEMS.Application.Notifications.Common.INotificationService notificationService)
     {
         _db = db;
         _currentUser = currentUser;
         _clock = clock;
+        _notificationService = notificationService;
     }
 
     public async Task<VisitNewsDto> Handle(SubmitVisitInstanceNewsCommand request, CancellationToken cancellationToken)
@@ -71,6 +73,31 @@ public sealed class SubmitVisitInstanceNewsCommandHandler
         await _db.SaveChangesAsync(cancellationToken);
 
         var tr = news.Translations.FirstOrDefault(t => t.LanguageCode == "vi") ?? news.Translations.FirstOrDefault();
+        string newsTitle = tr?.Title ?? "(Không có tiêu đề)";
+
+        var staffLeaders = await _db.Users
+            .Where(u => u.Role.RoleCode == RoleCodes.Staff && u.SubRole == UserSubRoles.Leader && u.PrimaryCampusId == instance.CampusId && u.Status == UserStatuses.Active)
+            .Select(u => u.UserId)
+            .ToListAsync(cancellationToken);
+
+        var notifications = new System.Collections.Generic.List<PEMS.Application.Notifications.Common.CreateNotificationItem>();
+        foreach (var leaderId in staffLeaders)
+        {
+            notifications.Add(new PEMS.Application.Notifications.Common.CreateNotificationItem(
+                leaderId,
+                "Tin tức chờ duyệt",
+                $"Bài tin \"{newsTitle}\" đang chờ bạn duyệt.",
+                PEMS.Application.Notifications.Common.NotificationTypes.NewsPendingApproval,
+                PEMS.Application.Notifications.Common.NotificationRelatedTypes.News,
+                news.NewsId
+            ));
+        }
+
+        if (notifications.Count > 0)
+        {
+            await _notificationService.CreateManyAsync(notifications, cancellationToken);
+        }
+
         var section = tr?.Sections.OrderBy(s => s.SectionOrder).FirstOrDefault();
         return new VisitNewsDto
         {

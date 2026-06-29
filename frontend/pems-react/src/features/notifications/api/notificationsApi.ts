@@ -1,28 +1,32 @@
 import httpClient from '../../../shared/api/httpClient';
+import { NotificationItem, UnreadNotificationCountResponse } from '../types/notification.types';
 
-export interface NotificationItem {
-  notificationId: number;
-  notificationType: string;
-  title: string;
-  message?: string;
-  relatedType?: string;
-  relatedId?: number;
-  isRead: boolean;
-  createdAt: string;
-}
-
-export interface NotificationsResponse {
-  items: NotificationItem[];
-  unreadCount: number;
-}
+type PaginatedResult<T> = {
+  items: T[];
+  page: number;
+  pageSize: number;
+  totalItems: number;
+  totalPages: number;
+};
 
 export const notificationsApi = {
-  getNotifications: (pageSize = 20) =>
-    httpClient.get<NotificationsResponse>('/public/notifications', { params: { pageSize } }),
+  getNotifications: async (params?: { page?: number; pageSize?: number; isRead?: boolean }) => {
+    const response = await httpClient.get<PaginatedResult<NotificationItem>>('/notifications', { params });
+    return response.data;
+  },
 
-  markAsRead: (notificationId: number) =>
-    httpClient.patch(`/public/notifications/${notificationId}/read`),
+  getUnreadCount: async () => {
+    const response = await httpClient.get<UnreadNotificationCountResponse>('/notifications/unread-count');
+    return response.data;
+  },
 
-  markAllAsRead: () =>
-    httpClient.patch('/public/notifications/read-all'),
+  markAsRead: async (notificationId: number) => {
+    const response = await httpClient.patch<{ success: boolean }>(`/notifications/${notificationId}/read`);
+    return response.data;
+  },
+
+  markAllAsRead: async () => {
+    const response = await httpClient.patch<{ updatedCount: number }>('/notifications/mark-all-read');
+    return response.data;
+  },
 };

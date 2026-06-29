@@ -68,6 +68,11 @@ export const API_ENDPOINTS = {
     create: '/galleries/addgalleryitem',
     update: '/galleries/updategalleryitem',
     changeStatus: '/galleries/changegalleryitemstatus',
+    // UC-LOC-01..09 — area/location management ("Quản lý khu vực").
+    locationList: '/galleries/viewgallerylocationlist',
+    locationCreate: '/galleries/creategallerylocation',
+    locationUpdate: '/galleries/updategallerylocation',
+    locationChangeStatus: '/galleries/changegallerylocationstatus',
   },
   partners: {
     list: '/partners',
@@ -77,6 +82,19 @@ export const API_ENDPOINTS = {
   },
   publicPartners: {
     search: '/public/partners/search',
+  },
+  // Public VisitFPTU Gallery (anonymous display layer over the Staff-Leader-managed gallery).
+  publicVisitFptu: {
+    campuses: '/public/visit-fptu/campuses',
+    navigation: (campusCode: string) => `/public/visit-fptu/campuses/${campusCode}/navigation`,
+    // Album grid of a location (each public item by its primary media).
+    locationGalleryItems: (locationId: string | number) =>
+      `/public/visit-fptu/locations/${locationId}/gallery-items`,
+    // Detail of one gallery item (all its media).
+    galleryItemDetail: (galleryItemId: string | number) =>
+      `/public/visit-fptu/gallery-items/${galleryItemId}`,
+    // Anonymous, gallery-scoped media proxy. URLs are returned absolute (e.g. "/api/public/visit-fptu/media/123/content").
+    mediaContent: (fileId: string | number) => `/public/visit-fptu/media/${fileId}/content`,
   },
   delegations: {
     list: '/delegations',

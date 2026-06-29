@@ -54,6 +54,34 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
     }, 4000);
   };
 
+  const handleInvalidSubmit = (errors: any) => {
+    console.warn("Submit blocked by validation:", errors);
+    
+    const step1Fields = ['registerInfo', 'delegationName', 'visitMode', 'visits', 'purpose', 'workingContent'];
+    const step2Fields = ['visitors', 'supportTeam', 'contactPoint'];
+    
+    const hasStep1Error = Object.keys(errors).some(k => step1Fields.includes(k));
+    const hasStep2Error = Object.keys(errors).some(k => step2Fields.includes(k));
+    
+    if (hasStep1Error) {
+      setCurrentStep(1);
+      setStepError("Vui lòng kiểm tra lại các thông tin còn thiếu hoặc chưa hợp lệ.");
+    } else if (hasStep2Error) {
+      setCurrentStep(2);
+      setStepError("Vui lòng kiểm tra lại các thông tin còn thiếu hoặc chưa hợp lệ.");
+    } else {
+      setCurrentStep(3);
+      setSubmitError("Vui lòng kiểm tra lại các thông tin còn thiếu hoặc chưa hợp lệ.");
+    }
+    
+    setTimeout(() => {
+      const firstError = document.querySelector('.error-scroll-target');
+      if (firstError) {
+        firstError.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 100);
+  };
+
   const {
     form,
     visitFields,
@@ -66,6 +94,7 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
     onSubmit,
     isSubmitting,
     submitError,
+    setSubmitError,
     sessionToken,
     maskedEmail,
     otpError,
@@ -76,7 +105,7 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
     cancelOtp,
     setDraftHydrated,
     isRestoringDraftRef,
-  } = useVisitRequestForm(handleSuccess);
+  } = useVisitRequestForm(handleSuccess, handleInvalidSubmit);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -484,7 +513,7 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
                     </button>
                   ) : (
                     <button
-                      type="submit"
+                      type="button"
                       disabled={isSubmitting}
                       onClick={onSubmit}
                       className="inline-flex items-center justify-center gap-2 px-8 py-3 rounded-xl font-black tracking-wide text-white bg-gradient-to-r from-[#f37021] to-[#e06111] hover:from-[#e06111] hover:to-[#c4530c] shadow-lg shadow-orange-500/30 transition-all transform hover:-translate-y-0.5 disabled:opacity-60 disabled:transform-none"

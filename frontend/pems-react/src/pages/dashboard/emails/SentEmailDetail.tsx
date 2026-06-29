@@ -5,7 +5,7 @@
 
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { ChevronLeft, Trash2, Reply, Send, FileText, Clock, AlertTriangle, Paperclip, Bold, Italic, Underline, Link, ImageIcon, List, ListOrdered, Check } from 'lucide-react';
+import { ChevronLeft, Trash2, Reply, Send, FileText, Clock, AlertTriangle, Paperclip, Bold, Italic, Underline, Link, ImageIcon, List, ListOrdered, Check, AlertCircle } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import ReactQuill from 'react-quill-new';
 import 'react-quill-new/dist/quill.snow.css';

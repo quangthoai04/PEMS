@@ -15,13 +15,15 @@ public sealed class CancelVisitRequestCommandHandler
     private readonly IApplicationDbContext _db;
     private readonly ICurrentUserService _currentUser;
     private readonly IDateTimeService _clock;
+    private readonly PEMS.Application.Notifications.Common.INotificationService _notificationService;
 
     public CancelVisitRequestCommandHandler(
-        IApplicationDbContext db, ICurrentUserService currentUser, IDateTimeService clock)
+        IApplicationDbContext db, ICurrentUserService currentUser, IDateTimeService clock, PEMS.Application.Notifications.Common.INotificationService notificationService)
     {
         _db = db;
         _currentUser = currentUser;
         _clock = clock;
+        _notificationService = notificationService;
     }
 
     public async Task<CancelVisitRequestResponse> Handle(
@@ -81,6 +83,48 @@ public sealed class CancelVisitRequestCommandHandler
             });
 
             await _db.SaveChangesAsync(cancellationToken);
+
+            // --- Notifications for PENDING_APPROVAL cancellation ---
+            var notifs = new List<PEMS.Application.Notifications.Common.CreateNotificationItem>();
+            if (visit.VisitScope == VisitScopes.MultiCampus)
+            {
+                var hoUsers = await _db.Users
+                    .Where(u => u.Role.RoleCode == "HO" && u.Status == "ACTIVE")
+                    .Select(u => u.UserId)
+                    .ToListAsync(cancellationToken);
+                
+                notifs.AddRange(hoUsers.Select(id => new PEMS.Application.Notifications.Common.CreateNotificationItem(
+                    id,
+                    "Yêu cầu tham quan đã bị hủy",
+                    $"Visitor đã hủy yêu cầu liên cơ sở {visit.RequestCode} trước khi được duyệt.",
+                    PEMS.Application.Notifications.Common.NotificationTypes.VisitCancelled,
+                    PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitRequest,
+                    visit.VisitRequestId
+                )));
+            }
+            else
+            {
+                var campusIds = visit.CampusInstances.Select(c => c.CampusId).Distinct().ToList();
+                var staffLeaders = await _db.Users
+                    .Where(u => u.Role.RoleCode == "CAMPUS" && u.SubRole == "LEADER" && u.PrimaryCampusId.HasValue && campusIds.Contains(u.PrimaryCampusId.Value) && u.Status == "ACTIVE")
+                    .Select(u => u.UserId)
+                    .ToListAsync(cancellationToken);
+                
+                notifs.AddRange(staffLeaders.Select(id => new PEMS.Application.Notifications.Common.CreateNotificationItem(
+                    id,
+                    "Yêu cầu tham quan đã bị hủy",
+                    $"Visitor đã hủy yêu cầu {visit.RequestCode} trước khi được duyệt.",
+                    PEMS.Application.Notifications.Common.NotificationTypes.VisitCancelled,
+                    PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitRequest,
+                    visit.VisitRequestId
+                )));
+            }
+
+            if (notifs.Any())
+            {
+                await _notificationService.CreateManyAsync(notifs, cancellationToken);
+            }
+
             await txPending.CommitAsync(cancellationToken);
 
             // No campus instance is cancelled in the pre-approval flow (đặc tả §1.1: không sinh/đụng
@@ -241,6 +285,87 @@ public sealed class CancelVisitRequestCommandHandler
             visit.RowVersion += 1;
 
             await _db.SaveChangesAsync(cancellationToken);
+        }
+
+        // --- Notifications for AFTER_APPROVAL cancellation ---
+        var afterNotifs = new List<PEMS.Application.Notifications.Common.CreateNotificationItem>();
+        var hoUsersToNotify = new List<ulong>();
+        if (visit.VisitScope == VisitScopes.MultiCampus && isVisitorOwner)
+        {
+            hoUsersToNotify = await _db.Users
+                .Where(u => u.Role.RoleCode == "HO" && u.Status == "ACTIVE")
+                .Select(u => u.UserId)
+                .ToListAsync(cancellationToken);
+        }
+
+        foreach (var instance in targets)
+        {
+            var staffLeaderId = instance.CoordinatorUserId;
+            if (isVisitorOwner)
+            {
+                if (instance.CurrentHostUserId.HasValue)
+                {
+                    afterNotifs.Add(new PEMS.Application.Notifications.Common.CreateNotificationItem(
+                        instance.CurrentHostUserId.Value,
+                        "Lịch thăm quan bị hủy",
+                        $"Khách đã hủy cơ sở {instance.CampusId} thuộc đơn {visit.RequestCode}.",
+                        PEMS.Application.Notifications.Common.NotificationTypes.VisitCancelled,
+                        PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitInstance,
+                        instance.VisitInstanceId
+                    ));
+                }
+                if (staffLeaderId.HasValue)
+                {
+                    afterNotifs.Add(new PEMS.Application.Notifications.Common.CreateNotificationItem(
+                        staffLeaderId.Value,
+                        "Lịch thăm quan bị hủy",
+                        $"Khách đã hủy cơ sở {instance.CampusId} thuộc đơn {visit.RequestCode}.",
+                        PEMS.Application.Notifications.Common.NotificationTypes.VisitCancelled,
+                        PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitInstance,
+                        instance.VisitInstanceId
+                    ));
+                }
+                foreach (var ho in hoUsersToNotify)
+                {
+                    afterNotifs.Add(new PEMS.Application.Notifications.Common.CreateNotificationItem(
+                        ho,
+                        "Lịch thăm quan bị hủy",
+                        $"Khách đã hủy cơ sở {instance.CampusId} thuộc đơn {visit.RequestCode}.",
+                        PEMS.Application.Notifications.Common.NotificationTypes.VisitCancelled,
+                        PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitInstance,
+                        instance.VisitInstanceId
+                    ));
+                }
+            }
+            else // Host cancelled
+            {
+                if (visit.VisitorUserId.HasValue)
+                {
+                    afterNotifs.Add(new PEMS.Application.Notifications.Common.CreateNotificationItem(
+                        visit.VisitorUserId.Value,
+                        "Lịch thăm quan bị hủy",
+                        $"Host đã hủy cơ sở {instance.CampusId} thuộc đơn {visit.RequestCode}.",
+                        PEMS.Application.Notifications.Common.NotificationTypes.VisitCancelled,
+                        PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitInstance,
+                        instance.VisitInstanceId
+                    ));
+                }
+                if (staffLeaderId.HasValue)
+                {
+                    afterNotifs.Add(new PEMS.Application.Notifications.Common.CreateNotificationItem(
+                        staffLeaderId.Value,
+                        "Lịch thăm quan bị hủy",
+                        $"Host đã hủy cơ sở {instance.CampusId} thuộc đơn {visit.RequestCode}.",
+                        PEMS.Application.Notifications.Common.NotificationTypes.VisitCancelled,
+                        PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitInstance,
+                        instance.VisitInstanceId
+                    ));
+                }
+            }
+        }
+        if (afterNotifs.Any())
+        {
+            await _notificationService.CreateManyAsync(afterNotifs, cancellationToken);
         }
 
         await tx.CommitAsync(cancellationToken);

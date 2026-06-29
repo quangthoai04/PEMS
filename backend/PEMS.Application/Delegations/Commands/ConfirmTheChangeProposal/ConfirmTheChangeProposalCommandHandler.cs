@@ -11,11 +11,13 @@ public sealed class ConfirmTheChangeProposalCommandHandler : IRequestHandler<Con
 {
     private readonly IApplicationDbContext _db;
     private readonly ICurrentUserService _currentUser;
+    private readonly PEMS.Application.Notifications.Common.INotificationService _notificationService;
 
-    public ConfirmTheChangeProposalCommandHandler(IApplicationDbContext db, ICurrentUserService currentUser)
+    public ConfirmTheChangeProposalCommandHandler(IApplicationDbContext db, ICurrentUserService currentUser, PEMS.Application.Notifications.Common.INotificationService notificationService)
     {
         _db = db;
         _currentUser = currentUser;
+        _notificationService = notificationService;
     }
 
     public async Task<ConfirmTheChangeProposalResponse> Handle(ConfirmTheChangeProposalCommand request, CancellationToken cancellationToken)
@@ -56,6 +58,59 @@ public sealed class ConfirmTheChangeProposalCommandHandler : IRequestHandler<Con
         }
 
         await _db.SaveChangesAsync(cancellationToken);
+
+        var notifications = new System.Collections.Generic.List<PEMS.Application.Notifications.Common.CreateNotificationItem>();
+        ulong? assigneeId = item.AssignedToUserId;
+        ulong? assignedBy = item.AssignedBy;
+
+        string actionText = request.Accepted ? "ĐÃ CHẤP NHẬN" : "ĐÃ TỪ CHỐI";
+        string msgText = request.Accepted 
+            ? $"Host đã chấp nhận đề xuất thay đổi cho nhiệm vụ \"{item.Title}\"."
+            : $"Host đã từ chối đề xuất thay đổi cho nhiệm vụ \"{item.Title}\".";
+
+        if (assigneeId.HasValue && assigneeId.Value != _currentUser.UserId.Value)
+        {
+            notifications.Add(new PEMS.Application.Notifications.Common.CreateNotificationItem(
+                assigneeId.Value,
+                "Phản hồi đề xuất hậu cần",
+                msgText,
+                PEMS.Application.Notifications.Common.NotificationTypes.LogisticsProposalResponded,
+                PEMS.Application.Notifications.Common.NotificationRelatedTypes.LogisticsItem,
+                item.LogisticsItemId
+            ));
+        }
+
+        if (assignedBy.HasValue && assignedBy.Value != _currentUser.UserId.Value && (!assigneeId.HasValue || assignedBy.Value != assigneeId.Value))
+        {
+            notifications.Add(new PEMS.Application.Notifications.Common.CreateNotificationItem(
+                assignedBy.Value,
+                "Phản hồi đề xuất hậu cần",
+                msgText,
+                PEMS.Application.Notifications.Common.NotificationTypes.LogisticsProposalResponded,
+                PEMS.Application.Notifications.Common.NotificationRelatedTypes.LogisticsItem,
+                item.LogisticsItemId
+            ));
+        }
+        else if (item.RequestedToDepartmentId.HasValue)
+        {
+            var dept = await _db.Departments.FirstOrDefaultAsync(d => d.DepartmentId == item.RequestedToDepartmentId.Value, cancellationToken);
+            if (dept?.HeadUserId != null && dept.HeadUserId.Value != _currentUser.UserId.Value && (!assigneeId.HasValue || dept.HeadUserId.Value != assigneeId.Value))
+            {
+                notifications.Add(new PEMS.Application.Notifications.Common.CreateNotificationItem(
+                    dept.HeadUserId.Value,
+                    "Phản hồi đề xuất hậu cần",
+                    msgText,
+                    PEMS.Application.Notifications.Common.NotificationTypes.LogisticsProposalResponded,
+                    PEMS.Application.Notifications.Common.NotificationRelatedTypes.LogisticsItem,
+                    item.LogisticsItemId
+                ));
+            }
+        }
+
+        if (notifications.Count > 0)
+        {
+            await _notificationService.CreateManyAsync(notifications, cancellationToken);
+        }
 
         return new ConfirmTheChangeProposalResponse
         {

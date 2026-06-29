@@ -91,7 +91,10 @@ function debounce<T extends (...args: any[]) => void>(fn: T, delay = 700) {
   };
 }
 
-export const useVisitRequestForm = (onSuccess: (result: VerifyResponse) => void) => {
+export const useVisitRequestForm = (
+  onSuccess: (result: VerifyResponse) => void,
+  onInvalid?: (errors: any) => void
+) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
@@ -146,17 +149,72 @@ export const useVisitRequestForm = (onSuccess: (result: VerifyResponse) => void)
     return () => subscription.unsubscribe();
   }, [form, draftHydrated]);
 
+  const contactEmailWatch = form.watch('contactPoint.email');
+  const registerEmailWatch = form.watch('registerInfo.email');
+
+  useEffect(() => {
+    const contactState = form.getFieldState('contactPoint.email');
+    if (contactState.error?.type === 'server') {
+      form.clearErrors('contactPoint.email');
+      setSubmitError(null);
+    }
+    const registerState = form.getFieldState('registerInfo.email');
+    if (registerState.error?.type === 'server') {
+      form.clearErrors('registerInfo.email');
+      setSubmitError(null);
+    }
+  }, [contactEmailWatch, registerEmailWatch, form]);
+
   const visitFields = useFieldArray({ control: form.control, name: 'visits' });
   const visitorFields = useFieldArray({ control: form.control, name: 'visitors' });
   const supportTeamFields = useFieldArray({ control: form.control, name: 'supportTeam' });
 
+  const normalizeText = (value?: string | null) => (value ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
+
+  const isSameSupportPerson = (a: any, b: any) => {
+    return (
+      normalizeText(a.fullName) === normalizeText(b.fullName) &&
+      normalizeText(a.jobTitle) === normalizeText(b.jobTitle) &&
+      normalizeText(a.organization) === normalizeText(b.organization) &&
+      normalizeText(a.nationality) === normalizeText(b.nationality)
+    );
+  };
+
   const syncSupportFromRegister = () => {
     const reg = form.getValues('registerInfo');
-    const currentTeam = form.getValues('supportTeam');
-    form.setValue('supportTeam', [
-      { fullName: reg.fullName, jobTitle: reg.jobTitle, organization: reg.organization, nationality: reg.nationality },
-      ...currentTeam.slice(1),
-    ]);
+    const registrantAsSupport = {
+      fullName: reg.fullName,
+      jobTitle: reg.jobTitle,
+      organization: reg.organization,
+      nationality: reg.nationality,
+      isAutoFilledFromRegistrant: true,
+    };
+
+    const currentTeam = form.getValues('supportTeam') || [];
+    
+    let existingIndex = currentTeam.findIndex((member) => member.isAutoFilledFromRegistrant);
+    if (existingIndex === -1) {
+      existingIndex = currentTeam.findIndex((member) => isSameSupportPerson(member, registrantAsSupport));
+    }
+
+    if (existingIndex >= 0) {
+      form.setValue(`supportTeam.${existingIndex}.fullName`, registrantAsSupport.fullName, { shouldValidate: true, shouldDirty: true, shouldTouch: true });
+      form.setValue(`supportTeam.${existingIndex}.jobTitle`, registrantAsSupport.jobTitle, { shouldValidate: true, shouldDirty: true, shouldTouch: true });
+      form.setValue(`supportTeam.${existingIndex}.organization`, registrantAsSupport.organization, { shouldValidate: true, shouldDirty: true, shouldTouch: true });
+      form.setValue(`supportTeam.${existingIndex}.nationality`, registrantAsSupport.nationality, { shouldValidate: true, shouldDirty: true, shouldTouch: true });
+      form.setValue(`supportTeam.${existingIndex}.isAutoFilledFromRegistrant`, true);
+    } else {
+      const nextSupportMembers = [...currentTeam, registrantAsSupport];
+      form.setValue('supportTeam', nextSupportMembers, { shouldValidate: true, shouldDirty: true, shouldTouch: true });
+      
+      const newIndex = nextSupportMembers.length - 1;
+      form.setValue(`supportTeam.${newIndex}.fullName`, registrantAsSupport.fullName, { shouldValidate: true });
+      form.setValue(`supportTeam.${newIndex}.jobTitle`, registrantAsSupport.jobTitle, { shouldValidate: true });
+      form.setValue(`supportTeam.${newIndex}.organization`, registrantAsSupport.organization, { shouldValidate: true });
+      form.setValue(`supportTeam.${newIndex}.nationality`, registrantAsSupport.nationality, { shouldValidate: true });
+    }
+    
+    form.trigger('supportTeam');
   };
 
   const addSupportMember = useCallback(() => {
@@ -165,8 +223,9 @@ export const useVisitRequestForm = (onSuccess: (result: VerifyResponse) => void)
   }, [form]);
 
   const clearSupportFirstRow = () => {
-    const currentTeam = form.getValues('supportTeam');
-    form.setValue('supportTeam', currentTeam.slice(1));
+    const currentTeam = form.getValues('supportTeam') || [];
+    const filteredMembers = currentTeam.filter((m) => !m.isAutoFilledFromRegistrant);
+    form.setValue('supportTeam', filteredMembers, { shouldValidate: true });
   };
 
   const syncContactFromRegister = () => {
@@ -176,7 +235,8 @@ export const useVisitRequestForm = (onSuccess: (result: VerifyResponse) => void)
       organization: reg.organization,
       phone: reg.phone,
       email: reg.email,
-    });
+    }, { shouldValidate: true });
+    form.trigger('contactPoint');
   };
 
   const clearContactPoint = () => {
@@ -190,17 +250,24 @@ export const useVisitRequestForm = (onSuccess: (result: VerifyResponse) => void)
     setSubmitError(null);
     try {
       const res = await visitRequestApi.initiate(data);
+      if ((res as any).success === false) {
+        throw new Error((res as any).message || 'Không thể gửi mã OTP. Vui lòng thử lại sau.');
+      }
+      if (!res?.sessionToken) {
+        throw new Error('Không nhận được token xác thực từ máy chủ.');
+      }
       setSessionToken(res.sessionToken);
       setMaskedEmail(res.maskedEmail);
     } catch (error) {
       console.error('UC-17 submit/initiate failed', error);
-      const message = getApiErrorMessage(error);
+      const message = getApiErrorMessage(error) || 'Không thể gửi đơn hoặc gửi mã OTP. Vui lòng thử lại sau.';
+      setSessionToken(null);
       setSubmitError(message);
       mapContactEmailError(error, message);
     } finally {
       setIsSubmitting(false);
     }
-  });
+  }, onInvalid);
 
   // Surface contact-email business conflicts on the specific field so the user knows
   // exactly which input to change (not just a generic submit banner).
@@ -276,6 +343,7 @@ export const useVisitRequestForm = (onSuccess: (result: VerifyResponse) => void)
     onSubmit,
     isSubmitting,
     submitError,
+    setSubmitError,
     // OTP phase
     sessionToken,
     maskedEmail,

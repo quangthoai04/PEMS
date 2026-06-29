@@ -13,11 +13,13 @@ public sealed class ApproveNewsCommandHandler
 {
     private readonly IApplicationDbContext _dbContext;
     private readonly ICurrentUserService _currentUser;
+    private readonly PEMS.Application.Notifications.Common.INotificationService _notificationService;
 
-    public ApproveNewsCommandHandler(IApplicationDbContext dbContext, ICurrentUserService currentUser)
+    public ApproveNewsCommandHandler(IApplicationDbContext dbContext, ICurrentUserService currentUser, PEMS.Application.Notifications.Common.INotificationService notificationService)
     {
         _dbContext = dbContext;
         _currentUser = currentUser;
+        _notificationService = notificationService;
     }
 
     public async Task<ApproveNewsResponse> Handle(ApproveNewsCommand request, CancellationToken cancellationToken)
@@ -80,17 +82,15 @@ public sealed class ApproveNewsCommandHandler
         news.RowVersion++;
 
         // Notify author
-        _dbContext.Notifications.Add(new Notification
-        {
-            RecipientUserId  = news.AuthorUserId,
-            NotificationType = request.Action == "APPROVE" ? "NEWS_APPROVED" : "NEWS_REJECTED",
-            Title            = notificationTitle,
-            Message          = notificationMessage,
-            RelatedType      = "NEWS",
-            RelatedId        = news.NewsId,
-            IsRead           = false,
-            CreatedAt        = now
-        });
+        await _notificationService.CreateAsync(
+            news.AuthorUserId,
+            notificationTitle,
+            notificationMessage,
+            PEMS.Application.Notifications.Common.NotificationTypes.NewsReviewed,
+            PEMS.Application.Notifications.Common.NotificationRelatedTypes.News,
+            news.NewsId,
+            cancellationToken
+        );
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 

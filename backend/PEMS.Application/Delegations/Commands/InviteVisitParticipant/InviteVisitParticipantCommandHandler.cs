@@ -36,11 +36,13 @@ public sealed class InviteVisitParticipantCommandHandler
     private readonly IHtmlSanitizerService _sanitizer;
     private readonly IFileStorageService _storage;
     private readonly PEMS.Application.Emails.Utils.IEmailImageLayoutNormalizer _normalizer;
+    private readonly PEMS.Application.Notifications.Common.INotificationService _notificationService;
 
     public InviteVisitParticipantCommandHandler(
         IApplicationDbContext db, ICurrentUserService currentUser, IDateTimeService clock,
         IEmailService email, IEmailActionTokenService tokens, IHtmlSanitizerService sanitizer,
-        IFileStorageService storage, PEMS.Application.Emails.Utils.IEmailImageLayoutNormalizer normalizer)
+        IFileStorageService storage, PEMS.Application.Emails.Utils.IEmailImageLayoutNormalizer normalizer,
+        PEMS.Application.Notifications.Common.INotificationService notificationService)
     {
         _db = db;
         _currentUser = currentUser;
@@ -50,6 +52,7 @@ public sealed class InviteVisitParticipantCommandHandler
         _sanitizer = sanitizer;
         _storage = storage;
         _normalizer = normalizer;
+        _notificationService = notificationService;
     }
 
     public async Task<InviteVisitParticipantResponse> Handle(
@@ -242,17 +245,15 @@ public sealed class InviteVisitParticipantCommandHandler
                 EntityId = participant.ParticipantId,
                 CreatedAt = now,
             });
-            _db.Notifications.Add(new Notification
-            {
-                RecipientUserId = targetUserId,
-                NotificationType = "VISIT_PARTICIPANT_INVITED",
-                Title = "Lời mời tham gia tiếp khách",
-                Message = $"Bạn được mời tham gia hỗ trợ đoàn {delegationName} tại {campusName}.",
-                RelatedType = "VisitParticipant",
-                RelatedId = participant.ParticipantId,
-                IsRead = false,
-                CreatedAt = now,
-            });
+            await _notificationService.CreateAsync(
+                targetUserId,
+                "Lời mời tham gia tiếp khách",
+                $"Bạn được mời tham gia hỗ trợ đoàn {delegationName} tại {campusName}.",
+                PEMS.Application.Notifications.Common.NotificationTypes.ParticipationInvited,
+                PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitParticipant,
+                participant.ParticipantId,
+                cancellationToken
+            );
             await _db.SaveChangesAsync(cancellationToken);
 
             sentEmailId = sentEmail.SentEmailId;

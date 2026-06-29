@@ -71,6 +71,7 @@ export const OrganizationCombobox: React.FC<Props> = ({
   placeholder = 'Nhập hoặc chọn...'
 }) => {
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [inputValue, setInputValue] = React.useState('');
 
   const loadOptions = useCallback(
     (inputValue: string): Promise<OrgOption[]> =>
@@ -79,10 +80,6 @@ export const OrganizationCombobox: React.FC<Props> = ({
 
         debounceTimer.current = setTimeout(async () => {
           try {
-            if (!inputValue.trim()) {
-              resolve([]);
-              return;
-            }
             const results = await visitRequestApi.searchOrganizations(inputValue);
             const apiOptions = results.map((r) => ({
               value: r.displayName,
@@ -102,13 +99,34 @@ export const OrganizationCombobox: React.FC<Props> = ({
   return (
     <AsyncCreatableSelect<OrgOption>
       cacheOptions
-      defaultOptions={[]}
+      defaultOptions={true}
       loadOptions={loadOptions}
       value={selectedOption}
-      onChange={(opt: SingleValue<OrgOption>) => {
-        onChange(opt?.value ?? '');
+      inputValue={inputValue}
+      onInputChange={(val, { action }) => {
+        if (action === 'input-change') {
+          setInputValue(val);
+          onChange(val);
+        } else if (action === 'set-value' || action === 'input-blur') {
+          setInputValue('');
+        }
       }}
-      onBlur={onBlur}
+      onChange={(opt: SingleValue<OrgOption>, meta) => {
+        if (meta.action === 'clear') {
+          setInputValue('');
+          onChange('');
+        } else {
+          setInputValue('');
+          onChange(opt?.value ?? '');
+        }
+      }}
+      onBlur={() => {
+        if (inputValue.trim()) {
+          onChange(inputValue.trim());
+        }
+        setInputValue('');
+        if (onBlur) onBlur();
+      }}
       placeholder={placeholder}
       styles={buildStyles(hasError)}
       isClearable={true}

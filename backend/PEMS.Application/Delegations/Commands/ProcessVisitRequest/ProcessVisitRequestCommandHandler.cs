@@ -18,13 +18,15 @@ public sealed class ProcessVisitRequestCommandHandler
     private readonly IApplicationDbContext _db;
     private readonly ICurrentUserService _currentUser;
     private readonly IDateTimeService _clock;
+    private readonly PEMS.Application.Notifications.Common.INotificationService _notificationService;
 
     public ProcessVisitRequestCommandHandler(
-        IApplicationDbContext db, ICurrentUserService currentUser, IDateTimeService clock)
+        IApplicationDbContext db, ICurrentUserService currentUser, IDateTimeService clock, PEMS.Application.Notifications.Common.INotificationService notificationService)
     {
         _db = db;
         _currentUser = currentUser;
         _clock = clock;
+        _notificationService = notificationService;
     }
 
     public async Task<ProcessVisitRequestResponse> Handle(
@@ -136,6 +138,39 @@ public sealed class ProcessVisitRequestCommandHandler
         });
 
         await _db.SaveChangesAsync(cancellationToken);
+
+        // --- Notifications ---
+        var notifications = new List<PEMS.Application.Notifications.Common.CreateNotificationItem>();
+        
+        if (visit.VisitScope == VisitScopes.SingleCampus)
+        {
+            if (visit.VisitorUserId.HasValue)
+            {
+                notifications.Add(new PEMS.Application.Notifications.Common.CreateNotificationItem(
+                    visit.VisitorUserId.Value,
+                    "Yêu cầu được phê duyệt",
+                    $"Yêu cầu tham quan {visit.RequestCode} của bạn đã được phê duyệt.",
+                    PEMS.Application.Notifications.Common.NotificationTypes.VisitRequestApproved,
+                    PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitRequest,
+                    visit.VisitRequestId
+                ));
+            }
+        }
+
+        notifications.Add(new PEMS.Application.Notifications.Common.CreateNotificationItem(
+            request.HostUserId,
+            "Bạn được gán phụ trách đoàn khách",
+            $"Bạn được phân công làm host cho đoàn tiếp khách {visit.DelegationName}. Vui lòng kiểm tra lịch trình.",
+            PEMS.Application.Notifications.Common.NotificationTypes.HostAssigned,
+            PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitInstance,
+            instance.VisitInstanceId
+        ));
+
+        if (notifications.Any())
+        {
+            await _notificationService.CreateManyAsync(notifications, cancellationToken);
+        }
+
         await tx.CommitAsync(cancellationToken);
 
         return new ProcessVisitRequestResponse(

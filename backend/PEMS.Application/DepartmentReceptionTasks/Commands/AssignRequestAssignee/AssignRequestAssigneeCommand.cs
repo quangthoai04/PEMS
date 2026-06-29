@@ -42,11 +42,13 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AssignRequestAssign
         private readonly IHtmlSanitizerService _sanitizer;
         private readonly IFileStorageService _storage;
         private readonly PEMS.Application.Emails.Utils.IEmailImageLayoutNormalizer _normalizer;
+        private readonly PEMS.Application.Notifications.Common.INotificationService _notificationService;
 
         public AssignRequestAssigneeCommandHandler(
             IApplicationDbContext context, ICurrentUserService currentUserService, IDateTimeService clock,
             IEmailService email, IEmailActionTokenService tokens, IHtmlSanitizerService sanitizer,
-            IFileStorageService storage, PEMS.Application.Emails.Utils.IEmailImageLayoutNormalizer normalizer)
+            IFileStorageService storage, PEMS.Application.Emails.Utils.IEmailImageLayoutNormalizer normalizer,
+            PEMS.Application.Notifications.Common.INotificationService notificationService)
         {
             _context = context;
             _currentUserService = currentUserService;
@@ -56,6 +58,7 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AssignRequestAssign
             _sanitizer = sanitizer;
             _storage = storage;
             _normalizer = normalizer;
+            _notificationService = notificationService;
         }
 
         public async Task<bool> Handle(AssignRequestAssigneeCommand request, CancellationToken cancellationToken)
@@ -193,17 +196,15 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AssignRequestAssign
                 _context.EmailActionTokens.Add(NewToken(_tokens.Hash(acceptRaw), EmailIntendedActions.Accept, groupKey, l.LogisticsItemId, assignee.UserId, assignee.Email, sentEmail.SentEmailId, sentRecipient.SentEmailRecipientId, now));
                 _context.EmailActionTokens.Add(NewToken(_tokens.Hash(declineRaw), EmailIntendedActions.Decline, groupKey, l.LogisticsItemId, assignee.UserId, assignee.Email, sentEmail.SentEmailId, sentRecipient.SentEmailRecipientId, now));
 
-                _context.Notifications.Add(new Notification
-                {
-                    RecipientUserId = assignee.UserId,
-                    NotificationType = "VISIT_LOGISTICS_ASSIGNED",
-                    Title = LogisticsPriorityText.SubjectPrefix(l.Priority) + "Bạn được phân công hậu cần",
-                    Message = $"Bạn được phân công xử lý hạng mục \"{l.Title}\" (ưu tiên {LogisticsPriorityText.LabelVi(l.Priority)}) cho đoàn {delegationName}.",
-                    RelatedType = "LOGISTICS_ITEM",
-                    RelatedId = l.LogisticsItemId,
-                    IsRead = false,
-                    CreatedAt = now,
-                });
+                await _notificationService.CreateAsync(
+                    assignee.UserId,
+                    LogisticsPriorityText.SubjectPrefix(l.Priority) + "Bạn được phân công hậu cần",
+                    $"Bạn được phân công xử lý hạng mục \"{l.Title}\" (ưu tiên {LogisticsPriorityText.LabelVi(l.Priority)}) cho đoàn {delegationName}.",
+                    PEMS.Application.Notifications.Common.NotificationTypes.LogisticsAssigned,
+                    PEMS.Application.Notifications.Common.NotificationRelatedTypes.LogisticsItem,
+                    l.LogisticsItemId,
+                    cancellationToken
+                );
                 await _context.SaveChangesAsync(cancellationToken);
 
                 sentEmailId = sentEmail.SentEmailId;

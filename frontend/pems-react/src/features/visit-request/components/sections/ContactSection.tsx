@@ -9,7 +9,16 @@ import { PhoneInput } from '../shared/PhoneInput';
 import { inputCls } from '../shared/FormField';
 import { validateSupportTeamExcel, isAllowedExcelFile } from '../ExcelUpload/excelValidator';
 import { downloadSupportTeamTemplate } from '../ExcelUpload/excelDownload';
-import type { SupportTeamExcelValidationResult } from '../../types/visitRequest.types';
+import type { SupportTeamExcelValidationResult, SupportTeamEntry } from '../../types/visitRequest.types';
+
+function hasRealError(error: unknown): boolean {
+  if (!error) return false;
+  if (Array.isArray(error)) return error.some(hasRealError);
+  if (typeof error === 'object') {
+    return Object.values(error as Record<string, unknown>).some(hasRealError);
+  }
+  return true;
+}
 
 interface Props {
   form: UseFormReturn<VisitRequestSchema>;
@@ -81,7 +90,7 @@ export const ContactSection: React.FC<Props> = ({
 
     if (!isAllowedExcelFile(file)) {
       setUploadResult({
-        valid: false, totalRows: 0, errorRows: 0,
+        valid: false, totalRows: 0, errorRows: 0, skippedDuplicates: 0,
         errors: [{ row: 0, column: '', message: 'Chỉ chấp nhận file .xlsx hoặc .xls' }],
         data: [],
       });
@@ -90,7 +99,13 @@ export const ContactSection: React.FC<Props> = ({
       return;
     }
 
-    const result = await validateSupportTeamExcel(file);
+    const existingData = supportTeamFields.fields.map(f => ({
+      fullName: f.fullName,
+      jobTitle: f.jobTitle,
+      organization: f.organization,
+      nationality: f.nationality
+    }));
+    const result = await validateSupportTeamExcel(file, existingData as SupportTeamEntry[]);
 
     if (result.data.length > 0) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -105,7 +120,7 @@ export const ContactSection: React.FC<Props> = ({
 
   const supportRootErrorMessage = (supportErrors as any)?.root?.message || (typeof supportErrors === 'object' && !Array.isArray(supportErrors) ? (supportErrors as any).message : null);
   const hasSupportRootError = !!supportRootErrorMessage;
-  const hasAnySupportError = showErrors && (hasSupportRootError || (Array.isArray(supportErrors) && supportErrors.length > 0));
+  const hasAnySupportError = showErrors && (hasSupportRootError || hasRealError(supportErrors));
 
   const hasAnyContactError = showErrors && !!contactErrors;
 
@@ -291,7 +306,7 @@ export const ContactSection: React.FC<Props> = ({
                     </p>
                     {uploadResult.totalRows > 0 && (
                       <p className="text-[10px] text-gray-600 mt-0.5">
-                        Tổng {uploadResult.totalRows} dòng · {uploadResult.errorRows} dòng lỗi
+                        Tổng {uploadResult.totalRows} dòng · {uploadResult.errorRows} dòng lỗi/bỏ qua{uploadResult.skippedDuplicates > 0 ? ` · ${uploadResult.skippedDuplicates} dòng trùng đã bỏ qua` : ''}.
                       </p>
                     )}
                   </div>

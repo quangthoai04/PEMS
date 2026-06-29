@@ -7,6 +7,7 @@ import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Plus, Edit, Trash2, Search, X, ChevronRight, ChevronLeft, ChevronDown, ChevronUp, ArrowLeft } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
+import { LocationManagementStaffLeader } from './LocationManagementStaffLeader';
 
 const MOCK_LOCATIONS = [
   { id: 1, campus: 'Hà Nội', category: 'TÒA DELTA', detail: 'Sảnh chính', status: 'Hoạt động', date: '01/05/2026' },
@@ -17,6 +18,20 @@ const MOCK_LOCATIONS = [
 ];
 
 export function LocationManagement() {
+  const userStr = localStorage.getItem('currentUser');
+  const currentUser = userStr ? JSON.parse(userStr) : null;
+  const isStaffLeader = currentUser?.role?.toUpperCase() === 'STAFF' && currentUser?.subRole?.toUpperCase() === 'LEADER';
+
+  // Staff Leader (sub_role LEADER) gets the real, server-driven "Quản lý khu vực" (UC-LOC-01..09).
+  // Other roles keep the legacy mock below untouched. Early return before any hooks keeps hook order stable.
+  if (isStaffLeader) {
+    return <LocationManagementStaffLeader />;
+  }
+
+  return <LocationManagementMock />;
+}
+
+function LocationManagementMock() {
   const navigate = useNavigate();
   const [locationList, setLocationList] = useState(MOCK_LOCATIONS);
   const [searchQuery, setSearchQuery] = useState('');

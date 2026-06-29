@@ -22,13 +22,15 @@ public sealed class CompleteVisitStageCommandHandler
     private readonly IApplicationDbContext _db;
     private readonly ICurrentUserService _currentUser;
     private readonly IDateTimeService _clock;
+    private readonly PEMS.Application.Notifications.Common.INotificationService _notificationService;
 
     public CompleteVisitStageCommandHandler(
-        IApplicationDbContext db, ICurrentUserService currentUser, IDateTimeService clock)
+        IApplicationDbContext db, ICurrentUserService currentUser, IDateTimeService clock, PEMS.Application.Notifications.Common.INotificationService notificationService)
     {
         _db = db;
         _currentUser = currentUser;
         _clock = clock;
+        _notificationService = notificationService;
     }
 
     public async Task<CompleteVisitStageResponse> Handle(
@@ -40,6 +42,7 @@ public sealed class CompleteVisitStageCommandHandler
         var actorId = _currentUser.UserId.Value;
 
         var instance = await _db.VisitRequestCampuses
+            .Include(c => c.VisitRequest)
             .FirstOrDefaultAsync(c => c.VisitInstanceId == request.VisitInstanceId
                                       && c.VisitRequestId == request.VisitRequestId, cancellationToken)
             ?? throw new NotFoundException("VisitRequestCampus", request.VisitInstanceId);
@@ -198,6 +201,53 @@ public sealed class CompleteVisitStageCommandHandler
         });
 
         await _db.SaveChangesAsync(cancellationToken);
+
+        // --- Notifications ---
+        var notifications = new List<PEMS.Application.Notifications.Common.CreateNotificationItem>();
+        if (newStatus == VisitInstanceStatus.DuringVisit || newStatus == VisitInstanceStatus.AfterVisit)
+        {
+            if (instance.CoordinatorUserId.HasValue)
+            {
+                notifications.Add(new PEMS.Application.Notifications.Common.CreateNotificationItem(
+                    instance.CoordinatorUserId.Value,
+                    "Cập nhật tiến độ đoàn khách",
+                    $"Đoàn khách {instance.VisitRequest?.DelegationName} đã chuyển sang trạng thái mới: {newStatus}.",
+                    PEMS.Application.Notifications.Common.NotificationTypes.VisitStatusChanged,
+                    PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitInstance,
+                    instance.VisitInstanceId
+                ));
+            }
+        }
+        else if (newStatus == VisitInstanceStatus.Closed)
+        {
+            if (instance.CoordinatorUserId.HasValue)
+            {
+                notifications.Add(new PEMS.Application.Notifications.Common.CreateNotificationItem(
+                    instance.CoordinatorUserId.Value,
+                    "Đóng đoàn khách",
+                    $"Cơ sở {instance.CampusId} của đoàn {instance.VisitRequest?.DelegationName} đã hoàn tất và đóng đoàn.",
+                    PEMS.Application.Notifications.Common.NotificationTypes.VisitClosed,
+                    PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitInstance,
+                    instance.VisitInstanceId
+                ));
+            }
+            if (instance.VisitRequest?.VisitorUserId != null)
+            {
+                notifications.Add(new PEMS.Application.Notifications.Common.CreateNotificationItem(
+                    instance.VisitRequest.VisitorUserId.Value,
+                    "Kết thúc chuyến thăm",
+                    $"Chuyến thăm {instance.VisitRequest.RequestCode} của bạn đã hoàn tất. Cảm ơn bạn!",
+                    PEMS.Application.Notifications.Common.NotificationTypes.VisitClosed,
+                    PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitInstance,
+                    instance.VisitInstanceId
+                ));
+            }
+        }
+
+        if (notifications.Any())
+        {
+            await _notificationService.CreateManyAsync(notifications, cancellationToken);
+        }
 
         return new CompleteVisitStageResponse(
             instance.VisitRequestId, instance.VisitInstanceId, instance.Status, message);

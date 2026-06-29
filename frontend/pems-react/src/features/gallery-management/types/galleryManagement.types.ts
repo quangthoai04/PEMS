@@ -123,3 +123,53 @@ export interface ChangeGalleryStatusInput {
   galleryItemId: number;
   status: GalleryStatus;
 }
+
+// ── Quản lý khu vực (area/location management, UC-LOC-01..09) ──
+
+export type GalleryLocationStatus = 'ACTIVE' | 'INACTIVE';
+export type GalleryLocationMode = 'EXISTING_AREA' | 'NEW_AREA';
+
+export interface GalleryLocationListItem {
+  locationId: number;
+  areaId: number;
+  areaName: string;
+  locationName: string;
+  status: GalleryLocationStatus;
+  createdAt: string;
+  updatedAt?: string | null;
+  // A location may hold 0, 1 or many gallery items — reported as aggregate counts.
+  hasGalleryItems: boolean;
+  galleryItemCount: number;
+  publishedGalleryItemCount: number;
+  hiddenGalleryItemCount: number;
+}
+
+export interface GalleryLocationDetail extends GalleryLocationListItem {
+  message?: string | null;
+}
+
+export interface GalleryLocationListQueryParams {
+  page?: number;
+  pageSize?: number;
+  keyword?: string;
+  areaId?: number;
+  status?: GalleryLocationStatus | '';
+  sortBy?: string;
+  sortDirection?: 'asc' | 'desc';
+}
+
+export interface CreateGalleryLocationInput {
+  mode: GalleryLocationMode;
+  areaId?: number | null;
+  newAreaName?: string | null;
+  locationName: string;
+}
+
+export interface UpdateGalleryLocationInput extends CreateGalleryLocationInput {
+  locationId: number;
+}
+
+export interface ChangeGalleryLocationStatusInput {
+  locationId: number;
+  status: GalleryLocationStatus;
+}

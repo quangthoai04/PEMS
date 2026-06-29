@@ -17,11 +17,13 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AcceptAssignedLogis
     {
         private readonly IApplicationDbContext _context;
         private readonly ICurrentUserService _currentUserService;
+        private readonly PEMS.Application.Notifications.Common.INotificationService _notificationService;
 
-        public AcceptAssignedLogisticsTaskCommandHandler(IApplicationDbContext context, ICurrentUserService currentUserService)
+        public AcceptAssignedLogisticsTaskCommandHandler(IApplicationDbContext context, ICurrentUserService currentUserService, PEMS.Application.Notifications.Common.INotificationService notificationService)
         {
             _context = context;
             _currentUserService = currentUserService;
+            _notificationService = notificationService;
         }
 
         public async Task<bool> Handle(AcceptAssignedLogisticsTaskCommand request, CancellationToken cancellationToken)
@@ -29,6 +31,7 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AcceptAssignedLogis
             ulong userId = _currentUserService.UserId.Value;
 
             var l = await _context.VisitLogisticsItems
+                .Include(x => x.VisitInstance)
                 .FirstOrDefaultAsync(x => x.LogisticsItemId == request.LogisticsItemId, cancellationToken);
 
             if (l == null) throw new Exception("Không tìm thấy nhiệm vụ");
@@ -61,6 +64,40 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AcceptAssignedLogis
             l.UpdatedAt = DateTime.UtcNow;
 
             await _context.SaveChangesAsync(cancellationToken);
+
+            var notifications = new System.Collections.Generic.List<PEMS.Application.Notifications.Common.CreateNotificationItem>();
+            var assignedBy = l.AssignedBy; // Department Leader who assigned this
+            var hostId = l.VisitInstance?.CurrentHostUserId;
+
+            if (assignedBy.HasValue && assignedBy.Value != userId)
+            {
+                notifications.Add(new PEMS.Application.Notifications.Common.CreateNotificationItem(
+                    assignedBy.Value,
+                    "Logistics được tiếp nhận",
+                    $"Nhân sự đã tiếp nhận nhiệm vụ hậu cần: {l.Title}.",
+                    PEMS.Application.Notifications.Common.NotificationTypes.LogisticsAssigneeResponded,
+                    PEMS.Application.Notifications.Common.NotificationRelatedTypes.LogisticsItem,
+                    request.LogisticsItemId
+                ));
+            }
+
+            if (hostId.HasValue && hostId.Value != userId && hostId.Value != assignedBy)
+            {
+                notifications.Add(new PEMS.Application.Notifications.Common.CreateNotificationItem(
+                    hostId.Value,
+                    "Logistics được tiếp nhận",
+                    $"Nhân sự phòng ban đã tiếp nhận nhiệm vụ hậu cần: {l.Title}.",
+                    PEMS.Application.Notifications.Common.NotificationTypes.LogisticsAssigneeResponded,
+                    PEMS.Application.Notifications.Common.NotificationRelatedTypes.LogisticsItem,
+                    request.LogisticsItemId
+                ));
+            }
+
+            if (notifications.Any())
+            {
+                await _notificationService.CreateManyAsync(notifications, cancellationToken);
+            }
+
             return true;
         }
     }

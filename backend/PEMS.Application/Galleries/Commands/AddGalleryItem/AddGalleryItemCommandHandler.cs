@@ -62,14 +62,7 @@ public sealed class AddGalleryItemCommandHandler
         await GalleryLocationGuard.LoadActiveLocationInCurrentCampusAsync(
             _db, (ulong)request.LocationId, campusId, cancellationToken);
 
-        // One gallery item per location (BR: location_id is unique). Checked BEFORE uploading any file
-        // so a rejected request never orphans a Drive object.
-        var locationTaken = await _db.GalleryItems.AnyAsync(
-            i => i.LocationId == (ulong)request.LocationId && i.DeletedAt == null, cancellationToken);
-        if (locationTaken)
-            throw new ConflictException(
-                "Vị trí này đã có gallery item. Mỗi vị trí chỉ được tạo một gallery item.",
-                GalleryErrorCodes.LocationAlreadyUsed);
+        // A location may hold 0, 1 or many gallery items — no per-location uniqueness check.
 
         var title = Regex.Replace(request.Title?.Trim() ?? string.Empty, @"\s+", " ");
         var description = request.Description?.Trim() ?? string.Empty;

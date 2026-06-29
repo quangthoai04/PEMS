@@ -20,6 +20,7 @@ public sealed class VerifyAndCreateVisitRequestCommandHandler
     private readonly IEmailService _emailService;
     private readonly IDateTimeService _clock;
     private readonly ILogger<VerifyAndCreateVisitRequestCommandHandler> _logger;
+    private readonly PEMS.Application.Notifications.Common.INotificationService _notificationService;
 
     public VerifyAndCreateVisitRequestCommandHandler(
         IApplicationDbContext db,
@@ -29,7 +30,8 @@ public sealed class VerifyAndCreateVisitRequestCommandHandler
         IApprovalRoutingService approvalRouting,
         IEmailService emailService,
         IDateTimeService clock,
-        ILogger<VerifyAndCreateVisitRequestCommandHandler> logger)
+        ILogger<VerifyAndCreateVisitRequestCommandHandler> logger,
+        PEMS.Application.Notifications.Common.INotificationService notificationService)
     {
         _db                   = db;
         _otpService           = otpService;
@@ -39,6 +41,7 @@ public sealed class VerifyAndCreateVisitRequestCommandHandler
         _emailService         = emailService;
         _clock                = clock;
         _logger               = logger;
+        _notificationService  = notificationService;
     }
 
     public async Task<VerifyAndCreateVisitRequestResponse> Handle(
@@ -142,6 +145,44 @@ public sealed class VerifyAndCreateVisitRequestCommandHandler
             visitRequest.EmailVerifiedAt = now;
 
             await _db.SaveChangesAsync(cancellationToken);
+
+            // --- 6.5. Send In-App Notifications ---
+            if (visitRequest.VisitScope == VisitScopes.MultiCampus)
+            {
+                var hoUsers = await _db.Users
+                    .Where(u => u.Role.RoleCode == "HO" && u.Status == "ACTIVE")
+                    .Select(u => u.UserId)
+                    .ToListAsync(cancellationToken);
+                    
+                var notifications = hoUsers.Select(id => new PEMS.Application.Notifications.Common.CreateNotificationItem(
+                    id,
+                    "Có yêu cầu liên cơ sở mới",
+                    "Yêu cầu tiếp khách liên cơ sở đang chờ HO duyệt.",
+                    PEMS.Application.Notifications.Common.NotificationTypes.CrossCampusRequestSubmitted,
+                    PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitRequest,
+                    visitRequest.VisitRequestId
+                ));
+                await _notificationService.CreateManyAsync(notifications, cancellationToken);
+            }
+            else
+            {
+                var campusIds = visitRequest.CampusInstances.Select(c => c.CampusId).Distinct().ToList();
+                var staffLeaders = await _db.Users
+                    .Where(u => u.Role.RoleCode == RoleCodes.Staff && u.SubRole == "LEADER" && u.PrimaryCampusId.HasValue && campusIds.Contains(u.PrimaryCampusId.Value) && u.Status == "ACTIVE")
+                    .Select(u => u.UserId)
+                    .ToListAsync(cancellationToken);
+                    
+                var notifications = staffLeaders.Select(id => new PEMS.Application.Notifications.Common.CreateNotificationItem(
+                    id,
+                    "Có yêu cầu tiếp khách mới",
+                    $"{visitRequest.DelegationName} đang chờ duyệt tại cơ sở của bạn.",
+                    PEMS.Application.Notifications.Common.NotificationTypes.VisitRequestSubmitted,
+                    PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitRequest,
+                    visitRequest.VisitRequestId
+                ));
+                await _notificationService.CreateManyAsync(notifications, cancellationToken);
+            }
+
             await transaction.CommitAsync(cancellationToken);
         }
         catch

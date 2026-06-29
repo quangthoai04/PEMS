@@ -33,17 +33,20 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.ProposeRequestChang
         private readonly IEmailService _email;
         private readonly IEmailActionTokenService _tokens;
         private readonly PEMS.Application.Emails.Utils.IEmailImageLayoutNormalizer _normalizer;
+        private readonly PEMS.Application.Notifications.Common.INotificationService _notificationService;
 
         public ProposeRequestChangeCommandHandler(
             IApplicationDbContext context, ICurrentUserService currentUserService,
             IEmailService email, IEmailActionTokenService tokens,
-            PEMS.Application.Emails.Utils.IEmailImageLayoutNormalizer normalizer)
+            PEMS.Application.Emails.Utils.IEmailImageLayoutNormalizer normalizer,
+            PEMS.Application.Notifications.Common.INotificationService notificationService)
         {
             _context = context;
             _currentUserService = currentUserService;
             _email = email;
             _tokens = tokens;
             _normalizer = normalizer;
+            _notificationService = notificationService;
         }
 
         public async Task<bool> Handle(ProposeRequestChangeCommand request, CancellationToken cancellationToken)
@@ -170,17 +173,15 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.ProposeRequestChang
                 _context.EmailActionTokens.Add(NewProposalToken(_tokens.Hash(approveRaw), EmailIntendedActions.ApproveProposal, groupKey, l.LogisticsItemId, host.UserId, host.Email, sentEmail.SentEmailId, sentRecipient.SentEmailRecipientId, now));
                 _context.EmailActionTokens.Add(NewProposalToken(_tokens.Hash(rejectRaw), EmailIntendedActions.RejectProposal, groupKey, l.LogisticsItemId, host.UserId, host.Email, sentEmail.SentEmailId, sentRecipient.SentEmailRecipientId, now));
 
-                _context.Notifications.Add(new Notification
-                {
-                    RecipientUserId = host.UserId,
-                    NotificationType = "VISIT_LOGISTICS_PROPOSAL",
-                    Title = LogisticsPriorityText.SubjectPrefix(l.Priority) + "Phòng ban đề xuất thay đổi hậu cần",
-                    Message = $"Phòng ban đề xuất thay đổi cho yêu cầu \"{l.Title}\" (ưu tiên {LogisticsPriorityText.LabelVi(l.Priority)}) của đoàn {delegationName}.",
-                    RelatedType = "LOGISTICS_ITEM",
-                    RelatedId = l.LogisticsItemId,
-                    IsRead = false,
-                    CreatedAt = now,
-                });
+                await _notificationService.CreateAsync(
+                    host.UserId,
+                    LogisticsPriorityText.SubjectPrefix(l.Priority) + "Phòng ban đề xuất thay đổi hậu cần",
+                    $"Phòng ban đề xuất thay đổi cho yêu cầu \"{l.Title}\" (ưu tiên {LogisticsPriorityText.LabelVi(l.Priority)}) của đoàn {delegationName}.",
+                    PEMS.Application.Notifications.Common.NotificationTypes.LogisticsProposalCreated,
+                    PEMS.Application.Notifications.Common.NotificationRelatedTypes.LogisticsItem,
+                    l.LogisticsItemId,
+                    cancellationToken
+                );
                 await _context.SaveChangesAsync(cancellationToken);
 
                 sentEmailId = sentEmail.SentEmailId;

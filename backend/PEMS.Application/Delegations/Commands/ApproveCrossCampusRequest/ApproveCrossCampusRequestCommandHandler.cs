@@ -19,13 +19,15 @@ public sealed class ApproveCrossCampusRequestCommandHandler
     private readonly IApplicationDbContext _db;
     private readonly ICurrentUserService _currentUser;
     private readonly IDateTimeService _clock;
+    private readonly PEMS.Application.Notifications.Common.INotificationService _notificationService;
 
     public ApproveCrossCampusRequestCommandHandler(
-        IApplicationDbContext db, ICurrentUserService currentUser, IDateTimeService clock)
+        IApplicationDbContext db, ICurrentUserService currentUser, IDateTimeService clock, PEMS.Application.Notifications.Common.INotificationService notificationService)
     {
         _db = db;
         _currentUser = currentUser;
         _clock = clock;
+        _notificationService = notificationService;
     }
 
     public async Task<ApproveCrossCampusRequestResponse> Handle(
@@ -158,6 +160,41 @@ public sealed class ApproveCrossCampusRequestCommandHandler
         });
 
         await _db.SaveChangesAsync(cancellationToken);
+
+        // --- Notifications ---
+        var notifications = new List<PEMS.Application.Notifications.Common.CreateNotificationItem>();
+        if (visit.VisitorUserId.HasValue)
+        {
+            notifications.Add(new PEMS.Application.Notifications.Common.CreateNotificationItem(
+                visit.VisitorUserId.Value,
+                "Yêu cầu được phê duyệt",
+                $"Yêu cầu liên cơ sở {visit.RequestCode} của bạn đã được HO phê duyệt.",
+                PEMS.Application.Notifications.Common.NotificationTypes.VisitRequestApproved,
+                PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitRequest,
+                visit.VisitRequestId
+            ));
+        }
+
+        foreach (var inst in visit.CampusInstances.Where(c => c.Status == "WAITING_HOST_ASSIGNMENT"))
+        {
+            if (inst.CoordinatorUserId.HasValue)
+            {
+                notifications.Add(new PEMS.Application.Notifications.Common.CreateNotificationItem(
+                    inst.CoordinatorUserId.Value,
+                    "Cần phân công Host",
+                    $"Đoàn {visit.DelegationName} vừa được HO duyệt. Vui lòng phân công Host phụ trách cho cơ sở của bạn.",
+                    PEMS.Application.Notifications.Common.NotificationTypes.WaitingHostAssignment,
+                    PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitInstance,
+                    inst.VisitInstanceId
+                ));
+            }
+        }
+
+        if (notifications.Any())
+        {
+            await _notificationService.CreateManyAsync(notifications, cancellationToken);
+        }
+
         await tx.CommitAsync(cancellationToken);
 
         return new ApproveCrossCampusRequestResponse(
