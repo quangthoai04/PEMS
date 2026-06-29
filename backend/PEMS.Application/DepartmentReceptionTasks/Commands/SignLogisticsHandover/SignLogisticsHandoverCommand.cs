@@ -29,11 +29,13 @@ public class SignLogisticsHandoverCommandHandler : IRequestHandler<SignLogistics
 {
     private readonly IApplicationDbContext _context;
     private readonly ICurrentUserService _currentUserService;
+    private readonly PEMS.Application.Notifications.Common.INotificationService _notificationService;
 
-    public SignLogisticsHandoverCommandHandler(IApplicationDbContext context, ICurrentUserService currentUserService)
+    public SignLogisticsHandoverCommandHandler(IApplicationDbContext context, ICurrentUserService currentUserService, PEMS.Application.Notifications.Common.INotificationService notificationService)
     {
         _context = context;
         _currentUserService = currentUserService;
+        _notificationService = notificationService;
     }
 
     public async Task<SignLogisticsHandoverResponse> Handle(SignLogisticsHandoverCommand request, CancellationToken cancellationToken)
@@ -52,6 +54,7 @@ public class SignLogisticsHandoverCommandHandler : IRequestHandler<SignLogistics
             ?? throw new Exception("Không tìm thấy người ký.");
 
         var item = await _context.VisitLogisticsItems
+            .Include(x => x.VisitInstance)
             .FirstOrDefaultAsync(x => x.LogisticsItemId == request.LogisticsItemId, cancellationToken)
             ?? throw new Exception("Không tìm thấy đơn yêu cầu.");
 
@@ -113,6 +116,20 @@ public class SignLogisticsHandoverCommandHandler : IRequestHandler<SignLogistics
         item.UpdatedAt = now;
 
         await _context.SaveChangesAsync(cancellationToken);
+
+        if (item.VisitInstance?.CurrentHostUserId != null)
+        {
+            string label = signerSide == HandoverSignerSides.Borrower ? "Bên nhận" : "Bên giao";
+            await _notificationService.CreateAsync(
+                item.VisitInstance.CurrentHostUserId.Value,
+                "Ký biên bản bàn giao",
+                $"Nhân sự phòng ban ({user.FullName}) đã ký biên bản bàn giao ({label}) cho nhiệm vụ \"{item.Title}\".",
+                PEMS.Application.Notifications.Common.NotificationTypes.LogisticsHandoverSigned,
+                PEMS.Application.Notifications.Common.NotificationRelatedTypes.LogisticsHandover,
+                handover.HandoverId,
+                cancellationToken
+            );
+        }
 
         return new SignLogisticsHandoverResponse
         {

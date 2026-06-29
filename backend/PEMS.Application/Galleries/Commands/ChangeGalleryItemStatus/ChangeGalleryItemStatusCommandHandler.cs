@@ -60,9 +60,20 @@ public sealed class ChangeGalleryItemStatusCommandHandler
                 Message = "Trạng thái không thay đổi.",
             };
 
-        // Enabling requires at least one active media (BR-GAL-ENABLE-04).
+        // Enabling requires at least one active media (BR-GAL-ENABLE-04) and an ACTIVE location + area
+        // (BR-GAL-STATUS-04 / AC-LOC-20): a hidden post must not be re-published while its location is off.
         if (newStatus == "PUBLISHED")
         {
+            if (item.Location!.Status != "ACTIVE")
+                throw new ConflictException(
+                    "Không thể hiển thị bài đăng vì vị trí đang ngừng hoạt động.",
+                    GalleryErrorCodes.ItemPublishBlockedLocationInactive);
+
+            if (item.Location.Area!.Status != "ACTIVE")
+                throw new ConflictException(
+                    "Không thể hiển thị bài đăng vì khu vực đang ngừng hoạt động.",
+                    GalleryErrorCodes.ItemPublishBlockedAreaInactive);
+
             var hasActiveMedia = await _db.GalleryItemMedia.AnyAsync(
                 m => m.GalleryItemId == itemId && m.DeletedAt == null && m.Status == "ACTIVE", cancellationToken);
             if (!hasActiveMedia)
