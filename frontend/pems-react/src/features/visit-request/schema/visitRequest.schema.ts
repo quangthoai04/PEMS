@@ -56,17 +56,18 @@ const emailSchema = z
   .email('Email không đúng định dạng (RFC 5322)');
 
 const visitorSchema = z.object({
-  fullName: z.string().min(1, 'Họ tên không được để trống').max(100, 'Tối đa 100 ký tự'),
-  jobTitle: z.string().min(1, 'Chức vụ không được để trống'),
-  organization: z.string().min(1, 'Đơn vị công tác không được để trống'),
-  nationality: z.string().min(1, 'Quốc tịch không được để trống'),
+  fullName: z.string().trim().min(1, 'Họ tên không được để trống').max(100, 'Tối đa 100 ký tự'),
+  jobTitle: z.string().trim().min(1, 'Chức vụ không được để trống'),
+  organization: z.string().trim().min(1, 'Đơn vị công tác không được để trống'),
+  nationality: z.string().trim().min(1, 'Quốc tịch không được để trống'),
 });
 
 const supportTeamSchema = z.object({
-  fullName: z.string().min(1, 'Họ tên không được để trống').max(100),
-  jobTitle: z.string().min(1, 'Chức vụ không được để trống'),
-  organization: z.string().min(1, 'Đơn vị công tác không được để trống'),
-  nationality: z.string().min(1, 'Quốc tịch không được để trống'),
+  fullName: z.string().trim().min(1, 'Họ tên không được để trống').max(100),
+  jobTitle: z.string().trim().min(1, 'Chức vụ không được để trống'),
+  organization: z.string().trim().min(1, 'Đơn vị công tác không được để trống'),
+  nationality: z.string().trim().min(1, 'Quốc tịch không được để trống'),
+  isAutoFilledFromRegistrant: z.boolean().optional(),
 });
 
 const visitSlotSchema = z
@@ -128,8 +129,8 @@ export const visitRequestSchema = z.object({
   visitors: z.array(visitorSchema).min(1, 'Vui lòng thêm ít nhất 1 khách.'),
   supportTeam: z.array(supportTeamSchema).min(1, 'Vui lòng thêm ít nhất 1 nhân sự hỗ trợ khách.'),
   contactPoint: z.object({
-    fullName: z.string().min(1, 'Họ tên không được để trống'),
-    organization: z.string().min(1, 'Đơn vị không được để trống'),
+    fullName: z.string().trim().min(1, 'Họ tên không được để trống'),
+    organization: z.string().trim().min(1, 'Đơn vị không được để trống'),
     phone: phoneSchema,
     email: emailSchema,
   }),

@@ -36,11 +36,19 @@ const mapHeaders = (headerRow: string[], names: string[]): Record<string, number
 const VISITOR_REQUIRED = ['Họ và tên', 'Chức vụ', 'Đơn vị công tác', 'Quốc tịch'];
 const VISITOR_ALL = ['Họ và tên', 'Chức vụ', 'Đơn vị công tác', 'Quốc tịch'];
 
-export const validateVisitorExcel = async (file: File): Promise<ExcelValidationResult> => {
+export const validateVisitorExcel = async (file: File, existingData: VisitorEntry[] = []): Promise<ExcelValidationResult> => {
   const rows = await readFirstSheet(file);
 
   if (!rows) return fail('File Excel không có dữ liệu.');
   if (rows.length < 2) return fail('File không có dữ liệu (chỉ có header hoặc rỗng).');
+
+  const normalizeStr = (str: string) => String(str || '').trim().replace(/\s+/g, ' ').toLowerCase();
+  const createHash = (fullName: string, jobTitle: string, org: string, nat: string) => 
+    `${normalizeStr(fullName)}|${normalizeStr(jobTitle)}|${normalizeStr(org)}|${normalizeStr(nat)}`;
+
+  const existingHashes = new Set(
+    existingData.map(e => createHash(e.fullName, e.jobTitle, e.organization, e.nationality))
+  );
 
   const headerRow = rows[0].map((h) => String(h).trim());
 
@@ -61,6 +69,7 @@ export const validateVisitorExcel = async (file: File): Promise<ExcelValidationR
   const errors: ExcelValidationError[] = [];
   const data: VisitorEntry[] = [];
   const errorRows = new Set<number>();
+  let skippedDuplicates = 0;
 
   rows.slice(1).forEach((row, i) => {
     const rowNum = i + 2;
@@ -74,28 +83,43 @@ export const validateVisitorExcel = async (file: File): Promise<ExcelValidationR
     });
 
     if (!errorRows.has(rowNum)) {
-      data.push({
+      const entry = {
         fullName: get(row, 'Họ và tên'),
         organization: get(row, 'Đơn vị công tác'),
         nationality: get(row, 'Quốc tịch'),
         jobTitle: get(row, 'Chức vụ'),
-      });
+      };
+      const hash = createHash(entry.fullName, entry.jobTitle, entry.organization, entry.nationality);
+      if (existingHashes.has(hash)) {
+        skippedDuplicates++;
+      } else {
+        existingHashes.add(hash);
+        data.push(entry);
+      }
     }
   });
 
   const totalRows = rows.slice(1).filter((r) => r.some((c) => String(c).trim() !== '')).length;
-  return { valid: errors.length === 0, totalRows, errorRows: errorRows.size, errors, data };
+  return { valid: errors.length === 0, totalRows, errorRows: errorRows.size, skippedDuplicates, errors, data };
 };
 
 // ─── Support team list ────────────────────────────────────────────────────────
 
 const SUPPORT_REQUIRED = ['Họ và tên', 'Chức vụ', 'Đơn vị công tác', 'Quốc tịch'];
 
-export const validateSupportTeamExcel = async (file: File): Promise<SupportTeamExcelValidationResult> => {
+export const validateSupportTeamExcel = async (file: File, existingData: SupportTeamEntry[] = []): Promise<SupportTeamExcelValidationResult> => {
   const rows = await readFirstSheet(file);
 
   if (!rows) return failSupport('File Excel không có dữ liệu.');
   if (rows.length < 2) return failSupport('File không có dữ liệu (chỉ có header hoặc rỗng).');
+
+  const normalizeStr = (str: string) => String(str || '').trim().replace(/\s+/g, ' ').toLowerCase();
+  const createHash = (fullName: string, jobTitle: string, org: string, nat: string) => 
+    `${normalizeStr(fullName)}|${normalizeStr(jobTitle)}|${normalizeStr(org)}|${normalizeStr(nat)}`;
+
+  const existingHashes = new Set(
+    existingData.map(e => createHash(e.fullName, e.jobTitle, e.organization, e.nationality))
+  );
 
   const headerRow = rows[0].map((h) => String(h).trim());
   const dataStartCol = headerRow[0].toLowerCase() === 'stt' ? 1 : 0;
@@ -114,6 +138,7 @@ export const validateSupportTeamExcel = async (file: File): Promise<SupportTeamE
   const errors: ExcelValidationError[] = [];
   const data: SupportTeamEntry[] = [];
   const errorRows = new Set<number>();
+  let skippedDuplicates = 0;
 
   rows.slice(1).forEach((row, i) => {
     const rowNum = i + 2;
@@ -127,29 +152,36 @@ export const validateSupportTeamExcel = async (file: File): Promise<SupportTeamE
     });
 
     if (!errorRows.has(rowNum)) {
-      data.push({
+      const entry = {
         fullName: get(row, 'Họ và tên'),
         jobTitle: get(row, 'Chức vụ'),
         organization: get(row, 'Đơn vị công tác'),
         nationality: get(row, 'Quốc tịch'),
-      });
+      };
+      const hash = createHash(entry.fullName, entry.jobTitle, entry.organization, entry.nationality);
+      if (existingHashes.has(hash)) {
+        skippedDuplicates++;
+      } else {
+        existingHashes.add(hash);
+        data.push(entry);
+      }
     }
   });
 
   const totalRows = rows.slice(1).filter((r) => r.some((c) => String(c).trim() !== '')).length;
-  return { valid: errors.length === 0, totalRows, errorRows: errorRows.size, errors, data };
+  return { valid: errors.length === 0, totalRows, errorRows: errorRows.size, skippedDuplicates, errors, data };
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const fail = (message: string): ExcelValidationResult => ({
-  valid: false, totalRows: 0, errorRows: 0,
+  valid: false, totalRows: 0, errorRows: 0, skippedDuplicates: 0,
   errors: [{ row: 0, column: '', message }],
   data: [],
 });
 
 const failSupport = (message: string): SupportTeamExcelValidationResult => ({
-  valid: false, totalRows: 0, errorRows: 0,
+  valid: false, totalRows: 0, errorRows: 0, skippedDuplicates: 0,
   errors: [{ row: 0, column: '', message }],
   data: [],
 });

@@ -29,7 +29,7 @@ export const galleryManagementApi = {
   async getGalleryItems(params: GalleryListQueryParams): Promise<PaginatedResult<GalleryListItem>> {
     const { data } = await httpClient.get<PaginatedResult<GalleryListItem>>(
       API_ENDPOINTS.gallery.list,
-      { params: cleanParams(params) },
+      { params: cleanParams(params as unknown as Record<string, unknown>) },
     );
     return data;
   },
@@ -92,7 +92,7 @@ export const galleryManagementApi = {
   async getLocations(params: GalleryLocationListQueryParams): Promise<PaginatedResult<GalleryLocationListItem>> {
     const { data } = await httpClient.get<PaginatedResult<GalleryLocationListItem>>(
       API_ENDPOINTS.gallery.locationList,
-      { params: cleanParams(params) },
+      { params: cleanParams(params as unknown as Record<string, unknown>) },
     );
     return data;
   },

@@ -10,6 +10,7 @@ export interface SupportTeamEntry {
   jobTitle: string;
   organization: string;
   nationality: string;
+  isAutoFilledFromRegistrant?: boolean;
 }
 
 export interface VisitSlot {
@@ -65,6 +66,7 @@ export interface ExcelValidationResult {
   valid: boolean;
   totalRows: number;
   errorRows: number;
+  skippedDuplicates: number;
   errors: ExcelValidationError[];
   data: VisitorEntry[];
 }
@@ -73,6 +75,7 @@ export interface SupportTeamExcelValidationResult {
   valid: boolean;
   totalRows: number;
   errorRows: number;
+  skippedDuplicates: number;
   errors: ExcelValidationError[];
   data: SupportTeamEntry[];
 }

@@ -43,9 +43,9 @@ public sealed class ResendVisitRequestOtpCommandHandler
                 rawCode,
                 cancellationToken);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            throw new PEMS.Application.Common.Exceptions.BusinessRuleException("Không thể gửi mã OTP. Vui lòng thử lại sau.");
+            throw new PEMS.Application.Common.Exceptions.BusinessRuleException("Không thể gửi mã OTP. Lỗi: " + ex.Message);
         }
 
         var isEmailEnabled = bool.TryParse(_configuration["Smtp:Enabled"], out var e) && e;

@@ -26,12 +26,12 @@ public sealed class EmailService : IEmailService
 
     // ── Generic send ──────────────────────────────────────────────────────────
 
-    public Task SendAsync(string toEmail, string subject, string htmlBody,
+    public async Task SendAsync(string toEmail, string subject, string htmlBody,
         CancellationToken cancellationToken = default)
     {
         using var message = new MailMessage { Subject = subject, Body = htmlBody, IsBodyHtml = true };
         message.To.Add(toEmail);
-        return SendCoreAsync(message, cancellationToken);
+        await SendCoreAsync(message, cancellationToken);
     }
 
     // ── Rich send: real MIME with attachments + inline (cid) images ─────────────
