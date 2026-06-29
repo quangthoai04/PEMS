@@ -43,14 +43,42 @@ public sealed class PublicGalleryLocationDto
     public ulong LocationId { get; init; }
     public string LocationName { get; init; } = string.Empty;
     public int DisplayOrder { get; init; }
+    /// <summary>The lead item shown as the location's nav thumbnail (a location may hold many items).</summary>
     public ulong GalleryItemId { get; init; }
     public string Title { get; init; } = string.Empty;
     public string MediaKind { get; init; } = string.Empty;
+    /// <summary>How many public-visible items this location carries (≥ 1).</summary>
+    public int PublicGalleryItemCount { get; init; }
     public string? PrimaryMediaUrl { get; init; }
 }
 
-// ── Location gallery-item detail (UC §7.3) ───────────────────────────────────
+// ── Location gallery grid (UC §7.2 grid / BR-PGAL-GRID-01..04) ───────────────
 
+/// <summary>
+/// The album grid of one location: every public-visible gallery item represented by its primary media
+/// (BR-PGAL-GRID-02). Campus/area/location header reported once. Used by the LOCATION_GRID screen.
+/// </summary>
+public sealed class PublicLocationGalleryGridDto
+{
+    public PublicCampusDto Campus { get; init; } = new();
+    public PublicGalleryAreaSummaryDto Area { get; init; } = new();
+    public PublicGalleryLocationSummaryDto Location { get; init; } = new();
+    public IReadOnlyList<PublicGalleryGridItemDto> Items { get; init; } = Array.Empty<PublicGalleryGridItemDto>();
+}
+
+/// <summary>One card in the location grid — a gallery item shown by its primary media + a short preview.</summary>
+public sealed class PublicGalleryGridItemDto
+{
+    public ulong GalleryItemId { get; init; }
+    public string Title { get; init; } = string.Empty;
+    public string DescriptionPreview { get; init; } = string.Empty;
+    public string MediaKind { get; init; } = string.Empty;
+    public PublicGalleryMediaDto? PrimaryMedia { get; init; }
+}
+
+// ── Gallery item detail (UC §7.3 / BR-PGAL-GRID-07) ──────────────────────────
+
+/// <summary>One gallery item with its full ordered ACTIVE media list (the detail screen).</summary>
 public sealed class PublicGalleryItemDetailDto
 {
     public PublicCampusDto Campus { get; init; } = new();

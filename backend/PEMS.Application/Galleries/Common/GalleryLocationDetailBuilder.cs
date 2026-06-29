@@ -10,8 +10,8 @@ namespace PEMS.Application.Galleries.Common;
 /// <summary>
 /// Builds the <see cref="GalleryLocationDetailDto"/> for one location — shared as the success payload
 /// of Create (UC-LOC-04/05), Update (UC-LOC-06/07) and the status toggle (UC-LOC-08/09). Reports the
-/// (single, non-deleted) gallery item of the location if there is one. Caller owns the scope check;
-/// this only reads. Pomelo-safe (single-join projection + one flat item lookup).
+/// aggregate gallery-item counts of the location (a location may hold many items now). Caller owns the
+/// scope check; this only reads. Pomelo-safe (single-join projection + one flat item lookup).
 /// </summary>
 internal static class GalleryLocationDetailBuilder
 {
@@ -33,10 +33,10 @@ internal static class GalleryLocationDetailBuilder
             .FirstOrDefaultAsync(ct)
             ?? throw new NotFoundException("GalleryLocation", locationId);
 
-        var item = await db.GalleryItems.AsNoTracking()
+        var statuses = await db.GalleryItems.AsNoTracking()
             .Where(i => i.LocationId == locationId && i.DeletedAt == null)
-            .Select(i => new { i.GalleryItemId, i.Status })
-            .FirstOrDefaultAsync(ct);
+            .Select(i => i.Status)
+            .ToListAsync(ct);
 
         return new GalleryLocationDetailDto
         {
@@ -47,9 +47,10 @@ internal static class GalleryLocationDetailBuilder
             Status = head.Status,
             CreatedAt = head.CreatedAt,
             UpdatedAt = head.UpdatedAt,
-            HasGalleryItem = item is not null,
-            GalleryItemId = item?.GalleryItemId,
-            GalleryItemStatus = item?.Status,
+            HasGalleryItems = statuses.Count > 0,
+            GalleryItemCount = statuses.Count,
+            PublishedGalleryItemCount = statuses.Count(s => s == "PUBLISHED"),
+            HiddenGalleryItemCount = statuses.Count(s => s == "HIDDEN"),
             Message = message,
         };
     }

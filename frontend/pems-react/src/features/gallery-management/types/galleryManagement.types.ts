@@ -137,9 +137,11 @@ export interface GalleryLocationListItem {
   status: GalleryLocationStatus;
   createdAt: string;
   updatedAt?: string | null;
-  hasGalleryItem: boolean;
-  galleryItemId?: number | null;
-  galleryItemStatus?: GalleryStatus | null;
+  // A location may hold 0, 1 or many gallery items — reported as aggregate counts.
+  hasGalleryItems: boolean;
+  galleryItemCount: number;
+  publishedGalleryItemCount: number;
+  hiddenGalleryItemCount: number;
 }
 
 export interface GalleryLocationDetail extends GalleryLocationListItem {

@@ -44,7 +44,7 @@ public sealed class GetPublicCampusNavigationQueryHandler
         if (campus is null)
             return null;
 
-        // Locations that carry a public-visible gallery item (1 location ≤ 1 item, BR-PGAL-07).
+        // Gallery items that are publicly visible (a location may carry MANY items now, BR-PGAL-07).
         var rows = await _db.GalleryItems.AsNoTracking()
             .Where(i =>
                 i.Status == "PUBLISHED" &&
@@ -62,6 +62,8 @@ public sealed class GetPublicCampusNavigationQueryHandler
                 LocationName = i.Location.LocationName,
                 LocationDisplayOrder = i.Location.DisplayOrder,
                 GalleryItemId = i.GalleryItemId,
+                ItemDisplayOrder = i.DisplayOrder,
+                CreatedAt = i.CreatedAt,
                 Title = i.Title,
                 MediaKind = i.MediaKind,
             })
@@ -102,20 +104,33 @@ public sealed class GetPublicCampusNavigationQueryHandler
                 AreaId = g.Key.AreaId,
                 AreaName = g.Key.AreaName,
                 DisplayOrder = (int)g.Key.AreaDisplayOrder,
+                // A location may hold many visible items — collapse to one nav node per location,
+                // represented by its lead item (lowest item display order, then newest), and carry the
+                // total count so the UI can hint at a slider. The full list loads on location click.
                 Locations = g
-                    .OrderBy(r => r.LocationDisplayOrder)
-                    .ThenBy(r => r.LocationName)
-                    .Select(r => new PublicGalleryLocationDto
+                    .GroupBy(r => new { r.LocationId, r.LocationName, r.LocationDisplayOrder })
+                    .OrderBy(lg => lg.Key.LocationDisplayOrder)
+                    .ThenBy(lg => lg.Key.LocationName)
+                    .Select(lg =>
                     {
-                        LocationId = r.LocationId,
-                        LocationName = r.LocationName,
-                        DisplayOrder = (int)r.LocationDisplayOrder,
-                        GalleryItemId = r.GalleryItemId,
-                        Title = r.Title,
-                        MediaKind = r.MediaKind,
-                        PrimaryMediaUrl = primaryByItem.TryGetValue(r.GalleryItemId, out var pm)
-                            ? PublicGalleryFileUrls.Content(pm.FileId)
-                            : null,
+                        var lead = lg
+                            .OrderBy(r => r.ItemDisplayOrder)
+                            .ThenByDescending(r => r.CreatedAt)
+                            .ThenByDescending(r => r.GalleryItemId)
+                            .First();
+                        return new PublicGalleryLocationDto
+                        {
+                            LocationId = lg.Key.LocationId,
+                            LocationName = lg.Key.LocationName,
+                            DisplayOrder = (int)lg.Key.LocationDisplayOrder,
+                            GalleryItemId = lead.GalleryItemId,
+                            Title = lead.Title,
+                            MediaKind = lead.MediaKind,
+                            PublicGalleryItemCount = lg.Count(),
+                            PrimaryMediaUrl = primaryByItem.TryGetValue(lead.GalleryItemId, out var pm)
+                                ? PublicGalleryFileUrls.Content(pm.FileId)
+                                : null,
+                        };
                     })
                     .ToList(),
             })
@@ -133,6 +148,8 @@ public sealed class GetPublicCampusNavigationQueryHandler
         public string LocationName { get; init; } = string.Empty;
         public uint LocationDisplayOrder { get; init; }
         public ulong GalleryItemId { get; init; }
+        public uint ItemDisplayOrder { get; init; }
+        public System.DateTime CreatedAt { get; init; }
         public string Title { get; init; } = string.Empty;
         public string MediaKind { get; init; } = string.Empty;
     }

@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -10,31 +11,37 @@ using PEMS.Application.Galleries.Public.Common;
 namespace PEMS.Application.Galleries.Public.Queries.GetPublicLocationGalleryItem;
 
 /// <summary>
-/// Loads the public-visible gallery item for a location plus its ACTIVE media (primary first, then
-/// display order). Enforces the same effective-visibility chain as the navigation query; if it fails
-/// (location/area/campus inactive, item hidden/deleted, or no active media) the item is treated as
-/// non-existent → 404 (BR-PGAL-22). Anonymous / read-only — no admin or audit fields leave the server.
+/// Loads the album grid of a location: ALL public-visible gallery items (location/area/campus ACTIVE,
+/// item PUBLISHED &amp; not deleted, ≥1 active media), each represented by its primary media — falling
+/// back to the lowest display-order / media-id ACTIVE media when no media is flagged primary
+/// (BR-PGAL-GRID-04). Items ordered by display order, then newest (UC §8.1). 404 if none qualify
+/// (BR-PGAL-GRID-11). Anonymous / read-only — no admin/audit fields leave the server (BR-PGAL-GRID-12).
+/// Pomelo-safe: one flat item query + one flat media query, assembled in memory.
 /// </summary>
-public sealed class GetPublicLocationGalleryItemQueryHandler
-    : IRequestHandler<GetPublicLocationGalleryItemQuery, PublicGalleryItemDetailDto>
+public sealed class GetPublicLocationGalleryItemsQueryHandler
+    : IRequestHandler<GetPublicLocationGalleryItemsQuery, PublicLocationGalleryGridDto>
 {
     private readonly IApplicationDbContext _db;
 
-    public GetPublicLocationGalleryItemQueryHandler(IApplicationDbContext db) => _db = db;
+    public GetPublicLocationGalleryItemsQueryHandler(IApplicationDbContext db) => _db = db;
 
-    public async Task<PublicGalleryItemDetailDto> Handle(
-        GetPublicLocationGalleryItemQuery request, CancellationToken cancellationToken)
+    public async Task<PublicLocationGalleryGridDto> Handle(
+        GetPublicLocationGalleryItemsQuery request, CancellationToken cancellationToken)
     {
         var locationId = (ulong)request.LocationId;
 
-        var head = await _db.GalleryItems.AsNoTracking()
+        var items = await _db.GalleryItems.AsNoTracking()
             .Where(i =>
                 i.LocationId == locationId &&
                 i.Status == "PUBLISHED" &&
                 i.DeletedAt == null &&
                 i.Location.Status == "ACTIVE" &&
                 i.Location.Area.Status == "ACTIVE" &&
-                i.Location.Area.Campus.Status == "ACTIVE")
+                i.Location.Area.Campus.Status == "ACTIVE" &&
+                i.Media.Any(m => m.Status == "ACTIVE" && m.DeletedAt == null))
+            .OrderBy(i => i.DisplayOrder)
+            .ThenByDescending(i => i.CreatedAt)
+            .ThenByDescending(i => i.GalleryItemId)
             .Select(i => new
             {
                 CampusId = i.Location.Area.CampusId,
@@ -49,37 +56,66 @@ public sealed class GetPublicLocationGalleryItemQueryHandler
                 i.Title,
                 i.Description,
                 i.MediaKind,
-                i.Status,
-            })
-            .FirstOrDefaultAsync(cancellationToken)
-            ?? throw new NotFoundException("PublicGalleryItem", request.LocationId);
-
-        var media = await _db.GalleryItemMedia.AsNoTracking()
-            .Where(m => m.GalleryItemId == head.GalleryItemId && m.Status == "ACTIVE" && m.DeletedAt == null)
-            .OrderByDescending(m => m.IsPrimary)
-            .ThenBy(m => m.DisplayOrder)
-            .ThenBy(m => m.MediaId)
-            .Select(m => new PublicGalleryMediaDto
-            {
-                MediaId = m.MediaId,
-                FileId = m.FileId,
-                MediaType = m.MediaType,
-                Url = PublicGalleryFileUrls.Content(m.FileId),
-                ThumbnailUrl = m.ThumbnailFileId != null
-                    ? PublicGalleryFileUrls.Content(m.ThumbnailFileId.Value)
-                    : null,
-                Caption = m.Caption,
-                AltText = m.AltText,
-                IsPrimary = m.IsPrimary,
-                DisplayOrder = (int)m.DisplayOrder,
             })
             .ToListAsync(cancellationToken);
 
-        // An item with zero active media would not have passed the navigation filter, but guard anyway.
-        if (media.Count == 0)
-            throw new NotFoundException("PublicGalleryItem", request.LocationId);
+        // No public-visible item for this location → treat as non-existent (BR-PGAL-GRID-11).
+        if (items.Count == 0)
+            throw new NotFoundException("PublicLocationGallery", request.LocationId);
 
-        return new PublicGalleryItemDetailDto
+        var itemIds = items.Select(i => i.GalleryItemId).ToList();
+        var mediaRows = await _db.GalleryItemMedia.AsNoTracking()
+            .Where(m => itemIds.Contains(m.GalleryItemId) && m.Status == "ACTIVE" && m.DeletedAt == null)
+            .Select(m => new
+            {
+                m.GalleryItemId,
+                Media = new PublicGalleryMediaDto
+                {
+                    MediaId = m.MediaId,
+                    FileId = m.FileId,
+                    MediaType = m.MediaType,
+                    Url = PublicGalleryFileUrls.Content(m.FileId),
+                    ThumbnailUrl = m.ThumbnailFileId != null
+                        ? PublicGalleryFileUrls.Content(m.ThumbnailFileId.Value)
+                        : null,
+                    Caption = m.Caption,
+                    AltText = m.AltText,
+                    IsPrimary = m.IsPrimary,
+                    DisplayOrder = (int)m.DisplayOrder,
+                },
+            })
+            .ToListAsync(cancellationToken);
+
+        // Primary media per item, fallback to lowest display-order / media-id when none flagged (BR-PGAL-GRID-04).
+        var primaryByItem = mediaRows
+            .GroupBy(r => r.GalleryItemId)
+            .ToDictionary(
+                g => g.Key,
+                g => g.Select(r => r.Media)
+                      .OrderByDescending(m => m.IsPrimary)
+                      .ThenBy(m => m.DisplayOrder)
+                      .ThenBy(m => m.MediaId)
+                      .First());
+
+        var head = items[0];
+
+        var gridItems = items
+            .Select(i => new PublicGalleryGridItemDto
+            {
+                GalleryItemId = i.GalleryItemId,
+                Title = i.Title,
+                DescriptionPreview = BuildPreview(i.Description),
+                MediaKind = i.MediaKind,
+                PrimaryMedia = primaryByItem.TryGetValue(i.GalleryItemId, out var pm) ? pm : null,
+            })
+            // An item left without media after the in-memory join would not have passed the filter; guard.
+            .Where(g => g.PrimaryMedia is not null)
+            .ToList();
+
+        if (gridItems.Count == 0)
+            throw new NotFoundException("PublicLocationGallery", request.LocationId);
+
+        return new PublicLocationGalleryGridDto
         {
             Campus = new PublicCampusDto
             {
@@ -90,15 +126,15 @@ public sealed class GetPublicLocationGalleryItemQueryHandler
             },
             Area = new PublicGalleryAreaSummaryDto { AreaId = head.AreaId, AreaName = head.AreaName },
             Location = new PublicGalleryLocationSummaryDto { LocationId = head.LocationId, LocationName = head.LocationName },
-            GalleryItem = new PublicGalleryItemSummaryDto
-            {
-                GalleryItemId = head.GalleryItemId,
-                Title = head.Title,
-                Description = head.Description,
-                MediaKind = head.MediaKind,
-                Status = head.Status,
-            },
-            Media = media,
+            Items = gridItems,
         };
+    }
+
+    /// <summary>A short, single-line preview of the description for the grid card.</summary>
+    private static string BuildPreview(string? description)
+    {
+        var text = (description ?? string.Empty).Replace('\n', ' ').Replace('\r', ' ').Trim();
+        const int max = 120;
+        return text.Length <= max ? text : text.Substring(0, max).TrimEnd() + "…";
     }
 }

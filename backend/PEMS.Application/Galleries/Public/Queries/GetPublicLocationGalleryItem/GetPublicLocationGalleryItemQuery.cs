@@ -4,8 +4,9 @@ using PEMS.Application.Galleries.Public.Common;
 namespace PEMS.Application.Galleries.Public.Queries.GetPublicLocationGalleryItem;
 
 /// <summary>
-/// UC §7.3 — the (single) public-visible gallery item of a location, with its ordered media list.
-/// Throws 404 when the location/item is not public-visible (AF in §10.3, BR-PGAL-22). Anonymous.
+/// UC §4 (LOCATION_GRID) — the album grid of a location: every public-visible gallery item represented
+/// by its primary media (BR-PGAL-GRID-01/02). Throws 404 when the location has no public-visible item
+/// (BR-PGAL-GRID-11). Anonymous.
 /// </summary>
-public sealed record GetPublicLocationGalleryItemQuery(long LocationId)
-    : IRequest<PublicGalleryItemDetailDto>;
+public sealed record GetPublicLocationGalleryItemsQuery(long LocationId)
+    : IRequest<PublicLocationGalleryGridDto>;

@@ -60,10 +60,14 @@ public sealed class ChangeGalleryLocationStatusCommandHandler
             string message;
             if (newStatus == EntityStatuses.Inactive)
             {
-                // Auto-hide the (single, non-deleted) gallery item if it was PUBLISHED (BR-LOC-DISABLE-02/03).
-                var item = await _db.GalleryItems.FirstOrDefaultAsync(
-                    i => i.LocationId == location.LocationId && i.DeletedAt == null, cancellationToken);
-                if (item is not null && item.Status == "PUBLISHED")
+                // Auto-hide ALL currently-PUBLISHED gallery items of this location (a location may have
+                // many items now). Items already HIDDEN keep their status (BR-LOC-DISABLE-02/03).
+                var publishedItems = await _db.GalleryItems
+                    .Where(i => i.LocationId == location.LocationId
+                             && i.Status == "PUBLISHED"
+                             && i.DeletedAt == null)
+                    .ToListAsync(cancellationToken);
+                foreach (var item in publishedItems)
                 {
                     item.Status = "HIDDEN";
                     item.UpdatedAt = now;

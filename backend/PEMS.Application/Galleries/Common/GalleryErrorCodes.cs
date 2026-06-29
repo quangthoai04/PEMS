@@ -28,13 +28,10 @@ public static class GalleryErrorCodes
     /// <summary>The target area/location is not ACTIVE. → 422.</summary>
     public const string LocationInactive = "GALLERY_LOCATION_INACTIVE";
 
-    /// <summary>Another gallery item already uses this location (one item per location). → 409.</summary>
-    public const string LocationAlreadyUsed = "GALLERY_LOCATION_ALREADY_USED";
-
     /// <summary>At least one media file is required when creating an item. → 422.</summary>
     public const string FilesRequired = "GALLERY_FILES_REQUIRED";
 
-    /// <summary>More than the allowed number of files (5) were supplied. → 422.</summary>
+    /// <summary>More than the allowed number of files (20) were supplied. → 422.</summary>
     public const string TooManyFiles = "GALLERY_TOO_MANY_FILES";
 
     /// <summary>A supplied file is neither a supported image nor video. → 422.</summary>

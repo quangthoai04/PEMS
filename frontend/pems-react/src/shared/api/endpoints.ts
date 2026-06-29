@@ -87,8 +87,12 @@ export const API_ENDPOINTS = {
   publicVisitFptu: {
     campuses: '/public/visit-fptu/campuses',
     navigation: (campusCode: string) => `/public/visit-fptu/campuses/${campusCode}/navigation`,
-    locationGalleryItem: (locationId: string | number) =>
-      `/public/visit-fptu/locations/${locationId}/gallery-item`,
+    // Album grid of a location (each public item by its primary media).
+    locationGalleryItems: (locationId: string | number) =>
+      `/public/visit-fptu/locations/${locationId}/gallery-items`,
+    // Detail of one gallery item (all its media).
+    galleryItemDetail: (galleryItemId: string | number) =>
+      `/public/visit-fptu/gallery-items/${galleryItemId}`,
     // Anonymous, gallery-scoped media proxy. URLs are returned absolute (e.g. "/api/public/visit-fptu/media/123/content").
     mediaContent: (fileId: string | number) => `/public/visit-fptu/media/${fileId}/content`,
   },

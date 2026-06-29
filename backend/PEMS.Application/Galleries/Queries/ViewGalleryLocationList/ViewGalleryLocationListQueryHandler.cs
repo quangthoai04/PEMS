@@ -90,20 +90,26 @@ public sealed class ViewGalleryLocationListQueryHandler
 
         var locationIds = rows.Select(r => r.LocationId).ToList();
 
-        // The (single, non-deleted) gallery item per location — one flat query, merged in memory.
+        // Gallery items of the listed locations — one flat query, aggregated in memory so the
+        // location list stays 1-row-per-location even when a location holds many items.
         var items = locationIds.Count == 0
             ? new List<ItemRow>()
             : await _db.GalleryItems.AsNoTracking()
                 .Where(i => locationIds.Contains(i.LocationId) && i.DeletedAt == null)
                 .Select(i => new ItemRow { LocationId = i.LocationId, GalleryItemId = i.GalleryItemId, Status = i.Status })
                 .ToListAsync(cancellationToken);
-        var itemByLocation = items
+        var countsByLocation = items
             .GroupBy(i => i.LocationId)
-            .ToDictionary(g => g.Key, g => g.First());
+            .ToDictionary(g => g.Key, g => new
+            {
+                Total = g.Count(),
+                Published = g.Count(i => i.Status == "PUBLISHED"),
+                Hidden = g.Count(i => i.Status == "HIDDEN"),
+            });
 
         var result = rows.Select(r =>
         {
-            itemByLocation.TryGetValue(r.LocationId, out var gi);
+            countsByLocation.TryGetValue(r.LocationId, out var c);
             return new GalleryLocationListItemDto
             {
                 LocationId = r.LocationId,
@@ -113,9 +119,10 @@ public sealed class ViewGalleryLocationListQueryHandler
                 Status = r.Status,
                 CreatedAt = r.CreatedAt,
                 UpdatedAt = r.UpdatedAt,
-                HasGalleryItem = gi is not null,
-                GalleryItemId = gi?.GalleryItemId,
-                GalleryItemStatus = gi?.Status,
+                HasGalleryItems = c is not null && c.Total > 0,
+                GalleryItemCount = c?.Total ?? 0,
+                PublishedGalleryItemCount = c?.Published ?? 0,
+                HiddenGalleryItemCount = c?.Hidden ?? 0,
             };
         }).ToList();
 

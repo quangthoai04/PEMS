@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using PEMS.Application.Galleries.Public.Queries.GetPublicCampuses;
 using PEMS.Application.Galleries.Public.Queries.GetPublicCampusNavigation;
+using PEMS.Application.Galleries.Public.Queries.GetPublicGalleryItemDetail;
 using PEMS.Application.Galleries.Public.Queries.GetPublicGalleryMedia;
 using PEMS.Application.Galleries.Public.Queries.GetPublicLocationGalleryItem;
 
@@ -39,10 +40,15 @@ namespace PEMS.Api.Controllers
             return result is null ? NotFound() : Ok(result);
         }
 
-        // UC §7.3 — the public gallery item of one location.
-        [HttpGet("locations/{locationId:long}/gallery-item")]
-        public async Task<IActionResult> GetLocationGalleryItem(long locationId, CancellationToken cancellationToken)
-            => Ok(await _mediator.Send(new GetPublicLocationGalleryItemQuery(locationId), cancellationToken));
+        // UC §4 — album grid of one location (every public item by its primary media).
+        [HttpGet("locations/{locationId:long}/gallery-items")]
+        public async Task<IActionResult> GetLocationGalleryItems(long locationId, CancellationToken cancellationToken)
+            => Ok(await _mediator.Send(new GetPublicLocationGalleryItemsQuery(locationId), cancellationToken));
+
+        // UC §5 — detail of one gallery item (all its media).
+        [HttpGet("gallery-items/{galleryItemId:long}")]
+        public async Task<IActionResult> GetGalleryItemDetail(long galleryItemId, CancellationToken cancellationToken)
+            => Ok(await _mediator.Send(new GetPublicGalleryItemDetailQuery(galleryItemId), cancellationToken));
 
         // Gallery-scoped public file proxy (images/videos) — inline, short private cache.
         [HttpGet("media/{fileId:long}/content")]
