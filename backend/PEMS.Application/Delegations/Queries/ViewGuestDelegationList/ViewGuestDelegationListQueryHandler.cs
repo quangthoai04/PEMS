@@ -381,6 +381,9 @@ public sealed class ViewGuestDelegationListQueryHandler
                     || r.CampusStatus == VisitInstanceStatus.Assigned
                     || r.CampusStatus == VisitInstanceStatus.BeforeVisit)
                 && r.PlannedStartAt > nowForCancel;
+            bool hasStartedCampus = r.CampusStatus == VisitInstanceStatus.DuringVisit 
+                || r.CampusStatus == VisitInstanceStatus.AfterVisit 
+                || r.CampusStatus == VisitInstanceStatus.Closed;
             string? campusName = campusNames.TryGetValue(r.CampusId, out var cn) ? cn : null;
             string? hostName = r.CurrentHostUserId.HasValue && userNames.TryGetValue(r.CurrentHostUserId.Value, out var hn) ? hn : null;
             string? visitorName = r.VisitorUserId.HasValue && userNames.TryGetValue(r.VisitorUserId.Value, out var vn) ? vn : null;
@@ -429,6 +432,7 @@ public sealed class ViewGuestDelegationListQueryHandler
                 CancelledBy = cancelledById,
                 CancelledByName = cancelledByName,
                 HasCancellableInstance = hasCancellableInstance,
+                HasStartedCampus = hasStartedCampus,
                 DecisionNote = r.DecisionNote,
                 DecidedBy = r.DecidedBy,
                 DecidedByName = r.DecidedBy.HasValue && userNames.TryGetValue(r.DecidedBy.Value, out var dbn) ? dbn : null,
@@ -601,6 +605,7 @@ public sealed class ViewGuestDelegationListQueryHandler
                         || i.Status == VisitInstanceStatus.Assigned
                         || i.Status == VisitInstanceStatus.BeforeVisit)
                     && i.PlannedStartAt > nowForCancel);
+            bool hasStartedCampus = instances.Any(i => i.Status == VisitInstanceStatus.DuringVisit || i.Status == VisitInstanceStatus.AfterVisit || i.Status == VisitInstanceStatus.Closed);
 
             string? campusName = single != null && campusNames.TryGetValue(single.CampusId, out var cnm) ? cnm
                 : count > 1 ? $"{count} cơ sở"
@@ -704,6 +709,7 @@ public sealed class ViewGuestDelegationListQueryHandler
                 CancelledBy = cancelledById,
                 CancelledByName = cancelledByName,
                 HasCancellableInstance = hasCancellableInstance,
+                HasStartedCampus = hasStartedCampus,
                 CanExpandCampuses = count > 1 && vr.Status == VisitRequestStatuses.Approved,
                 CanViewRequestDetail = true,
                 CanViewRejectReason = vr.Status == VisitRequestStatuses.Rejected && !string.IsNullOrEmpty(vr.DecisionNote),
@@ -765,15 +771,27 @@ public sealed class ViewGuestDelegationListQueryHandler
             }
         }
 
-        // Visitor — self-cancel own request (UC-136). Cancellation is POST-APPROVAL only: a
-        // PENDING_APPROVAL request is ended via the reject flow, so the cancel action is NEVER
-        // offered while pending. HasCancellableInstance already encodes "APPROVED + an instance
-        // in WAITING_HOST_ASSIGNMENT/ASSIGNED/BEFORE_VISIT that hasn't started".
-        if (isVisitor && item.VisitorUserId == userId
-            && item.RequestStatus == VisitRequestStatuses.Approved
-            && item.HasCancellableInstance)
+        // Visitor — self-cancel own request (UC-136).
+        if (isVisitor && item.VisitorUserId == userId)
         {
-            actions.Add("CANCEL_BY_VISITOR");
+            if (item.RequestStatus == VisitRequestStatuses.PendingApproval)
+            {
+                // PENDING_APPROVAL: can cancel whole request
+                actions.Add("CANCEL_BY_VISITOR");
+            }
+            else if (item.RequestStatus == VisitRequestStatuses.Approved)
+            {
+                if (isSingle && item.HasCancellableInstance)
+                {
+                    // SINGLE_CAMPUS: cancel if campus hasn't started
+                    actions.Add("CANCEL_BY_VISITOR");
+                }
+                else if (isMulti && !item.HasStartedCampus)
+                {
+                    // MULTI_CAMPUS: cancel WHOLE request only if NO campus has started
+                    actions.Add("CANCEL_BY_VISITOR");
+                }
+            }
         }
 
         // Host â€” cancel the campus instance they own before it starts.

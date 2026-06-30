@@ -175,7 +175,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
       ? 'xl:grid-cols-[minmax(0,1fr)_210px_160px_200px_112px_44px]'     // search·status·scope·date·apply·reset
       : 'xl:grid-cols-[minmax(0,1fr)_220px_200px_112px_44px]';          // search·status·date·apply·reset
 
-  const createEmptyFilters = () => ({ keyword: '', status: '', visitScopes: [] as string[], relation: '', fromDate: '', toDate: '', campusId: '' });
+  const createEmptyFilters = () => ({ keyword: '', status: '', visitScope: '', relation: '', fromDate: '', toDate: '', campusId: '' });
   const [draftFilters, setDraftFilters] = useState(createEmptyFilters());
   const [appliedFilters, setAppliedFilters] = useState(createEmptyFilters());
   const [filterError, setFilterError] = useState<string | null>(null);
@@ -222,7 +222,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
   const [cancelReason, setCancelReason] = useState<{ open: boolean; row: Row | null }>({ open: false, row: null });
   const [approveConfirm, setApproveConfirm] = useState<{ open: boolean; row: Row | null; submitting: boolean; error: string | null }>({ open: false, row: null, submitting: false, error: null });
   const [reject, setReject] = useState<{ open: boolean; row: Row | null; action: AllowedAction | null; text: string; submitting: boolean; error: string | null }>({ open: false, row: null, action: null, text: '', submitting: false, error: null });
-  const [cancel, setCancel] = useState<{ open: boolean; row: Row | null; mode: 'visitor' | 'host' | null; instanceId?: number | null; text: string; submitting: boolean; error: string | null }>({ open: false, row: null, mode: null, instanceId: null, text: '', submitting: false, error: null });
+  const [cancel, setCancel] = useState<{ open: boolean; row: Row | null; mode: 'visitor' | 'host' | null; instanceId?: number | null; text: string; submitting: boolean; error: string | null; confirmed: boolean }>({ open: false, row: null, mode: null, instanceId: null, text: '', submitting: false, error: null, confirmed: false });
   const [assign, setAssign] = useState<{ open: boolean; row: Row | null; mode: 'approve' | 'transfer' }>({ open: false, row: null, mode: 'approve' });
 
   // ── Toasts (success/failure notification cho approve/reject/cancel/assign host) ──
@@ -305,16 +305,15 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
         if (option?.cancelledOnly) params.cancelledOnly = true;
         if (option?.requestStatus) params.requestStatus = option.requestStatus;
         if (option?.campusStatus) params.campusStatus = option.campusStatus;
-        if (option?.visitScopes?.length) params.visitScopes = option.visitScopes.join(',');
+        if (option?.visitScope) params.visitScope = option.visitScope;
         if (option?.readOnlyOnly) params.readOnlyOnly = true;
         if (option?.actionableOnly) params.actionableOnly = true;
         if (option?.timing) params.timing = option.timing;
         if (option?.relation) params.relation = option.relation;
       }
       
-      if (filterConfig.showScope && targetFilters.visitScopes.length > 0) {
-        // Only merge with option if option didn't already set it, or let option override
-        if (!params.visitScopes) params.visitScopes = targetFilters.visitScopes.join(',');
+      if (filterConfig.showScope && targetFilters.visitScope) {
+        if (!params.visitScope) params.visitScope = targetFilters.visitScope;
       }
       
       if (filterConfig.showRelation && targetFilters.relation) {
@@ -610,6 +609,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
     if (!cancel.row || !cancel.mode) return;
     const text = cancel.text.trim();
     if (!text) { setCancel((s) => ({ ...s, error: 'Vui lòng nhập lý do hủy.' })); return; }
+    if (!cancel.confirmed) { setCancel((s) => ({ ...s, error: 'Vui lòng xác nhận rằng bạn hiểu thao tác hủy không thể hoàn tác.' })); return; }
     setCancel((s) => ({ ...s, submitting: true, error: null }));
     try {
       const payload = { cancellationReason: text };
@@ -621,7 +621,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
       } else {
         await delegationsApi.cancelVisitRequest(cancel.row.visitRequestId, payload);
       }
-      setCancel({ open: false, row: null, mode: null, instanceId: null, text: '', submitting: false, error: null });
+      setCancel({ open: false, row: null, mode: null, instanceId: null, text: '', submitting: false, error: null, confirmed: false });
       pushToast('success', 'Đã hủy lịch thăm thành công.');
       await loadDelegations(activeTab, currentPage, pageSize, appliedFilters, sortOrder);
     } catch (e: any) {
@@ -780,6 +780,10 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
     const isCancelledRow = activeTab !== 'attending'
       && (row.isCancelled === true || row.requestStatus === 'CANCELLED' || row.campusStatus === 'CANCELLED');
     
+    const isMultiCampusParentRow = row.visitScope === 'MULTI_CAMPUS' && row.canExpandCampuses === true && !row.visitInstanceId;
+    const shouldHideParentCancel = isVisitor && isMultiCampusParentRow && row.hasStartedCampus === true;
+    const canRenderCancelAction = (can('CANCEL_BY_VISITOR') || can('CANCEL_BY_HOST')) && !shouldHideParentCancel;
+
     return (
       <div className="mx-auto grid w-[184px] grid-cols-4 gap-2 place-items-center">
         {/* Slot 1: Xem form yêu cầu */}
@@ -826,9 +830,9 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
         ) : can('DECLINE_INVITATION') ? (
           <ActionIconButton title="Từ chối lời mời" tone="red" icon={<X className="h-5 w-5" />}
             onClick={(e) => { e.stopPropagation(); setReject({ open: true, row, action: 'DECLINE_INVITATION' as any, text: '', submitting: false, error: null }); }} />
-        ) : (can('CANCEL_BY_VISITOR') || can('CANCEL_BY_HOST')) ? (
+        ) : canRenderCancelAction ? (
           <ActionIconButton title="Hủy lịch thăm" tone="red" icon={<XCircle className="h-5 w-5" />}
-            onClick={(e) => { e.stopPropagation(); setCancel({ open: true, row, mode: can('CANCEL_BY_HOST') ? 'host' : 'visitor', text: '', submitting: false, error: null }); }} />
+            onClick={(e) => { e.stopPropagation(); setCancel({ open: true, row, mode: can('CANCEL_BY_HOST') ? 'host' : 'visitor', instanceId: null, text: '', submitting: false, error: null, confirmed: false }); }} />
         ) : (
           <span className="h-9 w-9" aria-hidden="true" />
         )}
@@ -867,7 +871,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
   };
 
   const openCampusCancel = (row: Row, item: CampusProgressItem) =>
-    setCancel({ open: true, row, mode: 'visitor', instanceId: item.visitInstanceId, text: '', submitting: false, error: null });
+    setCancel({ open: true, row, mode: 'visitor', instanceId: item.visitInstanceId, text: '', submitting: false, error: null, confirmed: false });
 
   const openCampusCancelReason = (row: Row, item: CampusProgressItem) => {
     const campusRow = {
@@ -947,7 +951,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
     );
   }
 
-  const hasActiveFilter = !!(appliedFilters.keyword || appliedFilters.status || appliedFilters.visitScopes.length > 0 || appliedFilters.fromDate || appliedFilters.toDate);
+  const hasActiveFilter = !!(appliedFilters.keyword || appliedFilters.status || appliedFilters.visitScope || appliedFilters.fromDate || appliedFilters.toDate);
   const emptyText = hasActiveFilter
     ? 'Không tìm thấy đơn phù hợp với bộ lọc.'
     : activeTab === 'attending'
@@ -1084,31 +1088,21 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
           {/* Scope */}
           {filterConfig.showScope && (
             <div className="relative min-w-0">
-              <label className="block h-5 mb-1 truncate text-xs font-bold text-slate-500">{filterConfig.scopeLabel || 'Phạm vi'}</label>
+              <label className="block h-5 mb-1 truncate text-xs font-bold text-slate-500">{filterConfig.scopeLabel || 'Phạm vi đơn'}</label>
               <button onClick={() => setIsTypeFilterOpen(!isTypeFilterOpen)} className="flex h-11 w-full min-w-0 items-center justify-between rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition-colors focus:border-[#004c91]">
-                <span className="min-w-0 truncate">{draftFilters.visitScopes.length === 0 ? filterConfig.scopeOptions[0]?.label || 'Tất cả phạm vi' : draftFilters.visitScopes.length === 1 ? (filterConfig.scopeOptions.find((x) => x.value === draftFilters.visitScopes[0])?.label ?? '1 phạm vi') : `${draftFilters.visitScopes.length} phạm vi`}</span>
+                <span className="min-w-0 truncate">{filterConfig.scopeOptions?.find((o) => o.value === draftFilters.visitScope)?.label ?? 'Tất cả phạm vi'}</span>
                 <ChevronDown className="w-4 h-4 text-gray-500 flex-shrink-0 ml-2 pointer-events-none" />
               </button>
               {isTypeFilterOpen && (
                 <>
                   <div className="fixed inset-0 z-10" onClick={() => setIsTypeFilterOpen(false)} />
-                  <div className="absolute left-0 top-full z-30 mt-1 w-full min-w-[210px] rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
-                    {filterConfig.scopeOptions.map((scope) => (
-                      <label key={scope.value} className="flex items-center px-3 py-2 hover:bg-slate-50 cursor-pointer">
-                        {scope.value === '' ? (
-                          <input type="checkbox" className="mr-2 rounded border-gray-300 text-[#004c91] focus:ring-[#004c91]" checked={draftFilters.visitScopes.length === 0}
-                            onChange={(e) => {
-                              if (e.target.checked) setDraftFilters({ ...draftFilters, visitScopes: [] });
-                            }} />
-                        ) : (
-                          <input type="checkbox" className="mr-2 rounded border-gray-300 text-[#004c91] focus:ring-[#004c91]" checked={draftFilters.visitScopes.includes(scope.value)}
-                            onChange={(e) => {
-                              if (e.target.checked) setDraftFilters({ ...draftFilters, visitScopes: [...draftFilters.visitScopes, scope.value] });
-                              else setDraftFilters({ ...draftFilters, visitScopes: draftFilters.visitScopes.filter((t) => t !== scope.value) });
-                            }} />
-                        )}
-                        <span className="text-sm font-medium text-gray-700">{scope.label}</span>
-                      </label>
+                  <div className="absolute left-0 top-full z-30 mt-1 w-full min-w-[210px] rounded-xl border border-slate-200 bg-white py-1 shadow-lg max-h-72 overflow-y-auto">
+                    {filterConfig.scopeOptions?.map((option) => (
+                      <div key={option.value} className={`px-3 py-2 text-sm cursor-pointer hover:bg-slate-50 flex items-center ${draftFilters.visitScope === option.value ? 'bg-blue-50 text-[#004c91] font-bold' : 'text-gray-700 font-medium'}`}
+                        onClick={() => { setDraftFilters({ ...draftFilters, visitScope: option.value }); setIsTypeFilterOpen(false); }}>
+                        {option.label}
+                        {draftFilters.visitScope === option.value && <Check className="w-4 h-4 ml-auto text-[#004c91]" />}
+                      </div>
                     ))}
                   </div>
                 </>
@@ -1457,28 +1451,62 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
           <motion.div initial={{ opacity: 0, scale: 0.95, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden relative border border-gray-100">
             <div className="px-6 py-4 bg-red-600 flex items-center justify-between">
-              <h3 className="text-lg font-bold text-white flex items-center gap-2"><AlertCircle className="w-5 h-5 bg-white/20 rounded-full p-0.5" /> Hủy lịch thăm</h3>
-              <button type="button" disabled={cancel.submitting} onClick={() => setCancel({ open: false, row: null, mode: null, text: '', submitting: false, error: null })} className="text-white/85 hover:text-white hover:bg-white/10 rounded-full p-1.5 cursor-pointer"><X className="w-5 h-5" /></button>
+              <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                <AlertCircle className="w-5 h-5 bg-white/20 rounded-full p-0.5" />
+                {cancel.row.requestStatus === 'PENDING_APPROVAL' ? 'Hủy đơn đăng ký tham quan'
+                  : cancel.row.visitScope === 'SINGLE_CAMPUS' ? 'Hủy lịch thăm'
+                    : cancel.instanceId ? `Hủy lịch thăm tại cơ sở ${cancel.row.campus}`
+                      : 'Hủy toàn bộ lịch thăm liên cơ sở'}
+              </h3>
+              <button type="button" disabled={cancel.submitting} onClick={() => setCancel({ open: false, row: null, mode: null, text: '', submitting: false, error: null, confirmed: false })} className="text-white/85 hover:text-white hover:bg-white/10 rounded-full p-1.5 cursor-pointer"><X className="w-5 h-5" /></button>
             </div>
-            <div className="p-6 space-y-3">
-              <p className="text-sm text-gray-700">Bạn đang hủy lịch thăm của đoàn <span className="font-bold text-[#004c91]">{cancel.row.name}</span>. Hành động này không thể hoàn tác.</p>
-              {cancel.row.campus && cancel.row.campus !== '-' && (
-                <p className="text-sm text-gray-600"><span className="text-slate-400">Cơ sở:</span> <span className="font-semibold text-slate-700">{cancel.row.campus}</span></p>
-              )}
+            <div className="p-6 space-y-4">
+              <div>
+                <p className="text-sm font-semibold text-gray-800 mb-1">
+                  {cancel.row.requestStatus === 'PENDING_APPROVAL' ? 'Bạn đang hủy đơn đăng ký tham quan này. Sau khi hủy, đơn sẽ không tiếp tục được phê duyệt và bạn sẽ không thể khôi phục lại đơn này.'
+                    : cancel.row.visitScope === 'SINGLE_CAMPUS' ? 'Bạn đang hủy lịch thăm đã được duyệt. Sau khi hủy, lịch tiếp khách tại cơ sở này sẽ bị hủy và không thể khôi phục.'
+                      : cancel.instanceId ? `Bạn đang hủy lịch thăm tại cơ sở ${cancel.row.campus}. Các cơ sở khác trong đơn liên cơ sở sẽ không bị ảnh hưởng.`
+                        : 'Bạn đang hủy toàn bộ lịch thăm liên cơ sở. Tất cả cơ sở trong đơn này sẽ bị hủy và không thể khôi phục.'}
+                </p>
+                <p className="text-sm text-gray-500">
+                  {cancel.row.requestStatus === 'PENDING_APPROVAL' ? 'Nếu bạn vẫn muốn tham quan vào thời gian khác, vui lòng tạo đơn đăng ký mới.'
+                    : cancel.row.visitScope === 'SINGLE_CAMPUS' ? 'Nhà trường có thể đã chuẩn bị nhân sự, phòng họp hoặc hậu cần cho lịch thăm này. Vui lòng nhập lý do hủy rõ ràng.'
+                      : cancel.instanceId ? 'Chỉ lịch thăm tại cơ sở này bị hủy. Những cơ sở đã diễn ra, đang diễn ra hoặc đã hoàn tất sẽ không thể hủy.'
+                        : 'Hành động này sẽ ảnh hưởng đến toàn bộ lịch tiếp khách tại các cơ sở đã được sắp xếp. Nếu bạn chỉ muốn thay đổi một phần lịch trình, vui lòng liên hệ người phụ trách trước khi hủy.'}
+                </p>
+              </div>
+
               {cancel.mode === 'host' && (
                 <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700">
                   Trường hợp Host hủy là do Visitor đã xác nhận hủy ngoài hệ thống.
                 </p>
               )}
+
               <div>
                 <label className="block text-sm font-bold text-gray-700 mb-2">Lý do hủy <span className="text-red-500">*</span></label>
-                <textarea value={cancel.text} onChange={(e) => setCancel((s) => ({ ...s, text: e.target.value }))} maxLength={2000} placeholder="Nhập lý do hủy..." className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:border-red-500 focus:ring-4 focus:ring-red-500/10 outline-none transition-all text-sm min-h-[100px] resize-none bg-gray-50/50 focus:bg-white" disabled={cancel.submitting} />
-                {cancel.error && <p className="text-red-500 text-sm mt-2">{cancel.error}</p>}
+                <textarea value={cancel.text} onChange={(e) => setCancel((s) => ({ ...s, text: e.target.value, error: null }))} maxLength={2000} placeholder="Nhập lý do hủy..." className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:border-red-500 focus:ring-4 focus:ring-red-500/10 outline-none transition-all text-sm min-h-[100px] resize-none bg-gray-50/50 focus:bg-white" disabled={cancel.submitting} />
               </div>
+              
+              <label className="flex items-start gap-3 cursor-pointer group p-1">
+                <div className="flex items-center h-5">
+                  <input type="checkbox" checked={cancel.confirmed} onChange={(e) => setCancel((s) => ({ ...s, confirmed: e.target.checked, error: null }))} disabled={cancel.submitting} className="w-4 h-4 rounded border-gray-300 text-red-600 focus:ring-red-600/20 cursor-pointer" />
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-sm font-semibold text-gray-700 group-hover:text-red-600 transition-colors">Tôi hiểu rằng thao tác hủy không thể hoàn tác.</span>
+                </div>
+              </label>
+
+              {cancel.error && <p className="text-red-500 text-sm mt-2">{cancel.error}</p>}
             </div>
             <div className="px-6 py-4 bg-gray-50 flex items-center justify-end gap-3 border-t border-gray-100">
-              <button type="button" disabled={cancel.submitting} onClick={() => setCancel({ open: false, row: null, mode: null, text: '', submitting: false, error: null })} className="px-5 py-2 rounded-xl font-bold text-gray-600 hover:bg-gray-200 transition-colors outline-none text-sm cursor-pointer">Đóng</button>
-              <button type="button" disabled={!cancel.text.trim() || cancel.submitting} onClick={submitCancel} className="px-6 py-2 rounded-xl font-bold text-white bg-red-600 hover:bg-red-700 shadow-sm transition-all outline-none text-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">{cancel.submitting ? 'Đang xử lý...' : 'Xác nhận hủy'}</button>
+              <button type="button" disabled={cancel.submitting} onClick={() => setCancel({ open: false, row: null, mode: null, text: '', submitting: false, error: null, confirmed: false })} className="px-5 py-2 rounded-xl font-bold text-gray-600 hover:bg-gray-200 transition-colors outline-none text-sm cursor-pointer">Quay lại</button>
+              <button type="button" disabled={!cancel.text.trim() || !cancel.confirmed || cancel.submitting} onClick={submitCancel} className="px-6 py-2 rounded-xl font-bold text-white bg-red-600 hover:bg-red-700 shadow-sm transition-all outline-none text-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
+                {cancel.submitting ? 'Đang xử lý...' : 
+                 cancel.row.requestStatus === 'PENDING_APPROVAL' ? 'Xác nhận hủy đơn'
+                 : cancel.row.visitScope === 'SINGLE_CAMPUS' ? 'Xác nhận hủy lịch thăm'
+                 : cancel.instanceId ? 'Xác nhận hủy cơ sở này'
+                 : 'Xác nhận hủy toàn bộ'}
+              </button>
             </div>
           </motion.div>
         </div>

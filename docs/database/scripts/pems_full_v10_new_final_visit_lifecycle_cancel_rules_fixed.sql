@@ -2852,9 +2852,10 @@ BEFORE UPDATE ON visit_requests
 FOR EACH ROW
 BEGIN
   DECLARE v_cancel_role_code VARCHAR(30);
+  DECLARE v_started_campus_count INT DEFAULT 0;
 
   IF NEW.status = 'CANCELLED' AND OLD.status <> 'CANCELLED' THEN
-    -- Visitor được hủy đơn khi còn PENDING_APPROVAL hoặc đã APPROVED; REJECTED/CANCELLED/khác không được chuyển sang CANCELLED.
+    -- Visitor được hủy request tổng khi còn PENDING_APPROVAL hoặc khi đã APPROVED nhưng chưa campus nào bắt đầu.
     IF OLD.status NOT IN ('APPROVED', 'PENDING_APPROVAL') THEN
       SIGNAL SQLSTATE '45000'
         SET MESSAGE_TEXT = 'Only pending or approved request/delegation can be cancelled';
@@ -2879,6 +2880,20 @@ BEGIN
       SIGNAL SQLSTATE '45000'
         SET MESSAGE_TEXT = 'Only VISITOR can cancel the main visit request';
     END IF;
+
+    -- Sau khi request đã APPROVED, không cho hủy tổng nếu bất kỳ campus nào đã bắt đầu/đã diễn ra/đã đóng.
+    -- Khi đó Visitor phải hủy từng campus còn chưa bắt đầu ở visit_request_campuses level.
+    IF OLD.status = 'APPROVED' THEN
+      SELECT COUNT(*) INTO v_started_campus_count
+      FROM visit_request_campuses vrc
+      WHERE vrc.visit_request_id = OLD.visit_request_id
+        AND vrc.status IN ('DURING_VISIT','AFTER_VISIT','CLOSED');
+
+      IF v_started_campus_count > 0 THEN
+        SIGNAL SQLSTATE '45000'
+          SET MESSAGE_TEXT = 'Request has campus visit(s) already started; cancel each not-yet-started campus instead of cancelling the whole request';
+      END IF;
+    END IF;
   END IF;
 END$$
 
@@ -2893,14 +2908,23 @@ BEGIN
     FROM visit_requests
     WHERE visit_request_id = NEW.visit_request_id;
 
-    IF v_request_status <> 'APPROVED' THEN
-      SIGNAL SQLSTATE '45000'
-        SET MESSAGE_TEXT = 'Campus instance can be cancelled only after the main request is approved; pending main request must be cancelled at visit_requests level';
-    END IF;
+    -- Campus-level cancel sau APPROVED chỉ áp dụng cho campus chưa bắt đầu.
+    -- Riêng WAITING_REQUEST_APPROVAL chỉ được chuyển CANCELLED khi request tổng đã bị Visitor hủy ở trạng thái PENDING_APPROVAL.
+    IF OLD.status = 'WAITING_REQUEST_APPROVAL' THEN
+      IF v_request_status <> 'CANCELLED' THEN
+        SIGNAL SQLSTATE '45000'
+          SET MESSAGE_TEXT = 'Pending campus instance can be cancelled only as a consequence of cancelling the pending main request';
+      END IF;
+    ELSE
+      IF v_request_status <> 'APPROVED' THEN
+        SIGNAL SQLSTATE '45000'
+          SET MESSAGE_TEXT = 'Campus instance can be cancelled only after the main request is approved, except pending-request cascade cancellation';
+      END IF;
 
-    IF OLD.status IN ('WAITING_REQUEST_APPROVAL','DURING_VISIT','AFTER_VISIT','CLOSED') THEN
-      SIGNAL SQLSTATE '45000'
-        SET MESSAGE_TEXT = 'Campus instance can be cancelled only after approval and before/during preparation; pending/during/after/closed instances cannot be cancelled';
+      IF OLD.status IN ('DURING_VISIT','AFTER_VISIT','CLOSED') THEN
+        SIGNAL SQLSTATE '45000'
+          SET MESSAGE_TEXT = 'Campus instance already started/finished/closed cannot be cancelled';
+      END IF;
     END IF;
 
     IF NEW.cancelled_by IS NULL OR NEW.cancelled_at IS NULL
@@ -2911,7 +2935,7 @@ BEGIN
 
     IF NEW.cancellation_reason IS NULL OR TRIM(NEW.cancellation_reason) = '' THEN
       SIGNAL SQLSTATE '45000'
-        SET MESSAGE_TEXT = 'cancellation_reason is required when approved campus instance is cancelled';
+        SET MESSAGE_TEXT = 'cancellation_reason is required when campus instance is cancelled';
     END IF;
 
     IF NEW.cancellation_actor_type = 'VISITOR' THEN
@@ -2920,6 +2944,10 @@ BEGIN
           SET MESSAGE_TEXT = 'VISITOR campus cancellation must use SELF_SERVICE source';
       END IF;
     ELSEIF NEW.cancellation_actor_type = 'HOST' THEN
+      IF OLD.status = 'WAITING_REQUEST_APPROVAL' THEN
+        SIGNAL SQLSTATE '45000'
+          SET MESSAGE_TEXT = 'HOST cannot cancel a pending-approval campus instance';
+      END IF;
       IF NEW.cancellation_source <> 'EXTERNAL_CONFIRMATION' THEN
         SIGNAL SQLSTATE '45000'
           SET MESSAGE_TEXT = 'HOST cancellation on behalf of visitor must use EXTERNAL_CONFIRMATION source';
@@ -7197,6 +7225,87 @@ SET
   updated_at = CURRENT_TIMESTAMP,
   updated_by = COALESCE(updated_by, created_by)
 WHERE email_template_id = 16;
+
+
+-- ---------------------------------------------------------------------
+-- Seed alignment patch — Visitor cancellation lifecycle rules.
+-- 1) Add seed coverage for Visitor cancelling request before approval.
+-- 2) Normalize SINGLE_CAMPUS rows whose only campus instance is already CANCELLED:
+--    the main request must also be CANCELLED.
+-- ---------------------------------------------------------------------
+
+-- Case A: Visitor cancels SINGLE_CAMPUS request while it is still PENDING_APPROVAL.
+UPDATE visit_requests
+SET
+  status = 'CANCELLED',
+  cancelled_by = 8,
+  cancelled_at = '2026-06-23 10:00:00',
+  cancellation_reason = 'Visitor tự hủy đơn trước khi duyệt vì đoàn cần đổi lịch trình; dùng để test rule PENDING_APPROVAL request-level cancellation.',
+  row_version = row_version + 1,
+  updated_at = '2026-06-23 10:00:00',
+  updated_by = 8
+WHERE visit_request_id = 1001
+  AND status = 'PENDING_APPROVAL';
+
+UPDATE visit_request_campuses
+SET
+  status = 'CANCELLED',
+  cancelled_by = 8,
+  cancelled_at = '2026-06-23 10:00:00',
+  cancellation_actor_type = 'VISITOR',
+  cancellation_source = 'SELF_SERVICE',
+  cancellation_reason = 'Request tổng bị Visitor hủy khi còn PENDING_APPROVAL; campus WAITING_REQUEST_APPROVAL được hủy theo request-level cancellation.',
+  row_version = row_version + 1,
+  updated_at = '2026-06-23 10:00:00',
+  updated_by = 8
+WHERE visit_instance_id = 3001
+  AND status = 'WAITING_REQUEST_APPROVAL';
+
+-- Case B: Visitor cancels MULTI_CAMPUS request while it is still PENDING_APPROVAL.
+UPDATE visit_requests
+SET
+  status = 'CANCELLED',
+  cancelled_by = 22,
+  cancelled_at = '2026-06-23 10:10:00',
+  cancellation_reason = 'Visitor tự hủy đơn liên cơ sở trước khi HO duyệt vì đoàn chưa chốt lịch di chuyển; dùng để test PENDING_APPROVAL MULTI_CAMPUS cancellation.',
+  row_version = row_version + 1,
+  updated_at = '2026-06-23 10:10:00',
+  updated_by = 22
+WHERE visit_request_id = 2001
+  AND status = 'PENDING_APPROVAL';
+
+UPDATE visit_request_campuses
+SET
+  status = 'CANCELLED',
+  cancelled_by = 22,
+  cancelled_at = '2026-06-23 10:10:00',
+  cancellation_actor_type = 'VISITOR',
+  cancellation_source = 'SELF_SERVICE',
+  cancellation_reason = 'Request liên cơ sở bị Visitor hủy khi còn PENDING_APPROVAL; tất cả campus WAITING_REQUEST_APPROVAL được hủy theo request-level cancellation.',
+  row_version = row_version + 1,
+  updated_at = '2026-06-23 10:10:00',
+  updated_by = 22
+WHERE visit_request_id = 2001
+  AND status = 'WAITING_REQUEST_APPROVAL';
+
+-- Normalize SINGLE_CAMPUS requests: if the only campus instance is CANCELLED, the main request is also CANCELLED.
+UPDATE visit_requests vr
+JOIN (
+  SELECT visit_request_id, MAX(cancelled_at) AS campus_cancelled_at
+  FROM visit_request_campuses
+  WHERE visit_request_id IN (1009, 3008, 3017, 3026, 3035, 3044)
+  GROUP BY visit_request_id
+) cx ON cx.visit_request_id = vr.visit_request_id
+SET
+  vr.status = 'CANCELLED',
+  vr.cancelled_by = vr.visitor_user_id,
+  vr.cancelled_at = COALESCE(cx.campus_cancelled_at, CURRENT_TIMESTAMP),
+  vr.cancellation_reason = 'Request single-campus được chuyển CANCELLED vì campus duy nhất đã bị hủy; xem cancellation_reason của campus instance để biết actor/source chi tiết.',
+  vr.row_version = vr.row_version + 1,
+  vr.updated_at = COALESCE(cx.campus_cancelled_at, CURRENT_TIMESTAMP),
+  vr.updated_by = vr.visitor_user_id
+WHERE vr.visit_scope = 'SINGLE_CAMPUS'
+  AND vr.status = 'APPROVED';
 
 COMMIT;
 

@@ -46,11 +46,11 @@ export function getVisitRequestFilterConfig({
       showCampus: true,
       showRelation: false,
       statusLabel: 'Trạng thái',
-      scopeLabel: 'Phạm vi',
+      scopeLabel: 'Phạm vi đơn',
       scopeOptions: [
         { value: '', label: 'Tất cả phạm vi' },
-        { value: 'SINGLE_CAMPUS', label: 'Một cơ sở' },
-        { value: 'MULTI_CAMPUS', label: 'Liên cơ sở' },
+        { value: 'SINGLE_CAMPUS', label: 'Đơn một cơ sở' },
+        { value: 'MULTI_CAMPUS', label: 'Đơn liên cơ sở' },
       ],
       relationOptions: [],
       statusOptions: [
@@ -72,10 +72,15 @@ export function getVisitRequestFilterConfig({
     return {
       showKeyword: true,
       showStatus: true,
-      showScope: false,
+      showScope: true,
       showRelation: false,
       statusLabel: isDeptStaff ? 'Trạng thái nhiệm vụ' : 'Trạng thái lời mời',
-      scopeOptions: [],
+      scopeLabel: 'Phạm vi đơn',
+      scopeOptions: [
+        { value: '', label: 'Tất cả phạm vi' },
+        { value: 'SINGLE_CAMPUS', label: 'Đơn một cơ sở' },
+        { value: 'MULTI_CAMPUS', label: 'Đơn liên cơ sở' },
+      ],
       relationOptions: [],
       statusOptions: isDeptStaff ? [
         { value: 'ALL', label: 'Tất cả nhiệm vụ' },
@@ -100,11 +105,11 @@ export function getVisitRequestFilterConfig({
       showRelation: false,
       showCampus: true,
       statusLabel: 'Trạng thái',
-      scopeLabel: 'Phạm vi',
+      scopeLabel: 'Phạm vi đơn',
       scopeOptions: [
         { value: '', label: 'Tất cả phạm vi' },
-        { value: 'MULTI_CAMPUS', label: 'Liên cơ sở' },
-        { value: 'SINGLE_CAMPUS', label: 'Đơn cơ sở' },
+        { value: 'SINGLE_CAMPUS', label: 'Đơn một cơ sở' },
+        { value: 'MULTI_CAMPUS', label: 'Đơn liên cơ sở' },
       ],
       relationOptions: [],
       statusOptions: [
@@ -130,11 +135,11 @@ export function getVisitRequestFilterConfig({
       showScope: true,
       showRelation: false,
       statusLabel: 'Trạng thái',
-      scopeLabel: 'Phạm vi',
+      scopeLabel: 'Phạm vi đơn',
       scopeOptions: [
         { value: '', label: 'Tất cả phạm vi' },
-        { value: 'SINGLE_CAMPUS', label: 'Đơn cơ sở' },
-        { value: 'MULTI_CAMPUS', label: 'Liên cơ sở' },
+        { value: 'SINGLE_CAMPUS', label: 'Đơn một cơ sở' },
+        { value: 'MULTI_CAMPUS', label: 'Đơn liên cơ sở' },
       ],
       relationOptions: [],
       statusOptions: [
@@ -145,7 +150,7 @@ export function getVisitRequestFilterConfig({
           value: 'PENDING_HOST_ASSIGNMENT',
           label: 'Cần chọn Host chính thức',
           requestStatus: 'APPROVED',
-          visitScopes: ['MULTI_CAMPUS'],
+          visitScope: 'MULTI_CAMPUS',
           campusStatuses: ['ASSIGNED', 'BEFORE_VISIT'],
           relation: 'PENDING_HOST_ASSIGNMENT',
           description: 'Đơn liên cơ sở đã được HO duyệt, đang chờ Staff Leader chọn Host chính thức.'
@@ -167,10 +172,15 @@ export function getVisitRequestFilterConfig({
     return {
       showKeyword: true,
       showStatus: true,
-      showScope: false,
+      showScope: true,
       showRelation: false,
       statusLabel: 'Trạng thái',
-      scopeOptions: [],
+      scopeLabel: 'Phạm vi đơn',
+      scopeOptions: [
+        { value: '', label: 'Tất cả phạm vi' },
+        { value: 'SINGLE_CAMPUS', label: 'Đơn một cơ sở' },
+        { value: 'MULTI_CAMPUS', label: 'Đơn liên cơ sở' },
+      ],
       relationOptions: [],
       statusOptions: [
         { value: '', label: 'Tất cả trạng thái' },
@@ -188,10 +198,15 @@ export function getVisitRequestFilterConfig({
   return {
     showKeyword: true,
     showStatus: true,
-    showScope: false,
+    showScope: true,
     showRelation: false,
     statusLabel: 'Trạng thái',
-    scopeOptions: [],
+    scopeLabel: 'Phạm vi đơn',
+    scopeOptions: [
+      { value: '', label: 'Tất cả phạm vi' },
+      { value: 'SINGLE_CAMPUS', label: 'Đơn một cơ sở' },
+      { value: 'MULTI_CAMPUS', label: 'Đơn liên cơ sở' },
+    ],
     relationOptions: [],
     statusOptions: [
         { value: '', label: 'Tất cả trạng thái' },

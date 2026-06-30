@@ -85,6 +85,7 @@ public sealed class VisitRequestManagementItemDto
     /// instance status). Drives whether CANCEL_BY_VISITOR is offered.
     /// </summary>
     public bool HasCancellableInstance { get; set; }
+    public bool HasStartedCampus { get; set; }
 
     // ── Multi-campus expandable row (Phương án A). Only meaningful on request-level rows
     // (Visitor / HO): the per-campus progress used by the accordion + backend-computed

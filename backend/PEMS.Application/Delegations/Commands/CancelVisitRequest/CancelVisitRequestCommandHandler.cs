@@ -82,6 +82,21 @@ public sealed class CancelVisitRequestCommandHandler
                 CreatedAt = nowPending
             });
 
+            var cancelledPendingCampuses = new List<CancelledCampusDto>();
+            foreach (var instance in visit.CampusInstances.Where(c => c.Status == VisitInstanceStatus.WaitingRequestApproval))
+            {
+                instance.Status = VisitInstanceStatus.Cancelled;
+                instance.CancelledBy = actorId;
+                instance.CancelledAt = nowPending;
+                instance.CancellationActorType = CancellationActorType.Visitor;
+                instance.CancellationSource = CancellationSource.SelfService;
+                instance.CancellationReason = reason;
+                instance.UpdatedAt = nowPending;
+                instance.UpdatedBy = actorId;
+                instance.RowVersion += 1;
+                cancelledPendingCampuses.Add(new CancelledCampusDto(instance.VisitInstanceId, instance.Status));
+            }
+
             await _db.SaveChangesAsync(cancellationToken);
 
             // --- Notifications for PENDING_APPROVAL cancellation ---
@@ -127,12 +142,11 @@ public sealed class CancelVisitRequestCommandHandler
 
             await txPending.CommitAsync(cancellationToken);
 
-            // No campus instance is cancelled in the pre-approval flow (đặc tả §1.1: không sinh/đụng
-            // campus lifecycle) → empty cancelled-campus list.
+            // No campus instance is cancelled in the pre-approval flow unless they are in WAITING_REQUEST_APPROVAL state.
             return new CancelVisitRequestResponse(
                 visit.VisitRequestId,
                 visit.Status,
-                new List<CancelledCampusDto>(),
+                cancelledPendingCampuses,
                 "Đơn tham quan đã được hủy.");
         }
 
@@ -155,10 +169,28 @@ public sealed class CancelVisitRequestCommandHandler
         {
             var instance = visit.CampusInstances.FirstOrDefault(c => c.VisitInstanceId == instanceId)
                 ?? throw new NotFoundException("VisitRequestCampus", instanceId);
+
+            if (instance.Status == VisitInstanceStatus.DuringVisit || 
+                instance.Status == VisitInstanceStatus.AfterVisit || 
+                instance.Status == VisitInstanceStatus.Closed)
+                throw new BusinessRuleException("Cơ sở này đã bắt đầu hoặc đã hoàn tất tiếp khách nên không thể hủy.");
+
             targets = new[] { instance };
         }
         else
         {
+            // Request-level cancellation
+            if (visit.VisitScope == VisitScopes.MultiCampus)
+            {
+                bool hasStartedCampus = visit.CampusInstances.Any(c => 
+                    c.Status == VisitInstanceStatus.DuringVisit || 
+                    c.Status == VisitInstanceStatus.AfterVisit || 
+                    c.Status == VisitInstanceStatus.Closed);
+                
+                if (hasStartedCampus)
+                    throw new BusinessRuleException("Đơn liên cơ sở đã bắt đầu tại một số cơ sở. Vui lòng hủy từng cơ sở chưa diễn ra.");
+            }
+
             targets = visit.CampusInstances.Where(c => cancellableStatuses.Contains(c.Status)).ToList();
         }
 
@@ -191,6 +223,11 @@ public sealed class CancelVisitRequestCommandHandler
         // (and the user never sees a raw EF/MySQL exception).
         foreach (var instance in targets)
         {
+            if (instance.Status == VisitInstanceStatus.DuringVisit || 
+                instance.Status == VisitInstanceStatus.AfterVisit || 
+                instance.Status == VisitInstanceStatus.Closed)
+                throw new BusinessRuleException("Cơ sở này đã bắt đầu hoặc đã hoàn tất tiếp khách nên không thể hủy.");
+
             if (!cancellableStatuses.Contains(instance.Status))
                 throw new BusinessRuleException(
                     "Không thể hủy lịch thăm. Cơ sở đang ở trạng thái không thể hủy.");

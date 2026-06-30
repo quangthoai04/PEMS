@@ -579,6 +579,7 @@ export interface VisitRequestManagementItem {
   // WAITING_HOST_ASSIGNMENT/ASSIGNED/BEFORE_VISIT that hasn't started). Action visibility is
   // still driven by allowedActions (CANCEL_BY_VISITOR/CANCEL_BY_HOST); this is the underlying flag.
   hasCancellableInstance?: boolean;
+  hasStartedCampus?: boolean;
 
   // Multi-campus expandable row (Phương án A). Backend-computed action booleans + per-campus
   // progress for the accordion. campusProgressItems is empty for single-campus / instance-level rows.
@@ -794,7 +795,7 @@ export type VisitStatusFilterOption = {
   requestStatus?: string;
   campusStatus?: string;
   campusStatuses?: string[];
-  visitScopes?: string[];
+  visitScope?: string;
   cancelledOnly?: boolean;
   relation?: string;
   readOnlyOnly?: boolean;
