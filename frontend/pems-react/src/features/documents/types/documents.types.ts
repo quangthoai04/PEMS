@@ -47,3 +47,57 @@ export interface PaginatedResponse<T> {
   pageSize: number;
   totalPages: number;
 }
+
+export interface UserSummary {
+  userId: number;
+  fullName: string;
+  email?: string;
+  avatarUrl?: string;
+}
+
+export interface CampusSummary {
+  campusId: number;
+  campusCode: string;
+  name: string;
+}
+
+export interface DocumentDetailResponse {
+  document: {
+    documentId: number;
+    fileId: number;
+    ownerType: DocumentOwnerType;
+    ownerId?: number;
+    campusId?: number;
+    title: string;
+    description?: string;
+    documentCategory?: string;
+    status: DocumentStatus;
+    createdAt: string;
+    createdBy?: number;
+    updatedAt?: string;
+    updatedBy?: number;
+  };
+  file: {
+    fileId: number;
+    storageProvider: StorageProvider;
+    bucketName?: string;
+    objectKey?: string;
+    originalFilename: string;
+    mimeType?: string;
+    fileSize?: number;
+    checksumSha256?: string;
+    uploadedBy?: number;
+    uploadedAt?: string;
+    externalFileId?: string;
+    webViewUrl?: string;
+    downloadUrl?: string;
+    thumbnailUrl?: string;
+    filePurpose?: string;
+  };
+  campus?: CampusSummary;
+  createdByUser?: UserSummary;
+  updatedByUser?: UserSummary;
+  uploadedByUser?: UserSummary;
+  ownerContext: any;
+}
+

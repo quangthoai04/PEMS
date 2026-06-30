@@ -26,5 +26,12 @@ namespace PEMS.Api.Controllers
             return Ok(result);
         }
 
+        [HttpGet("{documentId}")]
+        public async Task<IActionResult> ViewDocumentDetail(ulong documentId, CancellationToken cancellationToken)
+        {
+            var query = new PEMS.Application.Documents.Queries.ViewDocumentDetail.ViewDocumentDetailQuery { DocumentId = documentId };
+            var result = await _mediator.Send(query, cancellationToken);
+            return Ok(result);
+        }
     }
 }

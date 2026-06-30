@@ -16,7 +16,7 @@ export const documentsApi = {
     };
   },
   
-  getDocument: async (documentId: number): Promise<DocumentListItem> => {
+  getDocument: async (documentId: number): Promise<DocumentDetailResponse> => {
     const response = await httpClient.get(`/documents/${documentId}`);
     return response.data;
   }

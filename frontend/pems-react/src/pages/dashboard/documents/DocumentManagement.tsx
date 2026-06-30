@@ -13,6 +13,7 @@ import { DocumentOwnerType, DocumentStatus, StorageProvider, DocumentListItem } 
 import { formatFileSize } from '../../../shared/utils/fileUtils';
 import { resolveFileUrl } from '../../../shared/utils/resolveFileUrl';
 import toast from 'react-hot-toast';
+import { DocumentDetailModal } from './DocumentDetailModal';
 
 export function DocumentManagement() {
   const navigate = useNavigate();
@@ -423,143 +424,10 @@ export function DocumentManagement() {
       </div>
 
       {/* Modal Xem chi tiết có Preview */}
-      <AnimatePresence>
-        {selectedDoc && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6">
-            <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
-              onClick={() => setSelectedDoc(null)}
-            />
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative w-full max-w-5xl bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col h-[85vh]"
-            >
-              {/* Modal Header */}
-              <div className="flex items-center justify-between p-4 border-b border-slate-100 bg-white z-10 shrink-0">
-                <div className="flex items-center gap-3 pr-4">
-                  <div className="w-10 h-10 rounded-lg bg-[#004c91]/10 flex items-center justify-center shrink-0">
-                    <FileText className="w-5 h-5 text-[#004c91]" />
-                  </div>
-                  <div>
-                    <h3 className="text-lg font-bold text-slate-800 line-clamp-1" title={selectedDoc.title}>
-                      {selectedDoc.title}
-                    </h3>
-                    <p className="text-xs text-slate-500 mt-0.5 line-clamp-1">{selectedDoc.originalFilename}</p>
-                  </div>
-                </div>
-                <button 
-                  onClick={() => setSelectedDoc(null)}
-                  className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-full transition-colors shrink-0 outline-none cursor-pointer"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-              
-              {/* Modal Body: 2 Columns */}
-              <div className="flex flex-col md:flex-row flex-1 overflow-hidden bg-slate-50">
-                {/* Left: Metadata */}
-                <div className="w-full md:w-[35%] bg-white border-r border-slate-100 overflow-y-auto custom-scrollbar p-5 flex flex-col gap-5">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="p-3 rounded-lg bg-slate-50/80 border border-slate-100">
-                      <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">Loại Nghiệp Vụ</p>
-                      <p className="text-sm font-semibold text-slate-800">{selectedDoc.ownerType}</p>
-                    </div>
-                    <div className="p-3 rounded-lg bg-slate-50/80 border border-slate-100">
-                      <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">Trạng Thái</p>
-                      <span className={`inline-flex px-2 py-0.5 text-xs font-semibold rounded-full border ${
-                        selectedDoc.status === 'PUBLISHED' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                        selectedDoc.status === 'DRAFT' ? 'bg-amber-50 text-amber-700 border-amber-200' :
-                        'bg-slate-100 text-slate-700 border-slate-200'
-                      }`}>
-                        {selectedDoc.status}
-                      </span>
-                    </div>
-                    <div className="p-3 rounded-lg bg-slate-50/80 border border-slate-100">
-                      <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">Kích Thước</p>
-                      <p className="text-sm font-semibold text-slate-800">{selectedDoc.fileSize ? formatFileSize(selectedDoc.fileSize) : 'N/A'}</p>
-                    </div>
-                    <div className="p-3 rounded-lg bg-slate-50/80 border border-slate-100">
-                      <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">Ngày Tải</p>
-                      <p className="text-sm font-semibold text-slate-800">{selectedDoc.createdAt ? new Date(selectedDoc.createdAt).toLocaleDateString('vi-VN') : 'N/A'}</p>
-                    </div>
-                  </div>
-
-                  {selectedDoc.description && (
-                    <div className="p-3 rounded-lg border border-slate-100 bg-slate-50/50">
-                      <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">Mô Tả</p>
-                      <p className="text-sm text-slate-600 leading-relaxed">{selectedDoc.description}</p>
-                    </div>
-                  )}
-
-                  {/* Share Actions in Left Panel */}
-                  <div className="mt-auto pt-5 space-y-3">
-                    <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Chia sẻ & Tải xuống</p>
-                    <div className="grid grid-cols-2 gap-2">
-                      <button 
-                        onClick={() => handleShareZalo(selectedDoc)}
-                        className="flex items-center justify-center gap-2 px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg transition-colors text-sm font-medium border border-blue-100 cursor-pointer"
-                      >
-                        <Share2 className="w-4 h-4" /> Zalo
-                      </button>
-                      <button 
-                        onClick={() => handleShareGmail(selectedDoc)}
-                        className="flex items-center justify-center gap-2 px-3 py-2 bg-red-50 hover:bg-red-100 text-red-700 rounded-lg transition-colors text-sm font-medium border border-red-100 cursor-pointer"
-                      >
-                        <Mail className="w-4 h-4" /> Gmail
-                      </button>
-                    </div>
-                    <div className="grid grid-cols-1 gap-2 pt-1">
-                      {(selectedDoc.downloadUrl || selectedDoc.fileId) && (
-                        <a 
-                          href={selectedDoc.downloadUrl || resolveFileUrl(`/api/files/${selectedDoc.fileId}/content`)}
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          className="flex items-center justify-center gap-2 px-4 py-2.5 bg-[#004c91] hover:bg-[#00386b] text-white rounded-lg transition-colors text-sm font-medium shadow-md shadow-[#004c91]/20"
-                        >
-                          <Download className="w-4 h-4" /> Tải xuống máy
-                        </a>
-                      )}
-                      {selectedDoc.webViewUrl && (
-                        <a 
-                          href={selectedDoc.webViewUrl}
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          className="flex items-center justify-center gap-2 px-4 py-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-lg transition-colors text-sm font-medium"
-                        >
-                          <ExternalLink className="w-4 h-4" /> Mở trong Google Drive
-                        </a>
-                      )}
-                    </div>
-                  </div>
-                </div>
-                
-                {/* Right: Iframe Preview */}
-                <div className="w-full md:w-[65%] relative bg-[#f1f3f4] min-h-[400px] flex items-center justify-center">
-                  {selectedDoc.webViewUrl ? (
-                    <iframe 
-                      src={selectedDoc.webViewUrl.replace(/\/view.*/, '/preview')} 
-                      className="absolute inset-0 w-full h-full border-0"
-                      allow="autoplay"
-                      title={selectedDoc.title}
-                    />
-                  ) : (
-                    <div className="flex flex-col items-center justify-center text-slate-400 p-6 text-center">
-                      <FileText className="w-12 h-12 mb-3 text-slate-300" />
-                      <p className="font-medium text-slate-600">Không thể xem trước tệp tin này</p>
-                      <p className="text-sm mt-1">Tệp không được hỗ trợ hoặc không nằm trên Google Drive công khai. Vui lòng nhấn nút tải xuống.</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+      <DocumentDetailModal 
+        documentId={selectedDoc ? selectedDoc.documentId : null}
+        onClose={() => setSelectedDoc(null)}
+      />
     </div>
   );
 }
