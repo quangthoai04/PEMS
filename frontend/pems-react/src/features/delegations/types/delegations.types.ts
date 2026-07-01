@@ -322,6 +322,88 @@ export interface VisitParticipantListItem {
   } | null;
 }
 
+// ── Contribution Page (GET visit-instances/{id}/contribution) ──────────────────────────────
+// Permission gate + read-only summary + workspace status for participants who contribute results
+// (minutes/media/news). The backend is the single source of truth; the page renders sections
+// purely from these booleans and never falls back to `true`.
+export interface ContributionPage {
+  permissions: ContributionPermission;
+  summary: VisitContributionSummary;
+  workspace: ContributionWorkspaceStatus;
+}
+
+export interface ContributionPermission {
+  canViewContributionPage: boolean;
+  /** HOST | IC_SUPPORT | DEPARTMENT_RELATED | STUDENT_RELATED. Display only — never an auth input. */
+  relation: string;
+  participantRole?: string | null;
+  participantStatus?: string | null;
+
+  canViewRequestSummary: boolean;
+  canViewAgendaSummary: boolean;
+  canViewParticipantSummary: boolean;
+
+  canViewLogisticsSummary: boolean;
+  canViewRelatedLogisticsOnly: boolean;
+  canViewFullLogisticsSummary: boolean;
+
+  canViewMinutes: boolean;
+  canEditMinutes: boolean;
+
+  canViewMedia: boolean;
+  canUploadMedia: boolean;
+
+  canViewNews: boolean;
+  canCreateNews: boolean;
+  canEditNews: boolean;
+
+  /** True when the instance is CLOSED/CANCELLED — the whole workspace is view-only. */
+  isReadOnly: boolean;
+}
+
+export interface VisitContributionSummary {
+  visitRequestId: number;
+  visitInstanceId: number;
+  delegationName: string;
+  requestStatus: string;
+  instanceStatus: VisitInstanceStatus;
+  plannedStartAt: string;
+  plannedEndAt: string;
+  campusName?: string | null;
+  hostUserId?: number | null;
+  hostName?: string | null;
+  guestCount: number;
+  request?: VisitProcessRequestSummary | null;
+  agenda: VisitAgendaItem[];
+  participants: VisitParticipantListItem[];
+  logistics: ContributionLogisticsItem[];
+}
+
+export interface ContributionLogisticsItem {
+  logisticsItemId: number;
+  itemType?: string | null;
+  title: string;
+  status: string;
+  priority?: string | null;
+  requestedToDepartmentId?: number | null;
+  departmentName?: string | null;
+  assignedToUserId?: number | null;
+  assignedToName?: string | null;
+}
+
+export interface ContributionWorkspaceStatus {
+  minutes: ContributionSectionStatus;
+  media: ContributionSectionStatus;
+  news: ContributionSectionStatus;
+}
+
+export interface ContributionSectionStatus {
+  canView: boolean;
+  canEdit: boolean;
+  /** Phase 1 marker — the full editor/list is not wired on this page yet. */
+  placeholder: boolean;
+}
+
 /** A user eligible to be invited/assigned as a supporting participant, with conflict info. */
 export interface ParticipantCandidate {
   userId: number;

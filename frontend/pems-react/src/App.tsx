@@ -34,6 +34,7 @@ import { DepartmentReportDashboard } from './pages/dashboard/departments/Departm
 import { TaskDetail } from './pages/dashboard/departments/TaskDetail';
 import { TaskInvitationDetail } from './pages/dashboard/departments/TaskInvitationDetail';
 import { VisitProcess } from './pages/dashboard/visit/VisitProcess';
+import { VisitContributionPage } from './pages/dashboard/visit/VisitContributionPage';
 import { HoVisitProcessDetail } from './pages/dashboard/visit/HoVisitProcessDetail';
 import { VisitRequestDetail } from './pages/dashboard/visit/VisitRequestDetail';
 import { DocumentManagement } from './pages/dashboard/documents/DocumentManagement';
@@ -165,6 +166,7 @@ export default function App() {
             <Route path="visit/create" element={<CreateVisitRequest />} />
             <Route path="visit/agenda-templates" element={<AgendaTemplateManagement />} />
             <Route path="visit/process/:id" element={<VisitProcess />} />
+            <Route path="visit/contribution/:visitInstanceId" element={<VisitContributionPage />} />
             <Route path="visit/reception-detail/:id" element={<VisitProcess />} />
             <Route path="visit/ho-detail/:id" element={<HoVisitProcessDetail />} />
             <Route path="visit/process/:id/request/:type" element={<VisitRequestDetail />} />

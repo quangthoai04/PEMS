@@ -24,6 +24,7 @@ using PEMS.Application.Delegations.Queries.GetAgendaResponsibleCandidates;
 using PEMS.Application.Delegations.Commands.RespondVisitParticipantInvitation;
 using PEMS.Application.Delegations.Queries.GetHostCandidates;
 using PEMS.Application.Delegations.Queries.GetVisitInstanceParticipants;
+using PEMS.Application.Delegations.Queries.GetVisitInstanceContribution;
 using PEMS.Application.Delegations.Queries.GetParticipantCandidates;
 using PEMS.Application.Delegations.Queries.GetSupportDepartments;
 using PEMS.Application.Delegations.Queries.GetDepartmentStaffCandidates;
@@ -104,6 +105,17 @@ namespace PEMS.Api.Controllers
             var result = await _mediator.Send(
                 new PEMS.Application.Delegations.Queries.GetVisitProcessPermissions.GetVisitProcessPermissionsQuery(visitInstanceId),
                 cancellationToken);
+            return Ok(result);
+        }
+
+        // Contribution Page (spec §5.3 / §7 / §10.3): permission flags + read-only summary +
+        // workspace status for participants who contribute results (minutes/media/news). Access is
+        // enforced in the handler — Host / ACCEPTED|ASSIGNED participant / Department-with-logistics
+        // only; Admin, Visitor, unrelated and not-yet-accepted callers get 403/404.
+        [HttpGet("visit-instances/{visitInstanceId}/contribution")]
+        public async Task<IActionResult> GetVisitInstanceContribution(ulong visitInstanceId, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(new GetVisitInstanceContributionQuery(visitInstanceId), cancellationToken);
             return Ok(result);
         }
 

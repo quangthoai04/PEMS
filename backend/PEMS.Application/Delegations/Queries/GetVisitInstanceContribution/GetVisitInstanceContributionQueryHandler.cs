@@ -1,0 +1,335 @@
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+using MediatR;
+using Microsoft.EntityFrameworkCore;
+using PEMS.Application.Common.Exceptions;
+using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Delegations.Common;
+using PEMS.Application.Delegations.Queries.GetVisitProcessDetail;
+using PEMS.Domain.Constants;
+using PEMS.Shared;
+
+namespace PEMS.Application.Delegations.Queries.GetVisitInstanceContribution;
+
+public sealed class GetVisitInstanceContributionQueryHandler
+    : IRequestHandler<GetVisitInstanceContributionQuery, ContributionPageDto>
+{
+    private readonly IApplicationDbContext _db;
+    private readonly ICurrentUserService _currentUser;
+
+    public GetVisitInstanceContributionQueryHandler(IApplicationDbContext db, ICurrentUserService currentUser)
+    {
+        _db = db;
+        _currentUser = currentUser;
+    }
+
+    public async Task<ContributionPageDto> Handle(
+        GetVisitInstanceContributionQuery request, CancellationToken cancellationToken)
+    {
+        if (!_currentUser.IsAuthenticated || _currentUser.UserId is null)
+            throw new ForbiddenException();
+
+        var userId = _currentUser.UserId.Value;
+        var roleCode = _currentUser.RoleCode;
+        var departmentId = _currentUser.DepartmentId;
+
+        // Admin & Visitor never take part in the internal contribution flow (spec §6.1/§6.2, §10.3 deny list).
+        if (roleCode == RoleCodes.Admin || roleCode == RoleCodes.Visitor)
+            throw new ForbiddenException("Bạn không có quyền truy cập trang đóng góp kết quả chuyến thăm.");
+
+        var instance = await _db.VisitRequestCampuses
+            .Include(c => c.VisitRequest).ThenInclude(v => v.CampusInstances)
+            .Include(c => c.VisitRequest).ThenInclude(v => v.GuestMembers)
+            .FirstOrDefaultAsync(c => c.VisitInstanceId == request.VisitInstanceId, cancellationToken)
+            ?? throw new NotFoundException("VisitRequestCampus", request.VisitInstanceId);
+
+        var visit = instance.VisitRequest;
+
+        // ── Contribution access gate (spec §5.3 / §10.3) ──
+        //   Host  OR  ACCEPTED/ASSIGNED participant  OR  Department with a real logistics relation.
+        bool isHost = instance.CurrentHostUserId == userId;
+
+        var participant = await _db.VisitParticipants
+            .Where(p => p.VisitInstanceId == instance.VisitInstanceId
+                        && p.UserId == userId
+                        && !p.IsHost
+                        && (p.Status == ParticipantStatuses.Accepted || p.Status == ParticipantStatuses.Assigned))
+            .Select(p => new { p.ParticipantRole, p.Status })
+            .FirstOrDefaultAsync(cancellationToken);
+        bool isAcceptedParticipant = participant != null;
+
+        bool isDepartmentRelated = false;
+        if (!isHost && !isAcceptedParticipant && roleCode == RoleCodes.Department)
+        {
+            isDepartmentRelated = await _db.VisitLogisticsItems.AnyAsync(
+                l => l.VisitInstanceId == instance.VisitInstanceId
+                     && ((departmentId != null && l.RequestedToDepartmentId == departmentId)
+                         || l.AssignedToUserId == userId),
+                cancellationToken);
+        }
+
+        if (!(isHost || isAcceptedParticipant || isDepartmentRelated))
+            throw new ForbiddenException("Bạn không có quyền truy cập trang đóng góp kết quả chuyến thăm.");
+
+        // Relation label (display/telemetry only — never an auth input).
+        string relation = isHost ? "HOST"
+            : participant?.ParticipantRole switch
+            {
+                ParticipantRoles.IcSupport => "IC_SUPPORT",
+                ParticipantRoles.DeptSupport => "DEPARTMENT_RELATED",
+                ParticipantRoles.Student => "STUDENT_RELATED",
+                _ => "DEPARTMENT_RELATED", // department-via-logistics relation
+            };
+
+        bool isClosed = instance.Status == VisitInstanceStatus.Closed;
+        bool isCancelled = visit.Status == VisitRequestStatuses.Cancelled
+                           || instance.Status == VisitInstanceStatus.Cancelled;
+        bool isLive = !isClosed && !isCancelled;
+
+        bool isIcSupport = relation == "IC_SUPPORT";
+        bool isStudent = relation == "STUDENT_RELATED";
+        bool isDepartment = relation == "DEPARTMENT_RELATED";
+
+        // Minutes: Host or any accepted participant may edit while live (mirrors the process rule).
+        bool minutesEditor = (isHost || isAcceptedParticipant) && isLive;
+        // Media upload opens in AFTER_VISIT for Host/accepted participant (spec §7.2 B2).
+        bool mediaUploader = (isHost || isAcceptedParticipant) && isLive
+                             && instance.Status == VisitInstanceStatus.AfterVisit;
+        // News: Host, IC support or Student — never a pure Department participant (spec §6.8).
+        bool newsCreator = (isHost || isIcSupport || isStudent) && isLive;
+
+        var permissions = new ContributionPermissionDto
+        {
+            CanViewContributionPage = true,
+            Relation = relation,
+            ParticipantRole = participant?.ParticipantRole,
+            ParticipantStatus = participant?.Status,
+
+            CanViewRequestSummary = true,
+            CanViewAgendaSummary = true,
+            CanViewParticipantSummary = true,
+
+            CanViewLogisticsSummary = true,
+            CanViewFullLogisticsSummary = isHost || isIcSupport,
+            CanViewRelatedLogisticsOnly = isDepartment || isStudent,
+
+            CanViewMinutes = true,
+            CanEditMinutes = minutesEditor,
+
+            CanViewMedia = true,
+            CanUploadMedia = mediaUploader,
+
+            CanViewNews = true,
+            CanCreateNews = newsCreator,
+            CanEditNews = newsCreator,
+
+            IsReadOnly = !isLive,
+        };
+
+        // ── Summary (read-only). Same projections as the host process-detail screen. ──
+        var campusName = await _db.Campuses
+            .Where(c => c.CampusId == instance.CampusId)
+            .Select(c => c.Name)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        string? hostName = instance.CurrentHostUserId.HasValue
+            ? await _db.Users.Where(u => u.UserId == instance.CurrentHostUserId.Value)
+                .Select(u => u.FullName).FirstOrDefaultAsync(cancellationToken)
+            : null;
+
+        // Agenda (+ responsible-user name enrichment in-memory — Pomelo correlated-subquery pitfall).
+        var agenda = await _db.VisitAgendas
+            .Where(a => a.VisitInstanceId == instance.VisitInstanceId)
+            .OrderBy(a => a.SequenceOrder).ThenBy(a => a.StartTime)
+            .Select(a => new AgendaItemDto
+            {
+                AgendaId = a.AgendaId,
+                Title = a.Title,
+                StartTime = a.StartTime,
+                EndTime = a.EndTime,
+                Description = a.Description,
+                Location = a.Location,
+                SourceTemplateItemId = a.SourceTemplateItemId,
+                ResponsibleUserId = a.ResponsibleUserId,
+            })
+            .ToListAsync(cancellationToken);
+
+        var responsibleUserIds = agenda
+            .Where(a => a.ResponsibleUserId.HasValue)
+            .Select(a => a.ResponsibleUserId!.Value).Distinct().ToList();
+        if (responsibleUserIds.Count > 0)
+        {
+            var userById = (await _db.Users
+                    .Where(u => responsibleUserIds.Contains(u.UserId))
+                    .Select(u => new { u.UserId, u.FullName, u.Email })
+                    .ToListAsync(cancellationToken))
+                .ToDictionary(u => u.UserId);
+            foreach (var a in agenda)
+            {
+                if (a.ResponsibleUserId.HasValue && userById.TryGetValue(a.ResponsibleUserId.Value, out var u))
+                {
+                    a.ResponsibleUserName = u.FullName;
+                    a.ResponsibleUserEmail = u.Email;
+                }
+            }
+        }
+
+        // Request summary (read-only mirror of the guest's original form).
+        var requestCampusIds = visit.CampusInstances.Select(c => c.CampusId).Distinct().ToList();
+        var campusNamesById = requestCampusIds.Count == 0
+            ? new Dictionary<ulong, string>()
+            : await _db.Campuses
+                .Where(c => requestCampusIds.Contains(c.CampusId))
+                .ToDictionaryAsync(c => c.CampusId, c => c.Name, cancellationToken);
+
+        var requestSummary = new VisitProcessRequestSummaryDto
+        {
+            RegistrantName = visit.RegistrantFullName,
+            RegistrantEmail = visit.RegistrantEmail,
+            RegistrantPhone = visit.RegistrantPhone,
+            RegistrantOrganization = visit.RegistrantOrganization,
+            RegistrantJobTitle = visit.RegistrantJobTitle,
+            RegistrantNationality = visit.RegistrantNationality,
+
+            DelegationName = visit.DelegationName,
+            VisitScope = visit.VisitScope,
+            VisitType = visit.VisitType,
+            VisitTypeOther = visit.VisitTypeOther,
+            Purpose = visit.Purpose,
+            WorkingContent = visit.WorkingContent,
+            WorkingLanguage = visit.WorkingLanguage,
+            MediaConsentStatus = visit.MediaConsentStatus,
+            MediaConsentNote = visit.MediaConsentNote,
+            TransportationType = visit.TransportationType,
+            TransportationDetail = visit.TransportationDetail,
+            NoteToFptu = visit.NoteToFptu,
+
+            ContactPersonFullName = visit.ContactPersonFullName,
+            ContactPersonOrganization = visit.ContactPersonOrganization,
+            ContactPersonPhone = visit.ContactPersonPhone,
+            ContactPersonEmail = visit.ContactPersonEmail,
+
+            Campuses = visit.CampusInstances
+                .OrderBy(c => c.PlannedStartAt)
+                .Select(c => new VisitProcessCampusDto
+                {
+                    VisitInstanceId = c.VisitInstanceId,
+                    CampusId = c.CampusId,
+                    CampusName = campusNamesById.TryGetValue(c.CampusId, out var cn) ? cn : string.Empty,
+                    PlannedStartAt = c.PlannedStartAt,
+                    PlannedEndAt = c.PlannedEndAt,
+                    IsCurrent = c.VisitInstanceId == instance.VisitInstanceId,
+                })
+                .ToList(),
+
+            GuestMembers = visit.GuestMembers
+                .Where(m => m.MemberType != "EXTERNAL_SUPPORT")
+                .OrderBy(m => m.DisplayOrder)
+                .Select(MapGuestMember)
+                .ToList(),
+            ExternalSupportMembers = visit.GuestMembers
+                .Where(m => m.MemberType == "EXTERNAL_SUPPORT")
+                .OrderBy(m => m.DisplayOrder)
+                .Select(MapGuestMember)
+                .ToList(),
+        };
+
+        // Participants (internal coordination list) — reuse the shared builder.
+        var participants = await VisitParticipantListBuilder.BuildAsync(_db, instance.VisitInstanceId, cancellationToken);
+
+        // Logistics summary — scoped: full for Host/IC, related-only for Department/Student (spec §7.2 A4).
+        var logisticsQuery = _db.VisitLogisticsItems.Where(l => l.VisitInstanceId == instance.VisitInstanceId);
+        if (!permissions.CanViewFullLogisticsSummary)
+        {
+            logisticsQuery = logisticsQuery.Where(l =>
+                (departmentId != null && l.RequestedToDepartmentId == departmentId)
+                || l.AssignedToUserId == userId);
+        }
+
+        var logistics = await logisticsQuery
+            .OrderByDescending(l => l.LogisticsItemId)
+            .Select(l => new ContributionLogisticsItemDto
+            {
+                LogisticsItemId = l.LogisticsItemId,
+                ItemType = l.ItemType,
+                Title = l.Title,
+                Status = l.Status,
+                Priority = l.Priority,
+                RequestedToDepartmentId = l.RequestedToDepartmentId,
+                AssignedToUserId = l.AssignedToUserId,
+            })
+            .ToListAsync(cancellationToken);
+
+        // Enrich department + assignee names in-memory (avoid correlated subqueries — Pomelo pitfall).
+        if (logistics.Count > 0)
+        {
+            var logiDeptIds = logistics.Where(i => i.RequestedToDepartmentId.HasValue)
+                .Select(i => i.RequestedToDepartmentId!.Value).Distinct().ToList();
+            var logiDeptNames = logiDeptIds.Count == 0
+                ? new Dictionary<ulong, string>()
+                : await _db.Departments.Where(d => logiDeptIds.Contains(d.DepartmentId))
+                    .ToDictionaryAsync(d => d.DepartmentId, d => d.Name, cancellationToken);
+
+            var logiUserIds = logistics.Where(i => i.AssignedToUserId.HasValue)
+                .Select(i => i.AssignedToUserId!.Value).Distinct().ToList();
+            var logiUserNames = logiUserIds.Count == 0
+                ? new Dictionary<ulong, string>()
+                : await _db.Users.Where(u => logiUserIds.Contains(u.UserId))
+                    .ToDictionaryAsync(u => u.UserId, u => u.FullName, cancellationToken);
+
+            foreach (var i in logistics)
+            {
+                if (i.RequestedToDepartmentId.HasValue && logiDeptNames.TryGetValue(i.RequestedToDepartmentId.Value, out var dn))
+                    i.DepartmentName = dn;
+                if (i.AssignedToUserId.HasValue && logiUserNames.TryGetValue(i.AssignedToUserId.Value, out var un))
+                    i.AssignedToName = un;
+            }
+        }
+
+        var summary = new VisitContributionSummaryDto
+        {
+            VisitRequestId = visit.VisitRequestId,
+            VisitInstanceId = instance.VisitInstanceId,
+            DelegationName = visit.DelegationName,
+            RequestStatus = visit.Status,
+            InstanceStatus = instance.Status,
+            PlannedStartAt = instance.PlannedStartAt,
+            PlannedEndAt = instance.PlannedEndAt,
+            CampusName = campusName,
+            HostUserId = instance.CurrentHostUserId,
+            HostName = hostName,
+            GuestCount = visit.GuestMembers.Count(m => m.MemberType != "EXTERNAL_SUPPORT"),
+            Request = requestSummary,
+            Agenda = agenda,
+            Participants = participants,
+            Logistics = logistics,
+        };
+
+        var workspace = new ContributionWorkspaceStatusDto
+        {
+            Minutes = new ContributionSectionStatusDto { CanView = permissions.CanViewMinutes, CanEdit = permissions.CanEditMinutes },
+            Media = new ContributionSectionStatusDto { CanView = permissions.CanViewMedia, CanEdit = permissions.CanUploadMedia },
+            News = new ContributionSectionStatusDto { CanView = permissions.CanViewNews, CanEdit = permissions.CanCreateNews || permissions.CanEditNews },
+        };
+
+        return new ContributionPageDto
+        {
+            Permissions = permissions,
+            Summary = summary,
+            Workspace = workspace,
+        };
+    }
+
+    private static VisitProcessGuestMemberDto MapGuestMember(Domain.Entities.Delegations.VisitGuestMember m) => new()
+    {
+        GuestMemberId = m.GuestMemberId,
+        MemberType = m.MemberType,
+        FullName = m.FullName,
+        Organization = m.Organization,
+        JobTitle = m.JobTitle,
+        Nationality = m.Nationality,
+        DisplayOrder = (int)m.DisplayOrder,
+    };
+}

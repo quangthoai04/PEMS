@@ -9,6 +9,7 @@ import type {
   RespondInvitationResult,
   SubmittedVisitRequestFormDetail,
   VisitProcessPermission,
+  ContributionPage,
   VisitMinute,
   MinuteParticipant,
   MinuteUserSearchItem,
@@ -92,6 +93,18 @@ export const delegationsApi = {
   async getVisitProcessPermissions(visitInstanceId: number | string): Promise<VisitProcessPermission> {
     const { data } = await httpClient.get<VisitProcessPermission>(
       API_ENDPOINTS.delegations.processPermissions(visitInstanceId),
+    );
+    return data;
+  },
+
+  /**
+   * Contribution Page payload (permission gate + read-only summary + workspace status). The backend
+   * enforces access (Host / ACCEPTED|ASSIGNED participant / Department-with-logistics only) and
+   * returns 403/404 otherwise — the page shows Access Denied on those statuses.
+   */
+  async getVisitInstanceContribution(visitInstanceId: number | string): Promise<ContributionPage> {
+    const { data } = await httpClient.get<ContributionPage>(
+      API_ENDPOINTS.delegations.contribution(visitInstanceId),
     );
     return data;
   },

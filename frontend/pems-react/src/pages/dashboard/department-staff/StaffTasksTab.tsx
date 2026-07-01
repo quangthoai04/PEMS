@@ -4,7 +4,8 @@
  * (KHÔNG có "Mới được giao" vì chúng được hiển thị ở banner cam phía trên)
  */
 import React, { useState } from 'react';
-import { Search, ChevronLeft, ChevronRight, Eye, AlertCircle, X, CheckCircle2, XCircle, FileSignature } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Search, ChevronLeft, ChevronRight, Eye, AlertCircle, X, CheckCircle2, XCircle, FileSignature, FileText } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { SubmittedVisitRequestDetailModal } from '../../../components/modals/SubmittedVisitRequestDetailModal';
 import { departmentReceptionTasksApi } from '../../../features/department-reception-tasks/api/departmentReceptionTasksApi';
@@ -97,6 +98,17 @@ function toTaskModalItem(item: AssignedTask): StaffLeaderTaskModalItem {
 
 export function StaffTasksTab({ user, tasks, totalTasks, tasksLoading, attentionItems, filter, onFilterChange, onRefresh }: Props) {
   const totalPages = Math.max(1, Math.ceil(totalTasks / PAGE_SIZE));
+  const navigate = useNavigate();
+
+  // TEMP DEV TEST: Department contribution shortcut.
+  // Shows an extra action (next to the unchanged eye icon) that opens the Contribution Page,
+  // only for Department roles on rows that carry a visitInstanceId, and only in dev builds.
+  // Does NOT touch the eye icon's onClick/detail flow, nor backend allowedActions.
+  // Remove this shortcut when the OPEN_CONTRIBUTION allowedAction is implemented by backend.
+  const roleCode = (user?.role || user?.roleCode || '').toUpperCase();
+  const isDepartmentRole = roleCode === 'DEPARTMENT' || roleCode === 'DEPT';
+  const canOpenContribution = (item: AssignedTask) =>
+    import.meta.env.DEV && isDepartmentRole && !!item.visitInstanceId;
 
   // Propose change modal state
   const [proposingItem, setProposingItem] = useState<AssignedTask | null>(null);
@@ -359,6 +371,23 @@ export function StaffTasksTab({ user, tasks, totalTasks, tasksLoading, attention
                           <XCircle className="w-5 h-5" />
                         </button>
                       )}
+                      {/* TEMP DEV TEST: Department contribution shortcut.
+                          Keep the eye icon unchanged.
+                          Remove this shortcut when OPEN_CONTRIBUTION allowedAction is implemented by backend. */}
+                      {canOpenContribution(item) && (
+                        <button
+                          type="button"
+                          title="Đóng góp kết quả chuyến thăm"
+                          aria-label="Đóng góp kết quả chuyến thăm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigate(`/dashboard/visit/contribution/${item.visitInstanceId}`);
+                          }}
+                          className="w-9 h-9 rounded-full text-[#f37021] hover:bg-orange-50 flex items-center justify-center transition-colors">
+                          <FileText className="w-5 h-5" />
+                        </button>
+                      )}
+                      {/* Giữ nguyên icon mắt hiện tại */}
                       <button onClick={() => openDetail(item)}
                         className="w-9 h-9 rounded-full text-slate-400 hover:text-[#004c91] hover:bg-blue-50 flex items-center justify-center transition-colors"
                         title="Xem chi tiết">

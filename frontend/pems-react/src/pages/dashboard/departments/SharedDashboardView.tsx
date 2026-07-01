@@ -1190,6 +1190,15 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
     });
   };
 
+  // TEMP DEV TEST: Department contribution shortcut.
+  // Shows an extra action (next to the unchanged eye icon) that opens the Contribution Page,
+  // only for Department roles on rows that carry a visitInstanceId, and only in dev builds.
+  // Does NOT touch the eye icon's onClick/route/detail flow, nor backend allowedActions.
+  // Remove this shortcut when the OPEN_CONTRIBUTION allowedAction is implemented by backend.
+  const isDepartmentRole = !!isDeptLeader || !!isDeptStaff;
+  const canOpenContribution = (row: AssignmentProgressItem) =>
+    import.meta.env.DEV && isDepartmentRole && !!row.visitInstanceId;
+
   const renderAssignmentsProgressPanel = () => (
     <div className="space-y-5">
       {attentionItems.length > 0 && (
@@ -1362,14 +1371,35 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                         Đơn đã hủy vì đoàn khách đã hủy{item.cancelReason ? `: ${item.cancelReason}` : ''}
                       </span>
                     ) : (
-                      <button
-                        type="button"
-                        onClick={() => openAssignmentDetail(item)}
-                        className="inline-flex items-center justify-center w-9 h-9 rounded-full text-slate-400 hover:text-[#004c91] hover:bg-blue-50 transition-colors"
-                        title="Xem chi tiết"
-                      >
-                        <Eye className="w-5 h-5" />
-                      </button>
+                      <div className="flex items-center justify-center gap-2">
+                        {/* TEMP DEV TEST: Department contribution shortcut.
+                            Keep the eye icon unchanged.
+                            Remove this shortcut when OPEN_CONTRIBUTION allowedAction is implemented by backend. */}
+                        {canOpenContribution(item) && (
+                          <button
+                            type="button"
+                            title="Đóng góp kết quả chuyến thăm"
+                            aria-label="Đóng góp kết quả chuyến thăm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              navigate(`/dashboard/visit/contribution/${item.visitInstanceId}`);
+                            }}
+                            className="inline-flex items-center justify-center w-9 h-9 rounded-full text-[#f37021] hover:bg-orange-50 transition-colors"
+                          >
+                            <FileText className="w-5 h-5" />
+                          </button>
+                        )}
+
+                        {/* Giữ nguyên icon mắt hiện tại */}
+                        <button
+                          type="button"
+                          onClick={() => openAssignmentDetail(item)}
+                          className="inline-flex items-center justify-center w-9 h-9 rounded-full text-slate-400 hover:text-[#004c91] hover:bg-blue-50 transition-colors"
+                          title="Xem chi tiết"
+                        >
+                          <Eye className="w-5 h-5" />
+                        </button>
+                      </div>
                     )}
                   </td>
                 </tr>

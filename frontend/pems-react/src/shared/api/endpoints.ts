@@ -115,6 +115,9 @@ export const API_ENDPOINTS = {
     // Phase 2: permission flags for the visit-process detail page (source of truth for tab view/edit).
     processPermissions: (visitInstanceId: string | number) =>
       `/delegations/visit-instances/${visitInstanceId}/process-permissions`,
+    // Contribution Page (spec §5.3/§10.3): permission gate + read-only summary + workspace status.
+    contribution: (visitInstanceId: string | number) =>
+      `/delegations/visit-instances/${visitInstanceId}/contribution`,
     // VisitProcess "Trước tiếp khách": real setup detail + agenda upsert.
     processDetail: (visitRequestId: string | number, visitInstanceId: string | number) =>
       `/delegations/${visitRequestId}/campuses/${visitInstanceId}/process-detail`,
