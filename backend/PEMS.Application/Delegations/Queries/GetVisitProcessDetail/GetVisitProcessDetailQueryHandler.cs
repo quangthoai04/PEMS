@@ -57,8 +57,9 @@ public sealed class GetVisitProcessDetailQueryHandler
         bool isVisitorOwner = roleCode == RoleCodes.Visitor && visit.VisitorUserId == userId;
         bool isAcceptedParticipant = acceptedParticipantRole != null;
 
-        if (!isHost)
-            throw new ForbiddenException("Chỉ người phụ trách chính mới có quyền thao tác trang Host Operation.");
+        bool inScope = isHost || isStaffLeaderOfCampus || isHo || isVisitorOwner || isAcceptedParticipant;
+        if (!inScope)
+            throw new ForbiddenException("Bạn không có quyền truy cập trang thông tin này.");
 
         var relation = isHost ? "HOST"
             : isStaffLeaderOfCampus ? "STAFF_LEADER"
@@ -238,6 +239,95 @@ public sealed class GetVisitProcessDetailQueryHandler
             ? await VisitParticipantListBuilder.BuildAsync(_db, instance.VisitInstanceId, cancellationToken)
             : new List<GetVisitInstanceParticipants.VisitParticipantListItemDto>();
 
+        var notifications = new List<VisitorNotificationDto>();
+        var publicNews = new List<VisitorPublicNewsListItemDto>();
+        
+        if (relation == "VISITOR_OWNER")
+        {
+            var reqId = instance.VisitRequestId;
+            var instId = instance.VisitInstanceId;
+            
+            notifications = await _db.Notifications
+                .Where(n => n.RecipientUserId == userId)
+                .Where(n =>
+                    (n.RelatedType == "VISIT_INSTANCE" && n.RelatedId == instId) ||
+                    (n.RelatedType == "VISIT_REQUEST" && n.RelatedId == reqId)
+                )
+                .OrderByDescending(n => n.CreatedAt)
+                .Select(n => new VisitorNotificationDto
+                {
+                    NotificationId = n.NotificationId,
+                    Title = n.Title,
+                    Message = n.Message,
+                    NotificationType = n.NotificationType,
+                    IsRead = n.IsRead,
+                    ReadAt = n.ReadAt,
+                    CreatedAt = n.CreatedAt
+                })
+                .ToListAsync(cancellationToken);
+
+            var newsItems = await _db.News.AsNoTracking()
+                .Where(n => n.VisitInstanceId == instId && n.Status == NewsConstants.Status.Published)
+                .OrderByDescending(n => n.PublishedAt ?? n.CreatedAt)
+                .Select(n => new {
+                    n.NewsId,
+                    n.AuthorUserId,
+                    n.CoverFileId,
+                    n.PublishedAt
+                })
+                .ToListAsync(cancellationToken);
+
+            if (newsItems.Any())
+            {
+                var newsIds = newsItems.Select(n => n.NewsId).ToList();
+                var authorIds = newsItems.Select(n => n.AuthorUserId).Distinct().ToList();
+                var coverFileIds = newsItems.Where(n => n.CoverFileId.HasValue).Select(n => n.CoverFileId!.Value).Distinct().ToList();
+
+                var translations = await _db.NewsTranslations.AsNoTracking()
+                    .Where(t => newsIds.Contains(t.NewsId))
+                    .ToListAsync(cancellationToken);
+                    
+                var translationDict = translations
+                    .GroupBy(t => t.NewsId)
+                    .ToDictionary(
+                        g => g.Key,
+                        g => g.FirstOrDefault(t => t.LanguageCode == "vi") ?? g.First());
+
+                var users = await _db.Users.AsNoTracking()
+                    .Where(u => authorIds.Contains(u.UserId))
+                    .ToDictionaryAsync(u => u.UserId, u => u.FullName, cancellationToken);
+                    
+                var coverThumbs = new Dictionary<ulong, string?>();
+                if (coverFileIds.Any()) {
+                    var files = await _db.Files.AsNoTracking()
+                        .Where(f => coverFileIds.Contains(f.FileId))
+                        .Select(f => new { f.FileId, f.ThumbnailUrl, f.WebViewUrl })
+                        .ToListAsync(cancellationToken);
+                    foreach (var f in files) {
+                        coverThumbs[f.FileId] = f.ThumbnailUrl ?? f.WebViewUrl;
+                    }
+                }
+
+                foreach (var item in newsItems)
+                {
+                    translationDict.TryGetValue(item.NewsId, out var trans);
+                    users.TryGetValue(item.AuthorUserId, out var authorName);
+                    string? thumbUrl = item.CoverFileId.HasValue && coverThumbs.TryGetValue(item.CoverFileId.Value, out var tu) ? tu : null;
+
+                    publicNews.Add(new VisitorPublicNewsListItemDto
+                    {
+                        NewsId = item.NewsId,
+                        Title = trans?.Title ?? string.Empty,
+                        Summary = trans?.Summary,
+                        Slug = trans?.Slug,
+                        PublishedAt = item.PublishedAt,
+                        AuthorName = authorName,
+                        ThumbnailUrl = thumbUrl
+                    });
+                }
+            }
+        }
+
         return new VisitProcessDetailDto
         {
             VisitRequestId = instance.VisitRequestId,
@@ -256,6 +346,8 @@ public sealed class GetVisitProcessDetailQueryHandler
             RequestSummary = requestSummary,
             Host = hostDto,
             Participants = participants,
+            Notifications = notifications,
+            PublicNews = publicNews,
         };
     }
 

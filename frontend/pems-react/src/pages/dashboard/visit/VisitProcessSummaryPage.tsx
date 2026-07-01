@@ -183,6 +183,25 @@ export function VisitProcessSummaryPage() {
 
   const { permissions: perm } = data;
 
+  if (!perm) {
+    return (
+      <div className="p-4 sm:p-6 md:p-8 max-w-[95%] mx-auto">
+        <div className="bg-white rounded-[2rem] border border-gray-200 p-16 text-center shadow-sm flex flex-col items-center justify-center min-h-[350px]">
+          <div className="w-20 h-20 bg-rose-50 rounded-full flex items-center justify-center mb-6">
+            <Lock className="w-10 h-10 text-rose-400 stroke-[1.5]" />
+          </div>
+          <h2 className="text-xl font-bold text-slate-800 mb-2">Không có quyền truy cập</h2>
+          <p className="text-gray-500 font-medium max-w-sm mx-auto leading-relaxed text-sm mb-6">
+            Bạn không có quyền xem báo cáo tổng hợp của đoàn này, hoặc đoàn không tồn tại.
+          </p>
+          <button onClick={() => navigate(returnUrl)} className="px-6 py-2.5 rounded-xl bg-[#004c91] text-white text-sm font-bold hover:bg-[#003b70] transition-colors outline-none">
+            Về danh sách
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="p-4 sm:p-6 md:p-8 max-w-[95%] mx-auto pb-24">
       <div className="flex items-center gap-2 text-sm font-medium text-gray-500 mb-6">
@@ -226,7 +245,7 @@ export function VisitProcessSummaryPage() {
           icon={Info} 
           isExpanded={expandedSections.request} 
           onToggle={() => toggleSection('request')}
-          canView={perm.canViewRequestSummary}
+          canView={perm?.canViewRequestSummary}
         >
           {data.requestSummary ? (
             <div className="space-y-8">
@@ -241,11 +260,11 @@ export function VisitProcessSummaryPage() {
           icon={Calendar} 
           isExpanded={expandedSections.agenda} 
           onToggle={() => toggleSection('agenda')}
-          canView={perm.canViewAgendaSummary}
+          canView={perm?.canViewAgendaSummary}
         >
-          {data.agendaSummary.length > 0 ? (
+          {(data.agendaSummary?.length || 0) > 0 ? (
             <div className="space-y-4">
-              {data.agendaSummary.map((item, idx) => (
+              {data.agendaSummary?.map((item, idx) => (
                 <div key={idx} className="p-4 rounded-xl border border-gray-200 bg-slate-50 flex flex-col gap-2">
                   <div className="flex justify-between items-start">
                     <h3 className="font-bold text-[#004c91]">{item.title}</h3>
@@ -269,9 +288,9 @@ export function VisitProcessSummaryPage() {
           icon={Users} 
           isExpanded={expandedSections.participants} 
           onToggle={() => toggleSection('participants')}
-          canView={perm.canViewParticipantSummary}
+          canView={perm?.canViewParticipantSummary}
         >
-          {data.participantSummary.length > 0 ? (
+          {(data.participantSummary?.length || 0) > 0 ? (
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse min-w-[600px]">
                 <thead>
@@ -282,7 +301,7 @@ export function VisitProcessSummaryPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {data.participantSummary.map((p, idx) => (
+                  {data.participantSummary?.map((p, idx) => (
                     <tr key={idx} className="hover:bg-slate-50">
                       <td className="p-3 text-sm font-medium text-gray-900">{p.fullName}</td>
                       <td className="p-3 text-sm text-gray-600">{p.isHost ? 'Host' : p.participantRole}</td>
@@ -308,11 +327,11 @@ export function VisitProcessSummaryPage() {
           icon={Box} 
           isExpanded={expandedSections.logistics} 
           onToggle={() => toggleSection('logistics')}
-          canView={perm.canViewLogisticsSummary}
+          canView={perm?.canViewLogisticsSummary}
         >
-          {data.logisticsSummary.length > 0 ? (
+          {(data.logisticsSummary?.length || 0) > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {data.logisticsSummary.map((log, idx) => (
+              {data.logisticsSummary?.map((log, idx) => (
                 <div key={idx} className="p-4 rounded-xl border border-gray-200 bg-white shadow-sm flex flex-col gap-2">
                   <div className="flex justify-between items-start">
                     <h3 className="font-bold text-gray-800 text-sm">{log.title}</h3>
@@ -335,23 +354,23 @@ export function VisitProcessSummaryPage() {
           ) : <EmptyState message="Không có hạng mục hậu cần nào." />}
         </SectionCard>
 
-        <SectionCard title="Biên bản làm việc" icon={FileText} isExpanded={expandedSections.minutes} onToggle={() => toggleSection('minutes')} canView={perm.canViewMinutesSummary}>
-          <WorkspaceStatus status={data.minutesSummary} />
+        <SectionCard title="Biên bản làm việc" icon={FileText} isExpanded={expandedSections.minutes} onToggle={() => toggleSection('minutes')} canView={perm?.canViewMinutesSummary}>
+          {data.minutesSummary ? <WorkspaceStatus status={data.minutesSummary} /> : <EmptyState message="Chưa có dữ liệu." />}
         </SectionCard>
 
-        <SectionCard title="Hình ảnh / Media" icon={ImageIcon} isExpanded={expandedSections.media} onToggle={() => toggleSection('media')} canView={perm.canViewMediaSummary}>
-          <WorkspaceStatus status={data.mediaSummary} />
+        <SectionCard title="Hình ảnh / Media" icon={ImageIcon} isExpanded={expandedSections.media} onToggle={() => toggleSection('media')} canView={perm?.canViewMediaSummary}>
+          {data.mediaSummary ? <WorkspaceStatus status={data.mediaSummary} /> : <EmptyState message="Chưa có dữ liệu." />}
         </SectionCard>
 
-        <SectionCard title="Tin tức & Bài viết" icon={Newspaper} isExpanded={expandedSections.news} onToggle={() => toggleSection('news')} canView={perm.canViewNewsSummary}>
-          <WorkspaceStatus status={data.newsSummary} />
+        <SectionCard title="Tin tức & Bài viết" icon={Newspaper} isExpanded={expandedSections.news} onToggle={() => toggleSection('news')} canView={perm?.canViewNewsSummary}>
+          {data.newsSummary ? <WorkspaceStatus status={data.newsSummary} /> : <EmptyState message="Chưa có dữ liệu." />}
         </SectionCard>
         
-        <SectionCard title="Đánh giá chất lượng (Feedback)" icon={MessageSquare} isExpanded={expandedSections.feedback} onToggle={() => toggleSection('feedback')} canView={perm.canViewFeedbackSummary}>
+        <SectionCard title="Đánh giá chất lượng (Feedback)" icon={MessageSquare} isExpanded={expandedSections.feedback} onToggle={() => toggleSection('feedback')} canView={perm?.canViewFeedbackSummary}>
           <EmptyState message="Feedback chỉ khả dụng sau khi chuyến thăm hoàn tất." />
         </SectionCard>
 
-        <SectionCard title="Lịch sử cập nhật (Timeline)" icon={History} isExpanded={expandedSections.timeline} onToggle={() => toggleSection('timeline')} canView={perm.canViewTimeline}>
+        <SectionCard title="Lịch sử cập nhật (Timeline)" icon={History} isExpanded={expandedSections.timeline} onToggle={() => toggleSection('timeline')} canView={perm?.canViewTimeline}>
           <EmptyState message="Tính năng Timeline đang được phát triển." />
         </SectionCard>
       </div>

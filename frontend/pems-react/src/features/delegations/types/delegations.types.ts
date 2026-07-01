@@ -235,7 +235,29 @@ export interface VisitProcessDetail {
   host?: VisitProcessHost | null;
   /** Host snapshot + invited supporters of this instance. */
   participants?: VisitParticipantListItem[];
+  notifications?: VisitorNotification[];
+  publicNews?: VisitorPublicNewsListItem[];
 }
+
+export type VisitorNotification = {
+  notificationId: number;
+  title: string;
+  message?: string | null;
+  notificationType: string;
+  isRead: boolean;
+  readAt?: string | null;
+  createdAt: string;
+};
+
+export type VisitorPublicNewsListItem = {
+  newsId: number;
+  title: string;
+  summary?: string | null;
+  thumbnailUrl?: string | null;
+  slug?: string | null;
+  publishedAt?: string | null;
+  authorName?: string | null;
+};
 
 /** Read-only snapshot of what the guest submitted (shown on the VisitProcess "Thông tin" sections). */
 export interface VisitProcessRequestSummary {

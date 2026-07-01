@@ -67,6 +67,17 @@ namespace PEMS.Api.Controllers
             return Ok(result);
         }
 
+        [HttpGet("news/{newsId}")]
+        [AllowAnonymous]
+        public async Task<IActionResult> GetPublicNewsDetail(
+            ulong newsId,
+            CancellationToken cancellationToken)
+        {
+            var query = new PEMS.Application.PublicContent.Queries.ViewPublicNewsDetail.ViewPublicNewsDetailQuery(newsId);
+            var result = await _mediator.Send(query, cancellationToken);
+            return Ok(result);
+        }
+
         [HttpGet("partners")]
         public async Task<IActionResult> ViewPartners(
             [FromQuery] PEMS.Application.PublicContent.Queries.ViewPartners.ViewPartnersQuery query,
