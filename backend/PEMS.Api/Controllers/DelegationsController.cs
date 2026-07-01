@@ -119,6 +119,13 @@ namespace PEMS.Api.Controllers
             return Ok(result);
         }
 
+        [HttpGet("visit-instances/{visitInstanceId}/summary")]
+        public async Task<IActionResult> GetVisitInstanceSummary(ulong visitInstanceId, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(new PEMS.Application.Delegations.Queries.GetVisitInstanceSummary.GetVisitInstanceSummaryQuery(visitInstanceId), cancellationToken);
+            return Ok(result);
+        }
+
         [HttpGet("searchdelegations")]
         public async Task<IActionResult> SearchDelegations([FromQuery] PEMS.Application.Delegations.Queries.SearchDelegations.SearchDelegationsQuery query, CancellationToken cancellationToken)
         {

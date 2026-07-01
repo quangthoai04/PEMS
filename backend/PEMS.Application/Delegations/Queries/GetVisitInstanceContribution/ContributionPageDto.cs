@@ -97,9 +97,61 @@ public sealed class ContributionLogisticsItemDto
 /// </summary>
 public sealed class ContributionWorkspaceStatusDto
 {
-    public ContributionSectionStatusDto Minutes { get; set; } = new();
-    public ContributionSectionStatusDto Media { get; set; } = new();
-    public ContributionSectionStatusDto News { get; set; } = new();
+    public MinutesContributionDto? Minutes { get; set; }
+    public MediaContributionDto? Media { get; set; }
+    public NewsContributionDto? News { get; set; }
+}
+
+public sealed class MinutesContributionDto
+{
+    public bool HasMinutes { get; set; }
+    public string Status { get; set; } = default!;
+    public string? Content { get; set; }
+    public ulong? LockedByUserId { get; set; }
+    public string? LockedByName { get; set; }
+    public DateTime? LockedUntil { get; set; }
+    public DateTime? UpdatedAt { get; set; }
+    public bool CanCurrentUserTakeLock { get; set; }
+    public bool CanCurrentUserEdit { get; set; }
+}
+
+public sealed class MediaContributionDto
+{
+    public List<ContributionMediaItemDto> Items { get; set; } = new();
+    public int RequiredMinimumCount { get; set; }
+    public int UploadedCount { get; set; }
+    public bool IsRequirementSatisfied { get; set; }
+    public bool CanCurrentUserUpload { get; set; }
+}
+
+public sealed class ContributionMediaItemDto
+{
+    public ulong MediaId { get; set; }
+    public string FileName { get; set; } = default!;
+    public string FileType { get; set; } = default!;
+    public string Url { get; set; } = default!;
+    public string? ThumbnailUrl { get; set; }
+    public ulong UploadedByUserId { get; set; }
+    public string UploadedByName { get; set; } = default!;
+    public DateTime UploadedAt { get; set; }
+    public string? Description { get; set; }
+    public bool IsPrimary { get; set; }
+}
+
+public sealed class NewsContributionDto
+{
+    public bool HasNews { get; set; }
+    public ulong? NewsId { get; set; }
+    public string Status { get; set; } = default!;
+    public string? Title { get; set; }
+    public string? Description { get; set; }
+    public string? CreatedByName { get; set; }
+    public DateTime? UpdatedAt { get; set; }
+    public string? RejectionReason { get; set; }
+    public bool NewsNotRequired { get; set; }
+    public bool MediaConsentAllowed { get; set; }
+    public bool CanCurrentUserCreate { get; set; }
+    public bool CanCurrentUserEdit { get; set; }
 }
 
 public sealed class ContributionSectionStatusDto

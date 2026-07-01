@@ -106,6 +106,12 @@ export const VISIT_ALLOWED_ACTIONS = {
   ACCEPT_INVITATION: 'ACCEPT_INVITATION',
   DECLINE_INVITATION: 'DECLINE_INVITATION',
   ASSIGN_TO_DEPARTMENT_STAFF: 'ASSIGN_TO_DEPARTMENT_STAFF',
+  OPEN_HOST_PROCESS: 'OPEN_HOST_PROCESS',
+  OPEN_PROCESS_SUMMARY: 'OPEN_PROCESS_SUMMARY',
+  OPEN_CONTRIBUTION: 'OPEN_CONTRIBUTION',
+  OPEN_DEPARTMENT_TASK: 'OPEN_DEPARTMENT_TASK',
+  OPEN_INVITATION: 'OPEN_INVITATION',
+  VIEW_RECEPTION_DETAIL: 'VIEW_RECEPTION_DETAIL',
 } as const;
 
 export type AllowedAction = (typeof VISIT_ALLOWED_ACTIONS)[keyof typeof VISIT_ALLOWED_ACTIONS];
@@ -392,9 +398,57 @@ export interface ContributionLogisticsItem {
 }
 
 export interface ContributionWorkspaceStatus {
-  minutes: ContributionSectionStatus;
-  media: ContributionSectionStatus;
-  news: ContributionSectionStatus;
+  minutes: MinutesContributionStatus | null;
+  media: MediaContributionStatus | null;
+  news: NewsContributionStatus | null;
+}
+
+export interface MinutesContributionStatus {
+  hasMinutes: boolean;
+  status: string;
+  content?: string | null;
+  lockedByUserId?: number | null;
+  lockedByName?: string | null;
+  lockedUntil?: string | null;
+  updatedAt?: string | null;
+  canCurrentUserTakeLock: boolean;
+  canCurrentUserEdit: boolean;
+}
+
+export interface MediaContributionStatus {
+  items: ContributionMediaItem[];
+  requiredMinimumCount: number;
+  uploadedCount: number;
+  isRequirementSatisfied: boolean;
+  canCurrentUserUpload: boolean;
+}
+
+export interface ContributionMediaItem {
+  mediaId: number;
+  fileName: string;
+  fileType: string;
+  url: string;
+  thumbnailUrl?: string | null;
+  uploadedByUserId: number;
+  uploadedByName: string;
+  uploadedAt: string;
+  description?: string | null;
+  isPrimary: boolean;
+}
+
+export interface NewsContributionStatus {
+  hasNews: boolean;
+  newsId?: number | null;
+  status: string;
+  title?: string | null;
+  description?: string | null;
+  createdByName?: string | null;
+  updatedAt?: string | null;
+  rejectionReason?: string | null;
+  newsNotRequired: boolean;
+  mediaConsentAllowed: boolean;
+  canCurrentUserCreate: boolean;
+  canCurrentUserEdit: boolean;
 }
 
 export interface ContributionSectionStatus {
@@ -402,6 +456,38 @@ export interface ContributionSectionStatus {
   canEdit: boolean;
   /** Phase 1 marker — the full editor/list is not wired on this page yet. */
   placeholder: boolean;
+}
+
+export interface ProcessSummaryPage {
+  permissions: ProcessSummaryPermission;
+  requestSummary?: VisitProcessRequestSummary | null;
+  agendaSummary: VisitAgendaItem[];
+  participantSummary: VisitParticipantListItem[];
+  logisticsSummary: ContributionLogisticsItem[];
+  minutesSummary: ContributionSectionStatus;
+  mediaSummary: ContributionSectionStatus;
+  newsSummary: ContributionSectionStatus;
+}
+
+export interface ProcessSummaryPermission {
+  canViewSummaryPage: boolean;
+  relation: string;
+  canViewRequestSummary: boolean;
+  canViewAgendaSummary: boolean;
+  canViewParticipantSummary: boolean;
+  canViewLogisticsSummary: boolean;
+  canViewMinutesSummary: boolean;
+  canViewMediaSummary: boolean;
+  canViewNewsSummary: boolean;
+  canViewFeedbackSummary: boolean;
+  canViewTimeline: boolean;
+  isReadOnly: boolean;
+  instanceStatus: string;
+  campusName?: string | null;
+  delegationName: string;
+  hostName?: string | null;
+  plannedStartAt: string;
+  plannedEndAt: string;
 }
 
 /** A user eligible to be invited/assigned as a supporting participant, with conflict info. */

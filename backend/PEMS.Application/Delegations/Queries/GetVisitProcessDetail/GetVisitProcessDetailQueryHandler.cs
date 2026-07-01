@@ -57,8 +57,8 @@ public sealed class GetVisitProcessDetailQueryHandler
         bool isVisitorOwner = roleCode == RoleCodes.Visitor && visit.VisitorUserId == userId;
         bool isAcceptedParticipant = acceptedParticipantRole != null;
 
-        if (!(isHost || isStaffLeaderOfCampus || isHo || isVisitorOwner || isAcceptedParticipant))
-            throw new ForbiddenException("Bạn không có quyền xem chi tiết tiếp khách này.");
+        if (!isHost)
+            throw new ForbiddenException("Chỉ người phụ trách chính mới có quyền thao tác trang Host Operation.");
 
         var relation = isHost ? "HOST"
             : isStaffLeaderOfCampus ? "STAFF_LEADER"

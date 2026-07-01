@@ -307,11 +307,76 @@ public sealed class GetVisitInstanceContributionQueryHandler
             Logistics = logistics,
         };
 
+        var minutes = await _db.Minutes.FirstOrDefaultAsync(m => m.VisitInstanceId == instance.VisitInstanceId, cancellationToken);
+        var mediaDocs = await _db.Documents
+            .Include(d => d.File)
+            .Where(d => d.OwnerType == "VISIT_INSTANCE_MEDIA" && d.OwnerId == instance.VisitInstanceId)
+            .ToListAsync(cancellationToken);
+        var news = await _db.News
+            .Include(n => n.Translations)
+            .FirstOrDefaultAsync(n => n.VisitInstanceId == instance.VisitInstanceId, cancellationToken);
+
+        var userIdsToFetch = new HashSet<ulong>();
+        if (minutes?.EditLockedBy != null) userIdsToFetch.Add(minutes.EditLockedBy.Value);
+        if (news?.CreatedBy != null) userIdsToFetch.Add(news.CreatedBy.Value);
+        foreach (var doc in mediaDocs)
+        {
+            if (doc.CreatedBy != null) userIdsToFetch.Add(doc.CreatedBy.Value);
+        }
+
+        var usersDict = await _db.Users
+            .Where(u => userIdsToFetch.Contains(u.UserId))
+            .ToDictionaryAsync(u => u.UserId, u => u.FullName, cancellationToken);
+
         var workspace = new ContributionWorkspaceStatusDto
         {
-            Minutes = new ContributionSectionStatusDto { CanView = permissions.CanViewMinutes, CanEdit = permissions.CanEditMinutes },
-            Media = new ContributionSectionStatusDto { CanView = permissions.CanViewMedia, CanEdit = permissions.CanUploadMedia },
-            News = new ContributionSectionStatusDto { CanView = permissions.CanViewNews, CanEdit = permissions.CanCreateNews || permissions.CanEditNews },
+            Minutes = new MinutesContributionDto
+            {
+                HasMinutes = minutes != null,
+                Status = minutes?.Status ?? "NOT_STARTED",
+                Content = minutes?.Content,
+                LockedByUserId = minutes?.EditLockedBy,
+                LockedByName = minutes?.EditLockedBy != null && usersDict.TryGetValue(minutes.EditLockedBy.Value, out var mName) ? mName : null,
+                LockedUntil = minutes?.EditLockExpiresAt,
+                UpdatedAt = minutes?.UpdatedAt ?? minutes?.CreatedAt,
+                CanCurrentUserTakeLock = permissions.CanEditMinutes && (minutes?.EditLockedBy == null || minutes.EditLockedBy == userId || minutes.EditLockExpiresAt < DateTime.UtcNow),
+                CanCurrentUserEdit = permissions.CanEditMinutes
+            },
+            Media = new MediaContributionDto
+            {
+                Items = mediaDocs.Select(d => new ContributionMediaItemDto
+                {
+                    MediaId = d.DocumentId,
+                    FileName = d.File.OriginalFilename,
+                    FileType = d.File.MimeType ?? "application/octet-stream",
+                    Url = d.File.WebViewUrl ?? d.File.DownloadUrl ?? "",
+                    ThumbnailUrl = d.File.ThumbnailUrl,
+                    UploadedByUserId = d.CreatedBy ?? 0,
+                    UploadedByName = d.CreatedBy != null && usersDict.TryGetValue(d.CreatedBy.Value, out var dName) ? dName : "Unknown",
+                    UploadedAt = d.CreatedAt,
+                    Description = d.Description,
+                    IsPrimary = d.Status == "PRIMARY"
+                }).ToList(),
+                RequiredMinimumCount = 1,
+                UploadedCount = mediaDocs.Count,
+                IsRequirementSatisfied = mediaDocs.Count >= 1,
+                CanCurrentUserUpload = permissions.CanUploadMedia
+            },
+            News = new NewsContributionDto
+            {
+                HasNews = news != null,
+                NewsId = news?.NewsId,
+                Status = news?.Status ?? "NOT_STARTED",
+                Title = news?.Translations.FirstOrDefault()?.Title ?? "Bài tin tức",
+                Description = news?.Translations.FirstOrDefault()?.Summary,
+                CreatedByName = news?.CreatedBy != null && usersDict.TryGetValue(news.CreatedBy.Value, out var nName) ? nName : null,
+                UpdatedAt = news?.UpdatedAt ?? news?.CreatedAt,
+                RejectionReason = news?.ReviewNote,
+                NewsNotRequired = instance.NewsNotRequired,
+                MediaConsentAllowed = visit.MediaConsentStatus == "ACCEPTED",
+                CanCurrentUserCreate = permissions.CanCreateNews,
+                CanCurrentUserEdit = permissions.CanEditNews
+            }
         };
 
         return new ContributionPageDto

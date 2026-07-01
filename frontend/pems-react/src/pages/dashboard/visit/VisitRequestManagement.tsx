@@ -411,6 +411,14 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
   };
 
   const canOpenProcess = (row: Row) => {
+    const actions = row.allowedActions || [];
+    if (actions.includes('OPEN_HOST_PROCESS') || 
+        actions.includes('OPEN_PROCESS_SUMMARY') || 
+        actions.includes('VIEW_RECEPTION_DETAIL') || 
+        actions.includes('OPEN_CONTRIBUTION')) {
+      return true;
+    }
+
     if (activeTab === 'attending') return true;
 
     if (isVisitor) {
@@ -448,6 +456,17 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
   };
 
   const getProcessActionTitle = (row: Row) => {
+    const actions = row.allowedActions || [];
+    if (actions.includes('OPEN_HOST_PROCESS')) {
+      if (row.campusStatus === 'DURING_VISIT') return 'Tiếp tục xử lý đang tiếp khách';
+      if (row.campusStatus === 'AFTER_VISIT') return 'Hoàn tất sau tiếp khách';
+      if (row.campusStatus === 'CLOSED') return 'Xem quy trình đã đóng';
+      return 'Xử lý quy trình tiếp khách';
+    }
+    if (actions.includes('OPEN_PROCESS_SUMMARY')) return 'Xem báo cáo tổng hợp';
+    if (actions.includes('VIEW_RECEPTION_DETAIL')) return 'Xem thông tin tiếp khách';
+    if (actions.includes('OPEN_CONTRIBUTION')) return 'Vào trang đóng góp nội dung';
+
     const isCancelled = row.requestStatus === 'CANCELLED' || row.campusStatus === 'CANCELLED';
 
     if (activeTab === 'attending') {
@@ -467,6 +486,55 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
   };
 
   const handleProcess = (row: Row) => {
+    const actions = row.allowedActions || [];
+    const isCancelled = row.requestStatus === 'CANCELLED' || row.campusStatus === 'CANCELLED';
+    const displayStatus = row.statusText;
+
+    if (actions.includes('OPEN_PROCESS_SUMMARY')) {
+      navigate(`/dashboard/visit/process-summary/${row.visitInstanceId}`);
+      return;
+    }
+
+    if (actions.includes('OPEN_CONTRIBUTION')) {
+      navigate(`/dashboard/visit/contribution/${row.visitInstanceId}`);
+      return;
+    }
+
+    if (actions.includes('VIEW_RECEPTION_DETAIL')) {
+      navigate(`/dashboard/visit/reception-detail/${row.id}`);
+      return;
+    }
+
+    if (actions.includes('OPEN_HOST_PROCESS')) {
+      if (row.campusStatus === 'ASSIGNED' || row.campusStatus === 'BEFORE_VISIT') {
+        navigate(`/dashboard/visit/process/${row.visitInstanceId}`, {
+          state: { isPrep: true, status: displayStatus, isReadOnly: false }
+        });
+        return;
+      }
+
+      if (row.campusStatus === 'DURING_VISIT') {
+        navigate(`/dashboard/visit/process/${row.visitInstanceId}`, {
+          state: { defaultTab: 'during', status: displayStatus, isReadOnly: false }
+        });
+        return;
+      }
+
+      if (row.campusStatus === 'AFTER_VISIT') {
+        navigate(`/dashboard/visit/process/${row.visitInstanceId}`, {
+          state: { defaultTab: 'after', status: displayStatus, isReadOnly: false }
+        });
+        return;
+      }
+
+      if (row.campusStatus === 'CLOSED') {
+        navigate(`/dashboard/visit/process/${row.visitInstanceId}`, {
+          state: { defaultTab: 'before', status: displayStatus, isReadOnly: true }
+        });
+        return;
+      }
+    }
+
     const idForRoute = row.id;
 
     if (activeTab === 'attending') {
@@ -491,7 +559,6 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
       return;
     }
 
-    const isCancelled = row.requestStatus === 'CANCELLED' || row.campusStatus === 'CANCELLED';
     if (isCancelled && hasSetupProcess(row)) {
       navigate(`/dashboard/visit/process/${row.visitInstanceId}`, {
         state: { isReadOnly: true, cancelled: true, status: 'Đã hủy' }
@@ -499,8 +566,6 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
       return;
     }
 
-    const displayStatus = row.statusText;
-    
     if (row.campusStatus === 'ASSIGNED' || row.campusStatus === 'BEFORE_VISIT') {
       navigate(`/dashboard/visit/process/${row.visitInstanceId}`, {
         state: { isPrep: true, status: displayStatus, isReadOnly: isStaffLeader }
@@ -795,7 +860,12 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
 
         {/* Slot 2: Xử lý / Theo dõi quy trình */}
         {canOpenProcess(row) ? (
-          <ActionIconButton title={getProcessActionTitle(row)} tone="blue" icon={<ArrowRightCircle className="h-5 w-5" />} onClick={(e) => { e.stopPropagation(); handleProcess(row); }} />
+          <ActionIconButton 
+            title={getProcessActionTitle(row)} 
+            tone={can('OPEN_CONTRIBUTION') ? 'orange' : 'blue'} 
+            icon={can('OPEN_CONTRIBUTION') ? <FileText className="h-5 w-5" /> : <ArrowRightCircle className="h-5 w-5" />} 
+            onClick={(e) => { e.stopPropagation(); handleProcess(row); }} 
+          />
         ) : (
           <span className="h-9 w-9" aria-hidden="true" />
         )}

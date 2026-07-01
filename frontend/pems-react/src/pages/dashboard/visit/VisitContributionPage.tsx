@@ -10,10 +10,12 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
-  Lock, ArrowLeft, FileText, CalendarDays, Users, ClipboardList, Image as ImageIcon,
-  Newspaper, Clock, MapPin, Building2, Loader2, AlertCircle, User, ScrollText,
+  Lock, ArrowLeft, FileText, Users, Clock, Building2, AlertCircle, User, ScrollText,
 } from 'lucide-react';
 import { delegationsApi } from '../../../features/delegations/api/delegationsApi';
+import { MinutesContributionSection } from './components/MinutesContributionSection';
+import { MediaContributionSection } from './components/MediaContributionSection';
+import { NewsContributionSection } from './components/NewsContributionSection';
 import type {
   ContributionPage, ContributionLogisticsItem,
 } from '../../../features/delegations/types/delegations.types';
@@ -88,32 +90,7 @@ function Field({ label, value }: { label: string; value?: React.ReactNode }) {
   );
 }
 
-function WorkspaceCard({ icon, title, canView, canEdit, editLabel }: {
-  icon: React.ReactNode; title: string; canView: boolean; canEdit: boolean; editLabel: string;
-}) {
-  return (
-    <div className={`rounded-2xl border p-5 ${canView ? 'border-slate-200 bg-white' : 'border-slate-100 bg-slate-50'}`}>
-      <div className="flex items-center gap-2.5 mb-3">
-        <div className="w-9 h-9 rounded-xl bg-orange-50 text-[#f37021] flex items-center justify-center">{icon}</div>
-        <h3 className="text-sm font-black text-slate-800">{title}</h3>
-      </div>
-      {!canView ? (
-        <p className="text-xs font-semibold text-slate-400">Bạn không có quyền xem phần này.</p>
-      ) : (
-        <>
-          <span className={`inline-flex px-2.5 py-1 rounded-full border text-[11px] font-bold ${
-            canEdit ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-50 text-slate-500 border-slate-200'
-          }`}>
-            {canEdit ? editLabel : 'Chỉ xem'}
-          </span>
-          <p className="text-xs font-medium text-slate-400 mt-3 leading-relaxed">
-            Khu vực đóng góp đang được hoàn thiện ở giai đoạn tiếp theo.
-          </p>
-        </>
-      )}
-    </div>
-  );
-}
+
 
 export function VisitContributionPage() {
   const { visitInstanceId } = useParams();
@@ -226,9 +203,8 @@ export function VisitContributionPage() {
             <p className="text-lg font-bold text-slate-800 mt-1.5">{summary.delegationName}</p>
           </div>
           <div className="flex flex-col items-end gap-2">
-            <span className={`inline-flex px-3 py-1 rounded-full border text-xs font-black ${
-              INSTANCE_STATUS_CLASS[summary.instanceStatus] || 'bg-gray-100 text-gray-700 border-gray-200'
-            }`}>
+            <span className={`inline-flex px-3 py-1 rounded-full border text-xs font-black ${INSTANCE_STATUS_CLASS[summary.instanceStatus] || 'bg-gray-100 text-gray-700 border-gray-200'
+              }`}>
               {INSTANCE_STATUS_LABELS[summary.instanceStatus] || summary.instanceStatus}
             </span>
             <span className="inline-flex px-3 py-1 rounded-full border border-indigo-200 bg-indigo-50 text-indigo-700 text-xs font-black">
@@ -367,19 +343,40 @@ export function VisitContributionPage() {
         </SectionCard>
       )}
 
-      {/* ── Nhóm B: Workspace đóng góp (placeholder Phase 1) ── */}
+      {/* ── Nhóm B: Workspace đóng góp ── */}
       <div>
         <div className="flex items-center gap-2 mb-3 px-1">
           <ScrollText className="w-5 h-5 text-[#f37021]" />
           <h2 className="text-lg font-black text-[#004c91]">Đóng góp kết quả</h2>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <WorkspaceCard icon={<FileText className="w-5 h-5" />} title="Biên bản"
-            canView={workspace.minutes.canView} canEdit={workspace.minutes.canEdit} editLabel="Được chỉnh sửa" />
-          <WorkspaceCard icon={<ImageIcon className="w-5 h-5" />} title="Ảnh / Media"
-            canView={workspace.media.canView} canEdit={workspace.media.canEdit} editLabel="Được tải lên" />
-          <WorkspaceCard icon={<Newspaper className="w-5 h-5" />} title="Tin tức"
-            canView={workspace.news.canView} canEdit={workspace.news.canEdit} editLabel="Được tạo/sửa" />
+        <div className="grid grid-cols-1 gap-6">
+          {perm.canViewMinutes && workspace.minutes && (
+            <MinutesContributionSection
+              visitInstanceId={visitInstanceId}
+              data={workspace.minutes}
+              canView={perm.canViewMinutes}
+              instanceStatus={summary.instanceStatus}
+              onChanged={() => navigate(0)}
+            />
+          )}
+          {perm.canViewMedia && workspace.media && (
+            <MediaContributionSection
+              visitInstanceId={visitInstanceId}
+              data={workspace.media}
+              canView={perm.canViewMedia}
+              instanceStatus={summary.instanceStatus}
+              onChanged={() => navigate(0)}
+            />
+          )}
+          {perm.canViewNews && workspace.news && (
+            <NewsContributionSection
+              visitInstanceId={visitInstanceId}
+              data={workspace.news}
+              canView={perm.canViewNews}
+              instanceStatus={summary.instanceStatus}
+              onChanged={() => navigate(0)}
+            />
+          )}
         </div>
       </div>
     </div>

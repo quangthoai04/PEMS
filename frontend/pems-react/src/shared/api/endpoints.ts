@@ -118,6 +118,8 @@ export const API_ENDPOINTS = {
     // Contribution Page (spec §5.3/§10.3): permission gate + read-only summary + workspace status.
     contribution: (visitInstanceId: string | number) =>
       `/delegations/visit-instances/${visitInstanceId}/contribution`,
+    summary: (visitInstanceId: string | number) =>
+      `/delegations/visit-instances/${visitInstanceId}/summary`,
     // VisitProcess "Trước tiếp khách": real setup detail + agenda upsert.
     processDetail: (visitRequestId: string | number, visitInstanceId: string | number) =>
       `/delegations/${visitRequestId}/campuses/${visitInstanceId}/process-detail`,

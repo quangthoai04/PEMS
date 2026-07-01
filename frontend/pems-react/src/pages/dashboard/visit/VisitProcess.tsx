@@ -122,13 +122,14 @@ export function VisitProcess() {
   // client-side role computation so the page still renders.
   const [perm, setPerm] = useState<VisitProcessPermission | null>(null);
   const [permLoadFailed, setPermLoadFailed] = useState(false);
+  const [isLoadingPerm, setIsLoadingPerm] = useState(true);
   const numericId = Number(id);
   const hasNumericId = Number.isFinite(numericId) && numericId > 0;
 
   // Backend permission flags are the source of truth for tab view/edit + stage transitions.
   // Reusable so we can refetch after a stage transition to unlock the next tab.
   const loadPermissions = React.useCallback(async () => {
-    if (!hasNumericId) { setPerm(null); return; }
+    if (!hasNumericId) { setPerm(null); setIsLoadingPerm(false); return; }
     try {
       const p = await delegationsApi.getVisitProcessPermissions(numericId);
       setPerm(p);
@@ -136,6 +137,8 @@ export function VisitProcess() {
     } catch {
       setPerm(null);
       setPermLoadFailed(true);
+    } finally {
+      setIsLoadingPerm(false);
     }
   }, [numericId, hasNumericId]);
 
@@ -172,9 +175,9 @@ export function VisitProcess() {
   const canEditBefore = SETUP_SAVE_AVAILABLE && (perm ? perm.canEditBeforeVisit : !isDept);
   const isInfoEditable = isInfoEditableState && !isClosed && canEditBefore;
   // Tab visibility (backend says every in-scope role may at least view all tabs read-only).
-  const canViewBefore = perm ? perm.canViewBeforeVisit : true;
-  const canViewDuring = perm ? perm.canViewDuringVisit : true;
-  const canViewAfter = perm ? perm.canViewAfterVisit : true;
+  const canViewBefore = !!perm?.canViewBeforeVisit;
+  const canViewDuring = !!perm?.canViewDuringVisit;
+  const canViewAfter = !!perm?.canViewAfterVisit;
   // During/After read-only unless backend grants edit (fallback: legacy isClosed gate).
   const duringReadOnly = perm ? !perm.canEditDuringVisit : isClosed;
   const afterReadOnly = perm ? !perm.canEditAfterVisit : isClosed;
@@ -618,10 +621,18 @@ export function VisitProcess() {
     setRejectReasonModal({ isOpen: false, targetId: null, targetName: null, reasonText: '' });
   };
 
-  // Visitor must never see the internal process screen. The backend returns 403 (no relation),
-  // which surfaces here as a failed permission load → show a clear access-denied state instead of
-  // the internal page. (Their own approved visit uses the separate read-only reception-detail route.)
-  if (isVisitor && !isReceptionDetail && hasNumericId && permLoadFailed) {
+  if (isLoadingPerm) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[400px]">
+        <Loader2 className="w-8 h-8 animate-spin text-[#004c91] mb-4" />
+        <p className="text-sm font-bold text-slate-500">Đang tải phân quyền...</p>
+      </div>
+    );
+  }
+
+  // Mọi role không phải Host chính đều bị chặn (API trả 403).
+  // Với màn hình công khai "reception-detail" của Visitor thì không bị block ở đây.
+  if (!isReceptionDetail && hasNumericId && permLoadFailed) {
     return (
       <div className="p-4 sm:p-6 md:p-8 max-w-[95%] mx-auto">
         <div className="bg-white rounded-[2rem] border border-gray-200 p-16 text-center shadow-sm flex flex-col items-center justify-center min-h-[350px]">
@@ -630,7 +641,7 @@ export function VisitProcess() {
           </div>
           <h2 className="text-xl font-bold text-slate-800 mb-2">Không có quyền truy cập</h2>
           <p className="text-gray-500 font-medium max-w-sm mx-auto leading-relaxed text-sm mb-6">
-            Bạn không có quyền xem quy trình tiếp khách nội bộ của đoàn này.
+            Bạn không có quyền thao tác trang Host Operation của đoàn này.
           </p>
           <button onClick={() => navigate('/dashboard/visit')} className="px-6 py-2.5 rounded-xl bg-[#004c91] text-white text-sm font-bold hover:bg-[#003b70] transition-colors outline-none">
             Về danh sách

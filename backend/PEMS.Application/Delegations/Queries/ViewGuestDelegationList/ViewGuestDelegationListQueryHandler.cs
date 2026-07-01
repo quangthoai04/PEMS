@@ -802,6 +802,26 @@ public sealed class ViewGuestDelegationListQueryHandler
             actions.Add("CANCEL_BY_HOST");
         }
 
+        // Navigation Actions
+        if (item.CampusStatus != null && item.RequestStatus == VisitRequestStatuses.Approved)
+        {
+            if (item.CurrentUserIsHost)
+            {
+                actions.Add("OPEN_HOST_PROCESS");
+            }
+            if ((isHo && isMulti) || (isStaffLeader && sameCampus))
+            {
+                actions.Add("OPEN_PROCESS_SUMMARY");
+            }
+            if (isVisitor && item.VisitorUserId == userId)
+            {
+                actions.Add("VIEW_RECEPTION_DETAIL");
+            }
+            if (tab == TabAttending)
+            {
+                actions.Add("OPEN_CONTRIBUTION");
+            }
+        }
 
         return actions;
     }

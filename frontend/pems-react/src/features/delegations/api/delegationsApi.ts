@@ -10,6 +10,7 @@ import type {
   SubmittedVisitRequestFormDetail,
   VisitProcessPermission,
   ContributionPage,
+  ProcessSummaryPage,
   VisitMinute,
   MinuteParticipant,
   MinuteUserSearchItem,
@@ -105,6 +106,13 @@ export const delegationsApi = {
   async getVisitInstanceContribution(visitInstanceId: number | string): Promise<ContributionPage> {
     const { data } = await httpClient.get<ContributionPage>(
       API_ENDPOINTS.delegations.contribution(visitInstanceId),
+    );
+    return data;
+  },
+
+  async getVisitInstanceSummary(visitInstanceId: number | string): Promise<ProcessSummaryPage> {
+    const { data } = await httpClient.get<ProcessSummaryPage>(
+      API_ENDPOINTS.delegations.summary(visitInstanceId),
     );
     return data;
   },
