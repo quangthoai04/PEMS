@@ -29,6 +29,20 @@ namespace PEMS.Api.Controllers
             return Ok(result);
         }
 
+        [HttpGet("{minutesId}/export-pdf")]
+        public async Task<IActionResult> ExportPdf(ulong minutesId, CancellationToken cancellationToken)
+        {
+            var fileBytes = await _mediator.Send(new PEMS.Application.MeetingMinutes.Queries.ExportMinutes.ExportMinutesPdfQuery { MinutesId = minutesId }, cancellationToken);
+            return File(fileBytes, "application/pdf", $"minutes-{minutesId}.pdf");
+        }
+
+        [HttpGet("{minutesId}/export-excel")]
+        public async Task<IActionResult> ExportExcel(ulong minutesId, CancellationToken cancellationToken)
+        {
+            var fileBytes = await _mediator.Send(new PEMS.Application.MeetingMinutes.Queries.ExportMinutes.ExportMinutesExcelQuery { MinutesId = minutesId }, cancellationToken);
+            return File(fileBytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", $"minutes-{minutesId}.xlsx");
+        }
+
         // ── Biên bản chuyến thăm (1 bản / visit_instance + cơ chế lock chỉnh sửa) ──
         // Read the single minutes record for a campus instance (with lock state + action flags).
         [HttpGet("visit-instances/{visitInstanceId}")]

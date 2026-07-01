@@ -1,84 +1,90 @@
-/**
- * Trang MinuteManagement
- * Quản lý và cung cấp biên bản tài liệu cho cuộc họp chuyến thăm.
- */
-
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Plus, Filter, FileText, Eye, MoreVertical, ArrowDown, ChevronLeft, ChevronRight, X, Calendar, Users, Square, CheckSquare, Building2, Check, AlertCircle } from 'lucide-react';
+import { Search, Filter, FileText, Eye, Download, ChevronLeft, ChevronRight, X, Calendar, Users, Square, CheckSquare, Building2, User, Clock, ShieldAlert, Lock, Unlock } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-
-interface Minute {
-  id: string;
-  name: string;
-  uploadDate: string;
-  guestName: string;
-}
-
-const mockMinutes: Minute[] = [
-  {
-    id: '1',
-    name: 'Biên bản cuộc họp trao đổi hợp tác',
-    uploadDate: '15/06/2026',
-    guestName: 'Đoàn khách Đại học Quốc gia Hà Nội'
-  },
-  {
-    id: '2',
-    name: 'Biên bản thỏa thuận MOU',
-    uploadDate: '10/06/2026',
-    guestName: 'Tập đoàn Vingroup'
-  },
-  {
-    id: '3',
-    name: 'Biên bản tham quan phân luồng',
-    uploadDate: '01/06/2026',
-    guestName: 'Đại học Swinburne'
-  },
-  {
-    id: '4',
-    name: 'Biên bản ghi nhớ hợp tác công nghệ',
-    uploadDate: '25/05/2026',
-    guestName: 'Tập đoàn FPT'
-  },
-  {
-    id: '5',
-    name: 'Biên bản làm việc chi tiết',
-    uploadDate: '10/05/2026',
-    guestName: 'Khách sạn Mường Thanh'
-  }
-];
+import { useAuth } from '../../../shared/hooks/useAuth';
+import { useMinutes } from './useMinutes';
+import { MinutesFilterParams, MinutesListItem } from './types';
 
 export function MinuteManagement() {
   const navigate = useNavigate();
-  const [searchQuery, setSearchQuery] = useState('');
-  const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
-  const [selectedMinute, setSelectedMinute] = useState<Minute | null>(null);
+  const { user } = useAuth();
+  
+  const {
+    loading,
+    listData,
+    detailData,
+    fetchList,
+    fetchDetail,
+    clearDetail,
+    exportPdf,
+    exportExcel
+  } = useMinutes();
 
-  const mockParticipants = [
-    { id: 1, name: 'Nguyễn Văn A', role: 'Đại diện FPT HN', org: 'Trường Đại học FPT', isInternal: true, confirmed: true },
-    { id: 2, name: 'Trần Thị B', role: 'Trưởng đoàn', org: 'Đại học Quốc gia', isInternal: false, isPartner: true, confirmed: true },
-    { id: 3, name: 'Lê Văn C', role: 'Giảng viên', org: 'Đại học Quốc gia', isInternal: false, isPartner: false, confirmed: false },
-  ];
+  const [filters, setFilters] = useState<MinutesFilterParams>({
+    page: 1,
+    pageSize: 10,
+    sortBy: 'created_at',
+    sortDir: 'desc'
+  });
+  
+  const [searchInput, setSearchInput] = useState('');
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+  const [selectedMinute, setSelectedMinute] = useState<MinutesListItem | null>(null);
 
-  const filteredMinutes = [...mockMinutes]
-    .filter(doc => doc.name.toLowerCase().includes(searchQuery.toLowerCase()) || doc.guestName.toLowerCase().includes(searchQuery.toLowerCase()))
-    .sort((a, b) => {
-      // Simplified sort for mock dates: DD/MM/YYYY
-      const formatTime = (dateStr: string) => {
-        const [day, month, year] = dateStr.split('/');
-        return new Date(`${year}-${month}-${day}`).getTime();
-      };
-      
-      const timeA = formatTime(a.uploadDate);
-      const timeB = formatTime(b.uploadDate);
-      
-      if (sortOrder === 'asc') return timeA - timeB;
-      return timeB - timeA;
-    });
+  // Debounce search input
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setFilters(prev => ({ ...prev, q: searchInput, page: 1 }));
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
 
-  const handleSortToggle = () => {
-    setSortOrder(prev => prev === 'desc' ? 'asc' : 'desc');
+  useEffect(() => {
+    fetchList(filters);
+  }, [filters, fetchList]);
+
+  const handleFilterChange = (key: keyof MinutesFilterParams, value: any) => {
+    setFilters(prev => ({ ...prev, [key]: value, page: 1 }));
   };
+
+  const clearAllFilters = () => {
+    setSearchInput('');
+    setFilters({ page: 1, pageSize: 10, sortBy: 'created_at', sortDir: 'desc' });
+  };
+
+  const handlePageChange = (newPage: number) => {
+    if (newPage > 0 && (!listData?.totalCount || newPage <= Math.ceil(listData.totalCount / (filters.pageSize || 10)))) {
+      setFilters(prev => ({ ...prev, page: newPage }));
+    }
+  };
+
+  const handlePageSizeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    setFilters(prev => ({ ...prev, pageSize: Number(e.target.value), page: 1 }));
+  };
+
+  const openDetail = (minute: MinutesListItem) => {
+    setSelectedMinute(minute);
+    fetchDetail(minute.visitInstanceId);
+  };
+
+  const closeDetail = () => {
+    setSelectedMinute(null);
+    clearDetail();
+  };
+
+  const handleDownloadPDF = (e: React.MouseEvent, minutesId: number) => {
+    e.stopPropagation();
+    exportPdf(minutesId);
+  };
+
+  const handleDownloadExcel = (e: React.MouseEvent, minutesId: number) => {
+    e.stopPropagation();
+    exportExcel(minutesId);
+  };
+
+  const totalPages = listData ? Math.ceil(listData.totalCount / (filters.pageSize || 10)) : 1;
+  const currentPage = filters.page || 1;
 
   return (
     <div className="p-4 sm:p-6 md:p-8 max-w-[95%] mx-auto flex flex-col space-y-6 pb-12 animate-in fade-in duration-300">
@@ -91,79 +97,264 @@ export function MinuteManagement() {
       
       <div className="border-b border-gray-100 pb-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-[#004c91]">Quản lý biên bản</h1>
-          <p className="text-gray-500 mt-2 font-medium">Lưu trữ biên bản họp của các đoàn khách</p>
+          <div className="flex items-center gap-3">
+            <h1 className="text-3xl font-bold text-[#004c91]">Quản lý biên bản</h1>
+            {user?.campusName && (
+              <span className="inline-flex px-3 py-1 text-sm font-bold rounded-full bg-[#004c91]/10 text-[#004c91]">
+                Campus: {user.campusName}
+              </span>
+            )}
+          </div>
+          <p className="text-gray-500 mt-2 font-medium">Tra cứu, xem chi tiết và tải xuống biên bản của các đoàn khách thuộc campus bạn quản lý</p>
+        </div>
+      </div>
+
+      {/* Summary Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col">
+          <span className="text-sm font-bold text-slate-500 mb-1">Tổng biên bản</span>
+          <span className="text-2xl font-bold text-[#004c91]">{listData?.summary?.totalMinutes || 0}</span>
+        </div>
+        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col">
+          <span className="text-sm font-bold text-slate-500 mb-1">DRAFT</span>
+          <span className="text-2xl font-bold text-slate-700">{listData?.summary?.draftCount || 0}</span>
+        </div>
+        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col">
+          <span className="text-sm font-bold text-slate-500 mb-1">SAVED</span>
+          <span className="text-2xl font-bold text-green-600">{listData?.summary?.savedCount || 0}</span>
+        </div>
+        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col">
+          <span className="text-sm font-bold text-slate-500 mb-1">Đang bị khóa sửa</span>
+          <span className="text-2xl font-bold text-orange-500">{listData?.summary?.lockedCount || 0}</span>
+        </div>
+        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col">
+          <span className="text-sm font-bold text-slate-500 mb-1">Action item mở</span>
+          <span className="text-2xl font-bold text-red-500">{listData?.summary?.openActionItemCount || 0}</span>
+        </div>
+        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col">
+          <span className="text-sm font-bold text-slate-500 mb-1">Cập nhật gần nhất</span>
+          <span className="text-sm font-medium text-slate-700 mt-auto">{listData?.summary?.latestUpdatedAt ? new Date(listData.summary.latestUpdatedAt).toLocaleString('vi-VN') : 'Chưa có'}</span>
         </div>
       </div>
 
       {/* 2. Action & Filter Controller */}
-      <div className="w-full">
+      <div className="w-full bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-4">
         <div className="flex flex-col lg:flex-row items-center gap-4">
           <div className="relative flex-1 w-full group">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5 group-focus-within:text-[#004c91] transition-colors pointer-events-none" />
             <input 
               type="text" 
-              placeholder="Tìm kiếm theo tên biên bản, tên đoàn khách..." 
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-11 pr-4 py-3 border border-slate-200 rounded-xl bg-white text-sm font-medium text-slate-800 focus:outline-none focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] transition-all placeholder:text-slate-400 shadow-sm"
+              placeholder="Tìm theo tên biên bản, nội dung, đoàn khách, người tham gia, đầu việc..." 
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              className="w-full pl-11 pr-4 py-2.5 border border-slate-200 rounded-xl bg-white text-sm font-medium text-slate-800 focus:outline-none focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] transition-all placeholder:text-slate-400 shadow-sm"
             />
           </div>
+          
+          <div className="flex items-center gap-3 w-full lg:w-auto overflow-x-auto pb-2 lg:pb-0 hide-scrollbar">
+            <select 
+              value={filters.status || ''} 
+              onChange={e => handleFilterChange('status', e.target.value)}
+              className="px-3 py-2.5 border border-slate-200 rounded-xl text-sm font-medium focus:outline-none focus:border-[#004c91] bg-white min-w-[150px]"
+            >
+              <option value="">Tất cả trạng thái</option>
+              <option value="DRAFT">DRAFT</option>
+              <option value="SAVED">SAVED</option>
+            </select>
+            
+            <select 
+              value={filters.attendanceStatus || ''} 
+              onChange={e => handleFilterChange('attendanceStatus', e.target.value)}
+              className="px-3 py-2.5 border border-slate-200 rounded-xl text-sm font-medium focus:outline-none focus:border-[#004c91] bg-white min-w-[160px]"
+            >
+              <option value="">Tất cả điểm danh</option>
+              <option value="PRESENT">PRESENT</option>
+              <option value="ABSENT">ABSENT</option>
+              <option value="EXCUSED">EXCUSED</option>
+            </select>
+            
+            <select 
+              value={filters.actionItemStatus || ''} 
+              onChange={e => handleFilterChange('actionItemStatus', e.target.value)}
+              className="px-3 py-2.5 border border-slate-200 rounded-xl text-sm font-medium focus:outline-none focus:border-[#004c91] bg-white min-w-[150px]"
+            >
+              <option value="">Tất cả đầu việc</option>
+              <option value="TODO">TODO</option>
+              <option value="IN_PROGRESS">IN_PROGRESS</option>
+              <option value="DONE">DONE</option>
+              <option value="CANCELLED">CANCELLED</option>
+            </select>
+
+            <button 
+              onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
+              className={`flex items-center gap-2 px-4 py-2.5 border rounded-xl text-sm font-medium transition-colors whitespace-nowrap ${showAdvancedFilters ? 'border-[#004c91] bg-[#004c91]/5 text-[#004c91]' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'}`}
+            >
+              <Filter className="w-4 h-4" />
+              Lọc nâng cao
+            </button>
+            <button 
+              onClick={clearAllFilters}
+              className="px-4 py-2.5 border border-slate-200 rounded-xl text-sm font-medium bg-white text-slate-700 hover:bg-slate-50 transition-colors whitespace-nowrap"
+            >
+              Reset
+            </button>
+          </div>
         </div>
+
+        {/* Advanced Filters */}
+        <AnimatePresence>
+          {showAdvancedFilters && (
+            <motion.div 
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              className="overflow-hidden border-t border-slate-100 pt-4"
+            >
+              <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 mb-1">Loại ngày</label>
+                  <select 
+                    value={filters.dateType || ''} 
+                    onChange={e => handleFilterChange('dateType', e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                  >
+                    <option value="">Không lọc theo ngày</option>
+                    <option value="created_at">Ngày tạo</option>
+                    <option value="updated_at">Ngày cập nhật</option>
+                    <option value="edit_locked_at">Ngày khóa sửa</option>
+                    <option value="due_date">Deadline đầu việc</option>
+                  </select>
+                </div>
+                {filters.dateType && (
+                  <>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 mb-1">Từ ngày</label>
+                      <input 
+                        type="date" 
+                        value={filters.fromDate || ''} 
+                        onChange={e => handleFilterChange('fromDate', e.target.value)}
+                        className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 mb-1">Đến ngày</label>
+                      <input 
+                        type="date" 
+                        value={filters.toDate || ''} 
+                        onChange={e => handleFilterChange('toDate', e.target.value)}
+                        className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                      />
+                    </div>
+                  </>
+                )}
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 mb-1">Trạng thái khóa</label>
+                  <select 
+                    value={filters.lockState || ''} 
+                    onChange={e => handleFilterChange('lockState', e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                  >
+                    <option value="">Tất cả</option>
+                    <option value="LOCKED">Đang bị khóa</option>
+                    <option value="UNLOCKED">Không bị khóa</option>
+                    <option value="EXPIRED">Lock đã hết hạn</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 mb-1">Người tham gia vắng mặt</label>
+                  <select 
+                    value={filters.hasAbsentParticipants || ''} 
+                    onChange={e => handleFilterChange('hasAbsentParticipants', e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                  >
+                    <option value="">Tất cả</option>
+                    <option value="true">Có</option>
+                    <option value="false">Không</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 mb-1">Loại người tham gia</label>
+                  <select 
+                    value={filters.participantType || ''} 
+                    onChange={e => handleFilterChange('participantType', e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                  >
+                    <option value="">Tất cả</option>
+                    <option value="INTERNAL">Internal user</option>
+                    <option value="GUEST">Guest member</option>
+                  </select>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* 3. Data View */}
       <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse min-w-[1000px]">
+        <div className="overflow-x-auto w-full">
+          <table className="w-full text-left border-collapse min-w-[1200px]">
             <thead>
               <tr className="bg-[#004c91] border-b border-[#004c91]">
-                <th className="px-6 py-4 text-sm font-bold text-white uppercase tracking-wider whitespace-nowrap">Tên biên bản</th>
-                <th className="px-6 py-4 text-sm font-bold text-white uppercase tracking-wider whitespace-nowrap">ĐOÀN KHÁCH</th>
-                <th 
-                  className="px-6 py-4 text-sm font-bold text-white uppercase tracking-wider cursor-pointer group hover:bg-[#00386b] transition-colors whitespace-nowrap text-center"
-                  onClick={handleSortToggle}
-                >
-                  <div className="flex items-center justify-center gap-1">
-                    Thời gian
-                    <ArrowDown className={`w-4 h-4 text-white/70 group-hover:text-white transition-transform duration-300 ${sortOrder === 'asc' ? 'rotate-180' : ''}`} />
-                  </div>
-                </th>
-                <th className="px-6 py-4 text-sm font-bold text-white uppercase tracking-wider text-center whitespace-nowrap">Hành động</th>
+                <th className="px-4 py-4 text-xs font-bold text-white uppercase tracking-wider whitespace-nowrap w-16">STT</th>
+                <th className="px-4 py-4 text-xs font-bold text-white uppercase tracking-wider whitespace-nowrap min-w-[250px]">Biên bản</th>
+                <th className="px-4 py-4 text-xs font-bold text-white uppercase tracking-wider whitespace-nowrap min-w-[200px]">Đoàn khách</th>
+                <th className="px-4 py-4 text-xs font-bold text-white uppercase tracking-wider whitespace-nowrap min-w-[150px]">Trạng thái & Khóa</th>
+                <th className="px-4 py-4 text-xs font-bold text-white uppercase tracking-wider whitespace-nowrap">Audit</th>
+                <th className="px-4 py-4 text-xs font-bold text-white uppercase tracking-wider text-center whitespace-nowrap">Hành động</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filteredMinutes.length > 0 ? filteredMinutes.map((doc, index) => (
+              {loading ? (
+                 <tr><td colSpan={8} className="px-6 py-12 text-center text-slate-500">Đang tải dữ liệu...</td></tr>
+              ) : listData?.items && listData.items.length > 0 ? listData.items.map((doc, index) => (
                 <motion.tr 
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: index * 0.05 }}
-                  key={doc.id} 
-                  className="transition-colors duration-200 hover:bg-slate-50/50 group"
+                  key={doc.minutesId} 
+                  className="transition-colors duration-200 hover:bg-slate-50 group"
                 >
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-lg bg-[#004c91]/5 border border-[#004c91]/10 flex items-center justify-center shrink-0">
-                        <FileText className="w-5 h-5 text-[#004c91]" />
-                      </div>
-                      <span className="text-[15px] font-medium text-slate-700 truncate max-w-[200px] md:max-w-[350px] group-hover:text-[#004c91] transition-colors cursor-pointer" title={doc.name}>{doc.name}</span>
+                  <td className="px-4 py-4 text-sm font-medium text-slate-500">
+                    {(currentPage - 1) * (filters.pageSize || 10) + index + 1}
+                  </td>
+                  <td className="px-4 py-4">
+                    <div className="flex flex-col gap-1">
+                      <div className="font-bold text-slate-800 line-clamp-2">{doc.title}</div>
+                      <div className="text-xs text-slate-500 font-mono">MIN #{doc.minutesId}</div>
+                      <div className="text-xs text-slate-600 line-clamp-1 italic">{doc.contentPreview || 'Chưa có nội dung'}</div>
                     </div>
                   </td>
-                  <td className="px-6 py-4">
-                    <span className="inline-flex px-3 py-1 text-xs font-medium rounded-md border bg-slate-50 text-slate-600 border-slate-200">
-                      {doc.guestName}
-                    </span>
+                  <td className="px-4 py-4">
+                    <div className="flex flex-col gap-1">
+                      <div className="font-bold text-slate-700">{doc.visitTitle || 'Chưa có tên đoàn'}</div>
+                      <div className="text-xs text-slate-500 font-mono">INST #{doc.visitInstanceId}</div>
+                      {doc.hostName && <div className="text-xs text-slate-500">Host: {doc.hostName}</div>}
+                    </div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-center">
-                    <span className="text-sm font-medium text-slate-600">
-                      {doc.uploadDate}
-                    </span>
+                  <td className="px-4 py-4">
+                    <div className="flex flex-col gap-2 items-start">
+                      <span className={`inline-flex px-2 py-0.5 text-xs font-bold rounded-md ${doc.status === 'SAVED' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-slate-100 text-slate-600 border border-slate-200'}`}>
+                        {doc.status}
+                      </span>
+                      {doc.lockState === 'LOCKED' && (
+                        <div className="flex items-center gap-1 text-xs text-orange-600 bg-orange-50 px-2 py-0.5 rounded border border-orange-200" title={`Locked by ${doc.editLockedByName}`}>
+                          <Lock className="w-3 h-3" /> Đang khóa
+                        </div>
+                      )}
+                    </div>
                   </td>
-                  <td className="px-6 py-4">
-                    <div className="flex items-center justify-center">
+                  <td className="px-4 py-4">
+                    <div className="text-xs text-slate-500 space-y-1">
+                      <div className="flex items-center gap-1" title="Ngày tạo"><Clock className="w-3 h-3"/> {doc.createdAt ? new Date(doc.createdAt).toLocaleDateString('vi-VN') : 'N/A'}</div>
+                      <div className="flex items-center gap-1" title="Người cập nhật"><User className="w-3 h-3"/> {doc.updatedByName || doc.createdByName || 'N/A'}</div>
+                    </div>
+                  </td>
+                  <td className="px-4 py-4">
+                    <div className="flex items-center justify-center gap-2">
                       <button 
-                        onClick={() => setSelectedMinute(doc)}
-                        className="p-2 text-gray-400 hover:text-[#004c91] hover:bg-blue-50 rounded-lg transition-colors outline-none cursor-pointer" 
+                        onClick={() => openDetail(doc)}
+                        className="p-2 text-slate-400 hover:text-[#004c91] hover:bg-blue-50 rounded-lg transition-colors outline-none cursor-pointer" 
                         title="Xem chi tiết"
                       >
                         <Eye className="w-5 h-5" />
@@ -173,7 +364,7 @@ export function MinuteManagement() {
                 </motion.tr>
               )) : (
                 <tr>
-                  <td colSpan={4} className="px-6 py-12 text-center">
+                  <td colSpan={8} className="px-6 py-12 text-center">
                      <div className="flex flex-col items-center justify-center">
                         <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mb-4">
                           <Search className="w-8 h-8 text-slate-300" />
@@ -188,25 +379,36 @@ export function MinuteManagement() {
         </div>
         
         {/* Pagination */}
-        {filteredMinutes.length > 0 && (
+        {listData && listData.items.length > 0 && (
           <div className="px-6 py-4 border-t border-slate-200 bg-slate-50/50 flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-2 text-sm text-gray-600">
               <span>Hiển thị</span>
-              <select className="border border-gray-200 rounded-lg px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-[#004c91] font-medium">
+              <select 
+                value={filters.pageSize}
+                onChange={handlePageSizeChange}
+                className="border border-gray-200 rounded-lg px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-[#004c91] font-medium"
+              >
                 <option value={5}>5</option>
                 <option value={10}>10</option>
                 <option value={20}>20</option>
+                <option value={50}>50</option>
               </select>
               <span>bản ghi / trang</span>
             </div>
             <div className="flex items-center gap-2">
-              <button disabled className="p-1.5 border border-slate-200 rounded-lg text-slate-400 bg-white cursor-not-allowed">
+              <button 
+                disabled={currentPage === 1}
+                onClick={() => handlePageChange(currentPage - 1)}
+                className="p-1.5 border border-slate-200 rounded-lg text-slate-600 bg-white hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
+              >
                 <ChevronLeft className="w-5 h-5" />
               </button>
-              <button className="w-8 h-8 flex items-center justify-center border border-[#004c91] rounded-lg text-sm font-bold text-white bg-[#2b5a8c] transition-colors outline-none cursor-pointer">
-                1
-              </button>
-              <button disabled className="p-1.5 border border-slate-200 rounded-lg text-slate-400 bg-white cursor-not-allowed">
+              <span className="text-sm font-medium px-2">Trang {currentPage} / {totalPages}</span>
+              <button 
+                disabled={currentPage === totalPages}
+                onClick={() => handlePageChange(currentPage + 1)}
+                className="p-1.5 border border-slate-200 rounded-lg text-slate-600 bg-white hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
+              >
                 <ChevronRight className="w-5 h-5" />
               </button>
             </div>
@@ -214,7 +416,7 @@ export function MinuteManagement() {
         )}
       </div>
 
-      {/* Modal */}
+      {/* Modal Detail */}
       <AnimatePresence>
         {selectedMinute && (
           <motion.div 
@@ -227,127 +429,191 @@ export function MinuteManagement() {
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-2xl shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col m-auto relative"
+              className="bg-white rounded-2xl shadow-xl w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col m-auto relative"
             >
               {/* Header */}
               <div className="bg-[#004c91] px-6 py-4 flex items-center justify-between border-b border-[#003366] shrink-0 sticky top-0 z-10">
-                 <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                    <span className="w-8 h-8 rounded-full bg-[#f37021] flex items-center justify-center text-sm">
-                      <FileText className="w-4 h-4 text-white" />
-                    </span>
-                    Chi tiết biên bản cuộc họp
-                 </h2>
-                 <button onClick={() => setSelectedMinute(null)} className="text-white hover:bg-white/20 p-1.5 rounded-full transition-colors cursor-pointer outline-none">
-                    <X className="w-5 h-5" />
-                 </button>
+                 <div>
+                   <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                      <span className="w-8 h-8 rounded-full bg-[#f37021] flex items-center justify-center text-sm shrink-0">
+                        <FileText className="w-4 h-4 text-white" />
+                      </span>
+                      <span className="truncate max-w-[400px]">{detailData?.title || selectedMinute.title}</span>
+                   </h2>
+                   <div className="flex items-center gap-2 mt-2 ml-10">
+                      <span className="text-xs bg-white/20 text-white px-2 py-0.5 rounded font-mono">MIN #{selectedMinute.minutesId}</span>
+                      <span className="text-xs bg-white/20 text-white px-2 py-0.5 rounded font-mono">INST #{selectedMinute.visitInstanceId}</span>
+                      <span className={`text-xs px-2 py-0.5 rounded font-bold ${selectedMinute.status === 'SAVED' ? 'bg-green-500/20 text-green-100 border border-green-400/30' : 'bg-slate-500/30 text-slate-100 border border-slate-400/30'}`}>
+                        {selectedMinute.status}
+                      </span>
+                      {user?.campusName && (
+                        <span className="text-xs bg-white/20 text-white px-2 py-0.5 rounded">{user.campusName}</span>
+                      )}
+                   </div>
+                 </div>
+                 <div className="flex items-center gap-3">
+                    <button 
+                      onClick={(e) => handleDownloadPDF(e, selectedMinute.minutesId)}
+                      className="flex items-center gap-2 bg-white/10 hover:bg-white/20 border border-white/20 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors outline-none cursor-pointer"
+                    >
+                      <Download className="w-4 h-4" /> PDF
+                    </button>
+                    <button 
+                      onClick={(e) => handleDownloadExcel(e, selectedMinute.minutesId)}
+                      className="flex items-center gap-2 bg-white/10 hover:bg-white/20 border border-white/20 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors outline-none cursor-pointer"
+                    >
+                      <FileText className="w-4 h-4" /> Excel
+                    </button>
+                    <button onClick={closeDetail} className="text-white hover:bg-white/20 p-2 rounded-full transition-colors cursor-pointer outline-none">
+                       <X className="w-5 h-5" />
+                    </button>
+                 </div>
               </div>
 
               {/* Body */}
-              <div className="p-6 md:p-8 overflow-y-auto w-full flex-1 min-h-0 bg-gray-50/30">
-                 <fieldset disabled className="contents">
-                    <div className="flex flex-col sm:flex-row sm:items-start gap-6 mb-8">
-                        <div className="flex-1 w-full max-w-[450px]">
-                           <label className="block text-sm font-bold text-gray-700 mb-2 ml-1">Tên biên bản</label>
-                           <input 
-                             type="text" 
-                             value={selectedMinute.name}
-                             className="bg-blue-50/50 text-blue-900 px-4 py-2.5 rounded-xl font-bold border border-blue-100 outline-none w-full opacity-90 cursor-not-allowed"
-                             readOnly
-                           />
+              <div className="p-6 overflow-y-auto w-full flex-1 bg-gray-50/50">
+                 {loading && !detailData ? (
+                   <div className="flex justify-center items-center h-40">
+                     <span className="text-slate-500">Đang tải chi tiết...</span>
+                   </div>
+                 ) : detailData ? (
+                   <div className="space-y-6">
+                      {/* Cảnh báo lock */}
+                      {detailData.editLockedBy && (
+                        <div className="bg-orange-50 border border-orange-200 text-orange-800 p-4 rounded-xl flex items-start gap-3">
+                          <Lock className="w-5 h-5 text-orange-500 shrink-0 mt-0.5" />
+                          <div>
+                            <p className="font-bold text-sm">Đang được chỉnh sửa bởi {detailData.editLockedByName || detailData.editLockedBy}</p>
+                            <p className="text-xs mt-1 text-orange-700">Lock hết hạn vào: {new Date(detailData.editLockExpiresAt!).toLocaleString('vi-VN')}</p>
+                          </div>
                         </div>
-                        <div>
-                           <label className="block text-sm font-bold text-gray-700 mb-2 ml-1">Thời gian</label>
-                           <div className="bg-blue-50/50 text-blue-900 px-4 py-2.5 rounded-xl font-bold flex items-center gap-2 border border-blue-100 opacity-90 cursor-not-allowed">
-                              <Calendar className="w-5 h-5 text-blue-600 shrink-0" />
-                              <input 
-                                type="text" 
-                                value={selectedMinute.uploadDate}
-                                className="bg-transparent border-none outline-none font-bold text-blue-900 w-full cursor-not-allowed"
-                                readOnly
-                              />
-                           </div>
-                        </div>
-                    </div>
+                      )}
 
-                    <div className="mb-8 overflow-hidden rounded-xl border border-gray-200 bg-white">
-                        <div className="bg-gray-50/70 px-5 py-3 border-b border-gray-200 flex items-center justify-between opacity-90">
-                          <h3 className="text-sm font-bold text-gray-800 flex items-center gap-2 font-sans">
-                            <Users className="w-4 h-4 text-[#004c91]" />
-                            Bảng danh sách chi tiết người tham gia cuộc họp
-                          </h3>
-                          <span className="text-xs bg-[#004c91]/10 text-[#004c91] px-2.5 py-1 rounded-full font-bold">
-                            {mockParticipants.length} thành viên
-                          </span>
+                      {/* Thông tin đoàn */}
+                      <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+                        <h3 className="text-base font-bold text-[#004c91] mb-4 flex items-center gap-2"><Building2 className="w-5 h-5" /> Thông tin đoàn / Visit Instance</h3>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                          <div><span className="text-slate-500 block mb-1">Tên đoàn khách:</span> <span className="font-bold text-slate-800">{selectedMinute.visitTitle || 'Chưa có dữ liệu'}</span></div>
+                          <div><span className="text-slate-500 block mb-1">Trạng thái biên bản:</span> <span className="font-bold text-slate-800">{detailData.status || 'Chưa có dữ liệu'}</span></div>
+                          <div><span className="text-slate-500 block mb-1">Host chính:</span> <span className="font-bold text-slate-800">{selectedMinute.hostName || 'Chưa có dữ liệu'}</span></div>
+                          <div><span className="text-slate-500 block mb-1">Campus:</span> <span className="font-bold text-slate-800">{selectedMinute.campusName || 'Chưa có dữ liệu'}</span></div>
+                          <div><span className="text-slate-500 block mb-1">Thời gian dự kiến:</span> <span className="font-bold text-slate-800">
+                            {selectedMinute.plannedStartAt ? new Date(selectedMinute.plannedStartAt).toLocaleString('vi-VN') : '?'} - {selectedMinute.plannedEndAt ? new Date(selectedMinute.plannedEndAt).toLocaleString('vi-VN') : '?'}
+                          </span></div>
                         </div>
-                        
-                        <div className="overflow-x-auto max-h-[250px] overflow-y-auto">
-                          <table className="w-full text-left border-collapse text-sm">
-                            <thead className="sticky top-0 bg-white z-10 shadow-[0_1px_0_rgba(229,231,235,1)]">
-                              <tr className="border-b border-gray-200 bg-gray-100/50 text-[11px] uppercase tracking-wider text-gray-500 font-extrabold font-sans">
-                                <th className="px-4 py-3 text-center w-20">Có mặt</th>
-                                <th className="px-5 py-3">Đại biểu tham gia</th>
-                                <th className="px-5 py-3">Đơn vị của khách</th>
+                      </div>
+
+                      {/* Nội dung biên bản */}
+                      <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+                        <h3 className="text-base font-bold text-[#004c91] mb-4 flex items-center gap-2"><FileText className="w-5 h-5" /> Nội dung biên bản</h3>
+                        <div className="bg-slate-50 p-4 rounded-lg border border-slate-100 min-h-[100px] whitespace-pre-wrap text-sm text-slate-700">
+                          {detailData.content || 'Chưa có dữ liệu nội dung.'}
+                        </div>
+                      </div>
+
+                      {/* Danh sách người tham gia */}
+                      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+                        <div className="bg-slate-50 px-5 py-4 border-b border-slate-200 flex items-center justify-between">
+                          <h3 className="text-base font-bold text-[#004c91] flex items-center gap-2">
+                            <Users className="w-5 h-5" /> Danh sách người tham gia & điểm danh
+                          </h3>
+                          <div className="flex gap-2 text-xs">
+                            <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded font-medium">Tổng: {detailData.participants?.length || 0}</span>
+                            <span className="bg-green-100 text-green-800 px-2 py-1 rounded font-medium">Có mặt: {detailData.participants?.filter(p => p.attendanceStatus === 'PRESENT').length || 0}</span>
+                          </div>
+                        </div>
+                        <div className="overflow-x-auto max-h-[300px]">
+                          <table className="w-full text-left text-sm">
+                            <thead className="bg-slate-50 sticky top-0 border-b border-slate-200">
+                              <tr className="text-slate-500 font-bold uppercase text-xs">
+                                <th className="px-4 py-3">Tên & Vai trò</th>
+                                <th className="px-4 py-3">Đơn vị / Loại</th>
+                                <th className="px-4 py-3 text-center">Trạng thái</th>
+                                <th className="px-4 py-3">Ghi chú</th>
                               </tr>
                             </thead>
-                            <tbody className="divide-y divide-gray-100">
-                              {mockParticipants.map((p) => (
-                                <tr key={p.id} className="hover:bg-gray-50/55 transition-colors">
-                                  <td className="px-4 py-4 text-center">
-                                    <div className="inline-flex items-center justify-center opacity-70">
-                                      {p.confirmed ? (
-                                        <CheckSquare className="w-5 h-5 text-green-600 fill-green-50" />
-                                      ) : (
-                                        <Square className="w-5 h-5 text-gray-300" />
-                                      )}
+                            <tbody className="divide-y divide-slate-100">
+                              {detailData.participants?.length > 0 ? detailData.participants.map((p, idx) => (
+                                <tr key={p.minuteParticipantId || idx} className="hover:bg-slate-50/50">
+                                  <td className="px-4 py-3">
+                                    <div className="font-bold text-slate-800">{p.fullNameSnapshot || '-'}</div>
+                                    <div className="text-xs text-slate-500">{p.roleSnapshot || '-'}</div>
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    <div className="text-slate-700">{p.organizationSnapshot || '-'}</div>
+                                    <div className="mt-1">
+                                      {p.userId ? <span className="text-[10px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded border border-blue-200">Internal</span> :
+                                       p.guestMemberId ? <span className="text-[10px] bg-orange-50 text-orange-600 px-2 py-0.5 rounded border border-orange-200">Guest</span> :
+                                       <span className="text-[10px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded border border-slate-200">Snapshot only</span>}
                                     </div>
                                   </td>
-                                  <td className="px-5 py-4 font-sans">
-                                    <div className="font-semibold text-gray-900">{p.name}</div>
-                                    <div className="text-xs text-gray-500 font-medium">{p.role}</div>
+                                  <td className="px-4 py-3 text-center">
+                                    {p.attendanceStatus === 'PRESENT' && <span className="inline-flex items-center justify-center bg-green-100 text-green-700 px-2 py-1 rounded text-xs font-bold w-20">PRESENT</span>}
+                                    {p.attendanceStatus === 'ABSENT' && <span className="inline-flex items-center justify-center bg-red-100 text-red-700 px-2 py-1 rounded text-xs font-bold w-20">ABSENT</span>}
+                                    {p.attendanceStatus === 'EXCUSED' && <span className="inline-flex items-center justify-center bg-yellow-100 text-yellow-800 px-2 py-1 rounded text-xs font-bold w-20">EXCUSED</span>}
+                                    {!p.attendanceStatus && <span className="text-slate-400">-</span>}
                                   </td>
-                                  <td className="px-5 py-4 font-sans">
-                                    <div className="flex items-center gap-1.5 text-gray-700 font-medium font-sans">
-                                      <Building2 className="w-4 h-4 text-gray-400 shrink-0" />
-                                      {p.org}
-                                    </div>
-                                  </td>
+                                  <td className="px-4 py-3 text-slate-600 text-xs">{p.attendanceNote || '-'}</td>
                                 </tr>
-                              ))}
+                              )) : (
+                                <tr><td colSpan={4} className="px-4 py-6 text-center text-slate-500">Chưa có người tham gia</td></tr>
+                              )}
                             </tbody>
                           </table>
                         </div>
-                    </div>
+                      </div>
 
-                    <div className="space-y-6">
-                        <div>
-                          <h3 className="text-base font-bold text-gray-800 mb-3 ml-2 relative before:content-[''] before:absolute before:left-[-12px] before:top-[6px] before:w-1.5 before:h-1.5 before:bg-[#f37021] before:rounded-full">Ghi chú</h3>
-                          <textarea 
-                            className="w-full bg-gray-50/50 border border-gray-200 rounded-xl p-4 text-sm font-medium text-gray-800 min-h-[120px] outline-none resize-none cursor-not-allowed opacity-90"
-                            value="Đây là nội dung ghi chú mock cho biên bản cuộc họp."
-                            readOnly
-                          />
+                      {/* Đầu mục công việc */}
+                      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+                        <div className="bg-slate-50 px-5 py-4 border-b border-slate-200">
+                          <h3 className="text-base font-bold text-[#004c91] flex items-center gap-2">
+                            <CheckSquare className="w-5 h-5" /> Đầu mục công việc
+                          </h3>
                         </div>
-
-                        <div>
-                          <h3 className="text-base font-bold text-gray-800 mb-3 ml-2 relative before:content-[''] before:absolute before:left-[-12px] before:top-[6px] before:w-1.5 before:h-1.5 before:bg-[#004c91] before:rounded-full">Đầu mục công việc</h3>
-                          <div className="space-y-3 bg-gray-50/50 border border-gray-100 rounded-xl p-4 opacity-90 cursor-not-allowed">
-                              <div className="flex flex-col sm:flex-row sm:items-center gap-3 bg-white/50 p-3 rounded-lg border border-gray-200 shadow-sm pointer-events-none">
-                                <div className="flex items-center gap-3 flex-1">
-                                  <div className="text-[#004c91]">
-                                    <CheckSquare className="w-5 h-5 text-green-600" />
+                        <div className="p-4 space-y-3">
+                          {detailData.actionItems?.length > 0 ? detailData.actionItems.map(ai => {
+                            const isOverdue = ai.dueDate && new Date(ai.dueDate) < new Date() && ai.status !== 'DONE' && ai.status !== 'CANCELLED';
+                            return (
+                              <div key={ai.actionItemId} className="border border-slate-200 rounded-lg p-4 bg-white flex flex-col md:flex-row md:items-center justify-between gap-4">
+                                <div className="flex-1">
+                                  <div className="flex items-center gap-2 mb-1">
+                                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase
+                                      ${ai.status === 'DONE' ? 'bg-green-100 text-green-700' : 
+                                        ai.status === 'IN_PROGRESS' ? 'bg-blue-100 text-blue-700' : 
+                                        ai.status === 'CANCELLED' ? 'bg-slate-100 text-slate-600' : 
+                                        'bg-orange-100 text-orange-800'}`}>
+                                      {ai.status}
+                                    </span>
+                                    {isOverdue && <span className="text-[10px] font-bold px-2 py-0.5 rounded uppercase bg-red-100 text-red-700">Quá hạn</span>}
+                                    <h4 className="font-bold text-slate-800 text-sm">{ai.title}</h4>
                                   </div>
-                                  <span className="flex-1 text-sm font-medium line-through text-gray-400">Gửi mail cảm ơn đối tác</span>
+                                  {ai.note && <p className="text-xs text-slate-600 mt-1">{ai.note}</p>}
                                 </div>
-                                <div className="flex items-center gap-2">
-                                   <Calendar className="w-4 h-4 text-orange-500" />
-                                   <span className="text-xs font-bold text-orange-700 bg-orange-50/50 px-2 py-1.5 rounded-md border border-orange-200">18/06/2026</span>
+                                <div className="flex items-center gap-4 text-xs text-slate-500 shrink-0">
+                                  {ai.dueDate && <div className="flex items-center gap-1"><Calendar className="w-3 h-3"/> Deadline: {new Date(ai.dueDate).toLocaleDateString('vi-VN')}</div>}
+                                  {ai.completedAt && <div className="flex items-center gap-1 text-green-600"><CheckSquare className="w-3 h-3"/> HT: {new Date(ai.completedAt).toLocaleDateString('vi-VN')}</div>}
                                 </div>
                               </div>
-                          </div>
+                            );
+                          }) : (
+                            <div className="text-center py-6 text-slate-500">Biên bản này chưa có đầu mục công việc.</div>
+                          )}
                         </div>
-                    </div>
+                      </div>
 
-                 </fieldset>
+                      {/* Audit */}
+                      <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 shadow-sm">
+                        <h3 className="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2"><ShieldAlert className="w-4 h-4" /> Thông tin Audit & Concurrency</h3>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-y-3 text-xs text-slate-600">
+                          <div><span className="font-bold text-slate-800 block">Ngày khóa:</span> {detailData.editLockedAt ? new Date(detailData.editLockedAt).toLocaleString('vi-VN') : 'N/A'}</div>
+                          <div><span className="font-bold text-slate-800 block">Ngày cập nhật:</span> {detailData.updatedAt ? new Date(detailData.updatedAt).toLocaleString('vi-VN') : 'N/A'}</div>
+                          <div><span className="font-bold text-slate-800 block">Row version:</span> {detailData.rowVersion}</div>
+                        </div>
+                      </div>
+                   </div>
+                 ) : (
+                   <div className="text-center py-10 text-red-500">Không tải được chi tiết.</div>
+                 )}
               </div>
             </motion.div>
           </motion.div>
