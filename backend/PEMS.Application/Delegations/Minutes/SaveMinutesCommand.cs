@@ -19,7 +19,8 @@ public sealed record SaveMinutesCommand(
     string EditLockToken,
     uint RowVersion,
     IReadOnlyList<SaveMinuteParticipantInput>? Participants,
-    IReadOnlyList<SaveMinuteActionItemInput>? ActionItems) : IRequest<MinuteDto>;
+    IReadOnlyList<SaveMinuteActionItemInput>? ActionItems,
+    bool IsDraft = false) : IRequest<MinuteDto>;
 
 /// <summary>
 /// One attendance row to persist. <see cref="MinuteParticipantId"/> null = new row.

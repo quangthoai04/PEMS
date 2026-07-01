@@ -75,7 +75,7 @@ public sealed class SaveMinutesCommandHandler
 
         minute.Title = request.Title.Trim();
         minute.Content = request.Content;
-        minute.Status = MinuteAccess.StatusSaved;
+        minute.Status = request.IsDraft ? MinuteAccess.StatusDraft : MinuteAccess.StatusSaved;
         minute.RowVersion += 1;
         minute.UpdatedAt = now;
         minute.UpdatedBy = userId;

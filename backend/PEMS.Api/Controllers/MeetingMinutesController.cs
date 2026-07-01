@@ -66,7 +66,7 @@ namespace PEMS.Api.Controllers
             => Ok(await _mediator.Send(
                 new SaveMinutesCommand(
                     minutesId, body.Title, body.Content, body.EditLockToken, body.RowVersion,
-                    body.Participants, body.ActionItems), cancellationToken));
+                    body.Participants, body.ActionItems, body.IsDraft), cancellationToken));
 
         // Release the lock without saving (Hủy chỉnh sửa).
         [HttpPost("{minutesId}/release-lock")]
@@ -91,6 +91,7 @@ namespace PEMS.Api.Controllers
         string EditLockToken,
         uint RowVersion,
         List<SaveMinuteParticipantInput>? Participants,
-        List<SaveMinuteActionItemInput>? ActionItems);
+        List<SaveMinuteActionItemInput>? ActionItems,
+        bool IsDraft = false);
     public sealed record ReleaseMinutesLockBody(string EditLockToken);
 }

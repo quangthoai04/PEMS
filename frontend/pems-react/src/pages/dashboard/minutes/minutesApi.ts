@@ -41,4 +41,17 @@ export const minutesApi = {
     link.remove();
     window.URL.revokeObjectURL(url);
   },
+
+  acquireLock: async (minutesId: number): Promise<{ editLockToken: string }> => {
+    const { data } = await httpClient.post(`/meetingminutes/${minutesId}/acquire-lock`);
+    return data;
+  },
+
+  save: async (minutesId: number, payload: any): Promise<void> => {
+    await httpClient.put(`/meetingminutes/${minutesId}`, payload);
+  },
+
+  releaseLock: async (minutesId: number, editLockToken: string): Promise<void> => {
+    await httpClient.post(`/meetingminutes/${minutesId}/release-lock`, { editLockToken });
+  }
 };

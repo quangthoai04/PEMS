@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Filter, FileText, Eye, Download, ChevronLeft, ChevronRight, X, Calendar, Users, Square, CheckSquare, Building2, User, Clock, ShieldAlert, Lock, Unlock } from 'lucide-react';
+import { Search, Filter, FileText, Eye, Download, ChevronLeft, ChevronRight, X, Calendar, Users, Square, CheckSquare, Building2, User, Clock, ShieldAlert, Lock, Unlock, Edit3, Save } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../../../shared/hooks/useAuth';
 import { useMinutes } from './useMinutes';
-import { MinutesFilterParams, MinutesListItem } from './types';
+import { minutesApi } from './minutesApi';
+import { toast } from 'react-hot-toast';
+import { MinutesFilterParams, MinutesListItem, MinutesDetail } from './types';
 
 export function MinuteManagement() {
   const navigate = useNavigate();
@@ -31,6 +33,12 @@ export function MinuteManagement() {
   const [searchInput, setSearchInput] = useState('');
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [selectedMinute, setSelectedMinute] = useState<MinutesListItem | null>(null);
+
+  // Edit State
+  const [isEditing, setIsEditing] = useState(false);
+  const [editData, setEditData] = useState<MinutesDetail | null>(null);
+  const [editLockToken, setEditLockToken] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   // Debounce search input
   useEffect(() => {
@@ -69,8 +77,99 @@ export function MinuteManagement() {
   };
 
   const closeDetail = () => {
+    if (isEditing && selectedMinute && editLockToken) {
+      minutesApi.releaseLock(selectedMinute.minutesId, editLockToken).catch(() => {});
+    }
     setSelectedMinute(null);
+    setIsEditing(false);
+    setEditData(null);
+    setEditLockToken(null);
     clearDetail();
+  };
+
+  const handleAcquireLock = async () => {
+    if (!selectedMinute) return;
+    try {
+      setIsSaving(true);
+      const res = await minutesApi.acquireLock(selectedMinute.minutesId);
+      setEditLockToken(res.editLockToken);
+      setEditData(JSON.parse(JSON.stringify(detailData))); // deep copy
+      setIsEditing(true);
+    } catch (e: any) {
+      toast.error('Không thể mở khóa biên bản để chỉnh sửa');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleSave = async (isDraft: boolean = false) => {
+    if (!selectedMinute || !editData || !editLockToken) return;
+    try {
+      setIsSaving(true);
+      // Map editData to SaveMinutesBody
+      const payload = {
+        title: editData.title || selectedMinute.title,
+        content: editData.content,
+        editLockToken,
+        rowVersion: editData.rowVersion,
+        isDraft,
+        participants: editData.participants.map((p, idx) => ({
+          minuteParticipantId: p.minuteParticipantId,
+          userId: p.userId,
+          guestMemberId: p.guestMemberId,
+          attendanceStatus: p.attendanceStatus,
+          attendanceNote: p.attendanceNote,
+          displayOrder: idx
+        })),
+        actionItems: editData.actionItems.map((ai, idx) => ({
+          actionItemId: ai.actionItemId,
+          title: ai.title,
+          note: ai.note,
+          dueDate: ai.dueDate,
+          status: ai.status,
+          displayOrder: idx
+        }))
+      };
+      
+      await minutesApi.save(selectedMinute.minutesId, payload);
+      toast.success(isDraft ? 'Đã lưu Draft thành công' : 'Lưu biên bản thành công');
+      setIsEditing(false);
+      setEditLockToken(null);
+      // Refresh list and detail
+      fetchDetail(selectedMinute.visitInstanceId);
+      fetchList(filters);
+    } catch (e: any) {
+      toast.error('Lỗi khi lưu biên bản');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleCancelEdit = async () => {
+    if (!selectedMinute || !editLockToken) return;
+    try {
+      await minutesApi.releaseLock(selectedMinute.minutesId, editLockToken);
+    } catch (e) {}
+    setIsEditing(false);
+    setEditLockToken(null);
+    setEditData(null);
+    // Reload detail to ensure it's fresh
+    fetchDetail(selectedMinute.visitInstanceId);
+  };
+
+  const updateParticipant = (index: number, status: 'PRESENT' | 'ABSENT') => {
+    if (!editData) return;
+    const newData = { ...editData };
+    newData.participants[index].attendanceStatus = status;
+    setEditData(newData);
+  };
+
+  const toggleActionItem = (index: number) => {
+    if (!editData) return;
+    const newData = { ...editData };
+    const current = newData.actionItems[index].status;
+    newData.actionItems[index].status = current === 'DONE' ? 'TODO' : 'DONE';
+    setEditData(newData);
   };
 
   const handleDownloadPDF = (e: React.MouseEvent, minutesId: number) => {
@@ -452,19 +551,56 @@ export function MinuteManagement() {
                    </div>
                  </div>
                  <div className="flex items-center gap-3">
-                    <button 
-                      onClick={(e) => handleDownloadPDF(e, selectedMinute.minutesId)}
-                      className="flex items-center gap-2 bg-white/10 hover:bg-white/20 border border-white/20 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors outline-none cursor-pointer"
-                    >
-                      <Download className="w-4 h-4" /> PDF
-                    </button>
-                    <button 
-                      onClick={(e) => handleDownloadExcel(e, selectedMinute.minutesId)}
-                      className="flex items-center gap-2 bg-white/10 hover:bg-white/20 border border-white/20 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors outline-none cursor-pointer"
-                    >
-                      <FileText className="w-4 h-4" /> Excel
-                    </button>
-                    <button onClick={closeDetail} className="text-white hover:bg-white/20 p-2 rounded-full transition-colors cursor-pointer outline-none">
+                    {isEditing ? (
+                      <>
+                        <button 
+                          onClick={() => handleSave(false)}
+                          disabled={isSaving}
+                          className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors outline-none cursor-pointer disabled:opacity-50"
+                        >
+                          <Save className="w-4 h-4" /> {isSaving ? 'Đang lưu...' : 'Lưu lại'}
+                        </button>
+                        <button 
+                          onClick={() => handleSave(true)}
+                          disabled={isSaving}
+                          className="flex items-center gap-2 bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors outline-none cursor-pointer disabled:opacity-50"
+                        >
+                          <Edit3 className="w-4 h-4" /> Lưu Draft
+                        </button>
+                        <button 
+                          onClick={handleCancelEdit}
+                          disabled={isSaving}
+                          className="flex items-center gap-2 bg-slate-500 hover:bg-slate-600 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors outline-none cursor-pointer disabled:opacity-50"
+                        >
+                          <X className="w-4 h-4" /> Hủy
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        {detailData?.canEdit && (
+                          <button 
+                            onClick={handleAcquireLock}
+                            disabled={isSaving}
+                            className="flex items-center gap-2 bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors outline-none cursor-pointer disabled:opacity-50"
+                          >
+                            <Edit3 className="w-4 h-4" /> Chỉnh sửa
+                          </button>
+                        )}
+                        <button 
+                          onClick={(e) => handleDownloadPDF(e, selectedMinute.minutesId)}
+                          className="flex items-center gap-2 bg-white/10 hover:bg-white/20 border border-white/20 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors outline-none cursor-pointer"
+                        >
+                          <Download className="w-4 h-4" /> PDF
+                        </button>
+                        <button 
+                          onClick={(e) => handleDownloadExcel(e, selectedMinute.minutesId)}
+                          className="flex items-center gap-2 bg-white/10 hover:bg-white/20 border border-white/20 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors outline-none cursor-pointer"
+                        >
+                          <FileText className="w-4 h-4" /> Excel
+                        </button>
+                      </>
+                    )}
+                    <button onClick={closeDetail} className="text-white hover:bg-white/20 p-2 rounded-full transition-colors cursor-pointer outline-none ml-2">
                        <X className="w-5 h-5" />
                     </button>
                  </div>
@@ -478,8 +614,8 @@ export function MinuteManagement() {
                    </div>
                  ) : detailData ? (
                    <div className="space-y-6">
-                      {/* Cảnh báo lock */}
-                      {detailData.editLockedBy && (
+                      {/* Cảnh báo lock (Chỉ hiện khi ko phải mình đang sửa) */}
+                      {!isEditing && detailData.editLockedBy && (
                         <div className="bg-orange-50 border border-orange-200 text-orange-800 p-4 rounded-xl flex items-start gap-3">
                           <Lock className="w-5 h-5 text-orange-500 shrink-0 mt-0.5" />
                           <div>
@@ -518,8 +654,8 @@ export function MinuteManagement() {
                             <Users className="w-5 h-5" /> Danh sách người tham gia & điểm danh
                           </h3>
                           <div className="flex gap-2 text-xs">
-                            <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded font-medium">Tổng: {detailData.participants?.length || 0}</span>
-                            <span className="bg-green-100 text-green-800 px-2 py-1 rounded font-medium">Có mặt: {detailData.participants?.filter(p => p.attendanceStatus === 'PRESENT').length || 0}</span>
+                            <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded font-medium">Tổng: {(isEditing ? editData?.participants : detailData.participants)?.length || 0}</span>
+                            <span className="bg-green-100 text-green-800 px-2 py-1 rounded font-medium">Có mặt: {(isEditing ? editData?.participants : detailData.participants)?.filter(p => p.attendanceStatus === 'PRESENT').length || 0}</span>
                           </div>
                         </div>
                         <div className="overflow-x-auto max-h-[300px]">
@@ -533,7 +669,7 @@ export function MinuteManagement() {
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
-                              {detailData.participants?.length > 0 ? detailData.participants.map((p, idx) => (
+                              {((isEditing ? editData?.participants : detailData.participants) || []).map((p, idx) => (
                                 <tr key={p.minuteParticipantId || idx} className="hover:bg-slate-50/50">
                                   <td className="px-4 py-3">
                                     <div className="font-bold text-slate-800">{p.fullNameSnapshot || '-'}</div>
@@ -548,14 +684,24 @@ export function MinuteManagement() {
                                     </div>
                                   </td>
                                   <td className="px-4 py-3 text-center">
-                                    {p.attendanceStatus === 'PRESENT' && <span className="inline-flex items-center justify-center bg-green-100 text-green-700 px-2 py-1 rounded text-xs font-bold w-20">PRESENT</span>}
-                                    {p.attendanceStatus === 'ABSENT' && <span className="inline-flex items-center justify-center bg-red-100 text-red-700 px-2 py-1 rounded text-xs font-bold w-20">ABSENT</span>}
-                                    {p.attendanceStatus === 'EXCUSED' && <span className="inline-flex items-center justify-center bg-yellow-100 text-yellow-800 px-2 py-1 rounded text-xs font-bold w-20">EXCUSED</span>}
-                                    {!p.attendanceStatus && <span className="text-slate-400">-</span>}
+                                    {isEditing ? (
+                                      <div className="flex items-center justify-center gap-1">
+                                        <button onClick={() => updateParticipant(idx, 'PRESENT')} className={`px-2 py-1 rounded text-xs font-bold transition-colors ${p.attendanceStatus === 'PRESENT' ? 'bg-green-500 text-white shadow-sm' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}>Có mặt</button>
+                                        <button onClick={() => updateParticipant(idx, 'ABSENT')} className={`px-2 py-1 rounded text-xs font-bold transition-colors ${p.attendanceStatus === 'ABSENT' ? 'bg-red-500 text-white shadow-sm' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}>Vắng</button>
+                                      </div>
+                                    ) : (
+                                      <>
+                                        {p.attendanceStatus === 'PRESENT' && <span className="inline-flex items-center justify-center bg-green-100 text-green-700 px-2 py-1 rounded text-xs font-bold w-20">PRESENT</span>}
+                                        {p.attendanceStatus === 'ABSENT' && <span className="inline-flex items-center justify-center bg-red-100 text-red-700 px-2 py-1 rounded text-xs font-bold w-20">ABSENT</span>}
+                                        {p.attendanceStatus === 'EXCUSED' && <span className="inline-flex items-center justify-center bg-yellow-100 text-yellow-800 px-2 py-1 rounded text-xs font-bold w-20">EXCUSED</span>}
+                                        {!p.attendanceStatus && <span className="text-slate-400">-</span>}
+                                      </>
+                                    )}
                                   </td>
                                   <td className="px-4 py-3 text-slate-600 text-xs">{p.attendanceNote || '-'}</td>
                                 </tr>
-                              )) : (
+                              ))}
+                              {(!isEditing && detailData.participants?.length === 0) && (
                                 <tr><td colSpan={4} className="px-4 py-6 text-center text-slate-500">Chưa có người tham gia</td></tr>
                               )}
                             </tbody>
@@ -571,23 +717,33 @@ export function MinuteManagement() {
                           </h3>
                         </div>
                         <div className="p-4 space-y-3">
-                          {detailData.actionItems?.length > 0 ? detailData.actionItems.map(ai => {
+                          {((isEditing ? editData?.actionItems : detailData.actionItems) || []).map((ai, idx) => {
                             const isOverdue = ai.dueDate && new Date(ai.dueDate) < new Date() && ai.status !== 'DONE' && ai.status !== 'CANCELLED';
                             return (
-                              <div key={ai.actionItemId} className="border border-slate-200 rounded-lg p-4 bg-white flex flex-col md:flex-row md:items-center justify-between gap-4">
-                                <div className="flex-1">
-                                  <div className="flex items-center gap-2 mb-1">
-                                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase
-                                      ${ai.status === 'DONE' ? 'bg-green-100 text-green-700' : 
-                                        ai.status === 'IN_PROGRESS' ? 'bg-blue-100 text-blue-700' : 
-                                        ai.status === 'CANCELLED' ? 'bg-slate-100 text-slate-600' : 
-                                        'bg-orange-100 text-orange-800'}`}>
-                                      {ai.status}
-                                    </span>
-                                    {isOverdue && <span className="text-[10px] font-bold px-2 py-0.5 rounded uppercase bg-red-100 text-red-700">Quá hạn</span>}
-                                    <h4 className="font-bold text-slate-800 text-sm">{ai.title}</h4>
+                              <div key={ai.actionItemId || idx} className={`border border-slate-200 rounded-lg p-4 bg-white flex flex-col md:flex-row md:items-center justify-between gap-4 transition-colors ${ai.status === 'DONE' ? 'opacity-80 bg-slate-50' : ''}`}>
+                                <div className="flex-1 flex gap-3">
+                                  {isEditing && (
+                                    <button 
+                                      onClick={() => toggleActionItem(idx)}
+                                      className={`mt-1 shrink-0 w-6 h-6 rounded flex items-center justify-center border transition-colors ${ai.status === 'DONE' ? 'bg-green-500 border-green-500 text-white shadow-sm' : 'bg-white border-slate-300 hover:border-[#004c91]'}`}
+                                    >
+                                      {ai.status === 'DONE' && <CheckSquare className="w-4 h-4" />}
+                                    </button>
+                                  )}
+                                  <div>
+                                    <div className="flex items-center gap-2 mb-1">
+                                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase
+                                        ${ai.status === 'DONE' ? 'bg-green-100 text-green-700' : 
+                                          ai.status === 'IN_PROGRESS' ? 'bg-blue-100 text-blue-700' : 
+                                          ai.status === 'CANCELLED' ? 'bg-slate-100 text-slate-600' : 
+                                          'bg-orange-100 text-orange-800'}`}>
+                                        {ai.status}
+                                      </span>
+                                      {isOverdue && <span className="text-[10px] font-bold px-2 py-0.5 rounded uppercase bg-red-100 text-red-700">Quá hạn</span>}
+                                      <h4 className={`font-bold text-sm ${ai.status === 'DONE' ? 'text-slate-500 line-through' : 'text-slate-800'}`}>{ai.title}</h4>
+                                    </div>
+                                    {ai.note && <p className="text-xs text-slate-600 mt-1">{ai.note}</p>}
                                   </div>
-                                  {ai.note && <p className="text-xs text-slate-600 mt-1">{ai.note}</p>}
                                 </div>
                                 <div className="flex items-center gap-4 text-xs text-slate-500 shrink-0">
                                   {ai.dueDate && <div className="flex items-center gap-1"><Calendar className="w-3 h-3"/> Deadline: {new Date(ai.dueDate).toLocaleDateString('vi-VN')}</div>}
@@ -595,7 +751,8 @@ export function MinuteManagement() {
                                 </div>
                               </div>
                             );
-                          }) : (
+                          })}
+                          {(!isEditing && detailData.actionItems?.length === 0) && (
                             <div className="text-center py-6 text-slate-500">Biên bản này chưa có đầu mục công việc.</div>
                           )}
                         </div>
