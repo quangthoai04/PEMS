@@ -67,7 +67,7 @@ namespace PEMS.Api.Controllers
             [FromForm] string description,
             [FromForm] long locationId,
             [FromForm] string? status,
-            [FromForm] List<IFormFile>? files,
+            List<IFormFile>? files,
             CancellationToken cancellationToken)
         {
             var buffered = await BufferFilesAsync(files, cancellationToken);
@@ -87,7 +87,7 @@ namespace PEMS.Api.Controllers
             [FromForm] long locationId,
             [FromForm] List<long>? keepMediaIds,
             [FromForm] long? primaryMediaId,
-            [FromForm] List<IFormFile>? newFiles,
+            List<IFormFile>? newFiles,
             CancellationToken cancellationToken)
         {
             var buffered = await BufferFilesAsync(newFiles, cancellationToken);

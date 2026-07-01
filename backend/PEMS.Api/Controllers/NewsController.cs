@@ -45,7 +45,7 @@ namespace PEMS.Api.Controllers
         [RequestSizeLimit(6 * 1024 * 1024)]
         [Consumes("multipart/form-data")]
         public async Task<IActionResult> UploadNewsCoverImage(
-            [FromForm] IFormFile file,
+            IFormFile file,
             CancellationToken cancellationToken)
         {
             if (file is null || file.Length == 0)

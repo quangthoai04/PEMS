@@ -245,4 +245,11 @@ export const API_ENDPOINTS = {
     declineAssignment: (logisticsItemId: string | number) => `/department/reception-tasks/requests/${logisticsItemId}/decline-assignment`,
     signHandover: (logisticsItemId: string | number) => `/department/reception-tasks/requests/${logisticsItemId}/handovers/sign`,
   },
+  feedbacks: {
+    visitSummary: '/feedbacks/visit-summary',
+    raw: '/feedbacks',
+    visitSummaryDetail: (visitRequestId: string | number) => `/feedbacks/visit-summary/${visitRequestId}`,
+    visitInstanceSummaryDetail: (visitRequestId: string | number, visitInstanceId: string | number) => `/feedbacks/visit-summary/${visitRequestId}/instances/${visitInstanceId}`,
+    detail: (feedbackId: string | number) => `/feedbacks/${feedbackId}`,
+  },
 };
