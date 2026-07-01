@@ -38,6 +38,34 @@ public sealed class VisitProcessDetailDto
     /// <summary>Host snapshot + invited supporters of this instance. Empty for the guest/visitor
     /// owner (who must not see the internal process data).</summary>
     public List<VisitParticipantListItemDto> Participants { get; set; } = new();
+
+    /// <summary>Notifications related to this visit instance or its parent request, only loaded for the VISITOR_OWNER.</summary>
+    public List<VisitorNotificationDto> Notifications { get; set; } = new();
+
+    /// <summary>Public published news related to this visit instance, only loaded for the VISITOR_OWNER.</summary>
+    public List<VisitorPublicNewsListItemDto> PublicNews { get; set; } = new();
+}
+
+public sealed class VisitorPublicNewsListItemDto
+{
+    public ulong NewsId { get; set; }
+    public string Title { get; set; } = string.Empty;
+    public string? Summary { get; set; }
+    public string? ThumbnailUrl { get; set; }
+    public string? Slug { get; set; }
+    public DateTime? PublishedAt { get; set; }
+    public string? AuthorName { get; set; }
+}
+
+public sealed class VisitorNotificationDto
+{
+    public ulong NotificationId { get; set; }
+    public string Title { get; set; } = default!;
+    public string? Message { get; set; }
+    public string NotificationType { get; set; } = default!;
+    public bool IsRead { get; set; }
+    public DateTime? ReadAt { get; set; }
+    public DateTime CreatedAt { get; set; }
 }
 
 /// <summary>Mirror of the guest-submitted form, shown read-only on the process screen.</summary>

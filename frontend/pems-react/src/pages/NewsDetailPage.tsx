@@ -4,70 +4,104 @@
  */
 
 // Đây là trang hiển thị chi tiết một bài viết tin tức ở giao diện phía người dùng
-import React, { useEffect } from 'react';
-import { Calendar, User, Home } from 'lucide-react';
-import { useParams, useNavigate } from 'react-router-dom';
+import React, { useEffect, useState } from 'react';
+import { Calendar, User, Home, Image as ImageIcon } from 'lucide-react';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { publicContentApi } from '../features/public-content/api/publicContentApi';
+import { PublicNewsDetail, PublicNewsSection } from '../features/public-content/types/publicContent.types';
+import { format } from 'date-fns';
+import { vi } from 'date-fns/locale';
 import { sanitizeHtml } from '../shared/security/sanitizeHtml';
 
-const articleMock = {
-  id: 1,
-  title: 'TỪ MABUHAY ĐẾN SALAMAT VÀ MỘT CÁCH LÀM VIỆC KHÁC BIỆT: HÀNH TRANG MÌNH MANG VỀ SAU KỲ OJT TẠI MANILA, PHILIPPINES',
-  date: '18/03/2026',
-  author: 'Phòng Hợp tác Quốc tế',
-  sapo: 'Từ "Mabuhay" đến "Salamat" là cả một hành trình: Đi để làm việc, nhưng trở về với nhiều hơn cả một trải nghiệm nghề nghiệp. Ở Manila, mình học được rằng khác biệt không phải rào cản mà chính là điểm tựa để chúng ta vươn xa hơn trong một môi trường làm việc quốc tế.',
-  image: 'https://images.unsplash.com/photo-1543269865-cbf427effbad?w=1200&q=80',
-  content: `
-    <h3>1. Hành trình bắt đầu từ những điều khác biệt</h3>
-    <p>Khi mới đặt chân đến Manila, điều đầu tiên mình cảm nhận được là sự nhộn nhịp và một chút xa lạ. Ngôn ngữ tiếng Anh tuy là ngôn ngữ chung nhưng cách phát âm (accent) và văn hoá giao tiếp của người bản địa mang nét rất riêng. Lúc đầu mình gặp đôi chút khó khăn trong việc bắt nhịp, nhưng chính sự thân thiện của con người nơi đây đã giúp mình nhanh chóng hoà nhập.</p>
-    
-    <h3>2. "Một cách làm việc khác biệt"</h3>
-    <p>Tại công ty thực tập, mọi thứ diễn ra rất nhanh và đòi hỏi tính tự lập cao. Thay vì được cầm tay chỉ việc, mình được giao những dự án nhỏ và phải tự tìm cách giải quyết. Điều này ban đầu khá áp lực, nhưng nó rèn luyện cho mình kỹ năng giải quyết vấn đề (problem-solving) và sự chủ động trong công việc. Mình nhận ra rằng, ở môi trường quốc tế, kết quả công việc và thái độ làm việc được trân trọng hơn bất kỳ điều gì.</p>
-    
-    <img src="https://images.unsplash.com/photo-1522071820081-009f0129c71c?w=1200&q=80" alt="Working in team" />
-    
-    <blockquote>
-      "Trải nghiệm quốc tế không chỉ là việc bạn đi được bao xa, mà là bạn mở rộng được tư duy của mình đến đâu." 
-    </blockquote>
-    
-    <h3>3. Những bài học quý giá</h3>
-    <p>Sau kỳ OJT, hành trang mình mang về không chỉ là những kiến thức chuyên môn hay chứng nhận thực tập, mà lớn lao hơn là sự trưởng thành trong suy nghĩ. Mình học được cách tôn trọng sự đa dạng văn hoá, cách làm việc nhóm hiệu quả với những con người đến từ nhiều quốc gia khác nhau, và đặc biệt là sự tự tin vào khả năng của bản thân.</p>
-    <p>Manila đã dạy cho mình rằng, thế giới ngoài kia rất rộng lớn và đầy rẫy những cơ hội. Đừng ngại bước ra khỏi vùng an toàn của mình, bởi vì mỗi trải nghiệm dù là khó khăn nhất cũng sẽ là một bài học vô giá trên con đường phát triển sự nghiệp sau này.</p>
-  `
-};
-
 export function NewsDetailPage() {
-  const { id } = useParams();
+  const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   
-  // In a real app we'd fetch the article using the ID. Here we use mock data.
-  const article = articleMock;
+  const [article, setArticle] = useState<PublicNewsDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
 
-  // Scroll to top when loading the details page
+  useEffect(() => {
+    if (!id) return;
+
+    const fetchDetail = async () => {
+      try {
+        setLoading(true);
+        const data = await publicContentApi.getPublicNewsDetail(id);
+        setArticle(data);
+      } catch (err) {
+        console.error(err);
+        setError(true);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchDetail();
+  }, [id]);
+
   useEffect(() => {
     window.scrollTo(0, 0);
   }, [id]);
+
+  const handleBack = () => {
+    const state = location.state as { returnTo?: string };
+    if (state?.returnTo) {
+      navigate(state.returnTo);
+    } else {
+      navigate(-1);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="pt-24 md:pt-28 pb-12 md:pb-20 bg-white min-h-screen flex flex-col items-center justify-center">
+        <div className="w-12 h-12 border-4 border-[#004c91] border-t-transparent rounded-full animate-spin mb-4"></div>
+        <p className="text-gray-500 font-medium">Đang tải bài viết...</p>
+      </div>
+    );
+  }
+
+  if (error || !article) {
+    return (
+      <div className="pt-24 md:pt-28 pb-12 md:pb-20 bg-white min-h-screen flex flex-col items-center justify-center p-6 text-center">
+        <div className="w-16 h-16 bg-slate-200 text-slate-500 rounded-full flex items-center justify-center mb-4">
+          <ImageIcon className="w-8 h-8" />
+        </div>
+        <h2 className="text-xl font-bold text-slate-800 mb-2">Bài viết không tồn tại</h2>
+        <p className="text-slate-500 mb-6 max-w-md">
+          Bài viết không tồn tại hoặc chưa được công khai.
+        </p>
+        <button 
+          onClick={handleBack}
+          className="px-6 py-2 bg-[#004c91] text-white font-bold rounded-xl hover:bg-[#003b70] transition-colors"
+        >
+          Quay lại
+        </button>
+      </div>
+    );
+  }
+
+  const formatDate = (iso: string) => {
+    try {
+      return format(new Date(iso), 'dd/MM/yyyy', { locale: vi });
+    } catch {
+      return iso;
+    }
+  };
 
   return (
     <div className="pt-24 md:pt-28 pb-12 md:pb-20 bg-white min-h-screen">
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
         
-        {/* Simple Static Breadcrumbs with no motion animations based on user preference */}
+        {/* Breadcrumbs */}
         <div className="mb-6 flex flex-wrap items-center gap-2 text-sm font-semibold select-none text-slate-400 py-1">
           <button 
-            onClick={() => navigate('/')} 
+            onClick={handleBack} 
             className="hover:text-[#004c91] transition-colors flex items-center gap-1.5 cursor-pointer px-2 py-1 rounded-lg"
           >
-            <Home className="w-4 h-4 text-slate-400" />
-            <span>Trang chủ</span>
-          </button>
-          
-          <span className="text-slate-300">/</span>
-          
-          <button 
-            onClick={() => navigate('/')} 
-            className="text-[#f37021] hover:text-orange-600 font-bold transition-colors px-2 py-1 rounded-lg cursor-pointer"
-          >
-            Tin tức
+            Quay lại
           </button>
           
           <span className="text-slate-300">/</span>
@@ -84,71 +118,48 @@ export function NewsDetailPage() {
         
         {/* Meta Info */}
         <div className="flex items-center flex-wrap gap-4 mb-6">
-          <div className="flex items-center gap-1.5 text-gray-500 text-[15px]">
-            <Calendar className="w-4 h-4" />
-            <span>{article.date}</span>
-          </div>
-          <div className="flex items-center gap-1.5 text-gray-500 text-[15px]">
-            <User className="w-4 h-4" />
-            <span>{article.author}</span>
-          </div>
+          {article.publishedAt && (
+            <div className="flex items-center gap-1.5 text-gray-500 text-[15px]">
+              <Calendar className="w-4 h-4" />
+              <span>{formatDate(article.publishedAt)}</span>
+            </div>
+          )}
+          {article.authorName && (
+            <div className="flex items-center gap-1.5 text-gray-500 text-[15px]">
+              <User className="w-4 h-4" />
+              <span>{article.authorName}</span>
+            </div>
+          )}
         </div>
 
         {/* Light Gray Line */}
         <div className="h-[1px] bg-gray-200 w-full mb-8"></div>
 
-        {/* Sapo */}
-        <div className="flex mb-8">
-          <div className="w-[3px] bg-[#f37021] shrink-0 mr-4 rounded-sm"></div>
-          <p className="text-[17px] text-gray-700 italic leading-relaxed">
-            {article.sapo}
-          </p>
-        </div>
+        {/* Summary */}
+        {article.summary && (
+          <div className="flex mb-8">
+            <div className="w-[3px] bg-[#f37021] shrink-0 mr-4 rounded-sm"></div>
+            <p className="text-[17px] text-gray-700 italic leading-relaxed">
+              {article.summary}
+            </p>
+          </div>
+        )}
 
         {/* Main Image */}
-        <div className="mb-10 rounded-lg overflow-hidden">
-          <img 
-            src={article.image} 
-            alt={article.title} 
-            className="w-full h-auto object-cover" 
-          />
-        </div>
+        {article.thumbnailUrl && (
+          <div className="mb-10 rounded-lg overflow-hidden">
+            <img 
+              src={article.thumbnailUrl} 
+              alt={article.title} 
+              className="w-full max-h-[500px] object-cover" 
+            />
+          </div>
+        )}
 
         {/* Article Content */}
-        <div className="news-content text-gray-800">
-          <div dangerouslySetInnerHTML={{ __html: sanitizeHtml(article.content) }}></div>
+        <div className="news-content text-gray-800 space-y-8">
+          <PublicNewsSections sections={article.sections} />
         </div>
-
-        <style>{`
-          .news-content h3 {
-            font-size: 1.5rem;
-            font-weight: 700;
-            color: #111827;
-            margin-top: 2.5rem;
-            margin-bottom: 1.25rem;
-          }
-          .news-content p {
-            font-size: 1.05rem;
-            margin-bottom: 1.25rem;
-            line-height: 1.8;
-          }
-          .news-content img {
-            width: 100%;
-            border-radius: 0.5rem;
-            margin-top: 2rem;
-            margin-bottom: 2rem;
-          }
-          .news-content blockquote {
-            border-left: 4px solid #f37021;
-            padding-left: 1.25rem;
-            font-style: italic;
-            color: #4b5563;
-            margin: 2rem 0;
-            background-color: #fff7ed;
-            padding: 1.25rem;
-            border-radius: 0 0.5rem 0.5rem 0;
-          }
-        `}</style>
         
         {/* Light Gray Line Bottom */}
         <div className="h-[1px] bg-gray-200 w-full mt-12 mb-6"></div>
@@ -160,5 +171,65 @@ export function NewsDetailPage() {
 
       </div>
     </div>
+  );
+}
+
+function PublicNewsSections({ sections }: { sections: PublicNewsSection[] }) {
+  if (!sections || sections.length === 0) return null;
+
+  return (
+    <>
+      {sections.map(section => {
+        const bodyText = section.sectionBodyHtml || section.sectionBodyText;
+
+        switch (section.sectionTitle?.toUpperCase()) {
+          case 'HEADING':
+            return <h3 key={section.sectionId} className="text-2xl font-bold text-gray-900 mt-10 mb-5">{section.sectionTitle || bodyText}</h3>;
+
+          case 'QUOTE':
+            return <blockquote key={section.sectionId} className="border-l-4 border-[#f37021] pl-5 italic text-slate-600 my-8 bg-orange-50 p-5 rounded-r-lg">{bodyText}</blockquote>;
+
+          case 'IMAGE':
+          case 'GALLERY':
+            return (
+              <div key={section.sectionId} className="my-8">
+                {bodyText && (
+                  <div 
+                    className="text-lg leading-relaxed mb-5"
+                    dangerouslySetInnerHTML={{ __html: sanitizeHtml(bodyText) }}
+                  />
+                )}
+                {section.files && section.files.length > 0 && (
+                  <div className={`grid gap-4 ${section.files.length > 1 ? 'grid-cols-2 md:grid-cols-3' : 'grid-cols-1'}`}>
+                    {section.files.map(f => (
+                      <img key={f.fileId} src={f.url} alt={f.fileName || ''} className="rounded-lg w-full object-cover" />
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+
+          default:
+            return (
+              <div key={section.sectionId} className="my-5">
+                {section.sectionTitle && <h3 className="text-xl font-bold text-slate-800 mb-4">{section.sectionTitle}</h3>}
+                {bodyText && (
+                  <div 
+                    className="text-[1.05rem] leading-[1.8] whitespace-pre-line"
+                    dangerouslySetInnerHTML={{ __html: sanitizeHtml(bodyText) }}
+                  />
+                )}
+                {section.files && section.files.length > 0 && (
+                  <div className={`grid gap-4 mt-6 ${section.files.length > 1 ? 'grid-cols-2 md:grid-cols-3' : 'grid-cols-1'}`}>
+                    {section.files.map(f => (
+                      <img key={f.fileId} src={f.url} alt={f.fileName || ''} className="rounded-lg w-full object-cover" />
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+        }
+      })}
+    </>
   );
 }

@@ -31,6 +31,7 @@ import { AgendaSetupPanel } from '../../../features/agenda-templates/components/
 import { ParticipantInvitationSection } from '../../../features/delegations/components/ParticipantInvitationSection';
 import { LogisticsRequestSection } from '../../../features/delegations/components/LogisticsRequestSection';
 import { RegistrantInfoReadOnly, DelegationInfoReadOnly } from '../../../features/delegations/components/RequestInfoReadOnly';
+import { VisitorVisitDetailPage } from './VisitorVisitDetailPage';
 
 // Lightweight in-page toast (top-right) — cùng pattern với CampusManagement/VisitRequestManagement.
 type ProcessToast = { id: number; type: 'success' | 'error' | 'warning' | 'info'; msg: string };
@@ -650,6 +651,12 @@ export function VisitProcess() {
         </div>
       </div>
     );
+  }
+
+  const isVisitorOwner = perm?.relation === 'VISITOR_OWNER' || detail?.relation === 'VISITOR_OWNER';
+  
+  if (isReceptionDetail && isVisitorOwner) {
+    return <VisitorVisitDetailPage perm={perm} detail={detail} />;
   }
 
   return (
