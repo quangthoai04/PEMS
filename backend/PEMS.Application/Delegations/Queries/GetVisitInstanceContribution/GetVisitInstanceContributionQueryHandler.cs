@@ -70,11 +70,13 @@ public sealed class GetVisitInstanceContributionQueryHandler
                 cancellationToken);
         }
 
-        if (!(isHost || isAcceptedParticipant || isDepartmentRelated))
+        bool isHo = roleCode == RoleCodes.Ho;
+        if (!(isHost || isAcceptedParticipant || isDepartmentRelated || isHo))
             throw new ForbiddenException("Bạn không có quyền truy cập trang đóng góp kết quả chuyến thăm.");
 
         // Relation label (display/telemetry only — never an auth input).
         string relation = isHost ? "HOST"
+            : isHo ? "HO"
             : participant?.ParticipantRole switch
             {
                 ParticipantRoles.IcSupport => "IC_SUPPORT",

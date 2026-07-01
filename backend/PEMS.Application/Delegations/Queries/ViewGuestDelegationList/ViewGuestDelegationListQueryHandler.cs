@@ -809,7 +809,7 @@ public sealed class ViewGuestDelegationListQueryHandler
             {
                 actions.Add("OPEN_HOST_PROCESS");
             }
-            if ((isHo && isMulti) || (isStaffLeader && sameCampus))
+            if (item.CampusId != null && (isHo || (isStaffLeader && sameCampus)))
             {
                 actions.Add("OPEN_PROCESS_SUMMARY");
             }

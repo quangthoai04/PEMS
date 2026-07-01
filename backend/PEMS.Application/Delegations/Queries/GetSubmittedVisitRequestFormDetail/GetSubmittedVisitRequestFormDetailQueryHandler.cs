@@ -119,8 +119,7 @@ public sealed class GetSubmittedVisitRequestFormDetailQueryHandler
         // ── Scope enforcement ──
         if (isHo)
         {
-            if (!isMulti)
-                throw new ForbiddenException("HO chỉ được xem đơn liên cơ sở.");
+            // HO has global read-only access to all requests for audit purposes.
         }
         else if (isStaffLeader)
         {

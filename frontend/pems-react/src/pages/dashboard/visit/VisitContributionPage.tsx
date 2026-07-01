@@ -8,7 +8,7 @@
  * a 403/404 renders Access Denied, and each section honors the booleans the backend returns.
  */
 import React, { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import {
   Lock, ArrowLeft, FileText, Users, Clock, Building2, AlertCircle, User, ScrollText,
   Loader2, CalendarDays, MapPin, ClipboardList
@@ -96,6 +96,8 @@ function Field({ label, value }: { label: string; value?: React.ReactNode }) {
 export function VisitContributionPage() {
   const { visitInstanceId } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
+  const returnUrl = location.state?.returnTo ?? '/dashboard/visit';
 
   const [loading, setLoading] = useState(true);
   const [denied, setDenied] = useState(false);
@@ -129,7 +131,7 @@ export function VisitContributionPage() {
     <div className="flex items-center gap-2 text-sm font-medium text-slate-500 mb-6">
       <span>Dashboard</span>
       <span>/</span>
-      <span className="cursor-pointer hover:text-[#004c91] transition-colors" onClick={() => navigate('/dashboard/visit')}>
+      <span className="cursor-pointer hover:text-[#004c91] transition-colors" onClick={() => navigate(returnUrl)}>
         Quản lý tiếp khách
       </span>
       <span>/</span>
@@ -161,7 +163,7 @@ export function VisitContributionPage() {
           <p className="text-gray-500 font-medium max-w-sm mx-auto leading-relaxed text-sm mb-6">
             Bạn không có quyền đóng góp kết quả cho chuyến thăm này.
           </p>
-          <button onClick={() => navigate('/dashboard/visit')}
+          <button onClick={() => navigate(returnUrl)}
             className="px-6 py-2.5 rounded-xl bg-[#004c91] text-white text-sm font-bold hover:bg-[#003b70] transition-colors outline-none flex items-center gap-2">
             <ArrowLeft className="w-4 h-4" /> Về danh sách
           </button>

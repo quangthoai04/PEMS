@@ -50,7 +50,7 @@ public sealed class GetVisitInstanceSummaryQueryHandler : IRequestHandler<GetVis
             && string.Equals(subRole, UserSubRoles.Leader, StringComparison.OrdinalIgnoreCase)
             && userCampusId == instance.CampusId;
 
-        bool isHo = roleCode == RoleCodes.Ho && visit.VisitScope == VisitScopes.MultiCampus && visit.Status == VisitRequestStatuses.Approved;
+        bool isHo = roleCode == RoleCodes.Ho;
         
         bool isHost = instance.CurrentHostUserId == userId;
 

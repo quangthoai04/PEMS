@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { 
   ChevronLeft, 
   ChevronRight,
@@ -26,6 +26,8 @@ const inMemoryTaskStore: Record<string, any> = {};
 export function VisitRequestDetail() {
   const navigate = useNavigate();
   const { id, type } = useParams();
+  const location = useLocation();
+  const returnUrl = location.state?.returnTo ?? '/dashboard/visit';
 
   const userStr = localStorage.getItem("currentUser");
   const user = userStr ? JSON.parse(userStr) : null;
@@ -100,7 +102,7 @@ export function VisitRequestDetail() {
         </button>
         <span className="mx-2">/</span>
         <button
-          onClick={() => navigate('/dashboard/visit')}
+          onClick={() => navigate(returnUrl)}
           className="hover:text-[#004c91] transition-colors outline-none"
         >
           Quản lý tiếp khách

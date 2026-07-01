@@ -48,6 +48,7 @@ type ReminderRow = { enabled: boolean; days: number; time: string };
 export function VisitProcess() {
   const navigate = useNavigate();
   const location = useLocation();
+  const returnUrl = location.state?.returnTo ?? '/dashboard/visit';
   const { id } = useParams();
 
   const { user } = useAuthContext();
@@ -643,7 +644,7 @@ export function VisitProcess() {
           <p className="text-gray-500 font-medium max-w-sm mx-auto leading-relaxed text-sm mb-6">
             Bạn không có quyền thao tác trang Host Operation của đoàn này.
           </p>
-          <button onClick={() => navigate('/dashboard/visit')} className="px-6 py-2.5 rounded-xl bg-[#004c91] text-white text-sm font-bold hover:bg-[#003b70] transition-colors outline-none">
+          <button onClick={() => navigate(returnUrl)} className="px-6 py-2.5 rounded-xl bg-[#004c91] text-white text-sm font-bold hover:bg-[#003b70] transition-colors outline-none">
             Về danh sách
           </button>
         </div>
@@ -654,10 +655,10 @@ export function VisitProcess() {
   return (
     <div className="p-4 sm:p-6 md:p-8 max-w-[95%] mx-auto pb-24">
       <div className="flex items-center gap-2 text-sm font-medium text-gray-500 mb-6">
-        <span>Dashboard</span>
-        <span>/</span>
-        <span className="cursor-pointer hover:text-[#004c91] transition-colors" onClick={() => navigate('/dashboard/visit')}>Quản lý tiếp khách</span>
-        <span>/</span>
+        <button onClick={() => navigate('/dashboard')} className="hover:text-[#004c91] transition-colors outline-none">Dashboard</button>
+        <span className="mx-2">/</span>
+        <span className="cursor-pointer hover:text-[#004c91] transition-colors" onClick={() => navigate(returnUrl)}>Quản lý tiếp khách</span>
+        <span className="mx-2">/</span>
         <span className="text-[#004c91] font-bold">
           {isReceptionDetail ? 'Chi tiết đón tiếp' : 'Quy trình tiếp khách'}
         </span>

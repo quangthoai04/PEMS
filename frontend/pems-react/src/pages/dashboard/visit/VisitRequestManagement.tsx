@@ -11,10 +11,10 @@ import React, { Fragment, useEffect, useState } from 'react';
 import {
   Search, Plus, Eye, AlertCircle, Users, MapPin, Calendar,
   ChevronLeft, ChevronRight, ChevronDown, Check, X, XCircle, Mail,
-  FileText, ArrowRightCircle, Info,
+  FileText, ArrowRightCircle, Info, ClipboardList,
 } from 'lucide-react';
 import { motion } from 'motion/react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { VisitDetailsModal } from '../../../components/modals/VisitDetailsModal';
 import { SubmittedVisitRequestDetailModal } from '../../../components/modals/SubmittedVisitRequestDetailModal';
 import { AssignHostModal } from '../../../components/modals/AssignHostModal';
@@ -128,6 +128,15 @@ type Row = VisitRequestManagementItem & {
 
 export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: boolean } = {}) {
   const navigate = useNavigate();
+  const navTo = (path: string, options?: any) => {
+    navigate(path, {
+      ...options,
+      state: {
+        ...options?.state,
+        returnTo: location.pathname + location.search,
+      }
+    });
+  };
   const { user } = useAuthContext();
 
   const roleCode = (user?.roleCode || '').toUpperCase();
@@ -149,7 +158,10 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
   const responsibleTabLabel = isHO ? 'Theo dõi đơn tiếp khách' : 'Đơn phụ trách';
   const attendingTabLabel = (isDept && subRole === 'STAFF') ? 'Nhiệm vụ được giao' : 'Lời mời tham dự';
   
-  const defaultTab: Tab = (isStudent || isDept) ? 'attending' : 'responsible';
+  const [searchParams, setSearchParams] = useSearchParams();
+  const location = useLocation();
+
+  const defaultTab: Tab = (searchParams.get('tab') as Tab) || ((isStudent || isDept) ? 'attending' : 'responsible');
   const [activeTab, setActiveTab] = useState<Tab>(defaultTab);
 
   // UC-27: pending participation invitations for invitee roles. This banner is the entry
@@ -175,9 +187,19 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
       ? 'xl:grid-cols-[minmax(0,1fr)_210px_160px_200px_112px_44px]'     // search·status·scope·date·apply·reset
       : 'xl:grid-cols-[minmax(0,1fr)_220px_200px_112px_44px]';          // search·status·date·apply·reset
 
+  const getUrlFilters = () => ({
+    keyword: searchParams.get('keyword') || '',
+    status: searchParams.get('status') || '',
+    visitScope: searchParams.get('visitScope') || '',
+    relation: searchParams.get('relation') || '',
+    fromDate: searchParams.get('fromDate') || '',
+    toDate: searchParams.get('toDate') || '',
+    campusId: searchParams.get('campusId') || ''
+  });
+
   const createEmptyFilters = () => ({ keyword: '', status: '', visitScope: '', relation: '', fromDate: '', toDate: '', campusId: '' });
-  const [draftFilters, setDraftFilters] = useState(createEmptyFilters());
-  const [appliedFilters, setAppliedFilters] = useState(createEmptyFilters());
+  const [draftFilters, setDraftFilters] = useState(getUrlFilters());
+  const [appliedFilters, setAppliedFilters] = useState(getUrlFilters());
   const [filterError, setFilterError] = useState<string | null>(null);
   const [listError, setListError] = useState<string | null>(null);
 
@@ -190,10 +212,28 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
   const [rows, setRows] = useState<Row[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [total, setTotal] = useState(0);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
-  const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
+  const [currentPage, setCurrentPage] = useState(Number(searchParams.get('page')) || 1);
+  const [pageSize, setPageSize] = useState(Number(searchParams.get('pageSize')) || 10);
+  const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>((searchParams.get('sortOrder') as 'desc' | 'asc') || 'desc');
   const [debouncedKeyword, setDebouncedKeyword] = useState(draftFilters.keyword);
+
+  const updateUrlParams = (tab: Tab, page: number, size: number, filters: typeof appliedFilters, sort: string) => {
+    const params = new URLSearchParams(searchParams);
+    if (tab) params.set('tab', tab);
+    if (page > 1) params.set('page', page.toString()); else params.delete('page');
+    if (size !== 10) params.set('pageSize', size.toString()); else params.delete('pageSize');
+    if (sort !== 'desc') params.set('sortOrder', sort); else params.delete('sortOrder');
+    
+    if (filters.keyword) params.set('keyword', filters.keyword); else params.delete('keyword');
+    if (filters.status) params.set('status', filters.status); else params.delete('status');
+    if (filters.visitScope) params.set('visitScope', filters.visitScope); else params.delete('visitScope');
+    if (filters.relation) params.set('relation', filters.relation); else params.delete('relation');
+    if (filters.fromDate) params.set('fromDate', filters.fromDate); else params.delete('fromDate');
+    if (filters.toDate) params.set('toDate', filters.toDate); else params.delete('toDate');
+    if (filters.campusId) params.set('campusId', filters.campusId); else params.delete('campusId');
+    
+    setSearchParams(params, { replace: true });
+  };
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -207,6 +247,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
       const nextFilters = { ...appliedFilters, keyword: debouncedKeyword };
       setAppliedFilters(nextFilters);
       setCurrentPage(1);
+      updateUrlParams(activeTab, 1, pageSize, nextFilters, sortOrder);
       loadDelegations(activeTab, 1, pageSize, nextFilters, sortOrder);
     }
   }, [debouncedKeyword]);
@@ -273,6 +314,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
     const nextFilters = { ...draftFilters };
     setAppliedFilters(nextFilters);
     setCurrentPage(1);
+    updateUrlParams(activeTab, 1, pageSize, nextFilters, sortOrder);
     loadDelegations(activeTab, 1, pageSize, nextFilters, sortOrder);
   };
   const handleResetFilters = () => {
@@ -281,6 +323,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
     setAppliedFilters(empty);
     setFilterError(null);
     setCurrentPage(1);
+    updateUrlParams(activeTab, 1, pageSize, empty, sortOrder);
     loadDelegations(activeTab, 1, pageSize, empty, sortOrder);
   };
 
@@ -422,6 +465,9 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
     if (activeTab === 'attending') return true;
 
     if (isVisitor) {
+      if (row.visitScope === 'MULTI_CAMPUS') {
+        return row.requestStatus === 'APPROVED';
+      }
       return !!row.host && row.requestStatus === 'APPROVED';
     }
 
@@ -473,7 +519,9 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
       return isDept && subRole === 'STAFF' ? 'Xem nhiệm vụ' : 'Xem lời mời';
     }
 
-    if (isVisitor) return 'Xem thông tin tiếp khách';
+    if (isVisitor) {
+      return row.visitScope === 'MULTI_CAMPUS' ? 'Xem tiến trình các cơ sở' : 'Xem thông tin tiếp đón';
+    }
     if (isHO && row.visitScope === 'MULTI_CAMPUS') return 'Xử lý đơn liên cơ sở';
 
     if (isCancelled && hasSetupProcess(row)) return 'Xem quy trình đã hủy';
@@ -491,44 +539,44 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
     const displayStatus = row.statusText;
 
     if (actions.includes('OPEN_PROCESS_SUMMARY')) {
-      navigate(`/dashboard/visit/process-summary/${row.visitInstanceId}`);
+      navTo(`/dashboard/visit/process-summary/${row.visitInstanceId}`);
       return;
     }
 
     if (actions.includes('OPEN_CONTRIBUTION')) {
-      navigate(`/dashboard/visit/contribution/${row.visitInstanceId}`);
+      navTo(`/dashboard/visit/contribution/${row.visitInstanceId}`);
       return;
     }
 
     if (actions.includes('VIEW_RECEPTION_DETAIL')) {
-      navigate(`/dashboard/visit/reception-detail/${row.id}`);
+      navTo(`/dashboard/visit/reception-detail/${row.id}`);
       return;
     }
 
     if (actions.includes('OPEN_HOST_PROCESS')) {
       if (row.campusStatus === 'ASSIGNED' || row.campusStatus === 'BEFORE_VISIT') {
-        navigate(`/dashboard/visit/process/${row.visitInstanceId}`, {
+        navTo(`/dashboard/visit/process/${row.visitInstanceId}`, {
           state: { isPrep: true, status: displayStatus, isReadOnly: false }
         });
         return;
       }
 
       if (row.campusStatus === 'DURING_VISIT') {
-        navigate(`/dashboard/visit/process/${row.visitInstanceId}`, {
+        navTo(`/dashboard/visit/process/${row.visitInstanceId}`, {
           state: { defaultTab: 'during', status: displayStatus, isReadOnly: false }
         });
         return;
       }
 
       if (row.campusStatus === 'AFTER_VISIT') {
-        navigate(`/dashboard/visit/process/${row.visitInstanceId}`, {
+        navTo(`/dashboard/visit/process/${row.visitInstanceId}`, {
           state: { defaultTab: 'after', status: displayStatus, isReadOnly: false }
         });
         return;
       }
 
       if (row.campusStatus === 'CLOSED') {
-        navigate(`/dashboard/visit/process/${row.visitInstanceId}`, {
+        navTo(`/dashboard/visit/process/${row.visitInstanceId}`, {
           state: { defaultTab: 'before', status: displayStatus, isReadOnly: true }
         });
         return;
@@ -540,55 +588,59 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
     if (activeTab === 'attending') {
       const partId = (row as any).participantId;
       if (isDept && subRole === 'STAFF') {
-        navigate(`/dashboard/visit/department-tasks/${partId}`);
+        navTo(`/dashboard/visit/department-tasks/${partId}`);
       } else {
-        navigate(`/dashboard/visit/invitations/${partId}`);
+        navTo(`/dashboard/visit/invitations/${partId}`);
       }
       return;
     }
 
     if (isVisitor) {
+      if (row.visitScope === 'MULTI_CAMPUS') {
+        toggleExpanded(row.visitRequestId);
+        return;
+      }
       if (row.host && row.requestStatus === 'APPROVED') {
-        navigate(`/dashboard/visit/reception-detail/${idForRoute}`);
+        navTo(`/dashboard/visit/reception-detail/${row.visitInstanceId || idForRoute}`);
       }
       return;
     }
 
     if (isHO && row.visitScope === 'MULTI_CAMPUS') {
-      navigate(`/dashboard/visit/ho-detail/${idForRoute}`, { state: { guestData: row } });
+      navTo(`/dashboard/visit/ho-detail/${idForRoute}`, { state: { guestData: row } });
       return;
     }
 
     if (isCancelled && hasSetupProcess(row)) {
-      navigate(`/dashboard/visit/process/${row.visitInstanceId}`, {
+      navTo(`/dashboard/visit/process/${row.visitInstanceId}`, {
         state: { isReadOnly: true, cancelled: true, status: 'Đã hủy' }
       });
       return;
     }
 
     if (row.campusStatus === 'ASSIGNED' || row.campusStatus === 'BEFORE_VISIT') {
-      navigate(`/dashboard/visit/process/${row.visitInstanceId}`, {
+      navTo(`/dashboard/visit/process/${row.visitInstanceId}`, {
         state: { isPrep: true, status: displayStatus, isReadOnly: isStaffLeader }
       });
       return;
     }
 
     if (row.campusStatus === 'DURING_VISIT') {
-      navigate(`/dashboard/visit/process/${row.visitInstanceId}`, {
+      navTo(`/dashboard/visit/process/${row.visitInstanceId}`, {
         state: { defaultTab: 'during', status: displayStatus, isReadOnly: isStaffLeader }
       });
       return;
     }
 
     if (row.campusStatus === 'AFTER_VISIT') {
-      navigate(`/dashboard/visit/process/${row.visitInstanceId}`, {
+      navTo(`/dashboard/visit/process/${row.visitInstanceId}`, {
         state: { defaultTab: 'after', status: displayStatus, isReadOnly: isStaffLeader }
       });
       return;
     }
 
     if (row.campusStatus === 'CLOSED') {
-      navigate(`/dashboard/visit/process/${row.visitInstanceId}`, {
+      navTo(`/dashboard/visit/process/${row.visitInstanceId}`, {
         state: { defaultTab: 'before', status: displayStatus, isReadOnly: true }
       });
       return;
@@ -912,10 +964,22 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
 
   // ── Multi-campus accordion (Phương án A): per-campus progress + actions ──
   const openCampusDetail = (row: Row, item: CampusProgressItem) => {
+    // Nếu là HO và instance đã có ID, và đã được phân công host
+    if (isHO && item.visitInstanceId && item.hostUserId != null && item.instanceStatus !== 'WAITING_REQUEST_APPROVAL' && item.instanceStatus !== 'WAITING_HOST_ASSIGNMENT') {
+       navTo(`/dashboard/visit/process-summary/${item.visitInstanceId}`);
+       return;
+    }
+
+    // Nếu là Visitor, đơn đã duyệt, và campus đã được phân công host
+    if (isVisitor && row.requestStatus === 'APPROVED' && item.hostUserId != null && item.instanceStatus !== 'WAITING_HOST_ASSIGNMENT') {
+       navTo(`/dashboard/visit/reception-detail/${item.visitInstanceId}`);
+       return;
+    }
+
     // Campus đã hủy: nội bộ (không phải Visitor) xem lại setup cũ ở VisitProcess READ-ONLY nếu đã từng
     // có Host/setup; Visitor luôn dùng modal public-safe (không thấy setup/logistics/minutes nội bộ).
     if (item.instanceStatus === 'CANCELLED' && !isVisitor && item.hostUserId != null && item.visitInstanceId) {
-      navigate(`/dashboard/visit/process/${item.visitInstanceId}`, { state: { isReadOnly: true, cancelled: true, status: 'Đã hủy' } });
+      navTo(`/dashboard/visit/process/${item.visitInstanceId}`, { state: { isReadOnly: true, cancelled: true, status: 'Đã hủy' } });
       return;
     }
     const startTime = item.plannedStartAt ? new Date(item.plannedStartAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : '';
@@ -992,7 +1056,30 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
                 </div>
                 <div className="flex items-center gap-1 sm:w-[100px] sm:justify-end">
                   {item.canViewCampusDetail && (
-                    <ActionIconButton title="Xem chi tiết cơ sở" tone="blue" icon={<Eye className="h-5 w-5" />} onClick={() => openCampusDetail(row, item)} />
+                    <ActionIconButton 
+                      title={
+                        isHO && item.visitInstanceId && item.hostUserId != null && item.instanceStatus !== 'WAITING_REQUEST_APPROVAL' && item.instanceStatus !== 'WAITING_HOST_ASSIGNMENT' 
+                          ? 'Xem báo cáo tổng hợp' 
+                          : isVisitor && row.requestStatus === 'APPROVED' && item.hostUserId != null && item.instanceStatus !== 'WAITING_HOST_ASSIGNMENT'
+                            ? 'Xem chi tiết tiếp đón' 
+                            : 'Xem chi tiết cơ sở'
+                      } 
+                      tone={
+                        isHO && item.visitInstanceId && item.hostUserId != null && item.instanceStatus !== 'WAITING_REQUEST_APPROVAL' && item.instanceStatus !== 'WAITING_HOST_ASSIGNMENT' 
+                          ? 'orange' 
+                          : isVisitor && row.requestStatus === 'APPROVED' && item.hostUserId != null && item.instanceStatus !== 'WAITING_HOST_ASSIGNMENT'
+                            ? 'blue' 
+                            : 'blue'
+                      } 
+                      icon={
+                        isHO && item.visitInstanceId && item.hostUserId != null && item.instanceStatus !== 'WAITING_REQUEST_APPROVAL' && item.instanceStatus !== 'WAITING_HOST_ASSIGNMENT' 
+                          ? <FileText className="h-5 w-5" /> 
+                          : isVisitor && row.requestStatus === 'APPROVED' && item.hostUserId != null && item.instanceStatus !== 'WAITING_HOST_ASSIGNMENT'
+                            ? <ClipboardList className="h-5 w-5" /> 
+                            : <Eye className="h-5 w-5" />
+                      } 
+                      onClick={() => openCampusDetail(row, item)} 
+                    />
                   )}
                   {item.canViewCancelReason ? (
                     <ActionIconButton title="Xem lý do hủy" tone="gray" icon={<XCircle className="h-5 w-5" />} onClick={() => openCampusCancelReason(row, item)} />
@@ -1036,18 +1123,18 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
       {!isEmbedded && (
         <>
           <div className="mb-2 flex items-center text-sm font-medium text-gray-500">
-            <button onClick={() => navigate('/dashboard')} className="hover:text-[#004c91] transition-colors outline-none cursor-pointer">Dashboard</button>
+            <button onClick={() => navTo('/dashboard')} className="hover:text-[#004c91] transition-colors outline-none cursor-pointer">Dashboard</button>
             <span className="mx-2">/</span>
             <span className="text-[#004c91]">Quản lý tiếp khách</span>
           </div>
           <div className="border-b border-gray-100 pb-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
             <h1 className="text-3xl font-bold text-[#004c91]">{isVisitor ? 'Đơn của tôi' : 'Quản lý tiếp khách'}</h1>
             {isRegularStaff ? (
-              <button onClick={() => navigate('/dashboard/visit/create')} className="flex items-center justify-center gap-2 bg-[#F37021] hover:bg-orange-600 outline-none text-white px-4 py-2 rounded-lg font-bold shadow-sm transition-colors whitespace-nowrap w-full md:w-auto">
+              <button onClick={() => navTo('/dashboard/visit/create')} className="flex items-center justify-center gap-2 bg-[#F37021] hover:bg-orange-600 outline-none text-white px-4 py-2 rounded-lg font-bold shadow-sm transition-colors whitespace-nowrap w-full md:w-auto">
                 <Plus className="w-5 h-5" /> Tạo đoàn khách
               </button>
             ) : isHO ? (
-              <button onClick={() => navigate('/dashboard/visit/agenda-templates')} className="flex items-center justify-center gap-2 bg-[#F37021] hover:bg-orange-600 outline-none text-white px-4 py-2 rounded-lg font-bold shadow-sm transition-colors whitespace-nowrap w-full md:w-auto">
+              <button onClick={() => navTo('/dashboard/visit/agenda-templates')} className="flex items-center justify-center gap-2 bg-[#F37021] hover:bg-orange-600 outline-none text-white px-4 py-2 rounded-lg font-bold shadow-sm transition-colors whitespace-nowrap w-full md:w-auto">
                 <Plus className="w-5 h-5" /> Quản lý mẫu Agenda
               </button>
             ) : null}
@@ -1066,7 +1153,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
             {pendingInvitations.map((inv) => (
               <button
                 key={inv.participantId}
-                onClick={() => navigate(`/dashboard/visit/invitations/${inv.participantId}`)}
+                onClick={() => navTo(`/dashboard/visit/invitations/${inv.participantId}`)}
                 className="w-full flex items-center justify-between gap-3 rounded-xl border border-orange-100 bg-white px-4 py-3 text-left hover:border-[#F37021] hover:shadow-sm transition-all outline-none cursor-pointer"
               >
                 <div className="min-w-0">
@@ -1102,6 +1189,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
                   setDraftFilters(nextEmptyFilters);
                   setAppliedFilters(nextEmptyFilters);
                   setCurrentPage(1); 
+                  updateUrlParams(t.key, 1, pageSize, nextEmptyFilters, sortOrder);
                   loadDelegations(t.key, 1, pageSize, nextEmptyFilters, sortOrder); 
                 } 
               }}
@@ -1299,6 +1387,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
                 const nextSort = sortOrder === 'desc' ? 'asc' : 'desc';
                 setSortOrder(nextSort);
                 setCurrentPage(1);
+                updateUrlParams(activeTab, 1, pageSize, appliedFilters, nextSort);
                 loadDelegations(activeTab, 1, pageSize, appliedFilters, nextSort);
               }}
               title="Nhấn để sắp xếp theo thời gian tiếp khách"
@@ -1420,7 +1509,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
             <div className="flex items-center gap-2">
               <span className="text-sm font-medium text-gray-500">Hiển thị</span>
               <div className="relative">
-                <select value={pageSize} onChange={(e) => { const newSize = Number(e.target.value); setPageSize(newSize); setCurrentPage(1); loadDelegations(activeTab, 1, newSize, appliedFilters); }} className="px-3 py-1.5 pr-8 rounded-lg border border-gray-200 text-sm font-bold text-gray-700 bg-white focus:outline-none appearance-none min-w-[70px] text-left">
+                <select value={pageSize} onChange={(e) => { const newSize = Number(e.target.value); setPageSize(newSize); setCurrentPage(1); updateUrlParams(activeTab, 1, newSize, appliedFilters, sortOrder); loadDelegations(activeTab, 1, newSize, appliedFilters, sortOrder); }} className="px-3 py-1.5 pr-8 rounded-lg border border-gray-200 text-sm font-bold text-gray-700 bg-white focus:outline-none appearance-none min-w-[70px] text-left">
                   <option value={5}>5</option><option value={10}>10</option><option value={20}>20</option><option value={50}>50</option>
                 </select>
                 <ChevronDown className="w-4 h-4 absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
@@ -1428,13 +1517,13 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
               <span className="text-sm font-medium text-gray-500">bản ghi / trang</span>
             </div>
             <div className="flex items-center gap-2">
-              <button onClick={() => { const p = Math.max(1, currentPage - 1); setCurrentPage(p); loadDelegations(activeTab, p, pageSize, appliedFilters); }} disabled={currentPage === 1} className="p-2 rounded-lg border border-gray-200 text-gray-500 hover:text-[#004c91] hover:border-[#004c91] hover:bg-blue-50 transition-all disabled:opacity-50 disabled:cursor-not-allowed outline-none"><ChevronLeft className="w-4 h-4" /></button>
+              <button onClick={() => { const p = Math.max(1, currentPage - 1); setCurrentPage(p); updateUrlParams(activeTab, p, pageSize, appliedFilters, sortOrder); loadDelegations(activeTab, p, pageSize, appliedFilters, sortOrder); }} disabled={currentPage === 1} className="p-2 rounded-lg border border-gray-200 text-gray-500 hover:text-[#004c91] hover:border-[#004c91] hover:bg-blue-50 transition-all disabled:opacity-50 disabled:cursor-not-allowed outline-none"><ChevronLeft className="w-4 h-4" /></button>
               <div className="flex items-center gap-1">
                 {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
-                  <button key={page} onClick={() => { setCurrentPage(page); loadDelegations(activeTab, page, pageSize, appliedFilters); }} className={`w-8 h-8 rounded-lg text-sm font-bold transition-all outline-none ${currentPage === page ? 'bg-[#004c91] text-white shadow-sm' : 'text-gray-600 hover:bg-gray-200'}`}>{page}</button>
+                  <button key={page} onClick={() => { setCurrentPage(page); updateUrlParams(activeTab, page, pageSize, appliedFilters, sortOrder); loadDelegations(activeTab, page, pageSize, appliedFilters, sortOrder); }} className={`w-8 h-8 rounded-lg text-sm font-bold transition-all outline-none ${currentPage === page ? 'bg-[#004c91] text-white shadow-sm' : 'text-gray-600 hover:bg-gray-200'}`}>{page}</button>
                 ))}
               </div>
-              <button onClick={() => { const p = Math.min(totalPages, currentPage + 1); setCurrentPage(p); loadDelegations(activeTab, p, pageSize, appliedFilters); }} disabled={currentPage === totalPages} className="p-2 rounded-lg border border-gray-200 text-gray-500 hover:text-[#004c91] hover:border-[#004c91] hover:bg-blue-50 transition-all disabled:opacity-50 disabled:cursor-not-allowed outline-none"><ChevronRight className="w-4 h-4" /></button>
+              <button onClick={() => { const p = Math.min(totalPages, currentPage + 1); setCurrentPage(p); updateUrlParams(activeTab, p, pageSize, appliedFilters, sortOrder); loadDelegations(activeTab, p, pageSize, appliedFilters, sortOrder); }} disabled={currentPage === totalPages} className="p-2 rounded-lg border border-gray-200 text-gray-500 hover:text-[#004c91] hover:border-[#004c91] hover:bg-blue-50 transition-all disabled:opacity-50 disabled:cursor-not-allowed outline-none"><ChevronRight className="w-4 h-4" /></button>
             </div>
           </div>
         )}
