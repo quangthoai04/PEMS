@@ -1,6 +1,8 @@
-import React from 'react';
+import React, { useRef, useState } from 'react';
 import { MediaContributionStatus } from '../../../../features/delegations/types/delegations.types';
 import { Image as ImageIcon, UploadCloud } from 'lucide-react';
+import httpClient from '../../../../shared/api/httpClient';
+import { toast } from 'react-hot-toast';
 
 interface Props {
   visitInstanceId: string;
@@ -11,6 +13,35 @@ interface Props {
 }
 
 export function MediaContributionSection({ visitInstanceId, data, canView, instanceStatus, onChanged }: Props) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [loading, setLoading] = useState(false);
+
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0) return;
+    const files = Array.from(e.target.files);
+    
+    // In Phase 3, we mock the call to the actual backend endpoint which might be a stub
+    const formData = new FormData();
+    files.forEach(f => formData.append('files', f));
+
+    try {
+      setLoading(true);
+      // Giả định backend endpoint cho Media Upload của Visit
+      await httpClient.post(`/delegations/visit-instances/${visitInstanceId}/media`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+      toast.success('Tải lên Media thành công.');
+      onChanged();
+    } catch (err: any) {
+      if (err.response?.status === 403) toast.error('Bạn không có quyền tải lên.');
+      else if (err.response?.status === 404) toast.error('Tính năng đang được hoàn thiện trên server.');
+      else toast.error('Lỗi khi tải lên Media.');
+    } finally {
+      setLoading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
   if (!canView) return null;
 
   return (
@@ -41,7 +72,7 @@ export function MediaContributionSection({ visitInstanceId, data, canView, insta
                 {m.fileType.startsWith('image/') ? (
                   <img src={m.thumbnailUrl || m.url} alt={m.fileName} className="w-full h-full object-cover" />
                 ) : (
-                  <div className="w-full h-full bg-slate-100 flex items-center justify-center text-slate-400 font-bold text-xs p-2 text-center">
+                  <div className="w-full h-full bg-slate-100 flex items-center justify-center text-slate-400 font-bold text-xs p-2 text-center break-all">
                     {m.fileName}
                   </div>
                 )}
@@ -54,13 +85,22 @@ export function MediaContributionSection({ visitInstanceId, data, canView, insta
         )}
 
         {data.canCurrentUserUpload && (
-          <div className="pt-2">
+          <div className="pt-2 relative">
+            <input 
+              type="file" 
+              multiple 
+              className="hidden" 
+              ref={fileInputRef} 
+              onChange={handleUpload} 
+              accept="image/*,video/*" 
+            />
             <button
-              onClick={() => alert('Sẽ gọi màn hình upload media')}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-blue-50 text-[#004c91] hover:bg-blue-100 rounded-lg text-sm font-bold transition-colors"
+              disabled={loading}
+              onClick={() => fileInputRef.current?.click()}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-blue-50 text-[#004c91] hover:bg-blue-100 rounded-lg text-sm font-bold transition-colors disabled:opacity-50"
             >
               <UploadCloud className="w-4 h-4" />
-              Tải lên Ảnh / Video
+              {loading ? 'Đang tải lên...' : 'Tải lên Ảnh / Video'}
             </button>
           </div>
         )}

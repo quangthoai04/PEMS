@@ -1,5 +1,5 @@
 import httpClient from '../../../shared/api/httpClient';
-import { DocumentFilterParams, DocumentListItem, PaginatedResponse } from '../types/documents.types';
+import { DocumentFilterParams, DocumentListItem, PaginatedResponse, DocumentDetailResponse } from '../types/documents.types';
 
 export const documentsApi = {
   getDocuments: async (params: DocumentFilterParams): Promise<PaginatedResponse<DocumentListItem>> => {

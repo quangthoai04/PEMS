@@ -11,6 +11,7 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Lock, ArrowLeft, FileText, Users, Clock, Building2, AlertCircle, User, ScrollText,
+  Loader2, CalendarDays, MapPin, ClipboardList
 } from 'lucide-react';
 import { delegationsApi } from '../../../features/delegations/api/delegationsApi';
 import { MinutesContributionSection } from './components/MinutesContributionSection';

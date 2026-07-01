@@ -255,6 +255,37 @@ namespace PEMS.Api.Controllers
             return Ok(result);
         }
 
+        // ── VisitProcess "Workspace - Media": Upload files cho chuyến thăm ──
+        [HttpPost("visit-instances/{visitInstanceId}/media")]
+        [Consumes("multipart/form-data")]
+        [RequestSizeLimit(300 * 1024 * 1024)] // 300 MB limit
+        public async Task<IActionResult> UploadVisitMedia(ulong visitInstanceId, List<IFormFile> files, CancellationToken cancellationToken)
+        {
+            var command = new PEMS.Application.Delegations.Commands.UploadVisitPhotos.UploadVisitPhotosCommand
+            {
+                VisitInstanceId = visitInstanceId,
+                Files = new List<PEMS.Application.Delegations.Commands.UploadVisitPhotos.UploadVisitPhotoFileDto>()
+            };
+
+            if (files != null)
+            {
+                foreach (var file in files)
+                {
+                    if (file.Length == 0) continue;
+                    using var ms = new System.IO.MemoryStream();
+                    await file.CopyToAsync(ms, cancellationToken);
+                    command.Files.Add(new PEMS.Application.Delegations.Commands.UploadVisitPhotos.UploadVisitPhotoFileDto(
+                        ms.ToArray(),
+                        file.FileName,
+                        file.ContentType
+                    ));
+                }
+            }
+
+            var result = await _mediator.Send(command, cancellationToken);
+            return Ok(result);
+        }
+
         // ── VisitProcess "Cảnh báo & Thông báo" (scheduled reminder settings) — Host only, prep window ──
         // GET loads the saved schedule rows; PUT upserts the full set (enabled=false cancels a PENDING row);
         // PATCH .../cancel cancels every PENDING row. Nothing is sent on save — dispatch is a background job.

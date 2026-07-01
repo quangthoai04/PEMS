@@ -52,6 +52,12 @@ public sealed class CreateVisitInstanceNewsCommandHandler
         if (!canCreate)
             throw new ForbiddenException("Bạn không có quyền viết tin tức cho chuyến thăm này.");
 
+        if (instance.NewsNotRequired)
+            throw new ForbiddenException("Chuyến thăm này không yêu cầu bài tin tức.");
+
+        if (instance.VisitRequest.MediaConsentStatus != PEMS.Shared.MediaConsentStatus.Agreed)
+            throw new ForbiddenException("Khách không đồng ý truyền thông, không thể tạo bài tin.");
+
         var now = _clock.UtcNow;
         var news = new PEMS.Domain.Entities.News.News
         {

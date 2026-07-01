@@ -373,7 +373,7 @@ public sealed class GetVisitInstanceContributionQueryHandler
                 UpdatedAt = news?.UpdatedAt ?? news?.CreatedAt,
                 RejectionReason = news?.ReviewNote,
                 NewsNotRequired = instance.NewsNotRequired,
-                MediaConsentAllowed = visit.MediaConsentStatus == "ACCEPTED",
+                MediaConsentAllowed = visit.MediaConsentStatus == PEMS.Shared.MediaConsentStatus.Agreed,
                 CanCurrentUserCreate = permissions.CanCreateNews,
                 CanCurrentUserEdit = permissions.CanEditNews
             }

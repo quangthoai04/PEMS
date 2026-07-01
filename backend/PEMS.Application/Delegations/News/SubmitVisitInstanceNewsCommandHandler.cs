@@ -54,6 +54,12 @@ public sealed class SubmitVisitInstanceNewsCommandHandler
         if (!inScope)
             throw new ForbiddenException("Bạn không có quyền xem tin tức của chuyến thăm này.");
 
+        if (instance.NewsNotRequired)
+            throw new ForbiddenException("Chuyến thăm này không yêu cầu bài tin tức.");
+
+        if (instance.VisitRequest.MediaConsentStatus != PEMS.Shared.MediaConsentStatus.Agreed)
+            throw new ForbiddenException("Khách không đồng ý truyền thông, không thể gửi duyệt bài tin.");
+
         bool isHost = instance.CurrentHostUserId == userId;
         bool isLive = instance.Status != VisitInstanceStatus.Closed
             && instance.Status != VisitInstanceStatus.Cancelled
