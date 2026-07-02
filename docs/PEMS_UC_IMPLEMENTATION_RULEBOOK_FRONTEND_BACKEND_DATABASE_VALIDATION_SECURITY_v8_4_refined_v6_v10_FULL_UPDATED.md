@@ -103,6 +103,79 @@ Không code chức năng chuyển nhiệm vụ logistics. Nếu request muốn �
 
 ---
 
+# V11 Implementation Status Addendum — 2026-07-02
+
+> Kết quả rà soát trực tiếp source code trên nhánh `Canh-Iter1` (2026-07-02), đối chiếu với PHẦN A bên dưới. Mục tiêu là ghi nhận **khoảng cách thật giữa "đã document" và "đã chạy được"**, không phải thay đổi nghiệp vụ. Nếu build/test chưa xác nhận, mục nào dưới đây chỉ dựa trên đọc code tĩnh (không chạy runtime) — coi là "Cần xác nhận" nếu cần độ chắc chắn cao hơn.
+
+## V11.1 Schema source of truth đã đổi tên
+
+File SQL nêu ở V10.1 không còn tồn tại. Nguồn schema hiện tại: `docs/database/scripts/pems_full_v10_new_final_visit_lifecycle_cancel_rules_fixed.sql`, 58 bảng (tăng từ 49 lúc V10.1 được viết).
+
+## V11.2 CẢNH BÁO BẢO MẬT — controller thiếu authorization (ưu tiên xử lý riêng, ngoài phạm vi addendum này)
+
+Rà soát phát hiện các endpoint sau **có thể gọi được mà không cần đăng nhập/không đủ quyền**, trái với mọi mô tả scope trong tài liệu:
+
+```text
+DepartmentsController      -> KHÔNG có [Authorize] ở class lẫn method (15 endpoint: add/update department,
+                               personnel add/remove/search, assign/reassign task, sign report, reassign lead).
+ReportsController          -> KHÔNG có [Authorize]/[RoleAuthorize] nào; /api/reports/* gọi ẩn danh được.
+FeedbacksController        -> KHÔNG có [Authorize]/[RoleAuthorize] nào.
+ApiIntegrationsController  -> KHÔNG có [Authorize]/[RoleAuthorize] dù docs ghi actor = Admin only.
+DashboardController        -> GET /api/dashboard/debug-user gắn [AllowAnonymous], cấp JWT cho BẤT KỲ
+                               email nào tồn tại trong DB mà không cần mật khẩu/OTP.
+```
+
+`Program.cs` không có global `AuthorizeFilter`/fallback policy nên các controller trên không được bảo vệ ngầm bởi middleware chung. Đây là lỗ hổng bảo mật thật (không phải sai khác tài liệu đơn thuần) — cần một task riêng để patch code, addendum này chỉ ghi nhận theo đúng phạm vi "không sửa code" của lần rà soát tài liệu này.
+
+## V11.3 Kho stub/dead-code chưa từng được tài liệu hoá
+
+Nhiều class được đặt tên như đã hoàn thiện nhưng thực chất là stub rỗng, không được wire vào pipeline thật:
+
+```text
+Middleware:  RateLimitMiddleware.cs, RequestLoggingMiddleware.cs         -> class rỗng, không đăng ký.
+Filters:     ValidationFilter.cs, IdempotencyFilter.cs,
+             FileUploadValidationFilter.cs                               -> stub 5 dòng.
+Behaviours:  AuditLogBehaviour.cs, AuthorizationBehaviour.cs,
+             LoggingBehaviour.cs                                         -> stub, không nằm trong MediatR pipeline.
+Infra:       RateLimitService, InMemoryRateLimitStore, RedisRateLimitStore,
+             AuditLogService.cs, ApiRequestLogService.cs                 -> dead code, không đăng ký DI.
+Frontend:    src/shared/constants/ucCodes.ts, roles.ts                   -> object rỗng, tàn dư permission-code cũ.
+```
+
+Cơ chế thật đang chạy:
+
+```text
+Validation thật     -> FluentValidation qua ValidationBehaviour.cs (duy nhất behaviour thật trong pipeline).
+Rate limit thật     -> ASP.NET Core AddRateLimiter built-in, CHỈ áp cho policy "accounts-read" trên
+                        AccountsController; KHÔNG global.
+Audit log thật      -> ~30 lời gọi _db.AuditLogs.Add(...) rải rác trực tiếp trong handler
+                        (Accounts/Delegations/Campuses/Departments/Galleries), không qua service dùng chung.
+```
+
+Mục "17. Backend invariant checklist" (`[ ] Audit log cho action quan trọng`) trong file `PEMS_CANONICAL_BUSINESS_RULES...md` hiện được thoả mãn theo cách rải rác này, không qua `AuditLogBehaviour` như tên class gợi ý — cần lưu ý khi code UC mới để không giả định có audit middleware tự động.
+
+## V11.4 Tình trạng triển khai theo module (bảng tổng hợp)
+
+| Module | Tình trạng | Evidence |
+|---|---|---|
+| Partner & Contact Management | **Toàn bộ chưa chạy được**: mọi handler backend `NotImplementedException`; frontend 5 trang (~2500 dòng) không có bất kỳ lời gọi API nào, hoàn toàn mock. OCR scan card (`FaceRecognitionService`, `OcrService`) là class rỗng. | `backend/PEMS.Application/Partners/**`, `frontend/pems-react/src/features/partners/api/partnersApi.ts` |
+| Calendar (FE-04, `CalendarsController`) | **Toàn bộ scaffold chết**: cả 7 handler `NotImplementedException`; FE stub rỗng. Chức năng lịch thật (personal event, department calendar) nằm ở module khác (`DepartmentReceptionTasks`), không phải `Calendars`. | `backend/PEMS.Application/Calendars/**`, `backend/PEMS.Application/DepartmentReceptionTasks/Commands/CreatePersonalEvent/**` |
+| Documents (upload) | Không có command tạo/upload tài liệu nào; chỉ có read/search. `ViewDocumentListQueryHandler` stub. Upload ảnh visit đi qua pipeline khác, lưu LOCAL thay vì Google Drive như spec `GoogleDrive/PEMS_GOOGLE_DRIVE_UPLOAD_FOUNDATION_DONE_AND_HOWTO.md` §9 yêu cầu. | `backend/PEMS.Api/Controllers/DocumentsController.cs`, `backend/PEMS.Application/Delegations/Commands/UploadAttachedDocuments/**` |
+| Feedback | `SubmitDelegationFeedbackCommandHandler` là `NotImplementedException` dù route đã wire thật (submit sẽ lỗi runtime); `GetFeedbackDetail`/`GetVisitSummaryDetail`/`GetVisitInstanceSummaryDetail` trả `{}` giả để tránh 404. | `backend/PEMS.Application/Delegations/Commands/SubmitDelegationFeedback/**`, `backend/PEMS.Api/Controllers/FeedbacksController.cs` |
+| Campus Management | `AssignCampusLeadCommandHandler` là `NotImplementedException`, không có UI gọi tới; `Campus.IcHeadUserId` không bao giờ được ghi bởi `UpdateCampusCommandHandler`. Tạo campus tự động tạo kèm IC department (chưa được tài liệu hoá ở FE-11). | `backend/PEMS.Application/Campuses/Commands/AssignCampusLead/**` |
+| Department Management | `ReassignDepartmentLeadCommandHandler` không kiểm tra quyền, thực hiện đổi ngay một bước (không có "confirm" như doc mô tả); `SearchPersonnelQueryHandler`/`AddDepartmentPersonnelCommandHandler` không check scope campus/role. | `backend/PEMS.Application/Departments/Commands/ReassignDepartmentLead/**` |
+| Gallery | Hầu hết chạy thật; riêng `DeleteGalleryItemCommandHandler` là stub và **không có route** trong `GalleriesController`. | `backend/PEMS.Application/Galleries/Commands/DeleteGalleryItem/**` |
+| News | CRUD/approve/visibility chạy thật; `PublishNewsCommandHandler`, `AddMultilingualNewsCommandHandler`, và public news **list** (`ViewNewsQueryHandler`) là stub (chi tiết news công khai vẫn chạy được). | `backend/PEMS.Application/News/Commands/PublishNews/**` |
+| Meeting Minutes | Luồng theo visit instance (lock/save/participants/action items) chạy thật; UC "View Minutes List"/"Search and Filter Minutes" độc lập là stub — chỉ truy cập được minutes qua từng visit instance. | `backend/PEMS.Application/MeetingMinutes/Queries/**` |
+| Notifications | Có 2 bề mặt endpoint song song cho cùng một bảng `notifications` (`/api/notifications/*` và `/api/public/notifications/*`), không có tài liệu nào giải thích vì sao có 2; ngoài ra tồn tại một `NotificationService` (Infrastructure/Identity) là stub rỗng implement interface khác, gây nhầm lẫn — cần xác nhận có còn được đăng ký DI hay không. | `backend/PEMS.Api/Controllers/NotificationsController.cs`, `PublicContentController.cs` |
+| Email action (public token) | Xem "V11.8" của `VISITOR_MANAGEMENT_SYSTEM...md` — 2/6 action_context (negotiate, handover signature) chưa có handler xử lý dù đã có trong DB enum và constants. | `backend/PEMS.Application/EmailActions/**` |
+
+## V11.5 Ghi chú va chạm mã UC giữa các file canonical
+
+`PEMS_UC_IMPLEMENTATION_RULEBOOK...md` mục 18.1/18.2 (UC-95/UC-99, Account Management) và `PROJECT_OVERVIEW...md` bảng FE-11 (dùng UC-98/99/100 cho Add/Update/Search Department) **dùng trùng số UC cho hai nghiệp vụ khác nhau**. Cần xác nhận với chủ dự án đâu là số UC chính thức trước khi dùng UC ID này trong báo cáo hoàn thành mới.
+
+---
+
 # PHẦN A — NỘI DUNG CHUẨN HIỆN TẠI / UPDATED CANONICAL CONTENT
 
 # PEMS_UC_IMPLEMENTATION_RULEBOOK_v8_4_refined_v6_UPDATED

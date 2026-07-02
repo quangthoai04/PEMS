@@ -11,6 +11,18 @@ Parser-risk related-UC table has been converted into bullet clarification notes.
 > File này chỉ giữ các trường đã cần dùng hiện tại: **UC ID**, **UC Name**, **Note**. Các trường khác như Actor, Preconditions, Postconditions, FT, Priority, Status... tạm thời không đưa vào vì chưa kiểm định.
 > **Updated for:** SQL v8.2 `SSO_AUTO_PROVISION` + strict visit visibility + UC-136 cancellation flow. ADMIN không xem/hủy visit/delegation; HO xem được cả đơn liên cơ sở và đơn một cơ sở ở mức theo dõi, nhưng chỉ được duyệt/từ chối/hủy/xử lý nghiệp vụ đối với đơn liên cơ sở; đơn một cơ sở là read-only đối với HO. Staff Leader chỉ xem/xử lý/hủy theo campus scope.
 
+---
+
+> ## ⚠️ Cập nhật tình trạng triển khai — 2026-07-02
+>
+> - **Rule "HO xem SINGLE_CAMPUS read-only" đã xác nhận đúng với code hiện tại** (evidence: `ViewGuestDelegationListQueryHandler.cs:455-456`, `ReadOnlyOnly`/`ActionableOnly` query flags dành riêng cho HO). Tên file này phản ánh đúng nghiệp vụ thật.
+> - Note của **UC-21 Search Delegations** (dòng UC-21 bên dưới) mô tả nghiệp vụ đúng nhưng handler đứng sau route `searchdelegations` hiện là stub (`NotImplementedException`) — danh sách/tìm kiếm thật đang chạy qua UC-20 `View Guest Delegation List`.
+> - Note của **UC-34 Submit Delegation Feedback**, **UC-36/UC-50-54 Partner**, **UC-55 View Document List**, **UC-61 Delete Gallery Item**, **UC-62/63 Minutes List/Search**, **UC-72-78 Calendar**, **UC-87 Assign Campus Lead**, **UC-89 Publish News**, **UC-92 Add Multilingual News** mô tả nghiệp vụ dự kiến đúng nhưng **code hiện tại chưa triển khai** (stub hoặc scaffold chết). Danh sách đầy đủ + evidence: `docs/PEMS_UC_IMPLEMENTATION_RULEBOOK_..._v10_FULL_UPDATED.md` mục "V11 Implementation Status Addendum" và `docs/use-cases/USE_CASE_LIST.md` (đã cập nhật cùng ngày).
+> - Note của **UC-116 Reassign Department Lead** ngụ ý "Department Lead" là actor hợp lệ duy nhất, nhưng code hiện tại không kiểm tra quyền actor nào cả.
+> - **UC-136** (cuối file) cần bổ sung: Visitor giờ được hủy request ngay cả khi còn `PENDING_APPROVAL`, không chỉ sau khi đơn `APPROVED` như phần "Rule hủy theo role" mô tả — xem `docs/PEMS_CANONICAL_BUSINESS_RULES_v8_4_refined_v6_v10_FULL_UPDATED.md` mục "V11.3".
+
+---
+
 
 | UC ID | UC Name | Note |
 |---|---|---|

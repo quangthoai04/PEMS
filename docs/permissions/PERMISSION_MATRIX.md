@@ -11,6 +11,32 @@ Parser-risk addendum tables have been converted into prose/reference notes.
 > **Status:** Revised baseline v8.2 — aligned with SQL v8.2 strict visit visibility, SSO auto-provisioning, and UC-136 cancellation flow.  
 > Tài liệu này là nguồn tham chiếu cho backend authorization, frontend menu visibility, UI action control và kiểm thử phân quyền. Khi đặc tả UC hoặc business rule thay đổi, ma trận này phải được cập nhật trước khi sinh SQL/Permission seed thủ công.
 
+---
+
+> ## ⚠️ CẢNH BÁO CẬP NHẬT — 2026-07-02
+>
+> Rà soát trực tiếp source code hiện tại (nhánh `Canh-Iter1`) xác nhận: **schema PEMS hiện tại KHÔNG có bảng `permissions` hay `role_permissions`**, và **không có cột `permission_code`/`permission_level` được kiểm tra runtime ở đâu cả**. File `docs/database/scripts/pems_full_v10_new_final_visit_lifecycle_cancel_rules_fixed.sql` (nguồn schema duy nhất hiện tại) ghi rõ trong comment: *"PEMS v8.4 REFINED V6 — NO DYNAMIC PERMISSIONS BUILD ... removed permissions + role_permissions."*
+>
+> Nghĩa là **toàn bộ khái niệm `permission_code` dạng `UC-NN.NAME` và `permission_level` F/E/R/O trong file này là mô hình đã bị thay thế**, không phải cách authorization hoạt động hiện nay. Mô hình thật hiện tại (đã xác nhận qua code) là **fixed policy** dựa trên `role_code` + `sub_role` + scope (campus/department/ownership/participant/status) — mô tả đầy đủ tại:
+>
+> ```text
+> docs/PEMS_CANONICAL_BUSINESS_RULES_v8_4_refined_v6_v10_FULL_UPDATED.md   §1–§3, §10
+> docs/PEMS_UC_IMPLEMENTATION_RULEBOOK_..._v10_FULL_UPDATED.md             §4–5, §11
+> ```
+>
+> **Cách đọc file này từ nay:**
+> - Bảng "3. Role Scope" và "3.1 Effective Role Rule" **vẫn đúng** — role/subRole/effective-role mapping khớp code hiện tại, giữ nguyên tham khảo.
+> - Cột `permission_code`, mọi câu lệnh `INSERT INTO permissions`, và cụm từ "sinh SQL/Permission seed thủ công" ở trên **không áp dụng** — không có bảng nào để seed.
+> - Ký hiệu F/E/R/O trong các bảng theo UC bên dưới **vẫn hữu ích như một bản tóm tắt ý định nghiệp vụ** (ai được làm gì ở mức nào), nhưng backend không enforce bằng cách tra `permission_level` trong DB — nó enforce bằng if/scope-check trực tiếp trong Handler. Coi các bảng này là tài liệu tham khảo ý định, không phải đặc tả kỹ thuật để sinh permission seed.
+> - Xác nhận **đúng theo code**: HO có quyền xem `SINGLE_CAMPUS` ở chế độ read-only/monitoring (mục "4.0 Strict Visit / Delegation Visibility Rule" bên dưới) — comment trong `ViewGuestDelegationListQueryHandler.cs:455-456` ghi rõ *"HO sees every MULTI_CAMPUS request (they decide it) AND every SINGLE_CAMPUS request in read-only monitoring mode (business rule chốt 2026-06)"*. Đây là điểm mà `CANONICAL_BUSINESS_RULES...md` §10 hiện mô tả chưa đủ chi tiết (chỉ ghi "không xử lý single-campus", chưa ghi rõ "vẫn xem được read-only").
+> - **UC-21 Search Delegations** hiện là stub (`SearchDelegationsQueryHandler.cs` — `NotImplementedException`). Danh sách/tìm kiếm đoàn khách thật hiện chạy qua `GET /delegations/viewguestdelegationlist` (UC-20), không phải `searchdelegations`.
+> - **UC-87 Assign Campus Lead** là stub (`AssignCampusLeadCommandHandler.cs` — `NotImplementedException`), không có UI gọi tới. Dòng `| UC-87 | Assign Campus Lead | F | ... |` ở mục 5.14 bên dưới mô tả một tính năng chưa hoạt động.
+> - **UC-116 Reassign Department Lead**: `ReassignDepartmentLeadCommandHandler.cs` hiện **không kiểm tra quyền actor nào cả** (không giới hạn "Department Lead" như dòng permission bên dưới ghi) và thực thi đổi lead ngay lập tức, không có bước xác nhận.
+> - **UC-136 Cancel Visit Request**: cột Visitor hiện là `O` (đúng), nhưng cần bổ sung: Visitor giờ được hủy **ngay cả khi đơn còn `PENDING_APPROVAL`** (không chỉ sau `APPROVED`), xem chi tiết tại `CANONICAL_BUSINESS_RULES...md` mục "V11.3".
+> - Nhiều controller trong nhóm UC ở file này hiện **không có `[Authorize]`/`[RoleAuthorize]`** trong code dù bảng dưới đây ghi quyền cụ thể theo role (`DepartmentsController` — nhóm 5.17; `ReportsController` — nhóm 5.11; `FeedbacksController` — nhóm 5.13; `ApiIntegrationsController` — nhóm 5.19). Đây là lỗ hổng bảo mật thật, chi tiết tại `PEMS_UC_IMPLEMENTATION_RULEBOOK...md` mục "V11.2".
+
+---
+
 ## 1. Purpose
 
 File này mô tả ma trận phân quyền theo từng Use Case của hệ thống PEMS. Mỗi UC tương ứng với một `permission_code` trong database. Backend phải kiểm tra quyền dựa trên:
@@ -503,6 +529,7 @@ Student có thể tạo hoặc chỉnh sửa nội dung tin tức khi được g
 | v0.2 | 2026-06-18 | Revised backend enforcement rules; clarified pre-auth/public endpoints; added effective role mapping for `sub_role`; changed UC-44 HO F→E, UC-64 HO F→R, UC-72 R→O; removed Student publish permission UC-89; clarified email scope is not mandatory delegation-based. |
 | v0.3 | 2026-06-19 | Aligned with SQL v5: added `SSO_AUTO_PROVISION` rule; formalized ADMIN no visit access; limited HO to `MULTI_CAMPUS`; limited Staff Leader to campus scope; clarified visit access views and display status labels; kept UC-48 `O` own-scope. |
 | v8.2 | 2026-06-20 | Merged UC-136 into the main Delegation Reception Management matrix; updated document status from SQL v5 to SQL v8.2; converted parser-risk UC-136 addendum permission table into reference notes. |
+| v11 | 2026-07-02 | Rà soát code thật: xác nhận `permissions`/`role_permissions` không tồn tại trong DB — toàn bộ mô hình `permission_code`/DB-driven trong file này đã lỗi thời, xem cảnh báo đầu file. Xác nhận UC-21/UC-87 là stub chưa chạy được; UC-116 không có auth check trong code. Xác nhận rule HO read-only SINGLE_CAMPUS (mục 4.0) khớp code hiện tại. |
 
 ---
 
