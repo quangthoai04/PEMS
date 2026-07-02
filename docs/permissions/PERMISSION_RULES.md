@@ -14,6 +14,19 @@ The addendum section at the end is the authoritative update for cancellation UC-
 
 ---
 
+> ## ⚠️ CẢNH BÁO CẬP NHẬT — 2026-07-02
+>
+> 1. **File `PERMISSION_MATRIX_UPDATED_V5.md` nêu ở trên không còn tồn tại trong repo.** Dùng `docs/permissions/PERMISSION_MATRIX.md` (đã cập nhật cùng ngày) thay thế; và dùng `docs/PEMS_CANONICAL_BUSINESS_RULES_v8_4_refined_v6_v10_FULL_UPDATED.md` làm nguồn chuẩn nghiệp vụ cao nhất.
+> 2. **Toàn bộ mô hình "Permission Level" (`F/E/R/O`) gắn với `permission_code`/DB `role_permissions` ở mục 1–2 dưới đây mô tả một kiến trúc đã bị thay thế.** Code hiện tại (đã xác nhận: schema không có bảng `permissions`/`role_permissions`) dùng **fixed policy** — kiểm tra trực tiếp `role_code`/`sub_role`/scope trong Handler, không tra permission row trong DB. Giữ lại bảng Effective Role Resolution (mục 2) vì vẫn khớp code; bỏ qua phần ngụ ý có bảng `role_permissions` sống động.
+> 3. **§4 Strict Visit / Delegation Visibility — xác nhận đúng với code hiện tại**, kể cả chi tiết "HO View (read-only, monitor)" cho `SINGLE_CAMPUS` (evidence: `ViewGuestDelegationListQueryHandler.cs:455-456`, comment *"HO sees every MULTI_CAMPUS request ... AND every SINGLE_CAMPUS request in read-only monitoring mode"*). Đây là rule chi tiết hơn `CANONICAL_BUSINESS_RULES...md` §10 hiện có — nên dùng file này làm tham chiếu bổ sung cho riêng điểm này.
+> 4. **§5 Visit Status vs Display Status** liệt kê lifecycle `PENDING_APPROVAL → APPROVED → IN_PROGRESS → COMPLETED` — đây là **lifecycle SQL v5 cũ**, đã bị thay bằng model 2 tầng hiện tại: `visit_requests.status` (`PENDING_APPROVAL/APPROVED/REJECTED/CANCELLED`) tách biệt với `visit_request_campuses.status` (`WAITING_REQUEST_APPROVAL → WAITING_HOST_ASSIGNMENT → ASSIGNED → BEFORE_VISIT → DURING_VISIT → AFTER_VISIT → CLOSED/CANCELLED`). Xem `CANONICAL_BUSINESS_RULES...md` §6.
+> 5. **UC-136 cancellation section (cuối file)**: bổ sung nhánh Visitor được hủy request ngay cả khi còn `PENDING_APPROVAL` — xem `CANONICAL_BUSINESS_RULES...md` mục "V11.3" để biết chi tiết + evidence.
+> 6. **Role/SubRole Canonical Rules (cuối file, mục "Lưu trữ DB")**: dòng nói `role_permissions.sub_role ENUM('NONE','Leader','Staff')` mô tả bảng không còn tồn tại — chỉ `users.sub_role ENUM('LEADER','STAFF')` là còn áp dụng thật.
+
+---
+
+---
+
 ## 1. Permission Level Meaning
 
 | Symbol | Meaning | Backend Rule |
@@ -212,6 +225,7 @@ Frontend visibility is only UX. Backend authorization is mandatory.
 | Version | Description |
 |---|---|
 | v5 | Rewritten as concise implementation rulebook; removed duplicate full matrix content; added `SSO_AUTO_PROVISION`; added strict visit visibility; clarified Admin no visit access, HO multi-campus only, Staff Leader campus scope, UC-48 own-scope. |
+| v11 (2026-07-02) | Rà soát code thật: xác nhận mô hình permission_code/role_permissions đã lỗi thời (không có bảng trong DB); xác nhận §4 HO-read-only-SINGLE_CAMPUS đúng với code; đánh dấu §5 lifecycle status là legacy SQL v5 (đã thay bằng model 2 tầng); bổ sung nhánh Visitor-cancel-khi-PENDING vào UC-136. Xem cảnh báo đầu file. |
 
 ---
 

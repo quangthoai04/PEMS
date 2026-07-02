@@ -91,6 +91,63 @@ Không chuyển nhiệm vụ logistics từ người A sang người B. Nếu đ
 
 ---
 
+# V11 Visitor/Delegation Management Addendum — 2026-07-02
+
+> Addendum này ghi nhận các tính năng/hành vi đã có trong code nhưng chưa từng mô tả ở PHẦN A bên dưới, và sửa các điểm PHẦN A hiện sai so với code, sau khi rà soát trực tiếp nhánh `Canh-Iter1` (2026-07-02). 4 commit gần nhất của repo đều tập trung vào module này ("visit process details and public news viewing", "visit process management features", "visit contribution and news submission", "visit process management workflows") nên đây là khu vực lệch tài liệu nhiều nhất.
+
+## V11.1 Trang/luồng mới chưa từng được mô tả
+
+```text
+VisitProcessSummaryPage.tsx        -> trang tổng hợp tiến độ visit process
+VisitContributionPage.tsx          -> trang đóng góp media/minutes/news (dùng MediaContributionSection,
+                                       MinutesContributionSection, NewsContributionSection)
+VisitorVisitDetailPage.tsx         -> trang chi tiết chuyến thăm public-facing cho Visitor + xem news
+HoVisitProcessDetail.tsx           -> chi tiết visit process theo góc nhìn HO
+DeptLeadAssignmentTab.tsx          -> tab phân công cho Department Leader
+DeptLeadVisitTasksPage.tsx         -> trang task của Department Leader (bọc SharedDashboardView)
+```
+
+Không file canonical nào trong 4 file đang audit từng nhắc các trang này; chỉ có prompt làm việc rời rạc dưới `docs/delegation/**` (ví dụ `PROMPT_VISITOR_VISIT_DETAIL_PAGE.md`) mô tả một phần. Nếu cần mô tả UX chi tiết, đối chiếu trực tiếp các file trên.
+
+## V11.2 UC-27 Participant Invitations — đã triển khai (trước đây "pending")
+
+Trang mời tham gia không còn là mục backlog. `VisitRequestManagement.tsx` hiển thị banner "lời mời đang chờ" cho actor được mời, điều hướng tới `VisitParticipantInvitationDetail.tsx` (route `visit/invitations/:participantId`) để Accept/Decline thật. Tab "đang tham gia" (attending tab) giữ nguyên là read-only sau khi đã accept, đúng thiết kế cũ.
+
+## V11.3 Host assignment có kiểm tra xung đột lịch
+
+`GetHostCandidatesQueryHandler.cs` so khớp từng candidate với `CalendarEvent` cá nhân (ẩn thông tin sự kiện private) và các campus instance khác mà candidate đang làm host trùng khung giờ (`ASSIGNED/BEFORE_VISIT/DURING_VISIT`), trả về `Conflicts`/`ConflictCount` để Staff Leader tham khảo. §8.3 bên dưới chỉ mô tả điều kiện tĩnh (role/subRole/status/campus/department) — điều kiện đó vẫn đúng và được enforce độc lập, đây chỉ là UX bổ sung.
+
+## V11.4 CompleteVisitStage — điều kiện đóng hồ sơ (AFTER_VISIT → CLOSED) chi tiết hơn §9.5
+
+§9.5 bên dưới chỉ ghi `closed_by/closed_at/close_note`. Thực tế `CompleteVisitStageCommandHandler.cs` chặn CLOSED nếu chưa đủ **cả 5 điều kiện**: (1) hiện tại (giờ VN) >= `planned_end_at`; (2) không còn logistics item nào chưa terminal; (3) mọi `visit_logistics_item_handovers` đã ký đủ hai bên; (4) mọi `minute_action_items` đã DONE/CANCELLED; (5) có ít nhất một news PUBLISHED hoặc host xác nhận "không cần news". Gate `SETUP_SAVE_AVAILABLE` cho phần "Info tổng quát" (bút chì sửa) tại `VisitProcess.tsx` vẫn là `false` — chưa nối API save, tách biệt khỏi phần reminder/preparation-note đã hoạt động qua `canConfigurePrep`.
+
+## V11.5 Cập nhật §10.1 — Visitor được tự hủy cả khi còn PENDING_APPROVAL
+
+§10.1 bên dưới ("Nếu request đang PENDING_APPROVAL: Không cancel. Dùng reject flow") **chỉ còn đúng cho Staff Leader/HO**. `CancelVisitRequestCommandHandler.cs` đã bổ sung luồng Visitor tự hủy request của chính mình ngay cả khi còn `PENDING_APPROVAL` (`cancellation_actor_type = VISITOR`, `cancellation_source = SELF_SERVICE`), enforce bằng trigger DB `trg_visit_requests_cancel_validate_bu` và có seed case riêng. Khi đó `visit_requests.status = CANCELLED`, các `visit_request_campuses` đang `WAITING_REQUEST_APPROVAL` chuyển `CANCELLED` theo.
+
+**Cascade khi hủy** (chưa từng ghi ở §10/§11 cũ): hủy một campus instance tự động chuyển mọi `visit_logistics_items` chưa terminal của instance đó sang `CANCELLED` (tự ghi `DecisionNote`), và vô hiệu hoá mọi `email_action_tokens` đang pending cho instance đó.
+
+## V11.6 Cập nhật §11 — Logistics status enum đã thay đổi
+
+DB hiện tại đã bỏ `PLANNED`, `RECEIVED`, `READY` và thêm `DECLINED` (comment schema "FINAL UPDATE 2026-06-26"). Enum đúng: `REQUESTED, CHANGE_PROPOSED, ASSIGNED, ACCEPTED, IN_PROGRESS, DONE, REJECTED, DECLINED, CANCELLED`. Xem bản sửa trực tiếp ở §11 bên dưới.
+
+## V11.7 Reminders và preparation note — hoàn toàn chưa được mô tả
+
+```text
+visit_request_campuses.preparation_note   -> ghi chú chuẩn bị của Host trong BEFORE_VISIT
+visit_instance_reminder_settings          -> cấu hình nhắc lịch (channel IN_APP|EMAIL, target_group,
+                                              days_before/reminder_time -> scheduled_at)
+VisitReminderDispatchHostedService        -> background job gửi reminder thật
+```
+
+Chỉ Host, chỉ khi instance `ASSIGNED`/`BEFORE_VISIT`, mới được cấu hình (`canConfigurePrep`).
+
+## V11.8 Email action "Negotiate" / "Handover Signature" — schema có, handler public-token chưa xử lý
+
+V10.3 addendum liệt kê "Thương lượng", "Ký nhận", "Ký trả" là action có thể bấm trong email không cần đăng nhập. Thực tế `ExecuteEmailActionCommandHandler`/`GetEmailActionInfoQueryHandler` mới xử lý 4/6 `action_context` (`PARTICIPATION_RESPONSE`, `LOGISTICS_REQUEST_RESPONSE`, `LOGISTICS_ASSIGNEE_RESPONSE`, `LOGISTICS_PROPOSAL_RESPONSE`); `LOGISTICS_NEGOTIATION` và `LOGISTICS_HANDOVER_SIGNATURE` chưa có handler xử lý và cũng chưa có nơi nào phát hành token cho 2 context này. Thương lượng/ký mượn-trả **vẫn hoạt động bình thường qua ứng dụng có đăng nhập** (`SignVisitLogisticsHandoverCommand`, `ProposeResourceModificationCommand`, `ConfirmTheChangeProposalCommand` đã code thật) — chỉ riêng phiên bản "bấm nút trong email, không cần đăng nhập" cho 2 action này là chưa xong.
+
+---
+
 # PHẦN A — NỘI DUNG CHUẨN HIỆN TẠI / UPDATED CANONICAL CONTENT
 
 # VISITOR_MANAGEMENT_SYSTEM_v8_4_refined_v6_UPDATED
@@ -475,6 +532,8 @@ Không cancel.
 Dùng reject flow.
 ```
 
+> **Cập nhật theo implementation hiện tại — 2026-07-02:** rule trên chỉ còn đúng cho Staff Leader/HO. Visitor hiện được tự hủy chính request của mình ngay cả khi còn `PENDING_APPROVAL` (xem "V11.5" đầu file để biết chi tiết metadata/cascade). Evidence: `backend/PEMS.Application/Delegations/Commands/CancelVisitRequest/CancelVisitRequestCommandHandler.cs`.
+
 ### 10.2 Visitor self-service cancel
 
 Cho phép khi:
@@ -553,9 +612,11 @@ Host tạo logistics item
 
 Status hợp lệ:
 
+> **Cập nhật theo implementation hiện tại — 2026-07-02:** DB đã bỏ `PLANNED`, `RECEIVED`, `READY` và thêm `DECLINED`. Danh sách dưới đây theo `LogisticsItemStatus.cs` hiện tại.
+
 ```text
-PLANNED, REQUESTED, CHANGE_PROPOSED, RECEIVED, ASSIGNED, ACCEPTED,
-IN_PROGRESS, READY, DONE, REJECTED, CANCELLED
+REQUESTED, CHANGE_PROPOSED, ASSIGNED, ACCEPTED,
+IN_PROGRESS, DONE, REJECTED, DECLINED, CANCELLED
 ```
 
 ---

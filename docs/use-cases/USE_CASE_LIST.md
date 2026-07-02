@@ -2,6 +2,37 @@
 
 > UC IDs and names are unchanged and aligned through SQL v8.2. UC-136 cancellation logic is documented in `USE_CASE_NOTES_UPDATED_V8_2.md` and `PERMISSION_MATRIX_UPDATED_V8_2.md`.
 
+---
+
+> ## ⚠️ Cập nhật tình trạng triển khai — 2026-07-02
+>
+> Danh sách UC ID/tên bên dưới vẫn dùng được làm mục lục tham chiếu (rà soát code không phát hiện UC nào bị đổi tên/số). Tuy nhiên một số UC trong danh sách **chưa chạy được trong code hiện tại** — rà soát trực tiếp source (nhánh `Canh-Iter1`, 2026-07-02) phát hiện:
+>
+> ```text
+> UC-21  Search Delegations              -> Stub (NotImplementedException). Danh sách/tìm kiếm
+>                                            đoàn khách thật dùng UC-20 View Guest Delegation List.
+> UC-34  Submit Delegation Feedback      -> Stub (NotImplementedException) dù route đã wire.
+> UC-50, UC-51, UC-52, UC-53, UC-54      -> Toàn bộ module Partner Management là stub, cả backend
+>                                            lẫn frontend (frontend hoàn toàn mock, không gọi API).
+> UC-55  View Document List              -> Stub. UC-37 Upload Attached Documents cũng chưa có
+>                                            luồng tạo/upload document nào hoạt động.
+> UC-61  Delete Gallery Item             -> Stub, không có route trong controller.
+> UC-62, UC-63 Minutes List/Search       -> Stub (chỉ truy cập được minutes qua từng visit instance).
+> UC-72–UC-78 Calendar Management        -> Toàn bộ scaffold chết. Lịch cá nhân/phòng ban thật nằm
+>                                            trong module DepartmentReceptionTasks, không phải Calendars.
+> UC-87  Assign Campus Lead              -> Stub, không có UI gọi tới.
+> UC-89  Publish News                    -> Stub.
+> UC-92  Add Multilingual News           -> Stub.
+> UC-90  View News List (bản public)     -> Stub (chi tiết news công khai vẫn hoạt động).
+> UC-116 Reassign Department Lead        -> Chạy được nhưng KHÔNG kiểm tra quyền actor nào cả.
+> ```
+>
+> Chi tiết evidence từng dòng: `docs/PEMS_UC_IMPLEMENTATION_RULEBOOK_..._v10_FULL_UPDATED.md` mục "V11 Implementation Status Addendum".
+>
+> Ngoài ra, `DepartmentsController` (UC-101–116), `ReportsController` (UC-69–71), `FeedbacksController` (UC-79–80), `ApiIntegrationsController` (UC-122–130) hiện **không có authorization** trong code — gọi được ẩn danh dù danh sách này ngụ ý các UC đó có kiểm soát quyền theo role.
+
+---
+
 
 | UC ID  | UC Name                          |
 | ------ | -------------------------------- |

@@ -140,6 +140,63 @@ Security rule:
 
 ---
 
+# V11 Implementation Alignment Addendum — 2026-07-02
+
+> Addendum này ghi nhận các điểm mà **code hiện tại đã vượt hoặc lệch** so với các mục V10 addendum và PHẦN nội dung chuẩn bên dưới, sau khi đối chiếu trực tiếp với source code trên nhánh `Canh-Iter1` (2026-07-02). Nếu phần dưới đây mâu thuẫn với các mục cũ, ưu tiên phần V11 này. Đây là kết quả rà soát tài liệu, không phải thay đổi nghiệp vụ mới.
+
+## V11.1 Schema source of truth đã đổi tên
+
+File fresh-create SQL nêu ở V10.1 (`pems_full_create_manual_wide_coverage_seed_v8_4_refined_v6_v10_clean_logistics_handover_fields.sql`) **không còn tồn tại**. Nguồn schema hiện tại duy nhất là:
+
+```text
+docs/database/scripts/pems_full_v10_new_final_visit_lifecycle_cancel_rules_fixed.sql
+Base table count hiện tại: 58 (tăng từ 49)
+```
+
+Bảng mới xuất hiện so với V10.1: `visit_logistics_assignment_attempts`, `minute_participants`, `minute_action_items`, `visit_instance_reminder_settings`, `sent_email_attachments`, `email_drafts`, `email_draft_recipients`, `email_draft_attachments`. Tên file gợi ý patch lifecycle/cancel đã được gộp thẳng vào bản fresh-create, không còn là file patch rời.
+
+## V11.2 Cảnh báo bảo mật phát hiện khi rà soát (không thuộc phạm vi sửa của addendum này)
+
+Rà soát phát hiện một số controller **thiếu hoàn toàn `[Authorize]`/`[RoleAuthorize]`**, cho phép gọi API ẩn danh trái với mọi mô tả scope trong tài liệu này: `DepartmentsController`, `ReportsController`, `FeedbacksController`, `ApiIntegrationsController`. Ngoài ra `DashboardController` có endpoint `GET /api/dashboard/debug-user` (`[AllowAnonymous]`) cấp JWT cho bất kỳ email nào không cần xác thực. Đây là lỗ hổng bảo mật thật, không phải sai khác tài liệu đơn thuần — xem chi tiết & evidence tại `PEMS_UC_IMPLEMENTATION_RULEBOOK...md` mục "V11 Implementation Status Addendum". Addendum này chỉ ghi nhận, **không sửa code**.
+
+## V11.3 Cập nhật §11.1 — Visitor được tự hủy cả khi còn PENDING_APPROVAL
+
+Mục §11.1 bên dưới ("Trước khi request được duyệt... Không dùng CANCELLED") **chỉ còn đúng cho actor Staff Leader/HO** (họ vẫn dùng reject, không dùng CANCELLED). Code hiện tại (`CancelVisitRequestCommandHandler.cs`) đã bổ sung một luồng mới: **Visitor được tự hủy chính request của mình ngay cả khi còn `PENDING_APPROVAL`**, dùng `cancellation_actor_type = VISITOR`, `cancellation_source = SELF_SERVICE`. Luồng này được enforce bằng trigger `trg_visit_requests_cancel_validate_bu` trong SQL v11 và có seed case riêng ("Case A/B: Visitor cancels … while still PENDING_APPROVAL"). Khi Visitor hủy lúc `PENDING_APPROVAL`, `visit_requests.status = CANCELLED` và các `visit_request_campuses` đang `WAITING_REQUEST_APPROVAL` cũng chuyển `CANCELLED` theo.
+
+Cascade đi kèm (chưa từng được ghi ở §11 cũ): khi một campus instance bị hủy, mọi `visit_logistics_items` chưa ở trạng thái terminal cũng tự động chuyển `CANCELLED` (ghi `DecisionNote` tự động), và mọi `email_action_tokens` đang pending cho instance đó bị vô hiệu hoá.
+
+## V11.4 Cập nhật §12 — Logistics status enum đã thay đổi
+
+DB hiện tại (comment "FINAL UPDATE 2026-06-26 — visit_logistics_items status enum cleanup") đã bỏ `PLANNED`, `RECEIVED`, `READY` và thêm `DECLINED`. Enum đúng theo `LogisticsItemStatus.cs` và DB hiện tại:
+
+```text
+REQUESTED
+CHANGE_PROPOSED
+ASSIGNED
+ACCEPTED
+IN_PROGRESS
+DONE
+REJECTED
+DECLINED
+CANCELLED
+```
+
+Danh sách 11 giá trị cũ ở §12 (còn `PLANNED`, `RECEIVED`, `READY`, thiếu `DECLINED`) đã lỗi thời — xem bản sửa trực tiếp tại §12 bên dưới.
+
+## V11.5 Bổ sung — Host assignment có kiểm tra xung đột lịch (chưa từng ghi ở §9)
+
+`GetHostCandidatesQueryHandler.cs` hiện làm thêm việc kiểm tra xung đột lịch cho từng candidate host: so khớp với các `CalendarEvent` cá nhân (ẩn danh sự kiện private) và các campus instance khác mà candidate đang làm host trùng khung giờ (`ASSIGNED/BEFORE_VISIT/DURING_VISIT`). Kết quả trả về gồm `Conflicts`/`ConflictCount` để Staff Leader tham khảo khi chọn host; điều kiện eligibility tĩnh ở §9 (ACTIVE, STAFF+STAFF, cùng campus, IC department) vẫn được giữ nguyên và enforce độc lập.
+
+## V11.6 Bổ sung — Email action "Negotiate" và "Handover Signature" chưa được triển khai ở tầng public-token
+
+V10.6 liệt kê `LOGISTICS_NEGOTIATION` và `LOGISTICS_HANDOVER_SIGNATURE` là các `action_context` hợp lệ của `email_action_tokens`; giá trị này có trong DB enum và trong `EmailActionConstants.cs`, nhưng `ExecuteEmailActionCommandHandler`/`GetEmailActionInfoQueryHandler` hiện **chỉ xử lý 4/6 context** (`ParticipationResponse`, `LogisticsRequestResponse`, `LogisticsAssigneeResponse`, `LogisticsProposalResponse`). Không có nơi nào trong code tạo token với 2 context còn lại. Nghĩa là: thương lượng logistics và ký nhận/ký trả **vẫn hoạt động được qua ứng dụng có đăng nhập** (`SignVisitLogisticsHandoverCommand`, `ProposeResourceModificationCommand`, `ConfirmTheChangeProposalCommand` đều đã code thật — không còn "deferred" như ghi chú làm việc trước đây), nhưng phiên bản "bấm nút trong email không cần đăng nhập" cho riêng 2 action này thì chưa triển khai. Documented but not found in current implementation (chỉ với 2 context này).
+
+## V11.7 Bổ sung — UC-21 Search Delegations là stub
+
+`SearchDelegationsQueryHandler.cs` (đứng sau route `GET /delegations/searchdelegations`) hiện là `NotImplementedException`. Danh sách/tìm kiếm đoàn khách thật đang chạy qua `GET /delegations/viewguestdelegationlist` (`ViewGuestDelegationListQueryHandler.cs`, có đủ scope theo role kể cả rule HO read-only single-campus ở V11.2/§10 trên). Nếu code UC mới cần danh sách delegation, dùng handler này làm nguồn thật, không dùng `SearchDelegations`.
+
+---
+
 # PEMS_CANONICAL_BUSINESS_RULES_v8_4_refined_v6
 
 > **Authoritative source of truth for PEMS business logic.**  
@@ -523,7 +580,7 @@ Theo schema hiện tại, `current_host_user_id` chỉ nên set một lần. Kh�
 | Actor | Được thấy gì |
 |---|---|
 | Admin | Không mặc định xem business delegation; chỉ quản trị kỹ thuật/config/audit/account theo policy |
-| HO | Chỉ thấy multi-campus request/delegation tổng và các instance liên quan sau approve; không xử lý single-campus |
+| HO | Thấy multi-campus request/delegation tổng và các instance liên quan (được xử lý: duyệt/từ chối/hủy); **đồng thời thấy single-campus ở chế độ read-only/monitoring** (business rule chốt 2026-06, evidence: `ViewGuestDelegationListQueryHandler.cs`), nhưng không xử lý single-campus (không duyệt/từ chối/gán host/hủy) |
 | Staff Leader | Thấy single-campus thuộc campus mình; thấy multi-campus instance thuộc campus mình sau khi HO approve |
 | IC Staff | Thấy campus instance nếu là current host, IC_SUPPORT hoặc được assign liên quan |
 | Department Leader | Thấy logistics/task/participant/resource thuộc department/campus mình được giao |
@@ -554,6 +611,8 @@ Actor reject:
 Single-campus: Staff Leader đúng campus
 Multi-campus: HO
 ```
+
+> **Cập nhật theo implementation hiện tại — 2026-07-02:** quy tắc "Không dùng CANCELLED" ở trên chỉ đúng cho actor Staff Leader/HO. Visitor hiện có thêm quyền **tự hủy chính request của mình ngay cả khi còn `PENDING_APPROVAL`** (`cancellation_actor_type = VISITOR`, `cancellation_source = SELF_SERVICE`, `visit_requests.status = CANCELLED`), enforce bằng trigger DB và có seed case riêng. Xem chi tiết ở "V11.3" đầu file. Evidence: `backend/PEMS.Application/Delegations/Commands/CancelVisitRequest/CancelVisitRequestCommandHandler.cs`.
 
 ### 11.2 Sau khi request đã APPROVED
 
@@ -656,17 +715,17 @@ visit_logistics_items.visit_instance_id
 
 Status hợp lệ:
 
+> **Cập nhật theo implementation hiện tại — 2026-07-02:** DB đã bỏ `PLANNED`, `RECEIVED`, `READY` và thêm `DECLINED` (comment schema "FINAL UPDATE 2026-06-26 — visit_logistics_items status enum cleanup: Department Leader flow không dùng PLANNED/RECEIVED/READY"). Danh sách dưới đây đã cập nhật theo `backend/PEMS.Domain/Enums/LogisticsItemStatus.cs` và schema hiện tại.
+
 ```text
-PLANNED
 REQUESTED
 CHANGE_PROPOSED
-RECEIVED
 ASSIGNED
 ACCEPTED
 IN_PROGRESS
-READY
 DONE
 REJECTED
+DECLINED
 CANCELLED
 ```
 
@@ -932,6 +991,39 @@ WHERE vrc.current_host_user_id IS NOT NULL
 ```
 
 Kết quả đúng: `0 rows`.
+
+---
+
+## 20. Visit process lifecycle stage completion — bổ sung 2026-07-02
+
+Chuyển giai đoạn `BEFORE_VISIT → DURING_VISIT → AFTER_VISIT → CLOSED` được thực hiện qua command `CompleteVisitStage` (`backend/PEMS.Application/Delegations/Commands/CompleteVisitStage/CompleteVisitStageCommandHandler.cs`), chỉ Host phụ trách (`current_host_user_id`) được gọi. Mục này trước đây chưa có trong tài liệu canonical; §6.2 chỉ mô tả ý nghĩa từng status, không mô tả điều kiện chuyển.
+
+Điều kiện chuyển `AFTER_VISIT → CLOSED` (chặt nhất, gồm 5 điều kiện đồng thời):
+
+```text
+1. Thời điểm hiện tại (giờ Việt Nam) >= planned_end_at.
+2. Không còn visit_logistics_items nào ở trạng thái chưa terminal (DONE/REJECTED/DECLINED/CANCELLED).
+3. Toàn bộ visit_logistics_item_handovers liên quan đã ký đủ cả hai bên (borrower + provider).
+4. Toàn bộ minute_action_items đã DONE hoặc CANCELLED.
+5. Có ít nhất 1 news PUBLISHED cho instance, HOẶC host xác nhận "không cần news" (lưu ở visit_request_campuses.NewsNotRequired hoặc field tương đương).
+```
+
+Không đáp ứng đủ 5 điều kiện thì API trả lỗi nghiệp vụ, không cho CLOSED. Đây là rule engine chi tiết hơn nhiều so với mô tả tổng quát cũ ở §6.2/§14 — nếu cần sửa nghiệp vụ đóng hồ sơ, phải đối chiếu trực tiếp `CompleteVisitStageCommandHandler.cs`.
+
+## 21. Reminders và preparation note — bổ sung 2026-07-02
+
+Tính năng này tồn tại trong schema từ 2026-06-26 nhưng **chưa từng được nhắc đến** ở bất kỳ mục nào phía trên. Ghi nhận lại:
+
+```text
+visit_request_campuses.preparation_note   -> ghi chú chuẩn bị của Host trong giai đoạn BEFORE_VISIT
+visit_instance_reminder_settings          -> cấu hình nhắc lịch theo visit_instance_id
+  - channel: IN_APP | EMAIL
+  - target_group
+  - days_before / reminder_time -> tính ra scheduled_at
+  - status: PENDING | ... (dispatch qua VisitReminderDispatchHostedService, backend/PEMS.Infrastructure/BackgroundJobs)
+```
+
+Chỉnh sửa reminder/preparation note chỉ khả dụng khi actor là Host và instance đang `ASSIGNED`/`BEFORE_VISIT` (`canConfigurePrep` ở frontend, tương ứng gate `SETUP_SAVE_AVAILABLE = false` cho phần Info tổng quát vẫn tách biệt — xem `VISITOR_MANAGEMENT_SYSTEM...md` mục V11 để biết chi tiết UI).
 
 ---
 
