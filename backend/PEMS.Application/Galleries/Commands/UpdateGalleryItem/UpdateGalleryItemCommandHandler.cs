@@ -61,6 +61,8 @@ public sealed class UpdateGalleryItemCommandHandler
                 GalleryErrorCodes.GalleryScopeForbidden,
                 "Bạn không có quyền chỉnh sửa gallery item này.", 403);
 
+        var itemType = GalleryItemTypes.Normalize(request.ItemType);
+
         // New location must be ACTIVE and in the caller's campus (BR-GAL-EDIT-02/03; throws 404/403/422).
         // A location may hold many items, so moving an item into an already-used location is allowed.
         await GalleryLocationGuard.LoadActiveLocationInCurrentCampusAsync(
@@ -155,6 +157,7 @@ public sealed class UpdateGalleryItemCommandHandler
         item.Title = Regex.Replace(request.Title?.Trim() ?? string.Empty, @"\s+", " ");
         item.Description = request.Description?.Trim() ?? string.Empty;
         item.LocationId = (ulong)request.LocationId;
+        item.ItemType = itemType;
         item.MediaKind = mediaKind;
         item.UpdatedAt = now;
         item.UpdatedBy = actorId;
@@ -173,7 +176,7 @@ public sealed class UpdateGalleryItemCommandHandler
                     FieldName = "GalleryItem",
                     NewValueText = JsonSerializer.Serialize(new
                     {
-                        title = item.Title, locationId = request.LocationId, mediaKind,
+                        title = item.Title, locationId = request.LocationId, itemType, mediaKind,
                         keptMedia = kept.Count, addedMedia = appended.Count,
                     }),
                 },

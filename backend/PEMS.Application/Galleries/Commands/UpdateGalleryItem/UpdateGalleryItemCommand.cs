@@ -15,6 +15,7 @@ public sealed record UpdateGalleryItemCommand(
     string Title,
     string Description,
     long LocationId,
+    string? ItemType,
     IReadOnlyList<long> KeepMediaIds,
     IReadOnlyList<GalleryUploadFileCommandDto> NewFiles,
     long? PrimaryMediaId) : IRequest<GalleryItemDetailDto>;
