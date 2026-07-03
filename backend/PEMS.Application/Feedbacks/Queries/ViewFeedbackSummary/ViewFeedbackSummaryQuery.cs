@@ -7,7 +7,6 @@ public class ViewFeedbackSummaryQuery : IRequest<PaginatedResult<FeedbackVisitSu
 {
     public string? Q { get; set; }
     public string? RatingLevel { get; set; }
-    public string? RoleFlow { get; set; }
     public string? SubmitterRole { get; set; }
     public DateTime? FromDate { get; set; }
     public DateTime? ToDate { get; set; }

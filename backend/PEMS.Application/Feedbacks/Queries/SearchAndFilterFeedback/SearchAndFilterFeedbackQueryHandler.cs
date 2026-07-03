@@ -43,15 +43,9 @@ public class SearchAndFilterFeedbackQueryHandler : IRequestHandler<SearchAndFilt
             query = query.Where(x => x.SubmittedAt <= request.ToDate.Value);
         }
 
-        if (!string.IsNullOrEmpty(request.RoleFlow))
+        if (!string.IsNullOrEmpty(request.FeedbackType))
         {
-            var parts = request.RoleFlow.Split("_TO_");
-            if (parts.Length == 2)
-            {
-                var submitterRole = parts[0];
-                var targetRole = parts[1];
-                query = query.Where(x => x.SubmitterRole == submitterRole && x.TargetRole == targetRole);
-            }
+            query = query.Where(x => x.FeedbackType == request.FeedbackType);
         }
 
         if (request.VisitRequestId.HasValue)
@@ -70,6 +64,7 @@ public class SearchAndFilterFeedbackQueryHandler : IRequestHandler<SearchAndFilt
         if (!string.IsNullOrEmpty(request.RatingLevel))
         {
             if (request.RatingLevel == "LOW") query = query.Where(x => x.Rating <= 2);
+            else if (request.RatingLevel == "GOOD") query = query.Where(x => x.Rating >= 4);
             else if (int.TryParse(request.RatingLevel, out var r)) query = query.Where(x => x.Rating == r);
         }
 
@@ -96,6 +91,7 @@ public class SearchAndFilterFeedbackQueryHandler : IRequestHandler<SearchAndFilt
             VisitRequestId = x.VisitRequestId,
             VisitInstanceId = x.VisitInstanceId,
             VisitTitle = visitTitles.TryGetValue(x.VisitRequestId, out var title) ? title : "",
+            FeedbackType = x.FeedbackType,
             SubmittedByUserId = x.SubmittedByUserId,
             SubmitterRole = x.SubmitterRole,
             SubmitterContext = x.SubmitterContext,
