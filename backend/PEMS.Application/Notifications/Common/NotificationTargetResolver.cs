@@ -28,6 +28,10 @@ public class NotificationTargetResolver : INotificationTargetResolver
         bool canOpen = true;
         string? disabledReason = null;
 
+        var currentUserEntity = await _context.Users.Include(u => u.Role).FirstOrDefaultAsync(u => u.UserId == currentUserId, cancellationToken);
+        bool isDept = currentUserEntity?.Role?.RoleCode == "DEPARTMENT";
+        ulong? deptId = currentUserEntity?.DepartmentId;
+
         try
         {
             switch (relatedType)
@@ -68,7 +72,10 @@ public class NotificationTargetResolver : INotificationTargetResolver
                     }
                     else
                     {
-                        targetUrl = $"/dashboard/visit/process/{participant.VisitInstanceId}?tab=participants&participantId={relatedId}";
+                        if (isDept && deptId.HasValue)
+                            targetUrl = $"/dashboard/departments/{deptId.Value}/invitations/{relatedId}";
+                        else
+                            targetUrl = $"/dashboard/visit/process/{participant.VisitInstanceId}?tab=participants&participantId={relatedId}";
                     }
                     break;
 
@@ -81,7 +88,10 @@ public class NotificationTargetResolver : INotificationTargetResolver
                     }
                     else
                     {
-                        targetUrl = $"/dashboard/visit/process/{logisticsItem.VisitInstanceId}?tab=logistics&itemId={relatedId}";
+                        if (isDept && deptId.HasValue)
+                            targetUrl = $"/dashboard/departments/{deptId.Value}/tasks/{relatedId}";
+                        else
+                            targetUrl = $"/dashboard/visit/process/{logisticsItem.VisitInstanceId}?tab=logistics&itemId={relatedId}";
                     }
                     break;
 
@@ -96,7 +106,10 @@ public class NotificationTargetResolver : INotificationTargetResolver
                     }
                     else
                     {
-                        targetUrl = $"/dashboard/visit/process/{handover.LogisticsItem.VisitInstanceId}?tab=logistics&handoverId={relatedId}";
+                        if (isDept && deptId.HasValue)
+                            targetUrl = $"/dashboard/departments/{deptId.Value}/tasks/{handover.LogisticsItemId}";
+                        else
+                            targetUrl = $"/dashboard/visit/process/{handover.LogisticsItem.VisitInstanceId}?tab=logistics&handoverId={relatedId}";
                     }
                     break;
 

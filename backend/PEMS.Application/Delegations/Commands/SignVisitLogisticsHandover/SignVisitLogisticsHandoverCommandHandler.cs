@@ -155,6 +155,23 @@ public sealed class SignVisitLogisticsHandoverCommandHandler
             );
         }
 
+        if (item.RequestedToDepartmentId.HasValue)
+        {
+            var dept = await _db.Departments.FirstOrDefaultAsync(d => d.DepartmentId == item.RequestedToDepartmentId.Value, cancellationToken);
+            if (dept?.HeadUserId != null && (!item.AssignedToUserId.HasValue || dept.HeadUserId.Value != item.AssignedToUserId.Value))
+            {
+                await _notificationService.CreateAsync(
+                    dept.HeadUserId.Value,
+                    "Ký biên bản bàn giao",
+                    $"Host {actorName} đã ký biên bản bàn giao (Bên nhận) cho nhiệm vụ \"{item.Title}\".",
+                    PEMS.Application.Notifications.Common.NotificationTypes.LogisticsHandoverSigned,
+                    PEMS.Application.Notifications.Common.NotificationRelatedTypes.LogisticsHandover,
+                    handover.HandoverId,
+                    cancellationToken
+                );
+            }
+        }
+
         return new SignVisitLogisticsHandoverResponse
         {
             LogisticsItemId = item.LogisticsItemId,
