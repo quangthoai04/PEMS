@@ -16,6 +16,7 @@ public sealed class ViewGalleryItemListQuery : IRequest<PaginatedResult<GalleryI
     public long? AreaId { get; set; }
     public long? LocationId { get; set; }
     public string? MediaKind { get; set; }
+    public string? ItemType { get; set; }
     public string? Status { get; set; }
     public string? SortBy { get; set; } = "createdAt";
     public string? SortDirection { get; set; } = "desc";

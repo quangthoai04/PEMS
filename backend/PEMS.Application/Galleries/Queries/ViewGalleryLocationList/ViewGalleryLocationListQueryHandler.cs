@@ -81,7 +81,9 @@ public sealed class ViewGalleryLocationListQueryHandler
                 LocationId = l.LocationId,
                 AreaId = l.AreaId,
                 AreaName = l.Area.AreaName,
+                AreaCoverFileId = l.Area.CoverFileId,
                 LocationName = l.LocationName,
+                LocationCoverFileId = l.CoverFileId,
                 Status = l.Status,
                 CreatedAt = l.CreatedAt,
                 UpdatedAt = l.UpdatedAt,
@@ -115,7 +117,11 @@ public sealed class ViewGalleryLocationListQueryHandler
                 LocationId = r.LocationId,
                 AreaId = r.AreaId,
                 AreaName = r.AreaName,
+                AreaCoverFileId = r.AreaCoverFileId,
+                AreaCoverUrl = GalleryFileUrls.ContentOrNull(r.AreaCoverFileId),
                 LocationName = r.LocationName,
+                LocationCoverFileId = r.LocationCoverFileId,
+                LocationCoverUrl = GalleryFileUrls.ContentOrNull(r.LocationCoverFileId),
                 Status = r.Status,
                 CreatedAt = r.CreatedAt,
                 UpdatedAt = r.UpdatedAt,
@@ -134,7 +140,9 @@ public sealed class ViewGalleryLocationListQueryHandler
         public ulong LocationId { get; init; }
         public ulong AreaId { get; init; }
         public string AreaName { get; init; } = string.Empty;
+        public ulong? AreaCoverFileId { get; init; }
         public string LocationName { get; init; } = string.Empty;
+        public ulong? LocationCoverFileId { get; init; }
         public string Status { get; init; } = string.Empty;
         public DateTime CreatedAt { get; init; }
         public DateTime? UpdatedAt { get; init; }

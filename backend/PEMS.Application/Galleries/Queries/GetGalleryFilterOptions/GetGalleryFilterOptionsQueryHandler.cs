@@ -34,7 +34,7 @@ public sealed class GetGalleryFilterOptionsQueryHandler
         var areas = await _db.GalleryAreas.AsNoTracking()
             .Where(a => a.CampusId == campusId)
             .OrderBy(a => a.DisplayOrder).ThenBy(a => a.AreaName)
-            .Select(a => new { a.AreaId, a.AreaName, a.Status })
+            .Select(a => new { a.AreaId, a.AreaName, a.Status, a.CoverFileId })
             .ToListAsync(cancellationToken);
 
         var areaIds = areas.Select(a => a.AreaId).ToList();
@@ -61,6 +61,8 @@ public sealed class GetGalleryFilterOptionsQueryHandler
                 AreaId = a.AreaId,
                 AreaName = a.AreaName,
                 Status = a.Status,
+                CoverFileId = a.CoverFileId,
+                CoverUrl = GalleryFileUrls.ContentOrNull(a.CoverFileId),
                 Locations = (locationsByArea.TryGetValue(a.AreaId, out var ls) ? ls : new List<LocationRow>())
                     .Select(l => new GalleryLocationOptionDto
                     {
