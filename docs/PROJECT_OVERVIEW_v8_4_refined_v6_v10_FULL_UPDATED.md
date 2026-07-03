@@ -74,6 +74,49 @@ FAQ public/internal chỉ dùng tiếng Việt, không còn language switch.
 
 ---
 
+# V11 Project Overview Addendum — Tình trạng triển khai thật (2026-07-02)
+
+> Rà soát trực tiếp source code nhánh `Canh-Iter1` cho thấy một số feature ở bảng "5. Major features" bên dưới **được mô tả như đã hoàn thiện nhưng thực tế chưa chạy được**, và một số module mới đã xuất hiện mà bảng đó chưa liệt kê. Chi tiết evidence từng dòng nằm ở `PEMS_UC_IMPLEMENTATION_RULEBOOK...md` mục "V11 Implementation Status Addendum" — file này chỉ tóm tắt ở mức tổng quan dự án.
+
+## V11.1 Schema hiện tại
+
+File SQL fresh-create đã đổi tên thành `docs/database/scripts/pems_full_v10_new_final_visit_lifecycle_cancel_rules_fixed.sql`, 58 bảng (tăng từ 49).
+
+## V11.2 Cảnh báo bảo mật (ghi nhận, không thuộc phạm vi sửa của addendum này)
+
+`DepartmentsController`, `ReportsController`, `FeedbacksController`, `ApiIntegrationsController` hiện không có `[Authorize]`/`[RoleAuthorize]` nào — gọi được ẩn danh, trái với scope mô tả ở mục "4. Scope dữ liệu theo role". `DashboardController` có endpoint debug cấp JWT ẩn danh cho bất kỳ email nào. Đây là lỗ hổng bảo mật thật cần xử lý riêng.
+
+## V11.3 Tình trạng thật của các Major Features (bảng "5. Major features")
+
+```text
+FE-01 Partner & Contact Management  -> CHƯA HOẠT ĐỘNG. Toàn bộ backend NotImplementedException,
+                                        frontend hoàn toàn mock, không gọi API. OCR scan card cũng
+                                        chưa code (service rỗng).
+FE-02 Delegation Reception Management -> Lõi (submit/approve/host/lifecycle/cancel/logistics) hoạt động
+                                        thật; đã bổ sung nhiều trang mới (VisitProcessSummaryPage,
+                                        VisitContributionPage, VisitorVisitDetailPage,
+                                        HoVisitProcessDetail, DeptLeadAssignmentTab,
+                                        DeptLeadVisitTasksPage) và feature reminders/preparation_note
+                                        — xem VISITOR_MANAGEMENT_SYSTEM...md mục V11 để biết chi tiết.
+FE-04 Calendar & Deadline           -> Module CalendarsController/Calendars/** mô tả ở đây là scaffold
+                                        chết (toàn bộ NotImplementedException). Chức năng lịch cá
+                                        nhân/lịch phòng ban thật nằm trong module
+                                        DepartmentReceptionTasks, không phải Calendars.
+FE-05 Document & Archive            -> Chỉ có read/search tài liệu; không có luồng upload/tạo document
+                                        nào hoạt động ở DocumentsController.
+FE-07 Feedback & Rating             -> Submit feedback (UC-34) là NotImplementedException dù route đã
+                                        wire — gọi sẽ lỗi runtime. Các API xem chi tiết feedback trả
+                                        {} giả để tránh 404.
+FE-11 Campus & Department Management -> "Assign Campus Lead" (UC-84) là NotImplementedException, không
+                                        có UI gọi tới. DepartmentsController không có auth (xem V11.2).
+                                        Reassign Department Lead thực thi ngay một bước, không có
+                                        "confirm" như tài liệu cũ mô tả.
+```
+
+Các FE còn lại (FE-03 Gallery, FE-06 Email, FE-08 Reports, FE-09 News/FAQ, FE-10 Account, FE-12 Profile/Auth) về cơ bản khớp với code, trừ một số endpoint lẻ đã liệt kê chi tiết ở rulebook (ví dụ: xoá gallery item, publish news, danh sách minutes độc lập đều là stub nhỏ, không ảnh hưởng luồng chính).
+
+---
+
 # PHẦN A — NỘI DUNG CHUẨN HIỆN TẠI / UPDATED CANONICAL CONTENT
 
 # PROJECT_OVERVIEW_v8_4_refined_v6_UPDATED
@@ -194,20 +237,20 @@ Backend phải enforce scope trên mọi API list/detail/action.
 
 ## 5. Major features
 
-| FE | Tên | Ghi chú cập nhật |
-|---|---|---|
-| FE-01 | Partner & Contact Management | Quản lý đối tác, contact, scan card |
-| FE-02 | Delegation Reception Management | Core lifecycle của visit request/delegation |
-| FE-03 | Gallery Management | Public/internal gallery theo visibility |
-| FE-04 | Calendar & Deadline | Event cá nhân, visit, logistics, deadline |
-| FE-05 | Document & Archive | File, document, minutes archive |
-| FE-06 | Email & API Configuration | Template, sent email, API config/log |
-| FE-07 | Feedback & Rating | Feedback sau visit, không áp dụng cho cancel trước visit |
-| FE-08 | Dashboard & Statistics | Theo scope HO/Staff Leader |
-| FE-09 | News & FAQ | News review/publish, FAQ public/internal |
-| FE-10 | Account Management | Fixed role/subRole, no dynamic permissions DB |
-| FE-11 | Campus & Department Management | Campus, IC/GENERAL departments, personnel |
-| FE-12 | Profile/Auth/Notifications | SSO/local dev login, profile, notification |
+| FE | Tên | Ghi chú cập nhật | Tình trạng thật (2026-07-02, xem V11 addendum) |
+|---|---|---|---|
+| FE-01 | Partner & Contact Management | Quản lý đối tác, contact, scan card | **Chưa hoạt động** — backend/frontend đều chưa nối thật |
+| FE-02 | Delegation Reception Management | Core lifecycle của visit request/delegation | Hoạt động, có nhiều trang/feature mới chưa được mô tả ở bảng này |
+| FE-03 | Gallery Management | Public/internal gallery theo visibility | Hoạt động (trừ xoá item — stub nhỏ) |
+| FE-04 | Calendar & Deadline | Event cá nhân, visit, logistics, deadline | **Scaffold chết** — chức năng thật nằm ở module DepartmentReceptionTasks |
+| FE-05 | Document & Archive | File, document, minutes archive | Chỉ đọc/tìm kiếm; chưa có upload/tạo document |
+| FE-06 | Email & API Configuration | Template, sent email, API config/log | Hoạt động |
+| FE-07 | Feedback & Rating | Feedback sau visit, không áp dụng cho cancel trước visit | **Submit chưa hoạt động** (NotImplementedException) |
+| FE-08 | Dashboard & Statistics | Theo scope HO/Staff Leader | Hoạt động, nhưng thiếu authorization (xem V11.2) |
+| FE-09 | News & FAQ | News review/publish, FAQ public/internal | Hoạt động (vài stub nhỏ: publish, multilingual, public list) |
+| FE-10 | Account Management | Fixed role/subRole, no dynamic permissions DB | Hoạt động |
+| FE-11 | Campus & Department Management | Campus, IC/GENERAL departments, personnel | Assign Campus Lead chưa hoạt động; DepartmentsController thiếu authorization |
+| FE-12 | Profile/Auth/Notifications | SSO/local dev login, profile, notification | Hoạt động |
 
 ---
 

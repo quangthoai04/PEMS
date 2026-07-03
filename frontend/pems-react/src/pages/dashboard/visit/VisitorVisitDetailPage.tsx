@@ -74,9 +74,19 @@ export function VisitorVisitDetailPage({ perm, detail }: VisitorVisitDetailPageP
         {/* 6. Form đăng ký đã gửi */}
         {summary && <VisitorRequestInfoSection summary={summary} />}
 
+        {/* Thông tin người liên hệ (nếu có) */}
+        {summary?.contactPersonFullName && (
+          <VisitorContactPersonSection summary={summary} />
+        )}
+
         {/* 7. Danh sách thành viên đoàn */}
         {summary?.guestMembers && summary.guestMembers.length > 0 && (
           <VisitorGuestMembersSection members={summary.guestMembers} />
+        )}
+
+        {/* 8. Danh sách hỗ trợ đoàn (nếu có) */}
+        {summary?.externalSupportMembers && summary.externalSupportMembers.length > 0 && (
+          <VisitorExternalSupportSection members={summary.externalSupportMembers} />
         )}
 
         {/* 8. Thông tin cơ sở */}
@@ -347,6 +357,9 @@ function VisitorRequestInfoSection({ summary }: { summary: any }) {
             <ReadOnlyInfoField label="Ngôn ngữ sử dụng" value={summary.workingLanguage} />
             <ReadOnlyInfoField label="Phương tiện di chuyển" value={summary.transportationType ? `${summary.transportationType} ${summary.transportationDetail ? `(${summary.transportationDetail})` : ''}` : null} />
             <ReadOnlyInfoField label="Media Consent" value={summary.mediaConsentStatus === 'AGREE' ? 'Đồng ý ghi hình/chụp ảnh' : 'Từ chối ghi hình/chụp ảnh'} />
+            {summary.mediaConsentNote && (
+              <ReadOnlyInfoField label="Lưu ý về Media" value={summary.mediaConsentNote} />
+            )}
           </div>
         </div>
 
@@ -360,6 +373,60 @@ function VisitorGuestMembersSection({ members }: { members: any[] }) {
     <section>
       <h2 className="text-xl font-bold text-slate-800 mb-4 flex items-center gap-2">
         <Users className="w-5 h-5 text-[#004c91]" /> Danh sách thành viên đoàn
+      </h2>
+      <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm text-slate-600">
+            <thead className="bg-slate-50 text-slate-500 uppercase font-bold text-xs">
+              <tr>
+                <th className="px-6 py-4">STT</th>
+                <th className="px-6 py-4">Họ và tên</th>
+                <th className="px-6 py-4">Chức danh</th>
+                <th className="px-6 py-4">Tổ chức</th>
+                <th className="px-6 py-4">Quốc tịch</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {members.map((m, idx) => (
+                <tr key={idx} className="hover:bg-slate-50/50">
+                  <td className="px-6 py-4 font-bold text-slate-400">{idx + 1}</td>
+                  <td className="px-6 py-4 font-bold text-slate-800">{m.fullName || '—'}</td>
+                  <td className="px-6 py-4">{m.jobTitle || '—'}</td>
+                  <td className="px-6 py-4">{m.organization || '—'}</td>
+                  <td className="px-6 py-4">{m.nationality || '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function VisitorContactPersonSection({ summary }: { summary: any }) {
+  return (
+    <section>
+      <h2 className="text-xl font-bold text-slate-800 mb-4 flex items-center gap-2">
+        <User className="w-5 h-5 text-[#004c91]" /> Thông tin người liên hệ
+      </h2>
+      <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6 lg:p-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <ReadOnlyInfoField label="Họ và tên" value={summary.contactPersonFullName} />
+          <ReadOnlyInfoField label="Email" value={summary.contactPersonEmail} />
+          <ReadOnlyInfoField label="Số điện thoại" value={summary.contactPersonPhone} />
+          <ReadOnlyInfoField label="Tổ chức" value={summary.contactPersonOrganization} />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function VisitorExternalSupportSection({ members }: { members: any[] }) {
+  return (
+    <section>
+      <h2 className="text-xl font-bold text-slate-800 mb-4 flex items-center gap-2">
+        <Users className="w-5 h-5 text-[#004c91]" /> Danh sách hỗ trợ đoàn
       </h2>
       <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
