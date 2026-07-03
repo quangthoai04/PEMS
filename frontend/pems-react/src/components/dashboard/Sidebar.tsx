@@ -32,6 +32,8 @@ import {
   Cpu,
   Image,
   MessageSquare,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from "lucide-react";
 import logo from "../../assets/images/2021-FPTU-Eng.png";
 import avatarImg from "../../assets/Avatar/AvatarDefault.png";
@@ -43,11 +45,16 @@ import { useAuthenticatedImage } from "../../shared/hooks/useAuthenticatedImage"
 interface SidebarProps {
   isMobileOpen?: boolean;
   onCloseMobile?: () => void;
+  /** Trạng thái thu gọn (desktop) — do DashboardLayout quản lý + persist localStorage. */
+  isCollapsed?: boolean;
+  onToggleCollapsed?: () => void;
 }
 
 
-export function Sidebar({ isMobileOpen = false, onCloseMobile }: SidebarProps) {
+export function Sidebar({ isMobileOpen = false, onCloseMobile, isCollapsed = false, onToggleCollapsed }: SidebarProps) {
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
+  // Mobile drawer luôn hiển thị đầy đủ, chỉ desktop mới thu gọn.
+  const collapsed = isCollapsed && !isMobileOpen;
   const navigate = useNavigate();
   const { logout, user: authUser } = useAuth();
 
@@ -84,8 +91,13 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile }: SidebarProps) {
   };
 
 
+  // Khi thu gọn: chỉ còn icon căn giữa (icon to hơn, vùng click cao hơn), ẩn label (span).
   const navItemClass = ({ isActive }: { isActive: boolean }) =>
-    `flex items-center gap-3 px-4 py-3 rounded-xl transition-colors font-medium ${isActive
+    `flex items-center gap-3 rounded-xl transition-colors font-medium ${
+      collapsed
+        ? "justify-center px-0 py-3.5 [&>span]:hidden [&>svg]:w-6 [&>svg]:h-6"
+        : "px-4 py-3"
+    } ${isActive
       ? "bg-[#d2e5f5] text-[#004c91]"
       : "text-gray-600 hover:bg-[#d2e5f5] hover:text-[#004c91]"
     }`;
@@ -119,8 +131,8 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile }: SidebarProps) {
       </AnimatePresence>
 
 
-      <aside className={`w-[290px] bg-white border-r border-gray-200 h-screen flex flex-col pt-6 pb-4 shadow-sm z-50 transition-all duration-300
-        ${isMobileOpen ? "fixed top-0 left-0 h-full" : "hidden lg:flex lg:sticky lg:top-0"}
+      <aside className={`${collapsed ? "w-[84px]" : "w-[290px]"} bg-white border-r border-gray-200 h-screen flex flex-col pt-6 pb-4 shadow-sm z-50 transition-all duration-300
+        ${isMobileOpen ? "fixed top-0 left-0 h-full w-[290px]" : "hidden lg:flex lg:sticky lg:top-0"}
       `}>
         {/* Close mobile button */}
         {isMobileOpen && (
@@ -134,16 +146,29 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile }: SidebarProps) {
         )}
 
 
-        {/* Logo — click to go back to the public home page */}
-        <div className="flex justify-center px-6 mb-8 flex-shrink-0">
+        {/* Nút thu vào / mở ra — desktop, dùng chung mọi trang & mọi role */}
+        {!isMobileOpen && (
+          <button
+            onClick={onToggleCollapsed}
+            className="hidden lg:flex absolute -right-4 top-1/2 -translate-y-1/2 z-50 h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-md hover:text-[#004c91] hover:border-[#004c91]/40 hover:bg-blue-50 transition-all focus:outline-none focus:ring-2 focus:ring-[#004c91]/20"
+            aria-label={collapsed ? "Mở rộng menu" : "Thu gọn menu"}
+            title={collapsed ? "Mở rộng menu" : "Thu gọn menu"}
+          >
+            {collapsed ? <PanelLeftOpen className="w-5 h-5" /> : <PanelLeftClose className="w-5 h-5" />}
+          </button>
+        )}
+
+        {/* Logo — click to go back to the public home page. Khi thu gọn: logo nhỏ + đẩy menu
+            xuống thấp hơn (mb lớn hơn) để icon không dính sát logo. */}
+        <div className={`flex justify-center flex-shrink-0 ${collapsed ? "px-2 mb-10 mt-2" : "px-6 mb-8"}`}>
           <Link to="/" className="block cursor-pointer" aria-label="Về trang chủ" title="Về trang chủ">
-            <img src={logo} alt="FPT University" className="h-20 object-contain" />
+            <img src={logo} alt="FPT University" className={`${collapsed ? "h-10" : "h-20"} object-contain transition-all duration-300`} />
           </Link>
         </div>
 
 
         {/* Navigation */}
-        <nav className="flex-grow px-4 space-y-2 overflow-y-auto">
+        <nav className={`flex-grow space-y-2 overflow-y-auto ${collapsed ? "px-3" : "px-4"}`}>
           <NavLink to="/dashboard" end className={navItemClass} onClick={handleLinkClick}>
             <Home className="w-5 h-5 flex-shrink-0" />
             <span>Dashboard</span>
@@ -240,13 +265,14 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile }: SidebarProps) {
 
 
         {/* User Info */}
-        <div className="px-4 mt-6 relative flex-shrink-0">
+        <div className={`mt-6 relative flex-shrink-0 ${collapsed ? "px-2" : "px-4"}`}>
           <div
-            className="bg-white border text-left border-[#d2e5f5] hover:bg-[#e6eff7] rounded-2xl p-4 cursor-pointer hover:shadow-md transition-all relative z-10"
+            className={`bg-white border text-left border-[#d2e5f5] hover:bg-[#e6eff7] rounded-2xl cursor-pointer hover:shadow-md transition-all relative z-10 ${collapsed ? "p-2" : "p-4"}`}
             onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)}
+            title={collapsed ? `${user.name} (${user.role})` : undefined}
           >
-            <div className="flex items-center gap-3">
-              <div className="w-14 h-14 rounded-full overflow-hidden border-2 border-gray-100 bg-gray-50 flex-shrink-0 flex items-center justify-center">
+            <div className={`flex items-center ${collapsed ? "justify-center" : "gap-3"}`}>
+              <div className={`${collapsed ? "w-10 h-10" : "w-14 h-14"} rounded-full overflow-hidden border-2 border-gray-100 bg-gray-50 flex-shrink-0 flex items-center justify-center`}>
                 <img
                   src={avatarSrc}
                   alt="Avatar"
@@ -254,26 +280,30 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile }: SidebarProps) {
                   onError={(e) => { e.currentTarget.src = avatarImg; }}
                 />
               </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-[17px] font-bold text-[#004c91] truncate tracking-tight">
-                  {user.name}
-                </p>
-                <p className="text-[12px] text-[#004c91] flex items-center gap-1 mt-0.5 truncate font-medium">
-                  <School className="w-3.5 h-3.5 flex-shrink-0" />
-                  Campus {user.campus}
-                </p>
-                <p className="text-[13px] font-bold text-[#004c91] mt-1 flex items-center gap-1.5 truncate uppercase tracking-wide">
-                  {getRoleIcon()}
-                  {user.role}
-                </p>
-              </div>
-              <div className="text-gray-400">
-                {isProfileMenuOpen ? (
-                  <ChevronUp className="w-5 h-5" />
-                ) : (
-                  <ChevronDown className="w-5 h-5" />
-                )}
-              </div>
+              {!collapsed && (
+                <>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[17px] font-bold text-[#004c91] truncate tracking-tight">
+                      {user.name}
+                    </p>
+                    <p className="text-[12px] text-[#004c91] flex items-center gap-1 mt-0.5 truncate font-medium">
+                      <School className="w-3.5 h-3.5 flex-shrink-0" />
+                      Campus {user.campus}
+                    </p>
+                    <p className="text-[13px] font-bold text-[#004c91] mt-1 flex items-center gap-1.5 truncate uppercase tracking-wide">
+                      {getRoleIcon()}
+                      {user.role}
+                    </p>
+                  </div>
+                  <div className="text-gray-400">
+                    {isProfileMenuOpen ? (
+                      <ChevronUp className="w-5 h-5" />
+                    ) : (
+                      <ChevronDown className="w-5 h-5" />
+                    )}
+                  </div>
+                </>
+              )}
             </div>
           </div>
 
@@ -292,7 +322,7 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile }: SidebarProps) {
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: 10, scale: 0.95 }}
                 transition={{ duration: 0.15 }}
-                className="absolute bottom-full left-4 right-4 mb-3 bg-white rounded-2xl shadow-xl border border-[#d2e5f5] overflow-hidden z-20 py-2"
+                className={`absolute bottom-full mb-3 bg-white rounded-2xl shadow-xl border border-[#d2e5f5] overflow-hidden z-20 py-2 ${collapsed ? "left-2 w-56" : "left-4 right-4"}`}
               >
                 <button
                   onClick={() => {

@@ -7,7 +7,7 @@
  * The borrower RETURN signature closes the item (status DONE). All wired to the real handover API.
  */
 import React, { useCallback, useEffect, useState } from 'react';
-import { Loader2, PackageCheck, Undo2, CheckCircle2, AlertCircle, PenLine, Clock } from 'lucide-react';
+import { Loader2, PackageCheck, Undo2, CheckCircle2, AlertCircle, PenLine, Clock, X } from 'lucide-react';
 import { delegationsApi } from '../api/delegationsApi';
 import {
   LOGISTICS_STATUS_META,
@@ -63,8 +63,9 @@ export function LogisticsHandoverSection({ visitInstanceId, canManage, pushToast
   const [items, setItems] = useState<VisitInstanceLogisticsItem[]>([]);
   const [loadedOnce, setLoadedOnce] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [openKey, setOpenKey] = useState<string | null>(null);   // `${itemId}:${type}` whose sign form is open
-  const [busyKey, setBusyKey] = useState<string | null>(null);
+  // Chọn một việc mượn/trả → mở modal biên bản để nhập tình trạng + ghi chú và ký.
+  const [signTarget, setSignTarget] = useState<{ item: VisitInstanceLogisticsItem; type: LogisticsHandoverType } | null>(null);
+  const [busy, setBusy] = useState(false);
   const [condition, setCondition] = useState<LogisticsItemCondition>('GOOD');
   const [note, setNote] = useState('');
   const [err, setErr] = useState<string | null>(null);
@@ -89,30 +90,30 @@ export function LogisticsHandoverSection({ visitInstanceId, canManage, pushToast
     (i) => i.coordinationMode === 'SYSTEM_REQUEST' && HANDOVER_STATUSES.has(i.status),
   );
 
-  const openForm = (itemId: number, type: LogisticsHandoverType) => {
-    setOpenKey(`${itemId}:${type}`); setCondition('GOOD'); setNote(''); setErr(null);
+  const openSignModal = (item: VisitInstanceLogisticsItem, type: LogisticsHandoverType) => {
+    setSignTarget({ item, type }); setCondition('GOOD'); setNote(''); setErr(null);
   };
-  const closeForm = () => { setOpenKey(null); setErr(null); };
+  const closeSignModal = () => { if (!busy) { setSignTarget(null); setErr(null); } };
 
-  const submit = async (item: VisitInstanceLogisticsItem, type: LogisticsHandoverType) => {
+  const submit = async () => {
+    if (!signTarget) return;
     if (CONDITION_REQUIRES_NOTE.has(condition) && !note.trim()) {
       const m = 'Vui lòng nhập ghi chú tình trạng tài sản.'; setErr(m); pushToast?.('error', m); return;
     }
     if (!visitInstanceId) return;
-    const key = `${item.logisticsItemId}:${type}`;
-    setBusyKey(key);
+    setBusy(true);
     try {
-      const res = await delegationsApi.signLogisticsHandoverBorrower(visitInstanceId, item.logisticsItemId, {
-        handoverType: type, itemCondition: condition, note: note.trim() || null,
+      const res = await delegationsApi.signLogisticsHandoverBorrower(visitInstanceId, signTarget.item.logisticsItemId, {
+        handoverType: signTarget.type, itemCondition: condition, note: note.trim() || null,
       });
       pushToast?.('success', res.message || 'Đã ký biên bản.');
-      setOpenKey(null); setNote('');
+      setSignTarget(null); setNote('');
       await load();
     } catch (e: any) {
       const m = apiError(e, 'Không thể ký biên bản. Vui lòng thử lại.');
       setErr(m); pushToast?.('error', m);
     } finally {
-      setBusyKey(null);
+      setBusy(false);
     }
   };
 
@@ -141,7 +142,16 @@ export function LogisticsHandoverSection({ visitInstanceId, canManage, pushToast
             return (
               <div key={it.logisticsItemId} className="rounded-xl border border-gray-200 p-4 shadow-sm">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="text-sm font-bold text-gray-800">{it.title}</div>
+                  <div className="min-w-0">
+                    <div className="text-sm font-bold text-gray-800">{it.title}</div>
+                    <div className="truncate text-xs text-gray-500">
+                      {[
+                        it.departmentName,
+                        it.quantity != null ? `SL: ${it.quantity}` : null,
+                        it.assignedToName ? `Người xử lý: ${it.assignedToName}` : null,
+                      ].filter(Boolean).join(' • ')}
+                    </div>
+                  </div>
                   <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide ${meta.cls}`}>{meta.label}</span>
                 </div>
 
@@ -150,13 +160,7 @@ export function LogisticsHandoverSection({ visitInstanceId, canManage, pushToast
                     title="Biên bản mượn / bàn giao" icon={<PackageCheck className="w-4 h-4" />}
                     handover={borrow}
                     canSign={canManage}
-                    busy={busyKey === `${it.logisticsItemId}:BORROW`}
-                    open={openKey === `${it.logisticsItemId}:BORROW`}
-                    condition={condition} note={note} err={err}
-                    onOpen={() => openForm(it.logisticsItemId, 'BORROW')}
-                    onClose={closeForm}
-                    onCondition={setCondition} onNote={setNote}
-                    onSubmit={() => submit(it, 'BORROW')}
+                    onOpen={() => openSignModal(it, 'BORROW')}
                     signLabel="Bên nhận ký mượn"
                   />
                   <HandoverBlock
@@ -164,13 +168,7 @@ export function LogisticsHandoverSection({ visitInstanceId, canManage, pushToast
                     handover={ret}
                     canSign={canManage && canReturn}
                     disabledHint={!canReturn ? 'Cần hoàn tất ký mượn (đủ hai bên) trước khi ký trả.' : undefined}
-                    busy={busyKey === `${it.logisticsItemId}:RETURN`}
-                    open={openKey === `${it.logisticsItemId}:RETURN`}
-                    condition={condition} note={note} err={err}
-                    onOpen={() => openForm(it.logisticsItemId, 'RETURN')}
-                    onClose={closeForm}
-                    onCondition={setCondition} onNote={setNote}
-                    onSubmit={() => submit(it, 'RETURN')}
+                    onOpen={() => openSignModal(it, 'RETURN')}
                     signLabel="Bên nhận ký trả"
                   />
                 </div>
@@ -179,20 +177,72 @@ export function LogisticsHandoverSection({ visitInstanceId, canManage, pushToast
           })
         )}
       </div>
+
+      {/* Modal biên bản ký mượn/trả — mở khi chọn một việc mượn đồ */}
+      {signTarget && (
+        <div className="fixed inset-0 z-[80] flex items-end sm:items-center justify-center">
+          <div className="absolute inset-0 bg-black/40" onClick={closeSignModal} />
+          <div className="relative w-full sm:w-[460px] rounded-t-2xl sm:rounded-xl bg-white shadow-xl border border-slate-200 p-4">
+            <div className="mb-3 flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h4 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
+                  {signTarget.type === 'BORROW'
+                    ? <><PackageCheck className="w-4 h-4 text-[#f37021]" /> Biên bản ký mượn (bên nhận)</>
+                    : <><Undo2 className="w-4 h-4 text-[#f37021]" /> Biên bản ký trả (bên trả)</>}
+                </h4>
+                <p className="truncate text-xs text-slate-500 mt-0.5">
+                  {signTarget.item.title}
+                  {signTarget.item.departmentName ? ` • ${signTarget.item.departmentName}` : ''}
+                  {signTarget.item.quantity != null ? ` • SL: ${signTarget.item.quantity}` : ''}
+                </p>
+              </div>
+              <button type="button" onClick={closeSignModal} disabled={busy}
+                className="rounded-full p-1 text-slate-500 hover:bg-slate-100 outline-none" aria-label="Đóng">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <label className="mb-1 block text-[11px] font-bold text-slate-600">Tình trạng tài sản</label>
+            <select value={condition} onChange={(e) => setCondition(e.target.value as LogisticsItemCondition)}
+              className="mb-3 w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm outline-none focus:border-[#004c91]">
+              {CONDITION_OPTIONS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+            </select>
+
+            <label className="mb-1 block text-[11px] font-bold text-slate-600">
+              Ghi chú tình trạng {CONDITION_REQUIRES_NOTE.has(condition) && <span className="text-red-500">*</span>}
+            </label>
+            <textarea value={note} onChange={(e) => setNote(e.target.value)} maxLength={1000} rows={3}
+              placeholder="VD: Tài sản đầy đủ, hoạt động tốt..."
+              className="w-full resize-none rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm outline-none focus:border-[#004c91]" />
+            {err && (
+              <p className="mt-2 flex items-center gap-1 text-[11px] font-semibold text-red-600">
+                <AlertCircle className="w-3 h-3 shrink-0" /> {err}
+              </p>
+            )}
+            <div className="mt-3 flex items-center justify-end gap-2">
+              <button type="button" disabled={busy} onClick={closeSignModal}
+                className="rounded-lg border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-50 outline-none">
+                Hủy
+              </button>
+              <button type="button" disabled={busy} onClick={submit}
+                className="inline-flex items-center gap-1 rounded-lg bg-[#004c91] px-3.5 py-1.5 text-xs font-bold text-white hover:bg-[#003b70] disabled:opacity-50 outline-none">
+                {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                Xác nhận ký {signTarget.type === 'BORROW' ? 'mượn' : 'trả'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 function HandoverBlock({
-  title, icon, handover, canSign, disabledHint, busy, open, condition, note, err,
-  onOpen, onClose, onCondition, onNote, onSubmit, signLabel,
+  title, icon, handover, canSign, disabledHint, onOpen, signLabel,
 }: {
   title: string; icon: React.ReactNode; handover: LogisticsHandover | null;
-  canSign: boolean; disabledHint?: string; busy: boolean; open: boolean;
-  condition: LogisticsItemCondition; note: string; err: string | null;
-  onOpen: () => void; onClose: () => void;
-  onCondition: (c: LogisticsItemCondition) => void; onNote: (v: string) => void;
-  onSubmit: () => void; signLabel: string;
+  canSign: boolean; disabledHint?: string;
+  onOpen: () => void; signLabel: string;
 }) {
   const borrowerSigned = !!handover?.borrowerSignedAt;
   const conditionLabel = handover?.itemCondition
@@ -209,34 +259,7 @@ function HandoverBlock({
       </div>
 
       {!borrowerSigned && (
-        open ? (
-          <div className="mt-2 space-y-2 rounded-lg border border-[#004c91]/20 bg-white p-2.5">
-            <div>
-              <label className="block text-[11px] font-bold text-gray-600 mb-1">Tình trạng tài sản</label>
-              <select value={condition} onChange={(e) => onCondition(e.target.value as LogisticsItemCondition)}
-                className="w-full px-2.5 py-1.5 rounded-lg border border-gray-300 outline-none text-xs bg-white focus:border-[#004c91]">
-                {CONDITION_OPTIONS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="block text-[11px] font-bold text-gray-600 mb-1">
-                Ghi chú tình trạng {CONDITION_REQUIRES_NOTE.has(condition) && <span className="text-red-500">*</span>}
-              </label>
-              <textarea value={note} onChange={(e) => onNote(e.target.value)} maxLength={1000}
-                placeholder="VD: Tài sản đầy đủ, hoạt động tốt..."
-                className="w-full h-[60px] resize-none px-2.5 py-1.5 rounded-lg border border-gray-300 outline-none text-xs focus:border-[#004c91]" />
-            </div>
-            {err && <p className="flex items-center gap-1 text-[11px] font-semibold text-red-600"><AlertCircle className="w-3 h-3 shrink-0" /> {err}</p>}
-            <div className="flex items-center justify-end gap-2">
-              <button type="button" disabled={busy} onClick={onClose}
-                className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-[11px] font-bold text-gray-600 outline-none hover:bg-gray-50 disabled:opacity-50">Hủy</button>
-              <button type="button" disabled={busy} onClick={onSubmit}
-                className="inline-flex items-center gap-1 rounded-lg bg-[#004c91] px-3 py-1.5 text-[11px] font-bold text-white outline-none hover:bg-[#003b70] disabled:opacity-50">
-                {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />} Xác nhận ký
-              </button>
-            </div>
-          </div>
-        ) : canSign ? (
+        canSign ? (
           <button type="button" onClick={onOpen}
             className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-[#004c91] bg-white px-3 py-1.5 text-[11px] font-bold text-[#004c91] outline-none hover:bg-[#f0f7ff]">
             <PenLine className="w-3.5 h-3.5" /> {signLabel}

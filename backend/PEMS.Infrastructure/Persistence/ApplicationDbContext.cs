@@ -380,19 +380,36 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
             .HasOne<User>().WithMany()
             .HasForeignKey(m => m.EditLockedBy).OnDelete(DeleteBehavior.SetNull);
 
-        // Feedback → VisitRequest, VisitRequestCampus, SubmittedBy, TargetUser
+        // Feedback (v10 feedback_rule_fixed) → VisitRequest, VisitRequestCampus, SubmittedBy and the
+        // typed business targets. All FKs are RESTRICT per the SQL schema; the type/target flow rule
+        // (chk_feedbacks_flow) plus target-column mapping is validated in FeedbackRules (backend).
         modelBuilder.Entity<Feedback>()
             .HasOne<VisitRequest>().WithMany()
             .HasForeignKey(f => f.VisitRequestId).OnDelete(DeleteBehavior.Restrict);
         modelBuilder.Entity<Feedback>()
             .HasOne<VisitRequestCampus>().WithMany()
-            .HasForeignKey(f => f.VisitInstanceId).OnDelete(DeleteBehavior.SetNull);
+            .HasForeignKey(f => f.VisitInstanceId).OnDelete(DeleteBehavior.Restrict);
         modelBuilder.Entity<Feedback>()
             .HasOne<User>().WithMany()
-            .HasForeignKey(f => f.SubmittedByUserId).OnDelete(DeleteBehavior.SetNull);
+            .HasForeignKey(f => f.SubmittedByUserId).OnDelete(DeleteBehavior.Restrict);
         modelBuilder.Entity<Feedback>()
             .HasOne<User>().WithMany()
-            .HasForeignKey(f => f.TargetUserId).OnDelete(DeleteBehavior.SetNull);
+            .HasForeignKey(f => f.TargetUserId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<Feedback>()
+            .HasOne<VisitParticipant>().WithMany()
+            .HasForeignKey(f => f.TargetParticipantId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<Feedback>()
+            .HasOne<VisitGuestMember>().WithMany()
+            .HasForeignKey(f => f.TargetGuestMemberId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<Feedback>()
+            .HasOne<VisitLogisticsItem>().WithMany()
+            .HasForeignKey(f => f.TargetLogisticsItemId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<Feedback>()
+            .HasOne<VisitLogisticsItemHandover>().WithMany()
+            .HasForeignKey(f => f.TargetHandoverId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<Feedback>()
+            .HasOne<Department>().WithMany()
+            .HasForeignKey(f => f.TargetDepartmentId).OnDelete(DeleteBehavior.Restrict);
 
         // News → Campus, VisitInstance, AuthorUser, CoverFile, ReviewedBy
         modelBuilder.Entity<PEMS.Domain.Entities.News.News>()

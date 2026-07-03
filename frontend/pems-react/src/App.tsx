@@ -53,6 +53,7 @@ import { DeptLeadVisitTasksPage } from './pages/dashboard/visit/DeptLeadVisitTas
 import { VisitParticipantInvitationDetail } from './pages/dashboard/visit/VisitParticipantInvitationDetail';
 import { AgendaTemplateManagement } from './pages/dashboard/visit/AgendaTemplateManagement';
 import { CreateVisitRequest } from './pages/dashboard/visit/CreateVisitRequest';
+import { VisitFeedbackPage } from './pages/dashboard/visit/VisitFeedbackPage';
 import { FAQManagement } from './pages/dashboard/faq/FAQManagement';
 import { FAQDetail } from './pages/dashboard/faq/FAQDetail';
 import { FAQPage } from './pages/FAQPage';
@@ -167,6 +168,7 @@ export default function App() {
             <Route path="visit/create" element={<CreateVisitRequest />} />
             <Route path="visit/agenda-templates" element={<AgendaTemplateManagement />} />
             <Route path="visit/process/:id" element={<VisitProcess />} />
+            <Route path="visit/feedback/:visitInstanceId" element={<VisitFeedbackPage />} />
             <Route path="visit/process-summary/:visitInstanceId" element={<VisitProcessSummaryPage />} />
             <Route path="visit/contribution/:visitInstanceId" element={<VisitContributionPage />} />
             <Route path="visit/reception-detail/:id" element={<VisitProcess />} />

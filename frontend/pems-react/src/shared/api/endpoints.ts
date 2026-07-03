@@ -253,5 +253,9 @@ export const API_ENDPOINTS = {
     visitSummaryDetail: (visitRequestId: string | number) => `/feedbacks/visit-summary/${visitRequestId}`,
     visitInstanceSummaryDetail: (visitRequestId: string | number, visitInstanceId: string | number) => `/feedbacks/visit-summary/${visitRequestId}/instances/${visitInstanceId}`,
     detail: (feedbackId: string | number) => `/feedbacks/${feedbackId}`,
+    // Feedback rule mới (v10): targets + batch submit + pending reminders.
+    visitFeedbackTargets: (visitInstanceId: string | number) => `/feedbacks/visit-instances/${visitInstanceId}/targets`,
+    submitVisitFeedback: (visitInstanceId: string | number) => `/feedbacks/visit-instances/${visitInstanceId}`,
+    myPending: '/feedbacks/my-pending',
   },
 };

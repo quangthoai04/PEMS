@@ -12,8 +12,20 @@ import { NotificationBell } from '../dashboard/NotificationBell';
 import { Menu } from 'lucide-react';
 import logo from '../../assets/images/2021-FPTU-Eng.png';
 
+// Key localStorage lưu trạng thái thu gọn sidebar — dùng chung mọi trang, mọi role.
+const SIDEBAR_COLLAPSED_KEY = 'pems_sidebar_collapsed';
+
 export function DashboardLayout() {
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  // Sidebar thu vào / mở ra (desktop) — persist qua localStorage để giữ sau reload.
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(
+    () => localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === '1',
+  );
+  const toggleSidebarCollapsed = () =>
+    setIsSidebarCollapsed((prev) => {
+      localStorage.setItem(SIDEBAR_COLLAPSED_KEY, prev ? '0' : '1');
+      return !prev;
+    });
 
   return (
     <div className="flex h-screen bg-[#fafafa] overflow-hidden flex-col lg:flex-row shadow-inner">
@@ -35,10 +47,12 @@ export function DashboardLayout() {
         </div>
       </header>
 
-      {/* Sidebar with mobile toggle hooks */}
-      <Sidebar 
-        isMobileOpen={isMobileSidebarOpen} 
-        onCloseMobile={() => setIsMobileSidebarOpen(false)} 
+      {/* Sidebar with mobile toggle hooks + desktop collapse */}
+      <Sidebar
+        isMobileOpen={isMobileSidebarOpen}
+        onCloseMobile={() => setIsMobileSidebarOpen(false)}
+        isCollapsed={isSidebarCollapsed}
+        onToggleCollapsed={toggleSidebarCollapsed}
       />
 
       {/* Main dashboard content container */}
@@ -50,7 +64,9 @@ export function DashboardLayout() {
           </div>
         </div>
         
-        <div className="p-4 sm:p-6 md:p-8 flex-1 w-full max-w-7xl mx-auto">
+        {/* Nội dung căn sát sidebar (không mx-auto để tránh khoảng trắng lớn bên trái);
+            khi sidebar thu gọn thì dùng gần full chiều ngang. */}
+        <div className={`flex-1 w-full ${isSidebarCollapsed ? 'p-2 sm:p-3 md:pl-4 md:pr-4 md:py-4 max-w-none' : 'p-3 sm:p-4 md:p-5 max-w-[1560px]'}`}>
           <Outlet />
         </div>
       </main>

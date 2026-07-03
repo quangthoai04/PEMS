@@ -11,7 +11,7 @@ import React, { Fragment, useEffect, useState } from 'react';
 import {
   Search, Plus, Eye, AlertCircle, Users, MapPin, Calendar,
   ChevronLeft, ChevronRight, ChevronDown, Check, X, XCircle, Mail,
-  FileText, ArrowRightCircle, Info, ClipboardList,
+  FileText, ArrowRightCircle, Info, ClipboardList, Star, CheckCircle2,
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
@@ -31,6 +31,9 @@ import {
 } from '../../../features/delegations/types/delegations.types';
 import { useAuthContext } from '../../../shared/auth/AuthContext';
 import { getVisitRequestFilterConfig } from '../../../features/delegations/config/visitRequestFilterConfig';
+import { visitFeedbackApi } from '../../../features/feedbacks/api/visitFeedbackApi';
+import { VisitFeedbackModal } from '../../../features/feedbacks/components/VisitFeedbackModal';
+import type { PendingFeedbackItem } from '../../../features/feedbacks/types/visitFeedback.types';
 
 type Tab = 'responsible' | 'attending';
 
@@ -288,6 +291,34 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
     }
     if (data.title) return data.title;
     return fallback;
+  };
+
+  // Feedback rule mới: map visitInstanceId → trạng thái đánh giá của user hiện tại.
+  // Backend trả các instance user là Visitor/Host và đang DURING_VISIT/AFTER_VISIT/CLOSED;
+  // dùng để hiện nút "Đánh giá" hoặc badge "Đã đánh giá" ở cột hành động.
+  const [feedbackByInstance, setFeedbackByInstance] = useState<Record<number, PendingFeedbackItem>>({});
+  useEffect(() => {
+    if (isAdmin || isHO || isDept || isStudent) return; // chỉ Visitor & Staff (host) có mục đánh giá
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await visitFeedbackApi.getMyPending();
+        if (cancelled) return;
+        const map: Record<number, PendingFeedbackItem> = {};
+        for (const it of res.items || []) map[it.visitInstanceId] = it;
+        setFeedbackByInstance(map);
+      } catch { /* im lặng — không chặn danh sách */ }
+    })();
+    return () => { cancelled = true; };
+  }, [isAdmin, isHO, isDept, isStudent]);
+
+  // Modal đánh giá mở ngay trên danh sách (không chuyển route). Sau khi gửi thành công,
+  // đổi row sang "Đã đánh giá" tại chỗ.
+  const [feedbackModalInstanceId, setFeedbackModalInstanceId] = useState<number | null>(null);
+  const handleFeedbackSubmitted = (instanceId: number) => {
+    setFeedbackByInstance((prev) =>
+      prev[instanceId] ? { ...prev, [instanceId]: { ...prev[instanceId], alreadySubmitted: true } } : prev,
+    );
   };
 
   // Phương án A: đơn liên cơ sở mở rộng để xem tiến trình từng campus. Mở tối đa 1 row tại 1 thời điểm.
@@ -901,6 +932,10 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
     const shouldHideParentCancel = isVisitor && isMultiCampusParentRow && row.hasStartedCampus === true;
     const canRenderCancelAction = (can('CANCEL_BY_VISITOR') || can('CANCEL_BY_HOST')) && !shouldHideParentCancel;
 
+    // Feedback rule mới: nút "Đánh giá" khi instance đang tiếp khách / đã hoàn tất và user
+    // đủ điều kiện (Visitor của đơn hoặc Host phụ trách); đã gửi rồi → badge check "Đã đánh giá".
+    const fb = row.visitInstanceId ? feedbackByInstance[row.visitInstanceId] : undefined;
+
     return (
       <div className="mx-auto grid w-[184px] grid-cols-4 gap-2 place-items-center">
         {/* Slot 1: Xem form yêu cầu */}
@@ -922,7 +957,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
           <span className="h-9 w-9" aria-hidden="true" />
         )}
 
-        {/* Slot 3: Approve & assign host (one-time) / Accept / Reason. Host được gán MỘT lần — không có chuyển/đổi host. */}
+        {/* Slot 3: Approve / Assign / Accept (Các hành động tích cực) */}
         {can('HO_APPROVE') ? (
           <ActionIconButton title="Duyệt đơn liên cơ sở" tone="green" icon={<Check className="h-5 w-5" />}
             onClick={(e) => { e.stopPropagation(); setApproveConfirm({ open: true, row, submitting: false, error: null }); }} />
@@ -935,17 +970,11 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
         ) : can('ASSIGN_TO_DEPARTMENT_STAFF') ? (
           <ActionIconButton title="Giao việc cho Staff" tone="blue" icon={<Users className="h-5 w-5" />}
             onClick={(e) => { e.stopPropagation(); submitAssignDeptStaff(row); }} />
-        ) : showReason ? (
-          <ActionIconButton title="Xem lý do từ chối" tone="orange" icon={<AlertCircle className="h-5 w-5" />}
-            onClick={(e) => { e.stopPropagation(); setReason({ open: true, row }); }} />
-        ) : isCancelledRow ? (
-          <ActionIconButton title="Xem lý do hủy" tone="gray" icon={<Info className="h-5 w-5" />}
-            onClick={(e) => { e.stopPropagation(); setCancelReason({ open: true, row }); }} />
         ) : (
           <span className="h-9 w-9" aria-hidden="true" />
         )}
 
-        {/* Slot 4: Reject / Cancel / Decline */}
+        {/* Slot 4: Reject / Cancel / Reason / Feedback (Các hành động tiêu cực / Cảnh báo / Đánh giá) */}
         {(can('HO_REJECT') || can('CAMPUS_REJECT')) ? (
           <ActionIconButton title="Từ chối" tone="red" icon={<X className="h-5 w-5" />}
             onClick={(e) => { e.stopPropagation(); setReject({ open: true, row, action: can('HO_REJECT') ? 'HO_REJECT' : 'CAMPUS_REJECT', text: '', submitting: false, error: null }); }} />
@@ -955,6 +984,19 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
         ) : canRenderCancelAction ? (
           <ActionIconButton title="Hủy lịch thăm" tone="red" icon={<XCircle className="h-5 w-5" />}
             onClick={(e) => { e.stopPropagation(); setCancel({ open: true, row, mode: can('CANCEL_BY_HOST') ? 'host' : 'visitor', instanceId: null, text: '', submitting: false, error: null, confirmed: false }); }} />
+        ) : showReason ? (
+          <ActionIconButton title="Xem lý do từ chối" tone="orange" icon={<AlertCircle className="h-5 w-5" />}
+            onClick={(e) => { e.stopPropagation(); setReason({ open: true, row }); }} />
+        ) : isCancelledRow ? (
+          <ActionIconButton title="Xem lý do hủy" tone="gray" icon={<Info className="h-5 w-5" />}
+            onClick={(e) => { e.stopPropagation(); setCancelReason({ open: true, row }); }} />
+        ) : fb && !fb.alreadySubmitted ? (
+          <ActionIconButton title="Đánh giá chuyến thăm" tone="orange" icon={<Star className="h-5 w-5" />}
+            onClick={(e) => { e.stopPropagation(); setFeedbackModalInstanceId(row.visitInstanceId!); }} />
+        ) : fb?.alreadySubmitted ? (
+          <span title="Đã đánh giá" className="flex h-9 w-9 items-center justify-center text-emerald-500">
+            <CheckCircle2 className="h-5 w-5" />
+          </span>
         ) : (
           <span className="h-9 w-9" aria-hidden="true" />
         )}
@@ -1025,67 +1067,91 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
   const renderCampusAccordion = (row: Row) => {
     const items = row.campusProgressItems || [];
     return (
-      <div className="border-b border-slate-200 bg-slate-50 px-4 sm:px-6 py-4" onClick={(e) => e.stopPropagation()}>
-        <div className="mb-3 flex items-center justify-between">
-          <h4 className="text-sm font-bold text-[#004c91]">Tiến trình theo từng cơ sở</h4>
-          <span className="text-xs font-semibold text-slate-500">{items.length} cơ sở</span>
-        </div>
+      <div className="bg-[#f8fafc] border-b border-slate-200/70 shadow-inner" onClick={(e) => e.stopPropagation()}>
         {items.length === 0 ? (
-          <p className="py-2 text-sm text-slate-500">Chưa có thông tin cơ sở cho đơn này.</p>
+          <p className="py-2 pl-14 text-xs text-slate-500">Chưa có thông tin cơ sở cho đơn này.</p>
         ) : (
-          <div className="divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200 bg-white">
+          <div className="divide-y divide-slate-200/60">
             {items.map((item) => (
-              <div key={item.visitInstanceId} className="flex flex-col gap-2 p-3 sm:flex-row sm:items-center sm:gap-4">
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-bold text-[#004c91]">
+              <div key={item.visitInstanceId} className="flex flex-col lg:grid lg:grid-cols-[52px_minmax(0,1fr)_210px_150px_246px] items-start lg:items-center py-2 px-3 lg:p-0 hover:bg-[#f1f5f9] transition-colors min-h-[44px]">
+                
+                {/* Spacer / STT col for desktop */}
+                <div className="hidden lg:block w-full"></div>
+                
+                {/* Info Column */}
+                <div className="lg:py-1 lg:pl-10 lg:pr-4 w-full flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4 min-w-0">
+                  <div className="text-xs font-bold text-[#004c91] truncate sm:min-w-[160px]">
                     {item.campusName || '-'}
-                    {item.campusCode ? <span className="ml-1 text-xs font-medium text-slate-400">({item.campusCode})</span> : null}
-                  </p>
-                  <p className="truncate text-xs text-slate-500">
-                    <span className="text-slate-400">Host:</span> {item.hostName || 'Đang phân công'}
-                  </p>
+                    {item.campusCode ? <span className="ml-1 text-[10px] font-medium text-slate-400">({item.campusCode})</span> : null}
+                  </div>
+                  <div className="text-[11px] text-slate-500 truncate">
+                    <span className="text-slate-400">Host:</span> <span className="font-semibold text-slate-700">{item.hostName || 'Đang phân công'}</span>
+                  </div>
                 </div>
-                <div className="text-xs text-slate-600 sm:w-[190px]">
-                  <div className="whitespace-nowrap"><span className="w-9 text-slate-400">Từ:</span> {formatDateTimeShort(item.plannedStartAt)}</div>
-                  <div className="whitespace-nowrap"><span className="w-9 text-slate-400">Đến:</span> {formatDateTimeShort(item.plannedEndAt)}</div>
+
+                {/* Time Column */}
+                <div className="lg:py-1 lg:px-3 text-[11px] text-slate-600 flex flex-wrap items-center gap-1 mt-1 lg:mt-0">
+                  <span className="truncate">{formatDateTimeShort(item.plannedStartAt)}</span>
+                  <span className="text-slate-300">→</span>
+                  <span className="truncate">{formatDateTimeShort(item.plannedEndAt)}</span>
                 </div>
-                <div className="sm:w-[150px]">
-                  <span className={`inline-flex justify-center whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-semibold ${getCampusStatusBadgeClass(item.instanceStatus)}`}>
+
+                {/* Status Column */}
+                <div className="lg:py-1 lg:px-3 lg:flex lg:justify-center mt-2 lg:mt-0">
+                  <span className={`inline-flex justify-center whitespace-nowrap rounded-full border px-2 py-0.5 text-[10px] font-bold ${getCampusStatusBadgeClass(item.instanceStatus)}`}>
                     {getCampusStatusLabel(item.instanceStatus)}
                   </span>
                 </div>
-                <div className="flex items-center gap-1 sm:w-[100px] sm:justify-end">
-                  {item.canViewCampusDetail && (
-                    <ActionIconButton 
-                      title={
-                        isHO && item.visitInstanceId && item.hostUserId != null && item.instanceStatus !== 'WAITING_REQUEST_APPROVAL' && item.instanceStatus !== 'WAITING_HOST_ASSIGNMENT' 
-                          ? 'Xem báo cáo tổng hợp' 
-                          : isVisitor && row.requestStatus === 'APPROVED' && item.hostUserId != null && item.instanceStatus !== 'WAITING_HOST_ASSIGNMENT'
-                            ? 'Xem chi tiết tiếp đón' 
+
+                {/* Actions Column */}
+                <div className="lg:py-1 lg:px-2 flex items-center mt-2 lg:mt-0 lg:justify-center w-full">
+                  <div className="mx-auto grid w-[184px] grid-cols-4 gap-2 place-items-center">
+                    {/* Slot 1: Empty */}
+                    <span className="h-9 w-9" aria-hidden="true" />
+                    
+                    {/* Slot 2: View Detail */}
+                    {item.canViewCampusDetail ? (
+                      <ActionIconButton 
+                        title={
+                          isHO && item.visitInstanceId && item.hostUserId != null && item.instanceStatus !== 'WAITING_REQUEST_APPROVAL' && item.instanceStatus !== 'WAITING_HOST_ASSIGNMENT' 
+                            ? 'Xem báo cáo tổng hợp' 
                             : 'Xem chi tiết cơ sở'
-                      } 
-                      tone={
-                        isHO && item.visitInstanceId && item.hostUserId != null && item.instanceStatus !== 'WAITING_REQUEST_APPROVAL' && item.instanceStatus !== 'WAITING_HOST_ASSIGNMENT' 
-                          ? 'orange' 
-                          : isVisitor && row.requestStatus === 'APPROVED' && item.hostUserId != null && item.instanceStatus !== 'WAITING_HOST_ASSIGNMENT'
-                            ? 'blue' 
+                        } 
+                        tone={
+                          isHO && item.visitInstanceId && item.hostUserId != null && item.instanceStatus !== 'WAITING_REQUEST_APPROVAL' && item.instanceStatus !== 'WAITING_HOST_ASSIGNMENT' 
+                            ? 'orange' 
                             : 'blue'
-                      } 
-                      icon={
-                        isHO && item.visitInstanceId && item.hostUserId != null && item.instanceStatus !== 'WAITING_REQUEST_APPROVAL' && item.instanceStatus !== 'WAITING_HOST_ASSIGNMENT' 
-                          ? <FileText className="h-5 w-5" /> 
-                          : isVisitor && row.requestStatus === 'APPROVED' && item.hostUserId != null && item.instanceStatus !== 'WAITING_HOST_ASSIGNMENT'
-                            ? <ClipboardList className="h-5 w-5" /> 
-                            : <Eye className="h-5 w-5" />
-                      } 
-                      onClick={() => openCampusDetail(row, item)} 
-                    />
-                  )}
-                  {item.canViewCancelReason ? (
-                    <ActionIconButton title="Xem lý do hủy" tone="gray" icon={<XCircle className="h-5 w-5" />} onClick={() => openCampusCancelReason(row, item)} />
-                  ) : item.canCancelCampusVisit ? (
-                    <ActionIconButton title="Hủy lịch thăm cơ sở" tone="red" icon={<XCircle className="h-5 w-5" />} onClick={() => openCampusCancel(row, item)} />
-                  ) : null}
+                        } 
+                        icon={
+                          isHO && item.visitInstanceId && item.hostUserId != null && item.instanceStatus !== 'WAITING_REQUEST_APPROVAL' && item.instanceStatus !== 'WAITING_HOST_ASSIGNMENT' 
+                            ? <FileText className="h-5 w-5" /> 
+                            : isVisitor && row.requestStatus === 'APPROVED' && item.hostUserId != null && item.instanceStatus !== 'WAITING_HOST_ASSIGNMENT'
+                              ? <ClipboardList className="h-5 w-5" /> 
+                              : <Eye className="h-5 w-5" />
+                        } 
+                        onClick={() => openCampusDetail(row, item)} 
+                      />
+                    ) : <span className="h-9 w-9" aria-hidden="true" />}
+
+                    {/* Slot 3: Empty */}
+                    <span className="h-9 w-9" aria-hidden="true" />
+
+                    {/* Slot 4: Cancel / Cancel Reason / Feedback */}
+                    {item.canViewCancelReason ? (
+                      <ActionIconButton title="Xem lý do hủy" tone="gray" icon={<Info className="h-5 w-5" />} onClick={() => openCampusCancelReason(row, item)} />
+                    ) : item.canCancelCampusVisit ? (
+                      <ActionIconButton title="Hủy lịch thăm cơ sở" tone="red" icon={<XCircle className="h-5 w-5" />} onClick={() => openCampusCancel(row, item)} />
+                    ) : item.visitInstanceId && feedbackByInstance[item.visitInstanceId] ? (
+                      feedbackByInstance[item.visitInstanceId].alreadySubmitted ? (
+                        <span title="Đã đánh giá" className="flex h-9 w-9 items-center justify-center text-emerald-500">
+                          <CheckCircle2 className="h-5 w-5" />
+                        </span>
+                      ) : (
+                        <ActionIconButton title="Đánh giá chuyến thăm" tone="orange" icon={<Star className="h-5 w-5" />}
+                          onClick={() => setFeedbackModalInstanceId(item.visitInstanceId!)} />
+                      )
+                    ) : <span className="h-9 w-9" aria-hidden="true" />}
+                  </div>
                 </div>
               </div>
             ))}
@@ -1118,7 +1184,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
         : 'Bạn chưa có đơn phụ trách nào.';
 
   return (
-    <div className="w-full max-w-[1320px] mx-auto p-4 sm:p-6 lg:p-8 flex flex-col space-y-6 pb-12 animate-in fade-in duration-300">
+    <div className="w-full flex flex-col space-y-6 pb-12 animate-in fade-in duration-300">
       {/* Header */}
       {!isEmbedded && (
         <>
@@ -1378,7 +1444,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
       <div className="w-full overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm flex flex-col">
         {/* Desktop */}
         <div className="hidden lg:block w-full">
-          <div className="grid grid-cols-[52px_minmax(0,1fr)_210px_150px_200px] bg-[#004c91] text-white">
+          <div className="grid grid-cols-[52px_minmax(0,1fr)_210px_150px_246px] bg-[#004c91] text-white">
             <div className="p-3 text-[12px] font-bold text-center uppercase tracking-wider">STT</div>
             <div className="p-3 text-[12px] font-bold text-left uppercase tracking-wider">Thông tin đoàn</div>
             <div 
@@ -1409,7 +1475,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
               const isExpanded = expandedRequestId === row.visitRequestId;
               return (
               <Fragment key={row.id}>
-              <div className={`grid grid-cols-[52px_minmax(0,1fr)_210px_150px_200px] items-center min-h-[78px] border-b border-slate-200/70 transition-colors duration-150 ${isExpanded ? 'bg-blue-50' : index % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-blue-50 group`}>
+              <div className={`grid grid-cols-[52px_minmax(0,1fr)_210px_150px_246px] items-center min-h-[78px] border-b border-slate-200/70 transition-colors duration-150 ${isExpanded ? 'bg-blue-50' : index % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-blue-50 group`}>
                 <div className="py-3 px-3 text-center font-bold text-[#004c91] text-sm">{(currentPage - 1) * pageSize + index + 1}</div>
                 <div className="py-3 px-3 min-w-0 flex flex-col justify-center pr-4">
                   <p className="text-sm font-bold text-[#004c91] line-clamp-2 break-words" title={row.name}>{row.name}</p>
@@ -1709,6 +1775,14 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
           }}
         />
       )}
+
+      {/* Modal đánh giá chuyến thăm — mở ngay trên danh sách, không chuyển route */}
+      <VisitFeedbackModal
+        open={feedbackModalInstanceId !== null}
+        visitInstanceId={feedbackModalInstanceId}
+        onClose={() => setFeedbackModalInstanceId(null)}
+        onSubmitted={handleFeedbackSubmitted}
+      />
 
       {/* Toast viewport (success/failure notifications) */}
       {toasts.length > 0 && (

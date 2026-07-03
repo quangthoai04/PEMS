@@ -113,22 +113,21 @@ export function SubmittedVisitRequestDetailModal({
           onClick={(e) => e.stopPropagation()}
           className="bg-white w-full max-w-5xl max-h-[92vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden relative border border-gray-100"
         >
-          {/* Header */}
-          <div className="flex-none px-6 py-5 sm:px-10 flex items-start justify-between text-white bg-[#004c91]">
-            <div className="pr-8">
-              <h2 className="text-xl sm:text-2xl font-black tracking-tight mb-1">{headerTitle(data?.requestStatus)}</h2>
-              <p className="text-white/80 font-medium text-xs sm:text-sm">Thông tin khách đã gửi trong đơn</p>
+          {/* Header — compact 1 vùng mỏng */}
+          <div className="flex-none px-4 sm:px-6 py-3 flex items-start justify-between text-white bg-[#004c91]">
+            <div className="pr-8 min-w-0">
+              <h2 className="text-base sm:text-lg font-bold tracking-tight">{headerTitle(data?.requestStatus)}</h2>
               {data && (
-                <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold">
-                  <span className="inline-flex items-center rounded-full bg-white/15 px-3 py-1">Mã đơn: {data.requestCode || '-'}</span>
-                  <span className={`inline-flex items-center rounded-full px-3 py-1 ${
+                <div className="mt-1.5 flex flex-wrap gap-1.5 text-[11px] font-semibold">
+                  <span className="inline-flex items-center rounded-full bg-white/15 px-2.5 py-0.5">Mã đơn: {data.requestCode || '-'}</span>
+                  <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 ${
                     isRejected ? 'bg-red-400/90 text-red-950'
                     : data.requestStatus === 'PENDING_APPROVAL' ? 'bg-yellow-400/90 text-yellow-950'
                     : isCancelled ? 'bg-slate-300/90 text-slate-800'
                     : 'bg-emerald-400/90 text-emerald-950'
                   }`}>{statusLabel(data.requestStatus)}</span>
-                  <span className="inline-flex items-center rounded-full bg-white/15 px-3 py-1">Phạm vi: {scopeLabel}</span>
-                  <span className="inline-flex items-center rounded-full bg-white/15 px-3 py-1">Ngày gửi: {formatDateTime(data.submittedAt)}</span>
+                  <span className="inline-flex items-center rounded-full bg-white/15 px-2.5 py-0.5">Phạm vi: {scopeLabel}</span>
+                  <span className="inline-flex items-center rounded-full bg-white/15 px-2.5 py-0.5">Ngày gửi: {formatDateTime(data.submittedAt)}</span>
                 </div>
               )}
             </div>
@@ -136,14 +135,14 @@ export function SubmittedVisitRequestDetailModal({
               type="button"
               onClick={onClose}
               aria-label="Đóng"
-              className="absolute top-4 right-4 sm:top-5 sm:right-6 p-2 text-white/70 hover:text-white hover:bg-white/20 rounded-full transition-all"
+              className="absolute top-2.5 right-3 p-1.5 text-white/70 hover:text-white hover:bg-white/20 rounded-full transition-all"
             >
-              <X className="w-5 h-5 sm:w-6 sm:h-6" />
+              <X className="w-5 h-5" />
             </button>
           </div>
 
           {/* Body */}
-          <div className="flex-1 overflow-y-auto px-4 sm:px-10 py-8 bg-white">
+          <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-4 bg-white">
             {loading ? (
               <div className="py-20 flex flex-col items-center justify-center text-slate-500">
                 <Loader2 className="w-10 h-10 animate-spin text-[#004c91] mb-3" />
@@ -155,7 +154,7 @@ export function SubmittedVisitRequestDetailModal({
                 <p className="font-semibold text-red-600 max-w-md">{error}</p>
               </div>
             ) : data ? (
-              <div className="space-y-10">
+              <div className="space-y-5">
                 {/* Lý do từ chối (pre-approval reject) — decision_note, never cancellation_reason. */}
                 {isRejected && data.decisionNote && (
                   <DecisionReasonPanel
@@ -204,7 +203,7 @@ export function SubmittedVisitRequestDetailModal({
           </div>
 
           {/* Footer */}
-          <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex items-center justify-end gap-3">
+          <div className="px-4 sm:px-6 py-2.5 bg-gray-50 border-t border-gray-100 flex items-center justify-end gap-2">
             {data?.canReject && (
               <button
                 type="button"

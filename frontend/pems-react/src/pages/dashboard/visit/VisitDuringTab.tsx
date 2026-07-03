@@ -34,9 +34,12 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
 import { MinutesCard } from './MinutesCard';
 import { LogisticsHandoverSection } from '../../../features/delegations/components/LogisticsHandoverSection';
+import { VisitFeedbackModal } from '../../../features/feedbacks/components/VisitFeedbackModal';
 
 export function VisitDuringTab({ isReadOnly = false, isDept = false, visitInstanceId }: { isReadOnly?: boolean, isDept?: boolean, visitInstanceId?: number }) {
   const navigate = useNavigate();
+  // Modal đánh giá chuyến thăm — mở tại chỗ, không chuyển route.
+  const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState(false);
   // Image Upload and Card Scanning States
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadedCardImage, setUploadedCardImage] = useState<string | null>(null);
@@ -311,190 +314,38 @@ export function VisitDuringTab({ isReadOnly = false, isDept = false, visitInstan
 
   return (
     <div className="space-y-8 animate-in fade-in zoom-in-95 duration-300">
-      
-      {/* 1. Feedback Table */}
-      <div className="bg-white rounded-2xl border border-gray-200 shadow-sm transition-all overflow-hidden relative">
-        <div 
-          className="bg-[#004c91] px-6 py-4 flex items-center justify-between cursor-pointer"
-          onClick={() => setIsSection1Expanded(!isSection1Expanded)}
-        >
-          <h2 className="text-xl font-bold text-white flex items-center gap-2">
-             <span className="w-8 h-8 rounded-full bg-[#f37021] flex items-center justify-center text-sm">1</span>
-             Đánh giá (Feedback)
-          </h2>
-          <button className="text-white hover:bg-white/20 p-1 rounded-full transition-colors">
-            {isSection1Expanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
-          </button>
-        </div>
-        <AnimatePresence>
-          {isSection1Expanded && (
-            <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden">
-              <fieldset disabled={isReadOnly} className="contents">
-                <div className="overflow-x-auto">
-          <table className="w-full text-sm text-left font-sans">
-            <thead className="bg-gray-50 text-gray-700 font-bold border-b border-gray-200">
-              <tr>
-                <th className="px-6 py-4 w-16 text-center">Phần</th>
-                <th className="px-6 py-4">Thông tin</th>
-                <th className="px-6 py-4 w-48 text-center">Đánh giá (5 sao)</th>
-                <th className="px-6 py-4 w-72">Feedback</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {/* Row 1 */}
-              <tr className="bg-white hover:bg-gray-50/50 transition-colors">
-                <td className="px-6 py-4 font-bold text-gray-900 text-center align-top">1</td>
-                <td className="px-6 py-4 align-top">
-                  <div 
-                    className="flex items-center justify-between cursor-pointer font-bold text-[#004c91]"
-                    onClick={() => setExpandedRow1(!expandedRow1)}
-                  >
-                    <span>Người tạo đoàn khách: Nguyễn Minh Quyên</span>
-                    {expandedRow1 ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                  </div>
-                  <AnimatePresence>
-                    {expandedRow1 && (
-                      <motion.div 
-                        initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
-                        className="overflow-hidden"
-                      >
-                        <div className="pt-3 pb-1 space-y-2 text-gray-600 text-[13px] border-t border-gray-100 mt-3">
-                          <p><span className="font-semibold text-gray-700">Phòng ban:</span> Tuyển sinh</p>
-                          <p><span className="font-semibold text-gray-700">Đơn vị:</span> ĐH FPT</p>
-                          <p><span className="font-semibold text-gray-700">SĐT:</span> 0987654321</p>
-                          <p><span className="font-semibold text-gray-700">Email:</span> quyen@fpt.edu.vn</p>
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </td>
-                <td className="px-6 py-4 text-center align-top">
-                  <div className="flex justify-center">{renderStars('creator')}</div>
-                </td>
-                <td className="px-6 py-4 align-top">
-                  <textarea rows={2} placeholder="Nhập feedback..." className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-[#f37021] outline-none text-sm transition-colors resize-y" value={feedbacks['creator'] || ''} onChange={(e) => handleFeedback('creator', e.target.value)} />
-                </td>
-              </tr>
-              {/* Row 2 */}
-              <tr className="bg-white hover:bg-gray-50/50 transition-colors">
-                <td className="px-6 py-4 font-bold text-gray-900 text-center align-top">2</td>
-                <td className="px-6 py-4 font-bold text-[#004c91] align-top">
-                  Thông tin đoàn khách: Đoàn đối tác Đại học Tokyo
-                </td>
-                <td className="px-6 py-4 text-center align-top">
-                  <div className="flex justify-center">{renderStars('guest')}</div>
-                </td>
-                <td className="px-6 py-4 align-top">
-                  <textarea rows={2} placeholder="Nhập feedback..." className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-[#f37021] outline-none text-sm transition-colors resize-y" value={feedbacks['guest'] || ''} onChange={(e) => handleFeedback('guest', e.target.value)} />
-                </td>
-              </tr>
-              {/* Row 3 */}
-              <tr className="bg-white hover:bg-gray-50/50 transition-colors">
-                <td className="px-6 py-4 font-bold text-gray-900 text-center align-top">3</td>
-                <td className="px-6 py-4 align-top">
-                   <div 
-                    className="flex items-center justify-between cursor-pointer font-bold text-[#004c91]"
-                    onClick={() => setExpandedRow3(!expandedRow3)}
-                  >
-                    <span>Setup</span>
-                    {expandedRow3 ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                  </div>
-                  <AnimatePresence>
-                    {expandedRow3 && (
-                       <motion.div 
-                        initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
-                        className="overflow-hidden"
-                      >
-                         <div className="pt-3 pb-1 space-y-2 text-gray-600 text-[13px] border-t border-gray-100 mt-3 pl-2">
-                           <p className="font-bold text-[#f37021] mb-1">Thành phần tham gia:</p>
-                           <ul className="list-disc pl-4 space-y-1">
-                             <li><span className="font-semibold text-gray-700">Host:</span> Trần Văn A</li>
-                             <li><span className="font-semibold text-gray-700">Staff hỗ trợ IC:</span> Lê Hữu B</li>
-                             <li><span className="font-semibold text-gray-700">Phòng ban hỗ trợ:</span> Phòng IT</li>
-                             <li><span className="font-semibold text-gray-700">Sinh viên hỗ trợ:</span> Câu lạc bộ sự kiện</li>
-                           </ul>
-                         </div>
-                       </motion.div>
-                    )}
-                  </AnimatePresence>
-                </td>
-                <td className="px-6 py-4 text-center align-top">
-                  <div className="flex justify-center">{renderStars('setup')}</div>
-                </td>
-                <td className="px-6 py-4 align-top">
-                  <textarea rows={2} placeholder="Nhập feedback..." className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-[#f37021] outline-none text-sm transition-colors resize-y" value={feedbacks['setup'] || ''} onChange={(e) => handleFeedback('setup', e.target.value)} />
-                </td>
-              </tr>
-              {/* Row 4 */}
-               <tr className="bg-white hover:bg-gray-50/50 transition-colors">
-                <td className="px-6 py-4 font-bold text-gray-900 text-center align-top">4</td>
-                <td className="px-6 py-4 align-top">
-                   <div 
-                    className="flex items-center justify-between cursor-pointer font-bold text-[#004c91]"
-                    onClick={() => setExpandedRow4(!expandedRow4)}
-                  >
-                    <span>Detail setup</span>
-                    {expandedRow4 ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                  </div>
-                  <AnimatePresence>
-                    {expandedRow4 && (
-                       <motion.div 
-                        initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
-                        className="overflow-hidden"
-                      >
-                         <div className="pt-3 pb-1 space-y-3 text-gray-600 text-[13px] border-t border-gray-100 mt-3 pl-2">
-                           <ul className="list-disc pl-4 space-y-2">
-                             <li>
-                               <span className="font-semibold text-gray-700 block">Welcome LED:</span> Đã thiết lập
-                             </li>
-                             <li>
-                               <span className="font-semibold text-gray-700 block">Campus tour:</span> 
-                               <div className="pl-2 mt-1 space-y-1">
-                                  <p>- Người dẫn: Phạm Thị C</p>
-                                  <p>- Xe điện: Có (2 xe)</p>
-                                  <p>- Người lái: Bác D</p>
-                               </div>
-                             </li>
-                             <li>
-                               <span className="font-semibold text-gray-700 block">Họp:</span> 
-                               <div className="pl-2 mt-1 space-y-1">
-                                  <p>- Phòng họp: Phòng Alpha</p>
-                                  <p>- Teabreak và setup khác: Trái cây, Trà, Nước</p>
-                               </div>
-                             </li>
-                             <li>
-                               <span className="font-semibold text-gray-700 block">Khác:</span> 
-                               <div className="pl-2 mt-1 space-y-1">
-                                  <p>- Lớp võ: Biểu diễn Vovinam</p>
-                                  <p>- Lớp nhạc: Trống hội</p>
-                               </div>
-                             </li>
-                           </ul>
-                         </div>
-                       </motion.div>
-                    )}
-                  </AnimatePresence>
-                </td>
-                <td className="px-6 py-4 text-center align-top">
-                  <div className="flex justify-center">{renderStars('detail')}</div>
-                </td>
-                <td className="px-6 py-4 align-top">
-                  <textarea rows={2} placeholder="Nhập feedback..." className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-[#f37021] outline-none text-sm transition-colors resize-y" value={feedbacks['detail'] || ''} onChange={(e) => handleFeedback('detail', e.target.value)} />
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-              </fieldset>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
 
-      {/* Ký mượn / ký trả tài sản hậu cần — Host ký bên nhận (real handover API). */}
+      {/* Ký mượn tài sản hậu cần — phần đầu tiên của tab Đang tiếp khách (real handover API). */}
       {visitInstanceId && (
         <LogisticsHandoverSection visitInstanceId={visitInstanceId} canManage={!isReadOnly && !isDept} />
       )}
+
+      {/* Đánh giá chuyến thăm — flow feedback mới (dữ liệu thật, trang riêng thay bảng mock cũ) */}
+      {visitInstanceId && !isDept && (
+        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm px-6 py-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="p-1.5 bg-orange-100 rounded-lg shrink-0"><Star className="w-5 h-5 text-[#f37021]" /></div>
+            <div className="min-w-0">
+              <p className="text-sm font-bold text-gray-800">Đánh giá chuyến thăm</p>
+              <p className="text-xs text-gray-500 truncate">Đánh giá đoàn khách, các bên hỗ trợ setup và bên hậu cần theo dữ liệu thật.</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setIsFeedbackModalOpen(true)}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-[#004c91] bg-white px-3.5 py-1.5 text-xs font-bold text-[#004c91] hover:bg-[#f0f7ff] outline-none"
+          >
+            <Star className="w-3.5 h-3.5" /> Đánh giá ngay
+          </button>
+        </div>
+      )}
+
+      {/* Modal đánh giá — mở tại chỗ trong Visit Process */}
+      <VisitFeedbackModal
+        open={isFeedbackModalOpen}
+        visitInstanceId={visitInstanceId ?? null}
+        onClose={() => setIsFeedbackModalOpen(false)}
+      />
 
       {/* 2. Biên bản cuộc họp — bản thật (backend + cơ chế lock) khi có visitInstanceId; nếu không, dùng mock cũ */}
       {visitInstanceId ? (

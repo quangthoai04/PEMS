@@ -14,6 +14,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthContext } from '../../../shared/auth/AuthContext';
 import { VisitNewsSection } from './VisitNewsSection';
+import { LogisticsHandoverSection } from '../../../features/delegations/components/LogisticsHandoverSection';
 
 // Default Delegation Members for tag dropdown and display
 const DEFAULT_GUESTS = [
@@ -259,7 +260,12 @@ export function VisitAfterTab({ onTourCloseSuccess, isReadOnly = false, isDept =
 
   return (
     <div className="space-y-8 text-left">
-      
+
+      {/* Ký trả tài sản hậu cần — phần đầu tiên của tab Sau tiếp khách (real handover API). */}
+      {visitInstanceId && !isStudent && (
+        <LogisticsHandoverSection visitInstanceId={visitInstanceId} canManage={!isReadOnly && !isDept} />
+      )}
+
       {/* SECTION 1: PHOTO ALBUM & FACE SCANNING */}
       <div className="bg-white rounded-[2rem] border border-gray-200 shadow-sm overflow-hidden flex flex-col">
         

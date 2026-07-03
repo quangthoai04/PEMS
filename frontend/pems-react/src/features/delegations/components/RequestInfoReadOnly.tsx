@@ -32,23 +32,34 @@ function fmtDateTime(value?: string | null): string {
   return hm ? `${d}/${m}/${y} ${hm}` : `${d}/${m}/${y}`;
 }
 
+/** Dòng key-value compact ("Nhãn: Giá trị") — thay cho field-per-card cũ để tiết kiệm diện tích. */
 function Field({ label, value, className = '', multiline = false }: {
   label: string; value?: string | null; className?: string; multiline?: boolean;
 }) {
   const has = value != null && String(value).trim() !== '';
-  return (
-    <div className={className}>
-      <label className="mb-2 block text-sm font-bold text-gray-700">{label}</label>
-      <div className={`w-full rounded-xl border border-gray-200 bg-gray-50/50 px-4 py-2.5 text-sm font-medium text-gray-800 ${multiline ? 'min-h-[80px] whitespace-pre-wrap' : ''}`}>
-        {has ? value : <span className="font-normal italic text-gray-400">{EMPTY}</span>}
+  if (multiline) {
+    return (
+      <div className={`py-0.5 text-[13px] leading-5 ${className}`}>
+        <span className="text-gray-500">{label}:</span>
+        <p className="mt-0.5 whitespace-pre-wrap break-words font-medium text-gray-800">
+          {has ? value : <span className="font-normal italic text-gray-400">{EMPTY}</span>}
+        </p>
       </div>
+    );
+  }
+  return (
+    <div className={`flex gap-2 py-0.5 text-[13px] leading-5 ${className}`}>
+      <span className="w-40 shrink-0 text-gray-500">{label}:</span>
+      <span className="min-w-0 break-words font-medium text-gray-800">
+        {has ? value : <span className="font-normal italic text-gray-400">{EMPTY}</span>}
+      </span>
     </div>
   );
 }
 
 export function RegistrantInfoReadOnly({ summary }: { summary?: VisitProcessRequestSummary | null }) {
   return (
-    <div className="grid grid-cols-1 gap-6 bg-white p-6 md:grid-cols-2">
+    <div className="grid grid-cols-1 gap-x-10 bg-white px-4 py-3 md:grid-cols-2">
       <Field label="Họ và tên người đăng ký" value={summary?.registrantName} />
       <Field label="Đơn vị / tổ chức" value={summary?.registrantOrganization} />
       <Field label="Chức danh / phòng ban" value={summary?.registrantJobTitle} />
@@ -61,28 +72,28 @@ export function RegistrantInfoReadOnly({ summary }: { summary?: VisitProcessRequ
 
 function MembersTable({ members, emptyText }: { members: VisitProcessGuestMember[]; emptyText: string }) {
   if (!members || members.length === 0) {
-    return <p className="text-sm italic text-gray-400">{emptyText}</p>;
+    return <p className="text-[13px] italic text-gray-400">{emptyText}</p>;
   }
   return (
-    <div className="overflow-x-auto rounded-xl border border-gray-200">
-      <table className="min-w-full text-sm">
-        <thead className="bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
+    <div className="overflow-x-auto rounded-md border border-gray-200">
+      <table className="min-w-full text-[13px]">
+        <thead className="border-b border-gray-200 bg-gray-50 text-left text-xs text-gray-500">
           <tr>
-            <th className="px-3 py-2 font-bold">STT</th>
-            <th className="px-3 py-2 font-bold">Họ và tên</th>
-            <th className="px-3 py-2 font-bold">Chức vụ</th>
-            <th className="px-3 py-2 font-bold">Đơn vị</th>
-            <th className="px-3 py-2 font-bold">Quốc tịch</th>
+            <th className="px-2.5 py-1.5 font-semibold">STT</th>
+            <th className="px-2.5 py-1.5 font-semibold">Họ và tên</th>
+            <th className="px-2.5 py-1.5 font-semibold">Chức vụ</th>
+            <th className="px-2.5 py-1.5 font-semibold">Đơn vị</th>
+            <th className="px-2.5 py-1.5 font-semibold">Quốc tịch</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-100">
           {members.map((m, i) => (
             <tr key={m.guestMemberId || i}>
-              <td className="px-3 py-2 text-gray-500">{i + 1}</td>
-              <td className="px-3 py-2 font-medium text-gray-800">{m.fullName}</td>
-              <td className="px-3 py-2 text-gray-600">{m.jobTitle || '—'}</td>
-              <td className="px-3 py-2 text-gray-600">{m.organization || '—'}</td>
-              <td className="px-3 py-2 text-gray-600">{m.nationality || '—'}</td>
+              <td className="px-2.5 py-1.5 text-gray-500">{i + 1}</td>
+              <td className="px-2.5 py-1.5 font-medium text-gray-800">{m.fullName}</td>
+              <td className="px-2.5 py-1.5 text-gray-600">{m.jobTitle || '—'}</td>
+              <td className="px-2.5 py-1.5 text-gray-600">{m.organization || '—'}</td>
+              <td className="px-2.5 py-1.5 text-gray-600">{m.nationality || '—'}</td>
             </tr>
           ))}
         </tbody>
@@ -100,8 +111,8 @@ export function DelegationInfoReadOnly({ summary }: { summary?: VisitProcessRequ
   const scopeLabel = summary?.visitScope ? (VISIT_SCOPE_LABELS[summary.visitScope] || summary.visitScope) : null;
 
   return (
-    <div className="space-y-6 border-t border-gray-100 bg-white p-6">
-      <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+    <div className="space-y-3 border-t border-gray-100 bg-white px-4 py-3">
+      <div className="grid grid-cols-1 gap-x-10 md:grid-cols-2">
         <Field label="Tên đoàn khách" value={summary?.delegationName} />
         <Field label="Phạm vi" value={scopeLabel} />
         <Field label="Loại hình tham quan" value={visitTypeLabel} />
@@ -111,28 +122,28 @@ export function DelegationInfoReadOnly({ summary }: { summary?: VisitProcessRequ
       </div>
 
       <div>
-        <label className="mb-2 block text-sm font-bold text-gray-700">Cơ sở &amp; thời gian dự kiến</label>
-        <div className="overflow-x-auto rounded-xl border border-orange-100 bg-orange-50/40">
-          <table className="min-w-full text-sm">
-            <thead className="text-left text-xs uppercase tracking-wide text-gray-500">
+        <p className="mb-1 border-b border-gray-200 pb-1 text-xs font-bold uppercase tracking-wide text-[#004c91]">Cơ sở &amp; thời gian dự kiến</p>
+        <div className="overflow-x-auto rounded-md border border-gray-200">
+          <table className="min-w-full text-[13px]">
+            <thead className="border-b border-gray-200 bg-gray-50 text-left text-xs text-gray-500">
               <tr>
-                <th className="px-3 py-2 font-bold">Cơ sở</th>
-                <th className="px-3 py-2 font-bold">Bắt đầu</th>
-                <th className="px-3 py-2 font-bold">Kết thúc</th>
+                <th className="px-2.5 py-1.5 font-semibold">Cơ sở</th>
+                <th className="px-2.5 py-1.5 font-semibold">Bắt đầu</th>
+                <th className="px-2.5 py-1.5 font-semibold">Kết thúc</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-orange-100">
+            <tbody className="divide-y divide-gray-100">
               {(summary?.campuses ?? []).length === 0 ? (
-                <tr><td className="px-3 py-2 italic text-gray-400" colSpan={3}>{EMPTY}</td></tr>
+                <tr><td className="px-2.5 py-1.5 italic text-gray-400" colSpan={3}>{EMPTY}</td></tr>
               ) : (
                 summary!.campuses.map((c) => (
-                  <tr key={c.visitInstanceId} className={c.isCurrent ? 'bg-white font-semibold' : ''}>
-                    <td className="px-3 py-2 text-gray-800">
+                  <tr key={c.visitInstanceId} className={c.isCurrent ? 'bg-blue-50/40 font-semibold' : ''}>
+                    <td className="px-2.5 py-1.5 text-gray-800">
                       {c.campusName}
-                      {c.isCurrent && <span className="ml-2 rounded-md bg-[#004c91] px-1.5 py-0.5 text-[10px] font-bold text-white">Đang xử lý</span>}
+                      {c.isCurrent && <span className="ml-2 rounded bg-[#004c91] px-1.5 py-0.5 text-[10px] font-bold text-white">Đang xử lý</span>}
                     </td>
-                    <td className="px-3 py-2 text-gray-600">{fmtDateTime(c.plannedStartAt)}</td>
-                    <td className="px-3 py-2 text-gray-600">{fmtDateTime(c.plannedEndAt)}</td>
+                    <td className="px-2.5 py-1.5 text-gray-600">{fmtDateTime(c.plannedStartAt)}</td>
+                    <td className="px-2.5 py-1.5 text-gray-600">{fmtDateTime(c.plannedEndAt)}</td>
                   </tr>
                 ))
               )}
@@ -141,19 +152,21 @@ export function DelegationInfoReadOnly({ summary }: { summary?: VisitProcessRequ
         </div>
       </div>
 
-      <Field label="Mục đích thăm" value={summary?.purpose} multiline />
-      <Field label="Nội dung làm việc" value={summary?.workingContent} multiline />
-      {summary?.transportationDetail?.trim() && <Field label="Chi tiết phương tiện" value={summary.transportationDetail} />}
-      {summary?.mediaConsentNote?.trim() && <Field label="Ghi chú hình ảnh" value={summary.mediaConsentNote} multiline />}
-      {summary?.noteToFptu?.trim() && <Field label="Ghi chú của khách" value={summary.noteToFptu} multiline />}
+      <div className="space-y-1">
+        <Field label="Mục đích thăm" value={summary?.purpose} multiline />
+        <Field label="Nội dung làm việc" value={summary?.workingContent} multiline />
+        {summary?.transportationDetail?.trim() && <Field label="Chi tiết phương tiện" value={summary.transportationDetail} />}
+        {summary?.mediaConsentNote?.trim() && <Field label="Ghi chú hình ảnh" value={summary.mediaConsentNote} multiline />}
+        {summary?.noteToFptu?.trim() && <Field label="Ghi chú của khách" value={summary.noteToFptu} multiline />}
+      </div>
 
       <div>
-        <label className="mb-2 block text-sm font-bold text-gray-700">Danh sách khách mời</label>
+        <p className="mb-1 border-b border-gray-200 pb-1 text-xs font-bold uppercase tracking-wide text-[#004c91]">Danh sách khách mời</p>
         <MembersTable members={summary?.guestMembers ?? []} emptyText="Chưa có danh sách khách mời." />
       </div>
       {(summary?.externalSupportMembers?.length ?? 0) > 0 && (
         <div>
-          <label className="mb-2 block text-sm font-bold text-gray-700">Đội ngũ hỗ trợ bên ngoài</label>
+          <p className="mb-1 border-b border-gray-200 pb-1 text-xs font-bold uppercase tracking-wide text-[#004c91]">Đội ngũ hỗ trợ bên ngoài</p>
           <MembersTable members={summary!.externalSupportMembers} emptyText="" />
         </div>
       )}

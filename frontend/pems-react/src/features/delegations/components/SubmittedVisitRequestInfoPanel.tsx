@@ -5,6 +5,9 @@
  *
  * Pure presentation: it contains NO approve/reject/assign-host logic and never mutates data.
  * It also never renders host-created data (agendas, participants, logistics, minutes).
+ *
+ * UI: compact key-value rows ("Họ và tên: Nguyễn Văn A") + section heading nhỏ với divider mỏng —
+ * không dùng field-per-card để tiết kiệm diện tích (hồ sơ chi tiết kiểu enterprise).
  */
 
 import type {
@@ -38,48 +41,54 @@ const transportationLabel = (v?: string | null) => {
   }
 };
 
-const ReadOnlyField = ({ label, value }: { label: string; value?: string | null }) => (
-  <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-    <p className="text-xs font-bold text-slate-500">{label}</p>
-    <p className="mt-1 text-sm font-semibold text-slate-900 break-words">{value || '-'}</p>
+/** Một dòng key-value compact: "Nhãn: Giá trị". */
+const KV = ({ label, value }: { label: string; value?: string | null }) => (
+  <div className="flex gap-2 py-0.5 text-[13px] leading-5">
+    <span className="w-36 shrink-0 text-slate-500">{label}:</span>
+    <span className="min-w-0 font-medium text-slate-800 break-words">{value?.trim() || '-'}</span>
   </div>
 );
 
+/** Field text dài: nhãn trên, nội dung ngay dưới, không đóng khung. */
+const KVBlock = ({ label, value }: { label: string; value?: string | null }) => (
+  <div className="py-0.5 text-[13px] leading-5">
+    <span className="text-slate-500">{label}:</span>
+    <p className="mt-0.5 font-medium text-slate-800 whitespace-pre-wrap break-words">{value?.trim() || '-'}</p>
+  </div>
+);
+
+/** Section heading nhỏ + divider mỏng, không dùng box bo góc lớn. */
 const SectionTitle = ({ index, children }: { index: number; children: React.ReactNode }) => (
-  <h3 className="text-base sm:text-lg font-black text-[#004c91] border-b-2 border-[#f37021]/30 pb-2 mb-5 flex items-center gap-2 w-max pr-6">
-    <span className="flex items-center justify-center w-6 h-6 rounded-full bg-[#f37021] text-white text-sm">{index}</span>
+  <h3 className="mb-2 flex items-center gap-2 border-b border-slate-200 pb-1.5 text-xs font-bold uppercase tracking-wide text-[#004c91]">
+    <span className="text-slate-400">{index}.</span>
     {children}
   </h3>
 );
 
 const MemberTable = ({ members, emptyText }: { members: SubmittedGuestMember[]; emptyText: string }) => {
   if (!members.length) {
-    return (
-      <div className="bg-white border border-slate-200 rounded-xl p-4 text-center text-sm font-medium text-slate-500">
-        {emptyText}
-      </div>
-    );
+    return <p className="py-1 text-[13px] italic text-slate-400">{emptyText}</p>;
   }
   return (
-    <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto shadow-sm">
-      <table className="w-full min-w-[640px] border-collapse text-sm">
-        <thead className="bg-slate-50 border-b border-slate-200">
-          <tr>
-            <th className="p-3 text-center font-bold text-slate-700 w-14">STT</th>
-            <th className="p-3 text-left font-bold text-slate-700 border-l border-slate-200">Họ và tên</th>
-            <th className="p-3 text-left font-bold text-slate-700 border-l border-slate-200">Chức vụ</th>
-            <th className="p-3 text-left font-bold text-slate-700 border-l border-slate-200">Đơn vị công tác</th>
-            <th className="p-3 text-left font-bold text-slate-700 border-l border-slate-200">Quốc tịch</th>
+    <div className="overflow-x-auto rounded-md border border-slate-200">
+      <table className="w-full min-w-[560px] border-collapse text-[13px]">
+        <thead className="border-b border-slate-200 bg-slate-50">
+          <tr className="text-left text-xs text-slate-500">
+            <th className="px-2.5 py-1.5 w-10 text-center font-semibold">STT</th>
+            <th className="px-2.5 py-1.5 font-semibold">Họ và tên</th>
+            <th className="px-2.5 py-1.5 font-semibold">Chức vụ</th>
+            <th className="px-2.5 py-1.5 font-semibold">Đơn vị công tác</th>
+            <th className="px-2.5 py-1.5 font-semibold">Quốc tịch</th>
           </tr>
         </thead>
-        <tbody>
+        <tbody className="divide-y divide-slate-100">
           {members.map((m, i) => (
-            <tr key={m.guestMemberId} className="border-b border-slate-100 last:border-b-0">
-              <td className="p-3 text-center font-bold text-slate-400">{i + 1}</td>
-              <td className="p-3 border-l border-slate-100 font-medium text-slate-800">{m.fullName || '-'}</td>
-              <td className="p-3 border-l border-slate-100 font-medium text-slate-700">{m.jobTitle || '-'}</td>
-              <td className="p-3 border-l border-slate-100 font-medium text-slate-700">{m.organization || '-'}</td>
-              <td className="p-3 border-l border-slate-100 font-medium text-slate-700">{m.nationality || '-'}</td>
+            <tr key={m.guestMemberId}>
+              <td className="px-2.5 py-1.5 text-center text-slate-400">{i + 1}</td>
+              <td className="px-2.5 py-1.5 font-medium text-slate-800">{m.fullName || '-'}</td>
+              <td className="px-2.5 py-1.5 text-slate-600">{m.jobTitle || '-'}</td>
+              <td className="px-2.5 py-1.5 text-slate-600">{m.organization || '-'}</td>
+              <td className="px-2.5 py-1.5 text-slate-600">{m.nationality || '-'}</td>
             </tr>
           ))}
         </tbody>
@@ -94,115 +103,101 @@ export function SubmittedVisitRequestInfoPanel({ data }: { data: SubmittedVisitR
     data.visitType === 'OTHER' && data.visitTypeOther ? data.visitTypeOther : data.visitType;
 
   return (
-    <div className="space-y-10">
+    <div className="space-y-5">
       {/* 1. Người đăng ký */}
       <section>
-        <SectionTitle index={1}>THÔNG TIN NGƯỜI ĐĂNG KÝ</SectionTitle>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
-          <ReadOnlyField label="Họ và tên" value={data.registrant.fullName} />
-          <ReadOnlyField label="Quốc tịch" value={data.registrant.nationality} />
-          <ReadOnlyField label="Đơn vị công tác" value={data.registrant.organization} />
-          <ReadOnlyField label="Chức danh" value={data.registrant.jobTitle} />
-          <ReadOnlyField label="Số điện thoại" value={data.registrant.phone} />
-          <ReadOnlyField label="Email" value={data.registrant.email} />
+        <SectionTitle index={1}>Thông tin người đăng ký</SectionTitle>
+        <div className="grid grid-cols-1 gap-x-10 md:grid-cols-2">
+          <KV label="Họ và tên" value={data.registrant.fullName} />
+          <KV label="Quốc tịch" value={data.registrant.nationality} />
+          <KV label="Đơn vị công tác" value={data.registrant.organization} />
+          <KV label="Chức danh" value={data.registrant.jobTitle} />
+          <KV label="Số điện thoại" value={data.registrant.phone} />
+          <KV label="Email" value={data.registrant.email} />
         </div>
       </section>
 
       {/* 2. Thông tin chuyến thăm */}
       <section>
-        <SectionTitle index={2}>THÔNG TIN CHUYẾN THĂM</SectionTitle>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
-          <ReadOnlyField label="Tên đoàn khách" value={data.delegationName} />
-          <ReadOnlyField label="Phạm vi" value={scopeLabel} />
-          <ReadOnlyField label="Loại hình" value={visitTypeValue} />
-          <ReadOnlyField label="Nguồn tạo đơn" value={data.createdSource} />
+        <SectionTitle index={2}>Thông tin chuyến thăm</SectionTitle>
+        <div className="grid grid-cols-1 gap-x-10 md:grid-cols-2">
+          <KV label="Tên đoàn khách" value={data.delegationName} />
+          <KV label="Phạm vi" value={scopeLabel} />
+          <KV label="Loại hình" value={visitTypeValue} />
+          <KV label="Nguồn tạo đơn" value={data.createdSource} />
         </div>
-        <div className="mt-4 space-y-4">
-          <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-            <p className="text-xs font-bold text-slate-500">Mục đích thăm FPTU</p>
-            <p className="mt-1 text-sm font-medium text-slate-900 whitespace-pre-wrap">{data.purpose || '-'}</p>
-          </div>
-          <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-            <p className="text-xs font-bold text-slate-500">Nội dung làm việc</p>
-            <p className="mt-1 text-sm font-medium text-slate-900 whitespace-pre-wrap">{data.workingContent || '-'}</p>
-          </div>
+        <div className="mt-1.5 space-y-1.5">
+          <KVBlock label="Mục đích thăm FPTU" value={data.purpose} />
+          <KVBlock label="Nội dung làm việc" value={data.workingContent} />
         </div>
       </section>
 
       {/* 3. Cơ sở & thời gian dự kiến */}
       <section>
-        <SectionTitle index={3}>CƠ SỞ &amp; THỜI GIAN DỰ KIẾN</SectionTitle>
+        <SectionTitle index={3}>Cơ sở &amp; thời gian dự kiến</SectionTitle>
         {data.campuses.length ? (
-          <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto shadow-sm">
-            <table className="w-full min-w-[640px] border-collapse text-sm">
-              <thead className="bg-slate-50 border-b border-slate-200">
-                <tr>
-                  <th className="p-3 text-left font-bold text-slate-700">Cơ sở</th>
-                  <th className="p-3 text-left font-bold text-slate-700 border-l border-slate-200">Bắt đầu</th>
-                  <th className="p-3 text-left font-bold text-slate-700 border-l border-slate-200">Kết thúc</th>
+          <div className="overflow-x-auto rounded-md border border-slate-200">
+            <table className="w-full min-w-[480px] border-collapse text-[13px]">
+              <thead className="border-b border-slate-200 bg-slate-50">
+                <tr className="text-left text-xs text-slate-500">
+                  <th className="px-2.5 py-1.5 font-semibold">Cơ sở</th>
+                  <th className="px-2.5 py-1.5 font-semibold">Bắt đầu</th>
+                  <th className="px-2.5 py-1.5 font-semibold">Kết thúc</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="divide-y divide-slate-100">
                 {data.campuses.map((c) => (
-                  <tr key={c.visitInstanceId} className="border-b border-slate-100 last:border-b-0">
-                    <td className="p-3 font-semibold text-slate-800">
-                      {c.campusName || '-'}{c.campusCode ? <span className="text-slate-400 font-medium"> ({c.campusCode})</span> : null}
+                  <tr key={c.visitInstanceId}>
+                    <td className="px-2.5 py-1.5 font-medium text-slate-800">
+                      {c.campusName || '-'}{c.campusCode ? <span className="text-slate-400"> ({c.campusCode})</span> : null}
                     </td>
-                    <td className="p-3 border-l border-slate-100 font-medium text-slate-700">{formatDateTime(c.plannedStartAt)}</td>
-                    <td className="p-3 border-l border-slate-100 font-medium text-slate-700">{formatDateTime(c.plannedEndAt)}</td>
+                    <td className="px-2.5 py-1.5 text-slate-600">{formatDateTime(c.plannedStartAt)}</td>
+                    <td className="px-2.5 py-1.5 text-slate-600">{formatDateTime(c.plannedEndAt)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         ) : (
-          <div className="bg-white border border-slate-200 rounded-xl p-4 text-center text-sm font-medium text-slate-500">
-            Chưa có dữ liệu cơ sở
-          </div>
+          <p className="py-1 text-[13px] italic text-slate-400">Chưa có dữ liệu cơ sở</p>
         )}
       </section>
 
       {/* 4. Danh sách khách */}
       <section>
-        <SectionTitle index={4}>DANH SÁCH KHÁCH</SectionTitle>
+        <SectionTitle index={4}>Danh sách khách</SectionTitle>
         <MemberTable members={data.guestMembers} emptyText="Chưa có dữ liệu khách" />
       </section>
 
       {/* 5. Team hỗ trợ khách */}
       <section>
-        <SectionTitle index={5}>TEAM HỖ TRỢ KHÁCH</SectionTitle>
+        <SectionTitle index={5}>Team hỗ trợ khách</SectionTitle>
         <MemberTable members={data.externalSupportMembers} emptyText="Không có team hỗ trợ" />
       </section>
 
       {/* 6. Đầu mối liên hệ */}
       <section>
-        <SectionTitle index={6}>ĐẦU MỐI LIÊN HỆ</SectionTitle>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
-          <ReadOnlyField label="Họ và tên" value={data.contactPerson.fullName} />
-          <ReadOnlyField label="Đơn vị công tác" value={data.contactPerson.organization} />
-          <ReadOnlyField label="Số điện thoại" value={data.contactPerson.phone} />
-          <ReadOnlyField label="Email" value={data.contactPerson.email} />
+        <SectionTitle index={6}>Đầu mối liên hệ</SectionTitle>
+        <div className="grid grid-cols-1 gap-x-10 md:grid-cols-2">
+          <KV label="Họ và tên" value={data.contactPerson.fullName} />
+          <KV label="Đơn vị công tác" value={data.contactPerson.organization} />
+          <KV label="Số điện thoại" value={data.contactPerson.phone} />
+          <KV label="Email" value={data.contactPerson.email} />
         </div>
       </section>
 
       {/* 7. Yêu cầu & Xác nhận bổ sung */}
       <section>
-        <SectionTitle index={7}>YÊU CẦU &amp; XÁC NHẬN BỔ SUNG</SectionTitle>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
-          <ReadOnlyField label="Ngôn ngữ làm việc" value={workingLanguageLabel(data.workingLanguage)} />
-          <ReadOnlyField label="Đồng ý sử dụng hình ảnh & thông tin" value={mediaConsentLabel(data.mediaConsentStatus)} />
-          <ReadOnlyField label="Phương tiện di chuyển" value={transportationLabel(data.transportationType)} />
-          <ReadOnlyField label="Chi tiết phương tiện" value={data.transportationDetail} />
+        <SectionTitle index={7}>Yêu cầu &amp; xác nhận bổ sung</SectionTitle>
+        <div className="grid grid-cols-1 gap-x-10 md:grid-cols-2">
+          <KV label="Ngôn ngữ làm việc" value={workingLanguageLabel(data.workingLanguage)} />
+          <KV label="Dùng hình ảnh & thông tin" value={mediaConsentLabel(data.mediaConsentStatus)} />
+          <KV label="Phương tiện di chuyển" value={transportationLabel(data.transportationType)} />
+          <KV label="Chi tiết phương tiện" value={data.transportationDetail} />
         </div>
-        {data.mediaConsentNote ? (
-          <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-            <p className="text-xs font-bold text-slate-500">Ghi chú về sử dụng hình ảnh</p>
-            <p className="mt-1 text-sm font-medium text-slate-900 whitespace-pre-wrap">{data.mediaConsentNote}</p>
-          </div>
-        ) : null}
-        <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-          <p className="text-xs font-bold text-slate-500">Ghi chú cho FPTU</p>
-          <p className="mt-1 text-sm font-medium text-slate-900 whitespace-pre-wrap">{data.noteToFptu || '-'}</p>
+        <div className="mt-1.5 space-y-1.5">
+          {data.mediaConsentNote ? <KVBlock label="Ghi chú về sử dụng hình ảnh" value={data.mediaConsentNote} /> : null}
+          <KVBlock label="Ghi chú cho FPTU" value={data.noteToFptu} />
         </div>
       </section>
     </div>

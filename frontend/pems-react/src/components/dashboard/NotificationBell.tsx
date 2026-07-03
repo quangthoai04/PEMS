@@ -1,10 +1,13 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { Bell } from 'lucide-react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { Bell, Star } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { useNotifications } from '../../features/notifications/hooks/useNotifications';
 import { NotificationItem } from '../../features/notifications/types/notification.types';
+import { visitFeedbackApi } from '../../features/feedbacks/api/visitFeedbackApi';
+import type { PendingFeedbackItem } from '../../features/feedbacks/types/visitFeedback.types';
+import { VisitFeedbackModal } from '../../features/feedbacks/components/VisitFeedbackModal';
 
 function timeAgo(dateStr: string): string {
   const date = new Date(dateStr.endsWith('Z') ? dateStr : dateStr + 'Z');
@@ -30,15 +33,33 @@ export function NotificationBell() {
 
   const { items, unreadCount, loading, fetchNotifications, markAsRead, markAllAsRead } = useNotifications();
 
+  // Nhắc "Bạn hãy đánh giá đoàn" — query động từ backend (không insert vào notifications
+  // nên không bao giờ duplicate; tự biến mất sau khi user gửi feedback).
+  const [pendingFeedback, setPendingFeedback] = useState<PendingFeedbackItem[]>([]);
+  const [feedbackModalInstanceId, setFeedbackModalInstanceId] = useState<number | string | null>(null);
+
+  const fetchPendingFeedback = useCallback(async () => {
+    try {
+      const res = await visitFeedbackApi.getMyPending();
+      setPendingFeedback((res.items || []).filter((x) => !x.alreadySubmitted));
+    } catch {
+      setPendingFeedback([]);
+    }
+  }, []);
+
   // Fetch on mount to show unread badge
   useEffect(() => {
     fetchNotifications();
-  }, [fetchNotifications]);
+    fetchPendingFeedback();
+  }, [fetchNotifications, fetchPendingFeedback]);
 
   // Re-fetch when bell is opened
   useEffect(() => {
-    if (isOpen) fetchNotifications();
-  }, [isOpen, fetchNotifications]);
+    if (isOpen) {
+      fetchNotifications();
+      fetchPendingFeedback();
+    }
+  }, [isOpen, fetchNotifications, fetchPendingFeedback]);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -82,9 +103,9 @@ export function NotificationBell() {
         aria-label="Thông báo"
       >
         <Bell className="w-6 h-6" />
-        {unreadCount > 0 && (
+        {(unreadCount + pendingFeedback.length) > 0 && (
           <span className="absolute top-1 right-1.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">
-            {unreadCount > 9 ? '9+' : unreadCount}
+            {(unreadCount + pendingFeedback.length) > 9 ? '9+' : unreadCount + pendingFeedback.length}
           </span>
         )}
       </button>
@@ -111,15 +132,40 @@ export function NotificationBell() {
             </div>
 
             <div className="max-h-[70vh] overflow-y-auto">
+              {/* Nhắc đánh giá đoàn — hàng ưu tiên trên cùng, bấm vào mở trang đánh giá */}
+              {pendingFeedback.length > 0 && (
+                <div className="flex flex-col divide-y divide-orange-100/60 border-b border-orange-100 bg-orange-50/40">
+                  {pendingFeedback.map((p) => (
+                    <button
+                      key={`fb-${p.visitInstanceId}`}
+                      onClick={() => {
+                        setIsOpen(false);
+                        setFeedbackModalInstanceId(p.visitInstanceId!);
+                      }}
+                      className="flex w-full items-start gap-2.5 p-4 text-left transition-colors hover:bg-orange-50"
+                    >
+                      <Star className="mt-0.5 h-4 w-4 shrink-0 text-[#F37021]" />
+                      <span className="min-w-0">
+                        <span className="block text-sm font-semibold text-gray-900">Bạn hãy đánh giá đoàn</span>
+                        <span className="block truncate text-xs text-gray-500">
+                          {p.delegationName}{p.campusName ? ` • ${p.campusName}` : ''}
+                        </span>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
               {loading && items.length === 0 ? (
                 <div className="flex items-center justify-center gap-2 py-8 text-gray-400">
                   <div className="w-4 h-4 border-2 border-[#004c91] border-t-transparent rounded-full animate-spin" />
                   <span className="text-sm">Đang tải...</span>
                 </div>
               ) : items.length === 0 ? (
-                <div className="p-6 text-center text-gray-500">
-                  <p className="text-sm">Không có thông báo nào</p>
-                </div>
+                pendingFeedback.length === 0 ? (
+                  <div className="p-6 text-center text-gray-500">
+                    <p className="text-sm">Không có thông báo nào</p>
+                  </div>
+                ) : null
               ) : (
                 <div className="flex flex-col divide-y divide-gray-50">
                   {items.map((item: NotificationItem) => (
@@ -154,6 +200,16 @@ export function NotificationBell() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      <VisitFeedbackModal 
+        open={feedbackModalInstanceId !== null} 
+        visitInstanceId={feedbackModalInstanceId} 
+        onClose={() => setFeedbackModalInstanceId(null)} 
+        onSubmitted={() => {
+          fetchPendingFeedback();
+          setFeedbackModalInstanceId(null);
+        }} 
+      />
     </div>
   );
 }
