@@ -57,6 +57,8 @@ public sealed class ChangeGalleryItemStatusCommandHandler
             {
                 GalleryItemId = item.GalleryItemId,
                 Status = item.Status,
+                ItemType = item.ItemType,
+                ItemTypeLabel = GalleryItemTypes.Label(item.ItemType),
                 Message = "Trạng thái không thay đổi.",
             };
 
@@ -107,6 +109,8 @@ public sealed class ChangeGalleryItemStatusCommandHandler
         {
             GalleryItemId = item.GalleryItemId,
             Status = item.Status,
+            ItemType = item.ItemType,
+            ItemTypeLabel = GalleryItemTypes.Label(item.ItemType),
             Message = newStatus == "PUBLISHED" ? "Đã hiển thị gallery item." : "Đã ẩn gallery item.",
         };
     }

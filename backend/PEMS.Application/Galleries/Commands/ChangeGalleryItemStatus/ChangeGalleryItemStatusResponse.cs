@@ -5,5 +5,7 @@ public sealed class ChangeGalleryItemStatusResponse
 {
     public ulong GalleryItemId { get; init; }
     public string Status { get; init; } = string.Empty;
+    public string ItemType { get; init; } = string.Empty;
+    public string ItemTypeLabel { get; init; } = string.Empty;
     public string Message { get; init; } = string.Empty;
 }
