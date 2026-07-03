@@ -178,7 +178,7 @@ export function NewsManagement() {
   };
 
   return (
-    <div className="p-4 sm:p-6 md:p-8 max-w-[95%] mx-auto">
+    <div className="w-full pb-12">
       {/* Breadcrumb */}
       <div className="mb-4 flex items-center text-sm font-medium text-gray-500">
         <button onClick={() => navigate('/dashboard')} className="hover:text-[#004c91] transition-colors">Dashboard</button>

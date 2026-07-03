@@ -335,7 +335,7 @@ export function AgendaTemplateManagement() {
         <span className="text-[#004c91] font-bold">Quản lý mẫu Agenda</span>
       </div>
 
-      <div className="max-w-[1400px] mx-auto px-4 md:px-8 pb-12 w-full">
+      <div className="w-full pb-12">
         <div className="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <h1 className="text-3xl font-bold text-[#004c91]">Quản lý mẫu Agenda</h1>

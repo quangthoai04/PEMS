@@ -667,7 +667,7 @@ export function AccountManagement() {
   // Read-only related-visitors view: a self-contained tab, scope resolved server-side.
   if (isStaffLeader && slView === 'visitors') {
     return (
-      <div className="p-4 sm:p-6 md:p-8 max-w-[95%] mx-auto pb-12 animate-in fade-in duration-300">
+      <div className="w-full pb-12 animate-in fade-in duration-300">
         <div className="flex items-center gap-2 text-sm font-medium text-gray-500 mb-6">
           <span>Dashboard</span>
           <span>/</span>
@@ -686,7 +686,7 @@ export function AccountManagement() {
   }
 
   return (
-    <div className="p-4 sm:p-6 md:p-8 max-w-[95%] mx-auto pb-12 animate-in fade-in duration-300">
+    <div className="w-full pb-12 animate-in fade-in duration-300">
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-sm font-medium text-gray-500 mb-6">
         <span>Dashboard</span>

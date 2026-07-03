@@ -113,7 +113,7 @@ function LocationManagementMock() {
   };
 
   return (
-    <div className="p-4 sm:p-6 md:p-8 max-w-[95%] mx-auto pb-12 animate-in fade-in duration-500 font-sans">
+    <div className="w-full pb-12 animate-in fade-in duration-500 font-sans">
       <div className="flex items-center gap-2 text-sm font-medium text-slate-500 mb-6">
         <span>Dashboard</span>
         <span>/</span>
