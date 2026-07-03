@@ -20,6 +20,10 @@ public class GalleryArea
     [Column("area_key")]
     public string AreaKey { get; set; } = null!;
 
+    /// <summary>Ảnh đại diện khu vực (master data, không phải gallery item). FK → files.file_id.</summary>
+    [Column("cover_file_id")]
+    public ulong? CoverFileId { get; set; }
+
     [Column("status")]
     public string Status { get; set; } = "ACTIVE";
 

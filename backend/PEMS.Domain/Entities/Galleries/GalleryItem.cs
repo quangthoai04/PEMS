@@ -19,6 +19,10 @@ public class GalleryItem
     [Column("description")]
     public string Description { get; set; } = null!;
 
+    /// <summary>MEDIA (ảnh/video giới thiệu vị trí) hoặc VISIT_DELEGATION (ảnh/video đoàn khách).</summary>
+    [Column("item_type")]
+    public string ItemType { get; set; } = "MEDIA";
+
     [Column("media_kind")]
     public string MediaKind { get; set; } = "IMAGE";
 

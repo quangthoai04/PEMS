@@ -12,6 +12,8 @@ public sealed class GalleryItemDetailDto
     public ulong GalleryItemId { get; init; }
     public string Title { get; init; } = string.Empty;
     public string Description { get; init; } = string.Empty;
+    public string ItemType { get; init; } = string.Empty;
+    public string ItemTypeLabel { get; init; } = string.Empty;
     public string Status { get; init; } = string.Empty;
     public string MediaKind { get; init; } = string.Empty;
 

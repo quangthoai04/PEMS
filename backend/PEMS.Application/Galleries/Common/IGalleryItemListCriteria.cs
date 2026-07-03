@@ -22,6 +22,9 @@ public interface IGalleryItemListCriteria
     /// <summary>IMAGE / VIDEO / MIXED / empty (all).</summary>
     string? MediaKind { get; }
 
+    /// <summary>MEDIA / VISIT_DELEGATION / empty (all). Content type, distinct from media kind.</summary>
+    string? ItemType { get; }
+
     /// <summary>PUBLISHED / HIDDEN / empty (all).</summary>
     string? Status { get; }
 

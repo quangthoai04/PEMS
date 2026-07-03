@@ -70,6 +70,13 @@ internal static class GalleryItemListQueryExecutor
                 query = query.Where(i => i.MediaKind == mk);
         }
 
+        if (!string.IsNullOrWhiteSpace(request.ItemType))
+        {
+            var it = request.ItemType!.Trim().ToUpperInvariant();
+            if (it is GalleryItemTypes.Media or GalleryItemTypes.VisitDelegation)
+                query = query.Where(i => i.ItemType == it);
+        }
+
         if (!string.IsNullOrWhiteSpace(request.Status))
         {
             var st = request.Status!.Trim().ToUpperInvariant();
@@ -102,6 +109,7 @@ internal static class GalleryItemListQueryExecutor
                 LocationName = i.Location.LocationName,
                 Title = i.Title,
                 Description = i.Description,
+                ItemType = i.ItemType,
                 MediaKind = i.MediaKind,
                 Status = i.Status,
                 CreatedAt = i.CreatedAt,
@@ -147,6 +155,8 @@ internal static class GalleryItemListQueryExecutor
             LocationName = r.LocationName,
             Title = r.Title,
             Description = r.Description,
+            ItemType = r.ItemType,
+            ItemTypeLabel = GalleryItemTypes.Label(r.ItemType),
             MediaKind = r.MediaKind,
             Status = r.Status,
             CreatedAt = r.CreatedAt,
@@ -175,6 +185,7 @@ internal static class GalleryItemListQueryExecutor
         public string LocationName { get; init; } = string.Empty;
         public string Title { get; init; } = string.Empty;
         public string Description { get; init; } = string.Empty;
+        public string ItemType { get; init; } = string.Empty;
         public string MediaKind { get; init; } = string.Empty;
         public string Status { get; init; } = string.Empty;
         public DateTime CreatedAt { get; init; }

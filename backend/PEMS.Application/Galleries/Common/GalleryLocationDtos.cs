@@ -12,7 +12,11 @@ public sealed class GalleryLocationListItemDto
     public ulong LocationId { get; init; }
     public ulong AreaId { get; init; }
     public string AreaName { get; init; } = string.Empty;
+    public ulong? AreaCoverFileId { get; init; }
+    public string? AreaCoverUrl { get; init; }
     public string LocationName { get; init; } = string.Empty;
+    public ulong? LocationCoverFileId { get; init; }
+    public string? LocationCoverUrl { get; init; }
     public string Status { get; init; } = string.Empty;
     public DateTime CreatedAt { get; init; }
     public DateTime? UpdatedAt { get; init; }
@@ -33,7 +37,11 @@ public sealed class GalleryLocationDetailDto
     public ulong LocationId { get; init; }
     public ulong AreaId { get; init; }
     public string AreaName { get; init; } = string.Empty;
+    public ulong? AreaCoverFileId { get; init; }
+    public string? AreaCoverUrl { get; init; }
     public string LocationName { get; init; } = string.Empty;
+    public ulong? LocationCoverFileId { get; init; }
+    public string? LocationCoverUrl { get; init; }
     public string Status { get; init; } = string.Empty;
     public DateTime CreatedAt { get; init; }
     public DateTime? UpdatedAt { get; init; }
@@ -42,6 +50,8 @@ public sealed class GalleryLocationDetailDto
     public int GalleryItemCount { get; init; }
     public int PublishedGalleryItemCount { get; init; }
     public int HiddenGalleryItemCount { get; init; }
+    public int MediaCount { get; init; }
+    public int VisitDelegationCount { get; init; }
 
     public string? Message { get; init; }
 }

@@ -83,4 +83,24 @@ public static class GalleryErrorCodes
 
     /// <summary>Tried to publish an item whose area is INACTIVE. → 409.</summary>
     public const string ItemPublishBlockedAreaInactive = "GALLERY_ITEM_PUBLISH_BLOCKED_AREA_INACTIVE";
+
+    // ── Area / Location cover image + gallery item type (cover & item_type phase) ──
+
+    /// <summary>An area cover image is required when creating a new area. → 422.</summary>
+    public const string AreaCoverRequired = "GALLERY_AREA_COVER_REQUIRED";
+
+    /// <summary>A location cover image is required when creating a location. → 422.</summary>
+    public const string LocationCoverRequired = "GALLERY_LOCATION_COVER_REQUIRED";
+
+    /// <summary>The area cover file is not a supported image. → 422.</summary>
+    public const string AreaCoverInvalid = "GALLERY_AREA_COVER_INVALID";
+
+    /// <summary>The location cover file is not a supported image. → 422.</summary>
+    public const string LocationCoverInvalid = "GALLERY_LOCATION_COVER_INVALID";
+
+    /// <summary><c>itemType</c> is required when creating/editing a gallery item. → 422.</summary>
+    public const string ItemTypeRequired = "GALLERY_ITEM_TYPE_REQUIRED";
+
+    /// <summary><c>itemType</c> is neither MEDIA nor VISIT_DELEGATION. → 422.</summary>
+    public const string ItemTypeInvalid = "GALLERY_ITEM_TYPE_INVALID";
 }

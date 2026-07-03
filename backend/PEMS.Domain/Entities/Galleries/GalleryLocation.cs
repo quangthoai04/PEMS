@@ -19,6 +19,10 @@ public class GalleryLocation
     [Column("location_key")]
     public string LocationKey { get; set; } = null!;
 
+    /// <summary>Ảnh đại diện vị trí cụ thể (master data, không phải gallery item). FK → files.file_id.</summary>
+    [Column("cover_file_id")]
+    public ulong? CoverFileId { get; set; }
+
     [Column("status")]
     public string Status { get; set; } = "ACTIVE";
 

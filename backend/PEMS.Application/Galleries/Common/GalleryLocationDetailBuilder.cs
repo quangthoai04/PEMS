@@ -25,7 +25,9 @@ internal static class GalleryLocationDetailBuilder
                 l.LocationId,
                 l.AreaId,
                 AreaName = l.Area.AreaName,
+                AreaCoverFileId = l.Area.CoverFileId,
                 l.LocationName,
+                LocationCoverFileId = l.CoverFileId,
                 l.Status,
                 l.CreatedAt,
                 l.UpdatedAt,
@@ -33,9 +35,9 @@ internal static class GalleryLocationDetailBuilder
             .FirstOrDefaultAsync(ct)
             ?? throw new NotFoundException("GalleryLocation", locationId);
 
-        var statuses = await db.GalleryItems.AsNoTracking()
+        var items = await db.GalleryItems.AsNoTracking()
             .Where(i => i.LocationId == locationId && i.DeletedAt == null)
-            .Select(i => i.Status)
+            .Select(i => new { i.Status, i.ItemType })
             .ToListAsync(ct);
 
         return new GalleryLocationDetailDto
@@ -43,14 +45,20 @@ internal static class GalleryLocationDetailBuilder
             LocationId = head.LocationId,
             AreaId = head.AreaId,
             AreaName = head.AreaName,
+            AreaCoverFileId = head.AreaCoverFileId,
+            AreaCoverUrl = GalleryFileUrls.ContentOrNull(head.AreaCoverFileId),
             LocationName = head.LocationName,
+            LocationCoverFileId = head.LocationCoverFileId,
+            LocationCoverUrl = GalleryFileUrls.ContentOrNull(head.LocationCoverFileId),
             Status = head.Status,
             CreatedAt = head.CreatedAt,
             UpdatedAt = head.UpdatedAt,
-            HasGalleryItems = statuses.Count > 0,
-            GalleryItemCount = statuses.Count,
-            PublishedGalleryItemCount = statuses.Count(s => s == "PUBLISHED"),
-            HiddenGalleryItemCount = statuses.Count(s => s == "HIDDEN"),
+            HasGalleryItems = items.Count > 0,
+            GalleryItemCount = items.Count,
+            PublishedGalleryItemCount = items.Count(i => i.Status == "PUBLISHED"),
+            HiddenGalleryItemCount = items.Count(i => i.Status == "HIDDEN"),
+            MediaCount = items.Count(i => i.ItemType == GalleryItemTypes.Media),
+            VisitDelegationCount = items.Count(i => i.ItemType == GalleryItemTypes.VisitDelegation),
             Message = message,
         };
     }
