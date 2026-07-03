@@ -10,6 +10,7 @@
  * không dùng field-per-card để tiết kiệm diện tích (hồ sơ chi tiết kiểu enterprise).
  */
 
+import React from 'react';
 import type {
   SubmittedVisitRequestFormDetail,
   SubmittedGuestMember,

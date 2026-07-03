@@ -3628,18 +3628,19 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                         <label className="block text-[10px] font-black text-[#f37021] uppercase tracking-wider mb-1.5">
                           Ghi chú Bên Nhận
                         </label>
-                        <textarea
-                          rows={2}
-                          value={safuriBG2Note}
-                          onChange={e => setSafuriBG2Note(e.target.value)}
-                          className="w-full text-xs p-2.5 border border-slate-250 rounded-xl focus:border-[#f37021] outline-none resize-none font-sans bg-slate-50/30 focus:ring-1 focus:ring-orange-200"
-                          disabled={!!safuriBG2Signed}
-                          placeholder="Nhập ý kiến Bên Nhận đầu giờ..."
-                        />
+                        {safuriBG2Signed ? (
+                          <div className="w-full text-xs p-3 border border-slate-200 rounded-xl bg-slate-50 min-h-[64px] text-slate-600 italic">
+                            {safuriBG2Note || 'Đã xác nhận nhận tài sản.'}
+                          </div>
+                        ) : (
+                          <div className="w-full text-xs p-3 border border-slate-200 rounded-xl bg-slate-50 min-h-[64px] text-slate-400 italic">
+                            Chưa ký nhận.
+                          </div>
+                        )}
                       </div>
 
                       {/* Horizontal Signature Box */}
-                      <div className={`border-2 rounded-xl p-3 relative group shadow-3xs transition-colors ${safuriBG2Signed ? 'border-solid border-emerald-500 bg-emerald-50/20' : 'border-dashed border-slate-250 bg-white hover:border-[#f37021]/40'}`}>
+                      <div className={`border-2 rounded-xl p-3 relative group shadow-3xs transition-colors ${safuriBG2Signed ? 'border-solid border-emerald-500 bg-emerald-50/20' : 'border-dashed border-slate-250 bg-slate-50'}`}>
                         {safuriBG2Signed ? (
                           <div className="flex flex-row items-center justify-between gap-4 animate-fade-in-quick w-full">
                             <div className="flex items-center gap-2.5">
@@ -3652,22 +3653,14 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                             </div>
                           </div>
                         ) : (
-                          <div className="flex flex-row items-center justify-between gap-3 w-full">
+                          <div className="flex flex-row items-center justify-between gap-3 w-full opacity-60">
                             <div className="flex items-center gap-2">
-                              <FileText className="w-4 h-4 text-[#f37021]/80 shrink-0" />
+                              <FileText className="w-4 h-4 text-slate-400 shrink-0" />
                               <div className="text-left">
                                 <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block leading-none">Chữ ký Bên Nhận</span>
-                                <span className="text-[9px] text-slate-450">Nhấp để hoàn tất BG2</span>
+                                <span className="text-[9px] text-slate-450">Chờ Host ký nhận</span>
                               </div>
                             </div>
-                            <button
-                              type="button"
-                              onClick={() => handleSignHandover('BORROW', 'BORROWER', safuriBG2Note, setSafuriBG2Signed, 'Đã ký xác nhận bên nhận bàn giao.')}
-                              className="py-2 px-3 bg-orange-50 hover:bg-orange-100 hover:text-[#f37021] text-slate-705 font-extrabold text-[11px] rounded-xl border border-slate-200 transition-all flex items-center gap-1.5 cursor-pointer shadow-3xs shrink-0"
-                            >
-                              <FileText className="w-3.5 h-3.5" />
-                              <span>Ký xác nhận (BG2)</span>
-                            </button>
                           </div>
                         )}
                       </div>
@@ -3696,18 +3689,19 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                             <label className="block text-[10px] font-black text-[#004c91] uppercase tracking-wider mb-1.5">
                               Ghi chú Nghiệm thu (Bên Giao)
                             </label>
-                            <textarea
-                              rows={2}
-                              value={safuriNT1Note}
-                              onChange={e => setSafuriNT1Note(e.target.value)}
-                              className="w-full text-xs p-2.5 border border-slate-250 rounded-xl focus:border-[#004c91] outline-none resize-none font-sans bg-slate-50/30 focus:ring-1 focus:ring-blue-200"
-                              disabled={!!safuriNT1Signed}
-                              placeholder="Ghi nhận hiện trạng lúc trả..."
-                            />
+                            {safuriNT1Signed ? (
+                              <div className="w-full text-xs p-3 border border-slate-200 rounded-xl bg-slate-50 min-h-[64px] text-slate-600 italic">
+                                {safuriNT1Note || 'Đã bàn giao trả tài sản.'}
+                              </div>
+                            ) : (
+                              <div className="w-full text-xs p-3 border border-slate-200 rounded-xl bg-slate-50 min-h-[64px] text-slate-400 italic">
+                                Chưa ký trả.
+                              </div>
+                            )}
                           </div>
 
                           {/* Horizontal Signature Box */}
-                          <div className={`border-2 rounded-xl p-3 relative group shadow-3xs transition-colors ${safuriNT1Signed ? 'border-solid border-emerald-500 bg-emerald-50/20' : 'border-dashed border-slate-250 bg-white hover:border-[#004c91]/40'}`}>
+                          <div className={`border-2 rounded-xl p-3 relative group shadow-3xs transition-colors ${safuriNT1Signed ? 'border-solid border-emerald-500 bg-emerald-50/20' : 'border-dashed border-slate-250 bg-slate-50'}`}>
                             {safuriNT1Signed ? (
                               <div className="flex flex-row items-center justify-between gap-4 animate-fade-in-quick w-full">
                                 <div className="flex items-center gap-2.5">
@@ -3720,22 +3714,14 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                                 </div>
                               </div>
                             ) : (
-                              <div className="flex flex-row items-center justify-between gap-3 w-full">
+                              <div className="flex flex-row items-center justify-between gap-3 w-full opacity-60">
                                 <div className="flex items-center gap-2">
-                                  <FileText className="w-4 h-4 text-[#004c91]/80 shrink-0" />
+                                  <FileText className="w-4 h-4 text-slate-400 shrink-0" />
                                   <div className="text-left font-sans">
                                     <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block leading-none">Chữ ký Bên Giao</span>
-                                    <span className="text-[9px] text-slate-450">Nhấp để hoàn tất NT1</span>
+                                    <span className="text-[9px] text-slate-450">Chờ Host ký trả</span>
                                   </div>
                                 </div>
-                                <button
-                                  type="button"
-                                  onClick={() => handleSignHandover('RETURN', 'PROVIDER', safuriNT1Note, setSafuriNT1Signed, 'Đã ký nghiệm thu bên giao.')}
-                                  className="py-2 px-3 bg-blue-50 hover:bg-blue-100 hover:text-[#004c91] text-slate-705 font-extrabold text-[11px] rounded-xl border border-slate-200 transition-all flex items-center gap-1.5 cursor-pointer shadow-3xs shrink-0"
-                                >
-                                  <FileText className="w-3.5 h-3.5" />
-                                  <span>Ký Nghiệm thu (NT1)</span>
-                                </button>
                               </div>
                             )}
                           </div>
@@ -3752,8 +3738,8 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                               value={safuriNT2Note}
                               onChange={e => setSafuriNT2Note(e.target.value)}
                               className="w-full text-xs p-2.5 border border-slate-250 rounded-xl focus:border-[#004c91] outline-none resize-none font-sans bg-slate-50/30 focus:ring-1 focus:ring-blue-200"
-                              disabled={!!safuriNT2Signed}
-                              placeholder="Nhận xét tình trạng bàn giao trả..."
+                              disabled={!!safuriNT2Signed || !safuriNT1Signed}
+                              placeholder={safuriNT1Signed ? "Nhận xét tình trạng bàn giao trả..." : "Chờ Host (Bên Giao) ký trả trước..."}
                             />
                           </div>
 
@@ -3770,7 +3756,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                                   </div>
                                 </div>
                               </div>
-                            ) : (
+                            ) : safuriNT1Signed ? (
                               <div className="flex flex-row items-center justify-between gap-3 w-full">
                                 <div className="flex items-center gap-2">
                                   <FileText className="w-4 h-4 text-[#004c91]/80 shrink-0" />
@@ -3781,12 +3767,22 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                                 </div>
                                 <button
                                   type="button"
-                                  onClick={() => handleSignHandover('RETURN', 'BORROWER', safuriNT2Note, setSafuriNT2Signed, 'Đã ký nghiệm thu. Đơn yêu cầu đã hoàn thành.')}
+                                  onClick={() => handleSignHandover('RETURN', 'PROVIDER', safuriNT2Note, setSafuriNT2Signed, 'Đã ký nghiệm thu. Đơn yêu cầu đã hoàn thành.')}
                                   className="py-2 px-3 bg-blue-50 hover:bg-blue-100 hover:text-[#004c91] text-slate-705 font-extrabold text-[11px] rounded-xl border border-slate-200 transition-all flex items-center gap-1.5 cursor-pointer shadow-3xs shrink-0"
                                 >
                                   <FileText className="w-3.5 h-3.5" />
                                   <span>Ký Nghiệm thu (NT2)</span>
                                 </button>
+                              </div>
+                            ) : (
+                              <div className="flex flex-row items-center justify-between gap-3 w-full opacity-60">
+                                <div className="flex items-center gap-2">
+                                  <FileText className="w-4 h-4 text-slate-400 shrink-0" />
+                                  <div className="text-left font-sans">
+                                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block leading-none">Chữ ký Bên Nhận</span>
+                                    <span className="text-[9px] text-slate-450">Chờ bên giao ký trước</span>
+                                  </div>
+                                </div>
                               </div>
                             )}
                           </div>
