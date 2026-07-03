@@ -28,7 +28,8 @@ import {
   Sparkles,
   Info,
   ChevronDown,
-  Edit2
+  Edit2,
+  Download
 } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import toast, { Toaster } from 'react-hot-toast';
@@ -3464,12 +3465,43 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
               )}
 
               {(activePopoverEvent.category === 'Đơn yêu cầu mượn đồ' || activePopoverEvent.itemType === 'REQUEST') && requestStatus === 'accepted' && (
-                /* Safuri Event Layout */
-                <div className="bg-white rounded-2xl border border-slate-200/85 shadow-md p-6 md:p-10 font-sans max-w-4xl mx-auto space-y-6 relative overflow-hidden">
-                  {/* Draft decorative watermark stamp */}
-                  <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-slate-100/15 text-5xl sm:text-7xl font-sans font-black tracking-widest uppercase pointer-events-none select-none -rotate-12">
-                    FPT UNIVERSITY
-                  </div>
+                <>
+                  <style type="text/css" media="print">
+                    {`
+                      body * {
+                        visibility: hidden;
+                      }
+                      #safuri-handover-layout, #safuri-handover-layout * {
+                        visibility: visible;
+                      }
+                      #safuri-handover-layout {
+                        position: absolute;
+                        left: 0;
+                        top: 0;
+                        width: 100%;
+                        margin: 0;
+                        padding: 0;
+                        overflow: visible !important;
+                        border: none !important;
+                        box-shadow: none !important;
+                      }
+                    `}
+                  </style>
+                  {/* Safuri Event Layout */}
+                  <div id="safuri-handover-layout" className="bg-white rounded-2xl border border-slate-200/85 shadow-md p-6 md:p-10 font-sans max-w-4xl mx-auto space-y-6 relative overflow-hidden print:max-w-none">
+                    
+                    <button 
+                      type="button"
+                      onClick={() => window.print()}
+                      className="absolute top-6 right-6 z-20 flex items-center gap-1.5 text-xs font-bold text-[#004c91] bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-colors outline-none print:hidden"
+                    >
+                      <Download className="w-4 h-4" /> Tải PDF
+                    </button>
+
+                    {/* Draft decorative watermark stamp */}
+                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-slate-100/15 text-5xl sm:text-7xl font-sans font-black tracking-widest uppercase pointer-events-none select-none -rotate-12">
+                      FPT UNIVERSITY
+                    </div>
 
                   {/* National Emblem Text & FPTU Header */}
                   <div className="flex flex-col sm:flex-row justify-between border-b border-slate-150 pb-5 text-xs gap-4 text-slate-550 relative z-10">
@@ -3684,7 +3716,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-5 bg-[#f8fbfe] p-4.5 rounded-2xl border border-blue-200/50">
                         
                         {/* Block Bên Giao Nghiệm Thu */}
-                        <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-3xs flex flex-col justify-between gap-4">
+                        <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-3xs flex flex-col justify-between gap-4 print:shadow-none">
                           <div>
                             <label className="block text-[10px] font-black text-[#004c91] uppercase tracking-wider mb-1.5">
                               Ghi chú Nghiệm thu (Bên Giao)
@@ -3728,7 +3760,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                         </div>
 
                         {/* Block Bên Nhận Nghiệm Thu */}
-                        <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-3xs flex flex-col justify-between gap-4">
+                        <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-3xs flex flex-col justify-between gap-4 print:shadow-none">
                           <div>
                             <label className="block text-[10px] font-black text-[#004c91] uppercase tracking-wider mb-1.5">
                               Ghi chú Nghiệm thu (Bên Nhận)
@@ -3796,8 +3828,8 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                       <span className="font-semibold text-amber-950">Tiến trình an toàn: Vui lòng ký đầy đủ 2 ô "Bàn giao" đợt 1 bên trên để tự động mở khóa hồ sơ "Nghiệm thu bồi hoàn" đợt 2 sau khi hoàn tất hành trình di chuyển đoàn Safuri.</span>
                     </div>
                   )}
-
-              </div>
+                </div>
+                </>
               )}
 
               {activePopoverEvent.category === 'Lịch của tôi' && (

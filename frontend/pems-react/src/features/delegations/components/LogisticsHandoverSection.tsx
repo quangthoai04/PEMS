@@ -16,7 +16,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Loader2, PackageCheck, Undo2, CheckCircle2, AlertCircle,
-  PenLine, Clock, X, Building2, FileText,
+  PenLine, Clock, X, Building2, FileText, Download
 } from 'lucide-react';
 import { delegationsApi } from '../api/delegationsApi';
 import {
@@ -328,23 +328,52 @@ export function LogisticsHandoverSection({ visitInstanceId, canManage, handoverP
 
       {/* Modal biên bản ký mượn/trả */}
       {signTarget && createPortal(
-        <div className="fixed inset-0 z-[80] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={closeSignModal} />
-          <div className="relative w-full max-w-4xl max-h-[90vh] flex flex-col rounded-2xl bg-white shadow-2xl overflow-hidden font-sans border border-slate-200">
+        <>
+          <style type="text/css" media="print">
+            {`
+              body * {
+                visibility: hidden;
+              }
+              #logistics-handover-modal, #logistics-handover-modal * {
+                visibility: visible;
+              }
+              #logistics-handover-modal {
+                position: absolute;
+                left: 0;
+                top: 0;
+                width: 100%;
+                margin: 0;
+                padding: 0;
+                overflow: visible !important;
+              }
+            `}
+          </style>
+          <div id="logistics-handover-modal" className="fixed inset-0 z-[80] flex items-center justify-center p-4 print:static print:inset-auto print:p-0">
+            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm print:hidden" onClick={closeSignModal} />
+            <div className="relative w-full max-w-4xl max-h-[90vh] flex flex-col rounded-2xl bg-white shadow-2xl overflow-hidden font-sans border border-slate-200 print:max-w-none print:max-h-none print:shadow-none print:border-none print:rounded-none">
             {/* Modal header */}
-            <div className="bg-[#004c91] text-white px-6 py-4 flex items-center justify-between shrink-0">
+            <div className="bg-[#004c91] text-white px-6 py-4 flex items-center justify-between shrink-0 print:hidden">
               <h3 className="font-bold text-sm uppercase tracking-wide flex items-center gap-2">
                 <FileText className="w-5 h-5 opacity-80" />
                 BIÊN BẢN BÀN GIAO VÀ NGHIỆM THU
               </h3>
-              <button type="button" onClick={closeSignModal} disabled={busy}
-                className="text-white/70 hover:text-white outline-none transition-colors" aria-label="Đóng">
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-4">
+                <button 
+                  type="button" 
+                  onClick={() => window.print()}
+                  className="flex items-center gap-1.5 text-xs font-bold bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-lg transition-colors outline-none"
+                >
+                  <Download className="w-4 h-4" /> Tải PDF
+                </button>
+                <button type="button" onClick={closeSignModal} disabled={busy}
+                  className="text-white/70 hover:text-white outline-none transition-colors" aria-label="Đóng">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             {/* Modal body (scrollable) */}
-            <div className="p-6 md:p-12 overflow-y-auto bg-white flex-1 text-slate-900 shadow-[inset_0_0_20px_rgba(0,0,0,0.02)]">
+            <div className="p-6 md:p-12 overflow-y-auto bg-white flex-1 text-slate-900 shadow-[inset_0_0_20px_rgba(0,0,0,0.02)] print:overflow-visible print:shadow-none">
               {(() => {
                 const b = findHandover(signTarget.item.handovers, 'BORROW');
                 const r = findHandover(signTarget.item.handovers, 'RETURN');
@@ -519,7 +548,7 @@ export function LogisticsHandoverSection({ visitInstanceId, canManage, handoverP
                                   <span className="text-[9px] text-slate-450">{canSignBG2 ? 'Nhấp để xác nhận' : 'Chờ PB ký trước'}</span>
                                 </div>
                               </div>
-                              <button type="button" onClick={submit} disabled={!canSignBG2 || busy} className="py-2 px-3 bg-orange-50 hover:bg-orange-100 text-[#f37021] font-extrabold text-[11px] rounded-xl border border-slate-200 transition-all flex items-center gap-1.5 cursor-pointer shadow-sm">
+                              <button type="button" onClick={submit} disabled={!canSignBG2 || busy} className="py-2 px-3 bg-orange-50 hover:bg-orange-100 text-[#f37021] font-extrabold text-[11px] rounded-xl border border-slate-200 transition-all flex items-center gap-1.5 cursor-pointer shadow-sm print:hidden">
                                 {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />} Ký xác nhận (BG2)
                               </button>
                             </div>
@@ -582,7 +611,7 @@ export function LogisticsHandoverSection({ visitInstanceId, canManage, handoverP
                                     <span className="text-[9px] text-slate-450">{canSignNT1 ? 'Nhấp để hoàn tất' : 'Chờ hoàn tất'}</span>
                                   </div>
                                 </div>
-                                <button type="button" onClick={submit} disabled={!canSignNT1 || busy} className="py-2 px-3 bg-blue-50 hover:bg-blue-100 text-[#004c91] font-extrabold text-[11px] rounded-xl border border-slate-200 transition-all flex items-center gap-1.5 cursor-pointer shadow-sm">
+                                <button type="button" onClick={submit} disabled={!canSignNT1 || busy} className="py-2 px-3 bg-blue-50 hover:bg-blue-100 text-[#004c91] font-extrabold text-[11px] rounded-xl border border-slate-200 transition-all flex items-center gap-1.5 cursor-pointer shadow-sm print:hidden">
                                   {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />} Ký Nghiệm thu (NT1)
                                 </button>
                               </div>
@@ -649,7 +678,8 @@ export function LogisticsHandoverSection({ visitInstanceId, canManage, handoverP
               </button>
             </div>
           </div>
-        </div>,
+        </div>
+        </>,
         document.body
       )}
     </div>
