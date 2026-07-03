@@ -25,11 +25,11 @@ export type StaffLeaderTaskModalItem = {
   rawId: number | string;
   visitRequestId?: number;
   visitInstanceId?: number;
-  status: string;
-  title: string;
+  status?: string;
+  title?: string;
   delegationName?: string;
-  date: string;
-  time: string;
+  date?: string;
+  time?: string;
   location?: string;
   host?: string;
   purpose?: string;
