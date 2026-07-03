@@ -607,165 +607,169 @@ export function MinuteManagement() {
               </div>
 
               {/* Body */}
-              <div className="p-6 overflow-y-auto w-full flex-1 bg-gray-50/50">
+              <div className="px-6 py-4 overflow-y-auto w-full flex-1 bg-white text-sm">
                  {loading && !detailData ? (
                    <div className="flex justify-center items-center h-40">
                      <span className="text-slate-500">Đang tải chi tiết...</span>
                    </div>
                  ) : detailData ? (
-                   <div className="space-y-6">
+                   <div className="space-y-4">
                       {/* Cảnh báo lock (Chỉ hiện khi ko phải mình đang sửa) */}
                       {!isEditing && detailData.editLockedBy && (
-                        <div className="bg-orange-50 border border-orange-200 text-orange-800 p-4 rounded-xl flex items-start gap-3">
-                          <Lock className="w-5 h-5 text-orange-500 shrink-0 mt-0.5" />
+                        <div className="flex items-start gap-2 text-orange-700 bg-orange-50 border-l-2 border-orange-400 px-3 py-2 text-xs">
+                          <Lock className="w-3.5 h-3.5 shrink-0 mt-0.5" />
                           <div>
-                            <p className="font-bold text-sm">Đang được chỉnh sửa bởi {detailData.editLockedByName || detailData.editLockedBy}</p>
-                            <p className="text-xs mt-1 text-orange-700">Lock hết hạn vào: {new Date(detailData.editLockExpiresAt!).toLocaleString('vi-VN')}</p>
+                            <span className="font-bold">Đang được chỉnh sửa bởi {detailData.editLockedByName || detailData.editLockedBy}</span>
+                            <span className="ml-1">— Lock hết hạn: {new Date(detailData.editLockExpiresAt!).toLocaleString('vi-VN')}</span>
                           </div>
                         </div>
                       )}
 
-                      {/* Thông tin đoàn */}
-                      <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-                        <h3 className="text-base font-bold text-[#004c91] mb-4 flex items-center gap-2"><Building2 className="w-5 h-5" /> Thông tin đoàn / Visit Instance</h3>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                          <div><span className="text-slate-500 block mb-1">Tên đoàn khách:</span> <span className="font-bold text-slate-800">{selectedMinute.visitTitle || 'Chưa có dữ liệu'}</span></div>
-                          <div><span className="text-slate-500 block mb-1">Trạng thái biên bản:</span> <span className="font-bold text-slate-800">{detailData.status || 'Chưa có dữ liệu'}</span></div>
-                          <div><span className="text-slate-500 block mb-1">Host chính:</span> <span className="font-bold text-slate-800">{selectedMinute.hostName || 'Chưa có dữ liệu'}</span></div>
-                          <div><span className="text-slate-500 block mb-1">Campus:</span> <span className="font-bold text-slate-800">{selectedMinute.campusName || 'Chưa có dữ liệu'}</span></div>
-                          <div><span className="text-slate-500 block mb-1">Thời gian dự kiến:</span> <span className="font-bold text-slate-800">
+                      {/* Thông tin đoàn — key-value compact */}
+                      <div>
+                        <h3 className="text-xs font-bold text-[#004c91] uppercase tracking-wide mb-2 flex items-center gap-1.5"><Building2 className="w-3.5 h-3.5" /> Thông tin đoàn / Visit Instance</h3>
+                        <dl className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-1 text-sm">
+                          <div className="flex gap-1.5"><dt className="text-slate-500 shrink-0">Đoàn khách:</dt><dd className="font-semibold text-slate-800 truncate">{selectedMinute.visitTitle || 'Chưa có dữ liệu'}</dd></div>
+                          <div className="flex gap-1.5"><dt className="text-slate-500 shrink-0">Trạng thái:</dt><dd className="font-semibold text-slate-800">{detailData.status || 'Chưa có dữ liệu'}</dd></div>
+                          <div className="flex gap-1.5"><dt className="text-slate-500 shrink-0">Host:</dt><dd className="font-semibold text-slate-800 truncate">{selectedMinute.hostName || 'Chưa có dữ liệu'}</dd></div>
+                          <div className="flex gap-1.5"><dt className="text-slate-500 shrink-0">Campus:</dt><dd className="font-semibold text-slate-800 truncate">{selectedMinute.campusName || 'Chưa có dữ liệu'}</dd></div>
+                          <div className="flex gap-1.5 md:col-span-2"><dt className="text-slate-500 shrink-0">Thời gian dự kiến:</dt><dd className="font-semibold text-slate-800">
                             {selectedMinute.plannedStartAt ? new Date(selectedMinute.plannedStartAt).toLocaleString('vi-VN') : '?'} - {selectedMinute.plannedEndAt ? new Date(selectedMinute.plannedEndAt).toLocaleString('vi-VN') : '?'}
-                          </span></div>
-                        </div>
+                          </dd></div>
+                        </dl>
                       </div>
 
+                      <hr className="border-slate-100" />
+
                       {/* Nội dung biên bản */}
-                      <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-                        <h3 className="text-base font-bold text-[#004c91] mb-4 flex items-center gap-2"><FileText className="w-5 h-5" /> Nội dung biên bản</h3>
-                        <div className="bg-slate-50 p-4 rounded-lg border border-slate-100 min-h-[100px] whitespace-pre-wrap text-sm text-slate-700">
+                      <div>
+                        <h3 className="text-xs font-bold text-[#004c91] uppercase tracking-wide mb-2 flex items-center gap-1.5"><FileText className="w-3.5 h-3.5" /> Nội dung biên bản</h3>
+                        <div className="whitespace-pre-wrap text-sm text-slate-700 leading-relaxed">
                           {detailData.content || 'Chưa có dữ liệu nội dung.'}
                         </div>
                       </div>
 
+                      <hr className="border-slate-100" />
+
                       {/* Danh sách người tham gia */}
-                      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
-                        <div className="bg-slate-50 px-5 py-4 border-b border-slate-200 flex items-center justify-between">
-                          <h3 className="text-base font-bold text-[#004c91] flex items-center gap-2">
-                            <Users className="w-5 h-5" /> Danh sách người tham gia & điểm danh
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <h3 className="text-xs font-bold text-[#004c91] uppercase tracking-wide flex items-center gap-1.5">
+                            <Users className="w-3.5 h-3.5" /> Người tham gia & điểm danh
                           </h3>
-                          <div className="flex gap-2 text-xs">
-                            <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded font-medium">Tổng: {(isEditing ? editData?.participants : detailData.participants)?.length || 0}</span>
-                            <span className="bg-green-100 text-green-800 px-2 py-1 rounded font-medium">Có mặt: {(isEditing ? editData?.participants : detailData.participants)?.filter(p => p.attendanceStatus === 'PRESENT').length || 0}</span>
+                          <div className="flex gap-2 text-[11px] text-slate-500">
+                            <span>Tổng: <span className="font-bold text-slate-700">{(isEditing ? editData?.participants : detailData.participants)?.length || 0}</span></span>
+                            <span>Có mặt: <span className="font-bold text-green-700">{(isEditing ? editData?.participants : detailData.participants)?.filter(p => p.attendanceStatus === 'PRESENT').length || 0}</span></span>
                           </div>
                         </div>
-                        <div className="overflow-x-auto max-h-[300px]">
-                          <table className="w-full text-left text-sm">
-                            <thead className="bg-slate-50 sticky top-0 border-b border-slate-200">
-                              <tr className="text-slate-500 font-bold uppercase text-xs">
-                                <th className="px-4 py-3">Tên & Vai trò</th>
-                                <th className="px-4 py-3">Đơn vị / Loại</th>
-                                <th className="px-4 py-3 text-center">Trạng thái</th>
-                                <th className="px-4 py-3">Ghi chú</th>
+                        <div className="overflow-x-auto max-h-[260px] overflow-y-auto">
+                          <table className="w-full text-left text-xs">
+                            <thead className="bg-slate-50 sticky top-0">
+                              <tr className="text-slate-500 font-bold uppercase text-[10px]">
+                                <th className="px-2 py-1.5">Tên & Vai trò</th>
+                                <th className="px-2 py-1.5">Đơn vị / Loại</th>
+                                <th className="px-2 py-1.5 text-center">Trạng thái</th>
+                                <th className="px-2 py-1.5">Ghi chú</th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
                               {((isEditing ? editData?.participants : detailData.participants) || []).map((p, idx) => (
                                 <tr key={p.minuteParticipantId || idx} className="hover:bg-slate-50/50">
-                                  <td className="px-4 py-3">
+                                  <td className="px-2 py-1.5">
                                     <div className="font-bold text-slate-800">{p.fullNameSnapshot || '-'}</div>
-                                    <div className="text-xs text-slate-500">{p.roleSnapshot || '-'}</div>
+                                    <div className="text-slate-500">{p.roleSnapshot || '-'}</div>
                                   </td>
-                                  <td className="px-4 py-3">
-                                    <div className="text-slate-700">{p.organizationSnapshot || '-'}</div>
-                                    <div className="mt-1">
-                                      {p.userId ? <span className="text-[10px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded border border-blue-200">Internal</span> :
-                                       p.guestMemberId ? <span className="text-[10px] bg-orange-50 text-orange-600 px-2 py-0.5 rounded border border-orange-200">Guest</span> :
-                                       <span className="text-[10px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded border border-slate-200">Snapshot only</span>}
-                                    </div>
+                                  <td className="px-2 py-1.5">
+                                    <span className="text-slate-700">{p.organizationSnapshot || '-'}</span>
+                                    <span className="ml-1.5 text-[10px] text-slate-400">
+                                      {p.userId ? '(Internal)' : p.guestMemberId ? '(Guest)' : '(Snapshot only)'}
+                                    </span>
                                   </td>
-                                  <td className="px-4 py-3 text-center">
+                                  <td className="px-2 py-1.5 text-center">
                                     {isEditing ? (
                                       <div className="flex items-center justify-center gap-1">
-                                        <button onClick={() => updateParticipant(idx, 'PRESENT')} className={`px-2 py-1 rounded text-xs font-bold transition-colors ${p.attendanceStatus === 'PRESENT' ? 'bg-green-500 text-white shadow-sm' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}>Có mặt</button>
-                                        <button onClick={() => updateParticipant(idx, 'ABSENT')} className={`px-2 py-1 rounded text-xs font-bold transition-colors ${p.attendanceStatus === 'ABSENT' ? 'bg-red-500 text-white shadow-sm' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}>Vắng</button>
+                                        <button onClick={() => updateParticipant(idx, 'PRESENT')} className={`px-1.5 py-0.5 rounded text-[10px] font-bold transition-colors ${p.attendanceStatus === 'PRESENT' ? 'bg-green-500 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}>Có mặt</button>
+                                        <button onClick={() => updateParticipant(idx, 'ABSENT')} className={`px-1.5 py-0.5 rounded text-[10px] font-bold transition-colors ${p.attendanceStatus === 'ABSENT' ? 'bg-red-500 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}>Vắng</button>
                                       </div>
                                     ) : (
                                       <>
-                                        {p.attendanceStatus === 'PRESENT' && <span className="inline-flex items-center justify-center bg-green-100 text-green-700 px-2 py-1 rounded text-xs font-bold w-20">PRESENT</span>}
-                                        {p.attendanceStatus === 'ABSENT' && <span className="inline-flex items-center justify-center bg-red-100 text-red-700 px-2 py-1 rounded text-xs font-bold w-20">ABSENT</span>}
-                                        {p.attendanceStatus === 'EXCUSED' && <span className="inline-flex items-center justify-center bg-yellow-100 text-yellow-800 px-2 py-1 rounded text-xs font-bold w-20">EXCUSED</span>}
+                                        {p.attendanceStatus === 'PRESENT' && <span className="text-green-700 font-bold">PRESENT</span>}
+                                        {p.attendanceStatus === 'ABSENT' && <span className="text-red-700 font-bold">ABSENT</span>}
+                                        {p.attendanceStatus === 'EXCUSED' && <span className="text-yellow-700 font-bold">EXCUSED</span>}
                                         {!p.attendanceStatus && <span className="text-slate-400">-</span>}
                                       </>
                                     )}
                                   </td>
-                                  <td className="px-4 py-3 text-slate-600 text-xs">{p.attendanceNote || '-'}</td>
+                                  <td className="px-2 py-1.5 text-slate-600">{p.attendanceNote || '-'}</td>
                                 </tr>
                               ))}
                               {(!isEditing && detailData.participants?.length === 0) && (
-                                <tr><td colSpan={4} className="px-4 py-6 text-center text-slate-500">Chưa có người tham gia</td></tr>
+                                <tr><td colSpan={4} className="px-2 py-4 text-center text-slate-500">Chưa có người tham gia</td></tr>
                               )}
                             </tbody>
                           </table>
                         </div>
                       </div>
 
+                      <hr className="border-slate-100" />
+
                       {/* Đầu mục công việc */}
-                      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
-                        <div className="bg-slate-50 px-5 py-4 border-b border-slate-200">
-                          <h3 className="text-base font-bold text-[#004c91] flex items-center gap-2">
-                            <CheckSquare className="w-5 h-5" /> Đầu mục công việc
-                          </h3>
-                        </div>
-                        <div className="p-4 space-y-3">
+                      <div>
+                        <h3 className="text-xs font-bold text-[#004c91] uppercase tracking-wide mb-2 flex items-center gap-1.5">
+                          <CheckSquare className="w-3.5 h-3.5" /> Đầu mục công việc
+                        </h3>
+                        <div className="divide-y divide-slate-100">
                           {((isEditing ? editData?.actionItems : detailData.actionItems) || []).map((ai, idx) => {
                             const isOverdue = ai.dueDate && new Date(ai.dueDate) < new Date() && ai.status !== 'DONE' && ai.status !== 'CANCELLED';
                             return (
-                              <div key={ai.actionItemId || idx} className={`border border-slate-200 rounded-lg p-4 bg-white flex flex-col md:flex-row md:items-center justify-between gap-4 transition-colors ${ai.status === 'DONE' ? 'opacity-80 bg-slate-50' : ''}`}>
-                                <div className="flex-1 flex gap-3">
+                              <div key={ai.actionItemId || idx} className={`py-2 flex flex-col md:flex-row md:items-center justify-between gap-2 ${ai.status === 'DONE' ? 'opacity-70' : ''}`}>
+                                <div className="flex-1 flex gap-2">
                                   {isEditing && (
-                                    <button 
+                                    <button
                                       onClick={() => toggleActionItem(idx)}
-                                      className={`mt-1 shrink-0 w-6 h-6 rounded flex items-center justify-center border transition-colors ${ai.status === 'DONE' ? 'bg-green-500 border-green-500 text-white shadow-sm' : 'bg-white border-slate-300 hover:border-[#004c91]'}`}
+                                      className={`mt-0.5 shrink-0 w-4 h-4 rounded flex items-center justify-center border transition-colors ${ai.status === 'DONE' ? 'bg-green-500 border-green-500 text-white' : 'bg-white border-slate-300 hover:border-[#004c91]'}`}
                                     >
-                                      {ai.status === 'DONE' && <CheckSquare className="w-4 h-4" />}
+                                      {ai.status === 'DONE' && <CheckSquare className="w-3 h-3" />}
                                     </button>
                                   )}
                                   <div>
-                                    <div className="flex items-center gap-2 mb-1">
-                                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase
-                                        ${ai.status === 'DONE' ? 'bg-green-100 text-green-700' : 
-                                          ai.status === 'IN_PROGRESS' ? 'bg-blue-100 text-blue-700' : 
-                                          ai.status === 'CANCELLED' ? 'bg-slate-100 text-slate-600' : 
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded uppercase
+                                        ${ai.status === 'DONE' ? 'bg-green-100 text-green-700' :
+                                          ai.status === 'IN_PROGRESS' ? 'bg-blue-100 text-blue-700' :
+                                          ai.status === 'CANCELLED' ? 'bg-slate-100 text-slate-600' :
                                           'bg-orange-100 text-orange-800'}`}>
                                         {ai.status}
                                       </span>
-                                      {isOverdue && <span className="text-[10px] font-bold px-2 py-0.5 rounded uppercase bg-red-100 text-red-700">Quá hạn</span>}
+                                      {isOverdue && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded uppercase bg-red-100 text-red-700">Quá hạn</span>}
                                       <h4 className={`font-bold text-sm ${ai.status === 'DONE' ? 'text-slate-500 line-through' : 'text-slate-800'}`}>{ai.title}</h4>
                                     </div>
-                                    {ai.note && <p className="text-xs text-slate-600 mt-1">{ai.note}</p>}
+                                    {ai.note && <p className="text-xs text-slate-600 mt-0.5">{ai.note}</p>}
                                   </div>
                                 </div>
-                                <div className="flex items-center gap-4 text-xs text-slate-500 shrink-0">
-                                  {ai.dueDate && <div className="flex items-center gap-1"><Calendar className="w-3 h-3"/> Deadline: {new Date(ai.dueDate).toLocaleDateString('vi-VN')}</div>}
-                                  {ai.completedAt && <div className="flex items-center gap-1 text-green-600"><CheckSquare className="w-3 h-3"/> HT: {new Date(ai.completedAt).toLocaleDateString('vi-VN')}</div>}
+                                <div className="flex items-center gap-3 text-[11px] text-slate-500 shrink-0">
+                                  {ai.dueDate && <span className="flex items-center gap-1"><Calendar className="w-3 h-3"/> Deadline: {new Date(ai.dueDate).toLocaleDateString('vi-VN')}</span>}
+                                  {ai.completedAt && <span className="flex items-center gap-1 text-green-600"><CheckSquare className="w-3 h-3"/> HT: {new Date(ai.completedAt).toLocaleDateString('vi-VN')}</span>}
                                 </div>
                               </div>
                             );
                           })}
                           {(!isEditing && detailData.actionItems?.length === 0) && (
-                            <div className="text-center py-6 text-slate-500">Biên bản này chưa có đầu mục công việc.</div>
+                            <div className="text-center py-4 text-slate-500 text-sm">Biên bản này chưa có đầu mục công việc.</div>
                           )}
                         </div>
                       </div>
 
+                      <hr className="border-slate-100" />
+
                       {/* Audit */}
-                      <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 shadow-sm">
-                        <h3 className="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2"><ShieldAlert className="w-4 h-4" /> Thông tin Audit & Concurrency</h3>
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-y-3 text-xs text-slate-600">
-                          <div><span className="font-bold text-slate-800 block">Ngày khóa:</span> {detailData.editLockedAt ? new Date(detailData.editLockedAt).toLocaleString('vi-VN') : 'N/A'}</div>
-                          <div><span className="font-bold text-slate-800 block">Ngày cập nhật:</span> {detailData.updatedAt ? new Date(detailData.updatedAt).toLocaleString('vi-VN') : 'N/A'}</div>
-                          <div><span className="font-bold text-slate-800 block">Row version:</span> {detailData.rowVersion}</div>
-                        </div>
+                      <div>
+                        <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-2 flex items-center gap-1.5"><ShieldAlert className="w-3.5 h-3.5" /> Audit & Concurrency</h3>
+                        <dl className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-slate-600">
+                          <div className="flex gap-1.5"><dt className="text-slate-500">Ngày khóa:</dt><dd className="font-semibold text-slate-800">{detailData.editLockedAt ? new Date(detailData.editLockedAt).toLocaleString('vi-VN') : 'N/A'}</dd></div>
+                          <div className="flex gap-1.5"><dt className="text-slate-500">Ngày cập nhật:</dt><dd className="font-semibold text-slate-800">{detailData.updatedAt ? new Date(detailData.updatedAt).toLocaleString('vi-VN') : 'N/A'}</dd></div>
+                          <div className="flex gap-1.5"><dt className="text-slate-500">Row version:</dt><dd className="font-semibold text-slate-800">{detailData.rowVersion}</dd></div>
+                        </dl>
                       </div>
                    </div>
                  ) : (

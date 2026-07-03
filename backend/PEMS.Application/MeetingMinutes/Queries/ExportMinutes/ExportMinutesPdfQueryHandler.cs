@@ -18,6 +18,12 @@ public class ExportMinutesPdfQueryHandler : IRequestHandler<ExportMinutesPdfQuer
     private readonly IApplicationDbContext _db;
     private readonly ICurrentUserService _currentUser;
 
+    private static readonly string PrimaryColor = Colors.Blue.Darken2;
+    private static readonly string BorderColor = Colors.Grey.Lighten1;
+    private static readonly string HeaderBg = Colors.Blue.Darken2;
+    private static readonly string ZebraBg = Colors.Grey.Lighten4;
+    private static readonly string MutedText = Colors.Grey.Darken1;
+
     public ExportMinutesPdfQueryHandler(IApplicationDbContext db, ICurrentUserService currentUser)
     {
         _db = db;
@@ -45,91 +51,227 @@ public class ExportMinutesPdfQueryHandler : IRequestHandler<ExportMinutesPdfQuer
             throw new ForbiddenException("Không có quyền tải PDF của campus này");
         }
 
+        var delegationName = vrc?.VisitRequest?.DelegationName ?? "N/A";
+
         var pdfData = Document.Create(container =>
         {
             container.Page(page =>
             {
                 page.Size(PageSizes.A4);
-                page.Margin(2, QuestPDF.Infrastructure.Unit.Centimetre);
+                page.Margin(1.8f, QuestPDF.Infrastructure.Unit.Centimetre);
                 page.PageColor(Colors.White);
-                page.DefaultTextStyle(x => x.FontSize(11).FontFamily("Arial"));
+                page.DefaultTextStyle(x => x.FontSize(10).FontFamily("Arial").FontColor(Colors.Black));
 
-                page.Header().Text("BIÊN BẢN CUỘC HỌP").SemiBold().FontSize(18).FontColor(Colors.Blue.Darken2);
-
-                page.Content().Column(col =>
+                page.Header().Column(header =>
                 {
-                    col.Spacing(10);
-                    
-                    col.Item().Text($"Tiêu đề: {minute.Title}").Bold().FontSize(14);
-                    col.Item().Text($"Đoàn khách: {vrc?.VisitRequest?.DelegationName ?? "N/A"}");
-                    col.Item().Text($"Campus: {campusName ?? "N/A"}");
-                    col.Item().Text($"Trạng thái: {minute.Status}");
-                    col.Item().Text($"Ngày tạo: {minute.CreatedAt:dd/MM/yyyy HH:mm}");
-                    
-                    col.Item().PaddingTop(10).Text("Nội dung cuộc họp:").Bold().FontSize(12);
-                    col.Item().Text(minute.Content ?? "Chưa có nội dung.");
-
-                    col.Item().PaddingTop(10).Text("Người tham gia:").Bold().FontSize(12);
-                    col.Item().Table(table =>
+                    header.Item().Row(row =>
                     {
-                        table.ColumnsDefinition(columns =>
+                        row.RelativeItem().Column(c =>
                         {
-                            columns.RelativeColumn(3);
-                            columns.RelativeColumn(2);
-                            columns.RelativeColumn(1);
+                            c.Item().Text("BIÊN BẢN CUỘC HỌP").Bold().FontSize(18).FontColor(PrimaryColor);
+                            c.Item().Text("Partnership Engagement Management System").FontSize(8).FontColor(MutedText);
                         });
-
-                        table.Header(header =>
+                        row.ConstantItem(140).AlignRight().Column(c =>
                         {
-                            header.Cell().Text("Họ tên").Bold();
-                            header.Cell().Text("Đơn vị").Bold();
-                            header.Cell().Text("Điểm danh").Bold();
+                            c.Item().Text($"Mã biên bản: MIN-{minute.MinutesId}").FontSize(9).FontColor(MutedText);
+                            c.Item().Text($"Ngày xuất: {DateTime.Now:dd/MM/yyyy HH:mm}").FontSize(9).FontColor(MutedText);
                         });
+                    });
+                    header.Item().PaddingTop(8).LineHorizontal(1.5f).LineColor(PrimaryColor);
+                });
 
-                        foreach (var p in minute.Participants.OrderBy(p => p.DisplayOrder))
+                page.Content().PaddingTop(15).Column(col =>
+                {
+                    col.Spacing(14);
+
+                    col.Item().Text(minute.Title).Bold().FontSize(14);
+
+                    // Thông tin chung — bảng 2 cột không viền
+                    col.Item().Border(1).BorderColor(BorderColor).Padding(10).Column(info =>
+                    {
+                        info.Spacing(5);
+                        InfoRow(info, "Đoàn khách", delegationName);
+                        InfoRow(info, "Campus", campusName ?? "N/A");
+                        InfoRow(info, "Trạng thái biên bản", minute.Status);
+                        InfoRow(info, "Ngày tạo", minute.CreatedAt.ToString("dd/MM/yyyy HH:mm"));
+                        if (minute.UpdatedAt.HasValue)
                         {
-                            table.Cell().Text(p.FullNameSnapshot ?? "-");
-                            table.Cell().Text(p.OrganizationSnapshot ?? "-");
-                            table.Cell().Text(p.AttendanceStatus ?? "-");
+                            InfoRow(info, "Cập nhật lần cuối", minute.UpdatedAt.Value.ToString("dd/MM/yyyy HH:mm"));
                         }
                     });
 
-                    col.Item().PaddingTop(10).Text("Đầu mục công việc:").Bold().FontSize(12);
-                    col.Item().Table(table =>
+                    // Nội dung cuộc họp
+                    col.Item().Column(section =>
                     {
-                        table.ColumnsDefinition(columns =>
-                        {
-                            columns.RelativeColumn(3);
-                            columns.RelativeColumn(1);
-                            columns.RelativeColumn(1);
-                        });
+                        section.Item().Text("NỘI DUNG CUỘC HỌP").Bold().FontSize(11).FontColor(PrimaryColor);
+                        section.Item().PaddingTop(4).Border(1).BorderColor(BorderColor).Padding(10)
+                            .Text(string.IsNullOrWhiteSpace(minute.Content) ? "Chưa có nội dung." : minute.Content)
+                            .FontSize(10).LineHeight(1.4f);
+                    });
 
-                        table.Header(header =>
-                        {
-                            header.Cell().Text("Công việc").Bold();
-                            header.Cell().Text("Trạng thái").Bold();
-                            header.Cell().Text("Deadline").Bold();
-                        });
+                    // Người tham gia
+                    col.Item().Column(section =>
+                    {
+                        var participants = minute.Participants.OrderBy(p => p.DisplayOrder).ToList();
+                        section.Item().Text($"NGƯỜI THAM GIA & ĐIỂM DANH ({participants.Count})").Bold().FontSize(11).FontColor(PrimaryColor);
 
-                        foreach (var ai in minute.ActionItems.OrderBy(ai => ai.DisplayOrder))
+                        section.Item().PaddingTop(4).Table(table =>
                         {
-                            table.Cell().Text(ai.Title ?? "-");
-                            table.Cell().Text(ai.Status ?? "-");
-                            table.Cell().Text(ai.DueDate?.ToString("dd/MM/yyyy") ?? "-");
-                        }
+                            table.ColumnsDefinition(columns =>
+                            {
+                                columns.RelativeColumn(3);
+                                columns.RelativeColumn(2);
+                                columns.RelativeColumn(2);
+                                columns.RelativeColumn(1.5f);
+                                columns.RelativeColumn(2.5f);
+                            });
+
+                            table.Header(header =>
+                            {
+                                HeaderCell(header, "Họ tên");
+                                HeaderCell(header, "Vai trò");
+                                HeaderCell(header, "Đơn vị");
+                                HeaderCell(header, "Điểm danh");
+                                HeaderCell(header, "Ghi chú");
+                            });
+
+                            for (var i = 0; i < participants.Count; i++)
+                            {
+                                var p = participants[i];
+                                string bg = i % 2 == 1 ? ZebraBg : Colors.White;
+                                BodyCell(table, p.FullNameSnapshot ?? "-", bg);
+                                BodyCell(table, p.RoleSnapshot ?? "-", bg);
+                                BodyCell(table, p.OrganizationSnapshot ?? "-", bg);
+                                BodyCell(table, AttendanceLabel(p.AttendanceStatus), bg, AttendanceColor(p.AttendanceStatus));
+                                BodyCell(table, p.AttendanceNote ?? "-", bg);
+                            }
+
+                            if (participants.Count == 0)
+                            {
+                                table.Cell().ColumnSpan(5).Padding(6).AlignCenter().Text("Chưa có người tham gia").FontColor(MutedText);
+                            }
+                        });
+                    });
+
+                    // Đầu mục công việc
+                    col.Item().Column(section =>
+                    {
+                        var actionItems = minute.ActionItems.OrderBy(ai => ai.DisplayOrder).ToList();
+                        section.Item().Text($"ĐẦU MỤC CÔNG VIỆC ({actionItems.Count})").Bold().FontSize(11).FontColor(PrimaryColor);
+
+                        section.Item().PaddingTop(4).Table(table =>
+                        {
+                            table.ColumnsDefinition(columns =>
+                            {
+                                columns.RelativeColumn(3);
+                                columns.RelativeColumn(3);
+                                columns.RelativeColumn(1.5f);
+                                columns.RelativeColumn(1.5f);
+                                columns.RelativeColumn(1.5f);
+                            });
+
+                            table.Header(header =>
+                            {
+                                HeaderCell(header, "Công việc");
+                                HeaderCell(header, "Ghi chú");
+                                HeaderCell(header, "Trạng thái");
+                                HeaderCell(header, "Deadline");
+                                HeaderCell(header, "Hoàn thành");
+                            });
+
+                            for (var i = 0; i < actionItems.Count; i++)
+                            {
+                                var ai = actionItems[i];
+                                string bg = i % 2 == 1 ? ZebraBg : Colors.White;
+                                BodyCell(table, ai.Title ?? "-", bg);
+                                BodyCell(table, ai.Note ?? "-", bg);
+                                BodyCell(table, ActionStatusLabel(ai.Status), bg, ActionStatusColor(ai.Status));
+                                BodyCell(table, ai.DueDate?.ToString("dd/MM/yyyy") ?? "-", bg);
+                                BodyCell(table, ai.CompletedAt?.ToString("dd/MM/yyyy") ?? "-", bg);
+                            }
+
+                            if (actionItems.Count == 0)
+                            {
+                                table.Cell().ColumnSpan(5).Padding(6).AlignCenter().Text("Chưa có đầu mục công việc").FontColor(MutedText);
+                            }
+                        });
                     });
                 });
 
-                page.Footer().AlignCenter().Text(x =>
+                page.Footer().Column(footer =>
                 {
-                    x.Span("Trang ");
-                    x.CurrentPageNumber();
-                    x.Span(" / ");
-                    x.TotalPages();
+                    footer.Item().PaddingBottom(4).LineHorizontal(0.5f).LineColor(BorderColor);
+                    footer.Item().Row(row =>
+                    {
+                        row.RelativeItem().Text("Tài liệu được tạo tự động từ hệ thống PEMS.").FontSize(8).FontColor(MutedText);
+                        row.ConstantItem(100).AlignRight().Text(x =>
+                        {
+                            x.DefaultTextStyle(y => y.FontSize(8).FontColor(MutedText));
+                            x.Span("Trang ");
+                            x.CurrentPageNumber();
+                            x.Span(" / ");
+                            x.TotalPages();
+                        });
+                    });
                 });
             });
         }).GeneratePdf();
 
         return pdfData;
     }
+
+    private static void InfoRow(QuestPDF.Fluent.ColumnDescriptor col, string label, string value)
+    {
+        col.Item().Row(row =>
+        {
+            row.ConstantItem(130).Text(label).FontColor(MutedText).SemiBold();
+            row.RelativeItem().Text(value).SemiBold();
+        });
+    }
+
+    private static void HeaderCell(QuestPDF.Fluent.TableCellDescriptor header, string text)
+    {
+        header.Cell().Background(HeaderBg).Padding(6).Text(text).FontColor(Colors.White).Bold().FontSize(9);
+    }
+
+    private static void BodyCell(QuestPDF.Fluent.TableDescriptor table, string text, string bg, string? textColor = null)
+    {
+        var cell = table.Cell().Background(bg).BorderBottom(0.5f).BorderColor(BorderColor).Padding(6);
+        var t = cell.Text(text).FontSize(9);
+        if (textColor != null) t.FontColor(textColor).SemiBold();
+    }
+
+    private static string AttendanceLabel(string? status) => status switch
+    {
+        "PRESENT" => "Có mặt",
+        "ABSENT" => "Vắng mặt",
+        "EXCUSED" => "Vắng có phép",
+        _ => status ?? "-"
+    };
+
+    private static string AttendanceColor(string? status) => status switch
+    {
+        "PRESENT" => Colors.Green.Darken2,
+        "ABSENT" => Colors.Red.Darken1,
+        "EXCUSED" => Colors.Orange.Darken2,
+        _ => Colors.Black
+    };
+
+    private static string ActionStatusLabel(string? status) => status switch
+    {
+        "TODO" => "Cần làm",
+        "IN_PROGRESS" => "Đang thực hiện",
+        "DONE" => "Hoàn thành",
+        "CANCELLED" => "Đã hủy",
+        _ => status ?? "-"
+    };
+
+    private static string ActionStatusColor(string? status) => status switch
+    {
+        "TODO" => Colors.Orange.Darken2,
+        "IN_PROGRESS" => Colors.Blue.Darken2,
+        "DONE" => Colors.Green.Darken2,
+        "CANCELLED" => Colors.Grey.Darken1,
+        _ => Colors.Black
+    };
 }
