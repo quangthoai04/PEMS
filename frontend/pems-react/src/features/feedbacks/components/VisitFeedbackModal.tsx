@@ -5,6 +5,7 @@
  * comment mở qua icon bút). Footer: nút "Gửi đánh giá" cố định dưới modal.
  */
 import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { CheckCircle2, Loader2, Send, Star, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { feedbackApiError, useVisitFeedback } from '../hooks/useVisitFeedback';

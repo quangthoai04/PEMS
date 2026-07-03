@@ -54,7 +54,7 @@ export function VisitorVisitDetailPage({ perm, detail }: VisitorVisitDetailPageP
 
   return (
     <div className="min-h-screen bg-slate-50">
-      <div className="max-w-6xl mx-auto px-6 lg:px-8 py-6 space-y-6 pb-24">
+      <div className="max-w-6xl mx-auto px-4 lg:px-6 py-6 pb-24">
         
         {/* 1. Breadcrumb */}
         <VisitorBreadcrumb />
@@ -120,6 +120,27 @@ export function VisitorVisitDetailPage({ perm, detail }: VisitorVisitDetailPageP
 // COMPONENT PHỤ TRỢ (Sub-components)
 // ─────────────────────────────────────────────────────────────────────────────
 
+const KV = ({ label, value }: { label: string; value?: React.ReactNode }) => (
+  <div className="flex gap-2 py-0.5 text-[13px] leading-5">
+    <span className="w-40 shrink-0 text-slate-500">{label}:</span>
+    <span className="min-w-0 font-medium text-slate-800 break-words">{value || '-'}</span>
+  </div>
+);
+
+const KVBlock = ({ label, value }: { label: string; value?: string | null }) => (
+  <div className="py-0.5 text-[13px] leading-5">
+    <span className="text-slate-500">{label}:</span>
+    <p className="mt-0.5 font-medium text-slate-800 whitespace-pre-wrap break-words">{value?.trim() || '-'}</p>
+  </div>
+);
+
+const SectionTitle = ({ index, children }: { index?: number; children: React.ReactNode }) => (
+  <h3 className="mb-3 flex items-center gap-2 border-b border-slate-200 pb-1.5 text-sm font-bold uppercase tracking-wide text-[#004c91]">
+    {index !== undefined && <span className="text-slate-400">{index}.</span>}
+    {children}
+  </h3>
+);
+
 function VisitorBreadcrumb() {
   const navigate = useNavigate();
   return (
@@ -149,20 +170,21 @@ function VisitorVisitHero({ detail }: { detail: VisitProcessDetail }) {
   const statusText = getStatusText(detail.instanceStatus);
 
   return (
-    <section className="rounded-3xl bg-gradient-to-r from-[#004c91] to-[#0066b3] p-6 lg:p-8 text-white shadow-lg relative overflow-hidden">
-      <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/3"></div>
-      <div className="relative z-10">
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/20 border border-white/30 text-xs font-bold uppercase tracking-wider mb-4">
+    <div className="mb-4 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+      <div className="flex items-center gap-2 mb-2">
+        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-50 border border-blue-100 text-[11px] font-bold uppercase tracking-wider text-[#004c91]">
           <Info className="w-3.5 h-3.5" /> {statusText}
-        </div>
-        <h1 className="text-3xl lg:text-4xl font-black leading-tight mb-2 line-clamp-2">
-          Đoàn {detail.delegationName}
-        </h1>
+        </span>
         {detail.requestSummary?.visitType && (
-          <p className="text-blue-100 font-medium">Phân loại: {detail.requestSummary.visitType}</p>
+          <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-slate-50 border border-slate-200 text-[11px] font-bold uppercase tracking-wider text-slate-600">
+            {detail.requestSummary.visitType}
+          </span>
         )}
       </div>
-    </section>
+      <h1 className="text-xl lg:text-2xl font-black leading-tight text-slate-900">
+        Đoàn {detail.delegationName}
+      </h1>
+    </div>
   );
 }
 
@@ -185,35 +207,15 @@ function VisitorContactStrip({ detail }: { detail: VisitProcessDetail }) {
   };
 
   return (
-    <section className="rounded-3xl bg-white border border-slate-200 shadow-sm overflow-hidden">
-      <div className="px-6 py-5 border-l-4 border-[#f37021]">
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
-          
-          <div className="flex items-start gap-4">
-            <div className="w-14 h-14 rounded-2xl bg-blue-100 text-[#004c91] flex items-center justify-center font-black text-xl shrink-0">
-              {host.fullName?.charAt(0) || 'H'}
-            </div>
-            <div>
-              <p className="text-xs font-bold uppercase tracking-wide text-slate-500 mb-1">
-                Người phụ trách chuyến thăm
-              </p>
-              <h2 className="text-lg font-bold text-slate-900 leading-tight">
-                {host.fullName || 'Chưa cập nhật'}
-              </h2>
-              <p className="text-sm font-medium text-slate-500">
-                {host.departmentName || 'FPT University'}
-              </p>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 lg:min-w-[520px]">
-            <ReadOnlyInfoField label="Email" value={host.email} />
-            <ReadOnlyInfoField label="Số điện thoại" value={host.phone} />
-            <ReadOnlyInfoField label="Cơ sở" value={detail.campusName} />
-            <ReadOnlyInfoField label="Thời gian" value={formatVisitTime(detail.plannedStartAt, detail.plannedEndAt)} />
-          </div>
-
-        </div>
+    <section className="mb-6 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+      <SectionTitle>Người phụ trách chuyến thăm</SectionTitle>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-10">
+        <KV label="Họ và tên" value={host.fullName} />
+        <KV label="Đơn vị" value={host.departmentName} />
+        <KV label="Email" value={host.email} />
+        <KV label="Số điện thoại" value={host.phone} />
+        <KV label="Cơ sở tham quan" value={detail.campusName} />
+        <KV label="Thời gian" value={formatVisitTime(detail.plannedStartAt, detail.plannedEndAt)} />
       </div>
     </section>
   );
@@ -243,13 +245,13 @@ function VisitorNextStepCard({ detail }: { detail: VisitProcessDetail }) {
   }
 
   return (
-    <div className="bg-blue-50 border border-blue-100 rounded-2xl p-5 flex items-start gap-4 shadow-sm">
-      <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center shrink-0">
+    <div className="mb-6 bg-blue-50 border border-blue-100 rounded-xl p-4 flex items-start gap-4 shadow-sm">
+      <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center shrink-0">
         <Info className="w-5 h-5 text-[#004c91]" />
       </div>
       <div>
-        <h3 className="text-sm font-bold text-[#004c91] mb-1">Hướng dẫn / Thông báo</h3>
-        <p className="text-sm text-slate-700 font-medium leading-relaxed">{text}</p>
+        <h3 className="text-[14px] font-bold text-[#004c91] mb-1">Hướng dẫn / Thông báo</h3>
+        <p className="text-[13px] text-slate-700 font-medium leading-relaxed">{text}</p>
       </div>
     </div>
   );
@@ -262,107 +264,82 @@ function VisitorAgendaTimeline({ agenda }: { agenda: any[] }) {
   };
 
   return (
-    <section>
-      <h2 className="text-xl font-bold text-slate-800 mb-4 flex items-center gap-2">
-        <Clock className="w-5 h-5 text-[#004c91]" /> Lịch trình chuyến thăm
-      </h2>
-      <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6 lg:p-8">
-        {(!agenda || agenda.length === 0) ? (
-          <div className="text-center py-8">
-            <CalendarCheck2 className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-            <p className="text-slate-500 font-medium">Lịch trình chi tiết đang được nhà trường cập nhật.</p>
-          </div>
-        ) : (
-          <div className="relative space-y-6 before:absolute before:inset-0 before:ml-[17px] before:-translate-x-px before:h-full before:w-0.5 before:bg-slate-200">
-            {agenda.map((it, idx) => (
-              <div key={idx} className="relative flex items-start gap-6">
-                <div className="flex items-center justify-center w-9 h-9 rounded-full border-4 border-white bg-[#004c91] text-white shrink-0 z-10 shadow-sm">
-                  <span className="text-xs font-black">{idx + 1}</span>
-                </div>
-                <div className="flex-1 bg-slate-50 border border-slate-100 p-5 rounded-2xl hover:border-blue-200 transition-colors">
-                  <div className="flex flex-wrap items-center justify-between mb-2 gap-2">
-                    <span className="text-sm font-bold text-[#004c91] bg-blue-100/50 px-3 py-1 rounded-md">
-                      {formatTime(it.startTime)} {it.endTime ? ` - ${formatTime(it.endTime)}` : ''}
-                    </span>
-                  </div>
-                  <h3 className="text-base font-bold text-slate-800 mb-2">{it.title}</h3>
-                  {(it.location || it.description) && (
-                    <div className="space-y-2 mt-3 pt-3 border-t border-slate-200">
-                      {it.location && (
-                        <div className="flex items-start gap-2 text-sm">
-                          <MapPin className="w-4 h-4 shrink-0 text-[#f37021] mt-0.5" />
-                          <span className="font-bold text-slate-700">{it.location}</span>
-                        </div>
-                      )}
-                      {it.description && (
-                        <div className="flex items-start gap-2 text-sm text-slate-600">
-                          <Info className="w-4 h-4 shrink-0 text-slate-400 mt-0.5" />
-                          <span className="leading-relaxed">{it.description}</span>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+    <section className="mb-6 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+      <SectionTitle>Lịch trình chuyến thăm</SectionTitle>
+      {(!agenda || agenda.length === 0) ? (
+        <p className="text-[13px] italic text-slate-400">Lịch trình chi tiết đang được nhà trường cập nhật.</p>
+      ) : (
+        <div className="overflow-x-auto rounded-md border border-slate-200">
+          <table className="w-full min-w-[480px] border-collapse text-[13px]">
+            <thead className="border-b border-slate-200 bg-slate-50">
+              <tr className="text-left text-xs text-slate-500">
+                <th className="px-3 py-2 font-semibold w-[140px]">Thời gian</th>
+                <th className="px-3 py-2 font-semibold">Nội dung</th>
+                <th className="px-3 py-2 font-semibold">Địa điểm</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {agenda.map((it, idx) => (
+                <tr key={idx}>
+                  <td className="px-3 py-2 text-slate-600 whitespace-nowrap align-top">
+                    <span className="font-medium text-[#004c91]">{formatTime(it.startTime)} {it.endTime ? `- ${formatTime(it.endTime)}` : ''}</span>
+                  </td>
+                  <td className="px-3 py-2 align-top">
+                    <p className="font-medium text-slate-800">{it.title}</p>
+                    {it.description && <p className="text-slate-500 mt-1 whitespace-pre-wrap">{it.description}</p>}
+                  </td>
+                  <td className="px-3 py-2 text-slate-600 align-top">{it.location || '-'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </section>
   );
 }
 
 function VisitorRequestInfoSection({ summary }: { summary: any }) {
   return (
-    <section>
-      <h2 className="text-xl font-bold text-slate-800 mb-4 flex items-center gap-2">
-        <ShieldCheck className="w-5 h-5 text-[#004c91]" /> Thông tin đăng ký đã gửi
-      </h2>
-      <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6 lg:p-8 space-y-8">
-        
+    <section className="mb-6 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+      <SectionTitle>Thông tin đăng ký đã gửi</SectionTitle>
+      <div className="space-y-5">
         <div>
-          <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
-            <User className="w-5 h-5 text-[#f37021]" /> Người đại diện đăng ký
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            <ReadOnlyInfoField label="Họ và tên" value={summary.registrantName} />
-            <ReadOnlyInfoField label="Email" value={summary.registrantEmail} />
-            <ReadOnlyInfoField label="Số điện thoại" value={summary.registrantPhone} />
-            <ReadOnlyInfoField label="Quốc tịch" value={summary.registrantNationality} />
-            <ReadOnlyInfoField label="Tổ chức / Đơn vị" value={summary.registrantOrganization} />
-            <ReadOnlyInfoField label="Chức danh" value={summary.registrantJobTitle} />
+          <h4 className="text-[13px] font-bold text-[#f37021] mb-2 uppercase">Người đại diện đăng ký</h4>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-10">
+            <KV label="Họ và tên" value={summary.registrantName} />
+            <KV label="Email" value={summary.registrantEmail} />
+            <KV label="Số điện thoại" value={summary.registrantPhone} />
+            <KV label="Quốc tịch" value={summary.registrantNationality} />
+            <KV label="Tổ chức" value={summary.registrantOrganization} />
+            <KV label="Chức danh" value={summary.registrantJobTitle} />
           </div>
         </div>
 
         <div>
-          <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
-            <Users className="w-5 h-5 text-[#f37021]" /> Thông tin đoàn khách
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <ReadOnlyInfoField label="Tên đoàn" value={summary.delegationName} />
-            <ReadOnlyInfoField label="Tổ chức / Đối tác" value={summary.registrantOrganization} />
-            <ReadOnlyInfoField label="Số lượng khách" value={summary.guestMembers?.length ? `${summary.guestMembers.length} thành viên` : 'Chưa cập nhật'} />
-            <ReadOnlyInfoField label="Mục đích chuyến thăm" value={summary.purpose} />
-            <ReadOnlyInfoField label="Nội dung mong muốn trao đổi" value={summary.workingContent} />
-            <ReadOnlyInfoField label="Ghi chú thêm" value={summary.noteToFptu} />
+          <h4 className="text-[13px] font-bold text-[#f37021] mb-2 uppercase">Thông tin đoàn khách</h4>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-10">
+            <KV label="Tên đoàn" value={summary.delegationName} />
+            <KV label="Đối tác" value={summary.registrantOrganization} />
+            <KV label="Số lượng khách" value={summary.guestMembers?.length ? `${summary.guestMembers.length} thành viên` : 'Chưa cập nhật'} />
+          </div>
+          <div className="mt-1.5 space-y-1.5">
+            <KVBlock label="Mục đích tham quan" value={summary.purpose} />
+            <KVBlock label="Nội dung làm việc" value={summary.workingContent} />
+            <KVBlock label="Ghi chú thêm" value={summary.noteToFptu} />
           </div>
         </div>
 
         <div>
-          <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
-            <Building className="w-5 h-5 text-[#f37021]" /> Thông tin chuyến thăm mong muốn
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <ReadOnlyInfoField label="Phân loại chuyến thăm" value={summary.visitType} />
-            <ReadOnlyInfoField label="Ngôn ngữ sử dụng" value={summary.workingLanguage} />
-            <ReadOnlyInfoField label="Phương tiện di chuyển" value={summary.transportationType ? `${summary.transportationType} ${summary.transportationDetail ? `(${summary.transportationDetail})` : ''}` : null} />
-            <ReadOnlyInfoField label="Media Consent" value={summary.mediaConsentStatus === 'AGREE' ? 'Đồng ý ghi hình/chụp ảnh' : 'Từ chối ghi hình/chụp ảnh'} />
-            {summary.mediaConsentNote && (
-              <ReadOnlyInfoField label="Lưu ý về Media" value={summary.mediaConsentNote} />
-            )}
+          <h4 className="text-[13px] font-bold text-[#f37021] mb-2 uppercase">Thông tin bổ sung</h4>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-10">
+            <KV label="Loại hình" value={summary.visitType} />
+            <KV label="Ngôn ngữ" value={summary.workingLanguage} />
+            <KV label="Phương tiện" value={summary.transportationType ? `${summary.transportationType} ${summary.transportationDetail ? `(${summary.transportationDetail})` : ''}` : null} />
+            <KV label="Media Consent" value={summary.mediaConsentStatus === 'AGREE' ? 'Đồng ý ghi hình' : 'Từ chối ghi hình'} />
           </div>
+          {summary.mediaConsentNote && <KVBlock label="Lưu ý Media" value={summary.mediaConsentNote} />}
         </div>
-
       </div>
     </section>
   );
@@ -370,35 +347,31 @@ function VisitorRequestInfoSection({ summary }: { summary: any }) {
 
 function VisitorGuestMembersSection({ members }: { members: any[] }) {
   return (
-    <section>
-      <h2 className="text-xl font-bold text-slate-800 mb-4 flex items-center gap-2">
-        <Users className="w-5 h-5 text-[#004c91]" /> Danh sách thành viên đoàn
-      </h2>
-      <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm text-slate-600">
-            <thead className="bg-slate-50 text-slate-500 uppercase font-bold text-xs">
-              <tr>
-                <th className="px-6 py-4">STT</th>
-                <th className="px-6 py-4">Họ và tên</th>
-                <th className="px-6 py-4">Chức danh</th>
-                <th className="px-6 py-4">Tổ chức</th>
-                <th className="px-6 py-4">Quốc tịch</th>
+    <section className="mb-6 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+      <SectionTitle>Danh sách thành viên đoàn</SectionTitle>
+      <div className="overflow-x-auto rounded-md border border-slate-200">
+        <table className="w-full min-w-[560px] border-collapse text-[13px]">
+          <thead className="border-b border-slate-200 bg-slate-50">
+            <tr className="text-left text-xs text-slate-500">
+              <th className="px-2.5 py-1.5 w-10 text-center font-semibold">STT</th>
+              <th className="px-2.5 py-1.5 font-semibold">Họ và tên</th>
+              <th className="px-2.5 py-1.5 font-semibold">Chức danh</th>
+              <th className="px-2.5 py-1.5 font-semibold">Tổ chức</th>
+              <th className="px-2.5 py-1.5 font-semibold">Quốc tịch</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {members.map((m, idx) => (
+              <tr key={idx}>
+                <td className="px-2.5 py-1.5 text-center text-slate-400">{idx + 1}</td>
+                <td className="px-2.5 py-1.5 font-medium text-slate-800">{m.fullName || '-'}</td>
+                <td className="px-2.5 py-1.5 text-slate-600">{m.jobTitle || '-'}</td>
+                <td className="px-2.5 py-1.5 text-slate-600">{m.organization || '-'}</td>
+                <td className="px-2.5 py-1.5 text-slate-600">{m.nationality || '-'}</td>
               </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {members.map((m, idx) => (
-                <tr key={idx} className="hover:bg-slate-50/50">
-                  <td className="px-6 py-4 font-bold text-slate-400">{idx + 1}</td>
-                  <td className="px-6 py-4 font-bold text-slate-800">{m.fullName || '—'}</td>
-                  <td className="px-6 py-4">{m.jobTitle || '—'}</td>
-                  <td className="px-6 py-4">{m.organization || '—'}</td>
-                  <td className="px-6 py-4">{m.nationality || '—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+            ))}
+          </tbody>
+        </table>
       </div>
     </section>
   );
@@ -406,17 +379,13 @@ function VisitorGuestMembersSection({ members }: { members: any[] }) {
 
 function VisitorContactPersonSection({ summary }: { summary: any }) {
   return (
-    <section>
-      <h2 className="text-xl font-bold text-slate-800 mb-4 flex items-center gap-2">
-        <User className="w-5 h-5 text-[#004c91]" /> Thông tin người liên hệ
-      </h2>
-      <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6 lg:p-8">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <ReadOnlyInfoField label="Họ và tên" value={summary.contactPersonFullName} />
-          <ReadOnlyInfoField label="Email" value={summary.contactPersonEmail} />
-          <ReadOnlyInfoField label="Số điện thoại" value={summary.contactPersonPhone} />
-          <ReadOnlyInfoField label="Tổ chức" value={summary.contactPersonOrganization} />
-        </div>
+    <section className="mb-6 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+      <SectionTitle>Thông tin người liên hệ</SectionTitle>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-10">
+        <KV label="Họ và tên" value={summary.contactPersonFullName} />
+        <KV label="Email" value={summary.contactPersonEmail} />
+        <KV label="Số điện thoại" value={summary.contactPersonPhone} />
+        <KV label="Tổ chức" value={summary.contactPersonOrganization} />
       </div>
     </section>
   );
@@ -424,35 +393,31 @@ function VisitorContactPersonSection({ summary }: { summary: any }) {
 
 function VisitorExternalSupportSection({ members }: { members: any[] }) {
   return (
-    <section>
-      <h2 className="text-xl font-bold text-slate-800 mb-4 flex items-center gap-2">
-        <Users className="w-5 h-5 text-[#004c91]" /> Danh sách hỗ trợ đoàn
-      </h2>
-      <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm text-slate-600">
-            <thead className="bg-slate-50 text-slate-500 uppercase font-bold text-xs">
-              <tr>
-                <th className="px-6 py-4">STT</th>
-                <th className="px-6 py-4">Họ và tên</th>
-                <th className="px-6 py-4">Chức danh</th>
-                <th className="px-6 py-4">Tổ chức</th>
-                <th className="px-6 py-4">Quốc tịch</th>
+    <section className="mb-6 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+      <SectionTitle>Danh sách hỗ trợ đoàn</SectionTitle>
+      <div className="overflow-x-auto rounded-md border border-slate-200">
+        <table className="w-full min-w-[560px] border-collapse text-[13px]">
+          <thead className="border-b border-slate-200 bg-slate-50">
+            <tr className="text-left text-xs text-slate-500">
+              <th className="px-2.5 py-1.5 w-10 text-center font-semibold">STT</th>
+              <th className="px-2.5 py-1.5 font-semibold">Họ và tên</th>
+              <th className="px-2.5 py-1.5 font-semibold">Chức danh</th>
+              <th className="px-2.5 py-1.5 font-semibold">Tổ chức</th>
+              <th className="px-2.5 py-1.5 font-semibold">Quốc tịch</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {members.map((m, idx) => (
+              <tr key={idx}>
+                <td className="px-2.5 py-1.5 text-center text-slate-400">{idx + 1}</td>
+                <td className="px-2.5 py-1.5 font-medium text-slate-800">{m.fullName || '-'}</td>
+                <td className="px-2.5 py-1.5 text-slate-600">{m.jobTitle || '-'}</td>
+                <td className="px-2.5 py-1.5 text-slate-600">{m.organization || '-'}</td>
+                <td className="px-2.5 py-1.5 text-slate-600">{m.nationality || '-'}</td>
               </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {members.map((m, idx) => (
-                <tr key={idx} className="hover:bg-slate-50/50">
-                  <td className="px-6 py-4 font-bold text-slate-400">{idx + 1}</td>
-                  <td className="px-6 py-4 font-bold text-slate-800">{m.fullName || '—'}</td>
-                  <td className="px-6 py-4">{m.jobTitle || '—'}</td>
-                  <td className="px-6 py-4">{m.organization || '—'}</td>
-                  <td className="px-6 py-4">{m.nationality || '—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+            ))}
+          </tbody>
+        </table>
       </div>
     </section>
   );
@@ -462,19 +427,15 @@ function VisitorCampusInfoSection({ campusName }: { campusName?: string | null }
   if (!campusName) return null;
   
   return (
-    <section>
-      <h2 className="text-xl font-bold text-slate-800 mb-4 flex items-center gap-2">
-        <Building className="w-5 h-5 text-[#004c91]" /> Thông tin cơ sở
-      </h2>
-      <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6 lg:p-8">
-        <div className="flex items-start gap-4">
-          <div className="w-12 h-12 rounded-xl bg-orange-50 flex items-center justify-center shrink-0">
-            <MapPin className="w-6 h-6 text-[#f37021]" />
-          </div>
-          <div>
-            <h3 className="text-lg font-bold text-slate-900 mb-1">{campusName}</h3>
-            <p className="text-sm text-slate-500 font-medium">FPT University</p>
-          </div>
+    <section className="mb-6 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+      <SectionTitle>Thông tin cơ sở</SectionTitle>
+      <div className="flex items-start gap-3">
+        <div className="w-10 h-10 rounded-lg bg-orange-50 flex items-center justify-center shrink-0">
+          <MapPin className="w-5 h-5 text-[#f37021]" />
+        </div>
+        <div>
+          <h3 className="text-[13px] font-bold text-slate-900">{campusName}</h3>
+          <p className="text-[12px] text-slate-500 font-medium">FPT University</p>
         </div>
       </div>
     </section>
@@ -487,12 +448,12 @@ function VisitorFeedbackCard({ status, isCancelled }: { status: string, isCancel
   }
 
   return (
-    <section className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6 lg:p-8 text-center mt-8">
-      <div className="w-16 h-16 bg-orange-50 rounded-full flex items-center justify-center mx-auto mb-4">
-        <Star className="w-8 h-8 text-[#f37021] fill-[#f37021]" />
+    <section className="mb-6 bg-white p-6 rounded-xl border border-slate-200 shadow-sm text-center">
+      <div className="w-12 h-12 bg-orange-50 rounded-full flex items-center justify-center mx-auto mb-3">
+        <Star className="w-6 h-6 text-[#f37021] fill-[#f37021]" />
       </div>
-      <h3 className="text-lg font-bold text-slate-900 mb-2">Phản hồi chuyến thăm</h3>
-      <p className="text-slate-600 font-medium max-w-lg mx-auto">
+      <h3 className="text-[15px] font-bold text-slate-900 mb-1">Phản hồi chuyến thăm</h3>
+      <p className="text-[13px] text-slate-600 font-medium max-w-lg mx-auto">
         Nhà trường rất mong nhận được phản hồi của bạn. Tính năng gửi phản hồi sẽ sớm được cập nhật.
       </p>
     </section>
@@ -501,28 +462,19 @@ function VisitorFeedbackCard({ status, isCancelled }: { status: string, isCancel
 
 function VisitorCancelledBanner() {
   return (
-    <section className="bg-rose-50 border border-rose-200 rounded-3xl p-6 lg:p-8 mt-8 text-center sm:text-left">
+    <section className="mb-6 bg-rose-50 border border-rose-200 rounded-xl p-4 sm:p-5 text-center sm:text-left">
       <div className="flex flex-col sm:flex-row items-center sm:items-start gap-4">
-        <div className="w-12 h-12 rounded-2xl bg-rose-100 flex items-center justify-center shrink-0">
-          <XCircle className="w-6 h-6 text-rose-600" />
+        <div className="w-10 h-10 rounded-lg bg-rose-100 flex items-center justify-center shrink-0">
+          <XCircle className="w-5 h-5 text-rose-600" />
         </div>
         <div>
-          <h3 className="text-lg font-bold text-rose-800 mb-1">Chuyến thăm đã bị hủy</h3>
-          <p className="text-rose-700 text-sm font-medium">
+          <h3 className="text-[14px] font-bold text-rose-800 mb-1">Chuyến thăm đã bị hủy</h3>
+          <p className="text-rose-700 text-[13px] font-medium">
             Chuyến tham quan này đã được hủy bỏ và sẽ không diễn ra như dự kiến. Nếu bạn cần hỗ trợ thêm, vui lòng liên hệ nhà trường.
           </p>
         </div>
       </div>
     </section>
-  );
-}
-
-function ReadOnlyInfoField({ label, value }: { label: string, value?: string | null }) {
-  return (
-    <div className="rounded-2xl bg-slate-50 px-4 py-3 border border-slate-100">
-      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
-      <p className="mt-1 text-sm font-semibold text-slate-900 break-words">{value || '—'}</p>
-    </div>
   );
 }
 
@@ -541,24 +493,20 @@ function VisitorNotificationsSection({ notifications }: { notifications: Visitor
   };
 
   return (
-    <section className="mt-8">
-      <h2 className="text-xl font-bold text-slate-800 mb-4 flex items-center gap-2">
-        <Bell className="w-5 h-5 text-[#004c91]" /> Thông báo & Cập nhật
-      </h2>
-      <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6">
-        <div className="space-y-4">
-          {notifications.map((item) => (
-            <div key={item.notificationId} className="rounded-2xl border border-slate-100 bg-slate-50 px-5 py-4">
-              <p className="text-sm font-bold text-slate-900">{item.title}</p>
-              {item.message && (
-                <p className="mt-1.5 text-sm text-slate-600 leading-relaxed">{item.message}</p>
-              )}
-              <p className="mt-2 text-xs font-medium text-slate-400">
-                {formatDateTime(item.createdAt)}
-              </p>
-            </div>
-          ))}
-        </div>
+    <section className="mb-6 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+      <SectionTitle>Thông báo & Cập nhật</SectionTitle>
+      <div className="space-y-3">
+        {notifications.map((item) => (
+          <div key={item.notificationId} className="rounded-lg border border-slate-100 bg-slate-50 px-4 py-3">
+            <p className="text-[13px] font-bold text-slate-900">{item.title}</p>
+            {item.message && (
+              <p className="mt-1 text-[13px] text-slate-600 leading-relaxed">{item.message}</p>
+            )}
+            <p className="mt-1.5 text-[11px] font-medium text-slate-400">
+              {formatDateTime(item.createdAt)}
+            </p>
+          </div>
+        ))}
       </div>
     </section>
   );
@@ -587,53 +535,43 @@ function VisitorPublicNewsSection({
   };
 
   return (
-    <section className="mt-8">
-      <div className="flex items-center gap-2 mb-4">
-        <Newspaper className="w-5 h-5 text-[#004c91]" />
-        <h2 className="text-xl font-bold text-[#004c91]">
-          Bản tin chuyến thăm
-        </h2>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+    <section className="mb-6 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+      <SectionTitle>Bản tin chuyến thăm</SectionTitle>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {news.map((item) => (
           <article
             key={item.newsId}
-            className="rounded-2xl border border-slate-200 bg-white overflow-hidden hover:shadow-md transition-shadow flex flex-col"
+            className="rounded-lg border border-slate-200 bg-white overflow-hidden hover:shadow-sm transition-shadow flex flex-col"
           >
             {item.thumbnailUrl && (
               <img
                 src={item.thumbnailUrl}
                 alt={item.title}
-                className="h-48 w-full object-cover"
+                className="h-32 w-full object-cover"
               />
             )}
-
-            <div className="p-5 flex flex-col flex-1">
-              <h3 className="text-base font-bold text-slate-900 line-clamp-2">
+            <div className="p-3 flex flex-col flex-1">
+              <h3 className="text-[13px] font-bold text-slate-900 line-clamp-2">
                 {item.title}
               </h3>
-
               {item.summary && (
-                <p className="mt-2 text-sm text-slate-600 line-clamp-3">
+                <p className="mt-1 text-[12px] text-slate-600 line-clamp-2">
                   {item.summary}
                 </p>
               )}
-
-              <div className="mt-4 text-xs font-medium text-slate-400 mt-auto pt-2">
+              <div className="mt-2 text-[11px] font-medium text-slate-400 mt-auto pt-2">
                 {item.publishedAt ? formatDateTime(item.publishedAt) : ''}
                 {item.authorName ? ` · ${item.authorName}` : ''}
               </div>
-
               {onOpenDetail && (
-                <div className="mt-4 pt-4 border-t border-slate-100">
+                <div className="mt-3 pt-3 border-t border-slate-100">
                   <button 
                     type="button" 
                     onClick={() => onOpenDetail(item)}
-                    className="text-sm font-bold text-[#004c91] hover:underline flex items-center gap-1 group"
+                    className="text-[12px] font-bold text-[#004c91] hover:underline flex items-center gap-1 group"
                   >
                     Xem chi tiết
-                    <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                    <ChevronRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
                   </button>
                 </div>
               )}
