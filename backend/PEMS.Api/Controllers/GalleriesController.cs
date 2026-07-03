@@ -66,12 +66,13 @@ namespace PEMS.Api.Controllers
             [FromForm] string title,
             [FromForm] string description,
             [FromForm] long locationId,
+            [FromForm] string? itemType,
             [FromForm] string? status,
             List<IFormFile>? files,
             CancellationToken cancellationToken)
         {
             var buffered = await BufferFilesAsync(files, cancellationToken);
-            var command = new AddGalleryItemCommand(title, description, locationId, status, buffered);
+            var command = new AddGalleryItemCommand(title, description, locationId, itemType, status, buffered);
             return Ok(await _mediator.Send(command, cancellationToken));
         }
 
@@ -85,6 +86,7 @@ namespace PEMS.Api.Controllers
             [FromForm] string title,
             [FromForm] string description,
             [FromForm] long locationId,
+            [FromForm] string? itemType,
             [FromForm] List<long>? keepMediaIds,
             [FromForm] long? primaryMediaId,
             List<IFormFile>? newFiles,
@@ -96,6 +98,7 @@ namespace PEMS.Api.Controllers
                 title,
                 description,
                 locationId,
+                itemType,
                 keepMediaIds ?? new List<long>(),
                 buffered,
                 primaryMediaId);
@@ -114,15 +117,57 @@ namespace PEMS.Api.Controllers
         public async Task<IActionResult> ViewGalleryLocationList([FromQuery] ViewGalleryLocationListQuery query, CancellationToken cancellationToken)
             => Ok(await _mediator.Send(query, cancellationToken));
 
-        // UC-LOC-04 Add location into existing area / UC-LOC-05 New area + first location.
+        // UC-LOC-04 Add location into existing area / UC-LOC-05 New area + first location (multipart —
+        // carries the mandatory area/location cover images).
         [HttpPost("creategallerylocation")]
-        public async Task<IActionResult> CreateGalleryLocation([FromBody] CreateGalleryLocationCommand command, CancellationToken cancellationToken)
-            => Ok(await _mediator.Send(command, cancellationToken));
+        [Consumes("multipart/form-data")]
+        [RequestSizeLimit(GalleryUploadByteLimit)]
+        [RequestFormLimits(MultipartBodyLengthLimit = GalleryUploadByteLimit)]
+        public async Task<IActionResult> CreateGalleryLocation(
+            [FromForm] string mode,
+            [FromForm] long? areaId,
+            [FromForm] string? newAreaName,
+            [FromForm] string locationName,
+            IFormFile? areaCoverImage,
+            IFormFile? locationCoverImage,
+            CancellationToken cancellationToken)
+        {
+            var command = new CreateGalleryLocationCommand(
+                mode,
+                areaId,
+                newAreaName,
+                locationName,
+                await BufferOneAsync(areaCoverImage, cancellationToken),
+                await BufferOneAsync(locationCoverImage, cancellationToken));
+            return Ok(await _mediator.Send(command, cancellationToken));
+        }
 
-        // UC-LOC-06 Edit (existing area) / UC-LOC-07 Edit (new area).
+        // UC-LOC-06 Edit (existing area) / UC-LOC-07 Edit (new area). Multipart — the location cover is
+        // optional here (kept when omitted); a new area still requires its own cover image.
         [HttpPost("updategallerylocation")]
-        public async Task<IActionResult> UpdateGalleryLocation([FromBody] UpdateGalleryLocationCommand command, CancellationToken cancellationToken)
-            => Ok(await _mediator.Send(command, cancellationToken));
+        [Consumes("multipart/form-data")]
+        [RequestSizeLimit(GalleryUploadByteLimit)]
+        [RequestFormLimits(MultipartBodyLengthLimit = GalleryUploadByteLimit)]
+        public async Task<IActionResult> UpdateGalleryLocation(
+            [FromForm] long locationId,
+            [FromForm] string mode,
+            [FromForm] long? areaId,
+            [FromForm] string? newAreaName,
+            [FromForm] string locationName,
+            IFormFile? areaCoverImage,
+            IFormFile? locationCoverImage,
+            CancellationToken cancellationToken)
+        {
+            var command = new UpdateGalleryLocationCommand(
+                locationId,
+                mode,
+                areaId,
+                newAreaName,
+                locationName,
+                await BufferOneAsync(areaCoverImage, cancellationToken),
+                await BufferOneAsync(locationCoverImage, cancellationToken));
+            return Ok(await _mediator.Send(command, cancellationToken));
+        }
 
         // UC-LOC-08 Enable / UC-LOC-09 Disable.
         [HttpPost("changegallerylocationstatus")]
@@ -146,6 +191,19 @@ namespace PEMS.Api.Controllers
                     ms.ToArray(), file.FileName, file.ContentType, file.Length, null, null));
             }
             return result;
+        }
+
+        /// <summary>Buffers a single optional cover image (bytes + metadata), or null when none was sent.</summary>
+        private static async Task<GalleryUploadFileCommandDto?> BufferOneAsync(
+            IFormFile? file, CancellationToken cancellationToken)
+        {
+            if (file is not { Length: > 0 })
+                return null;
+
+            using var ms = new MemoryStream();
+            await file.CopyToAsync(ms, cancellationToken);
+            return new GalleryUploadFileCommandDto(
+                ms.ToArray(), file.FileName, file.ContentType, file.Length, null, null);
         }
     }
 }

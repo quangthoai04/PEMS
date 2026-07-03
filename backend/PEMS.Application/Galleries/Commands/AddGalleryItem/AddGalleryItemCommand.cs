@@ -13,5 +13,6 @@ public sealed record AddGalleryItemCommand(
     string Title,
     string Description,
     long LocationId,
+    string? ItemType,
     string? Status,
     IReadOnlyList<GalleryUploadFileCommandDto> Files) : IRequest<GalleryItemDetailDto>;

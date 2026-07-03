@@ -12,6 +12,8 @@ public enum FilePurpose
     UserAvatar,
     GalleryImage,
     GalleryVideo,
+    GalleryAreaCover,
+    GalleryLocationCover,
     NewsImage,
     NewsAttachment,
     Document,
@@ -32,6 +34,8 @@ public static class FilePurposeDbValues
     public const string UserAvatar = "USER_AVATAR";
     public const string GalleryImage = "GALLERY_IMAGE";
     public const string GalleryVideo = "GALLERY_VIDEO";
+    public const string GalleryAreaCover = "GALLERY_AREA_COVER";
+    public const string GalleryLocationCover = "GALLERY_LOCATION_COVER";
     public const string NewsImage = "NEWS_IMAGE";
     public const string NewsAttachment = "NEWS_ATTACHMENT";
     public const string Document = "DOCUMENT";
@@ -50,6 +54,8 @@ public static class FilePurposeExtensions
         FilePurpose.UserAvatar => FilePurposeDbValues.UserAvatar,
         FilePurpose.GalleryImage => FilePurposeDbValues.GalleryImage,
         FilePurpose.GalleryVideo => FilePurposeDbValues.GalleryVideo,
+        FilePurpose.GalleryAreaCover => FilePurposeDbValues.GalleryAreaCover,
+        FilePurpose.GalleryLocationCover => FilePurposeDbValues.GalleryLocationCover,
         FilePurpose.NewsImage => FilePurposeDbValues.NewsImage,
         FilePurpose.NewsAttachment => FilePurposeDbValues.NewsAttachment,
         FilePurpose.Document => FilePurposeDbValues.Document,
@@ -67,7 +73,8 @@ public static class FilePurposeExtensions
     public static string ToObjectKeyPrefix(this FilePurpose purpose) => purpose switch
     {
         FilePurpose.UserAvatar => "avatars",
-        FilePurpose.GalleryImage or FilePurpose.GalleryVideo => "gallery",
+        FilePurpose.GalleryImage or FilePurpose.GalleryVideo
+            or FilePurpose.GalleryAreaCover or FilePurpose.GalleryLocationCover => "gallery",
         FilePurpose.NewsImage or FilePurpose.NewsAttachment => "news",
         FilePurpose.Document => "documents",
         FilePurpose.MinutesAttachment => "minutes",

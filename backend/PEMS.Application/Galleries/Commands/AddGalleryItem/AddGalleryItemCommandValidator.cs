@@ -21,6 +21,9 @@ public sealed class AddGalleryItemCommandValidator : AbstractValidator<AddGaller
         RuleFor(x => x.LocationId)
             .GreaterThan(0).WithMessage("Vui lòng chọn vị trí.");
 
+        RuleFor(x => x.ItemType)
+            .NotEmpty().WithMessage("Vui lòng chọn loại nội dung.");
+
         RuleFor(x => x.Files)
             .NotNull().Must(f => f != null && f.Count >= 1)
             .WithMessage("Vui lòng chọn ít nhất một tệp media.");

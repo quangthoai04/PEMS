@@ -57,6 +57,7 @@ public sealed class AddGalleryItemCommandHandler
             throw new BusinessRuleException("Chỉ được tải lên tối đa 20 tệp.", GalleryErrorCodes.TooManyFiles);
 
         var status = NormalizeStatus(request.Status);
+        var itemType = GalleryItemTypes.Normalize(request.ItemType);
 
         // Location must exist, be ACTIVE and belong to the caller's campus (throws 404/403/422).
         await GalleryLocationGuard.LoadActiveLocationInCurrentCampusAsync(
@@ -86,6 +87,7 @@ public sealed class AddGalleryItemCommandHandler
             LocationId = (ulong)request.LocationId,
             Title = title,
             Description = description,
+            ItemType = itemType,
             MediaKind = mediaKind,
             Status = status,
             DisplayOrder = 0,
@@ -128,7 +130,7 @@ public sealed class AddGalleryItemCommandHandler
                     FieldName = "GalleryItem",
                     NewValueText = JsonSerializer.Serialize(new
                     {
-                        title, locationId = request.LocationId, status, mediaKind, mediaCount = uploads.Count,
+                        title, locationId = request.LocationId, itemType, status, mediaKind, mediaCount = uploads.Count,
                     }),
                 },
             },

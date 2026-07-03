@@ -48,7 +48,8 @@ public sealed class FileValidationPolicy : IFileValidationPolicy
             RequireImageMagicBytes = true,
         },
 
-        FilePurpose.GalleryImage or FilePurpose.NewsImage => new FileValidationRule
+        FilePurpose.GalleryImage or FilePurpose.NewsImage
+            or FilePurpose.GalleryAreaCover or FilePurpose.GalleryLocationCover => new FileValidationRule
         {
             MaxSizeBytes = 5 * Mb,
             AllowedMimeTypes = ImageMimes,
