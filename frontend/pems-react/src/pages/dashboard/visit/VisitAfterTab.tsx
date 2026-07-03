@@ -263,7 +263,7 @@ export function VisitAfterTab({ onTourCloseSuccess, isReadOnly = false, isDept =
 
       {/* Ký trả tài sản hậu cần — phần đầu tiên của tab Sau tiếp khách (real handover API). */}
       {visitInstanceId && !isStudent && (
-        <LogisticsHandoverSection visitInstanceId={visitInstanceId} canManage={!isReadOnly && !isDept} />
+        <LogisticsHandoverSection visitInstanceId={visitInstanceId} canManage={!isReadOnly && !isDept} handoverPhase="RETURN" />
       )}
 
       {/* SECTION 1: PHOTO ALBUM & FACE SCANNING */}

@@ -160,7 +160,7 @@
 -- - INT build converts UUID/CHAR(36) PK/FK columns to BIGINT UNSIGNED.
 -- - Seed NULL calls are converted to numeric AUTO_INCREMENT-safe values or NULL where the DB should generate IDs.
 -- - Final departments seed is trigger-safe: update existing rows first, then insert missing rows only.
--- - feedbacks retargeted for Visitor overall + Host participant/logistics feedback; not-self rule kept in triggers.
+-- - feedbacks retargeted for Visitor overall + Host delegation-overall/participant/logistics feedback; not-self rule kept in triggers.
 
 SET NAMES utf8mb4;
 SET SQL_MODE = 'STRICT_TRANS_TABLES,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION';
@@ -220,6 +220,7 @@ DROP TABLE IF EXISTS news_content_sections;
 DROP TABLE IF EXISTS news_translations;
 DROP TABLE IF EXISTS news;
 DROP TABLE IF EXISTS minute_action_items;
+DROP TABLE IF EXISTS feedback_rating_items;
 DROP TABLE IF EXISTS feedbacks;
 DROP TABLE IF EXISTS minutes;
 DROP TABLE IF EXISTS visit_logistics_items;
@@ -1331,7 +1332,7 @@ COMMENT='Lịch sử từng lần phân công logistics item cho nhân sự phò
 -- - minutes: main meeting minutes only; no embedded attachment/action JSON fields.
 -- - minute_action_items: separate CRUD for action items with note, deadline, status.
 -- - feedbacks: one row per submitted feedback with typed business target.
---   Visitor submits overall visit feedback; Host submits feedback for participants and logistics/resource providers.
+--   Visitor submits overall visit feedback; Host submits overall delegation feedback, participant/support feedback, and logistics/resource feedback.
 -- - feedbacks.rating remains required 1..5 stars; feedbacks.comment is optional text.
 -- - feedback_rating_items keeps normalized per-criterion 1..5 star ratings when a detailed form is used.
 
@@ -1465,8 +1466,8 @@ CREATE TABLE feedbacks (
   visit_request_id BIGINT UNSIGNED NOT NULL,
   visit_instance_id BIGINT UNSIGNED NULL,
 
-  feedback_type ENUM('VISITOR_OVERALL','HOST_PARTICIPANT','HOST_LOGISTICS') NOT NULL
-    COMMENT 'VISITOR_OVERALL=Visitor đánh giá chung chuyến thăm; HOST_PARTICIPANT=Host đánh giá bên tham gia; HOST_LOGISTICS=Host đánh giá bên cho mượn đồ/hậu cần',
+  feedback_type ENUM('VISITOR_OVERALL','HOST_DELEGATION_OVERALL','HOST_PARTICIPANT','HOST_LOGISTICS') NOT NULL
+    COMMENT 'VISITOR_OVERALL=Visitor đánh giá chung chuyến thăm; HOST_DELEGATION_OVERALL=Host đánh giá chung đoàn khách; HOST_PARTICIPANT=Host đánh giá các bên tham gia/hỗ trợ; HOST_LOGISTICS=Host đánh giá bên cho mượn đồ/hậu cần',
 
   submitted_by_user_id BIGINT UNSIGNED NOT NULL COMMENT 'User gửi feedback; Visitor hoặc Host phải có tài khoản hệ thống',
   submitter_role ENUM('VISITOR','HOST') NOT NULL COMMENT 'Vai trò người gửi feedback trong rule hiện tại',
@@ -1476,10 +1477,10 @@ CREATE TABLE feedbacks (
     COMMENT 'Tên người gửi tại thời điểm gửi feedback',
 
   target_type ENUM('VISIT_REQUEST','VISIT_INSTANCE','VISIT_PARTICIPANT','GUEST_MEMBER','LOGISTICS_ITEM','LOGISTICS_HANDOVER','USER','DEPARTMENT') NOT NULL
-    COMMENT 'Loại đối tượng nghiệp vụ được đánh giá',
+    COMMENT 'Loại đối tượng nghiệp vụ được đánh giá. GUEST_MEMBER giữ để tương thích dữ liệu nhưng không dùng trong rule active hiện tại',
   target_user_id BIGINT UNSIGNED NULL COMMENT 'User được đánh giá nếu target là cá nhân; NULL đối với feedback tổng thể của Visitor',
   target_participant_id BIGINT UNSIGNED NULL COMMENT 'Participant nội bộ được Host đánh giá',
-  target_guest_member_id BIGINT UNSIGNED NULL COMMENT 'Khách/đại diện ngoài hệ thống được Host đánh giá nếu cần',
+  target_guest_member_id BIGINT UNSIGNED NULL COMMENT 'Không dùng trong rule hiện tại; Host đánh giá chung đoàn khách qua VISIT_INSTANCE/VISIT_REQUEST, không đánh giá từng guest member',
   target_logistics_item_id BIGINT UNSIGNED NULL COMMENT 'Hạng mục logistics/resource được Host đánh giá',
   target_handover_id BIGINT UNSIGNED NULL COMMENT 'Lần ký mượn/trả cụ thể được Host đánh giá nếu cần',
   target_department_id BIGINT UNSIGNED NULL COMMENT 'Phòng ban/bên cho mượn đồ được Host đánh giá nếu đánh giá theo đơn vị',
@@ -1521,9 +1522,13 @@ CREATE TABLE feedbacks (
         AND submitter_role = 'VISITOR'
         AND target_type IN ('VISIT_REQUEST','VISIT_INSTANCE'))
       OR
+      (feedback_type = 'HOST_DELEGATION_OVERALL'
+        AND submitter_role = 'HOST'
+        AND target_type IN ('VISIT_REQUEST','VISIT_INSTANCE'))
+      OR
       (feedback_type = 'HOST_PARTICIPANT'
         AND submitter_role = 'HOST'
-        AND target_type IN ('VISIT_PARTICIPANT','GUEST_MEMBER','USER'))
+        AND target_type IN ('VISIT_PARTICIPANT','USER','DEPARTMENT'))
       OR
       (feedback_type = 'HOST_LOGISTICS'
         AND submitter_role = 'HOST'
@@ -1568,7 +1573,7 @@ CREATE TABLE feedbacks (
   CONSTRAINT fk_feedbacks_target_department
     FOREIGN KEY (target_department_id) REFERENCES departments(department_id)
     ON UPDATE CASCADE ON DELETE RESTRICT) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-COMMENT='Feedback theo rule mới: Visitor đánh giá chung chuyến thăm; Host đánh giá bên tham gia và bên cho mượn đồ/hậu cần. Rating sao bắt buộc 1..5; comment text không bắt buộc.';
+COMMENT='Feedback theo rule mới: Visitor đánh giá chung chuyến thăm; Host đánh giá chung đoàn khách, các bên tham gia/hỗ trợ và bên cho mượn đồ/hậu cần. Rating sao bắt buộc 1..5; comment text không bắt buộc.';
 
 CREATE TABLE feedback_rating_items (
   feedback_rating_item_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -1741,6 +1746,7 @@ CREATE TABLE gallery_areas (
 
   area_name VARCHAR(150) NOT NULL,
   area_key VARCHAR(180) NOT NULL,
+  cover_file_id BIGINT UNSIGNED NULL COMMENT 'Ảnh đại diện khu vực/tòa/khu lớn',
 
   status ENUM('ACTIVE','INACTIVE') NOT NULL DEFAULT 'ACTIVE',
   display_order INT UNSIGNED NOT NULL DEFAULT 0,
@@ -1754,9 +1760,13 @@ CREATE TABLE gallery_areas (
   UNIQUE KEY uq_gallery_areas_campus_key (campus_id, area_key),
   KEY idx_gallery_areas_campus_status (campus_id, status),
   KEY idx_gallery_areas_order (campus_id, display_order),
+  KEY idx_gallery_areas_cover_file (cover_file_id),
 
   CONSTRAINT fk_gallery_areas_campus
     FOREIGN KEY (campus_id) REFERENCES campuses(campus_id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  CONSTRAINT fk_gallery_areas_cover_file
+    FOREIGN KEY (cover_file_id) REFERENCES files(file_id)
     ON UPDATE CASCADE ON DELETE RESTRICT,
   CONSTRAINT fk_gallery_areas_created_by
     FOREIGN KEY (created_by) REFERENCES users(user_id)
@@ -1773,6 +1783,7 @@ CREATE TABLE gallery_locations (
 
   location_name VARCHAR(150) NOT NULL,
   location_key VARCHAR(180) NOT NULL,
+  cover_file_id BIGINT UNSIGNED NULL COMMENT 'Ảnh đại diện vị trí cụ thể',
 
   status ENUM('ACTIVE','INACTIVE') NOT NULL DEFAULT 'ACTIVE',
   display_order INT UNSIGNED NOT NULL DEFAULT 0,
@@ -1786,9 +1797,13 @@ CREATE TABLE gallery_locations (
   UNIQUE KEY uq_gallery_locations_area_key (area_id, location_key),
   KEY idx_gallery_locations_area_status (area_id, status),
   KEY idx_gallery_locations_order (area_id, display_order),
+  KEY idx_gallery_locations_cover_file (cover_file_id),
 
   CONSTRAINT fk_gallery_locations_area
     FOREIGN KEY (area_id) REFERENCES gallery_areas(area_id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  CONSTRAINT fk_gallery_locations_cover_file
+    FOREIGN KEY (cover_file_id) REFERENCES files(file_id)
     ON UPDATE CASCADE ON DELETE RESTRICT,
   CONSTRAINT fk_gallery_locations_created_by
     FOREIGN KEY (created_by) REFERENCES users(user_id)
@@ -1805,6 +1820,8 @@ CREATE TABLE gallery_items (
 
   title VARCHAR(255) NOT NULL,
   description TEXT NOT NULL,
+  item_type ENUM('MEDIA','VISIT_DELEGATION') NOT NULL DEFAULT 'MEDIA'
+    COMMENT 'MEDIA=ảnh/video giới thiệu vị trí; VISIT_DELEGATION=ảnh/video đoàn khách',
 
   media_kind ENUM('IMAGE','VIDEO','MIXED') NOT NULL DEFAULT 'IMAGE',
   status ENUM('PUBLISHED','HIDDEN') NOT NULL DEFAULT 'PUBLISHED',
@@ -1820,6 +1837,7 @@ CREATE TABLE gallery_items (
   PRIMARY KEY (gallery_item_id),
   -- A location can have 0, 1 or many gallery items (no unique constraint on location_id).
   KEY idx_gallery_items_location_status (location_id, status, deleted_at),
+  KEY idx_gallery_items_item_type (item_type, status, deleted_at),
   KEY idx_gallery_items_media_kind (media_kind),
   KEY idx_gallery_items_created_at (created_at),
   FULLTEXT KEY ft_gallery_items_search (title, description),
@@ -3241,7 +3259,7 @@ END$$
 
 -- MySQL 8.0 does not allow this self-target rule to be expressed safely
 -- as a CHECK in all FK/action combinations. Keep it in triggers.
--- Visitor overall feedback has no target_user_id, so only block self-target
+-- Overall feedback has no target_user_id, so only block self-target
 -- when target_user_id is present.
 CREATE TRIGGER trg_feedbacks_not_self_bi
 BEFORE INSERT ON feedbacks
@@ -5324,19 +5342,19 @@ INSERT INTO minute_participants (minute_participant_id, minutes_id, user_id, gue
 INSERT INTO feedbacks (feedback_id, visit_request_id, visit_instance_id, feedback_type, submitted_by_user_id, submitter_role, submitter_context, submitter_name_snapshot, target_type, target_user_id, target_participant_id, target_guest_member_id, target_logistics_item_id, target_handover_id, target_department_id, target_role, target_context, target_name_snapshot, rating, comment, submitted_at) VALUES
   (13001, 3005, 5005, 'VISITOR_OVERALL', 8, 'VISITOR', 'VISITOR context for coverage', 'Visitor feedback submitter', 'VISIT_INSTANCE', NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'Đánh giá tổng thể chuyến thăm', 'Chuyến thăm / đoàn tiếp đón', 1, 'Feedback 13001 riêng biệt: rating 1, flow VISITOR->HOST, không đánh sao guest member ngoài hệ thống.', '2026-08-15 10:00:00'),
   (13002, 3006, 5006, 'HOST_LOGISTICS', 101, 'HOST', 'HOST context for coverage', 'Host target', 'USER', 6, NULL, NULL, NULL, NULL, NULL, 'LOGISTICS', 'LOGISTICS context for coverage', 'Logistics feedback submitter', 2, 'Host đánh giá bên cho mượn đồ/hậu cần: Logistics feedback submitter phối hợp trong chuyến thăm. Rating 2/5.', '2026-08-15 10:00:00'),
-  (13003, 3007, 5007, 'HOST_PARTICIPANT', 4, 'HOST', 'HOST context for coverage', 'Host feedback submitter', 'USER', 8, NULL, NULL, NULL, NULL, NULL, 'VISITOR', 'VISITOR context for coverage', 'Visitor target', 3, 'Feedback 13003 riêng biệt: rating 3, flow HOST->VISITOR, không đánh sao guest member ngoài hệ thống.', '2026-08-15 10:00:00'),
+  (13003, 3007, 5007, 'HOST_DELEGATION_OVERALL', 4, 'HOST', 'HOST context for coverage', 'Host feedback submitter', 'VISIT_INSTANCE', NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'Đánh giá chung đoàn khách', 'Đoàn khách / chuyến thăm', 3, 'Host đánh giá chung đoàn khách cho feedback 13003: rating 3/5; không đánh giá riêng từng người trong đoàn khách.', '2026-08-15 10:00:00'),
   (13004, 3014, 5014, 'HOST_LOGISTICS', 103, 'HOST', 'HOST context for coverage', 'Host feedback submitter', 'USER', 128, NULL, NULL, NULL, NULL, NULL, 'LOGISTICS', 'LOGISTICS context for coverage', 'Logistics target', 4, 'Feedback 13004 riêng biệt: rating 4, flow HOST->LOGISTICS, không đánh sao guest member ngoài hệ thống.', '2026-08-15 10:00:00'),
   (13005, 3015, 5015, 'VISITOR_OVERALL', 204, 'VISITOR', 'VISITOR context for coverage', 'Visitor feedback submitter', 'VISIT_INSTANCE', NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'Đánh giá tổng thể chuyến thăm', 'Chuyến thăm / đoàn tiếp đón', 5, 'Feedback 13005 riêng biệt: rating 5, flow VISITOR->HOST, không đánh sao guest member ngoài hệ thống.', '2026-08-15 10:00:00'),
   (13006, 3016, 5016, 'HOST_LOGISTICS', 103, 'HOST', 'HOST context for coverage', 'Host target', 'USER', 128, NULL, NULL, NULL, NULL, NULL, 'LOGISTICS', 'LOGISTICS context for coverage', 'Logistics feedback submitter', 1, 'Host đánh giá bên cho mượn đồ/hậu cần: Logistics feedback submitter phối hợp trong chuyến thăm. Rating 1/5.', '2026-08-15 10:00:00'),
-  (13007, 3023, 5023, 'HOST_PARTICIPANT', 12, 'HOST', 'HOST context for coverage', 'Host feedback submitter', 'USER', 205, NULL, NULL, NULL, NULL, NULL, 'VISITOR', 'VISITOR context for coverage', 'Visitor target', 2, 'Feedback 13007 riêng biệt: rating 2, flow HOST->VISITOR, không đánh sao guest member ngoài hệ thống.', '2026-08-15 10:00:00'),
+  (13007, 3023, 5023, 'HOST_DELEGATION_OVERALL', 12, 'HOST', 'HOST context for coverage', 'Host feedback submitter', 'VISIT_INSTANCE', NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'Đánh giá chung đoàn khách', 'Đoàn khách / chuyến thăm', 2, 'Host đánh giá chung đoàn khách cho feedback 13007: rating 2/5; không đánh giá riêng từng người trong đoàn khách.', '2026-08-15 10:00:00'),
   (13008, 3024, 5024, 'HOST_LOGISTICS', 105, 'HOST', 'HOST context for coverage', 'Host feedback submitter', 'USER', 134, NULL, NULL, NULL, NULL, NULL, 'LOGISTICS', 'LOGISTICS context for coverage', 'Logistics target', 3, 'Feedback 13008 riêng biệt: rating 3, flow HOST->LOGISTICS, không đánh sao guest member ngoài hệ thống.', '2026-08-15 10:00:00'),
   (13009, 3025, 5025, 'VISITOR_OVERALL', 205, 'VISITOR', 'VISITOR context for coverage', 'Visitor feedback submitter', 'VISIT_INSTANCE', NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'Đánh giá tổng thể chuyến thăm', 'Chuyến thăm / đoàn tiếp đón', 4, 'Feedback 13009 riêng biệt: rating 4, flow VISITOR->HOST, không đánh sao guest member ngoài hệ thống.', '2026-08-15 10:00:00'),
   (13010, 3032, 5032, 'HOST_LOGISTICS', 107, 'HOST', 'HOST context for coverage', 'Host target', 'USER', 138, NULL, NULL, NULL, NULL, NULL, 'LOGISTICS', 'LOGISTICS context for coverage', 'Logistics feedback submitter', 5, 'Host đánh giá bên cho mượn đồ/hậu cần: Logistics feedback submitter phối hợp trong chuyến thăm. Rating 5/5.', '2026-08-15 10:00:00'),
-  (13011, 3033, 5033, 'HOST_PARTICIPANT', 14, 'HOST', 'HOST context for coverage', 'Host feedback submitter', 'USER', 206, NULL, NULL, NULL, NULL, NULL, 'VISITOR', 'VISITOR context for coverage', 'Visitor target', 1, 'Feedback 13011 riêng biệt: rating 1, flow HOST->VISITOR, không đánh sao guest member ngoài hệ thống.', '2026-08-15 10:00:00'),
+  (13011, 3033, 5033, 'HOST_DELEGATION_OVERALL', 14, 'HOST', 'HOST context for coverage', 'Host feedback submitter', 'VISIT_INSTANCE', NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'Đánh giá chung đoàn khách', 'Đoàn khách / chuyến thăm', 1, 'Host đánh giá chung đoàn khách cho feedback 13011: rating 1/5; không đánh giá riêng từng người trong đoàn khách.', '2026-08-15 10:00:00'),
   (13012, 3034, 5034, 'HOST_LOGISTICS', 107, 'HOST', 'HOST context for coverage', 'Host feedback submitter', 'USER', 138, NULL, NULL, NULL, NULL, NULL, 'LOGISTICS', 'LOGISTICS context for coverage', 'Logistics target', 2, 'Feedback 13012 riêng biệt: rating 2, flow HOST->LOGISTICS, không đánh sao guest member ngoài hệ thống.', '2026-08-15 10:00:00'),
   (13013, 3041, 5041, 'VISITOR_OVERALL', 207, 'VISITOR', 'VISITOR context for coverage', 'Visitor feedback submitter', 'VISIT_INSTANCE', NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'Đánh giá tổng thể chuyến thăm', 'Chuyến thăm / đoàn tiếp đón', 3, 'Feedback 13013 riêng biệt: rating 3, flow VISITOR->HOST, không đánh sao guest member ngoài hệ thống.', '2026-08-15 10:00:00'),
   (13014, 3042, 5042, 'HOST_LOGISTICS', 109, 'HOST', 'HOST context for coverage', 'Host target', 'USER', 142, NULL, NULL, NULL, NULL, NULL, 'LOGISTICS', 'LOGISTICS context for coverage', 'Logistics feedback submitter', 4, 'Host đánh giá bên cho mượn đồ/hậu cần: Logistics feedback submitter phối hợp trong chuyến thăm. Rating 4/5.', '2026-08-15 10:00:00'),
-  (13015, 3043, 5043, 'HOST_PARTICIPANT', 16, 'HOST', 'HOST context for coverage', 'Host feedback submitter', 'USER', 207, NULL, NULL, NULL, NULL, NULL, 'VISITOR', 'VISITOR context for coverage', 'Visitor target', 5, 'Feedback 13015 riêng biệt: rating 5, flow HOST->VISITOR, không đánh sao guest member ngoài hệ thống.', '2026-08-15 10:00:00'),
+  (13015, 3043, 5043, 'HOST_DELEGATION_OVERALL', 16, 'HOST', 'HOST context for coverage', 'Host feedback submitter', 'VISIT_INSTANCE', NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'Đánh giá chung đoàn khách', 'Đoàn khách / chuyến thăm', 5, 'Host đánh giá chung đoàn khách cho feedback 13015: rating 5/5; không đánh giá riêng từng người trong đoàn khách.', '2026-08-15 10:00:00'),
   (13016, 3059, 5068, 'HOST_LOGISTICS', 12, 'HOST', 'HOST context for coverage', 'Host feedback submitter', 'USER', 134, NULL, NULL, NULL, NULL, NULL, 'LOGISTICS', 'LOGISTICS context for coverage', 'Logistics target', 1, 'Feedback 13016 riêng biệt: rating 1, flow HOST->LOGISTICS, không đánh sao guest member ngoài hệ thống.', '2026-08-15 10:00:00'),
   (13017, 3064, 5077, 'VISITOR_OVERALL', 8, 'VISITOR', 'VISITOR context for coverage', 'Visitor feedback submitter', 'VISIT_INSTANCE', NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'Đánh giá tổng thể chuyến thăm', 'Chuyến thăm / đoàn tiếp đón', 2, 'Feedback 13017 riêng biệt: rating 2, flow VISITOR->HOST, không đánh sao guest member ngoài hệ thống.', '2026-08-15 10:00:00'),
   (13018, 3064, 5078, 'HOST_LOGISTICS', 107, 'HOST', 'HOST context for coverage', 'Host target', 'USER', 138, NULL, NULL, NULL, NULL, NULL, 'LOGISTICS', 'LOGISTICS context for coverage', 'Logistics feedback submitter', 3, 'Host đánh giá bên cho mượn đồ/hậu cần: Logistics feedback submitter phối hợp trong chuyến thăm. Rating 3/5.', '2026-08-15 10:00:00');

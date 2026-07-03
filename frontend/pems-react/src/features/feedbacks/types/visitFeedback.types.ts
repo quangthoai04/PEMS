@@ -7,7 +7,7 @@
 
 export type FeedbackActorType = 'VISITOR' | 'HOST';
 
-export type FeedbackType = 'VISITOR_OVERALL' | 'HOST_PARTICIPANT' | 'HOST_LOGISTICS';
+export type FeedbackType = 'VISITOR_OVERALL' | 'HOST_DELEGATION_OVERALL' | 'HOST_PARTICIPANT' | 'HOST_LOGISTICS';
 
 export type FeedbackTargetType =
   | 'VISIT_REQUEST'

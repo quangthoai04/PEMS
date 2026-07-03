@@ -97,10 +97,27 @@ const MemberTable = ({ members, emptyText }: { members: SubmittedGuestMember[]; 
   );
 };
 
+const VISIT_TYPE_LABELS: Record<string, string> = {
+  WORKSHOP: 'Workshop / Hội thảo',
+  SEMINAR: 'Chuyên đề (Seminar)',
+  CAMPUS_TOUR: 'Tham quan Campus',
+  ACADEMIC_EXCHANGE: 'Trao đổi học thuật',
+  CULTURAL_EXCHANGE: 'Giao lưu văn hóa',
+  MEETING: 'Họp / Làm việc',
+};
+
+const CREATED_SOURCE_LABELS: Record<string, string> = {
+  VISITOR_SUBMITTED: 'Khách gửi đơn',
+  INTERNAL_CREATED: 'Nội bộ tạo đơn',
+};
+
 export function SubmittedVisitRequestInfoPanel({ data }: { data: SubmittedVisitRequestFormDetail }) {
   const scopeLabel = VISIT_SCOPE_LABELS[data.visitScope] ?? data.visitScope;
   const visitTypeValue =
-    data.visitType === 'OTHER' && data.visitTypeOther ? data.visitTypeOther : data.visitType;
+    data.visitType === 'OTHER' && data.visitTypeOther 
+      ? data.visitTypeOther 
+      : (VISIT_TYPE_LABELS[data.visitType] ?? data.visitType);
+  const sourceLabel = CREATED_SOURCE_LABELS[data.createdSource] ?? data.createdSource;
 
   return (
     <div className="space-y-5">
@@ -124,7 +141,7 @@ export function SubmittedVisitRequestInfoPanel({ data }: { data: SubmittedVisitR
           <KV label="Tên đoàn khách" value={data.delegationName} />
           <KV label="Phạm vi" value={scopeLabel} />
           <KV label="Loại hình" value={visitTypeValue} />
-          <KV label="Nguồn tạo đơn" value={data.createdSource} />
+          <KV label="Nguồn tạo đơn" value={sourceLabel} />
         </div>
         <div className="mt-1.5 space-y-1.5">
           <KVBlock label="Mục đích thăm FPTU" value={data.purpose} />

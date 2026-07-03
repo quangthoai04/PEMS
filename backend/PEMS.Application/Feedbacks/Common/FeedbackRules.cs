@@ -16,7 +16,17 @@ public static class FeedbackRules
     private static readonly Dictionary<string, string[]> AllowedTargetsByType = new()
     {
         [FeedbackTypes.VisitorOverall] = new[] { FeedbackTargetTypes.VisitRequest, FeedbackTargetTypes.VisitInstance },
-        [FeedbackTypes.HostParticipant] = new[] { FeedbackTargetTypes.VisitParticipant, FeedbackTargetTypes.GuestMember, FeedbackTargetTypes.User },
+        // HOST_DELEGATION_OVERALL: đánh giá chung toàn bộ đoàn khách
+        [FeedbackTypes.HostDelegationOverall] = new[] {
+            FeedbackTargetTypes.VisitRequest,
+            FeedbackTargetTypes.VisitInstance
+        },
+        // HOST_PARTICIPANT: từng người tham gia
+        [FeedbackTypes.HostParticipant] = new[] {
+            FeedbackTargetTypes.VisitParticipant,
+            FeedbackTargetTypes.GuestMember,
+            FeedbackTargetTypes.User,
+        },
         [FeedbackTypes.HostLogistics] = new[] { FeedbackTargetTypes.LogisticsItem, FeedbackTargetTypes.LogisticsHandover, FeedbackTargetTypes.Department, FeedbackTargetTypes.User },
     };
 

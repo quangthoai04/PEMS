@@ -7,10 +7,11 @@ namespace PEMS.Application.Feedbacks.Common;
 public static class FeedbackTypes
 {
     public const string VisitorOverall = "VISITOR_OVERALL";
+    public const string HostDelegationOverall = "HOST_DELEGATION_OVERALL";
     public const string HostParticipant = "HOST_PARTICIPANT";
     public const string HostLogistics = "HOST_LOGISTICS";
 
-    public static readonly string[] All = { VisitorOverall, HostParticipant, HostLogistics };
+    public static readonly string[] All = { VisitorOverall, HostDelegationOverall, HostParticipant, HostLogistics };
 }
 
 public static class FeedbackSubmitterRoles

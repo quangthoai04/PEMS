@@ -317,7 +317,7 @@ export function VisitDuringTab({ isReadOnly = false, isDept = false, visitInstan
 
       {/* Ký mượn tài sản hậu cần — phần đầu tiên của tab Đang tiếp khách (real handover API). */}
       {visitInstanceId && (
-        <LogisticsHandoverSection visitInstanceId={visitInstanceId} canManage={!isReadOnly && !isDept} />
+        <LogisticsHandoverSection visitInstanceId={visitInstanceId} canManage={!isReadOnly && !isDept} handoverPhase="BORROW" />
       )}
 
       {/* Đánh giá chuyến thăm — flow feedback mới (dữ liệu thật, trang riêng thay bảng mock cũ) */}

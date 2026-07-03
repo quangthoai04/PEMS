@@ -126,7 +126,12 @@ public sealed class GetVisitFeedbackTargetsQueryHandler
         };
     }
 
-    // ── Host: 4 compact groups mapped to REAL rows only ─────────────────────
+    // ── Host: 3 compact groups mapped to REAL rows only ──────────────────────
+    // Rule mới (v10.1): Bỏ group "Người tạo đoàn khách";
+    //   Group 1 "Đoàn khách" = 1 target đánh giá CHUNG cả đoàn (VISIT_INSTANCE target),
+    //   không từng guest member.
+    //   Group 2 "Người tham gia hỗ trợ" = từng participant.
+    //   Group 3 "Hậu cần / đồ mượn" = từng logistics item.
     private async Task<List<FeedbackGroupDto>> BuildHostGroupsAsync(
         Domain.Entities.Delegations.VisitRequest visitRequest,
         Domain.Entities.Delegations.VisitRequestCampus instance,
@@ -148,71 +153,35 @@ public sealed class GetVisitFeedbackTargetsQueryHandler
             }
         }
 
-        // 1. Người tạo đoàn khách — the registrant's Visitor account (real USER target).
-        var creatorGroup = new FeedbackGroupDto { GroupCode = "CREATOR", Title = "Người tạo đoàn khách" };
-        if (visitRequest.VisitorUserId is ulong visitorUserId)
-        {
-            var creator = await _db.Users.AsNoTracking()
-                .Where(u => u.UserId == visitorUserId)
-                .Select(u => new { u.FullName, u.Email, u.Phone })
-                .FirstOrDefaultAsync(ct);
-            var subtitleParts = new[]
-            {
-                creator?.Email ?? visitRequest.RegistrantEmail,
-                creator?.Phone ?? visitRequest.RegistrantPhone,
-                visitRequest.RegistrantOrganization,
-            }.Where(s => !string.IsNullOrWhiteSpace(s));
-            var target = new FeedbackTargetDto
-            {
-                TargetKey = $"USER:{visitorUserId}",
-                FeedbackType = FeedbackTypes.HostParticipant,
-                TargetType = FeedbackTargetTypes.User,
-                TargetUserId = visitorUserId,
-                Name = creator?.FullName ?? visitRequest.RegistrantFullName,
-                Subtitle = string.Join(" • ", subtitleParts),
-                TargetRole = "Người tạo đoàn",
-                TargetContext = "Người tạo đoàn khách",
-            };
-            Attach(target);
-            creatorGroup.Targets.Add(target);
-        }
-        else
-        {
-            creatorGroup.InfoNote =
-                $"{visitRequest.RegistrantFullName} • {visitRequest.RegistrantEmail} • {visitRequest.RegistrantPhone} — chưa có tài khoản hệ thống nên không có mục đánh giá.";
-        }
-        groups.Add(creatorGroup);
-
-        // 2. Thông tin đoàn khách — each guest member is a real GUEST_MEMBER target.
-        var guestMembers = await _db.VisitGuestMembers.AsNoTracking()
-            .Where(m => m.VisitRequestId == visitRequest.VisitRequestId)
-            .OrderBy(m => m.DisplayOrder)
-            .ToListAsync(ct);
+        // 1. Đoàn khách — 1 target đánh giá chung cả đoàn (VISIT_INSTANCE).
+        //    Rule: Host không đánh giá từng thành viên riêng lẻ; chỉ đánh giá cả đoàn.
+        var guestCount = await _db.VisitGuestMembers.AsNoTracking()
+            .CountAsync(m => m.VisitRequestId == visitRequest.VisitRequestId, ct);
         var delegationGroup = new FeedbackGroupDto
         {
             GroupCode = "DELEGATION",
-            Title = "Thông tin đoàn khách",
-            InfoNote = $"{visitRequest.DelegationName} • {visitRequest.RegistrantOrganization} • {guestMembers.Count} khách",
+            Title = "Đoàn khách",
         };
-        foreach (var m in guestMembers)
+        var delegationTarget = new FeedbackTargetDto
         {
-            var target = new FeedbackTargetDto
+            TargetKey = $"INSTANCE:DELEGATION:{instance.VisitInstanceId}",
+            FeedbackType = FeedbackTypes.HostDelegationOverall,
+            TargetType = FeedbackTargetTypes.VisitInstance,
+            Name = visitRequest.DelegationName,
+            Subtitle = string.Join(" • ", new[]
             {
-                TargetKey = $"GUEST:{m.GuestMemberId}",
-                FeedbackType = FeedbackTypes.HostParticipant,
-                TargetType = FeedbackTargetTypes.GuestMember,
-                TargetGuestMemberId = m.GuestMemberId,
-                Name = m.FullName,
-                Subtitle = string.Join(" • ", new[] { m.JobTitle, m.Organization }.Where(s => !string.IsNullOrWhiteSpace(s))),
-                TargetRole = m.MemberType == "EXTERNAL_SUPPORT" ? "Hỗ trợ ngoài" : "Khách",
-                TargetContext = "Đoàn khách",
-            };
-            Attach(target);
-            delegationGroup.Targets.Add(target);
-        }
+                visitRequest.RegistrantOrganization,
+                guestCount > 0 ? $"{guestCount} khách" : null,
+            }.Where(s => !string.IsNullOrWhiteSpace(s))),
+            TargetRole = "Đoàn khách",
+            TargetContext = "Đoàn khách",
+        };
+        Attach(delegationTarget);
+        delegationGroup.Targets.Add(delegationTarget);
         groups.Add(delegationGroup);
 
-        // 3. Setup — internal participants (host/IC support/dept support/students) who accepted/were assigned.
+        // 2. Người tham gia hỗ trợ — internal participants (host/IC support/dept support/students)
+        //    who accepted/were assigned. Host không tự đánh giá bản thân.
         var participantRows = await (
             from p in _db.VisitParticipants.AsNoTracking()
             join u in _db.Users.AsNoTracking() on p.UserId equals u.UserId
@@ -228,10 +197,10 @@ public sealed class GetVisitFeedbackTargetsQueryHandler
                 .Where(d => participantDeptIds.Contains(d.DepartmentId))
                 .ToDictionaryAsync(d => d.DepartmentId, d => d.Name, ct);
 
-        var setupGroup = new FeedbackGroupDto { GroupCode = "SETUP", Title = "Setup — các bên tham gia hỗ trợ" };
+        var setupGroup = new FeedbackGroupDto { GroupCode = "SETUP", Title = "Người tham gia hỗ trợ" };
         foreach (var p in participantRows.OrderBy(p => p.ParticipantRole).ThenBy(p => p.FullName))
         {
-            // Host doesn't rate themselves.
+            // Host không tự đánh giá bản thân.
             if (p.UserId == instance.CurrentHostUserId) continue;
             var roleLabel = p.ParticipantRole switch
             {
@@ -251,7 +220,7 @@ public sealed class GetVisitFeedbackTargetsQueryHandler
                 Name = p.FullName,
                 Subtitle = string.Join(" • ", new[] { roleLabel, deptName }.Where(s => !string.IsNullOrWhiteSpace(s))),
                 TargetRole = roleLabel,
-                TargetContext = "Setup",
+                TargetContext = "Người tham gia hỗ trợ",
             };
             Attach(target);
             setupGroup.Targets.Add(target);
@@ -260,7 +229,7 @@ public sealed class GetVisitFeedbackTargetsQueryHandler
             setupGroup.InfoNote = "Chưa có bên tham gia hỗ trợ nào xác nhận cho chuyến này.";
         groups.Add(setupGroup);
 
-        // 4. Detail setup — logistics/resource items the departments actually handled.
+        // 3. Hậu cần / đồ mượn — logistics/resource items the departments actually handled.
         var logisticsRows = await _db.VisitLogisticsItems.AsNoTracking()
             .Where(l => l.VisitInstanceId == instance.VisitInstanceId
                         && RateableLogisticsStatuses.Contains(l.Status))
@@ -291,7 +260,7 @@ public sealed class GetVisitFeedbackTargetsQueryHandler
                 .Where(h => logisticsItemIds.Contains(h.LogisticsItemId))
                 .ToListAsync(ct);
 
-        var detailGroup = new FeedbackGroupDto { GroupCode = "DETAIL_SETUP", Title = "Detail setup — hậu cần / đồ mượn" };
+        var detailGroup = new FeedbackGroupDto { GroupCode = "DETAIL_SETUP", Title = "Hậu cần / đồ mượn" };
         foreach (var l in logisticsRows.OrderBy(l => l.RequestedToDepartmentId).ThenBy(l => l.LogisticsItemId))
         {
             var deptName = l.RequestedToDepartmentId.HasValue
@@ -322,7 +291,7 @@ public sealed class GetVisitFeedbackTargetsQueryHandler
                 Name = l.Title,
                 Subtitle = string.Join(" • ", subtitleParts),
                 TargetRole = deptName,
-                TargetContext = "Detail setup",
+                TargetContext = "Hậu cần / đồ mượn",
             };
             Attach(target);
             detailGroup.Targets.Add(target);
