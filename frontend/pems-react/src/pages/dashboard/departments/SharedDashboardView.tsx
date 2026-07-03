@@ -3486,41 +3486,76 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                   </div>
 
                   {/* Official Document Title */}
-                  <div className="text-center space-y-1.5 relative z-10 pt-2">
-                    <h4 className="text-base sm:text-xl font-black text-[#004c91] uppercase tracking-wide">
-                      BIÊN BẢN BÀN GIAO VÀ NGHIỆM THU PHƯƠNG TIỆN
+                  <div className="text-center space-y-1 mb-8 relative z-10 pt-2">
+                    <h4 className="text-xl sm:text-2xl font-bold uppercase tracking-wide">
+                      BIÊN BẢN BÀN GIAO VÀ NGHIỆM THU
                     </h4>
-                    <p className="text-[11px] font-semibold text-slate-505 italic">
-                      (V/v: Thiết lập thủ tục bàn giao và bảo đảm vận hành xe điện nội khu dịch vụ đối ngoại)
+                    <p className="text-lg font-bold uppercase">
+                      TÀI SẢN / TRANG THIẾT BỊ
                     </p>
                   </div>
 
                   {/* Core Minutes Information */}
-                  <div className="space-y-4 text-xs text-slate-750 font-normal leading-relaxed relative z-10 font-sans">
-                    <p className="text-justify">
-                      Căn cứ kế hoạch tiếp đón phái đoàn cao cấp đối tác thương mại <strong className="text-[#f37021] font-black">Safuri</strong> ghé thăm và làm việc tại campus Đại học FPT Hòa Lạc ngày 08 tháng 08 năm 2026. Hôm nay, đúng lúc 08h00, các bên tham gia trực tiếp đã có mặt đầy đủ để ký bàn giao, ghi nhận hiện trạng kỹ thuật bàn giao của phương tiện xe điện phục vụ di chuyển an toàn trong nội khu:
+                  <div className="space-y-3 text-[15px] leading-relaxed mb-6 font-sans relative z-10">
+                    <p>
+                      Hôm nay, lúc: <b>08:00</b> giờ, ngày <b>08/08/2026</b>, tại: <b>Trường Đại học FPT Hòa Lạc</b>.
                     </p>
-
-                    {/* Side by side parties info */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-50/80 p-5 rounded-2xl border border-slate-200/50">
-                      <div className="space-y-1.5 border-r border-slate-200/45 pr-2">
-                        <p className="font-black text-[#004c91] text-xs uppercase tracking-wide">BÊN GIAO (BỘ PHẬN PHƯƠNG TIỆN)</p>
-                                   <div className="flex items-center gap-1.5">• <strong>Phương tiện bàn giao</strong>: <span className="text-slate-850 font-bold">Xe điện du lịch chuyên dụng</span></div>
-                        <div className="flex items-center gap-1.5">• <strong>Mã danh định xe</strong>: <span className="text-slate-850 font-bold">FPTU-EV-09 / Loại 8 ghế</span></div>
-                        <div className="flex items-center gap-1.5">• <strong>Tình trạng pin lái</strong>: <span className="text-emerald-700 font-extrabold">Đã sạc đầy 100% cực bền</span></div>
-                        <div className="flex items-center gap-1.5">• <strong>Tính năng kỹ thuật</strong>: <span className="text-slate-850 font-bold font-sans">Phanh nhạy, Đèn còi đạt chuẩn</span></div>
-                        <div className="flex items-center gap-1.5">• <strong>Phụ kiện bàn giao</strong>: <span className="text-slate-850 font-bold">01 Chìa khóa thông minh, 01 Sổ vận trình</span></div>
-                        <div className="flex items-center gap-1.5">• <strong>Vật phẩm đi kèm</strong>: <span className="text-[#f37021] font-extrabold">10 Ô FPT dù cam xếp ở khay sau</span></div>
+                    <p>Chúng tôi gồm:</p>
+                    <div className="space-y-2 pl-4">
+                      <div className="flex flex-wrap gap-x-8 gap-y-2">
+                        <p className="flex-1 min-w-[250px]">Người bàn giao: <b>Đại diện Tổ Quản Lý Thiết Bị</b></p>
+                        <p className="flex-1 min-w-[200px]">Bộ phận: <b>Tổ Quản Lý Thiết Bị</b></p>
                       </div>
-                      <div className="space-y-1.5 pl-2">
-                        <p className="font-black text-[#004c91] text-xs uppercase tracking-wide">BÊN NHẬN (CÁN BỘ ĐÓN TIẾP)</p>
-                        <div className="flex items-center gap-1.5">• <strong>Đơn vị tiếp nhận</strong>: <span className="text-slate-850 font-bold">Ban Đào tạo & CTSV</span></div>
-                        <div className="flex items-center gap-1.5">• <strong>Mục đích sử dụng</strong>: <span className="text-slate-850 font-bold">Đón tiếp đoàn Safuri</span></div>
-                        <div className="flex items-center gap-1.5">• <strong>Thời gian dự kiến</strong>: <span className="text-slate-850 font-bold">08:00 - 16:30, 08/08/2026</span></div>
-                        <div className="flex items-center gap-1.5">• <strong>Trách nhiệm</strong>: <span className="text-slate-850 font-bold">Bảo quản tài sản, sử dụng đúng mục đích</span></div>
-                        <div className="flex items-center gap-1.5">• <strong>Cam kết đền bù</strong>: <span className="text-red-600 font-bold">Chịu trách nhiệm bảo quản</span></div>
+                      <div className="flex flex-wrap gap-x-8 gap-y-2">
+                        <p className="flex-1 min-w-[250px]">Người nhận bàn giao: <b>Đại diện Ban Đào tạo & CTSV</b></p>
+                        <p className="flex-1 min-w-[200px]">Bộ phận: <b>Ban Đào tạo & CTSV</b></p>
                       </div>
+                      <p>Lý do bàn giao: <b>Đón tiếp phái đoàn đối tác thương mại Safuri</b></p>
+                      <p>Thời gian hẹn trả tài sản: <b>16:30, 08/08/2026</b></p>
                     </div>
+                  </div>
+
+                  <p className="font-bold text-[15px] mb-2 relative z-10">Cùng bàn giao tài sản với tình trạng sau:</p>
+                  <div className="overflow-x-auto mb-6 relative z-10">
+                    <table className="w-full border-collapse border border-slate-500 text-[14px]">
+                      <thead>
+                        <tr className="bg-slate-50">
+                          <th className="border border-slate-500 p-2 text-center w-12">STT</th>
+                          <th className="border border-slate-500 p-2 text-center">Nội dung</th>
+                          <th className="border border-slate-500 p-2 text-center w-24">Số Lượng</th>
+                          <th className="border border-slate-500 p-2 text-center">Tình Trạng bàn giao</th>
+                          <th className="border border-slate-500 p-2 text-center">Tình Trạng nhận</th>
+                          <th className="border border-slate-500 p-2 text-center">Ghi chú</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          <td className="border border-slate-500 p-2 text-center">1</td>
+                          <td className="border border-slate-500 p-2 font-semibold">Xe điện FPTU-EV-09 (8 ghế)</td>
+                          <td className="border border-slate-500 p-2 text-center">1</td>
+                          <td className="border border-slate-500 p-2 text-center">
+                            {safuriBG1Note || 'Đã sạc đầy 100%, 10 ô dù'}
+                          </td>
+                          <td className="border border-slate-500 p-2 text-center">
+                            {safuriBG2Signed ? (safuriBG2Note || 'Đã xác nhận') : ''}
+                          </td>
+                          <td className="border border-slate-500 p-2"></td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="space-y-1 text-[14px] mb-8 relative z-10">
+                    <p className="font-bold">Quy định khi sử dụng tài sản:</p>
+                    <ul className="list-disc pl-8 space-y-1">
+                      <li>Người mượn tài sản phải tuân thủ đúng mục đích sử dụng, không tự ý chuyển giao cho người khác.</li>
+                      <li>Khi có vấn đề xảy ra (bị hỏng hoặc không nguyên hiện trạng ban đầu), <b>người mượn tài sản</b> sẽ phải chịu hoàn toàn trách nhiệm chi trả chi phí sửa chữa/đền bù.</li>
+                      <li>An toàn trong quá trình sử dụng tài sản sẽ do <b>người mượn tài sản</b> chịu hoàn toàn trách nhiệm.</li>
+                      <li>Ghi chú khác: ....................................................................................................................</li>
+                    </ul>
+                    <p className="mt-4">
+                      Tôi là <b>Đại diện Ban Đào tạo & CTSV</b>, đã đọc hiểu và cam kết thực hiện đúng quy định sử dụng.
+                    </p>
                   </div>
 
                   {/* Gray horizontal divider with Handover text */}

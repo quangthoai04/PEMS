@@ -16,7 +16,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Loader2, PackageCheck, Undo2, CheckCircle2, AlertCircle,
-  PenLine, Clock, X, Building2,
+  PenLine, Clock, X, Building2, FileText,
 } from 'lucide-react';
 import { delegationsApi } from '../api/delegationsApi';
 import {
@@ -300,21 +300,24 @@ export function LogisticsHandoverSection({ visitInstanceId, canManage, handoverP
                   </div>
 
                   {/* Right: action */}
-                  <div className="shrink-0 flex items-start">
-                    {canSign ? (
-                      <button
-                        type="button"
-                        onClick={() => openSignModal(item)}
-                        className="inline-flex items-center gap-1.5 rounded-lg border border-[#004c91] bg-white px-3 py-1.5 text-[12px] font-bold text-[#004c91] hover:bg-[#f0f7ff] outline-none"
-                      >
-                        <PenLine className="w-3.5 h-3.5" />
-                        {handoverPhase === 'BORROW' ? 'Ký nhận' : 'Ký trả'}
-                      </button>
-                    ) : disabledHint ? (
-                      <p className="text-[11px] italic text-slate-400 flex items-center gap-1 pt-1">
+                  <div className="shrink-0 flex flex-col items-end gap-1">
+                    <button
+                      type="button"
+                      onClick={() => openSignModal(item)}
+                      className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[12px] font-bold outline-none transition-colors ${
+                        canSign
+                          ? 'border-[#004c91] bg-[#004c91] text-white hover:bg-[#003b70]'
+                          : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50'
+                      }`}
+                    >
+                      <FileText className="w-3.5 h-3.5" />
+                      {canSign ? (handoverPhase === 'BORROW' ? 'Ký nhận' : 'Ký trả') : 'Xem biên bản'}
+                    </button>
+                    {!canSign && disabledHint && (
+                      <p className="text-[10px] italic text-slate-400 flex items-center gap-1">
                         <Clock className="w-3 h-3 shrink-0" /> {disabledHint}
                       </p>
-                    ) : null}
+                    )}
                   </div>
                 </div>
               );
@@ -325,91 +328,324 @@ export function LogisticsHandoverSection({ visitInstanceId, canManage, handoverP
 
       {/* Modal biên bản ký mượn/trả */}
       {signTarget && createPortal(
-        <div className="fixed inset-0 z-[80] flex items-end sm:items-center justify-center">
-          <div className="absolute inset-0 bg-black/40" onClick={closeSignModal} />
-          <div className="relative w-full sm:w-[480px] rounded-t-2xl sm:rounded-xl bg-white shadow-xl border border-slate-200 p-5">
+        <div className="fixed inset-0 z-[80] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={closeSignModal} />
+          <div className="relative w-full max-w-4xl max-h-[90vh] flex flex-col rounded-2xl bg-white shadow-2xl overflow-hidden font-sans border border-slate-200">
             {/* Modal header */}
-            <div className="mb-4 flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <h4 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
-                  {signTarget.type === 'BORROW'
-                    ? <><PackageCheck className="w-4 h-4 text-[#f37021]" /> Biên bản ký nhận (Host nhận từ phòng ban)</>
-                    : <><Undo2 className="w-4 h-4 text-[#f37021]" /> Biên bản ký trả (Host trả lại cho phòng ban)</>}
-                </h4>
-                <p className="truncate text-xs text-slate-500 mt-0.5">
-                  {signTarget.item.title}
-                  {signTarget.item.departmentName ? ` • ${signTarget.item.departmentName}` : ''}
-                  {signTarget.item.quantity != null ? ` • SL: ${signTarget.item.quantity}` : ''}
-                </p>
-              </div>
+            <div className="bg-[#004c91] text-white px-6 py-4 flex items-center justify-between shrink-0">
+              <h3 className="font-bold text-sm uppercase tracking-wide flex items-center gap-2">
+                <FileText className="w-5 h-5 opacity-80" />
+                BIÊN BẢN BÀN GIAO VÀ NGHIỆM THU
+              </h3>
               <button type="button" onClick={closeSignModal} disabled={busy}
-                className="rounded-full p-1 text-slate-500 hover:bg-slate-100 outline-none" aria-label="Đóng">
-                <X className="w-4 h-4" />
+                className="text-white/70 hover:text-white outline-none transition-colors" aria-label="Đóng">
+                <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* Hiển thị chữ ký bên kia (đã ký) */}
-            {signTarget.type === 'BORROW' && (() => {
-              const b = findHandover(signTarget.item.handovers, 'BORROW');
-              return b?.providerSignedAt ? (
-                <div className="mb-4 rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2.5">
-                  <p className="text-[11px] font-bold text-emerald-700 mb-1 uppercase tracking-wide">
-                    Phòng ban đã ký bàn giao
-                  </p>
-                  <p className="text-[12px] text-emerald-800 font-semibold">
-                    {b.providerSignedByName || 'Phòng ban'} — {fmtDateTime(b.providerSignedAt)}
-                  </p>
-                  {b.conditionNote && (
-                    <p className="text-[11px] text-emerald-700 mt-1 italic">Ghi chú: {b.conditionNote}</p>
-                  )}
-                </div>
-              ) : null;
-            })()}
+            {/* Modal body (scrollable) */}
+            <div className="p-6 md:p-12 overflow-y-auto bg-white flex-1 text-slate-900 shadow-[inset_0_0_20px_rgba(0,0,0,0.02)]">
+              {(() => {
+                const b = findHandover(signTarget.item.handovers, 'BORROW');
+                const r = findHandover(signTarget.item.handovers, 'RETURN');
+                const bg1 = b?.providerSignedAt ? `${b.providerSignedByName || 'Phòng ban'}` : null;
+                const bg2 = b?.borrowerSignedAt ? `${b.borrowerSignedByName || 'Host'}` : null;
+                const nt1 = r?.borrowerSignedAt ? `${r.borrowerSignedByName || 'Host'}` : null;
+                const nt2 = r?.providerSignedAt ? `${r.providerSignedByName || 'Phòng ban'}` : null;
 
-            {signTarget.type === 'RETURN' && (() => {
-              const b = findHandover(signTarget.item.handovers, 'BORROW');
-              return b ? (
-                <div className="mb-4 rounded-lg bg-blue-50 border border-blue-200 px-3 py-2.5">
-                  <p className="text-[11px] font-bold text-blue-700 mb-1 uppercase tracking-wide">
-                    Biên bản mượn (đã hoàn tất)
-                  </p>
-                  <div className="grid grid-cols-2 gap-x-4 text-[12px] text-blue-800">
-                    <div>PB ký giao: <b>{b.providerSignedByName || '—'}</b></div>
-                    <div>Host ký nhận: <b>{b.borrowerSignedByName || '—'}</b></div>
-                  </div>
-                </div>
-              ) : null;
-            })()}
+                const canSignBG2 = signTarget.type === 'BORROW' && bg1 && !bg2;
+                const isBorrowDone = bg1 && bg2;
+                const canSignNT1 = signTarget.type === 'RETURN' && isBorrowDone && !nt1;
 
-            {/* Tình trạng tài sản */}
-            <label className="mb-1 block text-[11px] font-bold text-slate-600">Tình trạng tài sản</label>
-            <select value={condition} onChange={(e) => setCondition(e.target.value as LogisticsItemCondition)}
-              className="mb-3 w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm outline-none focus:border-[#004c91]">
-              {CONDITION_OPTIONS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
-            </select>
+                // parse date for top section
+                let handoverTime = "....";
+                let handoverDate = "..../..../20.....";
+                if (b?.providerSignedAt) {
+                  const [d, t] = b.providerSignedAt.replace(' ', 'T').split('T');
+                  if (d && t) {
+                    const hm = t.slice(0, 5);
+                    const [y, m, day] = d.split('-');
+                    handoverTime = `${hm}`;
+                    handoverDate = `${day}/${m}/${y}`;
+                  }
+                }
 
-            <label className="mb-1 block text-[11px] font-bold text-slate-600">
-              Ghi chú tình trạng {CONDITION_REQUIRES_NOTE.has(condition) && <span className="text-red-500">*</span>}
-            </label>
-            <textarea value={note} onChange={(e) => setNote(e.target.value)} maxLength={1000} rows={3}
-              placeholder="VD: Tài sản đầy đủ, hoạt động tốt..."
-              className="w-full resize-none rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm outline-none focus:border-[#004c91]" />
+                // Host and Provider names
+                const hostName = b?.borrowerSignedByName || r?.borrowerSignedByName || 'Đại diện Host đón tiếp';
+                const providerName = b?.providerSignedByName || r?.providerSignedByName || signTarget.item.departmentName || 'Đại diện Phòng ban';
 
-            {err && (
-              <p className="mt-2 flex items-center gap-1 text-[11px] font-semibold text-red-600">
-                <AlertCircle className="w-3 h-3 shrink-0" /> {err}
-              </p>
-            )}
+                return (
+                  <>
+                    <div className="text-center space-y-1 mb-8">
+                      <h4 className="text-xl sm:text-2xl font-bold uppercase tracking-wide">
+                        BIÊN BẢN BÀN GIAO VÀ NGHIỆM THU
+                      </h4>
+                      <p className="text-lg font-bold uppercase">
+                        TÀI SẢN / TRANG THIẾT BỊ
+                      </p>
+                    </div>
 
-            <div className="mt-4 flex items-center justify-end gap-2">
-              <button type="button" disabled={busy} onClick={closeSignModal}
-                className="rounded-lg border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-50 outline-none">
-                Hủy
-              </button>
-              <button type="button" disabled={busy} onClick={submit}
-                className="inline-flex items-center gap-1 rounded-lg bg-[#004c91] px-3.5 py-1.5 text-xs font-bold text-white hover:bg-[#003b70] disabled:opacity-50 outline-none">
-                {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
-                Xác nhận {signTarget.type === 'BORROW' ? 'ký nhận' : 'ký trả'}
+                    <div className="space-y-3 text-[15px] leading-relaxed mb-6">
+                      <p>
+                        Hôm nay, lúc: <b>{handoverTime}</b> giờ, ngày <b>{handoverDate}</b>, tại: <b>Trường Đại học FPT Hòa Lạc</b>.
+                      </p>
+                      <p>Chúng tôi gồm:</p>
+                      <div className="space-y-2 pl-4">
+                        <div className="flex flex-wrap gap-x-8 gap-y-2">
+                          <p className="flex-1 min-w-[250px]">Người bàn giao: <b>{providerName}</b></p>
+                          <p className="flex-1 min-w-[200px]">Bộ phận: <b>{signTarget.item.departmentName || '................'}</b></p>
+                        </div>
+                        <div className="flex flex-wrap gap-x-8 gap-y-2">
+                          <p className="flex-1 min-w-[250px]">Người nhận bàn giao: <b>{hostName}</b></p>
+                          <p className="flex-1 min-w-[200px]">Bộ phận: <b>Host (Tiếp đón)</b></p>
+                        </div>
+                        <p>Lý do bàn giao: <b>Phục vụ công tác đón tiếp đoàn khách</b></p>
+                        <p>Thời gian hẹn trả tài sản: <b>Sau khi kết thúc chuyến thăm</b></p>
+                      </div>
+                    </div>
+
+                    <p className="font-bold text-[15px] mb-2">Cùng bàn giao tài sản với tình trạng sau:</p>
+                    <div className="overflow-x-auto mb-6">
+                      <table className="w-full border-collapse border border-slate-500 text-[14px]">
+                        <thead>
+                          <tr className="bg-slate-50">
+                            <th className="border border-slate-500 p-2 text-center w-12">STT</th>
+                            <th className="border border-slate-500 p-2 text-center">Nội dung</th>
+                            <th className="border border-slate-500 p-2 text-center w-24">Số Lượng</th>
+                            <th className="border border-slate-500 p-2 text-center">Tình Trạng bàn giao</th>
+                            <th className="border border-slate-500 p-2 text-center">Tình Trạng nhận</th>
+                            <th className="border border-slate-500 p-2 text-center">Ghi chú</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr>
+                            <td className="border border-slate-500 p-2 text-center">1</td>
+                            <td className="border border-slate-500 p-2 font-semibold">{signTarget.item.title}</td>
+                            <td className="border border-slate-500 p-2 text-center">{signTarget.item.quantity || 1}</td>
+                            <td className="border border-slate-500 p-2 text-center">
+                              {b?.conditionNote || ''}
+                            </td>
+                            <td className="border border-slate-500 p-2 text-center">
+                              {b?.borrowerSignedAt ? (signTarget.type === 'BORROW' ? note : 'Đã xác nhận') : ''}
+                            </td>
+                            <td className="border border-slate-500 p-2"></td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <div className="space-y-1 text-[14px] mb-8">
+                      <p className="font-bold">Quy định khi sử dụng tài sản:</p>
+                      <ul className="list-disc pl-8 space-y-1">
+                        <li>Người mượn tài sản phải tuân thủ đúng mục đích sử dụng, không tự ý chuyển giao cho người khác.</li>
+                        <li>Khi có vấn đề xảy ra (bị hỏng hoặc không nguyên hiện trạng ban đầu), <b>người mượn tài sản</b> sẽ phải chịu hoàn toàn trách nhiệm chi trả chi phí sửa chữa/đền bù.</li>
+                        <li>An toàn trong quá trình sử dụng tài sản sẽ do <b>người mượn tài sản</b> chịu hoàn toàn trách nhiệm.</li>
+                        <li>Ghi chú khác: ....................................................................................................................</li>
+                      </ul>
+                      <p className="mt-4">
+                        Tôi là <b>{hostName}</b>, đã đọc hiểu và cam kết thực hiện đúng quy định sử dụng.
+                      </p>
+                    </div>
+
+                    {/* 4 NÚT KÝ (Thiết kế dạng chữ ký văn bản) */}
+                    <div className="space-y-8">
+                    {/* KHỐI BÀN GIAO */}
+                    <div className="relative my-7">
+                      <div className="absolute inset-0 flex items-center" aria-hidden="true"><div className="w-full border-t border-slate-300"></div></div>
+                      <div className="relative flex justify-center"><span className="bg-white px-4 py-1.5 text-[10px] font-black text-slate-900 uppercase tracking-widest border border-slate-200 rounded-full shadow-sm">BÀN GIAO</span></div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5 bg-slate-50/70 p-4.5 rounded-2xl border border-slate-200">
+                      {/* Bên Giao */}
+                      <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm flex flex-col justify-between gap-4">
+                        <div>
+                          <label className="block text-[10px] font-black text-[#004c91] uppercase tracking-wider mb-2">Ghi chú Bên Giao</label>
+                          <div className="w-full text-xs p-3 border border-slate-200 rounded-xl bg-slate-50 min-h-[64px] text-slate-600 italic">
+                            {b?.conditionNote || 'Không có ghi chú.'}
+                          </div>
+                        </div>
+                        <div className={`border-2 rounded-xl p-3 relative ${bg1 ? 'border-emerald-500 bg-emerald-50/20' : 'border-dashed border-slate-250 bg-slate-50'}`}>
+                          {bg1 ? (
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-8 h-8 rounded-full bg-emerald-50 text-emerald-700 flex items-center justify-center font-bold text-xs shrink-0 shadow-sm border border-emerald-100">✓</div>
+                              <div>
+                                <span className="text-[9px] font-black uppercase text-emerald-800 block leading-none mb-0.5">ĐÃ KÝ DUYỆT BÀN GIAO</span>
+                                <p className="text-[11px] font-extrabold text-slate-800 leading-snug truncate">{bg1}</p>
+                                <p className="text-[9px] text-slate-500">{fmtDateTime(b?.providerSignedAt)}</p>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex flex-row items-center justify-between gap-3 w-full opacity-60">
+                              <div className="flex items-center gap-2">
+                                <FileText className="w-4 h-4 text-[#004c91]/80 shrink-0" />
+                                <div className="text-left">
+                                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block leading-none">Chữ ký Bên Giao</span>
+                                  <span className="text-[9px] text-slate-450">Chờ phòng ban ký</span>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Bên Nhận */}
+                      <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm flex flex-col justify-between gap-4">
+                        <div>
+                          <label className="block text-[10px] font-black text-[#f37021] uppercase tracking-wider mb-2">Ghi chú Bên Nhận</label>
+                          {signTarget.type === 'BORROW' && !bg2 ? (
+                            <textarea rows={2} value={note} onChange={e => setNote(e.target.value)} disabled={!canSignBG2 || busy} className="w-full text-xs p-2.5 border border-slate-250 rounded-xl focus:border-[#f37021] focus:ring-1 focus:ring-orange-200 outline-none resize-none bg-slate-50/30" placeholder={canSignBG2 ? "Nhập ý kiến xác nhận nhận..." : "Chờ phòng ban ký trước..."} />
+                          ) : (
+                            <div className="w-full text-xs p-3 border border-slate-200 rounded-xl bg-slate-50 min-h-[64px] text-slate-600 italic">
+                              {bg2 ? 'Đã xác nhận nhận tài sản.' : 'Chưa ký nhận.'}
+                            </div>
+                          )}
+                        </div>
+                        <div className={`border-2 rounded-xl p-3 relative ${bg2 ? 'border-emerald-500 bg-emerald-50/20' : canSignBG2 ? 'border-dashed border-[#f37021]/50 bg-orange-50/20' : 'border-dashed border-slate-250 bg-slate-50'}`}>
+                          {bg2 ? (
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-8 h-8 rounded-full bg-emerald-50 text-emerald-700 flex items-center justify-center font-bold text-xs shrink-0 shadow-sm border border-emerald-100">✓</div>
+                              <div>
+                                <span className="text-[9px] font-black uppercase text-emerald-800 block leading-none mb-0.5">ĐÃ KÝ DUYỆT BÀN GIAO</span>
+                                <p className="text-[11px] font-extrabold text-slate-800 leading-snug truncate">{bg2}</p>
+                                <p className="text-[9px] text-slate-500">{fmtDateTime(b?.borrowerSignedAt)}</p>
+                              </div>
+                            </div>
+                          ) : signTarget.type === 'BORROW' ? (
+                            <div className="flex flex-row items-center justify-between gap-3 w-full">
+                              <div className="flex items-center gap-2">
+                                <FileText className={`w-4 h-4 shrink-0 ${canSignBG2 ? 'text-[#f37021]' : 'text-slate-400'}`} />
+                                <div className="text-left">
+                                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block leading-none">Chữ ký Bên Nhận</span>
+                                  <span className="text-[9px] text-slate-450">{canSignBG2 ? 'Nhấp để xác nhận' : 'Chờ PB ký trước'}</span>
+                                </div>
+                              </div>
+                              <button type="button" onClick={submit} disabled={!canSignBG2 || busy} className="py-2 px-3 bg-orange-50 hover:bg-orange-100 text-[#f37021] font-extrabold text-[11px] rounded-xl border border-slate-200 transition-all flex items-center gap-1.5 cursor-pointer shadow-sm">
+                                {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />} Ký xác nhận (BG2)
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="flex flex-row items-center justify-between gap-3 w-full opacity-60">
+                              <div className="flex items-center gap-2">
+                                <FileText className="w-4 h-4 text-slate-400 shrink-0" />
+                                <div className="text-left">
+                                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block leading-none">Chữ ký Bên Nhận</span>
+                                  <span className="text-[9px] text-slate-450">Chưa ký nhận</span>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* KHỐI NGHIỆM THU */}
+                    <div className={`transition-opacity pt-4 ${!isBorrowDone ? 'opacity-40 pointer-events-none' : ''}`}>
+                      <div className="relative my-7">
+                        <div className="absolute inset-0 flex items-center" aria-hidden="true"><div className="w-full border-t border-slate-300"></div></div>
+                        <div className="relative flex justify-center"><span className="bg-white px-4 py-1.5 text-[10px] font-black text-slate-900 uppercase tracking-widest border border-slate-200 rounded-full shadow-sm">NGHIỆM THU</span></div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-5 bg-[#f8fbfe] p-4.5 rounded-2xl border border-blue-200/50">
+                        {/* Bên Giao (Host trả) */}
+                        <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm flex flex-col justify-between gap-4">
+                          <div>
+                            <label className="block text-[10px] font-black text-[#004c91] uppercase tracking-wider mb-2">Ghi chú Nghiệm thu (Bên Giao)</label>
+                            {signTarget.type === 'RETURN' && !nt1 ? (
+                              <>
+                                <select value={condition} onChange={e => setCondition(e.target.value as LogisticsItemCondition)} className="mb-2 w-full text-xs p-2 border border-slate-250 rounded-xl outline-none focus:border-[#004c91]">
+                                  {CONDITION_OPTIONS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                                </select>
+                                <textarea rows={2} value={note} onChange={e => setNote(e.target.value)} disabled={busy} className="w-full text-xs p-2.5 border border-slate-250 rounded-xl focus:border-[#004c91] focus:ring-1 focus:ring-blue-200 outline-none resize-none bg-slate-50/30" placeholder="Ghi nhận hiện trạng lúc trả..." />
+                              </>
+                            ) : (
+                              <div className="w-full text-xs p-3 border border-slate-200 rounded-xl bg-slate-50 min-h-[64px] text-slate-600 italic">
+                                {r?.conditionNote || 'Đã bàn giao trả tài sản.'}
+                              </div>
+                            )}
+                          </div>
+                          <div className={`border-2 rounded-xl p-3 relative ${nt1 ? 'border-emerald-500 bg-emerald-50/20' : canSignNT1 ? 'border-dashed border-[#004c91]/50 bg-blue-50/20' : 'border-dashed border-slate-250 bg-slate-50'}`}>
+                            {nt1 ? (
+                              <div className="flex items-center gap-2.5">
+                                <div className="w-8 h-8 rounded-full bg-emerald-50 text-emerald-700 flex items-center justify-center font-bold text-xs shrink-0 shadow-sm border border-emerald-100">✓</div>
+                                <div>
+                                  <span className="text-[9px] font-black uppercase text-emerald-800 block leading-none mb-0.5">ĐÃ KÝ DUYỆT NGHIỆM THU</span>
+                                  <p className="text-[11px] font-extrabold text-slate-800 leading-snug truncate">{nt1}</p>
+                                  <p className="text-[9px] text-slate-500">{fmtDateTime(r?.borrowerSignedAt)}</p>
+                                </div>
+                              </div>
+                            ) : signTarget.type === 'RETURN' ? (
+                              <div className="flex flex-row items-center justify-between gap-3 w-full">
+                                <div className="flex items-center gap-2">
+                                  <FileText className={`w-4 h-4 shrink-0 ${canSignNT1 ? 'text-[#004c91]' : 'text-slate-400'}`} />
+                                  <div className="text-left">
+                                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block leading-none">Chữ ký Bên Giao</span>
+                                    <span className="text-[9px] text-slate-450">{canSignNT1 ? 'Nhấp để hoàn tất' : 'Chờ hoàn tất'}</span>
+                                  </div>
+                                </div>
+                                <button type="button" onClick={submit} disabled={!canSignNT1 || busy} className="py-2 px-3 bg-blue-50 hover:bg-blue-100 text-[#004c91] font-extrabold text-[11px] rounded-xl border border-slate-200 transition-all flex items-center gap-1.5 cursor-pointer shadow-sm">
+                                  {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />} Ký Nghiệm thu (NT1)
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="flex flex-row items-center justify-between gap-3 w-full opacity-60">
+                                <div className="flex items-center gap-2">
+                                  <FileText className="w-4 h-4 text-slate-400 shrink-0" />
+                                  <div className="text-left">
+                                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block leading-none">Chữ ký Bên Giao</span>
+                                    <span className="text-[9px] text-slate-450">Chưa ký trả</span>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Bên Nhận (Phòng ban nhận lại) */}
+                        <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm flex flex-col justify-between gap-4">
+                          <div>
+                            <label className="block text-[10px] font-black text-[#004c91] uppercase tracking-wider mb-2">Ghi chú Nghiệm thu (Bên Nhận)</label>
+                            <div className="w-full text-xs p-3 border border-slate-200 rounded-xl bg-slate-50 min-h-[64px] text-slate-400 italic">
+                              Chờ phòng ban nhận xét tình trạng tài sản và xác nhận...
+                            </div>
+                          </div>
+                          <div className={`border-2 rounded-xl p-3 relative ${nt2 ? 'border-emerald-500 bg-emerald-50/20' : 'border-dashed border-slate-250 bg-slate-50'}`}>
+                            {nt2 ? (
+                              <div className="flex items-center gap-2.5">
+                                <div className="w-8 h-8 rounded-full bg-emerald-50 text-emerald-700 flex items-center justify-center font-bold text-xs shrink-0 shadow-sm border border-emerald-100">✓</div>
+                                <div>
+                                  <span className="text-[9px] font-black uppercase text-emerald-800 block leading-none mb-0.5">ĐÃ KÝ DUYỆT NGHIỆM THU</span>
+                                  <p className="text-[11px] font-extrabold text-slate-800 leading-snug truncate">{nt2}</p>
+                                  <p className="text-[9px] text-slate-500">{fmtDateTime(r?.providerSignedAt)}</p>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="flex flex-row items-center justify-between gap-3 w-full opacity-60">
+                                <div className="flex items-center gap-2">
+                                  <FileText className="w-4 h-4 text-slate-400 shrink-0" />
+                                  <div className="text-left">
+                                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block leading-none">Chữ ký Bên Nhận</span>
+                                    <span className="text-[9px] text-slate-450">Chờ PB nghiệm thu lại</span>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+
+            {/* Footer controls inside modal */}
+            <div className="bg-slate-50 px-6 py-4 flex flex-col sm:flex-row justify-between items-center border-t border-slate-200 gap-4 shrink-0 rounded-b-2xl">
+              <span className="text-[11px] text-slate-500 font-medium italic">
+                {err ? <span className="text-red-500 flex items-center gap-1"><AlertCircle className="w-4 h-4"/> {err}</span> : 'Vui lòng kiểm tra kỹ hiện trạng trước khi ký xác nhận.'}
+              </span>
+              <button onClick={closeSignModal} className="px-6 py-2.5 bg-[#004c91] text-white hover:bg-[#003b70] text-[12px] font-bold rounded-xl transition-colors shadow-sm w-full sm:w-auto outline-none">
+                Đóng biên bản
               </button>
             </div>
           </div>
