@@ -15,18 +15,19 @@ function fmtDateTime(value?: string | null): string {
 }
 
 interface TaskHandoverModalProps {
-  isOpen: boolean;
-  onClose: () => void;
+  isOpen?: boolean;
+  onClose?: () => void;
   detailData: any; // RequestDetailDto
-  onSuccess: () => void;
+  onSuccess?: () => void;
+  inline?: boolean;
 }
 
-export function TaskHandoverModal({ isOpen, onClose, detailData, onSuccess }: TaskHandoverModalProps) {
+export function TaskHandoverModal({ isOpen, onClose, detailData, onSuccess, inline }: TaskHandoverModalProps) {
   const [busy, setBusy] = useState(false);
   const [borrowNote, setBorrowNote] = useState('');
   const [returnNote, setReturnNote] = useState('');
 
-  if (!isOpen || !detailData) return null;
+  if ((!isOpen && !inline) || !detailData) return null;
 
   const bg1 = detailData.BorrowProviderSignature?.Name ? `${detailData.BorrowProviderSignature.Name}` : null;
   const bg2 = detailData.BorrowBorrowerSignature?.Name ? `${detailData.BorrowBorrowerSignature.Name}` : null;
@@ -59,7 +60,7 @@ export function TaskHandoverModal({ isOpen, onClose, detailData, onSuccess }: Ta
       const note = type === 'BORROW' ? borrowNote : returnNote;
       await departmentReceptionTasksApi.signHandover(detailData.LogisticsItemId, type, 'PROVIDER', note.trim() || undefined);
       toast.success(`Đã ký ${type === 'BORROW' ? 'bàn giao' : 'nhận lại'}`);
-      onSuccess();
+      onSuccess?.();
     } catch (e: any) {
       toast.error(e.response?.data?.message || 'Không thể ký biên bản. Vui lòng thử lại.');
     } finally {
@@ -67,7 +68,7 @@ export function TaskHandoverModal({ isOpen, onClose, detailData, onSuccess }: Ta
     }
   };
 
-  return createPortal(
+  const content = (
     <>
       <style type="text/css" media="print">
         {`
@@ -88,32 +89,43 @@ export function TaskHandoverModal({ isOpen, onClose, detailData, onSuccess }: Ta
           }
         `}
       </style>
-      <div id="task-handover-modal" className="fixed inset-0 z-[80] flex items-center justify-center p-4 print:static print:inset-auto print:p-0">
-        <div className="absolute inset-0 bg-black/60 backdrop-blur-sm print:hidden" onClick={onClose} />
-        <div className="relative w-full max-w-4xl max-h-[90vh] flex flex-col rounded-2xl bg-white shadow-2xl overflow-hidden font-sans border border-slate-200 print:max-w-none print:max-h-none print:shadow-none print:border-none print:rounded-none">
-          {/* Modal header */}
-          <div className="bg-[#f37021] text-white px-6 py-4 flex items-center justify-between shrink-0 print:hidden">
-            <h3 className="font-bold text-sm uppercase tracking-wide flex items-center gap-2">
-              <FileText className="w-5 h-5 opacity-80" />
-              BIÊN BẢN BÀN GIAO VÀ NGHIỆM THU
-            </h3>
-            <div className="flex items-center gap-4">
-              <button 
-                type="button" 
-                onClick={() => window.print()}
-                className="flex items-center gap-1.5 text-xs font-bold bg-white/20 hover:bg-white/30 px-3 py-1.5 rounded-lg transition-colors outline-none"
-              >
-                <Download className="w-4 h-4" /> Tải PDF
-              </button>
-              <button type="button" onClick={onClose} disabled={busy}
-                className="text-white/70 hover:text-white outline-none transition-colors">
-                <X className="w-5 h-5" />
-              </button>
+      <div id="task-handover-modal" className={inline ? "bg-white rounded-2xl p-6 md:p-10 font-sans w-full space-y-6 relative overflow-hidden print:max-w-none mt-6 border border-slate-200" : "fixed inset-0 z-[80] flex items-center justify-center p-4 print:static print:inset-auto print:p-0"}>
+        {!inline && <div className="absolute inset-0 bg-black/60 backdrop-blur-sm print:hidden" onClick={onClose} />}
+        <div className={inline ? "w-full" : "relative w-full max-w-4xl max-h-[90vh] flex flex-col rounded-2xl bg-white shadow-2xl overflow-hidden font-sans border border-slate-200 print:max-w-none print:max-h-none print:shadow-none print:border-none print:rounded-none"}>
+          
+          {/* Header/Download Button */}
+          {inline ? (
+            <button 
+              type="button"
+              onClick={() => window.print()}
+              className="absolute top-6 right-6 z-20 flex items-center gap-1.5 text-xs font-bold text-[#f37021] bg-orange-50 hover:bg-orange-100 px-3 py-1.5 rounded-lg transition-colors outline-none print:hidden"
+            >
+              <Download className="w-4 h-4" /> Tải PDF
+            </button>
+          ) : (
+            <div className="bg-[#f37021] text-white px-6 py-4 flex items-center justify-between shrink-0 print:hidden">
+              <h3 className="font-bold text-sm uppercase tracking-wide flex items-center gap-2">
+                <FileText className="w-5 h-5 opacity-80" />
+                BIÊN BẢN BÀN GIAO VÀ NGHIỆM THU
+              </h3>
+              <div className="flex items-center gap-4">
+                <button 
+                  type="button" 
+                  onClick={() => window.print()}
+                  className="flex items-center gap-1.5 text-xs font-bold bg-white/20 hover:bg-white/30 px-3 py-1.5 rounded-lg transition-colors outline-none"
+                >
+                  <Download className="w-4 h-4" /> Tải PDF
+                </button>
+                <button type="button" onClick={onClose} disabled={busy}
+                  className="text-white/70 hover:text-white outline-none transition-colors">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Modal body (scrollable) */}
-          <div className="p-6 md:p-12 overflow-y-auto bg-white flex-1 text-slate-900 shadow-[inset_0_0_20px_rgba(0,0,0,0.02)] print:overflow-visible print:shadow-none">
+          <div className={inline ? "bg-white flex-1 text-slate-900" : "p-6 md:p-12 overflow-y-auto bg-white flex-1 text-slate-900 shadow-[inset_0_0_20px_rgba(0,0,0,0.02)] print:overflow-visible print:shadow-none"}>
             
             <div className="text-center space-y-1 mb-8">
               <h4 className="text-xl sm:text-2xl font-bold uppercase tracking-wide">
@@ -358,4 +370,7 @@ export function TaskHandoverModal({ isOpen, onClose, detailData, onSuccess }: Ta
       </div>
     </>
   );
+
+  if (inline) return content;
+  return createPortal(content, document.body);
 }
