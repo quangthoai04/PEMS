@@ -49,7 +49,6 @@ pnpm-debug.log*
 .env
 .env.*
 !.env.example
-appsettings.Development.json
 appsettings.Local.json
 *.Secrets.json
 [Ee]nv.json
@@ -73,4 +72,4 @@ Desktop.ini
 
 ## macOS
 .DS_Store
-._*
+._*
