@@ -24,6 +24,18 @@ function cleanParams(params: Record<string, unknown>): Record<string, unknown> {
   );
 }
 
+/** Builds the shared multipart body for create/update location (cover images are optional per mode). */
+function buildLocationForm(input: CreateGalleryLocationInput): FormData {
+  const form = new FormData();
+  form.append('mode', input.mode);
+  if (input.areaId != null) form.append('areaId', String(input.areaId));
+  if (input.newAreaName) form.append('newAreaName', input.newAreaName);
+  form.append('locationName', input.locationName);
+  if (input.areaCoverImage) form.append('areaCoverImage', input.areaCoverImage);
+  if (input.locationCoverImage) form.append('locationCoverImage', input.locationCoverImage);
+  return form;
+}
+
 export const galleryManagementApi = {
   /** UC-GAL-01 / UC-GAL-02 — paged gallery list for the caller's campus. */
   async getGalleryItems(params: GalleryListQueryParams): Promise<PaginatedResult<GalleryListItem>> {
@@ -54,6 +66,7 @@ export const galleryManagementApi = {
     form.append('title', input.title);
     form.append('description', input.description);
     form.append('locationId', String(input.locationId));
+    form.append('itemType', input.itemType);
     form.append('status', input.status);
     input.files.forEach((file) => form.append('files', file));
 
@@ -70,6 +83,7 @@ export const galleryManagementApi = {
     form.append('title', input.title);
     form.append('description', input.description);
     form.append('locationId', String(input.locationId));
+    form.append('itemType', input.itemType);
     input.keepMediaIds.forEach((id) => form.append('keepMediaIds', String(id)));
     if (input.primaryMediaId != null) form.append('primaryMediaId', String(input.primaryMediaId));
     input.newFiles.forEach((file) => form.append('newFiles', file));
@@ -97,15 +111,22 @@ export const galleryManagementApi = {
     return data;
   },
 
-  /** UC-LOC-04/05 — add a location (into an existing area or a brand-new one). */
+  /** UC-LOC-04/05 — add a location (into an existing area or a brand-new one) with cover images (multipart). */
   async createLocation(input: CreateGalleryLocationInput): Promise<GalleryLocationDetail> {
-    const { data } = await httpClient.post<GalleryLocationDetail>(API_ENDPOINTS.gallery.locationCreate, input);
+    const form = buildLocationForm(input);
+    const { data } = await httpClient.post<GalleryLocationDetail>(API_ENDPOINTS.gallery.locationCreate, form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
     return data;
   },
 
-  /** UC-LOC-06/07 — rename a location and/or move it to another area. */
+  /** UC-LOC-06/07 — rename a location and/or move it to another area, optionally replacing cover images (multipart). */
   async updateLocation(input: UpdateGalleryLocationInput): Promise<GalleryLocationDetail> {
-    const { data } = await httpClient.post<GalleryLocationDetail>(API_ENDPOINTS.gallery.locationUpdate, input);
+    const form = buildLocationForm(input);
+    form.append('locationId', String(input.locationId));
+    const { data } = await httpClient.post<GalleryLocationDetail>(API_ENDPOINTS.gallery.locationUpdate, form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
     return data;
   },
 

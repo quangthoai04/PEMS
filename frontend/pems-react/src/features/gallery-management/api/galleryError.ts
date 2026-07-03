@@ -37,6 +37,13 @@ export const GALLERY_ERROR_MESSAGES: Record<string, string> = {
   GALLERY_INVALID_MODE: 'Chế độ thao tác không hợp lệ.',
   GALLERY_ITEM_PUBLISH_BLOCKED_LOCATION_INACTIVE: 'Không thể hiển thị bài đăng vì vị trí đang ngừng hoạt động.',
   GALLERY_ITEM_PUBLISH_BLOCKED_AREA_INACTIVE: 'Không thể hiển thị bài đăng vì khu vực đang ngừng hoạt động.',
+  // Area/location cover image + gallery item type.
+  GALLERY_AREA_COVER_REQUIRED: 'Vui lòng upload ảnh đại diện khu vực.',
+  GALLERY_LOCATION_COVER_REQUIRED: 'Vui lòng upload ảnh đại diện vị trí.',
+  GALLERY_AREA_COVER_INVALID: 'Ảnh đại diện khu vực không đúng định dạng.',
+  GALLERY_LOCATION_COVER_INVALID: 'Ảnh đại diện vị trí không đúng định dạng.',
+  GALLERY_ITEM_TYPE_REQUIRED: 'Vui lòng chọn loại nội dung.',
+  GALLERY_ITEM_TYPE_INVALID: 'Vui lòng chọn Media hoặc Đoàn khách.',
   // Shared file-upload foundation codes.
   FILE_EMPTY: 'Tệp rỗng hoặc không hợp lệ.',
   FILE_TOO_LARGE: 'Tệp vượt quá kích thước cho phép.',

@@ -158,6 +158,15 @@ export function GalleryDetailModal({
                 <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-bold bg-blue-100 text-[#004c91] border border-blue-200">
                   {detail.campus.campusName}
                 </span>
+                <span
+                  className={`inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-bold ${
+                    detail.itemType === 'VISIT_DELEGATION'
+                      ? 'bg-orange-100 text-orange-700 border border-orange-200'
+                      : 'bg-slate-100 text-slate-700 border border-slate-200'
+                  }`}
+                >
+                  {detail.itemTypeLabel || (detail.itemType === 'VISIT_DELEGATION' ? 'Đoàn khách' : 'Media')}
+                </span>
               </div>
 
               <h3 className="text-2xl font-black text-gray-900 mb-2 leading-tight">{detail.title}</h3>

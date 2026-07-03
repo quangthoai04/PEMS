@@ -10,6 +10,7 @@ import { getGalleryErrorMessage } from '../../../features/gallery-management/api
 import type {
   GalleryAreaOption,
   GalleryItemDetail,
+  GalleryItemType,
 } from '../../../features/gallery-management/types/galleryManagement.types';
 
 type Mode = 'create' | 'edit';
@@ -107,6 +108,7 @@ export function GalleryUpsertModal({
 
   const [title, setTitle] = useState(existing?.title ?? '');
   const [description, setDescription] = useState(existing?.description ?? '');
+  const [itemType, setItemType] = useState<GalleryItemType>(existing?.itemType ?? 'MEDIA');
   const [areaId, setAreaId] = useState<number | ''>(existing?.area.areaId ?? '');
   const [locationId, setLocationId] = useState<number | ''>(existing?.location.locationId ?? '');
   const [newFiles, setNewFiles] = useState<File[]>([]);
@@ -193,6 +195,7 @@ export function GalleryUpsertModal({
           title: title.trim(),
           description: description.trim(),
           locationId: Number(locationId),
+          itemType,
           status: 'PUBLISHED',
           files: newFiles,
         });
@@ -203,6 +206,7 @@ export function GalleryUpsertModal({
           title: title.trim(),
           description: description.trim(),
           locationId: Number(locationId),
+          itemType,
           keepMediaIds: keptMedia.filter((m) => m.kept).map((m) => m.mediaId),
           newFiles,
           primaryMediaId: primaryMediaId ?? undefined,
@@ -338,6 +342,18 @@ export function GalleryUpsertModal({
                 >
                   <option value="">-- Chọn vị trí --</option>
                   {locations.map((l) => <option key={l.locationId} value={l.locationId}>{l.locationName}</option>)}
+                </select>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Loại nội dung <span className="text-red-500">*</span></label>
+                <select
+                  value={itemType}
+                  onChange={(e) => setItemType(e.target.value as GalleryItemType)}
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none text-sm font-medium transition-all appearance-none bg-slate-50 focus:bg-white"
+                >
+                  <option value="MEDIA">Media</option>
+                  <option value="VISIT_DELEGATION">Đoàn khách</option>
                 </select>
               </div>
 

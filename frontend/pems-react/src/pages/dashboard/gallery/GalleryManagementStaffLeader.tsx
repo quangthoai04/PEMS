@@ -22,6 +22,7 @@ import { GalleryDetailModal } from './GalleryDetailModal';
 import { GalleryUpsertModal } from './GalleryUpsertModal';
 import type {
   GalleryItemDetail,
+  GalleryItemType,
   GalleryListItem,
   GalleryMediaKind,
   GalleryStatus,
@@ -96,6 +97,21 @@ function StatusBadge({ status }: { status: GalleryStatus }) {
   );
 }
 
+function ItemTypeBadge({ itemType, label }: { itemType: GalleryItemType; label?: string }) {
+  const text = label || (itemType === 'VISIT_DELEGATION' ? 'Đoàn khách' : 'Media');
+  return (
+    <span
+      className={`inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-bold ${
+        itemType === 'VISIT_DELEGATION'
+          ? 'bg-orange-100 text-orange-700 border border-orange-200'
+          : 'bg-blue-100 text-[#004c91] border border-blue-200'
+      }`}
+    >
+      {text}
+    </span>
+  );
+}
+
 function KindBadge({ kind }: { kind: GalleryMediaKind }) {
   const icon = kind === 'VIDEO' ? <Film className="w-4 h-4 text-blue-500" /> : <ImageIcon className="w-4 h-4 text-orange-500" />;
   return (
@@ -119,6 +135,7 @@ export function GalleryManagementStaffLeader() {
   const [areaId, setAreaId] = useState<number | ''>('');
   const [locationId, setLocationId] = useState<number | ''>('');
   const [mediaKind, setMediaKind] = useState<GalleryMediaKind | ''>('');
+  const [itemType, setItemType] = useState<GalleryItemType | ''>('');
   const [status, setStatus] = useState<GalleryStatus | ''>('');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   const [page, setPage] = useState(1);
@@ -143,17 +160,18 @@ export function GalleryManagementStaffLeader() {
       areaId: areaId === '' ? undefined : areaId,
       locationId: locationId === '' ? undefined : locationId,
       mediaKind: mediaKind || undefined,
+      itemType: itemType || undefined,
       status: status || undefined,
       sortBy: 'createdAt',
       sortDirection,
     }),
-    [page, pageSize, keyword, areaId, locationId, mediaKind, status, sortDirection],
+    [page, pageSize, keyword, areaId, locationId, mediaKind, itemType, status, sortDirection],
   );
 
   const { data, items, loading, error, refetch } = useGalleryList(params);
 
   const totalPages = data?.totalPages ?? 0;
-  const hasAnyFilter = !!(keyword || areaId !== '' || locationId !== '' || mediaKind || status);
+  const hasAnyFilter = !!(keyword || areaId !== '' || locationId !== '' || mediaKind || itemType || status);
 
   // Locations available for the location filter (scoped to the selected area when one is chosen).
   const filterLocations = useMemo(() => {
@@ -262,7 +280,7 @@ export function GalleryManagementStaffLeader() {
             />
           </div>
 
-          <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 w-full">
+          <div className="grid grid-cols-2 xl:grid-cols-5 gap-3 w-full">
             <ScrollableDropdown
               value={areaId === '' ? '' : String(areaId)}
               options={[
@@ -302,6 +320,18 @@ export function GalleryManagementStaffLeader() {
             </FilterSelect>
 
             <FilterSelect
+              value={itemType}
+              onChange={(v) => {
+                setItemType(v as GalleryItemType | '');
+                setPage(1);
+              }}
+            >
+              <option value="" className="text-slate-800">Tất cả nội dung</option>
+              <option value="MEDIA" className="text-slate-800">Media</option>
+              <option value="VISIT_DELEGATION" className="text-slate-800">Đoàn khách</option>
+            </FilterSelect>
+
+            <FilterSelect
               value={status}
               onChange={(v) => {
                 setStatus(v as GalleryStatus | '');
@@ -326,6 +356,7 @@ export function GalleryManagementStaffLeader() {
                 <th className="p-4 text-[11px] font-black uppercase tracking-widest whitespace-nowrap text-center">STT</th>
                 <th className="p-4 text-[11px] font-black uppercase tracking-widest whitespace-nowrap">Khu vực</th>
                 <th className="p-4 text-[11px] font-black uppercase tracking-widest whitespace-nowrap">Vị trí cụ thể</th>
+                <th className="p-4 text-[11px] font-black text-center uppercase tracking-widest whitespace-nowrap">Loại nội dung</th>
                 <th className="p-4 text-[11px] font-black uppercase tracking-widest whitespace-nowrap min-w-[220px]">Tiêu đề</th>
                 <th className="p-4 text-[11px] font-black text-center uppercase tracking-widest whitespace-nowrap">Định dạng</th>
                 <th className="p-4 text-[11px] font-black text-center uppercase tracking-widest whitespace-nowrap">Trạng thái</th>
@@ -347,14 +378,14 @@ export function GalleryManagementStaffLeader() {
             <tbody className="divide-y divide-slate-100">
               {loading ? (
                 <tr>
-                  <td colSpan={8} className="px-6 py-16 text-center text-slate-500">
+                  <td colSpan={9} className="px-6 py-16 text-center text-slate-500">
                     <Loader2 className="w-8 h-8 text-[#004c91] mx-auto mb-3 animate-spin" />
                     <p className="font-medium text-slate-600">Đang tải dữ liệu...</p>
                   </td>
                 </tr>
               ) : error ? (
                 <tr>
-                  <td colSpan={8} className="px-6 py-16 text-center text-red-500">
+                  <td colSpan={9} className="px-6 py-16 text-center text-red-500">
                     <AlertCircle className="w-10 h-10 mx-auto mb-3" />
                     <p className="font-semibold mb-3">{error}</p>
                     <button onClick={refetch} className="px-4 py-2 rounded-lg bg-[#004c91] text-white text-sm font-bold">Thử lại</button>
@@ -368,6 +399,7 @@ export function GalleryManagementStaffLeader() {
                     </td>
                     <td className="p-4 font-semibold text-slate-800 whitespace-nowrap">{item.areaName}</td>
                     <td className="p-4 font-medium text-slate-600 whitespace-nowrap">{item.locationName}</td>
+                    <td className="p-4 text-center"><ItemTypeBadge itemType={item.itemType} label={item.itemTypeLabel} /></td>
                     <td className="p-4">
                       <div className="text-sm font-semibold text-[#004c91] group-hover:text-blue-800 transition-colors line-clamp-2 max-w-[260px]">
                         {item.title}
@@ -399,7 +431,7 @@ export function GalleryManagementStaffLeader() {
                 ))
               ) : (
                 <tr className="bg-slate-50/50">
-                  <td colSpan={8} className="px-6 py-16 text-center text-slate-500">
+                  <td colSpan={9} className="px-6 py-16 text-center text-slate-500">
                     <ImageIcon className="w-12 h-12 text-slate-300 mx-auto mb-3" />
                     <p className="font-medium text-slate-600 mb-1">
                       {hasAnyFilter ? 'Không tìm thấy media phù hợp.' : 'Chưa có media nào trong cơ sở này.'}

@@ -1691,6 +1691,7 @@ CREATE TABLE gallery_areas (
 
   area_name VARCHAR(150) NOT NULL,
   area_key VARCHAR(180) NOT NULL,
+  cover_file_id BIGINT UNSIGNED NULL COMMENT 'Ảnh đại diện khu vực/tòa/khu lớn',
 
   status ENUM('ACTIVE','INACTIVE') NOT NULL DEFAULT 'ACTIVE',
   display_order INT UNSIGNED NOT NULL DEFAULT 0,
@@ -1704,9 +1705,13 @@ CREATE TABLE gallery_areas (
   UNIQUE KEY uq_gallery_areas_campus_key (campus_id, area_key),
   KEY idx_gallery_areas_campus_status (campus_id, status),
   KEY idx_gallery_areas_order (campus_id, display_order),
+  KEY idx_gallery_areas_cover_file (cover_file_id),
 
   CONSTRAINT fk_gallery_areas_campus
     FOREIGN KEY (campus_id) REFERENCES campuses(campus_id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  CONSTRAINT fk_gallery_areas_cover_file
+    FOREIGN KEY (cover_file_id) REFERENCES files(file_id)
     ON UPDATE CASCADE ON DELETE RESTRICT,
   CONSTRAINT fk_gallery_areas_created_by
     FOREIGN KEY (created_by) REFERENCES users(user_id)
@@ -1723,6 +1728,7 @@ CREATE TABLE gallery_locations (
 
   location_name VARCHAR(150) NOT NULL,
   location_key VARCHAR(180) NOT NULL,
+  cover_file_id BIGINT UNSIGNED NULL COMMENT 'Ảnh đại diện vị trí cụ thể',
 
   status ENUM('ACTIVE','INACTIVE') NOT NULL DEFAULT 'ACTIVE',
   display_order INT UNSIGNED NOT NULL DEFAULT 0,
@@ -1736,9 +1742,13 @@ CREATE TABLE gallery_locations (
   UNIQUE KEY uq_gallery_locations_area_key (area_id, location_key),
   KEY idx_gallery_locations_area_status (area_id, status),
   KEY idx_gallery_locations_order (area_id, display_order),
+  KEY idx_gallery_locations_cover_file (cover_file_id),
 
   CONSTRAINT fk_gallery_locations_area
     FOREIGN KEY (area_id) REFERENCES gallery_areas(area_id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  CONSTRAINT fk_gallery_locations_cover_file
+    FOREIGN KEY (cover_file_id) REFERENCES files(file_id)
     ON UPDATE CASCADE ON DELETE RESTRICT,
   CONSTRAINT fk_gallery_locations_created_by
     FOREIGN KEY (created_by) REFERENCES users(user_id)
@@ -1755,6 +1765,8 @@ CREATE TABLE gallery_items (
 
   title VARCHAR(255) NOT NULL,
   description TEXT NOT NULL,
+  item_type ENUM('MEDIA','VISIT_DELEGATION') NOT NULL DEFAULT 'MEDIA'
+    COMMENT 'MEDIA=ảnh/video giới thiệu vị trí; VISIT_DELEGATION=ảnh/video đoàn khách',
 
   media_kind ENUM('IMAGE','VIDEO','MIXED') NOT NULL DEFAULT 'IMAGE',
   status ENUM('PUBLISHED','HIDDEN') NOT NULL DEFAULT 'PUBLISHED',
@@ -1770,6 +1782,7 @@ CREATE TABLE gallery_items (
   PRIMARY KEY (gallery_item_id),
   -- A location can have 0, 1 or many gallery items (no unique constraint on location_id).
   KEY idx_gallery_items_location_status (location_id, status, deleted_at),
+  KEY idx_gallery_items_item_type (item_type, status, deleted_at),
   KEY idx_gallery_items_media_kind (media_kind),
   KEY idx_gallery_items_created_at (created_at),
   FULLTEXT KEY ft_gallery_items_search (title, description),

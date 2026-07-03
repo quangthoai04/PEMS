@@ -6,6 +6,8 @@
 export type GalleryStatus = 'PUBLISHED' | 'HIDDEN';
 export type GalleryMediaKind = 'IMAGE' | 'VIDEO' | 'MIXED';
 export type GalleryMediaType = 'IMAGE' | 'VIDEO';
+/** Content type of a gallery item — distinct from media kind. MEDIA = giới thiệu vị trí; VISIT_DELEGATION = đoàn khách. */
+export type GalleryItemType = 'MEDIA' | 'VISIT_DELEGATION';
 
 /** Legacy alias kept so the (empty) scaffold adapter still compiles. */
 export type GalleryManagement = Record<string, never>;
@@ -36,6 +38,8 @@ export interface GalleryListItem {
   locationName: string;
   title: string;
   description: string;
+  itemType: GalleryItemType;
+  itemTypeLabel: string;
   mediaKind: GalleryMediaKind;
   status: GalleryStatus;
   createdAt: string;
@@ -59,6 +63,8 @@ export interface GalleryItemDetail {
   galleryItemId: number;
   title: string;
   description: string;
+  itemType: GalleryItemType;
+  itemTypeLabel: string;
   status: GalleryStatus;
   mediaKind: GalleryMediaKind;
   area: { areaId: number; areaName: string };
@@ -82,6 +88,8 @@ export interface GalleryAreaOption {
   areaId: number;
   areaName: string;
   status: 'ACTIVE' | 'INACTIVE';
+  coverFileId?: number | null;
+  coverUrl?: string | null;
   locations: GalleryLocationOption[];
 }
 
@@ -96,6 +104,7 @@ export interface GalleryListQueryParams {
   areaId?: number;
   locationId?: number;
   mediaKind?: GalleryMediaKind | '';
+  itemType?: GalleryItemType | '';
   status?: GalleryStatus | '';
   sortBy?: string;
   sortDirection?: 'asc' | 'desc';
@@ -105,6 +114,7 @@ export interface CreateGalleryItemInput {
   title: string;
   description: string;
   locationId: number;
+  itemType: GalleryItemType;
   status: GalleryStatus;
   files: File[];
 }
@@ -114,6 +124,7 @@ export interface UpdateGalleryItemInput {
   title: string;
   description: string;
   locationId: number;
+  itemType: GalleryItemType;
   keepMediaIds: number[];
   newFiles: File[];
   primaryMediaId?: number | null;
@@ -133,7 +144,11 @@ export interface GalleryLocationListItem {
   locationId: number;
   areaId: number;
   areaName: string;
+  areaCoverFileId?: number | null;
+  areaCoverUrl?: string | null;
   locationName: string;
+  locationCoverFileId?: number | null;
+  locationCoverUrl?: string | null;
   status: GalleryLocationStatus;
   createdAt: string;
   updatedAt?: string | null;
@@ -145,6 +160,8 @@ export interface GalleryLocationListItem {
 }
 
 export interface GalleryLocationDetail extends GalleryLocationListItem {
+  mediaCount?: number;
+  visitDelegationCount?: number;
   message?: string | null;
 }
 
@@ -163,6 +180,10 @@ export interface CreateGalleryLocationInput {
   areaId?: number | null;
   newAreaName?: string | null;
   locationName: string;
+  /** Required when mode = NEW_AREA. */
+  areaCoverImage?: File | null;
+  /** Required on create; optional on edit (kept when omitted). */
+  locationCoverImage?: File | null;
 }
 
 export interface UpdateGalleryLocationInput extends CreateGalleryLocationInput {

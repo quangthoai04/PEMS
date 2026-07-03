@@ -9,9 +9,11 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Plus, Edit, Search, X, ChevronRight, ChevronLeft, ChevronDown, ChevronUp, ArrowLeft,
-  Loader2, AlertCircle, CheckCircle2, MapPin,
+  Loader2, AlertCircle, CheckCircle2, MapPin, Upload, ImageOff,
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
+import { useAuthenticatedMedia } from '../../../shared/hooks/useAuthenticatedImage';
+import { validateFile } from '../../../shared/utils/fileValidation';
 import { galleryManagementApi } from '../../../features/gallery-management/api/galleryManagementApi';
 import { getGalleryErrorMessage } from '../../../features/gallery-management/api/galleryError';
 import {
@@ -342,7 +344,7 @@ export function LocationManagementStaffLeader() {
           <LocationUpsertModal
             mode={modal.mode}
             target={modal.target}
-            activeAreas={activeAreas.map((a) => ({ areaId: a.areaId, areaName: a.areaName }))}
+            activeAreas={activeAreas.map((a) => ({ areaId: a.areaId, areaName: a.areaName, coverUrl: a.coverUrl }))}
             areasLoading={optionsLoading}
             onClose={() => setModal(null)}
             onSaved={onSaved}
@@ -372,6 +374,56 @@ export function LocationManagementStaffLeader() {
 interface AreaOption {
   areaId: number;
   areaName: string;
+  coverUrl?: string | null;
+}
+
+/** Single mandatory cover-image picker: preview of the picked file, or the existing (authenticated) cover. */
+function CoverImageField({
+  label,
+  required,
+  file,
+  onPick,
+  existingUrl,
+  hint,
+}: {
+  label: string;
+  required?: boolean;
+  file: File | null;
+  onPick: (f: File | null) => void;
+  existingUrl?: string | null;
+  hint?: string;
+}) {
+  const preview = useMemo(() => (file ? URL.createObjectURL(file) : null), [file]);
+  useEffect(() => () => { if (preview) URL.revokeObjectURL(preview); }, [preview]);
+  // Only fetch the stored cover when no new file has been picked.
+  const existing = useAuthenticatedMedia(!file && existingUrl ? existingUrl : null);
+  const shown = preview ?? existing.url;
+
+  return (
+    <div className="space-y-1.5">
+      <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">
+        {label} {required && <span className="text-red-500">*</span>}
+      </label>
+      <div className="flex items-center gap-3">
+        <div className="w-20 h-20 rounded-xl overflow-hidden bg-slate-100 border border-slate-200 flex items-center justify-center shrink-0">
+          {shown
+            ? <img src={shown} className="w-full h-full object-cover" alt="" />
+            : <ImageOff className="w-5 h-5 text-slate-300" />}
+        </div>
+        <label className="flex-1 cursor-pointer border-2 border-dashed border-[#004c91]/30 rounded-xl px-4 py-3 flex items-center gap-2 text-sm font-bold text-[#004c91] hover:bg-blue-50/50 transition-colors">
+          <Upload className="w-4 h-4" />
+          {file ? 'Đổi ảnh' : 'Chọn 1 ảnh'}
+          <input
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            className="hidden"
+            onChange={(e) => { onPick(e.target.files?.[0] ?? null); e.target.value = ''; }}
+          />
+        </label>
+      </div>
+      <p className="text-[11px] text-slate-400">{hint ?? 'Chỉ upload 1 ảnh (JPG/PNG/WEBP ≤5MB).'}</p>
+    </div>
+  );
 }
 
 /** Create/edit "khu vực" modal — radio between an existing area and a brand-new one (UC §28.4/28.5). */
@@ -402,6 +454,8 @@ function LocationUpsertModal({
   const [areaId, setAreaId] = useState<number | ''>(initialAreaId);
   const [newAreaName, setNewAreaName] = useState('');
   const [locationName, setLocationName] = useState(target?.locationName ?? '');
+  const [areaCover, setAreaCover] = useState<File | null>(null);
+  const [locationCover, setLocationCover] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -423,12 +477,35 @@ function LocationUpsertModal({
       onError('Vui lòng nhập tên khu vực/tòa mới.');
       return;
     }
+    // A new area always needs its own cover image (BR-AREA-COVER-01 / BR-LOCATION-COVER-05).
+    if (areaMode === 'NEW_AREA' && !areaCover) {
+      onError('Vui lòng upload ảnh đại diện khu vực.');
+      return;
+    }
+    // Location cover: mandatory on create, optional on edit (kept when omitted).
+    if (mode === 'create' && !locationCover) {
+      onError('Vui lòng upload ảnh đại diện vị trí.');
+      return;
+    }
+    // Client-side image sanity check (backend re-validates).
+    for (const [f, msg] of [
+      [areaCover, 'Ảnh đại diện khu vực không đúng định dạng.'],
+      [locationCover, 'Ảnh đại diện vị trí không đúng định dạng.'],
+    ] as [File | null, string][]) {
+      if (f && !validateFile(f, 'GALLERY_IMAGE').ok) {
+        onError(msg);
+        return;
+      }
+    }
 
     const payload = {
       mode: areaMode,
       areaId: areaMode === 'EXISTING_AREA' ? Number(areaId) : null,
       newAreaName: areaMode === 'NEW_AREA' ? newAreaName.trim() : null,
       locationName: trimmedLocation,
+      // NEW_AREA: required area cover. EXISTING_AREA + edit: optional replacement of that area's cover.
+      areaCoverImage: areaCover,
+      locationCoverImage: locationCover,
     };
 
     setSubmitting(true);
@@ -467,7 +544,7 @@ function LocationUpsertModal({
         <div className="p-6">
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-3">
-              <label className="text-xs font-bold text-slate-500 uppercase tracking-wide border-b border-slate-100 pb-2 block">Tên Khu Vực / Tòa</label>
+              <label className="text-xs font-bold text-slate-500 uppercase tracking-wide border-b border-slate-100 pb-2 block">Tên Khu Vực / Tòa <span className="text-red-500">*</span></label>
               <div className="flex items-center gap-4">
                 <label className="flex items-center gap-2 cursor-pointer text-sm font-medium text-slate-700">
                   <input
@@ -520,10 +597,28 @@ function LocationUpsertModal({
                   placeholder="Nhập tên khu vực mới (VD: TÒA DELTA)"
                 />
               )}
+
+              {areaMode === 'NEW_AREA' ? (
+                <CoverImageField
+                  label="Ảnh đại diện khu vực"
+                  required
+                  file={areaCover}
+                  onPick={setAreaCover}
+                  hint="Ảnh tổng quan tòa/khu — chỉ 1 ảnh (JPG/PNG/WEBP ≤5MB)."
+                />
+              ) : mode === 'edit' ? (
+                <CoverImageField
+                  label="Ảnh đại diện khu vực"
+                  file={areaCover}
+                  onPick={setAreaCover}
+                  existingUrl={activeAreas.find((a) => a.areaId === areaId)?.coverUrl}
+                  hint="Để trống nếu muốn giữ ảnh khu vực hiện tại. Chỉ 1 ảnh (JPG/PNG/WEBP ≤5MB)."
+                />
+              ) : null}
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Vị trí cụ thể</label>
+              <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Vị trí cụ thể <span className="text-red-500">*</span></label>
               <input
                 type="text"
                 value={locationName}
@@ -532,6 +627,17 @@ function LocationUpsertModal({
                 placeholder="VD: Sảnh chính"
               />
             </div>
+
+            <CoverImageField
+              label="Ảnh đại diện vị trí"
+              required={mode === 'create'}
+              file={locationCover}
+              onPick={setLocationCover}
+              existingUrl={target?.locationCoverUrl}
+              hint={mode === 'edit'
+                ? 'Để trống nếu muốn giữ ảnh hiện tại. Chỉ 1 ảnh (JPG/PNG/WEBP ≤5MB).'
+                : 'Ảnh mặt trước/không gian vị trí — chỉ 1 ảnh (JPG/PNG/WEBP ≤5MB).'}
+            />
 
             <div className="flex justify-end gap-3 pt-4 border-t border-slate-100 mt-4">
               <button type="button" onClick={onClose} className="px-5 py-2.5 rounded-xl text-sm font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 outline-none">
