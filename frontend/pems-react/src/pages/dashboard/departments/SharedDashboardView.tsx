@@ -2729,7 +2729,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
     
 
               {(activePopoverEvent.category === 'Lời mời tham gia' || activePopoverEvent.itemType === 'INVITATION') && (
-                <div className="bg-white rounded-2xl border border-slate-200/85 p-6 md:p-8 font-sans w-full max-w-4xl mx-auto space-y-6 relative overflow-visible">
+                <div className="bg-white rounded-2xl p-6 md:p-8 font-sans w-full space-y-6 relative overflow-visible">
                   
                   {/* BENTO GRID (Người gửi, Thời gian gửi, Đoàn khách, Thời gian diễn ra) */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -2964,7 +2964,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
               )}
 
               {(activePopoverEvent.category === 'Đơn yêu cầu mượn đồ' || activePopoverEvent.itemType === 'REQUEST') && (
-                <div className="bg-white rounded-2xl border border-slate-200/85 p-6 md:p-8 font-sans w-full max-w-4xl mx-auto space-y-6 relative overflow-visible">
+                <div className="bg-white rounded-2xl p-6 md:p-8 font-sans w-full space-y-6 relative overflow-visible">
                   
                   {/* BENTO GRID (Người gửi, Thời gian gửi, Đoàn khách, Thời gian sử dụng) */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -3488,7 +3488,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                     `}
                   </style>
                   {/* Safuri Event Layout */}
-                  <div id="safuri-handover-layout" className="bg-white rounded-2xl border border-slate-200/85 shadow-md p-6 md:p-10 font-sans max-w-4xl mx-auto space-y-6 relative overflow-hidden print:max-w-none">
+                  <div id="safuri-handover-layout" className="bg-white rounded-2xl p-6 md:p-10 font-sans w-full space-y-6 relative overflow-hidden print:max-w-none">
                     
                     <button 
                       type="button"
@@ -3833,7 +3833,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
               )}
 
               {activePopoverEvent.category === 'Lịch của tôi' && (
-                <div className="bg-white rounded-2xl border border-slate-200/85 p-6 md:p-8 font-sans w-full max-w-4xl mx-auto space-y-6 relative overflow-visible">
+                <div className="bg-white rounded-2xl p-6 md:p-8 font-sans w-full space-y-6 relative overflow-visible">
                   
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     

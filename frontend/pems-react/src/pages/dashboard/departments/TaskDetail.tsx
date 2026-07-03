@@ -166,7 +166,7 @@ export function TaskDetail() {
   if (!detailData) return <div className="p-8 text-center">Không tìm thấy chi tiết</div>;
 
   return (
-    <div className="p-4 sm:p-6 md:p-8 max-w-[95%] mx-auto pb-24 relative animate-in fade-in duration-500">
+    <div className="w-full pb-24 relative animate-in fade-in duration-500">
       {/* Breadcrumb */}
       <div className="mb-4 flex items-center text-sm font-medium text-gray-500">
         <button
@@ -226,7 +226,7 @@ export function TaskDetail() {
       </div>
 
       {/* Main Content */}
-      <div className="flex flex-col w-full max-w-4xl mx-auto gap-8">
+      <div className="flex flex-col w-full gap-8">
         
         {/* TOP COMPONENT: TASK INFORMATION */}
         <div className="bg-white rounded-[2rem] shadow-[0_8px_30px_-4px_rgba(0,0,0,0.05)] border border-gray-100 p-0 flex flex-col relative overflow-hidden group/card hover:shadow-[0_12px_40px_-4px_rgba(0,76,145,0.08)] transition-shadow duration-500">
@@ -487,7 +487,7 @@ export function TaskDetail() {
 
           <div className="flex-1 flex flex-col text-sm font-medium text-gray-700 p-8 pt-6">
             {/* Agreement Document Form */}
-            <div className="bg-white rounded-2xl border border-slate-200/85 shadow-md p-6 md:p-8 font-sans w-full max-w-4xl mx-auto space-y-6 relative overflow-hidden mb-8">
+            <div className="bg-white rounded-2xl border border-slate-200/85 shadow-md p-6 md:p-8 font-sans w-full space-y-6 relative overflow-hidden mb-8">
               {/* Draft decorative watermark stamp */}
               <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-slate-100/30 text-4xl sm:text-6xl font-sans font-black tracking-widest uppercase pointer-events-none select-none -rotate-12">
                 FPT UNIVERSITY

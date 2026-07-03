@@ -133,7 +133,7 @@ export function TaskInvitationDetail() {
   const isButtonsDisabled = taskActionStatus !== 'pending';
 
   return (
-    <div className="p-4 sm:p-6 md:p-8 max-w-[95%] mx-auto pb-24 relative animate-in fade-in duration-500">
+    <div className="w-full pb-24 relative animate-in fade-in duration-500">
       {/* Breadcrumb */}
       <div className="mb-4 flex items-center text-sm font-medium text-gray-500">
         <button
@@ -192,7 +192,7 @@ export function TaskInvitationDetail() {
       </div>
 
       {/* Main Content */}
-      <div className="grid grid-cols-1 lg:max-w-3xl mx-auto gap-8">
+      <div className="grid grid-cols-1 w-full gap-8">
 
         {/* LEFT COLUMN: TASK INFORMATION */}
         <div className="bg-white rounded-[2rem] shadow-[0_8px_30px_-4px_rgba(0,0,0,0.05)] border border-gray-100 p-0 flex flex-col relative overflow-hidden group/card hover:shadow-[0_12px_40px_-4px_rgba(0,76,145,0.08)] transition-shadow duration-500">

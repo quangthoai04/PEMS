@@ -29,7 +29,7 @@ export function DeptLeadVisitTasksPage() {
   const isDeptLeader = true;
 
   return (
-    <div className="w-full max-w-[1400px] mx-auto p-4 sm:p-6 lg:p-8 flex flex-col space-y-6 pb-12 overflow-x-hidden animate-in fade-in duration-300">
+    <div className="w-full flex flex-col space-y-6 pb-12 overflow-x-hidden animate-in fade-in duration-300">
       <div className="border-b border-gray-100 pb-4">
         <h1 className="text-3xl font-bold text-[#004c91]">Nhiệm vụ tiếp khách</h1>
         <p className="text-slate-500 mt-2">Theo dõi, phân công và cập nhật các nhiệm vụ phòng ban được mời hỗ trợ.</p>

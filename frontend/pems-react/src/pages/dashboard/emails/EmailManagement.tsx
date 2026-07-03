@@ -143,7 +143,7 @@ export function EmailManagement() {
   const currentItemsSent = sentData;
 
   return (
-    <div className="p-4 sm:p-6 md:p-8 max-w-[95%] mx-auto">
+    <div className="w-full">
       {toastMessage && (
         <div className={`fixed top-4 right-4 z-[120] px-6 py-3 rounded-lg shadow-lg text-white font-medium animate-in fade-in slide-in-from-top-2 ${
           toastMessage.type === 'success' ? 'bg-green-600' :
