@@ -913,7 +913,10 @@ export function VisitProcess() {
                               independently via "Lưu lịch trình" (does NOT change stage). */}
                           <div className="mb-2">
                             <h4 className="text-sm font-bold text-slate-800">Lịch trình hiện tại</h4>
-                            <p className="text-xs text-slate-500">Mỗi mục hiển thị đầy đủ ngày &amp; giờ; bạn có thể chỉnh sửa thủ công sau khi áp dụng mẫu.</p>
+                            <p className="text-xs text-slate-500">
+                              Sắp xếp các hoạt động theo thứ tự thời gian. Mỗi dòng gồm thời gian, nội dung, địa điểm và người phụ trách.
+                              {agendaItems.length > 0 && <span className="text-slate-400"> · {agendaItems.length} hoạt động</span>}
+                            </p>
                           </div>
                           <div className="space-y-3">
                             {agendaItems.length === 0 && (
@@ -921,84 +924,111 @@ export function VisitProcess() {
                                 Chưa có mục lịch trình nào.{canEditAgenda ? ' Bấm “Thêm mục” để tạo.' : ''}
                               </p>
                             )}
-                            {agendaItems.map((it, idx) => {
-                              // A previously-assigned responsible who is no longer a valid candidate
-                              // (e.g. later declined/removed) — keep them visible so the row doesn't
-                              // look unassigned; the host must re-pick before saving (validation guards it).
-                              const responsibleStale = it.responsibleUserId != null
-                                && !agendaResponsibleCandidates.some((c) => c.userId === it.responsibleUserId);
-                              return (
-                              <div key={idx} className="rounded-xl border border-gray-200 bg-white p-3 space-y-3">
-                                {/* Row 1 — time / content / location / delete */}
-                                <div className="flex flex-col md:flex-row md:items-end gap-3">
-                                  <div className="flex flex-col sm:flex-row sm:items-end gap-3 w-full md:w-auto shrink-0">
-                                    <div className="flex flex-col">
-                                      <label className="text-[10px] uppercase font-bold text-gray-500 mb-1 ml-1">Bắt đầu</label>
-                                      {/* datetime-local keeps date + time together so multi-day agendas stay correct. */}
-                                      <input type="datetime-local" value={it.startLocal} disabled={!canEditAgenda}
-                                        onChange={(e) => setAgendaItems((prev) => prev.map((p, i) => i === idx ? { ...p, startLocal: e.target.value } : p))}
-                                        className="w-full sm:w-[200px] px-2 py-2 rounded-xl border border-gray-200 text-sm bg-white disabled:bg-gray-50/50 disabled:cursor-not-allowed outline-none focus:border-[#004c91]" />
-                                    </div>
-                                    <span className="hidden sm:block text-gray-400 font-bold mb-2.5">-</span>
-                                    <div className="flex flex-col">
-                                      <label className="text-[10px] uppercase font-bold text-gray-500 mb-1 ml-1">Kết thúc</label>
-                                      <input type="datetime-local" value={it.endLocal} disabled={!canEditAgenda}
-                                        onChange={(e) => setAgendaItems((prev) => prev.map((p, i) => i === idx ? { ...p, endLocal: e.target.value } : p))}
-                                        className="w-full sm:w-[200px] px-2 py-2 rounded-xl border border-gray-200 text-sm bg-white disabled:bg-gray-50/50 disabled:cursor-not-allowed outline-none focus:border-[#004c91]" />
-                                    </div>
-                                  </div>
-                                  <div className="flex-1 w-full flex flex-col">
-                                    <label className="text-[10px] uppercase font-bold text-gray-500 mb-1 ml-1">Nội dung</label>
-                                    <input type="text" value={it.title} disabled={!canEditAgenda} placeholder="Nội dung mục lịch trình"
-                                      onChange={(e) => setAgendaItems((prev) => prev.map((p, i) => i === idx ? { ...p, title: e.target.value } : p))}
-                                      className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-gray-800 text-sm bg-white disabled:bg-gray-50/50 disabled:cursor-not-allowed outline-none focus:border-[#004c91]" />
-                                  </div>
-                                  <div className="w-full md:w-[150px] flex flex-col">
-                                    <label className="text-[10px] uppercase font-bold text-gray-500 mb-1 ml-1">Địa điểm</label>
-                                    <input type="text" value={it.location} disabled={!canEditAgenda} placeholder="(tuỳ chọn)"
-                                      onChange={(e) => setAgendaItems((prev) => prev.map((p, i) => i === idx ? { ...p, location: e.target.value } : p))}
-                                      className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-gray-800 text-sm bg-white disabled:bg-gray-50/50 disabled:cursor-not-allowed outline-none focus:border-[#004c91]" />
-                                  </div>
-                                  {canEditAgenda && (
-                                    <button type="button" title="Xoá mục"
-                                      onClick={() => { setAgendaItems((prev) => prev.filter((_, i) => i !== idx)); pushToast('info', 'Đã xóa mục khỏi lịch trình. Bấm “Lưu lịch trình” để lưu thay đổi.'); }}
-                                      className="mb-1 w-9 h-9 rounded-lg bg-red-50 text-red-500 hover:bg-red-100 flex items-center justify-center shrink-0 outline-none">
-                                      <X className="w-4 h-4" />
-                                    </button>
-                                  )}
+                            {agendaItems.length > 0 && (
+                              <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                                <div className="hidden md:grid grid-cols-[44px_220px_minmax(240px,1fr)_160px_260px_36px] gap-3 bg-slate-50 px-4 py-2 text-[11px] font-bold uppercase tracking-wide text-slate-500 border-b border-slate-200">
+                                  <span className="text-center">#</span>
+                                  <span>Thời gian</span>
+                                  <span>Nội dung</span>
+                                  <span>Địa điểm</span>
+                                  <span>Người phụ trách</span>
+                                  <span />
                                 </div>
-                                {/* Row 2 — responsible person (real user) + the template's suggested role hint */}
-                                <div className="flex flex-col sm:flex-row sm:items-end gap-2 border-t border-slate-100 pt-2.5">
-                                  <div className="flex flex-col w-full sm:w-[340px]">
-                                    <label className="text-[10px] uppercase font-bold text-gray-500 mb-1 ml-1">Người phụ trách</label>
-                                    <select
-                                      value={it.responsibleUserId ?? ''}
-                                      disabled={!canEditAgenda}
-                                      onChange={(e) => setAgendaItems((prev) => prev.map((p, i) => i === idx ? { ...p, responsibleUserId: e.target.value ? Number(e.target.value) : null } : p))}
-                                      className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-gray-800 text-sm bg-white disabled:bg-gray-50/50 disabled:cursor-not-allowed outline-none focus:border-[#004c91]"
-                                    >
-                                      <option value="">Chưa chọn người phụ trách</option>
-                                      {responsibleStale && (
-                                        <option value={it.responsibleUserId as number}>
-                                          {(it.responsibleUserName ?? `Người dùng #${it.responsibleUserId}`)} (không còn khả dụng)
-                                        </option>
-                                      )}
-                                      {agendaResponsibleCandidates.map((candidate) => (
-                                        <option key={candidate.userId} value={candidate.userId}>
-                                          {candidate.fullName} — {candidate.displayRole}
-                                        </option>
-                                      ))}
-                                    </select>
-                                  </div>
-                                  {it.templateResponsibleRoleLabel && (
-                                    <p className="text-xs font-medium text-slate-500 inline-flex items-center gap-1 sm:mb-2.5">
-                                      <Wand2 className="w-3.5 h-3.5 shrink-0 text-[#004c91]" /> Gợi ý từ mẫu: {it.templateResponsibleRoleLabel}
-                                    </p>
-                                  )}
+                                <div className="divide-y divide-slate-100">
+                                  {agendaItems.map((it, idx) => {
+                                    // A previously-assigned responsible who is no longer a valid candidate
+                                    // (e.g. later declined/removed) — keep them visible so the row doesn't
+                                    // look unassigned; the host must re-pick before saving (validation guards it).
+                                    const responsibleStale = it.responsibleUserId != null
+                                      && !agendaResponsibleCandidates.some((c) => c.userId === it.responsibleUserId);
+                                    const ghostInputClass = "h-9 w-full min-w-0 rounded-lg border border-transparent bg-transparent px-2 text-sm font-medium text-slate-800 outline-none transition hover:border-slate-200 hover:bg-white focus:border-[#004c91] focus:bg-white focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:border-transparent disabled:hover:bg-transparent";
+                                    const ghostSelectClass = "h-9 w-full rounded-lg border border-transparent bg-transparent px-2 text-sm font-medium text-slate-700 outline-none transition hover:border-slate-200 hover:bg-white focus:border-[#004c91] focus:bg-white focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:border-transparent disabled:hover:bg-transparent";
+                                    const ghostTimeClass = "h-8 w-full min-w-0 rounded-md border border-transparent bg-transparent px-2 text-sm font-semibold text-slate-800 outline-none transition hover:border-slate-200 hover:bg-white focus:border-[#004c91] focus:bg-white focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:border-transparent disabled:hover:bg-transparent";
+                                    return (
+                                      <div key={idx} className="grid grid-cols-1 gap-2 px-4 py-3 transition-colors hover:bg-slate-50 md:grid-cols-[44px_220px_minmax(240px,1fr)_160px_260px_36px] md:items-start md:gap-3">
+                                        {/* Order number — leads the row so the eye scans it first. */}
+                                        <div className="flex items-center md:justify-center">
+                                          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-orange-50 text-xs font-bold text-[#F37021]">
+                                            {idx + 1}
+                                          </span>
+                                        </div>
+
+                                        {/* Time range — datetime-local keeps date + time together so multi-day agendas stay
+                                            correct; stacked (not side-by-side) so the full date/time never gets clipped. */}
+                                        <div className="pl-9 md:pl-0">
+                                          <label className="block text-[10px] font-bold uppercase text-slate-400 md:hidden">Thời gian</label>
+                                          <div className="grid grid-cols-[14px_1fr] items-center gap-x-2 gap-y-1">
+                                            <span />
+                                            <input type="datetime-local" value={it.startLocal} disabled={!canEditAgenda}
+                                              onChange={(e) => setAgendaItems((prev) => prev.map((p, i) => i === idx ? { ...p, startLocal: e.target.value } : p))}
+                                              className={ghostTimeClass} />
+                                            <span className="text-center text-slate-400">→</span>
+                                            <input type="datetime-local" value={it.endLocal} disabled={!canEditAgenda}
+                                              onChange={(e) => setAgendaItems((prev) => prev.map((p, i) => i === idx ? { ...p, endLocal: e.target.value } : p))}
+                                              className={ghostTimeClass} />
+                                          </div>
+                                        </div>
+
+                                        {/* Content */}
+                                        <div className="pl-9 md:pl-0">
+                                          <label className="mb-1 block text-[10px] font-bold uppercase text-slate-400 md:hidden">Nội dung</label>
+                                          <input type="text" value={it.title} disabled={!canEditAgenda} placeholder="Nội dung mục lịch trình"
+                                            onChange={(e) => setAgendaItems((prev) => prev.map((p, i) => i === idx ? { ...p, title: e.target.value } : p))}
+                                            className={ghostInputClass} />
+                                        </div>
+
+                                        {/* Location */}
+                                        <div className="pl-9 md:pl-0">
+                                          <label className="mb-1 block text-[10px] font-bold uppercase text-slate-400 md:hidden">Địa điểm</label>
+                                          <input type="text" value={it.location} disabled={!canEditAgenda} placeholder="(tuỳ chọn)"
+                                            onChange={(e) => setAgendaItems((prev) => prev.map((p, i) => i === idx ? { ...p, location: e.target.value } : p))}
+                                            className={ghostInputClass} />
+                                        </div>
+
+                                        {/* Responsible person (real user) + the template's suggested role hint */}
+                                        <div className="pl-9 md:pl-0">
+                                          <label className="mb-1 block text-[10px] font-bold uppercase text-slate-400 md:hidden">Người phụ trách</label>
+                                          <select
+                                            value={it.responsibleUserId ?? ''}
+                                            disabled={!canEditAgenda}
+                                            onChange={(e) => setAgendaItems((prev) => prev.map((p, i) => i === idx ? { ...p, responsibleUserId: e.target.value ? Number(e.target.value) : null } : p))}
+                                            className={ghostSelectClass}
+                                          >
+                                            <option value="">Chưa chọn người phụ trách</option>
+                                            {responsibleStale && (
+                                              <option value={it.responsibleUserId as number}>
+                                                {(it.responsibleUserName ?? `Người dùng #${it.responsibleUserId}`)} (không còn khả dụng)
+                                              </option>
+                                            )}
+                                            {agendaResponsibleCandidates.map((candidate) => (
+                                              <option key={candidate.userId} value={candidate.userId}>
+                                                {candidate.fullName} — {candidate.displayRole}
+                                              </option>
+                                            ))}
+                                          </select>
+                                          {it.templateResponsibleRoleLabel && (
+                                            <p className="mt-1 text-[11px] font-medium text-slate-500">
+                                              Gợi ý: <span className="font-bold text-[#004c91]">{it.templateResponsibleRoleLabel}</span>
+                                            </p>
+                                          )}
+                                        </div>
+
+                                        {/* Delete */}
+                                        <div className="flex justify-end pl-9 md:justify-center md:pl-0">
+                                          {canEditAgenda && (
+                                            <button type="button" title="Xoá mục"
+                                              onClick={() => { setAgendaItems((prev) => prev.filter((_, i) => i !== idx)); pushToast('info', 'Đã xóa mục khỏi lịch trình. Bấm “Lưu lịch trình” để lưu thay đổi.'); }}
+                                              className="mt-1 inline-flex h-8 w-8 items-center justify-center rounded-lg text-red-500 transition hover:bg-red-50 hover:text-red-600 outline-none">
+                                              <X className="h-4 w-4" />
+                                            </button>
+                                          )}
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
                                 </div>
                               </div>
-                              );
-                            })}
+                            )}
                             {canEditAgenda && agendaResponsibleCandidates.filter((c) => !c.isMainHost).length === 0 && (
                               <p className="text-xs font-medium text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
                                 Chưa có người tham gia nào đã chấp nhận lời mời. Hiện tại chỉ Host chính có thể được chọn làm người phụ trách.
