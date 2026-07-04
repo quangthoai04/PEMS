@@ -1,14 +1,101 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
+using Microsoft.EntityFrameworkCore;
+using PEMS.Application.Common.Interfaces;
+using PEMS.Domain.Constants;
 
 namespace PEMS.Application.PublicContent.Queries.ViewNews;
 
 public sealed class ViewNewsQueryHandler : IRequestHandler<ViewNewsQuery, ViewNewsDto>
 {
-    public Task<ViewNewsDto> Handle(ViewNewsQuery request, CancellationToken cancellationToken)
+    private readonly IApplicationDbContext _dbContext;
+
+    public ViewNewsQueryHandler(IApplicationDbContext dbContext) => _dbContext = dbContext;
+
+    public async Task<ViewNewsDto> Handle(ViewNewsQuery request, CancellationToken cancellationToken)
     {
-        throw new NotImplementedException("UC View News has been scaffolded. Business rules must be implemented after UC specification is completed.");
+        var requestedLang = string.IsNullOrWhiteSpace(request.LanguageCode)
+            ? "vi"
+            : request.LanguageCode.Trim();
+
+        var query = _dbContext.News
+            .AsNoTracking()
+            .Where(n => n.Status == NewsConstants.Status.Published);
+
+        if (request.IsFeatured.HasValue)
+            query = query.Where(n => n.IsFeatured == request.IsFeatured.Value);
+
+        var keyword = request.Keyword?.Trim();
+        if (!string.IsNullOrEmpty(keyword))
+        {
+            // EXISTS over translations — matches the post when any translation matches.
+            query = query.Where(n => _dbContext.NewsTranslations.Any(t =>
+                t.NewsId == n.NewsId &&
+                (t.Title.Contains(keyword) || (t.Summary != null && t.Summary.Contains(keyword)))));
+        }
+
+        var totalItems = await query.CountAsync(cancellationToken);
+        var totalPages = totalItems == 0 ? 0 : (int)Math.Ceiling(totalItems / (double)request.PageSize);
+        var pageIndex  = Math.Max(1, request.PageIndex);
+
+        var pageNews = await query
+            .OrderByDescending(n => n.PublishedAt)
+            .ThenByDescending(n => n.NewsId)
+            .Skip((pageIndex - 1) * request.PageSize)
+            .Take(request.PageSize)
+            .Select(n => new { n.NewsId, n.CoverFileId, n.PublishedAt, n.IsFeatured })
+            .ToListAsync(cancellationToken);
+
+        var newsIds = pageNews.Select(n => n.NewsId).ToList();
+
+        var translations = newsIds.Count > 0
+            ? await _dbContext.NewsTranslations
+                .AsNoTracking()
+                .Where(t => newsIds.Contains(t.NewsId))
+                .Select(t => new { t.NewsId, t.LanguageCode, t.Title, t.Summary, t.Slug })
+                .ToListAsync(cancellationToken)
+            : [];
+
+        var translationsByNews = translations
+            .GroupBy(t => t.NewsId)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
+        var items = new List<PublicNewsListItemDto>(pageNews.Count);
+        foreach (var n in pageNews)
+        {
+            translationsByNews.TryGetValue(n.NewsId, out var candidates);
+            var translation =
+                candidates?.FirstOrDefault(t => string.Equals(t.LanguageCode, requestedLang, StringComparison.OrdinalIgnoreCase))
+                ?? candidates?.FirstOrDefault(t => t.LanguageCode == "vi")
+                ?? candidates?.FirstOrDefault();
+
+            if (translation is null) continue; // no translation at all — nothing renderable
+
+            items.Add(new PublicNewsListItemDto
+            {
+                NewsId       = n.NewsId,
+                Title        = translation.Title,
+                Slug         = translation.Slug,
+                Summary      = translation.Summary,
+                CoverFileId  = n.CoverFileId,
+                CoverUrl     = n.CoverFileId.HasValue ? $"/api/public/news-files/{n.CoverFileId.Value}" : null,
+                PublishedAt  = n.PublishedAt,
+                LanguageCode = translation.LanguageCode,
+                IsFeatured   = n.IsFeatured
+            });
+        }
+
+        return new ViewNewsDto
+        {
+            Items      = items,
+            PageIndex  = pageIndex,
+            PageSize   = request.PageSize,
+            TotalItems = totalItems,
+            TotalPages = totalPages
+        };
     }
 }

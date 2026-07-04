@@ -59,6 +59,7 @@ namespace PEMS.Api.Controllers
         }
 
         [HttpGet("news")]
+        [AllowAnonymous]
         public async Task<IActionResult> ViewNews(
             [FromQuery] PEMS.Application.PublicContent.Queries.ViewNews.ViewNewsQuery query,
             CancellationToken cancellationToken)
@@ -71,11 +72,27 @@ namespace PEMS.Api.Controllers
         [AllowAnonymous]
         public async Task<IActionResult> GetPublicNewsDetail(
             ulong newsId,
+            [FromQuery] string? languageCode,
             CancellationToken cancellationToken)
         {
-            var query = new PEMS.Application.PublicContent.Queries.ViewPublicNewsDetail.ViewPublicNewsDetailQuery(newsId);
+            var query = new PEMS.Application.PublicContent.Queries.ViewPublicNewsDetail.ViewPublicNewsDetailQuery(newsId, languageCode);
             var result = await _mediator.Send(query, cancellationToken);
             return Ok(result);
+        }
+
+        /// <summary>
+        /// Anonymous image/file stream for PUBLISHED news content (cover + section images).
+        /// Files not referenced by a published post return 404.
+        /// </summary>
+        [HttpGet("news-files/{fileId}")]
+        [AllowAnonymous]
+        public async Task<IActionResult> GetPublicNewsFile(ulong fileId, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(
+                new PEMS.Application.PublicContent.Queries.GetPublicNewsFile.GetPublicNewsFileQuery(fileId),
+                cancellationToken);
+            Response.Headers.CacheControl = "public, max-age=3600";
+            return File(result.Content, result.ContentType);
         }
 
         // NOTE: GET /api/public/partners moved to PublicPartnersController (Partner module,

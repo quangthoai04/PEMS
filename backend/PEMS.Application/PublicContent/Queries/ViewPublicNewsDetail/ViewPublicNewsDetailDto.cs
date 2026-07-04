@@ -12,6 +12,10 @@ public sealed class PublicNewsDetailDto
     public string? ThumbnailUrl { get; set; }
     public DateTime? PublishedAt { get; set; }
     public string? AuthorName { get; set; }
+    /// <summary>Language of the returned content (after fallback resolution).</summary>
+    public string LanguageCode { get; set; } = "vi";
+    /// <summary>All languages this post has a translation for.</summary>
+    public IReadOnlyList<string> AvailableLanguages { get; set; } = Array.Empty<string>();
     public IReadOnlyList<PublicNewsSectionDto> Sections { get; set; } = Array.Empty<PublicNewsSectionDto>();
 }
 

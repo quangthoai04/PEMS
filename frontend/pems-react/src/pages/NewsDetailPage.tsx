@@ -5,19 +5,30 @@
 
 // Đây là trang hiển thị chi tiết một bài viết tin tức ở giao diện phía người dùng
 import React, { useEffect, useState } from 'react';
-import { Calendar, User, Home, Image as ImageIcon } from 'lucide-react';
-import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { Calendar, User, Globe, Image as ImageIcon } from 'lucide-react';
+import { useParams, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { publicContentApi } from '../features/public-content/api/publicContentApi';
 import { PublicNewsDetail, PublicNewsSection } from '../features/public-content/types/publicContent.types';
 import { format } from 'date-fns';
 import { vi } from 'date-fns/locale';
 import { sanitizeHtml } from '../shared/security/sanitizeHtml';
+import { resolveFileUrl } from '../shared/utils/resolveFileUrl';
+
+const LANGUAGE_LABELS: Record<string, string> = {
+  vi: 'Tiếng Việt',
+  en: 'English',
+  ja: '日本語',
+  ko: '한국어',
+  'zh-CN': '中文',
+};
 
 export function NewsDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const location = useLocation();
-  
+  const [searchParams, setSearchParams] = useSearchParams();
+  const lang = searchParams.get('lang') ?? undefined;
+
   const [article, setArticle] = useState<PublicNewsDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -28,7 +39,7 @@ export function NewsDetailPage() {
     const fetchDetail = async () => {
       try {
         setLoading(true);
-        const data = await publicContentApi.getPublicNewsDetail(id);
+        const data = await publicContentApi.getPublicNewsDetail(id, lang);
         setArticle(data);
       } catch (err) {
         console.error(err);
@@ -39,7 +50,16 @@ export function NewsDetailPage() {
     };
 
     fetchDetail();
-  }, [id]);
+  }, [id, lang]);
+
+  const handleSwitchLanguage = (code: string) => {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      if (code === 'vi') next.delete('lang');
+      else next.set('lang', code);
+      return next;
+    }, { replace: true });
+  };
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -130,6 +150,26 @@ export function NewsDetailPage() {
               <span>{article.authorName}</span>
             </div>
           )}
+
+          {/* Language switch — chỉ hiện khi bài có nhiều bản dịch */}
+          {article.availableLanguages && article.availableLanguages.length > 1 && (
+            <div className="flex items-center gap-1.5 ml-auto">
+              <Globe className="w-4 h-4 text-gray-400" />
+              {article.availableLanguages.map(code => (
+                <button
+                  key={code}
+                  onClick={() => handleSwitchLanguage(code)}
+                  className={`px-2.5 py-1 rounded-full text-[12px] font-bold border transition-colors ${
+                    code === article.languageCode
+                      ? 'bg-[#004c91] text-white border-[#004c91]'
+                      : 'bg-white text-gray-600 border-gray-300 hover:border-[#004c91] hover:text-[#004c91]'
+                  }`}
+                >
+                  {LANGUAGE_LABELS[code] ?? code}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Light Gray Line */}
@@ -148,10 +188,10 @@ export function NewsDetailPage() {
         {/* Main Image */}
         {article.thumbnailUrl && (
           <div className="mb-10 rounded-lg overflow-hidden">
-            <img 
-              src={article.thumbnailUrl} 
-              alt={article.title} 
-              className="w-full max-h-[500px] object-cover" 
+            <img
+              src={resolveFileUrl(article.thumbnailUrl) ?? undefined}
+              alt={article.title}
+              className="w-full max-h-[500px] object-cover"
             />
           </div>
         )}
@@ -202,7 +242,7 @@ function PublicNewsSections({ sections }: { sections: PublicNewsSection[] }) {
                 {section.files && section.files.length > 0 && (
                   <div className={`grid gap-4 ${section.files.length > 1 ? 'grid-cols-2 md:grid-cols-3' : 'grid-cols-1'}`}>
                     {section.files.map(f => (
-                      <img key={f.fileId} src={f.url} alt={f.fileName || ''} className="rounded-lg w-full object-cover" />
+                      <img key={f.fileId} src={resolveFileUrl(f.url) ?? undefined} alt={f.fileName || ''} loading="lazy" className="rounded-lg w-full object-cover" />
                     ))}
                   </div>
                 )}
@@ -222,7 +262,7 @@ function PublicNewsSections({ sections }: { sections: PublicNewsSection[] }) {
                 {section.files && section.files.length > 0 && (
                   <div className={`grid gap-4 mt-6 ${section.files.length > 1 ? 'grid-cols-2 md:grid-cols-3' : 'grid-cols-1'}`}>
                     {section.files.map(f => (
-                      <img key={f.fileId} src={f.url} alt={f.fileName || ''} className="rounded-lg w-full object-cover" />
+                      <img key={f.fileId} src={resolveFileUrl(f.url) ?? undefined} alt={f.fileName || ''} loading="lazy" className="rounded-lg w-full object-cover" />
                     ))}
                   </div>
                 )}

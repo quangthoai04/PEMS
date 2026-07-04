@@ -38,26 +38,32 @@ public sealed class ViewPublicNewsDetailQueryHandler : IRequestHandler<ViewPubli
                     .ThenInclude(sf => sf.File)
             .ToListAsync(cancellationToken);
 
-        var translation = translations.FirstOrDefault(t => t.LanguageCode == "vi") ?? translations.FirstOrDefault();
+        var requestedLang = string.IsNullOrWhiteSpace(request.LanguageCode)
+            ? "vi"
+            : request.LanguageCode.Trim();
+
+        var translation =
+            translations.FirstOrDefault(t => string.Equals(t.LanguageCode, requestedLang, StringComparison.OrdinalIgnoreCase))
+            ?? translations.FirstOrDefault(t => t.LanguageCode == "vi")
+            ?? translations.FirstOrDefault();
+
+        var availableLanguages = translations
+            .Select(t => t.LanguageCode)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(l => l == "vi" ? 0 : 1)
+            .ThenBy(l => l, StringComparer.OrdinalIgnoreCase)
+            .ToList();
 
         var users = await _dbContext.Users
             .AsNoTracking()
             .Where(u => u.UserId == news.AuthorUserId)
             .ToDictionaryAsync(u => u.UserId, u => u.FullName, cancellationToken);
 
-        string? thumbnailUrl = null;
-        if (news.CoverFileId.HasValue)
-        {
-            var coverFile = await _dbContext.Files
-                .AsNoTracking()
-                .Where(f => f.FileId == news.CoverFileId.Value)
-                .FirstOrDefaultAsync(cancellationToken);
-            
-            if (coverFile != null)
-            {
-                thumbnailUrl = coverFile.ThumbnailUrl ?? coverFile.WebViewUrl;
-            }
-        }
+        // Images are streamed through the anonymous-safe backend proxy (only files of
+        // published news resolve there) — Drive webViewLink does not render in <img>.
+        string? thumbnailUrl = news.CoverFileId.HasValue
+            ? $"/api/public/news-files/{news.CoverFileId.Value}"
+            : null;
 
         var dto = new PublicNewsDetailDto
         {
@@ -68,6 +74,8 @@ public sealed class ViewPublicNewsDetailQueryHandler : IRequestHandler<ViewPubli
             ThumbnailUrl = thumbnailUrl,
             PublishedAt = news.PublishedAt,
             AuthorName = users.TryGetValue(news.AuthorUserId, out var name) ? name : null,
+            LanguageCode = translation?.LanguageCode ?? "vi",
+            AvailableLanguages = availableLanguages,
             Sections = translation?.Sections
                 .OrderBy(s => s.SectionOrder)
                 .Select(s => new PublicNewsSectionDto
@@ -84,7 +92,7 @@ public sealed class ViewPublicNewsDetailQueryHandler : IRequestHandler<ViewPubli
                             FileId = sf.FileId,
                             FileName = sf.File.OriginalFilename,
                             MimeType = sf.File.MimeType,
-                            Url = sf.File.WebViewUrl ?? sf.File.DownloadUrl ?? string.Empty,
+                            Url = $"/api/public/news-files/{sf.FileId}",
                             ThumbnailUrl = sf.File.ThumbnailUrl,
                             DisplayOrder = sf.DisplayOrder
                         })
