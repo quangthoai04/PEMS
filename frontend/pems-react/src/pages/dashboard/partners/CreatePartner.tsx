@@ -13,6 +13,12 @@ import type {
 } from '../../../features/partners/types/partners.types';
 import { PARTNER_TYPE_LABELS } from '../../../features/partners/types/partners.types';
 import { useDebounce } from '../../../shared/hooks/useDebounce';
+import {
+  getApiErrorMessage,
+  showLoadingToast,
+  updateToastSuccess,
+  updateToastMessageError,
+} from '../../../shared/utils/toast';
 
 export function CreatePartner() {
   const navigate = useNavigate();
@@ -67,6 +73,7 @@ export function CreatePartner() {
     }
     setSubmitting(true);
     setError(null);
+    const toastId = showLoadingToast('Đang tạo hồ sơ đối tác...', 'partner-create');
     try {
       const result = await partnersApi.createPartner({
         partnerCode: partnerCode.trim() || null,
@@ -89,9 +96,12 @@ export function CreatePartner() {
             }
           : null,
       });
+      updateToastSuccess(toastId, 'Đã tạo hồ sơ đối tác thành công.');
       navigate(`/dashboard/partners/${result.partnerId}`);
     } catch (err: any) {
-      setError(err?.response?.data?.message || 'Tạo đối tác thất bại. Vui lòng thử lại.');
+      const message = getApiErrorMessage(err, 'Không thể tạo hồ sơ đối tác. Vui lòng kiểm tra lại thông tin.');
+      setError(message);
+      updateToastMessageError(toastId, message);
     } finally {
       setSubmitting(false);
     }

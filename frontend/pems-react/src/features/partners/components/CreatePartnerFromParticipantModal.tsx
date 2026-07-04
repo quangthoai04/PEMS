@@ -12,6 +12,13 @@ import React, { useEffect, useRef, useState } from 'react';
 import { ChevronUp, ExternalLink, Info, Link2, Loader2, X } from 'lucide-react';
 import { partnersApi } from '../api/partnersApi';
 import {
+  getApiErrorMessage,
+  showLoadingToast,
+  updateToastSuccess,
+  updateToastMessageError,
+  dismissToast,
+} from '../../../shared/utils/toast';
+import {
   PARTNER_TYPE_LABELS, PROFILE_STATUS_LABELS, VISIBILITY_LABELS,
   type PartnerDetail, type PartnerType, type PartnerMatchResult, type PartnerMatchCandidate,
   type PartnerProfileStatus, type PartnerVisibility,
@@ -328,6 +335,7 @@ export function CreatePartnerFromParticipantModal({
   const linkExisting = async (partnerId: number) => {
     setLinkingId(partnerId);
     setError(null);
+    const toastId = showLoadingToast('Đang liên kết đối tác...', 'partner-guest-link');
     try {
       await partnersApi.linkGuestToPartner(visitInstanceId, {
         guestMemberId: guestMemberId || null,
@@ -336,14 +344,15 @@ export function CreatePartnerFromParticipantModal({
         matchSource: 'MANUAL',
         matchStatus: 'CONFIRMED',
       });
+      updateToastSuccess(toastId, 'Đã liên kết đối tác.');
       onDone();
     } catch (e: any) {
       const status = e?.response?.status;
-      setError(
-        status === 403
-          ? 'Bạn không có quyền liên kết với đối tác này hoặc đối tác nằm ngoài phạm vi cơ sở của bạn.'
-          : (e?.response?.data?.message || 'Không thể liên kết đối tác. Vui lòng thử lại.'),
-      );
+      const message = status === 403
+        ? 'Bạn không có quyền liên kết với đối tác này hoặc đối tác nằm ngoài phạm vi cơ sở của bạn.'
+        : getApiErrorMessage(e, 'Không thể liên kết đối tác. Vui lòng thử lại.');
+      setError(message);
+      updateToastMessageError(toastId, message);
       setLinkingId(null);
     }
   };
@@ -356,6 +365,7 @@ export function CreatePartnerFromParticipantModal({
     setBusy(true);
     setError(null);
     setConflict(false);
+    const toastId = showLoadingToast('Đang tạo hồ sơ đối tác...', 'partner-guest-create');
     try {
       await partnersApi.createPartnerFromGuest(visitInstanceId, {
         guestMemberId: guestMemberId || null,
@@ -369,13 +379,17 @@ export function CreatePartnerFromParticipantModal({
         description: description.trim() || null,
         contactEmail: prefill?.contactEmail?.trim() || null,
       });
+      updateToastSuccess(toastId, 'Đã tạo hồ sơ đối tác thành công.');
       onDone();
     } catch (e: any) {
       const code = e?.response?.data?.errorCode;
       const status = e?.response?.status;
       // Trùng tên → KHÔNG tạo trùng: đối chiếu lại và mời liên kết với đối tác đã có.
+      // Đây là luồng hướng dẫn (không phải lỗi cứng) nên đóng toast loading và để UI gợi ý
+      // liên kết inline dẫn dắt, tránh toast đỏ gây hiểu nhầm.
       if (code === 'PARTNER_NAME_DUPLICATED' || status === 409) {
         setConflict(true);
+        dismissToast(toastId);
         await runMatch(trimmedName, prefill?.contactEmail);
         setError('Tên đối tác đã tồn tại. Vui lòng liên kết với hồ sơ có sẵn ở trên hoặc đổi sang tên tổ chức khác.');
         setBusy(false);
@@ -383,10 +397,12 @@ export function CreatePartnerFromParticipantModal({
         setTimeout(() => candidatesRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
         return;
       }
-      setError(
-        e?.response?.data?.message
-          || 'Không tạo được đối tác. Vui lòng kiểm tra lại thông tin và thử lại.',
+      const message = getApiErrorMessage(
+        e,
+        'Không tạo được đối tác. Vui lòng kiểm tra lại thông tin và thử lại.',
       );
+      setError(message);
+      updateToastMessageError(toastId, message);
       setBusy(false);
     }
   };

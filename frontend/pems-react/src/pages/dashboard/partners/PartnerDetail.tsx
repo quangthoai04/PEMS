@@ -29,6 +29,11 @@ import httpClient from '../../../shared/api/httpClient';
 import { API_ENDPOINTS } from '../../../shared/api/endpoints';
 import { useAuthenticatedImage } from '../../../shared/hooks/useAuthenticatedImage';
 import { downloadAuthenticatedFile, fetchAuthenticatedBlobUrl } from '../../../shared/utils/fileDownload';
+import {
+  showLoadingToast,
+  updateToastSuccess,
+  updateToastError,
+} from '../../../shared/utils/toast';
 
 // Cover placeholder restored from the original PartnerDetail UI — shown until the partner's own
 // coverFileId resolves (or when it has none, or the fetch/render fails).
@@ -84,7 +89,6 @@ export function PartnerDetail() {
 
   // Approval panel
   const [busy, setBusy] = useState(false);
-  const [actionError, setActionError] = useState<string | null>(null);
   const [rejectOpen, setRejectOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
   const [makePublic, setMakePublic] = useState(false);
@@ -186,26 +190,28 @@ export function PartnerDetail() {
   const approve = async () => {
     if (!id) return;
     setBusy(true);
-    setActionError(null);
+    const toastId = showLoadingToast('Đang duyệt hồ sơ đối tác...', 'partner-detail-approve');
     try {
       await partnersApi.approvePartner(id, undefined, makePublic);
       await load();
+      updateToastSuccess(toastId, 'Đã duyệt hồ sơ đối tác.');
     } catch (e: any) {
-      setActionError(e?.response?.data?.message || 'Duyệt thất bại.');
+      updateToastError(toastId, e, 'Không thể duyệt hồ sơ đối tác.');
     } finally { setBusy(false); }
   };
 
   const reject = async () => {
     if (!id || !rejectReason.trim()) return;
     setBusy(true);
-    setActionError(null);
+    const toastId = showLoadingToast('Đang từ chối hồ sơ đối tác...', 'partner-detail-reject');
     try {
       await partnersApi.rejectPartner(id, rejectReason.trim());
       setRejectOpen(false);
       setRejectReason('');
       await load();
+      updateToastSuccess(toastId, 'Đã từ chối hồ sơ đối tác.');
     } catch (e: any) {
-      setActionError(e?.response?.data?.message || 'Từ chối thất bại.');
+      updateToastError(toastId, e, 'Không thể từ chối hồ sơ đối tác.');
     } finally { setBusy(false); }
   };
 
@@ -224,7 +230,8 @@ export function PartnerDetail() {
   const saveContact = async () => {
     if (!id || !cName.trim()) return;
     setBusy(true);
-    setActionError(null);
+    const isEdit = !!editingContact;
+    const toastId = showLoadingToast('Đang lưu người liên hệ...', 'partner-contact-save');
     try {
       if (editingContact) {
         await partnersApi.updateContact(id, editingContact.contactId, {
@@ -248,8 +255,9 @@ export function PartnerDetail() {
       }
       setContactFormOpen(false);
       await loadContacts();
+      updateToastSuccess(toastId, isEdit ? 'Đã cập nhật người liên hệ.' : 'Đã thêm người liên hệ.');
     } catch (e: any) {
-      setActionError(e?.response?.data?.message || 'Lưu người liên hệ thất bại.');
+      updateToastError(toastId, e, 'Không thể lưu người liên hệ.');
     } finally { setBusy(false); }
   };
 
@@ -257,53 +265,60 @@ export function PartnerDetail() {
     if (!id) return;
     if (!window.confirm(`Vô hiệu hoá người liên hệ "${contact.fullName}"?`)) return;
     setBusy(true);
+    const toastId = showLoadingToast('Đang vô hiệu hoá người liên hệ...', 'partner-contact-deactivate');
     try {
       await partnersApi.deactivateContact(id, contact.contactId);
       await loadContacts();
+      updateToastSuccess(toastId, 'Đã vô hiệu hoá người liên hệ.');
     } catch (e: any) {
-      setActionError(e?.response?.data?.message || 'Vô hiệu hoá thất bại.');
+      updateToastError(toastId, e, 'Không thể vô hiệu hoá người liên hệ.');
     } finally { setBusy(false); }
   };
 
   const setPrimary = async (contact: PartnerContact) => {
     if (!id) return;
     setBusy(true);
+    const toastId = showLoadingToast('Đang đặt người liên hệ chính...', 'partner-contact-primary');
     try {
       await partnersApi.setPrimaryContact(id, contact.contactId);
       await loadContacts();
+      updateToastSuccess(toastId, 'Đã đặt người liên hệ chính.');
     } catch (e: any) {
-      setActionError(e?.response?.data?.message || 'Đặt liên hệ chính thất bại.');
+      updateToastError(toastId, e, 'Không thể đặt người liên hệ chính.');
     } finally { setBusy(false); }
   };
 
   const addAlias = async () => {
     if (!id || !newAlias.trim()) return;
     setBusy(true);
-    setActionError(null);
+    const toastId = showLoadingToast('Đang thêm tên gọi khác...', 'partner-alias-add');
     try {
       await partnersApi.createAlias(id, newAlias.trim());
       setNewAlias('');
       await loadAliases();
+      updateToastSuccess(toastId, 'Đã thêm tên gọi khác.');
     } catch (e: any) {
-      setActionError(e?.response?.data?.message || 'Thêm tên gọi khác thất bại.');
+      updateToastError(toastId, e, 'Không thể thêm tên gọi khác.');
     } finally { setBusy(false); }
   };
 
   const removeAlias = async (alias: PartnerAlias) => {
     if (!id) return;
     setBusy(true);
+    const toastId = showLoadingToast('Đang xoá tên gọi khác...', 'partner-alias-remove');
     try {
       await partnersApi.deactivateAlias(id, alias.partnerAliasId);
       await loadAliases();
+      updateToastSuccess(toastId, 'Đã xoá tên gọi khác.');
     } catch (e: any) {
-      setActionError(e?.response?.data?.message || 'Xoá tên gọi khác thất bại.');
+      updateToastError(toastId, e, 'Không thể xoá tên gọi khác.');
     } finally { setBusy(false); }
   };
 
   const uploadDocument = async () => {
     if (!id || !docFile || !docTitle.trim()) return;
     setDocBusy(true);
-    setActionError(null);
+    const toastId = showLoadingToast('Đang tải tài liệu lên...', 'partner-doc-upload');
     try {
       // Upload the binary first (shared files endpoint), then register the document row.
       const form = new FormData();
@@ -316,8 +331,9 @@ export function PartnerDetail() {
       setDocTitle('');
       setDocFile(null);
       await loadDocuments();
+      updateToastSuccess(toastId, 'Đã tải tài liệu lên.');
     } catch (e: any) {
-      setActionError(e?.response?.data?.message || 'Tải tài liệu thất bại.');
+      updateToastError(toastId, e, 'Không thể tải tài liệu lên.');
     } finally { setDocBusy(false); }
   };
 
@@ -413,12 +429,6 @@ export function PartnerDetail() {
           <span><b>Hồ sơ bị từ chối.</b> Lý do: {partner.reviewNote}</span>
         </div>
       )}
-      {actionError && (
-        <div className="mb-5 bg-red-50 border border-red-100 text-red-600 text-sm rounded-xl px-4 py-3">
-          {actionError}
-        </div>
-      )}
-
       {/* Cover & Logo Section */}
       <div className="relative mb-10 w-full h-[220px] sm:h-[300px] md:h-[380px] lg:h-[440px] rounded-[24px] bg-gray-100 shadow-sm overflow-hidden">
         <img

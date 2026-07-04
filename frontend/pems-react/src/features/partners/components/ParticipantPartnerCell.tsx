@@ -14,6 +14,11 @@ import { partnersApi } from '../api/partnersApi';
 import type { VisitGuestPartnerLink } from '../types/partners.types';
 import { BusinessCardScanModal } from '../../business-card-ocr/components/BusinessCardScanModal';
 import { CreatePartnerFromParticipantModal } from './CreatePartnerFromParticipantModal';
+import {
+  showLoadingToast,
+  updateToastSuccess,
+  updateToastError,
+} from '../../../shared/utils/toast';
 
 interface Props {
   visitInstanceId: number;
@@ -79,6 +84,7 @@ export function ParticipantPartnerCell({
   const confirmSuggestion = async () => {
     if (!activeLink) return;
     setBusy(true);
+    const toastId = showLoadingToast('Đang liên kết đối tác...', 'partner-suggestion-confirm');
     try {
       await partnersApi.linkGuestToPartner(visitInstanceId, {
         guestMemberId: activeLink.guestMemberId,
@@ -88,16 +94,23 @@ export function ParticipantPartnerCell({
         matchSource: activeLink.matchSource,
         matchStatus: 'CONFIRMED',
       });
+      updateToastSuccess(toastId, 'Đã liên kết đối tác.');
       onChanged?.();
+    } catch (e: any) {
+      updateToastError(toastId, e, 'Không thể liên kết đối tác.');
     } finally { setBusy(false); }
   };
 
   const dismissSuggestion = async () => {
     if (!activeLink) return;
     setBusy(true);
+    const toastId = showLoadingToast('Đang bỏ qua gợi ý liên kết...', 'partner-suggestion-dismiss');
     try {
       await partnersApi.rejectLinkSuggestion(visitInstanceId, activeLink.linkId);
+      updateToastSuccess(toastId, 'Đã bỏ qua gợi ý liên kết.');
       onChanged?.();
+    } catch (e: any) {
+      updateToastError(toastId, e, 'Không thể bỏ qua gợi ý liên kết.');
     } finally { setBusy(false); }
   };
 

@@ -8,6 +8,12 @@ import { ArrowLeft, Loader2, AlertTriangle, Info } from 'lucide-react';
 import { partnersApi } from '../../../features/partners/api/partnersApi';
 import type { PartnerType } from '../../../features/partners/types/partners.types';
 import { PARTNER_TYPE_LABELS } from '../../../features/partners/types/partners.types';
+import {
+  getApiErrorMessage,
+  showLoadingToast,
+  updateToastSuccess,
+  updateToastMessageError,
+} from '../../../shared/utils/toast';
 
 const inputCls =
   'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] text-gray-700 bg-white';
@@ -70,6 +76,10 @@ export function PartnerEdit() {
     if (!id || !name.trim()) return;
     setSubmitting(true);
     setError(null);
+    const toastId = showLoadingToast(
+      wasRejected ? 'Đang cập nhật và gửi lại hồ sơ đối tác...' : 'Đang cập nhật hồ sơ đối tác...',
+      'partner-update',
+    );
     try {
       await partnersApi.updatePartner(id, {
         partnerCode: partnerCode.trim() || null,
@@ -84,9 +94,15 @@ export function PartnerEdit() {
         cooperationStatus,
         visibility: visibility as 'PRIVATE' | 'INTERNAL' | 'PUBLIC',
       });
+      updateToastSuccess(
+        toastId,
+        wasRejected ? 'Đã cập nhật và gửi lại hồ sơ đối tác để duyệt.' : 'Đã cập nhật hồ sơ đối tác.',
+      );
       navigate(`/dashboard/partners/${id}`);
     } catch (err: any) {
-      setError(err?.response?.data?.message || 'Cập nhật đối tác thất bại.');
+      const message = getApiErrorMessage(err, 'Không thể cập nhật hồ sơ đối tác.');
+      setError(message);
+      updateToastMessageError(toastId, message);
     } finally {
       setSubmitting(false);
     }

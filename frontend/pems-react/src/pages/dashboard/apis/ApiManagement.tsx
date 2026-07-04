@@ -5,22 +5,49 @@
  */
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  ScanLine, CheckCircle2, AlertCircle, Loader2, RefreshCw, Power, PowerOff,
+  ScanLine, Loader2, RefreshCw, Power, PowerOff,
   Settings2, Activity, KeyRound, X,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { apiManagementApi } from '../../../features/api-management/api/apiManagementApi';
 import type {
-  ApiConnectionTestResult,
   ApiIntegration,
   ApiQuota,
   ApiRequestLogListResponse,
   UpsertGoogleDocumentAiOcrConfigRequest,
 } from '../../../features/api-management/types/apiManagement.types';
+import {
+  getApiErrorMessage,
+  showLoadingToast,
+  showMessageErrorToast,
+  updateToastSuccess,
+  updateToastError,
+  updateToastMessageError,
+} from '../../../shared/utils/toast';
 
 const inputCls =
   'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] text-gray-700 bg-white';
 const labelCls = 'block text-xs font-bold text-gray-500 uppercase mb-1';
+
+/**
+ * Diễn giải lỗi test kết nối Google Document AI thành thông báo rõ ràng cho người dùng.
+ * Nguồn tín hiệu: HTTP status của request test + message backend (đã mask) — cả hai đều
+ * có thể mang mã lỗi Google (403/404) tuỳ backend surface ở status hay ở body.
+ */
+function describeTestFailure(status: number | undefined, backendMessage?: string | null): string {
+  const msg = (backendMessage ?? '').trim();
+  const hay = `${status ?? ''} ${msg}`.toLowerCase();
+  if (status === 403 || /\b403\b|permission|forbidden|không có quyền/.test(hay)) {
+    return 'Không có quyền truy cập tài nguyên Google Cloud. Vui lòng kiểm tra Project ID và quyền service account.';
+  }
+  if (status === 404 || /\b404\b|not\s*found|processor|không tìm thấy/.test(hay)) {
+    return 'Không tìm thấy processor hoặc project. Vui lòng kiểm tra Project ID, Location và Processor ID.';
+  }
+  if (/credential|service\s*account|secret\s*ref|chưa cấu hình/.test(hay)) {
+    return 'Chưa cấu hình credential. Vui lòng nhập Service Account JSON hoặc Secret Ref.';
+  }
+  return msg || 'Test kết nối thất bại. Vui lòng thử lại.';
+}
 
 export function ApiManagement() {
   const navigate = useNavigate();
@@ -31,10 +58,8 @@ export function ApiManagement() {
 
   const [editTarget, setEditTarget] = useState<ApiIntegration | null>(null);
   const [formOpen, setFormOpen] = useState(false);
-  const [testResult, setTestResult] = useState<ApiConnectionTestResult | null>(null);
   const [testBusy, setTestBusy] = useState<number | null>(null);
   const [statusBusy, setStatusBusy] = useState<number | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
 
   // Panel: quota + logs of the selected config
   const [panelTarget, setPanelTarget] = useState<ApiIntegration | null>(null);
@@ -70,14 +95,21 @@ export function ApiManagement() {
 
   const test = async (config: ApiIntegration) => {
     setTestBusy(config.apiConfigId);
-    setTestResult(null);
-    setActionError(null);
+    const toastId = showLoadingToast('Đang kiểm tra kết nối...', `api-test-${config.apiConfigId}`);
     try {
       const result = await apiManagementApi.testConnection(config.apiConfigId);
-      setTestResult(result);
+      if (result.success) {
+        updateToastSuccess(toastId, `Kết nối API thành công (${result.responseTimeMs} ms).`);
+      } else {
+        updateToastMessageError(toastId, describeTestFailure(undefined, result.message));
+      }
       await load();
     } catch (e: any) {
-      setActionError(e?.response?.data?.message || 'Test kết nối thất bại.');
+      const message = describeTestFailure(
+        e?.response?.status,
+        getApiErrorMessage(e, 'Test kết nối thất bại. Vui lòng thử lại.'),
+      );
+      updateToastMessageError(toastId, message);
     } finally {
       setTestBusy(null);
     }
@@ -85,13 +117,18 @@ export function ApiManagement() {
 
   const toggleStatus = async (config: ApiIntegration) => {
     setStatusBusy(config.apiConfigId);
-    setActionError(null);
+    const enabling = config.status !== 'ACTIVE';
+    const toastId = showLoadingToast(
+      enabling ? 'Đang bật cấu hình API...' : 'Đang tắt cấu hình API...',
+      `api-toggle-${config.apiConfigId}`,
+    );
     try {
       if (config.status === 'ACTIVE') await apiManagementApi.disable(config.apiConfigId);
       else await apiManagementApi.enable(config.apiConfigId);
       await load();
+      updateToastSuccess(toastId, enabling ? 'Đã bật cấu hình API.' : 'Đã tắt cấu hình API.');
     } catch (e: any) {
-      setActionError(e?.response?.data?.message || 'Đổi trạng thái thất bại.');
+      updateToastError(toastId, e, enabling ? 'Không thể bật cấu hình API.' : 'Không thể tắt cấu hình API.');
     } finally {
       setStatusBusy(null);
     }
@@ -100,14 +137,19 @@ export function ApiManagement() {
   const saveQuota = async () => {
     if (!panelTarget || !quotaEdit.trim()) return;
     const limit = Number(quotaEdit);
-    if (!Number.isFinite(limit) || limit <= 0) return;
+    if (!Number.isFinite(limit) || limit <= 0) {
+      showMessageErrorToast('Hạn mức phải là số lớn hơn 0.', 'api-quota');
+      return;
+    }
+    const toastId = showLoadingToast('Đang cập nhật hạn mức sử dụng...', 'api-quota');
     try {
       await apiManagementApi.updateQuota(panelTarget.apiConfigId, limit);
       setQuotaEdit('');
       setQuotas(await apiManagementApi.getQuota(panelTarget.apiConfigId));
       await load();
+      updateToastSuccess(toastId, 'Đã cập nhật hạn mức sử dụng.');
     } catch (e: any) {
-      setActionError(e?.response?.data?.message || 'Cập nhật hạn mức thất bại.');
+      updateToastError(toastId, e, 'Không thể cập nhật hạn mức sử dụng.');
     }
   };
 
@@ -126,23 +168,6 @@ export function ApiManagement() {
           hạn mức và nhật ký. Credential được mã hoá và không bao giờ hiển thị lại.
         </p>
       </div>
-
-      {actionError && (
-        <div className="mb-4 bg-red-50 border border-red-100 text-red-600 text-sm rounded-lg px-3 py-2.5 flex items-center justify-between">
-          <span>{actionError}</span>
-          <button onClick={() => setActionError(null)} className="cursor-pointer"><X className="w-4 h-4" /></button>
-        </div>
-      )}
-      {testResult && (
-        <div className={`mb-4 text-sm rounded-lg px-3 py-2.5 flex items-start gap-2 border ${
-          testResult.success ? 'bg-green-50 border-green-100 text-green-700' : 'bg-red-50 border-red-100 text-red-600'
-        }`}>
-          {testResult.success
-            ? <CheckCircle2 className="w-4 h-4 mt-0.5 flex-shrink-0" />
-            : <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />}
-          <span>{testResult.message} ({testResult.responseTimeMs} ms)</span>
-        </div>
-      )}
 
       {loading ? (
         <div className="py-20 text-center text-gray-400">
@@ -414,6 +439,7 @@ function GoogleDocumentAiConfigForm({
     e.preventDefault();
     setBusy(true);
     setError(null);
+    const toastId = showLoadingToast('Đang lưu cấu hình API...', 'api-config-save');
     try {
       const payload: UpsertGoogleDocumentAiOcrConfigRequest = {
         name: name.trim(),
@@ -430,9 +456,16 @@ function GoogleDocumentAiConfigForm({
       };
       if (config) await apiManagementApi.updateConfig(config.apiConfigId, payload);
       else await apiManagementApi.upsertGoogleDocumentAiConfig(payload);
+      updateToastSuccess(toastId, 'Đã lưu cấu hình API thành công.');
       await onSaved();
     } catch (err: any) {
-      setError(err?.response?.data?.message || 'Lưu cấu hình thất bại.');
+      // Backend trả lỗi thiếu credential → hiển thị thông báo chuẩn, rõ ràng.
+      const backendMsg = getApiErrorMessage(err, 'Không thể lưu cấu hình API. Vui lòng kiểm tra lại thông tin.');
+      const finalMsg = /credential|service\s*account|secret\s*ref|chưa cấu hình/i.test(backendMsg)
+        ? 'Chưa cấu hình credential. Vui lòng nhập Service Account JSON hoặc Secret Ref.'
+        : backendMsg;
+      setError(finalMsg);
+      updateToastMessageError(toastId, finalMsg);
     } finally {
       setBusy(false);
     }

@@ -19,6 +19,11 @@ import {
   VISIBILITY_LABELS,
 } from '../../../features/partners/types/partners.types';
 import { useDebounce } from '../../../shared/hooks/useDebounce';
+import {
+  showLoadingToast,
+  updateToastSuccess,
+  updateToastError,
+} from '../../../shared/utils/toast';
 
 interface ActiveCampus {
   campusId: number;
@@ -61,7 +66,6 @@ export function PartnerManagement() {
   const [rejectTarget, setRejectTarget] = useState<PartnerListItem | null>(null);
   const [rejectReason, setRejectReason] = useState('');
   const [actionBusy, setActionBusy] = useState(false);
-  const [actionError, setActionError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -102,12 +106,13 @@ export function PartnerManagement() {
 
   const approve = async (item: PartnerListItem) => {
     setActionBusy(true);
-    setActionError(null);
+    const toastId = showLoadingToast('Đang duyệt hồ sơ đối tác...', `partner-approve-${item.partnerId}`);
     try {
       await partnersApi.approvePartner(item.partnerId);
       await load();
+      updateToastSuccess(toastId, 'Đã duyệt hồ sơ đối tác.');
     } catch (e: any) {
-      setActionError(e?.response?.data?.message || 'Duyệt đối tác thất bại.');
+      updateToastError(toastId, e, 'Không thể duyệt hồ sơ đối tác.');
     } finally {
       setActionBusy(false);
     }
@@ -116,14 +121,15 @@ export function PartnerManagement() {
   const submitReject = async () => {
     if (!rejectTarget || !rejectReason.trim()) return;
     setActionBusy(true);
-    setActionError(null);
+    const toastId = showLoadingToast('Đang từ chối hồ sơ đối tác...', `partner-reject-${rejectTarget.partnerId}`);
     try {
       await partnersApi.rejectPartner(rejectTarget.partnerId, rejectReason.trim());
       setRejectTarget(null);
       setRejectReason('');
       await load();
+      updateToastSuccess(toastId, 'Đã từ chối hồ sơ đối tác.');
     } catch (e: any) {
-      setActionError(e?.response?.data?.message || 'Từ chối đối tác thất bại.');
+      updateToastError(toastId, e, 'Không thể từ chối hồ sơ đối tác.');
     } finally {
       setActionBusy(false);
     }
@@ -200,12 +206,6 @@ export function PartnerManagement() {
           </button>
         )}
       </div>
-
-      {actionError && (
-        <div className="mb-4 bg-red-50 border border-red-100 text-red-600 text-sm rounded-lg px-3 py-2.5">
-          {actionError}
-        </div>
-      )}
 
       {/* Table */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden mb-2">

@@ -16,11 +16,29 @@ import { partnersApi } from '../../partners/api/partnersApi';
 import type { PartnerListItem } from '../../partners/types/partners.types';
 import { PROFILE_STATUS_LABELS } from '../../partners/types/partners.types';
 import { useAuthenticatedImage } from '../../../shared/hooks/useAuthenticatedImage';
+import {
+  getApiErrorMessage,
+  showLoadingToast,
+  updateToastSuccess,
+  updateToastMessageError,
+} from '../../../shared/utils/toast';
 
 function partnerInitials(name: string): string {
   const words = name.trim().split(/\s+/).filter(Boolean);
   if (words.length === 0) return '?';
   return words.length === 1 ? words[0].slice(0, 2).toUpperCase() : (words[0][0] + words[words.length - 1][0]).toUpperCase();
+}
+
+/**
+ * Diễn giải lỗi quét danh thiếp: nếu do cấu hình OCR (credential/chưa kích hoạt…) thì báo rõ
+ * để admin đi kiểm tra cấu hình API; ngược lại giữ message backend hoặc fallback chung.
+ */
+function describeOcrFailure(rawMessage?: string | null): string {
+  const msg = (rawMessage ?? '').trim();
+  if (/credential|service\s*account|secret\s*ref|chưa cấu hình|not\s*configured|disabled|chưa kích hoạt|inactive/i.test(msg)) {
+    return 'Không thể quét danh thiếp do cấu hình OCR chưa hợp lệ.';
+  }
+  return msg || 'Quét danh thiếp thất bại. Vui lòng thử lại.';
 }
 
 type Step = 'UPLOAD' | 'PROCESSING' | 'REVIEW' | 'RESULT';
@@ -141,11 +159,14 @@ export function BusinessCardScanModal({ open, onClose, context, onConfirmed }: P
     if (!file) return;
     setStep('PROCESSING');
     setError(null);
+    const toastId = showLoadingToast('Đang quét danh thiếp...', 'ocr-scan');
     try {
       const result = await businessCardOcrApi.scan(file, context);
       setJob(result);
       if (result.status === 'FAILED') {
-        setError(result.errorMessage || 'Quét danh thiếp thất bại.');
+        const message = describeOcrFailure(result.errorMessage);
+        setError(message);
+        updateToastMessageError(toastId, message);
         setStep('UPLOAD');
         return;
       }
@@ -163,9 +184,11 @@ export function BusinessCardScanModal({ open, onClose, context, onConfirmed }: P
         setPartnerName(result.matchedPartner.partnerName);
       }
       setStep('REVIEW');
+      updateToastSuccess(toastId, 'Đã quét danh thiếp thành công.');
     } catch (e: any) {
-      const message = e?.response?.data?.message || 'Quét danh thiếp thất bại. Vui lòng thử lại.';
+      const message = describeOcrFailure(getApiErrorMessage(e, 'Quét danh thiếp thất bại. Vui lòng thử lại.'));
       setError(message);
+      updateToastMessageError(toastId, message);
       setStep('UPLOAD');
     }
   };
@@ -174,6 +197,7 @@ export function BusinessCardScanModal({ open, onClose, context, onConfirmed }: P
     if (!job || !partnerId || !fullName.trim()) return;
     setConfirming(true);
     setError(null);
+    const toastId = showLoadingToast('Đang lưu người liên hệ...', 'ocr-confirm');
     try {
       const result = await businessCardOcrApi.confirmContact(job.ocrJobId, {
         partnerId,
@@ -190,9 +214,12 @@ export function BusinessCardScanModal({ open, onClose, context, onConfirmed }: P
       });
       setConfirmedContactId(result.contactId);
       setStep('RESULT');
+      updateToastSuccess(toastId, 'Đã lưu người liên hệ thành công.');
       onConfirmed?.({ partnerId: result.partnerId, contactId: result.contactId });
     } catch (e: any) {
-      setError(e?.response?.data?.message || 'Lưu người liên hệ thất bại.');
+      const message = getApiErrorMessage(e, 'Không thể lưu người liên hệ.');
+      setError(message);
+      updateToastMessageError(toastId, message);
     } finally {
       setConfirming(false);
     }
