@@ -1,3 +1,8 @@
+/**
+ * Types cho báo cáo vận hành campus của Staff Leader — mirror StaffLeaderReportOverviewDto
+ * từ GET /reports/staff-leader-overview (backend aggregate từ DB thật, scope campus của leader).
+ */
+
 export interface StaffLeaderReportFilters {
   preset: string;
   fromDate?: string;
@@ -10,9 +15,36 @@ export interface StaffLeaderReportFilters {
   feedbackRating: string;
 }
 
+export type StaffLeaderExportFormat = 'EXCEL' | 'PDF' | 'CSV';
+
+export type StaffLeaderReportSection =
+  | 'EXECUTIVE_SUMMARY'
+  | 'LIFECYCLE_SUMMARY'
+  | 'HOST_WORKLOAD'
+  | 'PENDING_ACTIONS'
+  | 'LOGISTICS_SUMMARY'
+  | 'CLOSE_READINESS'
+  | 'FEEDBACK_SUMMARY';
+
 export interface StaffLeaderReportExportRequest extends StaffLeaderReportFilters {
   exportFormat: string;
   reportSections: string[];
+}
+
+export interface StaffLeaderFilterSummary {
+  preset: string;
+  fromDate: string | null;
+  toDate: string | null;
+  visitStatus: string;
+  requestStatus: string;
+  hostUserId: string;
+  hostName: string | null;
+  departmentId: string;
+  departmentName: string | null;
+  logisticsStatus: string;
+  feedbackRating: string;
+  campusName: string;
+  generatedByName: string | null;
 }
 
 export interface StaffLeaderKpis {
@@ -32,6 +64,8 @@ export interface StaffLeaderAttentionItem {
   type: string;
   label: string;
   count: number;
+  severity: string;
+  targetSection: string;
 }
 
 export interface StaffLeaderLifecyclePipelineItem {
@@ -47,6 +81,7 @@ export interface StaffLeaderMonthlyTrend {
   totalInstances: number;
   closedInstances: number;
   cancelledInstances: number;
+  activeInstances: number;
 }
 
 export interface StaffLeaderHostWorkload {
@@ -58,7 +93,6 @@ export interface StaffLeaderHostWorkload {
   duringVisitCount: number;
   afterVisitCount: number;
   averageFeedbackRating: number | null;
-  conflictCount: number;
 }
 
 export interface StaffLeaderLogisticsByDepartment {
@@ -74,12 +108,13 @@ export interface StaffLeaderLogisticsByDepartment {
 }
 
 export interface StaffLeaderPendingActionRequest {
-  type: string;
+  type: 'APPROVAL' | 'ASSIGN_HOST' | string;
   requestId: number;
   visitInstanceId: number | null;
   requestCode: string;
   delegationName: string;
   organizationName: string;
+  visitType: string;
   plannedStartAt: string | null;
   plannedEndAt: string | null;
   guestCount: number;
@@ -92,7 +127,7 @@ export interface StaffLeaderCloseReadiness {
   visitInstanceId: number;
   requestCode: string;
   delegationName: string;
-  hostName: string;
+  hostName: string | null;
   plannedEndAt: string;
   logisticsOpenCount: number;
   missingHandoverSignatureCount: number;
@@ -105,11 +140,14 @@ export interface StaffLeaderCloseReadiness {
   blockers: string[];
 }
 
-export interface StaffLeaderRatedVisit {
+export interface StaffLeaderFeedbackEntry {
+  feedbackId: number;
   visitInstanceId: number;
   delegationName: string;
-  averageRating: number;
-  feedbackCount: number;
+  hostName: string | null;
+  rating: number;
+  comment: string | null;
+  submittedAt: string;
   plannedStartAt: string | null;
 }
 
@@ -124,21 +162,14 @@ export interface StaffLeaderFeedbackSummary {
   averageRating: number | null;
   totalFeedbacks: number;
   lowFeedbackCount: number;
-  topRatedVisits: StaffLeaderRatedVisit[];
-  lowRatedVisits: StaffLeaderRatedVisit[];
+  lowFeedbacks: StaffLeaderFeedbackEntry[];
+  goodFeedbacks: StaffLeaderFeedbackEntry[];
   ratingByHost: StaffLeaderRatingByHost[];
-}
-
-export interface StaffLeaderNewsMediaSummary {
-  publishedNewsCount: number;
-  pendingNewsCount: number;
-  missingNewsCount: number;
-  newsNotRequiredCount: number;
-  mediaUploadedCount: number;
 }
 
 export interface StaffLeaderReportOverview {
   generatedAt: string;
+  filterSummary: StaffLeaderFilterSummary;
   kpis: StaffLeaderKpis;
   attentionItems: StaffLeaderAttentionItem[];
   campusLifecyclePipeline: StaffLeaderLifecyclePipelineItem[];
@@ -146,7 +177,8 @@ export interface StaffLeaderReportOverview {
   hostWorkload: StaffLeaderHostWorkload[];
   logisticsByDepartment: StaffLeaderLogisticsByDepartment[];
   pendingActionRequests: StaffLeaderPendingActionRequest[];
+  pendingActionTotal: number;
   closeReadiness: StaffLeaderCloseReadiness[];
+  closeReadinessTotal: number;
   feedbackSummary: StaffLeaderFeedbackSummary;
-  newsMediaSummary: StaffLeaderNewsMediaSummary;
 }

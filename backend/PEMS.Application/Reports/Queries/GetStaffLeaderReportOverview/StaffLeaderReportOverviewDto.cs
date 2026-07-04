@@ -6,30 +6,35 @@ namespace PEMS.Application.Reports.Queries.GetStaffLeaderReportOverview;
 public class StaffLeaderReportOverviewDto
 {
     public DateTime GeneratedAt { get; set; }
-    public StaffLeaderFilterSummary FilterSummary { get; set; }
-    public StaffLeaderKpis Kpis { get; set; }
-    public List<StaffLeaderAttentionItem> AttentionItems { get; set; }
-    public List<StaffLeaderLifecyclePipelineItem> CampusLifecyclePipeline { get; set; }
-    public List<StaffLeaderMonthlyTrend> MonthlyTrend { get; set; }
-    public List<StaffLeaderHostWorkload> HostWorkload { get; set; }
-    public List<StaffLeaderLogisticsByDepartment> LogisticsByDepartment { get; set; }
-    public List<StaffLeaderPendingActionRequest> PendingActionRequests { get; set; }
-    public List<StaffLeaderCloseReadiness> CloseReadiness { get; set; }
-    public StaffLeaderFeedbackSummary FeedbackSummary { get; set; }
-    public StaffLeaderNewsMediaSummary NewsMediaSummary { get; set; }
+    public StaffLeaderFilterSummary FilterSummary { get; set; } = new();
+    public StaffLeaderKpis Kpis { get; set; } = new();
+    public List<StaffLeaderAttentionItem> AttentionItems { get; set; } = new();
+    public List<StaffLeaderLifecyclePipelineItem> CampusLifecyclePipeline { get; set; } = new();
+    public List<StaffLeaderMonthlyTrend> MonthlyTrend { get; set; } = new();
+    public List<StaffLeaderHostWorkload> HostWorkload { get; set; } = new();
+    public List<StaffLeaderLogisticsByDepartment> LogisticsByDepartment { get; set; } = new();
+    public List<StaffLeaderPendingActionRequest> PendingActionRequests { get; set; } = new();
+    public int PendingActionTotal { get; set; }
+    public List<StaffLeaderCloseReadiness> CloseReadiness { get; set; } = new();
+    public int CloseReadinessTotal { get; set; }
+    public StaffLeaderFeedbackSummary FeedbackSummary { get; set; } = new();
 }
 
 public class StaffLeaderFilterSummary
 {
-    public string Preset { get; set; }
-    public string FromDate { get; set; }
-    public string ToDate { get; set; }
-    public string VisitStatus { get; set; }
-    public string RequestStatus { get; set; }
-    public string HostUserId { get; set; }
-    public string DepartmentId { get; set; }
-    public string LogisticsStatus { get; set; }
-    public string FeedbackRating { get; set; }
+    public string Preset { get; set; } = "THIS_YEAR";
+    public string? FromDate { get; set; }
+    public string? ToDate { get; set; }
+    public string VisitStatus { get; set; } = "ALL";
+    public string RequestStatus { get; set; } = "ALL";
+    public string HostUserId { get; set; } = "ALL";
+    public string? HostName { get; set; }
+    public string DepartmentId { get; set; } = "ALL";
+    public string? DepartmentName { get; set; }
+    public string LogisticsStatus { get; set; } = "ALL";
+    public string FeedbackRating { get; set; } = "ALL";
+    public string CampusName { get; set; } = string.Empty;
+    public string? GeneratedByName { get; set; }
 }
 
 public class StaffLeaderKpis
@@ -48,45 +53,47 @@ public class StaffLeaderKpis
 
 public class StaffLeaderAttentionItem
 {
-    public string Type { get; set; }
-    public string Label { get; set; }
+    public string Type { get; set; } = string.Empty;
+    public string Label { get; set; } = string.Empty;
     public int Count { get; set; }
+    public string Severity { get; set; } = "INFO";
+    public string TargetSection { get; set; } = string.Empty;
 }
 
 public class StaffLeaderLifecyclePipelineItem
 {
-    public string Status { get; set; }
-    public string LabelVi { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public string LabelVi { get; set; } = string.Empty;
     public int Count { get; set; }
     public double Percentage { get; set; }
 }
 
 public class StaffLeaderMonthlyTrend
 {
-    public string Month { get; set; }
-    public string MonthLabel { get; set; }
+    public string Month { get; set; } = string.Empty;
+    public string MonthLabel { get; set; } = string.Empty;
     public int TotalInstances { get; set; }
     public int ClosedInstances { get; set; }
     public int CancelledInstances { get; set; }
+    public int ActiveInstances { get; set; }
 }
 
 public class StaffLeaderHostWorkload
 {
     public ulong HostUserId { get; set; }
-    public string HostName { get; set; }
+    public string HostName { get; set; } = string.Empty;
     public int AssignedCount { get; set; }
     public int Upcoming7Days { get; set; }
     public int BeforeVisitCount { get; set; }
     public int DuringVisitCount { get; set; }
     public int AfterVisitCount { get; set; }
     public double? AverageFeedbackRating { get; set; }
-    public int ConflictCount { get; set; }
 }
 
 public class StaffLeaderLogisticsByDepartment
 {
     public ulong DepartmentId { get; set; }
-    public string DepartmentName { get; set; }
+    public string DepartmentName { get; set; } = string.Empty;
     public int TotalItems { get; set; }
     public int Requested { get; set; }
     public int Accepted { get; set; }
@@ -98,26 +105,28 @@ public class StaffLeaderLogisticsByDepartment
 
 public class StaffLeaderPendingActionRequest
 {
-    public string Type { get; set; }
+    /// <summary>APPROVAL | ASSIGN_HOST.</summary>
+    public string Type { get; set; } = string.Empty;
     public ulong RequestId { get; set; }
     public ulong? VisitInstanceId { get; set; }
-    public string RequestCode { get; set; }
-    public string DelegationName { get; set; }
-    public string OrganizationName { get; set; }
+    public string RequestCode { get; set; } = string.Empty;
+    public string DelegationName { get; set; } = string.Empty;
+    public string OrganizationName { get; set; } = string.Empty;
+    public string VisitType { get; set; } = string.Empty;
     public DateTime? PlannedStartAt { get; set; }
     public DateTime? PlannedEndAt { get; set; }
     public int GuestCount { get; set; }
-    public string Status { get; set; }
-    public int WaitingHours { get; set; }
-    public string ActionLabel { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public double WaitingHours { get; set; }
+    public string ActionLabel { get; set; } = string.Empty;
 }
 
 public class StaffLeaderCloseReadiness
 {
     public ulong VisitInstanceId { get; set; }
-    public string RequestCode { get; set; }
-    public string DelegationName { get; set; }
-    public string HostName { get; set; }
+    public string RequestCode { get; set; } = string.Empty;
+    public string DelegationName { get; set; } = string.Empty;
+    public string? HostName { get; set; }
     public DateTime PlannedEndAt { get; set; }
     public int LogisticsOpenCount { get; set; }
     public int MissingHandoverSignatureCount { get; set; }
@@ -127,7 +136,7 @@ public class StaffLeaderCloseReadiness
     public bool NewsNotRequired { get; set; }
     public int FeedbackCount { get; set; }
     public bool CanClose { get; set; }
-    public List<string> Blockers { get; set; }
+    public List<string> Blockers { get; set; } = new();
 }
 
 public class StaffLeaderFeedbackSummary
@@ -135,33 +144,27 @@ public class StaffLeaderFeedbackSummary
     public double? AverageRating { get; set; }
     public int TotalFeedbacks { get; set; }
     public int LowFeedbackCount { get; set; }
-    public List<StaffLeaderRatedVisit> TopRatedVisits { get; set; }
-    public List<StaffLeaderRatedVisit> LowRatedVisits { get; set; }
-    public List<StaffLeaderRatingByHost> RatingByHost { get; set; }
+    public List<StaffLeaderFeedbackEntry> LowFeedbacks { get; set; } = new();
+    public List<StaffLeaderFeedbackEntry> GoodFeedbacks { get; set; } = new();
+    public List<StaffLeaderRatingByHost> RatingByHost { get; set; } = new();
 }
 
-public class StaffLeaderRatedVisit
+public class StaffLeaderFeedbackEntry
 {
+    public ulong FeedbackId { get; set; }
     public ulong VisitInstanceId { get; set; }
-    public string DelegationName { get; set; }
-    public double AverageRating { get; set; }
-    public int FeedbackCount { get; set; }
+    public string DelegationName { get; set; } = string.Empty;
+    public string? HostName { get; set; }
+    public int Rating { get; set; }
+    public string? Comment { get; set; }
+    public DateTime SubmittedAt { get; set; }
     public DateTime? PlannedStartAt { get; set; }
 }
 
 public class StaffLeaderRatingByHost
 {
     public ulong HostUserId { get; set; }
-    public string HostName { get; set; }
+    public string HostName { get; set; } = string.Empty;
     public double AverageRating { get; set; }
     public int FeedbackCount { get; set; }
-}
-
-public class StaffLeaderNewsMediaSummary
-{
-    public int PublishedNewsCount { get; set; }
-    public int PendingNewsCount { get; set; }
-    public int MissingNewsCount { get; set; }
-    public int NewsNotRequiredCount { get; set; }
-    public int MediaUploadedCount { get; set; }
 }

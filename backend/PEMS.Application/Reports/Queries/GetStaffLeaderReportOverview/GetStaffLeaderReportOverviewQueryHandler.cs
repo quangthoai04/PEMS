@@ -1,115 +1,675 @@
-using MediatR;
-using Microsoft.EntityFrameworkCore;
-using PEMS.Application.Common.Interfaces;
-using PEMS.Application.Common.Security;
-using PEMS.Domain.Entities;
 using System;
+using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Collections.Generic;
+using MediatR;
+using Microsoft.EntityFrameworkCore;
+using PEMS.Application.Common.Exceptions;
+using PEMS.Application.Common.Interfaces;
+using PEMS.Shared;
 
 namespace PEMS.Application.Reports.Queries.GetStaffLeaderReportOverview;
 
-public class GetStaffLeaderReportOverviewQueryHandler : IRequestHandler<GetStaffLeaderReportOverviewQuery, StaffLeaderReportOverviewDto>
+/// <summary>
+/// Aggregates the Staff Leader campus operation report from live data (no mock).
+/// Scope is always the leader's primary campus; every query is AsNoTracking and
+/// aggregation happens in the database wherever EF can translate it.
+/// The controller enforces the role, this handler re-checks as defense in depth.
+/// </summary>
+public sealed class GetStaffLeaderReportOverviewQueryHandler
+    : IRequestHandler<GetStaffLeaderReportOverviewQuery, StaffLeaderReportOverviewDto>
 {
-    private readonly IApplicationDbContext _context;
-    private readonly ICurrentUserService _currentUserService;
+    private const int VnUtcOffsetHours = 7;
+    private const int PreviewLimit = 10;
+    private const int FeedbackEntryLimit = 10;
 
-    public GetStaffLeaderReportOverviewQueryHandler(IApplicationDbContext context, ICurrentUserService currentUserService)
+    private static readonly string[] OverdueCloseStatuses =
     {
-        _context = context;
-        _currentUserService = currentUserService;
+        VisitInstanceStatus.Assigned,
+        VisitInstanceStatus.BeforeVisit,
+        VisitInstanceStatus.DuringVisit,
+        VisitInstanceStatus.AfterVisit,
+    };
+
+    private static readonly string[] ActiveHostStatuses = OverdueCloseStatuses;
+
+    private static readonly string[] OpenLogisticsStatuses =
+    {
+        LogisticsItemStatus.Requested,
+        LogisticsItemStatus.ChangeProposed,
+        LogisticsItemStatus.Assigned,
+        LogisticsItemStatus.Accepted,
+        LogisticsItemStatus.InProgress,
+    };
+
+    private static readonly (string Status, string LabelVi)[] PipelineStatuses =
+    {
+        (VisitInstanceStatus.WaitingRequestApproval, "Chờ duyệt"),
+        (VisitInstanceStatus.WaitingHostAssignment, "Chờ gán host"),
+        (VisitInstanceStatus.Assigned, "Đã gán host"),
+        (VisitInstanceStatus.BeforeVisit, "Trước chuyến"),
+        (VisitInstanceStatus.DuringVisit, "Đang diễn ra"),
+        (VisitInstanceStatus.AfterVisit, "Sau chuyến"),
+        (VisitInstanceStatus.Closed, "Đã đóng"),
+        (VisitInstanceStatus.Cancelled, "Đã hủy"),
+    };
+
+    private readonly IApplicationDbContext _db;
+    private readonly ICurrentUserService _currentUser;
+
+    public GetStaffLeaderReportOverviewQueryHandler(IApplicationDbContext db, ICurrentUserService currentUser)
+    {
+        _db = db;
+        _currentUser = currentUser;
     }
 
     public async Task<StaffLeaderReportOverviewDto> Handle(GetStaffLeaderReportOverviewQuery request, CancellationToken cancellationToken)
     {
-        ulong campusId = _currentUserService.PrimaryCampusId ?? 0;
-        if (campusId == 0)
+        if (!_currentUser.IsAuthenticated)
+            throw new ForbiddenException("Phiên đăng nhập không hợp lệ hoặc đã hết hạn.");
+        if (!string.Equals(_currentUser.RoleCode, "STAFF", StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(_currentUser.SubRole, "LEADER", StringComparison.OrdinalIgnoreCase))
+            throw new ForbiddenException("Bạn không có quyền xem báo cáo vận hành campus.");
+
+        var campusId = _currentUser.PrimaryCampusId
+            ?? throw new ForbiddenException("Tài khoản chưa được gán campus chính.");
+
+        var nowUtc = DateTime.UtcNow;
+        var nowVn = nowUtc.AddHours(VnUtcOffsetHours);
+        var upcomingLimitUtc = nowUtc.AddDays(7);
+
+        var preset = NormalizePreset(request.Preset);
+        var (fromVn, toVnExclusive) = ResolvePeriodVn(preset, request.FromDate, request.ToDate, nowVn);
+        var fromUtc = fromVn.AddHours(-VnUtcOffsetHours);
+        var toUtc = toVnExclusive.AddHours(-VnUtcOffsetHours);
+
+        var visitStatus = NormalizeFilter(request.VisitStatus);
+        var requestStatus = NormalizeFilter(request.RequestStatus);
+        var logisticsStatus = NormalizeFilter(request.LogisticsStatus);
+        var feedbackRating = NormalizeFilter(request.FeedbackRating);
+        ulong? hostUserId = ulong.TryParse(request.HostUserId, out var parsedHost) && parsedHost > 0 ? parsedHost : null;
+        ulong? departmentId = ulong.TryParse(request.DepartmentId, out var parsedDept) && parsedDept > 0 ? parsedDept : null;
+
+        // ---- Base query 1: campus instances planned in the period (trend, pipeline, guests, logistics). ----
+        var instances = _db.VisitRequestCampuses.AsNoTracking()
+            .Where(ci => ci.CampusId == campusId && ci.PlannedStartAt >= fromUtc && ci.PlannedStartAt < toUtc);
+        if (visitStatus != null) instances = instances.Where(ci => ci.Status == visitStatus);
+        if (requestStatus != null) instances = instances.Where(ci => ci.VisitRequest.Status == requestStatus);
+        if (hostUserId != null) instances = instances.Where(ci => ci.CurrentHostUserId == hostUserId);
+
+        // ---- Base query 2: current operational state (ignores period on purpose — action queues). ----
+        var opInstances = _db.VisitRequestCampuses.AsNoTracking()
+            .Where(ci => ci.CampusId == campusId);
+        if (hostUserId != null) opInstances = opInstances.Where(ci => ci.CurrentHostUserId == hostUserId);
+
+        // ---- Base query 3: single-campus requests waiting for Staff Leader approval (current state). ----
+        var pendingApproval = _db.VisitRequests.AsNoTracking()
+            .Where(r => r.VisitScope == "SINGLE_CAMPUS"
+                        && r.Status == VisitRequestStatus.PendingApproval
+                        && r.CampusInstances.Any(ci => ci.CampusId == campusId));
+
+        // ---- Current-state workflow counts (KPI strip + attention). ----
+        var opStatusCounts = await opInstances
+            .GroupBy(ci => ci.Status)
+            .Select(g => new { Status = g.Key, Count = g.Count() })
+            .ToListAsync(cancellationToken);
+        int OpCount(string status) => opStatusCounts.FirstOrDefault(x => x.Status == status)?.Count ?? 0;
+
+        var pendingApprovalCount = await pendingApproval.CountAsync(cancellationToken);
+        var overdueOrNotClosed = await opInstances.CountAsync(
+            ci => ci.PlannedEndAt < nowUtc && OverdueCloseStatuses.Contains(ci.Status), cancellationToken);
+
+        // ---- Period aggregates: lifecycle pipeline + closed count + guests. ----
+        var instanceStatusCounts = await instances
+            .GroupBy(ci => ci.Status)
+            .Select(g => new { Status = g.Key, Count = g.Count() })
+            .ToListAsync(cancellationToken);
+        var totalInstances = instanceStatusCounts.Sum(x => x.Count);
+        int PeriodCount(string status) => instanceStatusCounts.FirstOrDefault(x => x.Status == status)?.Count ?? 0;
+
+        var lifecyclePipeline = PipelineStatuses
+            .Select(p => new StaffLeaderLifecyclePipelineItem
+            {
+                Status = p.Status,
+                LabelVi = p.LabelVi,
+                Count = PeriodCount(p.Status),
+                Percentage = totalInstances > 0
+                    ? Math.Round(PeriodCount(p.Status) * 100.0 / totalInstances, 1)
+                    : 0,
+            })
+            .ToList();
+
+        var totalGuests = await instances
+            .SelectMany(ci => ci.VisitRequest.GuestMembers)
+            .CountAsync(cancellationToken);
+
+        // ---- Monthly trend (grouped by Vietnam-local month of planned_start_at). ----
+        var trendRaw = await instances
+            .GroupBy(ci => new { ci.PlannedStartAt.AddHours(VnUtcOffsetHours).Year, ci.PlannedStartAt.AddHours(VnUtcOffsetHours).Month })
+            .Select(g => new
+            {
+                g.Key.Year,
+                g.Key.Month,
+                Total = g.Count(),
+                Closed = g.Count(ci => ci.Status == VisitInstanceStatus.Closed),
+                Cancelled = g.Count(ci => ci.Status == VisitInstanceStatus.Cancelled),
+            })
+            .ToListAsync(cancellationToken);
+
+        var monthlyTrend = new List<StaffLeaderMonthlyTrend>();
+        var lastMonthVn = toVnExclusive.AddDays(-1);
+        for (var cursor = new DateTime(fromVn.Year, fromVn.Month, 1);
+             cursor <= new DateTime(lastMonthVn.Year, lastMonthVn.Month, 1);
+             cursor = cursor.AddMonths(1))
         {
-            throw new Exception("User has no primary campus.");
+            var row = trendRaw.FirstOrDefault(t => t.Year == cursor.Year && t.Month == cursor.Month);
+            var total = row?.Total ?? 0;
+            var closed = row?.Closed ?? 0;
+            var cancelled = row?.Cancelled ?? 0;
+            monthlyTrend.Add(new StaffLeaderMonthlyTrend
+            {
+                Month = cursor.ToString("yyyy-MM", CultureInfo.InvariantCulture),
+                MonthLabel = $"T{cursor.Month}/{cursor.Year}",
+                TotalInstances = total,
+                ClosedInstances = closed,
+                CancelledInstances = cancelled,
+                ActiveInstances = total - closed - cancelled,
+            });
         }
 
-        // Base Data Retrieval - Mocked/Simplified for speed of execution
-        // Using AsNoTracking to avoid tracking overhead
-        var instancesQuery = _context.VisitRequestCampuses.AsNoTracking()
-            .Where(x => x.CampusId == campusId);
-            
-        var requestsQuery = _context.VisitRequests.AsNoTracking()
-            .Where(x => x.VisitScope == "SINGLE_CAMPUS" && x.CampusInstances.Any(ci => ci.CampusId == campusId));
+        // ---- Host workload (current active assignments, campus scope). ----
+        var hostAgg = await opInstances
+            .Where(ci => ci.CurrentHostUserId != null && ActiveHostStatuses.Contains(ci.Status))
+            .GroupBy(ci => ci.CurrentHostUserId!.Value)
+            .Select(g => new
+            {
+                HostUserId = g.Key,
+                Assigned = g.Count(),
+                Upcoming7 = g.Count(ci => ci.PlannedStartAt >= nowUtc && ci.PlannedStartAt < upcomingLimitUtc),
+                Before = g.Count(ci => ci.Status == VisitInstanceStatus.Assigned || ci.Status == VisitInstanceStatus.BeforeVisit),
+                During = g.Count(ci => ci.Status == VisitInstanceStatus.DuringVisit),
+                After = g.Count(ci => ci.Status == VisitInstanceStatus.AfterVisit),
+            })
+            .OrderByDescending(x => x.Assigned)
+            .ToListAsync(cancellationToken);
 
-        // Fetch basic counts
-        var pendingSingleCampus = await requestsQuery.CountAsync(x => x.Status == "PENDING_APPROVAL", cancellationToken);
-        var waitingHostAssignment = await instancesQuery.CountAsync(x => x.Status == "WAITING_HOST_ASSIGNMENT", cancellationToken);
-        var assignedVisits = await instancesQuery.CountAsync(x => x.Status == "ASSIGNED", cancellationToken);
-        var beforeVisit = await instancesQuery.CountAsync(x => x.Status == "BEFORE_VISIT", cancellationToken);
-        var duringVisit = await instancesQuery.CountAsync(x => x.Status == "DURING_VISIT", cancellationToken);
-        var afterVisit = await instancesQuery.CountAsync(x => x.Status == "AFTER_VISIT", cancellationToken);
-        var closedVisits = await instancesQuery.CountAsync(x => x.Status == "CLOSED", cancellationToken);
-        
-        // This is a minimal mock implementation of the required DTO because a full aggregation 
-        // with all the joins across 15 tables is too large for this specific task requirement.
-        // We will fill out the core metrics and return empty lists for the complex breakdowns.
+        // ---- Feedback base: feedbacks submitted in the period for instances of this campus. ----
+        var feedbackBase =
+            from f in _db.Feedbacks.AsNoTracking()
+            where f.SubmittedAt >= fromUtc && f.SubmittedAt < toUtc && f.VisitInstanceId != null
+            join ci in _db.VisitRequestCampuses.AsNoTracking() on f.VisitInstanceId equals (ulong?)ci.VisitInstanceId
+            where ci.CampusId == campusId
+            select new { f, ci };
+        if (hostUserId != null) feedbackBase = feedbackBase.Where(x => x.ci.CurrentHostUserId == hostUserId);
+        if (feedbackRating == "LOW") feedbackBase = feedbackBase.Where(x => x.f.Rating <= 2);
+        else if (feedbackRating == "HIGH") feedbackBase = feedbackBase.Where(x => x.f.Rating >= 4);
+        else if (byte.TryParse(feedbackRating, out var exactRating) && exactRating is >= 1 and <= 5)
+            feedbackBase = feedbackBase.Where(x => x.f.Rating == exactRating);
 
-        var dto = new StaffLeaderReportOverviewDto
+        var feedbackStats = await feedbackBase
+            .GroupBy(_ => 1)
+            .Select(g => new
+            {
+                Count = g.Count(),
+                Avg = g.Average(x => (double)x.f.Rating),
+                Low = g.Count(x => x.f.Rating <= 2),
+            })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        var lowFeedbackRows = await feedbackBase
+            .Where(x => x.f.Rating <= 2)
+            .OrderBy(x => x.f.Rating).ThenByDescending(x => x.f.SubmittedAt)
+            .Take(FeedbackEntryLimit)
+            .Select(x => new
+            {
+                x.f.FeedbackId,
+                VisitInstanceId = x.ci.VisitInstanceId,
+                x.ci.VisitRequest.DelegationName,
+                x.ci.CurrentHostUserId,
+                x.f.Rating,
+                x.f.Comment,
+                x.f.SubmittedAt,
+                x.ci.PlannedStartAt,
+            })
+            .ToListAsync(cancellationToken);
+
+        var goodFeedbackRows = await feedbackBase
+            .Where(x => x.f.Rating >= 4)
+            .OrderByDescending(x => x.f.SubmittedAt)
+            .Take(FeedbackEntryLimit)
+            .Select(x => new
+            {
+                x.f.FeedbackId,
+                VisitInstanceId = x.ci.VisitInstanceId,
+                x.ci.VisitRequest.DelegationName,
+                x.ci.CurrentHostUserId,
+                x.f.Rating,
+                x.f.Comment,
+                x.f.SubmittedAt,
+                x.ci.PlannedStartAt,
+            })
+            .ToListAsync(cancellationToken);
+
+        var ratingByHostRaw = await feedbackBase
+            .Where(x => x.ci.CurrentHostUserId != null)
+            .GroupBy(x => x.ci.CurrentHostUserId!.Value)
+            .Select(g => new { HostUserId = g.Key, Avg = g.Average(x => (double)x.f.Rating), Count = g.Count() })
+            .ToListAsync(cancellationToken);
+
+        // ---- Logistics by department (items of instances planned in the period). ----
+        var logisticsBase =
+            from li in _db.VisitLogisticsItems.AsNoTracking()
+            join ci in _db.VisitRequestCampuses.AsNoTracking() on li.VisitInstanceId equals ci.VisitInstanceId
+            where ci.CampusId == campusId && ci.PlannedStartAt >= fromUtc && ci.PlannedStartAt < toUtc
+            select new { li, ci };
+        if (hostUserId != null) logisticsBase = logisticsBase.Where(x => x.ci.CurrentHostUserId == hostUserId);
+        if (departmentId != null) logisticsBase = logisticsBase.Where(x => x.li.RequestedToDepartmentId == departmentId);
+        if (logisticsStatus != null) logisticsBase = logisticsBase.Where(x => x.li.Status == logisticsStatus);
+
+        var logisticsAgg = await logisticsBase
+            .GroupBy(x => x.li.RequestedToDepartmentId)
+            .Select(g => new
+            {
+                DepartmentId = g.Key,
+                Total = g.Count(),
+                Requested = g.Count(x => x.li.Status == LogisticsItemStatus.Requested
+                                         || x.li.Status == LogisticsItemStatus.ChangeProposed
+                                         || x.li.Status == LogisticsItemStatus.Assigned),
+                Accepted = g.Count(x => x.li.Status == LogisticsItemStatus.Accepted),
+                InProgress = g.Count(x => x.li.Status == LogisticsItemStatus.InProgress),
+                Done = g.Count(x => x.li.Status == LogisticsItemStatus.Done),
+                Rejected = g.Count(x => x.li.Status == LogisticsItemStatus.Rejected
+                                        || x.li.Status == LogisticsItemStatus.Declined),
+                Overdue = g.Count(x => OpenLogisticsStatuses.Contains(x.li.Status) && x.ci.PlannedEndAt < nowUtc),
+            })
+            .ToListAsync(cancellationToken);
+
+        var deptIds = logisticsAgg.Where(x => x.DepartmentId != null).Select(x => x.DepartmentId!.Value).Distinct().ToList();
+        var deptNames = await _db.Departments.AsNoTracking()
+            .Where(d => deptIds.Contains(d.DepartmentId))
+            .Select(d => new { d.DepartmentId, d.Name })
+            .ToListAsync(cancellationToken);
+
+        var logisticsByDepartment = logisticsAgg
+            .Select(x => new StaffLeaderLogisticsByDepartment
+            {
+                DepartmentId = x.DepartmentId ?? 0,
+                DepartmentName = x.DepartmentId != null
+                    ? deptNames.FirstOrDefault(d => d.DepartmentId == x.DepartmentId)?.Name ?? $"Phòng ban #{x.DepartmentId}"
+                    : "Chưa gán phòng ban",
+                TotalItems = x.Total,
+                Requested = x.Requested,
+                Accepted = x.Accepted,
+                InProgress = x.InProgress,
+                Done = x.Done,
+                Rejected = x.Rejected,
+                OverdueCount = x.Overdue,
+            })
+            .OrderByDescending(x => x.OverdueCount).ThenByDescending(x => x.TotalItems)
+            .ToList();
+        var overdueLogisticsTotal = logisticsByDepartment.Sum(x => x.OverdueCount);
+
+        // ---- Pending actions: approvals + host assignments (current state, oldest first). ----
+        var approvalRows = await pendingApproval
+            .OrderBy(r => r.SubmittedAt)
+            .Take(PreviewLimit)
+            .Select(r => new
+            {
+                r.VisitRequestId,
+                r.RequestCode,
+                r.DelegationName,
+                r.RegistrantOrganization,
+                r.VisitType,
+                r.Status,
+                r.SubmittedAt,
+                VisitInstanceId = r.CampusInstances
+                    .Where(ci => ci.CampusId == campusId)
+                    .Select(ci => (ulong?)ci.VisitInstanceId)
+                    .FirstOrDefault(),
+                PlannedStartAt = r.CampusInstances
+                    .Where(ci => ci.CampusId == campusId)
+                    .Min(ci => (DateTime?)ci.PlannedStartAt),
+                PlannedEndAt = r.CampusInstances
+                    .Where(ci => ci.CampusId == campusId)
+                    .Max(ci => (DateTime?)ci.PlannedEndAt),
+                GuestCount = r.GuestMembers.Count,
+            })
+            .ToListAsync(cancellationToken);
+
+        var waitingHostRows = await opInstances
+            .Where(ci => ci.Status == VisitInstanceStatus.WaitingHostAssignment)
+            .OrderBy(ci => ci.PlannedStartAt)
+            .Take(PreviewLimit)
+            .Select(ci => new
+            {
+                ci.VisitRequestId,
+                ci.VisitInstanceId,
+                ci.VisitRequest.RequestCode,
+                ci.VisitRequest.DelegationName,
+                ci.VisitRequest.RegistrantOrganization,
+                ci.VisitRequest.VisitType,
+                ci.Status,
+                WaitingSince = ci.VisitRequest.DecidedAt ?? ci.VisitRequest.SubmittedAt,
+                PlannedStartAt = (DateTime?)ci.PlannedStartAt,
+                PlannedEndAt = (DateTime?)ci.PlannedEndAt,
+                GuestCount = ci.VisitRequest.GuestMembers.Count,
+            })
+            .ToListAsync(cancellationToken);
+
+        var pendingActionRequests = approvalRows
+            .Select(r => new StaffLeaderPendingActionRequest
+            {
+                Type = "APPROVAL",
+                RequestId = r.VisitRequestId,
+                VisitInstanceId = r.VisitInstanceId,
+                RequestCode = r.RequestCode,
+                DelegationName = r.DelegationName,
+                OrganizationName = r.RegistrantOrganization,
+                VisitType = r.VisitType,
+                PlannedStartAt = r.PlannedStartAt,
+                PlannedEndAt = r.PlannedEndAt,
+                GuestCount = r.GuestCount,
+                Status = r.Status,
+                WaitingHours = Math.Max(0, Math.Round((nowUtc - r.SubmittedAt).TotalHours, 1)),
+                ActionLabel = "Duyệt / Từ chối",
+            })
+            .Concat(waitingHostRows.Select(ci => new StaffLeaderPendingActionRequest
+            {
+                Type = "ASSIGN_HOST",
+                RequestId = ci.VisitRequestId,
+                VisitInstanceId = ci.VisitInstanceId,
+                RequestCode = ci.RequestCode,
+                DelegationName = ci.DelegationName,
+                OrganizationName = ci.RegistrantOrganization,
+                VisitType = ci.VisitType,
+                PlannedStartAt = ci.PlannedStartAt,
+                PlannedEndAt = ci.PlannedEndAt,
+                GuestCount = ci.GuestCount,
+                Status = ci.Status,
+                // Seed/legacy có thể có DecidedAt tương lai — chưa tới thời điểm chờ thì tính 0.
+                WaitingHours = Math.Max(0, Math.Round((nowUtc - ci.WaitingSince).TotalHours, 1)),
+                ActionLabel = "Gán host",
+            }))
+            .OrderByDescending(x => x.WaitingHours)
+            .ToList();
+        var pendingActionTotal = pendingApprovalCount + OpCount(VisitInstanceStatus.WaitingHostAssignment);
+
+        // ---- Close readiness: AFTER_VISIT instances, mirroring the CompleteVisitStage close rule. ----
+        var closeReadinessTotal = OpCount(VisitInstanceStatus.AfterVisit);
+        var closeRows = await opInstances
+            .Where(ci => ci.Status == VisitInstanceStatus.AfterVisit)
+            .OrderBy(ci => ci.PlannedEndAt)
+            .Take(PreviewLimit)
+            .Select(ci => new
+            {
+                ci.VisitInstanceId,
+                ci.VisitRequest.RequestCode,
+                ci.VisitRequest.DelegationName,
+                ci.PlannedEndAt,
+                ci.CurrentHostUserId,
+                ci.NewsNotRequired,
+                LogisticsOpenCount = ci.LogisticsItems.Count(li =>
+                    li.Status != LogisticsItemStatus.Done
+                    && li.Status != LogisticsItemStatus.Rejected
+                    && li.Status != LogisticsItemStatus.Declined
+                    && li.Status != LogisticsItemStatus.Cancelled),
+                MissingHandoverSignatureCount = _db.VisitLogisticsItemHandovers.Count(h =>
+                    h.LogisticsItem.VisitInstanceId == ci.VisitInstanceId
+                    && (h.BorrowerSignedAt == null || h.ProviderSignedAt == null)),
+                OpenActionItemCount = _db.MinuteActionItems.Count(ai =>
+                    ai.Minute.VisitInstanceId == ci.VisitInstanceId
+                    && ai.Status != "DONE" && ai.Status != "CANCELLED"),
+                HasMinutes = _db.Minutes.Any(m => m.VisitInstanceId == ci.VisitInstanceId),
+                HasPublishedNews = _db.News.Any(n => n.VisitInstanceId == ci.VisitInstanceId && n.Status == "PUBLISHED"),
+                FeedbackCount = _db.Feedbacks.Count(f => f.VisitInstanceId == ci.VisitInstanceId),
+            })
+            .ToListAsync(cancellationToken);
+
+        // ---- Resolve user names in one query (hosts from workload, close readiness, feedback). ----
+        var userIds = hostAgg.Select(h => h.HostUserId)
+            .Concat(ratingByHostRaw.Select(h => h.HostUserId))
+            .Concat(closeRows.Where(r => r.CurrentHostUserId != null).Select(r => r.CurrentHostUserId!.Value))
+            .Concat(lowFeedbackRows.Where(r => r.CurrentHostUserId != null).Select(r => r.CurrentHostUserId!.Value))
+            .Concat(goodFeedbackRows.Where(r => r.CurrentHostUserId != null).Select(r => r.CurrentHostUserId!.Value))
+            .Distinct()
+            .ToList();
+        if (hostUserId != null) userIds.Add(hostUserId.Value);
+        var userNames = await _db.Users.AsNoTracking()
+            .Where(u => userIds.Contains(u.UserId))
+            .Select(u => new { u.UserId, u.FullName })
+            .ToListAsync(cancellationToken);
+        string? UserName(ulong? id) => id == null ? null
+            : userNames.FirstOrDefault(u => u.UserId == id)?.FullName ?? $"User #{id}";
+
+        var hostWorkload = hostAgg
+            .Select(h =>
+            {
+                var fb = ratingByHostRaw.FirstOrDefault(x => x.HostUserId == h.HostUserId);
+                return new StaffLeaderHostWorkload
+                {
+                    HostUserId = h.HostUserId,
+                    HostName = UserName(h.HostUserId) ?? $"User #{h.HostUserId}",
+                    AssignedCount = h.Assigned,
+                    Upcoming7Days = h.Upcoming7,
+                    BeforeVisitCount = h.Before,
+                    DuringVisitCount = h.During,
+                    AfterVisitCount = h.After,
+                    AverageFeedbackRating = fb != null ? Math.Round(fb.Avg, 1) : null,
+                };
+            })
+            .ToList();
+
+        var closeReadiness = closeRows.Select(r =>
         {
-            GeneratedAt = DateTime.UtcNow,
+            var blockers = new List<string>();
+            if (r.PlannedEndAt > nowUtc) blockers.Add("PLANNED_END_NOT_REACHED");
+            if (r.LogisticsOpenCount > 0) blockers.Add("LOGISTICS_OPEN");
+            if (r.MissingHandoverSignatureCount > 0) blockers.Add("HANDOVER_SIGNATURE_MISSING");
+            if (r.OpenActionItemCount > 0) blockers.Add("ACTION_ITEMS_OPEN");
+            if (!r.NewsNotRequired && !r.HasPublishedNews) blockers.Add("NEWS_MISSING");
+            return new StaffLeaderCloseReadiness
+            {
+                VisitInstanceId = r.VisitInstanceId,
+                RequestCode = r.RequestCode,
+                DelegationName = r.DelegationName,
+                HostName = UserName(r.CurrentHostUserId),
+                PlannedEndAt = r.PlannedEndAt,
+                LogisticsOpenCount = r.LogisticsOpenCount,
+                MissingHandoverSignatureCount = r.MissingHandoverSignatureCount,
+                OpenActionItemCount = r.OpenActionItemCount,
+                HasMinutes = r.HasMinutes,
+                HasPublishedNews = r.HasPublishedNews,
+                NewsNotRequired = r.NewsNotRequired,
+                FeedbackCount = r.FeedbackCount,
+                CanClose = blockers.Count == 0,
+                Blockers = blockers,
+            };
+        }).ToList();
+
+        var feedbackSummary = new StaffLeaderFeedbackSummary
+        {
+            AverageRating = feedbackStats != null ? Math.Round(feedbackStats.Avg, 1) : null,
+            TotalFeedbacks = feedbackStats?.Count ?? 0,
+            LowFeedbackCount = feedbackStats?.Low ?? 0,
+            LowFeedbacks = lowFeedbackRows.Select(r => new StaffLeaderFeedbackEntry
+            {
+                FeedbackId = r.FeedbackId,
+                VisitInstanceId = r.VisitInstanceId,
+                DelegationName = r.DelegationName,
+                HostName = UserName(r.CurrentHostUserId),
+                Rating = r.Rating,
+                Comment = r.Comment,
+                SubmittedAt = r.SubmittedAt,
+                PlannedStartAt = r.PlannedStartAt,
+            }).ToList(),
+            GoodFeedbacks = goodFeedbackRows.Select(r => new StaffLeaderFeedbackEntry
+            {
+                FeedbackId = r.FeedbackId,
+                VisitInstanceId = r.VisitInstanceId,
+                DelegationName = r.DelegationName,
+                HostName = UserName(r.CurrentHostUserId),
+                Rating = r.Rating,
+                Comment = r.Comment,
+                SubmittedAt = r.SubmittedAt,
+                PlannedStartAt = r.PlannedStartAt,
+            }).ToList(),
+            RatingByHost = ratingByHostRaw
+                .Select(h => new StaffLeaderRatingByHost
+                {
+                    HostUserId = h.HostUserId,
+                    HostName = UserName(h.HostUserId) ?? $"User #{h.HostUserId}",
+                    AverageRating = Math.Round(h.Avg, 1),
+                    FeedbackCount = h.Count,
+                })
+                .OrderBy(h => h.AverageRating)
+                .ToList(),
+        };
+
+        // ---- Attention items ("cần Staff Leader xử lý" — current state unless noted). ----
+        var afterVisitCount = OpCount(VisitInstanceStatus.AfterVisit);
+        var attentionItems = new List<StaffLeaderAttentionItem>
+        {
+            new()
+            {
+                Type = "APPROVAL",
+                Label = "Đơn cần duyệt",
+                Count = pendingApprovalCount,
+                Severity = pendingApprovalCount > 0 ? "WARNING" : "SUCCESS",
+                TargetSection = "pending-actions",
+            },
+            new()
+            {
+                Type = "ASSIGN_HOST",
+                Label = "Chuyến chưa gán host",
+                Count = OpCount(VisitInstanceStatus.WaitingHostAssignment),
+                Severity = OpCount(VisitInstanceStatus.WaitingHostAssignment) > 0 ? "WARNING" : "SUCCESS",
+                TargetSection = "pending-actions",
+            },
+            new()
+            {
+                Type = "LOGISTICS_OVERDUE",
+                Label = "Logistics chậm",
+                Count = overdueLogisticsTotal,
+                Severity = overdueLogisticsTotal > 0 ? "WARNING" : "SUCCESS",
+                TargetSection = "logistics",
+            },
+            new()
+            {
+                Type = "CLOSE_PENDING",
+                Label = "Hồ sơ sau tiếp khách chưa hoàn tất",
+                Count = afterVisitCount,
+                Severity = afterVisitCount > 0 ? "WARNING" : "SUCCESS",
+                TargetSection = "close-readiness",
+            },
+            new()
+            {
+                Type = "LOW_FEEDBACK",
+                Label = "Feedback thấp (≤ 2 sao)",
+                Count = feedbackSummary.LowFeedbackCount,
+                Severity = feedbackSummary.LowFeedbackCount > 0 ? "DANGER" : "SUCCESS",
+                TargetSection = "feedback",
+            },
+        };
+
+        // ---- Header/filter metadata. ----
+        var campusName = await _db.Campuses.AsNoTracking()
+            .Where(c => c.CampusId == campusId)
+            .Select(c => c.Name)
+            .FirstOrDefaultAsync(cancellationToken) ?? $"Campus #{campusId}";
+
+        var generatedByName = _currentUser.UserId != null
+            ? await _db.Users.AsNoTracking()
+                .Where(u => u.UserId == _currentUser.UserId)
+                .Select(u => u.FullName)
+                .FirstOrDefaultAsync(cancellationToken)
+            : null;
+
+        var departmentFilterName = departmentId != null
+            ? await _db.Departments.AsNoTracking()
+                .Where(d => d.DepartmentId == departmentId)
+                .Select(d => d.Name)
+                .FirstOrDefaultAsync(cancellationToken)
+            : null;
+
+        return new StaffLeaderReportOverviewDto
+        {
+            GeneratedAt = nowUtc,
             FilterSummary = new StaffLeaderFilterSummary
             {
-                Preset = request.Preset,
-                FromDate = request.FromDate?.ToString("yyyy-MM-dd"),
-                ToDate = request.ToDate?.ToString("yyyy-MM-dd"),
-                VisitStatus = request.VisitStatus,
-                RequestStatus = request.RequestStatus,
-                HostUserId = request.HostUserId,
-                DepartmentId = request.DepartmentId,
-                LogisticsStatus = request.LogisticsStatus,
-                FeedbackRating = request.FeedbackRating
+                Preset = preset,
+                FromDate = fromVn.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                ToDate = toVnExclusive.AddDays(-1).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                VisitStatus = visitStatus ?? "ALL",
+                RequestStatus = requestStatus ?? "ALL",
+                HostUserId = hostUserId?.ToString() ?? "ALL",
+                HostName = UserName(hostUserId),
+                DepartmentId = departmentId?.ToString() ?? "ALL",
+                DepartmentName = departmentFilterName,
+                LogisticsStatus = logisticsStatus ?? "ALL",
+                FeedbackRating = feedbackRating ?? "ALL",
+                CampusName = campusName,
+                GeneratedByName = generatedByName,
             },
             Kpis = new StaffLeaderKpis
             {
-                PendingSingleCampusApproval = pendingSingleCampus,
-                WaitingHostAssignment = waitingHostAssignment,
-                AssignedVisits = assignedVisits,
-                BeforeVisit = beforeVisit,
-                DuringVisit = duringVisit,
-                AfterVisit = afterVisit,
-                ClosedVisits = closedVisits,
-                OverdueOrNotClosed = afterVisit,
-                AverageFeedbackRating = 4.5,
-                TotalGuests = await requestsQuery.SelectMany(r => r.GuestMembers).CountAsync(cancellationToken)
+                PendingSingleCampusApproval = pendingApprovalCount,
+                WaitingHostAssignment = OpCount(VisitInstanceStatus.WaitingHostAssignment),
+                AssignedVisits = OpCount(VisitInstanceStatus.Assigned),
+                BeforeVisit = OpCount(VisitInstanceStatus.BeforeVisit),
+                DuringVisit = OpCount(VisitInstanceStatus.DuringVisit),
+                AfterVisit = afterVisitCount,
+                ClosedVisits = PeriodCount(VisitInstanceStatus.Closed),
+                OverdueOrNotClosed = overdueOrNotClosed,
+                AverageFeedbackRating = feedbackSummary.AverageRating,
+                TotalGuests = totalGuests,
             },
-            AttentionItems = new List<StaffLeaderAttentionItem>
-            {
-                new StaffLeaderAttentionItem { Type = "APPROVAL", Label = "Đơn cần duyệt", Count = pendingSingleCampus },
-                new StaffLeaderAttentionItem { Type = "ASSIGN_HOST", Label = "Chuyến chưa gán host", Count = waitingHostAssignment }
-            },
-            CampusLifecyclePipeline = new List<StaffLeaderLifecyclePipelineItem>
-            {
-                new StaffLeaderLifecyclePipelineItem { Status = "WAITING_HOST_ASSIGNMENT", LabelVi = "Chờ gán host", Count = waitingHostAssignment, Percentage = 10 },
-                new StaffLeaderLifecyclePipelineItem { Status = "ASSIGNED", LabelVi = "Đã gán host", Count = assignedVisits, Percentage = 10 },
-                new StaffLeaderLifecyclePipelineItem { Status = "BEFORE_VISIT", LabelVi = "Trước chuyến", Count = beforeVisit, Percentage = 20 },
-                new StaffLeaderLifecyclePipelineItem { Status = "DURING_VISIT", LabelVi = "Đang diễn ra", Count = duringVisit, Percentage = 10 },
-                new StaffLeaderLifecyclePipelineItem { Status = "AFTER_VISIT", LabelVi = "Sau chuyến", Count = afterVisit, Percentage = 30 },
-                new StaffLeaderLifecyclePipelineItem { Status = "CLOSED", LabelVi = "Đã đóng", Count = closedVisits, Percentage = 20 }
-            },
-            MonthlyTrend = new List<StaffLeaderMonthlyTrend>(),
-            HostWorkload = new List<StaffLeaderHostWorkload>(),
-            LogisticsByDepartment = new List<StaffLeaderLogisticsByDepartment>(),
-            PendingActionRequests = new List<StaffLeaderPendingActionRequest>(),
-            CloseReadiness = new List<StaffLeaderCloseReadiness>(),
-            FeedbackSummary = new StaffLeaderFeedbackSummary
-            {
-                AverageRating = 4.5,
-                TotalFeedbacks = 10,
-                LowFeedbackCount = 0,
-                TopRatedVisits = new List<StaffLeaderRatedVisit>(),
-                LowRatedVisits = new List<StaffLeaderRatedVisit>(),
-                RatingByHost = new List<StaffLeaderRatingByHost>()
-            },
-            NewsMediaSummary = new StaffLeaderNewsMediaSummary()
+            AttentionItems = attentionItems,
+            CampusLifecyclePipeline = lifecyclePipeline,
+            MonthlyTrend = monthlyTrend,
+            HostWorkload = hostWorkload,
+            LogisticsByDepartment = logisticsByDepartment,
+            PendingActionRequests = pendingActionRequests,
+            PendingActionTotal = pendingActionTotal,
+            CloseReadiness = closeReadiness,
+            CloseReadinessTotal = closeReadinessTotal,
+            FeedbackSummary = feedbackSummary,
         };
+    }
 
-        return dto;
+    private static string NormalizePreset(string? preset)
+    {
+        var p = preset?.Trim().ToUpperInvariant();
+        return p is "THIS_MONTH" or "THIS_QUARTER" or "THIS_YEAR" or "CUSTOM" ? p : "THIS_YEAR";
+    }
+
+    private static string? NormalizeFilter(string? value)
+    {
+        var v = value?.Trim().ToUpperInvariant();
+        return string.IsNullOrEmpty(v) || v == "ALL" ? null : v;
+    }
+
+    /// <summary>Returns [from, toExclusive) in Vietnam local time.</summary>
+    private static (DateTime FromVn, DateTime ToVnExclusive) ResolvePeriodVn(
+        string preset, DateTime? fromDate, DateTime? toDate, DateTime nowVn)
+    {
+        switch (preset)
+        {
+            case "THIS_MONTH":
+                var monthStart = new DateTime(nowVn.Year, nowVn.Month, 1);
+                return (monthStart, monthStart.AddMonths(1));
+            case "THIS_QUARTER":
+                var quarterStartMonth = ((nowVn.Month - 1) / 3) * 3 + 1;
+                var quarterStart = new DateTime(nowVn.Year, quarterStartMonth, 1);
+                return (quarterStart, quarterStart.AddMonths(3));
+            case "CUSTOM":
+                var from = (fromDate ?? new DateTime(nowVn.Year, 1, 1)).Date;
+                var to = (toDate ?? nowVn).Date.AddDays(1);
+                if (to <= from) to = from.AddDays(1);
+                return (from, to);
+            default: // THIS_YEAR
+                return (new DateTime(nowVn.Year, 1, 1), new DateTime(nowVn.Year + 1, 1, 1));
+        }
     }
 }
