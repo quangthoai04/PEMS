@@ -43,20 +43,21 @@ public class ViewFeedbackSummaryQueryHandler : IRequestHandler<ViewFeedbackSumma
             query = query.Where(x => x.SubmittedAt <= request.ToDate.Value);
         }
 
-        if (!string.IsNullOrEmpty(request.RoleFlow))
+        if (!string.IsNullOrEmpty(request.Q))
         {
-            var parts = request.RoleFlow.Split("_TO_");
-            if (parts.Length == 2)
-            {
-                var submitterRole = parts[0];
-                var targetRole = parts[1];
-                query = query.Where(x => x.SubmitterRole == submitterRole && x.TargetRole == targetRole);
-            }
+            var matchingRequestIds = _context.VisitRequests
+                .Where(r => r.DelegationName.Contains(request.Q))
+                .Select(r => r.VisitRequestId);
+            query = query.Where(x =>
+                matchingRequestIds.Contains(x.VisitRequestId) ||
+                x.SubmitterNameSnapshot.Contains(request.Q) ||
+                x.TargetNameSnapshot.Contains(request.Q));
         }
 
         if (!string.IsNullOrEmpty(request.RatingLevel))
         {
             if (request.RatingLevel == "LOW") query = query.Where(x => x.Rating <= 2);
+            else if (request.RatingLevel == "GOOD") query = query.Where(x => x.Rating >= 4);
             else if (int.TryParse(request.RatingLevel, out var r)) query = query.Where(x => x.Rating == r);
         }
 
@@ -109,11 +110,6 @@ public class ViewFeedbackSummaryQueryHandler : IRequestHandler<ViewFeedbackSumma
             item.LatestSubmitterName = latestFb?.SubmitterNameSnapshot;
         }
         
-        if (!string.IsNullOrEmpty(request.Q))
-        {
-            projections = projections.Where(x => x.VisitTitle.Contains(request.Q)).ToList();
-        }
-
         return PaginatedResult<FeedbackVisitSummaryItem>.Create(projections, request.Page, request.PageSize, total);
     }
 }

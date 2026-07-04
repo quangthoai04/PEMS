@@ -22,8 +22,24 @@ function timeAgo(dateStr: string): string {
   return date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
-function getNotificationLink(item: NotificationItem): string | undefined {
-  return item.targetUrl || undefined;
+function getNotificationLink(item: NotificationItem, user: any): string | undefined {
+  let link = item.targetUrl || undefined;
+
+  if (link && user) {
+    const isDeptStaff = user?.role?.toUpperCase() === 'DEPARTMENT' && user?.subRole?.toUpperCase() !== 'LEADER';
+    if (isDeptStaff) {
+      if (link.includes('/tasks/')) {
+        const parts = link.split('/tasks/');
+        return `/dashboard?taskId=${parts[1]}&itemType=REQUEST`;
+      }
+      if (link.includes('/invitations/')) {
+        const parts = link.split('/invitations/');
+        return `/dashboard?taskId=${parts[1]}&itemType=INVITATION`;
+      }
+    }
+  }
+
+  return link;
 }
 
 export function NotificationBell() {
@@ -87,7 +103,10 @@ export function NotificationBell() {
     }
 
     setIsOpen(false);
-    const link = getNotificationLink(item);
+    
+    const userStr = localStorage.getItem('currentUser');
+    const user = userStr ? JSON.parse(userStr) : null;
+    const link = getNotificationLink(item, user);
     if (link) navigate(link);
   };
 

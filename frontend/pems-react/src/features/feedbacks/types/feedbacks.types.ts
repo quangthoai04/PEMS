@@ -15,6 +15,7 @@ export interface FeedbackListItem {
   visitRequestId: number;
   visitInstanceId?: number | null;
   visitTitle?: string;
+  feedbackType: string;
   submittedByUserId: number;
   submitterRole: string;
   submitterContext?: string;
@@ -47,7 +48,7 @@ export interface FeedbackDetail extends FeedbackListItem {
 export interface FeedbackFilterParams {
   q?: string;
   ratingLevel?: string;
-  roleFlow?: string;
+  feedbackType?: string;
   submitterRole?: string;
   fromDate?: string; // ISO date
   toDate?: string; // ISO date

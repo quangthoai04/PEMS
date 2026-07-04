@@ -4,6 +4,7 @@
  * Không có banner riêng (DashboardHome đã render banner bên trên)
  */
 import React, { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Calendar, ClipboardList } from 'lucide-react';
 import { Toaster } from 'react-hot-toast';
 import { StaffCalendarTab } from './StaffCalendarTab';
@@ -11,6 +12,7 @@ import { StaffTasksTab } from './StaffTasksTab';
 import { useDeptStaffData, DEFAULT_FILTER } from './useDeptStaffData';
 import type { AssignmentsFilter } from './useDeptStaffData';
 import type { TaskStatusFilter } from './useDeptStaffData';
+import { StaffLeaderTaskModal, type StaffLeaderTaskModalItem } from './StaffLeaderTaskModal';
 
 const TABS = [
   { id: 'calendar', label: 'Bảng lịch', icon: Calendar },
@@ -25,6 +27,20 @@ export function DeptStaffDashboard() {
   const [activeTab, setActiveTab] = useState<TabId>('calendar');
   const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
   const [filter, setFilter] = useState<AssignmentsFilter>(DEFAULT_FILTER);
+  
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [urlTaskItem, setUrlTaskItem] = useState<StaffLeaderTaskModalItem | null>(null);
+
+  useEffect(() => {
+    const taskId = searchParams.get('taskId');
+    const itemType = searchParams.get('itemType');
+    if (taskId && (itemType === 'REQUEST' || itemType === 'INVITATION')) {
+      setUrlTaskItem({
+        rawId: parseInt(taskId, 10),
+        itemType: itemType as 'REQUEST' | 'INVITATION',
+      });
+    }
+  }, [searchParams]);
 
   const {
     calendarItems, calendarLoading, fetchCalendar,
@@ -104,6 +120,20 @@ export function DeptStaffDashboard() {
           )}
         </div>
       </div>
+
+      {urlTaskItem && (
+        <StaffLeaderTaskModal
+          item={urlTaskItem}
+          onClose={() => {
+            setUrlTaskItem(null);
+            const newParams = new URLSearchParams(searchParams);
+            newParams.delete('taskId');
+            newParams.delete('itemType');
+            setSearchParams(newParams, { replace: true });
+          }}
+          onRefresh={handleRefresh}
+        />
+      )}
     </div>
   );
 }

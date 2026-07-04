@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, FileText, Download, ExternalLink, Share2, Mail, Loader2, ChevronDown, ChevronUp } from 'lucide-react';
+import { X, FileText, Download, ExternalLink, Share2, Mail, Loader2 } from 'lucide-react';
 import { useDocumentDetail } from '../../../features/documents/hooks/useDocumentDetail';
 import { formatFileSize } from '../../../shared/utils/fileUtils';
 import { resolveFileUrl } from '../../../shared/utils/resolveFileUrl';
@@ -56,72 +56,71 @@ export function DocumentDetailModal({ documentId, onClose }: DocumentDetailModal
     const { ownerContext } = detail;
     const ctx = ownerContext || {};
 
+    const Row = ({ label, value }: { label: string; value: React.ReactNode }) => (
+      <div className="flex gap-1.5 text-sm">
+        <dt className="text-slate-500 shrink-0">{label}:</dt>
+        <dd className="font-semibold text-slate-800 min-w-0 break-words">{value}</dd>
+      </div>
+    );
+
     switch (ownerType) {
       case 'VISIT':
         return (
-          <div className="p-3 rounded-lg border border-slate-100 bg-blue-50/30">
-            <p className="text-[11px] font-bold text-[#004c91] uppercase tracking-wider mb-2">Thông tin đoàn khách</p>
-            <ul className="text-sm text-slate-600 space-y-1">
-              <li><span className="font-semibold text-slate-700">Tên đoàn:</span> {ctx.visitTitle || 'Chưa có'}</li>
-              <li><span className="font-semibold text-slate-700">Mã request:</span> REQ #{ctx.visitRequestId || 'N/A'}</li>
-              <li><span className="font-semibold text-slate-700">Host:</span> {ctx.hostName || 'Chưa có'}</li>
-              <li>
-                <span className="font-semibold text-slate-700">Thời gian diễn ra:</span>{' '}
-                {ctx.expectedStartDate ? new Date(ctx.expectedStartDate).toLocaleString('vi-VN') : 'N/A'} -{' '}
-                {ctx.expectedEndDate ? new Date(ctx.expectedEndDate).toLocaleString('vi-VN') : 'N/A'}
-              </li>
-              <li><span className="font-semibold text-slate-700">Trạng thái:</span> {ctx.requestStatus || 'N/A'}</li>
-            </ul>
+          <div>
+            <p className="text-xs font-bold text-[#004c91] uppercase tracking-wide mb-1.5">Thông tin đoàn khách</p>
+            <dl className="space-y-1">
+              <Row label="Tên đoàn" value={ctx.visitTitle || 'Chưa có'} />
+              <Row label="Mã request" value={`REQ #${ctx.visitRequestId || 'N/A'}`} />
+              <Row label="Host" value={ctx.hostName || 'Chưa có'} />
+              <Row label="Thời gian diễn ra" value={
+                <>{ctx.expectedStartDate ? new Date(ctx.expectedStartDate).toLocaleString('vi-VN') : 'N/A'} -{' '}
+                {ctx.expectedEndDate ? new Date(ctx.expectedEndDate).toLocaleString('vi-VN') : 'N/A'}</>
+              } />
+              <Row label="Trạng thái" value={ctx.requestStatus || 'N/A'} />
+            </dl>
           </div>
         );
       case 'MINUTES':
         return (
-          <div className="p-3 rounded-lg border border-slate-100 bg-orange-50/30">
-            <p className="text-[11px] font-bold text-orange-700 uppercase tracking-wider mb-2">Thông tin biên bản</p>
-            <ul className="text-sm text-slate-600 space-y-1">
-              <li><span className="font-semibold text-slate-700">Tên biên bản:</span> {ctx.minuteTitle || 'Chưa có'}</li>
-              <li><span className="font-semibold text-slate-700">Trạng thái:</span> {ctx.status || 'N/A'}</li>
-              <li><span className="font-semibold text-slate-700">Thuộc đoàn:</span> {ctx.visitTitle || 'Chưa có'} (REQ #{ctx.visitRequestId || 'N/A'})</li>
-            </ul>
+          <div>
+            <p className="text-xs font-bold text-[#004c91] uppercase tracking-wide mb-1.5">Thông tin biên bản</p>
+            <dl className="space-y-1">
+              <Row label="Tên biên bản" value={ctx.minuteTitle || 'Chưa có'} />
+              <Row label="Trạng thái" value={ctx.status || 'N/A'} />
+              <Row label="Thuộc đoàn" value={`${ctx.visitTitle || 'Chưa có'} (REQ #${ctx.visitRequestId || 'N/A'})`} />
+            </dl>
           </div>
         );
       case 'PARTNER':
         return (
-          <div className="p-3 rounded-lg border border-slate-100 bg-purple-50/30">
-            <p className="text-[11px] font-bold text-purple-700 uppercase tracking-wider mb-2">Thông tin đối tác</p>
-            <ul className="text-sm text-slate-600 space-y-1">
-              <li><span className="font-semibold text-slate-700">Tên đối tác:</span> {ctx.partnerName || 'Chưa có'}</li>
-              <li><span className="font-semibold text-slate-700">Quốc gia:</span> {ctx.country || 'N/A'}</li>
-              <li><span className="font-semibold text-slate-700">Trạng thái:</span> {ctx.status || 'N/A'}</li>
-              <li><span className="font-semibold text-slate-700">Website:</span> {ctx.website ? <a href={ctx.website} target="_blank" rel="noreferrer" className="text-blue-600">{ctx.website}</a> : 'N/A'}</li>
-              {ctx.profileSummary && (
-                <li className="mt-1 border-t pt-1 border-slate-200 text-xs italic">{ctx.profileSummary}</li>
-              )}
-            </ul>
+          <div>
+            <p className="text-xs font-bold text-[#004c91] uppercase tracking-wide mb-1.5">Thông tin đối tác</p>
+            <dl className="space-y-1">
+              <Row label="Tên đối tác" value={ctx.partnerName || 'Chưa có'} />
+              <Row label="Quốc gia" value={ctx.country || 'N/A'} />
+              <Row label="Trạng thái" value={ctx.status || 'N/A'} />
+              <Row label="Website" value={ctx.website ? <a href={ctx.website} target="_blank" rel="noreferrer" className="text-blue-600">{ctx.website}</a> : 'N/A'} />
+              {ctx.profileSummary && <Row label="Ghi chú" value={<span className="italic text-xs">{ctx.profileSummary}</span>} />}
+            </dl>
           </div>
         );
       case 'NEWS':
         return (
-          <div className="p-3 rounded-lg border border-slate-100 bg-emerald-50/30">
-            <p className="text-[11px] font-bold text-emerald-700 uppercase tracking-wider mb-2">Thông tin tin tức</p>
-            <ul className="text-sm text-slate-600 space-y-1">
-              <li><span className="font-semibold text-slate-700">Tiêu đề:</span> {ctx.title || 'Chưa có'}</li>
-              <li><span className="font-semibold text-slate-700">Trạng thái:</span> {ctx.status || 'N/A'}</li>
-              <li>
-                <span className="font-semibold text-slate-700">Ngày xuất bản:</span>{' '}
-                {ctx.publishedAt ? new Date(ctx.publishedAt).toLocaleString('vi-VN') : 'Chưa xuất bản'}
-              </li>
-              {ctx.summary && (
-                <li className="mt-1 border-t pt-1 border-slate-200 text-xs italic">{ctx.summary}</li>
-              )}
-            </ul>
+          <div>
+            <p className="text-xs font-bold text-[#004c91] uppercase tracking-wide mb-1.5">Thông tin tin tức</p>
+            <dl className="space-y-1">
+              <Row label="Tiêu đề" value={ctx.title || 'Chưa có'} />
+              <Row label="Trạng thái" value={ctx.status || 'N/A'} />
+              <Row label="Ngày xuất bản" value={ctx.publishedAt ? new Date(ctx.publishedAt).toLocaleString('vi-VN') : 'Chưa xuất bản'} />
+              {ctx.summary && <Row label="Tóm tắt" value={<span className="italic text-xs">{ctx.summary}</span>} />}
+            </dl>
           </div>
         );
       default:
         return (
-          <div className="p-3 rounded-lg border border-slate-100 bg-slate-50">
-            <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2">Tài liệu chung</p>
-            <p className="text-sm text-slate-600 text-xs italic">{ctx.message || 'Không có ngữ cảnh bổ sung.'}</p>
+          <div>
+            <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">Tài liệu chung</p>
+            <p className="text-sm text-slate-500 italic">{ctx.message || 'Không có ngữ cảnh bổ sung.'}</p>
           </div>
         );
     }
@@ -204,18 +203,28 @@ export function DocumentDetailModal({ documentId, onClose }: DocumentDetailModal
                     
                     {/* Scrollable Content */}
                     <div className="flex-1 overflow-y-auto custom-scrollbar p-5 flex flex-col gap-4">
-                      {/* Business Context */}
-                      {renderOwnerContext()}
-
-                      <div className="p-3 rounded-lg border border-slate-100 bg-slate-50/50">
-                        <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">Nội dung tài liệu</p>
-                        <ul className="text-sm text-slate-600 space-y-1">
-                           <li><span className="font-semibold text-slate-700">Danh mục:</span> {detail.document.documentCategory || 'N/A'}</li>
-                           <li><span className="font-semibold text-slate-700">Mô tả:</span> {detail.document.description || 'Không có mô tả'}</li>
-                           <li><span className="font-semibold text-slate-700">File gốc:</span> {detail.file.originalFilename}</li>
-                           <li><span className="font-semibold text-slate-700">Tạo bởi:</span> {detail.createdByUser?.fullName || 'N/A'}</li>
-                        </ul>
+                      {/* Thông tin tài liệu — key-value compact */}
+                      <div>
+                        <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">Thông tin tài liệu</p>
+                        <dl className="space-y-1 text-sm">
+                          <div className="flex gap-1.5"><dt className="text-slate-500 shrink-0">Tên tài liệu:</dt><dd className="font-semibold text-slate-800 min-w-0 break-words">{detail.document.title}</dd></div>
+                          <div className="flex gap-1.5"><dt className="text-slate-500 shrink-0">Loại:</dt><dd className="font-semibold text-slate-800">{detail.document.ownerType}{detail.document.documentCategory ? ` · ${detail.document.documentCategory}` : ''}</dd></div>
+                          <div className="flex gap-1.5"><dt className="text-slate-500 shrink-0">Trạng thái:</dt><dd className="font-semibold text-slate-800">{detail.document.status}</dd></div>
+                          <div className="flex gap-1.5"><dt className="text-slate-500 shrink-0">File:</dt><dd className="font-semibold text-slate-800 min-w-0 break-words">{detail.file.originalFilename}</dd></div>
+                          <div className="flex gap-1.5"><dt className="text-slate-500 shrink-0">Dung lượng:</dt><dd className="font-semibold text-slate-800">{detail.file.fileSize ? formatFileSize(detail.file.fileSize) : 'N/A'}</dd></div>
+                          <div className="flex gap-1.5"><dt className="text-slate-500 shrink-0">Google Drive:</dt><dd className="font-semibold text-slate-800">{previewUrl ? 'Có liên kết hợp lệ' : 'Chưa có liên kết hợp lệ'}</dd></div>
+                          {detail.document.description && (
+                            <div className="flex gap-1.5"><dt className="text-slate-500 shrink-0">Mô tả:</dt><dd className="text-slate-700 min-w-0 break-words">{detail.document.description}</dd></div>
+                          )}
+                          <div className="flex gap-1.5"><dt className="text-slate-500 shrink-0">Tạo bởi:</dt><dd className="font-semibold text-slate-800">{detail.createdByUser?.fullName || 'N/A'}</dd></div>
+                          <div className="flex gap-1.5"><dt className="text-slate-500 shrink-0">Cập nhật:</dt><dd className="font-semibold text-slate-800">{detail.document.updatedAt ? new Date(detail.document.updatedAt).toLocaleString('vi-VN') : 'Chưa cập nhật'}</dd></div>
+                        </dl>
                       </div>
+
+                      <hr className="border-slate-100" />
+
+                      {/* Business Context (Thuộc đoàn / biên bản / đối tác / tin tức tương ứng) */}
+                      {renderOwnerContext()}
                     </div>
 
                     {/* Fixed Bottom Share & Download Actions */}
@@ -288,8 +297,7 @@ export function DocumentDetailModal({ documentId, onClose }: DocumentDetailModal
                     ) : (
                       <div className="flex flex-col items-center justify-center text-slate-400 p-6 text-center">
                         <FileText className="w-12 h-12 mb-3 text-slate-300" />
-                        <p className="font-medium text-slate-600">Không thể xem trước tệp tin này</p>
-                        <p className="text-sm mt-1">Tệp không hỗ trợ preview hoặc liên kết Google Drive không hợp lệ. Vui lòng nhấn nút tải xuống bên trái.</p>
+                        <p className="text-sm text-slate-600 max-w-sm">Không thể xem trước. File chưa có liên kết Google Drive hợp lệ hoặc định dạng không hỗ trợ preview.</p>
                       </div>
                     )}
                   </div>

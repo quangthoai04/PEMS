@@ -77,8 +77,8 @@ export function NewsContributionSection({ visitInstanceId, data, canView, instan
   if (!canView) return null;
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-      <div className="flex items-center gap-3 px-5 py-4 border-b border-slate-100">
+    <div className="py-5">
+      <div className="flex items-center gap-3 mb-4">
         <div className="w-9 h-9 rounded-xl bg-orange-50 text-[#f37021] flex items-center justify-center shrink-0">
           <Newspaper className="w-5 h-5" />
         </div>
@@ -89,7 +89,7 @@ export function NewsContributionSection({ visitInstanceId, data, canView, instan
           </p>
         </div>
       </div>
-      <div className="p-5 space-y-4">
+      <div className="space-y-4">
         {data.newsNotRequired && (
           <p className="text-sm font-semibold text-slate-500 italic">
             Chuyến thăm này không yêu cầu bài tin tức (theo xác nhận của Host).
