@@ -8500,3 +8500,490 @@ WHERE expires_at < UTC_TIMESTAMP()
 -- Số dòng bị xóa: dùng ROW_COUNT() ngay sau DELETE để log nếu cần.
 SELECT ROW_COUNT() AS deleted_sessions;
 */
+
+
+-- =====================================================================
+-- APPENDED PATCH: DIVERSE CORE MODULE SEED CONTENT
+-- =====================================================================
+-- =====================================================================
+-- PEMS PATCH: DIVERSE NON-PLACEHOLDER SEED CONTENT FOR CORE MODULES
+-- Purpose: Replace shallow copy-paste seed text with realistic, distinct
+--          business content across visible modules outside the rich News seed.
+-- Scope: data-only UPDATE patch. No schema changes, no migrations, no enum changes.
+-- Safe to run after the full fresh-create SQL on DEV/STAGING.
+-- =====================================================================
+
+SET @OLD_SQL_SAFE_UPDATES := @@SQL_SAFE_UPDATES;
+SET SQL_SAFE_UPDATES = 0;
+START TRANSACTION;
+
+-- ---------------------------------------------------------------------
+-- 1) Partner profiles: replace generic "seed coverage" notes with concrete context.
+-- ---------------------------------------------------------------------
+UPDATE partners SET
+  description = CASE partner_id
+    WHEN 101 THEN 'IIT Delhi International Office gửi đề xuất trao đổi học thuật về AI ứng dụng, kiểm định chương trình và mô hình cố vấn sinh viên quốc tế. Hồ sơ còn thiếu thư giới thiệu chính thức nên giữ ở trạng thái draft.'
+    WHEN 102 THEN 'Politecnico di Milano Mobility Lab quan tâm mô hình campus xanh, quản trị di chuyển nội khu và thiết kế trải nghiệm tham quan cho đoàn nghiên cứu đô thị. Cần Staff Leader rà soát phạm vi truyền thông trước khi public.'
+    WHEN 103 THEN 'UTS Student Exchange là đối tác đã xác minh cho workshop kỹ năng toàn cầu, trao đổi sinh viên ngắn hạn và phiên tư vấn học kỳ quốc tế. Hồ sơ dùng tốt cho public partner listing.'
+    WHEN 104 THEN 'Nordic Green Campus Alliance từng đề xuất hợp tác phát triển bền vững nhưng bộ hồ sơ pháp lý chưa chứng minh được tư cách đại diện mạng lưới, vì vậy bị từ chối public.'
+    WHEN 105 THEN 'Paris Digital Arts Institute là đối tác cũ về media art và thiết kế tương tác; hiện tạm inactive vì chưa có chương trình trao đổi mới trong năm học hiện tại.'
+    WHEN 106 THEN 'Gulf Innovation Fund for Education có đề xuất tài trợ nhưng chưa qua bước kiểm tra nguồn quỹ và điều kiện truyền thông, cần giữ blacklist trong seed để test cảnh báo rủi ro.'
+    WHEN 107 THEN 'Seattle EdTech Studio là doanh nghiệp công nghệ giáo dục, phù hợp các buổi demo adaptive learning, analytics lớp học và workshop sản phẩm sinh viên.'
+    WHEN 108 THEN 'Lagos Tech Bridge Initiative kết nối startup sinh viên châu Phi với các trường đại học châu Á; hồ sơ đang chờ bổ sung người đại diện ký kết tại Việt Nam.'
+    WHEN 109 THEN 'Andes University Exchange Office hỗ trợ trao đổi văn hóa và điều phối đoàn multi-campus, có nhu cầu làm việc với HN, HCM và Đà Nẵng trong cùng một lịch trình.'
+    WHEN 110 THEN 'Singapore Applied AI Consortium là đối tác doanh nghiệp đang hoạt động về AI vận hành giáo dục, campus service automation và co-innovation challenge cho sinh viên.'
+    WHEN 120 THEN 'Nordic Applied Learning Network là hồ sơ pending của campus HN, tập trung micro-credential, active learning và trao đổi giảng viên theo học kỳ ngắn.'
+    WHEN 121 THEN 'ASEAN Digital Mobility Lab là hồ sơ pending của campus HCM, hướng tới thử nghiệm mobility data, smart shuttle và phân tích luồng di chuyển trong sự kiện đông khách.'
+    WHEN 122 THEN 'Pacific Robotics Exchange Center là hồ sơ pending của campus Đà Nẵng về robot dịch vụ, lab visit và mentoring capstone robotics.'
+    WHEN 123 THEN 'Mekong Sustainability Collaboration Office là hồ sơ pending của campus Cần Thơ, phục vụ workshop nông nghiệp bền vững, logistics vùng sông nước và CSR giáo dục.'
+    WHEN 124 THEN 'Coastal Hospitality Innovation Group là hồ sơ pending của campus Quy Nhơn về hospitality, tourism experience design và mô hình vận hành resort training.'
+    ELSE description END,
+  review_note = CASE partner_id
+    WHEN 101 THEN 'Chờ thư giới thiệu chính thức và danh sách người đại diện trước khi gửi duyệt.'
+    WHEN 102 THEN 'Cần Staff Leader kiểm tra nội dung hợp tác mobility có liên quan nhiều campus hay chỉ trong campus sở hữu.'
+    WHEN 103 THEN 'Đã xác minh email domain, đầu mối liên hệ và phạm vi trao đổi sinh viên.'
+    WHEN 104 THEN 'Từ chối vì thiếu giấy tờ pháp nhân và chưa xác định được đơn vị chịu trách nhiệm ký kết.'
+    WHEN 105 THEN 'Giữ approved/internal để lưu lịch sử, chưa khuyến nghị đưa public.'
+    WHEN 106 THEN 'Từ chối vì rủi ro nguồn tài trợ và điều kiện truyền thông chưa rõ.'
+    WHEN 107 THEN 'Đã xác minh business profile, phù hợp demo sản phẩm và workshop nội bộ.'
+    WHEN 108 THEN 'Chờ bổ sung thư ủy quyền và portfolio dự án đã triển khai.'
+    WHEN 109 THEN 'Đã xác minh đối tác, có thể dùng cho visit multi-campus.'
+    WHEN 110 THEN 'Đã xác minh hợp tác AI ứng dụng; ưu tiên hiển thị public.'
+    ELSE review_note END
+WHERE partner_id IN (101,102,103,104,105,106,107,108,109,110,120,121,122,123,124);
+
+-- ---------------------------------------------------------------------
+-- 2) Visit requests: each visible request now has its own business story.
+-- ---------------------------------------------------------------------
+UPDATE visit_requests SET
+  delegation_name = CASE visit_request_id
+    WHEN 1001 THEN 'SeoulTech smart campus discovery visit'
+    WHEN 1002 THEN 'Kyoto service robotics lab showcase request'
+    WHEN 1003 THEN 'SeoulTech AI curriculum articulation briefing'
+    WHEN 3001 THEN 'IIT Delhi AI assurance curriculum scoping visit'
+    WHEN 3002 THEN 'Polimi green mobility studio campus audit'
+    WHEN 3003 THEN 'UTS robotics classroom demonstration sprint'
+    WHEN 3004 THEN 'Nordic credit transfer governance workshop'
+    WHEN 3005 THEN 'Paris digital creativity student venture roundtable'
+    WHEN 3006 THEN 'Gulf education fund compliance review visit'
+    WHEN 3007 THEN 'Seattle adaptive learning product co-design day'
+    WHEN 3008 THEN 'Lagos startup bridge mentoring and demo tour'
+    WHEN 3009 THEN 'Andes cultural exchange multi-campus orientation'
+    WHEN 9001 THEN 'Visitor cancelled Hanoi-only campus tour due to visa delay'
+    WHEN 9002 THEN 'Visitor cancelled HCM workshop after partner board reschedule'
+    WHEN 9003 THEN 'Multi-campus request rejected because agenda scope was incomplete'
+    WHEN 9004 THEN 'Multi-campus approved but pending host assignment across campuses'
+    WHEN 9005 THEN 'Multi-campus active reception with split campus responsibilities'
+    WHEN 9006 THEN 'Closed multi-campus visit with media follow-up and feedback'
+    ELSE delegation_name END,
+  purpose = CASE visit_request_id
+    WHEN 1001 THEN 'Khảo sát không gian học tập thông minh, phương án hỗ trợ sinh viên quốc tế và cách FPTU tổ chức tour học thuật cho đối tác công nghệ.'
+    WHEN 1002 THEN 'Đề xuất một phiên demo robot dịch vụ cho sinh viên, kiểm tra mức sẵn sàng của phòng lab và quy trình an toàn thiết bị trước khi chốt workshop chính thức.'
+    WHEN 1003 THEN 'Làm việc với IC và đại diện đào tạo để đối chiếu cấu trúc chương trình AI, chuẩn tín chỉ và điều kiện trao đổi học kỳ ngắn.'
+    WHEN 3001 THEN 'Đánh giá khả năng xây dựng module AI assurance, chuẩn hóa learning outcomes và mô hình đánh giá đồ án giữa hai trường.'
+    WHEN 3002 THEN 'Khảo sát hành lang di chuyển, điểm đón trả đoàn, cách tổ chức campus tour xanh và dữ liệu vận hành xe điện nội khu.'
+    WHEN 3003 THEN 'Tổ chức sprint demo lớp học robotics, thu thập phản hồi sinh viên và xác định nhu cầu thiết bị cho workshop mở rộng.'
+    WHEN 3004 THEN 'Thống nhất cách ghi nhận tín chỉ quốc tế, minh chứng học phần và quy trình department support khi sinh viên chuyển đổi chương trình.'
+    WHEN 3005 THEN 'Kết nối sinh viên sáng tạo số với cố vấn quốc tế, thảo luận sản phẩm truyền thông tương tác và cơ hội showcase sau chuyến thăm.'
+    WHEN 3006 THEN 'Rà soát điều kiện tài trợ giáo dục, yêu cầu minh bạch truyền thông và quy trình xác minh đối tác trước khi tiếp tục làm việc.'
+    WHEN 3007 THEN 'Đồng thiết kế kịch bản adaptive learning, phân tích dữ liệu lớp học và thử nghiệm sản phẩm hỗ trợ học tập cá nhân hóa.'
+    WHEN 3008 THEN 'Kết nối startup sinh viên Lagos với hệ sinh thái FPTU, tập trung mentoring, pitching và tham quan không gian đổi mới sáng tạo.'
+    WHEN 3009 THEN 'Chuẩn bị hành trình multi-campus cho đoàn Andes, kết hợp giao lưu văn hóa, campus tour và gặp gỡ sinh viên quốc tế.'
+    WHEN 9001 THEN 'Đoàn khách hủy chuyến HN do visa cấp chậm, cần giữ dữ liệu để test luồng visitor cancel khi chưa phát sinh host.'
+    WHEN 9002 THEN 'Đối tác đổi lịch họp hội đồng quản trị, cần test luồng visitor cancel sau khi Staff Leader đã duyệt single-campus.'
+    WHEN 9003 THEN 'HO từ chối vì request multi-campus thiếu campus objective riêng và không đủ ngày chuẩn bị logistics liên cơ sở.'
+    WHEN 9004 THEN 'HO đã duyệt request tổng, các campus đang chờ Staff Leader gán host và chuẩn bị agenda riêng.'
+    WHEN 9005 THEN 'Đoàn đang triển khai reception ở nhiều campus với trách nhiệm host, department support và logistics tách theo từng instance.'
+    WHEN 9006 THEN 'Đoàn đã kết thúc, dùng để test đóng hồ sơ, feedback, news published và file public sau tiếp khách.'
+    ELSE purpose END,
+  working_content = CASE visit_request_id
+    WHEN 1001 THEN 'Tour thư viện, phòng lab AI, khu trải nghiệm sinh viên; meeting ngắn với IC về quy trình tiếp nhận đoàn và trao đổi follow-up bằng email.'
+    WHEN 1002 THEN 'Cần phòng lab có khu vực an toàn, bàn demo, nguồn điện dự phòng và người phụ trách kỹ thuật; nếu không đáp ứng thì nên từ chối sớm.'
+    WHEN 1003 THEN 'Trao đổi syllabus, mapping tín chỉ, tiêu chí chọn sinh viên, yêu cầu tiếng Anh và mốc thời gian mở đợt trao đổi đầu tiên.'
+    WHEN 3001 THEN 'Phiên sáng làm việc với IC và giảng viên AI; phiên chiều quan sát lớp học, thu thập câu hỏi về accreditation và bảo mật dữ liệu học tập.'
+    WHEN 3002 THEN 'Đi route lobby - tuyến xe điện - khu học tập xanh - phòng họp, ghi nhận ảnh minh họa nếu đoàn đồng ý media consent.'
+    WHEN 3003 THEN 'Demo robot trong lớp, chia nhóm sinh viên phản hồi, host ghi minutes và chuyển action item cho department kỹ thuật.'
+    WHEN 3004 THEN 'So sánh học phần, mẫu transcript, trách nhiệm phòng đào tạo và điều kiện department ký xác nhận hỗ trợ.'
+    WHEN 3005 THEN 'Roundtable với sinh viên, review portfolio sản phẩm, tư vấn cách đưa dự án vào bản tin public sau khi duyệt.'
+    WHEN 3006 THEN 'Kiểm tra hồ sơ tài trợ, điều khoản truyền thông, danh sách người tham dự và quyết định có tiếp tục quy trình partner approval hay không.'
+    WHEN 3007 THEN 'Workshop design thinking, demo dashboard học tập, ghi nhận nhu cầu tích hợp API và giới hạn dữ liệu cá nhân.'
+    WHEN 3008 THEN 'Mentoring startup, tham quan khu đổi mới sáng tạo, quay recap nội bộ và thống nhất đầu mối triển khai chương trình mùa hè.'
+    WHEN 3009 THEN 'Mỗi campus trình bày một chủ đề riêng: HN về AI, HCM về entrepreneurship, Đà Nẵng về robotics và Cần Thơ về sustainability.'
+    WHEN 9001 THEN 'Không tổ chức onsite; staff chỉ lưu lại lý do hủy, lịch dự kiến và đề xuất mở lại request khi visa hoàn tất.'
+    WHEN 9002 THEN 'Không triển khai logistics; cần thông báo department đã nhận lịch để tránh chuẩn bị thừa.'
+    WHEN 9003 THEN 'HO yêu cầu submit lại với agenda từng campus, danh sách khách chính thức và thư xác nhận thời gian làm việc.'
+    WHEN 9004 THEN 'Staff Leader từng campus cần gán host, xác nhận phòng họp và gửi lời mời department support trước hạn 5 ngày.'
+    WHEN 9005 THEN 'Campus HN đang tiếp đoàn, campus HCM chuẩn bị phiên sau; logistics và minutes được theo dõi riêng từng instance.'
+    WHEN 9006 THEN 'Host đã chốt minutes, thu feedback, xuất bản news và lưu file ảnh chuyến thăm qua Drive metadata.'
+    ELSE working_content END,
+  note_to_fptu = CASE visit_request_id
+    WHEN 1001 THEN 'Đoàn cần bản đồ vào campus và số điện thoại host trực trong ngày.'
+    WHEN 1002 THEN 'Nếu không có phòng lab phù hợp, mong FPTU đề xuất ngày khác thay vì tiếp nhận gấp.'
+    WHEN 1003 THEN 'Ưu tiên phòng họp yên tĩnh để trao đổi syllabus chi tiết.'
+    WHEN 3001 THEN 'Cần gửi trước danh sách giảng viên tham dự và tài liệu mô tả chương trình AI hiện hành.'
+    WHEN 3002 THEN 'Đoàn có hai thành viên lớn tuổi, ưu tiên route ít đi bộ và có nước uống tại mỗi điểm dừng.'
+    WHEN 3003 THEN 'Cần kiểm tra nguồn điện, Wi-Fi và khu vực an toàn trước khi demo robot.'
+    WHEN 3004 THEN 'Cần đại diện đào tạo có quyền xác nhận quy trình credit transfer.'
+    WHEN 3005 THEN 'Đề nghị mời 8–10 sinh viên có sản phẩm media hoặc startup tham gia roundtable.'
+    WHEN 3006 THEN 'Không chụp ảnh tài liệu tài trợ; chỉ ghi nhận biên bản làm việc nội bộ.'
+    WHEN 3007 THEN 'Có thể dùng ảnh public nếu không xuất hiện dữ liệu màn hình sinh viên.'
+    WHEN 3008 THEN 'Cần chuẩn bị khu vực pitching nhỏ và bảng tên cho mentor.'
+    WHEN 3009 THEN 'Mỗi campus cần một agenda riêng, tránh copy cùng nội dung cho cả hành trình.'
+    WHEN 9001 THEN 'Visitor đề nghị giữ liên hệ để đăng ký lại sau khi visa được cấp.'
+    WHEN 9002 THEN 'Partner muốn nhận email xác nhận đã hủy để báo lại board.'
+    WHEN 9003 THEN 'HO yêu cầu submit lại bản chi tiết hơn, không chỉ chọn campus theo danh sách.'
+    WHEN 9004 THEN 'Sau khi gán host, cần gửi email logistics summary cho từng campus.'
+    WHEN 9005 THEN 'Host cần cập nhật tiến độ ngay sau từng phiên để campus sau chuẩn bị kịp.'
+    WHEN 9006 THEN 'Dữ liệu dùng kiểm thử public news, feedback và close delegation.'
+    ELSE note_to_fptu END
+WHERE visit_request_id IN (1001,1002,1003,3001,3002,3003,3004,3005,3006,3007,3008,3009,9001,9002,9003,9004,9005,9006);
+
+-- ---------------------------------------------------------------------
+-- 3) Campus instances: add realistic preparation/close/cancel notes.
+-- ---------------------------------------------------------------------
+UPDATE visit_request_campuses vrc
+JOIN visit_requests vr ON vr.visit_request_id = vrc.visit_request_id
+JOIN campuses c ON c.campus_id = vrc.campus_id
+SET vrc.preparation_note = CASE vrc.status
+    WHEN 'WAITING_REQUEST_APPROVAL' THEN CONCAT('Chưa chuẩn bị onsite tại ', c.campus_code, '. Chỉ giữ lịch dự kiến để HO/Staff Leader đánh giá request: ', LEFT(vr.delegation_name, 120), '.')
+    WHEN 'WAITING_HOST_ASSIGNMENT' THEN CONCAT('Staff Leader ', c.campus_code, ' cần chọn host IC thường, kiểm tra xung đột lịch và xác nhận phòng trước khi gửi lời mời department support.')
+    WHEN 'ASSIGNED' THEN CONCAT('Host đã được gán tại ', c.campus_code, '; cần gửi briefing cho người tham gia, kiểm tra bảng tên, nước uống và route theo mục tiêu: ', LEFT(vr.purpose, 120), '.')
+    WHEN 'BEFORE_VISIT' THEN CONCAT('Checklist trước visit tại ', c.campus_code, ': xác nhận khách, mở phòng họp, chuẩn bị màn hình, in agenda và test link trình chiếu.')
+    WHEN 'DURING_VISIT' THEN CONCAT('Đang tiếp đoàn tại ', c.campus_code, '; host cần cập nhật attendance, ghi minutes và chụp tối thiểu một ảnh nếu media consent cho phép.')
+    WHEN 'AFTER_VISIT' THEN CONCAT('Sau visit tại ', c.campus_code, ': rà soát action item, thu feedback, chuẩn bị news hoặc xác nhận không cần news trước khi đóng hồ sơ.')
+    WHEN 'CLOSED' THEN CONCAT('Hồ sơ tại ', c.campus_code, ' đã đóng; dùng để test lịch sử visit, feedback, minutes và public news đã duyệt.')
+    WHEN 'CANCELLED' THEN CONCAT('Instance tại ', c.campus_code, ' đã hủy; không chuẩn bị onsite, chỉ giữ lý do hủy và thông tin liên hệ để follow-up.')
+    ELSE vrc.preparation_note END,
+  vrc.close_note = CASE WHEN vrc.status = 'CLOSED' THEN CONCAT('Đã hoàn tất tiếp khách tại ', c.campus_code, ': agenda thực tế khớp biên bản, feedback đã ghi nhận, logistics đã đối soát và news/no-news gate đã xử lý.') ELSE vrc.close_note END,
+  vrc.cancellation_reason = CASE WHEN vrc.status = 'CANCELLED' THEN
+    CASE vrc.cancellation_actor_type
+      WHEN 'VISITOR' THEN CONCAT('Visitor xác nhận hủy instance ', c.campus_code, ' do thay đổi lịch di chuyển. Host/IC đã dừng chuẩn bị phòng, logistics và gửi ghi chú follow-up.')
+      WHEN 'HOST' THEN CONCAT('Host hủy thay khách tại ', c.campus_code, ' sau xác nhận ngoài hệ thống qua email/điện thoại; lý do: lịch đối tác thay đổi và không còn đủ thời gian chuẩn bị an toàn.')
+      ELSE CONCAT('Instance ', c.campus_code, ' bị hủy để kiểm thử trạng thái CANCELLED và visibility read-only.') END
+    ELSE vrc.cancellation_reason END;
+
+-- ---------------------------------------------------------------------
+-- 4) Agendas: remove repeated “Arrival/Working session” placeholders.
+-- ---------------------------------------------------------------------
+UPDATE visit_agendas va
+JOIN visit_request_campuses vrc ON vrc.visit_instance_id = va.visit_instance_id
+JOIN visit_requests vr ON vr.visit_request_id = vrc.visit_request_id
+JOIN campuses c ON c.campus_id = vrc.campus_id
+SET va.title = CASE va.sequence_order
+    WHEN 1 THEN CONCAT('Đón đoàn và xác nhận mục tiêu tại ', c.campus_code)
+    WHEN 2 THEN CASE vr.visit_type
+      WHEN 'CAMPUS_TOUR' THEN CONCAT('Campus tour theo chủ đề: ', LEFT(vr.delegation_name, 90))
+      WHEN 'MEETING' THEN CONCAT('Phiên làm việc chuyên sâu: ', LEFT(vr.delegation_name, 90))
+      WHEN 'WORKSHOP' THEN CONCAT('Workshop/ demo thực hành: ', LEFT(vr.delegation_name, 90))
+      WHEN 'SIGNING_CEREMONY' THEN CONCAT('Làm việc về thỏa thuận và quy trình ký kết: ', c.campus_code)
+      WHEN 'EXCHANGE' THEN CONCAT('Giao lưu sinh viên và đối tác: ', c.campus_code)
+      ELSE CONCAT('Hoạt động chuyên đề với đoàn: ', LEFT(vr.delegation_name, 90)) END
+    ELSE CONCAT('Tổng kết, action item và đầu mối follow-up tại ', c.campus_code) END,
+  va.description = CASE va.sequence_order
+    WHEN 1 THEN CONCAT('Host kiểm tra danh sách khách, media consent, ngôn ngữ làm việc và nhắc lịch trình riêng của campus ', c.campus_code, '.')
+    WHEN 2 THEN CONCAT('Nội dung chính: ', LEFT(vr.working_content, 500))
+    ELSE CONCAT('Chốt người phụ trách, tài liệu cần gửi sau visit và thời hạn phản hồi cho mục tiêu: ', LEFT(vr.purpose, 300)) END,
+  va.location = CASE va.sequence_order
+    WHEN 1 THEN CONCAT(c.campus_code, ' main lobby / reception desk')
+    WHEN 2 THEN CASE vr.visit_type
+      WHEN 'CAMPUS_TOUR' THEN CONCAT(c.campus_code, ' library - lab - student hub route')
+      WHEN 'WORKSHOP' THEN CONCAT(c.campus_code, ' innovation lab / workshop room')
+      WHEN 'SIGNING_CEREMONY' THEN CONCAT(c.campus_code, ' conference room and signing table')
+      ELSE CONCAT(c.campus_code, ' meeting room and campus route') END
+    ELSE CONCAT(c.campus_code, ' debrief corner / online follow-up note') END
+WHERE va.agenda_id >= 8001;
+
+-- ---------------------------------------------------------------------
+-- 5) Logistics items: tie each item to actual request context.
+-- ---------------------------------------------------------------------
+UPDATE visit_logistics_items vli
+JOIN visit_request_campuses vrc ON vrc.visit_instance_id = vli.visit_instance_id
+JOIN visit_requests vr ON vr.visit_request_id = vrc.visit_request_id
+JOIN campuses c ON c.campus_id = vrc.campus_id
+SET vli.title = CASE vli.item_type
+    WHEN 'ROOM' THEN CONCAT('Phòng họp ', c.campus_code, ' cho ', LEFT(vr.delegation_name, 70))
+    WHEN 'EQUIPMENT' THEN CONCAT('Thiết bị trình chiếu/demo cho ', LEFT(vr.delegation_name, 70))
+    WHEN 'TRANSPORT' THEN CONCAT('Điều phối di chuyển nội khu ', c.campus_code)
+    WHEN 'TEABREAK' THEN CONCAT('Teabreak theo lịch làm việc ', c.campus_code)
+    WHEN 'DOCUMENT' THEN CONCAT('Bộ tài liệu tiếp khách cho ', LEFT(vr.delegation_name, 70))
+    ELSE CONCAT('Hậu cần khác cho ', LEFT(vr.delegation_name, 70)) END,
+  vli.description = CONCAT(
+    'Yêu cầu hậu cần phục vụ request ', vr.request_code, ' tại ', c.name, '. ',
+    'Mục tiêu nghiệp vụ: ', LEFT(vr.purpose, 260), ' ',
+    'Ghi chú xử lý: ',
+    CASE vli.status
+      WHEN 'REQUESTED' THEN 'đang chờ department tiếp nhận và phản hồi khả năng chuẩn bị.'
+      WHEN 'CHANGE_PROPOSED' THEN 'department đã đề xuất điều chỉnh số lượng/thời gian, cần host phản hồi.'
+      WHEN 'ASSIGNED' THEN 'đã phân công nhân sự phụ trách, chờ xác nhận nhận việc.'
+      WHEN 'ACCEPTED' THEN 'người phụ trách đã nhận việc, cần theo dõi deadline.'
+      WHEN 'IN_PROGRESS' THEN 'đang chuẩn bị, cần cập nhật tiến độ trước khi đoàn tới.'
+      WHEN 'DONE' THEN 'đã hoàn tất và có thể đối soát khi đóng hồ sơ.'
+      WHEN 'REJECTED' THEN 'bị từ chối do không đủ nguồn lực hoặc không phù hợp thời gian.'
+      WHEN 'CANCELLED' THEN 'đã hủy theo trạng thái visit hoặc yêu cầu của host.'
+      WHEN 'DECLINED' THEN 'assignee từ chối nhận việc, cần Staff Leader/Department Leader xử lý.'
+      ELSE 'đang ở trạng thái kiểm thử.' END),
+  vli.decision_note = CASE
+    WHEN vli.status IN ('REJECTED','CANCELLED','DECLINED') THEN CONCAT('Seed đa dạng: quyết định dựa trên năng lực chuẩn bị tại ', c.campus_code, ', không phải placeholder.')
+    ELSE vli.decision_note END,
+  vli.proposal_note = CASE
+    WHEN vli.status = 'CHANGE_PROPOSED' THEN CONCAT('Đề xuất đổi phương án để khớp lịch ', LEFT(vr.delegation_name, 80), ': giảm rủi ro thiếu phòng hoặc trùng thiết bị.')
+    ELSE vli.proposal_note END
+WHERE vli.logistics_item_id >= 9001 OR vli.logistics_item_id BETWEEN 1 AND 99;
+
+-- ---------------------------------------------------------------------
+-- 6) Minutes and action items: make meeting records read like real post-visit notes.
+-- ---------------------------------------------------------------------
+UPDATE minutes m
+JOIN visit_request_campuses vrc ON vrc.visit_instance_id = m.visit_instance_id
+JOIN visit_requests vr ON vr.visit_request_id = vrc.visit_request_id
+JOIN campuses c ON c.campus_id = vrc.campus_id
+SET m.title = CONCAT('Biên bản ', c.campus_code, ' - ', LEFT(vr.delegation_name, 110)),
+    m.content = CONCAT(
+      '<h2>Tóm tắt buổi làm việc</h2><p>Đoàn <strong>', vr.delegation_name, '</strong> làm việc tại ', c.name, ' với mục tiêu: ', LEFT(vr.purpose, 350), '</p>',
+      '<h3>Nội dung đã thống nhất</h3><ul><li>IC là đầu mối tổng hợp tài liệu và gửi follow-up.</li><li>Department phụ trách trả lời các câu hỏi chuyên môn trong 5 ngày làm việc.</li><li>Host cập nhật action item, feedback và trạng thái news trước khi đóng hồ sơ.</li></ul>',
+      '<blockquote>Ghi chú seed: nội dung này khác nhau theo request/campus, phục vụ test rich text và màn hình minutes.</blockquote>')
+WHERE m.minutes_id >= 10001 OR m.minutes_id IN (1,2,3,4);
+
+UPDATE minute_action_items mai
+JOIN minutes m ON m.minutes_id = mai.minutes_id
+JOIN visit_request_campuses vrc ON vrc.visit_instance_id = m.visit_instance_id
+JOIN visit_requests vr ON vr.visit_request_id = vrc.visit_request_id
+SET mai.title = CONCAT('Gửi gói follow-up cho ', LEFT(vr.delegation_name, 80)),
+    mai.note = CONCAT('Bao gồm minutes PDF, ảnh đã được phép dùng, đầu mối department và các tài liệu đã hứa trong buổi làm việc. Ưu tiên gửi trước hạn due_date để tránh trễ đóng hồ sơ.')
+WHERE mai.action_item_id IS NOT NULL;
+
+-- ---------------------------------------------------------------------
+-- 7) Feedback and rating labels: replace generic comments.
+-- ---------------------------------------------------------------------
+UPDATE feedbacks SET comment = CASE feedback_id
+  WHEN 1 THEN 'Đoàn đánh giá cao cách host giải thích quy trình học tập và đưa khách đi đúng route. Điểm cần cải thiện là gửi trước bản đồ campus kèm vị trí đỗ xe.'
+  WHEN 2 THEN 'Department support phản hồi nhanh, nhưng thời lượng Q&A hơi ngắn so với số câu hỏi chuyên môn. Nên chuẩn bị thêm FAQ nội bộ cho các đoàn học thuật.'
+  WHEN 3 THEN 'Logistics chuẩn bị phòng và teabreak đúng giờ. Cần kiểm tra micro trước buổi vì một khách ở cuối phòng nghe chưa rõ.'
+  WHEN 4 THEN 'Visitor ghi nhận trải nghiệm chuyên nghiệp, đặc biệt ở phần tổng kết action item. Đề nghị gửi ảnh nhóm đã duyệt media trong vòng hai ngày.'
+  WHEN 13001 THEN 'Host hoàn thành briefing, điều phối người tham dự và xử lý thay đổi lịch trong ngày tốt. Feedback dùng để test màn hình tổng hợp sau tiếp khách.'
+  WHEN 13002 THEN 'Department Leader đánh giá task rõ ràng, nhưng cần mô tả số lượng thiết bị sớm hơn để phòng ban không phải thương lượng lại.'
+  WHEN 13003 THEN 'Sinh viên hỗ trợ tham gia đúng giờ, hướng dẫn khách thân thiện và chủ động ghi nhận câu hỏi cho minutes.'
+  ELSE comment END
+WHERE feedback_id IN (1,2,3,4,13001,13002,13003);
+
+UPDATE feedback_rating_items SET criterion_label = CASE criterion_code
+  WHEN 'HOST_PREPARATION' THEN 'Chuẩn bị của host trước buổi tiếp khách'
+  WHEN 'AGENDA_CLARITY' THEN 'Mức rõ ràng và khả thi của agenda'
+  WHEN 'LOGISTICS_READINESS' THEN 'Độ sẵn sàng của phòng, thiết bị và teabreak'
+  WHEN 'COMMUNICATION' THEN 'Chất lượng trao đổi trước/trong/sau visit'
+  WHEN 'FOLLOW_UP' THEN 'Cam kết follow-up và action item sau visit'
+  ELSE criterion_label END
+WHERE criterion_code IN ('HOST_PREPARATION','AGENDA_CLARITY','LOGISTICS_READINESS','COMMUNICATION','FOLLOW_UP');
+
+-- ---------------------------------------------------------------------
+-- 8) FAQ: make public/internal FAQ valuable instead of generic samples.
+-- ---------------------------------------------------------------------
+UPDATE faqs SET
+  question = CASE faq_id
+    WHEN 1 THEN 'Khách ngoài có cần tài khoản để xem tin tức, FAQ và gallery công khai không?'
+    WHEN 16001 THEN 'Sau khi gửi đăng ký tham quan, tôi theo dõi trạng thái xử lý ở đâu?'
+    WHEN 16033 THEN 'Đoàn có thể yêu cầu FPTU hỗ trợ phương tiện di chuyển trong campus không?'
+    WHEN 16034 THEN 'Nếu đoàn không đồng ý sử dụng hình ảnh truyền thông thì hệ thống xử lý như thế nào?'
+    WHEN 16035 THEN 'Khi nào một chuyến thăm được xem là đã đóng hồ sơ?'
+    WHEN 16036 THEN 'Đối tác cần gửi những thông tin nào để tạo hồ sơ partner?'
+    WHEN 16037 THEN 'Email xác nhận hoặc từ chối tham gia có cần đăng nhập hệ thống không?'
+    WHEN 16038 THEN 'Vì sao tôi không thấy một bài news đã được tạo trong trang public?'
+    ELSE question END,
+  answer = CASE faq_id
+    WHEN 1 THEN 'Không. Nội dung công khai như news đã xuất bản, FAQ đang hiển thị và gallery public có thể xem mà không cần đăng nhập. Các dữ liệu nội bộ, bản nháp, bài bị ẩn hoặc request cá nhân vẫn được bảo vệ theo role và scope.'
+    WHEN 16001 THEN 'Sau khi xác minh email, visitor có thể đăng nhập cổng khách để xem danh sách đơn của mình. Trạng thái tổng nằm ở visit_requests, còn tiến độ từng campus nằm ở visit_request_campuses.'
+    WHEN 16033 THEN 'Có thể yêu cầu, nhưng FPTU sẽ xác nhận theo từng campus và từng thời điểm. Nếu cần xe điện nội khu, bãi đỗ hoặc hướng dẫn di chuyển, hãy ghi rõ số lượng khách, thời gian đến và điểm đón.'
+    WHEN 16034 THEN 'Hệ thống vẫn cho phép tổ chức visit, nhưng news/gallery public không được dùng ảnh có mặt khách nếu media consent bị từ chối. Host vẫn có thể lưu ảnh nội bộ tối thiểu khi nghiệp vụ yêu cầu, tùy rule đã chốt.'
+    WHEN 16035 THEN 'Một campus instance chỉ nên đóng khi đã qua thời gian planned_end_at, logistics và handover đã xử lý, action item hoàn tất hoặc bị hủy, đồng thời có news published hoặc host xác nhận chuyến này không cần news.'
+    WHEN 16036 THEN 'Cần có tên tổ chức, quốc gia/thành phố, loại đối tác, website hoặc bằng chứng liên hệ, người đại diện, mô tả hợp tác và campus sở hữu hồ sơ. Staff Leader duyệt theo owner_campus_id.'
+    WHEN 16037 THEN 'Không nhất thiết. Một số email có nút hành động dùng token một lần; người nhận chỉ cần bấm link còn hiệu lực. Nếu đã phản hồi rồi, bấm lại sẽ hiển thị trạng thái đã trả lời và không cập nhật lần hai.'
+    WHEN 16038 THEN 'Trang public chỉ hiển thị news có status PUBLISHED. Bài PENDING_REVIEW, REJECTED hoặc HIDDEN vẫn tồn tại trong dashboard nhưng không xuất hiện ngoài public.'
+    ELSE answer END
+WHERE faq_id IN (1,16001,16033,16034,16035,16036,16037,16038);
+
+-- ---------------------------------------------------------------------
+-- 9) Documents: make archive rows useful for UI/search tests.
+-- ---------------------------------------------------------------------
+UPDATE documents d SET
+  title = CASE document_id
+    WHEN 1 THEN 'SeoulTech visit agenda and guest briefing package'
+    WHEN 2 THEN 'Kyoto robotics lab safety checklist'
+    WHEN 3 THEN 'Green mobility campus route map'
+    WHEN 4 THEN 'Draft MOU terms for credit transfer workshop'
+    WHEN 5 THEN 'Student venture roundtable participant list'
+    WHEN 6 THEN 'AI curriculum comparison matrix'
+    WHEN 7 THEN 'Campus logistics handover photo evidence'
+    WHEN 8 THEN 'Feedback summary after closed multi-campus visit'
+    WHEN 9 THEN 'Partner verification memo for pending approval'
+    WHEN 10 THEN 'Public news image consent checklist'
+    ELSE title END,
+  description = CASE document_id
+    WHEN 1 THEN 'Tài liệu gửi host trước chuyến SeoulTech, gồm lịch trình, danh sách khách, ngôn ngữ làm việc và các điểm cần lưu ý khi đón đoàn.'
+    WHEN 2 THEN 'Checklist kiểm tra nguồn điện, khoảng cách an toàn, người phụ trách kỹ thuật và phương án dừng demo khi thiết bị robot lỗi.'
+    WHEN 3 THEN 'Bản đồ route từ lobby đến khu xe điện, thư viện, không gian xanh và phòng họp; dùng cho đoàn quan tâm sustainability.'
+    WHEN 4 THEN 'Bản nháp điều khoản trao đổi tín chỉ, trách nhiệm phòng đào tạo và mốc thời gian phản hồi giữa hai bên.'
+    WHEN 5 THEN 'Danh sách sinh viên tham gia roundtable, vai trò từng bạn và sản phẩm/startup muốn giới thiệu với đối tác.'
+    WHEN 6 THEN 'Bảng đối chiếu outcome, học phần AI, yêu cầu project và thang đánh giá để chuẩn bị phiên làm việc học thuật.'
+    WHEN 7 THEN 'Ảnh minh chứng bàn giao/nhận lại thiết bị, chỉ lưu metadata file trong PEMS và binary trên Drive.'
+    WHEN 8 THEN 'Tổng hợp feedback sau chuyến multi-campus đã đóng, dùng để kiểm thử report, dashboard và lọc theo target.'
+    WHEN 9 THEN 'Memo kiểm tra campus ownership, website, người đại diện và trạng thái profile_status trước khi Staff Leader duyệt partner.'
+    WHEN 10 THEN 'Checklist xác nhận ảnh nào được dùng public, ảnh nào chỉ lưu nội bộ, tránh publish khi khách từ chối media consent.'
+    ELSE description END
+WHERE document_id BETWEEN 1 AND 10;
+
+-- ---------------------------------------------------------------------
+-- 10) Gallery hierarchy and media: meaningful area/location/item/caption.
+-- ---------------------------------------------------------------------
+UPDATE gallery_areas SET area_name = CASE area_id
+  WHEN 1 THEN 'Khu đón tiếp và sảnh chính'
+  WHEN 2 THEN 'Không gian học tập và thư viện'
+  WHEN 3 THEN 'Phòng lab công nghệ và AI'
+  WHEN 4 THEN 'Khu trải nghiệm sinh viên'
+  WHEN 5 THEN 'Khu hội nghị và ký kết'
+  WHEN 6 THEN 'Campus xanh và tuyến di chuyển nội khu'
+  WHEN 7 THEN 'Khu đổi mới sáng tạo'
+  WHEN 8 THEN 'Không gian văn hóa quốc tế'
+  WHEN 9 THEN 'Khu thực hành hospitality'
+  WHEN 10 THEN 'Khu học thuật sau đại học'
+  WHEN 11 THEN 'Khu media và lưu trữ chuyến thăm'
+  ELSE area_name END
+WHERE area_id BETWEEN 1 AND 11;
+
+UPDATE gallery_locations gl
+JOIN gallery_areas ga ON ga.area_id = gl.area_id
+SET gl.location_name = CONCAT(ga.area_name, ' - điểm ', LPAD(gl.display_order,2,'0'))
+WHERE gl.location_id BETWEEN 1 AND 36;
+
+UPDATE gallery_items gi
+JOIN gallery_locations gl ON gl.location_id = gi.location_id
+JOIN gallery_areas ga ON ga.area_id = gl.area_id
+SET gi.title = CASE gi.media_kind
+    WHEN 'IMAGE' THEN CONCAT('Ảnh đại diện ', ga.area_name)
+    WHEN 'VIDEO' THEN CONCAT('Video walkthrough ', gl.location_name)
+    WHEN 'MIXED' THEN CONCAT('Bộ media tham quan ', gl.location_name)
+    ELSE CONCAT('Media ', gl.location_name) END,
+  gi.description = CONCAT('Nội dung gallery cho ', gl.location_name, '. Dữ liệu seed mô tả đúng khu vực/vị trí để test filter area, location, item detail và public display, không dùng text lặp vô nghĩa.')
+WHERE gi.gallery_item_id BETWEEN 1 AND 17030;
+
+UPDATE gallery_item_media gim
+JOIN gallery_items gi ON gi.gallery_item_id = gim.gallery_item_id
+SET gim.caption = CONCAT('Góc nhìn ', CASE gim.display_order WHEN 1 THEN 'toàn cảnh' WHEN 2 THEN 'chi tiết hoạt động' WHEN 3 THEN 'khách tương tác' ELSE 'điểm nhấn không gian' END, ' - ', LEFT(gi.title, 120)),
+    gim.alt_text = CONCAT('Hình minh họa ', LEFT(gi.title, 120), ' dùng cho gallery PEMS')
+WHERE gim.media_id BETWEEN 1 AND 72;
+
+-- ---------------------------------------------------------------------
+-- 11) Notifications and calendar: messages linked to actual workflow.
+-- ---------------------------------------------------------------------
+UPDATE notifications n
+LEFT JOIN visit_request_campuses vrc ON n.related_type IN ('VISIT_INSTANCE','VISIT') AND n.related_id = vrc.visit_instance_id
+LEFT JOIN visit_requests vr ON vr.visit_request_id = vrc.visit_request_id
+SET n.title = CASE
+    WHEN n.related_type IN ('VISIT_INSTANCE','VISIT') AND vr.visit_request_id IS NOT NULL THEN CONCAT('Cập nhật visit: ', LEFT(vr.delegation_name, 90))
+    WHEN n.notification_type LIKE '%NEWS%' THEN 'Cập nhật duyệt bài news'
+    WHEN n.notification_type LIKE '%EMAIL%' THEN 'Trạng thái email hành động'
+    ELSE CONCAT('Thông báo nghiệp vụ PEMS #', n.notification_id) END,
+  n.message = CASE
+    WHEN n.related_type IN ('VISIT_INSTANCE','VISIT') AND vr.visit_request_id IS NOT NULL THEN CONCAT('Request ', vr.request_code, ' có thay đổi cần theo dõi. Nội dung chính: ', LEFT(vr.purpose, 260))
+    WHEN n.notification_type LIKE '%NEWS%' THEN 'Bài viết cần được kiểm tra trạng thái PUBLISHED/HIDDEN và ngôn ngữ hiển thị trước khi xuất hiện ngoài public.'
+    WHEN n.notification_type LIKE '%EMAIL%' THEN 'Người nhận có thể phản hồi bằng token trong email; nếu đã phản hồi, hệ thống không cập nhật nghiệp vụ lần hai.'
+    ELSE CONCAT('Seed thông báo dùng để test unread/read, related_type/related_id và thứ tự thời gian trong dashboard. Mã thông báo: ', n.notification_id) END;
+
+UPDATE calendar_events ce
+LEFT JOIN visit_request_campuses vrc ON ce.visit_instance_id = vrc.visit_instance_id
+LEFT JOIN visit_requests vr ON vr.visit_request_id = vrc.visit_request_id
+LEFT JOIN campuses c ON c.campus_id = ce.campus_id
+LEFT JOIN visit_logistics_items vli ON vli.logistics_item_id = ce.logistics_item_id
+SET ce.title = CASE ce.source_type
+    WHEN 'VISIT' THEN CONCAT('Lịch tiếp đoàn: ', LEFT(COALESCE(vr.delegation_name, 'visit'), 100))
+    WHEN 'LOGISTICS' THEN CONCAT('Deadline hậu cần: ', LEFT(COALESCE(vli.title, 'logistics item'), 100))
+    WHEN 'DEADLINE' THEN CONCAT('Mốc cần xử lý: ', LEFT(COALESCE(vr.delegation_name, ce.title), 100))
+    ELSE ce.title END,
+  ce.description = CASE ce.source_type
+    WHEN 'VISIT' THEN CONCAT('Sự kiện lịch gắn với campus ', COALESCE(c.campus_code,'N/A'), '. Host dùng để kiểm tra xung đột khi gán người phụ trách. Mục tiêu: ', LEFT(COALESCE(vr.purpose,''), 250))
+    WHEN 'LOGISTICS' THEN CONCAT('Nhắc deadline cho logistics item: ', COALESCE(vli.title,'N/A'), '. Trạng thái hiện tại cần kiểm tra trước giờ đoàn tới.')
+    WHEN 'DEADLINE' THEN CONCAT('Mốc hệ thống dùng cho reminder/notification, không phải sự kiện cá nhân tự do. Liên quan: ', COALESCE(vr.request_code, ce.title))
+    ELSE ce.description END,
+  ce.location = CASE WHEN ce.source_type = 'VISIT' THEN CONCAT(COALESCE(c.campus_code,'Campus'), ' meeting room / reception route') ELSE ce.location END;
+
+-- ---------------------------------------------------------------------
+-- 12) Email templates and sent emails: realistic snapshots for email UI.
+-- ---------------------------------------------------------------------
+UPDATE email_templates SET
+  description = CASE template_code
+    WHEN 'VISIT_INVITATION' THEN 'Mẫu email mời tham gia tiếp khách, có nút xác nhận/từ chối bằng token một lần.'
+    WHEN 'LOGISTICS_REQUEST' THEN 'Mẫu email gửi phòng ban xử lý yêu cầu phòng họp, thiết bị, teabreak hoặc phương tiện.'
+    WHEN 'NEWS_REVIEW' THEN 'Mẫu email thông báo bài news cần Staff Leader duyệt hoặc đã bị từ chối.'
+    WHEN 'VISIT_CANCELLED' THEN 'Mẫu email thông báo hủy chuyến theo actor Visitor/Host và lý do đã ghi nhận.'
+    ELSE description END,
+  subject_vi = CASE template_code
+    WHEN 'VISIT_INVITATION' THEN '[PEMS] Mời tham gia tiếp đoàn {{delegationName}}'
+    WHEN 'LOGISTICS_REQUEST' THEN '[PEMS] Yêu cầu chuẩn bị hậu cần cho {{requestCode}}'
+    WHEN 'NEWS_REVIEW' THEN '[PEMS] Bài viết đang chờ duyệt: {{newsTitle}}'
+    WHEN 'VISIT_CANCELLED' THEN '[PEMS] Cập nhật hủy lịch tiếp đoàn {{delegationName}}'
+    ELSE subject_vi END,
+  body_vi = CASE template_code
+    WHEN 'VISIT_INVITATION' THEN 'Xin chào {{recipientName}}, bạn được mời tham gia tiếp đoàn {{delegationName}} tại {{campusCode}} vào {{plannedStart}}. Vui lòng bấm Xác nhận hoặc Từ chối trong email này; liên kết chỉ dùng một lần.'
+    WHEN 'LOGISTICS_REQUEST' THEN 'Yêu cầu hậu cần {{itemTitle}} cần được xử lý trước {{dueAt}}. Vui lòng xem số lượng, thời gian sử dụng và phản hồi nếu cần thương lượng.'
+    WHEN 'NEWS_REVIEW' THEN 'Bài viết {{newsTitle}} đã được gửi duyệt. Vui lòng kiểm tra nội dung, ảnh, ngôn ngữ và trạng thái public trước khi xuất bản.'
+    WHEN 'VISIT_CANCELLED' THEN 'Lịch tiếp đoàn {{delegationName}} đã bị hủy. Lý do: {{cancellationReason}}. Các task hậu cần liên quan cần được dừng hoặc cập nhật.'
+    ELSE body_vi END;
+
+UPDATE sent_emails se
+LEFT JOIN visit_request_campuses vrc ON se.related_type IN ('VISIT_INSTANCE','VISIT') AND se.related_id = vrc.visit_instance_id
+LEFT JOIN visit_requests vr ON vr.visit_request_id = vrc.visit_request_id
+SET se.subject = CASE
+    WHEN vr.visit_request_id IS NOT NULL THEN CONCAT('[PEMS] ', vr.request_code, ' - ', LEFT(vr.delegation_name, 120))
+    ELSE se.subject END,
+  se.body_snapshot = CASE
+    WHEN vr.visit_request_id IS NOT NULL THEN CONCAT('Email snapshot gửi cho workflow visit. Request: ', vr.request_code, '. Đoàn: ', vr.delegation_name, '. Nội dung chính: ', LEFT(vr.working_content, 500), ' Người nhận phản hồi bằng token nếu email có action button.')
+    ELSE se.body_snapshot END;
+
+-- ---------------------------------------------------------------------
+-- 13) API configuration: make external API seed useful for API management screen.
+-- ---------------------------------------------------------------------
+UPDATE api_configurations SET
+  name = CASE api_code
+    WHEN 'GOOGLE_DRIVE' THEN 'Google Drive Service Account - lưu file PEMS'
+    WHEN 'SMTP_PRIMARY' THEN 'SMTP Primary - gửi OTP/thông báo/trạng thái'
+    WHEN 'GOOGLE_OAUTH' THEN 'Google OAuth/SSO - đăng nhập Internal và Visitor'
+    WHEN 'NEWS_TRANSLATION_GOOGLE_CLOUD' THEN 'Google Cloud Translation v3 - dịch bài News'
+    WHEN 'BUSINESS_CARD_OCR_GOOGLE' THEN 'Google Document AI - OCR danh thiếp đối tác'
+    ELSE name END,
+  purpose = CASE api_code
+    WHEN 'GOOGLE_DRIVE' THEN 'Upload avatar, cover, tài liệu visit, ảnh news/gallery và lưu metadata vào bảng files.'
+    WHEN 'SMTP_PRIMARY' THEN 'Gửi OTP, invitation, logistics action token, reminder và thông báo trạng thái xử lý.'
+    WHEN 'GOOGLE_OAUTH' THEN 'Xác thực SSO bằng Google/FPT domain, liên kết provider_subject với user_auth_providers.'
+    WHEN 'NEWS_TRANSLATION_GOOGLE_CLOUD' THEN 'Dịch title/summary/section của news sang ngôn ngữ khác; giữ nguyên ảnh và cấu trúc section.'
+    WHEN 'BUSINESS_CARD_OCR_GOOGLE' THEN 'Nhận ảnh danh thiếp, trích xuất tên/email/chức danh/tổ chức và tạo gợi ý contact person.'
+    ELSE purpose END,
+  last_test_message = CASE api_code
+    WHEN 'GOOGLE_DRIVE' THEN 'Seed mô phỏng cấu hình Drive; cần credential thật khi chạy upload live.'
+    WHEN 'NEWS_TRANSLATION_GOOGLE_CLOUD' THEN 'Seed mô phỏng cấu hình Translation; nếu thiếu projectId/credential, UI phải báo chưa cấu hình.'
+    ELSE last_test_message END
+WHERE api_code IN ('GOOGLE_DRIVE','SMTP_PRIMARY','GOOGLE_OAUTH','NEWS_TRANSLATION_GOOGLE_CLOUD','BUSINESS_CARD_OCR_GOOGLE');
+
+-- ---------------------------------------------------------------------
+-- 14) Validation queries: these SELECTs should return 0 issue rows.
+-- ---------------------------------------------------------------------
+SELECT 'seed_placeholder_terms_remaining' AS check_name,
+       SUM(issue_count) AS issue_count
+FROM (
+  SELECT COUNT(*) AS issue_count FROM partners WHERE description LIKE '%kịch bản seed coverage%' OR review_note LIKE '%kịch bản seed coverage%'
+  UNION ALL SELECT COUNT(*) FROM visit_requests WHERE purpose LIKE '%Seed coverage:%' OR note_to_fptu LIKE '%Seed coverage:%'
+  UNION ALL SELECT COUNT(*) FROM visit_agendas WHERE title IN ('Arrival and reception briefing','Working session and campus walkthrough')
+  UNION ALL SELECT COUNT(*) FROM visit_logistics_items WHERE description LIKE '%Seed coverage:%'
+  UNION ALL SELECT COUNT(*) FROM news_content_sections WHERE section_body_html LIKE '%data:image%'
+) x;
+
+SELECT 'visit_request_core_text_empty' AS check_name,
+       COUNT(*) AS issue_count
+FROM visit_requests
+WHERE TRIM(delegation_name) = '' OR TRIM(purpose) = '' OR TRIM(registrant_full_name) = '';
+
+SELECT 'agenda_generic_title_remaining' AS check_name,
+       COUNT(*) AS issue_count
+FROM visit_agendas
+WHERE title IN ('Arrival and reception briefing','Working session and campus walkthrough');
+
+COMMIT;
+SET SQL_SAFE_UPDATES = @OLD_SQL_SAFE_UPDATES;
