@@ -1,6 +1,7 @@
 import httpClient from '../../../shared/api/httpClient';
 import { API_ENDPOINTS } from '../../../shared/api/endpoints';
 import type { HoReportFilters, HoReportExportRequest, HoReportOverview } from '../types/reports.types';
+import type { StaffLeaderReportFilters, StaffLeaderReportExportRequest, StaffLeaderReportOverview } from '../types/staffLeaderReports.types';
 
 /** Chuyển filters UI → query params; bỏ giá trị "ALL"/rỗng để backend hiểu là không lọc. */
 function toQueryParams(filters: HoReportFilters): Record<string, string | number> {
@@ -54,6 +55,51 @@ export const reportsApi = {
       : plainMatch
         ? plainMatch[1]
         : `PEMS_HO_Report.${ext}`;
+
+    return { blob: response.data as Blob, fileName };
+  },
+
+  getStaffLeaderReportOverview: async (filters: StaffLeaderReportFilters): Promise<StaffLeaderReportOverview> => {
+    const params: Record<string, string | number> = { preset: filters.preset };
+    if (filters.preset === 'CUSTOM') {
+      if (filters.fromDate) params.fromDate = filters.fromDate;
+      if (filters.toDate) params.toDate = filters.toDate;
+    }
+    if (filters.visitStatus !== 'ALL') params.visitStatus = filters.visitStatus;
+    if (filters.requestStatus !== 'ALL') params.requestStatus = filters.requestStatus;
+    if (filters.hostUserId !== 'ALL') params.hostUserId = filters.hostUserId;
+    if (filters.departmentId !== 'ALL') params.departmentId = filters.departmentId;
+    if (filters.logisticsStatus !== 'ALL') params.logisticsStatus = filters.logisticsStatus;
+    if (filters.feedbackRating !== 'ALL') params.feedbackRating = filters.feedbackRating;
+
+    const { data } = await httpClient.get<StaffLeaderReportOverview>('/reports/staff-leader-overview', { params });
+    return data;
+  },
+
+  exportStaffLeaderReport: async (request: StaffLeaderReportExportRequest): Promise<HoReportExportFile> => {
+    const response = await httpClient.post('/reports/staff-leader-overview/export', {
+      preset: request.preset,
+      fromDate: request.preset === 'CUSTOM' ? request.fromDate : undefined,
+      toDate: request.preset === 'CUSTOM' ? request.toDate : undefined,
+      visitStatus: request.visitStatus,
+      requestStatus: request.requestStatus,
+      hostUserId: request.hostUserId,
+      departmentId: request.departmentId,
+      logisticsStatus: request.logisticsStatus,
+      feedbackRating: request.feedbackRating,
+      exportFormat: request.exportFormat,
+      reportSections: request.reportSections,
+    }, { responseType: 'blob' });
+
+    const disposition: string = response.headers?.['content-disposition'] ?? '';
+    const utf8Match = /filename\*=UTF-8''([^;]+)/i.exec(disposition);
+    const plainMatch = /filename="?([^";]+)"?/i.exec(disposition);
+    const ext = request.exportFormat === 'PDF' ? 'pdf' : request.exportFormat === 'CSV' ? 'csv' : 'xlsx';
+    const fileName = utf8Match
+      ? decodeURIComponent(utf8Match[1])
+      : plainMatch
+        ? plainMatch[1]
+        : `PEMS_StaffLeader_Report.${ext}`;
 
     return { blob: response.data as Blob, fileName };
   },
