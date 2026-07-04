@@ -960,43 +960,19 @@ export function VisitDuringTab({ isReadOnly = false, isDept = false, visitInstan
          </>
        )}
 
-      {/* Action Buttons & Notice info */}
-      <div className="flex flex-col md:flex-row justify-between items-stretch md:items-center gap-4 pt-4 border-t border-gray-100">
-        {!isReadOnly ? (
-          <>
-            <div className="flex items-center gap-2.5 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-xl text-left shadow-sm max-w-2xl flex-1">
-              <AlertCircle className="w-5 h-5 text-amber-600 shrink-0" />
-              <span className="text-xs sm:text-sm font-bold text-amber-900 leading-snug">
-                Khi ấn nút xác nhận, hệ thống sẽ lưu lại thông tin và chuyển quy trình tiếp khách sang bước thứ ba "Sau tiếp khách"
-              </span>
-            </div>
-
-            <div className="flex justify-end gap-3 shrink-0">
-              <button 
-                onClick={() => navigate(-1)}
-                className="px-6 py-3 font-bold text-gray-700 bg-white border border-gray-300 rounded-xl hover:bg-gray-50 transition-colors shadow-sm outline-none cursor-pointer"
-              >
-                Hủy
-              </button>
-              <button 
-                onClick={() => navigate('/dashboard/visit')}
-                className="px-6 py-3 font-bold text-white bg-green-500 rounded-xl hover:bg-green-600 transition-colors shadow-sm outline-none cursor-pointer"
-              >
-                Xác nhận
-              </button>
-            </div>
-          </>
-        ) : (
+      {/* Read-only footer: the stage-transition CTA lives in VisitProcess's renderStageBar, not here. */}
+      {isReadOnly && (
+        <div className="flex flex-col md:flex-row justify-between items-stretch md:items-center gap-4 pt-4 border-t border-gray-100">
           <div className="w-full flex justify-end">
-            <button 
+            <button
               onClick={() => navigate('/dashboard/visit')}
               className="px-8 py-3.5 font-bold text-white bg-[#004c91] hover:bg-[#003366] rounded-xl transition-all shadow-md hover:shadow-lg outline-none cursor-pointer flex items-center gap-2"
             >
               Quay lại danh sách tiếp khách
             </button>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Create Partner Dialog Modal */}
       {isPartnerModalOpen && (

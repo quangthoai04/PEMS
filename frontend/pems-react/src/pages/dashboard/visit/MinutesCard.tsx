@@ -13,6 +13,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ChevronUp, ChevronDown, FileText, Lock, Edit3, Save, X, Plus, Clock, Users, ClipboardList,
   Trash2, UserPlus, RefreshCw, Search, Calendar, Building2, Mail, CheckCircle2, AlertCircle, Info,
+  CheckSquare, Square,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { delegationsApi } from '../../../features/delegations/api/delegationsApi';
@@ -20,6 +21,9 @@ import type {
   VisitMinute, MinuteUserSearchItem,
   SaveMinuteParticipantPayload, SaveMinuteActionItemPayload,
 } from '../../../features/delegations/types/delegations.types';
+import { partnersApi } from '../../../features/partners/api/partnersApi';
+import type { VisitGuestPartnerLink } from '../../../features/partners/types/partners.types';
+import { ParticipantPartnerCell } from '../../../features/partners/components/ParticipantPartnerCell';
 
 const formatDateTime = (value?: string | null) =>
   value ? new Date(value).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' }) : '-';
@@ -84,16 +88,10 @@ const KIND_META: Record<string, { label: string; cls: string }> = {
   GUEST: { label: 'Khách', cls: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
   MANUAL: { label: 'Thêm thủ công', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
 };
-const ATT_META: Record<string, { label: string; cls: string }> = {
-  PRESENT: { label: 'Có mặt', cls: 'bg-green-50 text-green-700 border-green-200' },
-  ABSENT: { label: 'Chưa xác nhận có mặt', cls: 'bg-red-50 text-red-700 border-red-200' },
-  EXCUSED: { label: 'Vắng có lý do', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
-};
-const ATT_OPTIONS = [
-  { value: 'PRESENT', label: 'Có mặt' },
-  { value: 'ABSENT', label: 'Chưa xác nhận có mặt' },
-  { value: 'EXCUSED', label: 'Vắng có lý do' },
-];
+// Điểm danh giờ là tick nhanh (không còn dropdown/badge trạng thái). Ánh xạ checkbox ↔ enum backend:
+//   ticked   → PRESENT
+//   unticked → ABSENT   (backend enum vẫn còn EXCUSED cho dữ liệu cũ, nhưng UI không dùng/không hiện)
+const isPresentStatus = (status?: string | null) => status === 'PRESENT';
 const ACTION_STATUS_META: Record<string, { label: string; cls: string }> = {
   TODO: { label: 'Chưa làm', cls: 'bg-gray-100 text-gray-600 border-gray-200' },
   IN_PROGRESS: { label: 'Đang làm', cls: 'bg-blue-50 text-blue-700 border-blue-200' },
@@ -172,6 +170,20 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
   }, [visitInstanceId]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Partner-link badges for the participants table (docs/PARTNER_canh/01 §10.3).
+  const [partnerLinks, setPartnerLinks] = useState<VisitGuestPartnerLink[]>([]);
+  const loadPartnerLinks = useCallback(async () => {
+    try { setPartnerLinks(await partnersApi.getVisitPartnerLinks(visitInstanceId)); }
+    catch { setPartnerLinks([]); }
+  }, [visitInstanceId]);
+  useEffect(() => { void loadPartnerLinks(); }, [loadPartnerLinks]);
+  const findPartnerLink = (p: { minuteParticipantId: number; guestMemberId: number | null }) =>
+    partnerLinks.find(
+      (l) =>
+        (p.minuteParticipantId > 0 && l.minuteParticipantId === p.minuteParticipantId)
+        || (p.guestMemberId != null && l.guestMemberId === p.guestMemberId),
+    ) ?? null;
 
   // Countdown of the edit session; auto-exit when the lock expires.
   useEffect(() => {
@@ -609,39 +621,47 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
                       </div>
                     ) : (
                       <div className="overflow-x-auto">
-                        <table className="w-full text-left border-collapse text-sm min-w-[760px]">
+                        <table className="w-full text-left border-collapse text-sm min-w-[1080px]">
                           <thead className="bg-gray-100/50 text-[11px] uppercase tracking-wider text-gray-500 font-extrabold">
                             <tr className="border-b border-gray-200">
-                              <th className="px-4 py-3 w-36">Điểm danh</th>
-                              <th className="px-4 py-3">Họ tên</th>
-                              <th className="px-4 py-3">Vai trò / chức danh</th>
-                              <th className="px-4 py-3">Đơn vị</th>
-                              <th className="px-4 py-3">Email</th>
+                              <th className="px-4 py-3 w-28 whitespace-nowrap">Điểm danh</th>
+                              <th className="px-4 py-3 w-44">Họ tên</th>
+                              <th className="px-4 py-3 w-40">Vai trò / chức danh</th>
+                              <th className="px-4 py-3 w-56">Đơn vị</th>
+                              <th className="px-4 py-3 w-60">Email</th>
                               <th className="px-4 py-3 w-28">Loại nguồn</th>
-                              <th className="px-4 py-3">Ghi chú</th>
+                              {!editing && <th className="px-4 py-3 w-44">Đối tác</th>}
+                              <th className="px-4 py-3 w-52">Ghi chú</th>
                               {editing && <th className="px-4 py-3 w-14 text-center">Xóa</th>}
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-gray-100">
                             {participantRows.map((p) => {
-                              const att = ATT_META[p.attendanceStatus] ?? ATT_META.ABSENT;
                               const kind = KIND_META[p.participantKind] ?? KIND_META.MANUAL;
                               const isManual = !p.userId && !p.guestMemberId;
                               const rowError = participantErrors[p._key];
+                              const isPresent = isPresentStatus(p.attendanceStatus);
                               return (
                                 <tr key={p._key} className={`transition-colors align-top ${rowError ? 'bg-red-50/70' : 'hover:bg-gray-50/55'}`}>
                                   <td className="px-4 py-3">
-                                    {editing ? (
-                                      <select
-                                        value={p.attendanceStatus}
-                                        onChange={(e) => updateParticipant(p._key, { attendanceStatus: e.target.value })}
-                                        className="w-full text-xs font-bold rounded-lg border border-gray-300 px-2 py-1.5 outline-none focus:border-[#004c91] bg-white"
-                                      >
-                                        {ATT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                                      </select>
-                                    ) : (
-                                      <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold border ${att.cls}`}>{att.label}</span>
-                                    )}
+                                    {/* Điểm danh = tick nhanh. Tick → PRESENT, bỏ tick → ABSENT. Ngoài phiên
+                                        chỉnh sửa thì chỉ hiển thị (disabled), không có dropdown/lý do vắng. */}
+                                    <button
+                                      type="button"
+                                      disabled={!editing}
+                                      onClick={() => updateParticipant(p._key, { attendanceStatus: isPresent ? 'ABSENT' : 'PRESENT' })}
+                                      aria-pressed={isPresent}
+                                      aria-label={isPresent ? 'Bỏ đánh dấu có mặt' : 'Đánh dấu có mặt'}
+                                      title={isPresent ? 'Có mặt' : 'Chưa có mặt'}
+                                      className="inline-flex items-center gap-1.5 rounded-lg px-1.5 py-1 transition-colors disabled:cursor-default enabled:hover:bg-slate-100"
+                                    >
+                                      {isPresent
+                                        ? <CheckSquare className="h-5 w-5 shrink-0 text-emerald-600" />
+                                        : <Square className="h-5 w-5 shrink-0 text-slate-400" />}
+                                      <span className={`text-xs font-bold ${isPresent ? 'text-emerald-700' : 'text-slate-400'}`}>
+                                        {isPresent ? 'Có mặt' : 'Chưa có mặt'}
+                                      </span>
+                                    </button>
                                   </td>
                                   <td className="px-4 py-3">
                                     {editing && isManual ? (
@@ -679,20 +699,50 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
                                       <input value={p.emailSnapshot} onChange={(e) => updateParticipant(p._key, { emailSnapshot: e.target.value })}
                                         placeholder="Email..."
                                         className="w-full text-sm rounded-lg border border-gray-300 px-2 py-1.5 outline-none focus:border-[#004c91]" />
+                                    ) : p.emailSnapshot ? (
+                                      // Email 1 dòng: truncate + tooltip full email. KHÔNG dùng break-all
+                                      // (nguyên nhân trước đây email bị vỡ thành từng ký tự).
+                                      <div className="flex items-center gap-1.5 min-w-0 max-w-[220px]">
+                                        <Mail className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                                        <a href={`mailto:${p.emailSnapshot}`} title={p.emailSnapshot}
+                                          className="block min-w-0 truncate text-sm font-medium text-slate-700 hover:text-[#004c91] hover:underline">
+                                          {p.emailSnapshot}
+                                        </a>
+                                      </div>
                                     ) : (
-                                      <span className="text-gray-600 break-all">{p.emailSnapshot || '-'}</span>
+                                      <span className="text-slate-400">—</span>
                                     )}
                                   </td>
                                   <td className="px-4 py-3">
                                     <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold border ${kind.cls}`}>{kind.label}</span>
                                   </td>
+                                  {!editing && (
+                                    <td className="px-4 py-3">
+                                      <ParticipantPartnerCell
+                                        visitInstanceId={visitInstanceId}
+                                        participantKind={p.participantKind}
+                                        minuteParticipantId={p.minuteParticipantId}
+                                        guestMemberId={p.guestMemberId}
+                                        link={findPartnerLink(p)}
+                                        canManage={!isReadOnly}
+                                        prefillOrganization={p.organizationSnapshot}
+                                        prefillContactName={p.fullNameSnapshot}
+                                        prefillContactEmail={p.emailSnapshot}
+                                        prefillJobTitle={p.roleSnapshot}
+                                        sourceLabel={data?.minutesId ? `biên bản cuộc họp #${data.minutesId}` : 'biên bản cuộc họp'}
+                                        onChanged={() => { void loadPartnerLinks(); }}
+                                      />
+                                    </td>
+                                  )}
                                   <td className="px-4 py-3">
                                     {editing ? (
                                       <input value={p.attendanceNote} onChange={(e) => updateParticipant(p._key, { attendanceNote: e.target.value })}
                                         placeholder="Ghi chú điểm danh..."
                                         className="w-full text-sm rounded-lg border border-gray-300 px-2 py-1.5 outline-none focus:border-[#004c91]" />
                                     ) : (
-                                      <span className="text-gray-500 text-xs">{p.attendanceNote || '-'}</span>
+                                      <div title={p.attendanceNote || ''} className="max-w-[200px] line-clamp-2 text-xs text-gray-500">
+                                        {p.attendanceNote || '—'}
+                                      </div>
                                     )}
                                   </td>
                                   {editing && (

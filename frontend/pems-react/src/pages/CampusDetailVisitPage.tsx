@@ -6,12 +6,14 @@
  * Dữ liệu lấy từ public API. Không có virtual tour 360 (BR-PGAL-17).
  */
 
-import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import React, { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { motion, AnimatePresence } from "motion/react";
 import {
   ChevronRight,
   ChevronLeft,
+  ChevronUp,
+  ChevronDown,
   MapPin,
   Image as ImageIcon,
   Video as VideoIcon,
@@ -27,6 +29,7 @@ import {
   Volume2,
   VolumeX,
   Play,
+  Users,
 } from "lucide-react";
 
 import bgHN from "../assets/FPTbanner_visit/hola_new.jpg";
@@ -40,7 +43,9 @@ import type {
   PublicGalleryArea,
   PublicGalleryGridItem,
   PublicGalleryItemDetail,
+  PublicGalleryShowcaseItem,
   PublicLocationGalleryGrid,
+  PublicLocationShowcase,
   PublicGalleryNavigation,
 } from "../features/visit-fptu/publicVisitFptu.types";
 
@@ -155,6 +160,686 @@ function GridCard({ item, onOpen }: { item: PublicGalleryGridItem; onOpen: () =>
   );
 }
 
+/**
+ * Area/Location Showcase fullscreen background — the cover image, falling back to the campus artwork
+ * (AC-PGAL-AREA-12). Plain <img> with NO fade animation: switching areas/locations swaps the image the
+ * moment the new one is ready (the old one stays until then, so there is no flash). The failed flag resets
+ * on src change so a broken cover for one area doesn't force the fallback for the next.
+ */
+function ShowcaseBackground({ src, fallbackSrc, alt }: { src?: string | null; fallbackSrc: string; alt: string }) {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    setFailed(false);
+  }, [src]);
+  const finalSrc = !src || failed ? fallbackSrc : src;
+  return (
+    <img
+      src={finalSrc}
+      alt={alt}
+      onError={() => setFailed(true)}
+      className="absolute inset-0 w-full h-full object-cover object-center z-0"
+    />
+  );
+}
+
+/**
+ * One location cover thumbnail in the Area Showcase rail (placeholder when the cover is missing/broken).
+ * Active and inactive render identically (same size, same object-cover fill) — the "active" emphasis is
+ * done purely on the button wrapper (scale/lift + glow), so the image itself never changes shape.
+ */
+function LocationThumbImage({ url, alt }: { url?: string | null; alt: string }) {
+  const [failed, setFailed] = useState(false);
+  if (!url || failed) {
+    return (
+      <div className="w-full h-full flex items-center justify-center bg-white/10 text-white/40">
+        <ImageOff className="w-5 h-5" />
+      </div>
+    );
+  }
+  return (
+    <img
+      src={url}
+      alt={alt}
+      loading="lazy"
+      onError={() => setFailed(true)}
+      className="w-full h-full object-cover"
+    />
+  );
+}
+
+/** Primary-media thumbnail of a Location Showcase gallery item (image, or video poster + play badge). */
+function ShowcaseItemThumb({ item }: { item: PublicGalleryShowcaseItem }) {
+  const [failed, setFailed] = useState(false);
+  const pm = item.primaryMedia;
+  const isVid = (pm?.mediaType || "").toUpperCase() === "VIDEO";
+  const src = isVid ? pm?.thumbnailUrl : pm?.thumbnailUrl || pm?.url;
+  if (!pm || !src || failed) {
+    return (
+      <div className="w-full h-full flex items-center justify-center bg-white/10 text-white/40">
+        {isVid ? <Play className="w-5 h-5" /> : <ImageOff className="w-5 h-5" />}
+      </div>
+    );
+  }
+  return (
+    <div className="relative w-full h-full">
+      <img
+        src={src}
+        alt={pm.altText || item.title}
+        loading="lazy"
+        onError={() => setFailed(true)}
+        className="w-full h-full object-cover"
+      />
+      {isVid && (
+        <span className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <span className="w-6 h-6 rounded-full bg-black/50 border border-white/50 flex items-center justify-center text-white">
+            <Play className="w-3 h-3 ml-0.5" fill="currentColor" />
+          </span>
+        </span>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Reusable vertical thumbnail rail — used by the Location Showcase MEDIA column (same look/behaviour as the
+ * Area Showcase rail: reveal-on-demand smooth scroll, white-glow active, up/down arrows, NN/MM counter).
+ * Loop on the arrows is handled by the parent's onStep.
+ */
+function VerticalThumbRail({
+  items,
+  activeIndex,
+  onSelect,
+  onStep,
+  renderThumb,
+  keyOf,
+  label,
+}: {
+  items: PublicGalleryShowcaseItem[];
+  activeIndex: number;
+  onSelect: (index: number) => void;
+  onStep: (dir: -1 | 1) => void;
+  renderThumb: (item: PublicGalleryShowcaseItem) => React.ReactNode;
+  keyOf: (item: PublicGalleryShowcaseItem, index: number) => React.Key;
+  label?: string;
+}) {
+  const railRef = useRef<HTMLDivElement | null>(null);
+  const thumbRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const total = items.length;
+  const safe = total > 0 ? Math.min(activeIndex, total - 1) : 0;
+
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => {
+      const rail = railRef.current;
+      const el = thumbRefs.current[safe];
+      if (!rail || !el) return;
+      const pad = 12;
+      const viewTop = rail.scrollTop;
+      const viewBottom = viewTop + rail.clientHeight;
+      const elTop = el.offsetTop;
+      const elBottom = elTop + el.offsetHeight;
+      const maxScroll = Math.max(0, rail.scrollHeight - rail.clientHeight);
+      let target = viewTop;
+      if (elTop < viewTop + pad) target = elTop - pad;
+      else if (elBottom > viewBottom - pad) target = elBottom - rail.clientHeight + pad;
+      target = Math.max(0, Math.min(target, maxScroll));
+      if (target !== viewTop) rail.scrollTo({ top: target, behavior: "smooth" });
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [safe, total]);
+
+  if (total === 0) return null;
+  const pad2 = (n: number) => String(n).padStart(2, "0");
+
+  return (
+    <div className="flex flex-col items-center gap-3">
+      <button
+        onClick={() => onStep(-1)}
+        title="Lên"
+        className="w-10 h-10 rounded-full border border-white/30 bg-black/30 text-white flex items-center justify-center backdrop-blur-md transition-all hover:bg-white/20 hover:scale-105"
+      >
+        <ChevronUp className="w-5 h-5" />
+      </button>
+      {label && (
+        <div className="text-white/85 text-[11px] font-bold uppercase tracking-[0.18em] text-center drop-shadow">
+          {label}
+        </div>
+      )}
+      <div
+        ref={railRef}
+        className="relative flex flex-col items-center gap-4 max-h-[min(52vh,404px)] overflow-y-auto px-6 py-4 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
+      >
+        {items.map((it, idx) => {
+          const active = idx === safe;
+          return (
+            <button
+              key={keyOf(it, idx)}
+              ref={(el) => {
+                thumbRefs.current[idx] = el;
+              }}
+              onClick={() => onSelect(idx)}
+              className={`relative w-[72px] h-[72px] sm:w-[78px] sm:h-[78px] rounded-[10px] overflow-hidden cursor-pointer shrink-0 transition-all duration-300 ${
+                active
+                  ? "z-10 border-2 border-white opacity-100 scale-[1.14] shadow-[0_0_0_3px_rgba(255,255,255,0.20),0_0_26px_rgba(255,255,255,0.6),0_10px_24px_rgba(0,0,0,0.45)]"
+                  : "border-2 border-white/25 opacity-65 hover:opacity-90 hover:border-white/50"
+              }`}
+            >
+              {renderThumb(it)}
+            </button>
+          );
+        })}
+      </div>
+      <button
+        onClick={() => onStep(1)}
+        title="Xuống"
+        className="w-10 h-10 rounded-full border border-white/30 bg-black/30 text-white flex items-center justify-center backdrop-blur-md transition-all hover:bg-white/20 hover:scale-105"
+      >
+        <ChevronDown className="w-5 h-5" />
+      </button>
+      <div className="mt-1 text-white font-extrabold tracking-[0.08em] text-sm text-center drop-shadow-[0_8px_20px_rgba(0,0,0,0.45)]">
+        {pad2(safe + 1)}/{pad2(total)}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Horizontal mirror of {@link VerticalThumbRail} — used by the Location Showcase "Đoàn khách đã tới thăm"
+ * row. Identical thumbnail size/style/gap/counter as the vertical MEDIA column, just laid out left→right
+ * with `< >` arrows on the sides. Shows up to ~4 thumbnails and reveal-scrolls to keep the active one in view.
+ */
+function HorizontalThumbRail({
+  items,
+  activeIndex,
+  onSelect,
+  onStep,
+  renderThumb,
+  keyOf,
+  title,
+}: {
+  items: PublicGalleryShowcaseItem[];
+  activeIndex: number;
+  onSelect: (index: number) => void;
+  onStep: (dir: -1 | 1) => void;
+  renderThumb: (item: PublicGalleryShowcaseItem) => React.ReactNode;
+  keyOf: (item: PublicGalleryShowcaseItem, index: number) => React.Key;
+  title?: string;
+}) {
+  const railRef = useRef<HTMLDivElement | null>(null);
+  const thumbRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const total = items.length;
+  const safe = total > 0 ? Math.min(activeIndex, total - 1) : 0;
+
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => {
+      const rail = railRef.current;
+      const el = thumbRefs.current[safe];
+      if (!rail || !el) return;
+      const pad = 12;
+      const viewLeft = rail.scrollLeft;
+      const viewRight = viewLeft + rail.clientWidth;
+      const elLeft = el.offsetLeft;
+      const elRight = elLeft + el.offsetWidth;
+      const maxScroll = Math.max(0, rail.scrollWidth - rail.clientWidth);
+      let target = viewLeft;
+      if (elLeft < viewLeft + pad) target = elLeft - pad;
+      else if (elRight > viewRight - pad) target = elRight - rail.clientWidth + pad;
+      target = Math.max(0, Math.min(target, maxScroll));
+      if (target !== viewLeft) rail.scrollTo({ left: target, behavior: "smooth" });
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [safe, total]);
+
+  if (total === 0) return null;
+  const pad2 = (n: number) => String(n).padStart(2, "0");
+
+  return (
+    <div className="flex flex-col items-start">
+      {title && (
+        <div className="flex items-center gap-2 text-white font-bold text-sm mb-3 drop-shadow">
+          <Users className="w-4 h-4" /> {title}
+        </div>
+      )}
+      {/* Arrow-row + counter grouped and centred together (so the counter lines up under the thumbnails) */}
+      <div className="flex flex-col items-center">
+      <div className="flex items-center gap-3">
+        <button
+          onClick={() => onStep(-1)}
+          title="Trước"
+          className="w-10 h-10 shrink-0 rounded-full border border-white/30 bg-black/30 text-white flex items-center justify-center backdrop-blur-md transition-all hover:bg-white/20 hover:scale-105"
+        >
+          <ChevronLeft className="w-5 h-5" />
+        </button>
+        {/* Exactly 4 thumbnails (78px·4 + gap·3 + px·2), the 5th clipped out; then reveal-scroll horizontally */}
+        <div
+          ref={railRef}
+          className="relative flex flex-row items-center gap-4 max-w-[min(82vw,400px)] overflow-x-auto px-6 py-4 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
+        >
+          {items.map((it, idx) => {
+            const active = idx === safe;
+            return (
+              <button
+                key={keyOf(it, idx)}
+                ref={(el) => {
+                  thumbRefs.current[idx] = el;
+                }}
+                onClick={() => onSelect(idx)}
+                className={`relative w-[72px] h-[72px] sm:w-[78px] sm:h-[78px] rounded-[10px] overflow-hidden cursor-pointer shrink-0 transition-all duration-300 ${
+                  active
+                    ? "z-10 border-2 border-white opacity-100 scale-[1.14] shadow-[0_0_0_3px_rgba(255,255,255,0.20),0_0_26px_rgba(255,255,255,0.6),0_10px_24px_rgba(0,0,0,0.45)]"
+                    : "border-2 border-white/25 opacity-65 hover:opacity-90 hover:border-white/50"
+                }`}
+              >
+                {renderThumb(it)}
+              </button>
+            );
+          })}
+        </div>
+        <button
+          onClick={() => onStep(1)}
+          title="Tiếp theo"
+          className="w-10 h-10 shrink-0 rounded-full border border-white/30 bg-black/30 text-white flex items-center justify-center backdrop-blur-md transition-all hover:bg-white/20 hover:scale-105"
+        >
+          <ChevronRight className="w-5 h-5" />
+        </button>
+      </div>
+      <div className="mt-1 text-white font-extrabold tracking-[0.08em] text-sm text-center drop-shadow-[0_8px_20px_rgba(0,0,0,0.45)]">
+        {pad2(safe + 1)}/{pad2(total)}
+      </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Detail modal for a public gallery item (opened by clicking a MEDIA or "Đoàn khách" thumbnail). Faithful
+ * re-creation of the original two-card detail design: left — a breadcrumb pill + share menu, a gradient
+ * title with an orange underline, and a drop-cap description with a "Nghe thuyết minh" narration button and
+ * a prev/next footer; right — the item's media carousel (image/video, prev/next, dots). Anonymous — media
+ * come from the scoped public proxy. Loads the item's full media set via getGalleryItemDetail.
+ */
+function GalleryItemDetailModal({
+  detail,
+  isLoading,
+  notFound,
+  onClose,
+  onPrev,
+  onNext,
+  hasNav,
+}: {
+  detail: PublicGalleryItemDetail | null;
+  isLoading: boolean;
+  notFound: boolean;
+  onClose: () => void;
+  onPrev: () => void;
+  onNext: () => void;
+  hasNav: boolean;
+}) {
+  const [idx, setIdx] = useState(0);
+  const [failed, setFailed] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [showShareMenu, setShowShareMenu] = useState(false);
+  const [zoomOpen, setZoomOpen] = useState(false);
+  const itemId = detail?.galleryItem.galleryItemId;
+
+  const stopNarration = useCallback(() => {
+    if (typeof window !== "undefined" && window.speechSynthesis) window.speechSynthesis.cancel();
+    setIsSpeaking(false);
+  }, []);
+
+  // Reset carousel + stop any narration whenever the shown item changes.
+  useEffect(() => {
+    setIdx(0);
+    setFailed(false);
+    setZoomOpen(false);
+    stopNarration();
+  }, [itemId, stopNarration]);
+  // Stop narration when the modal unmounts.
+  useEffect(() => () => stopNarration(), [stopNarration]);
+
+  const media = detail?.media ?? [];
+  const cur = media[idx] ?? null;
+  const step = (d: -1 | 1) => {
+    if (media.length > 1) {
+      setIdx((i) => (i + d + media.length) % media.length);
+      setFailed(false);
+    }
+  };
+
+  // Paginate with a small window of dots (so 14 media don't cram 14 dots) + a NN/MM counter below.
+  const total = media.length;
+  const DOT_WINDOW = 7;
+  const dotStart = total <= DOT_WINDOW ? 0 : Math.max(0, Math.min(idx - Math.floor(DOT_WINDOW / 2), total - DOT_WINDOW));
+  const dotIndices = Array.from({ length: Math.min(DOT_WINDOW, total) }, (_, k) => dotStart + k);
+  const pad2 = (n: number) => String(n).padStart(2, "0");
+
+  const toggleNarration = () => {
+    const synth = typeof window !== "undefined" ? window.speechSynthesis : undefined;
+    const text = detail?.galleryItem.description?.trim();
+    if (!synth || !text) return;
+    if (isSpeaking) {
+      stopNarration();
+      return;
+    }
+    synth.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = "vi-VN";
+    u.rate = 1;
+    u.onend = () => setIsSpeaking(false);
+    u.onerror = () => setIsSpeaking(false);
+    setIsSpeaking(true);
+    synth.speak(u);
+  };
+
+  const shareLink = (channel: "copy" | "facebook" | "twitter") => {
+    const url = window.location.href;
+    if (channel === "copy") {
+      navigator.clipboard.writeText(url);
+      setShowShareMenu(false);
+      return;
+    }
+    const target =
+      channel === "facebook"
+        ? `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`
+        : `https://twitter.com/intent/tweet?url=${encodeURIComponent(url)}`;
+    window.open(target, "_blank");
+    setShowShareMenu(false);
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.2 }}
+      className="fixed inset-0 z-[120] flex items-center justify-center p-4 sm:p-6 md:p-8"
+    >
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-md" onClick={onClose} />
+
+      <motion.div
+        initial={{ opacity: 0, scale: 0.92, y: 20 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.96, y: 10 }}
+        transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+        className="relative z-10 w-full max-w-6xl h-[82vh] grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-6"
+      >
+        {/* ── Left: breadcrumb / title / description ── */}
+        <div className="lg:col-span-5 flex flex-col gap-4 h-full min-h-0">
+          <div className="bg-white/15 dark:bg-black/20 backdrop-blur-2xl border border-white/30 rounded-[1.5rem] sm:rounded-[2rem] p-5 sm:p-6 shadow-[0_8px_32px_rgba(0,0,0,0.1)] relative z-30 group transition-all duration-500 hover:shadow-[0_8px_40px_rgba(255,255,255,0.1)] shrink-0">
+            <div className="absolute inset-0 overflow-hidden rounded-[inherit] pointer-events-none">
+              <div className="absolute -top-20 -right-20 w-40 h-40 bg-fpt-orange/20 rounded-full blur-3xl group-hover:bg-fpt-orange/30 transition-colors duration-500" />
+              <div className="absolute -bottom-20 -left-20 w-40 h-40 bg-blue-500/20 rounded-full blur-3xl group-hover:bg-blue-400/30 transition-colors duration-500" />
+            </div>
+
+            <div className="flex items-center justify-between mb-5 relative z-10 gap-3">
+              <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-fpt-orange/90 text-white font-semibold text-[10px] sm:text-xs tracking-widest uppercase rounded-full border border-white/30 backdrop-blur-md shadow-[0_0_15px_rgba(243,112,33,0.4)] max-w-full overflow-hidden">
+                <span className="truncate">{detail?.area.areaName}</span>
+                <ChevronRight className="w-3.5 h-3.5 shrink-0 opacity-80" />
+                <span className="truncate">{detail?.location.locationName}</span>
+              </div>
+              <div className="flex items-center gap-2 relative shrink-0">
+                <button
+                  onClick={() => setShowShareMenu((s) => !s)}
+                  className="w-8 h-8 flex items-center justify-center rounded-full bg-white/15 hover:bg-fpt-orange text-white/80 hover:text-white border border-white/25 transition-all hover:scale-110"
+                  title="Chia sẻ"
+                >
+                  <Share2 className="w-4 h-4" />
+                </button>
+                <AnimatePresence>
+                  {showShareMenu && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 8, scale: 0.92 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 8, scale: 0.92 }}
+                      className="absolute right-0 top-full mt-2 w-52 bg-black/90 backdrop-blur-xl border border-white/20 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.6)] p-2 z-[70] flex flex-col gap-1"
+                    >
+                      <button onClick={() => shareLink("copy")} className="flex items-center gap-3 px-3 py-2.5 text-sm text-white/90 hover:text-white hover:bg-white/10 rounded-xl transition-colors text-left">
+                        <LinkIcon className="w-4 h-4 shrink-0" /> Sao chép liên kết
+                      </button>
+                      <button onClick={() => shareLink("facebook")} className="flex items-center gap-3 px-3 py-2.5 text-sm text-white/90 hover:text-white hover:bg-blue-500/25 rounded-xl transition-colors text-left">
+                        <Facebook className="w-4 h-4 shrink-0" /> Facebook
+                      </button>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            </div>
+
+            <h3 className="text-2xl sm:text-3xl font-black text-transparent bg-clip-text bg-gradient-to-br from-white via-white to-white/70 mb-3 leading-tight tracking-tight drop-shadow-sm relative z-10 min-h-[2rem]">
+              {isLoading ? "Đang tải…" : detail?.galleryItem.title || "—"}
+            </h3>
+            <div className="w-24 h-1.5 bg-gradient-to-r from-fpt-orange to-transparent rounded-full opacity-80 relative z-10" />
+          </div>
+
+          <div className="bg-white/80 dark:bg-white/10 backdrop-blur-3xl border border-white/40 rounded-[1.5rem] sm:rounded-[2rem] p-5 sm:p-6 shadow-[0_8px_32px_rgba(0,0,0,0.1)] grow flex flex-col overflow-hidden relative min-h-0">
+            {/* Description — the ONLY scrolling element (flex-col grow so it's height-bounded); the narration
+                button floats top-right and the footer below stays fixed. */}
+            <div className="grow min-h-0 overflow-y-auto pr-2 mb-4 prose prose-base text-black dark:text-white font-light leading-relaxed [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-black/5 dark:[&::-webkit-scrollbar-track]:bg-white/10 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-thumb]:bg-fpt-orange/50 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb:hover]:bg-fpt-orange/80 [scrollbar-width:thin] [scrollbar-color:rgba(243,112,33,0.55)_transparent]">
+              {detail && !notFound && !isLoading && detail.galleryItem.description?.trim() && (
+                <button
+                  onClick={toggleNarration}
+                  title={isSpeaking ? "Dừng thuyết minh" : "Nghe thuyết minh"}
+                  className={`float-right ml-4 mb-2 flex items-center justify-center w-10 h-10 sm:w-12 sm:h-12 rounded-full transition-all duration-300 hover:scale-110 hover:shadow-[0_0_15px_rgba(243,112,33,0.4)] ${
+                    isSpeaking ? "bg-fpt-orange text-white animate-pulse" : "bg-fpt-orange/10 text-fpt-orange hover:bg-fpt-orange hover:text-white"
+                  }`}
+                >
+                  {isSpeaking ? <VolumeX className="w-5 h-5 sm:w-6 sm:h-6" /> : <Volume2 className="w-5 h-5 sm:w-6 sm:h-6" />}
+                </button>
+              )}
+              {isLoading ? (
+                <p className="text-gray-600 dark:text-gray-300">Đang tải mô tả…</p>
+              ) : notFound ? (
+                <p className="text-red-600 dark:text-red-400 font-medium">Nội dung này hiện không còn được hiển thị.</p>
+              ) : (
+                <p className="text-black dark:text-gray-100 whitespace-pre-line break-words [overflow-wrap:anywhere] first-letter:text-4xl first-letter:font-bold first-letter:text-fpt-orange first-letter:mr-1 first-letter:float-left">
+                  {detail?.galleryItem.description}
+                </p>
+              )}
+            </div>
+
+            {/* Prev / next item footer — fixed at the card bottom, never scrolls away */}
+            {hasNav && (
+              <div className="flex items-center justify-between pt-4 border-t border-gray-200 dark:border-white/10 shrink-0">
+                <button
+                  onClick={onPrev}
+                  className="flex items-center gap-2 px-3 py-2 text-sm font-bold text-gray-700 dark:text-gray-200 hover:text-fpt-orange dark:hover:text-fpt-orange hover:bg-fpt-orange/10 dark:hover:bg-fpt-orange/20 rounded-xl transition-all hover:scale-105 active:scale-95"
+                >
+                  <ChevronLeft className="w-5 h-5" /> Trước
+                </button>
+                <button
+                  onClick={onNext}
+                  className="flex items-center gap-2 px-3 py-2 text-sm font-bold text-gray-700 dark:text-gray-200 hover:text-fpt-orange dark:hover:text-fpt-orange hover:bg-fpt-orange/10 dark:hover:bg-fpt-orange/20 rounded-xl transition-all hover:scale-105 active:scale-95"
+                >
+                  Tiếp theo <ChevronRight className="w-5 h-5" />
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* ── Right: media carousel ── */}
+        <div className="lg:col-span-7 flex flex-col gap-4 min-h-[280px] lg:min-h-0 h-full order-first lg:order-last">
+          <div className="bg-white/15 dark:bg-white/5 backdrop-blur-2xl border border-white/30 rounded-[1.5rem] sm:rounded-[2rem] shadow-[0_8px_32px_rgba(0,0,0,0.15)] w-full h-full relative overflow-hidden group flex flex-col">
+            <button
+              onClick={onClose}
+              title="Đóng"
+              className="absolute top-4 right-4 z-20 w-9 h-9 flex items-center justify-center rounded-full bg-black/50 hover:bg-white/20 text-white border border-white/25 backdrop-blur-md transition-all hover:scale-110 opacity-0 group-hover:opacity-100 group/close"
+            >
+              <X className="w-4 h-4 group-hover/close:rotate-90 transition-transform duration-300" />
+            </button>
+
+            <div className="relative w-full h-full rounded-[1.5rem] sm:rounded-[2rem] overflow-hidden bg-black/30">
+              {isLoading ? (
+                <div className="absolute inset-0 flex items-center justify-center text-white/80">
+                  <Loader2 className="w-8 h-8 animate-spin" />
+                </div>
+              ) : notFound || !cur ? (
+                <div className="absolute inset-0 flex flex-col items-center justify-center text-white/70 gap-2">
+                  <ImageOff className="w-10 h-10" />
+                  <span className="text-sm">{notFound ? "Nội dung này không còn hiển thị." : "Không có media."}</span>
+                </div>
+              ) : failed ? (
+                <div className="absolute inset-0 flex flex-col items-center justify-center text-white/70 gap-2">
+                  <ImageOff className="w-10 h-10" />
+                  <span className="text-sm">Không thể tải media.</span>
+                </div>
+              ) : (
+                <AnimatePresence mode="popLayout" initial={false}>
+                  <motion.div
+                    key={cur.mediaId}
+                    initial={{ opacity: 0, scale: 1.04 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.98 }}
+                    transition={{ duration: 0.35, ease: "easeInOut" }}
+                    className="absolute inset-0 w-full h-full"
+                  >
+                    {isVideo(cur.mediaType) ? (
+                      <video
+                        src={mediaSrc(cur.url)}
+                        poster={mediaSrc(cur.thumbnailUrl)}
+                        controls
+                        muted
+                        playsInline
+                        onError={() => setFailed(true)}
+                        className="w-full h-full object-contain bg-black"
+                      />
+                    ) : (
+                      <img
+                        src={mediaSrc(cur.url)}
+                        alt={cur.altText || detail?.galleryItem.title || "FPTU"}
+                        onError={() => setFailed(true)}
+                        className="w-full h-full object-cover"
+                      />
+                    )}
+                  </motion.div>
+                </AnimatePresence>
+              )}
+
+              {media.length > 1 && (
+                <>
+                  <button
+                    onClick={() => step(-1)}
+                    className="absolute left-4 top-1/2 -translate-y-1/2 p-2 bg-white/10 hover:bg-white/30 border border-white/20 text-white rounded-full backdrop-blur-md transition-all z-10 hover:scale-110 shadow-lg opacity-0 group-hover:opacity-100"
+                  >
+                    <ChevronLeft className="w-6 h-6" />
+                  </button>
+                  <button
+                    onClick={() => step(1)}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 p-2 bg-white/10 hover:bg-white/30 border border-white/20 text-white rounded-full backdrop-blur-md transition-all z-10 hover:scale-110 shadow-lg opacity-0 group-hover:opacity-100"
+                  >
+                    <ChevronRight className="w-6 h-6" />
+                  </button>
+                </>
+              )}
+            </div>
+
+            {/* Zoom button + pagination dots + counter — shown for any item with ≥ 1 media */}
+            {!isLoading && !notFound && cur && !failed && (
+              <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-2">
+                <button
+                  onClick={() => setZoomOpen(true)}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-black/50 hover:bg-black/70 text-white text-sm font-semibold border border-white/25 backdrop-blur-md transition-all hover:scale-105 opacity-0 group-hover:opacity-100"
+                >
+                  <ZoomIn className="w-4 h-4" /> Phóng to
+                </button>
+                <div className="flex items-center gap-2 px-3.5 py-2 bg-black/45 backdrop-blur-md rounded-full border border-white/20">
+                  {dotIndices.map((i) => (
+                    <button
+                      key={i}
+                      onClick={() => {
+                        setIdx(i);
+                        setFailed(false);
+                      }}
+                      className={`rounded-full transition-all duration-300 ${
+                        idx === i
+                          ? "w-6 h-2.5 bg-white shadow-[0_0_12px_rgba(255,255,255,0.9)]"
+                          : "w-2 h-2 bg-white/50 hover:bg-white/80 hover:scale-125"
+                      }`}
+                    />
+                  ))}
+                </div>
+                <span className="text-white text-xs font-extrabold tracking-[0.1em] drop-shadow-[0_4px_12px_rgba(0,0,0,0.7)]">
+                  {pad2(idx + 1)}/{pad2(total)}
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+      </motion.div>
+
+      {/* Zoom lightbox for the current media */}
+      <AnimatePresence>
+        {zoomOpen && cur && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="fixed inset-0 z-[130] flex items-center justify-center bg-black/95 backdrop-blur-md"
+            onClick={() => setZoomOpen(false)}
+          >
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setZoomOpen(false);
+              }}
+              title="Đóng"
+              className="absolute top-6 right-6 z-10 w-11 h-11 flex items-center justify-center rounded-full bg-black/50 hover:bg-white/20 text-white border border-white/25 backdrop-blur-md transition-all hover:scale-110"
+            >
+              <X className="w-6 h-6" />
+            </button>
+            {media.length > 1 && (
+              <>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    step(-1);
+                  }}
+                  className="absolute left-6 top-1/2 -translate-y-1/2 z-10 p-3 rounded-full bg-black/50 hover:bg-white/20 text-white border border-white/20 backdrop-blur-md transition-all hover:scale-110"
+                >
+                  <ChevronLeft className="w-7 h-7" />
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    step(1);
+                  }}
+                  className="absolute right-6 top-1/2 -translate-y-1/2 z-10 p-3 rounded-full bg-black/50 hover:bg-white/20 text-white border border-white/20 backdrop-blur-md transition-all hover:scale-110"
+                >
+                  <ChevronRight className="w-7 h-7" />
+                </button>
+              </>
+            )}
+            <div className="relative flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
+              {isVideo(cur.mediaType) ? (
+                <video
+                  src={mediaSrc(cur.url)}
+                  poster={mediaSrc(cur.thumbnailUrl)}
+                  controls
+                  autoPlay
+                  muted
+                  playsInline
+                  className="max-w-[92vw] max-h-[90vh] object-contain"
+                />
+              ) : (
+                <img
+                  src={mediaSrc(cur.url)}
+                  alt={cur.altText || detail?.galleryItem.title || "FPTU"}
+                  className="max-w-[92vw] max-h-[90vh] object-contain"
+                />
+              )}
+            </div>
+            {media.length > 1 && (
+              <span className="absolute bottom-6 left-1/2 -translate-x-1/2 text-white text-sm font-extrabold tracking-[0.1em] drop-shadow-[0_4px_12px_rgba(0,0,0,0.8)]">
+                {pad2(idx + 1)}/{pad2(total)}
+              </span>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
+  );
+}
+
 export function CampusDetailVisitPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -184,6 +869,25 @@ export function CampusDetailVisitPage() {
   const [hoveredAreaId, setHoveredAreaId] = useState<number | null>(null);
   const [activeLocationId, setActiveLocationId] = useState<number | null>(null);
   const [selectedAreaId, setSelectedAreaId] = useState<number | null>(null);
+  // Area Showcase (BR-PGAL-AREA-01..12): fullscreen area cover + vertical location-cover thumbnail rail.
+  const [showcaseAreaId, setShowcaseAreaId] = useState<number | null>(null);
+  const [activeLocationThumbnailIndex, setActiveLocationThumbnailIndex] = useState(0);
+  // Vertical centre (px, in the rail's own box) of the active thumbnail → anchors the left-side name label.
+  const [activeThumbY, setActiveThumbY] = useState(0);
+  // Location Showcase (AC-LOC/MEDIA/DELEGATION): opened by clicking a location thumbnail in the Area rail.
+  const [locationShowcaseId, setLocationShowcaseId] = useState<number | null>(null);
+  const [showcaseData, setShowcaseData] = useState<PublicLocationShowcase | null>(null);
+  const [isShowcaseLoading, setIsShowcaseLoading] = useState(false);
+  const [activeMediaIndex, setActiveMediaIndex] = useState(0);
+  const [activeDelegationIndex, setActiveDelegationIndex] = useState(0);
+  // Gallery item detail modal (opened by clicking a MEDIA or "Đoàn khách" thumbnail).
+  const [detailItemId, setDetailItemId] = useState<number | null>(null);
+  const [detailData, setDetailData] = useState<PublicGalleryItemDetail | null>(null);
+  const [isItemDetailLoading, setIsItemDetailLoading] = useState(false);
+  const [itemDetailNotFound, setItemDetailNotFound] = useState(false);
+  // The list (gallery item ids) + position the modal was opened from → drives its prev/next footer.
+  const [detailItems, setDetailItems] = useState<number[]>([]);
+  const [detailPos, setDetailPos] = useState(0);
   const [selectedGalleryItemId, setSelectedGalleryItemId] = useState<number | null>(null);
   const [currentMediaIndex, setCurrentMediaIndex] = useState(0);
   const [isLightboxOpen, setIsLightboxOpen] = useState(false);
@@ -194,6 +898,8 @@ export function CampusDetailVisitPage() {
 
   const gridRequestId = useRef(0);
   const detailRequestId = useRef(0);
+  const showcaseRequestId = useRef(0);
+  const itemDetailRequestId = useRef(0);
 
   const areas: PublicGalleryArea[] = nav?.areas ?? [];
   const campusName = nav?.campus?.campusName || `Campus ${campusCode}`;
@@ -223,6 +929,10 @@ export function CampusDetailVisitPage() {
     setNav(null);
     setActiveLocationId(null);
     setSelectedGalleryItemId(null);
+    setShowcaseAreaId(null);
+    setActiveLocationThumbnailIndex(0);
+    setLocationShowcaseId(null);
+    setShowcaseData(null);
     setGrid(null);
     setDetail(null);
 
@@ -296,6 +1006,9 @@ export function CampusDetailVisitPage() {
       const loc = findLocation(locationId);
       if (!loc) return;
       setSelectedAreaId(loc.areaId);
+      setShowcaseAreaId(null); // grid, area showcase and location showcase are mutually exclusive views
+      setLocationShowcaseId(null);
+      setShowcaseData(null);
       setActiveLocationId(locationId);
       setSelectedGalleryItemId(null);
       setDetail(null);
@@ -353,41 +1066,47 @@ export function CampusDetailVisitPage() {
     });
   }, [setSearchParams]);
 
-  // Deep-link / reload: ?locationId opens the grid; +?itemId also opens the item detail.
   const deepLinkHandled = useRef(false);
-  useEffect(() => {
-    if (isNavLoading || !hasContent || deepLinkHandled.current) return;
-    const locParam = Number(searchParams.get("locationId"));
-    const itemParam = Number(searchParams.get("itemId"));
-    const loc = locParam ? findLocation(locParam) : null;
-    if (locParam && loc) {
-      deepLinkHandled.current = true;
-      setIsSidebarOpen(true);
-      setSelectedAreaId(loc.areaId);
-      setActiveLocationId(locParam);
-      void loadLocationGrid(locParam);
-      if (itemParam) {
-        setSelectedGalleryItemId(itemParam);
-        void loadItemDetail(itemParam);
-      }
-    }
-  }, [isNavLoading, hasContent, searchParams, findLocation, loadLocationGrid, loadItemDetail]);
 
-  // Lock body scroll while the gallery overlay is open.
+  // Lock body scroll while the gallery overlay or area showcase is open.
   useEffect(() => {
-    document.body.style.overflow = activeLocationId ? "hidden" : "";
+    const locked = activeLocationId != null || showcaseAreaId != null || locationShowcaseId != null;
+    document.body.style.overflow = locked ? "hidden" : "";
     return () => {
       document.body.style.overflow = "";
     };
-  }, [activeLocationId]);
+  }, [activeLocationId, showcaseAreaId, locationShowcaseId]);
+
+  // ── Area Showcase (BR-PGAL-AREA-01) ──────────────────────────────────────
+  /** Click an area on the sidebar → fullscreen area cover + location-cover thumbnail rail. */
+  const openAreaShowcase = useCallback((areaId: number) => {
+    setSelectedAreaId(areaId);
+    setShowcaseAreaId(areaId);
+    setActiveLocationThumbnailIndex(0); // reset counter to 01/n (BR-PGAL-AREA §9.3)
+    // Leave any open location grid/detail/showcase behind — these views are exclusive.
+    setActiveLocationId(null);
+    setSelectedGalleryItemId(null);
+    setLocationShowcaseId(null);
+    setShowcaseData(null);
+    setGrid(null);
+    setDetail(null);
+    setDetailNotice(null);
+    setIsSidebarOpen(true);
+  }, []);
+
+  const closeShowcase = useCallback(() => {
+    setShowcaseAreaId(null);
+    setSelectedAreaId(null);
+    setActiveLocationThumbnailIndex(0);
+  }, []);
 
   // ── Navigation helpers ───────────────────────────────────────────────────
   const startTour = useCallback(() => {
     if (!hasContent) return;
     setIsSidebarOpen(true);
-    const first = areas[0]?.locations[0];
-    if (first) openLocation(first.locationId);
-  }, [areas, hasContent, openLocation]);
+    const first = areas[0];
+    if (first) openAreaShowcase(first.areaId);
+  }, [areas, hasContent, openAreaShowcase]);
 
   // ── Detail media ───────────────────────────────────────────────────────────
   const media = detail?.media ?? [];
@@ -416,6 +1135,234 @@ export function CampusDetailVisitPage() {
   const currentArea = areas.find((a) => a.areaId === selectedAreaId) ?? null;
   const siblingLocations = currentArea?.locations ?? [];
 
+  // ── Area Showcase derived data ─────────────────────────────────────────────
+  const showcaseArea = useMemo(
+    () => areas.find((a) => a.areaId === showcaseAreaId) ?? null,
+    [areas, showcaseAreaId],
+  );
+  const showcaseLocations = showcaseArea?.locations ?? [];
+  const showcaseTotal = showcaseLocations.length;
+  // Guard the index if the active area changes to one with fewer locations.
+  const safeThumbIndex =
+    showcaseTotal > 0 ? Math.min(activeLocationThumbnailIndex, showcaseTotal - 1) : 0;
+  const showcaseBg = showcaseArea?.areaCoverUrl || fallback.bg;
+  const pad2 = (n: number) => String(n).padStart(2, "0");
+
+  const stepThumbnail = useCallback(
+    (dir: -1 | 1) => {
+      if (showcaseTotal <= 0) return;
+      setActiveLocationThumbnailIndex((i) => (i + dir + showcaseTotal) % showcaseTotal); // loop (BR-PGAL-AREA-09)
+    },
+    [showcaseTotal],
+  );
+
+  // Prev/next area navigation (loops), reusing the sidebar order. openAreaShowcase resets the rail to 01/n.
+  const stepArea = useCallback(
+    (dir: -1 | 1) => {
+      if (areas.length === 0) return;
+      const cur = areas.findIndex((a) => a.areaId === showcaseAreaId);
+      if (cur < 0) return;
+      const next = (cur + dir + areas.length) % areas.length;
+      openAreaShowcase(areas[next].areaId);
+    },
+    [areas, showcaseAreaId, openAreaShowcase],
+  );
+
+  // Reveal the active thumbnail when it reaches an edge of the rail, and anchor the left-hand name label to
+  // it. Uses an INSTANT scrollTop inside useLayoutEffect (no smooth animation, no rAF) so it is 100%
+  // reliable — the old smooth scroll got interrupted by the re-renders that onScroll → setActiveThumbY
+  // triggers, which is why the list stopped scrolling and the name froze on the first thumbnail.
+  // rail is position:relative, so el.offsetTop is measured against the rail itself.
+  const thumbRailRef = useRef<HTMLDivElement | null>(null);
+  const thumbRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  // Recompute where the active thumbnail sits in the rail's viewport (used to anchor the left name label).
+  const syncActiveThumbY = useCallback(() => {
+    const rail = thumbRailRef.current;
+    const el = thumbRefs.current[safeThumbIndex];
+    if (!rail || !el) return;
+    setActiveThumbY(el.offsetTop - rail.scrollTop + el.offsetHeight / 2);
+  }, [safeThumbIndex]);
+
+  useLayoutEffect(() => {
+    const rail = thumbRailRef.current;
+    const el = thumbRefs.current[safeThumbIndex];
+    if (!rail || !el) return;
+    const pad = 12; // keep a little breathing room past the edge so the next thumb peeks in
+    const viewTop = rail.scrollTop;
+    const viewBottom = viewTop + rail.clientHeight;
+    const elTop = el.offsetTop;
+    const elBottom = elTop + el.offsetHeight;
+    const maxScroll = Math.max(0, rail.scrollHeight - rail.clientHeight);
+
+    let target = viewTop;
+    if (elTop < viewTop + pad) {
+      target = elTop - pad; // active is above the fold → slide up to reveal it
+    } else if (elBottom > viewBottom - pad) {
+      target = elBottom - rail.clientHeight + pad; // active is below the fold → slide down to reveal it
+    }
+    target = Math.max(0, Math.min(target, maxScroll));
+
+    rail.scrollTop = target; // instant — never gets stuck
+    setActiveThumbY(elTop - target + el.offsetHeight / 2);
+  }, [showcaseAreaId, locationShowcaseId, safeThumbIndex, showcaseTotal]);
+
+  // ── Location Showcase (MEDIA column + "Đoàn khách đã tới thăm" row) ─────────
+  const locationShowcaseLocation = useMemo(
+    () => flatLocations.find((l) => l.locationId === locationShowcaseId) ?? null,
+    [flatLocations, locationShowcaseId],
+  );
+  const locationShowcaseArea = useMemo(
+    () => areas.find((a) => a.areaId === locationShowcaseLocation?.areaId) ?? null,
+    [areas, locationShowcaseLocation],
+  );
+  const locationSiblings = locationShowcaseArea?.locations ?? [];
+  const mediaItems = showcaseData?.mediaItems ?? [];
+  const delegationItems = showcaseData?.visitDelegationItems ?? [];
+  const safeMediaIndex = mediaItems.length > 0 ? Math.min(activeMediaIndex, mediaItems.length - 1) : 0;
+
+  const openLocationShowcase = useCallback(
+    (locationId: number) => {
+      const loc = flatLocations.find((l) => l.locationId === locationId);
+      if (loc) {
+        setSelectedAreaId(loc.areaId); // keep the sidebar area highlighted
+        // Retain the area context (Location Showcase is hidden while area !== null but stays set) so
+        // closing / "Trở Về" returns to THIS area's Area Showcase; also line up the area rail's active thumb.
+        setShowcaseAreaId(loc.areaId);
+        const area = areas.find((a) => a.areaId === loc.areaId);
+        const idx = area ? area.locations.findIndex((l) => l.locationId === locationId) : -1;
+        if (idx >= 0) setActiveLocationThumbnailIndex(idx);
+      }
+      setLocationShowcaseId(locationId);
+      setShowcaseData(null); // drop the previous location's items so nothing stale flashes while loading
+      setActiveMediaIndex(0);
+      setActiveDelegationIndex(0);
+    },
+    [areas, flatLocations],
+  );
+
+  // Deep-link / reload: ?locationId opens that location's Location Showcase.
+  useEffect(() => {
+    if (isNavLoading || !hasContent || deepLinkHandled.current) return;
+    const locParam = Number(searchParams.get("locationId"));
+    const loc = locParam ? findLocation(locParam) : null;
+    if (locParam && loc) {
+      deepLinkHandled.current = true;
+      setIsSidebarOpen(true);
+      openLocationShowcase(locParam);
+    }
+  }, [isNavLoading, hasContent, searchParams, findLocation, openLocationShowcase]);
+
+  const closeLocationShowcase = useCallback(() => {
+    setLocationShowcaseId(null);
+    setShowcaseData(null);
+    setActiveMediaIndex(0);
+    setActiveDelegationIndex(0);
+  }, []);
+
+  // Prev/next location within the SAME area (loops), background + lists reload via the fetch effect.
+  const stepLocationShowcase = useCallback(
+    (dir: -1 | 1) => {
+      const loc = flatLocations.find((l) => l.locationId === locationShowcaseId);
+      const area = areas.find((a) => a.areaId === loc?.areaId);
+      const sibs = area?.locations ?? [];
+      if (sibs.length === 0) return;
+      const cur = sibs.findIndex((l) => l.locationId === locationShowcaseId);
+      if (cur < 0) return;
+      const next = (cur + dir + sibs.length) % sibs.length;
+      openLocationShowcase(sibs[next].locationId);
+    },
+    [areas, flatLocations, locationShowcaseId, openLocationShowcase],
+  );
+
+  const stepMediaThumbnail = useCallback(
+    (dir: -1 | 1) => {
+      const n = mediaItems.length;
+      if (n <= 0) return;
+      setActiveMediaIndex((i) => (i + dir + n) % n); // loop (AC-MEDIA §10.2)
+    },
+    [mediaItems.length],
+  );
+
+  const stepDelegation = useCallback(
+    (dir: -1 | 1) => {
+      const n = delegationItems.length;
+      if (n <= 0) return;
+      setActiveDelegationIndex((i) => (i + dir + n) % n); // loop
+    },
+    [delegationItems.length],
+  );
+
+  // Open the detail modal for a clicked MEDIA / "Đoàn khách" gallery item (fetch its full media set).
+  const openItemDetail = useCallback((galleryItemId: number) => {
+    setDetailItemId(galleryItemId);
+    setDetailData(null);
+    setItemDetailNotFound(false);
+    const reqId = ++itemDetailRequestId.current;
+    setIsItemDetailLoading(true);
+    publicVisitFptuApi
+      .getGalleryItemDetail(galleryItemId)
+      .then((data) => {
+        if (reqId !== itemDetailRequestId.current) return;
+        setDetailData(data);
+      })
+      .catch(() => {
+        if (reqId !== itemDetailRequestId.current) return;
+        setDetailData(null);
+        setItemDetailNotFound(true);
+      })
+      .finally(() => {
+        if (reqId === itemDetailRequestId.current) setIsItemDetailLoading(false);
+      });
+  }, []);
+
+  const closeItemDetail = useCallback(() => {
+    setDetailItemId(null);
+    setDetailData(null);
+    setItemDetailNotFound(false);
+  }, []);
+
+  // Open the modal from a specific list (MEDIA or delegation) at a position → enables its prev/next footer.
+  const openItemDetailAt = useCallback(
+    (items: number[], pos: number) => {
+      setDetailItems(items);
+      setDetailPos(pos);
+      openItemDetail(items[pos]);
+    },
+    [openItemDetail],
+  );
+
+  const stepItemDetail = useCallback(
+    (dir: -1 | 1) => {
+      setDetailPos((p) => {
+        if (detailItems.length <= 1) return p;
+        const np = (p + dir + detailItems.length) % detailItems.length;
+        openItemDetail(detailItems[np]);
+        return np;
+      });
+    },
+    [detailItems, openItemDetail],
+  );
+
+  // Fetch MEDIA + delegation items whenever the shown location changes (stale-response guarded, AC-RELOAD-01).
+  useEffect(() => {
+    if (locationShowcaseId == null) return;
+    const reqId = ++showcaseRequestId.current;
+    setIsShowcaseLoading(true);
+    publicVisitFptuApi
+      .getLocationShowcase(locationShowcaseId)
+      .then((data) => {
+        if (reqId !== showcaseRequestId.current) return;
+        setShowcaseData(data);
+      })
+      .catch(() => {
+        if (reqId !== showcaseRequestId.current) return;
+        setShowcaseData(null);
+      })
+      .finally(() => {
+        if (reqId === showcaseRequestId.current) setIsShowcaseLoading(false);
+      });
+  }, [locationShowcaseId]);
+
   const markMediaFailed = useCallback((mediaId: number) => {
     setFailedMediaIds((prev) => {
       const next = new Set(prev);
@@ -432,17 +1379,83 @@ export function CampusDetailVisitPage() {
     [media.length],
   );
 
-  // ESC closes lightbox → detail → overlay.
+  // ESC closes lightbox → detail → overlay → area showcase.
+  // While the area showcase is open, ↑/↓ step the location thumbnail rail.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      if (isLightboxOpen) setIsLightboxOpen(false);
-      else if (isDetailView) backToGrid();
-      else if (activeLocationId) closeOverlay();
+      if (e.key === "Escape") {
+        if (detailItemId != null) closeItemDetail();
+        else if (isLightboxOpen) setIsLightboxOpen(false);
+        else if (isDetailView) backToGrid();
+        else if (activeLocationId) closeOverlay();
+        else if (locationShowcaseId != null) closeLocationShowcase();
+        else if (showcaseAreaId != null) closeShowcase();
+        return;
+      }
+      // While the detail modal is open, ←/→ step through its list; other keys are swallowed.
+      if (detailItemId != null) {
+        if (e.key === "ArrowRight") {
+          e.preventDefault();
+          stepItemDetail(1);
+        } else if (e.key === "ArrowLeft") {
+          e.preventDefault();
+          stepItemDetail(-1);
+        }
+        return;
+      }
+      // Location Showcase takes key priority: ↑/↓ step MEDIA, ←/→ change location.
+      if (locationShowcaseId != null) {
+        if (e.key === "ArrowDown") {
+          e.preventDefault();
+          stepMediaThumbnail(1);
+        } else if (e.key === "ArrowUp") {
+          e.preventDefault();
+          stepMediaThumbnail(-1);
+        } else if (e.key === "ArrowRight") {
+          e.preventDefault();
+          stepLocationShowcase(1);
+        } else if (e.key === "ArrowLeft") {
+          e.preventDefault();
+          stepLocationShowcase(-1);
+        }
+        return;
+      }
+      if (showcaseAreaId != null && !activeLocationId) {
+        if (e.key === "ArrowDown") {
+          e.preventDefault();
+          stepThumbnail(1);
+        } else if (e.key === "ArrowUp") {
+          e.preventDefault();
+          stepThumbnail(-1);
+        } else if (e.key === "ArrowRight") {
+          e.preventDefault();
+          stepArea(1);
+        } else if (e.key === "ArrowLeft") {
+          e.preventDefault();
+          stepArea(-1);
+        }
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [isLightboxOpen, isDetailView, activeLocationId, backToGrid, closeOverlay]);
+  }, [
+    isLightboxOpen,
+    isDetailView,
+    activeLocationId,
+    showcaseAreaId,
+    locationShowcaseId,
+    detailItemId,
+    backToGrid,
+    closeOverlay,
+    closeShowcase,
+    closeLocationShowcase,
+    closeItemDetail,
+    stepItemDetail,
+    stepThumbnail,
+    stepArea,
+    stepMediaThumbnail,
+    stepLocationShowcase,
+  ]);
 
   // "Nghe thuyết minh": read the description aloud via the browser's speech synthesis (Vietnamese).
   const stopNarration = useCallback(() => {
@@ -511,10 +1524,7 @@ export function CampusDetailVisitPage() {
                     onMouseLeave={() => setHoveredAreaId(null)}
                   >
                     <button
-                      onClick={() => {
-                        const firstLoc = area.locations[0];
-                        if (firstLoc) openLocation(firstLoc.locationId);
-                      }}
+                      onClick={() => openAreaShowcase(area.areaId)}
                       className={`w-full flex items-center justify-between px-4 py-3 border-b border-white/10 transition-all duration-300 text-left group relative z-10 ${
                         selectedAreaId === area.areaId
                           ? "bg-[#F37021] text-white shadow-[0_0_20px_rgba(243,112,33,0.5)]"
@@ -548,7 +1558,7 @@ export function CampusDetailVisitPage() {
                             {area.locations.map((loc) => (
                               <button
                                 key={loc.locationId}
-                                onClick={() => openLocation(loc.locationId)}
+                                onClick={() => openLocationShowcase(loc.locationId)}
                                 className={`w-full text-left px-5 py-3 text-sm transition-all flex justify-between items-center group/sub ${
                                   activeLocationId === loc.locationId
                                     ? "bg-white/25 text-white"
@@ -558,12 +1568,7 @@ export function CampusDetailVisitPage() {
                                 <span className="font-medium tracking-wide drop-shadow-sm group-hover/sub:translate-x-1 transition-transform">
                                   {loc.locationName}
                                 </span>
-                                <span className="flex items-center gap-2 shrink-0">
-                                  {loc.publicGalleryItemCount > 0 && (
-                                    <span className="text-[10px] font-bold bg-white/25 rounded-full px-1.5 py-0.5">
-                                      {loc.publicGalleryItemCount}
-                                    </span>
-                                  )}
+                                <span className="flex items-center shrink-0">
                                   <MapPin className="w-4 h-4 opacity-70 group-hover/sub:opacity-100 group-hover/sub:scale-110 transition-all" />
                                 </span>
                               </button>
@@ -597,7 +1602,11 @@ export function CampusDetailVisitPage() {
         initial={{ opacity: 0, x: -20 }}
         animate={{ opacity: 1, x: 0 }}
         transition={{ delay: 0.2 }}
-        onClick={() => navigate("/visit-fptu")}
+        onClick={() => {
+          // From the Location Showcase, "Trở Về" goes back to its Area Showcase; otherwise leave the page.
+          if (locationShowcaseId != null) closeLocationShowcase();
+          else navigate("/visit-fptu");
+        }}
         className="absolute top-24 left-6 sm:top-28 z-40 p-3 bg-black/30 backdrop-blur-md rounded-full border border-white/20 text-white hover:bg-fpt-orange hover:border-fpt-orange hover:scale-110 hover:shadow-[0_0_20px_rgba(243,112,33,0.5)] transition-all flex items-center gap-2 group"
       >
         <ArrowLeft className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
@@ -705,393 +1714,279 @@ export function CampusDetailVisitPage() {
         </div>
       </div>
 
-      {/* ── Gallery overlay ── */}
+      {/* ── Area Showcase: fullscreen area cover + location-cover thumbnail rail (BR-PGAL-AREA) ── */}
       <AnimatePresence>
-        {activeLocationId && (
+        {showcaseArea && !activeLocationId && locationShowcaseId == null && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.4 }}
-            className={`fixed top-[64px] inset-x-0 bottom-0 z-40 flex items-center justify-center transition-all duration-500 ${isSidebarOpen ? "md:pl-56" : ""} p-4 sm:p-6 md:p-8`}
+            transition={{ duration: 0 }}
+            className="fixed top-[64px] inset-x-0 bottom-0 z-30 overflow-hidden"
           >
-            <div className="fixed inset-0 bg-black/50 backdrop-blur-md" onClick={closeOverlay} />
+            {/* Background: area cover, fullscreen, cover-fit (BR-PGAL-AREA-02/03) */}
+            <ShowcaseBackground src={showcaseArea.areaCoverUrl} fallbackSrc={fallback.bg} alt={showcaseArea.areaName} />
 
-            <motion.div
-              initial={{ opacity: 0, scale: 0.92, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.96, y: 10 }}
-              transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-              className={`relative z-10 w-full flex flex-col gap-4 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] drop-shadow-2xl ${
-                isDetailView ? "max-w-6xl h-[82vh]" : "max-w-[1280px] max-h-[88vh]"
+            {/* Dark overlay for legibility / cinematic feel (BR-PGAL-AREA-04) */}
+            <div
+              className="absolute inset-0 z-[1] pointer-events-none"
+              style={{
+                background:
+                  "linear-gradient(to right, rgba(0,0,0,0.62), rgba(0,0,0,0.30) 45%, rgba(0,0,0,0.55)), rgba(0,0,0,0.16)",
+              }}
+            />
+
+            {/* Close showcase → back to hero */}
+            <button
+              onClick={closeShowcase}
+              title="Đóng"
+              className="absolute top-6 right-6 z-[6] w-10 h-10 flex items-center justify-center rounded-full bg-black/40 hover:bg-white/20 text-white border border-white/25 backdrop-blur-md transition-all hover:scale-110 group"
+            >
+              <X className="w-5 h-5 group-hover:rotate-90 transition-transform duration-300" />
+            </button>
+
+            {/* Area name — bottom-left, white, bold (BR-PGAL-AREA-05) */}
+            <div
+              className={`absolute z-[3] bottom-14 sm:bottom-20 max-w-[720px] transition-all duration-500 ${
+                isSidebarOpen ? "left-8 md:left-[19rem]" : "left-6 md:left-16"
               }`}
             >
-              {/* ====== Tier 2: ITEM DETAIL ====== */}
-              {isDetailView ? (
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-6 pb-6 pr-2 pl-2 flex-1 min-h-0">
-                  {/* Left: breadcrumb / title / description / back-to-grid */}
-                  <div className="lg:col-span-5 flex flex-col gap-4 h-full">
-                    <motion.div className="bg-white/15 dark:bg-black/20 backdrop-blur-2xl border border-white/30 rounded-[1.5rem] sm:rounded-[2rem] p-5 sm:p-6 shadow-[0_8px_32px_rgba(0,0,0,0.1)] relative group transition-all duration-500 hover:shadow-[0_8px_40px_rgba(255,255,255,0.1)] shrink-0">
-                      <div className="absolute inset-0 overflow-hidden rounded-[inherit] pointer-events-none">
-                        <div className="absolute -top-20 -right-20 w-40 h-40 bg-fpt-orange/20 rounded-full blur-3xl group-hover:bg-fpt-orange/30 transition-colors duration-500"></div>
-                        <div className="absolute -bottom-20 -left-20 w-40 h-40 bg-blue-500/20 rounded-full blur-3xl group-hover:bg-blue-400/30 transition-colors duration-500"></div>
-                      </div>
+              <span className="uppercase tracking-[0.3em] text-white/70 text-[11px] sm:text-xs font-semibold drop-shadow">
+                Khu vực
+              </span>
+              <h2 className="mt-2 text-white font-black text-4xl sm:text-5xl md:text-6xl leading-[1.05] tracking-tight drop-shadow-[0_12px_32px_rgba(0,0,0,0.45)]">
+                {showcaseArea.areaName}
+              </h2>
 
-                      <div className="flex items-center justify-between mb-5 relative z-10 gap-3">
-                        <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-fpt-orange/90 text-white font-semibold text-[10px] sm:text-xs tracking-widest uppercase rounded-full border border-white/30 backdrop-blur-md shadow-[0_0_15px_rgba(243,112,33,0.4)] max-w-full overflow-hidden">
-                          <span className="truncate">{breadcrumbArea}</span>
-                          <ChevronRight className="w-3.5 h-3.5 shrink-0 opacity-80" />
-                          <span className="truncate">{breadcrumbLocation}</span>
-                        </div>
-                        <div className="flex items-center gap-2 relative shrink-0">
-                          <button
-                            onClick={() => setShowShareMenu(!showShareMenu)}
-                            className="text-white/70 hover:text-fpt-orange transition-all hover:scale-110"
-                            title="Chia sẻ"
-                          >
-                            <Share2 className="w-5 h-5" />
-                          </button>
-                          <button
-                            onClick={closeOverlay}
-                            title="Đóng"
-                            className="w-8 h-8 flex items-center justify-center rounded-full bg-white/20 hover:bg-white/40 text-white border border-white/30 transition-all hover:scale-110 group"
-                          >
-                            <X className="w-4 h-4 group-hover:rotate-90 transition-transform duration-300" />
-                          </button>
-                          <AnimatePresence>
-                            {showShareMenu && (
-                              <motion.div
-                                initial={{ opacity: 0, y: 10, scale: 0.9 }}
-                                animate={{ opacity: 1, y: 0, scale: 1 }}
-                                exit={{ opacity: 0, y: 10, scale: 0.9 }}
-                                className="absolute right-0 top-full mt-2 w-48 bg-black/80 backdrop-blur-xl border border-white/20 rounded-2xl shadow-2xl p-2 z-50 flex flex-col gap-1"
-                              >
-                                <button onClick={() => shareCurrentLink("copy")} className="flex items-center gap-3 px-3 py-2 text-sm text-white/90 hover:text-white hover:bg-white/10 rounded-xl transition-colors text-left">
-                                  <LinkIcon className="w-4 h-4" /> Sao chép liên kết
-                                </button>
-                                <button onClick={() => shareCurrentLink("facebook")} className="flex items-center gap-3 px-3 py-2 text-sm text-white/90 hover:text-white hover:bg-blue-500/20 rounded-xl transition-colors text-left">
-                                  <Facebook className="w-4 h-4" /> Facebook
-                                </button>
-                                <button onClick={() => shareCurrentLink("twitter")} className="flex items-center gap-3 px-3 py-2 text-sm text-white/90 hover:text-white hover:bg-sky-500/20 rounded-xl transition-colors text-left">
-                                  <Twitter className="w-4 h-4" /> Twitter
-                                </button>
-                              </motion.div>
-                            )}
-                          </AnimatePresence>
-                        </div>
-                      </div>
-
-                      <h3 className="text-2xl sm:text-3xl font-black text-transparent bg-clip-text bg-gradient-to-br from-white via-white to-white/70 mb-3 leading-tight tracking-tight drop-shadow-sm relative z-10 min-h-[2rem]">
-                        {isDetailLoading ? "Đang tải…" : detail?.galleryItem.title || "—"}
-                      </h3>
-                      <div className="w-24 h-1.5 bg-gradient-to-r from-fpt-orange to-transparent rounded-full opacity-80 relative z-10" />
-                    </motion.div>
-
-                    <div className="bg-white/80 dark:bg-white/10 backdrop-blur-3xl border border-white/40 rounded-[1.5rem] sm:rounded-[2rem] p-5 sm:p-6 shadow-[0_8px_32px_rgba(0,0,0,0.1)] grow flex flex-col justify-between overflow-y-auto overflow-x-hidden relative">
-                      <div className="flex justify-between items-start gap-4 mb-4">
-                        <div className="prose prose-base text-black dark:text-white font-light leading-relaxed grow min-w-0">
-                          {isDetailLoading ? (
-                            <p className="text-gray-600 dark:text-gray-300">Đang tải mô tả…</p>
-                          ) : detailNotice ? (
-                            <p className="text-red-600 dark:text-red-400 font-medium">{detailNotice}</p>
-                          ) : (
-                            <p className="text-black dark:text-gray-100 whitespace-pre-line break-words [overflow-wrap:anywhere] first-letter:text-4xl first-letter:font-bold first-letter:text-fpt-orange first-letter:mr-1 first-letter:float-left">
-                              {detail?.galleryItem.description}
-                            </p>
-                          )}
-                        </div>
-                        {detail && !detailNotice && !isDetailLoading && (
-                          <button
-                            onClick={toggleNarration}
-                            title={isSpeaking ? "Dừng thuyết minh" : "Nghe thuyết minh"}
-                            className={`shrink-0 flex items-center justify-center w-10 h-10 sm:w-12 sm:h-12 rounded-full transition-all duration-300 hover:scale-110 hover:shadow-[0_0_15px_rgba(243,112,33,0.4)] ${
-                              isSpeaking
-                                ? "bg-fpt-orange text-white animate-pulse"
-                                : "bg-fpt-orange/10 text-fpt-orange hover:bg-fpt-orange hover:text-white"
-                            }`}
-                          >
-                            {isSpeaking ? <VolumeX className="w-5 h-5 sm:w-6 sm:h-6" /> : <Volume2 className="w-5 h-5 sm:w-6 sm:h-6" />}
-                          </button>
-                        )}
-                      </div>
-
-                      {/* Back to grid */}
-                      <div className="flex items-center justify-start pt-6 border-t border-gray-200 dark:border-white/10 mt-auto">
-                        <button
-                          onClick={backToGrid}
-                          className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-gray-700 dark:text-gray-200 hover:text-fpt-orange dark:hover:text-fpt-orange hover:bg-fpt-orange/10 dark:hover:bg-fpt-orange/20 rounded-xl transition-all hover:scale-105 active:scale-95"
-                        >
-                          <ArrowLeft className="w-5 h-5" />
-                          Quay lại danh sách hình ảnh
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Right: media viewer (carousel of THIS item's media) */}
-                  <div className="lg:col-span-7 flex flex-col gap-4 lg:gap-6 min-h-[300px] md:min-h-[400px] lg:min-h-0 h-full">
-                    <div className="bg-white/15 dark:bg-white/5 backdrop-blur-2xl border border-white/30 rounded-[1.5rem] sm:rounded-[2rem] shadow-[0_8px_32px_rgba(0,0,0,0.15)] w-full h-full relative overflow-hidden group hover:border-white/50 transition-all duration-500 flex flex-col">
-                      <div className="relative w-full h-full rounded-[1.5rem] sm:rounded-[2rem] overflow-hidden bg-black/30">
-                        {isDetailLoading ? (
-                          <div className="absolute inset-0 flex items-center justify-center text-white/80">
-                            <Loader2 className="w-8 h-8 animate-spin" />
-                          </div>
-                        ) : !currentMedia ? (
-                          <div className="absolute inset-0 flex flex-col items-center justify-center text-white/70 gap-2">
-                            <ImageOff className="w-10 h-10" />
-                            <span className="text-sm">{detailNotice || "Không có media để hiển thị."}</span>
-                          </div>
-                        ) : currentMediaFailed ? (
-                          <div className="absolute inset-0 flex flex-col items-center justify-center text-white/70 gap-2">
-                            <ImageOff className="w-10 h-10" />
-                            <span className="text-sm">Không thể tải media.</span>
-                          </div>
-                        ) : (
-                          <AnimatePresence mode="popLayout" initial={false}>
-                            <motion.div
-                              key={currentMedia.mediaId}
-                              initial={{ opacity: 0, scale: 1.05 }}
-                              animate={{ opacity: 1, scale: 1 }}
-                              exit={{ opacity: 0, scale: 0.95 }}
-                              transition={{ duration: 0.4, ease: "easeInOut" }}
-                              className="absolute inset-0 w-full h-full"
-                            >
-                              {isVideo(currentMedia.mediaType) ? (
-                                <video
-                                  src={mediaSrc(currentMedia.url)}
-                                  poster={mediaSrc(currentMedia.thumbnailUrl)}
-                                  controls
-                                  muted
-                                  playsInline
-                                  onError={() => markMediaFailed(currentMedia.mediaId)}
-                                  className="w-full h-full object-contain bg-black"
-                                />
-                              ) : (
-                                <img
-                                  src={mediaSrc(currentMedia.url)}
-                                  alt={currentMedia.altText || detail?.galleryItem.title || "FPTU"}
-                                  onClick={() => {
-                                    setIsLightboxOpen(true);
-                                    setZoomScale(1);
-                                  }}
-                                  onError={() => markMediaFailed(currentMedia.mediaId)}
-                                  className="w-full h-full object-cover cursor-zoom-in"
-                                />
-                              )}
-                            </motion.div>
-                          </AnimatePresence>
-                        )}
-
-                        {/* Zoom hint (image only) */}
-                        {currentMedia && !isVideo(currentMedia.mediaType) && (
-                          <div
-                            className={`absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 flex items-end justify-center pointer-events-none ${
-                              media.length > 1 ? "pb-16" : "pb-8"
-                            }`}
-                          >
-                            <span className="flex items-center gap-1.5 text-white text-xs font-medium px-3.5 py-1.5 rounded-full bg-white/20 backdrop-blur-md border border-white/40 shadow-lg">
-                              <ZoomIn className="w-4 h-4" /> Phóng to
-                            </span>
-                          </div>
-                        )}
-
-                        {/* Media prev/next (within this gallery item) */}
-                        {media.length > 1 && (
-                          <>
-                            <button
-                              onClick={() => stepMedia(-1)}
-                              className="absolute left-4 top-1/2 -translate-y-1/2 p-2 bg-white/10 hover:bg-white/30 border border-white/20 text-white rounded-full backdrop-blur-md transition-all z-10 hover:scale-110 shadow-lg"
-                            >
-                              <ChevronLeft className="w-6 h-6" />
-                            </button>
-                            <button
-                              onClick={() => stepMedia(1)}
-                              className="absolute right-4 top-1/2 -translate-y-1/2 p-2 bg-white/10 hover:bg-white/30 border border-white/20 text-white rounded-full backdrop-blur-md transition-all z-10 hover:scale-110 shadow-lg"
-                            >
-                              <ChevronRight className="w-6 h-6" />
-                            </button>
-                          </>
-                        )}
-                      </div>
-
-                      {/* Media dots */}
-                      {media.length > 1 && (
-                        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-3 z-20 px-4 py-2 bg-black/40 backdrop-blur-md rounded-full border border-white/20">
-                          {media.map((m, idx) => (
-                            <button
-                              key={m.mediaId}
-                              onClick={() => setCurrentMediaIndex(idx)}
-                              className={`w-2.5 h-2.5 rounded-full transition-all duration-300 hover:scale-125 ${
-                                currentMediaIndex === idx ? "bg-white shadow-[0_0_12px_rgba(255,255,255,1)] w-6" : "bg-white/50 hover:bg-white/80"
-                              }`}
-                            />
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
+              {/* Prev / next area navigation (BR-PGAL-AREA §6, loops) */}
+              {areas.length > 1 && (
+                <div className="mt-5 flex flex-wrap gap-3">
+                  <button
+                    onClick={() => stepArea(-1)}
+                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-full text-white font-bold text-sm bg-white/10 border border-white/25 backdrop-blur-md transition-all hover:bg-white/20 hover:border-white/50 hover:-translate-y-0.5"
+                  >
+                    <ChevronLeft className="w-4 h-4" /> Khu vực đằng trước
+                  </button>
+                  <button
+                    onClick={() => stepArea(1)}
+                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-full text-white font-bold text-sm bg-white/10 border border-white/25 backdrop-blur-md transition-all hover:bg-white/20 hover:border-white/50 hover:-translate-y-0.5"
+                  >
+                    Khu vực tiếp theo <ChevronRight className="w-4 h-4" />
+                  </button>
                 </div>
-              ) : (
-                /* ====== Tier 1: LOCATION GRID (album) ====== */
-                <div className="flex flex-col gap-5 pb-8 px-1 sm:px-2">
-                  {/* Premium location header */}
-                  <div className="relative rounded-[28px] p-6 sm:p-8 border border-white/15 bg-gradient-to-br from-white/[0.12] to-white/[0.04] backdrop-blur-xl shadow-[0_10px_40px_rgba(0,0,0,0.25)]">
-                    <button
-                      onClick={closeOverlay}
-                      title="Đóng"
-                      className="absolute top-4 right-4 w-9 h-9 flex items-center justify-center rounded-full bg-white/20 hover:bg-white/40 text-white border border-white/30 transition-all hover:scale-110 group z-10"
-                    >
-                      <X className="w-4 h-4 group-hover:rotate-90 transition-transform duration-300" />
-                    </button>
-                    <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-fpt-orange/90 text-white font-extrabold text-[10px] sm:text-xs tracking-[0.08em] uppercase border border-white/30 backdrop-blur-md shadow-[0_0_15px_rgba(243,112,33,0.4)] max-w-[calc(100%-3rem)] overflow-hidden">
-                      <span className="truncate">{breadcrumbArea}</span>
-                      <ChevronRight className="w-3.5 h-3.5 shrink-0 opacity-90" />
-                      <span className="truncate">{breadcrumbLocation}</span>
-                    </div>
-                    <h2 className="mt-4 text-3xl sm:text-4xl font-black text-white leading-[1.1] tracking-tight drop-shadow">
-                      {breadcrumbLocation || "Khu vực"}
-                    </h2>
-                    <p className="mt-2.5 text-white/70 text-sm sm:text-base">
-                      Khám phá những hình ảnh và video nổi bật tại khu vực này.
-                    </p>
-                    {!isGridLoading && !gridError && gridItems.length > 0 && (
-                      <p className="mt-3.5 text-white/80 text-sm font-semibold">{gridStats}</p>
-                    )}
+              )}
+            </div>
+
+            {/* Location-cover thumbnail rail — right side, vertical (BR-PGAL-AREA-07/08) */}
+            <div className="absolute right-3 sm:right-8 top-1/2 -translate-y-1/2 z-[4] flex flex-col items-center gap-3">
+              {showcaseTotal > 0 ? (
+                <>
+                  <button
+                    onClick={() => stepThumbnail(-1)}
+                    title="Lên"
+                    className="w-10 h-10 rounded-full border border-white/30 bg-black/30 text-white flex items-center justify-center backdrop-blur-md transition-all hover:bg-white/20 hover:scale-105"
+                  >
+                    <ChevronUp className="w-5 h-5" />
+                  </button>
+
+                  {/* Fixed section label — sits above the first thumbnail, never scrolls away */}
+                  <div className="text-white/85 text-[11px] font-bold uppercase tracking-[0.18em] text-center drop-shadow">
+                    Vị trí cụ thể
                   </div>
 
-                  {/* Location chips — quick-switch between locations of the same area */}
-                  {siblingLocations.length > 1 && (
-                    <div className="flex flex-wrap gap-2.5">
-                      {siblingLocations.map((loc) => {
-                        const active = loc.locationId === activeLocationId;
+                  {/* Rail + the active thumbnail's name shown to its LEFT */}
+                  <div className="relative">
+                    <div
+                      className="absolute right-full mr-1.5 -translate-y-1/2 pointer-events-none z-20"
+                      style={{ top: activeThumbY }}
+                    >
+                      <span className="inline-block max-w-[44vw] sm:max-w-[240px] truncate px-3.5 py-1.5 rounded-full bg-black/50 border border-white/20 backdrop-blur-md text-white text-sm font-semibold drop-shadow-[0_8px_20px_rgba(0,0,0,0.5)]">
+                        {showcaseLocations[safeThumbIndex]?.locationName}
+                      </span>
+                    </div>
+
+                    <div
+                      ref={thumbRailRef}
+                      onScroll={syncActiveThumbY}
+                      className="relative flex flex-col items-center gap-4 max-h-[min(52vh,404px)] overflow-y-auto px-6 py-4 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
+                    >
+                      {showcaseLocations.map((loc, idx) => {
+                        const active = idx === safeThumbIndex;
                         return (
                           <button
                             key={loc.locationId}
-                            onClick={() => openLocation(loc.locationId)}
-                            className={`px-4 py-2 rounded-full text-sm font-semibold border transition-all duration-200 ${
+                            ref={(el) => {
+                              thumbRefs.current[idx] = el;
+                            }}
+                            onClick={() => {
+                              setActiveLocationThumbnailIndex(idx);
+                              openLocationShowcase(loc.locationId); // AC-LOC-01: open Location Showcase
+                            }}
+                            title={loc.locationName}
+                            className={`relative w-[72px] h-[72px] sm:w-[78px] sm:h-[78px] rounded-[10px] overflow-hidden cursor-pointer shrink-0 transition-all duration-300 ${
                               active
-                                ? "text-white bg-fpt-orange border-transparent shadow-[0_10px_24px_rgba(243,112,33,0.26)]"
-                                : "text-white/80 bg-white/[0.08] border-white/15 hover:text-white hover:bg-fpt-orange/80 hover:border-transparent"
+                                ? "z-10 border-2 border-white opacity-100 scale-[1.14] shadow-[0_0_0_3px_rgba(255,255,255,0.20),0_0_26px_rgba(255,255,255,0.6),0_10px_24px_rgba(0,0,0,0.45)]"
+                                : "border-2 border-white/25 opacity-65 hover:opacity-90 hover:border-white/50"
                             }`}
                           >
-                            {loc.locationName}
+                            <LocationThumbImage url={loc.locationCoverUrl} alt={loc.locationName} />
                           </button>
                         );
                       })}
                     </div>
-                  )}
+                  </div>
 
-                  {/* Grid body — flows in the page-scroll container so the bottom row never gets cropped */}
-                  {isGridLoading ? (
-                    <div className="min-h-[280px] flex items-center justify-center text-white/80">
-                      <Loader2 className="w-8 h-8 animate-spin" />
-                    </div>
-                  ) : gridError ? (
-                    <div className="min-h-[280px] flex flex-col items-center justify-center text-white/70 gap-2">
-                      <ImageOff className="w-10 h-10" />
-                      <span className="text-sm">{gridError}</span>
-                    </div>
-                  ) : gridItems.length === 0 ? (
-                    <div className="min-h-[280px] flex flex-col items-center justify-center text-white/70 gap-2">
-                      <ImageOff className="w-10 h-10" />
-                      <span className="text-sm">Vị trí này hiện chưa có nội dung Gallery công khai.</span>
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 sm:gap-5">
-                      {gridItems.map((item) => (
-                        <GridCard key={item.galleryItemId} item={item} onOpen={() => openItem(item.galleryItemId)} />
-                      ))}
-                    </div>
-                  )}
+                  <button
+                    onClick={() => stepThumbnail(1)}
+                    title="Xuống"
+                    className="w-10 h-10 rounded-full border border-white/30 bg-black/30 text-white flex items-center justify-center backdrop-blur-md transition-all hover:bg-white/20 hover:scale-105"
+                  >
+                    <ChevronDown className="w-5 h-5" />
+                  </button>
+
+                  {/* Counter current/total, e.g. 03/12 (BR-PGAL-AREA-10) */}
+                  <div className="mt-1 text-white font-extrabold tracking-[0.08em] text-sm text-center drop-shadow-[0_8px_20px_rgba(0,0,0,0.45)]">
+                    {pad2(safeThumbIndex + 1)}/{pad2(showcaseTotal)}
+                  </div>
+                </>
+              ) : (
+                <div className="w-40 px-4 py-6 rounded-2xl bg-black/35 border border-white/20 text-white/80 text-sm text-center backdrop-blur-md">
+                  Chưa có vị trí hiển thị
                 </div>
               )}
-            </motion.div>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* ── Lightbox (detail media only) ── */}
+      {/* ── Location Showcase: location cover bg + MEDIA column + "Đoàn khách" row (AC-LOC/MEDIA/DELEGATION) ── */}
       <AnimatePresence>
-        {isLightboxOpen && currentMedia && (
+        {locationShowcaseId != null && locationShowcaseLocation && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/95 backdrop-blur-md overflow-hidden"
-            onClick={() => setIsLightboxOpen(false)}
-            onWheel={(e) => {
-              if (isVideo(currentMedia.mediaType)) return;
-              setZoomScale((prev) =>
-                e.deltaY < 0 ? Math.min(prev + 0.1, 4) : Math.max(prev - 0.1, 0.5),
-              );
-            }}
+            transition={{ duration: 0 }}
+            className="fixed top-[64px] inset-x-0 bottom-0 z-30 overflow-hidden"
           >
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                setIsLightboxOpen(false);
+            {/* Background: location cover, fullscreen (AC-LOC-01/02) — falls back to area cover / campus art */}
+            <ShowcaseBackground
+              src={locationShowcaseLocation.locationCoverUrl}
+              fallbackSrc={locationShowcaseArea?.areaCoverUrl || fallback.bg}
+              alt={locationShowcaseLocation.locationName}
+            />
+            <div
+              className="absolute inset-0 z-[1] pointer-events-none"
+              style={{
+                background:
+                  "linear-gradient(to right, rgba(0,0,0,0.66), rgba(0,0,0,0.34) 45%, rgba(0,0,0,0.55)), rgba(0,0,0,0.18)",
               }}
-              className="absolute top-6 right-6 z-[110] p-3 bg-black/50 hover:bg-white/20 text-white rounded-full backdrop-blur-md transition-colors"
+            />
+
+            {/* Close → back to Area Showcase */}
+            <button
+              onClick={closeLocationShowcase}
+              title="Đóng"
+              className="absolute top-6 right-6 z-[6] w-10 h-10 flex items-center justify-center rounded-full bg-black/40 hover:bg-white/20 text-white border border-white/25 backdrop-blur-md transition-all hover:scale-110 group"
             >
-              <X className="w-6 h-6" />
+              <X className="w-5 h-5 group-hover:rotate-90 transition-transform duration-300" />
             </button>
 
-            {media.length > 1 && (
-              <>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    stepMedia(-1);
-                    setZoomScale(1);
-                  }}
-                  className="absolute left-6 top-1/2 -translate-y-1/2 z-[110] p-3 bg-black/50 hover:bg-white/20 text-white rounded-full backdrop-blur-md transition-colors"
-                >
-                  <ChevronLeft className="w-7 h-7" />
-                </button>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    stepMedia(1);
-                    setZoomScale(1);
-                  }}
-                  className="absolute right-6 top-1/2 -translate-y-1/2 z-[110] p-3 bg-black/50 hover:bg-white/20 text-white rounded-full backdrop-blur-md transition-colors"
-                >
-                  <ChevronRight className="w-7 h-7" />
-                </button>
-              </>
-            )}
-
+            {/* Bottom-left: area / location names, prev-next arrows, delegation row */}
             <div
-              className="relative w-full h-full flex items-center justify-center overflow-hidden"
-              onClick={(e) => e.stopPropagation()}
+              className={`absolute z-[3] bottom-10 sm:bottom-14 max-w-[min(62vw,760px)] transition-all duration-500 ${
+                isSidebarOpen ? "left-8 md:left-[19rem]" : "left-6 md:left-16"
+              }`}
             >
-              {isVideo(currentMedia.mediaType) ? (
-                <video
-                  src={mediaSrc(currentMedia.url)}
-                  poster={mediaSrc(currentMedia.thumbnailUrl)}
-                  controls
-                  autoPlay
-                  muted
-                  playsInline
-                  className="max-w-[90vw] max-h-[90vh] object-contain"
-                />
-              ) : (
-                <motion.img
-                  drag
-                  dragConstraints={{ top: -500, bottom: 500, left: -500, right: 500 }}
-                  dragElastic={0.2}
-                  whileTap={{ cursor: "grabbing" }}
-                  src={mediaSrc(currentMedia.url)}
-                  alt={currentMedia.altText || "FPTU"}
-                  animate={{ scale: zoomScale }}
-                  transition={{ type: "spring", stiffness: 300, damping: 30 }}
-                  className="object-contain cursor-grab"
-                  style={{ maxWidth: "90vw", maxHeight: "90vh" }}
-                  draggable={false}
-                />
+              {/* Eyebrow — same style as the Area Showcase "Khu vực" label */}
+              <span className="uppercase tracking-[0.3em] text-white/70 text-[11px] sm:text-xs font-semibold drop-shadow">
+                Vị trí
+              </span>
+
+              {/* Name line: "TÊN KHU VỰC / TÊN VỊ TRÍ", flanked by prev/next-location arrows (AC-LOC-04/05) */}
+              <div className="mt-2 flex items-center gap-3 sm:gap-4">
+                {locationSiblings.length > 1 && (
+                  <button
+                    onClick={() => stepLocationShowcase(-1)}
+                    title="Vị trí trước"
+                    className="w-11 h-11 shrink-0 rounded-full border border-white/28 bg-white/10 text-white flex items-center justify-center backdrop-blur-md transition-all hover:bg-white/20 hover:border-white/50 hover:-translate-y-0.5"
+                  >
+                    <ChevronLeft className="w-5 h-5" />
+                  </button>
+                )}
+                <h2 className="min-w-0 text-white font-black text-3xl sm:text-4xl md:text-5xl leading-[1.05] tracking-tight drop-shadow-[0_12px_32px_rgba(0,0,0,0.45)]">
+                  <span className="uppercase">{locationShowcaseArea?.areaName}</span>
+                  <span className="font-medium text-white/75 text-xl sm:text-2xl md:text-3xl">
+                    {" "}/ {locationShowcaseLocation.locationName}
+                  </span>
+                </h2>
+                {locationSiblings.length > 1 && (
+                  <button
+                    onClick={() => stepLocationShowcase(1)}
+                    title="Vị trí tiếp theo"
+                    className="w-11 h-11 shrink-0 rounded-full border border-white/28 bg-white/10 text-white flex items-center justify-center backdrop-blur-md transition-all hover:bg-white/20 hover:border-white/50 hover:-translate-y-0.5"
+                  >
+                    <ChevronRight className="w-5 h-5" />
+                  </button>
+                )}
+              </div>
+
+              {/* "Đoàn khách đã tới thăm" — VISIT_DELEGATION row, styled exactly like the MEDIA column */}
+              {delegationItems.length > 0 && (
+                <div className="mt-10 sm:mt-12">
+                  <HorizontalThumbRail
+                    items={delegationItems}
+                    activeIndex={activeDelegationIndex}
+                    onSelect={(i) => {
+                      setActiveDelegationIndex(i);
+                      openItemDetailAt(delegationItems.map((d) => d.galleryItemId), i); // open detail modal
+                    }}
+                    onStep={stepDelegation}
+                    keyOf={(it) => it.galleryItemId}
+                    renderThumb={(it) => <ShowcaseItemThumb item={it} />}
+                    title="Đoàn khách đã tới thăm"
+                  />
+                </div>
               )}
             </div>
+
+            {/* Right MEDIA column (AC-MEDIA-01..05) — hidden entirely when the location has no MEDIA item */}
+            {isShowcaseLoading ? (
+              <div className="absolute right-8 sm:right-12 top-1/2 -translate-y-1/2 z-[4] text-white/80">
+                <Loader2 className="w-7 h-7 animate-spin" />
+              </div>
+            ) : mediaItems.length > 0 ? (
+              <div className="absolute right-3 sm:right-8 top-1/2 -translate-y-1/2 z-[4]">
+                <VerticalThumbRail
+                  items={mediaItems}
+                  activeIndex={safeMediaIndex}
+                  onSelect={(i) => {
+                    setActiveMediaIndex(i);
+                    openItemDetailAt(mediaItems.map((m) => m.galleryItemId), i); // open detail modal
+                  }}
+                  onStep={stepMediaThumbnail}
+                  keyOf={(it) => it.galleryItemId}
+                  renderThumb={(it) => <ShowcaseItemThumb item={it} />}
+                  label="Hình ảnh tham quan"
+                />
+              </div>
+            ) : null}
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Gallery item detail modal (click a MEDIA / "Đoàn khách" thumbnail) ── */}
+      <AnimatePresence>
+        {detailItemId != null && (
+          <GalleryItemDetailModal
+            detail={detailData}
+            isLoading={isItemDetailLoading}
+            notFound={itemDetailNotFound}
+            onClose={closeItemDetail}
+            onPrev={() => stepItemDetail(-1)}
+            onNext={() => stepItemDetail(1)}
+            hasNav={detailItems.length > 1}
+          />
         )}
       </AnimatePresence>
     </div>

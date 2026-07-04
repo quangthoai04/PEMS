@@ -1,5 +1,2 @@
-import { Partners } from '../types/partners.types';
-
-export const partnersAdapter = {
-  // TODO: implement adapters
-};
+// Backend DTOs are consumed directly (see ../types/partners.types.ts) — no adapter mapping needed.
+export const partnersAdapter = {};

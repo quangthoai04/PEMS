@@ -75,7 +75,7 @@ export function HeroSection() {
                   </svg>
                 </div>
                 <h3 className="text-base sm:text-lg font-bold mb-1 uppercase tracking-wide whitespace-nowrap">Visit FPTU Online</h3>
-                <p className="text-orange-100 text-xs font-medium px-2">Trải nghiệm không gian 360 độ trực tuyến</p>
+                <p className="text-orange-100 text-xs font-medium px-2">Tham quan không gian trường học trực tuyến</p>
               </Link>
             </motion.div>
           

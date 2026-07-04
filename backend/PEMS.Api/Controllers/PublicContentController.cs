@@ -78,14 +78,8 @@ namespace PEMS.Api.Controllers
             return Ok(result);
         }
 
-        [HttpGet("partners")]
-        public async Task<IActionResult> ViewPartners(
-            [FromQuery] PEMS.Application.PublicContent.Queries.ViewPartners.ViewPartnersQuery query,
-            CancellationToken cancellationToken)
-        {
-            var result = await _mediator.Send(query, cancellationToken);
-            return Ok(result);
-        }
+        // NOTE: GET /api/public/partners moved to PublicPartnersController (Partner module,
+        // docs/PARTNER_canh/01 §5.6) — only APPROVED + PUBLIC profiles are returned there.
 
         [HttpGet("gallery")]
         public async Task<IActionResult> ViewGallery(

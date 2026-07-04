@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using MediatR;
 using Microsoft.Extensions.Configuration;
 using PEMS.Application.Common.Exceptions;
+using PEMS.Application.Common.Files;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Domain.Entities.Documents;
 
@@ -12,10 +13,16 @@ namespace PEMS.Application.Files.Commands.UploadFile;
 
 public sealed class UploadFileCommandHandler : IRequestHandler<UploadFileCommand, UploadedFileDto>
 {
+    private static readonly HashSet<string> GoogleDrivePurposes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "EMAIL_INLINE", "EMAIL_ATTACHMENT", "PARTNER_DOCUMENT",
+    };
+
     private readonly IApplicationDbContext _db;
     private readonly ICurrentUserService _currentUser;
     private readonly IFileStorageService _storage;
     private readonly IGoogleDriveStorageService _googleDrive;
+    private readonly IFileStorageFolderResolver _folderResolver;
     private readonly IFileValidationService _validation;
     private readonly IConfiguration _configuration;
 
@@ -24,6 +31,7 @@ public sealed class UploadFileCommandHandler : IRequestHandler<UploadFileCommand
         ICurrentUserService currentUser,
         IFileStorageService storage,
         IGoogleDriveStorageService googleDrive,
+        IFileStorageFolderResolver folderResolver,
         IFileValidationService validation,
         IConfiguration configuration)
     {
@@ -31,6 +39,7 @@ public sealed class UploadFileCommandHandler : IRequestHandler<UploadFileCommand
         _currentUser = currentUser;
         _storage = storage;
         _googleDrive = googleDrive;
+        _folderResolver = folderResolver;
         _validation = validation;
         _configuration = configuration;
     }
@@ -58,9 +67,14 @@ public sealed class UploadFileCommandHandler : IRequestHandler<UploadFileCommand
             FilePurpose = request.Purpose,
         };
 
-        if (request.Purpose == "EMAIL_INLINE" || request.Purpose == "EMAIL_ATTACHMENT")
+        if (request.Purpose is { } purpose && GoogleDrivePurposes.Contains(purpose))
         {
-            var uploadResult = await _googleDrive.UploadFileAsync(request.Content, fileName, request.ContentType ?? "application/octet-stream", null, cancellationToken);
+            // PARTNER_DOCUMENT lands in the partner documents Drive folder; email purposes use the
+            // account root (folderId null → GoogleDriveStorageService falls back to RootFolderId).
+            var folderId = string.Equals(purpose, "PARTNER_DOCUMENT", StringComparison.OrdinalIgnoreCase)
+                ? _folderResolver.ResolveFolderId(FilePurpose.PartnerDocument)
+                : null;
+            var uploadResult = await _googleDrive.UploadFileAsync(request.Content, fileName, request.ContentType ?? "application/octet-stream", folderId, cancellationToken);
             file.StorageProvider = "GOOGLE_DRIVE";
             file.ExternalFileId = uploadResult.ExternalFileId;
             file.ObjectKey = uploadResult.ExternalFileId; // Ensure ObjectKey is set

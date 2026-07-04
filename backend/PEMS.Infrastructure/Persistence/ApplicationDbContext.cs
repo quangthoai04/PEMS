@@ -45,6 +45,8 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     // ── Partners ──────────────────────────────────────────────────────────
     public DbSet<Partner> Partners { get; set; }
     public DbSet<PartnerContact> PartnerContacts { get; set; }
+    public DbSet<PartnerAlias> PartnerAliases { get; set; }
+    public DbSet<VisitGuestPartnerLink> VisitGuestPartnerLinks { get; set; }
 
     // ── Files + Documents ─────────────────────────────────────────────────
     public DbSet<UploadedFile> Files { get; set; }
@@ -110,6 +112,7 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     public DbSet<ApiConfigurationHeader> ApiConfigurationHeaders { get; set; }
     public DbSet<ApiUsageQuota> ApiUsageQuotas { get; set; }
     public DbSet<ApiRequestLog> ApiRequestLogs { get; set; }
+    public DbSet<BusinessCardOcrJob> BusinessCardOcrJobs { get; set; }
 
     public Task<IDbContextTransaction> BeginTransactionAsync(CancellationToken cancellationToken = default)
         => Database.BeginTransactionAsync(cancellationToken);
@@ -208,6 +211,52 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
         modelBuilder.Entity<PartnerContact>()
             .HasOne(pc => pc.Partner).WithMany(p => p.Contacts)
             .HasForeignKey(pc => pc.PartnerId).OnDelete(DeleteBehavior.Restrict);
+
+        // PartnerAlias → Partner (patch_partner_module.sql)
+        modelBuilder.Entity<PartnerAlias>()
+            .HasOne(a => a.Partner).WithMany()
+            .HasForeignKey(a => a.PartnerId).OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<PartnerAlias>()
+            .HasIndex(a => new { a.PartnerId, a.AliasNameKey })
+            .IsUnique()
+            .HasDatabaseName("uq_partner_alias_key");
+
+        // VisitGuestPartnerLink (patch_partner_module.sql)
+        modelBuilder.Entity<VisitGuestPartnerLink>()
+            .HasOne(l => l.Partner).WithMany()
+            .HasForeignKey(l => l.PartnerId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<VisitGuestPartnerLink>()
+            .HasOne(l => l.PartnerContact).WithMany()
+            .HasForeignKey(l => l.PartnerContactId).OnDelete(DeleteBehavior.SetNull);
+        modelBuilder.Entity<VisitGuestPartnerLink>()
+            .HasOne(l => l.VisitRequest).WithMany()
+            .HasForeignKey(l => l.VisitRequestId).OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<VisitGuestPartnerLink>()
+            .HasOne(l => l.VisitInstance).WithMany()
+            .HasForeignKey(l => l.VisitInstanceId).OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<VisitGuestPartnerLink>()
+            .HasOne(l => l.GuestMember).WithMany()
+            .HasForeignKey(l => l.GuestMemberId).OnDelete(DeleteBehavior.SetNull);
+        modelBuilder.Entity<VisitGuestPartnerLink>()
+            .HasOne(l => l.MinuteParticipant).WithMany()
+            .HasForeignKey(l => l.MinuteParticipantId).OnDelete(DeleteBehavior.SetNull);
+
+        // BusinessCardOcrJob (patch_business_card_ocr_api_config.sql)
+        modelBuilder.Entity<BusinessCardOcrJob>()
+            .HasOne(j => j.ScannedCardFile).WithMany()
+            .HasForeignKey(j => j.ScannedCardFileId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<BusinessCardOcrJob>()
+            .HasOne(j => j.ApiConfiguration).WithMany()
+            .HasForeignKey(j => j.ApiConfigId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<BusinessCardOcrJob>()
+            .HasOne(j => j.MatchedPartner).WithMany()
+            .HasForeignKey(j => j.MatchedPartnerId).OnDelete(DeleteBehavior.SetNull);
+        modelBuilder.Entity<BusinessCardOcrJob>()
+            .HasOne(j => j.ConfirmedPartner).WithMany()
+            .HasForeignKey(j => j.ConfirmedPartnerId).OnDelete(DeleteBehavior.SetNull);
+        modelBuilder.Entity<BusinessCardOcrJob>()
+            .HasOne(j => j.ConfirmedContact).WithMany()
+            .HasForeignKey(j => j.ConfirmedContactId).OnDelete(DeleteBehavior.SetNull);
 
         // UploadedFile (uploaded_by → User, SET NULL)
         modelBuilder.Entity<UploadedFile>()

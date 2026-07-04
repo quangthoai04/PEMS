@@ -32,6 +32,8 @@ public interface IApplicationDbContext
     DbSet<SecurityEvent> SecurityEvents { get; }
     DbSet<Partner> Partners { get; }
     DbSet<PartnerContact> PartnerContacts { get; }
+    DbSet<PartnerAlias> PartnerAliases { get; }
+    DbSet<VisitGuestPartnerLink> VisitGuestPartnerLinks { get; }
     DbSet<UploadedFile> Files { get; }
     DbSet<Document> Documents { get; }
     DbSet<VisitRequest> VisitRequests { get; }
@@ -70,6 +72,7 @@ public interface IApplicationDbContext
     DbSet<ApiConfiguration> ApiConfigurations { get; }
     DbSet<ApiUsageQuota> ApiUsageQuotas { get; }
     DbSet<ApiRequestLog> ApiRequestLogs { get; }
+    DbSet<BusinessCardOcrJob> BusinessCardOcrJobs { get; }
     DbSet<AgendaTemplate> AgendaTemplates { get; }
     DbSet<AgendaTemplateItem> AgendaTemplateItems { get; }
     DbSet<AgendaTemplateDefault> AgendaTemplateDefaults { get; }

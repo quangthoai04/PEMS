@@ -35,7 +35,7 @@ export function CTASection() {
                 <MonitorPlay className="w-8 h-8" />
               </div>
               <h3 className="text-2xl sm:text-3xl font-bold mb-3 uppercase tracking-wide">Visit FPTU Online</h3>
-              <p className="text-orange-100 font-medium">Trải nghiệm không gian 360 độ trực tuyến</p>
+              <p className="text-orange-100 font-medium">Tham quan không gian trường học trực tuyến</p>
             </div>
           </button>
 

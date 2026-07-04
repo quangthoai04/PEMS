@@ -101,6 +101,21 @@ public sealed class FileValidationPolicy : IFileValidationPolicy
             RequireImageMagicBytes = false,
         },
 
+        // Business-card scans: the OCR handler already enforces the admin-configured size/mime rule
+        // (settings_json) before calling storage — this is just a generous outer cap matching the
+        // controller's 15 MB hard limit, mirroring the mixed image+PDF approach used above.
+        FilePurpose.BusinessCard => new FileValidationRule
+        {
+            MaxSizeBytes = 15 * Mb,
+            AllowedMimeTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "application/pdf", "image/jpeg", "image/png", "image/webp",
+            },
+            AllowedExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            { ".pdf", ".jpg", ".jpeg", ".png", ".webp" },
+            RequireImageMagicBytes = false,
+        },
+
         _ => new FileValidationRule
         {
             MaxSizeBytes = 10 * Mb,

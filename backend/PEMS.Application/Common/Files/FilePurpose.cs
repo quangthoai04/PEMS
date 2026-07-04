@@ -21,6 +21,7 @@ public enum FilePurpose
     VisitRequestAttachment,
     PartnerDocument,
     LogisticsAttachment,
+    BusinessCard,
     Other,
 }
 
@@ -43,6 +44,7 @@ public static class FilePurposeDbValues
     public const string VisitRequestAttachment = "VISIT_REQUEST_ATTACHMENT";
     public const string PartnerDocument = "PARTNER_DOCUMENT";
     public const string LogisticsAttachment = "LOGISTICS_ATTACHMENT";
+    public const string BusinessCard = "BUSINESS_CARD";
     public const string Other = "OTHER";
 }
 
@@ -63,6 +65,7 @@ public static class FilePurposeExtensions
         FilePurpose.VisitRequestAttachment => FilePurposeDbValues.VisitRequestAttachment,
         FilePurpose.PartnerDocument => FilePurposeDbValues.PartnerDocument,
         FilePurpose.LogisticsAttachment => FilePurposeDbValues.LogisticsAttachment,
+        FilePurpose.BusinessCard => FilePurposeDbValues.BusinessCard,
         _ => FilePurposeDbValues.Other,
     };
 
@@ -81,6 +84,7 @@ public static class FilePurposeExtensions
         FilePurpose.VisitRequestAttachment => "visit-requests",
         FilePurpose.PartnerDocument => "partners",
         FilePurpose.LogisticsAttachment => "logistics",
+        FilePurpose.BusinessCard => "business-cards",
         _ => "other",
     };
 }

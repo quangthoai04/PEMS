@@ -31,6 +31,7 @@ public sealed class GoogleDriveFolderResolver : IFileStorageFolderResolver
             FilePurpose.VisitRequestAttachment => _options.VisitRequestDocumentFolderId,
             FilePurpose.PartnerDocument => _options.DocumentPartnerFolderId,
             FilePurpose.LogisticsAttachment => _options.DocumentPartnerFolderId,
+            FilePurpose.BusinessCard => _options.DocumentPartnerFolderId,
             _ => _options.DocumentPartnerFolderId,
         };
 
