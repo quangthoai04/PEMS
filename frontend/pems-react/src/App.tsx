@@ -28,6 +28,7 @@ import { SentEmailDetail } from './pages/dashboard/emails/SentEmailDetail';
 import { PartnerManagement } from './pages/dashboard/partners/PartnerManagement';
 import { CreatePartner } from './pages/dashboard/partners/CreatePartner';
 import { PartnerDetail } from './pages/dashboard/partners/PartnerDetail';
+import { PartnerEdit } from './pages/dashboard/partners/PartnerEdit';
 import { DepartmentManagement } from './pages/dashboard/departments/DepartmentManagement';
 import { DepartmentDetailDashboard } from './pages/dashboard/departments/DepartmentDetailDashboard';
 import { DepartmentReportDashboard } from './pages/dashboard/departments/DepartmentReportDashboard';
@@ -152,6 +153,7 @@ export default function App() {
             <Route path="email/:id/edit" element={isDeptStaff ? <Navigate to="/dashboard" replace /> : <ProtectedRoute><EditEmail /></ProtectedRoute>} />
             <Route path="partners" element={<PartnerManagement />} />
             <Route path="partners/create" element={<CreatePartner />} />
+            <Route path="partners/:id/edit" element={<PartnerEdit />} />
             <Route path="partners/:id" element={<PartnerDetail />} />
             <Route path="departments" element={<DepartmentManagement />} />
             <Route path="departments/:id" element={<DepartmentDetailDashboard />} />

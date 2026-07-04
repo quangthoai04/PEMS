@@ -79,9 +79,49 @@ export const API_ENDPOINTS = {
     detail: (id: string | number) => `/partners/${id}`,
     create: '/partners',
     update: (id: string | number) => `/partners/${id}`,
+    approve: (id: string | number) => `/partners/${id}/approve`,
+    reject: (id: string | number) => `/partners/${id}/reject`,
+    pendingApprovals: '/partners/pending-approvals',
+    match: '/partners/match',
+    contacts: (id: string | number) => `/partners/${id}/contacts`,
+    contact: (id: string | number, contactId: string | number) => `/partners/${id}/contacts/${contactId}`,
+    contactSetPrimary: (id: string | number, contactId: string | number) =>
+      `/partners/${id}/contacts/${contactId}/set-primary`,
+    aliases: (id: string | number) => `/partners/${id}/aliases`,
+    alias: (id: string | number, aliasId: string | number) => `/partners/${id}/aliases/${aliasId}`,
+    documents: (id: string | number) => `/partners/${id}/documents`,
+  },
+  visitPartnerLinks: {
+    list: (visitInstanceId: string | number) => `/visit-instances/${visitInstanceId}/partner-links`,
+    create: (visitInstanceId: string | number) => `/visit-instances/${visitInstanceId}/partner-links`,
+    update: (visitInstanceId: string | number, linkId: string | number) =>
+      `/visit-instances/${visitInstanceId}/partner-links/${linkId}`,
+    rejectSuggestion: (visitInstanceId: string | number, linkId: string | number) =>
+      `/visit-instances/${visitInstanceId}/partner-links/${linkId}/reject-suggestion`,
+    createPartnerFromGuest: (visitInstanceId: string | number) =>
+      `/visit-instances/${visitInstanceId}/partner-links/create-partner`,
+  },
+  apiIntegrations: {
+    list: '/api-integrations',
+    detail: (id: string | number) => `/api-integrations/${id}`,
+    upsertGoogleDocumentAi: '/api-integrations/business-card-ocr/google-document-ai',
+    update: (id: string | number) => `/api-integrations/${id}`,
+    test: (id: string | number) => `/api-integrations/${id}/test`,
+    enable: (id: string | number) => `/api-integrations/${id}/enable`,
+    disable: (id: string | number) => `/api-integrations/${id}/disable`,
+    logs: (id: string | number) => `/api-integrations/${id}/logs`,
+    quota: (id: string | number) => `/api-integrations/${id}/quota`,
+  },
+  businessCardOcr: {
+    scan: '/business-card-ocr/scan',
+    job: (id: string | number) => `/business-card-ocr/jobs/${id}`,
+    confirmContact: (id: string | number) => `/business-card-ocr/jobs/${id}/confirm-contact`,
+    discard: (id: string | number) => `/business-card-ocr/jobs/${id}/discard`,
   },
   publicPartners: {
     search: '/public/partners/search',
+    list: '/public/partners',
+    detail: (idOrSlug: string | number) => `/public/partners/${idOrSlug}`,
   },
   // Public VisitFPTU Gallery (anonymous display layer over the Staff-Leader-managed gallery).
   publicVisitFptu: {
