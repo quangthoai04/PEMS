@@ -8,6 +8,7 @@ using PEMS.Application.Galleries.Public.Queries.GetPublicCampusNavigation;
 using PEMS.Application.Galleries.Public.Queries.GetPublicGalleryItemDetail;
 using PEMS.Application.Galleries.Public.Queries.GetPublicGalleryMedia;
 using PEMS.Application.Galleries.Public.Queries.GetPublicLocationGalleryItem;
+using PEMS.Application.Galleries.Public.Queries.GetPublicLocationShowcase;
 
 namespace PEMS.Api.Controllers
 {
@@ -44,6 +45,14 @@ namespace PEMS.Api.Controllers
         [HttpGet("locations/{locationId:long}/gallery-items")]
         public async Task<IActionResult> GetLocationGalleryItems(long locationId, CancellationToken cancellationToken)
             => Ok(await _mediator.Send(new GetPublicLocationGalleryItemsQuery(locationId), cancellationToken));
+
+        // Location Showcase — the location's MEDIA items (right column) + VISIT_DELEGATION items (row).
+        [HttpGet("locations/{locationId:long}/showcase")]
+        public async Task<IActionResult> GetLocationShowcase(long locationId, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(new GetPublicLocationShowcaseQuery(locationId), cancellationToken);
+            return result is null ? NotFound() : Ok(result);
+        }
 
         // UC §5 — detail of one gallery item (all its media).
         [HttpGet("gallery-items/{galleryItemId:long}")]

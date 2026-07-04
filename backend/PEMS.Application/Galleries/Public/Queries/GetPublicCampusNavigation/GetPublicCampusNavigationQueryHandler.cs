@@ -58,9 +58,11 @@ public sealed class GetPublicCampusNavigationQueryHandler
                 AreaId = i.Location.AreaId,
                 AreaName = i.Location.Area.AreaName,
                 AreaDisplayOrder = i.Location.Area.DisplayOrder,
+                AreaCoverFileId = i.Location.Area.CoverFileId,
                 LocationId = i.LocationId,
                 LocationName = i.Location.LocationName,
                 LocationDisplayOrder = i.Location.DisplayOrder,
+                LocationCoverFileId = i.Location.CoverFileId,
                 GalleryItemId = i.GalleryItemId,
                 ItemDisplayOrder = i.DisplayOrder,
                 CreatedAt = i.CreatedAt,
@@ -96,7 +98,7 @@ public sealed class GetPublicCampusNavigationQueryHandler
                       .First());
 
         var areas = rows
-            .GroupBy(r => new { r.AreaId, r.AreaName, r.AreaDisplayOrder })
+            .GroupBy(r => new { r.AreaId, r.AreaName, r.AreaDisplayOrder, r.AreaCoverFileId })
             .OrderBy(g => g.Key.AreaDisplayOrder)
             .ThenBy(g => g.Key.AreaName)
             .Select(g => new PublicGalleryAreaDto
@@ -104,11 +106,13 @@ public sealed class GetPublicCampusNavigationQueryHandler
                 AreaId = g.Key.AreaId,
                 AreaName = g.Key.AreaName,
                 DisplayOrder = (int)g.Key.AreaDisplayOrder,
+                AreaCoverFileId = g.Key.AreaCoverFileId,
+                AreaCoverUrl = PublicGalleryFileUrls.ContentOrNull(g.Key.AreaCoverFileId),
                 // A location may hold many visible items — collapse to one nav node per location,
                 // represented by its lead item (lowest item display order, then newest), and carry the
                 // total count so the UI can hint at a slider. The full list loads on location click.
                 Locations = g
-                    .GroupBy(r => new { r.LocationId, r.LocationName, r.LocationDisplayOrder })
+                    .GroupBy(r => new { r.LocationId, r.LocationName, r.LocationDisplayOrder, r.LocationCoverFileId })
                     .OrderBy(lg => lg.Key.LocationDisplayOrder)
                     .ThenBy(lg => lg.Key.LocationName)
                     .Select(lg =>
@@ -123,6 +127,8 @@ public sealed class GetPublicCampusNavigationQueryHandler
                             LocationId = lg.Key.LocationId,
                             LocationName = lg.Key.LocationName,
                             DisplayOrder = (int)lg.Key.LocationDisplayOrder,
+                            LocationCoverFileId = lg.Key.LocationCoverFileId,
+                            LocationCoverUrl = PublicGalleryFileUrls.ContentOrNull(lg.Key.LocationCoverFileId),
                             GalleryItemId = lead.GalleryItemId,
                             Title = lead.Title,
                             MediaKind = lead.MediaKind,
@@ -144,9 +150,11 @@ public sealed class GetPublicCampusNavigationQueryHandler
         public ulong AreaId { get; init; }
         public string AreaName { get; init; } = string.Empty;
         public uint AreaDisplayOrder { get; init; }
+        public ulong? AreaCoverFileId { get; init; }
         public ulong LocationId { get; init; }
         public string LocationName { get; init; } = string.Empty;
         public uint LocationDisplayOrder { get; init; }
+        public ulong? LocationCoverFileId { get; init; }
         public ulong GalleryItemId { get; init; }
         public uint ItemDisplayOrder { get; init; }
         public System.DateTime CreatedAt { get; init; }
