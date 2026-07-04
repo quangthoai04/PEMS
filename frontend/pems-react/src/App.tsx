@@ -30,7 +30,7 @@ import { CreatePartner } from './pages/dashboard/partners/CreatePartner';
 import { PartnerDetail } from './pages/dashboard/partners/PartnerDetail';
 import { DepartmentManagement } from './pages/dashboard/departments/DepartmentManagement';
 import { DepartmentDetailDashboard } from './pages/dashboard/departments/DepartmentDetailDashboard';
-import { DepartmentReportDashboard } from './pages/dashboard/departments/DepartmentReportDashboard';
+import { DeptReportManagement } from './pages/dashboard/reports/DeptReportManagement';
 import { TaskDetail } from './pages/dashboard/departments/TaskDetail';
 import { TaskInvitationDetail } from './pages/dashboard/departments/TaskInvitationDetail';
 import { VisitProcess } from './pages/dashboard/visit/VisitProcess';
@@ -182,7 +182,7 @@ export default function App() {
             <Route path="gallery" element={<GalleryManagement />} />
             <Route path="gallery/locations" element={<LocationManagement />} />
             <Route path="minutes" element={<MinuteManagement />} />
-            <Route path="reports" element={<ProtectedRoute>{isDeptLeader ? <DepartmentReportDashboard /> : isHO ? <HoReportManagement /> : isStaffLeader ? <StaffLeaderReportManagement /> : <ReportManagement />}</ProtectedRoute>} />
+            <Route path="reports" element={<ProtectedRoute>{isDeptLeader ? <DeptReportManagement /> : isHO ? <HoReportManagement /> : isStaffLeader ? <StaffLeaderReportManagement /> : <ReportManagement />}</ProtectedRoute>} />
             <Route path="feedback" element={<FeedbackManagement />} />
             <Route path="feedback/:id" element={<FeedbackDetail />} />
             <Route path="apis" element={<ProtectedRoute roles={['ADMIN']}><ApiManagement /></ProtectedRoute>} />
