@@ -20,6 +20,9 @@ import type {
   VisitMinute, MinuteUserSearchItem,
   SaveMinuteParticipantPayload, SaveMinuteActionItemPayload,
 } from '../../../features/delegations/types/delegations.types';
+import { partnersApi } from '../../../features/partners/api/partnersApi';
+import type { VisitGuestPartnerLink } from '../../../features/partners/types/partners.types';
+import { ParticipantPartnerCell } from '../../../features/partners/components/ParticipantPartnerCell';
 
 const formatDateTime = (value?: string | null) =>
   value ? new Date(value).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' }) : '-';
@@ -172,6 +175,20 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
   }, [visitInstanceId]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Partner-link badges for the participants table (docs/PARTNER_canh/01 §10.3).
+  const [partnerLinks, setPartnerLinks] = useState<VisitGuestPartnerLink[]>([]);
+  const loadPartnerLinks = useCallback(async () => {
+    try { setPartnerLinks(await partnersApi.getVisitPartnerLinks(visitInstanceId)); }
+    catch { setPartnerLinks([]); }
+  }, [visitInstanceId]);
+  useEffect(() => { void loadPartnerLinks(); }, [loadPartnerLinks]);
+  const findPartnerLink = (p: { minuteParticipantId: number; guestMemberId: number | null }) =>
+    partnerLinks.find(
+      (l) =>
+        (p.minuteParticipantId > 0 && l.minuteParticipantId === p.minuteParticipantId)
+        || (p.guestMemberId != null && l.guestMemberId === p.guestMemberId),
+    ) ?? null;
 
   // Countdown of the edit session; auto-exit when the lock expires.
   useEffect(() => {
@@ -618,6 +635,7 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
                               <th className="px-4 py-3">Đơn vị</th>
                               <th className="px-4 py-3">Email</th>
                               <th className="px-4 py-3 w-28">Loại nguồn</th>
+                              {!editing && <th className="px-4 py-3 w-44">Đối tác</th>}
                               <th className="px-4 py-3">Ghi chú</th>
                               {editing && <th className="px-4 py-3 w-14 text-center">Xóa</th>}
                             </tr>
@@ -686,6 +704,19 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
                                   <td className="px-4 py-3">
                                     <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold border ${kind.cls}`}>{kind.label}</span>
                                   </td>
+                                  {!editing && (
+                                    <td className="px-4 py-3">
+                                      <ParticipantPartnerCell
+                                        visitInstanceId={visitInstanceId}
+                                        participantKind={p.participantKind}
+                                        minuteParticipantId={p.minuteParticipantId}
+                                        guestMemberId={p.guestMemberId}
+                                        link={findPartnerLink(p)}
+                                        canManage={!isReadOnly}
+                                        onChanged={() => { void loadPartnerLinks(); }}
+                                      />
+                                    </td>
+                                  )}
                                   <td className="px-4 py-3">
                                     {editing ? (
                                       <input value={p.attendanceNote} onChange={(e) => updateParticipant(p._key, { attendanceNote: e.target.value })}
