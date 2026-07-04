@@ -1214,7 +1214,7 @@ function InvoiceTab({
   const canExport = selectedVisit !== '' && selectedRows.length > 0 && !hasInvalidPrice && !exportLoading;
 
   const handleExport = async () => {
-    if (!canExport || selectedVisit === '') return;
+    if (!canExport || typeof selectedVisit !== 'number') return;
     try {
       await onExport({
         visitInstanceId: selectedVisit,
