@@ -58,6 +58,29 @@ public class ApiConfiguration
     [Column("body_template_text")]
     public string? BodyTemplateText { get; set; }
 
+    /// <summary>Non-secret provider settings JSON (project_id, location, processor_id, endpoint...).</summary>
+    [Column("settings_json")]
+    public string? SettingsJson { get; set; }
+
+    /// <summary>Encrypted credential payload (e.g. Google service account JSON). Never exposed raw.</summary>
+    [Column("credentials_json_encrypted")]
+    public string? CredentialsJsonEncrypted { get; set; }
+
+    /// <summary>Env/secret-manager reference used when credentials are not stored in DB.</summary>
+    [Column("secret_ref")]
+    public string? SecretRef { get; set; }
+
+    /// <summary>PUBLIC | INTERNAL | CONFIDENTIAL | RESTRICTED</summary>
+    [Column("data_sensitivity")]
+    public string DataSensitivity { get; set; } = "CONFIDENTIAL";
+
+    [Column("allows_provider_training")]
+    public bool AllowsProviderTraining { get; set; }
+
+    /// <summary>How long raw OCR text/draft is retained before purge.</summary>
+    [Column("retention_days")]
+    public uint? RetentionDays { get; set; }
+
     [Column("rate_limit_per_minute")]
     public uint? RateLimitPerMinute { get; set; }
 
@@ -79,8 +102,9 @@ public class ApiConfiguration
     [Column("status")]
     public string Status { get; set; } = "ACTIVE";
 
+    /// <summary>DB enum SUCCESS | FAILED; NULL = not tested yet.</summary>
     [Column("last_test_status")]
-    public string LastTestStatus { get; set; } = "NOT_TESTED";
+    public string? LastTestStatus { get; set; }
 
     [Column("last_tested_at")]
     public DateTime? LastTestedAt { get; set; }
