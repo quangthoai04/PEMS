@@ -356,6 +356,7 @@ export function TaskHandoverModal({ isOpen, onClose, detailData, onSuccess }: Ta
           </div>
         </div>
       </div>
-    </>
+    </>,
+    document.body
   );
 }
