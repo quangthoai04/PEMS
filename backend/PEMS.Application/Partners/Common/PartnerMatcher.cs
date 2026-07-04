@@ -14,7 +14,12 @@ namespace PEMS.Application.Partners.Common;
 ///  2. exact alias key match           (score 95),
 ///  3. exact normalized name/short_name (score 92),
 ///  4. email-domain vs website domain   (score 85),
-///  5. fuzzy token match, org stop-words stripped (score 78).
+///  5. fuzzy token match, org stop-words stripped (score 78),
+///  6. Levenshtein similarity on the normalized name/short_name (suggest-only):
+///       sim &gt;=92% → 88, 85–91% → 78, 78–84% → 68, &lt;78% dropped.
+///     Short names (&lt;8 chars) and very different lengths are skipped so it never
+///     suggests unrelated partners; it also never outscores alias/exact/email-domain
+///     because <see cref="PartnerMatcher"/> keeps the highest score per partner.
 /// Scores: >=90 strong, 70–89 possible, &lt;70 dropped. Instead of returning the first hit,
 /// all strategies contribute candidates (deduped by partner, keeping the highest score);
 /// the best one drives the legacy top-level fields and the full ranked list is returned in
@@ -93,6 +98,13 @@ public static class PartnerMatcher
                     if (candKey == stripped || (candShort.Length > 0 && candShort == stripped))
                         Consider(c.PartnerId, 78m, "Có thể trùng theo tên rút gọn");
                 }
+
+                // 6) Levenshtein similarity on the full normalized name/short_name — suggest-only.
+                // Consider() keeps the highest score, so an alias/exact/email-domain hit for the
+                // same partner always wins over this lower fuzzy score.
+                var lev = LevenshteinSuggestion(key, c.Name, c.ShortName);
+                if (lev is { } l)
+                    Consider(c.PartnerId, l.Score, $"Tên gần giống · {l.Similarity}%");
             }
         }
 
@@ -189,4 +201,27 @@ public static class PartnerMatcher
         MatchStatus = "NONE",
         Reason = "No matching partner found",
     };
+
+    /// <summary>
+    /// Fuzzy-string suggestion for one candidate: the strongest Levenshtein similarity of the
+    /// normalized input against the candidate's normalized name and short_name, mapped to a score.
+    /// Returns <c>null</c> when the pair is unsafe to compare (short/very different lengths) or the
+    /// similarity is below the 78% floor — those must NOT be suggested.
+    /// </summary>
+    private static (decimal Score, int Similarity)? LevenshteinSuggestion(
+        string normalizedInput, string? candidateName, string? candidateShortName)
+    {
+        var best = -1;
+        var nameSim = PartnerNormalization.FuzzySimilarity(
+            normalizedInput, PartnerNormalization.NormalizeKey(candidateName));
+        if (nameSim is int ns && ns > best) best = ns;
+        var shortSim = PartnerNormalization.FuzzySimilarity(
+            normalizedInput, PartnerNormalization.NormalizeKey(candidateShortName));
+        if (shortSim is int ss && ss > best) best = ss;
+
+        if (best < 78) return null; // below floor → do not suggest
+
+        var score = best >= 92 ? 88m : best >= 85 ? 78m : 68m;
+        return (score, best);
+    }
 }

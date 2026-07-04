@@ -81,4 +81,76 @@ public static class PartnerNormalization
     public static bool IsGenericMailDomain(string domain) =>
         domain is "gmail.com" or "googlemail.com" or "yahoo.com" or "hotmail.com"
             or "outlook.com" or "live.com" or "icloud.com" or "proton.me" or "protonmail.com";
+
+    // ── Fuzzy string similarity (Levenshtein) ──────────────────────────────────
+    // Suggestion-only: used to surface near-identical names in the "create or link"
+    // picker. It NEVER auto-creates/links and never overrides the stronger
+    // alias/exact/email-domain strategies (the matcher keeps the highest score).
+
+    /// <summary>Below this normalized length Levenshtein is unreliable (e.g. "fpt" vs "fptu").</summary>
+    private const int MinFuzzyLength = 8;
+
+    /// <summary>Names whose lengths differ this much are almost certainly different orgs.</summary>
+    private const double MinFuzzyLengthRatio = 0.55;
+
+    /// <summary>
+    /// Levenshtein-based similarity (0–100) between two ALREADY-normalized strings, or
+    /// <c>null</c> when the pair is unsafe to fuzzy-compare. Two guards keep the matcher
+    /// from suggesting unrelated partners:
+    ///  • either side shorter than <see cref="MinFuzzyLength"/> → skip (short names alias too easily);
+    ///  • min/max length ratio below <see cref="MinFuzzyLengthRatio"/> → skip (lengths too different).
+    /// Callers must pass values already run through <see cref="NormalizeKey"/>.
+    /// </summary>
+    public static int? FuzzySimilarity(string? normalizedA, string? normalizedB)
+    {
+        if (string.IsNullOrEmpty(normalizedA) || string.IsNullOrEmpty(normalizedB))
+            return null;
+        if (normalizedA.Length < MinFuzzyLength || normalizedB.Length < MinFuzzyLength)
+            return null;
+
+        var min = Math.Min(normalizedA.Length, normalizedB.Length);
+        var max = Math.Max(normalizedA.Length, normalizedB.Length);
+        if ((double)min / max < MinFuzzyLengthRatio)
+            return null;
+
+        return SimilarityPercent(normalizedA, normalizedB);
+    }
+
+    /// <summary>Percentage similarity (0–100) = 1 − distance/maxLen, rounded.</summary>
+    private static int SimilarityPercent(string a, string b)
+    {
+        var maxLen = Math.Max(a.Length, b.Length);
+        if (maxLen == 0) return 100;
+        var distance = LevenshteinDistance(a, b);
+        return (int)Math.Round((1.0 - (double)distance / maxLen) * 100);
+    }
+
+    /// <summary>Classic Levenshtein edit distance with two rolling rows (O(min·max) time, O(max) space).</summary>
+    private static int LevenshteinDistance(string a, string b)
+    {
+        if (string.IsNullOrEmpty(a)) return b.Length;
+        if (string.IsNullOrEmpty(b)) return a.Length;
+
+        var previous = new int[b.Length + 1];
+        var current = new int[b.Length + 1];
+
+        for (var j = 0; j <= b.Length; j++)
+            previous[j] = j;
+
+        for (var i = 1; i <= a.Length; i++)
+        {
+            current[0] = i;
+            for (var j = 1; j <= b.Length; j++)
+            {
+                var cost = a[i - 1] == b[j - 1] ? 0 : 1;
+                current[j] = Math.Min(
+                    Math.Min(current[j - 1] + 1, previous[j] + 1),
+                    previous[j - 1] + cost);
+            }
+
+            (previous, current) = (current, previous);
+        }
+
+        return previous[b.Length];
+    }
 }

@@ -9,11 +9,11 @@
  * tự set owner_campus_id theo campus người dùng.
  */
 import React, { useEffect, useRef, useState } from 'react';
-import { Link2, Loader2, X } from 'lucide-react';
+import { ChevronUp, ExternalLink, Info, Link2, Loader2, X } from 'lucide-react';
 import { partnersApi } from '../api/partnersApi';
 import {
   PARTNER_TYPE_LABELS, PROFILE_STATUS_LABELS, VISIBILITY_LABELS,
-  type PartnerType, type PartnerMatchResult, type PartnerMatchCandidate,
+  type PartnerDetail, type PartnerType, type PartnerMatchResult, type PartnerMatchCandidate,
   type PartnerProfileStatus, type PartnerVisibility,
 } from '../types/partners.types';
 
@@ -76,6 +76,156 @@ function deriveCandidates(m: PartnerMatchResult | null): PartnerMatchCandidate[]
   return [];
 }
 
+/** Chưa cập nhật cho field trống — không để dấu "-" hay ô rỗng làm UI xấu. */
+function orNotUpdated(v?: string | null): string {
+  return v && v.trim() ? v.trim() : 'Chưa cập nhật';
+}
+
+function fmtDate(iso?: string | null): string {
+  if (!iso) return 'Chưa cập nhật';
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime())
+    ? 'Chưa cập nhật'
+    : d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+}
+
+function withProtocol(url: string): string {
+  return /^https?:\/\//i.test(url) ? url : `https://${url}`;
+}
+
+function DetailRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-[11px] font-medium text-gray-400">{label}</dt>
+      <dd className="text-xs text-gray-700 break-words">{children}</dd>
+    </div>
+  );
+}
+
+/**
+ * Inline panel mở dưới một candidate (Hướng A — không lồng modal trong modal).
+ * Xem kỹ trước khi liên kết. Detail lấy từ internal API GET /api/partners/{id}
+ * (đã enforce quyền xem theo campus); trong lúc chờ, hiển thị tạm field từ candidate.
+ * Bấm "Chi tiết" KHÔNG tạo/liên kết gì — chỉ liên kết khi bấm nút bên dưới.
+ */
+function CandidateDetailPanel({
+  candidate, detail, loading, error, linking, busy, onLink,
+}: {
+  candidate: PartnerMatchCandidate;
+  detail: PartnerDetail | null;
+  loading: boolean;
+  error: string | null;
+  linking: boolean;
+  busy: boolean;
+  onLink: () => void;
+}) {
+  const tier = scoreTier(candidate.matchScore);
+  const code = detail?.partnerCode && detail.partnerCode.trim() ? detail.partnerCode.trim() : 'Chưa có';
+  // Trước khi detail tải xong, fallback về dữ liệu đã có trong candidate.
+  const shortName = detail?.shortName ?? candidate.shortName;
+  const country = detail?.country ?? candidate.country;
+  const city = detail?.city ?? candidate.city;
+  const status = detail?.profileStatus ?? candidate.profileStatus;
+  const visibility = detail?.visibility ?? candidate.visibility;
+  const campus = detail?.ownerCampusName ?? candidate.ownerCampusName;
+  const website = detail?.websiteUrl?.trim();
+  const profileHref = `/dashboard/partners/${candidate.partnerId}`;
+
+  return (
+    <div className="border-t border-gray-100 bg-slate-50/70 px-4 py-3.5 space-y-3">
+      {loading && (
+        <p className="text-xs text-gray-400 inline-flex items-center gap-1.5">
+          <Loader2 className="w-3.5 h-3.5 animate-spin" /> Đang tải chi tiết đối tác...
+        </p>
+      )}
+
+      {!loading && error && (
+        <div className="text-xs rounded-lg px-3 py-2 border bg-red-50 border-red-100 text-red-600">
+          {error}
+        </div>
+      )}
+
+      {!loading && !error && (
+        <div>
+          <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400 mb-1.5">Thông tin đối tác</p>
+          <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2">
+            <DetailRow label="Mã đối tác">{code}</DetailRow>
+            <DetailRow label="Tên viết tắt">{orNotUpdated(shortName)}</DetailRow>
+            <DetailRow label="Trạng thái">
+              {PROFILE_STATUS_LABELS[status as PartnerProfileStatus] ?? status}
+            </DetailRow>
+            <DetailRow label="Hiển thị">
+              {VISIBILITY_LABELS[visibility as PartnerVisibility] ?? visibility ?? 'Chưa cập nhật'}
+            </DetailRow>
+            <DetailRow label="Cơ sở sở hữu">{orNotUpdated(campus)}</DetailRow>
+            <DetailRow label="Loại đối tác">
+              {detail ? (PARTNER_TYPE_LABELS[detail.partnerType] ?? detail.partnerType) : 'Chưa cập nhật'}
+            </DetailRow>
+            <DetailRow label="Quốc gia">{orNotUpdated(country)}</DetailRow>
+            <DetailRow label="Thành phố">{orNotUpdated(city)}</DetailRow>
+            <DetailRow label="Website">
+              {website ? (
+                <a
+                  href={withProtocol(website)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-[#004c91] hover:underline inline-flex items-center gap-1 break-all"
+                >
+                  {website} <ExternalLink className="w-3 h-3 shrink-0" />
+                </a>
+              ) : 'Chưa cập nhật'}
+            </DetailRow>
+            <DetailRow label="Ngày tạo">{fmtDate(detail?.createdAt)}</DetailRow>
+            {detail?.creatorName && <DetailRow label="Người tạo">{detail.creatorName}</DetailRow>}
+            <div className="sm:col-span-2">
+              <DetailRow label="Địa chỉ">{orNotUpdated(detail?.address)}</DetailRow>
+            </div>
+            <div className="sm:col-span-2">
+              <DetailRow label="Mô tả">{orNotUpdated(detail?.description)}</DetailRow>
+            </div>
+          </dl>
+        </div>
+      )}
+
+      {/* Vì sao được gợi ý — luôn có từ candidate, không phụ thuộc detail. */}
+      <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+        <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400 mb-1">Vì sao được gợi ý</p>
+        <div className="flex flex-wrap items-center gap-2 text-xs text-gray-600">
+          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold border ${tier.cls}`}>
+            {tier.label} · {Math.round(candidate.matchScore)}%
+          </span>
+          {candidate.matchReason && <span>Lý do: {candidate.matchReason}</span>}
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 pt-0.5">
+        {candidate.canLink ? (
+          <a
+            href={profileHref}
+            target="_blank"
+            rel="noreferrer"
+            className="mr-auto text-xs font-semibold text-slate-500 hover:text-[#004c91] inline-flex items-center gap-1"
+          >
+            Mở hồ sơ đầy đủ <ExternalLink className="w-3 h-3" />
+          </a>
+        ) : (
+          <span className="mr-auto text-[11px] text-amber-700">
+            Bạn không có quyền liên kết đối tác này hoặc đối tác nằm ngoài phạm vi cơ sở của bạn.
+          </span>
+        )}
+        <button
+          onClick={onLink}
+          disabled={busy || !candidate.canLink}
+          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold text-white bg-[#004c91] hover:bg-[#00386b] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          {linking ? <Loader2 className="w-4 h-4 animate-spin" /> : <Link2 className="w-4 h-4" />}
+          {linking ? 'Đang liên kết...' : 'Liên kết đối tác này'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function CreatePartnerFromParticipantModal({
   open, onClose, visitInstanceId, guestMemberId, minuteParticipantId, prefill, onDone,
 }: Props) {
@@ -92,9 +242,17 @@ export function CreatePartnerFromParticipantModal({
   const [match, setMatch] = useState<PartnerMatchResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [conflict, setConflict] = useState(false);
+  // Xem chi tiết candidate (inline expand). Chỉ mở 1 panel/lần cho gọn.
+  const [detailOpenId, setDetailOpenId] = useState<number | null>(null);
+  const [detailCache, setDetailCache] = useState<Record<number, PartnerDetail>>({});
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
   const candidatesRef = useRef<HTMLDivElement | null>(null);
 
   const runMatch = async (org?: string | null, email?: string | null): Promise<PartnerMatchResult | null> => {
+    // Danh sách candidate sắp đổi → đóng panel chi tiết đang mở để tránh lệch dữ liệu.
+    setDetailOpenId(null);
+    setDetailError(null);
     const orgTrim = org?.trim();
     if (!orgTrim && !email?.trim()) { setMatch(null); return null; }
     setChecking(true);
@@ -127,6 +285,10 @@ export function CreatePartnerFromParticipantModal({
     setBusy(false);
     setLinkingId(null);
     setMatch(null);
+    setDetailOpenId(null);
+    setDetailCache({});
+    setDetailError(null);
+    setDetailLoading(false);
     void runMatch(prefill?.organization, prefill?.contactEmail);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, prefill?.organization, prefill?.contactEmail, prefill?.sourceLabel]);
@@ -137,6 +299,31 @@ export function CreatePartnerFromParticipantModal({
   const noOrganization = !prefill?.organization?.trim();
   const anyBusy = busy || linkingId !== null || checking;
   const candidates = deriveCandidates(match);
+
+  // Mở/đóng panel chi tiết của một candidate. Lazy-load detail (cache theo partnerId),
+  // KHÔNG tạo/liên kết gì. Lỗi quyền/không tìm thấy được xử lý cục bộ trong panel.
+  const toggleDetail = async (partnerId: number) => {
+    if (detailOpenId === partnerId) { setDetailOpenId(null); return; }
+    setDetailOpenId(partnerId);
+    setDetailError(null);
+    if (detailCache[partnerId]) { setDetailLoading(false); return; }
+    setDetailLoading(true);
+    try {
+      const d = await partnersApi.getPartnerDetail(partnerId);
+      setDetailCache((prev) => ({ ...prev, [partnerId]: d }));
+    } catch (e: any) {
+      const status = e?.response?.status;
+      setDetailError(
+        status === 403
+          ? 'Bạn không có quyền xem chi tiết đối tác này.'
+          : status === 404
+            ? 'Không tìm thấy đối tác.'
+            : 'Không thể tải chi tiết đối tác. Vui lòng thử lại.',
+      );
+    } finally {
+      setDetailLoading(false);
+    }
+  };
 
   const linkExisting = async (partnerId: number) => {
     setLinkingId(partnerId);
@@ -255,37 +442,67 @@ export function CreatePartnerFromParticipantModal({
                     c.visibility ? `Hiển thị: ${VISIBILITY_LABELS[c.visibility] ?? c.visibility}` : null,
                     c.country || null,
                   ].filter(Boolean).join(' · ');
+                  const expanded = detailOpenId === c.partnerId;
                   return (
-                    <div key={c.partnerId} className="flex items-center gap-3 rounded-lg border border-gray-200 bg-white px-3 py-2">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold border whitespace-nowrap ${tier.cls}`}>
-                            {tier.label} · {Math.round(c.matchScore)}%
-                          </span>
-                          {statusBadge(c.profileStatus)}
+                    <div key={c.partnerId} className="rounded-lg border border-gray-200 bg-white overflow-hidden">
+                      <div className="flex items-center gap-3 px-3 py-2">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold border whitespace-nowrap ${tier.cls}`}>
+                              {tier.label} · {Math.round(c.matchScore)}%
+                            </span>
+                            {statusBadge(c.profileStatus)}
+                          </div>
+                          <div className="mt-1 truncate text-sm font-semibold text-slate-800" title={c.name}>
+                            {c.name}
+                          </div>
+                          {meta && <div className="truncate text-xs text-gray-500" title={meta}>{meta}</div>}
+                          {c.matchReason && (
+                            <div className="truncate text-[11px] text-gray-400" title={c.matchReason}>
+                              Lý do: {c.matchReason}
+                            </div>
+                          )}
                         </div>
-                        <div className="mt-1 truncate text-sm font-semibold text-slate-800" title={c.name}>
-                          {c.name}
+                        <div className="flex shrink-0 items-center gap-2">
+                          <button
+                            onClick={() => void toggleDetail(c.partnerId)}
+                            disabled={busy || linkingId !== null}
+                            aria-expanded={expanded}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-slate-600 border border-slate-200 hover:border-[#004c91] hover:text-[#004c91] transition-colors disabled:opacity-40"
+                          >
+                            {expanded ? <ChevronUp className="w-3.5 h-3.5" /> : <Info className="w-3.5 h-3.5" />}
+                            Chi tiết
+                          </button>
+                          <button
+                            onClick={() => void linkExisting(c.partnerId)}
+                            disabled={anyBusy || !c.canLink}
+                            title={!c.canLink ? 'Đối tác nằm ngoài phạm vi cơ sở của bạn' : undefined}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-bold text-white bg-[#004c91] hover:bg-[#00386b] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                          >
+                            {linkingId === c.partnerId ? <Loader2 className="w-4 h-4 animate-spin" /> : <Link2 className="w-4 h-4" />}
+                            {linkingId === c.partnerId ? 'Đang liên kết...' : 'Liên kết'}
+                          </button>
                         </div>
-                        {meta && <div className="truncate text-xs text-gray-500" title={meta}>{meta}</div>}
                       </div>
-                      <button
-                        onClick={() => void linkExisting(c.partnerId)}
-                        disabled={anyBusy || !c.canLink}
-                        title={!c.canLink ? 'Đối tác nằm ngoài phạm vi cơ sở của bạn' : undefined}
-                        className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-bold text-white bg-[#004c91] hover:bg-[#00386b] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                      >
-                        {linkingId === c.partnerId ? <Loader2 className="w-4 h-4 animate-spin" /> : <Link2 className="w-4 h-4" />}
-                        {linkingId === c.partnerId ? 'Đang liên kết...' : 'Liên kết'}
-                      </button>
+                      {expanded && (
+                        <CandidateDetailPanel
+                          candidate={c}
+                          detail={detailCache[c.partnerId] ?? null}
+                          loading={detailLoading}
+                          error={detailError}
+                          linking={linkingId === c.partnerId}
+                          busy={anyBusy}
+                          onLink={() => void linkExisting(c.partnerId)}
+                        />
+                      )}
                     </div>
                   );
                 })}
               </div>
 
               <p className="mt-3 text-[11px] leading-relaxed text-gray-500">
-                Điểm khớp được hệ thống tính từ tên tổ chức, tên gọi khác (alias) và tên miền email (nếu có).
-                Vui lòng kiểm tra trước khi liên kết.
+                Điểm khớp được hệ thống tính từ tên tổ chức, tên gọi khác (alias), tên gần giống và tên miền email (nếu có).
+                Đây chỉ là gợi ý — vui lòng kiểm tra trước khi liên kết.
               </p>
             </div>
           )}
