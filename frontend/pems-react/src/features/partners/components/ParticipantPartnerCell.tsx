@@ -1,10 +1,11 @@
 /**
  * ParticipantPartnerCell — cột "Đối tác" trong bảng người tham gia biên bản
- * (docs/PARTNER_canh/01 §10.3):
- *  - INTERNAL           → badge "Nội bộ", không có hành động.
- *  - link CONFIRMED     → badge theo trạng thái hồ sơ (Đối tác / Chờ duyệt) + Xem chi tiết.
- *  - link SUGGESTED     → badge "Gợi ý" + Liên kết / Bỏ qua.
- *  - chưa có            → badge "Chưa có" + Tạo đối tác / Quét danh thiếp.
+ * (docs/PARTNER_canh/01 §10.3). UI tách rõ TRẠNG THÁI (badge nhỏ) và TÊN đối tác
+ * (1 dòng, truncate + tooltip) để ô bảng gọn, không bị cao bất thường:
+ *  - INTERNAL           → badge "Nội bộ".
+ *  - link CONFIRMED     → badge trạng thái hồ sơ (Đã liên kết / Chờ duyệt / Từ chối) + tên + Xem hồ sơ.
+ *  - link SUGGESTED     → badge "Gợi ý" + tên + Liên kết / Bỏ qua.
+ *  - chưa link          → badge "Chưa liên kết" + Tạo / liên kết · Quét danh thiếp.
  */
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -12,6 +13,7 @@ import { Link2, ScanLine, UserPlus, X } from 'lucide-react';
 import { partnersApi } from '../api/partnersApi';
 import type { VisitGuestPartnerLink } from '../types/partners.types';
 import { BusinessCardScanModal } from '../../business-card-ocr/components/BusinessCardScanModal';
+import { CreatePartnerFromParticipantModal } from './CreatePartnerFromParticipantModal';
 
 interface Props {
   visitInstanceId: number;
@@ -22,20 +24,50 @@ interface Props {
   link?: VisitGuestPartnerLink | null;
   /** Cho phép thao tác (Host/participant có quyền với visit). */
   canManage?: boolean;
+  /** Prefill cho modal tạo đối tác (lấy từ snapshot dòng người tham gia). */
+  prefillOrganization?: string | null;
+  prefillContactName?: string | null;
+  prefillContactEmail?: string | null;
+  prefillJobTitle?: string | null;
+  /** Nhãn nguồn để ghi vào mô tả đối tác, vd "biên bản cuộc họp #12". */
+  sourceLabel?: string | null;
   onChanged?: () => void;
 }
 
+/** Badge trạng thái theo profile_status của partner đã liên kết (chỉ chứa trạng thái, không kèm tên). */
+function partnerStatusMeta(status?: string | null): { label: string; cls: string } {
+  switch (status) {
+    case 'APPROVED':
+      return { label: 'Đã liên kết', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
+    case 'PENDING_APPROVAL':
+      return { label: 'Chờ duyệt', cls: 'bg-amber-50 text-amber-700 border-amber-200' };
+    case 'REJECTED':
+      return { label: 'Từ chối', cls: 'bg-red-50 text-red-700 border-red-200' };
+    case 'DRAFT':
+      return { label: 'Bản nháp', cls: 'bg-slate-100 text-slate-600 border-slate-200' };
+    default:
+      // Trạng thái lạ/null → không crash, coi như đã liên kết.
+      return { label: 'Đã liên kết', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
+  }
+}
+
+const BADGE_BASE = 'inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold border whitespace-nowrap';
+const NAME_CLS = 'max-w-[180px] truncate text-[13px] font-semibold text-slate-800';
+
 export function ParticipantPartnerCell({
   visitInstanceId, participantKind, minuteParticipantId, guestMemberId,
-  link, canManage = true, onChanged,
+  link, canManage = true,
+  prefillOrganization, prefillContactName, prefillContactEmail, prefillJobTitle, sourceLabel,
+  onChanged,
 }: Props) {
   const navigate = useNavigate();
   const [busy, setBusy] = useState(false);
   const [scanOpen, setScanOpen] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
 
   if (participantKind === 'INTERNAL') {
     return (
-      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold border bg-blue-50 text-blue-700 border-blue-200">
+      <span className={`${BADGE_BASE} bg-blue-50 text-blue-700 border-blue-200`}>
         Nội bộ
       </span>
     );
@@ -69,48 +101,33 @@ export function ParticipantPartnerCell({
     } finally { setBusy(false); }
   };
 
-  const createPartner = async () => {
-    if (!hasTarget) return;
-    setBusy(true);
-    try {
-      const result = await partnersApi.createPartnerFromGuest(visitInstanceId, {
-        guestMemberId: guestMemberId || null,
-        minuteParticipantId: (minuteParticipantId ?? 0) > 0 ? minuteParticipantId : null,
-      });
-      onChanged?.();
-      navigate(`/dashboard/partners/${result.partnerId}`);
-    } catch {
-      onChanged?.();
-    } finally { setBusy(false); }
-  };
-
+  // Đã liên kết (CONFIRMED) — badge trạng thái + tên truncate + Xem hồ sơ.
   if (activeLink && activeLink.matchStatus === 'CONFIRMED') {
-    const approved = activeLink.partnerProfileStatus === 'APPROVED';
+    const meta = partnerStatusMeta(activeLink.partnerProfileStatus);
     return (
-      <div className="flex flex-col items-start gap-1">
-        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold border ${
-          approved
-            ? 'bg-green-50 text-green-700 border-green-200'
-            : 'bg-amber-50 text-amber-700 border-amber-200'
-        }`}>
-          {approved ? 'Đối tác' : 'Chờ duyệt'}: {activeLink.partnerName}
-        </span>
+      <div className="flex flex-col items-start gap-1 max-w-[190px]">
+        <span className={`${BADGE_BASE} ${meta.cls}`}>{meta.label}</span>
+        <div className={NAME_CLS} title={activeLink.partnerName}>
+          {activeLink.partnerName}
+        </div>
         <button
           onClick={() => navigate(`/dashboard/partners/${activeLink.partnerId}`)}
           className="text-[11px] font-bold text-[#004c91] hover:underline cursor-pointer"
         >
-          {approved ? 'Xem chi tiết' : 'Xem hồ sơ'}
+          Xem hồ sơ
         </button>
       </div>
     );
   }
 
+  // Gợi ý (SUGGESTED) — badge "Gợi ý" + tên truncate + Liên kết / Bỏ qua.
   if (activeLink && activeLink.matchStatus === 'SUGGESTED') {
     return (
-      <div className="flex flex-col items-start gap-1">
-        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold border bg-sky-50 text-sky-700 border-sky-200">
-          Gợi ý: {activeLink.partnerName}
-        </span>
+      <div className="flex flex-col items-start gap-1 max-w-[190px]">
+        <span className={`${BADGE_BASE} bg-sky-50 text-sky-700 border-sky-200`}>Gợi ý</span>
+        <div className={NAME_CLS} title={activeLink.partnerName}>
+          {activeLink.partnerName}
+        </div>
         {canManage && (
           <span className="flex items-center gap-2">
             <button onClick={() => void confirmSuggestion()} disabled={busy}
@@ -127,16 +144,17 @@ export function ParticipantPartnerCell({
     );
   }
 
+  // Chưa liên kết — badge nhẹ + Tạo / liên kết · Quét danh thiếp.
   return (
-    <div className="flex flex-col items-start gap-1">
-      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold border bg-gray-100 text-gray-500 border-gray-200">
-        Chưa có
+    <div className="flex flex-col items-start gap-1 max-w-[190px]">
+      <span className={`${BADGE_BASE} bg-slate-100 text-slate-600 border-slate-200`}>
+        Chưa liên kết
       </span>
       {canManage && hasTarget && (
         <span className="flex items-center gap-2">
-          <button onClick={() => void createPartner()} disabled={busy}
+          <button onClick={() => setCreateOpen(true)} disabled={busy}
             className="text-[11px] font-bold text-[#004c91] hover:underline disabled:opacity-40 cursor-pointer inline-flex items-center gap-0.5">
-            <UserPlus className="w-3 h-3" /> Tạo đối tác
+            <UserPlus className="w-3 h-3" /> Tạo / liên kết
           </button>
           <button onClick={() => setScanOpen(true)} disabled={busy}
             className="text-[11px] font-bold text-[#f37021] hover:underline disabled:opacity-40 cursor-pointer inline-flex items-center gap-0.5">
@@ -144,6 +162,22 @@ export function ParticipantPartnerCell({
           </button>
         </span>
       )}
+
+      <CreatePartnerFromParticipantModal
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        visitInstanceId={visitInstanceId}
+        guestMemberId={guestMemberId || null}
+        minuteParticipantId={(minuteParticipantId ?? 0) > 0 ? minuteParticipantId : null}
+        prefill={{
+          organization: prefillOrganization,
+          contactName: prefillContactName,
+          contactEmail: prefillContactEmail,
+          jobTitle: prefillJobTitle,
+          sourceLabel,
+        }}
+        onDone={() => { setCreateOpen(false); onChanged?.(); }}
+      />
 
       <BusinessCardScanModal
         open={scanOpen}

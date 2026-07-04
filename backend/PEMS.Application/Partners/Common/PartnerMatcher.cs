@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -10,14 +11,19 @@ namespace PEMS.Application.Partners.Common;
 /// <summary>
 /// Shared partner-matching pipeline (01 prompt §7). Never a naive Contains:
 ///  1. normalize the organization name,
-///  2. exact alias key match,
-///  3. exact normalized partners.name / short_name match,
-///  4. email-domain vs website domain,
-///  5. fuzzy token match with org stop-words stripped.
-/// Confidence: >=90 strong, 70–89 suggested (user must confirm), &lt;70 NONE.
+///  2. exact alias key match           (score 95),
+///  3. exact normalized name/short_name (score 92),
+///  4. email-domain vs website domain   (score 85),
+///  5. fuzzy token match, org stop-words stripped (score 78).
+/// Scores: >=90 strong, 70–89 possible, &lt;70 dropped. Instead of returning the first hit,
+/// all strategies contribute candidates (deduped by partner, keeping the highest score);
+/// the best one drives the legacy top-level fields and the full ranked list is returned in
+/// <see cref="PartnerMatchDto.Candidates"/> (top 5) for the "create or link" picker.
 /// </summary>
 public static class PartnerMatcher
 {
+    private const int MaxCandidates = 5;
+
     public static async Task<PartnerMatchDto> MatchAsync(
         IApplicationDbContext db,
         string? organizationName,
@@ -30,18 +36,26 @@ public static class PartnerMatcher
         if (string.IsNullOrEmpty(key) && emailDomain is null)
             return None();
 
+        // partnerId → best (score, reason) seen so far.
+        var scores = new Dictionary<ulong, (decimal Score, string Reason)>();
+        void Consider(ulong partnerId, decimal score, string reason)
+        {
+            if (!scores.TryGetValue(partnerId, out var existing) || score > existing.Score)
+                scores[partnerId] = (score, reason);
+        }
+
         // 2) Exact alias match
         if (!string.IsNullOrEmpty(key))
         {
-            var alias = await db.PartnerAliases
+            var aliasPartnerIds = await db.PartnerAliases
                 .Where(a => a.Status == "ACTIVE" && a.AliasNameKey == key)
-                .Select(a => new { a.PartnerId })
-                .FirstOrDefaultAsync(cancellationToken);
-            if (alias is not null)
-                return await Build(db, alias.PartnerId, 95m, "Matched by alias", cancellationToken);
+                .Select(a => a.PartnerId)
+                .ToListAsync(cancellationToken);
+            foreach (var id in aliasPartnerIds)
+                Consider(id, 95m, "Khớp theo tên gọi khác (alias)");
         }
 
-        // 3) Exact normalized name / short name match (normalize in-memory over candidate set)
+        // 3) Exact normalized name/short_name + 5) fuzzy (over the same candidate set)
         if (!string.IsNullOrEmpty(key))
         {
             var probe = key.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? key;
@@ -62,23 +76,22 @@ public static class PartnerMatcher
                     .ToListAsync(cancellationToken);
             }
 
+            var stripped = PartnerNormalization.StripOrgWords(key);
             foreach (var c in candidates)
             {
                 if (PartnerNormalization.NormalizeKey(c.Name) == key
                     || PartnerNormalization.NormalizeKey(c.ShortName) == key)
-                    return await Build(db, c.PartnerId, 92m, "Matched by normalized name", cancellationToken);
-            }
+                {
+                    Consider(c.PartnerId, 92m, "Khớp theo tên tổ chức");
+                    continue;
+                }
 
-            // 5) Fuzzy: compare with org stop-words stripped
-            var stripped = PartnerNormalization.StripOrgWords(key);
-            if (!string.IsNullOrEmpty(stripped))
-            {
-                foreach (var c in candidates)
+                if (!string.IsNullOrEmpty(stripped))
                 {
                     var candKey = PartnerNormalization.StripOrgWords(PartnerNormalization.NormalizeKey(c.Name));
                     var candShort = PartnerNormalization.StripOrgWords(PartnerNormalization.NormalizeKey(c.ShortName));
                     if (candKey == stripped || (candShort.Length > 0 && candShort == stripped))
-                        return await Build(db, c.PartnerId, 78m, "Possible fuzzy match", cancellationToken);
+                        Consider(c.PartnerId, 78m, "Có thể trùng theo tên rút gọn");
                 }
             }
         }
@@ -97,32 +110,64 @@ public static class PartnerMatcher
                 var site = PartnerNormalization.WebsiteDomain(p.WebsiteUrl);
                 if (site is null) continue;
                 if (site == emailDomain || emailDomain.EndsWith("." + site, StringComparison.Ordinal))
-                    return await Build(db, p.PartnerId, 85m, "Matched by email domain", cancellationToken);
+                    Consider(p.PartnerId, 85m, "Khớp theo tên miền email");
             }
         }
 
-        return None();
-    }
+        if (scores.Count == 0)
+            return None();
 
-    private static PartnerMatchDto None() => new()
-    {
-        MatchStatus = "NONE",
-        Reason = "No matching partner found",
-    };
+        // Load display fields for the strongest candidates only.
+        var topIds = scores
+            .OrderByDescending(kv => kv.Value.Score)
+            .Take(MaxCandidates)
+            .Select(kv => kv.Key)
+            .ToList();
 
-    private static async Task<PartnerMatchDto> Build(
-        IApplicationDbContext db, ulong partnerId, decimal confidence, string reason, CancellationToken ct)
-    {
-        var partner = await db.Partners
-            .Where(p => p.PartnerId == partnerId)
-            .Select(p => new { p.PartnerId, p.Name, p.ProfileStatus })
-            .FirstAsync(ct);
-
-        var matchStatus = confidence < 70m
-            ? "NONE"
-            : partner.ProfileStatus switch
+        var partners = await db.Partners
+            .Where(p => topIds.Contains(p.PartnerId))
+            .Select(p => new
             {
-                PartnerProfileStatuses.Approved => confidence >= 90m ? "APPROVED" : "SUGGESTED",
+                p.PartnerId, p.Name, p.ShortName, p.ProfileStatus, p.Visibility,
+                p.OwnerCampusId, p.Country, p.City,
+            })
+            .ToListAsync(cancellationToken);
+
+        var campusIds = partners.Select(p => p.OwnerCampusId).Distinct().ToList();
+        var campusNames = await db.Campuses
+            .Where(c => campusIds.Contains(c.CampusId))
+            .Select(c => new { c.CampusId, c.Name })
+            .ToDictionaryAsync(c => c.CampusId, c => c.Name, cancellationToken);
+
+        var ranked = partners
+            .Select(p =>
+            {
+                var (score, reason) = scores[p.PartnerId];
+                return new PartnerMatchCandidateDto
+                {
+                    PartnerId = p.PartnerId,
+                    Name = p.Name,
+                    ShortName = p.ShortName,
+                    ProfileStatus = p.ProfileStatus,
+                    Visibility = p.Visibility,
+                    OwnerCampusId = p.OwnerCampusId,
+                    OwnerCampusName = campusNames.TryGetValue(p.OwnerCampusId, out var cn) ? cn : null,
+                    Country = p.Country,
+                    City = p.City,
+                    MatchScore = score,
+                    MatchReason = reason,
+                };
+            })
+            .OrderByDescending(c => c.MatchScore)
+            .ThenBy(c => c.Name)
+            .ToList();
+
+        var best = ranked[0];
+        var matchStatus = best.MatchScore < 70m
+            ? "NONE"
+            : best.ProfileStatus switch
+            {
+                PartnerProfileStatuses.Approved => best.MatchScore >= 90m ? "APPROVED" : "SUGGESTED",
                 PartnerProfileStatuses.PendingApproval => "PENDING_APPROVAL",
                 _ => "SUGGESTED",
             };
@@ -130,11 +175,18 @@ public static class PartnerMatcher
         return new PartnerMatchDto
         {
             MatchStatus = matchStatus,
-            PartnerId = partner.PartnerId,
-            PartnerName = partner.Name,
-            ProfileStatus = partner.ProfileStatus,
-            Confidence = confidence,
-            Reason = reason,
+            PartnerId = best.PartnerId,
+            PartnerName = best.Name,
+            ProfileStatus = best.ProfileStatus,
+            Confidence = best.MatchScore,
+            Reason = best.MatchReason,
+            Candidates = ranked,
         };
     }
+
+    private static PartnerMatchDto None() => new()
+    {
+        MatchStatus = "NONE",
+        Reason = "No matching partner found",
+    };
 }

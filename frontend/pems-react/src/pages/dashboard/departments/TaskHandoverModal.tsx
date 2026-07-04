@@ -368,8 +368,7 @@ export function TaskHandoverModal({ isOpen, onClose, detailData, onSuccess, inli
           </div>
         </div>
       </div>
-    </>,
-    document.body
+    </>
   );
 
   if (inline) return content;

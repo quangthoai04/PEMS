@@ -15,8 +15,12 @@ public class Partner
     [Column("owner_campus_id")]
     public ulong OwnerCampusId { get; set; }
 
+    // Nullable in DB: partner_code is assigned on approval, so DRAFT / PENDING_APPROVAL
+    // partners (e.g. created from a meeting guest) legitimately have NULL here. Declaring
+    // this non-nullable made EF throw InvalidCastException (DBNull → String) while
+    // materialising any list/detail projection that included such a row.
     [Column("partner_code")]
-    public string PartnerCode { get; set; } = null!;
+    public string? PartnerCode { get; set; }
 
     [Column("name")]
     public string Name { get; set; } = null!;

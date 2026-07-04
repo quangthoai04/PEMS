@@ -163,6 +163,23 @@ export interface PartnerDocument {
   creatorName?: string | null;
 }
 
+export interface PartnerMatchCandidate {
+  partnerId: number;
+  name: string;
+  shortName?: string | null;
+  profileStatus: PartnerProfileStatus;
+  visibility: PartnerVisibility;
+  ownerCampusId: number;
+  ownerCampusName?: string | null;
+  country?: string | null;
+  city?: string | null;
+  /** 0–100 match score. */
+  matchScore: number;
+  matchReason?: string | null;
+  /** Whether the current user may link to this partner (campus scope). */
+  canLink: boolean;
+}
+
 export interface PartnerMatchResult {
   matchStatus: 'NONE' | 'SUGGESTED' | 'PENDING_APPROVAL' | 'APPROVED';
   partnerId?: number;
@@ -170,6 +187,8 @@ export interface PartnerMatchResult {
   profileStatus?: PartnerProfileStatus;
   confidence?: number;
   reason?: string;
+  /** Top scored candidates (best first); empty when nothing matched. */
+  candidates?: PartnerMatchCandidate[];
 }
 
 export interface VisitGuestPartnerLink {

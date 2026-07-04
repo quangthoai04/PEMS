@@ -713,6 +713,11 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
                                         guestMemberId={p.guestMemberId}
                                         link={findPartnerLink(p)}
                                         canManage={!isReadOnly}
+                                        prefillOrganization={p.organizationSnapshot}
+                                        prefillContactName={p.fullNameSnapshot}
+                                        prefillContactEmail={p.emailSnapshot}
+                                        prefillJobTitle={p.roleSnapshot}
+                                        sourceLabel={data?.minutesId ? `biên bản cuộc họp #${data.minutesId}` : 'biên bản cuộc họp'}
                                         onChanged={() => { void loadPartnerLinks(); }}
                                       />
                                     </td>

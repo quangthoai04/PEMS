@@ -111,13 +111,35 @@ public sealed class PartnerDocumentDto
 
 public sealed class PartnerMatchDto
 {
-    /// <summary>NONE | SUGGESTED | PENDING_APPROVAL | APPROVED</summary>
+    /// <summary>NONE | SUGGESTED | PENDING_APPROVAL | APPROVED (of the best candidate).</summary>
     public string MatchStatus { get; set; } = "NONE";
     public ulong? PartnerId { get; set; }
     public string? PartnerName { get; set; }
     public string? ProfileStatus { get; set; }
     public decimal? Confidence { get; set; }
     public string? Reason { get; set; }
+
+    /// <summary>Top scored candidates (best first). Empty when nothing matched.</summary>
+    public List<PartnerMatchCandidateDto> Candidates { get; set; } = new();
+}
+
+/// <summary>One partner suggested by the matcher, with the display fields the link picker needs.</summary>
+public sealed class PartnerMatchCandidateDto
+{
+    public ulong PartnerId { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string? ShortName { get; set; }
+    public string ProfileStatus { get; set; } = string.Empty;
+    public string Visibility { get; set; } = string.Empty;
+    public ulong OwnerCampusId { get; set; }
+    public string? OwnerCampusName { get; set; }
+    public string? Country { get; set; }
+    public string? City { get; set; }
+    /// <summary>0–100 match score (higher = stronger).</summary>
+    public decimal MatchScore { get; set; }
+    public string? MatchReason { get; set; }
+    /// <summary>Whether the CURRENT user is allowed to link a guest to this partner (campus scope).</summary>
+    public bool CanLink { get; set; }
 }
 
 public sealed class VisitGuestPartnerLinkDto

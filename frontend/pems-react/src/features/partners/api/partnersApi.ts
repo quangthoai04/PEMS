@@ -200,7 +200,9 @@ export const partnersApi = {
       partnerName?: string | null;
       partnerCode?: string | null;
       country?: string | null;
+      city?: string | null;
       websiteUrl?: string | null;
+      address?: string | null;
       description?: string | null;
       partnerType?: string | null;
       contactEmail?: string | null;
