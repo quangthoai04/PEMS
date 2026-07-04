@@ -139,6 +139,9 @@ export const API_ENDPOINTS = {
     // Album grid of a location (each public item by its primary media).
     locationGalleryItems: (locationId: string | number) =>
       `/public/visit-fptu/locations/${locationId}/gallery-items`,
+    // Location Showcase — the location's MEDIA items (column) + VISIT_DELEGATION items (row).
+    locationShowcase: (locationId: string | number) =>
+      `/public/visit-fptu/locations/${locationId}/showcase`,
     // Detail of one gallery item (all its media).
     galleryItemDetail: (galleryItemId: string | number) =>
       `/public/visit-fptu/gallery-items/${galleryItemId}`,

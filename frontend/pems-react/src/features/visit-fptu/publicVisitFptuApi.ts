@@ -4,6 +4,7 @@ import type {
   PublicCampus,
   PublicGalleryNavigation,
   PublicLocationGalleryGrid,
+  PublicLocationShowcase,
   PublicGalleryItemDetail,
 } from './publicVisitFptu.types';
 
@@ -29,6 +30,12 @@ export const publicVisitFptuApi = {
     const { data } = await httpClient.get(
       API_ENDPOINTS.publicVisitFptu.locationGalleryItems(locationId),
     );
+    return data;
+  },
+
+  /** Location Showcase — the location's MEDIA items (column) + VISIT_DELEGATION items (row). */
+  async getLocationShowcase(locationId: number): Promise<PublicLocationShowcase> {
+    const { data } = await httpClient.get(API_ENDPOINTS.publicVisitFptu.locationShowcase(locationId));
     return data;
   },
 

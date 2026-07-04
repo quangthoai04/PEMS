@@ -14,6 +14,9 @@ export interface PublicGalleryLocation {
   locationId: number;
   locationName: string;
   displayOrder: number;
+  /** Location cover image (gallery_locations.cover_file_id) — the Area Showcase thumbnail rail. */
+  locationCoverFileId?: number | null;
+  locationCoverUrl?: string | null;
   /** Lead item shown as the location's nav thumbnail (a location may hold many items). */
   galleryItemId: number;
   title: string;
@@ -27,6 +30,9 @@ export interface PublicGalleryArea {
   areaId: number;
   areaName: string;
   displayOrder: number;
+  /** Area cover image (gallery_areas.cover_file_id) — the Area Showcase fullscreen background. */
+  areaCoverFileId?: number | null;
+  areaCoverUrl?: string | null;
   locations: PublicGalleryLocation[];
 }
 
@@ -71,6 +77,25 @@ export interface PublicLocationGalleryGrid {
   area: { areaId: number; areaName: string };
   location: { locationId: number; locationName: string };
   items: PublicGalleryGridItem[];
+}
+
+// ── Location Showcase: MEDIA column + VISIT_DELEGATION row ──
+/** One gallery item shown by its primary media (used for both the MEDIA column and the delegation row). */
+export interface PublicGalleryShowcaseItem {
+  galleryItemId: number;
+  title: string;
+  itemType: 'MEDIA' | 'VISIT_DELEGATION' | string;
+  mediaKind: string;
+  primaryMedia: PublicGalleryMedia | null;
+}
+
+/** The Location Showcase payload: the location's MEDIA items (column) + VISIT_DELEGATION items (row). */
+export interface PublicLocationShowcase {
+  campus: { campusId: number; campusCode: string; campusName: string; city?: string | null };
+  area: { areaId: number; areaName: string };
+  location: { locationId: number; locationName: string };
+  mediaItems: PublicGalleryShowcaseItem[];
+  visitDelegationItems: PublicGalleryShowcaseItem[];
 }
 
 // ── Tier 2: Gallery item detail ──

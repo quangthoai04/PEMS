@@ -35,6 +35,9 @@ public sealed class PublicGalleryAreaDto
     public ulong AreaId { get; init; }
     public string AreaName { get; init; } = string.Empty;
     public int DisplayOrder { get; init; }
+    /// <summary>Area cover image (gallery_areas.cover_file_id) — the Area Showcase fullscreen background.</summary>
+    public ulong? AreaCoverFileId { get; init; }
+    public string? AreaCoverUrl { get; init; }
     public IReadOnlyList<PublicGalleryLocationDto> Locations { get; init; } = Array.Empty<PublicGalleryLocationDto>();
 }
 
@@ -43,6 +46,9 @@ public sealed class PublicGalleryLocationDto
     public ulong LocationId { get; init; }
     public string LocationName { get; init; } = string.Empty;
     public int DisplayOrder { get; init; }
+    /// <summary>Location cover image (gallery_locations.cover_file_id) — the Area Showcase thumbnail rail.</summary>
+    public ulong? LocationCoverFileId { get; init; }
+    public string? LocationCoverUrl { get; init; }
     /// <summary>The lead item shown as the location's nav thumbnail (a location may hold many items).</summary>
     public ulong GalleryItemId { get; init; }
     public string Title { get; init; } = string.Empty;
@@ -74,6 +80,35 @@ public sealed class PublicGalleryGridItemDto
     public string DescriptionPreview { get; init; } = string.Empty;
     public string MediaKind { get; init; } = string.Empty;
     public PublicGalleryMediaDto? PrimaryMedia { get; init; }
+}
+
+// ── Location showcase (MEDIA column + VISIT_DELEGATION row) ──────────────────
+
+/// <summary>
+/// One gallery item shown by its primary media in the Location Showcase — used for both the right-hand
+/// MEDIA column and the "Đoàn khách đã tới thăm" row. <see cref="ItemType"/> is MEDIA or VISIT_DELEGATION.
+/// </summary>
+public sealed class PublicGalleryShowcaseItemDto
+{
+    public ulong GalleryItemId { get; init; }
+    public string Title { get; init; } = string.Empty;
+    public string ItemType { get; init; } = string.Empty;
+    public string MediaKind { get; init; } = string.Empty;
+    public PublicGalleryMediaDto? PrimaryMedia { get; init; }
+}
+
+/// <summary>
+/// The Location Showcase payload: the location's own MEDIA gallery items (right column) and its
+/// VISIT_DELEGATION gallery items (bottom-left row), each by its primary media. Campus/area/location
+/// echoed for headers. Empty lists are valid (the UI just hides that section). Anonymous / read-only.
+/// </summary>
+public sealed class PublicLocationShowcaseDto
+{
+    public PublicCampusDto Campus { get; init; } = new();
+    public PublicGalleryAreaSummaryDto Area { get; init; } = new();
+    public PublicGalleryLocationSummaryDto Location { get; init; } = new();
+    public IReadOnlyList<PublicGalleryShowcaseItemDto> MediaItems { get; init; } = Array.Empty<PublicGalleryShowcaseItemDto>();
+    public IReadOnlyList<PublicGalleryShowcaseItemDto> VisitDelegationItems { get; init; } = Array.Empty<PublicGalleryShowcaseItemDto>();
 }
 
 // ── Gallery item detail (UC §7.3 / BR-PGAL-GRID-07) ──────────────────────────
