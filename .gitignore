@@ -56,6 +56,10 @@ appsettings.Local.json
 ## Thư mục sinh ra bởi công cụ kiểm thử (Test Results)
 [Tt]est[Rr]esult*/
 
+## File upload runtime (mọi file/ảnh nghiệp vụ phải lưu qua Google Drive, không commit local uploads)
+App_Data/uploads/
+**/App_Data/uploads/
+
 ## Thư mục lưu cache hệ thống của các thư viện Frontend
 .eslintcache
 .stylelintcache

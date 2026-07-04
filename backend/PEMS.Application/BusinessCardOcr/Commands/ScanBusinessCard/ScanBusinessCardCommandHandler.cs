@@ -12,11 +12,11 @@ using PEMS.Application.ApiIntegrations.Common;
 using PEMS.Application.BusinessCardOcr.Common;
 using PEMS.Application.BusinessCardOcr.Services;
 using PEMS.Application.Common.Exceptions;
+using PEMS.Application.Common.Files;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Partners.Common;
 using PEMS.Application.Partners.VisitLinks.Common;
 using PEMS.Domain.Entities.ApiIntegrations;
-using PEMS.Domain.Entities.Documents;
 
 namespace PEMS.Application.BusinessCardOcr.Commands.ScanBusinessCard;
 
@@ -26,7 +26,7 @@ public sealed class ScanBusinessCardCommandHandler
     private readonly IApplicationDbContext _db;
     private readonly ICurrentUserService _currentUser;
     private readonly IDateTimeService _clock;
-    private readonly IFileStorageService _storage;
+    private readonly IFileUploadService _fileUpload;
     private readonly IBusinessCardOcrProvider _provider;
     private readonly IOcrCredentialResolver _credentialResolver;
     private readonly IBusinessCardOcrThrottle _throttle;
@@ -36,7 +36,7 @@ public sealed class ScanBusinessCardCommandHandler
         IApplicationDbContext db,
         ICurrentUserService currentUser,
         IDateTimeService clock,
-        IFileStorageService storage,
+        IFileUploadService fileUpload,
         IBusinessCardOcrProvider provider,
         IOcrCredentialResolver credentialResolver,
         IBusinessCardOcrThrottle throttle,
@@ -45,7 +45,7 @@ public sealed class ScanBusinessCardCommandHandler
         _db = db;
         _currentUser = currentUser;
         _clock = clock;
-        _storage = storage;
+        _fileUpload = fileUpload;
         _provider = provider;
         _credentialResolver = credentialResolver;
         _throttle = throttle;
@@ -149,34 +149,21 @@ public sealed class ScanBusinessCardCommandHandler
             return ToDto(duplicate);
         }
 
-        // 10) Persist the card file (metadata row in files + bytes on storage).
+        // 10) Persist the card file to Google Drive (metadata row in files via the shared upload service).
         var fileName = string.IsNullOrWhiteSpace(request.FileName)
             ? "business-card"
             : Path.GetFileName(request.FileName.Trim());
-        StoredFileInfo stored;
+        UploadedFileDto uploadedFile;
         await using (var ms = new MemoryStream(request.FileBytes, writable: false))
-            stored = await _storage.SaveAsync(ms, fileName, mime, "BUSINESS_CARD", cancellationToken);
-
-        var file = new UploadedFile
         {
-            StorageProvider = stored.StorageProvider,
-            BucketName = stored.BucketName,
-            ObjectKey = stored.ObjectKey,
-            OriginalFilename = fileName,
-            MimeType = mime,
-            FileSize = stored.FileSize,
-            ChecksumSha256 = sha256,
-            UploadedBy = userId,
-            UploadedAt = now,
-            FilePurpose = "BUSINESS_CARD",
-        };
-        _db.Files.Add(file);
-        await _db.SaveChangesAsync(cancellationToken);
+            uploadedFile = await _fileUpload.UploadBusinessFileAsync(
+                ms, fileName, mime, request.FileBytes.Length, FilePurpose.BusinessCard, (long)userId, cancellationToken);
+        }
 
         // 11) OCR job row (PROCESSING).
         var job = new BusinessCardOcrJob
         {
-            ScannedCardFileId = file.FileId,
+            ScannedCardFileId = (ulong)uploadedFile.FileId,
             ApiConfigId = config.ApiConfigId,
             Status = BusinessCardOcrJob.StatusProcessing,
             ProviderName = BusinessCardOcrConstants.ProviderName,
