@@ -20,6 +20,8 @@ public sealed class ViewNewsDetailsDto
     public DateTime? PublishedAt { get; init; }
     public int RowVersion { get; init; }
     public string LanguageCode { get; init; } = "vi";
+    /// <summary>All languages this post has a translation for (vi first).</summary>
+    public IReadOnlyList<string> AvailableLanguages { get; init; } = Array.Empty<string>();
     public string Title { get; init; } = string.Empty;
     public string? Summary { get; init; }
     public string? Slug { get; init; }
@@ -67,4 +69,6 @@ public sealed class NewsDetailAvailableActionsDto
     public bool CanReject { get; init; }
     public bool CanHide { get; init; }
     public bool CanShow { get; init; }
+    /// <summary>May add translations (author while editable, Staff Leader of the campus anytime).</summary>
+    public bool CanTranslate { get; init; }
 }

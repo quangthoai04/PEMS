@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, User, Clock, CheckCircle, XCircle, EyeOff, Eye, ArrowLeft } from 'lucide-react';
+import { Calendar, User, Clock, CheckCircle, XCircle, EyeOff, Eye, ArrowLeft, Edit2, Globe, Languages, X } from 'lucide-react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import toast, { Toaster } from 'react-hot-toast';
+import toast from 'react-hot-toast';
 import { sanitizeHtml } from '../../../shared/security/sanitizeHtml';
 import httpClient from '../../../shared/api/httpClient';
 import { useAuthenticatedImage } from '../../../shared/hooks/useAuthenticatedImage';
@@ -45,6 +45,7 @@ interface AvailableActions {
   canReject: boolean;
   canHide: boolean;
   canShow: boolean;
+  canTranslate: boolean;
 }
 
 interface NewsDetail {
@@ -66,6 +67,7 @@ interface NewsDetail {
   publishedAt?: string;
   rowVersion: number;
   languageCode: string;
+  availableLanguages: string[];
   title: string;
   summary?: string;
   slug?: string;
@@ -73,6 +75,16 @@ interface NewsDetail {
   sections: Section[];
   availableActions: AvailableActions;
 }
+
+const LANGUAGE_LABELS: Record<string, string> = {
+  vi: 'Tiếng Việt',
+  en: 'English',
+  ja: '日本語',
+  ko: '한국어',
+  'zh-CN': '中文',
+};
+
+const ALL_LANGUAGES = ['vi', 'en', 'ja', 'ko', 'zh-CN'];
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -173,6 +185,216 @@ function RejectPopup({ onConfirm, onCancel, loading }: { onConfirm: (reason: str
   );
 }
 
+// ─── Popup: Dịch bài viết (auto-translate + chỉnh tay trước khi lưu) ─────────
+
+interface TranslateDraftSection {
+  sectionOrder: number;
+  sectionTitle: string;
+  sectionBodyHtml: string;
+}
+
+function TranslateModal({ news, onClose, onSaved }: {
+  news: NewsDetail;
+  onClose: () => void;
+  onSaved: (languageCode: string) => void;
+}) {
+  const existing = news.availableLanguages ?? [news.languageCode];
+  const targetOptions = ALL_LANGUAGES.filter(l => !existing.includes(l));
+
+  const [sourceLang] = useState(news.languageCode);
+  const [targetLang, setTargetLang] = useState(targetOptions[0] ?? '');
+  const [translating, setTranslating] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  // Prefill bằng nội dung nguồn để người dùng có thể dịch tay khi chưa cấu hình API dịch.
+  const [draftTitle, setDraftTitle] = useState(news.title);
+  const [draftSummary, setDraftSummary] = useState(news.summary ?? '');
+  const [draftSections, setDraftSections] = useState<TranslateDraftSection[]>(
+    news.sections.map(s => ({
+      sectionOrder: s.sectionOrder,
+      sectionTitle: s.sectionTitle,
+      sectionBodyHtml: s.sectionBodyHtml,
+    })),
+  );
+
+  async function handleAutoTranslate() {
+    if (!targetLang) return;
+    setTranslating(true);
+    const toastId = toast.loading('Đang dịch bài viết...');
+    try {
+      const { data } = await httpClient.post(`/news/${news.newsId}/translations/auto-translate`, {
+        sourceLanguage: sourceLang,
+        targetLanguage: targetLang,
+        save: false,
+      });
+      setDraftTitle(data.title ?? '');
+      setDraftSummary(data.summary ?? '');
+      setDraftSections((data.sections ?? []).map((s: TranslateDraftSection) => ({
+        sectionOrder: s.sectionOrder,
+        sectionTitle: s.sectionTitle,
+        sectionBodyHtml: s.sectionBodyHtml,
+      })));
+      toast.success('Đã dịch xong. Kiểm tra lại nội dung trước khi lưu.', { id: toastId });
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      toast.error(msg ?? 'Không thể dịch bài viết. Kiểm tra cấu hình API dịch.', { id: toastId });
+    } finally {
+      setTranslating(false);
+    }
+  }
+
+  async function handleSave() {
+    if (!targetLang) return;
+    if (!draftTitle.trim()) { toast.error('Tiêu đề bản dịch không được để trống.'); return; }
+    setSaving(true);
+    const toastId = toast.loading('Đang lưu bản dịch...');
+    try {
+      await httpClient.post('/news/addmultilingualnews', {
+        newsId: news.newsId,
+        languageCode: targetLang,
+        title: draftTitle.trim(),
+        summary: draftSummary.trim(),
+        sections: draftSections.map(s => ({
+          sectionOrder: s.sectionOrder,
+          sectionTitle: s.sectionTitle,
+          sectionBodyHtml: s.sectionBodyHtml,
+        })),
+        copySectionFilesFromLanguage: sourceLang,
+      });
+      toast.success('Dịch bài viết thành công.', { id: toastId });
+      onSaved(targetLang);
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      toast.error(msg ?? 'Không thể lưu bản dịch.', { id: toastId });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4 py-8">
+      <motion.div
+        initial={{ scale: 0.95, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        className="bg-white rounded-2xl shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col"
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+          <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+            <Languages className="w-5 h-5 text-[#004c91]" /> Dịch bài viết
+          </h3>
+          <button onClick={onClose} className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="p-6 overflow-y-auto flex-1 space-y-5">
+          {targetOptions.length === 0 ? (
+            <p className="text-gray-500 text-sm">Bài viết đã có đủ bản dịch cho tất cả ngôn ngữ được hỗ trợ.</p>
+          ) : (
+            <>
+              <div className="flex flex-wrap items-end gap-4">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1.5">Ngôn ngữ nguồn</label>
+                  <div className="px-3 py-2 border border-gray-200 rounded-xl bg-gray-50 text-sm font-medium text-gray-600">
+                    {LANGUAGE_LABELS[sourceLang] ?? sourceLang}
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                    Ngôn ngữ đích <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    value={targetLang}
+                    onChange={e => setTargetLang(e.target.value)}
+                    className="px-3 py-2 border border-gray-300 rounded-xl text-sm focus:outline-none focus:border-[#004c91] bg-white"
+                  >
+                    {targetOptions.map(l => (
+                      <option key={l} value={l}>{LANGUAGE_LABELS[l] ?? l}</option>
+                    ))}
+                  </select>
+                </div>
+                <button
+                  onClick={handleAutoTranslate}
+                  disabled={translating || saving || !targetLang}
+                  className="flex items-center gap-2 px-4 py-2 bg-[#004c91] text-white text-sm font-bold rounded-xl hover:bg-[#003a70] transition-colors disabled:opacity-50"
+                >
+                  {translating && <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />}
+                  Dịch tự động
+                </button>
+              </div>
+
+              <p className="text-xs text-gray-400">
+                Có thể bấm “Dịch tự động” (Google Cloud Translation) hoặc tự chỉnh nội dung bên dưới rồi lưu.
+                Ảnh của bài viết được giữ nguyên cho bản dịch.
+              </p>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Tiêu đề</label>
+                <input
+                  type="text"
+                  value={draftTitle}
+                  onChange={e => setDraftTitle(e.target.value)}
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:border-[#004c91]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Mô tả ngắn</label>
+                <textarea
+                  rows={2}
+                  value={draftSummary}
+                  onChange={e => setDraftSummary(e.target.value)}
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm resize-none focus:outline-none focus:border-[#004c91]"
+                />
+              </div>
+
+              {draftSections.map((s, i) => (
+                <div key={s.sectionOrder} className="border border-gray-200 rounded-xl p-4 space-y-3">
+                  <label className="block text-xs font-bold text-gray-500 uppercase">Mục {i + 1}</label>
+                  <input
+                    type="text"
+                    value={s.sectionTitle}
+                    onChange={e => setDraftSections(prev => prev.map((p, pi) => pi === i ? { ...p, sectionTitle: e.target.value } : p))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#004c91]"
+                    placeholder="Tiêu đề mục..."
+                  />
+                  <div
+                    className="text-sm text-gray-600 border border-gray-100 bg-gray-50 rounded-lg p-3 max-h-40 overflow-y-auto"
+                    dangerouslySetInnerHTML={{ __html: sanitizeHtml(s.sectionBodyHtml) }}
+                  />
+                </div>
+              ))}
+            </>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex justify-end gap-3 px-6 py-4 border-t border-gray-100">
+          <button
+            onClick={onClose}
+            disabled={saving || translating}
+            className="px-5 py-2.5 border border-gray-300 text-gray-600 font-semibold rounded-xl hover:bg-gray-50 transition-colors text-sm"
+          >
+            Hủy
+          </button>
+          {targetOptions.length > 0 && (
+            <button
+              onClick={handleSave}
+              disabled={saving || translating || !targetLang}
+              className="flex items-center gap-2 px-5 py-2.5 bg-[#f37021] text-white font-bold rounded-xl hover:bg-[#d9621a] transition-colors text-sm disabled:opacity-50"
+            >
+              {saving && <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />}
+              Lưu bản dịch
+            </button>
+          )}
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
 // ─── Authenticated image wrapper ─────────────────────────────────────────────
 
 function AuthenticatedImage({ url, alt, className, style }: {
@@ -204,9 +426,11 @@ export function NewsDetailDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [showApprovePopup, setShowApprovePopup] = useState(false);
-  const [showRejectPopup, setShowRejectPopup]   = useState(false);
-  const [actionLoading, setActionLoading]        = useState(false);
+  const [showApprovePopup, setShowApprovePopup]   = useState(false);
+  const [showRejectPopup, setShowRejectPopup]     = useState(false);
+  const [showTranslateModal, setShowTranslateModal] = useState(false);
+  const [actionLoading, setActionLoading]          = useState(false);
+  const [selectedLang, setSelectedLang]            = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -216,7 +440,9 @@ export function NewsDetailDashboard() {
       setLoading(true);
       setError(null);
       try {
-        const { data } = await httpClient.get<NewsDetail>(`/news/${id}`);
+        const { data } = await httpClient.get<NewsDetail>(`/news/${id}`, {
+          params: selectedLang ? { languageCode: selectedLang } : undefined,
+        });
         if (!cancelled) setNews(data);
       } catch (err: unknown) {
         if (!cancelled) {
@@ -230,7 +456,7 @@ export function NewsDetailDashboard() {
 
     fetchDetail();
     return () => { cancelled = true; };
-  }, [id]);
+  }, [id, selectedLang]);
 
   async function handleReview(action: 'APPROVE' | 'REJECT', reason?: string) {
     if (!news) return;
@@ -296,8 +522,6 @@ export function NewsDetailDashboard() {
 
   return (
     <>
-      <Toaster position="top-right" />
-
       <AnimatePresence>
         {showApprovePopup && (
           <ApprovePopup
@@ -311,6 +535,16 @@ export function NewsDetailDashboard() {
             onConfirm={reason => handleReview('REJECT', reason)}
             onCancel={() => setShowRejectPopup(false)}
             loading={actionLoading}
+          />
+        )}
+        {showTranslateModal && news && (
+          <TranslateModal
+            news={news}
+            onClose={() => setShowTranslateModal(false)}
+            onSaved={lang => {
+              setShowTranslateModal(false);
+              setSelectedLang(lang); // chuyển sang xem bản dịch vừa tạo
+            }}
           />
         )}
       </AnimatePresence>
@@ -334,8 +568,24 @@ export function NewsDetailDashboard() {
         <div className="mb-6 flex items-center justify-between flex-wrap gap-3">
           <h1 className="text-3xl font-bold text-[#004c91]">Xem chi tiết</h1>
 
-          {/* Action buttons for Staff Leader */}
+          {/* Action buttons */}
           <div className="flex gap-2 flex-wrap">
+            {actions.canEdit && (
+              <button
+                onClick={() => navigate(`/dashboard/news/${news.newsId}/edit${news.languageCode !== 'vi' ? `?lang=${news.languageCode}` : ''}`)}
+                className="flex items-center gap-2 bg-white border border-[#004c91] text-[#004c91] font-semibold px-4 py-2 rounded-xl hover:bg-[#eef5fa] transition-colors text-sm"
+              >
+                <Edit2 className="w-4 h-4" /> Chỉnh sửa
+              </button>
+            )}
+            {actions.canTranslate && (
+              <button
+                onClick={() => setShowTranslateModal(true)}
+                className="flex items-center gap-2 bg-white border border-[#004c91] text-[#004c91] font-semibold px-4 py-2 rounded-xl hover:bg-[#eef5fa] transition-colors text-sm"
+              >
+                <Languages className="w-4 h-4" /> Dịch bài viết
+              </button>
+            )}
             {actions.canApprove && (
               <button
                 onClick={() => setShowApprovePopup(true)}
@@ -396,6 +646,24 @@ export function NewsDetailDashboard() {
               </div>
             )}
             <StatusBadge status={news.status} label={news.statusLabel} />
+            {news.availableLanguages && news.availableLanguages.length > 1 && (
+              <div className="flex items-center gap-1.5">
+                <Globe className="w-4 h-4 text-gray-400" />
+                {news.availableLanguages.map(code => (
+                  <button
+                    key={code}
+                    onClick={() => setSelectedLang(code === 'vi' ? null : code)}
+                    className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold border transition-colors ${
+                      code === news.languageCode
+                        ? 'bg-[#004c91] text-white border-[#004c91]'
+                        : 'bg-white text-gray-600 border-gray-300 hover:border-[#004c91] hover:text-[#004c91]'
+                    }`}
+                  >
+                    {LANGUAGE_LABELS[code] ?? code}
+                  </button>
+                ))}
+              </div>
+            )}
             {news.updatedAt && !isStaffLeader && news.updatedAt !== news.reviewedAt && (
               <>
                 <span className="text-gray-300">|</span>

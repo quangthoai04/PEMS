@@ -4,7 +4,7 @@ import { motion } from 'motion/react';
 import ReactQuill from 'react-quill-new';
 import 'react-quill-new/dist/quill.snow.css';
 import { UploadCloud, Plus, Trash2, ArrowLeft, ImagePlus, X, Calendar, MapPin, CheckCircle2 } from 'lucide-react';
-import toast, { Toaster } from 'react-hot-toast';
+import toast from 'react-hot-toast';
 import httpClient from '../../../shared/api/httpClient';
 import { uploadFileToEndpoint } from '../../../shared/api/fileUploadApi';
 import { validateFile } from '../../../shared/utils/fileValidation';
@@ -23,12 +23,18 @@ interface EligibleVisit {
   canSelect: boolean;
 }
 
+interface SectionImage {
+  fileId: number | null;   // set after the Drive upload succeeds
+  previewUrl: string;      // local object URL for instant preview
+  uploading: boolean;
+}
+
 interface ContentSection {
   id: number;
   sectionOrder: number;
   sectionTitle: string;
   sectionBodyHtml: string;
-  sectionImageSrc: string | null;
+  sectionImage: SectionImage | null;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -73,7 +79,7 @@ export function CreateNews() {
 
   // Step 3: Content sections
   const [sections, setSections] = useState<ContentSection[]>([
-    { id: 1, sectionOrder: 1, sectionTitle: '', sectionBodyHtml: '', sectionImageSrc: null },
+    { id: 1, sectionOrder: 1, sectionTitle: '', sectionBodyHtml: '', sectionImage: null },
   ]);
   const [sectionToDelete, setSectionToDelete] = useState<number | null>(null);
 
@@ -140,9 +146,9 @@ export function CreateNews() {
     }
   };
 
-  // ── Section image ──────────────────────────────────────────────────────────
+  // ── Section image — upload lên Google Drive ngay khi chọn (không lưu base64) ──
 
-  function handleSectionImagePick(index: number, e: React.ChangeEvent<HTMLInputElement>) {
+  async function handleSectionImagePick(index: number, e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
     e.target.value = '';
@@ -150,22 +156,31 @@ export function CreateNews() {
     const v = validateFile(file, 'NEWS_IMAGE');
     if (!v.ok) { toast.error(v.message ?? 'File không hợp lệ.'); return; }
 
-    const reader = new FileReader();
-    reader.onload = ev => {
-      const base64 = ev.target?.result as string;
-      setSections(prev => {
-        const next = [...prev];
-        next[index] = { ...next[index], sectionImageSrc: base64 };
-        return next;
-      });
-    };
-    reader.readAsDataURL(file);
+    const sectionId = sections[index]?.id;
+    const previewUrl = URL.createObjectURL(file);
+    setSections(prev => prev.map(s =>
+      s.id === sectionId ? { ...s, sectionImage: { fileId: null, previewUrl, uploading: true } } : s
+    ));
+
+    try {
+      const uploaded = await uploadFileToEndpoint('/news/section-file-upload', 'file', file);
+      setSections(prev => prev.map(s =>
+        s.id === sectionId && s.sectionImage
+          ? { ...s, sectionImage: { ...s.sectionImage, fileId: uploaded.fileId, uploading: false } }
+          : s
+      ));
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message ?? 'Không thể tải ảnh nội dung lên.');
+      setSections(prev => prev.map(s =>
+        s.id === sectionId ? { ...s, sectionImage: null } : s
+      ));
+    }
   }
 
   function removeSectionImage(index: number) {
     setSections(prev => {
       const next = [...prev];
-      next[index] = { ...next[index], sectionImageSrc: null };
+      next[index] = { ...next[index], sectionImage: null };
       return next;
     });
   }
@@ -176,7 +191,7 @@ export function CreateNews() {
     if (sections.length >= 10) return;
     setSections(prev => [
       ...prev,
-      { id: Date.now(), sectionOrder: prev.length + 1, sectionTitle: '', sectionBodyHtml: '', sectionImageSrc: null },
+      { id: Date.now(), sectionOrder: prev.length + 1, sectionTitle: '', sectionBodyHtml: '', sectionImage: null },
     ]);
   };
 
@@ -219,6 +234,15 @@ export function CreateNews() {
       toast.error('Ảnh bìa chưa được tải lên thành công. Vui lòng chọn lại ảnh trước khi lưu.');
       return;
     }
+    if (sections.some(s => s.sectionImage?.uploading)) {
+      toast.error('Ảnh nội dung đang được tải lên, vui lòng chờ.');
+      return;
+    }
+    const brokenImage = sections.find(s => s.sectionImage && s.sectionImage.fileId === null);
+    if (brokenImage) {
+      toast.error(`Ảnh của mục ${brokenImage.sectionOrder} chưa tải lên thành công. Vui lòng chọn lại ảnh.`);
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -227,17 +251,14 @@ export function CreateNews() {
         coverFileId,
         title: title.trim(),
         summary: summary.trim(),
-        contentSections: sections.map(s => {
-          const imgHtml = s.sectionImageSrc
-            ? `<p style="text-align:center"><img src="${s.sectionImageSrc}" style="max-width:100%;height:auto;border-radius:0.5rem;display:block;margin:0 auto;"></p>`
-            : '';
-          return {
-            sectionOrder:    s.sectionOrder,
-            sectionTitle:    s.sectionTitle.trim(),
-            sectionBodyHtml: s.sectionBodyHtml + imgHtml,
-            sectionFiles:    [],
-          };
-        }),
+        contentSections: sections.map(s => ({
+          sectionOrder:    s.sectionOrder,
+          sectionTitle:    s.sectionTitle.trim(),
+          sectionBodyHtml: s.sectionBodyHtml,
+          sectionFiles:    s.sectionImage?.fileId
+            ? [{ fileId: s.sectionImage.fileId, usageType: 'INLINE_IMAGE', displayOrder: 1 }]
+            : [],
+        })),
       };
 
       const { data } = await httpClient.post<{ success: boolean; message: string }>('/news', payload);
@@ -267,8 +288,6 @@ export function CreateNews() {
       transition={{ duration: 0.3 }}
       className="p-4 sm:p-6 md:p-8 pb-12 max-w-5xl mx-auto"
     >
-      <Toaster position="top-right" />
-
       {/* Breadcrumb */}
       <div className="mb-6 flex items-center text-sm font-medium text-gray-500">
         <button onClick={() => navigate('/dashboard')} className="hover:text-[#004c91] transition-colors">Dashboard</button>
@@ -514,13 +533,21 @@ export function CreateNews() {
                   <div>
                     <label className="block text-gray-900 font-bold mb-2">Hình ảnh</label>
 
-                    {section.sectionImageSrc ? (
+                    {section.sectionImage ? (
                       <div className="relative rounded-xl overflow-hidden border border-gray-200 bg-gray-50">
                         <img
-                          src={section.sectionImageSrc}
+                          src={section.sectionImage.previewUrl}
                           alt={`Ảnh mục ${index + 1}`}
                           className="w-full h-auto object-contain rounded-lg"
                         />
+                        {section.sectionImage.uploading && (
+                          <div className="absolute inset-0 flex items-center justify-center bg-black/30 rounded-lg">
+                            <div className="flex items-center gap-2 text-white font-bold text-sm">
+                              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                              Đang tải lên...
+                            </div>
+                          </div>
+                        )}
                         <button
                           type="button"
                           onClick={() => removeSectionImage(index)}

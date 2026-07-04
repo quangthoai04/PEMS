@@ -62,6 +62,31 @@ namespace PEMS.Api.Controllers
             return Ok(result);
         }
 
+        // Upload one section (inline) image: POST /api/news/section-file-upload
+        // Same pipeline as cover-upload (Google Drive + files metadata); returns fileId
+        // to reference from contentSections[].sectionFiles.
+        [HttpPost("section-file-upload")]
+        [RoleAuthorize(EffectiveRole.Staff, EffectiveRole.Student)]
+        [RequestSizeLimit(6 * 1024 * 1024)]
+        [Consumes("multipart/form-data")]
+        public async Task<IActionResult> UploadNewsSectionImage(
+            IFormFile file,
+            CancellationToken cancellationToken)
+        {
+            if (file is null || file.Length == 0)
+                return BadRequest(new { message = "Tệp tải lên rỗng hoặc không hợp lệ." });
+
+            using var ms = new MemoryStream();
+            await file.CopyToAsync(ms, cancellationToken);
+
+            var result = await _mediator.Send(
+                new PEMS.Application.News.Commands.UploadNewsCoverImage.UploadNewsCoverImageCommand(
+                    ms.ToArray(), file.FileName, file.ContentType),
+                cancellationToken);
+
+            return Ok(result);
+        }
+
         // UC-88: View News List
         [HttpGet]
         [RoleAuthorize(EffectiveRole.Ho, EffectiveRole.StaffLeader, EffectiveRole.Staff, EffectiveRole.Student)]
@@ -101,13 +126,16 @@ namespace PEMS.Api.Controllers
             return StatusCode(201, result);
         }
 
-        // UC View News Details: GET /api/news/{newsId}
+        // UC View News Details: GET /api/news/{newsId}?languageCode=en
         [HttpGet("{newsId}")]
         [RoleAuthorize(EffectiveRole.Ho, EffectiveRole.StaffLeader, EffectiveRole.Staff, EffectiveRole.Student)]
-        public async Task<IActionResult> GetNewsDetails(ulong newsId, CancellationToken cancellationToken)
+        public async Task<IActionResult> GetNewsDetails(
+            ulong newsId,
+            [FromQuery] string? languageCode,
+            CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(
-                new PEMS.Application.News.Queries.ViewNewsDetails.ViewNewsDetailsQuery(newsId),
+                new PEMS.Application.News.Queries.ViewNewsDetails.ViewNewsDetailsQuery(newsId, languageCode),
                 cancellationToken);
             return Ok(result);
         }
@@ -163,12 +191,33 @@ namespace PEMS.Api.Controllers
 
         // [HttpGet("viewnewsdetails")] removed — replaced by GET /api/news/{newsId}
 
+        // UC Add Multilingual News: create a manual translation (or persist an auto-translated draft)
         [HttpPost("addmultilingualnews")]
+        [RoleAuthorize(EffectiveRole.StaffLeader, EffectiveRole.Staff, EffectiveRole.Student)]
         public async Task<IActionResult> AddMultilingualNews(
             [FromBody] PEMS.Application.News.Commands.AddMultilingualNews.AddMultilingualNewsCommand command,
             CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(command, cancellationToken);
+            return Ok(result);
+        }
+
+        // UC Auto Translate News: POST /api/news/{newsId}/translations/auto-translate
+        // save=false → preview only; save=true → persist as a new translation.
+        [HttpPost("{newsId}/translations/auto-translate")]
+        [RoleAuthorize(EffectiveRole.StaffLeader, EffectiveRole.Staff, EffectiveRole.Student)]
+        public async Task<IActionResult> AutoTranslateNews(
+            ulong newsId,
+            [FromBody] AutoTranslateNewsBody body,
+            CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(new PEMS.Application.News.Commands.TranslateNews.TranslateNewsCommand
+            {
+                NewsId         = newsId,
+                SourceLanguage = body.SourceLanguage ?? "vi",
+                TargetLanguage = body.TargetLanguage,
+                Save           = body.Save
+            }, cancellationToken);
             return Ok(result);
         }
 
@@ -196,6 +245,7 @@ namespace PEMS.Api.Controllers
                 CoverFileId     = body.CoverFileId,
                 Title           = body.Title ?? string.Empty,
                 Summary         = body.Summary,
+                LanguageCode    = string.IsNullOrWhiteSpace(body.LanguageCode) ? "vi" : body.LanguageCode!,
                 ContentSections = body.ContentSections
                     ?? Array.Empty<PEMS.Application.News.Commands.EditNews.EditNewsContentSectionDto>()
             };
@@ -208,11 +258,13 @@ namespace PEMS.Api.Controllers
     public sealed record CreateVisitInstanceNewsBody(string Title, string? Summary, string? Body);
     public sealed record UpdateVisitInstanceNewsBody(string Title, string? Summary, string? Body, int RowVersion);
     public sealed record ReviewNewsBody(string Action, string? Reason, int RowVersion);
+    public sealed record AutoTranslateNewsBody(string? SourceLanguage, string TargetLanguage, bool Save);
     public sealed record ChangeVisibilityBody(string TargetStatus, int RowVersion);
     public sealed record EditNewsBody(
         int    RowVersion,
         ulong? CoverFileId,
         string? Title,
         string? Summary,
+        string? LanguageCode,
         IReadOnlyList<PEMS.Application.News.Commands.EditNews.EditNewsContentSectionDto>? ContentSections);
 }

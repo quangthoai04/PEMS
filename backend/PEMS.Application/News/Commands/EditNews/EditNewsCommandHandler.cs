@@ -69,6 +69,27 @@ public sealed class EditNewsCommandHandler
                 throw new NotFoundException("File ảnh bìa", request.CoverFileId.Value);
         }
 
+        // Validate all referenced section file ids exist
+        var allSectionFileIds = request.ContentSections
+            .Where(s => s.SectionFiles != null)
+            .SelectMany(s => s.SectionFiles!)
+            .Select(f => f.FileId)
+            .Distinct()
+            .ToList();
+
+        if (allSectionFileIds.Count > 0)
+        {
+            var existingFileIds = await _dbContext.Files
+                .AsNoTracking()
+                .Where(f => allSectionFileIds.Contains(f.FileId))
+                .Select(f => f.FileId)
+                .ToListAsync(cancellationToken);
+
+            var missingFileId = allSectionFileIds.FirstOrDefault(id => !existingFileIds.Contains(id));
+            if (missingFileId != default)
+                throw new NotFoundException("File đính kèm", missingFileId);
+        }
+
         // Sanitize
         var sanitizedTitle   = _sanitizer.Sanitize(request.Title.Trim());
         var sanitizedSummary = _sanitizer.Sanitize((request.Summary ?? string.Empty).Trim());
@@ -100,9 +121,10 @@ public sealed class EditNewsCommandHandler
 
             await _dbContext.SaveChangesAsync(cancellationToken);
 
-            // Update translation
+            // Update the requested translation (default: the Vietnamese original)
+            var languageCode = string.IsNullOrWhiteSpace(request.LanguageCode) ? "vi" : request.LanguageCode.Trim();
             var translation = await _dbContext.NewsTranslations
-                .Where(t => t.NewsId == request.NewsId && t.LanguageCode == "vi")
+                .Where(t => t.NewsId == request.NewsId && t.LanguageCode == languageCode)
                 .FirstOrDefaultAsync(cancellationToken)
                 ?? throw new NotFoundException("Bản dịch tin tức", request.NewsId);
 
@@ -134,7 +156,7 @@ public sealed class EditNewsCommandHandler
 
             await _dbContext.SaveChangesAsync(cancellationToken);
 
-            // Create new sections
+            // Create new sections (+ their file mappings)
             foreach (var dto in request.ContentSections.OrderBy(s => s.SectionOrder))
             {
                 var sTitle    = _sanitizer.Sanitize(dto.SectionTitle.Trim());
@@ -143,8 +165,13 @@ public sealed class EditNewsCommandHandler
 
                 if (string.IsNullOrWhiteSpace(sTitle))
                     throw new ValidationException($"Tiêu đề nội dung {dto.SectionOrder} không hợp lệ.");
+                if (string.IsNullOrWhiteSpace(sBodyText))
+                    throw new ValidationException($"Nội dung chi tiết {dto.SectionOrder} không được rỗng.");
+                if (sBodyHtml.Contains("data:image", StringComparison.OrdinalIgnoreCase))
+                    throw new ValidationException(
+                        $"Nội dung mục {dto.SectionOrder} chứa ảnh nhúng base64. Vui lòng tải ảnh lên hệ thống thay vì nhúng trực tiếp.");
 
-                _dbContext.NewsContentSections.Add(new NewsContentSection
+                var section = new NewsContentSection
                 {
                     NewsTranslationId = translation.NewsTranslationId,
                     SectionOrder      = dto.SectionOrder,
@@ -153,7 +180,25 @@ public sealed class EditNewsCommandHandler
                     SectionBodyText   = sBodyText,
                     CreatedAt         = now,
                     UpdatedAt         = null
-                });
+                };
+                _dbContext.NewsContentSections.Add(section);
+                await _dbContext.SaveChangesAsync(cancellationToken); // get SectionId
+
+                if (dto.SectionFiles is { Count: > 0 })
+                {
+                    foreach (var fileDto in dto.SectionFiles)
+                    {
+                        _dbContext.NewsSectionFiles.Add(new NewsSectionFile
+                        {
+                            SectionId    = section.SectionId,
+                            FileId       = fileDto.FileId,
+                            UsageType    = string.IsNullOrWhiteSpace(fileDto.UsageType)
+                                ? "INLINE_IMAGE"
+                                : fileDto.UsageType.ToUpperInvariant(),
+                            DisplayOrder = fileDto.DisplayOrder
+                        });
+                    }
+                }
             }
 
             await _dbContext.SaveChangesAsync(cancellationToken);

@@ -64,15 +64,28 @@ public sealed class ViewNewsDetailsQueryHandler
             throw new ForbiddenException("Bạn không có quyền xem bài viết này.");
         }
 
-        // Step 3: Translation (prefer 'vi')
+        // Step 3: Translation (requested language → 'vi' → any)
         var translations = await _dbContext.NewsTranslations
             .AsNoTracking()
             .Where(t => t.NewsId == request.NewsId)
             .Select(t => new { t.NewsTranslationId, t.LanguageCode, t.Title, t.Summary, t.Slug })
             .ToListAsync(cancellationToken);
 
-        var translation = translations.FirstOrDefault(t => t.LanguageCode == "vi")
+        var requestedLang = string.IsNullOrWhiteSpace(request.LanguageCode)
+            ? "vi"
+            : request.LanguageCode.Trim();
+
+        var translation = translations.FirstOrDefault(t =>
+                              string.Equals(t.LanguageCode, requestedLang, StringComparison.OrdinalIgnoreCase))
+                       ?? translations.FirstOrDefault(t => t.LanguageCode == "vi")
                        ?? translations.FirstOrDefault();
+
+        var availableLanguages = translations
+            .Select(t => t.LanguageCode)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(l => l == "vi" ? 0 : 1)
+            .ThenBy(l => l, StringComparer.OrdinalIgnoreCase)
+            .ToList();
 
         // Step 4: Campus name
         string? campusName = null;
@@ -200,6 +213,7 @@ public sealed class ViewNewsDetailsQueryHandler
             PublishedAt     = news.PublishedAt,
             RowVersion      = news.RowVersion,
             LanguageCode    = translation?.LanguageCode ?? "vi",
+            AvailableLanguages = availableLanguages,
             Title           = translation?.Title ?? string.Empty,
             Summary         = translation?.Summary,
             Slug            = translation?.Slug,
@@ -222,7 +236,8 @@ public sealed class ViewNewsDetailsQueryHandler
                 CanApprove    = status == NewsConstants.Status.PendingReview,
                 CanReject     = status == NewsConstants.Status.PendingReview,
                 CanHide       = status == NewsConstants.Status.Published,
-                CanShow       = status == NewsConstants.Status.Hidden
+                CanShow       = status == NewsConstants.Status.Hidden,
+                CanTranslate  = true
             };
         }
 
@@ -230,15 +245,17 @@ public sealed class ViewNewsDetailsQueryHandler
          || roleCode == RoleCodes.Student)
         {
             var isOwner = authorUserId == currentUserId;
+            var editableStatus = status == NewsConstants.Status.PendingReview
+                              || status == NewsConstants.Status.Rejected;
             return new NewsDetailAvailableActionsDto
             {
                 CanViewDetail = isOwner,
-                CanEdit       = isOwner && (status == NewsConstants.Status.PendingReview
-                                         || status == NewsConstants.Status.Rejected),
+                CanEdit       = isOwner && editableStatus,
                 CanApprove    = false,
                 CanReject     = false,
                 CanHide       = false,
-                CanShow       = false
+                CanShow       = false,
+                CanTranslate  = isOwner && editableStatus
             };
         }
 
@@ -250,7 +267,8 @@ public sealed class ViewNewsDetailsQueryHandler
             CanApprove    = false,
             CanReject     = false,
             CanHide       = false,
-            CanShow       = false
+            CanShow       = false,
+            CanTranslate  = false
         };
     }
 }

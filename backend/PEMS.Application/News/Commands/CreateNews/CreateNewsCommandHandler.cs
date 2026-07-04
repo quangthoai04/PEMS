@@ -211,6 +211,9 @@ public sealed class CreateNewsCommandHandler
                     throw new ValidationException($"Tiêu đề nội dung {sectionDto.SectionOrder} không hợp lệ.");
                 if (string.IsNullOrWhiteSpace(bodyText))
                     throw new ValidationException($"Nội dung chi tiết {sectionDto.SectionOrder} không được rỗng.");
+                if (sanitizedBodyHtml.Contains("data:image", StringComparison.OrdinalIgnoreCase))
+                    throw new ValidationException(
+                        $"Nội dung mục {sectionDto.SectionOrder} chứa ảnh nhúng base64. Vui lòng tải ảnh lên hệ thống thay vì nhúng trực tiếp.");
 
                 var section = new NewsContentSection
                 {

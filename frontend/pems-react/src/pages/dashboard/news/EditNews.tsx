@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { motion } from 'motion/react';
 import ReactQuill from 'react-quill-new';
 import 'react-quill-new/dist/quill.snow.css';
 import { UploadCloud, Plus, Trash2, ArrowLeft, ImagePlus, X } from 'lucide-react';
-import toast, { Toaster } from 'react-hot-toast';
+import toast from 'react-hot-toast';
 import httpClient from '../../../shared/api/httpClient';
 import { useAuthenticatedImage } from '../../../shared/hooks/useAuthenticatedImage';
 import { uploadFileToEndpoint } from '../../../shared/api/fileUploadApi';
@@ -12,16 +12,23 @@ import { validateFile } from '../../../shared/utils/fileValidation';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
+interface SectionImage {
+  fileId: number | null;        // id trong bảng files (null = chưa upload xong / ảnh legacy)
+  previewUrl: string;           // blob:/data: URL hoặc /api/files/{id}/content
+  uploading: boolean;
+  legacyBase64?: string;        // ảnh base64 của bài cũ — sẽ được migrate lên Drive khi lưu
+}
+
 interface Section {
   id: number;
   sectionTitle: string;
-  sectionBodyHtml: string;    // text-only, no <img> tags
-  sectionImageSrc: string | null;  // extracted base64 or newly picked base64
+  sectionBodyHtml: string;      // text-only, no <img> tags
+  sectionImage: SectionImage | null;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-// Extract the first <img> src from an HTML string
+// Extract the first <img> src from an HTML string (legacy posts embedded base64 images)
 function extractFirstImgSrc(html: string): string | null {
   const m = /<img[^>]+src=["']([^"']+)["']/i.exec(html);
   return m ? m[1] : null;
@@ -33,6 +40,23 @@ function stripImgTags(html: string): string {
     .replace(/<img[^>]*\/?>/gi, '')
     .replace(/<p>(\s|&nbsp;)*<\/p>/gi, '')
     .trim();
+}
+
+// Convert a legacy data: URL into a File so it can be migrated onto Google Drive.
+async function dataUrlToFile(dataUrl: string, fileName: string): Promise<File> {
+  const res = await fetch(dataUrl);
+  const blob = await res.blob();
+  return new File([blob], fileName, { type: blob.type || 'image/png' });
+}
+
+// Preview that works for blob:/data: URLs (plain <img>) and backend /api/files
+// URLs (need the Authorization header → authenticated blob fetch).
+function SectionImagePreview({ image, alt }: { image: SectionImage; alt: string }) {
+  const isBackendUrl = image.previewUrl.startsWith('/');
+  const authSrc = useAuthenticatedImage(isBackendUrl ? image.previewUrl : null);
+  const src = isBackendUrl ? authSrc : image.previewUrl;
+  if (!src) return <div className="w-full h-40 bg-gray-100 animate-pulse rounded-lg" />;
+  return <img src={src} alt={alt} className="w-full h-auto object-contain rounded-lg" />;
 }
 
 // ─── Quill toolbar (no image button — images managed separately) ───────────────
@@ -53,6 +77,9 @@ export function EditNews() {
   const navigate = useNavigate();
   const { id }   = useParams<{ id: string }>();
   const newsId   = Number(id);
+  const [searchParams] = useSearchParams();
+  // Bản dịch đang chỉnh sửa (mặc định bản gốc tiếng Việt)
+  const languageCode = searchParams.get('lang') ?? 'vi';
 
   // ── Meta state ──
   const [loading,    setLoading]    = useState(true);
@@ -64,7 +91,7 @@ export function EditNews() {
   const [title,    setTitle]    = useState('');
   const [summary,  setSummary]  = useState('');
   const [sections, setSections] = useState<Section[]>([
-    { id: 1, sectionTitle: '', sectionBodyHtml: '', sectionImageSrc: null },
+    { id: 1, sectionTitle: '', sectionBodyHtml: '', sectionImage: null },
   ]);
 
   // ── Cover image ──
@@ -83,7 +110,9 @@ export function EditNews() {
     async function fetchNews() {
       setLoading(true);
       try {
-        const { data } = await httpClient.get(`/news/${newsId}`);
+        const { data } = await httpClient.get(`/news/${newsId}`, {
+          params: languageCode !== 'vi' ? { languageCode } : undefined,
+        });
         if (cancelled) return;
 
         setRowVersion(data.rowVersion ?? 0);
@@ -99,13 +128,35 @@ export function EditNews() {
         if (Array.isArray(data.sections) && data.sections.length > 0) {
           setSections(
             data.sections.map(
-              (s: { sectionTitle?: string; sectionBodyHtml?: string }, i: number) => {
+              (
+                s: {
+                  sectionTitle?: string;
+                  sectionBodyHtml?: string;
+                  files?: { fileId: number; url?: string; usageType?: string }[];
+                },
+                i: number,
+              ) => {
                 const rawHtml = s.sectionBodyHtml ?? '';
+
+                // Ưu tiên ảnh thật từ news_section_files; nếu bài cũ nhúng base64
+                // trong HTML thì giữ lại để migrate lên Drive khi lưu.
+                const inlineFile = (s.files ?? []).find(f => f.usageType === 'INLINE_IMAGE' && f.url);
+                const legacySrc = inlineFile ? null : extractFirstImgSrc(rawHtml);
+
+                let sectionImage: SectionImage | null = null;
+                if (inlineFile) {
+                  sectionImage = { fileId: inlineFile.fileId, previewUrl: inlineFile.url!, uploading: false };
+                } else if (legacySrc) {
+                  sectionImage = legacySrc.startsWith('data:')
+                    ? { fileId: null, previewUrl: legacySrc, uploading: false, legacyBase64: legacySrc }
+                    : { fileId: null, previewUrl: legacySrc, uploading: false };
+                }
+
                 return {
                   id:              i + 1,
                   sectionTitle:    s.sectionTitle ?? '',
                   sectionBodyHtml: stripImgTags(rawHtml),
-                  sectionImageSrc: extractFirstImgSrc(rawHtml),
+                  sectionImage,
                 };
               },
             ),
@@ -123,7 +174,7 @@ export function EditNews() {
 
     fetchNews();
     return () => { cancelled = true; };
-  }, [newsId, navigate]);
+  }, [newsId, navigate, languageCode]);
 
   // ── Cover upload ──────────────────────────────────────────────────────────
 
@@ -148,9 +199,9 @@ export function EditNews() {
     }
   }
 
-  // ── Section image ─────────────────────────────────────────────────────────
+  // ── Section image — upload lên Google Drive ngay khi chọn (không lưu base64) ──
 
-  function handleSectionImagePick(index: number, e: React.ChangeEvent<HTMLInputElement>) {
+  async function handleSectionImagePick(index: number, e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
     e.target.value = '';
@@ -158,22 +209,32 @@ export function EditNews() {
     const v = validateFile(file, 'NEWS_IMAGE');
     if (!v.ok) { toast.error(v.message ?? 'File không hợp lệ.'); return; }
 
-    const reader = new FileReader();
-    reader.onload = ev => {
-      const base64 = ev.target?.result as string;
-      setSections(prev => {
-        const next = [...prev];
-        next[index] = { ...next[index], sectionImageSrc: base64 };
-        return next;
-      });
-    };
-    reader.readAsDataURL(file);
+    const sectionId = sections[index]?.id;
+    const previewUrl = URL.createObjectURL(file);
+    setSections(prev => prev.map(s =>
+      s.id === sectionId ? { ...s, sectionImage: { fileId: null, previewUrl, uploading: true } } : s
+    ));
+
+    try {
+      const uploaded = await uploadFileToEndpoint('/news/section-file-upload', 'file', file);
+      setSections(prev => prev.map(s =>
+        s.id === sectionId && s.sectionImage
+          ? { ...s, sectionImage: { fileId: uploaded.fileId, previewUrl: s.sectionImage.previewUrl, uploading: false } }
+          : s
+      ));
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      toast.error(msg ?? 'Không thể tải ảnh nội dung lên.');
+      setSections(prev => prev.map(s =>
+        s.id === sectionId ? { ...s, sectionImage: null } : s
+      ));
+    }
   }
 
   function removeSectionImage(index: number) {
     setSections(prev => {
       const next = [...prev];
-      next[index] = { ...next[index], sectionImageSrc: null };
+      next[index] = { ...next[index], sectionImage: null };
       return next;
     });
   }
@@ -184,7 +245,7 @@ export function EditNews() {
     if (sections.length >= 10) return;
     setSections(prev => [
       ...prev,
-      { id: Date.now(), sectionTitle: '', sectionBodyHtml: '', sectionImageSrc: null },
+      { id: Date.now(), sectionTitle: '', sectionBodyHtml: '', sectionImage: null },
     ]);
   }
 
@@ -210,24 +271,50 @@ export function EditNews() {
       toast.error('Vui lòng nhập tiêu đề cho tất cả các mục nội dung.');
       return;
     }
+    const emptyBody = sections.find(s => !s.sectionBodyHtml.replace(/<[^>]+>/g, '').trim());
+    if (emptyBody) {
+      toast.error(`Nội dung chi tiết mục ${sections.indexOf(emptyBody) + 1} không được để trống.`);
+      return;
+    }
+    if (sections.some(s => s.sectionImage?.uploading)) {
+      toast.error('Ảnh nội dung đang được tải lên, vui lòng chờ.');
+      return;
+    }
 
     setSubmitting(true);
     try {
+      // Bài cũ còn ảnh base64 nhúng trong HTML → migrate lên Drive trước khi lưu
+      // (backend từ chối payload chứa data:image).
+      const migrated = [...sections];
+      for (let i = 0; i < migrated.length; i++) {
+        const img = migrated[i].sectionImage;
+        if (img && img.fileId === null && img.legacyBase64) {
+          const file = await dataUrlToFile(img.legacyBase64, `news-section-${newsId}-${i + 1}.png`);
+          const uploaded = await uploadFileToEndpoint('/news/section-file-upload', 'file', file);
+          migrated[i] = { ...migrated[i], sectionImage: { ...img, fileId: uploaded.fileId, legacyBase64: undefined } };
+        }
+      }
+      const broken = migrated.find(s => s.sectionImage && s.sectionImage.fileId === null);
+      if (broken) {
+        toast.error(`Ảnh của mục ${migrated.indexOf(broken) + 1} chưa tải lên thành công. Vui lòng chọn lại ảnh.`);
+        setSubmitting(false);
+        return;
+      }
+
       await httpClient.put(`/news/${newsId}`, {
         rowVersion,
         coverFileId: currentCoverFileId ?? null,
         title:       title.trim(),
         summary:     summary.trim(),
-        contentSections: sections.map((s, i) => {
-          const imgHtml = s.sectionImageSrc
-            ? `<p style="text-align:center"><img src="${s.sectionImageSrc}" style="max-width:100%;height:auto;border-radius:0.5rem;display:block;margin:0 auto;"></p>`
-            : '';
-          return {
-            sectionOrder:    i + 1,
-            sectionTitle:    s.sectionTitle.trim(),
-            sectionBodyHtml: s.sectionBodyHtml + imgHtml,
-          };
-        }),
+        languageCode,
+        contentSections: migrated.map((s, i) => ({
+          sectionOrder:    i + 1,
+          sectionTitle:    s.sectionTitle.trim(),
+          sectionBodyHtml: s.sectionBodyHtml,
+          sectionFiles:    s.sectionImage?.fileId
+            ? [{ fileId: s.sectionImage.fileId, usageType: 'INLINE_IMAGE', displayOrder: 1 }]
+            : [],
+        })),
       });
 
       toast.success(
@@ -267,8 +354,6 @@ export function EditNews() {
       transition={{ duration: 0.3 }}
       className="p-4 sm:p-6 md:p-8 pb-12 max-w-5xl mx-auto"
     >
-      <Toaster position="top-right" />
-
       {/* Breadcrumb */}
       <div className="mb-6 flex items-center text-sm font-medium text-gray-500">
         <button onClick={() => navigate('/dashboard')} className="hover:text-[#004c91] transition-colors">
@@ -283,7 +368,14 @@ export function EditNews() {
       </div>
 
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-[#004c91]">Chỉnh sửa tin tức</h1>
+        <h1 className="text-3xl font-bold text-[#004c91]">
+          Chỉnh sửa tin tức
+          {languageCode !== 'vi' && (
+            <span className="ml-3 align-middle text-sm font-bold px-3 py-1 rounded-full bg-[#eef5fa] text-[#004c91] border border-[#b6d4f0]">
+              Bản dịch: {languageCode}
+            </span>
+          )}
+        </h1>
         {newsStatus === 'REJECTED' && (
           <p className="mt-3 text-sm text-orange-700 bg-orange-50 border border-orange-200 rounded-xl px-4 py-2.5 inline-block">
             Bài viết đã bị từ chối. Sau khi chỉnh sửa, bài sẽ được nộp lại để Staff Leader duyệt.
@@ -452,13 +544,17 @@ export function EditNews() {
                   <div>
                     <label className="block text-gray-900 font-bold mb-2">Ảnh minh họa</label>
 
-                    {section.sectionImageSrc ? (
+                    {section.sectionImage ? (
                       <div className="relative rounded-xl overflow-hidden border border-gray-200 bg-gray-50">
-                        <img
-                          src={section.sectionImageSrc}
-                          alt={`Ảnh mục ${index + 1}`}
-                          className="w-full h-auto object-contain rounded-lg"
-                        />
+                        <SectionImagePreview image={section.sectionImage} alt={`Ảnh mục ${index + 1}`} />
+                        {section.sectionImage.uploading && (
+                          <div className="absolute inset-0 flex items-center justify-center bg-black/30 rounded-lg">
+                            <div className="flex items-center gap-2 text-white font-bold text-sm">
+                              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                              Đang tải lên...
+                            </div>
+                          </div>
+                        )}
                         {/* Remove button */}
                         <button
                           type="button"
