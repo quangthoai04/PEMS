@@ -28,15 +28,21 @@ import { BusinessCardScanModal } from '../../../features/business-card-ocr/compo
 import httpClient from '../../../shared/api/httpClient';
 import { API_ENDPOINTS } from '../../../shared/api/endpoints';
 import { useAuthenticatedImage } from '../../../shared/hooks/useAuthenticatedImage';
+import { downloadAuthenticatedFile, fetchAuthenticatedBlobUrl } from '../../../shared/utils/fileDownload';
 
-// Cover/logo placeholders restored from the original PartnerDetail UI — shown until the
-// partner's own logoFileId/coverFileId resolves (or when it has none).
+// Cover placeholder restored from the original PartnerDetail UI — shown until the partner's own
+// coverFileId resolves (or when it has none, or the fetch/render fails).
 import coverImage from '../../../assets/images/banner_partner.png';
-const logoModules = import.meta.glob('../../../assets/Logo/*', { eager: true });
-const logoList = Object.values(logoModules).map((m: any) => m.default || m) as string[];
 
 const inputCls =
   'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] text-gray-700 bg-white';
+
+/** Logo fallback when a partner has no cover/logo file (or it failed to load): initials badge. */
+function getInitials(name: string): string {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return '?';
+  return words.length === 1 ? words[0].slice(0, 2).toUpperCase() : (words[0][0] + words[words.length - 1][0]).toUpperCase();
+}
 
 /** Label/value slot matching the original "Thông tin cơ bản" card styling. */
 function Field({
@@ -95,6 +101,7 @@ export function PartnerDetail() {
   const [cPhone, setCPhone] = useState('');
   const [cTitle, setCTitle] = useState('');
   const [cDepartment, setCDepartment] = useState('');
+  const [cNote, setCNote] = useState('');
   const [cPrimary, setCPrimary] = useState(false);
 
   // Aliases
@@ -106,17 +113,30 @@ export function PartnerDetail() {
   const [docTitle, setDocTitle] = useState('');
   const [docFile, setDocFile] = useState<File | null>(null);
   const [docBusy, setDocBusy] = useState(false);
+  const [previewDoc, setPreviewDoc] = useState<PartnerDocument | null>(null);
 
   // OCR modal
   const [scanOpen, setScanOpen] = useState(false);
 
   // Cover/logo live behind the authenticated /api/files/{id}/content route; fall back to the
-  // original static banner/logo assets when the partner has no image yet.
+  // original static banner asset / initials badge when the partner has no image, or the fetch/
+  // render fails (onError below), so the UI never shows a broken image.
+  const [coverImgError, setCoverImgError] = useState(false);
+  const [logoImgError, setLogoImgError] = useState(false);
   const fetchedCover = useAuthenticatedImage(
     partner?.coverFileId ? `/api/files/${partner.coverFileId}/content` : null,
   );
   const fetchedLogo = useAuthenticatedImage(
     partner?.logoFileId ? `/api/files/${partner.logoFileId}/content` : null,
+  );
+  useEffect(() => { setCoverImgError(false); }, [fetchedCover]);
+  useEffect(() => { setLogoImgError(false); }, [fetchedLogo]);
+  const showCoverFallback = !fetchedCover || coverImgError;
+  const showLogoFallback = !fetchedLogo || logoImgError;
+
+  // Scanned business-card image for the contact "Xem chi tiết" modal, when the contact came from OCR.
+  const scannedCardUrl = useAuthenticatedImage(
+    viewContact?.scannedCardFileId ? `/api/files/${viewContact.scannedCardFileId}/content` : null,
   );
 
   const canManage = partner?.allowedActions.includes('MANAGE_CHILDREN') ?? false;
@@ -196,6 +216,7 @@ export function PartnerDetail() {
     setCPhone(contact?.phone ?? '');
     setCTitle(contact?.jobTitle ?? '');
     setCDepartment(contact?.departmentName ?? '');
+    setCNote(contact?.note ?? '');
     setCPrimary(contact?.isPrimary ?? false);
     setContactFormOpen(true);
   };
@@ -212,6 +233,7 @@ export function PartnerDetail() {
           phone: cPhone.trim() || null,
           jobTitle: cTitle.trim() || null,
           departmentName: cDepartment.trim() || null,
+          note: cNote.trim() || null,
         });
       } else {
         await partnersApi.createContact(id, {
@@ -220,6 +242,7 @@ export function PartnerDetail() {
           phone: cPhone.trim() || null,
           jobTitle: cTitle.trim() || null,
           departmentName: cDepartment.trim() || null,
+          note: cNote.trim() || null,
           isPrimary: cPrimary,
         });
       }
@@ -399,9 +422,10 @@ export function PartnerDetail() {
       {/* Cover & Logo Section */}
       <div className="relative mb-10 w-full h-[220px] sm:h-[300px] md:h-[380px] lg:h-[440px] rounded-[24px] bg-gray-100 shadow-sm overflow-hidden">
         <img
-          src={fetchedCover ?? coverImage}
+          src={showCoverFallback ? coverImage : fetchedCover!}
           alt="Cover"
           className="w-full h-full object-cover"
+          onError={() => setCoverImgError(true)}
         />
         <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
 
@@ -412,10 +436,12 @@ export function PartnerDetail() {
         {/* Logo overlay */}
         <div className="absolute -bottom-2 left-0 right-0 p-4 sm:p-6 flex items-end">
           <div className="w-20 h-20 sm:w-28 sm:h-28 rounded-[20px] bg-white shadow-xl p-2 border-4 border-white overflow-hidden flex items-center justify-center flex-shrink-0">
-            {(fetchedLogo || logoList[0]) ? (
-              <img src={fetchedLogo ?? logoList[0]} alt="Logo" className="w-full h-full object-contain" />
+            {showLogoFallback ? (
+              <div className="w-full h-full rounded-[14px] bg-gradient-to-br from-[#004c91] to-[#003a70] flex items-center justify-center text-white font-black text-2xl select-none">
+                {getInitials(partner.name)}
+              </div>
             ) : (
-              <Globe className="w-10 h-10 text-gray-300" />
+              <img src={fetchedLogo!} alt="Logo" className="w-full h-full object-contain" onError={() => setLogoImgError(true)} />
             )}
           </div>
           <div className="ml-4 sm:ml-6 mb-2 sm:mb-4 text-white z-10 min-w-0">
@@ -556,14 +582,24 @@ export function PartnerDetail() {
                       {d.creatorName ? ` • ${d.creatorName}` : ''}
                     </div>
                   </div>
-                  <a
-                    href={`${httpClient.defaults.baseURL}/files/${d.fileId}/download`}
-                    target="_blank" rel="noreferrer"
-                    className="p-2 rounded-lg text-gray-400 hover:bg-white hover:text-[#004c91] transition-colors flex-shrink-0"
-                    title="Tải xuống"
-                  >
-                    <Download className="w-4 h-4" />
-                  </a>
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    <button
+                      onClick={() => setPreviewDoc(d)}
+                      className="p-2 rounded-lg text-gray-400 hover:bg-white hover:text-[#004c91] transition-colors cursor-pointer"
+                      title="Xem trước"
+                    >
+                      <Eye className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => void downloadAuthenticatedFile(
+                        API_ENDPOINTS.files.download(d.fileId), d.originalFilename || d.title,
+                      )}
+                      className="p-2 rounded-lg text-gray-400 hover:bg-white hover:text-[#004c91] transition-colors cursor-pointer"
+                      title="Tải xuống"
+                    >
+                      <Download className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
               ))
             )}
@@ -818,6 +854,16 @@ export function PartnerDetail() {
                   <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Phòng ban</label>
                   <input className={`${inputCls} bg-white`} value={cDepartment} onChange={(e) => setCDepartment(e.target.value)} maxLength={150} />
                 </div>
+                <div className="md:col-span-2">
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Ghi chú</label>
+                  <textarea
+                    className={`${inputCls} bg-white`}
+                    rows={2}
+                    value={cNote}
+                    onChange={(e) => setCNote(e.target.value)}
+                    placeholder="Ghi chú thêm (tuỳ chọn)..."
+                  />
+                </div>
                 {!editingContact && (
                   <label className="md:col-span-2 flex items-center gap-2 text-sm text-gray-600 cursor-pointer select-none">
                     <input type="checkbox" checked={cPrimary} onChange={(e) => setCPrimary(e.target.checked)} className="rounded border-gray-300" />
@@ -895,6 +941,31 @@ export function PartnerDetail() {
                   <p className="text-[15px] font-medium text-gray-800">{viewContact.note || 'Không có ghi chú'}</p>
                 </div>
               </div>
+
+              {viewContact.scannedCardFileId && (
+                <div className="bg-white p-5 rounded-xl border border-gray-100 shadow-sm">
+                  <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Ảnh card đã quét</label>
+                  {scannedCardUrl ? (
+                    <img
+                      src={scannedCardUrl}
+                      alt="Card visit"
+                      className="w-full max-h-56 object-contain rounded-lg border border-gray-200 bg-gray-50"
+                    />
+                  ) : (
+                    <div className="h-32 flex items-center justify-center text-gray-300 bg-gray-50 rounded-lg border border-gray-200">
+                      <Loader2 className="w-6 h-6 animate-spin" />
+                    </div>
+                  )}
+                  <button
+                    onClick={() => void downloadAuthenticatedFile(
+                      API_ENDPOINTS.files.download(viewContact.scannedCardFileId!), 'card-visit',
+                    )}
+                    className="mt-3 inline-flex items-center gap-1.5 text-xs font-bold text-[#004c91] hover:underline cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5" /> Tải xuống ảnh card
+                  </button>
+                </div>
+              )}
             </div>
 
             <div className="p-5 border-t border-gray-100 bg-white flex justify-end">
@@ -909,13 +980,109 @@ export function PartnerDetail() {
         </div>
       )}
 
-      {/* OCR scan modal — preselects this partner */}
+      {/* OCR scan modal — preselects this partner (name passed through so the modal doesn't
+          have to show a bare "#id" badge while it resolves). */}
       <BusinessCardScanModal
         open={scanOpen}
         onClose={() => setScanOpen(false)}
-        context={{ partnerId: partner.partnerId }}
+        context={{ partnerId: partner.partnerId, partnerName: partner.name }}
         onConfirmed={() => { void loadContacts(); }}
       />
+
+      {previewDoc && (
+        <DocumentPreviewModal doc={previewDoc} onClose={() => setPreviewDoc(null)} />
+      )}
+    </div>
+  );
+}
+
+/** Preview a partner document behind the authenticated /api/files/{id}/content route — images
+ *  render inline, PDFs render in an iframe from a blob URL, everything else falls back to a
+ *  "download instead" card. Never opens a raw file URL (which would drop the auth header). */
+function DocumentPreviewModal({ doc, onClose }: { doc: PartnerDocument; onClose: () => void }) {
+  const isImage = doc.mimeType?.startsWith('image/') ?? false;
+  const isPdf = doc.mimeType === 'application/pdf';
+  const imageUrl = useAuthenticatedImage(isImage ? `/api/files/${doc.fileId}/content` : null);
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+  const [pdfError, setPdfError] = useState(false);
+
+  useEffect(() => {
+    if (!isPdf) return;
+    let cancelled = false;
+    let created: string | null = null;
+    (async () => {
+      try {
+        const url = await fetchAuthenticatedBlobUrl(API_ENDPOINTS.files.content(doc.fileId));
+        if (cancelled) { URL.revokeObjectURL(url); return; }
+        created = url;
+        setPdfUrl(url);
+      } catch {
+        if (!cancelled) setPdfError(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (created) URL.revokeObjectURL(created);
+    };
+  }, [doc.fileId, isPdf]);
+
+  const download = () => void downloadAuthenticatedFile(API_ENDPOINTS.files.download(doc.fileId), doc.originalFilename || doc.title);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-200">
+        <div className="flex items-center justify-between p-5 border-b border-gray-100 bg-[#004c91]">
+          <h3 className="text-lg font-bold text-white truncate pr-4">{doc.title}</h3>
+          <button onClick={onClose} className="p-2 text-white/80 hover:text-white hover:bg-white/20 rounded-lg transition-colors outline-none cursor-pointer flex-shrink-0">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <div className="flex-1 overflow-auto bg-gray-50 flex items-center justify-center p-4 min-h-[320px]">
+          {isImage ? (
+            imageUrl ? (
+              <img src={imageUrl} alt={doc.title} className="max-w-full max-h-[65vh] object-contain rounded-lg shadow-sm" />
+            ) : (
+              <Loader2 className="w-8 h-8 text-gray-300 animate-spin" />
+            )
+          ) : isPdf ? (
+            pdfError ? (
+              <UnsupportedPreviewCard onDownload={download} />
+            ) : pdfUrl ? (
+              <iframe src={pdfUrl} title={doc.title} className="w-full h-[65vh] rounded-lg border border-gray-200 bg-white" />
+            ) : (
+              <Loader2 className="w-8 h-8 text-gray-300 animate-spin" />
+            )
+          ) : (
+            <UnsupportedPreviewCard onDownload={download} />
+          )}
+        </div>
+        <div className="p-4 border-t border-gray-100 bg-white flex justify-end gap-3">
+          <button
+            onClick={download}
+            className="flex items-center gap-2 bg-[#004c91] hover:bg-[#003a70] text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors cursor-pointer"
+          >
+            <Download className="w-4 h-4" /> Tải xuống
+          </button>
+          <button onClick={onClose} className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-lg transition-colors cursor-pointer">
+            Đóng
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function UnsupportedPreviewCard({ onDownload }: { onDownload: () => void }) {
+  return (
+    <div className="text-center py-8">
+      <FileText className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+      <p className="text-sm font-medium text-gray-500">Không hỗ trợ xem trước trực tiếp, vui lòng tải xuống.</p>
+      <button
+        onClick={onDownload}
+        className="mt-4 inline-flex items-center gap-2 bg-[#004c91] hover:bg-[#003a70] text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors cursor-pointer"
+      >
+        <Download className="w-4 h-4" /> Tải xuống
+      </button>
     </div>
   );
 }

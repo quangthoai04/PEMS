@@ -147,6 +147,7 @@ public sealed class PublicPartnerDto
     public string? Country { get; set; }
     public string? City { get; set; }
     public string? WebsiteUrl { get; set; }
+    public string? Address { get; set; }
     public string? Description { get; set; }
     public string PartnerType { get; set; } = "UNIVERSITY";
     public ulong? LogoFileId { get; set; }

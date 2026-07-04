@@ -5,7 +5,7 @@
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  X, UploadCloud, Loader2, CheckCircle2, AlertTriangle, ScanLine, Search,
+  X, UploadCloud, Loader2, CheckCircle2, AlertTriangle, ScanLine, Search, MapPin,
 } from 'lucide-react';
 import { businessCardOcrApi } from '../api/businessCardOcrApi';
 import type {
@@ -15,6 +15,13 @@ import type {
 import { partnersApi } from '../../partners/api/partnersApi';
 import type { PartnerListItem } from '../../partners/types/partners.types';
 import { PROFILE_STATUS_LABELS } from '../../partners/types/partners.types';
+import { useAuthenticatedImage } from '../../../shared/hooks/useAuthenticatedImage';
+
+function partnerInitials(name: string): string {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return '?';
+  return words.length === 1 ? words[0].slice(0, 2).toUpperCase() : (words[0][0] + words[words.length - 1][0]).toUpperCase();
+}
 
 type Step = 'UPLOAD' | 'PROCESSING' | 'REVIEW' | 'RESULT';
 
@@ -43,11 +50,17 @@ export function BusinessCardScanModal({ open, onClose, context, onConfirmed }: P
   const [jobTitle, setJobTitle] = useState('');
   const [departmentName, setDepartmentName] = useState('');
   const [organization, setOrganization] = useState('');
+  const [note, setNote] = useState('');
   const [isPrimary, setIsPrimary] = useState(false);
+  // Read-only OCR fields with no dedicated partner_contacts column — informational only.
+  const [websiteOcr, setWebsiteOcr] = useState('');
+  const [addressOcr, setAddressOcr] = useState('');
 
-  // Partner selector
+  // Partner selector — "Tên công ty/đơn vị trên Card Visit" above is raw OCR text; this section
+  // links the contact to an actual partner record (partner_contacts.partner_id).
   const [partnerId, setPartnerId] = useState<number | null>(context?.partnerId ?? null);
-  const [partnerName, setPartnerName] = useState<string>('');
+  const [partnerName, setPartnerName] = useState<string>(context?.partnerName ?? '');
+  const [selectedPartner, setSelectedPartner] = useState<PartnerListItem | null>(null);
   const [partnerSearch, setPartnerSearch] = useState('');
   const [partnerOptions, setPartnerOptions] = useState<PartnerListItem[]>([]);
   const [searching, setSearching] = useState(false);
@@ -55,6 +68,9 @@ export function BusinessCardScanModal({ open, onClose, context, onConfirmed }: P
   const [confirmedContactId, setConfirmedContactId] = useState<number | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const selectedPartnerLogo = useAuthenticatedImage(
+    selectedPartner?.logoFileId ? `/api/files/${selectedPartner.logoFileId}/content` : null,
+  );
 
   const reset = () => {
     setStep('UPLOAD');
@@ -63,10 +79,12 @@ export function BusinessCardScanModal({ open, onClose, context, onConfirmed }: P
     setJob(null);
     setError(null);
     setFullName(''); setEmail(''); setPhone(''); setJobTitle('');
-    setDepartmentName(''); setOrganization('');
+    setDepartmentName(''); setOrganization(''); setNote('');
+    setWebsiteOcr(''); setAddressOcr('');
     setIsPrimary(false);
     setPartnerId(context?.partnerId ?? null);
-    setPartnerName('');
+    setPartnerName(context?.partnerName ?? '');
+    setSelectedPartner(null);
     setPartnerSearch('');
     setPartnerOptions([]);
     setConfirmedContactId(null);
@@ -138,6 +156,8 @@ export function BusinessCardScanModal({ open, onClose, context, onConfirmed }: P
       setJobTitle(result.parsed?.jobTitle ?? '');
       setDepartmentName(result.parsed?.departmentName ?? '');
       setOrganization(result.parsed?.organization ?? '');
+      setWebsiteOcr(result.parsed?.websiteUrl ?? '');
+      setAddressOcr(result.parsed?.address ?? '');
       if (!context?.partnerId && result.matchedPartner) {
         setPartnerId(result.matchedPartner.partnerId);
         setPartnerName(result.matchedPartner.partnerName);
@@ -162,6 +182,7 @@ export function BusinessCardScanModal({ open, onClose, context, onConfirmed }: P
         phone: phone.trim() || null,
         jobTitle: jobTitle.trim() || null,
         departmentName: departmentName.trim() || null,
+        note: note.trim() || null,
         isPrimary,
         visitInstanceId: context?.visitInstanceId ?? null,
         guestMemberId: context?.guestMemberId ?? null,
@@ -343,62 +364,122 @@ export function BusinessCardScanModal({ open, onClose, context, onConfirmed }: P
                   </div>
                 </div>
                 <div>
-                  <label className="text-xs font-bold text-gray-500 uppercase">Tổ chức (từ OCR)</label>
+                  <label className="text-xs font-bold text-gray-500 uppercase">Tên công ty/đơn vị trên Card Visit (OCR)</label>
                   <input className={inputCls} value={organization} onChange={(e) => setOrganization(e.target.value)} />
                 </div>
 
-                {/* Partner selector */}
+                {(websiteOcr || addressOcr) && (
+                  <div className="bg-slate-50 border border-gray-100 rounded-lg px-3 py-2.5 text-xs text-gray-500 space-y-1">
+                    <p className="font-bold text-gray-400 uppercase tracking-wide">Thông tin OCR khác (chưa lưu vào hồ sơ)</p>
+                    {websiteOcr && <p>Website: <span className="font-medium text-gray-600">{websiteOcr}</span></p>}
+                    {addressOcr && <p>Địa chỉ: <span className="font-medium text-gray-600">{addressOcr}</span></p>}
+                  </div>
+                )}
+
+                {/* Partner selector — distinct from "Tên công ty/đơn vị" above: this links the
+                    contact to an actual partner record (partner_contacts.partner_id). */}
                 <div>
-                  <label className="text-xs font-bold text-gray-500 uppercase">Đối tác *</label>
-                  {partnerId ? (
-                    <div className="flex items-center justify-between bg-green-50 border border-green-100 rounded-lg px-3 py-2 mt-1">
-                      <span className="text-sm font-bold text-green-700">
-                        {partnerName || job.matchedPartner?.partnerName || `#${partnerId}`}
-                      </span>
-                      {!context?.partnerId && (
-                        <button
-                          onClick={() => { setPartnerId(null); setPartnerName(''); }}
-                          className="text-xs text-gray-500 hover:text-red-500 font-medium cursor-pointer"
-                        >
-                          Chọn lại
-                        </button>
-                      )}
-                    </div>
+                  {context?.partnerId ? (
+                    <>
+                      <label className="text-xs font-bold text-gray-500 uppercase">Đối tác lưu trữ</label>
+                      <div className="flex items-center justify-between bg-green-50 border border-green-100 rounded-lg px-3 py-2 mt-1">
+                        <span className="text-sm text-green-700">
+                          Sẽ lưu vào đối tác hiện tại: <b>{partnerName || job.matchedPartner?.partnerName || `#${partnerId}`}</b>
+                        </span>
+                      </div>
+                    </>
                   ) : (
-                    <div className="relative mt-1">
-                      <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                      <input
-                        className={`${inputCls} pl-9`}
-                        placeholder="Tìm đối tác theo tên/mã..."
-                        value={partnerSearch}
-                        onChange={(e) => setPartnerSearch(e.target.value)}
-                      />
-                      {(partnerOptions.length > 0 || searching) && (
-                        <div className="absolute z-10 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                          {searching && (
-                            <div className="px-3 py-2 text-xs text-gray-400">Đang tìm...</div>
+                    <>
+                      <label className="text-xs font-bold text-gray-500 uppercase">Liên kết vào hồ sơ đối tác trong hệ thống *</label>
+                      <p className="text-[11px] text-gray-400 mt-0.5 mb-1">
+                        Tên công ty bên trên là dữ liệu OCR từ card. Dropdown này dùng để chọn hồ sơ đối tác thật trong PEMS.
+                      </p>
+                      {partnerId ? (
+                        <div className="flex items-center justify-between bg-green-50 border border-green-100 rounded-lg px-3 py-2">
+                          <span className="text-sm font-bold text-green-700">
+                            {partnerName || job.matchedPartner?.partnerName || `#${partnerId}`}
+                          </span>
+                          <button
+                            onClick={() => { setPartnerId(null); setPartnerName(''); setSelectedPartner(null); }}
+                            className="text-xs text-gray-500 hover:text-red-500 font-medium cursor-pointer"
+                          >
+                            Chọn lại
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="relative">
+                          <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                          <input
+                            className={`${inputCls} pl-9`}
+                            placeholder="Chọn hồ sơ đối tác để lưu contact"
+                            value={partnerSearch}
+                            onChange={(e) => setPartnerSearch(e.target.value)}
+                          />
+                          {(partnerOptions.length > 0 || searching) && (
+                            <div className="absolute z-10 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                              {searching && (
+                                <div className="px-3 py-2 text-xs text-gray-400">Đang tìm...</div>
+                              )}
+                              {partnerOptions.map((p) => (
+                                <button
+                                  key={p.partnerId}
+                                  onClick={() => {
+                                    setPartnerId(p.partnerId);
+                                    setPartnerName(p.name);
+                                    setSelectedPartner(p);
+                                    setPartnerOptions([]);
+                                    setPartnerSearch('');
+                                  }}
+                                  className="w-full text-left px-3 py-2 hover:bg-slate-50 cursor-pointer"
+                                >
+                                  <span className="text-sm font-medium text-gray-700">{p.name}</span>
+                                  <span className="ml-2 text-xs text-gray-400">
+                                    {PROFILE_STATUS_LABELS[p.profileStatus]}
+                                  </span>
+                                </button>
+                              ))}
+                            </div>
                           )}
-                          {partnerOptions.map((p) => (
-                            <button
-                              key={p.partnerId}
-                              onClick={() => {
-                                setPartnerId(p.partnerId);
-                                setPartnerName(p.name);
-                                setPartnerOptions([]);
-                                setPartnerSearch('');
-                              }}
-                              className="w-full text-left px-3 py-2 hover:bg-slate-50 cursor-pointer"
-                            >
-                              <span className="text-sm font-medium text-gray-700">{p.name}</span>
-                              <span className="ml-2 text-xs text-gray-400">
-                                {PROFILE_STATUS_LABELS[p.profileStatus]}
-                              </span>
-                            </button>
-                          ))}
+                          {!partnerId && (
+                            <p className="text-[11px] text-amber-600 mt-1.5">
+                              Vui lòng chọn đối tác lưu trữ hoặc tạo hồ sơ đối tác trước.
+                            </p>
+                          )}
                         </div>
                       )}
-                    </div>
+                      {selectedPartner && (
+                        <div className="mt-2 flex items-center gap-3 bg-white border border-gray-200 rounded-lg px-3 py-2">
+                          <div className="w-9 h-9 rounded-lg bg-[#004c91]/10 flex items-center justify-center flex-shrink-0 overflow-hidden">
+                            {selectedPartnerLogo ? (
+                              <img src={selectedPartnerLogo} alt="" className="w-full h-full object-contain" />
+                            ) : (
+                              <span className="text-[#004c91] font-black text-xs">{partnerInitials(selectedPartner.name)}</span>
+                            )}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-bold text-gray-700 truncate">{selectedPartner.name}</p>
+                            <p className="text-xs text-gray-400 flex items-center gap-2">
+                              {selectedPartner.country && (
+                                <span className="flex items-center gap-0.5"><MapPin className="w-3 h-3" />{selectedPartner.country}</span>
+                              )}
+                              <span>{PROFILE_STATUS_LABELS[selectedPartner.profileStatus]}</span>
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    </>
                   )}
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-gray-500 uppercase">Ghi chú</label>
+                  <textarea
+                    className={inputCls}
+                    rows={2}
+                    value={note}
+                    onChange={(e) => setNote(e.target.value)}
+                    placeholder="Ghi chú thêm (tuỳ chọn)..."
+                  />
                 </div>
 
                 <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer select-none">

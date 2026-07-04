@@ -74,6 +74,10 @@ export const API_ENDPOINTS = {
     locationUpdate: '/galleries/updategallerylocation',
     locationChangeStatus: '/galleries/changegallerylocationstatus',
   },
+  files: {
+    download: (id: string | number) => `/files/${id}/download`,
+    content: (id: string | number) => `/files/${id}/content`,
+  },
   partners: {
     list: '/partners',
     detail: (id: string | number) => `/partners/${id}`,
@@ -122,6 +126,11 @@ export const API_ENDPOINTS = {
     search: '/public/partners/search',
     list: '/public/partners',
     detail: (idOrSlug: string | number) => `/public/partners/${idOrSlug}`,
+    // Anonymous, partner-scoped logo/cover proxy — the public-page alternative to
+    // /api/files/{id}/content (which requires a session).
+    mediaContent: (fileId: string | number) => `/public/partners/media/${fileId}/content`,
+    // Distinct countries among APPROVED + PUBLIC partners, for the country filter dropdown.
+    countries: '/public/partners/countries',
   },
   // Public VisitFPTU Gallery (anonymous display layer over the Staff-Leader-managed gallery).
   publicVisitFptu: {

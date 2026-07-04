@@ -74,6 +74,8 @@ public sealed class CreatePartnerContactCommandHandler
             DepartmentName = contact.DepartmentName,
             Note = contact.Note,
             SourceType = contact.SourceType,
+            ScannedCardFileId = contact.ScannedCardFileId,
+            OcrConfidence = contact.OcrConfidence,
             IsPrimary = contact.IsPrimary,
             Status = contact.Status,
             CreatedAt = contact.CreatedAt,

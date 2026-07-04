@@ -36,6 +36,7 @@ public sealed class GetPublicPartnerDetailQueryHandler
                 Country = p.Country,
                 City = p.City,
                 WebsiteUrl = p.WebsiteUrl,
+                Address = p.Address,
                 Description = p.Description,
                 PartnerType = p.PartnerType,
                 LogoFileId = p.LogoFileId,
