@@ -1,214 +1,255 @@
 /**
- * Trang CreatePartner
- * Khai báo nhân sự tổ chức tham quan kí kết làm đối tác hợp tác.
+ * CreatePartner — tạo đối tác mới (docs/PARTNER_canh/01). Hồ sơ sinh ra ở trạng thái
+ * PENDING_APPROVAL; owner_campus_id do backend tự gán từ campus của người tạo —
+ * form KHÔNG gửi ownerCampusId.
  */
-
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronRight, UploadCloud, Image as ImageIcon } from 'lucide-react';
+import { ArrowLeft, Loader2, AlertTriangle, Info } from 'lucide-react';
+import { partnersApi } from '../../../features/partners/api/partnersApi';
+import type {
+  PartnerMatchResult,
+  PartnerType,
+} from '../../../features/partners/types/partners.types';
+import { PARTNER_TYPE_LABELS } from '../../../features/partners/types/partners.types';
+import { useDebounce } from '../../../shared/hooks/useDebounce';
 
 export function CreatePartner() {
   const navigate = useNavigate();
-  const userStr = localStorage.getItem('currentUser');
-  const user = userStr ? JSON.parse(userStr) : null;
-  const isHO = user?.role?.toUpperCase() === 'HO';
 
-  const [partnerDetails, setPartnerDetails] = useState({
-    code: '',
-    name: '',
-    country: '',
-    website: '',
-    address: '',
-    description: '',
-    campus: '',
-  });
+  const [name, setName] = useState('');
+  const [partnerCode, setPartnerCode] = useState('');
+  const [shortName, setShortName] = useState('');
+  const [country, setCountry] = useState('');
+  const [city, setCity] = useState('');
+  const [websiteUrl, setWebsiteUrl] = useState('');
+  const [address, setAddress] = useState('');
+  const [description, setDescription] = useState('');
+  const [partnerType, setPartnerType] = useState<PartnerType>('UNIVERSITY');
+  const [visibility, setVisibility] = useState<'PRIVATE' | 'INTERNAL'>('INTERNAL');
 
-  const InputFieldWrapper = ({ label, required, children, hint }: { label: string, required?: boolean, children: React.ReactNode, hint?: string }) => (
-    <div className="flex flex-col gap-2">
-      <label className="text-[15px] font-bold text-gray-800">
-        {label}{required && <span className="text-red-500 ml-1">*</span>}
-      </label>
-      {children}
-      {hint && <span className="text-sm text-gray-500">{hint}</span>}
-    </div>
-  );
+  const [withContact, setWithContact] = useState(false);
+  const [contactName, setContactName] = useState('');
+  const [contactEmail, setContactEmail] = useState('');
+  const [contactPhone, setContactPhone] = useState('');
+  const [contactTitle, setContactTitle] = useState('');
+
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [duplicateHint, setDuplicateHint] = useState<PartnerMatchResult | null>(null);
+
+  const debouncedName = useDebounce(name, 500);
+
+  // Cảnh báo sớm khi tên tổ chức khớp một partner đã tồn tại (match API).
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!debouncedName.trim() || debouncedName.trim().length < 3) {
+        setDuplicateHint(null);
+        return;
+      }
+      try {
+        const match = await partnersApi.matchPartner(debouncedName.trim());
+        if (!cancelled) setDuplicateHint(match.matchStatus === 'NONE' ? null : match);
+      } catch {
+        if (!cancelled) setDuplicateHint(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [debouncedName]);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim()) { setError('Tên đối tác là bắt buộc.'); return; }
+    if (withContact && !contactName.trim()) {
+      setError('Họ tên người liên hệ là bắt buộc khi thêm người liên hệ ban đầu.');
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    try {
+      const result = await partnersApi.createPartner({
+        partnerCode: partnerCode.trim() || null,
+        name: name.trim(),
+        shortName: shortName.trim() || null,
+        country: country.trim() || null,
+        city: city.trim() || null,
+        websiteUrl: websiteUrl.trim() || null,
+        address: address.trim() || null,
+        description: description.trim() || null,
+        partnerType,
+        visibility,
+        source: 'MANUAL',
+        initialContact: withContact
+          ? {
+              fullName: contactName.trim(),
+              email: contactEmail.trim() || null,
+              phone: contactPhone.trim() || null,
+              jobTitle: contactTitle.trim() || null,
+            }
+          : null,
+      });
+      navigate(`/dashboard/partners/${result.partnerId}`);
+    } catch (err: any) {
+      setError(err?.response?.data?.message || 'Tạo đối tác thất bại. Vui lòng thử lại.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const inputCls =
+    'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] text-gray-700 bg-white';
+  const labelCls = 'block text-xs font-bold text-gray-500 uppercase mb-1';
 
   return (
-    <div className="p-4 sm:p-6 md:p-8 max-w-6xl mx-auto w-full">
+    <div className="w-full pb-12 max-w-4xl">
       {/* Breadcrumb */}
-      <div className="flex items-center gap-2 text-sm text-gray-500 mb-6 font-medium">
-        <button onClick={() => navigate('/dashboard')} className="hover:text-[#004c91] transition-colors">Dashboard</button>
-        <span className="text-gray-400">/</span>
-        <button onClick={() => navigate('/dashboard/partners')} className="hover:text-[#004c91] transition-colors">Quản lý đối tác</button>
-        <span className="text-gray-400">/</span>
-        <span className="text-[#004c91]">Tạo mới đối tác</span>
+      <div className="mb-4 flex items-center text-sm font-medium text-gray-500">
+        <button onClick={() => navigate('/dashboard')} className="hover:text-[#004c91] cursor-pointer">Dashboard</button>
+        <span className="mx-2">/</span>
+        <button onClick={() => navigate('/dashboard/partners')} className="hover:text-[#004c91] cursor-pointer">
+          Quản lý đối tác
+        </button>
+        <span className="mx-2">/</span>
+        <span className="text-[#004c91]">Thêm mới đối tác</span>
       </div>
 
-      {/* Page Title */}
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-[#004c91]">Thêm mới đối tác</h1>
+      <div className="border-b border-gray-100 pb-4 mb-6 flex items-center gap-3">
+        <button
+          onClick={() => navigate('/dashboard/partners')}
+          className="p-2 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-[#004c91] transition-colors cursor-pointer"
+        >
+          <ArrowLeft className="w-5 h-5" />
+        </button>
+        <h1 className="text-3xl font-bold text-[#004c91]">Thêm mới đối tác</h1>
       </div>
 
-      <div className="bg-white rounded-2xl shadow-[0_4px_24px_rgba(0,0,0,0.02)] border border-gray-100 p-8 flex flex-col gap-8">
-        
-        {/* Row 1 */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          <InputFieldWrapper label="Mã đối tác" required>
-            <input 
-              type="text" 
-              placeholder="Nhập mã đối tác (VD: P001)..."
-              value={partnerDetails.code}
-              onChange={(e) => setPartnerDetails({...partnerDetails, code: e.target.value})}
-              className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none transition-shadow text-[15px]"
-            />
-          </InputFieldWrapper>
+      <div className="mb-5 flex items-start gap-2 bg-blue-50 border border-blue-100 text-[#004c91] text-sm rounded-lg px-3 py-2.5">
+        <Info className="w-4 h-4 mt-0.5 flex-shrink-0" />
+        <span>
+          Hồ sơ đối tác mới sẽ ở trạng thái <b>Chờ duyệt</b> và thuộc campus của bạn.
+          Trưởng phòng IC cùng campus sẽ duyệt/từ chối hồ sơ.
+        </span>
+      </div>
 
-          <InputFieldWrapper label="Tên đối tác" required>
-            <input 
-              type="text" 
-              placeholder="Nhập tên đối tác đầy đủ..."
-              value={partnerDetails.name}
-              onChange={(e) => setPartnerDetails({...partnerDetails, name: e.target.value})}
-              className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none transition-shadow text-[15px]"
-            />
-          </InputFieldWrapper>
+      {error && (
+        <div className="mb-5 flex items-start gap-2 bg-red-50 border border-red-100 text-red-600 text-sm rounded-lg px-3 py-2.5">
+          <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+          <span>{error}</span>
+        </div>
+      )}
+
+      <form onSubmit={submit} className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 space-y-5">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          <div className="md:col-span-2">
+            <label className={labelCls}>Tên đối tác *</label>
+            <input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} required maxLength={200} />
+            {duplicateHint && (
+              <p className="mt-1.5 text-xs font-medium text-amber-600 flex items-center gap-1">
+                <AlertTriangle className="w-3.5 h-3.5" />
+                Có thể trùng với đối tác đã tồn tại: <b>{duplicateHint.partnerName}</b> ({duplicateHint.reason})
+              </p>
+            )}
+          </div>
+          <div>
+            <label className={labelCls}>Mã đối tác</label>
+            <input className={inputCls} value={partnerCode} onChange={(e) => setPartnerCode(e.target.value)} maxLength={50} placeholder="VD: DEAKIN" />
+          </div>
+          <div>
+            <label className={labelCls}>Tên viết tắt</label>
+            <input className={inputCls} value={shortName} onChange={(e) => setShortName(e.target.value)} maxLength={100} />
+          </div>
+          <div>
+            <label className={labelCls}>Quốc gia</label>
+            <input className={inputCls} value={country} onChange={(e) => setCountry(e.target.value)} maxLength={100} />
+          </div>
+          <div>
+            <label className={labelCls}>Thành phố</label>
+            <input className={inputCls} value={city} onChange={(e) => setCity(e.target.value)} maxLength={100} />
+          </div>
+          <div>
+            <label className={labelCls}>Website</label>
+            <input className={inputCls} value={websiteUrl} onChange={(e) => setWebsiteUrl(e.target.value)} maxLength={500} placeholder="https://..." />
+          </div>
+          <div>
+            <label className={labelCls}>Loại đối tác</label>
+            <select className={inputCls} value={partnerType} onChange={(e) => setPartnerType(e.target.value as PartnerType)}>
+              {Object.entries(PARTNER_TYPE_LABELS).map(([value, label]) => (
+                <option key={value} value={value}>{label}</option>
+              ))}
+            </select>
+          </div>
+          <div className="md:col-span-2">
+            <label className={labelCls}>Địa chỉ</label>
+            <input className={inputCls} value={address} onChange={(e) => setAddress(e.target.value)} maxLength={500} />
+          </div>
+          <div className="md:col-span-2">
+            <label className={labelCls}>Mô tả</label>
+            <textarea className={inputCls} rows={4} value={description} onChange={(e) => setDescription(e.target.value)} />
+          </div>
+          <div>
+            <label className={labelCls}>Chế độ hiển thị</label>
+            <select className={inputCls} value={visibility} onChange={(e) => setVisibility(e.target.value as 'PRIVATE' | 'INTERNAL')}>
+              <option value="INTERNAL">Nội bộ (INTERNAL)</option>
+              <option value="PRIVATE">Riêng tư (PRIVATE)</option>
+            </select>
+            <p className="mt-1 text-xs text-gray-400">
+              PUBLIC chỉ khả dụng sau khi hồ sơ được duyệt.
+            </p>
+          </div>
         </div>
 
-        {/* Row 2 */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          <InputFieldWrapper label="Quốc gia" required>
-            <div className="relative">
-              <select 
-                value={partnerDetails.country}
-                onChange={(e) => setPartnerDetails({...partnerDetails, country: e.target.value})}
-                className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none transition-shadow text-[15px] bg-white appearance-none cursor-pointer"
-              >
-                <option value="" disabled>-- Chọn quốc gia --</option>
-                <option value="Hàn Quốc">Hàn Quốc</option>
-                <option value="Nhật Bản">Nhật Bản</option>
-                <option value="Úc">Úc</option>
-                <option value="Mỹ">Mỹ</option>
-                <option value="Pháp">Pháp</option>
-                <option value="Anh">Anh</option>
-                <option value="Canada">Canada</option>
-                <option value="Đức">Đức</option>
-              </select>
-              <div className="absolute inset-y-0 right-4 flex items-center pointer-events-none text-gray-500">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+        {/* Initial contact */}
+        <div className="border-t border-gray-100 pt-5">
+          <label className="flex items-center gap-2 text-sm font-bold text-gray-700 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={withContact}
+              onChange={(e) => setWithContact(e.target.checked)}
+              className="rounded border-gray-300"
+            />
+            Thêm người liên hệ ban đầu
+          </label>
+          {withContact && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mt-4">
+              <div>
+                <label className={labelCls}>Họ tên *</label>
+                <input className={inputCls} value={contactName} onChange={(e) => setContactName(e.target.value)} maxLength={150} />
+              </div>
+              <div>
+                <label className={labelCls}>Chức danh</label>
+                <input className={inputCls} value={contactTitle} onChange={(e) => setContactTitle(e.target.value)} maxLength={150} />
+              </div>
+              <div>
+                <label className={labelCls}>Email</label>
+                <input className={inputCls} type="email" value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} maxLength={150} />
+              </div>
+              <div>
+                <label className={labelCls}>Số điện thoại</label>
+                <input className={inputCls} value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} maxLength={50} />
               </div>
             </div>
-          </InputFieldWrapper>
-
-          <InputFieldWrapper label="Website">
-            <input 
-              type="url" 
-              placeholder="https://..."
-              value={partnerDetails.website}
-              onChange={(e) => setPartnerDetails({...partnerDetails, website: e.target.value})}
-              className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none transition-shadow text-[15px]"
-            />
-          </InputFieldWrapper>
+          )}
         </div>
 
-        {/* Cở sở (Only for HO) */}
-        {isHO && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            <InputFieldWrapper label="Cơ sở" required>
-              <div className="relative">
-                <select 
-                  value={partnerDetails.campus}
-                  onChange={(e) => setPartnerDetails({...partnerDetails, campus: e.target.value})}
-                  className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none transition-shadow text-[15px] bg-white appearance-none cursor-pointer"
-                >
-                  <option value="" disabled>-- Chọn cơ sở --</option>
-                  <option value="Hà Nội">Cơ sở Hà Nội</option>
-                  <option value="Đà Nẵng">Cơ sở Đà Nẵng</option>
-                  <option value="Cần Thơ">Cơ sở Cần Thơ</option>
-                  <option value="Hồ Chí Minh">Cơ sở Hồ Chí Minh</option>
-                  <option value="Quy Nhơn">Cơ sở Quy Nhơn</option>
-                </select>
-                <div className="absolute inset-y-0 right-4 flex items-center pointer-events-none text-gray-500">
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
-                </div>
-              </div>
-            </InputFieldWrapper>
-          </div>
-        )}
-
-        {/* Row 3 */}
-        <div className="grid grid-cols-1 gap-8">
-          <InputFieldWrapper label="Địa chỉ">
-            <input 
-              type="text" 
-              placeholder="Nhập địa chỉ đầy đủ của đối tác..."
-              value={partnerDetails.address}
-              onChange={(e) => setPartnerDetails({...partnerDetails, address: e.target.value})}
-              className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none transition-shadow text-[15px]"
-            />
-          </InputFieldWrapper>
-        </div>
-
-        {/* Row 4 */}
-        <div className="grid grid-cols-1 gap-8">
-          <InputFieldWrapper label="Mô tả chung">
-            <textarea 
-              rows={4}
-              placeholder="Nhập giới thiệu tóm tắt về đối tác này..."
-              value={partnerDetails.description}
-              onChange={(e) => setPartnerDetails({...partnerDetails, description: e.target.value})}
-              className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none transition-shadow text-[15px] resize-none"
-            />
-          </InputFieldWrapper>
-        </div>
-
-        {/* Row 5 - Images */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          {/* Logo */}
-          <div className="flex flex-col gap-2">
-            <span className="text-[15px] font-bold text-gray-800">Logo đối tác</span>
-            <label className="border-2 border-dashed border-gray-300 rounded-xl p-8 bg-gray-50/50 hover:bg-gray-50 hover:border-[#004c91] transition-colors flex flex-col items-center justify-center cursor-pointer group h-48 w-full">
-              <div className="w-12 h-12 rounded-full bg-white shadow-sm flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-                <UploadCloud className="w-6 h-6 text-[#004c91]" />
-              </div>
-              <span className="font-bold text-[#004c91]">Tải logo mới</span>
-              <span className="text-sm text-gray-500 mt-1">(1:1, ~300x300)</span>
-              <input type="file" className="hidden" accept="image/*" />
-            </label>
-          </div>
-
-          {/* Thumbnail */}
-          <div className="flex flex-col gap-2">
-            <span className="text-[15px] font-bold text-gray-800">Ảnh bìa (Thumbnail)</span>
-            <label className="border-2 border-dashed border-gray-300 rounded-xl p-8 bg-gray-50/50 hover:bg-gray-50 hover:border-[#004c91] transition-colors flex flex-col items-center justify-center cursor-pointer group h-48 w-full">
-              <div className="w-12 h-12 rounded-full bg-white shadow-sm flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-                <ImageIcon className="w-6 h-6 text-[#004c91]" />
-              </div>
-              <span className="font-bold text-[#004c91]">Tải ảnh bìa mới</span>
-              <span className="text-sm text-gray-500 mt-1">(16:9, ~1280x720)</span>
-              <input type="file" className="hidden" accept="image/*" />
-            </label>
-          </div>
-        </div>
-
-        {/* Actions */}
-        <div className="flex justify-end items-center gap-4 pt-6 mt-4 border-t border-gray-100">
-          <button 
-            type="button" 
+        <div className="flex justify-end gap-3 pt-2">
+          <button
+            type="button"
             onClick={() => navigate('/dashboard/partners')}
-            className="px-6 py-2.5 rounded-xl font-bold text-gray-600 border border-gray-300 hover:bg-gray-50 transition-colors bg-white shadow-sm"
+            className="px-5 py-2.5 rounded-lg text-sm font-bold text-gray-500 hover:bg-gray-100 transition-colors cursor-pointer"
           >
-            Hủy bỏ
+            Huỷ
           </button>
-          <button 
-            type="button" 
-            className="bg-[#f37021] text-white px-8 py-2.5 rounded-xl shadow-[0_4px_14px_rgba(243,112,33,0.3)] hover:shadow-[0_6px_20px_rgba(243,112,33,0.4)] hover:-translate-y-0.5 transition-all font-bold tracking-wide"
-            onClick={() => navigate('/dashboard/partners')}
+          <button
+            type="submit"
+            disabled={submitting || !name.trim()}
+            className="bg-[#f37021] hover:bg-[#d9621a] text-white px-6 py-2.5 rounded-lg text-sm font-bold transition-colors disabled:opacity-50 cursor-pointer flex items-center gap-2"
           >
-            Lưu thông tin
+            {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
+            Tạo đối tác
           </button>
         </div>
-
-      </div>
+      </form>
     </div>
   );
 }
