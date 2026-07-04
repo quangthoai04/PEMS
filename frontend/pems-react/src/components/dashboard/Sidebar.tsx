@@ -241,7 +241,7 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile, isCollapsed = fal
               )}
             </>
           )}
-          {(isStaffLeader || isDeptLeader) && (
+          {(roleForSidebar === "HO" || isStaffLeader || isDeptLeader) && (
             <NavLink to="/dashboard/reports" className={navItemClass} onClick={handleLinkClick}>
               <BarChart2 className="w-5 h-5 flex-shrink-0" />
               <span>Quản lý báo cáo</span>

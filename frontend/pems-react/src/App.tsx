@@ -43,6 +43,7 @@ import { GalleryManagement } from './pages/dashboard/gallery/GalleryManagement';
 import { LocationManagement } from './pages/dashboard/gallery/LocationManagement';
 import { MinuteManagement } from './pages/dashboard/minutes/MinuteManagement';
 import { ReportManagement } from './pages/dashboard/reports/ReportManagement';
+import { HoReportManagement } from './pages/dashboard/reports/HoReportManagement';
 import { FeedbackManagement } from './pages/dashboard/feedback/FeedbackManagement';
 import { FeedbackDetail } from './pages/dashboard/feedback/FeedbackDetail';
 import { AccountManagement } from './pages/dashboard/accounts/AccountManagement';
@@ -108,6 +109,7 @@ export default function App() {
   const user = userStr ? JSON.parse(userStr) : null;
   const isDeptLeader = user?.role?.toUpperCase() === 'DEPARTMENT' && user?.subRole?.toUpperCase() === 'LEADER';
   const isDeptStaff = user?.role?.toUpperCase() === 'DEPARTMENT' && !isDeptLeader;
+  const isHO = user?.role?.toUpperCase() === 'HO';
 
   return (
     <div className="font-sans text-gray-900 bg-white min-h-screen flex flex-col">
@@ -178,7 +180,7 @@ export default function App() {
             <Route path="gallery" element={<GalleryManagement />} />
             <Route path="gallery/locations" element={<LocationManagement />} />
             <Route path="minutes" element={<MinuteManagement />} />
-            <Route path="reports" element={<ProtectedRoute>{isDeptLeader ? <DepartmentReportDashboard /> : <ReportManagement />}</ProtectedRoute>} />
+            <Route path="reports" element={<ProtectedRoute>{isDeptLeader ? <DepartmentReportDashboard /> : isHO ? <HoReportManagement /> : <ReportManagement />}</ProtectedRoute>} />
             <Route path="feedback" element={<FeedbackManagement />} />
             <Route path="feedback/:id" element={<FeedbackDetail />} />
             <Route path="apis" element={<ProtectedRoute roles={['ADMIN']}><ApiManagement /></ProtectedRoute>} />

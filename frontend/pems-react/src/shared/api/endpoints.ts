@@ -258,4 +258,9 @@ export const API_ENDPOINTS = {
     submitVisitFeedback: (visitInstanceId: string | number) => `/feedbacks/visit-instances/${visitInstanceId}`,
     myPending: '/feedbacks/my-pending',
   },
+  reports: {
+    // Head Office report (HO-only): overview + export dùng đúng bộ filter đang áp dụng.
+    hoOverview: '/reports/ho-overview',
+    hoExport: '/reports/ho-overview/export',
+  },
 };
