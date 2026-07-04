@@ -73,6 +73,18 @@ public static class DependencyInjection
         services.AddScoped<IFaceRecognitionService, FaceRecognitionService>();
         services.AddScoped<IOcrService, OcrService>();
 
+        // Business Card OCR (Google Document AI) — docs/PARTNER_canh/02.
+        services.AddSingleton<ISecretProtector, PEMS.Infrastructure.Security.AesGcmSecretProtector>();
+        services.AddSingleton<PEMS.Infrastructure.Ocr.GoogleServiceAccountTokenProvider>();
+        services.AddSingleton<PEMS.Application.BusinessCardOcr.Services.IBusinessCardTextParser,
+            PEMS.Infrastructure.Ocr.BusinessCardTextParser>();
+        services.AddScoped<PEMS.Application.BusinessCardOcr.Services.IBusinessCardOcrProvider,
+            PEMS.Infrastructure.Ocr.GoogleDocumentAiBusinessCardOcrProvider>();
+        services.AddScoped<PEMS.Application.BusinessCardOcr.Services.IOcrCredentialResolver,
+            PEMS.Infrastructure.Ocr.OcrCredentialResolver>();
+        services.AddSingleton<PEMS.Application.BusinessCardOcr.Services.IBusinessCardOcrThrottle,
+            PEMS.Infrastructure.Ocr.InMemoryBusinessCardOcrThrottle>();
+
         // Background jobs — scheduled visit reminder dispatch (visit_instance_reminder_settings).
         services.AddHostedService<PEMS.Infrastructure.BackgroundJobs.VisitReminderDispatchHostedService>();
 
