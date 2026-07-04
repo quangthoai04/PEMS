@@ -85,6 +85,11 @@ public static class DependencyInjection
         services.AddSingleton<PEMS.Application.BusinessCardOcr.Services.IBusinessCardOcrThrottle,
             PEMS.Infrastructure.Ocr.InMemoryBusinessCardOcrThrottle>();
 
+        // News auto-translation (Google Cloud Translation v3) — reuses the OCR credential
+        // resolution + service-account token pipeline.
+        services.AddScoped<PEMS.Application.News.Services.INewsTranslationService,
+            PEMS.Infrastructure.Translation.GoogleNewsTranslationService>();
+
         // Background jobs — scheduled visit reminder dispatch (visit_instance_reminder_settings).
         services.AddHostedService<PEMS.Infrastructure.BackgroundJobs.VisitReminderDispatchHostedService>();
 

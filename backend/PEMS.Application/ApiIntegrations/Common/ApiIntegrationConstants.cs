@@ -9,6 +9,18 @@ public static class BusinessCardOcrConstants
     public const string DefaultSecretRef = "GOOGLE_DOCUMENT_AI_SERVICE_ACCOUNT";
 }
 
+public static class NewsTranslationConstants
+{
+    /// <summary>api_configurations.api_code of the Google Cloud Translation config row.</summary>
+    public const string ApiCode = "NEWS_TRANSLATION_GOOGLE_CLOUD";
+    public const string ProviderName = "GOOGLE_CLOUD_TRANSLATION";
+    public const string Purpose = "NEWS_TRANSLATION";
+    /// <summary>Default env/secret-manager reference for the service account.</summary>
+    public const string DefaultSecretRef = "GOOGLE_TRANSLATION_SERVICE_ACCOUNT";
+    /// <summary>Env fallback for the Google Cloud project when no DB config row exists.</summary>
+    public const string ProjectIdEnvVar = "GOOGLE_TRANSLATION_PROJECT_ID";
+}
+
 public static class ApiIntegrationStatuses
 {
     public const string Active = "ACTIVE";
