@@ -315,4 +315,10 @@ export const API_ENDPOINTS = {
     hoOverview: '/reports/ho-overview',
     hoExport: '/reports/ho-overview/export',
   },
+  dashboard: {
+    // Dashboard bảng lịch cho STAFF+LEADER / STAFF+STAFF: viewMode=office|mine, from/to=YYYY-MM-DD.
+    staffCalendar: '/dashboard/staff/calendar',
+    staffCalendarDetail: (visitInstanceId: string | number) =>
+      `/dashboard/staff/calendar/${visitInstanceId}/detail`,
+  },
 };

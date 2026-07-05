@@ -18,6 +18,11 @@ type AssignHostModalProps = {
   delegationName?: string | null;
   currentHostUserId?: number | null;
   customTitle?: string;
+  /**
+   * Khi được truyền, modal KHÔNG gọi API gán host — chỉ trả candidate đã chọn cho parent
+   * (dashboard dùng để tiếp tục bước chọn mẫu email mời host trước khi submit).
+   */
+  onHostPicked?: (host: HostCandidate) => void;
   onClose: () => void;
   onConfirmed: () => void;
 };
@@ -30,7 +35,7 @@ const formatDateTime = (value?: string | null) => {
 };
 
 export function AssignHostModal({
-  isOpen, mode, visitRequestId, visitInstanceId, delegationName, currentHostUserId, customTitle, onClose, onConfirmed,
+  isOpen, mode, visitRequestId, visitInstanceId, delegationName, currentHostUserId, customTitle, onHostPicked, onClose, onConfirmed,
 }: AssignHostModalProps) {
   const [candidates, setCandidates] = useState<HostCandidate[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -68,7 +73,9 @@ export function AssignHostModal({
   if (!isOpen) return null;
 
   const title = customTitle || (mode === 'approve' ? 'Duyệt đơn & chọn host' : 'Chuyển host phụ trách');
-  const confirmLabel = mode === 'approve' ? 'Duyệt & gán host' : (customTitle ? 'Lưu lựa chọn' : 'Chuyển host');
+  const confirmLabel = onHostPicked
+    ? 'Tiếp tục: chọn mẫu email'
+    : mode === 'approve' ? 'Duyệt & gán host' : (customTitle ? 'Lưu lựa chọn' : 'Chuyển host');
 
   const filtered = debouncedKeyword.trim()
     ? candidates.filter((c) =>
@@ -91,6 +98,12 @@ export function AssignHostModal({
   const doAssign = async () => {
     if (!selectedId || !visitInstanceId) return;
     setConfirmConflict(false);
+    // Pick-only mode: parent tiếp tục bước chọn mẫu email + submit gán host.
+    if (onHostPicked) {
+      const picked = candidates.find((c) => c.userId === selectedId);
+      if (picked) onHostPicked(picked);
+      return;
+    }
     setIsSubmitting(true);
     setSubmitError(null);
     try {

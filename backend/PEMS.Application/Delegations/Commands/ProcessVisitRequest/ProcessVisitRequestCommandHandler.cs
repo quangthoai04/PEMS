@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -5,8 +7,11 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Common.Security;
+using PEMS.Application.Emails.Common;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Delegations;
+using PEMS.Domain.Entities.Emails;
 using PEMS.Domain.Entities.Users;
 using PEMS.Shared;
 
@@ -15,18 +20,32 @@ namespace PEMS.Application.Delegations.Commands.ProcessVisitRequest;
 public sealed class ProcessVisitRequestCommandHandler
     : IRequestHandler<ProcessVisitRequestCommand, ProcessVisitRequestResponse>
 {
+    /// <summary>Template email mời host (seed email_templates: HOST_ASSIGNMENT).</summary>
+    private const string HostAssignmentTemplateCode = "HOST_ASSIGNMENT";
+
     private readonly IApplicationDbContext _db;
     private readonly ICurrentUserService _currentUser;
     private readonly IDateTimeService _clock;
     private readonly PEMS.Application.Notifications.Common.INotificationService _notificationService;
+    private readonly IEmailService _email;
+    private readonly IHtmlSanitizerService _sanitizer;
+    private readonly IFileStorageService _storage;
+    private readonly PEMS.Application.Emails.Utils.IEmailImageLayoutNormalizer _normalizer;
 
     public ProcessVisitRequestCommandHandler(
-        IApplicationDbContext db, ICurrentUserService currentUser, IDateTimeService clock, PEMS.Application.Notifications.Common.INotificationService notificationService)
+        IApplicationDbContext db, ICurrentUserService currentUser, IDateTimeService clock,
+        PEMS.Application.Notifications.Common.INotificationService notificationService,
+        IEmailService email, IHtmlSanitizerService sanitizer, IFileStorageService storage,
+        PEMS.Application.Emails.Utils.IEmailImageLayoutNormalizer normalizer)
     {
         _db = db;
         _currentUser = currentUser;
         _clock = clock;
         _notificationService = notificationService;
+        _email = email;
+        _sanitizer = sanitizer;
+        _storage = storage;
+        _normalizer = normalizer;
     }
 
     public async Task<ProcessVisitRequestResponse> Handle(
@@ -77,6 +96,15 @@ public sealed class ProcessVisitRequestCommandHandler
 
         var now = _clock.UtcNow;
 
+        // ── Validate/sanitize nội dung email đã chỉnh (bước "Chọn mẫu & xem trước email") ──
+        var editedContent = ValidateAndSanitizeOverride(request.EmailOverride);
+        var attachInputs = OutboundEmailAttachments.From(request.EmailOverride);
+        await OutboundEmailAttachments.ValidateAsync(_db, actorId, attachInputs, cancellationToken);
+
+        var campusName = await _db.Campuses
+            .Where(c => c.CampusId == instance.CampusId).Select(c => c.Name)
+            .FirstOrDefaultAsync(cancellationToken) ?? "FPT University";
+
         // The approve+assign writes touch two tables that have cross-row DB triggers: the
         // visit_request_campuses BEFORE UPDATE trigger reads visit_requests.status and rejects the
         // move to an operational status (ASSIGNED) unless the parent request is already APPROVED.
@@ -112,7 +140,7 @@ public sealed class ProcessVisitRequestCommandHandler
             instance.UpdatedBy = actorId;
             instance.RowVersion += 1;
         }
-        else // MULTI_CAMPUS â€” HO has already approved; Staff Leader assigns the actual staff.
+        else // MULTI_CAMPUS — HO has already approved; Staff Leader assigns the actual staff.
         {
             if (visit.Status != VisitRequestStatuses.Approved || instance.Status != "WAITING_HOST_ASSIGNMENT")
                 throw new ConflictException("Đơn đã được người khác xử lý hoặc trạng thái đã thay đổi.");
@@ -139,9 +167,18 @@ public sealed class ProcessVisitRequestCommandHandler
 
         await _db.SaveChangesAsync(cancellationToken);
 
+        // ── Email mời host (template HOST_ASSIGNMENT — module email hiện có, không tự chế) ──
+        // Persist sent_emails + recipient TRONG transaction để việc gán host và log email
+        // commit nguyên tử; SMTP gửi best-effort SAU commit (lỗi gửi không hủy việc gán host).
+        var (sentEmailId, sentRecipientId, finalSubject, finalBody) =
+            await PersistHostInvitationEmailAsync(
+                visit, instance, host, campusName,
+                editedContent, request.EmailOverride?.Subject?.Trim(),
+                attachInputs, actorId, now, cancellationToken);
+
         // --- Notifications ---
         var notifications = new List<PEMS.Application.Notifications.Common.CreateNotificationItem>();
-        
+
         if (visit.VisitScope == VisitScopes.SingleCampus)
         {
             if (visit.VisitorUserId.HasValue)
@@ -173,14 +210,177 @@ public sealed class ProcessVisitRequestCommandHandler
 
         await tx.CommitAsync(cancellationToken);
 
+        // ── Gửi email SAU khi mọi thứ đã commit (best-effort) ──
+        bool emailQueued;
+        string emailStatus;
+        try
+        {
+            var outboundAttachments = await OutboundEmailAttachments.LoadAsync(_db, _storage, attachInputs, cancellationToken);
+            await _email.SendAsync(new PEMS.Application.Common.Interfaces.OutboundEmail
+            {
+                ToEmail = host.Email,
+                Subject = finalSubject,
+                Body = finalBody,
+                IsHtml = true,
+                Attachments = outboundAttachments,
+            }, cancellationToken);
+            emailQueued = true;
+            emailStatus = "SENT";
+            await UpdateEmailStatusAsync(sentEmailId, sentRecipientId, "SENT", actorId, now, null, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            // Host đã được gán thành công; chỉ ghi nhận email lỗi để có thể gửi lại.
+            emailQueued = false;
+            emailStatus = "FAILED";
+            await UpdateEmailStatusAsync(sentEmailId, sentRecipientId, "FAILED", actorId, now, ex.Message, cancellationToken);
+        }
+
+        var baseMessage = visit.VisitScope == VisitScopes.SingleCampus
+            ? "Đã duyệt đơn và gán host phụ trách."
+            : "Đã gán host phụ trách cho cơ sở.";
+
         return new ProcessVisitRequestResponse(
             visit.VisitRequestId,
             instance.VisitInstanceId,
             visit.Status,
             instance.Status,
             request.HostUserId,
-            visit.VisitScope == VisitScopes.SingleCampus
-                ? "Đã duyệt đơn và gán host phụ trách."
-                : "Đã gán host phụ trách cho cơ sở.");
+            emailQueued ? $"{baseMessage} Đã gửi email mời host." : $"{baseMessage} Gửi email mời host thất bại.",
+            emailQueued,
+            emailStatus);
     }
+
+    /// <summary>
+    /// Ghi sent_emails + sent_email_recipients cho email mời host. Nội dung: bản Staff Leader đã
+    /// chỉnh (nếu có) hoặc render từ template HOST_ASSIGNMENT trong DB. Không có action token —
+    /// gán host là quyết định final (một lần).
+    /// </summary>
+    private async Task<(ulong SentEmailId, ulong SentRecipientId, string Subject, string Body)>
+        PersistHostInvitationEmailAsync(
+            PEMS.Domain.Entities.Delegations.VisitRequest visit,
+            VisitRequestCampus instance,
+            User host,
+            string campusName,
+            string? editedContent,
+            string? editedSubject,
+            IReadOnlyList<EmailDraftAttachmentInput> attachInputs,
+            ulong actorId,
+            DateTime now,
+            CancellationToken ct)
+    {
+        var template = await _db.EmailTemplates
+            .Where(t => t.TemplateCode == HostAssignmentTemplateCode)
+            .Select(t => new { t.EmailTemplateId, t.SubjectVi, t.BodyVi })
+            .FirstOrDefaultAsync(ct);
+
+        string subject;
+        string body;
+        if (editedContent != null)
+        {
+            subject = editedSubject ?? "Bạn được phân công làm Host chính";
+            body = EmailComposition.BrandedShell(editedContent);
+        }
+        else
+        {
+            var context = new Dictionary<string, string>
+            {
+                ["DelegationName"] = visit.DelegationName ?? "đoàn khách",
+                ["CampusName"] = campusName,
+                ["PlannedStartAt"] = $"{instance.PlannedStartAt:HH:mm dd/MM/yyyy}",
+                ["HostName"] = host.FullName,
+                ["RequestCode"] = visit.RequestCode ?? string.Empty,
+            };
+            subject = EmailComposition.RenderTemplate(
+                template?.SubjectVi ?? "Bạn được phân công làm Host chính", context);
+            var rendered = EmailComposition.RenderTemplate(
+                template?.BodyVi ?? "Bạn được phân công làm Host cho {{DelegationName}} tại {{CampusName}}.", context);
+            body = EmailComposition.BrandedShell(
+                $"<p>Xin chào <strong>{host.FullName}</strong>,</p><p>{rendered}</p>" +
+                $"<p>Thời gian dự kiến: <strong>{instance.PlannedStartAt:HH:mm dd/MM/yyyy}</strong> – " +
+                $"<strong>{instance.PlannedEndAt:HH:mm dd/MM/yyyy}</strong>.<br/>" +
+                "Vui lòng đăng nhập PEMS để xem chi tiết và chuẩn bị quy trình tiếp khách.</p>");
+        }
+
+        body = await _normalizer.NormalizeHtmlAsync(body, ct);
+
+        var sentEmail = new SentEmail
+        {
+            EmailTemplateId = template?.EmailTemplateId,
+            RelatedType = "VISIT_INSTANCE",
+            RelatedId = instance.VisitInstanceId,
+            Subject = subject,
+            BodySnapshot = body,
+            BodyFormat = PEMS.Domain.Enums.EmailBodyFormat.HTML,
+            Status = "QUEUED",
+            SentBy = actorId,
+            CreatedAt = now,
+        };
+        OutboundEmailAttachments.Attach(sentEmail, attachInputs, now);
+        _db.SentEmails.Add(sentEmail);
+        await _db.SaveChangesAsync(ct);
+
+        var sentRecipient = new SentEmailRecipient
+        {
+            SentEmailId = sentEmail.SentEmailId,
+            RecipientEmail = host.Email,
+            RecipientName = host.FullName,
+            RecipientType = "TO",
+            DeliveryStatus = "QUEUED",
+            CreatedAt = now,
+        };
+        _db.SentEmailRecipients.Add(sentRecipient);
+        await _db.SaveChangesAsync(ct);
+
+        return (sentEmail.SentEmailId, sentRecipient.SentEmailRecipientId, subject, body);
+    }
+
+    /// <summary>Validates + sanitizes the optional edited email; returns the sanitized content
+    /// HTML, or null when no override was supplied.</summary>
+    private string? ValidateAndSanitizeOverride(EmailOverride? ov)
+    {
+        if (ov is null || !ov.UseEditedContent) return null;
+
+        if (string.IsNullOrWhiteSpace(ov.Subject))
+            throw new ValidationException("Tiêu đề email không được để trống.");
+        if (ov.Subject.Trim().Length > EmailOverrideLimits.SubjectMax)
+            throw new ValidationException($"Tiêu đề email tối đa {EmailOverrideLimits.SubjectMax} ký tự.");
+
+        var rawHtml = EmailComposition.ResolveEditableHtml(ov);
+        if (string.IsNullOrWhiteSpace(rawHtml))
+            throw new ValidationException("Nội dung email không được để trống.");
+        if (rawHtml.Length > EmailOverrideLimits.BodyMax)
+            throw new ValidationException($"Nội dung email vượt quá {EmailOverrideLimits.BodyMax} ký tự.");
+
+        var sanitized = _sanitizer.SanitizeEmailHtml(rawHtml);
+        if (string.IsNullOrWhiteSpace(sanitized))
+            throw new ValidationException("Nội dung email không hợp lệ sau khi lọc.");
+        return sanitized;
+    }
+
+    private async Task UpdateEmailStatusAsync(
+        ulong sentEmailId, ulong sentEmailRecipientId, string status, ulong actorId, DateTime now,
+        string? error, CancellationToken ct)
+    {
+        var sentEmail = await _db.SentEmails.FirstOrDefaultAsync(e => e.SentEmailId == sentEmailId, ct);
+        if (sentEmail != null)
+        {
+            sentEmail.Status = status;
+            sentEmail.LastAttemptAt = now;
+            sentEmail.RetryCount += 1;
+            if (status == "SENT") { sentEmail.SentBy = actorId; sentEmail.SentAt = now; }
+            else { sentEmail.ErrorMessage = Truncate(error, 1000); }
+        }
+        var rec = await _db.SentEmailRecipients.FirstOrDefaultAsync(r => r.SentEmailRecipientId == sentEmailRecipientId, ct);
+        if (rec != null)
+        {
+            rec.DeliveryStatus = status;
+            if (status == "SENT") rec.SentAt = now;
+            else rec.ErrorMessage = Truncate(error, 1000);
+        }
+        await _db.SaveChangesAsync(ct);
+    }
+
+    private static string? Truncate(string? s, int max)
+        => string.IsNullOrEmpty(s) ? s : (s.Length <= max ? s : s.Substring(0, max));
 }

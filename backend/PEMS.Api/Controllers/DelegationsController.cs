@@ -147,7 +147,9 @@ namespace PEMS.Api.Controllers
 
         public async Task<IActionResult> AssignHost(ulong visitRequestId, ulong visitInstanceId, [FromBody] AssignHostBody body, CancellationToken cancellationToken)
         {
-            var result = await _mediator.Send(new ProcessVisitRequestCommand(visitRequestId, visitInstanceId, body.HostUserId), cancellationToken);
+            var result = await _mediator.Send(
+                new ProcessVisitRequestCommand(visitRequestId, visitInstanceId, body.HostUserId, body.EmailOverride),
+                cancellationToken);
             return Ok(result);
         }
 
@@ -628,8 +630,11 @@ namespace PEMS.Api.Controllers
     /// <summary>Request body for the UC-18/UC-22 reject endpoints (reason is mandatory).</summary>
     public sealed record RejectVisitRequestBody(string Reason);
 
-    /// <summary>Request body for the UC-22 approve-and-assign / transfer-host endpoint.</summary>
-    public sealed record AssignHostBody(ulong HostUserId);
+    /// <summary>Request body for the UC-22 approve-and-assign / transfer-host endpoint.
+    /// emailOverride: nội dung email mời host đã chỉnh ở bước "Xem trước email" (optional).</summary>
+    public sealed record AssignHostBody(
+        ulong HostUserId,
+        PEMS.Application.Emails.Common.EmailOverride? EmailOverride = null);
 
     /// <summary>Request body for updating an internally-created request's registrant block.</summary>
     public sealed record UpdateRegistrantInfoBody(string FullName, string Organization, string? JobTitle, string Phone, string Email);

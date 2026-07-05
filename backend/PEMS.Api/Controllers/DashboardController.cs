@@ -5,6 +5,8 @@ using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Dashboard.Queries.GetDepartmentLeaderDashboardSummary;
 using PEMS.Application.Dashboard.Queries.GetHODashboardOverview;
+using PEMS.Application.Dashboard.Queries.GetStaffCalendar;
+using PEMS.Application.Dashboard.Queries.GetStaffCalendarDetail;
 
 namespace PEMS.Api.Controllers
 {
@@ -31,6 +33,33 @@ namespace PEMS.Api.Controllers
         {
             var query = new GetHODashboardOverviewQuery();
             var result = await _mediator.Send(query, cancellationToken);
+            return Ok(result);
+        }
+
+        // ── Dashboard bảng lịch cho Staff Leader (STAFF+LEADER) và Staff thường (STAFF+STAFF) ──
+        // viewMode=office (Lịch văn phòng) | mine (Lịch của tôi — chỉ item user là host).
+        // Scope/action flags do handler tính; user ngoài role STAFF nhận 403.
+        [HttpGet("staff/calendar")]
+        [PEMS.Api.Filters.RoleAuthorize(
+            PEMS.Application.Common.Security.EffectiveRole.StaffLeader,
+            PEMS.Application.Common.Security.EffectiveRole.Staff)]
+        public async Task<IActionResult> GetStaffCalendar(
+            [FromQuery] string? viewMode,
+            [FromQuery] System.DateTime from,
+            [FromQuery] System.DateTime to,
+            CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(new GetStaffCalendarQuery(viewMode, from, to), cancellationToken);
+            return Ok(result);
+        }
+
+        [HttpGet("staff/calendar/{visitInstanceId}/detail")]
+        [PEMS.Api.Filters.RoleAuthorize(
+            PEMS.Application.Common.Security.EffectiveRole.StaffLeader,
+            PEMS.Application.Common.Security.EffectiveRole.Staff)]
+        public async Task<IActionResult> GetStaffCalendarDetail(ulong visitInstanceId, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(new GetStaffCalendarDetailQuery(visitInstanceId), cancellationToken);
             return Ok(result);
         }
 

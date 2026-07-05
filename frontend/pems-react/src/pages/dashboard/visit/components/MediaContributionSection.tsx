@@ -18,7 +18,7 @@ export function MediaContributionSection({ visitInstanceId, data, canView, insta
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
-    const files = Array.from(e.target.files);
+    const files = Array.from(e.target.files) as File[];
     
     // In Phase 3, we mock the call to the actual backend endpoint which might be a stub
     const formData = new FormData();

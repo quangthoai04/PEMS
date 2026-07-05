@@ -31,6 +31,7 @@ import { SharedDashboardView } from '../departments/SharedDashboardView';
 import { AdminDashboardView } from './AdminDashboardView';
 import { DeptLeadDashboardView } from './DeptLeadDashboardView';
 import { DeptStaffDashboard } from '../department-staff/DeptStaffDashboard';
+import { StaffDashboardCalendar } from './staff-calendar/StaffDashboardCalendar';
 import { useAuth } from '../../../shared/hooks/useAuth';
 
 
@@ -85,9 +86,10 @@ export function DashboardHome() {
   const isStudent = user?.role?.toUpperCase() === 'STUDENT';
   const isVisitor = user?.role?.toUpperCase() === 'VISITOR';
   const isAdmin = user?.role?.toUpperCase() === 'ADMIN';
-  // Đúng nghĩa: ai dùng SharedDashboardView (KHÔNG gom nhầm vào biến "isStaff").
-  const shouldUseSharedDashboard =
-    isStaffMember || isStaffLeader || isStudent || isVisitor;
+  // Staff/Staff Leader dùng bảng lịch data thật (StaffDashboardCalendar);
+  // Student/Visitor vẫn dùng SharedDashboardView.
+  const shouldUseStaffCalendar = isStaffMember || isStaffLeader;
+  const shouldUseSharedDashboard = isStudent || isVisitor;
 
   // State to handle Events Map (synchronized with localStorage)
   const [events, setEvents] = useState<Record<string, EventItem[]>>(() => {
@@ -353,6 +355,8 @@ export function DashboardHome() {
         <DeptLeadDashboardView user={user} />
       ) : isDeptStaff ? (
         <DeptStaffDashboard />
+      ) : shouldUseStaffCalendar ? (
+        <StaffDashboardCalendar user={user} isStaffLeader={isStaffLeader} />
       ) : shouldUseSharedDashboard ? (
         <SharedDashboardView user={user} isDeptLeader={isDeptLeader} isDeptStaff={isDeptStaff} isStudent={isStudent} isVisitor={isVisitor} />
       ) : (
