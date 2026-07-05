@@ -18,28 +18,35 @@ namespace PEMS.Api.Controllers
         private readonly IMediator _mediator;
         public NewsController(IMediator mediator) => _mediator = mediator;
 
-        // ── Tin tức gắn với 1 campus instance (Phase 4) — nhiều bài / instance ──
-        // List posts of an instance (Visitor sees only published).
+        // Get news list for a specific visit instance (used by visit management page)
         [HttpGet("visit-instances/{visitInstanceId}")]
         public async Task<IActionResult> GetVisitInstanceNews(ulong visitInstanceId, CancellationToken cancellationToken)
             => Ok(await _mediator.Send(new GetVisitInstanceNewsQuery(visitInstanceId), cancellationToken));
 
-        // Create a post (Host / accepted IC-Staff / Student) → PENDING_REVIEW.
+        // UC-Create News: POST /api/news/visit-instances/{visitInstanceId}
+        // visitInstanceId comes from URL — set by visit management page when navigating to create form
         [HttpPost("visit-instances/{visitInstanceId}")]
-        public async Task<IActionResult> CreateVisitInstanceNews(ulong visitInstanceId, [FromBody] CreateVisitInstanceNewsBody body, CancellationToken cancellationToken)
-            => Ok(await _mediator.Send(new CreateVisitInstanceNewsCommand(visitInstanceId, body.Title, body.Summary, body.Body), cancellationToken));
+        [RoleAuthorize(EffectiveRole.Staff, EffectiveRole.Student)]
+        public async Task<IActionResult> CreateNews(
+            [FromRoute] ulong visitInstanceId,
+            [FromBody] CreateNewsBody body,
+            CancellationToken cancellationToken)
+        {
+            var command = new PEMS.Application.News.Commands.CreateNews.CreateNewsCommand
+            {
+                VisitInstanceId = visitInstanceId,
+                CoverFileId     = body.CoverFileId,
+                Title           = body.Title ?? string.Empty,
+                Summary         = body.Summary ?? string.Empty,
+                ContentSections = body.ContentSections
+                    ?? Array.Empty<PEMS.Application.News.Commands.CreateNews.CreateNewsContentSectionDto>()
+            };
+            var result = await _mediator.Send(command, cancellationToken);
+            if (!result.Success) return Conflict(result);
+            return StatusCode(201, result);
+        }
 
-        // Edit a not-yet-published post (author or Host) → resubmits for review.
-        [HttpPut("visit-instance-news/{newsId}")]
-        public async Task<IActionResult> UpdateVisitInstanceNews(ulong newsId, [FromBody] UpdateVisitInstanceNewsBody body, CancellationToken cancellationToken)
-            => Ok(await _mediator.Send(new UpdateVisitInstanceNewsCommand(newsId, body.Title, body.Summary, body.Body, body.RowVersion), cancellationToken));
-
-        // Re-submit a post for review (e.g. after rejection).
-        [HttpPost("visit-instance-news/{newsId}/submit-review")]
-        public async Task<IActionResult> SubmitVisitInstanceNews(ulong newsId, CancellationToken cancellationToken)
-            => Ok(await _mediator.Send(new SubmitVisitInstanceNewsCommand(newsId), cancellationToken));
-
-        // UC Upload News Cover Image: POST /api/news/cover-upload
+        // UC Upload News Cover Image
         [HttpPost("cover-upload")]
         [RoleAuthorize(EffectiveRole.Staff, EffectiveRole.Student)]
         [RequestSizeLimit(6 * 1024 * 1024)]
@@ -73,35 +80,7 @@ namespace PEMS.Api.Controllers
             return Ok(result);
         }
 
-        // Create News support: get eligible closed visit instances
-        [HttpGet("eligible-visit-instances")]
-        [RoleAuthorize(EffectiveRole.Staff, EffectiveRole.Student)]
-        public async Task<IActionResult> GetEligibleVisitInstances(
-            [FromQuery] bool includeAlreadyHasNews = false,
-            CancellationToken cancellationToken = default)
-        {
-            var q = new PEMS.Application.News.Queries.GetEligibleVisitInstancesForNews
-                .GetEligibleVisitInstancesForNewsQuery
-            {
-                IncludeAlreadyHasNews = includeAlreadyHasNews
-            };
-            var result = await _mediator.Send(q, cancellationToken);
-            return Ok(result);
-        }
-
-        // UC-Create News: POST /api/news
-        [HttpPost]
-        [RoleAuthorize(EffectiveRole.Staff, EffectiveRole.Student)]
-        public async Task<IActionResult> CreateNews(
-            [FromBody] PEMS.Application.News.Commands.CreateNews.CreateNewsCommand command,
-            CancellationToken cancellationToken)
-        {
-            var result = await _mediator.Send(command, cancellationToken);
-            if (!result.Success) return Conflict(result);
-            return StatusCode(201, result);
-        }
-
-        // UC View News Details: GET /api/news/{newsId}
+        // UC View News Details
         [HttpGet("{newsId}")]
         [RoleAuthorize(EffectiveRole.Ho, EffectiveRole.StaffLeader, EffectiveRole.Staff, EffectiveRole.Student)]
         public async Task<IActionResult> GetNewsDetails(ulong newsId, CancellationToken cancellationToken)
@@ -128,7 +107,7 @@ namespace PEMS.Api.Controllers
             return Ok(result);
         }
 
-        // UC Change Visibility: PATCH /api/news/{newsId}/visibility (hide or show)
+        // UC Change Visibility: PATCH /api/news/{newsId}/visibility
         [HttpPatch("{newsId}/visibility")]
         [RoleAuthorize(EffectiveRole.StaffLeader)]
         public async Task<IActionResult> ChangeNewsVisibility(ulong newsId, [FromBody] ChangeVisibilityBody body, CancellationToken cancellationToken)
@@ -139,44 +118,6 @@ namespace PEMS.Api.Controllers
                 TargetStatus = body.TargetStatus,
                 RowVersion   = body.RowVersion
             };
-            var result = await _mediator.Send(command, cancellationToken);
-            return Ok(result);
-        }
-
-        [HttpPost("approvenews")]
-        public async Task<IActionResult> ApproveNews(
-            [FromBody] PEMS.Application.News.Commands.ApproveNews.ApproveNewsCommand command,
-            CancellationToken cancellationToken)
-        {
-            var result = await _mediator.Send(command, cancellationToken);
-            return Ok(result);
-        }
-
-        [HttpPost("publishnews")]
-        public async Task<IActionResult> PublishNews(
-            [FromBody] PEMS.Application.News.Commands.PublishNews.PublishNewsCommand command,
-            CancellationToken cancellationToken)
-        {
-            var result = await _mediator.Send(command, cancellationToken);
-            return Ok(result);
-        }
-
-        // [HttpGet("viewnewsdetails")] removed — replaced by GET /api/news/{newsId}
-
-        [HttpPost("addmultilingualnews")]
-        public async Task<IActionResult> AddMultilingualNews(
-            [FromBody] PEMS.Application.News.Commands.AddMultilingualNews.AddMultilingualNewsCommand command,
-            CancellationToken cancellationToken)
-        {
-            var result = await _mediator.Send(command, cancellationToken);
-            return Ok(result);
-        }
-
-        [HttpPost("managenewsvisibility")]
-        public async Task<IActionResult> ManageNewsVisibility(
-            [FromBody] PEMS.Application.News.Commands.ManageNewsVisibility.ManageNewsVisibilityCommand command,
-            CancellationToken cancellationToken)
-        {
             var result = await _mediator.Send(command, cancellationToken);
             return Ok(result);
         }
@@ -205,8 +146,11 @@ namespace PEMS.Api.Controllers
         }
     }
 
-    public sealed record CreateVisitInstanceNewsBody(string Title, string? Summary, string? Body);
-    public sealed record UpdateVisitInstanceNewsBody(string Title, string? Summary, string? Body, int RowVersion);
+    public sealed record CreateNewsBody(
+        ulong? CoverFileId,
+        string? Title,
+        string? Summary,
+        IReadOnlyList<PEMS.Application.News.Commands.CreateNews.CreateNewsContentSectionDto>? ContentSections);
     public sealed record ReviewNewsBody(string Action, string? Reason, int RowVersion);
     public sealed record ChangeVisibilityBody(string TargetStatus, int RowVersion);
     public sealed record EditNewsBody(

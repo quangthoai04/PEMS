@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Search, Plus, Eye, Edit2, ChevronLeft, ChevronRight, ArrowUpDown } from 'lucide-react';
+import { Search, Eye, Edit2, ChevronLeft, ChevronRight, ArrowUpDown } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import httpClient from '../../../shared/api/httpClient';
 
@@ -213,13 +213,9 @@ export function NewsManagement() {
         </select>
 
         {canCreateNews && (
-          <button
-            onClick={() => navigate('/dashboard/news/create')}
-            className="ml-auto bg-[#f37021] hover:bg-[#d9621a] text-white px-4 py-2 rounded-md font-bold flex items-center gap-1.5 transition-colors shadow-sm text-sm tracking-wide"
-          >
-            <Plus className="w-4 h-4 flex-shrink-0" />
-            Thêm tin tức mới
-          </button>
+          <div className="ml-auto flex items-center gap-2 px-4 py-2 bg-blue-50 border border-blue-200 rounded-md text-sm text-blue-700 font-medium">
+            Để tạo tin tức, vui lòng vào <button onClick={() => navigate('/dashboard/visit')} className="underline font-bold hover:text-[#004c91] transition-colors">Quản lý Chuyến tiếp khách</button>
+          </div>
         )}
       </div>
 

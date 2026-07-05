@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { motion } from 'motion/react';
 import ReactQuill from 'react-quill-new';
 import 'react-quill-new/dist/quill.snow.css';
-import { UploadCloud, Plus, Trash2, ArrowLeft, ImagePlus, X, Calendar, MapPin, CheckCircle2 } from 'lucide-react';
+import { UploadCloud, Plus, Trash2, ArrowLeft, ImagePlus, X } from 'lucide-react';
 import toast, { Toaster } from 'react-hot-toast';
 import httpClient from '../../../shared/api/httpClient';
 import { uploadFileToEndpoint } from '../../../shared/api/fileUploadApi';
@@ -11,32 +11,12 @@ import { validateFile } from '../../../shared/utils/fileValidation';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-interface EligibleVisit {
-  visitInstanceId: number;
-  visitTitle: string;
-  campusName: string;
-  plannedStartAt: string;
-  plannedEndAt: string;
-  closedAt?: string;
-  status: string;
-  hasNews: boolean;
-  canSelect: boolean;
-}
-
 interface ContentSection {
   id: number;
   sectionOrder: number;
   sectionTitle: string;
   sectionBodyHtml: string;
   sectionImageSrc: string | null;
-}
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function formatDate(dateStr?: string): string {
-  if (!dateStr) return '—';
-  const fixed = dateStr.endsWith('Z') ? dateStr : dateStr + 'Z';
-  return new Date(fixed).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
 // ─── Quill toolbar (no image button — images managed separately) ──────────────
@@ -55,12 +35,7 @@ const QUILL_MODULES = {
 
 export function CreateNews() {
   const navigate = useNavigate();
-
-  // Step 0: Eligible visit instances
-  const [eligibleVisits, setEligibleVisits]   = useState<EligibleVisit[]>([]);
-  const [loadingVisits, setLoadingVisits]     = useState(true);
-  const [selectedVisit, setSelectedVisit]     = useState<EligibleVisit | null>(null);
-  const [showVisitList, setShowVisitList]     = useState(true);
+  const { visitInstanceId } = useParams<{ visitInstanceId: string }>();
 
   // Step 1: Basic info
   const [title,   setTitle]   = useState('');
@@ -80,40 +55,20 @@ export function CreateNews() {
   // Submit state
   const [submitting, setSubmitting] = useState(false);
 
-  // ── Load eligible visits ───────────────────────────────────────────────────
-
-  useEffect(() => {
-    let cancelled = false;
-    const fetchVisits = async () => {
-      setLoadingVisits(true);
-      try {
-        const { data } = await httpClient.get<{ items: EligibleVisit[] }>(
-          '/news/eligible-visit-instances',
-          { params: { includeAlreadyHasNews: false } }
-        );
-        if (!cancelled) setEligibleVisits(data.items ?? []);
-      } catch {
-        if (!cancelled) setEligibleVisits([]);
-      } finally {
-        if (!cancelled) setLoadingVisits(false);
-      }
-    };
-    fetchVisits();
-    return () => { cancelled = true; };
-  }, []);
-
-  // ── Visit selection ────────────────────────────────────────────────────────
-
-  const handleSelectVisit = (visit: EligibleVisit) => {
-    if (!visit.canSelect) return;
-    setSelectedVisit(visit);
-    setShowVisitList(false);
-  };
-
-  const handleChangeVisit = () => {
-    setSelectedVisit(null);
-    setShowVisitList(true);
-  };
+  // Guard: visitInstanceId must be present (navigation should always supply it)
+  if (!visitInstanceId) {
+    return (
+      <div className="p-8 text-center">
+        <p className="text-red-600 font-bold mb-4">Không xác định được chuyến tiếp khách.</p>
+        <button
+          onClick={() => navigate('/dashboard/visit')}
+          className="px-6 py-2 bg-[#004c91] text-white rounded-xl font-bold"
+        >
+          Về trang Quản lý Chuyến tiếp khách
+        </button>
+      </div>
+    );
+  }
 
   // ── Cover upload ───────────────────────────────────────────────────────────
 
@@ -199,7 +154,6 @@ export function CreateNews() {
   // ── Submit ─────────────────────────────────────────────────────────────────
 
   const handleSubmit = async () => {
-    if (!selectedVisit)   { toast.error('Vui lòng chọn chuyến tiếp khách trước.'); return; }
     if (!title.trim())    { toast.error('Tiêu đề không được để trống.'); return; }
     if (title.length > 150) { toast.error('Tiêu đề không được vượt quá 150 ký tự.'); return; }
     if (!summary.trim())  { toast.error('Mô tả ngắn không được để trống.'); return; }
@@ -223,7 +177,6 @@ export function CreateNews() {
     setSubmitting(true);
     try {
       const payload = {
-        visitInstanceId: selectedVisit.visitInstanceId,
         coverFileId,
         title: title.trim(),
         summary: summary.trim(),
@@ -240,7 +193,10 @@ export function CreateNews() {
         }),
       };
 
-      const { data } = await httpClient.post<{ success: boolean; message: string }>('/news', payload);
+      const { data } = await httpClient.post<{ success: boolean; message: string }>(
+        `/news/visit-instances/${visitInstanceId}`,
+        payload
+      );
 
       if (data.success) {
         toast.success('Tạo tin tức thành công! Bài viết đang chờ duyệt.');
@@ -254,8 +210,6 @@ export function CreateNews() {
       setSubmitting(false);
     }
   };
-
-  const formDisabled = !selectedVisit;
 
   // ─────────────────────────────────────────────────────────────────────────
 
@@ -284,91 +238,8 @@ export function CreateNews() {
 
       <div className="space-y-8">
 
-        {/* ── Section 0: Chọn chuyến tiếp khách ── */}
-        <section className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-          <div className="bg-[#004c91] px-6 py-3.5">
-            <h2 className="text-[15px] font-bold text-white uppercase tracking-wide">0. CHỌN CHUYẾN TIẾP KHÁCH ĐÃ ĐÓNG</h2>
-          </div>
-          <div className="p-6">
-            {selectedVisit && (
-              <div className="mb-4 p-4 bg-[#eef5fa] border border-[#b6d4f0] rounded-xl flex items-start justify-between gap-4">
-                <div>
-                  <div className="flex items-center gap-2 mb-1">
-                    <CheckCircle2 className="w-5 h-5 text-[#0aa14f] flex-shrink-0" />
-                    <span className="font-bold text-gray-800">{selectedVisit.visitTitle}</span>
-                  </div>
-                  <div className="flex flex-wrap gap-4 text-sm text-gray-600 mt-1 pl-7">
-                    <span className="flex items-center gap-1"><MapPin className="w-3.5 h-3.5 text-gray-400" />{selectedVisit.campusName}</span>
-                    <span className="flex items-center gap-1"><Calendar className="w-3.5 h-3.5 text-gray-400" />{formatDate(selectedVisit.plannedStartAt)} – {formatDate(selectedVisit.plannedEndAt)}</span>
-                    <span className="px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full text-xs font-bold">Đã đóng đoàn</span>
-                    <span className="px-2 py-0.5 bg-[#eaffe4] text-[#0aa14f] rounded-full text-xs font-bold">Chưa có bài</span>
-                  </div>
-                </div>
-                <button
-                  onClick={handleChangeVisit}
-                  className="flex-shrink-0 px-3 py-1.5 text-sm font-bold text-[#004c91] border border-[#004c91] rounded-lg hover:bg-[#004c91] hover:text-white transition-colors"
-                >
-                  Đổi chuyến
-                </button>
-              </div>
-            )}
-
-            {showVisitList && (
-              <>
-                {loadingVisits ? (
-                  <div className="flex items-center justify-center gap-2 py-8 text-gray-400">
-                    <div className="w-5 h-5 border-2 border-[#004c91] border-t-transparent rounded-full animate-spin" />
-                    <span>Đang tải danh sách chuyến tiếp khách...</span>
-                  </div>
-                ) : eligibleVisits.length === 0 ? (
-                  <div className="py-10 text-center">
-                    <p className="text-gray-700 font-bold mb-2">Bạn chưa có chuyến tiếp khách đã đóng để viết tin tức.</p>
-                    <p className="text-gray-500 text-sm">Bạn chỉ có thể tạo tin tức cho chuyến tiếp khách mà bạn đã xác nhận tham gia và đã được đóng đoàn.</p>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    <p className="text-sm text-gray-500 mb-3">Chọn một chuyến tiếp khách để tạo bài tin tức:</p>
-                    {eligibleVisits.map(visit => (
-                      <div
-                        key={visit.visitInstanceId}
-                        className={`border rounded-xl p-4 transition-all ${visit.canSelect ? 'border-gray-200 hover:border-[#004c91] hover:bg-[#f0f6fc] cursor-pointer' : 'border-gray-100 bg-gray-50 opacity-60 cursor-not-allowed'}`}
-                        onClick={() => visit.canSelect && handleSelectVisit(visit)}
-                      >
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="min-w-0">
-                            <div className="font-bold text-gray-800 text-sm truncate">{visit.visitTitle}</div>
-                            <div className="flex flex-wrap gap-3 mt-1.5 text-xs text-gray-500">
-                              <span className="flex items-center gap-1"><MapPin className="w-3 h-3" />{visit.campusName}</span>
-                              <span className="flex items-center gap-1"><Calendar className="w-3 h-3" />{formatDate(visit.plannedStartAt)} – {formatDate(visit.plannedEndAt)}</span>
-                              <span className="px-2 py-0.5 bg-gray-100 rounded-full font-bold">Đã đóng đoàn</span>
-                              {visit.hasNews
-                                ? <span className="px-2 py-0.5 bg-yellow-50 text-yellow-700 rounded-full font-bold">Đã có bài viết</span>
-                                : <span className="px-2 py-0.5 bg-[#eaffe4] text-[#0aa14f] rounded-full font-bold">Chưa có bài</span>
-                              }
-                            </div>
-                          </div>
-                          {visit.canSelect
-                            ? <button className="flex-shrink-0 px-3 py-1.5 bg-[#004c91] text-white text-xs font-bold rounded-lg hover:bg-[#003a70] transition-colors">Chọn chuyến này</button>
-                            : <span className="flex-shrink-0 px-3 py-1.5 bg-gray-200 text-gray-400 text-xs font-bold rounded-lg">Không thể chọn</span>
-                          }
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </>
-            )}
-
-            {!selectedVisit && !loadingVisits && (
-              <p className="mt-4 text-sm text-amber-600 font-medium">
-                ⚠ Vui lòng chọn chuyến tiếp khách đã đóng trước khi tạo tin tức.
-              </p>
-            )}
-          </div>
-        </section>
-
         {/* ── Section 1: THÔNG TIN CƠ BẢN ── */}
-        <section className={`bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden transition-opacity ${formDisabled ? 'opacity-50' : ''}`}>
+        <section className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
           <div className="bg-[#004c91] px-6 py-3.5">
             <h2 className="text-[15px] font-bold text-white uppercase tracking-wide">1. THÔNG TIN CƠ BẢN</h2>
           </div>
@@ -383,9 +254,8 @@ export function CreateNews() {
                   maxLength={150}
                   placeholder="Nhập tiêu đề tin tức..."
                   value={title}
-                  disabled={formDisabled}
                   onChange={e => setTitle(e.target.value)}
-                  className="w-full pr-16 pl-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] hover:border-[#004c91] transition-colors text-gray-800 disabled:bg-gray-50 disabled:cursor-not-allowed"
+                  className="w-full pr-16 pl-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] hover:border-[#004c91] transition-colors text-gray-800"
                 />
                 <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm text-gray-400 font-medium">{title.length}/150</span>
               </div>
@@ -399,22 +269,21 @@ export function CreateNews() {
                 rows={3}
                 placeholder="Nhập mô tả ngắn gọn..."
                 value={summary}
-                disabled={formDisabled}
                 onChange={e => setSummary(e.target.value)}
-                className="w-full p-4 border border-gray-300 rounded-xl focus:outline-none focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] hover:border-[#004c91] transition-colors text-gray-800 resize-none disabled:bg-gray-50 disabled:cursor-not-allowed"
+                className="w-full p-4 border border-gray-300 rounded-xl focus:outline-none focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] hover:border-[#004c91] transition-colors text-gray-800 resize-none"
               />
             </div>
           </div>
         </section>
 
         {/* ── Section 2: ẢNH ĐẠI DIỆN ── */}
-        <section className={`bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden transition-opacity ${formDisabled ? 'opacity-50' : ''}`}>
+        <section className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
           <div className="bg-[#004c91] px-6 py-3.5">
             <h2 className="text-[15px] font-bold text-white uppercase tracking-wide">2. ẢNH ĐẠI DIỆN</h2>
           </div>
           <div className="p-6">
-            <label className={`block w-full cursor-pointer ${formDisabled ? 'pointer-events-none' : ''}`}>
-              <input type="file" accept="image/png,image/jpeg,image/jpg,image/webp" className="hidden" onChange={handleImageUpload} disabled={formDisabled} />
+            <label className="block w-full cursor-pointer">
+              <input type="file" accept="image/png,image/jpeg,image/jpg,image/webp" className="hidden" onChange={handleImageUpload} />
               <div className={`relative bg-[#eef5fa] border-2 border-dashed border-[#b6d4f0] rounded-xl flex flex-col items-center justify-center text-center hover:bg-[#e4f0fa] transition-colors overflow-hidden ${imagePreview ? 'p-2' : 'p-12 min-h-[200px]'}`}>
                 {imagePreview ? (
                   <div className="relative w-full">
@@ -446,12 +315,12 @@ export function CreateNews() {
         </section>
 
         {/* ── Section 3: NỘI DUNG CHI TIẾT ── */}
-        <section className={`bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden transition-opacity ${formDisabled ? 'opacity-50' : ''}`}>
+        <section className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
           <div className="bg-[#004c91] px-6 py-3.5">
             <h2 className="text-[15px] font-bold text-white uppercase tracking-wide">3. NỘI DUNG CHI TIẾT</h2>
           </div>
 
-          <div className={`p-6 flex flex-col gap-8 ${formDisabled ? 'pointer-events-none' : ''}`}>
+          <div className="p-6 flex flex-col gap-8">
             {sections.map((section, index) => (
               <div key={section.id}>
                 {index > 0 && <div className="h-px bg-gray-100 w-full mb-8" />}
@@ -491,7 +360,7 @@ export function CreateNews() {
                     />
                   </div>
 
-                  {/* Text body — no image button in toolbar */}
+                  {/* Text body */}
                   <div>
                     <label className="block text-gray-900 font-bold mb-2">
                       Nội dung <span className="text-red-500">*</span>
@@ -572,14 +441,14 @@ export function CreateNews() {
         {/* ── Buttons ── */}
         <div className="flex items-center justify-between gap-4 pt-6 border-t border-gray-200">
           <button
-            onClick={() => navigate('/dashboard/news')}
+            onClick={() => navigate(-1)}
             className="flex items-center gap-1.5 px-6 py-2.5 rounded-xl border border-gray-300 text-gray-700 font-bold hover:border-[#004c91] hover:text-[#004c91] transition-colors"
           >
             <ArrowLeft className="w-4 h-4" /> Quay lại
           </button>
           <button
             onClick={handleSubmit}
-            disabled={formDisabled || submitting || coverUploading}
+            disabled={submitting || coverUploading}
             className="px-8 py-2.5 text-white bg-[#f37021] rounded-xl font-bold hover:-translate-y-1 hover:shadow-lg transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0 flex items-center gap-2"
           >
             {submitting && <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />}

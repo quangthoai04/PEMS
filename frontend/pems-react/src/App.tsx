@@ -139,7 +139,7 @@ export default function App() {
             <Route index element={<DashboardHome />} />
             <Route path="profile" element={<Profile />} />
             <Route path="news" element={<NewsManagement />} />
-            <Route path="news/create" element={<CreateNews />} />
+            <Route path="news/create/:visitInstanceId" element={<CreateNews />} />
             <Route path="news/:id/edit" element={<EditNews />} />
             <Route path="news/:id" element={<NewsDetailDashboard />} />
             <Route path="email" element={isDeptStaff ? <Navigate to="/dashboard" replace /> : <ProtectedRoute><EmailManagement /></ProtectedRoute>} />
