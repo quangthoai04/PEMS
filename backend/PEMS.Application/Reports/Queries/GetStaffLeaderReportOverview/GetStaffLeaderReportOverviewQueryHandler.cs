@@ -527,6 +527,94 @@ public sealed class GetStaffLeaderReportOverviewQueryHandler
                 .ToList(),
         };
 
+        // ---- Partner engagement: campus-owned partners + partners tied to period visits. ----
+        var campusPartners = _db.Partners.AsNoTracking().Where(p => p.OwnerCampusId == campusId);
+
+        var partnerProfileCounts = await campusPartners
+            .GroupBy(p => p.ProfileStatus)
+            .Select(g => new { Status = g.Key, Count = g.Count() })
+            .ToListAsync(cancellationToken);
+        int PartnerProfileCount(string status) => partnerProfileCounts.FirstOrDefault(x => x.Status == status)?.Count ?? 0;
+
+        var activePartners = await campusPartners.CountAsync(
+            p => p.ProfileStatus == "APPROVED" && p.CooperationStatus == "ACTIVE", cancellationToken);
+        var newPartnersInPeriod = await campusPartners.CountAsync(
+            p => p.CreatedAt >= fromUtc && p.CreatedAt < toUtc, cancellationToken);
+
+        var partnersByType = await campusPartners
+            .Where(p => p.ProfileStatus == "APPROVED")
+            .GroupBy(p => p.PartnerType)
+            .Select(g => new StaffLeaderPartnerTypeCount { PartnerType = g.Key, Count = g.Count() })
+            .OrderByDescending(x => x.Count)
+            .ToListAsync(cancellationToken);
+
+        // Chuyến trong kỳ gắn partner: trực tiếp qua visit_requests.partner_id
+        // hoặc qua visit_guest_partner_links (CONFIRMED).
+        var directPartnerPairs = await instances
+            .Where(ci => ci.VisitRequest.PartnerId != null)
+            .Select(ci => new { PartnerId = ci.VisitRequest.PartnerId!.Value, ci.VisitInstanceId })
+            .ToListAsync(cancellationToken);
+
+        var linkPairs = await (
+                from l in _db.VisitGuestPartnerLinks.AsNoTracking()
+                where l.VisitInstanceId != null && l.MatchStatus == "CONFIRMED"
+                join ci in instances on l.VisitInstanceId equals (ulong?)ci.VisitInstanceId
+                select new { l.PartnerId, ci.VisitInstanceId, l.GuestMemberId })
+            .ToListAsync(cancellationToken);
+
+        var visitsByPartner = directPartnerPairs.Select(x => (x.PartnerId, x.VisitInstanceId))
+            .Concat(linkPairs.Select(x => (x.PartnerId, x.VisitInstanceId)))
+            .Distinct()
+            .GroupBy(x => x.PartnerId)
+            .ToDictionary(g => g.Key, g => g.Count());
+        var guestLinksByPartner = linkPairs
+            .Where(x => x.GuestMemberId != null)
+            .GroupBy(x => x.PartnerId)
+            .ToDictionary(g => g.Key, g => g.Count());
+        var visitsWithPartner = directPartnerPairs.Select(x => x.VisitInstanceId)
+            .Concat(linkPairs.Select(x => x.VisitInstanceId))
+            .Distinct()
+            .Count();
+
+        var topPartnerIds = visitsByPartner
+            .OrderByDescending(kv => kv.Value)
+            .Take(PreviewLimit)
+            .Select(kv => kv.Key)
+            .ToList();
+        var topPartnerInfos = await _db.Partners.AsNoTracking()
+            .Where(p => topPartnerIds.Contains(p.PartnerId))
+            .Select(p => new { p.PartnerId, p.Name, p.PartnerType, p.Country, p.CooperationStatus, p.ProfileStatus })
+            .ToListAsync(cancellationToken);
+
+        var topPartners = topPartnerIds
+            .Select(id =>
+            {
+                var info = topPartnerInfos.FirstOrDefault(p => p.PartnerId == id);
+                return new StaffLeaderTopPartner
+                {
+                    PartnerId = id,
+                    Name = info?.Name ?? $"Partner #{id}",
+                    PartnerType = info?.PartnerType ?? "OTHER",
+                    Country = info?.Country,
+                    CooperationStatus = info?.CooperationStatus ?? "",
+                    ProfileStatus = info?.ProfileStatus ?? "",
+                    VisitCount = visitsByPartner.TryGetValue(id, out var vc) ? vc : 0,
+                    LinkedGuestCount = guestLinksByPartner.TryGetValue(id, out var gc) ? gc : 0,
+                };
+            })
+            .ToList();
+
+        var partnerSummary = new StaffLeaderPartnerSummary
+        {
+            TotalPartners = PartnerProfileCount("APPROVED"),
+            ActivePartners = activePartners,
+            PendingApprovalPartners = PartnerProfileCount("PENDING_APPROVAL"),
+            NewPartnersInPeriod = newPartnersInPeriod,
+            VisitsWithPartner = visitsWithPartner,
+            PartnersByType = partnersByType,
+            TopPartners = topPartners,
+        };
+
         // ---- Attention items ("cần Staff Leader xử lý" — current state unless noted). ----
         var afterVisitCount = OpCount(VisitInstanceStatus.AfterVisit);
         var attentionItems = new List<StaffLeaderAttentionItem>
@@ -562,6 +650,14 @@ public sealed class GetStaffLeaderReportOverviewQueryHandler
                 Count = afterVisitCount,
                 Severity = afterVisitCount > 0 ? "WARNING" : "SUCCESS",
                 TargetSection = "close-readiness",
+            },
+            new()
+            {
+                Type = "PARTNER_APPROVAL",
+                Label = "Hồ sơ partner chờ duyệt",
+                Count = partnerSummary.PendingApprovalPartners,
+                Severity = partnerSummary.PendingApprovalPartners > 0 ? "WARNING" : "SUCCESS",
+                TargetSection = "partners",
             },
             new()
             {
@@ -635,6 +731,7 @@ public sealed class GetStaffLeaderReportOverviewQueryHandler
             CloseReadiness = closeReadiness,
             CloseReadinessTotal = closeReadinessTotal,
             FeedbackSummary = feedbackSummary,
+            PartnerSummary = partnerSummary,
         };
     }
 

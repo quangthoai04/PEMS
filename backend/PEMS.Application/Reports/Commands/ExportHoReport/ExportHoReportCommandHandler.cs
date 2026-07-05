@@ -33,6 +33,7 @@ public sealed class ExportHoReportCommandHandler : IRequestHandler<ExportHoRepor
         "LIFECYCLE_CLOSE_READINESS",
         "FEEDBACK_QUALITY",
         "CONTENT_EMAIL_EFFECTIVENESS",
+        "PARTNER_ENGAGEMENT",
     };
 
     private readonly IMediator _mediator;
@@ -252,6 +253,31 @@ public sealed class ExportHoReportCommandHandler : IRequestHandler<ExportHoRepor
             Row("Action token đã phản hồi", ce.ActionTokenRespondedCount);
             Row("Action token hết hạn", ce.ActionTokenExpiredCount);
             Row("Action token đang chờ", ce.ActionTokenPendingCount);
+            Row();
+        }
+
+        if (sections.Contains("PARTNER_ENGAGEMENT"))
+        {
+            var ps = o.PartnerSummary;
+            Row("7. PARTNER ENGAGEMENT");
+            Row("Tổng partner (đã duyệt)", ps.TotalPartners);
+            Row("Đang hợp tác (ACTIVE)", ps.ActivePartners);
+            Row("Hồ sơ chờ duyệt", ps.PendingApprovalPartners);
+            Row("Partner mới trong kỳ", ps.NewPartnersInPeriod);
+            Row("Chuyến trong kỳ có partner", ps.VisitsWithPartner);
+            Row();
+            Row("Phân bổ theo loại", "Số lượng");
+            if (ps.PartnersByType.Count == 0) Row("No data available for this section");
+            else foreach (var t in ps.PartnersByType) Row(t.PartnerType, t.Count);
+            Row();
+            Row("Partner theo campus", "Đã duyệt", "Chờ duyệt", "Mới trong kỳ");
+            if (ps.PartnersByCampus.Count == 0) Row("No data available for this section");
+            else foreach (var c in ps.PartnersByCampus) Row(c.CampusName, c.ApprovedCount, c.PendingCount, c.NewInPeriod);
+            Row();
+            Row("Top partner theo số chuyến", "Loại", "Quốc gia", "Campus quản lý", "Hợp tác", "Số chuyến", "Khách gắn partner");
+            if (ps.TopPartners.Count == 0) Row("No data available for this section");
+            else foreach (var p in ps.TopPartners)
+                Row(p.Name, p.PartnerType, p.Country ?? "—", p.OwnerCampusName, p.CooperationStatus, p.VisitCount, p.LinkedGuestCount);
         }
 
         // UTF-8 BOM so Excel opens Vietnamese text correctly.
@@ -535,6 +561,72 @@ public sealed class ExportHoReportCommandHandler : IRequestHandler<ExportHoRepor
             ws.Columns().AdjustToContents();
         }
 
+        if (sections.Contains("PARTNER_ENGAGEMENT"))
+        {
+            var ps = o.PartnerSummary;
+            var ws = workbook.Worksheets.Add("Partner");
+            ws.Cell(1, 1).Value = "Chỉ số";
+            ws.Cell(1, 2).Value = "Giá trị";
+            StyleHeader(ws, 1, 2);
+            var kpiRows = new (string, XLCellValue)[]
+            {
+                ("Tổng partner (đã duyệt)", ps.TotalPartners),
+                ("Đang hợp tác (ACTIVE)", ps.ActivePartners),
+                ("Hồ sơ chờ duyệt", ps.PendingApprovalPartners),
+                ("Partner mới trong kỳ", ps.NewPartnersInPeriod),
+                ("Chuyến trong kỳ có partner", ps.VisitsWithPartner),
+            };
+            for (var i = 0; i < kpiRows.Length; i++)
+            {
+                ws.Cell(i + 2, 1).Value = kpiRows[i].Item1;
+                ws.Cell(i + 2, 2).Value = kpiRows[i].Item2;
+            }
+
+            var pr = kpiRows.Length + 3;
+            ws.Cell(pr, 1).Value = "Loại partner";
+            ws.Cell(pr, 2).Value = "Số lượng";
+            StyleHeader(ws, pr, 2);
+            pr++;
+            foreach (var t in ps.PartnersByType)
+            {
+                ws.Cell(pr, 1).Value = t.PartnerType;
+                ws.Cell(pr, 2).Value = t.Count;
+                pr++;
+            }
+
+            pr++;
+            string[] campusHeader = { "Campus", "Đã duyệt", "Chờ duyệt", "Mới trong kỳ" };
+            for (var c = 0; c < campusHeader.Length; c++) ws.Cell(pr, c + 1).Value = campusHeader[c];
+            StyleHeader(ws, pr, campusHeader.Length);
+            pr++;
+            foreach (var cRow in ps.PartnersByCampus)
+            {
+                ws.Cell(pr, 1).Value = cRow.CampusName;
+                ws.Cell(pr, 2).Value = cRow.ApprovedCount;
+                ws.Cell(pr, 3).Value = cRow.PendingCount;
+                ws.Cell(pr, 4).Value = cRow.NewInPeriod;
+                pr++;
+            }
+
+            pr++;
+            string[] topHeader = { "Partner", "Loại", "Quốc gia", "Campus quản lý", "Hợp tác", "Số chuyến", "Khách gắn partner" };
+            for (var c = 0; c < topHeader.Length; c++) ws.Cell(pr, c + 1).Value = topHeader[c];
+            StyleHeader(ws, pr, topHeader.Length);
+            pr++;
+            foreach (var p in ps.TopPartners)
+            {
+                ws.Cell(pr, 1).Value = p.Name;
+                ws.Cell(pr, 2).Value = p.PartnerType;
+                ws.Cell(pr, 3).Value = p.Country ?? "—";
+                ws.Cell(pr, 4).Value = p.OwnerCampusName;
+                ws.Cell(pr, 5).Value = p.CooperationStatus;
+                ws.Cell(pr, 6).Value = p.VisitCount;
+                ws.Cell(pr, 7).Value = p.LinkedGuestCount;
+                pr++;
+            }
+            ws.Columns().AdjustToContents(1, 60);
+        }
+
         using var ms = new MemoryStream();
         workbook.SaveAs(ms);
         return ms.ToArray();
@@ -745,6 +837,45 @@ public sealed class ExportHoReportCommandHandler : IRequestHandler<ExportHoRepor
                             ("Action token hết hạn", ce.ActionTokenExpiredCount.ToString()),
                             ("Action token đang chờ", ce.ActionTokenPendingCount.ToString()),
                         });
+                    }
+
+                    if (sections.Contains("PARTNER_ENGAGEMENT"))
+                    {
+                        var ps = o.PartnerSummary;
+                        SectionTitle("7. Partner Engagement");
+                        KeyValueTable(new List<(string, string)>
+                        {
+                            ("Tổng partner (đã duyệt)", ps.TotalPartners.ToString()),
+                            ("Đang hợp tác (ACTIVE)", ps.ActivePartners.ToString()),
+                            ("Hồ sơ chờ duyệt", ps.PendingApprovalPartners.ToString()),
+                            ("Partner mới trong kỳ", ps.NewPartnersInPeriod.ToString()),
+                            ("Chuyến trong kỳ có partner", ps.VisitsWithPartner.ToString()),
+                        });
+                        if (ps.PartnersByCampus.Count > 0)
+                        {
+                            col.Item().PaddingTop(6).Text("Partner theo campus").FontSize(9).Bold();
+                            col.Item().PaddingTop(2);
+                            DataTable(
+                                new[] { "Campus", "Đã duyệt", "Chờ duyệt", "Mới trong kỳ" },
+                                ps.PartnersByCampus.Select(c => new[]
+                                {
+                                    c.CampusName, c.ApprovedCount.ToString(), c.PendingCount.ToString(), c.NewInPeriod.ToString(),
+                                }),
+                                new[] { 3f, 1f, 1f, 1.2f });
+                        }
+                        if (ps.TopPartners.Count > 0)
+                        {
+                            col.Item().PaddingTop(6).Text("Top partner theo số chuyến trong kỳ").FontSize(9).Bold();
+                            col.Item().PaddingTop(2);
+                            DataTable(
+                                new[] { "Partner", "Loại", "Quốc gia", "Campus", "Chuyến", "Khách" },
+                                ps.TopPartners.Select(p => new[]
+                                {
+                                    p.Name, p.PartnerType, p.Country ?? "—", p.OwnerCampusName,
+                                    p.VisitCount.ToString(), p.LinkedGuestCount.ToString(),
+                                }),
+                                new[] { 2.8f, 1.2f, 1.1f, 1.6f, 0.7f, 0.7f });
+                        }
                     }
                 });
 

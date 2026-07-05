@@ -36,7 +36,24 @@ const SECTION_OPTIONS: { value: StaffLeaderReportSection; label: string }[] = [
   { value: 'LOGISTICS_SUMMARY', label: 'Logistics Summary' },
   { value: 'CLOSE_READINESS', label: 'Close Readiness' },
   { value: 'FEEDBACK_SUMMARY', label: 'Feedback Summary' },
+  { value: 'PARTNER_SUMMARY', label: 'Partner Summary' },
 ];
+
+const PARTNER_TYPE_LABELS: Record<string, string> = {
+  UNIVERSITY: 'Trường ĐH',
+  COMPANY: 'Doanh nghiệp',
+  GOVERNMENT: 'Chính phủ',
+  NGO: 'NGO',
+  OTHER: 'Khác',
+};
+const partnerTypeLabel = (t: string) => PARTNER_TYPE_LABELS[t] ?? t;
+
+const COOPERATION_LABELS: Record<string, string> = {
+  ACTIVE: 'Đang hợp tác',
+  INACTIVE: 'Ngừng hợp tác',
+  PAUSED: 'Tạm dừng',
+};
+const cooperationLabel = (s: string) => COOPERATION_LABELS[s] ?? s;
 
 const PRESET_LABELS: Record<string, string> = {
   THIS_MONTH: 'Tháng này',
@@ -335,6 +352,7 @@ export function StaffLeaderReportManagement() {
             data={data}
             onOpen={(visitInstanceId) => navigate(`/dashboard/visit/process-summary/${visitInstanceId}`)}
           />
+          <PartnerSection data={data} onOpen={() => navigate('/dashboard/partners')} />
           <FeedbackSection
             data={data}
             onOpen={(visitInstanceId) => navigate(`/dashboard/visit/process-summary/${visitInstanceId}`)}
@@ -860,6 +878,119 @@ function CloseReadinessTable({ data, onOpen }: { data: StaffLeaderReportOverview
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ───────────────────────────── Partner ─────────────────────────────
+
+function PartnerStat({ label, value, warn, good }: { label: string; value: number; warn?: boolean; good?: boolean }) {
+  return (
+    <div className="border border-slate-100 rounded-lg px-3 py-2.5">
+      <p className="text-[11px] font-bold text-slate-400 uppercase truncate">{label}</p>
+      <p className={`text-lg font-black ${warn && value > 0 ? 'text-amber-600' : good ? 'text-emerald-600' : 'text-slate-800'}`}>
+        {fmt.formatNumber(value)}
+      </p>
+    </div>
+  );
+}
+
+function PartnerSection({ data, onOpen }: { data: StaffLeaderReportOverview; onOpen: () => void }) {
+  const ps = data.partnerSummary;
+  const hasAny = ps.totalPartners > 0 || ps.pendingApprovalPartners > 0 || ps.topPartners.length > 0;
+  const maxTypeCount = Math.max(1, ...ps.partnersByType.map((t) => t.count));
+
+  return (
+    <div id="partners" className="bg-white border border-slate-200 rounded-xl overflow-hidden scroll-mt-4">
+      <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between gap-2 flex-wrap">
+        <div>
+          <h3 className="text-sm font-bold text-slate-800">Đối tác (Partner)</h3>
+          <p className="text-xs text-slate-400 font-medium">Partner do campus quản lý và mức độ gắn kết trong kỳ báo cáo</p>
+        </div>
+        <button onClick={onOpen} className="flex items-center gap-1 text-xs font-bold text-[#004c91] hover:underline cursor-pointer">
+          Mở Quản lý partner <ArrowRight className="w-3.5 h-3.5" />
+        </button>
+      </div>
+
+      {!hasAny ? (
+        <SectionEmpty text="Campus chưa có partner nào trong hệ thống." />
+      ) : (
+        <div className="p-4 space-y-4">
+          {/* Mini stats */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+            <PartnerStat label="Tổng partner" value={ps.totalPartners} />
+            <PartnerStat label="Đang hợp tác" value={ps.activePartners} good />
+            <PartnerStat label="Hồ sơ chờ duyệt" value={ps.pendingApprovalPartners} warn />
+            <PartnerStat label="Mới trong kỳ" value={ps.newPartnersInPeriod} />
+            <PartnerStat label="Chuyến có partner" value={ps.visitsWithPartner} />
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+            {/* Phân bổ theo loại */}
+            <div>
+              <p className="text-[11px] font-bold text-slate-400 uppercase mb-1.5">Phân bổ theo loại</p>
+              {ps.partnersByType.length === 0 ? (
+                <p className="text-xs text-slate-400">Chưa có partner được duyệt.</p>
+              ) : (
+                <div className="space-y-1.5">
+                  {ps.partnersByType.map((t) => (
+                    <div key={t.partnerType} className="flex items-center gap-2 text-xs">
+                      <span className="w-24 truncate font-semibold text-slate-600">{partnerTypeLabel(t.partnerType)}</span>
+                      <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                        <div className="h-full rounded-full" style={{ width: `${(t.count / maxTypeCount) * 100}%`, background: CHART_BLUE }} />
+                      </div>
+                      <span className="font-bold text-slate-700 w-8 text-right">{t.count}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Top partner theo số chuyến */}
+            <div className="lg:col-span-2">
+              <p className="text-[11px] font-bold text-slate-400 uppercase mb-1.5">Top partner theo số chuyến trong kỳ</p>
+              {ps.topPartners.length === 0 ? (
+                <p className="text-xs text-slate-400">Chưa có chuyến nào gắn partner trong bộ lọc này.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse min-w-[560px]">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-100">
+                        <th className={thClass}>Partner</th>
+                        <th className={thClass}>Loại</th>
+                        <th className={thClass}>Quốc gia</th>
+                        <th className={thClass}>Hợp tác</th>
+                        <th className={`${thClass} text-right`}>Chuyến</th>
+                        <th className={`${thClass} text-right`}>Khách gắn</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {ps.topPartners.map((p) => (
+                        <tr key={p.partnerId} className="hover:bg-blue-50/40 transition-colors">
+                          <td className={`${tdClass} font-semibold text-slate-800 max-w-[220px] truncate`} title={p.name}>{p.name}</td>
+                          <td className={tdClass}>{partnerTypeLabel(p.partnerType)}</td>
+                          <td className={tdClass}>{p.country ?? '—'}</td>
+                          <td className={tdClass}>
+                            <span className={`inline-block text-[11px] font-bold border rounded-full px-2 py-0.5 ${
+                              p.cooperationStatus === 'ACTIVE'
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                : 'bg-slate-100 text-slate-500 border-slate-200'
+                            }`}>
+                              {cooperationLabel(p.cooperationStatus)}
+                            </span>
+                          </td>
+                          <td className={`${tdClass} text-right font-bold text-[#004c91]`}>{p.visitCount}</td>
+                          <td className={`${tdClass} text-right`}>{p.linkedGuestCount}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
     </div>

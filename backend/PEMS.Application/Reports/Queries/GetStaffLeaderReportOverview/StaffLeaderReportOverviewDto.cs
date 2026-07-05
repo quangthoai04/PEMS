@@ -18,6 +18,7 @@ public class StaffLeaderReportOverviewDto
     public List<StaffLeaderCloseReadiness> CloseReadiness { get; set; } = new();
     public int CloseReadinessTotal { get; set; }
     public StaffLeaderFeedbackSummary FeedbackSummary { get; set; } = new();
+    public StaffLeaderPartnerSummary PartnerSummary { get; set; } = new();
 }
 
 public class StaffLeaderFilterSummary
@@ -167,4 +168,40 @@ public class StaffLeaderRatingByHost
     public string HostName { get; set; } = string.Empty;
     public double AverageRating { get; set; }
     public int FeedbackCount { get; set; }
+}
+
+public class StaffLeaderPartnerSummary
+{
+    /// <summary>Approved partners owned by this campus (current state).</summary>
+    public int TotalPartners { get; set; }
+    /// <summary>Approved + cooperation_status ACTIVE (current state).</summary>
+    public int ActivePartners { get; set; }
+    /// <summary>Profile PENDING_APPROVAL — Staff Leader duyệt hồ sơ partner campus mình.</summary>
+    public int PendingApprovalPartners { get; set; }
+    /// <summary>Partners created within the report period.</summary>
+    public int NewPartnersInPeriod { get; set; }
+    /// <summary>Campus instances in the period linked to at least one partner (direct or guest link).</summary>
+    public int VisitsWithPartner { get; set; }
+    public List<StaffLeaderPartnerTypeCount> PartnersByType { get; set; } = new();
+    public List<StaffLeaderTopPartner> TopPartners { get; set; } = new();
+}
+
+public class StaffLeaderPartnerTypeCount
+{
+    public string PartnerType { get; set; } = string.Empty;
+    public int Count { get; set; }
+}
+
+public class StaffLeaderTopPartner
+{
+    public ulong PartnerId { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string PartnerType { get; set; } = string.Empty;
+    public string? Country { get; set; }
+    public string CooperationStatus { get; set; } = string.Empty;
+    public string ProfileStatus { get; set; } = string.Empty;
+    /// <summary>Distinct campus instances in the period tied to the partner (direct or via guest links).</summary>
+    public int VisitCount { get; set; }
+    /// <summary>Confirmed guest-member links in the period.</summary>
+    public int LinkedGuestCount { get; set; }
 }

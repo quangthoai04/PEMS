@@ -26,6 +26,7 @@ public sealed class HoReportOverviewDto
     public int CloseReadinessTotal { get; set; }
     public HoFeedbackSummaryDto FeedbackSummary { get; set; } = new();
     public HoContentEmailSummaryDto ContentAndEmailSummary { get; set; } = new();
+    public HoPartnerSummaryDto PartnerSummary { get; set; } = new();
 }
 
 public sealed class HoReportFilterSummaryDto
@@ -193,6 +194,52 @@ public sealed class HoFeedbackSummaryDto
     public List<HoRatedVisitDto> TopRatedVisits { get; set; } = new();
     public List<HoRatedVisitDto> LowRatedVisits { get; set; } = new();
     public List<HoCampusRatingDto> RatingByCampus { get; set; } = new();
+}
+
+public sealed class HoPartnerSummaryDto
+{
+    /// <summary>Approved partners (current state; scoped by campus filter via owner_campus_id).</summary>
+    public int TotalPartners { get; set; }
+    /// <summary>Approved + cooperation_status ACTIVE (current state).</summary>
+    public int ActivePartners { get; set; }
+    /// <summary>Profile PENDING_APPROVAL (current state).</summary>
+    public int PendingApprovalPartners { get; set; }
+    /// <summary>Partners created within the report period.</summary>
+    public int NewPartnersInPeriod { get; set; }
+    /// <summary>Campus instances in the period linked to at least one partner (direct or guest link).</summary>
+    public int VisitsWithPartner { get; set; }
+    public List<HoPartnerTypeCountDto> PartnersByType { get; set; } = new();
+    public List<HoPartnerCampusCountDto> PartnersByCampus { get; set; } = new();
+    public List<HoTopPartnerDto> TopPartners { get; set; } = new();
+}
+
+public sealed class HoPartnerTypeCountDto
+{
+    public string PartnerType { get; set; } = null!;
+    public int Count { get; set; }
+}
+
+public sealed class HoPartnerCampusCountDto
+{
+    public ulong CampusId { get; set; }
+    public string CampusName { get; set; } = null!;
+    public int ApprovedCount { get; set; }
+    public int PendingCount { get; set; }
+    public int NewInPeriod { get; set; }
+}
+
+public sealed class HoTopPartnerDto
+{
+    public ulong PartnerId { get; set; }
+    public string Name { get; set; } = null!;
+    public string PartnerType { get; set; } = null!;
+    public string? Country { get; set; }
+    public string OwnerCampusName { get; set; } = null!;
+    public string CooperationStatus { get; set; } = null!;
+    /// <summary>Distinct campus instances in the period tied to the partner (direct or via guest links).</summary>
+    public int VisitCount { get; set; }
+    /// <summary>Confirmed guest-member links in the period.</summary>
+    public int LinkedGuestCount { get; set; }
 }
 
 public sealed class HoContentEmailSummaryDto

@@ -24,7 +24,8 @@ export type HoReportSection =
   | 'CAMPUS_PERFORMANCE'
   | 'LIFECYCLE_CLOSE_READINESS'
   | 'FEEDBACK_QUALITY'
-  | 'CONTENT_EMAIL_EFFECTIVENESS';
+  | 'CONTENT_EMAIL_EFFECTIVENESS'
+  | 'PARTNER_ENGAGEMENT';
 
 export interface HoReportFilters {
   preset: HoReportPreset;
@@ -199,6 +200,41 @@ export interface HoContentEmailSummary {
   actionTokenPendingCount: number;
 }
 
+export interface HoPartnerTypeCount {
+  partnerType: string;
+  count: number;
+}
+
+export interface HoPartnerCampusCount {
+  campusId: number;
+  campusName: string;
+  approvedCount: number;
+  pendingCount: number;
+  newInPeriod: number;
+}
+
+export interface HoTopPartner {
+  partnerId: number;
+  name: string;
+  partnerType: string;
+  country: string | null;
+  ownerCampusName: string;
+  cooperationStatus: string;
+  visitCount: number;
+  linkedGuestCount: number;
+}
+
+export interface HoPartnerSummary {
+  totalPartners: number;
+  activePartners: number;
+  pendingApprovalPartners: number;
+  newPartnersInPeriod: number;
+  visitsWithPartner: number;
+  partnersByType: HoPartnerTypeCount[];
+  partnersByCampus: HoPartnerCampusCount[];
+  topPartners: HoTopPartner[];
+}
+
 export interface HoReportOverview {
   generatedAt: string;
   filterSummary: HoReportFilterSummary;
@@ -214,4 +250,5 @@ export interface HoReportOverview {
   closeReadinessTotal: number;
   feedbackSummary: HoFeedbackSummary;
   contentAndEmailSummary: HoContentEmailSummary;
+  partnerSummary: HoPartnerSummary;
 }

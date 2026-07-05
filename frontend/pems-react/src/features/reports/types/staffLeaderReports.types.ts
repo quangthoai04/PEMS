@@ -24,7 +24,8 @@ export type StaffLeaderReportSection =
   | 'PENDING_ACTIONS'
   | 'LOGISTICS_SUMMARY'
   | 'CLOSE_READINESS'
-  | 'FEEDBACK_SUMMARY';
+  | 'FEEDBACK_SUMMARY'
+  | 'PARTNER_SUMMARY';
 
 export interface StaffLeaderReportExportRequest extends StaffLeaderReportFilters {
   exportFormat: string;
@@ -167,6 +168,32 @@ export interface StaffLeaderFeedbackSummary {
   ratingByHost: StaffLeaderRatingByHost[];
 }
 
+export interface StaffLeaderPartnerTypeCount {
+  partnerType: string;
+  count: number;
+}
+
+export interface StaffLeaderTopPartner {
+  partnerId: number;
+  name: string;
+  partnerType: string;
+  country: string | null;
+  cooperationStatus: string;
+  profileStatus: string;
+  visitCount: number;
+  linkedGuestCount: number;
+}
+
+export interface StaffLeaderPartnerSummary {
+  totalPartners: number;
+  activePartners: number;
+  pendingApprovalPartners: number;
+  newPartnersInPeriod: number;
+  visitsWithPartner: number;
+  partnersByType: StaffLeaderPartnerTypeCount[];
+  topPartners: StaffLeaderTopPartner[];
+}
+
 export interface StaffLeaderReportOverview {
   generatedAt: string;
   filterSummary: StaffLeaderFilterSummary;
@@ -181,4 +208,5 @@ export interface StaffLeaderReportOverview {
   closeReadiness: StaffLeaderCloseReadiness[];
   closeReadinessTotal: number;
   feedbackSummary: StaffLeaderFeedbackSummary;
+  partnerSummary: StaffLeaderPartnerSummary;
 }

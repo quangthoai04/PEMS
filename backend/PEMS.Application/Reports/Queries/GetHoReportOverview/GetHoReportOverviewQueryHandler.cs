@@ -493,6 +493,120 @@ public sealed class GetHoReportOverviewQueryHandler
             ActionTokenPendingCount = tokenStats?.Pending ?? 0,
         };
 
+        // ---- Partner engagement (current-state profile counts + visits tied to partners in the period). ----
+        var partnersBase = _db.Partners.AsNoTracking().AsQueryable();
+        if (campusId != null) partnersBase = partnersBase.Where(p => p.OwnerCampusId == campusId);
+
+        var partnerProfileCounts = await partnersBase
+            .GroupBy(p => p.ProfileStatus)
+            .Select(g => new { Status = g.Key, Count = g.Count() })
+            .ToListAsync(cancellationToken);
+        int PartnerProfileCount(string status) => partnerProfileCounts.FirstOrDefault(x => x.Status == status)?.Count ?? 0;
+
+        var activePartners = await partnersBase.CountAsync(
+            p => p.ProfileStatus == "APPROVED" && p.CooperationStatus == "ACTIVE", cancellationToken);
+        var newPartnersInPeriod = await partnersBase.CountAsync(
+            p => p.CreatedAt >= fromUtc && p.CreatedAt < toUtc, cancellationToken);
+
+        var partnersByType = await partnersBase
+            .Where(p => p.ProfileStatus == "APPROVED")
+            .GroupBy(p => p.PartnerType)
+            .Select(g => new HoPartnerTypeCountDto { PartnerType = g.Key, Count = g.Count() })
+            .OrderByDescending(x => x.Count)
+            .ToListAsync(cancellationToken);
+
+        var partnersByCampusRaw = await partnersBase
+            .GroupBy(p => p.OwnerCampusId)
+            .Select(g => new
+            {
+                CampusId = g.Key,
+                Approved = g.Count(p => p.ProfileStatus == "APPROVED"),
+                Pending = g.Count(p => p.ProfileStatus == "PENDING_APPROVAL"),
+                NewInPeriod = g.Count(p => p.CreatedAt >= fromUtc && p.CreatedAt < toUtc),
+            })
+            .ToListAsync(cancellationToken);
+        var partnersByCampus = partnersByCampusRaw
+            .Select(x => new HoPartnerCampusCountDto
+            {
+                CampusId = x.CampusId,
+                CampusName = campusNameById.TryGetValue(x.CampusId, out var pcName) ? pcName : $"Campus #{x.CampusId}",
+                ApprovedCount = x.Approved,
+                PendingCount = x.Pending,
+                NewInPeriod = x.NewInPeriod,
+            })
+            .OrderBy(x => x.CampusName)
+            .ToList();
+
+        // Chuyến trong kỳ gắn partner: trực tiếp qua visit_requests.partner_id
+        // hoặc qua visit_guest_partner_links (CONFIRMED).
+        var directPartnerPairs = await instances
+            .Where(ci => ci.VisitRequest.PartnerId != null)
+            .Select(ci => new { PartnerId = ci.VisitRequest.PartnerId!.Value, ci.VisitInstanceId })
+            .ToListAsync(cancellationToken);
+
+        var linkPairs = await (
+                from l in _db.VisitGuestPartnerLinks.AsNoTracking()
+                where l.VisitInstanceId != null && l.MatchStatus == "CONFIRMED"
+                join ci in instances on l.VisitInstanceId equals (ulong?)ci.VisitInstanceId
+                select new { l.PartnerId, ci.VisitInstanceId, l.GuestMemberId })
+            .ToListAsync(cancellationToken);
+
+        var visitsByPartner = directPartnerPairs.Select(x => (x.PartnerId, x.VisitInstanceId))
+            .Concat(linkPairs.Select(x => (x.PartnerId, x.VisitInstanceId)))
+            .Distinct()
+            .GroupBy(x => x.PartnerId)
+            .ToDictionary(g => g.Key, g => g.Count());
+        var guestLinksByPartner = linkPairs
+            .Where(x => x.GuestMemberId != null)
+            .GroupBy(x => x.PartnerId)
+            .ToDictionary(g => g.Key, g => g.Count());
+        var visitsWithPartner = directPartnerPairs.Select(x => x.VisitInstanceId)
+            .Concat(linkPairs.Select(x => x.VisitInstanceId))
+            .Distinct()
+            .Count();
+
+        var topPartnerIds = visitsByPartner
+            .OrderByDescending(kv => kv.Value)
+            .Take(PreviewLimit)
+            .Select(kv => kv.Key)
+            .ToList();
+        var topPartnerInfos = await _db.Partners.AsNoTracking()
+            .Where(p => topPartnerIds.Contains(p.PartnerId))
+            .Select(p => new { p.PartnerId, p.Name, p.PartnerType, p.Country, p.OwnerCampusId, p.CooperationStatus })
+            .ToListAsync(cancellationToken);
+
+        var topPartners = topPartnerIds
+            .Select(id =>
+            {
+                var info = topPartnerInfos.FirstOrDefault(p => p.PartnerId == id);
+                return new HoTopPartnerDto
+                {
+                    PartnerId = id,
+                    Name = info?.Name ?? $"Partner #{id}",
+                    PartnerType = info?.PartnerType ?? "OTHER",
+                    Country = info?.Country,
+                    OwnerCampusName = info != null && campusNameById.TryGetValue(info.OwnerCampusId, out var ocName)
+                        ? ocName
+                        : "—",
+                    CooperationStatus = info?.CooperationStatus ?? "",
+                    VisitCount = visitsByPartner.TryGetValue(id, out var vc) ? vc : 0,
+                    LinkedGuestCount = guestLinksByPartner.TryGetValue(id, out var gc) ? gc : 0,
+                };
+            })
+            .ToList();
+
+        var partnerSummary = new HoPartnerSummaryDto
+        {
+            TotalPartners = PartnerProfileCount("APPROVED"),
+            ActivePartners = activePartners,
+            PendingApprovalPartners = PartnerProfileCount("PENDING_APPROVAL"),
+            NewPartnersInPeriod = newPartnersInPeriod,
+            VisitsWithPartner = visitsWithPartner,
+            PartnersByType = partnersByType,
+            PartnersByCampus = partnersByCampus,
+            TopPartners = topPartners,
+        };
+
         // ---- Attention items ("needs HO attention" — current state unless noted). ----
         var afterVisitNotClosed = closeReadinessTotal;
         var closedWithoutFeedback = await instances.CountAsync(ci =>
@@ -623,6 +737,7 @@ public sealed class GetHoReportOverviewQueryHandler
             CloseReadinessTotal = closeReadinessTotal,
             FeedbackSummary = feedbackSummary,
             ContentAndEmailSummary = contentEmailSummary,
+            PartnerSummary = partnerSummary,
         };
     }
 

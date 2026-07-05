@@ -36,6 +36,7 @@ public sealed class ExportStaffLeaderReportCommandHandler
         "LOGISTICS_SUMMARY",
         "CLOSE_READINESS",
         "FEEDBACK_SUMMARY",
+        "PARTNER_SUMMARY",
     };
 
     private readonly IMediator _mediator;
@@ -287,6 +288,30 @@ public sealed class ExportStaffLeaderReportCommandHandler
             if (fb.GoodFeedbacks.Count == 0) NoData();
             else foreach (var e in fb.GoodFeedbacks)
                 Row(e.DelegationName, e.HostName ?? "—", e.Rating, e.Comment ?? "", Dt(e.PlannedStartAt));
+            Row();
+        }
+
+        if (sections.Contains("PARTNER_SUMMARY"))
+        {
+            var ps = o.PartnerSummary;
+            Row("8. PARTNER SUMMARY");
+            Row("Metric", "Value");
+            Row("Tổng partner (đã duyệt)", ps.TotalPartners);
+            Row("Đang hợp tác (ACTIVE)", ps.ActivePartners);
+            Row("Hồ sơ chờ duyệt", ps.PendingApprovalPartners);
+            Row("Partner mới trong kỳ", ps.NewPartnersInPeriod);
+            Row("Chuyến trong kỳ có partner", ps.VisitsWithPartner);
+            Row();
+            Row("Partners By Type");
+            Row("Type", "Count");
+            if (ps.PartnersByType.Count == 0) NoData();
+            else foreach (var t in ps.PartnersByType) Row(t.PartnerType, t.Count);
+            Row();
+            Row("Top Partners By Visits");
+            Row("Partner", "Type", "Country", "Cooperation", "Visits", "Linked Guests");
+            if (ps.TopPartners.Count == 0) NoData();
+            else foreach (var p in ps.TopPartners)
+                Row(p.Name, p.PartnerType, p.Country ?? "—", p.CooperationStatus, p.VisitCount, p.LinkedGuestCount);
         }
 
         // UTF-8 BOM so Excel opens Vietnamese text correctly.
@@ -450,6 +475,30 @@ public sealed class ExportStaffLeaderReportCommandHandler
             WriteTable(ws, r, new[] { "Đoàn", "Host", "Rating", "Nội dung", "Ngày thăm" },
                 fb.GoodFeedbacks.Select(e => new object?[] { e.DelegationName, e.HostName ?? "—", e.Rating, e.Comment ?? "", Dt(e.PlannedStartAt) }),
                 "Feedback tốt gần đây");
+            ws.Columns().AdjustToContents(1, 60);
+        }
+
+        if (sections.Contains("PARTNER_SUMMARY"))
+        {
+            var ps = o.PartnerSummary;
+            var ws = workbook.Worksheets.Add("Partner");
+            var r = WriteTable(ws, 1, new[] { "Chỉ số", "Giá trị" }, new List<object?[]>
+            {
+                new object?[] { "Tổng partner (đã duyệt)", ps.TotalPartners },
+                new object?[] { "Đang hợp tác (ACTIVE)", ps.ActivePartners },
+                new object?[] { "Hồ sơ chờ duyệt", ps.PendingApprovalPartners },
+                new object?[] { "Partner mới trong kỳ", ps.NewPartnersInPeriod },
+                new object?[] { "Chuyến trong kỳ có partner", ps.VisitsWithPartner },
+            });
+            r = WriteTable(ws, r, new[] { "Loại partner", "Số lượng" },
+                ps.PartnersByType.Select(t => new object?[] { t.PartnerType, t.Count }),
+                "Phân bổ theo loại");
+            WriteTable(ws, r, new[] { "Partner", "Loại", "Quốc gia", "Hợp tác", "Số chuyến", "Khách gắn partner" },
+                ps.TopPartners.Select(p => new object?[]
+                {
+                    p.Name, p.PartnerType, p.Country ?? "—", p.CooperationStatus, p.VisitCount, p.LinkedGuestCount,
+                }),
+                "Top partner theo số chuyến trong kỳ");
             ws.Columns().AdjustToContents(1, 60);
         }
 
@@ -668,6 +717,39 @@ public sealed class ExportStaffLeaderReportCommandHandler
                                 e.DelegationName, e.HostName ?? "—", e.Rating.ToString(), e.Comment ?? "", Dt(e.PlannedStartAt),
                             }).ToList(),
                             new[] { 2.2f, 1.6f, 0.7f, 3f, 1.1f });
+                    }
+
+                    if (sections.Contains("PARTNER_SUMMARY"))
+                    {
+                        var ps = o.PartnerSummary;
+                        SectionTitle("8. Partner Summary");
+                        KeyValueTable(new List<(string, string)>
+                        {
+                            ("Tổng partner (đã duyệt)", ps.TotalPartners.ToString()),
+                            ("Đang hợp tác (ACTIVE)", ps.ActivePartners.ToString()),
+                            ("Hồ sơ chờ duyệt", ps.PendingApprovalPartners.ToString()),
+                            ("Partner mới trong kỳ", ps.NewPartnersInPeriod.ToString()),
+                            ("Chuyến trong kỳ có partner", ps.VisitsWithPartner.ToString()),
+                        });
+                        if (ps.PartnersByType.Count > 0)
+                        {
+                            col.Item().PaddingTop(6).Text("Phân bổ theo loại").FontSize(9).Bold();
+                            col.Item().PaddingTop(2);
+                            DataTable(
+                                new[] { "Loại partner", "Số lượng" },
+                                ps.PartnersByType.Select(t => new[] { t.PartnerType, t.Count.ToString() }).ToList(),
+                                new[] { 3f, 1f });
+                        }
+                        col.Item().PaddingTop(6).Text("Top partner theo số chuyến trong kỳ").FontSize(9).Bold();
+                        col.Item().PaddingTop(2);
+                        DataTable(
+                            new[] { "Partner", "Loại", "Quốc gia", "Hợp tác", "Chuyến", "Khách" },
+                            ps.TopPartners.Select(p => new[]
+                            {
+                                p.Name, p.PartnerType, p.Country ?? "—", p.CooperationStatus,
+                                p.VisitCount.ToString(), p.LinkedGuestCount.ToString(),
+                            }).ToList(),
+                            new[] { 2.8f, 1.2f, 1.1f, 1.1f, 0.7f, 0.7f });
                     }
                 });
 
