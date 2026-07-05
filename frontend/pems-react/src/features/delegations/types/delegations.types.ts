@@ -700,7 +700,11 @@ export interface VisitNews {
   publishedAt: string | null;
   reviewNote: string | null;
   rowVersion: number;
+  /** Chỉ TÁC GIẢ và bài đang PENDING_REVIEW/REJECTED. */
   canEdit: boolean;
+  /** Chỉ Staff Leader đúng campus và bài đang PENDING_REVIEW. */
+  canApprove: boolean;
+  canReject: boolean;
 }
 
 /** News list for a campus instance + whether the caller may add a post. */
