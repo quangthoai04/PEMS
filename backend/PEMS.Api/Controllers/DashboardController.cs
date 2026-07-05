@@ -4,6 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Dashboard.Queries.GetDepartmentLeaderDashboardSummary;
+using PEMS.Application.Dashboard.Queries.GetHODashboardOverview;
 
 namespace PEMS.Api.Controllers
 {
@@ -20,6 +21,15 @@ namespace PEMS.Api.Controllers
         public async Task<IActionResult> GetDepartmentLeaderDashboardSummary(CancellationToken cancellationToken)
         {
             var query = new GetDepartmentLeaderDashboardSummaryQuery();
+            var result = await _mediator.Send(query, cancellationToken);
+            return Ok(result);
+        }
+
+        [HttpGet("ho-overview")]
+        [PEMS.Api.Filters.RoleAuthorize(PEMS.Application.Common.Security.EffectiveRole.Ho)]
+        public async Task<IActionResult> GetHODashboardOverview(CancellationToken cancellationToken)
+        {
+            var query = new GetHODashboardOverviewQuery();
             var result = await _mediator.Send(query, cancellationToken);
             return Ok(result);
         }

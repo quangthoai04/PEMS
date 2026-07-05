@@ -233,12 +233,10 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile, isCollapsed = fal
                 <ClipboardList className="w-5 h-5 flex-shrink-0" />
                 <span>Quản lý biên bản</span>
               </NavLink>
-              {roleForSidebar !== 'HO' && (
-                <NavLink to="/dashboard/feedback" className={navItemClass} onClick={handleLinkClick}>
-                  <MessageSquare className="w-5 h-5 flex-shrink-0" />
-                  <span>Quản lý feedback</span>
-                </NavLink>
-              )}
+              <NavLink to="/dashboard/feedback" className={navItemClass} onClick={handleLinkClick}>
+                <MessageSquare className="w-5 h-5 flex-shrink-0" />
+                <span>Quản lý feedback</span>
+              </NavLink>
             </>
           )}
           {(roleForSidebar === "HO" || isStaffLeader || isDeptLeader) && (

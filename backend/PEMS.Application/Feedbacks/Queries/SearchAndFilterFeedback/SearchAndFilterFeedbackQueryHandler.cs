@@ -23,7 +23,9 @@ public class SearchAndFilterFeedbackQueryHandler : IRequestHandler<SearchAndFilt
     {
         var query = _context.Feedbacks.AsNoTracking();
 
-        if (_currentUserService.PrimaryCampusId.HasValue)
+        if (_currentUserService.PrimaryCampusId.HasValue && 
+            _currentUserService.RoleCode != "HO" && 
+            _currentUserService.RoleCode != "ADMIN")
         {
             var campusId = _currentUserService.PrimaryCampusId.Value;
             var allowedInstanceIds = _context.VisitRequestCampuses
