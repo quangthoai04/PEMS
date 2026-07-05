@@ -45,7 +45,7 @@ public sealed class GetVisitInvitationsQueryHandler
                 select new { p, c, vr };
 
         // Lọc theo Role
-        if (roleCode == RoleCodes.Staff && string.IsNullOrEmpty(subRole))
+        if (roleCode == RoleCodes.Staff)
         {
             q = q.Where(x => x.p.ParticipantRole == ParticipantRoles.IcSupport);
         }
@@ -169,38 +169,43 @@ public sealed class GetVisitInvitationsQueryHandler
                 InvitedAt = x.InvitedAt,
                 RespondedAt = x.RespondedAt,
                 AssignedAt = x.AssignedAt,
-                AllowedActions = new List<string> { "VIEW_DETAIL" }
+                AllowedActions = new List<string> { "VIEW_INVITATION_DETAIL", "VIEW_REQUEST_FORM" }
             };
 
             var isClosedOrCancelled = x.VisitRequestStatus == VisitRequestStatuses.Cancelled 
                 || x.VisitRequestStatus == VisitRequestStatuses.Rejected 
-                || x.CampusVisitStatus == VisitInstanceStatus.Cancelled 
-                || x.CampusVisitStatus == VisitInstanceStatus.Closed;
+                || x.CampusVisitStatus == VisitInstanceStatuses.Cancelled 
+                || x.CampusVisitStatus == VisitInstanceStatuses.Closed;
+
+            bool isActiveForInvitation = x.VisitRequestStatus == VisitRequestStatuses.Approved
+                && (x.CampusVisitStatus == "WAITING_HOST_ASSIGNMENT"
+                    || x.CampusVisitStatus == VisitInstanceStatuses.Assigned
+                    || x.CampusVisitStatus == VisitInstanceStatuses.BeforeVisit);
+
+            if ((x.Status == ParticipantStatuses.Accepted || x.Status == ParticipantStatuses.Assigned) && isActiveForInvitation)
+            {
+                dto.AllowedActions.Add("OPEN_CONTRIBUTION");
+            }
 
             if (roleCode == RoleCodes.Department || roleCode == "DEPT")
             {
                 if (subRole == UserSubRoles.Leader)
                 {
-                    if (x.Status == ParticipantStatuses.Invited && !isClosedOrCancelled)
+                    if (x.Status == ParticipantStatuses.Invited && isActiveForInvitation)
                     {
                         dto.AllowedActions.Add("ACCEPT_INVITATION");
                         dto.AllowedActions.Add("DECLINE_INVITATION");
                         dto.AllowedActions.Add("ASSIGN_TO_DEPARTMENT_STAFF");
                     }
-                    else if (x.Status == ParticipantStatuses.Accepted && !isClosedOrCancelled)
+                    else if (x.Status == ParticipantStatuses.Accepted && isActiveForInvitation)
                     {
                         dto.AllowedActions.Add("ASSIGN_TO_DEPARTMENT_STAFF");
                     }
                 }
-                else // Staff
-                {
-                    // Update progress / mark done etc. if needed later, but for now just VIEW_DETAIL.
-                    // The prompt says "Department Staff chỉ xác nhận/thực hiện nhiệm vụ, không làm lại luồng accept/decline giống lời mời từ IC."
-                }
             }
             else // Staff, Student
             {
-                if (x.Status == ParticipantStatuses.Invited && !isClosedOrCancelled)
+                if (x.Status == ParticipantStatuses.Invited && isActiveForInvitation)
                 {
                     dto.AllowedActions.Add("ACCEPT_INVITATION");
                     dto.AllowedActions.Add("DECLINE_INVITATION");

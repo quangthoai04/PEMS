@@ -40,7 +40,9 @@ public sealed class ViewMyVisitInvitationsQueryHandler
                 join vr in _db.VisitRequests on c.VisitRequestId equals vr.VisitRequestId
                 where p.UserId == userId
                     && !p.IsHost
-                    && p.ParticipantRole != ParticipantRoles.IcHost
+                    && (p.ParticipantRole == ParticipantRoles.IcSupport
+                        || p.ParticipantRole == ParticipantRoles.DeptSupport
+                        || p.ParticipantRole == ParticipantRoles.Student)
                     && vr.Status != VisitRequestStatuses.Rejected
                     && vr.Status != VisitRequestStatuses.Cancelled
                     && c.Status != VisitInstanceStatuses.Cancelled
@@ -51,6 +53,7 @@ public sealed class ViewMyVisitInvitationsQueryHandler
         else
             q = q.Where(x => x.p.Status == ParticipantStatuses.Invited
                           || x.p.Status == ParticipantStatuses.Accepted
+                          || x.p.Status == ParticipantStatuses.Assigned
                           || x.p.Status == ParticipantStatuses.Declined);
 
         var flat = await q

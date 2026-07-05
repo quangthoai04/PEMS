@@ -112,6 +112,7 @@ export const VISIT_ALLOWED_ACTIONS = {
   OPEN_DEPARTMENT_TASK: 'OPEN_DEPARTMENT_TASK',
   OPEN_INVITATION: 'OPEN_INVITATION',
   VIEW_RECEPTION_DETAIL: 'VIEW_RECEPTION_DETAIL',
+  VIEW_REQUEST_FORM: 'VIEW_REQUEST_FORM',
 } as const;
 
 export type AllowedAction = (typeof VISIT_ALLOWED_ACTIONS)[keyof typeof VISIT_ALLOWED_ACTIONS];
@@ -940,7 +941,7 @@ export interface CancelVisitRequestResult {
 export type InvitationStatus = 'INVITED' | 'ACCEPTED' | 'DECLINED' | 'ASSIGNED';
 
 /** Actions on the invitation-detail screen (NOT on the "Đơn mời tham dự" tab). */
-export type InvitationAction = 'VIEW_DETAIL' | 'ACCEPT_INVITATION' | 'DECLINE_INVITATION' | 'ASSIGN_TO_DEPARTMENT_STAFF';
+export type InvitationAction = 'VIEW_DETAIL' | 'ACCEPT_INVITATION' | 'DECLINE_INVITATION' | 'ASSIGN_TO_DEPARTMENT_STAFF' | 'VIEW_REQUEST_FORM' | 'OPEN_CONTRIBUTION';
 
 /** One visit-participation invitation addressed to the signed-in user (UC-27). */
 export interface VisitInvitation {

@@ -20,6 +20,7 @@ import {
   type VisitInvitation,
 } from '../../../features/delegations/types/delegations.types';
 import { useAuthContext } from '../../../shared/auth/AuthContext';
+import { SubmittedVisitRequestDetailModal } from '../../../components/modals/SubmittedVisitRequestDetailModal';
 
 const formatDateTime = (value?: string | null) => {
   if (!value) return '-';
@@ -47,6 +48,7 @@ export function VisitParticipantInvitationDetail() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [rejectOpen, setRejectOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
+  const [requestFormOpen, setRequestFormOpen] = useState(false);
 
   const fetchInvitation = async () => {
     if (!participantId) return;
@@ -74,6 +76,9 @@ export function VisitParticipantInvitationDetail() {
 
   const canRespond = invitation?.status === 'INVITED'
     && invitation.allowedActions.includes('ACCEPT_INVITATION');
+
+  const canViewRequestForm = invitation?.allowedActions.includes('VIEW_REQUEST_FORM');
+  const canOpenContribution = invitation?.allowedActions.includes('OPEN_CONTRIBUTION');
 
   // Decline-reason validation (mirrors backend: mandatory, 5–1000 chars after trim).
   const trimmedReason = rejectReason.trim();
@@ -169,7 +174,22 @@ export function VisitParticipantInvitationDetail() {
           <AlertCircle className="w-10 h-10 mx-auto mb-3 text-red-400" /><p>{loadError}</p>
         </div>
       ) : invitation ? (
-        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+        <>
+          {(invitation.visitRequestStatus === 'CANCELLED' || invitation.visitRequestStatus === 'REJECTED' || invitation.campusVisitStatus === 'CANCELLED') && (
+            <div className="mb-4 p-4 rounded-xl border border-red-200 bg-red-50 text-red-700 flex items-center gap-3">
+              <AlertCircle className="w-5 h-5 flex-shrink-0" />
+              <p className="text-sm font-semibold">Lịch thăm đã bị hủy hoặc từ chối, lời mời này không còn hiệu lực.</p>
+            </div>
+          )}
+          {!(invitation.visitRequestStatus === 'CANCELLED' || invitation.visitRequestStatus === 'REJECTED' || invitation.campusVisitStatus === 'CANCELLED') 
+            && invitation.status === 'INVITED' 
+            && (invitation.campusVisitStatus === 'DURING_VISIT' || invitation.campusVisitStatus === 'AFTER_VISIT' || invitation.campusVisitStatus === 'CLOSED') && (
+            <div className="mb-4 p-4 rounded-xl border border-orange-200 bg-orange-50 text-orange-700 flex items-center gap-3">
+              <AlertCircle className="w-5 h-5 flex-shrink-0" />
+              <p className="text-sm font-semibold">Lời mời đã hết hạn vì chuyến thăm đã bắt đầu hoặc kết thúc.</p>
+            </div>
+          )}
+          <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
           <div className="flex items-center justify-between gap-4 bg-[#004c91] px-6 py-5">
             <div className="flex items-center gap-3 min-w-0">
               <div className="p-2.5 bg-white/10 text-white rounded-xl border border-white/20"><Info className="w-6 h-6" /></div>
@@ -262,7 +282,35 @@ export function VisitParticipantInvitationDetail() {
             </div>
           ) : invitation.status === 'ACCEPTED' ? (
             <div className="px-6 py-5 border-t border-slate-100 bg-green-50/60 text-center text-sm font-semibold text-green-700">
-              {isDeptStaff ? 'Bạn đã nhận nhiệm vụ này' : 'Bạn đã xác nhận tham gia'}{invitation.respondedAt ? ` lúc ${formatDateTime(invitation.respondedAt)}` : ''}.
+              <div className="mb-4">{isDeptStaff ? 'Bạn đã nhận nhiệm vụ này' : 'Bạn đã xác nhận tham gia'}{invitation.respondedAt ? ` lúc ${formatDateTime(invitation.respondedAt)}` : ''}.</div>
+              <div className="flex justify-center gap-4">
+                {canViewRequestForm && (
+                  <button onClick={() => setRequestFormOpen(true)} className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-[#004c91] bg-white hover:bg-blue-50 border border-[#004c91]/20 rounded-xl transition-colors shadow-sm">
+                    <FileText className="w-4 h-4" /> Xem form đăng ký tham quan
+                  </button>
+                )}
+                {canOpenContribution && invitation.visitInstanceId && (
+                  <button onClick={() => navigate(`/dashboard/visit/contribution/${invitation.visitInstanceId}`)} className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-orange-600 bg-white hover:bg-orange-50 border border-orange-500/20 rounded-xl transition-colors shadow-sm">
+                    <FileText className="w-4 h-4" /> Vào trang đóng góp
+                  </button>
+                )}
+              </div>
+            </div>
+          ) : invitation.status === 'ASSIGNED' ? (
+            <div className="px-6 py-5 border-t border-slate-100 bg-blue-50/60 text-center text-sm font-semibold text-blue-700">
+              <div className="mb-4">Bạn mới được giao nhiệm vụ này{invitation.assignedAt ? ` lúc ${formatDateTime(invitation.assignedAt)}` : ''}.</div>
+              <div className="flex justify-center gap-4">
+                {canViewRequestForm && (
+                  <button onClick={() => setRequestFormOpen(true)} className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-[#004c91] bg-white hover:bg-blue-50 border border-[#004c91]/20 rounded-xl transition-colors shadow-sm">
+                    <FileText className="w-4 h-4" /> Xem form đăng ký tham quan
+                  </button>
+                )}
+                {canOpenContribution && invitation.visitInstanceId && (
+                  <button onClick={() => navigate(`/dashboard/visit/contribution/${invitation.visitInstanceId}`)} className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-orange-600 bg-white hover:bg-orange-50 border border-orange-500/20 rounded-xl transition-colors shadow-sm">
+                    <FileText className="w-4 h-4" /> Vào trang đóng góp
+                  </button>
+                )}
+              </div>
             </div>
           ) : invitation.status === 'DECLINED' ? (
             <div className="px-6 py-5 border-t border-slate-100 bg-red-50/60 text-center text-sm font-semibold text-red-600">
@@ -270,7 +318,16 @@ export function VisitParticipantInvitationDetail() {
             </div>
           ) : null}
         </div>
+        </>
       ) : null}
+
+      {requestFormOpen && invitation && (
+        <SubmittedVisitRequestDetailModal
+          isOpen={requestFormOpen}
+          onClose={() => setRequestFormOpen(false)}
+          visitRequestId={invitation.visitRequestId}
+        />
+      )}
 
       {/* Decline modal */}
       {rejectOpen && (

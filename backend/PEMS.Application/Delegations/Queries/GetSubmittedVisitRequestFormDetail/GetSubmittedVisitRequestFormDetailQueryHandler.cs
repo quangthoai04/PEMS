@@ -65,7 +65,8 @@ public sealed class GetSubmittedVisitRequestFormDetailQueryHandler
         // regular Staff who HOSTS an instance of this request may. The host relation needs the
         // request's campus instances, so it is verified after the request loads (below).
         var isStaff = roleCode == RoleCodes.Staff;
-        if (!isHo && !isVisitor && !isStaff && !isDepartmentStaff)
+        var isStudent = roleCode == RoleCodes.Student;
+        if (!isHo && !isVisitor && !isStaff && !isDepartmentStaff && !isStudent)
             throw new ForbiddenException("Bạn không có quyền xem chi tiết đơn này.");
 
         var visitRequest = await _context.VisitRequests
@@ -116,6 +117,15 @@ public sealed class GetSubmittedVisitRequestFormDetailQueryHandler
         var hostedInstances = visitRequest.CampusInstances.Where(c => c.CurrentHostUserId == userId).ToList();
         var isHost = !isStaffLeader && hostedInstances.Count > 0;
 
+        var isParticipant = await _context.VisitParticipants
+            .AnyAsync(p => instanceIds.Contains(p.VisitInstanceId)
+                        && p.UserId == userId
+                        && (p.Status == ParticipantStatuses.Invited
+                            || p.Status == ParticipantStatuses.Accepted
+                            || p.Status == ParticipantStatuses.Assigned
+                            || p.Status == ParticipantStatuses.Declined),
+                      cancellationToken);
+
         // ── Scope enforcement ──
         if (isHo)
         {
@@ -158,10 +168,13 @@ public sealed class GetSubmittedVisitRequestFormDetailQueryHandler
             // Verified above: caller is the official host of ≥1 campus instance of this request.
             // Allowed read-only; only their hosted instance(s) are surfaced (no other-campus leak).
         }
-        else if (isDepartmentStaff)
+        else if (isDepartmentStaff && departmentStaffAssignedInstanceIds.Count > 0)
         {
-            if (departmentStaffAssignedInstanceIds.Count == 0)
-                throw new ForbiddenException("Bạn chỉ được xem đoàn đã được giao cho mình.");
+            // Allowed read-only for assigned logistics/participants.
+        }
+        else if (isParticipant)
+        {
+            // Allowed read-only.
         }
         else
         {
@@ -184,7 +197,7 @@ public sealed class GetSubmittedVisitRequestFormDetailQueryHandler
             ? visitRequest.CampusInstances.Where(c => c.CampusId == primaryCampusId).ToList()
             : isHost
                 ? hostedInstances
-                : isDepartmentStaff
+                : isDepartmentStaff && !isParticipant
                     ? visitRequest.CampusInstances.Where(c => departmentStaffAssignedInstanceIds.Contains(c.VisitInstanceId)).ToList()
                     : visitRequest.CampusInstances.ToList();
 

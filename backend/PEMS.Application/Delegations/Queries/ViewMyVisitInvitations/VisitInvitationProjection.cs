@@ -36,11 +36,15 @@ public static class VisitInvitationProjection
 {
     public static VisitInvitationDto ToDto(VisitInvitationFlat r)
     {
-        var actions = new List<string> { "VIEW_DETAIL" };
+        var actions = new List<string> { "VIEW_DETAIL", "VIEW_REQUEST_FORM" };
         if (r.Status == ParticipantStatuses.Invited)
         {
             actions.Add("ACCEPT_INVITATION");
             actions.Add("DECLINE_INVITATION");
+        }
+        else if (r.Status == ParticipantStatuses.Accepted || r.Status == ParticipantStatuses.Assigned)
+        {
+            actions.Add("OPEN_CONTRIBUTION");
         }
 
         return new VisitInvitationDto

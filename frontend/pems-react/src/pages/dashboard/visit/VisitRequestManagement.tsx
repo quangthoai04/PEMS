@@ -12,6 +12,7 @@ import {
   Search, Plus, Eye, AlertCircle, Users, MapPin, Calendar,
   ChevronLeft, ChevronRight, ChevronDown, Check, X, XCircle, Mail,
   FileText, ArrowRightCircle, Info, ClipboardList, Star, CheckCircle2,
+  PencilLine, MailOpen,
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
@@ -404,6 +405,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
         const invParams: Record<string, unknown> = {
           page: targetPage,
           pageSize: targetSize,
+          includeResponded: true,
         };
         const keyword = targetFilters.keyword.trim();
         if (keyword) invParams.keyword = keyword;
@@ -836,12 +838,29 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
     const base = 'inline-flex min-w-[96px] max-w-[150px] justify-center whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-semibold';
     
     if (activeTab === 'attending') {
+      const status = (row as any).invitationStatus;
+      
+      const isReqCancelled = row.requestStatus === 'CANCELLED';
+      const isCampCancelled = row.campusStatus === 'CANCELLED';
+      const isRejected = row.requestStatus === 'REJECTED';
+      const isClosed = row.campusStatus === 'CLOSED';
+
+      if (isReqCancelled || isCampCancelled) {
+        return <span title="Lịch thăm đã bị hủy, lời mời không còn hiệu lực" className={`${base} bg-gray-100 text-gray-600 border-gray-200`}>Lời mời hết hiệu lực</span>;
+      }
+      if (isRejected) {
+        return <span title="Đơn đã bị từ chối" className={`${base} bg-red-50 text-red-700 border-red-200`}>Đơn đã bị từ chối</span>;
+      }
+      if (isClosed) {
+        return <span title="Chuyến thăm đã hoàn tất" className={`${base} bg-slate-100 text-slate-700 border-slate-300`}>Đã đóng đoàn</span>;
+      }
+
       const text = row.statusText;
       let cls = 'bg-gray-100 text-gray-700 border-gray-200';
-      if (text === 'Chờ phản hồi') cls = 'bg-yellow-50 text-yellow-700 border-yellow-200';
-      else if (text === 'Đã nhận lời' || text === 'Đã nhận') cls = 'bg-green-50 text-green-700 border-green-200';
-      else if (text === 'Mới được giao') cls = 'bg-blue-50 text-blue-700 border-blue-200';
-      else if (text === 'Đã từ chối') cls = 'bg-red-50 text-red-700 border-red-200';
+      if (status === 'INVITED') cls = 'bg-yellow-50 text-yellow-700 border-yellow-200';
+      else if (status === 'ACCEPTED') cls = 'bg-green-50 text-green-700 border-green-200';
+      else if (status === 'ASSIGNED') cls = 'bg-blue-50 text-blue-700 border-blue-200';
+      else if (status === 'DECLINED') cls = 'bg-red-50 text-red-700 border-red-200';
       return <span title={text} className={`${base} ${cls}`}>{text}</span>;
     }
 
@@ -939,8 +958,8 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
     return (
       <div className="mx-auto grid w-[184px] grid-cols-4 gap-2 place-items-center">
         {/* Slot 1: Xem form yêu cầu */}
-        {row.visitRequestId ? (
-          <ActionIconButton title="Xem form yêu cầu" tone="blue" icon={<FileText className="h-5 w-5" />} onClick={(e) => { e.stopPropagation(); openRequestForm(row); }} />
+        {row.visitRequestId && (activeTab !== 'attending' || can('VIEW_REQUEST_FORM')) ? (
+          <ActionIconButton title="Xem form đăng ký tham quan" tone="blue" icon={<ClipboardList className="h-5 w-5" />} onClick={(e) => { e.stopPropagation(); openRequestForm(row); }} />
         ) : (
           <span className="h-9 w-9" aria-hidden="true" />
         )}
@@ -950,7 +969,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
           <ActionIconButton 
             title={getProcessActionTitle(row)} 
             tone={can('OPEN_CONTRIBUTION') ? 'orange' : 'blue'} 
-            icon={can('OPEN_CONTRIBUTION') ? <FileText className="h-5 w-5" /> : <ArrowRightCircle className="h-5 w-5" />} 
+            icon={can('OPEN_CONTRIBUTION') ? <PencilLine className="h-5 w-5" /> : (activeTab === 'attending' && !can('OPEN_PROCESS_SUMMARY') && !can('VIEW_RECEPTION_DETAIL') && !can('OPEN_HOST_PROCESS')) ? <MailOpen className="h-5 w-5" /> : <ArrowRightCircle className="h-5 w-5" />} 
             onClick={(e) => { e.stopPropagation(); handleProcess(row); }} 
           />
         ) : (

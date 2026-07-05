@@ -42,7 +42,9 @@ public sealed class GetVisitInvitationByIdQueryHandler
             where p.ParticipantId == request.ParticipantId
                 && p.UserId == userId
                 && !p.IsHost
-                && p.ParticipantRole != ParticipantRoles.IcHost
+                && (p.ParticipantRole == ParticipantRoles.IcSupport
+                    || p.ParticipantRole == ParticipantRoles.DeptSupport
+                    || p.ParticipantRole == ParticipantRoles.Student)
             select new VisitInvitationFlat
             {
                 ParticipantId = p.ParticipantId,
