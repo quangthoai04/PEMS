@@ -36,21 +36,33 @@ public sealed class GetEligibleVisitInstancesForNewsQueryHandler
         if (!isAllowed)
             throw new ForbiddenException("Only Staff and Student can create news.");
 
-        // Step 1: Find visit instances current user has ACCEPTED
+        // Step 1: Find visit instances current user has ACCEPTED (participant) hoặc đang là Host
         var acceptedInstanceIds = await _dbContext.VisitParticipants
             .AsNoTracking()
             .Where(vp => vp.UserId == currentUserId && vp.Status == ParticipantStatuses.Accepted)
             .Select(vp => vp.VisitInstanceId)
             .ToListAsync(cancellationToken);
 
-        if (acceptedInstanceIds.Count == 0)
+        var hostedInstanceIds = await _dbContext.VisitRequestCampuses
+            .AsNoTracking()
+            .Where(vrc => vrc.CurrentHostUserId == currentUserId)
+            .Select(vrc => vrc.VisitInstanceId)
+            .ToListAsync(cancellationToken);
+
+        var relatedInstanceIds = acceptedInstanceIds.Union(hostedInstanceIds).ToList();
+        if (relatedInstanceIds.Count == 0)
             return new GetEligibleVisitInstancesResponse();
 
-        // Step 2: Filter to CLOSED instances only
-        var closedInstances = await _dbContext.VisitRequestCampuses
+        // Step 2: Writing window — AFTER_VISIT hoặc CLOSED (bài viết sau tiếp khách; PUBLISHED là
+        // điều kiện đóng đoàn nên phải viết được TRƯỚC khi đóng). Bỏ chuyến không yêu cầu tin tức
+        // và chuyến khách không đồng ý truyền thông (backend create cũng chặn).
+        var eligibleInstances = await _dbContext.VisitRequestCampuses
             .AsNoTracking()
-            .Where(vrc => acceptedInstanceIds.Contains(vrc.VisitInstanceId)
-                       && vrc.Status == VisitInstanceStatuses.Closed)
+            .Where(vrc => relatedInstanceIds.Contains(vrc.VisitInstanceId)
+                       && (vrc.Status == VisitInstanceStatuses.AfterVisit
+                           || vrc.Status == VisitInstanceStatuses.Closed)
+                       && !vrc.NewsNotRequired
+                       && vrc.VisitRequest.MediaConsentStatus == PEMS.Shared.MediaConsentStatus.Agreed)
             .Select(vrc => new
             {
                 vrc.VisitInstanceId,
@@ -63,12 +75,12 @@ public sealed class GetEligibleVisitInstancesForNewsQueryHandler
             })
             .ToListAsync(cancellationToken);
 
-        if (closedInstances.Count == 0)
+        if (eligibleInstances.Count == 0)
             return new GetEligibleVisitInstancesResponse();
 
-        var instanceIds = closedInstances.Select(v => v.VisitInstanceId).ToList();
-        var requestIds  = closedInstances.Select(v => v.VisitRequestId).Distinct().ToList();
-        var campusIds   = closedInstances.Select(v => v.CampusId).Distinct().ToList();
+        var instanceIds = eligibleInstances.Select(v => v.VisitInstanceId).ToList();
+        var requestIds  = eligibleInstances.Select(v => v.VisitRequestId).Distinct().ToList();
+        var campusIds   = eligibleInstances.Select(v => v.CampusId).Distinct().ToList();
 
         // Step 3: Batch fetch delegation names
         var delegationNames = await _dbContext.VisitRequests
@@ -84,16 +96,18 @@ public sealed class GetEligibleVisitInstancesForNewsQueryHandler
             .Select(c => new { c.CampusId, c.Name })
             .ToDictionaryAsync(c => c.CampusId, c => c.Name, cancellationToken);
 
-        // Step 5: Check which instances already have news
-        var instancesWithNews = await _dbContext.News
+        // Step 5: "Đã có bài" tính THEO TÁC GIẢ — mỗi người một bài / chuyến; bài của người khác
+        // không chặn quyền viết của current user.
+        var instancesWithOwnNews = await _dbContext.News
             .AsNoTracking()
-            .Where(n => n.VisitInstanceId.HasValue && instanceIds.Contains(n.VisitInstanceId!.Value))
+            .Where(n => n.VisitInstanceId.HasValue && instanceIds.Contains(n.VisitInstanceId!.Value)
+                     && n.AuthorUserId == currentUserId)
             .Select(n => n.VisitInstanceId!.Value)
             .ToListAsync(cancellationToken);
-        var newsSet = instancesWithNews.ToHashSet();
+        var newsSet = instancesWithOwnNews.ToHashSet();
 
         var items = new List<EligibleVisitInstanceDto>();
-        foreach (var inst in closedInstances.OrderByDescending(v => v.PlannedStartAt))
+        foreach (var inst in eligibleInstances.OrderByDescending(v => v.PlannedStartAt))
         {
             var hasNews = newsSet.Contains(inst.VisitInstanceId);
             if (hasNews && !request.IncludeAlreadyHasNews)

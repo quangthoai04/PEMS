@@ -50,8 +50,8 @@ public sealed class SubmitVisitInstanceNewsCommandHandler
             .Select(p => p.ParticipantRole)
             .FirstOrDefaultAsync(cancellationToken);
 
-        var (inScope, _, _) = VisitNewsAccess.Evaluate(instance, instance.VisitRequest, _currentUser, acceptedRole);
-        if (!inScope)
+        var actor = VisitNewsAccess.Evaluate(instance, instance.VisitRequest, _currentUser, acceptedRole);
+        if (!actor.InScope)
             throw new ForbiddenException("Bạn không có quyền xem tin tức của chuyến thăm này.");
 
         if (instance.NewsNotRequired)
@@ -60,12 +60,12 @@ public sealed class SubmitVisitInstanceNewsCommandHandler
         if (instance.VisitRequest.MediaConsentStatus != PEMS.Shared.MediaConsentStatus.Agreed)
             throw new ForbiddenException("Khách không đồng ý truyền thông, không thể gửi duyệt bài tin.");
 
-        bool isHost = instance.CurrentHostUserId == userId;
-        bool isLive = instance.Status != VisitInstanceStatus.Closed
-            && instance.Status != VisitInstanceStatus.Cancelled
-            && instance.VisitRequest.Status != VisitRequestStatuses.Cancelled;
-        if (!((news.AuthorUserId == userId || isHost) && isLive))
-            throw new ForbiddenException("Bạn không có quyền gửi duyệt bài tin này.");
+        bool isCancelled = instance.Status == VisitInstanceStatus.Cancelled
+            || instance.VisitRequest.Status == VisitRequestStatuses.Cancelled;
+
+        // Chỉ tác giả được gửi (lại) bài của mình đi duyệt.
+        if (news.AuthorUserId != userId || isCancelled)
+            throw new ForbiddenException("Bạn chỉ có thể gửi duyệt bài viết do chính mình tạo.");
         if (news.Status == NewsStatus.Published)
             throw new BusinessRuleException("Bài tin đã được đăng.");
 
@@ -117,7 +117,7 @@ public sealed class SubmitVisitInstanceNewsCommandHandler
             AuthorUserId = news.AuthorUserId,
             SubmittedAt = news.SubmittedAt,
             RowVersion = news.RowVersion,
-            CanEdit = (news.AuthorUserId == userId || isHost) && isLive,
+            CanEdit = news.AuthorUserId == userId,
         };
     }
 }

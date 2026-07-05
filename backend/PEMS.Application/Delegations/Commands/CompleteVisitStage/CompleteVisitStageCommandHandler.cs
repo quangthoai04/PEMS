@@ -169,7 +169,7 @@ public sealed class CompleteVisitStageCommandHandler
                         .AnyAsync(n => n.VisitInstanceId == instance.VisitInstanceId
                                        && n.Status == NewsConstants.Status.Published, cancellationToken);
                     if (!hasPublishedNews)
-                        blockers.Add("chưa có bài tin tức được duyệt (hoặc Host chưa xác nhận chuyến này không cần tin tức)");
+                        blockers.Add("chưa có bài tin tức đã được đăng — vui lòng chờ Staff Leader duyệt bài hoặc xác nhận chuyến này không cần tin tức");
                 }
 
                 if (blockers.Count > 0)
