@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -94,7 +94,7 @@ public sealed class GetVisitInvitationDetailQueryHandler
             DeclineReason = data.p.Status == ParticipantStatuses.Declined ? data.p.Note : null,
             AssignedByName = assignedByName,
             AssignedAt = data.p.AssignedAt,
-            AllowedActions = new List<string> { "VIEW_DETAIL" }
+            AllowedActions = new List<string> { "VIEW_INVITATION_DETAIL", "VIEW_REQUEST_FORM" }
         };
 
         var isClosedOrCancelled = data.vr.Status == VisitRequestStatuses.Cancelled 
@@ -102,17 +102,27 @@ public sealed class GetVisitInvitationDetailQueryHandler
             || data.c.Status == VisitInstanceStatuses.Cancelled 
             || data.c.Status == VisitInstanceStatuses.Closed;
 
+        bool isActiveForInvitation = data.vr.Status == VisitRequestStatuses.Approved
+            && (data.c.Status == "WAITING_HOST_ASSIGNMENT"
+                || data.c.Status == VisitInstanceStatuses.Assigned
+                || data.c.Status == VisitInstanceStatuses.BeforeVisit);
+
+        if ((data.p.Status == ParticipantStatuses.Accepted || data.p.Status == ParticipantStatuses.Assigned) && isActiveForInvitation)
+        {
+            dto.AllowedActions.Add("OPEN_CONTRIBUTION");
+        }
+
         if (roleCode == RoleCodes.Department || roleCode == "DEPT")
         {
             if (subRole == UserSubRoles.Leader)
             {
-                if (data.p.Status == ParticipantStatuses.Invited && !isClosedOrCancelled)
+                if (data.p.Status == ParticipantStatuses.Invited && isActiveForInvitation)
                 {
                     dto.AllowedActions.Add("ACCEPT_INVITATION");
                     dto.AllowedActions.Add("DECLINE_INVITATION");
                     dto.AllowedActions.Add("ASSIGN_TO_DEPARTMENT_STAFF");
                 }
-                else if (data.p.Status == ParticipantStatuses.Accepted && !isClosedOrCancelled)
+                else if (data.p.Status == ParticipantStatuses.Accepted && isActiveForInvitation)
                 {
                     dto.AllowedActions.Add("ASSIGN_TO_DEPARTMENT_STAFF");
                 }
@@ -120,7 +130,7 @@ public sealed class GetVisitInvitationDetailQueryHandler
         }
         else // Staff, Student
         {
-            if ((data.p.Status == ParticipantStatuses.Invited || data.p.Status == ParticipantStatuses.Assigned) && !isClosedOrCancelled)
+            if (data.p.Status == ParticipantStatuses.Invited && isActiveForInvitation)
             {
                 dto.AllowedActions.Add("ACCEPT_INVITATION");
                 dto.AllowedActions.Add("DECLINE_INVITATION");

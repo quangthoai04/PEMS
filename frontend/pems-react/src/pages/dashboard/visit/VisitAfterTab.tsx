@@ -738,11 +738,12 @@ export function VisitAfterTab({ onTourCloseSuccess, isReadOnly = false, isDept =
            ) : (
             <button
               type="button"
-              onClick={() => !isReadOnly && navigate('/dashboard/news')}
+              // Người dùng muốn TẠO tin → đi thẳng vào form tạo (không điều hướng sang list).
+              onClick={() => !isReadOnly && navigate('/dashboard/news/create')}
               disabled={isReadOnly}
               className={`inline-flex items-center gap-2 px-6 py-3 font-extrabold rounded-xl transition-all text-sm outline-none ${
-                isReadOnly 
-                  ? 'bg-gray-100 text-gray-400 border border-gray-200 cursor-default shadow-none' 
+                isReadOnly
+                  ? 'bg-gray-100 text-gray-400 border border-gray-200 cursor-default shadow-none'
                   : 'bg-[#004c91] hover:bg-[#00386b] text-white shadow-md hover:shadow-lg active:scale-95 cursor-pointer'
               }`}
             >

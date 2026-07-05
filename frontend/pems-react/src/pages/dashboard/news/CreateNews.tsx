@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion } from 'motion/react';
 import ReactQuill from 'react-quill-new';
 import 'react-quill-new/dist/quill.snow.css';
@@ -45,6 +45,13 @@ function formatDate(dateStr?: string): string {
   return new Date(fixed).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
+// Nhãn trạng thái chuyến trong cửa sổ viết tin (AFTER_VISIT trở đi).
+const INSTANCE_STATUS_LABELS: Record<string, string> = {
+  AFTER_VISIT: 'Sau tiếp khách',
+  CLOSED: 'Đã đóng đoàn',
+};
+const instanceStatusLabel = (status: string) => INSTANCE_STATUS_LABELS[status] ?? status;
+
 // ─── Quill toolbar (no image button — images managed separately) ──────────────
 
 const QUILL_MODULES = {
@@ -61,12 +68,19 @@ const QUILL_MODULES = {
 
 export function CreateNews() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  // Đi từ tab "Sau tiếp khách"/trang Đóng góp: chuyến được chọn sẵn + quay lại đúng trang cũ.
+  const presetVisitInstanceId = searchParams.get('visitInstanceId');
+  const returnTo = searchParams.get('returnTo');
 
   // Step 0: Eligible visit instances
   const [eligibleVisits, setEligibleVisits]   = useState<EligibleVisit[]>([]);
   const [loadingVisits, setLoadingVisits]     = useState(true);
   const [selectedVisit, setSelectedVisit]     = useState<EligibleVisit | null>(null);
-  const [showVisitList, setShowVisitList]     = useState(true);
+  const [showVisitList, setShowVisitList]     = useState(!presetVisitInstanceId);
+  // Khi có preset: khóa chuyến, không cho đổi; lỗi preset hiển thị riêng.
+  const [presetError, setPresetError]         = useState<string | null>(null);
+  const [presetExistingNewsId, setPresetExistingNewsId] = useState<number | null>(null);
 
   // Step 1: Basic info
   const [title,   setTitle]   = useState('');
@@ -93,20 +107,41 @@ export function CreateNews() {
     const fetchVisits = async () => {
       setLoadingVisits(true);
       try {
+        // Khi có chuyến chọn sẵn (?visitInstanceId): lấy cả chuyến đã có bài để báo đúng lý do.
         const { data } = await httpClient.get<{ items: EligibleVisit[] }>(
           '/news/eligible-visit-instances',
-          { params: { includeAlreadyHasNews: false } }
+          { params: { includeAlreadyHasNews: !!presetVisitInstanceId } }
         );
-        if (!cancelled) setEligibleVisits(data.items ?? []);
+        if (cancelled) return;
+        const items = data.items ?? [];
+
+        if (presetVisitInstanceId) {
+          const preset = items.find(v => String(v.visitInstanceId) === presetVisitInstanceId);
+          if (!preset) {
+            setPresetError('Chuyến tiếp khách này chưa đủ điều kiện để viết tin tức (chưa vào giai đoạn Sau tiếp khách, không yêu cầu tin tức, hoặc bạn không phải Host/người tham gia).');
+          } else if (preset.hasNews) {
+            setPresetExistingNewsId(preset.visitInstanceId);
+            setSelectedVisit(preset);
+            setPresetError('Bạn đã có bài viết cho chuyến này. Vui lòng chỉnh sửa bài hiện có trong Quản lý tin tức.');
+          } else {
+            setSelectedVisit(preset);
+          }
+          setEligibleVisits(items);
+        } else {
+          setEligibleVisits(items);
+        }
       } catch {
-        if (!cancelled) setEligibleVisits([]);
+        if (!cancelled) {
+          setEligibleVisits([]);
+          if (presetVisitInstanceId) setPresetError('Không thể tải thông tin chuyến tiếp khách. Vui lòng thử lại.');
+        }
       } finally {
         if (!cancelled) setLoadingVisits(false);
       }
     };
     fetchVisits();
     return () => { cancelled = true; };
-  }, []);
+  }, [presetVisitInstanceId]);
 
   // ── Visit selection ────────────────────────────────────────────────────────
 
@@ -264,8 +299,8 @@ export function CreateNews() {
       const { data } = await httpClient.post<{ success: boolean; message: string }>('/news', payload);
 
       if (data.success) {
-        toast.success('Tạo tin tức thành công! Bài viết đang chờ duyệt.');
-        setTimeout(() => navigate('/dashboard/news'), 1200);
+        toast.success(data.message || 'Đã gửi bài viết, đang chờ Staff Leader duyệt.');
+        setTimeout(() => navigate(returnTo || '/dashboard/news'), 1200);
       } else {
         toast.error(data.message ?? 'Không thể tạo tin tức.');
       }
@@ -276,7 +311,8 @@ export function CreateNews() {
     }
   };
 
-  const formDisabled = !selectedVisit;
+  // Khóa form khi chưa chọn chuyến hoặc user đã có bài cho chuyến preset (mỗi người 1 bài/chuyến).
+  const formDisabled = !selectedVisit || presetExistingNewsId !== null;
 
   // ─────────────────────────────────────────────────────────────────────────
 
@@ -303,12 +339,27 @@ export function CreateNews() {
 
       <div className="space-y-8">
 
-        {/* ── Section 0: Chọn chuyến tiếp khách ── */}
+        {/* ── Section 0: Chuyến tiếp khách ── */}
         <section className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
           <div className="bg-[#004c91] px-6 py-3.5">
-            <h2 className="text-[15px] font-bold text-white uppercase tracking-wide">0. CHỌN CHUYẾN TIẾP KHÁCH ĐÃ ĐÓNG</h2>
+            <h2 className="text-[15px] font-bold text-white uppercase tracking-wide">
+              {presetVisitInstanceId ? '0. CHUYẾN TIẾP KHÁCH' : '0. CHỌN CHUYẾN SAU TIẾP KHÁCH'}
+            </h2>
           </div>
           <div className="p-6">
+            {loadingVisits && presetVisitInstanceId && (
+              <div className="flex items-center justify-center gap-2 py-8 text-gray-400">
+                <div className="w-5 h-5 border-2 border-[#004c91] border-t-transparent rounded-full animate-spin" />
+                <span>Đang tải thông tin chuyến tiếp khách...</span>
+              </div>
+            )}
+
+            {presetError && !loadingVisits && (
+              <div className="mb-4 p-4 bg-amber-50 border border-amber-300 rounded-xl text-sm font-semibold text-amber-800">
+                {presetError}
+              </div>
+            )}
+
             {selectedVisit && (
               <div className="mb-4 p-4 bg-[#eef5fa] border border-[#b6d4f0] rounded-xl flex items-start justify-between gap-4">
                 <div>
@@ -319,20 +370,26 @@ export function CreateNews() {
                   <div className="flex flex-wrap gap-4 text-sm text-gray-600 mt-1 pl-7">
                     <span className="flex items-center gap-1"><MapPin className="w-3.5 h-3.5 text-gray-400" />{selectedVisit.campusName}</span>
                     <span className="flex items-center gap-1"><Calendar className="w-3.5 h-3.5 text-gray-400" />{formatDate(selectedVisit.plannedStartAt)} – {formatDate(selectedVisit.plannedEndAt)}</span>
-                    <span className="px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full text-xs font-bold">Đã đóng đoàn</span>
-                    <span className="px-2 py-0.5 bg-[#eaffe4] text-[#0aa14f] rounded-full text-xs font-bold">Chưa có bài</span>
+                    <span className="px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full text-xs font-bold">{instanceStatusLabel(selectedVisit.status)}</span>
+                    {selectedVisit.hasNews
+                      ? <span className="px-2 py-0.5 bg-yellow-50 text-yellow-700 rounded-full text-xs font-bold">Bạn đã có bài viết</span>
+                      : <span className="px-2 py-0.5 bg-[#eaffe4] text-[#0aa14f] rounded-full text-xs font-bold">Bạn chưa có bài</span>
+                    }
                   </div>
                 </div>
-                <button
-                  onClick={handleChangeVisit}
-                  className="flex-shrink-0 px-3 py-1.5 text-sm font-bold text-[#004c91] border border-[#004c91] rounded-lg hover:bg-[#004c91] hover:text-white transition-colors"
-                >
-                  Đổi chuyến
-                </button>
+                {/* Chuyến được chọn sẵn từ tab Sau tiếp khách/Đóng góp thì khóa, không cho đổi */}
+                {!presetVisitInstanceId && (
+                  <button
+                    onClick={handleChangeVisit}
+                    className="flex-shrink-0 px-3 py-1.5 text-sm font-bold text-[#004c91] border border-[#004c91] rounded-lg hover:bg-[#004c91] hover:text-white transition-colors"
+                  >
+                    Đổi chuyến
+                  </button>
+                )}
               </div>
             )}
 
-            {showVisitList && (
+            {showVisitList && !presetVisitInstanceId && (
               <>
                 {loadingVisits ? (
                   <div className="flex items-center justify-center gap-2 py-8 text-gray-400">
@@ -341,8 +398,8 @@ export function CreateNews() {
                   </div>
                 ) : eligibleVisits.length === 0 ? (
                   <div className="py-10 text-center">
-                    <p className="text-gray-700 font-bold mb-2">Bạn chưa có chuyến tiếp khách đã đóng để viết tin tức.</p>
-                    <p className="text-gray-500 text-sm">Bạn chỉ có thể tạo tin tức cho chuyến tiếp khách mà bạn đã xác nhận tham gia và đã được đóng đoàn.</p>
+                    <p className="text-gray-700 font-bold mb-2">Bạn chưa có chuyến tiếp khách nào ở giai đoạn Sau tiếp khách để viết tin tức.</p>
+                    <p className="text-gray-500 text-sm">Bạn chỉ có thể tạo tin tức cho chuyến tiếp khách mà bạn là Host hoặc đã xác nhận tham gia, từ giai đoạn Sau tiếp khách trở đi.</p>
                   </div>
                 ) : (
                   <div className="space-y-3">
@@ -359,10 +416,10 @@ export function CreateNews() {
                             <div className="flex flex-wrap gap-3 mt-1.5 text-xs text-gray-500">
                               <span className="flex items-center gap-1"><MapPin className="w-3 h-3" />{visit.campusName}</span>
                               <span className="flex items-center gap-1"><Calendar className="w-3 h-3" />{formatDate(visit.plannedStartAt)} – {formatDate(visit.plannedEndAt)}</span>
-                              <span className="px-2 py-0.5 bg-gray-100 rounded-full font-bold">Đã đóng đoàn</span>
+                              <span className="px-2 py-0.5 bg-gray-100 rounded-full font-bold">{instanceStatusLabel(visit.status)}</span>
                               {visit.hasNews
-                                ? <span className="px-2 py-0.5 bg-yellow-50 text-yellow-700 rounded-full font-bold">Đã có bài viết</span>
-                                : <span className="px-2 py-0.5 bg-[#eaffe4] text-[#0aa14f] rounded-full font-bold">Chưa có bài</span>
+                                ? <span className="px-2 py-0.5 bg-yellow-50 text-yellow-700 rounded-full font-bold">Bạn đã có bài viết</span>
+                                : <span className="px-2 py-0.5 bg-[#eaffe4] text-[#0aa14f] rounded-full font-bold">Bạn chưa có bài</span>
                               }
                             </div>
                           </div>
@@ -378,9 +435,9 @@ export function CreateNews() {
               </>
             )}
 
-            {!selectedVisit && !loadingVisits && (
+            {!selectedVisit && !loadingVisits && !presetError && (
               <p className="mt-4 text-sm text-amber-600 font-medium">
-                ⚠ Vui lòng chọn chuyến tiếp khách đã đóng trước khi tạo tin tức.
+                ⚠ Vui lòng chọn chuyến tiếp khách trước khi tạo tin tức.
               </p>
             )}
           </div>
@@ -599,7 +656,7 @@ export function CreateNews() {
         {/* ── Buttons ── */}
         <div className="flex items-center justify-between gap-4 pt-6 border-t border-gray-200">
           <button
-            onClick={() => navigate('/dashboard/news')}
+            onClick={() => navigate(returnTo || '/dashboard/news')}
             className="flex items-center gap-1.5 px-6 py-2.5 rounded-xl border border-gray-300 text-gray-700 font-bold hover:border-[#004c91] hover:text-[#004c91] transition-colors"
           >
             <ArrowLeft className="w-4 h-4" /> Quay lại

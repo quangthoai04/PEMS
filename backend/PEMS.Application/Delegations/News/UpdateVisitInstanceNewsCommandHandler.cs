@@ -53,8 +53,8 @@ public sealed class UpdateVisitInstanceNewsCommandHandler
             .Select(p => p.ParticipantRole)
             .FirstOrDefaultAsync(cancellationToken);
 
-        var (inScope, _, _) = VisitNewsAccess.Evaluate(instance, instance.VisitRequest, _currentUser, acceptedRole);
-        if (!inScope)
+        var actor = VisitNewsAccess.Evaluate(instance, instance.VisitRequest, _currentUser, acceptedRole);
+        if (!actor.InScope)
             throw new ForbiddenException("Bạn không có quyền xem tin tức của chuyến thăm này.");
 
         if (instance.NewsNotRequired)
@@ -63,15 +63,14 @@ public sealed class UpdateVisitInstanceNewsCommandHandler
         if (instance.VisitRequest.MediaConsentStatus != PEMS.Shared.MediaConsentStatus.Agreed)
             throw new ForbiddenException("Khách không đồng ý truyền thông, không thể cập nhật bài tin.");
 
-        bool isHost = instance.CurrentHostUserId == userId;
-        bool isLive = instance.Status != VisitInstanceStatus.Closed
-            && instance.Status != VisitInstanceStatus.Cancelled
-            && instance.VisitRequest.Status != VisitRequestStatuses.Cancelled;
+        bool isCancelled = instance.Status == VisitInstanceStatus.Cancelled
+            || instance.VisitRequest.Status == VisitRequestStatuses.Cancelled;
 
-        if (!((news.AuthorUserId == userId || isHost) && isLive))
-            throw new ForbiddenException("Bạn không có quyền chỉnh sửa bài tin này.");
-        if (news.Status == NewsStatus.Published)
-            throw new BusinessRuleException("Bài tin đã được đăng nên không thể chỉnh sửa ở đây.");
+        // Ai viết bài nào thì người đó sửa bài đó — Host KHÔNG được sửa bài của participant.
+        if (news.AuthorUserId != userId || isCancelled)
+            throw new ForbiddenException("Bạn chỉ có thể chỉnh sửa bài viết do chính mình tạo.");
+        if (news.Status != NewsStatus.PendingReview && news.Status != NewsStatus.Rejected)
+            throw new BusinessRuleException("Chỉ có thể chỉnh sửa bài viết đang chờ duyệt hoặc bị từ chối.");
         if (news.RowVersion != request.RowVersion)
             throw new ConflictException("Bài tin đã được cập nhật bởi người khác. Vui lòng tải lại nội dung mới nhất.");
 

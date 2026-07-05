@@ -37,21 +37,31 @@ public sealed class GetVisitInstanceNewsQueryHandler
             .Select(p => p.ParticipantRole)
             .FirstOrDefaultAsync(cancellationToken);
 
-        var (inScope, canCreate, canSeeUnpublished) =
-            VisitNewsAccess.Evaluate(instance, instance.VisitRequest, _currentUser, acceptedRole);
-        if (!inScope)
+        var actor = VisitNewsAccess.Evaluate(instance, instance.VisitRequest, _currentUser, acceptedRole);
+        if (!actor.InScope)
             throw new ForbiddenException("Bạn không có quyền xem tin tức của chuyến thăm này.");
-
-        bool isHost = instance.CurrentHostUserId == userId;
-        bool isLive = instance.Status != VisitInstanceStatus.Closed
-            && instance.Status != VisitInstanceStatus.Cancelled
-            && instance.VisitRequest.Status != VisitRequestStatuses.Cancelled;
 
         var query = _db.News
             .Include(n => n.Translations).ThenInclude(t => t.Sections)
             .Where(n => n.VisitInstanceId == instance.VisitInstanceId);
-        if (!canSeeUnpublished)
+
+        // Visibility (logic duyệt mới):
+        //  • Host / Staff Leader of campus: every post of the instance.
+        //  • HO / Visitor owner: PUBLISHED posts only (HO là read-only overview — không thấy
+        //    PENDING_REVIEW/REJECTED/HIDDEN và không tham gia workflow duyệt).
+        //  • Accepted participant (not host): ONLY their own posts.
+        if (actor.IsHost || actor.IsStaffLeaderOfCampus)
+        {
+            // full list
+        }
+        else if (actor.IsHo || actor.IsVisitorOwner)
+        {
             query = query.Where(n => n.Status == NewsStatus.Published);
+        }
+        else
+        {
+            query = query.Where(n => n.AuthorUserId == userId);
+        }
 
         var posts = await query.OrderByDescending(n => n.SubmittedAt).ToListAsync(cancellationToken);
 
@@ -61,11 +71,20 @@ public sealed class GetVisitInstanceNewsQueryHandler
             : await _db.Users.Where(u => authorIds.Contains(u.UserId))
                 .ToDictionaryAsync(u => u.UserId, u => u.FullName, cancellationToken);
 
+        // HO / Visitor: read-only — no internal workflow fields, no action flags.
+        bool isReadonlyViewer = actor.IsHo || actor.IsVisitorOwner;
+
         var items = posts.Select(n =>
         {
             var tr = n.Translations.FirstOrDefault(t => t.LanguageCode == "vi") ?? n.Translations.FirstOrDefault();
             var section = tr?.Sections.OrderBy(s => s.SectionOrder).FirstOrDefault();
-            bool canEdit = (n.AuthorUserId == userId || isHost) && n.Status != NewsStatus.Published && isLive;
+            // Chỉ TÁC GIẢ được sửa bài của mình, khi bài đang chờ duyệt hoặc bị từ chối.
+            bool canEdit = !isReadonlyViewer
+                && n.AuthorUserId == userId
+                && (n.Status == NewsStatus.PendingReview || n.Status == NewsStatus.Rejected);
+            // Chỉ Staff Leader đúng campus duyệt/từ chối bài đang chờ duyệt.
+            bool canReview = !isReadonlyViewer
+                && actor.IsStaffLeaderOfCampus && n.Status == NewsStatus.PendingReview;
             return new VisitNewsDto
             {
                 NewsId = n.NewsId,
@@ -79,9 +98,12 @@ public sealed class GetVisitInstanceNewsQueryHandler
                 AuthorName = authorNames.TryGetValue(n.AuthorUserId, out var an) ? an : null,
                 SubmittedAt = n.SubmittedAt,
                 PublishedAt = n.PublishedAt,
-                ReviewNote = n.ReviewNote,
+                // HO/Visitor: không trả reviewNote nội bộ.
+                ReviewNote = isReadonlyViewer ? null : n.ReviewNote,
                 RowVersion = n.RowVersion,
                 CanEdit = canEdit,
+                CanApprove = canReview,
+                CanReject = canReview,
             };
         }).ToList();
 
@@ -89,7 +111,9 @@ public sealed class GetVisitInstanceNewsQueryHandler
         {
             VisitInstanceId = instance.VisitInstanceId,
             CanView = true,
-            CanCreate = canCreate,
+            // HO/Visitor: never create — VisitNewsAccess already returns false,
+            // but we enforce explicitly for defense-in-depth.
+            CanCreate = !isReadonlyViewer && actor.CanCreate,
             Items = items,
         };
     }

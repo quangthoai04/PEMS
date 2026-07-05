@@ -45,11 +45,10 @@ public sealed class CreateVisitInstanceNewsCommandHandler
             .Select(p => p.ParticipantRole)
             .FirstOrDefaultAsync(cancellationToken);
 
-        var (inScope, canCreate, _) =
-            VisitNewsAccess.Evaluate(instance, instance.VisitRequest, _currentUser, acceptedRole);
-        if (!inScope)
+        var actor = VisitNewsAccess.Evaluate(instance, instance.VisitRequest, _currentUser, acceptedRole);
+        if (!actor.InScope)
             throw new ForbiddenException("Bạn không có quyền xem tin tức của chuyến thăm này.");
-        if (!canCreate)
+        if (!actor.CanCreate)
             throw new ForbiddenException("Bạn không có quyền viết tin tức cho chuyến thăm này.");
 
         if (instance.NewsNotRequired)

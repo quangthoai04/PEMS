@@ -80,6 +80,8 @@ export function EditNews() {
   const [searchParams] = useSearchParams();
   // Bản dịch đang chỉnh sửa (mặc định bản gốc tiếng Việt)
   const languageCode = searchParams.get('lang') ?? 'vi';
+  // Đi từ tab Sau tiếp khách/Đóng góp: lưu xong quay lại đúng trang cũ.
+  const returnTo = searchParams.get('returnTo');
 
   // ── Meta state ──
   const [loading,    setLoading]    = useState(true);
@@ -319,10 +321,10 @@ export function EditNews() {
 
       toast.success(
         newsStatus === 'REJECTED'
-          ? 'Bài viết đã được cập nhật và nộp lại chờ duyệt!'
+          ? 'Bài viết đã được cập nhật và nộp lại chờ Staff Leader duyệt!'
           : 'Bài viết đã được cập nhật thành công!',
       );
-      setTimeout(() => navigate('/dashboard/news'), 1500);
+      setTimeout(() => navigate(returnTo || '/dashboard/news'), 1500);
     } catch (err: unknown) {
       const msg =
         (err as { response?: { data?: { message?: string } } })?.response?.data?.message
@@ -608,7 +610,7 @@ export function EditNews() {
         {/* ── Buttons ── */}
         <div className="flex items-center justify-end gap-3 pt-6 border-t border-gray-200">
           <button
-            onClick={() => navigate('/dashboard/news')}
+            onClick={() => navigate(returnTo || '/dashboard/news')}
             className="flex items-center gap-1.5 px-6 py-2.5 rounded-xl border border-gray-300 text-gray-700 font-bold hover:border-[#004c91] hover:text-[#004c91] transition-colors"
           >
             <ArrowLeft className="w-4 h-4" /> Quay lại

@@ -6,17 +6,29 @@ using PEMS.Shared;
 namespace PEMS.Application.Delegations.News;
 
 /// <summary>
-/// Access rules for visit-instance news (UC tin tức):
-///  • View: any user in scope of the campus instance. Internal roles (Host / Staff Leader of
-///    campus / HO / accepted participant) see every post; a Visitor owner sees ONLY published posts.
-///  • Create / edit: ONLY the Host or an accepted IC-Staff / Student participant, while the visit
-///    is live. Department participants do NOT write news (chốt rule §11.2); Visitor / HO / Staff
-///    Leader never write — they only view.
-/// (Unlike minutes, there can be MANY news posts per instance.)
+/// Access rules for visit-instance news (logic duyệt mới — tất cả bài đều qua Staff Leader):
+///  • View list: Host / Staff Leader of campus / HO see EVERY post of the instance; an accepted
+///    participant sees ONLY their own posts; a Visitor owner sees ONLY published posts.
+///  • Create: ONLY the Host or an accepted IC-Staff / Student participant, from the AFTER_VISIT
+///    stage onward (news is written after the reception; a PUBLISHED post — or news_not_required —
+///    is a close condition, so writing must open BEFORE close and stays open after). Department
+///    participants do NOT write news; Visitor / HO / Staff Leader never write.
+///  • Edit / resubmit: the AUTHOR only — enforced in the command handlers.
+///  • Approve / reject: Staff Leader of the campus only — via the News review UC.
+/// (There can be MANY news posts per instance — one per author.)
 /// </summary>
 internal static class VisitNewsAccess
 {
-    public static (bool InScope, bool CanCreate, bool CanSeeUnpublished) Evaluate(
+    internal readonly record struct VisitNewsActor(
+        bool InScope,
+        bool CanCreate,
+        bool IsHost,
+        bool IsStaffLeaderOfCampus,
+        bool IsHo,
+        bool IsVisitorOwner,
+        bool IsAcceptedParticipant);
+
+    public static VisitNewsActor Evaluate(
         VisitRequestCampus instance, VisitRequest visit, ICurrentUserService user, string? acceptedParticipantRole)
     {
         var userId = user.UserId!.Value;
@@ -30,7 +42,10 @@ internal static class VisitNewsAccess
 
         bool inScope = isHost || isStaffLeaderOfCampus || isHo || isVisitorOwner || isAccepted;
 
-        bool isLive = instance.Status != VisitInstanceStatus.Closed
+        // Writing window: from AFTER_VISIT (news is a close condition) and still allowed after
+        // CLOSED (late posts are fine); never on a cancelled instance/request.
+        bool inWritingWindow = (instance.Status == VisitInstanceStatus.AfterVisit
+                             || instance.Status == VisitInstanceStatus.Closed)
             && instance.Status != VisitInstanceStatus.Cancelled
             && visit.Status != VisitRequestStatuses.Cancelled;
 
@@ -38,11 +53,8 @@ internal static class VisitNewsAccess
         bool canCreate = (isHost
             || (isAccepted && (acceptedParticipantRole == ParticipantRoles.IcSupport
                                || acceptedParticipantRole == ParticipantRoles.Student)))
-            && isLive;
+            && inWritingWindow;
 
-        // Everyone in scope except a pure Visitor owner may see unpublished (draft/pending/rejected) posts.
-        bool canSeeUnpublished = inScope && !(isVisitorOwner && !isHost && !isAccepted);
-
-        return (inScope, canCreate, canSeeUnpublished);
+        return new VisitNewsActor(inScope, canCreate, isHost, isStaffLeaderOfCampus, isHo, isVisitorOwner, isAccepted);
     }
 }

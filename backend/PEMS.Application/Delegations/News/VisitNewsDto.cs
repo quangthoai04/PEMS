@@ -17,8 +17,12 @@ public sealed class VisitNewsDto
     public DateTime? PublishedAt { get; set; }
     public string? ReviewNote { get; set; }
     public int RowVersion { get; set; }
-    /// <summary>True when the caller (author or Host) may edit/resubmit this post (not while PUBLISHED).</summary>
+    /// <summary>True when the caller is the AUTHOR and the post is editable (PENDING_REVIEW / REJECTED).</summary>
     public bool CanEdit { get; set; }
+    /// <summary>True when the caller is the Staff Leader of the campus and the post is PENDING_REVIEW.</summary>
+    public bool CanApprove { get; set; }
+    /// <summary>True when the caller is the Staff Leader of the campus and the post is PENDING_REVIEW.</summary>
+    public bool CanReject { get; set; }
 }
 
 /// <summary>News list for a campus instance + whether the caller may add a new post.</summary>

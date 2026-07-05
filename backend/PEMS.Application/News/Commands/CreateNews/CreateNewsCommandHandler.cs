@@ -50,21 +50,38 @@ public sealed class CreateNewsCommandHandler
         if (!isAllowed)
             throw new ForbiddenException("Chỉ Staff thường và Student mới được tạo tin tức.");
 
-        // Step 2: Load visit instance
+        // Step 2: Load visit instance (+ media consent / news_not_required flags)
         var visitInstance = await _dbContext.VisitRequestCampuses
             .AsNoTracking()
             .Where(vrc => vrc.VisitInstanceId == request.VisitInstanceId)
-            .Select(vrc => new { vrc.VisitInstanceId, vrc.CampusId, vrc.Status })
+            .Select(vrc => new
+            {
+                vrc.VisitInstanceId,
+                vrc.CampusId,
+                vrc.Status,
+                vrc.CurrentHostUserId,
+                vrc.NewsNotRequired,
+                MediaConsentStatus = vrc.VisitRequest.MediaConsentStatus
+            })
             .FirstOrDefaultAsync(cancellationToken)
             ?? throw new NotFoundException("Chuyến tiếp khách", request.VisitInstanceId);
 
-        // Step 3: Visit instance must be CLOSED
-        if (visitInstance.Status != VisitInstanceStatuses.Closed)
+        // Step 3: Writing window — from AFTER_VISIT onward (news được viết SAU tiếp khách và là
+        // một điều kiện đóng đoàn, nên phải mở TRƯỚC khi đóng; sau khi đóng vẫn được viết thêm).
+        if (visitInstance.Status != VisitInstanceStatuses.AfterVisit
+            && visitInstance.Status != VisitInstanceStatuses.Closed)
             throw new ConflictException(
-                "Chỉ có thể tạo tin tức sau khi chuyến tiếp khách đã đóng đoàn.");
+                "Chỉ có thể tạo tin tức từ giai đoạn Sau tiếp khách của chuyến tiếp khách.");
 
-        // Step 4: Current user must be an ACCEPTED participant
-        var isParticipant = await _dbContext.VisitParticipants
+        if (visitInstance.NewsNotRequired)
+            throw new ConflictException("Chuyến tiếp khách này đã được xác nhận không yêu cầu tin tức.");
+
+        if (visitInstance.MediaConsentStatus != PEMS.Shared.MediaConsentStatus.Agreed)
+            throw new ConflictException("Khách không đồng ý truyền thông, không thể tạo bài tin tức.");
+
+        // Step 4: Current user must be the Host or an ACCEPTED participant of the instance
+        var isHost = visitInstance.CurrentHostUserId == currentUserId;
+        var isParticipant = isHost || await _dbContext.VisitParticipants
             .AsNoTracking()
             .AnyAsync(vp =>
                 vp.VisitInstanceId == request.VisitInstanceId &&
@@ -74,42 +91,32 @@ public sealed class CreateNewsCommandHandler
 
         if (!isParticipant)
             throw new ForbiddenException(
-                "Bạn chỉ có thể tạo tin tức cho chuyến tiếp khách mà bạn đã xác nhận tham gia.");
+                "Bạn chỉ có thể tạo tin tức cho chuyến tiếp khách mà bạn là Host hoặc đã xác nhận tham gia.");
 
-        // Step 5: One news per visit instance — check before insert
+        // Step 5: One news per AUTHOR per visit instance — nhiều người cùng chuyến đều được viết
+        // bài riêng (Host + các participant), nhưng mỗi người chỉ một bài; sửa bài hiện có nếu đã tạo.
         var existingNews = await _dbContext.News
             .AsNoTracking()
-            .Where(n => n.VisitInstanceId == request.VisitInstanceId)
-            .Select(n => new { n.NewsId, n.AuthorUserId, n.Status })
+            .Where(n => n.VisitInstanceId == request.VisitInstanceId
+                     && n.AuthorUserId == currentUserId)
+            .Select(n => new { n.NewsId, n.Status })
             .FirstOrDefaultAsync(cancellationToken);
 
         if (existingNews is not null)
         {
-            var isSelf = existingNews.AuthorUserId == currentUserId;
-            var canEdit = isSelf &&
-                (existingNews.Status == NewsConstants.Status.PendingReview ||
-                 existingNews.Status == NewsConstants.Status.Rejected);
-
-            if (isSelf)
-            {
-                return new CreateNewsResponse
-                {
-                    Success   = false,
-                    Message   = "Bạn đã có bài viết cho chuyến này. Vui lòng chỉnh sửa bài hiện có.",
-                    ErrorCode = "NEWS_ALREADY_EXISTS_FOR_VISIT_INSTANCE",
-                    Data      = new CreateNewsData
-                    {
-                        ExistingNewsId  = existingNews.NewsId,
-                        CanEditExisting = canEdit
-                    }
-                };
-            }
+            var canEdit = existingNews.Status == NewsConstants.Status.PendingReview ||
+                          existingNews.Status == NewsConstants.Status.Rejected;
 
             return new CreateNewsResponse
             {
                 Success   = false,
-                Message   = "Chuyến tiếp khách này đã có bài viết. Mỗi chuyến chỉ được tạo một bài tin tức.",
-                ErrorCode = "NEWS_ALREADY_EXISTS_FOR_VISIT_INSTANCE"
+                Message   = "Bạn đã có bài viết cho chuyến này. Vui lòng chỉnh sửa bài hiện có.",
+                ErrorCode = "NEWS_ALREADY_EXISTS_FOR_VISIT_INSTANCE",
+                Data      = new CreateNewsData
+                {
+                    ExistingNewsId  = existingNews.NewsId,
+                    CanEditExisting = canEdit
+                }
             };
         }
 
@@ -292,7 +299,7 @@ public sealed class CreateNewsCommandHandler
             return new CreateNewsResponse
             {
                 Success = true,
-                Message = "Tạo tin tức thành công. Bài viết đã được gửi cho Staff Leader duyệt.",
+                Message = "Đã gửi bài viết, đang chờ Staff Leader duyệt.",
                 Data    = new CreateNewsData
                 {
                     NewsId          = news.NewsId,

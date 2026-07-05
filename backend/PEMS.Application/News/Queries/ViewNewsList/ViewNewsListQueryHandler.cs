@@ -42,8 +42,19 @@ public sealed class ViewNewsListQueryHandler
 
         var query = _dbContext.News.AsNoTracking();
 
+        // AUTHOR mode: Host của chuyến được thấy cả bài của participant cùng chuyến mình host
+        // (theo dõi trạng thái duyệt) — ngoài các bài do chính mình viết.
+        var hostedInstanceIds = viewerMode == NewsConstants.ViewerMode.Author
+            ? await _dbContext.VisitRequestCampuses
+                .AsNoTracking()
+                .Where(vrc => vrc.CurrentHostUserId == currentUserId)
+                .Select(vrc => vrc.VisitInstanceId)
+                .ToListAsync(cancellationToken)
+            : new List<ulong>();
+        var hostedSet = hostedInstanceIds.ToHashSet();
+
         // Apply role scope
-        query = ApplyRoleScope(query, viewerMode, currentUserId, primaryCampusId);
+        query = ApplyRoleScope(query, viewerMode, currentUserId, primaryCampusId, hostedInstanceIds);
 
         // Apply status filter
         query = ApplyStatusFilter(query, viewerMode, status);
@@ -182,6 +193,8 @@ public sealed class ViewNewsListQueryHandler
 
         var canCreateNews = await ResolveCanCreateNewsAsync(viewerMode, currentUserId, cancellationToken);
 
+        bool isHoViewer = viewerMode == NewsConstants.ViewerMode.HoReadonly;
+
         var items = rawItems.Select(n =>
         {
             translationDict.TryGetValue(n.NewsId, out var translation);
@@ -208,10 +221,13 @@ public sealed class ViewNewsListQueryHandler
                 UpdatedAt = n.UpdatedAt,
                 Status = n.Status,
                 StatusLabel = NewsConstants.ToVietnameseStatusLabel(n.Status),
-                ReviewedBy = n.ReviewedBy,
-                ReviewedByName = reviewerName,
-                ReviewedAt = n.ReviewedAt,
-                AvailableActions = BuildActions(viewerMode, n.Status, n.AuthorUserId, currentUserId)
+                // HO: không trả thông tin reviewer nội bộ.
+                ReviewedBy = isHoViewer ? null : n.ReviewedBy,
+                ReviewedByName = isHoViewer ? null : reviewerName,
+                ReviewedAt = isHoViewer ? null : n.ReviewedAt,
+                AvailableActions = BuildActions(
+                    viewerMode, n.Status, n.AuthorUserId, currentUserId,
+                    n.VisitInstanceId.HasValue && hostedSet.Contains(n.VisitInstanceId.Value))
             };
         }).ToList();
 
@@ -237,12 +253,15 @@ public sealed class ViewNewsListQueryHandler
         IQueryable<NewsEntity> query,
         string viewerMode,
         ulong currentUserId,
-        ulong? primaryCampusId)
+        ulong? primaryCampusId,
+        IReadOnlyList<ulong> hostedInstanceIds)
     {
         return viewerMode switch
         {
+            // Author: bài của chính mình + (nếu là Host) bài của participant cùng chuyến mình host.
             NewsConstants.ViewerMode.Author =>
-                query.Where(n => n.AuthorUserId == currentUserId),
+                query.Where(n => n.AuthorUserId == currentUserId
+                    || (n.VisitInstanceId != null && hostedInstanceIds.Contains(n.VisitInstanceId.Value))),
 
             NewsConstants.ViewerMode.Reviewer =>
                 query.Where(n => n.CampusId == primaryCampusId),
@@ -286,14 +305,16 @@ public sealed class ViewNewsListQueryHandler
         string viewerMode,
         string status,
         ulong authorUserId,
-        ulong currentUserId)
+        ulong currentUserId,
+        bool isHostOfInstance)
     {
         if (viewerMode == NewsConstants.ViewerMode.Author)
         {
             var isOwner = authorUserId == currentUserId;
             return new NewsAvailableActionsDto
             {
-                CanViewDetail = isOwner,
+                // Host xem được bài của participant cùng chuyến — chỉ tác giả được sửa.
+                CanViewDetail = isOwner || isHostOfInstance,
                 CanEdit = isOwner && (status == NewsConstants.Status.PendingReview || status == NewsConstants.Status.Rejected),
                 CanApprove = false,
                 CanReject = false,

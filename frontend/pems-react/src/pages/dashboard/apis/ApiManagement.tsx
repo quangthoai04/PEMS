@@ -6,7 +6,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ScanLine, Loader2, RefreshCw, Power, PowerOff,
-  Settings2, Activity, KeyRound, X,
+  Settings2, Activity, KeyRound, X, Languages,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { apiManagementApi } from '../../../features/api-management/api/apiManagementApi';
@@ -15,6 +15,7 @@ import type {
   ApiQuota,
   ApiRequestLogListResponse,
   UpsertGoogleDocumentAiOcrConfigRequest,
+  UpsertGoogleTranslationConfigRequest,
 } from '../../../features/api-management/types/apiManagement.types';
 import {
   getApiErrorMessage,
@@ -57,7 +58,8 @@ export function ApiManagement() {
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const [editTarget, setEditTarget] = useState<ApiIntegration | null>(null);
-  const [formOpen, setFormOpen] = useState(false);
+  // Loại form đang mở — cấu hình OCR (Document AI) hoặc dịch tin tức (Cloud Translation).
+  const [formKind, setFormKind] = useState<'OCR' | 'TRANSLATION' | null>(null);
   const [testBusy, setTestBusy] = useState<number | null>(null);
   const [statusBusy, setStatusBusy] = useState<number | null>(null);
 
@@ -164,8 +166,8 @@ export function ApiManagement() {
       <div className="border-b border-gray-100 pb-4 mb-6">
         <h1 className="text-3xl font-bold text-[#004c91]">Cấu hình API tích hợp</h1>
         <p className="text-sm text-gray-500 mt-1">
-          Quản lý cấu hình cloud API (Google Document AI — quét danh thiếp), test kết nối,
-          hạn mức và nhật ký. Credential được mã hoá và không bao giờ hiển thị lại.
+          Quản lý cấu hình cloud API (Google Document AI — quét danh thiếp, Google Cloud Translation — dịch tin tức),
+          test kết nối, hạn mức và nhật ký. Credential được mã hoá và không bao giờ hiển thị lại.
         </p>
       </div>
 
@@ -180,15 +182,27 @@ export function ApiManagement() {
         </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-          {integrations.length === 0 && (
-            <div className="col-span-full bg-white rounded-2xl border border-dashed border-gray-300 p-10 text-center">
+          {!integrations.some((c) => c.purpose === 'BUSINESS_CARD_OCR') && (
+            <div className="bg-white rounded-2xl border border-dashed border-gray-300 p-10 text-center">
               <ScanLine className="w-8 h-8 text-gray-300 mx-auto mb-3" />
-              <p className="text-sm text-gray-500 mb-4">Chưa có cấu hình API nào.</p>
+              <p className="text-sm text-gray-500 mb-4">Chưa cấu hình API quét danh thiếp.</p>
               <button
-                onClick={() => { setEditTarget(null); setFormOpen(true); }}
+                onClick={() => { setEditTarget(null); setFormKind('OCR'); }}
                 className="bg-[#f37021] hover:bg-[#d9621a] text-white px-4 py-2 rounded-lg text-sm font-bold cursor-pointer"
               >
                 Cấu hình Google Document AI
+              </button>
+            </div>
+          )}
+          {!integrations.some((c) => c.purpose === 'NEWS_TRANSLATION') && (
+            <div className="bg-white rounded-2xl border border-dashed border-gray-300 p-10 text-center">
+              <Languages className="w-8 h-8 text-gray-300 mx-auto mb-3" />
+              <p className="text-sm text-gray-500 mb-4">Chưa cấu hình API dịch tin tức đa ngôn ngữ.</p>
+              <button
+                onClick={() => { setEditTarget(null); setFormKind('TRANSLATION'); }}
+                className="bg-[#f37021] hover:bg-[#d9621a] text-white px-4 py-2 rounded-lg text-sm font-bold cursor-pointer"
+              >
+                Cấu hình Google Cloud Translation
               </button>
             </div>
           )}
@@ -197,7 +211,9 @@ export function ApiManagement() {
               <div className="flex items-start justify-between">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-xl bg-[#e6eff7] flex items-center justify-center">
-                    <ScanLine className="w-5 h-5 text-[#004c91]" />
+                    {config.purpose === 'NEWS_TRANSLATION'
+                      ? <Languages className="w-5 h-5 text-[#004c91]" />
+                      : <ScanLine className="w-5 h-5 text-[#004c91]" />}
                   </div>
                   <div>
                     <h3 className="text-base font-bold text-gray-800">{config.name}</h3>
@@ -246,7 +262,10 @@ export function ApiManagement() {
 
               <div className="mt-4 pt-4 border-t border-gray-100 flex flex-wrap items-center gap-2">
                 <button
-                  onClick={() => { setEditTarget(config); setFormOpen(true); }}
+                  onClick={() => {
+                    setEditTarget(config);
+                    setFormKind(config.purpose === 'NEWS_TRANSLATION' ? 'TRANSLATION' : 'OCR');
+                  }}
                   className="px-3 py-1.5 rounded-lg text-sm font-bold text-[#004c91] border border-[#004c91] hover:bg-[#e6eff7] transition-colors flex items-center gap-1.5 cursor-pointer"
                 >
                   <Settings2 className="w-4 h-4" /> Chỉnh sửa
@@ -288,11 +307,18 @@ export function ApiManagement() {
       )}
 
       {/* Config form modal */}
-      {formOpen && (
+      {formKind === 'OCR' && (
         <GoogleDocumentAiConfigForm
           config={editTarget}
-          onClose={() => setFormOpen(false)}
-          onSaved={async () => { setFormOpen(false); await load(); }}
+          onClose={() => setFormKind(null)}
+          onSaved={async () => { setFormKind(null); await load(); }}
+        />
+      )}
+      {formKind === 'TRANSLATION' && (
+        <GoogleTranslationConfigForm
+          config={editTarget}
+          onClose={() => setFormKind(null)}
+          onSaved={async () => { setFormKind(null); await load(); }}
         />
       )}
 
@@ -408,6 +434,153 @@ export function ApiManagement() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/** Form cấu hình Google Cloud Translation (dịch tin tức) — secret chỉ ghi, không đọc lại. */
+function GoogleTranslationConfigForm({
+  config, onClose, onSaved,
+}: {
+  config: ApiIntegration | null;
+  onClose: () => void;
+  onSaved: () => Promise<void> | void;
+}) {
+  const [name, setName] = useState(config?.name ?? 'Google Cloud Translation - Dịch tin tức');
+  const [projectId, setProjectId] = useState(config?.projectId ?? '');
+  const [location, setLocation] = useState(config?.location ?? 'global');
+  const [serviceAccountJson, setServiceAccountJson] = useState('');
+  const [replaceCredential, setReplaceCredential] = useState(!config?.hasCredential);
+  const [secretRef, setSecretRef] = useState(config?.secretRef ?? '');
+  const [rateLimit, setRateLimit] = useState(String(config?.rateLimitPerMinute ?? 60));
+  const [monthlyQuota, setMonthlyQuota] = useState(String(config?.monthlyQuota ?? 10000));
+  const [timeoutSeconds, setTimeoutSeconds] = useState(String(config?.timeoutSeconds ?? 30));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    const toastId = showLoadingToast('Đang lưu cấu hình API dịch...', 'api-translation-save');
+    try {
+      const payload: UpsertGoogleTranslationConfigRequest = {
+        name: name.trim(),
+        projectId: projectId.trim(),
+        location: location.trim() || 'global',
+        serviceAccountJson: replaceCredential && serviceAccountJson.trim() ? serviceAccountJson : null,
+        secretRef: secretRef.trim() || null,
+        rateLimitPerMinute: Number(rateLimit) || 60,
+        monthlyQuota: Number(monthlyQuota) || 10000,
+        timeoutSeconds: Number(timeoutSeconds) || 30,
+      };
+      // Một cấu hình duy nhất theo api_code — POST dùng cho cả tạo mới lẫn chỉnh sửa.
+      await apiManagementApi.upsertGoogleTranslationConfig(payload);
+      updateToastSuccess(toastId, 'Đã lưu cấu hình API dịch. Hãy test kết nối rồi kích hoạt.');
+      await onSaved();
+    } catch (err: any) {
+      const backendMsg = getApiErrorMessage(err, 'Không thể lưu cấu hình API. Vui lòng kiểm tra lại thông tin.');
+      const finalMsg = /credential|service\s*account|secret\s*ref|chưa cấu hình/i.test(backendMsg)
+        ? 'Chưa cấu hình credential. Vui lòng nhập Service Account JSON hoặc Secret Ref.'
+        : backendMsg;
+      setError(finalMsg);
+      updateToastMessageError(toastId, finalMsg);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <form onSubmit={submit} className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6">
+        <div className="flex items-center justify-between mb-5">
+          <h3 className="text-lg font-bold text-gray-800">
+            {config ? 'Chỉnh sửa cấu hình Google Cloud Translation' : 'Cấu hình Google Cloud Translation'}
+          </h3>
+          <button type="button" onClick={onClose} className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 cursor-pointer">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <p className="mb-4 text-xs text-gray-400">
+          Dùng cho tính năng dịch tin tức đa ngôn ngữ. Service account cần quyền
+          <span className="font-mono"> Cloud Translation API User</span> và project phải bật Cloud Translation API.
+        </p>
+
+        {error && (
+          <div className="mb-4 bg-red-50 border border-red-100 text-red-600 text-sm rounded-lg px-3 py-2.5">{error}</div>
+        )}
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="md:col-span-2">
+            <label className={labelCls}>Tên cấu hình *</label>
+            <input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} required maxLength={150} />
+          </div>
+          <div>
+            <label className={labelCls}>Project ID *</label>
+            <input className={inputCls} value={projectId} onChange={(e) => setProjectId(e.target.value)} required />
+          </div>
+          <div>
+            <label className={labelCls}>Location *</label>
+            <input className={inputCls} value={location} onChange={(e) => setLocation(e.target.value)} required
+              placeholder="global" />
+          </div>
+
+          <div className="md:col-span-2 border-t border-gray-100 pt-4">
+            <label className={labelCls}>Service Account JSON</label>
+            {config?.hasCredential && !replaceCredential ? (
+              <div className="flex items-center justify-between bg-slate-50 border border-gray-200 rounded-lg px-3 py-2.5">
+                <span className="text-sm font-mono text-gray-400">••••••••••••••••••••••••</span>
+                <button type="button" onClick={() => setReplaceCredential(true)}
+                  className="text-sm font-bold text-[#004c91] hover:underline cursor-pointer">
+                  Thay credential
+                </button>
+              </div>
+            ) : (
+              <textarea
+                className={`${inputCls} font-mono text-xs`}
+                rows={5}
+                value={serviceAccountJson}
+                onChange={(e) => setServiceAccountJson(e.target.value)}
+                placeholder='Dán nội dung file JSON service account ({"type":"service_account",...}) — sẽ được mã hoá, không hiển thị lại.'
+              />
+            )}
+            <p className="mt-1 text-xs text-gray-400">
+              Hoặc dùng Secret Ref (biến môi trường trên server) thay vì lưu JSON vào DB.
+            </p>
+          </div>
+          <div className="md:col-span-2">
+            <label className={labelCls}>Secret Ref (tuỳ chọn)</label>
+            <input className={inputCls} value={secretRef} onChange={(e) => setSecretRef(e.target.value)}
+              placeholder="GOOGLE_TRANSLATION_SERVICE_ACCOUNT" />
+          </div>
+
+          <div>
+            <label className={labelCls}>Rate limit / phút *</label>
+            <input className={inputCls} type="number" min={1} value={rateLimit} onChange={(e) => setRateLimit(e.target.value)} required />
+          </div>
+          <div>
+            <label className={labelCls}>Hạn mức tháng *</label>
+            <input className={inputCls} type="number" min={1} value={monthlyQuota} onChange={(e) => setMonthlyQuota(e.target.value)} required />
+          </div>
+          <div>
+            <label className={labelCls}>Timeout (giây, 5–120) *</label>
+            <input className={inputCls} type="number" min={5} max={120} value={timeoutSeconds} onChange={(e) => setTimeoutSeconds(e.target.value)} required />
+          </div>
+        </div>
+
+        <div className="mt-6 flex justify-end gap-2">
+          <button type="button" onClick={onClose} disabled={busy}
+            className="px-4 py-2 rounded-lg text-sm font-bold text-gray-500 hover:bg-gray-100 transition-colors cursor-pointer">
+            Huỷ
+          </button>
+          <button type="submit" disabled={busy}
+            className="bg-[#004c91] hover:bg-[#003a70] text-white px-5 py-2 rounded-lg text-sm font-bold transition-colors disabled:opacity-50 cursor-pointer flex items-center gap-2">
+            {busy && <Loader2 className="w-4 h-4 animate-spin" />}
+            Lưu cấu hình
+          </button>
+        </div>
+      </form>
     </div>
   );
 }
