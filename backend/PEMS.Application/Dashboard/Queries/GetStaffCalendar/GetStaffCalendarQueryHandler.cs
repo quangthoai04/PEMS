@@ -55,13 +55,24 @@ public sealed class GetStaffCalendarQueryHandler
         var primaryCampusId = _currentUser.PrimaryCampusId
             ?? throw new ForbiddenException("Tài khoản chưa được gán campus chính.");
 
-        // ── Validate khoảng thời gian ──
-        var from = request.From.Date;
-        var to = request.To.Date.AddDays(1).AddTicks(-1);
-        if (to < from)
-            throw new ValidationException("Khoảng thời gian không hợp lệ: 'to' phải sau 'from'.");
-        if ((to - from).TotalDays > MaxRangeDays)
-            throw new ValidationException($"Khoảng thời gian tải lịch tối đa {MaxRangeDays} ngày.");
+        // ── Validate khoảng thời gian (hoặc trọn năm nếu request.Year được truyền) ──
+        DateTime from, to;
+        if (request.Year.HasValue)
+        {
+            if (request.Year.Value < 2000 || request.Year.Value > 2100)
+                throw new ValidationException("Năm không hợp lệ.");
+            from = new DateTime(request.Year.Value, 1, 1);
+            to = new DateTime(request.Year.Value, 12, 31, 23, 59, 59);
+        }
+        else
+        {
+            from = request.From.Date;
+            to = request.To.Date.AddDays(1).AddTicks(-1);
+            if (to < from)
+                throw new ValidationException("Khoảng thời gian không hợp lệ: 'to' phải sau 'from'.");
+            if ((to - from).TotalDays > MaxRangeDays)
+                throw new ValidationException($"Khoảng thời gian tải lịch tối đa {MaxRangeDays} ngày.");
+        }
 
         var viewMode = string.Equals(request.ViewMode?.Trim(), "mine", StringComparison.OrdinalIgnoreCase)
             ? "mine"
@@ -161,12 +172,29 @@ public sealed class GetStaffCalendarQueryHandler
             };
         }).ToList();
 
+        // Lịch cá nhân (tự tạo bằng nút + trên bảng lịch) — chỉ của riêng user, hiển thị màu tím.
+        var personalEvents = await _db.CalendarEvents
+            .Where(e => e.OwnerUserId == userId
+                && e.Status == "ACTIVE"
+                && e.StartAt <= to && e.EndAt >= from)
+            .OrderBy(e => e.StartAt)
+            .Select(e => new StaffCalendarPersonalEventDto
+            {
+                CalendarEventId = e.CalendarEventId,
+                Title = e.Title,
+                Description = e.Description,
+                StartAt = e.StartAt,
+                EndAt = e.EndAt,
+            })
+            .ToListAsync(cancellationToken);
+
         return new StaffCalendarResponse
         {
             ViewMode = viewMode,
             From = from,
             To = to,
             Items = items,
+            PersonalEvents = personalEvents,
         };
     }
 }

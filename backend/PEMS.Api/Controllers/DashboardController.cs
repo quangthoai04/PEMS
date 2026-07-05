@@ -47,9 +47,10 @@ namespace PEMS.Api.Controllers
             [FromQuery] string? viewMode,
             [FromQuery] System.DateTime from,
             [FromQuery] System.DateTime to,
+            [FromQuery] int? year,
             CancellationToken cancellationToken)
         {
-            var result = await _mediator.Send(new GetStaffCalendarQuery(viewMode, from, to), cancellationToken);
+            var result = await _mediator.Send(new GetStaffCalendarQuery(viewMode, from, to, year), cancellationToken);
             return Ok(result);
         }
 

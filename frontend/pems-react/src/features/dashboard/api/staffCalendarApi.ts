@@ -6,20 +6,19 @@ import httpClient from '../../../shared/api/httpClient';
 import { API_ENDPOINTS } from '../../../shared/api/endpoints';
 
 export type StaffCalendarColorType =
-  | 'NEW'
   | 'NEEDS_ACTION'
+  | 'MINE'
   | 'PROCESSED'
   | 'CANCELLED_OR_EXPIRED'
-  | 'MINE';
+  | 'NEUTRAL';
 
 export interface StaffCalendarAllowedActions {
   canViewDetail: boolean;
   canApprove: boolean;
   canReject: boolean;
   canAssignHost: boolean;
-  canAcceptHost: boolean;
-  canDeclineHost: boolean;
-  canSendHostInvitationEmail: boolean;
+  /** True khi user hiện tại là host của instance — vào trang Setup đoàn khách. */
+  canSetupDelegation: boolean;
 }
 
 export interface StaffCalendarItem {
@@ -48,11 +47,21 @@ export interface StaffCalendarItem {
   allowedActions: StaffCalendarAllowedActions;
 }
 
+/** Lịch cá nhân tự tạo (nút + trên bảng lịch) — hiển thị màu tím, không phải yêu cầu đến thăm. */
+export interface StaffCalendarPersonalEvent {
+  calendarEventId: number;
+  title: string;
+  description: string | null;
+  startAt: string;
+  endAt: string;
+}
+
 export interface StaffCalendarResponse {
   viewMode: 'office' | 'mine';
   from: string;
   to: string;
   items: StaffCalendarItem[];
+  personalEvents: StaffCalendarPersonalEvent[];
 }
 
 export interface StaffCalendarParticipantResponse {
@@ -118,11 +127,15 @@ export interface StaffCalendarDetail {
 }
 
 export const staffCalendarApi = {
-  /** Lịch văn phòng / Lịch của tôi theo khoảng ngày đang hiển thị (from/to = YYYY-MM-DD). */
+  /**
+   * Lịch văn phòng / Lịch của tôi theo khoảng ngày đang hiển thị (from/to = YYYY-MM-DD),
+   * hoặc theo trọn năm khi truyền `year` (dùng cho bộ lọc năm trên UI — from/to bị bỏ qua).
+   */
   async getCalendar(params: {
     viewMode: 'office' | 'mine';
     from: string;
     to: string;
+    year?: number;
   }): Promise<StaffCalendarResponse> {
     const { data } = await httpClient.get<StaffCalendarResponse>(
       API_ENDPOINTS.dashboard.staffCalendar,

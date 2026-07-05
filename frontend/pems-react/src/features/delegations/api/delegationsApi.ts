@@ -120,18 +120,17 @@ export const delegationsApi = {
   /**
    * UC-22: Staff Leader picks the host for a campus instance — approves+assigns for a
    * single-campus request, or transfers the host for an HO-approved multi-campus request.
-   * Việc gán host luôn gửi email mời host (template HOST_ASSIGNMENT); `emailOverride`
-   * mang nội dung đã chỉnh ở bước "Xem trước email" (optional).
+   * Gán host không gửi email — Staff được gán xem qua thông báo/"Lịch của tôi" và tự vào
+   * Setup đoàn khách.
    */
   async assignHost(
     visitRequestId: number | string,
     visitInstanceId: number | string,
     hostUserId: number,
-    emailOverride?: import('../types/delegations.types').EmailOverridePayload,
   ): Promise<any> {
     const { data } = await httpClient.post<any>(
       API_ENDPOINTS.delegations.assignHost(visitRequestId, visitInstanceId),
-      { hostUserId, emailOverride },
+      { hostUserId },
     );
     return data;
   },

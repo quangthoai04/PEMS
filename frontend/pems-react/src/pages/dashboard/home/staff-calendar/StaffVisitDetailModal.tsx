@@ -5,9 +5,10 @@
  */
 import React, { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
+import { useNavigate } from 'react-router-dom';
 import {
   X, Loader2, MapPin, Clock, Users, User, Phone, Mail, Globe, Car, Camera,
-  FileText, AlertCircle, Check, UserCheck, MessageSquare, Ban,
+  FileText, AlertCircle, Check, UserCheck, MessageSquare, Ban, Settings,
 } from 'lucide-react';
 import {
   staffCalendarApi,
@@ -27,11 +28,11 @@ type StaffVisitDetailModalProps = {
 };
 
 const COLOR_BADGE: Record<string, string> = {
-  NEW: 'bg-sky-100 text-sky-800',
   NEEDS_ACTION: 'bg-amber-100 text-amber-800',
-  PROCESSED: 'bg-emerald-100 text-emerald-800',
-  CANCELLED_OR_EXPIRED: 'bg-slate-200 text-slate-600',
   MINE: 'bg-blue-100 text-[#004c91]',
+  PROCESSED: 'bg-emerald-100 text-emerald-700',
+  CANCELLED_OR_EXPIRED: 'bg-slate-200 text-slate-600',
+  NEUTRAL: 'bg-slate-100 text-slate-600',
 };
 
 const VISIT_TYPE_LABELS: Record<string, string> = {
@@ -89,6 +90,7 @@ function InfoRow({ icon, label, value }: { icon?: React.ReactNode; label: string
 export function StaffVisitDetailModal({
   isOpen, visitInstanceId, refreshKey = 0, onClose, onAssignHost, onReject,
 }: StaffVisitDetailModalProps) {
+  const navigate = useNavigate();
   const [detail, setDetail] = useState<StaffCalendarDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -119,8 +121,14 @@ export function StaffVisitDetailModal({
   const showApproveAssign = !!actions?.canApprove && !!actions?.canAssignHost;
   const showAssignOnly = !!actions?.canAssignHost && !actions?.canApprove;
   const showReject = !!actions?.canReject;
-  const hasFooterActions = !!detail && (showApproveAssign || showAssignOnly || showReject
-    || actions?.canAcceptHost || actions?.canDeclineHost);
+  const showSetup = !!actions?.canSetupDelegation;
+  const hasFooterActions = !!detail && (showApproveAssign || showAssignOnly || showReject || showSetup);
+
+  const goToSetup = () => {
+    if (!detail) return;
+    onClose();
+    navigate(`/dashboard/visit/process/${detail.visitInstanceId}`);
+  };
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
@@ -346,7 +354,16 @@ export function StaffVisitDetailModal({
                 className="px-6 py-2 rounded-xl font-bold text-white bg-[#004c91] hover:bg-[#003b70] shadow-sm transition-all outline-none text-sm cursor-pointer flex items-center gap-1.5"
               >
                 <Check className="w-4 h-4" />
-                {showApproveAssign ? 'Chấp nhận & gán host' : 'Gán host'}
+                {showApproveAssign ? 'Chấp nhận' : 'Gán người phụ trách'}
+              </button>
+            )}
+            {showSetup && (
+              <button
+                type="button"
+                onClick={goToSetup}
+                className="px-6 py-2 rounded-xl font-bold text-white bg-[#f37021] hover:opacity-90 shadow-sm transition-all outline-none text-sm cursor-pointer flex items-center gap-1.5"
+              >
+                <Settings className="w-4 h-4" /> Setup đoàn khách
               </button>
             )}
           </div>

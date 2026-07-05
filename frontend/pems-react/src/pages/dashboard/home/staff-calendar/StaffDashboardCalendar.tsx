@@ -7,31 +7,30 @@
  *   • Lịch của tôi   — chỉ yêu cầu tham quan mà user là host.
  *
  * Click event → modal chi tiết (StaffVisitDetailModal). Staff Leader có thể
- * Chấp nhận & gán host / Từ chối theo allowedActions backend trả; flow gán host
- * gồm bước chọn host (AssignHostModal) + chọn/sửa mẫu email mời host
- * (EmailPreviewModal, template HOST_ASSIGNMENT) trước khi submit.
+ * Chấp nhận & gán host / Từ chối theo allowedActions backend trả; gán host chỉ
+ * cần chọn host (không gửi email, không có bước chấp nhận/từ chối — Staff được
+ * gán mặc nhiên là host và tự vào "Setup đoàn khách" khi cần).
+ * Mỗi ngày có nút + để tạo lịch cá nhân (dùng chung API personal-events với dashboard
+ * Department Leader).
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Calendar as CalendarIcon, ChevronLeft, ChevronRight, ChevronDown,
-  Loader2, AlertCircle, RefreshCw, Briefcase, User as UserIcon, X,
+  Loader2, AlertCircle, RefreshCw, Briefcase, User as UserIcon, X, Plus,
 } from 'lucide-react';
 import toast, { Toaster } from 'react-hot-toast';
 import {
   staffCalendarApi,
   type StaffCalendarItem,
+  type StaffCalendarPersonalEvent,
   type StaffCalendarDetail,
 } from '../../../../features/dashboard/api/staffCalendarApi';
 import { delegationsApi } from '../../../../features/delegations/api/delegationsApi';
+import { departmentReceptionTasksApi } from '../../../../features/department-reception-tasks/api/departmentReceptionTasksApi';
 import { AssignHostModal } from '../../../../components/modals/AssignHostModal';
-import type { HostCandidate } from '../../../../features/delegations/types/delegations.types';
-import {
-  EmailPreviewModal,
-  type EmailPreviewSendPayload,
-} from '../../../../features/delegations/components/EmailPreviewModal';
 import { StaffVisitDetailModal } from './StaffVisitDetailModal';
 
-type DisplayMode = 'Tháng' | 'Tuần' | 'Ngày';
+type DisplayMode = 'Ngày' | 'Tuần' | 'Tháng' | 'Năm';
 type CalendarType = 'office' | 'mine';
 
 const WEEKDAYS = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
@@ -42,19 +41,20 @@ const MONTH_NAMES = [
 
 /** Legend đúng nhóm nghiệp vụ yêu cầu đến thăm (không dùng "thư mời"/"đơn yêu cầu"). */
 const LEGEND: { key: string; label: string; dot: string }[] = [
-  { key: 'NEW', label: 'Mới / Chờ xử lý', dot: 'bg-sky-400' },
   { key: 'NEEDS_ACTION', label: 'Cần xử lý', dot: 'bg-amber-400' },
-  { key: 'PROCESSED', label: 'Đã xử lý', dot: 'bg-emerald-400' },
+  { key: 'MINE', label: 'Tôi là người phụ trách', dot: 'bg-[#004c91]' },
+  { key: 'PROCESSED', label: 'Đã xử lý', dot: 'bg-emerald-500' },
   { key: 'CANCELLED_OR_EXPIRED', label: 'Bị hủy / Đã hết hạn', dot: 'bg-slate-300' },
-  { key: 'MINE', label: 'Tôi là host', dot: 'bg-[#004c91]' },
+  { key: 'PERSONAL', label: 'Lịch cá nhân', dot: 'bg-purple-400' },
 ];
 
 const PILL_CLASS: Record<string, string> = {
-  NEW: 'bg-sky-50 text-sky-700 border-sky-200 hover:bg-sky-100',
   NEEDS_ACTION: 'bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100',
-  PROCESSED: 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100',
-  CANCELLED_OR_EXPIRED: 'bg-slate-100 text-slate-500 border-slate-200 hover:bg-slate-200',
   MINE: 'bg-blue-50 text-[#004c91] border-blue-300 hover:bg-blue-100',
+  PROCESSED: 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100',
+  CANCELLED_OR_EXPIRED: 'bg-slate-100 text-slate-500 border-slate-200 hover:bg-slate-200',
+  NEUTRAL: 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100',
+  PERSONAL: 'bg-purple-50 text-purple-700 border-purple-300 hover:bg-purple-100',
 };
 
 const pad2 = (n: number) => String(n).padStart(2, '0');
@@ -78,8 +78,9 @@ const fmtTime = (value: string) => {
 export function StaffDashboardCalendar({ isStaffLeader }: { user?: any; isStaffLeader?: boolean }) {
   const today = new Date();
   const todayKey = toDateKey(today);
+  const todayStr = todayKey;
 
-  // ── Điều hướng lịch ──
+  // ── Điều hướng lịch ── (chế độ hiển thị gồm cả Năm — không tách bộ lọc riêng)
   const [displayMode, setDisplayMode] = useState<DisplayMode>('Tháng');
   const [anchorDate, setAnchorDate] = useState<Date>(new Date(today.getFullYear(), today.getMonth(), today.getDate()));
   const [calendarType, setCalendarType] = useState<CalendarType>('office');
@@ -87,6 +88,7 @@ export function StaffDashboardCalendar({ isStaffLeader }: { user?: any; isStaffL
 
   // ── Data ──
   const [items, setItems] = useState<StaffCalendarItem[]>([]);
+  const [personalEvents, setPersonalEvents] = useState<StaffCalendarPersonalEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -99,13 +101,14 @@ export function StaffDashboardCalendar({ isStaffLeader }: { user?: any; isStaffL
     open: boolean; detail: StaffCalendarDetail | null; text: string; submitting: boolean; error: string | null;
   }>({ open: false, detail: null, text: '', submitting: false, error: null });
 
-  // Gán host: bước 1 chọn host, bước 2 chọn/sửa mẫu email mời host.
+  // Gán host: chỉ 1 bước chọn host (không email, không accept/decline).
   const [assign, setAssign] = useState<{ open: boolean; detail: StaffCalendarDetail | null }>({ open: false, detail: null });
-  const [pendingHost, setPendingHost] = useState<HostCandidate | null>(null);
-  const [emailPreview, setEmailPreview] = useState({
-    open: false, loading: false, sending: false, error: null as string | null,
-    subject: '', body: '',
-  });
+
+  // Tạo lịch cá nhân (nút + trên mỗi ngày).
+  const [addEvent, setAddEvent] = useState<{
+    open: boolean; date: string; title: string; description: string;
+    startTime: string; endTime: string; submitting: boolean; error: string | null;
+  }>({ open: false, date: todayStr, title: '', description: '', startTime: '09:00', endTime: '10:00', submitting: false, error: null });
 
   // ── Khoảng ngày hiển thị (và fetch) theo chế độ xem ──
   const { gridStart, gridEnd, monthCells } = useMemo(() => {
@@ -116,6 +119,13 @@ export function StaffDashboardCalendar({ isStaffLeader }: { user?: any; isStaffL
     if (displayMode === 'Tuần') {
       const start = startOfWeek(anchorDate);
       return { gridStart: start, gridEnd: addDays(start, 6), monthCells: [] as Date[] };
+    }
+    if (displayMode === 'Năm') {
+      return {
+        gridStart: new Date(anchorDate.getFullYear(), 0, 1),
+        gridEnd: new Date(anchorDate.getFullYear(), 11, 31),
+        monthCells: [] as Date[],
+      };
     }
     // Tháng: lưới Monday-first phủ trọn tháng của anchorDate.
     const firstOfMonth = new Date(anchorDate.getFullYear(), anchorDate.getMonth(), 1);
@@ -134,57 +144,75 @@ export function StaffDashboardCalendar({ isStaffLeader }: { user?: any; isStaffL
     setLoading(true);
     setError(null);
     try {
-      const res = await staffCalendarApi.getCalendar({ viewMode: calendarType, from: fromStr, to: toStr });
+      const res = displayMode === 'Năm'
+        ? await staffCalendarApi.getCalendar({ viewMode: calendarType, from: fromStr, to: toStr, year: anchorDate.getFullYear() })
+        : await staffCalendarApi.getCalendar({ viewMode: calendarType, from: fromStr, to: toStr });
       setItems(res?.items || []);
+      setPersonalEvents(res?.personalEvents || []);
     } catch (e: any) {
       setError('Không thể tải lịch yêu cầu đến thăm. Vui lòng thử lại.');
       setItems([]);
+      setPersonalEvents([]);
     } finally {
       setLoading(false);
     }
-  }, [calendarType, fromStr, toStr]);
+  }, [calendarType, fromStr, toStr, displayMode, anchorDate]);
 
   useEffect(() => {
     fetchCalendar();
   }, [fetchCalendar]);
 
-  // ── Gom event theo ngày (một yêu cầu kéo dài nhiều ngày sẽ hiện ở mọi ngày nó phủ) ──
+  // ── Gộp yêu cầu đến thăm + lịch cá nhân thành 1 danh sách pill hiển thị chung ──
+  type CalendarPill =
+    | { kind: 'visit'; key: string; startAt: string; endAt: string; item: StaffCalendarItem }
+    | { kind: 'personal'; key: string; startAt: string; endAt: string; event: StaffCalendarPersonalEvent };
+
+  const allPills = useMemo<CalendarPill[]>(() => [
+    ...items.map((item): CalendarPill => ({ kind: 'visit', key: `v_${item.visitInstanceId}`, startAt: item.plannedStartAt, endAt: item.plannedEndAt, item })),
+    ...personalEvents.map((event): CalendarPill => ({ kind: 'personal', key: `p_${event.calendarEventId}`, startAt: event.startAt, endAt: event.endAt, event })),
+  ], [items, personalEvents]);
+
+  // ── Gom theo ngày (một yêu cầu kéo dài nhiều ngày sẽ hiện ở mọi ngày nó phủ) ──
   const eventsByDay = useMemo(() => {
-    const map: Record<string, StaffCalendarItem[]> = {};
+    const map: Record<string, CalendarPill[]> = {};
     const rangeStart = new Date(gridStart.getFullYear(), gridStart.getMonth(), gridStart.getDate());
     const rangeEnd = new Date(gridEnd.getFullYear(), gridEnd.getMonth(), gridEnd.getDate());
-    for (const item of items) {
-      const s = new Date(item.plannedStartAt);
-      const e = new Date(item.plannedEndAt);
+    for (const pill of allPills) {
+      const s = new Date(pill.startAt);
+      const e = new Date(pill.endAt);
       let d = new Date(Math.max(rangeStart.getTime(), new Date(s.getFullYear(), s.getMonth(), s.getDate()).getTime()));
       const end = new Date(Math.min(rangeEnd.getTime(), new Date(e.getFullYear(), e.getMonth(), e.getDate()).getTime()));
       while (d <= end) {
         const key = toDateKey(d);
-        (map[key] = map[key] || []).push(item);
+        (map[key] = map[key] || []).push(pill);
         d = addDays(d, 1);
       }
     }
     Object.values(map).forEach((list) =>
-      list.sort((a, b) => new Date(a.plannedStartAt).getTime() - new Date(b.plannedStartAt).getTime()));
+      list.sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime()));
     return map;
-  }, [items, gridStart, gridEnd]);
+  }, [allPills, gridStart, gridEnd]);
 
   // ── Điều hướng ──
   const goPrev = () => {
-    if (displayMode === 'Tháng') setAnchorDate((d) => new Date(d.getFullYear(), d.getMonth() - 1, 1));
+    if (displayMode === 'Năm') setAnchorDate((d) => new Date(d.getFullYear() - 1, d.getMonth(), 1));
+    else if (displayMode === 'Tháng') setAnchorDate((d) => new Date(d.getFullYear(), d.getMonth() - 1, 1));
     else setAnchorDate((d) => addDays(d, displayMode === 'Tuần' ? -7 : -1));
   };
   const goNext = () => {
-    if (displayMode === 'Tháng') setAnchorDate((d) => new Date(d.getFullYear(), d.getMonth() + 1, 1));
+    if (displayMode === 'Năm') setAnchorDate((d) => new Date(d.getFullYear() + 1, d.getMonth(), 1));
+    else if (displayMode === 'Tháng') setAnchorDate((d) => new Date(d.getFullYear(), d.getMonth() + 1, 1));
     else setAnchorDate((d) => addDays(d, displayMode === 'Tuần' ? 7 : 1));
   };
   const goToday = () => setAnchorDate(new Date(today.getFullYear(), today.getMonth(), today.getDate()));
 
-  const headerLabel = displayMode === 'Tháng'
-    ? `${MONTH_NAMES[anchorDate.getMonth()]} ${anchorDate.getFullYear()}`
-    : displayMode === 'Tuần'
-      ? `${pad2(gridStart.getDate())}/${pad2(gridStart.getMonth() + 1)} – ${pad2(gridEnd.getDate())}/${pad2(gridEnd.getMonth() + 1)}/${gridEnd.getFullYear()}`
-      : `${pad2(anchorDate.getDate())}/${pad2(anchorDate.getMonth() + 1)}/${anchorDate.getFullYear()}`;
+  const headerLabel = displayMode === 'Năm'
+    ? `Năm ${anchorDate.getFullYear()}`
+    : displayMode === 'Tháng'
+      ? `${MONTH_NAMES[anchorDate.getMonth()]} ${anchorDate.getFullYear()}`
+      : displayMode === 'Tuần'
+        ? `${pad2(gridStart.getDate())}/${pad2(gridStart.getMonth() + 1)} – ${pad2(gridEnd.getDate())}/${pad2(gridEnd.getMonth() + 1)}/${gridEnd.getFullYear()}`
+        : `${pad2(anchorDate.getDate())}/${pad2(anchorDate.getMonth() + 1)}/${anchorDate.getFullYear()}`;
 
   // ── Refresh sau action (không reload trang) ──
   const refreshAfterAction = useCallback(async () => {
@@ -209,78 +237,98 @@ export function StaffDashboardCalendar({ isStaffLeader }: { user?: any; isStaffL
     }
   };
 
-  // ── Flow gán host: chọn host → chọn/sửa mẫu email mời host → submit ──
-  const openHostEmailPreview = async (host: HostCandidate, detail: StaffCalendarDetail) => {
-    setPendingHost(host);
-    setEmailPreview((s) => ({ ...s, open: true, loading: true, error: null }));
+  // ── Flow gán host: chỉ chọn host rồi gọi API luôn (không email, không accept/decline) ──
+  const handleHostAssigned = async () => {
+    toast.success('Đã gán người phụ trách.');
+    setAssign({ open: false, detail: null });
+    await refreshAfterAction();
+  };
+
+  // ── Tạo lịch cá nhân ──
+  const openAddEvent = (dateStr: string) => {
+    if (dateStr < todayStr) {
+      toast.error('Không thể tạo lịch trong quá khứ. Vui lòng chọn ngày từ hôm nay trở đi.');
+      return;
+    }
+    setAddEvent({ open: true, date: dateStr, title: '', description: '', startTime: '09:00', endTime: '10:00', submitting: false, error: null });
+  };
+
+  const submitAddEvent = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!addEvent.title.trim()) return;
+    setAddEvent((s) => ({ ...s, submitting: true, error: null }));
     try {
-      const res = await delegationsApi.previewEmailTemplate({
-        templateCode: 'HOST_ASSIGNMENT',
-        context: {
-          DelegationName: detail.delegationName ?? 'đoàn khách',
-          CampusName: detail.campusName,
-          PlannedStartAt: `${fmtTime(detail.plannedStartAt)} ${new Date(detail.plannedStartAt).toLocaleDateString('vi-VN')}`,
-          HostName: host.fullName,
-          RequestCode: detail.requestCode ?? '',
-        },
-      });
-      setEmailPreview({
-        open: true, loading: false, sending: false, error: null,
-        subject: res.subject, body: res.bodyHtml,
-      });
-    } catch (e: any) {
-      setEmailPreview((s) => ({
-        ...s, loading: false,
-        error: e?.response?.data?.message || 'Không thể tải bản xem trước email.',
+      await departmentReceptionTasksApi.createPersonalEvent(
+        addEvent.title.trim(), addEvent.description, addEvent.date, addEvent.startTime, addEvent.endTime,
+      );
+      toast.success('Đã lưu lịch cá nhân.');
+      setAddEvent((s) => ({ ...s, open: false, submitting: false }));
+      await fetchCalendar();
+    } catch (err: any) {
+      setAddEvent((s) => ({
+        ...s, submitting: false,
+        error: err?.response?.data?.message || err?.response?.data?.title || 'Lỗi khi lưu lịch cá nhân.',
       }));
     }
   };
 
-  const submitAssignHost = async (payload: EmailPreviewSendPayload) => {
-    if (!assign.detail || !pendingHost) return;
-    if (!payload.subject.trim()) { toast.error('Tiêu đề email không được để trống.'); return; }
-    if (!payload.bodyHtml.trim()) { toast.error('Nội dung email không được để trống.'); return; }
-    setEmailPreview((s) => ({ ...s, sending: true }));
-    try {
-      await delegationsApi.assignHost(
-        assign.detail.visitRequestId,
-        assign.detail.visitInstanceId,
-        pendingHost.userId,
-        { useEditedContent: true, subject: payload.subject.trim(), bodyHtml: payload.bodyHtml, attachments: payload.attachments },
+  // ── Render 1 pill (yêu cầu đến thăm hoặc lịch cá nhân) ── (`key` khai báo trong props type
+  // vì project thiếu @types/react đầy đủ nên JSX không tự loại trừ key khỏi props check)
+  const EventPill = ({ pill, full = false }: { pill: CalendarPill; full?: boolean; key?: string | number }) => {
+    if (pill.kind === 'personal') {
+      const ev = pill.event;
+      return (
+        <button
+          type="button"
+          title={`${ev.title} — Lịch cá nhân`}
+          className={`w-full text-left border rounded-lg transition-colors cursor-default ${PILL_CLASS.PERSONAL} ${full ? 'px-3 py-2' : 'px-1.5 py-0.5'}`}
+        >
+          {full ? (
+            <>
+              <p className="text-xs font-bold truncate">{ev.title}</p>
+              <p className="text-[11px] font-medium opacity-80 mt-0.5">
+                {fmtTime(ev.startAt)} – {fmtTime(ev.endAt)} · Lịch cá nhân
+              </p>
+            </>
+          ) : (
+            <p className="text-[10px] font-bold truncate leading-4">{fmtTime(ev.startAt)} {ev.title}</p>
+          )}
+        </button>
       );
-      toast.success('Đã gán host và gửi email mời host.');
-      setEmailPreview((s) => ({ ...s, open: false, sending: false }));
-      setAssign({ open: false, detail: null });
-      setPendingHost(null);
-      await refreshAfterAction();
-    } catch (e: any) {
-      setEmailPreview((s) => ({ ...s, sending: false }));
-      toast.error(e?.response?.data?.message || e?.response?.data?.title || 'Gán host thất bại.');
     }
+    const item = pill.item;
+    return (
+      <button
+        type="button"
+        onClick={() => setDetailInstanceId(item.visitInstanceId)}
+        title={`${item.title} — ${item.displayStatus}`}
+        className={`w-full text-left border rounded-lg transition-colors cursor-pointer ${PILL_CLASS[item.colorType] || PILL_CLASS.NEUTRAL} ${full ? 'px-3 py-2' : 'px-1.5 py-0.5'}`}
+      >
+        {full ? (
+          <>
+            <p className="text-xs font-bold truncate">{item.title}</p>
+            <p className="text-[11px] font-medium opacity-80 mt-0.5">
+              {fmtTime(item.plannedStartAt)} – {fmtTime(item.plannedEndAt)} · {item.displayStatus}
+              {item.currentHostName ? ` · Người phụ trách: ${item.currentHostName}` : ''}
+            </p>
+          </>
+        ) : (
+          <p className="text-[10px] font-bold truncate leading-4">
+            {fmtTime(item.plannedStartAt)} {item.title}
+          </p>
+        )}
+      </button>
+    );
   };
 
-  // ── Render 1 event pill ── (`key` khai báo trong props type vì project thiếu @types/react
-  // đầy đủ nên JSX không tự loại trừ key khỏi props check)
-  const EventPill = ({ item, full = false }: { item: StaffCalendarItem; full?: boolean; key?: string | number }) => (
+  const DayAddButton = ({ dateStr }: { dateStr: string }) => (
     <button
       type="button"
-      onClick={() => setDetailInstanceId(item.visitInstanceId)}
-      title={`${item.title} — ${item.displayStatus}`}
-      className={`w-full text-left border rounded-lg transition-colors cursor-pointer ${PILL_CLASS[item.colorType] || PILL_CLASS.NEW} ${full ? 'px-3 py-2' : 'px-1.5 py-0.5'}`}
+      onClick={(e) => { e.stopPropagation(); openAddEvent(dateStr); }}
+      className="opacity-0 group-hover:opacity-100 text-[#f37021] hover:text-[#004c91] transition-opacity p-0.5 hover:bg-orange-100 rounded-md cursor-pointer shrink-0"
+      title="Thêm lịch cá nhân"
     >
-      {full ? (
-        <>
-          <p className="text-xs font-bold truncate">{item.title}</p>
-          <p className="text-[11px] font-medium opacity-80 mt-0.5">
-            {fmtTime(item.plannedStartAt)} – {fmtTime(item.plannedEndAt)} · {item.displayStatus}
-            {item.currentHostName ? ` · Host: ${item.currentHostName}` : ''}
-          </p>
-        </>
-      ) : (
-        <p className="text-[10px] font-bold truncate leading-4">
-          {fmtTime(item.plannedStartAt)} {item.title}
-        </p>
-      )}
+      <Plus className="w-3.5 h-3.5" />
     </button>
   );
 
@@ -290,22 +338,35 @@ export function StaffDashboardCalendar({ isStaffLeader }: { user?: any; isStaffL
     const isToday = key === todayKey;
     const isPast = key < todayKey;
     return (
-      <div key={key} className={`flex-1 min-w-0 rounded-xl border p-2 ${isToday ? 'border-[#004c91]/50 bg-blue-50/40' : 'border-slate-200 bg-white'} ${isPast ? 'opacity-70' : ''}`}>
-        <p className={`text-xs font-bold mb-2 ${isToday ? 'text-[#004c91]' : 'text-slate-500'}`}>
-          {compactHeader
-            ? `${WEEKDAYS[(date.getDay() + 6) % 7]} ${pad2(date.getDate())}/${pad2(date.getMonth() + 1)}`
-            : `${pad2(date.getDate())}/${pad2(date.getMonth() + 1)}`}
-        </p>
+      <div key={key} className={`group flex-1 min-w-0 rounded-xl border p-2 ${isToday ? 'border-[#004c91]/50 bg-blue-50/40' : 'border-slate-200 bg-white'} ${isPast ? 'opacity-70' : ''}`}>
+        <div className="flex items-center justify-between mb-2">
+          <p className={`text-xs font-bold ${isToday ? 'text-[#004c91]' : 'text-slate-500'}`}>
+            {compactHeader
+              ? `${WEEKDAYS[(date.getDay() + 6) % 7]} ${pad2(date.getDate())}/${pad2(date.getMonth() + 1)}`
+              : `${pad2(date.getDate())}/${pad2(date.getMonth() + 1)}`}
+          </p>
+          <DayAddButton dateStr={key} />
+        </div>
         <div className="space-y-1.5">
           {dayEvents.length === 0 ? (
             <p className="text-[11px] text-slate-400 italic">Trống</p>
           ) : (
-            dayEvents.map((ev) => <EventPill key={`${ev.visitInstanceId}_${key}`} item={ev} full />)
+            dayEvents.map((p) => <EventPill key={`${p.key}_${key}`} pill={p} full />)
           )}
         </div>
       </div>
     );
   };
+
+  // ── Chế độ Năm: lưới 12 tháng, mỗi ô đếm số yêu cầu đến thăm trong tháng đó ──
+  const yearMonthCounts = useMemo(() => {
+    const counts = Array(12).fill(0);
+    for (const pill of allPills) {
+      const d = new Date(pill.startAt);
+      if (d.getFullYear() === anchorDate.getFullYear()) counts[d.getMonth()] += 1;
+    }
+    return counts;
+  }, [allPills, anchorDate]);
 
   return (
     <div className="space-y-4">
@@ -358,7 +419,7 @@ export function StaffDashboardCalendar({ isStaffLeader }: { user?: any; isStaffL
             </button>
             {showModeDropdown && (
               <div className="absolute right-0 top-full mt-1 z-20 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden min-w-[110px]">
-                {(['Tháng', 'Tuần', 'Ngày'] as DisplayMode[]).map((m) => (
+                {(['Ngày', 'Tuần', 'Tháng', 'Năm'] as DisplayMode[]).map((m) => (
                   <button
                     key={m}
                     onClick={() => { setDisplayMode(m); setShowModeDropdown(false); }}
@@ -375,9 +436,9 @@ export function StaffDashboardCalendar({ isStaffLeader }: { user?: any; isStaffL
 
       {/* ── Bảng lịch ── */}
       <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-        {/* Legend */}
+        {/* Legend — màu "Cần xử lý" chỉ có ý nghĩa với Staff Leader (người xử lý được) */}
         <div className="px-4 py-2.5 border-b border-slate-100 flex flex-wrap items-center gap-x-4 gap-y-1.5">
-          {LEGEND.map((l) => (
+          {LEGEND.filter((l) => l.key !== 'NEEDS_ACTION' || isStaffLeader).map((l) => (
             <span key={l.key} className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-500">
               <span className={`w-2.5 h-2.5 rounded-full ${l.dot}`} />
               {l.label}
@@ -416,15 +477,18 @@ export function StaffDashboardCalendar({ isStaffLeader }: { user?: any; isStaffL
                 return (
                   <div
                     key={key}
-                    className={`min-h-[92px] rounded-lg border p-1 flex flex-col gap-0.5 transition-colors
+                    className={`group min-h-[92px] rounded-lg border p-1 flex flex-col gap-0.5 transition-colors
                       ${isToday ? 'border-[#004c91]/60 bg-blue-50/50' : 'border-slate-100'}
                       ${!inMonth ? 'bg-slate-50/60' : isPast && !isToday ? 'bg-slate-50/40' : 'bg-white'}`}
                   >
-                    <span className={`text-[11px] font-bold self-end px-1
-                      ${isToday ? 'text-white bg-[#004c91] rounded-md px-1.5 py-0.5' : !inMonth ? 'text-slate-300' : isPast ? 'text-slate-400' : 'text-slate-600'}`}>
-                      {date.getDate()}
-                    </span>
-                    {visible.map((ev) => <EventPill key={`${ev.visitInstanceId}_${key}`} item={ev} />)}
+                    <div className="flex items-center justify-between">
+                      <span className={`text-[11px] font-bold px-1
+                        ${isToday ? 'text-white bg-[#004c91] rounded-md px-1.5 py-0.5' : !inMonth ? 'text-slate-300' : isPast ? 'text-slate-400' : 'text-slate-600'}`}>
+                        {date.getDate()}
+                      </span>
+                      {inMonth && <DayAddButton dateStr={key} />}
+                    </div>
+                    {visible.map((p) => <EventPill key={`${p.key}_${key}`} pill={p} />)}
                     {more > 0 && (
                       <button
                         type="button"
@@ -455,16 +519,49 @@ export function StaffDashboardCalendar({ isStaffLeader }: { user?: any; isStaffL
               </p>
             )}
           </div>
+        ) : displayMode === 'Năm' ? (
+          <div className="p-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+              {MONTH_NAMES.map((name, idx) => (
+                <button
+                  key={name}
+                  type="button"
+                  onClick={() => { setAnchorDate(new Date(anchorDate.getFullYear(), idx, 1)); setDisplayMode('Tháng'); }}
+                  className={`text-left p-4 rounded-xl border transition-colors cursor-pointer ${idx === today.getMonth() && anchorDate.getFullYear() === today.getFullYear() ? 'border-[#004c91]/60 bg-blue-50/50' : 'border-slate-200 bg-white hover:bg-slate-50'}`}
+                >
+                  <p className="text-sm font-extrabold text-slate-700">{name}</p>
+                  <p className="text-xs text-slate-500 mt-1">
+                    {yearMonthCounts[idx] > 0 ? `${yearMonthCounts[idx]} yêu cầu đến thăm` : 'Không có yêu cầu'}
+                  </p>
+                </button>
+              ))}
+            </div>
+            {!loading && items.length === 0 && (
+              <p className="text-center text-sm text-slate-400 font-medium py-4">
+                Không có yêu cầu đến thăm trong khoảng thời gian này.
+              </p>
+            )}
+          </div>
         ) : (
           <div className="p-4">
+            <div className="flex items-center justify-end mb-3">
+              <button
+                type="button"
+                onClick={() => openAddEvent(toDateKey(anchorDate))}
+                className="flex items-center gap-1.5 px-3.5 py-2 bg-[#f37021] text-white text-xs font-black rounded-lg hover:opacity-90 active:scale-95 transition-all shadow-sm cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Thêm lịch cá nhân</span>
+              </button>
+            </div>
             {(eventsByDay[toDateKey(anchorDate)] || []).length === 0 && !loading ? (
               <p className="text-center text-sm text-slate-400 font-medium py-8">
                 Không có yêu cầu đến thăm trong khoảng thời gian này.
               </p>
             ) : (
               <div className="space-y-2 max-w-2xl mx-auto">
-                {(eventsByDay[toDateKey(anchorDate)] || []).map((ev) => (
-                  <EventPill key={ev.visitInstanceId} item={ev} full />
+                {(eventsByDay[toDateKey(anchorDate)] || []).map((p) => (
+                  <EventPill key={p.key} pill={p} full />
                 ))}
               </div>
             )}
@@ -482,7 +579,7 @@ export function StaffDashboardCalendar({ isStaffLeader }: { user?: any; isStaffL
         onReject={isStaffLeader ? (d) => setReject({ open: true, detail: d, text: '', submitting: false, error: null }) : undefined}
       />
 
-      {/* ── Bước 1: chọn host (pick-only, tiếp tục sang bước email) ── */}
+      {/* ── Gán host: chọn host rồi submit ngay (không gửi email) ── */}
       {assign.open && assign.detail && (
         <AssignHostModal
           isOpen={assign.open}
@@ -491,37 +588,11 @@ export function StaffDashboardCalendar({ isStaffLeader }: { user?: any; isStaffL
           visitInstanceId={assign.detail.visitInstanceId}
           delegationName={assign.detail.delegationName}
           currentHostUserId={assign.detail.currentHostUserId}
-          customTitle={assign.detail.allowedActions.canApprove ? 'Chấp nhận yêu cầu & chọn host' : 'Chọn host phụ trách'}
-          onHostPicked={(host) => { void openHostEmailPreview(host, assign.detail!); }}
+          customTitle={assign.detail.allowedActions.canApprove ? 'Chấp nhận yêu cầu & gán người phụ trách' : 'Gán người phụ trách'}
           onClose={() => setAssign({ open: false, detail: null })}
-          onConfirmed={() => { /* không dùng ở pick-only mode */ }}
+          onConfirmed={() => { void handleHostAssigned(); }}
         />
       )}
-
-      {/* ── Bước 2: chọn/sửa mẫu email mời host rồi submit gán host ── */}
-      <EmailPreviewModal
-        open={emailPreview.open}
-        loading={emailPreview.loading}
-        sending={emailPreview.sending}
-        error={emailPreview.error}
-        subject={emailPreview.subject}
-        body={emailPreview.body}
-        isActionTemplate={false}
-        recipient={pendingHost ? {
-          name: pendingHost.fullName,
-          email: pendingHost.email,
-          roleLabel: 'Host phụ trách',
-          departmentName: pendingHost.departmentName,
-          campusName: assign.detail?.campusName,
-        } : null}
-        canSend
-        sendLabel="Gán host & gửi email"
-        onSubjectChange={(v) => setEmailPreview((s) => ({ ...s, subject: v }))}
-        onBodyChange={(v) => setEmailPreview((s) => ({ ...s, body: v }))}
-        onClose={() => setEmailPreview((s) => ({ ...s, open: false }))}
-        onRestore={() => { if (pendingHost && assign.detail) void openHostEmailPreview(pendingHost, assign.detail); }}
-        onSend={(payload) => { void submitAssignHost(payload); }}
-      />
 
       {/* ── Modal từ chối yêu cầu ── */}
       {reject.open && reject.detail && (
@@ -572,6 +643,91 @@ export function StaffDashboardCalendar({ isStaffLeader }: { user?: any; isStaffL
                 {reject.submitting ? 'Đang xử lý...' : 'Xác nhận từ chối'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal tạo lịch cá nhân (nút + trên mỗi ngày) ── */}
+      {addEvent.open && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-[110] p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full border border-slate-200 shadow-2xl overflow-hidden animate-fade-in-quick">
+            <div className="bg-[#004c91] px-5 py-4 text-white flex justify-between items-center">
+              <h3 className="font-black text-sm flex items-center gap-2">
+                <CalendarIcon className="w-4 h-4 text-[#f37021]" />
+                Lên lịch cá nhân ({addEvent.date})
+              </h3>
+              <button
+                type="button"
+                onClick={() => setAddEvent((s) => ({ ...s, open: false }))}
+                className="text-white/80 hover:text-white p-1 hover:bg-white/10 rounded-full transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <form onSubmit={submitAddEvent} className="p-6 space-y-4 text-xs text-slate-800">
+              <div>
+                <label className="block text-[10px] font-extrabold text-slate-450 uppercase tracking-wider mb-1">
+                  Tiêu đề sự kiện *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="VD: Họp định kỳ"
+                  value={addEvent.title}
+                  onChange={(e) => setAddEvent((s) => ({ ...s, title: e.target.value }))}
+                  className="w-full text-xs px-3.5 py-2.5 border border-slate-200 rounded-xl focus:border-[#f37021] outline-none bg-slate-50/20"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-extrabold text-slate-450 uppercase tracking-wider mb-1">Bắt đầu</label>
+                  <input
+                    type="time"
+                    required
+                    value={addEvent.startTime}
+                    onChange={(e) => setAddEvent((s) => ({ ...s, startTime: e.target.value }))}
+                    className="w-full text-xs px-3 py-2.5 border border-slate-200 rounded-xl focus:border-[#f37021] outline-none bg-slate-50/20"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-extrabold text-slate-450 uppercase tracking-wider mb-1">Kết thúc</label>
+                  <input
+                    type="time"
+                    required
+                    value={addEvent.endTime}
+                    min={addEvent.startTime}
+                    onChange={(e) => setAddEvent((s) => ({ ...s, endTime: e.target.value }))}
+                    className="w-full text-xs px-3 py-2.5 border border-slate-200 rounded-xl focus:border-[#f37021] outline-none bg-slate-50/20"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-[10px] font-extrabold text-slate-450 uppercase tracking-wider mb-1">Nội dung</label>
+                <textarea
+                  rows={4}
+                  value={addEvent.description}
+                  onChange={(e) => setAddEvent((s) => ({ ...s, description: e.target.value }))}
+                  className="w-full text-xs px-3.5 py-2 border border-slate-200 rounded-xl focus:border-[#f37021] outline-none resize-none font-sans bg-slate-50/20"
+                />
+              </div>
+              {addEvent.error && <p className="text-red-500 text-xs">{addEvent.error}</p>}
+              <div className="flex justify-end gap-2.5 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setAddEvent((s) => ({ ...s, open: false }))}
+                  className="py-2.5 px-4 bg-slate-150 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-colors cursor-pointer"
+                >
+                  Đóng
+                </button>
+                <button
+                  type="submit"
+                  disabled={!addEvent.title.trim() || addEvent.submitting}
+                  className="py-2.5 px-7 bg-[#f37021] text-white font-black rounded-xl hover:opacity-90 active:scale-98 transition-all cursor-pointer shadow-3xs disabled:opacity-50"
+                >
+                  {addEvent.submitting ? 'Đang lưu...' : 'Xác nhận lưu'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
