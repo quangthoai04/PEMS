@@ -100,7 +100,10 @@ public sealed class GetVisitInstanceContributionQueryHandler
         bool mediaUploader = (isHost || isAcceptedParticipant) && isLive
                              && instance.Status == VisitInstanceStatus.AfterVisit;
         // News: Host, IC support or Student — never a pure Department participant (spec §6.8).
-        bool newsCreator = (isHost || isIcSupport || isStudent) && isLive;
+        // Writing window opens at AFTER_VISIT (news is a close condition) and stays open after CLOSED.
+        bool newsWritingWindow = !isCancelled
+            && (instance.Status == VisitInstanceStatus.AfterVisit || isClosed);
+        bool newsCreator = (isHost || isIcSupport || isStudent) && newsWritingWindow;
 
         var permissions = new ContributionPermissionDto
         {
@@ -118,14 +121,17 @@ public sealed class GetVisitInstanceContributionQueryHandler
             CanViewRelatedLogisticsOnly = isDepartment || isStudent,
 
             CanViewMinutes = true,
-            CanEditMinutes = minutesEditor,
+            // HO: read-only — không sửa biên bản.
+            CanEditMinutes = !isHo && minutesEditor,
 
             CanViewMedia = true,
-            CanUploadMedia = mediaUploader,
+            // HO: read-only — không upload media.
+            CanUploadMedia = !isHo && mediaUploader,
 
             CanViewNews = true,
-            CanCreateNews = newsCreator,
-            CanEditNews = newsCreator,
+            // HO: read-only — không tạo/sửa tin tức.
+            CanCreateNews = !isHo && newsCreator,
+            CanEditNews = !isHo && newsCreator,
 
             IsReadOnly = !isLive,
         };
@@ -373,7 +379,8 @@ public sealed class GetVisitInstanceContributionQueryHandler
                 Description = news?.Translations.FirstOrDefault()?.Summary,
                 CreatedByName = news?.CreatedBy != null && usersDict.TryGetValue(news.CreatedBy.Value, out var nName) ? nName : null,
                 UpdatedAt = news?.UpdatedAt ?? news?.CreatedAt,
-                RejectionReason = news?.ReviewNote,
+                // HO: không trả rejectionReason nội bộ.
+                RejectionReason = isHo ? null : news?.ReviewNote,
                 NewsNotRequired = instance.NewsNotRequired,
                 MediaConsentAllowed = visit.MediaConsentStatus == PEMS.Shared.MediaConsentStatus.Agreed,
                 CanCurrentUserCreate = permissions.CanCreateNews,

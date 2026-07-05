@@ -43,6 +43,13 @@ public sealed class ViewNewsDetailsQueryHandler
             ?? throw new NotFoundException("Tin tức", request.NewsId);
 
         // Step 2: Authorization scope
+        // Host của chuyến (current_host_user_id) được XEM mọi bài của chuyến mình host
+        // (theo dõi trạng thái duyệt) nhưng KHÔNG được sửa bài của participant khác.
+        var isHostOfInstance = news.VisitInstanceId.HasValue && await _dbContext.VisitRequestCampuses
+            .AsNoTracking()
+            .AnyAsync(vrc => vrc.VisitInstanceId == news.VisitInstanceId.Value
+                          && vrc.CurrentHostUserId == currentUserId, cancellationToken);
+
         if (roleCode == RoleCodes.Staff && subRole == UserSubRoles.Leader)
         {
             if (news.CampusId != campusId)
@@ -51,7 +58,7 @@ public sealed class ViewNewsDetailsQueryHandler
         else if ((roleCode == RoleCodes.Staff && subRole == UserSubRoles.Staff)
               || roleCode == RoleCodes.Student)
         {
-            if (news.AuthorUserId != currentUserId)
+            if (news.AuthorUserId != currentUserId && !isHostOfInstance)
                 throw new ForbiddenException("Bạn không có quyền xem bài viết này.");
         }
         else if (roleCode == RoleCodes.Ho)
@@ -191,7 +198,8 @@ public sealed class ViewNewsDetailsQueryHandler
         }
 
         // Step 8: Build available actions
-        var actions = BuildActions(roleCode, subRole, news.Status, news.AuthorUserId, currentUserId);
+        bool isHo = roleCode == RoleCodes.Ho;
+        var actions = BuildActions(roleCode, subRole, news.Status, news.AuthorUserId, currentUserId, isHostOfInstance);
 
         return new ViewNewsDetailsDto
         {
@@ -206,10 +214,11 @@ public sealed class ViewNewsDetailsQueryHandler
             CreatedAt       = news.CreatedAt,
             UpdatedAt       = news.UpdatedAt,
             SubmittedAt     = news.SubmittedAt,
-            ReviewedBy      = news.ReviewedBy,
-            ReviewedByName  = reviewerName,
-            ReviewedAt      = news.ReviewedAt,
-            ReviewNote      = news.ReviewNote,
+            // HO: không trả thông tin review nội bộ (reviewNote, reviewedBy, reviewedAt).
+            ReviewedBy      = isHo ? null : news.ReviewedBy,
+            ReviewedByName  = isHo ? null : reviewerName,
+            ReviewedAt      = isHo ? null : news.ReviewedAt,
+            ReviewNote      = isHo ? null : news.ReviewNote,
             PublishedAt     = news.PublishedAt,
             RowVersion      = news.RowVersion,
             LanguageCode    = translation?.LanguageCode ?? "vi",
@@ -225,7 +234,7 @@ public sealed class ViewNewsDetailsQueryHandler
 
     private static NewsDetailAvailableActionsDto BuildActions(
         string roleCode, string subRole, string status,
-        ulong authorUserId, ulong currentUserId)
+        ulong authorUserId, ulong currentUserId, bool isHostOfInstance)
     {
         if (roleCode == RoleCodes.Staff && subRole == UserSubRoles.Leader)
         {
@@ -249,7 +258,8 @@ public sealed class ViewNewsDetailsQueryHandler
                               || status == NewsConstants.Status.Rejected;
             return new NewsDetailAvailableActionsDto
             {
-                CanViewDetail = isOwner,
+                // Host của chuyến xem được bài của participant — nhưng CHỈ tác giả được sửa.
+                CanViewDetail = isOwner || isHostOfInstance,
                 CanEdit       = isOwner && editableStatus,
                 CanApprove    = false,
                 CanReject     = false,
