@@ -113,7 +113,7 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetInvitationDetail
             if (instanceStatus == "CANCELLED") return "CANCELLED";
             if (status == ParticipantStatuses.Invited) return "REQUESTED";
             if (status == ParticipantStatuses.Assigned) return "ASSIGNED";
-            if (status == ParticipantStatuses.Declined) return isStaffAssignment ? "DECLINED" : "REJECTED";
+            if (status == ParticipantStatuses.Declined) return "REJECTED";
             if (status == ParticipantStatuses.Accepted)
             {
                 if (instanceStatus == "CLOSED" || now > endAt) return "DONE";

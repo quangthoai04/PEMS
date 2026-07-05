@@ -51,7 +51,7 @@ export function TaskInvitationDetail() {
       if (data) {
         if (data.status === 'INVITED') setTaskActionStatus('pending');
         else if (data.status === 'ACCEPTED') setTaskActionStatus('confirmed');
-        else if (data.status === 'DECLINED') {
+        else if (data.status === 'DECLINED' || data.status === 'REJECTED') {
           setTaskActionStatus('rejected');
           setRejectReason(data.rejectReason || '');
         }

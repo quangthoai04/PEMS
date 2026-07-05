@@ -23,18 +23,18 @@ interface Props {
   attentionItems: AssignedTask[];
   filter: {
     search: string; itemType: string; status: TaskStatusFilter;
-    fromDate: string; toDate: string; sortDirection: 'ASC' | 'DESC'; page: number;
+    fromDate: string; toDate: string; sortDirection: 'ASC' | 'DESC'; page: number; pageSize: number;
   };
   onFilterChange: (patch: Partial<Props['filter']>) => void;
   onRefresh: () => void;
 }
 
-const PAGE_SIZE = 8;
+
 
 const STATUS_OPTIONS: { value: string; label: string }[] = [
   { value: 'ALL', label: 'Tất cả trạng thái' },
   { value: 'ACCEPTED', label: 'Đã chấp nhận' },
-  { value: 'DECLINED', label: 'Đã từ chối' },
+  { value: 'REJECTED', label: 'Đã từ chối' },
   { value: 'CHANGE_PROPOSED', label: 'Đang đề xuất' },
   { value: 'IN_PROGRESS', label: 'Trong tiến trình' },
   { value: 'DONE', label: 'Hoàn thành' },
@@ -55,7 +55,7 @@ const STATUS_BADGE: Record<string, string> = {
 const STATUS_LABEL: Record<string, string> = {
   ASSIGNED: 'Mới được giao', ACCEPTED: 'Đã chấp nhận', DECLINED: 'Đã từ chối',
   IN_PROGRESS: 'Đang thực hiện', DONE: 'Hoàn thành', CANCELLED: 'Đã hủy',
-  CHANGE_PROPOSED: 'Đang đề xuất', REJECTED: 'Đã từ chối (HO)',
+  CHANGE_PROPOSED: 'Đang đề xuất', REJECTED: 'Đã từ chối',
 };
 
 function fmt(iso?: string) {
@@ -100,6 +100,7 @@ function toTaskModalItem(item: AssignedTask): StaffLeaderTaskModalItem {
 }
 
 export function StaffTasksTab({ user, tasks, totalTasks, tasksLoading, attentionItems, filter, onFilterChange, onRefresh }: Props) {
+  const PAGE_SIZE = filter.pageSize || 10;
   const totalPages = Math.max(1, Math.ceil(totalTasks / PAGE_SIZE));
   const navigate = useNavigate();
 
@@ -225,7 +226,7 @@ export function StaffTasksTab({ user, tasks, totalTasks, tasksLoading, attention
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap">
                     <span className={`inline-flex whitespace-nowrap px-2.5 py-1 rounded-full border text-[11px] font-black ${STATUS_BADGE[item.uiStatus] || 'bg-slate-100 text-slate-600 border-slate-200'}`}>
-                      {item.statusLabel || STATUS_LABEL[item.uiStatus] || item.uiStatus}
+                      {item.uiStatus === 'DECLINED' || item.uiStatus === 'REJECTED' ? 'Từ chối' : (item.statusLabel || STATUS_LABEL[item.uiStatus] || item.uiStatus)}
                     </span>
                   </td>
                   <td className="px-4 py-3 text-center">
@@ -298,9 +299,22 @@ export function StaffTasksTab({ user, tasks, totalTasks, tasksLoading, attention
           </table>
         </div>
 
-        {/* Pagination */}
+        {/* Pagination & Page Size */}
         <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-t border-slate-100 text-xs font-bold text-slate-500">
-          <span>{tasksLoading ? 'Đang tải...' : `${totalTasks} nhiệm vụ`}</span>
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-slate-500 font-semibold">Hiển thị:</span>
+            <select
+              value={filter.pageSize}
+              onChange={e => onFilterChange({ pageSize: Number(e.target.value), page: 1 })}
+              className="px-2 py-1 bg-slate-50 border border-slate-200 rounded text-sm font-bold text-slate-700 outline-none hover:bg-slate-100"
+            >
+              <option value={5}>5</option>
+              <option value={10}>10</option>
+              <option value={20}>20</option>
+              <option value={50}>50</option>
+            </select>
+            <span>{tasksLoading ? 'Đang tải...' : `${totalTasks} nhiệm vụ`}</span>
+          </div>
           <div className="flex items-center gap-2">
             <button onClick={() => onFilterChange({ page: Math.max(1, filter.page - 1) })} disabled={filter.page <= 1}
               className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-black text-[#004c91] hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed">

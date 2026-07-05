@@ -67,6 +67,7 @@ export type TaskStatusFilter =
   | 'ALL'
   | 'ACCEPTED'
   | 'DECLINED'
+  | 'REJECTED'
   | 'CHANGE_PROPOSED'
   | 'IN_PROGRESS'
   | 'DONE'
@@ -87,7 +88,7 @@ function mapCalendarItem(item: any, idx: number): CalendarItem {
   let col = '';
   let hCol = '';
 
-  if (itemStatus === 'CANCELLED' || itemStatus === 'DECLINED' || isPast) {
+  if (itemStatus === 'CANCELLED' || itemStatus === 'DECLINED' || itemStatus === 'REJECTED' || isPast) {
     col = 'bg-slate-100 text-slate-500 border-slate-300 hover:bg-slate-200';
     hCol = 'border-slate-400';
   } else if (isProcessed) {
@@ -143,6 +144,7 @@ export type AssignmentsFilter = {
   toDate: string;
   sortDirection: 'ASC' | 'DESC';
   page: number;
+  pageSize: number;
 };
 
 export const DEFAULT_FILTER: AssignmentsFilter = {
@@ -153,6 +155,7 @@ export const DEFAULT_FILTER: AssignmentsFilter = {
   toDate: '',
   sortDirection: 'ASC',
   page: 1,
+  pageSize: 10,
 };
 
 export function useDeptStaffData(year: number) {
@@ -195,7 +198,7 @@ export function useDeptStaffData(year: number) {
         sortBy: 'date',
         sortDirection: filter.sortDirection,
         page: filter.page,
-        pageSize: 8,
+        pageSize: filter.pageSize,
       };
       const res = await departmentReceptionTasksApi.getAssignmentsProgress(params);
       setTasks(res?.items || []);
@@ -215,6 +218,7 @@ export function useDeptStaffData(year: number) {
       const pendingItems = (pendingAssignments?.items || []).filter((item: AssignedTask) =>
         item.uiStatus === 'ASSIGNED'
         && item.rawStatus !== 'DECLINED'
+        && item.rawStatus !== 'REJECTED'
         && (item.canAccept || item.canDecline),
       );
       setAttentionItems(pendingItems);

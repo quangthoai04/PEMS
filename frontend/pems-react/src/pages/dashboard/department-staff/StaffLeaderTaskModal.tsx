@@ -414,7 +414,7 @@ export function StaffLeaderTaskModal({ item, onClose, onRefresh }: Props) {
                         <div key={att.attemptId} className="py-1.5 text-xs font-semibold text-slate-700">
                           <span className="font-black text-[#004c91]">{att.assigneeName}</span>
                           {att.status === 'ACCEPTED' && <> đã chấp nhận lúc <span className="font-black">{att.respondedAt || att.assignedAt}</span>.</>}
-                          {att.status === 'DECLINED' && <> đã từ chối lúc <span className="font-black">{att.respondedAt || att.assignedAt}</span>{att.responseNote ? <> với lý do: <span className="text-rose-600 font-black">{att.responseNote}</span></> : '.'}</>}
+                          {(att.status === 'DECLINED' || att.status === 'REJECTED') && <> đã từ chối lúc <span className="font-black">{att.respondedAt || att.assignedAt}</span>{att.responseNote ? <> với lý do: <span className="text-rose-600 font-black">{att.responseNote}</span></> : '.'}</>}
                           {att.status === 'PENDING' && <> đang chờ phản hồi từ lúc <span className="font-black">{att.assignedAt}</span>.</>}
                         </div>
                       ))}

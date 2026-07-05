@@ -153,7 +153,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
   const [assignmentToDate, setAssignmentToDate] = useState('');
   const [assignmentSortDirection, setAssignmentSortDirection] = useState<'ASC' | 'DESC'>('ASC');
   const [assignmentPage, setAssignmentPage] = useState(1);
-  const assignmentPageSize = 8;
+  const [assignmentPageSize, setAssignmentPageSize] = useState(10);
   const [assigningTaskItem, setAssigningTaskItem] = useState<AssignmentProgressItem | null>(null);
 
   const [activePopoverEvent, setActivePopoverEvent] = useState<any>(null);
@@ -162,6 +162,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
   // Thư mời interaction states
   const [invitationStatus, setInvitationStatus] = useState<'pending' | 'rejecting' | 'rejected' | 'accepted' | 'assigned'>('pending');
   const [rejectReason, setRejectReason] = useState('');
+  const [rejectSignature, setRejectSignature] = useState<{name: string, time: string} | null>(null);
   const [acceptSignature, setAcceptSignature] = useState<{name: string, time: string} | null>(null);
   const [showAssignDropdown, setShowAssignDropdown] = useState(false);
   const [assignedPerson, setAssignedPerson] = useState<string | null>(null);
@@ -386,6 +387,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
           } else if (detail.status === 'REJECTED' || detail.status === 'DECLINED') {
             setInvitationStatus('rejected');
             setRejectReason(detail.rejectReason || '');
+            setRejectSignature({ name: detail.responderName || detail.senderName, time: detail.actionTime });
           } else if (detail.status === 'ASSIGNED' || detail.assigneeName) {
             setAssignedPerson(detail.assigneeName);
             setInvitationStatus('assigned');
@@ -422,10 +424,11 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
              setAssignedPerson(detail.assigneeName);
              setRequestStatus('accepted');
              setRequestAcceptSignature({ name: detail.responderName || detail.assigneeName || detail.senderName, time: detail.actionTime });
-          } else if (detail.status === 'DECLINED') {
-             // Staff declined — waiting for reassignment
+          } else if (detail.status === 'REJECTED' || detail.status === 'DECLINED') {
+             setRequestStatus('rejected');
+             setRequestRejectReason(detail.rejectReason || '');
+             setRequestRejectSignature({ name: detail.responderName || detail.senderName, time: detail.actionTime });
              setAssignedPerson(null);
-             setRequestStatus('awaiting-reassign');
           } else if (detail.status === 'REQUESTED') {
              setAssignedPerson(null);
              setRequestStatus('pending');
@@ -580,7 +583,8 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
     assignmentFromDate,
     assignmentToDate,
     assignmentSortDirection,
-    assignmentPage
+    assignmentPage,
+    assignmentPageSize
   ]);
 
   React.useEffect(() => {
@@ -594,7 +598,8 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
     assignmentOwnerScope,
     assignmentFromDate,
     assignmentToDate,
-    assignmentSortDirection
+    assignmentSortDirection,
+    assignmentPageSize
   ]);
 
   React.useEffect(() => {
@@ -1254,7 +1259,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
               <option value="ASSIGNED">Đã giao</option>
               <option value="ACCEPTED">Chấp nhận</option>
               <option value="REJECTED">Từ chối</option>
-              <option value="DECLINED">Từ chối phân công</option>
+
               <option value="CHANGE_PROPOSED">Đang đề xuất</option>
               <option value="IN_PROGRESS">Trong tiến trình</option>
               <option value="DONE">Hoàn thành</option>
@@ -1333,6 +1338,11 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                         <p className="font-black">{item.currentResponsibleName}</p>
                         {item.currentResponsibleRole && <p className="text-[11px] font-semibold text-slate-500">{item.currentResponsibleRole}</p>}
                       </div>
+                    ) : (item.uiStatus === 'DECLINED' || item.uiStatus === 'REJECTED') ? (
+                      <div>
+                        <p className="font-black text-rose-600">{item.latestDeclinedByName || (item.isActedByCurrentUser ? user?.name : 'Trưởng phòng')}</p>
+                        <p className="text-[11px] font-semibold text-rose-500">{item.latestDeclinedByName ? 'Nhân viên' : 'Trưởng phòng'}</p>
+                      </div>
                     ) : (
                       item.uiStatus === 'REQUESTED'
                         ? <span className="text-slate-400 font-semibold text-xs">Chưa phân công</span>
@@ -1350,19 +1360,19 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                   </td>
                   <td className="px-5 py-5 w-[170px]">
                     <span className={`px-2.5 py-1 rounded-full border text-[11px] font-black ${getStatusClass(item.uiStatus)}`}>
-                      {item.statusLabel}
+                      {item.uiStatus === 'DECLINED' || item.uiStatus === 'REJECTED' ? 'Từ chối' : item.statusLabel}
                     </span>
                     {item.priority && (
                       <span className={`mt-1 inline-flex px-2.5 py-1 rounded-full border text-[10px] font-black ${getPriorityClass(item.priority)}`}>
                         {getPriorityLabel(item.priority)}
                       </span>
                     )}
-                    {item.uiStatus === 'DECLINED' && item.latestDeclinedByName && (
+                    {(item.uiStatus === 'DECLINED' || item.uiStatus === 'REJECTED') && item.latestDeclinedByName && (
                       <p className="text-[10px] text-rose-500 mt-1">
                         Từ chối bởi: {item.latestDeclinedByName}{item.latestDeclinedAt ? ` • ${item.latestDeclinedAt}` : ''}
                       </p>
                     )}
-                    {item.uiStatus === 'DECLINED' && item.latestDeclineReason && (
+                    {(item.uiStatus === 'DECLINED' || item.uiStatus === 'REJECTED') && item.latestDeclineReason && (
                       <p className="text-[10px] text-rose-400 mt-0.5 line-clamp-2">Lý do: {item.latestDeclineReason}</p>
                     )}
                   </td>
@@ -1409,7 +1419,23 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
           </table>
         </div>
         <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-4 border-t border-slate-100 text-xs font-bold text-slate-500">
-          <span>{assignmentLoading ? 'Đang tải...' : `${assignmentTotal} mục`}</span>
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-slate-500 font-semibold">Hiển thị:</span>
+            <select
+              value={assignmentPageSize}
+              onChange={e => {
+                setAssignmentPageSize(Number(e.target.value));
+                setAssignmentPage(1);
+              }}
+              className="px-2 py-1 bg-slate-50 border border-slate-200 rounded text-sm font-bold text-slate-700 outline-none hover:bg-slate-100"
+            >
+              <option value={5}>5</option>
+              <option value={10}>10</option>
+              <option value={20}>20</option>
+              <option value={50}>50</option>
+            </select>
+            <span>{assignmentLoading ? 'Đang tải...' : `${assignmentTotal} mục`}</span>
+          </div>
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
@@ -2817,6 +2843,9 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                                 await departmentReceptionTasksApi.declineInvitation(activePopoverEvent.rawId, rejectReason);
                                 toast.success('Đã gửi phản hồi từ chối');
                                 setInvitationStatus('rejected');
+                                const now = new Date();
+                                const timeStr = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}, ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+                                setRejectSignature({ name: (user?.name || 'Khách') + (isDeptLeader ? ' - Trưởng phòng' : ' - Nhân viên'), time: timeStr });
                                 await fetchCalendarEvents();
                               }
                             } catch(e) { console.error(e); toast.error('Gửi phản hồi thất bại'); }
@@ -2832,12 +2861,23 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
 
                   {invitationStatus === 'rejected' && (
                     <div className="animate-fade-in-quick pt-4">
-                       <div className="p-4 rounded-2xl border border-red-200 bg-red-50 flex items-start gap-3">
-                          <Info className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
-                          <div>
-                            <span className="text-red-800 font-bold text-sm block mb-1">Đã từ chối tham gia</span>
-                            <span className="text-red-600/80 text-xs italic">"{rejectReason}"</span>
+                       <div className="p-4 rounded-2xl border border-red-200 bg-red-50 flex flex-col gap-3 relative">
+                          <div className="flex items-start gap-3">
+                            <Info className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+                            <div>
+                              <span className="text-red-800 font-bold text-sm block mb-1">Đã từ chối tham gia</span>
+                              <span className="text-red-600/80 text-xs italic">"{rejectReason}"</span>
+                            </div>
                           </div>
+                          {rejectSignature && (
+                            <div className="bg-red-100/50 px-3 py-1.5 rounded-lg inline-block self-start sm:ml-8">
+                              <span className="text-red-800 text-[11px] font-medium flex flex-col sm:flex-row sm:items-center sm:gap-1">
+                                <span>bởi: <span className="font-bold">{rejectSignature.name}</span></span>
+                                <span className="hidden sm:inline">-</span>
+                                <span>{rejectSignature.time}</span>
+                              </span>
+                            </div>
+                          )}
                        </div>
                     </div>
                   )}
@@ -3248,8 +3288,8 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
 
                   {(requestStatus === 'pending' || requestStatus === 'accepted' || requestStatus === 'assigned' || requestStatus === 'awaiting-reassign') && !isProposing && !proposalSubmitted && (
                     <div className="flex gap-4 pt-6 mt-6 border-t border-gray-100 flex-col relative z-10 w-full animate-fade-in-quick">
-                      {/* Nút Xác nhận/Từ chối hiện cho cả REQUESTED (pending) và DECLINED (awaiting-reassign) */}
-                      {(requestStatus === 'pending' || requestStatus === 'awaiting-reassign') && (
+                      {/* Nút Xác nhận/Từ chối hiện cho cả REQUESTED (pending) */}
+                      {requestStatus === 'pending' && (
                         <div className="flex flex-col sm:flex-row gap-4 w-full">
                           <button 
                             onClick={() => setRequestStatus('rejecting')}
@@ -3316,39 +3356,14 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                        )}
 
                        {/* DEPT LEADER: Assign / Reassign button */}
-                       {isDeptLeader && (requestStatus === 'pending' || requestStatus === 'awaiting-reassign') && (
+                       {isDeptLeader && requestStatus === 'pending' && (
+
                         <div className="w-full relative mt-2">
-                          {requestStatus === 'awaiting-reassign' && (
-                            <div className="mb-2 p-3 rounded-xl border border-amber-200 bg-amber-50 flex flex-col gap-2">
-                              <div className="flex items-start gap-2">
-                                <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                                <div>
-                                  <span className="text-amber-800 text-xs font-bold block mb-1">Nhân viên đã từ chối — cần phân công lại</span>
-                                  {(() => {
-                                    const latestDeclinedAttempt = activeEventDetail?.assignmentHistory?.find((att: any) => att.status === 'DECLINED');
-                                    if (!latestDeclinedAttempt) return null;
-                                    return (
-                                      <>
-                                        <span className="text-amber-700/80 text-[11px] italic block mb-1.5">Lý do: "{latestDeclinedAttempt.responseNote || 'Không có lý do'}"</span>
-                                        <div className="bg-amber-100/60 px-2.5 py-1 rounded-md inline-block">
-                                          <span className="text-amber-800 text-[10px] font-medium flex items-center gap-1">
-                                            <span>bởi: <span className="font-bold">{latestDeclinedAttempt.assigneeName}</span></span>
-                                            <span>-</span>
-                                            <span>{latestDeclinedAttempt.respondedAt || latestDeclinedAttempt.assignedAt}</span>
-                                          </span>
-                                        </div>
-                                      </>
-                                    );
-                                  })()}
-                                </div>
-                              </div>
-                            </div>
-                          )}
                           <button
                             onClick={() => setShowAssignDropdown(!showAssignDropdown)}
                             className="w-full py-3.5 px-6 rounded-2xl bg-slate-100 text-slate-700 font-black uppercase tracking-wider transition-all duration-300 outline-none text-xs text-center flex items-center justify-center gap-2 hover:bg-slate-200 border border-slate-200">
                             <User className="w-4 h-4" />
-                            {requestStatus === 'awaiting-reassign' ? 'Phân công lại người phụ trách' : 'Phân công người phụ trách'}
+                            Phân công người phụ trách
                           </button>
                           {showAssignDropdown && (
                             <div className="absolute bottom-full mb-2 left-0 right-0 bg-white border border-slate-200 rounded-xl shadow-[0_-8px_30px_-4px_rgba(0,0,0,0.1)] z-50 overflow-hidden">
@@ -3392,7 +3407,11 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                                 try {
                                   await departmentReceptionTasksApi.declineAssignment(activePopoverEvent.rawId, requestRejectReason || 'Không thể thực hiện nhiệm vụ này');
                                   toast.success('Đã từ chối nhiệm vụ');
-                                  setRequestStatus('awaiting-reassign');
+                                  setRequestStatus('rejected');
+                                  setRequestRejectReason(requestRejectReason || 'Không thể thực hiện nhiệm vụ này');
+                                  const now = new Date();
+                                  const timeStr = `${String(now.getDate()).padStart(2,'0')}/${String(now.getMonth()+1).padStart(2,'0')}/${now.getFullYear()}, ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+                                  setRequestRejectSignature({ name: user?.name || 'Nhân viên', time: timeStr });
                                   setAssignedPerson(null);
                                   await Promise.all([fetchCalendarEvents(), fetchAssignmentsProgress()]);
                                 } catch(e: any) { toast.error(e.response?.data?.message || 'Từ chối thất bại'); }
@@ -3430,23 +3449,23 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                             <div className="flex flex-col gap-2">
                               {activeEventDetail.assignmentHistory.map((att: any) => (
                                 <div key={att.attemptId} className={`flex items-start gap-3 p-3 rounded-xl border ${
-                                  att.status === 'DECLINED' ? 'bg-red-50 border-red-100' :
+                                  att.status === 'DECLINED' || att.status === 'REJECTED' ? 'bg-red-50 border-red-100' :
                                   att.status === 'ACCEPTED' ? 'bg-green-50 border-green-100' :
                                   'bg-slate-50 border-slate-100'
                                 }`}>
                                   <div className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${
-                                    att.status === 'DECLINED' ? 'bg-red-400' :
+                                    att.status === 'DECLINED' || att.status === 'REJECTED' ? 'bg-red-400' :
                                     att.status === 'ACCEPTED' ? 'bg-green-500' :
                                     'bg-amber-400'
                                   }`} />
                                   <div className="flex-1 min-w-0">
                                     <span className="block text-sm font-bold text-slate-800">{att.assigneeName}</span>
                                     <span className={`text-[11px] font-semibold ${
-                                      att.status === 'DECLINED' ? 'text-red-600' :
+                                      att.status === 'DECLINED' || att.status === 'REJECTED' ? 'text-red-600' :
                                       att.status === 'ACCEPTED' ? 'text-green-600' :
                                       'text-amber-600'
                                     }`}>
-                                      {att.status === 'DECLINED' ? 'Đã từ chối' : att.status === 'ACCEPTED' ? 'Đã nhận' : 'Đang chờ phản hồi'}
+                                      {att.status === 'DECLINED' || att.status === 'REJECTED' ? 'Đã từ chối' : att.status === 'ACCEPTED' ? 'Đã nhận' : 'Đang chờ phản hồi'}
                                     </span>
                                     <span className="block text-[10px] text-slate-400 font-mono mt-0.5">{att.assignedAt}</span>
                                     {att.responseNote && (
@@ -3832,7 +3851,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                 </>
               )}
 
-              {activePopoverEvent.category === 'Lịch của tôi' && (
+              {activePopoverEvent.category === 'Lịch của tôi' && activePopoverEvent.itemType !== 'INVITATION' && activePopoverEvent.itemType !== 'REQUEST' && (
                 <div className="bg-white rounded-2xl p-6 md:p-8 font-sans w-full space-y-6 relative overflow-visible">
                   
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

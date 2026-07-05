@@ -275,6 +275,7 @@ export function StaffCalendarTab({ year, onYearChange, calendarItems, calendarLo
       ASSIGNED: 'bg-orange-100 text-orange-700 border-orange-200',
       ACCEPTED: 'bg-emerald-100 text-emerald-700 border-emerald-200',
       DECLINED: 'bg-rose-100 text-rose-700 border-rose-200',
+      REJECTED: 'bg-rose-100 text-rose-700 border-rose-200',
       IN_PROGRESS: 'bg-cyan-100 text-cyan-700 border-cyan-200',
       DONE: 'bg-slate-100 text-slate-600 border-slate-200',
       CANCELLED: 'bg-gray-100 text-gray-500 border-gray-200',
@@ -285,7 +286,7 @@ export function StaffCalendarTab({ year, onYearChange, calendarItems, calendarLo
 
   const statusLabel = (s: string) => {
     const m: Record<string, string> = {
-      ASSIGNED: 'Mới được giao', ACCEPTED: 'Đã chấp nhận', DECLINED: 'Đã từ chối',
+      ASSIGNED: 'Mới được giao', ACCEPTED: 'Đã chấp nhận', DECLINED: 'Đã từ chối', REJECTED: 'Đã từ chối',
       IN_PROGRESS: 'Đang thực hiện', DONE: 'Hoàn thành', CANCELLED: 'Đã hủy',
       CHANGE_PROPOSED: 'Đang đề xuất', REQUESTED: 'Chờ phân công',
     };
@@ -293,7 +294,7 @@ export function StaffCalendarTab({ year, onYearChange, calendarItems, calendarLo
   };
 
   const canAct = activeEvent && (activeEvent.status === 'ASSIGNED');
-  const canProposeRequest = activeEvent?.itemType === 'REQUEST' && activeEvent.status !== 'CANCELLED' && activeEvent.status !== 'DECLINED' && activeEvent.status !== 'DONE' && activeEvent.status !== 'CHANGE_PROPOSED';
+  const canProposeRequest = activeEvent?.itemType === 'REQUEST' && activeEvent.status !== 'CANCELLED' && activeEvent.status !== 'DECLINED' && activeEvent.status !== 'REJECTED' && activeEvent.status !== 'DONE' && activeEvent.status !== 'CHANGE_PROPOSED';
   const canSignBorrow = activeEvent?.itemType === 'REQUEST' && activeEvent.status === 'ACCEPTED';
   const canSignReturn = activeEvent?.itemType === 'REQUEST' && activeEvent.status === 'IN_PROGRESS';
 

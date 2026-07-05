@@ -270,6 +270,7 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetRequestDetail
         private static string NormalizeStatus(string status, string instanceStatus, string requestStatus, bool borrowSigned, bool returnSigned)
         {
             if (requestStatus == "CANCELLED" || instanceStatus == "CANCELLED" || status == "CANCELLED") return "CANCELLED";
+            if (status == "DECLINED") return "REJECTED";
             if (returnSigned || status == "DONE") return "DONE";
             if (borrowSigned || status == "IN_PROGRESS") return "IN_PROGRESS";
             return status;

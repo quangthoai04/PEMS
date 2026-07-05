@@ -60,7 +60,7 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.DeclineAssignedLogi
 
             if (attempt != null)
             {
-                attempt.Status = "DECLINED";
+                attempt.Status = "REJECTED";
                 attempt.RespondedAt = DateTime.UtcNow;
                 attempt.ResponseNote = request.Reason.Trim();
                 attempt.ResponseSource = "PORTAL";
@@ -68,7 +68,7 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.DeclineAssignedLogi
             }
 
             // Staff declines the assignment attempt; leader can reassign while history is kept.
-            l.Status = "DECLINED";
+            l.Status = "REJECTED";
             l.AssignedToUserId = null;
             l.AssignedBy = null;
             l.AssignedAt = null;
