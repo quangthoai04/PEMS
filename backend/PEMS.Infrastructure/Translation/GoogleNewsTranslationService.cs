@@ -58,6 +58,52 @@ public sealed class GoogleNewsTranslationService : INewsTranslationService
         CancellationToken cancellationToken)
         => TranslateAsync(contents, sourceLanguage, targetLanguage, "text/html", cancellationToken);
 
+    public async Task<NewsTranslationConnectionTestResult> TestConnectionAsync(
+        string projectId, string location, string credentialJson, int timeoutSeconds,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(projectId))
+                return new NewsTranslationConnectionTestResult
+                {
+                    Success = false,
+                    Message = "Thiếu projectId trong cấu hình.",
+                    ErrorCode = "TRANSLATION_SETTINGS_INCOMPLETE",
+                };
+
+            var result = await TranslateCoreAsync(
+                new[] { "Xin chào" }, "vi", "en", "text/plain",
+                projectId,
+                string.IsNullOrWhiteSpace(location) ? "global" : location,
+                credentialJson, timeoutSeconds, cancellationToken);
+
+            return new NewsTranslationConnectionTestResult
+            {
+                Success = true,
+                Message = $"Kết nối Google Cloud Translation thành công (\"Xin chào\" → \"{result[0]}\").",
+            };
+        }
+        catch (BusinessRuleException ex)
+        {
+            return new NewsTranslationConnectionTestResult
+            {
+                Success = false,
+                Message = ex.Message,
+                ErrorCode = ex.ErrorCode,
+            };
+        }
+        catch (Exception)
+        {
+            return new NewsTranslationConnectionTestResult
+            {
+                Success = false,
+                Message = "Không thể kết nối Google Cloud Translation (network/credential).",
+                ErrorCode = "TRANSLATION_PROVIDER_ERROR",
+            };
+        }
+    }
+
     private async Task<IReadOnlyList<string>> TranslateAsync(
         IReadOnlyList<string> contents, string sourceLanguage, string targetLanguage,
         string mimeType, CancellationToken cancellationToken)
@@ -67,6 +113,16 @@ public sealed class GoogleNewsTranslationService : INewsTranslationService
         var (projectId, location, credentialJson, timeoutSeconds) =
             await ResolveConfigAsync(cancellationToken);
 
+        return await TranslateCoreAsync(
+            contents, sourceLanguage, targetLanguage, mimeType,
+            projectId, location, credentialJson, timeoutSeconds, cancellationToken);
+    }
+
+    private async Task<IReadOnlyList<string>> TranslateCoreAsync(
+        IReadOnlyList<string> contents, string sourceLanguage, string targetLanguage,
+        string mimeType, string projectId, string location, string credentialJson,
+        int timeoutSeconds, CancellationToken cancellationToken)
+    {
         var accessToken = await _tokenProvider.GetAccessTokenAsync(credentialJson, cancellationToken);
 
         var url = $"{TranslateEndpoint}/projects/{projectId}/locations/{location}:translateText";
@@ -135,7 +191,9 @@ public sealed class GoogleNewsTranslationService : INewsTranslationService
                 {
                     using var settings = JsonDocument.Parse(config.SettingsJson);
                     var root = settings.RootElement;
-                    if (root.TryGetProperty("projectId", out var p)) projectId = p.GetString();
+                    // Admin module writes snake_case (project_id); accept camelCase too.
+                    if (root.TryGetProperty("project_id", out var ps)) projectId = ps.GetString();
+                    else if (root.TryGetProperty("projectId", out var pc)) projectId = pc.GetString();
                     if (root.TryGetProperty("location", out var l) && !string.IsNullOrWhiteSpace(l.GetString()))
                         location = l.GetString()!;
                 }

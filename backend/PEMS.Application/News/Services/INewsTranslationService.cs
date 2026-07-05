@@ -21,4 +21,22 @@ public interface INewsTranslationService
         string sourceLanguage,
         string targetLanguage,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Connection test against an explicit (possibly not-yet-enabled) configuration —
+    /// used by the API-integration admin's "Test kết nối" button.
+    /// </summary>
+    Task<NewsTranslationConnectionTestResult> TestConnectionAsync(
+        string projectId,
+        string location,
+        string credentialJson,
+        int timeoutSeconds,
+        CancellationToken cancellationToken);
+}
+
+public sealed class NewsTranslationConnectionTestResult
+{
+    public bool Success { get; init; }
+    public string Message { get; init; } = string.Empty;
+    public string? ErrorCode { get; init; }
 }
