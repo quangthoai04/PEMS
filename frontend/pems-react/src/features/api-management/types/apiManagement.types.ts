@@ -43,6 +43,17 @@ export interface UpsertGoogleDocumentAiOcrConfigRequest {
   retentionDays: number;
 }
 
+export interface UpsertGoogleTranslationConfigRequest {
+  name: string;
+  projectId: string;
+  location: string;
+  serviceAccountJson?: string | null;
+  secretRef?: string | null;
+  rateLimitPerMinute: number;
+  monthlyQuota: number;
+  timeoutSeconds: number;
+}
+
 export interface ApiConnectionTestResult {
   success: boolean;
   message: string;

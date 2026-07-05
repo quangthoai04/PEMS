@@ -6,6 +6,7 @@ import type {
   ApiQuota,
   ApiRequestLogListResponse,
   UpsertGoogleDocumentAiOcrConfigRequest,
+  UpsertGoogleTranslationConfigRequest,
 } from '../types/apiManagement.types';
 
 /** ADMIN API Integration management — ApiIntegrationsController. Secrets never round-trip. */
@@ -29,6 +30,17 @@ export const apiManagementApi = {
   ): Promise<ApiIntegration> {
     const { data } = await httpClient.post<ApiIntegration>(
       API_ENDPOINTS.apiIntegrations.upsertGoogleDocumentAi,
+      payload,
+    );
+    return data;
+  },
+
+  /** Create-or-update the single Google Cloud Translation config (News auto-translate). */
+  async upsertGoogleTranslationConfig(
+    payload: UpsertGoogleTranslationConfigRequest,
+  ): Promise<ApiIntegration> {
+    const { data } = await httpClient.post<ApiIntegration>(
+      API_ENDPOINTS.apiIntegrations.upsertGoogleTranslation,
       payload,
     );
     return data;
