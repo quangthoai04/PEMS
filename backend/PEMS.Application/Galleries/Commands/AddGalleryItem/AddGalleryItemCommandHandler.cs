@@ -20,7 +20,8 @@ namespace PEMS.Application.Galleries.Commands.AddGalleryItem;
 /// <summary>
 /// UC-GAL-04 handler. Validates role/scope, the target location (must be ACTIVE and in the caller's
 /// campus), and the files; uploads each file to Google Drive via the shared <see cref="IFileUploadService"/>
-/// (image → <see cref="FilePurpose.GalleryImage"/>, video → <see cref="FilePurpose.GalleryVideo"/>);
+/// (MEDIA → <see cref="FilePurpose.GalleryItemImage"/>/<see cref="FilePurpose.GalleryItemVideo"/>,
+/// VISIT_DELEGATION → <see cref="FilePurpose.GalleryDelegationImage"/>/<see cref="FilePurpose.GalleryDelegationVideo"/>);
 /// creates the <c>gallery_items</c> row plus one <c>gallery_item_media</c> row per file (first = primary),
 /// derives <c>media_kind</c> from the files, and writes an audit log.
 /// </summary>
@@ -72,7 +73,7 @@ public sealed class AddGalleryItemCommandHandler
         var uploads = new List<(UploadedFileDto Uploaded, string MediaType, string? Caption, string? AltText)>();
         foreach (var file in files)
         {
-            var (mediaType, purpose) = GalleryMediaClassifier.Classify(file.FileName, file.ContentType);
+            var (mediaType, purpose) = GalleryMediaClassifier.Classify(file.FileName, file.ContentType, itemType);
             await using var stream = new MemoryStream(file.Content, writable: false);
             var uploaded = await _fileUpload.UploadBusinessFileAsync(
                 stream, file.FileName, file.ContentType ?? string.Empty, file.FileSize, purpose, (long)actorId, cancellationToken);

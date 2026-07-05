@@ -21,17 +21,22 @@ internal static class GalleryMediaClassifier
     /// <summary>
     /// Returns the media type ("IMAGE"/"VIDEO") and Drive upload purpose for a file, or throws
     /// <see cref="Common.Exceptions.BusinessRuleException"/> (422) if the extension/MIME is unsupported.
+    /// <paramref name="itemType"/> (normalized MEDIA / VISIT_DELEGATION) picks the purpose so the file
+    /// lands in the matching Google Drive folder (GalleryItemFolderId vs GalleryDelegationFolderId).
     /// </summary>
-    public static (string MediaType, FilePurpose Purpose) Classify(string fileName, string? contentType)
+    public static (string MediaType, FilePurpose Purpose) Classify(
+        string fileName, string? contentType, string itemType)
     {
         var ext = GetExtension(fileName);
         var mime = (contentType ?? string.Empty).ToLowerInvariant();
+        var isDelegation = string.Equals(
+            itemType, GalleryItemTypes.VisitDelegation, StringComparison.OrdinalIgnoreCase);
 
         if (Array.IndexOf(ImageExtensions, ext) >= 0 || mime.StartsWith("image/"))
-            return (Image, FilePurpose.GalleryImage);
+            return (Image, isDelegation ? FilePurpose.GalleryDelegationImage : FilePurpose.GalleryItemImage);
 
         if (Array.IndexOf(VideoExtensions, ext) >= 0 || mime.StartsWith("video/"))
-            return (Video, FilePurpose.GalleryVideo);
+            return (Video, isDelegation ? FilePurpose.GalleryDelegationVideo : FilePurpose.GalleryItemVideo);
 
         throw new BusinessRuleException(
             $"Tệp \"{fileName}\" không phải ảnh hoặc video được hỗ trợ.",

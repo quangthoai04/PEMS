@@ -49,7 +49,8 @@ public sealed class FileValidationPolicy : IFileValidationPolicy
         },
 
         FilePurpose.GalleryImage or FilePurpose.NewsImage
-            or FilePurpose.GalleryAreaCover or FilePurpose.GalleryLocationCover => new FileValidationRule
+            or FilePurpose.GalleryAreaCover or FilePurpose.GalleryLocationCover
+            or FilePurpose.GalleryItemImage or FilePurpose.GalleryDelegationImage => new FileValidationRule
         {
             MaxSizeBytes = 5 * Mb,
             AllowedMimeTypes = ImageMimes,
@@ -57,7 +58,8 @@ public sealed class FileValidationPolicy : IFileValidationPolicy
             RequireImageMagicBytes = true,
         },
 
-        FilePurpose.GalleryVideo => new FileValidationRule
+        FilePurpose.GalleryVideo or FilePurpose.GalleryItemVideo
+            or FilePurpose.GalleryDelegationVideo => new FileValidationRule
         {
             MaxSizeBytes = 100 * Mb,
             AllowedMimeTypes = VideoMimes,

@@ -95,7 +95,7 @@ public sealed class UpdateGalleryItemCommandHandler
         var appended = new List<GalleryItemMedia>();
         foreach (var file in newFiles)
         {
-            var (mediaType, purpose) = GalleryMediaClassifier.Classify(file.FileName, file.ContentType);
+            var (mediaType, purpose) = GalleryMediaClassifier.Classify(file.FileName, file.ContentType, itemType);
             await using var stream = new MemoryStream(file.Content, writable: false);
             var uploaded = await _fileUpload.UploadBusinessFileAsync(
                 stream, file.FileName, file.ContentType ?? string.Empty, file.FileSize, purpose, (long)actorId, cancellationToken);

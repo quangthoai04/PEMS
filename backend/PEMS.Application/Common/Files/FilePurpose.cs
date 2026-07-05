@@ -14,6 +14,10 @@ public enum FilePurpose
     GalleryVideo,
     GalleryAreaCover,
     GalleryLocationCover,
+    GalleryItemImage,
+    GalleryItemVideo,
+    GalleryDelegationImage,
+    GalleryDelegationVideo,
     NewsImage,
     NewsAttachment,
     Document,
@@ -37,6 +41,10 @@ public static class FilePurposeDbValues
     public const string GalleryVideo = "GALLERY_VIDEO";
     public const string GalleryAreaCover = "GALLERY_AREA_COVER";
     public const string GalleryLocationCover = "GALLERY_LOCATION_COVER";
+    public const string GalleryItemImage = "GALLERY_ITEM_IMAGE";
+    public const string GalleryItemVideo = "GALLERY_ITEM_VIDEO";
+    public const string GalleryDelegationImage = "GALLERY_DELEGATION_IMAGE";
+    public const string GalleryDelegationVideo = "GALLERY_DELEGATION_VIDEO";
     public const string NewsImage = "NEWS_IMAGE";
     public const string NewsAttachment = "NEWS_ATTACHMENT";
     public const string Document = "DOCUMENT";
@@ -58,6 +66,10 @@ public static class FilePurposeExtensions
         FilePurpose.GalleryVideo => FilePurposeDbValues.GalleryVideo,
         FilePurpose.GalleryAreaCover => FilePurposeDbValues.GalleryAreaCover,
         FilePurpose.GalleryLocationCover => FilePurposeDbValues.GalleryLocationCover,
+        FilePurpose.GalleryItemImage => FilePurposeDbValues.GalleryItemImage,
+        FilePurpose.GalleryItemVideo => FilePurposeDbValues.GalleryItemVideo,
+        FilePurpose.GalleryDelegationImage => FilePurposeDbValues.GalleryDelegationImage,
+        FilePurpose.GalleryDelegationVideo => FilePurposeDbValues.GalleryDelegationVideo,
         FilePurpose.NewsImage => FilePurposeDbValues.NewsImage,
         FilePurpose.NewsAttachment => FilePurposeDbValues.NewsAttachment,
         FilePurpose.Document => FilePurposeDbValues.Document,
@@ -76,8 +88,11 @@ public static class FilePurposeExtensions
     public static string ToObjectKeyPrefix(this FilePurpose purpose) => purpose switch
     {
         FilePurpose.UserAvatar => "avatars",
-        FilePurpose.GalleryImage or FilePurpose.GalleryVideo
-            or FilePurpose.GalleryAreaCover or FilePurpose.GalleryLocationCover => "gallery",
+        FilePurpose.GalleryImage or FilePurpose.GalleryVideo => "gallery",
+        FilePurpose.GalleryAreaCover => "gallery/areas",
+        FilePurpose.GalleryLocationCover => "gallery/locations",
+        FilePurpose.GalleryItemImage or FilePurpose.GalleryItemVideo => "gallery/items",
+        FilePurpose.GalleryDelegationImage or FilePurpose.GalleryDelegationVideo => "gallery/delegations",
         FilePurpose.NewsImage or FilePurpose.NewsAttachment => "news",
         FilePurpose.Document => "documents",
         FilePurpose.MinutesAttachment => "minutes",

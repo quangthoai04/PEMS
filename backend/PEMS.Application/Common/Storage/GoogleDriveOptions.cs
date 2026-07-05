@@ -28,7 +28,14 @@ public sealed class GoogleDriveOptions
     public string? RootFolderId { get; set; }
     public string? AvatarFolderId { get; set; }
     public string? DocumentPartnerFolderId { get; set; }
+    /// <summary>Legacy shared gallery folder — kept as fallback for old GalleryImage/GalleryVideo uploads.</summary>
     public string? GalleryFolderId { get; set; }
+
+    // Dedicated per-purpose gallery folders (area/location covers, MEDIA items, VISIT_DELEGATION items).
+    public string? GalleryAreaFolderId { get; set; }
+    public string? GalleryLocationFolderId { get; set; }
+    public string? GalleryItemFolderId { get; set; }
+    public string? GalleryDelegationFolderId { get; set; }
     public string? NewsFolderId { get; set; }
     public string? MinutesFolderId { get; set; }
     public string? VisitRequestDocumentFolderId { get; set; }

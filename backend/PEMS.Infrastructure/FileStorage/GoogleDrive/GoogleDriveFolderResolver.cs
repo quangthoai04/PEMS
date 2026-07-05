@@ -22,8 +22,20 @@ public sealed class GoogleDriveFolderResolver : IFileStorageFolderResolver
         var folderId = purpose switch
         {
             FilePurpose.UserAvatar => _options.AvatarFolderId,
-            FilePurpose.GalleryImage => _options.GalleryFolderId,
-            FilePurpose.GalleryVideo => _options.GalleryFolderId,
+
+            FilePurpose.GalleryAreaCover => _options.GalleryAreaFolderId,
+            FilePurpose.GalleryLocationCover => _options.GalleryLocationFolderId,
+            FilePurpose.GalleryItemImage or FilePurpose.GalleryItemVideo => _options.GalleryItemFolderId,
+            FilePurpose.GalleryDelegationImage or FilePurpose.GalleryDelegationVideo
+                => _options.GalleryDelegationFolderId,
+
+            // Legacy purposes from before per-folder routing: prefer the item folder so nothing new
+            // lands in the shared gallery folder, but keep it as a fallback for old call sites.
+            FilePurpose.GalleryImage or FilePurpose.GalleryVideo =>
+                !string.IsNullOrWhiteSpace(_options.GalleryItemFolderId)
+                    ? _options.GalleryItemFolderId
+                    : _options.GalleryFolderId,
+
             FilePurpose.NewsImage => _options.NewsFolderId,
             FilePurpose.NewsAttachment => _options.NewsFolderId,
             FilePurpose.Document => _options.DocumentPartnerFolderId,
@@ -35,8 +47,15 @@ public sealed class GoogleDriveFolderResolver : IFileStorageFolderResolver
             _ => _options.DocumentPartnerFolderId,
         };
 
+        // The dedicated gallery folders must never fall back silently — a missing id would quietly
+        // put covers/items/delegation media in the wrong folder, defeating the per-folder routing.
+        var isDedicatedGalleryPurpose = purpose is
+            FilePurpose.GalleryAreaCover or FilePurpose.GalleryLocationCover
+            or FilePurpose.GalleryItemImage or FilePurpose.GalleryItemVideo
+            or FilePurpose.GalleryDelegationImage or FilePurpose.GalleryDelegationVideo;
+
         // Fall back to the root folder so an un-provisioned purpose still has somewhere to land.
-        if (string.IsNullOrWhiteSpace(folderId))
+        if (string.IsNullOrWhiteSpace(folderId) && !isDedicatedGalleryPurpose)
             folderId = _options.RootFolderId;
 
         if (string.IsNullOrWhiteSpace(folderId))
