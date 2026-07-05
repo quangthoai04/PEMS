@@ -47,24 +47,24 @@ public sealed class GetVisitInvitationsQueryHandler
         // Lọc theo Role
         if (roleCode == RoleCodes.Staff)
         {
-            q = q.Where(x => x.p.ParticipantRole == ParticipantRoles.IcSupport);
+            q = q.Where(x => x.p.ParticipantRole == ParticipantRoles.IcSupport && x.p.Status != ParticipantStatuses.Assigned);
         }
         else if (roleCode == RoleCodes.Department || roleCode == "DEPT")
         {
             if (subRole == UserSubRoles.Leader)
             {
                 // Nhận lời mời từ IC/Host
-                q = q.Where(x => x.p.ParticipantRole == ParticipantRoles.DeptSupport);
+                q = q.Where(x => x.p.ParticipantRole == ParticipantRoles.DeptSupport && x.p.Status != ParticipantStatuses.Assigned);
             }
             else // Staff
             {
                 // Chỉ nhận nhiệm vụ được giao
-                q = q.Where(x => x.p.ParticipantRole == ParticipantRoles.DeptSupport && x.p.AssignedBy != null);
+                q = q.Where(x => x.p.ParticipantRole == ParticipantRoles.DeptSupport && x.p.AssignedBy != null && x.p.Status == ParticipantStatuses.Assigned);
             }
         }
         else if (roleCode == RoleCodes.Student)
         {
-            q = q.Where(x => x.p.ParticipantRole == ParticipantRoles.Student);
+            q = q.Where(x => x.p.ParticipantRole == ParticipantRoles.Student && x.p.Status != ParticipantStatuses.Assigned);
         }
         else
         {

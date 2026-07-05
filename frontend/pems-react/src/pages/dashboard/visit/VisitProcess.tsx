@@ -745,15 +745,7 @@ export function VisitProcess() {
           {/* Honest notice: the "Thông tin chung" registrant/delegation block is read-only
               reference data (what the guest registered). Lịch trình, thành phần tham gia and
               hậu cần (Chuẩn bị chi tiết) are all wired to real save APIs. */}
-          {!isClosed && !isDept && (
-            <div className="bg-amber-50 border-l-4 border-amber-400 p-4 rounded-2xl flex items-start gap-3 shadow-sm">
-              <AlertCircle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
-              <p className="text-sm font-semibold text-amber-800">
-                <span className="font-bold">Thông tin chung (người tạo &amp; đoàn khách) chỉ đọc</span> — đây là dữ liệu
-                khách đã đăng ký. Lịch trình, thành phần tham gia và hậu cần (Chuẩn bị chi tiết) được lưu trực tiếp vào hệ thống.
-              </p>
-            </div>
-          )}
+
           {/* Phần 1: Thông tin chung */}
           <div className="bg-white rounded-[2rem] border border-gray-200 shadow-sm overflow-hidden transition-all duration-300">
             <div 
@@ -837,8 +829,13 @@ export function VisitProcess() {
                           <span className="flex items-center justify-center w-6 h-6 rounded-full bg-[#f37021] text-white font-black text-sm">2</span>
                           Thông tin đoàn khách
                         </h2>
-                        <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-white">
-                          {isInfoSection2Expanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+                        <div className="flex items-center gap-2">
+                          <span className="inline-flex items-center gap-1 rounded-md bg-white/15 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-white">
+                            <Lock className="w-3 h-3" /> Chỉ đọc
+                          </span>
+                          <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-white">
+                            {isInfoSection2Expanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+                          </div>
                         </div>
                       </div>
                       <AnimatePresence>

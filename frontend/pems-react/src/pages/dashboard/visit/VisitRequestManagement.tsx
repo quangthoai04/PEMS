@@ -220,6 +220,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
   const [pageSize, setPageSize] = useState(Number(searchParams.get('pageSize')) || 10);
   const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>((searchParams.get('sortOrder') as 'desc' | 'asc') || 'desc');
   const [debouncedKeyword, setDebouncedKeyword] = useState(draftFilters.keyword);
+  const [summaryStats, setSummaryStats] = useState<any>(null);
 
   const updateUrlParams = (tab: Tab, page: number, size: number, filters: typeof appliedFilters, sort: string) => {
     const params = new URLSearchParams(searchParams);
@@ -239,6 +240,21 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
     setSearchParams(params, { replace: true });
   };
 
+  const applyFilterChange = (updates: Partial<typeof draftFilters>) => {
+    const newFilters = { ...draftFilters, ...updates };
+    if (newFilters.fromDate && newFilters.toDate && newFilters.fromDate > newFilters.toDate) {
+      setFilterError('Từ ngày không được lớn hơn Đến ngày.');
+      setDraftFilters(newFilters);
+      return;
+    }
+    setFilterError(null);
+    setDraftFilters(newFilters);
+    setAppliedFilters(newFilters);
+    setCurrentPage(1);
+    updateUrlParams(activeTab, 1, pageSize, newFilters, sortOrder);
+    loadDelegations(activeTab, 1, pageSize, newFilters, sortOrder);
+  };
+
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedKeyword(draftFilters.keyword.trim());
@@ -248,11 +264,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
 
   useEffect(() => {
     if (debouncedKeyword !== appliedFilters.keyword) {
-      const nextFilters = { ...appliedFilters, keyword: debouncedKeyword };
-      setAppliedFilters(nextFilters);
-      setCurrentPage(1);
-      updateUrlParams(activeTab, 1, pageSize, nextFilters, sortOrder);
-      loadDelegations(activeTab, 1, pageSize, nextFilters, sortOrder);
+      applyFilterChange({ keyword: debouncedKeyword });
     }
   }, [debouncedKeyword]);
 
@@ -338,16 +350,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
   };
 
   const handleApplyFilters = () => {
-    if (draftFilters.fromDate && draftFilters.toDate && draftFilters.fromDate > draftFilters.toDate) {
-      setFilterError('Từ ngày không được lớn hơn Đến ngày.');
-      return;
-    }
-    setFilterError(null);
-    const nextFilters = { ...draftFilters };
-    setAppliedFilters(nextFilters);
-    setCurrentPage(1);
-    updateUrlParams(activeTab, 1, pageSize, nextFilters, sortOrder);
-    loadDelegations(activeTab, 1, pageSize, nextFilters, sortOrder);
+    applyFilterChange({});
   };
   const handleResetFilters = () => {
     const empty = createEmptyFilters();
@@ -355,6 +358,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
     setAppliedFilters(empty);
     setFilterError(null);
     setCurrentPage(1);
+    setDebouncedKeyword('');
     updateUrlParams(activeTab, 1, pageSize, empty, sortOrder);
     loadDelegations(activeTab, 1, pageSize, empty, sortOrder);
   };
@@ -414,19 +418,48 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
         if (targetFilters.toDate) invParams.toDate = targetFilters.toDate;
 
         const response = await delegationsApi.visitInvitations.getMyInvitations(invParams);
-        const items: any[] = response.items || [];
+        
+        if (response.summary) {
+           setSummaryStats(response.summary);
+        } else {
+           const items = response.items || [];
+           const sum = { total: 0, pending: 0, accepted: 0, declined: 0, cancelledOrExpired: 0 };
+           items.forEach((it: any) => {
+              if (it.invitationStatus === 'REMOVED') return;
+              sum.total++;
+              if (it.invitationStatus === 'INVITED') sum.pending++;
+              if (it.invitationStatus === 'ACCEPTED' || it.invitationStatus === 'ASSIGNED') sum.accepted++;
+              if (it.invitationStatus === 'DECLINED') sum.declined++;
+              if (it.requestStatus === 'CANCELLED' || it.campusStatus === 'CANCELLED' || it.requestStatus === 'REJECTED') sum.cancelledOrExpired++;
+           });
+           setSummaryStats({ ...sum, _isLocal: true });
+        }
+
+        const isDepartmentLeader = isDept && subRole === 'LEADER';
+        
+        const items: any[] = (response.items || []).filter((it: any) => {
+          if (it.invitationStatus === 'REMOVED') return false;
+          if (it.invitationStatus === 'ASSIGNED') {
+            const isInvalidAssignedInvitation = isStudent || isRegularStaff || isDepartmentLeader;
+            if (isInvalidAssignedInvitation) {
+              console.warn(`[Invalid Data] Role cannot have ASSIGNED status. Row ignored: ${it.visitInstanceId || it.visitRequestId}`);
+              return false;
+            }
+          }
+          return true;
+        });
         const mapped: Row[] = items.map((item) => {
           let statusText = item.invitationStatus;
           if (statusText === 'INVITED') statusText = 'Chờ phản hồi';
-          else if (statusText === 'ACCEPTED') statusText = (isDept && subRole === 'STAFF') ? 'Đã nhận' : 'Đã nhận lời';
-          else if (statusText === 'ASSIGNED') statusText = 'Mới được giao';
+          else if (statusText === 'ACCEPTED') statusText = 'Đã nhận lời';
+          else if (statusText === 'ASSIGNED') statusText = 'Được giao nhiệm vụ';
           else if (statusText === 'DECLINED') statusText = 'Đã từ chối';
 
           return {
             ...item,
             id: item.visitInstanceId || item.visitRequestId,
             name: item.delegationName || 'Không có tên',
-            org: item.invitedByName ? `Người mời: ${item.invitedByName}` : '-',
+            org: item.invitedByName ? `Mời bởi: ${item.invitedByName} · ${PARTICIPANT_ROLE_LABELS[item.participantRole] ?? item.participantRole} · ${item.campusName || '-'}` : 'Người mời: -',
             campus: item.campusName || '-',
             host: '-',
             sender: '-',
@@ -438,6 +471,27 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
         setTotal(response.totalItems || 0);
       } else {
         const response = await delegationsApi.getVisitRequestManagementList(params);
+        
+        if (response.summary) {
+           setSummaryStats(response.summary);
+        } else {
+           const items = response.items || [];
+           const sum = { 
+             total: items.length, 
+             pendingApproval: items.filter((x: any) => x.requestStatus === 'PENDING_APPROVAL').length,
+             waitingHost: items.filter((x: any) => x.requestStatus === 'APPROVED' && x.campusStatus === 'WAITING_HOST_ASSIGNMENT').length,
+             assigned: items.filter((x: any) => x.requestStatus === 'APPROVED' && x.campusStatus === 'ASSIGNED').length,
+             before: items.filter((x: any) => x.requestStatus === 'APPROVED' && x.campusStatus === 'BEFORE_VISIT').length,
+             during: items.filter((x: any) => x.requestStatus === 'APPROVED' && x.campusStatus === 'DURING_VISIT').length,
+             after: items.filter((x: any) => x.requestStatus === 'APPROVED' && x.campusStatus === 'AFTER_VISIT').length,
+             closed: items.filter((x: any) => x.requestStatus === 'APPROVED' && x.campusStatus === 'CLOSED').length,
+             cancelled: items.filter((x: any) => x.requestStatus === 'CANCELLED' || x.campusStatus === 'CANCELLED').length,
+             rejected: items.filter((x: any) => x.requestStatus === 'REJECTED').length,
+             interCampusPending: items.filter((x: any) => x.visitScope === 'MULTI_CAMPUS' && x.requestStatus === 'PENDING_APPROVAL').length,
+           };
+           setSummaryStats({ ...sum, _isLocal: true });
+        }
+
         const items: VisitRequestManagementItem[] = response.items || [];
         const mapped: Row[] = items.map((item) => ({
           ...item,
@@ -855,7 +909,11 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
         return <span title="Chuyến thăm đã hoàn tất" className={`${base} bg-slate-100 text-slate-700 border-slate-300`}>Đã đóng đoàn</span>;
       }
 
-      const text = row.statusText;
+      let text = row.statusText;
+      if (isDept && subRole === 'STAFF' && status === 'ASSIGNED') {
+        text = 'Được giao nhiệm vụ';
+      }
+
       let cls = 'bg-gray-100 text-gray-700 border-gray-200';
       if (status === 'INVITED') cls = 'bg-yellow-50 text-yellow-700 border-yellow-200';
       else if (status === 'ACCEPTED') cls = 'bg-green-50 text-green-700 border-green-200';
@@ -984,7 +1042,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
           <ActionIconButton title={isPendingHostAssignment(row) ? 'Chọn Host chính thức' : 'Duyệt & chọn host'} tone="green" icon={<Check className="h-5 w-5" />}
             onClick={(e) => { e.stopPropagation(); setAssign({ open: true, row, mode: 'approve' }); }} />
         ) : can('ACCEPT_INVITATION') ? (
-          <ActionIconButton title="Chấp nhận lời mời" tone="green" icon={<Check className="h-5 w-5" />}
+          <ActionIconButton title="Xác nhận tham gia" tone="green" icon={<Check className="h-5 w-5" />}
             onClick={(e) => { e.stopPropagation(); submitAcceptInvitation(row); }} />
         ) : can('ASSIGN_TO_DEPARTMENT_STAFF') ? (
           <ActionIconButton title="Giao việc cho Staff" tone="blue" icon={<Users className="h-5 w-5" />}
@@ -1286,6 +1344,61 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
         </div>
       )}
 
+      {/* Summary Chips */}
+      {summaryStats && (
+        <div className="flex flex-wrap items-center mb-4 text-sm font-medium text-slate-700">
+          {activeTab === 'attending' ? (
+             <span>{[
+               { label: 'Tổng', count: summaryStats.total },
+               { label: 'Chờ phản hồi', count: summaryStats.pending },
+               { label: 'Đã nhận lời', count: summaryStats.accepted },
+               { label: 'Đã từ chối', count: summaryStats.declined },
+               { label: 'Hết hiệu lực / Đã hủy', count: summaryStats.cancelledOrExpired }
+             ].filter(it => it.count > 0 || it.label === 'Tổng').map(it => `${it.label} ${it.count}`).join(' · ')}</span>
+          ) : isHO ? (
+             <span>{[
+               { label: 'Tổng', count: summaryStats.total },
+               { label: 'Chờ duyệt liên cơ sở', count: summaryStats.interCampusPending },
+               { label: 'Đã duyệt', count: summaryStats.total - summaryStats.interCampusPending - summaryStats.rejected - summaryStats.cancelled },
+               { label: 'Đã từ chối', count: summaryStats.rejected },
+               { label: 'Đã hủy', count: summaryStats.cancelled }
+             ].filter(it => it.count > 0 || it.label === 'Tổng').map(it => `${it.label} ${it.count}`).join(' · ')}</span>
+          ) : isVisitor ? (
+             <span>{[
+               { label: 'Tổng', count: summaryStats.total },
+               { label: 'Chờ duyệt', count: summaryStats.pendingApproval },
+               { label: 'Đã duyệt', count: summaryStats.waitingHost + summaryStats.assigned + summaryStats.before + summaryStats.during + summaryStats.after },
+               { label: 'Đã từ chối', count: summaryStats.rejected },
+               { label: 'Đã hoàn tất', count: summaryStats.closed },
+               { label: 'Đã hủy', count: summaryStats.cancelled }
+             ].filter(it => it.count > 0 || it.label === 'Tổng').map(it => `${it.label} ${it.count}`).join(' · ')}</span>
+          ) : isStaffLeader ? (
+             <span>{[
+               { label: 'Tổng', count: summaryStats.total },
+               { label: 'Chờ duyệt', count: summaryStats.pendingApproval },
+               { label: 'Chờ phân công Host', count: summaryStats.waitingHost },
+               { label: 'Đã phân công Host', count: summaryStats.assigned },
+               { label: 'Trước tiếp khách', count: summaryStats.before },
+               { label: 'Trong tiếp khách', count: summaryStats.during },
+               { label: 'Chờ đóng đoàn', count: summaryStats.after },
+               { label: 'Đã đóng đoàn', count: summaryStats.closed },
+               { label: 'Đã hủy', count: summaryStats.cancelled }
+             ].filter(it => it.count > 0 || it.label === 'Tổng').map(it => `${it.label} ${it.count}`).join(' · ')}</span>
+          ) : (
+             <span>{[
+               { label: 'Tổng', count: summaryStats.total },
+               { label: 'Đã phân công Host', count: summaryStats.assigned },
+               { label: 'Trước tiếp khách', count: summaryStats.before },
+               { label: 'Trong tiếp khách', count: summaryStats.during },
+               { label: 'Chờ đóng đoàn', count: summaryStats.after },
+               { label: 'Đã đóng đoàn', count: summaryStats.closed },
+               { label: 'Đã hủy', count: summaryStats.cancelled }
+             ].filter(it => it.count > 0 || it.label === 'Tổng').map(it => `${it.label} ${it.count}`).join(' · ')}</span>
+          )}
+          {summaryStats._isLocal && <span className="text-xs font-medium text-slate-400 ml-auto">Số liệu theo trang hiện tại</span>}
+        </div>
+      )}
+
       {/* Filters */}
       <div className="w-full rounded-2xl border border-slate-200 bg-white p-4 shadow-sm overflow-visible">
         <div className={`grid grid-cols-1 gap-3 md:grid-cols-2 ${filterGridClass} xl:items-end`}>
@@ -1298,7 +1411,6 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
                   const val = e.target.value;
                   setDraftFilters({ ...draftFilters, keyword: val });
                 }}
-                onKeyDown={(e) => { if (e.key === 'Enter') handleApplyFilters(); }}
                 className="w-full pl-10 pr-4 h-11 bg-white border border-slate-300 rounded-xl text-sm font-semibold text-slate-700 outline-none focus:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/10 transition-colors min-w-0" />
             </div>
           </div>
@@ -1317,7 +1429,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
                   <div className="absolute left-0 top-full z-30 mt-1 w-full min-w-[210px] rounded-xl border border-slate-200 bg-white py-1 shadow-lg max-h-72 overflow-y-auto">
                     {filterConfig.statusOptions.map((option) => (
                       <div key={option.value} title={option.description} className={`px-3 py-2 text-sm cursor-pointer hover:bg-slate-50 flex items-center ${draftFilters.status === option.value ? 'bg-blue-50 text-[#004c91] font-bold' : 'text-gray-700 font-medium'}`}
-                        onClick={() => { setDraftFilters({ ...draftFilters, status: option.value }); setIsStatusFilterOpen(false); }}>
+                        onClick={() => { applyFilterChange({ status: option.value }); setIsStatusFilterOpen(false); }}>
                         {option.label}
                         {draftFilters.status === option.value && <Check className="w-4 h-4 ml-auto text-[#004c91]" />}
                       </div>
@@ -1342,7 +1454,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
                   <div className="absolute left-0 top-full z-30 mt-1 w-full min-w-[210px] rounded-xl border border-slate-200 bg-white py-1 shadow-lg max-h-72 overflow-y-auto">
                     {filterConfig.scopeOptions?.map((option) => (
                       <div key={option.value} className={`px-3 py-2 text-sm cursor-pointer hover:bg-slate-50 flex items-center ${draftFilters.visitScope === option.value ? 'bg-blue-50 text-[#004c91] font-bold' : 'text-gray-700 font-medium'}`}
-                        onClick={() => { setDraftFilters({ ...draftFilters, visitScope: option.value }); setIsTypeFilterOpen(false); }}>
+                        onClick={() => { applyFilterChange({ visitScope: option.value }); setIsTypeFilterOpen(false); }}>
                         {option.label}
                         {draftFilters.visitScope === option.value && <Check className="w-4 h-4 ml-auto text-[#004c91]" />}
                       </div>
@@ -1381,7 +1493,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
                       { value: '5', label: 'Quy Nhơn' },
                     ].map((option) => (
                       <div key={option.value} className={`px-3 py-2 text-sm cursor-pointer hover:bg-slate-50 flex items-center ${draftFilters.campusId === option.value ? 'bg-blue-50 text-[#004c91] font-bold' : 'text-gray-700 font-medium'}`}
-                        onClick={() => { setDraftFilters({ ...draftFilters, campusId: option.value }); setIsCampusFilterOpen(false); }}>
+                        onClick={() => { applyFilterChange({ campusId: option.value }); setIsCampusFilterOpen(false); }}>
                         {option.label}
                         {draftFilters.campusId === option.value && <Check className="w-4 h-4 ml-auto text-[#004c91]" />}
                       </div>
@@ -1406,7 +1518,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
                   <div className="absolute left-0 top-full z-30 mt-1 w-full min-w-[210px] rounded-xl border border-slate-200 bg-white py-1 shadow-lg max-h-72 overflow-y-auto">
                     {filterConfig.relationOptions.map((option) => (
                       <div key={option.value} className={`px-3 py-2 text-sm cursor-pointer hover:bg-slate-50 flex items-center ${draftFilters.relation === option.value ? 'bg-blue-50 text-[#004c91] font-bold' : 'text-gray-700 font-medium'}`}
-                        onClick={() => { setDraftFilters({ ...draftFilters, relation: option.value }); setIsRelationFilterOpen(false); }}>
+                        onClick={() => { applyFilterChange({ relation: option.value }); setIsRelationFilterOpen(false); }}>
                         {option.label}
                         {draftFilters.relation === option.value && <Check className="w-4 h-4 ml-auto text-[#004c91]" />}
                       </div>
@@ -1442,18 +1554,30 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
                       <label className="block text-xs font-bold text-slate-500">Đến ngày</label>
                       <input type="date" value={draftFilters.toDate} onChange={(e) => setDraftFilters({ ...draftFilters, toDate: e.target.value })} className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-[#004c91]" />
                     </div>
-                    <button onClick={() => setIsDateFilterOpen(false)} className="mt-2 h-9 w-full rounded-lg bg-slate-100 text-sm font-semibold text-slate-700 hover:bg-slate-200 transition-colors">Đóng</button>
+                    <button onClick={() => { setIsDateFilterOpen(false); applyFilterChange({}); }} className="mt-2 h-9 w-full rounded-lg bg-slate-100 text-sm font-semibold text-slate-700 hover:bg-slate-200 transition-colors">Đóng</button>
                   </div>
                 </div>
               </>
             )}
           </div>
 
-          {/* Buttons: full-width row on mobile/tablet; at xl `contents` dissolves the wrapper so
-              Áp dụng / reset map onto the grid's last two tracks (112px / 44px) in the single row. */}
-          <div className="flex gap-3 md:col-span-2 xl:contents">
-            <button onClick={handleApplyFilters} className="inline-flex h-11 w-full flex-1 items-center justify-center rounded-xl bg-[#004c91] px-4 text-sm font-bold text-white transition-colors hover:bg-[#003b70] whitespace-nowrap xl:flex-none">Áp dụng</button>
-            <button onClick={handleResetFilters} title="Xóa bộ lọc" aria-label="Xóa bộ lọc" className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-300 bg-white text-slate-500 transition-colors hover:bg-slate-50 hover:text-red-500"><X className="h-5 w-5" /></button>
+          <div className="flex md:col-span-2 xl:contents">
+            <button 
+              onClick={handleResetFilters} 
+              disabled={
+                !draftFilters.keyword.trim() && 
+                !debouncedKeyword.trim() &&
+                !draftFilters.status && 
+                !draftFilters.visitScope && 
+                !draftFilters.campusId && 
+                !draftFilters.relation && 
+                !draftFilters.fromDate && 
+                !draftFilters.toDate
+              }
+              className="h-11 rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-600 hover:bg-slate-50 disabled:text-slate-400 disabled:cursor-not-allowed outline-none w-full xl:w-auto transition-colors"
+            >
+              Reset
+            </button>
           </div>
         </div>
         {filterError && <div className="text-red-500 text-sm font-medium mt-2"><AlertCircle className="w-4 h-4 inline-block mr-1" />{filterError}</div>}
@@ -1499,7 +1623,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
                 <div className="py-3 px-3 min-w-0 flex flex-col justify-center pr-4">
                   <p className="text-sm font-bold text-[#004c91] line-clamp-2 break-words" title={row.name}>{row.name}</p>
                   <p className="text-xs font-medium text-slate-500 truncate" title={row.org}>{row.org}</p>
-                  {!isHO && (
+                  {!isHO && activeTab !== 'attending' && (
                     <p className="text-xs font-medium text-slate-600 mt-0.5 truncate">
                       <span className="text-slate-400">{isPendingHostAssignment(row) ? 'Người tiếp nhận tạm:' : 'Host:'}</span> {row.host || (row.requestStatus === 'APPROVED' && isVisitor ? 'Đang phân công' : '-')}
                       <span className="mx-1 text-slate-300">|</span>
@@ -1556,7 +1680,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
               {renderBadges(row)}
               <div className="grid grid-cols-1 gap-1.5 text-xs text-slate-600 bg-slate-50 p-3 rounded-xl border border-slate-100 mt-3">
                 <div className="flex items-center gap-2"><Calendar className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" /><span className="truncate">{formatDateTimeShort(row.plannedStartAt)} <span className="text-slate-400 mx-1">→</span> {formatDateTimeShort(row.plannedEndAt)}</span></div>
-                {!isHO && (
+                {!isHO && activeTab !== 'attending' && (
                   <>
                     <div className="flex items-center gap-2 mt-0.5"><Users className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" /><span className="truncate"><span className="text-slate-400">Host:</span> {row.host || (row.requestStatus === 'APPROVED' && isVisitor ? 'Đang phân công' : '-')}</span></div>
                     <div className="flex items-center gap-2 mt-0.5"><MapPin className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" /><span className="truncate"><span className="text-slate-400">Cơ sở:</span> {row.campus || '-'}</span></div>
