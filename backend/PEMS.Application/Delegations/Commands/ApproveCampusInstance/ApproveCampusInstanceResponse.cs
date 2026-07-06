@@ -6,4 +6,5 @@ public sealed record ApproveCampusInstanceResponse(
     string RequestStatus,
     string CampusStatus,
     ulong HostUserId,
-    string Message);
+    string Message,
+    bool HasScheduleWarning = false);

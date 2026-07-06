@@ -911,7 +911,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
     // (bỏ kiểu "Đã duyệt · Đã phân công Host"). Trong màn vận hành theo campus/role ưu tiên
     // visit_request_campuses.status; request status chỉ dùng cho quyết định tổng. `kind` chọn
     // màu badge, nhãn theo vai trò (Visitor xem ngôn ngữ thân thiện hơn nội bộ).
-    type StatusKind = 'pending' | 'rejected' | 'cancelled' | 'partially' | 'assigned'
+    type StatusKind = 'pending' | 'pending_request' | 'rejected' | 'cancelled' | 'partially' | 'assigned'
       | 'before' | 'during' | 'after' | 'closed' | 'approved';
     let kind: StatusKind;
     if (row.requestStatus === 'CANCELLED' || row.campusStatus === 'CANCELLED') kind = 'cancelled';
@@ -926,7 +926,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
     else if (row.requestStatus === 'REJECTED') kind = 'rejected';
     else if (row.requestStatus === 'PARTIALLY_APPROVED') kind = 'partially';
     else if (row.requestStatus === 'APPROVED') kind = 'approved';
-    else kind = 'pending';
+    else kind = 'pending_request';
 
     let cancelledText = 'Đã hủy';
     if (kind === 'cancelled') {
@@ -939,12 +939,12 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
     const assignedText = isStaffLeader ? 'Đã duyệt & gán Host' : 'Đã được phân công';
 
     const labelByKind: Record<StatusKind, string> = isVisitor ? {
-      pending: 'Chờ xử lý', rejected: 'Đã bị từ chối', cancelled: cancelledText,
+      pending: 'Chờ xử lý', pending_request: 'Chờ xử lý', rejected: 'Đã bị từ chối', cancelled: cancelledText,
       partially: 'Duyệt một phần', assigned: 'Đã phân công người phụ trách',
       before: 'Sắp diễn ra', during: 'Đang diễn ra', after: 'Đã diễn ra',
       closed: 'Đã hoàn tất', approved: 'Đã được duyệt',
     } : {
-      pending: 'Chờ xử lý tại cơ sở', rejected: 'Đã bị từ chối', cancelled: cancelledText,
+      pending: 'Chờ xử lý tại cơ sở', pending_request: 'Chờ xử lý', rejected: 'Đã bị từ chối', cancelled: cancelledText,
       partially: 'Duyệt một phần', assigned: assignedText,
       before: 'Đang chuẩn bị', during: 'Đang tiếp khách', after: 'Chờ đóng đoàn',
       closed: 'Đã đóng đoàn', approved: 'Đã duyệt',
@@ -952,6 +952,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
 
     const clsByKind: Record<StatusKind, string> = {
       pending: 'bg-yellow-50 text-yellow-700 border-yellow-200',
+      pending_request: 'bg-yellow-50 text-yellow-700 border-yellow-200',
       partially: 'bg-amber-50 text-amber-700 border-amber-200',
       assigned: 'bg-cyan-50 text-cyan-700 border-cyan-200',
       approved: 'bg-cyan-50 text-cyan-700 border-cyan-200',
@@ -965,6 +966,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
 
     const titleByKind: Record<StatusKind, string> = {
       pending: 'Cơ sở đang chờ Staff Leader duyệt & gán host',
+      pending_request: 'Đơn đang chờ xử lý tại các cơ sở',
       rejected: 'Đã bị từ chối tiếp nhận',
       cancelled: 'Đơn/cơ sở đã bị hủy',
       partially: 'Một số cơ sở đã tiếp nhận, một số còn chờ xử lý hoặc bị từ chối',
