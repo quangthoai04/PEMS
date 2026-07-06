@@ -1,3 +1,15 @@
+> [!WARNING]
+> **LEGACY ARCHITECTURE NOTE (Campus-independent Approval Update)**
+> This document has been updated to reflect the new Campus-independent Approval architecture.
+> - **HO is now monitor/read-only.** There is no centralized multi-campus approval by HO.
+> - **Staff Leader approval is per-campus.** Each Staff Leader directly receives and approves/rejects their own campus instance right after submission.
+> - **Self-hosting is supported.** Staff Leaders can assign themselves as the host during approval.
+> - **ASSIGNED is removed.** Approving a request now requires assigning a host immediately.
+> - **New statuses:** `PARTIALLY_APPROVED` (request level) and `REJECTED` (campus level) are added. 
+> - **Cancel logic:** Visitors can cancel requests in `PENDING_APPROVAL` or `PARTIALLY_APPROVED` states.
+> - **Transportation:** `transportation_note` and `transportation_note` are replaced by `transportation_note`.
+> Please refer to the latest codebase and SQL schema for the current implementation.
+
 # PROMPT — Tạo trang Visitor Detail riêng khi đơn đã được gán Host
 
 ## 1. Bối cảnh
@@ -141,7 +153,7 @@ CANCELLED                -> Chuyến thăm đã hủy
 Không hiển thị text nội bộ như:
 
 ```txt
-WAITING_HOST_ASSIGNMENT
+ASSIGNED
 BEFORE_VISIT
 AFTER_VISIT
 Chờ đóng đoàn
@@ -472,8 +484,8 @@ type VisitorVisitDetailDto = {
     workingContent: string | null;
     noteToFptu: string | null;
     workingLanguage: string | null;
-    transportationType: string | null;
-    transportationDetail: string | null;
+    transportationNote: string | null;
+    transportationNote: string | null;
     mediaConsentStatus: string | null;
     mediaConsentNote: string | null;
   };

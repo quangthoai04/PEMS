@@ -1,3 +1,15 @@
+> [!WARNING]
+> **LEGACY ARCHITECTURE NOTE (Campus-independent Approval Update)**
+> This document has been updated to reflect the new Campus-independent Approval architecture.
+> - **HO is now monitor/read-only.** There is no centralized multi-campus approval by HO.
+> - **Staff Leader approval is per-campus.** Each Staff Leader directly receives and approves/rejects their own campus instance right after submission.
+> - **Self-hosting is supported.** Staff Leaders can assign themselves as the host during approval.
+> - **ASSIGNED is removed.** Approving a request now requires assigning a host immediately.
+> - **New statuses:** `PARTIALLY_APPROVED` (request level) and `REJECTED` (campus level) are added. 
+> - **Cancel logic:** Visitors can cancel requests in `PENDING_APPROVAL` or `PARTIALLY_APPROVED` states.
+> - **Transportation:** `transportation_note` and `transportation_note` are replaced by `transportation_note`.
+> Please refer to the latest codebase and SQL schema for the current implementation.
+
 # PROMPT FIX CODE — HO XEM SINGLE_CAMPUS READ-ONLY TRONG DANH SÁCH ĐƠN TIẾP KHÁCH
 
 ## 0. Bối cảnh

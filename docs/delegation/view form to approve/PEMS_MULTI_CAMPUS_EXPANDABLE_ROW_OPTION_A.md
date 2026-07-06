@@ -1,3 +1,15 @@
+> [!WARNING]
+> **LEGACY ARCHITECTURE NOTE (Campus-independent Approval Update)**
+> This document has been updated to reflect the new Campus-independent Approval architecture.
+> - **HO is now monitor/read-only.** There is no centralized multi-campus approval by HO.
+> - **Staff Leader approval is per-campus.** Each Staff Leader directly receives and approves/rejects their own campus instance right after submission.
+> - **Self-hosting is supported.** Staff Leaders can assign themselves as the host during approval.
+> - **ASSIGNED is removed.** Approving a request now requires assigning a host immediately.
+> - **New statuses:** `PARTIALLY_APPROVED` (request level) and `REJECTED` (campus level) are added. 
+> - **Cancel logic:** Visitors can cancel requests in `PENDING_APPROVAL` or `PARTIALLY_APPROVED` states.
+> - **Transportation:** `transportation_note` and `transportation_note` are replaced by `transportation_note`.
+> Please refer to the latest codebase and SQL schema for the current implementation.
+
 # PEMS — Phương án A: Multi-campus Expandable Row trong danh sách đơn liên cơ sở
 
 > Mục đích: Đặc tả UI/UX + Backend/Frontend implementation guide cho việc hiển thị đơn liên cơ sở theo dạng **row cha + accordion campus con** trên màn hình `/dashboard/visit`.
@@ -19,7 +31,7 @@ Ví dụ:
 Visit Request: HO-approved waiting host assignment tour
 Visit scope: MULTI_CAMPUS
 Campus instances:
-- Hà Nội: WAITING_HOST_ASSIGNMENT
+- Hà Nội: ASSIGNED
 - TP.HCM: ASSIGNED
 - Đà Nẵng: BEFORE_VISIT
 - Cần Thơ: CANCELLED
@@ -282,7 +294,7 @@ PENDING_APPROVAL:
 - Xem đơn tổng.
 - Không hiện nút hủy nếu rule hiện tại chưa hỗ trợ “rút yêu cầu trước duyệt”.
 
-APPROVED + campus instance in WAITING_HOST_ASSIGNMENT / ASSIGNED / BEFORE_VISIT:
+APPROVED + campus instance in ASSIGNED / ASSIGNED / BEFORE_VISIT:
 - Xem đơn tổng.
 - Mở campus con.
 - Hủy lịch thăm nếu rule Visitor self-service cancel hiện có cho phép.
@@ -324,7 +336,7 @@ DURING_VISIT / AFTER_VISIT / CLOSED:
 | Role | instanceStatus | Action campus con |
 |---|---|---|
 | HO | WAITING_REQUEST_APPROVAL | Xem campus đăng ký |
-| HO | WAITING_HOST_ASSIGNMENT | Xem campus |
+| HO | ASSIGNED | Xem campus |
 | HO | ASSIGNED | Xem campus |
 | HO | BEFORE_VISIT | Xem campus |
 | HO | DURING_VISIT | Xem campus |
@@ -332,7 +344,7 @@ DURING_VISIT / AFTER_VISIT / CLOSED:
 | HO | CLOSED | Xem campus |
 | HO | CANCELLED | Xem campus, Xem lý do hủy |
 | Visitor | WAITING_REQUEST_APPROVAL | Xem campus đăng ký |
-| Visitor | WAITING_HOST_ASSIGNMENT | Xem campus, Hủy nếu request APPROVED |
+| Visitor | ASSIGNED | Xem campus, Hủy nếu request APPROVED |
 | Visitor | ASSIGNED | Xem campus, Hủy nếu request APPROVED |
 | Visitor | BEFORE_VISIT | Xem campus, Hủy nếu request APPROVED |
 | Visitor | DURING_VISIT | Xem campus |
@@ -358,7 +370,7 @@ public sealed class VisitRequestManagementItemDto
 
     public string VisitScope { get; init; } = string.Empty; // SINGLE_CAMPUS / MULTI_CAMPUS
 
-    public string RequestStatus { get; init; } = string.Empty; // PENDING_APPROVAL / APPROVED / REJECTED / CANCELLED
+    public string RequestStatus { get; init; } = string.Empty; // PENDING_APPROVAL / PARTIALLY_APPROVED / APPROVED / REJECTED / CANCELLED
     public string RequestStatusText { get; init; } = string.Empty;
 
     public DateTime? PlannedStartAt { get; init; }
@@ -522,7 +534,7 @@ export type VisitRequestStatus =
 
 export type VisitInstanceStatus =
   | 'WAITING_REQUEST_APPROVAL'
-  | 'WAITING_HOST_ASSIGNMENT'
+  | 'ASSIGNED'
   | 'ASSIGNED'
   | 'BEFORE_VISIT'
   | 'DURING_VISIT'
@@ -682,7 +694,7 @@ row.statusText === 'Từ chối'
 ```tsx
 row.requestStatus === 'APPROVED'
 row.requestStatus === 'REJECTED'
-campus.instanceStatus === 'WAITING_HOST_ASSIGNMENT'
+campus.instanceStatus === 'ASSIGNED'
 ```
 
 Tốt nhất:

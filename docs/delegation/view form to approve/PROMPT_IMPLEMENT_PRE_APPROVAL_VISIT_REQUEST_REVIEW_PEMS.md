@@ -1,3 +1,15 @@
+> [!WARNING]
+> **LEGACY ARCHITECTURE NOTE (Campus-independent Approval Update)**
+> This document has been updated to reflect the new Campus-independent Approval architecture.
+> - **HO is now monitor/read-only.** There is no centralized multi-campus approval by HO.
+> - **Staff Leader approval is per-campus.** Each Staff Leader directly receives and approves/rejects their own campus instance right after submission.
+> - **Self-hosting is supported.** Staff Leaders can assign themselves as the host during approval.
+> - **ASSIGNED is removed.** Approving a request now requires assigning a host immediately.
+> - **New statuses:** `PARTIALLY_APPROVED` (request level) and `REJECTED` (campus level) are added. 
+> - **Cancel logic:** Visitors can cancel requests in `PENDING_APPROVAL` or `PARTIALLY_APPROVED` states.
+> - **Transportation:** `transportation_note` and `transportation_note` are replaced by `transportation_note`.
+> Please refer to the latest codebase and SQL schema for the current implementation.
+
 # PROMPT_IMPLEMENT_PRE_APPROVAL_VISIT_REQUEST_REVIEW_PEMS
 
 > Mục tiêu: cập nhật code PEMS để làm đúng chức năng **xem đơn đăng ký tham quan trước khi duyệt** trong màn **Quản lý tiếp khách**.  
@@ -52,7 +64,7 @@ Không xử lý các đơn đã duyệt/chờ host trong chức năng này:
 
 ```text
 visit_requests.status = APPROVED
-visit_request_campuses.status = WAITING_HOST_ASSIGNMENT
+visit_request_campuses.status = ASSIGNED
 ```
 
 Các đơn “Đã duyệt · Chờ chọn Host” thuộc phase sau duyệt, không phải scope của prompt này.
@@ -691,7 +703,7 @@ Yêu cầu behavior:
 
 ```text
 visit_requests.status: PENDING_APPROVAL -> APPROVED
-visit_request_campuses.status: WAITING_REQUEST_APPROVAL -> WAITING_HOST_ASSIGNMENT
+visit_request_campuses.status: WAITING_REQUEST_APPROVAL -> ASSIGNED
 decision actor = STAFF_LEADER hoặc fixed audit equivalent hiện có
 decision_note lưu ghi chú nếu có
 ```
@@ -700,7 +712,7 @@ decision_note lưu ghi chú nếu có
 
 ```text
 visit_requests.status: PENDING_APPROVAL -> APPROVED
-all related visit_request_campuses.status: WAITING_REQUEST_APPROVAL -> WAITING_HOST_ASSIGNMENT
+all related visit_request_campuses.status: WAITING_REQUEST_APPROVAL -> ASSIGNED
 coordinator_user_id có thể set Staff Leader từng campus nếu logic hiện tại đã có
 ```
 
@@ -799,7 +811,7 @@ Test cases:
 7. IC Staff gọi API review trả 403.
 8. Department Leader/Staff gọi API review trả 403.
 9. Student gọi API review trả 403.
-10. Request APPROVED + WAITING_HOST_ASSIGNMENT gọi review trước duyệt trả lỗi trạng thái.
+10. Request APPROVED + ASSIGNED gọi review trước duyệt trả lỗi trạng thái.
 11. API review không thay đổi status request/campus.
 12. DTO trả guestMembers và externalSupportMembers tách riêng đúng member_type.
 ```

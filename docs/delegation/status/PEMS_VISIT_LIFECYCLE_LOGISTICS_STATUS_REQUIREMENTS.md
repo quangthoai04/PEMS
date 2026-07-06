@@ -1,3 +1,15 @@
+> [!WARNING]
+> **LEGACY ARCHITECTURE NOTE (Campus-independent Approval Update)**
+> This document has been updated to reflect the new Campus-independent Approval architecture.
+> - **HO is now monitor/read-only.** There is no centralized multi-campus approval by HO.
+> - **Staff Leader approval is per-campus.** Each Staff Leader directly receives and approves/rejects their own campus instance right after submission.
+> - **Self-hosting is supported.** Staff Leaders can assign themselves as the host during approval.
+> - **ASSIGNED is removed.** Approving a request now requires assigning a host immediately.
+> - **New statuses:** `PARTIALLY_APPROVED` (request level) and `REJECTED` (campus level) are added. 
+> - **Cancel logic:** Visitors can cancel requests in `PENDING_APPROVAL` or `PARTIALLY_APPROVED` states.
+> - **Transportation:** `transportation_note` and `transportation_note` are replaced by `transportation_note`.
+> Please refer to the latest codebase and SQL schema for the current implementation.
+
 # PEMS — Đặc tả yêu cầu cập nhật logic trạng thái tiếp khách, hủy, đóng đoàn và logistics
 
 > **Mục đích tài liệu:** Tổng hợp chi tiết toàn bộ các yêu cầu đã chốt để AI Agent/Developer dùng khi audit và cập nhật code backend/frontend cho vòng đời tiếp khách trong PEMS.
@@ -40,7 +52,7 @@ Visitor được hủy request đã duyệt nếu toàn bộ campus instance li�
 Cho phép hủy nếu các campus instance chỉ nằm trong các trạng thái:
 
 ```text
-WAITING_HOST_ASSIGNMENT
+ASSIGNED
 ASSIGNED
 BEFORE_VISIT
 CANCELLED
@@ -180,7 +192,7 @@ Các trạng thái hợp lệ:
 
 ```text
 WAITING_REQUEST_APPROVAL
-WAITING_HOST_ASSIGNMENT
+ASSIGNED
 ASSIGNED
 BEFORE_VISIT
 DURING_VISIT
@@ -193,7 +205,7 @@ Flow chuẩn:
 
 ```text
 WAITING_REQUEST_APPROVAL
-→ WAITING_HOST_ASSIGNMENT
+→ ASSIGNED
 → ASSIGNED
 → BEFORE_VISIT
 → DURING_VISIT
@@ -207,7 +219,7 @@ Luồng hủy:
 PENDING_APPROVAL request
 → CANCELLED request nếu Visitor hủy trước duyệt.
 
-WAITING_HOST_ASSIGNMENT / ASSIGNED / BEFORE_VISIT
+ASSIGNED / ASSIGNED / BEFORE_VISIT
 → CANCELLED campus instance nếu actor hợp lệ hủy trước tiếp khách.
 ```
 
@@ -224,7 +236,7 @@ CANCELLED
 
 ## 3. Transition backend cần audit/cập nhật
 
-### 3.1. `WAITING_HOST_ASSIGNMENT -> ASSIGNED`
+### 3.1. `ASSIGNED -> ASSIGNED`
 
 Xảy ra khi Staff Leader chọn Host chính thức cho campus instance.
 
@@ -440,7 +452,7 @@ AND campusStatus IN ('ASSIGNED', 'BEFORE_VISIT')
 Không cho Host hủy ở:
 
 ```text
-WAITING_HOST_ASSIGNMENT
+ASSIGNED
 DURING_VISIT
 AFTER_VISIT
 CLOSED

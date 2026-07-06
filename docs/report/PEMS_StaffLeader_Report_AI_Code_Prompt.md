@@ -1,3 +1,15 @@
+> [!WARNING]
+> **LEGACY ARCHITECTURE NOTE (Campus-independent Approval Update)**
+> This document has been updated to reflect the new Campus-independent Approval architecture.
+> - **HO is now monitor/read-only.** There is no centralized multi-campus approval by HO.
+> - **Staff Leader approval is per-campus.** Each Staff Leader directly receives and approves/rejects their own campus instance right after submission.
+> - **Self-hosting is supported.** Staff Leaders can assign themselves as the host during approval.
+> - **ASSIGNED is removed.** Approving a request now requires assigning a host immediately.
+> - **New statuses:** `PARTIALLY_APPROVED` (request level) and `REJECTED` (campus level) are added. 
+> - **Cancel logic:** Visitors can cancel requests in `PENDING_APPROVAL` or `PARTIALLY_APPROVED` states.
+> - **Transportation:** `transportation_note` and `transportation_note` are replaced by `transportation_note`.
+> Please refer to the latest codebase and SQL schema for the current implementation.
+
 # PROMPT AI CODE — Trang Report cho role Staff Leader
 
 > **Mục tiêu:** Code lại trang report cho **Staff Leader** tại `/dashboard/reports` theo hướng **Campus Operation Report**: gọn hơn, ít khung/ô hơn, hiển thị được nhiều thông tin vận hành hơn, lấy **data thật từ DB/API hiện có**, không dùng mock data.
@@ -94,7 +106,7 @@ Query params:
 fromDate?: string
 toDate?: string
 preset?: THIS_MONTH | THIS_QUARTER | THIS_YEAR | CUSTOM
-visitStatus?: ALL | WAITING_HOST_ASSIGNMENT | ASSIGNED | BEFORE_VISIT | DURING_VISIT | AFTER_VISIT | CLOSED | CANCELLED
+visitStatus?: ALL | ASSIGNED | ASSIGNED | BEFORE_VISIT | DURING_VISIT | AFTER_VISIT | CLOSED | CANCELLED
 requestStatus?: ALL | PENDING_APPROVAL | APPROVED | REJECTED | CANCELLED
 hostUserId?: number | ALL
 departmentId?: number | ALL
@@ -210,7 +222,7 @@ lowFeedbackCount
 Dùng `visit_request_campuses.status`:
 
 ```text
-WAITING_HOST_ASSIGNMENT
+ASSIGNED
 ASSIGNED
 BEFORE_VISIT
 DURING_VISIT
@@ -343,7 +355,7 @@ AND campus = currentUser.primary_campus_id
 
 waitingHostAssignment:
 visit_request_campuses.campus_id = currentUser.primary_campus_id
-AND status = 'WAITING_HOST_ASSIGNMENT'
+AND status = 'ASSIGNED'
 
 host workload:
 group by visit_request_campuses.current_host_user_id
