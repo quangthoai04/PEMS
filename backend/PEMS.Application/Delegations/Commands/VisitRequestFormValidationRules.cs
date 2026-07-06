@@ -13,7 +13,9 @@ namespace PEMS.Application.Delegations.Commands;
 /// </summary>
 public static class VisitRequestFormValidationRules
 {
-    public static void ApplyVisitRequestFormRules<T>(this AbstractValidator<T> v)
+    // minStartAdvanceHours: 72h for a brand-new submit (UC-17); the Visitor edit/resubmit
+    // flow only requires 24h (spec "Visitor sửa đơn / gửi lại / hủy trước 24h").
+    public static void ApplyVisitRequestFormRules<T>(this AbstractValidator<T> v, int minStartAdvanceHours = 72)
         where T : IVisitRequestFormCommand
     {
         // ── Registrant ────────────────────────────────────────────────────────
@@ -73,8 +75,8 @@ public static class VisitRequestFormValidationRules
                 .NotEmpty().WithMessage("Vui lòng chọn cơ sở.");
             
             slot.RuleFor(s => s.StartDatetime)
-                .Must(start => start >= DateTime.Now.AddHours(72))
-                .WithMessage("Thời gian bắt đầu phải ít nhất 72 giờ so với thời điểm hiện tại.");
+                .Must(start => start >= DateTime.Now.AddHours(minStartAdvanceHours))
+                .WithMessage($"Thời gian bắt đầu phải ít nhất {minStartAdvanceHours} giờ so với thời điểm hiện tại.");
 
             slot.RuleFor(s => s)
                 .Must(s => s.EndDatetime > s.StartDatetime)

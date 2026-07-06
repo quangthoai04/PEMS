@@ -55,6 +55,7 @@ import { DeptLeadVisitTasksPage } from './pages/dashboard/visit/DeptLeadVisitTas
 import { VisitParticipantInvitationDetail } from './pages/dashboard/visit/VisitParticipantInvitationDetail';
 import { AgendaTemplateManagement } from './pages/dashboard/visit/AgendaTemplateManagement';
 import { CreateVisitRequest } from './pages/dashboard/visit/CreateVisitRequest';
+import { EditVisitRequest } from './pages/dashboard/visit/EditVisitRequest';
 import { VisitFeedbackPage } from './pages/dashboard/visit/VisitFeedbackPage';
 import { FAQManagement } from './pages/dashboard/faq/FAQManagement';
 import { FAQDetail } from './pages/dashboard/faq/FAQDetail';
@@ -171,6 +172,9 @@ export default function App() {
             <Route path="visit/invitations/:participantId" element={<VisitParticipantInvitationDetail />} />
             <Route path="visit/department-tasks/:participantId" element={<VisitParticipantInvitationDetail />} />
             <Route path="visit/create" element={<CreateVisitRequest />} />
+            {/* Visitor sửa đơn pending / sửa & gửi lại đơn bị từ chối (owner-only, backend re-check) */}
+            <Route path="visit/edit/:visitRequestId" element={<EditVisitRequest />} />
+            <Route path="visit/resubmit/:visitRequestId" element={<EditVisitRequest />} />
             <Route path="visit/agenda-templates" element={<AgendaTemplateManagement />} />
             <Route path="visit/process/:id" element={<VisitProcess />} />
             <Route path="visit/feedback/:visitInstanceId" element={<VisitFeedbackPage />} />

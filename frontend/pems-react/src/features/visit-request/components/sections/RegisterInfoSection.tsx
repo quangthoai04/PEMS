@@ -4,7 +4,7 @@ import type { VisitRequestSchema } from '../../schema/visitRequest.schema';
 import { FormField, inputCls } from '../shared/FormField';
 import { CountrySelect } from '../shared/CountrySelect';
 import { PhoneInput } from '../shared/PhoneInput';
-import { PartnerAsyncSelect } from '../shared/PartnerAsyncSelect';
+import { PartnerOrgCombobox } from '../shared/PartnerOrgCombobox';
 
 interface Props {
   form: UseFormReturn<VisitRequestSchema>;
@@ -15,7 +15,6 @@ export const RegisterInfoSection: React.FC<Props> = ({ form, showErrors }) => {
   const { register, control, watch, setValue, formState: { errors, touchedFields, isSubmitted } } = form;
   const e = errors.registerInfo;
   const t = touchedFields.registerInfo;
-  const partnerSelectionMode = watch('partnerSelectionMode');
 
   const shouldShowError = (field: keyof NonNullable<typeof t>, specificError?: any) => {
     return !!specificError && (t?.[field] || showErrors || isSubmitted);
@@ -73,54 +72,32 @@ export const RegisterInfoSection: React.FC<Props> = ({ form, showErrors }) => {
 
         <div className="lg:col-span-2">
           <FormField
-            label="Đối tác/Tổ chức đã có trong hệ thống"
-            error={(form.formState.touchedFields.partnerId || showErrors || isSubmitted) ? form.formState.errors.partnerId?.message as string | undefined : undefined}
-            isValid={form.formState.touchedFields.partnerId && !form.formState.errors.partnerId}
-            subtitle="Nếu đơn vị của bạn đã là đối tác của FPTU, vui lòng chọn tại đây."
+            label="Đơn vị / Tổ chức"
+            required
+            error={shouldShowError('organization', e?.organization) ? e?.organization?.message : undefined}
+            isValid={isValid('organization')}
+            subtitle="Nhập tên đơn vị/tổ chức của bạn. Nếu đã là đối tác của FPTU, gõ để tìm và chọn từ gợi ý."
             showValidIcon={false}
           >
             <Controller
-              name="partnerId"
+              name="registerInfo.organization"
               control={control}
               render={({ field }) => (
-                <PartnerAsyncSelect
-                  value={field.value ?? null}
-                  partnerName={watch('registerInfo.organization')}
-                  onChange={(val, name) => {
-                    field.onChange(val);
-                    if (val !== null) {
-                      setValue('partnerSelectionMode', 'EXISTING_PARTNER');
-                      setValue('registerInfo.organization', name, { shouldValidate: true, shouldDirty: true });
-                    } else {
-                      setValue('partnerSelectionMode', 'NEW_ORGANIZATION');
-                      setValue('registerInfo.organization', '', { shouldValidate: true, shouldDirty: true });
-                    }
+                <PartnerOrgCombobox
+                  organization={field.value ?? ''}
+                  partnerId={watch('partnerId') ?? null}
+                  onChange={({ organization, partnerId, mode }) => {
+                    field.onChange(organization);
+                    setValue('partnerId', partnerId, { shouldValidate: true, shouldDirty: true });
+                    setValue('partnerSelectionMode', mode, { shouldDirty: true });
                   }}
                   onBlur={field.onBlur}
-                  hasError={!!form.formState.errors.partnerId && (!!form.formState.touchedFields.partnerId || !!showErrors || isSubmitted)}
+                  hasError={shouldShowError('organization', e?.organization)}
                 />
               )}
             />
           </FormField>
         </div>
-
-        {partnerSelectionMode === 'NEW_ORGANIZATION' && (
-          <div className="lg:col-span-2">
-            <FormField
-              label="Tên đơn vị / tổ chức của bạn"
-              required
-              error={shouldShowError('organization', e?.organization) ? e?.organization?.message : undefined}
-              isValid={isValid('organization')}
-              subtitle="Nếu đơn vị của bạn chưa có trong hệ thống, vui lòng nhập tên đơn vị tại đây."
-            >
-              <input
-                {...register('registerInfo.organization')}
-                placeholder="Nhập tên đơn vị / tổ chức"
-                className={inputCls(shouldShowError('organization', e?.organization), isValid('organization'))}
-              />
-            </FormField>
-          </div>
-        )}
 
         <FormField
           label="Chức danh, phòng ban"

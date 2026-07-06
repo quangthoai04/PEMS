@@ -1,32 +1,18 @@
-> [!WARNING]
-> **LEGACY ARCHITECTURE NOTE (Campus-independent Approval Update)**
-> This document has been updated to reflect the new Campus-independent Approval architecture.
-> - **HO is now monitor/read-only.** There is no centralized multi-campus approval by HO.
-> - **Staff Leader approval is per-campus.** Each Staff Leader directly receives and approves/rejects their own campus instance right after submission.
-> - **Self-hosting is supported.** Staff Leaders can assign themselves as the host during approval.
-> - **ASSIGNED is removed.** Approving a request now requires assigning a host immediately.
-> - **New statuses:** `PARTIALLY_APPROVED` (request level) and `REJECTED` (campus level) are added. 
-> - **Cancel logic:** Visitors can cancel requests in `PENDING_APPROVAL` or `PARTIALLY_APPROVED` states.
-> - **Transportation:** `transportation_note` and `transportation_note` are replaced by `transportation_note`.
-> Please refer to the latest codebase and SQL schema for the current implementation.
-
 # PEMS Project Structure (Full Tree)
 
-- File này phản ánh cấu trúc thư mục **thật hiện tại** của project PEMS.
-- Được cập nhật sau khi quét lại source code (lần quét: cấu trúc thật trên nhánh `Canh-Iter1`, ngày 2026-07-02).
-- Không bao gồm các thư mục build/generated như `node_modules`, `dist`, `bin`, `obj`, `.vs`, `.git`, `.tmp-build`, `.runlogs`... Những thư mục này được đánh dấu `[excluded]` tại vị trí xuất hiện và **không** mở rộng nội dung bên trong.
-- Với file môi trường (`.env`), chỉ ghi nhận **tên file** trong cây; không đọc/không in nội dung secret.
+Mô tả ngắn:
+- File này phản ánh cấu trúc thư mục thật hiện tại của project PEMS.
+- Được cập nhật sau khi quét lại source code.
+- Không bao gồm các thư mục build/generated như node_modules, dist, bin, obj.
 
 ## 1. Scope
 
-Tài liệu này bao gồm:
-
-- **Backend Clean Architecture** — `backend/PEMS.Api`, `backend/PEMS.Application`, `backend/PEMS.Domain`, `backend/PEMS.Infrastructure`, kèm 2 project tiện ích nhỏ `backend/CheckDb` và `backend/JsonTest`, cùng 2 file scratch `backend/handlers.txt` / `backend/handlers_utf8.txt`.
-- **Frontend React** — `frontend/pems-react` (Vite + React + TypeScript, kiến trúc feature-based: `src/features/`, `src/pages/`, `src/components/`, `src/shared/`, kèm thư mục `scripts/` chứa các applet codemod).
-- **Database scripts** — Không còn thư mục `database/` ở root. Toàn bộ SQL fresh-create v10, project `DbSeeder`, và các script seed/cleanup hiện nằm trong `docs/database/scripts/`. Dự án dùng SQL fresh-create, **không có** thư mục EF migrations.
-- **Documentation** — `docs/` (kiến trúc, use cases, permissions, database, authentication, và nhiều thư mục prompt/spec theo module).
-- **Tests** — `tests/` (PEMS.ApplicationTests, PEMS.ArchitectureTests, PEMS.IntegrationTests, PEMS.UnitTests + thư mục `http` test files và project scratch `temp_bcrypt`).
-- **Root configuration files** — `.gitignore`, `.gitattributes`, `PEMS.slnx`, `README.md`, thư mục `scripts/` (guard script), và thư mục scratch `temp_hash/`.
+Ghi rõ tài liệu bao gồm:
+- Backend Clean Architecture: `backend/PEMS.Api`, `backend/PEMS.Application`, `backend/PEMS.Domain`, `backend/PEMS.Infrastructure`
+- Frontend React: `frontend/pems-react`
+- Database scripts: Schema, migrations, seed, etc.
+- Documentation: `docs/` bao gồm architecture, use-cases, permissions, API, authentication.
+- Root configuration files: `.gitignore`, `.gitattributes`, solution file, và README.
 
 ## 2. Directory Tree
 
@@ -38,15 +24,11 @@ PEMS/
 ├── .git/   [excluded]
 ├── .runlogs/   [excluded]
 ├── .vs/   [excluded]
-├── .vscode/
-│   ├── launch.json
-│   └── tasks.json
+├── .vscode/   [excluded]
 ├── backend/
 │   ├── CheckDb/
 │   │   ├── bin/   [excluded]
-│   │   ├── obj/   [excluded]
-│   │   ├── CheckDb.csproj
-│   │   └── Program.cs
+│   │   └── obj/   [excluded]
 │   ├── JsonTest/
 │   │   ├── bin/   [excluded]
 │   │   ├── obj/   [excluded]
@@ -56,10 +38,14 @@ PEMS/
 │   │   ├── .tmp-build/   [excluded]
 │   │   ├── App_Data/
 │   │   │   └── uploads/
-│   │   │       └── email_attachment/
+│   │   │       ├── email_attachment/
+│   │   │       │   └── 2026/
+│   │   │       │       └── 06/
+│   │   │       │           └── fe8cd677dd8b4a5f975dac70ca1e8fdc.png
+│   │   │       └── partner_document/
 │   │   │           └── 2026/
-│   │   │               └── 06/
-│   │   │                   └── fe8cd677dd8b4a5f975dac70ca1e8fdc.png
+│   │   │               └── 07/
+│   │   ├── bin/   [excluded]
 │   │   ├── Contracts/
 │   │   │   ├── ApiResponse.cs
 │   │   │   └── ApiRoutes.cs
@@ -68,6 +54,7 @@ PEMS/
 │   │   │   ├── AgendaTemplatesController.cs
 │   │   │   ├── ApiIntegrationsController.cs
 │   │   │   ├── AuthenticationController.cs
+│   │   │   ├── BusinessCardOcrController.cs
 │   │   │   ├── CalendarsController.cs
 │   │   │   ├── CampusesController.cs
 │   │   │   ├── DashboardController.cs
@@ -75,8 +62,8 @@ PEMS/
 │   │   │   ├── DepartmentReceptionTasksController.cs
 │   │   │   ├── DepartmentsController.cs
 │   │   │   ├── DocumentsController.cs
-│   │   │   ├── EmailTemplatesController.cs
 │   │   │   ├── EmailsController.cs
+│   │   │   ├── EmailTemplatesController.cs
 │   │   │   ├── FaqsController.cs
 │   │   │   ├── FeedbacksController.cs
 │   │   │   ├── FilesController.cs
@@ -93,6 +80,7 @@ PEMS/
 │   │   │   ├── PublicVisitFptuController.cs
 │   │   │   ├── ReportsController.cs
 │   │   │   ├── VisitInvitationsController.cs
+│   │   │   ├── VisitPartnerLinksController.cs
 │   │   │   └── VisitRequestsController.cs
 │   │   ├── Email/
 │   │   │   └── EmailActionHtmlPages.cs
@@ -114,18 +102,16 @@ PEMS/
 │   │   │   ├── RequestLoggingMiddleware.cs
 │   │   │   ├── SecurityHeadersMiddleware.cs
 │   │   │   └── SessionValidationMiddleware.cs
+│   │   ├── obj/   [excluded]
 │   │   ├── Properties/
 │   │   │   └── launchSettings.json
-│   │   ├── bin/   [excluded]
-│   │   ├── obj/   [excluded]
-│   │   ├── PEMS.Api.csproj
-│   │   ├── Pems_WebAPI.http
-│   │   ├── Program.cs
 │   │   ├── appsettings.Development.example.json
 │   │   ├── appsettings.Development.json
-│   │   ├── appsettings.Production.json
 │   │   ├── appsettings.json
-│   │   └── backend_log.txt
+│   │   ├── appsettings.Production.json
+│   │   ├── Pems_WebAPI.http
+│   │   ├── PEMS.Api.csproj
+│   │   └── Program.cs
 │   ├── PEMS.Application/
 │   │   ├── .tmp-build/   [excluded]
 │   │   ├── Accounts/
@@ -251,49 +237,43 @@ PEMS/
 │   │   │           └── ViewAgendaTemplateListQueryHandler.cs
 │   │   ├── ApiIntegrations/
 │   │   │   ├── Commands/
-│   │   │   │   ├── ConfigureRequestLimit/
-│   │   │   │   │   ├── ConfigureRequestLimitCommand.cs
-│   │   │   │   │   ├── ConfigureRequestLimitCommandHandler.cs
-│   │   │   │   │   ├── ConfigureRequestLimitCommandValidator.cs
-│   │   │   │   │   └── ConfigureRequestLimitResponse.cs
-│   │   │   │   ├── CreateAPIConfiguration/
-│   │   │   │   │   ├── CreateAPIConfigurationCommand.cs
-│   │   │   │   │   ├── CreateAPIConfigurationCommandHandler.cs
-│   │   │   │   │   ├── CreateAPIConfigurationCommandValidator.cs
-│   │   │   │   │   └── CreateAPIConfigurationResponse.cs
-│   │   │   │   ├── DeleteAPIConfiguration/
-│   │   │   │   │   ├── DeleteAPIConfigurationCommand.cs
-│   │   │   │   │   ├── DeleteAPIConfigurationCommandHandler.cs
-│   │   │   │   │   ├── DeleteAPIConfigurationCommandValidator.cs
-│   │   │   │   │   └── DeleteAPIConfigurationResponse.cs
-│   │   │   │   ├── ManageAPIStatus/
-│   │   │   │   │   ├── ManageAPIStatusCommand.cs
-│   │   │   │   │   ├── ManageAPIStatusCommandHandler.cs
-│   │   │   │   │   ├── ManageAPIStatusCommandValidator.cs
-│   │   │   │   │   └── ManageAPIStatusResponse.cs
-│   │   │   │   ├── TestAPIConnection/
-│   │   │   │   │   ├── TestAPIConnectionCommand.cs
-│   │   │   │   │   ├── TestAPIConnectionCommandHandler.cs
-│   │   │   │   │   ├── TestAPIConnectionCommandValidator.cs
-│   │   │   │   │   └── TestAPIConnectionResponse.cs
-│   │   │   │   └── UpdateAPIConfiguration/
-│   │   │   │       ├── UpdateAPIConfigurationCommand.cs
-│   │   │   │       ├── UpdateAPIConfigurationCommandHandler.cs
-│   │   │   │       ├── UpdateAPIConfigurationCommandValidator.cs
-│   │   │   │       └── UpdateAPIConfigurationResponse.cs
+│   │   │   │   ├── SetApiIntegrationStatus/
+│   │   │   │   │   ├── SetApiIntegrationStatusCommand.cs
+│   │   │   │   │   └── SetApiIntegrationStatusCommandHandler.cs
+│   │   │   │   ├── TestApiIntegration/
+│   │   │   │   │   ├── TestApiIntegrationCommand.cs
+│   │   │   │   │   └── TestApiIntegrationCommandHandler.cs
+│   │   │   │   ├── UpdateApiIntegrationQuota/
+│   │   │   │   │   ├── UpdateApiIntegrationQuotaCommand.cs
+│   │   │   │   │   ├── UpdateApiIntegrationQuotaCommandHandler.cs
+│   │   │   │   │   └── UpdateApiIntegrationQuotaCommandValidator.cs
+│   │   │   │   ├── UpsertGoogleDocumentAiOcrConfig/
+│   │   │   │   │   ├── UpsertGoogleDocumentAiOcrConfigCommand.cs
+│   │   │   │   │   ├── UpsertGoogleDocumentAiOcrConfigCommandHandler.cs
+│   │   │   │   │   └── UpsertGoogleDocumentAiOcrConfigCommandValidator.cs
+│   │   │   │   └── UpsertGoogleTranslationConfig/
+│   │   │   │       ├── UpsertGoogleTranslationConfigCommand.cs
+│   │   │   │       ├── UpsertGoogleTranslationConfigCommandHandler.cs
+│   │   │   │       └── UpsertGoogleTranslationConfigCommandValidator.cs
+│   │   │   ├── Common/
+│   │   │   │   ├── ApiIntegrationAccess.cs
+│   │   │   │   ├── ApiIntegrationConstants.cs
+│   │   │   │   ├── ApiIntegrationDtos.cs
+│   │   │   │   ├── ApiIntegrationMapper.cs
+│   │   │   │   └── OcrProviderSettings.cs
 │   │   │   └── Queries/
-│   │   │       ├── SearchAPILogs/
-│   │   │       │   ├── SearchAPILogsDto.cs
-│   │   │       │   ├── SearchAPILogsQuery.cs
-│   │   │       │   └── SearchAPILogsQueryHandler.cs
-│   │   │       ├── ViewAPIConfiguration/
-│   │   │       │   ├── ViewAPIConfigurationDto.cs
-│   │   │       │   ├── ViewAPIConfigurationQuery.cs
-│   │   │       │   └── ViewAPIConfigurationQueryHandler.cs
-│   │   │       └── ViewAPILogs/
-│   │   │           ├── ViewAPILogsDto.cs
-│   │   │           ├── ViewAPILogsQuery.cs
-│   │   │           └── ViewAPILogsQueryHandler.cs
+│   │   │       ├── GetApiIntegrationDetail/
+│   │   │       │   ├── GetApiIntegrationDetailQuery.cs
+│   │   │       │   └── GetApiIntegrationDetailQueryHandler.cs
+│   │   │       ├── GetApiIntegrationLogs/
+│   │   │       │   ├── GetApiIntegrationLogsQuery.cs
+│   │   │       │   └── GetApiIntegrationLogsQueryHandler.cs
+│   │   │       ├── GetApiIntegrationQuota/
+│   │   │       │   ├── GetApiIntegrationQuotaQuery.cs
+│   │   │       │   └── GetApiIntegrationQuotaQueryHandler.cs
+│   │   │       └── GetApiIntegrations/
+│   │   │           ├── GetApiIntegrationsQuery.cs
+│   │   │           └── GetApiIntegrationsQueryHandler.cs
 │   │   ├── Authentication/
 │   │   │   ├── Commands/
 │   │   │   │   ├── ForgotPassword/
@@ -342,6 +322,30 @@ PEMS/
 │   │   │   │       └── GetCurrentUserQueryHandler.cs
 │   │   │   └── Rules/
 │   │   │       └── README.md
+│   │   ├── bin/   [excluded]
+│   │   ├── BusinessCardOcr/
+│   │   │   ├── Commands/
+│   │   │   │   ├── ConfirmBusinessCardContact/
+│   │   │   │   │   ├── ConfirmBusinessCardContactCommand.cs
+│   │   │   │   │   ├── ConfirmBusinessCardContactCommandHandler.cs
+│   │   │   │   │   └── ConfirmBusinessCardContactCommandValidator.cs
+│   │   │   │   ├── DiscardBusinessCardOcrJob/
+│   │   │   │   │   ├── DiscardBusinessCardOcrJobCommand.cs
+│   │   │   │   │   └── DiscardBusinessCardOcrJobCommandHandler.cs
+│   │   │   │   └── ScanBusinessCard/
+│   │   │   │       ├── ScanBusinessCardCommand.cs
+│   │   │   │       └── ScanBusinessCardCommandHandler.cs
+│   │   │   ├── Common/
+│   │   │   │   └── BusinessCardOcrDtos.cs
+│   │   │   ├── Queries/
+│   │   │   │   └── GetBusinessCardOcrJob/
+│   │   │   │       ├── GetBusinessCardOcrJobQuery.cs
+│   │   │   │       └── GetBusinessCardOcrJobQueryHandler.cs
+│   │   │   └── Services/
+│   │   │       ├── IBusinessCardOcrProvider.cs
+│   │   │       ├── IBusinessCardOcrThrottle.cs
+│   │   │       ├── IBusinessCardTextParser.cs
+│   │   │       └── IOcrCredentialResolver.cs
 │   │   ├── Calendars/
 │   │   │   ├── Commands/
 │   │   │   │   ├── AddPersonalEvent/
@@ -482,6 +486,7 @@ PEMS/
 │   │   │   │   ├── IPartnerRepository.cs
 │   │   │   │   ├── IPasswordHasher.cs
 │   │   │   │   ├── IRateLimitService.cs
+│   │   │   │   ├── ISecretProtector.cs
 │   │   │   │   ├── ISecurityAuditService.cs
 │   │   │   │   ├── ISessionService.cs
 │   │   │   │   ├── IUserProvisionService.cs
@@ -512,18 +517,32 @@ PEMS/
 │   │   │   │   └── GoogleDriveOptions.cs
 │   │   │   └── VietnamTime.cs
 │   │   ├── Dashboard/
+│   │   │   ├── Common/
+│   │   │   │   └── StaffCalendarLogic.cs
 │   │   │   └── Queries/
-│   │   │       └── GetDepartmentLeaderDashboardSummary/
-│   │   │           ├── DepartmentLeaderDashboardSummaryDto.cs
-│   │   │           ├── GetDepartmentLeaderDashboardSummaryQuery.cs
-│   │   │           └── GetDepartmentLeaderDashboardSummaryQueryHandler.cs
+│   │   │       ├── GetDepartmentLeaderDashboardSummary/
+│   │   │       │   ├── DepartmentLeaderDashboardSummaryDto.cs
+│   │   │       │   ├── GetDepartmentLeaderDashboardSummaryQuery.cs
+│   │   │       │   └── GetDepartmentLeaderDashboardSummaryQueryHandler.cs
+│   │   │       ├── GetHODashboardOverview/
+│   │   │       │   ├── GetHODashboardOverviewQuery.cs
+│   │   │       │   ├── GetHODashboardOverviewQueryHandler.cs
+│   │   │       │   └── HODashboardOverviewDto.cs
+│   │   │       ├── GetStaffCalendar/
+│   │   │       │   ├── GetStaffCalendarQuery.cs
+│   │   │       │   ├── GetStaffCalendarQueryHandler.cs
+│   │   │       │   └── StaffCalendarDtos.cs
+│   │   │       └── GetStaffCalendarDetail/
+│   │   │           ├── GetStaffCalendarDetailQuery.cs
+│   │   │           ├── GetStaffCalendarDetailQueryHandler.cs
+│   │   │           └── StaffCalendarDetailDto.cs
 │   │   ├── Delegations/
 │   │   │   ├── Commands/
-│   │   │   │   ├── ApproveCrossCampusRequest/
-│   │   │   │   │   ├── ApproveCrossCampusRequestCommand.cs
-│   │   │   │   │   ├── ApproveCrossCampusRequestCommandHandler.cs
-│   │   │   │   │   ├── ApproveCrossCampusRequestCommandValidator.cs
-│   │   │   │   │   └── ApproveCrossCampusRequestResponse.cs
+│   │   │   │   ├── ApproveCampusInstance/
+│   │   │   │   │   ├── ApproveCampusInstanceCommand.cs
+│   │   │   │   │   ├── ApproveCampusInstanceCommandHandler.cs
+│   │   │   │   │   ├── ApproveCampusInstanceCommandValidator.cs
+│   │   │   │   │   └── ApproveCampusInstanceResponse.cs
 │   │   │   │   ├── ApproveResourceRequest/
 │   │   │   │   │   ├── ApproveResourceRequestCommand.cs
 │   │   │   │   │   ├── ApproveResourceRequestCommandHandler.cs
@@ -603,21 +622,16 @@ PEMS/
 │   │   │   │   │   ├── PrepareVisitLogisticsCommandHandler.cs
 │   │   │   │   │   ├── PrepareVisitLogisticsCommandValidator.cs
 │   │   │   │   │   └── PrepareVisitLogisticsResponse.cs
-│   │   │   │   ├── ProcessVisitRequest/
-│   │   │   │   │   ├── ProcessVisitRequestCommand.cs
-│   │   │   │   │   ├── ProcessVisitRequestCommandHandler.cs
-│   │   │   │   │   ├── ProcessVisitRequestCommandValidator.cs
-│   │   │   │   │   └── ProcessVisitRequestResponse.cs
 │   │   │   │   ├── ProposeResourceModification/
 │   │   │   │   │   ├── ProposeResourceModificationCommand.cs
 │   │   │   │   │   ├── ProposeResourceModificationCommandHandler.cs
 │   │   │   │   │   ├── ProposeResourceModificationCommandValidator.cs
 │   │   │   │   │   └── ProposeResourceModificationResponse.cs
-│   │   │   │   ├── RejectVisitRequest/
-│   │   │   │   │   ├── RejectVisitRequestCommand.cs
-│   │   │   │   │   ├── RejectVisitRequestCommandHandler.cs
-│   │   │   │   │   ├── RejectVisitRequestCommandValidator.cs
-│   │   │   │   │   └── RejectVisitRequestResponse.cs
+│   │   │   │   ├── RejectCampusInstance/
+│   │   │   │   │   ├── RejectCampusInstanceCommand.cs
+│   │   │   │   │   ├── RejectCampusInstanceCommandHandler.cs
+│   │   │   │   │   ├── RejectCampusInstanceCommandValidator.cs
+│   │   │   │   │   └── RejectCampusInstanceResponse.cs
 │   │   │   │   ├── RemoveVisitParticipant/
 │   │   │   │   │   ├── RemoveVisitParticipantCommand.cs
 │   │   │   │   │   └── RemoveVisitParticipantCommandHandler.cs
@@ -630,6 +644,11 @@ PEMS/
 │   │   │   │   │   ├── RespondVisitParticipantInvitationCommandHandler.cs
 │   │   │   │   │   ├── RespondVisitParticipantInvitationCommandValidator.cs
 │   │   │   │   │   └── RespondVisitParticipantInvitationResponse.cs
+│   │   │   │   ├── ResubmitRejectedVisitRequest/
+│   │   │   │   │   ├── ResubmitRejectedVisitRequestCommand.cs
+│   │   │   │   │   ├── ResubmitRejectedVisitRequestCommandHandler.cs
+│   │   │   │   │   ├── ResubmitRejectedVisitRequestCommandValidator.cs
+│   │   │   │   │   └── ResubmitRejectedVisitRequestResponse.cs
 │   │   │   │   ├── SaveVisitAgenda/
 │   │   │   │   │   ├── SaveVisitAgendaCommand.cs
 │   │   │   │   │   ├── SaveVisitAgendaCommandHandler.cs
@@ -663,6 +682,11 @@ PEMS/
 │   │   │   │   │   ├── UpdateGuestDelegationCommandHandler.cs
 │   │   │   │   │   ├── UpdateGuestDelegationCommandValidator.cs
 │   │   │   │   │   └── UpdateGuestDelegationResponse.cs
+│   │   │   │   ├── UpdatePendingVisitRequest/
+│   │   │   │   │   ├── UpdatePendingVisitRequestCommand.cs
+│   │   │   │   │   ├── UpdatePendingVisitRequestCommandHandler.cs
+│   │   │   │   │   ├── UpdatePendingVisitRequestCommandValidator.cs
+│   │   │   │   │   └── UpdatePendingVisitRequestResponse.cs
 │   │   │   │   ├── UpdateRegistrantInfo/
 │   │   │   │   │   ├── UpdateRegistrantInfoCommand.cs
 │   │   │   │   │   ├── UpdateRegistrantInfoCommandHandler.cs
@@ -744,6 +768,10 @@ PEMS/
 │   │   │   │   ├── GetDepartmentStaffCandidates/
 │   │   │   │   │   ├── GetDepartmentStaffCandidatesQuery.cs
 │   │   │   │   │   └── GetDepartmentStaffCandidatesQueryHandler.cs
+│   │   │   │   ├── GetEditableVisitRequestDetail/
+│   │   │   │   │   ├── EditableVisitRequestDetailDto.cs
+│   │   │   │   │   ├── GetEditableVisitRequestDetailQuery.cs
+│   │   │   │   │   └── GetEditableVisitRequestDetailQueryHandler.cs
 │   │   │   │   ├── GetHostCandidates/
 │   │   │   │   │   ├── GetHostCandidatesQuery.cs
 │   │   │   │   │   ├── GetHostCandidatesQueryHandler.cs
@@ -823,8 +851,10 @@ PEMS/
 │   │   │   │       ├── ViewMyVisitInvitationsQueryHandler.cs
 │   │   │   │       ├── VisitInvitationDto.cs
 │   │   │   │       └── VisitInvitationProjection.cs
-│   │   │   └── Rules/
-│   │   │       └── README.md
+│   │   │   ├── Rules/
+│   │   │   │   └── README.md
+│   │   │   └── Services/
+│   │   │       └── VisitRequestAggregateStatusService.cs
 │   │   ├── DepartmentReceptionTasks/
 │   │   │   ├── Commands/
 │   │   │   │   ├── AcceptAssignedLogisticsTask/
@@ -917,6 +947,9 @@ PEMS/
 │   │   │   │   ├── IDepartmentListCriteria.cs
 │   │   │   │   └── StaffLeaderDepartmentScope.cs
 │   │   │   └── Queries/
+│   │   │       ├── SearchandFilterDepartments/
+│   │   │       │   ├── SearchandFilterDepartmentsQuery.cs
+│   │   │       │   └── SearchandFilterDepartmentsQueryHandler.cs
 │   │   │       ├── SearchCoordinationTasks/
 │   │   │       │   ├── SearchCoordinationTasksDto.cs
 │   │   │       │   ├── SearchCoordinationTasksQuery.cs
@@ -925,9 +958,6 @@ PEMS/
 │   │   │       │   ├── SearchPersonnelDto.cs
 │   │   │       │   ├── SearchPersonnelQuery.cs
 │   │   │       │   └── SearchPersonnelQueryHandler.cs
-│   │   │       ├── SearchandFilterDepartments/
-│   │   │       │   ├── SearchandFilterDepartmentsQuery.cs
-│   │   │       │   └── SearchandFilterDepartmentsQueryHandler.cs
 │   │   │       ├── ViewCoordinationTasks/
 │   │   │       │   ├── ViewCoordinationTasksDto.cs
 │   │   │       │   ├── ViewCoordinationTasksQuery.cs
@@ -1081,7 +1111,23 @@ PEMS/
 │   │   │           ├── ViewListFAQQueryHandler.cs
 │   │   │           └── ViewListFAQQueryValidator.cs
 │   │   ├── Feedbacks/
+│   │   │   ├── Commands/
+│   │   │   │   └── SubmitVisitFeedback/
+│   │   │   │       ├── SubmitVisitFeedbackCommand.cs
+│   │   │   │       ├── SubmitVisitFeedbackCommandHandler.cs
+│   │   │   │       └── SubmitVisitFeedbackCommandValidator.cs
+│   │   │   ├── Common/
+│   │   │   │   ├── FeedbackConstants.cs
+│   │   │   │   ├── FeedbackEligibility.cs
+│   │   │   │   ├── FeedbackRules.cs
+│   │   │   │   └── FeedbackTargetDto.cs
 │   │   │   └── Queries/
+│   │   │       ├── GetPendingFeedbackNotifications/
+│   │   │       │   ├── GetPendingFeedbackNotificationsQuery.cs
+│   │   │       │   └── GetPendingFeedbackNotificationsQueryHandler.cs
+│   │   │       ├── GetVisitFeedbackTargets/
+│   │   │       │   ├── GetVisitFeedbackTargetsQuery.cs
+│   │   │       │   └── GetVisitFeedbackTargetsQueryHandler.cs
 │   │   │       ├── SearchAndFilterFeedback/
 │   │   │       │   ├── SearchAndFilterFeedbackDto.cs
 │   │   │       │   ├── SearchAndFilterFeedbackQuery.cs
@@ -1132,12 +1178,14 @@ PEMS/
 │   │   │   │       ├── UpdateGalleryLocationCommandHandler.cs
 │   │   │   │       └── UpdateGalleryLocationCommandValidator.cs
 │   │   │   ├── Common/
+│   │   │   │   ├── GalleryCoverImage.cs
 │   │   │   │   ├── GalleryDetailBuilder.cs
 │   │   │   │   ├── GalleryErrorCodes.cs
 │   │   │   │   ├── GalleryFileUrls.cs
 │   │   │   │   ├── GalleryItemDetailDto.cs
 │   │   │   │   ├── GalleryItemListItemDto.cs
 │   │   │   │   ├── GalleryItemListQueryExecutor.cs
+│   │   │   │   ├── GalleryItemTypes.cs
 │   │   │   │   ├── GalleryKeyNormalizer.cs
 │   │   │   │   ├── GalleryLocationDetailBuilder.cs
 │   │   │   │   ├── GalleryLocationDtos.cs
@@ -1153,21 +1201,24 @@ PEMS/
 │   │   │   │   │   ├── PublicGalleryDtos.cs
 │   │   │   │   │   └── PublicGalleryFileUrls.cs
 │   │   │   │   └── Queries/
-│   │   │   │       ├── GetPublicCampusNavigation/
-│   │   │   │       │   ├── GetPublicCampusNavigationQuery.cs
-│   │   │   │       │   └── GetPublicCampusNavigationQueryHandler.cs
 │   │   │   │       ├── GetPublicCampuses/
 │   │   │   │       │   ├── GetPublicCampusesQuery.cs
 │   │   │   │       │   └── GetPublicCampusesQueryHandler.cs
+│   │   │   │       ├── GetPublicCampusNavigation/
+│   │   │   │       │   ├── GetPublicCampusNavigationQuery.cs
+│   │   │   │       │   └── GetPublicCampusNavigationQueryHandler.cs
 │   │   │   │       ├── GetPublicGalleryItemDetail/
 │   │   │   │       │   ├── GetPublicGalleryItemDetailQuery.cs
 │   │   │   │       │   └── GetPublicGalleryItemDetailQueryHandler.cs
 │   │   │   │       ├── GetPublicGalleryMedia/
 │   │   │   │       │   ├── GetPublicGalleryMediaQuery.cs
 │   │   │   │       │   └── GetPublicGalleryMediaQueryHandler.cs
-│   │   │   │       └── GetPublicLocationGalleryItem/
-│   │   │   │           ├── GetPublicLocationGalleryItemQuery.cs
-│   │   │   │           └── GetPublicLocationGalleryItemQueryHandler.cs
+│   │   │   │       ├── GetPublicLocationGalleryItem/
+│   │   │   │       │   ├── GetPublicLocationGalleryItemQuery.cs
+│   │   │   │       │   └── GetPublicLocationGalleryItemQueryHandler.cs
+│   │   │   │       └── GetPublicLocationShowcase/
+│   │   │   │           ├── GetPublicLocationShowcaseQuery.cs
+│   │   │   │           └── GetPublicLocationShowcaseQueryHandler.cs
 │   │   │   └── Queries/
 │   │   │       ├── GetGalleryFilterOptions/
 │   │   │       │   ├── GetGalleryFilterOptionsQuery.cs
@@ -1186,6 +1237,10 @@ PEMS/
 │   │   │           └── ViewGalleryLocationListQueryHandler.cs
 │   │   ├── MeetingMinutes/
 │   │   │   └── Queries/
+│   │   │       ├── ExportMinutes/
+│   │   │       │   ├── ExportMinutesExcelQueryHandler.cs
+│   │   │       │   ├── ExportMinutesPdfQueryHandler.cs
+│   │   │       │   └── ExportMinutesQuery.cs
 │   │   │       ├── SearchAndFilterMinutes/
 │   │   │       │   ├── SearchAndFilterMinutesDto.cs
 │   │   │       │   ├── SearchAndFilterMinutesQuery.cs
@@ -1226,24 +1281,29 @@ PEMS/
 │   │   │   │   │   ├── PublishNewsCommandHandler.cs
 │   │   │   │   │   ├── PublishNewsCommandValidator.cs
 │   │   │   │   │   └── PublishNewsResponse.cs
+│   │   │   │   ├── TranslateNews/
+│   │   │   │   │   ├── TranslateNewsCommand.cs
+│   │   │   │   │   └── TranslateNewsCommandHandler.cs
 │   │   │   │   └── UploadNewsCoverImage/
 │   │   │   │       ├── UploadNewsCoverImageCommand.cs
 │   │   │   │       ├── UploadNewsCoverImageCommandHandler.cs
 │   │   │   │       └── UploadNewsCoverImageResponse.cs
-│   │   │   └── Queries/
-│   │   │       ├── GetEligibleVisitInstancesForNews/
-│   │   │       │   ├── GetEligibleVisitInstancesForNewsDto.cs
-│   │   │       │   ├── GetEligibleVisitInstancesForNewsQuery.cs
-│   │   │       │   └── GetEligibleVisitInstancesForNewsQueryHandler.cs
-│   │   │       ├── ViewNewsDetails/
-│   │   │       │   ├── ViewNewsDetailsDto.cs
-│   │   │       │   ├── ViewNewsDetailsQuery.cs
-│   │   │       │   └── ViewNewsDetailsQueryHandler.cs
-│   │   │       └── ViewNewsList/
-│   │   │           ├── ViewNewsListDto.cs
-│   │   │           ├── ViewNewsListQuery.cs
-│   │   │           ├── ViewNewsListQueryHandler.cs
-│   │   │           └── ViewNewsListQueryValidator.cs
+│   │   │   ├── Queries/
+│   │   │   │   ├── GetEligibleVisitInstancesForNews/
+│   │   │   │   │   ├── GetEligibleVisitInstancesForNewsDto.cs
+│   │   │   │   │   ├── GetEligibleVisitInstancesForNewsQuery.cs
+│   │   │   │   │   └── GetEligibleVisitInstancesForNewsQueryHandler.cs
+│   │   │   │   ├── ViewNewsDetails/
+│   │   │   │   │   ├── ViewNewsDetailsDto.cs
+│   │   │   │   │   ├── ViewNewsDetailsQuery.cs
+│   │   │   │   │   └── ViewNewsDetailsQueryHandler.cs
+│   │   │   │   └── ViewNewsList/
+│   │   │   │       ├── ViewNewsListDto.cs
+│   │   │   │       ├── ViewNewsListQuery.cs
+│   │   │   │       ├── ViewNewsListQueryHandler.cs
+│   │   │   │       └── ViewNewsListQueryValidator.cs
+│   │   │   └── Services/
+│   │   │       └── INewsTranslationService.cs
 │   │   ├── Notifications/
 │   │   │   ├── Commands/
 │   │   │   │   ├── MarkAllNotificationsAsRead/
@@ -1268,42 +1328,128 @@ PEMS/
 │   │   │           ├── GetMyUnreadNotificationCountQuery.cs
 │   │   │           ├── GetMyUnreadNotificationCountQueryHandler.cs
 │   │   │           └── UnreadNotificationCountResponse.cs
+│   │   ├── obj/   [excluded]
 │   │   ├── Partners/
+│   │   │   ├── Aliases/
+│   │   │   │   ├── Commands/
+│   │   │   │   │   ├── CreatePartnerAlias/
+│   │   │   │   │   │   ├── CreatePartnerAliasCommand.cs
+│   │   │   │   │   │   ├── CreatePartnerAliasCommandHandler.cs
+│   │   │   │   │   │   └── CreatePartnerAliasCommandValidator.cs
+│   │   │   │   │   └── DeactivatePartnerAlias/
+│   │   │   │   │       ├── DeactivatePartnerAliasCommand.cs
+│   │   │   │   │       └── DeactivatePartnerAliasCommandHandler.cs
+│   │   │   │   └── Queries/
+│   │   │   │       └── GetPartnerAliases/
+│   │   │   │           ├── GetPartnerAliasesQuery.cs
+│   │   │   │           └── GetPartnerAliasesQueryHandler.cs
 │   │   │   ├── Commands/
-│   │   │   │   ├── EditPartnerInformation/
-│   │   │   │   │   ├── EditPartnerInformationCommand.cs
-│   │   │   │   │   ├── EditPartnerInformationCommandHandler.cs
-│   │   │   │   │   ├── EditPartnerInformationCommandValidator.cs
-│   │   │   │   │   └── EditPartnerInformationResponse.cs
-│   │   │   │   └── ProcessPartnerCreationRequest/
-│   │   │   │       ├── ProcessPartnerCreationRequestCommand.cs
-│   │   │   │       ├── ProcessPartnerCreationRequestCommandHandler.cs
-│   │   │   │       ├── ProcessPartnerCreationRequestCommandValidator.cs
-│   │   │   │       └── ProcessPartnerCreationRequestResponse.cs
+│   │   │   │   ├── ApprovePartner/
+│   │   │   │   │   ├── ApprovePartnerCommand.cs
+│   │   │   │   │   └── ApprovePartnerCommandHandler.cs
+│   │   │   │   ├── CreatePartner/
+│   │   │   │   │   ├── CreatePartnerCommand.cs
+│   │   │   │   │   ├── CreatePartnerCommandHandler.cs
+│   │   │   │   │   └── CreatePartnerCommandValidator.cs
+│   │   │   │   ├── CreatePartnerFromGuest/
+│   │   │   │   │   ├── CreatePartnerFromGuestCommand.cs
+│   │   │   │   │   └── CreatePartnerFromGuestCommandHandler.cs
+│   │   │   │   ├── RejectPartner/
+│   │   │   │   │   ├── RejectPartnerCommand.cs
+│   │   │   │   │   ├── RejectPartnerCommandHandler.cs
+│   │   │   │   │   └── RejectPartnerCommandValidator.cs
+│   │   │   │   └── UpdatePartner/
+│   │   │   │       ├── UpdatePartnerCommand.cs
+│   │   │   │       ├── UpdatePartnerCommandHandler.cs
+│   │   │   │       └── UpdatePartnerCommandValidator.cs
+│   │   │   ├── Common/
+│   │   │   │   ├── PartnerAccess.cs
+│   │   │   │   ├── PartnerConstants.cs
+│   │   │   │   ├── PartnerDtos.cs
+│   │   │   │   ├── PartnerMatcher.cs
+│   │   │   │   └── PartnerNormalization.cs
+│   │   │   ├── Contacts/
+│   │   │   │   ├── Commands/
+│   │   │   │   │   ├── CreatePartnerContact/
+│   │   │   │   │   │   ├── CreatePartnerContactCommand.cs
+│   │   │   │   │   │   ├── CreatePartnerContactCommandHandler.cs
+│   │   │   │   │   │   └── CreatePartnerContactCommandValidator.cs
+│   │   │   │   │   ├── DeactivatePartnerContact/
+│   │   │   │   │   │   ├── DeactivatePartnerContactCommand.cs
+│   │   │   │   │   │   └── DeactivatePartnerContactCommandHandler.cs
+│   │   │   │   │   ├── SetPrimaryPartnerContact/
+│   │   │   │   │   │   ├── SetPrimaryPartnerContactCommand.cs
+│   │   │   │   │   │   └── SetPrimaryPartnerContactCommandHandler.cs
+│   │   │   │   │   └── UpdatePartnerContact/
+│   │   │   │   │       ├── UpdatePartnerContactCommand.cs
+│   │   │   │   │       ├── UpdatePartnerContactCommandHandler.cs
+│   │   │   │   │       └── UpdatePartnerContactCommandValidator.cs
+│   │   │   │   ├── Common/
+│   │   │   │   │   └── PartnerContactWriteSupport.cs
+│   │   │   │   └── Queries/
+│   │   │   │       └── GetPartnerContacts/
+│   │   │   │           ├── GetPartnerContactsQuery.cs
+│   │   │   │           └── GetPartnerContactsQueryHandler.cs
+│   │   │   ├── Documents/
+│   │   │   │   ├── Commands/
+│   │   │   │   │   └── UploadPartnerDocument/
+│   │   │   │   │       ├── UploadPartnerDocumentCommand.cs
+│   │   │   │   │       ├── UploadPartnerDocumentCommandHandler.cs
+│   │   │   │   │       └── UploadPartnerDocumentCommandValidator.cs
+│   │   │   │   └── Queries/
+│   │   │   │       └── GetPartnerDocuments/
+│   │   │   │           ├── GetPartnerDocumentsQuery.cs
+│   │   │   │           └── GetPartnerDocumentsQueryHandler.cs
 │   │   │   ├── Dtos/
 │   │   │   │   └── README.md
 │   │   │   ├── Mappings/
 │   │   │   │   └── PartnersMappingProfile.cs
 │   │   │   ├── Queries/
-│   │   │   │   ├── SearchPartners/
-│   │   │   │   │   ├── SearchPartnersDto.cs
-│   │   │   │   │   ├── SearchPartnersQuery.cs
-│   │   │   │   │   └── SearchPartnersQueryHandler.cs
-│   │   │   │   ├── SearchPublicPartnerOptions/
-│   │   │   │   │   ├── PublicPartnerOptionDto.cs
-│   │   │   │   │   ├── SearchPublicPartnerOptionsQuery.cs
-│   │   │   │   │   ├── SearchPublicPartnerOptionsQueryHandler.cs
-│   │   │   │   │   └── SearchPublicPartnerOptionsQueryValidator.cs
-│   │   │   │   ├── ViewPartnerDetails/
-│   │   │   │   │   ├── ViewPartnerDetailsDto.cs
-│   │   │   │   │   ├── ViewPartnerDetailsQuery.cs
-│   │   │   │   │   └── ViewPartnerDetailsQueryHandler.cs
-│   │   │   │   └── ViewPartnerLists/
-│   │   │   │       ├── ViewPartnerListsDto.cs
-│   │   │   │       ├── ViewPartnerListsQuery.cs
-│   │   │   │       └── ViewPartnerListsQueryHandler.cs
-│   │   │   └── Rules/
-│   │   │       └── README.md
+│   │   │   │   ├── GetPartnerDetail/
+│   │   │   │   │   ├── GetPartnerDetailQuery.cs
+│   │   │   │   │   └── GetPartnerDetailQueryHandler.cs
+│   │   │   │   ├── GetPartners/
+│   │   │   │   │   ├── GetPartnersQuery.cs
+│   │   │   │   │   └── GetPartnersQueryHandler.cs
+│   │   │   │   ├── GetPendingPartnerApprovals/
+│   │   │   │   │   ├── GetPendingPartnerApprovalsQuery.cs
+│   │   │   │   │   └── GetPendingPartnerApprovalsQueryHandler.cs
+│   │   │   │   ├── GetPublicPartnerCountries/
+│   │   │   │   │   ├── GetPublicPartnerCountriesQuery.cs
+│   │   │   │   │   └── GetPublicPartnerCountriesQueryHandler.cs
+│   │   │   │   ├── GetPublicPartnerDetail/
+│   │   │   │   │   ├── GetPublicPartnerDetailQuery.cs
+│   │   │   │   │   └── GetPublicPartnerDetailQueryHandler.cs
+│   │   │   │   ├── GetPublicPartnerMedia/
+│   │   │   │   │   ├── GetPublicPartnerMediaQuery.cs
+│   │   │   │   │   └── GetPublicPartnerMediaQueryHandler.cs
+│   │   │   │   ├── GetPublicPartners/
+│   │   │   │   │   ├── GetPublicPartnersQuery.cs
+│   │   │   │   │   └── GetPublicPartnersQueryHandler.cs
+│   │   │   │   ├── MatchPartner/
+│   │   │   │   │   ├── MatchPartnerQuery.cs
+│   │   │   │   │   └── MatchPartnerQueryHandler.cs
+│   │   │   │   └── SearchPublicPartnerOptions/
+│   │   │   │       ├── PublicPartnerOptionDto.cs
+│   │   │   │       ├── SearchPublicPartnerOptionsQuery.cs
+│   │   │   │       ├── SearchPublicPartnerOptionsQueryHandler.cs
+│   │   │   │       └── SearchPublicPartnerOptionsQueryValidator.cs
+│   │   │   ├── Rules/
+│   │   │   │   └── README.md
+│   │   │   └── VisitLinks/
+│   │   │       ├── Commands/
+│   │   │       │   ├── CreateOrUpdateVisitGuestPartnerLink/
+│   │   │       │   │   ├── CreateOrUpdateVisitGuestPartnerLinkCommand.cs
+│   │   │       │   │   └── CreateOrUpdateVisitGuestPartnerLinkCommandHandler.cs
+│   │   │       │   └── RejectVisitGuestPartnerSuggestion/
+│   │   │       │       ├── RejectVisitGuestPartnerSuggestionCommand.cs
+│   │   │       │       └── RejectVisitGuestPartnerSuggestionCommandHandler.cs
+│   │   │       ├── Common/
+│   │   │       │   └── VisitLinkSupport.cs
+│   │   │       └── Queries/
+│   │   │           └── GetVisitGuestPartnerLinks/
+│   │   │               ├── GetVisitGuestPartnerLinksQuery.cs
+│   │   │               └── GetVisitGuestPartnerLinksQueryHandler.cs
 │   │   ├── Profiles/
 │   │   │   ├── Commands/
 │   │   │   │   ├── ChangePassword/
@@ -1342,6 +1488,9 @@ PEMS/
 │   │   │   ├── Mappings/
 │   │   │   │   └── PublicContentMappingProfile.cs
 │   │   │   ├── Queries/
+│   │   │   │   ├── GetPublicNewsFile/
+│   │   │   │   │   ├── GetPublicNewsFileQuery.cs
+│   │   │   │   │   └── GetPublicNewsFileQueryHandler.cs
 │   │   │   │   ├── SearchInformation/
 │   │   │   │   │   ├── SearchInformationDto.cs
 │   │   │   │   │   ├── SearchInformationQuery.cs
@@ -1387,6 +1536,18 @@ PEMS/
 │   │   │       └── README.md
 │   │   ├── Reports/
 │   │   │   ├── Commands/
+│   │   │   │   ├── ExportDeptLeaderInvoice/
+│   │   │   │   │   ├── ExportDeptLeaderInvoiceCommand.cs
+│   │   │   │   │   └── ExportDeptLeaderInvoiceCommandHandler.cs
+│   │   │   │   ├── ExportDeptLeaderReport/
+│   │   │   │   │   ├── ExportDeptLeaderReportCommand.cs
+│   │   │   │   │   └── ExportDeptLeaderReportCommandHandler.cs
+│   │   │   │   ├── ExportHoReport/
+│   │   │   │   │   ├── ExportHoReportCommand.cs
+│   │   │   │   │   └── ExportHoReportCommandHandler.cs
+│   │   │   │   ├── ExportStaffLeaderReport/
+│   │   │   │   │   ├── ExportStaffLeaderReportCommand.cs
+│   │   │   │   │   └── ExportStaffLeaderReportCommandHandler.cs
 │   │   │   │   └── ExportStatisticsReport/
 │   │   │   │       ├── ExportStatisticsReportCommand.cs
 │   │   │   │       ├── ExportStatisticsReportCommandHandler.cs
@@ -1397,16 +1558,32 @@ PEMS/
 │   │   │       │   ├── FilterDashboardByTimeDto.cs
 │   │   │       │   ├── FilterDashboardByTimeQuery.cs
 │   │   │       │   └── FilterDashboardByTimeQueryHandler.cs
+│   │   │       ├── GetDeptLeaderInvoiceData/
+│   │   │       │   ├── GetDeptLeaderInvoiceItemsQuery.cs
+│   │   │       │   ├── GetDeptLeaderInvoiceItemsQueryHandler.cs
+│   │   │       │   ├── GetDeptLeaderInvoiceVisitsQuery.cs
+│   │   │       │   └── GetDeptLeaderInvoiceVisitsQueryHandler.cs
+│   │   │       ├── GetDeptLeaderReportOverview/
+│   │   │       │   ├── DeptLeaderReportOverviewDto.cs
+│   │   │       │   ├── GetDeptLeaderReportOverviewQuery.cs
+│   │   │       │   └── GetDeptLeaderReportOverviewQueryHandler.cs
+│   │   │       ├── GetHoReportOverview/
+│   │   │       │   ├── GetHoReportOverviewQuery.cs
+│   │   │       │   ├── GetHoReportOverviewQueryHandler.cs
+│   │   │       │   └── HoReportOverviewDto.cs
+│   │   │       ├── GetStaffLeaderReportOverview/
+│   │   │       │   ├── GetStaffLeaderReportOverviewQuery.cs
+│   │   │       │   ├── GetStaffLeaderReportOverviewQueryHandler.cs
+│   │   │       │   └── StaffLeaderReportOverviewDto.cs
 │   │   │       └── ViewDashboardStatistics/
 │   │   │           ├── ViewDashboardStatisticsDto.cs
 │   │   │           ├── ViewDashboardStatisticsQuery.cs
 │   │   │           └── ViewDashboardStatisticsQueryHandler.cs
-│   │   ├── bin/   [excluded]
-│   │   ├── obj/   [excluded]
 │   │   ├── DependencyInjection.cs
 │   │   └── PEMS.Application.csproj
 │   ├── PEMS.Domain/
 │   │   ├── .tmp-build/   [excluded]
+│   │   ├── bin/   [excluded]
 │   │   ├── Common/
 │   │   │   ├── AuditableEntity.cs
 │   │   │   ├── BaseEntity.cs
@@ -1432,7 +1609,8 @@ PEMS/
 │   │   │   │   ├── ApiConfiguration.cs
 │   │   │   │   ├── ApiConfigurationHeader.cs
 │   │   │   │   ├── ApiRequestLog.cs
-│   │   │   │   └── ApiUsageQuota.cs
+│   │   │   │   ├── ApiUsageQuota.cs
+│   │   │   │   └── BusinessCardOcrJob.cs
 │   │   │   ├── Calendar/
 │   │   │   │   ├── CalendarEvent.cs
 │   │   │   │   ├── CalendarEventAttendee.cs
@@ -1487,7 +1665,9 @@ PEMS/
 │   │   │   │   └── Notification.cs
 │   │   │   ├── Partners/
 │   │   │   │   ├── Partner.cs
-│   │   │   │   └── Partnercontact.cs
+│   │   │   │   ├── PartnerAlias.cs
+│   │   │   │   ├── Partnercontact.cs
+│   │   │   │   └── VisitGuestPartnerLink.cs
 │   │   │   └── Users/
 │   │   │       ├── AuditLog.cs
 │   │   │       ├── AuditLogChange.cs
@@ -1533,91 +1713,115 @@ PEMS/
 │   │   │   ├── ResourceRequestApprovedEvent.cs
 │   │   │   ├── VisitRequestApprovedEvent.cs
 │   │   │   └── VisitRequestSubmittedEvent.cs
+│   │   ├── obj/   [excluded]
 │   │   ├── ValueObjects/
 │   │   │   ├── Address.cs
 │   │   │   ├── DateRange.cs
 │   │   │   ├── EmailAddress.cs
 │   │   │   ├── FileMetadata.cs
 │   │   │   └── PhoneNumber.cs
-│   │   ├── bin/   [excluded]
-│   │   ├── obj/   [excluded]
 │   │   └── PEMS.Domain.csproj
-│   ├── PEMS.Infrastructure/
-│   │   ├── .tmp-build/   [excluded]
-│   │   ├── BackgroundJobs/
-│   │   │   └── VisitReminderDispatchHostedService.cs
-│   │   ├── Common/
-│   │   │   └── DateTimeService.cs
-│   │   ├── Email/
-│   │   │   ├── EmailActionTokenService.cs
-│   │   │   ├── EmailService.cs
-│   │   │   ├── EmailTemplateRenderer.cs
-│   │   │   └── SmtpEmailSender.cs
-│   │   ├── ExternalServices/
-│   │   │   ├── ApiClient/
-│   │   │   │   └── ExternalApiClient.cs
-│   │   │   ├── Calendar/
-│   │   │   │   └── CalendarIntegrationService.cs
-│   │   │   ├── FaceRecognition/
-│   │   │   │   └── FaceRecognitionService.cs
-│   │   │   └── Ocr/
-│   │   │       └── OcrService.cs
-│   │   ├── FileStorage/
-│   │   │   ├── GoogleDrive/
-│   │   │   │   ├── GoogleDriveFolderResolver.cs
-│   │   │   │   └── GoogleDriveStorageService.cs
-│   │   │   ├── CloudFileStorageService.cs
-│   │   │   ├── FileValidationService.cs
-│   │   │   ├── LocalFileStorageService.cs
-│   │   │   └── VirusScanService.cs
-│   │   ├── Idempotency/
-│   │   │   └── IdempotencyService.cs
-│   │   ├── Identity/
-│   │   │   ├── CurrentUserService.cs
-│   │   │   ├── FeidIdentityVerifier.cs
-│   │   │   ├── GoogleTokenValidator.cs
-│   │   │   ├── JwtTokenService.cs
-│   │   │   ├── NotificationService.cs
-│   │   │   ├── OtpService.cs
-│   │   │   ├── OwnershipChecker.cs
-│   │   │   ├── PasswordHasher.cs
-│   │   │   ├── RefreshTokenStore.cs
-│   │   │   ├── SecureTokenGenerator.cs
-│   │   │   └── SessionService.cs
-│   │   ├── Logging/
-│   │   │   ├── ApiRequestLogService.cs
-│   │   │   ├── AuditLogService.cs
-│   │   │   └── SecurityAuditService.cs
-│   │   ├── Persistence/
-│   │   │   ├── Configurations/
-│   │   │   │   └── UserConfiguration.cs
-│   │   │   ├── Repositories/
-│   │   │   │   ├── CampusRepository.cs
-│   │   │   │   ├── DelegationRepository.cs
-│   │   │   │   ├── DocumentRepository.cs
-│   │   │   │   ├── GenericRepository.cs
-│   │   │   │   ├── PartnerRepository.cs
-│   │   │   │   ├── ReportRepository.cs
-│   │   │   │   └── UserRepository.cs
-│   │   │   ├── ApplicationDbContext.cs
-│   │   │   └── ApplicationDbContextFactory.cs
-│   │   ├── RateLimiting/
-│   │   │   ├── InMemoryRateLimitStore.cs
-│   │   │   ├── RateLimitService.cs
-│   │   │   └── RedisRateLimitStore.cs
-│   │   ├── Security/
-│   │   │   └── HtmlSanitizerService.cs
-│   │   ├── Services/
-│   │   │   ├── ApprovalRoutingService.cs
-│   │   │   ├── UserProvisionService.cs
-│   │   │   └── VisitRequestService.cs
-│   │   ├── bin/   [excluded]
-│   │   ├── obj/   [excluded]
-│   │   ├── DependencyInjection.cs
-│   │   └── PEMS.Infrastructure.csproj
-│   ├── handlers.txt
-│   └── handlers_utf8.txt
+│   └── PEMS.Infrastructure/
+│       ├── .tmp-build/   [excluded]
+│       ├── BackgroundJobs/
+│       │   └── VisitReminderDispatchHostedService.cs
+│       ├── bin/   [excluded]
+│       ├── Common/
+│       │   └── DateTimeService.cs
+│       ├── Email/
+│       │   ├── EmailActionTokenService.cs
+│       │   ├── EmailService.cs
+│       │   ├── EmailTemplateRenderer.cs
+│       │   └── SmtpEmailSender.cs
+│       ├── ExternalServices/
+│       │   ├── ApiClient/
+│       │   │   └── ExternalApiClient.cs
+│       │   ├── Calendar/
+│       │   │   └── CalendarIntegrationService.cs
+│       │   ├── FaceRecognition/
+│       │   │   └── FaceRecognitionService.cs
+│       │   └── Ocr/
+│       │       └── OcrService.cs
+│       ├── FileStorage/
+│       │   ├── GoogleDrive/
+│       │   │   ├── GoogleDriveFolderResolver.cs
+│       │   │   └── GoogleDriveStorageService.cs
+│       │   ├── CloudFileStorageService.cs
+│       │   ├── FileValidationService.cs
+│       │   ├── LocalFileStorageService.cs
+│       │   └── VirusScanService.cs
+│       ├── Idempotency/
+│       │   └── IdempotencyService.cs
+│       ├── Identity/
+│       │   ├── CurrentUserService.cs
+│       │   ├── FeidIdentityVerifier.cs
+│       │   ├── GoogleTokenValidator.cs
+│       │   ├── JwtTokenService.cs
+│       │   ├── NotificationService.cs
+│       │   ├── OtpService.cs
+│       │   ├── OwnershipChecker.cs
+│       │   ├── PasswordHasher.cs
+│       │   ├── RefreshTokenStore.cs
+│       │   ├── SecureTokenGenerator.cs
+│       │   └── SessionService.cs
+│       ├── Logging/
+│       │   ├── ApiRequestLogService.cs
+│       │   ├── AuditLogService.cs
+│       │   └── SecurityAuditService.cs
+│       ├── obj/   [excluded]
+│       ├── Ocr/
+│       │   ├── BusinessCardTextParser.cs
+│       │   ├── GoogleDocumentAiBusinessCardOcrProvider.cs
+│       │   ├── GoogleServiceAccountTokenProvider.cs
+│       │   ├── InMemoryBusinessCardOcrThrottle.cs
+│       │   └── OcrCredentialResolver.cs
+│       ├── Persistence/
+│       │   ├── Configurations/
+│       │   │   └── UserConfiguration.cs
+│       │   ├── Repositories/
+│       │   │   ├── CampusRepository.cs
+│       │   │   ├── DelegationRepository.cs
+│       │   │   ├── DocumentRepository.cs
+│       │   │   ├── GenericRepository.cs
+│       │   │   ├── PartnerRepository.cs
+│       │   │   ├── ReportRepository.cs
+│       │   │   └── UserRepository.cs
+│       │   ├── ApplicationDbContext.cs
+│       │   └── ApplicationDbContextFactory.cs
+│       ├── RateLimiting/
+│       │   ├── InMemoryRateLimitStore.cs
+│       │   ├── RateLimitService.cs
+│       │   └── RedisRateLimitStore.cs
+│       ├── Security/
+│       │   ├── AesGcmSecretProtector.cs
+│       │   └── HtmlSanitizerService.cs
+│       ├── Services/
+│       │   ├── ApprovalRoutingService.cs
+│       │   ├── UserProvisionService.cs
+│       │   └── VisitRequestService.cs
+│       ├── Translation/
+│       │   └── GoogleNewsTranslationService.cs
+│       ├── DependencyInjection.cs
+│       └── PEMS.Infrastructure.csproj
 ├── docs/
+│   ├── account-management/
+│   │   ├── PROMPT_UC95_UC99_ACCOUNT_LIST_SEARCH_FILTER_PEMS.md
+│   │   ├── UC_StaffLeader_Related_Visitor_Accounts_Tab.md
+│   │   └── UC95_UC99_ACCOUNT_LIST_SEARCH_FILTER.md
+│   ├── architecture/
+│   │   └── PROJECT_STRUCTURE_FULL.md
+│   ├── auth/
+│   │   ├── AUTH_ERROR_CODES.md
+│   │   ├── AUTH_HARDENING_REPORT.md
+│   │   └── AUTH_HARDENING_TEST_CASES.md
+│   ├── authentication/
+│   │   ├── PEMS_AUTH_HARDENING_REMAINING_PROMPT.md
+│   │   ├── PEMS_CORE_AUTH_BACKEND_DUAL_PORTAL_IMPLEMENTATION_PROMPT.md
+│   │   ├── PEMS_ROLE_BASED_FRONTEND_RBAC_PROMPT.md
+│   │   ├── PROMPT_IMPLEMENT_AUTH_HARDENING_TODOS.md
+│   │   └── PROMPT_SUA_LOGIN_SSO_FIRST_DUAL_PORTAL_PEMS.md
+│   ├── business-rules/
+│   │   └── department-task-logistics-email-token-flow.md
 │   ├── CampusManagement/
 │   │   ├── 00_CAMPUS_MANAGEMENT_COMMON_RULES_HO.md
 │   │   ├── 01_UC82_VIEW_CAMPUS_LIST_HO.md
@@ -1626,16 +1830,66 @@ PEMS/
 │   │   ├── 04_UC84_VIEW_CAMPUS_DETAILS_HO.md
 │   │   ├── 05_UC85_UPDATE_CAMPUS_HO.md
 │   │   └── 06_UC86_MANAGE_CAMPUS_STATUS_HO.md
+│   ├── ChangeSauHopChiQUyen/
+│   │   ├── PEMS_CAMPUS_INDEPENDENT_APPROVAL_IMPLEMENTATION_PLAN.md
+│   │   ├── PEMS_VISITOR_EDIT_RESUBMIT_CANCEL24_IMPLEMENTATION_PLAN.md
+│   │   └── PEMS_VISITOR_EDIT_RESUBMIT_CANCEL24_IMPLEMENTATION_REPORT.md
+│   ├── dashboard/
+│   │   ├── PEMS_HO_Dashboard_Redesign_Prompt.md
+│   │   └── PROMPT_DASHBOARD_CALENDAR_STAFF_STAFF_LEADER.md
+│   ├── database/
+│   │   ├── scripts/
+│   │   │   ├── DbSeeder/
+│   │   │   │   ├── bin/   [excluded]
+│   │   │   │   └── obj/   [excluded]
+│   │   │   └── pems_full_v10_new_final_campus_independent_approval_self_host_transport_note_resubmit_agenda_cancel24_FULL_UPDATED.sql
+│   │   ├── Table/
+│   │   │   └── PEMS_v10_NEW_FINAL_SQL_TABLE_FIELD_DICTIONARY_MATCHED.docx
+│   │   ├── DATABASE_SCHEMA_v8_4_refined_v6_v10_no_dynamic_permissions_FULL_UPDATED.md
+│   │   └── PROMPT_UPDATE_CODE_FOR_SQL_V10_PEMS.md
+│   ├── delegation/
+│   │   ├── invitation/
+│   │   │   └── PROMPT_UPDATE_STUDENT_STAFF_INVITATION_CONTRIBUTION.md
+│   │   ├── processFormByHost/
+│   │   │   └── UC_HOST_VISIT_PROCESS_INVITATION_EMAIL_FLOW.md
+│   │   ├── setup delegation/
+│   │   │   └── PEMS_VISIT_DETAIL_PROCESS_LOGIC_REQUIREMENTS.md
+│   │   ├── status/
+│   │   │   └── PEMS_VISIT_LIFECYCLE_LOGISTICS_STATUS_REQUIREMENTS.md
+│   │   ├── UC17_submitform/
+│   │   │   ├── PROMPT_AUDIT_SYNC_UC17_WITH_SQL_FULL.md
+│   │   │   ├── PROMPT_FIX_UC17_CONTACT_EMAIL_NON_VISITOR_CONFLICT.md
+│   │   │   ├── PROMPT_FIX_UC17_CONTACT_PERSON_ACCOUNT_SCOPE_AND_TSC_FINAL.md
+│   │   │   ├── PROMPT_FIX_UC17_PUBLIC_FORM_UI_AND_SQL_ALIGNMENT (1).md
+│   │   │   ├── uc17 submit form.md
+│   │   │   └── UC17_SUBMIT_VISIT_REQUEST_SYNC_REPORT.md
+│   │   ├── view form to approve/
+│   │   │   ├── PEMS_MULTI_CAMPUS_EXPANDABLE_ROW_OPTION_A.md
+│   │   │   ├── PROMPT_IMPLEMENT_APPROVE_REJECT_CANCEL_REASON_VISIBILITY_PEMS.md
+│   │   │   └── PROMPT_IMPLEMENT_PRE_APPROVAL_VISIT_REQUEST_REVIEW_PEMS.md
+│   │   ├── view list visiting/
+│   │   │   ├── PEMS_VISIT_PROCESS_ROLE_SPLIT_REQUIREMENTS.md
+│   │   │   ├── PROMPT_FIX_HO_SINGLE_CAMPUS_VISIBILITY_CODE.md
+│   │   │   ├── PROMPT_FIX_VISIT_MANAGEMENT_HOST_STATUS_SEARCH_SORT_SQL_ALIGNMENT.md
+│   │   │   ├── PROMPT_FIX_VISIT_ROLE_UI_FILTERS_AND_SEED_LOGIC.md
+│   │   │   ├── PROMPT_IMPLEMENT_VISIT_REQUEST_ROLE_TABS_PEMS.md
+│   │   │   ├── PROMPT_UPDATE_ROLE_BASED_VISIT_FILTERS_PEMS.md
+│   │   │   ├── PROMPT_UPDATE_VISIT_PARTICIPANTS_4_ROLES.md
+│   │   │   └── PROMPT_UPDATE_VISIT_REQUEST_ROLE_BASED_LOGIC.md
+│   │   ├── visitor-view-detail/
+│   │   │   └── PROMPT_VISITOR_VISIT_DETAIL_PAGE.md
+│   │   └── PEMS_DELEGATION_VISIT_MANAGEMENT_UPDATE_REQUIREMENTS.md
 │   ├── Department/
 │   │   ├── PEMS_DEPARTMENT_PERSONNEL_SHORT_FUNCTION_PROMPT.md
-│   │   ├── PEMS_DEPTLEAD_DASHBOARD_EMAIL_LOCAL_DRAFT_PROMPT.md
-│   │   ├── PEMS_DEPTLEAD_UI_RESTORE_ACTIONS_PROMPT - Copy.md
-│   │   ├── PEMS_DEPTLEAD_UI_RESTORE_ACTIONS_PROMPT.md
 │   │   ├── PEMS_DEPT_LEADER_ASSIGNMENT_PROGRESS_UNIFIED_PROMPT.md
 │   │   ├── PEMS_DEPT_LEADER_LOGISTICS_ASSIGNMENT_FLOW_PROMPT.md
 │   │   ├── PEMS_DEPT_LEADER_STATUS_LOGIC_UPDATE_PROMPT.md
 │   │   ├── PEMS_DEPT_RECEPTION_TASKS_REAL_DATA_PROMPT.md
-│   │   └── PEMS_EMAIL_MANAGEMENT_REAL_DATA_WORKFLOW_PROMPT.md
+│   │   ├── PEMS_DEPTLEAD_DASHBOARD_EMAIL_LOCAL_DRAFT_PROMPT.md
+│   │   ├── PEMS_DEPTLEAD_UI_RESTORE_ACTIONS_PROMPT - Copy.md
+│   │   ├── PEMS_DEPTLEAD_UI_RESTORE_ACTIONS_PROMPT.md
+│   │   ├── PEMS_EMAIL_MANAGEMENT_REAL_DATA_WORKFLOW_PROMPT.md
+│   │   └── PROMPT_FIX_DEPT_STAFF_ASSIGNED_TASKS_UI_FLOW_PEMS.md
 │   ├── Department_Staff_Leader/
 │   │   ├── UC-101_ADD_NEW_DEPARTMENT_STAFF_LEADER.md
 │   │   ├── UC-102_UPDATE_DEPARTMENT_STAFF_LEADER.md
@@ -1643,23 +1897,45 @@ PEMS/
 │   │   ├── UC-104_VIEW_DEPARTMENT_LIST_STAFF_LEADER.md
 │   │   ├── UC-105_VIEW_DEPARTMENT_DETAILS_STAFF_LEADER.md
 │   │   └── UC-106_MANAGE_DEPARTMENT_STATUS_STAFF_LEADER.md
-│   ├── GUIDE CLAUDE/
-│   │   ├── FRONTEND/
-│   │   │   └── PEMS_UI_DESIGN_SYSTEM_PROMPT.md
-│   │   ├── architecture/
-│   │   │   └── CLEAN_ARCHITECTURE.md
-│   │   └── PEMS_CLAUDE_PROJECT_INSTRUCTIONS_v8_4_refined_v6_v10_FULL_UPDATED.md
+│   ├── document/
+│   │   ├── PROMPT_DOCUMENT_DETAIL_DYNAMIC_BY_OWNER_TYPE.md
+│   │   ├── PROMPT_FIX_DOCUMENT_MANAGEMENT_PAGE_PEMS.md
+│   │   └── PROMPT_STAFF_LEADER_DOCUMENT_MANAGEMENT_CAMPUS_SCOPE.md
+│   ├── feedback/
+│   │   ├── FEEDBACK_MANAGEMENT_UI_PROPOSAL_AND_AI_PROMPT.md
+│   │   ├── PROMPT_FEEDBACK_HANDOVER_UI_COMPACT_PEMS.md
+│   │   ├── PROMPT_FIX_FEEDBACK_MANAGEMENT_PAGE_PEMS.md
+│   │   └── PROMPT_FIX_FEEDBACK_MANAGEMENT_SCOPE_FILTER_DETAIL.md
 │   ├── GalleryManagement/
-│   │   ├── PROMPT_UI_PUBLIC_GALLERY_LOCATION_GRID_REDESIGN.md
+│   │   ├── PROMPT_GALLERY_GOOGLE_DRIVE_FOLDER_ROUTING_ONLY.md
+│   │   ├── PROMPT_UI_PUBLIC_GALLERY_AREA_SHOWCASE.md
+│   │   ├── PROMPT_UI_PUBLIC_GALLERY_LOCATION_SHOWCASE_MEDIA_AND_DELEGATION.md
 │   │   ├── PROMPT_UPDATE_GALLERY_ALLOW_MULTIPLE_ITEMS_PER_LOCATION.md
+│   │   ├── PROMPT_UPDATE_GALLERY_AREA_LOCATION_COVER_AND_ITEM_TYPE.md
 │   │   ├── UC_Public_VisitFPTU_Gallery.md
-│   │   ├── UC_Public_VisitFPTU_Gallery_Location_Grid.md
 │   │   ├── UC_Quan_Ly_Khu_Vuc_Gallery_UPDATED_FINAL.md
 │   │   └── UC_Quan_Ly_VisitFPTU_Gallery.md
 │   ├── GoogleDrive/
 │   │   ├── PEMS_GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN_FLOW.md
 │   │   ├── PEMS_GOOGLE_DRIVE_STORAGE_FOUNDATION_REFACTOR_FOR_FUTURE_UPLOADS.md
 │   │   └── PEMS_GOOGLE_DRIVE_UPLOAD_FOUNDATION_DONE_AND_HOWTO.md
+│   ├── GUIDE CLAUDE/
+│   │   ├── architecture/
+│   │   │   └── CLEAN_ARCHITECTURE.md
+│   │   ├── FRONTEND/
+│   │   │   └── PEMS_UI_DESIGN_SYSTEM_PROMPT.md
+│   │   └── PEMS_CLAUDE_PROJECT_INSTRUCTIONS_v8_4_refined_v6_v10_FULL_UPDATED.md
+│   ├── minute/
+│   │   └── PROMPT_FIX_MINUTES_MANAGEMENT_SCOPE_FILTER_DETAIL_PDF.md
+│   ├── News-Canh/
+│   │   └── PEMS_NEWS_FULL_IMPLEMENTATION_PLAN.md
+│   ├── PARTNER_canh/
+│   │   ├── 00_PEMS_PARTNER_AND_OCR_MASTER_PLAN.md
+│   │   ├── 01_PEMS_PARTNER_MODULE_FULL_PROMPT.md
+│   │   └── 02_PEMS_BUSINESS_CARD_OCR_API_CONFIG_PROMPT.md
+│   ├── permissions/
+│   │   ├── PERMISSION_MATRIX.md
+│   │   └── PERMISSION_RULES.md
 │   ├── ProfileManagement/
 │   │   ├── 00_README_PROFILE_UC_IMPLEMENTATION.md
 │   │   ├── 01_UC14_VIEW_PROFILE_SPEC.md
@@ -1677,80 +1953,14 @@ PEMS/
 │   │   ├── PROMPT_CODE_UC63_CREATE_FAQ_BACKEND.md
 │   │   ├── PROMPT_CODE_UC64_UPDATE_FAQ_BACKEND.md
 │   │   └── PROMPT_CODE_UC88_VIEW_NEWS_LIST_BACKEND.md
-│   ├── account-management/
-│   │   ├── PROMPT_UC95_UC99_ACCOUNT_LIST_SEARCH_FILTER_PEMS.md
-│   │   ├── UC95_UC99_ACCOUNT_LIST_SEARCH_FILTER.md
-│   │   └── UC_StaffLeader_Related_Visitor_Accounts_Tab.md
-│   ├── architecture/
-│   │   └── PROJECT_STRUCTURE_FULL.md
-│   ├── auth/
-│   │   ├── AUTH_ERROR_CODES.md
-│   │   ├── AUTH_HARDENING_REPORT.md
-│   │   └── AUTH_HARDENING_TEST_CASES.md
-│   ├── authentication/
-│   │   ├── PEMS_AUTH_HARDENING_REMAINING_PROMPT.md
-│   │   ├── PEMS_CORE_AUTH_BACKEND_DUAL_PORTAL_IMPLEMENTATION_PROMPT.md
-│   │   ├── PEMS_ROLE_BASED_FRONTEND_RBAC_PROMPT.md
-│   │   ├── PROMPT_IMPLEMENT_AUTH_HARDENING_TODOS.md
-│   │   └── PROMPT_SUA_LOGIN_SSO_FIRST_DUAL_PORTAL_PEMS.md
-│   ├── business-rules/
-│   │   └── department-task-logistics-email-token-flow.md
-│   ├── database/
-│   │   ├── Table/
-│   │   │   └── PEMS_v8_4_refined_v6_v10_FULL_SQL_TABLE_FIELD_DICTIONARY.docx
-│   │   ├── scripts/
-│   │   │   ├── DbSeeder/
-│   │   │   │   ├── bin/   [excluded]
-│   │   │   │   ├── obj/   [excluded]
-│   │   │   │   ├── DbSeeder.csproj
-│   │   │   │   └── Program.cs
-│   │   │   ├── cleanup_expired_user_sessions.sql
-│   │   │   ├── pems_full_v10_new_final_visit_lifecycle_cancel_rules_fixed.sql
-│   │   │   └── seed_visitor_closed_news_feedback.sql
-│   │   ├── DATABASE_SCHEMA_v8_4_refined_v6_v10_no_dynamic_permissions_FULL_UPDATED.md
-│   │   └── PROMPT_UPDATE_CODE_FOR_SQL_V10_PEMS.md
-│   ├── delegation/
-│   │   ├── UC17_submitform/
-│   │   │   ├── PROMPT_AUDIT_SYNC_UC17_WITH_SQL_FULL.md
-│   │   │   ├── PROMPT_FIX_UC17_CONTACT_EMAIL_NON_VISITOR_CONFLICT.md
-│   │   │   ├── PROMPT_FIX_UC17_CONTACT_PERSON_ACCOUNT_SCOPE_AND_TSC_FINAL.md
-│   │   │   ├── PROMPT_FIX_UC17_PUBLIC_FORM_UI_AND_SQL_ALIGNMENT (1).md
-│   │   │   ├── UC17_SUBMIT_VISIT_REQUEST_SYNC_REPORT.md
-│   │   │   └── uc17 submit form.md
-│   │   ├── processFormByHost/
-│   │   │   └── UC_HOST_VISIT_PROCESS_INVITATION_EMAIL_FLOW.md
-│   │   ├── setup delegation/
-│   │   │   └── PEMS_VISIT_DETAIL_PROCESS_LOGIC_REQUIREMENTS.md
-│   │   ├── status/
-│   │   │   └── PEMS_VISIT_LIFECYCLE_LOGISTICS_STATUS_REQUIREMENTS.md
-│   │   ├── view form to approve/
-│   │   │   ├── PEMS_MULTI_CAMPUS_EXPANDABLE_ROW_OPTION_A.md
-│   │   │   ├── PROMPT_IMPLEMENT_APPROVE_REJECT_CANCEL_REASON_VISIBILITY_PEMS.md
-│   │   │   └── PROMPT_IMPLEMENT_PRE_APPROVAL_VISIT_REQUEST_REVIEW_PEMS.md
-│   │   ├── view list visiting/
-│   │   │   ├── PEMS_VISIT_PROCESS_ROLE_SPLIT_REQUIREMENTS.md
-│   │   │   ├── PROMPT_FIX_HO_SINGLE_CAMPUS_VISIBILITY_CODE.md
-│   │   │   ├── PROMPT_FIX_VISIT_MANAGEMENT_HOST_STATUS_SEARCH_SORT_SQL_ALIGNMENT.md
-│   │   │   ├── PROMPT_FIX_VISIT_ROLE_UI_FILTERS_AND_SEED_LOGIC.md
-│   │   │   ├── PROMPT_IMPLEMENT_VISIT_REQUEST_ROLE_TABS_PEMS.md
-│   │   │   ├── PROMPT_UPDATE_ROLE_BASED_VISIT_FILTERS_PEMS.md
-│   │   │   ├── PROMPT_UPDATE_VISIT_PARTICIPANTS_4_ROLES.md
-│   │   │   └── PROMPT_UPDATE_VISIT_REQUEST_ROLE_BASED_LOGIC.md
-│   │   ├── visitor-view-detail/
-│   │   │   └── PROMPT_VISITOR_VISIT_DETAIL_PAGE.md
-│   │   └── PEMS_DELEGATION_VISIT_MANAGEMENT_UPDATE_REQUIREMENTS.md
-│   ├── document/
-│   │   ├── PROMPT_DOCUMENT_DETAIL_DYNAMIC_BY_OWNER_TYPE.md
-│   │   └── PROMPT_STAFF_LEADER_DOCUMENT_MANAGEMENT_CAMPUS_SCOPE.md
-│   ├── feedback/
-│   │   ├── FEEDBACK_MANAGEMENT_UI_PROPOSAL_AND_AI_PROMPT.md
-│   │   └── PROMPT_FIX_FEEDBACK_MANAGEMENT_SCOPE_FILTER_DETAIL.md
-│   ├── permissions/
-│   │   ├── PERMISSION_MATRIX.md
-│   │   └── PERMISSION_RULES.md
+│   ├── report/
+│   │   ├── PEMS_DepartmentLeader_Report_AI_Code_Prompt (1).md
+│   │   ├── PEMS_HO_Report_AI_Code_Prompt.md
+│   │   ├── PEMS_StaffLeader_Report_AI_Code_Prompt.md
+│   │   └── PEMS_StaffLeader_Report_Fix_Prompt.md
 │   ├── send email dep/
-│   │   ├── PROMPT_UPDATE_LOGISTICS_FRONTEND_EMAIL_SQL_V10.md
-│   │   └── department_task_logistics_email_token_flow_requirements.md
+│   │   ├── department_task_logistics_email_token_flow_requirements.md
+│   │   └── PROMPT_UPDATE_LOGISTICS_FRONTEND_EMAIL_SQL_V10.md
 │   ├── swimlane/
 │   ├── todo/
 │   │   └── PEMS_AUTH_NEWS_SECURITY_TODO.md
@@ -1761,19 +1971,18 @@ PEMS/
 │   ├── PEMS_UC_IMPLEMENTATION_RULEBOOK_FRONTEND_BACKEND_DATABASE_VALIDATION_SECURITY_v8_4_refined_v6_v10_FULL_UPDATED.md
 │   ├── PROJECT_OVERVIEW_v8_4_refined_v6_v10_FULL_UPDATED.md
 │   ├── PROMPT_STANDARDIZE_ROLE_SUBROLE_DEPARTMENT_v8_4_refined_v6_v10_FULL_UPDATED.md
-│   ├── Technology_v10_FULL_UPDATED.md
 │   └── VISITOR_MANAGEMENT_SYSTEM_v8_4_refined_v6_v10_FULL_UPDATED.md
 ├── frontend/
 │   └── pems-react/
 │       ├── dist/   [excluded]
 │       ├── node_modules/   [excluded]
 │       ├── scripts/
-│       │   ├── applet_update.js
 │       │   ├── applet_update_contact.js
 │       │   ├── applet_update_emerald.js
 │       │   ├── applet_update_visit_3.js
 │       │   ├── applet_update_visit_4.js
 │       │   ├── applet_update_vp.js
+│       │   ├── applet_update.js
 │       │   ├── transform.js
 │       │   ├── update_ho.js
 │       │   ├── update_linter.js
@@ -1790,58 +1999,60 @@ PEMS/
 │       │   │   │   ├── CanTho.png
 │       │   │   │   ├── DaNang.png
 │       │   │   │   ├── HCM.png
+│       │   │   │   ├── hola_new.jpg
 │       │   │   │   ├── Hola.jpg
 │       │   │   │   ├── QuanAP.jpg
-│       │   │   │   ├── QuyNhon.png
-│       │   │   │   └── hola_new.jpg
-│       │   │   ├── Logo/
-│       │   │   │   ├── logo01.png
-│       │   │   │   ├── logo02.png
-│       │   │   │   ├── logo03.png
-│       │   │   │   ├── logo04.png
-│       │   │   │   ├── logo05.png
-│       │   │   │   ├── logo06.png
-│       │   │   │   ├── logo07.png
-│       │   │   │   ├── logo08.png
-│       │   │   │   ├── logo09.png
-│       │   │   │   ├── logo10.png
-│       │   │   │   ├── logo11.png
-│       │   │   │   ├── logo12.png
-│       │   │   │   ├── logo13.jpg
-│       │   │   │   ├── logo14.png
-│       │   │   │   ├── logo15.png
-│       │   │   │   ├── logo16.png
-│       │   │   │   ├── logo17.png
-│       │   │   │   └── logo18.png
+│       │   │   │   └── QuyNhon.png
 │       │   │   ├── images/
 │       │   │   │   ├── 2021-FPTU-Eng.png
+│       │   │   │   ├── banner_partner.png
 │       │   │   │   ├── banner.jpg
 │       │   │   │   ├── banner02.png
-│       │   │   │   ├── banner_partner.png
 │       │   │   │   ├── loading.png
+│       │   │   │   ├── logo_fpt_remove_bg.png
+│       │   │   │   ├── LogoFPT-2017-copy-3042-1513928399_1200x0.jpg
 │       │   │   │   ├── news_pattern.svg
 │       │   │   │   └── regenerated_image_1778552336496.png
-│       │   │   └── img_visit_detail/
-│       │   │       ├── 01.jpg
-│       │   │       ├── 02.jpg
-│       │   │       ├── 03.jpg
-│       │   │       ├── 04.jpg
-│       │   │       ├── 05.jpg
-│       │   │       ├── 06.jpg
-│       │   │       ├── 07.jpg
-│       │   │       ├── 08.jpg
-│       │   │       ├── 09.jpg
-│       │   │       ├── 10.jpg
-│       │   │       ├── 11.jpg
-│       │   │       ├── 12.jpg
-│       │   │       ├── 13.jpg
-│       │   │       ├── 14.jpg
-│       │   │       ├── 15.jpg
-│       │   │       ├── 16.jpg
-│       │   │       ├── 17.jpg
-│       │   │       ├── 18.jpg
-│       │   │       ├── 19.jpg
-│       │   │       └── 20.jpg
+│       │   │   ├── img_visit_detail/
+│       │   │   │   ├── 01.jpg
+│       │   │   │   ├── 02.jpg
+│       │   │   │   ├── 03.jpg
+│       │   │   │   ├── 04.jpg
+│       │   │   │   ├── 05.jpg
+│       │   │   │   ├── 06.jpg
+│       │   │   │   ├── 07.jpg
+│       │   │   │   ├── 08.jpg
+│       │   │   │   ├── 09.jpg
+│       │   │   │   ├── 10.jpg
+│       │   │   │   ├── 11.jpg
+│       │   │   │   ├── 12.jpg
+│       │   │   │   ├── 13.jpg
+│       │   │   │   ├── 14.jpg
+│       │   │   │   ├── 15.jpg
+│       │   │   │   ├── 16.jpg
+│       │   │   │   ├── 17.jpg
+│       │   │   │   ├── 18.jpg
+│       │   │   │   ├── 19.jpg
+│       │   │   │   └── 20.jpg
+│       │   │   └── Logo/
+│       │   │       ├── logo01.png
+│       │   │       ├── logo02.png
+│       │   │       ├── logo03.png
+│       │   │       ├── logo04.png
+│       │   │       ├── logo05.png
+│       │   │       ├── logo06.png
+│       │   │       ├── logo07.png
+│       │   │       ├── logo08.png
+│       │   │       ├── logo09.png
+│       │   │       ├── logo10.png
+│       │   │       ├── logo11.png
+│       │   │       ├── logo12.png
+│       │   │       ├── logo13.jpg
+│       │   │       ├── logo14.png
+│       │   │       ├── logo15.png
+│       │   │       ├── logo16.png
+│       │   │       ├── logo17.png
+│       │   │       └── logo18.png
 │       │   ├── components/
 │       │   │   ├── dashboard/
 │       │   │   │   ├── NotificationBell.tsx
@@ -1908,8 +2119,8 @@ PEMS/
 │       │   │   │   ├── adapters/
 │       │   │   │   │   └── authenticationAdapter.ts
 │       │   │   │   ├── api/
-│       │   │   │   │   ├── authError.ts
-│       │   │   │   │   └── authenticationApi.ts
+│       │   │   │   │   ├── authenticationApi.ts
+│       │   │   │   │   └── authError.ts
 │       │   │   │   ├── components/
 │       │   │   │   │   └── DualPortalLoginForms.tsx
 │       │   │   │   ├── hooks/
@@ -1917,6 +2128,13 @@ PEMS/
 │       │   │   │   │   └── useAuthentication.ts
 │       │   │   │   └── types/
 │       │   │   │       └── authentication.types.ts
+│       │   │   ├── business-card-ocr/
+│       │   │   │   ├── api/
+│       │   │   │   │   └── businessCardOcrApi.ts
+│       │   │   │   ├── components/
+│       │   │   │   │   └── BusinessCardScanModal.tsx
+│       │   │   │   └── types/
+│       │   │   │       └── businessCardOcr.types.ts
 │       │   │   ├── calendars/
 │       │   │   │   ├── adapters/
 │       │   │   │   │   └── calendarsAdapter.ts
@@ -1936,7 +2154,8 @@ PEMS/
 │       │   │   │   └── constants.ts
 │       │   │   ├── dashboard/
 │       │   │   │   ├── api/
-│       │   │   │   │   └── departmentLeaderDashboardApi.ts
+│       │   │   │   │   ├── departmentLeaderDashboardApi.ts
+│       │   │   │   │   └── staffCalendarApi.ts
 │       │   │   │   └── hooks/
 │       │   │   │       └── useDepartmentLeaderDashboard.ts
 │       │   │   ├── delegations/
@@ -1955,7 +2174,8 @@ PEMS/
 │       │   │   │   │   ├── RejectedReasonModal.tsx
 │       │   │   │   │   ├── RequestInfoReadOnly.tsx
 │       │   │   │   │   ├── SentEmailsModal.tsx
-│       │   │   │   │   └── SubmittedVisitRequestInfoPanel.tsx
+│       │   │   │   │   ├── SubmittedVisitRequestInfoPanel.tsx
+│       │   │   │   │   └── VisitNewsPostList.tsx
 │       │   │   │   ├── config/
 │       │   │   │   │   └── visitRequestFilterConfig.ts
 │       │   │   │   ├── hooks/
@@ -1980,6 +2200,10 @@ PEMS/
 │       │   │   │   │   └── documentsAdapter.ts
 │       │   │   │   ├── api/
 │       │   │   │   │   └── documentsApi.ts
+│       │   │   │   ├── components/
+│       │   │   │   │   ├── DocumentFilterBar.tsx
+│       │   │   │   │   ├── DocumentSummaryCompact.tsx
+│       │   │   │   │   └── DocumentTable.tsx
 │       │   │   │   ├── hooks/
 │       │   │   │   │   ├── useDocumentDetail.ts
 │       │   │   │   │   └── useDocuments.ts
@@ -2014,11 +2238,27 @@ PEMS/
 │       │   │   │   ├── adapters/
 │       │   │   │   │   └── feedbacksAdapter.ts
 │       │   │   │   ├── api/
-│       │   │   │   │   └── feedbacksApi.ts
+│       │   │   │   │   ├── feedbacksApi.ts
+│       │   │   │   │   └── visitFeedbackApi.ts
+│       │   │   │   ├── components/
+│       │   │   │   │   ├── CommentModal.tsx
+│       │   │   │   │   ├── CompactStarRating.tsx
+│       │   │   │   │   ├── FeedbackFilterBar.tsx
+│       │   │   │   │   ├── FeedbackGroupSection.tsx
+│       │   │   │   │   ├── FeedbackRatingStars.tsx
+│       │   │   │   │   ├── FeedbackSummaryCompact.tsx
+│       │   │   │   │   ├── FeedbackTable.tsx
+│       │   │   │   │   ├── FeedbackTargetRow.tsx
+│       │   │   │   │   ├── FeedbackTypeSection.tsx
+│       │   │   │   │   └── VisitFeedbackModal.tsx
+│       │   │   │   ├── constants/
+│       │   │   │   │   └── feedbackTypes.ts
 │       │   │   │   ├── hooks/
-│       │   │   │   │   └── useFeedbacks.ts
+│       │   │   │   │   ├── useFeedbacks.ts
+│       │   │   │   │   └── useVisitFeedback.ts
 │       │   │   │   └── types/
-│       │   │   │       └── feedbacks.types.ts
+│       │   │   │       ├── feedbacks.types.ts
+│       │   │   │       └── visitFeedback.types.ts
 │       │   │   ├── gallery-management/
 │       │   │   │   ├── adapters/
 │       │   │   │   │   └── galleryManagementAdapter.ts
@@ -2066,6 +2306,9 @@ PEMS/
 │       │   │   │   │   └── partnersAdapter.ts
 │       │   │   │   ├── api/
 │       │   │   │   │   └── partnersApi.ts
+│       │   │   │   ├── components/
+│       │   │   │   │   ├── CreatePartnerFromParticipantModal.tsx
+│       │   │   │   │   └── ParticipantPartnerCell.tsx
 │       │   │   │   ├── hooks/
 │       │   │   │   │   └── usePartners.ts
 │       │   │   │   └── types/
@@ -2090,6 +2333,15 @@ PEMS/
 │       │   │   │   │   └── usePublicContent.ts
 │       │   │   │   └── types/
 │       │   │   │       └── publicContent.types.ts
+│       │   │   ├── public-partners/
+│       │   │   │   ├── api/
+│       │   │   │   │   └── publicPartnersApi.ts
+│       │   │   │   ├── hooks/
+│       │   │   │   │   └── usePublicPartnerImage.ts
+│       │   │   │   ├── types/
+│       │   │   │   │   └── publicPartners.types.ts
+│       │   │   │   └── utils/
+│       │   │   │       └── countryMatch.ts
 │       │   │   ├── reports/
 │       │   │   │   ├── adapters/
 │       │   │   │   │   └── reportsAdapter.ts
@@ -2098,7 +2350,9 @@ PEMS/
 │       │   │   │   ├── hooks/
 │       │   │   │   │   └── useReports.ts
 │       │   │   │   └── types/
-│       │   │   │       └── reports.types.ts
+│       │   │   │       ├── deptLeaderReports.types.ts
+│       │   │   │       ├── reports.types.ts
+│       │   │   │       └── staffLeaderReports.types.ts
 │       │   │   ├── role-permission-management/
 │       │   │   │   ├── adapters/
 │       │   │   │   │   └── rolePermissionManagementAdapter.ts
@@ -2130,6 +2384,7 @@ PEMS/
 │       │   │       │   │   ├── OrganizationCombobox.tsx
 │       │   │       │   │   ├── OrganizationSelect.tsx
 │       │   │       │   │   ├── PartnerAsyncSelect.tsx
+│       │   │       │   │   ├── PartnerOrgCombobox.tsx
 │       │   │       │   │   └── PhoneInput.tsx
 │       │   │       │   └── OtpVerificationModal.tsx
 │       │   │       ├── hooks/
@@ -2155,7 +2410,10 @@ PEMS/
 │       │   │   │   │   ├── CampusDetail.tsx
 │       │   │   │   │   └── CampusManagement.tsx
 │       │   │   │   ├── department-staff/
+│       │   │   │   │   ├── AssignedTaskList.tsx
+│       │   │   │   │   ├── DeclineReasonModal.tsx
 │       │   │   │   │   ├── DeptStaffDashboard.tsx
+│       │   │   │   │   ├── ProposalModal.tsx
 │       │   │   │   │   ├── StaffCalendarTab.tsx
 │       │   │   │   │   ├── StaffLeaderTaskModal.tsx
 │       │   │   │   │   ├── StaffTasksTab.tsx
@@ -2163,9 +2421,9 @@ PEMS/
 │       │   │   │   ├── departments/
 │       │   │   │   │   ├── DepartmentDetailDashboard.tsx
 │       │   │   │   │   ├── DepartmentManagement.tsx
-│       │   │   │   │   ├── DepartmentReportDashboard.tsx
 │       │   │   │   │   ├── SharedDashboardView.tsx
 │       │   │   │   │   ├── TaskDetail.tsx
+│       │   │   │   │   ├── TaskHandoverModal.tsx
 │       │   │   │   │   └── TaskInvitationDetail.tsx
 │       │   │   │   ├── documents/
 │       │   │   │   │   ├── DocumentDetailModal.tsx
@@ -2175,7 +2433,6 @@ PEMS/
 │       │   │   │   │   ├── EditEmail.tsx
 │       │   │   │   │   ├── EmailDetail.tsx
 │       │   │   │   │   ├── EmailManagement.tsx
-│       │   │   │   │   ├── SendEmailTab.tsx
 │       │   │   │   │   ├── SentEmailDetail.tsx
 │       │   │   │   │   └── TemplateManagement.tsx
 │       │   │   │   ├── faq/
@@ -2192,12 +2449,18 @@ PEMS/
 │       │   │   │   │   ├── LocationManagement.tsx
 │       │   │   │   │   └── LocationManagementStaffLeader.tsx
 │       │   │   │   ├── home/
+│       │   │   │   │   ├── staff-calendar/
+│       │   │   │   │   │   ├── StaffDashboardCalendar.tsx
+│       │   │   │   │   │   └── StaffVisitDetailModal.tsx
 │       │   │   │   │   ├── AdminDashboardView.tsx
 │       │   │   │   │   ├── DashboardHome.tsx
 │       │   │   │   │   ├── DeptLeadDashboardView.tsx
 │       │   │   │   │   └── HODashboardView.tsx
 │       │   │   │   ├── minutes/
-│       │   │   │   │   └── MinuteManagement.tsx
+│       │   │   │   │   ├── MinuteManagement.tsx
+│       │   │   │   │   ├── minutesApi.ts
+│       │   │   │   │   ├── types.ts
+│       │   │   │   │   └── useMinutes.ts
 │       │   │   │   ├── news/
 │       │   │   │   │   ├── CreateNews.tsx
 │       │   │   │   │   ├── EditNews.tsx
@@ -2206,13 +2469,14 @@ PEMS/
 │       │   │   │   ├── partners/
 │       │   │   │   │   ├── CreatePartner.tsx
 │       │   │   │   │   ├── PartnerDetail.tsx
+│       │   │   │   │   ├── PartnerEdit.tsx
 │       │   │   │   │   └── PartnerManagement.tsx
 │       │   │   │   ├── profile/
 │       │   │   │   │   └── Profile.tsx
 │       │   │   │   ├── reports/
 │       │   │   │   │   ├── DeptReportManagement.tsx
-│       │   │   │   │   ├── ReportManagement.tsx
-│       │   │   │   │   └── mockReportData.ts
+│       │   │   │   │   ├── HoReportManagement.tsx
+│       │   │   │   │   └── StaffLeaderReportManagement.tsx
 │       │   │   │   └── visit/
 │       │   │   │       ├── components/
 │       │   │   │       │   ├── MediaContributionSection.tsx
@@ -2220,20 +2484,21 @@ PEMS/
 │       │   │   │       │   └── NewsContributionSection.tsx
 │       │   │   │       ├── AgendaTemplateManagement.tsx
 │       │   │   │       ├── CreateVisitRequest.tsx
-│       │   │   │       ├── DeptLeadAssignmentTab.tsx
 │       │   │   │       ├── DeptLeadVisitTasksPage.tsx
+│       │   │   │       ├── EditVisitRequest.tsx
 │       │   │   │       ├── HoVisitProcessDetail.tsx
 │       │   │   │       ├── MinutesCard.tsx
 │       │   │   │       ├── VisitAfterTab.tsx
 │       │   │   │       ├── VisitContributionPage.tsx
 │       │   │   │       ├── VisitDuringTab.tsx
+│       │   │   │       ├── VisitFeedbackPage.tsx
 │       │   │   │       ├── VisitNewsSection.tsx
+│       │   │   │       ├── VisitorVisitDetailPage.tsx
 │       │   │   │       ├── VisitParticipantInvitationDetail.tsx
 │       │   │   │       ├── VisitProcess.tsx
 │       │   │   │       ├── VisitProcessSummaryPage.tsx
 │       │   │   │       ├── VisitRequestDetail.tsx
-│       │   │   │       ├── VisitRequestManagement.tsx
-│       │   │   │       └── VisitorVisitDetailPage.tsx
+│       │   │   │       └── VisitRequestManagement.tsx
 │       │   │   ├── public/
 │       │   │   │   └── news/
 │       │   │   ├── CampusDetailVisitPage.tsx
@@ -2252,17 +2517,17 @@ PEMS/
 │       │   │   │   ├── authInterceptor.ts
 │       │   │   │   ├── endpoints.ts
 │       │   │   │   ├── errorHandler.ts
-│       │   │   │   ├── fileUploadApi.ts
 │       │   │   │   ├── filesApi.ts
+│       │   │   │   ├── fileUploadApi.ts
 │       │   │   │   └── httpClient.ts
 │       │   │   ├── auth/
 │       │   │   │   ├── AuthContext.tsx
-│       │   │   │   ├── ProtectedRoute.tsx
-│       │   │   │   ├── RoleGuard.tsx
 │       │   │   │   ├── authStorage.ts
 │       │   │   │   ├── dashboardRoute.ts
 │       │   │   │   ├── permissionChecker.ts
-│       │   │   │   └── resolveEffectiveRole.ts
+│       │   │   │   ├── ProtectedRoute.tsx
+│       │   │   │   ├── resolveEffectiveRole.ts
+│       │   │   │   └── RoleGuard.tsx
 │       │   │   ├── constants/
 │       │   │   │   ├── appRoutes.ts
 │       │   │   │   ├── auth.ts
@@ -2287,28 +2552,32 @@ PEMS/
 │       │   │   │   └── permission.types.ts
 │       │   │   └── utils/
 │       │   │       ├── dateUtils.ts
+│       │   │       ├── fileDownload.ts
 │       │   │       ├── fileUtils.ts
 │       │   │       ├── fileValidation.ts
 │       │   │       ├── formatUtils.ts
+│       │   │       ├── nameInitials.ts
 │       │   │       ├── passwordPolicy.ts
 │       │   │       ├── resolveFileUrl.ts
 │       │   │       ├── routeUtils.ts
+│       │   │       ├── toast.ts
 │       │   │       └── validationUtils.ts
 │       │   ├── App.tsx
 │       │   ├── index.css
 │       │   ├── main.tsx
-│       │   ├── scratch.tsx
 │       │   ├── types.ts
 │       │   └── vite-env.d.ts
 │       ├── .env
 │       ├── .env.example
 │       ├── .gitignore
-│       ├── README.md
 │       ├── index.html
 │       ├── metadata.json
 │       ├── package-lock.json
 │       ├── package.json
+│       ├── README.md
+│       ├── ts_errors.txt
 │       ├── tsconfig.json
+│       ├── tsconfig.tsbuildinfo
 │       └── vite.config.ts
 ├── scripts/
 │   └── guard-project-structure.ps1
@@ -2317,6 +2586,8 @@ PEMS/
 │   ├── package-lock.json
 │   └── package.json
 ├── tests/
+│   ├── http/
+│   │   └── auth_dual_portal_manual_tests.http
 │   ├── PEMS.ApplicationTests/
 │   │   ├── Accounts/
 │   │   │   ├── CreateAccountCommandHandlerTests.cs
@@ -2364,7 +2635,7 @@ PEMS/
 │   │   │   ├── ViewCampusDetailsQueryTests.cs
 │   │   │   └── ViewCampusListQueryTests.cs
 │   │   ├── Delegations/
-│   │   │   ├── ApproveCrossCampusRequestCommandTests.cs
+│   │   │   ├── ApproveCampusInstanceCommandTests.cs
 │   │   │   ├── ApproveResourceRequestCommandTests.cs
 │   │   │   ├── CloseDelegationCommandTests.cs
 │   │   │   ├── ConfirmParticipationCommandTests.cs
@@ -2376,9 +2647,8 @@ PEMS/
 │   │   │   ├── EditMeetingMinutesCommandTests.cs
 │   │   │   ├── GetSubmittedVisitRequestFormDetailQueryTests.cs
 │   │   │   ├── PrepareVisitLogisticsCommandTests.cs
-│   │   │   ├── ProcessVisitRequestCommandHandlerTests.cs
-│   │   │   ├── ProcessVisitRequestCommandTests.cs
 │   │   │   ├── ProposeResourceModificationCommandTests.cs
+│   │   │   ├── RejectCampusInstanceCommandTests.cs
 │   │   │   ├── ScanBusinessCardCommandTests.cs
 │   │   │   ├── SearchDelegationsQueryTests.cs
 │   │   │   ├── SubmitDelegationFeedbackCommandTests.cs
@@ -2399,9 +2669,9 @@ PEMS/
 │   │   │   ├── ReassignDepartmentLeadCommandTests.cs
 │   │   │   ├── RemovePersonnelCommandTests.cs
 │   │   │   ├── ReviewAssignedTasksCommandTests.cs
+│   │   │   ├── SearchandFilterDepartmentsQueryTests.cs
 │   │   │   ├── SearchCoordinationTasksQueryTests.cs
 │   │   │   ├── SearchPersonnelQueryTests.cs
-│   │   │   ├── SearchandFilterDepartmentsQueryTests.cs
 │   │   │   ├── SignTheServiceDeliveryReportCommandTests.cs
 │   │   │   ├── UpdateDepartmentCommandTests.cs
 │   │   │   ├── ViewCoordinationTasksQueryTests.cs
@@ -2504,8 +2774,6 @@ PEMS/
 │   │   │   └── DomainDummyTest.cs
 │   │   └── SharedKernel/
 │   │       └── SharedKernelDummyTest.cs
-│   ├── http/
-│   │   └── auth_dual_portal_manual_tests.http
 │   └── temp_bcrypt/
 │       ├── bin/   [excluded]
 │       ├── obj/   [excluded]
@@ -2513,36 +2781,41 @@ PEMS/
 │       └── temp_bcrypt.csproj
 ├── .gitattributes
 ├── .gitignore
+├── generate_tree.js
+├── generate_tree.ps1
 ├── PEMS.slnx
-└── README.md
+├── README.md
+└── tree_output.txt
 ```
 
 ## 3. Layer Overview
 
-- **backend/PEMS.Api** — API layer. Chứa `Controllers/` (Accounts, AgendaTemplates, ApiIntegrations, Authentication, Calendars, Campuses, Dashboard, Delegations, DepartmentReceptionTasks, Departments, Documents, Emails, Faqs, Feedbacks, Galleries, MeetingMinutes, News, Partners, Profiles, PublicContent, PublicPartners, Reports, VisitInvitations, VisitRequests), `Middleware/`, `Filters/`, `Extensions/`, `Contracts/`, `Properties/`, cùng `Program.cs`, `appsettings*.json`, `PEMS.Api.csproj`.
-- **backend/PEMS.Application** — Use case layer (CQRS). Mỗi module có `Commands/`, `Queries/`, `Common/`, và nơi cần thì `Mappings/`, `Models/`, `Rules/`, `Dtos/`. Các module hiện có: Accounts, AgendaTemplates, ApiIntegrations, Authentication, Calendars, Campuses, Common (Behaviours/Exceptions/Interfaces/Models/Security/DTOs), Dashboard, Delegations (kèm Minutes/, News/), DepartmentReceptionTasks, Departments, Documents, EmailActions, Emails, Faqs, Feedbacks, Files, Galleries, MeetingMinutes, News, Notifications, Partners, Profiles, PublicContent, Reports (danh sách đầy đủ trong cây). Kèm `DependencyInjection.cs` và `PEMS.Application.csproj`.
-- **backend/PEMS.Domain** — Domain layer. `Common/` (BaseEntity, AuditableEntity, SoftDeleteEntity, DomainEvent), `Constants/`, `Entities/` (nhóm theo aggregate: AgendaTemplates, ApiIntegrations, Calendar, Campuses, Delegations, Departments, Documents, Emails, Faqs, Feedbacks, Galleries, Minutes, News, Notifications, Partners, Users), `Enums/`, `Events/`, `ValueObjects/`.
-- **backend/PEMS.Infrastructure** — Persistence/external services layer. `Persistence/` (ApplicationDbContext + Repositories + Configurations), `Identity/`, `Email/`, `FileStorage/` (kèm GoogleDrive), `ExternalServices/` (ApiClient, Calendar, FaceRecognition, Ocr), `Logging/`, `RateLimiting/`, `Security/`, `Idempotency/`, `Common/`, `Services/`, `BackgroundJobs/`, kèm `DependencyInjection.cs`.
-- **frontend/pems-react** — React client. `src/features/` (feature-based: mỗi feature có api/adapters/hooks/types và tùy chọn components/constants/config/utils), `src/pages/` (auth, dashboard theo module, public), `src/components/` (dashboard/home/layout/modals/partners), `src/shared/` (api/auth/constants/hooks/security/types/utils), `src/assets/`. Routing gộp trong `App.tsx` + `src/shared/constants/appRoutes.ts`; auth-state qua `src/shared/auth/AuthContext.tsx` (không có thư mục `routes/` hay `store/` riêng).
-- **docs/database** — Vai trò schema/seed/deployment. Chứa `scripts/` (project `DbSeeder`, SQL fresh-create v10, seed & cleanup scripts), `Table/` (data dictionary .docx), và các file schema markdown.
-- **docs** — Tài liệu kiến trúc, use cases, permissions, API/authentication, database, cùng nhiều thư mục prompt/spec theo module (CampusManagement, Department, delegation, GoogleDrive, ProfileManagement, GalleryManagement, v.v.).
+- **backend/PEMS.Api**:
+  Vai trò API layer, Controllers, Middleware, Filters, Extensions.
+- **backend/PEMS.Application**:
+  Vai trò use case layer, CQRS Commands/Queries/Handlers, DTOs, Validators, Interfaces.
+- **backend/PEMS.Domain**:
+  Vai trò domain layer, Entities, Enums, Events, ValueObjects, Common base classes.
+- **backend/PEMS.Infrastructure**:
+  Vai trò persistence/external services layer, DbContext, Repositories, Identity, Email, FileStorage, Logging.
+- **frontend/pems-react**:
+  Vai trò React client, pages/components/services/routes/store.
+- **database**:
+  Vai trò schema, seed, migration, deployment scripts.
+- **docs**:
+  Vai trò tài liệu kiến trúc, use cases, permissions, API, database, authentication.
 
 ## 4. Important Notes
 
-Các điểm khác biệt/đáng chú ý phát hiện khi quét (chỉ ở mức structure, không đánh giá logic):
-
-- **Đã bỏ thư mục `database/` ở root.** Tài liệu cũ mô tả `database/scripts` (output build của DbSeeder) ở root — thư mục này **không còn tồn tại**. Toàn bộ SQL/seeder hiện tập trung tại `docs/database/scripts/`.
-- **Xuất hiện file/thư mục mới ở root & backend:** `.runlogs/` (log dev-server, đã `[excluded]`), `temp_hash/` (scratch npm project), `scripts/guard-project-structure.ps1` (guard script), `backend/handlers.txt` & `backend/handlers_utf8.txt` (file scratch liệt kê handler), `tests/temp_bcrypt/` (project scratch), `tests/http/` (file .http test thủ công).
-- **Test projects chưa đồng bộ vào build:** `tests/PEMS.ApplicationTests`, `tests/PEMS.IntegrationTests`, `tests/PEMS.UnitTests` **không có file `.csproj`** — chỉ là thư mục chứa `.cs`. Chỉ `tests/PEMS.ArchitectureTests` (và `tests/temp_bcrypt`) là project thật sự được wire vào solution. Đây là điểm cần đồng bộ tiếp (ngoài phạm vi task này).
-- **Có một số thư mục rỗng thực tế** được giữ trong repo: `frontend/pems-react/src/pages/public/news/`, `frontend/pems-react/src/features/notifications/components/`, `docs/swimlane/`. Ghi nhận nguyên trạng, không tạo/không xóa.
-- **Module Application mở rộng so với doc cũ:** ngoài các module quen thuộc, hiện có thêm `EmailActions/`, `Files/`, `Notifications/`, và nhánh con `Delegations/Minutes/`, `Delegations/News/` phục vụ luồng visit process.
-- **File `.env` của frontend** tồn tại (`frontend/pems-react/.env` + `.env.example`); chỉ ghi nhận tên, không đọc nội dung.
-- **Tài liệu documentation cần đồng bộ tiếp (chưa sửa trong task này):** nhiều spec/prompt trong `docs/` vẫn tham chiếu bố cục cũ (ví dụ đường dẫn `database/` ở root). Chỉ file này được cập nhật.
+- Cấu trúc thư mục được lấy từ project hiện tại. Đã loại trừ (excluded) các file và thư mục tự động sinh hoặc không cần thiết (bin, obj, node_modules, v.v.).
+- Backend tuân thủ nghiêm ngặt Clean Architecture.
+- Toàn bộ documentation được gom vào `docs/`.
+- Database scripts và migration nằm ở trong `docs/database/`.
+- Sự khác biệt so với version cũ: Các thay đổi về cấu trúc đã được cập nhật thực tế, không dùng dấu chấm lửng (`...`) cho các thư mục chính.
 
 ## 5. Change Summary
 
-- Đã quét lại toàn bộ cấu trúc từ source hiện tại (nhánh `Canh-Iter1`, 2026-07-02).
-- Đã cập nhật cây thư mục theo trạng thái thật, bao gồm các module/thư mục mới và loại bỏ `database/` root đã biến mất.
-- Đã loại trừ và đánh dấu `[excluded]` cho các generated folders (`node_modules`, `dist`, `bin`, `obj`, `.git`, `.vs`, `.tmp-build`, `.runlogs`).
-- Không đọc/không in nội dung secret trong `.env`.
-- Không sửa code, không rename/xóa/tạo folder rỗng, không chạy build/migration. Chỉ cập nhật duy nhất file `docs/architecture/PROJECT_STRUCTURE_FULL.md`.
+- Đã quét lại cấu trúc từ source hiện tại.
+- Đã cập nhật tree theo trạng thái thật.
+- Đã loại trừ generated folders.
+- Không sửa code.

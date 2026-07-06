@@ -15,6 +15,94 @@ export interface VerifyResponse {
   message: string;
 }
 
+// ── Visitor edit / resubmit (SQL v10 resubmit_agenda_cancel24) ────────────────
+
+export interface EditableCampusSlotDto {
+  visitInstanceId: number;
+  campusId: number;
+  campusCode: string;
+  campusName: string;
+  plannedStartAt: string;
+  plannedEndAt: string;
+  instanceStatus: string;
+}
+
+export interface EditableGuestMemberDto {
+  fullName: string;
+  organization: string | null;
+  jobTitle: string | null;
+  nationality: string | null;
+}
+
+export interface PreviousCampusDecisionDto {
+  visitInstanceId: number;
+  campusId: number;
+  campusName: string;
+  decisionNote: string | null;
+  decidedByName: string | null;
+  decidedAt: string | null;
+}
+
+/** GET /visit-requests/{id}/edit-detail — form-shaped snapshot for prefilling edit/resubmit. */
+export interface EditableVisitRequestDetail {
+  visitRequestId: number;
+  requestCode: string;
+  requestStatus: string;
+  visitScope: string;
+  mode: 'EDIT' | 'RESUBMIT';
+  isEditablePending: boolean;
+  isResubmittable: boolean;
+
+  registrantFullName: string;
+  registrantNationality: string;
+  registrantOrganization: string;
+  registrantJobTitle: string;
+  registrantPhone: string;
+  registrantEmail: string;
+
+  delegationName: string;
+  visitType: string;
+  visitTypeOther: string | null;
+  purpose: string;
+  workingContent: string | null;
+
+  contactPersonFullName: string;
+  contactPersonOrganization: string;
+  contactPersonPhone: string;
+  contactPersonEmail: string;
+
+  workingLanguage: string;
+  transportationNote: string | null;
+  mediaConsentStatus: string;
+  mediaConsentNote: string | null;
+  partnerId: number | null;
+  partnerName: string | null;
+  partnerIsActive: boolean;
+  partnerProfileStatus: string | null;
+  noteToFptu: string | null;
+
+  campusVisits: EditableCampusSlotDto[];
+  visitors: EditableGuestMemberDto[];
+  supportMembers: EditableGuestMemberDto[];
+
+  resubmissionCount: number;
+  lastResubmittedAt: string | null;
+  previousDecisions: PreviousCampusDecisionDto[];
+}
+
+export interface UpdatePendingResponse {
+  visitRequestId: number;
+  requestStatus: string;
+  message: string;
+}
+
+export interface ResubmitResponse {
+  visitRequestId: number;
+  requestStatus: string;
+  resubmissionCount: number;
+  message: string;
+}
+
 export interface PublicPartnerOptionDto {
   partnerId: number;
   name: string;
@@ -124,6 +212,31 @@ export const visitRequestApi = {
     const { data: res } = await httpClient.post<{ message: string }>(
       API_ENDPOINTS.visitRequests.resendOtp,
       { registrantEmail, registrantFullName }
+    );
+    return res;
+  },
+
+  // ── Visitor edit / resubmit (owner-only, không cần OTP) ──
+
+  async getEditableDetail(visitRequestId: number | string): Promise<EditableVisitRequestDetail> {
+    const { data } = await httpClient.get<EditableVisitRequestDetail>(
+      API_ENDPOINTS.visitRequests.editDetail(visitRequestId)
+    );
+    return data;
+  },
+
+  async updatePending(visitRequestId: number | string, data: VisitRequestSchema): Promise<UpdatePendingResponse> {
+    const { data: res } = await httpClient.put<UpdatePendingResponse>(
+      API_ENDPOINTS.visitRequests.pendingEdit(visitRequestId),
+      mapToPayload(data)
+    );
+    return res;
+  },
+
+  async resubmitRejected(visitRequestId: number | string, data: VisitRequestSchema): Promise<ResubmitResponse> {
+    const { data: res } = await httpClient.post<ResubmitResponse>(
+      API_ENDPOINTS.visitRequests.resubmit(visitRequestId),
+      mapToPayload(data)
     );
     return res;
   },

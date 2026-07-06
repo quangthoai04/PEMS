@@ -108,6 +108,10 @@ export const VISIT_ALLOWED_ACTIONS = {
   // NOTE: Host được gán MỘT lần (UC chốt). Không có TRANSFER_HOST / đổi host trong phase này.
   CANCEL_BY_HOST: 'CANCEL_BY_HOST',
   CANCEL_BY_VISITOR: 'CANCEL_BY_VISITOR',
+  // Visitor sửa đơn khi còn chờ xử lý toàn bộ (PENDING + mọi campus WAITING, còn ≥ 24h).
+  EDIT_PENDING_REQUEST: 'EDIT_PENDING_REQUEST',
+  // Visitor sửa & gửi lại đơn khi TOÀN BỘ request đã bị từ chối.
+  RESUBMIT_REJECTED_REQUEST: 'RESUBMIT_REJECTED_REQUEST',
   ACCEPT_INVITATION: 'ACCEPT_INVITATION',
   DECLINE_INVITATION: 'DECLINE_INVITATION',
   ASSIGN_TO_DEPARTMENT_STAFF: 'ASSIGN_TO_DEPARTMENT_STAFF',
@@ -789,6 +793,16 @@ export interface VisitRequestManagementItem {
   // by allowedActions (CANCEL_BY_VISITOR/CANCEL_BY_HOST); this is the underlying flag.
   hasCancellableInstance?: boolean;
   hasStartedCampus?: boolean;
+
+  // ── Visitor edit / resubmit (SQL v10 resubmit_agenda_cancel24) ──
+  resubmissionCount?: number;
+  lastResubmittedAt?: string | null;
+  lastResubmittedBy?: number | null;
+  lastResubmittedByName?: string | null;
+  /** Backend-computed: đơn còn sửa được (PENDING toàn phần + còn ≥ 24h). */
+  canEditPending?: boolean;
+  /** Backend-computed: đơn bị từ chối toàn bộ, có thể sửa & gửi lại. */
+  canResubmit?: boolean;
 
   // Multi-campus expandable row (Phương án A). Backend-computed action booleans + per-campus
   // progress for the accordion. campusProgressItems is empty for single-campus / instance-level rows.

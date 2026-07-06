@@ -272,6 +272,10 @@ export const API_ENDPOINTS = {
     initiate: '/visit-requests/initiate',
     verify: '/visit-requests/verify',
     resendOtp: '/visit-requests/resend-otp',
+    // Visitor sửa đơn pending / gửi lại đơn bị từ chối (owner-only, không cần OTP).
+    editDetail: (visitRequestId: string | number) => `/visit-requests/${visitRequestId}/edit-detail`,
+    pendingEdit: (visitRequestId: string | number) => `/visit-requests/${visitRequestId}/pending-edit`,
+    resubmit: (visitRequestId: string | number) => `/visit-requests/${visitRequestId}/resubmit`,
   },
   visitInvitations: {
     my: '/visit-invitations/my',
