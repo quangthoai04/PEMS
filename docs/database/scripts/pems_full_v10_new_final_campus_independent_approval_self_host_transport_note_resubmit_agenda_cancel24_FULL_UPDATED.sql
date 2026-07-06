@@ -812,6 +812,13 @@ CREATE TABLE visit_requests (
   submitted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   email_verified_at DATETIME NULL,
 
+  resubmission_count INT UNSIGNED NOT NULL DEFAULT 0
+    COMMENT 'Số lần Visitor sửa và gửi lại request sau khi toàn bộ campus bị từ chối',
+  last_resubmitted_at DATETIME NULL
+    COMMENT 'Thời điểm gần nhất Visitor gửi lại request sau khi bị từ chối',
+  last_resubmitted_by BIGINT UNSIGNED NULL
+    COMMENT 'Visitor gần nhất gửi lại request sau khi bị từ chối',
+
   cancelled_by BIGINT UNSIGNED NULL COMMENT 'Visitor hủy toàn bộ request/delegation',
   cancelled_at DATETIME NULL COMMENT 'Thời điểm visitor hủy toàn bộ request/delegation',
   cancellation_reason TEXT NULL COMMENT 'Lý do visitor nhập khi tự hủy toàn bộ request/delegation. Bảng tổng không lưu actor/source vì chỉ Visitor được hủy tổng.',
@@ -836,6 +843,8 @@ CREATE TABLE visit_requests (
   KEY idx_visit_requests_contact_email (contact_person_email),
   KEY idx_visit_requests_media_consent (media_consent_status),
   KEY idx_visit_requests_cancelled (cancelled_by, cancelled_at),
+  KEY idx_visit_requests_resubmission (resubmission_count, last_resubmitted_at),
+  KEY idx_visit_requests_last_resubmitted_by (last_resubmitted_by, last_resubmitted_at),
   FULLTEXT KEY ft_visit_requests_frontend_search (request_code, delegation_name, registrant_full_name, registrant_organization, registrant_email, contact_person_full_name, contact_person_organization, contact_person_email),
 
   CHECK (TRIM(registrant_job_title) <> ''),
@@ -853,8 +862,11 @@ CREATE TABLE visit_requests (
     ON UPDATE CASCADE ON DELETE SET NULL,
   CONSTRAINT fk_visit_requests_cancelled_by
     FOREIGN KEY (cancelled_by) REFERENCES users(user_id)
+    ON UPDATE CASCADE ON DELETE SET NULL,
+  CONSTRAINT fk_visit_requests_last_resubmitted_by
+    FOREIGN KEY (last_resubmitted_by) REFERENCES users(user_id)
     ON UPDATE CASCADE ON DELETE SET NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-COMMENT='Đơn đăng ký tham quan. Bảng tổng chỉ lưu form và trạng thái aggregate; quyết định duyệt/từ chối thật nằm ở visit_request_campuses; transportation_note là text nhận diện phương tiện.';
+COMMENT='Đơn đăng ký tham quan. Bảng tổng lưu form, trạng thái aggregate và metadata resubmit; quyết định duyệt/từ chối thật nằm ở visit_request_campuses; transportation_note là text nhận diện phương tiện.';
 
 CREATE TABLE visit_request_campuses (
   visit_instance_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -3106,6 +3118,7 @@ FOR EACH ROW
 BEGIN
   DECLARE v_cancel_role_code VARCHAR(30);
   DECLARE v_started_campus_count INT DEFAULT 0;
+  DECLARE v_cancel_window_violation_count INT DEFAULT 0;
 
   IF NEW.status = 'CANCELLED' AND OLD.status <> 'CANCELLED' THEN
     -- Visitor được hủy request tổng khi còn PENDING_APPROVAL hoặc khi đã APPROVED nhưng chưa campus nào bắt đầu.
@@ -3132,6 +3145,19 @@ BEGIN
     IF v_cancel_role_code <> 'VISITOR' THEN
       SIGNAL SQLSTATE '45000'
         SET MESSAGE_TEXT = 'Only VISITOR can cancel the main visit request';
+    END IF;
+
+    -- Visitor self-service cancellation must be at least 24 hours before every active campus schedule.
+    -- Backend should still enforce the same rule for better messages/timezone handling; this trigger is DB safety.
+    SELECT COUNT(*) INTO v_cancel_window_violation_count
+    FROM visit_request_campuses vrc
+    WHERE vrc.visit_request_id = OLD.visit_request_id
+      AND vrc.status NOT IN ('CANCELLED','REJECTED')
+      AND vrc.planned_start_at < DATE_ADD(NEW.cancelled_at, INTERVAL 24 HOUR);
+
+    IF v_cancel_window_violation_count > 0 THEN
+      SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Visitor cannot cancel the main visit request within 24 hours of any active campus visit';
     END IF;
 
     -- Sau khi request đã APPROVED, không cho hủy tổng nếu bất kỳ campus nào đã bắt đầu/đã diễn ra/đã đóng.
@@ -5115,7 +5141,17 @@ INSERT INTO visit_agendas (agenda_id, visit_instance_id, sequence_order, title, 
   (8095, 5153, 1, 'Arrival and reception briefing', 'Đón đoàn, xác nhận danh sách khách và nhắc lại quy tắc campus.', '2026-08-06 08:30:00', '2026-08-06 09:00:00', 'Main lobby', 12, '2026-07-03 08:00:00', 11, NULL, NULL),
   (8096, 5153, 2, 'Working session and campus walkthrough', 'Phiên làm việc theo mục tiêu request, có đại diện department khi cần.', '2026-08-06 09:15:00', '2026-08-06 11:30:00', 'Meeting room / campus route', 12, '2026-07-03 08:10:00', 11, NULL, NULL),
   (8097, 5154, 1, 'Arrival and reception briefing', 'Đón đoàn, xác nhận danh sách khách và nhắc lại quy tắc campus.', '2026-08-07 08:30:00', '2026-08-07 09:00:00', 'Main lobby', 14, '2026-07-03 08:00:00', 13, NULL, NULL),
-  (8098, 5154, 2, 'Working session and campus walkthrough', 'Phiên làm việc theo mục tiêu request, có đại diện department khi cần.', '2026-08-07 09:15:00', '2026-08-07 11:30:00', 'Meeting room / campus route', 14, '2026-07-03 08:10:00', 13, NULL, NULL);
+  (8098, 5154, 2, 'Working session and campus walkthrough', 'Phiên làm việc theo mục tiêu request, có đại diện department khi cần.', '2026-08-07 09:15:00', '2026-08-07 11:30:00', 'Meeting room / campus route', 14, '2026-07-03 08:10:00', 13, NULL, NULL),
+  (8099, 3113, 1, 'HN post-visit follow-up opening', 'Agenda bổ sung cho campus AFTER_VISIT: xác nhận mục tiêu, thành phần và nội dung đã thực hiện.', CURRENT_DATE - INTERVAL 3 DAY + INTERVAL 14 HOUR, CURRENT_DATE - INTERVAL 3 DAY + INTERVAL 14 HOUR + INTERVAL 30 MINUTE, 'HN IC meeting room', 4, '2026-06-12 14:30:00', 4, NULL, NULL),
+  (8100, 3113, 2, 'HN action review and handover notes', 'Rà soát action item sau tiếp khách, thống nhất tài liệu follow-up và ghi chú biên bản.', CURRENT_DATE - INTERVAL 3 DAY + INTERVAL 14 HOUR + INTERVAL 45 MINUTE, CURRENT_DATE - INTERVAL 3 DAY + INTERVAL 14 HOUR + INTERVAL 150 MINUTE, 'HN IC meeting room', 4, '2026-06-12 14:35:00', 4, NULL, NULL),
+  (8101, 3114, 1, 'QN post-visit reception recap', 'Agenda bổ sung cho campus AFTER_VISIT Quy Nhơn, phục vụ kiểm thử rule operational instance phải có agenda.', CURRENT_DATE - INTERVAL 4 DAY + INTERVAL 15 HOUR, CURRENT_DATE - INTERVAL 4 DAY + INTERVAL 15 HOUR + INTERVAL 30 MINUTE, 'QN reception room', 16, '2026-06-12 14:40:00', 16, NULL, NULL),
+  (8102, 3114, 2, 'QN follow-up coordination', 'Tổng hợp phản hồi của đoàn và điều phối các đầu việc sau chuyến thăm tại Quy Nhơn.', CURRENT_DATE - INTERVAL 4 DAY + INTERVAL 15 HOUR + INTERVAL 45 MINUTE, CURRENT_DATE - INTERVAL 4 DAY + INTERVAL 15 HOUR + INTERVAL 180 MINUTE, 'QN reception room', 16, '2026-06-12 14:45:00', 16, NULL, NULL),
+  (8103, 3115, 1, 'HN closed visit archive briefing', 'Agenda bổ sung cho campus CLOSED: đối soát lịch trình đã thực hiện trước khi đóng đoàn.', CURRENT_DATE - INTERVAL 35 DAY + INTERVAL 8 HOUR + INTERVAL 30 MINUTE, CURRENT_DATE - INTERVAL 35 DAY + INTERVAL 9 HOUR, 'HN archive meeting room', 4, '2026-05-25 15:00:00', 4, NULL, NULL),
+  (8104, 3115, 2, 'HN closing summary and document archive', 'Chốt biên bản, tài liệu, ảnh và feedback trước khi đóng campus visit.', CURRENT_DATE - INTERVAL 35 DAY + INTERVAL 9 HOUR + INTERVAL 10 MINUTE, CURRENT_DATE - INTERVAL 35 DAY + INTERVAL 10 HOUR, 'HN archive meeting room', 4, '2026-05-25 15:05:00', 4, NULL, NULL),
+  (8105, 3116, 1, 'HCM closed visit reception timeline', 'Agenda bổ sung cho campus CLOSED HCM, khớp logic đã diễn ra thì phải có agenda.', CURRENT_DATE - INTERVAL 36 DAY + INTERVAL 9 HOUR, CURRENT_DATE - INTERVAL 36 DAY + INTERVAL 9 HOUR + INTERVAL 30 MINUTE, 'HCM meeting room', 10, '2026-05-25 15:10:00', 10, NULL, NULL),
+  (8106, 3116, 2, 'HCM feedback and logistics closing', 'Đối soát feedback, logistics và nội dung follow-up trước khi đóng đoàn.', CURRENT_DATE - INTERVAL 36 DAY + INTERVAL 9 HOUR + INTERVAL 45 MINUTE, CURRENT_DATE - INTERVAL 36 DAY + INTERVAL 10 HOUR + INTERVAL 30 MINUTE, 'HCM meeting room', 10, '2026-05-25 15:15:00', 10, NULL, NULL),
+  (8107, 3117, 1, 'DN closed visit timeline review', 'Agenda bổ sung cho campus CLOSED Đà Nẵng, đảm bảo seed không có operational instance thiếu agenda.', CURRENT_DATE - INTERVAL 37 DAY + INTERVAL 9 HOUR + INTERVAL 15 MINUTE, CURRENT_DATE - INTERVAL 37 DAY + INTERVAL 9 HOUR + INTERVAL 45 MINUTE, 'DN IC room', 12, '2026-05-25 15:20:00', 12, NULL, NULL),
+  (8108, 3117, 2, 'DN closing actions and archive', 'Tổng hợp action item, tài liệu và ghi chú đóng đoàn tại Đà Nẵng.', CURRENT_DATE - INTERVAL 37 DAY + INTERVAL 10 HOUR, CURRENT_DATE - INTERVAL 37 DAY + INTERVAL 11 HOUR, 'DN IC room', 12, '2026-05-25 15:25:00', 12, NULL, NULL);
 
 INSERT INTO visit_logistics_items (logistics_item_id, visit_instance_id, item_type, title, description, quantity, usage_start_at, usage_end_at, status, priority, requested_by, requested_to_department_id, requested_at, received_by, received_at, assigned_to_user_id, assigned_by, assigned_at, assignee_accepted_at, assignee_response_note, due_at, completed_at, proposed_by, proposed_at, proposed_quantity, proposed_usage_start_at, proposed_usage_end_at, proposed_description, proposal_note, proposal_responded_by, proposal_responded_at, proposal_response, proposal_response_note, decision_note, row_version, created_at, created_by, updated_at, updated_by) VALUES
   
@@ -8649,6 +8685,16 @@ SELECT 'agenda_generic_title_remaining' AS check_name,
 FROM visit_agendas
 WHERE title IN ('Arrival and reception briefing','Working session and campus walkthrough');
 
+SELECT 'operational_visit_instances_missing_agenda' AS check_name,
+       COUNT(*) AS issue_count
+FROM visit_request_campuses vrc
+WHERE vrc.status IN ('DURING_VISIT','AFTER_VISIT','CLOSED')
+  AND NOT EXISTS (
+    SELECT 1
+    FROM visit_agendas va
+    WHERE va.visit_instance_id = vrc.visit_instance_id
+  );
+
 COMMIT;
 SET SQL_SAFE_UPDATES = @OLD_SQL_SAFE_UPDATES;
 
@@ -8837,6 +8883,18 @@ BEGIN
         SET MESSAGE_TEXT = 'cancellation_reason is required when campus instance is cancelled';
     END IF;
 
+    -- Visitor tự hủy campus phải trước lịch ít nhất 24 giờ.
+    -- Host chỉ được hủy thay khách khi chưa tới giờ bắt đầu tiếp khách; khi đã DURING_VISIT trở đi thì trigger đã chặn theo status.
+    IF NEW.cancellation_actor_type = 'VISITOR' AND OLD.planned_start_at < DATE_ADD(NEW.cancelled_at, INTERVAL 24 HOUR) THEN
+      SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Visitor cannot cancel a campus visit within 24 hours of its planned start time';
+    END IF;
+
+    IF NEW.cancellation_actor_type = 'HOST' AND NEW.cancelled_at >= OLD.planned_start_at THEN
+      SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'HOST cannot cancel a campus visit after the planned start time';
+    END IF;
+
     IF NEW.cancellation_actor_type = 'VISITOR' THEN
       IF NEW.cancellation_source <> 'SELF_SERVICE' THEN
         SIGNAL SQLSTATE '45000'
@@ -8874,6 +8932,7 @@ BEFORE INSERT ON visit_request_campuses
 FOR EACH ROW
 BEGIN
   DECLARE v_request_status VARCHAR(30);
+  DECLARE v_agenda_count INT DEFAULT 0;
   DECLARE v_host_role_code VARCHAR(30);
   DECLARE v_host_sub_role VARCHAR(30);
   DECLARE v_host_campus_id BIGINT UNSIGNED;
@@ -8918,6 +8977,19 @@ BEGIN
     END IF;
     IF NEW.decided_by IS NULL OR NEW.decided_at IS NULL OR NEW.decision_actor_role <> 'STAFF_LEADER' THEN
       SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Approved/operational campus instance requires Staff Leader decision metadata';
+    END IF;
+  END IF;
+
+  -- Từ DURING_VISIT trở đi, khách đã/đang được tiếp khách nên campus instance bắt buộc phải có agenda thật.
+  -- ASSIGNED/BEFORE_VISIT vẫn có thể là giai đoạn Host đang chuẩn bị agenda; backend có thể siết sớm hơn nếu cần.
+  IF NEW.status IN ('DURING_VISIT','AFTER_VISIT','CLOSED') THEN
+    SELECT COUNT(*) INTO v_agenda_count
+    FROM visit_agendas va
+    WHERE va.visit_instance_id = NEW.visit_instance_id;
+
+    IF v_agenda_count = 0 THEN
+      SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Campus instance cannot be DURING_VISIT/AFTER_VISIT/CLOSED without at least one agenda item';
     END IF;
   END IF;
 
@@ -8970,6 +9042,7 @@ BEFORE UPDATE ON visit_request_campuses
 FOR EACH ROW
 BEGIN
   DECLARE v_request_status VARCHAR(30);
+  DECLARE v_agenda_count INT DEFAULT 0;
   DECLARE v_host_role_code VARCHAR(30);
   DECLARE v_host_sub_role VARCHAR(30);
   DECLARE v_host_campus_id BIGINT UNSIGNED;
@@ -9021,6 +9094,19 @@ BEGIN
     END IF;
     IF NEW.decided_by IS NULL OR NEW.decided_at IS NULL OR NEW.decision_actor_role <> 'STAFF_LEADER' THEN
       SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Approved/operational campus instance requires Staff Leader decision metadata';
+    END IF;
+  END IF;
+
+  -- Từ DURING_VISIT trở đi, khách đã/đang được tiếp khách nên campus instance bắt buộc phải có agenda thật.
+  -- ASSIGNED/BEFORE_VISIT vẫn có thể là giai đoạn Host đang chuẩn bị agenda; backend có thể siết sớm hơn nếu cần.
+  IF NEW.status IN ('DURING_VISIT','AFTER_VISIT','CLOSED') THEN
+    SELECT COUNT(*) INTO v_agenda_count
+    FROM visit_agendas va
+    WHERE va.visit_instance_id = NEW.visit_instance_id;
+
+    IF v_agenda_count = 0 THEN
+      SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Campus instance cannot be DURING_VISIT/AFTER_VISIT/CLOSED without at least one agenda item';
     END IF;
   END IF;
 
@@ -9140,6 +9226,17 @@ WHERE vp.status = 'ASSIGNED'
         (r.role_code = 'STAFF' AND u.sub_role = 'STAFF' AND vp.participant_role = 'IC_SUPPORT')
      OR (r.role_code = 'STUDENT' AND vp.participant_role = 'STUDENT')
      OR (r.role_code = 'DEPARTMENT' AND u.sub_role = 'LEADER' AND vp.participant_role = 'DEPT_SUPPORT')
+  );
+
+-- Final DB-level check after all appended coverage rows: operational campus instances must have agenda.
+SELECT 'operational_visit_instances_missing_agenda_final' AS check_name,
+       COUNT(*) AS issue_count
+FROM visit_request_campuses vrc
+WHERE vrc.status IN ('DURING_VISIT','AFTER_VISIT','CLOSED')
+  AND NOT EXISTS (
+    SELECT 1
+    FROM visit_agendas va
+    WHERE va.visit_instance_id = vrc.visit_instance_id
   );
 
 -- Fixed participant rows in this generated SQL:
