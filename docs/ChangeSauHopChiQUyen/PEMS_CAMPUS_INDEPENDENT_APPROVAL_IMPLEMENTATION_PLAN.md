@@ -1,3 +1,15 @@
+> [!WARNING]
+> **LEGACY ARCHITECTURE NOTE (Campus-independent Approval Update)**
+> This document has been updated to reflect the new Campus-independent Approval architecture.
+> - **HO is now monitor/read-only.** There is no centralized multi-campus approval by HO.
+> - **Staff Leader approval is per-campus.** Each Staff Leader directly receives and approves/rejects their own campus instance right after submission.
+> - **Self-hosting is supported.** Staff Leaders can assign themselves as the host during approval.
+> - **ASSIGNED is removed.** Approving a request now requires assigning a host immediately.
+> - **New statuses:** `PARTIALLY_APPROVED` (request level) and `REJECTED` (campus level) are added. 
+> - **Cancel logic:** Visitors can cancel requests in `PENDING_APPROVAL` or `PARTIALLY_APPROVED` states.
+> - **Transportation:** `transportation_note` and `transportation_note` are replaced by `transportation_note`.
+> Please refer to the latest codebase and SQL schema for the current implementation.
+
 # PEMS — Kế hoạch triển khai logic mới: Campus xử lý độc lập, Staff Leader duyệt kèm host, Transportation Note
 
 > File này dùng làm **kế hoạch triển khai chi tiết** cho dev/backend/frontend/test/docs khi cập nhật logic Delegation Reception của PEMS.
@@ -22,11 +34,11 @@ Không dùng các flow sau nữa:
 1. Multi-campus request gửi cho HO duyệt tổng.
 2. HO approve/reject multi-campus request.
 3. Staff Leader chỉ thấy campus instance sau khi HO approve.
-4. Campus instance có trạng thái WAITING_HOST_ASSIGNMENT.
+4. Campus instance có trạng thái ASSIGNED.
 5. Staff Leader duyệt xong rồi mới gán host ở bước sau.
 6. Staff Leader không được tự làm host.
 7. Quyết định approve/reject lưu ở visit_requests.decided_*.
-8. transportation_type enum + transportation_detail.
+8. transportation_note enum + transportation_note.
 ```
 
 ### 0.2. Logic mới cần triển khai
@@ -43,7 +55,7 @@ Không dùng các flow sau nữa:
 9. Staff Leader được chọn chính mình làm host.
 10. Quyết định approve/reject lưu ở visit_request_campuses.decided_*.
 11. visit_requests.status chỉ là trạng thái tổng/aggregate.
-12. transportation_type + transportation_detail được thay bằng transportation_note text.
+12. transportation_note + transportation_note được thay bằng transportation_note text.
 ```
 
 ---
@@ -86,7 +98,7 @@ REJECTED
 Không còn:
 
 ```text
-WAITING_HOST_ASSIGNMENT
+ASSIGNED
 ```
 
 Flow mới:
@@ -132,8 +144,8 @@ decision_note
 Bỏ:
 
 ```text
-transportation_type
-transportation_detail
+transportation_note
+transportation_note
 ```
 
 Thêm:
@@ -183,8 +195,8 @@ permissions
 role_permissions
 permission_code runtime authorization
 dynamic permission matrix
-WAITING_HOST_ASSIGNMENT
-transportation_type enum
+ASSIGNED
+transportation_note enum
 HO approve multi-campus
 request-level decision approve/reject
 ```
@@ -210,11 +222,11 @@ VisitRequest
 VisitRequestCampus
 VisitRequestStatus
 VisitRequestCampusStatus
-WAITING_HOST_ASSIGNMENT
+ASSIGNED
 TransportationType
 TransportationDetail
-transportation_type
-transportation_detail
+transportation_note
+transportation_note
 DecisionActorRole
 decided_by
 decided_at
@@ -259,7 +271,7 @@ CANCELLED
 Xóa:
 
 ```csharp
-WAITING_HOST_ASSIGNMENT
+ASSIGNED
 ```
 
 Thêm:
@@ -346,8 +358,8 @@ visit_request_campuses.decision_note
 Xóa mapping cũ:
 
 ```text
-visit_requests.transportation_type
-visit_requests.transportation_detail
+visit_requests.transportation_note
+visit_requests.transportation_note
 visit_requests.decided_by
 visit_requests.decided_at
 visit_requests.decision_actor_role
@@ -358,7 +370,7 @@ visit_requests.decision_note
 
 ```text
 [ ] Backend compile không còn lỗi enum/property không tồn tại.
-[ ] Không còn reference WAITING_HOST_ASSIGNMENT trong backend runtime code.
+[ ] Không còn reference ASSIGNED trong backend runtime code.
 [ ] Không còn TransportationType/TransportationDetail trong entity/EF.
 [ ] VisitRequestCampus có decision fields mới.
 ```
@@ -530,8 +542,8 @@ Visitor owner -> canCancelRequest tùy request status.
 ### 5.8. Kiểm tra hoàn thành
 
 ```text
-[ ] API không còn trả/nhận transportationType.
-[ ] API không còn trả/nhận transportationDetail.
+[ ] API không còn trả/nhận transportationNote.
+[ ] API không còn trả/nhận transportationNote.
 [ ] API trả transportationNote.
 [ ] Approve request bắt buộc hostUserId.
 [ ] Reject request bắt buộc decisionNote.
@@ -1234,7 +1246,7 @@ Không chỉ hiển thị một status tổng.
 
 ```text
 [ ] Form gửi transportationNote.
-[ ] Không còn transportationType trên UI.
+[ ] Không còn transportationNote trên UI.
 [ ] Staff Leader approve bắt buộc host.
 [ ] HO không còn nút duyệt.
 [ ] Visitor thấy trạng thái từng campus.
@@ -1246,7 +1258,7 @@ Không chỉ hiển thị một status tổng.
 
 ### 16.1. Mục tiêu
 
-Dashboard/report không hiểu sai `PARTIALLY_APPROVED`, `REJECTED` ở campus, và không còn `WAITING_HOST_ASSIGNMENT`.
+Dashboard/report không hiểu sai `PARTIALLY_APPROVED`, `REJECTED` ở campus, và không còn `ASSIGNED`.
 
 ### 16.2. Dashboard counters
 
@@ -1304,7 +1316,7 @@ ASSIGNED/BEFORE_VISIT/DURING_VISIT/AFTER_VISIT/CLOSED
 [ ] Dashboard Staff Leader đếm pending theo campus instance.
 [ ] HO dashboard không có pending approval action.
 [ ] Reports hiểu PARTIALLY_APPROVED.
-[ ] Không còn WAITING_HOST_ASSIGNMENT trong chart/filter/badge.
+[ ] Không còn ASSIGNED trong chart/filter/badge.
 ```
 
 ---
@@ -1336,12 +1348,12 @@ Seed README / changelog nếu có
 ```text
 HO duyệt multi-campus
 Approve Cross-Campus Request
-WAITING_HOST_ASSIGNMENT
+ASSIGNED
 Staff Leader gán host sau HO approve
 Staff Leader không được làm host
 Host candidate chỉ STAFF + STAFF
-transportation_type
-transportation_detail
+transportation_note
+transportation_note
 SELF_ARRANGED
 FPTU_SUPPORT
 UNKNOWN
@@ -1364,7 +1376,7 @@ Transportation là text tự do: transportation_note.
 
 ```text
 [ ] Docs không còn flow HO approve multi-campus.
-[ ] Docs không còn WAITING_HOST_ASSIGNMENT.
+[ ] Docs không còn ASSIGNED.
 [ ] Docs mô tả PARTIALLY_APPROVED.
 [ ] Docs mô tả decision fields ở visit_request_campuses.
 [ ] Docs mô tả transportation_note.
@@ -1393,7 +1405,7 @@ dotnet build PEMS.slnx
 ### 18.2. Lỗi thường gặp cần xử lý
 
 ```text
-Enum WAITING_HOST_ASSIGNMENT không còn tồn tại.
+Enum ASSIGNED không còn tồn tại.
 TransportationType/TransportationDetail không còn tồn tại.
 VisitRequest.DecidedBy không còn tồn tại.
 DTO thiếu transportationNote.
@@ -1426,8 +1438,8 @@ Hoặc nếu project dùng pnpm/yarn thì dùng package manager hiện tại c�
 ### 19.2. Lỗi thường gặp cần xử lý
 
 ```text
-Type VisitRequest vẫn có transportationType.
-UI badge vẫn có WAITING_HOST_ASSIGNMENT.
+Type VisitRequest vẫn có transportationNote.
+UI badge vẫn có ASSIGNED.
 Approve modal chưa truyền hostUserId.
 AllowedActions type chưa cập nhật.
 Visitor detail chưa có campusDecisionSummary/campusInstances.
@@ -1437,7 +1449,7 @@ Visitor detail chưa có campusDecisionSummary/campusInstances.
 
 ```text
 [ ] Frontend build 0 errors.
-[ ] Không còn UI dùng transportationType.
+[ ] Không còn UI dùng transportationNote.
 [ ] Không còn label/nút HO approve multi-campus.
 [ ] Staff Leader approve modal bắt buộc host.
 ```
@@ -1513,7 +1525,7 @@ Flow all rejected:
 [ ] Reject reason bắt buộc.
 [ ] HO chỉ xem, không duyệt.
 [ ] Visitor thấy trạng thái từng campus.
-[ ] Badge status không còn WAITING_HOST_ASSIGNMENT.
+[ ] Badge status không còn ASSIGNED.
 ```
 
 ### 20.4. SQL import test
@@ -1536,10 +1548,10 @@ SHOW COLUMNS FROM visit_request_campuses LIKE 'decided%';
 Kỳ vọng:
 
 ```text
-visit_requests có transportation_note, không có transportation_type/transportation_detail.
+visit_requests có transportation_note, không có transportation_note/transportation_note.
 visit_requests không có decided_*.
 visit_request_campuses có decided_*.
-Không có WAITING_HOST_ASSIGNMENT trong dữ liệu.
+Không có ASSIGNED trong dữ liệu.
 Có thể có PARTIALLY_APPROVED trong visit_requests nếu seed có case partial.
 ```
 
@@ -1576,14 +1588,14 @@ Có thể có PARTIALLY_APPROVED trong visit_requests nếu seed có case partia
 [ ] Reject modal bắt buộc lý do.
 [ ] HO không còn action duyệt.
 [ ] Visitor detail hiển thị từng campus.
-[ ] Dashboard/report không còn WAITING_HOST_ASSIGNMENT.
+[ ] Dashboard/report không còn ASSIGNED.
 [ ] Build frontend pass.
 ```
 
 ## 4.3. Data/test/docs checklist
 
 ```text
-[ ] Seed không có WAITING_HOST_ASSIGNMENT.
+[ ] Seed không có ASSIGNED.
 [ ] Seed có REJECTED campus.
 [ ] Seed có PARTIALLY_APPROVED request nếu cần demo.
 [ ] Seed có Staff Leader self-host case.
@@ -1604,8 +1616,8 @@ Task cập nhật logic chỉ được xem là hoàn thành khi:
 1. SQL import sạch trên database mới.
 2. Backend build 0 errors.
 3. Frontend build 0 errors.
-4. Không còn runtime reference WAITING_HOST_ASSIGNMENT.
-5. Không còn runtime reference transportation_type / transportation_detail.
+4. Không còn runtime reference ASSIGNED.
+5. Không còn runtime reference transportation_note / transportation_note.
 6. Không còn HO approve/reject multi-campus.
 7. Staff Leader từng campus xử lý được multi-campus instance của mình ngay sau submit.
 8. Approve bắt buộc chọn host và chuyển thẳng sang ASSIGNED.

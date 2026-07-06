@@ -128,6 +128,35 @@ public sealed class VerifyAndCreateVisitRequestCommandHandler
                 request.PartnerId,
                 request.Notes);
 
+            // ── 3.5. Transactional routing check: Validate Staff Leader presence for all chosen campuses ──
+            var campusCodes = request.CampusVisits.Select(c => c.CampusId).Distinct().ToList();
+            var campusIds = await _db.Campuses
+                .Where(c => campusCodes.Contains(c.CampusCode))
+                .Select(c => c.CampusId)
+                .ToListAsync(cancellationToken);
+            
+            // For each campus, we need at least one ACTIVE Staff Leader in the IC department
+            var validCampuses = await _db.Users
+                .Include(u => u.Role)
+                .Include(u => u.Department)
+                .Where(u => u.Role.RoleCode == RoleCodes.Staff 
+                            && u.SubRole == "LEADER" 
+                            && u.PrimaryCampusId.HasValue 
+                            && campusIds.Contains(u.PrimaryCampusId.Value) 
+                            && u.Status == "ACTIVE"
+                            && u.Department != null 
+                            && u.Department.DepartmentType == "IC")
+                .Select(u => u.PrimaryCampusId.Value)
+                .Distinct()
+                .ToListAsync(cancellationToken);
+
+            if (validCampuses.Count < campusIds.Count)
+            {
+                throw new BusinessRuleException(
+                    "Một hoặc nhiều cơ sở bạn chọn hiện tại chưa có Staff Leader (IC) để tiếp nhận đơn. Vui lòng liên hệ FPTU để được hỗ trợ.",
+                    VisitRequestErrorCodes.CampusHasNoActiveStaffLeader);
+            }
+
             // ── 4. Provision Visitor account (links existing or creates a new VISITOR) ──
             var visitorUserId = await _userProvisionService.EnsureVisitorAccountAsync(
                 contactEmail,
@@ -150,9 +179,13 @@ public sealed class VerifyAndCreateVisitRequestCommandHandler
             // HO notification. EVERY campus instance (single or multi) is routed straight to
             // the ACTIVE Staff Leader(s) of that campus.
             {
-                var campusIds = visitRequest.CampusInstances.Select(c => c.CampusId).Distinct().ToList();
+                var notificationCampusIds = visitRequest.CampusInstances.Select(c => c.CampusId).Distinct().ToList();
                 var staffLeaders = await _db.Users
-                    .Where(u => u.Role.RoleCode == RoleCodes.Staff && u.SubRole == "LEADER" && u.PrimaryCampusId.HasValue && campusIds.Contains(u.PrimaryCampusId.Value) && u.Status == "ACTIVE")
+                    .Where(u => u.Role.RoleCode == RoleCodes.Staff 
+                                && u.SubRole == "LEADER" 
+                                && u.PrimaryCampusId.HasValue 
+                                && notificationCampusIds.Contains(u.PrimaryCampusId.Value) 
+                                && u.Status == "ACTIVE")
                     .Select(u => u.UserId)
                     .ToListAsync(cancellationToken);
 

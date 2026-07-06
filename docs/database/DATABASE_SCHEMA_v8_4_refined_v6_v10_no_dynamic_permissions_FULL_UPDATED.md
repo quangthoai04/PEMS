@@ -1,3 +1,15 @@
+> [!WARNING]
+> **LEGACY ARCHITECTURE NOTE (Campus-independent Approval Update)**
+> This document has been updated to reflect the new Campus-independent Approval architecture.
+> - **HO is now monitor/read-only.** There is no centralized multi-campus approval by HO.
+> - **Staff Leader approval is per-campus.** Each Staff Leader directly receives and approves/rejects their own campus instance right after submission.
+> - **Self-hosting is supported.** Staff Leaders can assign themselves as the host during approval.
+> - **ASSIGNED is removed.** Approving a request now requires assigning a host immediately.
+> - **New statuses:** `PARTIALLY_APPROVED` (request level) and `REJECTED` (campus level) are added. 
+> - **Cancel logic:** Visitors can cancel requests in `PENDING_APPROVAL` or `PARTIALLY_APPROVED` states.
+> - **Transportation:** `transportation_note` and `transportation_note` are replaced by `transportation_note`.
+> Please refer to the latest codebase and SQL schema for the current implementation.
+
 # PEMS Database Schema — FULL v8.4 Refined V6 v10 No Dynamic Permissions
 
 > **Generated from:** `pems_full_create_manual_wide_coverage_seed_v8_4_refined_v6_v10_clean_logistics_handover_fields.sql`  
@@ -691,8 +703,8 @@
 | `contact_person_phone` | `VARCHAR(50)` | NO |  |  |  |  | Field `contact_person_phone` used by `visit_requests` business logic and screens. |
 | `contact_person_email` | `VARCHAR(150)` | NO |  |  | IDX: idx_visit_requests_contact_email; IDX: ft_visit_requests_frontend_search |  | Field `contact_person_email` used by `visit_requests` business logic and screens. |
 | `working_language` | `ENUM('VI','EN')` | NO | 'EN' |  |  | VI, EN | Ngôn ngữ sử dụng trong visit. Chỉ dùng VI/EN theo frontend hiện tại, không có lựa chọn OTHER |
-| `transportation_type` | `ENUM('SELF_ARRANGED','FPTU_SUPPORT','UNKNOWN','OTHER')` | NO | 'UNKNOWN' |  |  | SELF_ARRANGED, FPTU_SUPPORT, UNKNOWN, OTHER | Field `transportation_type` used by `visit_requests` business logic and screens. |
-| `transportation_detail` | `VARCHAR(500)` | YES |  |  |  |  | Field `transportation_detail` used by `visit_requests` business logic and screens. |
+| `transportation_note` | `ENUM('SELF_ARRANGED','FPTU_SUPPORT','UNKNOWN','OTHER')` | NO | 'UNKNOWN' |  |  | SELF_ARRANGED, FPTU_SUPPORT, UNKNOWN, OTHER | Field `transportation_note` used by `visit_requests` business logic and screens. |
+| `transportation_note` | `VARCHAR(500)` | YES |  |  |  |  | Field `transportation_note` used by `visit_requests` business logic and screens. |
 | `media_consent_status` | `ENUM('AGREED','DECLINED')` | NO | 'DECLINED' |  | IDX: idx_visit_requests_media_consent | AGREED, DECLINED | Status field used for workflow state, filtering and UI badges. |
 | `media_consent_note` | `TEXT` | YES |  |  |  |  | Business note/reason used for explanation and audit. |
 | `note_to_fptu` | `TEXT` | YES |  |  |  |  | Ghi chú cho FPTU |
@@ -750,7 +762,7 @@
 - `CHECK (visit_type <> 'OTHER' OR (visit_type_other IS NOT NULL AND TRIM(visit_type_other) <> ''))`
 
 ### 5.15. `visit_request_campuses`
-**Purpose / Table Comment:** Mỗi campus trong request có một instance riêng. HO duyệt MULTI_CAMPUS thì chuyển WAITING_HOST_ASSIGNMENT và gán Staff Leader làm coordinator; Staff Leader gán Staff làm host chính thức một lần; không hỗ trợ transfer host.
+**Purpose / Table Comment:** Mỗi campus trong request có một instance riêng. HO duyệt MULTI_CAMPUS thì chuyển ASSIGNED và gán Staff Leader làm coordinator; Staff Leader gán Staff làm host chính thức một lần; không hỗ trợ transfer host.
 
 **Main Screens / UC Area:** Campus Visit Instance / Staff Leader Processing / Host Assignment / Lifecycle
 
@@ -765,7 +777,7 @@
 | `campus_id` | `BIGINT UNSIGNED` | NO |  |  | UNIQUE: uq_visit_instance_request_campus; IDX: idx_visit_instances_campus_status_time; IDX: idx_visit_instances_visibility_campus_request; FK: campuses(campus_id) |  | Identifier/reference field used to join or scope `visit_request_campuses` records. |
 | `planned_start_at` | `DATETIME` | NO |  |  | IDX: idx_visit_instances_campus_status_time; IDX: idx_visit_instances_status_time |  | Ngày giờ bắt đầu dự kiến tại campus |
 | `planned_end_at` | `DATETIME` | NO |  |  |  |  | Ngày giờ kết thúc dự kiến tại campus |
-| `status` | `ENUM(<br>    'WAITING_REQUEST_APPROVAL',<br>    'WAITING_HOST_ASSIGNMENT',<br>    'ASSIGNED',<br>    'BEFORE_VISIT',<br>    'DURING_VISIT',<br>    'AFTER_VISIT',<br>    'CLOSED',<br>    'CANCELLED'<br>  )` | NO | 'WAITING_REQUEST_APPROVAL' |  | IDX: idx_visit_instances_campus_status_time; IDX: idx_visit_instances_status_time; IDX: idx_visit_instances_coordinator; IDX: idx_visit_instances_current_host; IDX: idx_visit_instances_visibility_campus_request | WAITING_REQUEST_APPROVAL, WAITING_HOST_ASSIGNMENT, ASSIGNED, BEFORE_VISIT, DURING_VISIT, AFTER_VISIT, CLOSED, CANCELLED | WAITING_REQUEST_APPROVAL=chờ duyệt request; WAITING_HOST_ASSIGNMENT=đã duyệt, Staff Leader đang điều phối và chờ gán host chính thức; ASSIGNED=đã có Staff host chính thức. |
+| `status` | `ENUM(<br>    'WAITING_REQUEST_APPROVAL',<br>    'ASSIGNED',<br>    'ASSIGNED',<br>    'BEFORE_VISIT',<br>    'DURING_VISIT',<br>    'AFTER_VISIT',<br>    'CLOSED',<br>    'CANCELLED'<br>  )` | NO | 'WAITING_REQUEST_APPROVAL' |  | IDX: idx_visit_instances_campus_status_time; IDX: idx_visit_instances_status_time; IDX: idx_visit_instances_coordinator; IDX: idx_visit_instances_current_host; IDX: idx_visit_instances_visibility_campus_request | WAITING_REQUEST_APPROVAL, ASSIGNED, BEFORE_VISIT, DURING_VISIT, AFTER_VISIT, CLOSED, CANCELLED, REJECTED, ASSIGNED, BEFORE_VISIT, DURING_VISIT, AFTER_VISIT, CLOSED, CANCELLED | WAITING_REQUEST_APPROVAL=chờ duyệt request; ASSIGNED=đã duyệt, Staff Leader đang điều phối và chờ gán host chính thức; ASSIGNED=đã có Staff host chính thức. |
 | `coordinator_user_id` | `BIGINT UNSIGNED` | YES |  |  | IDX: idx_visit_instances_coordinator; FK: users(user_id) |  | Staff Leader điều phối campus instance. Với MULTI_CAMPUS, HO duyệt xong thì hệ thống gán Staff Leader campus vào đây. |
 | `coordinator_assigned_by` | `BIGINT UNSIGNED` | YES |  |  | IDX: idx_visit_instances_coordinator_assigned; FK: users(user_id) |  | Người gán coordinator, thường là HO khi duyệt MULTI_CAMPUS |
 | `coordinator_assigned_at` | `DATETIME` | YES |  |  | IDX: idx_visit_instances_coordinator_assigned |  | Thời điểm gán coordinator |

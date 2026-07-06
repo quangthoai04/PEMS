@@ -68,7 +68,9 @@ public sealed class ApproveCampusInstanceCommandHandler
 
         // Host is one-time: never overwrite an existing assignment.
         if (instance.CurrentHostUserId != null)
-            throw new ConflictException("Cơ sở này đã có host phụ trách; không thể gán lại host.");
+            throw new BusinessRuleException(
+                "Không thể gán lại host sau khi campus đã được duyệt.",
+                "HOST_ALREADY_ASSIGNED");
 
         if (request.HostUserId == 0)
             throw new BusinessRuleException(
@@ -107,9 +109,9 @@ public sealed class ApproveCampusInstanceCommandHandler
                     : "Host được chọn phải là IC Staff đang hoạt động thuộc đúng cơ sở, hoặc chính bạn.");
         }
 
-        // ── Hard conflict: the chosen host already hosts ANOTHER live instance overlapping
         //    this window. Calendar-event overlaps are surfaced as warnings by the host-candidate
-        //    API and stay selectable; hosting two delegations at once is not. ──
+        //    API and stay selectable; hosting two delegations at once is not blocked anymore,
+        //    we just log it as a warning.
         var hasHostingConflict = await _db.VisitRequestCampuses.AnyAsync(c =>
             c.CurrentHostUserId == request.HostUserId
             && c.VisitInstanceId != instance.VisitInstanceId
@@ -119,10 +121,6 @@ public sealed class ApproveCampusInstanceCommandHandler
             && c.PlannedStartAt < instance.PlannedEndAt
             && c.PlannedEndAt > instance.PlannedStartAt,
             cancellationToken);
-        if (hasHostingConflict)
-            throw new BusinessRuleException(
-                "Host được chọn đang phụ trách một đoàn khác trùng khung thời gian này.",
-                "HOST_SCHEDULE_CONFLICT");
 
         var now = _clock.UtcNow;
         var decisionNote = string.IsNullOrWhiteSpace(request.DecisionNote) ? null : request.DecisionNote.Trim();
@@ -186,10 +184,14 @@ public sealed class ApproveCampusInstanceCommandHandler
         visit.UpdatedBy = actorId;
         visit.RowVersion += 1;
 
+        var auditAction = hasHostingConflict 
+            ? "APPROVE_CAMPUS_INSTANCE_AND_ASSIGN_HOST_WITH_SCHEDULE_WARNING" 
+            : "APPROVE_CAMPUS_INSTANCE_AND_ASSIGN_HOST";
+
         _db.AuditLogs.Add(new AuditLog
         {
             ActorUserId = actorId,
-            Action = "APPROVE_CAMPUS_INSTANCE_AND_ASSIGN_HOST",
+            Action = auditAction,
             EntityType = "VisitRequestCampus",
             EntityId = instance.VisitInstanceId,
             CreatedAt = now
@@ -243,6 +245,7 @@ public sealed class ApproveCampusInstanceCommandHandler
             request.HostUserId,
             isSelfHost
                 ? "Đã duyệt cơ sở và bạn là host chính phụ trách."
-                : "Đã duyệt cơ sở và gán host phụ trách.");
+                : "Đã duyệt cơ sở và gán host phụ trách.",
+            hasHostingConflict);
     }
 }

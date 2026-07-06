@@ -56,15 +56,23 @@ public sealed class VisitRequestAggregateStatusService : IVisitRequestAggregateS
         var approved = campusStatuses.Count(s => ApprovedOrBeyond.Contains(s));
         var pending = campusStatuses.Count(s => s == VisitInstanceStatus.WaitingRequestApproval);
         var rejected = campusStatuses.Count(s => s == VisitInstanceStatus.Rejected);
+        var cancelled = campusStatuses.Count(s => s == VisitInstanceStatus.Cancelled);
+
+        if (pending > 0)
+        {
+            if (approved > 0 || cancelled > 0)
+                return VisitRequestStatuses.PartiallyApproved;
+            return VisitRequestStatuses.PendingApproval;
+        }
+
+        if (approved > 0)
+            return VisitRequestStatuses.Approved;
 
         if (total > 0 && rejected == total)
             return VisitRequestStatuses.Rejected;
-        if (approved > 0 && (pending > 0 || rejected > 0))
-            return VisitRequestStatuses.PartiallyApproved;
-        if (approved > 0 && pending == 0)
-            return VisitRequestStatuses.Approved;
-        if (approved == 0 && pending > 0)
-            return VisitRequestStatuses.PendingApproval;
+
+        if (approved == 0 && cancelled > 0)
+            return VisitRequestStatuses.Cancelled;
 
         return currentRequestStatus;
     }

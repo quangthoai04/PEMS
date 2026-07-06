@@ -1,3 +1,15 @@
+> [!WARNING]
+> **LEGACY ARCHITECTURE NOTE (Campus-independent Approval Update)**
+> This document has been updated to reflect the new Campus-independent Approval architecture.
+> - **HO is now monitor/read-only.** There is no centralized multi-campus approval by HO.
+> - **Staff Leader approval is per-campus.** Each Staff Leader directly receives and approves/rejects their own campus instance right after submission.
+> - **Self-hosting is supported.** Staff Leaders can assign themselves as the host during approval.
+> - **ASSIGNED is removed.** Approving a request now requires assigning a host immediately.
+> - **New statuses:** `PARTIALLY_APPROVED` (request level) and `REJECTED` (campus level) are added. 
+> - **Cancel logic:** Visitors can cancel requests in `PENDING_APPROVAL` or `PARTIALLY_APPROVED` states.
+> - **Transportation:** `transportation_note` and `transportation_note` are replaced by `transportation_note`.
+> Please refer to the latest codebase and SQL schema for the current implementation.
+
 # PEMS — Đặc tả logic trang chi tiết sau duyệt, Host setup, phân quyền role, biên bản và tin tức
 
 > File này dùng để đưa cho AI Agent đọc và code theo đúng nghiệp vụ đã chốt.
@@ -92,7 +104,7 @@ Status campus instance:
 
 ```text
 WAITING_REQUEST_APPROVAL
-WAITING_HOST_ASSIGNMENT
+ASSIGNED
 ASSIGNED
 BEFORE_VISIT
 DURING_VISIT
@@ -243,7 +255,7 @@ Nếu cần xem lịch sử, chỉ hiển thị dạng read-only.
 
 ```text
 visit_requests.status = APPROVED
-visit_request_campuses.status = WAITING_HOST_ASSIGNMENT
+visit_request_campuses.status = ASSIGNED
 current_host_user_id IS NULL
 ```
 
@@ -359,7 +371,7 @@ Staff Leader đúng campus được gán Host khi:
 
 ```text
 - Request đã APPROVED.
-- Campus instance đang WAITING_HOST_ASSIGNMENT.
+- Campus instance đang ASSIGNED.
 - current_host_user_id IS NULL.
 - Candidate là STAFF + STAFF.
 - Candidate ACTIVE.
@@ -965,7 +977,7 @@ Validate:
 ```text
 - Current user là Staff Leader đúng campus.
 - Request APPROVED.
-- Instance WAITING_HOST_ASSIGNMENT.
+- Instance ASSIGNED.
 - current_host_user_id IS NULL.
 - Candidate hợp lệ.
 - Không conflict lịch.
@@ -1024,7 +1036,7 @@ row.statusText === 'Chờ duyệt'
 
 ```ts
 row.requestStatus === 'APPROVED'
-row.instanceStatus === 'WAITING_HOST_ASSIGNMENT'
+row.instanceStatus === 'ASSIGNED'
 ```
 
 Tốt nhất:
@@ -1052,7 +1064,7 @@ if (requestStatus === 'CANCELLED') {
   openPreviewWithCancelReason();
 }
 
-if (requestStatus === 'APPROVED' && instanceStatus === 'WAITING_HOST_ASSIGNMENT') {
+if (requestStatus === 'APPROVED' && instanceStatus === 'ASSIGNED') {
   openPostApprovalLightDetail();
 }
 
@@ -1094,7 +1106,7 @@ TimelineTab
 ### Sau duyệt chưa gán Host
 
 ```text
-[ ] APPROVED + WAITING_HOST_ASSIGNMENT mở detail nhẹ.
+[ ] APPROVED + ASSIGNED mở detail nhẹ.
 [ ] Staff Leader đúng campus thấy nút Gán Host.
 [ ] Không có nút Đổi Host.
 [ ] Visitor thấy “Đang phân công Host”.
@@ -1155,7 +1167,7 @@ TimelineTab
 
 ```text
 [ ] Xem PENDING_APPROVAL single-campus → chỉ preview + duyệt/từ chối.
-[ ] Xem APPROVED + WAITING_HOST_ASSIGNMENT → thấy nút Gán Host.
+[ ] Xem APPROVED + ASSIGNED → thấy nút Gán Host.
 [ ] Gán Host thành công.
 [ ] Sau khi gán Host → không còn nút Gán Host / Đổi Host.
 [ ] Vào VisitProcess → chỉ read-only.

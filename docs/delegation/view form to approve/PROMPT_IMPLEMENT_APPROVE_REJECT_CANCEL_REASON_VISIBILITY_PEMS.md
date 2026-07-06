@@ -1,3 +1,15 @@
+> [!WARNING]
+> **LEGACY ARCHITECTURE NOTE (Campus-independent Approval Update)**
+> This document has been updated to reflect the new Campus-independent Approval architecture.
+> - **HO is now monitor/read-only.** There is no centralized multi-campus approval by HO.
+> - **Staff Leader approval is per-campus.** Each Staff Leader directly receives and approves/rejects their own campus instance right after submission.
+> - **Self-hosting is supported.** Staff Leaders can assign themselves as the host during approval.
+> - **ASSIGNED is removed.** Approving a request now requires assigning a host immediately.
+> - **New statuses:** `PARTIALLY_APPROVED` (request level) and `REJECTED` (campus level) are added. 
+> - **Cancel logic:** Visitors can cancel requests in `PENDING_APPROVAL` or `PARTIALLY_APPROVED` states.
+> - **Transportation:** `transportation_note` and `transportation_note` are replaced by `transportation_note`.
+> Please refer to the latest codebase and SQL schema for the current implementation.
+
 # PROMPT_IMPLEMENT_APPROVE_REJECT_CANCEL_AND_REASON_VISIBILITY_PEMS
 
 > Mục tiêu: hướng dẫn AI Agent cập nhật code PEMS cho các luồng **Duyệt / Từ chối đơn** của **HO và Staff Leader**, luồng **Cancel** của **Visitor và Host**, và phần **xem lý do hủy / lý do từ chối** theo đúng role/scope/status canonical v10.
@@ -175,7 +187,7 @@ Status instance liên quan:
 
 ```text
 WAITING_REQUEST_APPROVAL
-WAITING_HOST_ASSIGNMENT
+ASSIGNED
 ASSIGNED
 BEFORE_VISIT
 DURING_VISIT
@@ -478,7 +490,7 @@ visit_requests.decided_at = now
 visit_requests.decision_actor_role = STAFF_LEADER
 visit_requests.decision_note = decisionNote nếu có
 
-visit_request_campuses.status = WAITING_HOST_ASSIGNMENT
+visit_request_campuses.status = ASSIGNED
 ```
 
 Không tự gán host trong approve nếu luồng hiện tại tách bước gán host sau đó.
@@ -523,7 +535,7 @@ visit_requests.decision_note = decisionNote nếu có
 Với từng campus instance:
 
 ```text
-visit_request_campuses.status = WAITING_HOST_ASSIGNMENT
+visit_request_campuses.status = ASSIGNED
 visit_request_campuses.coordinator_user_id = Staff Leader của campus đó nếu tìm được
 visit_request_campuses.coordinator_assigned_by = currentUser.user_id
 visit_request_campuses.coordinator_assigned_at = now
@@ -1072,12 +1084,12 @@ Nếu chưa dùng row_version ở command hiện tại, không bắt buộc thê
 ### 14.1 Approve/Reject
 
 ```text
-1. Staff Leader approve single-campus đúng campus -> request APPROVED, instance WAITING_HOST_ASSIGNMENT.
+1. Staff Leader approve single-campus đúng campus -> request APPROVED, instance ASSIGNED.
 2. Staff Leader reject single-campus đúng campus -> request REJECTED, decision_note lưu đúng.
 3. Staff Leader reject reason rỗng -> validation error.
 4. Staff Leader campus khác approve/reject -> 403.
 5. Staff Leader approve/reject multi-campus pending HO -> 403.
-6. HO approve multi-campus -> request APPROVED, all instances WAITING_HOST_ASSIGNMENT, coordinator_user_id set nếu có Staff Leader.
+6. HO approve multi-campus -> request APPROVED, all instances ASSIGNED, coordinator_user_id set nếu có Staff Leader.
 7. HO reject multi-campus -> request REJECTED, decision_note lưu đúng.
 8. HO approve/reject single-campus -> 403.
 9. Admin/Staff thường/Department/Student/Visitor approve/reject -> 403.

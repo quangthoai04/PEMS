@@ -145,6 +145,7 @@ export interface CampusProgressItem {
   decidedBy?: number | null;
   decidedByName?: string | null;
   decidedAt?: string | null;
+  decisionActorRole?: string | null;
 
   cancellationReason?: string | null;
   cancelledBy?: number | null;

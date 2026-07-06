@@ -1,3 +1,15 @@
+> [!WARNING]
+> **LEGACY ARCHITECTURE NOTE (Campus-independent Approval Update)**
+> This document has been updated to reflect the new Campus-independent Approval architecture.
+> - **HO is now monitor/read-only.** There is no centralized multi-campus approval by HO.
+> - **Staff Leader approval is per-campus.** Each Staff Leader directly receives and approves/rejects their own campus instance right after submission.
+> - **Self-hosting is supported.** Staff Leaders can assign themselves as the host during approval.
+> - **ASSIGNED is removed.** Approving a request now requires assigning a host immediately.
+> - **New statuses:** `PARTIALLY_APPROVED` (request level) and `REJECTED` (campus level) are added. 
+> - **Cancel logic:** Visitors can cancel requests in `PENDING_APPROVAL` or `PARTIALLY_APPROVED` states.
+> - **Transportation:** `transportation_note` and `transportation_note` are replaced by `transportation_note`.
+> Please refer to the latest codebase and SQL schema for the current implementation.
+
 # PROMPT AI CODE — Thiết kế lại trang Report cho role HO
 
 > **Mục tiêu:** Thiết kế lại và triển khai thật trang **Head Office Report** cho PEMS tại route `/dashboard/reports`, theo hướng **gọn hơn, chuyên nghiệp hơn, ít khung/ô hơn, hiển thị được nhiều thông tin tổng quan hơn**, đồng thời **lấy dữ liệu thật từ database hiện có, không dùng mock data**.
@@ -273,7 +285,7 @@ preset?: THIS_MONTH | THIS_QUARTER | THIS_YEAR | CUSTOM
 campusId?: number | ALL
 visitScope?: ALL | SINGLE_CAMPUS | MULTI_CAMPUS
 requestStatus?: ALL | PENDING_APPROVAL | APPROVED | REJECTED | CANCELLED
-campusInstanceStatus?: ALL | WAITING_REQUEST_APPROVAL | WAITING_HOST_ASSIGNMENT | ASSIGNED | BEFORE_VISIT | DURING_VISIT | AFTER_VISIT | CLOSED | CANCELLED
+campusInstanceStatus?: ALL | WAITING_REQUEST_APPROVAL | ASSIGNED | ASSIGNED | BEFORE_VISIT | DURING_VISIT | AFTER_VISIT | CLOSED | CANCELLED
 visitType?: string | ALL
 ```
 
@@ -465,7 +477,7 @@ Status:
 
 ```text
 WAITING_REQUEST_APPROVAL
-WAITING_HOST_ASSIGNMENT
+ASSIGNED
 ASSIGNED
 BEFORE_VISIT
 DURING_VISIT
@@ -1030,7 +1042,7 @@ Tương ứng DB status:
 
 ```text
 WAITING_REQUEST_APPROVAL
-WAITING_HOST_ASSIGNMENT
+ASSIGNED
 ASSIGNED
 BEFORE_VISIT
 DURING_VISIT
@@ -1590,7 +1602,7 @@ CANCELLED
 
 visit_request_campuses.status:
 WAITING_REQUEST_APPROVAL
-WAITING_HOST_ASSIGNMENT
+ASSIGNED
 ASSIGNED
 BEFORE_VISIT
 DURING_VISIT
