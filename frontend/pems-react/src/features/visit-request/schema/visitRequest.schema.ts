@@ -135,8 +135,15 @@ export const visitRequestSchema = z.object({
     email: emailSchema,
   }),
   workingLanguage: z.enum(['EN', 'VI']),
-  transportationType: z.enum(['SELF_ARRANGED', 'FPTU_SUPPORT', 'UNKNOWN', 'OTHER']),
-  transportationDetail: z.string().optional().default(''),
+  // Free text identifying the transportation to FPTU — optional, bounded, no HTML/script.
+  transportationNote: z
+    .string()
+    .max(2000, 'Nhận diện phương tiện di chuyển tối đa 2000 ký tự')
+    .refine((v) => !v.includes('<') && !v.includes('>'), {
+      message: 'Không được chứa ký tự HTML/script',
+    })
+    .optional()
+    .default(''),
   mediaConsentStatus: z.enum(['AGREED', 'DECLINED']),
   mediaConsentNote: z.string().optional().default(''),
   partnerId: z.number().nullable().optional(),
@@ -171,14 +178,6 @@ export const visitRequestSchema = z.object({
       code: z.ZodIssueCode.custom,
       path: ['visitTypeOther'],
       message: 'Vui lòng nhập chi tiết loại hình tham quan khác',
-    });
-  }
-
-  if ((data.transportationType === 'FPTU_SUPPORT' || data.transportationType === 'OTHER') && (!data.transportationDetail || data.transportationDetail.trim() === '')) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ['transportationDetail'],
-      message: 'Vui lòng nhập chi tiết phương tiện di chuyển',
     });
   }
 

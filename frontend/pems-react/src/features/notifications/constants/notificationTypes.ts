@@ -1,9 +1,7 @@
 export const NotificationTypes = {
   VisitRequestSubmitted: "VISIT_REQUEST_SUBMITTED",
-  CrossCampusRequestSubmitted: "CROSS_CAMPUS_REQUEST_SUBMITTED",
   VisitRequestApproved: "VISIT_REQUEST_APPROVED",
   VisitRequestRejected: "VISIT_REQUEST_REJECTED",
-  WaitingHostAssignment: "WAITING_HOST_ASSIGNMENT",
   HostAssigned: "HOST_ASSIGNED",
   VisitStatusChanged: "VISIT_STATUS_CHANGED",
   VisitCancelled: "VISIT_CANCELLED",

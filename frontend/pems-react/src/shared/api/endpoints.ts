@@ -157,14 +157,14 @@ export const API_ENDPOINTS = {
     // approved/waiting-host detail and rejected detail screens.
     submittedFormDetail: (visitRequestId: string | number) =>
       `/delegations/visit-requests/${visitRequestId}/submitted-form-detail`,
-    // UC-18 HO approve / reject a MULTI_CAMPUS request (whole request).
-    hoApprove: (visitRequestId: string | number) => `/delegations/${visitRequestId}/ho-approve`,
-    hoReject: (visitRequestId: string | number) => `/delegations/${visitRequestId}/ho-reject`,
-    // UC-22 Staff Leader: reject own-campus single request, list host candidates, assign/transfer host.
-    campusReject: (visitRequestId: string | number) => `/delegations/${visitRequestId}/campus-reject`,
+    // Campus-independent approval (SQL v10): the campus Staff Leader decides each campus
+    // instance — approve (must pick the host in the same action) or reject with a reason.
+    // HO no longer approves/rejects anything (monitor/read-only).
     hostCandidates: (visitInstanceId: string | number) => `/delegations/campuses/${visitInstanceId}/host-candidates`,
-    assignHost: (visitRequestId: string | number, visitInstanceId: string | number) =>
-      `/delegations/${visitRequestId}/campuses/${visitInstanceId}/assign-host`,
+    approveCampusInstance: (visitRequestId: string | number, visitInstanceId: string | number) =>
+      `/delegations/${visitRequestId}/campuses/${visitInstanceId}/approve`,
+    rejectCampusInstance: (visitRequestId: string | number, visitInstanceId: string | number) =>
+      `/delegations/${visitRequestId}/campuses/${visitInstanceId}/reject`,
     // Phase 2: permission flags for the visit-process detail page (source of truth for tab view/edit).
     processPermissions: (visitInstanceId: string | number) =>
       `/delegations/visit-instances/${visitInstanceId}/process-permissions`,

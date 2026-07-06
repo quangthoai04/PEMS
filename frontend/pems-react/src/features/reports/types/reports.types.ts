@@ -5,17 +5,17 @@
 
 export type HoReportPreset = 'THIS_MONTH' | 'THIS_QUARTER' | 'THIS_YEAR' | 'CUSTOM';
 export type HoVisitScopeFilter = 'ALL' | 'SINGLE_CAMPUS' | 'MULTI_CAMPUS';
-export type HoRequestStatusFilter = 'ALL' | 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
+export type HoRequestStatusFilter = 'ALL' | 'PENDING_APPROVAL' | 'PARTIALLY_APPROVED' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
 export type HoInstanceStatusFilter =
   | 'ALL'
   | 'WAITING_REQUEST_APPROVAL'
-  | 'WAITING_HOST_ASSIGNMENT'
   | 'ASSIGNED'
   | 'BEFORE_VISIT'
   | 'DURING_VISIT'
   | 'AFTER_VISIT'
   | 'CLOSED'
-  | 'CANCELLED';
+  | 'CANCELLED'
+  | 'REJECTED';
 export type HoAttentionSeverity = 'INFO' | 'WARNING' | 'DANGER' | 'SUCCESS';
 export type HoExportFormat = 'PDF' | 'EXCEL' | 'CSV';
 export type HoReportSection =
@@ -64,6 +64,7 @@ export interface HoReportKpis {
   multiCampusPending: number;
   pendingRequests: number;
   approvedRequests: number;
+  partiallyApprovedRequests: number;
   rejectedRequests: number;
   cancelledRequests: number;
   activeCampusInstances: number;
@@ -90,6 +91,7 @@ export interface HoMonthlyTrend {
   singleCampusRequests: number;
   multiCampusRequests: number;
   approved: number;
+  partiallyApproved: number;
   rejected: number;
   cancelled: number;
   totalGuests: number;
@@ -97,6 +99,7 @@ export interface HoMonthlyTrend {
 
 export interface HoApprovalBreakdown {
   approved: number;
+  partiallyApproved: number;
   rejected: number;
   pending: number;
   cancelled: number;
@@ -111,7 +114,8 @@ export interface HoCampusPerformance {
   campusName: string;
   totalInstances: number;
   waitingRequestApproval: number;
-  waitingHostAssignment: number;
+  /** Campus instances the campus Staff Leader rejected (campus-independent approval). */
+  rejected: number;
   assigned: number;
   beforeVisit: number;
   duringVisit: number;
