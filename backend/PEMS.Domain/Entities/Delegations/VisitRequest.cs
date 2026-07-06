@@ -74,11 +74,10 @@ public class VisitRequest
     public string WorkingLanguage { get; set; } = "EN";
 
 
-    [Column("transportation_type")]
-    public string TransportationType { get; set; } = "UNKNOWN";
-
-    [Column("transportation_detail")]
-    public string? TransportationDetail { get; set; }
+    // Free text the guest enters to describe/identify the transportation to FPTU
+    // (replaces the old transportation_type enum + transportation_detail).
+    [Column("transportation_note")]
+    public string? TransportationNote { get; set; }
 
     [Column("media_consent_status")]
     public string MediaConsentStatus { get; set; } = "DECLINED";
@@ -89,8 +88,9 @@ public class VisitRequest
     [Column("note_to_fptu")]
     public string? NoteToFptu { get; set; }
 
-    // Request decision status only (PENDING_APPROVAL/APPROVED/REJECTED/CANCELLED).
-    // Visit progress is derived from VisitRequestCampus.Status.
+    // Aggregate status only (PENDING_APPROVAL/PARTIALLY_APPROVED/APPROVED/REJECTED/CANCELLED),
+    // derived from campus-instance decisions. The real approve/reject decision fields
+    // (decided_by/decided_at/decision_actor_role/decision_note) live on VisitRequestCampus.
     [Column("status")]
     public string Status { get; set; } = "PENDING_APPROVAL";
 
@@ -99,18 +99,6 @@ public class VisitRequest
 
     [Column("email_verified_at")]
     public DateTime? EmailVerifiedAt { get; set; }
-
-    [Column("decided_by")]
-    public ulong? DecidedBy { get; set; }
-
-    [Column("decided_at")]
-    public DateTime? DecidedAt { get; set; }
-
-    [Column("decision_actor_role")]
-    public string? DecisionActorRole { get; set; }
-
-    [Column("decision_note")]
-    public string? DecisionNote { get; set; }
 
     // --- Cancellation (UC-136, post-approval only). cancellation_reason carries
     // both the reason and any external-confirmation details; there is no separate note column. ---

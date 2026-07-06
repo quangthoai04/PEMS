@@ -39,12 +39,27 @@ public class VisitRequestCampus
     [Column("coordinator_assigned_at")]
     public DateTime? CoordinatorAssignedAt { get; set; }
 
-    // --- Host assignment (set when the overall request is approved). ---
+    // --- Host assignment (set by the campus Staff Leader in the same approve action). ---
     [Column("host_assigned_by")]
     public ulong? HostAssignedBy { get; set; }
 
     [Column("host_assigned_at")]
     public DateTime? HostAssignedAt { get; set; }
+
+    // --- Campus-level decision (SQL v10 campus-independent approval). The Staff Leader of
+    // this campus approves/rejects the instance; decision_actor_role is always STAFF_LEADER
+    // and REJECTED requires a decision_note (both enforced by DB triggers as well). ---
+    [Column("decided_by")]
+    public ulong? DecidedBy { get; set; }
+
+    [Column("decided_at")]
+    public DateTime? DecidedAt { get; set; }
+
+    [Column("decision_actor_role")]
+    public string? DecisionActorRole { get; set; }
+
+    [Column("decision_note")]
+    public string? DecisionNote { get; set; }
 
     [Column("closed_by")]
     public ulong? ClosedBy { get; set; }

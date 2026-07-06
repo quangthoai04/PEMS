@@ -16,14 +16,6 @@ public static class VisitType
     public const string Other = "OTHER";
 }
 
-public static class TransportationType
-{
-    public const string SelfArranged = "SELF_ARRANGED";
-    public const string FptuSupport = "FPTU_SUPPORT";
-    public const string Unknown = "UNKNOWN";
-    public const string Other = "OTHER";
-}
-
 public static class MediaConsentStatus
 {
     public const string Agreed = "AGREED";
