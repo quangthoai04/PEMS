@@ -5,7 +5,7 @@
  */
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   ArrowRight,
   Search,
@@ -100,6 +100,7 @@ function PartnerCardSkeleton() {
 
 export function PartnersPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [isVisitorFormOpen, setIsVisitorFormOpen] = useState(false);
 
   // Search / filter / pagination — all server-driven (GET /api/public/partners).
@@ -135,6 +136,18 @@ export function PartnersPage() {
     })();
     return () => { cancelled = true; };
   }, []);
+
+  // Deep-link support: a Homepage globe pin can send visitors here as /partners?country=<value>.
+  // Only applied once, after the real country list has loaded, and only if it actually matches —
+  // otherwise the default "Tất cả quốc gia" behavior is unchanged.
+  useEffect(() => {
+    if (countryOptions.length === 0) return;
+    const fromUrl = searchParams.get('country');
+    if (!fromUrl) return;
+    const matched = findMatchingCountryValue(fromUrl, countryOptions);
+    if (matched) setSelectedCountry(matched);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [countryOptions]);
 
   // Debounce the search box (400ms) before it drives a server request.
   useEffect(() => {

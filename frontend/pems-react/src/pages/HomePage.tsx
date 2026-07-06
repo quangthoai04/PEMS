@@ -1,25 +1,23 @@
 /**
- * Trang HomePage (Public)
- * Giao diện chính thức khi khởi động dành cho đại chúng.
+ * Trang HomePage
+ * Cổng vào hệ thống — rẽ nhánh theo trạng thái đăng nhập:
+ *  - Chưa đăng nhập / VISITOR → PublicHomePage (landing page quốc tế).
+ *  - Role nội bộ đã đăng nhập → InternalHomePage (cổng vào nội bộ, không phải Dashboard).
  */
 
-// Đây là trang chủ của ứng dụng
 import React from 'react';
-import { HeroSection } from '../components/home/HeroSection';
-import { NewsSection } from '../components/home/NewsSection';
-import { StatsSection } from '../components/home/StatsSection';
-import { PartnersSection } from '../components/home/PartnersSection';
+import { useAuth } from '../shared/hooks/useAuth';
+import { PublicHomePage } from './PublicHomePage';
+import { InternalHomePage } from './InternalHomePage';
 
 export function HomePage() {
-  return (
-    <div className="flex flex-col min-h-screen">
-      <HeroSection />
-      <NewsSection />
-      <StatsSection />
-      <PartnersSection />
-      {/* Footer padding to deal with the last section being white and footer being dark ok */}
-      <div className="h-12 bg-white"></div>
-    </div>
-  );
-}
+  const { user, isAuthenticated, isLoading } = useAuth();
 
+  // Trong lúc auth đang bootstrap (chỉ xảy ra khi có access token cũ), vẫn hiển thị
+  // Public Homepage để tránh chớp màn hình loading cho phần lớn khách truy cập ẩn danh.
+  if (isLoading || !isAuthenticated || !user || user.roleCode === 'VISITOR') {
+    return <PublicHomePage />;
+  }
+
+  return <InternalHomePage user={user} />;
+}

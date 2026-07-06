@@ -74,9 +74,13 @@ export const authenticationApi = {
   // ── Session management ──────────────────────────────────────────────
 
   async logout(refreshToken?: string | null): Promise<MessageResponse> {
-    const { data } = await httpClient.post<MessageResponse>(API_ENDPOINTS.auth.logout, {
-      refreshToken: refreshToken ?? null,
-    });
+    // Timeout ngắn: nếu backend đang chậm, người dùng vẫn được đăng xuất cục bộ
+    // nhanh thay vì chờ vô thời hạn (AuthContext.logout() vẫn clear session dù lỗi).
+    const { data } = await httpClient.post<MessageResponse>(
+      API_ENDPOINTS.auth.logout,
+      { refreshToken: refreshToken ?? null },
+      { timeout: 5000 },
+    );
     return data;
   },
 

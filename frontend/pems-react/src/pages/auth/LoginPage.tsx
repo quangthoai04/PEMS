@@ -16,7 +16,7 @@ export function LoginPage() {
   // Already signed in → leave the login page.
   useEffect(() => {
     if (!isLoading && isAuthenticated) {
-      navigate(fromPath ?? '/dashboard', { replace: true });
+      navigate(fromPath ?? '/', { replace: true });
     }
   }, [isAuthenticated, isLoading, navigate, fromPath]);
 
