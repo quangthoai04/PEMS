@@ -49,8 +49,10 @@ export interface StaffLeaderFilterSummary {
 }
 
 export interface StaffLeaderKpis {
+  /** Campus instances của campus mình chờ Staff Leader duyệt & gán host (mọi phạm vi đơn). */
   pendingSingleCampusApproval: number;
-  waitingHostAssignment: number;
+  /** Campus instances của campus mình đã bị Staff Leader từ chối. */
+  rejectedInstances: number;
   assignedVisits: number;
   beforeVisit: number;
   duringVisit: number;

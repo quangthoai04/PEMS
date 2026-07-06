@@ -63,21 +63,19 @@ export const delegationsApi = {
     return data;
   },
 
-  /** UC-18: HO approves a MULTI_CAMPUS request (auto-assigns each campus IC head as interim host). */
-  async hoApprove(visitRequestId: number | string): Promise<any> {
-    const { data } = await httpClient.post<any>(API_ENDPOINTS.delegations.hoApprove(visitRequestId), {});
-    return data;
-  },
-
-  /** UC-18: HO rejects a MULTI_CAMPUS request (reason mandatory). */
-  async hoReject(visitRequestId: number | string, reason: string): Promise<any> {
-    const { data } = await httpClient.post<any>(API_ENDPOINTS.delegations.hoReject(visitRequestId), { reason });
-    return data;
-  },
-
-  /** UC-22: Staff Leader rejects a SINGLE_CAMPUS request of their campus (reason mandatory). */
-  async campusReject(visitRequestId: number | string, reason: string): Promise<any> {
-    const { data } = await httpClient.post<any>(API_ENDPOINTS.delegations.campusReject(visitRequestId), { reason });
+  /**
+   * Campus-independent approval: the campus Staff Leader rejects ONLY their campus instance
+   * (reason mandatory → stored in the instance's decision_note).
+   */
+  async rejectCampusInstance(
+    visitRequestId: number | string,
+    visitInstanceId: number | string,
+    reason: string,
+  ): Promise<any> {
+    const { data } = await httpClient.post<any>(
+      API_ENDPOINTS.delegations.rejectCampusInstance(visitRequestId, visitInstanceId),
+      { reason },
+    );
     return data;
   },
 
@@ -118,19 +116,20 @@ export const delegationsApi = {
   },
 
   /**
-   * UC-22: Staff Leader picks the host for a campus instance — approves+assigns for a
-   * single-campus request, or transfers the host for an HO-approved multi-campus request.
-   * Gán host không gửi email — Staff được gán xem qua thông báo/"Lịch của tôi" và tự vào
-   * Setup đoàn khách.
+   * Campus-independent approval: the campus Staff Leader approves their campus instance —
+   * the official host is MANDATORY in the same action (IC Staff of the campus, or the Staff
+   * Leader themself). Gán host không gửi email — Staff được gán xem qua thông báo/"Lịch của
+   * tôi" và tự vào Setup đoàn khách.
    */
-  async assignHost(
+  async approveCampusInstance(
     visitRequestId: number | string,
     visitInstanceId: number | string,
     hostUserId: number,
+    decisionNote?: string,
   ): Promise<any> {
     const { data } = await httpClient.post<any>(
-      API_ENDPOINTS.delegations.assignHost(visitRequestId, visitInstanceId),
-      { hostUserId },
+      API_ENDPOINTS.delegations.approveCampusInstance(visitRequestId, visitInstanceId),
+      { hostUserId, decisionNote: decisionNote?.trim() || undefined },
     );
     return data;
   },

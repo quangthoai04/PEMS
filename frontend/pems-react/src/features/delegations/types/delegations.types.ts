@@ -1,9 +1,11 @@
-// Status enums mirror the SQL v8.3 ENUMs. The request status is a *decision* status
-// only; visit progress is derived from the per-campus instance status.
+// Status enums mirror the SQL v10 ENUMs (campus-independent approval). The request status
+// is an AGGREGATE derived from the per-campus instance decisions; the real approve/reject
+// decision lives on each campus instance.
 
-/** visit_requests.status — request decision status only. */
+/** visit_requests.status — aggregate of the campus-instance decisions. */
 export const VisitRequestStatus = {
   PendingApproval: 'PENDING_APPROVAL',
+  PartiallyApproved: 'PARTIALLY_APPROVED',
   Approved: 'APPROVED',
   Rejected: 'REJECTED',
   Cancelled: 'CANCELLED',
@@ -11,37 +13,39 @@ export const VisitRequestStatus = {
 export type VisitRequestStatus =
   (typeof VisitRequestStatus)[keyof typeof VisitRequestStatus];
 
-/** visit_request_campuses.status — the actual visit progress per campus. */
+/** visit_request_campuses.status — the actual visit progress per campus.
+ * No WAITING_HOST_ASSIGNMENT anymore: approve assigns the host in the same action. */
 export const VisitInstanceStatus = {
   WaitingRequestApproval: 'WAITING_REQUEST_APPROVAL',
-  WaitingHostAssignment: 'WAITING_HOST_ASSIGNMENT',
   Assigned: 'ASSIGNED',
   BeforeVisit: 'BEFORE_VISIT',
   DuringVisit: 'DURING_VISIT',
   AfterVisit: 'AFTER_VISIT',
   Closed: 'CLOSED',
   Cancelled: 'CANCELLED',
+  Rejected: 'REJECTED',
 } as const;
 export type VisitInstanceStatus =
   (typeof VisitInstanceStatus)[keyof typeof VisitInstanceStatus];
 
 /** Vietnamese display labels — never show the raw technical enum to users. */
 export const REQUEST_STATUS_LABELS: Record<VisitRequestStatus, string> = {
-  PENDING_APPROVAL: 'Chờ duyệt',
+  PENDING_APPROVAL: 'Chờ xử lý',
+  PARTIALLY_APPROVED: 'Duyệt một phần',
   APPROVED: 'Đã duyệt',
   REJECTED: 'Từ chối',
   CANCELLED: 'Đã hủy',
 };
 
 export const INSTANCE_STATUS_LABELS: Record<VisitInstanceStatus, string> = {
-  WAITING_REQUEST_APPROVAL: 'Chờ duyệt đơn',
-  WAITING_HOST_ASSIGNMENT: 'Chờ phân công host',
-  ASSIGNED: 'Đã phân công',
+  WAITING_REQUEST_APPROVAL: 'Chờ xử lý tại cơ sở',
+  ASSIGNED: 'Đã tiếp nhận',
   BEFORE_VISIT: 'Đang chuẩn bị',
   DURING_VISIT: 'Đang diễn ra',
   AFTER_VISIT: 'Hậu xử lý',
   CLOSED: 'Đã đóng',
   CANCELLED: 'Đã hủy',
+  REJECTED: 'Từ chối',
 };
 
 /** A campus instance may only be cancelled while it is ASSIGNED or BEFORE_VISIT. */
@@ -51,8 +55,8 @@ export const CANCELLABLE_INSTANCE_STATUSES: VisitInstanceStatus[] = [
 ];
 
 /**
- * UC-136: the Cancel action is available only when the request is APPROVED and the
- * campus instance is still ASSIGNED or BEFORE_VISIT. Used to decide whether to show
+ * UC-136: the Cancel action is available only when the request is APPROVED/PARTIALLY_APPROVED
+ * and the campus instance is still ASSIGNED or BEFORE_VISIT. Used to decide whether to show
  * the Cancel button (the backend remains the final authority).
  */
 export function canCancelInstance(
@@ -60,12 +64,13 @@ export function canCancelInstance(
   instanceStatus: VisitInstanceStatus
 ): boolean {
   return (
-    requestStatus === VisitRequestStatus.Approved &&
+    (requestStatus === VisitRequestStatus.Approved ||
+      requestStatus === VisitRequestStatus.PartiallyApproved) &&
     CANCELLABLE_INSTANCE_STATUSES.includes(instanceStatus)
   );
 }
 
-/** Visit scope — drives who approves (single → Staff Leader, multi → HO). */
+/** Visit scope — number of campuses only; EVERY campus instance is decided by its own Staff Leader. */
 export const VisitScope = {
   SingleCampus: 'SINGLE_CAMPUS',
   MultiCampus: 'MULTI_CAMPUS',
@@ -96,8 +101,8 @@ export const PARTICIPANT_ROLE_LABELS: Record<string, string> = {
  */
 export const VISIT_ALLOWED_ACTIONS = {
   VIEW_DETAIL: 'VIEW_DETAIL',
-  HO_APPROVE: 'HO_APPROVE',
-  HO_REJECT: 'HO_REJECT',
+  // Campus-independent approval: HO_APPROVE/HO_REJECT no longer exist — every decision is
+  // per campus instance by its Staff Leader (approve luôn kèm gán host).
   APPROVE_AND_ASSIGN_HOST: 'APPROVE_AND_ASSIGN_HOST',
   CAMPUS_REJECT: 'CAMPUS_REJECT',
   // NOTE: Host được gán MỘT lần (UC chốt). Không có TRANSFER_HOST / đổi host trong phase này.
@@ -135,6 +140,12 @@ export interface CampusProgressItem {
   hostUserId?: number | null;
   hostName?: string | null;
 
+  // Per-campus decision (campus-independent approval): who approved/rejected and why.
+  decisionNote?: string | null;
+  decidedBy?: number | null;
+  decidedByName?: string | null;
+  decidedAt?: string | null;
+
   cancellationReason?: string | null;
   cancelledBy?: number | null;
   cancelledByName?: string | null;
@@ -145,6 +156,8 @@ export interface CampusProgressItem {
   canViewCampusDetail: boolean;
   canCancelCampusVisit: boolean;
   canViewCancelReason: boolean;
+  /** True when this instance is REJECTED with a reason (show "Xem lý do từ chối"). */
+  canViewRejectReason?: boolean;
 }
 
 /**
@@ -278,8 +291,8 @@ export interface VisitProcessRequestSummary {
   workingLanguage?: string | null;
   mediaConsentStatus?: string | null;
   mediaConsentNote?: string | null;
-  transportationType?: string | null;
-  transportationDetail?: string | null;
+  /** Free text the guest entered to identify the transportation to FPTU. */
+  transportationNote?: string | null;
   noteToFptu?: string | null;
 
   contactPersonFullName?: string | null;
@@ -770,9 +783,9 @@ export interface VisitRequestManagementItem {
   decidedAt?: string | null;
   decisionActorRole?: string | null;
 
-  // UC-136: backend-computed cancel-eligibility (APPROVED request + an instance in
-  // WAITING_HOST_ASSIGNMENT/ASSIGNED/BEFORE_VISIT that hasn't started). Action visibility is
-  // still driven by allowedActions (CANCEL_BY_VISITOR/CANCEL_BY_HOST); this is the underlying flag.
+  // UC-136: backend-computed cancel-eligibility (APPROVED/PARTIALLY_APPROVED request + an
+  // instance in ASSIGNED/BEFORE_VISIT that hasn't started). Action visibility is still driven
+  // by allowedActions (CANCEL_BY_VISITOR/CANCEL_BY_HOST); this is the underlying flag.
   hasCancellableInstance?: boolean;
   hasStartedCampus?: boolean;
 
@@ -820,7 +833,15 @@ export interface SubmittedCampusSchedule {
   instanceStatus: string;
   coordinatorUserId?: number | null;
   currentHostUserId?: number | null;
+  currentHostName?: string | null;
   isOwnCampus: boolean;
+
+  // Per-campus decision info (campus-independent approval).
+  decidedByUserId?: number | null;
+  decidedByName?: string | null;
+  decidedAt?: string | null;
+  decisionActorRole?: string | null;
+  decisionNote?: string | null;
 
   // Per-campus cancellation info (UC-136 instance-level cancel).
   cancelledByUserId?: number | null;
@@ -829,6 +850,15 @@ export interface SubmittedCampusSchedule {
   cancellationActorType?: string | null;
   cancellationSource?: string | null;
   cancellationReason?: string | null;
+}
+
+/** Per-campus decision counters (campus-independent approval). */
+export interface CampusDecisionSummary {
+  total: number;
+  pending: number;
+  approved: number;
+  rejected: number;
+  cancelled: number;
 }
 
 export interface SubmittedGuestMember {
@@ -863,15 +893,18 @@ export interface SubmittedVisitRequestFormDetail {
   workingLanguage?: string | null;
   mediaConsentStatus?: string | null;
   mediaConsentNote?: string | null;
-  transportationType?: string | null;
-  transportationDetail?: string | null;
+  /** Free text the guest entered to identify the transportation to FPTU. */
+  transportationNote?: string | null;
   noteToFptu?: string | null;
 
   campuses: SubmittedCampusSchedule[];
+  /** Per-campus decision counters (campus-independent approval). */
+  campusDecisionSummary?: CampusDecisionSummary;
   guestMembers: SubmittedGuestMember[];
   externalSupportMembers: SubmittedGuestMember[];
 
-  // Decision info (populated once the request was decided / rejected). decisionNote = reject reason.
+  // Decision info mirror of the caller-relevant instance (single-campus / own campus);
+  // multi-campus decision detail rides on each campuses[] entry. decisionNote = reject reason.
   decidedByUserId?: number | null;
   decidedByName?: string | null;
   decisionActorRole?: string | null;
@@ -888,10 +921,10 @@ export interface SubmittedVisitRequestFormDetail {
   cancellationSource?: string | null;
   cancellationReason?: string | null;
 
+  // Approve = approve + assign host in ONE action (no separate assign-host step anymore).
   canApprove: boolean;
   canReject: boolean;
   canCancel: boolean;
-  canAssignHost: boolean;
 }
 
 /** A staff member who can be picked as host, with any schedule conflict pre-computed. */
@@ -902,6 +935,12 @@ export interface HostCandidate {
   campusId: number | null;
   departmentName: string | null;
   subRole: string | null;
+  /** Display label for the role ("Staff Leader" for the self-host option, "IC Staff" otherwise). */
+  roleLabel?: string | null;
+  /** True when this candidate IS the calling Staff Leader (self-host option). */
+  isSelf?: boolean;
+  /** True for the "Tôi làm host chính" option. */
+  isStaffLeaderSelfHostOption?: boolean;
   hasScheduleConflict: boolean;
   conflictCount: number;
   conflicts: HostConflict[];

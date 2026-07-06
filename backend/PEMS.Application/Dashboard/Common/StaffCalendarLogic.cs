@@ -13,17 +13,16 @@ namespace PEMS.Application.Dashboard.Common;
 /// Quy tắc màu (chốt, theo thứ tự ưu tiên):
 ///   1. Xanh dương (MINE)      — tôi đang là host, bất kể ai duyệt/gán (ưu tiên cao nhất).
 ///   2. Xám (CANCELLED/EXPIRED)— bị hủy hoặc đã hết hạn xử lý.
-///   3. Vàng (NEEDS_ACTION)    — chỉ Staff Leader: đơn chưa duyệt/chưa gán người phụ trách.
+///   3. Vàng (NEEDS_ACTION)    — chỉ Staff Leader: campus instance của campus mình chưa xử lý.
 ///   4. Xanh lá (PROCESSED)    — Staff Leader đã xử lý xong (duyệt hoặc từ chối) mà tôi
 ///      không phải host.
-///   5. Trung tính (NEUTRAL)   — còn lại (ví dụ multi-campus đang chờ HO duyệt).
+///   5. Trung tính (NEUTRAL)   — còn lại.
 ///
-/// Quy tắc action:
-///   • Staff Leader chỉ xử lý (duyệt/từ chối/gán host) đơn thuộc campus mình, đúng trạng thái.
-///   • Gán host là MỘT LẦN, không gửi email, không có bước accept/decline — Staff được gán
-///     mặc nhiên là host ngay, chỉ có action "Setup đoàn khách" (canSetupDelegation).
-///   • Host luôn phải là STAFF thường (ràng buộc DB) — Staff Leader không thể tự nhận làm host,
-///     nên "duyệt" và "gán host" luôn là một hành động duy nhất (mở modal chọn host).
+/// Quy tắc action (campus-independent approval, SQL v10):
+///   • Mỗi Staff Leader xử lý (duyệt kèm gán host / từ chối) campus instance của campus mình,
+///     bất kể đơn một hay nhiều cơ sở — không còn bước HO duyệt, không còn WAITING_HOST_ASSIGNMENT.
+///   • Gán host là MỘT LẦN, nằm trong chính action duyệt, không gửi email, không accept/decline.
+///   • Host có thể là IC Staff cùng campus hoặc CHÍNH Staff Leader đang duyệt (self-host).
 /// </summary>
 public static class StaffCalendarLogic
 {
@@ -48,9 +47,8 @@ public static class StaffCalendarLogic
 
         bool isCancelled = x.RequestStatus == VisitRequestStatuses.Cancelled
             || x.CampusStatus == VisitInstanceStatus.Cancelled;
-        bool isRejected = x.RequestStatus == VisitRequestStatuses.Rejected;
+        bool isRejected = x.CampusStatus == VisitInstanceStatus.Rejected;
         bool sameCampus = viewer.PrimaryCampusId.HasValue && x.CampusId == viewer.PrimaryCampusId.Value;
-        bool beforeStart = x.PlannedStartAt > now;
         bool isHost = x.CurrentHostUserId.HasValue && x.CurrentHostUserId.Value == viewer.UserId;
 
         // Terminal (CANCELLED/REJECTED/CLOSED): chỉ còn xem chi tiết, không action mutate.
@@ -62,29 +60,19 @@ public static class StaffCalendarLogic
 
         if (viewer.IsStaffLeader && sameCampus)
         {
-            // SINGLE_CAMPUS đang chờ duyệt: duyệt = duyệt + gán host trong một bước (UC-22).
-            if (x.VisitScope == VisitScopes.SingleCampus
-                && x.RequestStatus == VisitRequestStatuses.PendingApproval
-                && x.CampusStatus == VisitInstanceStatus.WaitingRequestApproval)
+            // Campus instance của campus mình đang chờ xử lý: duyệt = duyệt + gán host trong
+            // một bước (bắt buộc chọn host, có thể tự chọn mình); hoặc từ chối kèm lý do.
+            if (x.CampusStatus == VisitInstanceStatus.WaitingRequestApproval)
             {
                 actions.CanApprove = true;
                 actions.CanReject = true;
                 actions.CanAssignHost = true;
             }
-            // MULTI_CAMPUS đã được HO duyệt, chặng của campus mình chờ gán host.
-            else if (x.VisitScope == VisitScopes.MultiCampus
-                && x.RequestStatus == VisitRequestStatuses.Approved
-                && x.CampusStatus == VisitInstanceStatus.WaitingHostAssignment
-                && beforeStart)
-            {
-                actions.CanAssignHost = true;
-            }
         }
 
-        // Host (Staff Leader hoặc Staff thường đều có thể được gán làm host) → vào Setup đoàn khách.
+        // Host (IC Staff hoặc chính Staff Leader self-host) → vào Setup đoàn khách.
         actions.CanSetupDelegation = isHost
-            && x.CampusStatus != VisitInstanceStatus.WaitingRequestApproval
-            && x.CampusStatus != VisitInstanceStatus.WaitingHostAssignment;
+            && x.CampusStatus != VisitInstanceStatus.WaitingRequestApproval;
 
         return actions;
     }
@@ -94,10 +82,9 @@ public static class StaffCalendarLogic
     {
         bool isCancelled = x.RequestStatus == VisitRequestStatuses.Cancelled
             || x.CampusStatus == VisitInstanceStatus.Cancelled;
-        bool isRejected = x.RequestStatus == VisitRequestStatuses.Rejected;
+        bool isRejected = x.CampusStatus == VisitInstanceStatus.Rejected;
         bool isPast = x.PlannedEndAt < now;
-        bool isPending = x.RequestStatus == VisitRequestStatuses.PendingApproval
-            || x.CampusStatus == VisitInstanceStatus.WaitingHostAssignment;
+        bool isPending = x.CampusStatus == VisitInstanceStatus.WaitingRequestApproval;
         bool isExpired = !isCancelled && !isRejected && isPending && isPast;
         bool isMine = x.CurrentHostUserId.HasValue && x.CurrentHostUserId.Value == viewer.UserId;
         bool hasNoHost = !x.CurrentHostUserId.HasValue;
@@ -117,8 +104,7 @@ public static class StaffCalendarLogic
         {
             label = x.CampusStatus switch
             {
-                VisitInstanceStatus.WaitingRequestApproval => "Chờ duyệt",
-                VisitInstanceStatus.WaitingHostAssignment => "Chờ gán host",
+                VisitInstanceStatus.WaitingRequestApproval => "Chờ xử lý tại campus",
                 VisitInstanceStatus.Assigned => "Đã gán host",
                 VisitInstanceStatus.BeforeVisit => "Chuẩn bị đón tiếp",
                 VisitInstanceStatus.DuringVisit => "Đang tiếp khách",

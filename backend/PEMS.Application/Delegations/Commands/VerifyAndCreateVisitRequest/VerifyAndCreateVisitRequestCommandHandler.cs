@@ -122,8 +122,7 @@ public sealed class VerifyAndCreateVisitRequestCommandHandler
                 request.ContactPerson,
                 request.IsContactSelf,
                 request.WorkingLanguage,
-                request.TransportationType,
-                request.TransportationDetail,
+                request.TransportationNote,
                 request.MediaConsentStatus,
                 request.MediaConsentNote,
                 request.PartnerId,
@@ -147,35 +146,20 @@ public sealed class VerifyAndCreateVisitRequestCommandHandler
             await _db.SaveChangesAsync(cancellationToken);
 
             // --- 6.5. Send In-App Notifications ---
-            if (visitRequest.VisitScope == VisitScopes.MultiCampus)
-            {
-                var hoUsers = await _db.Users
-                    .Where(u => u.Role.RoleCode == "HO" && u.Status == "ACTIVE")
-                    .Select(u => u.UserId)
-                    .ToListAsync(cancellationToken);
-                    
-                var notifications = hoUsers.Select(id => new PEMS.Application.Notifications.Common.CreateNotificationItem(
-                    id,
-                    "Có yêu cầu liên cơ sở mới",
-                    "Yêu cầu tiếp khách liên cơ sở đang chờ HO duyệt.",
-                    PEMS.Application.Notifications.Common.NotificationTypes.CrossCampusRequestSubmitted,
-                    PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitRequest,
-                    visitRequest.VisitRequestId
-                ));
-                await _notificationService.CreateManyAsync(notifications, cancellationToken);
-            }
-            else
+            // Campus-independent approval: HO no longer approves multi-campus requests, so no
+            // HO notification. EVERY campus instance (single or multi) is routed straight to
+            // the ACTIVE Staff Leader(s) of that campus.
             {
                 var campusIds = visitRequest.CampusInstances.Select(c => c.CampusId).Distinct().ToList();
                 var staffLeaders = await _db.Users
                     .Where(u => u.Role.RoleCode == RoleCodes.Staff && u.SubRole == "LEADER" && u.PrimaryCampusId.HasValue && campusIds.Contains(u.PrimaryCampusId.Value) && u.Status == "ACTIVE")
                     .Select(u => u.UserId)
                     .ToListAsync(cancellationToken);
-                    
+
                 var notifications = staffLeaders.Select(id => new PEMS.Application.Notifications.Common.CreateNotificationItem(
                     id,
                     "Có yêu cầu tiếp khách mới",
-                    $"{visitRequest.DelegationName} đang chờ duyệt tại cơ sở của bạn.",
+                    $"{visitRequest.DelegationName} đang chờ xử lý tại cơ sở của bạn. Vui lòng xem chi tiết, duyệt/từ chối và chọn host nếu duyệt.",
                     PEMS.Application.Notifications.Common.NotificationTypes.VisitRequestSubmitted,
                     PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitRequest,
                     visitRequest.VisitRequestId

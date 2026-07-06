@@ -220,13 +220,14 @@ export function StaffDashboardCalendar({ isStaffLeader }: { user?: any; isStaffL
     await fetchCalendar();
   }, [fetchCalendar]);
 
-  // ── Flow từ chối (Staff Leader) ──
+  // ── Flow từ chối (Staff Leader) — reject theo campus instance (campus-independent approval) ──
   const submitReject = async () => {
     if (!reject.detail || !reject.text.trim()) return;
     setReject((s) => ({ ...s, submitting: true, error: null }));
     try {
-      await delegationsApi.campusReject(reject.detail.visitRequestId, reject.text.trim());
-      toast.success('Đã từ chối yêu cầu đến thăm.');
+      await delegationsApi.rejectCampusInstance(
+        reject.detail.visitRequestId, reject.detail.visitInstanceId, reject.text.trim());
+      toast.success('Đã từ chối tiếp nhận tại cơ sở này.');
       setReject({ open: false, detail: null, text: '', submitting: false, error: null });
       await refreshAfterAction();
     } catch (e: any) {
@@ -579,16 +580,15 @@ export function StaffDashboardCalendar({ isStaffLeader }: { user?: any; isStaffL
         onReject={isStaffLeader ? (d) => setReject({ open: true, detail: d, text: '', submitting: false, error: null }) : undefined}
       />
 
-      {/* ── Gán host: chọn host rồi submit ngay (không gửi email) ── */}
+      {/* ── Duyệt & gán host trong một bước (campus-independent approval, không gửi email) ── */}
       {assign.open && assign.detail && (
         <AssignHostModal
           isOpen={assign.open}
-          mode="approve"
           visitRequestId={assign.detail.visitRequestId}
           visitInstanceId={assign.detail.visitInstanceId}
           delegationName={assign.detail.delegationName}
           currentHostUserId={assign.detail.currentHostUserId}
-          customTitle={assign.detail.allowedActions.canApprove ? 'Chấp nhận yêu cầu & gán người phụ trách' : 'Gán người phụ trách'}
+          customTitle="Duyệt & gán host"
           onClose={() => setAssign({ open: false, detail: null })}
           onConfirmed={() => { void handleHostAssigned(); }}
         />

@@ -3,18 +3,19 @@
  */
 
 const INSTANCE_STATUS_LABELS: Record<string, string> = {
-  WAITING_REQUEST_APPROVAL: 'Chờ duyệt',
-  WAITING_HOST_ASSIGNMENT: 'Chờ gán host',
-  ASSIGNED: 'Đã gán host',
+  WAITING_REQUEST_APPROVAL: 'Chờ xử lý tại campus',
+  ASSIGNED: 'Đã duyệt & gán host',
   BEFORE_VISIT: 'Trước tiếp khách',
   DURING_VISIT: 'Đang tiếp',
   AFTER_VISIT: 'Sau tiếp khách',
   CLOSED: 'Đã đóng',
   CANCELLED: 'Đã hủy',
+  REJECTED: 'Đã từ chối',
 };
 
 const REQUEST_STATUS_LABELS: Record<string, string> = {
-  PENDING_APPROVAL: 'Chờ duyệt',
+  PENDING_APPROVAL: 'Chờ xử lý',
+  PARTIALLY_APPROVED: 'Duyệt một phần',
   APPROVED: 'Đã duyệt',
   REJECTED: 'Từ chối',
   CANCELLED: 'Đã hủy',
@@ -23,11 +24,11 @@ const REQUEST_STATUS_LABELS: Record<string, string> = {
 /** Tailwind classes cho badge theo status (text + bg nhẹ). */
 const STATUS_BADGE_CLASSES: Record<string, string> = {
   PENDING_APPROVAL: 'bg-amber-50 text-amber-700 border-amber-200',
+  PARTIALLY_APPROVED: 'bg-orange-50 text-orange-600 border-orange-200',
   APPROVED: 'bg-emerald-50 text-emerald-700 border-emerald-200',
   REJECTED: 'bg-red-50 text-red-600 border-red-200',
   CANCELLED: 'bg-slate-100 text-slate-500 border-slate-200',
   WAITING_REQUEST_APPROVAL: 'bg-amber-50 text-amber-700 border-amber-200',
-  WAITING_HOST_ASSIGNMENT: 'bg-orange-50 text-orange-600 border-orange-200',
   ASSIGNED: 'bg-blue-50 text-blue-700 border-blue-200',
   BEFORE_VISIT: 'bg-sky-50 text-sky-700 border-sky-200',
   DURING_VISIT: 'bg-indigo-50 text-indigo-700 border-indigo-200',

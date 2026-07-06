@@ -21,9 +21,9 @@ type StaffVisitDetailModalProps = {
   /** Tăng giá trị để buộc refetch (sau khi gán host / từ chối thành công). */
   refreshKey?: number;
   onClose: () => void;
-  /** Staff Leader: duyệt & gán host / gán host (backend flags quyết định). */
+  /** Staff Leader: duyệt & gán host trong một bước (backend flags quyết định). */
   onAssignHost?: (detail: StaffCalendarDetail) => void;
-  /** Staff Leader: từ chối yêu cầu (campus-reject). */
+  /** Staff Leader: từ chối campus instance của campus mình (lý do bắt buộc). */
   onReject?: (detail: StaffCalendarDetail) => void;
 };
 
@@ -46,12 +46,6 @@ const MEDIA_CONSENT_LABELS: Record<string, string> = {
   AGREED: 'Đồng ý ghi hình/chụp ảnh',
   DECLINED: 'Không đồng ý ghi hình',
   PARTIAL: 'Đồng ý một phần',
-};
-
-const TRANSPORTATION_LABELS: Record<string, string> = {
-  SELF_ARRANGED: 'Tự túc di chuyển',
-  REQUEST_SUPPORT: 'Cần hỗ trợ đưa đón',
-  UNKNOWN: 'Chưa xác định',
 };
 
 const PARTICIPANT_ROLE_LABELS: Record<string, string> = {
@@ -118,11 +112,11 @@ export function StaffVisitDetailModal({
   if (!isOpen) return null;
 
   const actions = detail?.allowedActions;
-  const showApproveAssign = !!actions?.canApprove && !!actions?.canAssignHost;
-  const showAssignOnly = !!actions?.canAssignHost && !actions?.canApprove;
+  // Campus-independent approval: duyệt luôn kèm gán host (một action duy nhất).
+  const showApproveAssign = !!actions?.canApprove;
   const showReject = !!actions?.canReject;
   const showSetup = !!actions?.canSetupDelegation;
-  const hasFooterActions = !!detail && (showApproveAssign || showAssignOnly || showReject || showSetup);
+  const hasFooterActions = !!detail && (showApproveAssign || showReject || showSetup);
 
   const goToSetup = () => {
     if (!detail) return;
@@ -263,10 +257,8 @@ export function StaffVisitDetailModal({
                   />
                   <InfoRow
                     icon={<Car className="w-3 h-3" />}
-                    label="Di chuyển"
-                    value={detail.transportationType
-                      ? (TRANSPORTATION_LABELS[detail.transportationType] || detail.transportationType) + (detail.transportationDetail ? ` — ${detail.transportationDetail}` : '')
-                      : null}
+                    label="Nhận diện phương tiện"
+                    value={detail.transportationNote}
                   />
                   <InfoRow icon={<MessageSquare className="w-3 h-3" />} label="Ghi chú gửi FPTU" value={detail.noteToFptu} />
                 </div>
@@ -347,14 +339,14 @@ export function StaffVisitDetailModal({
                 <X className="w-4 h-4" /> Từ chối
               </button>
             )}
-            {(showApproveAssign || showAssignOnly) && (
+            {showApproveAssign && (
               <button
                 type="button"
                 onClick={() => detail && onAssignHost?.(detail)}
                 className="px-6 py-2 rounded-xl font-bold text-white bg-[#004c91] hover:bg-[#003b70] shadow-sm transition-all outline-none text-sm cursor-pointer flex items-center gap-1.5"
               >
                 <Check className="w-4 h-4" />
-                {showApproveAssign ? 'Chấp nhận' : 'Gán người phụ trách'}
+                Duyệt & gán host
               </button>
             )}
             {showSetup && (

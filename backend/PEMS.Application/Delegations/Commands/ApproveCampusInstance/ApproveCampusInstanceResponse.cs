@@ -1,6 +1,6 @@
-namespace PEMS.Application.Delegations.Commands.ProcessVisitRequest;
+namespace PEMS.Application.Delegations.Commands.ApproveCampusInstance;
 
-public sealed record ProcessVisitRequestResponse(
+public sealed record ApproveCampusInstanceResponse(
     ulong VisitRequestId,
     ulong VisitInstanceId,
     string RequestStatus,

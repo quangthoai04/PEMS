@@ -22,13 +22,14 @@ import type {
 } from '../../../features/delegations/types/delegations.types';
 
 const INSTANCE_STATUS_LABELS: Record<string, string> = {
-  WAITING_HOST_ASSIGNMENT: 'Chờ phân công Host',
-  ASSIGNED: 'Đã phân công Host',
+  WAITING_REQUEST_APPROVAL: 'Chờ xử lý tại cơ sở',
+  ASSIGNED: 'Đã duyệt & gán Host',
   BEFORE_VISIT: 'Trước tiếp khách',
   DURING_VISIT: 'Đang tiếp khách',
   AFTER_VISIT: 'Chờ đóng đoàn',
   CLOSED: 'Đã đóng đoàn',
   CANCELLED: 'Đã hủy',
+  REJECTED: 'Từ chối',
 };
 const INSTANCE_STATUS_CLASS: Record<string, string> = {
   ASSIGNED: 'bg-cyan-50 text-cyan-700 border-cyan-200',

@@ -37,16 +37,21 @@ public sealed class SubmittedVisitRequestFormDetailDto
     public string? WorkingLanguage { get; set; }
     public string? MediaConsentStatus { get; set; }
     public string? MediaConsentNote { get; set; }
-    public string? TransportationType { get; set; }
-    public string? TransportationDetail { get; set; }
+    /// <summary>Free text the guest entered to identify the transportation to FPTU
+    /// (replaces the old transportation type enum + detail).</summary>
+    public string? TransportationNote { get; set; }
     public string? NoteToFptu { get; set; }
 
     public List<SubmittedCampusScheduleDto> Campuses { get; set; } = new();
+    /// <summary>Per-campus decision counters (campus-independent approval).</summary>
+    public CampusDecisionSummaryDto CampusDecisionSummary { get; set; } = new();
     public List<SubmittedGuestMemberDto> GuestMembers { get; set; } = new();
     public List<SubmittedGuestMemberDto> ExternalSupportMembers { get; set; } = new();
 
-    // ── Decision info (only populated when the request has been decided / REJECTED) ──
-    // Reject reason = decision_note. NEVER cancellation_reason.
+    // ── Decision info (campus-independent approval: decisions live on each campus instance).
+    // These request-level fields mirror the SINGLE visible instance (single-campus requests or a
+    // Staff Leader's own instance) for backward UI compatibility; multi-campus decision detail
+    // rides on each SubmittedCampusScheduleDto. Reject reason = decision_note, NEVER cancellation_reason. ──
     public long? DecidedByUserId { get; set; }
     public string? DecidedByName { get; set; }
     public string? DecisionActorRole { get; set; }
@@ -68,10 +73,20 @@ public sealed class SubmittedVisitRequestFormDetailDto
     public string? CancellationReason { get; set; }
 
     // ── Footer action gating (recomputed server-side) ──
+    // Approve = approve + assign host in ONE action (no separate assign-host step anymore).
     public bool CanApprove { get; set; }
     public bool CanReject { get; set; }
     public bool CanCancel { get; set; }
-    public bool CanAssignHost { get; set; }
+}
+
+/// <summary>Counters over the request's campus instances (campus-independent approval).</summary>
+public sealed class CampusDecisionSummaryDto
+{
+    public int Total { get; set; }
+    public int Pending { get; set; }
+    public int Approved { get; set; }
+    public int Rejected { get; set; }
+    public int Cancelled { get; set; }
 }
 
 public sealed class SubmittedRegistrantDto
@@ -103,8 +118,16 @@ public sealed class SubmittedCampusScheduleDto
     public string InstanceStatus { get; set; } = "";
     public long? CoordinatorUserId { get; set; }
     public long? CurrentHostUserId { get; set; }
+    public string? CurrentHostName { get; set; }
     /// <summary>True for the campus instance that belongs to the calling Staff Leader's campus.</summary>
     public bool IsOwnCampus { get; set; }
+
+    // ── Per-campus decision info (campus-independent approval) ──
+    public long? DecidedByUserId { get; set; }
+    public string? DecidedByName { get; set; }
+    public DateTime? DecidedAt { get; set; }
+    public string? DecisionActorRole { get; set; }
+    public string? DecisionNote { get; set; }
 
     // ── Per-campus cancellation info (UC-136 instance-level cancel) ──
     public long? CancelledByUserId { get; set; }

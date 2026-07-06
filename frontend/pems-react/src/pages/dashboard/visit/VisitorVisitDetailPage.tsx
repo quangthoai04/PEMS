@@ -335,7 +335,7 @@ function VisitorRequestInfoSection({ summary }: { summary: any }) {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-10">
             <KV label="Loại hình" value={summary.visitType} />
             <KV label="Ngôn ngữ" value={summary.workingLanguage} />
-            <KV label="Phương tiện" value={summary.transportationType ? `${summary.transportationType} ${summary.transportationDetail ? `(${summary.transportationDetail})` : ''}` : null} />
+            <KV label="Nhận diện phương tiện" value={summary.transportationNote || null} />
             <KV label="Media Consent" value={summary.mediaConsentStatus === 'AGREE' ? 'Đồng ý ghi hình' : 'Từ chối ghi hình'} />
           </div>
           {summary.mediaConsentNote && <KVBlock label="Lưu ý Media" value={summary.mediaConsentNote} />}

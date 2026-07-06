@@ -32,8 +32,7 @@ public interface IVisitRequestFormCommand
     bool IsContactSelf { get; }
 
     string WorkingLanguage { get; }
-    string TransportationType { get; }
-    string? TransportationDetail { get; }
+    string? TransportationNote { get; }
     string MediaConsentStatus { get; }
     string? MediaConsentNote { get; }
     ulong? PartnerId { get; }

@@ -68,8 +68,7 @@ function mapToPayload(data: VisitRequestSchema) {
 
     workingLanguage: data.workingLanguage,
 
-    transportationType: data.transportationType,
-    transportationDetail: (data.transportationType === 'FPTU_SUPPORT' || data.transportationType === 'OTHER') ? data.transportationDetail : null,
+    transportationNote: data.transportationNote?.trim() || null,
 
     mediaConsentStatus: data.mediaConsentStatus,
     mediaConsentNote: data.mediaConsentNote || null,

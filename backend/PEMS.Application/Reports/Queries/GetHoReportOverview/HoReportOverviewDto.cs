@@ -48,10 +48,13 @@ public sealed class HoReportKpisDto
 {
     /// <summary>Requests submitted in the selected period (after filters).</summary>
     public int TotalRequests { get; set; }
-    /// <summary>Multi-campus requests CURRENTLY waiting for HO decision (state-based, not time-filtered).</summary>
+    /// <summary>Multi-campus requests CURRENTLY having at least one campus instance waiting for
+    /// its Staff Leader's decision (HO monitor-only; state-based, not time-filtered).</summary>
     public int MultiCampusPending { get; set; }
     public int PendingRequests { get; set; }
     public int ApprovedRequests { get; set; }
+    /// <summary>Requests with at least one approved campus and at least one pending/rejected campus.</summary>
+    public int PartiallyApprovedRequests { get; set; }
     public int RejectedRequests { get; set; }
     public int CancelledRequests { get; set; }
     /// <summary>Campus instances in the period whose status is not CLOSED/CANCELLED.</summary>
@@ -85,6 +88,7 @@ public sealed class HoMonthlyTrendDto
     public int SingleCampusRequests { get; set; }
     public int MultiCampusRequests { get; set; }
     public int Approved { get; set; }
+    public int PartiallyApproved { get; set; }
     public int Rejected { get; set; }
     public int Cancelled { get; set; }
     public int TotalGuests { get; set; }
@@ -93,6 +97,7 @@ public sealed class HoMonthlyTrendDto
 public sealed class HoApprovalBreakdownDto
 {
     public int Approved { get; set; }
+    public int PartiallyApproved { get; set; }
     public int Rejected { get; set; }
     public int Pending { get; set; }
     public int Cancelled { get; set; }
@@ -109,7 +114,8 @@ public sealed class HoCampusPerformanceDto
     public string CampusName { get; set; } = null!;
     public int TotalInstances { get; set; }
     public int WaitingRequestApproval { get; set; }
-    public int WaitingHostAssignment { get; set; }
+    /// <summary>Campus instances the campus Staff Leader rejected (campus-independent approval).</summary>
+    public int Rejected { get; set; }
     public int Assigned { get; set; }
     public int BeforeVisit { get; set; }
     public int DuringVisit { get; set; }

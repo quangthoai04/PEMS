@@ -63,8 +63,7 @@ public record VisitRequestFormData(
 
     // ── Additional ───────────────────────────────────────
     string WorkingLanguage,          // EN | VI
-    string TransportationType,
-    string? TransportationDetail,
+    string? TransportationNote,      // free text identifying the transport to FPTU
     string MediaConsentStatus,
     string? MediaConsentNote,
     ulong? PartnerId,

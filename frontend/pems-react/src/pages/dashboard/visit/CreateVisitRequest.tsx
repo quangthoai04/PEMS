@@ -49,10 +49,9 @@ export function CreateVisitRequest() {
   const [visitType, setVisitType] = useState<string>('CAMPUS_TOUR');
   const [otherType, setOtherType] = useState('');
   
-  // New fields from v8.4
+  // New fields from v8.4 (transportation là text tự do — transportationNote, SQL v10)
   const [workingLanguage, setWorkingLanguage] = useState<string>('EN');
-  const [transportationType, setTransportationType] = useState<string>('UNKNOWN');
-  const [transportationDetail, setTransportationDetail] = useState<string>('');
+  const [transportationNote, setTransportationNote] = useState<string>('');
   const [mediaConsentStatus, setMediaConsentStatus] = useState<string>('DECLINED');
   const [mediaConsentNote, setMediaConsentNote] = useState<string>('');
   

@@ -107,11 +107,12 @@ public sealed class GetStaffCalendarDetailQueryHandler
                 .FirstOrDefaultAsync(cancellationToken);
         }
 
+        // Campus-independent approval: the decision lives on THIS campus instance.
         string? decidedByName = null;
-        if (visit.DecidedBy.HasValue)
+        if (instance.DecidedBy.HasValue)
         {
             decidedByName = await _db.Users
-                .Where(u => u.UserId == visit.DecidedBy.Value)
+                .Where(u => u.UserId == instance.DecidedBy.Value)
                 .Select(u => u.FullName)
                 .FirstOrDefaultAsync(cancellationToken);
         }
@@ -181,8 +182,7 @@ public sealed class GetStaffCalendarDetailQueryHandler
             WorkingLanguage = visit.WorkingLanguage,
             MediaConsentStatus = visit.MediaConsentStatus,
             MediaConsentNote = visit.MediaConsentNote,
-            TransportationType = visit.TransportationType,
-            TransportationDetail = visit.TransportationDetail,
+            TransportationNote = visit.TransportationNote,
             NoteToFptu = visit.NoteToFptu,
             CurrentHostUserId = instance.CurrentHostUserId,
             CurrentHostName = hostName,
@@ -190,9 +190,9 @@ public sealed class GetStaffCalendarDetailQueryHandler
             HostAssignedAt = instance.HostAssignedAt,
             HostAssignedByName = hostAssignedByName,
             IsCurrentHost = isHost,
-            DecisionNote = visit.DecisionNote,
+            DecisionNote = instance.DecisionNote,
             DecidedByName = decidedByName,
-            DecidedAt = visit.DecidedAt,
+            DecidedAt = instance.DecidedAt,
             IsCancelled = isCancelled,
             CancellationReason = isCancelled ? cancellationReason : null,
             CancelledAt = isCancelled ? cancelledAt : null,

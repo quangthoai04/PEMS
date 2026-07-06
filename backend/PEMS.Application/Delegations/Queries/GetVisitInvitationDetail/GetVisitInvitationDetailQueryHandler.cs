@@ -97,14 +97,15 @@ public sealed class GetVisitInvitationDetailQueryHandler
             AllowedActions = new List<string> { "VIEW_INVITATION_DETAIL", "VIEW_REQUEST_FORM" }
         };
 
-        var isClosedOrCancelled = data.vr.Status == VisitRequestStatuses.Cancelled 
-            || data.vr.Status == VisitRequestStatuses.Rejected 
-            || data.c.Status == VisitInstanceStatuses.Cancelled 
+        var isClosedOrCancelled = data.vr.Status == VisitRequestStatuses.Cancelled
+            || data.vr.Status == VisitRequestStatuses.Rejected
+            || data.c.Status == VisitInstanceStatuses.Rejected
+            || data.c.Status == VisitInstanceStatuses.Cancelled
             || data.c.Status == VisitInstanceStatuses.Closed;
 
-        bool isActiveForInvitation = data.vr.Status == VisitRequestStatuses.Approved
-            && (data.c.Status == "WAITING_HOST_ASSIGNMENT"
-                || data.c.Status == VisitInstanceStatuses.Assigned
+        bool isActiveForInvitation = (data.vr.Status == VisitRequestStatuses.Approved
+                || data.vr.Status == VisitRequestStatuses.PartiallyApproved)
+            && (data.c.Status == VisitInstanceStatuses.Assigned
                 || data.c.Status == VisitInstanceStatuses.BeforeVisit);
 
         if ((data.p.Status == ParticipantStatuses.Accepted || data.p.Status == ParticipantStatuses.Assigned) && isActiveForInvitation)

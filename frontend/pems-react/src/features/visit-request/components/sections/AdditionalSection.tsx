@@ -51,37 +51,23 @@ export const AdditionalSection: React.FC<Props> = ({ form }) => {
 
         </div>
 
-        {/* Transportation */}
+        {/* Transportation — free text (campus-independent approval spec: no type enum anymore) */}
         <div>
           <label className="block text-base font-bold text-gray-900 mb-2">
-            Phương tiện di chuyển <span className="text-red-500">*</span>
+            Nhận diện phương tiện di chuyển tới FPTU
           </label>
-          <div className="relative mb-3">
-            <select
-              {...register('transportationType')}
-              className="w-full px-4 py-2.5 rounded-xl border border-gray-300 focus:border-[#f37021] focus:ring-1 focus:ring-[#f37021] outline-none bg-white text-sm font-medium text-gray-900 shadow-sm"
-            >
-              <option value="UNKNOWN">-- Chưa xác định --</option>
-              <option value="SELF_ARRANGED">Tự di chuyển (Xe tự túc)</option>
-              <option value="FPTU_SUPPORT">Cần FPTU hỗ trợ sắp xếp</option>
-              <option value="OTHER">Khác</option>
-            </select>
-          </div>
-          {errors.transportationType && (
-            <p className="text-xs text-red-600 font-medium mb-2">⚠ {errors.transportationType.message}</p>
-          )}
-
-          <label className="block text-sm font-bold text-gray-900 mt-4 mb-2">
-            Chi tiết phương tiện (Bắt buộc nếu cần hỗ trợ hoặc khác)
-          </label>
-          <input
-            {...register('transportationDetail')}
-            placeholder="VD: Xe khách 45 chỗ, biển số 29A-XXXXX..."
-            className={inputCls(!!errors.transportationDetail, !!(touchedFields.transportationDetail && !errors.transportationDetail))}
+          <textarea
+            {...register('transportationNote')}
+            rows={4}
+            placeholder="Ví dụ: Xe 16 chỗ màu trắng, biển số 30A-xxxxx, dự kiến tới cổng lúc 8:30."
+            className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:border-[#f37021] focus:ring-1 focus:ring-[#f37021] outline-none transition-all bg-white text-sm shadow-sm resize-none font-medium text-gray-900"
           />
-          {errors.transportationDetail && (
-            <p className="text-xs text-red-600 font-medium mt-1">⚠ {errors.transportationDetail.message}</p>
+          {errors.transportationNote && (
+            <p className="text-xs text-red-600 font-medium mt-1">⚠ {errors.transportationNote.message}</p>
           )}
+          <p className="text-xs text-gray-500 italic mt-1">
+            Không bắt buộc — mô tả tự do giúp bảo vệ/lễ tân nhận diện đoàn khi tới cổng.
+          </p>
         </div>
 
         {/* Media Consent */}

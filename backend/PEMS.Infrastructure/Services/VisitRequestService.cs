@@ -42,7 +42,7 @@ public sealed class VisitRequestService : IVisitRequestService
         // Frontend sends campus codes (e.g. "HN", "HCM") — resolve to BIGINT campus_id.
         var campuses = await _db.Campuses
             .Where(c => requestedCodes.Contains(c.CampusCode))
-            .Select(c => new { c.CampusCode, c.CampusId, c.Status })
+            .Select(c => new { c.CampusCode, c.CampusId, c.Status, c.Name })
             .ToListAsync(cancellationToken);
 
         var campusByCode = campuses.ToDictionary(c => c.CampusCode, StringComparer.OrdinalIgnoreCase);
@@ -56,6 +56,32 @@ public sealed class VisitRequestService : IVisitRequestService
             if (!string.Equals(campus.Status, EntityStatuses.Active, StringComparison.OrdinalIgnoreCase))
                 throw new BusinessRuleException(
                     $"Cơ sở '{code}' hiện không hoạt động.", VisitRequestErrorCodes.CampusInactive);
+        }
+
+        // ── Campus-independent approval routing: every selected campus must have an ACTIVE
+        // Staff Leader (STAFF + sub_role LEADER of that campus) who receives the instance
+        // right after submit. Without one, the request would sit unprocessable — reject the
+        // whole submit up-front (no half-created request). The resolved leader also becomes
+        // the instance coordinator (the DB trigger requires the coordinator to be a Staff
+        // Leader of the same campus). ──
+        var requestedCampusIds = campuses.Select(c => c.CampusId).ToList();
+        var staffLeadersByCampus = (await _db.Users
+                .Where(u => u.Role.RoleCode == RoleCodes.Staff
+                            && u.SubRole == UserSubRoles.Leader
+                            && u.Status == UserStatuses.Active
+                            && u.PrimaryCampusId.HasValue
+                            && requestedCampusIds.Contains(u.PrimaryCampusId.Value))
+                .Select(u => new { u.UserId, CampusId = u.PrimaryCampusId!.Value })
+                .ToListAsync(cancellationToken))
+            .GroupBy(u => u.CampusId)
+            .ToDictionary(g => g.Key, g => g.First().UserId);
+
+        foreach (var campus in campuses)
+        {
+            if (!staffLeadersByCampus.ContainsKey(campus.CampusId))
+                throw new BusinessRuleException(
+                    $"Cơ sở {campus.Name} chưa có Staff Leader đang hoạt động nên chưa thể tiếp nhận yêu cầu.",
+                    VisitRequestErrorCodes.CampusHasNoActiveStaffLeader);
         }
 
         // Planned start must not be in the past (1-day grace covers client/server timezone skew);
@@ -116,8 +142,7 @@ public sealed class VisitRequestService : IVisitRequestService
             ContactPersonPhone   = f.ContactPerson.Phone,
             ContactPersonEmail   = f.ContactPerson.Email,
             WorkingLanguage      = f.WorkingLanguage,
-            TransportationType   = f.TransportationType,
-            TransportationDetail = f.TransportationDetail,
+            TransportationNote   = string.IsNullOrWhiteSpace(f.TransportationNote) ? null : f.TransportationNote.Trim(),
             MediaConsentStatus   = f.MediaConsentStatus,
             MediaConsentNote     = f.MediaConsentNote,
             NoteToFptu           = f.Notes,
@@ -129,8 +154,9 @@ public sealed class VisitRequestService : IVisitRequestService
         };
 
         // ── Campus instances (added via navigation so EF sets the FK after insert) ──
-        // UC-17 leaves host assignment NULL and status WAITING_REQUEST_APPROVAL; host is
-        // assigned only after the request is approved (approval flow, not here).
+        // Campus-independent approval: every instance starts WAITING_REQUEST_APPROVAL and is
+        // routed straight to the campus Staff Leader (coordinator). Host + decision fields
+        // stay NULL until that Staff Leader approves (approve = assign host in one action).
         var idx = 0;
         foreach (var slot in f.CampusVisits)
         {
@@ -150,6 +176,9 @@ public sealed class VisitRequestService : IVisitRequestService
                 CurrentHostUserId    = null,
                 HostAssignedBy       = null,
                 HostAssignedAt       = null,
+                CoordinatorUserId    = staffLeadersByCampus[campus.CampusId],
+                CoordinatorAssignedBy = visitorUserId,
+                CoordinatorAssignedAt = utcNow,
 
                 RowVersion           = 0,
                 CreatedAt            = utcNow,

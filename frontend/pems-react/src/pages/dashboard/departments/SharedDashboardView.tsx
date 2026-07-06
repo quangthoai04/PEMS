@@ -92,6 +92,8 @@ type AssignmentProgressItem = {
   latestDeclineReason?: string;
   latestDeclinedByName?: string;
   latestDeclinedAt?: string;
+  /** True khi chính người đang đăng nhập là người thực hiện hành động gần nhất. */
+  isActedByCurrentUser?: boolean;
   needsAttention: boolean;
   attentionReason?: string;
   cancelReason?: string;

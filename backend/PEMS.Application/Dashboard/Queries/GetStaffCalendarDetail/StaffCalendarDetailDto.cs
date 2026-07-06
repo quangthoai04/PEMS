@@ -59,8 +59,8 @@ public sealed class StaffCalendarDetailDto
     public string? WorkingLanguage { get; set; }
     public string? MediaConsentStatus { get; set; }
     public string? MediaConsentNote { get; set; }
-    public string? TransportationType { get; set; }
-    public string? TransportationDetail { get; set; }
+    /// <summary>Free text the guest entered to identify the transportation to FPTU.</summary>
+    public string? TransportationNote { get; set; }
     public string? NoteToFptu { get; set; }
 
     // ── Host hiện tại ──

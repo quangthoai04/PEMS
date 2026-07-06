@@ -105,8 +105,8 @@ export interface StaffCalendarDetail {
   workingLanguage: string | null;
   mediaConsentStatus: string | null;
   mediaConsentNote: string | null;
-  transportationType: string | null;
-  transportationDetail: string | null;
+  /** Free text nhận diện phương tiện di chuyển tới FPTU (SQL v10). */
+  transportationNote: string | null;
   noteToFptu: string | null;
   currentHostUserId: number | null;
   currentHostName: string | null;

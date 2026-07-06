@@ -61,10 +61,11 @@ public sealed class RespondVisitParticipantInvitationCommandHandler
 
         var actionName = request.Accept ? "xác nhận tham gia" : "từ chối";
 
-        if (requestStatus == VisitRequestStatuses.Cancelled || requestStatus == VisitRequestStatuses.Rejected || campusStatus == VisitInstanceStatuses.Cancelled)
+        if (requestStatus == VisitRequestStatuses.Cancelled || requestStatus == VisitRequestStatuses.Rejected
+            || campusStatus == VisitInstanceStatuses.Cancelled || campusStatus == VisitInstanceStatuses.Rejected)
             throw new ConflictException($"Không thể {actionName} vì lịch thăm đã bị hủy hoặc từ chối.");
 
-        if (campusStatus != "WAITING_HOST_ASSIGNMENT" && campusStatus != VisitInstanceStatuses.Assigned && campusStatus != VisitInstanceStatuses.BeforeVisit)
+        if (campusStatus != VisitInstanceStatuses.Assigned && campusStatus != VisitInstanceStatuses.BeforeVisit)
             throw new ConflictException($"Không thể {actionName} vì chuyến thăm đã bắt đầu hoặc kết thúc.");
 
         var now = _clock.UtcNow;

@@ -46,14 +46,14 @@ public sealed class GetStaffLeaderReportOverviewQueryHandler
 
     private static readonly (string Status, string LabelVi)[] PipelineStatuses =
     {
-        (VisitInstanceStatus.WaitingRequestApproval, "Chờ duyệt"),
-        (VisitInstanceStatus.WaitingHostAssignment, "Chờ gán host"),
-        (VisitInstanceStatus.Assigned, "Đã gán host"),
+        (VisitInstanceStatus.WaitingRequestApproval, "Chờ xử lý tại campus"),
+        (VisitInstanceStatus.Assigned, "Đã duyệt & gán host"),
         (VisitInstanceStatus.BeforeVisit, "Trước chuyến"),
         (VisitInstanceStatus.DuringVisit, "Đang diễn ra"),
         (VisitInstanceStatus.AfterVisit, "Sau chuyến"),
         (VisitInstanceStatus.Closed, "Đã đóng"),
         (VisitInstanceStatus.Cancelled, "Đã hủy"),
+        (VisitInstanceStatus.Rejected, "Đã từ chối"),
     };
 
     private readonly IApplicationDbContext _db;
@@ -104,11 +104,13 @@ public sealed class GetStaffLeaderReportOverviewQueryHandler
             .Where(ci => ci.CampusId == campusId);
         if (hostUserId != null) opInstances = opInstances.Where(ci => ci.CurrentHostUserId == hostUserId);
 
-        // ---- Base query 3: single-campus requests waiting for Staff Leader approval (current state). ----
+        // ---- Base query 3: campus instances waiting for THIS Staff Leader's decision (current
+        // state). Campus-independent approval: single AND multi-campus instances route straight
+        // to the campus — pending = instance WAITING_REQUEST_APPROVAL of my campus. ----
         var pendingApproval = _db.VisitRequests.AsNoTracking()
-            .Where(r => r.VisitScope == "SINGLE_CAMPUS"
-                        && r.Status == VisitRequestStatus.PendingApproval
-                        && r.CampusInstances.Any(ci => ci.CampusId == campusId));
+            .Where(r => r.Status != VisitRequestStatus.Cancelled
+                        && r.CampusInstances.Any(ci => ci.CampusId == campusId
+                            && ci.Status == VisitInstanceStatus.WaitingRequestApproval));
 
         // ---- Current-state workflow counts (KPI strip + attention). ----
         var opStatusCounts = await opInstances
@@ -338,26 +340,8 @@ public sealed class GetStaffLeaderReportOverviewQueryHandler
             })
             .ToListAsync(cancellationToken);
 
-        var waitingHostRows = await opInstances
-            .Where(ci => ci.Status == VisitInstanceStatus.WaitingHostAssignment)
-            .OrderBy(ci => ci.PlannedStartAt)
-            .Take(PreviewLimit)
-            .Select(ci => new
-            {
-                ci.VisitRequestId,
-                ci.VisitInstanceId,
-                ci.VisitRequest.RequestCode,
-                ci.VisitRequest.DelegationName,
-                ci.VisitRequest.RegistrantOrganization,
-                ci.VisitRequest.VisitType,
-                ci.Status,
-                WaitingSince = ci.VisitRequest.DecidedAt ?? ci.VisitRequest.SubmittedAt,
-                PlannedStartAt = (DateTime?)ci.PlannedStartAt,
-                PlannedEndAt = (DateTime?)ci.PlannedEndAt,
-                GuestCount = ci.VisitRequest.GuestMembers.Count,
-            })
-            .ToListAsync(cancellationToken);
-
+        // Campus-independent approval: there is no separate "assign host" queue anymore —
+        // approving ALWAYS assigns the host in the same action.
         var pendingActionRequests = approvalRows
             .Select(r => new StaffLeaderPendingActionRequest
             {
@@ -373,28 +357,11 @@ public sealed class GetStaffLeaderReportOverviewQueryHandler
                 GuestCount = r.GuestCount,
                 Status = r.Status,
                 WaitingHours = Math.Max(0, Math.Round((nowUtc - r.SubmittedAt).TotalHours, 1)),
-                ActionLabel = "Duyệt / Từ chối",
+                ActionLabel = "Duyệt & gán host / Từ chối",
             })
-            .Concat(waitingHostRows.Select(ci => new StaffLeaderPendingActionRequest
-            {
-                Type = "ASSIGN_HOST",
-                RequestId = ci.VisitRequestId,
-                VisitInstanceId = ci.VisitInstanceId,
-                RequestCode = ci.RequestCode,
-                DelegationName = ci.DelegationName,
-                OrganizationName = ci.RegistrantOrganization,
-                VisitType = ci.VisitType,
-                PlannedStartAt = ci.PlannedStartAt,
-                PlannedEndAt = ci.PlannedEndAt,
-                GuestCount = ci.GuestCount,
-                Status = ci.Status,
-                // Seed/legacy có thể có DecidedAt tương lai — chưa tới thời điểm chờ thì tính 0.
-                WaitingHours = Math.Max(0, Math.Round((nowUtc - ci.WaitingSince).TotalHours, 1)),
-                ActionLabel = "Gán host",
-            }))
             .OrderByDescending(x => x.WaitingHours)
             .ToList();
-        var pendingActionTotal = pendingApprovalCount + OpCount(VisitInstanceStatus.WaitingHostAssignment);
+        var pendingActionTotal = pendingApprovalCount;
 
         // ---- Close readiness: AFTER_VISIT instances, mirroring the CompleteVisitStage close rule. ----
         var closeReadinessTotal = OpCount(VisitInstanceStatus.AfterVisit);
@@ -629,14 +596,6 @@ public sealed class GetStaffLeaderReportOverviewQueryHandler
             },
             new()
             {
-                Type = "ASSIGN_HOST",
-                Label = "Chuyến chưa gán host",
-                Count = OpCount(VisitInstanceStatus.WaitingHostAssignment),
-                Severity = OpCount(VisitInstanceStatus.WaitingHostAssignment) > 0 ? "WARNING" : "SUCCESS",
-                TargetSection = "pending-actions",
-            },
-            new()
-            {
                 Type = "LOGISTICS_OVERDUE",
                 Label = "Logistics chậm",
                 Count = overdueLogisticsTotal,
@@ -711,7 +670,7 @@ public sealed class GetStaffLeaderReportOverviewQueryHandler
             Kpis = new StaffLeaderKpis
             {
                 PendingSingleCampusApproval = pendingApprovalCount,
-                WaitingHostAssignment = OpCount(VisitInstanceStatus.WaitingHostAssignment),
+                RejectedInstances = OpCount(VisitInstanceStatus.Rejected),
                 AssignedVisits = OpCount(VisitInstanceStatus.Assigned),
                 BeforeVisit = OpCount(VisitInstanceStatus.BeforeVisit),
                 DuringVisit = OpCount(VisitInstanceStatus.DuringVisit),

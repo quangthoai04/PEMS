@@ -268,16 +268,14 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
             .HasOne(d => d.File).WithMany(f => f.Documents)
             .HasForeignKey(d => d.FileId).OnDelete(DeleteBehavior.Restrict);
 
-        // VisitRequest → Partner, VisitorUser, DecidedBy, CancelledBy
+        // VisitRequest → Partner, VisitorUser, CancelledBy
+        // (decision fields moved down to VisitRequestCampus — SQL v10 campus-independent approval)
         modelBuilder.Entity<VisitRequest>()
             .HasOne(v => v.Partner).WithMany()
             .HasForeignKey(v => v.PartnerId).OnDelete(DeleteBehavior.SetNull);
         modelBuilder.Entity<VisitRequest>()
             .HasOne<User>().WithMany()
             .HasForeignKey(v => v.VisitorUserId).OnDelete(DeleteBehavior.Restrict);
-        modelBuilder.Entity<VisitRequest>()
-            .HasOne<User>().WithMany()
-            .HasForeignKey(v => v.DecidedBy).OnDelete(DeleteBehavior.SetNull);
         modelBuilder.Entity<VisitRequest>()
             .HasOne<User>().WithMany()
             .HasForeignKey(v => v.CancelledBy).OnDelete(DeleteBehavior.SetNull);
@@ -301,6 +299,9 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
         modelBuilder.Entity<VisitRequestCampus>()
             .HasOne<User>().WithMany()
             .HasForeignKey(vc => vc.CoordinatorAssignedBy).OnDelete(DeleteBehavior.SetNull);
+        modelBuilder.Entity<VisitRequestCampus>()
+            .HasOne<User>().WithMany()
+            .HasForeignKey(vc => vc.DecidedBy).OnDelete(DeleteBehavior.SetNull);
 
         modelBuilder.Entity<VisitRequestCampus>()
             .HasOne<User>().WithMany()

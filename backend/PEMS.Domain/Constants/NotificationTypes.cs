@@ -3,10 +3,8 @@ namespace PEMS.Domain.Constants;
 public static class NotificationTypes
 {
     public const string VisitRequestSubmitted = "VISIT_REQUEST_SUBMITTED";
-    public const string CrossCampusRequestSubmitted = "CROSS_CAMPUS_REQUEST_SUBMITTED";
     public const string VisitRequestApproved = "VISIT_REQUEST_APPROVED";
     public const string VisitRequestRejected = "VISIT_REQUEST_REJECTED";
-    public const string WaitingHostAssignment = "WAITING_HOST_ASSIGNMENT";
     public const string HostAssigned = "HOST_ASSIGNED";
     public const string VisitStatusChanged = "VISIT_STATUS_CHANGED";
     public const string VisitCancelled = "VISIT_CANCELLED";

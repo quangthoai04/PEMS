@@ -1,18 +1,20 @@
 /**
- * AssignHostModal — Staff Leader picks the staff member who will host a campus instance.
- * Used both to APPROVE + assign a single-campus request and to TRANSFER the host of an
- * HO-approved multi-campus instance. Candidates and any schedule conflict are loaded from
- * the backend (UC-22 host-candidates); the conflict warning is advisory and does not block.
+ * AssignHostModal — Staff Leader APPROVES a campus instance and picks the official host in the
+ * SAME action (campus-independent approval, SQL v10). Candidates = IC Staff of the campus +
+ * "Tôi làm host chính" (the approving Staff Leader themself); schedule conflicts are loaded from
+ * the backend (UC-22 host-candidates) and are advisory (the backend hard-blocks only a real
+ * double-hosting overlap). An optional decision note is stored on the instance's decision_note.
  */
 import { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
-import { X, AlertTriangle, Check, Users, Loader2, Search } from 'lucide-react';
+import { X, AlertTriangle, Check, Users, Loader2, Search, UserCheck } from 'lucide-react';
 import { delegationsApi } from '../../features/delegations/api/delegationsApi';
 import type { HostCandidate } from '../../features/delegations/types/delegations.types';
 
 type AssignHostModalProps = {
   isOpen: boolean;
-  mode: 'approve' | 'transfer';
+  /** Kept for call-site compatibility; approve là hành động duy nhất (không còn transfer host). */
+  mode?: 'approve';
   visitRequestId: number;
   visitInstanceId: number | null;
   delegationName?: string | null;
@@ -30,7 +32,7 @@ const formatDateTime = (value?: string | null) => {
 };
 
 export function AssignHostModal({
-  isOpen, mode, visitRequestId, visitInstanceId, delegationName, currentHostUserId, customTitle, onClose, onConfirmed,
+  isOpen, visitRequestId, visitInstanceId, delegationName, currentHostUserId, customTitle, onClose, onConfirmed,
 }: AssignHostModalProps) {
   const [candidates, setCandidates] = useState<HostCandidate[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -38,6 +40,7 @@ export function AssignHostModal({
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [keyword, setKeyword] = useState('');
   const [debouncedKeyword, setDebouncedKeyword] = useState('');
+  const [decisionNote, setDecisionNote] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   // Confirm overlay shown when assigning a host that has a schedule conflict.
@@ -56,6 +59,7 @@ export function AssignHostModal({
     setSelectedId(null);
     setKeyword('');
     setDebouncedKeyword('');
+    setDecisionNote('');
     setSubmitError(null);
     delegationsApi
       .getHostCandidates(visitInstanceId)
@@ -67,8 +71,8 @@ export function AssignHostModal({
 
   if (!isOpen) return null;
 
-  const title = customTitle || (mode === 'approve' ? 'Duyệt đơn & chọn host' : 'Chuyển host phụ trách');
-  const confirmLabel = mode === 'approve' ? 'Duyệt & gán host' : (customTitle ? 'Lưu lựa chọn' : 'Chuyển host');
+  const title = customTitle || 'Duyệt & gán host';
+  const confirmLabel = 'Duyệt & gán host';
 
   const filtered = debouncedKeyword.trim()
     ? candidates.filter((c) =>
@@ -78,27 +82,27 @@ export function AssignHostModal({
   const selectedCandidate = candidates.find((c) => c.userId === selectedId) ?? null;
 
   // Selecting confirm: if the chosen host has a schedule conflict, ask for explicit confirmation
-  // first (the backend still allows it — this is an advisory guard, not a hard block).
+  // first (calendar overlaps are advisory; a real double-hosting overlap is rejected server-side).
   const attemptConfirm = () => {
     if (!selectedId || !visitInstanceId) return;
     if (selectedCandidate?.hasScheduleConflict) {
       setConfirmConflict(true);
       return;
     }
-    void doAssign();
+    void doApprove();
   };
 
-  const doAssign = async () => {
+  const doApprove = async () => {
     if (!selectedId || !visitInstanceId) return;
     setConfirmConflict(false);
     setIsSubmitting(true);
     setSubmitError(null);
     try {
-      await delegationsApi.assignHost(visitRequestId, visitInstanceId, selectedId);
+      await delegationsApi.approveCampusInstance(visitRequestId, visitInstanceId, selectedId, decisionNote);
       onConfirmed();
     } catch (e: any) {
       const msg = e?.response?.data?.message || e?.response?.data?.title || e?.message || 'Lỗi không xác định';
-      setSubmitError(`Không thể gán host. ${msg}`);
+      setSubmitError(`Không thể duyệt & gán host. ${msg}`);
     } finally {
       setIsSubmitting(false);
     }
@@ -129,6 +133,11 @@ export function AssignHostModal({
         </div>
 
         <div className="p-5 flex-1 overflow-y-auto">
+          <p className="mb-3 rounded-xl border border-blue-100 bg-blue-50/60 px-3 py-2 text-[12px] text-[#004c91]">
+            Duyệt yêu cầu <span className="font-bold">bắt buộc chọn host chính thức</span> trong cùng một bước.
+            Bạn có thể chọn IC Staff của cơ sở hoặc chính mình làm host.
+          </p>
+
           <div className="relative mb-3">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
             <input
@@ -157,23 +166,34 @@ export function AssignHostModal({
               {filtered.map((c) => {
                 const selected = selectedId === c.userId;
                 const isCurrent = currentHostUserId != null && currentHostUserId === c.userId;
+                const isSelfOption = c.isStaffLeaderSelfHostOption === true;
                 return (
                   <button
                     key={c.userId}
                     type="button"
                     onClick={() => setSelectedId(c.userId)}
                     className={`w-full text-left rounded-2xl border p-3 transition-colors outline-none cursor-pointer ${
-                      selected ? 'border-[#004c91] bg-blue-50/60 ring-2 ring-[#004c91]/10' : 'border-slate-200 hover:border-[#004c91]/40 hover:bg-slate-50'
+                      selected
+                        ? 'border-[#004c91] bg-blue-50/60 ring-2 ring-[#004c91]/10'
+                        : isSelfOption
+                          ? 'border-emerald-200 bg-emerald-50/40 hover:border-emerald-400'
+                          : 'border-slate-200 hover:border-[#004c91]/40 hover:bg-slate-50'
                     }`}
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
                         <p className="text-sm font-bold text-slate-800 truncate">
+                          {isSelfOption && <UserCheck className="mr-1 inline-block h-4 w-4 text-emerald-600" />}
                           {c.fullName}
-                          {c.subRole?.toUpperCase() === 'LEADER' && <span className="ml-2 text-[10px] font-semibold text-[#004c91] bg-blue-100 rounded px-1.5 py-0.5">Leader</span>}
+                          {isSelfOption && <span className="ml-2 text-[10px] font-semibold text-emerald-700 bg-emerald-100 rounded px-1.5 py-0.5">Tôi làm host chính</span>}
+                          {!isSelfOption && c.subRole?.toUpperCase() === 'LEADER' && <span className="ml-2 text-[10px] font-semibold text-[#004c91] bg-blue-100 rounded px-1.5 py-0.5">Leader</span>}
                           {isCurrent && <span className="ml-2 text-[10px] font-semibold text-slate-600 bg-slate-100 rounded px-1.5 py-0.5">Host hiện tại</span>}
                         </p>
-                        <p className="text-xs text-slate-500 truncate">{c.email}{c.departmentName ? ` · ${c.departmentName}` : ''}</p>
+                        <p className="text-xs text-slate-500 truncate">
+                          {c.email}
+                          {c.roleLabel ? ` · ${c.roleLabel}` : ''}
+                          {c.departmentName ? ` · ${c.departmentName}` : ''}
+                        </p>
                       </div>
                       {selected && <Check className="w-5 h-5 text-[#004c91] flex-shrink-0" />}
                     </div>
@@ -202,6 +222,19 @@ export function AssignHostModal({
               })}
             </div>
           )}
+
+          <div className="mt-4">
+            <label className="block text-sm font-bold text-slate-700 mb-1.5">Ghi chú duyệt (không bắt buộc)</label>
+            <textarea
+              value={decisionNote}
+              onChange={(e) => setDecisionNote(e.target.value)}
+              maxLength={2000}
+              rows={3}
+              placeholder="VD: Đồng ý tiếp nhận đoàn..."
+              disabled={isSubmitting}
+              className="w-full px-3 py-2.5 rounded-xl border border-slate-300 focus:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/10 outline-none text-sm resize-none bg-slate-50/50 focus:bg-white"
+            />
+          </div>
 
           {submitError && <p className="text-red-500 text-sm mt-3">{submitError}</p>}
         </div>
@@ -236,7 +269,7 @@ export function AssignHostModal({
               </div>
               <div className="p-5 text-sm text-slate-700">
                 <p>
-                  Nhân sự <span className="font-bold text-slate-900">{selectedCandidate?.fullName}</span> đang có lịch trùng với thời gian đón đoàn. Bạn vẫn muốn gán làm host?
+                  Nhân sự <span className="font-bold text-slate-900">{selectedCandidate?.fullName}</span> đang có lịch trùng với thời gian đón đoàn. Bạn vẫn muốn duyệt và gán làm host?
                 </p>
               </div>
               <div className="px-5 py-4 bg-gray-50 flex items-center justify-end gap-3 border-t border-gray-100">
@@ -250,12 +283,12 @@ export function AssignHostModal({
                 </button>
                 <button
                   type="button"
-                  onClick={doAssign}
+                  onClick={doApprove}
                   disabled={isSubmitting}
                   className="px-5 py-2 rounded-xl font-bold text-white bg-amber-600 hover:bg-amber-700 shadow-sm transition-all outline-none text-sm cursor-pointer disabled:opacity-50 flex items-center gap-2"
                 >
                   {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                  Vẫn gán host
+                  Vẫn duyệt & gán host
                 </button>
               </div>
             </div>

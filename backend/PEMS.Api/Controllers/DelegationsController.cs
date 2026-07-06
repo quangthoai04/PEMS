@@ -2,11 +2,10 @@ using MediatR;
 using Microsoft.AspNetCore.Mvc;
 using PEMS.Api.Filters;
 using PEMS.Application.Common.Security;
-using PEMS.Application.Delegations.Commands.ApproveCrossCampusRequest;
+using PEMS.Application.Delegations.Commands.ApproveCampusInstance;
 using PEMS.Application.Delegations.Commands.CancelVisitRequest;
 using PEMS.Application.Delegations.Commands.CompleteVisitStage;
-using PEMS.Application.Delegations.Commands.ProcessVisitRequest;
-using PEMS.Application.Delegations.Commands.RejectVisitRequest;
+using PEMS.Application.Delegations.Commands.RejectCampusInstance;
 using PEMS.Application.Delegations.Commands.SaveVisitAgenda;
 using PEMS.Application.Delegations.Commands.UpdateRegistrantInfo;
 using PEMS.Application.Delegations.Commands.InviteVisitParticipant;
@@ -48,23 +47,25 @@ namespace PEMS.Api.Controllers
         // The former DelegationsController.submitvisitrequest scaffold (NotImplementedException)
         // was removed — it was unused and conflicted with the real UC-17.
 
-        // ── UC-18 HO approve / reject a MULTI_CAMPUS request ──────────────────
-        // Approve: request → APPROVED and every campus instance is auto-assigned to its IC head.
+        // ── HO approve/reject: PERMANENTLY DISABLED (campus-independent approval, SQL v10) ──
+        // Multi-campus requests are no longer decided by HO: each campus instance is routed to
+        // and decided by the Staff Leader of that campus. The old routes stay registered so a
+        // stale client gets an explicit 410 Gone (never a silent 404) and can never mutate data.
         [HttpPost("{visitRequestId}/ho-approve")]
-
-        public async Task<IActionResult> HoApprove(ulong visitRequestId, CancellationToken cancellationToken)
-        {
-            var result = await _mediator.Send(new ApproveCrossCampusRequestCommand(visitRequestId), cancellationToken);
-            return Ok(result);
-        }
+        public IActionResult HoApprove(ulong visitRequestId)
+            => StatusCode(StatusCodes.Status410Gone, new
+            {
+                errorCode = "HO_APPROVAL_FLOW_REMOVED",
+                message = "Luồng duyệt liên cơ sở đã thay đổi. Mỗi Staff Leader xử lý campus instance của campus mình; HO không còn duyệt request tổng."
+            });
 
         [HttpPost("{visitRequestId}/ho-reject")]
-
-        public async Task<IActionResult> HoReject(ulong visitRequestId, [FromBody] RejectVisitRequestBody body, CancellationToken cancellationToken)
-        {
-            var result = await _mediator.Send(new RejectVisitRequestCommand(visitRequestId, body.Reason), cancellationToken);
-            return Ok(result);
-        }
+        public IActionResult HoReject(ulong visitRequestId)
+            => StatusCode(StatusCodes.Status410Gone, new
+            {
+                errorCode = "HO_APPROVAL_FLOW_REMOVED",
+                message = "Luồng duyệt liên cơ sở đã thay đổi. Mỗi Staff Leader xử lý campus instance của campus mình; HO không còn duyệt request tổng."
+            });
 
         // ── Submitted visit-request form snapshot (read-only, shared) ────────
         // The "what the guest submitted" detail, reused by the pre-approval review, the
@@ -133,8 +134,8 @@ namespace PEMS.Api.Controllers
             return Ok(result);
         }
 
-        // ── UC-22 Staff Leader: list host candidates, approve+assign host (single) /
-        //    transfer host (multi), and reject own-campus single requests ─────────
+        // ── UC-22 Staff Leader (campus-independent approval): list host candidates, then
+        //    approve + assign host, or reject — always per campus instance of THEIR campus ──
         [HttpGet("campuses/{visitInstanceId}/host-candidates")]
 
         public async Task<IActionResult> GetHostCandidates(ulong visitInstanceId, CancellationToken cancellationToken)
@@ -143,12 +144,25 @@ namespace PEMS.Api.Controllers
             return Ok(result);
         }
 
+        // Approve the campus instance: WAITING_REQUEST_APPROVAL → ASSIGNED with the mandatory
+        // official host (IC Staff of the campus, or the approving Staff Leader themself).
+        // "assign-host" is kept as a legacy alias of the same action.
+        [HttpPost("{visitRequestId}/campuses/{visitInstanceId}/approve")]
         [HttpPost("{visitRequestId}/campuses/{visitInstanceId}/assign-host")]
-
-        public async Task<IActionResult> AssignHost(ulong visitRequestId, ulong visitInstanceId, [FromBody] AssignHostBody body, CancellationToken cancellationToken)
+        public async Task<IActionResult> ApproveCampusInstance(ulong visitRequestId, ulong visitInstanceId, [FromBody] ApproveCampusInstanceBody body, CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(
-                new ProcessVisitRequestCommand(visitRequestId, visitInstanceId, body.HostUserId),
+                new ApproveCampusInstanceCommand(visitRequestId, visitInstanceId, body.HostUserId, body.DecisionNote),
+                cancellationToken);
+            return Ok(result);
+        }
+
+        // Reject ONLY this campus instance (mandatory reason → instance decision_note).
+        [HttpPost("{visitRequestId}/campuses/{visitInstanceId}/reject")]
+        public async Task<IActionResult> RejectCampusInstance(ulong visitRequestId, ulong visitInstanceId, [FromBody] RejectVisitRequestBody body, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(
+                new RejectCampusInstanceCommand(visitRequestId, visitInstanceId, body.Reason),
                 cancellationToken);
             return Ok(result);
         }
@@ -424,13 +438,8 @@ namespace PEMS.Api.Controllers
             return Ok(result);
         }
 
-        [HttpPost("{visitRequestId}/campus-reject")]
-
-        public async Task<IActionResult> CampusReject(ulong visitRequestId, [FromBody] RejectVisitRequestBody body, CancellationToken cancellationToken)
-        {
-            var result = await _mediator.Send(new RejectVisitRequestCommand(visitRequestId, body.Reason), cancellationToken);
-            return Ok(result);
-        }
+        // NB: the old request-level "{visitRequestId}/campus-reject" endpoint was removed —
+        // rejection is per campus instance now: POST {visitRequestId}/campuses/{visitInstanceId}/reject.
 
         [HttpPost("createguestdelegation")]
         public async Task<IActionResult> CreateGuestDelegation([FromBody] PEMS.Application.Delegations.Commands.CreateGuestDelegation.CreateGuestDelegationCommand command, CancellationToken cancellationToken)
@@ -627,12 +636,13 @@ namespace PEMS.Api.Controllers
     /// <summary>Request body for the UC-136 cancel endpoints.</summary>
     public sealed record CancelVisitRequestBody(string CancellationReason);
 
-    /// <summary>Request body for the UC-18/UC-22 reject endpoints (reason is mandatory).</summary>
+    /// <summary>Request body for the UC-22 campus-instance reject endpoint (reason is mandatory).</summary>
     public sealed record RejectVisitRequestBody(string Reason);
 
-    /// <summary>Request body for the UC-22 approve-and-assign / transfer-host endpoint.
-    /// Gán host không gửi email — Staff được gán xem qua thông báo/"Lịch của tôi".</summary>
-    public sealed record AssignHostBody(ulong HostUserId);
+    /// <summary>Request body for the UC-22 approve-campus-instance endpoint: the official host is
+    /// mandatory; the decision note is optional. Gán host không gửi email — Staff được gán xem
+    /// qua thông báo/"Lịch của tôi".</summary>
+    public sealed record ApproveCampusInstanceBody(ulong HostUserId, string? DecisionNote);
 
     /// <summary>Request body for updating an internally-created request's registrant block.</summary>
     public sealed record UpdateRegistrantInfoBody(string FullName, string Organization, string? JobTitle, string Phone, string Email);

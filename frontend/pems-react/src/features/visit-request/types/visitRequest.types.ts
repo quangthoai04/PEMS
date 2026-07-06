@@ -48,8 +48,8 @@ export interface VisitRequestFormData {
   supportTeam: SupportTeamEntry[];
   contactPoint: ContactPointData;
   workingLanguage: 'EN' | 'VI';
-  transportationType: string;
-  transportationDetail?: string;
+  /** Free text identifying the transportation to FPTU (optional). */
+  transportationNote?: string;
   mediaConsentStatus: 'AGREED' | 'DECLINED';
   mediaConsentNote?: string;
   partnerId?: number | null;

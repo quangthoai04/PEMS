@@ -147,8 +147,8 @@ public sealed class ExportStaffLeaderReportCommandHandler
 
     private static List<(string Label, string Value)> KpiLines(StaffLeaderKpis k) => new()
     {
-        ("Chờ duyệt", k.PendingSingleCampusApproval.ToString()),
-        ("Chờ gán host", k.WaitingHostAssignment.ToString()),
+        ("Chờ xử lý tại campus", k.PendingSingleCampusApproval.ToString()),
+        ("Đã từ chối", k.RejectedInstances.ToString()),
         ("Đang chuẩn bị (đã gán + trước chuyến)", (k.AssignedVisits + k.BeforeVisit).ToString()),
         ("Đang diễn ra", k.DuringVisit.ToString()),
         ("Sau tiếp khách", k.AfterVisit.ToString()),

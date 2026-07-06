@@ -1,8 +1,8 @@
 namespace PEMS.Shared;
 
-// Maps visit_requests.decision_actor_role ENUM (SQL v8.3).
+// Maps visit_request_campuses.decision_actor_role ENUM (SQL v10).
+// Campus-independent approval: every decision is made by the campus Staff Leader.
 public static class DecisionActorRole
 {
-    public const string Ho = "HO";
     public const string StaffLeader = "STAFF_LEADER";
 }
