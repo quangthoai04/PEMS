@@ -219,16 +219,7 @@ export function SubmittedVisitRequestDetailModal({
                 onClick={() => onApprove?.(data)}
                 className="px-5 py-2.5 rounded-xl font-bold text-white bg-green-600 hover:bg-green-700 shadow-sm transition-colors outline-none text-sm inline-flex items-center gap-2"
               >
-                <Check className="w-4 h-4" /> Duyệt
-              </button>
-            )}
-            {data?.canAssignHost && (
-              <button
-                type="button"
-                onClick={() => onAssignHost?.(data)}
-                className="px-5 py-2.5 rounded-xl font-bold text-white bg-[#004c91] hover:bg-[#00386b] shadow-sm transition-colors outline-none text-sm inline-flex items-center gap-2"
-              >
-                <UserCog className="w-4 h-4" /> Gán Host
+                <Check className="w-4 h-4" /> Duyệt & gán host
               </button>
             )}
             <button

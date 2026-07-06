@@ -244,14 +244,14 @@ export function StaffLeaderReportManagement() {
           aria-label="Trạng thái chuyến"
         >
           <option value="ALL">Chuyến: Tất cả</option>
-          <option value="WAITING_REQUEST_APPROVAL">Chờ duyệt</option>
-          <option value="WAITING_HOST_ASSIGNMENT">Chờ gán host</option>
-          <option value="ASSIGNED">Đã gán host</option>
+          <option value="WAITING_REQUEST_APPROVAL">Chờ xử lý tại campus</option>
+          <option value="ASSIGNED">Đã duyệt & gán host</option>
           <option value="BEFORE_VISIT">Trước chuyến</option>
           <option value="DURING_VISIT">Đang diễn ra</option>
           <option value="AFTER_VISIT">Sau chuyến</option>
           <option value="CLOSED">Đã đóng</option>
           <option value="CANCELLED">Đã hủy</option>
+          <option value="REJECTED">Đã từ chối</option>
         </select>
 
         <select
@@ -459,8 +459,8 @@ function ReportSkeleton() {
 function KpiStrip({ data }: { data: StaffLeaderReportOverview }) {
   const k = data.kpis;
   const items: { label: string; value: string; sub?: string; tone?: 'warn' | 'danger' | 'good'; title?: string }[] = [
-    { label: 'Chờ duyệt', value: fmt.formatNumber(k.pendingSingleCampusApproval), sub: 'đơn single-campus', tone: k.pendingSingleCampusApproval > 0 ? 'warn' : undefined, title: 'Đơn SINGLE_CAMPUS đang chờ duyệt (trạng thái hiện tại)' },
-    { label: 'Chờ gán host', value: fmt.formatNumber(k.waitingHostAssignment), sub: 'chuyến chưa có host', tone: k.waitingHostAssignment > 0 ? 'warn' : undefined },
+    { label: 'Chờ xử lý', value: fmt.formatNumber(k.pendingSingleCampusApproval), sub: 'cơ sở chờ duyệt & gán host', tone: k.pendingSingleCampusApproval > 0 ? 'warn' : undefined, title: 'Campus instance của campus bạn đang chờ duyệt & gán host (mọi phạm vi đơn)' },
+    { label: 'Đã từ chối', value: fmt.formatNumber(k.rejectedInstances), sub: 'cơ sở đã từ chối' },
     { label: 'Đang chuẩn bị', value: fmt.formatNumber(k.assignedVisits + k.beforeVisit), sub: 'đã gán + trước chuyến' },
     { label: 'Đang diễn ra', value: fmt.formatNumber(k.duringVisit), sub: 'chuyến đang tiếp' },
     { label: 'Sau tiếp khách', value: fmt.formatNumber(k.afterVisit), sub: 'chờ hoàn tất hồ sơ' },

@@ -15,9 +15,6 @@ const VISIT_TYPE_LABELS: Record<string, string> = {
   SIGNING_CEREMONY: 'Lễ ký kết', EXCHANGE: 'Giao lưu', OTHER: 'Khác',
 };
 const MEDIA_CONSENT_LABELS: Record<string, string> = { AGREED: 'Đồng ý', DECLINED: 'Không đồng ý' };
-const TRANSPORT_LABELS: Record<string, string> = {
-  SELF_ARRANGED: 'Tự sắp xếp', FPTU_SUPPORT: 'FPTU hỗ trợ', UNKNOWN: 'Chưa xác định', OTHER: 'Khác',
-};
 const WORKING_LANG_LABELS: Record<string, string> = { VI: 'Tiếng Việt', EN: 'Tiếng Anh' };
 
 /** "YYYY-MM-DD[ T]HH:mm[:ss]" → "DD/MM/YYYY HH:mm" via pure string slicing (no Date / no TZ shift). */
@@ -118,7 +115,6 @@ export function DelegationInfoReadOnly({ summary }: { summary?: VisitProcessRequ
         <Field label="Loại hình tham quan" value={visitTypeLabel} />
         <Field label="Ngôn ngữ làm việc" value={summary?.workingLanguage ? (WORKING_LANG_LABELS[summary.workingLanguage] || summary.workingLanguage) : null} />
         <Field label="Đồng ý sử dụng hình ảnh" value={summary?.mediaConsentStatus ? (MEDIA_CONSENT_LABELS[summary.mediaConsentStatus] || summary.mediaConsentStatus) : null} />
-        <Field label="Phương tiện di chuyển" value={summary?.transportationType ? (TRANSPORT_LABELS[summary.transportationType] || summary.transportationType) : null} />
       </div>
 
       <div>
@@ -155,7 +151,7 @@ export function DelegationInfoReadOnly({ summary }: { summary?: VisitProcessRequ
       <div className="space-y-1">
         <Field label="Mục đích thăm" value={summary?.purpose} multiline />
         <Field label="Nội dung làm việc" value={summary?.workingContent} multiline />
-        {summary?.transportationDetail?.trim() && <Field label="Chi tiết phương tiện" value={summary.transportationDetail} />}
+        {summary?.transportationNote?.trim() && <Field label="Nhận diện phương tiện di chuyển" value={summary.transportationNote} multiline />}
         {summary?.mediaConsentNote?.trim() && <Field label="Ghi chú hình ảnh" value={summary.mediaConsentNote} multiline />}
         {summary?.noteToFptu?.trim() && <Field label="Ghi chú của khách" value={summary.noteToFptu} multiline />}
       </div>

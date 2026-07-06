@@ -269,9 +269,8 @@ export function HoReportManagement() {
           aria-label="Trạng thái instance"
         >
           <option value="ALL">Instance: Tất cả</option>
-          <option value="WAITING_REQUEST_APPROVAL">Chờ duyệt</option>
-          <option value="WAITING_HOST_ASSIGNMENT">Chờ gán host</option>
-          <option value="ASSIGNED">Đã gán host</option>
+          <option value="WAITING_REQUEST_APPROVAL">Chờ xử lý tại campus</option>
+          <option value="ASSIGNED">Đã duyệt & gán host</option>
           <option value="BEFORE_VISIT">Trước tiếp khách</option>
           <option value="DURING_VISIT">Đang tiếp</option>
           <option value="AFTER_VISIT">Sau tiếp khách</option>
@@ -618,13 +617,13 @@ function ChartEmpty({ height }: { height: number }) {
 
 const PIPELINE_TONES: Record<string, string> = {
   WAITING_REQUEST_APPROVAL: 'bg-amber-400',
-  WAITING_HOST_ASSIGNMENT: 'bg-orange-400',
   ASSIGNED: 'bg-blue-400',
   BEFORE_VISIT: 'bg-sky-400',
   DURING_VISIT: 'bg-indigo-400',
   AFTER_VISIT: 'bg-violet-400',
   CLOSED: 'bg-emerald-400',
   CANCELLED: 'bg-slate-300',
+  REJECTED: 'bg-red-400',
 };
 
 function LifecyclePipeline({ data, activeStatus, onSelect }: {
@@ -686,7 +685,7 @@ function CampusPerformanceTable({ data }: { data: HoReportOverview }) {
               <tr className="bg-slate-50 border-b border-slate-100">
                 <th className={thClass}>Campus</th>
                 <th className={`${thClass} text-right`}>Tổng chuyến</th>
-                <th className={`${thClass} text-right`}>Chờ host</th>
+                <th className={`${thClass} text-right`}>Từ chối</th>
                 <th className={`${thClass} text-right`}>Chuẩn bị</th>
                 <th className={`${thClass} text-right`}>Đang tiếp</th>
                 <th className={`${thClass} text-right`}>Sau tiếp</th>
@@ -703,7 +702,7 @@ function CampusPerformanceTable({ data }: { data: HoReportOverview }) {
                   <tr key={c.campusId} className="hover:bg-blue-50/40 transition-colors">
                     <td className={`${tdClass} font-bold text-slate-800`}>{c.campusName}</td>
                     <td className={`${tdClass} text-right font-bold text-slate-800`}>{fmt.formatNumber(c.totalInstances)}</td>
-                    <td className={`${tdClass} text-right`}>{fmt.formatNumber(c.waitingHostAssignment)}</td>
+                    <td className={`${tdClass} text-right`}>{fmt.formatNumber(c.rejected)}</td>
                     <td className={`${tdClass} text-right`}>{fmt.formatNumber(c.assigned + c.beforeVisit)}</td>
                     <td className={`${tdClass} text-right`}>{fmt.formatNumber(c.duringVisit)}</td>
                     <td className={`${tdClass} text-right`}>{fmt.formatNumber(c.afterVisit)}</td>

@@ -94,7 +94,7 @@ export function HoVisitProcessDetail() {
                       transition={{ delay: idx * 0.1 }}
                       className="bg-slate-50 border border-slate-200 rounded-xl p-5 shadow-sm relative overflow-hidden group hover:shadow-md transition-shadow"
                     >
-                      <div className={`absolute top-0 left-0 w-1 h-full ${campus.status === 'CANCELLED' || campus.status === 'REJECTED' ? 'bg-red-500' : campus.status === 'WAITING_HOST_ASSIGNMENT' || campus.status === 'WAITING_REQUEST_APPROVAL' ? 'bg-yellow-500' : 'bg-green-500'}`}></div>
+                      <div className={`absolute top-0 left-0 w-1 h-full ${campus.status === 'CANCELLED' || campus.status === 'REJECTED' ? 'bg-red-500' : campus.status === 'WAITING_REQUEST_APPROVAL' ? 'bg-yellow-500' : 'bg-green-500'}`}></div>
                       
                       <div className="ml-2 flex flex-col h-full">
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 gap-2">
@@ -103,7 +103,7 @@ export function HoVisitProcessDetail() {
                             <div className="bg-red-100 text-red-700 px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5 shadow-sm w-fit">
                               <XCircle className="w-3.5 h-3.5" /> {campus.status === 'CANCELLED' ? 'Đã Hủy' : 'Từ Chối'}
                             </div>
-                          ) : campus.status === 'WAITING_HOST_ASSIGNMENT' || campus.status === 'WAITING_REQUEST_APPROVAL' ? (
+                          ) : campus.status === 'WAITING_REQUEST_APPROVAL' ? (
                             <div className="bg-yellow-100 text-yellow-700 px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5 shadow-sm w-fit">
                               <Activity className="w-3.5 h-3.5" /> Chờ Xử Lý
                             </div>
@@ -131,7 +131,7 @@ export function HoVisitProcessDetail() {
                               <span className="italic text-red-600 bg-red-50 px-3 py-2 rounded-lg border border-red-100 text-[13px] font-medium leading-relaxed">"{campus.rejectReason}"</span>
                             </div>
                           )}
-                          {campus.visitInstanceId && campus.status !== 'WAITING_REQUEST_APPROVAL' && campus.status !== 'WAITING_HOST_ASSIGNMENT' && (
+                          {campus.visitInstanceId && campus.status !== 'WAITING_REQUEST_APPROVAL' && campus.status !== 'REJECTED' && (
                             <div className="pt-3 border-t border-gray-100 mt-3">
                               <button
                                 onClick={() => navigate(`/dashboard/visit/process-summary/${campus.visitInstanceId}`)}

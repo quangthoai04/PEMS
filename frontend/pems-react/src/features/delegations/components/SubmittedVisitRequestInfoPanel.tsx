@@ -15,7 +15,7 @@ import type {
   SubmittedVisitRequestFormDetail,
   SubmittedGuestMember,
 } from '../types/delegations.types';
-import { VISIT_SCOPE_LABELS } from '../types/delegations.types';
+import { VISIT_SCOPE_LABELS, INSTANCE_STATUS_LABELS } from '../types/delegations.types';
 
 const formatDateTime = (value?: string | null) => {
   if (!value) return '-';
@@ -32,14 +32,16 @@ const workingLanguageLabel = (v?: string | null) =>
 const mediaConsentLabel = (v?: string | null) =>
   v === 'AGREED' ? 'Đồng ý' : v === 'DECLINED' ? 'Không đồng ý' : (v || '-');
 
-const transportationLabel = (v?: string | null) => {
-  switch (v) {
-    case 'SELF_ARRANGED': return 'Đoàn tự sắp xếp';
-    case 'FPTU_SUPPORT': return 'FPTU hỗ trợ';
-    case 'OTHER': return 'Khác';
-    case 'UNKNOWN': return 'Chưa xác định';
-    default: return v || '-';
-  }
+/** Nhãn + màu badge trạng thái từng campus (campus-independent approval). */
+const instanceStatusBadge = (status?: string | null): { label: string; cls: string } => {
+  const label = status ? (INSTANCE_STATUS_LABELS[status as keyof typeof INSTANCE_STATUS_LABELS] ?? status) : '-';
+  const cls =
+    status === 'WAITING_REQUEST_APPROVAL' ? 'bg-amber-50 text-amber-700 border-amber-200'
+    : status === 'REJECTED' ? 'bg-red-50 text-red-700 border-red-200'
+    : status === 'CANCELLED' ? 'bg-slate-100 text-slate-500 border-slate-200'
+    : status === 'CLOSED' ? 'bg-slate-100 text-slate-600 border-slate-200'
+    : 'bg-emerald-50 text-emerald-700 border-emerald-200';
+  return { label, cls };
 };
 
 /** Một dòng key-value compact: "Nhãn: Giá trị". */
@@ -155,24 +157,38 @@ export function SubmittedVisitRequestInfoPanel({ data }: { data: SubmittedVisitR
         <SectionTitle index={3}>Cơ sở &amp; thời gian dự kiến</SectionTitle>
         {data.campuses.length ? (
           <div className="overflow-x-auto rounded-md border border-slate-200">
-            <table className="w-full min-w-[480px] border-collapse text-[13px]">
+            <table className="w-full min-w-[640px] border-collapse text-[13px]">
               <thead className="border-b border-slate-200 bg-slate-50">
                 <tr className="text-left text-xs text-slate-500">
                   <th className="px-2.5 py-1.5 font-semibold">Cơ sở</th>
                   <th className="px-2.5 py-1.5 font-semibold">Bắt đầu</th>
                   <th className="px-2.5 py-1.5 font-semibold">Kết thúc</th>
+                  <th className="px-2.5 py-1.5 font-semibold">Trạng thái</th>
+                  <th className="px-2.5 py-1.5 font-semibold">Host / Quyết định</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {data.campuses.map((c) => (
-                  <tr key={c.visitInstanceId}>
-                    <td className="px-2.5 py-1.5 font-medium text-slate-800">
-                      {c.campusName || '-'}{c.campusCode ? <span className="text-slate-400"> ({c.campusCode})</span> : null}
-                    </td>
-                    <td className="px-2.5 py-1.5 text-slate-600">{formatDateTime(c.plannedStartAt)}</td>
-                    <td className="px-2.5 py-1.5 text-slate-600">{formatDateTime(c.plannedEndAt)}</td>
-                  </tr>
-                ))}
+                {data.campuses.map((c) => {
+                  const badge = instanceStatusBadge(c.instanceStatus);
+                  return (
+                    <tr key={c.visitInstanceId} className={c.isOwnCampus ? 'bg-blue-50/40' : ''}>
+                      <td className="px-2.5 py-1.5 font-medium text-slate-800">
+                        {c.campusName || '-'}{c.campusCode ? <span className="text-slate-400"> ({c.campusCode})</span> : null}
+                        {c.isOwnCampus && <span className="ml-1.5 rounded bg-[#004c91] px-1.5 py-0.5 text-[10px] font-bold text-white">Cơ sở của bạn</span>}
+                      </td>
+                      <td className="px-2.5 py-1.5 text-slate-600">{formatDateTime(c.plannedStartAt)}</td>
+                      <td className="px-2.5 py-1.5 text-slate-600">{formatDateTime(c.plannedEndAt)}</td>
+                      <td className="px-2.5 py-1.5">
+                        <span className={`inline-block rounded border px-1.5 py-0.5 text-[11px] font-semibold ${badge.cls}`}>{badge.label}</span>
+                      </td>
+                      <td className="px-2.5 py-1.5 text-slate-600">
+                        {c.instanceStatus === 'REJECTED'
+                          ? <span className="text-red-700">Lý do: {c.decisionNote?.trim() || '-'}</span>
+                          : (c.currentHostName?.trim() || (c.instanceStatus === 'WAITING_REQUEST_APPROVAL' ? 'Chờ Staff Leader xử lý' : '-'))}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -210,10 +226,9 @@ export function SubmittedVisitRequestInfoPanel({ data }: { data: SubmittedVisitR
         <div className="grid grid-cols-1 gap-x-10 md:grid-cols-2">
           <KV label="Ngôn ngữ làm việc" value={workingLanguageLabel(data.workingLanguage)} />
           <KV label="Dùng hình ảnh & thông tin" value={mediaConsentLabel(data.mediaConsentStatus)} />
-          <KV label="Phương tiện di chuyển" value={transportationLabel(data.transportationType)} />
-          <KV label="Chi tiết phương tiện" value={data.transportationDetail} />
         </div>
         <div className="mt-1.5 space-y-1.5">
+          <KVBlock label="Nhận diện phương tiện di chuyển tới FPTU" value={data.transportationNote} />
           {data.mediaConsentNote ? <KVBlock label="Ghi chú về sử dụng hình ảnh" value={data.mediaConsentNote} /> : null}
           <KVBlock label="Ghi chú cho FPTU" value={data.noteToFptu} />
         </div>
