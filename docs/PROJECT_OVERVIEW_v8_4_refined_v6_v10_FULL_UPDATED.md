@@ -1,3 +1,15 @@
+> [!WARNING]
+> **LEGACY ARCHITECTURE NOTE (Campus-independent Approval Update)**
+> This document has been updated to reflect the new Campus-independent Approval architecture.
+> - **HO is now monitor/read-only.** There is no centralized multi-campus approval by HO.
+> - **Staff Leader approval is per-campus.** Each Staff Leader directly receives and approves/rejects their own campus instance right after submission.
+> - **Self-hosting is supported.** Staff Leaders can assign themselves as the host during approval.
+> - **ASSIGNED is removed.** Approving a request now requires assigning a host immediately.
+> - **New statuses:** `PARTIALLY_APPROVED` (request level) and `REJECTED` (campus level) are added. 
+> - **Cancel logic:** Visitors can cancel requests in `PENDING_APPROVAL` or `PARTIALLY_APPROVED` states.
+> - **Transportation:** `transportation_note` and `transportation_note` are replaced by `transportation_note`.
+> Please refer to the latest codebase and SQL schema for the current implementation.
+
 # PROJECT_OVERVIEW_v8_4_refined_v6_FULL_UPDATED
 
 > **Bản FULL-PRESERVED cập nhật theo PEMS v8.4 refined v6 no dynamic permissions.**  
@@ -273,7 +285,7 @@ CANCELLED
 
 ```text
 WAITING_REQUEST_APPROVAL
-WAITING_HOST_ASSIGNMENT
+ASSIGNED
 ASSIGNED
 BEFORE_VISIT
 DURING_VISIT
@@ -307,7 +319,7 @@ Nếu Staff Leader duyệt:
 
 ```text
 visit_requests.status = APPROVED
-campus instance = WAITING_HOST_ASSIGNMENT nếu chưa chọn host
+campus instance = ASSIGNED nếu chưa chọn host
 ```
 
 Khi Staff Leader gán host:
@@ -355,7 +367,7 @@ Nếu HO duyệt:
 
 ```text
 visit_requests.status = APPROVED
-Mỗi campus instance = WAITING_HOST_ASSIGNMENT
+Mỗi campus instance = ASSIGNED
 coordinator_user_id = Staff Leader của campus đó
 coordinator_assigned_by = HO
 coordinator_assigned_at = now
@@ -435,7 +447,7 @@ Seed hiện hành nên có dynamic planned time:
 
 ```text
 WAITING_REQUEST_APPROVAL  → tương lai xa
-WAITING_HOST_ASSIGNMENT   → tương lai
+ASSIGNED   → tương lai
 ASSIGNED                  → tương lai
 BEFORE_VISIT              → tương lai gần
 DURING_VISIT              → bao quanh CURRENT_TIMESTAMP

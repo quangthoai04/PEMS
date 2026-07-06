@@ -25,6 +25,7 @@ export interface RejectedReasonModalProps {
   decidedByUserId?: number | null;
   decidedAt?: string | null;
   decisionNote?: string | null;
+  contextLabel?: string | null;
 }
 
 const MetaRow = ({ label, value }: { label: string; value?: string | null }) => (
@@ -36,7 +37,7 @@ const MetaRow = ({ label, value }: { label: string; value?: string | null }) => 
 
 export function RejectedReasonModal({
   isOpen, onClose, delegationName, requestCode, visitScope,
-  decisionActorRole, decidedByName, decidedByUserId, decidedAt, decisionNote,
+  decisionActorRole, decidedByName, decidedByUserId, decidedAt, decisionNote, contextLabel,
 }: RejectedReasonModalProps) {
   if (!isOpen) return null;
 
@@ -61,6 +62,7 @@ export function RejectedReasonModal({
           <div className="grid grid-cols-2 gap-3">
             <MetaRow label="Mã đơn" value={requestCode} />
             {scopeLabel ? <MetaRow label="Phạm vi" value={scopeLabel} /> : null}
+            {contextLabel ? <MetaRow label="Cơ sở" value={contextLabel} /> : null}
           </div>
           <DecisionReasonPanel
             compact

@@ -1,3 +1,15 @@
+> [!WARNING]
+> **LEGACY ARCHITECTURE NOTE (Campus-independent Approval Update)**
+> This document has been updated to reflect the new Campus-independent Approval architecture.
+> - **HO is now monitor/read-only.** There is no centralized multi-campus approval by HO.
+> - **Staff Leader approval is per-campus.** Each Staff Leader directly receives and approves/rejects their own campus instance right after submission.
+> - **Self-hosting is supported.** Staff Leaders can assign themselves as the host during approval.
+> - **ASSIGNED is removed.** Approving a request now requires assigning a host immediately.
+> - **New statuses:** `PARTIALLY_APPROVED` (request level) and `REJECTED` (campus level) are added. 
+> - **Cancel logic:** Visitors can cancel requests in `PENDING_APPROVAL` or `PARTIALLY_APPROVED` states.
+> - **Transportation:** `transportation_note` and `transportation_note` are replaced by `transportation_note`.
+> Please refer to the latest codebase and SQL schema for the current implementation.
+
 # PEMS_UC_IMPLEMENTATION_RULEBOOK_FRONTEND_BACKEND_DATABASE_VALIDATION_SECURITY_v8_4_refined_v6_FULL_UPDATED
 
 > **Bản FULL-PRESERVED cập nhật theo PEMS v8.4 refined v6 no dynamic permissions.**  
@@ -440,7 +452,7 @@ CANCELLED
 
 ```text
 WAITING_REQUEST_APPROVAL
-WAITING_HOST_ASSIGNMENT
+ASSIGNED
 ASSIGNED
 BEFORE_VISIT
 DURING_VISIT
@@ -467,7 +479,7 @@ Nút “Là tôi” ở EXTERNAL_SUPPORT copy thông tin người đăng ký for
 ```text
 PENDING_APPROVAL + WAITING_REQUEST_APPROVAL
 → Staff Leader đúng campus approve/reject
-→ approve: request APPROVED, instance WAITING_HOST_ASSIGNMENT
+→ approve: request APPROVED, instance ASSIGNED
 → assign host: instance ASSIGNED
 ```
 
@@ -477,7 +489,7 @@ PENDING_APPROVAL + WAITING_REQUEST_APPROVAL
 PENDING_APPROVAL + all instances WAITING_REQUEST_APPROVAL
 → only HO sees request tổng
 → HO approve/reject
-→ approve: request APPROVED, all instances WAITING_HOST_ASSIGNMENT
+→ approve: request APPROVED, all instances ASSIGNED
 → coordinator_user_id = Staff Leader từng campus
 → Staff Leader từng campus assign host
 ```
@@ -666,7 +678,7 @@ WHERE vr.visitor_user_id = currentUserId
 [ ] Instance exists.
 [ ] Request status APPROVED.
 [ ] Actor is Staff Leader same campus.
-[ ] Instance status WAITING_HOST_ASSIGNMENT or allowed state.
+[ ] Instance status ASSIGNED or allowed state.
 [ ] current_host_user_id is NULL.
 [ ] Candidate is ACTIVE STAFF + STAFF same campus IC department.
 [ ] Instance not CANCELLED/CLOSED.
@@ -767,7 +779,7 @@ Không giữ mock mặc định khi API thật có.
 [ ] Visitor submit form thiếu EXTERNAL_SUPPORT -> 400/validation error.
 [ ] Multi-campus pending HO: Staff Leader không thấy instance.
 [ ] HO thấy multi-campus pending.
-[ ] HO approve: Staff Leader từng campus thấy WAITING_HOST_ASSIGNMENT.
+[ ] HO approve: Staff Leader từng campus thấy ASSIGNED.
 [ ] Staff Leader assign host: candidate list đúng.
 [ ] Staff Leader không thấy campus khác.
 [ ] IC Staff host thấy instance được gán.
@@ -2182,3 +2194,19 @@ File này là quy ước chung để code các UC của PEMS thống nhất.
 6. Có validate + chống spam.
 7. Có build/test/changelog rõ ràng.
 ```
+
+
+### CAMPUS-INDEPENDENT APPROVAL CHECKLIST
+1. Submit multi-campus thành công khi tất cả campus có Staff Leader ACTIVE.
+2. Submit fail toàn bộ nếu một campus không có Staff Leader ACTIVE.
+3. Staff Leader HN thấy campus HN ngay sau submit.
+4. Staff Leader HCM thấy campus HCM ngay sau submit.
+5. HO chỉ xem/monitor, không có approve/reject.
+6. HN Staff Leader approve + self-host.
+7. HCM Staff Leader reject với lý do.
+8. Request aggregate chuyển đúng:
+   - Có duyệt, còn chờ -> PARTIALLY_APPROVED
+   - Có duyệt, không còn chờ -> APPROVED
+   - Tất cả reject -> REJECTED
+9. Host trùng lịch bị chặn HOST_SCHEDULE_CONFLICT.
+10. Visitor hủy được khi PENDING_APPROVAL/PARTIALLY_APPROVED theo rule mới.

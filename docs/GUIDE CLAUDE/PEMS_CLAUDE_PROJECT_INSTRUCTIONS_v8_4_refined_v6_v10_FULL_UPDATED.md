@@ -1,3 +1,15 @@
+> [!WARNING]
+> **LEGACY ARCHITECTURE NOTE (Campus-independent Approval Update)**
+> This document has been updated to reflect the new Campus-independent Approval architecture.
+> - **HO is now monitor/read-only.** There is no centralized multi-campus approval by HO.
+> - **Staff Leader approval is per-campus.** Each Staff Leader directly receives and approves/rejects their own campus instance right after submission.
+> - **Self-hosting is supported.** Staff Leaders can assign themselves as the host during approval.
+> - **ASSIGNED is removed.** Approving a request now requires assigning a host immediately.
+> - **New statuses:** `PARTIALLY_APPROVED` (request level) and `REJECTED` (campus level) are added. 
+> - **Cancel logic:** Visitors can cancel requests in `PENDING_APPROVAL` or `PARTIALLY_APPROVED` states.
+> - **Transportation:** `transportation_note` and `transportation_note` are replaced by `transportation_note`.
+> Please refer to the latest codebase and SQL schema for the current implementation.
+
 # PEMS — CLAUDE PROJECT INSTRUCTIONS v8.4 refined v6 / v10 FULL UPDATED
 
 > File này dùng để dán vào **Claude Project Instructions** hoặc đặt trong project dưới dạng:
@@ -1599,7 +1611,7 @@ Seed phải cover tối thiểu:
 - Single-campus đủ trạng thái.
 - Multi-campus đủ trạng thái.
 - Multi-campus pending HO chưa visible cho campus con.
-- WAITING_HOST_ASSIGNMENT.
+- ASSIGNED.
 - ASSIGNED / BEFORE_VISIT / DURING_VISIT / AFTER_VISIT / CLOSED.
 - Visitor cancel full single-campus.
 - Visitor cancel full multi-campus.
@@ -2298,7 +2310,7 @@ Chỉ dùng:
 
 ```text
 WAITING_REQUEST_APPROVAL
-WAITING_HOST_ASSIGNMENT
+ASSIGNED
 ASSIGNED
 BEFORE_VISIT
 DURING_VISIT
@@ -2312,7 +2324,7 @@ CANCELLED
 | Status | Ý nghĩa | Host |
 |---|---|---|
 | `WAITING_REQUEST_APPROVAL` | Chờ Staff Leader hoặc HO duyệt | Chưa có host |
-| `WAITING_HOST_ASSIGNMENT` | Request tổng đã approve, campus chờ Staff Leader gán host | Chưa có host |
+| `ASSIGNED` | Request tổng đã approve, campus chờ Staff Leader gán host | Chưa có host |
 | `ASSIGNED` | Đã có host chính thức | Có `current_host_user_id` |
 | `BEFORE_VISIT` | Giai đoạn chuẩn bị/trước tiếp khách | Có host |
 | `DURING_VISIT` | Đang diễn ra chuyến thăm | Có host |
@@ -2352,7 +2364,7 @@ visit_requests.status = APPROVED
 decision_actor_role = STAFF_LEADER
 decided_by = Staff Leader
 decided_at = thời điểm xử lý
-visit_request_campuses.status = WAITING_HOST_ASSIGNMENT nếu chưa gán host ngay
+visit_request_campuses.status = ASSIGNED nếu chưa gán host ngay
 ```
 
 Sau đó Staff Leader gán IC Staff thường làm host:
@@ -2412,7 +2424,7 @@ visit_requests.status = APPROVED
 decision_actor_role = HO
 decided_by = HO
 decided_at = thời điểm xử lý
-Mỗi campus instance chuyển sang WAITING_HOST_ASSIGNMENT
+Mỗi campus instance chuyển sang ASSIGNED
 coordinator_user_id = Staff Leader của campus tương ứng
 coordinator_assigned_by = HO
 coordinator_assigned_at = thời điểm approve
@@ -2553,7 +2565,7 @@ CANCELLED
 Có thể cancel nếu đang ở:
 
 ```text
-WAITING_HOST_ASSIGNMENT
+ASSIGNED
 ASSIGNED
 BEFORE_VISIT
 ```
@@ -2715,7 +2727,7 @@ Rule thời gian dynamic khi seed/test:
 | Campus status | planned_start_at/planned_end_at nên như thế nào |
 |---|---|
 | `WAITING_REQUEST_APPROVAL` | Tương lai xa, ví dụ hôm nay +10 đến +35 ngày |
-| `WAITING_HOST_ASSIGNMENT` | Tương lai, ví dụ hôm nay +7 đến +28 ngày |
+| `ASSIGNED` | Tương lai, ví dụ hôm nay +7 đến +28 ngày |
 | `ASSIGNED` | Tương lai, ví dụ hôm nay +5 đến +20 ngày |
 | `BEFORE_VISIT` | Tương lai gần, ví dụ hôm nay +1 đến +3 ngày |
 | `DURING_VISIT` | `planned_start_at <= CURRENT_TIMESTAMP <= planned_end_at` |
@@ -3183,11 +3195,11 @@ Backend controller chỉ nhận request, gọi IMediator, trả response. Busine
 
 Submit visit request chỉ tạo request PENDING_APPROVAL và campus instance WAITING_REQUEST_APPROVAL. Form bắt buộc có ít nhất 1 GUEST và 1 EXTERNAL_SUPPORT. Nút “Là tôi” copy người đăng ký thành EXTERNAL_SUPPORT.
 
-visit_requests.status chỉ có PENDING_APPROVAL, APPROVED, REJECTED, CANCELLED. visit_request_campuses.status mới là lifecycle: WAITING_REQUEST_APPROVAL, WAITING_HOST_ASSIGNMENT, ASSIGNED, BEFORE_VISIT, DURING_VISIT, AFTER_VISIT, CLOSED, CANCELLED.
+visit_requests.status chỉ có PENDING_APPROVAL, APPROVED, REJECTED, CANCELLED. visit_request_campuses.status mới là lifecycle: WAITING_REQUEST_APPROVAL, ASSIGNED, BEFORE_VISIT, DURING_VISIT, AFTER_VISIT, CLOSED, CANCELLED, REJECTED, ASSIGNED, BEFORE_VISIT, DURING_VISIT, AFTER_VISIT, CLOSED, CANCELLED.
 
-Single-campus: Staff Leader campus duyệt/từ chối. Nếu approve mà chưa gán host thì WAITING_HOST_ASSIGNMENT; sau đó Staff Leader gán IC Staff thường làm host.
+Single-campus: Staff Leader campus duyệt/từ chối. Nếu approve mà chưa gán host thì ASSIGNED; sau đó Staff Leader gán IC Staff thường làm host.
 
-Multi-campus: Khi HO chưa duyệt, các campus con không được thấy đoàn trong form đó. Chỉ HO thấy request tổng PENDING_APPROVAL. HO approve xong gán Staff Leader từng campus làm coordinator_user_id, instance sang WAITING_HOST_ASSIGNMENT. Staff Leader từng campus sau đó gán IC Staff thường làm host. Staff Leader không phải host mặc định.
+Multi-campus: Khi HO chưa duyệt, các campus con không được thấy đoàn trong form đó. Chỉ HO thấy request tổng PENDING_APPROVAL. HO approve xong gán Staff Leader từng campus làm coordinator_user_id, instance sang ASSIGNED. Staff Leader từng campus sau đó gán IC Staff thường làm host. Staff Leader không phải host mặc định.
 
 Cancel sau APPROVED chỉ Visitor hoặc Host. Trước duyệt không dùng CANCELLED, dùng REJECTED. Visitor tự hủy dùng SELF_SERVICE. Host hủy thay khách dùng EXTERNAL_CONFIRMATION và cancellation_reason phải ghi rõ kênh/thời điểm/người xác nhận/lý do. Không có Staff Leader/HO internal decision cancel sau APPROVED nếu schema chưa patch.
 
@@ -3207,7 +3219,7 @@ Nếu gặp tài liệu cũ ghi các tên sau, map như sau trước khi code:
 | `DEPT`, `Dept` | `role_code = DEPARTMENT` |
 | `DEPT_L`, `Dept Lead` | `role_code = DEPARTMENT`, `sub_role = LEADER` |
 | `DEPT_P`, `Dept Staff` | `role_code = DEPARTMENT`, `sub_role = STAFF` |
-| “Đã duyệt nhưng chưa có HOST” | `visit_request_campuses.status = WAITING_HOST_ASSIGNMENT` |
+| “Đã duyệt nhưng chưa có HOST” | `visit_request_campuses.status = ASSIGNED` |
 | “Staff click nhận đón” | Không còn là flow chuẩn; Staff Leader gán host chính thức |
 | “HO duyệt xong auto Staff Leader làm host” | Sai flow mới; HO gán Staff Leader làm coordinator, không phải host |
 | “Mỗi campus duyệt lại sau HO” | Sai flow mới; HO duyệt request tổng, Staff Leader chỉ gán host/operate instance |
