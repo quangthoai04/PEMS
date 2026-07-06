@@ -40,8 +40,10 @@ public class StaffLeaderFilterSummary
 
 public class StaffLeaderKpis
 {
+    /// <summary>Campus instances of my campus still waiting for my decision (single or multi scope).</summary>
     public int PendingSingleCampusApproval { get; set; }
-    public int WaitingHostAssignment { get; set; }
+    /// <summary>Campus instances of my campus I have rejected (campus-independent approval).</summary>
+    public int RejectedInstances { get; set; }
     public int AssignedVisits { get; set; }
     public int BeforeVisit { get; set; }
     public int DuringVisit { get; set; }

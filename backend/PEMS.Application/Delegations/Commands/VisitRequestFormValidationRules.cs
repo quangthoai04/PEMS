@@ -143,14 +143,11 @@ public static class VisitRequestFormValidationRules
             .Must(l => l is "EN" or "VI")
             .WithMessage("Ngôn ngữ làm việc phải là EN hoặc VI.");
 
-        v.RuleFor(x => x.TransportationType)
-            .NotEmpty().WithMessage("Loại phương tiện di chuyển không được để trống.")
-            .Must(t => t is "SELF_ARRANGED" or "FPTU_SUPPORT" or "UNKNOWN" or "OTHER")
-            .WithMessage("Loại phương tiện di chuyển không hợp lệ.");
-
-        v.RuleFor(x => x.TransportationDetail)
-            .NotEmpty().WithMessage("Vui lòng nhập chi tiết phương tiện di chuyển.")
-            .When(x => x.TransportationType is "FPTU_SUPPORT" or "OTHER");
+        // Transportation is free text now (transportation_note): optional, bounded, no HTML/script.
+        v.RuleFor(x => x.TransportationNote)
+            .MaximumLength(2000).WithMessage("Nhận diện phương tiện di chuyển tối đa 2000 ký tự.")
+            .Must(note => string.IsNullOrEmpty(note) || (!note.Contains('<') && !note.Contains('>')))
+            .WithMessage("Nhận diện phương tiện di chuyển không được chứa HTML/script.");
 
         v.RuleFor(x => x.MediaConsentStatus)
             .NotEmpty().WithMessage("Trạng thái truyền thông không được để trống.")

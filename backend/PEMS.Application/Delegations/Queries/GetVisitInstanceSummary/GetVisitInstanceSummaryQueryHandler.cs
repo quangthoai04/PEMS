@@ -100,8 +100,7 @@ public sealed class GetVisitInstanceSummaryQueryHandler : IRequestHandler<GetVis
             WorkingLanguage = visit.WorkingLanguage,
             MediaConsentStatus = visit.MediaConsentStatus,
             MediaConsentNote = visit.MediaConsentNote,
-            TransportationType = visit.TransportationType,
-            TransportationDetail = visit.TransportationDetail,
+            TransportationNote = visit.TransportationNote,
             NoteToFptu = visit.NoteToFptu,
 
             ContactPersonFullName = visit.ContactPersonFullName,

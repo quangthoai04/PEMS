@@ -32,6 +32,9 @@ public static class DependencyInjection
         services.AddScoped<PEMS.Application.Notifications.Common.INotificationService, PEMS.Application.Notifications.Common.NotificationService>();
         services.AddScoped<PEMS.Application.Notifications.Common.INotificationTargetResolver, PEMS.Application.Notifications.Common.NotificationTargetResolver>();
 
+        // visit_requests.status aggregate (campus-independent approval) — mirrors the DB triggers.
+        services.AddScoped<PEMS.Application.Delegations.Services.IVisitRequestAggregateStatusService, PEMS.Application.Delegations.Services.VisitRequestAggregateStatusService>();
+
         return services;
     }
 }

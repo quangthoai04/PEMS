@@ -44,7 +44,9 @@ public sealed class GetHostCandidatesQueryHandler
         var windowStart = instance.PlannedStartAt;
         var windowEnd = instance.PlannedEndAt;
 
-        // Eligible host = active IC-department STAFF of this campus (not the Staff Leader themself).
+        // Eligible hosts (campus-independent approval):
+        //   1. active IC-department STAFF of this campus, and
+        //   2. the calling Staff Leader THEMSELF ("Tôi làm host chính") — never another Staff Leader.
         var candidates = await (
             from u in _db.Users
             join r in _db.Roles on u.RoleId equals r.RoleId
@@ -64,7 +66,32 @@ public sealed class GetHostCandidatesQueryHandler
                 CampusId = u.PrimaryCampusId,
                 DepartmentName = d.Name,
                 SubRole = u.SubRole,
+                RoleLabel = "IC Staff",
             }).ToListAsync(cancellationToken);
+
+        // Self-host option: the approving Staff Leader (already validated STAFF+LEADER above).
+        var self = await (
+            from u in _db.Users
+            join d in _db.Departments on u.DepartmentId equals d.DepartmentId into dj
+            from d in dj.DefaultIfEmpty()
+            where u.UserId == _currentUser.UserId
+                  && u.PrimaryCampusId == campusId
+                  && u.Status == UserStatuses.Active
+            select new HostCandidateDto
+            {
+                UserId = u.UserId,
+                FullName = u.FullName,
+                Email = u.Email,
+                CampusId = u.PrimaryCampusId,
+                DepartmentName = d != null ? d.Name : null,
+                SubRole = u.SubRole,
+                RoleLabel = "Staff Leader",
+                IsSelf = true,
+                IsStaffLeaderSelfHostOption = true,
+            }).FirstOrDefaultAsync(cancellationToken);
+
+        if (self is not null)
+            candidates.Insert(0, self);
 
         if (candidates.Count == 0)
             return candidates;
@@ -146,7 +173,8 @@ public sealed class GetHostCandidatesQueryHandler
         }
 
         return candidates
-            .OrderBy(c => c.HasScheduleConflict)   // conflict-free first
+            .OrderByDescending(c => c.IsStaffLeaderSelfHostOption) // "Tôi làm host chính" on top
+            .ThenBy(c => c.HasScheduleConflict)    // conflict-free first
             .ThenBy(c => c.ConflictCount)          // fewer conflicts first
             .ThenBy(c => c.FullName)
             .ToList();

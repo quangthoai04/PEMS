@@ -12,6 +12,13 @@ public sealed class HostCandidateDto
     public string? DepartmentName { get; set; }
     public string? SubRole { get; set; }
 
+    /// <summary>Display label for the role ("Staff Leader" for the self-host option, "IC Staff" otherwise).</summary>
+    public string? RoleLabel { get; set; }
+    /// <summary>True when this candidate IS the calling Staff Leader (self-host option).</summary>
+    public bool IsSelf { get; set; }
+    /// <summary>True for the "Tôi làm host chính" option — the approving Staff Leader as host.</summary>
+    public bool IsStaffLeaderSelfHostOption { get; set; }
+
     /// <summary>True when the candidate has any schedule overlap with the target visit window.</summary>
     public bool HasScheduleConflict { get; set; }
     /// <summary>Number of overlapping events (calendar + other hosting assignments).</summary>

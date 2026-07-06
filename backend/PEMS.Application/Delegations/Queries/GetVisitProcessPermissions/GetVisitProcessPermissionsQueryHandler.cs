@@ -73,8 +73,8 @@ public sealed class GetVisitProcessPermissionsQueryHandler
         bool hostAssigned = instance.CurrentHostUserId != null;
         bool isClosed = instance.Status == VisitInstanceStatus.Closed;
         bool isCancelled = visit.Status == VisitRequestStatuses.Cancelled || instance.Status == VisitInstanceStatus.Cancelled;
-        bool isApproved = visit.Status == VisitRequestStatuses.Approved;
-        bool isLive = !isClosed && !isCancelled;
+        bool isRejected = instance.Status == VisitInstanceStatus.Rejected;
+        bool isLive = !isClosed && !isCancelled && !isRejected;
 
         // Only the Host edits the operational tabs (Trước/Trong/Sau), and only while the visit is live.
         bool hostCanEdit = isHost && isLive;
@@ -124,8 +124,9 @@ public sealed class GetVisitProcessPermissionsQueryHandler
             CanViewAfterVisit = canViewInternalTabs,
             CanEditAfterVisit = hostCanEdit,
 
-            CanAssignHost = isStaffLeaderOfCampus && isApproved
-                && instance.Status == VisitInstanceStatus.WaitingHostAssignment && !hostAssigned,
+            // Campus-independent approval: there is no separate assign-host step anymore —
+            // the host is assigned inside the Staff Leader's approve action.
+            CanAssignHost = false,
 
             CanViewMinutes = canViewInternalTabs,
             CanCreateMinutes = minutesEditor,

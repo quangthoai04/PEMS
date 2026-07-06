@@ -35,14 +35,14 @@ public sealed class GetHoReportOverviewQueryHandler
 
     private static readonly (string Status, string LabelVi)[] PipelineStatuses =
     {
-        (VisitInstanceStatus.WaitingRequestApproval, "Chờ duyệt"),
-        (VisitInstanceStatus.WaitingHostAssignment, "Chờ gán host"),
-        (VisitInstanceStatus.Assigned, "Đã gán host"),
+        (VisitInstanceStatus.WaitingRequestApproval, "Chờ xử lý tại campus"),
+        (VisitInstanceStatus.Assigned, "Đã duyệt & gán host"),
         (VisitInstanceStatus.BeforeVisit, "Trước tiếp khách"),
         (VisitInstanceStatus.DuringVisit, "Đang tiếp"),
         (VisitInstanceStatus.AfterVisit, "Sau tiếp khách"),
         (VisitInstanceStatus.Closed, "Đã đóng"),
         (VisitInstanceStatus.Cancelled, "Đã hủy"),
+        (VisitInstanceStatus.Rejected, "Đã từ chối"),
     };
 
     private readonly IApplicationDbContext _db;
@@ -98,8 +98,12 @@ public sealed class GetHoReportOverviewQueryHandler
         if (visitScope != null) opInstances = opInstances.Where(ci => ci.VisitRequest.VisitScope == visitScope);
         if (visitType != null) opInstances = opInstances.Where(ci => ci.VisitRequest.VisitType == visitType);
 
+        // HO monitor-only (campus-independent approval): multi-campus requests that still have
+        // at least one campus instance waiting for its Staff Leader's decision.
         var pendingMultiCampus = _db.VisitRequests.AsNoTracking()
-            .Where(r => r.VisitScope == "MULTI_CAMPUS" && r.Status == VisitRequestStatus.PendingApproval);
+            .Where(r => r.VisitScope == "MULTI_CAMPUS"
+                        && r.Status != VisitRequestStatus.Cancelled
+                        && r.CampusInstances.Any(ci => ci.Status == VisitInstanceStatus.WaitingRequestApproval));
         if (visitType != null) pendingMultiCampus = pendingMultiCampus.Where(r => r.VisitType == visitType);
         if (campusId != null) pendingMultiCampus = pendingMultiCampus.Where(r => r.CampusInstances.Any(ci => ci.CampusId == campusId));
 
@@ -112,15 +116,18 @@ public sealed class GetHoReportOverviewQueryHandler
         int CountStatus(string status) => requestStatusCounts.FirstOrDefault(x => x.Status == status)?.Count ?? 0;
         var totalRequests = requestStatusCounts.Sum(x => x.Count);
         var approvedRequests = CountStatus(VisitRequestStatus.Approved);
+        var partiallyApprovedRequests = CountStatus(VisitRequestStatus.PartiallyApproved);
         var rejectedRequests = CountStatus(VisitRequestStatus.Rejected);
         var cancelledRequests = CountStatus(VisitRequestStatus.Cancelled);
         var pendingRequests = CountStatus(VisitRequestStatus.PendingApproval);
 
         var totalGuests = await requests.SelectMany(r => r.GuestMembers).CountAsync(cancellationToken);
 
-        var decisionPairs = await requests
-            .Where(r => r.DecidedAt != null)
-            .Select(r => new { r.SubmittedAt, r.DecidedAt })
+        // Decision time is per campus instance now (campus-independent approval):
+        // submitted_at của request → decided_at của từng campus instance.
+        var decisionPairs = await instances
+            .Where(ci => ci.DecidedAt != null)
+            .Select(ci => new { ci.VisitRequest.SubmittedAt, ci.DecidedAt })
             .ToListAsync(cancellationToken);
         double? averageDecisionHours = decisionPairs.Count > 0
             ? Math.Round(decisionPairs.Average(p => (p.DecidedAt!.Value - p.SubmittedAt).TotalHours), 1)
@@ -137,6 +144,7 @@ public sealed class GetHoReportOverviewQueryHandler
                 Single = g.Count(r => r.VisitScope == "SINGLE_CAMPUS"),
                 Multi = g.Count(r => r.VisitScope == "MULTI_CAMPUS"),
                 Approved = g.Count(r => r.Status == VisitRequestStatus.Approved),
+                PartiallyApproved = g.Count(r => r.Status == VisitRequestStatus.PartiallyApproved),
                 Rejected = g.Count(r => r.Status == VisitRequestStatus.Rejected),
                 Cancelled = g.Count(r => r.Status == VisitRequestStatus.Cancelled),
                 Guests = g.Sum(r => r.GuestMembers.Count),
@@ -158,6 +166,7 @@ public sealed class GetHoReportOverviewQueryHandler
                 SingleCampusRequests = row?.Single ?? 0,
                 MultiCampusRequests = row?.Multi ?? 0,
                 Approved = row?.Approved ?? 0,
+                PartiallyApproved = row?.PartiallyApproved ?? 0,
                 Rejected = row?.Rejected ?? 0,
                 Cancelled = row?.Cancelled ?? 0,
                 TotalGuests = row?.Guests ?? 0,
@@ -204,7 +213,7 @@ public sealed class GetHoReportOverviewQueryHandler
                 CampusId = g.Key,
                 Total = g.Count(),
                 WaitingRequestApproval = g.Count(ci => ci.Status == VisitInstanceStatus.WaitingRequestApproval),
-                WaitingHostAssignment = g.Count(ci => ci.Status == VisitInstanceStatus.WaitingHostAssignment),
+                Rejected = g.Count(ci => ci.Status == VisitInstanceStatus.Rejected),
                 Assigned = g.Count(ci => ci.Status == VisitInstanceStatus.Assigned),
                 BeforeVisit = g.Count(ci => ci.Status == VisitInstanceStatus.BeforeVisit),
                 DuringVisit = g.Count(ci => ci.Status == VisitInstanceStatus.DuringVisit),
@@ -236,7 +245,7 @@ public sealed class GetHoReportOverviewQueryHandler
                     CampusName = c.Name,
                     TotalInstances = agg?.Total ?? 0,
                     WaitingRequestApproval = agg?.WaitingRequestApproval ?? 0,
-                    WaitingHostAssignment = agg?.WaitingHostAssignment ?? 0,
+                    Rejected = agg?.Rejected ?? 0,
                     Assigned = agg?.Assigned ?? 0,
                     BeforeVisit = agg?.BeforeVisit ?? 0,
                     DuringVisit = agg?.DuringVisit ?? 0,
@@ -619,11 +628,11 @@ public sealed class GetHoReportOverviewQueryHandler
         {
             new()
             {
-                Key = "pendingHoApprovalOver48h",
-                Label = $"Đơn liên cơ sở chờ duyệt quá {PendingAttentionThresholdHours}h",
+                Key = "pendingCampusProcessingOver48h",
+                Label = $"Đơn liên cơ sở còn campus chờ xử lý quá {PendingAttentionThresholdHours}h",
                 Count = pendingOver48h,
                 Severity = pendingOver48h > 0 ? "DANGER" : "SUCCESS",
-                Description = "Đơn MULTI_CAMPUS đang ở trạng thái chờ duyệt lâu hơn 48 giờ (tính theo trạng thái hiện tại).",
+                Description = "Đơn MULTI_CAMPUS còn campus instance chờ Staff Leader của campus xử lý lâu hơn 48 giờ (HO chỉ theo dõi, không duyệt).",
                 TargetSection = "pending-requests",
             },
             new()
@@ -708,6 +717,7 @@ public sealed class GetHoReportOverviewQueryHandler
                 MultiCampusPending = multiCampusPendingTotal,
                 PendingRequests = pendingRequests,
                 ApprovedRequests = approvedRequests,
+                PartiallyApprovedRequests = partiallyApprovedRequests,
                 RejectedRequests = rejectedRequests,
                 CancelledRequests = cancelledRequests,
                 ActiveCampusInstances = activeInstances,
@@ -722,6 +732,7 @@ public sealed class GetHoReportOverviewQueryHandler
             ApprovalBreakdown = new HoApprovalBreakdownDto
             {
                 Approved = approvedRequests,
+                PartiallyApproved = partiallyApprovedRequests,
                 Rejected = rejectedRequests,
                 Pending = pendingRequests,
                 Cancelled = cancelledRequests,

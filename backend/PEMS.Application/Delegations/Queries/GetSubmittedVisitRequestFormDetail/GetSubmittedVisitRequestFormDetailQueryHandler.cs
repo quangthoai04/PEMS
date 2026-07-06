@@ -14,15 +14,14 @@ using PEMS.Shared;
 namespace PEMS.Application.Delegations.Queries.GetSubmittedVisitRequestFormDetail;
 
 /// <summary>
-/// Returns the guest-submitted form snapshot for a visit request, enforcing canonical v10
-/// visibility:
-///   • HO            → MULTI_CAMPUS only (any status). SINGLE_CAMPUS ⇒ 403.
-///   • Staff Leader  → SINGLE_CAMPUS of own campus (any status: pending/approved/rejected/cancelled);
-///                     MULTI_CAMPUS of own campus ONLY after HO approval (status APPROVED or a
-///                     post-approval terminal like CANCELLED). MULTI_CAMPUS PENDING_APPROVAL or
-///                     REJECTED-by-HO ⇒ 403.
+/// Returns the guest-submitted form snapshot for a visit request, enforcing campus-independent
+/// approval visibility (SQL v10):
+///   • HO            → monitor/read-only on every request (never any decision action).
+///   • Staff Leader  → any request with an instance of THEIR campus (single or multi, any status,
+///                     immediately after submit); only their own-campus instance is surfaced on
+///                     multi-campus requests.
 ///   • Visitor       → only the request they own (any status / scope).
-///   • Everyone else (Admin, regular Staff, Department, Student) ⇒ 403.
+///   • Everyone else (Admin, regular Staff, Department, Student) ⇒ 403 unless host/participant.
 ///
 /// Strictly read-only: only visit_requests / visit_request_campuses / visit_guest_members are
 /// touched. Host-created data (agendas, participants, logistics, minutes) is never read here.
@@ -136,26 +135,10 @@ public sealed class GetSubmittedVisitRequestFormDetailQueryHandler
             if (!primaryCampusId.HasValue)
                 throw new ForbiddenException("Tài khoản Staff Leader chưa được gán cơ sở.");
 
-            if (isSingle)
-            {
-                if (ownInstance == null)
-                    throw new ForbiddenException("Đơn không thuộc cơ sở của bạn.");
-            }
-            else if (isMulti)
-            {
-                // Before HO decides (PENDING) or after HO rejects (REJECTED), the request is
-                // NOT released to the campus — Staff Leader has nothing to do with it.
-                if (status == VisitRequestStatuses.PendingApproval)
-                    throw new ForbiddenException("Staff Leader không được xem đơn liên cơ sở khi chưa được HO duyệt.");
-                if (status == VisitRequestStatuses.Rejected)
-                    throw new ForbiddenException("Đơn liên cơ sở đã bị HO từ chối, không thuộc phạm vi của bạn.");
-                if (ownInstance == null)
-                    throw new ForbiddenException("Đơn không có cơ sở thuộc phạm vi của bạn.");
-            }
-            else
-            {
-                throw new ForbiddenException("Phạm vi đơn không hợp lệ.");
-            }
+            // Campus-independent approval: the Staff Leader sees any request that has an
+            // instance of THEIR campus — single or multi, any status, right after submit.
+            if (ownInstance == null)
+                throw new ForbiddenException("Đơn không có cơ sở thuộc phạm vi của bạn.");
         }
         else if (isVisitor)
         {
@@ -201,12 +184,13 @@ public sealed class GetSubmittedVisitRequestFormDetailQueryHandler
                     ? visitRequest.CampusInstances.Where(c => departmentStaffAssignedInstanceIds.Contains(c.VisitInstanceId)).ToList()
                     : visitRequest.CampusInstances.ToList();
 
-        // Resolve every "who decided / who cancelled" name in one round-trip (decision actor,
-        // request-level canceller, and each visible campus-instance canceller).
+        // Resolve every "who decided / who cancelled" name in one round-trip (per-instance
+        // decision actors, request-level canceller, and each visible campus-instance canceller).
         var actorIds = new List<ulong>();
-        if (visitRequest.DecidedBy.HasValue) actorIds.Add(visitRequest.DecidedBy.Value);
         if (visitRequest.CancelledBy.HasValue) actorIds.Add(visitRequest.CancelledBy.Value);
         actorIds.AddRange(visibleInstances.Where(c => c.CancelledBy.HasValue).Select(c => c.CancelledBy!.Value));
+        actorIds.AddRange(visibleInstances.Where(c => c.DecidedBy.HasValue).Select(c => c.DecidedBy!.Value));
+        actorIds.AddRange(visibleInstances.Where(c => c.CurrentHostUserId.HasValue).Select(c => c.CurrentHostUserId!.Value));
         actorIds = actorIds.Distinct().ToList();
 
         var actorNames = actorIds.Count == 0
@@ -219,34 +203,28 @@ public sealed class GetSubmittedVisitRequestFormDetailQueryHandler
         string? NameOf(ulong? id) =>
             id.HasValue && actorNames.TryGetValue(id.Value, out var n) ? n : null;
 
-        var decidedByName = NameOf(visitRequest.DecidedBy);
+        // Request-level decision mirror (campus-independent approval): the decision fields live
+        // on each instance; surface the caller-relevant one (Staff Leader's own instance, or the
+        // sole instance of a single-campus request).
+        var decisionInstance = ownInstance
+            ?? (visibleInstances.Count == 1 ? visibleInstances[0] : null);
+        var decidedByName = NameOf(decisionInstance?.DecidedBy);
 
-        // ── Footer action flags ──
-        bool canApprove = false, canReject = false, canAssignHost = false, canCancel = false;
-        if (status == VisitRequestStatuses.PendingApproval)
+        // ── Footer action flags (campus-independent approval): only the campus Staff Leader
+        // decides, per instance, while it awaits their decision. Approve = approve + assign host. ──
+        bool canApprove = false, canReject = false, canCancel = false;
+        if (status != VisitRequestStatuses.Cancelled
+            && isStaffLeader && ownInstance != null
+            && ownInstance.Status == VisitInstanceStatuses.WaitingRequestApproval)
         {
-            if (isHo && isMulti)
-            {
-                canApprove = canReject = true;
-            }
-            else if (isStaffLeader && isSingle
-                && ownInstance != null
-                && ownInstance.Status == VisitInstanceStatuses.WaitingRequestApproval)
-            {
-                canApprove = canReject = true;
-            }
-        }
-        else if (status == VisitRequestStatuses.Approved && isStaffLeader && ownInstance != null
-            && ownInstance.Status == VisitInstanceStatus.WaitingHostAssignment)
-        {
-            canAssignHost = true;
+            canApprove = canReject = true;
         }
 
         // Cancel (UC-136) is offered on this read-only form only to the Visitor owner of an
-        // approved request that still has an active (ASSIGNED/BEFORE_VISIT) instance. HO/Staff
-        // Leader never cancel here (pre-approval ⇒ reject; post-approval cancel is out of scope).
-        // The cancel command re-checks the time window and ownership — this flag is a UI hint only.
-        if (isVisitor && status == VisitRequestStatuses.Approved
+        // approved/partially-approved request that still has an active (ASSIGNED/BEFORE_VISIT)
+        // instance. The cancel command re-checks the time window and ownership — UI hint only.
+        if (isVisitor
+            && (status == VisitRequestStatuses.Approved || status == VisitRequestStatuses.PartiallyApproved)
             && visibleInstances.Any(c => c.Status == VisitInstanceStatus.Assigned
                 || c.Status == VisitInstanceStatus.BeforeVisit))
         {
@@ -334,8 +312,7 @@ public sealed class GetSubmittedVisitRequestFormDetailQueryHandler
             WorkingLanguage = visitRequest.WorkingLanguage,
             MediaConsentStatus = visitRequest.MediaConsentStatus,
             MediaConsentNote = visitRequest.MediaConsentNote,
-            TransportationType = visitRequest.TransportationType,
-            TransportationDetail = visitRequest.TransportationDetail,
+            TransportationNote = visitRequest.TransportationNote,
             NoteToFptu = visitRequest.NoteToFptu,
 
             Campuses = visibleInstances
@@ -351,7 +328,13 @@ public sealed class GetSubmittedVisitRequestFormDetailQueryHandler
                     InstanceStatus = c.Status,
                     CoordinatorUserId = c.CoordinatorUserId.HasValue ? (long)c.CoordinatorUserId.Value : null,
                     CurrentHostUserId = c.CurrentHostUserId.HasValue ? (long)c.CurrentHostUserId.Value : null,
+                    CurrentHostName = NameOf(c.CurrentHostUserId),
                     IsOwnCampus = primaryCampusId.HasValue && c.CampusId == primaryCampusId.Value,
+                    DecidedByUserId = c.DecidedBy.HasValue ? (long)c.DecidedBy.Value : null,
+                    DecidedByName = NameOf(c.DecidedBy),
+                    DecidedAt = c.DecidedAt,
+                    DecisionActorRole = c.DecisionActorRole,
+                    DecisionNote = c.DecisionNote,
                     CancelledByUserId = c.CancelledBy.HasValue ? (long)c.CancelledBy.Value : null,
                     CancelledByName = NameOf(c.CancelledBy),
                     CancelledAt = c.CancelledAt,
@@ -360,6 +343,20 @@ public sealed class GetSubmittedVisitRequestFormDetailQueryHandler
                     CancellationReason = c.CancellationReason,
                 })
                 .ToList(),
+
+            CampusDecisionSummary = new CampusDecisionSummaryDto
+            {
+                Total = visitRequest.CampusInstances.Count,
+                Pending = visitRequest.CampusInstances.Count(c => c.Status == VisitInstanceStatus.WaitingRequestApproval),
+                Approved = visitRequest.CampusInstances.Count(c =>
+                    c.Status == VisitInstanceStatus.Assigned
+                    || c.Status == VisitInstanceStatus.BeforeVisit
+                    || c.Status == VisitInstanceStatus.DuringVisit
+                    || c.Status == VisitInstanceStatus.AfterVisit
+                    || c.Status == VisitInstanceStatus.Closed),
+                Rejected = visitRequest.CampusInstances.Count(c => c.Status == VisitInstanceStatus.Rejected),
+                Cancelled = visitRequest.CampusInstances.Count(c => c.Status == VisitInstanceStatus.Cancelled),
+            },
 
             GuestMembers = visitRequest.GuestMembers
                 .Where(m => m.MemberType != "EXTERNAL_SUPPORT")
@@ -372,11 +369,11 @@ public sealed class GetSubmittedVisitRequestFormDetailQueryHandler
                 .Select(MapMember)
                 .ToList(),
 
-            DecidedByUserId = visitRequest.DecidedBy.HasValue ? (long)visitRequest.DecidedBy.Value : null,
+            DecidedByUserId = decisionInstance?.DecidedBy is { } dby ? (long)dby : null,
             DecidedByName = decidedByName,
-            DecisionActorRole = visitRequest.DecisionActorRole,
-            DecidedAt = visitRequest.DecidedAt,
-            DecisionNote = visitRequest.DecisionNote,
+            DecisionActorRole = decisionInstance?.DecisionActorRole,
+            DecidedAt = decisionInstance?.DecidedAt,
+            DecisionNote = decisionInstance?.DecisionNote,
 
             IsCancelled = isCancelled,
             CancellationLevel = cancellationLevel,
@@ -390,7 +387,6 @@ public sealed class GetSubmittedVisitRequestFormDetailQueryHandler
             CanApprove = canApprove,
             CanReject = canReject,
             CanCancel = canCancel,
-            CanAssignHost = canAssignHost,
         };
 
         return dto;

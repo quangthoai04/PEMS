@@ -36,8 +36,7 @@ public sealed record InitiateVisitRequestCommand(
 
     // ── Additional ─────────────────────────────────────────
     string WorkingLanguage,
-    string TransportationType,
-    string? TransportationDetail,
+    string? TransportationNote,
     string MediaConsentStatus,
     string? MediaConsentNote,
     ulong? PartnerId,

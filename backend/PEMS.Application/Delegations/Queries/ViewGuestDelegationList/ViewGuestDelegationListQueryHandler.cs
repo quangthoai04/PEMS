@@ -141,11 +141,9 @@ public sealed class ViewGuestDelegationListQueryHandler
                 var primaryCampusId = _currentUser.PrimaryCampusId
                     ?? throw new UnauthorizedAccessException("Staff Leader missing PrimaryCampusId");
 
-                // Single-campus of my campus (I am the approver); or multi-campus of my
-                // campus only AFTER HO approval (before that it isn't my concern yet).
-                q = q.Where(x => x.c.CampusId == primaryCampusId
-                    && (x.vr.VisitScope == VisitScopes.SingleCampus
-                        || (x.vr.VisitScope == VisitScopes.MultiCampus && x.vr.Status == VisitRequestStatuses.Approved)));
+                // Campus-independent approval: the Staff Leader sees EVERY instance of their
+                // campus (single or multi) immediately after submit — no HO gate anymore.
+                q = q.Where(x => x.c.CampusId == primaryCampusId);
             }
             else if (roleCode == RoleCodes.Staff)
             {
@@ -237,24 +235,12 @@ public sealed class ViewGuestDelegationListQueryHandler
 
         if (!string.IsNullOrWhiteSpace(request.Relation))
         {
-            // NOTE: a previous version had a missing-braces bug where the PENDING_HOST_ASSIGNMENT
-            // predicate below ran UNCONDITIONALLY for any non-empty Relation (and a no-op
-            // "TASK_ASSIGNEE" branch). In practice only 'PENDING_HOST_ASSIGNMENT' is ever sent
-            // (Staff Leader "Cần chọn Host chính thức" filter; the relation dropdown is disabled
-            // for every role), so the bug was latent. Each relation now scopes its own predicate.
+            // Campus-independent approval: PENDING_HOST_ASSIGNMENT no longer exists (approve
+            // assigns the host in the same action) — HOST is the only instance-level relation filter.
             var rel = request.Relation.ToUpperInvariant();
             if (rel == "HOST")
             {
                 q = q.Where(x => x.c.CurrentHostUserId == userId);
-            }
-            else if (rel == "PENDING_HOST_ASSIGNMENT")
-            {
-                // Staff Leader: multi-campus instances HO has approved that this leader (campus IC
-                // head / coordinator) still needs to pick the official host for.
-                q = q.Where(x => x.vr.VisitScope == VisitScopes.MultiCampus
-                    && x.vr.Status == VisitRequestStatuses.Approved
-                    && x.c.CoordinatorUserId == userId
-                    && x.c.Status == "WAITING_HOST_ASSIGNMENT");
             }
         }
 
@@ -264,9 +250,9 @@ public sealed class ViewGuestDelegationListQueryHandler
             var subRole = _currentUser.SubRole;
             if (roleCode == RoleCodes.Staff && subRole == UserSubRoles.Leader)
             {
-                var nowUtc = _clock.UtcNow;
-                q = q.Where(x => (x.vr.VisitScope == VisitScopes.SingleCampus && x.vr.Status == VisitRequestStatuses.PendingApproval)
-                    || (x.vr.VisitScope == VisitScopes.MultiCampus && x.vr.Status == VisitRequestStatuses.Approved && x.c.Status == VisitInstanceStatus.Assigned && x.c.PlannedStartAt > nowUtc));
+                // Actionable for a Staff Leader = instances of my campus still waiting for MY decision.
+                q = q.Where(x => x.c.Status == VisitInstanceStatus.WaitingRequestApproval
+                    && x.vr.Status != VisitRequestStatuses.Cancelled);
             }
         }
         if (request.ReadOnlyOnly == true)
@@ -275,9 +261,8 @@ public sealed class ViewGuestDelegationListQueryHandler
             var subRole = _currentUser.SubRole;
             if (roleCode == RoleCodes.Staff && subRole == UserSubRoles.Leader)
             {
-                var nowUtc = _clock.UtcNow;
-                q = q.Where(x => !((x.vr.VisitScope == VisitScopes.SingleCampus && x.vr.Status == VisitRequestStatuses.PendingApproval)
-                    || (x.vr.VisitScope == VisitScopes.MultiCampus && x.vr.Status == VisitRequestStatuses.Approved && x.c.Status == VisitInstanceStatus.Assigned && x.c.PlannedStartAt > nowUtc)));
+                q = q.Where(x => !(x.c.Status == VisitInstanceStatus.WaitingRequestApproval
+                    && x.vr.Status != VisitRequestStatuses.Cancelled));
             }
         }
 
@@ -330,10 +315,11 @@ public sealed class ViewGuestDelegationListQueryHandler
                 RequestCancellationReason = x.vr.CancellationReason,
 
                 RequestCancelledBy = x.vr.CancelledBy,
-                x.vr.DecisionNote,
-                x.vr.DecidedBy,
-                x.vr.DecidedAt,
-                x.vr.DecisionActorRole,
+                // Decision fields live on the campus instance now (campus-independent approval).
+                x.c.DecisionNote,
+                x.c.DecidedBy,
+                x.c.DecidedAt,
+                x.c.DecisionActorRole,
             })
             .ToListAsync(ct);
 
@@ -376,9 +362,9 @@ public sealed class ViewGuestDelegationListQueryHandler
         var items = page.Select(r =>
         {
             string? partnerName = r.PartnerId.HasValue && partnerNames.TryGetValue(r.PartnerId.Value, out var pn) ? pn : r.RegistrantOrganization;
-            bool hasCancellableInstance = r.RequestStatus == VisitRequestStatuses.Approved
-                && (r.CampusStatus == VisitInstanceStatus.WaitingHostAssignment
-                    || r.CampusStatus == VisitInstanceStatus.Assigned
+            bool hasCancellableInstance = (r.RequestStatus == VisitRequestStatuses.Approved
+                    || r.RequestStatus == VisitRequestStatuses.PartiallyApproved)
+                && (r.CampusStatus == VisitInstanceStatus.Assigned
                     || r.CampusStatus == VisitInstanceStatus.BeforeVisit)
                 && r.PlannedStartAt > nowForCancel;
             bool hasStartedCampus = r.CampusStatus == VisitInstanceStatus.DuringVisit 
@@ -523,14 +509,12 @@ public sealed class ViewGuestDelegationListQueryHandler
                 q = q.Where(vr => vr.VisitorUserId == userId);
         }
 
+        // Campus-independent approval: HO never has actionable rows (monitor/read-only only).
         if (request.ActionableOnly == true && roleCode == RoleCodes.Ho)
         {
-            q = q.Where(vr => vr.VisitScope == VisitScopes.MultiCampus && vr.Status == VisitRequestStatuses.PendingApproval);
+            q = q.Where(vr => false);
         }
-        if (request.ReadOnlyOnly == true && roleCode == RoleCodes.Ho)
-        {
-            q = q.Where(vr => vr.VisitScope == VisitScopes.SingleCampus || vr.Status != VisitRequestStatuses.PendingApproval);
-        }
+        // ReadOnlyOnly is a no-op for HO — every row is read-only for HO now.
 
         var total = await q.CountAsync(ct);
 
@@ -572,9 +556,9 @@ public sealed class ViewGuestDelegationListQueryHandler
         var userIds = requests
             .SelectMany(vr => vr.CampusInstances.Select(i => i.CurrentHostUserId)
                 .Concat(vr.CampusInstances.Where(i => i.Status == VisitInstanceStatus.Cancelled).Select(i => i.CancelledBy))
+                .Concat(vr.CampusInstances.Select(i => i.DecidedBy))
                 .Append((ulong?)vr.VisitorUserId)
-                .Append(vr.CancelledBy)
-                .Append(vr.DecidedBy))
+                .Append(vr.CancelledBy))
             .Where(id => id.HasValue).Select(id => id!.Value).Distinct().ToList();
 
         var campusRows = campusIds.Count == 0
@@ -596,13 +580,13 @@ public sealed class ViewGuestDelegationListQueryHandler
             var count = instances.Count;
             var single = count == 1 ? instances.First() : null;
 
-            // Cancel-eligibility (UC-136): APPROVED request + an instance still in a cancellable
-            // status and not yet started. Computed here (we have all instances) so the frontend
-            // never has to infer it from a multi-campus summary row.
-            bool hasCancellableInstance = vr.Status == VisitRequestStatuses.Approved
+            // Cancel-eligibility (UC-136): APPROVED/PARTIALLY_APPROVED request + an instance still
+            // in a cancellable status and not yet started. Computed here (we have all instances)
+            // so the frontend never has to infer it from a multi-campus summary row.
+            bool hasCancellableInstance = (vr.Status == VisitRequestStatuses.Approved
+                    || vr.Status == VisitRequestStatuses.PartiallyApproved)
                 && instances.Any(i =>
-                    (i.Status == VisitInstanceStatus.WaitingHostAssignment
-                        || i.Status == VisitInstanceStatus.Assigned
+                    (i.Status == VisitInstanceStatus.Assigned
                         || i.Status == VisitInstanceStatus.BeforeVisit)
                     && i.PlannedStartAt > nowForCancel);
             bool hasStartedCampus = instances.Any(i => i.Status == VisitInstanceStatus.DuringVisit || i.Status == VisitInstanceStatus.AfterVisit || i.Status == VisitInstanceStatus.Closed);
@@ -644,9 +628,9 @@ public sealed class ViewGuestDelegationListQueryHandler
                 .OrderBy(i => i.PlannedStartAt)
                 .Select(i =>
                 {
-                    bool instanceCancellable = vr.Status == VisitRequestStatuses.Approved
-                        && (i.Status == VisitInstanceStatus.WaitingHostAssignment
-                            || i.Status == VisitInstanceStatus.Assigned
+                    bool instanceCancellable = (vr.Status == VisitRequestStatuses.Approved
+                            || vr.Status == VisitRequestStatuses.PartiallyApproved)
+                        && (i.Status == VisitInstanceStatus.Assigned
                             || i.Status == VisitInstanceStatus.BeforeVisit)
                         && i.PlannedStartAt > nowForCancel;
                     return new CampusProgressItemDto
@@ -660,6 +644,10 @@ public sealed class ViewGuestDelegationListQueryHandler
                         InstanceStatus = i.Status,
                         HostUserId = i.CurrentHostUserId,
                         HostName = i.CurrentHostUserId.HasValue && userNames.TryGetValue(i.CurrentHostUserId.Value, out var ihn) ? ihn : null,
+                        DecisionNote = i.DecisionNote,
+                        DecidedBy = i.DecidedBy,
+                        DecidedByName = i.DecidedBy.HasValue && userNames.TryGetValue(i.DecidedBy.Value, out var idbn) ? idbn : null,
+                        DecidedAt = i.DecidedAt,
                         CancellationReason = i.CancellationReason,
                         CancelledBy = i.CancelledBy,
                         CancelledByName = i.CancelledBy.HasValue && userNames.TryGetValue(i.CancelledBy.Value, out var icbn) ? icbn : null,
@@ -669,6 +657,7 @@ public sealed class ViewGuestDelegationListQueryHandler
                         CanViewCampusDetail = true,
                         CanCancelCampusVisit = isVisitorOwner && instanceCancellable,
                         CanViewCancelReason = i.Status == VisitInstanceStatus.Cancelled && !string.IsNullOrEmpty(i.CancellationReason),
+                        CanViewRejectReason = i.Status == VisitInstanceStatus.Rejected && !string.IsNullOrEmpty(i.DecisionNote),
                     };
                 }).ToList();
 
@@ -710,16 +699,21 @@ public sealed class ViewGuestDelegationListQueryHandler
                 CancelledByName = cancelledByName,
                 HasCancellableInstance = hasCancellableInstance,
                 HasStartedCampus = hasStartedCampus,
-                CanExpandCampuses = count > 1 && vr.Status == VisitRequestStatuses.Approved,
+                // Per-campus progress is meaningful for ANY multi-campus status now (each campus
+                // is decided independently — pending/assigned/rejected can coexist).
+                CanExpandCampuses = count > 1,
                 CanViewRequestDetail = true,
-                CanViewRejectReason = vr.Status == VisitRequestStatuses.Rejected && !string.IsNullOrEmpty(vr.DecisionNote),
+                CanViewRejectReason = instances.Any(i => i.Status == VisitInstanceStatus.Rejected && !string.IsNullOrEmpty(i.DecisionNote)),
                 CanViewCancelReason = isCancelled,
                 CampusProgressItems = campusProgressItems,
-                DecisionNote = vr.DecisionNote,
-                DecidedBy = vr.DecidedBy,
-                DecidedByName = vr.DecidedBy.HasValue && userNames.TryGetValue(vr.DecidedBy.Value, out var dbn2) ? dbn2 : null,
-                DecidedAt = vr.DecidedAt,
-                DecisionActorRole = vr.DecisionActorRole,
+                // Request-level decision info = the single instance's decision (decision fields
+                // moved to visit_request_campuses); multi-campus rows expose them per campus
+                // via CampusProgressItems instead.
+                DecisionNote = single?.DecisionNote,
+                DecidedBy = single?.DecidedBy,
+                DecidedByName = single?.DecidedBy is { } sdb && userNames.TryGetValue(sdb, out var dbn2) ? dbn2 : null,
+                DecidedAt = single?.DecidedAt,
+                DecisionActorRole = single?.DecisionActorRole,
             };
         }).ToList();
 
@@ -748,27 +742,17 @@ public sealed class ViewGuestDelegationListQueryHandler
         bool isSingle = item.VisitScope == VisitScopes.SingleCampus;
         bool beforeStart = !item.PlannedStartAt.HasValue || item.PlannedStartAt.Value > now;
         bool sameCampus = item.CampusId.HasValue && primaryCampusId.HasValue && item.CampusId == primaryCampusId;
+        bool requestActive = item.RequestStatus != VisitRequestStatuses.Cancelled;
 
-        // HO â€” multi-campus request decisions (whole request).
-        if (isHo && isMulti && item.RequestStatus == VisitRequestStatuses.PendingApproval)
-        {
-            actions.Add("HO_APPROVE");
-            actions.Add("HO_REJECT");
-        }
+        // HO never approves/rejects anymore (campus-independent approval) — monitor/read-only.
 
-        // Staff Leader â€” own campus only.
-        if (isStaffLeader && sameCampus)
+        // Staff Leader — decides their own campus instance regardless of scope: approve
+        // (must pick host in the same action) or reject, only while it awaits their decision.
+        if (isStaffLeader && sameCampus && requestActive
+            && item.CampusStatus == VisitInstanceStatus.WaitingRequestApproval)
         {
-            if (isSingle && item.RequestStatus == VisitRequestStatuses.PendingApproval)
-            {
-                actions.Add("APPROVE_AND_ASSIGN_HOST"); // approve + pick host (opens host picker)
-                actions.Add("CAMPUS_REJECT");
-            }
-            else if (isMulti && item.RequestStatus == VisitRequestStatuses.Approved
-                     && item.CampusStatus == "WAITING_HOST_ASSIGNMENT" && beforeStart)
-            {
-                actions.Add("APPROVE_AND_ASSIGN_HOST"); // Multi-campus assignment
-            }
+            actions.Add("APPROVE_AND_ASSIGN_HOST"); // duyệt & gán host (opens host picker)
+            actions.Add("CAMPUS_REJECT");
         }
 
         // Visitor — self-cancel own request (UC-136).
@@ -779,14 +763,15 @@ public sealed class ViewGuestDelegationListQueryHandler
                 // PENDING_APPROVAL: can cancel whole request
                 actions.Add("CANCEL_BY_VISITOR");
             }
-            else if (item.RequestStatus == VisitRequestStatuses.Approved)
+            else if (item.RequestStatus == VisitRequestStatuses.Approved
+                     || item.RequestStatus == VisitRequestStatuses.PartiallyApproved)
             {
                 if (isSingle && item.HasCancellableInstance)
                 {
                     // SINGLE_CAMPUS: cancel if campus hasn't started
                     actions.Add("CANCEL_BY_VISITOR");
                 }
-                else if (isMulti && !item.HasStartedCampus)
+                else if (isMulti && !item.HasStartedCampus && item.HasCancellableInstance)
                 {
                     // MULTI_CAMPUS: cancel WHOLE request only if NO campus has started
                     actions.Add("CANCEL_BY_VISITOR");
@@ -794,7 +779,7 @@ public sealed class ViewGuestDelegationListQueryHandler
             }
         }
 
-        // Host â€” cancel the campus instance they own before it starts.
+        // Host — cancel the campus instance they own before it starts.
         if (!isStaffLeader && item.CurrentUserIsHost
             && (item.CampusStatus == VisitInstanceStatus.Assigned || item.CampusStatus == VisitInstanceStatus.BeforeVisit)
             && beforeStart)
@@ -802,8 +787,14 @@ public sealed class ViewGuestDelegationListQueryHandler
             actions.Add("CANCEL_BY_HOST");
         }
 
-        // Navigation Actions
-        if (item.CampusStatus != null && item.RequestStatus == VisitRequestStatuses.Approved)
+        // Navigation Actions — driven by the campus instance lifecycle (never the request
+        // aggregate: a PARTIALLY_APPROVED request already has live instances).
+        bool instanceOperational = item.CampusStatus == VisitInstanceStatus.Assigned
+            || item.CampusStatus == VisitInstanceStatus.BeforeVisit
+            || item.CampusStatus == VisitInstanceStatus.DuringVisit
+            || item.CampusStatus == VisitInstanceStatus.AfterVisit
+            || item.CampusStatus == VisitInstanceStatus.Closed;
+        if (instanceOperational && requestActive)
         {
             if (item.CurrentUserIsHost)
             {
@@ -821,6 +812,14 @@ public sealed class ViewGuestDelegationListQueryHandler
             {
                 actions.Add("OPEN_CONTRIBUTION");
             }
+        }
+        // Visitor request-level rows have no single instance status; keep the reception detail
+        // reachable once at least one campus is approved/beyond.
+        else if (isVisitor && item.VisitorUserId == userId && item.CampusStatus == null
+                 && (item.RequestStatus == VisitRequestStatuses.Approved
+                     || item.RequestStatus == VisitRequestStatuses.PartiallyApproved))
+        {
+            actions.Add("VIEW_RECEPTION_DETAIL");
         }
 
         return actions;
@@ -856,20 +855,10 @@ public sealed class ViewGuestDelegationListQueryHandler
         if (roleCode == RoleCodes.Visitor)
             return "VISITOR_OWNER";
         if (roleCode == RoleCodes.Ho)
-            // HO can DECIDE only a pending multi-campus request; everything else is monitoring.
-            return item.VisitScope == VisitScopes.MultiCampus
-                && item.RequestStatus == VisitRequestStatuses.PendingApproval
-                ? "HO_APPROVER" : "HO_MONITOR";
+            // Campus-independent approval: HO never decides — always monitoring.
+            return "HO_MONITOR";
         if (isStaffLeader)
-        {
-            if (item.VisitScope == VisitScopes.MultiCampus
-                && item.RequestStatus == VisitRequestStatuses.Approved
-                && item.CampusStatus == "WAITING_HOST_ASSIGNMENT")
-            {
-                return "PENDING_HOST_ASSIGNMENT";
-            }
             return "CAMPUS_APPROVER";
-        }
         if (roleCode == RoleCodes.Department || roleCode == RoleCodes.Student)
             return "DEPARTMENT_TASK_OWNER";
         return "NONE";

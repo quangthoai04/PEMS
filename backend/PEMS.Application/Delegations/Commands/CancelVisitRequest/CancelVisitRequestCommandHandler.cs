@@ -65,6 +65,10 @@ public sealed class CancelVisitRequestCommandHandler
             var nowPending = _clock.UtcNow;
             await using var txPending = await _db.BeginTransactionAsync(cancellationToken);
 
+            // Phase 1 — flip the request FIRST. The visit_request_campuses cancel trigger only
+            // allows a WAITING_REQUEST_APPROVAL instance to become CANCELLED when the parent
+            // request is already CANCELLED (pending-request cascade), and EF flushes campus rows
+            // BEFORE visit_requests within one SaveChanges — so this must be two-phase.
             visit.Status = VisitRequestStatuses.Cancelled;
             visit.CancelledBy = actorId;
             visit.CancelledAt = nowPending;
@@ -82,6 +86,9 @@ public sealed class CancelVisitRequestCommandHandler
                 CreatedAt = nowPending
             });
 
+            await _db.SaveChangesAsync(cancellationToken);
+
+            // Phase 2 — cascade-cancel the still-pending campus instances.
             var cancelledPendingCampuses = new List<CancelledCampusDto>();
             foreach (var instance in visit.CampusInstances.Where(c => c.Status == VisitInstanceStatus.WaitingRequestApproval))
             {
@@ -100,35 +107,20 @@ public sealed class CancelVisitRequestCommandHandler
             await _db.SaveChangesAsync(cancellationToken);
 
             // --- Notifications for PENDING_APPROVAL cancellation ---
+            // Campus-independent approval: the pending instances sat with the campus Staff
+            // Leaders (never HO) — notify them for every scope.
             var notifs = new List<PEMS.Application.Notifications.Common.CreateNotificationItem>();
-            if (visit.VisitScope == VisitScopes.MultiCampus)
-            {
-                var hoUsers = await _db.Users
-                    .Where(u => u.Role.RoleCode == "HO" && u.Status == "ACTIVE")
-                    .Select(u => u.UserId)
-                    .ToListAsync(cancellationToken);
-                
-                notifs.AddRange(hoUsers.Select(id => new PEMS.Application.Notifications.Common.CreateNotificationItem(
-                    id,
-                    "Yêu cầu tham quan đã bị hủy",
-                    $"Visitor đã hủy yêu cầu liên cơ sở {visit.RequestCode} trước khi được duyệt.",
-                    PEMS.Application.Notifications.Common.NotificationTypes.VisitCancelled,
-                    PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitRequest,
-                    visit.VisitRequestId
-                )));
-            }
-            else
             {
                 var campusIds = visit.CampusInstances.Select(c => c.CampusId).Distinct().ToList();
                 var staffLeaders = await _db.Users
-                    .Where(u => u.Role.RoleCode == "CAMPUS" && u.SubRole == "LEADER" && u.PrimaryCampusId.HasValue && campusIds.Contains(u.PrimaryCampusId.Value) && u.Status == "ACTIVE")
+                    .Where(u => u.Role.RoleCode == RoleCodes.Staff && u.SubRole == "LEADER" && u.PrimaryCampusId.HasValue && campusIds.Contains(u.PrimaryCampusId.Value) && u.Status == "ACTIVE")
                     .Select(u => u.UserId)
                     .ToListAsync(cancellationToken);
-                
+
                 notifs.AddRange(staffLeaders.Select(id => new PEMS.Application.Notifications.Common.CreateNotificationItem(
                     id,
                     "Yêu cầu tham quan đã bị hủy",
-                    $"Visitor đã hủy yêu cầu {visit.RequestCode} trước khi được duyệt.",
+                    $"Visitor đã hủy yêu cầu {visit.RequestCode} trước khi được xử lý.",
                     PEMS.Application.Notifications.Common.NotificationTypes.VisitCancelled,
                     PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitRequest,
                     visit.VisitRequestId
@@ -142,7 +134,6 @@ public sealed class CancelVisitRequestCommandHandler
 
             await txPending.CommitAsync(cancellationToken);
 
-            // No campus instance is cancelled in the pre-approval flow unless they are in WAITING_REQUEST_APPROVAL state.
             return new CancelVisitRequestResponse(
                 visit.VisitRequestId,
                 visit.Status,
@@ -150,16 +141,15 @@ public sealed class CancelVisitRequestCommandHandler
                 "Đơn tham quan đã được hủy.");
         }
 
-        if (visit.Status != VisitRequestStatuses.Approved)
+        if (visit.Status != VisitRequestStatuses.Approved && visit.Status != VisitRequestStatuses.PartiallyApproved)
             throw new BusinessRuleException(
-                "Không thể hủy lịch thăm. Chỉ có thể hủy đơn đã được duyệt.");
+                "Không thể hủy lịch thăm. Chỉ có thể hủy đơn đã được duyệt (toàn phần hoặc một phần).");
 
         // Campus instances that may be cancelled: only after approval and before the visit starts.
-        // WAITING_REQUEST_APPROVAL (pending), DURING_VISIT / AFTER_VISIT / CLOSED / CANCELLED are
-        // never cancellable through this self-service / external-confirmation flow.
+        // WAITING_REQUEST_APPROVAL (pending), REJECTED, DURING_VISIT / AFTER_VISIT / CLOSED /
+        // CANCELLED are never cancellable through this self-service / external-confirmation flow.
         var cancellableStatuses = new[]
         {
-            VisitInstanceStatus.WaitingHostAssignment,
             VisitInstanceStatus.Assigned,
             VisitInstanceStatus.BeforeVisit,
         };
@@ -307,9 +297,16 @@ public sealed class CancelVisitRequestCommandHandler
         // cancelled_by to have the VISITOR role — a HOST cancels a campus INSTANCE only (external
         // confirmation) and must NEVER flip the parent request, otherwise the trigger SIGNALs and
         // the whole operation surfaces as a generic 500. So a HOST cancel leaves the request
-        // APPROVED with the instance CANCELLED (the list shows an instance-level cancellation).
-        var allCancelled = visit.CampusInstances.All(c => c.Status == VisitInstanceStatus.Cancelled);
-        var requestRolledUp = allCancelled && isVisitorOwner;
+        // as-is with the instance CANCELLED (the list shows an instance-level cancellation).
+        // REJECTED instances are terminal and count as "settled" for the rollup; still-pending
+        // (WAITING_REQUEST_APPROVAL) instances are cascade-cancelled AFTER the request flips
+        // (the campus trigger only allows a pending instance to cancel under a CANCELLED request).
+        var whollyCancellable = request.VisitInstanceId is null && isVisitorOwner
+            && visit.CampusInstances.All(c =>
+                c.Status == VisitInstanceStatus.Cancelled
+                || c.Status == VisitInstanceStatus.Rejected
+                || c.Status == VisitInstanceStatus.WaitingRequestApproval);
+        var requestRolledUp = whollyCancellable;
         if (requestRolledUp)
         {
             visit.Status = VisitRequestStatuses.Cancelled;
@@ -322,6 +319,28 @@ public sealed class CancelVisitRequestCommandHandler
             visit.RowVersion += 1;
 
             await _db.SaveChangesAsync(cancellationToken);
+
+            // Cascade-cancel any instance still waiting for a campus decision.
+            var pendingLeft = visit.CampusInstances
+                .Where(c => c.Status == VisitInstanceStatus.WaitingRequestApproval)
+                .ToList();
+            if (pendingLeft.Count > 0)
+            {
+                foreach (var instance in pendingLeft)
+                {
+                    instance.Status = VisitInstanceStatus.Cancelled;
+                    instance.CancelledBy = actorId;
+                    instance.CancelledAt = now;
+                    instance.CancellationActorType = CancellationActorType.Visitor;
+                    instance.CancellationSource = CancellationSource.SelfService;
+                    instance.CancellationReason = reason;
+                    instance.UpdatedAt = now;
+                    instance.UpdatedBy = actorId;
+                    instance.RowVersion += 1;
+                    cancelled.Add(new CancelledCampusDto(instance.VisitInstanceId, instance.Status));
+                }
+                await _db.SaveChangesAsync(cancellationToken);
+            }
         }
 
         // --- Notifications for AFTER_APPROVAL cancellation ---

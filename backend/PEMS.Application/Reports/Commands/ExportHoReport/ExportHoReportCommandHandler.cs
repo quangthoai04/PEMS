@@ -200,9 +200,9 @@ public sealed class ExportHoReportCommandHandler : IRequestHandler<ExportHoRepor
         if (sections.Contains("CAMPUS_PERFORMANCE"))
         {
             Row("3. CAMPUS PERFORMANCE");
-            Row("Campus", "Tổng chuyến", "Chờ duyệt", "Chờ host", "Đã gán", "Trước tiếp", "Đang tiếp", "Sau tiếp", "Đã đóng", "Đã hủy", "Quá hạn", "Lượt khách", "Feedback TB");
+            Row("Campus", "Tổng chuyến", "Chờ xử lý", "Từ chối", "Đã gán", "Trước tiếp", "Đang tiếp", "Sau tiếp", "Đã đóng", "Đã hủy", "Quá hạn", "Lượt khách", "Feedback TB");
             foreach (var c in o.CampusPerformance)
-                Row(c.CampusName, c.TotalInstances, c.WaitingRequestApproval, c.WaitingHostAssignment, c.Assigned,
+                Row(c.CampusName, c.TotalInstances, c.WaitingRequestApproval, c.Rejected, c.Assigned,
                     c.BeforeVisit, c.DuringVisit, c.AfterVisit, c.Closed, c.Cancelled, c.OverdueCloseCount, c.GuestCount, Num(c.AverageFeedbackRating));
             Row();
         }
@@ -415,7 +415,7 @@ public sealed class ExportHoReportCommandHandler : IRequestHandler<ExportHoRepor
                 ws.Cell(cr, 1).Value = cp.CampusName;
                 ws.Cell(cr, 2).Value = cp.TotalInstances;
                 ws.Cell(cr, 3).Value = cp.WaitingRequestApproval;
-                ws.Cell(cr, 4).Value = cp.WaitingHostAssignment;
+                ws.Cell(cr, 4).Value = cp.Rejected;
                 ws.Cell(cr, 5).Value = cp.Assigned;
                 ws.Cell(cr, 6).Value = cp.BeforeVisit;
                 ws.Cell(cr, 7).Value = cp.DuringVisit;
@@ -765,10 +765,10 @@ public sealed class ExportHoReportCommandHandler : IRequestHandler<ExportHoRepor
                     {
                         SectionTitle("3. Campus Performance");
                         DataTable(
-                            new[] { "Campus", "Tổng", "Chờ host", "Chuẩn bị", "Đang tiếp", "Sau tiếp", "Đóng", "Quá hạn", "Khách", "FB TB" },
+                            new[] { "Campus", "Tổng", "Từ chối", "Chuẩn bị", "Đang tiếp", "Sau tiếp", "Đóng", "Quá hạn", "Khách", "FB TB" },
                             o.CampusPerformance.Select(c => new[]
                             {
-                                c.CampusName, c.TotalInstances.ToString(), c.WaitingHostAssignment.ToString(),
+                                c.CampusName, c.TotalInstances.ToString(), c.Rejected.ToString(),
                                 (c.Assigned + c.BeforeVisit).ToString(), c.DuringVisit.ToString(), c.AfterVisit.ToString(),
                                 c.Closed.ToString(), c.OverdueCloseCount.ToString(), c.GuestCount.ToString(),
                                 Num(c.AverageFeedbackRating),

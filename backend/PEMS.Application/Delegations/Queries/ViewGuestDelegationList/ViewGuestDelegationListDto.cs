@@ -146,6 +146,13 @@ public sealed class CampusProgressItemDto
     public ulong? HostUserId { get; set; }
     public string? HostName { get; set; }
 
+    // ── Campus-level decision (campus-independent approval): who approved/rejected this
+    // instance and why. REJECTED always carries a DecisionNote (mandatory reason). ──
+    public string? DecisionNote { get; set; }
+    public ulong? DecidedBy { get; set; }
+    public string? DecidedByName { get; set; }
+    public DateTime? DecidedAt { get; set; }
+
     public string? CancellationReason { get; set; }
     public ulong? CancelledBy { get; set; }
     public string? CancelledByName { get; set; }
@@ -155,8 +162,10 @@ public sealed class CampusProgressItemDto
 
     /// <summary>Always true for in-scope rows (the list is already scoped server-side).</summary>
     public bool CanViewCampusDetail { get; set; }
-    /// <summary>True only for the Visitor owner when the request is APPROVED and this instance is still cancellable.</summary>
+    /// <summary>True only for the Visitor owner when the request is APPROVED/PARTIALLY_APPROVED and this instance is still cancellable.</summary>
     public bool CanCancelCampusVisit { get; set; }
     /// <summary>True when this instance is CANCELLED (show "Xem lý do hủy").</summary>
     public bool CanViewCancelReason { get; set; }
+    /// <summary>True when this instance is REJECTED and a decision note exists (show "Xem lý do từ chối").</summary>
+    public bool CanViewRejectReason { get; set; }
 }
