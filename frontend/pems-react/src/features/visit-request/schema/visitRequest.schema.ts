@@ -70,7 +70,9 @@ const supportTeamSchema = z.object({
   isAutoFilledFromRegistrant: z.boolean().optional(),
 });
 
-const visitSlotSchema = z
+// Slot schema factory: the public submit requires 72h advance; the Visitor edit/resubmit
+// flow only requires 24h (spec "sửa đơn / gửi lại / hủy trước 24h").
+const buildVisitSlotSchema = (minAdvanceHours: number) => z
   .object({
     campus: z.string().min(1, 'Vui lòng chọn cơ sở'),
     startDatetime: z.string().min(1, 'Thời gian bắt đầu không được để trống'),
@@ -81,12 +83,12 @@ const visitSlotSchema = z
 
     const start = new Date(data.startDatetime);
     const end = new Date(data.endDatetime);
-    const minStart = new Date(Date.now() + MIN_ADVANCE_HOURS * 60 * 60 * 1000);
+    const minStart = new Date(Date.now() + minAdvanceHours * 60 * 60 * 1000);
 
     if (start < minStart) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: `Thời gian bắt đầu phải ít nhất ${MIN_ADVANCE_HOURS} giờ so với thời điểm hiện tại`,
+        message: `Thời gian bắt đầu phải ít nhất ${minAdvanceHours} giờ so với thời điểm hiện tại`,
         path: ['startDatetime'],
       });
     }
@@ -110,7 +112,7 @@ const visitSlotSchema = z
     }
   });
 
-export const visitRequestSchema = z.object({
+export const buildVisitRequestSchema = (minAdvanceHours: number = MIN_ADVANCE_HOURS) => z.object({
   registerInfo: z.object({
     fullName: z.string().min(1, 'Họ tên không được để trống').max(100),
     organization: z.string().min(1, 'Đơn vị công tác không được để trống'),
@@ -123,7 +125,7 @@ export const visitRequestSchema = z.object({
   visitMode: z.enum(['single', 'multiple']),
   visitType: z.enum(['CAMPUS_TOUR', 'MEETING', 'WORKSHOP', 'SIGNING_CEREMONY', 'EXCHANGE', 'OTHER']),
   visitTypeOther: z.string().optional().default(''),
-  visits: z.array(visitSlotSchema).min(1),
+  visits: z.array(buildVisitSlotSchema(minAdvanceHours)).min(1),
   purpose: z.string().min(1, 'Mục đích thăm không được để trống'),
   workingContent: z.string().min(1, 'Nội dung làm việc không được để trống'),
   visitors: z.array(visitorSchema).min(1, 'Vui lòng thêm ít nhất 1 khách.'),
@@ -213,5 +215,11 @@ export const visitRequestSchema = z.object({
   }
 
 });
+
+/** Default schema for the public UC-17 submit (72h advance). */
+export const visitRequestSchema = buildVisitRequestSchema();
+
+/** Schema for the Visitor edit/resubmit forms — only 24h advance is required. */
+export const visitRequestEditSchema = buildVisitRequestSchema(24);
 
 export type VisitRequestSchema = z.infer<typeof visitRequestSchema>;

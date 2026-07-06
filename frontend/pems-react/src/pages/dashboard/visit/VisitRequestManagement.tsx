@@ -12,7 +12,7 @@ import {
   Search, Plus, Eye, AlertCircle, Users, MapPin, Calendar,
   ChevronLeft, ChevronRight, ChevronDown, Check, X, XCircle, Mail,
   FileText, ArrowRightCircle, Info, ClipboardList, Star, CheckCircle2,
-  PencilLine, MailOpen,
+  PencilLine, MailOpen, RefreshCw,
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
@@ -1037,10 +1037,16 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
           <span className="h-9 w-9" aria-hidden="true" />
         )}
 
-        {/* Slot 3: Approve / Accept (campus-independent approval: duyệt LUÔN kèm gán host) */}
+        {/* Slot 3: Approve / Accept / Edit / Resubmit (campus-independent approval: duyệt LUÔN kèm gán host) */}
         {can('APPROVE_AND_ASSIGN_HOST') ? (
           <ActionIconButton title="Duyệt & gán host" tone="green" icon={<Check className="h-5 w-5" />}
             onClick={(e) => { e.stopPropagation(); setAssign({ open: true, row, mode: 'approve' }); }} />
+        ) : can('EDIT_PENDING_REQUEST') ? (
+          <ActionIconButton title="Sửa đơn đăng ký tham quan" tone="blue" icon={<PencilLine className="h-5 w-5" />}
+            onClick={(e) => { e.stopPropagation(); navTo(`/dashboard/visit/edit/${row.visitRequestId}`); }} />
+        ) : can('RESUBMIT_REJECTED_REQUEST') ? (
+          <ActionIconButton title="Sửa & gửi lại đơn" tone="orange" icon={<RefreshCw className="h-5 w-5" />}
+            onClick={(e) => { e.stopPropagation(); navTo(`/dashboard/visit/resubmit/${row.visitRequestId}`); }} />
         ) : can('ACCEPT_INVITATION') ? (
           <ActionIconButton title="Xác nhận tham gia" tone="green" icon={<Check className="h-5 w-5" />}
             onClick={(e) => { e.stopPropagation(); submitAcceptInvitation(row); }} />
