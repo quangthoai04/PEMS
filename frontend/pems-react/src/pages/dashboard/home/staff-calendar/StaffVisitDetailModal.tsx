@@ -8,7 +8,7 @@ import { motion } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
 import {
   X, Loader2, MapPin, Clock, Users, User, Phone, Mail, Globe, Car, Camera,
-  FileText, AlertCircle, Check, UserCheck, MessageSquare, Ban, Settings,
+  FileText, AlertCircle, Check, UserCheck, MessageSquare, Ban, Settings, UserPlus,
 } from 'lucide-react';
 import {
   staffCalendarApi,
@@ -21,7 +21,11 @@ type StaffVisitDetailModalProps = {
   /** Tăng giá trị để buộc refetch (sau khi gán host / từ chối thành công). */
   refreshKey?: number;
   onClose: () => void;
-  /** Staff Leader: duyệt & gán host trong một bước (backend flags quyết định). */
+  /** Staff Leader bấm "Tôi là người phụ trách" — tự nhận làm host, submit ngay không cần chọn. */
+  onSelfHost?: (detail: StaffCalendarDetail) => void;
+  /** True khi đang gọi API self-host cho item đang mở (disable nút, hiện spinner). */
+  selfHostSubmitting?: boolean;
+  /** Staff Leader bấm "Gán người phụ trách" — mở modal chọn IC Staff làm host. */
   onAssignHost?: (detail: StaffCalendarDetail) => void;
   /** Staff Leader: từ chối campus instance của campus mình (lý do bắt buộc). */
   onReject?: (detail: StaffCalendarDetail) => void;
@@ -82,8 +86,11 @@ function InfoRow({ icon, label, value }: { icon?: React.ReactNode; label: string
 }
 
 export function StaffVisitDetailModal({
-  isOpen, visitInstanceId, refreshKey = 0, onClose, onAssignHost, onReject,
+  isOpen, visitInstanceId, refreshKey = 0, onClose, onSelfHost, onAssignHost, onReject, selfHostSubmitting = false,
 }: StaffVisitDetailModalProps) {
+  // Sau khi bấm "Chấp nhận" (canApprove), hiện 2 lựa chọn con thay vì mở modal ngay:
+  // "Tôi là người phụ trách" hoặc "Gán người phụ trách". Reset mỗi khi đổi item xem.
+  const [showApproveChoices, setShowApproveChoices] = useState(false);
   const navigate = useNavigate();
   const [detail, setDetail] = useState<StaffCalendarDetail | null>(null);
   const [loading, setLoading] = useState(false);
@@ -94,6 +101,7 @@ export function StaffVisitDetailModal({
       setDetail(null);
       return;
     }
+    setShowApproveChoices(false);
     let cancelled = false;
     setLoading(true);
     setError(null);
@@ -330,7 +338,7 @@ export function StaffVisitDetailModal({
         {/* Footer actions — chỉ render theo allowedActions backend trả */}
         {hasFooterActions && (
           <div className="px-6 py-4 bg-gray-50 flex items-center justify-end gap-3 border-t border-gray-100 flex-shrink-0 flex-wrap">
-            {showReject && (
+            {showReject && !showApproveChoices && (
               <button
                 type="button"
                 onClick={() => detail && onReject?.(detail)}
@@ -339,15 +347,45 @@ export function StaffVisitDetailModal({
                 <X className="w-4 h-4" /> Từ chối
               </button>
             )}
-            {showApproveAssign && (
+            {showApproveAssign && !showApproveChoices && (
               <button
                 type="button"
-                onClick={() => detail && onAssignHost?.(detail)}
+                onClick={() => setShowApproveChoices(true)}
                 className="px-6 py-2 rounded-xl font-bold text-white bg-[#004c91] hover:bg-[#003b70] shadow-sm transition-all outline-none text-sm cursor-pointer flex items-center gap-1.5"
               >
                 <Check className="w-4 h-4" />
-                Duyệt & gán host
+                Chấp nhận
               </button>
+            )}
+            {showApproveAssign && showApproveChoices && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setShowApproveChoices(false)}
+                  disabled={selfHostSubmitting}
+                  className="px-4 py-2 rounded-xl font-bold text-slate-500 hover:bg-slate-100 transition-colors outline-none text-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Quay lại
+                </button>
+                <button
+                  type="button"
+                  onClick={() => detail && onSelfHost?.(detail)}
+                  disabled={selfHostSubmitting}
+                  className="px-5 py-2 rounded-xl font-bold text-white bg-emerald-600 hover:bg-emerald-700 shadow-sm transition-all outline-none text-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+                >
+                  {selfHostSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserCheck className="w-4 h-4" />}
+                  Tôi là người phụ trách
+                </button>
+                <button
+                  type="button"
+                  onClick={() => detail && onAssignHost?.(detail)}
+                  disabled={selfHostSubmitting}
+                  className="px-6 py-2 rounded-xl font-bold text-white bg-[#004c91] hover:bg-[#003b70] shadow-sm transition-all outline-none text-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+                >
+                  <UserPlus className="w-4 h-4" />
+                  Gán người phụ trách
+                </button>
+              </>
             )}
             {showSetup && (
               <button
