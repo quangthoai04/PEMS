@@ -72,6 +72,12 @@ public sealed class SubmittedVisitRequestFormDetailDto
     public string? CancellationSource { get; set; }
     public string? CancellationReason { get; set; }
 
+    // ── Resubmission info (SQL v10 resubmit_agenda_cancel24) ──
+    public int ResubmissionCount { get; set; }
+    public DateTime? LastResubmittedAt { get; set; }
+    public long? LastResubmittedBy { get; set; }
+    public string? LastResubmittedByName { get; set; }
+
     // ── Footer action gating (recomputed server-side) ──
     // Approve = approve + assign host in ONE action (no separate assign-host step anymore).
     public bool CanApprove { get; set; }

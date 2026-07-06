@@ -91,6 +91,10 @@ public sealed class CompleteVisitStageCommandHandler
                         "Chưa thể chuyển sang giai đoạn đang tiếp khách vì còn hạng mục chuẩn bị chưa hoàn tất: "
                         + string.Join("; ", missing) + ".");
 
+                // Spec §9 (resubmit_agenda_cancel24): DURING_VISIT and beyond REQUIRE ≥ 1 agenda
+                // row — mirrored by a DB rule; checked here so the user gets a clean 409.
+                await EnsureAgendaExistsAsync(instance.VisitInstanceId, cancellationToken);
+
                 newStatus = VisitInstanceStatus.DuringVisit;
                 action = "COMPLETE_BEFORE_VISIT";
                 message = "Đã hoàn thành chuẩn bị. Chuyển sang giai đoạn đang tiếp khách.";
@@ -99,6 +103,8 @@ public sealed class CompleteVisitStageCommandHandler
             case VisitStageKeys.During:
                 if (instance.Status != VisitInstanceStatus.DuringVisit)
                     throw new ConflictException("Không thể hoàn thành tiếp khách. Cơ sở chưa ở giai đoạn đang tiếp khách.");
+                // AFTER_VISIT still requires an agenda (spec §9 — DB rule enforces the same).
+                await EnsureAgendaExistsAsync(instance.VisitInstanceId, cancellationToken);
                 newStatus = VisitInstanceStatus.AfterVisit;
                 action = "COMPLETE_DURING_VISIT";
                 message = "Đã hoàn thành tiếp khách. Chuyển sang giai đoạn sau tiếp khách.";
@@ -107,6 +113,9 @@ public sealed class CompleteVisitStageCommandHandler
             case VisitStageKeys.After:
                 if (instance.Status != VisitInstanceStatus.AfterVisit)
                     throw new ConflictException("Không thể đóng đoàn. Cơ sở chưa ở giai đoạn sau tiếp khách.");
+
+                // CLOSED still requires an agenda (spec §9 — DB rule enforces the same).
+                await EnsureAgendaExistsAsync(instance.VisitInstanceId, cancellationToken);
 
                 // §10: điều kiện đóng đoàn — gom mọi hạng mục còn thiếu và trả 409 rõ ràng. Không
                 // update status nếu chưa đủ điều kiện.
@@ -251,5 +260,20 @@ public sealed class CompleteVisitStageCommandHandler
 
         return new CompleteVisitStageResponse(
             instance.VisitRequestId, instance.VisitInstanceId, instance.Status, message);
+    }
+
+    /// <summary>
+    /// Spec §9: a campus instance may only be in DURING_VISIT / AFTER_VISIT / CLOSED when it
+    /// has at least one agenda row. Enforced before every such transition (the DB carries the
+    /// same rule; this check turns it into a clean 409 instead of a raw trigger 500).
+    /// </summary>
+    private async Task EnsureAgendaExistsAsync(ulong visitInstanceId, CancellationToken cancellationToken)
+    {
+        var hasAgenda = await _db.VisitAgendas
+            .AnyAsync(a => a.VisitInstanceId == visitInstanceId, cancellationToken);
+        if (!hasAgenda)
+            throw new ConflictException(
+                "Cần có agenda trước khi bắt đầu tiếp khách.",
+                VisitRequestErrorCodes.VisitAgendaRequiredBeforeStart);
     }
 }

@@ -62,6 +62,17 @@ public sealed class CancelVisitRequestCommandHandler
             if (!isVisitorOwner)
                 throw new ForbiddenException("Chỉ khách sở hữu đơn mới được hủy đơn đang chờ duyệt.");
 
+            // Rule 24h (spec §2.3): the Visitor may only self-cancel while EVERY still-active
+            // campus starts ≥ 24h from now. planned_start_at is local wall-clock → VietnamNow.
+            var vnNowPending = _clock.VietnamNow;
+            if (visit.CampusInstances.Any(c =>
+                    c.Status != VisitInstanceStatus.Cancelled
+                    && c.Status != VisitInstanceStatus.Rejected
+                    && c.PlannedStartAt < vnNowPending.AddHours(24)))
+                throw new BusinessRuleException(
+                    "Lịch thăm sắp diễn ra trong vòng 24 giờ. Vui lòng liên hệ FPTU để được hỗ trợ hủy/thay đổi.",
+                    VisitRequestErrorCodes.VisitCancelWindowExpired);
+
             var nowPending = _clock.UtcNow;
             await using var txPending = await _db.BeginTransactionAsync(cancellationToken);
 
@@ -160,10 +171,12 @@ public sealed class CancelVisitRequestCommandHandler
             var instance = visit.CampusInstances.FirstOrDefault(c => c.VisitInstanceId == instanceId)
                 ?? throw new NotFoundException("VisitRequestCampus", instanceId);
 
-            if (instance.Status == VisitInstanceStatus.DuringVisit || 
-                instance.Status == VisitInstanceStatus.AfterVisit || 
+            if (instance.Status == VisitInstanceStatus.DuringVisit ||
+                instance.Status == VisitInstanceStatus.AfterVisit ||
                 instance.Status == VisitInstanceStatus.Closed)
-                throw new BusinessRuleException("Cơ sở này đã bắt đầu hoặc đã hoàn tất tiếp khách nên không thể hủy.");
+                throw new BusinessRuleException(
+                    "Cơ sở này đã bắt đầu hoặc đã hoàn tất tiếp khách nên không thể hủy.",
+                    VisitRequestErrorCodes.VisitAlreadyStartedCannotCancel);
 
             targets = new[] { instance };
         }
@@ -178,7 +191,9 @@ public sealed class CancelVisitRequestCommandHandler
                     c.Status == VisitInstanceStatus.Closed);
                 
                 if (hasStartedCampus)
-                    throw new BusinessRuleException("Đơn liên cơ sở đã bắt đầu tại một số cơ sở. Vui lòng hủy từng cơ sở chưa diễn ra.");
+                    throw new BusinessRuleException(
+                        "Đơn liên cơ sở đã bắt đầu tại một số cơ sở. Vui lòng hủy từng cơ sở chưa diễn ra.",
+                        VisitRequestErrorCodes.VisitAlreadyStartedCannotCancel);
             }
 
             targets = visit.CampusInstances.Where(c => cancellableStatuses.Contains(c.Status)).ToList();
@@ -208,23 +223,42 @@ public sealed class CancelVisitRequestCommandHandler
                 "Không thể hủy lịch thăm. Không có cơ sở nào ở trạng thái có thể hủy.");
 
         var now = _clock.UtcNow;
+        // planned_start_at is a LOCAL wall-clock DATETIME → time-window checks use VietnamNow
+        // (UtcNow is 7h behind the wall clock and would let cancels through after the start).
+        var vnNow = _clock.VietnamNow;
 
         // Pre-validate every target BEFORE any write, so a violation never reaches SaveChanges
         // (and the user never sees a raw EF/MySQL exception).
         foreach (var instance in targets)
         {
-            if (instance.Status == VisitInstanceStatus.DuringVisit || 
-                instance.Status == VisitInstanceStatus.AfterVisit || 
+            if (instance.Status == VisitInstanceStatus.DuringVisit ||
+                instance.Status == VisitInstanceStatus.AfterVisit ||
                 instance.Status == VisitInstanceStatus.Closed)
-                throw new BusinessRuleException("Cơ sở này đã bắt đầu hoặc đã hoàn tất tiếp khách nên không thể hủy.");
+                throw new BusinessRuleException(
+                    "Cơ sở này đã bắt đầu hoặc đã hoàn tất tiếp khách nên không thể hủy.",
+                    VisitRequestErrorCodes.VisitAlreadyStartedCannotCancel);
 
             if (!cancellableStatuses.Contains(instance.Status))
                 throw new BusinessRuleException(
                     "Không thể hủy lịch thăm. Cơ sở đang ở trạng thái không thể hủy.");
 
-            if (now >= instance.PlannedStartAt)
+            if (vnNow >= instance.PlannedStartAt)
                 throw new BusinessRuleException(
-                    "Không thể hủy lịch thăm. Đã đến hoặc quá thời gian bắt đầu.");
+                    actorType == CancellationActorType.Host
+                        ? "Không thể hủy vì lịch tiếp khách đã bắt đầu hoặc đã diễn ra."
+                        : "Không thể hủy lịch thăm. Đã đến hoặc quá thời gian bắt đầu.",
+                    actorType == CancellationActorType.Host
+                        ? VisitRequestErrorCodes.HostCannotCancelAfterVisitStarted
+                        : VisitRequestErrorCodes.VisitAlreadyStartedCannotCancel);
+
+            // Rule 24h (spec §2.3) applies to the VISITOR self-service flow only: the Host may
+            // cancel any time BEFORE the start (external confirmation), but the Visitor must
+            // cancel ≥ 24h in advance.
+            if (actorType == CancellationActorType.Visitor
+                && instance.PlannedStartAt < vnNow.AddHours(24))
+                throw new BusinessRuleException(
+                    "Lịch thăm sắp diễn ra trong vòng 24 giờ. Vui lòng liên hệ FPTU để được hỗ trợ hủy/thay đổi.",
+                    VisitRequestErrorCodes.VisitCancelWindowExpired);
         }
 
         // ── Write phase. Child campus instances are cancelled and persisted FIRST, while the

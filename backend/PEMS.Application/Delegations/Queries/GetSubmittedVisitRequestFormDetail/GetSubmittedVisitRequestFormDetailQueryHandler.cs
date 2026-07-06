@@ -188,6 +188,7 @@ public sealed class GetSubmittedVisitRequestFormDetailQueryHandler
         // decision actors, request-level canceller, and each visible campus-instance canceller).
         var actorIds = new List<ulong>();
         if (visitRequest.CancelledBy.HasValue) actorIds.Add(visitRequest.CancelledBy.Value);
+        if (visitRequest.LastResubmittedBy.HasValue) actorIds.Add(visitRequest.LastResubmittedBy.Value);
         actorIds.AddRange(visibleInstances.Where(c => c.CancelledBy.HasValue).Select(c => c.CancelledBy!.Value));
         actorIds.AddRange(visibleInstances.Where(c => c.DecidedBy.HasValue).Select(c => c.DecidedBy!.Value));
         actorIds.AddRange(visibleInstances.Where(c => c.CurrentHostUserId.HasValue).Select(c => c.CurrentHostUserId!.Value));
@@ -383,6 +384,11 @@ public sealed class GetSubmittedVisitRequestFormDetailQueryHandler
             CancellationActorType = cancellationActorType,
             CancellationSource = cancellationSource,
             CancellationReason = cancellationReason,
+
+            ResubmissionCount = (int)visitRequest.ResubmissionCount,
+            LastResubmittedAt = visitRequest.LastResubmittedAt,
+            LastResubmittedBy = visitRequest.LastResubmittedBy.HasValue ? (long)visitRequest.LastResubmittedBy.Value : null,
+            LastResubmittedByName = NameOf(visitRequest.LastResubmittedBy),
 
             CanApprove = canApprove,
             CanReject = canReject,

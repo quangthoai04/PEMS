@@ -62,4 +62,21 @@ public static class VisitRequestErrorCodes
 
     // contactEmail belongs to an existing VISITOR account that is not ACTIVE.
     public const string VisitorAccountInactive = "VISITOR_ACCOUNT_INACTIVE";
+
+    // ── Visitor edit / resubmit / cancel-24h (SQL v10 resubmit_agenda_cancel24) ──
+    // The request is not in an editable state (must be PENDING_APPROVAL with every campus
+    // still WAITING_REQUEST_APPROVAL and ≥ 24h before the earliest start).
+    public const string VisitRequestNotEditable = "VISIT_REQUEST_NOT_EDITABLE";
+    // The request is not resubmittable (must be REJECTED with every campus REJECTED).
+    public const string VisitRequestNotResubmittable = "VISIT_REQUEST_NOT_RESUBMITTABLE";
+    // Resubmit must keep the exact same campus set (change campuses ⇒ create a new request).
+    public const string ResubmitCampusListChanged = "RESUBMIT_CAMPUS_LIST_CHANGED";
+    // Visitor cancel/edit blocked because a campus starts within 24 hours.
+    public const string VisitCancelWindowExpired = "VISIT_CANCEL_WINDOW_EXPIRED";
+    // Cancel blocked because a campus already started (DURING_VISIT / AFTER_VISIT / CLOSED).
+    public const string VisitAlreadyStartedCannotCancel = "VISIT_ALREADY_STARTED_CANNOT_CANCEL";
+    // Host may only cancel their campus instance BEFORE planned_start_at.
+    public const string HostCannotCancelAfterVisitStarted = "HOST_CANNOT_CANCEL_AFTER_VISIT_STARTED";
+    // A campus instance needs ≥ 1 agenda row before moving to DURING_VISIT / AFTER_VISIT / CLOSED.
+    public const string VisitAgendaRequiredBeforeStart = "VISIT_AGENDA_REQUIRED_BEFORE_START";
 }

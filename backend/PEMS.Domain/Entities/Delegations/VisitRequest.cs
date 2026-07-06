@@ -111,6 +111,18 @@ public class VisitRequest
     [Column("cancellation_reason")]
     public string? CancellationReason { get; set; }
 
+    // --- Resubmission (SQL v10 resubmit_agenda_cancel24): the Visitor may edit & resubmit a
+    // request after ALL campuses rejected it. Old per-campus decisions are snapshotted into
+    // audit_log_changes before being cleared. ---
+    [Column("resubmission_count")]
+    public uint ResubmissionCount { get; set; }
+
+    [Column("last_resubmitted_at")]
+    public DateTime? LastResubmittedAt { get; set; }
+
+    [Column("last_resubmitted_by")]
+    public ulong? LastResubmittedBy { get; set; }
+
     [Column("row_version")]
     public int RowVersion { get; set; }
 

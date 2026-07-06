@@ -558,6 +558,7 @@ public sealed class ViewGuestDelegationListQueryHandler
                 .Concat(vr.CampusInstances.Where(i => i.Status == VisitInstanceStatus.Cancelled).Select(i => i.CancelledBy))
                 .Concat(vr.CampusInstances.Select(i => i.DecidedBy))
                 .Append((ulong?)vr.VisitorUserId)
+                .Append(vr.LastResubmittedBy)
                 .Append(vr.CancelledBy))
             .Where(id => id.HasValue).Select(id => id!.Value).Distinct().ToList();
 
@@ -574,11 +575,23 @@ public sealed class ViewGuestDelegationListQueryHandler
             : await _context.Users.Where(u => userIds.Contains(u.UserId)).ToDictionaryAsync(u => u.UserId, u => u.FullName, ct);
 
         var nowForCancel = _clock.UtcNow;
+        // planned_start_at is a LOCAL wall-clock DATETIME → the 24h edit window must be
+        // computed against VietnamNow (UtcNow would shift the window by 7 hours).
+        var vnNow = _clock.VietnamNow;
         var items = requests.Select(vr =>
         {
             var instances = vr.CampusInstances;
             var count = instances.Count;
             var single = count == 1 ? instances.First() : null;
+
+            // ── Visitor edit / resubmit eligibility (spec "sửa đơn / gửi lại sau reject") ──
+            bool canEditPending = vr.Status == VisitRequestStatuses.PendingApproval
+                && count > 0
+                && instances.All(i => i.Status == VisitInstanceStatus.WaitingRequestApproval)
+                && instances.Min(i => i.PlannedStartAt) >= vnNow.AddHours(24);
+            bool canResubmit = vr.Status == VisitRequestStatuses.Rejected
+                && count > 0
+                && instances.All(i => i.Status == VisitInstanceStatus.Rejected);
 
             // Cancel-eligibility (UC-136): APPROVED/PARTIALLY_APPROVED request + an instance still
             // in a cancellable status and not yet started. Computed here (we have all instances)
@@ -699,6 +712,12 @@ public sealed class ViewGuestDelegationListQueryHandler
                 CancelledByName = cancelledByName,
                 HasCancellableInstance = hasCancellableInstance,
                 HasStartedCampus = hasStartedCampus,
+                ResubmissionCount = (int)vr.ResubmissionCount,
+                LastResubmittedAt = vr.LastResubmittedAt,
+                LastResubmittedBy = vr.LastResubmittedBy,
+                LastResubmittedByName = vr.LastResubmittedBy is { } lrb && userNames.TryGetValue(lrb, out var lrbn) ? lrbn : null,
+                CanEditPending = canEditPending,
+                CanResubmit = canResubmit,
                 // Per-campus progress is meaningful for ANY multi-campus status now (each campus
                 // is decided independently — pending/assigned/rejected can coexist).
                 CanExpandCampuses = count > 1,
@@ -753,6 +772,17 @@ public sealed class ViewGuestDelegationListQueryHandler
         {
             actions.Add("APPROVE_AND_ASSIGN_HOST"); // duyệt & gán host (opens host picker)
             actions.Add("CAMPUS_REJECT");
+        }
+
+        // Visitor — edit a still-fully-pending request / resubmit a fully-rejected one.
+        // Eligibility (status + 24h window) is precomputed per row in QueryRequestLevelAsync;
+        // the commands re-validate everything server-side.
+        if (isVisitor && item.VisitorUserId == userId)
+        {
+            if (item.CanEditPending)
+                actions.Add("EDIT_PENDING_REQUEST");
+            if (item.CanResubmit)
+                actions.Add("RESUBMIT_REJECTED_REQUEST");
         }
 
         // Visitor — self-cancel own request (UC-136).
