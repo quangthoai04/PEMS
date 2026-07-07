@@ -26,4 +26,13 @@ public class ViewNewsQuery : IRequest<ViewNewsDto>
     public string? Keyword { get; init; }
 
     public bool? IsFeatured { get; init; }
+
+    /// <summary>Optional campus filter (matches News.CampusId).</summary>
+    public ulong? CampusId { get; init; }
+
+    /// <summary>Optional category filter: all | featured | visit | general. Defaults to all.</summary>
+    public string? Type { get; init; }
+
+    /// <summary>Sort order: latest | oldest. Defaults to latest.</summary>
+    public string? Sort { get; init; }
 }
