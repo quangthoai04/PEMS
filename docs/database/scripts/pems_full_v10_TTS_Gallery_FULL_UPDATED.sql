@@ -251,6 +251,7 @@ DROP TABLE IF EXISTS notifications;
 DROP TABLE IF EXISTS sent_emails;
 DROP TABLE IF EXISTS email_templates;
 DROP TABLE IF EXISTS photo_face_tags;
+DROP TABLE IF EXISTS gallery_item_tts_audios;
 DROP TABLE IF EXISTS gallery_item_media;
 DROP TABLE IF EXISTS gallery_items;
 DROP TABLE IF EXISTS gallery_locations;
@@ -2083,6 +2084,139 @@ CREATE TABLE gallery_item_media (
     ON UPDATE CASCADE ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Ảnh/video thuộc gallery item, liên kết file metadata dùng chung';
+
+-- Lịch sử EverAI TTS narration audio cho gallery item (public icon loa).
+-- running_key (STORED generated, UNIQUE) chỉ non-NULL khi job đang chạy →
+-- chặn 2 job đồng thời cùng item+hash+config; READY/FAILED/CANCELLED không bị chặn.
+CREATE TABLE gallery_item_tts_audios (
+    tts_audio_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    gallery_item_id BIGINT UNSIGNED NOT NULL,
+
+    source_text_hash CHAR(64) NOT NULL
+        COMMENT 'SHA-256 (lowercase hex) của description đã normalize + voice/audio setting',
+    source_text TEXT NOT NULL
+        COMMENT 'Snapshot mô tả tại thời điểm yêu cầu tạo audio',
+
+    voice_code VARCHAR(100) NOT NULL,
+    audio_type ENUM('mp3','wav') NOT NULL DEFAULT 'mp3',
+    bitrate INT NULL,
+    speed_rate DECIMAL(3,1) NOT NULL DEFAULT 1.0,
+    pitch_rate DECIMAL(3,1) NOT NULL DEFAULT 1.0,
+    volume INT NOT NULL DEFAULT 100,
+
+    status ENUM(
+        'PENDING',
+        'SUBMITTED',
+        'PROCESSING',
+        'READY',
+        'FAILED',
+        'CANCELLED'
+    ) NOT NULL DEFAULT 'PENDING',
+
+    everai_request_id VARCHAR(100) NULL,
+    everai_audio_link TEXT NULL
+        COMMENT 'Link audio tạm của EverAI — chỉ dùng nội bộ để download một lần, không phát public',
+
+    audio_file_id BIGINT UNSIGNED NULL
+        COMMENT 'files.file_id của audio đã upload Google Drive (folder gallery-audio)',
+
+    trigger_source ENUM(
+        'AUTO_GENERATE',
+        'LAZY_GENERATE',
+        'MANUAL_REGENERATE'
+    ) NOT NULL,
+
+    characters INT NULL,
+    progress DECIMAL(5,2) NULL,
+
+    error_code VARCHAR(100) NULL,
+    error_message TEXT NULL,
+
+    requested_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    submitted_at DATETIME NULL,
+    processing_at DATETIME NULL,
+    ready_at DATETIME NULL,
+    failed_at DATETIME NULL,
+
+    created_by BIGINT UNSIGNED NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_by BIGINT UNSIGNED NULL,
+    updated_at DATETIME NULL,
+
+    running_key VARCHAR(500)
+        GENERATED ALWAYS AS (
+            CASE
+                WHEN status IN ('PENDING','SUBMITTED','PROCESSING') THEN
+                    CONCAT(
+                        gallery_item_id, ':',
+                        source_text_hash, ':',
+                        voice_code, ':',
+                        audio_type, ':',
+                        IFNULL(bitrate, 0), ':',
+                        speed_rate, ':',
+                        pitch_rate, ':',
+                        volume
+                    )
+                ELSE NULL
+            END
+        ) STORED,
+
+    PRIMARY KEY (tts_audio_id),
+
+    UNIQUE KEY uq_gallery_tts_running_key (running_key),
+
+    KEY idx_gallery_tts_item_status (
+        gallery_item_id,
+        status,
+        created_at
+    ),
+
+    KEY idx_gallery_tts_request (
+        everai_request_id
+    ),
+
+    KEY idx_gallery_tts_hash_lookup (
+        gallery_item_id,
+        source_text_hash,
+        voice_code,
+        audio_type,
+        bitrate,
+        speed_rate,
+        pitch_rate,
+        volume,
+        status
+    ),
+
+    KEY idx_gallery_tts_audio_file (audio_file_id),
+
+    -- ON UPDATE RESTRICT (not CASCADE): gallery_item_id is a base column of the STORED generated
+    -- running_key, and MySQL rejects cascading FK actions on generated-column base columns (1215).
+    -- The PK is AUTO_INCREMENT and never updated, so RESTRICT is equivalent in practice.
+    CONSTRAINT fk_gallery_tts_item
+        FOREIGN KEY (gallery_item_id)
+        REFERENCES gallery_items(gallery_item_id)
+        ON UPDATE RESTRICT
+        ON DELETE RESTRICT,
+
+    CONSTRAINT fk_gallery_tts_audio_file
+        FOREIGN KEY (audio_file_id)
+        REFERENCES files(file_id)
+        ON UPDATE CASCADE
+        ON DELETE RESTRICT,
+
+    CONSTRAINT fk_gallery_tts_created_by
+        FOREIGN KEY (created_by)
+        REFERENCES users(user_id)
+        ON UPDATE CASCADE
+        ON DELETE SET NULL,
+
+    CONSTRAINT fk_gallery_tts_updated_by
+        FOREIGN KEY (updated_by)
+        REFERENCES users(user_id)
+        ON UPDATE CASCADE
+        ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Lịch sử request/kết quả EverAI TTS cho từng gallery item';
 
 CREATE TABLE photo_face_tags (
   face_tag_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
