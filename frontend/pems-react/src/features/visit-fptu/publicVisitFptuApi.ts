@@ -6,6 +6,7 @@ import type {
   PublicLocationGalleryGrid,
   PublicLocationShowcase,
   PublicGalleryItemDetail,
+  PublicTtsAudio,
 } from './publicVisitFptu.types';
 
 /**
@@ -44,6 +45,18 @@ export const publicVisitFptuApi = {
     const { data } = await httpClient.get(
       API_ENDPOINTS.publicVisitFptu.galleryItemDetail(galleryItemId),
     );
+    return data;
+  },
+
+  /** Speaker icon — returns READY (+audioUrl) or lazily starts a TTS generation (PROCESSING). */
+  async ensureTtsAudio(galleryItemId: number): Promise<PublicTtsAudio> {
+    const { data } = await httpClient.post(API_ENDPOINTS.publicVisitFptu.ttsEnsure(galleryItemId));
+    return data;
+  },
+
+  /** Cheap read-only poll while a TTS generation is PROCESSING. */
+  async getTtsAudioStatus(galleryItemId: number): Promise<PublicTtsAudio> {
+    const { data } = await httpClient.get(API_ENDPOINTS.publicVisitFptu.ttsStatus(galleryItemId));
     return data;
   },
 };

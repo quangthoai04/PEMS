@@ -107,3 +107,21 @@ export interface PublicGalleryItemDetail {
   galleryItem: PublicGalleryItemSummary;
   media: PublicGalleryMedia[];
 }
+
+// ── EverAI TTS narration (speaker icon) ──
+export type PublicTtsAudioStatus =
+  | 'READY'
+  | 'PROCESSING'
+  | 'NOT_CREATED'
+  | 'TEMPORARILY_UNAVAILABLE'
+  | 'DISABLED'
+  | 'INVALID_DESCRIPTION';
+
+/** Response of the ensure/poll TTS endpoints. audioUrl (READY only) is a PEMS-served proxy URL. */
+export interface PublicTtsAudio {
+  status: PublicTtsAudioStatus;
+  audioUrl?: string | null;
+  message?: string | null;
+  voiceCode?: string | null;
+  audioType?: string | null;
+}

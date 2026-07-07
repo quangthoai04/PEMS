@@ -476,15 +476,100 @@ function GalleryItemDetailModal({
 }) {
   const [idx, setIdx] = useState(0);
   const [failed, setFailed] = useState(false);
-  const [isSpeaking, setIsSpeaking] = useState(false);
   const [showShareMenu, setShowShareMenu] = useState(false);
   const [zoomOpen, setZoomOpen] = useState(false);
   const itemId = detail?.galleryItem.galleryItemId;
 
+  // ── EverAI TTS narration (speaker icon) ──
+  // Click → POST ensure. READY plays the stored audio (PEMS proxy URL); PROCESSING polls the GET
+  // endpoint every 2.5s until READY; failures show a light inline note. Switching item/location or
+  // closing the modal stops the audio and cancels any pending poll.
+  const [narration, setNarration] = useState<{ state: "idle" | "loading" | "playing" | "error"; note?: string }>({ state: "idle" });
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const pollTimerRef = useRef<number | null>(null);
+  const narrationReqRef = useRef(0); // bumping this invalidates every in-flight ensure/poll/play
+  const NARRATION_POLL_MS = 2500;
+  const NARRATION_POLL_MAX = 48; // ~2 minutes of polling before giving up
+
   const stopNarration = useCallback(() => {
-    if (typeof window !== "undefined" && window.speechSynthesis) window.speechSynthesis.cancel();
-    setIsSpeaking(false);
+    narrationReqRef.current += 1;
+    if (pollTimerRef.current != null) {
+      window.clearTimeout(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.removeAttribute("src");
+      audioRef.current = null;
+    }
+    setNarration({ state: "idle" });
   }, []);
+
+  const failNarration = useCallback((req: number, note?: string) => {
+    if (req !== narrationReqRef.current) return;
+    setNarration({ state: "error", note: note || "Chưa thể phát giọng đọc. Vui lòng thử lại sau." });
+  }, []);
+
+  const playNarration = useCallback(
+    (req: number, url: string) => {
+      if (req !== narrationReqRef.current) return;
+      const audio = new Audio(mediaSrc(url));
+      audioRef.current = audio;
+      audio.onended = () => {
+        if (req === narrationReqRef.current) setNarration({ state: "idle" });
+      };
+      audio.onerror = () => failNarration(req);
+      audio
+        .play()
+        .then(() => {
+          if (req === narrationReqRef.current) setNarration({ state: "playing" });
+          else audio.pause();
+        })
+        .catch(() => failNarration(req));
+    },
+    [failNarration],
+  );
+
+  const pollNarration = useCallback(
+    (req: number, attempt: number) => {
+      if (req !== narrationReqRef.current || itemId == null) return;
+      if (attempt >= NARRATION_POLL_MAX) {
+        failNarration(req, "Giọng đọc đang được tạo, vui lòng thử lại sau ít phút.");
+        return;
+      }
+      pollTimerRef.current = window.setTimeout(async () => {
+        try {
+          const status = await publicVisitFptuApi.getTtsAudioStatus(itemId);
+          if (req !== narrationReqRef.current) return;
+          if (status.status === "READY" && status.audioUrl) playNarration(req, status.audioUrl);
+          else if (status.status === "PROCESSING" || status.status === "NOT_CREATED") pollNarration(req, attempt + 1);
+          else failNarration(req, status.message || undefined);
+        } catch {
+          failNarration(req);
+        }
+      }, NARRATION_POLL_MS);
+    },
+    [itemId, failNarration, playNarration],
+  );
+
+  const toggleNarration = async () => {
+    if (itemId == null) return;
+    if (narration.state === "playing" || narration.state === "loading") {
+      stopNarration();
+      return;
+    }
+    const req = ++narrationReqRef.current;
+    setNarration({ state: "loading" });
+    try {
+      const ensured = await publicVisitFptuApi.ensureTtsAudio(itemId);
+      if (req !== narrationReqRef.current) return;
+      if (ensured.status === "READY" && ensured.audioUrl) playNarration(req, ensured.audioUrl);
+      else if (ensured.status === "PROCESSING") pollNarration(req, 0);
+      else failNarration(req, ensured.message || undefined);
+    } catch {
+      failNarration(req);
+    }
+  };
 
   // Reset carousel + stop any narration whenever the shown item changes.
   useEffect(() => {
@@ -511,24 +596,6 @@ function GalleryItemDetailModal({
   const dotStart = total <= DOT_WINDOW ? 0 : Math.max(0, Math.min(idx - Math.floor(DOT_WINDOW / 2), total - DOT_WINDOW));
   const dotIndices = Array.from({ length: Math.min(DOT_WINDOW, total) }, (_, k) => dotStart + k);
   const pad2 = (n: number) => String(n).padStart(2, "0");
-
-  const toggleNarration = () => {
-    const synth = typeof window !== "undefined" ? window.speechSynthesis : undefined;
-    const text = detail?.galleryItem.description?.trim();
-    if (!synth || !text) return;
-    if (isSpeaking) {
-      stopNarration();
-      return;
-    }
-    synth.cancel();
-    const u = new SpeechSynthesisUtterance(text);
-    u.lang = "vi-VN";
-    u.rate = 1;
-    u.onend = () => setIsSpeaking(false);
-    u.onerror = () => setIsSpeaking(false);
-    setIsSpeaking(true);
-    synth.speak(u);
-  };
 
   const shareLink = (channel: "copy" | "facebook" | "twitter") => {
     const url = window.location.href;
@@ -615,15 +682,41 @@ function GalleryItemDetailModal({
                 button floats top-right and the footer below stays fixed. */}
             <div className="grow min-h-0 overflow-y-auto pr-2 mb-4 prose prose-base text-black dark:text-white font-light leading-relaxed [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-black/5 dark:[&::-webkit-scrollbar-track]:bg-white/10 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-thumb]:bg-fpt-orange/50 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb:hover]:bg-fpt-orange/80 [scrollbar-width:thin] [scrollbar-color:rgba(243,112,33,0.55)_transparent]">
               {detail && !notFound && !isLoading && detail.galleryItem.description?.trim() && (
-                <button
-                  onClick={toggleNarration}
-                  title={isSpeaking ? "Dừng thuyết minh" : "Nghe thuyết minh"}
-                  className={`float-right ml-4 mb-2 flex items-center justify-center w-10 h-10 sm:w-12 sm:h-12 rounded-full transition-all duration-300 hover:scale-110 hover:shadow-[0_0_15px_rgba(243,112,33,0.4)] ${
-                    isSpeaking ? "bg-fpt-orange text-white animate-pulse" : "bg-fpt-orange/10 text-fpt-orange hover:bg-fpt-orange hover:text-white"
-                  }`}
-                >
-                  {isSpeaking ? <VolumeX className="w-5 h-5 sm:w-6 sm:h-6" /> : <Volume2 className="w-5 h-5 sm:w-6 sm:h-6" />}
-                </button>
+                <div className="float-right ml-4 mb-2 flex flex-col items-end gap-1.5 max-w-[180px]">
+                  <button
+                    onClick={toggleNarration}
+                    title={
+                      narration.state === "playing"
+                        ? "Dừng thuyết minh"
+                        : narration.state === "loading"
+                          ? "Đang tạo giọng đọc…"
+                          : "Nghe thuyết minh"
+                    }
+                    className={`flex items-center justify-center w-10 h-10 sm:w-12 sm:h-12 rounded-full transition-all duration-300 hover:scale-110 hover:shadow-[0_0_15px_rgba(243,112,33,0.4)] ${
+                      narration.state === "playing"
+                        ? "bg-fpt-orange text-white animate-pulse"
+                        : "bg-fpt-orange/10 text-fpt-orange hover:bg-fpt-orange hover:text-white"
+                    }`}
+                  >
+                    {narration.state === "loading" ? (
+                      <Loader2 className="w-5 h-5 sm:w-6 sm:h-6 animate-spin" />
+                    ) : narration.state === "playing" ? (
+                      <VolumeX className="w-5 h-5 sm:w-6 sm:h-6" />
+                    ) : (
+                      <Volume2 className="w-5 h-5 sm:w-6 sm:h-6" />
+                    )}
+                  </button>
+                  {narration.state === "loading" && (
+                    <span className="text-[11px] leading-snug text-right text-gray-500 dark:text-gray-300">
+                      Giọng đọc đang được tạo…
+                    </span>
+                  )}
+                  {narration.state === "error" && narration.note && (
+                    <span className="text-[11px] leading-snug text-right text-red-500 dark:text-red-400">
+                      {narration.note}
+                    </span>
+                  )}
+                </div>
               )}
               {isLoading ? (
                 <p className="text-gray-600 dark:text-gray-300">Đang tải mô tả…</p>
