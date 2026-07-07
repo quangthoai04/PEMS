@@ -28,6 +28,7 @@ public sealed class GoogleDriveFolderResolver : IFileStorageFolderResolver
             FilePurpose.GalleryItemImage or FilePurpose.GalleryItemVideo => _options.GalleryItemFolderId,
             FilePurpose.GalleryDelegationImage or FilePurpose.GalleryDelegationVideo
                 => _options.GalleryDelegationFolderId,
+            FilePurpose.GalleryAudio => _options.GalleryAudioFolderId,
 
             // Legacy purposes from before per-folder routing: prefer the item folder so nothing new
             // lands in the shared gallery folder, but keep it as a fallback for old call sites.
@@ -52,7 +53,8 @@ public sealed class GoogleDriveFolderResolver : IFileStorageFolderResolver
         var isDedicatedGalleryPurpose = purpose is
             FilePurpose.GalleryAreaCover or FilePurpose.GalleryLocationCover
             or FilePurpose.GalleryItemImage or FilePurpose.GalleryItemVideo
-            or FilePurpose.GalleryDelegationImage or FilePurpose.GalleryDelegationVideo;
+            or FilePurpose.GalleryDelegationImage or FilePurpose.GalleryDelegationVideo
+            or FilePurpose.GalleryAudio;
 
         // Fall back to the root folder so an un-provisioned purpose still has somewhere to land.
         if (string.IsNullOrWhiteSpace(folderId) && !isDedicatedGalleryPurpose)

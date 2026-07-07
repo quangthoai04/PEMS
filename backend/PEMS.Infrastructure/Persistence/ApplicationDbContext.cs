@@ -86,6 +86,7 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     public DbSet<GalleryLocation> GalleryLocations { get; set; }
     public DbSet<GalleryItem> GalleryItems { get; set; }
     public DbSet<GalleryItemMedia> GalleryItemMedia { get; set; }
+    public DbSet<GalleryItemTtsAudio> GalleryItemTtsAudios { get; set; }
     public DbSet<PhotoFaceTag> PhotoFaceTags { get; set; }
 
     // ── Email + Notification ──────────────────────────────────────────────
@@ -538,6 +539,25 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
         modelBuilder.Entity<GalleryItemMedia>()
             .HasOne<User>().WithMany()
             .HasForeignKey(m => m.DeletedBy).OnDelete(DeleteBehavior.SetNull);
+
+        // GalleryItemTtsAudio → GalleryItem, CreatedBy, UpdatedBy. audio_file_id stays a scalar (like
+        // the gallery cover_file_id columns) — the DB owns that FK. The DB's generated running_key
+        // column is not mapped at all, so EF never tries to write it.
+        modelBuilder.Entity<GalleryItemTtsAudio>()
+            .HasOne(t => t.GalleryItem).WithMany()
+            .HasForeignKey(t => t.GalleryItemId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<GalleryItemTtsAudio>()
+            .HasOne<User>().WithMany()
+            .HasForeignKey(t => t.CreatedBy).OnDelete(DeleteBehavior.SetNull);
+        modelBuilder.Entity<GalleryItemTtsAudio>()
+            .HasOne<User>().WithMany()
+            .HasForeignKey(t => t.UpdatedBy).OnDelete(DeleteBehavior.SetNull);
+        modelBuilder.Entity<GalleryItemTtsAudio>()
+            .Property(t => t.SpeedRate).HasPrecision(3, 1);
+        modelBuilder.Entity<GalleryItemTtsAudio>()
+            .Property(t => t.PitchRate).HasPrecision(3, 1);
+        modelBuilder.Entity<GalleryItemTtsAudio>()
+            .Property(t => t.Progress).HasPrecision(5, 2);
 
         // PhotoFaceTag → File, TaggedUser, VisitRequest, GuestMember, PartnerContact, CreatedBy, RemovedBy
         modelBuilder.Entity<PhotoFaceTag>()
