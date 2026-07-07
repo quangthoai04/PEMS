@@ -16,6 +16,8 @@ import type {
 type Mode = 'create' | 'edit';
 const MEDIA_ACCEPT = 'image/jpeg,image/png,image/webp,video/mp4,video/webm';
 const MAX_FILES = 20;
+// Narration cap: gallery_items.description feeds the EverAI TTS voice-over, hard-limited to 1000 chars.
+const MAX_DESCRIPTION_LENGTH = 1000;
 
 /** True when a picked file is a video (by MIME or extension), so previews/validation pick the right kind. */
 function isVideoFile(file: File): boolean {
@@ -107,7 +109,9 @@ export function GalleryUpsertModal({
   const activeAreas = useMemo(() => areas.filter((a) => a.status === 'ACTIVE' || a.areaId === existing?.area.areaId), [areas, existing]);
 
   const [title, setTitle] = useState(existing?.title ?? '');
-  const [description, setDescription] = useState(existing?.description ?? '');
+  const [description, setDescription] = useState(
+    (existing?.description ?? '').slice(0, MAX_DESCRIPTION_LENGTH),
+  );
   const [itemType, setItemType] = useState<GalleryItemType>(existing?.itemType ?? 'MEDIA');
   const [areaId, setAreaId] = useState<number | ''>(existing?.area.areaId ?? '');
   const [locationId, setLocationId] = useState<number | ''>(existing?.location.locationId ?? '');
@@ -173,6 +177,7 @@ export function GalleryUpsertModal({
   const validate = (): string | null => {
     if (!title.trim()) return 'Vui lòng nhập tiêu đề.';
     if (!description.trim()) return 'Vui lòng nhập mô tả.';
+    if (description.length > MAX_DESCRIPTION_LENGTH) return `Mô tả không được vượt quá ${MAX_DESCRIPTION_LENGTH} ký tự.`;
     if (areaId === '') return 'Vui lòng chọn khu vực.';
     if (locationId === '') return 'Vui lòng chọn vị trí.';
     if (mode === 'create' && newFiles.length === 0) return 'Vui lòng chọn ít nhất một tệp media.';
@@ -361,13 +366,24 @@ export function GalleryUpsertModal({
 
             <div className="space-y-1.5 flex-1">
               <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Mô tả <span className="text-red-500">*</span></label>
+              {/* Bigger narration textarea: typing stops at 1000 (maxLength) and an over-long paste is
+                  auto-trimmed to 1000 (slice). The counter turns red + shows a warning at the limit. */}
               <textarea
-                rows={3}
+                rows={6}
                 value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none text-sm font-medium transition-all resize-none"
-                placeholder="Nhập mô tả về tài nguyên..."
+                maxLength={MAX_DESCRIPTION_LENGTH}
+                onChange={(e) => setDescription(e.target.value.slice(0, MAX_DESCRIPTION_LENGTH))}
+                className="min-h-[160px] w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none text-sm font-medium transition-all resize-y"
+                placeholder="Nhập mô tả về tài nguyên (được dùng làm giọng đọc thuyết minh)..."
               />
+              <div className="flex items-center justify-between text-xs">
+                <span className={description.length >= MAX_DESCRIPTION_LENGTH ? 'text-red-600 font-bold' : 'text-slate-400 font-medium'}>
+                  {description.length}/{MAX_DESCRIPTION_LENGTH} ký tự
+                </span>
+                {description.length >= MAX_DESCRIPTION_LENGTH && (
+                  <span className="text-red-600 font-medium">Bạn đã đạt giới hạn tối đa {MAX_DESCRIPTION_LENGTH} ký tự.</span>
+                )}
+              </div>
             </div>
 
             <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100 mt-auto">

@@ -45,6 +45,8 @@ export interface GalleryListItem {
   createdAt: string;
   createdByName?: string | null;
   primaryMedia?: GalleryPrimaryMedia | null;
+  /** EverAI narration status for the item's current description (drives the AUDIO column). */
+  audioStatus: GalleryItemTtsManagementStatus;
 }
 
 export interface GalleryMedia {
@@ -106,6 +108,7 @@ export interface GalleryListQueryParams {
   mediaKind?: GalleryMediaKind | '';
   itemType?: GalleryItemType | '';
   status?: GalleryStatus | '';
+  audioStatus?: GalleryItemTtsManagementStatus | '';
   sortBy?: string;
   sortDirection?: 'asc' | 'desc';
 }
@@ -133,6 +136,33 @@ export interface UpdateGalleryItemInput {
 export interface ChangeGalleryStatusInput {
   galleryItemId: number;
   status: GalleryStatus;
+}
+
+// ── EverAI TTS narration (Staff Leader dashboard) ──
+
+export type GalleryItemTtsManagementStatus =
+  | 'READY'
+  | 'PROCESSING'
+  | 'FAILED'
+  | 'STALE'
+  | 'NOT_CREATED'
+  | 'DISABLED'
+  | 'INVALID_DESCRIPTION';
+
+/** Management status of an item's narration; drives the badge + enables the "Tạo lại audio" button. */
+export interface GalleryItemTtsStatus {
+  status: GalleryItemTtsManagementStatus;
+  canRegenerate: boolean;
+  audioUrl?: string | null;
+  voiceCode?: string | null;
+  audioType?: string | null;
+  errorMessage?: string | null;
+}
+
+/** Result of the "Tạo lại audio" action. UP_TO_DATE = current description already has matching audio. */
+export interface GalleryItemTtsRegenerateResult {
+  status: 'PROCESSING' | 'UP_TO_DATE' | string;
+  message?: string | null;
 }
 
 // ── Quản lý khu vực (area/location management, UC-LOC-01..09) ──

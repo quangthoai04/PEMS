@@ -11,6 +11,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import {
   Search, X, Upload, Trash2, ChevronRight, ChevronLeft, ChevronDown, ChevronUp,
   Plus, Image as ImageIcon, ImageOff, Film, Eye, MapPin, Loader2, AlertCircle, CheckCircle2, Star,
+  Volume2, VolumeX, RefreshCw, XCircle, Clock, AlertTriangle,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthenticatedMedia } from '../../../shared/hooks/useAuthenticatedImage';
@@ -22,6 +23,7 @@ import { GalleryDetailModal } from './GalleryDetailModal';
 import { GalleryUpsertModal } from './GalleryUpsertModal';
 import type {
   GalleryItemDetail,
+  GalleryItemTtsManagementStatus,
   GalleryItemType,
   GalleryListItem,
   GalleryMediaKind,
@@ -121,6 +123,33 @@ function KindBadge({ kind }: { kind: GalleryMediaKind }) {
   );
 }
 
+/** Compact narration-status pill for the list "AUDIO" column (matches the detail modal's semantics). */
+const AUDIO_STATUS_META: Record<
+  GalleryItemTtsManagementStatus,
+  { label: string; className: string; icon: React.ReactNode }
+> = {
+  READY: { label: 'Sẵn sàng', className: 'bg-green-100 text-green-700 border-green-200', icon: <Volume2 className="w-3.5 h-3.5" /> },
+  PROCESSING: { label: 'Đang tạo', className: 'bg-blue-100 text-[#004c91] border-blue-200', icon: <Loader2 className="w-3.5 h-3.5 animate-spin" /> },
+  STALE: { label: 'Cần tạo lại', className: 'bg-amber-100 text-amber-700 border-amber-200', icon: <RefreshCw className="w-3.5 h-3.5" /> },
+  FAILED: { label: 'Lỗi', className: 'bg-red-100 text-red-700 border-red-200', icon: <XCircle className="w-3.5 h-3.5" /> },
+  NOT_CREATED: { label: 'Chưa tạo', className: 'bg-slate-100 text-slate-600 border-slate-200', icon: <Clock className="w-3.5 h-3.5" /> },
+  DISABLED: { label: 'Đang tắt', className: 'bg-slate-100 text-slate-500 border-slate-200', icon: <VolumeX className="w-3.5 h-3.5" /> },
+  INVALID_DESCRIPTION: { label: 'Mô tả lỗi', className: 'bg-slate-100 text-slate-500 border-slate-200', icon: <AlertTriangle className="w-3.5 h-3.5" /> },
+};
+
+function AudioStatusBadge({ status }: { status: GalleryItemTtsManagementStatus }) {
+  const meta = AUDIO_STATUS_META[status] ?? AUDIO_STATUS_META.NOT_CREATED;
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold border w-max mx-auto ${meta.className}`}
+      title={`Giọng đọc: ${meta.label}`}
+    >
+      {meta.icon}
+      {meta.label}
+    </span>
+  );
+}
+
 interface ToastState {
   type: 'success' | 'error';
   message: string;
@@ -137,6 +166,7 @@ export function GalleryManagementStaffLeader() {
   const [mediaKind, setMediaKind] = useState<GalleryMediaKind | ''>('');
   const [itemType, setItemType] = useState<GalleryItemType | ''>('');
   const [status, setStatus] = useState<GalleryStatus | ''>('');
+  const [audioStatus, setAudioStatus] = useState<GalleryItemTtsManagementStatus | ''>('');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -162,16 +192,17 @@ export function GalleryManagementStaffLeader() {
       mediaKind: mediaKind || undefined,
       itemType: itemType || undefined,
       status: status || undefined,
+      audioStatus: audioStatus || undefined,
       sortBy: 'createdAt',
       sortDirection,
     }),
-    [page, pageSize, keyword, areaId, locationId, mediaKind, itemType, status, sortDirection],
+    [page, pageSize, keyword, areaId, locationId, mediaKind, itemType, status, audioStatus, sortDirection],
   );
 
   const { data, items, loading, error, refetch } = useGalleryList(params);
 
   const totalPages = data?.totalPages ?? 0;
-  const hasAnyFilter = !!(keyword || areaId !== '' || locationId !== '' || mediaKind || itemType || status);
+  const hasAnyFilter = !!(keyword || areaId !== '' || locationId !== '' || mediaKind || itemType || status || audioStatus);
 
   // Locations available for the location filter (scoped to the selected area when one is chosen).
   const filterLocations = useMemo(() => {
@@ -224,7 +255,7 @@ export function GalleryManagementStaffLeader() {
 
   const onCreated = () => {
     setIsCreateOpen(false);
-    setToast({ type: 'success', message: 'Đã thêm gallery item mới.' });
+    setToast({ type: 'success', message: 'Gallery item đã lưu. Giọng đọc sẽ được tạo tự động.' });
     setPage(1);
     refetch();
   };
@@ -232,7 +263,7 @@ export function GalleryManagementStaffLeader() {
   const onUpdated = (updated: GalleryItemDetail) => {
     setIsEditOpen(false);
     setDetail(updated);
-    setToast({ type: 'success', message: 'Đã cập nhật gallery item.' });
+    setToast({ type: 'success', message: 'Gallery item đã lưu. Giọng đọc sẽ được tạo tự động.' });
     refetch();
   };
 
@@ -280,7 +311,7 @@ export function GalleryManagementStaffLeader() {
             />
           </div>
 
-          <div className="grid grid-cols-2 xl:grid-cols-5 gap-3 w-full">
+          <div className="grid grid-cols-2 xl:grid-cols-6 gap-3 w-full">
             <ScrollableDropdown
               value={areaId === '' ? '' : String(areaId)}
               options={[
@@ -342,6 +373,21 @@ export function GalleryManagementStaffLeader() {
               <option value="PUBLISHED" className="text-slate-800">Hiển thị</option>
               <option value="HIDDEN" className="text-slate-800">Đã ẩn</option>
             </FilterSelect>
+
+            <FilterSelect
+              value={audioStatus}
+              onChange={(v) => {
+                setAudioStatus(v as GalleryItemTtsManagementStatus | '');
+                setPage(1);
+              }}
+            >
+              <option value="" className="text-slate-800">Tất cả giọng đọc</option>
+              <option value="READY" className="text-slate-800">Sẵn sàng</option>
+              <option value="PROCESSING" className="text-slate-800">Đang tạo</option>
+              <option value="STALE" className="text-slate-800">Cần tạo lại</option>
+              <option value="FAILED" className="text-slate-800">Lỗi</option>
+              <option value="NOT_CREATED" className="text-slate-800">Chưa tạo</option>
+            </FilterSelect>
           </div>
 
         </div>
@@ -360,6 +406,7 @@ export function GalleryManagementStaffLeader() {
                 <th className="p-4 text-[11px] font-black uppercase tracking-widest whitespace-nowrap min-w-[220px]">Tiêu đề</th>
                 <th className="p-4 text-[11px] font-black text-center uppercase tracking-widest whitespace-nowrap">Định dạng</th>
                 <th className="p-4 text-[11px] font-black text-center uppercase tracking-widest whitespace-nowrap">Trạng thái</th>
+                <th className="p-4 text-[11px] font-black text-center uppercase tracking-widest whitespace-nowrap">Audio</th>
                 <th
                   className="p-4 text-[11px] font-black uppercase tracking-widest whitespace-nowrap cursor-pointer hover:bg-gray-50 transition-colors select-none group text-center"
                   onClick={() => setSortDirection((p) => (p === 'asc' ? 'desc' : 'asc'))}
@@ -378,14 +425,14 @@ export function GalleryManagementStaffLeader() {
             <tbody className="divide-y divide-slate-100">
               {loading ? (
                 <tr>
-                  <td colSpan={9} className="px-6 py-16 text-center text-slate-500">
+                  <td colSpan={10} className="px-6 py-16 text-center text-slate-500">
                     <Loader2 className="w-8 h-8 text-[#004c91] mx-auto mb-3 animate-spin" />
                     <p className="font-medium text-slate-600">Đang tải dữ liệu...</p>
                   </td>
                 </tr>
               ) : error ? (
                 <tr>
-                  <td colSpan={9} className="px-6 py-16 text-center text-red-500">
+                  <td colSpan={10} className="px-6 py-16 text-center text-red-500">
                     <AlertCircle className="w-10 h-10 mx-auto mb-3" />
                     <p className="font-semibold mb-3">{error}</p>
                     <button onClick={refetch} className="px-4 py-2 rounded-lg bg-[#004c91] text-white text-sm font-bold">Thử lại</button>
@@ -407,6 +454,7 @@ export function GalleryManagementStaffLeader() {
                     </td>
                     <td className="p-4 text-center"><KindBadge kind={item.mediaKind} /></td>
                     <td className="p-4 text-center"><StatusBadge status={item.status} /></td>
+                    <td className="p-4 text-center"><AudioStatusBadge status={item.audioStatus} /></td>
                     <td className="p-4 text-slate-600 font-medium whitespace-nowrap text-center">{formatDate(item.createdAt)}</td>
                     <td className="p-4">
                       <div className="flex items-center justify-center gap-2">
@@ -431,7 +479,7 @@ export function GalleryManagementStaffLeader() {
                 ))
               ) : (
                 <tr className="bg-slate-50/50">
-                  <td colSpan={9} className="px-6 py-16 text-center text-slate-500">
+                  <td colSpan={10} className="px-6 py-16 text-center text-slate-500">
                     <ImageIcon className="w-12 h-12 text-slate-300 mx-auto mb-3" />
                     <p className="font-medium text-slate-600 mb-1">
                       {hasAnyFilter ? 'Không tìm thấy media phù hợp.' : 'Chưa có media nào trong cơ sở này.'}
