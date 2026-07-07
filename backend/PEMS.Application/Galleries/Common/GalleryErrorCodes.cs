@@ -103,4 +103,9 @@ public static class GalleryErrorCodes
 
     /// <summary><c>itemType</c> is neither MEDIA nor VISIT_DELEGATION. → 422.</summary>
     public const string ItemTypeInvalid = "GALLERY_ITEM_TYPE_INVALID";
+
+    // ── EverAI TTS narration phase ──
+
+    /// <summary>The description exceeds the 1000-character narration cap. → 422.</summary>
+    public const string DescriptionTooLong = "GALLERY_DESCRIPTION_TOO_LONG";
 }

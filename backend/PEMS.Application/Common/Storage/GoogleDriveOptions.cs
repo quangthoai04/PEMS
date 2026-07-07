@@ -36,6 +36,8 @@ public sealed class GoogleDriveOptions
     public string? GalleryLocationFolderId { get; set; }
     public string? GalleryItemFolderId { get; set; }
     public string? GalleryDelegationFolderId { get; set; }
+    /// <summary>Dedicated folder for generated gallery TTS narration audio (folder "gallery-audio").</summary>
+    public string? GalleryAudioFolderId { get; set; }
     public string? NewsFolderId { get; set; }
     public string? MinutesFolderId { get; set; }
     public string? VisitRequestDocumentFolderId { get; set; }

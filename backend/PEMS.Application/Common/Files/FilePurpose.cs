@@ -18,6 +18,7 @@ public enum FilePurpose
     GalleryItemVideo,
     GalleryDelegationImage,
     GalleryDelegationVideo,
+    GalleryAudio,
     NewsImage,
     NewsAttachment,
     Document,
@@ -45,6 +46,7 @@ public static class FilePurposeDbValues
     public const string GalleryItemVideo = "GALLERY_ITEM_VIDEO";
     public const string GalleryDelegationImage = "GALLERY_DELEGATION_IMAGE";
     public const string GalleryDelegationVideo = "GALLERY_DELEGATION_VIDEO";
+    public const string GalleryAudio = "GALLERY_AUDIO";
     public const string NewsImage = "NEWS_IMAGE";
     public const string NewsAttachment = "NEWS_ATTACHMENT";
     public const string Document = "DOCUMENT";
@@ -70,6 +72,7 @@ public static class FilePurposeExtensions
         FilePurpose.GalleryItemVideo => FilePurposeDbValues.GalleryItemVideo,
         FilePurpose.GalleryDelegationImage => FilePurposeDbValues.GalleryDelegationImage,
         FilePurpose.GalleryDelegationVideo => FilePurposeDbValues.GalleryDelegationVideo,
+        FilePurpose.GalleryAudio => FilePurposeDbValues.GalleryAudio,
         FilePurpose.NewsImage => FilePurposeDbValues.NewsImage,
         FilePurpose.NewsAttachment => FilePurposeDbValues.NewsAttachment,
         FilePurpose.Document => FilePurposeDbValues.Document,
@@ -93,6 +96,7 @@ public static class FilePurposeExtensions
         FilePurpose.GalleryLocationCover => "gallery/locations",
         FilePurpose.GalleryItemImage or FilePurpose.GalleryItemVideo => "gallery/items",
         FilePurpose.GalleryDelegationImage or FilePurpose.GalleryDelegationVideo => "gallery/delegations",
+        FilePurpose.GalleryAudio => "gallery/audio",
         FilePurpose.NewsImage or FilePurpose.NewsAttachment => "news",
         FilePurpose.Document => "documents",
         FilePurpose.MinutesAttachment => "minutes",

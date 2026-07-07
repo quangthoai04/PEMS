@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Common.Models;
+using PEMS.Application.Galleries.Tts;
 using PEMS.Domain.Entities.Galleries;
 
 namespace PEMS.Application.Galleries.Common;
@@ -24,9 +25,17 @@ internal static class GalleryItemListQueryExecutor
 {
     private static readonly string[] AllowedSortColumns = { "createdat", "title", "status" };
 
+    private static readonly string[] AllowedAudioStatuses =
+    {
+        TtsManagementStatuses.Ready, TtsManagementStatuses.Processing, TtsManagementStatuses.Failed,
+        TtsManagementStatuses.Stale, TtsManagementStatuses.NotCreated, TtsManagementStatuses.Disabled,
+        TtsManagementStatuses.InvalidDescription,
+    };
+
     public static async Task<PaginatedResult<GalleryItemListItemDto>> ExecuteAsync(
         IApplicationDbContext db,
         ICurrentUserService currentUser,
+        IGalleryItemTtsService tts,
         IGalleryItemListCriteria request,
         CancellationToken ct)
     {
@@ -95,27 +104,52 @@ internal static class GalleryItemListQueryExecutor
         };
         var sortedQuery = ordered.ThenByDescending(i => i.GalleryItemId);
 
-        var totalItems = await query.CountAsync(ct);
+        var projected = sortedQuery.Select(i => new GalleryRow
+        {
+            GalleryItemId = i.GalleryItemId,
+            AreaId = i.Location.AreaId,
+            AreaName = i.Location.Area.AreaName,
+            LocationId = i.LocationId,
+            LocationName = i.Location.LocationName,
+            Title = i.Title,
+            Description = i.Description,
+            ItemType = i.ItemType,
+            MediaKind = i.MediaKind,
+            Status = i.Status,
+            CreatedAt = i.CreatedAt,
+            CreatedBy = i.CreatedBy,
+        });
 
-        var rows = await sortedQuery
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
-            .Select(i => new GalleryRow
-            {
-                GalleryItemId = i.GalleryItemId,
-                AreaId = i.Location.AreaId,
-                AreaName = i.Location.Area.AreaName,
-                LocationId = i.LocationId,
-                LocationName = i.Location.LocationName,
-                Title = i.Title,
-                Description = i.Description,
-                ItemType = i.ItemType,
-                MediaKind = i.MediaKind,
-                Status = i.Status,
-                CreatedAt = i.CreatedAt,
-                CreatedBy = i.CreatedBy,
-            })
-            .ToListAsync(ct);
+        // Audio (narration) status is a computed value (per-item hash + TTS-row state machine), so it
+        // can't be expressed in SQL. When no audio filter is active we keep the efficient SQL paging and
+        // only compute the status for the returned page. When an audio filter IS active we must compute
+        // over the whole filtered set first, then page the matches in memory — the SQL sort is preserved.
+        var audioFilter = string.IsNullOrWhiteSpace(request.AudioStatus)
+            ? null
+            : request.AudioStatus!.Trim().ToUpperInvariant();
+        if (audioFilter is not null && !AllowedAudioStatuses.Contains(audioFilter))
+            audioFilter = null;
+
+        List<GalleryRow> rows;
+        int totalItems;
+        IReadOnlyDictionary<long, GalleryItemTtsManagementStatus> statusByItem;
+
+        if (audioFilter is null)
+        {
+            totalItems = await query.CountAsync(ct);
+            rows = await projected.Skip((page - 1) * pageSize).Take(pageSize).ToListAsync(ct);
+            statusByItem = await tts.GetManagementStatusesAsync(Descriptors(rows), ct);
+        }
+        else
+        {
+            var allRows = await projected.ToListAsync(ct);
+            statusByItem = await tts.GetManagementStatusesAsync(Descriptors(allRows), ct);
+            var matched = allRows
+                .Where(r => statusByItem.TryGetValue((long)r.GalleryItemId, out var s) && s.Status == audioFilter)
+                .ToList();
+            totalItems = matched.Count;
+            rows = matched.Skip((page - 1) * pageSize).Take(pageSize).ToList();
+        }
 
         var itemIds = rows.Select(r => r.GalleryItemId).ToList();
 
@@ -171,10 +205,17 @@ internal static class GalleryItemListQueryExecutor
                     ThumbnailUrl = GalleryFileUrls.ContentOrNull(pm.ThumbnailFileId),
                 }
                 : null,
+            AudioStatus = statusByItem.TryGetValue((long)r.GalleryItemId, out var st)
+                ? st.Status
+                : TtsManagementStatuses.NotCreated,
         }).ToList();
 
         return PaginatedResult<GalleryItemListItemDto>.Create(items, page, pageSize, totalItems);
     }
+
+    /// <summary>Projects the page/candidate rows into the batch narration-status lookup input.</summary>
+    private static IReadOnlyCollection<GalleryTtsItemDescriptor> Descriptors(IEnumerable<GalleryRow> rows)
+        => rows.Select(r => new GalleryTtsItemDescriptor((long)r.GalleryItemId, r.Description)).ToList();
 
     private sealed class GalleryRow
     {

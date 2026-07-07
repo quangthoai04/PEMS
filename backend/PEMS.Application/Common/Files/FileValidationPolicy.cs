@@ -67,6 +67,17 @@ public sealed class FileValidationPolicy : IFileValidationPolicy
             RequireImageMagicBytes = false,
         },
 
+        // Generated gallery TTS narration audio (EverAI → Google Drive). Not user-supplied, but the
+        // same rule guards the download from EverAI before it is stored.
+        FilePurpose.GalleryAudio => new FileValidationRule
+        {
+            MaxSizeBytes = 20 * Mb,
+            AllowedMimeTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            { "audio/mpeg", "audio/mp3", "audio/wav", "audio/x-wav" },
+            AllowedExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".mp3", ".wav" },
+            RequireImageMagicBytes = false,
+        },
+
         FilePurpose.NewsAttachment or FilePurpose.Document or FilePurpose.PartnerDocument
             or FilePurpose.LogisticsAttachment => new FileValidationRule
         {

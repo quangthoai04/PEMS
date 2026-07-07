@@ -27,6 +27,15 @@ public static class DependencyInjection
         services.AddScoped<IFileObjectKeyBuilder, FileObjectKeyBuilder>();
         services.AddScoped<IFileUploadService, FileUploadService>();
 
+        // EverAI TTS narration for gallery items (hash + ensure/job service + in-process job queue).
+        // The EverAI HTTP client + hosted worker are registered in Infrastructure.
+        services.AddSingleton<PEMS.Application.Galleries.Tts.IGalleryTtsHashService,
+            PEMS.Application.Galleries.Tts.GalleryTtsHashService>();
+        services.AddSingleton<PEMS.Application.Galleries.Tts.IGalleryTtsJobQueue,
+            PEMS.Application.Galleries.Tts.GalleryTtsJobQueue>();
+        services.AddScoped<PEMS.Application.Galleries.Tts.IGalleryItemTtsService,
+            PEMS.Application.Galleries.Tts.GalleryItemTtsService>();
+
         services.AddScoped<PEMS.Application.Emails.Utils.IEmailImageLayoutNormalizer, PEMS.Application.Emails.Utils.EmailImageLayoutNormalizer>();
 
         services.AddScoped<PEMS.Application.Notifications.Common.INotificationService, PEMS.Application.Notifications.Common.NotificationService>();
