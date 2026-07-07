@@ -50,6 +50,7 @@ pnpm-debug.log*
 .env.*
 !.env.example
 appsettings.Local.json
+appsettings.Testing.json
 *.Secrets.json
 [Ee]nv.json
 

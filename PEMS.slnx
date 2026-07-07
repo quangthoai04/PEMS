@@ -4,4 +4,6 @@
   <Project Path="backend/PEMS.Infrastructure/PEMS.Infrastructure.csproj" />
   <Project Path="backend/PEMS.Api/PEMS.Api.csproj" />
   <Project Path="tests/PEMS.ArchitectureTests/PEMS.ArchitectureTests.csproj" />
+  <Project Path="tests/PEMS.IntegrationTests/PEMS.IntegrationTests.csproj" />
+  <Project Path="tests/PEMS.UnitTests/PEMS.UnitTests.csproj" />
 </Solution>
