@@ -10,7 +10,7 @@ import type { CampusOption, LoginPortal } from '../types/authentication.types';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-export function InternalLoginForm({ fromPath, onSuccess }: { fromPath?: string; onSuccess?: () => void }) {
+export function InternalLoginForm({ onSuccess }: { onSuccess?: () => void }) {
   const { login } = useAuth();
   const navigate = useNavigate();
 
@@ -88,7 +88,7 @@ export function InternalLoginForm({ fromPath, onSuccess }: { fromPath?: string; 
       if (user.mustChangePassword || user.mustSetPassword) {
         navigate('/change-password', { replace: true });
       } else {
-        navigate(fromPath ?? '/', { replace: true });
+        navigate('/', { replace: true });
       }
     } catch (err) {
       setFormError(getAuthErrorMessage(err, 'Email, mật khẩu hoặc cơ sở không chính xác.'));
@@ -246,7 +246,6 @@ export function InternalLoginForm({ fromPath, onSuccess }: { fromPath?: string; 
           portal="INTERNAL"
           selectedCampusId={selectedCampusId ? Number(selectedCampusId) : null}
           onError={setFormError}
-          fromPath={fromPath}
           onSuccess={onSuccess}
           onValidateCampus={() => {
             setGoogleLoginAttempted(true);
@@ -271,7 +270,7 @@ export function InternalLoginForm({ fromPath, onSuccess }: { fromPath?: string; 
   );
 }
 
-export function VisitorLoginForm({ fromPath, onSuccess }: { fromPath?: string; onSuccess?: () => void }) {
+export function VisitorLoginForm({ onSuccess }: { onSuccess?: () => void }) {
   const { login } = useAuth();
   const navigate = useNavigate();
 
@@ -314,7 +313,7 @@ export function VisitorLoginForm({ fromPath, onSuccess }: { fromPath?: string; o
       if (user.mustChangePassword || user.mustSetPassword) {
         navigate('/change-password', { replace: true });
       } else {
-        navigate(fromPath ?? '/', { replace: true });
+        navigate('/', { replace: true });
       }
     } catch (err) {
       setFormError(getAuthErrorMessage(err, 'Email hoặc mật khẩu không chính xác.'));
@@ -405,7 +404,6 @@ export function VisitorLoginForm({ fromPath, onSuccess }: { fromPath?: string; o
         <GoogleSignInButton
           portal="VISITOR"
           onError={setFormError}
-          fromPath={fromPath}
           onSuccess={onSuccess}
         />
       )}
@@ -417,14 +415,12 @@ export function GoogleSignInButton({
   portal,
   selectedCampusId,
   onError,
-  fromPath,
   onSuccess,
   onValidateCampus,
 }: {
   portal: LoginPortal;
   selectedCampusId?: number | null;
   onError: (msg: string) => void;
-  fromPath?: string;
   onSuccess?: () => void;
   onValidateCampus?: () => boolean;
 }) {
@@ -463,7 +459,7 @@ export function GoogleSignInButton({
         const user = await loginWithGoogle(response.credential, portal, selectedCampusId);
         if (onSuccess) onSuccess();
         if (user.mustChangePassword || user.mustSetPassword) navigate('/change-password', { replace: true });
-        else navigate(fromPath ?? '/', { replace: true });
+        else navigate('/', { replace: true });
       } catch (err) {
         onError(getAuthErrorMessage(err, 'Unable to sign in with this account.'));
       }
@@ -494,7 +490,7 @@ export function GoogleSignInButton({
     script.id = 'google-gsi-script';
     script.onload = init;
     document.body.appendChild(script);
-  }, [clientId, portal, selectedCampusId, fromPath, loginWithGoogle, navigate, onError, onValidateCampus, onSuccess]);
+  }, [clientId, portal, selectedCampusId, loginWithGoogle, navigate, onError, onValidateCampus, onSuccess]);
 
   // No client id configured: do NOT silently disable. Keep the button clickable and
   // surface a clear, actionable error so SSO mis-config is obvious in dev.

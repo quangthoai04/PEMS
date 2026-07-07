@@ -11,14 +11,12 @@ export function LoginPage() {
   const location = useLocation();
   const [portal, setPortal] = useState<LoginPortal>('INTERNAL');
 
-  const fromPath = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname;
-
   // Already signed in → leave the login page.
   useEffect(() => {
     if (!isLoading && isAuthenticated) {
-      navigate(fromPath ?? '/', { replace: true });
+      navigate('/', { replace: true });
     }
-  }, [isAuthenticated, isLoading, navigate, fromPath]);
+  }, [isAuthenticated, isLoading, navigate]);
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#eaf2fb] via-white to-[#fdeee5] px-4 font-sans">
@@ -65,9 +63,9 @@ export function LoginPage() {
 
         <div className="min-h-[250px]">
           {portal === 'INTERNAL' ? (
-            <InternalLoginForm fromPath={fromPath} />
+            <InternalLoginForm />
           ) : (
-            <VisitorLoginForm fromPath={fromPath} />
+            <VisitorLoginForm />
           )}
         </div>
 

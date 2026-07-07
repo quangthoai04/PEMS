@@ -144,7 +144,7 @@ export default function App() {
 
           {/* Dashboard Routes (require authentication) */}
           <Route path="/dashboard" element={<ProtectedRoute><ErrorBoundary><DashboardLayout /></ErrorBoundary></ProtectedRoute>}>
-            <Route index element={<DashboardHome />} />
+            <Route index element={user?.role?.toUpperCase() === 'VISITOR' ? <Navigate to="/dashboard/visit" replace /> : <DashboardHome />} />
             <Route path="profile" element={<Profile />} />
             <Route path="news" element={<NewsManagement />} />
             <Route path="news/create" element={<CreateNews />} />

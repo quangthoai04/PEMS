@@ -169,10 +169,12 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile, isCollapsed = fal
 
         {/* Navigation */}
         <nav className={`flex-grow space-y-2 overflow-y-auto ${collapsed ? "px-3" : "px-4"}`}>
-          <NavLink to="/dashboard" end className={navItemClass} onClick={handleLinkClick}>
-            <Home className="w-5 h-5 flex-shrink-0" />
-            <span>Dashboard</span>
-          </NavLink>
+          {roleForSidebar !== 'VISITOR' && (
+            <NavLink to="/dashboard" end className={navItemClass} onClick={handleLinkClick}>
+              <Home className="w-5 h-5 flex-shrink-0" />
+              <span>Dashboard</span>
+            </NavLink>
+          )}
           {roleForSidebar !== "DEPARTMENT" && roleForSidebar !== "VISITOR" && !isRealAdmin && (
             <NavLink to="/dashboard/news" className={navItemClass} onClick={handleLinkClick}>
               <Newspaper className="w-5 h-5 flex-shrink-0" />

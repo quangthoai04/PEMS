@@ -153,11 +153,11 @@ export function Header() {
                         className="absolute right-0 mt-2 w-56 bg-white rounded-2xl shadow-xl border border-[#d2e5f5] overflow-hidden z-[60] py-2"
                       >
                         <button 
-                          onClick={() => { navigate('/dashboard'); setIsProfileMenuOpen(false); }}
+                          onClick={() => { navigate(user?.role === 'VISITOR' ? '/dashboard/visit' : '/dashboard'); setIsProfileMenuOpen(false); }}
                           className="w-full flex items-center gap-3 px-5 py-3 text-sm font-semibold text-gray-700 hover:text-[#004c91] hover:bg-[#d2e5f5] transition-colors"
                         >
                           <LayoutDashboard className="w-4 h-4" />
-                          Trang quản trị
+                          {user?.role === 'VISITOR' ? 'Đơn thăm quan của tôi' : 'Trang quản trị'}
                         </button>
                         <button 
                           onClick={() => { navigate('/dashboard/profile'); setIsProfileMenuOpen(false); }}
@@ -285,11 +285,11 @@ export function Header() {
 
                   <div className="grid grid-cols-2 gap-2">
                     <button 
-                      onClick={() => { navigate('/dashboard'); setIsMobileMenuOpen(false); }}
+                      onClick={() => { navigate(user?.role === 'VISITOR' ? '/dashboard/visit' : '/dashboard'); setIsMobileMenuOpen(false); }}
                       className="px-3 py-2.5 bg-white text-xs font-bold text-slate-700 border border-slate-205 rounded-xl hover:text-[#004c91] hover:bg-[#d2e5f5] transition-all flex items-center justify-center gap-1.5"
                     >
                       <LayoutDashboard className="w-3.5 h-3.5 text-[#004c91]" />
-                      Quản lý
+                      {user?.role === 'VISITOR' ? 'Đơn của tôi' : 'Quản lý'}
                     </button>
                     <button 
                       onClick={() => { navigate('/dashboard/profile'); setIsMobileMenuOpen(false); }}
