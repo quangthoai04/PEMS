@@ -87,6 +87,24 @@ public sealed class VisitRequestManagementItemDto
     public bool HasCancellableInstance { get; set; }
     public bool HasStartedCampus { get; set; }
 
+    // ── Visitor edit / resubmit (SQL v10 resubmit_agenda_cancel24) ──
+    /// <summary>Times the Visitor resubmitted this request after a full rejection.</summary>
+    public int ResubmissionCount { get; set; }
+    public DateTime? LastResubmittedAt { get; set; }
+    public ulong? LastResubmittedBy { get; set; }
+    public string? LastResubmittedByName { get; set; }
+    /// <summary>
+    /// True when the request is still fully pending (PENDING_APPROVAL, every campus
+    /// WAITING_REQUEST_APPROVAL) and the earliest start is ≥ 24h away — the Visitor owner
+    /// may edit it. Drives EDIT_PENDING_REQUEST.
+    /// </summary>
+    public bool CanEditPending { get; set; }
+    /// <summary>
+    /// True when the whole request was rejected (request REJECTED + every campus REJECTED) —
+    /// the Visitor owner may edit &amp; resubmit it. Drives RESUBMIT_REJECTED_REQUEST.
+    /// </summary>
+    public bool CanResubmit { get; set; }
+
     // ── Multi-campus expandable row (Phương án A). Only meaningful on request-level rows
     // (Visitor / HO): the per-campus progress used by the accordion + backend-computed
     // action booleans so the frontend never gates on status text. ──

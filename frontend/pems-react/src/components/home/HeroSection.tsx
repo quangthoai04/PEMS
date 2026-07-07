@@ -1,88 +1,87 @@
 /**
  * Component HeroSection
- * Khu vực chào mừng và biểu ngữ (Banner) trên trang chủ.
+ * Hero chữ ký của Homepage — bố cục split-screen (chữ lớn bên trái, quả cầu 3D bên phải),
+ * cùng ngôn ngữ thị giác với trang Đối tác để tạo bản sắc riêng cho cả hệ thống.
  */
 
-// Đây là component hiển thị phần nội dung nổi bật ở trang chủ (Hero section)
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { Link } from 'react-router-dom';
-import { CalendarDays } from 'lucide-react';
-import bannerImg from '../../assets/images/banner02.png';
+import { useNavigate } from 'react-router-dom';
+import { CalendarDays, ArrowRight, ArrowUpRight } from 'lucide-react';
 import { VisitingFormPopup } from '../modals/VisitingFormPopup';
+import { LazyGlobeShowcase } from './LazyGlobeShowcase';
 
 export function HeroSection() {
   const [isVisitorFormOpen, setIsVisitorFormOpen] = useState(false);
+  const navigate = useNavigate();
 
   return (
     <>
-      <section className="relative pt-16 pb-12 lg:pt-24 lg:pb-16 min-h-[350px] lg:min-h-[500px] flex items-center overflow-hidden border-b border-gray-200 bg-gray-50">
-        {/* Full-width Background Banner */}
-        <div className="absolute inset-0 z-0">
-          <img 
-            src={bannerImg} 
-            alt="FPT University Banner" 
-            className="w-full h-full object-cover lg:object-contain lg:object-right-bottom lg:scale-110 lg:origin-right"
-          />
-          {/* Soft white overlay to ensure text remains readable with a stronger white tint */}
-          <div className="absolute inset-0 bg-gradient-to-r from-gray-50/95 via-gray-50/80 to-transparent sm:to-transparent"></div>
-          <div className="absolute inset-0 bg-gradient-to-t from-gray-50/50 via-transparent to-transparent"></div>
-        </div>
+      <section className="relative pt-20 pb-6 lg:pt-28 lg:pb-12 bg-[#f8fafc] overflow-x-clip">
+        <div className="absolute inset-0 opacity-[0.04] pointer-events-none" style={{ backgroundImage: 'radial-gradient(#004c91 1.5px, transparent 1.5px)', backgroundSize: '28px 28px' }}></div>
+        <div className="absolute left-[-15%] top-[10%] w-[500px] h-[500px] bg-fpt-navy/5 rounded-full blur-[110px] pointer-events-none"></div>
 
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10 w-full">
-          <div className="max-w-4xl">
-            
-            <motion.div 
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+          <div className="flex flex-col lg:flex-row gap-6 lg:gap-12 lg:items-center">
+
+            {/* Left: headline + CTA */}
+            <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.6, delay: 0.2 }}
-              className="max-w-3xl"
+              transition={{ duration: 0.6 }}
+              className="w-full lg:w-1/2 flex flex-col items-start relative z-10"
             >
-              <span className="inline-block py-1 px-3 rounded-full bg-fpt-orange shadow-sm text-white font-semibold text-xs mb-4">
-                Phòng Hợp tác Quốc tế
-              </span>
-              <h1 className="text-3xl md:text-4xl lg:text-5xl xl:text-6xl font-bold text-fpt-navy tracking-tight leading-tight mb-4">
-                Kết nối toàn cầu cùng <br className="hidden sm:block" /><span className="text-fpt-orange">Đại học FPT</span>
+              <div className="flex items-center gap-3 sm:gap-4 mb-4 sm:mb-6">
+                <div className="h-[2px] w-8 sm:w-12 bg-fpt-orange"></div>
+                <span className="text-fpt-orange font-bold tracking-widest uppercase text-[11px] sm:text-xs">
+                  Phòng Hợp tác Quốc tế
+                </span>
+              </div>
+
+              <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-[64px] font-black leading-[1.15] lg:leading-[1.1] mb-4 sm:mb-6 tracking-tight">
+                <span className="text-fpt-navy block mb-1 sm:mb-2">Kết nối toàn cầu</span>
+                <span className="text-fpt-orange block">cùng Đại học FPT</span>
               </h1>
-              <p className="text-base md:text-lg text-gray-700 font-medium leading-relaxed mb-10 max-w-2xl">
-                 Mở rộng mạng lưới đối tác, thúc đẩy các chương trình trao đổi sinh viên và trải nghiệm chuẩn quốc tế.
+
+              <p className="text-gray-500 text-sm sm:text-[15px] md:text-base font-medium mb-6 sm:mb-10 max-w-[480px] leading-relaxed">
+                Mở rộng mạng lưới đối tác quốc tế, thúc đẩy trao đổi sinh viên và mang trải nghiệm
+                chuẩn quốc tế đến 5 cơ sở trên toàn quốc.
               </p>
+
+              <div className="flex flex-col sm:flex-row gap-3 sm:gap-5 w-full sm:w-auto">
+                <button
+                  onClick={() => setIsVisitorFormOpen(true)}
+                  className="inline-flex items-center justify-center gap-2 sm:gap-2.5 px-6 py-3.5 sm:px-10 sm:py-5 bg-fpt-navy text-white font-bold rounded-xl shadow-[0_8px_25px_rgba(0,76,145,0.25)] hover:-translate-y-1 hover:shadow-[0_12px_30px_rgba(0,76,145,0.35)] transition-all duration-300 group text-base sm:text-lg"
+                >
+                  <CalendarDays className="w-4 h-4 sm:w-5 sm:h-5" />
+                  Đăng ký tham quan
+                  <ArrowRight className="w-4 h-4 sm:w-5 sm:h-5 group-hover:translate-x-1 transition-transform" />
+                </button>
+
+                <button
+                  onClick={() => navigate('/visit-fptu')}
+                  className="inline-flex items-center justify-center gap-2 sm:gap-2.5 px-6 py-3.5 sm:px-10 sm:py-5 bg-white text-gray-600 font-bold border-2 border-gray-200 rounded-xl hover:text-white hover:bg-fpt-orange hover:border-fpt-orange hover:shadow-lg transition-all duration-300 text-base sm:text-lg"
+                >
+                  Visit FPTU Online
+                  <ArrowUpRight className="w-4 h-4 sm:w-5 sm:h-5" />
+                </button>
+              </div>
             </motion.div>
 
-            {/* Solid Large Buttons directly on banner */}
-            <motion.div 
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.6, delay: 0.3 }}
-              className="grid sm:grid-cols-2 gap-4 lg:gap-6 max-w-2xl"
+            {/* Right: 3D globe — real partner countries, lazy-loaded */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.7, delay: 0.15 }}
+              className="w-full lg:w-1/2 h-[260px] sm:h-[420px] lg:h-[700px] flex items-center justify-center relative lg:-mr-24 xl:-mr-32"
             >
-              {/* Blue Button */}
-              <button 
-                onClick={() => setIsVisitorFormOpen(true)}
-                className="bg-[#004C91] text-white rounded-2xl py-6 px-5 flex flex-col items-center justify-center text-center hover:bg-[#003a70] hover:-translate-y-1 transition-all duration-300 border-b-4 border-[#003360] shadow-2xl shadow-fpt-navy/20 group"
-              >
-                <CalendarDays className="w-8 h-8 mb-3 group-hover:scale-110 transition-transform" />
-                <h3 className="text-base sm:text-lg font-bold mb-1 uppercase tracking-wide whitespace-nowrap">Đăng ký tham quan</h3>
-                <p className="text-blue-100 text-xs font-medium px-2">Dành cho đối tác đăng ký làm việc trực tiếp</p>
-              </button>
-
-              {/* Orange Button */}
-              <Link to="/visit-fptu" className="bg-[#F37021] text-white rounded-2xl py-6 px-5 flex flex-col items-center justify-center text-center hover:bg-[#d9621a] hover:-translate-y-1 transition-all duration-300 border-b-4 border-[#c25515] shadow-2xl shadow-fpt-orange/20 group">
-                <div className="mb-3 group-hover:scale-110 transition-transform">
-                  {/* VR Headset Custom SVG Icon */}
-                  <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
-                    <path fillRule="evenodd" clipRule="evenodd" d="M4 15V7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.5l-1.5-1.5a1 1 0 0 0-1.4 0L10.5 17H6a2 2 0 0 1-2-2zm4.5-3a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm7 0a2 2 0 1 0 0-4 2 2 0 0 0 0 4z" />
-                  </svg>
-                </div>
-                <h3 className="text-base sm:text-lg font-bold mb-1 uppercase tracking-wide whitespace-nowrap">Visit FPTU Online</h3>
-                <p className="text-orange-100 text-xs font-medium px-2">Tham quan không gian trường học trực tuyến</p>
-              </Link>
+              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[220px] h-[220px] sm:w-[360px] sm:h-[360px] lg:w-[460px] lg:h-[460px] bg-sky-200/25 blur-[70px] sm:blur-[100px] lg:blur-[110px] rounded-full pointer-events-none"></div>
+              <LazyGlobeShowcase />
             </motion.div>
-          
           </div>
         </div>
       </section>
-      
+
       <VisitingFormPopup isOpen={isVisitorFormOpen} onClose={() => setIsVisitorFormOpen(false)} />
     </>
   );

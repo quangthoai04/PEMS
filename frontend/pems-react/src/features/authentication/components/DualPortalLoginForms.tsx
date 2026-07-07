@@ -2,7 +2,6 @@ import React, { useEffect, useState, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, Mail, Lock, Building2 } from 'lucide-react';
 import { useAuth } from '../../../shared/hooks/useAuth';
-import { getDashboardRoute } from '../../../shared/auth/dashboardRoute';
 import { getAuthErrorMessage } from '../api/authError';
 import { authenticationApi } from '../api/authenticationApi';
 import { useActiveCampuses } from '../hooks/useActiveCampuses';
@@ -89,7 +88,7 @@ export function InternalLoginForm({ fromPath, onSuccess }: { fromPath?: string; 
       if (user.mustChangePassword || user.mustSetPassword) {
         navigate('/change-password', { replace: true });
       } else {
-        navigate(fromPath ?? getDashboardRoute(user), { replace: true });
+        navigate(fromPath ?? '/', { replace: true });
       }
     } catch (err) {
       setFormError(getAuthErrorMessage(err, 'Email, mật khẩu hoặc cơ sở không chính xác.'));
@@ -315,7 +314,7 @@ export function VisitorLoginForm({ fromPath, onSuccess }: { fromPath?: string; o
       if (user.mustChangePassword || user.mustSetPassword) {
         navigate('/change-password', { replace: true });
       } else {
-        navigate(fromPath ?? getDashboardRoute(user), { replace: true });
+        navigate(fromPath ?? '/', { replace: true });
       }
     } catch (err) {
       setFormError(getAuthErrorMessage(err, 'Email hoặc mật khẩu không chính xác.'));
@@ -464,7 +463,7 @@ export function GoogleSignInButton({
         const user = await loginWithGoogle(response.credential, portal, selectedCampusId);
         if (onSuccess) onSuccess();
         if (user.mustChangePassword || user.mustSetPassword) navigate('/change-password', { replace: true });
-        else navigate(fromPath ?? getDashboardRoute(user), { replace: true });
+        else navigate(fromPath ?? '/', { replace: true });
       } catch (err) {
         onError(getAuthErrorMessage(err, 'Unable to sign in with this account.'));
       }

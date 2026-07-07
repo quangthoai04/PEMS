@@ -26,6 +26,14 @@ public sealed class SearchPublicPartnerOptionsQueryHandler
         var keyword = request.Keyword?.Trim();
         var limit = request.Limit <= 0 ? 20 : Math.Min(request.Limit, 50);
 
+        // Free-solo combobox contract: only search when the user has typed a real keyword
+        // (≥ 2 chars). An empty / 1-char keyword must NOT dump the whole partner list — the
+        // frontend then shows no dropdown and treats what the user typed as a free-text org.
+        if (string.IsNullOrWhiteSpace(keyword) || keyword.Length < 2)
+        {
+            return Array.Empty<PublicPartnerOptionDto>();
+        }
+
         var query = _context.Partners
             .AsNoTracking()
             .Where(p =>
@@ -33,17 +41,14 @@ public sealed class SearchPublicPartnerOptionsQueryHandler
                 p.ProfileStatus == "APPROVED" &&
                 p.Visibility == "PUBLIC");
 
-        if (!string.IsNullOrWhiteSpace(keyword))
-        {
-            var pattern = $"%{keyword}%";
+        var pattern = $"%{keyword}%";
 
-            query = query.Where(p =>
-                EF.Functions.Like(p.Name, pattern) ||
-                (p.ShortName != null && EF.Functions.Like(p.ShortName, pattern)) ||
-                (p.PartnerCode != null && EF.Functions.Like(p.PartnerCode, pattern)) ||
-                (p.Country != null && EF.Functions.Like(p.Country, pattern)) ||
-                (p.City != null && EF.Functions.Like(p.City, pattern)));
-        }
+        query = query.Where(p =>
+            EF.Functions.Like(p.Name, pattern) ||
+            (p.ShortName != null && EF.Functions.Like(p.ShortName, pattern)) ||
+            (p.PartnerCode != null && EF.Functions.Like(p.PartnerCode, pattern)) ||
+            (p.Country != null && EF.Functions.Like(p.Country, pattern)) ||
+            (p.City != null && EF.Functions.Like(p.City, pattern)));
 
         return await query
             .OrderBy(p => p.Name)

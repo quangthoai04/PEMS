@@ -1,5 +1,6 @@
 import httpClient from '../../../shared/api/httpClient';
 import {
+  PublicFaqListResponse,
   PublicNewsDetail,
   PublicNewsListResponse,
 } from '../types/publicContent.types';
@@ -10,6 +11,13 @@ export interface PublicNewsListParams {
   languageCode?: string;
   keyword?: string;
   isFeatured?: boolean;
+}
+
+export interface PublicFaqListParams {
+  page?: number;
+  pageSize?: number;
+  keyword?: string;
+  faqType?: string;
 }
 
 export const publicContentApi = {
@@ -23,5 +31,10 @@ export const publicContentApi = {
       params: languageCode ? { languageCode } : undefined,
     });
     return data;
-  }
+  },
+
+  getPublicFaqs: async (params: PublicFaqListParams = {}): Promise<PublicFaqListResponse> => {
+    const { data } = await httpClient.get<PublicFaqListResponse>('/public/faqs', { params });
+    return data;
+  },
 };

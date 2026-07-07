@@ -59,7 +59,7 @@ export function NewsSection() {
   if (!loading && items.length === 0) return null;
 
   return (
-    <section id="news" className="py-24 bg-slate-50/80 border-y border-gray-100 relative overflow-hidden">
+    <section id="news" className="py-14 sm:py-20 lg:py-24 bg-slate-50/80 border-y border-gray-100 relative overflow-hidden">
       {/* Decorative Background Elements */}
       <div className="absolute inset-0 z-0 pointer-events-none opacity-50" style={{ backgroundImage: `url(${newsPattern})`, backgroundSize: '600px 400px' }}></div>
 

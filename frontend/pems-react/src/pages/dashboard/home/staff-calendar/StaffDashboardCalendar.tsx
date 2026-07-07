@@ -103,6 +103,8 @@ export function StaffDashboardCalendar({ isStaffLeader }: { user?: any; isStaffL
 
   // Gán host: chỉ 1 bước chọn host (không email, không accept/decline).
   const [assign, setAssign] = useState<{ open: boolean; detail: StaffCalendarDetail | null }>({ open: false, detail: null });
+  // "Tôi là người phụ trách": Staff Leader tự nhận host, submit ngay không cần mở modal chọn.
+  const [selfHostSubmittingId, setSelfHostSubmittingId] = useState<number | null>(null);
 
   // Tạo lịch cá nhân (nút + trên mỗi ngày).
   const [addEvent, setAddEvent] = useState<{
@@ -243,6 +245,26 @@ export function StaffDashboardCalendar({ isStaffLeader }: { user?: any; isStaffL
     toast.success('Đã gán người phụ trách.');
     setAssign({ open: false, detail: null });
     await refreshAfterAction();
+  };
+
+  // ── Flow "Tôi là người phụ trách": tự nhận host, submit ngay (không mở modal chọn) ──
+  const submitSelfHost = async (detail: StaffCalendarDetail) => {
+    setSelfHostSubmittingId(detail.visitInstanceId);
+    try {
+      const candidates = await delegationsApi.getHostCandidates(detail.visitInstanceId);
+      const selfOption = candidates.find((c) => c.isStaffLeaderSelfHostOption);
+      if (!selfOption) {
+        toast.error('Không tìm thấy lựa chọn tự làm người phụ trách cho cơ sở này.');
+        return;
+      }
+      await delegationsApi.approveCampusInstance(detail.visitRequestId, detail.visitInstanceId, selfOption.userId);
+      toast.success('Bạn đã trở thành người phụ trách đoàn khách này.');
+      await refreshAfterAction();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message || e?.response?.data?.title || 'Không thể tự nhận làm người phụ trách. Vui lòng thử lại.');
+    } finally {
+      setSelfHostSubmittingId(null);
+    }
   };
 
   // ── Tạo lịch cá nhân ──
@@ -576,8 +598,10 @@ export function StaffDashboardCalendar({ isStaffLeader }: { user?: any; isStaffL
         visitInstanceId={detailInstanceId}
         refreshKey={detailRefreshKey}
         onClose={() => setDetailInstanceId(null)}
+        onSelfHost={isStaffLeader ? (d) => { void submitSelfHost(d); } : undefined}
         onAssignHost={isStaffLeader ? (d) => setAssign({ open: true, detail: d }) : undefined}
         onReject={isStaffLeader ? (d) => setReject({ open: true, detail: d, text: '', submitting: false, error: null }) : undefined}
+        selfHostSubmitting={selfHostSubmittingId !== null && selfHostSubmittingId === detailInstanceId}
       />
 
       {/* ── Duyệt & gán host trong một bước (campus-independent approval, không gửi email) ── */}

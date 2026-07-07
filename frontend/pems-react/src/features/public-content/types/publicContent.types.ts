@@ -55,3 +55,23 @@ export type PublicNewsListResponse = {
   totalItems: number;
   totalPages: number;
 };
+
+export type PublicFaqItem = {
+  faqId: number;
+  faqType: string;
+  faqTypeLabel: string;
+  question: string;
+  answer: string;
+  displayOrder: number;
+  createdAt: string;
+};
+
+export type PublicFaqListResponse = {
+  items: PublicFaqItem[];
+  page: number;
+  pageSize: number;
+  totalItems: number;
+  totalPages: number;
+  hasNextPage: boolean;
+  hasPreviousPage: boolean;
+};

@@ -22,6 +22,7 @@ export function Header() {
   const [isLoginOpen, setIsLoginOpen] = useState(false);
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -36,15 +37,27 @@ export function Header() {
 
   // Avatar comes from the shared AuthContext so it updates reactively right after an upload.
   // It lives behind an authenticated endpoint, so fetch it as a blob; fall back to the default.
-  const { user: authUser } = useAuth();
+  const { user: authUser, logout } = useAuth();
   const fetchedAvatar = useAuthenticatedImage(authUser?.avatarUrl ?? null);
   const avatarSrc = fetchedAvatar ?? avatarImg;
 
-  const handleLogout = () => {
-    localStorage.removeItem('currentUser');
-    navigate('/');
+  const handleLogout = async () => {
+    if (isLoggingOut) return; // tránh bấm nhiều lần khi API logout đang chậm
+    setIsLoggingOut(true);
+    // Đóng menu ngay để người dùng thấy phản hồi tức thì, không đợi API logout
+    // (có thể chậm nếu backend đang bận) mới đóng — tránh cảm giác nút bị treo.
     setIsProfileMenuOpen(false);
     setIsMobileMenuOpen(false);
+    try {
+      // Clear the real session (token + pems_user + legacy currentUser) via the auth
+      // context — removing only the legacy `currentUser` key left `token`/`pems_user`
+      // behind, so AuthContext's bootstrap effect silently logged the user back in
+      // on the next reload.
+      await logout();
+    } finally {
+      setIsLoggingOut(false);
+      navigate('/');
+    }
   };
 
   const getLinkClass = (path: string) => {
@@ -154,12 +167,13 @@ export function Header() {
                           Hồ sơ cá nhân
                         </button>
                         <div className="h-px bg-gray-100 my-1 mx-4"></div>
-                        <button 
+                        <button
                           onClick={handleLogout}
-                          className="w-full flex items-center gap-3 px-5 py-3 text-sm font-semibold text-gray-700 hover:text-red-700 hover:bg-red-50 transition-colors"
+                          disabled={isLoggingOut}
+                          className="w-full flex items-center gap-3 px-5 py-3 text-sm font-semibold text-gray-700 hover:text-red-700 hover:bg-red-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           <LogOut className="w-4 h-4" />
-                          Đăng xuất
+                          {isLoggingOut ? 'Đang đăng xuất...' : 'Đăng xuất'}
                         </button>
                       </motion.div>
                     )}
@@ -286,12 +300,13 @@ export function Header() {
                     </button>
                   </div>
 
-                  <button 
+                  <button
                     onClick={handleLogout}
-                    className="w-full py-3 bg-red-50 hover:bg-red-100 text-xs font-extrabold text-red-650 rounded-xl transition-colors flex items-center justify-center gap-2 border border-red-200/40"
+                    disabled={isLoggingOut}
+                    className="w-full py-3 bg-red-50 hover:bg-red-100 text-xs font-extrabold text-red-650 rounded-xl transition-colors flex items-center justify-center gap-2 border border-red-200/40 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <LogOut className="w-3.5 h-3.5" />
-                    Đăng xuất tài khoản
+                    {isLoggingOut ? 'Đang đăng xuất...' : 'Đăng xuất tài khoản'}
                   </button>
                 </div>
               ) : (
