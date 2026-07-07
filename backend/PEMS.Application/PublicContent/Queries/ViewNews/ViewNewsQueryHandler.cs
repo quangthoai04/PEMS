@@ -29,6 +29,22 @@ public sealed class ViewNewsQueryHandler : IRequestHandler<ViewNewsQuery, ViewNe
         if (request.IsFeatured.HasValue)
             query = query.Where(n => n.IsFeatured == request.IsFeatured.Value);
 
+        if (request.CampusId.HasValue)
+            query = query.Where(n => n.CampusId == request.CampusId.Value);
+
+        switch (request.Type?.Trim().ToLowerInvariant())
+        {
+            case "featured":
+                query = query.Where(n => n.IsFeatured);
+                break;
+            case "visit":
+                query = query.Where(n => n.VisitInstanceId != null);
+                break;
+            case "general":
+                query = query.Where(n => n.VisitInstanceId == null && !n.IsFeatured);
+                break;
+        }
+
         var keyword = request.Keyword?.Trim();
         if (!string.IsNullOrEmpty(keyword))
         {
@@ -42,12 +58,25 @@ public sealed class ViewNewsQueryHandler : IRequestHandler<ViewNewsQuery, ViewNe
         var totalPages = totalItems == 0 ? 0 : (int)Math.Ceiling(totalItems / (double)request.PageSize);
         var pageIndex  = Math.Max(1, request.PageIndex);
 
+        var sortOldest = string.Equals(request.Sort?.Trim(), "oldest", StringComparison.OrdinalIgnoreCase);
+        query = sortOldest
+            ? query.OrderBy(n => n.PublishedAt).ThenBy(n => n.NewsId)
+            : query.OrderByDescending(n => n.PublishedAt).ThenByDescending(n => n.NewsId);
+
         var pageNews = await query
-            .OrderByDescending(n => n.PublishedAt)
-            .ThenByDescending(n => n.NewsId)
             .Skip((pageIndex - 1) * request.PageSize)
             .Take(request.PageSize)
-            .Select(n => new { n.NewsId, n.CoverFileId, n.PublishedAt, n.IsFeatured })
+            .Select(n => new
+            {
+                n.NewsId,
+                n.CoverFileId,
+                n.PublishedAt,
+                n.IsFeatured,
+                n.CampusId,
+                CampusName = n.CampusId != null ? _dbContext.Campuses.Where(c => c.CampusId == n.CampusId).Select(c => c.Name).FirstOrDefault() : null,
+                CampusCode = n.CampusId != null ? _dbContext.Campuses.Where(c => c.CampusId == n.CampusId).Select(c => c.CampusCode).FirstOrDefault() : null,
+                IsVisitRelated = n.VisitInstanceId != null
+            })
             .ToListAsync(cancellationToken);
 
         var newsIds = pageNews.Select(n => n.NewsId).ToList();
@@ -83,9 +112,13 @@ public sealed class ViewNewsQueryHandler : IRequestHandler<ViewNewsQuery, ViewNe
                 Summary      = translation.Summary,
                 CoverFileId  = n.CoverFileId,
                 CoverUrl     = n.CoverFileId.HasValue ? $"/api/public/news-files/{n.CoverFileId.Value}" : null,
-                PublishedAt  = n.PublishedAt,
-                LanguageCode = translation.LanguageCode,
-                IsFeatured   = n.IsFeatured
+                PublishedAt    = n.PublishedAt,
+                LanguageCode   = translation.LanguageCode,
+                IsFeatured     = n.IsFeatured,
+                CampusId       = n.CampusId,
+                CampusName     = n.CampusName,
+                CampusCode     = n.CampusCode,
+                IsVisitRelated = n.IsVisitRelated
             });
         }
 

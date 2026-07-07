@@ -132,6 +132,18 @@ export const API_ENDPOINTS = {
     mediaContent: (fileId: string | number) => `/public/partners/media/${fileId}/content`,
     // Distinct countries among APPROVED + PUBLIC partners, for the country filter dropdown.
     countries: '/public/partners/countries',
+    // Distinct partner_type values (with counts) among APPROVED + PUBLIC partners.
+    types: '/public/partners/types',
+  },
+  publicFaqs: {
+    list: '/public/faqs',
+    // Every faq_type (all 7, including zero-count ones) with its PUBLISHED question count.
+    typeCounts: '/public/faqs/type-counts',
+  },
+  // Site-wide keyword search across published news, approved+public partners, published faqs,
+  // and active campuses — powers the Header's SearchPopup.
+  publicSearch: {
+    search: '/public/search',
   },
   // Public VisitFPTU Gallery (anonymous display layer over the Staff-Leader-managed gallery).
   publicVisitFptu: {

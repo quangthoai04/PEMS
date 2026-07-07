@@ -5,6 +5,7 @@ import type {
   PublicPartnerCountry,
   PublicPartnerListParams,
   PublicPartnerListResponse,
+  PublicPartnerType,
 } from '../types/publicPartners.types';
 
 function cleanParams(params: Record<string, unknown>): Record<string, unknown> {
@@ -29,6 +30,11 @@ export const publicPartnersApi = {
 
   async getPublicPartnerCountries(): Promise<PublicPartnerCountry[]> {
     const { data } = await httpClient.get<PublicPartnerCountry[]>(API_ENDPOINTS.publicPartners.countries);
+    return data;
+  },
+
+  async getPublicPartnerTypes(): Promise<PublicPartnerType[]> {
+    const { data } = await httpClient.get<PublicPartnerType[]>(API_ENDPOINTS.publicPartners.types);
     return data;
   },
 };

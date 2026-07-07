@@ -1,7 +1,7 @@
 /**
  * Trang PartnersPage (Public)
- * Trang biểu thị danh mục lưới liên kết tổng hợp đối ngoại — dữ liệu thật từ
- * GET /api/public/partners (chỉ đối tác APPROVED + PUBLIC), không còn mock data.
+ * FPTU Partnership Directory — dữ liệu thật từ GET /api/public/partners (chỉ đối tác
+ * APPROVED + PUBLIC), không dùng mock data, không dùng globe/map.
  */
 
 import React, { useEffect, useMemo, useState } from 'react';
@@ -13,87 +13,188 @@ import {
   MapPin,
   ChevronLeft,
   ChevronRight,
-  Sparkles,
-  Layers,
-  ArrowUpRight,
-  FilterX,
   RefreshCw,
   AlertTriangle,
+  Building2,
+  Mail,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import GlobeComponent from '../components/partners/GlobeComponent';
+import 'flag-icons/css/flag-icons.min.css';
 import { VisitingFormPopup } from '../components/modals/VisitingFormPopup';
 import { publicPartnersApi } from '../features/public-partners/api/publicPartnersApi';
 import { usePublicPartnerImage } from '../features/public-partners/hooks/usePublicPartnerImage';
 import { findMatchingCountryValue } from '../features/public-partners/utils/countryMatch';
-import type { PublicPartner, PublicPartnerCountry } from '../features/public-partners/types/publicPartners.types';
+import { getCountryIsoCode } from '../features/public-partners/utils/countryFlag';
+import type {
+  PublicPartner,
+  PublicPartnerCountry,
+  PublicPartnerType,
+  PublicPartnerSort,
+} from '../features/public-partners/types/publicPartners.types';
 import { getNameInitials } from '../shared/utils/nameInitials';
 
 const ALL_COUNTRIES_LABEL = 'Tất cả quốc gia';
+const ALL_TYPES_LABEL = 'Tất cả loại hình';
+const PAGE_SIZE = 12;
 
-/** One partner card — a separate component so `usePublicPartnerImage` (a hook) can be called
- *  once per card instead of inside a `.map()` callback. */
+const SORT_OPTIONS: { value: PublicPartnerSort; label: string }[] = [
+  { value: 'name_asc', label: 'Tên A-Z' },
+  { value: 'newest', label: 'Mới nhất' },
+  { value: 'country', label: 'Theo quốc gia' },
+];
+
+/* ───────────────────────── Partner Card ───────────────────────── */
+
 function PublicPartnerCard({
   partner, index, onClick,
-}: { partner: PublicPartner; index: number; onClick: () => void }) {
+}: { partner: PublicPartner; index: number; onClick: () => void; key?: React.Key }) {
   const logoUrl = usePublicPartnerImage(partner.logoFileId);
+  const location = [partner.city, partner.country].filter(Boolean).join(', ');
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 25, scale: 0.95 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={{ opacity: 0, scale: 0.95 }}
-      transition={{ duration: 0.3, delay: (index % 4) * 0.05, ease: 'easeOut' }}
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.35, delay: (index % PAGE_SIZE) * 0.04, ease: 'easeOut' }}
       onClick={onClick}
-      className="group bg-white rounded-3xl p-6 flex flex-col items-center text-center shadow-[0_5px_20px_-3px_rgba(0,0,0,0.05)] hover:shadow-[0_20px_40px_-5px_rgba(0,76,145,0.12)] hover:-translate-y-2.5 transition-all duration-300 relative overflow-hidden cursor-pointer"
+      className="group bg-white rounded-2xl p-6 flex flex-col border border-slate-200 hover:border-sky-200 shadow-sm hover:shadow-md hover:-translate-y-1 transition-all duration-300 cursor-pointer"
     >
-      {/* Modern glowing accents in gradient matching FPT University */}
-      <div className="absolute top-0 left-0 w-full h-[3px] bg-gradient-to-r from-[#004c91] via-orange-400 to-[#f37021] transform origin-left scale-x-0 group-hover:scale-x-100 transition-transform duration-500" />
-      <div className="absolute inset-0 bg-gradient-to-b from-[#004c91]/2 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
-
-      {/* 1. Logo / initials fallback */}
-      <div className="w-full h-24 flex items-center justify-center p-2 transition-all duration-300 relative my-1">
-        {logoUrl ? (
-          <img
-            src={logoUrl}
-            alt={partner.name}
-            className="max-w-[85%] max-h-[85%] object-contain scale-100 group-hover:scale-110 transition-transform duration-500"
-          />
-        ) : (
-          <div className="w-14 h-14 bg-[#004c91]/5 text-[#004c91] font-black text-lg rounded-full flex items-center justify-center uppercase border border-[#004c91]/10 shadow-inner">
-            {getNameInitials(partner.name)}
-          </div>
-        )}
-      </div>
-
-      {/* 2. Partner Name in center — default to brand navy blue #004c91 */}
-      <div className="flex-grow flex flex-col justify-center my-3 w-full">
-        <h3 className="text-[17px] font-black text-[#004c91] leading-snug group-hover:text-orange-600 transition-colors line-clamp-2 px-1">
-          {partner.name}
-        </h3>
-      </div>
-
-      {/* Thin decorative dotted divider line */}
-      <div className="w-full border-t border-dashed border-slate-100 my-2" />
-
-      {/* 3. Partner Country Badge */}
-      <div className="w-full flex justify-center mt-2.5">
-        <div className="inline-flex items-center gap-1.5 py-1.5 px-4 bg-[#004c91]/5 border border-[#004c91]/10 text-[#004c91] text-xs font-bold rounded-xl group-hover:bg-orange-50 group-hover:border-orange-200/50 group-hover:text-[#f37021] transition-all duration-300 shadow-sm shadow-[#004c91]/2">
-          <MapPin className="w-3.5 h-3.5 text-[#f37021]" />
-          <span>{partner.country || 'Chưa cập nhật'}</span>
+      <div className="flex items-start gap-4 mb-4">
+        <div className="w-14 h-14 shrink-0 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center overflow-hidden">
+          {logoUrl ? (
+            <img
+              src={logoUrl}
+              alt={partner.name}
+              className="max-w-[80%] max-h-[80%] object-contain transition-transform duration-500 group-hover:scale-105"
+            />
+          ) : (
+            <span className="text-base font-black text-[#004c91]">{getNameInitials(partner.name)}</span>
+          )}
+        </div>
+        <div className="flex-1 min-w-0">
+          <h3 className="text-[15px] font-bold text-slate-900 leading-snug line-clamp-2 group-hover:text-[#004c91] transition-colors">
+            {partner.name}
+          </h3>
+          {location && (
+            <div className="mt-1.5 flex items-center gap-1 text-slate-500 text-xs">
+              <MapPin className="w-3.5 h-3.5 text-[#f37021] shrink-0" />
+              <span className="truncate">{location}</span>
+            </div>
+          )}
         </div>
       </div>
+
+      {partner.partnerType && (
+        <span className="self-start mb-3 px-2.5 py-1 rounded-full bg-[#004c91]/5 text-[#004c91] text-[11px] font-bold uppercase tracking-wide">
+          {partner.partnerType}
+        </span>
+      )}
+
+      {partner.description && (
+        <p className="text-sm text-slate-600 leading-relaxed line-clamp-2 mb-4 flex-1">
+          {partner.description}
+        </p>
+      )}
+
+      <span className="mt-auto inline-flex items-center gap-1.5 text-[#004c91] font-bold text-sm group-hover:gap-2.5 transition-all">
+        Xem hồ sơ <ArrowRight className="w-3.5 h-3.5" />
+      </span>
     </motion.div>
   );
 }
 
 function PartnerCardSkeleton() {
   return (
-    <div className="bg-white rounded-3xl p-6 flex flex-col items-center shadow-[0_5px_20px_-3px_rgba(0,0,0,0.05)] animate-pulse">
-      <div className="w-14 h-14 rounded-full bg-slate-100 my-1" />
-      <div className="h-4 w-3/4 bg-slate-100 rounded-full my-4" />
-      <div className="w-full border-t border-dashed border-slate-100 my-2" />
-      <div className="h-6 w-24 bg-slate-100 rounded-xl mt-2.5" />
+    <div className="bg-white rounded-2xl p-6 border border-slate-200 animate-pulse">
+      <div className="flex items-start gap-4 mb-4">
+        <div className="w-14 h-14 rounded-xl bg-slate-100 skeleton-shimmer" />
+        <div className="flex-1 space-y-2 pt-1">
+          <div className="h-4 bg-slate-100 rounded w-full skeleton-shimmer" />
+          <div className="h-3 bg-slate-100 rounded w-2/3 skeleton-shimmer" />
+        </div>
+      </div>
+      <div className="h-5 w-24 bg-slate-100 rounded-full mb-3 skeleton-shimmer" />
+      <div className="h-3 bg-slate-100 rounded w-full mb-1.5 skeleton-shimmer" />
+      <div className="h-3 bg-slate-100 rounded w-3/4 skeleton-shimmer" />
+    </div>
+  );
+}
+
+/* ───────────────────────── Hero showcase — country flags of partnered nations ───────────────────────── */
+
+const FLAGS_PER_PAGE = 9;
+
+function CountryFlagCard({ country, delay }: { country: PublicPartnerCountry; delay: number; key?: React.Key }) {
+  const isoCode = getCountryIsoCode(country.value);
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4, delay, ease: 'easeOut' }}
+      title={`${country.label} — ${country.count} đối tác`}
+      className="aspect-[4/3] rounded-2xl border border-slate-200 shadow-sm overflow-hidden hover:shadow-md hover:-translate-y-0.5 transition-all duration-300 cursor-default"
+    >
+      {isoCode ? (
+        <span
+          className={`fi fi-${isoCode.toLowerCase()} fi-cover block`}
+          role="img"
+          aria-label={country.label}
+        />
+      ) : (
+        <span className="w-full h-full bg-slate-100 flex items-center justify-center text-slate-400">
+          <Globe className="w-6 h-6" />
+        </span>
+      )}
+    </motion.div>
+  );
+}
+
+function CountryFlagShowcase({ countries }: { countries: PublicPartnerCountry[] }) {
+  const [pageIndex, setPageIndex] = useState(0);
+  const totalPages = Math.max(1, Math.ceil(countries.length / FLAGS_PER_PAGE));
+  const visible = countries.slice(pageIndex * FLAGS_PER_PAGE, pageIndex * FLAGS_PER_PAGE + FLAGS_PER_PAGE);
+
+  if (countries.length === 0) {
+    return (
+      <div className="grid grid-cols-3 gap-4">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div key={i} className="bg-white rounded-2xl border border-slate-200 p-4 h-[92px] animate-pulse">
+            <div className="h-full w-full bg-slate-100 rounded-lg skeleton-shimmer" />
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="grid grid-cols-3 gap-4">
+        {visible.map((c, i) => (
+          <CountryFlagCard key={c.value} country={c} delay={i * 0.05} />
+        ))}
+      </div>
+      {totalPages > 1 && (
+        <div className="mt-4 flex items-center justify-center gap-3">
+          <button
+            onClick={() => setPageIndex((p) => (p === 0 ? totalPages - 1 : p - 1))}
+            aria-label="Xem quốc gia trước"
+            className="w-9 h-9 rounded-full border border-slate-200 flex items-center justify-center text-slate-500 hover:bg-[#004c91] hover:text-white hover:border-[#004c91] transition-colors"
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+          <span className="text-xs font-semibold text-slate-400">
+            {pageIndex + 1} / {totalPages}
+          </span>
+          <button
+            onClick={() => setPageIndex((p) => (p === totalPages - 1 ? 0 : p + 1))}
+            aria-label="Xem quốc gia tiếp theo"
+            className="w-9 h-9 rounded-full border border-slate-200 flex items-center justify-center text-slate-500 hover:bg-[#004c91] hover:text-white hover:border-[#004c91] transition-colors"
+          >
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -103,12 +204,12 @@ export function PartnersPage() {
   const [searchParams] = useSearchParams();
   const [isVisitorFormOpen, setIsVisitorFormOpen] = useState(false);
 
-  // Search / filter / pagination — all server-driven (GET /api/public/partners).
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [selectedCountry, setSelectedCountry] = useState(ALL_COUNTRIES_LABEL);
+  const [selectedType, setSelectedType] = useState(ALL_TYPES_LABEL);
+  const [sort, setSort] = useState<PublicPartnerSort>('name_asc');
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 12;
 
   const [partners, setPartners] = useState<PublicPartner[]>([]);
   const [totalCount, setTotalCount] = useState(0);
@@ -116,30 +217,36 @@ export function PartnersPage() {
   const [error, setError] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
 
-  // Country filter options — real distinct countries among APPROVED + PUBLIC partners
-  // (GET /public/partners/countries), not inferred from a page of results.
   const [countryOptions, setCountryOptions] = useState<PublicPartnerCountry[]>([]);
-  // Transient notice when GlobeComponent's pin click doesn't match any real partner country —
-  // never silently filters by a bogus value.
-  const [globeNotice, setGlobeNotice] = useState<string | null>(null);
+  const [typeOptions, setTypeOptions] = useState<PublicPartnerType[]>([]);
+
+  // Trust metrics: total partners overall (unfiltered) + total countries.
+  const [totalPartnersOverall, setTotalPartnersOverall] = useState<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const res = await publicPartnersApi.getPublicPartnerCountries();
-        if (!cancelled) setCountryOptions(res);
+        const [countries, types, overall] = await Promise.all([
+          publicPartnersApi.getPublicPartnerCountries(),
+          publicPartnersApi.getPublicPartnerTypes(),
+          publicPartnersApi.getPublicPartners({ page: 1, pageSize: 1 }),
+        ]);
+        if (cancelled) return;
+        setCountryOptions(countries);
+        setTypeOptions(types);
+        setTotalPartnersOverall(overall.totalCount);
       } catch {
-        // Country list failing is non-fatal — dropdown just falls back to "Tất cả quốc gia" only.
-        if (!cancelled) setCountryOptions([]);
+        if (!cancelled) {
+          setCountryOptions([]);
+          setTypeOptions([]);
+        }
       }
     })();
     return () => { cancelled = true; };
   }, []);
 
-  // Deep-link support: a Homepage globe pin can send visitors here as /partners?country=<value>.
-  // Only applied once, after the real country list has loaded, and only if it actually matches —
-  // otherwise the default "Tất cả quốc gia" behavior is unchanged.
+  // Deep-link support: /partners?country=<value>.
   useEffect(() => {
     if (countryOptions.length === 0) return;
     const fromUrl = searchParams.get('country');
@@ -149,16 +256,14 @@ export function PartnersPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [countryOptions]);
 
-  // Debounce the search box (400ms) before it drives a server request.
   useEffect(() => {
     const handle = setTimeout(() => setDebouncedSearch(searchQuery.trim()), 400);
     return () => clearTimeout(handle);
   }, [searchQuery]);
 
-  // Reset to page 1 whenever the filters change.
   useEffect(() => {
     setCurrentPage(1);
-  }, [debouncedSearch, selectedCountry]);
+  }, [debouncedSearch, selectedCountry, selectedType, sort]);
 
   useEffect(() => {
     let cancelled = false;
@@ -169,8 +274,10 @@ export function PartnersPage() {
         const res = await publicPartnersApi.getPublicPartners({
           search: debouncedSearch || undefined,
           country: selectedCountry === ALL_COUNTRIES_LABEL ? undefined : selectedCountry,
+          partnerType: selectedType === ALL_TYPES_LABEL ? undefined : selectedType,
+          sort,
           page: currentPage,
-          pageSize: itemsPerPage,
+          pageSize: PAGE_SIZE,
         });
         if (cancelled) return;
         setPartners(res.items);
@@ -186,457 +293,310 @@ export function PartnersPage() {
       }
     })();
     return () => { cancelled = true; };
-  }, [debouncedSearch, selectedCountry, currentPage, reloadToken]);
+  }, [debouncedSearch, selectedCountry, selectedType, sort, currentPage, reloadToken]);
 
   const countryDropdownOptions = useMemo(
-    () => [{ value: ALL_COUNTRIES_LABEL, label: ALL_COUNTRIES_LABEL, count: totalCount }, ...countryOptions],
-    [countryOptions, totalCount],
+    () => [{ value: ALL_COUNTRIES_LABEL, label: ALL_COUNTRIES_LABEL, count: totalPartnersOverall ?? 0 }, ...countryOptions],
+    [countryOptions, totalPartnersOverall],
   );
-  const totalPages = Math.max(1, Math.ceil(totalCount / itemsPerPage));
-  const hasActiveFilter = debouncedSearch !== '' || selectedCountry !== ALL_COUNTRIES_LABEL;
+  const typeDropdownOptions = useMemo(
+    () => [{ value: ALL_TYPES_LABEL, label: ALL_TYPES_LABEL, count: totalPartnersOverall ?? 0 }, ...typeOptions],
+    [typeOptions, totalPartnersOverall],
+  );
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+  const hasActiveFilter = debouncedSearch !== '' || selectedCountry !== ALL_COUNTRIES_LABEL || selectedType !== ALL_TYPES_LABEL;
 
-  // Auto-dismiss the "no match" globe notice.
-  useEffect(() => {
-    if (!globeNotice) return;
-    const handle = setTimeout(() => setGlobeNotice(null), 5000);
-    return () => clearTimeout(handle);
-  }, [globeNotice]);
-
-  const handleGlobeSelectCountry = (rawCountry: string) => {
-    const matched = findMatchingCountryValue(rawCountry, countryOptions);
-    if (!matched) {
-      setGlobeNotice('Chưa có đối tác công khai tại quốc gia này.');
-      return;
-    }
-    setGlobeNotice(null);
-    setSelectedCountry(matched);
-    setTimeout(() => {
-      const tableElement = document.getElementById('partners-directory');
-      if (tableElement) {
-        tableElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }
-    }, 80);
-  };
+  const topCountryChips = useMemo(() => countryOptions.slice(0, 8), [countryOptions]);
 
   const paginate = (pageNumber: number) => {
     setCurrentPage(pageNumber);
     setTimeout(() => {
-      const tableElement = document.getElementById('partners-directory');
-      if (tableElement) {
-        tableElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }
+      document.getElementById('partners-directory')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }, 40);
   };
 
   const clearFilters = () => {
     setSearchQuery('');
     setSelectedCountry(ALL_COUNTRIES_LABEL);
+    setSelectedType(ALL_TYPES_LABEL);
   };
 
   return (
     <>
-      <div className="pt-24 pb-20 bg-[#f8fafc] min-h-screen overflow-x-clip">
+      <div className="pt-20 pb-16 bg-white">
+        {/* A. Compact Hero — no globe, real partner logos */}
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-
-          {/* Top Hero and Globe Section */}
-          <div className="flex flex-col lg:flex-row gap-12 lg:items-start items-center">
-
-            {/* Left Content */}
-            <div className="w-full lg:w-1/2 flex flex-col items-start relative z-10 lg:pt-10">
-              {/* Tag */}
-              <div className="flex items-center gap-4 mb-6">
-                <div className="h-[2px] w-12 bg-[#f37021]"></div>
-                <span className="text-[#f37021] font-bold tracking-widest uppercase text-xs">
-                  FPT University
-                </span>
-                <div className="h-[2px] w-12 bg-[#f37021]"></div>
+          <div className="min-h-[420px] lg:min-h-[480px] flex flex-col lg:flex-row items-center gap-10 py-12 lg:py-16">
+            {/* Left content */}
+            <motion.div
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, ease: 'easeOut' }}
+              className="w-full lg:w-1/2"
+            >
+              <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-sky-50 text-[#004c91] border border-sky-100 rounded-full text-xs font-bold uppercase tracking-wider mb-5">
+                <Building2 className="w-3.5 h-3.5 text-[#f37021]" />
+                FPT University Partnership Network
               </div>
-
-              {/* Slogan */}
-              <h1 className="text-5xl md:text-6xl lg:text-[76px] font-black leading-[1.1] mb-6">
-                <span className="text-[#004c91] block mb-2 tracking-tight">Kết sức mạnh,</span>
-                <span className="text-[#f37021] block tracking-tight">Nối tầm nhìn</span>
+              <h1 className="text-3xl md:text-4xl lg:text-[42px] font-bold text-slate-900 leading-tight mb-4">
+                Đối tác &amp; Hợp tác quốc tế
               </h1>
-
-              {/* Subtitle */}
-              <p className="text-gray-500 text-[14px] md:text-[15px] font-medium mb-8 max-w-[480px] leading-relaxed">
-                Cộng hưởng giá trị tri thức toàn cầu — Bệ phóng cho những ý tưởng đổi mới và khởi nghiệp thành công.
+              <p className="text-slate-500 text-base leading-relaxed max-w-lg mb-8">
+                Kết nối học thuật, doanh nghiệp và tổ chức toàn cầu trong hệ sinh thái FPT University.
               </p>
-
-              {/* Buttons */}
-              <div className="flex flex-col sm:flex-row gap-4 w-full sm:w-auto">
+              <div className="flex flex-col sm:flex-row gap-3">
                 <button
                   onClick={() => setIsVisitorFormOpen(true)}
-                  className="flex justify-center items-center gap-2 px-8 py-3.5 bg-[#f37021] text-white font-bold rounded-lg shadow-[0_8px_25px_rgba(243,112,33,0.35)] hover:-translate-y-1 hover:shadow-[0_12px_30px_rgba(243,112,33,0.45)] transition-all duration-300 group text-[15px] cursor-pointer"
+                  className="inline-flex justify-center items-center gap-2 px-6 py-3 bg-[#f37021] text-white font-bold rounded-xl hover:bg-orange-600 transition-colors text-sm"
                 >
                   Đăng ký ghé thăm
-                  <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                  <ArrowRight className="w-4 h-4" />
                 </button>
-
                 <button
                   onClick={() => navigate('/visit-fptu')}
-                  className="flex justify-center items-center px-8 py-3.5 bg-white text-gray-600 font-bold border-[1.5px] border-gray-200 rounded-lg hover:text-white hover:bg-[#004c91] hover:border-[#004c91] hover:shadow-lg transition-all duration-300 text-[15px] cursor-pointer"
+                  className="inline-flex justify-center items-center px-6 py-3 bg-white text-slate-600 font-bold border border-slate-200 rounded-xl hover:border-[#004c91] hover:text-[#004c91] transition-colors text-sm"
                 >
-                  Khám phá trực tuyến
+                  Khám phá Visit FPTU
                 </button>
               </div>
+            </motion.div>
 
-              {/* Statistics */}
-              <div className="w-full mt-12 pt-8 border-t border-gray-200/80">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-center divide-y md:divide-y-0 md:divide-x divide-gray-200/80">
-                  {/* Stat 1 */}
-                  <div className="flex flex-col items-center px-2 py-4 md:py-0">
-                    <span className="text-[40px] leading-tight font-black text-[#f37021] mb-2 tracking-tight">180+</span>
-                    <span className="text-gray-500 text-sm leading-relaxed max-w-[200px]">
-                      <strong>Đối tác chiến lược:</strong> Mạng lưới các tập đoàn lớn (Nvidia, Microsoft, AWS...) khẳng định uy tín toàn cầu.
-                    </span>
-                  </div>
-                  {/* Stat 2 */}
-                  <div className="flex flex-col items-center px-2 py-4 md:py-0">
-                    <span className="text-[40px] leading-tight font-black text-[#f37021] mb-2 tracking-tight">200+</span>
-                    <span className="text-gray-500 text-sm leading-relaxed max-w-[200px]">
-                      <strong>Tổ chức giáo dục:</strong> Mở rộng hợp tác, mang đến môi trường học thuật và cơ hội trao đổi quốc tế đa dạng.
-                    </span>
-                  </div>
-                  {/* Stat 3 */}
-                  <div className="flex flex-col items-center px-2 py-4 md:py-0">
-                    <span className="text-[40px] leading-tight font-black text-[#f37021] mb-2 tracking-tight">40+</span>
-                    <span className="text-gray-500 text-sm leading-relaxed max-w-[200px]">
-                      <strong>Quốc gia & Vùng lãnh thổ:</strong> Dấu ấn toàn cầu, đón hơn 2.000 sinh viên quốc tế đến Việt Nam mỗi năm.
-                    </span>
-                  </div>
-                </div>
-              </div>
+            {/* Right: flag showcase of partnered countries (real data, no globe) */}
+            <div className="w-full lg:w-1/2">
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3 text-center lg:text-left">
+                Đối tác đến từ
+              </p>
+              <CountryFlagShowcase countries={countryOptions} />
             </div>
-
-            {/* Right Globe */}
-            <div className="w-full lg:w-1/2 h-[450px] sm:h-[550px] lg:h-[700px] flex items-start justify-center relative mt-10 lg:mt-0 lg:-mr-32">
-              {/* Soft glow behind the globe */}
-              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] h-[400px] bg-sky-200/30 blur-[100px] rounded-full z-0"></div>
-              <GlobeComponent onSelectCountry={handleGlobeSelectCountry} />
-              {globeNotice && (
-                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 bg-slate-900/90 text-white text-xs font-medium px-4 py-2.5 rounded-xl shadow-lg backdrop-blur-sm whitespace-nowrap">
-                  {globeNotice}
-                </div>
-              )}
-            </div>
-
           </div>
 
-          {/* Interactive Partners Directory Section */}
-          <div id="partners-directory" className="mt-20 pt-16 border-t border-slate-200 relative">
-            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[40%] h-[150px] bg-gradient-to-b from-[#004c91]/5 to-transparent blur-[80px] rounded-full pointer-events-none"></div>
-
-            {/* Header of Section */}
-            <div className="text-center max-w-3xl mx-auto mb-12">
-              <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-sky-50 text-[#004c91] border border-sky-100 rounded-full text-xs font-bold uppercase tracking-wider mb-4">
-                <Sparkles className="w-4 h-4 text-[#f37021]" />
-                Mạng Lưới Quốc Tế
+          {/* B. Trust metrics — real numbers only */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pb-12 border-b border-slate-100">
+            <div className="text-center">
+              <div className="text-3xl font-black text-[#004c91]">{totalPartnersOverall ?? '–'}</div>
+              <div className="text-slate-500 text-xs font-semibold uppercase tracking-wide mt-1">Tổng đối tác công khai</div>
+            </div>
+            <div className="text-center">
+              <div className="text-3xl font-black text-[#004c91]">{countryOptions.length || '–'}</div>
+              <div className="text-slate-500 text-xs font-semibold uppercase tracking-wide mt-1">Quốc gia</div>
+            </div>
+            {typeOptions.length > 0 && (
+              <div className="text-center">
+                <div className="text-3xl font-black text-[#004c91]">{typeOptions.length}</div>
+                <div className="text-slate-500 text-xs font-semibold uppercase tracking-wide mt-1">Loại hình đối tác</div>
               </div>
-              <h2 className="text-3xl md:text-4xl font-black text-slate-800 tracking-tight leading-tight">
-                Danh sách <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#004c91] to-[#f37021]">đối tác chiến lược & liên kết</span>
-              </h2>
-              <p className="text-slate-500 text-sm md:text-base mt-2">
-                Hỗ trợ tra cứu nhanh chóng cơ sở liên kết, thông tin lĩnh vực hợp tác học thuật của trường Đại học FPT với các tổ chức hàng đầu thế giới.
-              </p>
+            )}
+          </div>
+        </div>
+
+        {/* Directory section */}
+        <div id="partners-directory" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-12">
+          {/* C. Filter bar */}
+          <div className="bg-white border border-slate-200 rounded-2xl p-5 md:p-6 mb-6">
+            <div className="flex flex-col lg:flex-row gap-4">
+              <div className="relative flex-1">
+                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Tìm tên đối tác, quốc gia, mô tả..."
+                  className="w-full h-11 pl-10 pr-4 rounded-xl border border-slate-200 bg-white text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#004c91]/20 focus:border-[#004c91] transition-colors"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 lg:flex gap-3">
+                <div className="relative">
+                  <Globe className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                  <select
+                    value={selectedCountry}
+                    onChange={(e) => setSelectedCountry(e.target.value)}
+                    className="w-full h-11 pl-9 pr-3 rounded-xl border border-slate-200 bg-white text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#004c91]/20 focus:border-[#004c91] transition-colors appearance-none"
+                  >
+                    {countryDropdownOptions.map((c) => (
+                      <option key={c.value} value={c.value}>
+                        {c.value === ALL_COUNTRIES_LABEL ? c.label : `${c.label} (${c.count})`}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {typeOptions.length > 0 && (
+                  <select
+                    value={selectedType}
+                    onChange={(e) => setSelectedType(e.target.value)}
+                    className="h-11 px-3 rounded-xl border border-slate-200 bg-white text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#004c91]/20 focus:border-[#004c91] transition-colors"
+                  >
+                    {typeDropdownOptions.map((t) => (
+                      <option key={t.value} value={t.value}>
+                        {t.value === ALL_TYPES_LABEL ? t.label : `${t.label} (${t.count})`}
+                      </option>
+                    ))}
+                  </select>
+                )}
+
+                <select
+                  value={sort}
+                  onChange={(e) => setSort(e.target.value as PublicPartnerSort)}
+                  className="h-11 px-3 rounded-xl border border-slate-200 bg-white text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#004c91]/20 focus:border-[#004c91] transition-colors"
+                >
+                  {SORT_OPTIONS.map((s) => (
+                    <option key={s.value} value={s.value}>{s.label}</option>
+                  ))}
+                </select>
+              </div>
             </div>
 
-            {/* SEARCH AND FILTERS GRID PANEL */}
-            <div className="bg-white border border-slate-100 rounded-2xl shadow-lg p-6 md:p-8 mb-8 relative z-20">
-              <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-end">
+            {hasActiveFilter && (
+              <div className="mt-4 flex items-center justify-between flex-wrap gap-3 bg-orange-50/60 border border-orange-100 rounded-xl px-4 py-3">
+                <span className="text-xs font-semibold text-slate-700">
+                  Tìm thấy <span className="font-bold text-[#f37021]">{totalCount}</span> đối tác phù hợp.
+                </span>
+                <button
+                  onClick={clearFilters}
+                  className="text-xs font-bold text-[#004c91] hover:text-[#f37021] transition-colors"
+                >
+                  Xóa bộ lọc
+                </button>
+              </div>
+            )}
+          </div>
 
-                {/* Search Bar */}
-                <div className="md:col-span-8 flex flex-col gap-2">
-                  <label htmlFor="partner-name-search" className="text-xs font-bold text-slate-700 uppercase tracking-widest pl-1">
-                    Tên đối tác
-                  </label>
-                  <div className="relative group/search">
-                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
-                      <Search className="w-5 h-5 text-slate-400 group-focus-within/search:text-[#f37021] transition-colors" />
+          {/* D. Country / region chips */}
+          {topCountryChips.length > 0 && (
+            <div className="mb-8">
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3">Khám phá theo quốc gia</p>
+              <div className="flex gap-2 overflow-x-auto no-scrollbar">
+                {topCountryChips.map((c) => (
+                  <button
+                    key={c.value}
+                    onClick={() => setSelectedCountry(c.value === selectedCountry ? ALL_COUNTRIES_LABEL : c.value)}
+                    className={`relative shrink-0 px-4 py-2 rounded-full text-sm font-semibold whitespace-nowrap transition-colors border ${
+                      selectedCountry === c.value
+                        ? 'bg-[#004c91] text-white border-[#004c91]'
+                        : 'bg-white text-slate-600 border-slate-200 hover:border-[#004c91]/40'
+                    }`}
+                  >
+                    {c.label} ({c.count})
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* E. Partner grid */}
+          <div className="mb-12">
+            {error ? (
+              <div className="bg-white rounded-2xl border border-red-100 py-16 px-6 text-center">
+                <AlertTriangle className="w-10 h-10 text-red-400 mx-auto mb-4" />
+                <h3 className="text-base font-bold text-slate-700 mb-1">{error}</h3>
+                <button
+                  onClick={() => setReloadToken((t) => t + 1)}
+                  className="mt-4 inline-flex items-center gap-2 px-5 py-2.5 bg-[#004c91] text-white text-sm font-bold rounded-xl hover:bg-[#003b70] transition-colors"
+                >
+                  <RefreshCw className="w-4 h-4" /> Thử lại
+                </button>
+              </div>
+            ) : loading ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                {Array.from({ length: PAGE_SIZE }).map((_, i) => <PartnerCardSkeleton key={i} />)}
+              </div>
+            ) : (
+              <AnimatePresence mode="popLayout">
+                {partners.length > 0 ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {partners.map((partner, index) => (
+                      <PublicPartnerCard
+                        key={partner.partnerId}
+                        partner={partner}
+                        index={index}
+                        onClick={() => navigate(`/partners/${partner.publicSlug || partner.partnerId}`)}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="bg-white rounded-2xl border border-slate-200 py-16 px-6 text-center">
+                    <div className="w-16 h-16 rounded-full bg-slate-50 flex items-center justify-center mx-auto mb-4">
+                      <RefreshCw className="w-8 h-8 text-slate-400" />
                     </div>
-                    <input
-                      id="partner-name-search"
-                      type="text"
-                      placeholder="Nhập tên đối tác (VD: Nvidia, Swinburne, HELP...)"
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      className="w-full pl-11 pr-10 py-3.5 bg-slate-50/50 hover:bg-slate-50 border border-slate-200 hover:border-slate-300 focus:border-[#f37021] focus:bg-white text-slate-800 text-sm font-medium rounded-xl outline-none transition-all focus:ring-4 focus:ring-orange-100 shadow-inner"
-                    />
-                    {searchQuery && (
+                    <h3 className="text-base font-bold text-slate-700 mb-1">
+                      {hasActiveFilter ? 'Không tìm thấy đối tác phù hợp' : 'Chưa có đối tác công khai'}
+                    </h3>
+                    <p className="text-sm text-slate-400 max-w-sm mx-auto mb-4">
+                      {hasActiveFilter
+                        ? 'Thử điều chỉnh từ khóa hoặc bộ lọc.'
+                        : 'Danh mục đối tác công khai hiện chưa có dữ liệu. Vui lòng quay lại sau.'}
+                    </p>
+                    {hasActiveFilter && (
                       <button
-                        onClick={() => setSearchQuery('')}
-                        className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 focus:outline-none text-xs font-bold cursor-pointer"
+                        onClick={clearFilters}
+                        className="px-5 py-2.5 bg-[#004c91] text-white text-sm font-bold rounded-xl hover:bg-[#003b70] transition-colors"
                       >
-                        Xóa
+                        Xem tất cả đối tác
                       </button>
                     )}
                   </div>
-                </div>
+                )}
+              </AnimatePresence>
+            )}
 
-                {/* Dropdownlist for country filter */}
-                <div className="md:col-span-4 flex flex-col gap-2">
-                  <label htmlFor="country-filter" className="text-xs font-bold text-slate-700 uppercase tracking-widest pl-1">
-                    Quốc gia
-                  </label>
-                  <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
-                      <Globe className="w-5 h-5 text-slate-400" />
-                    </div>
-                    <select
-                      id="country-filter"
-                      value={selectedCountry}
-                      onChange={(e) => setSelectedCountry(e.target.value)}
-                      className="w-full pl-11 pr-10 py-3.5 bg-slate-50/50 border border-slate-200 hover:border-slate-300 focus:border-[#f37021] focus:bg-white text-slate-800 text-sm font-semibold rounded-xl outline-none transition-all cursor-pointer focus:ring-4 focus:ring-orange-100 appearance-none shadow-inner"
-                    >
-                      {countryDropdownOptions.map((country) => (
-                        <option key={country.value} value={country.value} className="font-medium text-slate-800 py-2">
-                          {country.value === ALL_COUNTRIES_LABEL ? country.label : `${country.label} (${country.count})`}
-                        </option>
-                      ))}
-                    </select>
-                    {/* Visual caret down decoration */}
-                    <div className="absolute inset-y-0 right-0 pr-4 flex items-center pointer-events-none text-slate-400">
-                      <ChevronRight className="w-4 h-4 rotate-90" />
-                    </div>
-                  </div>
-                </div>
-
-              </div>
-
-              {/* Filter metrics status */}
-              {hasActiveFilter && (
-                <div className="mt-5 flex items-center justify-between flex-wrap gap-3 bg-orange-50/40 border border-orange-100/50 rounded-xl p-3.5">
-                  <div className="flex items-center gap-2 text-xs font-medium text-slate-700">
-                    <Layers className="w-4 h-4 text-[#f37021]" />
-                    Tìm thấy <span className="font-bold text-[#f37021]">{totalCount}</span> kết quả phù hợp cho bộ lọc hiện tại.
-                  </div>
+            {/* F. Pagination */}
+            {!loading && !error && partners.length > 0 && totalPages > 1 && (
+              <div className="mt-10 flex items-center justify-center gap-1.5">
+                <button
+                  onClick={() => currentPage > 1 && paginate(currentPage - 1)}
+                  disabled={currentPage === 1}
+                  className="w-9 h-9 rounded-xl border border-slate-200 flex items-center justify-center text-slate-600 hover:bg-[#004c91] hover:text-white hover:border-[#004c91] disabled:opacity-40 disabled:hover:bg-white disabled:hover:text-slate-600 transition-colors"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
                   <button
-                    onClick={clearFilters}
-                    className="flex items-center gap-1.5 text-xs font-bold text-[#004c91] hover:text-[#f37021] transition-colors focus:outline-none"
+                    key={page}
+                    onClick={() => paginate(page)}
+                    className={`w-9 h-9 rounded-xl text-sm font-bold transition-colors border ${
+                      page === currentPage
+                        ? 'bg-[#f37021] border-[#f37021] text-white'
+                        : 'bg-white border-slate-200 text-slate-600 hover:border-[#004c91]/40'
+                    }`}
                   >
-                    <FilterX className="w-4 h-4" /> Làm mới bộ lọc
+                    {page}
                   </button>
-                </div>
-              )}
-            </div>
-
-            {/* MAIN PARTNER DIRECTORY / GRID BENTO LAYOUT */}
-            <div className="mb-12 relative z-10">
-              {error ? (
-                <div className="bg-white rounded-2xl border border-red-100 shadow-xl py-16 px-6 text-center">
-                  <div className="max-w-md mx-auto flex flex-col items-center">
-                    <AlertTriangle className="w-10 h-10 text-red-400 mb-4" />
-                    <h3 className="text-base font-bold text-slate-700 mb-1">{error}</h3>
-                    <button
-                      onClick={() => setReloadToken((t) => t + 1)}
-                      className="mt-4 px-5 py-2.5 bg-[#004c91] hover:bg-[#f37021] text-white text-xs font-bold rounded-lg transition-all shadow-md active:scale-95 cursor-pointer"
-                    >
-                      Thử lại
-                    </button>
-                  </div>
-                </div>
-              ) : loading ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-                  {Array.from({ length: itemsPerPage }).map((_, i) => <PartnerCardSkeleton key={i} />)}
-                </div>
-              ) : (
-                <AnimatePresence mode="popLayout">
-                  {partners.length > 0 ? (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-                      {partners.map((partner, index) => (
-                        <PublicPartnerCard
-                          key={partner.partnerId}
-                          partner={partner}
-                          index={index}
-                          onClick={() => navigate(`/partners/${partner.partnerId}`)}
-                        />
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="bg-white rounded-2xl border border-slate-100 shadow-xl py-16 px-6 text-center">
-                      <div className="max-w-md mx-auto flex flex-col items-center">
-                        <div className="w-16 h-16 rounded-full bg-slate-50 flex items-center justify-center text-slate-355 mb-4">
-                          <RefreshCw className="w-8 h-8" />
-                        </div>
-                        <h3 className="text-base font-bold text-slate-700 mb-1">
-                          {hasActiveFilter ? 'Không tìm thấy đối tác liên kết' : 'Chưa có đối tác công khai'}
-                        </h3>
-                        <p className="text-xs text-slate-400 max-w-sm mb-4">
-                          {hasActiveFilter
-                            ? `Không tìm thấy kết quả phù hợp với từ khóa "${debouncedSearch}" trong danh mục quốc gia "${selectedCountry}".`
-                            : 'Danh mục đối tác công khai hiện chưa có dữ liệu. Vui lòng quay lại sau.'}
-                        </p>
-                        {hasActiveFilter && (
-                          <button
-                            onClick={clearFilters}
-                            className="px-5 py-2.5 bg-[#004c91] hover:bg-[#f37021] text-white text-xs font-bold rounded-lg transition-all shadow-md active:scale-95 cursor-pointer"
-                          >
-                            Thử lại tất cả đối tác
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </AnimatePresence>
-              )}
-
-              {/* PAGINATION PANEL FOR MODERN CARD GRID */}
-              {!loading && !error && partners.length > 0 && totalPages >= 1 && (
-                <div className="mt-12 flex justify-center w-full">
-
-                  {/* Navigation key buttons */}
-                  <div className="flex items-center gap-1.5 justify-center">
-
-                    {/* Previous Button */}
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.currentTarget.blur();
-                        if (currentPage > 1) {
-                          paginate(currentPage - 1);
-                        }
-                      }}
-                      disabled={currentPage === 1}
-                      className={`w-9 h-9 rounded-xl border flex items-center justify-center transition-all ${
-                        currentPage === 1
-                          ? 'bg-slate-50 border-slate-100 text-slate-300 cursor-not-allowed'
-                          : 'bg-white border-slate-200 text-slate-600 hover:bg-[#004c91] hover:text-white hover:border-[#004c91] cursor-pointer shadow-sm hover:shadow'
-                      }`}
-                      title="Trang trước"
-                    >
-                      <ChevronLeft className="w-4 h-4" />
-                    </button>
-
-                    {/* Numeric buttons generator */}
-                    {Array.from({ length: totalPages }).map((_, i) => {
-                      const pageNum = i + 1;
-                      const isActive = pageNum === currentPage;
-
-                      return (
-                        <button
-                          key={pageNum}
-                          type="button"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.currentTarget.blur();
-                            paginate(pageNum);
-                          }}
-                          className={`w-9 h-9 rounded-xl font-bold text-xs transition-all flex items-center justify-center border cursor-pointer shadow-sm hover:shadow ${
-                            isActive
-                              ? 'bg-[#f37021] border-[#f37021] text-white shadow-md shadow-orange-500/10 scale-105'
-                              : 'bg-white border-slate-200 text-slate-600 hover:bg-[#004c91]/10 hover:border-[#004c91]/20 hover:text-[#004c91]'
-                          }`}
-                        >
-                          {pageNum}
-                        </button>
-                      );
-                    })}
-
-                    {/* Next Button */}
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.currentTarget.blur();
-                        if (currentPage < totalPages) {
-                          paginate(currentPage + 1);
-                        }
-                      }}
-                      disabled={currentPage === totalPages}
-                      className={`w-9 h-9 rounded-xl border flex items-center justify-center transition-all ${
-                        currentPage === totalPages
-                          ? 'bg-slate-50 border-slate-100 text-slate-300 cursor-not-allowed'
-                          : 'bg-white border-slate-200 text-slate-600 hover:bg-[#004c91] hover:text-white hover:border-[#004c91] cursor-pointer shadow-sm hover:shadow'
-                      }`}
-                      title="Trang tiếp"
-                    >
-                      <ChevronRight className="w-4 h-4" />
-                    </button>
-
-                  </div>
-
-                </div>
-              )}
-            </div>
-
-            {/* Quick Strategic Footer Call to Action Banner */}
-            <div className="relative rounded-3xl overflow-hidden bg-gradient-to-br from-sky-50/50 via-white to-orange-50/30 p-8 md:p-12 shadow-[0_20px_50px_-12px_rgba(0,76,145,0.08)] hover:shadow-[0_30px_70px_-10px_rgba(243,112,33,0.15)] border border-slate-100 hover:border-orange-200/30 hover:-translate-y-1.5 transition-all duration-500 group">
-
-              {/* Dual custom gradient washes (blue left, orange right) */}
-              <div className="absolute top-0 left-0 bottom-0 w-1/2 bg-gradient-to-r from-[#004c91]/5 via-sky-500/1 to-transparent pointer-events-none rounded-l-3xl transition-opacity duration-700" />
-              <div className="absolute top-0 right-0 bottom-0 w-1/2 bg-gradient-to-l from-[#f37021]/8 via-orange-400/2 to-transparent pointer-events-none rounded-r-3xl transition-opacity duration-700" />
-
-              {/* Elevated animated glowing orbs - Orange on right, Blue on left */}
-              <div className="absolute -top-[20%] -right-[10%] w-[420px] h-[420px] bg-gradient-to-br from-[#f37021]/15 to-orange-300/5 rounded-full blur-[90px] pointer-events-none group-hover:scale-115 transition-transform duration-1000" />
-              <div className="absolute -bottom-[20%] -left-[10%] w-[380px] h-[380px] bg-gradient-to-tr from-[#004c91]/15 to-sky-400/5 rounded-full blur-[90px] pointer-events-none group-hover:scale-115 transition-transform duration-1000" />
-
-              <div className="relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
-                {/* Left side info column */}
-                <div className="lg:col-span-7 space-y-5">
-                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#004c91]/5 border border-[#004c91]/10 text-[#004c91] text-xs font-black uppercase tracking-wider">
-                    <Globe className="w-3.5 h-3.5 text-[#f37021] animate-spin" style={{ animationDuration: '20s' }} />
-                    <span>Mạng Lưới Toàn Cầu</span>
-                  </div>
-
-                  <h3 className="text-3xl md:text-4xl font-black tracking-tight leading-tight">
-                    <span className="text-[#004c91]">Bạn mong muốn cùng xây dựng</span> <br className="hidden sm:inline" />
-                    <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#004c91] to-[#f37021] font-extrabold">
-                      tương lai giáo dục?
-                    </span>
-                  </h3>
-
-                  <p className="text-slate-600 text-[15px] font-medium leading-relaxed max-w-xl">
-                    Đại học FPT liên tục đồng hành cùng đối tác chiến lược quốc tế, kiến tạo môi trường học tập không giới hạn cho sinh viên toàn cầu. Đăng ký để thảo luận chương trình liên kết đào tạo, chuyển giao học thuật ngay hôm nay.
-                  </p>
-
-                  {/* Trust markers */}
-                  <div className="pt-2 flex flex-wrap gap-5 text-xs text-slate-500 font-bold">
-                    <div className="flex items-center gap-2">
-                      <span className="w-4 h-4 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center font-black">✓</span>
-                      Hỗ trợ 24/7
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="w-4 h-4 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center font-black">✓</span>
-                      Quy trình tinh gọn
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="w-4 h-4 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center font-black">✓</span>
-                      Hơn 40 quốc gia
-                    </div>
-                  </div>
-                </div>
-
-                {/* Right side contact CTA & stats */}
-                <div className="lg:col-span-5 flex flex-col justify-center items-center lg:items-end gap-6">
-                  {/* Micro dashboard layout inside cards */}
-                  <div className="grid grid-cols-2 gap-4 w-full max-w-sm">
-                    <div className="bg-white/70 backdrop-blur-sm p-4 rounded-2xl border border-slate-100 shadow-sm text-center">
-                      <div className="text-2xl font-black text-[#004c91]">40+</div>
-                      <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Quốc Gia</div>
-                    </div>
-                    <div className="bg-white/70 backdrop-blur-sm p-4 rounded-2xl border border-slate-100 shadow-sm text-center">
-                      <div className="text-2xl font-black text-[#f37021]">500+</div>
-                      <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Đối Tác Quốc Tế</div>
-                    </div>
-                  </div>
-
-                  {/* Main Call to Action button */}
-                  <div className="w-full max-w-sm text-center lg:text-right">
-                    <button
-                      onClick={() => setIsVisitorFormOpen(true)}
-                      className="w-full px-6 py-4 bg-gradient-to-r from-[#004c91] to-[#0461b5] hover:from-[#f37021] hover:to-orange-600 font-extrabold text-sm rounded-2xl text-center text-white shadow-lg shadow-[#004c91]/25 hover:shadow-orange-500/25 transition-all duration-300 flex items-center justify-center gap-2 hover:-translate-y-1 active:translate-y-0 cursor-pointer"
-                    >
-                      <span>Gửi yêu cầu hợp tác</span>
-                      <ArrowUpRight className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
+                ))}
+                <button
+                  onClick={() => currentPage < totalPages && paginate(currentPage + 1)}
+                  disabled={currentPage === totalPages}
+                  className="w-9 h-9 rounded-xl border border-slate-200 flex items-center justify-center text-slate-600 hover:bg-[#004c91] hover:text-white hover:border-[#004c91] disabled:opacity-40 disabled:hover:bg-white disabled:hover:text-slate-600 transition-colors"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
               </div>
-            </div>
-
+            )}
           </div>
 
+          {/* G. Final CTA — soft gradient */}
+          <div className="rounded-2xl bg-gradient-to-r from-sky-50 to-orange-50 border border-slate-100 p-8 md:p-10 text-center">
+            <h3 className="text-xl md:text-2xl font-bold text-slate-900 mb-2">
+              Bạn muốn kết nối với FPT University?
+            </h3>
+            <p className="text-slate-500 text-sm md:text-base max-w-xl mx-auto mb-6">
+              Cùng chúng tôi mở rộng cơ hội hợp tác học thuật, trao đổi sinh viên và tiếp cận hệ sinh thái giáo dục quốc tế.
+            </p>
+            <div className="flex flex-col sm:flex-row gap-3 justify-center">
+              <button
+                onClick={() => setIsVisitorFormOpen(true)}
+                className="inline-flex justify-center items-center gap-2 px-6 py-3 bg-[#f37021] text-white font-bold rounded-xl hover:bg-orange-600 transition-colors text-sm"
+              >
+                Đăng ký ghé thăm <ArrowRight className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => document.querySelector('footer')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                className="inline-flex justify-center items-center gap-2 px-6 py-3 bg-white text-slate-600 font-bold border border-slate-200 rounded-xl hover:border-[#004c91] hover:text-[#004c91] transition-colors text-sm"
+              >
+                <Mail className="w-4 h-4" /> Liên hệ Phòng HTQT
+              </button>
+            </div>
+          </div>
         </div>
       </div>
       <VisitingFormPopup isOpen={isVisitorFormOpen} onClose={() => setIsVisitorFormOpen(false)} />

@@ -10,7 +10,7 @@ import { motion } from 'motion/react';
 import { GraduationCap, Globe2, Rocket, Building2 } from 'lucide-react';
 
 const HIGHLIGHTS = [
-  { icon: Building2, value: '5', label: 'Cơ sở trên toàn quốc', bar: 'bg-fpt-orange' },
+  { icon: Building2, value: '5', label: 'Khám phá 5 cơ sở trên toàn quốc', bar: 'bg-fpt-orange' },
   { icon: Globe2, value: '40+', label: 'Quốc gia đối tác', bar: 'bg-fpt-navy' },
   { icon: Rocket, value: '100%', label: 'Định hướng thực chiến', bar: 'bg-emerald-500' },
 ];
@@ -63,15 +63,15 @@ export function AboutFptuSection() {
                     whileInView={{ opacity: 1, x: 0 }}
                     viewport={{ once: true }}
                     transition={{ duration: 0.45, delay: 0.1 + idx * 0.08 }}
-                    className="flex items-center gap-5 bg-slate-50 border border-slate-200 rounded-2xl px-6 py-5 hover:border-fpt-orange/30 hover:bg-orange-50/20 transition-colors"
+                    className="flex items-center gap-5 bg-slate-50 border border-slate-200 rounded-2xl px-6 py-6 hover:border-fpt-orange/30 hover:bg-orange-50/20 transition-colors"
                   >
-                    <span className={`w-1.5 h-10 rounded-full flex-shrink-0 ${item.bar}`} />
-                    <div className="w-11 h-11 rounded-xl bg-white shadow-sm flex items-center justify-center flex-shrink-0">
-                      <Icon className="w-5 h-5 text-fpt-navy" />
+                    <span className={`w-1.5 h-12 rounded-full flex-shrink-0 ${item.bar}`} />
+                    <div className="w-14 h-14 rounded-xl bg-white shadow-sm flex items-center justify-center flex-shrink-0">
+                      <Icon className="w-6 h-6 text-fpt-navy" />
                     </div>
-                    <div className="flex items-baseline gap-3">
-                      <p className="text-2xl font-black text-fpt-navy leading-none">{item.value}</p>
-                      <p className="text-sm text-slate-500 font-medium">{item.label}</p>
+                    <div className="flex items-baseline gap-3 flex-wrap">
+                      <p className="text-4xl font-black text-fpt-navy leading-none">{item.value}</p>
+                      <p className="text-base text-slate-600 font-semibold">{item.label}</p>
                     </div>
                   </motion.div>
                 );

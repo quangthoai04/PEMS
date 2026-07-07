@@ -22,9 +22,13 @@ export interface PublicPartnerListResponse {
   pageSize: number;
 }
 
+export type PublicPartnerSort = 'name_asc' | 'newest' | 'country';
+
 export interface PublicPartnerListParams {
   search?: string;
   country?: string;
+  partnerType?: string;
+  sort?: PublicPartnerSort;
   page?: number;
   pageSize?: number;
 }
@@ -32,6 +36,14 @@ export interface PublicPartnerListParams {
 /** One distinct country among APPROVED + PUBLIC partners (GET /public/partners/countries). */
 export interface PublicPartnerCountry {
   /** Exact `partners.country` value — pass this straight back as the list filter's `country`. */
+  value: string;
+  label: string;
+  count: number;
+}
+
+/** One distinct partner_type among APPROVED + PUBLIC partners (GET /public/partners/types). */
+export interface PublicPartnerType {
+  /** Exact `partners.partner_type` enum value — pass this straight back as the list filter's `partnerType`. */
   value: string;
   label: string;
   count: number;

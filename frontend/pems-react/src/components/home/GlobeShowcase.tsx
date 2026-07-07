@@ -9,8 +9,10 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Globe from 'react-globe.gl';
 import * as THREE from 'three';
+import 'flag-icons/css/flag-icons.min.css';
 import { publicPartnersApi } from '../../features/public-partners/api/publicPartnersApi';
 import { resolveCountryCoordinates } from '../../shared/constants/countryCoordinates';
+import { getCountryIsoCode } from '../../features/public-partners/utils/countryFlag';
 import countriesGeoJson from '../../assets/ne_110m_admin_0_countries.geojson?url';
 
 const VIETNAM_HUB = { lat: 21.0285, lng: 105.8542, name: 'FPT University' };
@@ -25,58 +27,17 @@ async function loadCountriesGeoJson(): Promise<{ features: unknown[] }> {
   return res.json();
 }
 
-// 3 màu luân phiên cho hiệu ứng dây nối chạy qua các điểm ghim.
-const ARC_COLORS = ['#16a34a', '#004c91', '#f37021']; // xanh lá, xanh dương, cam
-
 interface GlobePoint {
   lat: number;
   lng: number;
   name: string;
   countryValue: string | null;
+  /** ISO-3166 alpha-2 code, for the flag icon shown in the hover tooltip. Null when unrecognized. */
+  isoCode: string | null;
   isHub: boolean;
   size: number;
   color: string;
   count?: number;
-}
-
-interface GlobeArc {
-  startLat: number;
-  startLng: number;
-  endLat: number;
-  endLng: number;
-  color: string;
-}
-
-/** Nối hub Việt Nam tới từng quốc gia đối tác, và nối các quốc gia đối tác liền kề với nhau
- *  thành một vòng — tạo cảm giác "mạng lưới" thay vì chỉ toả tia từ 1 điểm. */
-function buildArcs(points: GlobePoint[]): GlobeArc[] {
-  const hub = points.find((p) => p.isHub);
-  const partners = points.filter((p) => !p.isHub);
-  if (!hub || partners.length === 0) return [];
-
-  const arcs: GlobeArc[] = partners.map((p, idx) => ({
-    startLat: hub.lat,
-    startLng: hub.lng,
-    endLat: p.lat,
-    endLng: p.lng,
-    color: ARC_COLORS[idx % ARC_COLORS.length],
-  }));
-
-  // Nối vòng giữa các quốc gia đối tác liền kề (bỏ qua khi chỉ có 1 quốc gia).
-  if (partners.length > 1) {
-    partners.forEach((p, idx) => {
-      const next = partners[(idx + 1) % partners.length];
-      arcs.push({
-        startLat: p.lat,
-        startLng: p.lng,
-        endLat: next.lat,
-        endLng: next.lng,
-        color: ARC_COLORS[(idx + 1) % ARC_COLORS.length],
-      });
-    });
-  }
-
-  return arcs;
 }
 
 interface GlobeRing {
@@ -109,12 +70,12 @@ export default function GlobeShowcase() {
     lng: VIETNAM_HUB.lng,
     name: VIETNAM_HUB.name,
     countryValue: null,
+    isoCode: 'vn',
     isHub: true,
     size: 1.6,
     color: '#ff5a00',
   }]);
 
-  const arcs = useMemo(() => buildArcs(points), [points]);
   const rings = useMemo(() => buildRings(points), [points]);
 
   useEffect(() => {
@@ -137,6 +98,7 @@ export default function GlobeShowcase() {
               lng: coord.lng,
               name: c.label,
               countryValue: c.value,
+              isoCode: getCountryIsoCode(c.label)?.toLowerCase() ?? null,
               isHub: false,
               size: 1.1,
               color: '#f37021',
@@ -174,16 +136,18 @@ export default function GlobeShowcase() {
   }, []);
 
   useEffect(() => {
-    if (globeRef.current) {
-      globeRef.current.pointOfView({ lat: 15, lng: 100, altitude: 2.3 }, 0);
-      const controls = globeRef.current.controls();
-      if (controls) {
-        controls.autoRotate = true;
-        controls.autoRotateSpeed = 0.5;
-        controls.enableZoom = false;
-      }
+    // Only set the initial camera + autoRotate once dimensions are known — re-running this on
+    // every `countries` (geojson) load was resetting the camera/controls redundantly.
+    if (dimensions.width === 0 || !globeRef.current) return;
+    globeRef.current.pointOfView({ lat: 15, lng: 100, altitude: 2.3 }, 0);
+    const controls = globeRef.current.controls();
+    if (controls) {
+      controls.autoRotate = true;
+      controls.autoRotateSpeed = 0.2;
+      controls.enableZoom = false;
     }
-  }, [dimensions.width, countries]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dimensions.width]);
 
   return (
     <div ref={containerRef} className="w-full h-full relative cursor-grab active:cursor-grabbing">
@@ -238,14 +202,6 @@ export default function GlobeShowcase() {
             showAtmosphere={true}
             atmosphereColor="#dbeafe"
             atmosphereAltitude={0.15}
-            arcsData={arcs}
-            arcColor="color"
-            arcAltitude={0.28}
-            arcStroke={0.6}
-            arcDashLength={0.4}
-            arcDashGap={0.2}
-            arcDashInitialGap={() => Math.random()}
-            arcDashAnimateTime={4000}
             pointsData={points}
             pointLat="lat"
             pointLng="lng"
@@ -271,7 +227,9 @@ export default function GlobeShowcase() {
                 border-left: 3px solid ${d.isHub ? '#ff5a00' : '#f37021'};
                 white-space: nowrap;
               ">
-                <span style="width: 5px; height: 5px; background-color: ${d.isHub ? '#ff5a00' : '#f37021'}; border-radius: 50%; box-shadow: 0 0 6px ${d.isHub ? '#ff5a00' : '#f37021'};"></span>
+                ${d.isoCode
+                  ? `<span class="fi fi-${d.isoCode}" style="width: 16px; height: 12px; background-size: cover; background-position: center; border-radius: 2px; flex-shrink: 0;"></span>`
+                  : `<span style="width: 5px; height: 5px; background-color: ${d.isHub ? '#ff5a00' : '#f37021'}; border-radius: 50%; box-shadow: 0 0 6px ${d.isHub ? '#ff5a00' : '#f37021'};"></span>`}
                 <span>${d.name}${!d.isHub && d.count ? ` (${d.count})` : ''}</span>
               </div>
             `}

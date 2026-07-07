@@ -58,6 +58,17 @@ namespace PEMS.Api.Controllers
             return Ok(result);
         }
 
+        /// <summary>Every faq_type with its PUBLISHED question count — for the FAQ page's topic cards.</summary>
+        [HttpGet("faqs/type-counts")]
+        [AllowAnonymous]
+        public async Task<IActionResult> GetFaqTypeCounts(CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(
+                new PEMS.Application.PublicContent.Queries.GetFaqTypeCounts.GetFaqTypeCountsQuery(),
+                cancellationToken);
+            return Ok(result);
+        }
+
         [HttpGet("news")]
         [AllowAnonymous]
         public async Task<IActionResult> ViewNews(

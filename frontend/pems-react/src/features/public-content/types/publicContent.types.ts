@@ -46,6 +46,16 @@ export type PublicNewsListItem = {
   publishedAt?: string | null;
   languageCode: string;
   isFeatured: boolean;
+  campusId?: number | null;
+  campusName?: string | null;
+  campusCode?: string | null;
+  isVisitRelated: boolean;
+};
+
+export type ActiveCampus = {
+  campusId: number;
+  campusCode: string;
+  campusName: string;
 };
 
 export type PublicNewsListResponse = {

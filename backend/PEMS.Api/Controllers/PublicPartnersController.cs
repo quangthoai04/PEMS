@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using PEMS.Application.Partners.Queries.GetPublicPartnerCountries;
 using PEMS.Application.Partners.Queries.GetPublicPartnerDetail;
 using PEMS.Application.Partners.Queries.GetPublicPartnerMedia;
+using PEMS.Application.Partners.Queries.GetPublicPartnerTypes;
 using PEMS.Application.Partners.Queries.GetPublicPartners;
 using PEMS.Application.Partners.Queries.SearchPublicPartnerOptions;
 using System.Threading;
@@ -53,6 +54,13 @@ public sealed class PublicPartnersController : ControllerBase
     [HttpGet("countries")]
     public async Task<IActionResult> GetCountries(CancellationToken cancellationToken)
         => Ok(await _mediator.Send(new GetPublicPartnerCountriesQuery(), cancellationToken));
+
+    /// <summary>Distinct partner_type values (with counts) among APPROVED + PUBLIC partners — for the
+    /// list page's partner type filter.</summary>
+    [AllowAnonymous]
+    [HttpGet("types")]
+    public async Task<IActionResult> GetPartnerTypes(CancellationToken cancellationToken)
+        => Ok(await _mediator.Send(new GetPublicPartnerTypesQuery(), cancellationToken));
 
     [AllowAnonymous]
     [HttpGet("{partnerIdOrSlug}")]
