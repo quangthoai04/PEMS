@@ -8,10 +8,12 @@ using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Files;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Galleries.Common;
+using PEMS.Application.Galleries.Tts;
 using PEMS.Domain.Entities.Galleries;
 using PEMS.Domain.Entities.Users;
 
@@ -30,17 +32,23 @@ public sealed class UpdateGalleryItemCommandHandler
     private readonly ICurrentUserService _currentUser;
     private readonly IFileUploadService _fileUpload;
     private readonly IDateTimeService _clock;
+    private readonly IGalleryItemTtsService _tts;
+    private readonly ILogger<UpdateGalleryItemCommandHandler> _logger;
 
     public UpdateGalleryItemCommandHandler(
         IApplicationDbContext db,
         ICurrentUserService currentUser,
         IFileUploadService fileUpload,
-        IDateTimeService clock)
+        IDateTimeService clock,
+        IGalleryItemTtsService tts,
+        ILogger<UpdateGalleryItemCommandHandler> logger)
     {
         _db = db;
         _currentUser = currentUser;
         _fileUpload = fileUpload;
         _clock = clock;
+        _tts = tts;
+        _logger = logger;
     }
 
     public async Task<GalleryItemDetailDto> Handle(
@@ -62,6 +70,13 @@ public sealed class UpdateGalleryItemCommandHandler
                 "Bạn không có quyền chỉnh sửa gallery item này.", 403);
 
         var itemType = GalleryItemTypes.Normalize(request.ItemType);
+
+        // Narration cap (EverAI TTS): checked BEFORE any upload so a rejected request never orphans
+        // a Drive object. 422 per the TTS spec.
+        var description = request.Description?.Trim() ?? string.Empty;
+        if (description.Length > 1000)
+            throw new BusinessRuleException(
+                "Mô tả không được vượt quá 1000 ký tự.", GalleryErrorCodes.DescriptionTooLong);
 
         // New location must be ACTIVE and in the caller's campus (BR-GAL-EDIT-02/03; throws 404/403/422).
         // A location may hold many items, so moving an item into an already-used location is allowed.
@@ -155,7 +170,7 @@ public sealed class UpdateGalleryItemCommandHandler
         var mediaKind = GalleryMediaClassifier.ResolveMediaKind(finalActive.Select(m => m.MediaType));
 
         item.Title = Regex.Replace(request.Title?.Trim() ?? string.Empty, @"\s+", " ");
-        item.Description = request.Description?.Trim() ?? string.Empty;
+        item.Description = description;
         item.LocationId = (ulong)request.LocationId;
         item.ItemType = itemType;
         item.MediaKind = mediaKind;
@@ -185,6 +200,21 @@ public sealed class UpdateGalleryItemCommandHandler
         });
 
         await _db.SaveChangesAsync(cancellationToken);
+
+        // Fire-and-forget narration job (AUTO_GENERATE): an edited description changes the TTS hash,
+        // so this queues a fresh generation unless a matching READY/running one already exists. A TTS
+        // problem must never fail the edit itself.
+        try
+        {
+            await _tts.EnsureAudioAsync(
+                (long)item.GalleryItemId, TtsTriggerSources.AutoGenerate, (long)actorId,
+                requirePublicVisible: false, bypassFailedCooldown: false, cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "TTS auto-generate failed after updating gallery item {GalleryItemId}.",
+                item.GalleryItemId);
+        }
 
         return await GalleryDetailBuilder.BuildAsync(
             _db, item.GalleryItemId, cancellationToken, "Đã cập nhật gallery item.");

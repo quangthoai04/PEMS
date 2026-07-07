@@ -66,6 +66,23 @@ public sealed class GetPublicGalleryMediaQueryHandler : IRequestHandler<GetPubli
                 cancellationToken);
         }
 
+        // TTS narration audio (EverAI phase): /api/files is [Authorize], so the anonymous public page
+        // plays a READY narration through this same scoped proxy. Only files linked from a READY TTS
+        // row of a public-visible item are served — FAILED rows, stale hashes on HIDDEN items, etc.
+        // stay unreachable.
+        if (!isPublicGalleryFile)
+        {
+            isPublicGalleryFile = await _db.GalleryItemTtsAudios.AsNoTracking().AnyAsync(t =>
+                t.AudioFileId == request.FileId &&
+                t.Status == "READY" &&
+                t.GalleryItem.Status == "PUBLISHED" &&
+                t.GalleryItem.DeletedAt == null &&
+                t.GalleryItem.Location.Status == "ACTIVE" &&
+                t.GalleryItem.Location.Area.Status == "ACTIVE" &&
+                t.GalleryItem.Location.Area.Campus.Status == "ACTIVE",
+                cancellationToken);
+        }
+
         if (!isPublicGalleryFile)
             throw new NotFoundException("PublicGalleryMedia", request.FileId);
 
