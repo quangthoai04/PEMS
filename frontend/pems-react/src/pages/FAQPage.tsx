@@ -1,65 +1,202 @@
-import React, { useState, useEffect } from 'react';
+/**
+ * Trang FAQPage (Public) — Help Center
+ * Trung tâm trợ giúp công khai của trường — dữ liệu thật từ GET /api/public/faqs và
+ * GET /api/public/faqs/type-counts. Chỉ hiển thị FAQ status=PUBLISHED, không dùng mock data.
+ */
+
+import React, { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Search, ChevronDown, HelpCircle, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
-import httpClient from '../shared/api/httpClient';
+import {
+  Search,
+  ChevronDown,
+  HelpCircle,
+  ChevronLeft,
+  ChevronRight,
+  Loader2,
+  RefreshCw,
+  KeyRound,
+  MapPinned,
+  UsersRound,
+  Truck,
+  FileText,
+  Bell,
+  MoreHorizontal,
+  ArrowRight,
+  Mail,
+  Sparkles,
+} from 'lucide-react';
+import { publicFaqApi } from '../features/public-faq/api/publicFaqApi';
+import { VisitingFormPopup } from '../components/modals/VisitingFormPopup';
+import type { PublicFaqItem, PublicFaqTypeCount } from '../features/public-faq/types/publicFaq.types';
 
-interface FaqItem {
-  faqId: number;
-  faqType: string;
-  faqTypeLabel: string;
-  question: string;
-  answer: string;
-  displayOrder: number;
-  createdAt: string;
-}
-
-interface PaginatedFaqResponse {
-  items: FaqItem[];
-  page: number;
-  pageSize: number;
-  totalItems: number;
-  totalPages: number;
-  hasNextPage: boolean;
-  hasPreviousPage: boolean;
-}
-
-const FAQ_TYPES = [
-  { value: 'ALL', label: 'Tất cả' },
-  { value: 'ACCOUNT_ACCESS', label: 'Tài khoản & truy cập' },
-  { value: 'VISIT_REQUEST', label: 'Đăng ký tham quan' },
-  { value: 'DELEGATION_MANAGEMENT', label: 'Quản lý đoàn' },
-  { value: 'LOGISTICS_RESOURCE', label: 'Hậu cần' },
-  { value: 'DOCUMENT_MEDIA', label: 'Tài liệu' },
-  { value: 'NOTIFICATION_EMAIL', label: 'Thông báo' },
-  { value: 'OTHER', label: 'Khác' },
-];
-
+const ALL_TYPE = 'ALL';
 const PAGE_SIZE = 10;
+const SUGGESTED_SIZE = 6;
+
+/** faqType -> icon, kept in sync with backend FaqConstants.Type.All (7 fixed values). */
+const TYPE_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
+  ACCOUNT_ACCESS: KeyRound,
+  VISIT_REQUEST: MapPinned,
+  DELEGATION_MANAGEMENT: UsersRound,
+  LOGISTICS_RESOURCE: Truck,
+  DOCUMENT_MEDIA: FileText,
+  NOTIFICATION_EMAIL: Bell,
+  OTHER: MoreHorizontal,
+};
+
+const TYPE_DESCRIPTIONS: Record<string, string> = {
+  ACCOUNT_ACCESS: 'Đăng nhập, quên mật khẩu, quyền truy cập hệ thống.',
+  VISIT_REQUEST: 'Quy trình đăng ký, chỉnh sửa, hủy chuyến tham quan.',
+  DELEGATION_MANAGEMENT: 'Thông tin đoàn khách, thành viên, lịch trình.',
+  LOGISTICS_RESOURCE: 'Phòng họp, xe đưa đón, thiết bị hỗ trợ.',
+  DOCUMENT_MEDIA: 'Tài liệu đính kèm, hình ảnh, video sự kiện.',
+  NOTIFICATION_EMAIL: 'Thông báo hệ thống và email tự động.',
+  OTHER: 'Các câu hỏi khác chưa thuộc nhóm cụ thể.',
+};
+
+function TopicCardSkeleton() {
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200 p-5 animate-pulse">
+      <div className="w-10 h-10 rounded-xl bg-slate-100 mb-4 skeleton-shimmer" />
+      <div className="h-4 bg-slate-100 rounded w-3/4 mb-2 skeleton-shimmer" />
+      <div className="h-3 bg-slate-100 rounded w-full skeleton-shimmer" />
+    </div>
+  );
+}
+
+function TopicCard({
+  type, active, onClick, delay,
+}: { type: PublicFaqTypeCount; active: boolean; onClick: () => void; delay: number; key?: React.Key }) {
+  const Icon = TYPE_ICONS[type.value] ?? HelpCircle;
+  return (
+    <motion.button
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4, delay, ease: 'easeOut' }}
+      onClick={onClick}
+      className={`text-left bg-white rounded-2xl border p-5 transition-all duration-300 hover:-translate-y-1 hover:shadow-md ${
+        active ? 'border-[#004c91] ring-2 ring-[#004c91]/15' : 'border-slate-200'
+      }`}
+    >
+      <div className={`w-10 h-10 rounded-xl flex items-center justify-center mb-4 ${active ? 'bg-[#004c91] text-white' : 'bg-[#004c91]/8 text-[#004c91]'}`}>
+        <Icon className="w-5 h-5" />
+      </div>
+      <div className="flex items-center justify-between gap-2 mb-1.5">
+        <h3 className="text-sm font-bold text-slate-900 leading-snug">{type.label}</h3>
+        <span className="shrink-0 text-xs font-bold text-[#f37021]">{type.count}</span>
+      </div>
+      <p className="text-xs text-slate-500 leading-relaxed line-clamp-2">
+        {TYPE_DESCRIPTIONS[type.value] ?? ''}
+      </p>
+    </motion.button>
+  );
+}
+
+function FaqAccordionItem({ faq, isOpen, onToggle }: { faq: PublicFaqItem; isOpen: boolean; onToggle: () => void; key?: React.Key }) {
+  return (
+    <motion.div
+      layout
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0 }}
+      className="bg-white rounded-2xl border border-slate-200 overflow-hidden hover:border-slate-300 transition-colors"
+    >
+      <button
+        onClick={onToggle}
+        className="w-full px-5 sm:px-6 py-4 sm:py-5 flex items-center justify-between gap-4 text-left"
+      >
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 min-w-0">
+          <span className="inline-block w-fit px-2.5 py-1 bg-[#004c91]/8 text-[#004c91] text-[11px] font-bold rounded-lg whitespace-nowrap">
+            {faq.faqTypeLabel}
+          </span>
+          <h3 className={`text-[15px] sm:text-base font-bold leading-snug ${isOpen ? 'text-[#f37021]' : 'text-slate-900'}`}>
+            {faq.question}
+          </h3>
+        </div>
+        <div className={`shrink-0 w-8 h-8 rounded-full flex items-center justify-center transition-transform duration-300 ${isOpen ? 'bg-orange-50 rotate-180' : 'bg-slate-50'}`}>
+          <ChevronDown className={`w-4 h-4 ${isOpen ? 'text-[#f37021]' : 'text-slate-400'}`} />
+        </div>
+      </button>
+
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.3, ease: 'easeInOut' }}
+            className="overflow-hidden"
+          >
+            <div className="px-5 sm:px-6 pb-5 sm:pb-6">
+              <div className="p-4 sm:p-5 bg-slate-50 rounded-xl border-l-4 border-[#f37021]">
+                <p className="text-slate-700 text-sm sm:text-[15px] leading-relaxed whitespace-pre-line">
+                  {faq.answer}
+                </p>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
+  );
+}
 
 export function FAQPage() {
+  const [isVisitorFormOpen, setIsVisitorFormOpen] = useState(false);
+
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedKeyword, setDebouncedKeyword] = useState('');
-  const [selectedType, setSelectedType] = useState('ALL');
-  const [openFAQ, setOpenFAQ] = useState<number | null>(null);
+  const [selectedType, setSelectedType] = useState(ALL_TYPE);
+  const [openFaqId, setOpenFaqId] = useState<number | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
 
-  const [faqs, setFaqs] = useState<FaqItem[]>([]);
+  const [faqs, setFaqs] = useState<PublicFaqItem[]>([]);
   const [totalPages, setTotalPages] = useState(0);
   const [totalItems, setTotalItems] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [fetchTick, setFetchTick] = useState(0);
+  const [reloadToken, setReloadToken] = useState(0);
 
-  // Re-fetch khi tab được focus lại (user có thể vừa tạo FAQ ở tab khác)
+  const [typeCounts, setTypeCounts] = useState<PublicFaqTypeCount[]>([]);
+  const [typeCountsLoading, setTypeCountsLoading] = useState(true);
+
+  const [suggested, setSuggested] = useState<PublicFaqItem[]>([]);
+  const [suggestedLoading, setSuggestedLoading] = useState(true);
+
+  // Topic type counts — loaded once.
   useEffect(() => {
-    const handleVisibility = () => {
-      if (!document.hidden) setFetchTick(t => t + 1);
-    };
-    document.addEventListener('visibilitychange', handleVisibility);
-    return () => document.removeEventListener('visibilitychange', handleVisibility);
-  }, []);
+    let cancelled = false;
+    (async () => {
+      setTypeCountsLoading(true);
+      try {
+        const counts = await publicFaqApi.getFaqTypeCounts();
+        if (!cancelled) setTypeCounts(counts);
+      } catch {
+        if (!cancelled) setTypeCounts([]);
+      } finally {
+        if (!cancelled) setTypeCountsLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [reloadToken]);
 
-  // Debounce keyword 400ms
+  // Suggested questions — first page, no filter, server default order (display_order ASC, created_at DESC).
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setSuggestedLoading(true);
+      try {
+        const res = await publicFaqApi.getPublicFaqs({ page: 1, pageSize: SUGGESTED_SIZE });
+        if (!cancelled) setSuggested(res.items ?? []);
+      } catch {
+        if (!cancelled) setSuggested([]);
+      } finally {
+        if (!cancelled) setSuggestedLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [reloadToken]);
+
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedKeyword(searchQuery.trim());
@@ -68,27 +205,22 @@ export function FAQPage() {
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
-  // Fetch from backend whenever params change
   useEffect(() => {
     let cancelled = false;
-
-    const fetchFaqs = async () => {
+    (async () => {
       setLoading(true);
       setError(null);
       try {
-        const params: Record<string, string | number> = {
+        const res = await publicFaqApi.getPublicFaqs({
           page: currentPage,
           pageSize: PAGE_SIZE,
-        };
-        if (debouncedKeyword) params.keyword = debouncedKeyword;
-        if (selectedType !== 'ALL') params.faqType = selectedType;
-
-        const { data } = await httpClient.get<PaginatedFaqResponse>('/public/faqs', { params });
-        if (!cancelled) {
-          setFaqs(data.items ?? []);
-          setTotalPages(data.totalPages ?? 0);
-          setTotalItems(data.totalItems ?? 0);
-        }
+          keyword: debouncedKeyword || undefined,
+          faqType: selectedType === ALL_TYPE ? undefined : selectedType,
+        });
+        if (cancelled) return;
+        setFaqs(res.items ?? []);
+        setTotalPages(res.totalPages ?? 0);
+        setTotalItems(res.totalItems ?? 0);
       } catch {
         if (!cancelled) {
           setError('Không thể tải dữ liệu FAQ. Vui lòng thử lại sau.');
@@ -99,226 +231,305 @@ export function FAQPage() {
       } finally {
         if (!cancelled) setLoading(false);
       }
-    };
-
-    fetchFaqs();
+    })();
     return () => { cancelled = true; };
-  }, [debouncedKeyword, selectedType, currentPage, fetchTick]);
+  }, [debouncedKeyword, selectedType, currentPage, reloadToken]);
 
-  const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setSearchQuery(e.target.value);
-    setOpenFAQ(null);
-  };
-
-  const handleTypeChange = (type: string) => {
+  const handleTypeSelect = (type: string) => {
     setSelectedType(type);
     setCurrentPage(1);
-    setOpenFAQ(null);
+    setOpenFaqId(null);
+    document.getElementById('faq-main-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
   const handlePageChange = (page: number) => {
     setCurrentPage(page);
-    setOpenFAQ(null);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    setOpenFaqId(null);
+    document.getElementById('faq-main-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
-  return (
-    <div className="bg-slate-50 min-h-screen pt-24 pb-20">
-      {/* Header */}
-      <div className="bg-[#004c91] text-white py-16 px-4 md:px-8 shadow-inner relative overflow-hidden mb-12">
-        <div className="absolute top-0 right-0 p-8 opacity-10 pointer-events-none transform translate-x-12 -translate-y-12">
-          <HelpCircle className="w-64 h-64 text-white" />
-        </div>
-        <div className="max-w-4xl mx-auto text-center relative z-10">
-          <h1 className="text-4xl md:text-5xl font-extrabold mb-6">Câu hỏi thường gặp</h1>
-          <p className="text-blue-100 text-lg md:text-xl max-w-2xl mx-auto mb-10">
-            Tìm kiếm thông tin nhanh chóng hoặc duyệt qua các danh mục dưới đây để giải đáp thắc mắc của bạn về các chương trình hợp tác quốc tế.
-          </p>
+  const clearFilters = () => {
+    setSearchQuery('');
+    setSelectedType(ALL_TYPE);
+  };
 
-          {/* Search bar */}
-          <div className="relative max-w-xl mx-auto">
-            <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-              {loading && debouncedKeyword
-                ? <Loader2 className="h-6 w-6 text-gray-400 animate-spin" />
-                : <Search className="h-6 w-6 text-gray-400" />
-              }
+  const hasActiveFilter = debouncedKeyword !== '' || selectedType !== ALL_TYPE;
+  const allTypesTotal = useMemo(() => typeCounts.reduce((sum, t) => sum + t.count, 0), [typeCounts]);
+
+  return (
+    <div className="bg-slate-50 min-h-screen pt-20 pb-16">
+      {/* A. Compact Hero — navy background, badge, search */}
+      <div className="bg-[#004c91] relative overflow-hidden">
+        <div className="absolute top-0 right-0 opacity-10 pointer-events-none transform translate-x-16 -translate-y-16">
+          <HelpCircle className="w-72 h-72 text-white" />
+        </div>
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-14 md:py-16 text-center relative z-10">
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, ease: 'easeOut' }}
+          >
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-white/10 text-white border border-white/20 rounded-full text-xs font-bold uppercase tracking-wider mb-5">
+              <Sparkles className="w-3.5 h-3.5 text-orange-300" />
+              Help Center
             </div>
-            <input
-              type="text"
-              placeholder="Nhập từ khóa tìm kiếm (VD: đăng nhập, tài liệu...)"
-              value={searchQuery}
-              onChange={handleSearch}
-              className="block w-full pl-12 pr-4 py-4 md:py-5 border-none rounded-2xl text-gray-900 bg-white placeholder-gray-400 focus:outline-none focus:ring-4 focus:ring-orange-500/30 text-lg shadow-xl"
-            />
-          </div>
+            <h1 className="text-2xl md:text-4xl font-bold text-white leading-tight mb-3">
+              Chúng tôi có thể giúp gì cho bạn?
+            </h1>
+            <p className="text-blue-100 text-sm md:text-base max-w-2xl mx-auto mb-8">
+              Giải đáp về tài khoản, đăng ký tham quan, quản lý đoàn, hậu cần, tài liệu và thông báo trong hệ thống PEMS.
+            </p>
+
+            <div className="relative max-w-xl mx-auto">
+              <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                {loading && debouncedKeyword
+                  ? <Loader2 className="h-5 w-5 text-slate-400 animate-spin" />
+                  : <Search className="h-5 w-5 text-slate-400" />}
+              </div>
+              <input
+                type="text"
+                placeholder="Nhập từ khóa (VD: đăng nhập, tài liệu...)"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="block w-full pl-12 pr-4 py-3.5 md:py-4 rounded-xl text-slate-900 bg-white placeholder:text-slate-400 focus:outline-none focus:ring-4 focus:ring-orange-400/30 text-sm md:text-base shadow-lg transition-shadow"
+              />
+            </div>
+          </motion.div>
         </div>
       </div>
 
-      <div className="max-w-4xl mx-auto px-4 md:px-8">
-        {/* Category filter */}
-        <div className="flex flex-wrap gap-3 justify-center mb-10">
-          {FAQ_TYPES.map(({ value, label }) => (
-            <button
-              key={value}
-              onClick={() => handleTypeChange(value)}
-              className={`px-5 py-2.5 rounded-full text-sm font-bold transition-all ${
-                selectedType === value
-                  ? 'bg-[#f37021] text-white shadow-md'
-                  : 'bg-white text-gray-600 hover:bg-orange-50 hover:text-[#f37021] border border-gray-200'
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-10">
+        {/* B. Topic cards */}
+        <div className="mb-12">
+          <h2 className="text-lg font-bold text-slate-900 mb-5">Duyệt theo chủ đề</h2>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <motion.button
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, ease: 'easeOut' }}
+              onClick={() => handleTypeSelect(ALL_TYPE)}
+              className={`text-left bg-white rounded-2xl border p-5 transition-all duration-300 hover:-translate-y-1 hover:shadow-md ${
+                selectedType === ALL_TYPE ? 'border-[#004c91] ring-2 ring-[#004c91]/15' : 'border-slate-200'
               }`}
             >
-              {label}
-            </button>
-          ))}
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center mb-4 ${selectedType === ALL_TYPE ? 'bg-[#004c91] text-white' : 'bg-[#004c91]/8 text-[#004c91]'}`}>
+                <HelpCircle className="w-5 h-5" />
+              </div>
+              <div className="flex items-center justify-between gap-2 mb-1.5">
+                <h3 className="text-sm font-bold text-slate-900">Tất cả</h3>
+                <span className="text-xs font-bold text-[#f37021]">{allTypesTotal}</span>
+              </div>
+              <p className="text-xs text-slate-500 leading-relaxed">Xem toàn bộ câu hỏi thường gặp.</p>
+            </motion.button>
+
+            {typeCountsLoading
+              ? Array.from({ length: 3 }).map((_, i) => <TopicCardSkeleton key={i} />)
+              : typeCounts.map((type, i) => (
+                  <TopicCard
+                    key={type.value}
+                    type={type}
+                    active={selectedType === type.value}
+                    onClick={() => handleTypeSelect(type.value)}
+                    delay={(i + 1) * 0.05}
+                  />
+                ))}
+          </div>
         </div>
 
-        {/* Total count */}
-        {!loading && !error && (
-          <p className="text-center text-sm text-gray-500 mb-6">
-            {totalItems > 0
-              ? `Tìm thấy ${totalItems} câu hỏi`
-              : ''}
-          </p>
-        )}
-
-        {/* Loading skeleton */}
-        {loading && (
-          <div className="space-y-4">
-            {[...Array(5)].map((_, i) => (
-              <div key={i} className="bg-white rounded-2xl shadow-sm border border-gray-100 h-20 animate-pulse" />
-            ))}
+        {/* C. Suggested questions — only when there's real data, no filter/search applied */}
+        {!hasActiveFilter && !suggestedLoading && suggested.length > 0 && (
+          <div className="mb-12">
+            <h2 className="text-lg font-bold text-slate-900 mb-5">Câu hỏi nổi bật</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {suggested.map((faq) => (
+                <button
+                  key={faq.faqId}
+                  onClick={() => {
+                    setOpenFaqId(faq.faqId);
+                    document.getElementById('faq-main-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                  }}
+                  className="text-left bg-white rounded-xl border border-slate-200 p-4 hover:border-[#004c91]/40 hover:shadow-sm transition-all"
+                >
+                  <span className="inline-block mb-2 px-2 py-0.5 bg-[#004c91]/8 text-[#004c91] text-[10px] font-bold rounded-md uppercase">
+                    {faq.faqTypeLabel}
+                  </span>
+                  <p className="text-sm font-semibold text-slate-800 leading-snug line-clamp-2">{faq.question}</p>
+                </button>
+              ))}
+            </div>
           </div>
         )}
 
-        {/* Error state */}
-        {!loading && error && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="text-center py-20 bg-white rounded-3xl border border-red-100"
-          >
-            <HelpCircle className="w-16 h-16 text-red-200 mx-auto mb-4" />
-            <h3 className="text-xl font-bold text-gray-900 mb-2">Lỗi tải dữ liệu</h3>
-            <p className="text-gray-500">{error}</p>
-            <button
-              onClick={() => { setCurrentPage(1); setDebouncedKeyword(''); setSearchQuery(''); }}
-              className="mt-6 px-6 py-2.5 bg-[#004c91] text-white rounded-xl font-bold hover:bg-[#003a70] transition-colors"
-            >
-              Thử lại
-            </button>
-          </motion.div>
-        )}
-
-        {/* FAQ List */}
-        {!loading && !error && (
-          <>
-            <div className="space-y-4">
-              <AnimatePresence>
-                {faqs.map((faq) => {
-                  const isOpen = openFAQ === faq.faqId;
-                  return (
-                    <motion.div
-                      key={faq.faqId}
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, scale: 0.95 }}
-                      className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-shadow"
-                    >
-                      <button
-                        onClick={() => setOpenFAQ(isOpen ? null : faq.faqId)}
-                        className="w-full px-6 py-5 flex items-center justify-between text-left focus:outline-none focus:bg-slate-50/50"
-                      >
-                        <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-4 pr-8">
-                          <span className="inline-block px-3 py-1 bg-blue-50 text-[#004c91] text-xs font-bold rounded-lg border border-blue-100 whitespace-nowrap self-start md:self-auto">
-                            {faq.faqTypeLabel}
-                          </span>
-                          <h3 className={`text-lg md:text-xl font-bold transition-colors ${isOpen ? 'text-[#f37021]' : 'text-[#004c91]'}`}>
-                            {faq.question}
-                          </h3>
-                        </div>
-                        <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center transition-transform duration-300 ${isOpen ? 'bg-orange-50 rotate-180' : 'bg-gray-50'}`}>
-                          <ChevronDown className={`w-5 h-5 ${isOpen ? 'text-[#f37021]' : 'text-gray-400'}`} />
-                        </div>
-                      </button>
-
-                      <AnimatePresence>
-                        {isOpen && (
-                          <motion.div
-                            initial={{ height: 0, opacity: 0 }}
-                            animate={{ height: 'auto', opacity: 1 }}
-                            exit={{ height: 0, opacity: 0 }}
-                            transition={{ duration: 0.3, ease: 'easeInOut' }}
-                            className="overflow-hidden"
-                          >
-                            <div className="px-6 pb-6 pt-2">
-                              <div className="p-5 bg-slate-50 rounded-xl rounded-tl-none border-l-4 border-[#004c91]">
-                                <p className="text-gray-700 leading-relaxed font-medium whitespace-pre-line">
-                                  {faq.answer}
-                                </p>
-                              </div>
-                            </div>
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                    </motion.div>
-                  );
-                })}
-              </AnimatePresence>
-
-              {faqs.length === 0 && (
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  className="text-center py-20 bg-white rounded-3xl border border-gray-100"
-                >
-                  <HelpCircle className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-                  <h3 className="text-xl font-bold text-gray-900 mb-2">Không tìm thấy kết quả</h3>
-                  <p className="text-gray-500">
-                    {searchQuery
-                      ? `Không tìm thấy câu hỏi nào phù hợp với "${searchQuery}". Vui lòng thử lại với từ khóa khác.`
-                      : 'Chưa có câu hỏi nào trong danh mục này.'}
-                  </p>
-                </motion.div>
-              )}
-            </div>
-
-            {/* Pagination */}
-            {totalPages > 1 && (
-              <div className="mt-10 flex justify-center items-center gap-2">
+        {/* D. Main FAQ section — left sticky topic nav (desktop) + right accordion */}
+        <div id="faq-main-section" className="flex flex-col lg:flex-row gap-8">
+          {/* Desktop: sticky left nav */}
+          <aside className="hidden lg:block lg:w-64 shrink-0">
+            <div className="sticky top-28">
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3">Chủ đề</p>
+              <nav className="flex flex-col gap-1">
                 <button
-                  onClick={() => handlePageChange(currentPage - 1)}
-                  disabled={currentPage === 1}
-                  className="w-10 h-10 rounded-xl flex items-center justify-center bg-white border border-gray-200 text-gray-600 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 transition-colors"
+                  onClick={() => handleTypeSelect(ALL_TYPE)}
+                  className={`text-left px-3 py-2.5 rounded-lg text-sm font-semibold transition-colors ${
+                    selectedType === ALL_TYPE ? 'bg-[#004c91] text-white' : 'text-slate-600 hover:bg-slate-100'
+                  }`}
                 >
-                  <ChevronLeft className="w-5 h-5" />
+                  Tất cả ({allTypesTotal})
                 </button>
-
-                {Array.from({ length: totalPages }).map((_, idx) => (
+                {typeCounts.map((type) => (
                   <button
-                    key={idx}
-                    onClick={() => handlePageChange(idx + 1)}
-                    className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm transition-all ${
-                      currentPage === idx + 1
-                        ? 'bg-[#004c91] text-white shadow-sm'
-                        : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'
+                    key={type.value}
+                    onClick={() => handleTypeSelect(type.value)}
+                    className={`text-left px-3 py-2.5 rounded-lg text-sm font-semibold transition-colors ${
+                      selectedType === type.value ? 'bg-[#004c91] text-white' : 'text-slate-600 hover:bg-slate-100'
                     }`}
                   >
-                    {idx + 1}
+                    {type.label} ({type.count})
                   </button>
                 ))}
+              </nav>
+            </div>
+          </aside>
 
+          {/* Mobile/tablet: horizontal chips */}
+          <div className="lg:hidden flex gap-2 overflow-x-auto no-scrollbar pb-1">
+            <button
+              onClick={() => handleTypeSelect(ALL_TYPE)}
+              className={`shrink-0 px-4 py-2 rounded-full text-sm font-semibold whitespace-nowrap transition-colors border ${
+                selectedType === ALL_TYPE ? 'bg-[#004c91] text-white border-[#004c91]' : 'bg-white text-slate-600 border-slate-200'
+              }`}
+            >
+              Tất cả
+            </button>
+            {typeCounts.map((type) => (
+              <button
+                key={type.value}
+                onClick={() => handleTypeSelect(type.value)}
+                className={`shrink-0 px-4 py-2 rounded-full text-sm font-semibold whitespace-nowrap transition-colors border ${
+                  selectedType === type.value ? 'bg-[#004c91] text-white border-[#004c91]' : 'bg-white text-slate-600 border-slate-200'
+                }`}
+              >
+                {type.label} ({type.count})
+              </button>
+            ))}
+          </div>
+
+          {/* Right: accordion list */}
+          <div className="flex-1 min-w-0">
+            {!loading && !error && (
+              <p className="text-sm text-slate-500 mb-4">
+                {totalItems > 0 ? `Tìm thấy ${totalItems} câu hỏi` : ''}
+              </p>
+            )}
+
+            {loading ? (
+              <div className="space-y-4">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <div key={i} className="bg-white rounded-2xl border border-slate-200 h-20 animate-pulse skeleton-shimmer" />
+                ))}
+              </div>
+            ) : error ? (
+              <div className="text-center py-16 bg-white rounded-2xl border border-red-100">
+                <HelpCircle className="w-14 h-14 text-red-200 mx-auto mb-4" />
+                <h3 className="text-base font-bold text-slate-800 mb-1">Lỗi tải dữ liệu</h3>
+                <p className="text-slate-500 text-sm mb-4">{error}</p>
                 <button
-                  onClick={() => handlePageChange(currentPage + 1)}
-                  disabled={currentPage === totalPages}
-                  className="w-10 h-10 rounded-xl flex items-center justify-center bg-white border border-gray-200 text-gray-600 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 transition-colors"
+                  onClick={() => setReloadToken((t) => t + 1)}
+                  className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#004c91] text-white text-sm font-bold rounded-xl hover:bg-[#003b70] transition-colors"
                 >
-                  <ChevronRight className="w-5 h-5" />
+                  <RefreshCw className="w-4 h-4" /> Thử lại
                 </button>
               </div>
+            ) : faqs.length === 0 ? (
+              <div className="text-center py-16 bg-white rounded-2xl border border-slate-200">
+                <HelpCircle className="w-14 h-14 text-slate-300 mx-auto mb-4" />
+                <h3 className="text-base font-bold text-slate-800 mb-1">Không tìm thấy câu hỏi phù hợp</h3>
+                <p className="text-slate-500 text-sm max-w-sm mx-auto mb-4">
+                  Hãy thử từ khóa khác hoặc liên hệ Phòng HTQT.
+                </p>
+                {hasActiveFilter && (
+                  <button
+                    onClick={clearFilters}
+                    className="px-5 py-2.5 bg-[#004c91] text-white text-sm font-bold rounded-xl hover:bg-[#003b70] transition-colors"
+                  >
+                    Xóa bộ lọc
+                  </button>
+                )}
+              </div>
+            ) : (
+              <>
+                <div className="space-y-4">
+                  <AnimatePresence>
+                    {faqs.map((faq) => (
+                      <FaqAccordionItem
+                        key={faq.faqId}
+                        faq={faq}
+                        isOpen={openFaqId === faq.faqId}
+                        onToggle={() => setOpenFaqId(openFaqId === faq.faqId ? null : faq.faqId)}
+                      />
+                    ))}
+                  </AnimatePresence>
+                </div>
+
+                {totalPages > 1 && (
+                  <div className="mt-8 flex justify-center items-center gap-1.5">
+                    <button
+                      onClick={() => currentPage > 1 && handlePageChange(currentPage - 1)}
+                      disabled={currentPage === 1}
+                      className="w-9 h-9 rounded-xl flex items-center justify-center bg-white border border-slate-200 text-slate-600 disabled:opacity-40 hover:bg-[#004c91] hover:text-white hover:border-[#004c91] disabled:hover:bg-white disabled:hover:text-slate-600 transition-colors"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </button>
+                    {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+                      <button
+                        key={page}
+                        onClick={() => handlePageChange(page)}
+                        className={`w-9 h-9 rounded-xl text-sm font-bold transition-colors border ${
+                          currentPage === page
+                            ? 'bg-[#f37021] border-[#f37021] text-white'
+                            : 'bg-white border-slate-200 text-slate-600 hover:border-[#004c91]/40'
+                        }`}
+                      >
+                        {page}
+                      </button>
+                    ))}
+                    <button
+                      onClick={() => currentPage < totalPages && handlePageChange(currentPage + 1)}
+                      disabled={currentPage === totalPages}
+                      className="w-9 h-9 rounded-xl flex items-center justify-center bg-white border border-slate-200 text-slate-600 disabled:opacity-40 hover:bg-[#004c91] hover:text-white hover:border-[#004c91] disabled:hover:bg-white disabled:hover:text-slate-600 transition-colors"
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
+              </>
             )}
-          </>
-        )}
+          </div>
+        </div>
+
+        {/* E. Final CTA */}
+        <div className="mt-14 rounded-2xl bg-gradient-to-r from-sky-50 to-orange-50 border border-slate-100 p-8 md:p-10 text-center">
+          <h3 className="text-xl md:text-2xl font-bold text-slate-900 mb-2">Bạn vẫn cần hỗ trợ?</h3>
+          <p className="text-slate-500 text-sm md:text-base max-w-xl mx-auto mb-6">
+            Đội ngũ Phòng Hợp tác Quốc tế luôn sẵn sàng giải đáp thắc mắc của bạn.
+          </p>
+          <div className="flex flex-col sm:flex-row gap-3 justify-center">
+            <button
+              onClick={() => document.querySelector('footer')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+              className="inline-flex justify-center items-center gap-2 px-6 py-3 bg-white text-slate-600 font-bold border border-slate-200 rounded-xl hover:border-[#004c91] hover:text-[#004c91] transition-colors text-sm"
+            >
+              <Mail className="w-4 h-4" /> Liên hệ Phòng HTQT
+            </button>
+            <button
+              onClick={() => setIsVisitorFormOpen(true)}
+              className="inline-flex justify-center items-center gap-2 px-6 py-3 bg-[#f37021] text-white font-bold rounded-xl hover:bg-orange-600 transition-colors text-sm"
+            >
+              Đăng ký tham quan <ArrowRight className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
       </div>
+
+      <VisitingFormPopup isOpen={isVisitorFormOpen} onClose={() => setIsVisitorFormOpen(false)} />
     </div>
   );
 }

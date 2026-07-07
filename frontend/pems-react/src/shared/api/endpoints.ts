@@ -135,6 +135,11 @@ export const API_ENDPOINTS = {
     // Distinct partner_type values (with counts) among APPROVED + PUBLIC partners.
     types: '/public/partners/types',
   },
+  publicFaqs: {
+    list: '/public/faqs',
+    // Every faq_type (all 7, including zero-count ones) with its PUBLISHED question count.
+    typeCounts: '/public/faqs/type-counts',
+  },
   // Public VisitFPTU Gallery (anonymous display layer over the Staff-Leader-managed gallery).
   publicVisitFptu: {
     campuses: '/public/visit-fptu/campuses',
