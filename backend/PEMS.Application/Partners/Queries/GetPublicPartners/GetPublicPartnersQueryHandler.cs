@@ -33,12 +33,21 @@ public sealed class GetPublicPartnersQueryHandler
         if (!string.IsNullOrWhiteSpace(request.Country))
             query = query.Where(p => p.Country == request.Country);
 
+        if (!string.IsNullOrWhiteSpace(request.PartnerType) && PartnerTypes.All.Contains(request.PartnerType))
+            query = query.Where(p => p.PartnerType == request.PartnerType);
+
         var page = Math.Max(1, request.Page);
         var pageSize = Math.Clamp(request.PageSize, 1, 100);
         var totalCount = await query.CountAsync(cancellationToken);
 
+        query = request.Sort?.Trim().ToLowerInvariant() switch
+        {
+            "newest" => query.OrderByDescending(p => p.CreatedAt),
+            "country" => query.OrderBy(p => p.Country).ThenBy(p => p.Name),
+            _ => query.OrderBy(p => p.Name),
+        };
+
         var items = await query
-            .OrderBy(p => p.Name)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .Select(p => new PublicPartnerDto

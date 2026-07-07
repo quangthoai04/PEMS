@@ -9,6 +9,13 @@ public sealed class GetPublicPartnersQuery : IRequest<GetPublicPartnersResponse>
 {
     public string? Search { get; set; }
     public string? Country { get; set; }
+
+    /// <summary>One of <see cref="PartnerTypes.All"/>. Ignored if not a recognized value.</summary>
+    public string? PartnerType { get; set; }
+
+    /// <summary>name_asc (default) | newest | country.</summary>
+    public string? Sort { get; set; }
+
     public int Page { get; set; } = 1;
     public int PageSize { get; set; } = 24;
 }

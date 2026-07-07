@@ -66,3 +66,12 @@ body {
     transform: translateX(100%);
   }
 }
+
+/* Override flag-icons' default `contain` sizing (and em-based width) so a flag can fill an
+   arbitrary-sized container edge-to-edge, e.g. a fixed-aspect-ratio card. */
+.fi-cover {
+  width: 100% !important;
+  height: 100% !important;
+  background-size: cover !important;
+  background-position: center !important;
+}

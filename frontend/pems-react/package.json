@@ -23,6 +23,7 @@
     "cobe": "^2.0.1",
     "date-fns": "^4.4.0",
     "dotenv": "^17.2.3",
+    "flag-icons": "^7.5.0",
     "i18n-iso-countries": "^7.14.0",
     "libphonenumber-js": "^1.13.6",
     "lucide-react": "^0.469.0",

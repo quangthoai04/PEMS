@@ -9,7 +9,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { motion } from 'motion/react';
 import {
-  ArrowLeft, MapPin, ExternalLink, BookOpen, Home, Loader2, AlertTriangle,
+  ArrowLeft, MapPin, ExternalLink, BookOpen, Home, Loader2, AlertTriangle, Building2, Globe2,
 } from 'lucide-react';
 import { publicPartnersApi } from '../features/public-partners/api/publicPartnersApi';
 import { usePublicPartnerImage } from '../features/public-partners/hooks/usePublicPartnerImage';
@@ -46,12 +46,16 @@ export function PartnerDetailPage() {
     return () => { cancelled = true; };
   }, [id]);
 
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [id]);
+
   const coverUrl = usePublicPartnerImage(partner?.coverFileId);
   const logoUrl = usePublicPartnerImage(partner?.logoFileId);
 
   if (loading) {
     return (
-      <div className="pt-24 pb-24 bg-[#f8fafc] min-h-screen flex items-center justify-center">
+      <div className="pt-24 pb-24 bg-white min-h-screen flex items-center justify-center">
         <Loader2 className="w-8 h-8 text-[#004c91] animate-spin" />
       </div>
     );
@@ -59,15 +63,15 @@ export function PartnerDetailPage() {
 
   if (notFound || !partner) {
     return (
-      <div className="pt-24 pb-24 bg-[#f8fafc] min-h-screen flex items-center justify-center px-4">
-        <div className="max-w-md w-full bg-white rounded-2xl border border-slate-100 shadow-xl py-14 px-6 text-center">
+      <div className="pt-24 pb-24 bg-white min-h-screen flex items-center justify-center px-4">
+        <div className="max-w-md w-full bg-white rounded-2xl border border-slate-200 py-14 px-6 text-center">
           <AlertTriangle className="w-10 h-10 text-amber-400 mx-auto mb-4" />
           <h3 className="text-lg font-bold text-slate-700 mb-2">
             Không tìm thấy đối tác hoặc đối tác chưa được công khai.
           </h3>
           <button
             onClick={() => navigate('/partners')}
-            className="mt-4 px-5 py-2.5 bg-[#004c91] hover:bg-[#f37021] text-white text-sm font-bold rounded-lg transition-all shadow-md active:scale-95 cursor-pointer"
+            className="mt-4 px-5 py-2.5 bg-[#004c91] hover:bg-[#003b70] text-white text-sm font-bold rounded-xl transition-colors"
           >
             Quay lại danh sách đối tác
           </button>
@@ -78,13 +82,13 @@ export function PartnerDetailPage() {
 
   if (error) {
     return (
-      <div className="pt-24 pb-24 bg-[#f8fafc] min-h-screen flex items-center justify-center px-4">
-        <div className="max-w-md w-full bg-white rounded-2xl border border-red-100 shadow-xl py-14 px-6 text-center">
+      <div className="pt-24 pb-24 bg-white min-h-screen flex items-center justify-center px-4">
+        <div className="max-w-md w-full bg-white rounded-2xl border border-red-100 py-14 px-6 text-center">
           <AlertTriangle className="w-10 h-10 text-red-400 mx-auto mb-4" />
           <h3 className="text-lg font-bold text-slate-700 mb-2">{error}</h3>
           <button
             onClick={() => window.location.reload()}
-            className="mt-4 px-5 py-2.5 bg-[#004c91] hover:bg-[#f37021] text-white text-sm font-bold rounded-lg transition-all shadow-md active:scale-95 cursor-pointer"
+            className="mt-4 px-5 py-2.5 bg-[#004c91] hover:bg-[#003b70] text-white text-sm font-bold rounded-xl transition-colors"
           >
             Thử lại
           </button>
@@ -93,187 +97,160 @@ export function PartnerDetailPage() {
     );
   }
 
+  const location = [partner.city, partner.country].filter(Boolean).join(', ');
+  const websiteHref = partner.websiteUrl
+    ? (partner.websiteUrl.startsWith('http') ? partner.websiteUrl : `https://${partner.websiteUrl}`)
+    : null;
+
   return (
-    <div className="pt-24 pb-24 bg-[#f8fafc] min-h-screen">
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+    <div className="pt-20 pb-16 bg-white min-h-screen">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
 
-        {/* Breadcrumbs */}
-        <div className="mb-6 flex flex-wrap items-center gap-2 text-sm font-semibold select-none text-slate-400 py-1">
-          <button
-            onClick={() => navigate('/')}
-            className="hover:text-[#004c91] transition-colors flex items-center gap-1.5 cursor-pointer px-2 py-1 rounded-lg"
-          >
-            <Home className="w-4 h-4 text-slate-400" />
-            <span>Trang chủ</span>
+        {/* Breadcrumb */}
+        <div className="mb-4 flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-400 py-1">
+          <button onClick={() => navigate('/')} className="hover:text-[#004c91] transition-colors flex items-center gap-1.5">
+            <Home className="w-4 h-4" /> Trang chủ
           </button>
-
           <span className="text-slate-300">/</span>
-
-          <button
-            onClick={() => navigate('/partners')}
-            className="text-[#f37021] hover:text-orange-600 font-bold transition-colors px-2 py-1 rounded-lg cursor-pointer"
-          >
-            đối tác liên kết
+          <button onClick={() => navigate('/partners')} className="hover:text-[#004c91] transition-colors">
+            Đối tác
           </button>
-
           <span className="text-slate-300">/</span>
-
-          <span className="text-slate-600 font-bold truncate max-w-[200px] sm:max-w-none">
-            {partner.name}
-          </span>
+          <span className="text-slate-600 font-bold truncate max-w-[200px] sm:max-w-none">{partner.name}</span>
         </div>
 
-        {/* Back Button */}
+        {/* Back button */}
         <button
           onClick={() => navigate('/partners')}
-          className="mb-8 inline-flex items-center gap-2 px-4 py-2 bg-white hover:bg-slate-55 border border-slate-200 rounded-xl text-slate-500 font-bold text-sm shadow-sm transition-all cursor-pointer"
+          className="mb-6 inline-flex items-center gap-2 px-4 py-2 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl text-slate-500 font-bold text-sm transition-colors"
         >
-          <ArrowLeft className="w-4 h-4 text-[#f37021]" />
-          Quay lại danh sách đối tác
+          <ArrowLeft className="w-4 h-4" /> Quay lại danh sách đối tác
         </button>
 
-        {/* Main Content Body Stack */}
-        <div className="flex flex-col gap-6">
+        {/* Two-column layout */}
+        <div className="flex flex-col lg:flex-row gap-8">
 
-          {/* 1. Hero Cover Photo — real coverFileId if any, otherwise a branded gradient (never a
-              stock photo, never broken). */}
-          <motion.div
-            initial={{ opacity: 0, y: 25 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, ease: 'easeOut' }}
-            className="relative w-full h-[380px] sm:h-[480px] md:h-[550px] lg:h-[620px] rounded-2xl overflow-hidden shadow-md"
+          {/* LEFT: Profile panel — sticky on desktop */}
+          <motion.aside
+            initial={{ opacity: 0, x: -16 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 0.4, ease: 'easeOut' }}
+            className="lg:w-[320px] shrink-0"
           >
-            {coverUrl ? (
-              <img
-                src={coverUrl}
-                alt={partner.name}
-                className="w-full h-full object-cover select-none"
-              />
-            ) : (
-              <div
-                className="w-full h-full bg-gradient-to-br from-[#004c91] via-[#003a70] to-[#f37021]/60"
-                style={{
-                  backgroundImage: 'radial-gradient(rgba(255,255,255,0.08) 2px, transparent 2px)',
-                  backgroundSize: '28px 28px',
-                }}
-              />
-            )}
-            {/* Perfect dark linear gradient cover for readable text */}
-            <div className="absolute inset-0 bg-gradient-to-t from-slate-950/95 via-slate-900/40 to-transparent z-10" />
-            <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-slate-950/80 to-transparent z-15" />
-
-            {/* In-Cover Bottom-Left Corner Branding elements */}
-            <div className="absolute bottom-6 left-6 right-6 z-20 flex flex-col sm:flex-row items-center sm:items-end gap-4 sm:gap-6 text-center sm:text-left">
-
-              {/* Partner Logo — real logoFileId if any, otherwise initials */}
-              <div className="relative shrink-0 w-20 h-20 sm:w-24 sm:h-24 bg-white p-2.5 rounded-xl sm:rounded-2xl shadow-lg flex items-center justify-center border border-white/20 select-none overflow-hidden">
-                {logoUrl ? (
-                  <img
-                    src={logoUrl}
-                    alt={partner.name}
-                    className="max-w-[95%] max-h-[95%] object-contain"
-                  />
+            <div className="lg:sticky lg:top-28 bg-white rounded-2xl border border-slate-200 overflow-hidden">
+              {/* Cover image — real coverFileId if any, otherwise a branded gradient */}
+              <div className="relative w-full h-40 sm:h-48">
+                {coverUrl ? (
+                  <img src={coverUrl} alt={partner.name} className="w-full h-full object-cover" />
                 ) : (
-                  <span className="text-2xl font-black text-[#004c91]">{getNameInitials(partner.name)}</span>
+                  <div className="w-full h-full bg-gradient-to-br from-[#004c91] to-[#f37021]/60" />
                 )}
               </div>
 
-              {/* Text side beside logo */}
-              <div className="flex-1 text-white">
-                <h2 className="text-xl sm:text-2xl md:text-3xl font-black tracking-tight leading-tight line-clamp-2 drop-shadow-md">
-                  {partner.name}
-                </h2>
+              <div className="p-6 -mt-10 relative">
+                {/* Logo card */}
+                <div className="w-20 h-20 bg-white rounded-2xl border border-slate-200 shadow-sm flex items-center justify-center overflow-hidden mb-4">
+                  {logoUrl ? (
+                    <img src={logoUrl} alt={partner.name} className="max-w-[80%] max-h-[80%] object-contain" />
+                  ) : (
+                    <span className="text-xl font-black text-[#004c91]">{getNameInitials(partner.name)}</span>
+                  )}
+                </div>
 
-                {(partner.country || partner.city) && (
-                  <div className="flex items-center justify-center sm:justify-start gap-1.5 mt-2.5 text-xs sm:text-sm font-bold text-orange-200">
-                    <MapPin className="w-4 h-4 text-[#f37021] fill-orange-500/10" />
-                    <span>{[partner.city, partner.country].filter(Boolean).join(', ')}</span>
+                <h1 className="text-xl font-bold text-slate-900 leading-tight mb-1.5">{partner.name}</h1>
+                {partner.shortName && (
+                  <p className="text-sm text-slate-400 font-medium mb-3">{partner.shortName}</p>
+                )}
+
+                {location && (
+                  <div className="flex items-center gap-1.5 text-slate-500 text-sm mb-2">
+                    <MapPin className="w-4 h-4 text-[#f37021] shrink-0" />
+                    <span>{location}</span>
                   </div>
                 )}
+
+                {partner.partnerType && (
+                  <div className="flex items-center gap-1.5 text-slate-500 text-sm">
+                    <Building2 className="w-4 h-4 text-[#004c91] shrink-0" />
+                    <span className="px-2 py-0.5 rounded-full bg-[#004c91]/5 text-[#004c91] text-xs font-bold uppercase tracking-wide">
+                      {partner.partnerType}
+                    </span>
+                  </div>
+                )}
+
+                {websiteHref && (
+                  <a
+                    href={websiteHref}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-6 w-full inline-flex items-center justify-center gap-2 px-5 py-3 bg-[#f37021] hover:bg-orange-600 text-white font-bold text-sm rounded-xl transition-colors"
+                  >
+                    Ghé thăm website đối tác <ExternalLink className="w-4 h-4" />
+                  </a>
+                )}
               </div>
-
             </div>
-          </motion.div>
+          </motion.aside>
 
-          {/* 2. Giới thiệu chung Block */}
-          <motion.div
-            initial={{ opacity: 0, y: 15 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.4, delay: 0.1 }}
-            className="bg-white rounded-2xl p-6 sm:p-8 border border-slate-100 shadow-[0_4px_20px_rgba(0,0,0,0.015)] relative overflow-hidden"
-          >
-            <div className="absolute top-0 left-0 w-full h-[3px] bg-gradient-to-r from-[#f37021] to-orange-400" />
-
-            <div className="flex items-center gap-3 mb-4 select-none">
-              <div className="w-9 h-9 rounded-xl bg-orange-100/50 flex items-center justify-center text-[#f37021]">
-                <BookOpen className="w-4.5 h-4.5" />
-              </div>
-              <h3 className="text-xl font-extrabold text-[#004c91] tracking-tight">
-                Giới thiệu chung
-              </h3>
-            </div>
-
-            <p className="text-slate-600 text-base leading-relaxed font-medium">
-              {partner.description || 'Đối tác chưa cập nhật mô tả.'}
-            </p>
-          </motion.div>
-
-          {/* 3. Địa chỉ trụ sở — chỉ hiển thị khi có dữ liệu thật (không bịa). */}
-          {partner.address && (
+          {/* RIGHT: Detail panel */}
+          <div className="flex-1 min-w-0 flex flex-col gap-6">
+            {/* Giới thiệu chung */}
             <motion.div
               initial={{ opacity: 0, y: 15 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4, delay: 0.15 }}
-              className="bg-white rounded-2xl p-6 sm:p-8 border border-slate-100 shadow-[0_4px_20px_rgba(0,0,0,0.015)] relative overflow-hidden"
+              transition={{ duration: 0.4, delay: 0.05 }}
+              className="bg-white rounded-2xl p-6 sm:p-8 border border-slate-200"
             >
-              <div className="flex items-center gap-3 mb-4 select-none">
-                <div className="w-9 h-9 rounded-xl bg-orange-100/40 flex items-center justify-center text-[#f37021]">
-                  <MapPin className="w-5 h-5 text-[#f37021]" />
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-9 h-9 rounded-xl bg-orange-50 flex items-center justify-center text-[#f37021]">
+                  <BookOpen className="w-4.5 h-4.5" />
                 </div>
-                <h3 className="text-xl font-extrabold text-[#004c91] tracking-tight">
-                  Địa chỉ trụ sở chính
-                </h3>
+                <h2 className="text-lg font-bold text-[#004c91]">Giới thiệu chung</h2>
               </div>
-
-              <div className="p-5 bg-gradient-to-r from-orange-50/30 to-slate-50 rounded-xl border border-slate-100">
-                <p className="font-bold text-slate-700 leading-relaxed text-base">
-                  {partner.address}
-                </p>
-              </div>
-            </motion.div>
-          )}
-
-          {/* 4. Ghé thăm website button CTA — chỉ hiện khi partner có website */}
-          {partner.websiteUrl && (
-            <motion.div
-              initial={{ opacity: 0, y: 15 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4, delay: 0.2 }}
-              className="flex flex-col items-center mt-2 relative select-none w-full"
-            >
-              <motion.a
-                href={partner.websiteUrl.startsWith('http') ? partner.websiteUrl : `https://${partner.websiteUrl}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                whileHover={{
-                  scale: 1.02,
-                  backgroundColor: '#e65c00',
-                  boxShadow: '0 10px 25px rgba(243, 112, 33, 0.35)',
-                }}
-                whileTap={{ scale: 0.98 }}
-                className="w-full py-4.5 bg-[#f37021] font-black text-white text-center rounded-2xl shadow-md transition-all duration-300 flex items-center justify-center gap-2 cursor-pointer text-base"
-              >
-                <span>Ghé thăm website đối tác</span>
-                <ExternalLink className="w-5 h-5" />
-              </motion.a>
-              <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest mt-2">
-                Bảo mật và bảo hộ bởi tổ chức giáo dục FPT
+              <p className="text-slate-600 text-base leading-relaxed">
+                {partner.description || 'Đối tác chưa cập nhật mô tả.'}
               </p>
             </motion.div>
-          )}
 
+            {/* Thông tin tổ chức */}
+            <motion.div
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.1 }}
+              className="bg-white rounded-2xl p-6 sm:p-8 border border-slate-200"
+            >
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-9 h-9 rounded-xl bg-sky-50 flex items-center justify-center text-[#004c91]">
+                  <Globe2 className="w-4.5 h-4.5" />
+                </div>
+                <h2 className="text-lg font-bold text-[#004c91]">Thông tin tổ chức</h2>
+              </div>
+              <dl className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {partner.country && (
+                  <div>
+                    <dt className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-1">Quốc gia</dt>
+                    <dd className="text-slate-700 font-semibold">{partner.country}</dd>
+                  </div>
+                )}
+                {partner.city && (
+                  <div>
+                    <dt className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-1">Thành phố</dt>
+                    <dd className="text-slate-700 font-semibold">{partner.city}</dd>
+                  </div>
+                )}
+                {partner.address && (
+                  <div className="sm:col-span-2">
+                    <dt className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-1">Địa chỉ / trụ sở</dt>
+                    <dd className="text-slate-700 font-semibold leading-relaxed">{partner.address}</dd>
+                  </div>
+                )}
+                {!partner.country && !partner.city && !partner.address && (
+                  <p className="text-sm text-slate-400 sm:col-span-2">Chưa cập nhật thông tin vị trí.</p>
+                )}
+              </dl>
+            </motion.div>
+          </div>
         </div>
-
       </div>
     </div>
   );

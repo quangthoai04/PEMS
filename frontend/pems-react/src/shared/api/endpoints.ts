@@ -132,6 +132,8 @@ export const API_ENDPOINTS = {
     mediaContent: (fileId: string | number) => `/public/partners/media/${fileId}/content`,
     // Distinct countries among APPROVED + PUBLIC partners, for the country filter dropdown.
     countries: '/public/partners/countries',
+    // Distinct partner_type values (with counts) among APPROVED + PUBLIC partners.
+    types: '/public/partners/types',
   },
   // Public VisitFPTU Gallery (anonymous display layer over the Staff-Leader-managed gallery).
   publicVisitFptu: {
