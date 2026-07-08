@@ -169,7 +169,7 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile, isCollapsed = fal
 
         {/* Navigation */}
         <nav className={`flex-grow space-y-2 overflow-y-auto ${collapsed ? "px-3" : "px-4"}`}>
-          {roleForSidebar !== 'VISITOR' && (
+          {roleForSidebar !== 'VISITOR' && roleForSidebar !== 'STUDENT' && (
             <NavLink to="/dashboard" end className={navItemClass} onClick={handleLinkClick}>
               <Home className="w-5 h-5 flex-shrink-0" />
               <span>Dashboard</span>
