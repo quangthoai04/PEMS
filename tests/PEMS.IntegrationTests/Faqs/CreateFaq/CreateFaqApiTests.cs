@@ -15,8 +15,9 @@ namespace PEMS.IntegrationTests.Faqs.CreateFaq;
 /// controller + MediatR pipeline + validator + handler against a real <c>pems_test</c>
 /// MySQL database, with authentication faked via <see cref="TestAuthHandler"/>.
 ///
-/// All FAQ rows created here are prefixed with <see cref="DatabaseResetHelper.FaqQuestionPrefix"/>
-/// and removed on dispose so repeated runs never accumulate leftover data.
+/// All FAQ rows created here are prefixed with <see cref="DatabaseResetHelper.CreateFaqQuestionPrefix"/>
+/// (dedicated to this test class — never shared with UpdateFaqApiTests) and removed on dispose
+/// so repeated runs never accumulate leftover data.
 /// </summary>
 public sealed class CreateFaqApiTests : IClassFixture<PemsWebApplicationFactory>, IAsyncLifetime
 {
@@ -35,7 +36,7 @@ public sealed class CreateFaqApiTests : IClassFixture<PemsWebApplicationFactory>
     {
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        await DatabaseResetHelper.DeleteTestFaqsAsync(db);
+        await DatabaseResetHelper.DeleteTestFaqsAsync(db, DatabaseResetHelper.CreateFaqQuestionPrefix);
     }
 
     private async Task<HttpClient> CreateClientAsAsync(string effectiveRole)
@@ -66,7 +67,7 @@ public sealed class CreateFaqApiTests : IClassFixture<PemsWebApplicationFactory>
     }
 
     private static string UniqueQuestion(string label) =>
-        $"{DatabaseResetHelper.FaqQuestionPrefix}{label} {Guid.NewGuid():N}?";
+        $"{DatabaseResetHelper.CreateFaqQuestionPrefix}{label} {Guid.NewGuid():N}?";
 
     private sealed record CreateFaqRequest(string FaqType, string Question, string Answer, string? Status);
 
@@ -184,7 +185,7 @@ public sealed class CreateFaqApiTests : IClassFixture<PemsWebApplicationFactory>
         // embed a unique marker in Answer instead. The finally block cleans that marker up
         // directly (not via DeleteTestFaqsAsync, which matches on Question) in case a
         // validation regression lets the row through despite the expected 400.
-        var answerMarker = $"{DatabaseResetHelper.FaqQuestionPrefix}EmptyQuestionCheck {Guid.NewGuid():N}";
+        var answerMarker = $"{DatabaseResetHelper.CreateFaqQuestionPrefix}EmptyQuestionCheck {Guid.NewGuid():N}";
 
         try
         {
@@ -300,7 +301,7 @@ public sealed class CreateFaqApiTests : IClassFixture<PemsWebApplicationFactory>
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var saved = await db.Faqs.AsNoTracking()
-            .Where(f => f.Question.StartsWith(DatabaseResetHelper.FaqQuestionPrefix) && f.Question.Contains("xss"))
+            .Where(f => f.Question.StartsWith(DatabaseResetHelper.CreateFaqQuestionPrefix) && f.Question.Contains("xss"))
             .OrderByDescending(f => f.FaqId)
             .FirstAsync();
 
