@@ -1,0 +1,23 @@
+{
+  "title": "What are you looking for?",
+  "placeholder": "Enter a search keyword...",
+  "searchAria": "Search",
+  "loading": "Loading...",
+  "error": "Unable to search at this moment. Please try again later.",
+  "noResult": "No matching results found for \"{{keyword}}\".",
+  "news": "News",
+  "partners": "Partners",
+  "faq": "FAQs",
+  "campuses": "Campuses",
+  "morePartners": "View more related partners",
+  "suggestions": "Popular Keywords",
+  "contactsHanoi": "HANOI",
+  "contactsHcm": "HO CHI MINH",
+  "contactsDanang": "DA NANG",
+  "contactsCantho": "CAN THO",
+  "contactsQuynhon": "QUY NHON",
+  "address": "Address",
+  "hotline": "Hotline",
+  "email": "Email",
+  "copyright": "� 2026 PEMS - FPT University. All rights reserved."
+}

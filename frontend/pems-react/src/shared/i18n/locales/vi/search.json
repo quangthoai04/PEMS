@@ -1,0 +1,23 @@
+{
+  "title": "B?n dang t�m ki?m g�?",
+  "placeholder": "Nh?p t? kh�a t�m ki?m...",
+  "searchAria": "T�m ki?m",
+  "loading": "�ang t?i...",
+  "error": "Kh�ng th? t�m ki?m l�c n�y. Vui l�ng th? l?i sau.",
+  "noResult": "Kh�ng t�m th?y k?t qu? ph� h?p v?i \"{{keyword}}\".",
+  "news": "Tin t?c",
+  "partners": "�?i t�c",
+  "faq": "C�u h?i thu?ng g?p",
+  "campuses": "Co s?",
+  "morePartners": "Xem th�m d?i t�c li�n quan",
+  "suggestions": "G?i � t�m ki?m ph? bi?n",
+  "contactsHanoi": "H� N?I",
+  "contactsHcm": "TP. H? CH� MINH",
+  "contactsDanang": "�� N?NG",
+  "contactsCantho": "C?N THO",
+  "contactsQuynhon": "QUY NHON",
+  "address": "�?a ch?",
+  "hotline": "Hotline",
+  "email": "Email",
+  "copyright": "� 2026 B?n quy?n thu?c v? Tru?ng �?i h?c FPT."
+}

@@ -1,0 +1,40 @@
+{
+  "descriptions": {
+    "ACCOUNT_ACCESS": "Login, forgot password, system access rights.",
+    "VISIT_REQUEST": "Process to register, edit, and cancel visits.",
+    "DELEGATION_MANAGEMENT": "Delegation details, members, and schedule.",
+    "LOGISTICS_RESOURCE": "Meeting rooms, transportation, and support equipment.",
+    "DOCUMENT_MEDIA": "Attachments, images, and event videos.",
+    "NOTIFICATION_EMAIL": "System notifications and automated emails.",
+    "OTHER": "Other questions not in a specific category."
+  },
+  "hero": {
+    "title": "How can we help you?",
+    "subtitle": "Answers regarding accounts, visit registration, delegation management, logistics, documents, and notifications in the PEMS system.",
+    "searchPlaceholder": "Enter keywords (e.g., login, document...)"
+  },
+  "browse": {
+    "title": "Browse by Topic",
+    "all": "All",
+    "allDesc": "View all frequently asked questions."
+  },
+  "suggested": {
+    "title": "Popular Questions"
+  },
+  "main": {
+    "topics": "Topics",
+    "found": "Found {{count}} questions",
+    "errorTitle": "Data Load Error",
+    "errorMsg": "Unable to load FAQ data. Please try again later.",
+    "retry": "Try again",
+    "noResultTitle": "No matching questions found",
+    "noResultMsg": "Try a different keyword or contact Intl. Relations Dept.",
+    "clearFilter": "Clear filter"
+  },
+  "cta": {
+    "title": "Still need help?",
+    "subtitle": "The International Relations Department team is always ready to answer your questions.",
+    "contact": "Contact Intl. Relations",
+    "register": "Book a Visit"
+  }
+}

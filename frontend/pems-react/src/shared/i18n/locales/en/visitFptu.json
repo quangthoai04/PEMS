@@ -1,0 +1,81 @@
+{
+  "hero": {
+    "scrollDown": "Scroll down",
+    "campusPrefix": "Campus",
+    "hanoi": "Hanoi",
+    "hochiminh": "Ho Chi Minh",
+    "quynhon": "Quy Nhon",
+    "cantho": "Can Tho",
+    "danang": "Da Nang"
+  },
+  "overview": {
+    "badge": "Virtual Tour",
+    "titleLine1": "Space of",
+    "titleLine2": "The Future",
+    "description": "Experience a multi-sensory journey across 5 FPT University campuses nationwide. Ecological architecture harmonious with nature and modern technological utilities create an ideal academic environment.",
+    "benefit1": "Understand the academic and living environment",
+    "benefit2": "Explore exclusive check-in spots",
+    "benefit3": "Admire 5-star facilities",
+    "cta": "Start Exploring"
+  },
+  "gallery": {
+    "mediaKinds": {
+      "video": "Video",
+      "mixed": "Mixed",
+      "image": "Image"
+    },
+    "actions": {
+      "viewDetails": "View details",
+      "up": "Up",
+      "down": "Down",
+      "previous": "Previous",
+      "next": "Next",
+      "close": "Close",
+      "zoomIn": "Zoom in",
+      "share": "Share",
+      "copyLink": "Copy link",
+      "listenNarration": "Listen to narration",
+      "stopNarration": "Stop narration"
+    },
+    "labels": {
+      "delegationsVisited": "Delegations visited",
+      "loading": "Loading...",
+      "loadingDescription": "Loading description...",
+      "generatingNarration": "Generating narration...",
+      "itemsCount": "{{count}} items",
+      "imagesCount": "{{count}} images",
+      "videosCount": "{{count}} videos",
+      "mixedCount": "{{count}} mixed",
+      "explore": "Explore",
+      "learnMore": "Learn more",
+      "goBack": "Go back",
+      "tourGallery": "Digital Tour Gallery",
+      "loadingGalleryContent": "Loading Gallery content...",
+      "noPublicCampusContent": "This campus currently has no public Gallery content.",
+      "startTour": "Start Tour",
+      "viewAreas": "View Areas",
+      "areasCount": "Areas",
+      "locationsCount": "Locations",
+      "nationwideCampuses": "Nationwide Campuses",
+      "noLocationsYet": "No locations yet",
+      "specificLocation": "Specific location",
+      "prevArea": "Previous Area",
+      "nextArea": "Next Area",
+      "locationPrefix": "Location",
+      "prevLocation": "Previous Location",
+      "nextLocation": "Next Location",
+      "backToPrev": "Go Back",
+      "visitingImages": "Visiting Images"
+    },
+    "errors": {
+      "narrationGenWait": "Narration is being generated, please try again in a few minutes.",
+      "narrationFailed": "Cannot play narration. Please try again later.",
+      "contentHidden": "This content is no longer displayed.",
+      "noMedia": "No media.",
+      "mediaLoadFailed": "Cannot load media.",
+      "noPublicContent": "This location currently has no public Gallery content.",
+      "campusNotFound": "Campus not found.",
+      "galleryLoadFailed": "Unable to load Gallery data. Please try again."
+    }
+  }
+}

@@ -1,0 +1,46 @@
+{
+  "types": {
+    "all": "All",
+    "featured": "Featured",
+    "visit": "From visits",
+    "general": "General"
+  },
+  "card": {
+    "featured": "Featured",
+    "readMore": "Read more",
+    "readMoreArrow": "Read more ?"
+  },
+  "filter": {
+    "searchPlaceholder": "Search news...",
+    "allCampuses": "All campuses",
+    "sortLatest": "Latest",
+    "sortOldest": "Oldest"
+  },
+  "sections": {
+    "topStories": "Top Stories",
+    "visitHighlights": "Visit Highlights",
+    "searchResults": "Search Results",
+    "latestNews": "Latest News",
+    "newsByCampus": "News by Campus",
+    "allCampuses": "All"
+  },
+  "status": {
+    "loadErrorTitle": "Unable to load news list.",
+    "loadErrorMsg": "Please check your connection and try again.",
+    "retry": "Try again",
+    "noSearchResultTitle": "No matching news found.",
+    "noNewsTitle": "No news published yet.",
+    "adjustFilterMsg": "Try adjusting keywords or filters.",
+    "comeBackLaterMsg": "Please check back later.",
+    "loading": "Loading...",
+    "loadMore": "Load more",
+    "campusNoNewsTitle": "This campus has no news yet."
+  },
+  "detail": {
+    "loadingArticle": "Loading article...",
+    "notFoundTitle": "Article not found",
+    "notFoundMsg": "The article does not exist or has not been published.",
+    "goBack": "Go back",
+    "copyright": "� Copyright by International Relations Department - FPT University"
+  }
+}

@@ -5,6 +5,7 @@ import { AuthProvider } from './shared/auth/AuthContext';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import App from './App.tsx';
 import './index.css';
+import './shared/i18n/config';
 
 // Intercept and silence Recharts initial render dimension warnings
 const originalWarn = console.warn;

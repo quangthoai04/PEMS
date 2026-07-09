@@ -1,0 +1,57 @@
+{
+  "hero": {
+    "department": "International Relations Department",
+    "title1": "Global Connection",
+    "title2": "with FPT University",
+    "description": "Expand international partner networks, promote student exchange, and bring international standard experiences to 5 campuses nationwide.",
+    "primaryCta": "Book a Visit",
+    "secondaryCta": "Visit FPTU Online",
+    "titleLine1": "Global Connection",
+    "titleLine2": "with FPT University"
+  },
+  "about": {
+    "sectionTitle": "About FPT University",
+    "headline": "Pioneering university in technology talent training, closely associated with businesses and global partner networks.",
+    "description": "The International Relations Department connects FPT University with universities, organizations, and enterprises worldwide — from student exchange and research collaboration to campus visits at 5 facilities.",
+    "stat1": "Explore 5 campuses nationwide",
+    "stat2": "Partner countries",
+    "stat3": "Practical orientation"
+  },
+  "news": {
+    "sectionTitle": "Featured News",
+    "viewAll": "View all",
+    "readMore": "Read more"
+  },
+  "campus": {
+    "title": "5 campuses nationwide",
+    "subtitle": "From Hanoi to Can Tho — each campus is a unique space for learning, working, and welcoming international partners according to distinct standards.",
+    "explore": "Explore",
+    "HN": "Hanoi",
+    "HCM": "Ho Chi Minh City",
+    "DN": "Da Nang",
+    "CT": "Can Tho",
+    "QN": "Quy Nhon"
+  },
+  "partners": {
+    "title": "Partners & International Cooperation",
+    "subtitle": "A strong network of partners with universities and enterprises locally and internationally, providing numerous practical experience opportunities."
+  },
+  "process": {
+    "title": "Visit Request Process",
+    "subtitle": "Simple and transparent — from request submission to the actual visit.",
+    "step1Title": "Submit Request",
+    "step1Desc": "Fill out visit registration and delegation details via the online form.",
+    "step2Title": "FPTU Review",
+    "step2Desc": "International Relations Department receives and reviews the partner's request.",
+    "step3Title": "Host Assignment",
+    "step3Desc": "A host is assigned to prepare for and welcome the delegation.",
+    "step4Title": "Schedule Confirmation",
+    "step4Desc": "The visit schedule is confirmed and sent back to the partner."
+  },
+  "cta": {
+    "title": "Ready to connect with FPT University?",
+    "subtitle": "Register for a visit or contact the International Relations Department directly to begin our partnership journey.",
+    "bookVisit": "Book a Visit",
+    "contact": "Contact IR Department"
+  }
+}

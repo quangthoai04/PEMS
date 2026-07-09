@@ -1,0 +1,40 @@
+{
+  "descriptions": {
+    "ACCOUNT_ACCESS": "�ang nh?p, qu�n m?t kh?u, quy?n truy c?p h? th?ng.",
+    "VISIT_REQUEST": "Quy tr�nh dang k�, ch?nh s?a, h?y chuy?n tham quan.",
+    "DELEGATION_MANAGEMENT": "Th�ng tin do�n kh�ch, th�nh vi�n, l?ch tr�nh.",
+    "LOGISTICS_RESOURCE": "Ph�ng h?p, xe dua d�n, thi?t b? h? tr?.",
+    "DOCUMENT_MEDIA": "T�i li?u d�nh k�m, h�nh ?nh, video s? ki?n.",
+    "NOTIFICATION_EMAIL": "Th�ng b�o h? th?ng v� email t? d?ng.",
+    "OTHER": "C�c c�u h?i kh�c chua thu?c nh�m c? th?."
+  },
+  "hero": {
+    "title": "Ch�ng t�i c� th? gi�p g� cho b?n?",
+    "subtitle": "Gi?i d�p v? t�i kho?n, dang k� tham quan, qu?n l� do�n, h?u c?n, t�i li?u v� th�ng b�o trong h? th?ng PEMS.",
+    "searchPlaceholder": "Nh?p t? kh�a (VD: dang nh?p, t�i li?u...)"
+  },
+  "browse": {
+    "title": "Duy?t theo ch? d?",
+    "all": "T?t c?",
+    "allDesc": "Xem to�n b? c�u h?i thu?ng g?p."
+  },
+  "suggested": {
+    "title": "C�u h?i n?i b?t"
+  },
+  "main": {
+    "topics": "Ch? d?",
+    "found": "T�m th?y {{count}} c�u h?i",
+    "errorTitle": "L?i t?i d? li?u",
+    "errorMsg": "Kh�ng th? t?i d? li?u FAQ. Vui l�ng th? l?i sau.",
+    "retry": "Th? l?i",
+    "noResultTitle": "Kh�ng t�m th?y c�u h?i ph� h?p",
+    "noResultMsg": "H�y th? t? kh�a kh�c ho?c li�n h? Ph�ng HTQT.",
+    "clearFilter": "X�a b? l?c"
+  },
+  "cta": {
+    "title": "B?n v?n c?n h? tr??",
+    "subtitle": "�?i ngu Ph�ng H?p t�c Qu?c t? lu�n s?n s�ng gi?i d�p th?c m?c c?a b?n.",
+    "contact": "Li�n h? Ph�ng HTQT",
+    "register": "�ang k� tham quan"
+  }
+}

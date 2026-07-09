@@ -8,6 +8,12 @@ const httpClient = axios.create({
   baseURL,
 });
 
+httpClient.interceptors.request.use((config) => {
+  const language = localStorage.getItem('pems.language') || 'vi';
+  config.headers['Accept-Language'] = language;
+  return config;
+});
+
 httpClient.interceptors.request.use(authInterceptor);
 
 // Endpoints that must never trigger a refresh-retry loop.

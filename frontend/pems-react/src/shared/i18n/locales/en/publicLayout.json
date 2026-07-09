@@ -1,0 +1,51 @@
+{
+  "nav": {
+    "home": "Home",
+    "news": "News",
+    "partners": "Partners",
+    "faq": "FAQs",
+    "gallery": "Visit FPTU Gallery",
+    "login": "Sign in",
+    "galleryShort": "Visit FPTU",
+    "faqShort": "FAQs"
+  },
+  "language": {
+    "vi": "Tiếng Việt",
+    "en": "English"
+  },
+  "footer": {
+    "deptName": "International Relations Department",
+    "system": "Education System",
+    "hanoi": "Hanoi: Hoa Lac Hi-tech Park",
+    "danang": "Da Nang: FPT City",
+    "hcm": "Ho Chi Minh: Hi-tech Park, Thu Duc",
+    "cantho": "Can Tho: 600 Nguyen Van Cu Street",
+    "quynhon": "Quy Nhon: An Phu Thinh Urban Area",
+    "connect": "Connect With Us",
+    "privacy": "Privacy Policy",
+    "terms": "Terms of Use",
+    "copyright": "© 2024 PEMS - FPT University",
+    "backToTop": "Back to top"
+  },
+  "actions": {
+    "openSearch": "Open search",
+    "openMenu": "Open menu",
+    "closeMenu": "Close menu"
+  },
+  "brand": {
+    "department": "Intl. Relations"
+  },
+  "profile": {
+    "myVisitRequests": "My Visit Requests",
+    "adminDashboard": "Admin Dashboard",
+    "userProfile": "Profile",
+    "logout": "Log out",
+    "logoutAccount": "Log out account",
+    "loggingOut": "Logging out...",
+    "category": "Categories",
+    "language": "Language",
+    "guest": "Partner / Guest",
+    "myForms": "My requests",
+    "manage": "Manage"
+  }
+}

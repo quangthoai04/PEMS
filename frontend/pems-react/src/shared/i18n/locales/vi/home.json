@@ -1,0 +1,57 @@
+{
+  "hero": {
+    "department": "Phòng Hợp tác Quốc tế",
+    "title1": "Kết nối toàn cầu",
+    "title2": "cùng Đại học FPT",
+    "description": "Mở rộng mạng lưới đối tác quốc tế, thúc đẩy trao đổi sinh viên và mang trải nghiệm chuẩn quốc tế đến 5 cơ sở trên toàn quốc.",
+    "primaryCta": "Đăng ký tham quan",
+    "secondaryCta": "Visit FPTU Online",
+    "titleLine1": "Kết nối toàn cầu",
+    "titleLine2": "cùng Đại học FPT"
+  },
+  "about": {
+    "sectionTitle": "Về Đại học FPT",
+    "headline": "Đại học tiên phong đào tạo nhân lực công nghệ, gắn kết chặt chẽ với doanh nghiệp và mạng lưới đối tác quốc tế.",
+    "description": "Phòng Hợp tác Quốc tế là đầu mối kết nối FPT University với các trường đại học, tổ chức và doanh nghiệp trên toàn cầu — từ trao đổi sinh viên, hợp tác nghiên cứu đến các chuyến tham quan, làm việc trực tiếp tại 5 cơ sở.",
+    "stat1": "Khám phá 5 cơ sở trên toàn quốc",
+    "stat2": "Quốc gia đối tác",
+    "stat3": "Định hướng thực chiến"
+  },
+  "news": {
+    "sectionTitle": "Tin Tức Nổi Bật",
+    "viewAll": "Xem tất cả",
+    "readMore": "Đọc tiếp"
+  },
+  "campus": {
+    "title": "5 cơ sở trên toàn quốc",
+    "subtitle": "Từ Hà Nội đến Cần Thơ — mỗi cơ sở là một không gian học tập, làm việc và tiếp đón đối tác quốc tế theo tiêu chuẩn riêng.",
+    "explore": "Khám phá",
+    "HN": "Hà Nội",
+    "HCM": "TP. Hồ Chí Minh",
+    "DN": "Đà Nẵng",
+    "CT": "Cần Thơ",
+    "QN": "Quy Nhơn"
+  },
+  "partners": {
+    "title": "Đối tác & Hợp tác quốc tế",
+    "subtitle": "Mạng lưới đối tác bền chặt với các trường Đại học và doanh nghiệp trong và ngoài nước, mang lại nhiều cơ hội trải nghiệm thực tế."
+  },
+  "process": {
+    "title": "Quy trình gửi yêu cầu tham quan",
+    "subtitle": "Đơn giản, minh bạch — từ lúc gửi yêu cầu đến khi buổi tham quan diễn ra.",
+    "step1Title": "Gửi yêu cầu",
+    "step1Desc": "Điền thông tin đăng ký tham quan và thành phần đoàn qua form trực tuyến.",
+    "step2Title": "FPTU xem xét",
+    "step2Desc": "Phòng Hợp tác Quốc tế tiếp nhận và xem xét yêu cầu của quý đối tác.",
+    "step3Title": "Phân công tiếp đón",
+    "step3Desc": "Cán bộ phụ trách (host) được phân công chuẩn bị và tiếp đón đoàn.",
+    "step4Title": "Xác nhận lịch",
+    "step4Desc": "Lịch trình tham quan được xác nhận và gửi lại cho quý đối tác."
+  },
+  "cta": {
+    "title": "Sẵn sàng kết nối cùng FPT University?",
+    "subtitle": "Đăng ký tham quan hoặc liên hệ trực tiếp với Phòng Hợp tác Quốc tế để bắt đầu hành trình hợp tác.",
+    "bookVisit": "Đăng ký tham quan",
+    "contact": "Liên hệ Phòng HTQT"
+  }
+}

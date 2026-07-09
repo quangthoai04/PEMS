@@ -1,0 +1,51 @@
+{
+  "nav": {
+    "home": "Trang chủ",
+    "news": "Tin tức",
+    "partners": "Đối tác",
+    "faq": "Câu hỏi thường gặp",
+    "gallery": "Thư viện FPTU",
+    "login": "Đăng nhập",
+    "galleryShort": "Thư viện FPTU",
+    "faqShort": "FAQ"
+  },
+  "language": {
+    "vi": "Tiếng Việt",
+    "en": "English"
+  },
+  "footer": {
+    "deptName": "Phòng Hợp Tác Quốc Tế",
+    "system": "Hệ Thống Đào Tạo",
+    "hanoi": "Hà Nội: Khu CNC Hòa Lạc",
+    "danang": "Đà Nẵng: KĐT FPT City",
+    "hcm": "TP. HCM: Khu CNC, Thủ Đức",
+    "cantho": "Cần Thơ: Số 600, đường Nguyễn Văn Cừ",
+    "quynhon": "Quy Nhơn: Khu Đô Thị An Phú Thịnh",
+    "connect": "Kết Nối Với Chúng Tôi",
+    "privacy": "Chính sách bảo mật",
+    "terms": "Điều khoản sử dụng",
+    "copyright": "© 2024 Hệ thống quản lý tiếp khách và hợp tác quốc tế - ĐẠI HỌC FPT",
+    "backToTop": "Trở lại đầu trang"
+  },
+  "actions": {
+    "openSearch": "Tìm kiếm",
+    "openMenu": "Mở menu",
+    "closeMenu": "Đóng menu"
+  },
+  "brand": {
+    "department": "Phòng HTQT"
+  },
+  "profile": {
+    "myVisitRequests": "�on tham quan c?a t�i",
+    "adminDashboard": "Trang qu?n tr?",
+    "userProfile": "H? so c� nh�n",
+    "logout": "�ang xu?t",
+    "logoutAccount": "�ang xu?t t�i kho?n",
+    "loggingOut": "�ang dang xu?t...",
+    "category": "Danh m?c",
+    "language": "Ng�n ng? / Language",
+    "guest": "�?i t�c / Kh�ch",
+    "myForms": "�on c?a t�i",
+    "manage": "Qu?n l�"
+  }
+}

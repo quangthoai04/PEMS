@@ -1,0 +1,46 @@
+{
+  "types": {
+    "all": "T?t c?",
+    "featured": "N?i b?t",
+    "visit": "T? chuy?n tham",
+    "general": "Tin chung"
+  },
+  "card": {
+    "featured": "N?i b?t",
+    "readMore": "�?c ti?p",
+    "readMoreArrow": "�?c ti?p ?"
+  },
+  "filter": {
+    "searchPlaceholder": "T�m ki?m tin t?c...",
+    "allCampuses": "T?t c? co s?",
+    "sortLatest": "M?i nh?t",
+    "sortOldest": "Cu nh?t"
+  },
+  "sections": {
+    "topStories": "Tin n?i b?t",
+    "visitHighlights": "D?u ?n c�c chuy?n tham",
+    "searchResults": "K?t qu? t�m ki?m",
+    "latestNews": "Tin m?i nh?t",
+    "newsByCampus": "Tin t?c theo co s?",
+    "allCampuses": "T?t c?"
+  },
+  "status": {
+    "loadErrorTitle": "Kh�ng th? t?i danh s�ch tin t?c.",
+    "loadErrorMsg": "Vui l�ng ki?m tra k?t n?i v� th? l?i.",
+    "retry": "Th? l?i",
+    "noSearchResultTitle": "Kh�ng t�m th?y tin t?c ph� h?p.",
+    "noNewsTitle": "Chua c� tin t?c n�o du?c dang.",
+    "adjustFilterMsg": "Th? di?u ch?nh t? kh�a ho?c b? l?c.",
+    "comeBackLaterMsg": "Vui l�ng quay l?i sau.",
+    "loading": "�ang t?i...",
+    "loadMore": "Xem th�m",
+    "campusNoNewsTitle": "Co s? n�y chua c� tin t?c."
+  },
+  "detail": {
+    "loadingArticle": "�ang t?i b�i vi?t...",
+    "notFoundTitle": "B�i vi?t kh�ng t?n t?i",
+    "notFoundMsg": "B�i vi?t kh�ng t?n t?i ho?c chua du?c c�ng khai.",
+    "goBack": "Quay l?i",
+    "copyright": "� B?n quy?n thu?c v? Ph�ng H?p t�c Qu?c t? - �?i h?c FPT"
+  }
+}

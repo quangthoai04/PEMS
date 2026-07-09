@@ -1,0 +1,81 @@
+{
+  "hero": {
+    "scrollDown": "Cuộn xuống",
+    "campusPrefix": "Campus",
+    "hanoi": "Hà Nội",
+    "hochiminh": "Hồ Chí Minh",
+    "quynhon": "Quy Nhơn",
+    "cantho": "Cần Thơ",
+    "danang": "Đà Nẵng"
+  },
+  "overview": {
+    "badge": "Tour Tham Quan Số",
+    "titleLine1": "Không Gian",
+    "titleLine2": "Tương Lai",
+    "description": "Trải nghiệm đa giác quan tại 5 cơ sở của Đại học FPT trên toàn quốc. Kiến trúc sinh thái giao hòa cùng thiên nhiên, tiện ích công nghệ hiện đại mở ra môi trường học thuật lý tưởng.",
+    "benefit1": "Hiểu rõ môi trường học thuật và sinh hoạt",
+    "benefit2": "Khám phá các góc sống ảo độc quyền",
+    "benefit3": "Chiêm ngưỡng cơ sở vật chất 5 sao",
+    "cta": "Bắt đầu khám phá"
+  },
+  "gallery": {
+    "mediaKinds": {
+      "video": "Video",
+      "mixed": "Hỗn hợp",
+      "image": "Hình ảnh"
+    },
+    "actions": {
+      "viewDetails": "Xem chi tiết",
+      "up": "Lên",
+      "down": "Xuống",
+      "previous": "Trước",
+      "next": "Tiếp theo",
+      "close": "Đóng",
+      "zoomIn": "Phóng to",
+      "share": "Chia sẻ",
+      "copyLink": "Sao chép liên kết",
+      "listenNarration": "Nghe thuyết minh",
+      "stopNarration": "Dừng thuyết minh"
+    },
+    "labels": {
+      "delegationsVisited": "Đoàn khách đã tới thăm",
+      "loading": "Đang tải…",
+      "loadingDescription": "Đang tải mô tả…",
+      "generatingNarration": "Giọng đọc đang được tạo…",
+      "itemsCount": "{{count}} nội dung",
+      "imagesCount": "{{count}} hình ảnh",
+      "videosCount": "{{count}} video",
+      "mixedCount": "{{count}} hỗn hợp",
+      "explore": "Khám phá",
+      "learnMore": "Tìm hiểu thêm",
+      "goBack": "Quay lại",
+      "tourGallery": "Tour Tham Quan Số",
+      "loadingGalleryContent": "Đang tải nội dung Gallery…",
+      "noPublicCampusContent": "Campus này hiện chưa có nội dung Gallery công khai.",
+      "startTour": "Bắt đầu tham quan",
+      "viewAreas": "Xem các khu vực",
+      "areasCount": "Khu vực",
+      "locationsCount": "Vị trí tham quan",
+      "nationwideCampuses": "Cơ sở toàn quốc",
+      "noLocationsYet": "Chưa có vị trí hiển thị",
+      "specificLocation": "Vị trí cụ thể",
+      "prevArea": "Khu vực đằng trước",
+      "nextArea": "Khu vực tiếp theo",
+      "locationPrefix": "Vị trí",
+      "prevLocation": "Vị trí trước",
+      "nextLocation": "Vị trí tiếp theo",
+      "backToPrev": "Trở Về",
+      "visitingImages": "Hình ảnh tham quan"
+    },
+    "errors": {
+      "narrationGenWait": "Giọng đọc đang được tạo, vui lòng thử lại sau ít phút.",
+      "narrationFailed": "Chưa thể phát giọng đọc. Vui lòng thử lại sau.",
+      "contentHidden": "Nội dung này hiện không còn được hiển thị.",
+      "noMedia": "Không có media.",
+      "mediaLoadFailed": "Không thể tải media.",
+      "noPublicContent": "Vị trí này hiện chưa có nội dung Gallery công khai.",
+      "campusNotFound": "Không tìm thấy cơ sở này.",
+      "galleryLoadFailed": "Không thể tải dữ liệu Gallery. Vui lòng thử lại."
+    }
+  }
+}
