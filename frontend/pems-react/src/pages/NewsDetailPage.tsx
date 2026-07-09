@@ -13,6 +13,7 @@ import { format } from 'date-fns';
 import { vi } from 'date-fns/locale';
 import { sanitizeHtml } from '../shared/security/sanitizeHtml';
 import { resolveFileUrl } from '../shared/utils/resolveFileUrl';
+import { useTranslation } from 'react-i18next';
 
 const LANGUAGE_LABELS: Record<string, string> = {
   vi: 'Tiếng Việt',
@@ -23,6 +24,7 @@ const LANGUAGE_LABELS: Record<string, string> = {
 };
 
 export function NewsDetailPage() {
+  const { t } = useTranslation(['news']);
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const location = useLocation();
@@ -78,7 +80,7 @@ export function NewsDetailPage() {
     return (
       <div className="pt-24 md:pt-28 pb-12 md:pb-20 bg-white min-h-screen flex flex-col items-center justify-center">
         <div className="w-12 h-12 border-4 border-[#004c91] border-t-transparent rounded-full animate-spin mb-4"></div>
-        <p className="text-gray-500 font-medium">Đang tải bài viết...</p>
+        <p className="text-gray-500 font-medium">{t('news:detail.loadingArticle')}</p>
       </div>
     );
   }
@@ -89,15 +91,15 @@ export function NewsDetailPage() {
         <div className="w-16 h-16 bg-slate-200 text-slate-500 rounded-full flex items-center justify-center mb-4">
           <ImageIcon className="w-8 h-8" />
         </div>
-        <h2 className="text-xl font-bold text-slate-800 mb-2">Bài viết không tồn tại</h2>
+        <h2 className="text-xl font-bold text-slate-800 mb-2">{t('news:detail.notFoundTitle')}</h2>
         <p className="text-slate-500 mb-6 max-w-md">
-          Bài viết không tồn tại hoặc chưa được công khai.
+          {t('news:detail.notFoundMsg')}
         </p>
         <button 
           onClick={handleBack}
           className="px-6 py-2 bg-[#004c91] text-white font-bold rounded-xl hover:bg-[#003b70] transition-colors"
         >
-          Quay lại
+          {t('news:detail.goBack')}
         </button>
       </div>
     );
@@ -121,7 +123,7 @@ export function NewsDetailPage() {
             onClick={handleBack} 
             className="hover:text-[#004c91] transition-colors flex items-center gap-1.5 cursor-pointer px-2 py-1 rounded-lg"
           >
-            Quay lại
+            {t('news:detail.goBack')}
           </button>
           
           <span className="text-slate-300">/</span>
@@ -206,7 +208,7 @@ export function NewsDetailPage() {
 
         {/* Copyright */}
         <p className="text-[14px] text-gray-400 opacity-80 font-medium pb-8 border-b border-white">
-          © Bản quyền thuộc về Phòng Hợp tác Quốc tế - Đại học FPT
+          {t('news:detail.copyright')}
         </p>
 
       </div>

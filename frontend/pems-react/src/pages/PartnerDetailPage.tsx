@@ -15,8 +15,10 @@ import { publicPartnersApi } from '../features/public-partners/api/publicPartner
 import { usePublicPartnerImage } from '../features/public-partners/hooks/usePublicPartnerImage';
 import type { PublicPartner } from '../features/public-partners/types/publicPartners.types';
 import { getNameInitials } from '../shared/utils/nameInitials';
+import { useTranslation } from 'react-i18next';
 
 export function PartnerDetailPage() {
+  const { t } = useTranslation(['partners']);
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
 
@@ -38,7 +40,7 @@ export function PartnerDetailPage() {
       } catch (e: any) {
         if (cancelled) return;
         if (e?.response?.status === 404) setNotFound(true);
-        else setError('Không thể tải thông tin đối tác. Vui lòng thử lại sau.');
+        else setError(t('partners:detail.loadError'));
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -67,13 +69,13 @@ export function PartnerDetailPage() {
         <div className="max-w-md w-full bg-white rounded-2xl border border-slate-200 py-14 px-6 text-center">
           <AlertTriangle className="w-10 h-10 text-amber-400 mx-auto mb-4" />
           <h3 className="text-lg font-bold text-slate-700 mb-2">
-            Không tìm thấy đối tác hoặc đối tác chưa được công khai.
+            {t('partners:detail.notFound')}
           </h3>
           <button
             onClick={() => navigate('/partners')}
             className="mt-4 px-5 py-2.5 bg-[#004c91] hover:bg-[#003b70] text-white text-sm font-bold rounded-xl transition-colors"
           >
-            Quay lại danh sách đối tác
+            {t('partners:detail.backToList')}
           </button>
         </div>
       </div>
@@ -90,7 +92,7 @@ export function PartnerDetailPage() {
             onClick={() => window.location.reload()}
             className="mt-4 px-5 py-2.5 bg-[#004c91] hover:bg-[#003b70] text-white text-sm font-bold rounded-xl transition-colors"
           >
-            Thử lại
+            {t('partners:list.retry')}
           </button>
         </div>
       </div>
@@ -109,11 +111,11 @@ export function PartnerDetailPage() {
         {/* Breadcrumb */}
         <div className="mb-4 flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-400 py-1">
           <button onClick={() => navigate('/')} className="hover:text-[#004c91] transition-colors flex items-center gap-1.5">
-            <Home className="w-4 h-4" /> Trang chủ
+            <Home className="w-4 h-4" /> {t('partners:detail.home')}
           </button>
           <span className="text-slate-300">/</span>
           <button onClick={() => navigate('/partners')} className="hover:text-[#004c91] transition-colors">
-            Đối tác
+            {t('partners:detail.partners')}
           </button>
           <span className="text-slate-300">/</span>
           <span className="text-slate-600 font-bold truncate max-w-[200px] sm:max-w-none">{partner.name}</span>
@@ -124,7 +126,7 @@ export function PartnerDetailPage() {
           onClick={() => navigate('/partners')}
           className="mb-6 inline-flex items-center gap-2 px-4 py-2 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl text-slate-500 font-bold text-sm transition-colors"
         >
-          <ArrowLeft className="w-4 h-4" /> Quay lại danh sách đối tác
+          <ArrowLeft className="w-4 h-4" /> {t('partners:detail.backToList')}
         </button>
 
         {/* Two-column layout */}
@@ -185,7 +187,7 @@ export function PartnerDetailPage() {
                     rel="noopener noreferrer"
                     className="mt-6 w-full inline-flex items-center justify-center gap-2 px-5 py-3 bg-[#f37021] hover:bg-orange-600 text-white font-bold text-sm rounded-xl transition-colors"
                   >
-                    Ghé thăm website đối tác <ExternalLink className="w-4 h-4" />
+                    {t('partners:detail.visitWebsite')} <ExternalLink className="w-4 h-4" />
                   </a>
                 )}
               </div>
@@ -205,10 +207,10 @@ export function PartnerDetailPage() {
                 <div className="w-9 h-9 rounded-xl bg-orange-50 flex items-center justify-center text-[#f37021]">
                   <BookOpen className="w-4.5 h-4.5" />
                 </div>
-                <h2 className="text-lg font-bold text-[#004c91]">Giới thiệu chung</h2>
+                <h2 className="text-lg font-bold text-[#004c91]">{t('partners:detail.overview')}</h2>
               </div>
               <p className="text-slate-600 text-base leading-relaxed">
-                {partner.description || 'Đối tác chưa cập nhật mô tả.'}
+                {partner.description || t('partners:detail.noDescription')}
               </p>
             </motion.div>
 
@@ -223,29 +225,29 @@ export function PartnerDetailPage() {
                 <div className="w-9 h-9 rounded-xl bg-sky-50 flex items-center justify-center text-[#004c91]">
                   <Globe2 className="w-4.5 h-4.5" />
                 </div>
-                <h2 className="text-lg font-bold text-[#004c91]">Thông tin tổ chức</h2>
+                <h2 className="text-lg font-bold text-[#004c91]">{t('partners:detail.orgInfo')}</h2>
               </div>
               <dl className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {partner.country && (
                   <div>
-                    <dt className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-1">Quốc gia</dt>
+                    <dt className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-1">{t('partners:detail.country')}</dt>
                     <dd className="text-slate-700 font-semibold">{partner.country}</dd>
                   </div>
                 )}
                 {partner.city && (
                   <div>
-                    <dt className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-1">Thành phố</dt>
+                    <dt className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-1">{t('partners:detail.city')}</dt>
                     <dd className="text-slate-700 font-semibold">{partner.city}</dd>
                   </div>
                 )}
                 {partner.address && (
                   <div className="sm:col-span-2">
-                    <dt className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-1">Địa chỉ / trụ sở</dt>
+                    <dt className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-1">{t('partners:detail.address')}</dt>
                     <dd className="text-slate-700 font-semibold leading-relaxed">{partner.address}</dd>
                   </div>
                 )}
                 {!partner.country && !partner.city && !partner.address && (
-                  <p className="text-sm text-slate-400 sm:col-span-2">Chưa cập nhật thông tin vị trí.</p>
+                  <p className="text-sm text-slate-400 sm:col-span-2">{t('partners:detail.noLocation')}</p>
                 )}
               </dl>
             </motion.div>

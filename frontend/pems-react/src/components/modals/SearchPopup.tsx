@@ -13,6 +13,7 @@ import { publicPartnersApi } from '../../features/public-partners/api/publicPart
 import { publicFaqApi } from '../../features/public-faq/api/publicFaqApi';
 import { authenticationApi } from '../../features/authentication/api/authenticationApi';
 import type { SearchInformationResult } from '../../features/public-search/types/publicSearch.types';
+import { useTranslation } from 'react-i18next';
 
 interface SearchPopupProps {
   isOpen: boolean;
@@ -26,31 +27,31 @@ const VISIT_RELATED_FAQ_TYPES = ['VISIT_REQUEST', 'DELEGATION_MANAGEMENT', 'LOGI
 const CAMPUS_CONTACTS = [
   {
     city: 'HÀ NỘI',
-    address: 'Khu Giáo dục và Đào tạo - Khu Công nghệ cao Hòa Lạc - Km29 Đại lộ Thăng Long, Xã Thạch Hòa, Huyện Thạch Thất, TP. Hà Nội',
+    addressKey: 'search:contactsHanoiAddress',
     hotline: '(024) 7300 5588',
     email: 'tuyensinhhanoi@fpt.edu.vn'
   },
   {
     city: 'TP. HỒ CHÍ MINH',
-    address: 'Lô E2a-7, Đường D1, Khu Công nghệ cao, Phường Tăng Nhơn Phú B, TP. Hồ Chí Minh',
+    addressKey: 'search:contactsHcmAddress',
     hotline: '(028) 7300 5588',
     email: 'tuyensinhhcm@fpt.edu.vn'
   },
   {
     city: 'ĐÀ NẴNG',
-    address: 'Khu đô thị công nghệ FPT Đà Nẵng, Phường Hòa Hải, Quận Ngũ Hành Sơn, TP. Đà Nẵng',
+    addressKey: 'search:contactsDanangAddress',
     hotline: '(0236) 730 0999',
     email: 'tuyensinhdanang@fpt.edu.vn'
   },
   {
     city: 'CẦN THƠ',
-    address: 'Số 600, đường Nguyễn Văn Cừ (nối dài), Phường An Bình, Quận Ninh Kiều, Thành phố Cần Thơ',
+    addressKey: 'search:contactsCanthoAddress',
     hotline: '(0292) 730 3636',
     email: 'tuyensinhcantho@fpt.edu.vn'
   },
   {
     city: 'QUY NHƠN',
-    address: 'Khu đô thị mới An Phú Thịnh, Phường Nhơn Bình, TP. Quy Nhơn, Tỉnh Bình Định',
+    addressKey: 'search:contactsQuynhonAddress',
     hotline: '(0256) 7300 999',
     email: 'tuyensinhquynhon@fpt.edu.vn'
   }
@@ -66,6 +67,7 @@ function formatDate(iso?: string | null): string {
 }
 
 export function SearchPopup({ isOpen, onClose }: SearchPopupProps) {
+  const { t } = useTranslation(['search']);
   const navigate = useNavigate();
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -76,6 +78,15 @@ export function SearchPopup({ isOpen, onClose }: SearchPopupProps) {
   const [error, setError] = useState(false);
 
   const [suggestions, setSuggestions] = useState<string[]>([]);
+
+  // Update contacts with translations inside component to respond to locale change
+  const translatedContacts = useMemo(() => [
+    { ...CAMPUS_CONTACTS[0], city: t('search:contactsHanoi'), address: t(CAMPUS_CONTACTS[0].addressKey as unknown as TemplateStringsArray) },
+    { ...CAMPUS_CONTACTS[1], city: t('search:contactsHcm'), address: t(CAMPUS_CONTACTS[1].addressKey as unknown as TemplateStringsArray) },
+    { ...CAMPUS_CONTACTS[2], city: t('search:contactsDanang'), address: t(CAMPUS_CONTACTS[2].addressKey as unknown as TemplateStringsArray) },
+    { ...CAMPUS_CONTACTS[3], city: t('search:contactsCantho'), address: t(CAMPUS_CONTACTS[3].addressKey as unknown as TemplateStringsArray) },
+    { ...CAMPUS_CONTACTS[4], city: t('search:contactsQuynhon'), address: t(CAMPUS_CONTACTS[4].addressKey as unknown as TemplateStringsArray) }
+  ], [t]);
 
   useEffect(() => {
     if (isOpen) {
@@ -208,7 +219,7 @@ export function SearchPopup({ isOpen, onClose }: SearchPopupProps) {
               {/* Search Area */}
               <div className="flex-none flex flex-col items-center justify-center pt-16 sm:pt-20 pb-10 px-4 sm:px-6">
                 <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-center text-gray-800 mb-8">
-                  Bạn đang tìm kiếm gì?
+                  {t('search:title')}
                 </h2>
 
                 <div className="w-full max-w-3xl relative">
@@ -217,7 +228,7 @@ export function SearchPopup({ isOpen, onClose }: SearchPopupProps) {
                     type="text"
                     value={keyword}
                     onChange={(e) => setKeyword(e.target.value)}
-                    placeholder="Nhập từ khóa tìm kiếm..."
+                    placeholder={t('search:placeholder')}
                     className="w-full h-16 pl-6 pr-16 text-lg sm:text-xl rounded-full border-2 border-gray-200 shadow-sm focus:border-fpt-orange focus:ring-0 outline-none transition-colors"
                     onKeyDown={(e) => {
                       if (e.key === 'Escape') onClose();
@@ -225,7 +236,7 @@ export function SearchPopup({ isOpen, onClose }: SearchPopupProps) {
                   />
                   <button
                     onClick={() => setDebouncedKeyword(keyword.trim())}
-                    aria-label="Tìm kiếm"
+                    aria-label={t('search:searchAria')}
                     className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 bg-fpt-orange text-white rounded-full flex items-center justify-center hover:bg-orange-600 transition-colors"
                   >
                     {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Search className="w-5 h-5" />}
@@ -241,18 +252,18 @@ export function SearchPopup({ isOpen, onClose }: SearchPopupProps) {
                       </div>
                     ) : error ? (
                       <p className="text-center text-sm text-gray-500 py-6">
-                        Không thể tìm kiếm lúc này. Vui lòng thử lại sau.
+                        {t('search:error')}
                       </p>
                     ) : !hasResults ? (
                       <p className="text-center text-sm text-gray-500 py-6">
-                        Không tìm thấy kết quả phù hợp với &quot;{debouncedKeyword}&quot;.
+                        {t('search:noResult', { keyword: debouncedKeyword })}
                       </p>
                     ) : (
                       <div className="bg-white rounded-2xl border border-gray-200 shadow-sm divide-y divide-gray-100 overflow-hidden text-left">
                         {result!.news.length > 0 && (
                           <div className="p-4">
                             <p className="flex items-center gap-1.5 text-xs font-bold text-gray-400 uppercase tracking-wide mb-2">
-                              <Newspaper className="w-3.5 h-3.5" /> Tin tức
+                              <Newspaper className="w-3.5 h-3.5" /> {t('search:news')}
                             </p>
                             {result!.news.map((n) => (
                               <button
@@ -272,7 +283,7 @@ export function SearchPopup({ isOpen, onClose }: SearchPopupProps) {
                         {result!.partners.length > 0 && (
                           <div className="p-4">
                             <p className="flex items-center gap-1.5 text-xs font-bold text-gray-400 uppercase tracking-wide mb-2">
-                              <Building2 className="w-3.5 h-3.5" /> Đối tác
+                              <Building2 className="w-3.5 h-3.5" /> {t('search:partners')}
                             </p>
                             {result!.partners.map((p) => (
                               <button
@@ -292,7 +303,7 @@ export function SearchPopup({ isOpen, onClose }: SearchPopupProps) {
                         {result!.faqs.length > 0 && (
                           <div className="p-4">
                             <p className="flex items-center gap-1.5 text-xs font-bold text-gray-400 uppercase tracking-wide mb-2">
-                              <HelpCircle className="w-3.5 h-3.5" /> Câu hỏi thường gặp
+                              <HelpCircle className="w-3.5 h-3.5" /> {t('search:faq')}
                             </p>
                             {result!.faqs.map((f) => (
                               <button
@@ -312,7 +323,7 @@ export function SearchPopup({ isOpen, onClose }: SearchPopupProps) {
                         {result!.campuses.length > 0 && (
                           <div className="p-4">
                             <p className="flex items-center gap-1.5 text-xs font-bold text-gray-400 uppercase tracking-wide mb-2">
-                              <MapPin className="w-3.5 h-3.5" /> Cơ sở
+                              <MapPin className="w-3.5 h-3.5" /> {t('search:campuses')}
                             </p>
                             {result!.campuses.map((c) => (
                               <div key={c.campusId} className="w-full py-2 flex items-center justify-between gap-3">
@@ -327,7 +338,7 @@ export function SearchPopup({ isOpen, onClose }: SearchPopupProps) {
                           onClick={() => goTo(`/partners?search=${encodeURIComponent(debouncedKeyword)}`)}
                           className="w-full flex items-center justify-center gap-1.5 py-3 text-xs font-bold text-fpt-orange hover:bg-orange-50 transition-colors"
                         >
-                          Xem thêm đối tác liên quan <ArrowRight className="w-3.5 h-3.5" />
+                          {t('search:morePartners')} <ArrowRight className="w-3.5 h-3.5" />
                         </button>
                       </div>
                     )}
@@ -336,7 +347,7 @@ export function SearchPopup({ isOpen, onClose }: SearchPopupProps) {
 
                 {!debouncedKeyword && suggestions.length > 0 && (
                   <div className="w-full max-w-3xl mt-8">
-                    <h3 className="text-sm uppercase tracking-wider text-gray-500 font-semibold mb-4 text-center">Gợi ý tìm kiếm phổ biến</h3>
+                    <h3 className="text-sm uppercase tracking-wider text-gray-500 font-semibold mb-4 text-center">{t('search:suggestions')}</h3>
                     <div className="flex flex-wrap justify-center gap-3">
                       {suggestions.map((item) => (
                         <button
@@ -355,23 +366,23 @@ export function SearchPopup({ isOpen, onClose }: SearchPopupProps) {
               {/* Footer Contacts Area */}
               <div className="mt-auto bg-[#fafafa] border-t border-gray-200 pt-16 pb-8 px-4 sm:px-8">
                 <div className="max-w-[1400px] mx-auto grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-8">
-                  {CAMPUS_CONTACTS.map((campus) => (
-                    <div key={campus.city} className="flex flex-col">
+                  {translatedContacts.map((campus, index) => (
+                    <div key={index} className="flex flex-col">
                       <h4 className="text-[16px] font-bold text-gray-900 flex items-center mb-4 uppercase tracking-wide">
                         <span className="w-[3px] h-4 bg-fpt-orange mr-2 inline-block"></span>
                         {campus.city}
                       </h4>
                       <div className="space-y-4 text-[14px] text-gray-600 leading-relaxed font-medium">
                         <div>
-                          <p className="text-gray-500 font-bold mb-1">Địa chỉ</p>
+                          <p className="text-gray-500 font-bold mb-1">{t('search:address')}</p>
                           <p className="text-gray-800">{campus.address}</p>
                         </div>
                         <div>
-                          <p className="text-gray-500 font-bold inline-block mr-1">Hotline</p>
+                          <p className="text-gray-500 font-bold inline-block mr-1">{t('search:hotline')}</p>
                           <p className="inline-block text-gray-800">{campus.hotline}</p>
                         </div>
                         <div>
-                          <p className="text-gray-500 font-bold inline-block mr-1">Email</p>
+                          <p className="text-gray-500 font-bold inline-block mr-1">{t('search:email')}</p>
                           <p className="inline-block text-gray-800">{campus.email}</p>
                         </div>
                       </div>
@@ -381,7 +392,7 @@ export function SearchPopup({ isOpen, onClose }: SearchPopupProps) {
 
                 <div className="max-w-[1400px] mx-auto mt-16 pt-6 border-t border-gray-200 flex flex-col md:flex-row items-center justify-between gap-4">
                   <p className="text-[14px] font-bold text-gray-800">
-                    © 2026 Bản quyền thuộc về Trường Đại học FPT.
+                    {t('search:copyright')}
                   </p>
                   <div className="flex items-center gap-5">
                     {/* Facebook */}

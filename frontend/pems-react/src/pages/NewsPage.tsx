@@ -21,6 +21,7 @@ import { authenticationApi } from '../features/authentication/api/authentication
 import { PublicNewsListItem } from '../features/public-content/types/publicContent.types';
 import { CampusOption } from '../features/authentication/types/authentication.types';
 import { resolveFileUrl } from '../shared/utils/resolveFileUrl';
+import { useTranslation } from 'react-i18next';
 
 const LATEST_INITIAL_SIZE = 3;
 const LATEST_LOAD_MORE_STEP = 3;
@@ -31,12 +32,7 @@ const CAMPUS_STORIES_LOAD_MORE_STEP = 3;
 type TypeFilter = 'all' | 'featured' | 'visit' | 'general';
 type SortOrder = 'latest' | 'oldest';
 
-const TYPE_OPTIONS: { value: TypeFilter; label: string }[] = [
-  { value: 'all', label: 'Tất cả' },
-  { value: 'featured', label: 'Nổi bật' },
-  { value: 'visit', label: 'Từ chuyến thăm' },
-  { value: 'general', label: 'Tin chung' },
-];
+// We'll generate TYPE_OPTIONS using useTranslation inside the component or via a function.
 
 function formatDate(iso?: string | null): string {
   if (!iso) return '';
@@ -162,6 +158,7 @@ function EmptyState({ title, subtitle }: { title: string; subtitle?: string }) {
 /* ───────────────────────── Hero ───────────────────────── */
 
 function NewsroomHero({ item, loading }: { item: PublicNewsListItem | null; loading: boolean }) {
+  const { t } = useTranslation(['news']);
   if (loading) {
     return (
       <div className="relative left-1/2 right-1/2 -mx-[50vw] w-screen">
@@ -185,7 +182,7 @@ function NewsroomHero({ item, loading }: { item: PublicNewsListItem | null; load
           <div className="absolute inset-x-0 bottom-0 px-8 sm:px-12 lg:px-16 pb-5 sm:pb-10 lg:pb-14 max-w-[1600px] mx-auto">
             <div className="flex items-center gap-3 mb-3">
               <span className="px-3 py-1 rounded-full bg-[#f37021] text-white text-xs font-bold uppercase tracking-wide">
-                Nổi bật
+                {t('news:card.featured')}
               </span>
               {item.publishedAt && (
                 <span className="flex items-center gap-1.5 text-white/80 text-sm">
@@ -203,7 +200,7 @@ function NewsroomHero({ item, loading }: { item: PublicNewsListItem | null; load
               </p>
             )}
             <span className="inline-flex items-center gap-1.5 text-white font-bold text-sm group-hover:gap-2.5 transition-all">
-              Đọc tiếp <ArrowRight className="w-4 h-4" />
+              {t('news:card.readMore')} <ArrowRight className="w-4 h-4" />
             </span>
           </div>
         </div>
@@ -235,6 +232,15 @@ function FilterBar({
   sort: SortOrder;
   onSort: (v: SortOrder) => void;
 }) {
+  const { t } = useTranslation(['news']);
+  
+  const TYPE_OPTIONS: { value: TypeFilter; label: string }[] = [
+    { value: 'all', label: t('news:types.all') },
+    { value: 'featured', label: t('news:types.featured') },
+    { value: 'visit', label: t('news:types.visit') },
+    { value: 'general', label: t('news:types.general') },
+  ];
+
   return (
     <FadeSection className="mb-10">
       <div className="flex flex-col lg:flex-row lg:items-center gap-4">
@@ -245,7 +251,7 @@ function FilterBar({
             type="text"
             value={keyword}
             onChange={(e) => onKeyword(e.target.value)}
-            placeholder="Tìm kiếm tin tức..."
+            placeholder={t('news:filter.searchPlaceholder')}
             className="w-full h-11 pl-10 pr-4 rounded-xl border border-slate-200 bg-white text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#004c91]/20 focus:border-[#004c91] transition-colors"
           />
         </div>
@@ -284,7 +290,7 @@ function FilterBar({
               onChange={(e) => onCampus(e.target.value ? Number(e.target.value) : undefined)}
               className="h-11 px-3 rounded-xl border border-slate-200 bg-white text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#004c91]/20 focus:border-[#004c91] transition-colors"
             >
-              <option value="">Tất cả cơ sở</option>
+              <option value="">{t('news:filter.allCampuses')}</option>
               {campuses.map((c) => (
                 <option key={c.campusId} value={c.campusId}>
                   {c.campusName}
@@ -299,8 +305,8 @@ function FilterBar({
             onChange={(e) => onSort(e.target.value as SortOrder)}
             className="h-11 px-3 rounded-xl border border-slate-200 bg-white text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#004c91]/20 focus:border-[#004c91] transition-colors"
           >
-            <option value="latest">Mới nhất</option>
-            <option value="oldest">Cũ nhất</option>
+            <option value="latest">{t('news:filter.sortLatest')}</option>
+            <option value="oldest">{t('news:filter.sortOldest')}</option>
           </select>
         </div>
       </div>
@@ -311,6 +317,7 @@ function FilterBar({
 /* ───────────────────────── Editorial Top Stories ───────────────────────── */
 
 function TopStories({ items, loading }: { items: PublicNewsListItem[]; loading: boolean }) {
+  const { t } = useTranslation(['news']);
   if (loading) {
     return (
       <FadeSection className="mb-14">
@@ -332,7 +339,7 @@ function TopStories({ items, loading }: { items: PublicNewsListItem[]; loading: 
   return (
     <FadeSection className="mb-14">
       <h2 className="text-lg font-bold text-slate-900 uppercase tracking-wide mb-5 flex items-center gap-2">
-        <span className="w-1.5 h-5 bg-[#f37021] rounded-full" /> Tin nổi bật
+        <span className="w-1.5 h-5 bg-[#f37021] rounded-full" /> {t('news:sections.topStories')}
       </h2>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Link to={`/news/${big.newsId}`} className="group block">
@@ -383,10 +390,11 @@ function TopStories({ items, loading }: { items: PublicNewsListItem[]; loading: 
 /* ───────────────────────── Visit Highlights (vertical, left column) ───────────────────────── */
 
 function VisitHighlights({ items }: { items: PublicNewsListItem[] }) {
+  const { t } = useTranslation(['news']);
   return (
     <FadeSection>
       <h2 className="text-lg font-bold text-slate-900 uppercase tracking-wide mb-5 flex items-center gap-2">
-        <Compass className="w-4 h-4 text-[#f37021]" /> Dấu ấn các chuyến thăm
+        <Compass className="w-4 h-4 text-[#f37021]" /> {t('news:sections.visitHighlights')}
       </h2>
       <div className="flex flex-col gap-6">
         {items.map((item) => (
@@ -415,6 +423,7 @@ function VisitHighlights({ items }: { items: PublicNewsListItem[] }) {
 /* ───────────────────────── Latest News Grid ───────────────────────── */
 
 function NewsCard({ item, index }: { item: PublicNewsListItem; index: number; key?: React.Key }) {
+  const { t } = useTranslation(['news']);
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -433,7 +442,7 @@ function NewsCard({ item, index }: { item: PublicNewsListItem; index: number; ke
           <div className="flex items-center gap-2 flex-wrap mb-2">
             {item.isFeatured && (
               <span className="px-2 py-0.5 rounded-full bg-[#f37021]/10 text-[#f37021] text-[11px] font-bold uppercase">
-                Nổi bật
+                {t('news:card.featured')}
               </span>
             )}
             <CampusBadge item={item} />
@@ -451,7 +460,7 @@ function NewsCard({ item, index }: { item: PublicNewsListItem; index: number; ke
               </span>
             )}
             <span className="text-[#004c91] text-xs font-bold opacity-0 group-hover:opacity-100 transition-opacity">
-              Đọc tiếp →
+              {t('news:card.readMoreArrow')}
             </span>
           </div>
         </div>
@@ -463,6 +472,8 @@ function NewsCard({ item, index }: { item: PublicNewsListItem; index: number; ke
 /* ───────────────────────── Page ───────────────────────── */
 
 export function NewsPage() {
+  const { t } = useTranslation(['news']);
+  
   // Filters
   const [keyword, setKeyword] = useState('');
   const [debouncedKeyword, setDebouncedKeyword] = useState('');
@@ -687,7 +698,7 @@ export function NewsPage() {
             {/* D. Latest news grid */}
             <FadeSection className="mb-16">
               <h2 className="text-lg font-bold text-slate-900 uppercase tracking-wide mb-5 flex items-center gap-2">
-                <span className="w-1.5 h-5 bg-[#004c91] rounded-full" /> {hasActiveFilter ? 'Kết quả tìm kiếm' : 'Tin mới nhất'}
+                <span className="w-1.5 h-5 bg-[#004c91] rounded-full" /> {hasActiveFilter ? t('news:sections.searchResults') : t('news:sections.latestNews')}
               </h2>
 
               {gridLoading && items.length === 0 ? (
@@ -698,19 +709,19 @@ export function NewsPage() {
                 </div>
               ) : gridError ? (
                 <div className="py-16 text-center">
-                  <p className="text-slate-700 font-bold mb-2">Không thể tải danh sách tin tức.</p>
-                  <p className="text-slate-500 text-sm mb-6">Vui lòng kiểm tra kết nối và thử lại.</p>
+                  <p className="text-slate-700 font-bold mb-2">{t('news:status.loadErrorTitle')}</p>
+                  <p className="text-slate-500 text-sm mb-6">{t('news:status.loadErrorMsg')}</p>
                   <button
                     onClick={() => setReloadKey((k) => k + 1)}
                     className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#004c91] text-white font-bold rounded-xl hover:bg-[#003b70] transition-colors"
                   >
-                    <RefreshCw className="w-4 h-4" /> Thử lại
+                    <RefreshCw className="w-4 h-4" /> {t('news:status.retry')}
                   </button>
                 </div>
               ) : items.length === 0 ? (
                 <EmptyState
-                  title={hasActiveFilter ? 'Không tìm thấy tin tức phù hợp.' : 'Chưa có tin tức nào được đăng.'}
-                  subtitle={hasActiveFilter ? 'Thử điều chỉnh từ khóa hoặc bộ lọc.' : 'Vui lòng quay lại sau.'}
+                  title={hasActiveFilter ? t('news:status.noSearchResultTitle') : t('news:status.noNewsTitle')}
+                  subtitle={hasActiveFilter ? t('news:status.adjustFilterMsg') : t('news:status.comeBackLaterMsg')}
                 />
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -728,7 +739,7 @@ export function NewsPage() {
                     disabled={gridLoading}
                     className="px-6 py-2.5 rounded-xl border border-[#004c91] text-[#004c91] font-bold text-sm hover:bg-[#004c91] hover:text-white transition-colors disabled:opacity-50"
                   >
-                    {gridLoading ? 'Đang tải...' : 'Xem thêm'}
+                    {gridLoading ? t('news:status.loading') : t('news:status.loadMore')}
                   </button>
                 </div>
               )}
@@ -738,7 +749,7 @@ export function NewsPage() {
             {campuses.length > 0 && (
               <FadeSection className="mb-16">
                 <h2 className="text-lg font-bold text-slate-900 uppercase tracking-wide mb-5 flex items-center gap-2">
-                  <MapPin className="w-4 h-4 text-[#004c91]" /> Tin tức theo cơ sở
+                  <MapPin className="w-4 h-4 text-[#004c91]" /> {t('news:sections.newsByCampus')}
                 </h2>
 
                 <div className="flex gap-2 overflow-x-auto no-scrollbar mb-6">
@@ -750,7 +761,7 @@ export function NewsPage() {
                         : 'bg-white text-slate-600 border border-slate-200 hover:border-[#004c91]/40'
                     }`}
                   >
-                    Tất cả
+                    {t('news:sections.allCampuses')}
                   </button>
                   {campuses.map((c) => (
                     <button
@@ -774,7 +785,7 @@ export function NewsPage() {
                     ))}
                   </div>
                 ) : visibleCampusItems.length === 0 ? (
-                  <EmptyState title="Cơ sở này chưa có tin tức." subtitle="Vui lòng quay lại sau." />
+                  <EmptyState title={t('news:status.campusNoNewsTitle')} subtitle={t('news:status.comeBackLaterMsg')} />
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                     {visibleCampusItems.map((article, idx) => (
@@ -791,7 +802,7 @@ export function NewsPage() {
                       disabled={campusGroupsLoading}
                       className="px-6 py-2.5 rounded-xl border border-[#004c91] text-[#004c91] font-bold text-sm hover:bg-[#004c91] hover:text-white transition-colors disabled:opacity-50"
                     >
-                      {campusGroupsLoading ? 'Đang tải...' : 'Xem thêm'}
+                      {campusGroupsLoading ? t('news:status.loading') : t('news:status.loadMore')}
                     </button>
                   </div>
                 )}

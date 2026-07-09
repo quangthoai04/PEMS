@@ -28,6 +28,7 @@ import {
 import { publicFaqApi } from '../features/public-faq/api/publicFaqApi';
 import { VisitingFormPopup } from '../components/modals/VisitingFormPopup';
 import type { PublicFaqItem, PublicFaqTypeCount } from '../features/public-faq/types/publicFaq.types';
+import { useTranslation } from 'react-i18next';
 
 const ALL_TYPE = 'ALL';
 const PAGE_SIZE = 10;
@@ -44,15 +45,7 @@ const TYPE_ICONS: Record<string, React.ComponentType<{ className?: string }>> = 
   OTHER: MoreHorizontal,
 };
 
-const TYPE_DESCRIPTIONS: Record<string, string> = {
-  ACCOUNT_ACCESS: 'Đăng nhập, quên mật khẩu, quyền truy cập hệ thống.',
-  VISIT_REQUEST: 'Quy trình đăng ký, chỉnh sửa, hủy chuyến tham quan.',
-  DELEGATION_MANAGEMENT: 'Thông tin đoàn khách, thành viên, lịch trình.',
-  LOGISTICS_RESOURCE: 'Phòng họp, xe đưa đón, thiết bị hỗ trợ.',
-  DOCUMENT_MEDIA: 'Tài liệu đính kèm, hình ảnh, video sự kiện.',
-  NOTIFICATION_EMAIL: 'Thông báo hệ thống và email tự động.',
-  OTHER: 'Các câu hỏi khác chưa thuộc nhóm cụ thể.',
-};
+// We will move TYPE_DESCRIPTIONS inside the component or use translation directly.
 
 function TopicCardSkeleton() {
   return (
@@ -67,6 +60,7 @@ function TopicCardSkeleton() {
 function TopicCard({
   type, active, onClick, delay,
 }: { type: PublicFaqTypeCount; active: boolean; onClick: () => void; delay: number; key?: React.Key }) {
+  const { t } = useTranslation(['faq']);
   const Icon = TYPE_ICONS[type.value] ?? HelpCircle;
   return (
     <motion.button
@@ -86,7 +80,7 @@ function TopicCard({
         <span className="shrink-0 text-xs font-bold text-[#f37021]">{type.count}</span>
       </div>
       <p className="text-xs text-slate-500 leading-relaxed line-clamp-2">
-        {TYPE_DESCRIPTIONS[type.value] ?? ''}
+        {t(`faq:descriptions.${type.value}`, '')}
       </p>
     </motion.button>
   );
@@ -142,6 +136,7 @@ function FaqAccordionItem({ faq, isOpen, onToggle }: { faq: PublicFaqItem; isOpe
 }
 
 export function FAQPage() {
+  const { t } = useTranslation(['faq']);
   const [isVisitorFormOpen, setIsVisitorFormOpen] = useState(false);
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -223,7 +218,7 @@ export function FAQPage() {
         setTotalItems(res.totalItems ?? 0);
       } catch {
         if (!cancelled) {
-          setError('Không thể tải dữ liệu FAQ. Vui lòng thử lại sau.');
+          setError(t('faq:main.errorMsg'));
           setFaqs([]);
           setTotalPages(0);
           setTotalItems(0);
@@ -274,10 +269,10 @@ export function FAQPage() {
               Help Center
             </div>
             <h1 className="text-2xl md:text-4xl font-bold text-white leading-tight mb-3">
-              Chúng tôi có thể giúp gì cho bạn?
+              {t('faq:hero.title')}
             </h1>
             <p className="text-blue-100 text-sm md:text-base max-w-2xl mx-auto mb-8">
-              Giải đáp về tài khoản, đăng ký tham quan, quản lý đoàn, hậu cần, tài liệu và thông báo trong hệ thống PEMS.
+              {t('faq:hero.subtitle')}
             </p>
 
             <div className="relative max-w-xl mx-auto">
@@ -288,7 +283,7 @@ export function FAQPage() {
               </div>
               <input
                 type="text"
-                placeholder="Nhập từ khóa (VD: đăng nhập, tài liệu...)"
+                placeholder={t('faq:hero.searchPlaceholder')}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="block w-full pl-12 pr-4 py-3.5 md:py-4 rounded-xl text-slate-900 bg-white placeholder:text-slate-400 focus:outline-none focus:ring-4 focus:ring-orange-400/30 text-sm md:text-base shadow-lg transition-shadow"
@@ -301,7 +296,7 @@ export function FAQPage() {
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-10">
         {/* B. Topic cards */}
         <div className="mb-12">
-          <h2 className="text-lg font-bold text-slate-900 mb-5">Duyệt theo chủ đề</h2>
+          <h2 className="text-lg font-bold text-slate-900 mb-5">{t('faq:browse.title')}</h2>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <motion.button
               initial={{ opacity: 0, y: 16 }}
@@ -316,10 +311,10 @@ export function FAQPage() {
                 <HelpCircle className="w-5 h-5" />
               </div>
               <div className="flex items-center justify-between gap-2 mb-1.5">
-                <h3 className="text-sm font-bold text-slate-900">Tất cả</h3>
+                <h3 className="text-sm font-bold text-slate-900">{t('faq:browse.all')}</h3>
                 <span className="text-xs font-bold text-[#f37021]">{allTypesTotal}</span>
               </div>
-              <p className="text-xs text-slate-500 leading-relaxed">Xem toàn bộ câu hỏi thường gặp.</p>
+              <p className="text-xs text-slate-500 leading-relaxed">{t('faq:browse.allDesc')}</p>
             </motion.button>
 
             {typeCountsLoading
@@ -339,7 +334,7 @@ export function FAQPage() {
         {/* C. Suggested questions — only when there's real data, no filter/search applied */}
         {!hasActiveFilter && !suggestedLoading && suggested.length > 0 && (
           <div className="mb-12">
-            <h2 className="text-lg font-bold text-slate-900 mb-5">Câu hỏi nổi bật</h2>
+            <h2 className="text-lg font-bold text-slate-900 mb-5">{t('faq:suggested.title')}</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {suggested.map((faq) => (
                 <button
@@ -365,7 +360,7 @@ export function FAQPage() {
           {/* Desktop: sticky left nav */}
           <aside className="hidden lg:block lg:w-64 shrink-0">
             <div className="sticky top-28">
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3">Chủ đề</p>
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3">{t('faq:main.topics')}</p>
               <nav className="flex flex-col gap-1">
                 <button
                   onClick={() => handleTypeSelect(ALL_TYPE)}
@@ -373,7 +368,7 @@ export function FAQPage() {
                     selectedType === ALL_TYPE ? 'bg-[#004c91] text-white' : 'text-slate-600 hover:bg-slate-100'
                   }`}
                 >
-                  Tất cả ({allTypesTotal})
+                  {t('faq:browse.all')} ({allTypesTotal})
                 </button>
                 {typeCounts.map((type) => (
                   <button
@@ -398,7 +393,7 @@ export function FAQPage() {
                 selectedType === ALL_TYPE ? 'bg-[#004c91] text-white border-[#004c91]' : 'bg-white text-slate-600 border-slate-200'
               }`}
             >
-              Tất cả
+              {t('faq:browse.all')}
             </button>
             {typeCounts.map((type) => (
               <button
@@ -417,7 +412,7 @@ export function FAQPage() {
           <div className="flex-1 min-w-0">
             {!loading && !error && (
               <p className="text-sm text-slate-500 mb-4">
-                {totalItems > 0 ? `Tìm thấy ${totalItems} câu hỏi` : ''}
+                {totalItems > 0 ? t('faq:main.found', { count: totalItems }) : ''}
               </p>
             )}
 
@@ -430,28 +425,28 @@ export function FAQPage() {
             ) : error ? (
               <div className="text-center py-16 bg-white rounded-2xl border border-red-100">
                 <HelpCircle className="w-14 h-14 text-red-200 mx-auto mb-4" />
-                <h3 className="text-base font-bold text-slate-800 mb-1">Lỗi tải dữ liệu</h3>
+                <h3 className="text-base font-bold text-slate-800 mb-1">{t('faq:main.errorTitle')}</h3>
                 <p className="text-slate-500 text-sm mb-4">{error}</p>
                 <button
                   onClick={() => setReloadToken((t) => t + 1)}
                   className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#004c91] text-white text-sm font-bold rounded-xl hover:bg-[#003b70] transition-colors"
                 >
-                  <RefreshCw className="w-4 h-4" /> Thử lại
+                  <RefreshCw className="w-4 h-4" /> {t('faq:main.retry')}
                 </button>
               </div>
             ) : faqs.length === 0 ? (
               <div className="text-center py-16 bg-white rounded-2xl border border-slate-200">
                 <HelpCircle className="w-14 h-14 text-slate-300 mx-auto mb-4" />
-                <h3 className="text-base font-bold text-slate-800 mb-1">Không tìm thấy câu hỏi phù hợp</h3>
+                <h3 className="text-base font-bold text-slate-800 mb-1">{t('faq:main.noResultTitle')}</h3>
                 <p className="text-slate-500 text-sm max-w-sm mx-auto mb-4">
-                  Hãy thử từ khóa khác hoặc liên hệ Phòng HTQT.
+                  {t('faq:main.noResultMsg')}
                 </p>
                 {hasActiveFilter && (
                   <button
                     onClick={clearFilters}
                     className="px-5 py-2.5 bg-[#004c91] text-white text-sm font-bold rounded-xl hover:bg-[#003b70] transition-colors"
                   >
-                    Xóa bộ lọc
+                    {t('faq:main.clearFilter')}
                   </button>
                 )}
               </div>
@@ -508,22 +503,22 @@ export function FAQPage() {
 
         {/* E. Final CTA */}
         <div className="mt-14 rounded-2xl bg-gradient-to-r from-sky-50 to-orange-50 border border-slate-100 p-8 md:p-10 text-center">
-          <h3 className="text-xl md:text-2xl font-bold text-slate-900 mb-2">Bạn vẫn cần hỗ trợ?</h3>
+          <h3 className="text-xl md:text-2xl font-bold text-slate-900 mb-2">{t('faq:cta.title')}</h3>
           <p className="text-slate-500 text-sm md:text-base max-w-xl mx-auto mb-6">
-            Đội ngũ Phòng Hợp tác Quốc tế luôn sẵn sàng giải đáp thắc mắc của bạn.
+            {t('faq:cta.subtitle')}
           </p>
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
             <button
               onClick={() => document.querySelector('footer')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
               className="inline-flex justify-center items-center gap-2 px-6 py-3 bg-white text-slate-600 font-bold border border-slate-200 rounded-xl hover:border-[#004c91] hover:text-[#004c91] transition-colors text-sm"
             >
-              <Mail className="w-4 h-4" /> Liên hệ Phòng HTQT
+              <Mail className="w-4 h-4" /> {t('faq:cta.contact')}
             </button>
             <button
               onClick={() => setIsVisitorFormOpen(true)}
               className="inline-flex justify-center items-center gap-2 px-6 py-3 bg-[#f37021] text-white font-bold rounded-xl hover:bg-orange-600 transition-colors text-sm"
             >
-              Đăng ký tham quan <ArrowRight className="w-4 h-4" />
+              {t('faq:cta.register')} <ArrowRight className="w-4 h-4" />
             </button>
           </div>
         </div>

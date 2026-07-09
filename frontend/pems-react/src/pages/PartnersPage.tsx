@@ -32,22 +32,18 @@ import type {
   PublicPartnerSort,
 } from '../features/public-partners/types/publicPartners.types';
 import { getNameInitials } from '../shared/utils/nameInitials';
+import { useTranslation, Trans } from 'react-i18next';
 
-const ALL_COUNTRIES_LABEL = 'Tất cả quốc gia';
-const ALL_TYPES_LABEL = 'Tất cả loại hình';
 const PAGE_SIZE = 12;
 
-const SORT_OPTIONS: { value: PublicPartnerSort; label: string }[] = [
-  { value: 'name_asc', label: 'Tên A-Z' },
-  { value: 'newest', label: 'Mới nhất' },
-  { value: 'country', label: 'Theo quốc gia' },
-];
+// Will move labels and sort options inside component to use translations
 
 /* ───────────────────────── Partner Card ───────────────────────── */
 
 function PublicPartnerCard({
   partner, index, onClick,
 }: { partner: PublicPartner; index: number; onClick: () => void; key?: React.Key }) {
+  const { t } = useTranslation(['partners']);
   const logoUrl = usePublicPartnerImage(partner.logoFileId);
   const location = [partner.city, partner.country].filter(Boolean).join(', ');
 
@@ -98,7 +94,7 @@ function PublicPartnerCard({
       )}
 
       <span className="mt-auto inline-flex items-center gap-1.5 text-[#004c91] font-bold text-sm group-hover:gap-2.5 transition-all">
-        Xem hồ sơ <ArrowRight className="w-3.5 h-3.5" />
+        {t('partners:list.viewProfile')} <ArrowRight className="w-3.5 h-3.5" />
       </span>
     </motion.div>
   );
@@ -200,9 +196,19 @@ function CountryFlagShowcase({ countries }: { countries: PublicPartnerCountry[] 
 }
 
 export function PartnersPage() {
+  const { t } = useTranslation(['partners']);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [isVisitorFormOpen, setIsVisitorFormOpen] = useState(false);
+  
+  const ALL_COUNTRIES_LABEL = t('partners:list.allCountries');
+  const ALL_TYPES_LABEL = t('partners:list.allTypes');
+
+  const SORT_OPTIONS: { value: PublicPartnerSort; label: string }[] = [
+    { value: 'name_asc', label: t('partners:list.sortNameAsc') },
+    { value: 'newest', label: t('partners:list.sortNewest') },
+    { value: 'country', label: t('partners:list.sortCountry') },
+  ];
 
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -284,7 +290,7 @@ export function PartnersPage() {
         setTotalCount(res.totalCount);
       } catch {
         if (!cancelled) {
-          setError('Không thể tải danh sách đối tác. Vui lòng thử lại sau.');
+          setError(t('partners:list.loadError'));
           setPartners([]);
           setTotalCount(0);
         }
@@ -336,27 +342,27 @@ export function PartnersPage() {
             >
               <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-sky-50 text-[#004c91] border border-sky-100 rounded-full text-xs font-bold uppercase tracking-wider mb-5">
                 <Building2 className="w-3.5 h-3.5 text-[#f37021]" />
-                FPT University Partnership Network
+                {t('partners:list.heroTag')}
               </div>
               <h1 className="text-3xl md:text-4xl lg:text-[42px] font-bold text-slate-900 leading-tight mb-4">
-                Đối tác &amp; Hợp tác quốc tế
+                {t('partners:list.heroTitle')}
               </h1>
               <p className="text-slate-500 text-base leading-relaxed max-w-lg mb-8">
-                Kết nối học thuật, doanh nghiệp và tổ chức toàn cầu trong hệ sinh thái FPT University.
+                {t('partners:list.heroDesc')}
               </p>
               <div className="flex flex-col sm:flex-row gap-3">
                 <button
                   onClick={() => setIsVisitorFormOpen(true)}
                   className="inline-flex justify-center items-center gap-2 px-6 py-3 bg-[#f37021] text-white font-bold rounded-xl hover:bg-orange-600 transition-colors text-sm"
                 >
-                  Đăng ký ghé thăm
+                  {t('partners:list.bookVisit')}
                   <ArrowRight className="w-4 h-4" />
                 </button>
                 <button
                   onClick={() => navigate('/visit-fptu')}
                   className="inline-flex justify-center items-center px-6 py-3 bg-white text-slate-600 font-bold border border-slate-200 rounded-xl hover:border-[#004c91] hover:text-[#004c91] transition-colors text-sm"
                 >
-                  Khám phá Visit FPTU
+                  {t('partners:list.exploreVisit')}
                 </button>
               </div>
             </motion.div>
@@ -364,7 +370,7 @@ export function PartnersPage() {
             {/* Right: flag showcase of partnered countries (real data, no globe) */}
             <div className="w-full lg:w-1/2">
               <p className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3 text-center lg:text-left">
-                Đối tác đến từ
+                {t('partners:list.partnersFrom')}
               </p>
               <CountryFlagShowcase countries={countryOptions} />
             </div>
@@ -374,16 +380,16 @@ export function PartnersPage() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pb-12 border-b border-slate-100">
             <div className="text-center">
               <div className="text-3xl font-black text-[#004c91]">{totalPartnersOverall ?? '–'}</div>
-              <div className="text-slate-500 text-xs font-semibold uppercase tracking-wide mt-1">Tổng đối tác công khai</div>
+              <div className="text-slate-500 text-xs font-semibold uppercase tracking-wide mt-1">{t('partners:list.totalPartners')}</div>
             </div>
             <div className="text-center">
               <div className="text-3xl font-black text-[#004c91]">{countryOptions.length || '–'}</div>
-              <div className="text-slate-500 text-xs font-semibold uppercase tracking-wide mt-1">Quốc gia</div>
+              <div className="text-slate-500 text-xs font-semibold uppercase tracking-wide mt-1">{t('partners:list.countries')}</div>
             </div>
             {typeOptions.length > 0 && (
               <div className="text-center">
                 <div className="text-3xl font-black text-[#004c91]">{typeOptions.length}</div>
-                <div className="text-slate-500 text-xs font-semibold uppercase tracking-wide mt-1">Loại hình đối tác</div>
+                <div className="text-slate-500 text-xs font-semibold uppercase tracking-wide mt-1">{t('partners:list.partnerTypes')}</div>
               </div>
             )}
           </div>
@@ -450,13 +456,15 @@ export function PartnersPage() {
             {hasActiveFilter && (
               <div className="mt-4 flex items-center justify-between flex-wrap gap-3 bg-orange-50/60 border border-orange-100 rounded-xl px-4 py-3">
                 <span className="text-xs font-semibold text-slate-700">
-                  Tìm thấy <span className="font-bold text-[#f37021]">{totalCount}</span> đối tác phù hợp.
+                  <Trans i18nKey="partners:list.foundMatches" count={totalCount}>
+                    Tìm thấy <span className="font-bold text-[#f37021]">{totalCount}</span> đối tác phù hợp.
+                  </Trans>
                 </span>
                 <button
                   onClick={clearFilters}
                   className="text-xs font-bold text-[#004c91] hover:text-[#f37021] transition-colors"
                 >
-                  Xóa bộ lọc
+                  {t('partners:list.clearFilters')}
                 </button>
               </div>
             )}
@@ -465,7 +473,7 @@ export function PartnersPage() {
           {/* D. Country / region chips */}
           {topCountryChips.length > 0 && (
             <div className="mb-8">
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3">Khám phá theo quốc gia</p>
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3">{t('partners:list.exploreByCountry')}</p>
               <div className="flex gap-2 overflow-x-auto no-scrollbar">
                 {topCountryChips.map((c) => (
                   <button
@@ -494,7 +502,7 @@ export function PartnersPage() {
                   onClick={() => setReloadToken((t) => t + 1)}
                   className="mt-4 inline-flex items-center gap-2 px-5 py-2.5 bg-[#004c91] text-white text-sm font-bold rounded-xl hover:bg-[#003b70] transition-colors"
                 >
-                  <RefreshCw className="w-4 h-4" /> Thử lại
+                  <RefreshCw className="w-4 h-4" /> {t('partners:list.retry')}
                 </button>
               </div>
             ) : loading ? (
@@ -520,19 +528,19 @@ export function PartnersPage() {
                       <RefreshCw className="w-8 h-8 text-slate-400" />
                     </div>
                     <h3 className="text-base font-bold text-slate-700 mb-1">
-                      {hasActiveFilter ? 'Không tìm thấy đối tác phù hợp' : 'Chưa có đối tác công khai'}
+                      {hasActiveFilter ? t('partners:list.noMatchTitle') : t('partners:list.noDataTitle')}
                     </h3>
                     <p className="text-sm text-slate-400 max-w-sm mx-auto mb-4">
                       {hasActiveFilter
-                        ? 'Thử điều chỉnh từ khóa hoặc bộ lọc.'
-                        : 'Danh mục đối tác công khai hiện chưa có dữ liệu. Vui lòng quay lại sau.'}
+                        ? t('partners:list.adjustFilterMsg')
+                        : t('partners:list.checkBackMsg')}
                     </p>
                     {hasActiveFilter && (
                       <button
                         onClick={clearFilters}
                         className="px-5 py-2.5 bg-[#004c91] text-white text-sm font-bold rounded-xl hover:bg-[#003b70] transition-colors"
                       >
-                        Xem tất cả đối tác
+                        {t('partners:list.viewAll')}
                       </button>
                     )}
                   </div>
@@ -577,23 +585,23 @@ export function PartnersPage() {
           {/* G. Final CTA — soft gradient */}
           <div className="rounded-2xl bg-gradient-to-r from-sky-50 to-orange-50 border border-slate-100 p-8 md:p-10 text-center">
             <h3 className="text-xl md:text-2xl font-bold text-slate-900 mb-2">
-              Bạn muốn kết nối với FPT University?
+              {t('partners:list.ctaTitle')}
             </h3>
             <p className="text-slate-500 text-sm md:text-base max-w-xl mx-auto mb-6">
-              Cùng chúng tôi mở rộng cơ hội hợp tác học thuật, trao đổi sinh viên và tiếp cận hệ sinh thái giáo dục quốc tế.
+              {t('partners:list.ctaDesc')}
             </p>
             <div className="flex flex-col sm:flex-row gap-3 justify-center">
               <button
                 onClick={() => setIsVisitorFormOpen(true)}
                 className="inline-flex justify-center items-center gap-2 px-6 py-3 bg-[#f37021] text-white font-bold rounded-xl hover:bg-orange-600 transition-colors text-sm"
               >
-                Đăng ký ghé thăm <ArrowRight className="w-4 h-4" />
+                {t('partners:list.bookVisit')} <ArrowRight className="w-4 h-4" />
               </button>
               <button
                 onClick={() => document.querySelector('footer')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
                 className="inline-flex justify-center items-center gap-2 px-6 py-3 bg-white text-slate-600 font-bold border border-slate-200 rounded-xl hover:border-[#004c91] hover:text-[#004c91] transition-colors text-sm"
               >
-                <Mail className="w-4 h-4" /> Liên hệ Phòng HTQT
+                <Mail className="w-4 h-4" /> {t('partners:list.contactDept')}
               </button>
             </div>
           </div>
