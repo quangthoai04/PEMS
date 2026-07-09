@@ -31,6 +31,7 @@ public static class DatabaseResetHelper
     public const string UpdateFaqQuestionPrefix = "[IT-UPDATE-FAQ] ";
     public const string ViewListFaqQuestionPrefix = "[IT-VIEW-LIST-FAQ] ";
     public const string ChangeFaqVisibilityQuestionPrefix = "[IT-CHANGE-FAQ-VISIBILITY] ";
+    public const string SearchFaqQuestionPrefix = "[IT-SEARCH-FAQ] ";
 
     private const string TestUserEmailDomain = "@it-uc63.pems.local";
 
