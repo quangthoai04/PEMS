@@ -78,7 +78,22 @@
     "purposePlaceholder": "Enter visit purpose...",
     "workingContent": "Working Content at FPTU",
     "workingContentPlaceholder": "Enter specific working content...",
-    "overlapError": "Some campuses in the schedule have overlapping start/end times. Please recheck before continuing."
+    "overlapError": "Some campuses in the schedule have overlapping start/end times. Please recheck before continuing.",
+    "visitTypes": {
+      "CAMPUS_TOUR": "Campus Tour",
+      "MEETING": "Meeting / Exchange",
+      "WORKSHOP": "Workshop",
+      "SIGNING_CEREMONY": "Signing Ceremony",
+      "EXCHANGE": "Cultural Exchange",
+      "OTHER": "Other"
+    },
+    "campusOptions": {
+      "HN": "Hanoi",
+      "HCM": "Ho Chi Minh City",
+      "DN": "Da Nang",
+      "CT": "Can Tho",
+      "QN": "Quy Nhon"
+    }
   },
   "step2Visitors": {
     "title": "Visitor List",
@@ -148,5 +163,38 @@
     "mediaNotePlaceholder": "e.g., Please avoid taking close-up photos of students...",
     "notes": "Notes for FPTU",
     "notesPlaceholder": "Enter any essential notes..."
+  },
+  "otp": {
+    "title": "OTP Verification",
+    "sentTo": "A 6-digit verification code has been sent to",
+    "inputLabel": "Enter verification code",
+    "noCode": "Did not receive a code?",
+    "resend": "Resend",
+    "resendTimer": "Resend ({{count}}s)",
+    "sending": "Sending...",
+    "back": "Back",
+    "confirm": "Confirm",
+    "confirming": "Verifying...",
+    "validity": "Code is valid for 5 minutes. Do not share your code with anyone."
+  },
+  "shared": {
+    "countrySearchPlaceholder": "Search country...",
+    "countryNotFound": "Country not found",
+    "useInput": "Use \"{{value}}\"",
+    "orgPlaceholder": "Enter or select...",
+    "orgNoOptions": "Type to search or create new...",
+    "orgLoading": "Searching...",
+    "orgPlaceholderSearch": "Search or enter organization name...",
+    "partnerSelectPlaceholder": "Select existing or add new organization...",
+    "partnerNotFound": "No results found",
+    "partnerLoading": "Searching...",
+    "partnerNew": "-- New Organization / Not in system --",
+    "partnerLoadingInfo": "Loading organization info...",
+    "partnerOrgPlaceholder": "Enter or search organization/partner...",
+    "selected": "Partner selected",
+    "freeText": "Free-text organization (not linked to an existing partner).",
+    "delete": "Delete",
+    "phoneSearchPlaceholder": "Search country or code...",
+    "phoneNotFound": "Not found"
   }
 }

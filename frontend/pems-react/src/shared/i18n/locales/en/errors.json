@@ -1,1 +1,26 @@
-{}
+{
+  "404": {
+    "title": "Content Not Found",
+    "message": "The content related to this notification no longer exists or the URL is incorrect.",
+    "backToDashboard": "Back to Dashboard"
+  },
+  "403": {
+    "title": "You do not have permission to access this feature.",
+    "message": "If you believe this is a mistake, please contact the system administrator.",
+    "backToDashboard": "Back to Dashboard",
+    "home": "Home"
+  },
+  "invalidAccount": {
+    "title": "Account Not Configured",
+    "message": "Your account has not been assigned a valid role.",
+    "instruction": "Please contact the Admin or system management team to be assigned the correct role.",
+    "logout": "Log Out",
+    "reload": "Reload Page"
+  },
+  "boundary": {
+    "title": "An error occurred while loading the screen",
+    "message": "Please try again or return to the dashboard.",
+    "reload": "Reload Page",
+    "backToDashboard": "Back to Dashboard"
+  }
+}

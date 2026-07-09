@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { Mail, RefreshCw, ShieldCheck, X } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 interface Props {
   maskedEmail: string;
@@ -24,6 +25,7 @@ export const OtpVerificationModal: React.FC<Props> = ({
   onResend,
   onCancel,
 }) => {
+  const { t } = useTranslation(['visitRequest']);
   const [code, setCode] = useState('');
   const [countdown, setCountdown] = useState(RESEND_COOLDOWN);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -88,9 +90,9 @@ export const OtpVerificationModal: React.FC<Props> = ({
         </div>
 
         {/* Title */}
-        <h2 className="text-2xl font-bold text-gray-900 text-center mb-1">Xác thực OTP</h2>
+        <h2 className="text-2xl font-bold text-gray-900 text-center mb-1">{t('visitRequest:otp.title')}</h2>
         <p className="text-sm text-gray-500 text-center mb-6">
-          Mã xác thực 6 chữ số đã gửi đến
+          {t('visitRequest:otp.sentTo')}
           <span className="font-semibold text-[#004c91] ml-1">{maskedEmail}</span>
         </p>
 
@@ -98,7 +100,7 @@ export const OtpVerificationModal: React.FC<Props> = ({
           {/* OTP input */}
           <div>
             <label className="block text-sm font-bold text-gray-700 mb-2 text-center">
-              Nhập mã xác thực
+              {t('visitRequest:otp.inputLabel')}
             </label>
             <input
               ref={inputRef}
@@ -136,7 +138,7 @@ export const OtpVerificationModal: React.FC<Props> = ({
           {/* Resend */}
           <div className="flex items-center justify-center gap-1.5 text-sm">
             <Mail className="w-4 h-4 text-gray-400" />
-            <span className="text-gray-500">Không nhận được mã?</span>
+            <span className="text-gray-500">{t('visitRequest:otp.noCode')}</span>
             <button
               type="button"
               onClick={handleResend}
@@ -146,12 +148,12 @@ export const OtpVerificationModal: React.FC<Props> = ({
               {isResending ? (
                 <>
                   <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                  Đang gửi...
+                  {t('visitRequest:otp.sending')}
                 </>
               ) : countdown > 0 ? (
-                `Gửi lại (${countdown}s)`
+                t('visitRequest:otp.resendTimer', { count: countdown })
               ) : (
-                'Gửi lại'
+                t('visitRequest:otp.resend')
               )}
             </button>
           </div>
@@ -163,7 +165,7 @@ export const OtpVerificationModal: React.FC<Props> = ({
               onClick={onCancel}
               className="flex-1 px-4 py-3 rounded-xl border border-gray-300 text-gray-700 text-sm font-bold hover:bg-gray-50 transition-colors"
             >
-              Quay lại
+              {t('visitRequest:otp.back')}
             </button>
             <button
               type="submit"
@@ -173,17 +175,17 @@ export const OtpVerificationModal: React.FC<Props> = ({
               {isVerifying ? (
                 <>
                   <RefreshCw className="w-4 h-4 animate-spin" />
-                  Đang xác thực...
+                  {t('visitRequest:otp.confirming')}
                 </>
               ) : (
-                'Xác nhận'
+                t('visitRequest:otp.confirm')
               )}
             </button>
           </div>
         </form>
 
         <p className="mt-4 text-xs text-gray-400 text-center">
-          Mã có hiệu lực trong 5 phút. Không chia sẻ mã với bất kỳ ai.
+          {t('visitRequest:otp.validity')}
         </p>
       </motion.div>
     </div>

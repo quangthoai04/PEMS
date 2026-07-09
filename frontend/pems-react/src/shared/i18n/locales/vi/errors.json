@@ -1,1 +1,26 @@
-{}
+{
+  "404": {
+    "title": "Không tìm thấy nội dung",
+    "message": "Nội dung liên quan đến thông báo này không còn tồn tại hoặc đường dẫn không đúng.",
+    "backToDashboard": "Quay lại Dashboard"
+  },
+  "403": {
+    "title": "Bạn không có quyền truy cập chức năng này.",
+    "message": "Nếu bạn cho rằng đây là nhầm lẫn, vui lòng liên hệ quản trị viên hệ thống.",
+    "backToDashboard": "Về trang quản trị",
+    "home": "Trang chủ"
+  },
+  "invalidAccount": {
+    "title": "Tài khoản chưa được cấu hình",
+    "message": "Tài khoản của bạn chưa được cấu hình vai trò hợp lệ.",
+    "instruction": "Vui lòng liên hệ Admin hoặc bộ phận quản trị hệ thống để được cấp đúng vai trò.",
+    "logout": "Đăng xuất",
+    "reload": "Tải lại trang"
+  },
+  "boundary": {
+    "title": "Đã xảy ra lỗi khi tải màn hình",
+    "message": "Vui lòng thử lại hoặc quay về dashboard.",
+    "reload": "Tải lại trang",
+    "backToDashboard": "Quay về Dashboard"
+  }
+}

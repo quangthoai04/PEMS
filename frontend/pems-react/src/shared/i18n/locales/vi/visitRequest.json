@@ -78,7 +78,22 @@
     "purposePlaceholder": "Nhập mục đích chuyến thăm...",
     "workingContent": "Nội dung làm việc tại FPTU",
     "workingContentPlaceholder": "Nhập nội dung làm việc cụ thể...",
-    "overlapError": "Một số cơ sở trong lịch trình có thời gian bắt đầu/kết thúc bị chồng lên nhau. Vui lòng kiểm tra lại trước khi tiếp tục."
+    "overlapError": "Một số cơ sở trong lịch trình có thời gian bắt đầu/kết thúc bị chồng lên nhau. Vui lòng kiểm tra lại trước khi tiếp tục.",
+    "visitTypes": {
+      "CAMPUS_TOUR": "Tham quan cơ sở",
+      "MEETING": "Họ p trao đổi",
+      "WORKSHOP": "Workshop",
+      "SIGNING_CEREMONY": "Lễ ký kết",
+      "EXCHANGE": "Giao lưu",
+      "OTHER": "Khác"
+    },
+    "campusOptions": {
+      "HN": "Hà Nội",
+      "HCM": "Hồ Chí Minh",
+      "DN": "Đà Nẵng",
+      "CT": "Cần Thơ",
+      "QN": "Quy Nhơn"
+    }
   },
   "step2Visitors": {
     "title": "Danh s�ch kh�ch",
@@ -141,12 +156,53 @@
     "transport": "Nh?n di?n phuong ti?n di chuy?n t?i FPTU",
     "transportPlaceholder": "V� d?: Xe 16 ch? m�u tr?ng, bi?n s? 30A-xxxxx, d? ki?n t?i c?ng l�c 8:30.",
     "transportNote": "Kh�ng b?t bu?c � m� t? t? do gi�p b?o v?/l? t�n nh?n di?n do�n khi t?i c?ng.",
-    "media": "Ch?p thu?n truy?n th�ng/Ch?p ?nh *",
-    "agreed": "�?ng �",
-    "declined": "T? ch?i",
-    "mediaNoteTitle": "Ghi ch� truy?n th�ng (N?u c�)",
-    "mediaNotePlaceholder": "VD: Vui l�ng kh�ng ch?p c?n m?t h?c sinh...",
-    "notes": "Ghi ch� cho FPTU",
-    "notesPlaceholder": "Nh?p b?t k? ghi ch� thi?t y?u n�o..."
+    "title": "III. Yêu cầu bổ sung",
+    "language": "Ngôn ngữ làm việc *",
+    "en": "Tiếng Anh",
+    "vi": "Tiếng Việt",
+    "langNote": "PEMS hiện chỉ hỗ trợ làm việc bằng Tiếng Việt hoặc Tiếng Anh. Nếu đoàn cần sử dụng ngôn ngữ khác, vui lòng tự chuẩn bị phiên dịch.",
+    "transport": "Nhận diện phương tiện di chuyển tới FPTU",
+    "transportPlaceholder": "Ví dụ: Xe 16 chỗ màu trắng, biển số 30A-xxxxx, dự kiến tới cổng lúc 8:30.",
+    "transportNote": "Không bắt buộc – mô tả tự do giúp bảo vệ/lễ tân nhận diện đoàn khi tới cổng.",
+    "media": "Chấp thuận truyền thông/Chụp ảnh *",
+    "agreed": "Đồng ý",
+    "declined": "Từ chối",
+    "mediaNoteTitle": "Ghi chú truyền thông (Nếu có)",
+    "mediaNotePlaceholder": "VD: Vui lòng không chụp cận mặt học sinh...",
+    "notes": "Ghi chú cho FPTU",
+    "notesPlaceholder": "Nhập bất kỳ ghi chú thiết yếu nào..."
+  },
+  "otp": {
+    "title": "Xác thực OTP",
+    "sentTo": "Mã xác thực 6 chữ số đã gửi đến",
+    "inputLabel": "Nhập mã xác thực",
+    "noCode": "Không nhận được mã?",
+    "resend": "Gửi lại",
+    "resendTimer": "Gửi lại ({{count}}s)",
+    "sending": "Đang gửi...",
+    "back": "Quay lại",
+    "confirm": "Xác nhận",
+    "confirming": "Đang xác thực...",
+    "validity": "Mã có hiệu lực trong 5 phút. Không chia sẻ mã với bất kỳ ai."
+  },
+  "shared": {
+    "countrySearchPlaceholder": "Tìm kiếm quốc gia...",
+    "countryNotFound": "Không tìm thấy quốc gia",
+    "useInput": "Sử dụng \"{{value}}\"",
+    "orgPlaceholder": "Nhập hoặc chọn...",
+    "orgNoOptions": "Nhập để tìm hoặc tạo mới...",
+    "orgLoading": "Đang tìm kiếm...",
+    "orgPlaceholderSearch": "Tìm kiếm hoặc nhập tên đơn vị...",
+    "partnerSelectPlaceholder": "Chọn tổ chức có sẵn hoặc chọn tổ chức mới...",
+    "partnerNotFound": "Không tìm thấy kết quả",
+    "partnerLoading": "Đang tìm kiếm...",
+    "partnerNew": "-- Tổ chức mới / Chưa có trong hệ thống --",
+    "partnerLoadingInfo": "Đang tải thông tin tổ chức...",
+    "partnerOrgPlaceholder": "Nhập hoặc tìm tổ chức/đối tác...",
+    "selected": "Đã chọn đối tác có sẵn",
+    "freeText": "Đây là tổ chức nhập tự do (chưa liên kết đối tác có sẵn).",
+    "delete": "Xóa",
+    "phoneSearchPlaceholder": "Tìm quốc gia hoặc mã...",
+    "phoneNotFound": "Không tìm thấy"
   }
 }

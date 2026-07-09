@@ -28,7 +28,11 @@
     "viewAll": "View all partners",
     "ctaTitle": "Want to connect with FPT University?",
     "ctaDesc": "Join us in expanding opportunities for academic cooperation, student exchange, and access to an international education ecosystem.",
-    "contactDept": "Contact Intl. Relations"
+    "contactDept": "Contact Intl. Relations",
+    "partnersUnit": "partners",
+    "prevCountry": "Previous country",
+    "nextCountry": "Next country",
+    "foundMatchesTpl": "Found"
   },
   "detail": {
     "notFound": "Partner not found or not public.",

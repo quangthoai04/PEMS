@@ -8,13 +8,7 @@ import { FormField, inputCls } from '../shared/FormField';
 import { SectionTitle } from './RegisterInfoSection';
 import { useTranslation } from 'react-i18next';
 
-const CAMPUS_OPTIONS = [
-  { value: 'HN',  label: 'Hà Nội' },
-  { value: 'DN',  label: 'Đà Nẵng' },
-  { value: 'CT',  label: 'Cần Thơ' },
-  { value: 'HCM', label: 'Hồ Chí Minh' },
-  { value: 'QN',  label: 'Quy Nhơn' },
-];
+// Campus options are now defined inside the component to access t()
 
 function findDuplicateCampusIndexes(visits: Array<{ campus?: string }>) {
   const seen = new Map<string, number>();
@@ -43,6 +37,15 @@ interface Props {
 
 export const VisitInfoSection: React.FC<Props> = ({ form, visitFields, showErrors }) => {
   const { t } = useTranslation(['visitRequest']);
+
+  const CAMPUS_OPTIONS = [
+    { value: 'HN',  label: t('visitRequest:step2Info.campusOptions.HN', 'Hà Nội') },
+    { value: 'DN',  label: t('visitRequest:step2Info.campusOptions.DN', 'Đà Nẵng') },
+    { value: 'CT',  label: t('visitRequest:step2Info.campusOptions.CT', 'Cần Thơ') },
+    { value: 'HCM', label: t('visitRequest:step2Info.campusOptions.HCM', 'Hồ Chí Minh') },
+    { value: 'QN',  label: t('visitRequest:step2Info.campusOptions.QN', 'Quy Nhơn') },
+  ];
+
   const { register, control, watch, trigger, formState: { errors, touchedFields } } = form;
   const visitMode = watch('visitMode');
   const visits = watch('visits');
@@ -279,11 +282,11 @@ export const VisitInfoSection: React.FC<Props> = ({ form, visitFields, showError
                     {...register('visitType')}
                     className="w-full px-4 py-2.5 pr-9 rounded-xl border border-gray-300 focus:border-[#f37021] focus:ring-1 focus:ring-[#f37021] outline-none bg-white text-sm font-medium text-gray-900 shadow-sm appearance-none"
                   >
-                    <option value="CAMPUS_TOUR">Campus Tour</option>
-                    <option value="MEETING">Họp trao đổi</option>
-                    <option value="WORKSHOP">Workshop</option>
-                    <option value="SIGNING_CEREMONY">Lễ ký kết</option>
-                    <option value="EXCHANGE">Giao lưu</option>
+                    <option value="CAMPUS_TOUR">{t('visitRequest:step2Info.visitTypes.CAMPUS_TOUR', 'Campus Tour')}</option>
+                    <option value="MEETING">{t('visitRequest:step2Info.visitTypes.MEETING', 'Họp trao đổi')}</option>
+                    <option value="WORKSHOP">{t('visitRequest:step2Info.visitTypes.WORKSHOP', 'Workshop')}</option>
+                    <option value="SIGNING_CEREMONY">{t('visitRequest:step2Info.visitTypes.SIGNING_CEREMONY', 'Lễ ký kết')}</option>
+                    <option value="EXCHANGE">{t('visitRequest:step2Info.visitTypes.EXCHANGE', 'Giao lưu')}</option>
                     <option value="OTHER">{t('visitRequest:step2Info.typeOther')}</option>
                   </select>
                   <ChevronDown className="w-4 h-4 text-gray-500 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
