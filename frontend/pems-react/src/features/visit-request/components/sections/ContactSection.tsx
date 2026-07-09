@@ -10,6 +10,7 @@ import { inputCls } from '../shared/FormField';
 import { validateSupportTeamExcel, isAllowedExcelFile } from '../ExcelUpload/excelValidator';
 import { downloadSupportTeamTemplate } from '../ExcelUpload/excelDownload';
 import type { SupportTeamExcelValidationResult, SupportTeamEntry } from '../../types/visitRequest.types';
+import { useTranslation } from 'react-i18next';
 
 function hasRealError(error: unknown): boolean {
   if (!error) return false;
@@ -39,6 +40,7 @@ export const ContactSection: React.FC<Props> = ({
   onClearContactPoint,
   showErrors,
 }) => {
+  const { t } = useTranslation(['visitRequest']);
   const { register, control, formState: { errors } } = form;
   const [isSupportSameAsRegister, setIsSupportSameAsRegister] = useState(false);
   const [isContactSameAsRegister, setIsContactSameAsRegister] = useState(false);
@@ -91,7 +93,7 @@ export const ContactSection: React.FC<Props> = ({
     if (!isAllowedExcelFile(file)) {
       setUploadResult({
         valid: false, totalRows: 0, errorRows: 0, skippedDuplicates: 0,
-        errors: [{ row: 0, column: '', message: 'Chỉ chấp nhận file .xlsx hoặc .xls' }],
+        errors: [{ row: 0, column: '', message: t('visitRequest:step2Contact.uploadError') }],
         data: [],
       });
       setIsProcessing(false);
@@ -130,7 +132,7 @@ export const ContactSection: React.FC<Props> = ({
       <div className={`rounded-2xl border bg-white shadow-sm transition-colors ${hasAnySupportError ? 'border-red-300 shadow-red-500/10' : 'border-slate-200'}`}>
         <div className={`border-b px-6 py-4 flex items-center justify-between flex-wrap gap-2 ${hasAnySupportError ? 'border-red-200 bg-red-50/50 rounded-t-2xl' : 'border-slate-200'}`}>
           <h4 className="text-[#004c91] font-bold text-lg">
-            Danh sách team hỗ trợ khách <span className="text-red-500">*</span>
+            {t('visitRequest:step2Contact.supportTitle')} <span className="text-red-500">*</span>
           </h4>
           <label className="flex items-center gap-2.5 cursor-pointer text-sm text-[#004c91] font-bold select-none bg-blue-50/50 px-3 py-1.5 rounded-lg border border-blue-100 hover:bg-blue-50 transition-colors">
             <input
@@ -139,7 +141,7 @@ export const ContactSection: React.FC<Props> = ({
               onChange={(e) => handleSupportCheckbox(e.target.checked)}
               className="w-4 h-4 rounded text-[#004c91] focus:ring-[#004c91] border-blue-300 cursor-pointer"
             />
-            Tôi là người hỗ trợ khách
+            {t('visitRequest:step2Contact.iamSupport')}
           </label>
         </div>
 
@@ -147,7 +149,7 @@ export const ContactSection: React.FC<Props> = ({
           <div className="bg-red-50 border border-red-200 rounded-lg p-3 mx-6 mt-4 flex items-start gap-2 error-scroll-target">
             <AlertCircle className="w-5 h-5 text-red-500 shrink-0" />
             <div>
-              <p className="text-sm font-bold text-red-700">Vui lòng kiểm tra lại thông tin trong phần này.</p>
+              <p className="text-sm font-bold text-red-700">{t('visitRequest:step2Contact.errorBoxTitle')}</p>
               {supportRootErrorMessage && <p className="text-xs text-red-600 mt-0.5">{supportRootErrorMessage}</p>}
             </div>
           </div>
@@ -158,11 +160,11 @@ export const ContactSection: React.FC<Props> = ({
           <table className="w-full min-w-[750px] border-collapse text-sm">
             <thead className="bg-slate-50 border-b border-gray-200">
               <tr>
-                <th className="p-3 text-center font-bold text-slate-700 w-12">STT</th>
-                <th className="p-3 text-left font-bold text-slate-700 border-l border-gray-200">Họ và tên *</th>
-                <th className="p-3 text-left font-bold text-slate-700 border-l border-gray-200">Chức vụ *</th>
-                <th className="p-3 text-left font-bold text-slate-700 border-l border-gray-200">Đơn vị công tác *</th>
-                <th className="p-3 text-left font-bold text-slate-700 border-l border-gray-200">Quốc tịch *</th>
+                <th className="p-3 text-center font-bold text-slate-700 w-12">{t('visitRequest:step2Contact.stt')}</th>
+                <th className="p-3 text-left font-bold text-slate-700 border-l border-gray-200">{t('visitRequest:step2Contact.fullName')}</th>
+                <th className="p-3 text-left font-bold text-slate-700 border-l border-gray-200">{t('visitRequest:step2Contact.jobTitle')}</th>
+                <th className="p-3 text-left font-bold text-slate-700 border-l border-gray-200">{t('visitRequest:step2Contact.organization')}</th>
+                <th className="p-3 text-left font-bold text-slate-700 border-l border-gray-200">{t('visitRequest:step2Contact.nationality')}</th>
                 <th className="p-3 text-center w-12 border-l border-gray-200" />
               </tr>
             </thead>
@@ -183,7 +185,7 @@ export const ContactSection: React.FC<Props> = ({
                       <td className="p-0 border-l border-gray-100">
                         <input
                           {...register(`supportTeam.${i}.fullName`)}
-                          placeholder="Nhập tên..."
+                          placeholder={t('visitRequest:step2Contact.placeholderName')}
                           className={cellInputCls(!!se?.fullName)}
                         />
                         {se?.fullName && <CellError msg={se.fullName.message} />}
@@ -192,7 +194,7 @@ export const ContactSection: React.FC<Props> = ({
                       <td className="p-0 border-l border-gray-100">
                         <input
                           {...register(`supportTeam.${i}.jobTitle`)}
-                          placeholder="Chức vụ..."
+                          placeholder={t('visitRequest:step2Contact.placeholderJob')}
                           className={cellInputCls(!!se?.jobTitle)}
                         />
                         {se?.jobTitle && <CellError msg={se.jobTitle.message} />}
@@ -208,7 +210,7 @@ export const ContactSection: React.FC<Props> = ({
                               onChange={field.onChange}
                               onBlur={field.onBlur}
                               hasError={!!se?.organization}
-                              placeholder="Đơn vị..."
+                              placeholder={t('visitRequest:step2Contact.placeholderOrg')}
                             />
                           )}
                         />
@@ -225,7 +227,7 @@ export const ContactSection: React.FC<Props> = ({
                               onChange={field.onChange}
                               onBlur={field.onBlur}
                               hasError={!!se?.nationality}
-                              placeholder="Quốc tịch..."
+                              placeholder={t('visitRequest:step2Contact.placeholderNat')}
                             />
                           )}
                         />
@@ -257,7 +259,7 @@ export const ContactSection: React.FC<Props> = ({
             }
             className="inline-flex items-center gap-2 px-4 py-2 bg-[#f37021]/10 text-[#f37021] text-sm font-bold rounded-xl hover:bg-[#f37021]/20 transition-colors"
           >
-            <Plus className="w-4 h-4" /> Thêm nhân sự
+            <Plus className="w-4 h-4" /> {t('visitRequest:step2Contact.addSupport')}
           </button>
           <div className="flex flex-wrap gap-2 sm:gap-3">
             <button
@@ -265,7 +267,7 @@ export const ContactSection: React.FC<Props> = ({
               onClick={downloadSupportTeamTemplate}
               className="inline-flex items-center gap-2 px-4 py-2 bg-white text-slate-700 text-sm font-bold rounded-xl hover:bg-slate-50 transition-colors border border-slate-200 shadow-sm"
             >
-              <Download className="w-4 h-4" /> Tải mẫu
+              <Download className="w-4 h-4" /> {t('visitRequest:step2Contact.downloadTemplate')}
             </button>
             <button
               type="button"
@@ -276,7 +278,7 @@ export const ContactSection: React.FC<Props> = ({
               {isProcessing
                 ? <span className="w-4 h-4 border-2 border-[#004c91] border-t-transparent rounded-full animate-spin" />
                 : <Upload className="w-4 h-4" />}
-              Up danh sách
+              {t('visitRequest:step2Contact.uploadList')}
             </button>
             <input ref={fileInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleFileChange} />
           </div>
@@ -301,12 +303,14 @@ export const ContactSection: React.FC<Props> = ({
                   <div>
                     <p className={`text-xs font-bold ${addedCount > 0 ? 'text-green-700' : 'text-red-700'}`}>
                       {addedCount > 0
-                        ? `Đã thêm ${addedCount} nhân sự từ "${uploadFileName}". Tổng: ${supportTeamFields.fields.length} người.`
-                        : `Không thêm được dữ liệu từ "${uploadFileName}"`}
+                        ? t('visitRequest:step2Contact.addedMsg', { added: addedCount, fileName: uploadFileName, total: supportTeamFields.fields.length })
+                        : t('visitRequest:step2Contact.failedMsg', { fileName: uploadFileName })}
                     </p>
                     {uploadResult.totalRows > 0 && (
                       <p className="text-[10px] text-gray-600 mt-0.5">
-                        Tổng {uploadResult.totalRows} dòng · {uploadResult.errorRows} dòng lỗi/bỏ qua{uploadResult.skippedDuplicates > 0 ? ` · ${uploadResult.skippedDuplicates} dòng trùng đã bỏ qua` : ''}.
+                        {uploadResult.skippedDuplicates > 0
+                          ? t('visitRequest:step2Contact.statsMsgDup', { totalRows: uploadResult.totalRows, errorRows: uploadResult.errorRows, skipped: uploadResult.skippedDuplicates })
+                          : t('visitRequest:step2Contact.statsMsg', { totalRows: uploadResult.totalRows, errorRows: uploadResult.errorRows })}
                       </p>
                     )}
                   </div>
@@ -335,7 +339,7 @@ export const ContactSection: React.FC<Props> = ({
       <div className={`rounded-2xl border bg-white shadow-sm transition-colors ${hasAnyContactError ? 'border-red-300 shadow-red-500/10' : 'border-slate-200'}`}>
         <div className={`border-b px-6 py-4 flex items-center justify-between flex-wrap gap-2 ${hasAnyContactError ? 'border-red-200 bg-red-50/50 rounded-t-2xl' : 'border-slate-200'}`}>
           <h4 className="text-[#004c91] font-bold text-lg">
-            Thông tin đầu mối liên hệ <span className="text-red-500">*</span>
+            {t('visitRequest:step2Contact.contactTitle')} <span className="text-red-500">*</span>
           </h4>
           <label className="flex items-center gap-2.5 cursor-pointer text-sm text-[#004c91] font-bold select-none bg-blue-50/80 px-3 py-1.5 rounded-lg border border-blue-200 hover:bg-blue-100 transition-colors">
             <input
@@ -344,7 +348,7 @@ export const ContactSection: React.FC<Props> = ({
               onChange={(e) => handleContactCheckbox(e.target.checked)}
               className="w-4 h-4 rounded text-[#004c91] focus:ring-[#004c91] border-blue-300 cursor-pointer"
             />
-            Tôi cũng là đầu mối liên hệ
+            {t('visitRequest:step2Contact.iamContact')}
           </label>
         </div>
 
@@ -352,20 +356,19 @@ export const ContactSection: React.FC<Props> = ({
           <div className="bg-red-50 border border-red-200 rounded-lg p-3 mx-6 mt-4 flex items-start gap-2 error-scroll-target">
             <AlertCircle className="w-5 h-5 text-red-500 shrink-0" />
             <div>
-              <p className="text-sm font-bold text-red-700">Vui lòng kiểm tra lại thông tin trong phần này.</p>
+              <p className="text-sm font-bold text-red-700">{t('visitRequest:step2Contact.errorBoxTitle')}</p>
             </div>
           </div>
         )}
 
         <div className="p-6">
           <p className="text-xs text-slate-500 mb-2 -mt-1">
-            Khi chọn “Tôi cũng là đầu mối liên hệ”, hệ thống sẽ tự điền Thông tin đầu mối liên hệ từ Thông tin người đăng ký form.
+            {t('visitRequest:step2Contact.contactDesc1')}
           </p>
 
         <div className="mb-3 rounded-lg bg-blue-50/60 border border-blue-100 px-3 py-2">
           <p className="text-xs text-[#004c91] leading-5">
-            Thông tin đầu mối liên hệ sẽ được FPTU sử dụng để trao đổi về yêu cầu tham quan. Email đầu mối liên hệ
-            cũng là email dùng để tạo tài khoản VISITOR và đăng nhập Google lần sau để theo dõi yêu cầu.
+            {t('visitRequest:step2Contact.contactDesc2')}
           </p>
         </div>
 
@@ -373,10 +376,10 @@ export const ContactSection: React.FC<Props> = ({
           <table className="w-full min-w-[700px] border-collapse text-sm">
             <thead className="bg-[#004c91]/5 border-b border-gray-200">
               <tr>
-                <th className="p-3 text-left font-bold text-[#004c91]">Họ và tên *</th>
-                <th className="p-3 text-left font-bold text-[#004c91] border-l border-gray-200">Đơn vị công tác *</th>
-                <th className="p-3 text-left font-bold text-[#004c91] border-l border-gray-200">Số điện thoại *</th>
-                <th className="p-3 text-left font-bold text-[#004c91] border-l border-gray-200">Email *</th>
+                <th className="p-3 text-left font-bold text-[#004c91]">{t('visitRequest:step2Contact.contactFullName')}</th>
+                <th className="p-3 text-left font-bold text-[#004c91] border-l border-gray-200">{t('visitRequest:step2Contact.contactOrg')}</th>
+                <th className="p-3 text-left font-bold text-[#004c91] border-l border-gray-200">{t('visitRequest:step2Contact.contactPhone')}</th>
+                <th className="p-3 text-left font-bold text-[#004c91] border-l border-gray-200">{t('visitRequest:step2Contact.contactEmail')}</th>
               </tr>
             </thead>
             <tbody>
@@ -384,7 +387,7 @@ export const ContactSection: React.FC<Props> = ({
                 <td className="p-0">
                   <input
                     {...register('contactPoint.fullName')}
-                    placeholder="Nhập tên..."
+                    placeholder={t('visitRequest:step2Contact.placeholderName')}
                     className={cellInputCls(!!contactErrors?.fullName)}
                   />
                   {contactErrors?.fullName && <CellError msg={contactErrors.fullName.message} />}
@@ -399,7 +402,7 @@ export const ContactSection: React.FC<Props> = ({
                         onChange={field.onChange}
                         onBlur={field.onBlur}
                         hasError={!!contactErrors?.organization}
-                        placeholder="Nhập đơn vị..."
+                        placeholder={t('visitRequest:step2Contact.placeholderOrg')}
                       />
                     )}
                   />
@@ -424,7 +427,7 @@ export const ContactSection: React.FC<Props> = ({
                   <input
                     {...register('contactPoint.email')}
                     type="email"
-                    placeholder="email@domain.com"
+                    placeholder={t('visitRequest:step2Contact.placeholderEmail')}
                     className={cellInputCls(!!contactErrors?.email)}
                   />
                   {contactErrors?.email && <CellError msg={contactErrors.email.message} />}

@@ -8,6 +8,7 @@ import { OrganizationCombobox } from '../shared/OrganizationCombobox';
 import { validateVisitorExcel, isAllowedExcelFile } from '../ExcelUpload/excelValidator';
 import { downloadVisitorTemplate } from '../ExcelUpload/excelDownload';
 import type { ExcelValidationResult, ExcelValidationError, VisitorEntry } from '../../types/visitRequest.types';
+import { useTranslation } from 'react-i18next';
 
 function hasRealError(error: unknown): boolean {
   if (!error) return false;
@@ -25,6 +26,7 @@ interface Props {
 }
 
 export const VisitorListSection: React.FC<Props> = ({ form, visitorFields, showErrors }) => {
+  const { t } = useTranslation(['visitRequest']);
   const { register, control, formState: { errors } } = form;
   const visitorErrors = errors.visitors;
 
@@ -45,7 +47,7 @@ export const VisitorListSection: React.FC<Props> = ({ form, visitorFields, showE
     if (!isAllowedExcelFile(file)) {
       setUploadResult({
         valid: false, totalRows: 0, errorRows: 0, skippedDuplicates: 0,
-        errors: [{ row: 0, column: '', message: 'Chỉ chấp nhận file .xlsx hoặc .xls' }],
+        errors: [{ row: 0, column: '', message: t('visitRequest:step2Visitors.uploadError') }],
         data: [],
       });
       setIsProcessing(false);
@@ -90,14 +92,14 @@ export const VisitorListSection: React.FC<Props> = ({ form, visitorFields, showE
   return (
     <div className={`rounded-2xl border bg-white shadow-sm mt-8 transition-colors ${hasAnyError ? 'border-red-300 shadow-red-500/10' : 'border-slate-200'}`}>
       <div className={`border-b px-6 py-4 flex items-center justify-between ${hasAnyError ? 'border-red-200 bg-red-50/50 rounded-t-2xl' : 'border-slate-200'}`}>
-        <h4 className="text-[#004c91] font-bold text-lg">Danh sách khách <span className="text-red-500">*</span></h4>
+        <h4 className="text-[#004c91] font-bold text-lg">{t('visitRequest:step2Visitors.title')} <span className="text-red-500">*</span></h4>
       </div>
 
       {hasAnyError && (
         <div className="bg-red-50 border border-red-200 rounded-lg p-3 mx-6 mt-4 flex items-start gap-2 error-scroll-target">
           <AlertCircle className="w-5 h-5 text-red-500 shrink-0" />
           <div>
-            <p className="text-sm font-bold text-red-700">Vui lòng kiểm tra lại thông tin trong phần này.</p>
+            <p className="text-sm font-bold text-red-700">{t('visitRequest:step2Visitors.errorBoxTitle')}</p>
             {rootErrorMessage && <p className="text-xs text-red-600 mt-0.5">{rootErrorMessage}</p>}
           </div>
         </div>
@@ -108,11 +110,11 @@ export const VisitorListSection: React.FC<Props> = ({ form, visitorFields, showE
           <table className="w-full min-w-[680px] border-collapse text-sm">
             <thead className="bg-slate-50 border-b border-gray-200">
               <tr>
-                <th className="p-3 text-center font-bold text-slate-700 w-12">STT</th>
-                <th className="p-3 text-left font-bold text-slate-700 border-l border-gray-200">Họ và tên *</th>
-                <th className="p-3 text-left font-bold text-slate-700 border-l border-gray-200">Chức vụ *</th>
-                <th className="p-3 text-left font-bold text-slate-700 border-l border-gray-200">Đơn vị công tác *</th>
-                <th className="p-3 text-left font-bold text-slate-700 border-l border-gray-200">Quốc tịch *</th>
+                <th className="p-3 text-center font-bold text-slate-700 w-12">{t('visitRequest:step2Visitors.stt')}</th>
+                <th className="p-3 text-left font-bold text-slate-700 border-l border-gray-200">{t('visitRequest:step2Visitors.fullName')}</th>
+                <th className="p-3 text-left font-bold text-slate-700 border-l border-gray-200">{t('visitRequest:step2Visitors.jobTitle')}</th>
+                <th className="p-3 text-left font-bold text-slate-700 border-l border-gray-200">{t('visitRequest:step2Visitors.organization')}</th>
+                <th className="p-3 text-left font-bold text-slate-700 border-l border-gray-200">{t('visitRequest:step2Visitors.nationality')}</th>
                 <th className="p-3 text-center w-12 border-l border-gray-200" />
               </tr>
             </thead>
@@ -137,7 +139,7 @@ export const VisitorListSection: React.FC<Props> = ({ form, visitorFields, showE
                       <td className="p-0 border-l border-gray-100">
                         <input
                           {...register(`visitors.${i}.fullName`)}
-                          placeholder="Nhập tên..."
+                          placeholder={t('visitRequest:step2Visitors.placeholderName')}
                           className={cellInputCls(!!fe?.fullName)}
                         />
                         {fe?.fullName && <CellError msg={fe.fullName.message} />}
@@ -146,7 +148,7 @@ export const VisitorListSection: React.FC<Props> = ({ form, visitorFields, showE
                       <td className="p-0 border-l border-gray-100">
                         <input
                           {...register(`visitors.${i}.jobTitle`)}
-                          placeholder="Chức vụ..."
+                          placeholder={t('visitRequest:step2Visitors.placeholderJob')}
                           className={cellInputCls(!!fe?.jobTitle)}
                         />
                         {fe?.jobTitle && <CellError msg={fe.jobTitle.message} />}
@@ -162,7 +164,7 @@ export const VisitorListSection: React.FC<Props> = ({ form, visitorFields, showE
                               onChange={field.onChange}
                               onBlur={field.onBlur}
                               hasError={!!fe?.organization}
-                              placeholder="Đơn vị công tác..."
+                              placeholder={t('visitRequest:step2Visitors.placeholderOrg')}
                             />
                           )}
                         />
@@ -179,7 +181,7 @@ export const VisitorListSection: React.FC<Props> = ({ form, visitorFields, showE
                               onChange={field.onChange}
                               onBlur={field.onBlur}
                               hasError={!!fe?.nationality}
-                              placeholder="Quốc tịch..."
+                              placeholder={t('visitRequest:step2Visitors.placeholderNat')}
                             />
                           )}
                         />
@@ -211,7 +213,7 @@ export const VisitorListSection: React.FC<Props> = ({ form, visitorFields, showE
             }
             className="inline-flex items-center gap-2 px-4 py-2 bg-[#f37021]/10 text-[#f37021] text-sm font-bold rounded-xl hover:bg-[#f37021]/20 transition-colors"
           >
-            <Plus className="w-4 h-4" /> Thêm khách
+            <Plus className="w-4 h-4" /> {t('visitRequest:step2Visitors.addVisitor')}
           </button>
 
           <div className="flex flex-wrap gap-2 sm:gap-3">
@@ -220,7 +222,7 @@ export const VisitorListSection: React.FC<Props> = ({ form, visitorFields, showE
               onClick={downloadVisitorTemplate}
               className="inline-flex items-center gap-2 px-4 py-2 bg-white text-slate-700 text-sm font-bold rounded-xl hover:bg-slate-50 transition-colors border border-slate-200 shadow-sm"
             >
-              <Download className="w-4 h-4" /> Tải mẫu
+              <Download className="w-4 h-4" /> {t('visitRequest:step2Visitors.downloadTemplate')}
             </button>
 
             <button
@@ -232,7 +234,7 @@ export const VisitorListSection: React.FC<Props> = ({ form, visitorFields, showE
               {isProcessing
                 ? <span className="w-4 h-4 border-2 border-[#004c91] border-t-transparent rounded-full animate-spin" />
                 : <Upload className="w-4 h-4" />}
-              Up danh sách
+              {t('visitRequest:step2Visitors.uploadList')}
             </button>
             <input ref={fileInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleFileChange} />
           </div>
@@ -257,12 +259,14 @@ export const VisitorListSection: React.FC<Props> = ({ form, visitorFields, showE
                   <div>
                     <p className={`text-xs font-bold ${addedCount > 0 ? 'text-green-700' : 'text-red-700'}`}>
                       {addedCount > 0
-                        ? `Đã thêm ${addedCount} khách từ "${uploadFileName}". Tổng: ${visitorFields.fields.length} người.`
-                        : `Không thêm được dữ liệu từ "${uploadFileName}"`}
+                        ? t('visitRequest:step2Visitors.addedMsg', { added: addedCount, fileName: uploadFileName, total: visitorFields.fields.length })
+                        : t('visitRequest:step2Visitors.failedMsg', { fileName: uploadFileName })}
                     </p>
                     {uploadResult.totalRows > 0 && (
                       <p className="text-[10px] text-gray-600 mt-0.5">
-                        Tổng {uploadResult.totalRows} dòng · {uploadResult.errorRows} dòng lỗi/bỏ qua{uploadResult.skippedDuplicates > 0 ? ` · ${uploadResult.skippedDuplicates} dòng trùng đã bỏ qua` : ''}.
+                        {uploadResult.skippedDuplicates > 0
+                          ? t('visitRequest:step2Visitors.statsMsgDup', { totalRows: uploadResult.totalRows, errorRows: uploadResult.errorRows, skipped: uploadResult.skippedDuplicates })
+                          : t('visitRequest:step2Visitors.statsMsg', { totalRows: uploadResult.totalRows, errorRows: uploadResult.errorRows })}
                       </p>
                     )}
                   </div>

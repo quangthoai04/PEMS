@@ -5,6 +5,7 @@ import { FormField, inputCls } from '../shared/FormField';
 import { CountrySelect } from '../shared/CountrySelect';
 import { PhoneInput } from '../shared/PhoneInput';
 import { PartnerOrgCombobox } from '../shared/PartnerOrgCombobox';
+import { useTranslation } from 'react-i18next';
 
 interface Props {
   form: UseFormReturn<VisitRequestSchema>;
@@ -12,45 +13,46 @@ interface Props {
 }
 
 export const RegisterInfoSection: React.FC<Props> = ({ form, showErrors }) => {
+  const { t } = useTranslation(['visitRequest']);
   const { register, control, watch, setValue, formState: { errors, touchedFields, isSubmitted } } = form;
   const e = errors.registerInfo;
-  const t = touchedFields.registerInfo;
+  const tf = touchedFields.registerInfo;
 
-  const shouldShowError = (field: keyof NonNullable<typeof t>, specificError?: any) => {
-    return !!specificError && (t?.[field] || showErrors || isSubmitted);
+  const shouldShowError = (field: keyof NonNullable<typeof tf>, specificError?: any) => {
+    return !!specificError && (tf?.[field] || showErrors || isSubmitted);
   };
 
-  const isValid = (field: keyof NonNullable<typeof t>) =>
-    t?.[field] && !e?.[field];
+  const isValid = (field: keyof NonNullable<typeof tf>) =>
+    tf?.[field] && !e?.[field];
 
   return (
     <section>
-      <SectionTitle index={1} title="THÔNG TIN NGƯỜI ĐĂNG KÝ" />
+      <SectionTitle index={1} title={t('visitRequest:step1.title')} />
       
       <div className="rounded-3xl border border-slate-200 border-l-4 border-l-[#F37021] bg-white/95 p-6 shadow-sm">
         <div className="mb-6 border-b border-slate-200 pb-4">
           <h3 className="text-lg font-extrabold text-slate-900">
-            I. THÔNG TIN NGƯỜI ĐĂNG KÝ
+            {t('visitRequest:step1.groupTitle')}
           </h3>
         </div>
 
         <div className="grid grid-cols-1 gap-x-10 gap-y-6 lg:grid-cols-2">
 
         <FormField
-          label="Họ và tên"
+          label={t('visitRequest:step1.fullName')}
           required
           error={shouldShowError('fullName', e?.fullName) ? e?.fullName?.message : undefined}
           isValid={isValid('fullName')}
         >
           <input
             {...register('registerInfo.fullName')}
-            placeholder="Nguyễn Văn A"
+            placeholder={t('visitRequest:step1.fullNamePlaceholder')}
             className={inputCls(shouldShowError('fullName', e?.fullName), isValid('fullName'))}
           />
         </FormField>
 
         <FormField
-          label="Quốc tịch"
+          label={t('visitRequest:step1.nationality')}
           required
           error={shouldShowError('nationality', e?.nationality) ? e?.nationality?.message : undefined}
           isValid={isValid('nationality')}
@@ -72,11 +74,11 @@ export const RegisterInfoSection: React.FC<Props> = ({ form, showErrors }) => {
 
         <div className="lg:col-span-2">
           <FormField
-            label="Đơn vị / Tổ chức"
+            label={t('visitRequest:step1.organization')}
             required
             error={shouldShowError('organization', e?.organization) ? e?.organization?.message : undefined}
             isValid={isValid('organization')}
-            subtitle="Nhập tên đơn vị/tổ chức của bạn. Nếu đã là đối tác của FPTU, gõ để tìm và chọn từ gợi ý."
+            subtitle={t('visitRequest:step1.organizationSubtitle')}
             showValidIcon={false}
           >
             <Controller
@@ -100,20 +102,19 @@ export const RegisterInfoSection: React.FC<Props> = ({ form, showErrors }) => {
         </div>
 
         <FormField
-          label="Chức danh, phòng ban"
+          label={t('visitRequest:step1.jobTitle')}
           required
           error={shouldShowError('jobTitle', e?.jobTitle) ? e?.jobTitle?.message : undefined}
           isValid={isValid('jobTitle')}
         >
           <input
             {...register('registerInfo.jobTitle')}
-            placeholder="Giám đốc - Phòng Hợp tác Quốc tế"
             className={inputCls(shouldShowError('jobTitle', e?.jobTitle), isValid('jobTitle'))}
           />
         </FormField>
 
         <FormField
-          label="Số điện thoại"
+          label={t('visitRequest:step1.phone')}
           required
           error={shouldShowError('phone', e?.phone) ? e?.phone?.message : undefined}
           isValid={isValid('phone')}
@@ -133,11 +134,11 @@ export const RegisterInfoSection: React.FC<Props> = ({ form, showErrors }) => {
         </FormField>
 
         <FormField
-          label="Email"
+          label={t('visitRequest:step1.email')}
           required
           error={shouldShowError('email', e?.email) ? e?.email?.message : undefined}
           isValid={isValid('email')}
-          subtitle="Email này chỉ dùng để nhận mã OTP xác thực việc gửi form. Tài khoản theo dõi yêu cầu sẽ được tạo theo email ở phần Thông tin đầu mối liên hệ."
+          subtitle={t('visitRequest:step1.emailSubtitle')}
         >
           <input
             {...register('registerInfo.email')}

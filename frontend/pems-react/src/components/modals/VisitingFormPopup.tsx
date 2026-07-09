@@ -12,11 +12,12 @@ import { findCampusTimeOverlaps } from '../../features/visit-request/schema/visi
 import type { VisitRequestSchema } from '../../features/visit-request/schema/visitRequest.schema';
 import type { VerifyResponse } from '../../features/visit-request/api/visitRequestApi';
 import { loadVisitRequestDraft, clearVisitRequestDraft, saveVisitRequestDraft, hasAnyUserInput } from '../../features/visit-request/utils/visitRequestDraftStorage';
+import { useTranslation } from 'react-i18next';
 
 const STEPS = [
-  { num: 1, label: 'Thông tin đăng ký' },
-  { num: 2, label: 'Thành phần tham dự' },
-  { num: 3, label: 'Yêu cầu bổ sung' },
+  { num: 1, labelKey: 'step1' },
+  { num: 2, labelKey: 'step2' },
+  { num: 3, labelKey: 'step3' },
 ];
 
 interface VisitingFormPopupProps {
@@ -25,6 +26,7 @@ interface VisitingFormPopupProps {
 }
 
 export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
+  const { t } = useTranslation(['visitRequest']);
   const [currentStep, setCurrentStep] = useState(1);
   const [successResult, setSuccessResult] = useState<VerifyResponse | null>(null);
   const [stepError, setStepError] = useState<string | null>(null);
@@ -65,13 +67,13 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
     
     if (hasStep1Error) {
       setCurrentStep(1);
-      setStepError("Vui lòng kiểm tra lại các thông tin còn thiếu hoặc chưa hợp lệ.");
+      setStepError(t('visitRequest:popup.checkInfoError'));
     } else if (hasStep2Error) {
       setCurrentStep(2);
-      setStepError("Vui lòng kiểm tra lại các thông tin còn thiếu hoặc chưa hợp lệ.");
+      setStepError(t('visitRequest:popup.checkInfoError'));
     } else {
       setCurrentStep(3);
-      setSubmitError("Vui lòng kiểm tra lại các thông tin còn thiếu hoặc chưa hợp lệ.");
+      setSubmitError(t('visitRequest:popup.checkInfoError'));
     }
     
     setTimeout(() => {
@@ -208,7 +210,7 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
   const handleSaveDraft = () => {
     const isDirty = hasAnyUserInput(form.getValues());
     if (!isDirty) {
-      setToastMessage('Chưa có thông tin để lưu tạm.');
+      setToastMessage(t('visitRequest:draft.emptyMsg'));
       return;
     }
     saveVisitRequestDraft(form.getValues());
@@ -236,7 +238,7 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const valid = await form.trigger(fields as any);
     if (!valid) {
-      setStepError('Vui lòng điền đầy đủ và đúng các trường bắt buộc trước khi tiếp tục.');
+      setStepError(t('visitRequest:popup.fillAllError'));
       setTimeout(() => {
         const firstError = document.querySelector('.error-scroll-target');
         if (firstError) {
@@ -301,12 +303,12 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
                       >
                         <CheckCircle2 className="w-10 h-10 text-green-500" />
                       </motion.div>
-                      <h3 className="text-2xl font-black text-gray-900 mb-2">Đăng ký thành công!</h3>
+                      <h3 className="text-2xl font-black text-gray-900 mb-2">{t('visitRequest:popup.successTitle')}</h3>
                       <p className="text-gray-500 text-sm mb-4">
-                        Đơn của bạn đang chờ phê duyệt. Vui lòng kiểm tra email để theo dõi.
+                        {t('visitRequest:popup.successDesc')}
                       </p>
                       <div className="inline-flex items-center gap-2 px-4 py-2.5 bg-[#004c91]/10 rounded-xl">
-                        <span className="text-xs font-bold text-gray-500 uppercase tracking-wide">Mã đơn:</span>
+                        <span className="text-xs font-bold text-gray-500 uppercase tracking-wide">{t('visitRequest:popup.reqCode')}</span>
                         <span className="text-lg font-black text-[#004c91] tracking-wider">
                           {successResult.requestCode}
                         </span>
@@ -323,11 +325,11 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
                 <div className="relative z-10 pr-8">
                   <div className="inline-flex items-center gap-2 px-2.5 py-1 bg-white/10 text-orange-200 rounded-full text-[10px] font-bold uppercase tracking-wider mb-2">
                     <span className="w-1.5 h-1.5 bg-[#f37021] rounded-full animate-pulse" />
-                    Campus Visit
+                    {t('visitRequest:popup.badge')}
                   </div>
-                  <h2 className="text-xl sm:text-2xl font-black tracking-tight mb-1">ĐĂNG KÝ THAM QUAN TRƯỜNG</h2>
+                  <h2 className="text-xl sm:text-2xl font-black tracking-tight mb-1 uppercase">{t('visitRequest:popup.title')}</h2>
                   <p className="text-blue-100/90 font-medium text-xs sm:text-sm max-w-2xl">
-                    Vui lòng điền đầy đủ thông tin dưới đây để đăng ký lịch trình tham quan.
+                    {t('visitRequest:popup.subtitle')}
                   </p>
                 </div>
                 <button
@@ -373,7 +375,7 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
                                   : 'text-gray-400 group-hover:text-gray-600',
                             ].join(' ')}
                           >
-                            {step.label}
+                            {t(`visitRequest:popup.${step.labelKey}`)}
                           </span>
                         </button>
                         {i < STEPS.length - 1 && (
@@ -459,7 +461,7 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
                     disabled={isSubmitting}
                     className="px-6 py-3 rounded-xl font-bold text-gray-600 bg-white border-2 border-gray-200 hover:bg-gray-50 hover:text-gray-900 transition-colors disabled:opacity-50"
                   >
-                    Hủy
+                    {t('visitRequest:popup.cancel')}
                   </button>
                   {currentStep > 1 && (
                     <button
@@ -469,7 +471,7 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
                       className="inline-flex items-center gap-2 px-6 py-3 rounded-xl font-bold text-gray-600 bg-white border-2 border-gray-200 hover:bg-gray-50 hover:text-gray-900 transition-colors disabled:opacity-50"
                     >
                       <ChevronLeft className="w-4 h-4" />
-                      Quay lại
+                      {t('visitRequest:popup.back')}
                     </button>
                   )}
                   <button
@@ -478,7 +480,7 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
                     disabled={isSubmitting}
                     className="px-4 py-3 rounded-xl font-bold text-[#004c91] bg-blue-50 border-2 border-transparent hover:bg-blue-100 transition-colors disabled:opacity-50"
                   >
-                    Lưu tạm 30p
+                    {t('visitRequest:popup.saveDraft')}
                   </button>
                 </div>
 
@@ -508,7 +510,7 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
                       onClick={handleNextStep}
                       className="inline-flex items-center gap-2 px-8 py-3 rounded-xl font-black tracking-wide text-white bg-gradient-to-r from-[#004c91] to-[#013565] hover:from-[#013565] hover:to-[#012a52] shadow-lg shadow-blue-900/30 transition-all transform hover:-translate-y-0.5"
                     >
-                      Tiếp theo
+                      {t('visitRequest:popup.next')}
                       <ChevronRight className="w-4 h-4" />
                     </button>
                   ) : (
@@ -521,10 +523,10 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
                       {isSubmitting ? (
                         <>
                           <Loader2 className="w-4 h-4 animate-spin" />
-                          Đang gửi...
+                          {t('visitRequest:popup.submitting')}
                         </>
                       ) : (
-                        'Gửi đơn'
+                        t('visitRequest:popup.submit')
                       )}
                     </button>
                   )}
@@ -567,20 +569,16 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
                 <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center shrink-0">
                   <AlertCircle className="w-6 h-6 text-amber-600" />
                 </div>
-                <h3 className="text-lg font-bold text-gray-900">Xác nhận lịch trình trùng thời gian</h3>
+                <h3 className="text-lg font-bold text-gray-900">{t('visitRequest:overlaps.title')}</h3>
               </div>
-              <p className="text-sm text-gray-600 mb-6">
-                Một số cơ sở trong lịch trình có thời gian bắt đầu/kết thúc bị chồng lên nhau. Điều này có thể gây khó khăn cho quá trình tiếp đón.
-                <br /><br />
-                Bạn có chắc chắn muốn tiếp tục không?
-              </p>
+              <p className="text-sm text-gray-600 mb-6" dangerouslySetInnerHTML={{ __html: t('visitRequest:overlaps.desc') }} />
               <div className="flex justify-end gap-3">
                 <button
                   type="button"
                   onClick={() => setShowOverlapConfirm(false)}
                   className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-bold rounded-xl transition-colors"
                 >
-                  Kiểm tra lại
+                  {t('visitRequest:overlaps.recheck')}
                 </button>
                 <button
                   type="button"
@@ -594,7 +592,7 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
                   }}
                   className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-bold rounded-xl transition-colors shadow-lg shadow-amber-500/30"
                 >
-                  Vẫn tiếp tục
+                  {t('visitRequest:overlaps.continue')}
                 </button>
               </div>
             </motion.div>
@@ -618,10 +616,10 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
               className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6"
             >
               <h3 className="text-lg font-bold text-gray-900 mb-2">
-                Khôi phục thông tin đã nhập?
+                {t('visitRequest:draft.title')}
               </h3>
               <p className="text-sm text-gray-600 mb-6">
-                Hệ thống tìm thấy bản nháp form đăng ký tham quan bạn đã nhập trước đó. Bạn có muốn khôi phục để tiếp tục không?
+                {t('visitRequest:draft.desc')}
               </p>
               <div className="flex justify-end gap-3">
                 <button
@@ -629,14 +627,14 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
                   onClick={handleDiscardDraft}
                   className="px-4 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-bold"
                 >
-                  Không khôi phục
+                  {t('visitRequest:draft.discard')}
                 </button>
                 <button
                   type="button"
                   onClick={handleRestoreDraft}
                   className="px-4 py-2 rounded-xl bg-[#004c91] hover:bg-[#013565] text-white text-sm font-bold"
                 >
-                  Khôi phục
+                  {t('visitRequest:draft.restore')}
                 </button>
               </div>
             </motion.div>
@@ -656,10 +654,10 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
             >
               <div className="border-b border-slate-200 px-6 py-5">
                 <h3 className="text-lg font-extrabold text-slate-900">
-                  Hủy form đăng ký?
+                  {t('visitRequest:cancelConfirm.title')}
                 </h3>
                 <p className="mt-2 text-sm font-medium text-slate-600">
-                  Bạn có chắc muốn hủy form đăng ký? Thông tin đã nhập sẽ bị xóa.
+                  {t('visitRequest:cancelConfirm.desc')}
                 </p>
               </div>
               <div className="flex items-center justify-end gap-3 px-6 py-4">
@@ -668,14 +666,14 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
                   onClick={() => setShowCancelConfirm(false)}
                   className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-bold rounded-xl transition-colors"
                 >
-                  Không
+                  {t('visitRequest:cancelConfirm.no')}
                 </button>
                 <button
                   type="button"
                   onClick={handleConfirmCancel}
                   className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white text-sm font-bold rounded-xl transition-colors shadow-lg shadow-red-500/30"
                 >
-                  OK
+                  {t('visitRequest:cancelConfirm.yes')}
                 </button>
               </div>
             </motion.div>
@@ -696,10 +694,10 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
               <div className="border-b border-slate-200 px-6 py-5">
                 <h3 className="text-lg font-extrabold text-slate-900 flex items-center gap-2">
                   <CheckCircle2 className="w-6 h-6 text-green-500" />
-                  Lưu tạm thành công
+                  {t('visitRequest:saveDraftConfirm.title')}
                 </h3>
                 <p className="mt-2 text-sm font-medium text-slate-600">
-                  Đã lưu tạm form trong 30 phút. Bạn có muốn thoát form ngay bây giờ không?
+                  {t('visitRequest:saveDraftConfirm.desc')}
                 </p>
               </div>
               <div className="flex items-center justify-end gap-3 px-6 py-4">
@@ -711,14 +709,14 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
                   }}
                   className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-bold rounded-xl transition-colors"
                 >
-                  Lưu và thoát form
+                  {t('visitRequest:saveDraftConfirm.saveAndExit')}
                 </button>
                 <button
                   type="button"
                   onClick={() => setShowSaveDraftConfirm(false)}
                   className="px-4 py-2 bg-[#004c91] hover:bg-[#013565] text-white text-sm font-bold rounded-xl transition-colors shadow-lg shadow-blue-900/30"
                 >
-                  Lưu và viết tiếp
+                  {t('visitRequest:saveDraftConfirm.saveAndContinue')}
                 </button>
               </div>
             </motion.div>
