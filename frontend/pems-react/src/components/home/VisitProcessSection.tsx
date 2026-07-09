@@ -9,39 +9,42 @@
 import React from 'react';
 import { motion } from 'motion/react';
 import { FileEdit, ClipboardCheck, UserCheck, CalendarCheck } from 'lucide-react';
-
-const STEPS = [
-  {
-    icon: FileEdit,
-    title: 'Gửi yêu cầu',
-    desc: 'Điền thông tin đăng ký tham quan và thành phần đoàn qua form trực tuyến.',
-  },
-  {
-    icon: ClipboardCheck,
-    title: 'FPTU xem xét',
-    desc: 'Phòng Hợp tác Quốc tế tiếp nhận và xem xét yêu cầu của quý đối tác.',
-  },
-  {
-    icon: UserCheck,
-    title: 'Phân công tiếp đón',
-    desc: 'Cán bộ phụ trách (host) được phân công chuẩn bị và tiếp đón đoàn.',
-  },
-  {
-    icon: CalendarCheck,
-    title: 'Xác nhận lịch',
-    desc: 'Lịch trình tham quan được xác nhận và gửi lại cho quý đối tác.',
-  },
-];
+import { useTranslation } from 'react-i18next';
 
 export function VisitProcessSection() {
+  const { t } = useTranslation(['home']);
+
+  const STEPS = [
+    {
+      icon: FileEdit,
+      title: t('home:process.step1Title'),
+      desc: t('home:process.step1Desc'),
+    },
+    {
+      icon: ClipboardCheck,
+      title: t('home:process.step2Title'),
+      desc: t('home:process.step2Desc'),
+    },
+    {
+      icon: UserCheck,
+      title: t('home:process.step3Title'),
+      desc: t('home:process.step3Desc'),
+    },
+    {
+      icon: CalendarCheck,
+      title: t('home:process.step4Title'),
+      desc: t('home:process.step4Desc'),
+    },
+  ];
+
   return (
     <section className="py-14 sm:py-20 lg:py-24 bg-slate-50 relative overflow-hidden">
       <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
         <div className="text-center mb-10 sm:mb-16 lg:mb-24">
-          <h2 className="text-3xl font-bold text-fpt-navy mb-2">Quy trình gửi yêu cầu tham quan</h2>
+          <h2 className="text-3xl font-bold text-fpt-navy mb-2">{t('home:process.title')}</h2>
           <div className="w-24 h-1.5 bg-fpt-orange mt-4 mb-6 mx-auto rounded-full"></div>
           <p className="text-gray-600 max-w-2xl mx-auto text-lg">
-            Đơn giản, minh bạch — từ lúc gửi yêu cầu đến khi buổi tham quan diễn ra.
+            {t('home:process.subtitle')}
           </p>
         </div>
 

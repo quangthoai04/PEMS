@@ -10,8 +10,10 @@ import { useNavigate } from 'react-router-dom';
 import { CalendarDays, ArrowRight, ArrowUpRight } from 'lucide-react';
 import { VisitingFormPopup } from '../modals/VisitingFormPopup';
 import { LazyGlobeShowcase } from './LazyGlobeShowcase';
+import { useTranslation } from 'react-i18next';
 
 export function HeroSection() {
+  const { t } = useTranslation(['home']);
   const [isVisitorFormOpen, setIsVisitorFormOpen] = useState(false);
   const navigate = useNavigate();
 
@@ -34,36 +36,35 @@ export function HeroSection() {
               <div className="flex items-center gap-3 sm:gap-4 mb-4 sm:mb-6">
                 <div className="h-[2px] w-8 sm:w-12 bg-fpt-orange"></div>
                 <span className="text-fpt-orange font-bold tracking-widest uppercase text-[11px] sm:text-xs">
-                  Phòng Hợp tác Quốc tế
+                  {t('home:hero.department')}
                 </span>
               </div>
 
-              <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-[64px] font-black leading-[1.15] lg:leading-[1.1] mb-4 sm:mb-6 tracking-tight">
-                <span className="text-fpt-navy block mb-1 sm:mb-2">Kết nối toàn cầu</span>
-                <span className="text-fpt-orange block">cùng Đại học FPT</span>
+              <h1 className="max-w-[760px] text-3xl sm:text-4xl md:text-5xl lg:text-[64px] font-black leading-[1.15] lg:leading-[1.1] mb-4 sm:mb-6 tracking-tight">
+                <span className="block text-fpt-navy mb-1 sm:mb-2">{t('home:hero.titleLine1')}</span>
+                <span className="block text-fpt-orange">{t('home:hero.titleLine2')}</span>
               </h1>
 
               <p className="text-gray-500 text-sm sm:text-[15px] md:text-base font-medium mb-6 sm:mb-10 max-w-[480px] leading-relaxed">
-                Mở rộng mạng lưới đối tác quốc tế, thúc đẩy trao đổi sinh viên và mang trải nghiệm
-                chuẩn quốc tế đến 5 cơ sở trên toàn quốc.
+                {t('home:hero.description')}
               </p>
 
-              <div className="flex flex-col sm:flex-row gap-3 sm:gap-5 w-full sm:w-auto">
+              <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 w-full sm:w-auto">
                 <button
                   onClick={() => setIsVisitorFormOpen(true)}
-                  className="inline-flex items-center justify-center gap-2 sm:gap-2.5 px-6 py-3.5 sm:px-10 sm:py-5 bg-fpt-navy text-white font-bold rounded-xl shadow-[0_8px_25px_rgba(0,76,145,0.25)] hover:-translate-y-1 hover:shadow-[0_12px_30px_rgba(0,76,145,0.35)] transition-all duration-300 group text-base sm:text-lg"
+                  className="inline-flex items-center justify-center gap-2 sm:gap-2.5 w-full sm:w-[300px] h-14 sm:h-16 px-4 bg-fpt-navy text-white font-bold rounded-xl shadow-[0_8px_25px_rgba(0,76,145,0.25)] hover:-translate-y-1 hover:shadow-[0_12px_30px_rgba(0,76,145,0.35)] transition-all duration-300 group text-base sm:text-lg"
                 >
-                  <CalendarDays className="w-4 h-4 sm:w-5 sm:h-5" />
-                  Đăng ký tham quan
-                  <ArrowRight className="w-4 h-4 sm:w-5 sm:h-5 group-hover:translate-x-1 transition-transform" />
+                  <CalendarDays className="w-4 h-4 sm:w-5 sm:h-5 shrink-0" />
+                  <span className="truncate">{t('home:hero.primaryCta')}</span>
+                  <ArrowRight className="w-4 h-4 sm:w-5 sm:h-5 shrink-0 group-hover:translate-x-1 transition-transform" />
                 </button>
 
                 <button
                   onClick={() => navigate('/visit-fptu')}
-                  className="inline-flex items-center justify-center gap-2 sm:gap-2.5 px-6 py-3.5 sm:px-10 sm:py-5 bg-white text-gray-600 font-bold border-2 border-gray-200 rounded-xl hover:text-white hover:bg-fpt-orange hover:border-fpt-orange hover:shadow-lg transition-all duration-300 text-base sm:text-lg"
+                  className="inline-flex items-center justify-center gap-2 sm:gap-2.5 w-full sm:w-[300px] h-14 sm:h-16 px-4 bg-white text-gray-600 font-bold border-2 border-gray-200 rounded-xl hover:text-white hover:bg-fpt-orange hover:border-fpt-orange hover:shadow-lg transition-all duration-300 text-base sm:text-lg"
                 >
-                  Visit FPTU Online
-                  <ArrowUpRight className="w-4 h-4 sm:w-5 sm:h-5" />
+                  <span className="truncate">{t('home:hero.secondaryCta')}</span>
+                  <ArrowUpRight className="w-4 h-4 sm:w-5 sm:h-5 shrink-0" />
                 </button>
               </div>
             </motion.div>

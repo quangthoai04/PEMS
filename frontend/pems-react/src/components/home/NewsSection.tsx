@@ -11,6 +11,7 @@ import newsPattern from '../../assets/images/news_pattern.svg';
 import { publicContentApi } from '../../features/public-content/api/publicContentApi';
 import { PublicNewsListItem } from '../../features/public-content/types/publicContent.types';
 import { resolveFileUrl } from '../../shared/utils/resolveFileUrl';
+import { useTranslation } from 'react-i18next';
 
 const FALLBACK_IMAGE =
   'data:image/svg+xml;utf8,' +
@@ -42,18 +43,19 @@ function CardImage({ item }: { item: PublicNewsListItem }) {
 }
 
 export function NewsSection() {
+  const { t, i18n } = useTranslation(['home']);
   const [items, setItems] = useState<PublicNewsListItem[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
     publicContentApi
-      .getPublicNewsList({ pageIndex: 1, pageSize: 3 })
+      .getPublicNewsList({ pageIndex: 1, pageSize: 3, languageCode: i18n.language })
       .then(data => { if (!cancelled) setItems(data.items ?? []); })
       .catch(() => { /* trang chủ vẫn hiển thị bình thường khi API lỗi */ })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, []);
+  }, [i18n.language]);
 
   // Không có bài published nào → ẩn cả section để trang chủ gọn gàng.
   if (!loading && items.length === 0) return null;
@@ -66,11 +68,11 @@ export function NewsSection() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
         <div className="flex items-end justify-between mb-12">
           <div>
-            <h2 className="text-3xl font-bold text-fpt-navy">Tin Tức Nổi Bật</h2>
+            <h2 className="text-3xl font-bold text-fpt-navy">{t('home:news.sectionTitle')}</h2>
             <div className="w-16 h-1.5 bg-fpt-orange mt-4 rounded-full"></div>
           </div>
           <Link to="/news" className="hidden sm:flex items-center gap-2 text-fpt-orange font-medium hover:text-fpt-orange-hover transition-colors">
-            Xem tất cả <ArrowRight className="w-4 h-4" />
+            {t('home:news.viewAll')} <ArrowRight className="w-4 h-4" />
           </Link>
         </div>
 
@@ -107,7 +109,7 @@ export function NewsSection() {
                     )}
                     <div className="mt-auto">
                       <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-fpt-navy group-hover:text-fpt-orange transition-colors">
-                        Đọc tiếp <ArrowRight className="w-4 h-4 translate-x-0 group-hover:translate-x-1 transition-transform" />
+                        {t('home:news.readMore')} <ArrowRight className="w-4 h-4 translate-x-0 group-hover:translate-x-1 transition-transform" />
                       </span>
                     </div>
                   </div>

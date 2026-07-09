@@ -12,6 +12,7 @@ import { publicPartnersApi } from '../../features/public-partners/api/publicPart
 import { PublicPartner } from '../../features/public-partners/types/publicPartners.types';
 import { API_ENDPOINTS } from '../../shared/api/endpoints';
 import { resolveFileUrl } from '../../shared/utils/resolveFileUrl';
+import { useTranslation } from 'react-i18next';
 
 const ITEMS_PER_PAGE = 18;
 
@@ -41,6 +42,7 @@ function PartnerLogo({ partner }: { partner: PublicPartner }) {
 }
 
 export function PartnersSection() {
+  const { t } = useTranslation(['home']);
   const [partners, setPartners] = useState<PublicPartner[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(0);
@@ -73,10 +75,10 @@ export function PartnersSection() {
       <div className="absolute inset-0 opacity-[0.03] pointer-events-none" style={{ backgroundImage: 'radial-gradient(#F37021 2px, transparent 2px)', backgroundSize: '32px 32px' }}></div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-12 text-center relative z-10 w-full">
-        <h2 className="text-3xl font-bold text-fpt-navy mb-2">Đối tác & Hợp tác quốc tế</h2>
+        <h2 className="text-3xl font-bold text-fpt-navy mb-2">{t('home:partners.title')}</h2>
         <div className="w-24 h-1.5 bg-fpt-orange mt-4 mb-6 mx-auto rounded-full"></div>
         <p className="text-gray-600 max-w-3xl mx-auto text-lg leading-relaxed">
-          Mạng lưới đối tác bền chặt với các trường Đại học và doanh nghiệp trong và ngoài nước, mang lại nhiều cơ hội trải nghiệm thực tế.
+          {t('home:partners.subtitle')}
         </p>
       </div>
 

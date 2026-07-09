@@ -14,16 +14,18 @@ import bgCT from "../assets/FPTbanner_visit/CanTho.png";
 import bgDN from "../assets/FPTbanner_visit/DaNang.png";
 import bgQN from "../assets/FPTbanner_visit/QuyNhon.png";
 import defaultBg from "../assets/FPTbanner_visit/5CS.png";
+import { useTranslation } from "react-i18next";
 
 const CAMPUSES = [
-  { id: "hn", col: 1, row: 3, label: "Campus Hà Nội", img: bgHN },
-  { id: "hcm", col: 2, row: 2, label: "Campus Hồ Chí Minh", img: bgHCM },
-  { id: "qn", col: 3, row: 1, label: "Campus Quy Nhơn", img: bgQN },
-  { id: "ct", col: 2, row: 3, label: "Campus Cần Thơ", img: bgCT },
-  { id: "dn", col: 3, row: 2, label: "Campus Đà Nẵng", img: bgDN },
+  { id: "hn", col: 1, row: 3, labelKey: "hanoi", img: bgHN },
+  { id: "hcm", col: 2, row: 2, labelKey: "hochiminh", img: bgHCM },
+  { id: "qn", col: 3, row: 1, labelKey: "quynhon", img: bgQN },
+  { id: "ct", col: 2, row: 3, labelKey: "cantho", img: bgCT },
+  { id: "dn", col: 3, row: 2, labelKey: "danang", img: bgDN },
 ];
 
 export function VisitFPTUPage() {
+  const { t } = useTranslation(['visitFptu']);
   const [activeBg, setActiveBg] = useState<string | null>(null);
   const navigate = useNavigate();
   const { scrollYProgress } = useScroll();
@@ -53,7 +55,7 @@ export function VisitFPTUPage() {
           <img
             key={c.id}
             src={c.img}
-            alt={c.label}
+            alt={t(`visitFptu:hero.${c.labelKey}`)}
             className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-700 ease-in-out z-0 ${
               activeBg === c.id ? "opacity-100" : "opacity-0"
             }`}
@@ -79,8 +81,8 @@ export function VisitFPTUPage() {
                 className="border border-white/60 hover:border-white hover:bg-white/10 transition-all duration-300 flex items-center justify-center cursor-pointer group hover:shadow-[0_0_30px_rgba(255,255,255,0.7)] hover:z-20 relative backdrop-blur-[2px]"
               >
                 <div className="-rotate-45 transform text-white font-bold text-sm sm:text-base md:text-lg lg:text-xl xl:text-2xl tracking-wide group-hover:scale-110 transition-transform duration-300 drop-shadow-lg text-center px-2 flex flex-col items-center justify-center leading-tight">
-                  <span className="opacity-90 text-[0.8em]">Campus</span>
-                  <span>{c.label.replace('Campus ', '')}</span>
+                  <span className="opacity-90 text-[0.8em]">{t('visitFptu:hero.campusPrefix')}</span>
+                  <span className="whitespace-nowrap">{t(`visitFptu:hero.${c.labelKey}`)}</span>
                 </div>
               </motion.div>
             ))}
@@ -94,7 +96,7 @@ export function VisitFPTUPage() {
           transition={{ delay: 1, duration: 1 }}
           className="absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 z-20 text-white/70"
         >
-          <span className="text-xs uppercase tracking-widest font-medium">Cuộn xuống</span>
+          <span className="text-xs uppercase tracking-widest font-medium whitespace-nowrap">{t('visitFptu:hero.scrollDown')}</span>
           <div className="w-px h-12 bg-white/30 overflow-hidden relative">
             <motion.div 
               animate={{ y: [0, 48, 0] }}
@@ -119,25 +121,25 @@ export function VisitFPTUPage() {
               className="lg:w-5/12 flex flex-col"
             >
               <div className="flex items-center gap-2 mb-6">
-                <Globe className="w-5 h-5 text-fpt-orange" />
-                <span className="text-fpt-orange font-bold uppercase tracking-widest text-sm">Tour Tham Quan Số</span>
+                <Globe className="w-5 h-5 text-fpt-orange shrink-0" />
+                <span className="text-fpt-orange font-bold uppercase tracking-widest text-sm">{t('visitFptu:overview.badge')}</span>
               </div>
               <h2 className="text-4xl md:text-5xl lg:text-6xl font-black leading-[1.1] mb-6 tracking-tight">
-                <span className="text-[#004c91]">Không Gian</span> <br />
-                <span className="text-transparent bg-clip-text bg-gradient-to-r from-fpt-orange to-fpt-orange/80">Tương Lai</span>
+                <span className="text-[#004c91] block">{t('visitFptu:overview.titleLine1')}</span>
+                <span className="text-transparent bg-clip-text bg-gradient-to-r from-fpt-orange to-fpt-orange/80 block">{t('visitFptu:overview.titleLine2')}</span>
               </h2>
               <p className="text-lg text-gray-600 mb-8 leading-relaxed font-light">
-                Trải nghiệm đa giác quan tại 5 cơ sở của Đại học FPT trên toàn quốc. Kiến trúc sinh thái giao hòa cùng thiên nhiên, tiện ích công nghệ hiện đại mở ra môi trường học thuật lý tưởng.
+                {t('visitFptu:overview.description')}
               </p>
               
               <ul className="flex flex-col gap-5 mb-12">
                 {[
-                  "Hiểu rõ môi trường học thuật và sinh hoạt",
-                  "Khám phá các góc sống ảo độc quyền",
-                  "Chiêm ngưỡng cơ sở vật chất 5 sao"
+                  t('visitFptu:overview.benefit1'),
+                  t('visitFptu:overview.benefit2'),
+                  t('visitFptu:overview.benefit3')
                 ].map((item, index) => (
                   <li key={index} className="flex items-center gap-4 group">
-                    <div className="w-10 h-10 rounded-full bg-orange-50 flex items-center justify-center group-hover:bg-fpt-orange transition-colors">
+                    <div className="w-10 h-10 rounded-full bg-orange-50 flex items-center justify-center shrink-0 group-hover:bg-fpt-orange transition-colors">
                       <Sparkles className="w-4 h-4 text-fpt-orange group-hover:text-white transition-colors" />
                     </div>
                     <span className="text-gray-700 font-medium">{item}</span>
@@ -151,8 +153,8 @@ export function VisitFPTUPage() {
                 onClick={scrollToTop}
                 className="group relative self-start inline-flex items-center justify-center gap-3 px-8 py-4 bg-fpt-orange/10 hover:bg-fpt-orange text-fpt-orange hover:text-white rounded-full font-bold transition-all duration-300 overflow-hidden"
               >
-                <span className="relative z-10 text-sm uppercase tracking-wider">Bắt đầu khám phá</span>
-                <ArrowUp className="w-4 h-4 relative z-10 group-hover:-translate-y-1 transition-transform" />
+                <span className="relative z-10 text-sm uppercase tracking-wider truncate max-w-[200px]">{t('visitFptu:overview.cta')}</span>
+                <ArrowUp className="w-4 h-4 relative z-10 shrink-0 group-hover:-translate-y-1 transition-transform" />
               </motion.button>
             </motion.div>
             

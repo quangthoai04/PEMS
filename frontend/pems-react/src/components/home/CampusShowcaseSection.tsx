@@ -14,25 +14,26 @@ import bgHCM from '../../assets/FPTbanner_visit/HCM.png';
 import bgCT from '../../assets/FPTbanner_visit/CanTho.png';
 import bgDN from '../../assets/FPTbanner_visit/DaNang.png';
 import bgQN from '../../assets/FPTbanner_visit/QuyNhon.png';
+import { useTranslation } from 'react-i18next';
 
 const CAMPUSES = [
-  { code: 'HN', name: 'Hà Nội', img: bgHN },
-  { code: 'HCM', name: 'TP. Hồ Chí Minh', img: bgHCM },
-  { code: 'DN', name: 'Đà Nẵng', img: bgDN },
-  { code: 'CT', name: 'Cần Thơ', img: bgCT },
-  { code: 'QN', name: 'Quy Nhơn', img: bgQN },
+  { code: 'HN', key: 'HN', img: bgHN },
+  { code: 'HCM', key: 'HCM', img: bgHCM },
+  { code: 'DN', key: 'DN', img: bgDN },
+  { code: 'CT', key: 'CT', img: bgCT },
+  { code: 'QN', key: 'QN', img: bgQN },
 ];
 
 export function CampusShowcaseSection() {
+  const { t } = useTranslation(['home']);
   return (
     <section className="py-14 sm:py-20 lg:py-24 bg-slate-50 relative overflow-hidden">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="mb-10 sm:mb-16 lg:mb-24 text-center">
-          <h2 className="text-3xl font-bold text-fpt-navy mb-2">5 cơ sở trên toàn quốc</h2>
+          <h2 className="text-3xl font-bold text-fpt-navy mb-2">{t('home:campus.title')}</h2>
           <div className="w-24 h-1.5 bg-fpt-orange mt-4 mb-6 mx-auto rounded-full"></div>
           <p className="text-gray-600 max-w-2xl mx-auto text-lg leading-relaxed">
-            Từ Hà Nội đến Cần Thơ — mỗi cơ sở là một không gian học tập, làm việc và tiếp đón
-            đối tác quốc tế theo tiêu chuẩn riêng.
+            {t('home:campus.subtitle')}
           </p>
         </div>
 
@@ -63,7 +64,7 @@ export function CampusShowcaseSection() {
                       <div className="relative w-28 h-28 sm:w-32 sm:h-32 rounded-2xl overflow-hidden flex-shrink-0 bg-slate-200">
                         <img
                           src={campus.img}
-                          alt={`Campus ${campus.name}`}
+                          alt={`Campus ${t(`home:campus.${campus.key}`)}`}
                           loading="lazy"
                           className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 ease-out"
                         />
@@ -72,10 +73,10 @@ export function CampusShowcaseSection() {
                         <p className="text-fpt-orange text-xs font-bold uppercase tracking-widest mb-1">FPT University</p>
                         <div className={`flex items-center gap-2 mb-1 ${isEven ? 'lg:flex-row-reverse' : ''}`}>
                           <MapPin className="w-4 h-4 text-fpt-navy flex-shrink-0" />
-                          <h3 className="text-lg font-bold text-slate-900">{campus.name}</h3>
+                          <h3 className="text-lg font-bold text-slate-900">{t(`home:campus.${campus.key}`)}</h3>
                         </div>
                         <div className={`inline-flex items-center gap-1.5 text-sm font-semibold text-fpt-navy group-hover:text-fpt-orange transition-colors ${isEven ? 'lg:flex-row-reverse' : ''}`}>
-                          Khám phá <ArrowUpRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
+                          {t('home:campus.explore')} <ArrowUpRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
                         </div>
                       </div>
                     </Link>

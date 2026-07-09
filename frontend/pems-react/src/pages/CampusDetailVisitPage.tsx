@@ -8,6 +8,7 @@
 
 import React, { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { motion, AnimatePresence } from "motion/react";
 import {
   ChevronRight,
@@ -77,11 +78,11 @@ const CAMPUS_FALLBACK: Record<string, { bg: string; description: string }> = {
 
 const isVideo = (mediaType?: string) => (mediaType || "").toUpperCase() === "VIDEO";
 
-const mediaKindLabel = (kind?: string) => {
+const mediaKindLabel = (kind: string | undefined, t: any) => {
   const k = (kind || "").toUpperCase();
-  if (k === "VIDEO") return "Video";
-  if (k === "MIXED") return "Hỗn hợp";
-  return "Hình ảnh";
+  if (k === "VIDEO") return t("visitFptu:gallery.mediaKinds.video");
+  if (k === "MIXED") return t("visitFptu:gallery.mediaKinds.mixed");
+  return t("visitFptu:gallery.mediaKinds.image");
 };
 
 /** Resolves the media URL through the dev server (vite proxies /api → backend). URLs come absolute. */
@@ -92,6 +93,7 @@ const mediaSrc = (url?: string | null) => url || "";
  * media-kind pill, title, and a centered "Xem chi tiết" CTA on hover (BR-PGAL-GRID-02/05/06).
  */
 function GridCard({ item, onOpen }: { item: PublicGalleryGridItem; onOpen: () => void }) {
+  const { t } = useTranslation(['visitFptu']);
   const [failed, setFailed] = useState(false);
   const pm = item.primaryMedia;
   const video = isVideo(pm?.mediaType);
@@ -133,7 +135,7 @@ function GridCard({ item, onOpen }: { item: PublicGalleryGridItem; onOpen: () =>
       {/* Media-kind pill (top-left) */}
       <span className="absolute top-3 left-3 z-10 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-900/60 backdrop-blur-md text-white text-[11px] font-bold border border-white/20">
         {video ? <VideoIcon className="w-3 h-3" /> : <ImageIcon className="w-3 h-3" />}
-        {mediaKindLabel(item.mediaKind)}
+        {mediaKindLabel(item.mediaKind, t)}
       </span>
 
       {/* Idle: play icon for videos (hidden on hover, replaced by CTA) */}
@@ -148,7 +150,7 @@ function GridCard({ item, onOpen }: { item: PublicGalleryGridItem; onOpen: () =>
       {/* Hover CTA: darken + "Xem chi tiết" */}
       <div className="absolute inset-0 z-[2] flex items-center justify-center bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none">
         <span className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-fpt-orange/95 text-white text-sm font-extrabold shadow-[0_12px_28px_rgba(243,112,33,0.32)]">
-          <ZoomIn className="w-4 h-4" /> Xem chi tiết
+          <ZoomIn className="w-4 h-4" /> {t('visitFptu:gallery.actions.viewDetails')}
         </span>
       </div>
 
@@ -253,6 +255,7 @@ function VerticalThumbRail({
   renderThumb,
   keyOf,
   label,
+  t,
 }: {
   items: PublicGalleryShowcaseItem[];
   activeIndex: number;
@@ -261,6 +264,7 @@ function VerticalThumbRail({
   renderThumb: (item: PublicGalleryShowcaseItem) => React.ReactNode;
   keyOf: (item: PublicGalleryShowcaseItem, index: number) => React.Key;
   label?: string;
+  t: any;
 }) {
   const railRef = useRef<HTMLDivElement | null>(null);
   const thumbRefs = useRef<(HTMLButtonElement | null)[]>([]);
@@ -294,7 +298,7 @@ function VerticalThumbRail({
     <div className="flex flex-col items-center gap-3">
       <button
         onClick={() => onStep(-1)}
-        title="Lên"
+        title={t('visitFptu:gallery.actions.up')}
         className="w-10 h-10 rounded-full border border-white/30 bg-black/30 text-white flex items-center justify-center backdrop-blur-md transition-all hover:bg-white/20 hover:scale-105"
       >
         <ChevronUp className="w-5 h-5" />
@@ -330,7 +334,7 @@ function VerticalThumbRail({
       </div>
       <button
         onClick={() => onStep(1)}
-        title="Xuống"
+        title={t('visitFptu:gallery.actions.down')}
         className="w-10 h-10 rounded-full border border-white/30 bg-black/30 text-white flex items-center justify-center backdrop-blur-md transition-all hover:bg-white/20 hover:scale-105"
       >
         <ChevronDown className="w-5 h-5" />
@@ -355,6 +359,7 @@ function HorizontalThumbRail({
   renderThumb,
   keyOf,
   title,
+  t,
 }: {
   items: PublicGalleryShowcaseItem[];
   activeIndex: number;
@@ -363,6 +368,7 @@ function HorizontalThumbRail({
   renderThumb: (item: PublicGalleryShowcaseItem) => React.ReactNode;
   keyOf: (item: PublicGalleryShowcaseItem, index: number) => React.Key;
   title?: string;
+  t: any;
 }) {
   const railRef = useRef<HTMLDivElement | null>(null);
   const thumbRefs = useRef<(HTMLButtonElement | null)[]>([]);
@@ -404,7 +410,7 @@ function HorizontalThumbRail({
       <div className="flex items-center gap-3">
         <button
           onClick={() => onStep(-1)}
-          title="Trước"
+          title={t('visitFptu:gallery.actions.previous')}
           className="w-10 h-10 shrink-0 rounded-full border border-white/30 bg-black/30 text-white flex items-center justify-center backdrop-blur-md transition-all hover:bg-white/20 hover:scale-105"
         >
           <ChevronLeft className="w-5 h-5" />
@@ -436,7 +442,7 @@ function HorizontalThumbRail({
         </div>
         <button
           onClick={() => onStep(1)}
-          title="Tiếp theo"
+          title={t('visitFptu:gallery.actions.next')}
           className="w-10 h-10 shrink-0 rounded-full border border-white/30 bg-black/30 text-white flex items-center justify-center backdrop-blur-md transition-all hover:bg-white/20 hover:scale-105"
         >
           <ChevronRight className="w-5 h-5" />
@@ -465,6 +471,7 @@ function GalleryItemDetailModal({
   onPrev,
   onNext,
   hasNav,
+  t,
 }: {
   detail: PublicGalleryItemDetail | null;
   isLoading: boolean;
@@ -473,6 +480,7 @@ function GalleryItemDetailModal({
   onPrev: () => void;
   onNext: () => void;
   hasNav: boolean;
+  t: any;
 }) {
   const [idx, setIdx] = useState(0);
   const [failed, setFailed] = useState(false);
@@ -507,8 +515,8 @@ function GalleryItemDetailModal({
 
   const failNarration = useCallback((req: number, note?: string) => {
     if (req !== narrationReqRef.current) return;
-    setNarration({ state: "error", note: note || "Chưa thể phát giọng đọc. Vui lòng thử lại sau." });
-  }, []);
+    setNarration({ state: "error", note: note || t('visitFptu:gallery.errors.narrationFailed') });
+  }, [t]);
 
   const playNarration = useCallback(
     (req: number, url: string) => {
@@ -534,7 +542,7 @@ function GalleryItemDetailModal({
     (req: number, attempt: number) => {
       if (req !== narrationReqRef.current || itemId == null) return;
       if (attempt >= NARRATION_POLL_MAX) {
-        failNarration(req, "Giọng đọc đang được tạo, vui lòng thử lại sau ít phút.");
+        failNarration(req, t('visitFptu:gallery.errors.narrationGenWait'));
         return;
       }
       pollTimerRef.current = window.setTimeout(async () => {
@@ -647,7 +655,7 @@ function GalleryItemDetailModal({
                 <button
                   onClick={() => setShowShareMenu((s) => !s)}
                   className="w-8 h-8 flex items-center justify-center rounded-full bg-white/15 hover:bg-fpt-orange text-white/80 hover:text-white border border-white/25 transition-all hover:scale-110"
-                  title="Chia sẻ"
+                  title={t('visitFptu:gallery.actions.share')}
                 >
                   <Share2 className="w-4 h-4" />
                 </button>
@@ -660,7 +668,7 @@ function GalleryItemDetailModal({
                       className="absolute right-0 top-full mt-2 w-52 bg-black/90 backdrop-blur-xl border border-white/20 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.6)] p-2 z-[70] flex flex-col gap-1"
                     >
                       <button onClick={() => shareLink("copy")} className="flex items-center gap-3 px-3 py-2.5 text-sm text-white/90 hover:text-white hover:bg-white/10 rounded-xl transition-colors text-left">
-                        <LinkIcon className="w-4 h-4 shrink-0" /> Sao chép liên kết
+                        <LinkIcon className="w-4 h-4 shrink-0" /> {t('visitFptu:gallery.actions.copyLink')}
                       </button>
                       <button onClick={() => shareLink("facebook")} className="flex items-center gap-3 px-3 py-2.5 text-sm text-white/90 hover:text-white hover:bg-blue-500/25 rounded-xl transition-colors text-left">
                         <Facebook className="w-4 h-4 shrink-0" /> Facebook
@@ -672,7 +680,7 @@ function GalleryItemDetailModal({
             </div>
 
             <h3 className="text-2xl sm:text-3xl font-black text-transparent bg-clip-text bg-gradient-to-br from-white via-white to-white/70 mb-3 leading-tight tracking-tight drop-shadow-sm relative z-10 min-h-[2rem]">
-              {isLoading ? "Đang tải…" : detail?.galleryItem.title || "—"}
+              {isLoading ? t('visitFptu:gallery.labels.loading') : detail?.galleryItem.title || "—"}
             </h3>
             <div className="w-24 h-1.5 bg-gradient-to-r from-fpt-orange to-transparent rounded-full opacity-80 relative z-10" />
           </div>
@@ -687,10 +695,10 @@ function GalleryItemDetailModal({
                     onClick={toggleNarration}
                     title={
                       narration.state === "playing"
-                        ? "Dừng thuyết minh"
+                        ? t('visitFptu:gallery.actions.stopNarration')
                         : narration.state === "loading"
-                          ? "Đang tạo giọng đọc…"
-                          : "Nghe thuyết minh"
+                          ? t('visitFptu:gallery.labels.generatingNarration')
+                          : t('visitFptu:gallery.actions.listenNarration')
                     }
                     className={`flex items-center justify-center w-10 h-10 sm:w-12 sm:h-12 rounded-full transition-all duration-300 hover:scale-110 hover:shadow-[0_0_15px_rgba(243,112,33,0.4)] ${
                       narration.state === "playing"
@@ -708,7 +716,7 @@ function GalleryItemDetailModal({
                   </button>
                   {narration.state === "loading" && (
                     <span className="text-[11px] leading-snug text-right text-gray-500 dark:text-gray-300">
-                      Giọng đọc đang được tạo…
+                      {t('visitFptu:gallery.labels.generatingNarration')}
                     </span>
                   )}
                   {narration.state === "error" && narration.note && (
@@ -719,9 +727,9 @@ function GalleryItemDetailModal({
                 </div>
               )}
               {isLoading ? (
-                <p className="text-gray-600 dark:text-gray-300">Đang tải mô tả…</p>
+                <p className="text-gray-600 dark:text-gray-300">{t('visitFptu:gallery.labels.loadingDescription')}</p>
               ) : notFound ? (
-                <p className="text-red-600 dark:text-red-400 font-medium">Nội dung này hiện không còn được hiển thị.</p>
+                <p className="text-red-600 dark:text-red-400 font-medium">{t('visitFptu:gallery.errors.contentHidden')}</p>
               ) : (
                 <p className="text-black dark:text-gray-100 whitespace-pre-line break-words [overflow-wrap:anywhere] first-letter:text-4xl first-letter:font-bold first-letter:text-fpt-orange first-letter:mr-1 first-letter:float-left">
                   {detail?.galleryItem.description}
@@ -736,13 +744,13 @@ function GalleryItemDetailModal({
                   onClick={onPrev}
                   className="flex items-center gap-2 px-3 py-2 text-sm font-bold text-gray-700 dark:text-gray-200 hover:text-fpt-orange dark:hover:text-fpt-orange hover:bg-fpt-orange/10 dark:hover:bg-fpt-orange/20 rounded-xl transition-all hover:scale-105 active:scale-95"
                 >
-                  <ChevronLeft className="w-5 h-5" /> Trước
+                  <ChevronLeft className="w-5 h-5" /> {t('visitFptu:gallery.actions.previous')}
                 </button>
                 <button
                   onClick={onNext}
                   className="flex items-center gap-2 px-3 py-2 text-sm font-bold text-gray-700 dark:text-gray-200 hover:text-fpt-orange dark:hover:text-fpt-orange hover:bg-fpt-orange/10 dark:hover:bg-fpt-orange/20 rounded-xl transition-all hover:scale-105 active:scale-95"
                 >
-                  Tiếp theo <ChevronRight className="w-5 h-5" />
+                  {t('visitFptu:gallery.actions.next')} <ChevronRight className="w-5 h-5" />
                 </button>
               </div>
             )}
@@ -754,7 +762,7 @@ function GalleryItemDetailModal({
           <div className="bg-white/15 dark:bg-white/5 backdrop-blur-2xl border border-white/30 rounded-[1.5rem] sm:rounded-[2rem] shadow-[0_8px_32px_rgba(0,0,0,0.15)] w-full h-full relative overflow-hidden group flex flex-col">
             <button
               onClick={onClose}
-              title="Đóng"
+              title={t('visitFptu:gallery.actions.close')}
               className="absolute top-4 right-4 z-20 w-9 h-9 flex items-center justify-center rounded-full bg-black/50 hover:bg-white/20 text-white border border-white/25 backdrop-blur-md transition-all hover:scale-110 opacity-0 group-hover:opacity-100 group/close"
             >
               <X className="w-4 h-4 group-hover/close:rotate-90 transition-transform duration-300" />
@@ -768,12 +776,12 @@ function GalleryItemDetailModal({
               ) : notFound || !cur ? (
                 <div className="absolute inset-0 flex flex-col items-center justify-center text-white/70 gap-2">
                   <ImageOff className="w-10 h-10" />
-                  <span className="text-sm">{notFound ? "Nội dung này không còn hiển thị." : "Không có media."}</span>
+                  <span className="text-sm">{notFound ? t('visitFptu:gallery.errors.contentHidden') : t('visitFptu:gallery.errors.noMedia')}</span>
                 </div>
               ) : failed ? (
                 <div className="absolute inset-0 flex flex-col items-center justify-center text-white/70 gap-2">
                   <ImageOff className="w-10 h-10" />
-                  <span className="text-sm">Không thể tải media.</span>
+                  <span className="text-sm">{t('visitFptu:gallery.errors.mediaLoadFailed')}</span>
                 </div>
               ) : (
                 <AnimatePresence mode="popLayout" initial={false}>
@@ -832,7 +840,7 @@ function GalleryItemDetailModal({
                   onClick={() => setZoomOpen(true)}
                   className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-black/50 hover:bg-black/70 text-white text-sm font-semibold border border-white/25 backdrop-blur-md transition-all hover:scale-105 opacity-0 group-hover:opacity-100"
                 >
-                  <ZoomIn className="w-4 h-4" /> Phóng to
+                  <ZoomIn className="w-4 h-4" /> {t('visitFptu:gallery.actions.zoomIn')}
                 </button>
                 <div className="flex items-center gap-2 px-3.5 py-2 bg-black/45 backdrop-blur-md rounded-full border border-white/20">
                   {dotIndices.map((i) => (
@@ -934,6 +942,7 @@ function GalleryItemDetailModal({
 }
 
 export function CampusDetailVisitPage() {
+  const { t } = useTranslation(['visitFptu']);
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -1040,8 +1049,8 @@ export function CampusDetailVisitPage() {
         const status = err?.response?.status;
         setNavError(
           status === 404
-            ? "Không tìm thấy cơ sở này."
-            : "Không thể tải dữ liệu Gallery. Vui lòng thử lại.",
+            ? t('visitFptu:gallery.errors.campusNotFound')
+            : t('visitFptu:gallery.errors.galleryLoadFailed'),
         );
       })
       .finally(() => {
@@ -1066,7 +1075,7 @@ export function CampusDetailVisitPage() {
       if (reqId !== gridRequestId.current) return;
       setGrid(null);
       // BR-PGAL-GRID-11: location may have just lost all public items.
-      setGridError("Vị trí này hiện chưa có nội dung Gallery công khai.");
+      setGridError(t('visitFptu:gallery.errors.noPublicContent'));
     } finally {
       if (reqId === gridRequestId.current) setIsGridLoading(false);
     }
@@ -1086,7 +1095,7 @@ export function CampusDetailVisitPage() {
       if (reqId !== detailRequestId.current) return;
       setDetail(null);
       // BR-PGAL-GRID-10/11: content may have just been hidden/disabled.
-      setDetailNotice("Nội dung này hiện không còn được hiển thị.");
+      setDetailNotice(t('visitFptu:gallery.errors.contentHidden'));
     } finally {
       if (reqId === detailRequestId.current) setIsDetailLoading(false);
     }
@@ -1703,7 +1712,7 @@ export function CampusDetailVisitPage() {
         className="absolute top-24 left-6 sm:top-28 z-40 p-3 bg-black/30 backdrop-blur-md rounded-full border border-white/20 text-white hover:bg-fpt-orange hover:border-fpt-orange hover:scale-110 hover:shadow-[0_0_20px_rgba(243,112,33,0.5)] transition-all flex items-center gap-2 group"
       >
         <ArrowLeft className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
-        <span className="hidden sm:inline font-medium pr-2 text-sm tracking-wide">Trở Về</span>
+        <span className="hidden sm:inline font-medium pr-2 text-sm tracking-wide">{t('visitFptu:gallery.labels.backToPrev')}</span>
       </motion.button>
 
       {/* ── Hero ── */}
@@ -1755,7 +1764,7 @@ export function CampusDetailVisitPage() {
             {isNavLoading ? (
               <div className="flex items-center gap-3 text-white/80">
                 <Loader2 className="w-5 h-5 animate-spin" />
-                <span>Đang tải nội dung Gallery…</span>
+                <span>{t('visitFptu:gallery.labels.loadingGalleryContent')}</span>
               </div>
             ) : navError ? (
               <div className="px-6 py-3 rounded-full bg-red-500/20 border border-red-300/30 text-white">
@@ -1763,7 +1772,7 @@ export function CampusDetailVisitPage() {
               </div>
             ) : !hasContent ? (
               <div className="px-6 py-3 rounded-full bg-white/10 border border-white/20 text-white backdrop-blur-md">
-                Campus này hiện chưa có nội dung Gallery công khai.
+                {t('visitFptu:gallery.labels.noPublicCampusContent')}
               </div>
             ) : (
               <>
@@ -1771,13 +1780,13 @@ export function CampusDetailVisitPage() {
                   onClick={startTour}
                   className="px-8 py-3.5 bg-fpt-orange hover:bg-fpt-orange/90 text-white rounded-full font-medium transition-all hover:scale-105 hover:shadow-[0_0_25px_rgba(243,112,33,0.6)] flex items-center gap-2 group"
                 >
-                  Bắt đầu tham quan <ChevronRight className="w-5 h-5 ml-1 group-hover:translate-x-1 transition-transform" />
+                  {t('visitFptu:gallery.labels.startTour')} <ChevronRight className="w-5 h-5 ml-1 group-hover:translate-x-1 transition-transform" />
                 </button>
                 <button
                   onClick={() => setIsSidebarOpen(true)}
                   className="px-8 py-3.5 bg-white/10 hover:bg-white/20 text-white rounded-full font-medium backdrop-blur-md border border-white/20 transition-all hover:scale-105"
                 >
-                  Xem các khu vực
+                  {t('visitFptu:gallery.labels.viewAreas')}
                 </button>
               </>
             )}
@@ -1792,15 +1801,15 @@ export function CampusDetailVisitPage() {
             >
               <div className="flex flex-col items-center">
                 <span className="text-2xl font-bold text-white mb-1 drop-shadow-md">{areas.length}</span>
-                <span className="text-[9px] sm:text-[10px] font-semibold text-gray-300 uppercase tracking-[0.2em] text-center">Khu vực</span>
+                <span className="text-[9px] sm:text-[10px] font-semibold text-gray-300 uppercase tracking-[0.2em] text-center">{t('visitFptu:gallery.labels.areasCount')}</span>
               </div>
               <div className="flex flex-col items-center">
                 <span className="text-2xl font-bold text-white mb-1 drop-shadow-md">{flatLocations.length}</span>
-                <span className="text-[9px] sm:text-[10px] font-semibold text-gray-300 uppercase tracking-[0.2em] text-center">Vị trí tham quan</span>
+                <span className="text-[9px] sm:text-[10px] font-semibold text-gray-300 uppercase tracking-[0.2em] text-center">{t('visitFptu:gallery.labels.locationsCount')}</span>
               </div>
               <div className="hidden sm:flex flex-col items-center">
                 <span className="text-2xl font-bold text-white mb-1 drop-shadow-md">5</span>
-                <span className="text-[9px] sm:text-[10px] font-semibold text-gray-300 uppercase tracking-[0.2em] text-center">Cơ sở toàn quốc</span>
+                <span className="text-[9px] sm:text-[10px] font-semibold text-gray-300 uppercase tracking-[0.2em] text-center">{t('visitFptu:gallery.labels.nationwideCampuses')}</span>
               </div>
             </motion.div>
           )}
@@ -1832,7 +1841,7 @@ export function CampusDetailVisitPage() {
             {/* Close showcase → back to hero */}
             <button
               onClick={closeShowcase}
-              title="Đóng"
+              title={t('visitFptu:gallery.actions.close')}
               className="absolute top-6 right-6 z-[6] w-10 h-10 flex items-center justify-center rounded-full bg-black/40 hover:bg-white/20 text-white border border-white/25 backdrop-blur-md transition-all hover:scale-110 group"
             >
               <X className="w-5 h-5 group-hover:rotate-90 transition-transform duration-300" />
@@ -1845,7 +1854,7 @@ export function CampusDetailVisitPage() {
               }`}
             >
               <span className="uppercase tracking-[0.3em] text-white/70 text-[11px] sm:text-xs font-semibold drop-shadow">
-                Khu vực
+                {t('visitFptu:gallery.labels.areasCount')}
               </span>
               <h2 className="mt-2 text-white font-black text-4xl sm:text-5xl md:text-6xl leading-[1.05] tracking-tight drop-shadow-[0_12px_32px_rgba(0,0,0,0.45)]">
                 {showcaseArea.areaName}
@@ -1858,13 +1867,13 @@ export function CampusDetailVisitPage() {
                     onClick={() => stepArea(-1)}
                     className="inline-flex items-center gap-2 px-4 py-2.5 rounded-full text-white font-bold text-sm bg-white/10 border border-white/25 backdrop-blur-md transition-all hover:bg-white/20 hover:border-white/50 hover:-translate-y-0.5"
                   >
-                    <ChevronLeft className="w-4 h-4" /> Khu vực đằng trước
+                    <ChevronLeft className="w-4 h-4" /> {t('visitFptu:gallery.labels.prevArea')}
                   </button>
                   <button
                     onClick={() => stepArea(1)}
                     className="inline-flex items-center gap-2 px-4 py-2.5 rounded-full text-white font-bold text-sm bg-white/10 border border-white/25 backdrop-blur-md transition-all hover:bg-white/20 hover:border-white/50 hover:-translate-y-0.5"
                   >
-                    Khu vực tiếp theo <ChevronRight className="w-4 h-4" />
+                    {t('visitFptu:gallery.labels.nextArea')} <ChevronRight className="w-4 h-4" />
                   </button>
                 </div>
               )}
@@ -1876,7 +1885,7 @@ export function CampusDetailVisitPage() {
                 <>
                   <button
                     onClick={() => stepThumbnail(-1)}
-                    title="Lên"
+                    title={t('visitFptu:gallery.actions.up')}
                     className="w-10 h-10 rounded-full border border-white/30 bg-black/30 text-white flex items-center justify-center backdrop-blur-md transition-all hover:bg-white/20 hover:scale-105"
                   >
                     <ChevronUp className="w-5 h-5" />
@@ -1884,7 +1893,7 @@ export function CampusDetailVisitPage() {
 
                   {/* Fixed section label — sits above the first thumbnail, never scrolls away */}
                   <div className="text-white/85 text-[11px] font-bold uppercase tracking-[0.18em] text-center drop-shadow">
-                    Vị trí cụ thể
+                    {t('visitFptu:gallery.labels.specificLocation')}
                   </div>
 
                   {/* Rail + the active thumbnail's name shown to its LEFT */}
@@ -1931,7 +1940,7 @@ export function CampusDetailVisitPage() {
 
                   <button
                     onClick={() => stepThumbnail(1)}
-                    title="Xuống"
+                    title={t('visitFptu:gallery.actions.down')}
                     className="w-10 h-10 rounded-full border border-white/30 bg-black/30 text-white flex items-center justify-center backdrop-blur-md transition-all hover:bg-white/20 hover:scale-105"
                   >
                     <ChevronDown className="w-5 h-5" />
@@ -1944,7 +1953,7 @@ export function CampusDetailVisitPage() {
                 </>
               ) : (
                 <div className="w-40 px-4 py-6 rounded-2xl bg-black/35 border border-white/20 text-white/80 text-sm text-center backdrop-blur-md">
-                  Chưa có vị trí hiển thị
+                  {t('visitFptu:gallery.labels.noLocationsYet')}
                 </div>
               )}
             </div>
@@ -1979,7 +1988,7 @@ export function CampusDetailVisitPage() {
             {/* Close → back to Area Showcase */}
             <button
               onClick={closeLocationShowcase}
-              title="Đóng"
+              title={t('visitFptu:gallery.actions.close')}
               className="absolute top-6 right-6 z-[6] w-10 h-10 flex items-center justify-center rounded-full bg-black/40 hover:bg-white/20 text-white border border-white/25 backdrop-blur-md transition-all hover:scale-110 group"
             >
               <X className="w-5 h-5 group-hover:rotate-90 transition-transform duration-300" />
@@ -1993,7 +2002,7 @@ export function CampusDetailVisitPage() {
             >
               {/* Eyebrow — same style as the Area Showcase "Khu vực" label */}
               <span className="uppercase tracking-[0.3em] text-white/70 text-[11px] sm:text-xs font-semibold drop-shadow">
-                Vị trí
+                {t('visitFptu:gallery.labels.locationPrefix')}
               </span>
 
               {/* Name line: "TÊN KHU VỰC / TÊN VỊ TRÍ", flanked by prev/next-location arrows (AC-LOC-04/05) */}
@@ -2001,7 +2010,7 @@ export function CampusDetailVisitPage() {
                 {locationSiblings.length > 1 && (
                   <button
                     onClick={() => stepLocationShowcase(-1)}
-                    title="Vị trí trước"
+                    title={t('visitFptu:gallery.labels.prevLocation')}
                     className="w-11 h-11 shrink-0 rounded-full border border-white/28 bg-white/10 text-white flex items-center justify-center backdrop-blur-md transition-all hover:bg-white/20 hover:border-white/50 hover:-translate-y-0.5"
                   >
                     <ChevronLeft className="w-5 h-5" />
@@ -2016,7 +2025,7 @@ export function CampusDetailVisitPage() {
                 {locationSiblings.length > 1 && (
                   <button
                     onClick={() => stepLocationShowcase(1)}
-                    title="Vị trí tiếp theo"
+                    title={t('visitFptu:gallery.labels.nextLocation')}
                     className="w-11 h-11 shrink-0 rounded-full border border-white/28 bg-white/10 text-white flex items-center justify-center backdrop-blur-md transition-all hover:bg-white/20 hover:border-white/50 hover:-translate-y-0.5"
                   >
                     <ChevronRight className="w-5 h-5" />
@@ -2037,7 +2046,8 @@ export function CampusDetailVisitPage() {
                     onStep={stepDelegation}
                     keyOf={(it) => it.galleryItemId}
                     renderThumb={(it) => <ShowcaseItemThumb item={it} />}
-                    title="Đoàn khách đã tới thăm"
+                    title={t('visitFptu:gallery.labels.delegationsVisited')}
+                    t={t}
                   />
                 </div>
               )}
@@ -2060,7 +2070,8 @@ export function CampusDetailVisitPage() {
                   onStep={stepMediaThumbnail}
                   keyOf={(it) => it.galleryItemId}
                   renderThumb={(it) => <ShowcaseItemThumb item={it} />}
-                  label="Hình ảnh tham quan"
+                  label={t('visitFptu:gallery.labels.visitingImages')}
+                  t={t}
                 />
               </div>
             ) : null}
@@ -2079,6 +2090,7 @@ export function CampusDetailVisitPage() {
             onPrev={() => stepItemDetail(-1)}
             onNext={() => stepItemDetail(1)}
             hasNav={detailItems.length > 1}
+            t={t}
           />
         )}
       </AnimatePresence>

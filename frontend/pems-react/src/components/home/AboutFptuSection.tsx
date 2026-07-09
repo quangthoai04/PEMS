@@ -8,14 +8,17 @@
 import React from 'react';
 import { motion } from 'motion/react';
 import { GraduationCap, Globe2, Rocket, Building2 } from 'lucide-react';
-
-const HIGHLIGHTS = [
-  { icon: Building2, value: '5', label: 'Khám phá 5 cơ sở trên toàn quốc', bar: 'bg-fpt-orange' },
-  { icon: Globe2, value: '40+', label: 'Quốc gia đối tác', bar: 'bg-fpt-navy' },
-  { icon: Rocket, value: '100%', label: 'Định hướng thực chiến', bar: 'bg-emerald-500' },
-];
+import { useTranslation } from 'react-i18next';
 
 export function AboutFptuSection() {
+  const { t } = useTranslation(['home']);
+  const HIGHLIGHTS = [
+    { icon: Building2, value: '5', label: t('home:about.stat1'), bar: 'bg-fpt-orange' },
+    { icon: Globe2, value: '40+', label: t('home:about.stat2'), bar: 'bg-fpt-navy' },
+    { icon: Rocket, value: '100%', label: t('home:about.stat3'), bar: 'bg-emerald-500' },
+  ];
+
+
   return (
     <section className="py-14 sm:py-20 lg:py-24 bg-white relative overflow-hidden">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -39,16 +42,13 @@ export function AboutFptuSection() {
             >
               <div className="flex items-center gap-3 mb-5">
                 <GraduationCap className="w-7 h-7 text-fpt-orange" />
-                <span className="text-fpt-orange font-bold tracking-widest uppercase text-xs">Về Đại học FPT</span>
+                <span className="text-fpt-orange font-bold tracking-widest uppercase text-xs">{t('home:about.sectionTitle')}</span>
               </div>
               <h2 className="text-2xl md:text-3xl lg:text-[34px] font-bold text-fpt-navy leading-snug mb-4">
-                Đại học tiên phong đào tạo nhân lực công nghệ, gắn kết chặt chẽ với doanh nghiệp
-                và mạng lưới đối tác quốc tế.
+                {t('home:about.headline')}
               </h2>
               <p className="text-slate-500 text-[15px] leading-relaxed">
-                Phòng Hợp tác Quốc tế là đầu mối kết nối FPT University với các trường đại học,
-                tổ chức và doanh nghiệp trên toàn cầu — từ trao đổi sinh viên, hợp tác nghiên cứu
-                đến các chuyến tham quan, làm việc trực tiếp tại 5 cơ sở.
+                {t('home:about.description')}
               </p>
             </motion.div>
 
