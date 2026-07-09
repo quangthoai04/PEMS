@@ -8,19 +8,17 @@ Mô tả ngắn:
 ## 1. Scope
 
 Ghi rõ tài liệu bao gồm:
-- Backend Clean Architecture: `backend/PEMS.Api`, `backend/PEMS.Application`, `backend/PEMS.Domain`, `backend/PEMS.Infrastructure`
-- Frontend React: `frontend/pems-react`
-- Database scripts: Schema, migrations, seed, etc.
-- Documentation: `docs/` bao gồm architecture, use-cases, permissions, API, authentication.
-- Root configuration files: `.gitignore`, `.gitattributes`, solution file, và README.
+- Backend Clean Architecture
+- Frontend React
+- Database scripts
+- Documentation
+- Root configuration files
 
 ## 2. Directory Tree
 
 ```text
 PEMS/
-├── .claude/
-│   ├── settings.json
-│   └── settings.local.json
+├── .claude/   [excluded]
 ├── .git/   [excluded]
 ├── .runlogs/   [excluded]
 ├── .vs/   [excluded]
@@ -64,10 +62,12 @@ PEMS/
 │   │   │   ├── DocumentsController.cs
 │   │   │   ├── EmailsController.cs
 │   │   │   ├── EmailTemplatesController.cs
+│   │   │   ├── EverAiTtsCallbackController.cs
 │   │   │   ├── FaqsController.cs
 │   │   │   ├── FeedbacksController.cs
 │   │   │   ├── FilesController.cs
 │   │   │   ├── GalleriesController.cs
+│   │   │   ├── GalleryManagementTtsController.cs
 │   │   │   ├── GoogleDriveOAuthController.cs
 │   │   │   ├── MeetingMinutesController.cs
 │   │   │   ├── NewsController.cs
@@ -76,6 +76,7 @@ PEMS/
 │   │   │   ├── ProfilesController.cs
 │   │   │   ├── PublicContentController.cs
 │   │   │   ├── PublicEmailActionsController.cs
+│   │   │   ├── PublicGalleryTtsController.cs
 │   │   │   ├── PublicPartnersController.cs
 │   │   │   ├── PublicVisitFptuController.cs
 │   │   │   ├── ReportsController.cs
@@ -109,6 +110,7 @@ PEMS/
 │   │   ├── appsettings.Development.json
 │   │   ├── appsettings.json
 │   │   ├── appsettings.Production.json
+│   │   ├── appsettings.Testing.example.json
 │   │   ├── Pems_WebAPI.http
 │   │   ├── PEMS.Api.csproj
 │   │   └── Program.cs
@@ -501,6 +503,8 @@ PEMS/
 │   │   │   │   ├── PaginationRequest.cs
 │   │   │   │   ├── Result.cs
 │   │   │   │   └── ResultOfT.cs
+│   │   │   ├── Options/
+│   │   │   │   └── EverAiTtsOptions.cs
 │   │   │   ├── Security/
 │   │   │   │   ├── AuthErrorCodes.cs
 │   │   │   │   ├── AuthOptions.cs
@@ -1219,22 +1223,46 @@ PEMS/
 │   │   │   │       └── GetPublicLocationShowcase/
 │   │   │   │           ├── GetPublicLocationShowcaseQuery.cs
 │   │   │   │           └── GetPublicLocationShowcaseQueryHandler.cs
-│   │   │   └── Queries/
-│   │   │       ├── GetGalleryFilterOptions/
-│   │   │       │   ├── GetGalleryFilterOptionsQuery.cs
-│   │   │       │   └── GetGalleryFilterOptionsQueryHandler.cs
-│   │   │       ├── SearchGalleryItems/
-│   │   │       │   ├── SearchGalleryItemsQuery.cs
-│   │   │       │   └── SearchGalleryItemsQueryHandler.cs
-│   │   │       ├── ViewGalleryItemDetails/
-│   │   │       │   ├── ViewGalleryItemDetailsQuery.cs
-│   │   │       │   └── ViewGalleryItemDetailsQueryHandler.cs
-│   │   │       ├── ViewGalleryItemList/
-│   │   │       │   ├── ViewGalleryItemListQuery.cs
-│   │   │       │   └── ViewGalleryItemListQueryHandler.cs
-│   │   │       └── ViewGalleryLocationList/
-│   │   │           ├── ViewGalleryLocationListQuery.cs
-│   │   │           └── ViewGalleryLocationListQueryHandler.cs
+│   │   │   ├── Queries/
+│   │   │   │   ├── GetGalleryFilterOptions/
+│   │   │   │   │   ├── GetGalleryFilterOptionsQuery.cs
+│   │   │   │   │   └── GetGalleryFilterOptionsQueryHandler.cs
+│   │   │   │   ├── SearchGalleryItems/
+│   │   │   │   │   ├── SearchGalleryItemsQuery.cs
+│   │   │   │   │   └── SearchGalleryItemsQueryHandler.cs
+│   │   │   │   ├── ViewGalleryItemDetails/
+│   │   │   │   │   ├── ViewGalleryItemDetailsQuery.cs
+│   │   │   │   │   └── ViewGalleryItemDetailsQueryHandler.cs
+│   │   │   │   ├── ViewGalleryItemList/
+│   │   │   │   │   ├── ViewGalleryItemListQuery.cs
+│   │   │   │   │   └── ViewGalleryItemListQueryHandler.cs
+│   │   │   │   └── ViewGalleryLocationList/
+│   │   │   │       ├── ViewGalleryLocationListQuery.cs
+│   │   │   │       └── ViewGalleryLocationListQueryHandler.cs
+│   │   │   └── Tts/
+│   │   │       ├── Commands/
+│   │   │       │   ├── EnsurePublicGalleryItemTtsAudio/
+│   │   │       │   │   ├── EnsurePublicGalleryItemTtsAudioCommand.cs
+│   │   │       │   │   └── EnsurePublicGalleryItemTtsAudioCommandHandler.cs
+│   │   │       │   └── RegenerateGalleryItemTtsAudio/
+│   │   │       │       ├── RegenerateGalleryItemTtsAudioCommand.cs
+│   │   │       │       └── RegenerateGalleryItemTtsAudioCommandHandler.cs
+│   │   │       ├── Queries/
+│   │   │       │   ├── GetGalleryItemTtsStatus/
+│   │   │       │   │   ├── GetGalleryItemTtsStatusQuery.cs
+│   │   │       │   │   └── GetGalleryItemTtsStatusQueryHandler.cs
+│   │   │       │   └── GetPublicGalleryItemTtsAudioStatus/
+│   │   │       │       ├── GetPublicGalleryItemTtsAudioStatusQuery.cs
+│   │   │       │       └── GetPublicGalleryItemTtsAudioStatusQueryHandler.cs
+│   │   │       ├── EverAiTtsModels.cs
+│   │   │       ├── GalleryItemTtsAudioResponse.cs
+│   │   │       ├── GalleryItemTtsService.cs
+│   │   │       ├── GalleryTtsConstants.cs
+│   │   │       ├── GalleryTtsHashService.cs
+│   │   │       ├── IEverAiTtsClient.cs
+│   │   │       ├── IGalleryItemTtsService.cs
+│   │   │       ├── IGalleryTtsHashService.cs
+│   │   │       └── IGalleryTtsJobQueue.cs
 │   │   ├── MeetingMinutes/
 │   │   │   └── Queries/
 │   │   │       ├── ExportMinutes/
@@ -1426,6 +1454,9 @@ PEMS/
 │   │   │   │   ├── GetPublicPartners/
 │   │   │   │   │   ├── GetPublicPartnersQuery.cs
 │   │   │   │   │   └── GetPublicPartnersQueryHandler.cs
+│   │   │   │   ├── GetPublicPartnerTypes/
+│   │   │   │   │   ├── GetPublicPartnerTypesQuery.cs
+│   │   │   │   │   └── GetPublicPartnerTypesQueryHandler.cs
 │   │   │   │   ├── MatchPartner/
 │   │   │   │   │   ├── MatchPartnerQuery.cs
 │   │   │   │   │   └── MatchPartnerQueryHandler.cs
@@ -1488,6 +1519,9 @@ PEMS/
 │   │   │   ├── Mappings/
 │   │   │   │   └── PublicContentMappingProfile.cs
 │   │   │   ├── Queries/
+│   │   │   │   ├── GetFaqTypeCounts/
+│   │   │   │   │   ├── GetFaqTypeCountsQuery.cs
+│   │   │   │   │   └── GetFaqTypeCountsQueryHandler.cs
 │   │   │   │   ├── GetPublicNewsFile/
 │   │   │   │   │   ├── GetPublicNewsFileQuery.cs
 │   │   │   │   │   └── GetPublicNewsFileQueryHandler.cs
@@ -1650,6 +1684,7 @@ PEMS/
 │   │   │   │   ├── GalleryArea.cs
 │   │   │   │   ├── GalleryItem.cs
 │   │   │   │   ├── GalleryItemMedia.cs
+│   │   │   │   ├── GalleryItemTtsAudio.cs
 │   │   │   │   ├── GalleryLocation.cs
 │   │   │   │   └── PhotoFaceTag.cs
 │   │   │   ├── Minutes/
@@ -1724,6 +1759,7 @@ PEMS/
 │   └── PEMS.Infrastructure/
 │       ├── .tmp-build/   [excluded]
 │       ├── BackgroundJobs/
+│       │   ├── GalleryTtsBackgroundService.cs
 │       │   └── VisitReminderDispatchHostedService.cs
 │       ├── bin/   [excluded]
 │       ├── Common/
@@ -1740,8 +1776,10 @@ PEMS/
 │       │   │   └── CalendarIntegrationService.cs
 │       │   ├── FaceRecognition/
 │       │   │   └── FaceRecognitionService.cs
-│       │   └── Ocr/
-│       │       └── OcrService.cs
+│       │   ├── Ocr/
+│       │   │   └── OcrService.cs
+│       │   └── Tts/
+│       │       └── EverAiTtsClient.cs
 │       ├── FileStorage/
 │       │   ├── GoogleDrive/
 │       │   │   ├── GoogleDriveFolderResolver.cs
@@ -1836,13 +1874,14 @@ PEMS/
 │   │   └── PEMS_VISITOR_EDIT_RESUBMIT_CANCEL24_IMPLEMENTATION_REPORT.md
 │   ├── dashboard/
 │   │   ├── PEMS_HO_Dashboard_Redesign_Prompt.md
-│   │   └── PROMPT_DASHBOARD_CALENDAR_STAFF_STAFF_LEADER.md
+│   │   ├── PROMPT_DASHBOARD_CALENDAR_STAFF_STAFF_LEADER.md
+│   │   └── PROMPT_PUBLIC_FAQ_PAGE_REDESIGN_PEMS.md
 │   ├── database/
 │   │   ├── scripts/
 │   │   │   ├── DbSeeder/
 │   │   │   │   ├── bin/   [excluded]
 │   │   │   │   └── obj/   [excluded]
-│   │   │   └── pems_full_v10_new_final_campus_independent_approval_self_host_transport_note_resubmit_agenda_cancel24_FULL_UPDATED.sql
+│   │   │   └── pems_full_v10_TTS_Gallery_FULL_UPDATED.sql
 │   │   ├── Table/
 │   │   │   └── PEMS_v10_NEW_FINAL_SQL_TABLE_FIELD_DICTIONARY_MATCHED.docx
 │   │   ├── DATABASE_SCHEMA_v8_4_refined_v6_v10_no_dynamic_permissions_FULL_UPDATED.md
@@ -1907,6 +1946,7 @@ PEMS/
 │   │   ├── PROMPT_FIX_FEEDBACK_MANAGEMENT_PAGE_PEMS.md
 │   │   └── PROMPT_FIX_FEEDBACK_MANAGEMENT_SCOPE_FILTER_DETAIL.md
 │   ├── GalleryManagement/
+│   │   ├── PROMPT_EVERAI_TTS_GALLERY_ITEM_INTEGRATION.md
 │   │   ├── PROMPT_GALLERY_GOOGLE_DRIVE_FOLDER_ROUTING_ONLY.md
 │   │   ├── PROMPT_UI_PUBLIC_GALLERY_AREA_SHOWCASE.md
 │   │   ├── PROMPT_UI_PUBLIC_GALLERY_LOCATION_SHOWCASE_MEDIA_AND_DELEGATION.md
@@ -1925,14 +1965,18 @@ PEMS/
 │   │   ├── FRONTEND/
 │   │   │   └── PEMS_UI_DESIGN_SYSTEM_PROMPT.md
 │   │   └── PEMS_CLAUDE_PROJECT_INSTRUCTIONS_v8_4_refined_v6_v10_FULL_UPDATED.md
+│   ├── homepage/
+│   │   └── PROMPT_ROLE_AWARE_HOMEPAGE_PEMS.md
 │   ├── minute/
 │   │   └── PROMPT_FIX_MINUTES_MANAGEMENT_SCOPE_FILTER_DETAIL_PDF.md
 │   ├── News-Canh/
-│   │   └── PEMS_NEWS_FULL_IMPLEMENTATION_PLAN.md
+│   │   ├── PEMS_NEWS_FULL_IMPLEMENTATION_PLAN.md
+│   │   └── PROMPT_PUBLIC_NEWS_PAGE_REDESIGN_PEMS.md
 │   ├── PARTNER_canh/
 │   │   ├── 00_PEMS_PARTNER_AND_OCR_MASTER_PLAN.md
 │   │   ├── 01_PEMS_PARTNER_MODULE_FULL_PROMPT.md
-│   │   └── 02_PEMS_BUSINESS_CARD_OCR_API_CONFIG_PROMPT.md
+│   │   ├── 02_PEMS_BUSINESS_CARD_OCR_API_CONFIG_PROMPT.md
+│   │   └── PROMPT_PUBLIC_PARTNERS_PAGE_REDESIGN_PEMS.md
 │   ├── permissions/
 │   │   ├── PERMISSION_MATRIX.md
 │   │   └── PERMISSION_RULES.md
@@ -1953,6 +1997,18 @@ PEMS/
 │   │   ├── PROMPT_CODE_UC63_CREATE_FAQ_BACKEND.md
 │   │   ├── PROMPT_CODE_UC64_UPDATE_FAQ_BACKEND.md
 │   │   └── PROMPT_CODE_UC88_VIEW_NEWS_LIST_BACKEND.md
+│   ├── prompt_test/
+│   │   ├── PROMPT_AI_CREATE_FAQ_UNIT_INTEGRATION_SAFE_NO_DOCKER.md
+│   │   ├── PROMPT_AI_UC62_VIEW_LIST_FAQ_HO_UNIT_INTEGRATION_SAFE_NO_DOCKER_v1.md
+│   │   ├── PROMPT_AI_UPDATE_FAQ_UNIT_INTEGRATION_SAFE_NO_DOCKER_v3_BEST_PRACTICE.md
+│   │   └── Require_UC_CreateFAQ.md
+│   ├── Prompt_usecase/
+│   │   ├── PROMPT_CODE_CREATE_NEWS_BACKEND.md
+│   │   ├── PROMPT_CODE_UC05_VIEW_FAQ_BACKEND_UPDATED_PROJECT_STRUCTURE.md
+│   │   ├── PROMPT_CODE_UC62_VIEW_LIST_FAQ_BACKEND.md
+│   │   ├── PROMPT_CODE_UC63_CREATE_FAQ_BACKEND.md
+│   │   ├── PROMPT_CODE_UC64_UPDATE_FAQ_BACKEND.md
+│   │   └── PROMPT_CODE_UC88_VIEW_NEWS_LIST_BACKEND.md
 │   ├── report/
 │   │   ├── PEMS_DepartmentLeader_Report_AI_Code_Prompt (1).md
 │   │   ├── PEMS_HO_Report_AI_Code_Prompt.md
@@ -1962,6 +2018,8 @@ PEMS/
 │   │   ├── department_task_logistics_email_token_flow_requirements.md
 │   │   └── PROMPT_UPDATE_LOGISTICS_FRONTEND_EMAIL_SQL_V10.md
 │   ├── swimlane/
+│   ├── testing/
+│   │   └── CREATE_TEST_DATABASE.md
 │   ├── todo/
 │   │   └── PEMS_AUTH_NEWS_SECURITY_TODO.md
 │   ├── use-cases/
@@ -1971,11 +2029,14 @@ PEMS/
 │   ├── PEMS_UC_IMPLEMENTATION_RULEBOOK_FRONTEND_BACKEND_DATABASE_VALIDATION_SECURITY_v8_4_refined_v6_v10_FULL_UPDATED.md
 │   ├── PROJECT_OVERVIEW_v8_4_refined_v6_v10_FULL_UPDATED.md
 │   ├── PROMPT_STANDARDIZE_ROLE_SUBROLE_DEPARTMENT_v8_4_refined_v6_v10_FULL_UPDATED.md
+│   ├── Report 5.2_L1-UnitTests_Template.xlsx
+│   ├── Report 5.2_L2-IntegrationTests_Template.xlsx
 │   └── VISITOR_MANAGEMENT_SYSTEM_v8_4_refined_v6_v10_FULL_UPDATED.md
 ├── frontend/
 │   └── pems-react/
 │       ├── dist/   [excluded]
 │       ├── node_modules/   [excluded]
+│       ├── scratch/
 │       ├── scripts/
 │       │   ├── applet_update_contact.js
 │       │   ├── applet_update_emerald.js
@@ -2034,35 +2095,47 @@ PEMS/
 │       │   │   │   ├── 18.jpg
 │       │   │   │   ├── 19.jpg
 │       │   │   │   └── 20.jpg
-│       │   │   └── Logo/
-│       │   │       ├── logo01.png
-│       │   │       ├── logo02.png
-│       │   │       ├── logo03.png
-│       │   │       ├── logo04.png
-│       │   │       ├── logo05.png
-│       │   │       ├── logo06.png
-│       │   │       ├── logo07.png
-│       │   │       ├── logo08.png
-│       │   │       ├── logo09.png
-│       │   │       ├── logo10.png
-│       │   │       ├── logo11.png
-│       │   │       ├── logo12.png
-│       │   │       ├── logo13.jpg
-│       │   │       ├── logo14.png
-│       │   │       ├── logo15.png
-│       │   │       ├── logo16.png
-│       │   │       ├── logo17.png
-│       │   │       └── logo18.png
+│       │   │   ├── Logo/
+│       │   │   │   ├── logo01.png
+│       │   │   │   ├── logo02.png
+│       │   │   │   ├── logo03.png
+│       │   │   │   ├── logo04.png
+│       │   │   │   ├── logo05.png
+│       │   │   │   ├── logo06.png
+│       │   │   │   ├── logo07.png
+│       │   │   │   ├── logo08.png
+│       │   │   │   ├── logo09.png
+│       │   │   │   ├── logo10.png
+│       │   │   │   ├── logo11.png
+│       │   │   │   ├── logo12.png
+│       │   │   │   ├── logo13.jpg
+│       │   │   │   ├── logo14.png
+│       │   │   │   ├── logo15.png
+│       │   │   │   ├── logo16.png
+│       │   │   │   ├── logo17.png
+│       │   │   │   └── logo18.png
+│       │   │   └── ne_110m_admin_0_countries.geojson
 │       │   ├── components/
 │       │   │   ├── dashboard/
 │       │   │   │   ├── NotificationBell.tsx
 │       │   │   │   └── Sidebar.tsx
 │       │   │   ├── home/
-│       │   │   │   ├── CTASection.tsx
+│       │   │   │   ├── internal/
+│       │   │   │   │   ├── GuideStepsSection.tsx
+│       │   │   │   │   ├── InternalFinalCta.tsx
+│       │   │   │   │   ├── QuickAccessSection.tsx
+│       │   │   │   │   └── WelcomeHero.tsx
+│       │   │   │   ├── AboutFptuSection.tsx
+│       │   │   │   ├── CampusShowcaseSection.tsx
+│       │   │   │   ├── FaqPreviewSection.tsx
+│       │   │   │   ├── FinalCtaSection.tsx
+│       │   │   │   ├── GalleryPreviewSection.tsx
+│       │   │   │   ├── GlobeShowcase.tsx
 │       │   │   │   ├── HeroSection.tsx
+│       │   │   │   ├── LazyGlobeShowcase.tsx
 │       │   │   │   ├── NewsSection.tsx
 │       │   │   │   ├── PartnersSection.tsx
-│       │   │   │   └── StatsSection.tsx
+│       │   │   │   └── VisitProcessSection.tsx
 │       │   │   ├── layout/
 │       │   │   │   ├── DashboardLayout.tsx
 │       │   │   │   ├── ErrorBoundary.tsx
@@ -2076,8 +2149,6 @@ PEMS/
 │       │   │   │   ├── SubmittedVisitRequestDetailModal.tsx
 │       │   │   │   ├── VisitDetailsModal.tsx
 │       │   │   │   └── VisitingFormPopup.tsx
-│       │   │   ├── partners/
-│       │   │   │   └── GlobeComponent.tsx
 │       │   │   └── ErrorBoundary.tsx
 │       │   ├── features/
 │       │   │   ├── account-management/
@@ -2333,6 +2404,11 @@ PEMS/
 │       │   │   │   │   └── usePublicContent.ts
 │       │   │   │   └── types/
 │       │   │   │       └── publicContent.types.ts
+│       │   │   ├── public-faq/
+│       │   │   │   ├── api/
+│       │   │   │   │   └── publicFaqApi.ts
+│       │   │   │   └── types/
+│       │   │   │       └── publicFaq.types.ts
 │       │   │   ├── public-partners/
 │       │   │   │   ├── api/
 │       │   │   │   │   └── publicPartnersApi.ts
@@ -2341,7 +2417,13 @@ PEMS/
 │       │   │   │   ├── types/
 │       │   │   │   │   └── publicPartners.types.ts
 │       │   │   │   └── utils/
+│       │   │   │       ├── countryFlag.ts
 │       │   │   │       └── countryMatch.ts
+│       │   │   ├── public-search/
+│       │   │   │   ├── api/
+│       │   │   │   │   └── publicSearchApi.ts
+│       │   │   │   └── types/
+│       │   │   │       └── publicSearch.types.ts
 │       │   │   ├── reports/
 │       │   │   │   ├── adapters/
 │       │   │   │   │   └── reportsAdapter.ts
@@ -2505,12 +2587,14 @@ PEMS/
 │       │   │   ├── FAQPage.tsx
 │       │   │   ├── ForbiddenPage.tsx
 │       │   │   ├── HomePage.tsx
+│       │   │   ├── InternalHomePage.tsx
 │       │   │   ├── InvalidAccountPage.tsx
 │       │   │   ├── NewsDetailPage.tsx
 │       │   │   ├── NewsPage.tsx
 │       │   │   ├── NotFoundPage.tsx
 │       │   │   ├── PartnerDetailPage.tsx
 │       │   │   ├── PartnersPage.tsx
+│       │   │   ├── PublicHomePage.tsx
 │       │   │   └── VisitFPTUPage.tsx
 │       │   ├── shared/
 │       │   │   ├── api/
@@ -2527,10 +2611,12 @@ PEMS/
 │       │   │   │   ├── permissionChecker.ts
 │       │   │   │   ├── ProtectedRoute.tsx
 │       │   │   │   ├── resolveEffectiveRole.ts
+│       │   │   │   ├── resolveHomeRoleBucket.ts
 │       │   │   │   └── RoleGuard.tsx
 │       │   │   ├── constants/
 │       │   │   │   ├── appRoutes.ts
 │       │   │   │   ├── auth.ts
+│       │   │   │   ├── countryCoordinates.ts
 │       │   │   │   ├── roles.ts
 │       │   │   │   ├── statusCodes.ts
 │       │   │   │   ├── ucCodes.ts
@@ -2764,16 +2850,37 @@ PEMS/
 │   │   │   └── RateLimitMiddlewareTests.cs
 │   │   ├── Database/
 │   │   │   └── DatabaseTest.cs
-│   │   └── Security/
-│   │       ├── OwnershipCheckerTests.cs
-│   │       └── PermissionCheckerTests.cs
+│   │   ├── Faqs/
+│   │   │   ├── CreateFaq/
+│   │   │   │   └── CreateFaqApiTests.cs
+│   │   │   ├── UpdateFaq/
+│   │   │   │   └── UpdateFaqApiTests.cs
+│   │   │   └── ViewListFaq/
+│   │   │       └── ViewListFaqApiTests.cs
+│   │   ├── Security/
+│   │   │   ├── OwnershipCheckerTests.cs
+│   │   │   └── PermissionCheckerTests.cs
+│   │   ├── TestInfrastructure/
+│   │   │   ├── DatabaseResetHelper.cs
+│   │   │   ├── PemsWebApplicationFactory.cs
+│   │   │   └── TestAuthHandler.cs
+│   │   ├── AssemblyInfo.cs
+│   │   └── PEMS.IntegrationTests.csproj
 │   ├── PEMS.UnitTests/
 │   │   ├── Application/
 │   │   │   └── ApplicationDummyTest.cs
 │   │   ├── Domain/
 │   │   │   └── DomainDummyTest.cs
-│   │   └── SharedKernel/
-│   │       └── SharedKernelDummyTest.cs
+│   │   ├── Faqs/
+│   │   │   ├── CreateFaq/
+│   │   │   │   └── CreateFaqCommandValidatorTests.cs
+│   │   │   ├── UpdateFaq/
+│   │   │   │   └── UpdateFaqCommandValidatorTests.cs
+│   │   │   └── ViewListFaq/
+│   │   │       └── ViewListFaqQueryValidatorTests.cs
+│   │   ├── SharedKernel/
+│   │   │   └── SharedKernelDummyTest.cs
+│   │   └── PEMS.UnitTests.csproj
 │   └── temp_bcrypt/
 │       ├── bin/   [excluded]
 │       ├── obj/   [excluded]
@@ -2781,37 +2888,36 @@ PEMS/
 │       └── temp_bcrypt.csproj
 ├── .gitattributes
 ├── .gitignore
-├── generate_tree.js
-├── generate_tree.ps1
 ├── PEMS.slnx
-├── README.md
-└── tree_output.txt
+└── README.md
+
 ```
 
 ## 3. Layer Overview
 
-- **backend/PEMS.Api**:
+Tóm tắt ngắn từng khu vực:
+
+- backend/PEMS.Api:
   Vai trò API layer, Controllers, Middleware, Filters, Extensions.
-- **backend/PEMS.Application**:
+- backend/PEMS.Application:
   Vai trò use case layer, CQRS Commands/Queries/Handlers, DTOs, Validators, Interfaces.
-- **backend/PEMS.Domain**:
+- backend/PEMS.Domain:
   Vai trò domain layer, Entities, Enums, Events, ValueObjects, Common base classes.
-- **backend/PEMS.Infrastructure**:
+- backend/PEMS.Infrastructure:
   Vai trò persistence/external services layer, DbContext, Repositories, Identity, Email, FileStorage, Logging.
-- **frontend/pems-react**:
-  Vai trò React client, pages/components/services/routes/store.
-- **database**:
+- frontend/pems-react:
+  Vai trò React client, pages/components/services/routes/store nếu có.
+- database:
   Vai trò schema, seed, migration, deployment scripts.
-- **docs**:
+- docs:
   Vai trò tài liệu kiến trúc, use cases, permissions, API, database, authentication.
 
 ## 4. Important Notes
 
-- Cấu trúc thư mục được lấy từ project hiện tại. Đã loại trừ (excluded) các file và thư mục tự động sinh hoặc không cần thiết (bin, obj, node_modules, v.v.).
-- Backend tuân thủ nghiêm ngặt Clean Architecture.
-- Toàn bộ documentation được gom vào `docs/`.
-- Database scripts và migration nằm ở trong `docs/database/`.
-- Sự khác biệt so với version cũ: Các thay đổi về cấu trúc đã được cập nhật thực tế, không dùng dấu chấm lửng (`...`) cho các thư mục chính.
+Ghi lại các lưu ý phát hiện được khi quét:
+- Đã cập nhật lại toàn bộ structure từ source thật.
+- Các module và file mới đều được ghi nhận.
+- Các folder sinh ra trong lúc build và run được loại trừ để tập trung vào mã nguồn.
 
 ## 5. Change Summary
 
