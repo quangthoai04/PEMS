@@ -53,5 +53,14 @@
     "subtitle": "Đăng ký tham quan hoặc liên hệ trực tiếp với Phòng Hợp tác Quốc tế để bắt đầu hành trình hợp tác.",
     "bookVisit": "Đăng ký tham quan",
     "contact": "Liên hệ Phòng HTQT"
+  },
+  "faqPreview": {
+    "title": "Câu hỏi thường gặp",
+    "desc": "Giải đáp về tài khoản, đăng ký tham quan, quản lý đoàn, hậu cần, tài liệu và thông báo trong hệ thống PEMS.",
+    "viewAll": "Xem tất cả câu hỏi"
+  },
+  "galleryPreview": {
+    "title": "Khám phá Visit FPTU",
+    "viewAll": "Xem tất cả"
   }
 }

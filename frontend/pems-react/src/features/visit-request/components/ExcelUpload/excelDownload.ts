@@ -1,4 +1,5 @@
 import * as XLSX from 'xlsx';
+import type { ExcelTranslator } from './excelValidator';
 
 const saveWorkbook = (wb: XLSX.WorkBook, filename: string) => {
   XLSX.writeFile(wb, filename);
@@ -10,20 +11,43 @@ const makeSheet = (rows: (string | number)[][], colWidths: number[]): XLSX.WorkS
   return ws;
 };
 
-export const downloadVisitorTemplate = () => {
-  const header = ['STT', 'Họ và tên', 'Chức vụ', 'Đơn vị công tác', 'Quốc tịch'];
-  const sample = [1, 'Nguyễn Văn A', 'Giám đốc', 'Công ty XYZ', 'Vietnam'];
-  const ws = makeSheet([header, sample], [6, 28, 20, 30, 18]);
+/**
+ * Headers are written in the language the user is currently browsing in. `excelValidator`
+ * matches every column against all of its known aliases, so a template downloaded in one
+ * language still uploads correctly in the other.
+ */
+const headerRow = (t: ExcelTranslator): string[] => [
+  t('visitRequest:excel.template.index'),
+  t('visitRequest:excel.template.fullName'),
+  t('visitRequest:excel.template.jobTitle'),
+  t('visitRequest:excel.template.organization'),
+  t('visitRequest:excel.template.nationality'),
+];
+
+export const downloadVisitorTemplate = (t: ExcelTranslator) => {
+  const sample = [
+    1,
+    t('visitRequest:excel.template.sampleVisitorName'),
+    t('visitRequest:excel.template.sampleVisitorJobTitle'),
+    t('visitRequest:excel.template.sampleVisitorOrganization'),
+    t('visitRequest:excel.template.sampleNationality'),
+  ];
+  const ws = makeSheet([headerRow(t), sample], [6, 28, 20, 30, 18]);
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Danh sách khách');
+  XLSX.utils.book_append_sheet(wb, ws, t('visitRequest:excel.template.visitorsSheet'));
   saveWorkbook(wb, 'visit-guests-template.xlsx');
 };
 
-export const downloadSupportTeamTemplate = () => {
-  const header = ['STT', 'Họ và tên', 'Chức vụ', 'Đơn vị công tác', 'Quốc tịch'];
-  const sample = [1, 'Trần Thị B', 'Trưởng nhóm', 'Công ty ABC', 'Vietnam'];
-  const ws = makeSheet([header, sample], [6, 28, 20, 28, 18]);
+export const downloadSupportTeamTemplate = (t: ExcelTranslator) => {
+  const sample = [
+    1,
+    t('visitRequest:excel.template.sampleSupportName'),
+    t('visitRequest:excel.template.sampleSupportJobTitle'),
+    t('visitRequest:excel.template.sampleSupportOrganization'),
+    t('visitRequest:excel.template.sampleNationality'),
+  ];
+  const ws = makeSheet([headerRow(t), sample], [6, 28, 20, 28, 18]);
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Team hỗ trợ');
+  XLSX.utils.book_append_sheet(wb, ws, t('visitRequest:excel.template.supportSheet'));
   saveWorkbook(wb, 'support-team-template.xlsx');
 };

@@ -53,5 +53,14 @@
     "subtitle": "Register for a visit or contact the International Relations Department directly to begin our partnership journey.",
     "bookVisit": "Book a Visit",
     "contact": "Contact IR Department"
+  },
+  "faqPreview": {
+    "title": "Frequently Asked Questions",
+    "desc": "Answers regarding accounts, visit registration, delegation management, logistics, documents, and notifications in the PEMS system.",
+    "viewAll": "View all questions"
+  },
+  "galleryPreview": {
+    "title": "Explore Visit FPTU",
+    "viewAll": "View all"
   }
 }

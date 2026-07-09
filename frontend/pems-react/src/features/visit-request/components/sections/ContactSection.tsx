@@ -7,7 +7,7 @@ import { CountrySelect } from '../shared/CountrySelect';
 import { OrganizationCombobox } from '../shared/OrganizationCombobox';
 import { PhoneInput } from '../shared/PhoneInput';
 import { inputCls } from '../shared/FormField';
-import { validateSupportTeamExcel, isAllowedExcelFile } from '../ExcelUpload/excelValidator';
+import { validateSupportTeamExcel, isAllowedExcelFile, type ExcelTranslator } from '../ExcelUpload/excelValidator';
 import { downloadSupportTeamTemplate } from '../ExcelUpload/excelDownload';
 import type { SupportTeamExcelValidationResult, SupportTeamEntry } from '../../types/visitRequest.types';
 import { useTranslation } from 'react-i18next';
@@ -41,6 +41,8 @@ export const ContactSection: React.FC<Props> = ({
   showErrors,
 }) => {
   const { t } = useTranslation(['visitRequest']);
+  // Excel helpers live outside React, so the translator is handed to them explicitly.
+  const excelT: ExcelTranslator = (key, options) => t(key, options as never) as unknown as string;
   const { register, control, formState: { errors } } = form;
   const [isSupportSameAsRegister, setIsSupportSameAsRegister] = useState(false);
   const [isContactSameAsRegister, setIsContactSameAsRegister] = useState(false);
@@ -107,7 +109,7 @@ export const ContactSection: React.FC<Props> = ({
       organization: f.organization,
       nationality: f.nationality
     }));
-    const result = await validateSupportTeamExcel(file, existingData as SupportTeamEntry[]);
+    const result = await validateSupportTeamExcel(file, existingData as SupportTeamEntry[], excelT);
 
     if (result.data.length > 0) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -264,7 +266,7 @@ export const ContactSection: React.FC<Props> = ({
           <div className="flex flex-wrap gap-2 sm:gap-3">
             <button
               type="button"
-              onClick={downloadSupportTeamTemplate}
+              onClick={() => downloadSupportTeamTemplate(excelT)}
               className="inline-flex items-center gap-2 px-4 py-2 bg-white text-slate-700 text-sm font-bold rounded-xl hover:bg-slate-50 transition-colors border border-slate-200 shadow-sm"
             >
               <Download className="w-4 h-4" /> {t('visitRequest:step2Contact.downloadTemplate')}

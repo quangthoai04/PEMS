@@ -16,8 +16,13 @@
   "contactsDanang": "DA NANG",
   "contactsCantho": "CAN THO",
   "contactsQuynhon": "QUY NHON",
+  "contactsHanoiAddress": "Education and Training Zone - Hoa Lac Hi-Tech Park - Km29 Thang Long Boulevard, Thach Hoa Commune, Thach That District, Hanoi",
+  "contactsHcmAddress": "Lot E2a-7, D1 Street, Hi-Tech Park, Tang Nhon Phu B Ward, Ho Chi Minh City",
+  "contactsDanangAddress": "FPT Da Nang Technology Urban Area, Hoa Hai Ward, Ngu Hanh Son District, Da Nang",
+  "contactsCanthoAddress": "No. 600, Nguyen Van Cu Street (extended), An Binh Ward, Ninh Kieu District, Can Tho City",
+  "contactsQuynhonAddress": "An Phu Thinh New Urban Area, Nhon Binh Ward, Quy Nhon City, Binh Dinh Province",
   "address": "Address",
   "hotline": "Hotline",
   "email": "Email",
-  "copyright": "� 2026 PEMS - FPT University. All rights reserved."
+  "copyright": "© 2026 PEMS - FPT University. All rights reserved."
 }

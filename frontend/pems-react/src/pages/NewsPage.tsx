@@ -472,8 +472,10 @@ function NewsCard({ item, index }: { item: PublicNewsListItem; index: number; ke
 /* ───────────────────────── Page ───────────────────────── */
 
 export function NewsPage() {
-  const { t } = useTranslation(['news']);
-  
+  const { t, i18n } = useTranslation(['news']);
+  // Public news content is translated server-side (news_translations); refetch on language switch.
+  const lang = i18n.language;
+
   // Filters
   const [keyword, setKeyword] = useState('');
   const [debouncedKeyword, setDebouncedKeyword] = useState('');
@@ -521,10 +523,10 @@ export function NewsPage() {
       setHeroLoading(true);
       setTopLoading(true);
       try {
-        const featuredRes = await publicContentApi.getPublicNewsList({ pageIndex: 1, pageSize: 1, isFeatured: true });
+        const featuredRes = await publicContentApi.getPublicNewsList({ pageIndex: 1, pageSize: 1, isFeatured: true, languageCode: lang });
         let featured = featuredRes.items[0] ?? null;
         if (!featured) {
-          const latestRes = await publicContentApi.getPublicNewsList({ pageIndex: 1, pageSize: 1, sort: 'latest' });
+          const latestRes = await publicContentApi.getPublicNewsList({ pageIndex: 1, pageSize: 1, sort: 'latest', languageCode: lang });
           featured = latestRes.items[0] ?? null;
         }
         if (!cancelled) setHero(featured);
@@ -535,7 +537,7 @@ export function NewsPage() {
       }
 
       try {
-        const res = await publicContentApi.getPublicNewsList({ pageIndex: 1, pageSize: TOP_STORIES_SIZE, sort: 'latest' });
+        const res = await publicContentApi.getPublicNewsList({ pageIndex: 1, pageSize: TOP_STORIES_SIZE, sort: 'latest', languageCode: lang });
         if (!cancelled) setTopStories(res.items ?? []);
       } catch {
         if (!cancelled) setTopStories([]);
@@ -546,7 +548,7 @@ export function NewsPage() {
     return () => {
       cancelled = true;
     };
-  }, [reloadKey]);
+  }, [reloadKey, lang]);
 
   // Latest grid — reacts to filters + load-more (pageIndex stays 1, pageSize grows)
   useEffect(() => {
@@ -562,6 +564,7 @@ export function NewsPage() {
           type,
           campusId,
           sort,
+          languageCode: lang,
         });
         if (cancelled) return;
         setItems(data.items ?? []);
@@ -575,7 +578,7 @@ export function NewsPage() {
     return () => {
       cancelled = true;
     };
-  }, [gridPageSize, debouncedKeyword, type, campusId, sort, reloadKey]);
+  }, [gridPageSize, debouncedKeyword, type, campusId, sort, reloadKey, lang]);
 
   useEffect(() => {
     setGridPageSize(LATEST_INITIAL_SIZE);
@@ -601,6 +604,7 @@ export function NewsPage() {
                 pageSize: campusPageSize,
                 campusId: Number(c.campusId),
                 sort: 'latest',
+                languageCode: lang,
               });
               groups[Number(c.campusId)] = res.items ?? [];
               totals[Number(c.campusId)] = res.totalItems ?? 0;
@@ -623,7 +627,7 @@ export function NewsPage() {
     return () => {
       cancelled = true;
     };
-  }, [campusPageSize, reloadKey]);
+  }, [campusPageSize, reloadKey, lang]);
 
   useEffect(() => {
     setCampusPageSize(CAMPUS_STORIES_INITIAL_SIZE);
@@ -635,7 +639,7 @@ export function NewsPage() {
     (async () => {
       setVisitLoading(true);
       try {
-        const res = await publicContentApi.getPublicNewsList({ pageIndex: 1, pageSize: 4, type: 'visit', sort: 'latest' });
+        const res = await publicContentApi.getPublicNewsList({ pageIndex: 1, pageSize: 4, type: 'visit', sort: 'latest', languageCode: lang });
         if (!cancelled) setVisitHighlights(res.items ?? []);
       } catch {
         if (!cancelled) setVisitHighlights([]);
@@ -646,7 +650,7 @@ export function NewsPage() {
     return () => {
       cancelled = true;
     };
-  }, [reloadKey]);
+  }, [reloadKey, lang]);
 
   const visibleCampusItems = useMemo(() => {
     if (activeCampusTab === 'all') {

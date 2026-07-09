@@ -1,11 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../shared/hooks/useAuth';
 import type { LoginPortal } from '../../features/authentication/types/authentication.types';
 import logo from '../../assets/images/2021-FPTU-Eng.png';
 import { InternalLoginForm, VisitorLoginForm } from '../../features/authentication/components/DualPortalLoginForms';
 
 export function LoginPage() {
+  const { t } = useTranslation(['loginModal']);
   const { isAuthenticated, isLoading } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
@@ -25,8 +27,8 @@ export function LoginPage() {
           <Link to="/">
             <img src={logo} alt="FPT University" className="h-14 object-contain mb-5 drop-shadow-sm" />
           </Link>
-          <h2 className="text-[#004c91] text-2xl font-black text-center leading-tight">Đăng nhập PEMS</h2>
-          <p className="text-gray-500 text-sm text-center mt-2">Partnership Engagement Management System</p>
+          <h2 className="text-[#004c91] text-2xl font-black text-center leading-tight">{t('loginModal:title')}</h2>
+          <p className="text-gray-500 text-sm text-center mt-2">{t('loginModal:subtitle')}</p>
         </div>
 
         <div className="mb-8">
@@ -40,7 +42,7 @@ export function LoginPage() {
                   : 'text-gray-500 hover:text-gray-800 hover:bg-gray-200/50'
               }`}
             >
-              Nội bộ (Internal)
+              {t('loginModal:internal')}
             </button>
             <button
               type="button"
@@ -51,13 +53,13 @@ export function LoginPage() {
                   : 'text-gray-500 hover:text-gray-800 hover:bg-gray-200/50'
               }`}
             >
-              Khách (Visitor)
+              {t('loginModal:visitor')}
             </button>
           </div>
           <p className="text-[13px] text-gray-500 text-center mt-4 px-2">
-            {portal === 'INTERNAL' 
-              ? 'Dành cho Cán bộ, Giảng viên, và Sinh viên FPTU.' 
-              : 'Dành cho Khách, Đối tác theo dõi thông tin chuyến thăm.'}
+            {portal === 'INTERNAL'
+              ? t('loginModal:internalDesc')
+              : t('loginModal:visitorDesc')}
           </p>
         </div>
 
@@ -70,7 +72,7 @@ export function LoginPage() {
         </div>
 
         <p className="mt-8 text-center text-[12px] text-gray-400">
-          Bằng việc đăng nhập, bạn đồng ý với quy định sử dụng hệ thống của FPT University.
+          {t('loginModal:termsNotice')}
         </p>
       </div>
     </div>

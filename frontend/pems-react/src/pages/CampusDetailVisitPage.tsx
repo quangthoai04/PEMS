@@ -883,7 +883,7 @@ function GalleryItemDetailModal({
                 e.stopPropagation();
                 setZoomOpen(false);
               }}
-              title="Đóng"
+              title={t('visitFptu:gallery.actions.close')}
               className="absolute top-6 right-6 z-10 w-11 h-11 flex items-center justify-center rounded-full bg-black/50 hover:bg-white/20 text-white border border-white/25 backdrop-blur-md transition-all hover:scale-110"
             >
               <X className="w-6 h-6" />

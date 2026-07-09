@@ -8,7 +8,7 @@
   "card": {
     "featured": "Featured",
     "readMore": "Read more",
-    "readMoreArrow": "Read more ?"
+    "readMoreArrow": "Read more →"
   },
   "filter": {
     "searchPlaceholder": "Search news...",
@@ -41,6 +41,6 @@
     "notFoundTitle": "Article not found",
     "notFoundMsg": "The article does not exist or has not been published.",
     "goBack": "Go back",
-    "copyright": "� Copyright by International Relations Department - FPT University"
+    "copyright": "© Copyright by International Relations Department - FPT University"
   }
 }

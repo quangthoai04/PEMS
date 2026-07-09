@@ -1,8 +1,23 @@
 import { z } from 'zod';
 import { isValidPhoneNumber } from 'libphonenumber-js';
+import i18n from '../../../shared/i18n/config';
 
 const MIN_ADVANCE_HOURS = 72;
 const MIN_DURATION_HOURS = 3;
+
+/**
+ * Translator for validation messages, scoped to the `validation` namespace.
+ *
+ * The schema must be REBUILT when the language changes — a Zod schema bakes its
+ * messages in at construction time, so a schema created at module scope would keep
+ * whatever language was active on first import. Callers build it inside a
+ * `useMemo(..., [t, i18n.language])`; see `useVisitRequestForm`.
+ */
+export type ValidationTranslator = (key: string, options?: Record<string, unknown>) => string;
+
+/** Fallback translator used by the type-only schema instance below. */
+const defaultT: ValidationTranslator = (key, options) =>
+  i18n.t(key, { ns: 'validation', ...options }) as string;
 
 export type VisitCampusRow = {
   campus: string;
@@ -36,9 +51,9 @@ export function findCampusTimeOverlaps(visits: VisitCampusRow[]) {
   return conflicts;
 }
 
-const phoneSchema = z
+const buildPhoneSchema = (t: ValidationTranslator) => z
   .string()
-  .min(1, 'Số điện thoại không được để trống')
+  .min(1, t('phoneRequired'))
   .refine(
     (val) => {
       try {
@@ -47,36 +62,36 @@ const phoneSchema = z
         return false;
       }
     },
-    { message: 'Số điện thoại không hợp lệ' }
+    { message: t('phoneInvalid') }
   );
 
-const emailSchema = z
+const buildEmailSchema = (t: ValidationTranslator) => z
   .string()
-  .min(1, 'Email không được để trống')
-  .email('Email không đúng định dạng (RFC 5322)');
+  .min(1, t('emailRequired'))
+  .email(t('emailInvalid'));
 
-const visitorSchema = z.object({
-  fullName: z.string().trim().min(1, 'Họ tên không được để trống').max(100, 'Tối đa 100 ký tự'),
-  jobTitle: z.string().trim().min(1, 'Chức vụ không được để trống'),
-  organization: z.string().trim().min(1, 'Đơn vị công tác không được để trống'),
-  nationality: z.string().trim().min(1, 'Quốc tịch không được để trống'),
+const buildVisitorSchema = (t: ValidationTranslator) => z.object({
+  fullName: z.string().trim().min(1, t('fullNameRequired')).max(100, t('maxLength', { max: 100 })),
+  jobTitle: z.string().trim().min(1, t('jobTitleRequired')),
+  organization: z.string().trim().min(1, t('organizationRequired')),
+  nationality: z.string().trim().min(1, t('nationalityRequired')),
 });
 
-const supportTeamSchema = z.object({
-  fullName: z.string().trim().min(1, 'Họ tên không được để trống').max(100),
-  jobTitle: z.string().trim().min(1, 'Chức vụ không được để trống'),
-  organization: z.string().trim().min(1, 'Đơn vị công tác không được để trống'),
-  nationality: z.string().trim().min(1, 'Quốc tịch không được để trống'),
+const buildSupportTeamSchema = (t: ValidationTranslator) => z.object({
+  fullName: z.string().trim().min(1, t('fullNameRequired')).max(100),
+  jobTitle: z.string().trim().min(1, t('jobTitleRequired')),
+  organization: z.string().trim().min(1, t('organizationRequired')),
+  nationality: z.string().trim().min(1, t('nationalityRequired')),
   isAutoFilledFromRegistrant: z.boolean().optional(),
 });
 
 // Slot schema factory: the public submit requires 72h advance; the Visitor edit/resubmit
 // flow only requires 24h (spec "sửa đơn / gửi lại / hủy trước 24h").
-const buildVisitSlotSchema = (minAdvanceHours: number) => z
+const buildVisitSlotSchema = (minAdvanceHours: number, t: ValidationTranslator) => z
   .object({
-    campus: z.string().min(1, 'Vui lòng chọn cơ sở'),
-    startDatetime: z.string().min(1, 'Thời gian bắt đầu không được để trống'),
-    endDatetime: z.string().min(1, 'Thời gian kết thúc không được để trống'),
+    campus: z.string().min(1, t('campusRequired')),
+    startDatetime: z.string().min(1, t('startTimeRequired')),
+    endDatetime: z.string().min(1, t('endTimeRequired')),
   })
   .superRefine((data, ctx) => {
     if (!data.startDatetime || !data.endDatetime) return;
@@ -88,7 +103,7 @@ const buildVisitSlotSchema = (minAdvanceHours: number) => z
     if (start < minStart) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: `Thời gian bắt đầu phải ít nhất ${minAdvanceHours} giờ so với thời điểm hiện tại`,
+        message: t('startTimeMinAdvance', { hours: minAdvanceHours }),
         path: ['startDatetime'],
       });
     }
@@ -96,7 +111,7 @@ const buildVisitSlotSchema = (minAdvanceHours: number) => z
     if (end <= start) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'Thời gian kết thúc phải sau thời gian bắt đầu',
+        message: t('endTimeAfterStart'),
         path: ['endDatetime'],
       });
       return;
@@ -106,43 +121,46 @@ const buildVisitSlotSchema = (minAdvanceHours: number) => z
     if (durationHours < MIN_DURATION_HOURS) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: `Thời gian tham quan tối thiểu ${MIN_DURATION_HOURS} giờ`,
+        message: t('minDuration', { hours: MIN_DURATION_HOURS }),
         path: ['endDatetime'],
       });
     }
   });
 
-export const buildVisitRequestSchema = (minAdvanceHours: number = MIN_ADVANCE_HOURS) => z.object({
+export const buildVisitRequestSchema = (
+  minAdvanceHours: number = MIN_ADVANCE_HOURS,
+  t: ValidationTranslator = defaultT,
+) => z.object({
   registerInfo: z.object({
-    fullName: z.string().min(1, 'Họ tên không được để trống').max(100),
-    organization: z.string().min(1, 'Đơn vị công tác không được để trống'),
-    jobTitle: z.string().min(1, 'Chức danh/phòng ban không được để trống'),
-    phone: phoneSchema,
-    email: emailSchema,
-    nationality: z.string().min(1, 'Quốc tịch không được để trống'),
+    fullName: z.string().min(1, t('fullNameRequired')).max(100),
+    organization: z.string().min(1, t('organizationRequired')),
+    jobTitle: z.string().min(1, t('jobTitleOrDeptRequired')),
+    phone: buildPhoneSchema(t),
+    email: buildEmailSchema(t),
+    nationality: z.string().min(1, t('nationalityRequired')),
   }),
-  delegationName: z.string().min(1, 'Tên đoàn không được để trống'),
+  delegationName: z.string().min(1, t('delegationNameRequired')),
   visitMode: z.enum(['single', 'multiple']),
   visitType: z.enum(['CAMPUS_TOUR', 'MEETING', 'WORKSHOP', 'SIGNING_CEREMONY', 'EXCHANGE', 'OTHER']),
   visitTypeOther: z.string().optional().default(''),
-  visits: z.array(buildVisitSlotSchema(minAdvanceHours)).min(1),
-  purpose: z.string().min(1, 'Mục đích thăm không được để trống'),
-  workingContent: z.string().min(1, 'Nội dung làm việc không được để trống'),
-  visitors: z.array(visitorSchema).min(1, 'Vui lòng thêm ít nhất 1 khách.'),
-  supportTeam: z.array(supportTeamSchema).min(1, 'Vui lòng thêm ít nhất 1 nhân sự hỗ trợ khách.'),
+  visits: z.array(buildVisitSlotSchema(minAdvanceHours, t)).min(1),
+  purpose: z.string().min(1, t('purposeRequired')),
+  workingContent: z.string().min(1, t('workingContentRequired')),
+  visitors: z.array(buildVisitorSchema(t)).min(1, t('atLeastOneVisitor')),
+  supportTeam: z.array(buildSupportTeamSchema(t)).min(1, t('atLeastOneSupport')),
   contactPoint: z.object({
-    fullName: z.string().trim().min(1, 'Họ tên không được để trống'),
-    organization: z.string().trim().min(1, 'Đơn vị không được để trống'),
-    phone: phoneSchema,
-    email: emailSchema,
+    fullName: z.string().trim().min(1, t('fullNameRequired')),
+    organization: z.string().trim().min(1, t('organizationShortRequired')),
+    phone: buildPhoneSchema(t),
+    email: buildEmailSchema(t),
   }),
   workingLanguage: z.enum(['EN', 'VI']),
   // Free text identifying the transportation to FPTU — optional, bounded, no HTML/script.
   transportationNote: z
     .string()
-    .max(2000, 'Nhận diện phương tiện di chuyển tối đa 2000 ký tự')
+    .max(2000, t('transportationNoteMaxLength', { max: 2000 }))
     .refine((v) => !v.includes('<') && !v.includes('>'), {
-      message: 'Không được chứa ký tự HTML/script',
+      message: t('noHtmlChars'),
     })
     .optional()
     .default(''),
@@ -157,20 +175,20 @@ export const buildVisitRequestSchema = (minAdvanceHours: number = MIN_ADVANCE_HO
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ['registerInfo', 'organization'],
-      message: 'Vui lòng nhập tên đơn vị / tổ chức của bạn.',
+      message: t('organizationNameRequired'),
     });
   } else if (data.partnerSelectionMode === 'EXISTING_PARTNER') {
     if (data.partnerId === null || data.partnerId === undefined) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['partnerId'],
-        message: 'Vui lòng chọn tổ chức có sẵn từ danh sách.',
+        message: t('partnerRequired'),
       });
     } else if (!data.registerInfo.organization || data.registerInfo.organization.trim().length === 0) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['partnerId'],
-        message: 'Không thể xác định tên tổ chức đã chọn. Vui lòng chọn lại.',
+        message: t('partnerNameUnresolved'),
       });
     }
   }
@@ -179,7 +197,7 @@ export const buildVisitRequestSchema = (minAdvanceHours: number = MIN_ADVANCE_HO
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ['visitTypeOther'],
-      message: 'Vui lòng nhập chi tiết loại hình tham quan khác',
+      message: t('visitTypeOtherRequired'),
     });
   }
 
@@ -195,13 +213,13 @@ export const buildVisitRequestSchema = (minAdvanceHours: number = MIN_ADVANCE_HO
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['visits'],
-        message: 'Không được chọn trùng cơ sở trong yêu cầu liên cơ sở. Vui lòng chọn cơ sở khác.',
+        message: t('duplicateCampus'),
       });
     } else if (distinct.size < 2) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['visits'],
-        message: 'Yêu cầu liên cơ sở cần ít nhất 2 cơ sở. Vui lòng thêm cơ sở thứ hai hoặc đổi sang Đơn cơ sở.',
+        message: t('multiCampusNeedsTwo'),
       });
     }
   }
@@ -210,16 +228,14 @@ export const buildVisitRequestSchema = (minAdvanceHours: number = MIN_ADVANCE_HO
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ['visits'],
-      message: 'Yêu cầu đơn cơ sở chỉ được chọn đúng 1 cơ sở.',
+      message: t('singleCampusExactlyOne'),
     });
   }
 
 });
 
-/** Default schema for the public UC-17 submit (72h advance). */
-export const visitRequestSchema = buildVisitRequestSchema();
+/** Advance-notice thresholds: public submit needs 72h, Visitor edit/resubmit only 24h. */
+export const VISIT_REQUEST_MIN_ADVANCE_HOURS = MIN_ADVANCE_HOURS;
+export const VISIT_REQUEST_EDIT_MIN_ADVANCE_HOURS = 24;
 
-/** Schema for the Visitor edit/resubmit forms — only 24h advance is required. */
-export const visitRequestEditSchema = buildVisitRequestSchema(24);
-
-export type VisitRequestSchema = z.infer<typeof visitRequestSchema>;
+export type VisitRequestSchema = z.infer<ReturnType<typeof buildVisitRequestSchema>>;

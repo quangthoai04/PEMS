@@ -427,11 +427,12 @@ export function GoogleSignInButton({
   onSuccess?: () => void;
   onValidateCampus?: () => boolean;
 }) {
-  const { t } = useTranslation(['loginModal']);
+  const { t, i18n } = useTranslation(['loginModal']);
   const { loginWithGoogle } = useAuth();
   const navigate = useNavigate();
   const clientId = AUTH_CONFIG.googleClientId;
   const containerRef = React.useRef<HTMLDivElement>(null);
+  const language = i18n.language;
 
   // Visitor never requires a campus; only Internal does. Never gate Visitor on campus.
   const campusBlocked = portal === 'INTERNAL' && !selectedCampusId;
@@ -465,7 +466,7 @@ export function GoogleSignInButton({
         if (user.mustChangePassword || user.mustSetPassword) navigate('/change-password', { replace: true });
         else navigate('/', { replace: true });
       } catch (err) {
-        onError(getAuthErrorMessage(err, 'Unable to sign in with this account.'));
+        onError(getAuthErrorMessage(err, t('loginModal:googleSignInFailed')));
       }
     };
 
@@ -473,7 +474,18 @@ export function GoogleSignInButton({
       const google = (window as any).google;
       if (!google?.accounts?.id || !containerRef.current) return;
       google.accounts.id.initialize({ client_id: clientId, callback: handleCredential });
-      google.accounts.id.renderButton(containerRef.current, { theme: 'outline', size: 'large', width: '100%', shape: 'rectangular' });
+      // Google's GSI script renders its own button label and localizes it from the
+      // browser / Google-account locale unless `locale` is passed. Without this the
+      // button reads "Đăng nhập bằng Google" while the rest of the app is in English.
+      // Clear first: renderButton appends, so a language switch would stack buttons.
+      containerRef.current.innerHTML = '';
+      google.accounts.id.renderButton(containerRef.current, {
+        theme: 'outline',
+        size: 'large',
+        width: '100%',
+        shape: 'rectangular',
+        locale: language,
+      });
     };
 
     if ((window as any).google?.accounts?.id) {
@@ -494,7 +506,7 @@ export function GoogleSignInButton({
     script.id = 'google-gsi-script';
     script.onload = init;
     document.body.appendChild(script);
-  }, [clientId, portal, selectedCampusId, loginWithGoogle, navigate, onError, onValidateCampus, onSuccess]);
+  }, [clientId, portal, selectedCampusId, loginWithGoogle, navigate, onError, onValidateCampus, onSuccess, language]);
 
   // No client id configured: do NOT silently disable. Keep the button clickable and
   // surface a clear, actionable error so SSO mis-config is obvious in dev.
@@ -504,18 +516,18 @@ export function GoogleSignInButton({
         type="button"
         onClick={() => {
           if (campusBlocked) {
-            onError(t('loginModal:googleMissingCampus', 'Vui lòng chọn cơ sở trước khi đăng nhập bằng Google.'));
+            onError(t('loginModal:googleMissingCampus'));
             if (onValidateCampus) onValidateCampus();
             return;
           }
-          onError(t('loginModal:googleMissingClientId', 'Google SSO chưa được cấu hình Client ID. Vui lòng kiểm tra VITE_GOOGLE_CLIENT_ID.'));
+          onError(t('loginModal:googleMissingClientId'));
         }}
         className="w-full flex items-center justify-center gap-3 border border-gray-300 text-gray-700 hover:bg-gray-50 py-2.5 rounded-xl font-medium text-[14px] transition-colors"
       >
         <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
           <path d="M12.48 10.92v3.28h7.84c-.24 1.84-.853 3.187-1.787 4.133-1.147 1.147-2.933 2.4-6.053 2.4-4.827 0-8.6-3.893-8.6-8.72s3.773-8.72 8.6-8.72c2.6 0 4.507 1.027 5.907 2.347l2.307-2.307C18.747 1.44 16.133 0 12.48 0 5.867 0 .307 5.387.307 12s5.56 12 12.173 12c3.573 0 6.267-1.173 8.373-3.36 2.16-2.16 2.84-5.213 2.84-7.667 0-.76-.053-1.467-.173-2.053H12.48z" />
         </svg>
-        Sign in with Google
+        {t('loginModal:signInWithGoogle')}
       </button>
     );
   }
@@ -531,7 +543,7 @@ export function GoogleSignInButton({
             e.stopPropagation();
             onValidateCampus();
           }}
-          title={t('loginModal:googleMissingCampus', 'Vui lòng chọn cơ sở trước')}
+          title={t('loginModal:googleMissingCampus')}
         />
       )}
     </div>

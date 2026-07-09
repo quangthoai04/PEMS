@@ -113,8 +113,8 @@
     "uploadError": "Only .xlsx or .xls files are allowed",
     "addedMsg": "Added {{added}} visitors from \"{{fileName}}\". Total: {{total}} people.",
     "failedMsg": "Failed to add data from \"{{fileName}}\"",
-    "statsMsg": "Total {{totalRows}} rows � {{errorRows}} error/skipped rows",
-    "statsMsgDup": "Total {{totalRows}} rows � {{errorRows}} error/skipped rows � {{skipped}} duplicated rows skipped."
+    "statsMsg": "Total {{totalRows}} rows · {{errorRows}} error/skipped rows",
+    "statsMsgDup": "Total {{totalRows}} rows · {{errorRows}} error/skipped rows · {{skipped}} duplicated rows skipped."
   },
   "step2Contact": {
     "supportTitle": "Support Team List",
@@ -135,8 +135,8 @@
     "uploadError": "Only .xlsx or .xls files are allowed",
     "addedMsg": "Added {{added}} staff members from \"{{fileName}}\". Total: {{total}} people.",
     "failedMsg": "Failed to add data from \"{{fileName}}\"",
-    "statsMsg": "Total {{totalRows}} rows � {{errorRows}} error/skipped rows",
-    "statsMsgDup": "Total {{totalRows}} rows � {{errorRows}} error/skipped rows � {{skipped}} duplicated rows skipped.",
+    "statsMsg": "Total {{totalRows}} rows · {{errorRows}} error/skipped rows",
+    "statsMsgDup": "Total {{totalRows}} rows · {{errorRows}} error/skipped rows · {{skipped}} duplicated rows skipped.",
     "contactTitle": "Contact Point Information",
     "iamContact": "I am also the contact point",
     "contactDesc1": "When checking \"I am also the contact point\", the system will autofill the Contact Point Information from the Registrant Information.",
@@ -155,7 +155,7 @@
     "langNote": "PEMS currently only supports Vietnamese or English. If your delegation requires another language, please arrange your own interpreter.",
     "transport": "Vehicle Identification for FPTU",
     "transportPlaceholder": "e.g., White 16-seat van, license plate 30A-xxxxx, arriving at the gate at 8:30.",
-    "transportNote": "Optional � free-text description to help security/receptionists identify the delegation upon arrival.",
+    "transportNote": "Optional · free-text description to help security/receptionists identify the delegation upon arrival.",
     "media": "Media/Photography Consent *",
     "agreed": "Agreed",
     "declined": "Declined",
@@ -196,5 +196,51 @@
     "delete": "Delete",
     "phoneSearchPlaceholder": "Search country or code...",
     "phoneNotFound": "Not found"
+  },
+  "select": {
+    "searching": "Searching...",
+    "noResults": "No results found",
+    "notFound": "Not found",
+    "useInput": "Use \"{{input}}\"",
+    "countryPlaceholder": "Search for a country...",
+    "countryNoOptions": "No country found",
+    "orgComboPlaceholder": "Type or select...",
+    "orgComboNoOptions": "Type to search or create a new one...",
+    "orgSelectPlaceholder": "Search or enter an organization name...",
+    "orgSelectMinChars": "Enter at least 2 characters to search",
+    "partnerNewOrg": "-- New organization / Not in the system --",
+    "partnerLoading": "Loading organization info...",
+    "partnerPlaceholder": "Select an existing organization or choose a new one...",
+    "partnerComboPlaceholder": "Type or search for an organization/partner...",
+    "partnerSelected": "An existing partner is selected",
+    "partnerFreeText": "This is a free-text organization (not linked to an existing partner).",
+    "clear": "Clear",
+    "phoneSearchPlaceholder": "Search country or code...",
+    "partnerNoMatch": "No matching partner found. You can keep using the name you typed."
+  },
+  "excel": {
+    "errors": {
+      "invalidFileType": "Only .xlsx or .xls files are supported",
+      "noData": "The Excel file contains no data.",
+      "headerOnly": "The file has no data rows (header only, or empty).",
+      "missingColumns": "Missing required column(s): {{missing}}. The file must contain: {{required}}.",
+      "requiredCell": "Row {{row}}: column \"{{column}}\" must not be empty."
+    },
+    "template": {
+      "index": "No.",
+      "fullName": "Full Name",
+      "jobTitle": "Job Title",
+      "organization": "Organization",
+      "nationality": "Nationality",
+      "visitorsSheet": "Visitor List",
+      "supportSheet": "Support Team",
+      "sampleVisitorName": "John Smith",
+      "sampleVisitorJobTitle": "Director",
+      "sampleVisitorOrganization": "XYZ Company",
+      "sampleSupportName": "Jane Doe",
+      "sampleSupportJobTitle": "Team Lead",
+      "sampleSupportOrganization": "ABC Company",
+      "sampleNationality": "Vietnam"
+    }
   }
 }

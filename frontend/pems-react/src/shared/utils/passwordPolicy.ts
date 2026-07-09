@@ -1,6 +1,13 @@
 // Frontend mirror of the backend password policy (PasswordPolicy.cs).
-export const PASSWORD_REQUIREMENTS =
-  'Mật khẩu tối thiểu 8 ký tự, gồm chữ hoa, chữ thường, số và ký tự đặc biệt.';
+import i18n from '../i18n/config';
+
+/**
+ * Human-readable policy text. Resolved at call time (not module load) so it follows the
+ * active language. Used both as helper text under the field and as the validation error.
+ */
+export function getPasswordRequirements(): string {
+  return i18n.t('passwordPolicy', { ns: 'validation' }) as string;
+}
 
 export function isStrongPassword(password: string): boolean {
   return (

@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Eye, EyeOff } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../shared/hooks/useAuth';
 import { getAuthErrorMessage } from '../../features/authentication/api/authError';
-import { isStrongPassword, PASSWORD_REQUIREMENTS } from '../../shared/utils/passwordPolicy';
+import { isStrongPassword, getPasswordRequirements } from '../../shared/utils/passwordPolicy';
 import logo from '../../assets/images/2021-FPTU-Eng.png';
 
 export function ChangePasswordPage() {
+  const { t } = useTranslation(['loginModal', 'validation']);
   const { user, changePassword, logout } = useAuth();
   const navigate = useNavigate();
 
@@ -25,15 +27,15 @@ export function ChangePasswordPage() {
     e.preventDefault();
     setError('');
     if (requireCurrent && !currentPassword) {
-      setError('Vui lòng nhập mật khẩu hiện tại.');
+      setError(t('validation:currentPasswordRequired'));
       return;
     }
     if (!isStrongPassword(newPassword)) {
-      setError(PASSWORD_REQUIREMENTS);
+      setError(getPasswordRequirements());
       return;
     }
     if (newPassword !== confirmPassword) {
-      setError('Mật khẩu xác nhận không khớp.');
+      setError(t('validation:passwordsDoNotMatch'));
       return;
     }
 
@@ -44,10 +46,10 @@ export function ChangePasswordPage() {
         newPassword,
         confirmPassword,
       });
-      setSuccess('Đổi mật khẩu thành công.');
+      setSuccess(t('loginModal:changePassword.success'));
       setTimeout(() => navigate('/dashboard', { replace: true }), 1200);
     } catch (err) {
-      setError(getAuthErrorMessage(err, 'Không thể đổi mật khẩu.'));
+      setError(getAuthErrorMessage(err, t('loginModal:changePassword.failed')));
     } finally {
       setSubmitting(false);
     }
@@ -58,10 +60,10 @@ export function ChangePasswordPage() {
       <div className="w-full max-w-[440px] bg-white rounded-2xl shadow-xl border border-gray-100 p-7 md:p-9">
         <div className="flex flex-col items-center mb-6">
           <img src={logo} alt="FPT University" className="h-14 object-contain mb-4" />
-          <h1 className="text-[#004c91] text-xl font-black text-center">Đổi mật khẩu</h1>
+          <h1 className="text-[#004c91] text-xl font-black text-center">{t('loginModal:changePassword.title')}</h1>
           {forced && (
             <p className="text-amber-600 text-sm text-center mt-1 font-medium">
-              Bạn cần đặt/đổi mật khẩu trước khi tiếp tục.
+              {t('loginModal:changePassword.forcedNotice')}
             </p>
           )}
         </div>
@@ -74,7 +76,7 @@ export function ChangePasswordPage() {
 
             {requireCurrent && (
               <div>
-                <label className="block text-gray-700 font-semibold text-sm mb-1.5">Mật khẩu hiện tại</label>
+                <label className="block text-gray-700 font-semibold text-sm mb-1.5">{t('loginModal:changePassword.currentPassword')}</label>
                 <input
                   type={showPassword ? 'text' : 'password'}
                   value={currentPassword}
@@ -86,7 +88,7 @@ export function ChangePasswordPage() {
             )}
 
             <div>
-              <label className="block text-gray-700 font-semibold text-sm mb-1.5">Mật khẩu mới</label>
+              <label className="block text-gray-700 font-semibold text-sm mb-1.5">{t('loginModal:changePassword.newPassword')}</label>
               <div className="relative">
                 <input
                   type={showPassword ? 'text' : 'password'}
@@ -103,11 +105,11 @@ export function ChangePasswordPage() {
                   {showPassword ? <Eye className="w-5 h-5" /> : <EyeOff className="w-5 h-5" />}
                 </button>
               </div>
-              <p className="mt-1 text-xs text-gray-400">{PASSWORD_REQUIREMENTS}</p>
+              <p className="mt-1 text-xs text-gray-400">{getPasswordRequirements()}</p>
             </div>
 
             <div>
-              <label className="block text-gray-700 font-semibold text-sm mb-1.5">Xác nhận mật khẩu mới</label>
+              <label className="block text-gray-700 font-semibold text-sm mb-1.5">{t('loginModal:changePassword.confirmPassword')}</label>
               <input
                 type={showPassword ? 'text' : 'password'}
                 value={confirmPassword}
@@ -122,7 +124,7 @@ export function ChangePasswordPage() {
               disabled={submitting}
               className="w-full bg-[#004c91] hover:bg-[#003a6f] disabled:opacity-60 text-white py-3 rounded-xl font-bold"
             >
-              {submitting ? 'Đang xử lý...' : 'Đổi mật khẩu'}
+              {submitting ? t('loginModal:changePassword.processing') : t('loginModal:changePassword.submit')}
             </button>
 
             <button
@@ -130,7 +132,7 @@ export function ChangePasswordPage() {
               onClick={() => (forced ? logout().then(() => navigate('/login', { replace: true })) : navigate(-1))}
               className="w-full text-sm text-gray-500 hover:text-gray-700"
             >
-              {forced ? 'Đăng xuất' : 'Hủy'}
+              {forced ? t('loginModal:changePassword.logout') : t('loginModal:changePassword.cancel')}
             </button>
           </form>
         )}

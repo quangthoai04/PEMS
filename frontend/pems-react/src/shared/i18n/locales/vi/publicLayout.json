@@ -15,6 +15,7 @@
   },
   "footer": {
     "deptName": "Phòng Hợp Tác Quốc Tế",
+    "hqAddress": "Khu Công nghệ cao Hòa Lạc, Hà Nội",
     "system": "Hệ Thống Đào Tạo",
     "hanoi": "Hà Nội: Khu CNC Hòa Lạc",
     "danang": "Đà Nẵng: KĐT FPT City",
@@ -36,16 +37,16 @@
     "department": "Phòng HTQT"
   },
   "profile": {
-    "myVisitRequests": "�on tham quan c?a t�i",
-    "adminDashboard": "Trang qu?n tr?",
-    "userProfile": "H? so c� nh�n",
-    "logout": "�ang xu?t",
-    "logoutAccount": "�ang xu?t t�i kho?n",
-    "loggingOut": "�ang dang xu?t...",
-    "category": "Danh m?c",
-    "language": "Ng�n ng? / Language",
-    "guest": "�?i t�c / Kh�ch",
-    "myForms": "�on c?a t�i",
-    "manage": "Qu?n l�"
+    "myVisitRequests": "Đơn tham quan của tôi",
+    "adminDashboard": "Trang quản trị",
+    "userProfile": "Hồ sơ cá nhân",
+    "logout": "Đăng xuất",
+    "logoutAccount": "Đăng xuất tài khoản",
+    "loggingOut": "Đang đăng xuất...",
+    "category": "Danh mục",
+    "language": "Ngôn ngữ / Language",
+    "guest": "Đối tác / Khách",
+    "myForms": "Đơn của tôi",
+    "manage": "Quản lý"
   }
 }

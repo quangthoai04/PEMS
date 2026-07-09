@@ -17,12 +17,52 @@
   "processing": "Processing...",
   "loginBtn": "Sign in",
   "or": "OR",
+  "signInWithGoogle": "Sign in with Google",
+  "googleSignInFailed": "Unable to sign in with this account. Please try again.",
   "googleMissingCampus": "Please select a campus before signing in with Google.",
+  "googleMissingClientId": "Google SSO is not configured yet. Please contact the administrator.",
   "googleLoading": "Please wait for the system to load the campus list.",
   "googleError": "Cannot sign in with Google because the campus list could not be loaded.",
   "emailRequired": "Please enter your email.",
   "emailInvalid": "Invalid email address.",
   "passwordRequired": "Please enter your password.",
   "internalError": "Incorrect email, password, or campus.",
-  "visitorError": "Incorrect email or password."
+  "visitorError": "Incorrect email or password.",
+  "termsNotice": "By signing in, you agree to the FPT University system usage policy.",
+  "backToLogin": "Back to sign in",
+  "forgot": {
+    "title": "Forgot password",
+    "subtitle": "Enter your email to receive a password reset code.",
+    "sent": "If that email exists in our system, we have sent a password reset code to it.",
+    "haveCode": "I already have a reset code",
+    "sending": "Sending...",
+    "submit": "Send reset code"
+  },
+  "reset": {
+    "title": "Reset password",
+    "subtitle": "Enter the code you received and your new password.",
+    "codeLabel": "Reset code (OTP)",
+    "codePlaceholder": "6 digits",
+    "newPassword": "New password",
+    "confirmPassword": "Confirm password",
+    "processing": "Processing...",
+    "submit": "Reset password",
+    "success": "Password reset successfully. Redirecting to sign in...",
+    "invalidCode": "The reset code is invalid or has expired."
+  },
+  "campusNoneActive": "No active campus is available. Please contact an administrator.",
+  "campusLoadFailed": "Unable to load the campus list. Please check your connection and try again.",
+  "changePassword": {
+    "title": "Change password",
+    "forcedNotice": "You must set or change your password before continuing.",
+    "currentPassword": "Current password",
+    "newPassword": "New password",
+    "confirmPassword": "Confirm new password",
+    "processing": "Processing...",
+    "submit": "Change password",
+    "success": "Password changed successfully.",
+    "failed": "Unable to change the password.",
+    "logout": "Log out",
+    "cancel": "Cancel"
+  }
 }

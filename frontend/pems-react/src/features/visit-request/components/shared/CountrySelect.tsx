@@ -1,4 +1,5 @@
 import React, { useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import CreatableSelect from 'react-select/creatable';
 import type { StylesConfig, SingleValue } from 'react-select';
 import countries from 'i18n-iso-countries';
@@ -99,9 +100,10 @@ export const CountrySelect: React.FC<CountrySelectProps> = ({
   value,
   onChange,
   onBlur,
-  placeholder = 'Tìm kiếm quốc gia...',
+  placeholder,
   hasError,
 }) => {
+  const { t } = useTranslation(['visitRequest']);
   const selectedOption = useMemo(
     () => COUNTRY_OPTIONS.find((o) => o.value === value) ?? null,
     [value]
@@ -119,14 +121,14 @@ export const CountrySelect: React.FC<CountrySelectProps> = ({
       onChange={(opt: SingleValue<CountryOption>) => onChange(opt?.value ?? '')}
       onCreateOption={(inputValue) => onChange(inputValue)}
       onBlur={onBlur}
-      placeholder={placeholder}
+      placeholder={placeholder ?? t('visitRequest:select.countryPlaceholder')}
       styles={styles}
       isClearable
       isSearchable
       menuPortalTarget={document.body}
       menuPosition="fixed"
-      formatCreateLabel={(input) => `Sử dụng "${input}"`}
-      noOptionsMessage={() => 'Không tìm thấy quốc gia'}
+      formatCreateLabel={(input) => t('visitRequest:select.useInput', { input })}
+      noOptionsMessage={() => t('visitRequest:select.countryNoOptions')}
       filterOption={(option, inputValue) =>
         option.label.toLowerCase().includes(inputValue.toLowerCase())
       }

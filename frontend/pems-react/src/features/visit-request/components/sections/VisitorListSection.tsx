@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import type { VisitRequestSchema } from '../../schema/visitRequest.schema';
 import { CountrySelect } from '../shared/CountrySelect';
 import { OrganizationCombobox } from '../shared/OrganizationCombobox';
-import { validateVisitorExcel, isAllowedExcelFile } from '../ExcelUpload/excelValidator';
+import { validateVisitorExcel, isAllowedExcelFile, type ExcelTranslator } from '../ExcelUpload/excelValidator';
 import { downloadVisitorTemplate } from '../ExcelUpload/excelDownload';
 import type { ExcelValidationResult, ExcelValidationError, VisitorEntry } from '../../types/visitRequest.types';
 import { useTranslation } from 'react-i18next';
@@ -27,6 +27,8 @@ interface Props {
 
 export const VisitorListSection: React.FC<Props> = ({ form, visitorFields, showErrors }) => {
   const { t } = useTranslation(['visitRequest']);
+  // Excel helpers live outside React, so the translator is handed to them explicitly.
+  const excelT: ExcelTranslator = (key, options) => t(key, options as never) as unknown as string;
   const { register, control, formState: { errors } } = form;
   const visitorErrors = errors.visitors;
 
@@ -61,7 +63,7 @@ export const VisitorListSection: React.FC<Props> = ({ form, visitorFields, showE
       organization: f.organization,
       nationality: f.nationality
     }));
-    const result = await validateVisitorExcel(file, existingData as VisitorEntry[]);
+    const result = await validateVisitorExcel(file, existingData as VisitorEntry[], excelT);
 
     if (result.data.length > 0) {
       // Email checking removed
@@ -219,7 +221,7 @@ export const VisitorListSection: React.FC<Props> = ({ form, visitorFields, showE
           <div className="flex flex-wrap gap-2 sm:gap-3">
             <button
               type="button"
-              onClick={downloadVisitorTemplate}
+              onClick={() => downloadVisitorTemplate(excelT)}
               className="inline-flex items-center gap-2 px-4 py-2 bg-white text-slate-700 text-sm font-bold rounded-xl hover:bg-slate-50 transition-colors border border-slate-200 shadow-sm"
             >
               <Download className="w-4 h-4" /> {t('visitRequest:step2Visitors.downloadTemplate')}

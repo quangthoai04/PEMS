@@ -7,6 +7,9 @@ import type {
   SupportTeamEntry,
 } from '../../types/visitRequest.types';
 
+/** Translator for user-facing Excel messages, supplied by the calling component. */
+export type ExcelTranslator = (key: string, options?: Record<string, unknown>) => string;
+
 const ALLOWED_EXTENSIONS = ['xlsx', 'xls'];
 
 export const isAllowedExcelFile = (file: File): boolean => {
@@ -22,154 +25,185 @@ const readFirstSheet = async (file: File): Promise<string[][] | null> => {
   return XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1, defval: '' }) as string[][];
 };
 
-const mapHeaders = (headerRow: string[], names: string[]): Record<string, number> => {
-  const result: Record<string, number> = {};
-  names.forEach((name) => {
-    const idx = headerRow.indexOf(name);
-    if (idx !== -1) result[name] = idx;
-  });
+// ─── Columns ─────────────────────────────────────────────────────────────────
+//
+// The sheet is parsed entirely in the browser (the result is appended to the form and
+// submitted as JSON), so no backend depends on these header strings. Headers may
+// therefore be localized — but a file downloaded in one language must still parse when
+// uploaded in the other, so every column is matched against ALL of its known aliases
+// rather than against the currently active translation.
+
+type ColumnId = 'fullName' | 'jobTitle' | 'organization' | 'nationality';
+
+const REQUIRED_COLUMNS: ColumnId[] = ['fullName', 'jobTitle', 'organization', 'nationality'];
+
+const COLUMN_ALIASES: Record<ColumnId, string[]> = {
+  fullName: ['họ và tên', 'full name'],
+  jobTitle: ['chức vụ', 'job title', 'position'],
+  organization: ['đơn vị công tác', 'organization', 'organisation'],
+  nationality: ['quốc tịch', 'nationality'],
+};
+
+/** Leading index column, skipped when present. */
+const INDEX_ALIASES = ['stt', 'no.', 'no', '#'];
+
+const normalizeHeader = (value: unknown): string =>
+  String(value ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
+
+/** Maps each column id to its position in the (index-stripped) header row. */
+const mapColumns = (headerRow: string[]): Partial<Record<ColumnId, number>> => {
+  const normalized = headerRow.map(normalizeHeader);
+  const result: Partial<Record<ColumnId, number>> = {};
+  for (const id of REQUIRED_COLUMNS) {
+    const idx = normalized.findIndex((h) => COLUMN_ALIASES[id].includes(h));
+    if (idx !== -1) result[id] = idx;
+  }
   return result;
 };
 
-// ─── Visitor list ────────────────────────────────────────────────────────────
+/** Localized label for a column, used in error messages and templates. */
+const columnLabel = (t: ExcelTranslator, id: ColumnId): string =>
+  t(`visitRequest:excel.template.${id}`);
 
-const VISITOR_REQUIRED = ['Họ và tên', 'Chức vụ', 'Đơn vị công tác', 'Quốc tịch'];
-const VISITOR_ALL = ['Họ và tên', 'Chức vụ', 'Đơn vị công tác', 'Quốc tịch'];
+interface ParsedSheet {
+  rows: string[][];
+  colIdx: Partial<Record<ColumnId, number>>;
+  dataStartCol: number;
+}
 
-export const validateVisitorExcel = async (file: File, existingData: VisitorEntry[] = []): Promise<ExcelValidationResult> => {
-  const rows = await readFirstSheet(file);
-
-  if (!rows) return fail('File Excel không có dữ liệu.');
-  if (rows.length < 2) return fail('File không có dữ liệu (chỉ có header hoặc rỗng).');
-
-  const normalizeStr = (str: string) => String(str || '').trim().replace(/\s+/g, ' ').toLowerCase();
-  const createHash = (fullName: string, jobTitle: string, org: string, nat: string) => 
-    `${normalizeStr(fullName)}|${normalizeStr(jobTitle)}|${normalizeStr(org)}|${normalizeStr(nat)}`;
-
-  const existingHashes = new Set(
-    existingData.map(e => createHash(e.fullName, e.jobTitle, e.organization, e.nationality))
-  );
+/** Shared parse + header validation. Returns a localized message on failure. */
+const parseSheet = (
+  rows: string[][] | null,
+  t: ExcelTranslator,
+): { error: string } | ParsedSheet => {
+  if (!rows) return { error: t('visitRequest:excel.errors.noData') };
+  if (rows.length < 2) return { error: t('visitRequest:excel.errors.headerOnly') };
 
   const headerRow = rows[0].map((h) => String(h).trim());
-
-  // Skip leading STT column if present
-  const dataStartCol = headerRow[0].toLowerCase() === 'stt' ? 1 : 0;
+  const dataStartCol = INDEX_ALIASES.includes(normalizeHeader(headerRow[0])) ? 1 : 0;
   const effectiveHeader = headerRow.slice(dataStartCol);
 
-  const missing = VISITOR_REQUIRED.filter((h) => !effectiveHeader.includes(h));
-  if (missing.length > 0)
-    return fail(
-      `Thiếu cột bắt buộc: ${missing.join(', ')}. File phải có các cột: ${VISITOR_REQUIRED.join(', ')}.`
-    );
+  const colIdx = mapColumns(effectiveHeader);
+  const missing = REQUIRED_COLUMNS.filter((id) => colIdx[id] === undefined);
+  if (missing.length > 0) {
+    return {
+      error: t('visitRequest:excel.errors.missingColumns', {
+        missing: missing.map((id) => columnLabel(t, id)).join(', '),
+        required: REQUIRED_COLUMNS.map((id) => columnLabel(t, id)).join(', '),
+      }),
+    };
+  }
 
-  const colIdx = mapHeaders(effectiveHeader, VISITOR_ALL);
-  const get = (row: string[], col: string) =>
-    String(row[dataStartCol + (colIdx[col] ?? -1)] ?? '').trim();
+  return { rows, colIdx, dataStartCol };
+};
+
+const normalizeStr = (str: string) => String(str || '').trim().replace(/\s+/g, ' ').toLowerCase();
+
+const createHash = (fullName: string, jobTitle: string, org: string, nat: string) =>
+  `${normalizeStr(fullName)}|${normalizeStr(jobTitle)}|${normalizeStr(org)}|${normalizeStr(nat)}`;
+
+interface RowScan {
+  errors: ExcelValidationError[];
+  errorRows: Set<number>;
+  entries: Record<ColumnId, string>[];
+  skippedDuplicates: number;
+  totalRows: number;
+}
+
+/** Walks the data rows, collecting required-cell errors and de-duplicating entries. */
+const scanRows = (
+  { rows, colIdx, dataStartCol }: ParsedSheet,
+  existingHashes: Set<string>,
+  t: ExcelTranslator,
+): RowScan => {
+  const get = (row: string[], id: ColumnId) =>
+    String(row[dataStartCol + (colIdx[id] ?? -1)] ?? '').trim();
 
   const errors: ExcelValidationError[] = [];
-  const data: VisitorEntry[] = [];
   const errorRows = new Set<number>();
+  const entries: Record<ColumnId, string>[] = [];
   let skippedDuplicates = 0;
 
   rows.slice(1).forEach((row, i) => {
     const rowNum = i + 2;
     if (row.every((c) => String(c).trim() === '')) return;
 
-    VISITOR_REQUIRED.forEach((col) => {
-      if (!get(row, col)) {
-        errors.push({ row: rowNum, column: col, message: `Dòng ${rowNum}: Cột "${col}" không được để trống.` });
+    for (const id of REQUIRED_COLUMNS) {
+      if (!get(row, id)) {
+        const column = columnLabel(t, id);
+        errors.push({
+          row: rowNum,
+          column,
+          message: t('visitRequest:excel.errors.requiredCell', { row: rowNum, column }),
+        });
         errorRows.add(rowNum);
       }
-    });
+    }
 
     if (!errorRows.has(rowNum)) {
       const entry = {
-        fullName: get(row, 'Họ và tên'),
-        organization: get(row, 'Đơn vị công tác'),
-        nationality: get(row, 'Quốc tịch'),
-        jobTitle: get(row, 'Chức vụ'),
+        fullName: get(row, 'fullName'),
+        jobTitle: get(row, 'jobTitle'),
+        organization: get(row, 'organization'),
+        nationality: get(row, 'nationality'),
       };
       const hash = createHash(entry.fullName, entry.jobTitle, entry.organization, entry.nationality);
       if (existingHashes.has(hash)) {
         skippedDuplicates++;
       } else {
         existingHashes.add(hash);
-        data.push(entry);
+        entries.push(entry);
       }
     }
   });
 
   const totalRows = rows.slice(1).filter((r) => r.some((c) => String(c).trim() !== '')).length;
-  return { valid: errors.length === 0, totalRows, errorRows: errorRows.size, skippedDuplicates, errors, data };
+  return { errors, errorRows, entries, skippedDuplicates, totalRows };
+};
+
+const hashesOf = (existing: { fullName: string; jobTitle: string; organization: string; nationality: string }[]) =>
+  new Set(existing.map((e) => createHash(e.fullName, e.jobTitle, e.organization, e.nationality)));
+
+// ─── Visitor list ────────────────────────────────────────────────────────────
+
+export const validateVisitorExcel = async (
+  file: File,
+  existingData: VisitorEntry[] = [],
+  t: ExcelTranslator,
+): Promise<ExcelValidationResult> => {
+  const parsed = parseSheet(await readFirstSheet(file), t);
+  if ('error' in parsed) return fail(parsed.error);
+
+  const scan = scanRows(parsed, hashesOf(existingData), t);
+  return {
+    valid: scan.errors.length === 0,
+    totalRows: scan.totalRows,
+    errorRows: scan.errorRows.size,
+    skippedDuplicates: scan.skippedDuplicates,
+    errors: scan.errors,
+    data: scan.entries as VisitorEntry[],
+  };
 };
 
 // ─── Support team list ────────────────────────────────────────────────────────
 
-const SUPPORT_REQUIRED = ['Họ và tên', 'Chức vụ', 'Đơn vị công tác', 'Quốc tịch'];
+export const validateSupportTeamExcel = async (
+  file: File,
+  existingData: SupportTeamEntry[] = [],
+  t: ExcelTranslator,
+): Promise<SupportTeamExcelValidationResult> => {
+  const parsed = parseSheet(await readFirstSheet(file), t);
+  if ('error' in parsed) return failSupport(parsed.error);
 
-export const validateSupportTeamExcel = async (file: File, existingData: SupportTeamEntry[] = []): Promise<SupportTeamExcelValidationResult> => {
-  const rows = await readFirstSheet(file);
-
-  if (!rows) return failSupport('File Excel không có dữ liệu.');
-  if (rows.length < 2) return failSupport('File không có dữ liệu (chỉ có header hoặc rỗng).');
-
-  const normalizeStr = (str: string) => String(str || '').trim().replace(/\s+/g, ' ').toLowerCase();
-  const createHash = (fullName: string, jobTitle: string, org: string, nat: string) => 
-    `${normalizeStr(fullName)}|${normalizeStr(jobTitle)}|${normalizeStr(org)}|${normalizeStr(nat)}`;
-
-  const existingHashes = new Set(
-    existingData.map(e => createHash(e.fullName, e.jobTitle, e.organization, e.nationality))
-  );
-
-  const headerRow = rows[0].map((h) => String(h).trim());
-  const dataStartCol = headerRow[0].toLowerCase() === 'stt' ? 1 : 0;
-  const effectiveHeader = headerRow.slice(dataStartCol);
-
-  const missing = SUPPORT_REQUIRED.filter((h) => !effectiveHeader.includes(h));
-  if (missing.length > 0)
-    return failSupport(
-      `Thiếu cột bắt buộc: ${missing.join(', ')}. File phải có các cột: ${SUPPORT_REQUIRED.join(', ')}.`
-    );
-
-  const colIdx = mapHeaders(effectiveHeader, SUPPORT_REQUIRED);
-  const get = (row: string[], col: string) =>
-    String(row[dataStartCol + (colIdx[col] ?? -1)] ?? '').trim();
-
-  const errors: ExcelValidationError[] = [];
-  const data: SupportTeamEntry[] = [];
-  const errorRows = new Set<number>();
-  let skippedDuplicates = 0;
-
-  rows.slice(1).forEach((row, i) => {
-    const rowNum = i + 2;
-    if (row.every((c) => String(c).trim() === '')) return;
-
-    SUPPORT_REQUIRED.forEach((col) => {
-      if (!get(row, col)) {
-        errors.push({ row: rowNum, column: col, message: `Dòng ${rowNum}: Cột "${col}" không được để trống.` });
-        errorRows.add(rowNum);
-      }
-    });
-
-    if (!errorRows.has(rowNum)) {
-      const entry = {
-        fullName: get(row, 'Họ và tên'),
-        jobTitle: get(row, 'Chức vụ'),
-        organization: get(row, 'Đơn vị công tác'),
-        nationality: get(row, 'Quốc tịch'),
-      };
-      const hash = createHash(entry.fullName, entry.jobTitle, entry.organization, entry.nationality);
-      if (existingHashes.has(hash)) {
-        skippedDuplicates++;
-      } else {
-        existingHashes.add(hash);
-        data.push(entry);
-      }
-    }
-  });
-
-  const totalRows = rows.slice(1).filter((r) => r.some((c) => String(c).trim() !== '')).length;
-  return { valid: errors.length === 0, totalRows, errorRows: errorRows.size, skippedDuplicates, errors, data };
+  const scan = scanRows(parsed, hashesOf(existingData), t);
+  return {
+    valid: scan.errors.length === 0,
+    totalRows: scan.totalRows,
+    errorRows: scan.errorRows.size,
+    skippedDuplicates: scan.skippedDuplicates,
+    errors: scan.errors,
+    data: scan.entries as SupportTeamEntry[],
+  };
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

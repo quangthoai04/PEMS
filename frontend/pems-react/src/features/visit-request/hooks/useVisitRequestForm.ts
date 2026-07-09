@@ -1,7 +1,12 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { visitRequestSchema, type VisitRequestSchema } from '../schema/visitRequest.schema';
+import { useTranslation } from 'react-i18next';
+import {
+  buildVisitRequestSchema,
+  VISIT_REQUEST_MIN_ADVANCE_HOURS,
+  type VisitRequestSchema,
+} from '../schema/visitRequest.schema';
 import { visitRequestApi, type VerifyResponse } from '../api/visitRequestApi';
 
 const DEFAULT_VISITOR = {
@@ -41,28 +46,7 @@ export const DEFAULT_VISIT_REQUEST_VALUES: VisitRequestSchema = {
 };
 
 import axios from 'axios';
-
-function getApiErrorMessage(error: unknown): string {
-  if (axios.isAxiosError(error)) {
-    const data = error.response?.data as any;
-
-    if (typeof data?.message === 'string' && data.message.trim()) {
-      return data.message;
-    }
-
-    if (data?.errors) {
-      const values = Object.values(data.errors);
-      const first = values.flat?.()[0];
-      if (typeof first === 'string') return first;
-    }
-
-    if (typeof data?.errorCode === 'string') {
-      return data.errorCode;
-    }
-  }
-
-  return 'Có lỗi xảy ra khi gửi đơn. Vui lòng thử lại.';
-}
+import { getApiErrorMessage } from '../../../shared/utils/toast';
 
 /** Machine-readable backend error code (response.errorCode), if present. */
 function getApiErrorCode(error: unknown): string | null {
@@ -107,13 +91,31 @@ export const useVisitRequestForm = (
   const [draftHydrated, setDraftHydrated] = useState(false);
   const isRestoringDraftRef = useRef(false);
 
+  const { t, i18n } = useTranslation(['validation', 'toast']);
+
+  // Zod bakes messages in at construction, so the schema must be rebuilt whenever the
+  // language changes — otherwise validation keeps the language active on first render.
+  const schema = useMemo(
+    () => buildVisitRequestSchema(VISIT_REQUEST_MIN_ADVANCE_HOURS, (key, options) =>
+      t(key, { ns: 'validation', ...options }),
+    ),
+    [t, i18n.language],
+  );
+
   const form = useForm<VisitRequestSchema>({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    resolver: zodResolver(visitRequestSchema) as any,
+    resolver: zodResolver(schema) as any,
     mode: 'onBlur',
     reValidateMode: 'onChange',
     defaultValues: DEFAULT_VISIT_REQUEST_VALUES,
   });
+
+  // Errors already on screen keep their old-language message until re-validated.
+  const hasErrors = Object.keys(form.formState.errors).length > 0;
+  useEffect(() => {
+    if (hasErrors) form.trigger();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [i18n.language]);
 
   useEffect(() => {
     const draft = loadVisitRequestDraft();
@@ -250,16 +252,16 @@ export const useVisitRequestForm = (
     try {
       const res = await visitRequestApi.initiate(data);
       if ((res as any).success === false) {
-        throw new Error((res as any).message || 'Không thể gửi mã OTP. Vui lòng thử lại sau.');
+        throw new Error((res as any).message || t('toast:visitRequest.otpSendFailed'));
       }
       if (!res?.sessionToken) {
-        throw new Error('Không nhận được token xác thực từ máy chủ.');
+        throw new Error(t('toast:visitRequest.otpTokenMissing'));
       }
       setSessionToken(res.sessionToken);
       setMaskedEmail(res.maskedEmail);
     } catch (error) {
       console.error('UC-17 submit/initiate failed', error);
-      const message = getApiErrorMessage(error) || 'Không thể gửi đơn hoặc gửi mã OTP. Vui lòng thử lại sau.';
+      const message = getApiErrorMessage(error, t('toast:visitRequest.submitFailed'));
       setSessionToken(null);
       setSubmitError(message);
       mapContactEmailError(error, message);
@@ -299,10 +301,7 @@ export const useVisitRequestForm = (
         mapContactEmailError(err, message);
       } else {
         console.error('UC-17 OTP verify failed:', err?.response?.status, err?.response?.data);
-        const msg = err?.response?.data?.message
-          || err?.response?.data?.error
-          || 'Đã xảy ra lỗi hệ thống. Vui lòng thử lại sau.';
-        setOtpError(msg);
+        setOtpError(getApiErrorMessage(err, t('toast:common.defaultError')));
       }
     } finally {
       setIsVerifying(false);
@@ -317,9 +316,7 @@ export const useVisitRequestForm = (
       const data = form.getValues();
       await visitRequestApi.resendOtp(data.registerInfo.email, data.registerInfo.fullName);
     } catch (err: any) {
-      setOtpError(
-        err?.response?.data?.message ?? 'Không thể gửi lại mã. Vui lòng thử lại.'
-      );
+      setOtpError(getApiErrorMessage(err, t('toast:visitRequest.otpResendFailed')));
     } finally {
       setIsResending(false);
     }

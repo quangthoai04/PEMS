@@ -129,7 +129,7 @@ function CountryFlagCard({ country, delay }: { country: PublicPartnerCountry; de
       initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, delay, ease: 'easeOut' }}
-      title={`${country.label} — ${country.count} ${t('partners:list.partnersUnit', 'đối tác')}`}
+      title={`${country.label} — ${country.count} ${t('partners:list.partnersUnit')}`}
       className="aspect-[4/3] rounded-2xl border border-slate-200 shadow-sm overflow-hidden hover:shadow-md hover:-translate-y-0.5 transition-all duration-300 cursor-default"
     >
       {isoCode ? (
@@ -176,7 +176,7 @@ function CountryFlagShowcase({ countries }: { countries: PublicPartnerCountry[] 
         <div className="mt-4 flex items-center justify-center gap-3">
           <button
             onClick={() => setPageIndex((p) => (p === 0 ? totalPages - 1 : p - 1))}
-            aria-label={t('partners:list.prevCountry', 'Xem quốc gia trước')}
+            aria-label={t('partners:list.prevCountry')}
             className="w-9 h-9 rounded-full border border-slate-200 flex items-center justify-center text-slate-500 hover:bg-[#004c91] hover:text-white hover:border-[#004c91] transition-colors"
           >
             <ChevronLeft className="w-4 h-4" />
@@ -186,7 +186,7 @@ function CountryFlagShowcase({ countries }: { countries: PublicPartnerCountry[] 
           </span>
           <button
             onClick={() => setPageIndex((p) => (p === totalPages - 1 ? 0 : p + 1))}
-            aria-label={t('partners:list.nextCountry', 'Xem quốc gia tiếp theo')}
+            aria-label={t('partners:list.nextCountry')}
             className="w-9 h-9 rounded-full border border-slate-200 flex items-center justify-center text-slate-500 hover:bg-[#004c91] hover:text-white hover:border-[#004c91] transition-colors"
           >
             <ChevronRight className="w-4 h-4" />
@@ -408,7 +408,7 @@ export function PartnersPage() {
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder={t('partners:list.searchPlaceholder', 'Tìm tên đối tác, quốc gia, mô tả...')}
+                  placeholder={t('partners:list.searchPlaceholder')}
                   className="w-full h-11 pl-10 pr-4 rounded-xl border border-slate-200 bg-white text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#004c91]/20 focus:border-[#004c91] transition-colors"
                 />
               </div>
@@ -459,7 +459,7 @@ export function PartnersPage() {
               <div className="mt-4 flex items-center justify-between flex-wrap gap-3 bg-orange-50/60 border border-orange-100 rounded-xl px-4 py-3">
                 <span className="text-xs font-semibold text-slate-700">
                   <Trans i18nKey="partners:list.foundMatches" count={totalCount}>
-                    {t('partners:list.foundMatchesTpl', 'Tìm thấy')} <span className="font-bold text-[#f37021]">{totalCount}</span> {t('partners:list.partnersUnit', 'đối tác phù hợp.')}
+                    {t('partners:list.foundMatchesTpl')} <span className="font-bold text-[#f37021]">{totalCount}</span> {t('partners:list.partnersUnit')}
                   </Trans>
                 </span>
                 <button

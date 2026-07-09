@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { authenticationApi } from '../../features/authentication/api/authenticationApi';
 import { getAuthErrorMessage } from '../../features/authentication/api/authError';
-import { isStrongPassword, PASSWORD_REQUIREMENTS } from '../../shared/utils/passwordPolicy';
+import { isStrongPassword, getPasswordRequirements } from '../../shared/utils/passwordPolicy';
 import logo from '../../assets/images/2021-FPTU-Eng.png';
 
 export function ResetPasswordPage() {
+  const { t } = useTranslation(['loginModal', 'validation']);
   const navigate = useNavigate();
   const location = useLocation();
   const prefillEmail = (location.state as { email?: string } | null)?.email ?? '';
@@ -24,30 +26,31 @@ export function ResetPasswordPage() {
     e.preventDefault();
     setError('');
     if (!email.trim() || !code.trim()) {
-      setError('Vui lòng nhập email và mã đặt lại.');
+      setError(t('validation:emailAndCodeRequired'));
       return;
     }
     if (!isStrongPassword(newPassword)) {
-      setError(PASSWORD_REQUIREMENTS);
+      setError(getPasswordRequirements());
       return;
     }
     if (newPassword !== confirmPassword) {
-      setError('Mật khẩu xác nhận không khớp.');
+      setError(t('validation:passwordsDoNotMatch'));
       return;
     }
 
     setSubmitting(true);
     try {
-      const res = await authenticationApi.resetPassword({
+      await authenticationApi.resetPassword({
         email: email.trim(),
         otpOrToken: code.trim(),
         newPassword,
         confirmPassword,
       });
-      setSuccess(res.message);
+      // Backend `message` is Vietnamese-only; show the localized confirmation instead.
+      setSuccess(t('loginModal:reset.success'));
       setTimeout(() => navigate('/login', { replace: true }), 1500);
     } catch (err) {
-      setError(getAuthErrorMessage(err, 'Invalid or expired reset code.'));
+      setError(getAuthErrorMessage(err, t('loginModal:reset.invalidCode')));
     } finally {
       setSubmitting(false);
     }
@@ -58,8 +61,8 @@ export function ResetPasswordPage() {
       <div className="w-full max-w-[440px] bg-white rounded-2xl shadow-xl border border-gray-100 p-7 md:p-9">
         <div className="flex flex-col items-center mb-6">
           <Link to="/"><img src={logo} alt="FPT University" className="h-14 object-contain mb-4" /></Link>
-          <h1 className="text-[#004c91] text-xl font-black text-center">Đặt lại mật khẩu</h1>
-          <p className="text-gray-500 text-sm text-center mt-1">Nhập mã đã nhận và mật khẩu mới.</p>
+          <h1 className="text-[#004c91] text-xl font-black text-center">{t('loginModal:reset.title')}</h1>
+          <p className="text-gray-500 text-sm text-center mt-1">{t('loginModal:reset.subtitle')}</p>
         </div>
 
         {success ? (
@@ -69,7 +72,7 @@ export function ResetPasswordPage() {
             {error && <div className="p-3 bg-red-50 text-red-600 text-sm rounded-lg border border-red-100">{error}</div>}
 
             <div>
-              <label className="block text-gray-700 font-semibold text-sm mb-1.5">Email</label>
+              <label className="block text-gray-700 font-semibold text-sm mb-1.5">{t('loginModal:emailLabel')}</label>
               <input
                 type="email"
                 value={email}
@@ -79,18 +82,18 @@ export function ResetPasswordPage() {
             </div>
 
             <div>
-              <label className="block text-gray-700 font-semibold text-sm mb-1.5">Mã đặt lại (OTP)</label>
+              <label className="block text-gray-700 font-semibold text-sm mb-1.5">{t('loginModal:reset.codeLabel')}</label>
               <input
                 type="text"
                 value={code}
                 onChange={(e) => setCode(e.target.value)}
-                placeholder="6 chữ số"
+                placeholder={t('loginModal:reset.codePlaceholder')}
                 className="w-full px-4 py-2.5 rounded-xl border border-gray-300 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none tracking-widest"
               />
             </div>
 
             <div>
-              <label className="block text-gray-700 font-semibold text-sm mb-1.5">Mật khẩu mới</label>
+              <label className="block text-gray-700 font-semibold text-sm mb-1.5">{t('loginModal:reset.newPassword')}</label>
               <div className="relative">
                 <input
                   type={showPassword ? 'text' : 'password'}
@@ -106,11 +109,11 @@ export function ResetPasswordPage() {
                   {showPassword ? <Eye className="w-5 h-5" /> : <EyeOff className="w-5 h-5" />}
                 </button>
               </div>
-              <p className="mt-1 text-xs text-gray-400">{PASSWORD_REQUIREMENTS}</p>
+              <p className="mt-1 text-xs text-gray-400">{getPasswordRequirements()}</p>
             </div>
 
             <div>
-              <label className="block text-gray-700 font-semibold text-sm mb-1.5">Xác nhận mật khẩu</label>
+              <label className="block text-gray-700 font-semibold text-sm mb-1.5">{t('loginModal:reset.confirmPassword')}</label>
               <input
                 type={showPassword ? 'text' : 'password'}
                 value={confirmPassword}
@@ -124,9 +127,9 @@ export function ResetPasswordPage() {
               disabled={submitting}
               className="w-full bg-[#004c91] hover:bg-[#003a6f] disabled:opacity-60 text-white py-3 rounded-xl font-bold"
             >
-              {submitting ? 'Đang xử lý...' : 'Đặt lại mật khẩu'}
+              {submitting ? t('loginModal:reset.processing') : t('loginModal:reset.submit')}
             </button>
-            <Link to="/login" className="block text-center text-sm text-[#004c91] hover:underline">Quay lại đăng nhập</Link>
+            <Link to="/login" className="block text-center text-sm text-[#004c91] hover:underline">{t('loginModal:backToLogin')}</Link>
           </form>
         )}
       </div>

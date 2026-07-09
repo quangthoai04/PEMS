@@ -7,8 +7,10 @@ import React from 'react';
 import { motion } from 'motion/react';
 import { HelpCircle, ArrowRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 
 export function FaqPreviewSection() {
+  const { t } = useTranslation(['home']);
   return (
     <section className="py-14 sm:py-20 lg:py-24 bg-slate-50 relative overflow-hidden">
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -22,15 +24,15 @@ export function FaqPreviewSection() {
           <div className="w-16 h-16 rounded-2xl bg-orange-50 flex items-center justify-center mb-6">
             <HelpCircle className="w-8 h-8 text-fpt-orange" />
           </div>
-          <h2 className="text-2xl sm:text-3xl font-bold text-fpt-navy mb-3">Câu hỏi thường gặp</h2>
+          <h2 className="text-2xl sm:text-3xl font-bold text-fpt-navy mb-3">{t('home:faqPreview.title')}</h2>
           <p className="text-slate-500 text-[15px] max-w-lg mb-8">
-            Giải đáp về tài khoản, đăng ký tham quan, quản lý đoàn, hậu cần, tài liệu và thông báo trong hệ thống PEMS.
+            {t('home:faqPreview.desc')}
           </p>
           <Link
             to="/faq"
             className="inline-flex items-center gap-2 px-6 py-3 bg-fpt-orange text-white font-bold rounded-xl hover:bg-fpt-orange-hover transition-colors text-sm"
           >
-            Xem tất cả câu hỏi <ArrowRight className="w-4 h-4" />
+            {t('home:faqPreview.viewAll')} <ArrowRight className="w-4 h-4" />
           </Link>
         </motion.div>
       </div>

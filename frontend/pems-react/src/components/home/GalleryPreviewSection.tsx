@@ -10,6 +10,7 @@ import { Link } from 'react-router-dom';
 import { publicVisitFptuApi } from '../../features/visit-fptu/publicVisitFptuApi';
 import type { PublicGalleryLocation } from '../../features/visit-fptu/publicVisitFptu.types';
 import { resolveFileUrl } from '../../shared/utils/resolveFileUrl';
+import { useTranslation } from 'react-i18next';
 
 interface GalleryPreviewSectionProps {
   /** campusCode ưu tiên (vd: campus của user nội bộ). Nếu không tìm thấy sẽ dùng campus đầu tiên. */
@@ -40,6 +41,7 @@ function LocationThumbnail({ loc }: { loc: PublicGalleryLocation }) {
 }
 
 export function GalleryPreviewSection({ preferredCampusCode }: GalleryPreviewSectionProps) {
+  const { t } = useTranslation(['home']);
   const [campusCode, setCampusCode] = useState<string | null>(null);
   const [items, setItems] = useState<PublicGalleryLocation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -81,14 +83,14 @@ export function GalleryPreviewSection({ preferredCampusCode }: GalleryPreviewSec
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-end justify-between mb-12">
           <div>
-            <h2 className="text-3xl font-bold text-fpt-navy">Khám phá Visit FPTU</h2>
+            <h2 className="text-3xl font-bold text-fpt-navy">{t('home:galleryPreview.title')}</h2>
             <div className="w-16 h-1.5 bg-fpt-orange mt-4 rounded-full"></div>
           </div>
           <Link
             to={campusCode ? `/visit-fptu/${campusCode}` : '/visit-fptu'}
             className="hidden sm:flex items-center gap-2 text-fpt-orange font-medium hover:text-fpt-orange-hover transition-colors"
           >
-            Xem tất cả <ArrowRight className="w-4 h-4" />
+            {t('home:galleryPreview.viewAll')} <ArrowRight className="w-4 h-4" />
           </Link>
         </div>
 

@@ -1,14 +1,14 @@
 {
-  "404": {
-    "title": "Không tìm thấy nội dung",
-    "message": "Nội dung liên quan đến thông báo này không còn tồn tại hoặc đường dẫn không đúng.",
-    "backToDashboard": "Quay lại Dashboard"
-  },
   "403": {
     "title": "Bạn không có quyền truy cập chức năng này.",
     "message": "Nếu bạn cho rằng đây là nhầm lẫn, vui lòng liên hệ quản trị viên hệ thống.",
     "backToDashboard": "Về trang quản trị",
     "home": "Trang chủ"
+  },
+  "404": {
+    "title": "Không tìm thấy nội dung",
+    "message": "Nội dung liên quan đến thông báo này không còn tồn tại hoặc đường dẫn không đúng.",
+    "backToDashboard": "Quay lại Dashboard"
   },
   "invalidAccount": {
     "title": "Tài khoản chưa được cấu hình",
@@ -22,5 +22,43 @@
     "message": "Vui lòng thử lại hoặc quay về dashboard.",
     "reload": "Tải lại trang",
     "backToDashboard": "Quay về Dashboard"
+  },
+  "api": {
+    "CAMPUS_REQUIRED": "Vui lòng chọn cơ sở trước khi đăng nhập.",
+    "CAMPUS_MISMATCH": "Tài khoản của bạn không có quyền truy cập cơ sở đã chọn. Vui lòng chọn đúng cơ sở được phân quyền.",
+    "PORTAL_MISMATCH": "Tài khoản này không được phép đăng nhập tại cổng hiện tại. Vui lòng kiểm tra lại cổng đăng nhập phù hợp.",
+    "INTERNAL_ACCOUNT_NOT_FOUND": "Tài khoản của bạn chưa được tạo trong hệ thống nội bộ. Vui lòng liên hệ Staff Leader hoặc quản trị viên của cơ sở để được cấp quyền đăng nhập.",
+    "PASSWORD_LOGIN_DISABLED": "Đăng nhập bằng mật khẩu đã bị tắt. Vui lòng sử dụng SSO/FEID.",
+    "INVALID_CREDENTIALS": "Email hoặc mật khẩu không đúng.",
+    "ACCOUNT_INACTIVE": "Tài khoản của bạn đã bị vô hiệu hóa.",
+    "ACCOUNT_LOCKED": "Tài khoản của bạn đang bị khóa. Vui lòng thử lại sau hoặc liên hệ quản trị viên.",
+    "SSO_DISABLED": "Đăng nhập bằng Google hiện đang bị tắt.",
+    "FEID_DISABLED": "Đăng nhập bằng FEID hiện đang bị tắt.",
+    "FEID_NOT_CONFIGURED": "Đăng nhập bằng FEID hiện chưa khả dụng. Vui lòng dùng phương thức khác hoặc liên hệ quản trị viên.",
+    "FEID_NOT_ELIGIBLE": "Tài khoản FEID của bạn chưa đủ điều kiện đăng nhập. Vui lòng liên hệ quản trị viên.",
+    "EXTERNAL_AUTH_FAILED": "Không thể đăng nhập bằng tài khoản này. Vui lòng thử lại.",
+    "VISITOR_PROVISION_DISABLED": "Hệ thống chưa cho phép tạo tài khoản Visitor tự động.",
+    "SESSION_REVOKED": "Phiên đăng nhập đã bị thu hồi. Vui lòng đăng nhập lại.",
+    "TOKEN_EXPIRED": "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.",
+    "UNAUTHORIZED": "Bạn cần đăng nhập để tiếp tục.",
+    "INTERNAL_SERVER_ERROR": "Đã xảy ra lỗi hệ thống. Vui lòng thử lại sau.",
+    "CAMPUS_MANAGEMENT_FORBIDDEN": "Bạn không có quyền quản lý campus.",
+    "CAMPUS_NOT_FOUND": "Không tìm thấy campus.",
+    "INVALID_CAMPUS_STATUS": "Trạng thái campus không hợp lệ.",
+    "CAMPUS_ACTIVATION_MASTER_DATA_INCOMPLETE": "Không thể kích hoạt campus vì còn thiếu thông tin bắt buộc (mã, tên, cơ sở, địa chỉ, số điện thoại, email).",
+    "CAMPUS_ACTIVATION_MISSING_IC_DEPARTMENT": "Không thể kích hoạt campus vì chưa có phòng ban IC đang hoạt động.",
+    "CAMPUS_CODE_ALREADY_EXISTS": "Mã campus đã tồn tại.",
+    "CAMPUS_NAME_ALREADY_EXISTS": "Tên campus đã tồn tại.",
+    "CAMPUS_ADDRESS_ALREADY_EXISTS": "Địa chỉ này đã được sử dụng cho campus khác.",
+    "CAMPUS_PHONE_ALREADY_EXISTS": "Số điện thoại này đã được sử dụng cho campus khác.",
+    "CAMPUS_EMAIL_ALREADY_EXISTS": "Email này đã được sử dụng cho campus khác.",
+    "PROFILE_FORBIDDEN_FIELD": "Yêu cầu chứa thông tin không được phép cập nhật.",
+    "PROFILE_FULLNAME_REQUIRED": "Họ và tên không được để trống.",
+    "PROFILE_FULLNAME_TOO_LONG": "Họ và tên quá dài.",
+    "PROFILE_GENDER_INVALID": "Giới tính không hợp lệ.",
+    "PROFILE_PHONE_INVALID": "Số điện thoại không hợp lệ. Vui lòng nhập 8–15 chữ số.",
+    "PROFILE_NATIONALITY_TOO_LONG": "Quốc tịch quá dài.",
+    "CONTACT_EMAIL_CANNOT_BE_USED_FOR_VISITOR_ACCOUNT": "Email đầu mối liên hệ này không thể dùng để tạo tài khoản Visitor. Vui lòng dùng email khác.",
+    "VISITOR_ACCOUNT_INACTIVE": "Tài khoản Visitor gắn với email này đang bị vô hiệu hóa. Vui lòng liên hệ quản trị viên."
   }
 }

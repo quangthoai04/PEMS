@@ -1,1 +1,34 @@
-{}
+{
+  "common": {
+    "saveSuccess": "Saved successfully.",
+    "saveFailed": "Unable to save. Please try again.",
+    "loadFailed": "Unable to load data. Please try again.",
+    "defaultError": "Something went wrong. Please try again.",
+    "networkError": "Unable to reach the server. Please check your network connection."
+  },
+  "http": {
+    "400": "Invalid data. Please check your input.",
+    "401": "Your session has expired. Please sign in again.",
+    "403": "You do not have permission to perform this action.",
+    "404": "The requested data could not be found.",
+    "409": "The data conflicts with an existing record.",
+    "422": "The data does not meet the processing requirements.",
+    "429": "Too many requests. Please try again later.",
+    "500": "The system encountered an error. Please try again later."
+  },
+  "mask": {
+    "secret": "[secret hidden]",
+    "value": "[hidden]",
+    "token": "[token hidden]"
+  },
+  "visitRequest": {
+    "submitSuccess": "Your visit request has been submitted successfully.",
+    "submitFailed": "Unable to submit your visit request. Please try again.",
+    "draftSaved": "Draft saved.",
+    "uploadFailed": "Unable to upload the file. Please try again.",
+    "sessionExpired": "Your session has expired. Please sign in again.",
+    "otpSendFailed": "Unable to send the OTP code. Please try again later.",
+    "otpTokenMissing": "The server did not return a verification token.",
+    "otpResendFailed": "Unable to resend the code. Please try again."
+  }
+}

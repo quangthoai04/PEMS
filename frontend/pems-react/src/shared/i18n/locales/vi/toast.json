@@ -1,1 +1,34 @@
-{}
+{
+  "common": {
+    "saveSuccess": "Lưu thành công.",
+    "saveFailed": "Không thể lưu dữ liệu. Vui lòng thử lại.",
+    "loadFailed": "Không thể tải dữ liệu. Vui lòng thử lại.",
+    "defaultError": "Đã xảy ra lỗi. Vui lòng thử lại.",
+    "networkError": "Không thể kết nối tới máy chủ. Vui lòng kiểm tra kết nối mạng."
+  },
+  "http": {
+    "400": "Dữ liệu không hợp lệ. Vui lòng kiểm tra lại.",
+    "401": "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.",
+    "403": "Bạn không có quyền thực hiện thao tác này.",
+    "404": "Không tìm thấy dữ liệu cần xử lý.",
+    "409": "Dữ liệu đang bị xung đột hoặc đã tồn tại.",
+    "422": "Dữ liệu chưa đạt điều kiện xử lý.",
+    "429": "Bạn thao tác quá nhanh. Vui lòng thử lại sau.",
+    "500": "Hệ thống đang gặp lỗi. Vui lòng thử lại sau."
+  },
+  "mask": {
+    "secret": "[đã ẩn thông tin bí mật]",
+    "value": "[đã ẩn]",
+    "token": "[đã ẩn token]"
+  },
+  "visitRequest": {
+    "submitSuccess": "Yêu cầu tham quan đã được gửi thành công.",
+    "submitFailed": "Không thể gửi yêu cầu tham quan. Vui lòng thử lại.",
+    "draftSaved": "Đã lưu bản nháp.",
+    "uploadFailed": "Không thể tải tệp lên. Vui lòng thử lại.",
+    "sessionExpired": "Phiên làm việc đã hết hạn. Vui lòng đăng nhập lại.",
+    "otpSendFailed": "Không thể gửi mã OTP. Vui lòng thử lại sau.",
+    "otpTokenMissing": "Không nhận được token xác thực từ máy chủ.",
+    "otpResendFailed": "Không thể gửi lại mã. Vui lòng thử lại."
+  }
+}

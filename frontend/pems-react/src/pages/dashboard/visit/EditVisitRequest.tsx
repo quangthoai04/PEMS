@@ -4,7 +4,7 @@
  *
  * - Load dữ liệu thật từ GET /visit-requests/{id}/edit-detail (owner-only).
  * - Tái sử dụng đúng các section của form đăng ký công khai (UC-17) nhưng KHÔNG có OTP.
- * - Mốc thời gian tối thiểu là 24h (visitRequestEditSchema) thay vì 72h như đơn mới.
+ * - Mốc thời gian tối thiểu là 24h (VISIT_REQUEST_EDIT_MIN_ADVANCE_HOURS) thay vì 72h như đơn mới.
  * - edit  → PUT  /visit-requests/{id}/pending-edit   (trạng thái giữ nguyên Chờ xử lý)
  * - resubmit → POST /visit-requests/{id}/resubmit     (REJECTED → PENDING_APPROVAL,
  *   không được đổi danh sách cơ sở — backend sẽ chặn nếu đổi).
@@ -15,7 +15,12 @@ import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { AlertCircle, ArrowLeft, Loader2, PencilLine, RefreshCw, Send } from 'lucide-react';
-import { visitRequestEditSchema, type VisitRequestSchema } from '../../../features/visit-request/schema/visitRequest.schema';
+import { useTranslation } from 'react-i18next';
+import {
+  buildVisitRequestSchema,
+  VISIT_REQUEST_EDIT_MIN_ADVANCE_HOURS,
+  type VisitRequestSchema,
+} from '../../../features/visit-request/schema/visitRequest.schema';
 import {
   visitRequestApi,
   type EditableVisitRequestDetail,
@@ -109,9 +114,19 @@ export function EditVisitRequest() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [showErrors, setShowErrors] = useState(false);
 
+  const { t: tv, i18n } = useTranslation(['validation']);
+
+  // Rebuilt on language change — Zod bakes messages in at construction time.
+  const editSchema = useMemo(
+    () => buildVisitRequestSchema(VISIT_REQUEST_EDIT_MIN_ADVANCE_HOURS, (key, options) =>
+      tv(key, { ns: 'validation', ...options }),
+    ),
+    [tv, i18n.language],
+  );
+
   const form = useForm<VisitRequestSchema>({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    resolver: zodResolver(visitRequestEditSchema) as any,
+    resolver: zodResolver(editSchema) as any,
     mode: 'onBlur',
     reValidateMode: 'onChange',
     defaultValues: DEFAULT_VISIT_REQUEST_VALUES,

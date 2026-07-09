@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { createPortal } from 'react-dom';
 import { ChevronDown, Search } from 'lucide-react';
 import { getCountries, getCountryCallingCode, parsePhoneNumber } from 'libphonenumber-js';
@@ -39,6 +40,7 @@ interface PhoneInputProps {
 }
 
 export const PhoneInput: React.FC<PhoneInputProps> = ({ value, onChange, onBlur, hasError }) => {
+  const { t } = useTranslation(['visitRequest']);
   const [selectedCode, setSelectedCode] = useState(DEFAULT_COUNTRY);
   const [localNumber, setLocalNumber] = useState('');
   const [open, setOpen] = useState(false);
@@ -174,7 +176,7 @@ export const PhoneInput: React.FC<PhoneInputProps> = ({ value, onChange, onBlur,
                   type="text"
                   value={search}
                   onChange={e => setSearch(e.target.value)}
-                  placeholder="Tìm quốc gia hoặc mã..."
+                  placeholder={t('visitRequest:select.phoneSearchPlaceholder')}
                   className="flex-1 bg-transparent outline-none text-xs text-gray-700 placeholder:text-gray-400"
                 />
               </div>
@@ -183,7 +185,7 @@ export const PhoneInput: React.FC<PhoneInputProps> = ({ value, onChange, onBlur,
             {/* List */}
             <div className="max-h-52 overflow-y-auto">
               {filtered.length === 0 ? (
-                <p className="text-center text-xs text-gray-400 py-4">Không tìm thấy</p>
+                <p className="text-center text-xs text-gray-400 py-4">{t('visitRequest:select.notFound')}</p>
               ) : (
                 filtered.map(opt => (
                   <button

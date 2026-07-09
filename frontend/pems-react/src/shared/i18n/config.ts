@@ -12,6 +12,9 @@ import viVisitRequest from './locales/vi/visitRequest.json';
 import viValidation from './locales/vi/validation.json';
 import viErrors from './locales/vi/errors.json';
 import viToast from './locales/vi/toast.json';
+import viLoginModal from './locales/vi/loginModal.json';
+import viSearch from './locales/vi/search.json';
+import viVisitFptu from './locales/vi/visitFptu.json';
 
 import enCommon from './locales/en/common.json';
 import enPublicLayout from './locales/en/publicLayout.json';
@@ -24,6 +27,9 @@ import enVisitRequest from './locales/en/visitRequest.json';
 import enValidation from './locales/en/validation.json';
 import enErrors from './locales/en/errors.json';
 import enToast from './locales/en/toast.json';
+import enLoginModal from './locales/en/loginModal.json';
+import enSearch from './locales/en/search.json';
+import enVisitFptu from './locales/en/visitFptu.json';
 
 const resources = {
   vi: {
@@ -38,6 +44,9 @@ const resources = {
     validation: viValidation,
     errors: viErrors,
     toast: viToast,
+    loginModal: viLoginModal,
+    search: viSearch,
+    visitFptu: viVisitFptu,
   },
   en: {
     common: enCommon,
@@ -51,6 +60,9 @@ const resources = {
     validation: enValidation,
     errors: enErrors,
     toast: enToast,
+    loginModal: enLoginModal,
+    search: enSearch,
+    visitFptu: enVisitFptu,
   },
 };
 
@@ -72,16 +84,27 @@ i18n
     resources,
     lng: getInitialLanguage(),
     fallbackLng: 'vi',
+    // Every namespace listed here must also exist in `resources` above. An unregistered
+    // namespace does not fail loudly: i18next strips the `ns:` prefix and renders the
+    // bare key segment (t('loginModal:title') -> "title") straight into the UI.
     ns: [
-      'common', 'publicLayout', 'home', 'news', 'partners', 
-      'faq', 'gallery', 'visitRequest', 'validation', 'errors', 'toast'
+      'common', 'publicLayout', 'home', 'news', 'partners',
+      'faq', 'gallery', 'visitRequest', 'validation', 'errors', 'toast',
+      'loginModal', 'search', 'visitFptu'
     ],
     defaultNS: 'common',
     interpolation: {
       escapeValue: false, // React already safe from xss
     },
-    // Don't output raw keys if translation is missing, but show a fallback
+    // Missing keys render as the key itself so gaps are visible during development
+    // instead of silently collapsing to an empty node.
     parseMissingKeyHandler: (key) => key,
+    saveMissing: import.meta.env.DEV,
+    missingKeyHandler: (lngs, ns, key) => {
+      if (import.meta.env.DEV) {
+        console.warn(`[i18n] missing key "${key}" in namespace "${ns}" for ${lngs.join(', ')}`);
+      }
+    },
   });
 
 export const changeLanguage = (lng: 'vi' | 'en') => {

@@ -1,4 +1,5 @@
-import React, { useCallback, useRef } from 'react';
+import React, { useCallback, useMemo, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import AsyncSelect from 'react-select/async';
 import type { StylesConfig, SingleValue } from 'react-select';
 import { visitRequestApi } from '../../api/visitRequestApi';
@@ -43,10 +44,6 @@ const buildStyles = (hasError?: boolean): StylesConfig<PartnerOption> => ({
   indicatorSeparator: () => ({ display: 'none' }),
 });
 
-const NEW_ORGANIZATION_OPTION: PartnerOption = {
-  value: null,
-  label: '-- Tổ chức mới / Chưa có trong hệ thống --',
-};
 
 interface PartnerAsyncSelectProps {
   value: number | null | undefined;
@@ -63,7 +60,14 @@ export const PartnerAsyncSelect: React.FC<PartnerAsyncSelectProps> = ({
   onBlur,
   hasError,
 }) => {
+  const { t } = useTranslation(['visitRequest']);
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Rebuilt on language change so the sentinel option follows the active locale.
+  const newOrganizationOption = useMemo<PartnerOption>(
+    () => ({ value: null, label: t('visitRequest:select.partnerNewOrg') }),
+    [t],
+  );
 
   const loadOptions = useCallback(
     (inputValue: string): Promise<PartnerOption[]> =>
@@ -77,13 +81,13 @@ export const PartnerAsyncSelect: React.FC<PartnerAsyncSelectProps> = ({
               value: r.partnerId,
               label: r.displayName,
             }));
-            resolve([NEW_ORGANIZATION_OPTION, ...apiOptions]);
+            resolve([newOrganizationOption, ...apiOptions]);
           } catch {
-            resolve([NEW_ORGANIZATION_OPTION]);
+            resolve([newOrganizationOption]);
           }
         }, 300);
       }),
-    []
+    [newOrganizationOption]
   );
 
   return (
@@ -95,18 +99,18 @@ export const PartnerAsyncSelect: React.FC<PartnerAsyncSelectProps> = ({
         value === undefined
           ? null
           : value === null
-          ? NEW_ORGANIZATION_OPTION
-          : { value, label: partnerName || 'Đang tải thông tin tổ chức...' } // This is a fallback if the option isn't loaded
+          ? newOrganizationOption
+          : { value, label: partnerName || t('visitRequest:select.partnerLoading') } // Fallback while the option list is still loading
       }
       onChange={(opt: SingleValue<PartnerOption>) => {
         onChange(opt?.value ?? null, opt?.label ?? '');
       }}
       onBlur={onBlur}
-      placeholder="Chọn tổ chức có sẵn hoặc chọn tổ chức mới..."
+      placeholder={t('visitRequest:select.partnerPlaceholder')}
       styles={buildStyles(hasError)}
       isClearable={false}
-      noOptionsMessage={() => 'Không tìm thấy kết quả'}
-      loadingMessage={() => 'Đang tìm kiếm...'}
+      noOptionsMessage={() => t('visitRequest:select.noResults')}
+      loadingMessage={() => t('visitRequest:select.searching')}
     />
   );
 };

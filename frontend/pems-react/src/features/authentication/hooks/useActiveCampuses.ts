@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import i18n from '../../../shared/i18n/config';
 import { authenticationApi } from '../api/authenticationApi';
 import type { CampusOption } from '../types/authentication.types';
 
@@ -43,7 +44,7 @@ export function useActiveCampuses(portal: 'INTERNAL' | 'VISITOR'): UseActiveCamp
       const validData = Array.isArray(data) ? data : [];
       
       if (validData.length === 0) {
-        setError('Không có cơ sở nào đang hoạt động. Vui lòng liên hệ quản trị viên.');
+        setError(i18n.t('campusNoneActive', { ns: 'loginModal' }));
         setLoading(false);
       } else {
         cachedCampuses = validData;
@@ -59,7 +60,7 @@ export function useActiveCampuses(portal: 'INTERNAL' | 'VISITOR'): UseActiveCamp
           setRetryCount(prev => prev + 1);
         }, delay);
       } else {
-        setError('Không thể tải danh sách cơ sở. Vui lòng kiểm tra kết nối hoặc thử lại.');
+        setError(i18n.t('campusLoadFailed', { ns: 'loginModal' }));
         setLoading(false);
       }
     } finally {

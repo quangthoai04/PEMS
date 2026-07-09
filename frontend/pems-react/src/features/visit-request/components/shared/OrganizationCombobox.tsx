@@ -1,4 +1,5 @@
 import React, { useCallback, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import AsyncCreatableSelect from 'react-select/async-creatable';
 import type { StylesConfig, SingleValue } from 'react-select';
 import { visitRequestApi } from '../../api/visitRequestApi';
@@ -68,8 +69,9 @@ export const OrganizationCombobox: React.FC<Props> = ({
   onChange,
   onBlur,
   hasError,
-  placeholder = 'Nhập hoặc chọn...'
+  placeholder,
 }) => {
+  const { t } = useTranslation(['visitRequest']);
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [inputValue, setInputValue] = React.useState('');
 
@@ -127,12 +129,12 @@ export const OrganizationCombobox: React.FC<Props> = ({
         setInputValue('');
         if (onBlur) onBlur();
       }}
-      placeholder={placeholder}
+      placeholder={placeholder ?? t('visitRequest:select.orgComboPlaceholder')}
       styles={buildStyles(hasError)}
       isClearable={true}
-      noOptionsMessage={() => 'Nhập để tìm hoặc tạo mới...'}
-      loadingMessage={() => 'Đang tìm kiếm...'}
-      formatCreateLabel={(inputValue) => `Sử dụng "${inputValue}"`}
+      noOptionsMessage={() => t('visitRequest:select.orgComboNoOptions')}
+      loadingMessage={() => t('visitRequest:select.searching')}
+      formatCreateLabel={(inputValue) => t('visitRequest:select.useInput', { input: inputValue })}
       menuPortalTarget={document.body}
       menuPosition="fixed"
       closeMenuOnScroll={true}

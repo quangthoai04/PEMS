@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Check, Loader2, Search, X } from 'lucide-react';
 import { visitRequestApi, type PublicPartnerOptionDto } from '../../api/visitRequestApi';
 
@@ -38,8 +39,9 @@ export const PartnerOrgCombobox: React.FC<PartnerOrgComboboxProps> = ({
   onChange,
   onBlur,
   hasError,
-  placeholder = 'Nhập hoặc tìm tổ chức/đối tác...',
+  placeholder,
 }) => {
+  const { t } = useTranslation(['visitRequest']);
   const [text, setText] = useState(organization ?? '');
   const [options, setOptions] = useState<PublicPartnerOptionDto[]>([]);
   const [isOpen, setIsOpen] = useState(false);
@@ -171,7 +173,7 @@ export const PartnerOrgCombobox: React.FC<PartnerOrgComboboxProps> = ({
           }}
           onBlur={onBlur}
           onKeyDown={handleKeyDown}
-          placeholder={placeholder}
+          placeholder={placeholder ?? t('visitRequest:select.partnerComboPlaceholder')}
           className="w-full bg-transparent py-2.5 text-sm font-medium text-gray-900 outline-none placeholder:font-normal placeholder:text-gray-400"
           autoComplete="off"
         />
@@ -181,7 +183,7 @@ export const PartnerOrgCombobox: React.FC<PartnerOrgComboboxProps> = ({
             type="button"
             onClick={handleClear}
             className="shrink-0 rounded-full p-1 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
-            title="Xóa"
+            title={t('visitRequest:select.clear')}
           >
             <X className="h-4 w-4" />
           </button>
@@ -191,11 +193,11 @@ export const PartnerOrgCombobox: React.FC<PartnerOrgComboboxProps> = ({
       {/* Badge trạng thái link partner */}
       {partnerId != null ? (
         <div className="mt-1.5 inline-flex items-center gap-1.5 rounded-md bg-green-50 px-2 py-1 text-xs font-semibold text-green-700 border border-green-100">
-          <Check className="h-3 w-3" /> Đã chọn đối tác có sẵn
+          <Check className="h-3 w-3" /> {t('visitRequest:select.partnerSelected')}
         </div>
       ) : (
         text.trim().length > 0 && (
-          <p className="mt-1.5 text-xs text-gray-500">Đây là tổ chức nhập tự do (chưa liên kết đối tác có sẵn).</p>
+          <p className="mt-1.5 text-xs text-gray-500">{t('visitRequest:select.partnerFreeText')}</p>
         )
       )}
 
@@ -203,11 +205,11 @@ export const PartnerOrgCombobox: React.FC<PartnerOrgComboboxProps> = ({
         <div className="absolute z-[9999] mt-1 w-full overflow-hidden rounded-xl border border-gray-200 bg-white shadow-lg">
           {isLoading ? (
             <div className="flex items-center gap-2 px-4 py-3 text-sm text-gray-400">
-              <Loader2 className="h-4 w-4 animate-spin" /> Đang tìm kiếm...
+              <Loader2 className="h-4 w-4 animate-spin" /> {t('visitRequest:select.searching')}
             </div>
           ) : showNoResult ? (
             <div className="px-4 py-3 text-sm text-gray-500">
-              Không tìm thấy đối tác phù hợp. Bạn có thể tiếp tục dùng tên đang nhập.
+              {t('visitRequest:select.partnerNoMatch')}
             </div>
           ) : (
             <ul className="max-h-60 overflow-y-auto py-1">

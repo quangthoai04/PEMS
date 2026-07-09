@@ -1,4 +1,5 @@
 import React, { useCallback, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import AsyncCreatableSelect from 'react-select/async-creatable';
 import type { StylesConfig, SingleValue } from 'react-select';
 import { visitRequestApi } from '../../api/visitRequestApi';
@@ -58,8 +59,9 @@ export const OrganizationSelect: React.FC<OrganizationSelectProps> = ({
   onChange,
   onBlur,
   hasError,
-  placeholder = 'Tìm kiếm hoặc nhập tên đơn vị...',
+  placeholder,
 }) => {
+  const { t } = useTranslation(['visitRequest']);
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const loadOptions = useCallback(
@@ -95,14 +97,14 @@ export const OrganizationSelect: React.FC<OrganizationSelectProps> = ({
       onChange={(opt: SingleValue<OrgOption>) => onChange(opt?.value ?? '')}
       onCreateOption={(inputValue) => onChange(inputValue)}
       onBlur={onBlur}
-      placeholder={placeholder}
+      placeholder={placeholder ?? t('visitRequest:select.orgSelectPlaceholder')}
       styles={buildStyles(hasError, !!value)}
       isClearable
-      formatCreateLabel={(input) => `Sử dụng "${input}"`}
+      formatCreateLabel={(input) => t('visitRequest:select.useInput', { input })}
       noOptionsMessage={({ inputValue }) =>
-        inputValue.length < 2 ? 'Nhập ít nhất 2 ký tự để tìm kiếm' : 'Không tìm thấy kết quả'
+        inputValue.length < 2 ? t('visitRequest:select.orgSelectMinChars') : t('visitRequest:select.noResults')
       }
-      loadingMessage={() => 'Đang tìm kiếm...'}
+      loadingMessage={() => t('visitRequest:select.searching')}
     />
   );
 };
