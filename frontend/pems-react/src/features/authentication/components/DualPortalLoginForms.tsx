@@ -7,10 +7,12 @@ import { authenticationApi } from '../api/authenticationApi';
 import { useActiveCampuses } from '../hooks/useActiveCampuses';
 import { AUTH_CONFIG } from '../../../shared/constants/auth';
 import type { CampusOption, LoginPortal } from '../types/authentication.types';
+import { useTranslation } from 'react-i18next';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function InternalLoginForm({ onSuccess }: { onSuccess?: () => void }) {
+  const { t } = useTranslation(['loginModal']);
   const { login } = useAuth();
   const navigate = useNavigate();
 
@@ -64,13 +66,13 @@ export function InternalLoginForm({ onSuccess }: { onSuccess?: () => void }) {
 
   const validate = () => {
     const errors: { email?: string; password?: string; campus?: string } = {};
-    if (!email.trim()) errors.email = 'Vui lòng nhập email.';
-    else if (!EMAIL_RE.test(email.trim())) errors.email = 'Email không hợp lệ.';
-    if (!password) errors.password = 'Vui lòng nhập mật khẩu.';
+    if (!email.trim()) errors.email = t('loginModal:emailRequired');
+    else if (!EMAIL_RE.test(email.trim())) errors.email = t('loginModal:emailInvalid');
+    if (!password) errors.password = t('loginModal:passwordRequired');
     
-    if (loadingCampuses) errors.campus = 'Vui lòng đợi hệ thống tải danh sách cơ sở.';
-    else if (campusError) errors.campus = 'Không thể đăng nhập vì chưa tải được danh sách cơ sở.';
-    else if (!selectedCampusId) errors.campus = 'Vui lòng chọn cơ sở.';
+    if (loadingCampuses) errors.campus = t('loginModal:googleLoading');
+    else if (campusError) errors.campus = t('loginModal:googleError');
+    else if (!selectedCampusId) errors.campus = t('loginModal:googleMissingCampus');
     
     setFieldErrors(errors);
     return Object.keys(errors).length === 0;
@@ -91,7 +93,7 @@ export function InternalLoginForm({ onSuccess }: { onSuccess?: () => void }) {
         navigate('/', { replace: true });
       }
     } catch (err) {
-      setFormError(getAuthErrorMessage(err, 'Email, mật khẩu hoặc cơ sở không chính xác.'));
+      setFormError(getAuthErrorMessage(err, t('loginModal:internalError')));
     } finally {
       setSubmitting(false);
     }
@@ -107,7 +109,7 @@ export function InternalLoginForm({ onSuccess }: { onSuccess?: () => void }) {
 
       {/* Campus selector */}
       <div className="mb-2.5">
-        <label className="block text-gray-700 font-semibold text-[13px] mb-0.5">Cơ sở (Campus)</label>
+        <label className="block text-gray-700 font-semibold text-[13px] mb-0.5">{t('loginModal:campusLabel')}</label>
         {campusError ? (
           <div className="flex flex-col gap-2">
             <p className="text-sm text-red-600">{campusError}</p>
@@ -116,7 +118,7 @@ export function InternalLoginForm({ onSuccess }: { onSuccess?: () => void }) {
               onClick={reloadCampuses}
               className="self-start px-3 py-1.5 text-sm bg-red-50 text-red-700 font-medium rounded-lg hover:bg-red-100 transition-colors"
             >
-              Thử lại
+              {t('loginModal:campusRetry')}
             </button>
           </div>
         ) : (
@@ -131,10 +133,10 @@ export function InternalLoginForm({ onSuccess }: { onSuccess?: () => void }) {
             >
               <span className={!selectedCampusId ? 'text-gray-500' : 'text-gray-900 truncate'}>
                 {loadingCampuses 
-                  ? 'Đang tải danh sách cơ sở...' 
+                  ? t('loginModal:campusLoading') 
                   : selectedCampusId 
                     ? campuses.find(c => c.campusId === selectedCampusId)?.campusName + ` (${campuses.find(c => c.campusId === selectedCampusId)?.campusCode})` 
-                    : `-- Chọn cơ sở (${campuses.length}) --`
+                    : t('loginModal:campusSelect', { count: campuses.length })
                 }
               </span>
               <svg className={`w-4 h-4 text-gray-500 transition-transform duration-200 ${isDropdownOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -148,7 +150,7 @@ export function InternalLoginForm({ onSuccess }: { onSuccess?: () => void }) {
                   onClick={() => { setSelectedCampusId(null); setIsDropdownOpen(false); clearLoginErrors(); }}
                   className={`px-4 py-2 text-[14px] cursor-pointer transition-colors ${!selectedCampusId ? 'bg-blue-50 text-[#004c91] font-medium' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}
                 >
-                  -- Chọn cơ sở ({campuses.length}) --
+                  {t('loginModal:campusSelect', { count: campuses.length })}
                 </div>
                 {campuses.map((c) => (
                   <div
@@ -174,7 +176,7 @@ export function InternalLoginForm({ onSuccess }: { onSuccess?: () => void }) {
       {AUTH_CONFIG.enablePasswordLogin && (
         <form onSubmit={handleSubmit} noValidate className="space-y-2.5">
           <div>
-            <label className="block text-gray-700 font-semibold text-[13px] mb-0.5">Email</label>
+            <label className="block text-gray-700 font-semibold text-[13px] mb-0.5">{t('loginModal:emailLabel')}</label>
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
                 <Mail className="w-[18px] h-[18px]" strokeWidth={1.5} />
@@ -192,7 +194,7 @@ export function InternalLoginForm({ onSuccess }: { onSuccess?: () => void }) {
           </div>
 
           <div>
-            <label className="block text-gray-700 font-semibold text-[13px] mb-0.5">Mật khẩu</label>
+            <label className="block text-gray-700 font-semibold text-[13px] mb-0.5">{t('loginModal:passwordLabel')}</label>
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
                 <Lock className="w-[18px] h-[18px]" strokeWidth={1.5} />
@@ -209,7 +211,7 @@ export function InternalLoginForm({ onSuccess }: { onSuccess?: () => void }) {
                 type="button"
                 onClick={() => setShowPassword((s) => !s)}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                aria-label={showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
+                aria-label={showPassword ? t('loginModal:hidePassword') : t('loginModal:showPassword')}
               >
                 {showPassword ? <Eye className="w-[18px] h-[18px]" strokeWidth={1.5} /> : <EyeOff className="w-[18px] h-[18px]" strokeWidth={1.5} />}
               </button>
@@ -219,7 +221,7 @@ export function InternalLoginForm({ onSuccess }: { onSuccess?: () => void }) {
 
           <div className="flex justify-end">
             <Link to="/forgot-password" onClick={onSuccess} className="text-[13px] text-[#004c91] hover:underline font-medium">
-              Quên mật khẩu?
+              {t('loginModal:forgotPassword')}
             </Link>
           </div>
 
@@ -228,7 +230,7 @@ export function InternalLoginForm({ onSuccess }: { onSuccess?: () => void }) {
             disabled={submitting || loadingCampuses || !!campusError}
             className="w-full h-[40px] bg-gradient-to-r from-[#004c91] to-[#005baa] hover:from-[#003a6f] hover:to-[#004c91] disabled:opacity-60 disabled:cursor-not-allowed text-white rounded-[4px] font-medium transition-all shadow-sm text-[14px] flex justify-center items-center gap-2"
           >
-            {submitting ? 'Đang xử lý...' : 'Đăng nhập'}
+            {submitting ? t('loginModal:processing') : t('loginModal:loginBtn')}
           </button>
         </form>
       )}
@@ -236,7 +238,7 @@ export function InternalLoginForm({ onSuccess }: { onSuccess?: () => void }) {
       {AUTH_CONFIG.enablePasswordLogin && AUTH_CONFIG.enableGoogleSso && (
         <div className="my-4 flex items-center gap-3 text-gray-400 text-xs">
           <div className="h-px flex-1 bg-gray-200" />
-          <span>HOẶC</span>
+          <span>{t('loginModal:or')}</span>
           <div className="h-px flex-1 bg-gray-200" />
         </div>
       )}
@@ -250,15 +252,15 @@ export function InternalLoginForm({ onSuccess }: { onSuccess?: () => void }) {
           onValidateCampus={() => {
             setGoogleLoginAttempted(true);
             if (loadingCampuses) {
-              setGoogleCampusError('Vui lòng đợi hệ thống tải danh sách cơ sở.');
+              setGoogleCampusError(t('loginModal:googleLoading'));
               return false;
             }
             if (campusError) {
-              setGoogleCampusError('Không thể đăng nhập bằng Google vì chưa tải được danh sách cơ sở.');
+              setGoogleCampusError(t('loginModal:googleError'));
               return false;
             }
             if (!selectedCampusId) {
-              setGoogleCampusError('Vui lòng chọn cơ sở trước khi đăng nhập bằng Google.');
+              setGoogleCampusError(t('loginModal:googleMissingCampus'));
               return false;
             }
             setGoogleCampusError(null);
@@ -271,6 +273,7 @@ export function InternalLoginForm({ onSuccess }: { onSuccess?: () => void }) {
 }
 
 export function VisitorLoginForm({ onSuccess }: { onSuccess?: () => void }) {
+  const { t } = useTranslation(['loginModal']);
   const { login } = useAuth();
   const navigate = useNavigate();
 
@@ -293,9 +296,9 @@ export function VisitorLoginForm({ onSuccess }: { onSuccess?: () => void }) {
 
   const validate = () => {
     const errors: { email?: string; password?: string } = {};
-    if (!email.trim()) errors.email = 'Vui lòng nhập email.';
-    else if (!EMAIL_RE.test(email.trim())) errors.email = 'Email không hợp lệ.';
-    if (!password) errors.password = 'Vui lòng nhập mật khẩu.';
+    if (!email.trim()) errors.email = t('loginModal:emailRequired');
+    else if (!EMAIL_RE.test(email.trim())) errors.email = t('loginModal:emailInvalid');
+    if (!password) errors.password = t('loginModal:passwordRequired');
     
     setFieldErrors(errors);
     return Object.keys(errors).length === 0;
@@ -316,7 +319,7 @@ export function VisitorLoginForm({ onSuccess }: { onSuccess?: () => void }) {
         navigate('/', { replace: true });
       }
     } catch (err) {
-      setFormError(getAuthErrorMessage(err, 'Email hoặc mật khẩu không chính xác.'));
+      setFormError(getAuthErrorMessage(err, t('loginModal:visitorError')));
     } finally {
       setSubmitting(false);
     }
@@ -333,7 +336,7 @@ export function VisitorLoginForm({ onSuccess }: { onSuccess?: () => void }) {
       {AUTH_CONFIG.enablePasswordLogin && (
         <form onSubmit={handleSubmit} noValidate className="space-y-2.5">
           <div>
-            <label className="block text-gray-700 font-semibold text-[13px] mb-0.5">Email</label>
+            <label className="block text-gray-700 font-semibold text-[13px] mb-0.5">{t('loginModal:emailLabel')}</label>
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
                 <Mail className="w-[18px] h-[18px]" strokeWidth={1.5} />
@@ -351,7 +354,7 @@ export function VisitorLoginForm({ onSuccess }: { onSuccess?: () => void }) {
           </div>
 
           <div>
-            <label className="block text-gray-700 font-semibold text-[13px] mb-0.5">Mật khẩu</label>
+            <label className="block text-gray-700 font-semibold text-[13px] mb-0.5">{t('loginModal:passwordLabel')}</label>
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
                 <Lock className="w-[18px] h-[18px]" strokeWidth={1.5} />
@@ -368,7 +371,7 @@ export function VisitorLoginForm({ onSuccess }: { onSuccess?: () => void }) {
                 type="button"
                 onClick={() => setShowPassword((s) => !s)}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                aria-label={showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
+                aria-label={showPassword ? t('loginModal:hidePassword') : t('loginModal:showPassword')}
               >
                 {showPassword ? <Eye className="w-[18px] h-[18px]" strokeWidth={1.5} /> : <EyeOff className="w-[18px] h-[18px]" strokeWidth={1.5} />}
               </button>
@@ -378,7 +381,7 @@ export function VisitorLoginForm({ onSuccess }: { onSuccess?: () => void }) {
 
           <div className="flex justify-end">
             <Link to="/forgot-password" onClick={onSuccess} className="text-[13px] text-[#004c91] hover:underline font-medium">
-              Quên mật khẩu?
+              {t('loginModal:forgotPassword')}
             </Link>
           </div>
 
@@ -387,7 +390,7 @@ export function VisitorLoginForm({ onSuccess }: { onSuccess?: () => void }) {
             disabled={submitting}
             className="w-full h-[40px] bg-gradient-to-r from-[#004c91] to-[#005baa] hover:from-[#003a6f] hover:to-[#004c91] disabled:opacity-60 disabled:cursor-not-allowed text-white rounded-[4px] font-medium transition-all shadow-sm text-[14px] flex justify-center items-center gap-2"
           >
-            {submitting ? 'Đang xử lý...' : 'Đăng nhập'}
+            {submitting ? t('loginModal:processing') : t('loginModal:loginBtn')}
           </button>
         </form>
       )}
@@ -395,7 +398,7 @@ export function VisitorLoginForm({ onSuccess }: { onSuccess?: () => void }) {
       {AUTH_CONFIG.enablePasswordLogin && AUTH_CONFIG.enableGoogleSso && (
         <div className="my-5 flex items-center gap-3 text-gray-400 text-xs">
           <div className="h-px flex-1 bg-gray-200" />
-          <span>HOẶC</span>
+          <span>{t('loginModal:or')}</span>
           <div className="h-px flex-1 bg-gray-200" />
         </div>
       )}
@@ -424,6 +427,7 @@ export function GoogleSignInButton({
   onSuccess?: () => void;
   onValidateCampus?: () => boolean;
 }) {
+  const { t } = useTranslation(['loginModal']);
   const { loginWithGoogle } = useAuth();
   const navigate = useNavigate();
   const clientId = AUTH_CONFIG.googleClientId;
@@ -500,11 +504,11 @@ export function GoogleSignInButton({
         type="button"
         onClick={() => {
           if (campusBlocked) {
-            onError('Vui lòng chọn cơ sở trước khi đăng nhập bằng Google.');
+            onError(t('loginModal:googleMissingCampus', 'Vui lòng chọn cơ sở trước khi đăng nhập bằng Google.'));
             if (onValidateCampus) onValidateCampus();
             return;
           }
-          onError('Google SSO chưa được cấu hình Client ID. Vui lòng kiểm tra VITE_GOOGLE_CLIENT_ID.');
+          onError(t('loginModal:googleMissingClientId', 'Google SSO chưa được cấu hình Client ID. Vui lòng kiểm tra VITE_GOOGLE_CLIENT_ID.'));
         }}
         className="w-full flex items-center justify-center gap-3 border border-gray-300 text-gray-700 hover:bg-gray-50 py-2.5 rounded-xl font-medium text-[14px] transition-colors"
       >
@@ -527,7 +531,7 @@ export function GoogleSignInButton({
             e.stopPropagation();
             onValidateCampus();
           }}
-          title="Vui lòng chọn cơ sở trước"
+          title={t('loginModal:googleMissingCampus', 'Vui lòng chọn cơ sở trước')}
         />
       )}
     </div>

@@ -4,6 +4,7 @@ import { X } from 'lucide-react';
 import logo from '../../assets/images/2021-FPTU-Eng.png';
 import type { LoginPortal } from '../../features/authentication/types/authentication.types';
 import { InternalLoginForm, VisitorLoginForm } from '../../features/authentication/components/DualPortalLoginForms';
+import { useTranslation } from 'react-i18next';
 
 interface LoginModalProps {
   isOpen: boolean;
@@ -11,6 +12,7 @@ interface LoginModalProps {
 }
 
 export function LoginModal({ isOpen, onClose }: LoginModalProps) {
+  const { t } = useTranslation(['loginModal']);
   const [portal, setPortal] = useState<LoginPortal>('INTERNAL');
 
   const handleClose = () => {
@@ -52,10 +54,10 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
               <img src={logo} alt="FPT University" className="h-14 md:h-16 mb-5 object-contain drop-shadow-sm" />
 
               <h2 className="text-[#004c91] text-2xl font-black text-center leading-tight tracking-tight">
-                Đăng nhập PEMS
+                {t('loginModal:title')}
               </h2>
               <p className="text-gray-500 text-[13px] text-center mb-6 font-medium mt-1">
-                Partnership Engagement Management System
+                {t('loginModal:subtitle')}
               </p>
 
               {/* Portal Tabs (Segmented Control style) */}
@@ -70,7 +72,7 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
                         : 'text-gray-500 hover:text-gray-800 hover:bg-gray-200/50'
                     }`}
                   >
-                    Nội bộ (Internal)
+                    {t('loginModal:internal')}
                   </button>
                   <button
                     type="button"
@@ -81,13 +83,13 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
                         : 'text-gray-500 hover:text-gray-800 hover:bg-gray-200/50'
                     }`}
                   >
-                    Khách (Visitor)
+                    {t('loginModal:visitor')}
                   </button>
                 </div>
                 <p className="text-[12px] text-gray-500 text-center mt-3 px-2">
                   {portal === 'INTERNAL' 
-                    ? 'Dành cho Cán bộ, Giảng viên, và Sinh viên FPTU.' 
-                    : 'Dành cho Khách, Đối tác theo dõi thông tin chuyến thăm.'}
+                    ? t('loginModal:internalDesc')
+                    : t('loginModal:visitorDesc')}
                 </p>
               </div>
 
