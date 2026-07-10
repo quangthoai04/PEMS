@@ -1,2 +1,9 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Force LF for files Docker/shell tooling parses — CRLF breaks shebang lines
+# and Docker's line-continuation parsing (backslash-CRLF is not a valid
+# continuation), so these must stay LF regardless of client core.autocrlf.
+Dockerfile text eol=lf
+.dockerignore text eol=lf
+*.sh text eol=lf

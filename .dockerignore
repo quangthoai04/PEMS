@@ -1,0 +1,61 @@
+# ── VCS / IDE ────────────────────────────────────────────────────────────
+.git/
+.github/
+.gitignore
+.gitattributes
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# ── .NET build output (rebuilt inside the image) ───────────────────────────
+**/bin/
+**/obj/
+**/publish/
+*.pdb
+
+# ── Frontend (not part of the API image) ───────────────────────────────────
+frontend/
+node_modules/
+dist/
+build/
+coverage/
+
+# ── Tests, docs, scripts, misc project files ────────────────────────────────
+tests/
+docs/
+scripts/
+temp_hash/
+backend/JsonTest/
+**/TestResults/
+.runlogs/
+
+# ── Logs / temp ──────────────────────────────────────────────────────────
+*.log
+logs/
+temp/
+tmp/
+
+# ── Secrets / local & development configuration ────────────────────────────
+# Real backend config is supplied via Railway environment variables, never
+# baked into the image.
+**/appsettings.Development.json
+**/appsettings.Development.example.json
+**/appsettings.Testing.json
+**/appsettings.Testing.example.json
+**/appsettings.Local.json
+.env
+.env.*
+!.env.example
+*.Secrets.json
+
+# ── Misc ─────────────────────────────────────────────────────────────────
+README.md
+Dockerfile
+.dockerignore
+.claude/
+**/.DS_Store
+**/Thumbs.db

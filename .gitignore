@@ -16,6 +16,7 @@ bin/
 obj/
 **/bin/
 **/obj/
+**/.tmp-build/
 [An]ative/
 x64/
 x86/

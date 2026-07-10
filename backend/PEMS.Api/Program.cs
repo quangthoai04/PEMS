@@ -1,4 +1,5 @@
 using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi.Models;
@@ -11,9 +12,34 @@ using PEMS.Infrastructure.Persistence;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// ── Listen address/port ────────────────────────────────────────────────────
+// Railway injects PORT and expects the container to bind 0.0.0.0:$PORT (no
+// fixed default — it's assigned per-deployment). Only override the URLs when
+// PORT is actually set, so local `dotnet run` / Visual Studio keeps using
+// launchSettings.json (http://localhost:5265) unchanged.
+var port = Environment.GetEnvironmentVariable("PORT");
+if (!string.IsNullOrEmpty(port))
+{
+    builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
+}
+
 // ── Application / Infrastructure services ────────────────────────────────────
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
+
+// ── Forwarded headers (Railway terminates TLS at its edge proxy and forwards
+// plain HTTP to this container). Without this, UseHttpsRedirection()/UseHsts()
+// below would see every request as HTTP and force a redirect loop. Railway's
+// proxy IP isn't a fixed/known address, so KnownProxies/KnownNetworks are
+// cleared to accept the forwarded headers from any upstream (safe here since
+// the container is not directly reachable from the internet — Railway's edge
+// is the only path in).
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    options.KnownNetworks.Clear();
+    options.KnownProxies.Clear();
+});
 
 // ── Auth policy options (SSO-first / dual-portal). Bound once and shared. ─────
 var authOptions = builder.Configuration.GetSection(AuthOptions.SectionName).Get<AuthOptions>()
@@ -51,7 +77,11 @@ builder.Services.AddSwaggerGen(options =>
 builder.Services.AddJwtAuthentication(builder.Configuration);
 builder.Services.AddAppAuthorization();
 
-// ── CORS (origins from config; falls back to common dev origins) ─────────────
+// ── CORS ─────────────────────────────────────────────────────────────────────
+// Origins come from config (Cors:AllowedOrigins), which Railway overrides via
+// the Cors__AllowedOrigins__0 (etc.) environment variable. The localhost
+// fallback below only applies in Development — Production must never silently
+// accept localhost if the operator forgets to set the env var.
 var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>();
 const string CorsPolicy = "PemsFrontend";
 builder.Services.AddCors(options =>
@@ -60,9 +90,12 @@ builder.Services.AddCors(options =>
     {
         if (allowedOrigins is { Length: > 0 })
             policy.WithOrigins(allowedOrigins).AllowAnyHeader().AllowAnyMethod();
-        else
+        else if (builder.Environment.IsDevelopment())
             policy.WithOrigins("http://localhost:3000", "http://localhost:5173")
                   .AllowAnyHeader().AllowAnyMethod();
+        // Production with no configured origins: no origins are allowed
+        // (browsers will block cross-origin calls) rather than falling back
+        // to an insecure default.
     });
 });
 
@@ -111,6 +144,11 @@ builder.Services.AddRateLimiter(options =>
 var app = builder.Build();
 
 // ── HTTP pipeline ────────────────────────────────────────────────────────────
+// Must run before anything that inspects scheme/remote IP (HSTS, HTTPS
+// redirection, auth, rate limiting) so they see the original client info
+// instead of the proxy's.
+app.UseForwardedHeaders();
+
 // Exception handler is outermost so it catches everything; it does not clear
 // headers, so CORS headers added downstream survive on error responses.
 app.UseMiddleware<ExceptionHandlingMiddleware>();
