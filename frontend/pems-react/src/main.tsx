@@ -2,6 +2,7 @@ import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
 import {BrowserRouter} from 'react-router-dom';
 import { AuthProvider } from './shared/auth/AuthContext';
+import { NotificationsProvider } from './features/notifications/context/NotificationsContext';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import App from './App.tsx';
 import './index.css';
@@ -39,7 +40,9 @@ createRoot(document.getElementById('root')!).render(
     <ErrorBoundary>
       <BrowserRouter>
         <AuthProvider>
-          <App />
+          <NotificationsProvider>
+            <App />
+          </NotificationsProvider>
         </AuthProvider>
       </BrowserRouter>
     </ErrorBoundary>

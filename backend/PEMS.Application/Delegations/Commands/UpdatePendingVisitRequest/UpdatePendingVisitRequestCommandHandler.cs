@@ -282,13 +282,19 @@ public sealed class UpdatePendingVisitRequestCommandHandler
         if (leadersToNotify.Count > 0)
         {
             await _notificationService.CreateManyAsync(
-                leadersToNotify.Select(id => new PEMS.Application.Notifications.Common.CreateNotificationItem(
-                    id,
-                    "Visitor đã cập nhật đơn đăng ký tham quan",
-                    $"Visitor đã cập nhật thông tin đơn {visit.RequestCode} ({visit.DelegationName}). Vui lòng xem lại thông tin mới nhất trước khi xử lý.",
-                    PEMS.Application.Notifications.Common.NotificationTypes.VisitRequestSubmitted,
-                    PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitRequest,
-                    visit.VisitRequestId)).ToList(),
+                leadersToNotify.Select(id => new PEMS.Application.Notifications.Common.CreateNotificationRequest(
+                    RecipientUserId: id,
+                    Title: "Visitor đã cập nhật đơn đăng ký tham quan",
+                    Message: $"Visitor đã cập nhật thông tin đơn {visit.RequestCode} ({visit.DelegationName}). Vui lòng xem lại thông tin mới nhất trước khi xử lý.",
+                    NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.VisitRequestSubmitted,
+                    RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitRequest,
+                    RelatedId: visit.VisitRequestId,
+                    ActorUserId: actorId,
+                    Category: PEMS.Application.Notifications.Common.NotificationCategories.Visit,
+                    IsActionRequired: true,
+                    VisitRequestId: visit.VisitRequestId,
+                    ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitDetail,
+                    ActionUrl: "/dashboard/visit")).ToList(),
                 cancellationToken);
         }
 

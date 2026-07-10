@@ -104,6 +104,10 @@ public static class DependencyInjection
         // Background jobs — scheduled visit reminder dispatch (visit_instance_reminder_settings).
         services.AddHostedService<PEMS.Infrastructure.BackgroundJobs.VisitReminderDispatchHostedService>();
 
+        // Background job — HO visibility alert for multi-campus requests with an unprocessed
+        // campus close to its planned start (spec §5 HO rule).
+        services.AddHostedService<PEMS.Infrastructure.BackgroundJobs.HoUnprocessedCampusAlertHostedService>();
+
         return services;
     }
 }

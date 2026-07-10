@@ -155,9 +155,10 @@ public sealed class SaveVisitAgendaCommandHandler
         await _db.SaveChangesAsync(cancellationToken);
         await tx.CommitAsync(cancellationToken);
 
-        var notifications = new System.Collections.Generic.List<PEMS.Application.Notifications.Common.CreateNotificationItem>();
+        var notifications = new System.Collections.Generic.List<PEMS.Application.Notifications.Common.CreateNotificationRequest>();
         string delegationName = instance.VisitRequest?.DelegationName ?? "Đoàn khách";
-        
+        var agendaActionUrl = $"/dashboard/visit/process/{instance.VisitInstanceId}";
+
         // Notify Accepted participants
         var notifyParticipantIds = await _db.VisitParticipants
             .Where(p => p.VisitInstanceId == instance.VisitInstanceId && p.Status == ParticipantStatuses.Accepted && p.UserId != actorId)
@@ -166,35 +167,20 @@ public sealed class SaveVisitAgendaCommandHandler
 
         foreach (var pId in notifyParticipantIds)
         {
-            notifications.Add(new PEMS.Application.Notifications.Common.CreateNotificationItem(
-                pId,
-                "Lịch trình được cập nhật",
-                $"Lịch trình của đoàn {delegationName} đã được cập nhật.",
-                PEMS.Application.Notifications.Common.NotificationTypes.AgendaUpdated,
-                PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitInstance,
-                instance.VisitInstanceId
+            notifications.Add(new PEMS.Application.Notifications.Common.CreateNotificationRequest(
+                RecipientUserId: pId,
+                Title: "Lịch trình được cập nhật",
+                Message: $"Lịch trình của đoàn {delegationName} đã được cập nhật.",
+                NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.AgendaUpdated,
+                RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitInstance,
+                RelatedId: instance.VisitInstanceId,
+                ActorUserId: actorId,
+                Category: PEMS.Application.Notifications.Common.NotificationCategories.Visit,
+                VisitInstanceId: instance.VisitInstanceId,
+                CampusId: instance.CampusId,
+                ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitDetail,
+                ActionUrl: agendaActionUrl
             ));
-        }
-
-        // Notify Staff Leader of the campus
-        var staffLeaders = await _db.Users
-            .Where(u => u.Role.RoleCode == RoleCodes.Staff && u.SubRole == UserSubRoles.Leader && u.PrimaryCampusId == instance.CampusId && u.Status == UserStatuses.Active && u.UserId != actorId)
-            .Select(u => u.UserId)
-            .ToListAsync(cancellationToken);
-
-        foreach (var leaderId in staffLeaders)
-        {
-            if (!notifyParticipantIds.Contains(leaderId))
-            {
-                notifications.Add(new PEMS.Application.Notifications.Common.CreateNotificationItem(
-                    leaderId,
-                    "Lịch trình được cập nhật",
-                    $"Lịch trình của đoàn {delegationName} đã được cập nhật.",
-                    PEMS.Application.Notifications.Common.NotificationTypes.AgendaUpdated,
-                    PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitInstance,
-                    instance.VisitInstanceId
-                ));
-            }
         }
 
         if (notifications.Count > 0)

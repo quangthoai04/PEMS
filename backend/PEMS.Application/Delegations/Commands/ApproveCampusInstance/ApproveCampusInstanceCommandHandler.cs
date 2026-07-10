@@ -179,6 +179,7 @@ public sealed class ApproveCampusInstanceCommandHandler
         // ── Aggregate request status (PENDING/PARTIALLY_APPROVED/APPROVED/REJECTED). Computed
         //    here to mirror the DB aggregate trigger exactly, so EF's later visit_requests UPDATE
         //    writes the same value the trigger already produced. ──
+        var previousVisitStatus = visit.Status;
         _aggregateStatus.Apply(visit);
         visit.UpdatedAt = now;
         visit.UpdatedBy = actorId;
@@ -205,31 +206,109 @@ public sealed class ApproveCampusInstanceCommandHandler
             .Select(c => c.Name)
             .FirstOrDefaultAsync(cancellationToken) ?? $"#{instance.CampusId}";
 
-        var notifications = new List<PEMS.Application.Notifications.Common.CreateNotificationItem>();
+        var notifications = new List<PEMS.Application.Notifications.Common.CreateNotificationRequest>();
+        var visitProcessUrl = $"/dashboard/visit/process/{instance.VisitInstanceId}";
 
         if (visit.VisitorUserId.HasValue)
         {
-            notifications.Add(new PEMS.Application.Notifications.Common.CreateNotificationItem(
-                visit.VisitorUserId.Value,
-                "Cơ sở đã tiếp nhận yêu cầu",
-                $"Cơ sở {campusName} đã tiếp nhận yêu cầu tham quan {visit.RequestCode} của bạn. Host phụ trách: {host.FullName}.",
-                PEMS.Application.Notifications.Common.NotificationTypes.VisitRequestApproved,
-                PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitInstance,
-                instance.VisitInstanceId
+            notifications.Add(new PEMS.Application.Notifications.Common.CreateNotificationRequest(
+                RecipientUserId: visit.VisitorUserId.Value,
+                Title: "Cơ sở đã tiếp nhận yêu cầu",
+                Message: $"Cơ sở {campusName} đã tiếp nhận yêu cầu tham quan {visit.RequestCode} của bạn. Host phụ trách: {host.FullName}.",
+                NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.VisitRequestApproved,
+                RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitInstance,
+                RelatedId: instance.VisitInstanceId,
+                ActorUserId: actorId,
+                Category: PEMS.Application.Notifications.Common.NotificationCategories.Visit,
+                VisitRequestId: visit.VisitRequestId,
+                VisitInstanceId: instance.VisitInstanceId,
+                CampusId: instance.CampusId,
+                ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitDetail,
+                ActionUrl: "/dashboard/visit"
             ));
         }
 
         // Self-host: the approver already knows — skip the "you were assigned" notification.
         if (!isSelfHost)
         {
-            notifications.Add(new PEMS.Application.Notifications.Common.CreateNotificationItem(
-                request.HostUserId,
-                "Bạn được gán phụ trách đoàn khách",
-                $"Bạn được phân công làm host chính cho đoàn {visit.DelegationName} tại {campusName}. Vui lòng vào Setup đoàn khách để chuẩn bị.",
-                PEMS.Application.Notifications.Common.NotificationTypes.HostAssigned,
-                PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitInstance,
-                instance.VisitInstanceId
+            notifications.Add(new PEMS.Application.Notifications.Common.CreateNotificationRequest(
+                RecipientUserId: request.HostUserId,
+                Title: "Bạn được gán phụ trách đoàn khách",
+                Message: $"Bạn được phân công làm host chính cho đoàn {visit.DelegationName} tại {campusName}. Vui lòng vào Setup đoàn khách để chuẩn bị.",
+                NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.HostAssigned,
+                RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitInstance,
+                RelatedId: instance.VisitInstanceId,
+                ActorUserId: actorId,
+                Category: PEMS.Application.Notifications.Common.NotificationCategories.Visit,
+                IsActionRequired: true,
+                VisitRequestId: visit.VisitRequestId,
+                VisitInstanceId: instance.VisitInstanceId,
+                CampusId: instance.CampusId,
+                ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitDetail,
+                ActionUrl: visitProcessUrl
             ));
+        }
+
+        // G8/G9/G10 (spec §5 HO): visibility on multi-campus per-campus decisions + aggregate
+        // status transitions. HO doesn't act on these — Category=Visit, not action-required.
+        if (visit.VisitScope == VisitScopes.MultiCampus)
+        {
+            var hoUsers = await _db.Users
+                .Where(u => u.Role.RoleCode == RoleCodes.Ho && u.Status == "ACTIVE")
+                .Select(u => u.UserId)
+                .ToListAsync(cancellationToken);
+
+            notifications.AddRange(hoUsers.Select(id => new PEMS.Application.Notifications.Common.CreateNotificationRequest(
+                RecipientUserId: id,
+                Title: "Cơ sở đã duyệt đơn liên cơ sở",
+                Message: $"Cơ sở {campusName} đã duyệt đơn {visit.RequestCode} ({visit.DelegationName}).",
+                NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.VisitStatusChanged,
+                RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitRequest,
+                RelatedId: visit.VisitRequestId,
+                ActorUserId: actorId,
+                Category: PEMS.Application.Notifications.Common.NotificationCategories.Visit,
+                VisitRequestId: visit.VisitRequestId,
+                VisitInstanceId: instance.VisitInstanceId,
+                CampusId: instance.CampusId,
+                ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitDetail,
+                ActionUrl: "/dashboard/visit"
+            )));
+
+            if (previousVisitStatus != visit.Status)
+            {
+                if (visit.Status == VisitRequestStatuses.PartiallyApproved)
+                {
+                    notifications.AddRange(hoUsers.Select(id => new PEMS.Application.Notifications.Common.CreateNotificationRequest(
+                        RecipientUserId: id,
+                        Title: "Đơn liên cơ sở được duyệt một phần",
+                        Message: $"Đơn {visit.RequestCode} ({visit.DelegationName}) hiện đã được duyệt một phần.",
+                        NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.VisitStatusChanged,
+                        RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitRequest,
+                        RelatedId: visit.VisitRequestId,
+                        ActorUserId: actorId,
+                        Category: PEMS.Application.Notifications.Common.NotificationCategories.Visit,
+                        VisitRequestId: visit.VisitRequestId,
+                        ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitDetail,
+                        ActionUrl: "/dashboard/visit"
+                    )));
+                }
+                else if (visit.Status == VisitRequestStatuses.Approved || visit.Status == VisitRequestStatuses.Rejected)
+                {
+                    notifications.AddRange(hoUsers.Select(id => new PEMS.Application.Notifications.Common.CreateNotificationRequest(
+                        RecipientUserId: id,
+                        Title: "Đơn liên cơ sở đã xử lý xong",
+                        Message: $"Tất cả cơ sở của đơn {visit.RequestCode} ({visit.DelegationName}) đã xử lý xong.",
+                        NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.VisitStatusChanged,
+                        RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitRequest,
+                        RelatedId: visit.VisitRequestId,
+                        ActorUserId: actorId,
+                        Category: PEMS.Application.Notifications.Common.NotificationCategories.Visit,
+                        VisitRequestId: visit.VisitRequestId,
+                        ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitDetail,
+                        ActionUrl: "/dashboard/visit"
+                    )));
+                }
+            }
         }
 
         if (notifications.Any())

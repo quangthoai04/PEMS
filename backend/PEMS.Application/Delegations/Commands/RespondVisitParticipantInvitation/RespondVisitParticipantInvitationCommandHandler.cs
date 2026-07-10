@@ -111,12 +111,18 @@ public sealed class RespondVisitParticipantInvitationCommandHandler
             string responseText = request.Accept ? "chấp nhận" : "từ chối";
             
             await _notificationService.CreateAsync(
-                participant.VisitInstance.CurrentHostUserId.Value,
-                "Phản hồi lời mời tham gia",
-                $"{participantName} đã {responseText} lời mời hỗ trợ đoàn {delegationName}.",
-                PEMS.Application.Notifications.Common.NotificationTypes.ParticipationResponded,
-                PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitParticipant,
-                participant.ParticipantId,
+                new PEMS.Application.Notifications.Common.CreateNotificationRequest(
+                    RecipientUserId: participant.VisitInstance.CurrentHostUserId.Value,
+                    Title: "Phản hồi lời mời tham gia",
+                    Message: $"{participantName} đã {responseText} lời mời hỗ trợ đoàn {delegationName}.",
+                    NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.ParticipationResponded,
+                    RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitParticipant,
+                    RelatedId: participant.ParticipantId,
+                    ActorUserId: userId,
+                    Category: PEMS.Application.Notifications.Common.NotificationCategories.Invitation,
+                    VisitInstanceId: participant.VisitInstanceId,
+                    ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitDetail,
+                    ActionUrl: $"/dashboard/visit/process/{participant.VisitInstanceId}"),
                 cancellationToken
             );
         }

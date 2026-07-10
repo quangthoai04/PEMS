@@ -336,6 +336,8 @@ export const API_ENDPOINTS = {
     visitFeedbackTargets: (visitInstanceId: string | number) => `/feedbacks/visit-instances/${visitInstanceId}/targets`,
     submitVisitFeedback: (visitInstanceId: string | number) => `/feedbacks/visit-instances/${visitInstanceId}`,
     myPending: '/feedbacks/my-pending',
+    myHostFeedback: (visitInstanceId: string | number) => `/feedbacks/my-host-feedback/${visitInstanceId}`,
+    visitorFeedback: (visitInstanceId: string | number) => `/feedbacks/visitor-feedback/${visitInstanceId}`,
   },
   reports: {
     // Head Office report (HO-only): overview + export dùng đúng bộ filter đang áp dụng.

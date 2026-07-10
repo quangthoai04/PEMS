@@ -163,12 +163,17 @@ public sealed class ManageAccountStatusCommandHandler : IRequestHandler<ManageAc
 
         string statusText = newStatus == UserStatuses.Active ? "kích hoạt" : (newStatus == UserStatuses.Inactive ? "vô hiệu hóa" : "khóa");
         await _notificationService.CreateAsync(
-            user.UserId,
-            "Cập nhật trạng thái tài khoản",
-            $"Tài khoản của bạn đã được {statusText}.",
-            PEMS.Application.Notifications.Common.NotificationTypes.AccountStatusChanged,
-            PEMS.Application.Notifications.Common.NotificationRelatedTypes.Account,
-            user.UserId,
+            new PEMS.Application.Notifications.Common.CreateNotificationRequest(
+                RecipientUserId: user.UserId,
+                Title: "Cập nhật trạng thái tài khoản",
+                Message: $"Tài khoản của bạn đã được {statusText}.",
+                NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.AccountStatusChanged,
+                RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.Account,
+                RelatedId: user.UserId,
+                ActorUserId: actorId,
+                Category: PEMS.Application.Notifications.Common.NotificationCategories.Account,
+                ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenAccountDetail,
+                ActionUrl: "/dashboard/accounts"),
             cancellationToken
         );
 

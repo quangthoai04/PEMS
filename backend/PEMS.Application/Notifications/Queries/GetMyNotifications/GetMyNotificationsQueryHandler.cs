@@ -10,13 +10,11 @@ public class GetMyNotificationsQueryHandler : IRequestHandler<GetMyNotifications
 {
     private readonly IApplicationDbContext _context;
     private readonly ICurrentUserService _currentUserService;
-    private readonly INotificationTargetResolver _targetResolver;
 
-    public GetMyNotificationsQueryHandler(IApplicationDbContext context, ICurrentUserService currentUserService, INotificationTargetResolver targetResolver)
+    public GetMyNotificationsQueryHandler(IApplicationDbContext context, ICurrentUserService currentUserService)
     {
         _context = context;
         _currentUserService = currentUserService;
-        _targetResolver = targetResolver;
     }
 
     public async Task<PaginatedResult<NotificationDto>> Handle(GetMyNotificationsQuery request, CancellationToken cancellationToken)
@@ -49,28 +47,31 @@ public class GetMyNotificationsQueryHandler : IRequestHandler<GetMyNotifications
             .Take(pageSize)
             .ToListAsync(cancellationToken);
 
-        var items = new List<NotificationDto>();
-        foreach (var n in dbItems)
+        var items = dbItems.Select(n => new NotificationDto
         {
-            var resolved = await _targetResolver.ResolveTargetAsync(userId.Value, n.NotificationType, n.RelatedType, n.RelatedId, cancellationToken);
-            
-            items.Add(new NotificationDto
-            {
-                NotificationId = n.NotificationId,
-                Title = n.Title,
-                Message = n.Message,
-                NotificationType = n.NotificationType,
-                RelatedType = n.RelatedType,
-                RelatedId = n.RelatedId,
-                IsRead = n.IsRead,
-                ReadAt = n.ReadAt,
-                CreatedAt = n.CreatedAt,
-                TimeAgoText = ComputeTimeAgo(n.CreatedAt),
-                TargetUrl = resolved.targetUrl,
-                CanOpen = resolved.canOpen,
-                DisabledReason = resolved.disabledReason
-            });
-        }
+            NotificationId = n.NotificationId,
+            Title = n.Title,
+            Message = n.Message,
+            NotificationType = n.NotificationType,
+            Category = n.Category,
+            Priority = n.Priority.ToString(),
+            IsActionRequired = n.IsActionRequired,
+            RelatedType = n.RelatedType,
+            RelatedId = n.RelatedId,
+            VisitRequestId = n.VisitRequestId,
+            VisitInstanceId = n.VisitInstanceId,
+            CampusId = n.CampusId,
+            ActionType = n.ActionType,
+            IsRead = n.IsRead,
+            ReadAt = n.ReadAt,
+            CreatedAt = n.CreatedAt,
+            TimeAgoText = ComputeTimeAgo(n.CreatedAt),
+            TargetUrl = n.ActionUrl,
+            CanOpen = !string.IsNullOrEmpty(n.ActionUrl),
+            DisabledReason = string.IsNullOrEmpty(n.ActionUrl)
+                ? "Thông báo này không có đường dẫn chi tiết."
+                : null
+        }).ToList();
 
         return PaginatedResult<NotificationDto>.Create(items, page, pageSize, totalItems);
     }

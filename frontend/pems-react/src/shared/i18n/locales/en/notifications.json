@@ -1,0 +1,67 @@
+{
+  "bell": {
+    "tooltip": "Notifications",
+    "ariaLabel": "Notifications"
+  },
+  "dropdown": {
+    "title": "Notifications",
+    "markAllRead": "Mark as read",
+    "loading": "Loading...",
+    "empty": "No notifications",
+    "viewAll": "View all notifications",
+    "pendingFeedbackTitle": "Please rate this delegation"
+  },
+  "page": {
+    "title": "Notifications",
+    "subtitle": "All notifications related to you"
+  },
+  "filters": {
+    "all": "All",
+    "unread": "Unread",
+    "actionRequired": "Action required",
+    "visit": "Delegations",
+    "invitation": "Invitations",
+    "feedback": "Feedback",
+    "logistics": "Logistics",
+    "news": "News",
+    "partner": "Partners",
+    "system": "System"
+  },
+  "empty": {
+    "title": "No notifications",
+    "description": "You have no notifications in this category yet."
+  },
+  "pagination": {
+    "showing": "Show",
+    "perPage": "per page",
+    "page": "Page",
+    "of": "of"
+  },
+  "actions": {
+    "markAllRead": "Mark all as read",
+    "markAsRead": "Mark as read"
+  },
+  "toast": {
+    "cannotOpen": "This content cannot be opened."
+  },
+  "hostFeedbackModal": {
+    "title": "Host feedback about you",
+    "delegationInfoTitle": "Delegation information",
+    "expand": "View details",
+    "collapse": "Collapse",
+    "noFeedback": "No feedback yet.",
+    "loading": "Loading feedback...",
+    "close": "Close"
+  },
+  "detailModal": {
+    "title": "Notification detail",
+    "close": "Close"
+  },
+  "visitorFeedbackModal": {
+    "title": "Feedback from Visitor",
+    "delegationInfoTitle": "Delegation information",
+    "noFeedback": "No feedback yet.",
+    "loading": "Loading feedback...",
+    "close": "Close"
+  }
+}

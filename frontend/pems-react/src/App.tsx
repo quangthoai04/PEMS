@@ -72,6 +72,7 @@ import { ChangePasswordPage } from './pages/auth/ChangePasswordPage';
 import { ForbiddenPage } from './pages/ForbiddenPage';
 import { InvalidAccountPage } from './pages/InvalidAccountPage';
 import { NotFoundPage } from './pages/NotFoundPage';
+import { NotificationsPage } from './pages/notifications/NotificationsPage';
 import { ProtectedRoute } from './shared/auth/ProtectedRoute';
 import { ErrorBoundary } from './components/layout/ErrorBoundary';
 
@@ -141,6 +142,9 @@ export default function App() {
           <Route path="/change-password" element={<ProtectedRoute><ChangePasswordPage /></ProtectedRoute>} />
           <Route path="/403" element={<ForbiddenPage />} />
           <Route path="/invalid-account" element={<InvalidAccountPage />} />
+
+          {/* Notification Center — yêu cầu đăng nhập, KHÔNG lồng trong /dashboard để giữ Header/Footer public */}
+          <Route path="/notifications" element={<ProtectedRoute><NotificationsPage /></ProtectedRoute>} />
 
           {/* Dashboard Routes (require authentication) */}
           <Route path="/dashboard" element={<ProtectedRoute><ErrorBoundary><DashboardLayout /></ErrorBoundary></ProtectedRoute>}>

@@ -76,7 +76,7 @@ public sealed class InviteVisitParticipantCommandHandler
             throw new ConflictException("Chỉ có thể mời thành phần tham gia trong giai đoạn chuẩn bị.");
 
         // ── Resolve the real invitee + participant role from the DB ──
-        var (targetUserId, participantRole, roleLabel) =
+        var (targetUserId, participantRole, roleLabel, recipientDeptId) =
             await ResolveInviteeAsync(type, request, instance, cancellationToken);
 
         // ── Duplicate handling (unique (visit_instance_id, user_id)) ──
@@ -245,13 +245,26 @@ public sealed class InviteVisitParticipantCommandHandler
                 EntityId = participant.ParticipantId,
                 CreatedAt = now,
             });
+            var isDeptRecipient = participantRole == ParticipantRoles.DeptSupport;
+            var invitationActionUrl = isDeptRecipient && recipientDeptId.HasValue
+                ? $"/dashboard/departments/{recipientDeptId.Value}/invitations/{participant.ParticipantId}"
+                : $"/dashboard/visit/process/{instance.VisitInstanceId}?tab=participants&participantId={participant.ParticipantId}";
+
             await _notificationService.CreateAsync(
-                targetUserId,
-                "Lời mời tham gia tiếp khách",
-                $"Bạn được mời tham gia hỗ trợ đoàn {delegationName} tại {campusName}.",
-                PEMS.Application.Notifications.Common.NotificationTypes.ParticipationInvited,
-                PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitParticipant,
-                participant.ParticipantId,
+                new PEMS.Application.Notifications.Common.CreateNotificationRequest(
+                    RecipientUserId: targetUserId,
+                    Title: "Lời mời tham gia tiếp khách",
+                    Message: $"Bạn được mời tham gia hỗ trợ đoàn {delegationName} tại {campusName}.",
+                    NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.ParticipationInvited,
+                    RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitParticipant,
+                    RelatedId: participant.ParticipantId,
+                    ActorUserId: actorId,
+                    Category: PEMS.Application.Notifications.Common.NotificationCategories.Invitation,
+                    IsActionRequired: true,
+                    VisitInstanceId: instance.VisitInstanceId,
+                    CampusId: instance.CampusId,
+                    ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitInvitation,
+                    ActionUrl: invitationActionUrl),
                 cancellationToken
             );
             await _db.SaveChangesAsync(cancellationToken);
@@ -326,7 +339,7 @@ public sealed class InviteVisitParticipantCommandHandler
 
     // ── helpers ──
 
-    private async Task<(ulong UserId, string ParticipantRole, string RoleLabel)> ResolveInviteeAsync(
+    private async Task<(ulong UserId, string ParticipantRole, string RoleLabel, ulong? DepartmentId)> ResolveInviteeAsync(
         string type, InviteVisitParticipantCommand request, VisitRequestCampus instance, CancellationToken ct)
     {
         var campusId = instance.CampusId;
@@ -350,7 +363,7 @@ public sealed class InviteVisitParticipantCommandHandler
                 select u.UserId).AnyAsync(ct);
             if (!ok)
                 throw new ConflictException("Nhân sự được chọn không hợp lệ (không phải Staff IC đang hoạt động cùng cơ sở).");
-            return (request.UserId.Value, ParticipantRoles.IcSupport, "Staff hỗ trợ IC");
+            return (request.UserId.Value, ParticipantRoles.IcSupport, "Staff hỗ trợ IC", null);
         }
 
         if (type == InviteParticipantTypes.Student)
@@ -367,7 +380,7 @@ public sealed class InviteVisitParticipantCommandHandler
                 select u.UserId).AnyAsync(ct);
             if (!ok)
                 throw new ConflictException("Sinh viên được chọn không hợp lệ (không hoạt động hoặc khác cơ sở).");
-            return (request.UserId.Value, ParticipantRoles.Student, "Sinh viên hỗ trợ");
+            return (request.UserId.Value, ParticipantRoles.Student, "Sinh viên hỗ trợ", null);
         }
 
         if (type == InviteParticipantTypes.DeptSupport)
@@ -403,7 +416,7 @@ public sealed class InviteVisitParticipantCommandHandler
             if (leaderId is null)
                 throw new ConflictException("Phòng này chưa có trưởng phòng đang hoạt động, không thể gửi lời mời.");
 
-            return (leaderId.Value, ParticipantRoles.DeptSupport, "Trưởng phòng (Phòng ban hỗ trợ)");
+            return (leaderId.Value, ParticipantRoles.DeptSupport, "Trưởng phòng (Phòng ban hỗ trợ)", dept.DepartmentId);
         }
 
         throw new ValidationException("Loại thành phần tham gia không hợp lệ.");

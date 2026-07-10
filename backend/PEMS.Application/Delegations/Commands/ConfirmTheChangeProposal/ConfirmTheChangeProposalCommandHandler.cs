@@ -59,52 +59,73 @@ public sealed class ConfirmTheChangeProposalCommandHandler : IRequestHandler<Con
 
         await _db.SaveChangesAsync(cancellationToken);
 
-        var notifications = new System.Collections.Generic.List<PEMS.Application.Notifications.Common.CreateNotificationItem>();
+        var notifications = new System.Collections.Generic.List<PEMS.Application.Notifications.Common.CreateNotificationRequest>();
         ulong? assigneeId = item.AssignedToUserId;
         ulong? assignedBy = item.AssignedBy;
+        ulong? proposedBy = item.ProposedBy;
+        var currentUserId = _currentUser.UserId.Value;
+        var deptTaskUrl = item.RequestedToDepartmentId.HasValue
+            ? $"/dashboard/departments/{item.RequestedToDepartmentId.Value}/tasks/{item.LogisticsItemId}"
+            : null;
 
         string actionText = request.Accepted ? "ĐÃ CHẤP NHẬN" : "ĐÃ TỪ CHỐI";
-        string msgText = request.Accepted 
+        string msgText = request.Accepted
             ? $"Host đã chấp nhận đề xuất thay đổi cho nhiệm vụ \"{item.Title}\"."
             : $"Host đã từ chối đề xuất thay đổi cho nhiệm vụ \"{item.Title}\".";
 
-        if (assigneeId.HasValue && assigneeId.Value != _currentUser.UserId.Value)
+        if (assigneeId.HasValue && assigneeId.Value != currentUserId)
         {
-            notifications.Add(new PEMS.Application.Notifications.Common.CreateNotificationItem(
-                assigneeId.Value,
-                "Phản hồi đề xuất hậu cần",
-                msgText,
-                PEMS.Application.Notifications.Common.NotificationTypes.LogisticsProposalResponded,
-                PEMS.Application.Notifications.Common.NotificationRelatedTypes.LogisticsItem,
-                item.LogisticsItemId
+            notifications.Add(new PEMS.Application.Notifications.Common.CreateNotificationRequest(
+                RecipientUserId: assigneeId.Value,
+                Title: "Phản hồi đề xuất hậu cần",
+                Message: msgText,
+                NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.LogisticsProposalResponded,
+                RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.LogisticsItem,
+                RelatedId: item.LogisticsItemId,
+                ActorUserId: currentUserId,
+                Category: PEMS.Application.Notifications.Common.NotificationCategories.Logistics,
+                VisitInstanceId: item.VisitInstanceId,
+                ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenLogisticsDetail,
+                ActionUrl: deptTaskUrl ?? $"/dashboard/visit/process/{item.VisitInstanceId}"
             ));
         }
 
-        if (assignedBy.HasValue && assignedBy.Value != _currentUser.UserId.Value && (!assigneeId.HasValue || assignedBy.Value != assigneeId.Value))
+        if (assignedBy.HasValue && assignedBy.Value != currentUserId && (!assigneeId.HasValue || assignedBy.Value != assigneeId.Value))
         {
-            notifications.Add(new PEMS.Application.Notifications.Common.CreateNotificationItem(
-                assignedBy.Value,
-                "Phản hồi đề xuất hậu cần",
-                msgText,
-                PEMS.Application.Notifications.Common.NotificationTypes.LogisticsProposalResponded,
-                PEMS.Application.Notifications.Common.NotificationRelatedTypes.LogisticsItem,
-                item.LogisticsItemId
+            notifications.Add(new PEMS.Application.Notifications.Common.CreateNotificationRequest(
+                RecipientUserId: assignedBy.Value,
+                Title: "Phản hồi đề xuất hậu cần",
+                Message: msgText,
+                NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.LogisticsProposalResponded,
+                RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.LogisticsItem,
+                RelatedId: item.LogisticsItemId,
+                ActorUserId: currentUserId,
+                Category: PEMS.Application.Notifications.Common.NotificationCategories.Logistics,
+                VisitInstanceId: item.VisitInstanceId,
+                ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenLogisticsDetail,
+                ActionUrl: deptTaskUrl ?? $"/dashboard/visit/process/{item.VisitInstanceId}"
             ));
         }
-        else if (item.RequestedToDepartmentId.HasValue)
+
+        // The person who actually authored the proposal must learn the outcome too — they may be
+        // neither the assignee nor the assignedBy (e.g. a Dept Leader proposing on their own item).
+        if (proposedBy.HasValue && proposedBy.Value != currentUserId
+            && (!assigneeId.HasValue || proposedBy.Value != assigneeId.Value)
+            && (!assignedBy.HasValue || proposedBy.Value != assignedBy.Value))
         {
-            var dept = await _db.Departments.FirstOrDefaultAsync(d => d.DepartmentId == item.RequestedToDepartmentId.Value, cancellationToken);
-            if (dept?.HeadUserId != null && dept.HeadUserId.Value != _currentUser.UserId.Value && (!assigneeId.HasValue || dept.HeadUserId.Value != assigneeId.Value))
-            {
-                notifications.Add(new PEMS.Application.Notifications.Common.CreateNotificationItem(
-                    dept.HeadUserId.Value,
-                    "Phản hồi đề xuất hậu cần",
-                    msgText,
-                    PEMS.Application.Notifications.Common.NotificationTypes.LogisticsProposalResponded,
-                    PEMS.Application.Notifications.Common.NotificationRelatedTypes.LogisticsItem,
-                    item.LogisticsItemId
-                ));
-            }
+            notifications.Add(new PEMS.Application.Notifications.Common.CreateNotificationRequest(
+                RecipientUserId: proposedBy.Value,
+                Title: "Phản hồi đề xuất hậu cần",
+                Message: msgText,
+                NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.LogisticsProposalResponded,
+                RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.LogisticsItem,
+                RelatedId: item.LogisticsItemId,
+                ActorUserId: currentUserId,
+                Category: PEMS.Application.Notifications.Common.NotificationCategories.Logistics,
+                VisitInstanceId: item.VisitInstanceId,
+                ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenLogisticsDetail,
+                ActionUrl: deptTaskUrl ?? $"/dashboard/visit/process/{item.VisitInstanceId}"
+            ));
         }
 
         if (notifications.Count > 0)

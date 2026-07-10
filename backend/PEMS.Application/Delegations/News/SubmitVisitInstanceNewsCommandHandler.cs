@@ -86,16 +86,23 @@ public sealed class SubmitVisitInstanceNewsCommandHandler
             .Select(u => u.UserId)
             .ToListAsync(cancellationToken);
 
-        var notifications = new System.Collections.Generic.List<PEMS.Application.Notifications.Common.CreateNotificationItem>();
+        var notifications = new System.Collections.Generic.List<PEMS.Application.Notifications.Common.CreateNotificationRequest>();
         foreach (var leaderId in staffLeaders)
         {
-            notifications.Add(new PEMS.Application.Notifications.Common.CreateNotificationItem(
-                leaderId,
-                "Tin tức chờ duyệt",
-                $"Bài tin \"{newsTitle}\" đang chờ bạn duyệt.",
-                PEMS.Application.Notifications.Common.NotificationTypes.NewsPendingApproval,
-                PEMS.Application.Notifications.Common.NotificationRelatedTypes.News,
-                news.NewsId
+            notifications.Add(new PEMS.Application.Notifications.Common.CreateNotificationRequest(
+                RecipientUserId: leaderId,
+                Title: "Tin tức chờ duyệt",
+                Message: $"Bài tin \"{newsTitle}\" đang chờ bạn duyệt.",
+                NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.NewsPendingApproval,
+                RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.News,
+                RelatedId: news.NewsId,
+                ActorUserId: userId,
+                Category: PEMS.Application.Notifications.Common.NotificationCategories.News,
+                IsActionRequired: true,
+                VisitInstanceId: instance.VisitInstanceId,
+                CampusId: instance.CampusId,
+                ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenNewsDetail,
+                ActionUrl: $"/dashboard/news/{news.NewsId}"
             ));
         }
 

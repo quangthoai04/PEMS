@@ -16,16 +16,22 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AcceptInvitation
     {
         private readonly IApplicationDbContext _context;
         private readonly ICurrentUserService _currentUserService;
+        private readonly PEMS.Application.Notifications.Common.INotificationService _notificationService;
 
-        public AcceptInvitationCommandHandler(IApplicationDbContext context, ICurrentUserService currentUserService)
+        public AcceptInvitationCommandHandler(
+            IApplicationDbContext context,
+            ICurrentUserService currentUserService,
+            PEMS.Application.Notifications.Common.INotificationService notificationService)
         {
             _context = context;
             _currentUserService = currentUserService;
+            _notificationService = notificationService;
         }
 
         public async Task<bool> Handle(AcceptInvitationCommand request, CancellationToken cancellationToken)
         {
             var p = await _context.VisitParticipants
+                .Include(x => x.VisitInstance).ThenInclude(v => v.VisitRequest)
                 .FirstOrDefaultAsync(x => x.ParticipantId == request.ParticipantId, cancellationToken);
 
             if (p == null) throw new Exception("Không tìm thấy thư mời");
@@ -34,12 +40,39 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AcceptInvitation
             // Allow accepting anytime
             // if (p.Status != "INVITED") throw new Exception("Thư mời không ở trạng thái chờ xác nhận.");
 
+            var userId = _currentUserService.UserId;
             p.Status = "ACCEPTED";
             p.RespondedAt = DateTime.UtcNow;
-            p.UpdatedBy = _currentUserService.UserId;
+            p.UpdatedBy = userId;
             p.UpdatedAt = DateTime.UtcNow;
 
             await _context.SaveChangesAsync(cancellationToken);
+
+            if (p.VisitInstance?.CurrentHostUserId != null && userId.HasValue)
+            {
+                var actorName = await _context.Users
+                    .Where(u => u.UserId == userId.Value)
+                    .Select(u => u.FullName)
+                    .FirstOrDefaultAsync(cancellationToken) ?? "Phòng ban";
+                var delegationName = p.VisitInstance.VisitRequest?.DelegationName ?? "Đoàn khách";
+
+                await _notificationService.CreateAsync(
+                    new PEMS.Application.Notifications.Common.CreateNotificationRequest(
+                        RecipientUserId: p.VisitInstance.CurrentHostUserId.Value,
+                        Title: "Phản hồi lời mời tham gia",
+                        Message: $"{actorName} đã chấp nhận lời mời hỗ trợ đoàn {delegationName}.",
+                        NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.ParticipationResponded,
+                        RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitParticipant,
+                        RelatedId: p.ParticipantId,
+                        ActorUserId: userId.Value,
+                        Category: PEMS.Application.Notifications.Common.NotificationCategories.Invitation,
+                        VisitInstanceId: p.VisitInstanceId,
+                        ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitDetail,
+                        ActionUrl: $"/dashboard/visit/process/{p.VisitInstanceId}"),
+                    cancellationToken
+                );
+            }
+
             return true;
         }
     }

@@ -212,43 +212,67 @@ public sealed class CompleteVisitStageCommandHandler
         await _db.SaveChangesAsync(cancellationToken);
 
         // --- Notifications ---
-        var notifications = new List<PEMS.Application.Notifications.Common.CreateNotificationItem>();
-        if (newStatus == VisitInstanceStatus.DuringVisit || newStatus == VisitInstanceStatus.AfterVisit)
+        var notifications = new List<PEMS.Application.Notifications.Common.CreateNotificationRequest>();
+        var visitDetailUrl = $"/dashboard/visit/process/{instance.VisitInstanceId}";
+        if (newStatus == VisitInstanceStatus.Closed)
         {
-            if (instance.CoordinatorUserId.HasValue)
-            {
-                notifications.Add(new PEMS.Application.Notifications.Common.CreateNotificationItem(
-                    instance.CoordinatorUserId.Value,
-                    "Cập nhật tiến độ đoàn khách",
-                    $"Đoàn khách {instance.VisitRequest?.DelegationName} đã chuyển sang trạng thái mới: {newStatus}.",
-                    PEMS.Application.Notifications.Common.NotificationTypes.VisitStatusChanged,
-                    PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitInstance,
-                    instance.VisitInstanceId
-                ));
-            }
-        }
-        else if (newStatus == VisitInstanceStatus.Closed)
-        {
-            if (instance.CoordinatorUserId.HasValue)
-            {
-                notifications.Add(new PEMS.Application.Notifications.Common.CreateNotificationItem(
-                    instance.CoordinatorUserId.Value,
-                    "Đóng đoàn khách",
-                    $"Cơ sở {instance.CampusId} của đoàn {instance.VisitRequest?.DelegationName} đã hoàn tất và đóng đoàn.",
-                    PEMS.Application.Notifications.Common.NotificationTypes.VisitClosed,
-                    PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitInstance,
-                    instance.VisitInstanceId
-                ));
-            }
             if (instance.VisitRequest?.VisitorUserId != null)
             {
-                notifications.Add(new PEMS.Application.Notifications.Common.CreateNotificationItem(
-                    instance.VisitRequest.VisitorUserId.Value,
-                    "Kết thúc chuyến thăm",
-                    $"Chuyến thăm {instance.VisitRequest.RequestCode} của bạn đã hoàn tất. Cảm ơn bạn!",
-                    PEMS.Application.Notifications.Common.NotificationTypes.VisitClosed,
-                    PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitInstance,
-                    instance.VisitInstanceId
+                notifications.Add(new PEMS.Application.Notifications.Common.CreateNotificationRequest(
+                    RecipientUserId: instance.VisitRequest.VisitorUserId.Value,
+                    Title: "Kết thúc chuyến thăm",
+                    Message: $"Chuyến thăm {instance.VisitRequest.RequestCode} của bạn đã hoàn tất. Cảm ơn bạn!",
+                    NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.VisitClosed,
+                    RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitInstance,
+                    RelatedId: instance.VisitInstanceId,
+                    ActorUserId: actorId,
+                    Category: PEMS.Application.Notifications.Common.NotificationCategories.Visit,
+                    VisitInstanceId: instance.VisitInstanceId,
+                    CampusId: instance.CampusId,
+                    ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitDetail,
+                    ActionUrl: visitDetailUrl
+                ));
+            }
+
+            // G3 (spec §5 Visitor/Host): mời gửi feedback sau chuyến — hook vào đúng lifecycle
+            // transition "đóng đoàn", không tạo cơ chế push mới nào khác.
+            var feedbackUrl = $"/dashboard/visit/feedback/{instance.VisitInstanceId}";
+            if (instance.VisitRequest?.VisitorUserId != null)
+            {
+                notifications.Add(new PEMS.Application.Notifications.Common.CreateNotificationRequest(
+                    RecipientUserId: instance.VisitRequest.VisitorUserId.Value,
+                    Title: "Mời bạn đánh giá chuyến thăm",
+                    Message: $"Chuyến thăm {instance.VisitRequest.RequestCode} đã kết thúc. Hãy dành chút thời gian đánh giá trải nghiệm của bạn.",
+                    NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.VisitClosed,
+                    RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitInstance,
+                    RelatedId: instance.VisitInstanceId,
+                    ActorUserId: actorId,
+                    Category: PEMS.Application.Notifications.Common.NotificationCategories.Feedback,
+                    IsActionRequired: true,
+                    VisitInstanceId: instance.VisitInstanceId,
+                    CampusId: instance.CampusId,
+                    ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitDetail,
+                    ActionUrl: feedbackUrl,
+                    DedupeKey: $"FEEDBACK_INVITE_VISITOR_{instance.VisitInstanceId}"
+                ));
+            }
+            if (instance.CurrentHostUserId.HasValue)
+            {
+                notifications.Add(new PEMS.Application.Notifications.Common.CreateNotificationRequest(
+                    RecipientUserId: instance.CurrentHostUserId.Value,
+                    Title: "Mời bạn đánh giá thành phần tham gia",
+                    Message: $"Đoàn {instance.VisitRequest?.DelegationName} đã kết thúc. Hãy đánh giá host/thành phần đã hỗ trợ bạn.",
+                    NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.VisitClosed,
+                    RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitInstance,
+                    RelatedId: instance.VisitInstanceId,
+                    ActorUserId: actorId,
+                    Category: PEMS.Application.Notifications.Common.NotificationCategories.Feedback,
+                    IsActionRequired: true,
+                    VisitInstanceId: instance.VisitInstanceId,
+                    CampusId: instance.CampusId,
+                    ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitDetail,
+                    ActionUrl: feedbackUrl,
+                    DedupeKey: $"FEEDBACK_INVITE_HOST_{instance.VisitInstanceId}"
                 ));
             }
         }

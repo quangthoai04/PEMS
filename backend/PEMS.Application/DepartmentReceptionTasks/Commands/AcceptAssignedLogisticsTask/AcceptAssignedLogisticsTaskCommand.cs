@@ -65,31 +65,44 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AcceptAssignedLogis
 
             await _context.SaveChangesAsync(cancellationToken);
 
-            var notifications = new System.Collections.Generic.List<PEMS.Application.Notifications.Common.CreateNotificationItem>();
+            var notifications = new System.Collections.Generic.List<PEMS.Application.Notifications.Common.CreateNotificationRequest>();
             var assignedBy = l.AssignedBy; // Department Leader who assigned this
             var hostId = l.VisitInstance?.CurrentHostUserId;
+            var deptTaskUrl = l.RequestedToDepartmentId.HasValue
+                ? $"/dashboard/departments/{l.RequestedToDepartmentId.Value}/tasks/{l.LogisticsItemId}"
+                : null;
 
             if (assignedBy.HasValue && assignedBy.Value != userId)
             {
-                notifications.Add(new PEMS.Application.Notifications.Common.CreateNotificationItem(
-                    assignedBy.Value,
-                    "Logistics được tiếp nhận",
-                    $"Nhân sự đã tiếp nhận nhiệm vụ hậu cần: {l.Title}.",
-                    PEMS.Application.Notifications.Common.NotificationTypes.LogisticsAssigneeResponded,
-                    PEMS.Application.Notifications.Common.NotificationRelatedTypes.LogisticsItem,
-                    request.LogisticsItemId
+                notifications.Add(new PEMS.Application.Notifications.Common.CreateNotificationRequest(
+                    RecipientUserId: assignedBy.Value,
+                    Title: "Logistics được tiếp nhận",
+                    Message: $"Nhân sự đã tiếp nhận nhiệm vụ hậu cần: {l.Title}.",
+                    NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.LogisticsAssigneeResponded,
+                    RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.LogisticsItem,
+                    RelatedId: request.LogisticsItemId,
+                    ActorUserId: userId,
+                    Category: PEMS.Application.Notifications.Common.NotificationCategories.Logistics,
+                    VisitInstanceId: l.VisitInstanceId,
+                    ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenLogisticsDetail,
+                    ActionUrl: deptTaskUrl ?? $"/dashboard/visit/process/{l.VisitInstanceId}"
                 ));
             }
 
             if (hostId.HasValue && hostId.Value != userId && hostId.Value != assignedBy)
             {
-                notifications.Add(new PEMS.Application.Notifications.Common.CreateNotificationItem(
-                    hostId.Value,
-                    "Logistics được tiếp nhận",
-                    $"Nhân sự phòng ban đã tiếp nhận nhiệm vụ hậu cần: {l.Title}.",
-                    PEMS.Application.Notifications.Common.NotificationTypes.LogisticsAssigneeResponded,
-                    PEMS.Application.Notifications.Common.NotificationRelatedTypes.LogisticsItem,
-                    request.LogisticsItemId
+                notifications.Add(new PEMS.Application.Notifications.Common.CreateNotificationRequest(
+                    RecipientUserId: hostId.Value,
+                    Title: "Logistics được tiếp nhận",
+                    Message: $"Nhân sự phòng ban đã tiếp nhận nhiệm vụ hậu cần: {l.Title}.",
+                    NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.LogisticsAssigneeResponded,
+                    RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.LogisticsItem,
+                    RelatedId: request.LogisticsItemId,
+                    ActorUserId: userId,
+                    Category: PEMS.Application.Notifications.Common.NotificationCategories.Logistics,
+                    VisitInstanceId: l.VisitInstanceId,
+                    ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitDetail,
+                    ActionUrl: $"/dashboard/visit/process/{l.VisitInstanceId}"
                 ));
             }
 

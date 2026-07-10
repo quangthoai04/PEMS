@@ -120,7 +120,7 @@ public sealed class CancelVisitRequestCommandHandler
             // --- Notifications for PENDING_APPROVAL cancellation ---
             // Campus-independent approval: the pending instances sat with the campus Staff
             // Leaders (never HO) — notify them for every scope.
-            var notifs = new List<PEMS.Application.Notifications.Common.CreateNotificationItem>();
+            var notifs = new List<PEMS.Application.Notifications.Common.CreateNotificationRequest>();
             {
                 var campusIds = visit.CampusInstances.Select(c => c.CampusId).Distinct().ToList();
                 var staffLeaders = await _db.Users
@@ -128,13 +128,18 @@ public sealed class CancelVisitRequestCommandHandler
                     .Select(u => u.UserId)
                     .ToListAsync(cancellationToken);
 
-                notifs.AddRange(staffLeaders.Select(id => new PEMS.Application.Notifications.Common.CreateNotificationItem(
-                    id,
-                    "Yêu cầu tham quan đã bị hủy",
-                    $"Visitor đã hủy yêu cầu {visit.RequestCode} trước khi được xử lý.",
-                    PEMS.Application.Notifications.Common.NotificationTypes.VisitCancelled,
-                    PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitRequest,
-                    visit.VisitRequestId
+                notifs.AddRange(staffLeaders.Select(id => new PEMS.Application.Notifications.Common.CreateNotificationRequest(
+                    RecipientUserId: id,
+                    Title: "Yêu cầu tham quan đã bị hủy",
+                    Message: $"Visitor đã hủy yêu cầu {visit.RequestCode} trước khi được xử lý.",
+                    NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.VisitCancelled,
+                    RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitRequest,
+                    RelatedId: visit.VisitRequestId,
+                    ActorUserId: actorId,
+                    Category: PEMS.Application.Notifications.Common.NotificationCategories.Visit,
+                    VisitRequestId: visit.VisitRequestId,
+                    ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitDetail,
+                    ActionUrl: "/dashboard/visit"
                 )));
             }
 
@@ -378,7 +383,7 @@ public sealed class CancelVisitRequestCommandHandler
         }
 
         // --- Notifications for AFTER_APPROVAL cancellation ---
-        var afterNotifs = new List<PEMS.Application.Notifications.Common.CreateNotificationItem>();
+        var afterNotifs = new List<PEMS.Application.Notifications.Common.CreateNotificationRequest>();
         var hoUsersToNotify = new List<ulong>();
         if (visit.VisitScope == VisitScopes.MultiCampus && isVisitorOwner)
         {
@@ -388,42 +393,79 @@ public sealed class CancelVisitRequestCommandHandler
                 .ToListAsync(cancellationToken);
         }
 
+        // Notify every active Staff Leader of each target campus (not just the coordinator who
+        // happened to approve it) — consistent with the PENDING_APPROVAL branch above, so a
+        // campus with several/rotated Leaders all learn about the cancellation.
+        var targetCampusIds = targets.Select(c => c.CampusId).Distinct().ToList();
+        var staffLeadersByCampus = (await _db.Users
+                .Where(u => u.Role.RoleCode == RoleCodes.Staff && u.SubRole == "LEADER"
+                    && u.PrimaryCampusId.HasValue && targetCampusIds.Contains(u.PrimaryCampusId.Value)
+                    && u.Status == "ACTIVE")
+                .Select(u => new { u.UserId, CampusId = u.PrimaryCampusId!.Value })
+                .ToListAsync(cancellationToken))
+            .GroupBy(u => u.CampusId)
+            .ToDictionary(g => g.Key, g => g.Select(u => u.UserId).ToList());
+
         foreach (var instance in targets)
         {
-            var staffLeaderId = instance.CoordinatorUserId;
+            var staffLeaderIds = staffLeadersByCampus.TryGetValue(instance.CampusId, out var leaders)
+                ? leaders
+                : new List<ulong>();
+            var actionUrl = $"/dashboard/visit/process/{instance.VisitInstanceId}";
             if (isVisitorOwner)
             {
                 if (instance.CurrentHostUserId.HasValue)
                 {
-                    afterNotifs.Add(new PEMS.Application.Notifications.Common.CreateNotificationItem(
-                        instance.CurrentHostUserId.Value,
-                        "Lịch thăm quan bị hủy",
-                        $"Khách đã hủy cơ sở {instance.CampusId} thuộc đơn {visit.RequestCode}.",
-                        PEMS.Application.Notifications.Common.NotificationTypes.VisitCancelled,
-                        PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitInstance,
-                        instance.VisitInstanceId
+                    afterNotifs.Add(new PEMS.Application.Notifications.Common.CreateNotificationRequest(
+                        RecipientUserId: instance.CurrentHostUserId.Value,
+                        Title: "Lịch thăm quan bị hủy",
+                        Message: $"Khách đã hủy cơ sở {instance.CampusId} thuộc đơn {visit.RequestCode}.",
+                        NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.VisitCancelled,
+                        RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitInstance,
+                        RelatedId: instance.VisitInstanceId,
+                        ActorUserId: actorId,
+                        Category: PEMS.Application.Notifications.Common.NotificationCategories.Visit,
+                        VisitRequestId: visit.VisitRequestId,
+                        VisitInstanceId: instance.VisitInstanceId,
+                        CampusId: instance.CampusId,
+                        ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitDetail,
+                        ActionUrl: actionUrl
                     ));
                 }
-                if (staffLeaderId.HasValue)
+                foreach (var staffLeaderId in staffLeaderIds)
                 {
-                    afterNotifs.Add(new PEMS.Application.Notifications.Common.CreateNotificationItem(
-                        staffLeaderId.Value,
-                        "Lịch thăm quan bị hủy",
-                        $"Khách đã hủy cơ sở {instance.CampusId} thuộc đơn {visit.RequestCode}.",
-                        PEMS.Application.Notifications.Common.NotificationTypes.VisitCancelled,
-                        PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitInstance,
-                        instance.VisitInstanceId
+                    afterNotifs.Add(new PEMS.Application.Notifications.Common.CreateNotificationRequest(
+                        RecipientUserId: staffLeaderId,
+                        Title: "Lịch thăm quan bị hủy",
+                        Message: $"Khách đã hủy cơ sở {instance.CampusId} thuộc đơn {visit.RequestCode}.",
+                        NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.VisitCancelled,
+                        RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitInstance,
+                        RelatedId: instance.VisitInstanceId,
+                        ActorUserId: actorId,
+                        Category: PEMS.Application.Notifications.Common.NotificationCategories.Visit,
+                        VisitRequestId: visit.VisitRequestId,
+                        VisitInstanceId: instance.VisitInstanceId,
+                        CampusId: instance.CampusId,
+                        ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitDetail,
+                        ActionUrl: actionUrl
                     ));
                 }
                 foreach (var ho in hoUsersToNotify)
                 {
-                    afterNotifs.Add(new PEMS.Application.Notifications.Common.CreateNotificationItem(
-                        ho,
-                        "Lịch thăm quan bị hủy",
-                        $"Khách đã hủy cơ sở {instance.CampusId} thuộc đơn {visit.RequestCode}.",
-                        PEMS.Application.Notifications.Common.NotificationTypes.VisitCancelled,
-                        PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitInstance,
-                        instance.VisitInstanceId
+                    afterNotifs.Add(new PEMS.Application.Notifications.Common.CreateNotificationRequest(
+                        RecipientUserId: ho,
+                        Title: "Lịch thăm quan bị hủy",
+                        Message: $"Khách đã hủy cơ sở {instance.CampusId} thuộc đơn {visit.RequestCode}.",
+                        NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.VisitCancelled,
+                        RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitInstance,
+                        RelatedId: instance.VisitInstanceId,
+                        ActorUserId: actorId,
+                        Category: PEMS.Application.Notifications.Common.NotificationCategories.Visit,
+                        VisitRequestId: visit.VisitRequestId,
+                        VisitInstanceId: instance.VisitInstanceId,
+                        CampusId: instance.CampusId,
+                        ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitDetail,
+                        ActionUrl: actionUrl
                     ));
                 }
             }
@@ -431,24 +473,38 @@ public sealed class CancelVisitRequestCommandHandler
             {
                 if (visit.VisitorUserId.HasValue)
                 {
-                    afterNotifs.Add(new PEMS.Application.Notifications.Common.CreateNotificationItem(
-                        visit.VisitorUserId.Value,
-                        "Lịch thăm quan bị hủy",
-                        $"Host đã hủy cơ sở {instance.CampusId} thuộc đơn {visit.RequestCode}.",
-                        PEMS.Application.Notifications.Common.NotificationTypes.VisitCancelled,
-                        PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitInstance,
-                        instance.VisitInstanceId
+                    afterNotifs.Add(new PEMS.Application.Notifications.Common.CreateNotificationRequest(
+                        RecipientUserId: visit.VisitorUserId.Value,
+                        Title: "Lịch thăm quan bị hủy",
+                        Message: $"Host đã hủy cơ sở {instance.CampusId} thuộc đơn {visit.RequestCode}.",
+                        NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.VisitCancelled,
+                        RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitInstance,
+                        RelatedId: instance.VisitInstanceId,
+                        ActorUserId: actorId,
+                        Category: PEMS.Application.Notifications.Common.NotificationCategories.Visit,
+                        VisitRequestId: visit.VisitRequestId,
+                        VisitInstanceId: instance.VisitInstanceId,
+                        CampusId: instance.CampusId,
+                        ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitDetail,
+                        ActionUrl: actionUrl
                     ));
                 }
-                if (staffLeaderId.HasValue)
+                foreach (var staffLeaderId in staffLeaderIds)
                 {
-                    afterNotifs.Add(new PEMS.Application.Notifications.Common.CreateNotificationItem(
-                        staffLeaderId.Value,
-                        "Lịch thăm quan bị hủy",
-                        $"Host đã hủy cơ sở {instance.CampusId} thuộc đơn {visit.RequestCode}.",
-                        PEMS.Application.Notifications.Common.NotificationTypes.VisitCancelled,
-                        PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitInstance,
-                        instance.VisitInstanceId
+                    afterNotifs.Add(new PEMS.Application.Notifications.Common.CreateNotificationRequest(
+                        RecipientUserId: staffLeaderId,
+                        Title: "Lịch thăm quan bị hủy",
+                        Message: $"Host đã hủy cơ sở {instance.CampusId} thuộc đơn {visit.RequestCode}.",
+                        NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.VisitCancelled,
+                        RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitInstance,
+                        RelatedId: instance.VisitInstanceId,
+                        ActorUserId: actorId,
+                        Category: PEMS.Application.Notifications.Common.NotificationCategories.Visit,
+                        VisitRequestId: visit.VisitRequestId,
+                        VisitInstanceId: instance.VisitInstanceId,
+                        CampusId: instance.CampusId,
+                        ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitDetail,
+                        ActionUrl: actionUrl
                     ));
                 }
             }

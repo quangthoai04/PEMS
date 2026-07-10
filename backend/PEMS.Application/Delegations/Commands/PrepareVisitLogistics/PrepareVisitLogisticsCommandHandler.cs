@@ -295,12 +295,21 @@ public sealed class PrepareVisitLogisticsCommandHandler
                 await _db.SaveChangesAsync(cancellationToken);
 
                 await _notificationService.CreateAsync(
-                    leaderUserId!.Value,
-                    LogisticsPriorityText.SubjectPrefix(item.Priority) + "Có yêu cầu hậu cần mới",
-                    $"Host {requesterName} đã gửi yêu cầu \"{item.Title}\" (ưu tiên {LogisticsPriorityText.LabelVi(item.Priority)}) cho đoàn {delegationName} tại {campusName}.",
-                    PEMS.Application.Notifications.Common.NotificationTypes.LogisticsRequestCreated,
-                    PEMS.Application.Notifications.Common.NotificationRelatedTypes.LogisticsItem,
-                    item.LogisticsItemId,
+                    new PEMS.Application.Notifications.Common.CreateNotificationRequest(
+                        RecipientUserId: leaderUserId!.Value,
+                        Title: LogisticsPriorityText.SubjectPrefix(item.Priority) + "Có yêu cầu hậu cần mới",
+                        Message: $"Host {requesterName} đã gửi yêu cầu \"{item.Title}\" (ưu tiên {LogisticsPriorityText.LabelVi(item.Priority)}) cho đoàn {delegationName} tại {campusName}.",
+                        NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.LogisticsRequestCreated,
+                        RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.LogisticsItem,
+                        RelatedId: item.LogisticsItemId,
+                        ActorUserId: actorId,
+                        Category: PEMS.Application.Notifications.Common.NotificationCategories.Logistics,
+                        IsActionRequired: true,
+                        VisitInstanceId: item.VisitInstanceId,
+                        ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenLogisticsDetail,
+                        ActionUrl: requestedDeptId.HasValue
+                            ? $"/dashboard/departments/{requestedDeptId.Value}/tasks/{item.LogisticsItemId}"
+                            : $"/dashboard/visit/process/{item.VisitInstanceId}"),
                     cancellationToken
                 );
 

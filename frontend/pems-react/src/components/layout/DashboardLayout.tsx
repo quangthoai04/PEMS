@@ -8,7 +8,7 @@
 import React, { useState } from 'react';
 import { Outlet } from 'react-router-dom';
 import { Sidebar } from '../dashboard/Sidebar';
-import { NotificationBell } from '../dashboard/NotificationBell';
+import { NotificationBellButton } from '../../features/notifications/components/NotificationBellButton';
 import { Menu } from 'lucide-react';
 import logo from '../../assets/images/2021-FPTU-Eng.png';
 
@@ -42,7 +42,7 @@ export function DashboardLayout() {
           <span className="font-bold text-[#004c91] text-base">Dashboard</span>
         </div>
         <div className="flex items-center gap-2">
-          <NotificationBell />
+          <NotificationBellButton variant="dashboard" />
           <img src={logo} alt="FPT Logo" className="h-8 md:h-9 object-contain" />
         </div>
       </header>
@@ -60,7 +60,7 @@ export function DashboardLayout() {
         {/* Desktop floating notification bell */}
         <div className="hidden lg:flex fixed top-4 right-6 z-40">
           <div className="bg-white/80 backdrop-blur-md shadow-sm rounded-full border border-gray-100 p-1">
-             <NotificationBell />
+             <NotificationBellButton variant="dashboard" />
           </div>
         </div>
         

@@ -15,6 +15,7 @@ import { LoginModal } from '../modals/LoginModal';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../../shared/hooks/useAuth';
 import { useAuthenticatedImage } from '../../shared/hooks/useAuthenticatedImage';
+import { NotificationBellButton } from '../../features/notifications/components/NotificationBellButton';
 import { useTranslation } from 'react-i18next';
 import { changeLanguage } from '../../shared/i18n/config';
 
@@ -39,7 +40,7 @@ export function Header() {
 
   // Avatar comes from the shared AuthContext so it updates reactively right after an upload.
   // It lives behind an authenticated endpoint, so fetch it as a blob; fall back to the default.
-  const { user: authUser, logout } = useAuth();
+  const { user: authUser, logout, isAuthenticated } = useAuth();
   const fetchedAvatar = useAuthenticatedImage(authUser?.avatarUrl ?? null);
   const avatarSrc = fetchedAvatar ?? avatarImg;
 
@@ -176,9 +177,11 @@ export function Header() {
                 </div>
               </div>
 
+              {isAuthenticated && <NotificationBellButton variant="header-desktop" />}
+
               {user ? (
                 <div className="relative">
-                  <button 
+                  <button
                     onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)}
                     className="flex items-center justify-between gap-1.5 px-2 py-1.5 rounded-full hover:bg-gray-50 transition-colors border border-transparent hover:border-gray-200 max-w-[100px] lg:max-w-[130px] xl:max-w-[180px]"
                   >
@@ -322,6 +325,13 @@ export function Header() {
             <div className="p-5 border-t border-slate-100 bg-slate-50/50">
               {user ? (
                 <div className="space-y-3">
+                  <div className="flex items-center justify-between px-1">
+                    <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                      {t('publicLayout:profile.category')}
+                    </span>
+                    <NotificationBellButton variant="header-mobile" onNavigate={() => setIsMobileMenuOpen(false)} />
+                  </div>
+
                   <div className="flex items-center gap-3 px-3 py-2 bg-white rounded-xl border border-slate-100 shadow-xs">
                     <img src={avatarSrc} alt="Avatar" className="w-10 h-10 rounded-full border border-slate-250 object-cover" onError={(e) => { e.currentTarget.src = avatarImg; }} />
                     <div className="min-w-0 flex-1">

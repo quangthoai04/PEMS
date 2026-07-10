@@ -76,19 +76,28 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.DeclineAssignedLogi
             l.UpdatedBy = userId;
             l.UpdatedAt = DateTime.UtcNow;
 
-            var notifications = new System.Collections.Generic.List<PEMS.Application.Notifications.Common.CreateNotificationItem>();
+            var notifications = new System.Collections.Generic.List<PEMS.Application.Notifications.Common.CreateNotificationRequest>();
             ulong? assignedBy = attempt?.AssignedBy ?? l.AssignedBy;
             var hostId = l.VisitInstance?.CurrentHostUserId;
+            var deptTaskUrl = l.RequestedToDepartmentId.HasValue
+                ? $"/dashboard/departments/{l.RequestedToDepartmentId.Value}/tasks/{l.LogisticsItemId}"
+                : null;
 
             if (assignedBy.HasValue && assignedBy.Value != userId)
             {
-                notifications.Add(new PEMS.Application.Notifications.Common.CreateNotificationItem(
-                    assignedBy.Value,
-                    "Nhân viên từ chối nhiệm vụ",
-                    $"Nhân viên {decliningName} đã từ chối nhiệm vụ \"{l.Title}\". Vui lòng phân công người khác.",
-                    PEMS.Application.Notifications.Common.NotificationTypes.LogisticsAssigneeResponded,
-                    PEMS.Application.Notifications.Common.NotificationRelatedTypes.LogisticsItem,
-                    request.LogisticsItemId
+                notifications.Add(new PEMS.Application.Notifications.Common.CreateNotificationRequest(
+                    RecipientUserId: assignedBy.Value,
+                    Title: "Nhân viên từ chối nhiệm vụ",
+                    Message: $"Nhân viên {decliningName} đã từ chối nhiệm vụ \"{l.Title}\". Vui lòng phân công người khác.",
+                    NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.LogisticsAssigneeResponded,
+                    RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.LogisticsItem,
+                    RelatedId: request.LogisticsItemId,
+                    ActorUserId: userId,
+                    Category: PEMS.Application.Notifications.Common.NotificationCategories.Logistics,
+                    IsActionRequired: true,
+                    VisitInstanceId: l.VisitInstanceId,
+                    ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenLogisticsDetail,
+                    ActionUrl: deptTaskUrl ?? $"/dashboard/visit/process/{l.VisitInstanceId}"
                 ));
             }
             else if (l.RequestedToDepartmentId.HasValue)
@@ -96,26 +105,38 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.DeclineAssignedLogi
                 var dept = await _context.Departments.FirstOrDefaultAsync(d => d.DepartmentId == l.RequestedToDepartmentId.Value, cancellationToken);
                 if (dept?.HeadUserId != null && dept.HeadUserId.Value != userId)
                 {
-                    notifications.Add(new PEMS.Application.Notifications.Common.CreateNotificationItem(
-                        dept.HeadUserId.Value,
-                        "Nhân viên từ chối nhiệm vụ",
-                        $"Nhân viên {decliningName} đã từ chối nhiệm vụ \"{l.Title}\". Vui lòng phân công người khác.",
-                        PEMS.Application.Notifications.Common.NotificationTypes.LogisticsAssigneeResponded,
-                        PEMS.Application.Notifications.Common.NotificationRelatedTypes.LogisticsItem,
-                        request.LogisticsItemId
+                    notifications.Add(new PEMS.Application.Notifications.Common.CreateNotificationRequest(
+                        RecipientUserId: dept.HeadUserId.Value,
+                        Title: "Nhân viên từ chối nhiệm vụ",
+                        Message: $"Nhân viên {decliningName} đã từ chối nhiệm vụ \"{l.Title}\". Vui lòng phân công người khác.",
+                        NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.LogisticsAssigneeResponded,
+                        RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.LogisticsItem,
+                        RelatedId: request.LogisticsItemId,
+                        ActorUserId: userId,
+                        Category: PEMS.Application.Notifications.Common.NotificationCategories.Logistics,
+                        IsActionRequired: true,
+                        VisitInstanceId: l.VisitInstanceId,
+                        ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenLogisticsDetail,
+                        ActionUrl: deptTaskUrl!
                     ));
                 }
             }
 
             if (hostId.HasValue && hostId.Value != userId && hostId.Value != assignedBy)
             {
-                notifications.Add(new PEMS.Application.Notifications.Common.CreateNotificationItem(
-                    hostId.Value,
-                    "Nhân viên từ chối nhiệm vụ",
-                    $"Nhân sự phòng ban đã từ chối nhiệm vụ hậu cần: {l.Title}. Phòng ban sẽ phân công người khác.",
-                    PEMS.Application.Notifications.Common.NotificationTypes.LogisticsAssigneeResponded,
-                    PEMS.Application.Notifications.Common.NotificationRelatedTypes.LogisticsItem,
-                    request.LogisticsItemId
+                notifications.Add(new PEMS.Application.Notifications.Common.CreateNotificationRequest(
+                    RecipientUserId: hostId.Value,
+                    Title: "Nhân viên từ chối nhiệm vụ",
+                    Message: $"Nhân sự phòng ban đã từ chối nhiệm vụ hậu cần: {l.Title}. Phòng ban sẽ phân công người khác.",
+                    NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.LogisticsAssigneeResponded,
+                    RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.LogisticsItem,
+                    RelatedId: request.LogisticsItemId,
+                    ActorUserId: userId,
+                    Category: PEMS.Application.Notifications.Common.NotificationCategories.Logistics,
+                    IsActionRequired: false,
+                    VisitInstanceId: l.VisitInstanceId,
+                    ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitDetail,
+                    ActionUrl: $"/dashboard/visit/process/{l.VisitInstanceId}"
                 ));
             }
 

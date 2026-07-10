@@ -15,6 +15,7 @@ import viToast from './locales/vi/toast.json';
 import viLoginModal from './locales/vi/loginModal.json';
 import viSearch from './locales/vi/search.json';
 import viVisitFptu from './locales/vi/visitFptu.json';
+import viNotifications from './locales/vi/notifications.json';
 
 import enCommon from './locales/en/common.json';
 import enPublicLayout from './locales/en/publicLayout.json';
@@ -30,6 +31,7 @@ import enToast from './locales/en/toast.json';
 import enLoginModal from './locales/en/loginModal.json';
 import enSearch from './locales/en/search.json';
 import enVisitFptu from './locales/en/visitFptu.json';
+import enNotifications from './locales/en/notifications.json';
 
 const resources = {
   vi: {
@@ -47,6 +49,7 @@ const resources = {
     loginModal: viLoginModal,
     search: viSearch,
     visitFptu: viVisitFptu,
+    notifications: viNotifications,
   },
   en: {
     common: enCommon,
@@ -63,6 +66,7 @@ const resources = {
     loginModal: enLoginModal,
     search: enSearch,
     visitFptu: enVisitFptu,
+    notifications: enNotifications,
   },
 };
 
@@ -90,7 +94,7 @@ i18n
     ns: [
       'common', 'publicLayout', 'home', 'news', 'partners',
       'faq', 'gallery', 'visitRequest', 'validation', 'errors', 'toast',
-      'loginModal', 'search', 'visitFptu'
+      'loginModal', 'search', 'visitFptu', 'notifications'
     ],
     defaultNS: 'common',
     interpolation: {

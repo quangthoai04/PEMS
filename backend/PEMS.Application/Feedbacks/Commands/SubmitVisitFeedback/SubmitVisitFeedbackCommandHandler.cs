@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Feedbacks.Common;
+using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Feedbacks;
 
 namespace PEMS.Application.Feedbacks.Commands.SubmitVisitFeedback;
@@ -17,13 +18,16 @@ public sealed class SubmitVisitFeedbackCommandHandler
     private readonly IApplicationDbContext _db;
     private readonly ICurrentUserService _currentUser;
     private readonly IDateTimeService _clock;
+    private readonly PEMS.Application.Notifications.Common.INotificationService _notificationService;
 
     public SubmitVisitFeedbackCommandHandler(
-        IApplicationDbContext db, ICurrentUserService currentUser, IDateTimeService clock)
+        IApplicationDbContext db, ICurrentUserService currentUser, IDateTimeService clock,
+        PEMS.Application.Notifications.Common.INotificationService notificationService)
     {
         _db = db;
         _currentUser = currentUser;
         _clock = clock;
+        _notificationService = notificationService;
     }
 
     public async Task<SubmitVisitFeedbackResponse> Handle(
@@ -110,6 +114,68 @@ public sealed class SubmitVisitFeedbackCommandHandler
 
         _db.Feedbacks.AddRange(toAdd);
         await _db.SaveChangesAsync(cancellationToken);
+
+        // G4/G5 (spec §5): notify về việc feedback đã được ghi nhận.
+        var feedbackNotifs = new List<PEMS.Application.Notifications.Common.CreateNotificationRequest>();
+        var visitDetailUrl = $"/dashboard/visit/process/{instance.VisitInstanceId}";
+
+        if (actorType == FeedbackSubmitterRoles.Visitor)
+        {
+            // G4: Visitor đánh giá chung chuyến thăm — Host hiện tại + Staff Leader (coordinator)
+            // campus đó được biết feedback đã được ghi nhận. Bấm vào phải mở modal xem NỘI DUNG
+            // đánh giá (rating/comment) — không điều hướng sang trang setup đoàn.
+            var recipientIds = new HashSet<ulong>();
+            if (instance.CurrentHostUserId.HasValue) recipientIds.Add(instance.CurrentHostUserId.Value);
+            if (instance.CoordinatorUserId.HasValue) recipientIds.Add(instance.CoordinatorUserId.Value);
+            recipientIds.Remove(userId);
+
+            foreach (var recipientId in recipientIds)
+            {
+                feedbackNotifs.Add(new PEMS.Application.Notifications.Common.CreateNotificationRequest(
+                    RecipientUserId: recipientId,
+                    Title: "Visitor đã gửi đánh giá",
+                    Message: $"Visitor đã gửi đánh giá cho chuyến thăm {visitRequest.RequestCode} ({visitRequest.DelegationName}).",
+                    NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.VisitStatusChanged,
+                    RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitInstance,
+                    RelatedId: instance.VisitInstanceId,
+                    ActorUserId: userId,
+                    Category: PEMS.Application.Notifications.Common.NotificationCategories.Feedback,
+                    VisitRequestId: visitRequest.VisitRequestId,
+                    VisitInstanceId: instance.VisitInstanceId,
+                    CampusId: instance.CampusId,
+                    ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitorFeedbackModal,
+                    ActionUrl: visitDetailUrl
+                ));
+            }
+        }
+        else if (actorType == FeedbackSubmitterRoles.Host)
+        {
+            // G5: Host chấm feedback về chính 1 user có tài khoản (Student/Dept Leader/Dept
+            // Staff/Staff) — chỉ khi TargetType==USER (GuestMember không có tài khoản, bỏ qua).
+            foreach (var f in toAdd.Where(f => f.TargetType == FeedbackTargetTypes.User && f.TargetUserId.HasValue))
+            {
+                feedbackNotifs.Add(new PEMS.Application.Notifications.Common.CreateNotificationRequest(
+                    RecipientUserId: f.TargetUserId!.Value,
+                    Title: "Host đã đánh giá bạn",
+                    Message: $"Host đã gửi đánh giá về bạn trong chuyến thăm {visitRequest.RequestCode} ({visitRequest.DelegationName}).",
+                    NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.VisitStatusChanged,
+                    RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitInstance,
+                    RelatedId: instance.VisitInstanceId,
+                    ActorUserId: userId,
+                    Category: PEMS.Application.Notifications.Common.NotificationCategories.Feedback,
+                    VisitRequestId: visitRequest.VisitRequestId,
+                    VisitInstanceId: instance.VisitInstanceId,
+                    CampusId: instance.CampusId,
+                    ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenHostFeedbackModal,
+                    ActionUrl: visitDetailUrl,
+                    MetadataJson: $"{{\"feedbackId\":{f.FeedbackId}}}",
+                    DedupeKey: $"FEEDBACK_{f.FeedbackId}"
+                ));
+            }
+        }
+
+        if (feedbackNotifs.Count > 0)
+            await _notificationService.CreateManyAsync(feedbackNotifs, cancellationToken);
 
         return new SubmitVisitFeedbackResponse
         {

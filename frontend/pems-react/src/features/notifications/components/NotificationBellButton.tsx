@@ -1,15 +1,18 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Bell, Star } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
-import toast from 'react-hot-toast';
-import { useNotifications } from '../../features/notifications/hooks/useNotifications';
-import { NotificationItem } from '../../features/notifications/types/notification.types';
-import { visitFeedbackApi } from '../../features/feedbacks/api/visitFeedbackApi';
-import type { PendingFeedbackItem } from '../../features/feedbacks/types/visitFeedback.types';
-import { VisitFeedbackModal } from '../../features/feedbacks/components/VisitFeedbackModal';
+import { useTranslation } from 'react-i18next';
+import { useNotifications } from '../context/NotificationsContext';
+import { useAuth } from '../../../shared/hooks/useAuth';
+import { NotificationItem } from '../types/notification.types';
+import { VisitFeedbackModal } from '../../feedbacks/components/VisitFeedbackModal';
+import { HostFeedbackModal } from '../../feedbacks/components/HostFeedbackModal';
+import { VisitorFeedbackDetailModal } from '../../feedbacks/components/VisitorFeedbackDetailModal';
+import { NotificationDetailModal } from './NotificationDetailModal';
+import type { AuthUser } from '../../authentication/types/authentication.types';
 
-function timeAgo(dateStr: string): string {
+export function timeAgo(dateStr: string): string {
   const date = new Date(dateStr.endsWith('Z') ? dateStr : dateStr + 'Z');
   const diffMs = Date.now() - date.getTime();
   const diffMin = Math.floor(diffMs / 60000);
@@ -22,11 +25,11 @@ function timeAgo(dateStr: string): string {
   return date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
-function getNotificationLink(item: NotificationItem, user: any): string | undefined {
+export function getNotificationLink(item: NotificationItem, user: AuthUser | null): string | undefined {
   let link = item.targetUrl || undefined;
 
   if (link && user) {
-    const isDeptStaff = user?.role?.toUpperCase() === 'DEPARTMENT' && user?.subRole?.toUpperCase() !== 'LEADER';
+    const isDeptStaff = user.roleCode?.toUpperCase() === 'DEPARTMENT' && user.subRole?.toUpperCase() !== 'LEADER';
     if (isDeptStaff) {
       if (link.includes('/tasks/')) {
         const parts = link.split('/tasks/');
@@ -42,34 +45,27 @@ function getNotificationLink(item: NotificationItem, user: any): string | undefi
   return link;
 }
 
-export function NotificationBell() {
+interface NotificationBellButtonProps {
+  variant?: 'header-desktop' | 'header-mobile' | 'dashboard';
+  onNavigate?: () => void;
+}
+
+export function NotificationBellButton({ variant = 'dashboard', onNavigate }: NotificationBellButtonProps) {
+  const { t } = useTranslation(['notifications']);
   const [isOpen, setIsOpen] = useState(false);
   const popoverRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
+  const { user } = useAuth();
 
-  const { items, unreadCount, loading, fetchNotifications, markAsRead, markAllAsRead } = useNotifications();
+  const { items, unreadCount, pendingFeedback, loading, fetchNotifications, fetchPendingFeedback, markAsRead, markAllAsRead } =
+    useNotifications();
 
-  // Nhắc "Bạn hãy đánh giá đoàn" — query động từ backend (không insert vào notifications
-  // nên không bao giờ duplicate; tự biến mất sau khi user gửi feedback).
-  const [pendingFeedback, setPendingFeedback] = useState<PendingFeedbackItem[]>([]);
   const [feedbackModalInstanceId, setFeedbackModalInstanceId] = useState<number | string | null>(null);
+  const [hostFeedbackVisitInstanceId, setHostFeedbackVisitInstanceId] = useState<number | null>(null);
+  const [visitorFeedbackVisitInstanceId, setVisitorFeedbackVisitInstanceId] = useState<number | null>(null);
+  const [detailModalItem, setDetailModalItem] = useState<NotificationItem | null>(null);
 
-  const fetchPendingFeedback = useCallback(async () => {
-    try {
-      const res = await visitFeedbackApi.getMyPending();
-      setPendingFeedback((res.items || []).filter((x) => !x.alreadySubmitted));
-    } catch {
-      setPendingFeedback([]);
-    }
-  }, []);
-
-  // Fetch on mount to show unread badge
-  useEffect(() => {
-    fetchNotifications();
-    fetchPendingFeedback();
-  }, [fetchNotifications, fetchPendingFeedback]);
-
-  // Re-fetch when bell is opened
+  // Re-fetch when bell is opened (danh sách/pending feedback vẫn có thể đã cũ từ lần poll trước).
   useEffect(() => {
     if (isOpen) {
       fetchNotifications();
@@ -90,24 +86,30 @@ export function NotificationBell() {
   const handleItemClick = async (item: NotificationItem) => {
     if (!item.isRead) await markAsRead(item.notificationId);
 
+    if (item.actionType === 'OPEN_HOST_FEEDBACK_MODAL' && item.visitInstanceId) {
+      setIsOpen(false);
+      setHostFeedbackVisitInstanceId(item.visitInstanceId);
+      return;
+    }
+
+    if (item.actionType === 'OPEN_VISITOR_FEEDBACK_MODAL' && item.visitInstanceId) {
+      setIsOpen(false);
+      setVisitorFeedbackVisitInstanceId(item.visitInstanceId);
+      return;
+    }
+
     if (!item.canOpen || !item.targetUrl) {
-      toast.error(item.disabledReason || "Không thể mở nội dung này.", {
-        icon: '⚠️',
-        style: {
-          borderRadius: '10px',
-          background: '#333',
-          color: '#fff',
-        },
-      });
+      setIsOpen(false);
+      setDetailModalItem(item);
       return;
     }
 
     setIsOpen(false);
-    
-    const userStr = localStorage.getItem('currentUser');
-    const user = userStr ? JSON.parse(userStr) : null;
     const link = getNotificationLink(item, user);
-    if (link) navigate(link);
+    if (link) {
+      navigate(link);
+      onNavigate?.();
+    }
   };
 
   const handleMarkAllAsRead = async () => {
@@ -119,7 +121,9 @@ export function NotificationBell() {
       <button
         onClick={() => setIsOpen(!isOpen)}
         className="p-2 text-gray-600 hover:bg-gray-100 rounded-full transition-colors relative"
-        aria-label="Thông báo"
+        aria-label={t('notifications:bell.ariaLabel')}
+        title={t('notifications:bell.tooltip')}
+        data-variant={variant}
       >
         <Bell className="w-6 h-6" />
         {(unreadCount + pendingFeedback.length) > 0 && (
@@ -139,19 +143,18 @@ export function NotificationBell() {
             className="absolute right-0 mt-2 w-80 sm:w-96 bg-white rounded-xl shadow-xl border border-gray-100 z-50 overflow-hidden"
           >
             <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-gray-50/50">
-              <h3 className="font-semibold text-gray-800">Thông báo</h3>
+              <h3 className="font-semibold text-gray-800">{t('notifications:dropdown.title')}</h3>
               {unreadCount > 0 && (
                 <button
                   onClick={handleMarkAllAsRead}
                   className="text-xs font-medium text-[#004c91] hover:underline"
                 >
-                  Đánh dấu đã đọc
+                  {t('notifications:dropdown.markAllRead')}
                 </button>
               )}
             </div>
 
             <div className="max-h-[70vh] overflow-y-auto">
-              {/* Nhắc đánh giá đoàn — hàng ưu tiên trên cùng, bấm vào mở trang đánh giá */}
               {pendingFeedback.length > 0 && (
                 <div className="flex flex-col divide-y divide-orange-100/60 border-b border-orange-100 bg-orange-50/40">
                   {pendingFeedback.map((p) => (
@@ -165,7 +168,9 @@ export function NotificationBell() {
                     >
                       <Star className="mt-0.5 h-4 w-4 shrink-0 text-[#F37021]" />
                       <span className="min-w-0">
-                        <span className="block text-sm font-semibold text-gray-900">Bạn hãy đánh giá đoàn</span>
+                        <span className="block text-sm font-semibold text-gray-900">
+                          {t('notifications:dropdown.pendingFeedbackTitle')}
+                        </span>
                         <span className="block truncate text-xs text-gray-500">
                           {p.delegationName}{p.campusName ? ` • ${p.campusName}` : ''}
                         </span>
@@ -177,12 +182,12 @@ export function NotificationBell() {
               {loading && items.length === 0 ? (
                 <div className="flex items-center justify-center gap-2 py-8 text-gray-400">
                   <div className="w-4 h-4 border-2 border-[#004c91] border-t-transparent rounded-full animate-spin" />
-                  <span className="text-sm">Đang tải...</span>
+                  <span className="text-sm">{t('notifications:dropdown.loading')}</span>
                 </div>
               ) : items.length === 0 ? (
                 pendingFeedback.length === 0 ? (
                   <div className="p-6 text-center text-gray-500">
-                    <p className="text-sm">Không có thông báo nào</p>
+                    <p className="text-sm">{t('notifications:dropdown.empty')}</p>
                   </div>
                 ) : null
               ) : (
@@ -216,19 +221,46 @@ export function NotificationBell() {
                 </div>
               )}
             </div>
+
+            <div className="border-t border-gray-100 bg-gray-50/50 px-4 py-2 text-center">
+              <button
+                onClick={() => {
+                  setIsOpen(false);
+                  navigate('/notifications');
+                  onNavigate?.();
+                }}
+                className="text-xs font-medium text-[#004c91] hover:underline"
+              >
+                {t('notifications:dropdown.viewAll')}
+              </button>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      <VisitFeedbackModal 
-        open={feedbackModalInstanceId !== null} 
-        visitInstanceId={feedbackModalInstanceId} 
-        onClose={() => setFeedbackModalInstanceId(null)} 
+      <VisitFeedbackModal
+        open={feedbackModalInstanceId !== null}
+        visitInstanceId={feedbackModalInstanceId}
+        onClose={() => setFeedbackModalInstanceId(null)}
         onSubmitted={() => {
           fetchPendingFeedback();
           setFeedbackModalInstanceId(null);
-        }} 
+        }}
       />
+
+      <HostFeedbackModal
+        open={hostFeedbackVisitInstanceId !== null}
+        visitInstanceId={hostFeedbackVisitInstanceId}
+        onClose={() => setHostFeedbackVisitInstanceId(null)}
+      />
+
+      <VisitorFeedbackDetailModal
+        open={visitorFeedbackVisitInstanceId !== null}
+        visitInstanceId={visitorFeedbackVisitInstanceId}
+        onClose={() => setVisitorFeedbackVisitInstanceId(null)}
+      />
+
+      <NotificationDetailModal item={detailModalItem} onClose={() => setDetailModalItem(null)} />
     </div>
   );
 }

@@ -94,9 +94,10 @@ public sealed class SaveMinutesCommandHandler
         await _db.SaveChangesAsync(cancellationToken);
         await tx.CommitAsync(cancellationToken);
 
-        var notifications = new System.Collections.Generic.List<PEMS.Application.Notifications.Common.CreateNotificationItem>();
+        var notifications = new System.Collections.Generic.List<PEMS.Application.Notifications.Common.CreateNotificationRequest>();
         string delegationName = instance.VisitRequest?.DelegationName ?? "Đoàn khách";
         string title = request.Title.Trim();
+        var minutesActionUrl = $"/dashboard/visit/process/{instance.VisitInstanceId}";
 
         // Notify Accepted participants
         var notifyParticipantIds = await _db.VisitParticipants
@@ -106,35 +107,43 @@ public sealed class SaveMinutesCommandHandler
 
         foreach (var pId in notifyParticipantIds)
         {
-            notifications.Add(new PEMS.Application.Notifications.Common.CreateNotificationItem(
-                pId,
-                "Biên bản cuộc họp cập nhật",
-                $"Biên bản cuộc họp \"{title}\" của đoàn {delegationName} đã được lưu.",
-                PEMS.Application.Notifications.Common.NotificationTypes.MinutesUpdated,
-                PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitInstance,
-                instance.VisitInstanceId
+            notifications.Add(new PEMS.Application.Notifications.Common.CreateNotificationRequest(
+                RecipientUserId: pId,
+                Title: "Biên bản cuộc họp cập nhật",
+                Message: $"Biên bản cuộc họp \"{title}\" của đoàn {delegationName} đã được lưu.",
+                NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.MinutesUpdated,
+                RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitInstance,
+                RelatedId: instance.VisitInstanceId,
+                ActorUserId: userId,
+                Category: PEMS.Application.Notifications.Common.NotificationCategories.Visit,
+                VisitInstanceId: instance.VisitInstanceId,
+                CampusId: instance.CampusId,
+                ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitDetail,
+                ActionUrl: minutesActionUrl
             ));
         }
 
-        // Notify Staff Leader of the campus
-        var staffLeaders = await _db.Users
-            .Where(u => u.Role.RoleCode == RoleCodes.Staff && u.SubRole == UserSubRoles.Leader && u.PrimaryCampusId == instance.CampusId && u.Status == UserStatuses.Active && u.UserId != userId)
-            .Select(u => u.UserId)
-            .ToListAsync(cancellationToken);
-
-        foreach (var leaderId in staffLeaders)
+        // The current Host must also learn about it when they aren't the one editing (e.g. a
+        // participant saved the minutes) — but never anyone else's campus Staff Leader, per the
+        // host-scope rule (Staff/Staff Leader only get delegation detail notifications for
+        // delegations they actually host).
+        if (instance.CurrentHostUserId.HasValue && instance.CurrentHostUserId.Value != userId
+            && !notifyParticipantIds.Contains(instance.CurrentHostUserId.Value))
         {
-            if (!notifyParticipantIds.Contains(leaderId))
-            {
-                notifications.Add(new PEMS.Application.Notifications.Common.CreateNotificationItem(
-                    leaderId,
-                    "Biên bản cuộc họp cập nhật",
-                    $"Biên bản cuộc họp \"{title}\" của đoàn {delegationName} đã được lưu.",
-                    PEMS.Application.Notifications.Common.NotificationTypes.MinutesUpdated,
-                    PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitInstance,
-                    instance.VisitInstanceId
-                ));
-            }
+            notifications.Add(new PEMS.Application.Notifications.Common.CreateNotificationRequest(
+                RecipientUserId: instance.CurrentHostUserId.Value,
+                Title: "Biên bản cuộc họp cập nhật",
+                Message: $"Biên bản cuộc họp \"{title}\" của đoàn {delegationName} đã được lưu.",
+                NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.MinutesUpdated,
+                RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitInstance,
+                RelatedId: instance.VisitInstanceId,
+                ActorUserId: userId,
+                Category: PEMS.Application.Notifications.Common.NotificationCategories.Visit,
+                VisitInstanceId: instance.VisitInstanceId,
+                CampusId: instance.CampusId,
+                ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitDetail,
+                ActionUrl: minutesActionUrl
+            ));
         }
 
         if (notifications.Count > 0)

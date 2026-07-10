@@ -669,10 +669,46 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
             .HasIndex(t => t.TokenHash).IsUnique()
             .HasDatabaseName("uq_email_action_token_hash");
 
-        // Notification → RecipientUser
-        modelBuilder.Entity<Notification>()
-            .HasOne<User>().WithMany()
-            .HasForeignKey(n => n.RecipientUserId).OnDelete(DeleteBehavior.Cascade);
+        // Notification (v10) → RecipientUser (CASCADE), ActorUser/VisitRequest/VisitInstance/Campus
+        // (all SetNull). Priority persists as its SQL ENUM string (name maps 1:1). dedupe_key is
+        // UNIQUE per recipient but NULL-safe (MySQL allows multiple NULLs in a unique key), so most
+        // notifications can leave it unset; only idempotent/background-job creates populate it.
+        modelBuilder.Entity<Notification>(b =>
+        {
+            b.HasOne<User>().WithMany()
+                .HasForeignKey(n => n.RecipientUserId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne<User>().WithMany()
+                .HasForeignKey(n => n.ActorUserId).OnDelete(DeleteBehavior.SetNull);
+            b.HasOne<VisitRequest>().WithMany()
+                .HasForeignKey(n => n.VisitRequestId).OnDelete(DeleteBehavior.SetNull);
+            b.HasOne<VisitRequestCampus>().WithMany()
+                .HasForeignKey(n => n.VisitInstanceId).OnDelete(DeleteBehavior.SetNull);
+            b.HasOne<Campus>().WithMany()
+                .HasForeignKey(n => n.CampusId).OnDelete(DeleteBehavior.SetNull);
+
+            b.Property(n => n.Priority).HasConversion<string>();
+
+            b.HasIndex(n => new { n.RecipientUserId, n.IsRead, n.CreatedAt })
+                .HasDatabaseName("idx_notifications_user_read_time");
+            b.HasIndex(n => new { n.RelatedType, n.RelatedId })
+                .HasDatabaseName("idx_notifications_related");
+            b.HasIndex(n => new { n.NotificationType, n.CreatedAt })
+                .HasDatabaseName("idx_notifications_type_time");
+            b.HasIndex(n => new { n.RecipientUserId, n.Category, n.CreatedAt })
+                .HasDatabaseName("idx_notifications_user_category_time");
+            b.HasIndex(n => new { n.RecipientUserId, n.IsActionRequired, n.IsRead, n.CreatedAt })
+                .HasDatabaseName("idx_notifications_user_action_time");
+            b.HasIndex(n => new { n.ActorUserId, n.CreatedAt })
+                .HasDatabaseName("idx_notifications_actor");
+            b.HasIndex(n => new { n.VisitRequestId, n.CreatedAt })
+                .HasDatabaseName("idx_notifications_visit_request");
+            b.HasIndex(n => new { n.VisitInstanceId, n.CreatedAt })
+                .HasDatabaseName("idx_notifications_visit_instance");
+            b.HasIndex(n => new { n.CampusId, n.CreatedAt })
+                .HasDatabaseName("idx_notifications_campus");
+            b.HasIndex(n => new { n.RecipientUserId, n.DedupeKey })
+                .IsUnique().HasDatabaseName("uq_notifications_recipient_dedupe");
+        });
 
         // CalendarEvent → OwnerUser, Campus, VisitInstance, LogisticsItem
         modelBuilder.Entity<CalendarEvent>()

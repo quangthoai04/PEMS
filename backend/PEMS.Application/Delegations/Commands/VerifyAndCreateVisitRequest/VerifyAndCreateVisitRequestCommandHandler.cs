@@ -175,28 +175,57 @@ public sealed class VerifyAndCreateVisitRequestCommandHandler
             await _db.SaveChangesAsync(cancellationToken);
 
             // --- 6.5. Send In-App Notifications ---
-            // Campus-independent approval: HO no longer approves multi-campus requests, so no
-            // HO notification. EVERY campus instance (single or multi) is routed straight to
-            // the ACTIVE Staff Leader(s) of that campus.
+            // Campus-independent approval: HO no longer approves multi-campus requests, so
+            // approval routing is straight to the ACTIVE Staff Leader(s) of each campus. HO is
+            // still notified for VISIBILITY (spec §5 HO rule "có đơn liên cơ sở mới") even though
+            // HO doesn't act on it.
             {
                 var notificationCampusIds = visitRequest.CampusInstances.Select(c => c.CampusId).Distinct().ToList();
                 var staffLeaders = await _db.Users
-                    .Where(u => u.Role.RoleCode == RoleCodes.Staff 
-                                && u.SubRole == "LEADER" 
-                                && u.PrimaryCampusId.HasValue 
-                                && notificationCampusIds.Contains(u.PrimaryCampusId.Value) 
+                    .Where(u => u.Role.RoleCode == RoleCodes.Staff
+                                && u.SubRole == "LEADER"
+                                && u.PrimaryCampusId.HasValue
+                                && notificationCampusIds.Contains(u.PrimaryCampusId.Value)
                                 && u.Status == "ACTIVE")
                     .Select(u => u.UserId)
                     .ToListAsync(cancellationToken);
 
-                var notifications = staffLeaders.Select(id => new PEMS.Application.Notifications.Common.CreateNotificationItem(
-                    id,
-                    "Có yêu cầu tiếp khách mới",
-                    $"{visitRequest.DelegationName} đang chờ xử lý tại cơ sở của bạn. Vui lòng xem chi tiết, duyệt/từ chối và chọn host nếu duyệt.",
-                    PEMS.Application.Notifications.Common.NotificationTypes.VisitRequestSubmitted,
-                    PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitRequest,
-                    visitRequest.VisitRequestId
-                ));
+                var notifications = staffLeaders.Select(id => new PEMS.Application.Notifications.Common.CreateNotificationRequest(
+                    RecipientUserId: id,
+                    Title: "Có yêu cầu tiếp khách mới",
+                    Message: $"{visitRequest.DelegationName} đang chờ xử lý tại cơ sở của bạn. Vui lòng xem chi tiết, duyệt/từ chối và chọn host nếu duyệt.",
+                    NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.VisitRequestSubmitted,
+                    RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitRequest,
+                    RelatedId: visitRequest.VisitRequestId,
+                    Category: PEMS.Application.Notifications.Common.NotificationCategories.Visit,
+                    IsActionRequired: true,
+                    VisitRequestId: visitRequest.VisitRequestId,
+                    ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitDetail,
+                    ActionUrl: "/dashboard/visit"
+                )).ToList();
+
+                if (visitScope == VisitScopes.MultiCampus)
+                {
+                    var hoUsers = await _db.Users
+                        .Where(u => u.Role.RoleCode == RoleCodes.Ho && u.Status == "ACTIVE")
+                        .Select(u => u.UserId)
+                        .ToListAsync(cancellationToken);
+
+                    notifications.AddRange(hoUsers.Select(id => new PEMS.Application.Notifications.Common.CreateNotificationRequest(
+                        RecipientUserId: id,
+                        Title: "Có đơn liên cơ sở mới",
+                        Message: $"{visitRequest.DelegationName} vừa gửi đơn liên cơ sở, đang chờ các cơ sở xử lý.",
+                        NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.VisitRequestSubmitted,
+                        RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitRequest,
+                        RelatedId: visitRequest.VisitRequestId,
+                        Category: PEMS.Application.Notifications.Common.NotificationCategories.Visit,
+                        IsActionRequired: false,
+                        VisitRequestId: visitRequest.VisitRequestId,
+                        ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitDetail,
+                        ActionUrl: "/dashboard/visit"
+                    )));
+                }
+
                 await _notificationService.CreateManyAsync(notifications, cancellationToken);
             }
 

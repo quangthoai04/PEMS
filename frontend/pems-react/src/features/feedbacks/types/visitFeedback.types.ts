@@ -105,3 +105,56 @@ export interface PendingFeedbackResponse {
   items: PendingFeedbackItem[];
   pendingCount: number;
 }
+
+export interface HostFeedbackRatingItem {
+  criterionCode: string;
+  criterionLabel: string;
+  rating: number;
+}
+
+export interface HostFeedbackItem {
+  feedbackId: number;
+  hostName?: string | null;
+  rating: number;
+  comment?: string | null;
+  submittedAt: string;
+  ratingItems: HostFeedbackRatingItem[];
+}
+
+/** Feedback của host về CHÍNH user đang đăng nhập — backend tự resolve theo token. */
+export interface MyHostFeedbackResponse {
+  visitInstanceId: number;
+  visitRequestId: number;
+  requestCode: string;
+  delegationName: string;
+  organizationName?: string | null;
+  campusName?: string | null;
+  hostName?: string | null;
+  instanceStatus: string;
+  plannedStartAt?: string | null;
+  plannedEndAt?: string | null;
+  feedbacks: HostFeedbackItem[];
+}
+
+export interface VisitorFeedbackItem {
+  feedbackId: number;
+  visitorName?: string | null;
+  rating: number;
+  comment?: string | null;
+  submittedAt: string;
+}
+
+/** Feedback của Visitor về chuyến thăm — chỉ Host hiện tại/Staff Leader campus đó xem được (backend tự kiểm tra quyền). */
+export interface VisitorFeedbackResponse {
+  visitInstanceId: number;
+  visitRequestId: number;
+  requestCode: string;
+  delegationName: string;
+  organizationName?: string | null;
+  campusName?: string | null;
+  hostName?: string | null;
+  instanceStatus: string;
+  plannedStartAt?: string | null;
+  plannedEndAt?: string | null;
+  feedbacks: VisitorFeedbackItem[];
+}

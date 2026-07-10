@@ -280,12 +280,17 @@ public sealed class CreateAccountCommandHandler : IRequestHandler<CreateAccountC
             await _db.SaveChangesAsync(cancellationToken);
 
             await _notificationService.CreateAsync(
-                user.UserId,
-                "Tài khoản được tạo",
-                $"Tài khoản PEMS của bạn đã được khởi tạo thành công với vai trò {shape.RoleCode}.",
-                PEMS.Application.Notifications.Common.NotificationTypes.AccountCreated,
-                PEMS.Application.Notifications.Common.NotificationRelatedTypes.Account,
-                user.UserId,
+                new PEMS.Application.Notifications.Common.CreateNotificationRequest(
+                    RecipientUserId: user.UserId,
+                    Title: "Tài khoản được tạo",
+                    Message: $"Tài khoản PEMS của bạn đã được khởi tạo thành công với vai trò {shape.RoleCode}.",
+                    NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.AccountCreated,
+                    RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.Account,
+                    RelatedId: user.UserId,
+                    ActorUserId: actorId,
+                    Category: PEMS.Application.Notifications.Common.NotificationCategories.Account,
+                    ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenAccountDetail,
+                    ActionUrl: "/dashboard/accounts"),
                 cancellationToken
             );
 

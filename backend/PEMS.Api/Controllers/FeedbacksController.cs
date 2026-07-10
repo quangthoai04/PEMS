@@ -2,8 +2,10 @@ using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using PEMS.Application.Feedbacks.Commands.SubmitVisitFeedback;
+using PEMS.Application.Feedbacks.Queries.GetMyHostFeedback;
 using PEMS.Application.Feedbacks.Queries.GetPendingFeedbackNotifications;
 using PEMS.Application.Feedbacks.Queries.GetVisitFeedbackTargets;
+using PEMS.Application.Feedbacks.Queries.GetVisitorFeedback;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -64,6 +66,25 @@ namespace PEMS.Api.Controllers
         public async Task<IActionResult> GetMyPendingFeedback(CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(new GetPendingFeedbackNotificationsQuery(), cancellationToken);
+            return Ok(result);
+        }
+
+        // Backs the "Host feedback về bạn" notification modal (OPEN_HOST_FEEDBACK_MODAL). Always
+        // resolves to the caller's own feedback server-side — never accepts a targetUserId.
+        [HttpGet("my-host-feedback/{visitInstanceId}")]
+        public async Task<IActionResult> GetMyHostFeedback(ulong visitInstanceId, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(new GetMyHostFeedbackQuery(visitInstanceId), cancellationToken);
+            return Ok(result);
+        }
+
+        // Backs the "Visitor đã gửi đánh giá" notification modal (OPEN_VISITOR_FEEDBACK_MODAL).
+        // Only the current Host of the instance or a Staff Leader of its campus may view (checked
+        // server-side in the handler) — same audience the notification itself was sent to.
+        [HttpGet("visitor-feedback/{visitInstanceId}")]
+        public async Task<IActionResult> GetVisitorFeedback(ulong visitInstanceId, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(new GetVisitorFeedbackQuery(visitInstanceId), cancellationToken);
             return Ok(result);
         }
 

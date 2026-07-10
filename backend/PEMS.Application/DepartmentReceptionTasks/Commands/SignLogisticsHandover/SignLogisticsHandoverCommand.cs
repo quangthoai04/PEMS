@@ -121,12 +121,18 @@ public class SignLogisticsHandoverCommandHandler : IRequestHandler<SignLogistics
         {
             string label = signerSide == HandoverSignerSides.Borrower ? "Bên nhận" : "Bên giao";
             await _notificationService.CreateAsync(
-                item.VisitInstance.CurrentHostUserId.Value,
-                "Ký biên bản bàn giao",
-                $"Nhân sự phòng ban ({user.FullName}) đã ký biên bản bàn giao ({label}) cho nhiệm vụ \"{item.Title}\".",
-                PEMS.Application.Notifications.Common.NotificationTypes.LogisticsHandoverSigned,
-                PEMS.Application.Notifications.Common.NotificationRelatedTypes.LogisticsHandover,
-                handover.HandoverId,
+                new PEMS.Application.Notifications.Common.CreateNotificationRequest(
+                    RecipientUserId: item.VisitInstance.CurrentHostUserId.Value,
+                    Title: "Ký biên bản bàn giao",
+                    Message: $"Nhân sự phòng ban ({user.FullName}) đã ký biên bản bàn giao ({label}) cho nhiệm vụ \"{item.Title}\".",
+                    NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.LogisticsHandoverSigned,
+                    RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.LogisticsHandover,
+                    RelatedId: handover.HandoverId,
+                    ActorUserId: userId,
+                    Category: PEMS.Application.Notifications.Common.NotificationCategories.Handover,
+                    VisitInstanceId: item.VisitInstance.VisitInstanceId,
+                    ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenHandoverDetail,
+                    ActionUrl: $"/dashboard/visit/process/{item.VisitInstance.VisitInstanceId}"),
                 cancellationToken
             );
         }

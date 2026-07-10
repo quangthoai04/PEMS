@@ -174,12 +174,19 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.ProposeRequestChang
                 _context.EmailActionTokens.Add(NewProposalToken(_tokens.Hash(rejectRaw), EmailIntendedActions.RejectProposal, groupKey, l.LogisticsItemId, host.UserId, host.Email, sentEmail.SentEmailId, sentRecipient.SentEmailRecipientId, now));
 
                 await _notificationService.CreateAsync(
-                    host.UserId,
-                    LogisticsPriorityText.SubjectPrefix(l.Priority) + "Phòng ban đề xuất thay đổi hậu cần",
-                    $"Phòng ban đề xuất thay đổi cho yêu cầu \"{l.Title}\" (ưu tiên {LogisticsPriorityText.LabelVi(l.Priority)}) của đoàn {delegationName}.",
-                    PEMS.Application.Notifications.Common.NotificationTypes.LogisticsProposalCreated,
-                    PEMS.Application.Notifications.Common.NotificationRelatedTypes.LogisticsItem,
-                    l.LogisticsItemId,
+                    new PEMS.Application.Notifications.Common.CreateNotificationRequest(
+                        RecipientUserId: host.UserId,
+                        Title: LogisticsPriorityText.SubjectPrefix(l.Priority) + "Phòng ban đề xuất thay đổi hậu cần",
+                        Message: $"Phòng ban đề xuất thay đổi cho yêu cầu \"{l.Title}\" (ưu tiên {LogisticsPriorityText.LabelVi(l.Priority)}) của đoàn {delegationName}.",
+                        NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.LogisticsProposalCreated,
+                        RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.LogisticsItem,
+                        RelatedId: l.LogisticsItemId,
+                        ActorUserId: proposerUserId,
+                        Category: PEMS.Application.Notifications.Common.NotificationCategories.Logistics,
+                        IsActionRequired: true,
+                        VisitInstanceId: l.VisitInstanceId,
+                        ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenLogisticsDetail,
+                        ActionUrl: $"/dashboard/visit/process/{l.VisitInstanceId}"),
                     cancellationToken
                 );
                 await _context.SaveChangesAsync(cancellationToken);

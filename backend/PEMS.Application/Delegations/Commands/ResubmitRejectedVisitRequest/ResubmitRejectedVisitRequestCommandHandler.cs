@@ -320,13 +320,19 @@ public sealed class ResubmitRejectedVisitRequestCommandHandler
         if (leadersToNotify.Count > 0)
         {
             await _notificationService.CreateManyAsync(
-                leadersToNotify.Select(id => new PEMS.Application.Notifications.Common.CreateNotificationItem(
-                    id,
-                    "Visitor đã gửi lại đơn bị từ chối",
-                    $"Visitor đã chỉnh sửa và gửi lại đơn {visit.RequestCode} ({visit.DelegationName}). Vui lòng xử lý lại tại cơ sở của bạn.",
-                    PEMS.Application.Notifications.Common.NotificationTypes.VisitRequestSubmitted,
-                    PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitRequest,
-                    visit.VisitRequestId)).ToList(),
+                leadersToNotify.Select(id => new PEMS.Application.Notifications.Common.CreateNotificationRequest(
+                    RecipientUserId: id,
+                    Title: "Visitor đã gửi lại đơn bị từ chối",
+                    Message: $"Visitor đã chỉnh sửa và gửi lại đơn {visit.RequestCode} ({visit.DelegationName}). Vui lòng xử lý lại tại cơ sở của bạn.",
+                    NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.VisitRequestSubmitted,
+                    RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitRequest,
+                    RelatedId: visit.VisitRequestId,
+                    ActorUserId: actorId,
+                    Category: PEMS.Application.Notifications.Common.NotificationCategories.Visit,
+                    IsActionRequired: true,
+                    VisitRequestId: visit.VisitRequestId,
+                    ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitDetail,
+                    ActionUrl: "/dashboard/visit")).ToList(),
                 cancellationToken);
         }
 

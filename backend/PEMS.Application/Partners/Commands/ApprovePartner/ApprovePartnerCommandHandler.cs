@@ -77,12 +77,18 @@ public sealed class ApprovePartnerCommandHandler : IRequestHandler<ApprovePartne
         if (partner.CreatedBy is { } creatorId && creatorId != _currentUser.UserId)
         {
             await _notifications.CreateAsync(
-                creatorId,
-                "Đối tác đã được duyệt",
-                $"Hồ sơ đối tác \"{partner.Name}\" đã được duyệt.",
-                NotificationTypes.PartnerReviewed,
-                "Partner",
-                partner.PartnerId,
+                new PEMS.Application.Notifications.Common.CreateNotificationRequest(
+                    RecipientUserId: creatorId,
+                    Title: "Đối tác đã được duyệt",
+                    Message: $"Hồ sơ đối tác \"{partner.Name}\" đã được duyệt.",
+                    NotificationType: NotificationTypes.PartnerReviewed,
+                    RelatedType: "Partner",
+                    RelatedId: partner.PartnerId,
+                    ActorUserId: _currentUser.UserId,
+                    Category: PEMS.Application.Notifications.Common.NotificationCategories.Partner,
+                    CampusId: partner.OwnerCampusId,
+                    ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenPartnerDetail,
+                    ActionUrl: $"/dashboard/partners/{partner.PartnerId}"),
                 cancellationToken);
         }
 

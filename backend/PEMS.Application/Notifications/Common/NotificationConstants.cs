@@ -63,3 +63,34 @@ public static class NotificationRelatedTypes
     public const string Account = "ACCOUNT";
     public const string System = "SYSTEM";
 }
+
+/// <summary>UI grouping/filter bucket for the notification bell/page (v10 `category` column).</summary>
+public static class NotificationCategories
+{
+    public const string Visit = "VISIT";
+    public const string Invitation = "INVITATION";
+    public const string Reminder = "REMINDER";
+    public const string Feedback = "FEEDBACK";
+    public const string Logistics = "LOGISTICS";
+    public const string Handover = "HANDOVER";
+    public const string News = "NEWS";
+    public const string Partner = "PARTNER";
+    public const string Account = "ACCOUNT";
+    public const string System = "SYSTEM";
+    public const string General = "GENERAL";
+}
+
+/// <summary>Frontend click action key (v10 `action_type` column) - tells the client what to open.</summary>
+public static class NotificationActionTypes
+{
+    public const string OpenVisitDetail = "OPEN_VISIT_DETAIL";
+    public const string OpenVisitInvitation = "OPEN_VISIT_INVITATION";
+    public const string OpenHostFeedbackModal = "OPEN_HOST_FEEDBACK_MODAL";
+    public const string OpenVisitorFeedbackModal = "OPEN_VISITOR_FEEDBACK_MODAL";
+    public const string OpenLogisticsDetail = "OPEN_LOGISTICS_DETAIL";
+    public const string OpenHandoverDetail = "OPEN_HANDOVER_DETAIL";
+    public const string OpenNewsDetail = "OPEN_NEWS_DETAIL";
+    public const string OpenPartnerDetail = "OPEN_PARTNER_DETAIL";
+    public const string OpenAccountDetail = "OPEN_ACCOUNT_DETAIL";
+    public const string OpenNotificationPage = "OPEN_NOTIFICATION_PAGE";
+}

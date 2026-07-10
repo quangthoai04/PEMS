@@ -142,34 +142,27 @@ public sealed class SignVisitLogisticsHandoverCommandHandler
 
         await _db.SaveChangesAsync(cancellationToken);
 
+        var deptHandoverUrl = item.RequestedToDepartmentId.HasValue
+            ? $"/dashboard/departments/{item.RequestedToDepartmentId.Value}/tasks/{item.LogisticsItemId}"
+            : null;
+
         if (item.AssignedToUserId.HasValue)
         {
             await _notificationService.CreateAsync(
-                item.AssignedToUserId.Value,
-                "Ký biên bản bàn giao",
-                $"Host {actorName} đã ký biên bản bàn giao (Bên nhận) cho nhiệm vụ \"{item.Title}\".",
-                PEMS.Application.Notifications.Common.NotificationTypes.LogisticsHandoverSigned,
-                PEMS.Application.Notifications.Common.NotificationRelatedTypes.LogisticsHandover,
-                handover.HandoverId,
+                new PEMS.Application.Notifications.Common.CreateNotificationRequest(
+                    RecipientUserId: item.AssignedToUserId.Value,
+                    Title: "Ký biên bản bàn giao",
+                    Message: $"Host {actorName} đã ký biên bản bàn giao (Bên nhận) cho nhiệm vụ \"{item.Title}\".",
+                    NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.LogisticsHandoverSigned,
+                    RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.LogisticsHandover,
+                    RelatedId: handover.HandoverId,
+                    ActorUserId: actorId,
+                    Category: PEMS.Application.Notifications.Common.NotificationCategories.Handover,
+                    VisitInstanceId: instance.VisitInstanceId,
+                    ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenLogisticsDetail,
+                    ActionUrl: deptHandoverUrl ?? $"/dashboard/visit/process/{instance.VisitInstanceId}"),
                 cancellationToken
             );
-        }
-
-        if (item.RequestedToDepartmentId.HasValue)
-        {
-            var dept = await _db.Departments.FirstOrDefaultAsync(d => d.DepartmentId == item.RequestedToDepartmentId.Value, cancellationToken);
-            if (dept?.HeadUserId != null && (!item.AssignedToUserId.HasValue || dept.HeadUserId.Value != item.AssignedToUserId.Value))
-            {
-                await _notificationService.CreateAsync(
-                    dept.HeadUserId.Value,
-                    "Ký biên bản bàn giao",
-                    $"Host {actorName} đã ký biên bản bàn giao (Bên nhận) cho nhiệm vụ \"{item.Title}\".",
-                    PEMS.Application.Notifications.Common.NotificationTypes.LogisticsHandoverSigned,
-                    PEMS.Application.Notifications.Common.NotificationRelatedTypes.LogisticsHandover,
-                    handover.HandoverId,
-                    cancellationToken
-                );
-            }
         }
 
         return new SignVisitLogisticsHandoverResponse

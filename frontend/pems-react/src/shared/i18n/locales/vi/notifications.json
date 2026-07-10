@@ -1,0 +1,67 @@
+{
+  "bell": {
+    "tooltip": "Thông báo",
+    "ariaLabel": "Thông báo"
+  },
+  "dropdown": {
+    "title": "Thông báo",
+    "markAllRead": "Đánh dấu đã đọc",
+    "loading": "Đang tải...",
+    "empty": "Không có thông báo nào",
+    "viewAll": "Xem tất cả thông báo",
+    "pendingFeedbackTitle": "Bạn hãy đánh giá đoàn"
+  },
+  "page": {
+    "title": "Thông báo",
+    "subtitle": "Toàn bộ thông báo liên quan đến bạn"
+  },
+  "filters": {
+    "all": "Tất cả",
+    "unread": "Chưa đọc",
+    "actionRequired": "Cần hành động",
+    "visit": "Đoàn khách",
+    "invitation": "Thư mời",
+    "feedback": "Feedback",
+    "logistics": "Hậu cần",
+    "news": "Tin tức",
+    "partner": "Đối tác",
+    "system": "Hệ thống"
+  },
+  "empty": {
+    "title": "Không có thông báo",
+    "description": "Bạn chưa có thông báo nào ở mục này."
+  },
+  "pagination": {
+    "showing": "Hiển thị",
+    "perPage": "bản ghi / trang",
+    "page": "Trang",
+    "of": "/"
+  },
+  "actions": {
+    "markAllRead": "Đánh dấu tất cả đã đọc",
+    "markAsRead": "Đánh dấu đã đọc"
+  },
+  "toast": {
+    "cannotOpen": "Không thể mở nội dung này."
+  },
+  "hostFeedbackModal": {
+    "title": "Đánh giá từ host về bạn",
+    "delegationInfoTitle": "Thông tin đoàn",
+    "expand": "Xem chi tiết",
+    "collapse": "Thu gọn",
+    "noFeedback": "Chưa có đánh giá nào.",
+    "loading": "Đang tải đánh giá...",
+    "close": "Đóng"
+  },
+  "detailModal": {
+    "title": "Chi tiết thông báo",
+    "close": "Đóng"
+  },
+  "visitorFeedbackModal": {
+    "title": "Đánh giá từ Visitor",
+    "delegationInfoTitle": "Thông tin đoàn",
+    "noFeedback": "Chưa có đánh giá nào.",
+    "loading": "Đang tải đánh giá...",
+    "close": "Đóng"
+  }
+}

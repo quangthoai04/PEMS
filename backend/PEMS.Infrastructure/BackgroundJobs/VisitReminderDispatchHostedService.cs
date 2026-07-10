@@ -5,9 +5,9 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Notifications.Common;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Emails;
-using PEMS.Domain.Entities.Notifications;
 using PEMS.Domain.Enums;
 
 namespace PEMS.Infrastructure.BackgroundJobs;
@@ -69,6 +69,7 @@ public sealed class VisitReminderDispatchHostedService : BackgroundService
         var db = scope.ServiceProvider.GetRequiredService<IApplicationDbContext>();
         var email = scope.ServiceProvider.GetRequiredService<IEmailService>();
         var clock = scope.ServiceProvider.GetRequiredService<IDateTimeService>();
+        var notificationService = scope.ServiceProvider.GetRequiredService<INotificationService>();
 
         // scheduled_at is stored as Vietnam wall-clock, so compare against Vietnam-local "now"
         // (never UtcNow — that would fire reminders ~7h off).
@@ -86,7 +87,7 @@ public sealed class VisitReminderDispatchHostedService : BackgroundService
         {
             try
             {
-                await DispatchOneAsync(db, email, reminder, now, ct);
+                await DispatchOneAsync(db, email, notificationService, reminder, now, ct);
                 reminder.Status = VisitReminderStatus.SENT;
                 reminder.LastDispatchedAt = now;
                 reminder.ErrorMessage = null;
@@ -105,7 +106,8 @@ public sealed class VisitReminderDispatchHostedService : BackgroundService
     }
 
     private async Task DispatchOneAsync(
-        IApplicationDbContext db, IEmailService email, Domain.Entities.Delegations.VisitInstanceReminderSetting reminder,
+        IApplicationDbContext db, IEmailService email, INotificationService notificationService,
+        Domain.Entities.Delegations.VisitInstanceReminderSetting reminder,
         DateTime now, CancellationToken ct)
     {
         var instance = await db.VisitRequestCampuses
@@ -126,20 +128,22 @@ public sealed class VisitReminderDispatchHostedService : BackgroundService
 
         if (reminder.Channel == VisitReminderChannel.IN_APP)
         {
-            foreach (var r in recipients)
-            {
-                db.Notifications.Add(new Notification
-                {
-                    RecipientUserId = r.UserId,
-                    NotificationType = "VISIT_REMINDER",
-                    Title = "Nhắc lịch tiếp khách",
-                    Message = $"Đoàn {delegationName} tại {campusName} sẽ diễn ra vào {plannedStartText}.",
-                    RelatedType = "VISIT_INSTANCE",
-                    RelatedId = instance.VisitInstanceId,
-                    IsRead = false,
-                    CreatedAt = now,
-                });
-            }
+            var requests = recipients.Select(r => new CreateNotificationRequest(
+                RecipientUserId: r.UserId,
+                Title: "Nhắc lịch tiếp khách",
+                Message: $"Đoàn {delegationName} tại {campusName} sẽ diễn ra vào {plannedStartText}.",
+                NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.VisitReminder,
+                RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitInstance,
+                RelatedId: instance.VisitInstanceId,
+                Category: NotificationCategories.Reminder,
+                VisitInstanceId: instance.VisitInstanceId,
+                CampusId: instance.CampusId,
+                ActionType: NotificationActionTypes.OpenVisitDetail,
+                ActionUrl: $"/dashboard/visit/process/{instance.VisitInstanceId}",
+                DedupeKey: $"REMINDER_{reminder.ReminderSettingId}_USER_{r.UserId}"
+            )).ToList();
+
+            await notificationService.CreateManyAsync(requests, ct);
             return;
         }
 

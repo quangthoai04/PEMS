@@ -10,7 +10,13 @@ type PaginatedResult<T> = {
 };
 
 export const notificationsApi = {
-  getNotifications: async (params?: { page?: number; pageSize?: number; isRead?: boolean }) => {
+  getNotifications: async (params?: {
+    page?: number;
+    pageSize?: number;
+    isRead?: boolean;
+    category?: string;
+    isActionRequired?: boolean;
+  }) => {
     const response = await httpClient.get<PaginatedResult<NotificationItem>>('/notifications', { params });
     return response.data;
   },

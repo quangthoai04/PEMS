@@ -83,12 +83,17 @@ public sealed class ApproveNewsCommandHandler
 
         // Notify author
         await _notificationService.CreateAsync(
-            news.AuthorUserId,
-            notificationTitle,
-            notificationMessage,
-            PEMS.Application.Notifications.Common.NotificationTypes.NewsReviewed,
-            PEMS.Application.Notifications.Common.NotificationRelatedTypes.News,
-            news.NewsId,
+            new PEMS.Application.Notifications.Common.CreateNotificationRequest(
+                RecipientUserId: news.AuthorUserId,
+                Title: notificationTitle,
+                Message: notificationMessage,
+                NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.NewsReviewed,
+                RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.News,
+                RelatedId: news.NewsId,
+                ActorUserId: currentUserId,
+                Category: PEMS.Application.Notifications.Common.NotificationCategories.News,
+                ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenNewsDetail,
+                ActionUrl: $"/dashboard/news/{news.NewsId}"),
             cancellationToken
         );
 

@@ -78,12 +78,18 @@ public sealed class RejectPartnerCommandHandler : IRequestHandler<RejectPartnerC
         if (partner.CreatedBy is { } creatorId && creatorId != _currentUser.UserId)
         {
             await _notifications.CreateAsync(
-                creatorId,
-                "Đối tác bị từ chối",
-                $"Hồ sơ đối tác \"{partner.Name}\" bị từ chối. Lý do: {partner.ReviewNote}",
-                NotificationTypes.PartnerReviewed,
-                "Partner",
-                partner.PartnerId,
+                new PEMS.Application.Notifications.Common.CreateNotificationRequest(
+                    RecipientUserId: creatorId,
+                    Title: "Đối tác bị từ chối",
+                    Message: $"Hồ sơ đối tác \"{partner.Name}\" bị từ chối. Lý do: {partner.ReviewNote}",
+                    NotificationType: NotificationTypes.PartnerReviewed,
+                    RelatedType: "Partner",
+                    RelatedId: partner.PartnerId,
+                    ActorUserId: _currentUser.UserId,
+                    Category: PEMS.Application.Notifications.Common.NotificationCategories.Partner,
+                    CampusId: partner.OwnerCampusId,
+                    ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenPartnerDetail,
+                    ActionUrl: $"/dashboard/partners/{partner.PartnerId}"),
                 cancellationToken);
         }
 

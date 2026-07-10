@@ -2558,23 +2558,69 @@ COMMENT='One-time action tokens for email buttons: accept, decline, negotiate, h
 
 CREATE TABLE notifications (
   notification_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+
   recipient_user_id BIGINT UNSIGNED NOT NULL,
+  actor_user_id BIGINT UNSIGNED NULL COMMENT 'User who caused the notification, if applicable.',
+
   title VARCHAR(255) NOT NULL,
   message TEXT NULL,
-  notification_type VARCHAR(80) NOT NULL,
-  related_type VARCHAR(80) NULL,
-  related_id BIGINT UNSIGNED NULL,
+
+  notification_type VARCHAR(80) NOT NULL COMMENT 'Specific business event type, for example VISIT_CANCELLED, INVITATION_RECEIVED, HOST_FEEDBACK_RECEIVED.',
+  category VARCHAR(80) NOT NULL DEFAULT 'GENERAL' COMMENT 'UI grouping: VISIT, INVITATION, REMINDER, FEEDBACK, LOGISTICS, HANDOVER, NEWS, PARTNER, ACCOUNT, SYSTEM, GENERAL.',
+  priority ENUM('LOW','NORMAL','HIGH','URGENT') NOT NULL DEFAULT 'NORMAL',
+  is_action_required BOOLEAN NOT NULL DEFAULT FALSE COMMENT 'TRUE when the recipient should take an action, not just read the notification.',
+
+  related_type VARCHAR(80) NULL COMMENT 'Backward-compatible generic target type.',
+  related_id BIGINT UNSIGNED NULL COMMENT 'Backward-compatible generic target id.',
+
+  visit_request_id BIGINT UNSIGNED NULL COMMENT 'Direct visit request context for filtering and navigation.',
+  visit_instance_id BIGINT UNSIGNED NULL COMMENT 'Direct campus visit instance context for filtering and navigation.',
+  campus_id BIGINT UNSIGNED NULL COMMENT 'Direct campus context for Staff Leader/HO filtering.',
+
+  action_type VARCHAR(80) NULL COMMENT 'Frontend action, for example OPEN_VISIT_DETAIL, OPEN_INVITATION_MODAL, OPEN_HOST_FEEDBACK_MODAL.',
+  action_url VARCHAR(500) NULL COMMENT 'Frontend route to open when the notification is clicked.',
+  metadata_json JSON NULL COMMENT 'Small UI payload for modal/detail rendering; do not store source-of-truth business data here.',
+  dedupe_key VARCHAR(255) NULL COMMENT 'Idempotency key to prevent duplicate notifications, especially reminders/background jobs.',
+
   is_read BOOLEAN NOT NULL DEFAULT FALSE,
   read_at DATETIME NULL,
+  archived_at DATETIME NULL COMMENT 'Soft archive/hide timestamp for the recipient.',
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
   PRIMARY KEY (notification_id),
+
   KEY idx_notifications_user_read_time (recipient_user_id, is_read, created_at),
   KEY idx_notifications_related (related_type, related_id),
   KEY idx_notifications_type_time (notification_type, created_at),
+  KEY idx_notifications_user_category_time (recipient_user_id, category, created_at),
+  KEY idx_notifications_user_action_time (recipient_user_id, is_action_required, is_read, created_at),
+  KEY idx_notifications_actor (actor_user_id, created_at),
+  KEY idx_notifications_visit_request (visit_request_id, created_at),
+  KEY idx_notifications_visit_instance (visit_instance_id, created_at),
+  KEY idx_notifications_campus (campus_id, created_at),
+  UNIQUE KEY uq_notifications_recipient_dedupe (recipient_user_id, dedupe_key),
+
   CONSTRAINT fk_notifications_user
     FOREIGN KEY (recipient_user_id) REFERENCES users(user_id)
-    ON UPDATE CASCADE ON DELETE CASCADE) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-COMMENT='In-app notifications';
+    ON UPDATE CASCADE ON DELETE CASCADE,
+
+  CONSTRAINT fk_notifications_actor_user
+    FOREIGN KEY (actor_user_id) REFERENCES users(user_id)
+    ON UPDATE CASCADE ON DELETE SET NULL,
+
+  CONSTRAINT fk_notifications_visit_request
+    FOREIGN KEY (visit_request_id) REFERENCES visit_requests(visit_request_id)
+    ON UPDATE CASCADE ON DELETE SET NULL,
+
+  CONSTRAINT fk_notifications_visit_instance
+    FOREIGN KEY (visit_instance_id) REFERENCES visit_request_campuses(visit_instance_id)
+    ON UPDATE CASCADE ON DELETE SET NULL,
+
+  CONSTRAINT fk_notifications_campus
+    FOREIGN KEY (campus_id) REFERENCES campuses(campus_id)
+    ON UPDATE CASCADE ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='In-app notifications. Global notification center table; supports role/context filtering, click actions, modal metadata, reminders and idempotency.';
 
 -- =====================================================================
 -- 10. CALENDAR + API + AGENDA TEMPLATE

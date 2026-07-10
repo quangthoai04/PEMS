@@ -197,12 +197,21 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AssignRequestAssign
                 _context.EmailActionTokens.Add(NewToken(_tokens.Hash(declineRaw), EmailIntendedActions.Decline, groupKey, l.LogisticsItemId, assignee.UserId, assignee.Email, sentEmail.SentEmailId, sentRecipient.SentEmailRecipientId, now));
 
                 await _notificationService.CreateAsync(
-                    assignee.UserId,
-                    LogisticsPriorityText.SubjectPrefix(l.Priority) + "Bạn được phân công hậu cần",
-                    $"Bạn được phân công xử lý hạng mục \"{l.Title}\" (ưu tiên {LogisticsPriorityText.LabelVi(l.Priority)}) cho đoàn {delegationName}.",
-                    PEMS.Application.Notifications.Common.NotificationTypes.LogisticsAssigned,
-                    PEMS.Application.Notifications.Common.NotificationRelatedTypes.LogisticsItem,
-                    l.LogisticsItemId,
+                    new PEMS.Application.Notifications.Common.CreateNotificationRequest(
+                        RecipientUserId: assignee.UserId,
+                        Title: LogisticsPriorityText.SubjectPrefix(l.Priority) + "Bạn được phân công hậu cần",
+                        Message: $"Bạn được phân công xử lý hạng mục \"{l.Title}\" (ưu tiên {LogisticsPriorityText.LabelVi(l.Priority)}) cho đoàn {delegationName}.",
+                        NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.LogisticsAssigned,
+                        RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.LogisticsItem,
+                        RelatedId: l.LogisticsItemId,
+                        ActorUserId: userId,
+                        Category: PEMS.Application.Notifications.Common.NotificationCategories.Logistics,
+                        IsActionRequired: true,
+                        VisitInstanceId: l.VisitInstanceId,
+                        ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenLogisticsDetail,
+                        ActionUrl: l.RequestedToDepartmentId.HasValue
+                            ? $"/dashboard/departments/{l.RequestedToDepartmentId.Value}/tasks/{l.LogisticsItemId}"
+                            : $"/dashboard/visit/process/{l.VisitInstanceId}"),
                     cancellationToken
                 );
                 await _context.SaveChangesAsync(cancellationToken);

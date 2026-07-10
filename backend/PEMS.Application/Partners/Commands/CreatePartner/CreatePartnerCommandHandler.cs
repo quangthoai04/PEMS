@@ -175,12 +175,19 @@ public sealed class CreatePartnerCommandHandler : IRequestHandler<CreatePartnerC
         foreach (var leaderId in leaderIds.Where(id => id != actorId))
         {
             await _notifications.CreateAsync(
-                leaderId,
-                "Đối tác mới chờ duyệt",
-                $"Đối tác \"{partner.Name}\" vừa được tạo và đang chờ duyệt.",
-                NotificationTypes.PartnerPendingApproval,
-                "Partner",
-                partner.PartnerId,
+                new PEMS.Application.Notifications.Common.CreateNotificationRequest(
+                    RecipientUserId: leaderId,
+                    Title: "Đối tác mới chờ duyệt",
+                    Message: $"Đối tác \"{partner.Name}\" vừa được tạo và đang chờ duyệt.",
+                    NotificationType: NotificationTypes.PartnerPendingApproval,
+                    RelatedType: "Partner",
+                    RelatedId: partner.PartnerId,
+                    ActorUserId: actorId,
+                    Category: PEMS.Application.Notifications.Common.NotificationCategories.Partner,
+                    IsActionRequired: true,
+                    CampusId: ownerCampusId,
+                    ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenPartnerDetail,
+                    ActionUrl: $"/dashboard/partners/{partner.PartnerId}"),
                 cancellationToken);
         }
 
