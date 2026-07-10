@@ -1,4 +1,41 @@
 {
+  "singleForm": {
+    "requiredHint": "Fields marked with * are required.",
+    "sections": {
+      "registrant": "Registrant Information",
+      "visit": "Visit Information",
+      "schedule": "Schedule",
+      "visitors": "Delegation Members",
+      "support": "Support Team",
+      "contact": "Contact Point",
+      "additional": "Additional Requests"
+    },
+    "actions": {
+      "submit": "Submit Request",
+      "submitting": "Submitting...",
+      "close": "Close"
+    }
+  },
+  "result": {
+    "title": "Request submitted",
+    "description": "Your visit request has been received.",
+    "statusLabel": "Status",
+    "requestCode": "Request code",
+    "reviewTitle": "Information you submitted",
+    "emailHint": "Please keep the request code and check your email for updates.",
+    "emptyValue": "—",
+    "status": {
+      "pendingApproval": "Pending approval",
+      "received": "Received"
+    },
+    "fields": {
+      "workingLanguage": "Working language",
+      "transportation": "Transportation details",
+      "mediaConsent": "Media consent",
+      "mediaConsentNote": "Media notes",
+      "notes": "General notes"
+    }
+  },
   "popup": {
     "badge": "Campus Visit",
     "title": "Book a Campus Visit",

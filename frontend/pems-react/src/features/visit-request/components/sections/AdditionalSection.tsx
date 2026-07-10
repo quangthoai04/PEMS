@@ -1,30 +1,36 @@
 import React from 'react';
 import { type UseFormReturn } from 'react-hook-form';
 import type { VisitRequestSchema } from '../../schema/visitRequest.schema';
-import { inputCls } from '../shared/FormField';
+import { inputCls, textareaCls } from '../shared/FormField';
+import { FormSection } from '../shared/FormSection';
 import { useTranslation } from 'react-i18next';
 
 interface Props {
   form: UseFormReturn<VisitRequestSchema>;
+  showErrors?: boolean;
 }
 
-export const AdditionalSection: React.FC<Props> = ({ form }) => {
+export const AdditionalSection: React.FC<Props> = ({ form, showErrors }) => {
   const { t } = useTranslation(['visitRequest']);
   const { register, formState: { errors, touchedFields } } = form;
 
-  return (
-    <div className="bg-slate-50/50 rounded-2xl border-l-4 border-l-[#f37021] border border-gray-100 p-5 sm:p-7 shadow-sm mt-8">
-      <h4 className="text-gray-800 font-bold text-base mb-5 border-b border-gray-200 pb-2 uppercase tracking-wide">
-        {t('visitRequest:step3.title')}
-      </h4>
+  // Same convention as the other sections: errors appear after the first submit
+  // attempt (showErrors) or once the field has been touched.
+  const showFieldError = (field: 'workingLanguage' | 'transportationNote' | 'mediaConsentStatus') =>
+    !!errors[field] && (showErrors || !!touchedFields[field]);
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+  return (
+    <FormSection
+      id="section-additional"
+      title={t('visitRequest:singleForm.sections.additional')}
+    >
+      <div className="grid grid-cols-1 gap-8 md:grid-cols-2">
         {/* Language */}
-        <div>
-          <label className="block text-base font-bold text-gray-900 mb-2">
+        <div data-field-error={showFieldError('workingLanguage') ? 'true' : undefined}>
+          <label className="block text-sm font-bold text-slate-900 mb-2">
             {t('visitRequest:step3.language')}
           </label>
-          <div className="flex items-center gap-8 mt-2 mb-3">
+          <div className="mt-2 mb-3 flex items-center gap-8">
             <label className="flex items-center gap-2.5 cursor-pointer group">
               <input
                 type="radio"
@@ -32,7 +38,7 @@ export const AdditionalSection: React.FC<Props> = ({ form }) => {
                 value="EN"
                 className="w-5 h-5 text-[#f37021] border-gray-300 focus:ring-[#f37021] cursor-pointer"
               />
-              <span className="text-gray-800 font-bold text-sm group-hover:text-[#004c91] transition-colors">{t('visitRequest:step3.en')}</span>
+              <span className="text-sm font-bold text-gray-800 transition-colors group-hover:text-[#004c91]">{t('visitRequest:step3.en')}</span>
             </label>
             <label className="flex items-center gap-2.5 cursor-pointer group">
               <input
@@ -41,43 +47,45 @@ export const AdditionalSection: React.FC<Props> = ({ form }) => {
                 value="VI"
                 className="w-5 h-5 text-[#f37021] border-gray-300 focus:ring-[#f37021] cursor-pointer"
               />
-              <span className="text-gray-800 font-bold text-sm group-hover:text-[#004c91] transition-colors">{t('visitRequest:step3.vi')}</span>
+              <span className="text-sm font-bold text-gray-800 transition-colors group-hover:text-[#004c91]">{t('visitRequest:step3.vi')}</span>
             </label>
           </div>
-          {errors.workingLanguage && (
-            <p className="text-xs text-red-600 font-medium mb-2">⚠ {errors.workingLanguage.message}</p>
+          {showFieldError('workingLanguage') && (
+            <p className="text-xs text-red-600 font-medium mb-2">⚠ {errors.workingLanguage?.message}</p>
           )}
-          <p className="text-xs text-gray-500 italic mt-1">
+          <p className="mt-1 text-xs italic text-gray-500">
             {t('visitRequest:step3.langNote')}
           </p>
-
         </div>
 
         {/* Transportation — free text (campus-independent approval spec: no type enum anymore) */}
-        <div>
-          <label className="block text-base font-bold text-gray-900 mb-2">
+        <div data-field-error={showFieldError('transportationNote') ? 'true' : undefined}>
+          <label className="block text-sm font-bold text-slate-900 mb-2">
             {t('visitRequest:step3.transport')}
           </label>
           <textarea
             {...register('transportationNote')}
             rows={4}
             placeholder={t('visitRequest:step3.transportPlaceholder')}
-            className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:border-[#f37021] focus:ring-1 focus:ring-[#f37021] outline-none transition-all bg-white text-sm shadow-sm resize-none font-medium text-gray-900"
+            className={textareaCls(showFieldError('transportationNote'))}
           />
-          {errors.transportationNote && (
-            <p className="text-xs text-red-600 font-medium mt-1">⚠ {errors.transportationNote.message}</p>
+          {showFieldError('transportationNote') && (
+            <p className="mt-1 text-xs font-medium text-red-600">⚠ {errors.transportationNote?.message}</p>
           )}
-          <p className="text-xs text-gray-500 italic mt-1">
+          <p className="mt-1 text-xs italic text-gray-500">
             {t('visitRequest:step3.transportNote')}
           </p>
         </div>
 
         {/* Media Consent */}
-        <div className="md:col-span-2 border-t border-gray-200 pt-6 mt-2">
-          <label className="block text-base font-bold text-gray-900 mb-2">
+        <div
+          className="md:col-span-2 border-t border-slate-200 pt-6"
+          data-field-error={showFieldError('mediaConsentStatus') ? 'true' : undefined}
+        >
+          <label className="block text-sm font-bold text-slate-900 mb-2">
             {t('visitRequest:step3.media')}
           </label>
-          <div className="flex items-center gap-8 mt-2 mb-3">
+          <div className="mt-2 mb-3 flex items-center gap-8">
             <label className="flex items-center gap-2.5 cursor-pointer group">
               <input
                 type="radio"
@@ -85,7 +93,7 @@ export const AdditionalSection: React.FC<Props> = ({ form }) => {
                 value="AGREED"
                 className="w-5 h-5 text-[#f37021] border-gray-300 focus:ring-[#f37021] cursor-pointer"
               />
-              <span className="text-gray-800 font-bold text-sm group-hover:text-[#004c91] transition-colors">{t('visitRequest:step3.agreed')}</span>
+              <span className="text-sm font-bold text-gray-800 transition-colors group-hover:text-[#004c91]">{t('visitRequest:step3.agreed')}</span>
             </label>
             <label className="flex items-center gap-2.5 cursor-pointer group">
               <input
@@ -94,15 +102,14 @@ export const AdditionalSection: React.FC<Props> = ({ form }) => {
                 value="DECLINED"
                 className="w-5 h-5 text-[#f37021] border-gray-300 focus:ring-[#f37021] cursor-pointer"
               />
-              <span className="text-gray-800 font-bold text-sm group-hover:text-[#004c91] transition-colors">{t('visitRequest:step3.declined')}</span>
+              <span className="text-sm font-bold text-gray-800 transition-colors group-hover:text-[#004c91]">{t('visitRequest:step3.declined')}</span>
             </label>
-
           </div>
-          {errors.mediaConsentStatus && (
-            <p className="text-xs text-red-600 font-medium mb-2">⚠ {errors.mediaConsentStatus.message}</p>
+          {showFieldError('mediaConsentStatus') && (
+            <p className="text-xs text-red-600 font-medium mb-2">⚠ {errors.mediaConsentStatus?.message}</p>
           )}
 
-          <label className="block text-sm font-bold text-gray-900 mt-4 mb-2">
+          <label className="mt-4 mb-2 block text-sm font-bold text-slate-900">
             {t('visitRequest:step3.mediaNoteTitle')}
           </label>
           <input
@@ -115,14 +122,14 @@ export const AdditionalSection: React.FC<Props> = ({ form }) => {
 
       {/* Notes */}
       <div className="mt-8">
-        <label className="block text-base font-bold text-gray-900 mb-2">{t('visitRequest:step3.notes')}</label>
+        <label className="block text-sm font-bold text-slate-900 mb-2">{t('visitRequest:step3.notes')}</label>
         <textarea
           {...register('notes')}
           rows={4}
           placeholder={t('visitRequest:step3.notesPlaceholder')}
-          className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:border-[#f37021] focus:ring-1 focus:ring-[#f37021] outline-none transition-all bg-white text-sm shadow-sm resize-none font-medium text-gray-900"
+          className={textareaCls(false)}
         />
       </div>
-    </div>
+    </FormSection>
   );
 };

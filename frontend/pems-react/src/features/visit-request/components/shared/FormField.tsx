@@ -27,7 +27,7 @@ export const FormField: React.FC<FormFieldProps> = ({
   children,
   className = '',
 }) => (
-  <div className={`space-y-2 ${className}`}>
+  <div className={`space-y-2 ${className}`} data-field-error={error ? 'true' : undefined}>
     <div>
       <label className="block text-sm font-bold text-slate-900">
         {label} {required && <span className="text-red-500">*</span>}
@@ -52,7 +52,25 @@ export const FormField: React.FC<FormFieldProps> = ({
 
 export const inputCls = (hasError?: boolean, hasValue?: boolean, hasIcon: boolean = true) =>
   [
-    `flex h-12 w-full min-w-0 items-center rounded-xl border bg-white pl-4 ${hasIcon ? 'pr-10' : 'pr-4'} text-sm font-semibold text-slate-800 outline-none transition-all shadow-sm`,
+    `flex h-11 w-full min-w-0 items-center rounded-xl border bg-white pl-4 ${hasIcon ? 'pr-10' : 'pr-4'} text-sm font-semibold text-slate-800 outline-none transition-colors`,
+    hasError
+      ? 'border-red-400 focus:border-red-500 focus:ring-2 focus:ring-red-500/10'
+      : 'border-slate-300 focus:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/10',
+  ].join(' ');
+
+/** Textarea variant of the standard control: same border/focus, no shadow. */
+export const textareaCls = (hasError?: boolean) =>
+  [
+    'w-full min-w-0 rounded-xl border bg-white px-4 py-3 text-sm font-medium text-slate-800 outline-none transition-colors resize-none',
+    hasError
+      ? 'border-red-400 focus:border-red-500 focus:ring-2 focus:ring-red-500/10'
+      : 'border-slate-300 focus:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/10',
+  ].join(' ');
+
+/** Select variant: chevron space on the right, no shadow. */
+export const selectCls = (hasError?: boolean) =>
+  [
+    'h-11 w-full min-w-0 appearance-none rounded-xl border bg-white pl-4 pr-9 text-sm font-medium text-slate-800 outline-none transition-colors',
     hasError
       ? 'border-red-400 focus:border-red-500 focus:ring-2 focus:ring-red-500/10'
       : 'border-slate-300 focus:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/10',

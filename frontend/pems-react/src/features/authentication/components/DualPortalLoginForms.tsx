@@ -484,23 +484,34 @@ export function GoogleSignInButton({
         size: 'large',
         width: '100%',
         shape: 'rectangular',
-        locale: language,
+        locale: language === 'en' ? 'en_US' : 'vi_VN',
       });
     };
+
+    const targetHl = language === 'en' ? 'en' : 'vi';
+    const scriptUrl = `https://accounts.google.com/gsi/client?hl=${targetHl}`;
+
+    // If the GSI script is already loaded but for a DIFFERENT language, it ignores the
+    // renderButton locale param. We must remove it and its global object to force a reload.
+    const existing = document.getElementById('google-gsi-script') as HTMLScriptElement;
+    if (existing && !existing.src.includes(`hl=${targetHl}`)) {
+      existing.remove();
+      delete (window as any).google;
+    }
 
     if ((window as any).google?.accounts?.id) {
       init();
       return;
     }
 
-    const existing = document.getElementById('google-gsi-script');
-    if (existing) {
-      existing.addEventListener('load', init);
-      return () => existing.removeEventListener('load', init);
+    const currentScript = document.getElementById('google-gsi-script') as HTMLScriptElement;
+    if (currentScript) {
+      currentScript.addEventListener('load', init);
+      return () => currentScript.removeEventListener('load', init);
     }
 
     const script = document.createElement('script');
-    script.src = 'https://accounts.google.com/gsi/client';
+    script.src = scriptUrl;
     script.async = true;
     script.defer = true;
     script.id = 'google-gsi-script';
@@ -533,7 +544,7 @@ export function GoogleSignInButton({
   }
 
   return (
-    <div className="relative w-full">
+    <div className="relative w-full" key={language}>
       <div ref={containerRef} className="w-full flex justify-center [&>div]:w-full" />
       {onValidateCampus && !selectedCampusId && (
         <div 

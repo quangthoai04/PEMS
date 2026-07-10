@@ -2,6 +2,7 @@ import React from 'react';
 import { Controller, type UseFormReturn } from 'react-hook-form';
 import type { VisitRequestSchema } from '../../schema/visitRequest.schema';
 import { FormField, inputCls } from '../shared/FormField';
+import { FormSection } from '../shared/FormSection';
 import { CountrySelect } from '../shared/CountrySelect';
 import { PhoneInput } from '../shared/PhoneInput';
 import { PartnerOrgCombobox } from '../shared/PartnerOrgCombobox';
@@ -26,17 +27,11 @@ export const RegisterInfoSection: React.FC<Props> = ({ form, showErrors }) => {
     tf?.[field] && !e?.[field];
 
   return (
-    <section>
-      <SectionTitle index={1} title={t('visitRequest:step1.title')} />
-      
-      <div className="rounded-3xl border border-slate-200 border-l-4 border-l-[#F37021] bg-white/95 p-6 shadow-sm">
-        <div className="mb-6 border-b border-slate-200 pb-4">
-          <h3 className="text-lg font-extrabold text-slate-900">
-            {t('visitRequest:step1.groupTitle')}
-          </h3>
-        </div>
-
-        <div className="grid grid-cols-1 gap-x-10 gap-y-6 lg:grid-cols-2">
+    <FormSection
+      id="section-registrant"
+      title={t('visitRequest:singleForm.sections.registrant')}
+    >
+      <div className="grid grid-cols-1 gap-x-10 gap-y-6 lg:grid-cols-2">
 
         <FormField
           label={t('visitRequest:step1.fullName')}
@@ -148,17 +143,7 @@ export const RegisterInfoSection: React.FC<Props> = ({ form, showErrors }) => {
           />
         </FormField>
 
-        </div>
       </div>
-    </section>
+    </FormSection>
   );
 };
-
-export const SectionTitle: React.FC<{ index: number; title: string }> = ({ index, title }) => (
-  <h3 className="text-lg sm:text-xl font-black text-[#004c91] border-b-2 border-[#f37021]/30 pb-2 mb-6 flex items-center gap-2 w-max pr-6">
-    <span className="flex items-center justify-center w-6 h-6 sm:w-7 sm:h-7 rounded-full bg-[#f37021] text-white text-sm">
-      {index}
-    </span>
-    {title}
-  </h3>
-);

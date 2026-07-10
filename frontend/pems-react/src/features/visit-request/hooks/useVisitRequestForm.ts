@@ -74,8 +74,19 @@ function debounce<T extends (...args: any[]) => void>(fn: T, delay = 700) {
   };
 }
 
+/**
+ * Deep-clone the form values so the post-OTP summary shows an immutable snapshot —
+ * later field-array replaces/resets must not mutate what the user reviews.
+ * UC17 payload is JSON-safe (string/number/boolean/null/array), so the JSON
+ * fallback is valid where structuredClone is unavailable.
+ */
+const cloneVisitRequestValues = (value: VisitRequestSchema): VisitRequestSchema =>
+  typeof structuredClone === 'function'
+    ? structuredClone(value)
+    : (JSON.parse(JSON.stringify(value)) as VisitRequestSchema);
+
 export const useVisitRequestForm = (
-  onSuccess: (result: VerifyResponse) => void,
+  onSuccess: (result: VerifyResponse, submittedValues: VisitRequestSchema) => void,
   onInvalid?: (errors: any) => void
 ) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -286,10 +297,12 @@ export const useVisitRequestForm = (
     setOtpError(null);
     try {
       // SQL v8.3: resubmit the full form (kept in the form state) together with the OTP.
-      const result = await visitRequestApi.verify(form.getValues(), otpCode);
+      // Snapshot BEFORE the call so the summary can't drift if the form is reset later.
+      const submittedValues = cloneVisitRequestValues(form.getValues());
+      const result = await visitRequestApi.verify(submittedValues, otpCode);
       setSessionToken(null);
       clearVisitRequestDraft();
-      onSuccess(result);
+      onSuccess(result, submittedValues);
     } catch (err: any) {
       const code = getApiErrorCode(err);
       // A contact-email business conflict is not an OTP problem — close the OTP modal,
@@ -327,6 +340,28 @@ export const useVisitRequestForm = (
     setOtpError(null);
   };
 
+  // Single reset path shared by cancel-form, discard-draft and close-after-success,
+  // so no PII from a submitted request survives a reopen.
+  const resetVisitRequestForm = () => {
+    const defaults = cloneVisitRequestValues(DEFAULT_VISIT_REQUEST_VALUES);
+    // Suppress the debounced draft auto-save (700ms) while resetting so the cleared
+    // form does not re-create a draft of the request that was just submitted.
+    isRestoringDraftRef.current = true;
+    form.reset(defaults);
+    visitFields.replace(defaults.visits);
+    visitorFields.replace(defaults.visitors);
+    supportTeamFields.replace(defaults.supportTeam);
+    form.clearErrors();
+    setSessionToken(null);
+    setMaskedEmail('');
+    setOtpError(null);
+    setSubmitError(null);
+    clearVisitRequestDraft();
+    window.setTimeout(() => {
+      isRestoringDraftRef.current = false;
+    }, 800);
+  };
+
   return {
     form,
     visitFields,
@@ -349,6 +384,7 @@ export const useVisitRequestForm = (
     verifyOtp,
     resendOtp,
     cancelOtp,
+    resetVisitRequestForm,
     draftHydrated,
     setDraftHydrated,
     isRestoringDraftRef,

@@ -1,4 +1,41 @@
 {
+  "singleForm": {
+    "requiredHint": "Các trường có dấu * là bắt buộc.",
+    "sections": {
+      "registrant": "Thông tin người đăng ký",
+      "visit": "Thông tin chuyến thăm",
+      "schedule": "Lịch trình",
+      "visitors": "Thành viên đoàn khách",
+      "support": "Đội hỗ trợ khách",
+      "contact": "Đầu mối liên hệ",
+      "additional": "Yêu cầu bổ sung"
+    },
+    "actions": {
+      "submit": "Gửi yêu cầu",
+      "submitting": "Đang gửi...",
+      "close": "Đóng"
+    }
+  },
+  "result": {
+    "title": "Đã gửi yêu cầu tham quan",
+    "description": "Yêu cầu của bạn đã được hệ thống tiếp nhận.",
+    "statusLabel": "Trạng thái",
+    "requestCode": "Mã yêu cầu",
+    "reviewTitle": "Thông tin bạn đã gửi",
+    "emailHint": "Vui lòng giữ mã yêu cầu và kiểm tra email khi có cập nhật.",
+    "emptyValue": "—",
+    "status": {
+      "pendingApproval": "Đang chờ duyệt",
+      "received": "Đã tiếp nhận"
+    },
+    "fields": {
+      "workingLanguage": "Ngôn ngữ làm việc",
+      "transportation": "Thông tin phương tiện",
+      "mediaConsent": "Chấp thuận truyền thông",
+      "mediaConsentNote": "Ghi chú truyền thông",
+      "notes": "Ghi chú chung"
+    }
+  },
   "popup": {
     "badge": "Campus Visit",
     "title": "Đăng ký tham quan trường",
@@ -81,7 +118,7 @@
     "overlapError": "Một số cơ sở trong lịch trình có thời gian bắt đầu/kết thúc bị chồng lên nhau. Vui lòng kiểm tra lại trước khi tiếp tục.",
     "visitTypes": {
       "CAMPUS_TOUR": "Tham quan cơ sở",
-      "MEETING": "Họ p trao đổi",
+      "MEETING": "Họp trao đổi",
       "WORKSHOP": "Workshop",
       "SIGNING_CEREMONY": "Lễ ký kết",
       "EXCHANGE": "Giao lưu",
