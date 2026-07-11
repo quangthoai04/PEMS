@@ -14,6 +14,18 @@ public class VisitRequest
     [Column("request_code")]
     public string RequestCode { get; set; } = null!;
 
+    // UUID of ONE submit intent (frontend crypto.randomUUID(), kept across
+    // initiate/resend/recover/verify). UNIQUE in the DB — the last barrier against
+    // double-click / network-retry creating a second row. NULL on legacy rows.
+    [Column("submission_id")]
+    public string? SubmissionId { get; set; }
+
+    // SHA-256 "v1" fingerprint of the core visit identity (registrant email, effective
+    // contact email, delegation name, scope, type(+other), sorted campus schedules).
+    // NORMAL index only — never unique (would block legitimate later re-submissions).
+    [Column("business_fingerprint")]
+    public string? BusinessFingerprint { get; set; }
+
     [Column("visitor_user_id")]
     public ulong? VisitorUserId { get; set; }
 

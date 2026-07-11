@@ -80,6 +80,23 @@ public sealed class ExceptionHandlingMiddleware
                 payload = new { success = false, message = notFound.Message, traceId };
                 break;
 
+            case OtpChallengeException otp:
+                // UC-17 OTP challenge contract: machine-readable errorCode + attempt metadata.
+                // The frontend renders from errorCode/metadata — never by parsing the message.
+                status = otp.StatusCode;
+                payload = new
+                {
+                    success = false,
+                    errorCode = otp.ErrorCode,
+                    message = otp.Message,
+                    remainingAttempts = otp.RemainingAttempts,
+                    retryAfterSeconds = otp.RetryAfterSeconds,
+                    humanVerificationRequired = otp.HumanVerificationRequired,
+                    traceId
+                };
+                _logger.LogInformation("OTP challenge failure ({Code}).", otp.ErrorCode);
+                break;
+
             case ConflictException conflict:
                 status = StatusCodes.Status409Conflict;
                 payload = conflict.Data is null

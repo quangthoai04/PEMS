@@ -6,6 +6,34 @@ namespace PEMS.Application.Common.Interfaces;
 public sealed record OtpVerificationResult(bool Success, string? FailureReason, OtpToken? Token);
 
 /// <summary>
+/// A freshly issued UC-17 OTP challenge. <see cref="SessionToken"/> is the raw opaque
+/// token (CSPRNG) — returned to the client exactly once; only its SHA-256 is stored.
+/// <see cref="Code"/> is the raw 6-digit code for email delivery only. Neither may be
+/// logged or persisted raw.
+/// </summary>
+public sealed record OtpChallengeIssue(
+    string SessionToken,
+    string Code,
+    string Email,
+    DateTime ExpiresAt,
+    int ResendAfterSeconds,
+    int MaxAttempts);
+
+/// <summary>
+/// Outcome of verifying a UC-17 OTP challenge. <see cref="ErrorCode"/> is one of
+/// <c>OtpErrorCodes</c>; metadata mirrors what the client renders. <see cref="Token"/> is
+/// the TRACKED challenge row (locked FOR UPDATE) so the caller can mark it used inside
+/// the same transaction.
+/// </summary>
+public sealed record OtpChallengeVerification(
+    bool Success,
+    string? ErrorCode,
+    int RemainingAttempts,
+    int RetryAfterSeconds,
+    bool HumanVerificationRequired,
+    OtpToken? Token);
+
+/// <summary>
 /// Issues and verifies one-time codes (OTP). Codes are stored hashed (SHA-256);
 /// the raw code is returned once for delivery.
 /// </summary>
@@ -42,5 +70,66 @@ public interface IOtpService
         string email,
         string purpose,
         string rawCode,
+        CancellationToken cancellationToken = default);
+
+    // ── UC-17 challenge-based flow (V2) ────────────────────────────────────────────
+
+    /// <summary>
+    /// Issues a new OTP challenge bound to email + purpose + submissionId. Enforces the
+    /// per-email hourly issue quotas and the min resend interval (throws a typed
+    /// <c>OtpChallengeException</c> 429 when exceeded). Persists immediately (own
+    /// SaveChanges); safe to call outside a transaction.
+    /// </summary>
+    Task<OtpChallengeIssue> CreateChallengeAsync(
+        string email,
+        string purpose,
+        string submissionId,
+        string issueReason,
+        string? ipAddress,
+        string? userAgent,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Verifies a raw code against the challenge identified by the opaque session token.
+    /// MUST be called inside an ambient transaction owned by the caller: the challenge row
+    /// is locked (<c>SELECT … FOR UPDATE</c>) and attempt-state mutations are saved but NOT
+    /// committed — the caller commits on BOTH the wrong-code path (so attempts persist even
+    /// though the request fails) and the success path (atomically with the created request).
+    /// </summary>
+    Task<OtpChallengeVerification> VerifyChallengeAsync(
+        string sessionToken,
+        string email,
+        string purpose,
+        string submissionId,
+        string rawCode,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Normal resend: supersedes the old challenge (looked up by its raw session token +
+    /// submission binding) and issues a fresh one with <c>issue_reason = RESEND</c>.
+    /// A challenge that already requires human verification can NOT be resent — resend must
+    /// never bypass the CAPTCHA gate (throws typed 428). Issue quotas apply.
+    /// </summary>
+    Task<OtpChallengeIssue> ResendChallengeAsync(
+        string oldSessionToken,
+        string purpose,
+        string submissionId,
+        string? ipAddress,
+        string? userAgent,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// After successful human verification: invalidates the old challenge (looked up by its
+    /// raw session token + submission binding) and issues a fresh challenge with
+    /// <c>issue_reason = HUMAN_RECOVERY</c> and attempt count 0. The old code can never be
+    /// used again. Throws typed <c>OtpChallengeException</c> on unknown/mismatched session
+    /// or when the recovery issue quota is exhausted.
+    /// </summary>
+    Task<OtpChallengeIssue> RecoverChallengeAsync(
+        string oldSessionToken,
+        string purpose,
+        string submissionId,
+        string? ipAddress,
+        string? userAgent,
         CancellationToken cancellationToken = default);
 }

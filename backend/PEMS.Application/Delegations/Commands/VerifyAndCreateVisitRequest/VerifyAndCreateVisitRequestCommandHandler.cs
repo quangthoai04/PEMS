@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.DTOs;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Delegations.Services;
 using PEMS.Domain.Constants;
 using Microsoft.Extensions.Logging;
 using PEMS.Domain.Entities.Delegations;
@@ -12,6 +13,10 @@ namespace PEMS.Application.Delegations.Commands.VerifyAndCreateVisitRequest;
 public sealed class VerifyAndCreateVisitRequestCommandHandler
     : IRequestHandler<VerifyAndCreateVisitRequestCommand, VerifyAndCreateVisitRequestResponse>
 {
+    // Two submit intents with the same business fingerprint inside this window are
+    // treated as one duplicate submission (unless the old one is REJECTED/CANCELLED).
+    private const int DuplicateWindowMinutes = 15;
+
     private readonly IApplicationDbContext _db;
     private readonly IOtpService _otpService;
     private readonly IVisitRequestService _visitRequestService;
@@ -59,48 +64,88 @@ public sealed class VerifyAndCreateVisitRequestCommandHandler
         var contactName  = request.IsContactSelf ? request.RegistrantFullName : request.ContactPerson.FullName;
         var contactPhone = request.IsContactSelf ? request.RegistrantPhone : request.ContactPerson.Phone;
 
+        // Server-side fingerprint — the client never decides it.
+        var fingerprint = VisitRequestFingerprintBuilder.BuildFromForm(request);
+
+        // ── Idempotency pre-check (BEFORE OTP verify): a retry whose original submit
+        //    already committed must be replayed idempotently — its OTP is already
+        //    consumed, so verifying again would return a misleading OTP error. ──
+        var replay = await CheckIdempotentReplayAsync(request.SubmissionId, email, fingerprint, cancellationToken);
+        if (replay is not null)
+            return replay;
+
         // ── Atomic submit: consume OTP → dedupe → provision visitor → insert request +
-        //    campuses + guests must all commit together, or nothing at all. ──
+        //    campuses + guests must all commit together, or nothing at all. The one
+        //    deliberate exception: a WRONG code COMMITS its attempt-state update and only
+        //    then surfaces the typed error (attempts must survive the failed request). ──
         await using var transaction = await _db.BeginTransactionAsync(cancellationToken);
+        var committed = false;
 
         VisitRequest visitRequest;
         try
         {
-            // ── 1. Verify OTP (no server-side draft in v8.3 — form is resubmitted by client) ──
-            var otpResult = await _otpService.VerifyAsync(
+            // ── 1. Verify OTP challenge. Locks the challenge row (FOR UPDATE) — concurrent
+            //       attempts and same-submission retries serialize here. ──
+            var otpResult = await _otpService.VerifyChallengeAsync(
+                request.SessionToken,
                 email,
                 OtpPurposes.VisitRequestVerify,
+                request.SubmissionId,
                 request.OtpCode,
                 cancellationToken);
 
             if (!otpResult.Success)
             {
-                throw new BusinessRuleException(otpResult.FailureReason switch
+                // A concurrent/earlier retry of THIS submission may have already created the
+                // request and consumed the OTP — replay idempotently instead of erroring.
+                var lateReplay = await CheckIdempotentReplayAsync(
+                    request.SubmissionId, email, fingerprint, cancellationToken);
+                if (lateReplay is not null)
                 {
-                    "expired"         => "Mã OTP đã hết hạn. Vui lòng yêu cầu mã mới.",
-                    "max_attempts"    => "Bạn đã nhập sai quá nhiều lần. Vui lòng yêu cầu mã mới.",
-                    "mismatch"        => "Mã OTP không đúng. Vui lòng kiểm tra lại.",
-                    "no_active_token" => "Không tìm thấy mã OTP. Vui lòng yêu cầu mã mới.",
-                    _                 => "Xác thực OTP thất bại."
-                });
+                    await transaction.CommitAsync(cancellationToken);
+                    committed = true;
+                    return lateReplay;
+                }
+
+                // Persist attempt/cooldown/burn state FIRST, then surface the typed error.
+                await transaction.CommitAsync(cancellationToken);
+                committed = true;
+                throw BuildOtpException(otpResult);
             }
 
-            // ── 2. Duplicate guard: same registrant + delegation + scope submitted very
-            //       recently and not already rejected/cancelled → reject as a double-submit. ──
-            var duplicateWindowStart = now.AddMinutes(-10);
-            var isDuplicate = await _db.VisitRequests.AsNoTracking().AnyAsync(r =>
-                r.RegistrantEmail == email &&
-                r.DelegationName == request.DelegationName &&
-                r.VisitScope == visitScope &&
-                r.SubmittedAt >= duplicateWindowStart &&
-                r.Status != VisitRequestStatuses.Rejected &&
-                r.Status != VisitRequestStatuses.Cancelled,
-                cancellationToken);
+            var otpToken = otpResult.Token!;
 
-            if (isDuplicate)
+            // ── 2. Duplicate guard (business fingerprint): another submit intent with the
+            //       same core visit identity committed within the window → consume the OTP
+            //       but create NOTHING new (no request/account/children/notifications). ──
+            var duplicateWindowStart = now.AddMinutes(-DuplicateWindowMinutes);
+            var duplicate = await _db.VisitRequests.AsNoTracking()
+                .Where(r => r.BusinessFingerprint == fingerprint
+                            && r.SubmittedAt >= duplicateWindowStart
+                            && r.Status != VisitRequestStatuses.Rejected
+                            && r.Status != VisitRequestStatuses.Cancelled)
+                .OrderByDescending(r => r.SubmittedAt)
+                .Select(r => new { r.VisitRequestId, r.RequestCode, r.Status, r.SubmittedAt })
+                .FirstOrDefaultAsync(cancellationToken);
+
+            if (duplicate is not null)
+            {
+                otpToken.UsedAt = now;
+                await _db.SaveChangesAsync(cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+                committed = true;
+
                 throw new ConflictException(
-                    "Một đơn đăng ký tương tự vừa được gửi. Vui lòng kiểm tra email xác nhận trước khi gửi lại.",
-                    VisitRequestErrorCodes.DuplicateVisitRequest);
+                    "Một đơn đăng ký với nội dung tương tự vừa được gửi trước đó. Không có đơn mới nào được tạo.",
+                    VisitRequestErrorCodes.DuplicateVisitRequest,
+                    new
+                    {
+                        existingVisitRequestId = duplicate.VisitRequestId,
+                        existingRequestCode    = duplicate.RequestCode,
+                        existingStatus         = duplicate.Status,
+                        existingSubmittedAt    = duplicate.SubmittedAt
+                    });
+            }
 
             // ── 3. Rebuild the form payload from the resubmitted command ──────────
             var formData = new VisitRequestFormData(
@@ -134,17 +179,17 @@ public sealed class VerifyAndCreateVisitRequestCommandHandler
                 .Where(c => campusCodes.Contains(c.CampusCode))
                 .Select(c => c.CampusId)
                 .ToListAsync(cancellationToken);
-            
+
             // For each campus, we need at least one ACTIVE Staff Leader in the IC department
             var validCampuses = await _db.Users
                 .Include(u => u.Role)
                 .Include(u => u.Department)
-                .Where(u => u.Role.RoleCode == RoleCodes.Staff 
-                            && u.SubRole == "LEADER" 
-                            && u.PrimaryCampusId.HasValue 
-                            && campusIds.Contains(u.PrimaryCampusId.Value) 
+                .Where(u => u.Role.RoleCode == RoleCodes.Staff
+                            && u.SubRole == "LEADER"
+                            && u.PrimaryCampusId.HasValue
+                            && campusIds.Contains(u.PrimaryCampusId.Value)
                             && u.Status == "ACTIVE"
-                            && u.Department != null 
+                            && u.Department != null
                             && u.Department.DepartmentType == "IC")
                 .Select(u => u.PrimaryCampusId.Value)
                 .Distinct()
@@ -168,9 +213,19 @@ public sealed class VerifyAndCreateVisitRequestCommandHandler
             // ── 5. Create VisitRequest + child aggregates (campuses, guests) ──────
             visitRequest = await _visitRequestService.CreateAsync(formData, visitorUserId, "VISITOR_SUBMITTED", now, cancellationToken);
 
+            // Submit-intent idempotency + core-identity fingerprint. submission_id has a
+            // UNIQUE index — if a concurrent retry of this intent won the race, the insert
+            // below throws and is replayed idempotently in the DbUpdateException catch.
+            visitRequest.SubmissionId        = request.SubmissionId;
+            visitRequest.BusinessFingerprint = fingerprint;
+
             // ── 6. Approval routing — request decision status only (PENDING_APPROVAL) ──
             visitRequest.Status          = _approvalRouting.DetermineInitialStatus(formData.VisitScope);
             visitRequest.EmailVerifiedAt = now;
+
+            // ── 6.4. Consume the OTP atomically with the request creation. If anything
+            //         below fails, the rollback also un-consumes the OTP (it stays usable). ──
+            otpToken.UsedAt = now;
 
             await _db.SaveChangesAsync(cancellationToken);
 
@@ -230,10 +285,27 @@ public sealed class VerifyAndCreateVisitRequestCommandHandler
             }
 
             await transaction.CommitAsync(cancellationToken);
+            committed = true;
+        }
+        catch (DbUpdateException dbEx) when (!committed)
+        {
+            // Most likely uq_visit_requests_submission_id: a concurrent retry of the SAME
+            // submission intent won the insert race. Roll back, re-query the winner and
+            // replay idempotently; a different-content reuse of the key is rejected.
+            await transaction.RollbackAsync(cancellationToken);
+
+            var racedReplay = await CheckIdempotentReplayAsync(
+                request.SubmissionId, email, fingerprint, cancellationToken);
+            if (racedReplay is not null)
+                return racedReplay;
+
+            _logger.LogError(dbEx, "UC-17 verify insert failed with DbUpdateException and no idempotent row for submission {SubmissionId}.", request.SubmissionId);
+            throw;
         }
         catch
         {
-            await transaction.RollbackAsync(cancellationToken);
+            if (!committed)
+                await transaction.RollbackAsync(cancellationToken);
             throw;
         }
 
@@ -244,7 +316,7 @@ public sealed class VerifyAndCreateVisitRequestCommandHandler
             {
                 var minTime = request.CampusVisits.Min(s => s.StartDatetime);
                 var maxTime = request.CampusVisits.Max(s => s.EndDatetime);
-                var plannedTimeText = minTime.Date == maxTime.Date 
+                var plannedTimeText = minTime.Date == maxTime.Date
                     ? $"{minTime:dd/MM/yyyy} ({minTime:HH:mm} - {maxTime:HH:mm})"
                     : $"{minTime:dd/MM/yyyy HH:mm} - {maxTime:dd/MM/yyyy HH:mm}";
 
@@ -284,5 +356,60 @@ public sealed class VerifyAndCreateVisitRequestCommandHandler
             visitRequest.RequestCode,
             visitRequest.Status,
             "Đơn đăng ký thăm quan đã được gửi thành công và đang chờ phê duyệt.");
+    }
+
+    /// <summary>
+    /// Same-submission-intent replay handling: if a request with this submissionId already
+    /// exists AND its registrant email + fingerprint match, the retry gets the ORIGINAL
+    /// result back (HTTP 200, no new row, no new side effects). Same key with different
+    /// content is an idempotency-key reuse and is rejected (409).
+    /// </summary>
+    private async Task<VerifyAndCreateVisitRequestResponse?> CheckIdempotentReplayAsync(
+        string submissionId, string normalizedEmail, string fingerprint, CancellationToken cancellationToken)
+    {
+        var existing = await _db.VisitRequests.AsNoTracking()
+            .Where(r => r.SubmissionId == submissionId)
+            .Select(r => new { r.VisitRequestId, r.RequestCode, r.Status, r.RegistrantEmail, r.BusinessFingerprint })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (existing is null)
+            return null;
+
+        if (!string.Equals(existing.RegistrantEmail, normalizedEmail, StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(existing.BusinessFingerprint, fingerprint, StringComparison.Ordinal))
+        {
+            throw new ConflictException(
+                "Phiên gửi đơn này đã được dùng cho một nội dung khác. Vui lòng tải lại trang và gửi lại.",
+                VisitRequestErrorCodes.IdempotencyKeyReused);
+        }
+
+        return new VerifyAndCreateVisitRequestResponse(
+            existing.VisitRequestId,
+            existing.RequestCode,
+            existing.Status,
+            "Đơn đăng ký này đã được ghi nhận trước đó. Không có đơn mới nào được tạo.");
+    }
+
+    /// <summary>Maps a failed challenge verification to the typed error contract.</summary>
+    private static OtpChallengeException BuildOtpException(OtpChallengeVerification result)
+    {
+        var (status, message) = result.ErrorCode switch
+        {
+            OtpErrorCodes.Invalid                   => (400, "Mã OTP không đúng. Vui lòng kiểm tra lại."),
+            OtpErrorCodes.Expired                   => (400, "Mã OTP đã hết hạn. Vui lòng yêu cầu mã mới."),
+            OtpErrorCodes.NotFound                  => (400, "Không tìm thấy phiên xác thực. Vui lòng yêu cầu mã mới."),
+            OtpErrorCodes.SessionInvalid            => (400, "Phiên xác thực không còn hiệu lực. Vui lòng yêu cầu mã mới."),
+            OtpErrorCodes.RetryLater                => (429, "Bạn thao tác quá nhanh. Vui lòng chờ trước khi thử lại."),
+            OtpErrorCodes.HumanVerificationRequired => (428, "Bạn đã nhập sai quá nhiều lần. Vui lòng xác minh bạn không phải robot để nhận mã mới."),
+            _                                       => (400, "Xác thực OTP thất bại.")
+        };
+
+        return new OtpChallengeException(
+            status,
+            result.ErrorCode ?? OtpErrorCodes.SessionInvalid,
+            message,
+            remainingAttempts: result.RemainingAttempts,
+            retryAfterSeconds: result.RetryAfterSeconds > 0 ? result.RetryAfterSeconds : null,
+            humanVerificationRequired: result.HumanVerificationRequired);
     }
 }

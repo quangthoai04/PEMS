@@ -10,17 +10,20 @@ public sealed class InitiateVisitRequestCommandHandler
     private readonly IOtpService _otpService;
     private readonly IEmailService _emailService;
     private readonly IUserProvisionService _userProvisionService;
+    private readonly IRequestMetadataService _requestMetadata;
     private readonly Microsoft.Extensions.Configuration.IConfiguration _configuration;
 
     public InitiateVisitRequestCommandHandler(
         IOtpService otpService,
         IEmailService emailService,
         IUserProvisionService userProvisionService,
+        IRequestMetadataService requestMetadata,
         Microsoft.Extensions.Configuration.IConfiguration configuration)
     {
         _otpService  = otpService;
         _emailService = emailService;
         _userProvisionService = userProvisionService;
+        _requestMetadata = requestMetadata;
         _configuration = configuration;
     }
 
@@ -36,14 +39,17 @@ public sealed class InitiateVisitRequestCommandHandler
         await _userProvisionService.ValidateContactEmailCanBeUsedForVisitorAsync(
             contactEmail, cancellationToken);
 
-        // SQL v8.3 has no pending_visit_requests table. The form draft stays on the
-        // frontend (sessionStorage) and is resubmitted at the verify step. Here we only
-        // create the OTP (stored in otp_tokens) and email it — nothing is persisted yet.
-        var rawCode = await _otpService.CreateForEmailAsync(
+        // The form draft stays on the frontend (sessionStorage) and is resubmitted at the
+        // verify step. Here we only create the OTP challenge (otp_tokens) and email the code.
+        // The challenge is bound to email + purpose + submissionId; IP/User-Agent are taken
+        // server-side, never from the body.
+        var issue = await _otpService.CreateChallengeAsync(
             email,
             OtpPurposes.VisitRequestVerify,
-            null,
-            null,
+            request.SubmissionId,
+            OtpIssueReasons.Initial,
+            _requestMetadata.IpAddress,
+            _requestMetadata.UserAgent,
             cancellationToken);
 
         try
@@ -51,7 +57,7 @@ public sealed class InitiateVisitRequestCommandHandler
             await _emailService.SendVisitRequestOtpAsync(
                 email,
                 request.RegistrantFullName,
-                rawCode,
+                issue.Code,
                 cancellationToken);
         }
         catch (Exception ex)
@@ -61,14 +67,17 @@ public sealed class InitiateVisitRequestCommandHandler
         }
 
         var isEmailEnabled = bool.TryParse(_configuration["Smtp:Enabled"], out var e) && e;
-        var msg = isEmailEnabled 
+        var msg = isEmailEnabled
             ? "Mã xác thực đã được gửi tới email của bạn. Vui lòng kiểm tra hộp thư."
             : "Hệ thống đang ở chế độ DEV (Smtp:Enabled=false). Mã xác thực đã được in ra log của backend.";
 
         return new InitiateVisitRequestResponse(
-            SessionToken: email,
-            Message:      msg,
-            MaskedEmail:  MaskEmail(email));
+            SessionToken:       issue.SessionToken,
+            Message:            msg,
+            MaskedEmail:        MaskEmail(email),
+            ExpiresAt:          issue.ExpiresAt,
+            ResendAfterSeconds: issue.ResendAfterSeconds,
+            MaxAttempts:        issue.MaxAttempts);
     }
 
     private static string MaskEmail(string email)

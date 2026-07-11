@@ -1,6 +1,7 @@
 using MediatR;
 using Microsoft.AspNetCore.Mvc;
 using PEMS.Application.Delegations.Commands.InitiateVisitRequest;
+using PEMS.Application.Delegations.Commands.RecoverVisitRequestOtp;
 using PEMS.Application.Delegations.Commands.ResendVisitRequestOtp;
 using PEMS.Application.Delegations.Commands.ResubmitRejectedVisitRequest;
 using PEMS.Application.Delegations.Commands.UpdatePendingVisitRequest;
@@ -40,13 +41,19 @@ public sealed class VisitRequestsController : ControllerBase
     }
 
     /// <summary>
-    /// STEP 2 — Verifies the OTP, creates the VisitRequest, provisions the Visitor
-    /// account and routes the request to the correct approval queue.
+    /// STEP 2 — Verifies the OTP challenge (identified by <c>sessionToken</c> and bound to
+    /// <c>submissionId</c>), creates the VisitRequest, provisions the Visitor account and
+    /// routes the request to the correct approval queue. Retries of the SAME submission
+    /// intent are replayed idempotently (200 with the original request). A different submit
+    /// intent with the same core content inside the duplicate window returns
+    /// 409 DUPLICATE_VISIT_REQUEST.
     /// </summary>
     [HttpPost("verify")]
     [ProducesResponseType(typeof(VerifyAndCreateVisitRequestResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(StatusCodes.Status428PreconditionRequired)]
+    [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
     public async Task<IActionResult> Verify(
         [FromBody] VerifyAndCreateVisitRequestCommand command,
         CancellationToken cancellationToken)
@@ -56,15 +63,35 @@ public sealed class VisitRequestsController : ControllerBase
     }
 
     /// <summary>
-    /// RESEND — Generates and sends a new OTP for an active pending session.
-    /// Subject to the same hourly resend limit as the initial request (max 5/hr).
+    /// RESEND — Supersedes the old challenge and returns a NEW <c>sessionToken</c> with a
+    /// fresh code. Subject to per-email hourly issue quotas + min resend interval. A
+    /// challenge that already requires human verification cannot be resent (428).
     /// </summary>
     [HttpPost("resend-otp")]
-    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(InitiateVisitRequestResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status428PreconditionRequired)]
     [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
     public async Task<IActionResult> ResendOtp(
         [FromBody] ResendVisitRequestOtpCommand command,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(command, cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// RECOVER — After the challenge was burned by too many wrong codes: validates the
+    /// Turnstile token server-side, invalidates the old challenge and issues a brand-new
+    /// one (attempts reset) for the same submission intent. CAPTCHA success never re-opens
+    /// the old code.
+    /// </summary>
+    [HttpPost("otp/recover")]
+    [ProducesResponseType(typeof(InitiateVisitRequestResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
+    public async Task<IActionResult> RecoverOtp(
+        [FromBody] RecoverVisitRequestOtpCommand command,
         CancellationToken cancellationToken)
     {
         var result = await _mediator.Send(command, cancellationToken);

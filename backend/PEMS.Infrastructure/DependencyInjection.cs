@@ -47,6 +47,12 @@ public static class DependencyInjection
         services.AddHttpContextAccessor();
         services.AddHttpClient();
 
+        // Server-derived request metadata (IP / User-Agent) — never taken from the body.
+        services.AddScoped<IRequestMetadataService, RequestMetadataService>();
+
+        // Human verification (Cloudflare Turnstile) for the UC-17 OTP recovery flow.
+        services.AddScoped<IHumanVerificationService, TurnstileHumanVerificationService>();
+
         // Content / upload security (defence in depth)
         services.AddSingleton<IHtmlSanitizerService, HtmlSanitizerService>();
         services.AddSingleton<IFileValidationService, FileValidationService>();
