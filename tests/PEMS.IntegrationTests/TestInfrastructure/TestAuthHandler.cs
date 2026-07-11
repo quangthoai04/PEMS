@@ -24,6 +24,8 @@ public sealed class TestAuthHandler : AuthenticationHandler<AuthenticationScheme
     public const string RoleCodeHeader = "X-Test-RoleCode";
     public const string SubRoleHeader = "X-Test-SubRole";
     public const string SessionIdHeader = "X-Test-SessionId";
+    public const string PrimaryCampusIdHeader = "X-Test-PrimaryCampusId";
+    public const string DepartmentIdHeader = "X-Test-DepartmentId";
 
     public TestAuthHandler(
         IOptionsMonitor<AuthenticationSchemeOptions> options,
@@ -53,6 +55,12 @@ public sealed class TestAuthHandler : AuthenticationHandler<AuthenticationScheme
 
         if (Request.Headers.TryGetValue(SessionIdHeader, out var sessionId) && !string.IsNullOrWhiteSpace(sessionId))
             claims.Add(new Claim(PemsClaimTypes.SessionId, sessionId!));
+
+        if (Request.Headers.TryGetValue(PrimaryCampusIdHeader, out var primaryCampusId) && !string.IsNullOrWhiteSpace(primaryCampusId))
+            claims.Add(new Claim(PemsClaimTypes.PrimaryCampusId, primaryCampusId!));
+
+        if (Request.Headers.TryGetValue(DepartmentIdHeader, out var departmentId) && !string.IsNullOrWhiteSpace(departmentId))
+            claims.Add(new Claim(PemsClaimTypes.DepartmentId, departmentId!));
 
         var identity = new ClaimsIdentity(claims, SchemeName);
         var principal = new ClaimsPrincipal(identity);
