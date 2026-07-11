@@ -133,6 +133,10 @@ public static class OtpErrorCodes
     public const string HumanVerificationRequired = "OTP_HUMAN_VERIFICATION_REQUIRED";
     public const string HumanVerificationFailed = "HUMAN_VERIFICATION_FAILED";
     public const string ResendRateLimited = "OTP_RESEND_RATE_LIMITED";
+    public const string ResendTooSoon = "OTP_RESEND_TOO_SOON";
+    public const string StandardRateLimited = "OTP_STANDARD_RATE_LIMITED";
+    public const string RecoveryRateLimited = "OTP_RECOVERY_RATE_LIMITED";
+    public const string AbsoluteRateLimited = "OTP_ABSOLUTE_RATE_LIMITED";
 }
 
 public static class SecurityEventTypes

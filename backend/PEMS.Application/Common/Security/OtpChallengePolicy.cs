@@ -36,7 +36,7 @@ public sealed record OtpChallengeSnapshot(
     int MaxAttempts);
 
 /// <summary>Decision for one issue (initiate / resend / recover) request.</summary>
-public sealed record OtpIssueDecision(bool Allowed, int RetryAfterSeconds);
+public sealed record OtpIssueDecision(bool Allowed, string? ErrorCode, int RetryAfterSeconds, DateTime? RetryAtUtc);
 
 /// <summary>
 /// Pure, deterministic UC-17 OTP challenge rules: progressive cooldown schedule, the
@@ -120,39 +120,82 @@ public static class OtpChallengePolicy
     /// </summary>
     public static OtpIssueDecision EvaluateIssue(
         bool isHumanRecovery,
-        int standardIssuesInWindow,
-        int recoveryIssuesInWindow,
-        DateTime? lastIssuedAt,
+        IReadOnlyList<(bool IsRecovery, DateTime CreatedAt)> issues,
         DateTime now,
         int minResendIntervalSeconds,
         int maxStandardPerHour,
         int maxRecoveryPerHour,
         int absoluteMaxPerHour)
     {
-        if (standardIssuesInWindow + recoveryIssuesInWindow >= absoluteMaxPerHour)
-            return new OtpIssueDecision(false, 3600);
+        var windowStart = now.AddHours(-1);
+        var recentIssues = issues.Where(i => i.CreatedAt >= windowStart).ToList();
+
+        var standardCount = recentIssues.Count(i => !i.IsRecovery);
+        var recoveryCount = recentIssues.Count(i => i.IsRecovery);
+        var absoluteCount = recentIssues.Count;
+
+        DateTime? retryAtUtc = null;
+        string? errorCode = null;
+
+        if (absoluteCount >= absoluteMaxPerHour)
+        {
+            var oldestViolating = recentIssues.OrderBy(i => i.CreatedAt).Skip(absoluteCount - absoluteMaxPerHour).First();
+            var resetAt = oldestViolating.CreatedAt.AddHours(1);
+            if (retryAtUtc == null || resetAt > retryAtUtc)
+            {
+                retryAtUtc = resetAt;
+                errorCode = PEMS.Domain.Constants.OtpErrorCodes.AbsoluteRateLimited;
+            }
+        }
 
         if (isHumanRecovery)
         {
-            if (recoveryIssuesInWindow >= maxRecoveryPerHour)
-                return new OtpIssueDecision(false, 3600);
+            if (recoveryCount >= maxRecoveryPerHour)
+            {
+                var oldestViolating = recentIssues.Where(i => i.IsRecovery).OrderBy(i => i.CreatedAt).Skip(recoveryCount - maxRecoveryPerHour).First();
+                var resetAt = oldestViolating.CreatedAt.AddHours(1);
+                if (retryAtUtc == null || resetAt > retryAtUtc)
+                {
+                    retryAtUtc = resetAt;
+                    errorCode = PEMS.Domain.Constants.OtpErrorCodes.RecoveryRateLimited;
+                }
+            }
         }
-        else if (standardIssuesInWindow >= maxStandardPerHour)
+        else
         {
-            return new OtpIssueDecision(false, 3600);
+            if (standardCount >= maxStandardPerHour)
+            {
+                var oldestViolating = recentIssues.Where(i => !i.IsRecovery).OrderBy(i => i.CreatedAt).Skip(standardCount - maxStandardPerHour).First();
+                var resetAt = oldestViolating.CreatedAt.AddHours(1);
+                if (retryAtUtc == null || resetAt > retryAtUtc)
+                {
+                    retryAtUtc = resetAt;
+                    errorCode = PEMS.Domain.Constants.OtpErrorCodes.StandardRateLimited;
+                }
+            }
         }
 
-        // minResendIntervalSeconds <= 0 disables the interval check entirely. This must be
-        // an explicit guard: MySQL DATETIME rounds fractional seconds, so a just-written
-        // last-issue timestamp can read back a few ms in the FUTURE and make elapsed
-        // slightly negative — which would spuriously trip "elapsed < 0".
-        if (minResendIntervalSeconds > 0 && lastIssuedAt is not null)
+        if (recentIssues.Count > 0 && minResendIntervalSeconds > 0)
         {
-            var elapsed = (now - lastIssuedAt.Value).TotalSeconds;
+            var lastIssuedAt = recentIssues.Max(i => i.CreatedAt);
+            var elapsed = (now - lastIssuedAt).TotalSeconds;
             if (elapsed < minResendIntervalSeconds)
-                return new OtpIssueDecision(false, (int)Math.Ceiling(minResendIntervalSeconds - elapsed));
+            {
+                var resetAt = lastIssuedAt.AddSeconds(minResendIntervalSeconds);
+                if (retryAtUtc == null || resetAt > retryAtUtc)
+                {
+                    retryAtUtc = resetAt;
+                    errorCode = PEMS.Domain.Constants.OtpErrorCodes.ResendTooSoon;
+                }
+            }
         }
 
-        return new OtpIssueDecision(true, 0);
+        if (retryAtUtc != null)
+        {
+            var waitSeconds = (int)Math.Ceiling((retryAtUtc.Value - now).TotalSeconds);
+            return new OtpIssueDecision(false, errorCode, Math.Max(1, waitSeconds), retryAtUtc);
+        }
+
+        return new OtpIssueDecision(true, null, 0, null);
     }
 }

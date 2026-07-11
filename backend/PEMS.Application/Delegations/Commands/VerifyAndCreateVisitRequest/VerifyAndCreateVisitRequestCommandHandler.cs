@@ -400,6 +400,10 @@ public sealed class VerifyAndCreateVisitRequestCommandHandler
             OtpErrorCodes.NotFound                  => (400, "Không tìm thấy phiên xác thực. Vui lòng yêu cầu mã mới."),
             OtpErrorCodes.SessionInvalid            => (400, "Phiên xác thực không còn hiệu lực. Vui lòng yêu cầu mã mới."),
             OtpErrorCodes.RetryLater                => (429, "Bạn thao tác quá nhanh. Vui lòng chờ trước khi thử lại."),
+            OtpErrorCodes.ResendTooSoon             => (429, "Temporarily unable to issue another verification code."),
+            OtpErrorCodes.StandardRateLimited       => (429, "Temporarily unable to issue another verification code."),
+            OtpErrorCodes.RecoveryRateLimited       => (429, "Temporarily unable to issue another verification code."),
+            OtpErrorCodes.AbsoluteRateLimited       => (429, "Temporarily unable to issue another verification code."),
             OtpErrorCodes.HumanVerificationRequired => (428, "Bạn đã nhập sai quá nhiều lần. Vui lòng xác minh bạn không phải robot để nhận mã mới."),
             _                                       => (400, "Xác thực OTP thất bại.")
         };
@@ -410,6 +414,7 @@ public sealed class VerifyAndCreateVisitRequestCommandHandler
             message,
             remainingAttempts: result.RemainingAttempts,
             retryAfterSeconds: result.RetryAfterSeconds > 0 ? result.RetryAfterSeconds : null,
+            retryAtUtc: result.RetryAtUtc,
             humanVerificationRequired: result.HumanVerificationRequired);
     }
 }

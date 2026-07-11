@@ -20,6 +20,25 @@ function GlobeSkeleton() {
   );
 }
 
+class GlobeErrorBoundary extends React.Component<{children: React.ReactNode}, {hasError: boolean}> {
+  constructor(props: {children: React.ReactNode}) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+  componentDidCatch(error: Error) {
+    if (import.meta.env.DEV) {
+      console.warn("[GlobeErrorBoundary] Globe disabled due to WebGL error:", error.message);
+    }
+  }
+  render() {
+    if (this.state.hasError) return <GlobeSkeleton />;
+    return this.props.children;
+  }
+}
+
 export function LazyGlobeShowcase() {
   const containerRef = useRef<HTMLDivElement>(null);
   const [shouldLoad, setShouldLoad] = useState(false);
@@ -42,9 +61,11 @@ export function LazyGlobeShowcase() {
   return (
     <div ref={containerRef} className="w-full h-full">
       {shouldLoad ? (
-        <Suspense fallback={<GlobeSkeleton />}>
-          <GlobeShowcase />
-        </Suspense>
+        <GlobeErrorBoundary>
+          <Suspense fallback={<GlobeSkeleton />}>
+            <GlobeShowcase />
+          </Suspense>
+        </GlobeErrorBoundary>
       ) : (
         <GlobeSkeleton />
       )}

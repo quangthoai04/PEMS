@@ -31,7 +31,8 @@ public sealed record OtpChallengeVerification(
     int RemainingAttempts,
     int RetryAfterSeconds,
     bool HumanVerificationRequired,
-    OtpToken? Token);
+    OtpToken? Token,
+    DateTime? RetryAtUtc = null);
 
 /// <summary>
 /// Issues and verifies one-time codes (OTP). Codes are stored hashed (SHA-256);

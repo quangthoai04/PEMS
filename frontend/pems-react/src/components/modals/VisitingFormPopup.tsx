@@ -108,6 +108,7 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
     cancelOtp,
     remainingAttempts,
     retryAfterSeconds,
+    retryAtUtc,
     resendAfterSeconds,
     humanVerificationRequired,
     isRecoveringOtp,
@@ -475,6 +476,7 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
           isResending={isResending}
           remainingAttempts={remainingAttempts}
           retryAfterSeconds={retryAfterSeconds}
+          retryAtUtc={retryAtUtc}
           resendAfterSeconds={resendAfterSeconds}
           humanVerificationRequired={humanVerificationRequired}
           isRecovering={isRecoveringOtp}

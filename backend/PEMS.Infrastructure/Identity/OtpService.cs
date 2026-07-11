@@ -224,6 +224,36 @@ public sealed class OtpService : IOtpService
             await _db.SaveChangesAsync(cancellationToken);
         }
 
+        if (verdict.Outcome == OtpVerifyOutcome.HumanVerificationRequired)
+        {
+            var windowStart = now.AddHours(-1);
+            var issuesInWindow = await _db.OtpTokens.AsNoTracking()
+                .Where(t => t.Email == normalizedEmail && t.Purpose == purpose && t.CreatedAt >= windowStart)
+                .Select(t => new { t.IssueReason, t.CreatedAt })
+                .ToListAsync(cancellationToken);
+
+            var tuples = issuesInWindow.Select(i => (i.IssueReason == OtpIssueReasons.HumanRecovery, i.CreatedAt)).ToList();
+
+            var decision = OtpChallengePolicy.EvaluateIssue(
+                isHumanRecovery: true, tuples, now,
+                _minResendIntervalSeconds,
+                _maxStandardIssuesPerEmailPerHour,
+                _maxRecoveryIssuesPerEmailPerHour,
+                _absoluteMaxIssuesPerEmailPerHour);
+
+            if (!decision.Allowed)
+            {
+                return new OtpChallengeVerification(
+                    false,
+                    decision.ErrorCode,
+                    0,
+                    decision.RetryAfterSeconds,
+                    true,
+                    null,
+                    decision.RetryAtUtc);
+            }
+        }
+
         return new OtpChallengeVerification(
             verdict.Outcome == OtpVerifyOutcome.Success,
             verdict.Outcome switch
@@ -336,10 +366,11 @@ public sealed class OtpService : IOtpService
 
         var recoveryCount = issuesInWindow.Count(t => t.IssueReason == OtpIssueReasons.HumanRecovery);
         var standardCount = issuesInWindow.Count - recoveryCount;
-        var lastIssuedAt  = issuesInWindow.Count == 0 ? (DateTime?)null : issuesInWindow.Max(t => t.CreatedAt);
+        
+        var tuples = issuesInWindow.Select(i => (i.IssueReason == OtpIssueReasons.HumanRecovery, i.CreatedAt)).ToList();
 
         var decision = OtpChallengePolicy.EvaluateIssue(
-            isRecovery, standardCount, recoveryCount, lastIssuedAt, now,
+            isRecovery, tuples, now,
             _minResendIntervalSeconds,
             _maxStandardIssuesPerEmailPerHour,
             _maxRecoveryIssuesPerEmailPerHour,
@@ -349,9 +380,10 @@ public sealed class OtpService : IOtpService
         {
             throw new OtpChallengeException(
                 StatusCodes.Status429TooManyRequests,
-                OtpErrorCodes.ResendRateLimited,
-                "Bạn đã yêu cầu mã xác thực quá nhiều lần. Vui lòng thử lại sau.",
-                retryAfterSeconds: decision.RetryAfterSeconds);
+                decision.ErrorCode ?? OtpErrorCodes.ResendRateLimited,
+                "Temporarily unable to issue another verification code.",
+                retryAfterSeconds: decision.RetryAfterSeconds,
+                retryAtUtc: decision.RetryAtUtc);
         }
 
         var expiresAt = now.AddMinutes(_visitRequestCodeMinutes);

@@ -14,6 +14,8 @@ interface Props {
   remainingAttempts: number | null;
   /** Server-enforced cooldown before the next attempt; the countdown here is presentation. */
   retryAfterSeconds: number | null;
+  /** Absolute time when the quota resets and user can retry. Drives the Cooldown screen. */
+  retryAtUtc: string | null;
   /** Server-provided resend cooldown seed (seconds). */
   resendAfterSeconds: number;
   /** true → the challenge is burned; only human verification can issue a new code. */
@@ -38,6 +40,7 @@ export const OtpVerificationModal: React.FC<Props> = ({
   isResending,
   remainingAttempts,
   retryAfterSeconds,
+  retryAtUtc,
   resendAfterSeconds,
   humanVerificationRequired,
   isRecovering,
@@ -74,6 +77,25 @@ export const OtpVerificationModal: React.FC<Props> = ({
     return () => clearTimeout(timer);
   }, [retryCountdown]);
 
+  // Global quota cooldown based on retryAtUtc.
+  const [rateLimitCountdown, setRateLimitCountdown] = useState(0);
+
+  useEffect(() => {
+    if (!retryAtUtc) {
+      setRateLimitCountdown(0);
+      return;
+    }
+    const updateCountdown = () => {
+      const now = Date.now();
+      const target = new Date(`${retryAtUtc}Z`).getTime(); // Ensure UTC parsing
+      const diff = Math.ceil((target - now) / 1000);
+      setRateLimitCountdown(diff > 0 ? diff : 0);
+    };
+    updateCountdown();
+    const timer = setInterval(updateCountdown, 1000);
+    return () => clearInterval(timer);
+  }, [retryAtUtc]);
+
   // Recovery succeeded (human verification cleared) → new challenge: reset the input.
   useEffect(() => {
     if (wasHumanVerificationRef.current && !humanVerificationRequired) {
@@ -97,6 +119,12 @@ export const OtpVerificationModal: React.FC<Props> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!confirmDisabled) onVerify(code);
+  };
+
+  const formatDuration = (seconds: number) => {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
   const modal = (
@@ -131,7 +159,37 @@ export const OtpVerificationModal: React.FC<Props> = ({
           <X className="w-5 h-5" />
         </button>
 
-        {humanVerificationRequired ? (
+        {rateLimitCountdown > 0 ? (
+          /* ── RATE_LIMITED / COOLDOWN ─────────────────────────────── */
+          <div>
+            <div className="flex justify-center mb-5">
+              <div className="w-16 h-16 rounded-full bg-red-100 flex items-center justify-center">
+                <ShieldAlert className="w-8 h-8 text-red-600" />
+              </div>
+            </div>
+
+            <h2 id="otp-dialog-title" className="text-2xl font-bold text-gray-900 text-center mb-2">
+              {t('visitRequest:otp.rateLimited.title', 'Chưa thể gửi mã xác thực')}
+            </h2>
+            <p className="text-sm text-gray-500 text-center mb-6">
+              {t('visitRequest:otp.rateLimited.desc', 'Bạn đã yêu cầu mã quá nhiều lần. Vui lòng quay lại sau khoảng thời gian đếm ngược dưới đây.')}
+            </p>
+
+            <div className="mb-6 flex justify-center">
+               <div className="text-4xl font-mono font-bold text-red-600 tracking-wider">
+                  {formatDuration(rateLimitCountdown)}
+               </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={onCancel}
+              className="w-full px-4 py-3 rounded-xl border border-gray-300 text-gray-700 text-sm font-bold hover:bg-gray-50 transition-colors"
+            >
+              {t('visitRequest:otp.back')}
+            </button>
+          </div>
+        ) : humanVerificationRequired ? (
           /* ── HUMAN_VERIFICATION / RECOVERING ─────────────────────────────── */
           <div>
             <div className="flex justify-center mb-5">

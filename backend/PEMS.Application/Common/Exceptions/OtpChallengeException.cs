@@ -13,6 +13,7 @@ public class OtpChallengeException : Exception
     public string ErrorCode { get; }
     public int? RemainingAttempts { get; }
     public int? RetryAfterSeconds { get; }
+    public DateTime? RetryAtUtc { get; }
     public bool HumanVerificationRequired { get; }
 
     public OtpChallengeException(
@@ -21,12 +22,14 @@ public class OtpChallengeException : Exception
         string message,
         int? remainingAttempts = null,
         int? retryAfterSeconds = null,
+        DateTime? retryAtUtc = null,
         bool humanVerificationRequired = false) : base(message)
     {
         StatusCode = statusCode;
         ErrorCode = errorCode;
         RemainingAttempts = remainingAttempts;
         RetryAfterSeconds = retryAfterSeconds;
+        RetryAtUtc = retryAtUtc;
         HumanVerificationRequired = humanVerificationRequired;
     }
 }

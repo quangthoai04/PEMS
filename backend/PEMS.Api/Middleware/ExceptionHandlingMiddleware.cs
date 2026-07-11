@@ -91,6 +91,7 @@ public sealed class ExceptionHandlingMiddleware
                     message = otp.Message,
                     remainingAttempts = otp.RemainingAttempts,
                     retryAfterSeconds = otp.RetryAfterSeconds,
+                    retryAtUtc = otp.RetryAtUtc,
                     humanVerificationRequired = otp.HumanVerificationRequired,
                     traceId
                 };
@@ -160,6 +161,12 @@ public sealed class ExceptionHandlingMiddleware
         // by the (inner) CORS middleware are preserved on error responses.
         context.Response.StatusCode = status;
         context.Response.ContentType = "application/json";
+
+        if (status == StatusCodes.Status429TooManyRequests && ex is OtpChallengeException { RetryAfterSeconds: not null } otpEx)
+        {
+            context.Response.Headers.Append("Retry-After", otpEx.RetryAfterSeconds.Value.ToString());
+        }
+
         await context.Response.WriteAsync(JsonSerializer.Serialize(payload, JsonOptions));
     }
 
