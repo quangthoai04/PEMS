@@ -69,10 +69,11 @@
     "emptyMsg": "No information to save yet."
   },
   "cancelConfirm": {
-    "title": "Cancel registration?",
-    "desc": "Are you sure you want to cancel the registration? Entered information will be deleted.",
-    "no": "No",
-    "yes": "Yes"
+    "title": "You haven't completed the form",
+    "desc": "Do you want to save a draft to continue later?",
+    "continue": "Continue editing",
+    "discard": "Discard and Close",
+    "saveAndExit": "Save and Close"
   },
   "saveDraftConfirm": {
     "title": "Draft saved successfully",

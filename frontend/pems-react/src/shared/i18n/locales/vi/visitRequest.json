@@ -69,10 +69,11 @@
     "emptyMsg": "Chưa có thông tin để lưu tạm."
   },
   "cancelConfirm": {
-    "title": "Hủy form đăng ký?",
-    "desc": "Bạn có chắc muốn hủy form đăng ký? Thông tin đã nhập sẽ bị xóa.",
-    "no": "Không",
-    "yes": "OK"
+    "title": "Bạn chưa hoàn tất đăng ký",
+    "desc": "Bạn có muốn lưu nháp để điền tiếp vào lần sau không?",
+    "continue": "Tiếp tục điền",
+    "discard": "Thoát không lưu",
+    "saveAndExit": "Lưu nháp và đóng"
   },
   "saveDraftConfirm": {
     "title": "Lưu tạm thành công",

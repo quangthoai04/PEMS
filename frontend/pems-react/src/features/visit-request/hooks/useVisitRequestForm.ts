@@ -66,12 +66,16 @@ import { saveVisitRequestDraft, loadVisitRequestDraft, clearVisitRequestDraft } 
 
 function debounce<T extends (...args: any[]) => void>(fn: T, delay = 700) {
   let timer: ReturnType<typeof setTimeout> | null = null;
-  return (...args: Parameters<T>) => {
+  const debounced = (...args: Parameters<T>) => {
     if (timer) clearTimeout(timer);
     timer = setTimeout(() => {
       fn(...args);
     }, delay);
   };
+  debounced.cancel = () => {
+    if (timer) clearTimeout(timer);
+  };
+  return debounced;
 }
 
 /**
@@ -128,38 +132,42 @@ export const useVisitRequestForm = (
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [i18n.language]);
 
-  useEffect(() => {
-    const draft = loadVisitRequestDraft();
-    if (draft?.data) {
-      isRestoringDraftRef.current = true;
-      form.reset({
-        ...DEFAULT_VISIT_REQUEST_VALUES,
-        ...draft.data,
-      });
-      setTimeout(() => {
-        isRestoringDraftRef.current = false;
-        setDraftHydrated(true);
-      }, 100);
-    } else {
-      setDraftHydrated(true);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // No auto-restore here anymore.
+  // The UI (VisitingFormPopup) is solely responsible for reading the draft
+  // and deciding whether to prompt the user to restore it.
+
+  const autoSaveBlockedRef = useRef(false);
+  const debouncedSaveRef = useRef<ReturnType<typeof debounce> | null>(null);
 
   useEffect(() => {
     if (!draftHydrated) return;
 
-    const debouncedSave = debounce((value: Partial<VisitRequestSchema>) => {
-      if (isRestoringDraftRef.current) return;
+    debouncedSaveRef.current = debounce((value: Partial<VisitRequestSchema>) => {
+      if (autoSaveBlockedRef.current || isRestoringDraftRef.current) return;
       saveVisitRequestDraft(value);
     }, 700);
 
     const subscription = form.watch((value) => {
-      debouncedSave(value as Partial<VisitRequestSchema>);
+      debouncedSaveRef.current?.(value as Partial<VisitRequestSchema>);
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      subscription.unsubscribe();
+      debouncedSaveRef.current?.cancel();
+    };
   }, [form, draftHydrated]);
+
+  const blockAutoSave = useCallback(() => {
+    autoSaveBlockedRef.current = true;
+  }, []);
+
+  const unblockAutoSave = useCallback(() => {
+    autoSaveBlockedRef.current = false;
+  }, []);
+
+  const cancelPendingAutoSave = useCallback(() => {
+    debouncedSaveRef.current?.cancel();
+  }, []);
 
   const contactEmailWatch = form.watch('contactPoint.email');
   const registerEmailWatch = form.watch('registerInfo.email');
@@ -340,13 +348,12 @@ export const useVisitRequestForm = (
     setOtpError(null);
   };
 
-  // Single reset path shared by cancel-form, discard-draft and close-after-success,
-  // so no PII from a submitted request survives a reopen.
   const resetVisitRequestForm = () => {
     const defaults = cloneVisitRequestValues(DEFAULT_VISIT_REQUEST_VALUES);
-    // Suppress the debounced draft auto-save (700ms) while resetting so the cleared
-    // form does not re-create a draft of the request that was just submitted.
-    isRestoringDraftRef.current = true;
+    
+    blockAutoSave();
+    cancelPendingAutoSave();
+
     form.reset(defaults);
     visitFields.replace(defaults.visits);
     visitorFields.replace(defaults.visitors);
@@ -357,9 +364,6 @@ export const useVisitRequestForm = (
     setOtpError(null);
     setSubmitError(null);
     clearVisitRequestDraft();
-    window.setTimeout(() => {
-      isRestoringDraftRef.current = false;
-    }, 800);
   };
 
   return {
@@ -388,5 +392,8 @@ export const useVisitRequestForm = (
     draftHydrated,
     setDraftHydrated,
     isRestoringDraftRef,
+    blockAutoSave,
+    unblockAutoSave,
+    cancelPendingAutoSave,
   };
 };

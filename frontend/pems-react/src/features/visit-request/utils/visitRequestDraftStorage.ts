@@ -9,7 +9,12 @@ export type VisitRequestDraft = {
   data: Partial<VisitRequestSchema>;
 };
 
-export function hasAnyUserInput(values: Partial<VisitRequestSchema> | undefined | null): boolean {
+export type SaveDraftResult =
+  | { success: true; savedAt: number; expiresAt: number }
+  | { success: false; error: string };
+
+
+export function hasMeaningfulVisitRequestData(values: Partial<VisitRequestSchema> | undefined | null): boolean {
   if (!values) return false;
   const reg = values.registerInfo;
   const cp = values.contactPoint;
@@ -33,11 +38,13 @@ export function hasAnyUserInput(values: Partial<VisitRequestSchema> | undefined 
   );
 }
 
-export function saveVisitRequestDraft(data: Partial<VisitRequestSchema>, expiresInMs: number = 30 * 60 * 1000) {
-  if (!hasAnyUserInput(data)) return;
+export function saveVisitRequestDraft(data: Partial<VisitRequestSchema>, expiresInMs: number = 30 * 60 * 1000): SaveDraftResult {
+  if (!hasMeaningfulVisitRequestData(data)) {
+    return { success: false, error: 'No meaningful data to save' };
+  }
 
   try {
-    const sanitizedData = sanitizeDraftData(data);
+    const sanitizedData = sanitizeVisitRequestDraft(data);
 
     const payload: VisitRequestDraft = {
       version: 2,
@@ -47,8 +54,10 @@ export function saveVisitRequestDraft(data: Partial<VisitRequestSchema>, expires
     };
 
     localStorage.setItem(VISIT_FORM_DRAFT_KEY, JSON.stringify(payload));
+    return { success: true, savedAt: payload.savedAt, expiresAt: payload.expiresAt };
   } catch (error) {
     console.warn('Failed to save UC-17 visit request draft', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown storage error' };
   }
 }
 
@@ -80,6 +89,17 @@ export function loadVisitRequestDraft(): VisitRequestDraft | null {
   }
 }
 
+export function isVisitRequestDraftExpired(draft: VisitRequestDraft | null): boolean {
+  if (!draft) return true;
+  return Date.now() > draft.expiresAt;
+}
+
+export function getVisitRequestDraftRemainingTime(draft: VisitRequestDraft | null): number {
+  if (!draft) return 0;
+  const remaining = draft.expiresAt - Date.now();
+  return remaining > 0 ? remaining : 0;
+}
+
 export function clearVisitRequestDraft() {
   try {
     localStorage.removeItem(VISIT_FORM_DRAFT_KEY);
@@ -89,7 +109,7 @@ export function clearVisitRequestDraft() {
   }
 }
 
-function sanitizeDraftData(data: Partial<VisitRequestSchema>): Partial<VisitRequestSchema> {
+export function sanitizeVisitRequestDraft(data: Partial<VisitRequestSchema>): Partial<VisitRequestSchema> {
   const cloned = JSON.parse(JSON.stringify(data));
 
   // Không lưu OTP/session nhạy cảm nếu sau này có đưa vào form state.
