@@ -18,25 +18,26 @@ const COUNTRY_OPTIONS: CountryOption[] = Object.entries(
   .map(([, name]) => ({ value: name, label: name }))
   .sort((a, b) => a.label.localeCompare(b.label));
 
-const buildStyles = (hasError?: boolean): StylesConfig<CountryOption> => ({
+const buildStyles = (hasError?: boolean, isCell?: boolean): StylesConfig<CountryOption> => ({
   control: (base, state) => ({
     ...base,
-    borderRadius: '0.75rem',
-    borderColor: hasError
+    borderRadius: isCell ? '0' : '0.75rem',
+    borderColor: isCell ? (hasError ? '#fca5a5' : 'transparent') : (hasError
       ? '#f87171'
       : state.isFocused
         ? '#004c91'
-        : '#d1d5db',
-    boxShadow: state.isFocused
+        : '#d1d5db'),
+    boxShadow: isCell ? 'none' : (state.isFocused
       ? hasError
         ? '0 0 0 1px #f87171'
         : '0 0 0 1px #004c91'
-      : 'none',
-    '&:hover': { borderColor: hasError ? '#f87171' : '#004c91' },
-    minHeight: '48px',
+      : 'none'),
+    '&:hover': { borderColor: isCell ? (hasError ? '#f87171' : '#bfdbfe') : (hasError ? '#f87171' : '#004c91') },
+    minHeight: '44px',
     fontSize: '0.875rem',
     fontWeight: '500',
-    backgroundColor: 'white',
+    backgroundColor: isCell ? (hasError ? 'rgba(254, 226, 226, 0.2)' : 'transparent') : 'white',
+    padding: isCell ? '0 4px' : '0',
     cursor: 'text',
   }),
   option: (base, state) => ({
@@ -94,6 +95,7 @@ interface CountrySelectProps {
   onBlur?: () => void;
   placeholder?: string;
   hasError?: boolean;
+  isCell?: boolean;
 }
 
 export const CountrySelect: React.FC<CountrySelectProps> = ({
@@ -102,6 +104,7 @@ export const CountrySelect: React.FC<CountrySelectProps> = ({
   onBlur,
   placeholder,
   hasError,
+  isCell,
 }) => {
   const { t } = useTranslation(['visitRequest']);
   const selectedOption = useMemo(
@@ -110,8 +113,8 @@ export const CountrySelect: React.FC<CountrySelectProps> = ({
   );
 
   const styles = useMemo(
-    () => buildStyles(hasError),
-    [hasError]
+    () => buildStyles(hasError, isCell),
+    [hasError, isCell]
   );
 
   return (

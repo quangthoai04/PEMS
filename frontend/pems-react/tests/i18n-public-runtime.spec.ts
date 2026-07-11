@@ -36,11 +36,11 @@ async function openVisitForm(page: Page) {
 }
 
 test.describe('visit-request validation is localized at runtime', () => {
-  test('EN mode: submitting step 1 empty shows English validation, no Vietnamese', async ({ page }) => {
+  test('EN mode: submitting the empty form shows English validation, no Vietnamese', async ({ page }) => {
     await gotoWithLanguage(page, '/', 'en');
     await openVisitForm(page);
 
-    await page.getByRole('button', { name: /^Next$/i }).click();
+    await page.getByRole('button', { name: /Submit Request/i }).click();
 
     // A real message from validation.json, produced by the Zod resolver.
     await expect(page.getByText('Full name is required').first()).toBeVisible();
@@ -52,11 +52,11 @@ test.describe('visit-request validation is localized at runtime', () => {
     await expect(page.getByText('Thời gian kết thúc không được để trống')).toHaveCount(0);
   });
 
-  test('VI mode: submitting step 1 empty shows Vietnamese validation', async ({ page }) => {
+  test('VI mode: submitting the empty form shows Vietnamese validation', async ({ page }) => {
     await gotoWithLanguage(page, '/', 'vi');
     await openVisitForm(page);
 
-    await page.getByRole('button', { name: /Tiếp theo/i }).click();
+    await page.getByRole('button', { name: /Gửi yêu cầu/i }).click();
     await expect(page.getByText('Họ tên không được để trống').first()).toBeVisible();
   });
 
@@ -69,7 +69,7 @@ test.describe('visit-request validation is localized at runtime', () => {
     await gotoWithLanguage(page, '/', 'vi');
     await openVisitForm(page);
 
-    await page.getByRole('button', { name: /Tiếp theo/i }).click();
+    await page.getByRole('button', { name: /Gửi yêu cầu/i }).click();
     await expect(page.getByText('Họ tên không được để trống').first()).toBeVisible();
 
     // The header language menu sits behind the modal overlay and is `visibility:hidden`

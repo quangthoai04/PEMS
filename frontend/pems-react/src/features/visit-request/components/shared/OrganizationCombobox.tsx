@@ -9,19 +9,20 @@ interface OrgOption {
   label: string;
 }
 
-const buildStyles = (hasError?: boolean): StylesConfig<OrgOption> => ({
+const buildStyles = (hasError?: boolean, isCell?: boolean): StylesConfig<OrgOption> => ({
   control: (base, state) => ({
     ...base,
-    borderRadius: '0.375rem',
-    borderColor: hasError ? '#f87171' : state.isFocused ? '#f37021' : 'transparent',
-    boxShadow: state.isFocused ? `0 0 0 1px ${hasError ? '#f87171' : '#f37021'}` : 'none',
-    '&:hover': { borderColor: hasError ? '#f87171' : '#f37021' },
-    minHeight: '36px',
-    height: '36px',
+    borderRadius: isCell ? '0' : '0.375rem',
+    borderColor: isCell ? (hasError ? '#fca5a5' : 'transparent') : (hasError ? '#f87171' : state.isFocused ? '#f37021' : 'transparent'),
+    boxShadow: isCell ? 'none' : (state.isFocused ? `0 0 0 1px ${hasError ? '#f87171' : '#f37021'}` : 'none'),
+    '&:hover': { borderColor: isCell ? (hasError ? '#f87171' : '#bfdbfe') : (hasError ? '#f87171' : '#f37021') },
+    minHeight: isCell ? '44px' : '36px',
+    height: isCell ? '44px' : '36px',
     fontSize: '0.875rem',
-    fontWeight: '400',
-    backgroundColor: 'transparent',
-    padding: 0,
+    fontWeight: isCell ? '500' : '400',
+    backgroundColor: isCell ? (hasError ? 'rgba(254, 226, 226, 0.2)' : 'transparent') : 'transparent',
+    padding: isCell ? '0 4px' : '0',
+    cursor: 'text',
   }),
   valueContainer: (base) => ({
     ...base,
@@ -62,6 +63,7 @@ interface Props {
   onBlur?: () => void;
   hasError?: boolean;
   placeholder?: string;
+  isCell?: boolean;
 }
 
 export const OrganizationCombobox: React.FC<Props> = ({
@@ -70,6 +72,7 @@ export const OrganizationCombobox: React.FC<Props> = ({
   onBlur,
   hasError,
   placeholder,
+  isCell,
 }) => {
   const { t } = useTranslation(['visitRequest']);
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -130,7 +133,7 @@ export const OrganizationCombobox: React.FC<Props> = ({
         if (onBlur) onBlur();
       }}
       placeholder={placeholder ?? t('visitRequest:select.orgComboPlaceholder')}
-      styles={buildStyles(hasError)}
+      styles={buildStyles(hasError, isCell)}
       isClearable={true}
       noOptionsMessage={() => t('visitRequest:select.orgComboNoOptions')}
       loadingMessage={() => t('visitRequest:select.searching')}

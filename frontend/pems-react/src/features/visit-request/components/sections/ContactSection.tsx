@@ -6,7 +6,9 @@ import type { VisitRequestSchema } from '../../schema/visitRequest.schema';
 import { CountrySelect } from '../shared/CountrySelect';
 import { OrganizationCombobox } from '../shared/OrganizationCombobox';
 import { PhoneInput } from '../shared/PhoneInput';
-import { inputCls } from '../shared/FormField';
+import { FormField, inputCls } from '../shared/FormField';
+import { FormSection } from '../shared/FormSection';
+import { MobileField } from './VisitorListSection';
 import { validateSupportTeamExcel, isAllowedExcelFile, type ExcelTranslator } from '../ExcelUpload/excelValidator';
 import { downloadSupportTeamTemplate } from '../ExcelUpload/excelDownload';
 import type { SupportTeamExcelValidationResult, SupportTeamEntry } from '../../types/visitRequest.types';
@@ -43,12 +45,13 @@ export const ContactSection: React.FC<Props> = ({
   const { t } = useTranslation(['visitRequest']);
   // Excel helpers live outside React, so the translator is handed to them explicitly.
   const excelT: ExcelTranslator = (key, options) => t(key, options as never) as unknown as string;
-  const { register, control, formState: { errors } } = form;
+  const { register, control, formState: { errors, touchedFields } } = form;
   const [isSupportSameAsRegister, setIsSupportSameAsRegister] = useState(false);
   const [isContactSameAsRegister, setIsContactSameAsRegister] = useState(false);
 
   const supportErrors = errors.supportTeam;
   const contactErrors = errors.contactPoint;
+  const contactTouched = touchedFields.contactPoint;
 
   // Support team Excel upload state
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -128,15 +131,26 @@ export const ContactSection: React.FC<Props> = ({
 
   const hasAnyContactError = showErrors && !!contactErrors;
 
+  // Server errors (contact email business conflict) must surface immediately,
+  // regardless of touched state or whether a full submit was attempted.
+  const showContactError = (field: keyof NonNullable<typeof contactErrors>) => {
+    const err = contactErrors?.[field] as { message?: string; type?: string } | undefined;
+    if (!err) return undefined;
+    if (showErrors || err.type === 'server' || contactTouched?.[field as keyof NonNullable<typeof contactTouched>]) {
+      return err.message;
+    }
+    return undefined;
+  };
+
   return (
-    <div className="space-y-8 mt-8">
+    <>
       {/* ── Support team ─────────────────────────────────────────────────────── */}
-      <div className={`rounded-2xl border bg-white shadow-sm transition-colors ${hasAnySupportError ? 'border-red-300 shadow-red-500/10' : 'border-slate-200'}`}>
-        <div className={`border-b px-6 py-4 flex items-center justify-between flex-wrap gap-2 ${hasAnySupportError ? 'border-red-200 bg-red-50/50 rounded-t-2xl' : 'border-slate-200'}`}>
-          <h4 className="text-[#004c91] font-bold text-lg">
-            {t('visitRequest:step2Contact.supportTitle')} <span className="text-red-500">*</span>
-          </h4>
-          <label className="flex items-center gap-2.5 cursor-pointer text-sm text-[#004c91] font-bold select-none bg-blue-50/50 px-3 py-1.5 rounded-lg border border-blue-100 hover:bg-blue-50 transition-colors">
+      <FormSection
+        id="section-support"
+        title={t('visitRequest:singleForm.sections.support')}
+        required
+        headerRight={
+          <label className="flex cursor-pointer select-none items-center gap-2.5 text-sm font-bold text-[#004c91]">
             <input
               type="checkbox"
               checked={isSupportSameAsRegister}
@@ -145,10 +159,10 @@ export const ContactSection: React.FC<Props> = ({
             />
             {t('visitRequest:step2Contact.iamSupport')}
           </label>
-        </div>
-
+        }
+      >
         {hasAnySupportError && (
-          <div className="bg-red-50 border border-red-200 rounded-lg p-3 mx-6 mt-4 flex items-start gap-2 error-scroll-target">
+          <div className="error-scroll-target mb-4 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3">
             <AlertCircle className="w-5 h-5 text-red-500 shrink-0" />
             <div>
               <p className="text-sm font-bold text-red-700">{t('visitRequest:step2Contact.errorBoxTitle')}</p>
@@ -157,17 +171,17 @@ export const ContactSection: React.FC<Props> = ({
           </div>
         )}
 
-        <div className="p-6">
-          <div className="bg-white border border-gray-200 rounded-xl overflow-x-auto shadow-sm">
+        {/* Desktop: single table frame */}
+        <div className="hidden overflow-x-auto rounded-xl border border-slate-200 lg:block">
           <table className="w-full min-w-[750px] border-collapse text-sm">
-            <thead className="bg-slate-50 border-b border-gray-200">
+            <thead className="border-b border-gray-200 bg-slate-50">
               <tr>
-                <th className="p-3 text-center font-bold text-slate-700 w-12">{t('visitRequest:step2Contact.stt')}</th>
-                <th className="p-3 text-left font-bold text-slate-700 border-l border-gray-200">{t('visitRequest:step2Contact.fullName')}</th>
-                <th className="p-3 text-left font-bold text-slate-700 border-l border-gray-200">{t('visitRequest:step2Contact.jobTitle')}</th>
-                <th className="p-3 text-left font-bold text-slate-700 border-l border-gray-200">{t('visitRequest:step2Contact.organization')}</th>
-                <th className="p-3 text-left font-bold text-slate-700 border-l border-gray-200">{t('visitRequest:step2Contact.nationality')}</th>
-                <th className="p-3 text-center w-12 border-l border-gray-200" />
+                <th className="w-12 p-3 text-center font-bold text-slate-700">{t('visitRequest:step2Contact.stt')}</th>
+                <th className="border-l border-gray-200 p-3 text-left font-bold text-slate-700">{t('visitRequest:step2Contact.fullName')}</th>
+                <th className="border-l border-gray-200 p-3 text-left font-bold text-slate-700">{t('visitRequest:step2Contact.jobTitle')}</th>
+                <th className="border-l border-gray-200 p-3 text-left font-bold text-slate-700">{t('visitRequest:step2Contact.organization')}</th>
+                <th className="border-l border-gray-200 p-3 text-left font-bold text-slate-700">{t('visitRequest:step2Contact.nationality')}</th>
+                <th className="w-12 border-l border-gray-200 p-3 text-center" />
               </tr>
             </thead>
             <tbody>
@@ -184,25 +198,39 @@ export const ContactSection: React.FC<Props> = ({
                     >
                       <td className="p-3 text-center font-bold text-slate-400">{i + 1}</td>
 
+                      {/* Controlled inputs: rendered in both desktop table and mobile list,
+                          duplicate uncontrolled register() refs would break value tracking. */}
                       <td className="p-0 border-l border-gray-100">
-                        <input
-                          {...register(`supportTeam.${i}.fullName`)}
-                          placeholder={t('visitRequest:step2Contact.placeholderName')}
-                          className={cellInputCls(!!se?.fullName)}
+                        <Controller
+                          name={`supportTeam.${i}.fullName`}
+                          control={control}
+                          render={({ field }) => (
+                            <input
+                              {...field}
+                              placeholder={t('visitRequest:step2Contact.placeholderName')}
+                              className={cellInputCls(!!se?.fullName)}
+                            />
+                          )}
                         />
                         {se?.fullName && <CellError msg={se.fullName.message} />}
                       </td>
 
                       <td className="p-0 border-l border-gray-100">
-                        <input
-                          {...register(`supportTeam.${i}.jobTitle`)}
-                          placeholder={t('visitRequest:step2Contact.placeholderJob')}
-                          className={cellInputCls(!!se?.jobTitle)}
+                        <Controller
+                          name={`supportTeam.${i}.jobTitle`}
+                          control={control}
+                          render={({ field }) => (
+                            <input
+                              {...field}
+                              placeholder={t('visitRequest:step2Contact.placeholderJob')}
+                              className={cellInputCls(!!se?.jobTitle)}
+                            />
+                          )}
                         />
                         {se?.jobTitle && <CellError msg={se.jobTitle.message} />}
                       </td>
 
-                      <td className="p-1 border-l border-gray-100 min-w-[200px]">
+                      <td className="p-0 border-l border-gray-100 min-w-[200px]">
                         <Controller
                           name={`supportTeam.${i}.organization`}
                           control={control}
@@ -213,13 +241,14 @@ export const ContactSection: React.FC<Props> = ({
                               onBlur={field.onBlur}
                               hasError={!!se?.organization}
                               placeholder={t('visitRequest:step2Contact.placeholderOrg')}
+                              isCell={true}
                             />
                           )}
                         />
                         {se?.organization && <CellError msg={se.organization.message} />}
                       </td>
 
-                      <td className="p-1 border-l border-gray-100 min-w-[160px]">
+                      <td className="p-0 border-l border-gray-100 min-w-[160px]">
                         <Controller
                           name={`supportTeam.${i}.nationality`}
                           control={control}
@@ -230,6 +259,7 @@ export const ContactSection: React.FC<Props> = ({
                               onBlur={field.onBlur}
                               hasError={!!se?.nationality}
                               placeholder={t('visitRequest:step2Contact.placeholderNat')}
+                              isCell={true}
                             />
                           )}
                         />
@@ -240,6 +270,7 @@ export const ContactSection: React.FC<Props> = ({
                         <button
                           type="button"
                           onClick={() => supportTeamFields.remove(i)}
+                          aria-label={t('visitRequest:shared.delete')}
                           className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
                         >
                           <Trash2 className="w-4 h-4" />
@@ -253,13 +284,98 @@ export const ContactSection: React.FC<Props> = ({
           </table>
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-3 mt-4">
+        {/* Mobile/tablet: stacked rows separated by dividers */}
+        <div className="lg:hidden">
+          {supportTeamFields.fields.map((field, i) => {
+            const se = supportErrors?.[i];
+            return (
+              <div key={field.id} className="space-y-3 border-b border-slate-200 py-4 first:pt-0 last:border-b-0">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                    {t('visitRequest:step2Contact.stt')} {i + 1}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => supportTeamFields.remove(i)}
+                    aria-label={t('visitRequest:shared.delete')}
+                    className="rounded-lg p-2 text-gray-400 transition-colors hover:bg-red-50 hover:text-red-500"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <MobileField label={t('visitRequest:step2Contact.fullName')} error={se?.fullName?.message}>
+                  <Controller
+                    name={`supportTeam.${i}.fullName`}
+                    control={control}
+                    render={({ field }) => (
+                      <input
+                        {...field}
+                        placeholder={t('visitRequest:step2Contact.placeholderName')}
+                        className={inputCls(!!se?.fullName, false, false)}
+                      />
+                    )}
+                  />
+                </MobileField>
+
+                <MobileField label={t('visitRequest:step2Contact.jobTitle')} error={se?.jobTitle?.message}>
+                  <Controller
+                    name={`supportTeam.${i}.jobTitle`}
+                    control={control}
+                    render={({ field }) => (
+                      <input
+                        {...field}
+                        placeholder={t('visitRequest:step2Contact.placeholderJob')}
+                        className={inputCls(!!se?.jobTitle, false, false)}
+                      />
+                    )}
+                  />
+                </MobileField>
+
+                <MobileField label={t('visitRequest:step2Contact.organization')} error={se?.organization?.message}>
+                  <Controller
+                    name={`supportTeam.${i}.organization`}
+                    control={control}
+                    render={({ field }) => (
+                      <OrganizationCombobox
+                        value={field.value}
+                        onChange={field.onChange}
+                        onBlur={field.onBlur}
+                        hasError={!!se?.organization}
+                        placeholder={t('visitRequest:step2Contact.placeholderOrg')}
+                      />
+                    )}
+                  />
+                </MobileField>
+
+                <MobileField label={t('visitRequest:step2Contact.nationality')} error={se?.nationality?.message}>
+                  <Controller
+                    name={`supportTeam.${i}.nationality`}
+                    control={control}
+                    render={({ field }) => (
+                      <CountrySelect
+                        value={field.value}
+                        onChange={field.onChange}
+                        onBlur={field.onBlur}
+                        hasError={!!se?.nationality}
+                        placeholder={t('visitRequest:step2Contact.placeholderNat')}
+                      />
+                    )}
+                  />
+                </MobileField>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Flat toolbar */}
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
           <button
             type="button"
             onClick={() =>
               supportTeamFields.append({ fullName: '', jobTitle: '', organization: '', nationality: '' })
             }
-            className="inline-flex items-center gap-2 px-4 py-2 bg-[#f37021]/10 text-[#f37021] text-sm font-bold rounded-xl hover:bg-[#f37021]/20 transition-colors"
+            className="inline-flex items-center gap-2 rounded-xl bg-[#f37021]/10 px-4 py-2 text-sm font-bold text-[#f37021] transition-colors hover:bg-[#f37021]/20"
           >
             <Plus className="w-4 h-4" /> {t('visitRequest:step2Contact.addSupport')}
           </button>
@@ -267,7 +383,7 @@ export const ContactSection: React.FC<Props> = ({
             <button
               type="button"
               onClick={() => downloadSupportTeamTemplate(excelT)}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-white text-slate-700 text-sm font-bold rounded-xl hover:bg-slate-50 transition-colors border border-slate-200 shadow-sm"
+              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 transition-colors hover:bg-slate-50"
             >
               <Download className="w-4 h-4" /> {t('visitRequest:step2Contact.downloadTemplate')}
             </button>
@@ -275,7 +391,7 @@ export const ContactSection: React.FC<Props> = ({
               type="button"
               disabled={isProcessing}
               onClick={() => fileInputRef.current?.click()}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-white text-[#004c91] text-sm font-bold rounded-xl hover:bg-blue-50 transition-colors border border-slate-200 shadow-sm disabled:opacity-60"
+              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-[#004c91] transition-colors hover:bg-blue-50 disabled:opacity-60"
             >
               {isProcessing
                 ? <span className="w-4 h-4 border-2 border-[#004c91] border-t-transparent rounded-full animate-spin" />
@@ -334,16 +450,16 @@ export const ContactSection: React.FC<Props> = ({
             </motion.div>
           )}
         </AnimatePresence>
-        </div>
-      </div>
+      </FormSection>
 
       {/* ── Contact point ─────────────────────────────────────────────────────── */}
-      <div className={`rounded-2xl border bg-white shadow-sm transition-colors ${hasAnyContactError ? 'border-red-300 shadow-red-500/10' : 'border-slate-200'}`}>
-        <div className={`border-b px-6 py-4 flex items-center justify-between flex-wrap gap-2 ${hasAnyContactError ? 'border-red-200 bg-red-50/50 rounded-t-2xl' : 'border-slate-200'}`}>
-          <h4 className="text-[#004c91] font-bold text-lg">
-            {t('visitRequest:step2Contact.contactTitle')} <span className="text-red-500">*</span>
-          </h4>
-          <label className="flex items-center gap-2.5 cursor-pointer text-sm text-[#004c91] font-bold select-none bg-blue-50/80 px-3 py-1.5 rounded-lg border border-blue-200 hover:bg-blue-100 transition-colors">
+      <FormSection
+        id="section-contact"
+        title={t('visitRequest:singleForm.sections.contact')}
+        required
+        description={t('visitRequest:step2Contact.contactDesc2')}
+        headerRight={
+          <label className="flex cursor-pointer select-none items-center gap-2.5 text-sm font-bold text-[#004c91]">
             <input
               type="checkbox"
               checked={isContactSameAsRegister}
@@ -352,105 +468,97 @@ export const ContactSection: React.FC<Props> = ({
             />
             {t('visitRequest:step2Contact.iamContact')}
           </label>
-        </div>
-
+        }
+      >
         {hasAnyContactError && (
-          <div className="bg-red-50 border border-red-200 rounded-lg p-3 mx-6 mt-4 flex items-start gap-2 error-scroll-target">
+          <div className="error-scroll-target mb-4 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3">
             <AlertCircle className="w-5 h-5 text-red-500 shrink-0" />
-            <div>
-              <p className="text-sm font-bold text-red-700">{t('visitRequest:step2Contact.errorBoxTitle')}</p>
-            </div>
+            <p className="text-sm font-bold text-red-700">{t('visitRequest:step2Contact.errorBoxTitle')}</p>
           </div>
         )}
 
-        <div className="p-6">
-          <p className="text-xs text-slate-500 mb-2 -mt-1">
-            {t('visitRequest:step2Contact.contactDesc1')}
-          </p>
+        <p className="mb-4 text-xs text-slate-500">
+          {t('visitRequest:step2Contact.contactDesc1')}
+        </p>
 
-        <div className="mb-3 rounded-lg bg-blue-50/60 border border-blue-100 px-3 py-2">
-          <p className="text-xs text-[#004c91] leading-5">
-            {t('visitRequest:step2Contact.contactDesc2')}
-          </p>
+        {/* Flat field grid — no table-in-card */}
+        <div className="grid grid-cols-1 gap-x-8 gap-y-5 md:grid-cols-2">
+          <FormField
+            label={t('visitRequest:step2Contact.contactFullName').replace(' *', '')}
+            required
+            error={showContactError('fullName')}
+          >
+            <input
+              {...register('contactPoint.fullName')}
+              placeholder={t('visitRequest:step2Contact.placeholderName')}
+              className={inputCls(!!showContactError('fullName'), false, false)}
+            />
+          </FormField>
+
+          <FormField
+            label={t('visitRequest:step2Contact.contactOrg').replace(' *', '')}
+            required
+            error={showContactError('organization')}
+            showValidIcon={false}
+          >
+            <Controller
+              name="contactPoint.organization"
+              control={control}
+              render={({ field }) => (
+                <OrganizationCombobox
+                  value={field.value}
+                  onChange={field.onChange}
+                  onBlur={field.onBlur}
+                  hasError={!!showContactError('organization')}
+                  placeholder={t('visitRequest:step2Contact.placeholderOrg')}
+                />
+              )}
+            />
+          </FormField>
+
+          <FormField
+            label={t('visitRequest:step2Contact.contactPhone').replace(' *', '')}
+            required
+            error={showContactError('phone')}
+            showValidIcon={false}
+          >
+            <Controller
+              name="contactPoint.phone"
+              control={control}
+              render={({ field }) => (
+                <PhoneInput
+                  value={field.value}
+                  onChange={field.onChange}
+                  onBlur={field.onBlur}
+                  hasError={!!showContactError('phone')}
+                />
+              )}
+            />
+          </FormField>
+
+          <FormField
+            label={t('visitRequest:step2Contact.contactEmail').replace(' *', '')}
+            required
+            error={showContactError('email')}
+          >
+            <input
+              {...register('contactPoint.email')}
+              type="email"
+              placeholder={t('visitRequest:step2Contact.placeholderEmail')}
+              className={inputCls(!!showContactError('email'), false, false)}
+            />
+          </FormField>
         </div>
-
-        <div className="bg-white border border-gray-200 rounded-xl overflow-x-auto shadow-sm">
-          <table className="w-full min-w-[700px] border-collapse text-sm">
-            <thead className="bg-[#004c91]/5 border-b border-gray-200">
-              <tr>
-                <th className="p-3 text-left font-bold text-[#004c91]">{t('visitRequest:step2Contact.contactFullName')}</th>
-                <th className="p-3 text-left font-bold text-[#004c91] border-l border-gray-200">{t('visitRequest:step2Contact.contactOrg')}</th>
-                <th className="p-3 text-left font-bold text-[#004c91] border-l border-gray-200">{t('visitRequest:step2Contact.contactPhone')}</th>
-                <th className="p-3 text-left font-bold text-[#004c91] border-l border-gray-200">{t('visitRequest:step2Contact.contactEmail')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr className="hover:bg-orange-50/40 focus-within:bg-orange-50/30 transition-colors">
-                <td className="p-0">
-                  <input
-                    {...register('contactPoint.fullName')}
-                    placeholder={t('visitRequest:step2Contact.placeholderName')}
-                    className={cellInputCls(!!contactErrors?.fullName)}
-                  />
-                  {contactErrors?.fullName && <CellError msg={contactErrors.fullName.message} />}
-                </td>
-                <td className="p-1 border-l border-gray-100 min-w-[200px]">
-                  <Controller
-                    name="contactPoint.organization"
-                    control={control}
-                    render={({ field }) => (
-                      <OrganizationCombobox
-                        value={field.value}
-                        onChange={field.onChange}
-                        onBlur={field.onBlur}
-                        hasError={!!contactErrors?.organization}
-                        placeholder={t('visitRequest:step2Contact.placeholderOrg')}
-                      />
-                    )}
-                  />
-                  {contactErrors?.organization && <CellError msg={contactErrors.organization.message} />}
-                </td>
-                <td className="p-1 border-l border-gray-100">
-                  <Controller
-                    name="contactPoint.phone"
-                    control={control}
-                    render={({ field }) => (
-                      <PhoneInput
-                        value={field.value}
-                        onChange={field.onChange}
-                        onBlur={field.onBlur}
-                        hasError={!!contactErrors?.phone}
-                      />
-                    )}
-                  />
-                  {contactErrors?.phone && <CellError msg={contactErrors.phone.message} />}
-                </td>
-                <td className="p-0 border-l border-gray-100">
-                  <input
-                    {...register('contactPoint.email')}
-                    type="email"
-                    placeholder={t('visitRequest:step2Contact.placeholderEmail')}
-                    className={cellInputCls(!!contactErrors?.email)}
-                  />
-                  {contactErrors?.email && <CellError msg={contactErrors.email.message} />}
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-
-        </div>
-      </div>
-    </div>
+      </FormSection>
+    </>
   );
 };
 
 const cellInputCls = (hasError: boolean) =>
   [
-    'w-full p-3 bg-transparent outline-none font-medium placeholder:text-gray-300 text-sm border focus:ring-1 focus:outline-none transition-colors',
+    'w-full p-3 bg-transparent outline-none font-medium placeholder:text-gray-400 text-sm border focus:ring-1 focus:outline-none transition-colors',
     hasError ? 'text-red-700 border-red-300 bg-red-50/20 focus:border-red-400 focus:ring-red-300' : 'text-gray-900 border-transparent focus:border-blue-200 focus:ring-blue-200',
   ].join(' ');
 
 const CellError: React.FC<{ msg?: string }> = ({ msg }) =>
-  msg ? <p className="px-3 pb-1 text-[10px] text-red-600 font-medium">{msg}</p> : null;
+  msg ? <p className="px-3 pb-2 pt-0.5 text-[10px] text-red-600 font-medium bg-red-50/20">{msg}</p> : null;
