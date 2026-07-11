@@ -294,6 +294,8 @@ export const API_ENDPOINTS = {
     initiate: '/visit-requests/initiate',
     verify: '/visit-requests/verify',
     resendOtp: '/visit-requests/resend-otp',
+    // Human-verification (Turnstile) recovery sau khi nhập sai OTP quá số lần cho phép.
+    otpRecover: '/visit-requests/otp/recover',
     // Visitor sửa đơn pending / gửi lại đơn bị từ chối (owner-only, không cần OTP).
     editDetail: (visitRequestId: string | number) => `/visit-requests/${visitRequestId}/edit-detail`,
     pendingEdit: (visitRequestId: string | number) => `/visit-requests/${visitRequestId}/pending-edit`,

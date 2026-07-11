@@ -26,6 +26,8 @@
     "emptyValue": "—",
     "status": {
       "pendingApproval": "Đang chờ duyệt",
+      "partiallyApproved": "Duyệt một phần",
+      "approved": "Đã duyệt",
       "received": "Đã tiếp nhận"
     },
     "fields": {
@@ -35,6 +37,13 @@
       "mediaConsentNote": "Ghi chú truyền thông",
       "notes": "Ghi chú chung"
     }
+  },
+  "duplicate": {
+    "badge": "Đã gửi trước đó",
+    "title": "Yêu cầu này đã được gửi trước đó",
+    "description": "Một đơn đăng ký với nội dung tương tự vừa được ghi nhận gần đây. Không có đơn mới nào được tạo.",
+    "submittedAt": "Thời điểm đã gửi",
+    "noNewRequest": "Bạn có thể xem lại thông tin đã gửi bên dưới. Vui lòng kiểm tra email xác nhận của lần gửi trước."
   },
   "popup": {
     "badge": "Campus Visit",
@@ -213,7 +222,16 @@
     "back": "Quay lại",
     "confirm": "Xác nhận",
     "confirming": "Đang xác thực...",
-    "validity": "Mã có hiệu lực trong 5 phút. Không chia sẻ mã với bất kỳ ai."
+    "validity": "Mã có hiệu lực trong 5 phút. Không chia sẻ mã với bất kỳ ai.",
+    "remainingAttempts": "Còn {{count}} lần thử",
+    "retryIn": "Vui lòng thử lại sau {{count}} giây",
+    "human": {
+      "title": "Xác minh bạn không phải robot",
+      "desc": "Bạn đã nhập sai mã quá nhiều lần. Vui lòng hoàn thành bước xác minh bên dưới để nhận mã mới.",
+      "recovering": "Đang xác minh và gửi mã mới...",
+      "devVerify": "Tôi không phải robot",
+      "loadError": "Không tải được công cụ xác minh. Vui lòng kiểm tra kết nối và thử lại."
+    }
   },
   "shared": {
     "countrySearchPlaceholder": "Tìm kiếm quốc gia...",

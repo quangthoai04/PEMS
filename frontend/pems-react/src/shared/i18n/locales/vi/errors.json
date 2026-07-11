@@ -59,6 +59,16 @@
     "PROFILE_PHONE_INVALID": "Số điện thoại không hợp lệ. Vui lòng nhập 8–15 chữ số.",
     "PROFILE_NATIONALITY_TOO_LONG": "Quốc tịch quá dài.",
     "CONTACT_EMAIL_CANNOT_BE_USED_FOR_VISITOR_ACCOUNT": "Email đầu mối liên hệ này không thể dùng để tạo tài khoản Visitor. Vui lòng dùng email khác.",
-    "VISITOR_ACCOUNT_INACTIVE": "Tài khoản Visitor gắn với email này đang bị vô hiệu hóa. Vui lòng liên hệ quản trị viên."
+    "VISITOR_ACCOUNT_INACTIVE": "Tài khoản Visitor gắn với email này đang bị vô hiệu hóa. Vui lòng liên hệ quản trị viên.",
+    "OTP_INVALID": "Mã OTP không đúng. Vui lòng kiểm tra lại.",
+    "OTP_EXPIRED": "Mã OTP đã hết hạn. Vui lòng bấm gửi lại để nhận mã mới.",
+    "OTP_NOT_FOUND": "Không tìm thấy phiên xác thực. Vui lòng gửi lại yêu cầu.",
+    "OTP_SESSION_INVALID": "Phiên xác thực không còn hiệu lực. Vui lòng gửi lại để nhận mã mới.",
+    "OTP_RETRY_LATER": "Bạn thao tác quá nhanh. Vui lòng chờ trong giây lát rồi thử lại.",
+    "OTP_HUMAN_VERIFICATION_REQUIRED": "Bạn đã nhập sai quá nhiều lần. Vui lòng xác minh bạn không phải robot để nhận mã mới.",
+    "HUMAN_VERIFICATION_FAILED": "Xác minh không thành công. Vui lòng thử lại.",
+    "OTP_RESEND_RATE_LIMITED": "Bạn đã yêu cầu mã xác thực quá nhiều lần. Vui lòng thử lại sau.",
+    "IDEMPOTENCY_KEY_REUSED": "Phiên gửi đơn không hợp lệ. Vui lòng đóng form và gửi lại từ đầu.",
+    "DUPLICATE_VISIT_REQUEST": "Một đơn đăng ký với nội dung tương tự vừa được gửi trước đó. Không có đơn mới nào được tạo."
   }
 }

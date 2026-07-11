@@ -106,6 +106,13 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
     verifyOtp,
     resendOtp,
     cancelOtp,
+    remainingAttempts,
+    retryAfterSeconds,
+    resendAfterSeconds,
+    humanVerificationRequired,
+    isRecoveringOtp,
+    recoverOtp,
+    duplicateResult,
     resetVisitRequestForm,
     setDraftHydrated,
     isRestoringDraftRef,
@@ -113,6 +120,20 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
     unblockAutoSave,
     cancelPendingAutoSave,
   } = useVisitRequestForm(handleSuccess, handleInvalidSubmit);
+
+  // The duplicate result behaves like the success summary: no auto-close, scroll to top,
+  // focus the heading — but it announces "already submitted before" instead of success.
+  useEffect(() => {
+    if (!duplicateResult) return;
+    blockAutoSave();
+    cancelPendingAutoSave();
+    setSubmitAttempted(false);
+    requestAnimationFrame(() => {
+      formScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+      submittedHeadingRef.current?.focus({ preventScroll: true });
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [duplicateResult]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -208,8 +229,9 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
     setDraftHydrated(true);
   };
 
-  // Closing the submitted view wipes the snapshot and resets the form, so the next
-  // open shows a blank form with no PII from the request that was just created.
+  // Closing the submitted/duplicate view wipes the snapshot and resets the form, so the
+  // next open shows a blank form with no PII from the request that was just reviewed.
+  // resetVisitRequestForm also clears duplicateResult and the submission intent id.
   const closeSubmittedView = () => {
     setSubmission(null);
     setSubmitAttempted(false);
@@ -218,7 +240,7 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
   };
 
   const requestCloseForm = React.useCallback(() => {
-    if (submission) {
+    if (submission || duplicateResult) {
       closeSubmittedView();
       return;
     }
@@ -229,12 +251,16 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
       return;
     }
     setShowCancelConfirm(true);
-  }, [submission, form, cancelPendingAutoSave, onClose]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [submission, duplicateResult, form, cancelPendingAutoSave, onClose]);
 
   useEffect(() => {
     if (!isOpen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        // A child control that already handled this Escape (e.g. react-select closing
+        // its open menu calls preventDefault) must not also prompt-close the whole form.
+        if (e.defaultPrevented) return;
         if (!showRestoreDraftModal && !showCancelConfirm && !showOverlapConfirm && !sessionToken) {
           requestCloseForm();
         }
@@ -270,8 +296,8 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
   useEffect(() => {
     if (!isOpen) {
       // Safety net for closes that bypass closeSubmittedView (e.g. parent-driven):
-      // never keep a submitted snapshot or its form values around for the next open.
-      if (submission) {
+      // never keep a submitted/duplicate snapshot or its form values around for the next open.
+      if (submission || duplicateResult) {
         setSubmission(null);
         resetVisitRequestForm();
       }
@@ -360,6 +386,20 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
               >
                 {submission ? (
                   <SubmittedVisitRequestSummary submission={submission} headingRef={submittedHeadingRef} />
+                ) : duplicateResult ? (
+                  <SubmittedVisitRequestSummary
+                    submission={{
+                      response: {
+                        visitRequestId: duplicateResult.data.existingVisitRequestId,
+                        requestCode: duplicateResult.data.existingRequestCode,
+                        status: duplicateResult.data.existingStatus,
+                        message: '',
+                      },
+                      values: duplicateResult.values,
+                    }}
+                    duplicate={duplicateResult.data}
+                    headingRef={submittedHeadingRef}
+                  />
                 ) : (
                   <form id="visit-request-form" onSubmit={handleSingleFormSubmit} noValidate>
                     <RegisterInfoSection form={form} showErrors={submitAttempted} />
@@ -381,7 +421,7 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
 
               {/* ── Footer ── */}
               <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-white px-4 py-3 sm:px-6">
-                {submission ? (
+                {submission || duplicateResult ? (
                   <button
                     type="button"
                     onClick={closeSubmittedView}
@@ -433,8 +473,14 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
           otpError={otpError}
           isVerifying={isVerifying}
           isResending={isResending}
+          remainingAttempts={remainingAttempts}
+          retryAfterSeconds={retryAfterSeconds}
+          resendAfterSeconds={resendAfterSeconds}
+          humanVerificationRequired={humanVerificationRequired}
+          isRecovering={isRecoveringOtp}
           onVerify={verifyOtp}
           onResend={resendOtp}
+          onRecover={recoverOtp}
           onCancel={cancelOtp}
         />
       )}

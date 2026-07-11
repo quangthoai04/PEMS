@@ -26,6 +26,8 @@
     "emptyValue": "—",
     "status": {
       "pendingApproval": "Pending approval",
+      "partiallyApproved": "Partially approved",
+      "approved": "Approved",
       "received": "Received"
     },
     "fields": {
@@ -35,6 +37,13 @@
       "mediaConsentNote": "Media notes",
       "notes": "General notes"
     }
+  },
+  "duplicate": {
+    "badge": "Already submitted",
+    "title": "This request was already submitted",
+    "description": "A visit request with the same details was recorded recently. No new request has been created.",
+    "submittedAt": "Submitted at",
+    "noNewRequest": "You can review the previously submitted information below. Please check your email for the original confirmation."
   },
   "popup": {
     "badge": "Campus Visit",
@@ -213,7 +222,16 @@
     "back": "Back",
     "confirm": "Confirm",
     "confirming": "Verifying...",
-    "validity": "Code is valid for 5 minutes. Do not share your code with anyone."
+    "validity": "Code is valid for 5 minutes. Do not share your code with anyone.",
+    "remainingAttempts": "{{count}} attempts remaining",
+    "retryIn": "Please try again in {{count}} seconds",
+    "human": {
+      "title": "Verify you are human",
+      "desc": "You entered the wrong code too many times. Please complete the verification below to receive a new code.",
+      "recovering": "Verifying and sending a new code...",
+      "devVerify": "I am not a robot",
+      "loadError": "The verification widget could not be loaded. Please check your connection and try again."
+    }
   },
   "shared": {
     "countrySearchPlaceholder": "Search country...",
