@@ -36,7 +36,8 @@ public static class DepartmentErrorCodes
 
     /// <summary>
     /// UC-106: disable is blocked because the department still has non-terminal business
-    /// dependencies (e.g. open logistics requests). → 409 with a <c>blockers</c> payload.
+    /// dependencies (open logistics requests, pending participant invitations, active visit
+    /// participations). → 409 with a <c>blockers</c> payload.
     /// </summary>
     public const string DepartmentStatusBlockedByDependencies = "DEPARTMENT_STATUS_BLOCKED_BY_DEPENDENCIES";
 }

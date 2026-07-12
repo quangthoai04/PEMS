@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
@@ -15,6 +16,15 @@ public sealed class DepartmentStatusBlocker
 {
     public string Type { get; init; } = default!;
     public int Count { get; init; }
+
+    /// <summary>Distinct users behind <see cref="Count"/> (participant blockers only, BR-UC106-38).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? AffectedUserCount { get; init; }
+
+    /// <summary>Distinct visit instances behind <see cref="Count"/> (participant blockers only).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? AffectedVisitCount { get; init; }
+
     public string Message { get; init; } = default!;
 }
 
@@ -37,7 +47,10 @@ public sealed class DepartmentStatusImpact
 /// even if abnormal data gives them the same department_id).
 ///
 /// Hard blockers use the real schema only: <c>visit_logistics_items.requested_to_department_id</c>
-/// rows whose status is non-terminal (per <see cref="LogisticsItemStatus"/>).
+/// rows whose status is non-terminal (per <see cref="LogisticsItemStatus"/>), plus visit
+/// participant dependencies of the department's users (invitations awaiting a response and
+/// accepted/assigned participations on operational visits — see
+/// <see cref="DepartmentParticipantDependencyRule"/>).
 /// </summary>
 public static class DepartmentStatusImpactCalculator
 {
@@ -84,6 +97,29 @@ public static class DepartmentStatusImpactCalculator
                 Message = $"Còn {openLogisticsCount} yêu cầu hậu cần chưa hoàn tất được giao cho phòng ban.",
             });
         }
+
+        // Participant dependencies (BR-UC106-24..39). SQL only pre-filters by department (a
+        // department's users have few participant rows); the full matrix — role/sub-role,
+        // DEPT_SUPPORT, INVITED/ACCEPTED/ASSIGNED, operational visit allowlist — lives in
+        // DepartmentParticipantDependencyRule so tests and production share one classification.
+        // visit_participants has no User navigation, hence the explicit join (Pomelo-safe).
+        var participantCandidates = await (
+            from vp in db.VisitParticipants
+            join u in db.Users on vp.UserId equals u.UserId
+            where u.DepartmentId == departmentId
+            select new ParticipantDependencyCandidate
+            {
+                UserId = vp.UserId,
+                VisitInstanceId = vp.VisitInstanceId,
+                UserDepartmentId = u.DepartmentId,
+                RoleCode = u.Role!.RoleCode,
+                SubRole = u.SubRole,
+                ParticipantRole = vp.ParticipantRole,
+                ParticipantStatus = vp.Status,
+                VisitStatus = vp.VisitInstance.Status,
+            }).ToListAsync(cancellationToken);
+
+        blockers.AddRange(DepartmentParticipantDependencyRule.BuildBlockers(participantCandidates, departmentId));
 
         return new DepartmentStatusImpact
         {
