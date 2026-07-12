@@ -17,6 +17,12 @@ public static class AuthErrorCodes
     public const string InvalidCredentials = "INVALID_CREDENTIALS";
     public const string AccountInactive = "ACCOUNT_INACTIVE";
     public const string AccountLocked = "ACCOUNT_LOCKED";
+
+    /// <summary>
+    /// UC-106: a DEPARTMENT-role account whose linked department is INACTIVE may not sign in
+    /// (credentials or SSO) or refresh a token until the department is enabled again. HTTP 403.
+    /// </summary>
+    public const string DepartmentInactive = "DEPARTMENT_INACTIVE";
     public const string SsoDisabled = "SSO_DISABLED";
     public const string FeidDisabled = "FEID_DISABLED";
 

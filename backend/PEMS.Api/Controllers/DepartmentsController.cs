@@ -47,6 +47,13 @@ namespace PEMS.Api.Controllers
             return Ok(result);
         }
 
+        [HttpGet("departmentstatusimpact")]
+        public async Task<IActionResult> GetDepartmentStatusImpact([FromQuery] PEMS.Application.Departments.Queries.GetDepartmentStatusImpact.GetDepartmentStatusImpactQuery query, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(query, cancellationToken);
+            return Ok(result);
+        }
+
         [HttpPost("managedepartmentstatus")]
         public async Task<IActionResult> ManageDepartmentStatus([FromBody] PEMS.Application.Departments.Commands.ManageDepartmentStatus.ManageDepartmentStatusCommand command, CancellationToken cancellationToken)
         {

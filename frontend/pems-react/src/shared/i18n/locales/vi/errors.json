@@ -32,6 +32,7 @@
     "INVALID_CREDENTIALS": "Email hoặc mật khẩu không đúng.",
     "ACCOUNT_INACTIVE": "Tài khoản của bạn đã bị vô hiệu hóa.",
     "ACCOUNT_LOCKED": "Tài khoản của bạn đang bị khóa. Vui lòng thử lại sau hoặc liên hệ quản trị viên.",
+    "DEPARTMENT_INACTIVE": "Phòng ban của tài khoản đã ngừng hoạt động. Vui lòng liên hệ Trưởng phòng Hợp tác quốc tế tại cơ sở.",
     "SSO_DISABLED": "Đăng nhập bằng Google hiện đang bị tắt.",
     "FEID_DISABLED": "Đăng nhập bằng FEID hiện đang bị tắt.",
     "FEID_NOT_CONFIGURED": "Đăng nhập bằng FEID hiện chưa khả dụng. Vui lòng dùng phương thức khác hoặc liên hệ quản trị viên.",

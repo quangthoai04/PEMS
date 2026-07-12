@@ -24,6 +24,10 @@ import { useDebounce } from "../../../shared/hooks/useDebounce";
 import { useDepartmentList } from "../../../features/department-management/hooks/useDepartmentManagement";
 import { departmentManagementApi } from "../../../features/department-management/api/departmentManagementApi";
 import { getDepartmentErrorMessage } from "../../../features/department-management/api/departmentError";
+import type {
+  DepartmentStatusBlocker,
+  DepartmentStatusImpact,
+} from "../../../features/department-management/types/departmentManagement.types";
 
 const CAMPUSES = ["Hà Nội", "Hồ Chí Minh", "Đà Nẵng", "Cần Thơ", "Quy Nhơn"];
 
@@ -114,16 +118,66 @@ export function DepartmentManagement() {
     }
   };
 
-  // Toggle a GENERAL department's status (IC departments are not toggleable).
-  const handleToggleStatusApi = async (row: { id: number; status: string; canToggleStatus?: boolean }) => {
+  // ── UC-106 status confirmation modal (IC departments are not toggleable) ──
+  // The toggle never flips optimistically: the row only changes after the API succeeds + refetch.
+  const [statusConfirm, setStatusConfirm] = useState<{ id: number; name: string; target: 'ACTIVE' | 'INACTIVE' } | null>(null);
+  const [statusImpact, setStatusImpact] = useState<DepartmentStatusImpact | null>(null);
+  const [statusImpactLoading, setStatusImpactLoading] = useState(false);
+  const [statusBlockers, setStatusBlockers] = useState<DepartmentStatusBlocker[] | null>(null);
+  const [statusError, setStatusError] = useState<string | null>(null);
+  const [statusSaving, setStatusSaving] = useState(false);
+
+  const openStatusConfirm = async (row: { id: number; name: string; status: string; canToggleStatus?: boolean }) => {
     if (row.canToggleStatus === false) return;
-    const next = row.status === 'Hoạt động' ? 'INACTIVE' : 'ACTIVE';
+    const target: 'ACTIVE' | 'INACTIVE' = row.status === 'Hoạt động' ? 'INACTIVE' : 'ACTIVE';
+    setStatusConfirm({ id: row.id, name: row.name, target });
+    setStatusImpact(null);
+    setStatusBlockers(null);
+    setStatusError(null);
+    setStatusImpactLoading(true);
     try {
-      await departmentManagementApi.manageDepartmentStatus({ departmentId: row.id, status: next });
+      const impact = await departmentManagementApi.getDepartmentStatusImpact(row.id, target);
+      setStatusImpact(impact);
+      if (impact.blockers?.length) setStatusBlockers(impact.blockers);
+    } catch {
+      // Preview is best-effort — the modal falls back to static text and the
+      // backend re-validates blockers on submit regardless.
+    } finally {
+      setStatusImpactLoading(false);
+    }
+  };
+
+  const closeStatusConfirm = () => {
+    if (statusSaving) return;
+    setStatusConfirm(null);
+    setStatusImpact(null);
+    setStatusBlockers(null);
+    setStatusError(null);
+  };
+
+  const confirmStatusChange = async () => {
+    if (!statusConfirm) return;
+    setStatusSaving(true);
+    setStatusError(null);
+    try {
+      const res = await departmentManagementApi.manageDepartmentStatus({
+        departmentId: statusConfirm.id,
+        status: statusConfirm.target,
+      });
+      setStatusConfirm(null);
+      setStatusImpact(null);
+      setStatusBlockers(null);
       slRefetch();
-      showToast('success', next === 'ACTIVE' ? 'Đã kích hoạt phòng ban.' : 'Đã ngừng hoạt động phòng ban.');
+      showToast('success', res.message
+        || (statusConfirm.target === 'ACTIVE' ? 'Đã kích hoạt lại phòng ban.' : 'Đã ngừng hoạt động phòng ban.'));
     } catch (err) {
-      showToast('error', getDepartmentErrorMessage(err, 'Không thể thay đổi trạng thái phòng ban.'));
+      const body = (err as { response?: { data?: { errorCode?: string; data?: { blockers?: DepartmentStatusBlocker[] } } } })?.response?.data;
+      if (body?.errorCode === 'DEPARTMENT_STATUS_BLOCKED_BY_DEPENDENCIES') {
+        setStatusBlockers(body.data?.blockers ?? []);
+      }
+      setStatusError(getDepartmentErrorMessage(err, 'Không thể thay đổi trạng thái phòng ban.'));
+    } finally {
+      setStatusSaving(false);
     }
   };
 
@@ -436,7 +490,7 @@ export function DepartmentManagement() {
                           <span className="text-xs font-medium text-gray-400 italic">Phòng mặc định</span>
                         ) : (
                           <button
-                            onClick={() => isStaffLeader ? handleToggleStatusApi(item as any) : toggleStatus(item.id)}
+                            onClick={() => isStaffLeader ? openStatusConfirm(item as any) : toggleStatus(item.id)}
                             className={`relative inline-flex h-[20px] w-[36px] items-center rounded-full transition-colors duration-300 focus:outline-none ${
                               item.status === 'Hoạt động' ? 'bg-[#004c91]' : 'bg-gray-300'
                             }`}
@@ -606,6 +660,111 @@ export function DepartmentManagement() {
                 className="px-5 py-2.5 rounded-xl font-bold text-white bg-[#f37021] hover:bg-[#d9621a] disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm outline-none"
               >
                 {isStaffLeader && creating ? 'Đang lưu...' : 'Tạo mới'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* UC-106 — Status change confirmation modal (Staff Leader) */}
+      {statusConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={closeStatusConfirm}></div>
+          <div className="relative bg-white rounded-3xl w-full max-w-md shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-300">
+            {/* Header */}
+            <div className={`flex items-center justify-between p-6 py-4 text-white ${statusConfirm.target === 'INACTIVE' ? 'bg-red-600' : 'bg-[#0aa14f]'}`}>
+              <h3 className="text-xl font-bold">
+                {statusConfirm.target === 'INACTIVE' ? 'Ngừng hoạt động phòng ban?' : 'Kích hoạt lại phòng ban?'}
+              </h3>
+              <button
+                onClick={closeStatusConfirm}
+                className="text-white hover:text-gray-200 hover:bg-white/10 p-2 rounded-full transition-colors outline-none"
+                title="Đóng"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-6 space-y-4">
+              <p className="text-sm font-bold text-gray-800">{statusConfirm.name}</p>
+
+              {statusConfirm.target === 'INACTIVE' ? (
+                <div className="text-sm text-gray-600 space-y-1.5">
+                  <p className="font-semibold text-gray-700">Sau khi ngừng hoạt động:</p>
+                  <ul className="list-disc pl-5 space-y-1">
+                    <li>Trưởng phòng và toàn bộ nhân sự thuộc phòng ban sẽ bị đăng xuất.</li>
+                    <li>Các tài khoản này không thể đăng nhập cho đến khi phòng ban được kích hoạt lại.</li>
+                    <li>Phòng ban sẽ không xuất hiện trong các lựa chọn phân công mới.</li>
+                    <li>Dữ liệu và lịch sử nghiệp vụ vẫn được giữ nguyên.</li>
+                  </ul>
+                </div>
+              ) : (
+                <div className="text-sm text-gray-600 space-y-1.5">
+                  <p className="font-semibold text-gray-700">Sau khi kích hoạt:</p>
+                  <ul className="list-disc pl-5 space-y-1">
+                    <li>Phòng ban có thể được chọn cho các phân công mới.</li>
+                    <li>Các tài khoản đang ở trạng thái hoạt động có thể đăng nhập lại.</li>
+                    <li>Các phiên đăng nhập cũ không được khôi phục.</li>
+                    <li>Những tài khoản bị khóa riêng vẫn tiếp tục bị khóa.</li>
+                  </ul>
+                </div>
+              )}
+
+              {/* Impact summary (best-effort preview) */}
+              {statusConfirm.target === 'INACTIVE' && (
+                statusImpactLoading ? (
+                  <p className="text-sm font-medium text-gray-400">Đang tải thông tin ảnh hưởng...</p>
+                ) : statusImpact ? (
+                  <div className="rounded-xl bg-gray-50 border border-gray-200 p-4 text-sm space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium text-gray-600">Tài khoản bị ảnh hưởng</span>
+                      <span className="font-bold text-gray-900">{statusImpact.affectedAccountCount}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium text-gray-600">Phiên đăng nhập đang hoạt động</span>
+                      <span className="font-bold text-gray-900">{statusImpact.activeSessionCount}</span>
+                    </div>
+                  </div>
+                ) : null
+              )}
+
+              {/* Blockers */}
+              {statusBlockers && statusBlockers.length > 0 && (
+                <div className="rounded-xl bg-red-50 border border-red-200 p-4">
+                  <p className="text-sm font-bold text-red-700 mb-2">
+                    Không thể ngừng hoạt động vì còn nghiệp vụ chưa hoàn tất:
+                  </p>
+                  <ul className="list-disc pl-5 space-y-1 text-sm text-red-700">
+                    {statusBlockers.map((b) => (
+                      <li key={b.type}>{b.message}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {statusError && <p className="text-sm font-bold text-red-600">{statusError}</p>}
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center justify-end gap-3 p-6 pt-0">
+              <button
+                onClick={closeStatusConfirm}
+                disabled={statusSaving}
+                className="px-5 py-2.5 rounded-xl font-bold text-gray-600 bg-white border border-gray-200 hover:bg-gray-50 hover:text-gray-800 transition-colors shadow-sm outline-none disabled:opacity-50"
+              >
+                Hủy
+              </button>
+              <button
+                onClick={confirmStatusChange}
+                disabled={statusSaving || (!!statusBlockers && statusBlockers.length > 0)}
+                className={`px-5 py-2.5 rounded-xl font-bold text-white transition-colors shadow-sm outline-none disabled:opacity-50 disabled:cursor-not-allowed ${
+                  statusConfirm.target === 'INACTIVE' ? 'bg-red-600 hover:bg-red-700' : 'bg-[#0aa14f] hover:bg-[#088c44]'
+                }`}
+              >
+                {statusSaving
+                  ? 'Đang xử lý...'
+                  : statusConfirm.target === 'INACTIVE' ? 'Ngừng hoạt động' : 'Kích hoạt lại'}
               </button>
             </div>
           </div>

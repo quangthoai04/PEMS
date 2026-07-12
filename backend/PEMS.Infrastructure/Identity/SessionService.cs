@@ -69,6 +69,8 @@ public sealed class SessionService : ISessionService
         return await _db.UserSessions
             .Include(s => s.User).ThenInclude(u => u.Role)
             .Include(s => s.User).ThenInclude(u => u.PrimaryCampus)
+            // UC-106: refresh must re-check the CURRENT department status from the DB.
+            .Include(s => s.User).ThenInclude(u => u.Department)
             .FirstOrDefaultAsync(s =>
                     s.RefreshTokenHash == hash
                     && s.RevokedAt == null

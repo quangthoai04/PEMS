@@ -53,6 +53,8 @@ export const API_ENDPOINTS = {
     search: '/departments/searchandfilterdepartments',
     create: '/departments/addnewdepartment',
     manageStatus: '/departments/managedepartmentstatus',
+    // UC-106 impact preview for the status confirmation modal (affected accounts/sessions/blockers).
+    statusImpact: '/departments/departmentstatusimpact',
     details: '/departments/viewdepartmentdetails',
     update: '/departments/updatedepartment',
   },

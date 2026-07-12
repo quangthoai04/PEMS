@@ -32,6 +32,7 @@
     "INVALID_CREDENTIALS": "Incorrect email or password.",
     "ACCOUNT_INACTIVE": "Your account has been deactivated.",
     "ACCOUNT_LOCKED": "Your account is locked. Please try again later or contact an administrator.",
+    "DEPARTMENT_INACTIVE": "Your account's department has been deactivated. Please contact the International Cooperation Department Leader at your campus.",
     "SSO_DISABLED": "Google sign-in is currently disabled.",
     "FEID_DISABLED": "FEID sign-in is currently disabled.",
     "FEID_NOT_CONFIGURED": "FEID sign-in is not available yet. Please use another method or contact an administrator.",

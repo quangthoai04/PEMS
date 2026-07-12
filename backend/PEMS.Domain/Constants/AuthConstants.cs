@@ -186,6 +186,9 @@ public static class SessionRevokeReasons
     public const string PasswordChanged = "PASSWORD_CHANGED";
     public const string AccountDeactivated = "ACCOUNT_DEACTIVATED";
     public const string RoleChanged = "ROLE_CHANGED";
+
+    /// <summary>UC-106: the user's department was disabled, so every active session is revoked.</summary>
+    public const string DepartmentDisabled = "DEPARTMENT_DISABLED";
 }
 
 public static class CreatedViaValues

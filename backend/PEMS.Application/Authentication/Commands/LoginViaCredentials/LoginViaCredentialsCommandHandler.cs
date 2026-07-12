@@ -112,6 +112,12 @@ public sealed class LoginviaCredentialsCommandHandler : IRequestHandler<Loginvia
             await FailAsync(user, email, portal, LoginLogStatuses.Blocked, "role_inactive", SecurityEventFailureReasonCodes.AccountDisabled,
                 request, AuthErrorCodes.AccountInactive, "Your account is not active.", 403, cancellationToken);
 
+        // UC-106: DEPARTMENT accounts lose access while their department is INACTIVE
+        // (users.status stays untouched — this is an org-level lock, not a personal one).
+        if (DepartmentAccessRule.IsBlocked(user.Role!.RoleCode, user.Department?.Status))
+            await FailAsync(user, email, portal, LoginLogStatuses.Blocked, "department_inactive", SecurityEventFailureReasonCodes.AccountDisabled,
+                request, AuthErrorCodes.DepartmentInactive, DepartmentAccessRule.BlockedMessage, 403, cancellationToken);
+
         // Local password provider, if present, must be enabled.
         var localProvider = user.AuthProviders.FirstOrDefault(p => p.ProviderType == ProviderTypes.LocalPassword);
         if (localProvider is not null && !localProvider.IsEnabled)

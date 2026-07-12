@@ -4,6 +4,7 @@ using PEMS.Application.Authentication.Common;
 using PEMS.Application.Authentication.Models;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Common.Security;
 using PEMS.Domain.Constants;
 
 namespace PEMS.Application.Authentication.Commands.RefreshToken;
@@ -39,6 +40,14 @@ public sealed class RefreshTokenCommandHandler : IRequestHandler<RefreshTokenCom
         {
             await _sessionService.RevokeSessionAsync(session.SessionId, SessionRevokeReasons.AccountDeactivated, null, cancellationToken);
             throw new AuthenticationFailedException(ExpiredMessage, "account_or_role_inactive");
+        }
+
+        // UC-106: a DEPARTMENT account may not refresh while its department is INACTIVE.
+        // Revoke the session so the old refresh token stays dead even after re-enable.
+        if (DepartmentAccessRule.IsBlocked(user.Role.RoleCode, user.Department?.Status))
+        {
+            await _sessionService.RevokeSessionAsync(session.SessionId, SessionRevokeReasons.DepartmentDisabled, null, cancellationToken);
+            throw new AuthenticationFailedException(ExpiredMessage, "department_inactive");
         }
 
         var rotated = await _sessionService.RotateRefreshTokenAsync(session, cancellationToken);
