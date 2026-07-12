@@ -95,7 +95,7 @@ public sealed class AddGalleryItemCommandHandler
         }
 
         var mediaKind = GalleryMediaClassifier.ResolveMediaKind(uploads.Select(u => u.MediaType));
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
 
         var item = new GalleryItem
         {

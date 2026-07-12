@@ -11,6 +11,7 @@ using PEMS.Application.Delegations.Queries.GetVisitProcessDetail;
 using PEMS.Domain.Constants;
 using PEMS.Shared;
 
+using PEMS.Application.Common;
 namespace PEMS.Application.Delegations.Queries.GetVisitInstanceContribution;
 
 public sealed class GetVisitInstanceContributionQueryHandler
@@ -346,7 +347,7 @@ public sealed class GetVisitInstanceContributionQueryHandler
                 LockedByName = minutes?.EditLockedBy != null && usersDict.TryGetValue(minutes.EditLockedBy.Value, out var mName) ? mName : null,
                 LockedUntil = minutes?.EditLockExpiresAt,
                 UpdatedAt = minutes?.UpdatedAt ?? minutes?.CreatedAt,
-                CanCurrentUserTakeLock = permissions.CanEditMinutes && (minutes?.EditLockedBy == null || minutes.EditLockedBy == userId || minutes.EditLockExpiresAt < DateTime.UtcNow),
+                CanCurrentUserTakeLock = permissions.CanEditMinutes && (minutes?.EditLockedBy == null || minutes.EditLockedBy == userId || minutes.EditLockExpiresAt < VietnamTime.Now()),
                 CanCurrentUserEdit = permissions.CanEditMinutes
             },
             Media = new MediaContributionDto

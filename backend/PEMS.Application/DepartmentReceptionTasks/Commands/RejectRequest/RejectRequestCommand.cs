@@ -5,6 +5,7 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 
+using PEMS.Application.Common;
 namespace PEMS.Application.DepartmentReceptionTasks.Commands.RejectRequest
 {
     public class RejectRequestCommand : IRequest<bool>
@@ -46,7 +47,7 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.RejectRequest
             l.Status = "REJECTED";
             l.DecisionNote = request.Reason;
             l.UpdatedBy = userId;
-            l.UpdatedAt = DateTime.UtcNow;
+            l.UpdatedAt = VietnamTime.Now();
 
             await _context.SaveChangesAsync(cancellationToken);
             return true;

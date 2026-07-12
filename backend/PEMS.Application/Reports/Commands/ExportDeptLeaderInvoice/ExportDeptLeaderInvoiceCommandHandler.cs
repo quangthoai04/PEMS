@@ -14,6 +14,7 @@ using QuestPDF.Fluent;
 using QuestPDF.Helpers;
 using QuestPDF.Infrastructure;
 
+using PEMS.Application.Common;
 namespace PEMS.Application.Reports.Commands.ExportDeptLeaderInvoice;
 
 /// <summary>
@@ -112,7 +113,7 @@ public sealed class ExportDeptLeaderInvoiceCommandHandler
                 .FirstOrDefaultAsync(cancellationToken)
             : null;
 
-        var stampVn = DateTime.UtcNow.AddHours(7);
+        var stampVn = VietnamTime.Now();
         var meta = new InvoiceMeta
         {
             InvoiceCode = $"PEMS-INV-{stampVn:yyyyMMdd-HHmm}",
@@ -124,7 +125,7 @@ public sealed class ExportDeptLeaderInvoiceCommandHandler
             CampusName = deptInfo?.CampusName ?? "—",
             DelegationName = visit.DelegationName,
             RequestCode = visit.RequestCode,
-            VisitDate = $"{visit.PlannedStartAt.AddHours(7):dd/MM/yyyy} – {visit.PlannedEndAt.AddHours(7):dd/MM/yyyy}",
+            VisitDate = $"{visit.PlannedStartAt:dd/MM/yyyy} – {visit.PlannedEndAt:dd/MM/yyyy}",
             HostName = hostName ?? "—",
         };
 

@@ -76,7 +76,7 @@ public sealed class ApplyAgendaTemplateCommandHandler
                 "Cơ sở này đã có lịch trình. Bật replaceExisting để thay thế lịch trình hiện tại.",
                 "AGENDA_ALREADY_EXISTS");
 
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
         var plannedStart = instance.PlannedStartAt;
 
         await using var tx = await _db.BeginTransactionAsync(cancellationToken);

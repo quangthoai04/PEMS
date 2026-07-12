@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Domain.Entities.Notifications;
 
+using PEMS.Application.Common;
 namespace PEMS.Application.Notifications.Common;
 
 public class NotificationService : INotificationService
@@ -96,7 +97,7 @@ public class NotificationService : INotificationService
                 DedupeKey = item.DedupeKey,
                 IsRead = false,
                 ReadAt = null,
-                CreatedAt = DateTime.UtcNow
+                CreatedAt = VietnamTime.Now()
             });
         }
 

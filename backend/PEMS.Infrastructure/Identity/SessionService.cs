@@ -31,7 +31,7 @@ public sealed class SessionService : ISessionService
         string? userAgent,
         CancellationToken cancellationToken = default)
     {
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
         var rawRefresh = SecureTokenGenerator.GenerateOpaqueToken();
         var refreshExpires = now.AddDays(_refreshDays);
 
@@ -64,7 +64,7 @@ public sealed class SessionService : ISessionService
             return null;
 
         var hash = SecureTokenGenerator.Hash(rawRefreshToken);
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
 
         return await _db.UserSessions
             .Include(s => s.User).ThenInclude(u => u.Role)
@@ -85,7 +85,7 @@ public sealed class SessionService : ISessionService
         if (sessionId == 0)
             return false;
 
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
         return await _db.UserSessions.AsNoTracking()
             .AnyAsync(s => s.SessionId == sessionId && s.RevokedAt == null && s.ExpiresAt > now,
                 cancellationToken);
@@ -94,7 +94,7 @@ public sealed class SessionService : ISessionService
     public async Task<SessionTokens> RotateRefreshTokenAsync(
         UserSession session, CancellationToken cancellationToken = default)
     {
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
         var rawRefresh = SecureTokenGenerator.GenerateOpaqueToken();
         var refreshExpires = now.AddDays(_refreshDays);
 
@@ -113,7 +113,7 @@ public sealed class SessionService : ISessionService
         if (session is null || session.RevokedAt != null)
             return;
 
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
         session.RevokedAt = now;
         session.RefreshRevokedAt = now;
         session.RevokedReason = Truncate(reason, 255);
@@ -125,7 +125,7 @@ public sealed class SessionService : ISessionService
     public async Task<int> RevokeAllActiveSessionsAsync(
         ulong userId, string reason, ulong? revokedBy = null, CancellationToken cancellationToken = default)
     {
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
         var sessions = await _db.UserSessions
             .Where(s => s.UserId == userId && s.RevokedAt == null)
             .ToListAsync(cancellationToken);

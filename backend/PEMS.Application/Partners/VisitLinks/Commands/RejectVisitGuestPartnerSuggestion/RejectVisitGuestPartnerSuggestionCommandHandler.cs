@@ -36,7 +36,7 @@ public sealed class RejectVisitGuestPartnerSuggestionCommandHandler
                                       && l.VisitRequestId == instance.VisitRequestId, cancellationToken)
             ?? throw new NotFoundException("VisitGuestPartnerLink", request.LinkId);
 
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
         link.MatchStatus = PartnerLinkMatchStatuses.Rejected;
         link.UpdatedAt = now;
         link.UpdatedBy = _currentUser.UserId;

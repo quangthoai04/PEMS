@@ -122,7 +122,7 @@ public sealed class ApproveCampusInstanceCommandHandler
             && c.PlannedEndAt > instance.PlannedStartAt,
             cancellationToken);
 
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
         var decisionNote = string.IsNullOrWhiteSpace(request.DecisionNote) ? null : request.DecisionNote.Trim();
 
         await using var tx = await _db.BeginTransactionAsync(cancellationToken);

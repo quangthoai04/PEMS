@@ -63,7 +63,7 @@ public sealed class UpsertGoogleDocumentAiOcrConfigCommandHandler
                     cancellationToken);
         }
 
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
         var isNew = config is null;
         if (config is null)
         {

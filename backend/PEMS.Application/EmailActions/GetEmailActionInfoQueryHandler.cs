@@ -91,7 +91,7 @@ public sealed class GetEmailActionInfoQueryHandler
         {
             result.Status = EmailActionViewStatuses.Invalid;
         }
-        else if (token.ResultStatus == EmailActionResultStatuses.Expired || token.ExpiresAt < _clock.UtcNow)
+        else if (token.ResultStatus == EmailActionResultStatuses.Expired || token.ExpiresAt < _clock.VietnamNow)
         {
             result.Status = EmailActionViewStatuses.Expired;
         }
@@ -154,7 +154,7 @@ public sealed class GetEmailActionInfoQueryHandler
         {
             result.Status = EmailActionViewStatuses.Invalid;
         }
-        else if (token.ResultStatus == EmailActionResultStatuses.Expired || token.ExpiresAt < _clock.UtcNow)
+        else if (token.ResultStatus == EmailActionResultStatuses.Expired || token.ExpiresAt < _clock.VietnamNow)
         {
             result.Status = EmailActionViewStatuses.Expired;
         }
@@ -214,7 +214,7 @@ public sealed class GetEmailActionInfoQueryHandler
         {
             result.Status = EmailActionViewStatuses.Invalid;
         }
-        else if (token.ResultStatus == EmailActionResultStatuses.Expired || token.ExpiresAt < _clock.UtcNow)
+        else if (token.ResultStatus == EmailActionResultStatuses.Expired || token.ExpiresAt < _clock.VietnamNow)
         {
             result.Status = EmailActionViewStatuses.Expired;
         }

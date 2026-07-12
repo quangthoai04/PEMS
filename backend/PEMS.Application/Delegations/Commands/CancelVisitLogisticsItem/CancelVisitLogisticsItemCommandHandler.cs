@@ -69,7 +69,7 @@ public sealed class CancelVisitLogisticsItemCommandHandler
             || systemDone)
             throw new ConflictException("Yêu cầu đã được phòng ban tiếp nhận/đang xử lý nên không thể hủy.");
 
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
         item.Status = LogisticsItemStatus.Cancelled;
         item.DecisionNote = reason;   // lý do hủy (decision_note) — required, validated above
         item.UpdatedAt = now;

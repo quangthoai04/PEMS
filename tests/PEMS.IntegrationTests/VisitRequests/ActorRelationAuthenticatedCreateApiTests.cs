@@ -8,6 +8,7 @@ using PEMS.Domain.Constants;
 using PEMS.Infrastructure.Persistence;
 using PEMS.IntegrationTests.TestInfrastructure;
 using Xunit;
+using PEMS.Application.Common;
 
 namespace PEMS.IntegrationTests.VisitRequests;
 
@@ -121,7 +122,7 @@ public sealed class ActorRelationAuthenticatedCreateApiTests : IAsyncLifetime
             DepartmentId = icDept,
             Status = "ACTIVE",
             CreatedVia = "MANUAL_CREATED",
-            CreatedAt = DateTime.UtcNow,
+            CreatedAt = VietnamTime.Now(),
         });
         await db.SaveChangesAsync();
     }
@@ -259,6 +260,41 @@ public sealed class ActorRelationAuthenticatedCreateApiTests : IAsyncLifetime
         Assert.All(vr.CampusInstances, i => Assert.Equal("WAITING_REQUEST_APPROVAL", i.Status));
         // Registrant identity came from the DB user, never the payload.
         Assert.NotEqual("spoofed-identity@evil.example.com", vr.RegistrantEmail);
+    }
+
+    /// <summary>
+    /// Vietnam-time policy (AC-01/AC-03): submitted_at/created_at persist as Vietnam
+    /// wall-clock (not UTC −7h), and the planned slot round-trips verbatim with no shift.
+    /// </summary>
+    [Fact]
+    public async Task Create_Stores_VietnamWallClock_Timestamps_And_PlannedTimes_Unshifted()
+    {
+        var name = DelegationPrefix + "VN time " + Guid.NewGuid().ToString("N")[..8];
+        var payload = CreatePayload(name, UniqueContactEmail(),
+            new[] { (_campus1Code, "SEND_FOR_REVIEW", (ulong?)null) });
+
+        var slots = (List<Dictionary<string, object?>>)payload["campusVisits"]!;
+        var expectedStart = DateTime.Parse((string)slots[0]["startDatetime"]!);
+
+        var before = VietnamTime.Now().AddMinutes(-1);
+        var response = await VisitorClient().PostAsJsonAsync("/api/visit-requests", payload);
+        var after = VietnamTime.Now().AddMinutes(1);
+
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.True(response.StatusCode == HttpStatusCode.OK, $"expected 200, got {(int)response.StatusCode}: {body}");
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var vr = await db.VisitRequests.Include(v => v.CampusInstances)
+            .FirstAsync(v => v.DelegationName == name);
+
+        // Under the old UTC policy these were ~7h behind Vietnam "now" — must be in-window now.
+        Assert.InRange(vr.SubmittedAt, before, after);
+        Assert.InRange(vr.CreatedAt, before, after);
+
+        // Planned wall-clock round-trips verbatim: no +7/−7 shift, no double conversion.
+        var instance = Assert.Single(vr.CampusInstances);
+        Assert.Equal(expectedStart, instance.PlannedStartAt);
     }
 
     // ── Regular Staff ───────────────────────────────────────────────────────

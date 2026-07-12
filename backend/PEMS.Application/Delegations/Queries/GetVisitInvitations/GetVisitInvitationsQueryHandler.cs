@@ -146,7 +146,7 @@ public sealed class GetVisitInvitationsQueryHandler
             ? new Dictionary<ulong, string>()
             : await _context.Users.Where(u => userIds.Contains(u.UserId)).ToDictionaryAsync(u => u.UserId, u => u.FullName, cancellationToken);
 
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
 
         var items = page.Select(x => 
         {

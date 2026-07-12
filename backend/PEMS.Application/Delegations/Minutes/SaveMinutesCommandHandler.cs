@@ -58,7 +58,7 @@ public sealed class SaveMinutesCommandHandler
         if (!canEdit)
             throw new ForbiddenException("Bạn không có quyền chỉnh sửa biên bản chuyến thăm này.");
 
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
 
         // The caller must currently hold the lock (same token, not expired, same user).
         bool holdsLock = minute.EditLockedBy == userId

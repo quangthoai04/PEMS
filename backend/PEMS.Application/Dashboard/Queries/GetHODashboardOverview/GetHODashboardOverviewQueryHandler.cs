@@ -4,6 +4,7 @@ using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Domain.Constants;
 
+using PEMS.Application.Common;
 namespace PEMS.Application.Dashboard.Queries.GetHODashboardOverview;
 
 public class GetHODashboardOverviewQueryHandler
@@ -29,7 +30,7 @@ public class GetHODashboardOverviewQueryHandler
             throw new ForbiddenException("Only HO users can access this dashboard.");
         }
 
-        var now = DateTime.UtcNow;
+        var now = VietnamTime.Now();
         var in7Days = now.AddDays(7);
 
         var dto = new HODashboardOverviewDto();

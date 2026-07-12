@@ -6,6 +6,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
+using PEMS.Application.Common;
 namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetInvitationDetail
 {
     public class GetInvitationDetailQuery : IRequest<InvitationDetailDto>
@@ -109,7 +110,7 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetInvitationDetail
 
         private static string NormalizeStatus(string status, bool isStaffAssignment, string instanceStatus, System.DateTime startAt, System.DateTime endAt)
         {
-            var now = System.DateTime.UtcNow;
+            var now = VietnamTime.Now();
             if (instanceStatus == "CANCELLED") return "CANCELLED";
             if (status == ParticipantStatuses.Invited) return "REQUESTED";
             if (status == ParticipantStatuses.Assigned) return "ASSIGNED";

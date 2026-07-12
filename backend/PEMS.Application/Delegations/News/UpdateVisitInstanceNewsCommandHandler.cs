@@ -74,7 +74,7 @@ public sealed class UpdateVisitInstanceNewsCommandHandler
         if (news.RowVersion != request.RowVersion)
             throw new ConflictException("Bài tin đã được cập nhật bởi người khác. Vui lòng tải lại nội dung mới nhất.");
 
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
         var translation = news.Translations.FirstOrDefault(t => t.LanguageCode == "vi") ?? news.Translations.FirstOrDefault();
         if (translation == null)
         {

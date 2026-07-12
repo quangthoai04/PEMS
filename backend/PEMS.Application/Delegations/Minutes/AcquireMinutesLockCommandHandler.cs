@@ -48,7 +48,7 @@ public sealed class AcquireMinutesLockCommandHandler
         if (!canEdit)
             throw new ForbiddenException("Bạn không có quyền chỉnh sửa biên bản chuyến thăm này.");
 
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
         if (MinuteAccess.IsLockActive(minute, now) && minute.EditLockedBy != userId)
             throw new ConflictException("Biên bản đang được chỉnh sửa bởi người khác. Vui lòng thử lại sau khi họ lưu hoặc phiên sửa hết hạn.");
 

@@ -5,6 +5,7 @@ using MediatR;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Domain.Entities.Emails;
 
+using PEMS.Application.Common;
 namespace PEMS.Application.Emails.Commands.SendEmail;
 
 public sealed class SendEmailCommandHandler : IRequestHandler<SendEmailCommand, SendEmailResponse>
@@ -28,7 +29,7 @@ public sealed class SendEmailCommandHandler : IRequestHandler<SendEmailCommand, 
 
     public async Task<SendEmailResponse> Handle(SendEmailCommand request, CancellationToken cancellationToken)
     {
-        var now = DateTime.UtcNow;
+        var now = VietnamTime.Now();
         var normalizedBody = await _normalizer.NormalizeHtmlAsync(request.Body, cancellationToken);
 
         var sentEmail = new SentEmail
@@ -64,12 +65,12 @@ public sealed class SendEmailCommandHandler : IRequestHandler<SendEmailCommand, 
         var hasFailure = false;
         foreach (var recipient in sentEmail.Recipients)
         {
-            recipient.SentAt = DateTime.UtcNow;
+            recipient.SentAt = VietnamTime.Now();
             try
             {
                 await _emailService.SendAsync(recipient.RecipientEmail, request.Subject, normalizedBody, cancellationToken);
                 recipient.DeliveryStatus = "DELIVERED";
-                recipient.DeliveredAt = DateTime.UtcNow;
+                recipient.DeliveredAt = VietnamTime.Now();
             }
             catch (Exception ex)
             {
@@ -79,7 +80,7 @@ public sealed class SendEmailCommandHandler : IRequestHandler<SendEmailCommand, 
             }
         }
 
-        sentEmail.SentAt = DateTime.UtcNow;
+        sentEmail.SentAt = VietnamTime.Now();
         sentEmail.LastAttemptAt = sentEmail.SentAt;
 
         // Compute aggregated status: ALL ok → SENT; ALL failed → FAILED; mixed → PARTIAL_FAILED.

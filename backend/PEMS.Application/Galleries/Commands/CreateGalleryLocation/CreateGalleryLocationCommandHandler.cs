@@ -45,7 +45,7 @@ public sealed class CreateGalleryLocationCommandHandler
     {
         var campusId = StaffLeaderGalleryScope.EnsureStaffLeaderCampus(_currentUser);
         var actorId = _currentUser.UserId!.Value;
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
 
         var mode = (request.Mode ?? string.Empty).Trim().ToUpperInvariant();
         var locationName = GalleryKeyNormalizer.CleanName(request.LocationName);

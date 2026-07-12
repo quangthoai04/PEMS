@@ -6,6 +6,7 @@ using PEMS.Application.Common.Security;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Notifications;
 
+using PEMS.Application.Common;
 namespace PEMS.Application.News.Commands.ApproveNews;
 
 public sealed class ApproveNewsCommandHandler
@@ -53,7 +54,7 @@ public sealed class ApproveNewsCommandHandler
         if (news.RowVersion != request.RowVersion)
             throw new ConflictException("Bài viết đã được cập nhật bởi người khác. Vui lòng tải lại trang.");
 
-        var now = DateTime.UtcNow;
+        var now = VietnamTime.Now();
         string newStatus;
         string notificationTitle;
         string notificationMessage;

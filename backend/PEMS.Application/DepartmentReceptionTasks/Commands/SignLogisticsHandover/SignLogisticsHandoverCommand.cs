@@ -4,6 +4,7 @@ using PEMS.Application.Common.Interfaces;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Delegations;
 
+using PEMS.Application.Common;
 namespace PEMS.Application.DepartmentReceptionTasks.Commands.SignLogisticsHandover;
 
 public class SignLogisticsHandoverCommand : IRequest<SignLogisticsHandoverResponse>
@@ -69,7 +70,7 @@ public class SignLogisticsHandoverCommandHandler : IRequestHandler<SignLogistics
         if (isDepartmentStaff && item.AssignedToUserId != userId)
             throw new Exception("Ban chi co the ky bien ban cua don yeu cau duoc giao cho minh.");
 
-        var now = DateTime.UtcNow;
+        var now = VietnamTime.Now();
         var handover = await _context.VisitLogisticsItemHandovers
             .FirstOrDefaultAsync(h => h.LogisticsItemId == request.LogisticsItemId && h.HandoverType == handoverType, cancellationToken);
 

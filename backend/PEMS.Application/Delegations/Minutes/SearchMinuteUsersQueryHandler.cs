@@ -48,7 +48,7 @@ public sealed class SearchMinuteUsersQueryHandler
         // lock của biên bản — không chỉ canEdit. Đây là endpoint riêng nên backend tự kiểm tra, không
         // dựa vào việc frontend ẩn form.
         var minute = await _db.Minutes.FirstOrDefaultAsync(m => m.VisitInstanceId == instance.VisitInstanceId, cancellationToken);
-        if (minute == null || !MinuteAccess.IsLockHeldBy(minute, userId, _clock.UtcNow))
+        if (minute == null || !MinuteAccess.IsLockHeldBy(minute, userId, _clock.VietnamNow))
             throw new ConflictException("Phiên chỉnh sửa biên bản đã hết hạn hoặc đang do người khác giữ. Vui lòng mở lại để chỉnh sửa.");
 
         var term = (request.Query ?? string.Empty).Trim();

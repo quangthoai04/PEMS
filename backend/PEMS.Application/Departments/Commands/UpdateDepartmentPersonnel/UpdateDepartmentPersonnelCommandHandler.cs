@@ -5,6 +5,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Interfaces;
 
+using PEMS.Application.Common;
 namespace PEMS.Application.Departments.Commands.UpdateDepartmentPersonnel;
 
 public sealed class UpdateDepartmentPersonnelCommandHandler : IRequestHandler<UpdateDepartmentPersonnelCommand, UpdateDepartmentPersonnelResponse>
@@ -32,7 +33,7 @@ public sealed class UpdateDepartmentPersonnelCommandHandler : IRequestHandler<Up
         user.Phone = request.Phone;
         user.Gender = request.Gender;
         user.UpdatedBy = _currentUserService.UserId;
-        user.UpdatedAt = DateTime.UtcNow;
+        user.UpdatedAt = VietnamTime.Now();
 
         await _context.SaveChangesAsync(cancellationToken);
 

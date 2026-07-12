@@ -5,6 +5,7 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 
+using PEMS.Application.Common;
 namespace PEMS.Application.DepartmentReceptionTasks.Commands.CreatePersonalEvent
 {
     public class CreatePersonalEventCommand : IRequest<ulong>
@@ -55,7 +56,7 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.CreatePersonalEvent
                 Visibility = "PRIVATE",
                 Status = "ACTIVE",
                 CreatedBy = userId,
-                CreatedAt = DateTime.UtcNow
+                CreatedAt = VietnamTime.Now()
             };
 
             _context.CalendarEvents.Add(ev);

@@ -62,7 +62,7 @@ public sealed class UploadProfileAvatarCommandHandler
             cancellationToken);
 
         user.AvatarUrl = uploaded.FileUrl;
-        user.UpdatedAt = _clock.UtcNow;
+        user.UpdatedAt = _clock.VietnamNow;
         user.UpdatedBy = userId;
         await _db.SaveChangesAsync(cancellationToken);
 

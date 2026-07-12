@@ -6,6 +6,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
+using PEMS.Application.Common;
 namespace PEMS.Application.DepartmentReceptionTasks.Commands.AcceptAssignedLogisticsTask
 {
     public class AcceptAssignedLogisticsTaskCommand : IRequest<bool>
@@ -51,17 +52,17 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AcceptAssignedLogis
             if (attempt != null)
             {
                 attempt.Status = "ACCEPTED";
-                attempt.RespondedAt = DateTime.UtcNow;
+                attempt.RespondedAt = VietnamTime.Now();
                 attempt.ResponseSource = "PORTAL";
-                attempt.UpdatedAt = DateTime.UtcNow;
+                attempt.UpdatedAt = VietnamTime.Now();
             }
 
             // Update item
             l.Status = "ACCEPTED";
-            l.AssigneeAcceptedAt = DateTime.UtcNow;
+            l.AssigneeAcceptedAt = VietnamTime.Now();
             l.AssigneeResponseNote = null;
             l.UpdatedBy = userId;
-            l.UpdatedAt = DateTime.UtcNow;
+            l.UpdatedAt = VietnamTime.Now();
 
             await _context.SaveChangesAsync(cancellationToken);
 

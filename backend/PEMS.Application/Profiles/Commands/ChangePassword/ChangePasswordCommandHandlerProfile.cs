@@ -57,7 +57,7 @@ public sealed class ChangePasswordCommandHandler : IRequestHandler<ChangePasswor
                 throw new BusinessRuleException("New password must be different from the old password.");
         }
 
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
         user.PasswordHash = _passwordHasher.Hash(request.NewPassword);
         user.UpdatedAt = now;
 

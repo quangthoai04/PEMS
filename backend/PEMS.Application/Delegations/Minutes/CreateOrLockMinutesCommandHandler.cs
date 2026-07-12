@@ -46,7 +46,7 @@ public sealed class CreateOrLockMinutesCommandHandler
         if (!canEdit)
             throw new ForbiddenException("Bạn không có quyền tạo hoặc chỉnh sửa biên bản chuyến thăm này.");
 
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
         var token = Guid.NewGuid().ToString();
         var expiresAt = now.AddMinutes(MinuteAccess.LockMinutes);
 

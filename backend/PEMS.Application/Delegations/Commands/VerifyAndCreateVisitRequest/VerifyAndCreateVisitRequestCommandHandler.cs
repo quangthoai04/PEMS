@@ -52,7 +52,7 @@ public sealed class VerifyAndCreateVisitRequestCommandHandler
     public async Task<VerifyAndCreateVisitRequestResponse> Handle(
         VerifyAndCreateVisitRequestCommand request, CancellationToken cancellationToken)
     {
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
         var email = request.RegistrantEmail.Trim().ToLowerInvariant();
 
         var visitScope = request.VisitScope == VisitScopes.MultiCampus
@@ -431,7 +431,7 @@ public sealed class VerifyAndCreateVisitRequestCommandHandler
             message,
             remainingAttempts: result.RemainingAttempts,
             retryAfterSeconds: result.RetryAfterSeconds > 0 ? result.RetryAfterSeconds : null,
-            retryAtUtc: result.RetryAtUtc,
+            retryAt: result.RetryAt,
             humanVerificationRequired: result.HumanVerificationRequired);
     }
 }

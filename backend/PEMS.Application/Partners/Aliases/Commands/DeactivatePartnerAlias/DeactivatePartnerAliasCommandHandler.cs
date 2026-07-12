@@ -38,7 +38,7 @@ public sealed class DeactivatePartnerAliasCommandHandler
             .FirstOrDefaultAsync(a => a.PartnerAliasId == request.AliasId && a.PartnerId == partner.PartnerId, cancellationToken)
             ?? throw new NotFoundException("PartnerAlias", request.AliasId);
 
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
         alias.Status = "INACTIVE";
         alias.UpdatedAt = now;
         alias.UpdatedBy = _currentUser.UserId;

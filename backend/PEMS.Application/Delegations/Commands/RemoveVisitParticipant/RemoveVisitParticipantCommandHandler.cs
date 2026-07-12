@@ -53,7 +53,7 @@ public sealed class RemoveVisitParticipantCommandHandler
             throw new ConflictException(
                 "Chỉ có thể gỡ lời mời khi người được mời chưa phản hồi. Người đã chấp nhận/được phân công cần quy trình xác nhận riêng.");
 
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
         participant.Status = ParticipantStatuses.Removed;
         participant.UpdatedAt = now;
         participant.UpdatedBy = actorId;

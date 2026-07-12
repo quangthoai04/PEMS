@@ -138,7 +138,7 @@ public sealed class UpdateProfileCommandHandler : IRequestHandler<UpdateProfileC
             }
         }
 
-        user.UpdatedAt = _clock.UtcNow;
+        user.UpdatedAt = _clock.VietnamNow;
         user.UpdatedBy = userId;
 
         await _db.SaveChangesAsync(cancellationToken);

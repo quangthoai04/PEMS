@@ -15,6 +15,7 @@ using QuestPDF.Fluent;
 using QuestPDF.Helpers;
 using QuestPDF.Infrastructure;
 
+using PEMS.Application.Common;
 namespace PEMS.Application.Reports.Commands.ExportHoReport;
 
 /// <summary>
@@ -74,7 +75,7 @@ public sealed class ExportHoReportCommandHandler : IRequestHandler<ExportHoRepor
             _ => "EXCEL",
         };
 
-        var stampVn = DateTime.UtcNow.AddHours(7);
+        var stampVn = VietnamTime.Now();
         var baseName = $"PEMS_HO_Report_{stampVn:yyyyMMdd_HHmm}";
 
         return format switch
@@ -131,7 +132,7 @@ public sealed class ExportHoReportCommandHandler : IRequestHandler<ExportHoRepor
         ("Trạng thái instance", o.FilterSummary.CampusInstanceStatus),
         ("Loại chuyến", o.FilterSummary.VisitType),
         ("Người xuất", o.FilterSummary.GeneratedByName ?? "—"),
-        ("Thời điểm xuất", o.GeneratedAt.AddHours(7).ToString("dd/MM/yyyy HH:mm", CultureInfo.InvariantCulture) + " (GMT+7)"),
+        ("Thời điểm xuất", o.GeneratedAt.ToString("dd/MM/yyyy HH:mm", CultureInfo.InvariantCulture) + " (GMT+7)"),
     };
 
     private static List<(string Label, string Value)> KpiLines(HoReportKpisDto k) => new()
@@ -661,7 +662,7 @@ public sealed class ExportHoReportCommandHandler : IRequestHandler<ExportHoRepor
                         t.Span($"Cơ sở: {o.FilterSummary.CampusName}   ");
                         t.Span($"Phạm vi: {ScopeLabel(o.FilterSummary.VisitScope)}");
                     });
-                    header.Item().Text($"Người xuất: {o.FilterSummary.GeneratedByName ?? "—"} · {o.GeneratedAt.AddHours(7):dd/MM/yyyy HH:mm} (GMT+7)")
+                    header.Item().Text($"Người xuất: {o.FilterSummary.GeneratedByName ?? "—"} · {o.GeneratedAt:dd/MM/yyyy HH:mm} (GMT+7)")
                         .FontSize(8).FontColor(muted);
                     header.Item().PaddingTop(6).LineHorizontal(1).LineColor(headerBg);
                 });

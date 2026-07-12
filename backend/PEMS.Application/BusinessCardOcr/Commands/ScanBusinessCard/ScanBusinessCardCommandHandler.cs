@@ -92,7 +92,7 @@ public sealed class ScanBusinessCardCommandHandler
             throw new AuthBusinessException(BusinessCardOcrErrorCodes.RateLimited,
                 "Địa chỉ IP của bạn gửi quá nhiều yêu cầu. Vui lòng thử lại sau.", 429);
 
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
         var period = now.ToString("yyyyMM");
 
         // 6) Monthly quota → HTTP 429 without calling the cloud.
@@ -223,7 +223,7 @@ public sealed class ScanBusinessCardCommandHandler
         }
         stopwatch.Stop();
 
-        var processedAt = _clock.UtcNow;
+        var processedAt = _clock.VietnamNow;
         if (result is not null)
         {
             job.Status = BusinessCardOcrJob.StatusSucceeded;

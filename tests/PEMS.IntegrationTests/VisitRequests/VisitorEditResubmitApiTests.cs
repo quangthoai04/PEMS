@@ -15,6 +15,7 @@ using PEMS.Domain.Entities.Delegations;
 using PEMS.Infrastructure.Persistence;
 using PEMS.IntegrationTests.TestInfrastructure;
 using Xunit;
+using PEMS.Application.Common;
 
 namespace PEMS.IntegrationTests.VisitRequests;
 
@@ -92,22 +93,22 @@ public sealed class VisitorEditResubmitApiTests : IAsyncLifetime
             ContactPersonEmail = "contact.integration@example.com",
             Status = status,
             ResubmissionCount = 0,
-            CreatedAt = DateTime.UtcNow,
-            SubmittedAt = DateTime.UtcNow,
+            CreatedAt = VietnamTime.Now(),
+            SubmittedAt = VietnamTime.Now(),
             CampusInstances = new List<VisitRequestCampus>
             {
                 new()
                 {
                     CampusId = _campusId,
                     Status = instanceStatus,
-                    PlannedStartAt = DateTime.UtcNow.AddDays(7),
-                    PlannedEndAt = DateTime.UtcNow.AddDays(7).AddHours(4),
-                    CreatedAt = DateTime.UtcNow,
+                    PlannedStartAt = VietnamTime.Now().AddDays(7),
+                    PlannedEndAt = VietnamTime.Now().AddDays(7).AddHours(4),
+                    CreatedAt = VietnamTime.Now(),
                     CoordinatorUserId = instanceStatus == VisitInstanceStatuses.Rejected ? _leaderId : null,
                     CoordinatorAssignedBy = instanceStatus == VisitInstanceStatuses.Rejected ? _leaderId : null,
-                    CoordinatorAssignedAt = instanceStatus == VisitInstanceStatuses.Rejected ? DateTime.UtcNow : null,
+                    CoordinatorAssignedAt = instanceStatus == VisitInstanceStatuses.Rejected ? VietnamTime.Now() : null,
                     DecidedBy = instanceStatus == VisitInstanceStatuses.Rejected ? _leaderId : null,
-                    DecidedAt = instanceStatus == VisitInstanceStatuses.Rejected ? DateTime.UtcNow : null,
+                    DecidedAt = instanceStatus == VisitInstanceStatuses.Rejected ? VietnamTime.Now() : null,
                     DecisionActorRole = instanceStatus == VisitInstanceStatuses.Rejected ? "STAFF_LEADER" : null,
                     DecisionSource = instanceStatus == VisitInstanceStatuses.Rejected ? "STANDARD_CAMPUS_REVIEW" : null,
                     DecisionNote = instanceStatus == VisitInstanceStatuses.Rejected ? "Test Rejection Note" : null,
@@ -117,11 +118,11 @@ public sealed class VisitorEditResubmitApiTests : IAsyncLifetime
                         {
                             Title = "Original Agenda",
                             Description = "Original Description",
-                            StartTime = DateTime.UtcNow.AddDays(7).AddHours(1),
-                            EndTime = DateTime.UtcNow.AddDays(7).AddHours(2),
+                            StartTime = VietnamTime.Now().AddDays(7).AddHours(1),
+                            EndTime = VietnamTime.Now().AddDays(7).AddHours(2),
                             Location = "Room 1",
                             SequenceOrder = 1,
-                            CreatedAt = DateTime.UtcNow,
+                            CreatedAt = VietnamTime.Now(),
                             CreatedBy = _staffId
                         }
                     }
@@ -291,10 +292,10 @@ public sealed class VisitorEditResubmitApiTests : IAsyncLifetime
             FullName = "New Registrant",
             RoleId = visitorRoleId,
             CreatedVia = "MANUAL_CREATED",
-            CreatedAt = DateTime.UtcNow,
+            CreatedAt = VietnamTime.Now(),
             Status = "ACTIVE",
-            FirstLoginAt = DateTime.UtcNow,
-            LastLoginAt = DateTime.UtcNow,
+            FirstLoginAt = VietnamTime.Now(),
+            LastLoginAt = VietnamTime.Now(),
             FailedLoginCount = 0
         };
         db.Users.Add(newUser);
@@ -306,8 +307,8 @@ public sealed class VisitorEditResubmitApiTests : IAsyncLifetime
         {
             SessionId = sessionId,
             UserId = registrantId,
-            CreatedAt = DateTime.UtcNow,
-            ExpiresAt = DateTime.UtcNow.AddDays(1),
+            CreatedAt = VietnamTime.Now(),
+            ExpiresAt = VietnamTime.Now().AddDays(1),
             LoginPortal = "VISITOR"
         });
         visit.RegistrantUserId = registrantId;
@@ -334,10 +335,10 @@ public sealed class VisitorEditResubmitApiTests : IAsyncLifetime
             FullName = "Unrelated User",
             RoleId = await db.Roles.Where(r => r.RoleCode == "VISITOR").Select(r => r.RoleId).FirstAsync(),
             CreatedVia = "MANUAL_CREATED",
-            CreatedAt = DateTime.UtcNow,
+            CreatedAt = VietnamTime.Now(),
             Status = "ACTIVE",
-            FirstLoginAt = DateTime.UtcNow,
-            LastLoginAt = DateTime.UtcNow,
+            FirstLoginAt = VietnamTime.Now(),
+            LastLoginAt = VietnamTime.Now(),
             FailedLoginCount = 0
         };
         db.Users.Add(unrelatedUser);
@@ -349,8 +350,8 @@ public sealed class VisitorEditResubmitApiTests : IAsyncLifetime
         {
             SessionId = sessionId,
             UserId = unrelatedId,
-            CreatedAt = DateTime.UtcNow,
-            ExpiresAt = DateTime.UtcNow.AddDays(1),
+            CreatedAt = VietnamTime.Now(),
+            ExpiresAt = VietnamTime.Now().AddDays(1),
             LoginPortal = "VISITOR"
         });
         await db.SaveChangesAsync();
@@ -386,7 +387,10 @@ public sealed class VisitorEditResubmitApiTests : IAsyncLifetime
         var content = new System.Net.Http.StringContent(jsonNode.ToJsonString(), System.Text.Encoding.UTF8, "application/json");
         var response = await client.PostAsync($"/api/visit-requests/{visitId}/resubmit", content);
 
-        response.EnsureSuccessStatusCode();
+        // Surface the error body on failure (EnsureSuccessStatusCode hides it) — this test
+        // flaked once in a full-suite run and the missing body blocked diagnosis.
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.True(response.IsSuccessStatusCode, $"expected 2xx, got {(int)response.StatusCode}: {body}");
 
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();

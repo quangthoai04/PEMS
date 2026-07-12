@@ -11,6 +11,7 @@ using QuestPDF.Fluent;
 using QuestPDF.Helpers;
 using QuestPDF.Infrastructure;
 
+using PEMS.Application.Common;
 namespace PEMS.Application.MeetingMinutes.Queries.ExportMinutes;
 
 public class ExportMinutesPdfQueryHandler : IRequestHandler<ExportMinutesPdfQuery, byte[]>
@@ -74,7 +75,7 @@ public class ExportMinutesPdfQueryHandler : IRequestHandler<ExportMinutesPdfQuer
                         row.ConstantItem(140).AlignRight().Column(c =>
                         {
                             c.Item().Text($"Mã biên bản: MIN-{minute.MinutesId}").FontSize(9).FontColor(MutedText);
-                            c.Item().Text($"Ngày xuất: {DateTime.Now:dd/MM/yyyy HH:mm}").FontSize(9).FontColor(MutedText);
+                            c.Item().Text($"Ngày xuất: {VietnamTime.Now():dd/MM/yyyy HH:mm}").FontSize(9).FontColor(MutedText);
                         });
                     });
                     header.Item().PaddingTop(8).LineHorizontal(1.5f).LineColor(PrimaryColor);

@@ -4,6 +4,7 @@ using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Domain.Constants;
 
+using PEMS.Application.Common;
 namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetAssignmentsProgressList;
 
 public sealed class GetAssignmentsProgressListQuery : IRequest<AssignmentsProgressListDto>
@@ -102,7 +103,7 @@ public sealed class GetAssignmentsProgressListQueryHandler
 
         var currentUserId = _currentUser.UserId.Value;
         var departmentId = _currentUser.DepartmentId.Value;
-        var now = DateTime.UtcNow;
+        var now = VietnamTime.Now();
         var isDepartmentStaff = string.Equals(_currentUser.RoleCode, RoleCodes.Department, StringComparison.OrdinalIgnoreCase)
             && string.Equals(_currentUser.SubRole, UserSubRoles.Staff, StringComparison.OrdinalIgnoreCase);
 

@@ -54,7 +54,7 @@ public sealed class SaveVisitInstanceReminderSettingsCommandHandler
         if (instance.Status != VisitInstanceStatus.Assigned && instance.Status != VisitInstanceStatus.BeforeVisit)
             throw new ConflictException("Chỉ có thể cấu hình cảnh báo trong giai đoạn chuẩn bị.");
 
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
         // scheduled_at is Vietnam wall-clock (derived from planned_start_at) — validate "in the past"
         // against Vietnam-local now, not UtcNow.
         var nowVn = _clock.VietnamNow;

@@ -6,6 +6,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
+using PEMS.Application.Common;
 namespace PEMS.Application.Emails.Commands.MarkEmailCompleted;
 
 public class MarkEmailCompletedCommandHandler : IRequestHandler<MarkEmailCompletedCommand, MarkEmailCompletedResponse>
@@ -50,7 +51,7 @@ public class MarkEmailCompletedCommandHandler : IRequestHandler<MarkEmailComplet
             return new MarkEmailCompletedResponse { Success = false, Message = "Email đã được đánh dấu hoàn thành từ trước." };
         }
 
-        email.DeliveredAt = DateTime.UtcNow;
+        email.DeliveredAt = VietnamTime.Now();
 
         await _context.SaveChangesAsync(cancellationToken);
 

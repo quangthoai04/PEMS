@@ -63,7 +63,7 @@ public sealed class UpdateCampusCommandHandler : IRequestHandler<UpdateCampusCom
 
         var before = new { campus.CampusCode, campus.Name, campus.City, campus.Address, campus.Phone, campus.Email };
         var actorId = _currentUser.UserId;
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
 
         campus.CampusCode = code;
         campus.Name = name;

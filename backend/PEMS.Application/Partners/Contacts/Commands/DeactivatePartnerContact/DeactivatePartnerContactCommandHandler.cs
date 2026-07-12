@@ -33,7 +33,7 @@ public sealed class DeactivatePartnerContactCommandHandler
             .FirstOrDefaultAsync(c => c.ContactId == request.ContactId && c.PartnerId == partner.PartnerId, cancellationToken)
             ?? throw new NotFoundException("PartnerContact", request.ContactId);
 
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
         contact.Status = "INACTIVE";
         contact.IsPrimary = false; // an inactive contact cannot stay the primary
         contact.UpdatedAt = now;

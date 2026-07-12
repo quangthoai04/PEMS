@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Linq;
 
+using PEMS.Application.Common;
 namespace PEMS.Application.Emails.Commands.ReplytoEmail;
 
 public class ReplytoEmailCommandHandler : IRequestHandler<ReplytoEmailCommand, ReplytoEmailResponse>
@@ -57,7 +58,7 @@ public class ReplytoEmailCommandHandler : IRequestHandler<ReplytoEmailCommand, R
             BodySnapshot = request.Body,
             Status = "QUEUED",
             SentBy = _currentUserService.UserId,
-            CreatedAt = DateTime.UtcNow,
+            CreatedAt = VietnamTime.Now(),
             RelatedType = "REPLY",
             RelatedId = request.OriginalEmailId
         };
@@ -84,7 +85,7 @@ public class ReplytoEmailCommandHandler : IRequestHandler<ReplytoEmailCommand, R
         _context.SentEmails.Add(newEmail);
         
         // Mark original email as completed
-        originalEmail.DeliveredAt = DateTime.UtcNow;
+        originalEmail.DeliveredAt = VietnamTime.Now();
 
         await _context.SaveChangesAsync(cancellationToken);
 
@@ -92,7 +93,7 @@ public class ReplytoEmailCommandHandler : IRequestHandler<ReplytoEmailCommand, R
         {
             await _emailService.SendAsync(toEmail, replySubject, request.Body, cancellationToken);
             newEmail.Status = "SENT";
-            newEmail.SentAt = DateTime.UtcNow;
+            newEmail.SentAt = VietnamTime.Now();
             await _context.SaveChangesAsync(cancellationToken);
         }
         catch (Exception ex)

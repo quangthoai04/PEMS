@@ -10,6 +10,7 @@ using PEMS.Domain.Constants;
 using PEMS.Infrastructure.Persistence;
 using PEMS.IntegrationTests.TestInfrastructure;
 using Xunit;
+using PEMS.Application.Common;
 
 namespace PEMS.IntegrationTests.Faqs.ChangeFaqVisibility;
 
@@ -210,10 +211,10 @@ public sealed class ChangeFaqVisibilityApiTests : IClassFixture<PemsWebApplicati
         }
 
         var (hoUserId, client) = await CreateClientWithUserIdAsAsync(EffectiveRole.Ho);
-        var beforeChange = DateTime.UtcNow;
+        var beforeChange = VietnamTime.Now();
 
         var response = await client.PatchAsJsonAsync(Endpoint, new ChangeVisibilityBody(faqId));
-        var afterChange = DateTime.UtcNow;
+        var afterChange = VietnamTime.Now();
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
         using var scope = _factory.Services.CreateScope();

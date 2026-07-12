@@ -58,7 +58,7 @@ public sealed class AddNewDepartmentCommandHandler
                 "Tên phòng ban đã tồn tại trong cơ sở này.", DepartmentErrorCodes.DepartmentNameAlreadyExists);
 
         var actorId = _currentUser.UserId;
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
 
         var department = new Department
         {

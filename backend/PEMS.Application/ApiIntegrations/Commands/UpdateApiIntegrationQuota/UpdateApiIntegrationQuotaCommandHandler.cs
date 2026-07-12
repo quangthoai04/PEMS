@@ -33,7 +33,7 @@ public sealed class UpdateApiIntegrationQuotaCommandHandler
             .FirstOrDefaultAsync(c => c.ApiConfigId == request.ApiConfigId && c.DeletedAt == null, cancellationToken)
             ?? throw new NotFoundException("ApiConfiguration", request.ApiConfigId);
 
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
         var period = now.ToString("yyyyMM");
 
         var quota = await _db.ApiUsageQuotas.FirstOrDefaultAsync(

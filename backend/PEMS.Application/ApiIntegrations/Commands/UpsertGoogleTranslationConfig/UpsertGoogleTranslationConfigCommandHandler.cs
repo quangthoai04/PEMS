@@ -43,7 +43,7 @@ public sealed class UpsertGoogleTranslationConfigCommandHandler
             .FirstOrDefaultAsync(c => c.ApiCode == NewsTranslationConstants.ApiCode && c.DeletedAt == null,
                 cancellationToken);
 
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
         var isNew = config is null;
         if (config is null)
         {

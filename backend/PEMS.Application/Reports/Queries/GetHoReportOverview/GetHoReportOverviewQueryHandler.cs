@@ -10,6 +10,7 @@ using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Shared;
 
+using PEMS.Application.Common;
 namespace PEMS.Application.Reports.Queries.GetHoReportOverview;
 
 /// <summary>
@@ -61,13 +62,11 @@ public sealed class GetHoReportOverviewQueryHandler
         if (!string.Equals(_currentUser.RoleCode, "HO", StringComparison.OrdinalIgnoreCase))
             throw new ForbiddenException("Bạn không có quyền xem báo cáo Head Office.");
 
-        var nowUtc = DateTime.UtcNow;
-        var nowVn = nowUtc.AddHours(VnUtcOffsetHours);
+        // All DATETIME columns store Vietnam wall-clock — query bounds need no offset shifting.
+        var nowVn = VietnamTime.Now();
 
         var preset = NormalizePreset(request.Preset);
         var (fromVn, toVnExclusive) = ResolvePeriodVn(preset, request.FromDate, request.ToDate, nowVn);
-        var fromUtc = fromVn.AddHours(-VnUtcOffsetHours);
-        var toUtc = toVnExclusive.AddHours(-VnUtcOffsetHours);
 
         var campusId = request.CampusId is > 0 ? request.CampusId : null;
         var visitScope = NormalizeFilter(request.VisitScope);
@@ -77,7 +76,7 @@ public sealed class GetHoReportOverviewQueryHandler
 
         // ---- Base query 1: requests submitted in the period (approval funnel & trend). ----
         var requests = _db.VisitRequests.AsNoTracking()
-            .Where(r => r.SubmittedAt >= fromUtc && r.SubmittedAt < toUtc);
+            .Where(r => r.SubmittedAt >= fromVn && r.SubmittedAt < toVnExclusive);
         if (visitScope != null) requests = requests.Where(r => r.VisitScope == visitScope);
         if (visitType != null) requests = requests.Where(r => r.VisitType == visitType);
         if (requestStatus != null) requests = requests.Where(r => r.Status == requestStatus);
@@ -85,7 +84,7 @@ public sealed class GetHoReportOverviewQueryHandler
 
         // ---- Base query 2: campus instances planned in the period (lifecycle & campus performance). ----
         var instances = _db.VisitRequestCampuses.AsNoTracking()
-            .Where(ci => ci.PlannedStartAt >= fromUtc && ci.PlannedStartAt < toUtc);
+            .Where(ci => ci.PlannedStartAt >= fromVn && ci.PlannedStartAt < toVnExclusive);
         if (campusId != null) instances = instances.Where(ci => ci.CampusId == campusId);
         if (visitScope != null) instances = instances.Where(ci => ci.VisitRequest.VisitScope == visitScope);
         if (visitType != null) instances = instances.Where(ci => ci.VisitRequest.VisitType == visitType);
@@ -135,7 +134,7 @@ public sealed class GetHoReportOverviewQueryHandler
 
         // ---- Monthly trend (grouped by Vietnam-local month of submitted_at). ----
         var trendRaw = await requests
-            .GroupBy(r => new { r.SubmittedAt.AddHours(VnUtcOffsetHours).Year, r.SubmittedAt.AddHours(VnUtcOffsetHours).Month })
+            .GroupBy(r => new { r.SubmittedAt.Year, r.SubmittedAt.Month })
             .Select(g => new
             {
                 g.Key.Year,
@@ -198,7 +197,7 @@ public sealed class GetHoReportOverviewQueryHandler
         var activeInstances = totalInstances - closedInstances - cancelledInstances;
 
         var overdueCloseInstances = await instances.CountAsync(
-            ci => ci.PlannedEndAt < nowUtc && OverdueCloseStatuses.Contains(ci.Status), cancellationToken);
+            ci => ci.PlannedEndAt < nowVn && OverdueCloseStatuses.Contains(ci.Status), cancellationToken);
 
         // ---- Campus performance. ----
         var campuses = await _db.Campuses.AsNoTracking()
@@ -220,7 +219,7 @@ public sealed class GetHoReportOverviewQueryHandler
                 AfterVisit = g.Count(ci => ci.Status == VisitInstanceStatus.AfterVisit),
                 Closed = g.Count(ci => ci.Status == VisitInstanceStatus.Closed),
                 Cancelled = g.Count(ci => ci.Status == VisitInstanceStatus.Cancelled),
-                Overdue = g.Count(ci => ci.PlannedEndAt < nowUtc && OverdueCloseStatuses.Contains(ci.Status)),
+                Overdue = g.Count(ci => ci.PlannedEndAt < nowVn && OverdueCloseStatuses.Contains(ci.Status)),
                 Guests = g.Sum(ci => ci.VisitRequest.GuestMembers.Count),
             })
             .ToListAsync(cancellationToken);
@@ -262,7 +261,7 @@ public sealed class GetHoReportOverviewQueryHandler
         // ---- Pending multi-campus requests needing HO action (current state). ----
         var multiCampusPendingTotal = await pendingMultiCampus.CountAsync(cancellationToken);
         var pendingOver48h = await pendingMultiCampus.CountAsync(
-            r => r.SubmittedAt <= nowUtc.AddHours(-PendingAttentionThresholdHours), cancellationToken);
+            r => r.SubmittedAt <= nowVn.AddHours(-PendingAttentionThresholdHours), cancellationToken);
 
         var pendingRows = await pendingMultiCampus
             .OrderBy(r => r.SubmittedAt)
@@ -294,7 +293,7 @@ public sealed class GetHoReportOverviewQueryHandler
                 PlannedEndAt = r.PlannedEndAt,
                 RequestedCampusCount = r.CampusCount,
                 GuestCount = r.GuestCount,
-                WaitingHours = Math.Round((nowUtc - r.SubmittedAt).TotalHours, 1),
+                WaitingHours = Math.Round((nowVn - r.SubmittedAt).TotalHours, 1),
                 Status = r.Status,
             })
             .ToList();
@@ -344,7 +343,7 @@ public sealed class GetHoReportOverviewQueryHandler
         var closeReadiness = closeRows.Select(r =>
         {
             var blockers = new List<string>();
-            if (r.PlannedEndAt > nowUtc) blockers.Add("PLANNED_END_NOT_REACHED");
+            if (r.PlannedEndAt > nowVn) blockers.Add("PLANNED_END_NOT_REACHED");
             if (r.LogisticsOpenCount > 0) blockers.Add("LOGISTICS_OPEN");
             if (r.MissingHandoverSignatureCount > 0) blockers.Add("HANDOVER_SIGNATURE_MISSING");
             if (r.OpenActionItemCount > 0) blockers.Add("ACTION_ITEMS_OPEN");
@@ -374,7 +373,7 @@ public sealed class GetHoReportOverviewQueryHandler
 
         // ---- Feedback summary (feedbacks submitted in the period; campus filter via instance). ----
         var feedbacks = _db.Feedbacks.AsNoTracking()
-            .Where(f => f.SubmittedAt >= fromUtc && f.SubmittedAt < toUtc);
+            .Where(f => f.SubmittedAt >= fromVn && f.SubmittedAt < toVnExclusive);
         if (campusId != null)
         {
             feedbacks = feedbacks.Where(f =>
@@ -455,7 +454,7 @@ public sealed class GetHoReportOverviewQueryHandler
         if (campusId != null) newsBase = newsBase.Where(n => n.CampusId == campusId);
 
         var publishedNewsCount = await newsBase.CountAsync(
-            n => n.PublishedAt != null && n.PublishedAt >= fromUtc && n.PublishedAt < toUtc, cancellationToken);
+            n => n.PublishedAt != null && n.PublishedAt >= fromVn && n.PublishedAt < toVnExclusive, cancellationToken);
         var pendingNewsCount = await newsBase.CountAsync(n => n.Status == "PENDING_REVIEW", cancellationToken);
 
         var instancesMissingNews = await opInstances.CountAsync(ci =>
@@ -465,7 +464,7 @@ public sealed class GetHoReportOverviewQueryHandler
             cancellationToken);
 
         var emailStats = await _db.SentEmails.AsNoTracking()
-            .Where(e => e.CreatedAt >= fromUtc && e.CreatedAt < toUtc)
+            .Where(e => e.CreatedAt >= fromVn && e.CreatedAt < toVnExclusive)
             .GroupBy(_ => 1)
             .Select(g => new
             {
@@ -477,13 +476,13 @@ public sealed class GetHoReportOverviewQueryHandler
         var emailFailed = emailStats?.Failed ?? 0;
 
         var tokenStats = await _db.EmailActionTokens.AsNoTracking()
-            .Where(t => t.CreatedAt >= fromUtc && t.CreatedAt < toUtc)
+            .Where(t => t.CreatedAt >= fromVn && t.CreatedAt < toVnExclusive)
             .GroupBy(_ => 1)
             .Select(g => new
             {
                 Responded = g.Count(t => t.UsedAt != null),
-                Expired = g.Count(t => t.UsedAt == null && t.ExpiresAt < nowUtc),
-                Pending = g.Count(t => t.UsedAt == null && t.ExpiresAt >= nowUtc),
+                Expired = g.Count(t => t.UsedAt == null && t.ExpiresAt < nowVn),
+                Pending = g.Count(t => t.UsedAt == null && t.ExpiresAt >= nowVn),
             })
             .FirstOrDefaultAsync(cancellationToken);
 
@@ -515,7 +514,7 @@ public sealed class GetHoReportOverviewQueryHandler
         var activePartners = await partnersBase.CountAsync(
             p => p.ProfileStatus == "APPROVED" && p.CooperationStatus == "ACTIVE", cancellationToken);
         var newPartnersInPeriod = await partnersBase.CountAsync(
-            p => p.CreatedAt >= fromUtc && p.CreatedAt < toUtc, cancellationToken);
+            p => p.CreatedAt >= fromVn && p.CreatedAt < toVnExclusive, cancellationToken);
 
         var partnersByType = await partnersBase
             .Where(p => p.ProfileStatus == "APPROVED")
@@ -531,7 +530,7 @@ public sealed class GetHoReportOverviewQueryHandler
                 CampusId = g.Key,
                 Approved = g.Count(p => p.ProfileStatus == "APPROVED"),
                 Pending = g.Count(p => p.ProfileStatus == "PENDING_APPROVAL"),
-                NewInPeriod = g.Count(p => p.CreatedAt >= fromUtc && p.CreatedAt < toUtc),
+                NewInPeriod = g.Count(p => p.CreatedAt >= fromVn && p.CreatedAt < toVnExclusive),
             })
             .ToListAsync(cancellationToken);
         var partnersByCampus = partnersByCampusRaw
@@ -696,7 +695,7 @@ public sealed class GetHoReportOverviewQueryHandler
 
         return new HoReportOverviewDto
         {
-            GeneratedAt = nowUtc,
+            GeneratedAt = nowVn,
             FilterSummary = new HoReportFilterSummaryDto
             {
                 Preset = preset,

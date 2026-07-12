@@ -2,6 +2,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Interfaces;
 
+using PEMS.Application.Common;
 namespace PEMS.Application.Notifications.Commands.MarkAllNotificationsAsRead;
 
 public class MarkAllNotificationsAsReadCommandHandler : IRequestHandler<MarkAllNotificationsAsReadCommand, MarkAllNotificationsAsReadResponse>
@@ -30,7 +31,7 @@ public class MarkAllNotificationsAsReadCommandHandler : IRequestHandler<MarkAllN
         var count = 0;
         if (unreadNotifications.Any())
         {
-            var now = DateTime.UtcNow;
+            var now = VietnamTime.Now();
             foreach (var notification in unreadNotifications)
             {
                 notification.IsRead = true;

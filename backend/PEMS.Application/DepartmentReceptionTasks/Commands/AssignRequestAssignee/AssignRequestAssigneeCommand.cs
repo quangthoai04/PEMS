@@ -102,7 +102,7 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AssignRequestAssign
             var editedContent = ValidateAndSanitizeOverride(request.EmailOverride);
             var attachInputs = OutboundEmailAttachments.From(request.EmailOverride);
             await OutboundEmailAttachments.ValidateAsync(_context, userId, attachInputs, cancellationToken);
-            var now = _clock.UtcNow;
+            var now = _clock.VietnamNow;
             var delegationName = await (
                 from c in _context.VisitRequestCampuses
                 join v in _context.VisitRequests on c.VisitRequestId equals v.VisitRequestId

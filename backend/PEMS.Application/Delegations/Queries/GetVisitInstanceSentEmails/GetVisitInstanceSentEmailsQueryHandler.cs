@@ -161,7 +161,7 @@ public sealed class GetVisitInstanceSentEmailsQueryHandler
             .ToListAsync(cancellationToken);
         var tokensByEmail = tokenRows.GroupBy(t => t.SentEmailId!.Value)
             .ToDictionary(g => g.Key, g => g.OrderBy(t => t.EmailActionTokenId).ToList());
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
 
         var templateIds = emails.Where(e => e.EmailTemplateId.HasValue)
             .Select(e => e.EmailTemplateId!.Value).Distinct().ToList();

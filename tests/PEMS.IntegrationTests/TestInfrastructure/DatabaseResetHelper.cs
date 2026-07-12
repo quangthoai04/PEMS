@@ -6,6 +6,7 @@ using PEMS.Domain.Entities.Departments;
 using PEMS.Domain.Entities.Faqs;
 using PEMS.Domain.Entities.Users;
 using PEMS.Infrastructure.Persistence;
+using PEMS.Application.Common;
 
 namespace PEMS.IntegrationTests.TestInfrastructure;
 
@@ -134,7 +135,7 @@ public static class DatabaseResetHelper
             DepartmentId = departmentId,
             Status = UserStatuses.Active,
             CreatedVia = "MANUAL_CREATED",
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = VietnamTime.Now()
         };
 
         db.Users.Add(user);
@@ -156,7 +157,7 @@ public static class DatabaseResetHelper
             .FirstAsync(u => u.UserId == userId, cancellationToken);
 
         var isInternalPortal = effectiveRole != EffectiveRole.Visitor;
-        var now = DateTime.UtcNow;
+        var now = VietnamTime.Now();
 
         var session = new UserSession
         {
@@ -196,7 +197,7 @@ public static class DatabaseResetHelper
             Answer = answer,
             DisplayOrder = 0,
             Status = status,
-            CreatedAt = DateTime.UtcNow,
+            CreatedAt = VietnamTime.Now(),
             CreatedBy = createdBy,
             UpdatedAt = null,
             UpdatedBy = null
@@ -248,7 +249,7 @@ public static class DatabaseResetHelper
             DepartmentType = departmentType,
             HeadUserId = null,
             Status = status,
-            CreatedAt = DateTime.UtcNow,
+            CreatedAt = VietnamTime.Now(),
             CreatedBy = createdBy,
             UpdatedAt = null,
             UpdatedBy = null
@@ -313,7 +314,7 @@ public static class DatabaseResetHelper
                 CampusCode = InactiveCampusTestCode,
                 Name = "[IT-UC101] Inactive Test Campus",
                 Status = EntityStatuses.Inactive,
-                CreatedAt = DateTime.UtcNow
+                CreatedAt = VietnamTime.Now()
             };
             db.Campuses.Add(newCampus);
             await db.SaveChangesAsync(cancellationToken);
@@ -334,7 +335,7 @@ public static class DatabaseResetHelper
                 DepartmentType = "IC",
                 HeadUserId = null,
                 Status = EntityStatuses.Active,
-                CreatedAt = DateTime.UtcNow
+                CreatedAt = VietnamTime.Now()
             };
             db.Departments.Add(newIcDepartment);
             await db.SaveChangesAsync(cancellationToken);
@@ -355,7 +356,7 @@ public static class DatabaseResetHelper
             DepartmentId = icDepartment,
             Status = UserStatuses.Active,
             CreatedVia = "MANUAL_CREATED",
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = VietnamTime.Now()
         };
 
         db.Users.Add(user);
@@ -398,7 +399,7 @@ public static class DatabaseResetHelper
                 CampusCode = IcProtectionTestCampusCode,
                 Name = "[IT-UC102] IC Protection Test Campus",
                 Status = EntityStatuses.Active,
-                CreatedAt = DateTime.UtcNow
+                CreatedAt = VietnamTime.Now()
             };
             db.Campuses.Add(newCampus);
             await db.SaveChangesAsync(cancellationToken);
@@ -419,7 +420,7 @@ public static class DatabaseResetHelper
                 DepartmentType = "IC",
                 HeadUserId = null,
                 Status = EntityStatuses.Active,
-                CreatedAt = DateTime.UtcNow
+                CreatedAt = VietnamTime.Now()
             };
             db.Departments.Add(newIcDepartment);
             await db.SaveChangesAsync(cancellationToken);
@@ -445,7 +446,7 @@ public static class DatabaseResetHelper
             DepartmentId = icDepartmentId,
             Status = UserStatuses.Active,
             CreatedVia = "MANUAL_CREATED",
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = VietnamTime.Now()
         };
 
         db.Users.Add(user);

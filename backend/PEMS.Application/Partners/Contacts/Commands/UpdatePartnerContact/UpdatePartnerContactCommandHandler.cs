@@ -36,7 +36,7 @@ public sealed class UpdatePartnerContactCommandHandler
         await PartnerContactWriteSupport.EnsureEmailUniqueAsync(
             _db, partner.PartnerId, request.Email, contact.ContactId, cancellationToken);
 
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
         contact.FullName = request.FullName.Trim();
         contact.Email = string.IsNullOrWhiteSpace(request.Email) ? null : request.Email.Trim().ToLowerInvariant();
         contact.Phone = string.IsNullOrWhiteSpace(request.Phone) ? null : request.Phone.Trim();

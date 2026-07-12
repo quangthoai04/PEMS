@@ -130,7 +130,7 @@ public sealed class GetStaffCalendarQueryHandler
             : await _db.Users.Where(u => hostIds.Contains(u.UserId))
                 .ToDictionaryAsync(u => u.UserId, u => u.FullName, cancellationToken);
 
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
         var viewer = new StaffCalendarLogic.ViewerContext(userId, isStaffLeader, primaryCampusId);
 
         var items = rows.Select(r =>

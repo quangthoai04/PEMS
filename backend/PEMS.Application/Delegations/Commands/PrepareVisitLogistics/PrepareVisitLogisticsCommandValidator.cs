@@ -1,6 +1,7 @@
 using System.Linq;
 using FluentValidation;
 
+using PEMS.Application.Common;
 namespace PEMS.Application.Delegations.Commands.PrepareVisitLogistics;
 
 public sealed class PrepareVisitLogisticsCommandValidator : AbstractValidator<PrepareVisitLogisticsCommand>
@@ -55,7 +56,7 @@ public sealed class PrepareVisitLogisticsCommandValidator : AbstractValidator<Pr
             .NotNull()
             .When(x => !IsOffline(x))
             .WithMessage("LOGISTICS_USAGE_TIME_REQUIRED")
-            .Must(s => string.Compare(s, System.DateTime.Now.AddMinutes(-10).ToString("yyyy-MM-ddTHH:mm")) >= 0)
+            .Must(s => string.Compare(s, VietnamTime.Now().AddMinutes(-10).ToString("yyyy-MM-ddTHH:mm")) >= 0)
             .When(x => !string.IsNullOrEmpty(x.UsageStartAt) && !IsOffline(x))
             .WithMessage("LOGISTICS_USAGE_START_IN_PAST");
 
@@ -79,7 +80,7 @@ public sealed class PrepareVisitLogisticsCommandValidator : AbstractValidator<Pr
 
         // due_at must not be in the past.
         RuleFor(x => x.DueAt)
-            .Must(d => string.Compare(d, System.DateTime.Now.AddMinutes(-10).ToString("yyyy-MM-ddTHH:mm")) >= 0)
+            .Must(d => string.Compare(d, VietnamTime.Now().AddMinutes(-10).ToString("yyyy-MM-ddTHH:mm")) >= 0)
             .When(x => !string.IsNullOrEmpty(x.DueAt) && !IsOffline(x))
             .WithMessage("Hạn phản hồi không được nằm trong quá khứ.");
 

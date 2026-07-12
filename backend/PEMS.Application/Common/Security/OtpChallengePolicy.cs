@@ -36,7 +36,7 @@ public sealed record OtpChallengeSnapshot(
     int MaxAttempts);
 
 /// <summary>Decision for one issue (initiate / resend / recover) request.</summary>
-public sealed record OtpIssueDecision(bool Allowed, string? ErrorCode, int RetryAfterSeconds, DateTime? RetryAtUtc);
+public sealed record OtpIssueDecision(bool Allowed, string? ErrorCode, int RetryAfterSeconds, DateTime? RetryAt);
 
 /// <summary>
 /// Pure, deterministic UC-17 OTP challenge rules: progressive cooldown schedule, the
@@ -134,16 +134,16 @@ public static class OtpChallengePolicy
         var recoveryCount = recentIssues.Count(i => i.IsRecovery);
         var absoluteCount = recentIssues.Count;
 
-        DateTime? retryAtUtc = null;
+        DateTime? retryAt = null;
         string? errorCode = null;
 
         if (absoluteCount >= absoluteMaxPerHour)
         {
             var oldestViolating = recentIssues.OrderBy(i => i.CreatedAt).Skip(absoluteCount - absoluteMaxPerHour).First();
             var resetAt = oldestViolating.CreatedAt.AddHours(1);
-            if (retryAtUtc == null || resetAt > retryAtUtc)
+            if (retryAt == null || resetAt > retryAt)
             {
-                retryAtUtc = resetAt;
+                retryAt = resetAt;
                 errorCode = PEMS.Domain.Constants.OtpErrorCodes.AbsoluteRateLimited;
             }
         }
@@ -154,9 +154,9 @@ public static class OtpChallengePolicy
             {
                 var oldestViolating = recentIssues.Where(i => i.IsRecovery).OrderBy(i => i.CreatedAt).Skip(recoveryCount - maxRecoveryPerHour).First();
                 var resetAt = oldestViolating.CreatedAt.AddHours(1);
-                if (retryAtUtc == null || resetAt > retryAtUtc)
+                if (retryAt == null || resetAt > retryAt)
                 {
-                    retryAtUtc = resetAt;
+                    retryAt = resetAt;
                     errorCode = PEMS.Domain.Constants.OtpErrorCodes.RecoveryRateLimited;
                 }
             }
@@ -167,9 +167,9 @@ public static class OtpChallengePolicy
             {
                 var oldestViolating = recentIssues.Where(i => !i.IsRecovery).OrderBy(i => i.CreatedAt).Skip(standardCount - maxStandardPerHour).First();
                 var resetAt = oldestViolating.CreatedAt.AddHours(1);
-                if (retryAtUtc == null || resetAt > retryAtUtc)
+                if (retryAt == null || resetAt > retryAt)
                 {
-                    retryAtUtc = resetAt;
+                    retryAt = resetAt;
                     errorCode = PEMS.Domain.Constants.OtpErrorCodes.StandardRateLimited;
                 }
             }
@@ -182,18 +182,18 @@ public static class OtpChallengePolicy
             if (elapsed < minResendIntervalSeconds)
             {
                 var resetAt = lastIssuedAt.AddSeconds(minResendIntervalSeconds);
-                if (retryAtUtc == null || resetAt > retryAtUtc)
+                if (retryAt == null || resetAt > retryAt)
                 {
-                    retryAtUtc = resetAt;
+                    retryAt = resetAt;
                     errorCode = PEMS.Domain.Constants.OtpErrorCodes.ResendTooSoon;
                 }
             }
         }
 
-        if (retryAtUtc != null)
+        if (retryAt != null)
         {
-            var waitSeconds = (int)Math.Ceiling((retryAtUtc.Value - now).TotalSeconds);
-            return new OtpIssueDecision(false, errorCode, Math.Max(1, waitSeconds), retryAtUtc);
+            var waitSeconds = (int)Math.Ceiling((retryAt.Value - now).TotalSeconds);
+            return new OtpIssueDecision(false, errorCode, Math.Max(1, waitSeconds), retryAt);
         }
 
         return new OtpIssueDecision(true, null, 0, null);

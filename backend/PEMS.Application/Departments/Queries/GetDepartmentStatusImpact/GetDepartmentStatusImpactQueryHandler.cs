@@ -75,7 +75,7 @@ public sealed class GetDepartmentStatusImpactQueryHandler
         }
 
         var impact = await DepartmentStatusImpactCalculator.ComputeDisableImpactAsync(
-            _db, department.DepartmentId, _clock.UtcNow, cancellationToken);
+            _db, department.DepartmentId, _clock.VietnamNow, cancellationToken);
 
         return new GetDepartmentStatusImpactResponse
         {

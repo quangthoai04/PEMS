@@ -6,6 +6,7 @@ using PEMS.Application.Common.Security;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Faqs;
 
+using PEMS.Application.Common;
 namespace PEMS.Application.Faqs.Commands.CreateFAQ;
 
 public sealed class CreateFAQCommandHandler : IRequestHandler<CreateFAQCommand, CreateFAQResponse>
@@ -52,7 +53,7 @@ public sealed class CreateFAQCommandHandler : IRequestHandler<CreateFAQCommand, 
                 "This question already exists in the system. Please enter a different question.",
                 "DUPLICATE_FAQ_QUESTION");
 
-        var now = DateTime.UtcNow;
+        var now = VietnamTime.Now();
 
         var faq = new Faq
         {

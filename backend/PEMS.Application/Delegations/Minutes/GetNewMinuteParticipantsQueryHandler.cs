@@ -50,7 +50,7 @@ public sealed class GetNewMinuteParticipantsQueryHandler
 
         // "Đồng bộ người mới" là thao tác trong phiên chỉnh sửa: chỉ người ĐANG GIỮ lock mới được gọi
         // (không chỉ canEdit) — nhất quán với SaveMinutes (lớp kiểm tra cuối, không phụ thuộc frontend).
-        if (!MinuteAccess.IsLockHeldBy(minute, userId, _clock.UtcNow))
+        if (!MinuteAccess.IsLockHeldBy(minute, userId, _clock.VietnamNow))
             throw new ConflictException("Phiên chỉnh sửa biên bản đã hết hạn hoặc đang do người khác giữ. Vui lòng mở lại để chỉnh sửa.");
 
         var existing = await _db.MinuteParticipants
@@ -58,7 +58,7 @@ public sealed class GetNewMinuteParticipantsQueryHandler
             .ToListAsync(cancellationToken);
 
         var candidates = await MinuteAutoFill.ComputeNewRowsAsync(
-            _db, instance, existing, minute.MinutesId, _clock.UtcNow, cancellationToken);
+            _db, instance, existing, minute.MinutesId, _clock.VietnamNow, cancellationToken);
 
         return candidates.Select(p => new MinuteParticipantDto
         {

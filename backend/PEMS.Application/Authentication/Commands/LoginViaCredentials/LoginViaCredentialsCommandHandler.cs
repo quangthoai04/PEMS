@@ -72,7 +72,7 @@ public sealed class LoginviaCredentialsCommandHandler : IRequestHandler<Loginvia
             await FailAsync(null, email, portal, LoginLogStatuses.Failed, "user_not_found", SecurityEventFailureReasonCodes.AccountNotFound,
                 request, AuthErrorCodes.InvalidCredentials, GenericCredentialError, 401, cancellationToken);
 
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
 
         // Verify the password BEFORE revealing any portal/campus mismatch (anti-enumeration).
         var passwordOk = !string.IsNullOrEmpty(user.PasswordHash)

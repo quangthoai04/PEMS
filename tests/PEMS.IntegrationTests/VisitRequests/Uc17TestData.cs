@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Users;
 using PEMS.Infrastructure.Persistence;
+using PEMS.Application.Common;
 
 namespace PEMS.IntegrationTests.VisitRequests;
 
@@ -50,7 +51,7 @@ public static class Uc17TestData
         DateTime? invalidatedAt = null,
         string issueReason = "INITIAL")
     {
-        var now = DateTime.UtcNow;
+        var now = VietnamTime.Now();
         var token = new OtpToken
         {
             Email = email,

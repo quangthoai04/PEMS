@@ -43,7 +43,7 @@ public sealed class SecurityAuditService : ISecurityAuditService
             IpAddress = Truncate(ipAddress, 45),
             UserAgent = Truncate(userAgent, 500),
             SessionId = sessionId,
-            CreatedAt = _clock.UtcNow
+            CreatedAt = _clock.VietnamNow
         };
 
         _db.LoginLogs.Add(entry);
@@ -79,7 +79,7 @@ public sealed class SecurityAuditService : ISecurityAuditService
             ProviderType = providerType,
             SessionId = sessionId,
             DetailText = detailText,
-            CreatedAt = _clock.UtcNow
+            CreatedAt = _clock.VietnamNow
         };
 
         _db.SecurityEvents.Add(entry);

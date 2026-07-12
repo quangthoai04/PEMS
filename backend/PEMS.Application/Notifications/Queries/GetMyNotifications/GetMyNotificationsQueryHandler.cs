@@ -4,6 +4,7 @@ using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Common.Models;
 using PEMS.Application.Notifications.Common;
 
+using PEMS.Application.Common;
 namespace PEMS.Application.Notifications.Queries.GetMyNotifications;
 
 public class GetMyNotificationsQueryHandler : IRequestHandler<GetMyNotificationsQuery, PaginatedResult<NotificationDto>>
@@ -78,7 +79,7 @@ public class GetMyNotificationsQueryHandler : IRequestHandler<GetMyNotifications
 
     private static string ComputeTimeAgo(DateTime createdAt)
     {
-        var diff = DateTime.UtcNow - createdAt;
+        var diff = VietnamTime.Now() - createdAt;
         if (diff.TotalMinutes < 1) return "Vừa xong";
         if (diff.TotalHours < 1) return $"{(int)diff.TotalMinutes} phút trước";
         if (diff.TotalDays < 1) return $"{(int)diff.TotalHours} giờ trước";

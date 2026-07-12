@@ -8,6 +8,7 @@ using PEMS.Application.Departments.Commands.AddNewDepartment;
 using PEMS.Infrastructure.Persistence;
 using PEMS.IntegrationTests.TestInfrastructure;
 using Xunit;
+using PEMS.Application.Common;
 
 namespace PEMS.IntegrationTests.Departments.AddNewDepartment;
 
@@ -266,9 +267,9 @@ public sealed class AddNewDepartmentApiTests : IClassFixture<PemsWebApplicationF
         var (client, staffLeaderUserId, _) = await CreateStaffLeaderClientAsync();
         var name = $"{DatabaseResetHelper.AddDepartmentNamePrefix}audit {UniqueToken()}";
 
-        var beforeCreate = DateTime.UtcNow.AddSeconds(-2);
+        var beforeCreate = VietnamTime.Now().AddSeconds(-2);
         var response = await client.PostAsJsonAsync(Url, new AddNewDepartmentCommand { Name = name });
-        var afterCreate = DateTime.UtcNow.AddSeconds(5);
+        var afterCreate = VietnamTime.Now().AddSeconds(5);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
         var body = await response.Content.ReadFromJsonAsync<AddNewDepartmentResponse>(JsonOptions);

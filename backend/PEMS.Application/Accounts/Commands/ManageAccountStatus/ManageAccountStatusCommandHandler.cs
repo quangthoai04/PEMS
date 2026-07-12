@@ -128,7 +128,7 @@ public sealed class ManageAccountStatusCommandHandler : IRequestHandler<ManageAc
             };
         }
 
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
         user.Status = newStatus;
         user.UpdatedAt = now;
         user.UpdatedBy = actorId;

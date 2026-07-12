@@ -11,6 +11,7 @@ using PEMS.Application.Emails.Common;
 using PEMS.Domain.Entities.Emails;
 using PEMS.Domain.Enums;
 
+using PEMS.Application.Common;
 namespace PEMS.Application.Emails.Commands.UpdateEmailDraft;
 
 public sealed class UpdateEmailDraftCommandHandler : IRequestHandler<UpdateEmailDraftCommand, EmailDraftDto>
@@ -41,7 +42,7 @@ public sealed class UpdateEmailDraftCommandHandler : IRequestHandler<UpdateEmail
         if (draft.Status != EmailDraftStatus.DRAFT)
             throw new ConflictException("Email nháp đã được gửi hoặc huỷ, không thể chỉnh sửa.");
 
-        var now = DateTime.Now;
+        var now = VietnamTime.Now();
         var bodyFormat = EmailDraftWriter.ParseBodyFormat(request.BodyFormat);
         var body = bodyFormat == EmailBodyFormat.HTML
             ? _sanitizer.SanitizeEmailHtml(request.BodyContent)

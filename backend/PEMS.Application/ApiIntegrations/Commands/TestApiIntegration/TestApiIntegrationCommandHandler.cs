@@ -49,7 +49,7 @@ public sealed class TestApiIntegrationCommandHandler
                 "Chỉ hỗ trợ test kết nối cho cấu hình BUSINESS_CARD_OCR hoặc NEWS_TRANSLATION.",
                 ApiIntegrationErrorCodes.InvalidPurpose);
 
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
         var stopwatch = Stopwatch.StartNew();
         bool success;
         string message;

@@ -60,7 +60,7 @@ public sealed class UpdatePartnerCommandHandler : IRequestHandler<UpdatePartnerC
                 "Không thể đặt hiển thị PUBLIC khi hồ sơ đối tác chưa được duyệt.",
                 PartnerErrorCodes.PublicRequiresApproved);
 
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
         var before = JsonSerializer.Serialize(new
         {
             partner.PartnerCode, partner.Name, partner.ShortName, partner.Country, partner.City,

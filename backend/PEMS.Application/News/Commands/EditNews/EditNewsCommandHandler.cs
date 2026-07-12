@@ -8,6 +8,7 @@ using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.News;
 using PEMS.Domain.Entities.Notifications;
 
+using PEMS.Application.Common;
 namespace PEMS.Application.News.Commands.EditNews;
 
 public sealed class EditNewsCommandHandler
@@ -97,7 +98,7 @@ public sealed class EditNewsCommandHandler
         if (string.IsNullOrWhiteSpace(sanitizedTitle))
             throw new ValidationException("Tiêu đề không hợp lệ sau khi xử lý.");
 
-        var now         = DateTime.UtcNow;
+        var now         = VietnamTime.Now();
         var wasRejected = news.Status == NewsConstants.Status.Rejected;
         var campusId    = news.CampusId;
 

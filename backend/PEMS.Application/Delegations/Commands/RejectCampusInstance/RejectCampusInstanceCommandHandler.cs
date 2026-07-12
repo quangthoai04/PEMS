@@ -69,7 +69,7 @@ public sealed class RejectCampusInstanceCommandHandler
         if (instance.Status != VisitInstanceStatus.WaitingRequestApproval)
             throw new ConflictException("Cơ sở này đã được xử lý hoặc trạng thái đã thay đổi.");
 
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
 
         await using var tx = await _db.BeginTransactionAsync(cancellationToken);
 

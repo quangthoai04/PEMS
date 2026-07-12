@@ -22,6 +22,6 @@ public interface IVisitRequestService
         ulong? visitorUserId,
         ulong? registrantUserId,
         string createdSource,
-        DateTime utcNow,
+        DateTime vietnamNow,
         CancellationToken cancellationToken = default);
 }

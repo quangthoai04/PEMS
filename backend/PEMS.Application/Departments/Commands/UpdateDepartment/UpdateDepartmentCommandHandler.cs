@@ -87,7 +87,7 @@ public sealed class UpdateDepartmentCommandHandler
                 "Tên phòng ban đã tồn tại trong cơ sở này.", DepartmentErrorCodes.DepartmentNameAlreadyExists);
 
         var oldName = department.Name;
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
         department.Name = newName;
         department.UpdatedAt = now;
         department.UpdatedBy = _currentUser.UserId;

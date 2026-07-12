@@ -46,7 +46,7 @@ public sealed class CancelVisitInstanceReminderSettingsCommandHandler
                         && r.Status == VisitReminderStatus.PENDING)
             .ToListAsync(cancellationToken);
 
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
         foreach (var row in pending)
         {
             row.Status = VisitReminderStatus.CANCELLED;

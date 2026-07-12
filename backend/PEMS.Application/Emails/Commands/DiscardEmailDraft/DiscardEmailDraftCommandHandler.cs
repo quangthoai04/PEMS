@@ -7,6 +7,7 @@ using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Domain.Enums;
 
+using PEMS.Application.Common;
 namespace PEMS.Application.Emails.Commands.DiscardEmailDraft;
 
 public sealed class DiscardEmailDraftCommandHandler
@@ -37,7 +38,7 @@ public sealed class DiscardEmailDraftCommandHandler
             throw new ConflictException("Chỉ có thể huỷ email nháp đang ở trạng thái DRAFT.");
 
         draft.Status = EmailDraftStatus.DISCARDED;
-        draft.DiscardedAt = DateTime.Now;
+        draft.DiscardedAt = VietnamTime.Now();
         draft.LastEditedBy = userId;
         await _db.SaveChangesAsync(cancellationToken);
 

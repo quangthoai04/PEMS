@@ -12,6 +12,7 @@ using PEMS.Domain.Entities.News;
 using PEMS.Domain.Entities.Notifications;
 using NewsEntity = PEMS.Domain.Entities.News.News;
 
+using PEMS.Application.Common;
 namespace PEMS.Application.News.Commands.CreateNews;
 
 public sealed class CreateNewsCommandHandler
@@ -160,7 +161,7 @@ public sealed class CreateNewsCommandHandler
         if (string.IsNullOrWhiteSpace(sanitizedSummary))
             throw new ValidationException("Mô tả ngắn không hợp lệ sau khi xử lý.");
 
-        var now = DateTime.UtcNow;
+        var now = VietnamTime.Now();
 
         await using var transaction = await _dbContext.BeginTransactionAsync(cancellationToken);
         try

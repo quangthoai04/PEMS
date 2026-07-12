@@ -15,7 +15,17 @@ namespace PEMS.Api.Middleware;
 /// </summary>
 public sealed class ExceptionHandlingMiddleware
 {
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    // Same timestamp contract as MVC responses: Vietnam wall-clock with explicit +07:00
+    // (e.g. the OTP cooldown's retryAt) — this serializer bypasses AddJsonOptions.
+    private static readonly JsonSerializerOptions JsonOptions = CreateJsonOptions();
+
+    private static JsonSerializerOptions CreateJsonOptions()
+    {
+        var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        options.Converters.Add(new PEMS.Api.Serialization.VietnamDateTimeJsonConverter());
+        options.Converters.Add(new PEMS.Api.Serialization.VietnamNullableDateTimeJsonConverter());
+        return options;
+    }
 
     private readonly RequestDelegate _next;
     private readonly ILogger<ExceptionHandlingMiddleware> _logger;
@@ -91,7 +101,7 @@ public sealed class ExceptionHandlingMiddleware
                     message = otp.Message,
                     remainingAttempts = otp.RemainingAttempts,
                     retryAfterSeconds = otp.RetryAfterSeconds,
-                    retryAtUtc = otp.RetryAtUtc,
+                    retryAt = otp.RetryAt,
                     humanVerificationRequired = otp.HumanVerificationRequired,
                     traceId
                 };

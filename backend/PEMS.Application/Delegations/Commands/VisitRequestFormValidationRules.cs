@@ -2,6 +2,7 @@ using FluentValidation;
 using PEMS.Application.Common.DTOs;
 using PEMS.Domain.Constants;
 
+using PEMS.Application.Common;
 namespace PEMS.Application.Delegations.Commands;
 
 /// <summary>
@@ -75,7 +76,7 @@ public static class VisitRequestFormValidationRules
                 .NotEmpty().WithMessage("Vui lòng chọn cơ sở.");
             
             slot.RuleFor(s => s.StartDatetime)
-                .Must(start => start >= DateTime.Now.AddHours(minStartAdvanceHours))
+                .Must(start => start >= VietnamTime.Now().AddHours(minStartAdvanceHours))
                 .WithMessage($"Thời gian bắt đầu phải ít nhất {minStartAdvanceHours} giờ so với thời điểm hiện tại.");
 
             slot.RuleFor(s => s)

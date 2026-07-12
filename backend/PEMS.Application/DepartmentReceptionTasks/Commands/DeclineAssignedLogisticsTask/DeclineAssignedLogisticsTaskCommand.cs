@@ -7,6 +7,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
+using PEMS.Application.Common;
 namespace PEMS.Application.DepartmentReceptionTasks.Commands.DeclineAssignedLogisticsTask
 {
     public class DeclineAssignedLogisticsTaskCommand : IRequest<bool>
@@ -61,10 +62,10 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.DeclineAssignedLogi
             if (attempt != null)
             {
                 attempt.Status = "REJECTED";
-                attempt.RespondedAt = DateTime.UtcNow;
+                attempt.RespondedAt = VietnamTime.Now();
                 attempt.ResponseNote = request.Reason.Trim();
                 attempt.ResponseSource = "PORTAL";
-                attempt.UpdatedAt = DateTime.UtcNow;
+                attempt.UpdatedAt = VietnamTime.Now();
             }
 
             // Staff declines the assignment attempt; leader can reassign while history is kept.
@@ -74,7 +75,7 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.DeclineAssignedLogi
             l.AssignedAt = null;
             l.AssigneeResponseNote = request.Reason.Trim();
             l.UpdatedBy = userId;
-            l.UpdatedAt = DateTime.UtcNow;
+            l.UpdatedAt = VietnamTime.Now();
 
             var notifications = new System.Collections.Generic.List<PEMS.Application.Notifications.Common.CreateNotificationRequest>();
             ulong? assignedBy = attempt?.AssignedBy ?? l.AssignedBy;

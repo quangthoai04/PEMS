@@ -5,6 +5,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Interfaces;
 
+using PEMS.Application.Common;
 namespace PEMS.Application.Departments.Commands.ReassignDepartmentLead;
 
 public sealed class ReassignDepartmentLeadCommandHandler : IRequestHandler<ReassignDepartmentLeadCommand, ReassignDepartmentLeadResponse>
@@ -39,17 +40,17 @@ public sealed class ReassignDepartmentLeadCommandHandler : IRequestHandler<Reass
                     if (oldLeader != null && oldLeader.DepartmentId == request.DepartmentId)
                     {
                         oldLeader.SubRole = "STAFF";
-                        oldLeader.UpdatedAt = DateTime.UtcNow;
+                        oldLeader.UpdatedAt = VietnamTime.Now();
                         oldLeader.UpdatedBy = _currentUserService.UserId;
                     }
                 }
 
                 newLeader.SubRole = "LEADER";
-                newLeader.UpdatedAt = DateTime.UtcNow;
+                newLeader.UpdatedAt = VietnamTime.Now();
                 newLeader.UpdatedBy = _currentUserService.UserId;
 
                 dept.HeadUserId = newLeader.UserId;
-                dept.UpdatedAt = DateTime.UtcNow;
+                dept.UpdatedAt = VietnamTime.Now();
                 dept.UpdatedBy = _currentUserService.UserId;
 
                 await _context.SaveChangesAsync(cancellationToken);

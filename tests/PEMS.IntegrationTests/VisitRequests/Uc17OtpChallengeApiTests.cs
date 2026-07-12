@@ -7,6 +7,7 @@ using PEMS.Application.Common.Security;
 using PEMS.Infrastructure.Persistence;
 using PEMS.IntegrationTests.TestInfrastructure;
 using Xunit;
+using PEMS.Application.Common;
 
 namespace PEMS.IntegrationTests.VisitRequests;
 
@@ -219,7 +220,7 @@ public sealed class Uc17OtpChallengeApiTests : IClassFixture<PemsWebApplicationF
         var email = Uc17TestData.UniqueEmail("recover");
         var submissionId = Guid.NewGuid().ToString();
         var oldSession = $"it-session-{Guid.NewGuid():N}";
-        var now = DateTime.UtcNow;
+        var now = VietnamTime.Now();
         var (start, end) = FutureSlot();
 
         using (var scope = _factory.Services.CreateScope())
@@ -272,7 +273,7 @@ public sealed class Uc17OtpChallengeApiTests : IClassFixture<PemsWebApplicationF
         var email = Uc17TestData.UniqueEmail("recfail");
         var submissionId = Guid.NewGuid().ToString();
         var oldSession = $"it-session-{Guid.NewGuid():N}";
-        var now = DateTime.UtcNow;
+        var now = VietnamTime.Now();
 
         using (var scope = _factory.Services.CreateScope())
             await Uc17TestData.SeedChallengeAsync(Db(scope), email, submissionId, oldSession, "123456",
@@ -400,7 +401,7 @@ public sealed class Uc17OtpChallengeApiTests : IClassFixture<PemsWebApplicationF
         var email = Uc17TestData.UniqueEmail("resendburn");
         var submissionId = Guid.NewGuid().ToString();
         var sessionToken = $"it-session-{Guid.NewGuid():N}";
-        var now = DateTime.UtcNow;
+        var now = VietnamTime.Now();
 
         using (var scope = _factory.Services.CreateScope())
             await Uc17TestData.SeedChallengeAsync(Db(scope), email, submissionId, sessionToken, "123456",

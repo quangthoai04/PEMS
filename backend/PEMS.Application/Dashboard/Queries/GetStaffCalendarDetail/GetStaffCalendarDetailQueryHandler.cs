@@ -79,7 +79,7 @@ public sealed class GetStaffCalendarDetailQueryHandler
             throw new ForbiddenException("Yêu cầu này không thuộc phạm vi của bạn.");
         }
 
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
         var viewer = new StaffCalendarLogic.ViewerContext(userId, isStaffLeader, primaryCampusId);
         var snapshot = new StaffCalendarLogic.InstanceSnapshot(
             visit.Status, instance.Status, visit.VisitScope, instance.CampusId,

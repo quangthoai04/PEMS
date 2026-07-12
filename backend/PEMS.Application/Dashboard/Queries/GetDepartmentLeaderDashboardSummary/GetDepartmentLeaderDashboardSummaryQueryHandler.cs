@@ -4,6 +4,7 @@ using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Domain.Constants;
 
+using PEMS.Application.Common;
 namespace PEMS.Application.Dashboard.Queries.GetDepartmentLeaderDashboardSummary;
 
 public class GetDepartmentLeaderDashboardSummaryQueryHandler
@@ -30,13 +31,15 @@ public class GetDepartmentLeaderDashboardSummaryQueryHandler
         }
 
         var departmentId = _currentUserService.DepartmentId.Value;
-        var now = DateTime.UtcNow;
-        var todayStart = now.AddHours(7).Date.AddHours(-7);
+        var now = VietnamTime.Now();
+        // now is already Vietnam wall-clock, so local midnight is just .Date.
+        var todayStart = now.Date;
         var closedInstanceStatuses = new[] { "CANCELLED", "CLOSED" };
 
         var dto = new DepartmentLeaderDashboardSummaryDto
         {
-            ServerNow = now.ToString("O")
+            // Explicit +07:00 offset — same contract as every other API timestamp.
+            ServerNow = VietnamTime.ToOffset(now).ToString("O")
         };
 
         var requestItemsQuery = _context.VisitLogisticsItems

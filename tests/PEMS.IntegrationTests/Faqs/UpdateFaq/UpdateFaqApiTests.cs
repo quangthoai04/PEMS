@@ -7,6 +7,7 @@ using PEMS.Domain.Constants;
 using PEMS.Infrastructure.Persistence;
 using PEMS.IntegrationTests.TestInfrastructure;
 using Xunit;
+using PEMS.Application.Common;
 
 namespace PEMS.IntegrationTests.Faqs.UpdateFaq;
 
@@ -442,12 +443,12 @@ public sealed class UpdateFaqApiTests : IClassFixture<PemsWebApplicationFactory>
         }
 
         var (hoUserId, client) = await CreateClientWithUserIdAsAsync(EffectiveRole.Ho);
-        var beforeUpdate = DateTime.UtcNow;
+        var beforeUpdate = VietnamTime.Now();
 
         var response = await client.PutAsJsonAsync($"/api/faqs/{faqId}", new UpdateFaqBody(
             FaqConstants.Type.Other, UniqueQuestion("audit-new"), "Trả lời mới."));
 
-        var afterUpdate = DateTime.UtcNow;
+        var afterUpdate = VietnamTime.Now();
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
         using var scope = _factory.Services.CreateScope();

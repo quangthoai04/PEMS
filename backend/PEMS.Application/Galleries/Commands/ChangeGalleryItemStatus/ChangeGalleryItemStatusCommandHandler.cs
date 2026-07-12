@@ -84,7 +84,7 @@ public sealed class ChangeGalleryItemStatusCommandHandler
         }
 
         var oldStatus = item.Status;
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
         item.Status = newStatus;
         item.UpdatedAt = now;
         item.UpdatedBy = actorId;

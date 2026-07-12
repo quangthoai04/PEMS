@@ -37,7 +37,7 @@ public sealed class ReleaseMinutesLockCommandHandler
             minute.EditLockedAt = null;
             minute.EditLockExpiresAt = null;
             minute.EditLockToken = null;
-            minute.UpdatedAt = _clock.UtcNow;
+            minute.UpdatedAt = _clock.VietnamNow;
             minute.UpdatedBy = userId;
             await _db.SaveChangesAsync(cancellationToken);
         }

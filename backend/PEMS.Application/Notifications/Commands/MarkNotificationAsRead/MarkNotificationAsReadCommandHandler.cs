@@ -2,6 +2,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Interfaces;
 
+using PEMS.Application.Common;
 namespace PEMS.Application.Notifications.Commands.MarkNotificationAsRead;
 
 public class MarkNotificationAsReadCommandHandler : IRequestHandler<MarkNotificationAsReadCommand, bool>
@@ -34,7 +35,7 @@ public class MarkNotificationAsReadCommandHandler : IRequestHandler<MarkNotifica
         if (!notification.IsRead)
         {
             notification.IsRead = true;
-            notification.ReadAt = DateTime.UtcNow;
+            notification.ReadAt = VietnamTime.Now();
             await _context.SaveChangesAsync(cancellationToken);
         }
 

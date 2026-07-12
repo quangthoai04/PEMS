@@ -9,6 +9,7 @@ using PEMS.Application.Common.Security;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.News;
 
+using PEMS.Application.Common;
 namespace PEMS.Application.News.Commands.AddMultilingualNews;
 
 public sealed class AddMultilingualNewsCommandHandler
@@ -144,7 +145,7 @@ public sealed class AddMultilingualNewsCommandHandler
             }
         }
 
-        var now = DateTime.UtcNow;
+        var now = VietnamTime.Now();
 
         await using var tx = await _dbContext.BeginTransactionAsync(cancellationToken);
         try

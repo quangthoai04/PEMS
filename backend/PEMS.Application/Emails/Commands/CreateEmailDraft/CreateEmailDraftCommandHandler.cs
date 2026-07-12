@@ -10,6 +10,7 @@ using PEMS.Application.Emails.Common;
 using PEMS.Domain.Entities.Emails;
 using PEMS.Domain.Enums;
 
+using PEMS.Application.Common;
 namespace PEMS.Application.Emails.Commands.CreateEmailDraft;
 
 public sealed class CreateEmailDraftCommandHandler : IRequestHandler<CreateEmailDraftCommand, EmailDraftDto>
@@ -31,7 +32,7 @@ public sealed class CreateEmailDraftCommandHandler : IRequestHandler<CreateEmail
         if (!_currentUser.IsAuthenticated || _currentUser.UserId is not { } userId)
             throw new ForbiddenException();
 
-        var now = DateTime.Now;
+        var now = VietnamTime.Now();
         var bodyFormat = EmailDraftWriter.ParseBodyFormat(request.BodyFormat);
         var body = bodyFormat == EmailBodyFormat.HTML
             ? _sanitizer.SanitizeEmailHtml(request.BodyContent)

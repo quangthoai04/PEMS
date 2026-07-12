@@ -76,7 +76,7 @@ public sealed class AssignDepartmentStaffCommandHandler : IRequestHandler<Assign
         if (targetStaff.Role?.RoleCode != RoleCodes.Department || targetStaff.DepartmentId != _currentUser.DepartmentId)
             throw new ConflictException("Người được phân công phải thuộc cùng phòng ban.");
 
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
         var editedContent = ValidateAndSanitizeOverride(request.EmailOverride);
         var attachInputs = OutboundEmailAttachments.From(request.EmailOverride);
         await OutboundEmailAttachments.ValidateAsync(_db, userId, attachInputs, cancellationToken);

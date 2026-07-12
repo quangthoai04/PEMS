@@ -46,7 +46,7 @@ public sealed class DeleteAgendaTemplateCommandHandler
                 "Mẫu agenda đang được đặt làm mặc định. Hãy đổi mặc định sang mẫu khác trước khi xóa.",
                 "AGENDA_TEMPLATE_IS_DEFAULT");
 
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
         template.DeletedAt = now;
         template.DeletedBy = actorId;
         template.UpdatedAt = now;

@@ -47,7 +47,7 @@ public sealed class DiscardBusinessCardOcrJobCommandHandler
         job.RawTextEncrypted = null;
         job.ParsedJsonEncrypted = null;
         job.DeletedAt = null;
-        job.ProcessedAt ??= _clock.UtcNow;
+        job.ProcessedAt ??= _clock.VietnamNow;
 
         await _db.SaveChangesAsync(cancellationToken);
 

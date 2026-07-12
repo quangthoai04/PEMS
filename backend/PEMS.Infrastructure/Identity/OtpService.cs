@@ -65,7 +65,7 @@ public sealed class OtpService : IOtpService
         ulong? userId, string email, string purpose, int expiryMinutes,
         string? ipAddress, string? userAgent, CancellationToken cancellationToken)
     {
-        var now             = _clock.UtcNow;
+        var now             = _clock.VietnamNow;
         var normalizedEmail = email.Trim().ToLowerInvariant();
         var windowStart     = now.AddHours(-1);
 
@@ -118,7 +118,7 @@ public sealed class OtpService : IOtpService
     public async Task<OtpVerificationResult> VerifyAsync(
         string email, string purpose, string rawCode, CancellationToken cancellationToken = default)
     {
-        var now             = _clock.UtcNow;
+        var now             = _clock.VietnamNow;
         var normalizedEmail = (email ?? string.Empty).Trim().ToLowerInvariant();
 
         var token = await _db.OtpTokens
@@ -166,7 +166,7 @@ public sealed class OtpService : IOtpService
         string sessionToken, string email, string purpose, string submissionId, string rawCode,
         CancellationToken cancellationToken = default)
     {
-        var now             = _clock.UtcNow;
+        var now             = _clock.VietnamNow;
         var normalizedEmail = (email ?? string.Empty).Trim().ToLowerInvariant();
         var challengeHash   = SecureTokenGenerator.Hash(sessionToken ?? string.Empty);
 
@@ -250,7 +250,7 @@ public sealed class OtpService : IOtpService
                     decision.RetryAfterSeconds,
                     true,
                     null,
-                    decision.RetryAtUtc);
+                    decision.RetryAt);
             }
         }
 
@@ -294,7 +294,7 @@ public sealed class OtpService : IOtpService
         string? ipAddress, string? userAgent, bool isHumanRecovery,
         CancellationToken cancellationToken)
     {
-        var now           = _clock.UtcNow;
+        var now           = _clock.VietnamNow;
         var challengeHash = SecureTokenGenerator.Hash(oldSessionToken ?? string.Empty);
 
         await using var transaction = await _db.BeginTransactionAsync(cancellationToken);
@@ -354,7 +354,7 @@ public sealed class OtpService : IOtpService
         string? ipAddress, string? userAgent, DateTime? humanVerifiedAt,
         CancellationToken cancellationToken)
     {
-        var now             = _clock.UtcNow;
+        var now             = _clock.VietnamNow;
         var normalizedEmail = (email ?? string.Empty).Trim().ToLowerInvariant();
         var windowStart     = now.AddHours(-1);
         var isRecovery      = issueReason == OtpIssueReasons.HumanRecovery;
@@ -383,7 +383,7 @@ public sealed class OtpService : IOtpService
                 decision.ErrorCode ?? OtpErrorCodes.ResendRateLimited,
                 "Temporarily unable to issue another verification code.",
                 retryAfterSeconds: decision.RetryAfterSeconds,
-                retryAtUtc: decision.RetryAtUtc);
+                retryAt: decision.RetryAt);
         }
 
         var expiresAt = now.AddMinutes(_visitRequestCodeMinutes);

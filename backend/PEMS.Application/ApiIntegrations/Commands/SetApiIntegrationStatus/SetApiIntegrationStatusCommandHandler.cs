@@ -37,7 +37,7 @@ public sealed class SetApiIntegrationStatusCommandHandler
                 "Không thể kích hoạt cấu hình khi chưa test kết nối thành công.",
                 ApiIntegrationErrorCodes.TestRequiredBeforeEnable);
 
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
         config.Status = request.Enable ? ApiIntegrationStatuses.Active : ApiIntegrationStatuses.Inactive;
         config.UpdatedAt = now;
         config.UpdatedBy = _currentUser.UserId;

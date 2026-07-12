@@ -73,7 +73,7 @@ public sealed class CancelVisitRequestCommandHandler
                     "Lịch thăm sắp diễn ra trong vòng 24 giờ. Vui lòng liên hệ FPTU để được hỗ trợ hủy/thay đổi.",
                     VisitRequestErrorCodes.VisitCancelWindowExpired);
 
-            var nowPending = _clock.UtcNow;
+            var nowPending = _clock.VietnamNow;
             await using var txPending = await _db.BeginTransactionAsync(cancellationToken);
 
             // Phase 1 — flip the request FIRST. The visit_request_campuses cancel trigger only
@@ -227,7 +227,7 @@ public sealed class CancelVisitRequestCommandHandler
             throw new BusinessRuleException(
                 "Không thể hủy lịch thăm. Không có cơ sở nào ở trạng thái có thể hủy.");
 
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
         // planned_start_at is a LOCAL wall-clock DATETIME → time-window checks use VietnamNow
         // (UtcNow is 7h behind the wall clock and would let cancels through after the start).
         var vnNow = _clock.VietnamNow;

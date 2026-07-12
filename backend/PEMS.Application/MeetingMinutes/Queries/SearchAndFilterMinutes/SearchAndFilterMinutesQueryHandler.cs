@@ -7,6 +7,7 @@ using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Common.Exceptions;
 using System;
 
+using PEMS.Application.Common;
 namespace PEMS.Application.MeetingMinutes.Queries.SearchAndFilterMinutes;
 
 public sealed class SearchAndFilterMinutesQueryHandler : IRequestHandler<SearchAndFilterMinutesQuery, SearchAndFilterMinutesDto>
@@ -44,7 +45,7 @@ public sealed class SearchAndFilterMinutesQueryHandler : IRequestHandler<SearchA
         var draftCount = await query.CountAsync(m => m.Status == "DRAFT", cancellationToken);
         var savedCount = await query.CountAsync(m => m.Status == "SAVED", cancellationToken);
         
-        var now = DateTime.UtcNow;
+        var now = VietnamTime.Now();
         var lockedCount = await query.CountAsync(m => m.EditLockedBy != null && m.EditLockExpiresAt != null && m.EditLockExpiresAt > now, cancellationToken);
         
         var openActionItemCountQuery = from m in query

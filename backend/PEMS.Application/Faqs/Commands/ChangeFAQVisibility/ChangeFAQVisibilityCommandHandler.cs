@@ -5,6 +5,7 @@ using PEMS.Application.Common.Interfaces;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Faqs;
 
+using PEMS.Application.Common;
 namespace PEMS.Application.Faqs.Commands.ChangeFAQVisibility;
 
 public sealed class ChangeFAQVisibilityCommandHandler
@@ -35,7 +36,7 @@ public sealed class ChangeFAQVisibilityCommandHandler
             ? FaqConstants.Status.Hidden
             : FaqConstants.Status.Published;
 
-        faq.UpdatedAt = DateTime.UtcNow;
+        faq.UpdatedAt = VietnamTime.Now();
         faq.UpdatedBy = _currentUser.UserId;
 
         await _dbContext.SaveChangesAsync(cancellationToken);

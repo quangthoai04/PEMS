@@ -9,6 +9,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
+using PEMS.Application.Common;
 namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetDepartmentCalendar
 {
     public class GetDepartmentCalendarQuery : IRequest<List<DepartmentCalendarItemDto>>
@@ -107,7 +108,7 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetDepartmentCalenda
                     camp.Status,
                     camp.PlannedStartAt,
                     camp.PlannedEndAt,
-                    DateTime.UtcNow);
+                    VietnamTime.Now());
 
                 items.Add(new DepartmentCalendarItemDto
                 {

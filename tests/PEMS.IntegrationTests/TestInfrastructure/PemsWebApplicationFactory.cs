@@ -85,12 +85,22 @@ public sealed class PemsWebApplicationFactory : WebApplicationFactory<FaqsContro
                         ?? throw new InvalidOperationException(
                             "ConnectionStrings:DefaultConnection is not configured in appsettings.Testing.json.");
 
+                    // Mirrors Program.cs: every pooled MySQL session is pinned to +07:00 so
+                    // CURRENT_TIMESTAMP defaults/triggers produce Vietnam wall-clock in tests too.
                     services.AddDbContext<ApplicationDbContext>(options =>
-                        options.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString)));
+                        options.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString))
+                               .AddInterceptors(new VietnamTimeZoneConnectionInterceptor()));
 
                     // Controllers live in PEMS.Api — this test host's "entry assembly" is the test
                     // project, so the controller assembly must be added explicitly.
-                    services.AddControllers().AddApplicationPart(typeof(FaqsController).Assembly);
+                    // JSON options mirror Program.cs: timestamps serialize with the +07:00 offset.
+                    services.AddControllers()
+                        .AddApplicationPart(typeof(FaqsController).Assembly)
+                        .AddJsonOptions(options =>
+                        {
+                            options.JsonSerializerOptions.Converters.Add(new PEMS.Api.Serialization.VietnamDateTimeJsonConverter());
+                            options.JsonSerializerOptions.Converters.Add(new PEMS.Api.Serialization.VietnamNullableDateTimeJsonConverter());
+                        });
 
                     // Real JwtBearer is replaced by the header-driven TestAuthHandler.
                     services.AddAuthentication(TestAuthHandler.SchemeName)

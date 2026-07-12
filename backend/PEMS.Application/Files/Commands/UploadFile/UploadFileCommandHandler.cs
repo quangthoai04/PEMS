@@ -9,6 +9,7 @@ using PEMS.Application.Common.Files;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Domain.Entities.Documents;
 
+using PEMS.Application.Common;
 namespace PEMS.Application.Files.Commands.UploadFile;
 
 public sealed class UploadFileCommandHandler : IRequestHandler<UploadFileCommand, UploadedFileDto>
@@ -57,7 +58,7 @@ public sealed class UploadFileCommandHandler : IRequestHandler<UploadFileCommand
         // Denylist check (extension + mime + size) — throws BusinessRuleException on a bad file.
         _validation.Validate(fileName, request.ContentType, request.Content.Length);
 
-        var now = DateTime.Now;
+        var now = VietnamTime.Now();
         var file = new UploadedFile
         {
             OriginalFilename = fileName,

@@ -68,7 +68,7 @@ public sealed class CreateAuthenticatedVisitRequestCommandHandler
     public async Task<CreateAuthenticatedVisitRequestResponse> Handle(
         CreateAuthenticatedVisitRequestCommand request, CancellationToken cancellationToken)
     {
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
 
         // ── 1. Actor: authenticated claims revalidated against the DB (never the payload). ──
         if (!_currentUser.IsAuthenticated || _currentUser.UserId is null)

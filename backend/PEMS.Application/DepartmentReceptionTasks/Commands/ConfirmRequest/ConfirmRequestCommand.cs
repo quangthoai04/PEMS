@@ -6,6 +6,7 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 
+using PEMS.Application.Common;
 namespace PEMS.Application.DepartmentReceptionTasks.Commands.ConfirmRequest
 {
     public class ConfirmRequestCommand : IRequest<bool>
@@ -37,7 +38,7 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.ConfirmRequest
             if (user == null || l.RequestedToDepartmentId != user.DepartmentId) 
                 throw new Exception("Không có quyền xác nhận đơn yêu cầu của phòng ban khác");
 
-            var now = DateTime.UtcNow;
+            var now = VietnamTime.Now();
 
             l.Status = "ACCEPTED";
             l.ReceivedBy ??= userId;

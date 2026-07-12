@@ -141,7 +141,7 @@ public sealed class PrepareVisitLogisticsCommandHandler
             .FirstOrDefaultAsync(cancellationToken);
         var templateId = template?.EmailTemplateId;
 
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
         var itemType = request.ItemType.Trim().ToUpperInvariant();
         var priority = string.IsNullOrWhiteSpace(request.Priority) ? "MEDIUM" : request.Priority!.Trim().ToUpperInvariant();
         var usageStart = ParseLocal(request.UsageStartAt);

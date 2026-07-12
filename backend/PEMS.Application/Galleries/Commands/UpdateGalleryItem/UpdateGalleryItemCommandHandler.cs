@@ -83,7 +83,7 @@ public sealed class UpdateGalleryItemCommandHandler
         await GalleryLocationGuard.LoadActiveLocationInCurrentCampusAsync(
             _db, (ulong)request.LocationId, campusId, cancellationToken);
 
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
         var keepSet = new HashSet<ulong>((request.KeepMediaIds ?? Array.Empty<long>()).Select(id => (ulong)id));
 
         var liveMedia = item.Media.Where(m => m.DeletedAt == null).ToList();

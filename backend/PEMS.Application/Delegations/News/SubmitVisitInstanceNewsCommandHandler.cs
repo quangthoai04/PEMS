@@ -69,7 +69,7 @@ public sealed class SubmitVisitInstanceNewsCommandHandler
         if (news.Status == NewsStatus.Published)
             throw new BusinessRuleException("Bài tin đã được đăng.");
 
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
         news.Status = NewsStatus.PendingReview;
         news.SubmittedAt = now;
         news.ReviewNote = null;

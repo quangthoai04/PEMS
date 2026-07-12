@@ -5,6 +5,7 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 
+using PEMS.Application.Common;
 namespace PEMS.Application.DepartmentReceptionTasks.Commands.AcceptInvitation
 {
     public class AcceptInvitationCommand : IRequest<bool>
@@ -42,9 +43,9 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AcceptInvitation
 
             var userId = _currentUserService.UserId;
             p.Status = "ACCEPTED";
-            p.RespondedAt = DateTime.UtcNow;
+            p.RespondedAt = VietnamTime.Now();
             p.UpdatedBy = userId;
-            p.UpdatedAt = DateTime.UtcNow;
+            p.UpdatedAt = VietnamTime.Now();
 
             await _context.SaveChangesAsync(cancellationToken);
 

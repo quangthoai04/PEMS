@@ -5,6 +5,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Interfaces;
 
+using PEMS.Application.Common;
 namespace PEMS.Application.Delegations.Commands.ConfirmTheChangeProposal;
 
 public sealed class ConfirmTheChangeProposalCommandHandler : IRequestHandler<ConfirmTheChangeProposalCommand, ConfirmTheChangeProposalResponse>
@@ -36,7 +37,7 @@ public sealed class ConfirmTheChangeProposalCommandHandler : IRequestHandler<Con
         if (item.Status != "CHANGE_PROPOSED")
             throw new InvalidOperationException("Đơn yêu cầu không ở trạng thái đang đề xuất.");
 
-        var now = DateTime.UtcNow;
+        var now = VietnamTime.Now();
         item.ProposalResponse = request.Accepted ? "ACCEPTED" : "REJECTED";
         item.ProposalRespondedBy = _currentUser.UserId.Value;
         item.ProposalRespondedAt = now;

@@ -21,12 +21,22 @@ var authOptions = builder.Configuration.GetSection(AuthOptions.SectionName).Get<
 builder.Services.AddSingleton(authOptions);
 
 // ── Database (MySQL, database-first — schema is owned by manual SQL, not EF) ──
+// Every pooled connection is pinned to time_zone '+07:00' so CURRENT_TIMESTAMP defaults
+// and trigger NOW() produce Vietnam wall-clock, per the PEMS persistence policy.
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
-    options.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString)));
+    options.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString))
+           .AddInterceptors(new VietnamTimeZoneConnectionInterceptor()));
 
 // ── Web API ──────────────────────────────────────────────────────────────────
-builder.Services.AddControllers();
+// Timestamps cross the API boundary as ISO 8601 with the explicit +07:00 offset
+// (Vietnam wall-clock), never as ambiguous offset-less strings.
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.Converters.Add(new PEMS.Api.Serialization.VietnamDateTimeJsonConverter());
+        options.JsonSerializerOptions.Converters.Add(new PEMS.Api.Serialization.VietnamNullableDateTimeJsonConverter());
+    });
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {

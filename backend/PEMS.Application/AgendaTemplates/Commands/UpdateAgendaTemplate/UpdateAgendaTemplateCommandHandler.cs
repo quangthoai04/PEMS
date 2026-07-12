@@ -66,7 +66,7 @@ public sealed class UpdateAgendaTemplateCommandHandler
                 "Đã tồn tại mẫu agenda cùng tên trong phạm vi và loại hình visit này.",
                 "AGENDA_TEMPLATE_DUPLICATE");
 
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
 
         template.CampusId = request.CampusId;
         template.CampusScopeKey = scopeKey;

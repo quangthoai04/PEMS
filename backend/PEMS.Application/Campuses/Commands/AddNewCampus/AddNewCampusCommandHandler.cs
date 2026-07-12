@@ -63,7 +63,7 @@ public sealed class AddNewCampusCommandHandler : IRequestHandler<AddNewCampusCom
             _db, code, name, address, phone, email, excludeCampusId: null, cancellationToken);
 
         var actorId = _currentUser.UserId;
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
 
         var campus = new Campus
         {

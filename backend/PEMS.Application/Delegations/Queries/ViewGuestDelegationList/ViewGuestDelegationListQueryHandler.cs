@@ -114,7 +114,7 @@ public sealed class ViewGuestDelegationListQueryHandler
             (items, totalItems) = await QueryInstanceLevelAsync(request, userId, attending: false, hostedOnly: false, cancellationToken);
         }
 
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
         foreach (var item in items)
         {
             item.AllowedActions = BuildAllowedActions(item, tab, userId, now);
@@ -257,9 +257,9 @@ public sealed class ViewGuestDelegationListQueryHandler
         if (!string.IsNullOrWhiteSpace(request.Timing))
         {
             var timing = request.Timing.ToUpperInvariant();
-            var nowUtc = _clock.UtcNow;
+            var nowVn = _clock.VietnamNow;
             if (timing == "UPCOMING")
-                q = q.Where(x => x.c.PlannedStartAt > nowUtc && x.vr.Status != VisitRequestStatuses.Rejected && x.vr.Status != VisitRequestStatuses.Cancelled && x.c.Status != VisitInstanceStatus.Cancelled && x.c.Status != VisitInstanceStatus.Closed);
+                q = q.Where(x => x.c.PlannedStartAt > nowVn && x.vr.Status != VisitRequestStatuses.Rejected && x.vr.Status != VisitRequestStatuses.Cancelled && x.c.Status != VisitInstanceStatus.Cancelled && x.c.Status != VisitInstanceStatus.Closed);
             else if (timing == "ONGOING")
                 q = q.Where(x => x.c.Status == VisitInstanceStatus.DuringVisit);
             else if (timing == "ENDED")
@@ -392,7 +392,7 @@ public sealed class ViewGuestDelegationListQueryHandler
             ? new Dictionary<ulong, string>()
             : await _context.Users.Where(u => userIds.Contains(u.UserId)).ToDictionaryAsync(u => u.UserId, u => u.FullName, ct);
 
-        var nowForCancel = _clock.UtcNow;
+        var nowForCancel = _clock.VietnamNow;
         var items = page.Select(r =>
         {
             string? partnerName = r.PartnerId.HasValue && partnerNames.TryGetValue(r.PartnerId.Value, out var pn) ? pn : r.RegistrantOrganization;
@@ -542,9 +542,9 @@ public sealed class ViewGuestDelegationListQueryHandler
         if (!string.IsNullOrWhiteSpace(request.Timing))
         {
             var timing = request.Timing.ToUpperInvariant();
-            var nowUtc = _clock.UtcNow;
+            var nowVn = _clock.VietnamNow;
             if (timing == "UPCOMING")
-                q = q.Where(vr => vr.CampusInstances.Any(i => i.PlannedStartAt > nowUtc) && vr.Status != VisitRequestStatuses.Rejected && vr.Status != VisitRequestStatuses.Cancelled && !vr.CampusInstances.All(i => i.Status == VisitInstanceStatus.Cancelled || i.Status == VisitInstanceStatus.Closed));
+                q = q.Where(vr => vr.CampusInstances.Any(i => i.PlannedStartAt > nowVn) && vr.Status != VisitRequestStatuses.Rejected && vr.Status != VisitRequestStatuses.Cancelled && !vr.CampusInstances.All(i => i.Status == VisitInstanceStatus.Cancelled || i.Status == VisitInstanceStatus.Closed));
             else if (timing == "ONGOING")
                 q = q.Where(vr => vr.CampusInstances.Any(i => i.Status == VisitInstanceStatus.DuringVisit));
             else if (timing == "ENDED")
@@ -623,7 +623,7 @@ public sealed class ViewGuestDelegationListQueryHandler
             ? new Dictionary<ulong, string>()
             : await _context.Users.Where(u => userIds.Contains(u.UserId)).ToDictionaryAsync(u => u.UserId, u => u.FullName, ct);
 
-        var nowForCancel = _clock.UtcNow;
+        var nowForCancel = _clock.VietnamNow;
         // planned_start_at is a LOCAL wall-clock DATETIME → the 24h edit window must be
         // computed against VietnamNow (UtcNow would shift the window by 7 hours).
         var vnNow = _clock.VietnamNow;

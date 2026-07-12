@@ -40,7 +40,7 @@ public sealed class SetPrimaryPartnerContactCommandHandler
         await PartnerContactWriteSupport.UnsetOtherPrimariesAsync(
             _db, partner.PartnerId, contact.ContactId, cancellationToken);
 
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
         contact.IsPrimary = true;
         contact.UpdatedAt = now;
         contact.UpdatedBy = _currentUser.UserId;

@@ -57,7 +57,7 @@ public sealed class CompleteVisitStageCommandHandler
         if (instance.Status == VisitInstanceStatus.Closed)
             throw new ConflictException("Cơ sở này đã đóng đoàn nên không thể cập nhật tiến độ.");
 
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
         string newStatus;
         string action;
         string message;

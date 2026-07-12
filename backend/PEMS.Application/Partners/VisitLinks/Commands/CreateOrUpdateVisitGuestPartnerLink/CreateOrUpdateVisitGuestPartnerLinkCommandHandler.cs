@@ -73,7 +73,7 @@ public sealed class CreateOrUpdateVisitGuestPartnerLinkCommandHandler
             if (!contactOk) throw new NotFoundException("PartnerContact", contactId);
         }
 
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
         var matchSource = string.IsNullOrWhiteSpace(request.MatchSource)
             ? PartnerLinkMatchSources.Manual
             : request.MatchSource!;

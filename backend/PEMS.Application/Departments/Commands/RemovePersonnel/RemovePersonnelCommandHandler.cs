@@ -5,6 +5,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Interfaces;
 
+using PEMS.Application.Common;
 namespace PEMS.Application.Departments.Commands.RemovePersonnel;
 
 public sealed class RemovePersonnelCommandHandler : IRequestHandler<RemovePersonnelCommand, RemovePersonnelResponse>
@@ -44,7 +45,7 @@ public sealed class RemovePersonnelCommandHandler : IRequestHandler<RemovePerson
             user.Status = "ACTIVE";
         }
 
-        user.UpdatedAt = DateTime.UtcNow;
+        user.UpdatedAt = VietnamTime.Now();
         user.UpdatedBy = _currentUserService.UserId;
 
         await _context.SaveChangesAsync(cancellationToken);

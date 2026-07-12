@@ -10,6 +10,7 @@ using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Shared;
 
+using PEMS.Application.Common;
 namespace PEMS.Application.Reports.Queries.GetStaffLeaderReportOverview;
 
 /// <summary>
@@ -76,14 +77,13 @@ public sealed class GetStaffLeaderReportOverviewQueryHandler
         var campusId = _currentUser.PrimaryCampusId
             ?? throw new ForbiddenException("Tài khoản chưa được gán campus chính.");
 
-        var nowUtc = DateTime.UtcNow;
-        var nowVn = nowUtc.AddHours(VnUtcOffsetHours);
-        var upcomingLimitUtc = nowUtc.AddDays(7);
+        var nowVn = VietnamTime.Now();
+
+        var upcomingLimitUtc = nowVn.AddDays(7);
 
         var preset = NormalizePreset(request.Preset);
         var (fromVn, toVnExclusive) = ResolvePeriodVn(preset, request.FromDate, request.ToDate, nowVn);
-        var fromUtc = fromVn.AddHours(-VnUtcOffsetHours);
-        var toUtc = toVnExclusive.AddHours(-VnUtcOffsetHours);
+
 
         var visitStatus = NormalizeFilter(request.VisitStatus);
         var requestStatus = NormalizeFilter(request.RequestStatus);
@@ -94,7 +94,7 @@ public sealed class GetStaffLeaderReportOverviewQueryHandler
 
         // ---- Base query 1: campus instances planned in the period (trend, pipeline, guests, logistics). ----
         var instances = _db.VisitRequestCampuses.AsNoTracking()
-            .Where(ci => ci.CampusId == campusId && ci.PlannedStartAt >= fromUtc && ci.PlannedStartAt < toUtc);
+            .Where(ci => ci.CampusId == campusId && ci.PlannedStartAt >= fromVn && ci.PlannedStartAt < toVnExclusive);
         if (visitStatus != null) instances = instances.Where(ci => ci.Status == visitStatus);
         if (requestStatus != null) instances = instances.Where(ci => ci.VisitRequest.Status == requestStatus);
         if (hostUserId != null) instances = instances.Where(ci => ci.CurrentHostUserId == hostUserId);
@@ -121,7 +121,7 @@ public sealed class GetStaffLeaderReportOverviewQueryHandler
 
         var pendingApprovalCount = await pendingApproval.CountAsync(cancellationToken);
         var overdueOrNotClosed = await opInstances.CountAsync(
-            ci => ci.PlannedEndAt < nowUtc && OverdueCloseStatuses.Contains(ci.Status), cancellationToken);
+            ci => ci.PlannedEndAt < nowVn && OverdueCloseStatuses.Contains(ci.Status), cancellationToken);
 
         // ---- Period aggregates: lifecycle pipeline + closed count + guests. ----
         var instanceStatusCounts = await instances
@@ -149,7 +149,7 @@ public sealed class GetStaffLeaderReportOverviewQueryHandler
 
         // ---- Monthly trend (grouped by Vietnam-local month of planned_start_at). ----
         var trendRaw = await instances
-            .GroupBy(ci => new { ci.PlannedStartAt.AddHours(VnUtcOffsetHours).Year, ci.PlannedStartAt.AddHours(VnUtcOffsetHours).Month })
+            .GroupBy(ci => new { ci.PlannedStartAt.Year, ci.PlannedStartAt.Month })
             .Select(g => new
             {
                 g.Key.Year,
@@ -189,7 +189,7 @@ public sealed class GetStaffLeaderReportOverviewQueryHandler
             {
                 HostUserId = g.Key,
                 Assigned = g.Count(),
-                Upcoming7 = g.Count(ci => ci.PlannedStartAt >= nowUtc && ci.PlannedStartAt < upcomingLimitUtc),
+                Upcoming7 = g.Count(ci => ci.PlannedStartAt >= nowVn && ci.PlannedStartAt < upcomingLimitUtc),
                 Before = g.Count(ci => ci.Status == VisitInstanceStatus.Assigned || ci.Status == VisitInstanceStatus.BeforeVisit),
                 During = g.Count(ci => ci.Status == VisitInstanceStatus.DuringVisit),
                 After = g.Count(ci => ci.Status == VisitInstanceStatus.AfterVisit),
@@ -200,7 +200,7 @@ public sealed class GetStaffLeaderReportOverviewQueryHandler
         // ---- Feedback base: feedbacks submitted in the period for instances of this campus. ----
         var feedbackBase =
             from f in _db.Feedbacks.AsNoTracking()
-            where f.SubmittedAt >= fromUtc && f.SubmittedAt < toUtc && f.VisitInstanceId != null
+            where f.SubmittedAt >= fromVn && f.SubmittedAt < toVnExclusive && f.VisitInstanceId != null
             join ci in _db.VisitRequestCampuses.AsNoTracking() on f.VisitInstanceId equals (ulong?)ci.VisitInstanceId
             where ci.CampusId == campusId
             select new { f, ci };
@@ -264,7 +264,7 @@ public sealed class GetStaffLeaderReportOverviewQueryHandler
         var logisticsBase =
             from li in _db.VisitLogisticsItems.AsNoTracking()
             join ci in _db.VisitRequestCampuses.AsNoTracking() on li.VisitInstanceId equals ci.VisitInstanceId
-            where ci.CampusId == campusId && ci.PlannedStartAt >= fromUtc && ci.PlannedStartAt < toUtc
+            where ci.CampusId == campusId && ci.PlannedStartAt >= fromVn && ci.PlannedStartAt < toVnExclusive
             select new { li, ci };
         if (hostUserId != null) logisticsBase = logisticsBase.Where(x => x.ci.CurrentHostUserId == hostUserId);
         if (departmentId != null) logisticsBase = logisticsBase.Where(x => x.li.RequestedToDepartmentId == departmentId);
@@ -284,7 +284,7 @@ public sealed class GetStaffLeaderReportOverviewQueryHandler
                 Done = g.Count(x => x.li.Status == LogisticsItemStatus.Done),
                 Rejected = g.Count(x => x.li.Status == LogisticsItemStatus.Rejected
                                         || x.li.Status == LogisticsItemStatus.Declined),
-                Overdue = g.Count(x => OpenLogisticsStatuses.Contains(x.li.Status) && x.ci.PlannedEndAt < nowUtc),
+                Overdue = g.Count(x => OpenLogisticsStatuses.Contains(x.li.Status) && x.ci.PlannedEndAt < nowVn),
             })
             .ToListAsync(cancellationToken);
 
@@ -356,7 +356,7 @@ public sealed class GetStaffLeaderReportOverviewQueryHandler
                 PlannedEndAt = r.PlannedEndAt,
                 GuestCount = r.GuestCount,
                 Status = r.Status,
-                WaitingHours = Math.Max(0, Math.Round((nowUtc - r.SubmittedAt).TotalHours, 1)),
+                WaitingHours = Math.Max(0, Math.Round((nowVn - r.SubmittedAt).TotalHours, 1)),
                 ActionLabel = "Duyệt & gán host / Từ chối",
             })
             .OrderByDescending(x => x.WaitingHours)
@@ -431,7 +431,7 @@ public sealed class GetStaffLeaderReportOverviewQueryHandler
         var closeReadiness = closeRows.Select(r =>
         {
             var blockers = new List<string>();
-            if (r.PlannedEndAt > nowUtc) blockers.Add("PLANNED_END_NOT_REACHED");
+            if (r.PlannedEndAt > nowVn) blockers.Add("PLANNED_END_NOT_REACHED");
             if (r.LogisticsOpenCount > 0) blockers.Add("LOGISTICS_OPEN");
             if (r.MissingHandoverSignatureCount > 0) blockers.Add("HANDOVER_SIGNATURE_MISSING");
             if (r.OpenActionItemCount > 0) blockers.Add("ACTION_ITEMS_OPEN");
@@ -506,7 +506,7 @@ public sealed class GetStaffLeaderReportOverviewQueryHandler
         var activePartners = await campusPartners.CountAsync(
             p => p.ProfileStatus == "APPROVED" && p.CooperationStatus == "ACTIVE", cancellationToken);
         var newPartnersInPeriod = await campusPartners.CountAsync(
-            p => p.CreatedAt >= fromUtc && p.CreatedAt < toUtc, cancellationToken);
+            p => p.CreatedAt >= fromVn && p.CreatedAt < toVnExclusive, cancellationToken);
 
         var partnersByType = await campusPartners
             .Where(p => p.ProfileStatus == "APPROVED")
@@ -650,7 +650,7 @@ public sealed class GetStaffLeaderReportOverviewQueryHandler
 
         return new StaffLeaderReportOverviewDto
         {
-            GeneratedAt = nowUtc,
+            GeneratedAt = nowVn,
             FilterSummary = new StaffLeaderFilterSummary
             {
                 Preset = preset,

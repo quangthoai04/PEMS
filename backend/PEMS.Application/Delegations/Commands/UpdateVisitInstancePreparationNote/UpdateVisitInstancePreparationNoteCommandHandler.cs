@@ -48,7 +48,7 @@ public sealed class UpdateVisitInstancePreparationNoteCommandHandler
         if (instance.Status != VisitInstanceStatus.Assigned && instance.Status != VisitInstanceStatus.BeforeVisit)
             throw new ConflictException("Chỉ có thể sửa ghi chú chung trong giai đoạn chuẩn bị.");
 
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
         var normalized = string.IsNullOrWhiteSpace(request.Note) ? null : request.Note.Trim();
 
         instance.PreparationNote = normalized;

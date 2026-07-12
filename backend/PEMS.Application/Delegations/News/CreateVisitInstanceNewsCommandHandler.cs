@@ -57,7 +57,7 @@ public sealed class CreateVisitInstanceNewsCommandHandler
         if (instance.VisitRequest.MediaConsentStatus != PEMS.Shared.MediaConsentStatus.Agreed)
             throw new ForbiddenException("Khách không đồng ý truyền thông, không thể tạo bài tin.");
 
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
         var news = new PEMS.Domain.Entities.News.News
         {
             CampusId = instance.CampusId,

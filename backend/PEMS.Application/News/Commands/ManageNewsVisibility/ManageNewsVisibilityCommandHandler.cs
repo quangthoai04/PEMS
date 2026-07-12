@@ -5,6 +5,7 @@ using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Common.Security;
 using PEMS.Domain.Constants;
 
+using PEMS.Application.Common;
 namespace PEMS.Application.News.Commands.ManageNewsVisibility;
 
 public sealed class ManageNewsVisibilityCommandHandler
@@ -62,7 +63,7 @@ public sealed class ManageNewsVisibilityCommandHandler
         if (news.RowVersion != request.RowVersion)
             throw new ConflictException("Bài viết đã được cập nhật bởi người khác. Vui lòng tải lại trang.");
 
-        var now = DateTime.UtcNow;
+        var now = VietnamTime.Now();
 
         // Only update status + audit fields (NOT reviewed_by/reviewed_at/published_at)
         news.Status    = request.TargetStatus;

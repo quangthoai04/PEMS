@@ -68,7 +68,7 @@ public sealed class SignVisitLogisticsHandoverCommandHandler
         if (item.CoordinationMode == LogisticsCoordinationModes.OfflineCoordinated)
             throw new ConflictException("Hạng mục đã trao đổi bên ngoài hệ thống — không ký biên bản trong hệ thống.");
 
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
 
         if (handoverType == LogisticsHandoverTypes.Borrow)
         {

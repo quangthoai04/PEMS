@@ -8,6 +8,7 @@ using PEMS.Domain.Entities.Users;
 using PEMS.Domain.Entities.Emails;
 using System.Text.Json;
 
+using PEMS.Application.Common;
 namespace PEMS.Application.Departments.Commands.AddDepartmentPersonnel;
 
 public sealed class AddDepartmentPersonnelCommandHandler : IRequestHandler<AddDepartmentPersonnelCommand, AddDepartmentPersonnelResponse>
@@ -60,7 +61,7 @@ public sealed class AddDepartmentPersonnelCommandHandler : IRequestHandler<AddDe
             DepartmentId = request.DepartmentId,
             Status = "ACTIVE",
             CreatedVia = "MANUAL_CREATED",
-            CreatedAt = DateTime.UtcNow,
+            CreatedAt = VietnamTime.Now(),
             CreatedBy = currentUserId
         };
 
@@ -105,7 +106,7 @@ public sealed class AddDepartmentPersonnelCommandHandler : IRequestHandler<AddDe
             BodySnapshot = body,
             Status = "QUEUED",
             SentBy = currentUserId,
-            SentAt = DateTime.UtcNow
+            SentAt = VietnamTime.Now()
         };
 
         _context.SentEmails.Add(sentEmail);

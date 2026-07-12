@@ -31,7 +31,7 @@ public sealed class CreatePartnerContactCommandHandler
         await PartnerContactWriteSupport.EnsureEmailUniqueAsync(
             _db, partner.PartnerId, request.Email, null, cancellationToken);
 
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
         var contact = new PartnerContact
         {
             PartnerId = partner.PartnerId,

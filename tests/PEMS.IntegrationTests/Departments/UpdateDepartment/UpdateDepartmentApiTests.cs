@@ -10,6 +10,7 @@ using PEMS.Domain.Constants;
 using PEMS.Infrastructure.Persistence;
 using PEMS.IntegrationTests.TestInfrastructure;
 using Xunit;
+using PEMS.Application.Common;
 
 namespace PEMS.IntegrationTests.Departments.UpdateDepartment;
 
@@ -448,9 +449,9 @@ public sealed class UpdateDepartmentApiTests : IClassFixture<PemsWebApplicationF
         Assert.Null(snapshot.UpdatedAt);
         Assert.Null(snapshot.UpdatedBy);
 
-        var beforeUpdate = DateTime.UtcNow.AddSeconds(-2);
+        var beforeUpdate = VietnamTime.Now().AddSeconds(-2);
         var response = await client.PostAsJsonAsync(Url, new UpdateDepartmentCommand { DepartmentId = departmentId, Name = newName });
-        var afterUpdate = DateTime.UtcNow.AddSeconds(5);
+        var afterUpdate = VietnamTime.Now().AddSeconds(5);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
         using var scope = _factory.Services.CreateScope();
@@ -697,9 +698,9 @@ public sealed class UpdateDepartmentApiTests : IClassFixture<PemsWebApplicationF
         var caseVariant = "  " + originalName.ToUpperInvariant() + "  ";
         Assert.NotEqual(originalName, caseVariant.Trim()); // sanity: genuinely different case, not a no-op
 
-        var beforeUpdate = DateTime.UtcNow.AddSeconds(-2);
+        var beforeUpdate = VietnamTime.Now().AddSeconds(-2);
         var response = await client.PostAsJsonAsync(Url, new UpdateDepartmentCommand { DepartmentId = departmentId, Name = caseVariant });
-        var afterUpdate = DateTime.UtcNow.AddSeconds(5);
+        var afterUpdate = VietnamTime.Now().AddSeconds(5);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
         var body = await response.Content.ReadFromJsonAsync<UpdateDepartmentResponse>(JsonOptions);

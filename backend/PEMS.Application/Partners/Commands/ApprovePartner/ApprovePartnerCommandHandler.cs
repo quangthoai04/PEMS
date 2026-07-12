@@ -44,7 +44,7 @@ public sealed class ApprovePartnerCommandHandler : IRequestHandler<ApprovePartne
             throw new BusinessRuleException("Hồ sơ đối tác không ở trạng thái chờ duyệt.",
                 PartnerErrorCodes.NotPending);
 
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
         partner.ProfileStatus = PartnerProfileStatuses.Approved;
         partner.ReviewNote = string.IsNullOrWhiteSpace(request.ReviewNote) ? null : request.ReviewNote.Trim();
         partner.ReviewedBy = _currentUser.UserId;

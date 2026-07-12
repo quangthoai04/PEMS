@@ -39,7 +39,7 @@ public sealed class UploadPartnerDocumentCommandHandler
             .FirstOrDefaultAsync(f => f.FileId == request.FileId, cancellationToken)
             ?? throw new NotFoundException("File", request.FileId);
 
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
         var document = new Document
         {
             FileId = file.FileId,

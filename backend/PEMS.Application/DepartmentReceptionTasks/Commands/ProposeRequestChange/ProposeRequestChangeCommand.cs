@@ -9,6 +9,7 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 
+using PEMS.Application.Common;
 namespace PEMS.Application.DepartmentReceptionTasks.Commands.ProposeRequestChange
 {
     public class ProposeRequestChangeCommand : IRequest<bool>
@@ -80,7 +81,7 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.ProposeRequestChang
             if (ps.HasValue && pe.HasValue && pe.Value <= ps.Value)
                 throw new Exception("Thời gian kết thúc đề xuất phải sau thời gian bắt đầu.");
 
-            var now = DateTime.UtcNow;
+            var now = VietnamTime.Now();
 
             // Never overwrite the original quantity (the PLANNED figure) — only the proposed_* columns.
             l.ProposedQuantity = request.ProposedQuantity;

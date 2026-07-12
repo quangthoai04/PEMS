@@ -82,7 +82,7 @@ public sealed class UpdateAccountRoleCommandHandler : IRequestHandler<UpdateAcco
                 _db, request.NewRoleCode, request.SubRole, request.PrimaryCampusId, request.DepartmentId,
                 privileged, actorCampus, cancellationToken);
 
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
 
         // ── Department head (head_user_id) synchronisation — BR-100SL-06/06b/06c. ──
         var assignsDepartmentHead = shape.RoleCode == RoleCodes.Department

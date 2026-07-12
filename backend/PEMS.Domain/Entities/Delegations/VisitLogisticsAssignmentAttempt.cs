@@ -19,8 +19,10 @@ public class VisitLogisticsAssignmentAttempt
     [Column("assigned_by")]
     public ulong AssignedBy { get; set; }
 
+    // Always set explicitly by handlers with the shared Vietnam wall-clock "now"
+    // (no clock default here — Domain must not decide the time policy).
     [Column("assigned_at")]
-    public DateTime AssignedAt { get; set; } = DateTime.UtcNow;
+    public DateTime AssignedAt { get; set; }
 
     /// <summary>PENDING | ACCEPTED | DECLINED | CANCELLED</summary>
     [Column("status")]
@@ -43,7 +45,7 @@ public class VisitLogisticsAssignmentAttempt
     public DateTime? CancelledAt { get; set; }
 
     [Column("created_at")]
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime CreatedAt { get; set; }
 
     [Column("updated_at")]
     public DateTime? UpdatedAt { get; set; }

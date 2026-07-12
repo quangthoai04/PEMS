@@ -8,12 +8,13 @@ using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 
+using PEMS.Application.Common;
 namespace PEMS.Application.Reports.Queries.GetDeptLeaderInvoiceData;
 
 public sealed class GetDeptLeaderInvoiceVisitsQueryHandler
     : IRequestHandler<GetDeptLeaderInvoiceVisitsQuery, List<DeptLeaderInvoiceVisitDto>>
 {
-    private const int VnUtcOffsetHours = 7;
+
     private const int VisitLimit = 100;
 
     private readonly IApplicationDbContext _db;
@@ -29,13 +30,12 @@ public sealed class GetDeptLeaderInvoiceVisitsQueryHandler
     {
         var deptId = DeptLeaderInvoiceGuard.RequireDepartmentLeader(_currentUser);
 
-        var nowVn = DateTime.UtcNow.AddHours(VnUtcOffsetHours);
+        var nowVn = VietnamTime.Now();
         var (fromVn, toVnExclusive) = DeptLeaderInvoiceGuard.ResolvePeriodVn(request.Preset, request.FromDate, request.ToDate, nowVn);
-        var fromUtc = fromVn.AddHours(-VnUtcOffsetHours);
-        var toUtc = toVnExclusive.AddHours(-VnUtcOffsetHours);
+
 
         return await _db.VisitRequestCampuses.AsNoTracking()
-            .Where(ci => ci.PlannedStartAt >= fromUtc && ci.PlannedStartAt < toUtc
+            .Where(ci => ci.PlannedStartAt >= fromVn && ci.PlannedStartAt < toVnExclusive
                          && ci.LogisticsItems.Any(li => li.RequestedToDepartmentId == deptId))
             .OrderByDescending(ci => ci.PlannedStartAt)
             .Take(VisitLimit)

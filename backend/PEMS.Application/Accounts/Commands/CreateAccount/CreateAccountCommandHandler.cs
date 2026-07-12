@@ -154,7 +154,7 @@ public sealed class CreateAccountCommandHandler : IRequestHandler<CreateAccountC
                     "Phòng ban này đã có trưởng phòng. Vui lòng bỏ gán trưởng phòng hiện tại trước khi chỉ định người mới.");
         }
 
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
         var user = new User
         {
             FullName = request.FullName.Trim(),

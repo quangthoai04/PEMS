@@ -105,7 +105,7 @@ public sealed class InviteVisitParticipantCommandHandler
             .FirstOrDefaultAsync(cancellationToken) ?? "FPT University";
         var delegationName = instance.VisitRequest.DelegationName;
 
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
 
         // ── Validate the optional host-edited email content + attachments (Part C / rich editor) ──
         var editedContent = ValidateAndSanitizeOverride(request.EmailOverride);

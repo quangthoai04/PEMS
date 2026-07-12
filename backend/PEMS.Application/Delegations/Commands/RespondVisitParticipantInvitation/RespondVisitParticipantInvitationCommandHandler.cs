@@ -68,7 +68,7 @@ public sealed class RespondVisitParticipantInvitationCommandHandler
         if (campusStatus != VisitInstanceStatuses.Assigned && campusStatus != VisitInstanceStatuses.BeforeVisit)
             throw new ConflictException($"Không thể {actionName} vì chuyến thăm đã bắt đầu hoặc kết thúc.");
 
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
         string newStatus;
 
         if (request.Accept)

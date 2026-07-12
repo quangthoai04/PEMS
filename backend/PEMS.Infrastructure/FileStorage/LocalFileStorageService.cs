@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Domain.Entities.Documents;
 
+using PEMS.Application.Common;
 namespace PEMS.Infrastructure.FileStorage;
 
 /// <summary>
@@ -43,7 +44,7 @@ public sealed class LocalFileStorageService : IFileStorageService
         var ext = Path.GetExtension(originalFilename ?? string.Empty);
         var folder = Sanitize(purpose) ?? "misc";
         // Opaque key: <purpose>/<yyyy>/<MM>/<guid><ext> — date partitioning keeps folders small.
-        var now = DateTime.Now;
+        var now = VietnamTime.Now();
         var objectKey = $"{folder}/{now:yyyy}/{now:MM}/{Guid.NewGuid():N}{ext}".Replace('\\', '/');
 
         var fullPath = Path.Combine(_root, objectKey.Replace('/', Path.DirectorySeparatorChar));

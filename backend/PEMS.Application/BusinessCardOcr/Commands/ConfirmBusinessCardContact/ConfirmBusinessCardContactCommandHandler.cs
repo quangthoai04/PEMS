@@ -61,7 +61,7 @@ public sealed class ConfirmBusinessCardContactCommandHandler
         await PartnerContactWriteSupport.EnsureEmailUniqueAsync(
             _db, partner.PartnerId, request.Email, null, cancellationToken);
 
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
 
         // 7) Create the contact from the REVIEWED values (not blindly from OCR).
         var contact = new PartnerContact

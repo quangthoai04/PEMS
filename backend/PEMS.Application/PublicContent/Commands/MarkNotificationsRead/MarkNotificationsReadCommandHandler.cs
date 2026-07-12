@@ -4,6 +4,7 @@ using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Common.Security;
 
+using PEMS.Application.Common;
 namespace PEMS.Application.PublicContent.Commands.MarkNotificationsRead;
 
 public sealed class MarkNotificationsReadCommandHandler : IRequestHandler<MarkNotificationsReadCommand>
@@ -22,7 +23,7 @@ public sealed class MarkNotificationsReadCommandHandler : IRequestHandler<MarkNo
         var currentUserId = _currentUser.UserId
             ?? throw new ForbiddenException("Bạn chưa đăng nhập.");
 
-        var now = DateTime.UtcNow;
+        var now = VietnamTime.Now();
 
         if (request.NotificationId.HasValue)
         {

@@ -28,7 +28,7 @@ public sealed class VisitRequestService : IVisitRequestService
         ulong? visitorUserId,
         ulong? registrantUserId,
         string createdSource,
-        DateTime utcNow,
+        DateTime vietnamNow,
         CancellationToken cancellationToken = default)
     {
         // The audit "creator" is the submitting actor (registrant) when known; the
@@ -90,7 +90,7 @@ public sealed class VisitRequestService : IVisitRequestService
 
         // Planned start must not be in the past (1-day grace covers client/server timezone skew);
         // end must be after start (also guarded by the SQL CHECK and form validation).
-        var earliestAllowedStart = utcNow.AddDays(-1);
+        var earliestAllowedStart = vietnamNow.AddDays(-1);
 
         var registrantOrg = f.RegistrantOrganization;
         if (f.PartnerId.HasValue)
@@ -116,7 +116,7 @@ public sealed class VisitRequestService : IVisitRequestService
                     "Thời gian thăm không được ở quá khứ.", VisitRequestErrorCodes.InvalidVisitTime);
         }
 
-        var requestCode = GenerateRequestCode(utcNow);
+        var requestCode = GenerateRequestCode(vietnamNow);
 
         var visitScope   = f.VisitScope == VisitScopes.MultiCampus
             ? VisitScopes.MultiCampus
@@ -152,9 +152,9 @@ public sealed class VisitRequestService : IVisitRequestService
             MediaConsentNote     = f.MediaConsentNote,
             NoteToFptu           = f.Notes,
             Status               = VisitRequestStatuses.PendingApproval, // overwritten by routing service
-            SubmittedAt          = utcNow,
+            SubmittedAt          = vietnamNow,
             RowVersion           = 0,
-            CreatedAt            = utcNow,
+            CreatedAt            = vietnamNow,
             CreatedBy            = creatorUserId
         };
 
@@ -183,10 +183,10 @@ public sealed class VisitRequestService : IVisitRequestService
                 HostAssignedAt       = null,
                 CoordinatorUserId    = staffLeadersByCampus[campus.CampusId],
                 CoordinatorAssignedBy = creatorUserId,
-                CoordinatorAssignedAt = utcNow,
+                CoordinatorAssignedAt = vietnamNow,
 
                 RowVersion           = 0,
-                CreatedAt            = utcNow,
+                CreatedAt            = vietnamNow,
                 CreatedBy            = creatorUserId
             });
         }
@@ -203,7 +203,7 @@ public sealed class VisitRequestService : IVisitRequestService
                 Nationality      = visitor.Nationality,
                 MemberType       = "GUEST",
                 DisplayOrder     = order++,
-                CreatedAt        = utcNow,
+                CreatedAt        = vietnamNow,
                 CreatedBy        = creatorUserId
             });
         }
@@ -220,7 +220,7 @@ public sealed class VisitRequestService : IVisitRequestService
                     Nationality      = support.Nationality,
                     MemberType       = "EXTERNAL_SUPPORT", // User explicitly requested EXTERNAL_SUPPORT
                     DisplayOrder     = order++,
-                    CreatedAt        = utcNow,
+                    CreatedAt        = vietnamNow,
                     CreatedBy        = creatorUserId
                 });
             }
@@ -231,9 +231,9 @@ public sealed class VisitRequestService : IVisitRequestService
     }
 
     // VR + YYYYMMDD + 7 random hex chars → e.g. VR20260618A3F9C12
-    private static string GenerateRequestCode(DateTime utcNow)
+    private static string GenerateRequestCode(DateTime vietnamNow)
     {
-        var datePart   = utcNow.ToString("yyyyMMdd");
+        var datePart   = vietnamNow.ToString("yyyyMMdd");
         var randomPart = Guid.NewGuid().ToString("N")[..7].ToUpperInvariant();
         return $"VR{datePart}{randomPart}";
     }

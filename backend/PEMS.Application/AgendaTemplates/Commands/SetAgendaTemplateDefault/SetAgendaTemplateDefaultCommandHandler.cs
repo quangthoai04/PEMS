@@ -47,7 +47,7 @@ public sealed class SetAgendaTemplateDefaultCommandHandler
         if (template.CampusScopeKey != scopeKey)
             throw new BusinessRuleException("Mặc định phải cùng phạm vi (campus/GLOBAL) với mẫu agenda.", "AGENDA_TEMPLATE_SCOPE_MISMATCH");
 
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
 
         var existing = await _db.AgendaTemplateDefaults
             .FirstOrDefaultAsync(d => d.CampusScopeKey == scopeKey && d.VisitType == request.VisitType, cancellationToken);

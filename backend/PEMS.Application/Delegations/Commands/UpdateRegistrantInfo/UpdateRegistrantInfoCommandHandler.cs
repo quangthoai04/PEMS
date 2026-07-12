@@ -53,7 +53,7 @@ public sealed class UpdateRegistrantInfoCommandHandler
         if (visit.Status == VisitRequestStatuses.Rejected)
             throw new ConflictException("Đơn đã bị từ chối nên không thể chỉnh sửa thông tin người đăng ký.");
 
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
         visit.RegistrantFullName = request.FullName.Trim();
         visit.RegistrantOrganization = request.Organization.Trim();
         visit.RegistrantJobTitle = (request.JobTitle ?? string.Empty).Trim();

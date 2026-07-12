@@ -59,7 +59,7 @@ public sealed class LoginviaSSOCommandHandler : IRequestHandler<LoginviaSSOComma
                 request, AuthErrorCodes.ExternalAuthFailed, GenericSsoError, 401, cancellationToken);
 
         var email = info!.Email.Trim().ToLowerInvariant();
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
 
         var user = await _db.Users
             .Include(u => u.Role)
@@ -218,7 +218,7 @@ public sealed class LoginviaSSOCommandHandler : IRequestHandler<LoginviaSSOComma
     private async Task EnsureActiveAsync(
         User user, string email, string portal, LoginviaSSOCommand request, CancellationToken cancellationToken)
     {
-        if (user.LockedUntil is not null && user.LockedUntil > _clock.UtcNow)
+        if (user.LockedUntil is not null && user.LockedUntil > _clock.VietnamNow)
             await FailAsync(user, email, portal, "account_locked", SecurityEventFailureReasonCodes.AccountDisabled,
                 request, AuthErrorCodes.AccountLocked,
                 "Your account is temporarily locked. Please try again later.", 403, cancellationToken);

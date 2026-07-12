@@ -60,7 +60,7 @@ public sealed class ResetPasswordCommandHandler : IRequestHandler<ResetPasswordC
             throw new BusinessRuleException("New password must be different from the old password.");
         }
 
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
         user.PasswordHash = _passwordHasher.Hash(request.NewPassword);
         // Schema v4.5 removed these fields
         user.UpdatedAt = now;

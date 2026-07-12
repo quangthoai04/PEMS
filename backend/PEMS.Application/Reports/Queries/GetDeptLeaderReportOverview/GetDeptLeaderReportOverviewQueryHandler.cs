@@ -11,6 +11,7 @@ using PEMS.Application.Common.Interfaces;
 using PEMS.Domain.Entities.Delegations;
 using PEMS.Shared;
 
+using PEMS.Application.Common;
 namespace PEMS.Application.Reports.Queries.GetDeptLeaderReportOverview;
 
 /// <summary>
@@ -70,14 +71,13 @@ public sealed class GetDeptLeaderReportOverviewQueryHandler
         var deptId = _currentUser.DepartmentId
             ?? throw new ForbiddenException("Tài khoản chưa được gán phòng ban.");
 
-        var nowUtc = DateTime.UtcNow;
-        var nowVn = nowUtc.AddHours(VnUtcOffsetHours);
-        var pending24hUtc = nowUtc.AddHours(-24);
+        var nowVn = VietnamTime.Now();
+
+        var pending24hUtc = nowVn.AddHours(-24);
 
         var preset = NormalizePreset(request.Preset);
         var (fromVn, toVnExclusive) = ResolvePeriodVn(preset, request.FromDate, request.ToDate, nowVn);
-        var fromUtc = fromVn.AddHours(-VnUtcOffsetHours);
-        var toUtc = toVnExclusive.AddHours(-VnUtcOffsetHours);
+
 
         var logisticsStatus = NormalizeFilter(request.LogisticsStatus);
         var itemType = NormalizeFilter(request.ItemType);
@@ -95,10 +95,10 @@ public sealed class GetDeptLeaderReportOverviewQueryHandler
             if (priority != null) q = q.Where(li => li.Priority == priority);
             if (assignedUserId != null) q = q.Where(li => li.AssignedToUserId == assignedUserId);
             if (dueStatus == "OVERDUE")
-                q = q.Where(li => (li.DueAt ?? li.VisitInstance.PlannedEndAt) < nowUtc && OpenStatuses.Contains(li.Status));
+                q = q.Where(li => (li.DueAt ?? li.VisitInstance.PlannedEndAt) < nowVn && OpenStatuses.Contains(li.Status));
             else if (dueStatus == "DUE_SOON")
-                q = q.Where(li => (li.DueAt ?? li.VisitInstance.PlannedEndAt) >= nowUtc
-                                  && (li.DueAt ?? li.VisitInstance.PlannedEndAt) < nowUtc.AddHours(72)
+                q = q.Where(li => (li.DueAt ?? li.VisitInstance.PlannedEndAt) >= nowVn
+                                  && (li.DueAt ?? li.VisitInstance.PlannedEndAt) < nowVn.AddHours(72)
                                   && OpenStatuses.Contains(li.Status));
             if (handoverStatus == "COMPLETE")
                 q = q.Where(li => li.Handovers.Any() && li.Handovers.All(h => h.BorrowerSignedAt != null && h.ProviderSignedAt != null));
@@ -114,8 +114,8 @@ public sealed class GetDeptLeaderReportOverviewQueryHandler
         // ---- Base query 1: items requested to this department, visit planned in the period. ----
         var periodItems = ApplyItemFilters(_db.VisitLogisticsItems.AsNoTracking()
             .Where(li => li.RequestedToDepartmentId == deptId
-                         && li.VisitInstance.PlannedStartAt >= fromUtc
-                         && li.VisitInstance.PlannedStartAt < toUtc));
+                         && li.VisitInstance.PlannedStartAt >= fromVn
+                         && li.VisitInstance.PlannedStartAt < toVnExclusive));
 
         // ---- Base query 2: current operational state (ignores period on purpose — action queues). ----
         var currentItems = ApplyItemFilters(_db.VisitLogisticsItems.AsNoTracking()
@@ -131,7 +131,7 @@ public sealed class GetDeptLeaderReportOverviewQueryHandler
         var waitingAssignment = await currentItems.CountAsync(
             li => li.Status == LogisticsItemStatus.Requested && li.AssignedToUserId == null, cancellationToken);
         var overdueCurrent = await currentItems.CountAsync(
-            li => (li.DueAt ?? li.VisitInstance.PlannedEndAt) < nowUtc && OpenStatuses.Contains(li.Status), cancellationToken);
+            li => (li.DueAt ?? li.VisitInstance.PlannedEndAt) < nowVn && OpenStatuses.Contains(li.Status), cancellationToken);
         var pendingResponseOver24h = await currentItems.CountAsync(
             li => li.Status == LogisticsItemStatus.Assigned && li.AssignedAt != null && li.AssignedAt < pending24hUtc, cancellationToken);
         var missingSignatureCurrent = await currentItems
@@ -181,8 +181,8 @@ public sealed class GetDeptLeaderReportOverviewQueryHandler
         var trendRaw = await periodItems
             .GroupBy(li => new
             {
-                li.VisitInstance.PlannedStartAt.AddHours(VnUtcOffsetHours).Year,
-                li.VisitInstance.PlannedStartAt.AddHours(VnUtcOffsetHours).Month,
+                li.VisitInstance.PlannedStartAt.Year,
+                li.VisitInstance.PlannedStartAt.Month,
             })
             .Select(g => new
             {
@@ -190,7 +190,7 @@ public sealed class GetDeptLeaderReportOverviewQueryHandler
                 g.Key.Month,
                 Total = g.Count(),
                 Completed = g.Count(li => li.Status == LogisticsItemStatus.Done),
-                Overdue = g.Count(li => (li.DueAt ?? li.VisitInstance.PlannedEndAt) < nowUtc && OpenStatuses.Contains(li.Status)),
+                Overdue = g.Count(li => (li.DueAt ?? li.VisitInstance.PlannedEndAt) < nowVn && OpenStatuses.Contains(li.Status)),
             })
             .ToListAsync(cancellationToken);
 
@@ -215,8 +215,8 @@ public sealed class GetDeptLeaderReportOverviewQueryHandler
         // Minimal projection to memory: a department's attempts within a period stay small.
         var attemptRows = await _db.VisitLogisticsAssignmentAttempts.AsNoTracking()
             .Where(a => a.LogisticsItem.RequestedToDepartmentId == deptId
-                        && a.LogisticsItem.VisitInstance.PlannedStartAt >= fromUtc
-                        && a.LogisticsItem.VisitInstance.PlannedStartAt < toUtc)
+                        && a.LogisticsItem.VisitInstance.PlannedStartAt >= fromVn
+                        && a.LogisticsItem.VisitInstance.PlannedStartAt < toVnExclusive)
             .Select(a => new { a.AssigneeUserId, a.Status, a.AssignedAt, a.RespondedAt })
             .ToListAsync(cancellationToken);
 
@@ -235,7 +235,7 @@ public sealed class GetDeptLeaderReportOverviewQueryHandler
                 Total = g.Count(),
                 InProgress = g.Count(li => li.Status == LogisticsItemStatus.InProgress),
                 Completed = g.Count(li => li.Status == LogisticsItemStatus.Done),
-                Overdue = g.Count(li => (li.DueAt ?? li.VisitInstance.PlannedEndAt) < nowUtc && OpenStatuses.Contains(li.Status)),
+                Overdue = g.Count(li => (li.DueAt ?? li.VisitInstance.PlannedEndAt) < nowVn && OpenStatuses.Contains(li.Status)),
             })
             .ToListAsync(cancellationToken);
 
@@ -356,7 +356,7 @@ public sealed class GetDeptLeaderReportOverviewQueryHandler
 
         // ---- Feedback about this department / its logistics items, submitted in the period. ----
         var feedbackBase = _db.Feedbacks.AsNoTracking().Where(f =>
-            f.SubmittedAt >= fromUtc && f.SubmittedAt < toUtc
+            f.SubmittedAt >= fromVn && f.SubmittedAt < toVnExclusive
             && (f.TargetDepartmentId == deptId
                 || (f.TargetLogisticsItemId != null && _db.VisitLogisticsItems.Any(li =>
                         li.LogisticsItemId == f.TargetLogisticsItemId && li.RequestedToDepartmentId == deptId))
@@ -477,7 +477,7 @@ public sealed class GetDeptLeaderReportOverviewQueryHandler
                 Status = r.Status,
                 DueAt = r.DueAt,
                 AssignedToName = UserName(r.AssignedToUserId),
-                WaitingHours = Math.Max(0, Math.Round((nowUtc - r.WaitingSince).TotalHours, 1)),
+                WaitingHours = Math.Max(0, Math.Round((nowVn - r.WaitingSince).TotalHours, 1)),
                 ActionLabel = r.Status == LogisticsItemStatus.Requested && r.AssignedToUserId == null
                     ? "Phân công"
                     : r.Status == LogisticsItemStatus.Assigned
@@ -585,7 +585,7 @@ public sealed class GetDeptLeaderReportOverviewQueryHandler
 
         return new DeptLeaderReportOverviewDto
         {
-            GeneratedAt = nowUtc,
+            GeneratedAt = nowVn,
             FilterSummary = new DeptLeaderFilterSummary
             {
                 Preset = preset,

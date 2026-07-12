@@ -82,7 +82,7 @@ public sealed class ManageDepartmentStatusCommandHandler
     private async Task<ManageDepartmentStatusResponse> DisableAsync(
         Domain.Entities.Departments.Department department, ulong campusId, CancellationToken cancellationToken)
     {
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
 
         var impact = await DepartmentStatusImpactCalculator.ComputeDisableImpactAsync(
             _db, department.DepartmentId, now, cancellationToken);
@@ -158,7 +158,7 @@ public sealed class ManageDepartmentStatusCommandHandler
                 DepartmentErrorCodes.CampusInactive);
 
         var oldStatus = department.Status;
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
 
         department.Status = EntityStatuses.Active;
         department.UpdatedAt = now;

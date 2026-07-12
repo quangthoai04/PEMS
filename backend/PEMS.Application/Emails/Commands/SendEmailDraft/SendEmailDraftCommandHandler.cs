@@ -11,6 +11,7 @@ using PEMS.Application.Emails.Common;
 using PEMS.Domain.Entities.Emails;
 using PEMS.Domain.Enums;
 
+using PEMS.Application.Common;
 namespace PEMS.Application.Emails.Commands.SendEmailDraft;
 
 public sealed class SendEmailDraftCommandHandler
@@ -79,7 +80,7 @@ public sealed class SendEmailDraftCommandHandler
         }).ToList();
         await EmailDraftWriter.ValidateAndLoadFilesAsync(_db, userId, attachmentInputs, cancellationToken);
 
-        var now = DateTime.Now;
+        var now = VietnamTime.Now();
         var subject = draft.Subject!.Trim();
         var rawBody = draft.BodyFormat == EmailBodyFormat.HTML
             ? _sanitizer.SanitizeEmailHtml(draft.BodyContent)
@@ -141,7 +142,7 @@ public sealed class SendEmailDraftCommandHandler
         var hasFailure = false;
         foreach (var recipient in sentEmail.Recipients)
         {
-            recipient.SentAt = DateTime.Now;
+            recipient.SentAt = VietnamTime.Now();
             try
             {
                 await _email.SendAsync(new OutboundEmail
@@ -153,7 +154,7 @@ public sealed class SendEmailDraftCommandHandler
                     Attachments = outboundAttachments,
                 }, cancellationToken);
                 recipient.DeliveryStatus = "DELIVERED";
-                recipient.DeliveredAt = DateTime.Now;
+                recipient.DeliveredAt = VietnamTime.Now();
             }
             catch (Exception ex)
             {
@@ -163,7 +164,7 @@ public sealed class SendEmailDraftCommandHandler
             }
         }
 
-        sentEmail.SentAt = DateTime.Now;
+        sentEmail.SentAt = VietnamTime.Now();
         sentEmail.LastAttemptAt = sentEmail.SentAt;
 
         // Compute aggregated status: ALL ok → SENT; ALL failed → FAILED; mixed → PARTIAL_FAILED.

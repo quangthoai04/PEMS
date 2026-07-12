@@ -95,7 +95,7 @@ public sealed class ExecuteEmailActionCommandHandler
             .Where(u => u.UserId == participant.UserId).Select(u => u.FullName)
             .FirstOrDefaultAsync(cancellationToken);
 
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
 
         if (token.ResultStatus == EmailActionResultStatuses.Invalid)
         {
@@ -211,7 +211,7 @@ public sealed class ExecuteEmailActionCommandHandler
             ? await _db.Users.Where(u => u.UserId == token.RecipientUserId.Value).Select(u => u.FullName).FirstOrDefaultAsync(cancellationToken)
             : null;
 
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
 
         if (token.ResultStatus == EmailActionResultStatuses.Invalid)
         {
@@ -328,7 +328,7 @@ public sealed class ExecuteEmailActionCommandHandler
             ? await _db.Users.Where(u => u.UserId == token.RecipientUserId.Value).Select(u => u.FullName).FirstOrDefaultAsync(cancellationToken)
             : null;
 
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
 
         if (token.ResultStatus == EmailActionResultStatuses.Invalid)
         {
@@ -454,7 +454,7 @@ public sealed class ExecuteEmailActionCommandHandler
             ? await _db.Users.Where(u => u.UserId == token.RecipientUserId.Value).Select(u => u.FullName).FirstOrDefaultAsync(cancellationToken)
             : null;
 
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
 
         if (token.ResultStatus == EmailActionResultStatuses.Invalid)
         {

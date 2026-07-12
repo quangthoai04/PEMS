@@ -54,7 +54,7 @@ public sealed class SaveVisitAgendaCommandHandler
         if (instance.Status != VisitInstanceStatus.Assigned && instance.Status != VisitInstanceStatus.BeforeVisit)
             throw new ConflictException("Chỉ có thể chỉnh sửa lịch trình trong giai đoạn chuẩn bị (trước tiếp khách).");
 
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
         var incoming = request.Items ?? new List<SaveVisitAgendaItem>();
 
         // ── Responsible-user validation ──

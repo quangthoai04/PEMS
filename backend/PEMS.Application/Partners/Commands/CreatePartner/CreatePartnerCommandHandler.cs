@@ -69,7 +69,7 @@ public sealed class CreatePartnerCommandHandler : IRequestHandler<CreatePartnerC
         if (sameNames.Any(p => PartnerNormalization.NormalizeKey(p.Name) == nameKey))
             throw new ConflictException("Tên đối tác đã tồn tại.", PartnerErrorCodes.NameDuplicated);
 
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
         var actorId = _currentUser.UserId;
 
         var partner = new Partner

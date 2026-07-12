@@ -73,7 +73,7 @@ public sealed class ManageCampusStatusCommandHandler
 
         var previousStatus = campus.Status;
         var actorId = _currentUser.UserId;
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
 
         // Idempotent no-op: already at the requested status (UC-86 §10).
         if (string.Equals(previousStatus, newStatus, StringComparison.Ordinal))

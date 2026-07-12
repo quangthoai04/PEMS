@@ -5,6 +5,7 @@ using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Common.Security;
 using PEMS.Domain.Constants;
 
+using PEMS.Application.Common;
 namespace PEMS.Application.Faqs.Commands.UpdateFAQ;
 
 public sealed class UpdateFAQCommandHandler : IRequestHandler<UpdateFAQCommand, UpdateFAQResponse>
@@ -60,7 +61,7 @@ public sealed class UpdateFAQCommandHandler : IRequestHandler<UpdateFAQCommand, 
             faq.FaqType = faqType;
             faq.Question = sanitizedQuestion;
             faq.Answer = sanitizedAnswer;
-            faq.UpdatedAt = DateTime.UtcNow;
+            faq.UpdatedAt = VietnamTime.Now();
             faq.UpdatedBy = _currentUser.UserId;
 
             await _dbContext.SaveChangesAsync(cancellationToken);

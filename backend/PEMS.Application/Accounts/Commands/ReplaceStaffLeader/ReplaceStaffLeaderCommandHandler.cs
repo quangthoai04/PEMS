@@ -61,7 +61,7 @@ public sealed class ReplaceStaffLeaderCommandHandler
         var oldLeaderId = avail.Leader!.UserId;
         var icDepartmentId = avail.IcDepartmentId!.Value;
 
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
 
         await using var transaction = await _db.BeginTransactionAsync(cancellationToken);
         string oldLeaderEmail;

@@ -37,7 +37,7 @@ public sealed class ChangeGalleryLocationStatusCommandHandler
     {
         var campusId = StaffLeaderGalleryScope.EnsureStaffLeaderCampus(_currentUser);
         var actorId = _currentUser.UserId!.Value;
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
 
         var newStatus = (request.Status ?? string.Empty).Trim().ToUpperInvariant();
         if (newStatus is not (EntityStatuses.Active or EntityStatuses.Inactive))

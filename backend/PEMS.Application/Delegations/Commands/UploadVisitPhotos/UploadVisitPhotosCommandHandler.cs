@@ -9,6 +9,7 @@ using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Files.Commands.UploadFile;
 using PEMS.Domain.Entities.Documents;
 
+using PEMS.Application.Common;
 namespace PEMS.Application.Delegations.Commands.UploadVisitPhotos;
 
 public sealed class UploadVisitPhotosCommandHandler : IRequestHandler<UploadVisitPhotosCommand, UploadVisitPhotosResponse>
@@ -77,7 +78,7 @@ public sealed class UploadVisitPhotosCommandHandler : IRequestHandler<UploadVisi
                 Title = fileDto.FileName,
                 Description = "",
                 Status = "PUBLISHED", // Tự động publish
-                CreatedAt = DateTime.UtcNow,
+                CreatedAt = VietnamTime.Now(),
                 CreatedBy = userId
             };
 

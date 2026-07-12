@@ -52,7 +52,7 @@ public sealed class ResubmitRejectedVisitRequestCommandHandler
             throw new ForbiddenException("Chỉ khách (Visitor) mới được gửi lại đơn đăng ký tham quan.");
 
         var actorId = _currentUser.UserId.Value;
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
         // planned_start_at is local wall-clock DATETIME → the 24h window uses VietnamNow.
         var vnNow = _clock.VietnamNow;
 

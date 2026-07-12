@@ -48,13 +48,13 @@ public sealed class CreatePartnerAliasCommandHandler
             // Revive a previously deactivated alias instead of violating the unique key.
             existing.Status = "ACTIVE";
             existing.AliasName = aliasName;
-            existing.UpdatedAt = _clock.UtcNow;
+            existing.UpdatedAt = _clock.VietnamNow;
             existing.UpdatedBy = _currentUser.UserId;
             await _db.SaveChangesAsync(cancellationToken);
             return ToDto(existing);
         }
 
-        var now = _clock.UtcNow;
+        var now = _clock.VietnamNow;
         var alias = new PartnerAlias
         {
             PartnerId = partner.PartnerId,
