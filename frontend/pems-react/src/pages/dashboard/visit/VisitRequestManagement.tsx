@@ -415,7 +415,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
         if (!params.visitScope) params.visitScope = targetFilters.visitScope;
       }
       
-      if (filterConfig.showRelation && targetFilters.relation) {
+      if (targetFilters.relation) {
         if (targetFilters.relation === 'READ_ONLY') params.readOnlyOnly = true;
         else if (targetFilters.relation === 'ACTION_REQUIRED') params.actionableOnly = true;
         else params.relation = targetFilters.relation;
@@ -657,11 +657,6 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
     const isCancelled = row.requestStatus === 'CANCELLED' || row.campusStatus === 'CANCELLED';
     const displayStatus = row.statusText;
 
-    if (actions.includes('OPEN_PROCESS_SUMMARY')) {
-      navTo(`/dashboard/visit/process-summary/${row.visitInstanceId}`);
-      return;
-    }
-
     if (actions.includes('OPEN_CONTRIBUTION')) {
       navTo(`/dashboard/visit/contribution/${row.visitInstanceId}`);
       return;
@@ -672,6 +667,10 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
       return;
     }
 
+    // OPEN_HOST_PROCESS được ưu tiên trước OPEN_PROCESS_SUMMARY: Staff Leader có thể ĐỒNG
+    // THỜI là Host của chính instance này (backend thêm cả 2 action) — khi đó phải vào trang
+    // Setup (có thể thao tác) thay vì bị ép về Báo cáo tổng hợp read-only. OPEN_PROCESS_SUMMARY
+    // chỉ còn là fallback khi user không phải Host (HO thuần, hoặc theo dõi đơn Staff khác).
     if (actions.includes('OPEN_HOST_PROCESS')) {
       if (row.campusStatus === 'ASSIGNED' || row.campusStatus === 'BEFORE_VISIT') {
         navTo(`/dashboard/visit/process/${row.visitInstanceId}`, {
@@ -700,6 +699,9 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
         });
         return;
       }
+    } else if (actions.includes('OPEN_PROCESS_SUMMARY')) {
+      navTo(`/dashboard/visit/process-summary/${row.visitInstanceId}`);
+      return;
     }
 
     const idForRoute = row.id;
@@ -1169,6 +1171,9 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
       item.instanceStatus === 'CLOSED'
     ) {
       if (item.visitInstanceId) {
+        // Staff Leader CÓ THỂ là chính Host của cơ sở này (tự nhận, không chỉ gán cho Staff
+        // thường) — chỉ khóa read-only khi họ không phải Host thật của instance đang xem.
+        const isStaffLeaderNotHost = isStaffLeader && item.hostUserId != null && String(item.hostUserId) !== user?.userId;
         navTo(`/dashboard/visit/process/${item.visitInstanceId}`, {
           state: {
             defaultTab:
@@ -1178,7 +1183,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
                   ? 'after'
                   : 'before',
             status: getCampusStatusLabel(item.instanceStatus),
-            isReadOnly: isHO || isStaffLeader || item.instanceStatus === 'CLOSED',
+            isReadOnly: isHO || isStaffLeaderNotHost || item.instanceStatus === 'CLOSED',
           },
         });
         return;
@@ -1339,7 +1344,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
     );
   }
 
-  const hasActiveFilter = !!(appliedFilters.keyword || appliedFilters.status || appliedFilters.visitScope || appliedFilters.fromDate || appliedFilters.toDate);
+  const hasActiveFilter = !!(appliedFilters.keyword || appliedFilters.status || appliedFilters.visitScope || appliedFilters.relation || appliedFilters.fromDate || appliedFilters.toDate);
   const emptyText = hasActiveFilter
     ? 'Không tìm thấy đơn phù hợp với bộ lọc.'
     : activeTab === 'attending'
@@ -1406,30 +1411,50 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
 
       {/* Tabs */}
       {showTabs && !isEmbedded && (
-        <div className="flex w-full sm:w-max items-center gap-1 rounded-xl bg-slate-100 p-1">
-          {([
-            { key: 'responsible' as Tab, label: responsibleTabLabel, show: canUseResponsibleTab },
-            { key: 'attending' as Tab, label: attendingTabLabel, show: canUseAttendingTab },
-          ]).filter(t => t.show).map((t) => (
-            <button
-              key={t.key}
-              onClick={() => { 
-                if (activeTab !== t.key) {
-                  const nextEmptyFilters = createEmptyFilters();
-                  setActiveTab(t.key);
-                  setDraftFilters(nextEmptyFilters);
-                  setAppliedFilters(nextEmptyFilters);
-                  setCurrentPage(1);
-                  setNotificationVisitRequestId('');
-                  updateUrlParams(t.key, 1, pageSize, nextEmptyFilters, sortOrder);
-                  loadDelegations(t.key, 1, pageSize, nextEmptyFilters, sortOrder, '');
-                }
-              }}
-              className={`flex-1 sm:flex-none px-5 py-2 rounded-lg text-sm font-bold transition-colors outline-none cursor-pointer ${activeTab === t.key ? 'bg-white text-[#004c91] shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-            >
-              {t.label}
-            </button>
-          ))}
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex w-full sm:w-max items-center gap-1 rounded-xl bg-slate-100 p-1">
+            {([
+              { key: 'responsible' as Tab, label: responsibleTabLabel, show: canUseResponsibleTab },
+              { key: 'attending' as Tab, label: attendingTabLabel, show: canUseAttendingTab },
+            ]).filter(t => t.show).map((t) => {
+              // Staff Leader chỉ có tab "responsible" (canUseAttendingTab=false) — thay vì 1
+              // tab đơn độc vô nghĩa (click không đổi gì), dùng đúng vị trí đó làm nút toggle
+              // nhanh "Đơn phụ trách" (chỉ đơn mình đang làm Host) / "Đơn của cơ sở" (toàn bộ
+              // đơn của campus, mặc định) — tái dùng field relation=HOST đã có sẵn ở backend
+              // (ViewGuestDelegationListQueryHandler), không phải dropdown filter.
+              if (isStaffLeader && t.key === 'responsible' && !canUseAttendingTab) {
+                return (
+                  <button
+                    key={t.key}
+                    onClick={() => applyFilterChange({ relation: appliedFilters.relation === 'HOST' ? '' : 'HOST' })}
+                    className="flex-1 sm:flex-none px-5 py-2 rounded-lg text-sm font-bold transition-colors outline-none cursor-pointer bg-white text-[#004c91] shadow-sm"
+                  >
+                    {appliedFilters.relation === 'HOST' ? 'Đơn của cơ sở' : 'Đơn phụ trách'}
+                  </button>
+                );
+              }
+              return (
+                <button
+                  key={t.key}
+                  onClick={() => {
+                    if (activeTab !== t.key) {
+                      const nextEmptyFilters = createEmptyFilters();
+                      setActiveTab(t.key);
+                      setDraftFilters(nextEmptyFilters);
+                      setAppliedFilters(nextEmptyFilters);
+                      setCurrentPage(1);
+                      setNotificationVisitRequestId('');
+                      updateUrlParams(t.key, 1, pageSize, nextEmptyFilters, sortOrder);
+                      loadDelegations(t.key, 1, pageSize, nextEmptyFilters, sortOrder, '');
+                    }
+                  }}
+                  className={`flex-1 sm:flex-none px-5 py-2 rounded-lg text-sm font-bold transition-colors outline-none cursor-pointer ${activeTab === t.key ? 'bg-white text-[#004c91] shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                  {t.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
 

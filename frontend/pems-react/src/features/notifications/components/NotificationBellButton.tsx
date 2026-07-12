@@ -55,13 +55,23 @@ export function getNotificationLink(item: NotificationItem, user: AuthUser | nul
       return `/dashboard/visit?visitRequestId=${item.visitRequestId}`;
     }
 
-    // Visitor & HO chỉ xem — không thao tác quy trình tiếp khách (trang đó dành cho
-    // Host/Staff Leader). Notification cũ có thể còn trỏ vào /process|/reception-detail|
+    const isProcessDetailLink = /\/dashboard\/visit\/(process|reception-detail|ho-detail)\//.test(link);
+
+    // Visitor & HO không bao giờ là Host theo thiết kế hệ thống — trang Host Operation
+    // không dành cho họ. Notification cũ có thể còn trỏ vào /process|/reception-detail|
     // /ho-detail từ trước khi route này được đổi — luôn rewrite về trang Quản lý tiếp khách
     // lọc đúng đơn, tính theo dữ liệu hiện tại của notification thay vì tin URL đã lưu sẵn.
     const isViewOnlyRole = ['VISITOR', 'HO'].includes(user.roleCode?.toUpperCase() || '');
-    const isProcessDetailLink = /\/dashboard\/visit\/(process|reception-detail|ho-detail)\//.test(link);
     if (isViewOnlyRole && isProcessDetailLink && item.visitRequestId) {
+      return `/dashboard/visit?visitRequestId=${item.visitRequestId}`;
+    }
+
+    // "Bạn được mời tham gia đoàn" (participant invitation) — người nhận có thể là
+    // Student/IC Staff KHÔNG phải Host của đoàn này (IC Staff đôi khi là Host đoàn khác,
+    // nên không thể chặn theo role tĩnh). Trang Host Operation chỉ dành cho đúng Host của
+    // đoàn, nên loại notification này luôn rewrite về trang danh sách "Quản lý tiếp khách"
+    // lọc đúng đơn, bất kể role.
+    if (item.actionType === 'OPEN_VISIT_INVITATION' && isProcessDetailLink && item.visitRequestId) {
       return `/dashboard/visit?visitRequestId=${item.visitRequestId}`;
     }
   }
