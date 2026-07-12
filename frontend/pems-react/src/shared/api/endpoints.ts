@@ -293,6 +293,10 @@ export const API_ENDPOINTS = {
     apply: '/agenda-templates/apply',
   },
   visitRequests: {
+    // Authenticated create (Visitor/IC Staff/Staff Leader) — không cần OTP, identity từ JWT.
+    createAuthenticated: '/visit-requests',
+    // Host candidates cho ASSIGN_HOST của Staff Leader ngay trong form tạo (own campus).
+    createHostCandidates: '/visit-requests/host-candidates',
     initiate: '/visit-requests/initiate',
     verify: '/visit-requests/verify',
     resendOtp: '/visit-requests/resend-otp',

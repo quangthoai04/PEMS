@@ -31,6 +31,11 @@ interface Props {
   onSyncContactFromRegister: () => void;
   onClearContactPoint: () => void;
   showErrors?: boolean;
+  /**
+   * Internal actors (IC Staff / Staff Leader) can NEVER be their own contact owner:
+   * hides the "Tôi cũng là đầu mối liên hệ" checkbox and shows the different-person hint.
+   */
+  allowContactSelf?: boolean;
 }
 
 export const ContactSection: React.FC<Props> = ({
@@ -41,6 +46,7 @@ export const ContactSection: React.FC<Props> = ({
   onSyncContactFromRegister,
   onClearContactPoint,
   showErrors,
+  allowContactSelf = true,
 }) => {
   const { t } = useTranslation(['visitRequest']);
   // Excel helpers live outside React, so the translator is handed to them explicitly.
@@ -459,15 +465,21 @@ export const ContactSection: React.FC<Props> = ({
         required
         description={t('visitRequest:step2Contact.contactDesc2')}
         headerRight={
-          <label className="flex cursor-pointer select-none items-center gap-2.5 text-sm font-bold text-[#004c91]">
-            <input
-              type="checkbox"
-              checked={isContactSameAsRegister}
-              onChange={(e) => handleContactCheckbox(e.target.checked)}
-              className="w-4 h-4 rounded text-[#004c91] focus:ring-[#004c91] border-blue-300 cursor-pointer"
-            />
-            {t('visitRequest:step2Contact.iamContact')}
-          </label>
+          allowContactSelf ? (
+            <label className="flex cursor-pointer select-none items-center gap-2.5 text-sm font-bold text-[#004c91]">
+              <input
+                type="checkbox"
+                checked={isContactSameAsRegister}
+                onChange={(e) => handleContactCheckbox(e.target.checked)}
+                className="w-4 h-4 rounded text-[#004c91] focus:ring-[#004c91] border-blue-300 cursor-pointer"
+              />
+              {t('visitRequest:step2Contact.iamContact')}
+            </label>
+          ) : (
+            <span className="text-xs font-semibold text-slate-500">
+              {t('visitRequest:step2Contact.internalMustPickOther')}
+            </span>
+          )
         }
       >
         {hasAnyContactError && (

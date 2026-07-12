@@ -3,8 +3,12 @@
  *
  * Dữ liệu được backend lọc theo role/scope (UC-20) và trả kèm `allowedActions`;
  * frontend chỉ render UI + nút theo danh sách đó, mọi thao tác đều được backend
- * validate lại. Hai tab: "Đơn phụ trách" (responsible) và "Đơn mời tham dự"
- * (attending). Visitor chỉ thấy "Đơn của tôi"; Admin không tham gia luồng này.
+ * validate lại. Tab theo role (actor relation):
+ *   - Visitor: "Tôi là đầu mối" (responsible/owner) + "Tôi là người đăng ký" (registered, read-only).
+ *   - IC Staff: "Đơn phụ trách" (host) + "Lời mời tham dự" (attending) + "Đơn tôi đăng ký" (registered).
+ *   - Staff Leader: "Yêu cầu tại cơ sở" (campus review) + "Tôi là host" (hosted) + "Đơn tôi đăng ký".
+ * Visitor/IC Staff/Staff Leader có nút "Tạo đoàn khách" mở shared form (authenticated mode).
+ * Admin không tham gia luồng này.
  */
 
 import React, { Fragment, useEffect, useState } from 'react';
@@ -17,6 +21,7 @@ import {
 import { motion } from 'motion/react';
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { SubmittedVisitRequestDetailModal } from '../../../components/modals/SubmittedVisitRequestDetailModal';
+import { VisitingFormPopup } from '../../../components/modals/VisitingFormPopup';
 import { AssignHostModal } from '../../../components/modals/AssignHostModal';
 import { CancellationReasonModal } from '../../../features/delegations/components/CancellationReasonModal';
 import { RejectedReasonModal } from '../../../features/delegations/components/RejectedReasonModal';
@@ -35,7 +40,7 @@ import { visitFeedbackApi } from '../../../features/feedbacks/api/visitFeedbackA
 import { VisitFeedbackModal } from '../../../features/feedbacks/components/VisitFeedbackModal';
 import type { PendingFeedbackItem } from '../../../features/feedbacks/types/visitFeedback.types';
 
-type Tab = 'responsible' | 'attending';
+type Tab = 'responsible' | 'attending' | 'registered' | 'hosted';
 
 type ActionTone = 'blue' | 'green' | 'red' | 'gray' | 'orange';
 
@@ -157,22 +162,47 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
 
   // The "Đơn mời tham dự" (attending) tab is only for users who can be invited as a
   const canUseAttendingTab = isRegularStaff || isDept || isStudent;
-  const canUseResponsibleTab = !isStudent && !isDept && !isAdmin && !isVisitor;
-  const showTabs = canUseAttendingTab || canUseResponsibleTab;
-  
-  const responsibleTabLabel = isHO ? 'Theo dõi đơn tiếp khách' : 'Đơn phụ trách';
+  const canUseResponsibleTab = !isStudent && !isDept && !isAdmin;
+  // Actor relation: tab "Đơn tôi đăng ký / Tôi là người đăng ký" (registrant, read-only)
+  // cho các role được tạo đoàn khách; tab "Tôi là host" riêng cho Staff Leader.
+  const canUseRegisteredTab = isVisitor || isStaff;
+  const canUseHostedTab = isStaffLeader;
+  // Các role được tạo đoàn khách (Visitor / IC Staff / Staff Leader) — backend revalidate.
+  const canCreateVisitRequest = isVisitor || isRegularStaff || isStaffLeader;
+  const showTabs = [canUseAttendingTab, canUseResponsibleTab, canUseRegisteredTab, canUseHostedTab].filter(Boolean).length > 1
+    || canUseAttendingTab || (canUseResponsibleTab && canUseRegisteredTab);
+
+  const responsibleTabLabel = isHO ? 'Theo dõi đơn tiếp khách'
+    : isVisitor ? 'Tôi là đầu mối'
+    : isStaffLeader ? 'Yêu cầu tại cơ sở'
+    : 'Đơn phụ trách';
   const attendingTabLabel = (isDept && subRole === 'STAFF') ? 'Nhiệm vụ được giao' : 'Lời mời tham dự';
-  
+  const registeredTabLabel = isVisitor ? 'Tôi là người đăng ký' : 'Đơn tôi đăng ký';
+  const hostedTabLabel = 'Tôi là host';
+
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
 
-  const defaultTab: Tab = (searchParams.get('tab') as Tab) || ((isStudent || isDept) ? 'attending' : 'responsible');
+  const isTabAllowed = (tab: Tab | null): tab is Tab => {
+    if (tab === 'responsible') return canUseResponsibleTab;
+    if (tab === 'attending') return canUseAttendingTab;
+    if (tab === 'registered') return canUseRegisteredTab;
+    if (tab === 'hosted') return canUseHostedTab;
+    return false;
+  };
+  const urlTab = searchParams.get('tab') as Tab | null;
+  const defaultTab: Tab = isTabAllowed(urlTab)
+    ? urlTab
+    : (isStudent || isDept) ? 'attending' : 'responsible';
   const [activeTab, setActiveTab] = useState<Tab>(defaultTab);
 
   // UC-27: pending participation invitations for invitee roles. This banner is the entry
   // point to the invitation-detail screen, where Accept/Decline happens — never in the
   // attending tab (which only lists already-ACCEPTED invitations and is read-only).
   const [pendingInvitations, setPendingInvitations] = useState<VisitInvitation[]>([]);
+
+  // Shared create form (authenticated mode): Visitor / IC Staff / Staff Leader.
+  const [showCreateModal, setShowCreateModal] = useState(false);
 
   const filterConfig = getVisitRequestFilterConfig({
     roleCode,
@@ -367,7 +397,12 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
     try {
       setIsLoading(true);
       setListError(null);
-      const effectiveTab = isVisitor ? 'responsible' : (isStudent || isDept) ? 'attending' : targetTab;
+      // Students/Depts only have the attending view; Visitors have owner + registered.
+      const effectiveTab = (isStudent || isDept)
+        ? 'attending'
+        : isVisitor
+          ? (targetTab === 'registered' ? 'registered' : 'responsible')
+          : targetTab;
       const params: Record<string, unknown> = {
         tab: effectiveTab,
         page: targetPage,
@@ -862,7 +897,13 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
         single ? 'bg-sky-50 text-sky-700 border-sky-200' : 'bg-indigo-50 text-indigo-700 border-indigo-200'));
     }
 
-    if (isAwaitingMyDecision(row) && !isCancelledOrRejected(row)) {
+    if (activeTab === 'registered') {
+      // Registrant relation: strictly read-only tracking; badge only, never host actions here.
+      badges.push(chip('registered', 'Chỉ theo dõi', 'bg-slate-50 text-slate-600 border-slate-200'));
+      if (row.isAlsoHost) {
+        badges.push(chip('also-host', 'Đồng thời là host', 'bg-emerald-50 text-emerald-700 border-emerald-200'));
+      }
+    } else if (isAwaitingMyDecision(row) && !isCancelledOrRejected(row)) {
       badges.push(chip('pending-decision', 'Cần duyệt & gán host', 'bg-orange-50 text-orange-700 border-orange-200'));
     } else if (row.currentUserIsHost && activeTab !== 'attending') {
       badges.push(chip('host', 'Được giao làm host', 'bg-emerald-50 text-emerald-700 border-emerald-200'));
@@ -1317,9 +1358,13 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
     ? 'Không tìm thấy đơn phù hợp với bộ lọc.'
     : activeTab === 'attending'
       ? 'Bạn chưa có đơn mời tham dự nào.'
-      : isVisitor
-        ? 'Bạn chưa gửi đơn tiếp khách nào.'
-        : 'Bạn chưa có đơn phụ trách nào.';
+      : activeTab === 'registered'
+        ? 'Bạn chưa đăng ký đoàn khách nào cho người khác.'
+        : activeTab === 'hosted'
+          ? 'Bạn chưa là host của đoàn khách nào.'
+          : isVisitor
+            ? 'Bạn chưa là đầu mối của đơn tiếp khách nào.'
+            : 'Bạn chưa có đơn phụ trách nào.';
 
   return (
     <div className="w-full flex flex-col space-y-6 pb-12 animate-in fade-in duration-300">
@@ -1331,17 +1376,26 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
             <span className="mx-2">/</span>
             <span className="text-[#004c91]">Quản lý tiếp khách</span>
           </div>
+          {/* Page header: title group + action group each own their space (flex wrap) — the
+              action button never sits under the layout notification bell (which reserves its
+              own row in DashboardLayout, no fixed overlay). */}
           <div className="border-b border-gray-100 pb-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-            <h1 className="text-3xl font-bold text-[#004c91]">{isVisitor ? 'Đơn của tôi' : 'Quản lý tiếp khách'}</h1>
-            {isRegularStaff ? (
-              <button onClick={() => navTo('/dashboard/visit/create')} className="flex items-center justify-center gap-2 bg-[#F37021] hover:bg-orange-600 outline-none text-white px-4 py-2 rounded-lg font-bold shadow-sm transition-colors whitespace-nowrap w-full md:w-auto">
-                <Plus className="w-5 h-5" /> Tạo đoàn khách
-              </button>
-            ) : isHO ? (
-              <button onClick={() => navTo('/dashboard/visit/agenda-templates')} className="flex items-center justify-center gap-2 bg-[#F37021] hover:bg-orange-600 outline-none text-white px-4 py-2 rounded-lg font-bold shadow-sm transition-colors whitespace-nowrap w-full md:w-auto">
-                <Plus className="w-5 h-5" /> Quản lý mẫu Agenda
-              </button>
-            ) : null}
+            <h1 className="min-w-0 text-3xl font-bold text-[#004c91]">{isVisitor ? 'Đơn của tôi' : 'Quản lý tiếp khách'}</h1>
+            <div className="flex shrink-0 flex-wrap items-center gap-3 w-full md:w-auto">
+              {canCreateVisitRequest && (
+                <button
+                  onClick={() => setShowCreateModal(true)}
+                  className="flex items-center justify-center gap-2 bg-[#F37021] hover:bg-orange-600 outline-none focus-visible:ring-2 focus-visible:ring-[#F37021]/50 text-white px-4 py-2 rounded-lg font-bold shadow-sm transition-colors whitespace-nowrap w-full md:w-auto"
+                >
+                  <Plus className="w-5 h-5" /> Tạo đoàn khách
+                </button>
+              )}
+              {isHO && (
+                <button onClick={() => navTo('/dashboard/visit/agenda-templates')} className="flex items-center justify-center gap-2 bg-[#F37021] hover:bg-orange-600 outline-none text-white px-4 py-2 rounded-lg font-bold shadow-sm transition-colors whitespace-nowrap w-full md:w-auto">
+                  <Plus className="w-5 h-5" /> Quản lý mẫu Agenda
+                </button>
+              )}
+            </div>
           </div>
         </>
       )}
@@ -1382,7 +1436,9 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
         <div className="flex w-full sm:w-max items-center gap-1 rounded-xl bg-slate-100 p-1">
           {([
             { key: 'responsible' as Tab, label: responsibleTabLabel, show: canUseResponsibleTab },
+            { key: 'hosted' as Tab, label: hostedTabLabel, show: canUseHostedTab },
             { key: 'attending' as Tab, label: attendingTabLabel, show: canUseAttendingTab },
+            { key: 'registered' as Tab, label: registeredTabLabel, show: canUseRegisteredTab },
           ]).filter(t => t.show).map((t) => (
             <button
               key={t.key}
@@ -1798,6 +1854,19 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
           </div>
         )}
       </div>
+
+      {/* Tạo đoàn khách (shared form core, authenticated mode — không OTP). Đóng modal
+          sau khi gửi thành công thì reload danh sách để thấy đơn mới ngay. */}
+      {canCreateVisitRequest && (
+        <VisitingFormPopup
+          isOpen={showCreateModal}
+          mode="authenticated"
+          onClose={() => {
+            setShowCreateModal(false);
+            loadDelegations(activeTab, currentPage, pageSize, appliedFilters, sortOrder);
+          }}
+        />
+      )}
 
       {/* Xem form yêu cầu (readonly view of original request form) */}
       <SubmittedVisitRequestDetailModal

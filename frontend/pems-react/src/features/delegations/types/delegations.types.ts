@@ -758,6 +758,13 @@ export interface VisitRequestManagementItem {
   visitorUserId: number | null;
   visitorName: string | null;
 
+  // ── Actor relation (registrant vs contact owner) ──
+  /** Tài khoản NGƯỜI ĐĂNG KÝ (read-only tracking relation). */
+  registrantUserId?: number | null;
+  /** Tab "Đơn tôi đăng ký": registrant đồng thời là host chính thức của ≥1 campus. */
+  isAlsoHost?: boolean;
+  alsoHostVisitInstanceId?: number | null;
+
   isCurrentUserParticipant: boolean;
   participantRole: string | null;
   currentUserRelation: string;

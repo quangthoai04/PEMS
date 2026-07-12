@@ -101,7 +101,28 @@
     "jobTitle": "Position / Department",
     "phone": "Phone Number",
     "email": "Email",
-    "emailSubtitle": "This email is only used to receive OTP for form submission. An account for tracking will be created using the email in the Contact Point section."
+    "emailSubtitle": "This email is only used to receive OTP for form submission. An account for tracking will be created using the email in the Contact Point section.",
+    "identityFromAccount": "Taken from your signed-in account — cannot be edited."
+  },
+  "campusProcessing": {
+    "title": "Per-campus processing",
+    "desc": "Choose how the campus in your scope is processed. Other campuses always wait for that campus's Staff Leader.",
+    "sendForReview": "Send to Staff Leader for review",
+    "selfHost": "I will host and process it now",
+    "assignHost": "Assign a host and process now",
+    "hostPickerLabel": "Pick a host (same-campus IC Staff)",
+    "hostPickerPlaceholder": "— Select host —",
+    "hostConflictBadge": "Schedule conflict",
+    "otherCampusPending": "Waiting for this campus's Staff Leader",
+    "hostFinalWarning": "Note: the official host CANNOT be changed after assignment in the current flow.",
+    "visitorInfo": "Your request will be sent to each campus's Staff Leader for review.",
+    "loadingCandidates": "Loading host candidates...",
+    "noCandidates": "No eligible IC Staff at your campus."
+  },
+  "hostConflictConfirm": {
+    "title": "Host schedule conflict",
+    "confirm": "I understand, continue",
+    "cancel": "Review again"
   },
   "step2Info": {
     "title": "DELEGATION INFORMATION",
@@ -186,6 +207,7 @@
     "statsMsgDup": "Total {{totalRows}} rows · {{errorRows}} error/skipped rows · {{skipped}} duplicated rows skipped.",
     "contactTitle": "Contact Point Information",
     "iamContact": "I am also the contact point",
+    "internalMustPickOther": "The contact point must be an external person (VISITOR account)",
     "contactDesc1": "When checking \"I am also the contact point\", the system will autofill the Contact Point Information from the Registrant Information.",
     "contactDesc2": "Contact point information will be used by FPTU to discuss the visit request. The contact point email is also used to create a VISITOR account for subsequent Google logins to track the request.",
     "contactFullName": "Full Name *",

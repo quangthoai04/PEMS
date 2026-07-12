@@ -101,7 +101,28 @@
     "jobTitle": "Chức danh, phòng ban",
     "phone": "Số điện thoại",
     "email": "Email",
-    "emailSubtitle": "Email này chỉ dùng để nhận mã OTP xác thực việc gửi form. Tài khoản theo dõi yêu cầu sẽ được tạo theo email ở phần Thông tin đầu mối liên hệ."
+    "emailSubtitle": "Email này chỉ dùng để nhận mã OTP xác thực việc gửi form. Tài khoản theo dõi yêu cầu sẽ được tạo theo email ở phần Thông tin đầu mối liên hệ.",
+    "identityFromAccount": "Lấy từ tài khoản đăng nhập — không thể chỉnh sửa."
+  },
+  "campusProcessing": {
+    "title": "Xử lý theo cơ sở",
+    "desc": "Chọn cách xử lý cho cơ sở thuộc phạm vi của bạn. Các cơ sở khác luôn chờ Staff Leader của cơ sở đó duyệt.",
+    "sendForReview": "Gửi Staff Leader duyệt",
+    "selfHost": "Tôi tự nhận làm host và xử lý ngay",
+    "assignHost": "Gán host và xử lý ngay",
+    "hostPickerLabel": "Chọn host (IC Staff cùng cơ sở)",
+    "hostPickerPlaceholder": "— Chọn host —",
+    "hostConflictBadge": "Trùng lịch",
+    "otherCampusPending": "Chờ Staff Leader cơ sở này duyệt",
+    "hostFinalWarning": "Lưu ý: host chính thức KHÔNG thể thay đổi sau khi gán theo quy trình hiện tại.",
+    "visitorInfo": "Đơn của bạn sẽ được gửi tới Staff Leader của từng cơ sở để duyệt.",
+    "loadingCandidates": "Đang tải danh sách host...",
+    "noCandidates": "Không có IC Staff hợp lệ tại cơ sở của bạn."
+  },
+  "hostConflictConfirm": {
+    "title": "Host bị trùng lịch",
+    "confirm": "Tôi hiểu, vẫn tiếp tục",
+    "cancel": "Xem lại"
   },
   "step2Info": {
     "title": "THÔNG TIN ĐOÀN KHÁCH",
@@ -186,6 +207,7 @@
     "statsMsgDup": "Tổng {{totalRows}} dòng · {{errorRows}} dòng lỗi/bỏ qua · {{skipped}} dòng trùng đã bỏ qua.",
     "contactTitle": "Thông tin đầu mối liên hệ",
     "iamContact": "Tôi cũng là đầu mối liên hệ",
+    "internalMustPickOther": "Đầu mối liên hệ phải là người ngoài FPTU (tài khoản VISITOR)",
     "contactDesc1": "Khi chọn \"Tôi cũng là đầu mối liên hệ\", hệ thống sẽ tự điền Thông tin đầu mối liên hệ từ Thông tin người đăng ký form.",
     "contactDesc2": "Thông tin đầu mối liên hệ sẽ được FPTU sử dụng để trao đổi về yêu cầu tham quan. Email đầu mối liên hệ cũng là email dùng để tạo tài khoản VISITOR và đăng nhập Google lần sau để theo dõi yêu cầu.",
     "contactFullName": "Họ và tên *",

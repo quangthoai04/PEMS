@@ -203,7 +203,65 @@ function mapToPayload(data: VisitRequestSchema) {
   };
 }
 
+// ── Authenticated create (Visitor / IC Staff / Staff Leader) ────────────────
+
+/** Per-campus processing mode for the authenticated create (backend revalidates all). */
+export interface CampusProcessingChoice {
+  campusId: string; // campus CODE ("HN", "HCM", ...)
+  mode: 'SEND_FOR_REVIEW' | 'SELF_HOST' | 'ASSIGN_HOST';
+  hostUserId?: number | null;
+}
+
+export interface AuthenticatedCreateResponse {
+  visitRequestId: number;
+  requestCode: string;
+  status: string;
+  message: string;
+  hasHostingConflictWarning: boolean;
+}
+
+export interface CreateHostCandidate {
+  userId: number;
+  fullName: string;
+  email: string | null;
+  campusId: number | null;
+  departmentName: string | null;
+  subRole: string | null;
+  roleLabel: string | null;
+  isSelf: boolean;
+  isStaffLeaderSelfHostOption: boolean;
+  hasScheduleConflict: boolean;
+  conflictCount: number;
+}
+
 export const visitRequestApi = {
+  /**
+   * Authenticated submit — no OTP; the JWT session is the registrant identity (the
+   * backend overrides the registrant name/email from the DB user). Same payload shape
+   * + submissionId idempotency as the public flow, plus per-campus processing modes.
+   */
+  async createAuthenticated(
+    data: VisitRequestSchema,
+    submissionId: string,
+    campusProcessing: CampusProcessingChoice[],
+    confirmedHostConflict = false
+  ): Promise<AuthenticatedCreateResponse> {
+    const { data: res } = await httpClient.post<AuthenticatedCreateResponse>(
+      API_ENDPOINTS.visitRequests.createAuthenticated,
+      { ...mapToPayload(data), submissionId, campusProcessing, confirmedHostConflict }
+    );
+    return res;
+  },
+
+  /** Staff Leader only — own-campus host candidates for ASSIGN_HOST in the create form. */
+  async getCreateHostCandidates(startAt?: string, endAt?: string): Promise<CreateHostCandidate[]> {
+    const { data } = await httpClient.get<CreateHostCandidate[]>(
+      API_ENDPOINTS.visitRequests.createHostCandidates,
+      { params: { startAt: startAt || undefined, endAt: endAt || undefined } }
+    );
+    return data;
+  },
+
   async initiate(data: VisitRequestSchema, submissionId: string): Promise<InitiateResponse> {
     const { data: res } = await httpClient.post<InitiateResponse>(
       API_ENDPOINTS.visitRequests.initiate,
