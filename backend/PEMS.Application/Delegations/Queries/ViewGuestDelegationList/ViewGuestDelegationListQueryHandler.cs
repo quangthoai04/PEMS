@@ -14,12 +14,16 @@ namespace PEMS.Application.Delegations.Queries.ViewGuestDelegationList;
 
 /// <summary>
 /// UC-20 View Guest Delegation List. Returns rows already filtered to the caller's
-/// responsibility scope (the backend is the single authority â€” the frontend never
-/// post-filters by role). Two tabs:
-///   • "responsible" (Đơn phụ trách): requests the user creates / approves / hosts /
-///     is assigned a task on. Visitor &amp; HO see one row per request; campus actors
-///     (Staff Leader/Staff, Dept, Student) see one row per relevant campus instance.
+/// responsibility scope (the backend is the single authority — the frontend never
+/// post-filters by role). Tabs (actor relation):
+///   • "responsible": Visitor = CONTACT-OWNER rows (one per request); HO = monitor (one per
+///     request); campus actors (Staff Leader/Staff, Dept, Student) = one row per relevant
+///     campus instance (regular Staff = instances they officially HOST).
 ///   • "attending" (Đơn mời tham dự): requests the user has ACCEPTED an invitation for.
+///   • "registered" (Đơn tôi đăng ký / Tôi là người đăng ký): requests where the caller is
+///     the REGISTRANT (registrant_user_id) — strictly read-only tracking rows.
+///   • "hosted" (Tôi là host): instance rows the caller officially hosts (Staff Leader's
+///     dedicated host view).
 /// Each row also carries <see cref="VisitRequestManagementItemDto.AllowedActions"/>.
 /// </summary>
 public sealed class ViewGuestDelegationListQueryHandler
@@ -30,6 +34,14 @@ public sealed class ViewGuestDelegationListQueryHandler
     private readonly IDateTimeService _clock;
 
     private const string TabAttending = "attending";
+    // "registered" (Đơn tôi đăng ký / Tôi là người đăng ký): requests where the caller is the
+    // REGISTRANT (registrant_user_id) — strictly read-only tracking. Available to Visitor,
+    // regular Staff and Staff Leader. A Visitor who is BOTH registrant and contact owner sees
+    // the row only on their owner tab, never here.
+    private const string TabRegistered = "registered";
+    // "hosted" (Tôi là host): instance-level rows the caller officially hosts. Gives the Staff
+    // Leader a dedicated host view separate from the campus-review tab.
+    private const string TabHosted = "hosted";
 
     public ViewGuestDelegationListQueryHandler(
         IApplicationDbContext context, ICurrentUserService currentUser, IDateTimeService clock)
@@ -49,17 +61,26 @@ public sealed class ViewGuestDelegationListQueryHandler
         var roleCode = _currentUser.RoleCode;
         var subRole = _currentUser.SubRole;
         var isStaffLeader = roleCode == RoleCodes.Staff && subRole == UserSubRoles.Leader;
-        var tab = string.Equals(request.Tab, TabAttending, StringComparison.OrdinalIgnoreCase)
-            ? TabAttending
-            : "responsible";
+        var isStaffRole = roleCode == RoleCodes.Staff;
+        var tab = (request.Tab ?? string.Empty).ToLowerInvariant() switch
+        {
+            TabAttending  => TabAttending,
+            TabRegistered => TabRegistered,
+            TabHosted     => TabHosted,
+            _             => "responsible",
+        };
 
         // Admin does not take part in the reception flow (also has no UC-20 grant).
         // The "Đơn mời tham dự" (attending) tab is ONLY for users who can be invited as a
         // non-host participant: regular Staff, Dept, Student. HO, Staff Leader/IC Head and
         // Visitor are never invitees (they approve / assign / own), so they have no Tab 2.
+        // "registered" is for Visitor/Staff/Staff Leader (the only roles that may create);
+        // "hosted" is instance-hosting Staff (in practice the Staff Leader's dedicated view).
         if (roleCode == RoleCodes.Admin ||
             (tab == TabAttending &&
-                (roleCode == RoleCodes.Visitor || roleCode == RoleCodes.Ho || isStaffLeader)))
+                (roleCode == RoleCodes.Visitor || roleCode == RoleCodes.Ho || isStaffLeader)) ||
+            (tab == TabRegistered && !(roleCode == RoleCodes.Visitor || isStaffRole)) ||
+            (tab == TabHosted && !isStaffRole))
         {
             return PaginatedResult<VisitRequestManagementItemDto>.Create(
                 new List<VisitRequestManagementItemDto>(), request.Page, request.PageSize, 0);
@@ -70,18 +91,27 @@ public sealed class ViewGuestDelegationListQueryHandler
 
         if (tab == TabAttending)
         {
-            (items, totalItems) = await QueryInstanceLevelAsync(request, userId, attending: true, cancellationToken);
+            (items, totalItems) = await QueryInstanceLevelAsync(request, userId, attending: true, hostedOnly: false, cancellationToken);
+        }
+        else if (tab == TabRegistered)
+        {
+            // Read-only registrant tracking rows (one per request), any creator role.
+            (items, totalItems) = await QueryRequestLevelAsync(request, userId, roleCode, cancellationToken, registeredView: true);
+        }
+        else if (tab == TabHosted)
+        {
+            (items, totalItems) = await QueryInstanceLevelAsync(request, userId, attending: false, hostedOnly: true, cancellationToken);
         }
         else if (roleCode == RoleCodes.Visitor || roleCode == RoleCodes.Ho)
         {
-            // Request-level rows (one per delegation): HO acts on the whole request,
-            // Visitor owns the whole request.
+            // Request-level rows (one per delegation): HO monitors the whole request,
+            // the Visitor CONTACT OWNER owns the whole request.
             (items, totalItems) = await QueryRequestLevelAsync(request, userId, roleCode, cancellationToken);
         }
         else
         {
             // Campus actors (Staff Leader/Staff, Dept, Student): one row per relevant instance.
-            (items, totalItems) = await QueryInstanceLevelAsync(request, userId, attending: false, cancellationToken);
+            (items, totalItems) = await QueryInstanceLevelAsync(request, userId, attending: false, hostedOnly: false, cancellationToken);
         }
 
         var now = _clock.UtcNow;
@@ -103,13 +133,18 @@ public sealed class ViewGuestDelegationListQueryHandler
     // subqueries over an optional LEFT-JOIN side or scalar subqueries in the projection
     // (the previous shape) fail to translate there.
     private async Task<(List<VisitRequestManagementItemDto> Items, int Total)> QueryInstanceLevelAsync(
-        ViewGuestDelegationListQuery request, ulong userId, bool attending, CancellationToken ct)
+        ViewGuestDelegationListQuery request, ulong userId, bool attending, bool hostedOnly, CancellationToken ct)
     {
         var q = from c in _context.VisitRequestCampuses
                 join vr in _context.VisitRequests on c.VisitRequestId equals vr.VisitRequestId
                 select new { c, vr };
 
-        if (attending)
+        if (hostedOnly)
+        {
+            // "Tôi là host" tab: instances the caller officially hosts, regardless of sub-role.
+            q = q.Where(x => x.c.CurrentHostUserId == userId);
+        }
+        else if (attending)
         {
             var currentUserEmail = _currentUser.Email?.ToLower();
             // Tab 2 — "Đơn mời tham dự": instances the user was INVITED to by someone else as a
@@ -121,6 +156,7 @@ public sealed class ViewGuestDelegationListQueryHandler
                 x.c.Status != VisitInstanceStatus.Cancelled &&
                 x.c.CurrentHostUserId != userId &&
                 x.vr.CreatedBy != userId &&
+                x.vr.RegistrantUserId != userId &&
                 (string.IsNullOrEmpty(currentUserEmail) || x.vr.RegistrantEmail == null || x.vr.RegistrantEmail.ToLower() != currentUserEmail) &&
                 x.vr.VisitorUserId != userId &&
                 _context.VisitParticipants.Any(pp =>
@@ -147,12 +183,9 @@ public sealed class ViewGuestDelegationListQueryHandler
             }
             else if (roleCode == RoleCodes.Staff)
             {
-                var currentUserEmail = _currentUser.Email?.ToLower();
-                // Regular Staff: instances I host or am creator of.
-                q = q.Where(x =>
-                    x.c.CurrentHostUserId == userId
-                    || x.vr.CreatedBy == userId
-                    || (!string.IsNullOrEmpty(currentUserEmail) && x.vr.RegistrantEmail != null && x.vr.RegistrantEmail.ToLower() == currentUserEmail));
+                // Regular Staff "Đơn phụ trách": ONLY instances I officially host. Requests I
+                // merely REGISTERED moved to the read-only "registered" tab (actor relation).
+                q = q.Where(x => x.c.CurrentHostUserId == userId);
             }
             else if (roleCode == RoleCodes.Department || roleCode == RoleCodes.Student)
             {
@@ -309,6 +342,7 @@ public sealed class ViewGuestDelegationListQueryHandler
                 x.vr.VisitScope,
                 x.vr.CreatedBy,
                 x.vr.VisitorUserId,
+                x.vr.RegistrantUserId,
                 x.vr.CreatedAt,
                 x.vr.SubmittedAt,
                 RequestCancelledAt = x.vr.CancelledAt,
@@ -400,6 +434,7 @@ public sealed class ViewGuestDelegationListQueryHandler
 
                 CurrentUserIsHost = r.CurrentHostUserId == userId,
                 VisitorUserId = r.VisitorUserId,
+                RegistrantUserId = r.RegistrantUserId,
                 VisitorName = visitorName,
                 IsCurrentUserParticipant = participantRole != null,
                 ParticipantRole = participantRole,
@@ -430,14 +465,28 @@ public sealed class ViewGuestDelegationListQueryHandler
         return (items, total);
     }
 
-    // â”€â”€ Request-level (responsible tab for Visitor &amp; HO): one row per delegation â”€â”€
+    // ── Request-level: responsible tab for Visitor & HO, and the read-only REGISTERED tab
+    // (registeredView: rows where the caller is the registrant but NOT the contact owner) ──
     private async Task<(List<VisitRequestManagementItemDto> Items, int Total)> QueryRequestLevelAsync(
-        ViewGuestDelegationListQuery request, ulong userId, string? roleCode, CancellationToken ct)
+        ViewGuestDelegationListQuery request, ulong userId, string? roleCode, CancellationToken ct,
+        bool registeredView = false)
     {
         var q = _context.VisitRequests.AsQueryable();
 
-        if (roleCode == RoleCodes.Visitor)
-            q = q.Where(vr => vr.VisitorUserId == userId || vr.CreatedBy == userId);
+        if (registeredView)
+        {
+            // "Tôi là người đăng ký / Đơn tôi đăng ký": strictly the registrant relation.
+            // A Visitor who is BOTH registrant and contact owner sees the request only on
+            // their owner tab — never duplicated here.
+            q = q.Where(vr => vr.RegistrantUserId == userId
+                && (vr.VisitorUserId == null || vr.VisitorUserId != userId));
+        }
+        // Visitor "Tôi là đầu mối": CONTACT-OWNER rows only. Rows where the Visitor merely
+        // registered for someone else live on the "registered" tab (actor relation). Legacy
+        // rows without an owner fall back to created_by.
+        else if (roleCode == RoleCodes.Visitor)
+            q = q.Where(vr => vr.VisitorUserId == userId
+                || (vr.VisitorUserId == null && vr.CreatedBy == userId));
         // HO sees every MULTI_CAMPUS request (they decide it) AND every SINGLE_CAMPUS request
         // in read-only monitoring mode (business rule chốt 2026-06: HO theo dõi SINGLE_CAMPUS).
         // No filter is applied for HO here â€” read-only is enforced via AllowedActions (the HO
@@ -584,19 +633,23 @@ public sealed class ViewGuestDelegationListQueryHandler
             var count = instances.Count;
             var single = count == 1 ? instances.First() : null;
 
-            // ── Visitor edit / resubmit eligibility (spec "sửa đơn / gửi lại sau reject") ──
-            bool canEditPending = vr.Status == VisitRequestStatuses.PendingApproval
+            // ── Visitor edit / resubmit eligibility (spec "sửa đơn / gửi lại sau reject").
+            // NEVER on the registered view — the registrant relation is strictly read-only. ──
+            bool canEditPending = !registeredView
+                && vr.Status == VisitRequestStatuses.PendingApproval
                 && count > 0
                 && instances.All(i => i.Status == VisitInstanceStatus.WaitingRequestApproval)
                 && instances.Min(i => i.PlannedStartAt) >= vnNow.AddHours(24);
-            bool canResubmit = vr.Status == VisitRequestStatuses.Rejected
+            bool canResubmit = !registeredView
+                && vr.Status == VisitRequestStatuses.Rejected
                 && count > 0
                 && instances.All(i => i.Status == VisitInstanceStatus.Rejected);
 
             // Cancel-eligibility (UC-136): APPROVED/PARTIALLY_APPROVED request + an instance still
             // in a cancellable status and not yet started. Computed here (we have all instances)
             // so the frontend never has to infer it from a multi-campus summary row.
-            bool hasCancellableInstance = (vr.Status == VisitRequestStatuses.Approved
+            bool hasCancellableInstance = !registeredView
+                && (vr.Status == VisitRequestStatuses.Approved
                     || vr.Status == VisitRequestStatuses.PartiallyApproved)
                 && instances.Any(i =>
                     (i.Status == VisitInstanceStatus.Assigned
@@ -636,7 +689,7 @@ public sealed class ViewGuestDelegationListQueryHandler
             // instance, with backend-computed action booleans. Only the Visitor owner may cancel,
             // and only when the request is APPROVED and the instance is still cancellable. ──
             bool isVisitor = roleCode == RoleCodes.Visitor;
-            bool isVisitorOwner = isVisitor && vr.VisitorUserId == userId;
+            bool isVisitorOwner = !registeredView && isVisitor && vr.VisitorUserId == userId;
             var campusProgressItems = instances
                 .OrderBy(i => i.PlannedStartAt)
                 .Select(i =>
@@ -674,6 +727,12 @@ public sealed class ViewGuestDelegationListQueryHandler
                     };
                 }).ToList();
 
+            // "Đồng thời là host" badge (registered view only): the registrant Staff also
+            // officially hosts ≥1 instance; actions for that stay on the hosted tab.
+            var alsoHostedInstance = registeredView
+                ? instances.FirstOrDefault(i => i.CurrentHostUserId == userId)
+                : null;
+
             return new VisitRequestManagementItemDto
             {
                 VisitRequestId = vr.VisitRequestId,
@@ -690,6 +749,9 @@ public sealed class ViewGuestDelegationListQueryHandler
                 CreatedByUserId = vr.CreatedBy,
                 CurrentHostUserId = hostUserId,
                 HostName = hostName,
+                RegistrantUserId = vr.RegistrantUserId,
+                IsAlsoHost = alsoHostedInstance != null,
+                AlsoHostVisitInstanceId = alsoHostedInstance?.VisitInstanceId,
 
                 CurrentUserIsHost = false,
                 VisitorUserId = vr.VisitorUserId,
@@ -749,6 +811,8 @@ public sealed class ViewGuestDelegationListQueryHandler
         var actions = new List<string> { "VIEW_DETAIL" };
         if (tab == TabAttending)
             return actions; // attending tab is read-only
+        if (tab == TabRegistered)
+            return actions; // registrant relation is STRICTLY read-only — never owner/host actions
 
         var roleCode = _currentUser.RoleCode?.ToUpperInvariant();
         var subRole = _currentUser.SubRole;
@@ -859,6 +923,8 @@ public sealed class ViewGuestDelegationListQueryHandler
     private static string ResolveTabType(string tab, string? roleCode)
     {
         if (tab == TabAttending) return "INVITED";
+        if (tab == TabRegistered) return "REGISTERED";
+        if (tab == TabHosted) return "HOSTED";
         if (roleCode == RoleCodes.Visitor) return "MY_REQUESTS";
         return "RESPONSIBLE";
     }
@@ -869,6 +935,10 @@ public sealed class ViewGuestDelegationListQueryHandler
     /// </summary>
     private string ResolveRelation(VisitRequestManagementItemDto item, string tab, string? roleCode, bool isStaffLeader)
     {
+        if (tab == TabRegistered)
+            return "REGISTRANT_VIEWER";
+        if (tab == TabHosted)
+            return "HOST";
         if (tab == TabAttending)
         {
             return item.ParticipantRole switch

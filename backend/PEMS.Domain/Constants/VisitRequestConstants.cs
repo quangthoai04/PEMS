@@ -38,6 +38,16 @@ public static class VisitInstanceStatuses
     public const string Rejected               = "REJECTED";
 }
 
+// Per-campus processing mode chosen by an AUTHENTICATED creator (visit-request create).
+// Visitor/public always SEND_FOR_REVIEW; Staff may SELF_HOST their own campus; a Staff
+// Leader may SELF_HOST or ASSIGN_HOST on their own campus. Backend revalidates everything.
+public static class CampusSubmissionModes
+{
+    public const string SendForReview = "SEND_FOR_REVIEW";
+    public const string SelfHost      = "SELF_HOST";
+    public const string AssignHost    = "ASSIGN_HOST";
+}
+
 // Machine-readable error codes for the UC-17 public visit-request flow.
 // Surfaced to the client as response.errorCode (see ExceptionHandlingMiddleware).
 public static class VisitRequestErrorCodes
@@ -83,4 +93,26 @@ public static class VisitRequestErrorCodes
     public const string HostCannotCancelAfterVisitStarted = "HOST_CANNOT_CANCEL_AFTER_VISIT_STARTED";
     // A campus instance needs ≥ 1 agenda row before moving to DURING_VISIT / AFTER_VISIT / CLOSED.
     public const string VisitAgendaRequiredBeforeStart = "VISIT_AGENDA_REQUIRED_BEFORE_START";
+
+    // ── Actor-relation / authenticated create (registrant vs contact owner) ──
+    // Public registrant email belongs to an internal account — the public flow cannot
+    // verify/provision it as a VISITOR; the user must use the internal portal instead.
+    public const string RegistrantEmailBelongsToInternalAccount = "REGISTRANT_EMAIL_BELONGS_TO_INTERNAL_ACCOUNT";
+    // An internal (STAFF/STAFF LEADER) registrant tried to use their own email as the
+    // contact owner — internal users can never be the contact owner.
+    public const string InternalRegistrantCannotBeContact = "INTERNAL_REGISTRANT_CANNOT_BE_CONTACT";
+    // The caller's role may not create visit requests at all (ADMIN/HO/DEPARTMENT/STUDENT).
+    public const string RoleCannotCreateVisitRequest = "ROLE_CANNOT_CREATE_VISIT_REQUEST";
+    // A Visitor (or public) payload carried SELF_HOST/ASSIGN_HOST/host metadata.
+    public const string InvalidCampusSubmissionMode = "INVALID_CAMPUS_SUBMISSION_MODE";
+    // Staff tried to direct-process a campus other than their own primary campus.
+    public const string DirectProcessOtherCampusForbidden = "DIRECT_PROCESS_OTHER_CAMPUS_FORBIDDEN";
+    // Regular Staff tried to assign a host other than themself.
+    public const string StaffCannotAssignOtherHost = "STAFF_CANNOT_ASSIGN_OTHER_HOST";
+    // ASSIGN_HOST candidate is invalid (inactive / wrong role / other campus / not IC).
+    public const string InvalidHostCandidate = "INVALID_HOST_CANDIDATE";
+    // Direct mode payload references a campus that is not among the selected campuses.
+    public const string DirectModeCampusNotSelected = "DIRECT_MODE_CAMPUS_NOT_SELECTED";
+    // The acting Staff does not qualify for direct self-host (not ACTIVE IC staff of that campus).
+    public const string SelfHostNotEligible = "SELF_HOST_NOT_ELIGIBLE";
 }

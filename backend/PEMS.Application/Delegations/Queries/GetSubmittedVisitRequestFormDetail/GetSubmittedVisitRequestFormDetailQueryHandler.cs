@@ -87,6 +87,11 @@ public sealed class GetSubmittedVisitRequestFormDetailQueryHandler
         var isMulti = visitRequest.VisitScope == VisitScopes.MultiCampus;
         var isSingle = visitRequest.VisitScope == VisitScopes.SingleCampus;
         var status = visitRequest.Status;
+
+        // Registrant (người đăng ký) relation: read-only view of the submitted form snapshot
+        // + public-safe progress. Never grants any mutation (those stay visitor_user_id-gated).
+        var isRegistrant = visitRequest.RegistrantUserId.HasValue
+            && visitRequest.RegistrantUserId.Value == userId;
         var instanceIds = visitRequest.CampusInstances.Select(c => c.VisitInstanceId).ToList();
         var departmentStaffAssignedInstanceIds = new HashSet<ulong>();
         if (isDepartmentStaff)
@@ -137,12 +142,15 @@ public sealed class GetSubmittedVisitRequestFormDetailQueryHandler
 
             // Campus-independent approval: the Staff Leader sees any request that has an
             // instance of THEIR campus — single or multi, any status, right after submit.
-            if (ownInstance == null)
+            // A Leader who REGISTERED this request may also view it (read-only relation).
+            if (ownInstance == null && !isRegistrant)
                 throw new ForbiddenException("Đơn không có cơ sở thuộc phạm vi của bạn.");
         }
         else if (isVisitor)
         {
-            var owns = visitRequest.VisitorUserId == userId || visitRequest.CreatedBy == userId;
+            var owns = visitRequest.VisitorUserId == userId
+                || isRegistrant
+                || visitRequest.CreatedBy == userId;
             if (!owns)
                 throw new ForbiddenException("Bạn chỉ được xem đơn của chính mình.");
         }
@@ -150,6 +158,11 @@ public sealed class GetSubmittedVisitRequestFormDetailQueryHandler
         {
             // Verified above: caller is the official host of ≥1 campus instance of this request.
             // Allowed read-only; only their hosted instance(s) are surfaced (no other-campus leak).
+        }
+        else if (isRegistrant)
+        {
+            // Registrant viewer (e.g. regular Staff who registered the request but hosts nothing):
+            // read-only form snapshot + public-safe progress.
         }
         else if (isDepartmentStaff && departmentStaffAssignedInstanceIds.Count > 0)
         {
@@ -176,7 +189,9 @@ public sealed class GetSubmittedVisitRequestFormDetailQueryHandler
         // For a Staff Leader on a MULTI_CAMPUS request we only surface their own campus instance
         // (they have no business with the other campuses). HO sees every campus; Visitor (owner)
         // sees all; Staff Leader on SINGLE_CAMPUS sees the single instance.
-        var visibleInstances = (isStaffLeader && isMulti)
+        // A registrant sees every campus they submitted (public-safe progress); a non-registrant
+        // Staff Leader on a multi-campus request still only sees their own campus instance.
+        var visibleInstances = (isStaffLeader && isMulti && !isRegistrant)
             ? visitRequest.CampusInstances.Where(c => c.CampusId == primaryCampusId).ToList()
             : isHost
                 ? hostedInstances
@@ -221,10 +236,12 @@ public sealed class GetSubmittedVisitRequestFormDetailQueryHandler
             canApprove = canReject = true;
         }
 
-        // Cancel (UC-136) is offered on this read-only form only to the Visitor owner of an
+        // Cancel (UC-136) is offered on this read-only form only to the CONTACT OWNER of an
         // approved/partially-approved request that still has an active (ASSIGNED/BEFORE_VISIT)
-        // instance. The cancel command re-checks the time window and ownership — UI hint only.
+        // instance. A registrant-only Visitor never gets it. The cancel command re-checks the
+        // time window and ownership — UI hint only.
         if (isVisitor
+            && visitRequest.VisitorUserId == userId
             && (status == VisitRequestStatuses.Approved || status == VisitRequestStatuses.PartiallyApproved)
             && visibleInstances.Any(c => c.Status == VisitInstanceStatus.Assigned
                 || c.Status == VisitInstanceStatus.BeforeVisit))

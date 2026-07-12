@@ -26,10 +26,14 @@ public sealed class VisitRequestService : IVisitRequestService
     public async Task<VisitRequest> CreateAsync(
         VisitRequestFormData f,
         ulong? visitorUserId,
+        ulong? registrantUserId,
         string createdSource,
         DateTime utcNow,
         CancellationToken cancellationToken = default)
     {
+        // The audit "creator" is the submitting actor (registrant) when known; the
+        // contact owner stays only the action owner of the request itself.
+        var creatorUserId = registrantUserId ?? visitorUserId;
         // ── Business validation: campus existence + ACTIVE state, planned times ──
         // (Structural validation — required fields, scope↔count, end>start — already ran
         //  in the FluentValidation pipeline. These checks need the database / clock.)
@@ -123,6 +127,7 @@ public sealed class VisitRequestService : IVisitRequestService
             // VisitRequestId is DB-generated (BIGINT AUTO_INCREMENT).
             RequestCode          = requestCode,
             VisitorUserId        = visitorUserId,
+            RegistrantUserId     = registrantUserId,
             PartnerId            = f.PartnerId,
             CreatedSource        = createdSource,
             RegistrantFullName   = f.RegistrantFullName,
@@ -150,7 +155,7 @@ public sealed class VisitRequestService : IVisitRequestService
             SubmittedAt          = utcNow,
             RowVersion           = 0,
             CreatedAt            = utcNow,
-            CreatedBy            = visitorUserId
+            CreatedBy            = creatorUserId
         };
 
         // ── Campus instances (added via navigation so EF sets the FK after insert) ──
@@ -177,12 +182,12 @@ public sealed class VisitRequestService : IVisitRequestService
                 HostAssignedBy       = null,
                 HostAssignedAt       = null,
                 CoordinatorUserId    = staffLeadersByCampus[campus.CampusId],
-                CoordinatorAssignedBy = visitorUserId,
+                CoordinatorAssignedBy = creatorUserId,
                 CoordinatorAssignedAt = utcNow,
 
                 RowVersion           = 0,
                 CreatedAt            = utcNow,
-                CreatedBy            = visitorUserId
+                CreatedBy            = creatorUserId
             });
         }
 
@@ -199,7 +204,7 @@ public sealed class VisitRequestService : IVisitRequestService
                 MemberType       = "GUEST",
                 DisplayOrder     = order++,
                 CreatedAt        = utcNow,
-                CreatedBy        = visitorUserId
+                CreatedBy        = creatorUserId
             });
         }
 
@@ -216,7 +221,7 @@ public sealed class VisitRequestService : IVisitRequestService
                     MemberType       = "EXTERNAL_SUPPORT", // User explicitly requested EXTERNAL_SUPPORT
                     DisplayOrder     = order++,
                     CreatedAt        = utcNow,
-                    CreatedBy        = visitorUserId
+                    CreatedBy        = creatorUserId
                 });
             }
         }

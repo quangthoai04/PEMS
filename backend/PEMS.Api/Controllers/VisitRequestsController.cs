@@ -1,11 +1,14 @@
 using MediatR;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using PEMS.Application.Delegations.Commands.CreateAuthenticatedVisitRequest;
 using PEMS.Application.Delegations.Commands.InitiateVisitRequest;
 using PEMS.Application.Delegations.Commands.RecoverVisitRequestOtp;
 using PEMS.Application.Delegations.Commands.ResendVisitRequestOtp;
 using PEMS.Application.Delegations.Commands.ResubmitRejectedVisitRequest;
 using PEMS.Application.Delegations.Commands.UpdatePendingVisitRequest;
 using PEMS.Application.Delegations.Commands.VerifyAndCreateVisitRequest;
+using PEMS.Application.Delegations.Queries.GetCreateHostCandidates;
 using PEMS.Application.Delegations.Queries.GetEditableVisitRequestDetail;
 
 namespace PEMS.Api.Controllers;
@@ -95,6 +98,44 @@ public sealed class VisitRequestsController : ControllerBase
         CancellationToken cancellationToken)
     {
         var result = await _mediator.Send(command, cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// AUTHENTICATED create (Visitor / IC Staff / Staff Leader) — no OTP: the JWT session
+    /// is the registrant identity. Same shared form validation + fingerprint idempotency
+    /// as the public flow. Per-campus processing modes (SELF_HOST / ASSIGN_HOST) are only
+    /// honoured on the caller's own campus and only for Staff/Staff Leader; the handler
+    /// revalidates role, campus scope and host candidate from the DB.
+    /// </summary>
+    [HttpPost]
+    [Authorize]
+    [ProducesResponseType(typeof(CreateAuthenticatedVisitRequestResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> CreateAuthenticated(
+        [FromBody] CreateAuthenticatedVisitRequestCommand command,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(command, cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Host candidates for the authenticated create form's ASSIGN_HOST mode (Staff Leader
+    /// only, own campus implied — no campus parameter, other campuses can't be probed).
+    /// Optional planned window drives non-blocking schedule-conflict warnings.
+    /// </summary>
+    [HttpGet("host-candidates")]
+    [Authorize]
+    public async Task<IActionResult> GetCreateHostCandidates(
+        [FromQuery] DateTime? startAt,
+        [FromQuery] DateTime? endAt,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new GetCreateHostCandidatesQuery(startAt, endAt), cancellationToken);
         return Ok(result);
     }
 
