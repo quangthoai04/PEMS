@@ -792,7 +792,8 @@ CREATE TABLE visit_requests (
   request_code VARCHAR(50) NOT NULL,
   submission_id CHAR(36) NULL COMMENT 'UUID idempotency cho một submit intent',
   business_fingerprint CHAR(64) NULL COMMENT 'SHA-256 fingerprint v1 của core visit identity',
-  visitor_user_id BIGINT UNSIGNED NULL COMMENT 'Visitor user/account created or linked for the registrant',
+  visitor_user_id BIGINT UNSIGNED NULL COMMENT 'Tài khoản ĐẦU MỐI LIÊN HỆ (contact owner) — chủ sở hữu thao tác request (edit/resubmit/cancel/feedback theo status). Luôn là role VISITOR.',
+  registrant_user_id BIGINT UNSIGNED NULL COMMENT 'Tài khoản NGƯỜI ĐĂNG KÝ (submitter). Chỉ có quyền xem/theo dõi read-only; mọi mutation request-level thuộc về visitor_user_id (đầu mối liên hệ).',
   partner_id BIGINT UNSIGNED NULL,
   created_source ENUM('VISITOR_SUBMITTED','STAFF_CREATED') NOT NULL DEFAULT 'VISITOR_SUBMITTED',
 
@@ -853,6 +854,7 @@ CREATE TABLE visit_requests (
   -- legitimate re-submissions after 15 minutes or after reject/cancel. Do NOT make it unique.
   KEY idx_visit_requests_fingerprint_time_status (business_fingerprint, submitted_at, status),
   KEY idx_visit_requests_visitor (visitor_user_id),
+  KEY idx_visit_requests_registrant_user (registrant_user_id, submitted_at),
   KEY idx_visit_requests_partner (partner_id),
   KEY idx_visit_requests_status_submitted (status, submitted_at),
   KEY idx_visit_requests_registrant_email (registrant_email),
@@ -876,6 +878,9 @@ CREATE TABLE visit_requests (
   CHECK (visit_type <> 'OTHER' OR (visit_type_other IS NOT NULL AND TRIM(visit_type_other) <> '')),
   CONSTRAINT fk_visit_requests_visitor
     FOREIGN KEY (visitor_user_id) REFERENCES users(user_id)
+    ON UPDATE CASCADE ON DELETE SET NULL,
+  CONSTRAINT fk_visit_requests_registrant_user
+    FOREIGN KEY (registrant_user_id) REFERENCES users(user_id)
     ON UPDATE CASCADE ON DELETE SET NULL,
   CONSTRAINT fk_visit_requests_partner
     FOREIGN KEY (partner_id) REFERENCES partners(partner_id)
@@ -917,9 +922,10 @@ CREATE TABLE visit_request_campuses (
   host_assigned_by BIGINT UNSIGNED NULL COMMENT 'Staff Leader approve và gán host chính thức',
   host_assigned_at DATETIME NULL COMMENT 'Thời điểm host chính thức được gán',
 
-  decided_by BIGINT UNSIGNED NULL COMMENT 'Staff Leader duyệt/từ chối campus instance',
-  decided_at DATETIME NULL COMMENT 'Thời điểm Staff Leader xử lý campus instance',
-  decision_actor_role ENUM('STAFF_LEADER') NULL COMMENT 'Luôn là STAFF_LEADER trong flow campus-level approval',
+  decided_by BIGINT UNSIGNED NULL COMMENT 'Người xử lý campus instance (Staff Leader duyệt/từ chối, hoặc IC Staff tự nhận host trong transaction tạo đơn của chính mình)',
+  decided_at DATETIME NULL COMMENT 'Thời điểm campus instance được xử lý',
+  decision_actor_role ENUM('STAFF_LEADER','STAFF') NULL COMMENT 'STAFF_LEADER = duyệt chuẩn/gán host/leader self-host; STAFF = IC Staff thường tự nhận host trong transaction TẠO đơn của chính mình (decision_source=INTERNAL_SELF_HOST).',
+  decision_source ENUM('STANDARD_CAMPUS_REVIEW','INTERNAL_SELF_HOST','INTERNAL_LEADER_ASSIGN') NULL COMMENT 'Nguồn quyết định: STANDARD_CAMPUS_REVIEW=Staff Leader duyệt instance pending; INTERNAL_SELF_HOST=người tạo tự nhận host own campus trong create; INTERNAL_LEADER_ASSIGN=Leader gán IC Staff cùng campus trong create.',
   decision_note TEXT NULL COMMENT 'Ghi chú duyệt hoặc lý do từ chối; REJECTED bắt buộc có lý do',
 
   closed_by BIGINT UNSIGNED NULL,
@@ -953,6 +959,7 @@ CREATE TABLE visit_request_campuses (
   KEY idx_visit_instances_host_assigned (host_assigned_by, host_assigned_at),
   KEY idx_visit_instances_decision (decided_by, decided_at),
   KEY idx_visit_instances_decision_role (decision_actor_role, decided_at),
+  KEY idx_visit_instances_decision_source (decision_source, decided_at),
   KEY idx_visit_instances_cancelled (cancelled_by, cancelled_at),
   KEY idx_visit_instances_cancel_actor (cancellation_actor_type, cancelled_at),
   KEY idx_visit_instances_visibility_campus_request (campus_id, visit_request_id, status, current_host_user_id),
@@ -3344,6 +3351,14 @@ BEGIN
     IF v_cancel_role_code <> 'VISITOR' THEN
       SIGNAL SQLSTATE '45000'
         SET MESSAGE_TEXT = 'Only VISITOR can cancel the main visit request';
+    END IF;
+
+    -- Actor relation hardening: the canceller must be THE contact owner of this
+    -- request, not merely any account with role VISITOR (legacy rows with a NULL
+    -- owner keep the old role-only check).
+    IF NEW.visitor_user_id IS NOT NULL AND NEW.cancelled_by <> NEW.visitor_user_id THEN
+      SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Only the contact owner (visitor_user_id) can cancel the main visit request';
     END IF;
 
     -- Visitor self-service cancellation must be at least 24 hours before every active campus schedule.
@@ -9046,9 +9061,10 @@ BEFORE UPDATE ON visit_request_campuses
 FOR EACH ROW
 BEGIN
   DECLARE v_request_status VARCHAR(30);
+  DECLARE v_contact_owner_id BIGINT UNSIGNED;
 
   IF NEW.status = 'CANCELLED' AND OLD.status <> 'CANCELLED' THEN
-    SELECT status INTO v_request_status
+    SELECT status, visitor_user_id INTO v_request_status, v_contact_owner_id
     FROM visit_requests
     WHERE visit_request_id = NEW.visit_request_id;
 
@@ -9099,6 +9115,12 @@ BEGIN
         SIGNAL SQLSTATE '45000'
           SET MESSAGE_TEXT = 'VISITOR campus cancellation must use SELF_SERVICE source';
       END IF;
+      -- Actor relation hardening: the visitor canceller must be the contact owner
+      -- of the parent request (legacy rows with NULL owner keep old behaviour).
+      IF v_contact_owner_id IS NOT NULL AND NEW.cancelled_by <> v_contact_owner_id THEN
+        SIGNAL SQLSTATE '45000'
+          SET MESSAGE_TEXT = 'VISITOR campus cancellation requires cancelled_by to be the contact owner of the parent request';
+      END IF;
     ELSEIF NEW.cancellation_actor_type = 'HOST' THEN
       IF OLD.status = 'WAITING_REQUEST_APPROVAL' THEN
         SIGNAL SQLSTATE '45000'
@@ -9131,6 +9153,7 @@ BEFORE INSERT ON visit_request_campuses
 FOR EACH ROW
 BEGIN
   DECLARE v_request_status VARCHAR(30);
+  DECLARE v_registrant_user_id BIGINT UNSIGNED;
   DECLARE v_agenda_count INT DEFAULT 0;
   DECLARE v_host_role_code VARCHAR(30);
   DECLARE v_host_sub_role VARCHAR(30);
@@ -9141,11 +9164,13 @@ BEGIN
   DECLARE v_decider_role_code VARCHAR(30);
   DECLARE v_decider_sub_role VARCHAR(30);
   DECLARE v_decider_campus_id BIGINT UNSIGNED;
+  DECLARE v_decider_status VARCHAR(30);
   DECLARE v_coord_role_code VARCHAR(30);
   DECLARE v_coord_sub_role VARCHAR(30);
   DECLARE v_coord_campus_id BIGINT UNSIGNED;
+  DECLARE v_source VARCHAR(40);
 
-  SELECT status INTO v_request_status
+  SELECT status, registrant_user_id INTO v_request_status, v_registrant_user_id
   FROM visit_requests
   WHERE visit_request_id = NEW.visit_request_id;
 
@@ -9155,7 +9180,8 @@ BEGIN
 
   IF NEW.status = 'WAITING_REQUEST_APPROVAL' THEN
     IF NEW.current_host_user_id IS NOT NULL OR NEW.host_assigned_by IS NOT NULL OR NEW.host_assigned_at IS NOT NULL
-       OR NEW.decided_by IS NOT NULL OR NEW.decided_at IS NOT NULL OR NEW.decision_actor_role IS NOT NULL THEN
+       OR NEW.decided_by IS NOT NULL OR NEW.decided_at IS NOT NULL OR NEW.decision_actor_role IS NOT NULL
+       OR NEW.decision_source IS NOT NULL THEN
       SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'WAITING_REQUEST_APPROVAL must not have host or decision data';
     END IF;
   END IF;
@@ -9174,8 +9200,8 @@ BEGIN
     IF NEW.current_host_user_id IS NULL OR NEW.host_assigned_by IS NULL OR NEW.host_assigned_at IS NULL THEN
       SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Approved/operational campus instance requires official host assignment';
     END IF;
-    IF NEW.decided_by IS NULL OR NEW.decided_at IS NULL OR NEW.decision_actor_role <> 'STAFF_LEADER' THEN
-      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Approved/operational campus instance requires Staff Leader decision metadata';
+    IF NEW.decided_by IS NULL OR NEW.decided_at IS NULL OR NEW.decision_actor_role IS NULL THEN
+      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Approved/operational campus instance requires decision metadata';
     END IF;
   END IF;
 
@@ -9201,24 +9227,53 @@ BEGIN
     END IF;
   END IF;
 
+  -- Decision rules: standard review / leader assign need a same-campus Staff Leader.
+  -- INTERNAL_SELF_HOST by a regular IC Staff is ONLY valid at insert time (the create
+  -- transaction of their OWN request): decided_by = host_assigned_by = current_host =
+  -- the request's registrant, ACTIVE STAFF/STAFF of the same campus, actor role 'STAFF'.
   IF NEW.decided_by IS NOT NULL THEN
-    SELECT r.role_code, u.sub_role, u.primary_campus_id INTO v_decider_role_code, v_decider_sub_role, v_decider_campus_id
+    SET v_source = COALESCE(NEW.decision_source, 'STANDARD_CAMPUS_REVIEW');
+
+    SELECT r.role_code, u.sub_role, u.primary_campus_id, u.status
+      INTO v_decider_role_code, v_decider_sub_role, v_decider_campus_id, v_decider_status
     FROM users u JOIN roles r ON r.role_id = u.role_id
     WHERE u.user_id = NEW.decided_by;
-    IF NOT (v_decider_role_code = 'STAFF' AND v_decider_sub_role = 'LEADER' AND v_decider_campus_id = NEW.campus_id) THEN
-      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'decided_by must be Staff Leader of the same campus';
+
+    IF v_source = 'INTERNAL_SELF_HOST' AND NEW.decision_actor_role = 'STAFF' THEN
+      IF NOT (v_decider_role_code = 'STAFF' AND v_decider_sub_role = 'STAFF'
+              AND v_decider_campus_id = NEW.campus_id AND v_decider_status = 'ACTIVE') THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'INTERNAL_SELF_HOST by STAFF requires an ACTIVE regular Staff of the same campus';
+      END IF;
+      IF v_registrant_user_id IS NULL OR v_registrant_user_id <> NEW.decided_by THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'STAFF self-host decision is only valid on a request registered by that same Staff';
+      END IF;
+      IF NEW.current_host_user_id IS NULL OR NEW.current_host_user_id <> NEW.decided_by
+         OR NEW.host_assigned_by IS NULL OR NEW.host_assigned_by <> NEW.decided_by THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'STAFF self-host requires decided_by = host_assigned_by = current_host_user_id';
+      END IF;
+    ELSE
+      IF NEW.decision_actor_role <> 'STAFF_LEADER' THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'decision_actor_role must be STAFF_LEADER unless INTERNAL_SELF_HOST by the registering Staff';
+      END IF;
+      IF NOT (v_decider_role_code = 'STAFF' AND v_decider_sub_role = 'LEADER' AND v_decider_campus_id = NEW.campus_id) THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'decided_by must be Staff Leader of the same campus';
+      END IF;
     END IF;
   END IF;
 
   IF NEW.host_assigned_by IS NOT NULL THEN
-    SELECT r.role_code, u.sub_role, u.primary_campus_id INTO v_assigner_role_code, v_assigner_sub_role, v_assigner_campus_id
-    FROM users u JOIN roles r ON r.role_id = u.role_id
-    WHERE u.user_id = NEW.host_assigned_by;
-    IF NOT (v_assigner_role_code = 'STAFF' AND v_assigner_sub_role = 'LEADER' AND v_assigner_campus_id = NEW.campus_id) THEN
-      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'host_assigned_by must be Staff Leader of the same campus';
-    END IF;
     IF NEW.decided_by IS NOT NULL AND NEW.decided_by <> NEW.host_assigned_by THEN
       SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'host_assigned_by must match decided_by when approving a campus instance';
+    END IF;
+    -- Same-person INTERNAL_SELF_HOST STAFF case already fully validated above.
+    IF NOT (COALESCE(NEW.decision_source,'STANDARD_CAMPUS_REVIEW') = 'INTERNAL_SELF_HOST'
+            AND NEW.decision_actor_role = 'STAFF') THEN
+      SELECT r.role_code, u.sub_role, u.primary_campus_id INTO v_assigner_role_code, v_assigner_sub_role, v_assigner_campus_id
+      FROM users u JOIN roles r ON r.role_id = u.role_id
+      WHERE u.user_id = NEW.host_assigned_by;
+      IF NOT (v_assigner_role_code = 'STAFF' AND v_assigner_sub_role = 'LEADER' AND v_assigner_campus_id = NEW.campus_id) THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'host_assigned_by must be Staff Leader of the same campus';
+      END IF;
     END IF;
   END IF;
 
@@ -9236,11 +9291,16 @@ BEGIN
   END IF;
 END$$
 
+-- A NEW decision appearing on update (OLD.decided_by IS NULL) is always the standard
+-- Staff Leader review — STAFF/INTERNAL_SELF_HOST can never be introduced after creation
+-- (a regular Staff must not approve an existing pending request). Rows that already carry
+-- a valid insert-time STAFF self-host decision keep passing consistency checks later.
 CREATE TRIGGER trg_visit_campuses_assignment_validate_bu
 BEFORE UPDATE ON visit_request_campuses
 FOR EACH ROW
 BEGIN
   DECLARE v_request_status VARCHAR(30);
+  DECLARE v_registrant_user_id BIGINT UNSIGNED;
   DECLARE v_agenda_count INT DEFAULT 0;
   DECLARE v_host_role_code VARCHAR(30);
   DECLARE v_host_sub_role VARCHAR(30);
@@ -9254,8 +9314,9 @@ BEGIN
   DECLARE v_coord_role_code VARCHAR(30);
   DECLARE v_coord_sub_role VARCHAR(30);
   DECLARE v_coord_campus_id BIGINT UNSIGNED;
+  DECLARE v_source VARCHAR(40);
 
-  SELECT status INTO v_request_status
+  SELECT status, registrant_user_id INTO v_request_status, v_registrant_user_id
   FROM visit_requests
   WHERE visit_request_id = NEW.visit_request_id;
 
@@ -9267,9 +9328,18 @@ BEGIN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Official host cannot be changed after first assignment';
   END IF;
 
+  -- A decision introduced AFTER creation must come from the standard campus review.
+  IF OLD.decided_by IS NULL AND NEW.decided_by IS NOT NULL THEN
+    IF COALESCE(NEW.decision_source, 'STANDARD_CAMPUS_REVIEW') <> 'STANDARD_CAMPUS_REVIEW'
+       OR COALESCE(NEW.decision_actor_role,'') <> 'STAFF_LEADER' THEN
+      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Post-create campus decisions must use STANDARD_CAMPUS_REVIEW by a Staff Leader';
+    END IF;
+  END IF;
+
   IF NEW.status = 'WAITING_REQUEST_APPROVAL' THEN
     IF NEW.current_host_user_id IS NOT NULL OR NEW.host_assigned_by IS NOT NULL OR NEW.host_assigned_at IS NOT NULL
-       OR NEW.decided_by IS NOT NULL OR NEW.decided_at IS NOT NULL OR NEW.decision_actor_role IS NOT NULL THEN
+       OR NEW.decided_by IS NOT NULL OR NEW.decided_at IS NOT NULL OR NEW.decision_actor_role IS NOT NULL
+       OR NEW.decision_source IS NOT NULL THEN
       SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'WAITING_REQUEST_APPROVAL must not have host or decision data';
     END IF;
   END IF;
@@ -9291,8 +9361,8 @@ BEGIN
     IF NEW.current_host_user_id IS NULL OR NEW.host_assigned_by IS NULL OR NEW.host_assigned_at IS NULL THEN
       SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Approved/operational campus instance requires official host assignment';
     END IF;
-    IF NEW.decided_by IS NULL OR NEW.decided_at IS NULL OR NEW.decision_actor_role <> 'STAFF_LEADER' THEN
-      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Approved/operational campus instance requires Staff Leader decision metadata';
+    IF NEW.decided_by IS NULL OR NEW.decided_at IS NULL OR NEW.decision_actor_role IS NULL THEN
+      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Approved/operational campus instance requires decision metadata';
     END IF;
   END IF;
 
@@ -9319,23 +9389,46 @@ BEGIN
   END IF;
 
   IF NEW.decided_by IS NOT NULL THEN
+    SET v_source = COALESCE(NEW.decision_source, 'STANDARD_CAMPUS_REVIEW');
+
     SELECT r.role_code, u.sub_role, u.primary_campus_id INTO v_decider_role_code, v_decider_sub_role, v_decider_campus_id
     FROM users u JOIN roles r ON r.role_id = u.role_id
     WHERE u.user_id = NEW.decided_by;
-    IF NOT (v_decider_role_code = 'STAFF' AND v_decider_sub_role = 'LEADER' AND v_decider_campus_id = NEW.campus_id) THEN
-      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'decided_by must be Staff Leader of the same campus';
+
+    IF v_source = 'INTERNAL_SELF_HOST' AND NEW.decision_actor_role = 'STAFF' THEN
+      -- Consistency re-check of an insert-time STAFF self-host on later updates.
+      IF NOT (v_decider_role_code = 'STAFF' AND v_decider_sub_role = 'STAFF' AND v_decider_campus_id = NEW.campus_id) THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'INTERNAL_SELF_HOST by STAFF requires a regular Staff of the same campus';
+      END IF;
+      IF v_registrant_user_id IS NULL OR v_registrant_user_id <> NEW.decided_by THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'STAFF self-host decision is only valid on a request registered by that same Staff';
+      END IF;
+      IF NEW.current_host_user_id IS NULL OR NEW.current_host_user_id <> NEW.decided_by
+         OR NEW.host_assigned_by IS NULL OR NEW.host_assigned_by <> NEW.decided_by THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'STAFF self-host requires decided_by = host_assigned_by = current_host_user_id';
+      END IF;
+    ELSE
+      IF NEW.decision_actor_role <> 'STAFF_LEADER' THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'decision_actor_role must be STAFF_LEADER unless INTERNAL_SELF_HOST by the registering Staff';
+      END IF;
+      IF NOT (v_decider_role_code = 'STAFF' AND v_decider_sub_role = 'LEADER' AND v_decider_campus_id = NEW.campus_id) THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'decided_by must be Staff Leader of the same campus';
+      END IF;
     END IF;
   END IF;
 
   IF NEW.host_assigned_by IS NOT NULL THEN
-    SELECT r.role_code, u.sub_role, u.primary_campus_id INTO v_assigner_role_code, v_assigner_sub_role, v_assigner_campus_id
-    FROM users u JOIN roles r ON r.role_id = u.role_id
-    WHERE u.user_id = NEW.host_assigned_by;
-    IF NOT (v_assigner_role_code = 'STAFF' AND v_assigner_sub_role = 'LEADER' AND v_assigner_campus_id = NEW.campus_id) THEN
-      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'host_assigned_by must be Staff Leader of the same campus';
-    END IF;
     IF NEW.decided_by IS NOT NULL AND NEW.decided_by <> NEW.host_assigned_by THEN
       SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'host_assigned_by must match decided_by when approving a campus instance';
+    END IF;
+    IF NOT (COALESCE(NEW.decision_source,'STANDARD_CAMPUS_REVIEW') = 'INTERNAL_SELF_HOST'
+            AND NEW.decision_actor_role = 'STAFF') THEN
+      SELECT r.role_code, u.sub_role, u.primary_campus_id INTO v_assigner_role_code, v_assigner_sub_role, v_assigner_campus_id
+      FROM users u JOIN roles r ON r.role_id = u.role_id
+      WHERE u.user_id = NEW.host_assigned_by;
+      IF NOT (v_assigner_role_code = 'STAFF' AND v_assigner_sub_role = 'LEADER' AND v_assigner_campus_id = NEW.campus_id) THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'host_assigned_by must be Staff Leader of the same campus';
+      END IF;
     END IF;
   END IF;
 

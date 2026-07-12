@@ -26,8 +26,15 @@ public class VisitRequest
     [Column("business_fingerprint")]
     public string? BusinessFingerprint { get; set; }
 
+    // CONTACT OWNER (đầu mối liên hệ) — the request's action owner. Always a VISITOR
+    // account; every request-level mutation (edit/resubmit/cancel/feedback) checks this.
     [Column("visitor_user_id")]
     public ulong? VisitorUserId { get; set; }
+
+    // REGISTRANT (người đăng ký / submitter) — read-only tracking relation only.
+    // May be a VISITOR or an internal STAFF/STAFF LEADER account; never grants mutations.
+    [Column("registrant_user_id")]
+    public ulong? RegistrantUserId { get; set; }
 
     [Column("partner_id")]
     public ulong? PartnerId { get; set; }

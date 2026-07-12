@@ -11,9 +11,14 @@ import { useTranslation } from 'react-i18next';
 interface Props {
   form: UseFormReturn<VisitRequestSchema>;
   showErrors?: boolean;
+  /**
+   * Authenticated mode: full name + email come from the signed-in account and are
+   * rendered read-only (anti-impersonation — the backend overrides them anyway).
+   */
+  identityReadOnly?: boolean;
 }
 
-export const RegisterInfoSection: React.FC<Props> = ({ form, showErrors }) => {
+export const RegisterInfoSection: React.FC<Props> = ({ form, showErrors, identityReadOnly }) => {
   const { t } = useTranslation(['visitRequest']);
   const { register, control, watch, setValue, formState: { errors, touchedFields, isSubmitted } } = form;
   const e = errors.registerInfo;
@@ -42,8 +47,15 @@ export const RegisterInfoSection: React.FC<Props> = ({ form, showErrors }) => {
           <input
             {...register('registerInfo.fullName')}
             placeholder={t('visitRequest:step1.fullNamePlaceholder')}
-            className={inputCls(shouldShowError('fullName', e?.fullName), isValid('fullName'))}
+            readOnly={identityReadOnly}
+            aria-readonly={identityReadOnly || undefined}
+            className={`${inputCls(shouldShowError('fullName', e?.fullName), isValid('fullName'))} ${identityReadOnly ? 'cursor-not-allowed bg-slate-100 text-slate-500' : ''}`}
           />
+          {identityReadOnly && (
+            <p className="mt-1 text-[11px] font-medium text-slate-400">
+              {t('visitRequest:step1.identityFromAccount')}
+            </p>
+          )}
         </FormField>
 
         <FormField
@@ -139,8 +151,15 @@ export const RegisterInfoSection: React.FC<Props> = ({ form, showErrors }) => {
             {...register('registerInfo.email')}
             type="email"
             placeholder="example@domain.com"
-            className={inputCls(shouldShowError('email', e?.email), isValid('email'))}
+            readOnly={identityReadOnly}
+            aria-readonly={identityReadOnly || undefined}
+            className={`${inputCls(shouldShowError('email', e?.email), isValid('email'))} ${identityReadOnly ? 'cursor-not-allowed bg-slate-100 text-slate-500' : ''}`}
           />
+          {identityReadOnly && (
+            <p className="mt-1 text-[11px] font-medium text-slate-400">
+              {t('visitRequest:step1.identityFromAccount')}
+            </p>
+          )}
         </FormField>
 
       </div>

@@ -11,6 +11,7 @@ import {
   visitRequestApi,
   type VerifyResponse,
   type DuplicateVisitRequestData,
+  type CampusProcessingChoice,
 } from '../api/visitRequestApi';
 
 const DEFAULT_VISITOR = {
@@ -101,8 +102,20 @@ function getDuplicateData(error: unknown): DuplicateVisitRequestData | null {
 
 const CONTACT_EMAIL_CONFLICT = 'CONTACT_EMAIL_CANNOT_BE_USED_FOR_VISITOR_ACCOUNT';
 const VISITOR_ACCOUNT_INACTIVE = 'VISITOR_ACCOUNT_INACTIVE';
+const INTERNAL_REGISTRANT_CANNOT_BE_CONTACT = 'INTERNAL_REGISTRANT_CANNOT_BE_CONTACT';
 const DUPLICATE_VISIT_REQUEST = 'DUPLICATE_VISIT_REQUEST';
 const OTP_HUMAN_VERIFICATION_REQUIRED = 'OTP_HUMAN_VERIFICATION_REQUIRED';
+const HOST_CONFLICT_CONFIRMATION_REQUIRED = 'HOST_SCHEDULE_CONFLICT_CONFIRMATION_REQUIRED';
+
+/** Options that switch the shared form core between the public and authenticated flows. */
+export interface UseVisitRequestFormOptions {
+  /** 'public' (default): initiate → OTP → verify. 'authenticated': direct JWT submit. */
+  mode?: 'public' | 'authenticated';
+  /** Per-user namespace for the draft storage (required in authenticated mode). */
+  draftNamespace?: string;
+  /** Supplier of the per-campus processing choices (authenticated Staff/Leader only). */
+  getCampusProcessing?: () => CampusProcessingChoice[];
+}
 
 /** Immutable snapshot shown by the duplicate result screen. */
 export interface DuplicateSubmissionResult {
@@ -139,10 +152,19 @@ const cloneVisitRequestValues = (value: VisitRequestSchema): VisitRequestSchema 
 
 export const useVisitRequestForm = (
   onSuccess: (result: VerifyResponse, submittedValues: VisitRequestSchema) => void,
-  onInvalid?: (errors: any) => void
+  onInvalid?: (errors: any) => void,
+  options?: UseVisitRequestFormOptions
 ) => {
+  const mode = options?.mode ?? 'public';
+  const isAuthenticatedMode = mode === 'authenticated';
+  const draftNamespace = options?.draftNamespace;
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+
+  // Authenticated direct-processing: a 409 host-schedule conflict requires an explicit
+  // user confirmation before the same submit intent is retried with confirmedHostConflict.
+  const [hostConflictPrompt, setHostConflictPrompt] = useState<string | null>(null);
 
   // OTP phase state
   const [sessionToken, setSessionToken] = useState<string | null>(null);
@@ -215,7 +237,7 @@ export const useVisitRequestForm = (
 
     debouncedSaveRef.current = debounce((value: Partial<VisitRequestSchema>) => {
       if (autoSaveBlockedRef.current || isRestoringDraftRef.current) return;
-      saveVisitRequestDraft(value);
+      saveVisitRequestDraft(value, undefined, draftNamespace);
     }, 700);
 
     const subscription = form.watch((value) => {
@@ -226,7 +248,7 @@ export const useVisitRequestForm = (
       subscription.unsubscribe();
       debouncedSaveRef.current?.cancel();
     };
-  }, [form, draftHydrated]);
+  }, [form, draftHydrated, draftNamespace]);
 
   const blockAutoSave = useCallback(() => {
     autoSaveBlockedRef.current = true;
@@ -335,11 +357,75 @@ export const useVisitRequestForm = (
   };
 
 
-  // Step 1: Validate form → call /initiate → open OTP popup.
+  // Authenticated direct submit (no OTP): the JWT session is the registrant. The same
+  // submissionId is kept for the host-conflict confirmation retry so the backend can
+  // replay/dedupe the intent idempotently.
+  const submitAuthenticated = async (data: VisitRequestSchema, confirmedHostConflict: boolean) => {
+    setIsSubmitting(true);
+    setSubmitError(null);
+    setHostConflictPrompt(null);
+    try {
+      const submissionId = confirmedHostConflict && submissionIdRef.current
+        ? submissionIdRef.current
+        : crypto.randomUUID();
+      submissionIdRef.current = submissionId;
+
+      const campusProcessing = options?.getCampusProcessing?.() ?? [];
+      const submittedValues = cloneVisitRequestValues(data);
+      const result = await visitRequestApi.createAuthenticated(
+        submittedValues, submissionId, campusProcessing, confirmedHostConflict);
+
+      submissionIdRef.current = null;
+      clearVisitRequestDraft(draftNamespace);
+      onSuccess(result, submittedValues);
+    } catch (error: any) {
+      const code = getApiErrorCode(error);
+      const message = getApiErrorMessage(error, t('toast:visitRequest.submitFailed'));
+      if (code === HOST_CONFLICT_CONFIRMATION_REQUIRED) {
+        // Non-blocking warning: keep the submissionId and ask the user to confirm.
+        setHostConflictPrompt(message);
+      } else if (code === DUPLICATE_VISIT_REQUEST) {
+        const duplicateData = getDuplicateData(error);
+        const submittedValues = cloneVisitRequestValues(form.getValues());
+        submissionIdRef.current = null;
+        clearVisitRequestDraft(draftNamespace);
+        if (duplicateData) {
+          setDuplicateResult({ data: duplicateData, values: submittedValues });
+        } else {
+          setSubmitError(message);
+        }
+      } else {
+        console.error('Authenticated visit-request submit failed', error);
+        submissionIdRef.current = null;
+        setSubmitError(message);
+        mapContactEmailError(error, message);
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  /** Resubmits the SAME intent after the user confirmed the host schedule conflict. */
+  const confirmHostConflictAndSubmit = async () => {
+    if (!isAuthenticatedMode) return;
+    await submitAuthenticated(form.getValues(), true);
+  };
+
+  const dismissHostConflictPrompt = useCallback(() => {
+    setHostConflictPrompt(null);
+    submissionIdRef.current = null;
+  }, []);
+
+  // Step 1 (public): Validate form → call /initiate → open OTP popup.
   // Every initiate call starts a NEW submit intent: a fresh submissionId is generated
   // here and kept unchanged across resend/recover/verify until the intent concludes
   // (success/duplicate) or is abandoned (cancel/reset).
+  // Authenticated mode skips OTP entirely and posts the form with the session identity.
   const onSubmit = form.handleSubmit(async (data) => {
+    if (isAuthenticatedMode) {
+      await submitAuthenticated(data, false);
+      return;
+    }
     setIsSubmitting(true);
     setSubmitError(null);
     try {
@@ -374,7 +460,9 @@ export const useVisitRequestForm = (
   // exactly which input to change (not just a generic submit banner).
   const mapContactEmailError = (error: unknown, message: string) => {
     const code = getApiErrorCode(error);
-    if (code === CONTACT_EMAIL_CONFLICT || code === VISITOR_ACCOUNT_INACTIVE) {
+    if (code === CONTACT_EMAIL_CONFLICT
+      || code === VISITOR_ACCOUNT_INACTIVE
+      || code === INTERNAL_REGISTRANT_CANNOT_BE_CONTACT) {
       form.setError('contactPoint.email', { type: 'server', message });
     }
   };
@@ -393,7 +481,7 @@ export const useVisitRequestForm = (
       setSessionToken(null);
       submissionIdRef.current = null;
       resetOtpChallengeState();
-      clearVisitRequestDraft();
+      clearVisitRequestDraft(draftNamespace);
       onSuccess(result, submittedValues);
     } catch (err: any) {
       const code = getApiErrorCode(err);
@@ -412,7 +500,7 @@ export const useVisitRequestForm = (
         setSessionToken(null);
         submissionIdRef.current = null;
         resetOtpChallengeState();
-        clearVisitRequestDraft();
+        clearVisitRequestDraft(draftNamespace);
         if (duplicateData) {
           setDuplicateResult({ data: duplicateData, values: submittedValues });
         } else {
@@ -507,9 +595,10 @@ export const useVisitRequestForm = (
     setMaskedEmail('');
     setSubmitError(null);
     setDuplicateResult(null);
+    setHostConflictPrompt(null);
     submissionIdRef.current = null;
     resetOtpChallengeState();
-    clearVisitRequestDraft();
+    clearVisitRequestDraft(draftNamespace);
   };
 
   return {
@@ -545,6 +634,10 @@ export const useVisitRequestForm = (
     // Duplicate result (a result state, never an OTP error)
     duplicateResult,
     clearDuplicateResult,
+    // Authenticated-mode host schedule conflict confirmation (non-blocking warning)
+    hostConflictPrompt,
+    confirmHostConflictAndSubmit,
+    dismissHostConflictPrompt,
     resetVisitRequestForm,
     draftHydrated,
     setDraftHydrated,

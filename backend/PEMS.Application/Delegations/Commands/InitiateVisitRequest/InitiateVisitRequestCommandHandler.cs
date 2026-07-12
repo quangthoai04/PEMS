@@ -32,6 +32,12 @@ public sealed class InitiateVisitRequestCommandHandler
     {
         var email = request.RegistrantEmail.Trim().ToLowerInvariant();
 
+        // ── Fail fast (actor relation): the PUBLIC registrant email also becomes/links a
+        //    VISITOR account at verify time. An internal-account email must never enter the
+        //    public OTP flow — reject BEFORE any OTP is sent. ──
+        await _userProvisionService.ValidateRegistrantEmailUsableForPublicFlowAsync(
+            email, cancellationToken);
+
         // ── Fail fast: the contact email is what becomes the VISITOR account. If it already
         //    belongs to a non-VISITOR (or inactive VISITOR) account, reject BEFORE sending an
         //    OTP so the registrant can fix the contact email up front. ──

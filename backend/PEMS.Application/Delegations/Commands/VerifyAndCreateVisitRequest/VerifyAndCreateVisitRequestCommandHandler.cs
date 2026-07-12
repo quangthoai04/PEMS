@@ -202,16 +202,33 @@ public sealed class VerifyAndCreateVisitRequestCommandHandler
                     VisitRequestErrorCodes.CampusHasNoActiveStaffLeader);
             }
 
-            // ── 4. Provision Visitor account (links existing or creates a new VISITOR) ──
-            var visitorUserId = await _userProvisionService.EnsureVisitorAccountAsync(
-                contactEmail,
-                contactName,
-                contactPhone,
+            // ── 4. Provision BOTH accounts inside the same transaction (actor relation):
+            //       registrant (submitter, read-only) + contact owner (action owner).
+            //       Same normalized email ⇒ one account reused for both FKs. The registrant
+            //       email was already re-checked against internal accounts below; the contact
+            //       email conflict rules live inside EnsureVisitorAccountAsync. ──
+            await _userProvisionService.ValidateRegistrantEmailUsableForPublicFlowAsync(
+                email, cancellationToken);
+
+            var registrantUserId = await _userProvisionService.EnsureVisitorAccountAsync(
+                email,
+                request.RegistrantFullName,
+                request.RegistrantPhone,
                 now,
                 cancellationToken);
 
+            var visitorUserId = string.Equals(email, contactEmail.Trim(), StringComparison.OrdinalIgnoreCase)
+                ? registrantUserId
+                : await _userProvisionService.EnsureVisitorAccountAsync(
+                    contactEmail,
+                    contactName,
+                    contactPhone,
+                    now,
+                    cancellationToken);
+
             // ── 5. Create VisitRequest + child aggregates (campuses, guests) ──────
-            visitRequest = await _visitRequestService.CreateAsync(formData, visitorUserId, "VISITOR_SUBMITTED", now, cancellationToken);
+            visitRequest = await _visitRequestService.CreateAsync(
+                formData, visitorUserId, registrantUserId, "VISITOR_SUBMITTED", now, cancellationToken);
 
             // Submit-intent idempotency + core-identity fingerprint. submission_id has a
             // UNIQUE index — if a concurrent retry of this intent won the race, the insert

@@ -83,6 +83,34 @@ public sealed class UserProvisionService : IUserProvisionService
         EnsureExistingAccountUsableAsVisitor(existing.RoleCode, existing.Status);
     }
 
+    public async Task ValidateRegistrantEmailUsableForPublicFlowAsync(
+        string email,
+        CancellationToken cancellationToken = default)
+    {
+        var normalized = email.Trim().ToLowerInvariant();
+
+        var existing = await _db.Users.AsNoTracking()
+            .Where(u => u.Email == normalized)
+            .Select(u => new { RoleCode = u.Role.RoleCode, u.Status })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        // A non-existent email is fine — a VISITOR account is created at the verify step.
+        if (existing is null)
+            return;
+
+        // Internal accounts must never be OTP-provisioned/repurposed through the public form.
+        // Deliberately does NOT reveal which internal role owns the email.
+        if (!string.Equals(existing.RoleCode, RoleCodes.Visitor, StringComparison.OrdinalIgnoreCase))
+            throw new ConflictException(
+                "Email này thuộc tài khoản nội bộ FPTU. Vui lòng đăng nhập cổng nội bộ và dùng chức năng Tạo đoàn khách trong hệ thống.",
+                VisitRequestErrorCodes.RegistrantEmailBelongsToInternalAccount);
+
+        if (!string.Equals(existing.Status, UserStatuses.Active, StringComparison.OrdinalIgnoreCase))
+            throw new BusinessRuleException(
+                "Tài khoản VISITOR tương ứng với email này hiện không hoạt động. Vui lòng liên hệ FPTU để được hỗ trợ.",
+                VisitRequestErrorCodes.VisitorAccountInactive);
+    }
+
     /// <summary>
     /// Guards the rule that a contact email may only be linked when it belongs to an ACTIVE
     /// VISITOR account. Throws otherwise; never mutates the account.

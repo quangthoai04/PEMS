@@ -13,10 +13,14 @@ public interface IVisitRequestService
     /// <summary>
     /// Builds and adds to the DbContext a new <see cref="VisitRequest"/> together
     /// with its campus instances and guest-member rows. Does not call SaveChanges.
+    /// <paramref name="visitorUserId"/> is the CONTACT OWNER account (always VISITOR);
+    /// <paramref name="registrantUserId"/> is the submitter account (VISITOR or internal
+    /// STAFF/STAFF LEADER) with a read-only relation. created_by = registrant.
     /// </summary>
     Task<VisitRequest> CreateAsync(
         VisitRequestFormData formData,
         ulong? visitorUserId,
+        ulong? registrantUserId,
         string createdSource,
         DateTime utcNow,
         CancellationToken cancellationToken = default);

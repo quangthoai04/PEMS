@@ -279,6 +279,9 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
             .HasForeignKey(v => v.VisitorUserId).OnDelete(DeleteBehavior.Restrict);
         modelBuilder.Entity<VisitRequest>()
             .HasOne<User>().WithMany()
+            .HasForeignKey(v => v.RegistrantUserId).OnDelete(DeleteBehavior.SetNull);
+        modelBuilder.Entity<VisitRequest>()
+            .HasOne<User>().WithMany()
             .HasForeignKey(v => v.CancelledBy).OnDelete(DeleteBehavior.SetNull);
 
         // VisitRequestCampus → VisitRequest, Campus, host/transfer/closed/cancelled users

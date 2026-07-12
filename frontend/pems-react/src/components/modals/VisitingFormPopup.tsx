@@ -1,5 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { X, Loader2, AlertCircle, CheckCircle2 } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { X, Loader2, AlertCircle, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useVisitRequestForm, DEFAULT_VISIT_REQUEST_VALUES } from '../../features/visit-request/hooks/useVisitRequestForm';
 import { RegisterInfoSection } from '../../features/visit-request/components/sections/RegisterInfoSection';
@@ -7,21 +7,45 @@ import { VisitInfoSection } from '../../features/visit-request/components/sectio
 import { VisitorListSection } from '../../features/visit-request/components/sections/VisitorListSection';
 import { ContactSection } from '../../features/visit-request/components/sections/ContactSection';
 import { AdditionalSection } from '../../features/visit-request/components/sections/AdditionalSection';
+import { CampusProcessingSection, type CreatorRole } from '../../features/visit-request/components/sections/CampusProcessingSection';
 import { OtpVerificationModal } from '../../features/visit-request/components/OtpVerificationModal';
 import { SubmittedVisitRequestSummary, type SubmittedVisitRequest } from '../../features/visit-request/components/SubmittedVisitRequestSummary';
 import { findCampusTimeOverlaps } from '../../features/visit-request/schema/visitRequest.schema';
 import type { VisitRequestSchema } from '../../features/visit-request/schema/visitRequest.schema';
-import type { VerifyResponse } from '../../features/visit-request/api/visitRequestApi';
+import type { VerifyResponse, CampusProcessingChoice } from '../../features/visit-request/api/visitRequestApi';
 import { loadVisitRequestDraft, saveVisitRequestDraft, hasMeaningfulVisitRequestData, isVisitRequestDraftExpired, clearVisitRequestDraft } from '../../features/visit-request/utils/visitRequestDraftStorage';
+import { useAuthContext } from '../../shared/auth/AuthContext';
 import { useTranslation } from 'react-i18next';
 
 interface VisitingFormPopupProps {
   isOpen: boolean;
   onClose: () => void;
+  /**
+   * 'public' (default): anonymous OTP flow. 'authenticated': the signed-in user is the
+   * registrant — identity prefilled/read-only, no OTP, per-campus processing for Staff/Leader.
+   */
+  mode?: 'public' | 'authenticated';
 }
 
-export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
+export function VisitingFormPopup({ isOpen, onClose, mode = 'public' }: VisitingFormPopupProps) {
   const { t } = useTranslation(['visitRequest']);
+  const isAuthenticatedMode = mode === 'authenticated';
+  const { user } = useAuthContext();
+
+  // Creator role for the campus-processing options (backend revalidates everything).
+  const creatorRole: CreatorRole = useMemo(() => {
+    const rc = (user?.roleCode || '').toUpperCase();
+    const sr = (user?.subRole || '').toUpperCase();
+    if (rc === 'STAFF') return sr === 'LEADER' ? 'STAFF_LEADER' : 'STAFF';
+    return 'VISITOR';
+  }, [user?.roleCode, user?.subRole]);
+
+  // Per-user draft namespace so accounts on a shared device never see each other's draft.
+  const draftNamespace = isAuthenticatedMode && user?.userId ? `u${user.userId}` : undefined;
+
+  const [campusProcessing, setCampusProcessing] = useState<Record<string, CampusProcessingChoice>>({});
+  const campusProcessingRef = useRef(campusProcessing);
+  campusProcessingRef.current = campusProcessing;
 
   // UC17 single-form phases: editing → otp (sessionToken) → submitted (submission).
   const [submission, setSubmission] = useState<SubmittedVisitRequest | null>(null);
@@ -47,7 +71,7 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
     // No auto-close: the user reviews the submitted data and closes the modal themselves.
     blockAutoSave();
     cancelPendingAutoSave();
-    clearVisitRequestDraft();
+    clearVisitRequestDraft(isAuthenticatedMode && user?.userId ? `u${user.userId}` : undefined);
     setSubmission({ response, values });
     setSubmitAttempted(false);
     requestAnimationFrame(() => {
@@ -114,13 +138,32 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
     isRecoveringOtp,
     recoverOtp,
     duplicateResult,
+    hostConflictPrompt,
+    confirmHostConflictAndSubmit,
+    dismissHostConflictPrompt,
     resetVisitRequestForm,
     setDraftHydrated,
     isRestoringDraftRef,
     blockAutoSave,
     unblockAutoSave,
     cancelPendingAutoSave,
-  } = useVisitRequestForm(handleSuccess, handleInvalidSubmit);
+  } = useVisitRequestForm(handleSuccess, handleInvalidSubmit, {
+    mode,
+    draftNamespace,
+    getCampusProcessing: () => Object.values(campusProcessingRef.current),
+  });
+
+  // Authenticated prefill: identity from the signed-in account (read-only in the UI and
+  // overridden server-side anyway); phone is a starting value the user may adjust.
+  const applyAccountPrefill = React.useCallback(() => {
+    if (!isAuthenticatedMode || !user) return;
+    form.setValue('registerInfo.fullName', user.fullName || '', { shouldValidate: false });
+    form.setValue('registerInfo.email', user.email || '', { shouldValidate: false });
+    if (user.phone && !form.getValues('registerInfo.phone')) {
+      form.setValue('registerInfo.phone', user.phone, { shouldValidate: false });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticatedMode, user?.userId]);
 
   // The duplicate result behaves like the success summary: no auto-close, scroll to top,
   // focus the heading — but it announces "already submitted before" instead of success.
@@ -154,18 +197,19 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
   useEffect(() => {
     if (!isOpen) return;
 
-    const draft = loadVisitRequestDraft();
+    const draft = loadVisitRequestDraft(draftNamespace);
     if (draft && !isVisitRequestDraftExpired(draft)) {
       setPendingDraft(draft);
       setShowRestoreDraftModal(true);
       setDraftHydrated(false);
     } else {
       if (draft) {
-        clearVisitRequestDraft();
+        clearVisitRequestDraft(draftNamespace);
       }
+      applyAccountPrefill();
       setDraftHydrated(true);
     }
-  }, [isOpen, setDraftHydrated]);
+  }, [isOpen, setDraftHydrated, draftNamespace, applyAccountPrefill]);
 
   // A contact-email business conflict after OTP closes the OTP modal and returns to the
   // editable form: scroll the Contact section into view and focus the email field.
@@ -217,6 +261,8 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
 
       isRestoringDraftRef.current = false;
     }
+    // Identity always wins over whatever the (namespaced) draft carried.
+    applyAccountPrefill();
     setShowRestoreDraftModal(false);
     setPendingDraft(null);
     setDraftHydrated(true);
@@ -224,6 +270,7 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
 
   const handleDiscardDraft = () => {
     resetVisitRequestForm();
+    applyAccountPrefill();
     setSubmitAttempted(false);
     setShowRestoreDraftModal(false);
     setPendingDraft(null);
@@ -275,7 +322,7 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
     blockAutoSave();
     cancelPendingAutoSave();
     const latestValues = form.getValues();
-    const result = saveVisitRequestDraft(latestValues);
+    const result = saveVisitRequestDraft(latestValues, undefined, draftNamespace);
     if (result.success === false) {
       unblockAutoSave();
       setToastMessage(result.error || 'Failed to save draft');
@@ -288,7 +335,7 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
   const handleConfirmCancelWithoutSave = () => {
     blockAutoSave();
     cancelPendingAutoSave();
-    clearVisitRequestDraft();
+    clearVisitRequestDraft(draftNamespace);
     resetVisitRequestForm();
     setShowCancelConfirm(false);
     onClose();
@@ -303,6 +350,7 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
         resetVisitRequestForm();
       }
       setSubmitAttempted(false);
+      setCampusProcessing({});
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
@@ -403,8 +451,17 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
                   />
                 ) : (
                   <form id="visit-request-form" onSubmit={handleSingleFormSubmit} noValidate>
-                    <RegisterInfoSection form={form} showErrors={submitAttempted} />
+                    <RegisterInfoSection form={form} showErrors={submitAttempted} identityReadOnly={isAuthenticatedMode} />
                     <VisitInfoSection form={form} visitFields={visitFields} showErrors={submitAttempted} />
+                    {isAuthenticatedMode && (
+                      <CampusProcessingSection
+                        form={form}
+                        role={creatorRole}
+                        ownCampusCode={user?.campusCode}
+                        value={campusProcessing}
+                        onChange={setCampusProcessing}
+                      />
+                    )}
                     <VisitorListSection form={form} visitorFields={visitorFields} showErrors={submitAttempted} />
                     <ContactSection
                       form={form}
@@ -414,6 +471,7 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
                       onSyncContactFromRegister={syncContactFromRegister}
                       onClearContactPoint={clearContactPoint}
                       showErrors={submitAttempted}
+                      allowContactSelf={!isAuthenticatedMode || creatorRole === 'VISITOR'}
                     />
                     <AdditionalSection form={form} showErrors={submitAttempted} />
                   </form>
@@ -461,6 +519,56 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
                     </div>
                   </>
                 )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Host schedule conflict confirmation (authenticated direct processing only) */}
+      <AnimatePresence>
+        {hostConflictPrompt && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[200] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl"
+              role="alertdialog"
+              aria-modal="true"
+              aria-label={t('visitRequest:hostConflictConfirm.title')}
+            >
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center shrink-0">
+                  <AlertTriangle className="w-6 h-6 text-amber-600" />
+                </div>
+                <h3 className="text-lg font-bold text-gray-900">{t('visitRequest:hostConflictConfirm.title')}</h3>
+              </div>
+              <p className="text-sm text-gray-600 mb-2">{hostConflictPrompt}</p>
+              <p className="text-xs font-medium text-amber-700 mb-6">
+                {t('visitRequest:campusProcessing.hostFinalWarning')}
+              </p>
+              <div className="flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={dismissHostConflictPrompt}
+                  className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-bold rounded-xl transition-colors"
+                >
+                  {t('visitRequest:hostConflictConfirm.cancel')}
+                </button>
+                <button
+                  type="button"
+                  disabled={isSubmitting}
+                  onClick={() => void confirmHostConflictAndSubmit()}
+                  className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-bold rounded-xl transition-colors shadow-lg shadow-amber-500/30 disabled:opacity-60"
+                >
+                  {t('visitRequest:hostConflictConfirm.confirm')}
+                </button>
               </div>
             </motion.div>
           </motion.div>

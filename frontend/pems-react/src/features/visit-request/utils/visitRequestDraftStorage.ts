@@ -2,6 +2,12 @@ import type { VisitRequestSchema } from '../schema/visitRequest.schema';
 
 const VISIT_FORM_DRAFT_KEY = 'pems_public_visit_registration_draft';
 
+// Authenticated drafts are namespaced per user so two accounts on the same device
+// never see each other's draft. The public (anonymous) form keeps the bare key.
+function draftKey(namespace?: string): string {
+  return namespace ? `${VISIT_FORM_DRAFT_KEY}::${namespace}` : VISIT_FORM_DRAFT_KEY;
+}
+
 export type VisitRequestDraft = {
   version: 2;
   savedAt: number;
@@ -38,7 +44,7 @@ export function hasMeaningfulVisitRequestData(values: Partial<VisitRequestSchema
   );
 }
 
-export function saveVisitRequestDraft(data: Partial<VisitRequestSchema>, expiresInMs: number = 30 * 60 * 1000): SaveDraftResult {
+export function saveVisitRequestDraft(data: Partial<VisitRequestSchema>, expiresInMs: number = 30 * 60 * 1000, namespace?: string): SaveDraftResult {
   if (!hasMeaningfulVisitRequestData(data)) {
     return { success: false, error: 'No meaningful data to save' };
   }
@@ -53,7 +59,7 @@ export function saveVisitRequestDraft(data: Partial<VisitRequestSchema>, expires
       data: sanitizedData,
     };
 
-    localStorage.setItem(VISIT_FORM_DRAFT_KEY, JSON.stringify(payload));
+    localStorage.setItem(draftKey(namespace), JSON.stringify(payload));
     return { success: true, savedAt: payload.savedAt, expiresAt: payload.expiresAt };
   } catch (error) {
     console.warn('Failed to save UC-17 visit request draft', error);
@@ -61,15 +67,15 @@ export function saveVisitRequestDraft(data: Partial<VisitRequestSchema>, expires
   }
 }
 
-export function loadVisitRequestDraft(): VisitRequestDraft | null {
+export function loadVisitRequestDraft(namespace?: string): VisitRequestDraft | null {
   try {
-    const raw = localStorage.getItem(VISIT_FORM_DRAFT_KEY);
+    const raw = localStorage.getItem(draftKey(namespace));
     if (!raw) return null;
 
     const parsed = JSON.parse(raw) as VisitRequestDraft;
 
     if (!parsed?.data || !parsed?.expiresAt || Date.now() > parsed.expiresAt || parsed.version < 2) {
-      localStorage.removeItem(VISIT_FORM_DRAFT_KEY);
+      localStorage.removeItem(draftKey(namespace));
       return null;
     }
 
@@ -100,9 +106,9 @@ export function getVisitRequestDraftRemainingTime(draft: VisitRequestDraft | nul
   return remaining > 0 ? remaining : 0;
 }
 
-export function clearVisitRequestDraft() {
+export function clearVisitRequestDraft(namespace?: string) {
   try {
-    localStorage.removeItem(VISIT_FORM_DRAFT_KEY);
+    localStorage.removeItem(draftKey(namespace));
     sessionStorage.removeItem('pems.uc17.visitRequestDraft.v1'); // clear legacy draft
   } catch (error) {
     console.warn('Failed to clear UC-17 visit request draft', error);

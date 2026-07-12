@@ -34,4 +34,16 @@ public interface IUserProvisionService
     Task ValidateContactEmailCanBeUsedForVisitorAsync(
         string email,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Read-only pre-check for the PUBLIC flow registrant email: an email that belongs to an
+    /// internal (non-VISITOR) account cannot go through OTP provisioning — the user must log
+    /// in to the internal portal and use the authenticated create instead. Throws a
+    /// <c>ConflictException</c> (REGISTRANT_EMAIL_BELONGS_TO_INTERNAL_ACCOUNT) in that case and a
+    /// <c>BusinessRuleException</c> (VISITOR_ACCOUNT_INACTIVE) for a non-ACTIVE VISITOR account.
+    /// A non-existent email is allowed (a VISITOR account is created at verify time).
+    /// </summary>
+    Task ValidateRegistrantEmailUsableForPublicFlowAsync(
+        string email,
+        CancellationToken cancellationToken = default);
 }

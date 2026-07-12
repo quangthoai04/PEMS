@@ -28,6 +28,18 @@ public sealed class VisitRequestManagementItemDto
     /// <summary>True when the signed-in user is the current host of this campus instance.</summary>
     public bool CurrentUserIsHost { get; set; }
 
+    // ── Actor relation (registrant vs contact owner) ──
+    /// <summary>Registrant (người đăng ký) account id — read-only tracking relation only.</summary>
+    public ulong? RegistrantUserId { get; set; }
+    /// <summary>
+    /// On the REGISTERED tab: true when the registrant is ALSO the official host of at least
+    /// one campus instance ("Đồng thời là host" badge). Host actions still live on the
+    /// responsible/hosted tab, never here.
+    /// </summary>
+    public bool IsAlsoHost { get; set; }
+    /// <summary>First hosted instance id when <see cref="IsAlsoHost"/> — link target to the host context.</summary>
+    public ulong? AlsoHostVisitInstanceId { get; set; }
+
     public ulong? VisitorUserId { get; set; }
     public string? VisitorName { get; set; }
 

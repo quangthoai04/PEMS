@@ -3,8 +3,12 @@
  *
  * Dữ liệu được backend lọc theo role/scope (UC-20) và trả kèm `allowedActions`;
  * frontend chỉ render UI + nút theo danh sách đó, mọi thao tác đều được backend
- * validate lại. Hai tab: "Đơn phụ trách" (responsible) và "Đơn mời tham dự"
- * (attending). Visitor chỉ thấy "Đơn của tôi"; Admin không tham gia luồng này.
+ * validate lại. Tab theo role (actor relation):
+ *   - Visitor: "Tôi là đầu mối" (responsible/owner) + "Tôi là người đăng ký" (registered, read-only).
+ *   - IC Staff: "Đơn phụ trách" (host) + "Lời mời tham dự" (attending) + "Đơn tôi đăng ký" (registered).
+ *   - Staff Leader: "Yêu cầu tại cơ sở" (campus review) + "Tôi là host" (hosted) + "Đơn tôi đăng ký".
+ * Visitor/IC Staff/Staff Leader có nút "Tạo đoàn khách" mở shared form (authenticated mode).
+ * Admin không tham gia luồng này.
  */
 
 import React, { Fragment, useEffect, useState } from 'react';
@@ -17,6 +21,7 @@ import {
 import { motion } from 'motion/react';
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { SubmittedVisitRequestDetailModal } from '../../../components/modals/SubmittedVisitRequestDetailModal';
+import { VisitingFormPopup } from '../../../components/modals/VisitingFormPopup';
 import { AssignHostModal } from '../../../components/modals/AssignHostModal';
 import { CancellationReasonModal } from '../../../features/delegations/components/CancellationReasonModal';
 import { RejectedReasonModal } from '../../../features/delegations/components/RejectedReasonModal';
@@ -35,7 +40,7 @@ import { visitFeedbackApi } from '../../../features/feedbacks/api/visitFeedbackA
 import { VisitFeedbackModal } from '../../../features/feedbacks/components/VisitFeedbackModal';
 import type { PendingFeedbackItem } from '../../../features/feedbacks/types/visitFeedback.types';
 
-type Tab = 'responsible' | 'attending';
+type Tab = 'responsible' | 'attending' | 'registered' | 'hosted';
 
 type ActionTone = 'blue' | 'green' | 'red' | 'gray' | 'orange';
 
@@ -157,22 +162,47 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
 
   // The "Đơn mời tham dự" (attending) tab is only for users who can be invited as a
   const canUseAttendingTab = isRegularStaff || isDept || isStudent;
-  const canUseResponsibleTab = !isStudent && !isDept && !isAdmin && !isVisitor;
-  const showTabs = canUseAttendingTab || canUseResponsibleTab;
-  
-  const responsibleTabLabel = isHO ? 'Theo dõi đơn tiếp khách' : 'Đơn phụ trách';
+  const canUseResponsibleTab = !isStudent && !isDept && !isAdmin;
+  // Actor relation: tab "Đơn tôi đăng ký / Tôi là người đăng ký" (registrant, read-only)
+  // cho các role được tạo đoàn khách; tab "Tôi là host" riêng cho Staff Leader.
+  const canUseRegisteredTab = isVisitor || isStaff;
+  const canUseHostedTab = isStaffLeader;
+  // Các role được tạo đoàn khách (Visitor / IC Staff / Staff Leader) — backend revalidate.
+  const canCreateVisitRequest = isVisitor || isRegularStaff || isStaffLeader;
+  const showTabs = [canUseAttendingTab, canUseResponsibleTab, canUseRegisteredTab, canUseHostedTab].filter(Boolean).length > 1
+    || canUseAttendingTab || (canUseResponsibleTab && canUseRegisteredTab);
+
+  const responsibleTabLabel = isHO ? 'Theo dõi đơn tiếp khách'
+    : isVisitor ? 'Tôi là đầu mối'
+      : isStaffLeader ? 'Yêu cầu tại cơ sở'
+        : 'Đơn phụ trách';
   const attendingTabLabel = (isDept && subRole === 'STAFF') ? 'Nhiệm vụ được giao' : 'Lời mời tham dự';
-  
+  const registeredTabLabel = isVisitor ? 'Tôi là người đăng ký' : 'Đơn tôi đăng ký';
+  const hostedTabLabel = 'Tôi là host';
+
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
 
-  const defaultTab: Tab = (searchParams.get('tab') as Tab) || ((isStudent || isDept) ? 'attending' : 'responsible');
+  const isTabAllowed = (tab: Tab | null): tab is Tab => {
+    if (tab === 'responsible') return canUseResponsibleTab;
+    if (tab === 'attending') return canUseAttendingTab;
+    if (tab === 'registered') return canUseRegisteredTab;
+    if (tab === 'hosted') return canUseHostedTab;
+    return false;
+  };
+  const urlTab = searchParams.get('tab') as Tab | null;
+  const defaultTab: Tab = isTabAllowed(urlTab)
+    ? urlTab
+    : (isStudent || isDept) ? 'attending' : 'responsible';
   const [activeTab, setActiveTab] = useState<Tab>(defaultTab);
 
   // UC-27: pending participation invitations for invitee roles. This banner is the entry
   // point to the invitation-detail screen, where Accept/Decline happens — never in the
   // attending tab (which only lists already-ACCEPTED invitations and is read-only).
   const [pendingInvitations, setPendingInvitations] = useState<VisitInvitation[]>([]);
+
+  // Shared create form (authenticated mode): Visitor / IC Staff / Staff Leader.
+  const [showCreateModal, setShowCreateModal] = useState(false);
 
   const filterConfig = getVisitRequestFilterConfig({
     roleCode,
@@ -385,10 +415,12 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
     try {
       setIsLoading(true);
       setListError(null);
-      const effectiveTab = isVisitor ? 'responsible' : (isStudent || isDept) ? 'attending' : targetTab;
-      // Đang lọc theo 1 đơn cụ thể (đến từ thông báo): server không hỗ trợ filter theo
-      // visitRequestId trực tiếp, nên lấy nguyên trang lớn rồi lọc phía client — tránh bỏ sót
-      // đơn nằm ở trang khác theo sort mặc định.
+      // Students/Depts only have the attending view; Visitors have owner + registered.
+      const effectiveTab = (isStudent || isDept)
+        ? 'attending'
+        : isVisitor
+          ? (targetTab === 'registered' ? 'registered' : 'responsible')
+          : targetTab;
       const params: Record<string, unknown> = {
         tab: effectiveTab,
         page: notifFilter ? 1 : targetPage,
@@ -398,7 +430,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
       };
       const keyword = targetFilters.keyword.trim();
       if (keyword) params.keyword = keyword;
-      
+
       if (targetFilters.status) {
         const option = filterConfig.statusOptions.find((o) => o.value === targetFilters.status);
         if (option?.cancelledOnly) params.cancelledOnly = true;
@@ -410,17 +442,17 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
         if (option?.timing) params.timing = option.timing;
         if (option?.relation) params.relation = option.relation;
       }
-      
+
       if (filterConfig.showScope && targetFilters.visitScope) {
         if (!params.visitScope) params.visitScope = targetFilters.visitScope;
       }
-      
+
       if (targetFilters.relation) {
         if (targetFilters.relation === 'READ_ONLY') params.readOnlyOnly = true;
         else if (targetFilters.relation === 'ACTION_REQUIRED') params.actionableOnly = true;
         else params.relation = targetFilters.relation;
       }
-      
+
       if (targetFilters.fromDate) params.fromDate = targetFilters.fromDate;
       if (targetFilters.toDate) params.toDate = targetFilters.toDate;
       if (targetFilters.campusId) params.campusId = targetFilters.campusId;
@@ -438,25 +470,25 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
         if (targetFilters.toDate) invParams.toDate = targetFilters.toDate;
 
         const response = await delegationsApi.visitInvitations.getMyInvitations(invParams);
-        
+
         if (response.summary) {
-           setSummaryStats(response.summary);
+          setSummaryStats(response.summary);
         } else {
-           const items = response.items || [];
-           const sum = { total: 0, pending: 0, accepted: 0, declined: 0, cancelledOrExpired: 0 };
-           items.forEach((it: any) => {
-              if (it.invitationStatus === 'REMOVED') return;
-              sum.total++;
-              if (it.invitationStatus === 'INVITED') sum.pending++;
-              if (it.invitationStatus === 'ACCEPTED' || it.invitationStatus === 'ASSIGNED') sum.accepted++;
-              if (it.invitationStatus === 'DECLINED') sum.declined++;
-              if (it.requestStatus === 'CANCELLED' || it.campusStatus === 'CANCELLED' || it.requestStatus === 'REJECTED') sum.cancelledOrExpired++;
-           });
-           setSummaryStats({ ...sum, _isLocal: true });
+          const items = response.items || [];
+          const sum = { total: 0, pending: 0, accepted: 0, declined: 0, cancelledOrExpired: 0 };
+          items.forEach((it: any) => {
+            if (it.invitationStatus === 'REMOVED') return;
+            sum.total++;
+            if (it.invitationStatus === 'INVITED') sum.pending++;
+            if (it.invitationStatus === 'ACCEPTED' || it.invitationStatus === 'ASSIGNED') sum.accepted++;
+            if (it.invitationStatus === 'DECLINED') sum.declined++;
+            if (it.requestStatus === 'CANCELLED' || it.campusStatus === 'CANCELLED' || it.requestStatus === 'REJECTED') sum.cancelledOrExpired++;
+          });
+          setSummaryStats({ ...sum, _isLocal: true });
         }
 
         const isDepartmentLeader = isDept && subRole === 'LEADER';
-        
+
         const items: any[] = (response.items || []).filter((it: any) => {
           if (it.invitationStatus === 'REMOVED') return false;
           if (it.invitationStatus === 'ASSIGNED') {
@@ -494,30 +526,30 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
         setTotal(notifFilter ? filtered.length : (response.totalItems || 0));
       } else {
         const response = await delegationsApi.getVisitRequestManagementList(params);
-        
+
         if (response.summary) {
-           setSummaryStats(response.summary);
+          setSummaryStats(response.summary);
         } else {
-           const items = response.items || [];
-           // Campus-independent approval: đếm theo trạng thái từng campus instance,
-           // không gate theo requestStatus === 'APPROVED' (PARTIALLY_APPROVED vẫn có instance sống).
-           const sum = {
-             total: items.length,
-             pendingApproval: items.filter((x: any) => x.campusStatus === 'WAITING_REQUEST_APPROVAL'
-               || (!x.campusStatus && x.requestStatus === 'PENDING_APPROVAL')).length,
-             waitingHost: 0, // không còn trạng thái WAITING_HOST_ASSIGNMENT
-             assigned: items.filter((x: any) => x.campusStatus === 'ASSIGNED').length,
-             before: items.filter((x: any) => x.campusStatus === 'BEFORE_VISIT').length,
-             during: items.filter((x: any) => x.campusStatus === 'DURING_VISIT').length,
-             after: items.filter((x: any) => x.campusStatus === 'AFTER_VISIT').length,
-             closed: items.filter((x: any) => x.campusStatus === 'CLOSED').length,
-             cancelled: items.filter((x: any) => x.requestStatus === 'CANCELLED' || x.campusStatus === 'CANCELLED').length,
-             rejected: items.filter((x: any) => x.campusStatus === 'REJECTED'
-               || (!x.campusStatus && x.requestStatus === 'REJECTED')).length,
-             interCampusPending: items.filter((x: any) => x.visitScope === 'MULTI_CAMPUS'
-               && (x.requestStatus === 'PENDING_APPROVAL' || x.requestStatus === 'PARTIALLY_APPROVED')).length,
-           };
-           setSummaryStats({ ...sum, _isLocal: true });
+          const items = response.items || [];
+          // Campus-independent approval: đếm theo trạng thái từng campus instance,
+          // không gate theo requestStatus === 'APPROVED' (PARTIALLY_APPROVED vẫn có instance sống).
+          const sum = {
+            total: items.length,
+            pendingApproval: items.filter((x: any) => x.campusStatus === 'WAITING_REQUEST_APPROVAL'
+              || (!x.campusStatus && x.requestStatus === 'PENDING_APPROVAL')).length,
+            waitingHost: 0, // không còn trạng thái WAITING_HOST_ASSIGNMENT
+            assigned: items.filter((x: any) => x.campusStatus === 'ASSIGNED').length,
+            before: items.filter((x: any) => x.campusStatus === 'BEFORE_VISIT').length,
+            during: items.filter((x: any) => x.campusStatus === 'DURING_VISIT').length,
+            after: items.filter((x: any) => x.campusStatus === 'AFTER_VISIT').length,
+            closed: items.filter((x: any) => x.campusStatus === 'CLOSED').length,
+            cancelled: items.filter((x: any) => x.requestStatus === 'CANCELLED' || x.campusStatus === 'CANCELLED').length,
+            rejected: items.filter((x: any) => x.campusStatus === 'REJECTED'
+              || (!x.campusStatus && x.requestStatus === 'REJECTED')).length,
+            interCampusPending: items.filter((x: any) => x.visitScope === 'MULTI_CAMPUS'
+              && (x.requestStatus === 'PENDING_APPROVAL' || x.requestStatus === 'PARTIALLY_APPROVED')).length,
+          };
+          setSummaryStats({ ...sum, _isLocal: true });
         }
 
         const items: VisitRequestManagementItem[] = response.items || [];
@@ -573,10 +605,10 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
 
   const canOpenProcess = (row: Row) => {
     const actions = row.allowedActions || [];
-    if (actions.includes('OPEN_HOST_PROCESS') || 
-        actions.includes('OPEN_PROCESS_SUMMARY') || 
-        actions.includes('VIEW_RECEPTION_DETAIL') || 
-        actions.includes('OPEN_CONTRIBUTION')) {
+    if (actions.includes('OPEN_HOST_PROCESS') ||
+      actions.includes('OPEN_PROCESS_SUMMARY') ||
+      actions.includes('VIEW_RECEPTION_DETAIL') ||
+      actions.includes('OPEN_CONTRIBUTION')) {
       return true;
     }
 
@@ -883,7 +915,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
       }
       const visitStatusText = getVietnameseStatus((row as any).visitRequestStatus, (row as any).campusVisitStatus);
       if (visitStatusText && visitStatusText !== '-' && visitStatusText !== 'Không xác định') {
-         badges.push(chip('v-status', visitStatusText, 'bg-slate-100 text-slate-600 border-slate-300'));
+        badges.push(chip('v-status', visitStatusText, 'bg-slate-100 text-slate-600 border-slate-300'));
       }
     } else if (row.visitScope) {
       const single = row.visitScope === 'SINGLE_CAMPUS';
@@ -891,7 +923,13 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
         single ? 'bg-sky-50 text-sky-700 border-sky-200' : 'bg-indigo-50 text-indigo-700 border-indigo-200'));
     }
 
-    if (isAwaitingMyDecision(row) && !isCancelledOrRejected(row)) {
+    if (activeTab === 'registered') {
+      // Registrant relation: strictly read-only tracking; badge only, never host actions here.
+      badges.push(chip('registered', 'Chỉ theo dõi', 'bg-slate-50 text-slate-600 border-slate-200'));
+      if (row.isAlsoHost) {
+        badges.push(chip('also-host', 'Đồng thời là host', 'bg-emerald-50 text-emerald-700 border-emerald-200'));
+      }
+    } else if (isAwaitingMyDecision(row) && !isCancelledOrRejected(row)) {
       badges.push(chip('pending-decision', 'Cần duyệt & gán host', 'bg-orange-50 text-orange-700 border-orange-200'));
     } else if (row.currentUserIsHost && activeTab !== 'attending') {
       badges.push(chip('host', 'Được giao làm host', 'bg-emerald-50 text-emerald-700 border-emerald-200'));
@@ -902,10 +940,10 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
   const getStatusBadge = (row: Row) => {
     let statusText = 'Không xác định';
     const base = 'inline-flex min-w-[96px] max-w-[150px] justify-center whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-semibold';
-    
+
     if (activeTab === 'attending') {
       const status = (row as any).invitationStatus;
-      
+
       const isReqCancelled = row.requestStatus === 'CANCELLED';
       const isCampCancelled = row.campusStatus === 'CANCELLED';
       const isRejected = row.requestStatus === 'REJECTED';
@@ -1019,7 +1057,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
     // The list is already scoped server-side, so a cancelled row here is always one the user may see.
     const isCancelledRow = activeTab !== 'attending'
       && (row.isCancelled === true || row.requestStatus === 'CANCELLED' || row.campusStatus === 'CANCELLED');
-    
+
     const isMultiCampusParentRow = row.visitScope === 'MULTI_CAMPUS' && row.canExpandCampuses === true && !row.visitInstanceId;
     const shouldHideParentCancel = isVisitor && isMultiCampusParentRow && row.hasStartedCampus === true;
     const canRenderCancelAction = (can('CANCEL_BY_VISITOR') || can('CANCEL_BY_HOST')) && !shouldHideParentCancel;
@@ -1039,7 +1077,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
 
         {/* Slot 2: Xử lý / Theo dõi quy trình */}
         {canOpenProcess(row) ? (
-          <ActionIconButton 
+          <ActionIconButton
             title={getProcessActionTitle(row)}
             tone={
               can('OPEN_CONTRIBUTION') || can('OPEN_PROCESS_SUMMARY')
@@ -1236,10 +1274,10 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
           <div className="divide-y divide-slate-200/60">
             {items.map((item) => (
               <div key={item.visitInstanceId} className="flex flex-col lg:grid lg:grid-cols-[52px_minmax(0,1fr)_210px_150px_246px] items-start lg:items-center py-2 px-3 lg:p-0 hover:bg-[#f1f5f9] transition-colors min-h-[44px]">
-                
+
                 {/* Spacer / STT col for desktop */}
                 <div className="hidden lg:block w-full"></div>
-                
+
                 {/* Info Column */}
                 <div className="lg:py-1 lg:pl-10 lg:pr-4 w-full flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4 min-w-0">
                   <div className="text-xs font-bold text-[#004c91] truncate sm:min-w-[160px]">
@@ -1274,7 +1312,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
                   <div className="mx-auto grid w-[184px] grid-cols-4 gap-2 place-items-center">
                     {/* Slot 1: Empty */}
                     <span className="h-9 w-9" aria-hidden="true" />
-                    
+
                     {/* Slot 2: View Detail */}
                     {item.canViewCampusDetail && item.instanceStatus !== 'REJECTED' ? (
                       <ActionIconButton
@@ -1349,9 +1387,13 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
     ? 'Không tìm thấy đơn phù hợp với bộ lọc.'
     : activeTab === 'attending'
       ? 'Bạn chưa có đơn mời tham dự nào.'
-      : isVisitor
-        ? 'Bạn chưa gửi đơn tiếp khách nào.'
-        : 'Bạn chưa có đơn phụ trách nào.';
+      : activeTab === 'registered'
+        ? 'Bạn chưa đăng ký đoàn khách nào cho người khác.'
+        : activeTab === 'hosted'
+          ? 'Bạn chưa là host của đoàn khách nào.'
+          : isVisitor
+            ? 'Bạn chưa là đầu mối của đơn tiếp khách nào.'
+            : 'Bạn chưa có đơn phụ trách nào.';
 
   return (
     <div className="w-full flex flex-col space-y-6 pb-12 animate-in fade-in duration-300">
@@ -1363,17 +1405,26 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
             <span className="mx-2">/</span>
             <span className="text-[#004c91]">Quản lý tiếp khách</span>
           </div>
+          {/* Page header: title group + action group each own their space (flex wrap) — the
+              action button never sits under the layout notification bell (which reserves its
+              own row in DashboardLayout, no fixed overlay). */}
           <div className="border-b border-gray-100 pb-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-            <h1 className="text-3xl font-bold text-[#004c91]">{isVisitor ? 'Đơn của tôi' : 'Quản lý tiếp khách'}</h1>
-            {isRegularStaff ? (
-              <button onClick={() => navTo('/dashboard/visit/create')} className="flex items-center justify-center gap-2 bg-[#F37021] hover:bg-orange-600 outline-none text-white px-4 py-2 rounded-lg font-bold shadow-sm transition-colors whitespace-nowrap w-full md:w-auto">
-                <Plus className="w-5 h-5" /> Tạo đoàn khách
-              </button>
-            ) : isHO ? (
-              <button onClick={() => navTo('/dashboard/visit/agenda-templates')} className="flex items-center justify-center gap-2 bg-[#F37021] hover:bg-orange-600 outline-none text-white px-4 py-2 rounded-lg font-bold shadow-sm transition-colors whitespace-nowrap w-full md:w-auto">
-                <Plus className="w-5 h-5" /> Quản lý mẫu Agenda
-              </button>
-            ) : null}
+            <h1 className="min-w-0 text-3xl font-bold text-[#004c91]">{isVisitor ? 'Đơn của tôi' : 'Quản lý tiếp khách'}</h1>
+            <div className="flex shrink-0 flex-wrap items-center gap-3 w-full md:w-auto">
+              {canCreateVisitRequest && (
+                <button
+                  onClick={() => setShowCreateModal(true)}
+                  className="flex items-center justify-center gap-2 bg-[#F37021] hover:bg-orange-600 outline-none focus-visible:ring-2 focus-visible:ring-[#F37021]/50 text-white px-4 py-2 rounded-lg font-bold shadow-sm transition-colors whitespace-nowrap w-full md:w-auto"
+                >
+                  <Plus className="w-5 h-5" /> Tạo đoàn khách
+                </button>
+              )}
+              {isHO && (
+                <button onClick={() => navTo('/dashboard/visit/agenda-templates')} className="flex items-center justify-center gap-2 bg-[#F37021] hover:bg-orange-600 outline-none text-white px-4 py-2 rounded-lg font-bold shadow-sm transition-colors whitespace-nowrap w-full md:w-auto">
+                  <Plus className="w-5 h-5" /> Quản lý mẫu Agenda
+                </button>
+              )}
+            </div>
           </div>
         </>
       )}
@@ -1411,50 +1462,31 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
 
       {/* Tabs */}
       {showTabs && !isEmbedded && (
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex w-full sm:w-max items-center gap-1 rounded-xl bg-slate-100 p-1">
-            {([
-              { key: 'responsible' as Tab, label: responsibleTabLabel, show: canUseResponsibleTab },
-              { key: 'attending' as Tab, label: attendingTabLabel, show: canUseAttendingTab },
-            ]).filter(t => t.show).map((t) => {
-              // Staff Leader chỉ có tab "responsible" (canUseAttendingTab=false) — thay vì 1
-              // tab đơn độc vô nghĩa (click không đổi gì), dùng đúng vị trí đó làm nút toggle
-              // nhanh "Đơn phụ trách" (chỉ đơn mình đang làm Host) / "Đơn của cơ sở" (toàn bộ
-              // đơn của campus, mặc định) — tái dùng field relation=HOST đã có sẵn ở backend
-              // (ViewGuestDelegationListQueryHandler), không phải dropdown filter.
-              if (isStaffLeader && t.key === 'responsible' && !canUseAttendingTab) {
-                return (
-                  <button
-                    key={t.key}
-                    onClick={() => applyFilterChange({ relation: appliedFilters.relation === 'HOST' ? '' : 'HOST' })}
-                    className="flex-1 sm:flex-none px-5 py-2 rounded-lg text-sm font-bold transition-colors outline-none cursor-pointer bg-white text-[#004c91] shadow-sm"
-                  >
-                    {appliedFilters.relation === 'HOST' ? 'Đơn của cơ sở' : 'Đơn phụ trách'}
-                  </button>
-                );
-              }
-              return (
-                <button
-                  key={t.key}
-                  onClick={() => {
-                    if (activeTab !== t.key) {
-                      const nextEmptyFilters = createEmptyFilters();
-                      setActiveTab(t.key);
-                      setDraftFilters(nextEmptyFilters);
-                      setAppliedFilters(nextEmptyFilters);
-                      setCurrentPage(1);
-                      setNotificationVisitRequestId('');
-                      updateUrlParams(t.key, 1, pageSize, nextEmptyFilters, sortOrder);
-                      loadDelegations(t.key, 1, pageSize, nextEmptyFilters, sortOrder, '');
-                    }
-                  }}
-                  className={`flex-1 sm:flex-none px-5 py-2 rounded-lg text-sm font-bold transition-colors outline-none cursor-pointer ${activeTab === t.key ? 'bg-white text-[#004c91] shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                >
-                  {t.label}
-                </button>
-              );
-            })}
-          </div>
+        <div className="flex w-full sm:w-max items-center gap-1 rounded-xl bg-slate-100 p-1">
+          {([
+            { key: 'responsible' as Tab, label: responsibleTabLabel, show: canUseResponsibleTab },
+            { key: 'hosted' as Tab, label: hostedTabLabel, show: canUseHostedTab },
+            { key: 'attending' as Tab, label: attendingTabLabel, show: canUseAttendingTab },
+            { key: 'registered' as Tab, label: registeredTabLabel, show: canUseRegisteredTab },
+          ]).filter(t => t.show).map((t) => (
+            <button
+              key={t.key}
+              onClick={() => {
+                if (activeTab !== t.key) {
+                  const nextEmptyFilters = createEmptyFilters();
+                  setActiveTab(t.key);
+                  setDraftFilters(nextEmptyFilters);
+                  setAppliedFilters(nextEmptyFilters);
+                  setCurrentPage(1);
+                  updateUrlParams(t.key, 1, pageSize, nextEmptyFilters, sortOrder);
+                  loadDelegations(t.key, 1, pageSize, nextEmptyFilters, sortOrder);
+                }
+              }}
+              className={`flex-1 sm:flex-none px-5 py-2 rounded-lg text-sm font-bold transition-colors outline-none cursor-pointer ${activeTab === t.key ? 'bg-white text-[#004c91] shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+            >
+              {t.label}
+            </button>
+          ))}
         </div>
       )}
 
@@ -1462,52 +1494,52 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
       {summaryStats && (
         <div className="flex flex-wrap items-center mb-4 text-sm font-medium text-slate-700">
           {activeTab === 'attending' ? (
-             <span>{[
-               { label: 'Tổng', count: summaryStats.total },
-               { label: 'Chờ phản hồi', count: summaryStats.pending },
-               { label: 'Đã nhận lời', count: summaryStats.accepted },
-               { label: 'Đã từ chối', count: summaryStats.declined },
-               { label: 'Hết hiệu lực / Đã hủy', count: summaryStats.cancelledOrExpired }
-             ].filter(it => it.count > 0 || it.label === 'Tổng').map(it => `${it.label} ${it.count}`).join(' · ')}</span>
+            <span>{[
+              { label: 'Tổng', count: summaryStats.total },
+              { label: 'Chờ phản hồi', count: summaryStats.pending },
+              { label: 'Đã nhận lời', count: summaryStats.accepted },
+              { label: 'Đã từ chối', count: summaryStats.declined },
+              { label: 'Hết hiệu lực / Đã hủy', count: summaryStats.cancelledOrExpired }
+            ].filter(it => it.count > 0 || it.label === 'Tổng').map(it => `${it.label} ${it.count}`).join(' · ')}</span>
           ) : isHO ? (
-             <span>{[
-               { label: 'Tổng', count: summaryStats.total },
-               { label: 'Còn cơ sở chờ xử lý', count: summaryStats.pendingApproval },
-               { label: 'Đã tiếp nhận', count: summaryStats.assigned + summaryStats.before + summaryStats.during + summaryStats.after + summaryStats.closed },
-               { label: 'Đã từ chối', count: summaryStats.rejected },
-               { label: 'Đã hủy', count: summaryStats.cancelled }
-             ].filter(it => it.count > 0 || it.label === 'Tổng').map(it => `${it.label} ${it.count}`).join(' · ')}</span>
+            <span>{[
+              { label: 'Tổng', count: summaryStats.total },
+              { label: 'Còn cơ sở chờ xử lý', count: summaryStats.pendingApproval },
+              { label: 'Đã tiếp nhận', count: summaryStats.assigned + summaryStats.before + summaryStats.during + summaryStats.after + summaryStats.closed },
+              { label: 'Đã từ chối', count: summaryStats.rejected },
+              { label: 'Đã hủy', count: summaryStats.cancelled }
+            ].filter(it => it.count > 0 || it.label === 'Tổng').map(it => `${it.label} ${it.count}`).join(' · ')}</span>
           ) : isVisitor ? (
-             <span>{[
-               { label: 'Tổng', count: summaryStats.total },
-               { label: 'Chờ xử lý', count: summaryStats.pendingApproval },
-               { label: 'Đã tiếp nhận', count: summaryStats.assigned + summaryStats.before + summaryStats.during + summaryStats.after },
-               { label: 'Đã từ chối', count: summaryStats.rejected },
-               { label: 'Đã hoàn tất', count: summaryStats.closed },
-               { label: 'Đã hủy', count: summaryStats.cancelled }
-             ].filter(it => it.count > 0 || it.label === 'Tổng').map(it => `${it.label} ${it.count}`).join(' · ')}</span>
+            <span>{[
+              { label: 'Tổng', count: summaryStats.total },
+              { label: 'Chờ xử lý', count: summaryStats.pendingApproval },
+              { label: 'Đã tiếp nhận', count: summaryStats.assigned + summaryStats.before + summaryStats.during + summaryStats.after },
+              { label: 'Đã từ chối', count: summaryStats.rejected },
+              { label: 'Đã hoàn tất', count: summaryStats.closed },
+              { label: 'Đã hủy', count: summaryStats.cancelled }
+            ].filter(it => it.count > 0 || it.label === 'Tổng').map(it => `${it.label} ${it.count}`).join(' · ')}</span>
           ) : isStaffLeader ? (
-             <span>{[
-               { label: 'Tổng', count: summaryStats.total },
-               { label: 'Chờ duyệt & gán host', count: summaryStats.pendingApproval },
-               { label: 'Đã duyệt & gán Host', count: summaryStats.assigned },
-               { label: 'Trước tiếp khách', count: summaryStats.before },
-               { label: 'Trong tiếp khách', count: summaryStats.during },
-               { label: 'Chờ đóng đoàn', count: summaryStats.after },
-               { label: 'Đã đóng đoàn', count: summaryStats.closed },
-               { label: 'Đã từ chối', count: summaryStats.rejected },
-               { label: 'Đã hủy', count: summaryStats.cancelled }
-             ].filter(it => it.count > 0 || it.label === 'Tổng').map(it => `${it.label} ${it.count}`).join(' · ')}</span>
+            <span>{[
+              { label: 'Tổng', count: summaryStats.total },
+              { label: 'Chờ duyệt & gán host', count: summaryStats.pendingApproval },
+              { label: 'Đã duyệt & gán Host', count: summaryStats.assigned },
+              { label: 'Trước tiếp khách', count: summaryStats.before },
+              { label: 'Trong tiếp khách', count: summaryStats.during },
+              { label: 'Chờ đóng đoàn', count: summaryStats.after },
+              { label: 'Đã đóng đoàn', count: summaryStats.closed },
+              { label: 'Đã từ chối', count: summaryStats.rejected },
+              { label: 'Đã hủy', count: summaryStats.cancelled }
+            ].filter(it => it.count > 0 || it.label === 'Tổng').map(it => `${it.label} ${it.count}`).join(' · ')}</span>
           ) : (
-             <span>{[
-               { label: 'Tổng', count: summaryStats.total },
-               { label: 'Đã phân công Host', count: summaryStats.assigned },
-               { label: 'Trước tiếp khách', count: summaryStats.before },
-               { label: 'Trong tiếp khách', count: summaryStats.during },
-               { label: 'Chờ đóng đoàn', count: summaryStats.after },
-               { label: 'Đã đóng đoàn', count: summaryStats.closed },
-               { label: 'Đã hủy', count: summaryStats.cancelled }
-             ].filter(it => it.count > 0 || it.label === 'Tổng').map(it => `${it.label} ${it.count}`).join(' · ')}</span>
+            <span>{[
+              { label: 'Tổng', count: summaryStats.total },
+              { label: 'Đã phân công Host', count: summaryStats.assigned },
+              { label: 'Trước tiếp khách', count: summaryStats.before },
+              { label: 'Trong tiếp khách', count: summaryStats.during },
+              { label: 'Chờ đóng đoàn', count: summaryStats.after },
+              { label: 'Đã đóng đoàn', count: summaryStats.closed },
+              { label: 'Đã hủy', count: summaryStats.cancelled }
+            ].filter(it => it.count > 0 || it.label === 'Tổng').map(it => `${it.label} ${it.count}`).join(' · ')}</span>
           )}
           {summaryStats._isLocal && <span className="text-xs font-medium text-slate-400 ml-auto">Số liệu theo trang hiện tại</span>}
         </div>
@@ -1585,13 +1617,13 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
               <label className="block h-5 mb-1 truncate text-xs font-bold text-slate-500">Cơ sở</label>
               <button onClick={() => setIsCampusFilterOpen(!isCampusFilterOpen)} className="flex h-11 w-full min-w-0 items-center justify-between rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition-colors focus:border-[#004c91]">
                 <span className="min-w-0 truncate">{[
-                    { value: '', label: 'Tất cả cơ sở' },
-                    { value: '1', label: 'Hà Nội' },
-                    { value: '2', label: 'Hồ Chí Minh' },
-                    { value: '3', label: 'Đà Nẵng' },
-                    { value: '4', label: 'Cần Thơ' },
-                    { value: '5', label: 'Quy Nhơn' },
-                  ].find((o) => o.value === draftFilters.campusId)?.label ?? 'Tất cả cơ sở'}</span>
+                  { value: '', label: 'Tất cả cơ sở' },
+                  { value: '1', label: 'Hà Nội' },
+                  { value: '2', label: 'Hồ Chí Minh' },
+                  { value: '3', label: 'Đà Nẵng' },
+                  { value: '4', label: 'Cần Thơ' },
+                  { value: '5', label: 'Quy Nhơn' },
+                ].find((o) => o.value === draftFilters.campusId)?.label ?? 'Tất cả cơ sở'}</span>
                 <ChevronDown className="w-4 h-4 text-gray-500 flex-shrink-0 ml-2 pointer-events-none" />
               </button>
               {isCampusFilterOpen && (
@@ -1650,8 +1682,8 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
               <span className="min-w-0 truncate">
                 {!draftFilters.fromDate && !draftFilters.toDate ? 'Chọn khoảng ngày'
                   : draftFilters.fromDate && !draftFilters.toDate ? `Từ ${formatDateOnly(draftFilters.fromDate)}`
-                  : !draftFilters.fromDate && draftFilters.toDate ? `Đến ${formatDateOnly(draftFilters.toDate)}`
-                  : `${formatDateOnly(draftFilters.fromDate)} - ${formatDateOnly(draftFilters.toDate)}`}
+                    : !draftFilters.fromDate && draftFilters.toDate ? `Đến ${formatDateOnly(draftFilters.toDate)}`
+                      : `${formatDateOnly(draftFilters.fromDate)} - ${formatDateOnly(draftFilters.toDate)}`}
               </span>
               <Calendar className="w-4 h-4 text-gray-500 flex-shrink-0 ml-2 pointer-events-none" />
             </button>
@@ -1676,8 +1708,8 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
           </div>
 
           <div className="flex md:col-span-2 xl:contents">
-            <button 
-              onClick={handleResetFilters} 
+            <button
+              onClick={handleResetFilters}
               disabled={
                 !draftFilters.keyword.trim() &&
                 !debouncedKeyword.trim() &&
@@ -1719,7 +1751,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
           <div className="grid grid-cols-[52px_minmax(0,1fr)_210px_150px_246px] bg-[#004c91] text-white">
             <div className="p-3 text-[12px] font-bold text-center uppercase tracking-wider">STT</div>
             <div className="p-3 text-[12px] font-bold text-left uppercase tracking-wider">Thông tin đoàn</div>
-            <div 
+            <div
               className="p-3 text-[12px] font-bold text-left uppercase tracking-wider cursor-pointer hover:bg-[#003b70] transition-colors group flex items-center gap-1"
               onClick={() => {
                 const nextSort = sortOrder === 'desc' ? 'asc' : 'desc';
@@ -1746,43 +1778,43 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
             ) : rows.length > 0 ? rows.map((row, index) => {
               const isExpanded = expandedRequestId === row.visitRequestId;
               return (
-              <Fragment key={row.id}>
-              <div className={`grid grid-cols-[52px_minmax(0,1fr)_210px_150px_246px] items-center min-h-[78px] border-b border-slate-200/70 transition-colors duration-150 ${isExpanded ? 'bg-blue-50' : index % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-blue-50 group`}>
-                <div className="py-3 px-3 text-center font-bold text-[#004c91] text-sm">{(currentPage - 1) * pageSize + index + 1}</div>
-                <div className="py-3 px-3 min-w-0 flex flex-col justify-center pr-4">
-                  <p className="text-sm font-bold text-[#004c91] line-clamp-2 break-words" title={row.name}>{row.name}</p>
-                  <p className="text-xs font-medium text-slate-500 truncate" title={row.org}>{row.org}</p>
-                  {!isHO && activeTab !== 'attending' && (
-                    <p className="text-xs font-medium text-slate-600 mt-0.5 truncate">
-                      <span className="text-slate-400">Host:</span> {row.host || (row.campusStatus === 'WAITING_REQUEST_APPROVAL' ? 'Chờ duyệt & gán host' : '-')}
-                      <span className="mx-1 text-slate-300">|</span>
-                      <span className="text-slate-400">Cơ sở:</span> {row.campus || '-'}
-                    </p>
-                  )}
-                  {renderBadges(row)}
-                  {row.canExpandCampuses && (
-                    <button
-                      type="button"
-                      aria-expanded={isExpanded}
-                      aria-label="Xem tiến trình theo từng cơ sở"
-                      title="Xem tiến trình theo từng cơ sở"
-                      onClick={(e) => { e.stopPropagation(); toggleExpanded(row.visitRequestId); }}
-                      className="mt-1.5 inline-flex w-max items-center gap-1 rounded-md text-xs font-bold text-[#004c91] outline-none hover:underline cursor-pointer"
-                    >
-                      {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                      {isExpanded ? 'Thu gọn cơ sở' : `Xem ${row.campusCount} cơ sở`}
-                    </button>
-                  )}
-                </div>
-                <div className="py-3 px-3 text-sm leading-6 text-slate-700">
-                  <div className="flex items-center gap-2 whitespace-nowrap"><span className="w-9 text-slate-400 font-medium">Từ:</span><span className="font-semibold text-slate-800">{formatDateTimeShort(row.plannedStartAt)}</span></div>
-                  <div className="flex items-center gap-2 whitespace-nowrap"><span className="w-9 text-slate-400 font-medium">Đến:</span><span className="font-semibold text-slate-800">{formatDateTimeShort(row.plannedEndAt)}</span></div>
-                </div>
-                <div className="py-3 px-3 flex flex-col items-center justify-center gap-1">{getStatusBadge(row)}</div>
-                <div className="py-3 px-2 flex items-center justify-center" onClick={(e) => e.stopPropagation()}>{renderRowActions(row)}</div>
-              </div>
-              {isExpanded && row.canExpandCampuses && renderCampusAccordion(row)}
-              </Fragment>
+                <Fragment key={row.id}>
+                  <div className={`grid grid-cols-[52px_minmax(0,1fr)_210px_150px_246px] items-center min-h-[78px] border-b border-slate-200/70 transition-colors duration-150 ${isExpanded ? 'bg-blue-50' : index % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-blue-50 group`}>
+                    <div className="py-3 px-3 text-center font-bold text-[#004c91] text-sm">{(currentPage - 1) * pageSize + index + 1}</div>
+                    <div className="py-3 px-3 min-w-0 flex flex-col justify-center pr-4">
+                      <p className="text-sm font-bold text-[#004c91] line-clamp-2 break-words" title={row.name}>{row.name}</p>
+                      <p className="text-xs font-medium text-slate-500 truncate" title={row.org}>{row.org}</p>
+                      {!isHO && activeTab !== 'attending' && (
+                        <p className="text-xs font-medium text-slate-600 mt-0.5 truncate">
+                          <span className="text-slate-400">Host:</span> {row.host || (row.campusStatus === 'WAITING_REQUEST_APPROVAL' ? 'Chờ duyệt & gán host' : '-')}
+                          <span className="mx-1 text-slate-300">|</span>
+                          <span className="text-slate-400">Cơ sở:</span> {row.campus || '-'}
+                        </p>
+                      )}
+                      {renderBadges(row)}
+                      {row.canExpandCampuses && (
+                        <button
+                          type="button"
+                          aria-expanded={isExpanded}
+                          aria-label="Xem tiến trình theo từng cơ sở"
+                          title="Xem tiến trình theo từng cơ sở"
+                          onClick={(e) => { e.stopPropagation(); toggleExpanded(row.visitRequestId); }}
+                          className="mt-1.5 inline-flex w-max items-center gap-1 rounded-md text-xs font-bold text-[#004c91] outline-none hover:underline cursor-pointer"
+                        >
+                          {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                          {isExpanded ? 'Thu gọn cơ sở' : `Xem ${row.campusCount} cơ sở`}
+                        </button>
+                      )}
+                    </div>
+                    <div className="py-3 px-3 text-sm leading-6 text-slate-700">
+                      <div className="flex items-center gap-2 whitespace-nowrap"><span className="w-9 text-slate-400 font-medium">Từ:</span><span className="font-semibold text-slate-800">{formatDateTimeShort(row.plannedStartAt)}</span></div>
+                      <div className="flex items-center gap-2 whitespace-nowrap"><span className="w-9 text-slate-400 font-medium">Đến:</span><span className="font-semibold text-slate-800">{formatDateTimeShort(row.plannedEndAt)}</span></div>
+                    </div>
+                    <div className="py-3 px-3 flex flex-col items-center justify-center gap-1">{getStatusBadge(row)}</div>
+                    <div className="py-3 px-2 flex items-center justify-center" onClick={(e) => e.stopPropagation()}>{renderRowActions(row)}</div>
+                  </div>
+                  {isExpanded && row.canExpandCampuses && renderCampusAccordion(row)}
+                </Fragment>
               );
             }) : (
               <div className="py-12 text-center text-slate-500 font-medium flex flex-col items-center justify-center"><Users className="w-12 h-12 text-slate-300 mb-3" /><p>{emptyText}</p></div>
@@ -1797,44 +1829,44 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
           ) : rows.length > 0 ? rows.map((row) => {
             const isExpanded = expandedRequestId === row.visitRequestId;
             return (
-            <Fragment key={row.id}>
-            <div className={`rounded-2xl border bg-white p-4 shadow-sm transition-colors ${isExpanded ? 'border-[#004c91]/40' : 'border-slate-200 hover:border-[#004c91]/30'}`}>
-              <div className="flex items-start justify-between gap-3 mb-2">
-                <div className="min-w-0 flex-1">
-                  <p className="font-bold text-[#004c91] text-sm line-clamp-2 leading-snug">{row.name}</p>
-                  <p className="text-xs text-slate-500 truncate">{row.org}</p>
+              <Fragment key={row.id}>
+                <div className={`rounded-2xl border bg-white p-4 shadow-sm transition-colors ${isExpanded ? 'border-[#004c91]/40' : 'border-slate-200 hover:border-[#004c91]/30'}`}>
+                  <div className="flex items-start justify-between gap-3 mb-2">
+                    <div className="min-w-0 flex-1">
+                      <p className="font-bold text-[#004c91] text-sm line-clamp-2 leading-snug">{row.name}</p>
+                      <p className="text-xs text-slate-500 truncate">{row.org}</p>
+                    </div>
+                    <div className="flex-shrink-0">{getStatusBadge(row)}</div>
+                  </div>
+                  {renderBadges(row)}
+                  <div className="grid grid-cols-1 gap-1.5 text-xs text-slate-600 bg-slate-50 p-3 rounded-xl border border-slate-100 mt-3">
+                    <div className="flex items-center gap-2"><Calendar className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" /><span className="truncate">{formatDateTimeShort(row.plannedStartAt)} <span className="text-slate-400 mx-1">→</span> {formatDateTimeShort(row.plannedEndAt)}</span></div>
+                    {!isHO && activeTab !== 'attending' && (
+                      <>
+                        <div className="flex items-center gap-2 mt-0.5"><Users className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" /><span className="truncate"><span className="text-slate-400">Host:</span> {row.host || (row.requestStatus === 'APPROVED' && isVisitor ? 'Đang phân công' : '-')}</span></div>
+                        <div className="flex items-center gap-2 mt-0.5"><MapPin className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" /><span className="truncate"><span className="text-slate-400">Cơ sở:</span> {row.campus || '-'}</span></div>
+                      </>
+                    )}
+                  </div>
+                  {row.canExpandCampuses && (
+                    <button
+                      type="button"
+                      aria-expanded={isExpanded}
+                      aria-label="Xem tiến trình theo từng cơ sở"
+                      title="Xem tiến trình theo từng cơ sở"
+                      onClick={(e) => { e.stopPropagation(); toggleExpanded(row.visitRequestId); }}
+                      className="mt-3 inline-flex w-full items-center justify-center gap-1 rounded-lg border border-slate-200 py-2 text-xs font-bold text-[#004c91] outline-none cursor-pointer"
+                    >
+                      {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                      {isExpanded ? 'Thu gọn cơ sở' : `Xem ${row.campusCount} cơ sở`}
+                    </button>
+                  )}
+                  <div className="mt-3 flex items-center justify-end border-t border-slate-100 pt-3" onClick={(e) => e.stopPropagation()}>{renderRowActions(row)}</div>
                 </div>
-                <div className="flex-shrink-0">{getStatusBadge(row)}</div>
-              </div>
-              {renderBadges(row)}
-              <div className="grid grid-cols-1 gap-1.5 text-xs text-slate-600 bg-slate-50 p-3 rounded-xl border border-slate-100 mt-3">
-                <div className="flex items-center gap-2"><Calendar className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" /><span className="truncate">{formatDateTimeShort(row.plannedStartAt)} <span className="text-slate-400 mx-1">→</span> {formatDateTimeShort(row.plannedEndAt)}</span></div>
-                {!isHO && activeTab !== 'attending' && (
-                  <>
-                    <div className="flex items-center gap-2 mt-0.5"><Users className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" /><span className="truncate"><span className="text-slate-400">Host:</span> {row.host || (row.requestStatus === 'APPROVED' && isVisitor ? 'Đang phân công' : '-')}</span></div>
-                    <div className="flex items-center gap-2 mt-0.5"><MapPin className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" /><span className="truncate"><span className="text-slate-400">Cơ sở:</span> {row.campus || '-'}</span></div>
-                  </>
+                {isExpanded && row.canExpandCampuses && (
+                  <div className="overflow-hidden rounded-2xl border border-slate-200">{renderCampusAccordion(row)}</div>
                 )}
-              </div>
-              {row.canExpandCampuses && (
-                <button
-                  type="button"
-                  aria-expanded={isExpanded}
-                  aria-label="Xem tiến trình theo từng cơ sở"
-                  title="Xem tiến trình theo từng cơ sở"
-                  onClick={(e) => { e.stopPropagation(); toggleExpanded(row.visitRequestId); }}
-                  className="mt-3 inline-flex w-full items-center justify-center gap-1 rounded-lg border border-slate-200 py-2 text-xs font-bold text-[#004c91] outline-none cursor-pointer"
-                >
-                  {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                  {isExpanded ? 'Thu gọn cơ sở' : `Xem ${row.campusCount} cơ sở`}
-                </button>
-              )}
-              <div className="mt-3 flex items-center justify-end border-t border-slate-100 pt-3" onClick={(e) => e.stopPropagation()}>{renderRowActions(row)}</div>
-            </div>
-            {isExpanded && row.canExpandCampuses && (
-              <div className="overflow-hidden rounded-2xl border border-slate-200">{renderCampusAccordion(row)}</div>
-            )}
-            </Fragment>
+              </Fragment>
             );
           }) : (
             <div className="py-10 text-center text-slate-500 font-medium flex flex-col items-center justify-center"><Users className="w-12 h-12 text-slate-300 mb-3" /><p>{emptyText}</p></div>
@@ -1866,6 +1898,19 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
           </div>
         )}
       </div>
+
+      {/* Tạo đoàn khách (shared form core, authenticated mode — không OTP). Đóng modal
+          sau khi gửi thành công thì reload danh sách để thấy đơn mới ngay. */}
+      {canCreateVisitRequest && (
+        <VisitingFormPopup
+          isOpen={showCreateModal}
+          mode="authenticated"
+          onClose={() => {
+            setShowCreateModal(false);
+            loadDelegations(activeTab, currentPage, pageSize, appliedFilters, sortOrder);
+          }}
+        />
+      )}
 
       {/* Xem form yêu cầu (readonly view of original request form) */}
       <SubmittedVisitRequestDetailModal
@@ -1967,7 +2012,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
                 <label className="block text-sm font-bold text-gray-700 mb-2">Lý do hủy <span className="text-red-500">*</span></label>
                 <textarea value={cancel.text} onChange={(e) => setCancel((s) => ({ ...s, text: e.target.value, error: null }))} maxLength={2000} placeholder="Nhập lý do hủy..." className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:border-red-500 focus:ring-4 focus:ring-red-500/10 outline-none transition-all text-sm min-h-[100px] resize-none bg-gray-50/50 focus:bg-white" disabled={cancel.submitting} />
               </div>
-              
+
               <label className="flex items-start gap-3 cursor-pointer group p-1">
                 <div className="flex items-center h-5">
                   <input type="checkbox" checked={cancel.confirmed} onChange={(e) => setCancel((s) => ({ ...s, confirmed: e.target.checked, error: null }))} disabled={cancel.submitting} className="w-4 h-4 rounded border-gray-300 text-red-600 focus:ring-red-600/20 cursor-pointer" />
@@ -1982,11 +2027,11 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
             <div className="px-6 py-4 bg-gray-50 flex items-center justify-end gap-3 border-t border-gray-100">
               <button type="button" disabled={cancel.submitting} onClick={() => setCancel({ open: false, row: null, mode: null, text: '', submitting: false, error: null, confirmed: false })} className="px-5 py-2 rounded-xl font-bold text-gray-600 hover:bg-gray-200 transition-colors outline-none text-sm cursor-pointer">Quay lại</button>
               <button type="button" disabled={!cancel.text.trim() || !cancel.confirmed || cancel.submitting} onClick={submitCancel} className="px-6 py-2 rounded-xl font-bold text-white bg-red-600 hover:bg-red-700 shadow-sm transition-all outline-none text-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
-                {cancel.submitting ? 'Đang xử lý...' : 
-                 cancel.row.requestStatus === 'PENDING_APPROVAL' ? 'Xác nhận hủy đơn'
-                 : cancel.row.visitScope === 'SINGLE_CAMPUS' ? 'Xác nhận hủy lịch thăm'
-                 : cancel.instanceId ? 'Xác nhận hủy cơ sở này'
-                 : 'Xác nhận hủy toàn bộ'}
+                {cancel.submitting ? 'Đang xử lý...' :
+                  cancel.row.requestStatus === 'PENDING_APPROVAL' ? 'Xác nhận hủy đơn'
+                    : cancel.row.visitScope === 'SINGLE_CAMPUS' ? 'Xác nhận hủy lịch thăm'
+                      : cancel.instanceId ? 'Xác nhận hủy cơ sở này'
+                        : 'Xác nhận hủy toàn bộ'}
               </button>
             </div>
           </motion.div>
@@ -2043,11 +2088,10 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
               initial={{ opacity: 0, x: 24 }}
               animate={{ opacity: 1, x: 0 }}
               role="status"
-              className={`flex items-start gap-2 rounded-xl border px-4 py-3 text-sm font-semibold shadow-lg ${
-                t.type === 'success'
+              className={`flex items-start gap-2 rounded-xl border px-4 py-3 text-sm font-semibold shadow-lg ${t.type === 'success'
                   ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
                   : 'bg-red-50 border-red-200 text-red-700'
-              }`}
+                }`}
             >
               {t.type === 'success' ? <Check className="mt-0.5 h-4 w-4 flex-shrink-0" /> : <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />}
               <span className="flex-1">{t.msg}</span>
