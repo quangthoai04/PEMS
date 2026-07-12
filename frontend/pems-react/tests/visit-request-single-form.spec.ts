@@ -35,11 +35,20 @@ async function mockPartnerSearch(page: Page) {
 }
 
 async function mockInitiate(page: Page) {
-  const counter = { calls: 0 };
+  const counter = { calls: 0, lastSubmissionId: '' };
   await page.route('**/visit-requests/initiate', async (route) => {
     counter.calls += 1;
+    const body = route.request().postDataJSON() as { submissionId?: string };
+    counter.lastSubmissionId = body?.submissionId ?? '';
     await route.fulfill({
-      json: { sessionToken: 'test-session-token', maskedEmail: 'te***@example.com', message: 'OTP sent' },
+      json: {
+        sessionToken: 'test-session-token',
+        maskedEmail: 'te***@example.com',
+        message: 'OTP sent',
+        expiresAt: '2099-01-01T00:05:00',
+        resendAfterSeconds: 60,
+        maxAttempts: 10,
+      },
     });
   });
   return counter;
@@ -301,5 +310,273 @@ test.describe('UC17 single-form public visit request', () => {
 
     // The desktop-only visitor table is replaced by the stacked list on mobile.
     await expect(page.locator('#section-visitors table')).toBeHidden();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// UC17 OTP V2 — attempt metadata, server cooldown, human verification (Turnstile),
+// recovery, submission idempotency wiring and the DUPLICATE result screen.
+// All backend endpoints + the Turnstile callback are mocked; nothing real is called
+// (without VITE_TURNSTILE_SITE_KEY the widget renders its explicit dev fallback button).
+// ─────────────────────────────────────────────────────────────────────────────
+
+const DUPLICATE_409 = {
+  status: 409,
+  json: {
+    success: false,
+    errorCode: 'DUPLICATE_VISIT_REQUEST',
+    message: 'Một đơn đăng ký với nội dung tương tự vừa được gửi trước đó.',
+    data: {
+      existingVisitRequestId: 999,
+      existingRequestCode: 'VR-2026-000999',
+      existingStatus: 'PENDING_APPROVAL',
+      existingSubmittedAt: '2026-07-11T11:30:00',
+    },
+  },
+};
+
+test.describe('UC17 OTP V2 + duplicate result', () => {
+  test.beforeEach(async ({ page }) => {
+    await mockPartnerSearch(page);
+  });
+
+  test('V2-01: wrong OTP shows server remaining attempts', async ({ page }) => {
+    await mockInitiate(page);
+    await page.route('**/visit-requests/verify', (route) =>
+      route.fulfill({
+        status: 400,
+        json: {
+          errorCode: 'OTP_INVALID',
+          message: 'Mã OTP không đúng. Vui lòng kiểm tra lại.',
+          remainingAttempts: 9,
+          retryAfterSeconds: null,
+          humanVerificationRequired: false,
+        },
+      })
+    );
+
+    await gotoVi(page);
+    await openVisitForm(page);
+    await fillValidForm(page);
+    await submitAndOpenOtp(page);
+
+    await enterOtp(page, '000000');
+    await expect(page.getByText('Mã OTP không đúng. Vui lòng kiểm tra lại.')).toBeVisible();
+    await expect(page.getByTestId('otp-remaining-attempts')).toHaveText('Còn 9 lần thử');
+    // Still on OTP entry, not human verification.
+    await expect(page.getByText('Xác thực OTP')).toBeVisible();
+  });
+
+  test('V2-02: server cooldown disables confirm until the countdown ends', async ({ page }) => {
+    await mockInitiate(page);
+    await page.route('**/visit-requests/verify', (route) =>
+      route.fulfill({
+        status: 400,
+        json: {
+          errorCode: 'OTP_INVALID',
+          message: 'Mã OTP không đúng. Vui lòng kiểm tra lại.',
+          remainingAttempts: 4,
+          retryAfterSeconds: 8,
+          humanVerificationRequired: false,
+        },
+      })
+    );
+
+    await gotoVi(page);
+    await openVisitForm(page);
+    await fillValidForm(page);
+    await submitAndOpenOtp(page);
+
+    await enterOtp(page, '000000');
+    await expect(page.getByTestId('otp-retry-countdown')).toBeVisible();
+    await page.getByPlaceholder('______').fill('123456');
+    await expect(page.getByRole('button', { name: 'Xác nhận' })).toBeDisabled();
+  });
+
+  test('V2-03/04/05/06: 10th wrong → human verification → CAPTCHA fail keeps state → success issues new OTP → submit succeeds', async ({ page }) => {
+    await mockInitiate(page);
+
+    // Verify: burned challenge until the recovered session token is used, then success.
+    await page.route('**/visit-requests/verify', async (route) => {
+      const body = route.request().postDataJSON() as { sessionToken?: string };
+      if (body?.sessionToken === 'recovered-session-token') {
+        await route.fulfill({ json: VERIFY_OK });
+      } else {
+        await route.fulfill({
+          status: 428,
+          json: {
+            errorCode: 'OTP_HUMAN_VERIFICATION_REQUIRED',
+            message: 'Bạn đã nhập sai quá nhiều lần.',
+            remainingAttempts: 0,
+            humanVerificationRequired: true,
+          },
+        });
+      }
+    });
+
+    // Recover: first call fails (CAPTCHA rejected), second succeeds with a NEW session.
+    let recoverCalls = 0;
+    await page.route('**/visit-requests/otp/recover', async (route) => {
+      recoverCalls += 1;
+      if (recoverCalls === 1) {
+        await route.fulfill({
+          status: 400,
+          json: {
+            errorCode: 'HUMAN_VERIFICATION_FAILED',
+            message: 'Xác minh không thành công. Vui lòng thử lại.',
+            humanVerificationRequired: true,
+          },
+        });
+      } else {
+        await route.fulfill({
+          json: {
+            sessionToken: 'recovered-session-token',
+            maskedEmail: 'te***@example.com',
+            message: 'Mã mới đã được gửi.',
+            resendAfterSeconds: 60,
+            maxAttempts: 10,
+          },
+        });
+      }
+    });
+
+    await gotoVi(page);
+    await openVisitForm(page);
+    await fillValidForm(page);
+    await submitAndOpenOtp(page);
+
+    // V2-03: server says the challenge is burned → human verification screen replaces OTP entry.
+    await enterOtp(page, '000000');
+    await expect(page.getByRole('heading', { name: 'Xác minh bạn không phải robot' })).toBeVisible();
+    await expect(page.getByPlaceholder('______')).toHaveCount(0);
+    await expect(page.getByTestId('turnstile-fallback')).toBeVisible();
+
+    // V2-04: CAPTCHA failure keeps the human-verification state AND the form data.
+    await page.getByTestId('turnstile-fallback').click();
+    await expect(page.getByText('Xác minh không thành công. Vui lòng thử lại.')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Xác minh bạn không phải robot' })).toBeVisible();
+
+    // V2-05: CAPTCHA success returns to OTP entry with a fresh challenge.
+    await page.getByTestId('turnstile-fallback').click();
+    await expect(page.getByText('Xác thực OTP')).toBeVisible();
+    await expect(page.getByPlaceholder('______')).toHaveValue('');
+
+    // V2-06: the new OTP verifies successfully; summary shows and never auto-closes.
+    await enterOtp(page, '135790');
+    await expect(page.getByRole('heading', { name: 'Đã gửi yêu cầu tham quan' })).toBeVisible();
+    await page.waitForTimeout(3200);
+    await expect(page.getByRole('heading', { name: 'Đã gửi yêu cầu tham quan' })).toBeVisible();
+  });
+
+  test('V2-07: duplicate is a dedicated result screen, not an OTP error', async ({ page }) => {
+    await mockInitiate(page);
+    await page.route('**/visit-requests/verify', (route) => route.fulfill(DUPLICATE_409));
+
+    await gotoVi(page);
+    await openVisitForm(page);
+    await fillValidForm(page);
+    await submitAndOpenOtp(page);
+    await enterOtp(page, '135790');
+
+    // OTP modal closed — duplicate rendered as a result state with the EXISTING request info.
+    await expect(page.getByText('Xác thực OTP')).toHaveCount(0);
+    await expect(page.getByTestId('duplicate-badge')).toHaveText('Đã gửi trước đó');
+    await expect(page.getByRole('heading', { name: 'Yêu cầu này đã được gửi trước đó' })).toBeVisible();
+    await expect(page.getByText('VR-2026-000999')).toBeVisible();
+    await expect(page.getByText('Đang chờ duyệt')).toBeVisible();
+
+    // The submitted snapshot stays reviewable (read-only).
+    await expect(page.getByText('Thông tin bạn đã gửi')).toBeVisible();
+    await expect(page.getByText('Nguyễn Văn Test').first()).toBeVisible();
+
+    // No auto-close; closing resets to a blank form.
+    await page.waitForTimeout(3200);
+    await expect(page.getByTestId('duplicate-badge')).toBeVisible();
+    await page.getByRole('button', { name: 'Đóng' }).click();
+    await openVisitForm(page);
+    await expect(page.getByText('Khôi phục thông tin đã nhập?')).toHaveCount(0);
+    await expect(page.locator('input[name="registerInfo.fullName"]')).toHaveValue('');
+    await expect(page.getByText('VR-2026-000999')).toHaveCount(0);
+  });
+
+  test('V2-08: verify carries the SAME submissionId + sessionToken issued at initiate', async ({ page }) => {
+    const initiate = await mockInitiate(page);
+    const verifyBodies: Array<{ submissionId?: string; sessionToken?: string }> = [];
+    await page.route('**/visit-requests/verify', async (route) => {
+      verifyBodies.push(route.request().postDataJSON());
+      await route.fulfill({
+        status: 400,
+        json: { errorCode: 'OTP_INVALID', message: 'Mã OTP không đúng.', remainingAttempts: 9 },
+      });
+    });
+
+    await gotoVi(page);
+    await openVisitForm(page);
+    await fillValidForm(page);
+    await submitAndOpenOtp(page);
+
+    await enterOtp(page, '000000');
+    await expect(page.getByTestId('otp-remaining-attempts')).toBeVisible();
+    await enterOtp(page, '000001');
+
+    expect(initiate.lastSubmissionId).toMatch(/^[0-9a-f-]{36}$/i); // a real UUID
+    expect(verifyBodies.length).toBe(2);
+    for (const body of verifyBodies) {
+      expect(body.submissionId).toBe(initiate.lastSubmissionId); // intent kept across retries
+      expect(body.sessionToken).toBe('test-session-token');
+    }
+  });
+
+  test('V2-09: 390×844 — human verification and duplicate screens do not overflow', async ({ page }) => {
+    await mockInitiate(page);
+
+    let phase: 'burn' | 'duplicate' = 'burn';
+    await page.route('**/visit-requests/verify', async (route) => {
+      if (phase === 'burn') {
+        await route.fulfill({
+          status: 428,
+          json: { errorCode: 'OTP_HUMAN_VERIFICATION_REQUIRED', message: 'x', humanVerificationRequired: true },
+        });
+      } else {
+        await route.fulfill(DUPLICATE_409);
+      }
+    });
+    await page.route('**/visit-requests/otp/recover', (route) =>
+      route.fulfill({
+        json: {
+          sessionToken: 'recovered-session-token',
+          maskedEmail: 'te***@example.com',
+          message: 'ok',
+          resendAfterSeconds: 60,
+          maxAttempts: 10,
+        },
+      })
+    );
+
+    await gotoVi(page);
+    await openVisitForm(page);
+    // Fill on the desktop layout (the visitor table is desktop-only), THEN go mobile.
+    await fillValidForm(page);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await submitAndOpenOtp(page);
+
+    // Human verification on mobile: visible and no horizontal page overflow.
+    await enterOtp(page, '000000');
+    await expect(page.getByRole('heading', { name: 'Xác minh bạn không phải robot' })).toBeVisible();
+    const humanOverflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth
+    );
+    expect(humanOverflow).toBeLessThanOrEqual(0);
+
+    // Recover → duplicate result on mobile: no overflow either.
+    phase = 'duplicate';
+    await page.getByTestId('turnstile-fallback').click();
+    await expect(page.getByText('Xác thực OTP')).toBeVisible();
+    await enterOtp(page, '135790');
+    await expect(page.getByTestId('duplicate-badge')).toBeVisible();
+    const duplicateOverflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth
+    );
+    expect(duplicateOverflow).toBeLessThanOrEqual(0);
   });
 });

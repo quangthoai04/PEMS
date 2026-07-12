@@ -6,6 +6,7 @@ import type {
   DepartmentDetail,
   DepartmentListItem,
   DepartmentListQueryParams,
+  DepartmentStatusImpact,
   ManageDepartmentStatusRequest,
   ManageDepartmentStatusResponse,
   PaginatedResult,
@@ -37,6 +38,18 @@ export const departmentManagementApi = {
     const { data } = await httpClient.post<CreateDepartmentResponse>(
       API_ENDPOINTS.departments.create,
       payload,
+    );
+    return data;
+  },
+
+  /** UC-106 — impact preview (affected accounts/sessions/blockers) for the confirmation modal. */
+  async getDepartmentStatusImpact(
+    departmentId: number,
+    newStatus: 'ACTIVE' | 'INACTIVE',
+  ): Promise<DepartmentStatusImpact> {
+    const { data } = await httpClient.get<DepartmentStatusImpact>(
+      API_ENDPOINTS.departments.statusImpact,
+      { params: { departmentId, newStatus } },
     );
     return data;
   },

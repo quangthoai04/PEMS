@@ -102,6 +102,43 @@ public static class OtpTokenTypes
     public const string MagicLink = "MAGIC_LINK";
 }
 
+// otp_tokens.issue_reason — why a challenge/code was issued. Recovery issues have a
+// separate (stricter) hourly quota than standard INITIAL/RESEND issues.
+public static class OtpIssueReasons
+{
+    public const string Initial = "INITIAL";
+    public const string Resend = "RESEND";
+    public const string HumanRecovery = "HUMAN_RECOVERY";
+}
+
+// otp_tokens.invalidation_reason values.
+public static class OtpInvalidationReasons
+{
+    public const string MaxAttempts = "MAX_ATTEMPTS";
+    public const string HumanRecovery = "HUMAN_RECOVERY";
+    public const string SupersededByResend = "SUPERSEDED_BY_RESEND";
+}
+
+// Machine-readable error codes for the UC-17 OTP challenge flow. Surfaced to the client
+// as response.errorCode together with remainingAttempts/retryAfterSeconds/
+// humanVerificationRequired metadata (see ExceptionHandlingMiddleware) — the frontend
+// must never parse the Vietnamese message.
+public static class OtpErrorCodes
+{
+    public const string Invalid = "OTP_INVALID";
+    public const string Expired = "OTP_EXPIRED";
+    public const string NotFound = "OTP_NOT_FOUND";
+    public const string SessionInvalid = "OTP_SESSION_INVALID";
+    public const string RetryLater = "OTP_RETRY_LATER";
+    public const string HumanVerificationRequired = "OTP_HUMAN_VERIFICATION_REQUIRED";
+    public const string HumanVerificationFailed = "HUMAN_VERIFICATION_FAILED";
+    public const string ResendRateLimited = "OTP_RESEND_RATE_LIMITED";
+    public const string ResendTooSoon = "OTP_RESEND_TOO_SOON";
+    public const string StandardRateLimited = "OTP_STANDARD_RATE_LIMITED";
+    public const string RecoveryRateLimited = "OTP_RECOVERY_RATE_LIMITED";
+    public const string AbsoluteRateLimited = "OTP_ABSOLUTE_RATE_LIMITED";
+}
+
 public static class SecurityEventTypes
 {
     public const string SsoLogin = "SSO_LOGIN";
@@ -149,6 +186,9 @@ public static class SessionRevokeReasons
     public const string PasswordChanged = "PASSWORD_CHANGED";
     public const string AccountDeactivated = "ACCOUNT_DEACTIVATED";
     public const string RoleChanged = "ROLE_CHANGED";
+
+    /// <summary>UC-106: the user's department was disabled, so every active session is revoked.</summary>
+    public const string DepartmentDisabled = "DEPARTMENT_DISABLED";
 }
 
 public static class CreatedViaValues

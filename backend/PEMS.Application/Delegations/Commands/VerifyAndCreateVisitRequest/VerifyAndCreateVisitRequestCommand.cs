@@ -44,5 +44,13 @@ public sealed record VerifyAndCreateVisitRequestCommand(
     string? Notes,
 
     // ── Verification ───────────────────────────────────────
-    string OtpCode
+    string OtpCode,
+
+    // UUID of THIS submit intent (same value used at /initiate). Idempotency key:
+    // retries of the same intent can never create a second request.
+    string SubmissionId,
+
+    // Opaque challenge token returned by /initiate (or resend/recover). Identifies the
+    // OTP challenge row — the backend no longer picks "latest OTP for this email".
+    string SessionToken
 ) : IRequest<VerifyAndCreateVisitRequestResponse>, IVisitRequestFormCommand;

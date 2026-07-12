@@ -53,7 +53,9 @@ public sealed class SessionValidationMiddleware
             .Select(u => new
             {
                 u.Status,
-                RoleStatus = u.Role!.Status
+                RoleStatus = u.Role!.Status,
+                RoleCode = u.Role!.RoleCode,
+                DepartmentStatus = u.Department != null ? u.Department.Status : null
             })
             .FirstOrDefaultAsync(context.RequestAborted);
 
@@ -62,6 +64,14 @@ public sealed class SessionValidationMiddleware
             || account.RoleStatus != EntityStatuses.Active)
         {
             await WriteUnauthorizedAsync(context, "Your account is not active. Please contact administrator.");
+            return;
+        }
+
+        // UC-106: DEPARTMENT accounts lose access immediately when their department is disabled,
+        // even if a session somehow escaped revocation — never trust the JWT's login-time snapshot.
+        if (DepartmentAccessRule.IsBlocked(account.RoleCode, account.DepartmentStatus))
+        {
+            await WriteUnauthorizedAsync(context, "Your department is no longer active. Please contact administrator.");
             return;
         }
 

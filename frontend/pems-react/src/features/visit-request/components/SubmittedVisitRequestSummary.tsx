@@ -1,8 +1,8 @@
 import React from 'react';
-import { CheckCircle2 } from 'lucide-react';
+import { CheckCircle2, CopyCheck } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { VisitRequestSchema } from '../schema/visitRequest.schema';
-import type { VerifyResponse } from '../api/visitRequestApi';
+import type { VerifyResponse, DuplicateVisitRequestData } from '../api/visitRequestApi';
 
 /** Immutable snapshot of a successfully submitted request (kept in React memory only). */
 export interface SubmittedVisitRequest {
@@ -14,6 +14,12 @@ interface Props {
   submission: SubmittedVisitRequest;
   /** Focus target after OTP success (heading gets tabIndex={-1}). */
   headingRef?: React.Ref<HTMLHeadingElement>;
+  /**
+   * When present, renders the "already submitted" DUPLICATE result variant: amber
+   * banner + existing request code/status/time, and the read-only submitted snapshot.
+   * No new request was created in this case.
+   */
+  duplicate?: DuplicateVisitRequestData;
 }
 
 /**
@@ -41,6 +47,10 @@ const getSubmittedStatusPresentation = (status: string) => {
   switch (status) {
     case 'PENDING_APPROVAL':
       return { labelKey: 'visitRequest:result.status.pendingApproval', kind: 'pending' as const };
+    case 'PARTIALLY_APPROVED':
+      return { labelKey: 'visitRequest:result.status.partiallyApproved', kind: 'pending' as const };
+    case 'APPROVED':
+      return { labelKey: 'visitRequest:result.status.approved', kind: 'neutral' as const };
     default:
       return { labelKey: 'visitRequest:result.status.received', kind: 'neutral' as const };
   }
@@ -53,7 +63,7 @@ const STATUS_BADGE_CLS: Record<'pending' | 'neutral', string> = {
     'inline-flex min-w-[96px] items-center justify-center whitespace-nowrap rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600',
 };
 
-export const SubmittedVisitRequestSummary: React.FC<Props> = ({ submission, headingRef }) => {
+export const SubmittedVisitRequestSummary: React.FC<Props> = ({ submission, headingRef, duplicate }) => {
   const { t, i18n } = useTranslation(['visitRequest']);
   const { response, values } = submission;
   const locale = i18n.language?.startsWith('vi') ? 'vi-VN' : 'en-GB';
@@ -61,7 +71,8 @@ export const SubmittedVisitRequestSummary: React.FC<Props> = ({ submission, head
   const empty = t('visitRequest:result.emptyValue');
   const show = (value?: string | null) => (value && value.trim() ? value : empty);
 
-  const status = getSubmittedStatusPresentation(response.status);
+  const status = getSubmittedStatusPresentation(duplicate ? duplicate.existingStatus : response.status);
+  const requestCode = duplicate ? duplicate.existingRequestCode : response.requestCode;
 
   const campusLabel = (code: string) =>
     t(`visitRequest:step2Info.campusOptions.${code}`, code);
@@ -90,19 +101,37 @@ export const SubmittedVisitRequestSummary: React.FC<Props> = ({ submission, head
 
   return (
     <div>
-      {/* ── Result banner ─────────────────────────────────────────────────── */}
+      {/* ── Result banner (success OR duplicate — duplicate is a result, not an error) ── */}
       <div role="status" className="flex flex-col items-center border-b border-slate-200 pb-7 text-center">
-        <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-green-100">
-          <CheckCircle2 className="h-8 w-8 text-green-600" />
-        </div>
+        {duplicate ? (
+          <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-amber-100">
+            <CopyCheck className="h-8 w-8 text-amber-600" />
+          </div>
+        ) : (
+          <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-green-100">
+            <CheckCircle2 className="h-8 w-8 text-green-600" />
+          </div>
+        )}
+
+        {duplicate && (
+          <span
+            data-testid="duplicate-badge"
+            className="mb-2 inline-flex items-center justify-center rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-xs font-bold uppercase tracking-wide text-amber-700"
+          >
+            {t('visitRequest:duplicate.badge')}
+          </span>
+        )}
+
         <h2
           ref={headingRef}
           tabIndex={-1}
           className="text-xl font-extrabold text-slate-900 outline-none sm:text-2xl"
         >
-          {t('visitRequest:result.title')}
+          {duplicate ? t('visitRequest:duplicate.title') : t('visitRequest:result.title')}
         </h2>
-        <p className="mt-1 text-sm text-slate-500">{t('visitRequest:result.description')}</p>
+        <p className="mt-1 text-sm text-slate-500">
+          {duplicate ? t('visitRequest:duplicate.description') : t('visitRequest:result.description')}
+        </p>
 
         <div className="mt-4 flex flex-wrap items-center justify-center gap-x-6 gap-y-2">
           <span className="flex items-center gap-2 text-sm text-slate-600">
@@ -112,12 +141,22 @@ export const SubmittedVisitRequestSummary: React.FC<Props> = ({ submission, head
           <span className="flex items-center gap-2 text-sm text-slate-600">
             <span className="font-semibold">{t('visitRequest:result.requestCode')}:</span>
             <span className="text-base font-extrabold tracking-wider text-[#004c91]">
-              {response.requestCode}
+              {requestCode}
             </span>
           </span>
+          {duplicate && (
+            <span className="flex items-center gap-2 text-sm text-slate-600">
+              <span className="font-semibold">{t('visitRequest:duplicate.submittedAt')}:</span>
+              <span className="font-semibold text-slate-800">
+                {formatWallClock(duplicate.existingSubmittedAt, locale)}
+              </span>
+            </span>
+          )}
         </div>
 
-        <p className="mt-3 text-xs text-slate-500">{t('visitRequest:result.emailHint')}</p>
+        <p className="mt-3 text-xs text-slate-500">
+          {duplicate ? t('visitRequest:duplicate.noNewRequest') : t('visitRequest:result.emailHint')}
+        </p>
       </div>
 
       <h3 className="mt-7 text-lg font-extrabold text-[#004c91]">

@@ -40,5 +40,10 @@ public sealed record InitiateVisitRequestCommand(
     string MediaConsentStatus,
     string? MediaConsentNote,
     ulong? PartnerId,
-    string? Notes
+    string? Notes,
+
+    // ── Submit intent ──────────────────────────────────────
+    // UUID generated ONCE per submit intent by the frontend (crypto.randomUUID()) and
+    // kept across initiate/resend/recover/verify. Never an authorization token.
+    string SubmissionId
 ) : IRequest<InitiateVisitRequestResponse>, IVisitRequestFormCommand;

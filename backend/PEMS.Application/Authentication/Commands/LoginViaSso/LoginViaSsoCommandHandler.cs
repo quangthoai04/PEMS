@@ -230,6 +230,12 @@ public sealed class LoginviaSSOCommandHandler : IRequestHandler<LoginviaSSOComma
         if (user.Role is null || user.Role.Status != EntityStatuses.Active)
             await FailAsync(user, email, portal, "role_inactive", SecurityEventFailureReasonCodes.AccountDisabled,
                 request, AuthErrorCodes.AccountInactive, "Your account is not active.", 403, cancellationToken);
+
+        // UC-106: DEPARTMENT accounts lose access while their department is INACTIVE
+        // (applies to DEPARTMENT+LEADER/STAFF; other roles are never blocked by this rule).
+        if (DepartmentAccessRule.IsBlocked(user.Role!.RoleCode, user.Department?.Status))
+            await FailAsync(user, email, portal, "department_inactive", SecurityEventFailureReasonCodes.AccountDisabled,
+                request, AuthErrorCodes.DepartmentInactive, DepartmentAccessRule.BlockedMessage, 403, cancellationToken);
     }
 
     private async Task<AuthResponse> IssueAndAuditAsync(

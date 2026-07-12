@@ -1,6 +1,8 @@
 using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Security;
 using PEMS.Domain.Constants;
+using PEMS.Domain.Entities.Campuses;
+using PEMS.Domain.Entities.Departments;
 using PEMS.Domain.Entities.Faqs;
 using PEMS.Domain.Entities.Users;
 using PEMS.Infrastructure.Persistence;
@@ -32,14 +34,19 @@ public static class DatabaseResetHelper
     public const string ViewListFaqQuestionPrefix = "[IT-VIEW-LIST-FAQ] ";
     public const string ChangeFaqVisibilityQuestionPrefix = "[IT-CHANGE-FAQ-VISIBILITY] ";
     public const string SearchFaqQuestionPrefix = "[IT-SEARCH-FAQ] ";
+    public const string AddDepartmentNamePrefix = "[IT-UC101-ADD-DEPARTMENT] ";
+    public const string UpdateDepartmentNamePrefix = "[IT-UC102-UPDATE-DEPARTMENT] ";
 
     private const string TestUserEmailDomain = "@it-uc63.pems.local";
+    private const string InactiveCampusTestCode = "IT-UC101-INACTIVE";
+    private const string IcProtectionTestCampusCode = "IT-UC102-IC-TEST";
 
     /// <summary>
     /// Gets or creates a deterministic ACTIVE test user for the given effective role
     /// (<see cref="EffectiveRole.Ho"/>, <c>STAFF</c>, <see cref="EffectiveRole.StaffLeader"/>,
-    /// <see cref="EffectiveRole.Admin"/>, <see cref="EffectiveRole.Visitor"/>) and returns its
-    /// user id.
+    /// <see cref="EffectiveRole.DepartmentLead"/>, <see cref="EffectiveRole.Department"/>,
+    /// <see cref="EffectiveRole.Student"/>, <see cref="EffectiveRole.Admin"/>,
+    /// <see cref="EffectiveRole.Visitor"/>) and returns its user id.
     /// </summary>
     public static async Task<ulong> EnsureTestUserAsync(
         ApplicationDbContext db,
@@ -52,9 +59,12 @@ public static class DatabaseResetHelper
             EffectiveRole.Admin => (RoleCode.Admin, (string?)null),
             EffectiveRole.Staff => (RoleCode.Staff, SubRole.Staff),
             EffectiveRole.StaffLeader => (RoleCode.Staff, SubRole.Leader),
+            EffectiveRole.DepartmentLead => (RoleCode.Department, SubRole.Leader),
+            EffectiveRole.Department => (RoleCode.Department, SubRole.Staff),
+            EffectiveRole.Student => (RoleCode.Student, (string?)null),
             EffectiveRole.Visitor => (RoleCode.Visitor, (string?)null),
             _ => throw new ArgumentOutOfRangeException(
-                nameof(effectiveRole), effectiveRole, "Unsupported effective role for Create FAQ integration tests.")
+                nameof(effectiveRole), effectiveRole, "Unsupported effective role for integration tests.")
         };
 
         var email = $"it-uc63-{effectiveRole.ToLowerInvariant()}{TestUserEmailDomain}";
@@ -82,11 +92,10 @@ public static class DatabaseResetHelper
                     "No active campus found in pems_test to attach an internal test user to.");
         }
 
-        // DB trigger requires STAFF/DEPARTMENT users to have a department_id, regardless of
-        // sub_role (STAFF or LEADER). STAFF/STAFF_LEADER belong to an IC department (same
-        // convention used across the app, e.g. AccountProvisioningRules.cs:
-        // "d.CampusId == actorCampusId && d.DepartmentType == "IC""), so look up an existing
-        // active IC department on the same campus from the seed data — never hard-code a
+        // DB trigger trg_users_validate_bi/bu requires STAFF/DEPARTMENT users to have a
+        // department_id whose department_type matches the role: STAFF -> IC, DEPARTMENT ->
+        // GENERAL (regardless of sub_role STAFF/LEADER). Look up an existing active department
+        // of the right type on the same campus from the seed data — never hard-code a
         // department_id.
         ulong? departmentId = null;
         if (effectiveRole is EffectiveRole.Staff or EffectiveRole.StaffLeader)
@@ -100,6 +109,20 @@ public static class DatabaseResetHelper
                 ?? throw new InvalidOperationException(
                     "No active IC department found in pems_test for the selected campus to attach a STAFF test user to.");
         }
+        else if (effectiveRole is EffectiveRole.DepartmentLead or EffectiveRole.Department)
+        {
+            departmentId = (await db.Departments.AsNoTracking()
+                .Where(d => d.CampusId == primaryCampusId
+                            && d.DepartmentType == "GENERAL"
+                            && d.Status == EntityStatuses.Active)
+                .Select(d => (ulong?)d.DepartmentId)
+                .FirstOrDefaultAsync(cancellationToken))
+                ?? throw new InvalidOperationException(
+                    "No active GENERAL department found in pems_test for the selected campus to attach a DEPARTMENT test user to.");
+        }
+        // EffectiveRole.Student falls through with departmentId = null: trg_users_validate_bi/bu's
+        // ELSE branch (any role other than VISITOR/STAFF/DEPARTMENT) requires sub_role and
+        // department_id to both be NULL, and primary_campus_id to be set.
 
         var user = new User
         {
@@ -200,5 +223,233 @@ public static class DatabaseResetHelper
 
         db.Faqs.RemoveRange(testFaqs);
         await db.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Inserts a Department row directly for Add New Department tests to seed a pre-existing
+    /// department (e.g. for duplicate-name checks). <paramref name="name"/> must already carry
+    /// <see cref="AddDepartmentNamePrefix"/> so <see cref="DeleteTestDepartmentsAsync"/> can clean
+    /// it up without touching other test classes' data or real seed departments. Never attaches a
+    /// user to the created department, so cleanup never hits the department_id FK (RESTRICT).
+    /// </summary>
+    public static async Task<ulong> CreateTestDepartmentAsync(
+        ApplicationDbContext db,
+        string name,
+        ulong campusId,
+        string departmentType,
+        string status,
+        ulong? createdBy = null,
+        CancellationToken cancellationToken = default)
+    {
+        var department = new Department
+        {
+            CampusId = campusId,
+            Name = name,
+            DepartmentType = departmentType,
+            HeadUserId = null,
+            Status = status,
+            CreatedAt = DateTime.UtcNow,
+            CreatedBy = createdBy,
+            UpdatedAt = null,
+            UpdatedBy = null
+        };
+
+        db.Departments.Add(department);
+        await db.SaveChangesAsync(cancellationToken);
+        return department.DepartmentId;
+    }
+
+    /// <summary>
+    /// Removes every Department row whose name starts with <paramref name="prefix"/>. Callers
+    /// must pass their own dedicated prefix (e.g. <see cref="AddDepartmentNamePrefix"/>) — never a
+    /// prefix shared with another test class. Safe only because test departments created via
+    /// <see cref="CreateTestDepartmentAsync"/> or the Add New Department API never get a user
+    /// attached (fk_users_department is ON DELETE RESTRICT).
+    /// </summary>
+    public static async Task DeleteTestDepartmentsAsync(ApplicationDbContext db, string prefix, CancellationToken cancellationToken = default)
+    {
+        var testDepartments = await db.Departments
+            .Where(d => d.Name.StartsWith(prefix))
+            .ToListAsync(cancellationToken);
+
+        if (testDepartments.Count == 0)
+            return;
+
+        db.Departments.RemoveRange(testDepartments);
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Gets or creates a dedicated, isolated INACTIVE test campus (its own campus_code, never a
+    /// real seed campus) with an active IC department and an ACTIVE Staff Leader user whose
+    /// <c>primary_campus_id</c> points to that inactive campus — used only to test
+    /// AddNewDepartmentCommandHandler's "caller's own campus is INACTIVE" rule (UC-101 manual test
+    /// #7). Idempotent: reused across test runs the same way <see cref="EnsureTestUserAsync"/>
+    /// reuses its users, so nothing here needs cleanup.
+    /// </summary>
+    public static async Task<ulong> EnsureInactiveCampusStaffLeaderAsync(
+        ApplicationDbContext db,
+        CancellationToken cancellationToken = default)
+    {
+        var email = $"it-uc101-inactive-campus-staffleader{TestUserEmailDomain}";
+
+        var existingUser = await db.Users.AsNoTracking()
+            .FirstOrDefaultAsync(u => u.Email == email, cancellationToken);
+        if (existingUser is not null)
+            return existingUser.UserId;
+
+        var campus = await db.Campuses.AsNoTracking()
+            .FirstOrDefaultAsync(c => c.CampusCode == InactiveCampusTestCode, cancellationToken);
+
+        ulong campusId;
+        if (campus is not null)
+        {
+            campusId = campus.CampusId;
+        }
+        else
+        {
+            var newCampus = new Campus
+            {
+                CampusCode = InactiveCampusTestCode,
+                Name = "[IT-UC101] Inactive Test Campus",
+                Status = EntityStatuses.Inactive,
+                CreatedAt = DateTime.UtcNow
+            };
+            db.Campuses.Add(newCampus);
+            await db.SaveChangesAsync(cancellationToken);
+            campusId = newCampus.CampusId;
+        }
+
+        var icDepartment = await db.Departments.AsNoTracking()
+            .Where(d => d.CampusId == campusId && d.DepartmentType == "IC" && d.Status == EntityStatuses.Active)
+            .Select(d => (ulong?)d.DepartmentId)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (icDepartment is null)
+        {
+            var newIcDepartment = new Department
+            {
+                CampusId = campusId,
+                Name = "[IT-UC101] Inactive Campus IC Department",
+                DepartmentType = "IC",
+                HeadUserId = null,
+                Status = EntityStatuses.Active,
+                CreatedAt = DateTime.UtcNow
+            };
+            db.Departments.Add(newIcDepartment);
+            await db.SaveChangesAsync(cancellationToken);
+            icDepartment = newIcDepartment.DepartmentId;
+        }
+
+        var role = await db.Roles.AsNoTracking()
+            .FirstOrDefaultAsync(r => r.RoleCode == RoleCode.Staff, cancellationToken)
+            ?? throw new InvalidOperationException("Role 'STAFF' was not found in pems_test. Import the fresh-create schema first.");
+
+        var user = new User
+        {
+            FullName = "[IT-UC101] Test StaffLeader (Inactive Campus)",
+            Email = email,
+            RoleId = role.RoleId,
+            SubRole = SubRole.Leader,
+            PrimaryCampusId = campusId,
+            DepartmentId = icDepartment,
+            Status = UserStatuses.Active,
+            CreatedVia = "MANUAL_CREATED",
+            CreatedAt = DateTime.UtcNow
+        };
+
+        db.Users.Add(user);
+        await db.SaveChangesAsync(cancellationToken);
+        return user.UserId;
+    }
+
+    /// <summary>
+    /// Gets or creates a dedicated, isolated ACTIVE test campus (its own campus_code, never a real
+    /// seed campus) with its own IC department and an ACTIVE Staff Leader user whose
+    /// <c>primary_campus_id</c>/<c>department_id</c> point there — used only to test
+    /// UpdateDepartmentCommandHandler's "cannot rename the IC department" rule (UC-102) WITHOUT
+    /// ever targeting a real seed campus's IC department. That matters because if a future
+    /// regression ever let this update through, the IC department's name would gain the
+    /// <see cref="UpdateDepartmentNamePrefix"/> and <see cref="DeleteTestDepartmentsAsync"/> would
+    /// delete it on cleanup — catastrophic if it were a real campus's IC department (FK violations
+    /// from real users referencing it, or silent loss of real seed data). Using a campus nothing
+    /// else references confines that worst case to disposable test data.
+    /// Idempotent: reused across test runs the same way <see cref="EnsureTestUserAsync"/> reuses
+    /// its users, so nothing here needs cleanup.
+    /// </summary>
+    public static async Task<(ulong UserId, ulong CampusId, ulong IcDepartmentId)> EnsureIcProtectionTestContextAsync(
+        ApplicationDbContext db,
+        CancellationToken cancellationToken = default)
+    {
+        var email = $"it-uc102-ic-protection-staffleader{TestUserEmailDomain}";
+
+        var campus = await db.Campuses.AsNoTracking()
+            .FirstOrDefaultAsync(c => c.CampusCode == IcProtectionTestCampusCode, cancellationToken);
+
+        ulong campusId;
+        if (campus is not null)
+        {
+            campusId = campus.CampusId;
+        }
+        else
+        {
+            var newCampus = new Campus
+            {
+                CampusCode = IcProtectionTestCampusCode,
+                Name = "[IT-UC102] IC Protection Test Campus",
+                Status = EntityStatuses.Active,
+                CreatedAt = DateTime.UtcNow
+            };
+            db.Campuses.Add(newCampus);
+            await db.SaveChangesAsync(cancellationToken);
+            campusId = newCampus.CampusId;
+        }
+
+        var icDepartmentId = await db.Departments.AsNoTracking()
+            .Where(d => d.CampusId == campusId && d.DepartmentType == "IC" && d.Status == EntityStatuses.Active)
+            .Select(d => (ulong?)d.DepartmentId)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (icDepartmentId is null)
+        {
+            var newIcDepartment = new Department
+            {
+                CampusId = campusId,
+                Name = "[IT-UC102] IC Protection Test IC Department",
+                DepartmentType = "IC",
+                HeadUserId = null,
+                Status = EntityStatuses.Active,
+                CreatedAt = DateTime.UtcNow
+            };
+            db.Departments.Add(newIcDepartment);
+            await db.SaveChangesAsync(cancellationToken);
+            icDepartmentId = newIcDepartment.DepartmentId;
+        }
+
+        var existingUser = await db.Users.AsNoTracking()
+            .FirstOrDefaultAsync(u => u.Email == email, cancellationToken);
+        if (existingUser is not null)
+            return (existingUser.UserId, campusId, icDepartmentId.Value);
+
+        var role = await db.Roles.AsNoTracking()
+            .FirstOrDefaultAsync(r => r.RoleCode == RoleCode.Staff, cancellationToken)
+            ?? throw new InvalidOperationException("Role 'STAFF' was not found in pems_test. Import the fresh-create schema first.");
+
+        var user = new User
+        {
+            FullName = "[IT-UC102] Test StaffLeader (IC Protection)",
+            Email = email,
+            RoleId = role.RoleId,
+            SubRole = SubRole.Leader,
+            PrimaryCampusId = campusId,
+            DepartmentId = icDepartmentId,
+            Status = UserStatuses.Active,
+            CreatedVia = "MANUAL_CREATED",
+            CreatedAt = DateTime.UtcNow
+        };
+
+        db.Users.Add(user);
+        await db.SaveChangesAsync(cancellationToken);
+        return (user.UserId, campusId, icDepartmentId.Value);
     }
 }

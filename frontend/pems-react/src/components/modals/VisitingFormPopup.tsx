@@ -12,7 +12,7 @@ import { SubmittedVisitRequestSummary, type SubmittedVisitRequest } from '../../
 import { findCampusTimeOverlaps } from '../../features/visit-request/schema/visitRequest.schema';
 import type { VisitRequestSchema } from '../../features/visit-request/schema/visitRequest.schema';
 import type { VerifyResponse } from '../../features/visit-request/api/visitRequestApi';
-import { loadVisitRequestDraft, saveVisitRequestDraft, hasAnyUserInput } from '../../features/visit-request/utils/visitRequestDraftStorage';
+import { loadVisitRequestDraft, saveVisitRequestDraft, hasMeaningfulVisitRequestData, isVisitRequestDraftExpired, clearVisitRequestDraft } from '../../features/visit-request/utils/visitRequestDraftStorage';
 import { useTranslation } from 'react-i18next';
 
 interface VisitingFormPopupProps {
@@ -31,7 +31,6 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
   const [pendingDraft, setPendingDraft] = useState<ReturnType<typeof loadVisitRequestDraft> | null>(null);
   const [showRestoreDraftModal, setShowRestoreDraftModal] = useState(false);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
-  const [showSaveDraftConfirm, setShowSaveDraftConfirm] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const formScrollRef = useRef<HTMLDivElement>(null);
@@ -46,6 +45,9 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
 
   const handleSuccess = (response: VerifyResponse, values: VisitRequestSchema) => {
     // No auto-close: the user reviews the submitted data and closes the modal themselves.
+    blockAutoSave();
+    cancelPendingAutoSave();
+    clearVisitRequestDraft();
     setSubmission({ response, values });
     setSubmitAttempted(false);
     requestAnimationFrame(() => {
@@ -104,10 +106,35 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
     verifyOtp,
     resendOtp,
     cancelOtp,
+    remainingAttempts,
+    retryAfterSeconds,
+    retryAtUtc,
+    resendAfterSeconds,
+    humanVerificationRequired,
+    isRecoveringOtp,
+    recoverOtp,
+    duplicateResult,
     resetVisitRequestForm,
     setDraftHydrated,
     isRestoringDraftRef,
+    blockAutoSave,
+    unblockAutoSave,
+    cancelPendingAutoSave,
   } = useVisitRequestForm(handleSuccess, handleInvalidSubmit);
+
+  // The duplicate result behaves like the success summary: no auto-close, scroll to top,
+  // focus the heading — but it announces "already submitted before" instead of success.
+  useEffect(() => {
+    if (!duplicateResult) return;
+    blockAutoSave();
+    cancelPendingAutoSave();
+    setSubmitAttempted(false);
+    requestAnimationFrame(() => {
+      formScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+      submittedHeadingRef.current?.focus({ preventScroll: true });
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [duplicateResult]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -128,11 +155,14 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
     if (!isOpen) return;
 
     const draft = loadVisitRequestDraft();
-    if (draft?.data) {
+    if (draft && !isVisitRequestDraftExpired(draft)) {
       setPendingDraft(draft);
       setShowRestoreDraftModal(true);
       setDraftHydrated(false);
     } else {
+      if (draft) {
+        clearVisitRequestDraft();
+      }
       setDraftHydrated(true);
     }
   }, [isOpen, setDraftHydrated]);
@@ -200,8 +230,9 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
     setDraftHydrated(true);
   };
 
-  // Closing the submitted view wipes the snapshot and resets the form, so the next
-  // open shows a blank form with no PII from the request that was just created.
+  // Closing the submitted/duplicate view wipes the snapshot and resets the form, so the
+  // next open shows a blank form with no PII from the request that was just reviewed.
+  // resetVisitRequestForm also clears duplicateResult and the submission intent id.
   const closeSubmittedView = () => {
     setSubmission(null);
     setSubmitAttempted(false);
@@ -209,41 +240,65 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
     onClose();
   };
 
-  const requestCloseForm = () => {
-    if (submission) {
+  const requestCloseForm = React.useCallback(() => {
+    if (submission || duplicateResult) {
       closeSubmittedView();
       return;
     }
-    const isDirty = hasAnyUserInput(form.getValues());
+    const isDirty = hasMeaningfulVisitRequestData(form.getValues());
     if (!isDirty) {
+      cancelPendingAutoSave();
       onClose();
       return;
     }
     setShowCancelConfirm(true);
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [submission, duplicateResult, form, cancelPendingAutoSave, onClose]);
 
-  const handleConfirmCancel = () => {
-    resetVisitRequestForm();
-    setSubmitAttempted(false);
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        // A child control that already handled this Escape (e.g. react-select closing
+        // its open menu calls preventDefault) must not also prompt-close the whole form.
+        if (e.defaultPrevented) return;
+        if (!showRestoreDraftModal && !showCancelConfirm && !showOverlapConfirm && !sessionToken) {
+          requestCloseForm();
+        }
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, showRestoreDraftModal, showCancelConfirm, showOverlapConfirm, sessionToken, requestCloseForm]);
+
+  const handleConfirmCancelWithSave = () => {
+    blockAutoSave();
+    cancelPendingAutoSave();
+    const latestValues = form.getValues();
+    const result = saveVisitRequestDraft(latestValues);
+    if (result.success === false) {
+      unblockAutoSave();
+      setToastMessage(result.error || 'Failed to save draft');
+      return;
+    }
     setShowCancelConfirm(false);
     onClose();
   };
 
-  const handleSaveDraft = () => {
-    const isDirty = hasAnyUserInput(form.getValues());
-    if (!isDirty) {
-      setToastMessage(t('visitRequest:draft.emptyMsg'));
-      return;
-    }
-    saveVisitRequestDraft(form.getValues());
-    setShowSaveDraftConfirm(true);
+  const handleConfirmCancelWithoutSave = () => {
+    blockAutoSave();
+    cancelPendingAutoSave();
+    clearVisitRequestDraft();
+    resetVisitRequestForm();
+    setShowCancelConfirm(false);
+    onClose();
   };
 
   useEffect(() => {
     if (!isOpen) {
       // Safety net for closes that bypass closeSubmittedView (e.g. parent-driven):
-      // never keep a submitted snapshot or its form values around for the next open.
-      if (submission) {
+      // never keep a submitted/duplicate snapshot or its form values around for the next open.
+      if (submission || duplicateResult) {
         setSubmission(null);
         resetVisitRequestForm();
       }
@@ -292,7 +347,6 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 p-0 backdrop-blur-sm sm:p-4"
-            onClick={requestCloseForm}
           >
             <motion.div
               initial={{ opacity: 0, scale: 0.97, y: 12 }}
@@ -333,6 +387,20 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
               >
                 {submission ? (
                   <SubmittedVisitRequestSummary submission={submission} headingRef={submittedHeadingRef} />
+                ) : duplicateResult ? (
+                  <SubmittedVisitRequestSummary
+                    submission={{
+                      response: {
+                        visitRequestId: duplicateResult.data.existingVisitRequestId,
+                        requestCode: duplicateResult.data.existingRequestCode,
+                        status: duplicateResult.data.existingStatus,
+                        message: '',
+                      },
+                      values: duplicateResult.values,
+                    }}
+                    duplicate={duplicateResult.data}
+                    headingRef={submittedHeadingRef}
+                  />
                 ) : (
                   <form id="visit-request-form" onSubmit={handleSingleFormSubmit} noValidate>
                     <RegisterInfoSection form={form} showErrors={submitAttempted} />
@@ -354,7 +422,7 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
 
               {/* ── Footer ── */}
               <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-white px-4 py-3 sm:px-6">
-                {submission ? (
+                {submission || duplicateResult ? (
                   <button
                     type="button"
                     onClick={closeSubmittedView}
@@ -365,22 +433,7 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
                 ) : (
                   <>
                     <div className="flex flex-wrap items-center gap-3">
-                      <button
-                        type="button"
-                        onClick={requestCloseForm}
-                        disabled={isSubmitting}
-                        className="inline-flex h-11 items-center justify-center rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-50 hover:text-[#004c91] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#004c91]/20 disabled:opacity-50"
-                      >
-                        {t('visitRequest:popup.cancel')}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleSaveDraft}
-                        disabled={isSubmitting}
-                        className="inline-flex h-11 items-center justify-center rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-[#004c91] transition-colors hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#004c91]/20 disabled:opacity-50"
-                      >
-                        {t('visitRequest:popup.saveDraft')}
-                      </button>
+                      {/* Left side empty or add other actions if needed */}
                     </div>
 
                     <div className="flex flex-wrap items-center justify-end gap-3">
@@ -421,8 +474,15 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
           otpError={otpError}
           isVerifying={isVerifying}
           isResending={isResending}
+          remainingAttempts={remainingAttempts}
+          retryAfterSeconds={retryAfterSeconds}
+          retryAtUtc={retryAtUtc}
+          resendAfterSeconds={resendAfterSeconds}
+          humanVerificationRequired={humanVerificationRequired}
+          isRecovering={isRecoveringOtp}
           onVerify={verifyOtp}
           onResend={resendOtp}
+          onRecover={recoverOtp}
           onCancel={cancelOtp}
         />
       )}
@@ -520,73 +580,40 @@ export function VisitingFormPopup({ isOpen, onClose }: VisitingFormPopupProps) {
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="w-full max-w-md overflow-hidden rounded-3xl bg-white shadow-2xl"
+              className="w-full max-w-sm overflow-hidden rounded-3xl bg-white shadow-2xl"
             >
-              <div className="border-b border-slate-200 px-6 py-5">
+              <div className="px-6 py-6 text-center">
+                <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-blue-50">
+                  <AlertCircle className="h-7 w-7 text-[#004c91]" />
+                </div>
                 <h3 className="text-lg font-extrabold text-slate-900">
                   {t('visitRequest:cancelConfirm.title')}
                 </h3>
-                <p className="mt-2 text-sm font-medium text-slate-600">
+                <p className="mt-2 text-sm font-medium text-slate-600 leading-relaxed">
                   {t('visitRequest:cancelConfirm.desc')}
                 </p>
               </div>
-              <div className="flex items-center justify-end gap-3 px-6 py-4">
+              <div className="flex flex-col gap-2.5 px-6 pb-6">
+                <button
+                  type="button"
+                  onClick={handleConfirmCancelWithSave}
+                  className="flex w-full items-center justify-center rounded-xl bg-[#004c91] px-4 py-3 text-sm font-bold text-white transition-colors hover:bg-[#013565] shadow-lg shadow-blue-900/20"
+                >
+                  {t('visitRequest:cancelConfirm.saveAndExit')}
+                </button>
                 <button
                   type="button"
                   onClick={() => setShowCancelConfirm(false)}
-                  className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-bold rounded-xl transition-colors"
+                  className="flex w-full items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-bold text-slate-700 transition-colors hover:bg-slate-50"
                 >
-                  {t('visitRequest:cancelConfirm.no')}
+                  {t('visitRequest:cancelConfirm.continue')}
                 </button>
                 <button
                   type="button"
-                  onClick={handleConfirmCancel}
-                  className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white text-sm font-bold rounded-xl transition-colors shadow-lg shadow-red-500/30"
+                  onClick={handleConfirmCancelWithoutSave}
+                  className="flex w-full items-center justify-center rounded-xl border border-red-200 bg-white px-4 py-3 text-sm font-bold text-red-600 transition-colors hover:bg-red-50"
                 >
-                  {t('visitRequest:cancelConfirm.yes')}
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* Save Draft Confirm Modal */}
-      <AnimatePresence>
-        {showSaveDraftConfirm && (
-          <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm">
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              className="w-full max-w-md overflow-hidden rounded-3xl bg-white shadow-2xl"
-            >
-              <div className="border-b border-slate-200 px-6 py-5">
-                <h3 className="text-lg font-extrabold text-slate-900 flex items-center gap-2">
-                  <CheckCircle2 className="w-6 h-6 text-green-500" />
-                  {t('visitRequest:saveDraftConfirm.title')}
-                </h3>
-                <p className="mt-2 text-sm font-medium text-slate-600">
-                  {t('visitRequest:saveDraftConfirm.desc')}
-                </p>
-              </div>
-              <div className="flex items-center justify-end gap-3 px-6 py-4">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowSaveDraftConfirm(false);
-                    onClose();
-                  }}
-                  className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-bold rounded-xl transition-colors"
-                >
-                  {t('visitRequest:saveDraftConfirm.saveAndExit')}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowSaveDraftConfirm(false)}
-                  className="px-4 py-2 bg-[#004c91] hover:bg-[#013565] text-white text-sm font-bold rounded-xl transition-colors shadow-lg shadow-blue-900/30"
-                >
-                  {t('visitRequest:saveDraftConfirm.saveAndContinue')}
+                  {t('visitRequest:cancelConfirm.discard')}
                 </button>
               </div>
             </motion.div>

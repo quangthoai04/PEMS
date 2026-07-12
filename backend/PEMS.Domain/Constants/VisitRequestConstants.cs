@@ -43,6 +43,10 @@ public static class VisitInstanceStatuses
 public static class VisitRequestErrorCodes
 {
     public const string DuplicateVisitRequest = "DUPLICATE_VISIT_REQUEST";
+
+    // Same submissionId re-used with a DIFFERENT registrant email / business fingerprint —
+    // an idempotency-key replay with changed content is rejected, never silently replayed.
+    public const string IdempotencyKeyReused = "IDEMPOTENCY_KEY_REUSED";
     public const string CampusNotFound        = "CAMPUS_NOT_FOUND";
     public const string CampusInactive        = "CAMPUS_INACTIVE";
     public const string InvalidVisitScope     = "INVALID_VISIT_SCOPE";

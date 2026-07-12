@@ -3,9 +3,15 @@ import { API_ENDPOINTS } from '../../../shared/api/endpoints';
 import type { VisitRequestSchema } from '../schema/visitRequest.schema';
 
 export interface InitiateResponse {
+  /** Opaque random challenge token (NOT the email) — pass back to verify/resend/recover. */
   sessionToken: string;
   maskedEmail: string;
   message: string;
+  expiresAt?: string;
+  /** Server-decided resend cooldown (seconds) — presentation seed only. */
+  resendAfterSeconds?: number;
+  /** Server-decided max wrong attempts — presentation seed only. */
+  maxAttempts?: number;
 }
 
 export interface VerifyResponse {
@@ -13,6 +19,14 @@ export interface VerifyResponse {
   requestCode: string;
   status: string;
   message: string;
+}
+
+/** 409 DUPLICATE_VISIT_REQUEST payload (response.data.data) — a result, not an OTP error. */
+export interface DuplicateVisitRequestData {
+  existingVisitRequestId: number;
+  existingRequestCode: string;
+  existingStatus: string;
+  existingSubmittedAt: string;
 }
 
 // ── Visitor edit / resubmit (SQL v10 resubmit_agenda_cancel24) ────────────────
@@ -190,28 +204,56 @@ function mapToPayload(data: VisitRequestSchema) {
 }
 
 export const visitRequestApi = {
-  async initiate(data: VisitRequestSchema): Promise<InitiateResponse> {
+  async initiate(data: VisitRequestSchema, submissionId: string): Promise<InitiateResponse> {
     const { data: res } = await httpClient.post<InitiateResponse>(
       API_ENDPOINTS.visitRequests.initiate,
-      mapToPayload(data)
+      { ...mapToPayload(data), submissionId }
     );
     return res;
   },
 
-  // SQL v8.3 has no pending_visit_requests table: the draft stays in the browser and
-  // the full form is resubmitted here together with the OTP code.
-  async verify(data: VisitRequestSchema, otpCode: string): Promise<VerifyResponse> {
+  // The draft stays in the browser and the full form is resubmitted here together with
+  // the OTP code + the submission intent id + the opaque challenge session token.
+  async verify(
+    data: VisitRequestSchema,
+    otpCode: string,
+    submissionId: string,
+    sessionToken: string
+  ): Promise<VerifyResponse> {
     const { data: res } = await httpClient.post<VerifyResponse>(
       API_ENDPOINTS.visitRequests.verify,
-      { ...mapToPayload(data), otpCode }
+      { ...mapToPayload(data), otpCode, submissionId, sessionToken }
     );
     return res;
   },
 
-  async resendOtp(registrantEmail: string, registrantFullName: string): Promise<{ message: string }> {
-    const { data: res } = await httpClient.post<{ message: string }>(
+  /** Supersedes the old challenge — the response carries a NEW sessionToken to swap in. */
+  async resendOtp(
+    registrantEmail: string,
+    registrantFullName: string,
+    submissionId: string,
+    sessionToken: string
+  ): Promise<InitiateResponse> {
+    const { data: res } = await httpClient.post<InitiateResponse>(
       API_ENDPOINTS.visitRequests.resendOtp,
-      { registrantEmail, registrantFullName }
+      { registrantEmail, registrantFullName, submissionId, sessionToken }
+    );
+    return res;
+  },
+
+  /**
+   * Human-verification recovery after the challenge was burned by wrong attempts.
+   * On success the old challenge stays dead and a brand-new sessionToken is returned.
+   */
+  async recoverOtp(
+    submissionId: string,
+    sessionToken: string,
+    humanVerificationToken: string,
+    registrantFullName: string
+  ): Promise<InitiateResponse> {
+    const { data: res } = await httpClient.post<InitiateResponse>(
+      API_ENDPOINTS.visitRequests.otpRecover,
+      { submissionId, sessionToken, humanVerificationToken, registrantFullName }
     );
     return res;
   },

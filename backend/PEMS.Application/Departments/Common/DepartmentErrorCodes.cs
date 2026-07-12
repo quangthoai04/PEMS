@@ -33,4 +33,10 @@ public static class DepartmentErrorCodes
 
     /// <summary>Tried to edit the default IC department's name (UC-102). → 409.</summary>
     public const string DepartmentIcNotEditable = "DEPARTMENT_IC_NOT_EDITABLE";
+
+    /// <summary>
+    /// UC-106: disable is blocked because the department still has non-terminal business
+    /// dependencies (e.g. open logistics requests). → 409 with a <c>blockers</c> payload.
+    /// </summary>
+    public const string DepartmentStatusBlockedByDependencies = "DEPARTMENT_STATUS_BLOCKED_BY_DEPENDENCIES";
 }

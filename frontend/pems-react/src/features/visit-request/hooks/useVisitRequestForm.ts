@@ -7,7 +7,11 @@ import {
   VISIT_REQUEST_MIN_ADVANCE_HOURS,
   type VisitRequestSchema,
 } from '../schema/visitRequest.schema';
-import { visitRequestApi, type VerifyResponse } from '../api/visitRequestApi';
+import {
+  visitRequestApi,
+  type VerifyResponse,
+  type DuplicateVisitRequestData,
+} from '../api/visitRequestApi';
 
 const DEFAULT_VISITOR = {
   fullName: '',
@@ -59,19 +63,67 @@ function getApiErrorCode(error: unknown): string | null {
   return null;
 }
 
+/** OTP challenge metadata the backend attaches to typed OTP errors. */
+interface OtpErrorMeta {
+  remainingAttempts: number | null;
+  retryAfterSeconds: number | null;
+  retryAtUtc: string | null;
+  humanVerificationRequired: boolean;
+}
+
+function getOtpErrorMeta(error: unknown): OtpErrorMeta {
+  if (axios.isAxiosError(error)) {
+    const data = error.response?.data as any;
+    return {
+      remainingAttempts:
+        typeof data?.remainingAttempts === 'number' ? data.remainingAttempts : null,
+      retryAfterSeconds:
+        typeof data?.retryAfterSeconds === 'number' && data.retryAfterSeconds > 0
+          ? data.retryAfterSeconds
+          : null,
+      retryAtUtc: typeof data?.retryAtUtc === 'string' ? data.retryAtUtc : null,
+      humanVerificationRequired: data?.humanVerificationRequired === true,
+    };
+  }
+  return { remainingAttempts: null, retryAfterSeconds: null, retryAtUtc: null, humanVerificationRequired: false };
+}
+
+/** 409 DUPLICATE_VISIT_REQUEST structured payload (response.data.data), if present. */
+function getDuplicateData(error: unknown): DuplicateVisitRequestData | null {
+  if (axios.isAxiosError(error)) {
+    const data = (error.response?.data as any)?.data;
+    if (data && typeof data.existingRequestCode === 'string') {
+      return data as DuplicateVisitRequestData;
+    }
+  }
+  return null;
+}
+
 const CONTACT_EMAIL_CONFLICT = 'CONTACT_EMAIL_CANNOT_BE_USED_FOR_VISITOR_ACCOUNT';
 const VISITOR_ACCOUNT_INACTIVE = 'VISITOR_ACCOUNT_INACTIVE';
+const DUPLICATE_VISIT_REQUEST = 'DUPLICATE_VISIT_REQUEST';
+const OTP_HUMAN_VERIFICATION_REQUIRED = 'OTP_HUMAN_VERIFICATION_REQUIRED';
+
+/** Immutable snapshot shown by the duplicate result screen. */
+export interface DuplicateSubmissionResult {
+  data: DuplicateVisitRequestData;
+  values: VisitRequestSchema;
+}
 
 import { saveVisitRequestDraft, loadVisitRequestDraft, clearVisitRequestDraft } from '../utils/visitRequestDraftStorage';
 
 function debounce<T extends (...args: any[]) => void>(fn: T, delay = 700) {
   let timer: ReturnType<typeof setTimeout> | null = null;
-  return (...args: Parameters<T>) => {
+  const debounced = (...args: Parameters<T>) => {
     if (timer) clearTimeout(timer);
     timer = setTimeout(() => {
       fn(...args);
     }, delay);
   };
+  debounced.cancel = () => {
+    if (timer) clearTimeout(timer);
+  };
+  return debounced;
 }
 
 /**
@@ -99,10 +151,33 @@ export const useVisitRequestForm = (
   const [isVerifying, setIsVerifying] = useState(false);
   const [isResending, setIsResending] = useState(false);
 
+  // OTP V2 challenge state — attempt/cooldown values always come from the BACKEND;
+  // the frontend only presents them and never counts attempts itself.
+  const [remainingAttempts, setRemainingAttempts] = useState<number | null>(null);
+  const [retryAfterSeconds, setRetryAfterSeconds] = useState<number | null>(null);
+  const [retryAtUtc, setRetryAtUtc] = useState<string | null>(null);
+  const [resendAfterSeconds, setResendAfterSeconds] = useState<number>(60);
+  const [humanVerificationRequired, setHumanVerificationRequired] = useState(false);
+  const [isRecoveringOtp, setIsRecoveringOtp] = useState(false);
+  const [duplicateResult, setDuplicateResult] = useState<DuplicateSubmissionResult | null>(null);
+
+  // UUID of ONE submit intent (kept across initiate/resend/recover/verify so backend
+  // idempotency can collapse retries). Reset when the intent concludes or is abandoned.
+  const submissionIdRef = useRef<string | null>(null);
+
   const [draftHydrated, setDraftHydrated] = useState(false);
   const isRestoringDraftRef = useRef(false);
 
-  const { t, i18n } = useTranslation(['validation', 'toast']);
+  const { t, i18n } = useTranslation(['validation', 'toast', 'visitRequest']);
+
+  const resetOtpChallengeState = useCallback(() => {
+    setOtpError(null);
+    setRemainingAttempts(null);
+    setRetryAfterSeconds(null);
+    setRetryAtUtc(null);
+    setHumanVerificationRequired(false);
+    setIsRecoveringOtp(false);
+  }, []);
 
   // Zod bakes messages in at construction, so the schema must be rebuilt whenever the
   // language changes — otherwise validation keeps the language active on first render.
@@ -128,38 +203,42 @@ export const useVisitRequestForm = (
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [i18n.language]);
 
-  useEffect(() => {
-    const draft = loadVisitRequestDraft();
-    if (draft?.data) {
-      isRestoringDraftRef.current = true;
-      form.reset({
-        ...DEFAULT_VISIT_REQUEST_VALUES,
-        ...draft.data,
-      });
-      setTimeout(() => {
-        isRestoringDraftRef.current = false;
-        setDraftHydrated(true);
-      }, 100);
-    } else {
-      setDraftHydrated(true);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // No auto-restore here anymore.
+  // The UI (VisitingFormPopup) is solely responsible for reading the draft
+  // and deciding whether to prompt the user to restore it.
+
+  const autoSaveBlockedRef = useRef(false);
+  const debouncedSaveRef = useRef<ReturnType<typeof debounce> | null>(null);
 
   useEffect(() => {
     if (!draftHydrated) return;
 
-    const debouncedSave = debounce((value: Partial<VisitRequestSchema>) => {
-      if (isRestoringDraftRef.current) return;
+    debouncedSaveRef.current = debounce((value: Partial<VisitRequestSchema>) => {
+      if (autoSaveBlockedRef.current || isRestoringDraftRef.current) return;
       saveVisitRequestDraft(value);
     }, 700);
 
     const subscription = form.watch((value) => {
-      debouncedSave(value as Partial<VisitRequestSchema>);
+      debouncedSaveRef.current?.(value as Partial<VisitRequestSchema>);
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      subscription.unsubscribe();
+      debouncedSaveRef.current?.cancel();
+    };
   }, [form, draftHydrated]);
+
+  const blockAutoSave = useCallback(() => {
+    autoSaveBlockedRef.current = true;
+  }, []);
+
+  const unblockAutoSave = useCallback(() => {
+    autoSaveBlockedRef.current = false;
+  }, []);
+
+  const cancelPendingAutoSave = useCallback(() => {
+    debouncedSaveRef.current?.cancel();
+  }, []);
 
   const contactEmailWatch = form.watch('contactPoint.email');
   const registerEmailWatch = form.watch('registerInfo.email');
@@ -256,24 +335,34 @@ export const useVisitRequestForm = (
   };
 
 
-  // Step 1: Validate form → call /initiate → open OTP popup
+  // Step 1: Validate form → call /initiate → open OTP popup.
+  // Every initiate call starts a NEW submit intent: a fresh submissionId is generated
+  // here and kept unchanged across resend/recover/verify until the intent concludes
+  // (success/duplicate) or is abandoned (cancel/reset).
   const onSubmit = form.handleSubmit(async (data) => {
     setIsSubmitting(true);
     setSubmitError(null);
     try {
-      const res = await visitRequestApi.initiate(data);
+      const submissionId = crypto.randomUUID();
+      submissionIdRef.current = submissionId;
+
+      const res = await visitRequestApi.initiate(data, submissionId);
       if ((res as any).success === false) {
         throw new Error((res as any).message || t('toast:visitRequest.otpSendFailed'));
       }
       if (!res?.sessionToken) {
         throw new Error(t('toast:visitRequest.otpTokenMissing'));
       }
+      resetOtpChallengeState();
+      setRemainingAttempts(res.maxAttempts ?? null);
+      setResendAfterSeconds(res.resendAfterSeconds ?? 60);
       setSessionToken(res.sessionToken);
       setMaskedEmail(res.maskedEmail);
     } catch (error) {
       console.error('UC-17 submit/initiate failed', error);
       const message = getApiErrorMessage(error, t('toast:visitRequest.submitFailed'));
       setSessionToken(null);
+      submissionIdRef.current = null;
       setSubmitError(message);
       mapContactEmailError(error, message);
     } finally {
@@ -292,15 +381,18 @@ export const useVisitRequestForm = (
 
   // Step 2: Verify OTP → create visit request
   const verifyOtp = async (otpCode: string) => {
-    if (!sessionToken) return;
+    if (!sessionToken || !submissionIdRef.current) return;
     setIsVerifying(true);
     setOtpError(null);
     try {
-      // SQL v8.3: resubmit the full form (kept in the form state) together with the OTP.
+      // Resubmit the full form (kept in the form state) together with the OTP.
       // Snapshot BEFORE the call so the summary can't drift if the form is reset later.
       const submittedValues = cloneVisitRequestValues(form.getValues());
-      const result = await visitRequestApi.verify(submittedValues, otpCode);
+      const result = await visitRequestApi.verify(
+        submittedValues, otpCode, submissionIdRef.current, sessionToken);
       setSessionToken(null);
+      submissionIdRef.current = null;
+      resetOtpChallengeState();
       clearVisitRequestDraft();
       onSuccess(result, submittedValues);
     } catch (err: any) {
@@ -312,8 +404,29 @@ export const useVisitRequestForm = (
         setSessionToken(null);
         setSubmitError(message);
         mapContactEmailError(err, message);
+      } else if (code === DUPLICATE_VISIT_REQUEST) {
+        // Duplicate is a RESULT, not an OTP error: close the OTP modal and show the
+        // dedicated "already submitted" result screen with the submitted snapshot.
+        const duplicateData = getDuplicateData(err);
+        const submittedValues = cloneVisitRequestValues(form.getValues());
+        setSessionToken(null);
+        submissionIdRef.current = null;
+        resetOtpChallengeState();
+        clearVisitRequestDraft();
+        if (duplicateData) {
+          setDuplicateResult({ data: duplicateData, values: submittedValues });
+        } else {
+          setSubmitError(getApiErrorMessage(err));
+        }
       } else {
         console.error('UC-17 OTP verify failed:', err?.response?.status, err?.response?.data);
+        const meta = getOtpErrorMeta(err);
+        if (meta.remainingAttempts !== null) setRemainingAttempts(meta.remainingAttempts);
+        setRetryAfterSeconds(meta.retryAfterSeconds);
+        setRetryAtUtc(meta.retryAtUtc);
+        if (meta.humanVerificationRequired || code === OTP_HUMAN_VERIFICATION_REQUIRED) {
+          setHumanVerificationRequired(true);
+        }
         setOtpError(getApiErrorMessage(err, t('toast:common.defaultError')));
       }
     } finally {
@@ -321,32 +434,70 @@ export const useVisitRequestForm = (
     }
   };
 
+  // Resend swaps the old challenge for a new one — the NEW sessionToken replaces the old.
   const resendOtp = async () => {
-    if (!sessionToken) return;
+    if (!sessionToken || !submissionIdRef.current) return;
     setIsResending(true);
     setOtpError(null);
     try {
       const data = form.getValues();
-      await visitRequestApi.resendOtp(data.registerInfo.email, data.registerInfo.fullName);
+      const res = await visitRequestApi.resendOtp(
+        data.registerInfo.email, data.registerInfo.fullName,
+        submissionIdRef.current, sessionToken);
+      setSessionToken(res.sessionToken);
+      resetOtpChallengeState();
+      setRemainingAttempts(res.maxAttempts ?? null);
+      setResendAfterSeconds(res.resendAfterSeconds ?? 60);
     } catch (err: any) {
+      const meta = getOtpErrorMeta(err);
+      if (meta.humanVerificationRequired || getApiErrorCode(err) === OTP_HUMAN_VERIFICATION_REQUIRED) {
+        setHumanVerificationRequired(true);
+      }
       setOtpError(getApiErrorMessage(err, t('toast:visitRequest.otpResendFailed')));
     } finally {
       setIsResending(false);
     }
   };
 
-  const cancelOtp = () => {
-    setSessionToken(null);
+  // Human-verification recovery: Turnstile token → brand-new challenge (attempts reset).
+  const recoverOtp = async (humanVerificationToken: string) => {
+    if (!sessionToken || !submissionIdRef.current || isRecoveringOtp) return;
+    setIsRecoveringOtp(true);
     setOtpError(null);
+    try {
+      const data = form.getValues();
+      const res = await visitRequestApi.recoverOtp(
+        submissionIdRef.current, sessionToken,
+        humanVerificationToken, data.registerInfo.fullName);
+      setSessionToken(res.sessionToken);
+      resetOtpChallengeState();
+      setRemainingAttempts(res.maxAttempts ?? null);
+      setResendAfterSeconds(res.resendAfterSeconds ?? 60);
+    } catch (err: any) {
+      // Stay on the human-verification screen; the user may retry the CAPTCHA.
+      setIsRecoveringOtp(false);
+      setOtpError(getApiErrorMessage(err, t('toast:common.defaultError')));
+      return;
+    }
+    setIsRecoveringOtp(false);
   };
 
-  // Single reset path shared by cancel-form, discard-draft and close-after-success,
-  // so no PII from a submitted request survives a reopen.
+  const cancelOtp = () => {
+    setSessionToken(null);
+    submissionIdRef.current = null;
+    resetOtpChallengeState();
+  };
+
+  const clearDuplicateResult = useCallback(() => {
+    setDuplicateResult(null);
+  }, []);
+
   const resetVisitRequestForm = () => {
     const defaults = cloneVisitRequestValues(DEFAULT_VISIT_REQUEST_VALUES);
-    // Suppress the debounced draft auto-save (700ms) while resetting so the cleared
-    // form does not re-create a draft of the request that was just submitted.
-    isRestoringDraftRef.current = true;
+    
+    blockAutoSave();
+    cancelPendingAutoSave();
+
     form.reset(defaults);
     visitFields.replace(defaults.visits);
     visitorFields.replace(defaults.visitors);
@@ -354,12 +505,11 @@ export const useVisitRequestForm = (
     form.clearErrors();
     setSessionToken(null);
     setMaskedEmail('');
-    setOtpError(null);
     setSubmitError(null);
+    setDuplicateResult(null);
+    submissionIdRef.current = null;
+    resetOtpChallengeState();
     clearVisitRequestDraft();
-    window.setTimeout(() => {
-      isRestoringDraftRef.current = false;
-    }, 800);
   };
 
   return {
@@ -384,9 +534,23 @@ export const useVisitRequestForm = (
     verifyOtp,
     resendOtp,
     cancelOtp,
+    // OTP V2 challenge state (server-driven presentation values)
+    remainingAttempts,
+    retryAfterSeconds,
+    retryAtUtc,
+    resendAfterSeconds,
+    humanVerificationRequired,
+    isRecoveringOtp,
+    recoverOtp,
+    // Duplicate result (a result state, never an OTP error)
+    duplicateResult,
+    clearDuplicateResult,
     resetVisitRequestForm,
     draftHydrated,
     setDraftHydrated,
     isRestoringDraftRef,
+    blockAutoSave,
+    unblockAutoSave,
+    cancelPendingAutoSave,
   };
 };

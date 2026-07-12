@@ -19,5 +19,14 @@ public sealed class VerifyAndCreateVisitRequestCommandValidator
             .NotEmpty().WithMessage("Mã OTP không được để trống.")
             .Length(6).WithMessage("Mã OTP phải gồm 6 chữ số.")
             .Matches(@"^\d{6}$").WithMessage("Mã OTP chỉ được chứa chữ số.");
+
+        RuleFor(x => x.SubmissionId)
+            .NotEmpty().WithMessage("Thiếu mã phiên gửi đơn.")
+            .Must(BeUuid).WithMessage("Mã phiên gửi đơn không hợp lệ.");
+
+        RuleFor(x => x.SessionToken)
+            .NotEmpty().WithMessage("Thiếu phiên xác thực OTP.");
     }
+
+    private static bool BeUuid(string value) => Guid.TryParse(value, out _);
 }

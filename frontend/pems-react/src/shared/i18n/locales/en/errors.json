@@ -32,6 +32,7 @@
     "INVALID_CREDENTIALS": "Incorrect email or password.",
     "ACCOUNT_INACTIVE": "Your account has been deactivated.",
     "ACCOUNT_LOCKED": "Your account is locked. Please try again later or contact an administrator.",
+    "DEPARTMENT_INACTIVE": "Your account's department has been deactivated. Please contact the International Cooperation Department Leader at your campus.",
     "SSO_DISABLED": "Google sign-in is currently disabled.",
     "FEID_DISABLED": "FEID sign-in is currently disabled.",
     "FEID_NOT_CONFIGURED": "FEID sign-in is not available yet. Please use another method or contact an administrator.",
@@ -59,6 +60,16 @@
     "PROFILE_PHONE_INVALID": "Invalid phone number. Please enter 8–15 digits.",
     "PROFILE_NATIONALITY_TOO_LONG": "Nationality is too long.",
     "CONTACT_EMAIL_CANNOT_BE_USED_FOR_VISITOR_ACCOUNT": "This contact email cannot be used to create a Visitor account. Please use a different email.",
-    "VISITOR_ACCOUNT_INACTIVE": "The Visitor account linked to this email is deactivated. Please contact an administrator."
+    "VISITOR_ACCOUNT_INACTIVE": "The Visitor account linked to this email is deactivated. Please contact an administrator.",
+    "OTP_INVALID": "Incorrect OTP code. Please check and try again.",
+    "OTP_EXPIRED": "The OTP code has expired. Please resend to receive a new one.",
+    "OTP_NOT_FOUND": "Verification session not found. Please submit your request again.",
+    "OTP_SESSION_INVALID": "The verification session is no longer valid. Please resend to receive a new code.",
+    "OTP_RETRY_LATER": "You are going too fast. Please wait a moment and try again.",
+    "OTP_HUMAN_VERIFICATION_REQUIRED": "Too many incorrect attempts. Please verify you are human to receive a new code.",
+    "HUMAN_VERIFICATION_FAILED": "Verification failed. Please try again.",
+    "OTP_RESEND_RATE_LIMITED": "You have requested too many verification codes. Please try again later.",
+    "IDEMPOTENCY_KEY_REUSED": "This submission session is no longer valid. Please close the form and submit again.",
+    "DUPLICATE_VISIT_REQUEST": "A visit request with the same details was submitted recently. No new request has been created."
   }
 }

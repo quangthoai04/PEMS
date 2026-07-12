@@ -13,5 +13,14 @@ public sealed class ResendVisitRequestOtpCommandValidator
 
         RuleFor(x => x.RegistrantFullName)
             .NotEmpty().WithMessage("Họ và tên người đăng ký không được để trống.");
+
+        RuleFor(x => x.SubmissionId)
+            .NotEmpty().WithMessage("Thiếu mã phiên gửi đơn.")
+            .Must(BeUuid).WithMessage("Mã phiên gửi đơn không hợp lệ.");
+
+        RuleFor(x => x.SessionToken)
+            .NotEmpty().WithMessage("Thiếu phiên xác thực OTP.");
     }
+
+    private static bool BeUuid(string value) => Guid.TryParse(value, out _);
 }
