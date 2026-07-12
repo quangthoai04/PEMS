@@ -15,7 +15,9 @@ public class SearchAndFilterMinutesQuery : IRequest<SearchAndFilterMinutesDto>
     public string? LockState { get; set; }
     public string? HasAbsentParticipants { get; set; }
     public string? ParticipantType { get; set; }
-    
+    /// <summary>Optional — chỉ HO gửi lên để lọc còn biên bản của đúng 1 campus.</summary>
+    public ulong? CampusId { get; set; }
+
     public int Page { get; set; } = 1;
     public int PageSize { get; set; } = 10;
     public string? SortBy { get; set; }

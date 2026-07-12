@@ -12,6 +12,8 @@ public class SearchDocumentsQuery : IRequest<PaginatedResult<SearchDocumentsDto>
     public string? StorageProvider { get; init; }
     public string? UploadedFrom { get; init; }
     public string? UploadedTo { get; init; }
+    /// <summary>Optional — chỉ HO gửi lên để lọc còn tài liệu của đúng 1 campus.</summary>
+    public ulong? CampusId { get; init; }
     public int Page { get; init; } = 1;
     public int PageSize { get; init; } = 10;
     public string? SortBy { get; init; }

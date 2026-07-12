@@ -123,6 +123,8 @@ export interface MinutesFilterParams {
   lockState?: string;
   hasAbsentParticipants?: string;
   participantType?: string;
+  /** Chỉ HO gửi lên — lọc theo cơ sở. */
+  campusId?: number;
   page?: number;
   pageSize?: number;
   sortBy?: string;

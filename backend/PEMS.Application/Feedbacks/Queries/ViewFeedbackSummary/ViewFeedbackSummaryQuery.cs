@@ -10,6 +10,8 @@ public class ViewFeedbackSummaryQuery : IRequest<PaginatedResult<FeedbackVisitSu
     public string? SubmitterRole { get; set; }
     public DateTime? FromDate { get; set; }
     public DateTime? ToDate { get; set; }
+    /// <summary>Optional — chỉ HO gửi lên để lọc còn feedback của đúng 1 campus.</summary>
+    public ulong? CampusId { get; set; }
     public int Page { get; set; } = 1;
     public int PageSize { get; set; } = 10;
 }

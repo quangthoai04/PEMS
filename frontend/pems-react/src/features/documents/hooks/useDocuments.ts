@@ -37,6 +37,7 @@ export const useDocuments = (params: DocumentFilterParams) => {
     params.storageProvider,
     params.uploadedFrom,
     params.uploadedTo,
+    params.campusId,
     params.page,
     params.pageSize,
     params.sortBy,

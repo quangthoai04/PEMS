@@ -7,6 +7,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useDocuments } from '../../../features/documents/hooks/useDocuments';
 import { useAuth } from '../../../shared/hooks/useAuth';
+import { useCampusFilterOptions } from '../../../features/campus-management/hooks/useCampusManagement';
 import { DocumentOwnerType, DocumentStatus, StorageProvider, DocumentListItem } from '../../../features/documents/types/documents.types';
 import { DocumentDetailModal } from './DocumentDetailModal';
 import { DocumentSummaryCompact } from '../../../features/documents/components/DocumentSummaryCompact';
@@ -16,6 +17,8 @@ import { DocumentTable } from '../../../features/documents/components/DocumentTa
 export function DocumentManagement() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const isHO = user?.roleCode === 'HO';
+  const campusFilterOptions = useCampusFilterOptions();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -24,6 +27,7 @@ export function DocumentManagement() {
   const [ownerTypeFilter, setOwnerTypeFilter] = useState<DocumentOwnerType | 'All'>('All');
   const [documentCategoryFilter] = useState('All');
   const [storageProviderFilter] = useState<StorageProvider | 'All'>('All');
+  const [campusFilter, setCampusFilter] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
 
@@ -44,6 +48,7 @@ export function DocumentManagement() {
     storageProvider: storageProviderFilter,
     uploadedFrom: dateFrom || undefined,
     uploadedTo: dateTo || undefined,
+    campusId: isHO && campusFilter ? Number(campusFilter) : undefined,
     page,
     pageSize,
     sortBy,
@@ -68,6 +73,7 @@ export function DocumentManagement() {
     setDebouncedSearch('');
     setStatusFilter('All');
     setOwnerTypeFilter('All');
+    setCampusFilter('');
     setDateFrom('');
     setDateTo('');
     setPage(1);
@@ -128,6 +134,9 @@ export function DocumentManagement() {
         onDateFromChange={setDateFrom}
         dateTo={dateTo}
         onDateToChange={setDateTo}
+        campusOptions={isHO ? campusFilterOptions?.campuses : undefined}
+        campusFilter={campusFilter}
+        onCampusFilterChange={setCampusFilter}
         onReset={handleResetFilters}
       />
 
