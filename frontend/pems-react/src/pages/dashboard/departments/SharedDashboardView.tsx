@@ -147,7 +147,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
   const [events, setEvents] = useState<any[]>([]);
   const [candidates, setCandidates] = useState<any[]>([]);
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [assignmentItems, setAssignmentItems] = useState<AssignmentProgressItem[]>([]);
   const [attentionItems, setAttentionItems] = useState<AssignmentProgressItem[]>([]);
   const [assignmentTotal, setAssignmentTotal] = useState(0);
@@ -163,6 +163,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
   const [assignmentSortDirection, setAssignmentSortDirection] = useState<'ASC' | 'DESC'>('ASC');
   const [assignmentPage, setAssignmentPage] = useState(1);
   const [assignmentPageSize, setAssignmentPageSize] = useState(10);
+  const [focusVisitRequestId, setFocusVisitRequestId] = useState<number | null>(null);
   const [assigningTaskItem, setAssigningTaskItem] = useState<AssignmentProgressItem | null>(null);
 
   const [activePopoverEvent, setActivePopoverEvent] = useState<any>(null);
@@ -568,7 +569,8 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
         sortBy: assignmentSortBy === 'PRIORITY' ? 'priority' : 'date',
         sortDirection: assignmentSortDirection,
         page: assignmentPage,
-        pageSize: assignmentPageSize
+        pageSize: assignmentPageSize,
+        visitRequestId: focusVisitRequestId || undefined
       };
       const res = await departmentReceptionTasksApi.getAssignmentsProgress(params);
       setAssignmentItems(res?.items || []);
@@ -594,7 +596,8 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
     assignmentToDate,
     assignmentSortDirection,
     assignmentPage,
-    assignmentPageSize
+    assignmentPageSize,
+    focusVisitRequestId
   ]);
 
   React.useEffect(() => {
@@ -609,7 +612,8 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
     assignmentFromDate,
     assignmentToDate,
     assignmentSortDirection,
-    assignmentPageSize
+    assignmentPageSize,
+    focusVisitRequestId
   ]);
 
   React.useEffect(() => {
@@ -618,6 +622,20 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
       setAssignmentStatus(statusFromUrl);
     }
   }, [searchParams, viewMode]);
+
+  React.useEffect(() => {
+    const visitRequestIdFromUrl = searchParams.get('visitRequestId');
+    if (viewMode === 'assignments' && visitRequestIdFromUrl) {
+      setFocusVisitRequestId(Number(visitRequestIdFromUrl));
+    }
+  }, [searchParams, viewMode]);
+
+  const clearFocusFilter = () => {
+    setFocusVisitRequestId(null);
+    const next = new URLSearchParams(searchParams);
+    next.delete('visitRequestId');
+    setSearchParams(next, { replace: true });
+  };
 
   React.useEffect(() => {
     fetchCalendarEvents();
@@ -1210,6 +1228,20 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
 
   const renderAssignmentsProgressPanel = () => (
     <div className="space-y-5">
+      {focusVisitRequestId && (
+        <div className="flex items-center justify-between gap-3 rounded-2xl border border-blue-200 bg-blue-50/80 px-4 py-3">
+          <p className="text-sm font-bold text-[#004c91]">
+            Đang lọc theo đơn/thư vừa chọn từ thông báo ({assignmentItems.length} mục).
+          </p>
+          <button
+            type="button"
+            onClick={clearFocusFilter}
+            className="px-3 py-1.5 rounded-lg border border-blue-200 bg-white text-[#004c91] text-[11px] font-black hover:bg-blue-100 transition-colors"
+          >
+            Xem tất cả
+          </button>
+        </div>
+      )}
       {attentionItems.length > 0 && (
         <div className="rounded-2xl border border-orange-200 bg-orange-50/80 p-4 shadow-3xs">
           <div className="flex items-center gap-2 text-[#f37021] font-black text-sm mb-3">

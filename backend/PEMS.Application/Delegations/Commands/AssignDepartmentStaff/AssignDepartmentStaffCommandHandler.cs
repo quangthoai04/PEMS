@@ -87,6 +87,7 @@ public sealed class AssignDepartmentStaffCommandHandler : IRequestHandler<Assign
             where inst.VisitInstanceId == leaderParticipant.VisitInstanceId
             select new
             {
+                vr.VisitRequestId,
                 vr.DelegationName,
                 inst.PlannedStartAt,
                 inst.PlannedEndAt
@@ -208,6 +209,10 @@ public sealed class AssignDepartmentStaffCommandHandler : IRequestHandler<Assign
             Message = $"Bạn được ủy quyền tham gia đón tiếp đoàn {delegationName}.",
             RelatedType = "VisitParticipant",
             RelatedId = assignedParticipant.ParticipantId,
+            VisitRequestId = instanceInfo?.VisitRequestId,
+            VisitInstanceId = leaderParticipant.VisitInstanceId,
+            ActionType = "OPEN_VISIT_INVITATION",
+            ActionUrl = $"/dashboard/departments/{_currentUser.DepartmentId}/invitations/{assignedParticipant.ParticipantId}",
             IsRead = false,
             CreatedAt = now,
         });

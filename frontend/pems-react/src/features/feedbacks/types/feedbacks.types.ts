@@ -53,6 +53,8 @@ export interface FeedbackFilterParams {
   fromDate?: string; // ISO date
   toDate?: string; // ISO date
   visitRequestId?: number;
+  /** Chỉ HO gửi lên — lọc theo cơ sở. */
+  campusId?: number;
   page?: number;
   pageSize?: number;
 }

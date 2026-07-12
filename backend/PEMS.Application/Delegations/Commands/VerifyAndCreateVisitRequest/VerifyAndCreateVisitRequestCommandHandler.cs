@@ -273,7 +273,7 @@ public sealed class VerifyAndCreateVisitRequestCommandHandler
                     IsActionRequired: true,
                     VisitRequestId: visitRequest.VisitRequestId,
                     ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitDetail,
-                    ActionUrl: "/dashboard/visit"
+                    ActionUrl: $"/dashboard/visit?visitRequestId={visitRequest.VisitRequestId}"
                 )).ToList();
 
                 if (visitScope == VisitScopes.MultiCampus)
@@ -294,7 +294,7 @@ public sealed class VerifyAndCreateVisitRequestCommandHandler
                         IsActionRequired: false,
                         VisitRequestId: visitRequest.VisitRequestId,
                         ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitDetail,
-                        ActionUrl: "/dashboard/visit"
+                        ActionUrl: $"/dashboard/visit?visitRequestId={visitRequest.VisitRequestId}"
                     )));
                 }
 

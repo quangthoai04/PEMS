@@ -61,7 +61,7 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.DeclineAssignedLogi
 
             if (attempt != null)
             {
-                attempt.Status = "REJECTED";
+                attempt.Status = "DECLINED";
                 attempt.RespondedAt = VietnamTime.Now();
                 attempt.ResponseNote = request.Reason.Trim();
                 attempt.ResponseSource = "PORTAL";
@@ -96,6 +96,7 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.DeclineAssignedLogi
                     ActorUserId: userId,
                     Category: PEMS.Application.Notifications.Common.NotificationCategories.Logistics,
                     IsActionRequired: true,
+                    VisitRequestId: l.VisitInstance?.VisitRequestId,
                     VisitInstanceId: l.VisitInstanceId,
                     ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenLogisticsDetail,
                     ActionUrl: deptTaskUrl ?? $"/dashboard/visit/process/{l.VisitInstanceId}"
@@ -116,6 +117,7 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.DeclineAssignedLogi
                         ActorUserId: userId,
                         Category: PEMS.Application.Notifications.Common.NotificationCategories.Logistics,
                         IsActionRequired: true,
+                        VisitRequestId: l.VisitInstance?.VisitRequestId,
                         VisitInstanceId: l.VisitInstanceId,
                         ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenLogisticsDetail,
                         ActionUrl: deptTaskUrl!

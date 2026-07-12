@@ -14,6 +14,8 @@ public sealed class GetAssignmentsProgressListQuery : IRequest<AssignmentsProgre
     public string? Status { get; set; }
     public string? StatusGroup { get; set; }
     public string? OwnerScope { get; set; }
+    /// <summary>Optional: khi set, chỉ trả về các item thuộc đúng đơn này (dùng khi vào từ thông báo).</summary>
+    public ulong? VisitRequestId { get; set; }
     /// <summary>Optional filter on logistics priority: LOW | MEDIUM | HIGH | URGENT (null/empty = all).</summary>
     public string? Priority { get; set; }
     public DateTime? FromDate { get; set; }
@@ -352,6 +354,9 @@ public sealed class GetAssignmentsProgressListQueryHandler
 
         if (!string.IsNullOrWhiteSpace(request.ItemType) && !request.ItemType.Equals("ALL", StringComparison.OrdinalIgnoreCase))
             query = query.Where(x => x.ItemType.Equals(request.ItemType, StringComparison.OrdinalIgnoreCase));
+
+        if (request.VisitRequestId.HasValue)
+            query = query.Where(x => x.VisitRequestId == request.VisitRequestId.Value);
 
         if (!string.IsNullOrWhiteSpace(request.Status) && !request.Status.Equals("ALL", StringComparison.OrdinalIgnoreCase))
             query = query.Where(x => x.UiStatus.Equals(request.Status, StringComparison.OrdinalIgnoreCase));

@@ -41,6 +41,7 @@ export function DeptStaffDashboard() {
         rawId: parseInt(taskId, 10),
         itemType: itemType as 'REQUEST' | 'INVITATION',
       });
+      setActiveTab('tasks');
     }
   }, [searchParams]);
 

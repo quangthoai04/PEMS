@@ -7,6 +7,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../shared/hooks/useAuth';
+import { useCampusFilterOptions } from '../../../features/campus-management/hooks/useCampusManagement';
 import { useFeedbacks } from '../../../features/feedbacks/hooks/useFeedbacks';
 import { FeedbackFilterParams } from '../../../features/feedbacks/types/feedbacks.types';
 import { FeedbackSummaryCompact } from '../../../features/feedbacks/components/FeedbackSummaryCompact';
@@ -20,6 +21,8 @@ const toIsoDate = (d: Date) => toVietnamDateInput(d);
 export function FeedbackManagement() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const isHO = user?.roleCode === 'HO';
+  const campusFilterOptions = useCampusFilterOptions();
 
   const { summaries, loading, fetchSummaries } = useFeedbacks();
 
@@ -29,6 +32,7 @@ export function FeedbackManagement() {
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
   const [dateError, setDateError] = useState('');
+  const [campusFilter, setCampusFilter] = useState('');
 
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -78,12 +82,13 @@ export function FeedbackManagement() {
       ratingLevel: filterRating || undefined,
       fromDate: effectiveDates.from,
       toDate: effectiveDates.to,
+      campusId: isHO && campusFilter ? Number(campusFilter) : undefined,
       page: currentPage,
       pageSize,
     };
 
     fetchSummaries(params);
-  }, [debouncedSearch, filterRating, effectiveDates, currentPage, pageSize, fetchSummaries]);
+  }, [debouncedSearch, filterRating, effectiveDates, campusFilter, isHO, currentPage, pageSize, fetchSummaries]);
 
   const handleOpenViewSummary = (visitRequestId: number) => {
     navigate(`/dashboard/feedback/${visitRequestId}`);
@@ -96,6 +101,7 @@ export function FeedbackManagement() {
     setFromDate('');
     setToDate('');
     setDateError('');
+    setCampusFilter('');
     setCurrentPage(1);
   };
 
@@ -168,6 +174,9 @@ export function FeedbackManagement() {
           onFromDateChange={(v) => { setFromDate(v); setCurrentPage(1); }}
           onToDateChange={(v) => { setToDate(v); setCurrentPage(1); }}
           dateError={dateError}
+          campusOptions={isHO ? campusFilterOptions?.campuses : undefined}
+          campusFilter={campusFilter}
+          onCampusFilterChange={(v) => { setCampusFilter(v); setCurrentPage(1); }}
           onReset={handleReset}
         />
       </div>

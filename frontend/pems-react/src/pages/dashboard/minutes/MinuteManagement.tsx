@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Search, Filter, FileText, Eye, Download, ChevronLeft, ChevronRight, X, Calendar, Users, Square, CheckSquare, Building2, User, Clock, ShieldAlert, Lock, Unlock, Edit3, Save } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../../../shared/hooks/useAuth';
+import { useCampusFilterOptions } from '../../../features/campus-management/hooks/useCampusManagement';
 import { useMinutes } from './useMinutes';
 import { minutesApi } from './minutesApi';
 import { toast } from 'react-hot-toast';
@@ -12,7 +13,9 @@ import { formatVietnamDateTime, formatVietnamDate } from '../../../shared/utils/
 export function MinuteManagement() {
   const navigate = useNavigate();
   const { user } = useAuth();
-  
+  const isHO = user?.roleCode === 'HO';
+  const campusFilterOptions = useCampusFilterOptions();
+
   const {
     loading,
     listData,
@@ -285,7 +288,20 @@ export function MinuteManagement() {
               <option value="CANCELLED">CANCELLED</option>
             </select>
 
-            <button 
+            {isHO && (
+              <select
+                value={filters.campusId || ''}
+                onChange={e => handleFilterChange('campusId', e.target.value ? Number(e.target.value) : undefined)}
+                className="px-3 py-2.5 border border-slate-200 rounded-xl text-sm font-medium focus:outline-none focus:border-[#004c91] bg-white min-w-[150px]"
+              >
+                <option value="">Tất cả cơ sở</option>
+                {campusFilterOptions?.campuses.map((c) => (
+                  <option key={c.campusId} value={c.campusId}>{c.name}</option>
+                ))}
+              </select>
+            )}
+
+            <button
               onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
               className={`flex items-center gap-2 px-4 py-2.5 border rounded-xl text-sm font-medium transition-colors whitespace-nowrap ${showAdvancedFilters ? 'border-[#004c91] bg-[#004c91]/5 text-[#004c91]' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'}`}
             >

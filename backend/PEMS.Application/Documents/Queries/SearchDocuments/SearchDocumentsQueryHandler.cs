@@ -43,6 +43,12 @@ public sealed class SearchDocumentsQueryHandler : IRequestHandler<SearchDocument
         {
             query = query.Where(d => d.CampusId == campusId);
         }
+        else if (request.CampusId.HasValue)
+        {
+            // HO: optional self-chosen filter (server never trusts this for Staff Leader —
+            // their scope above always wins regardless of what the client sends).
+            query = query.Where(d => d.CampusId == request.CampusId.Value);
+        }
 
         // Apply filters
         if (!string.IsNullOrWhiteSpace(request.Q))

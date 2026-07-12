@@ -16,6 +16,10 @@ interface Props {
   onToDateChange: (value: string) => void;
   dateError: string;
   onReset: () => void;
+  /** Chỉ HO truyền vào — lọc theo cơ sở, ẩn hoàn toàn với các role khác. */
+  campusOptions?: { campusId: number; name: string }[];
+  campusFilter?: string;
+  onCampusFilterChange?: (value: string) => void;
 }
 
 export function FeedbackFilterBar({
@@ -31,6 +35,9 @@ export function FeedbackFilterBar({
   onToDateChange,
   dateError,
   onReset,
+  campusOptions,
+  campusFilter,
+  onCampusFilterChange,
 }: Props) {
   return (
     <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-200 flex flex-col md:flex-row md:flex-wrap gap-3 md:items-center">
@@ -66,6 +73,19 @@ export function FeedbackFilterBar({
         <option value="30d">30 ngày gần nhất</option>
         <option value="custom">Khoảng ngày tùy chọn</option>
       </select>
+
+      {campusOptions && (
+        <select
+          value={campusFilter || ''}
+          onChange={(e) => onCampusFilterChange?.(e.target.value)}
+          className="px-3 py-2 rounded-xl border border-slate-200 text-sm font-medium outline-none"
+        >
+          <option value="">Tất cả cơ sở</option>
+          {campusOptions.map((c) => (
+            <option key={c.campusId} value={c.campusId}>{c.name}</option>
+          ))}
+        </select>
+      )}
 
       {timeRange === 'custom' && (
         <div className="flex items-center gap-2 relative">

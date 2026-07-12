@@ -84,6 +84,7 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AcceptAssignedLogis
                     RelatedId: request.LogisticsItemId,
                     ActorUserId: userId,
                     Category: PEMS.Application.Notifications.Common.NotificationCategories.Logistics,
+                    VisitRequestId: l.VisitInstance?.VisitRequestId,
                     VisitInstanceId: l.VisitInstanceId,
                     ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenLogisticsDetail,
                     ActionUrl: deptTaskUrl ?? $"/dashboard/visit/process/{l.VisitInstanceId}"

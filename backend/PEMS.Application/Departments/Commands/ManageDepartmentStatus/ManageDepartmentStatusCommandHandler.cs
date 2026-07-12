@@ -18,8 +18,10 @@ namespace PEMS.Application.Departments.Commands.ManageDepartmentStatus;
 /// UC-106 (2026-07-12 baseline): active DEPARTMENT accounts are NOT a blocker anymore. Disabling
 /// revokes every active session of the department's DEPARTMENT+LEADER/STAFF users (users.status is
 /// never touched) inside the same transaction as the status change + audit. Disable is still
-/// blocked by non-terminal business dependencies (open logistics requests). Enabling requires the
-/// campus to be ACTIVE and never restores old sessions.
+/// blocked by non-terminal business dependencies: open logistics requests, plus participant
+/// dependencies of the department's users — pending DEPT_SUPPORT invitations and
+/// accepted/assigned participations on operational visits (BR-UC106-24..39). Enabling requires
+/// the campus to be ACTIVE, never restores old sessions, and never runs the participant check.
 /// </summary>
 public sealed class ManageDepartmentStatusCommandHandler
     : IRequestHandler<ManageDepartmentStatusCommand, ManageDepartmentStatusResponse>
@@ -87,10 +89,11 @@ public sealed class ManageDepartmentStatusCommandHandler
         var impact = await DepartmentStatusImpactCalculator.ComputeDisableImpactAsync(
             _db, department.DepartmentId, now, cancellationToken);
 
-        // Non-terminal business dependencies still block; nothing is changed or revoked.
+        // Non-terminal business dependencies (open logistics + participant invitations/
+        // participations) still block; nothing is changed or revoked (BR-UC106-35).
         if (impact.HasBlockers)
             throw new ConflictException(
-                "Không thể ngừng hoạt động phòng ban vì còn nghiệp vụ chưa hoàn tất.",
+                "Không thể ngừng hoạt động phòng ban vì còn lời mời, lượt tham gia hoặc nghiệp vụ chưa hoàn tất.",
                 DepartmentErrorCodes.DepartmentStatusBlockedByDependencies,
                 new { blockers = impact.Blockers });
 

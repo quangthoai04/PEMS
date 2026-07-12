@@ -261,6 +261,7 @@ public sealed class InviteVisitParticipantCommandHandler
                     ActorUserId: actorId,
                     Category: PEMS.Application.Notifications.Common.NotificationCategories.Invitation,
                     IsActionRequired: true,
+                    VisitRequestId: instance.VisitRequestId,
                     VisitInstanceId: instance.VisitInstanceId,
                     CampusId: instance.CampusId,
                     ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitInvitation,

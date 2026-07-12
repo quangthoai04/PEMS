@@ -14,6 +14,10 @@ interface Props {
   dateTo: string;
   onDateToChange: (value: string) => void;
   onReset: () => void;
+  /** Chỉ HO truyền vào — lọc theo cơ sở, ẩn hoàn toàn với các role khác. */
+  campusOptions?: { campusId: number; name: string }[];
+  campusFilter?: string;
+  onCampusFilterChange?: (value: string) => void;
 }
 
 export function DocumentFilterBar({
@@ -28,6 +32,9 @@ export function DocumentFilterBar({
   dateTo,
   onDateToChange,
   onReset,
+  campusOptions,
+  campusFilter,
+  onCampusFilterChange,
 }: Props) {
   return (
     <div className="bg-white rounded-xl p-3 border border-slate-200 shadow-sm flex flex-col md:flex-row md:flex-wrap gap-2.5 md:items-center">
@@ -67,6 +74,19 @@ export function DocumentFilterBar({
         <option value="PUBLISHED">PUBLISHED</option>
         <option value="ARCHIVED">ARCHIVED</option>
       </select>
+
+      {campusOptions && (
+        <select
+          value={campusFilter || ''}
+          onChange={(e) => onCampusFilterChange?.(e.target.value)}
+          className="px-3 py-2 border border-slate-200 rounded-lg text-sm font-medium focus:outline-none focus:border-[#004c91] bg-white"
+        >
+          <option value="">Tất cả cơ sở</option>
+          {campusOptions.map((c) => (
+            <option key={c.campusId} value={c.campusId}>{c.name}</option>
+          ))}
+        </select>
+      )}
 
       <div className="flex items-center gap-1.5">
         <input

@@ -139,7 +139,7 @@ public sealed class CancelVisitRequestCommandHandler
                     Category: PEMS.Application.Notifications.Common.NotificationCategories.Visit,
                     VisitRequestId: visit.VisitRequestId,
                     ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitDetail,
-                    ActionUrl: "/dashboard/visit"
+                    ActionUrl: $"/dashboard/visit?visitRequestId={visit.VisitRequestId}"
                 )));
             }
 
@@ -486,7 +486,7 @@ public sealed class CancelVisitRequestCommandHandler
                         VisitInstanceId: instance.VisitInstanceId,
                         CampusId: instance.CampusId,
                         ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitDetail,
-                        ActionUrl: actionUrl
+                        ActionUrl: $"/dashboard/visit?visitRequestId={visit.VisitRequestId}"
                     ));
                 }
                 foreach (var staffLeaderId in staffLeaderIds)

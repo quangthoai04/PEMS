@@ -23,6 +23,7 @@ export function getNotificationLink(item: NotificationItem, user: AuthUser | nul
 
   if (link && user) {
     const isDeptStaff = user.roleCode?.toUpperCase() === 'DEPARTMENT' && user.subRole?.toUpperCase() !== 'LEADER';
+    const isDeptLeader = user.roleCode?.toUpperCase() === 'DEPARTMENT' && user.subRole?.toUpperCase() === 'LEADER';
     if (isDeptStaff) {
       if (link.includes('/tasks/')) {
         const parts = link.split('/tasks/');
@@ -32,6 +33,39 @@ export function getNotificationLink(item: NotificationItem, user: AuthUser | nul
         const parts = link.split('/invitations/');
         return `/dashboard?taskId=${parts[1]}&itemType=INVITATION`;
       }
+    }
+
+    // Dept Leader: đơn/thư mời được giao xem tại tab "Phân công và tiến độ" thay vì
+    // trang chi tiết đứng riêng (TaskDetail/TaskInvitationDetail) — lọc còn đúng 1 dòng.
+    if (isDeptLeader && (link.includes('/tasks/') || link.includes('/invitations/')) && item.visitRequestId) {
+      return `/dashboard/visit?tab=assignments-progress&visitRequestId=${item.visitRequestId}`;
+    }
+
+    // Notification cũ (tạo trước khi ActionUrl bắt đầu kèm id) còn lưu targetUrl trơ trụi
+    // "/dashboard/visit" — không định danh được đơn nào. Vá lại bằng visitRequestId sẵn có
+    // trên chính notification, áp dụng mọi role vì list không lọc gì thì vô nghĩa.
+    if (link === '/dashboard/visit' && item.visitRequestId) {
+      return `/dashboard/visit?visitRequestId=${item.visitRequestId}`;
+    }
+
+    const isProcessDetailLink = /\/dashboard\/visit\/(process|reception-detail|ho-detail)\//.test(link);
+
+    // Visitor & HO không bao giờ là Host theo thiết kế hệ thống — trang Host Operation
+    // không dành cho họ. Notification cũ có thể còn trỏ vào /process|/reception-detail|
+    // /ho-detail từ trước khi route này được đổi — luôn rewrite về trang Quản lý tiếp khách
+    // lọc đúng đơn, tính theo dữ liệu hiện tại của notification thay vì tin URL đã lưu sẵn.
+    const isViewOnlyRole = ['VISITOR', 'HO'].includes(user.roleCode?.toUpperCase() || '');
+    if (isViewOnlyRole && isProcessDetailLink && item.visitRequestId) {
+      return `/dashboard/visit?visitRequestId=${item.visitRequestId}`;
+    }
+
+    // "Bạn được mời tham gia đoàn" (participant invitation) — người nhận có thể là
+    // Student/IC Staff KHÔNG phải Host của đoàn này (IC Staff đôi khi là Host đoàn khác,
+    // nên không thể chặn theo role tĩnh). Trang Host Operation chỉ dành cho đúng Host của
+    // đoàn, nên loại notification này luôn rewrite về trang danh sách "Quản lý tiếp khách"
+    // lọc đúng đơn, bất kể role.
+    if (item.actionType === 'OPEN_VISIT_INVITATION' && isProcessDetailLink && item.visitRequestId) {
+      return `/dashboard/visit?visitRequestId=${item.visitRequestId}`;
     }
   }
 

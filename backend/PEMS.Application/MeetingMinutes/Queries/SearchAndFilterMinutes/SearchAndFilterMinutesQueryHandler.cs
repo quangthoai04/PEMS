@@ -23,22 +23,39 @@ public sealed class SearchAndFilterMinutesQueryHandler : IRequestHandler<SearchA
 
     public async Task<SearchAndFilterMinutesDto> Handle(SearchAndFilterMinutesQuery request, CancellationToken cancellationToken)
     {
-        if (!_currentUser.IsAuthenticated || _currentUser.UserId is null || _currentUser.PrimaryCampusId is null)
+        if (!_currentUser.IsAuthenticated || _currentUser.UserId is null)
+        {
+            throw new ForbiddenException();
+        }
+
+        var isHo = _currentUser.RoleCode == "HO";
+        // HO manages every campus (no fixed PrimaryCampusId) — everyone else is scoped to
+        // exactly one campus and must have it set, otherwise they see nothing meaningful here.
+        if (!isHo && _currentUser.PrimaryCampusId is null)
         {
             throw new ForbiddenException();
         }
 
         var campusId = _currentUser.PrimaryCampusId;
 
-        // Base query applying the Staff Leader scope (PrimaryCampusId)
-        var query = _db.Minutes
+        var joined = _db.Minutes
             .Join(_db.VisitRequestCampuses,
                   m => m.VisitInstanceId,
                   vrc => vrc.VisitInstanceId,
-                  (m, vrc) => new { m, vrc })
-            .Where(x => x.vrc.CampusId == campusId)
-            .Select(x => x.m)
-            .AsQueryable();
+                  (m, vrc) => new { m, vrc });
+
+        // Base query: non-HO roles are always scoped to their own campus (server never trusts
+        // the client for this). HO instead may optionally self-filter via request.CampusId.
+        if (!isHo)
+        {
+            joined = joined.Where(x => x.vrc.CampusId == campusId);
+        }
+        else if (request.CampusId.HasValue)
+        {
+            joined = joined.Where(x => x.vrc.CampusId == request.CampusId.Value);
+        }
+
+        var query = joined.Select(x => x.m).AsQueryable();
 
         // Summary queries before pagination but after scope filtering
         var totalMinutes = await query.CountAsync(cancellationToken);

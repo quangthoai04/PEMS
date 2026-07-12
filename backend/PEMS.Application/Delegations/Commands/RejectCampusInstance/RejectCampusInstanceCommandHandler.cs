@@ -126,7 +126,7 @@ public sealed class RejectCampusInstanceCommandHandler
                 VisitInstanceId: instance.VisitInstanceId,
                 CampusId: instance.CampusId,
                 ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitDetail,
-                ActionUrl: "/dashboard/visit"
+                ActionUrl: $"/dashboard/visit?visitRequestId={visit.VisitRequestId}"
             ));
         }
 
@@ -152,7 +152,7 @@ public sealed class RejectCampusInstanceCommandHandler
                 VisitInstanceId: instance.VisitInstanceId,
                 CampusId: instance.CampusId,
                 ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitDetail,
-                ActionUrl: "/dashboard/visit"
+                ActionUrl: $"/dashboard/visit/process/{instance.VisitInstanceId}"
             )));
 
             if (previousVisitStatus != visit.Status)
@@ -170,7 +170,7 @@ public sealed class RejectCampusInstanceCommandHandler
                         Category: PEMS.Application.Notifications.Common.NotificationCategories.Visit,
                         VisitRequestId: visit.VisitRequestId,
                         ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitDetail,
-                        ActionUrl: "/dashboard/visit"
+                        ActionUrl: $"/dashboard/visit?visitRequestId={visit.VisitRequestId}"
                     )));
                 }
                 else if (visit.Status == VisitRequestStatuses.Approved || visit.Status == VisitRequestStatuses.Rejected)
@@ -186,7 +186,7 @@ public sealed class RejectCampusInstanceCommandHandler
                         Category: PEMS.Application.Notifications.Common.NotificationCategories.Visit,
                         VisitRequestId: visit.VisitRequestId,
                         ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitDetail,
-                        ActionUrl: "/dashboard/visit"
+                        ActionUrl: $"/dashboard/visit?visitRequestId={visit.VisitRequestId}"
                     )));
                 }
             }

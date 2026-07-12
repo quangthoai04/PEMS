@@ -34,6 +34,8 @@ export interface DocumentFilterParams {
   uploadedFrom?: string;
   uploadedTo?: string;
   storageProvider?: StorageProvider | 'All';
+  /** Chỉ HO gửi lên — lọc theo cơ sở. */
+  campusId?: number;
   page?: number;
   pageSize?: number;
   sortBy?: string;

@@ -23,8 +23,8 @@ public class ViewFeedbackSummaryQueryHandler : IRequestHandler<ViewFeedbackSumma
     {
         var query = _context.Feedbacks.AsNoTracking();
 
-        if (_currentUserService.PrimaryCampusId.HasValue && 
-            _currentUserService.RoleCode != "HO" && 
+        if (_currentUserService.PrimaryCampusId.HasValue &&
+            _currentUserService.RoleCode != "HO" &&
             _currentUserService.RoleCode != "ADMIN")
         {
             var campusId = _currentUserService.PrimaryCampusId.Value;
@@ -33,6 +33,17 @@ public class ViewFeedbackSummaryQueryHandler : IRequestHandler<ViewFeedbackSumma
                 .Select(x => x.VisitInstanceId);
 
             query = query.Where(x => x.VisitInstanceId.HasValue && allowedInstanceIds.Contains(x.VisitInstanceId.Value));
+        }
+        else if (request.CampusId.HasValue)
+        {
+            // HO/ADMIN: optional self-chosen filter (never applies to Staff — their scope
+            // above already fixes the campus and ignores whatever the client sends).
+            var chosenCampusId = request.CampusId.Value;
+            var chosenInstanceIds = _context.VisitRequestCampuses
+                .Where(x => x.CampusId == chosenCampusId)
+                .Select(x => x.VisitInstanceId);
+
+            query = query.Where(x => x.VisitInstanceId.HasValue && chosenInstanceIds.Contains(x.VisitInstanceId.Value));
         }
 
         if (request.FromDate.HasValue)
