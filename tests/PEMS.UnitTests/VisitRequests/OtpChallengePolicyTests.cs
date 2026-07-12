@@ -181,12 +181,34 @@ public class OtpChallengePolicyTests
 
     // ── Issue quotas (spec §29.10): standard soft / recovery / absolute hard ───────
 
+    /// <summary>
+    /// Builds the per-email issue history the policy receives: <paramref name="standard"/>
+    /// standard issues then <paramref name="recovery"/> recovery issues, most recent at
+    /// <paramref name="lastIssuedAt"/> and older ones one minute apart (all inside the window).
+    /// </summary>
+    private static IReadOnlyList<(bool IsRecovery, DateTime CreatedAt)> Issues(
+        int standard, int recovery, DateTime lastIssuedAt)
+    {
+        var list = new System.Collections.Generic.List<(bool IsRecovery, DateTime CreatedAt)>();
+        var createdAt = lastIssuedAt;
+        for (var i = 0; i < standard; i++)
+        {
+            list.Add((false, createdAt));
+            createdAt = createdAt.AddMinutes(-1);
+        }
+        for (var i = 0; i < recovery; i++)
+        {
+            list.Add((true, createdAt));
+            createdAt = createdAt.AddMinutes(-1);
+        }
+        return list;
+    }
+
     [Fact]
     public void StandardIssue_UnderLimits_Allowed()
     {
         var decision = OtpChallengePolicy.EvaluateIssue(
-            isHumanRecovery: false, standardIssuesInWindow: 4, recoveryIssuesInWindow: 0,
-            lastIssuedAt: Now.AddMinutes(-5), Now,
+            isHumanRecovery: false, Issues(standard: 4, recovery: 0, lastIssuedAt: Now.AddMinutes(-5)), Now,
             minResendIntervalSeconds: 60, maxStandardPerHour: 5, maxRecoveryPerHour: 1, absoluteMaxPerHour: 7);
         Assert.True(decision.Allowed);
     }
@@ -195,8 +217,7 @@ public class OtpChallengePolicyTests
     public void StandardIssue_AtSoftLimit_Denied()
     {
         var decision = OtpChallengePolicy.EvaluateIssue(
-            false, standardIssuesInWindow: 5, recoveryIssuesInWindow: 0,
-            lastIssuedAt: Now.AddMinutes(-5), Now, 60, 5, 1, 7);
+            false, Issues(standard: 5, recovery: 0, lastIssuedAt: Now.AddMinutes(-5)), Now, 60, 5, 1, 7);
         Assert.False(decision.Allowed);
     }
 
@@ -205,19 +226,17 @@ public class OtpChallengePolicyTests
     {
         // 5 standard issues used up — recovery still allowed once (5+0 < 7 absolute).
         var allowed = OtpChallengePolicy.EvaluateIssue(
-            isHumanRecovery: true, standardIssuesInWindow: 5, recoveryIssuesInWindow: 0,
-            lastIssuedAt: Now.AddMinutes(-5), Now, 60, 5, 1, 7);
+            isHumanRecovery: true, Issues(standard: 5, recovery: 0, lastIssuedAt: Now.AddMinutes(-5)), Now, 60, 5, 1, 7);
         Assert.True(allowed.Allowed);
 
         // Second recovery in the window exceeds the recovery quota.
         var recoveryQuota = OtpChallengePolicy.EvaluateIssue(
-            true, 5, recoveryIssuesInWindow: 1, Now.AddMinutes(-5), Now, 60, 5, 1, 7);
+            true, Issues(standard: 5, recovery: 1, lastIssuedAt: Now.AddMinutes(-5)), Now, 60, 5, 1, 7);
         Assert.False(recoveryQuota.Allowed);
 
         // Absolute hard limit trumps everything, including recovery.
         var absolute = OtpChallengePolicy.EvaluateIssue(
-            true, standardIssuesInWindow: 7, recoveryIssuesInWindow: 0,
-            Now.AddMinutes(-5), Now, 60, 5, 1, 7);
+            true, Issues(standard: 7, recovery: 0, lastIssuedAt: Now.AddMinutes(-5)), Now, 60, 5, 1, 7);
         Assert.False(absolute.Allowed);
     }
 
@@ -226,13 +245,13 @@ public class OtpChallengePolicyTests
     {
         // 59s since the last issue → denied with retryAfter 1s.
         var tooSoon = OtpChallengePolicy.EvaluateIssue(
-            false, 1, 0, lastIssuedAt: Now.AddSeconds(-59), Now, 60, 5, 1, 7);
+            false, Issues(standard: 1, recovery: 0, lastIssuedAt: Now.AddSeconds(-59)), Now, 60, 5, 1, 7);
         Assert.False(tooSoon.Allowed);
         Assert.Equal(1, tooSoon.RetryAfterSeconds);
 
         // Exactly 60s → allowed.
         var exact = OtpChallengePolicy.EvaluateIssue(
-            false, 1, 0, lastIssuedAt: Now.AddSeconds(-60), Now, 60, 5, 1, 7);
+            false, Issues(standard: 1, recovery: 0, lastIssuedAt: Now.AddSeconds(-60)), Now, 60, 5, 1, 7);
         Assert.True(exact.Allowed);
     }
 }
