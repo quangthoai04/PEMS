@@ -127,37 +127,45 @@ public sealed class UpdatePendingVisitRequestCommandHandler
                     VisitRequestErrorCodes.InvalidVisitTime);
         }
 
-        // ── Partner (optional): must be an ACTIVE, APPROVED partner; overrides registrant org ──
-        var registrantOrg = request.RegistrantOrganization;
-        if (request.PartnerId.HasValue)
+        // ── Immutable Fields Validation (spec §5.1) ──
+        if (!string.Equals(visit.RegistrantFullName, request.RegistrantFullName, StringComparison.Ordinal) ||
+            !string.Equals(visit.RegistrantNationality, request.RegistrantNationality, StringComparison.Ordinal) ||
+            !string.Equals(visit.RegistrantJobTitle, request.RegistrantPosition, StringComparison.Ordinal) ||
+            !string.Equals(visit.RegistrantPhone, request.RegistrantPhone, StringComparison.Ordinal) ||
+            !string.Equals(visit.RegistrantEmail, request.RegistrantEmail, StringComparison.OrdinalIgnoreCase) ||
+            visit.PartnerId != request.PartnerId)
         {
-            var partner = await _db.Partners
-                .FirstOrDefaultAsync(p => p.PartnerId == request.PartnerId.Value, cancellationToken);
-            if (partner == null || partner.CooperationStatus != "ACTIVE" || partner.ProfileStatus != "APPROVED")
-                throw new BusinessRuleException(
-                    "Tổ chức/đối tác đã chọn không hợp lệ hoặc không còn hoạt động.", "INVALID_PARTNER");
-            registrantOrg = string.IsNullOrWhiteSpace(partner.ShortName) ? partner.Name : $"{partner.Name} ({partner.ShortName})";
+            throw new BusinessRuleException(
+                "Thông tin người đăng ký không được phép thay đổi.",
+                "IMMUTABLE_REGISTRANT_INFO");
+        }
+
+        if (!visit.PartnerId.HasValue && !string.Equals(visit.RegistrantOrganization, request.RegistrantOrganization, StringComparison.Ordinal))
+        {
+            throw new BusinessRuleException(
+                "Thông tin người đăng ký không được phép thay đổi.",
+                "IMMUTABLE_REGISTRANT_INFO");
+        }
+
+        var contactEmail = request.IsContactSelf ? request.RegistrantEmail : request.ContactPerson.Email;
+        if (!string.Equals(visit.ContactPersonEmail, contactEmail, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new BusinessRuleException(
+                "Không được phép thay đổi email của đầu mối liên hệ.",
+                "IMMUTABLE_CONTACT_IDENTITY");
         }
 
         var visitScope = request.VisitScope == VisitScopes.MultiCampus
             ? VisitScopes.MultiCampus
             : VisitScopes.SingleCampus;
 
-        var contactEmail = request.IsContactSelf ? request.RegistrantEmail : request.ContactPerson.Email;
         var contactName = request.IsContactSelf ? request.RegistrantFullName : request.ContactPerson.FullName;
         var contactPhone = request.IsContactSelf ? request.RegistrantPhone : request.ContactPerson.Phone;
-        var contactOrg = request.IsContactSelf ? registrantOrg : request.ContactPerson.Organization;
+        var contactOrg = request.IsContactSelf ? request.RegistrantOrganization : request.ContactPerson.Organization;
 
         await using var tx = await _db.BeginTransactionAsync(cancellationToken);
 
         // ── visit_requests scalar fields ──
-        visit.PartnerId = request.PartnerId;
-        visit.RegistrantFullName = request.RegistrantFullName;
-        visit.RegistrantNationality = request.RegistrantNationality;
-        visit.RegistrantOrganization = registrantOrg;
-        visit.RegistrantJobTitle = request.RegistrantPosition;
-        visit.RegistrantPhone = request.RegistrantPhone;
-        visit.RegistrantEmail = request.RegistrantEmail.Trim().ToLowerInvariant();
         visit.DelegationName = request.DelegationName;
         visit.VisitScope = visitScope;
         visit.VisitType = request.VisitType;
@@ -167,7 +175,6 @@ public sealed class UpdatePendingVisitRequestCommandHandler
         visit.ContactPersonFullName = contactName;
         visit.ContactPersonOrganization = contactOrg;
         visit.ContactPersonPhone = contactPhone;
-        visit.ContactPersonEmail = contactEmail;
         visit.WorkingLanguage = request.WorkingLanguage;
         visit.TransportationNote = string.IsNullOrWhiteSpace(request.TransportationNote) ? null : request.TransportationNote.Trim();
         visit.MediaConsentStatus = request.MediaConsentStatus;

@@ -907,14 +907,7 @@ public sealed class ViewGuestDelegationListQueryHandler
                 actions.Add("OPEN_CONTRIBUTION");
             }
         }
-        // Visitor request-level rows have no single instance status; keep the reception detail
-        // reachable once at least one campus is approved/beyond.
-        else if (isVisitor && item.VisitorUserId == userId && item.CampusStatus == null
-                 && (item.RequestStatus == VisitRequestStatuses.Approved
-                     || item.RequestStatus == VisitRequestStatuses.PartiallyApproved))
-        {
-            actions.Add("VIEW_RECEPTION_DETAIL");
-        }
+
 
         return actions;
     }

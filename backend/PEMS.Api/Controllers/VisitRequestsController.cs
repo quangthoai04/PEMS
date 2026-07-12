@@ -148,6 +148,7 @@ public sealed class VisitRequestsController : ControllerBase
     /// resubmit (rejected) form can be prefilled.
     /// </summary>
     [HttpGet("{visitRequestId}/edit-detail")]
+    [Authorize]
     public async Task<IActionResult> GetEditableDetail(ulong visitRequestId, CancellationToken cancellationToken)
     {
         var result = await _mediator.Send(new GetEditableVisitRequestDetailQuery(visitRequestId), cancellationToken);
@@ -159,6 +160,7 @@ public sealed class VisitRequestsController : ControllerBase
     /// ≥ 24h before the earliest start). Campus list may change; status stays PENDING_APPROVAL.
     /// </summary>
     [HttpPut("{visitRequestId}/pending-edit")]
+    [Authorize]
     public async Task<IActionResult> UpdatePending(
         ulong visitRequestId,
         [FromBody] UpdatePendingVisitRequestCommand command,
@@ -173,6 +175,7 @@ public sealed class VisitRequestsController : ControllerBase
     /// same; old decisions are snapshotted to audit before being cleared.
     /// </summary>
     [HttpPost("{visitRequestId}/resubmit")]
+    [Authorize]
     public async Task<IActionResult> Resubmit(
         ulong visitRequestId,
         [FromBody] ResubmitRejectedVisitRequestCommand command,
