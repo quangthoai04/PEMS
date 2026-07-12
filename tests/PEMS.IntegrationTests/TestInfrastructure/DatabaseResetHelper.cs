@@ -36,6 +36,7 @@ public static class DatabaseResetHelper
     public const string SearchFaqQuestionPrefix = "[IT-SEARCH-FAQ] ";
     public const string AddDepartmentNamePrefix = "[IT-UC101-ADD-DEPARTMENT] ";
     public const string UpdateDepartmentNamePrefix = "[IT-UC102-UPDATE-DEPARTMENT] ";
+    public const string SearchFilterDepartmentNamePrefix = "[IT-UC103-SEARCH-FILTER-DEPARTMENT] ";
 
     private const string TestUserEmailDomain = "@it-uc63.pems.local";
     private const string InactiveCampusTestCode = "IT-UC101-INACTIVE";
@@ -226,11 +227,13 @@ public static class DatabaseResetHelper
     }
 
     /// <summary>
-    /// Inserts a Department row directly for Add New Department tests to seed a pre-existing
-    /// department (e.g. for duplicate-name checks). <paramref name="name"/> must already carry
-    /// <see cref="AddDepartmentNamePrefix"/> so <see cref="DeleteTestDepartmentsAsync"/> can clean
-    /// it up without touching other test classes' data or real seed departments. Never attaches a
-    /// user to the created department, so cleanup never hits the department_id FK (RESTRICT).
+    /// Inserts a Department row directly for Add/Update/Search Department tests to seed a
+    /// pre-existing department. <paramref name="name"/> must already carry the caller's own
+    /// dedicated prefix so <see cref="DeleteTestDepartmentsAsync"/> can clean it up without
+    /// touching other test classes' data or real seed departments. Leaves <c>HeadUserId</c> null
+    /// unless <paramref name="headUserId"/> is supplied (needed for UC-103's "keyword matches head
+    /// full name" behavior) — never attaches a user by default, so cleanup never hits the
+    /// department_id FK (RESTRICT).
     /// </summary>
     public static async Task<ulong> CreateTestDepartmentAsync(
         ApplicationDbContext db,
@@ -239,6 +242,7 @@ public static class DatabaseResetHelper
         string departmentType,
         string status,
         ulong? createdBy = null,
+        ulong? headUserId = null,
         CancellationToken cancellationToken = default)
     {
         var department = new Department
@@ -246,7 +250,7 @@ public static class DatabaseResetHelper
             CampusId = campusId,
             Name = name,
             DepartmentType = departmentType,
-            HeadUserId = null,
+            HeadUserId = headUserId,
             Status = status,
             CreatedAt = DateTime.UtcNow,
             CreatedBy = createdBy,
@@ -257,6 +261,42 @@ public static class DatabaseResetHelper
         db.Departments.Add(department);
         await db.SaveChangesAsync(cancellationToken);
         return department.DepartmentId;
+    }
+
+    /// <summary>
+    /// Creates a minimal, uniquely-named STUDENT-role test user (no sub_role/department_id
+    /// required by the trigger) purely to serve as a Department's <c>head_user_id</c> so UC-103's
+    /// "keyword matches name + head full name" behavior can be tested. Unlike
+    /// <see cref="EnsureTestUserAsync"/>, this is NOT idempotent/reused — each call creates a fresh
+    /// row, since callers need a specific, unique FullName to search for. Not cleaned up
+    /// afterwards, matching the project's existing convention of never deleting test Users.
+    /// </summary>
+    public static async Task<ulong> CreateHeadUserCandidateAsync(
+        ApplicationDbContext db,
+        ulong campusId,
+        string fullName,
+        CancellationToken cancellationToken = default)
+    {
+        var role = await db.Roles.AsNoTracking()
+            .FirstOrDefaultAsync(r => r.RoleCode == RoleCode.Student, cancellationToken)
+            ?? throw new InvalidOperationException("Role 'STUDENT' was not found in pems_test. Import the fresh-create schema first.");
+
+        var user = new User
+        {
+            FullName = fullName,
+            Email = $"it-uc103-head-{Guid.NewGuid():N}{TestUserEmailDomain}",
+            RoleId = role.RoleId,
+            SubRole = null,
+            PrimaryCampusId = campusId,
+            DepartmentId = null,
+            Status = UserStatuses.Active,
+            CreatedVia = "MANUAL_CREATED",
+            CreatedAt = DateTime.UtcNow
+        };
+
+        db.Users.Add(user);
+        await db.SaveChangesAsync(cancellationToken);
+        return user.UserId;
     }
 
     /// <summary>
