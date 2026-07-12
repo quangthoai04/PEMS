@@ -17,13 +17,9 @@ import type {
 } from '../types/delegations.types';
 import { VISIT_SCOPE_LABELS, INSTANCE_STATUS_LABELS } from '../types/delegations.types';
 
+import { formatVietnamDateTime } from '../../../shared/utils/vietnamTime';
 const formatDateTime = (value?: string | null) => {
-  if (!value) return '-';
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return '-';
-  return d.toLocaleString('vi-VN', {
-    hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric',
-  });
+  return formatVietnamDateTime(value, { fallback: '-' });
 };
 
 const workingLanguageLabel = (v?: string | null) =>

@@ -7,6 +7,7 @@ import { useMinutes } from './useMinutes';
 import { minutesApi } from './minutesApi';
 import { toast } from 'react-hot-toast';
 import { MinutesFilterParams, MinutesListItem, MinutesDetail } from './types';
+import { formatVietnamDateTime, formatVietnamDate } from '../../../shared/utils/vietnamTime';
 
 export function MinuteManagement() {
   const navigate = useNavigate();
@@ -232,7 +233,7 @@ export function MinuteManagement() {
         </div>
         <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col">
           <span className="text-sm font-bold text-slate-500 mb-1">Cập nhật gần nhất</span>
-          <span className="text-sm font-medium text-slate-700 mt-auto">{listData?.summary?.latestUpdatedAt ? new Date(listData.summary.latestUpdatedAt).toLocaleString('vi-VN') : 'Chưa có'}</span>
+          <span className="text-sm font-medium text-slate-700 mt-auto">{listData?.summary?.latestUpdatedAt ? formatVietnamDateTime(listData.summary.latestUpdatedAt) : 'Chưa có'}</span>
         </div>
       </div>
 
@@ -445,7 +446,7 @@ export function MinuteManagement() {
                   </td>
                   <td className="px-4 py-4">
                     <div className="text-xs text-slate-500 space-y-1">
-                      <div className="flex items-center gap-1" title="Ngày tạo"><Clock className="w-3 h-3"/> {doc.createdAt ? new Date(doc.createdAt).toLocaleDateString('vi-VN') : 'N/A'}</div>
+                      <div className="flex items-center gap-1" title="Ngày tạo"><Clock className="w-3 h-3"/> {doc.createdAt ? formatVietnamDate(doc.createdAt) : 'N/A'}</div>
                       <div className="flex items-center gap-1" title="Người cập nhật"><User className="w-3 h-3"/> {doc.updatedByName || doc.createdByName || 'N/A'}</div>
                     </div>
                   </td>
@@ -620,7 +621,7 @@ export function MinuteManagement() {
                           <Lock className="w-3.5 h-3.5 shrink-0 mt-0.5" />
                           <div>
                             <span className="font-bold">Đang được chỉnh sửa bởi {detailData.editLockedByName || detailData.editLockedBy}</span>
-                            <span className="ml-1">— Lock hết hạn: {new Date(detailData.editLockExpiresAt!).toLocaleString('vi-VN')}</span>
+                            <span className="ml-1">— Lock hết hạn: {formatVietnamDateTime(detailData.editLockExpiresAt!)}</span>
                           </div>
                         </div>
                       )}
@@ -634,7 +635,7 @@ export function MinuteManagement() {
                           <div className="flex gap-1.5"><dt className="text-slate-500 shrink-0">Host:</dt><dd className="font-semibold text-slate-800 truncate">{selectedMinute.hostName || 'Chưa có dữ liệu'}</dd></div>
                           <div className="flex gap-1.5"><dt className="text-slate-500 shrink-0">Campus:</dt><dd className="font-semibold text-slate-800 truncate">{selectedMinute.campusName || 'Chưa có dữ liệu'}</dd></div>
                           <div className="flex gap-1.5 md:col-span-2"><dt className="text-slate-500 shrink-0">Thời gian dự kiến:</dt><dd className="font-semibold text-slate-800">
-                            {selectedMinute.plannedStartAt ? new Date(selectedMinute.plannedStartAt).toLocaleString('vi-VN') : '?'} - {selectedMinute.plannedEndAt ? new Date(selectedMinute.plannedEndAt).toLocaleString('vi-VN') : '?'}
+                            {selectedMinute.plannedStartAt ? formatVietnamDateTime(selectedMinute.plannedStartAt) : '?'} - {selectedMinute.plannedEndAt ? formatVietnamDateTime(selectedMinute.plannedEndAt) : '?'}
                           </dd></div>
                         </dl>
                       </div>
@@ -748,8 +749,8 @@ export function MinuteManagement() {
                                   </div>
                                 </div>
                                 <div className="flex items-center gap-3 text-[11px] text-slate-500 shrink-0">
-                                  {ai.dueDate && <span className="flex items-center gap-1"><Calendar className="w-3 h-3"/> Deadline: {new Date(ai.dueDate).toLocaleDateString('vi-VN')}</span>}
-                                  {ai.completedAt && <span className="flex items-center gap-1 text-green-600"><CheckSquare className="w-3 h-3"/> HT: {new Date(ai.completedAt).toLocaleDateString('vi-VN')}</span>}
+                                  {ai.dueDate && <span className="flex items-center gap-1"><Calendar className="w-3 h-3"/> Deadline: {formatVietnamDate(ai.dueDate)}</span>}
+                                  {ai.completedAt && <span className="flex items-center gap-1 text-green-600"><CheckSquare className="w-3 h-3"/> HT: {formatVietnamDate(ai.completedAt)}</span>}
                                 </div>
                               </div>
                             );
@@ -766,8 +767,8 @@ export function MinuteManagement() {
                       <div>
                         <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-2 flex items-center gap-1.5"><ShieldAlert className="w-3.5 h-3.5" /> Audit & Concurrency</h3>
                         <dl className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-slate-600">
-                          <div className="flex gap-1.5"><dt className="text-slate-500">Ngày khóa:</dt><dd className="font-semibold text-slate-800">{detailData.editLockedAt ? new Date(detailData.editLockedAt).toLocaleString('vi-VN') : 'N/A'}</dd></div>
-                          <div className="flex gap-1.5"><dt className="text-slate-500">Ngày cập nhật:</dt><dd className="font-semibold text-slate-800">{detailData.updatedAt ? new Date(detailData.updatedAt).toLocaleString('vi-VN') : 'N/A'}</dd></div>
+                          <div className="flex gap-1.5"><dt className="text-slate-500">Ngày khóa:</dt><dd className="font-semibold text-slate-800">{detailData.editLockedAt ? formatVietnamDateTime(detailData.editLockedAt) : 'N/A'}</dd></div>
+                          <div className="flex gap-1.5"><dt className="text-slate-500">Ngày cập nhật:</dt><dd className="font-semibold text-slate-800">{detailData.updatedAt ? formatVietnamDateTime(detailData.updatedAt) : 'N/A'}</dd></div>
                           <div className="flex gap-1.5"><dt className="text-slate-500">Row version:</dt><dd className="font-semibold text-slate-800">{detailData.rowVersion}</dd></div>
                         </dl>
                       </div>

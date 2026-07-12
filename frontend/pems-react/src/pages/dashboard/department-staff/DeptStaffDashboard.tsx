@@ -13,6 +13,7 @@ import { useDeptStaffData, DEFAULT_FILTER } from './useDeptStaffData';
 import type { AssignmentsFilter } from './useDeptStaffData';
 import type { TaskStatusFilter } from './useDeptStaffData';
 import { StaffLeaderTaskModal, type StaffLeaderTaskModalItem } from './StaffLeaderTaskModal';
+import { toVietnamCalendarDate } from '../../../shared/utils/vietnamTime';
 
 const TABS = [
   { id: 'calendar', label: 'Bảng lịch', icon: Calendar },
@@ -25,7 +26,8 @@ export function DeptStaffDashboard() {
   const user = userStr ? JSON.parse(userStr) : null;
 
   const [activeTab, setActiveTab] = useState<TabId>('calendar');
-  const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
+  // Năm hiện tại theo giờ Việt Nam (đêm giao thừa VN, browser Mỹ vẫn ra năm VN).
+  const [currentYear, setCurrentYear] = useState((toVietnamCalendarDate(new Date()) ?? new Date()).getUTCFullYear());
   const [filter, setFilter] = useState<AssignmentsFilter>(DEFAULT_FILTER);
   
   const [searchParams, setSearchParams] = useSearchParams();

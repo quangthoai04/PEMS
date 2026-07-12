@@ -14,6 +14,7 @@ import { StaffLeaderTaskModal, type StaffLeaderTaskModalItem } from './StaffLead
 import { AssignedTaskList, taskKey } from './AssignedTaskList';
 import { DeclineReasonModal } from './DeclineReasonModal';
 import { ProposalModal } from './ProposalModal';
+import { toVietnamDateTimeLocalInput, toVietnamCalendarDate } from '../../../shared/utils/vietnamTime';
 
 interface Props {
   user: any;
@@ -60,13 +61,15 @@ const STATUS_LABEL: Record<string, string> = {
 
 function fmt(iso?: string) {
   if (!iso) return '—';
-  const d = new Date(iso);
-  return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')} ${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
+  const local = toVietnamDateTimeLocalInput(iso); // "YYYY-MM-DDTHH:mm" giờ VN
+  if (!local) return '—';
+  return `${local.slice(11, 16)} ${local.slice(8, 10)}/${local.slice(5, 7)}/${local.slice(0, 4)}`;
 }
 
 function toTaskModalItem(item: AssignedTask): StaffLeaderTaskModalItem {
-  const start = item.startAt ? new Date(item.startAt) : null;
-  const end = item.endAt ? new Date(item.endAt) : null;
+  // Re-based: các getter local bên dưới trả đúng phần giờ Việt Nam.
+  const start = item.startAt ? toVietnamCalendarDate(item.startAt) : null;
+  const end = item.endAt ? toVietnamCalendarDate(item.endAt) : null;
   const hasStart = !!start && !Number.isNaN(start.getTime());
   const hasEnd = !!end && !Number.isNaN(end.getTime());
   const date = hasStart

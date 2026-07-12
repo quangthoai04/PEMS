@@ -24,20 +24,16 @@ import type {
 import { partnersApi } from '../../../features/partners/api/partnersApi';
 import type { VisitGuestPartnerLink } from '../../../features/partners/types/partners.types';
 import { ParticipantPartnerCell } from '../../../features/partners/components/ParticipantPartnerCell';
-
+import { formatVietnamDateTime, toVietnamDateTimeLocalInput } from '../../../shared/utils/vietnamTime';
 const formatDateTime = (value?: string | null) =>
-  value ? new Date(value).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' }) : '-';
+  value ? formatVietnamDateTime(value) : '-';
 
 // Action-item deadline is a business wall-clock value (stored as MySQL DATETIME, no timezone). The
 // backend returns it WITHOUT a 'Z', so new Date() parses it as local — the round-trip stays WYSIWYG.
 const pad2 = (n: number) => String(n).padStart(2, '0');
-// ISO/DB value → "yyyy-MM-ddTHH:mm" for an <input type="datetime-local">.
-const toDateTimeLocalValue = (value?: string | null): string => {
-  if (!value) return '';
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return '';
-  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
-};
+// ISO/DB value ("+07:00" hoặc chuỗi trần VN) → "yyyy-MM-ddTHH:mm" cho <input type="datetime-local">,
+// luôn theo giờ Việt Nam — không drift khi browser ở timezone khác.
+const toDateTimeLocalValue = (value?: string | null): string => toVietnamDateTimeLocalInput(value);
 // datetime-local "yyyy-MM-ddTHH:mm" → payload "yyyy-MM-ddTHH:mm:ss" (keep the picked wall-clock as-is).
 const toPayloadDateTime = (value: string): string => (value.length === 16 ? `${value}:00` : value);
 

@@ -21,12 +21,11 @@ import {
 } from '../../../features/delegations/types/delegations.types';
 import { useAuthContext } from '../../../shared/auth/AuthContext';
 import { SubmittedVisitRequestDetailModal } from '../../../components/modals/SubmittedVisitRequestDetailModal';
+import { formatVietnamDateTime } from '../../../shared/utils/vietnamTime';
 
 const formatDateTime = (value?: string | null) => {
   if (!value) return '-';
-  return new Date(value).toLocaleString('vi-VN', {
-    hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric',
-  });
+  return formatVietnamDateTime(value);
 };
 
 export function VisitParticipantInvitationDetail() {

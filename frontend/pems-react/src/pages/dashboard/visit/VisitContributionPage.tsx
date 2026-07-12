@@ -20,6 +20,7 @@ import { NewsContributionSection } from './components/NewsContributionSection';
 import type {
   ContributionPage, ContributionLogisticsItem,
 } from '../../../features/delegations/types/delegations.types';
+import { toVietnamDateTimeLocalInput } from '../../../shared/utils/vietnamTime';
 
 const INSTANCE_STATUS_LABELS: Record<string, string> = {
   WAITING_REQUEST_APPROVAL: 'Chờ xử lý tại cơ sở',
@@ -61,9 +62,9 @@ const LOGISTICS_STATUS_LABELS: Record<string, string> = {
 const pad = (n: number) => String(n).padStart(2, '0');
 const fmtDateTime = (v?: string | null) => {
   if (!v) return '—';
-  const d = new Date(v);
-  if (Number.isNaN(d.getTime())) return String(v);
-  return `${pad(d.getHours())}:${pad(d.getMinutes())} ${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
+  const local = toVietnamDateTimeLocalInput(v); // giờ Việt Nam cố định
+  if (!local) return String(v);
+  return `${local.slice(11, 16)} ${local.slice(8, 10)}/${local.slice(5, 7)}/${local.slice(0, 4)}`;
 };
 
 /** Section phẳng: header nhỏ + divider mỏng, không card/ô icon lớn */

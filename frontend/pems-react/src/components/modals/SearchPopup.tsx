@@ -15,6 +15,7 @@ import { authenticationApi } from '../../features/authentication/api/authenticat
 import type { SearchInformationResult } from '../../features/public-search/types/publicSearch.types';
 import { useTranslation } from 'react-i18next';
 
+import { formatVietnamDate } from '../../shared/utils/vietnamTime';
 interface SearchPopupProps {
   isOpen: boolean;
   onClose: () => void;
@@ -60,7 +61,7 @@ const CAMPUS_CONTACTS = [
 function formatDate(iso?: string | null): string {
   if (!iso) return '';
   try {
-    return new Date(iso).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    return formatVietnamDate(iso);
   } catch {
     return '';
   }

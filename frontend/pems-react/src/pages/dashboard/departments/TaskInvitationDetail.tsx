@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { departmentReceptionTasksApi } from '../../../features/department-reception-tasks/api/departmentReceptionTasksApi';
 import toast from 'react-hot-toast';
+import { toVietnamCalendarDate } from '../../../shared/utils/vietnamTime';
 
 const inMemoryTaskStore: Record<string, any> = {};
 
@@ -82,8 +83,9 @@ export function TaskInvitationDetail() {
   const [supporterSigned, setSupporterSigned] = useState(false);
 
   const getCurrentTime = () => {
-    const now = new Date();
-    return `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')} ${now.getDate().toString().padStart(2, '0')}-${(now.getMonth() + 1).toString().padStart(2, '0')}-${now.getFullYear()}`;
+    // Giờ Việt Nam cố định cho mốc ký — không theo timezone browser.
+    const now = toVietnamCalendarDate(new Date())!;
+    return `${now.getUTCHours().toString().padStart(2, '0')}:${now.getUTCMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')} ${now.getUTCDate().toString().padStart(2, '0')}-${(now.getUTCMonth() + 1).toString().padStart(2, '0')}-${now.getUTCFullYear()}`;
   };
 
   const [requesterSignTime, setRequesterSignTime] = useState<string | null>(null);

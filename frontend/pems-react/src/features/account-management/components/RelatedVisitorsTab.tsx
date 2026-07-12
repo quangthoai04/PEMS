@@ -17,6 +17,7 @@ import { useDebounce } from '../../../shared/hooks/useDebounce';
 import { useRelatedVisitors } from '../hooks/useRelatedVisitors';
 import { accountManagementApi } from '../api/accountManagementApi';
 import { getAccountErrorMessage } from '../api/accountError';
+import { formatVietnamDateTime } from '../../../shared/utils/vietnamTime';
 import type {
   RelatedVisitorDetail,
   RelatedVisitorListItem,
@@ -45,12 +46,7 @@ const genderLabel = (g?: unknown): string => {
 };
 
 function formatDateTime(value?: string | null): string {
-  if (!value) return '—';
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleString('vi-VN', {
-    day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
-  });
+  return formatVietnamDateTime(value, { fallback: '—' });
 }
 
 function StatusBadge({ status }: { status: string }) {

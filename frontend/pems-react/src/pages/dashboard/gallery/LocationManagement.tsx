@@ -8,6 +8,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Plus, Edit, Trash2, Search, X, ChevronRight, ChevronLeft, ChevronDown, ChevronUp, ArrowLeft } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { LocationManagementStaffLeader } from './LocationManagementStaffLeader';
+import { formatVietnamDate } from '../../../shared/utils/vietnamTime';
 
 const MOCK_LOCATIONS = [
   { id: 1, campus: 'Hà Nội', category: 'TÒA DELTA', detail: 'Sảnh chính', status: 'Hoạt động', date: '01/05/2026' },
@@ -107,7 +108,7 @@ function LocationManagementMock() {
     if (isEditMode) {
       setLocationList(prev => prev.map(loc => loc.id === selectedItem.id ? { ...formData, id: loc.id, date: loc.date } : loc));
     } else {
-      setLocationList([{ ...formData, id: Date.now(), date: new Date().toLocaleDateString('en-GB') }, ...locationList]);
+      setLocationList([{ ...formData, id: Date.now(), date: formatVietnamDate(new Date()) }, ...locationList]);
     }
     setIsModalOpen(false);
   };

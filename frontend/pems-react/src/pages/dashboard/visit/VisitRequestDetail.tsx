@@ -20,6 +20,7 @@ import {
   PenLine,
   FileText
 } from 'lucide-react';
+import { toVietnamCalendarDate } from '../../../shared/utils/vietnamTime';
 
 const inMemoryTaskStore: Record<string, any> = {};
 
@@ -79,8 +80,9 @@ export function VisitRequestDetail() {
   const [ntNote, setNtNote] = useState('');
 
   const getCurrentTime = () => {
-    const now = new Date();
-    return `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}, ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    // Giờ Việt Nam cố định cho mốc ký — không theo timezone browser.
+    const now = toVietnamCalendarDate(new Date())!;
+    return `${String(now.getUTCDate()).padStart(2, '0')}/${String(now.getUTCMonth() + 1).padStart(2, '0')}/${now.getUTCFullYear()}, ${String(now.getUTCHours()).padStart(2, '0')}:${String(now.getUTCMinutes()).padStart(2, '0')}`;
   };
 
   const isTaskComplete = bg1Signed && bg2Signed && nt1Signed && nt2Signed;

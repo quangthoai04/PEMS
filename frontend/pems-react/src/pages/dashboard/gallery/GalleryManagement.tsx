@@ -9,6 +9,7 @@ import { Edit, Trash2, Search, X, Upload, CheckCircle2, ChevronRight, ChevronLef
 import { Link, useNavigate } from 'react-router-dom';
 import bgHN from "../../../assets/FPTbanner_visit/hola_new.jpg";
 import { GalleryManagementStaffLeader } from './GalleryManagementStaffLeader';
+import { formatVietnamDate } from '../../../shared/utils/vietnamTime';
 
 // Defined Locations from Visit FPTU
 const LOCATIONS: Record<string, string[]> = {
@@ -167,7 +168,7 @@ function GalleryManagementMock() {
       ...formData,
       id: Date.now(),
       views: 0,
-      date: new Date().toLocaleDateString('en-GB')
+      date: formatVietnamDate(new Date())
     };
     if(newItem.images.length === 0) newItem.images = [bgHN]; // dummy fallback
     setGalleryList([newItem, ...galleryList]);

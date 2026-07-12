@@ -15,6 +15,7 @@ import { format } from 'date-fns';
 import { toast } from 'react-hot-toast';
 import { sanitizeHtml, sanitizeSentEmailPreviewHtml } from '../../../shared/security/sanitizeHtml';
 
+import { formatVietnamDateTime } from '../../../shared/utils/vietnamTime';
 export function SentEmailDetail() {
   const navigate = useNavigate();
   const { sourceType, id } = useParams();
@@ -174,7 +175,7 @@ export function SentEmailDetail() {
             </div>
             <div className="flex items-center gap-2 text-orange-800 font-bold text-sm bg-[#ffe4c4] px-4 py-2 rounded-xl border border-[#ffd2a0] shadow-[0_2px_10px_-4px_rgba(255,165,0,0.3)]">
               <Clock className="w-4 h-4 text-orange-600" />
-              {emailData.sentAt ? format(new Date(emailData.sentAt.endsWith('Z') ? emailData.sentAt : emailData.sentAt + 'Z'), 'dd/MM/yyyy HH:mm') : 'Chưa gửi'}
+              {emailData.sentAt ? formatVietnamDateTime(emailData.sentAt) : 'Chưa gửi'}
             </div>
           </div>
 

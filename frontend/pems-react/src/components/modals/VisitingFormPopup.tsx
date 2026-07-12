@@ -132,7 +132,7 @@ export function VisitingFormPopup({ isOpen, onClose, mode = 'public' }: Visiting
     cancelOtp,
     remainingAttempts,
     retryAfterSeconds,
-    retryAtUtc,
+    retryAt,
     resendAfterSeconds,
     humanVerificationRequired,
     isRecoveringOtp,
@@ -584,7 +584,7 @@ export function VisitingFormPopup({ isOpen, onClose, mode = 'public' }: Visiting
           isResending={isResending}
           remainingAttempts={remainingAttempts}
           retryAfterSeconds={retryAfterSeconds}
-          retryAtUtc={retryAtUtc}
+          retryAt={retryAt}
           resendAfterSeconds={resendAfterSeconds}
           humanVerificationRequired={humanVerificationRequired}
           isRecovering={isRecoveringOtp}

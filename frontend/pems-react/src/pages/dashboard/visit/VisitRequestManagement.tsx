@@ -39,7 +39,7 @@ import { getVisitRequestFilterConfig } from '../../../features/delegations/confi
 import { visitFeedbackApi } from '../../../features/feedbacks/api/visitFeedbackApi';
 import { VisitFeedbackModal } from '../../../features/feedbacks/components/VisitFeedbackModal';
 import type { PendingFeedbackItem } from '../../../features/feedbacks/types/visitFeedback.types';
-
+import { formatVietnamDateTime, formatVietnamDate } from '../../../shared/utils/vietnamTime';
 type Tab = 'responsible' | 'attending' | 'registered' | 'hosted';
 
 type ActionTone = 'blue' | 'green' | 'red' | 'gray' | 'orange';
@@ -370,12 +370,11 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
 
   const formatDateOnly = (dateStr: string) => {
     if (!dateStr) return '';
-    const d = new Date(dateStr);
-    return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+    return formatVietnamDate(dateStr, { fallback: '' });
   };
   const formatDateTimeShort = (value?: string | null) => {
     if (!value) return '-';
-    return new Date(value).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' });
+    return formatVietnamDateTime(value);
   };
 
   const handleApplyFilters = () => {

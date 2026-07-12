@@ -14,6 +14,7 @@ import {
   staffCalendarApi,
   type StaffCalendarDetail,
 } from '../../../../features/dashboard/api/staffCalendarApi';
+import { toVietnamDateTimeLocalInput } from '../../../../shared/utils/vietnamTime';
 
 type StaffVisitDetailModalProps = {
   isOpen: boolean;
@@ -67,9 +68,9 @@ const PARTICIPANT_STATUS_LABELS: Record<string, { label: string; cls: string }> 
 
 const fmtDateTime = (value?: string | null) => {
   if (!value) return '—';
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return value;
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')} ${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+  const local = toVietnamDateTimeLocalInput(value); // giờ Việt Nam cố định
+  if (!local) return value;
+  return `${local.slice(11, 16)} ${local.slice(8, 10)}/${local.slice(5, 7)}/${local.slice(0, 4)}`;
 };
 
 function InfoRow({ icon, label, value }: { icon?: React.ReactNode; label: string; value?: React.ReactNode }) {

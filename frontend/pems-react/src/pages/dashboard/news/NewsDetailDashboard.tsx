@@ -8,6 +8,7 @@ import httpClient from '../../../shared/api/httpClient';
 import { useAuthenticatedImage } from '../../../shared/hooks/useAuthenticatedImage';
 import { useAuth } from '../../../shared/hooks/useAuth';
 
+import { formatVietnamDate, formatVietnamDateTime } from '../../../shared/utils/vietnamTime';
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 interface SectionFile {
@@ -90,17 +91,12 @@ const ALL_LANGUAGES = ['vi', 'en', 'ja', 'ko', 'zh-CN'];
 
 function formatDate(iso?: string) {
   if (!iso) return null;
-  const s = iso.endsWith('Z') ? iso : iso + 'Z';
-  return new Date(s).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  return formatVietnamDate(iso);
 }
 
 function formatDateTime(iso?: string) {
   if (!iso) return null;
-  const s = iso.endsWith('Z') ? iso : iso + 'Z';
-  return new Date(s).toLocaleString('vi-VN', {
-    day: '2-digit', month: '2-digit', year: 'numeric',
-    hour: '2-digit', minute: '2-digit'
-  });
+  return formatVietnamDateTime(iso);
 }
 
 function StatusBadge({ status, label }: { status: string; label: string }) {

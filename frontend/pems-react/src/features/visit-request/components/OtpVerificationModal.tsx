@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Mail, RefreshCw, ShieldAlert, ShieldCheck, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { TurnstileWidget } from './TurnstileWidget';
+import { parseApiDate } from '../../../shared/utils/vietnamTime';
 
 interface Props {
   maskedEmail: string;
@@ -15,7 +16,7 @@ interface Props {
   /** Server-enforced cooldown before the next attempt; the countdown here is presentation. */
   retryAfterSeconds: number | null;
   /** Absolute time when the quota resets and user can retry. Drives the Cooldown screen. */
-  retryAtUtc: string | null;
+  retryAt: string | null;
   /** Server-provided resend cooldown seed (seconds). */
   resendAfterSeconds: number;
   /** true → the challenge is burned; only human verification can issue a new code. */
@@ -40,7 +41,7 @@ export const OtpVerificationModal: React.FC<Props> = ({
   isResending,
   remainingAttempts,
   retryAfterSeconds,
-  retryAtUtc,
+  retryAt,
   resendAfterSeconds,
   humanVerificationRequired,
   isRecovering,
@@ -77,24 +78,25 @@ export const OtpVerificationModal: React.FC<Props> = ({
     return () => clearTimeout(timer);
   }, [retryCountdown]);
 
-  // Global quota cooldown based on retryAtUtc.
+  // Global quota cooldown based on retryAt.
   const [rateLimitCountdown, setRateLimitCountdown] = useState(0);
 
   useEffect(() => {
-    if (!retryAtUtc) {
+    if (!retryAt) {
       setRateLimitCountdown(0);
       return;
     }
     const updateCountdown = () => {
       const now = Date.now();
-      const target = new Date(`${retryAtUtc}Z`).getTime(); // Ensure UTC parsing
+      // API sends "+07:00"-offset ISO (Vietnam wall-clock) — parse offset-aware, never append 'Z'.
+      const target = parseApiDate(retryAt)?.getTime() ?? 0;
       const diff = Math.ceil((target - now) / 1000);
       setRateLimitCountdown(diff > 0 ? diff : 0);
     };
     updateCountdown();
     const timer = setInterval(updateCountdown, 1000);
     return () => clearInterval(timer);
-  }, [retryAtUtc]);
+  }, [retryAt]);
 
   // Recovery succeeded (human verification cleared) → new challenge: reset the input.
   useEffect(() => {

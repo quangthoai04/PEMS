@@ -19,9 +19,10 @@ import httpClient from '../../../shared/api/httpClient';
 import { delegationsApi } from '../api/delegationsApi';
 import type { VisitNews, VisitNewsList } from '../types/delegations.types';
 
+import { formatVietnamDateTime } from '../../../shared/utils/vietnamTime';
 const errMsg = (e: any, fallback: string) => e?.response?.data?.message || fallback;
 const formatDateTime = (value?: string | null) =>
-  value ? new Date(value).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' }) : '-';
+  value ? formatVietnamDateTime(value) : '-';
 
 const STATUS_META: Record<string, { label: string; cls: string }> = {
   PENDING_REVIEW: { label: 'Chờ Staff Leader duyệt', cls: 'bg-yellow-50 text-yellow-700 border-yellow-200' },

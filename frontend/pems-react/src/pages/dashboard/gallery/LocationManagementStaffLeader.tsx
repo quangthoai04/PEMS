@@ -25,12 +25,11 @@ import type {
   GalleryLocationMode,
   GalleryLocationStatus,
 } from '../../../features/gallery-management/types/galleryManagement.types';
+import { formatVietnamDate } from '../../../shared/utils/vietnamTime';
 
 function formatDate(iso: string): string {
   if (!iso) return '';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleDateString('en-GB');
+  return formatVietnamDate(iso, { fallback: iso });
 }
 
 interface ToastState {

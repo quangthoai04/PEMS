@@ -9,6 +9,7 @@ import httpClient from '../../../shared/api/httpClient';
 import { uploadFileToEndpoint } from '../../../shared/api/fileUploadApi';
 import { validateFile } from '../../../shared/utils/fileValidation';
 
+import { formatVietnamDate } from '../../../shared/utils/vietnamTime';
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 interface EligibleVisit {
@@ -40,9 +41,7 @@ interface ContentSection {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatDate(dateStr?: string): string {
-  if (!dateStr) return '—';
-  const fixed = dateStr.endsWith('Z') ? dateStr : dateStr + 'Z';
-  return new Date(fixed).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  return formatVietnamDate(dateStr);
 }
 
 // Nhãn trạng thái chuyến trong cửa sổ viết tin (AFTER_VISIT trở đi).

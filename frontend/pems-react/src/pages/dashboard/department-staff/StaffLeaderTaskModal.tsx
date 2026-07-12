@@ -19,6 +19,7 @@ import toast from 'react-hot-toast';
 import { SubmittedVisitRequestDetailModal } from '../../../components/modals/SubmittedVisitRequestDetailModal';
 import { TaskHandoverModal } from '../departments/TaskHandoverModal';
 import { departmentReceptionTasksApi } from '../../../features/department-reception-tasks/api/departmentReceptionTasksApi';
+import { toVietnamDateTimeLocalInput } from '../../../shared/utils/vietnamTime';
 
 export type StaffLeaderTaskModalItem = {
   itemType: 'INVITATION' | 'REQUEST';
@@ -78,16 +79,15 @@ function toIsoDate(date: string) {
 
 function formatDateTime(value?: string | null) {
   if (!value) return '';
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return value;
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')} ${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+  const local = toVietnamDateTimeLocalInput(value); // giờ VN cố định
+  if (!local) return value;
+  return `${local.slice(11, 16)} ${local.slice(8, 10)}/${local.slice(5, 7)}/${local.slice(0, 4)}`;
 }
 
 function formatTime(value?: string | null) {
   if (!value) return '--:--';
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return value.slice(11, 16) || value;
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  const local = toVietnamDateTimeLocalInput(value);
+  return local ? local.slice(11, 16) : (value.slice(11, 16) || value);
 }
 
 type SignatureInfo = { name?: string; signedAt?: string } | null | undefined;

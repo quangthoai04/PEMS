@@ -37,7 +37,7 @@ import { departmentReceptionTasksApi } from '../../../features/department-recept
 import { delegationsApi } from '../../../features/delegations/api/delegationsApi';
 import { EmailPreviewModal, type EmailPreviewSendPayload } from '../../../features/delegations/components/EmailPreviewModal';
 import { stripLegacyActionHtml } from '../../../features/emails/utils/actionLinks';
-
+import { formatVietnamDateTime, toVietnamCalendarDate, parseApiDate, toVietnamDateTimeLocalInput } from '../../../shared/utils/vietnamTime';
 interface Event {
   id: string;
   title: string;
@@ -99,6 +99,12 @@ type AssignmentProgressItem = {
   cancelReason?: string;
 };
 
+/** Parse key "YYYY-MM-DD" theo PHẦN lịch — new Date('YYYY-MM-DD') là UTC midnight và lùi 1 ngày ở browser múi giờ âm. */
+function parseDateKey(s: string): Date {
+  const [y, m, d] = s.split('-').map(Number);
+  return new Date(y, (m || 1) - 1, d || 1);
+}
+
 const INITIAL_EVENTS: Event[] = [
   {
     id: 'e-invitation-8',
@@ -134,8 +140,9 @@ const INITIAL_EVENTS: Event[] = [
   }];
 
 export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent, isVisitor, initialVisitInstanceId, viewMode = 'calendar' }: { user?: any, isDeptLeader?: boolean, isDeptStaff?: boolean, isStudent?: boolean, isVisitor?: boolean, initialVisitInstanceId?: number | null, viewMode?: 'calendar' | 'assignments' }) {
-  const today = new Date();
-  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  // "Hôm nay" theo lịch Việt Nam — không lệch ngày ở browser nước ngoài.
+  const today = toVietnamCalendarDate(new Date())!;
+  const todayStr = `${today.getUTCFullYear()}-${String(today.getUTCMonth() + 1).padStart(2, '0')}-${String(today.getUTCDate()).padStart(2, '0')}`;
 
   const [events, setEvents] = useState<any[]>([]);
   const [candidates, setCandidates] = useState<any[]>([]);
@@ -452,8 +459,8 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
     fetchDetail();
   }, [activePopoverEvent?.rawId, activePopoverEvent?.itemType]);
 
-  const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
-  const [currentMonth, setCurrentMonth] = useState(new Date().getMonth());
+  const [currentYear, setCurrentYear] = useState(toVietnamCalendarDate(new Date())!.getUTCFullYear());
+  const [currentMonth, setCurrentMonth] = useState(toVietnamCalendarDate(new Date())!.getUTCMonth());
 
   const fetchCalendarEvents = React.useCallback(async () => {
     try {
@@ -466,7 +473,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
            let hCol = '';
            let isProcessed = false;
            const itemStatus = item.itemStatus || item.status;
-           const itemEndTime = item.endAt ? new Date(item.endAt).getTime() : 0;
+           const itemEndTime = item.endAt ? (parseApiDate(item.endAt)?.getTime() ?? 0) : 0;
            const isPast = itemEndTime > 0 && itemEndTime < Date.now();
 
            if (item.itemType === 'INVITATION') {
@@ -499,10 +506,11 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
               hCol = 'border-purple-500';
            }
 
-           const sd = new Date(item.startAt);
-           const ed = new Date(item.endAt);
-           const dateStr = `${sd.getFullYear()}-${String(sd.getMonth() + 1).padStart(2, '0')}-${String(sd.getDate()).padStart(2, '0')}`;
-           const timeStr = `${String(sd.getHours()).padStart(2, '0')}:${String(sd.getMinutes()).padStart(2, '0')} - ${String(ed.getHours()).padStart(2, '0')}:${String(ed.getMinutes()).padStart(2, '0')}`;
+           // Re-based: UTC getters trả đúng phần giờ Việt Nam.
+           const sd = toVietnamCalendarDate(item.startAt) ?? new Date(NaN);
+           const ed = toVietnamCalendarDate(item.endAt) ?? new Date(NaN);
+           const dateStr = `${sd.getUTCFullYear()}-${String(sd.getUTCMonth() + 1).padStart(2, '0')}-${String(sd.getUTCDate()).padStart(2, '0')}`;
+           const timeStr = `${String(sd.getUTCHours()).padStart(2, '0')}:${String(sd.getUTCMinutes()).padStart(2, '0')} - ${String(ed.getUTCHours()).padStart(2, '0')}:${String(ed.getUTCMinutes()).padStart(2, '0')}`;
 
            return {
              id: item.itemId + '_' + idx,
@@ -627,8 +635,8 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
 
   // States for Vietnamese Miniature Date Picker & Views
   const [showMiniCalendar, setShowMiniCalendar] = useState(false);
-  const [miniMonth, setMiniMonth] = useState(new Date().getMonth());
-  const [miniYear, setMiniYear] = useState(new Date().getFullYear());
+  const [miniMonth, setMiniMonth] = useState(toVietnamCalendarDate(new Date())!.getUTCMonth());
+  const [miniYear, setMiniYear] = useState(toVietnamCalendarDate(new Date())!.getUTCFullYear());
   const [showDisplayDropdown, setShowDisplayDropdown] = useState(false);
   const [displayMode, setDisplayMode] = useState<'Ngày' | 'Tuần' | 'Tháng' | 'Năm'>('Tháng');
 
@@ -675,7 +683,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
     setActivePopoverEvent(null);
     if (displayMode === 'Ngày' || displayMode === 'Tuần') {
       if (selectedCellDate) {
-        const d = new Date(selectedCellDate);
+        const d = parseDateKey(selectedCellDate);
         if (displayMode === 'Ngày') {
           d.setDate(d.getDate() - 1);
         } else {
@@ -704,7 +712,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
     setActivePopoverEvent(null);
     if (displayMode === 'Ngày' || displayMode === 'Tuần') {
       if (selectedCellDate) {
-        const d = new Date(selectedCellDate);
+        const d = parseDateKey(selectedCellDate);
         if (displayMode === 'Ngày') {
           d.setDate(d.getDate() + 1);
         } else {
@@ -730,8 +738,8 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
   };
 
   const handleResetToAugust2026 = () => {
-    setCurrentMonth(new Date().getMonth());
-    setCurrentYear(new Date().getFullYear());
+    setCurrentMonth(toVietnamCalendarDate(new Date())!.getUTCMonth());
+    setCurrentYear(toVietnamCalendarDate(new Date())!.getUTCFullYear());
     setActivePopoverEvent(null);
   };
 
@@ -804,7 +812,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
   // Find the sub-array of 7 days containing selectedCellDate
   const currentWeekDays = useMemo(() => {
     if (!selectedCellDate) return [];
-    const d = new Date(selectedCellDate);
+    const d = parseDateKey(selectedCellDate);
     const day = d.getDay();
     const diff = d.getDate() - day + (day === 0 ? -6 : 1); // adjust when day is sunday
     
@@ -954,22 +962,15 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
 
   const formatDateTime = (value?: string) => {
     if (!value) return '';
-    const d = new Date(value);
-    if (Number.isNaN(d.getTime())) return value;
-    return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    return formatVietnamDateTime(value, { fallback: value });
   };
 
   // Hiển thị thời gian theo định dạng thống nhất "HH:mm dd/MM/yyyy" (ví dụ 08:30 15/10/2026).
   const formatDateTimeDisplay = (value?: string | null) => {
     if (!value) return 'Chưa có';
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return value;
-    const hh = String(date.getHours()).padStart(2, '0');
-    const mm = String(date.getMinutes()).padStart(2, '0');
-    const dd = String(date.getDate()).padStart(2, '0');
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const yyyy = date.getFullYear();
-    return `${hh}:${mm} ${dd}/${month}/${yyyy}`;
+    const local = toVietnamDateTimeLocalInput(value); // "YYYY-MM-DDTHH:mm" giờ VN
+    if (!local) return value;
+    return `${local.slice(11, 16)} ${local.slice(8, 10)}/${local.slice(5, 7)}/${local.slice(0, 4)}`;
   };
 
   const toHandoverSignatureText = (signature?: { name?: string; signedAt?: string } | null) => {
@@ -1061,8 +1062,8 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
     if (event) {
       setActivePopoverEvent(event);
       setSelectedCellDate(event.date);
-      setCurrentMonth(new Date(event.date).getMonth());
-      setCurrentYear(new Date(event.date).getFullYear());
+      setCurrentMonth(parseDateKey(event.date).getMonth());
+      setCurrentYear(parseDateKey(event.date).getFullYear());
       setDisplayMode('Tháng');
       return;
     }
@@ -1327,8 +1328,8 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                   </td>
                   <td className="px-5 py-5 text-xs text-slate-600 font-semibold whitespace-nowrap">
                     {(() => {
-                      const sd = item.startAt ? new Date(item.startAt) : null;
-                      const ed = item.endAt ? new Date(item.endAt) : null;
+                      const sd = item.startAt ? toVietnamCalendarDate(item.startAt) : null;
+                      const ed = item.endAt ? toVietnamCalendarDate(item.endAt) : null;
                       if (!sd) return '—';
                       const fmt = (d: Date) => `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')} ${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
                       return <><span className="block">{fmt(sd)}</span>{ed && <span className="block text-slate-400">→ {fmt(ed)}</span>}</>;
@@ -1569,7 +1570,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
               <span className="text-slate-800 select-none">
                 {displayMode === 'Ngày' && selectedCellDate ? `Ngày ${selectedCellDate.split('-').reverse().join('/')}` :
                  displayMode === 'Tuần' && selectedCellDate ? `Tuần ${(() => {
-                   const d = new Date(selectedCellDate);
+                   const d = parseDateKey(selectedCellDate);
                    const startYear = new Date(d.getFullYear(), 0, 1);
                    const days = Math.floor((d.getTime() - startYear.getTime()) / (24 * 60 * 60 * 1000));
                    return Math.ceil((d.getDay() + 1 + days) / 7);
@@ -2254,7 +2255,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                       <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">Ngày & Giờ diễn ra</span>
                       <p className="font-bold text-slate-700 mt-0.5 leading-relaxed">
                         {(() => {
-                          const d = new Date(activePopoverEvent.date);
+                          const d = parseDateKey(activePopoverEvent.date);
                           const weekdays = ['Chủ Nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy'];
                           return `${weekdays[d.getDay() || 0]}, ngày ${d.getDate()} tháng ${d.getMonth() + 1} năm ${d.getFullYear()}`;
                         })()}
@@ -2845,8 +2846,8 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                                 await departmentReceptionTasksApi.declineInvitation(activePopoverEvent.rawId, rejectReason);
                                 toast.success('Đã gửi phản hồi từ chối');
                                 setInvitationStatus('rejected');
-                                const now = new Date();
-                                const timeStr = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}, ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+                                const now = toVietnamCalendarDate(new Date())!;
+                                const timeStr = `${String(now.getUTCDate()).padStart(2, '0')}/${String(now.getUTCMonth() + 1).padStart(2, '0')}/${now.getUTCFullYear()}, ${String(now.getUTCHours()).padStart(2, '0')}:${String(now.getUTCMinutes()).padStart(2, '0')}`;
                                 setRejectSignature({ name: (user?.name || 'Khách') + (isDeptLeader ? ' - Trưởng phòng' : ' - Nhân viên'), time: timeStr });
                                 await fetchCalendarEvents();
                               }
@@ -2936,8 +2937,8 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                             if (activePopoverEvent?.rawId) {
                               await departmentReceptionTasksApi.acceptInvitation(activePopoverEvent.rawId);
                               toast.success('Xác nhận tham gia thành công');
-                              const now = new Date();
-                              const timeStr = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}, ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+                              const now = toVietnamCalendarDate(new Date())!;
+                              const timeStr = `${String(now.getUTCDate()).padStart(2, '0')}/${String(now.getUTCMonth() + 1).padStart(2, '0')}/${now.getUTCFullYear()}, ${String(now.getUTCHours()).padStart(2, '0')}:${String(now.getUTCMinutes()).padStart(2, '0')}`;
                               setAcceptSignature({ name: user?.name || 'Khách', time: timeStr });
                               setInvitationStatus('accepted');
                               await Promise.all([fetchCalendarEvents(), fetchAssignmentsProgress()]);
@@ -3205,7 +3206,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                                bởi: {activeEventDetail?.proposedByName || user?.name || 'Người xử lý'}
                                {activeEventDetail?.proposedByRole ? ` - ${activeEventDetail.proposedByRole}` : ''}
                                {' - '}
-                               {activeEventDetail?.proposedAt ? formatDateTime(activeEventDetail.proposedAt) : new Date().toLocaleString('vi-VN')}
+                               {activeEventDetail?.proposedAt ? formatDateTime(activeEventDetail.proposedAt) : formatVietnamDateTime(new Date())}
                              </span>
                              <div className="mt-2 space-y-1 text-white/95 text-xs">
                                {activeEventDetail?.proposedUsageStartAt && activeEventDetail?.proposedUsageEndAt && (
@@ -3249,8 +3250,8 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                                 await departmentReceptionTasksApi.rejectRequest(activePopoverEvent.rawId, requestRejectReason);
                                 toast.success('Đã từ chối nhiệm vụ');
                                 setRequestStatus('rejected');
-                                const now = new Date();
-                                const timeStr = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}, ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+                                const now = toVietnamCalendarDate(new Date())!;
+                                const timeStr = `${String(now.getUTCDate()).padStart(2, '0')}/${String(now.getUTCMonth() + 1).padStart(2, '0')}/${now.getUTCFullYear()}, ${String(now.getUTCHours()).padStart(2, '0')}:${String(now.getUTCMinutes()).padStart(2, '0')}`;
                                 setRequestRejectSignature({ name: (user?.name || 'Khách') + (isDeptLeader ? ' - Trưởng phòng' : ' - Nhân viên'), time: timeStr });
                                 await Promise.all([fetchCalendarEvents(), fetchAssignmentsProgress()]);
                               }
@@ -3309,8 +3310,8 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                                 if (activePopoverEvent?.rawId) {
                                   await departmentReceptionTasksApi.confirmRequest(activePopoverEvent.rawId);
                                   toast.success('Xác nhận nhiệm vụ thành công');
-                                  const now = new Date();
-                                  const timeStr = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}, ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+                                  const now = toVietnamCalendarDate(new Date())!;
+                                  const timeStr = `${String(now.getUTCDate()).padStart(2, '0')}/${String(now.getUTCMonth() + 1).padStart(2, '0')}/${now.getUTCFullYear()}, ${String(now.getUTCHours()).padStart(2, '0')}:${String(now.getUTCMinutes()).padStart(2, '0')}`;
                                   setRequestAcceptSignature({ name: user?.name || 'Khách', time: timeStr });
                                   setRequestStatus('accepted');
                                   await Promise.all([fetchCalendarEvents(), fetchAssignmentsProgress()]);
@@ -3411,8 +3412,8 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                                   toast.success('Đã từ chối nhiệm vụ');
                                   setRequestStatus('rejected');
                                   setRequestRejectReason(requestRejectReason || 'Không thể thực hiện nhiệm vụ này');
-                                  const now = new Date();
-                                  const timeStr = `${String(now.getDate()).padStart(2,'0')}/${String(now.getMonth()+1).padStart(2,'0')}/${now.getFullYear()}, ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+                                  const now = toVietnamCalendarDate(new Date())!;
+                                  const timeStr = `${String(now.getUTCDate()).padStart(2,'0')}/${String(now.getUTCMonth()+1).padStart(2,'0')}/${now.getUTCFullYear()}, ${String(now.getUTCHours()).padStart(2,'0')}:${String(now.getUTCMinutes()).padStart(2,'0')}`;
                                   setRequestRejectSignature({ name: user?.name || 'Nhân viên', time: timeStr });
                                   setAssignedPerson(null);
                                   await Promise.all([fetchCalendarEvents(), fetchAssignmentsProgress()]);
@@ -3428,8 +3429,8 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                                   await departmentReceptionTasksApi.acceptAssignment(activePopoverEvent.rawId);
                                   toast.success('Đã xác nhận nhiệm vụ thành công');
                                   setRequestStatus('accepted');
-                                  const now = new Date();
-                                  const timeStr = `${String(now.getDate()).padStart(2,'0')}/${String(now.getMonth()+1).padStart(2,'0')}/${now.getFullYear()}, ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+                                  const now = toVietnamCalendarDate(new Date())!;
+                                  const timeStr = `${String(now.getUTCDate()).padStart(2,'0')}/${String(now.getUTCMonth()+1).padStart(2,'0')}/${now.getUTCFullYear()}, ${String(now.getUTCHours()).padStart(2,'0')}:${String(now.getUTCMinutes()).padStart(2,'0')}`;
                                   setRequestAcceptSignature({ name: user?.name || 'Nhân viên', time: timeStr });
                                   await Promise.all([fetchCalendarEvents(), fetchAssignmentsProgress()]);
                                 } catch(e: any) { toast.error(e.response?.data?.message || 'Xác nhận thất bại'); }

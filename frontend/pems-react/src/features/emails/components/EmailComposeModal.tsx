@@ -19,6 +19,7 @@ import { filesApi } from '../../../shared/api/filesApi';
 import { authStorage } from '../../../shared/auth/authStorage';
 import { contentIdForFile } from '../utils/inlineImages';
 import { ConfirmModal } from '../../../components/modals/ConfirmModal';
+import { formatVietnamTime } from '../../../shared/utils/vietnamTime';
 
 type Toast = (type: 'success' | 'error' | 'warning' | 'info', msg: string) => void;
 
@@ -178,8 +179,7 @@ export function EmailComposeModal({
       } else {
         await emailDraftsApi.updateDraft(draftIdRef.current, payload);
       }
-      const now = new Date();
-      setSavedAt(`${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`);
+      setSavedAt(formatVietnamTime(new Date()));
     } catch {
       /* autosave is best-effort; failures never block composing */
     } finally {

@@ -5,6 +5,7 @@
 import React from 'react';
 import { AlertCircle } from 'lucide-react';
 import type { AssignedTask } from './useDeptStaffData';
+import { toVietnamCalendarDate } from '../../../shared/utils/vietnamTime';
 
 export const taskKey = (item: AssignedTask, action: string) =>
   `${item.itemType}_${item.itemId}_${action}`;
@@ -14,11 +15,12 @@ function typeLabel(item: AssignedTask) {
 }
 
 function timeLabel(item: AssignedTask) {
-  const s = item.startAt ? new Date(item.startAt) : null;
-  const e = item.endAt ? new Date(item.endAt) : null;
+  // Giờ Việt Nam cố định (re-based) — không phụ thuộc timezone browser.
+  const s = item.startAt ? toVietnamCalendarDate(item.startAt) : null;
+  const e = item.endAt ? toVietnamCalendarDate(item.endAt) : null;
   if (!s || Number.isNaN(s.getTime())) return '';
   const hm = (d: Date) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-  const dmy = `${String(s.getDate()).padStart(2, '0')}/${String(s.getMonth() + 1).padStart(2, '0')}/${s.getFullYear()}`;
+  const dmy = `${String(s.getUTCDate()).padStart(2, '0')}/${String(s.getUTCMonth() + 1).padStart(2, '0')}/${s.getUTCFullYear()}`;
   if (e && !Number.isNaN(e.getTime())) return `${hm(s)} - ${hm(e)} ${dmy}`;
   return `${hm(s)} ${dmy}`;
 }

@@ -29,6 +29,7 @@ import { delegationsApi } from '../../../../features/delegations/api/delegations
 import { departmentReceptionTasksApi } from '../../../../features/department-reception-tasks/api/departmentReceptionTasksApi';
 import { AssignHostModal } from '../../../../components/modals/AssignHostModal';
 import { StaffVisitDetailModal } from './StaffVisitDetailModal';
+import { formatVietnamTime, toVietnamCalendarDate } from '../../../../shared/utils/vietnamTime';
 
 type DisplayMode = 'Ngày' | 'Tuần' | 'Tháng' | 'Năm';
 type CalendarType = 'office' | 'mine';
@@ -58,31 +59,32 @@ const PILL_CLASS: Record<string, string> = {
 };
 
 const pad2 = (n: number) => String(n).padStart(2, '0');
-const toDateKey = (d: Date) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+const toDateKey = (d: Date) => `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`;
 const addDays = (d: Date, days: number) => {
   const r = new Date(d);
-  r.setDate(r.getDate() + days);
+  r.setUTCDate(r.getUTCDate() + days);
   return r;
 };
-/** Thứ Hai đầu tuần của một ngày bất kỳ. */
+/** Thứ Hai đầu tuần của một ngày bất kỳ (nhận UTC carrier Date). */
 const startOfWeek = (d: Date) => {
-  const r = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-  const day = r.getDay(); // 0=CN
+  const r = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+  const day = r.getUTCDay(); // 0=CN
   return addDays(r, day === 0 ? -6 : 1 - day);
 };
-const fmtTime = (value: string) => {
-  const d = new Date(value);
-  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
-};
+// Giờ Việt Nam cố định — pill giờ không đổi theo timezone browser.
+const fmtTime = (value: string) => formatVietnamTime(value);
+/** Parse business datetime → Date re-based để mọi getter local trả phần giờ VN. */
+const toVnDate = (value: string) => toVietnamCalendarDate(value) ?? new Date(NaN);
 
 export function StaffDashboardCalendar({ isStaffLeader }: { user?: any; isStaffLeader?: boolean }) {
-  const today = new Date();
+  // "Hôm nay" theo lịch Việt Nam (ô today không lệch ngày ở browser nước ngoài).
+  const today = toVietnamCalendarDate(new Date())!;
   const todayKey = toDateKey(today);
   const todayStr = todayKey;
 
   // ── Điều hướng lịch ── (chế độ hiển thị gồm cả Năm — không tách bộ lọc riêng)
   const [displayMode, setDisplayMode] = useState<DisplayMode>('Tháng');
-  const [anchorDate, setAnchorDate] = useState<Date>(new Date(today.getFullYear(), today.getMonth(), today.getDate()));
+  const [anchorDate, setAnchorDate] = useState<Date>(new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate())));
   const [calendarType, setCalendarType] = useState<CalendarType>('office');
   const [showModeDropdown, setShowModeDropdown] = useState(false);
 
@@ -124,14 +126,14 @@ export function StaffDashboardCalendar({ isStaffLeader }: { user?: any; isStaffL
     }
     if (displayMode === 'Năm') {
       return {
-        gridStart: new Date(anchorDate.getFullYear(), 0, 1),
-        gridEnd: new Date(anchorDate.getFullYear(), 11, 31),
+        gridStart: new Date(Date.UTC(anchorDate.getUTCFullYear(), 0, 1)),
+        gridEnd: new Date(Date.UTC(anchorDate.getUTCFullYear(), 11, 31)),
         monthCells: [] as Date[],
       };
     }
     // Tháng: lưới Monday-first phủ trọn tháng của anchorDate.
-    const firstOfMonth = new Date(anchorDate.getFullYear(), anchorDate.getMonth(), 1);
-    const lastOfMonth = new Date(anchorDate.getFullYear(), anchorDate.getMonth() + 1, 0);
+    const firstOfMonth = new Date(Date.UTC(anchorDate.getUTCFullYear(), anchorDate.getUTCMonth(), 1));
+    const lastOfMonth = new Date(Date.UTC(anchorDate.getUTCFullYear(), anchorDate.getUTCMonth() + 1, 0));
     const start = startOfWeek(firstOfMonth);
     const totalDays = Math.ceil(((lastOfMonth.getTime() - start.getTime()) / 86400000 + 1) / 7) * 7;
     const cells: Date[] = [];
@@ -147,7 +149,7 @@ export function StaffDashboardCalendar({ isStaffLeader }: { user?: any; isStaffL
     setError(null);
     try {
       const res = displayMode === 'Năm'
-        ? await staffCalendarApi.getCalendar({ viewMode: calendarType, from: fromStr, to: toStr, year: anchorDate.getFullYear() })
+        ? await staffCalendarApi.getCalendar({ viewMode: calendarType, from: fromStr, to: toStr, year: anchorDate.getUTCFullYear() })
         : await staffCalendarApi.getCalendar({ viewMode: calendarType, from: fromStr, to: toStr });
       setItems(res?.items || []);
       setPersonalEvents(res?.personalEvents || []);
@@ -177,13 +179,13 @@ export function StaffDashboardCalendar({ isStaffLeader }: { user?: any; isStaffL
   // ── Gom theo ngày (một yêu cầu kéo dài nhiều ngày sẽ hiện ở mọi ngày nó phủ) ──
   const eventsByDay = useMemo(() => {
     const map: Record<string, CalendarPill[]> = {};
-    const rangeStart = new Date(gridStart.getFullYear(), gridStart.getMonth(), gridStart.getDate());
-    const rangeEnd = new Date(gridEnd.getFullYear(), gridEnd.getMonth(), gridEnd.getDate());
+    const rangeStart = new Date(Date.UTC(gridStart.getUTCFullYear(), gridStart.getUTCMonth(), gridStart.getUTCDate()));
+    const rangeEnd = new Date(Date.UTC(gridEnd.getUTCFullYear(), gridEnd.getUTCMonth(), gridEnd.getUTCDate()));
     for (const pill of allPills) {
-      const s = new Date(pill.startAt);
-      const e = new Date(pill.endAt);
-      let d = new Date(Math.max(rangeStart.getTime(), new Date(s.getFullYear(), s.getMonth(), s.getDate()).getTime()));
-      const end = new Date(Math.min(rangeEnd.getTime(), new Date(e.getFullYear(), e.getMonth(), e.getDate()).getTime()));
+      const s = toVnDate(pill.startAt);
+      const e = toVnDate(pill.endAt);
+      let d = new Date(Math.max(rangeStart.getTime(), new Date(Date.UTC(s.getUTCFullYear(), s.getUTCMonth(), s.getUTCDate())).getTime()));
+      const end = new Date(Math.min(rangeEnd.getTime(), new Date(Date.UTC(e.getUTCFullYear(), e.getUTCMonth(), e.getUTCDate())).getTime()));
       while (d <= end) {
         const key = toDateKey(d);
         (map[key] = map[key] || []).push(pill);
@@ -197,24 +199,24 @@ export function StaffDashboardCalendar({ isStaffLeader }: { user?: any; isStaffL
 
   // ── Điều hướng ──
   const goPrev = () => {
-    if (displayMode === 'Năm') setAnchorDate((d) => new Date(d.getFullYear() - 1, d.getMonth(), 1));
-    else if (displayMode === 'Tháng') setAnchorDate((d) => new Date(d.getFullYear(), d.getMonth() - 1, 1));
+    if (displayMode === 'Năm') setAnchorDate((d) => new Date(Date.UTC(d.getUTCFullYear() - 1, d.getUTCMonth(), 1)));
+    else if (displayMode === 'Tháng') setAnchorDate((d) => new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - 1, 1)));
     else setAnchorDate((d) => addDays(d, displayMode === 'Tuần' ? -7 : -1));
   };
   const goNext = () => {
-    if (displayMode === 'Năm') setAnchorDate((d) => new Date(d.getFullYear() + 1, d.getMonth(), 1));
-    else if (displayMode === 'Tháng') setAnchorDate((d) => new Date(d.getFullYear(), d.getMonth() + 1, 1));
+    if (displayMode === 'Năm') setAnchorDate((d) => new Date(Date.UTC(d.getUTCFullYear() + 1, d.getUTCMonth(), 1)));
+    else if (displayMode === 'Tháng') setAnchorDate((d) => new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1)));
     else setAnchorDate((d) => addDays(d, displayMode === 'Tuần' ? 7 : 1));
   };
-  const goToday = () => setAnchorDate(new Date(today.getFullYear(), today.getMonth(), today.getDate()));
+  const goToday = () => setAnchorDate(new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate())));
 
   const headerLabel = displayMode === 'Năm'
-    ? `Năm ${anchorDate.getFullYear()}`
+    ? `Năm ${anchorDate.getUTCFullYear()}`
     : displayMode === 'Tháng'
-      ? `${MONTH_NAMES[anchorDate.getMonth()]} ${anchorDate.getFullYear()}`
+      ? `${MONTH_NAMES[anchorDate.getUTCMonth()]} ${anchorDate.getUTCFullYear()}`
       : displayMode === 'Tuần'
-        ? `${pad2(gridStart.getDate())}/${pad2(gridStart.getMonth() + 1)} – ${pad2(gridEnd.getDate())}/${pad2(gridEnd.getMonth() + 1)}/${gridEnd.getFullYear()}`
-        : `${pad2(anchorDate.getDate())}/${pad2(anchorDate.getMonth() + 1)}/${anchorDate.getFullYear()}`;
+        ? `${pad2(gridStart.getUTCDate())}/${pad2(gridStart.getUTCMonth() + 1)} – ${pad2(gridEnd.getUTCDate())}/${pad2(gridEnd.getUTCMonth() + 1)}/${gridEnd.getUTCFullYear()}`
+        : `${pad2(anchorDate.getUTCDate())}/${pad2(anchorDate.getUTCMonth() + 1)}/${anchorDate.getUTCFullYear()}`;
 
   // ── Refresh sau action (không reload trang) ──
   const refreshAfterAction = useCallback(async () => {
@@ -365,8 +367,8 @@ export function StaffDashboardCalendar({ isStaffLeader }: { user?: any; isStaffL
         <div className="flex items-center justify-between mb-2">
           <p className={`text-xs font-bold ${isToday ? 'text-[#004c91]' : 'text-slate-500'}`}>
             {compactHeader
-              ? `${WEEKDAYS[(date.getDay() + 6) % 7]} ${pad2(date.getDate())}/${pad2(date.getMonth() + 1)}`
-              : `${pad2(date.getDate())}/${pad2(date.getMonth() + 1)}`}
+              ? `${WEEKDAYS[(date.getUTCDay() + 6) % 7]} ${pad2(date.getUTCDate())}/${pad2(date.getUTCMonth() + 1)}`
+              : `${pad2(date.getUTCDate())}/${pad2(date.getUTCMonth() + 1)}`}
           </p>
           <DayAddButton dateStr={key} />
         </div>
@@ -385,8 +387,8 @@ export function StaffDashboardCalendar({ isStaffLeader }: { user?: any; isStaffL
   const yearMonthCounts = useMemo(() => {
     const counts = Array(12).fill(0);
     for (const pill of allPills) {
-      const d = new Date(pill.startAt);
-      if (d.getFullYear() === anchorDate.getFullYear()) counts[d.getMonth()] += 1;
+      const d = toVnDate(pill.startAt);
+      if (d.getUTCFullYear() === anchorDate.getUTCFullYear()) counts[d.getUTCMonth()] += 1;
     }
     return counts;
   }, [allPills, anchorDate]);
@@ -491,7 +493,7 @@ export function StaffDashboardCalendar({ isStaffLeader }: { user?: any; isStaffL
             <div className="grid grid-cols-7 gap-1">
               {monthCells.map((date) => {
                 const key = toDateKey(date);
-                const inMonth = date.getMonth() === anchorDate.getMonth();
+                const inMonth = date.getUTCMonth() === anchorDate.getUTCMonth();
                 const isToday = key === todayKey;
                 const isPast = key < todayKey;
                 const dayEvents = eventsByDay[key] || [];
@@ -507,7 +509,7 @@ export function StaffDashboardCalendar({ isStaffLeader }: { user?: any; isStaffL
                     <div className="flex items-center justify-between">
                       <span className={`text-[11px] font-bold px-1
                         ${isToday ? 'text-white bg-[#004c91] rounded-md px-1.5 py-0.5' : !inMonth ? 'text-slate-300' : isPast ? 'text-slate-400' : 'text-slate-600'}`}>
-                        {date.getDate()}
+                        {date.getUTCDate()}
                       </span>
                       {inMonth && <DayAddButton dateStr={key} />}
                     </div>
@@ -549,8 +551,8 @@ export function StaffDashboardCalendar({ isStaffLeader }: { user?: any; isStaffL
                 <button
                   key={name}
                   type="button"
-                  onClick={() => { setAnchorDate(new Date(anchorDate.getFullYear(), idx, 1)); setDisplayMode('Tháng'); }}
-                  className={`text-left p-4 rounded-xl border transition-colors cursor-pointer ${idx === today.getMonth() && anchorDate.getFullYear() === today.getFullYear() ? 'border-[#004c91]/60 bg-blue-50/50' : 'border-slate-200 bg-white hover:bg-slate-50'}`}
+                  onClick={() => { setAnchorDate(new Date(Date.UTC(anchorDate.getUTCFullYear(), idx, 1))); setDisplayMode('Tháng'); }}
+                  className={`text-left p-4 rounded-xl border transition-colors cursor-pointer ${idx === today.getUTCMonth() && anchorDate.getUTCFullYear() === today.getUTCFullYear() ? 'border-[#004c91]/60 bg-blue-50/50' : 'border-slate-200 bg-white hover:bg-slate-50'}`}
                 >
                   <p className="text-sm font-extrabold text-slate-700">{name}</p>
                   <p className="text-xs text-slate-500 mt-1">

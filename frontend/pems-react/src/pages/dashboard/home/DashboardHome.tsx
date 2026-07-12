@@ -33,8 +33,7 @@ import { DeptLeadDashboardView } from './DeptLeadDashboardView';
 import { DeptStaffDashboard } from '../department-staff/DeptStaffDashboard';
 import { StaffDashboardCalendar } from './staff-calendar/StaffDashboardCalendar';
 import { useAuth } from '../../../shared/hooks/useAuth';
-
-
+import { formatVietnamDateTimeLocale, formatVietnamTime, toVietnamCalendarDate } from '../../../shared/utils/vietnamTime';
 interface EventItem {
   id: string;
   time: string;
@@ -142,9 +141,10 @@ export function DashboardHome() {
     }
 
     // Current Month days
-    const todayObj = new Date();
+    // "Hôm nay" theo lịch Việt Nam — ô today không lệch ngày ở browser nước ngoài.
+    const todayObj = toVietnamCalendarDate(new Date())!;
     for (let i = 1; i <= totalDays; i++) {
-      const isToday = todayObj.getDate() === i && todayObj.getMonth() === month && todayObj.getFullYear() === year;
+      const isToday = todayObj.getUTCDate() === i && todayObj.getUTCMonth() === month && todayObj.getUTCFullYear() === year;
       days.push({
         day: i,
         month: month,
@@ -340,7 +340,7 @@ export function DashboardHome() {
             <div>
               <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Thời gian hệ thống</p>
               <p className="font-extrabold text-[#004c91] text-sm md:text-base tracking-wide mt-0.5">
-                {currentSystemTime.toLocaleDateString('vi-VN', { day: '2-digit', month: 'long', year: 'numeric' })} - {currentSystemTime.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+                {formatVietnamDateTimeLocale(currentSystemTime, 'vi-VN', { day: '2-digit', month: 'long', year: 'numeric' })} - {formatVietnamTime(currentSystemTime)}
               </p>
             </div>
           </div>

@@ -4,6 +4,7 @@ import { Search, ArrowDown, ChevronLeft, ChevronRight, FileText, Eye } from 'luc
 import { DocumentListItem } from '../types/documents.types';
 import { formatFileSize } from '../../../shared/utils/fileUtils';
 
+import { formatVietnamDateTime } from '../../../shared/utils/vietnamTime';
 interface Props {
   docs: DocumentListItem[];
   isLoading: boolean;
@@ -136,8 +137,8 @@ export function DocumentTable({
                 {/* Thời gian */}
                 <td className="px-4 py-2.5 whitespace-nowrap">
                    <div className="flex flex-col gap-0.5 text-[11px] text-slate-600">
-                      <span><span className="font-semibold">Tải lên:</span> {doc.createdAt ? new Date(doc.createdAt).toLocaleString('vi-VN') : 'N/A'}</span>
-                      <span><span className="font-semibold">Cập nhật:</span> {doc.updatedAt ? new Date(doc.updatedAt).toLocaleString('vi-VN') : 'Chưa cập nhật'}</span>
+                      <span><span className="font-semibold">Tải lên:</span> {doc.createdAt ? formatVietnamDateTime(doc.createdAt) : 'N/A'}</span>
+                      <span><span className="font-semibold">Cập nhật:</span> {doc.updatedAt ? formatVietnamDateTime(doc.updatedAt) : 'Chưa cập nhật'}</span>
                    </div>
                 </td>
 

@@ -8,6 +8,7 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Home, ChevronRight, CheckCircle, XCircle, FileText, Activity, Calendar } from 'lucide-react';
 import { motion } from 'motion/react';
 import { SubmittedVisitRequestDetailModal } from '../../../components/modals/SubmittedVisitRequestDetailModal';
+import { formatVietnamDate, formatVietnamTime } from '../../../shared/utils/vietnamTime';
 
 export function HoVisitProcessDetail() {
   const navigate = useNavigate();
@@ -22,7 +23,7 @@ export function HoVisitProcessDetail() {
   const campuses = guest?.campusProgressItems?.map((item: any) => ({
     name: item.campusName || '-',
     time: item.plannedStartAt && item.plannedEndAt
-      ? `${new Date(item.plannedStartAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} ${new Date(item.plannedStartAt).toLocaleDateString('vi-VN')} - ${new Date(item.plannedEndAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} ${new Date(item.plannedEndAt).toLocaleDateString('vi-VN')}`
+      ? `${formatVietnamTime(item.plannedStartAt)} ${formatVietnamDate(item.plannedStartAt)} - ${formatVietnamTime(item.plannedEndAt)} ${formatVietnamDate(item.plannedEndAt)}`
       : 'Chưa có thời gian',
     status: item.instanceStatus,
     person: item.hostName || 'Chưa phân công',

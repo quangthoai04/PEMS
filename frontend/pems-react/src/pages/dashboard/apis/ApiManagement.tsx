@@ -25,6 +25,7 @@ import {
   updateToastError,
   updateToastMessageError,
 } from '../../../shared/utils/toast';
+import { formatVietnamDateTime } from '../../../shared/utils/vietnamTime';
 
 const inputCls =
   'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] text-gray-700 bg-white';
@@ -254,7 +255,7 @@ export function ApiManagement() {
                 <div className="col-span-2"><dt className="text-xs text-gray-400 font-bold uppercase">Test gần nhất</dt>
                   <dd className={`text-sm ${config.lastTestStatus === 'SUCCESS' ? 'text-green-600' : config.lastTestStatus === 'FAILED' ? 'text-red-500' : 'text-gray-400'}`}>
                     {config.lastTestStatus
-                      ? `${config.lastTestStatus} · ${config.lastTestedAt ? new Date(config.lastTestedAt).toLocaleString('vi-VN') : ''}`
+                      ? `${config.lastTestStatus} · ${config.lastTestedAt ? formatVietnamDateTime(config.lastTestedAt) : ''}`
                       : 'Chưa test'}
                     {config.lastTestMessage && <span className="block text-xs text-gray-400 truncate">{config.lastTestMessage}</span>}
                   </dd></div>
@@ -376,7 +377,7 @@ export function ApiManagement() {
                         <td className="px-4 py-2.5 text-sm text-right font-bold text-[#004c91]">{q.usedCount}</td>
                         <td className="px-4 py-2.5 text-sm text-right text-gray-600">{q.monthlyLimit}</td>
                         <td className="px-4 py-2.5 text-xs text-gray-400">
-                          {q.lastUsedAt ? new Date(q.lastUsedAt).toLocaleString('vi-VN') : '—'}
+                          {q.lastUsedAt ? formatVietnamDateTime(q.lastUsedAt) : '—'}
                         </td>
                       </tr>
                     ))}
@@ -401,7 +402,7 @@ export function ApiManagement() {
                     ) : logs.items.map((log) => (
                       <tr key={log.apiRequestLogId}>
                         <td className="px-4 py-2.5 text-xs text-gray-500 whitespace-nowrap">
-                          {new Date(log.createdAt).toLocaleString('vi-VN')}
+                          {formatVietnamDateTime(log.createdAt)}
                         </td>
                         <td className="px-4 py-2.5 text-xs text-gray-600 truncate max-w-[220px]" title={log.endpoint}>
                           {log.method} {log.endpoint}

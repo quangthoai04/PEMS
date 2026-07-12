@@ -23,6 +23,7 @@ import {
   type PartnerDetail, type PartnerType, type PartnerMatchResult, type PartnerMatchCandidate,
   type PartnerProfileStatus, type PartnerVisibility,
 } from '../types/partners.types';
+import { formatVietnamDate } from '../../../shared/utils/vietnamTime';
 
 interface Prefill {
   /** Ưu tiên làm tên đối tác. */
@@ -89,11 +90,7 @@ function orNotUpdated(v?: string | null): string {
 }
 
 function fmtDate(iso?: string | null): string {
-  if (!iso) return 'Chưa cập nhật';
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime())
-    ? 'Chưa cập nhật'
-    : d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  return formatVietnamDate(iso, { fallback: 'Chưa cập nhật' });
 }
 
 function withProtocol(url: string): string {

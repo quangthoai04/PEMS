@@ -12,8 +12,10 @@ import { FeedbackFilterParams } from '../../../features/feedbacks/types/feedback
 import { FeedbackSummaryCompact } from '../../../features/feedbacks/components/FeedbackSummaryCompact';
 import { FeedbackFilterBar, TimeRangeFilter } from '../../../features/feedbacks/components/FeedbackFilterBar';
 import { FeedbackTable } from '../../../features/feedbacks/components/FeedbackTable';
+import { toVietnamDateInput } from '../../../shared/utils/vietnamTime';
 
-const toIsoDate = (d: Date) => d.toISOString().slice(0, 10);
+// Vietnam calendar date (not the UTC date of the instant — those differ after 17:00 VN).
+const toIsoDate = (d: Date) => toVietnamDateInput(d);
 
 export function FeedbackManagement() {
   const navigate = useNavigate();

@@ -29,6 +29,7 @@ import type {
   GalleryMediaKind,
   GalleryStatus,
 } from '../../../features/gallery-management/types/galleryManagement.types';
+import { formatVietnamDate } from '../../../shared/utils/vietnamTime';
 
 const BRAND = '#004c91';
 const ACCENT = '#f37021';
@@ -42,9 +43,7 @@ const MEDIA_KIND_LABEL: Record<GalleryMediaKind, string> = {
 
 function formatDate(iso: string): string {
   if (!iso) return '';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleDateString('en-GB');
+  return formatVietnamDate(iso, { fallback: iso });
 }
 
 /** Renders an authenticated image/video (file served behind a Bearer-protected backend route). */

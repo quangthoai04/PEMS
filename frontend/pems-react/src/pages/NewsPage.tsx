@@ -22,6 +22,7 @@ import { PublicNewsListItem } from '../features/public-content/types/publicConte
 import { CampusOption } from '../features/authentication/types/authentication.types';
 import { resolveFileUrl } from '../shared/utils/resolveFileUrl';
 import { useTranslation } from 'react-i18next';
+import { formatVietnamDate } from '../shared/utils/vietnamTime';
 
 const LATEST_INITIAL_SIZE = 3;
 const LATEST_LOAD_MORE_STEP = 3;
@@ -35,13 +36,7 @@ type SortOrder = 'latest' | 'oldest';
 // We'll generate TYPE_OPTIONS using useTranslation inside the component or via a function.
 
 function formatDate(iso?: string | null): string {
-  if (!iso) return '';
-  try {
-    const d = new Date(iso);
-    return d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
-  } catch {
-    return '';
-  }
+  return formatVietnamDate(iso, { fallback: '' });
 }
 
 const fadeUp = {

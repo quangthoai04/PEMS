@@ -14,6 +14,7 @@ import type {
   GalleryItemTtsStatus,
   GalleryMediaKind,
 } from '../../../features/gallery-management/types/galleryManagement.types';
+import { formatVietnamDate } from '../../../shared/utils/vietnamTime';
 
 const MEDIA_KIND_LABEL: Record<GalleryMediaKind, string> = {
   IMAGE: 'Hình ảnh',
@@ -62,8 +63,7 @@ const TTS_STATUS_META: Record<GalleryItemTtsStatus['status'], { label: string; c
 
 function formatDate(iso?: string | null): string {
   if (!iso) return '—';
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString('en-GB');
+  return formatVietnamDate(iso, { fallback: iso });
 }
 
 function PreviewMedia({ fileUrl, mediaType }: { fileUrl: string; mediaType: 'IMAGE' | 'VIDEO' }) {

@@ -33,6 +33,7 @@ import {
   type SupportDepartment,
   type VisitInstanceLogisticsItem,
 } from '../types/delegations.types';
+import { vietnamNowDateTimeLocal } from '../../../shared/utils/vietnamTime';
 
 type ToastFn = (type: 'success' | 'error' | 'warning' | 'info', msg: string) => void;
 
@@ -85,9 +86,9 @@ type ResourceForm = {
 const emptyForm = (title = ''): ResourceForm =>
   ({ quantity: '', usageStartAt: '', usageEndAt: '', dueAt: '', priority: 'MEDIUM', note: '', departmentId: '', title });
 
-// datetime-local string of "now" (local wall-clock, minute precision) for past-date guards.
-const nowLocalMinute = (): string =>
-  new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+// datetime-local string of Vietnam "now" (minute precision) for past-date guards —
+// fixed Asia/Ho_Chi_Minh, independent of the browser timezone.
+const nowLocalMinute = (): string => vietnamNowDateTimeLocal();
 
 function apiError(e: any, fallback: string): string {
   const data = e?.response?.data;

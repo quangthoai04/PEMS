@@ -21,6 +21,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { delegationsApi } from '../../../features/delegations/api/delegationsApi';
 import type { ProcessSummaryPage, ContributionSectionStatus } from '../../../features/delegations/types/delegations.types';
 import { RegistrantInfoReadOnly, DelegationInfoReadOnly } from '../../../features/delegations/components/RequestInfoReadOnly';
+import { formatVietnamDateTime } from '../../../shared/utils/vietnamTime';
 
 const getStatusColor = (status: string) => {
   switch (status) {
@@ -269,7 +270,7 @@ export function VisitProcessSummaryPage() {
                   <div className="flex justify-between items-start">
                     <h3 className="font-bold text-[#004c91]">{item.title}</h3>
                     <span className="text-xs font-bold text-slate-500 bg-white px-2 py-1 rounded-md border border-slate-200">
-                      {new Date(item.startTime).toLocaleString('vi-VN')} - {item.endTime ? new Date(item.endTime).toLocaleString('vi-VN') : ''}
+                      {formatVietnamDateTime(item.startTime)} - {item.endTime ? formatVietnamDateTime(item.endTime) : ''}
                     </span>
                   </div>
                   {item.description && <p className="text-sm text-gray-600">{item.description}</p>}

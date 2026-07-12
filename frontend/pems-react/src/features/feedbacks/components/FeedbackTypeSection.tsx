@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { FeedbackListItem } from '../types/feedbacks.types';
 import { FeedbackRatingStars } from './FeedbackRatingStars';
+import { formatVietnamDateTime } from '../../../shared/utils/vietnamTime';
 
 interface Props {
   title: string;
@@ -31,14 +32,7 @@ function FeedbackCommentText({ comment }: { comment: string }) {
   );
 }
 
-const formatDate = (dateStr: string) => {
-  try {
-    const d = new Date(dateStr);
-    return d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
-  } catch {
-    return dateStr;
-  }
-};
+const formatDate = (dateStr: string) => formatVietnamDateTime(dateStr, { fallback: dateStr });
 
 export function FeedbackTypeSection({ title, items, emptyText = 'Chưa có đánh giá.' }: Props) {
   return (

@@ -12,6 +12,7 @@ import { visitFeedbackApi } from '../api/visitFeedbackApi';
 import type { MyHostFeedbackResponse } from '../types/visitFeedback.types';
 import { visitInstanceStatusLabelVi } from '../utils/visitInstanceStatusLabel';
 
+import { formatVietnamDateTime } from '../../../shared/utils/vietnamTime';
 interface Props {
   open: boolean;
   visitInstanceId: number | string | null;
@@ -104,8 +105,8 @@ function HostFeedbackModalInner({ visitInstanceId, onClose }: { visitInstanceId:
                     {data.plannedStartAt && (
                       <div>
                         <span className="font-semibold text-slate-500">Thời gian:</span>{' '}
-                        {new Date(data.plannedStartAt).toLocaleString('vi-VN')}
-                        {data.plannedEndAt ? ` - ${new Date(data.plannedEndAt).toLocaleString('vi-VN')}` : ''}
+                        {formatVietnamDateTime(data.plannedStartAt)}
+                        {data.plannedEndAt ? ` - ${formatVietnamDateTime(data.plannedEndAt)}` : ''}
                       </div>
                     )}
                   </div>

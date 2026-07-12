@@ -6,6 +6,7 @@ import { formatFileSize } from '../../../shared/utils/fileUtils';
 import { resolveFileUrl } from '../../../shared/utils/resolveFileUrl';
 import toast from 'react-hot-toast';
 import httpClient from '../../../shared/api/httpClient';
+import { formatVietnamDateTime } from '../../../shared/utils/vietnamTime';
 
 interface DocumentDetailModalProps {
   documentId: number | null;
@@ -73,8 +74,8 @@ export function DocumentDetailModal({ documentId, onClose }: DocumentDetailModal
               <Row label="Mã request" value={`REQ #${ctx.visitRequestId || 'N/A'}`} />
               <Row label="Host" value={ctx.hostName || 'Chưa có'} />
               <Row label="Thời gian diễn ra" value={
-                <>{ctx.expectedStartDate ? new Date(ctx.expectedStartDate).toLocaleString('vi-VN') : 'N/A'} -{' '}
-                {ctx.expectedEndDate ? new Date(ctx.expectedEndDate).toLocaleString('vi-VN') : 'N/A'}</>
+                <>{ctx.expectedStartDate ? formatVietnamDateTime(ctx.expectedStartDate) : 'N/A'} -{' '}
+                {ctx.expectedEndDate ? formatVietnamDateTime(ctx.expectedEndDate) : 'N/A'}</>
               } />
               <Row label="Trạng thái" value={ctx.requestStatus || 'N/A'} />
             </dl>
@@ -111,7 +112,7 @@ export function DocumentDetailModal({ documentId, onClose }: DocumentDetailModal
             <dl className="space-y-1">
               <Row label="Tiêu đề" value={ctx.title || 'Chưa có'} />
               <Row label="Trạng thái" value={ctx.status || 'N/A'} />
-              <Row label="Ngày xuất bản" value={ctx.publishedAt ? new Date(ctx.publishedAt).toLocaleString('vi-VN') : 'Chưa xuất bản'} />
+              <Row label="Ngày xuất bản" value={ctx.publishedAt ? formatVietnamDateTime(ctx.publishedAt) : 'Chưa xuất bản'} />
               {ctx.summary && <Row label="Tóm tắt" value={<span className="italic text-xs">{ctx.summary}</span>} />}
             </dl>
           </div>
@@ -217,7 +218,7 @@ export function DocumentDetailModal({ documentId, onClose }: DocumentDetailModal
                             <div className="flex gap-1.5"><dt className="text-slate-500 shrink-0">Mô tả:</dt><dd className="text-slate-700 min-w-0 break-words">{detail.document.description}</dd></div>
                           )}
                           <div className="flex gap-1.5"><dt className="text-slate-500 shrink-0">Tạo bởi:</dt><dd className="font-semibold text-slate-800">{detail.createdByUser?.fullName || 'N/A'}</dd></div>
-                          <div className="flex gap-1.5"><dt className="text-slate-500 shrink-0">Cập nhật:</dt><dd className="font-semibold text-slate-800">{detail.document.updatedAt ? new Date(detail.document.updatedAt).toLocaleString('vi-VN') : 'Chưa cập nhật'}</dd></div>
+                          <div className="flex gap-1.5"><dt className="text-slate-500 shrink-0">Cập nhật:</dt><dd className="font-semibold text-slate-800">{detail.document.updatedAt ? formatVietnamDateTime(detail.document.updatedAt) : 'Chưa cập nhật'}</dd></div>
                         </dl>
                       </div>
 

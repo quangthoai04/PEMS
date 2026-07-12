@@ -1,3 +1,4 @@
+import { formatVietnamDate, formatVietnamDateTime } from '../../../shared/utils/vietnamTime';
 /**
  * Map status DB → label tiếng Việt / màu badge + các formatter dùng chung cho HO report.
  */
@@ -63,20 +64,12 @@ export const reportsAdapter = {
 
   /** ISO string → dd/MM/yyyy. */
   formatDate: (iso: string | null | undefined): string => {
-    if (!iso) return '—';
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return '—';
-    return d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    return formatVietnamDate(iso, { fallback: '—' });
   },
 
   /** ISO string → dd/MM/yyyy HH:mm. */
   formatDateTime: (iso: string | null | undefined): string => {
-    if (!iso) return '—';
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return '—';
-    return d.toLocaleString('vi-VN', {
-      day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
-    });
+    return formatVietnamDateTime(iso, { fallback: '—' });
   },
 
   /** 52.4 giờ → "2 ngày 4 giờ"; < 1 giờ → "dưới 1 giờ". */

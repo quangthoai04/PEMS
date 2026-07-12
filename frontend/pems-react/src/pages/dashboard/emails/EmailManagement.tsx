@@ -7,6 +7,7 @@ import { TemplateManagement } from './TemplateManagement';
 import { emailsApi } from '../../../features/emails/api/emailsApi';
 import { format } from 'date-fns';
 
+import { formatVietnamDateTime } from '../../../shared/utils/vietnamTime';
 export function EmailManagement() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -286,9 +287,9 @@ export function EmailManagement() {
                         <div className="line-clamp-2">{item.subject}</div>
                       </td>
                       <td className="p-3 align-middle whitespace-nowrap text-center text-[13px] text-gray-500 font-medium">
-                          {item.sentAt 
-                             ? format(new Date(item.sentAt.endsWith('Z') ? item.sentAt : item.sentAt + 'Z'), 'dd/MM/yyyy HH:mm') 
-                             : (item.createdAt ? format(new Date(item.createdAt.endsWith('Z') ? item.createdAt : item.createdAt + 'Z'), 'dd/MM/yyyy HH:mm') : '')}
+                          {item.sentAt
+                             ? formatVietnamDateTime(item.sentAt)
+                             : (item.createdAt ? formatVietnamDateTime(item.createdAt) : '')}
                       </td>
                       <td className="p-3 align-middle text-center">
                         <span className={`inline-flex items-center justify-center px-2.5 py-1.5 rounded-full text-[12px] font-bold border whitespace-nowrap ${

@@ -38,6 +38,7 @@ import {
 // Cover placeholder restored from the original PartnerDetail UI — shown until the partner's own
 // coverFileId resolves (or when it has none, or the fetch/render fails).
 import coverImage from '../../../assets/images/banner_partner.png';
+import { formatVietnamDateTime } from '../../../shared/utils/vietnamTime';
 
 const inputCls =
   'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] text-gray-700 bg-white';
@@ -506,14 +507,14 @@ export function PartnerDetail() {
 
             <Field
               label="Người tạo"
-              value={`${partner.creatorName || '—'} · ${new Date(partner.createdAt).toLocaleString('vi-VN')}`}
+              value={`${partner.creatorName || '—'} · ${formatVietnamDateTime(partner.createdAt)}`}
               className="md:col-span-3"
             />
 
             {partner.reviewedAt && (
               <Field
                 label="Kết quả duyệt"
-                value={`${partner.reviewerName || '—'} · ${new Date(partner.reviewedAt).toLocaleString('vi-VN')}${partner.reviewNote ? ` · ${partner.reviewNote}` : ''}`}
+                value={`${partner.reviewerName || '—'} · ${formatVietnamDateTime(partner.reviewedAt)}${partner.reviewNote ? ` · ${partner.reviewNote}` : ''}`}
                 className="md:col-span-3"
               />
             )}

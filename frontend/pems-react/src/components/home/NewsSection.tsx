@@ -13,6 +13,7 @@ import { PublicNewsListItem } from '../../features/public-content/types/publicCo
 import { resolveFileUrl } from '../../shared/utils/resolveFileUrl';
 import { useTranslation } from 'react-i18next';
 
+import { formatVietnamDate } from '../../shared/utils/vietnamTime';
 const FALLBACK_IMAGE =
   'data:image/svg+xml;utf8,' +
   encodeURIComponent(
@@ -22,7 +23,7 @@ const FALLBACK_IMAGE =
 function formatDate(iso?: string | null): string {
   if (!iso) return '';
   try {
-    return new Date(iso).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    return formatVietnamDate(iso);
   } catch {
     return '';
   }

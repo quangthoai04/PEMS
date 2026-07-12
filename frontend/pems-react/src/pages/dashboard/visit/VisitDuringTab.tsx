@@ -35,6 +35,7 @@ import { useNavigate } from 'react-router-dom';
 import { MinutesCard } from './MinutesCard';
 import { LogisticsHandoverSection } from '../../../features/delegations/components/LogisticsHandoverSection';
 import { VisitFeedbackModal } from '../../../features/feedbacks/components/VisitFeedbackModal';
+import { vietnamNowDateTimeLocal } from '../../../shared/utils/vietnamTime';
 
 export function VisitDuringTab({ isReadOnly = false, isDept = false, visitInstanceId }: { isReadOnly?: boolean, isDept?: boolean, visitInstanceId?: number }) {
   const navigate = useNavigate();
@@ -258,7 +259,7 @@ export function VisitDuringTab({ isReadOnly = false, isDept = false, visitInstan
       fileName: partnerDocFile.name,
       fileSize: partnerDocFile.size,
       partner: selectedPartnerForDoc,
-      uploadedAt: new Date().toISOString().replace('T', ' ').substring(0, 16)
+      uploadedAt: vietnamNowDateTimeLocal().replace('T', ' ')
     };
     setUploadedDocuments(prev => [...prev, newDoc]);
     setPartnerDocFile(null);

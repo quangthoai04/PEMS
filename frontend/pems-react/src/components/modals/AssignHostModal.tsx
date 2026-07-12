@@ -11,6 +11,7 @@ import { X, AlertTriangle, Check, Users, Loader2, Search, UserCheck } from 'luci
 import { delegationsApi } from '../../features/delegations/api/delegationsApi';
 import type { HostCandidate } from '../../features/delegations/types/delegations.types';
 
+import { formatVietnamDateTime } from '../../shared/utils/vietnamTime';
 type AssignHostModalProps = {
   isOpen: boolean;
   /** Kept for call-site compatibility; approve là hành động duy nhất (không còn transfer host). */
@@ -26,9 +27,7 @@ type AssignHostModalProps = {
 
 const formatDateTime = (value?: string | null) => {
   if (!value) return '-';
-  return new Date(value).toLocaleString('vi-VN', {
-    hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric',
-  });
+  return formatVietnamDateTime(value);
 };
 
 export function AssignHostModal({

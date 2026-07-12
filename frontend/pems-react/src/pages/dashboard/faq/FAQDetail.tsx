@@ -7,6 +7,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
 import toast, { Toaster } from 'react-hot-toast';
 import httpClient from '../../../shared/api/httpClient';
+import { formatVietnamDateTime } from '../../../shared/utils/vietnamTime';
 
 const FAQ_TYPE_OPTIONS = [
   { value: 'ACCOUNT_ACCESS',       label: 'Tài khoản & truy cập' },
@@ -110,16 +111,8 @@ export function FAQDetail() {
     }
   };
 
-  const formatDate = (dateStr?: string) => {
-    if (!dateStr) return '—';
-    // Backend lưu DateTime.UtcNow nhưng MySQL/EF trả về không có 'Z' suffix
-    // Append 'Z' để JS hiểu là UTC và tự chuyển sang giờ địa phương
-    const utc = dateStr.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(dateStr) ? dateStr : dateStr + 'Z';
-    return new Date(utc).toLocaleString('vi-VN', {
-      day: '2-digit', month: '2-digit', year: 'numeric',
-      hour: '2-digit', minute: '2-digit',
-    });
-  };
+  // Giờ Việt Nam cố định (API trả ISO +07:00) — không phụ thuộc timezone trình duyệt.
+  const formatDate = (dateStr?: string) => formatVietnamDateTime(dateStr);
 
   const getStatusBadge = (status: string) =>
     status === 'PUBLISHED'

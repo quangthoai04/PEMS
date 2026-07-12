@@ -1,5 +1,6 @@
 import React from 'react';
 import { Star } from 'lucide-react';
+import { formatVietnamDateTime } from '../../../shared/utils/vietnamTime';
 
 interface Props {
   totalDelegations?: number;
@@ -9,14 +10,7 @@ interface Props {
   latest?: string | null;
 }
 
-const formatDate = (dateStr: string) => {
-  try {
-    const d = new Date(dateStr);
-    return d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-  } catch {
-    return dateStr;
-  }
-};
+const formatDate = (dateStr: string) => formatVietnamDateTime(dateStr, { fallback: dateStr });
 
 export function FeedbackSummaryCompact({ totalDelegations, totalFeedbacks, avgRating, lowRating, latest }: Props) {
   return (

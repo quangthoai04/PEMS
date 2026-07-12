@@ -68,7 +68,7 @@ function getApiErrorCode(error: unknown): string | null {
 interface OtpErrorMeta {
   remainingAttempts: number | null;
   retryAfterSeconds: number | null;
-  retryAtUtc: string | null;
+  retryAt: string | null;
   humanVerificationRequired: boolean;
 }
 
@@ -82,11 +82,11 @@ function getOtpErrorMeta(error: unknown): OtpErrorMeta {
         typeof data?.retryAfterSeconds === 'number' && data.retryAfterSeconds > 0
           ? data.retryAfterSeconds
           : null,
-      retryAtUtc: typeof data?.retryAtUtc === 'string' ? data.retryAtUtc : null,
+      retryAt: typeof data?.retryAt === 'string' ? data.retryAt : null,
       humanVerificationRequired: data?.humanVerificationRequired === true,
     };
   }
-  return { remainingAttempts: null, retryAfterSeconds: null, retryAtUtc: null, humanVerificationRequired: false };
+  return { remainingAttempts: null, retryAfterSeconds: null, retryAt: null, humanVerificationRequired: false };
 }
 
 /** 409 DUPLICATE_VISIT_REQUEST structured payload (response.data.data), if present. */
@@ -177,7 +177,7 @@ export const useVisitRequestForm = (
   // the frontend only presents them and never counts attempts itself.
   const [remainingAttempts, setRemainingAttempts] = useState<number | null>(null);
   const [retryAfterSeconds, setRetryAfterSeconds] = useState<number | null>(null);
-  const [retryAtUtc, setRetryAtUtc] = useState<string | null>(null);
+  const [retryAt, setRetryAtUtc] = useState<string | null>(null);
   const [resendAfterSeconds, setResendAfterSeconds] = useState<number>(60);
   const [humanVerificationRequired, setHumanVerificationRequired] = useState(false);
   const [isRecoveringOtp, setIsRecoveringOtp] = useState(false);
@@ -511,7 +511,7 @@ export const useVisitRequestForm = (
         const meta = getOtpErrorMeta(err);
         if (meta.remainingAttempts !== null) setRemainingAttempts(meta.remainingAttempts);
         setRetryAfterSeconds(meta.retryAfterSeconds);
-        setRetryAtUtc(meta.retryAtUtc);
+        setRetryAtUtc(meta.retryAt);
         if (meta.humanVerificationRequired || code === OTP_HUMAN_VERIFICATION_REQUIRED) {
           setHumanVerificationRequired(true);
         }
@@ -626,7 +626,7 @@ export const useVisitRequestForm = (
     // OTP V2 challenge state (server-driven presentation values)
     remainingAttempts,
     retryAfterSeconds,
-    retryAtUtc,
+    retryAt,
     resendAfterSeconds,
     humanVerificationRequired,
     isRecoveringOtp,

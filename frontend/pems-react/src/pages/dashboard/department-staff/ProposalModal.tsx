@@ -7,6 +7,7 @@ import { X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { departmentReceptionTasksApi } from '../../../features/department-reception-tasks/api/departmentReceptionTasksApi';
 import type { AssignedTask } from './useDeptStaffData';
+import { toVietnamDateTimeLocalInput } from '../../../shared/utils/vietnamTime';
 
 interface Props {
   item: AssignedTask | null;
@@ -15,10 +16,10 @@ interface Props {
 }
 
 function toTimeInput(iso?: string) {
+  // "HH:mm" theo giờ Việt Nam cố định (hydrate input time không drift theo browser).
   if (!iso) return '';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  const local = toVietnamDateTimeLocalInput(iso);
+  return local ? local.slice(11, 16) : '';
 }
 
 export function ProposalModal({ item, onClose, onSuccess }: Props) {

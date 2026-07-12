@@ -15,6 +15,7 @@ import toast from 'react-hot-toast';
 import agendaTemplatesApi from '../api/agendaTemplatesApi';
 import { VISIT_TYPE_LABELS } from '../types/agendaTemplates.types';
 import type { AgendaSetupForInstance } from '../types/agendaTemplates.types';
+import { toVietnamDateTimeLocalInput, formatVietnamTime } from '../../../shared/utils/vietnamTime';
 
 type NotifyType = 'success' | 'error' | 'warning' | 'info';
 
@@ -27,16 +28,15 @@ function statusOf(e: unknown): number | undefined {
   return (e as { response?: { status?: number } })?.response?.status;
 }
 
+// "dd/MM HH:mm" theo giờ Việt Nam cố định (không dùng getter local của browser).
 function fmtDateTime(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  const p = (n: number) => String(n).padStart(2, '0');
-  return `${p(d.getDate())}/${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  const local = toVietnamDateTimeLocalInput(iso); // "YYYY-MM-DDTHH:mm"
+  if (!local) return iso;
+  return `${local.slice(8, 10)}/${local.slice(5, 7)} ${local.slice(11, 16)}`;
 }
 
 function hhmm(d: Date): string {
-  const p = (n: number) => String(n).padStart(2, '0');
-  return `${p(d.getHours())}:${p(d.getMinutes())}`;
+  return formatVietnamTime(d);
 }
 
 interface Props {

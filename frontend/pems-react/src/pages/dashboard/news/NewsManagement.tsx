@@ -3,6 +3,7 @@ import { Search, Plus, Eye, Edit2, ChevronLeft, ChevronRight, ArrowUpDown } from
 import { useNavigate } from 'react-router-dom';
 import httpClient from '../../../shared/api/httpClient';
 
+import { formatVietnamDate } from '../../../shared/utils/vietnamTime';
 interface NewsAvailableActions {
   canViewDetail: boolean;
   canEdit: boolean;
@@ -63,10 +64,7 @@ const HO_STATUS_OPTIONS = [
 ];
 
 function formatDate(dateStr?: string): string {
-  if (!dateStr) return '—';
-  const fixed = dateStr.endsWith('Z') ? dateStr : dateStr + 'Z';
-  const d = new Date(fixed);
-  return d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  return formatVietnamDate(dateStr);
 }
 
 export function NewsManagement() {

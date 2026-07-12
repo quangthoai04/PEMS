@@ -7,6 +7,7 @@
 
 import { useState, useCallback, useMemo } from 'react';
 import { departmentReceptionTasksApi } from '../../../features/department-reception-tasks/api/departmentReceptionTasksApi';
+import { parseApiDate, toVietnamCalendarDate } from '../../../shared/utils/vietnamTime';
 
 // ── Shared Types ──────────────────────────────────────────────────────────────
 
@@ -81,7 +82,7 @@ export type TaskStatusFilter =
 function mapCalendarItem(item: any, idx: number): CalendarItem {
   const itemStatus = item.itemStatus || item.status;
   const rawId = item.itemId || item.logisticsItemId || item.participantId || item.id;
-  const itemEndTime = item.endAt ? new Date(item.endAt).getTime() : 0;
+  const itemEndTime = item.endAt ? (parseApiDate(item.endAt)?.getTime() ?? 0) : 0;
   const isPast = itemEndTime > 0 && itemEndTime < Date.now();
   const isProcessed = itemStatus !== 'REQUESTED' && itemStatus !== 'ASSIGNED';
 
@@ -106,10 +107,11 @@ function mapCalendarItem(item: any, idx: number): CalendarItem {
     hCol = 'border-purple-500';
   }
 
-  const sd = new Date(item.startAt);
-  const ed = new Date(item.endAt);
-  const dateStr = `${sd.getFullYear()}-${String(sd.getMonth() + 1).padStart(2, '0')}-${String(sd.getDate()).padStart(2, '0')}`;
-  const timeStr = `${String(sd.getHours()).padStart(2, '0')}:${String(sd.getMinutes()).padStart(2, '0')} - ${String(ed.getHours()).padStart(2, '0')}:${String(ed.getMinutes()).padStart(2, '0')}`;
+  // Re-based: local getters bên dưới trả đúng phần giờ Việt Nam trên mọi browser.
+  const sd = toVietnamCalendarDate(item.startAt) ?? new Date(NaN);
+  const ed = toVietnamCalendarDate(item.endAt) ?? new Date(NaN);
+  const dateStr = `${sd.getUTCFullYear()}-${String(sd.getUTCMonth() + 1).padStart(2, '0')}-${String(sd.getUTCDate()).padStart(2, '0')}`;
+  const timeStr = `${String(sd.getUTCHours()).padStart(2, '0')}:${String(sd.getUTCMinutes()).padStart(2, '0')} - ${String(ed.getUTCHours()).padStart(2, '0')}:${String(ed.getUTCMinutes()).padStart(2, '0')}`;
 
   return {
     id: `${rawId}_${idx}`,

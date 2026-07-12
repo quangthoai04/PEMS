@@ -32,6 +32,7 @@ import { ParticipantInvitationSection } from '../../../features/delegations/comp
 import { LogisticsRequestSection } from '../../../features/delegations/components/LogisticsRequestSection';
 import { RegistrantInfoReadOnly, DelegationInfoReadOnly } from '../../../features/delegations/components/RequestInfoReadOnly';
 import { VisitorVisitDetailPage } from './VisitorVisitDetailPage';
+import { formatVietnamTime } from '../../../shared/utils/vietnamTime';
 
 // Lightweight in-page toast (top-right) — cùng pattern với CampusManagement/VisitRequestManagement.
 type ProcessToast = { id: number; type: 'success' | 'error' | 'warning' | 'info'; msg: string };
@@ -610,7 +611,7 @@ export function VisitProcess() {
       }
       return {
         ...prev,
-        [id]: { time: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }), name, status }
+        [id]: { time: formatVietnamTime(new Date()), name, status }
       };
     });
   };
@@ -620,7 +621,7 @@ export function VisitProcess() {
       setConfirmations(prev => ({
         ...prev,
         [rejectReasonModal.targetId!]: { 
-          time: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }), 
+          time: formatVietnamTime(new Date()),
           name: rejectReasonModal.targetName!, 
           status: 'rejected',
           reason: rejectReasonModal.reasonText

@@ -3,6 +3,7 @@ import type {
   AgendaTemplateItemDto,
   AgendaTemplateItemInput,
 } from '../types/agendaTemplates.types';
+import { formatVietnamTime } from '../../../shared/utils/vietnamTime';
 
 /**
  * Helpers to map between the editor model and API payloads, and to preview the absolute clock
@@ -35,9 +36,8 @@ export const agendaTemplatesAdapter = {
     if (Number.isNaN(base.getTime())) return '';
     const start = new Date(base.getTime() + offsetMinutes * 60_000);
     const end = new Date(start.getTime() + durationMinutes * 60_000);
-    const hhmm = (d: Date) =>
-      `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-    return `${hhmm(start)} – ${hhmm(end)}`;
+    // Hiển thị theo giờ Việt Nam cố định, không phụ thuộc timezone browser.
+    return `${formatVietnamTime(start)} – ${formatVietnamTime(end)}`;
   },
 
   /** Map API items (with id) down to the input shape used by the editor / create+update payloads. */

@@ -12,6 +12,7 @@ import { SubmittedVisitRequestDetailModal } from '../../../components/modals/Sub
 import { departmentReceptionTasksApi } from '../../../features/department-reception-tasks/api/departmentReceptionTasksApi';
 import type { CalendarItem } from './useDeptStaffData';
 import { StaffLeaderTaskModal } from './StaffLeaderTaskModal';
+import { toVietnamCalendarDate } from '../../../shared/utils/vietnamTime';
 
 interface Props {
   year: number;
@@ -25,8 +26,16 @@ const WEEKDAYS = ['Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sá
 const MONTHS = ['Tháng 1','Tháng 2','Tháng 3','Tháng 4','Tháng 5','Tháng 6','Tháng 7','Tháng 8','Tháng 9','Tháng 10','Tháng 11','Tháng 12'];
 
 function todayStr() {
-  const t = new Date();
-  return `${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}`;
+  // "Hôm nay" theo lịch Việt Nam — ô today không lệch ngày ở browser nước ngoài.
+  const t = toVietnamCalendarDate(new Date())!;
+  return `${t.getUTCFullYear()}-${String(t.getUTCMonth()+1).padStart(2,'0')}-${String(t.getUTCDate()).padStart(2,'0')}`;
+}
+
+/** Parse key "YYYY-MM-DD" thành Date theo PHẦN lịch (không phải instant UTC midnight —
+ *  new Date('YYYY-MM-DD') sẽ lùi 1 ngày ở browser múi giờ âm). */
+function parseDateKey(s: string): Date {
+  const [y, m, d] = s.split('-').map(Number);
+  return new Date(y, (m || 1) - 1, d || 1);
 }
 
 function buildDaysGrid(year: number, month: number) {
@@ -66,8 +75,8 @@ const isTaskModalItem = (
 
 export function StaffCalendarTab({ year, onYearChange, calendarItems, calendarLoading, onRefresh }: Props) {
   const today = todayStr();
-  const now = new Date();
-  const [month, setMonth] = useState(now.getMonth());
+  const now = toVietnamCalendarDate(new Date())!;
+  const [month, setMonth] = useState(now.getUTCMonth());
   const [selectedDate, setSelectedDate] = useState<string | null>(today);
   const [displayMode, setDisplayMode] = useState<'Ngày' | 'Tuần' | 'Tháng' | 'Năm'>('Tháng');
   const [showDisplayDd, setShowDisplayDd] = useState(false);
@@ -86,7 +95,7 @@ export function StaffCalendarTab({ year, onYearChange, calendarItems, calendarLo
   const daysGrid = useMemo(() => buildDaysGrid(year, month), [year, month]);
 
   const shiftView = (dir: -1 | 1) => {
-    const base = selectedDate ? new Date(selectedDate) : new Date(year, month, 1);
+    const base = selectedDate ? parseDateKey(selectedDate) : new Date(year, month, 1);
     if (displayMode === 'Ngày') {
       base.setDate(base.getDate() + dir);
       const next = `${base.getFullYear()}-${String(base.getMonth()+1).padStart(2,'0')}-${String(base.getDate()).padStart(2,'0')}`;
@@ -117,7 +126,7 @@ export function StaffCalendarTab({ year, onYearChange, calendarItems, calendarLo
   const nextMonth = () => shiftView(1);
 
   const weekDays = useMemo(() => {
-    const base = selectedDate ? new Date(selectedDate) : new Date();
+    const base = selectedDate ? parseDateKey(selectedDate) : new Date(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
     const day = base.getDay();
     const mondayOffset = day === 0 ? -6 : 1 - day;
     const monday = new Date(base);
@@ -155,7 +164,7 @@ export function StaffCalendarTab({ year, onYearChange, calendarItems, calendarLo
   const yearMonths = useMemo(() => Array.from({ length: 12 }, (_, m) => ({
     month: m,
     items: calendarItems.filter(e => {
-      const d = new Date(e.date);
+      const d = parseDateKey(e.date); // e.date đã là ngày lịch Việt Nam (mapCalendarItem)
       return d.getFullYear() === year && d.getMonth() === m;
     }),
   })), [calendarItems, year]);
@@ -311,7 +320,7 @@ export function StaffCalendarTab({ year, onYearChange, calendarItems, calendarLo
       {/* Toolbar */}
       <div className="flex items-center gap-3 flex-wrap">
         <div className="bg-slate-100 p-0.5 rounded-xl border border-slate-200 flex items-center gap-1">
-          <button onClick={() => { setMonth(now.getMonth()); onYearChange(now.getFullYear()); }} className="px-4 py-2 text-xs font-bold text-slate-700 bg-white shadow-sm hover:bg-slate-50 border border-slate-200/60 rounded-lg">Hôm nay</button>
+          <button onClick={() => { setMonth(now.getUTCMonth()); onYearChange(now.getUTCFullYear()); }} className="px-4 py-2 text-xs font-bold text-slate-700 bg-white shadow-sm hover:bg-slate-50 border border-slate-200/60 rounded-lg">Hôm nay</button>
           <div className="h-4 w-px bg-slate-200 mx-1" />
           <button onClick={prevMonth} className="p-2 text-slate-600 hover:bg-white rounded-lg transition-all"><ChevronLeft className="w-4 h-4" /></button>
           <button onClick={nextMonth} className="p-2 text-slate-600 hover:bg-white rounded-lg transition-all"><ChevronRight className="w-4 h-4" /></button>

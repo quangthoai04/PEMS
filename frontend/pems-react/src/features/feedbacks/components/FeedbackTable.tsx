@@ -1,6 +1,7 @@
 import React from 'react';
 import { Eye, Star, MessageSquare } from 'lucide-react';
 import { FeedbackVisitSummaryItem, PaginatedResult } from '../types/feedbacks.types';
+import { formatVietnamDateTime } from '../../../shared/utils/vietnamTime';
 
 interface Props {
   summaries: PaginatedResult<FeedbackVisitSummaryItem> | null;
@@ -10,14 +11,7 @@ interface Props {
   onView: (visitRequestId: number, visitInstanceId?: number | null) => void;
 }
 
-const formatDate = (dateStr: string) => {
-  try {
-    const d = new Date(dateStr);
-    return d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-  } catch {
-    return dateStr;
-  }
-};
+const formatDate = (dateStr: string) => formatVietnamDateTime(dateStr, { fallback: dateStr });
 
 export function FeedbackTable({ summaries, loading, currentPage, pageSize, onView }: Props) {
   return (

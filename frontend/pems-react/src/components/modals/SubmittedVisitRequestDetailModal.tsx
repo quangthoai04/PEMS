@@ -20,6 +20,7 @@ import { SubmittedVisitRequestInfoPanel } from '../../features/delegations/compo
 import { DecisionReasonPanel } from '../../features/delegations/components/DecisionReasonPanel';
 import { CancellationReasonPanel } from '../../features/delegations/components/CancellationReasonPanel';
 
+import { formatVietnamDateTime } from '../../shared/utils/vietnamTime';
 interface Props {
   isOpen: boolean;
   visitRequestId: number | null;
@@ -30,12 +31,7 @@ interface Props {
 }
 
 const formatDateTime = (value?: string | null) => {
-  if (!value) return '-';
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return '-';
-  return d.toLocaleString('vi-VN', {
-    hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric',
-  });
+  return formatVietnamDateTime(value, { fallback: '-' });
 };
 
 const getFriendlyError = (e: any): string => {

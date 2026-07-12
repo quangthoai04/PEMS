@@ -1,6 +1,14 @@
 import { z } from 'zod';
 import { isValidPhoneNumber } from 'libphonenumber-js';
 import i18n from '../../../shared/i18n/config';
+import { parseApiDate } from '../../../shared/utils/vietnamTime';
+
+/**
+ * Form datetime-local values are Vietnam wall-clock strings; parse them as +07:00
+ * so the 72h/duration checks give the same verdict on every browser timezone.
+ * (The backend re-validates with VietnamNow — this is presentation-side UX only.)
+ */
+const parseVietnamWallClock = (value: string): Date => parseApiDate(value) ?? new Date(NaN);
 
 const MIN_ADVANCE_HOURS = 72;
 const MIN_DURATION_HOURS = 3;
@@ -27,10 +35,10 @@ export type VisitCampusRow = {
 
 export function isTimeOverlap(a: VisitCampusRow, b: VisitCampusRow): boolean {
   if (!a.startDatetime || !a.endDatetime || !b.startDatetime || !b.endDatetime) return false;
-  const startA = new Date(a.startDatetime).getTime();
-  const endA = new Date(a.endDatetime).getTime();
-  const startB = new Date(b.startDatetime).getTime();
-  const endB = new Date(b.endDatetime).getTime();
+  const startA = parseVietnamWallClock(a.startDatetime).getTime();
+  const endA = parseVietnamWallClock(a.endDatetime).getTime();
+  const startB = parseVietnamWallClock(b.startDatetime).getTime();
+  const endB = parseVietnamWallClock(b.endDatetime).getTime();
   return startA < endB && startB < endA;
 }
 
@@ -96,8 +104,8 @@ const buildVisitSlotSchema = (minAdvanceHours: number, t: ValidationTranslator) 
   .superRefine((data, ctx) => {
     if (!data.startDatetime || !data.endDatetime) return;
 
-    const start = new Date(data.startDatetime);
-    const end = new Date(data.endDatetime);
+    const start = parseVietnamWallClock(data.startDatetime);
+    const end = parseVietnamWallClock(data.endDatetime);
     const minStart = new Date(Date.now() + minAdvanceHours * 60 * 60 * 1000);
 
     if (start < minStart) {
