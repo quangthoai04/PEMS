@@ -8,7 +8,9 @@
       "visitors": "Thành viên đoàn khách",
       "support": "Đội hỗ trợ khách",
       "contact": "Đầu mối liên hệ",
-      "additional": "Yêu cầu bổ sung"
+      "additional": "Yêu cầu bổ sung",
+      "registrantReadOnly": "Thông tin người đăng ký được ghi nhận tại thời điểm gửi đơn và không thể thay đổi trong lần chỉnh sửa này.",
+      "contactIdentityReadOnly": "Email đầu mối liên hệ được dùng để liên kết tài khoản và quyền của đầu mối nên không thể đổi trong form này."
     },
     "actions": {
       "submit": "Gửi yêu cầu",

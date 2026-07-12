@@ -37,9 +37,10 @@ interface PhoneInputProps {
   onChange: (value: string) => void;
   onBlur?: () => void;
   hasError?: boolean;
+  disabled?: boolean;
 }
 
-export const PhoneInput: React.FC<PhoneInputProps> = ({ value, onChange, onBlur, hasError }) => {
+export const PhoneInput: React.FC<PhoneInputProps> = ({ value, onChange, onBlur, hasError, disabled }) => {
   const { t } = useTranslation(['visitRequest']);
   const [selectedCode, setSelectedCode] = useState(DEFAULT_COUNTRY);
   const [localNumber, setLocalNumber] = useState('');
@@ -81,6 +82,7 @@ export const PhoneInput: React.FC<PhoneInputProps> = ({ value, onChange, onBlur,
   }, [search]);
 
   const openDropdown = () => {
+    if (disabled) return;
     if (buttonRef.current) {
       const r = buttonRef.current.getBoundingClientRect();
       setDropdownStyle({
@@ -142,8 +144,9 @@ export const PhoneInput: React.FC<PhoneInputProps> = ({ value, onChange, onBlur,
         <button
           ref={buttonRef}
           type="button"
+          disabled={disabled}
           onClick={openDropdown}
-          className="flex h-full items-center gap-1.5 pl-4 pr-2 bg-slate-50 border-r border-slate-200 hover:bg-slate-100 transition-colors shrink-0"
+          className={`flex h-full items-center gap-1.5 pl-4 pr-2 bg-slate-50 border-r border-slate-200 transition-colors shrink-0 ${disabled ? 'cursor-not-allowed opacity-60' : 'hover:bg-slate-100'}`}
         >
           <span className="text-base leading-none">{selectedOpt.flag}</span>
           <span className="text-sm font-semibold text-gray-700">+{selectedOpt.dialCode}</span>
@@ -159,7 +162,9 @@ export const PhoneInput: React.FC<PhoneInputProps> = ({ value, onChange, onBlur,
           onChange={handleNumberChange}
           onBlur={onBlur}
           placeholder="912 345 678"
-          className="flex-1 px-4 h-full bg-white outline-none text-sm font-semibold text-slate-800 min-w-0"
+          disabled={disabled}
+          readOnly={disabled}
+          className={`flex-1 px-4 h-full outline-none text-sm font-semibold min-w-0 ${disabled ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : 'bg-white text-slate-800'}`}
         />
       </div>
 

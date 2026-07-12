@@ -69,6 +69,8 @@
     "OTP_HUMAN_VERIFICATION_REQUIRED": "Too many incorrect attempts. Please verify you are human to receive a new code.",
     "HUMAN_VERIFICATION_FAILED": "Verification failed. Please try again.",
     "OTP_RESEND_RATE_LIMITED": "You have requested too many verification codes. Please try again later.",
+    "IMMUTABLE_REGISTRANT_INFO": "Registrant information cannot be changed after the request has been submitted.",
+    "IMMUTABLE_CONTACT_IDENTITY": "The contact email, linked account, and contact relationship cannot be changed during this edit.",
     "IDEMPOTENCY_KEY_REUSED": "This submission session is no longer valid. Please close the form and submit again.",
     "DUPLICATE_VISIT_REQUEST": "A visit request with the same details was submitted recently. No new request has been created."
   }

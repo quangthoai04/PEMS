@@ -16,15 +16,19 @@ interface Props {
    * rendered read-only (anti-impersonation — the backend overrides them anyway).
    */
   identityReadOnly?: boolean;
+  /**
+   * Edit mode: the entire section is read-only.
+   */
+  readOnly?: boolean;
 }
 
-export const RegisterInfoSection: React.FC<Props> = ({ form, showErrors, identityReadOnly }) => {
+export const RegisterInfoSection: React.FC<Props> = ({ form, showErrors, identityReadOnly, readOnly }) => {
   const { t } = useTranslation(['visitRequest']);
   const { register, control, watch, setValue, formState: { errors, touchedFields, isSubmitted } } = form;
   const e = errors.registerInfo;
   const tf = touchedFields.registerInfo;
 
-  const shouldShowError = (field: keyof NonNullable<typeof tf>, specificError?: any) => {
+  const shouldShowError = (field: keyof NonNullable<typeof tf>, specificError?: unknown) => {
     return !!specificError && (tf?.[field] || showErrors || isSubmitted);
   };
 
@@ -36,6 +40,11 @@ export const RegisterInfoSection: React.FC<Props> = ({ form, showErrors, identit
       id="section-registrant"
       title={t('visitRequest:singleForm.sections.registrant')}
     >
+      {readOnly && (
+        <div className="mb-6 rounded-xl bg-slate-50 p-4 border border-slate-200 text-sm text-slate-600 font-medium">
+          <p>{t('visitRequest:singleForm.sections.registrantReadOnly')}</p>
+        </div>
+      )}
       <div className="grid grid-cols-1 gap-x-10 gap-y-6 lg:grid-cols-2">
 
         <FormField
@@ -47,11 +56,11 @@ export const RegisterInfoSection: React.FC<Props> = ({ form, showErrors, identit
           <input
             {...register('registerInfo.fullName')}
             placeholder={t('visitRequest:step1.fullNamePlaceholder')}
-            readOnly={identityReadOnly}
-            aria-readonly={identityReadOnly || undefined}
-            className={`${inputCls(shouldShowError('fullName', e?.fullName), isValid('fullName'))} ${identityReadOnly ? 'cursor-not-allowed bg-slate-100 text-slate-500' : ''}`}
+            readOnly={identityReadOnly || readOnly}
+            aria-readonly={identityReadOnly || readOnly || undefined}
+            className={`${inputCls(shouldShowError('fullName', e?.fullName), isValid('fullName'))} ${identityReadOnly || readOnly ? 'cursor-not-allowed bg-slate-100 text-slate-500' : ''}`}
           />
-          {identityReadOnly && (
+          {identityReadOnly && !readOnly && (
             <p className="mt-1 text-[11px] font-medium text-slate-400">
               {t('visitRequest:step1.identityFromAccount')}
             </p>
@@ -74,6 +83,7 @@ export const RegisterInfoSection: React.FC<Props> = ({ form, showErrors, identit
                 onChange={field.onChange}
                 onBlur={field.onBlur}
                 hasError={shouldShowError('nationality', e?.nationality)}
+                disabled={readOnly}
               />
             )}
           />
@@ -96,12 +106,14 @@ export const RegisterInfoSection: React.FC<Props> = ({ form, showErrors, identit
                   organization={field.value ?? ''}
                   partnerId={watch('partnerId') ?? null}
                   onChange={({ organization, partnerId, mode }) => {
+                    if (readOnly) return;
                     field.onChange(organization);
                     setValue('partnerId', partnerId, { shouldValidate: true, shouldDirty: true });
                     setValue('partnerSelectionMode', mode, { shouldDirty: true });
                   }}
                   onBlur={field.onBlur}
                   hasError={shouldShowError('organization', e?.organization)}
+                  disabled={readOnly}
                 />
               )}
             />
@@ -116,7 +128,9 @@ export const RegisterInfoSection: React.FC<Props> = ({ form, showErrors, identit
         >
           <input
             {...register('registerInfo.jobTitle')}
-            className={inputCls(shouldShowError('jobTitle', e?.jobTitle), isValid('jobTitle'))}
+            readOnly={readOnly}
+            aria-readonly={readOnly || undefined}
+            className={`${inputCls(shouldShowError('jobTitle', e?.jobTitle), isValid('jobTitle'))} ${readOnly ? 'cursor-not-allowed bg-slate-100 text-slate-500' : ''}`}
           />
         </FormField>
 
@@ -135,6 +149,7 @@ export const RegisterInfoSection: React.FC<Props> = ({ form, showErrors, identit
                 onChange={field.onChange}
                 onBlur={field.onBlur}
                 hasError={shouldShowError('phone', e?.phone)}
+                disabled={readOnly}
               />
             )}
           />
@@ -151,11 +166,11 @@ export const RegisterInfoSection: React.FC<Props> = ({ form, showErrors, identit
             {...register('registerInfo.email')}
             type="email"
             placeholder="example@domain.com"
-            readOnly={identityReadOnly}
-            aria-readonly={identityReadOnly || undefined}
-            className={`${inputCls(shouldShowError('email', e?.email), isValid('email'))} ${identityReadOnly ? 'cursor-not-allowed bg-slate-100 text-slate-500' : ''}`}
+            readOnly={identityReadOnly || readOnly}
+            aria-readonly={identityReadOnly || readOnly || undefined}
+            className={`${inputCls(shouldShowError('email', e?.email), isValid('email'))} ${identityReadOnly || readOnly ? 'cursor-not-allowed bg-slate-100 text-slate-500' : ''}`}
           />
-          {identityReadOnly && (
+          {identityReadOnly && !readOnly && (
             <p className="mt-1 text-[11px] font-medium text-slate-400">
               {t('visitRequest:step1.identityFromAccount')}
             </p>

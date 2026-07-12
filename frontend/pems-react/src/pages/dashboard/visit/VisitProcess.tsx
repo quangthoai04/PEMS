@@ -254,6 +254,8 @@ export function VisitProcess() {
     templateResponsibleRoleLabel: string | null;
   };
   const [detail, setDetail] = useState<VisitProcessDetail | null>(null);
+  const [detailLoading, setDetailLoading] = useState(true);
+  const [detailLoadError, setDetailLoadError] = useState(false);
   const [agendaItems, setAgendaItems] = useState<AgendaRow[]>([]);
   const [isSavingAgenda, setIsSavingAgenda] = useState(false);
   const [agendaResponsibleCandidates, setAgendaResponsibleCandidates] = useState<AgendaResponsibleCandidate[]>([]);
@@ -276,10 +278,12 @@ export function VisitProcess() {
   };
 
   const loadDetail = React.useCallback(async () => {
-    if (!perm) { setDetail(null); setAgendaItems([]); return; }
+    if (!perm) { setDetail(null); setAgendaItems([]); setDetailLoading(false); return; }
     try {
+      setDetailLoading(true);
       const d = await delegationsApi.getVisitProcessDetail(perm.visitRequestId, perm.visitInstanceId);
       setDetail(d);
+      setDetailLoadError(false);
       setPreparationNote(d.preparationNote ?? '');
       setPreparationNoteSaved(d.preparationNote ?? '');
       setAgendaItems((d.agenda || []).map((a) => ({
@@ -295,6 +299,9 @@ export function VisitProcess() {
     } catch {
       setDetail(null);
       setAgendaItems([]);
+      setDetailLoadError(true);
+    } finally {
+      setDetailLoading(false);
     }
   }, [perm?.visitRequestId, perm?.visitInstanceId]);
   useEffect(() => { void loadDetail(); }, [loadDetail]);
@@ -623,40 +630,63 @@ export function VisitProcess() {
     setRejectReasonModal({ isOpen: false, targetId: null, targetName: null, reasonText: '' });
   };
 
-  if (isLoadingPerm) {
+  if (isLoadingPerm || detailLoading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[400px]">
         <Loader2 className="w-8 h-8 animate-spin text-[#004c91] mb-4" />
-        <p className="text-sm font-bold text-slate-500">Đang tải phân quyền...</p>
-      </div>
-    );
-  }
-
-  // Mọi role không phải Host chính đều bị chặn (API trả 403).
-  // Với màn hình công khai "reception-detail" của Visitor thì không bị block ở đây.
-  if (!isReceptionDetail && hasNumericId && permLoadFailed) {
-    return (
-      <div className="p-4 sm:p-6 md:p-8 max-w-[95%] mx-auto">
-        <div className="bg-white rounded-[2rem] border border-gray-200 p-16 text-center shadow-sm flex flex-col items-center justify-center min-h-[350px]">
-          <div className="w-20 h-20 bg-rose-50 rounded-full flex items-center justify-center mb-6">
-            <Lock className="w-10 h-10 text-rose-400 stroke-[1.5]" />
-          </div>
-          <h2 className="text-xl font-bold text-slate-800 mb-2">Không có quyền truy cập</h2>
-          <p className="text-gray-500 font-medium max-w-sm mx-auto leading-relaxed text-sm mb-6">
-            Bạn không có quyền thao tác trang Host Operation của đoàn này.
-          </p>
-          <button onClick={() => navigate(returnUrl)} className="px-6 py-2.5 rounded-xl bg-[#004c91] text-white text-sm font-bold hover:bg-[#003b70] transition-colors outline-none">
-            Về danh sách
-          </button>
-        </div>
+        <p className="text-sm font-bold text-slate-500">
+          {isLoadingPerm ? 'Đang tải phân quyền...' : 'Đang tải thông tin...'}
+        </p>
       </div>
     );
   }
 
   const isVisitorOwner = perm?.relation === 'VISITOR_OWNER' || detail?.relation === 'VISITOR_OWNER';
+
+  if (!hasNumericId || permLoadFailed || detailLoadError) {
+    return (
+      <div className="p-4 sm:p-6 md:p-8 max-w-[95%] mx-auto">
+        <div className="bg-white rounded-[2rem] border border-gray-200 p-16 text-center shadow-sm flex flex-col items-center justify-center min-h-[350px]">
+          <div className="w-20 h-20 bg-rose-50 rounded-full flex items-center justify-center mb-6">
+            <AlertCircle className="w-10 h-10 text-rose-400 stroke-[1.5]" />
+          </div>
+          <h2 className="text-xl font-bold text-slate-800 mb-2">
+            {isReceptionDetail ? 'Không tìm thấy thông tin chuyến thăm' : 'Không có quyền truy cập'}
+          </h2>
+          <p className="text-gray-500 font-medium max-w-sm mx-auto leading-relaxed text-sm mb-6">
+            {isReceptionDetail
+              ? 'Bạn không có quyền xem chuyến thăm này hoặc đường dẫn không hợp lệ.'
+              : 'Bạn không có quyền thao tác trang Host Operation của đoàn này.'}
+          </p>
+          <button onClick={() => navigate(returnUrl)} className="px-6 py-2.5 rounded-xl bg-[#004c91] text-white text-sm font-bold hover:bg-[#003b70] transition-colors outline-none">
+            Quay lại danh sách tiếp khách
+          </button>
+        </div>
+      </div>
+    );
+  }
   
-  if (isReceptionDetail && isVisitorOwner) {
-    return <VisitorVisitDetailPage perm={perm} detail={detail} />;
+  if (isReceptionDetail) {
+    if (isVisitorOwner && perm != null && detail != null) {
+      return <VisitorVisitDetailPage perm={perm} detail={detail} />;
+    }
+    // Lỡ lot xuống đây mà không đủ quyền
+    return (
+      <div className="p-4 sm:p-6 md:p-8 max-w-[95%] mx-auto">
+        <div className="bg-white rounded-[2rem] border border-gray-200 p-16 text-center shadow-sm flex flex-col items-center justify-center min-h-[350px]">
+          <div className="w-20 h-20 bg-rose-50 rounded-full flex items-center justify-center mb-6">
+            <AlertCircle className="w-10 h-10 text-rose-400 stroke-[1.5]" />
+          </div>
+          <h2 className="text-xl font-bold text-slate-800 mb-2">Không tìm thấy thông tin chuyến thăm</h2>
+          <p className="text-gray-500 font-medium max-w-sm mx-auto leading-relaxed text-sm mb-6">
+            Bạn không có quyền xem chuyến thăm này.
+          </p>
+          <button onClick={() => navigate(returnUrl)} className="px-6 py-2.5 rounded-xl bg-[#004c91] text-white text-sm font-bold hover:bg-[#003b70] transition-colors outline-none">
+            Quay lại danh sách tiếp khách
+          </button>
+        </div>
+      </div>
+    );
   }
 
   return (

@@ -36,6 +36,10 @@ interface Props {
    * hides the "Tôi cũng là đầu mối liên hệ" checkbox and shows the different-person hint.
    */
   allowContactSelf?: boolean;
+  /**
+   * Edit mode: disables changing the contact identity (email and 'I am contact' checkbox).
+   */
+  readOnlyIdentity?: boolean;
 }
 
 export const ContactSection: React.FC<Props> = ({
@@ -47,6 +51,7 @@ export const ContactSection: React.FC<Props> = ({
   onClearContactPoint,
   showErrors,
   allowContactSelf = true,
+  readOnlyIdentity = false,
 }) => {
   const { t } = useTranslation(['visitRequest']);
   // Excel helpers live outside React, so the translator is handed to them explicitly.
@@ -466,12 +471,16 @@ export const ContactSection: React.FC<Props> = ({
         description={t('visitRequest:step2Contact.contactDesc2')}
         headerRight={
           allowContactSelf ? (
-            <label className="flex cursor-pointer select-none items-center gap-2.5 text-sm font-bold text-[#004c91]">
+            <label className={`flex select-none items-center gap-2.5 text-sm font-bold text-[#004c91] ${readOnlyIdentity ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}>
               <input
                 type="checkbox"
                 checked={isContactSameAsRegister}
-                onChange={(e) => handleContactCheckbox(e.target.checked)}
-                className="w-4 h-4 rounded text-[#004c91] focus:ring-[#004c91] border-blue-300 cursor-pointer"
+                onChange={(e) => {
+                  if (readOnlyIdentity) return;
+                  handleContactCheckbox(e.target.checked);
+                }}
+                disabled={readOnlyIdentity}
+                className={`w-4 h-4 rounded text-[#004c91] focus:ring-[#004c91] border-blue-300 ${readOnlyIdentity ? 'cursor-not-allowed' : 'cursor-pointer'}`}
               />
               {t('visitRequest:step2Contact.iamContact')}
             </label>
@@ -482,6 +491,12 @@ export const ContactSection: React.FC<Props> = ({
           )
         }
       >
+        {readOnlyIdentity && (
+          <div className="mb-4 rounded-xl bg-slate-50 p-4 border border-slate-200 text-sm text-slate-600 font-medium">
+            <p>{t('visitRequest:singleForm.sections.contactIdentityReadOnly')}</p>
+          </div>
+        )}
+
         {hasAnyContactError && (
           <div className="error-scroll-target mb-4 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3">
             <AlertCircle className="w-5 h-5 text-red-500 shrink-0" />
@@ -557,7 +572,9 @@ export const ContactSection: React.FC<Props> = ({
               {...register('contactPoint.email')}
               type="email"
               placeholder={t('visitRequest:step2Contact.placeholderEmail')}
-              className={inputCls(!!showContactError('email'), false, false)}
+              readOnly={readOnlyIdentity}
+              aria-readonly={readOnlyIdentity || undefined}
+              className={`${inputCls(!!showContactError('email'), false, false)} ${readOnlyIdentity ? 'cursor-not-allowed bg-slate-100 text-slate-500' : ''}`}
             />
           </FormField>
         </div>

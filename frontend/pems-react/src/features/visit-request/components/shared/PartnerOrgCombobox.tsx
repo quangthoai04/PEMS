@@ -31,6 +31,7 @@ interface PartnerOrgComboboxProps {
   onBlur?: () => void;
   hasError?: boolean;
   placeholder?: string;
+  disabled?: boolean;
 }
 
 export const PartnerOrgCombobox: React.FC<PartnerOrgComboboxProps> = ({
@@ -40,6 +41,7 @@ export const PartnerOrgCombobox: React.FC<PartnerOrgComboboxProps> = ({
   onBlur,
   hasError,
   placeholder,
+  disabled,
 }) => {
   const { t } = useTranslation(['visitRequest']);
   const [text, setText] = useState(organization ?? '');
@@ -161,7 +163,7 @@ export const PartnerOrgCombobox: React.FC<PartnerOrgComboboxProps> = ({
   return (
     <div ref={containerRef} className="relative">
       <div
-        className={`flex items-center gap-2 rounded-xl border bg-white px-3 transition-all focus-within:ring-2 ${borderCls}`}
+        className={`flex items-center gap-2 rounded-xl border bg-white px-3 transition-all ${disabled ? 'opacity-60 cursor-not-allowed bg-slate-100' : 'focus-within:ring-2'} ${borderCls}`}
       >
         <Search className="h-4 w-4 shrink-0 text-gray-400" />
         <input
@@ -174,11 +176,13 @@ export const PartnerOrgCombobox: React.FC<PartnerOrgComboboxProps> = ({
           onBlur={onBlur}
           onKeyDown={handleKeyDown}
           placeholder={placeholder ?? t('visitRequest:select.partnerComboPlaceholder')}
-          className="w-full bg-transparent py-2.5 text-sm font-medium text-gray-900 outline-none placeholder:font-normal placeholder:text-gray-400"
+          className={`w-full bg-transparent py-2.5 text-sm font-medium outline-none placeholder:font-normal placeholder:text-gray-400 ${disabled ? 'cursor-not-allowed text-slate-500' : 'text-gray-900'}`}
           autoComplete="off"
+          disabled={disabled}
+          readOnly={disabled}
         />
         {isLoading && <Loader2 className="h-4 w-4 shrink-0 animate-spin text-gray-400" />}
-        {!isLoading && text && (
+        {!isLoading && !disabled && text && (
           <button
             type="button"
             onClick={handleClear}

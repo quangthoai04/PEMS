@@ -340,7 +340,7 @@ export function EditVisitRequest() {
       ) : (
         <form onSubmit={onSubmit} noValidate>
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 sm:p-8 space-y-12">
-            <RegisterInfoSection form={form} showErrors={showErrors} />
+            <RegisterInfoSection form={form} showErrors={showErrors} readOnly={true} />
             <VisitInfoSection form={form} visitFields={visitFields} showErrors={showErrors} />
             <VisitorListSection form={form} visitorFields={visitorFields} showErrors={showErrors} />
             <ContactSection
@@ -351,6 +351,7 @@ export function EditVisitRequest() {
               onSyncContactFromRegister={syncContactFromRegister}
               onClearContactPoint={clearContactPoint}
               showErrors={showErrors}
+              readOnlyIdentity={true}
             />
             <AdditionalSection form={form} />
           </div>

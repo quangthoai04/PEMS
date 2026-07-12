@@ -96,6 +96,7 @@ interface CountrySelectProps {
   placeholder?: string;
   hasError?: boolean;
   isCell?: boolean;
+  disabled?: boolean;
 }
 
 export const CountrySelect: React.FC<CountrySelectProps> = ({
@@ -105,12 +106,24 @@ export const CountrySelect: React.FC<CountrySelectProps> = ({
   placeholder,
   hasError,
   isCell,
+  disabled,
 }) => {
   const { t } = useTranslation(['visitRequest']);
-  const selectedOption = useMemo(
-    () => COUNTRY_OPTIONS.find((o) => o.value === value) ?? null,
-    [value]
-  );
+  const selectedOption = useMemo(() => {
+    const normalizedValue = value?.trim();
+    if (!normalizedValue) {
+      return null;
+    }
+
+    const matchedOption = COUNTRY_OPTIONS.find(
+      (option) => option.value.trim().toLowerCase() === normalizedValue.toLowerCase()
+    );
+
+    return matchedOption ?? {
+      value: normalizedValue,
+      label: normalizedValue,
+    };
+  }, [value]);
 
   const styles = useMemo(
     () => buildStyles(hasError, isCell),
@@ -127,6 +140,7 @@ export const CountrySelect: React.FC<CountrySelectProps> = ({
       placeholder={placeholder ?? t('visitRequest:select.countryPlaceholder')}
       styles={styles}
       isClearable
+      isDisabled={disabled}
       isSearchable
       menuPortalTarget={document.body}
       menuPosition="fixed"

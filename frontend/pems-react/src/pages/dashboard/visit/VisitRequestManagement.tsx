@@ -676,7 +676,14 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
     }
 
     if (actions.includes('VIEW_RECEPTION_DETAIL')) {
-      navTo(`/dashboard/visit/reception-detail/${row.id}`);
+      if (row.visitInstanceId) {
+        navTo(`/dashboard/visit/reception-detail/${row.visitInstanceId}`);
+        return;
+      }
+      if (row.visitScope === 'MULTI_CAMPUS') {
+        toggleExpanded(row.visitRequestId);
+        return;
+      }
       return;
     }
 
@@ -728,7 +735,9 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
         return;
       }
       if (row.host && row.requestStatus === 'APPROVED') {
-        navTo(`/dashboard/visit/reception-detail/${row.visitInstanceId || idForRoute}`);
+        if (row.visitInstanceId) {
+          navTo(`/dashboard/visit/reception-detail/${row.visitInstanceId}`);
+        }
       }
       return;
     }

@@ -8,7 +8,9 @@
       "visitors": "Delegation Members",
       "support": "Support Team",
       "contact": "Contact Point",
-      "additional": "Additional Requests"
+      "additional": "Additional Requests",
+      "registrantReadOnly": "Registrant information was recorded when the request was submitted and cannot be changed during this edit.",
+      "contactIdentityReadOnly": "The contact email is used to link the account and determine contact rights, so it cannot be changed in this form."
     },
     "actions": {
       "submit": "Submit Request",
