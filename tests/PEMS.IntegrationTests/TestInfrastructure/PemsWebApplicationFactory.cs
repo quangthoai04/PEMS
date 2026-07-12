@@ -103,7 +103,6 @@ public sealed class PemsWebApplicationFactory : WebApplicationFactory<FaqsContro
                 {
                     // Mirrors Program.cs's pipeline for the pieces CreateFAQ actually exercises.
                     // Swagger/CORS/HSTS/rate-limiting are irrelevant to API correctness tests and
-                    // are intentionally left out to keep the test host minimal.
                     app.UseMiddleware<ExceptionHandlingMiddleware>();
                     app.UseRouting();
                     app.UseAuthentication();
