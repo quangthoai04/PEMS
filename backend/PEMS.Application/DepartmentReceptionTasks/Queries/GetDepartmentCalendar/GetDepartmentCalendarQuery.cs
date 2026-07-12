@@ -78,7 +78,13 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetDepartmentCalenda
             var isDepartmentStaff = string.Equals(_currentUserService.RoleCode, RoleCodes.Department, StringComparison.OrdinalIgnoreCase)
                 && string.Equals(_currentUserService.SubRole, UserSubRoles.Staff, StringComparison.OrdinalIgnoreCase);
 
-            // 1. INVITATIONS (visit_participants)
+            var department = await _context.Departments.AsNoTracking()
+                .FirstOrDefaultAsync(d => d.DepartmentId == deptId, cancellationToken);
+            var leaderUserId = department?.HeadUserId;
+
+            // 1. INVITATIONS (visit_participants) — mỗi visit_instance chỉ đại diện bởi 1 dòng
+            // (ưu tiên staff đang phụ trách, rồi tới staff vừa từ chối, rồi tới bản ghi leader)
+            // để tránh hiện trùng nhiều dòng khi phòng ban đã ủy quyền qua lại nhiều lượt.
             var invitationsQuery = from p in _context.VisitParticipants
                                    join u in _context.Users on p.UserId equals u.UserId
                                    join r in _context.Roles on u.RoleId equals r.RoleId
@@ -96,11 +102,31 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetDepartmentCalenda
             var senderIds = invitationsList.Where(x => x.p.InvitedBy != null).Select(x => x.p.InvitedBy).Distinct().ToList();
             var senders = await _context.Users.Where(u => senderIds.Contains(u.UserId)).ToDictionaryAsync(u => u.UserId, u => u.FullName);
 
-            foreach (var item in invitationsList)
+            var invitationGroups = invitationsList
+                .GroupBy(x => x.p.VisitInstanceId)
+                .Select(g =>
+                {
+                    var activeStaff = g
+                        .Where(x => x.p.AssignedBy != null && x.p.Status != "DECLINED" && x.p.Status != "REMOVED")
+                        .OrderByDescending(x => x.p.AssignedAt ?? x.p.InvitedAt ?? x.p.CreatedAt)
+                        .FirstOrDefault();
+                    var declinedStaff = g
+                        .Where(x => x.p.AssignedBy != null && x.p.Status == "DECLINED")
+                        .OrderByDescending(x => x.p.RespondedAt ?? x.p.AssignedAt ?? x.p.CreatedAt)
+                        .FirstOrDefault();
+                    var leaderRow = g
+                        .Where(x => leaderUserId == null || x.p.UserId == leaderUserId.Value)
+                        .OrderByDescending(x => x.p.InvitedAt ?? x.p.CreatedAt)
+                        .FirstOrDefault();
+                    return activeStaff ?? declinedStaff ?? leaderRow ?? g.First();
+                })
+                .ToList();
+
+            foreach (var item in invitationGroups)
             {
                 var camp = item.c;
                 string senderName = item.p.InvitedBy != null && senders.ContainsKey(item.p.InvitedBy.Value) ? senders[item.p.InvitedBy.Value] : "Hệ thống";
-                
+
                 var status = NormalizeInvitationStatus(
                     item.p.Status,
                     item.p.AssignedBy != null,

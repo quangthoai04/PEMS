@@ -30,6 +30,7 @@ export function getNotificationLink(item: NotificationItem, user: AuthUser | nul
 
   if (link && user) {
     const isDeptStaff = user.roleCode?.toUpperCase() === 'DEPARTMENT' && user.subRole?.toUpperCase() !== 'LEADER';
+    const isDeptLeader = user.roleCode?.toUpperCase() === 'DEPARTMENT' && user.subRole?.toUpperCase() === 'LEADER';
     if (isDeptStaff) {
       if (link.includes('/tasks/')) {
         const parts = link.split('/tasks/');
@@ -39,6 +40,12 @@ export function getNotificationLink(item: NotificationItem, user: AuthUser | nul
         const parts = link.split('/invitations/');
         return `/dashboard?taskId=${parts[1]}&itemType=INVITATION`;
       }
+    }
+
+    // Dept Leader: đơn/thư mời được giao xem tại tab "Phân công và tiến độ" thay vì
+    // trang chi tiết đứng riêng (TaskDetail/TaskInvitationDetail) — lọc còn đúng 1 dòng.
+    if (isDeptLeader && (link.includes('/tasks/') || link.includes('/invitations/')) && item.visitRequestId) {
+      return `/dashboard/visit?tab=assignments-progress&visitRequestId=${item.visitRequestId}`;
     }
 
     // Notification cũ (tạo trước khi ActionUrl bắt đầu kèm id) còn lưu targetUrl trơ trụi
