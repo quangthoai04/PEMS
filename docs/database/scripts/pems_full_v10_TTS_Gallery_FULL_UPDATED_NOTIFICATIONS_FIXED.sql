@@ -206,6 +206,17 @@
 SET NAMES utf8mb4;
 SET SQL_MODE = 'STRICT_TRANS_TABLES,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION';
 
+-- =====================================================================
+-- TIME POLICY (2026-07-12): mọi cột DATETIME do PEMS quản lý lưu GIỜ VIỆT NAM
+-- (Asia/Ho_Chi_Minh, UTC+07:00) — bao gồm business, audit VÀ security
+-- (OTP/session/token expiry). UTC/Unix chỉ tồn tại bên trong JWT/OAuth protocol.
+-- SET time_zone dưới đây áp dụng cho PHIÊN import này (CURRENT_TIMESTAMP của
+-- default/trigger/seed sinh giờ VN). Runtime application connection được ép
+-- +07:00 riêng bởi VietnamTimeZoneConnectionInterceptor (Infrastructure) —
+-- KHÔNG được dựa vào câu lệnh này cho runtime.
+-- =====================================================================
+SET time_zone = '+07:00';
+
 DROP DATABASE IF EXISTS pems_db;
 CREATE DATABASE IF NOT EXISTS pems_db
   CHARACTER SET utf8mb4
@@ -3481,6 +3492,7 @@ DELIMITER ;
 
 SET NAMES utf8mb4;
 SET SQL_MODE = 'STRICT_TRANS_TABLES,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION';
+SET time_zone = '+07:00'; -- Vietnam wall-clock cho CURRENT_TIMESTAMP/NOW() của seed section này
 USE pems_db;
 
 
@@ -8402,13 +8414,15 @@ ORDER BY vrc.visit_instance_id;
 -- =============================================================================
 
 -- Mặc định: xóa session đã revoke và đã quá hạn.
+-- LƯU Ý TIME POLICY: expires_at lưu GIỜ VIỆT NAM (wall-clock) — so sánh bằng NOW()
+-- với session time_zone = '+07:00' (đặt ở đầu file), KHÔNG dùng UTC_TIMESTAMP().
 DELETE FROM user_sessions
-WHERE expires_at < UTC_TIMESTAMP()
+WHERE expires_at < NOW()
   AND revoked_at IS NOT NULL;
 
 -- Tùy chọn (giữ audit lâu hơn): chỉ dọn sau 30 ngày kể từ khi hết hạn.
 -- DELETE FROM user_sessions
--- WHERE expires_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL 30 DAY)
+-- WHERE expires_at < DATE_SUB(NOW(), INTERVAL 30 DAY)
 --   AND revoked_at IS NOT NULL;
 
 -- Số dòng bị xóa: dùng ROW_COUNT() ngay sau DELETE để log nếu cần.
