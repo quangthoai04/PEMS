@@ -294,7 +294,7 @@ public sealed class UpdatePendingVisitRequestCommandHandler
                     IsActionRequired: true,
                     VisitRequestId: visit.VisitRequestId,
                     ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitDetail,
-                    ActionUrl: "/dashboard/visit")).ToList(),
+                    ActionUrl: $"/dashboard/visit?visitRequestId={visit.VisitRequestId}")).ToList(),
                 cancellationToken);
         }
 

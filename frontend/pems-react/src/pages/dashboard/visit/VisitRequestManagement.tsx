@@ -214,6 +214,11 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
   const [isCampusFilterOpen, setIsCampusFilterOpen] = useState(false);
   const [isDateFilterOpen, setIsDateFilterOpen] = useState(false);
 
+  // Đến từ 1 thông báo cụ thể (?visitRequestId=...): chỉ hiển thị đúng đơn đó thay vì cả
+  // danh sách, để người dùng không phải tự tìm. "Reset" (nút có sẵn) xoá filter này để xem
+  // lại toàn bộ. Độc lập với draftFilters/appliedFilters (không hiện trên thanh filter UI).
+  const [notificationVisitRequestId, setNotificationVisitRequestId] = useState(searchParams.get('visitRequestId') || '');
+
   const [rows, setRows] = useState<Row[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [total, setTotal] = useState(0);
@@ -223,13 +228,15 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
   const [debouncedKeyword, setDebouncedKeyword] = useState(draftFilters.keyword);
   const [summaryStats, setSummaryStats] = useState<any>(null);
 
-  const updateUrlParams = (tab: Tab, page: number, size: number, filters: typeof appliedFilters, sort: string) => {
+  // keepNotificationFilter=false (mặc định): mọi thay đổi filter thường thoát khỏi chế độ
+  // "xem 1 đơn từ thông báo" — chỉ Reset và lần load ban đầu mới cần giữ/xoá tường minh.
+  const updateUrlParams = (tab: Tab, page: number, size: number, filters: typeof appliedFilters, sort: string, keepNotificationFilter = false) => {
     const params = new URLSearchParams(searchParams);
     if (tab) params.set('tab', tab);
     if (page > 1) params.set('page', page.toString()); else params.delete('page');
     if (size !== 10) params.set('pageSize', size.toString()); else params.delete('pageSize');
     if (sort !== 'desc') params.set('sortOrder', sort); else params.delete('sortOrder');
-    
+
     if (filters.keyword) params.set('keyword', filters.keyword); else params.delete('keyword');
     if (filters.status) params.set('status', filters.status); else params.delete('status');
     if (filters.visitScope) params.set('visitScope', filters.visitScope); else params.delete('visitScope');
@@ -237,7 +244,8 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
     if (filters.fromDate) params.set('fromDate', filters.fromDate); else params.delete('fromDate');
     if (filters.toDate) params.set('toDate', filters.toDate); else params.delete('toDate');
     if (filters.campusId) params.set('campusId', filters.campusId); else params.delete('campusId');
-    
+    if (!keepNotificationFilter) params.delete('visitRequestId');
+
     setSearchParams(params, { replace: true });
   };
 
@@ -252,8 +260,9 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
     setDraftFilters(newFilters);
     setAppliedFilters(newFilters);
     setCurrentPage(1);
+    setNotificationVisitRequestId('');
     updateUrlParams(activeTab, 1, pageSize, newFilters, sortOrder);
-    loadDelegations(activeTab, 1, pageSize, newFilters, sortOrder);
+    loadDelegations(activeTab, 1, pageSize, newFilters, sortOrder, '');
   };
 
   useEffect(() => {
@@ -358,20 +367,32 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
     setFilterError(null);
     setCurrentPage(1);
     setDebouncedKeyword('');
+    setNotificationVisitRequestId('');
     updateUrlParams(activeTab, 1, pageSize, empty, sortOrder);
-    loadDelegations(activeTab, 1, pageSize, empty, sortOrder);
+    loadDelegations(activeTab, 1, pageSize, empty, sortOrder, '');
   };
 
-  const loadDelegations = async (targetTab: Tab, targetPage: number, targetSize: number, targetFilters: typeof appliedFilters, targetSort: string = sortOrder) => {
+  const loadDelegations = async (
+    targetTab: Tab,
+    targetPage: number,
+    targetSize: number,
+    targetFilters: typeof appliedFilters,
+    targetSort: string = sortOrder,
+    notifFilterOverride?: string,
+  ) => {
     if (isAdmin) return;
+    const notifFilter = notifFilterOverride !== undefined ? notifFilterOverride : notificationVisitRequestId;
     try {
       setIsLoading(true);
       setListError(null);
       const effectiveTab = isVisitor ? 'responsible' : (isStudent || isDept) ? 'attending' : targetTab;
+      // Đang lọc theo 1 đơn cụ thể (đến từ thông báo): server không hỗ trợ filter theo
+      // visitRequestId trực tiếp, nên lấy nguyên trang lớn rồi lọc phía client — tránh bỏ sót
+      // đơn nằm ở trang khác theo sort mặc định.
       const params: Record<string, unknown> = {
         tab: effectiveTab,
-        page: targetPage,
-        pageSize: targetSize,
+        page: notifFilter ? 1 : targetPage,
+        pageSize: notifFilter ? 1000 : targetSize,
         sortBy: 'plannedStartAt',
         sortOrder: targetSort,
       };
@@ -466,8 +487,11 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
             statusText,
           };
         });
-        setRows(mapped);
-        setTotal(response.totalItems || 0);
+        const filtered = notifFilter
+          ? mapped.filter((r) => String(r.visitRequestId) === notifFilter)
+          : mapped;
+        setRows(filtered);
+        setTotal(notifFilter ? filtered.length : (response.totalItems || 0));
       } else {
         const response = await delegationsApi.getVisitRequestManagementList(params);
         
@@ -508,8 +532,11 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
           time: formatDateTimeShort(item.plannedStartAt),
           statusText: getVietnameseStatus(item.requestStatus, item.campusStatus),
         }));
-        setRows(mapped);
-        setTotal(response.totalItems || 0);
+        const filtered = notifFilter
+          ? mapped.filter((r) => String(r.visitRequestId) === notifFilter)
+          : mapped;
+        setRows(filtered);
+        setTotal(notifFilter ? filtered.length : (response.totalItems || 0));
       }
     } catch (e) {
       console.error('Failed to fetch visit requests', e);
@@ -1387,15 +1414,16 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
             <button
               key={t.key}
               onClick={() => { 
-                if (activeTab !== t.key) { 
+                if (activeTab !== t.key) {
                   const nextEmptyFilters = createEmptyFilters();
-                  setActiveTab(t.key); 
+                  setActiveTab(t.key);
                   setDraftFilters(nextEmptyFilters);
                   setAppliedFilters(nextEmptyFilters);
-                  setCurrentPage(1); 
+                  setCurrentPage(1);
+                  setNotificationVisitRequestId('');
                   updateUrlParams(t.key, 1, pageSize, nextEmptyFilters, sortOrder);
-                  loadDelegations(t.key, 1, pageSize, nextEmptyFilters, sortOrder); 
-                } 
+                  loadDelegations(t.key, 1, pageSize, nextEmptyFilters, sortOrder, '');
+                }
               }}
               className={`flex-1 sm:flex-none px-5 py-2 rounded-lg text-sm font-bold transition-colors outline-none cursor-pointer ${activeTab === t.key ? 'bg-white text-[#004c91] shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
             >
@@ -1626,14 +1654,15 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
             <button 
               onClick={handleResetFilters} 
               disabled={
-                !draftFilters.keyword.trim() && 
+                !draftFilters.keyword.trim() &&
                 !debouncedKeyword.trim() &&
-                !draftFilters.status && 
-                !draftFilters.visitScope && 
-                !draftFilters.campusId && 
-                !draftFilters.relation && 
-                !draftFilters.fromDate && 
-                !draftFilters.toDate
+                !draftFilters.status &&
+                !draftFilters.visitScope &&
+                !draftFilters.campusId &&
+                !draftFilters.relation &&
+                !draftFilters.fromDate &&
+                !draftFilters.toDate &&
+                !notificationVisitRequestId
               }
               className="h-11 rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-600 hover:bg-slate-50 disabled:text-slate-400 disabled:cursor-not-allowed outline-none w-full xl:w-auto transition-colors"
             >
@@ -1643,6 +1672,20 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
         </div>
         {filterError && <div className="text-red-500 text-sm font-medium mt-2"><AlertCircle className="w-4 h-4 inline-block mr-1" />{filterError}</div>}
       </div>
+
+      {notificationVisitRequestId && (
+        <div className="flex items-center justify-between gap-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm">
+          <span className="font-medium text-blue-800">
+            Đang hiển thị đúng đơn từ thông báo bạn vừa bấm.
+          </span>
+          <button
+            onClick={handleResetFilters}
+            className="shrink-0 rounded-lg border border-blue-300 bg-white px-3 py-1.5 text-xs font-bold text-blue-700 hover:bg-blue-100 transition-colors"
+          >
+            Xem tất cả
+          </button>
+        </div>
+      )}
 
       {/* List */}
       <div className="w-full overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm flex flex-col">

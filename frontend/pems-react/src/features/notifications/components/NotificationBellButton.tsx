@@ -40,6 +40,23 @@ export function getNotificationLink(item: NotificationItem, user: AuthUser | nul
         return `/dashboard?taskId=${parts[1]}&itemType=INVITATION`;
       }
     }
+
+    // Notification cũ (tạo trước khi ActionUrl bắt đầu kèm id) còn lưu targetUrl trơ trụi
+    // "/dashboard/visit" — không định danh được đơn nào. Vá lại bằng visitRequestId sẵn có
+    // trên chính notification, áp dụng mọi role vì list không lọc gì thì vô nghĩa.
+    if (link === '/dashboard/visit' && item.visitRequestId) {
+      return `/dashboard/visit?visitRequestId=${item.visitRequestId}`;
+    }
+
+    // Visitor & HO chỉ xem — không thao tác quy trình tiếp khách (trang đó dành cho
+    // Host/Staff Leader). Notification cũ có thể còn trỏ vào /process|/reception-detail|
+    // /ho-detail từ trước khi route này được đổi — luôn rewrite về trang Quản lý tiếp khách
+    // lọc đúng đơn, tính theo dữ liệu hiện tại của notification thay vì tin URL đã lưu sẵn.
+    const isViewOnlyRole = ['VISITOR', 'HO'].includes(user.roleCode?.toUpperCase() || '');
+    const isProcessDetailLink = /\/dashboard\/visit\/(process|reception-detail|ho-detail)\//.test(link);
+    if (isViewOnlyRole && isProcessDetailLink && item.visitRequestId) {
+      return `/dashboard/visit?visitRequestId=${item.visitRequestId}`;
+    }
   }
 
   return link;
