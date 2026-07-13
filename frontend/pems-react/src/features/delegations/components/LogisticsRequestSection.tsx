@@ -33,7 +33,7 @@ import {
   type SupportDepartment,
   type VisitInstanceLogisticsItem,
 } from '../types/delegations.types';
-import { vietnamNowDateTimeLocal } from '../../../shared/utils/vietnamTime';
+import { toVietnamDateTimeLocalInput, vietnamNowDateTimeLocal } from '../../../shared/utils/vietnamTime';
 
 type ToastFn = (type: 'success' | 'error' | 'warning' | 'info', msg: string) => void;
 
@@ -44,6 +44,10 @@ interface Props {
   delegationName: string;
   campusName: string;
   hostName: string;
+  /** Planned window of THIS campus instance ("yyyy-MM-ddTHH:mm[:ss][+07:00]" wall-clock) — the
+   * DEFAULT usage start/end of every new system logistics form (host-editable, never locked). */
+  plannedStartAt?: string | null;
+  plannedEndAt?: string | null;
   pushToast: ToastFn;
 }
 
@@ -83,8 +87,10 @@ type ResourceForm = {
   departmentId: string;
   title: string;         // editable only for "Khác"
 };
-const emptyForm = (title = ''): ResourceForm =>
-  ({ quantity: '', usageStartAt: '', usageEndAt: '', dueAt: '', priority: 'MEDIUM', note: '', departmentId: '', title });
+/** Fresh create-form. `defaultStart`/`defaultEnd` are the campus-instance planned times (already in
+ * datetime-local form, '' when unknown) — a DEFAULT the host can edit, never a lock. */
+const emptyForm = (title = '', defaultStart = '', defaultEnd = ''): ResourceForm =>
+  ({ quantity: '', usageStartAt: defaultStart, usageEndAt: defaultEnd, dueAt: '', priority: 'MEDIUM', note: '', departmentId: '', title });
 
 // datetime-local string of Vietnam "now" (minute precision) for past-date guards —
 // fixed Asia/Ho_Chi_Minh, independent of the browser timezone.
@@ -115,9 +121,16 @@ function fmtDateTime(value?: string | null): string {
 }
 
 export function LogisticsRequestSection({
-  visitInstanceId, relation, instanceStatus, delegationName, campusName, hostName, pushToast,
+  visitInstanceId, relation, instanceStatus, delegationName, campusName, hostName,
+  plannedStartAt, plannedEndAt, pushToast,
 }: Props) {
   const canManage = relation === 'HOST' && (instanceStatus === 'ASSIGNED' || instanceStatus === 'BEFORE_VISIT');
+
+  // Default usage window for NEW system forms = the planned window of THIS campus instance,
+  // hydrated via the Vietnam datetime-local helper (handles "+07:00" offsets, never shifts the
+  // wall-clock, '' fallback when planned time is missing/invalid — no invented time).
+  const defaultUsageStart = toVietnamDateTimeLocalInput(plannedStartAt);
+  const defaultUsageEnd = toVietnamDateTimeLocalInput(plannedEndAt);
 
   const [departments, setDepartments] = useState<SupportDepartment[]>([]);
   const [items, setItems] = useState<VisitInstanceLogisticsItem[]>([]);
@@ -343,6 +356,7 @@ export function LogisticsRequestSection({
 
   const shared = {
     visitInstanceId, departments, canManage, busyKey, loadedOnce,
+    defaultUsageStart, defaultUsageEnd,
     onSubmit: submitRequest, onPreview: openPreview, onCancel: cancelItem, pushToast,
   };
 
@@ -599,6 +613,10 @@ interface SharedCardProps {
   canManage: boolean;
   busyKey: string | null;
   loadedOnce: boolean;
+  /** Campus-instance planned window in datetime-local form ('' when unknown) — the default
+   * usageStartAt/usageEndAt of every NEW system form. Editable; existing items keep their own. */
+  defaultUsageStart: string;
+  defaultUsageEnd: string;
   onSubmit: (key: string, payload: PrepareVisitLogisticsPayload) => Promise<boolean>;
   onPreview: (payload: PrepareVisitLogisticsPayload, onReset: () => void) => void;
   onCancel: (key: string, item: VisitInstanceLogisticsItem) => void;
@@ -620,40 +638,36 @@ interface ResourceCardProps extends SharedCardProps {
 /** SYSTEM_REQUEST resource form (datetime range, dept required), or a summary when already saved. */
 function ResourceCard({
   cardKey, icon, label, itemType, qtyLabel, notePlaceholder, editableTitle, existingItem, onRemove,
-  visitInstanceId, departments, canManage, busyKey, loadedOnce, onSubmit, onPreview, onCancel, pushToast,
+  visitInstanceId, departments, canManage, busyKey, loadedOnce, defaultUsageStart, defaultUsageEnd,
+  onSubmit, onPreview, onCancel, pushToast,
 }: ResourceCardProps) {
-  const [form, setForm] = useState<ResourceForm>(() => {
-    if (existingItem) {
-      return {
-        title: existingItem.title || label,
-        quantity: existingItem.quantity?.toString() || '',
-        usageStartAt: existingItem.usageStartAt ? existingItem.usageStartAt.slice(0, 16) : '',
-        usageEndAt: existingItem.usageEndAt ? existingItem.usageEndAt.slice(0, 16) : '',
-        dueAt: existingItem.dueAt ? existingItem.dueAt.slice(0, 16) : '',
-        priority: existingItem.priority || 'MEDIUM',
-        note: existingItem.description || '',
-        departmentId: existingItem.requestedToDepartmentId?.toString() || '',
-      };
-    }
-    return emptyForm(editableTitle ? '' : label);
+  // A SAVED item always shows its OWN stored usage times (hydrated through the Vietnam
+  // datetime-local helper — API values may carry "+07:00" and must not shift); only a NEW form is
+  // pre-filled with the campus-instance planned window. Both remain host-editable.
+  const formFromItem = (it: VisitInstanceLogisticsItem): ResourceForm => ({
+    title: it.title || label,
+    quantity: it.quantity?.toString() || '',
+    usageStartAt: toVietnamDateTimeLocalInput(it.usageStartAt),
+    usageEndAt: toVietnamDateTimeLocalInput(it.usageEndAt),
+    dueAt: toVietnamDateTimeLocalInput(it.dueAt),
+    priority: it.priority || 'MEDIUM',
+    note: it.description || '',
+    departmentId: it.requestedToDepartmentId?.toString() || '',
   });
+  const freshForm = () => emptyForm(editableTitle ? '' : label, defaultUsageStart, defaultUsageEnd);
+
+  const [form, setForm] = useState<ResourceForm>(() => (existingItem ? formFromItem(existingItem) : freshForm()));
   const [err, setErr] = useState<string | null>(null);
   const [localSubmitted, setLocalSubmitted] = useState(false);
   const set = (k: keyof ResourceForm, v: string) => { setForm((f) => ({ ...f, [k]: v })); setErr(null); };
-  const reset = () => { setForm(emptyForm(editableTitle ? '' : label)); setErr(null); setLocalSubmitted(false); };
+  // Reset of an UNSAVED form returns to the planned-time defaults (not empty strings).
+  const reset = () => { setForm(freshForm()); setErr(null); setLocalSubmitted(false); };
 
+  // Only a (re)appearing saved item overwrites the form. When there is no saved item we leave the
+  // form alone so a re-render/refetch never clobbers values the host already edited.
   useEffect(() => {
     if (existingItem) {
-      setForm({
-        title: existingItem.title || label,
-        quantity: existingItem.quantity?.toString() || '',
-        usageStartAt: existingItem.usageStartAt ? existingItem.usageStartAt.slice(0, 16) : '',
-        usageEndAt: existingItem.usageEndAt ? existingItem.usageEndAt.slice(0, 16) : '',
-        dueAt: existingItem.dueAt ? existingItem.dueAt.slice(0, 16) : '',
-        priority: existingItem.priority || 'MEDIUM',
-        note: existingItem.description || '',
-        departmentId: existingItem.requestedToDepartmentId?.toString() || '',
-      });
+      setForm(formFromItem(existingItem));
       setErr(null);
       setLocalSubmitted(true);
     } else {
@@ -663,7 +677,7 @@ function ResourceCard({
 
   const busy = busyKey === cardKey;
   // If departmentId is set in form, find it. If it was already submitted but the API didn't return the full department object, we fallback to showing the departmentName from the item if available.
-  const dept = departments.find((d) => String(d.departmentId) === form.departmentId) || (existingItem && existingItem.departmentName ? { departmentId: Number(form.departmentId), departmentName: existingItem.departmentName, leaderName: '', leaderEmail: '', canInvite: true } as SupportDepartment : undefined);
+  const dept = departments.find((d) => String(d.departmentId) === form.departmentId) || (existingItem && existingItem.departmentName ? { departmentId: Number(form.departmentId), departmentName: existingItem.departmentName, leaderName: '', leaderEmail: '', canInviteParticipant: true, canReceiveLogistics: true } as SupportDepartment : undefined);
   const title = editableTitle ? form.title.trim() : label;
   
   const isSubmitted = !!existingItem || localSubmitted;
@@ -825,11 +839,11 @@ function ResourceCard({
                     <div
                       key={d.departmentId}
                       onClick={() => {
-                        if (!d.canInvite || isFormDisabled) return;
+                        if (!d.canReceiveLogistics || isFormDisabled) return;
                         set('departmentId', d.departmentId.toString());
                         close();
                       }}
-                      className={`flex items-center justify-between gap-3 border-b border-gray-100 px-4 py-2.5 last:border-b-0 transition-colors ${d.canInvite && !isFormDisabled ? 'cursor-pointer hover:bg-[#f0f7ff]' : 'opacity-60 cursor-not-allowed'}`}
+                      className={`flex items-center justify-between gap-3 border-b border-gray-100 px-4 py-2.5 last:border-b-0 transition-colors ${d.canReceiveLogistics && !isFormDisabled ? 'cursor-pointer hover:bg-[#f0f7ff]' : 'opacity-60 cursor-not-allowed'}`}
                     >
                       <div className="min-w-0">
                         <div className="truncate text-sm font-bold text-gray-800">{d.departmentName}</div>
@@ -837,11 +851,11 @@ function ResourceCard({
                           {d.leaderName ? `Trưởng phòng: ${d.leaderName}` : 'Chưa có trưởng phòng đang hoạt động'}
                           {d.leaderEmail ? ` · ${d.leaderEmail}` : ''}
                         </div>
-                        {!d.canInvite && d.disabledReason && (
-                          <div className="mt-0.5 text-[11px] font-medium text-amber-600">{d.disabledReason}</div>
+                        {!d.canReceiveLogistics && d.logisticsDisabledReason && (
+                          <div className="mt-0.5 text-[11px] font-medium text-amber-600">{d.logisticsDisabledReason}</div>
                         )}
                       </div>
-                      {d.canInvite && (
+                      {d.canReceiveLogistics && (
                         <button type="button" className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-[#004c91] px-2 py-1 text-xs font-bold text-[#004c91]">
                           Chọn
                         </button>
@@ -873,24 +887,24 @@ function ResourceCard({
                         <Mail className="w-3.5 h-3.5 shrink-0 text-gray-400" />
                         {dept.leaderEmail ? <span className="break-all">{dept.leaderEmail}</span> : <span className="font-semibold text-red-500">Chưa có email</span>}
                       </div>
-                      {!dept.canInvite && dept.disabledReason && (
+                      {!dept.canReceiveLogistics && dept.logisticsDisabledReason && (
                         <div className="mt-1.5 text-[11px] font-medium text-amber-600 flex items-center gap-1">
-                          <AlertCircle className="w-3 h-3" /> {dept.disabledReason}
+                          <AlertCircle className="w-3 h-3" /> {dept.logisticsDisabledReason}
                         </div>
                       )}
                     </div>
                     {canManage && !isSubmitted && (
                       <div className="flex flex-col items-end gap-1.5 shrink-0">
-                        {dept.canInvite && (
+                        {dept.canReceiveLogistics && (
                           <button type="button" disabled={busy} onClick={doPreview}
                             className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 bg-white text-[#004c91] outline-none transition-colors hover:bg-gray-50 disabled:opacity-50"
                             title="Xem trước & sửa email">
                             <Eye className="w-3.5 h-3.5" />
                           </button>
                         )}
-                        <button type="button" disabled={!dept.canInvite || busy} onClick={doSend}
+                        <button type="button" disabled={!dept.canReceiveLogistics || busy} onClick={doSend}
                           className="inline-flex items-center gap-1 rounded-lg bg-[#004c91] px-3 py-1.5 text-xs font-bold text-white outline-none transition-colors hover:bg-[#003b70] disabled:cursor-not-allowed disabled:opacity-40"
-                          title={!dept.canInvite ? 'Không thể gửi yêu cầu' : undefined}>
+                          title={!dept.canReceiveLogistics ? 'Không thể gửi yêu cầu' : undefined}>
                           {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
                           Gửi yêu cầu
                         </button>

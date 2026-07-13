@@ -551,7 +551,14 @@ export interface ParticipantCandidate {
   disabledReason?: string | null;
 }
 
-/** A GENERAL department the host can invite to support, with its resolved active leader. */
+/**
+ * A GENERAL department of the instance's campus, with its resolved active leader. One list feeds
+ * TWO independent host actions, each gated by its own flag (mirrors SupportDepartmentDto):
+ * - canInviteParticipant: invite the leader as DEPT_SUPPORT (false khi không có leader active
+ *   HOẶC leader đã có slot INVITED/ACCEPTED/ASSIGNED trong instance).
+ * - canReceiveLogistics: gửi yêu cầu hậu cần qua hệ thống (chỉ false khi không có leader active —
+ *   leader đã tham gia đoàn KHÔNG chặn logistics).
+ */
 export interface SupportDepartment {
   departmentId: number;
   departmentName: string;
@@ -560,8 +567,10 @@ export interface SupportDepartment {
   leaderUserId?: number | null;
   leaderName?: string | null;
   leaderEmail?: string | null;
-  canInvite: boolean;
-  disabledReason?: string | null;
+  canInviteParticipant: boolean;
+  participantDisabledReason?: string | null;
+  canReceiveLogistics: boolean;
+  logisticsDisabledReason?: string | null;
 }
 
 export type InviteParticipantType = 'IC_SUPPORT' | 'STUDENT' | 'DEPT_SUPPORT';

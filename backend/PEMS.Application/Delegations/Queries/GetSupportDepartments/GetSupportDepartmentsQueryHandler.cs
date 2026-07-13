@@ -34,8 +34,10 @@ public sealed class GetSupportDepartmentsQueryHandler
             .FirstOrDefaultAsync(c => c.VisitInstanceId == request.VisitInstanceId, cancellationToken)
             ?? throw new NotFoundException("VisitRequestCampus", request.VisitInstanceId);
 
+        // Host-only: this list feeds BOTH the participant-invitation dropdown and the logistics
+        // department picker on the host's prep screen.
         if (instance.CurrentHostUserId != _currentUser.UserId.Value)
-            throw new ForbiddenException("Chỉ Host phụ trách cơ sở này mới được mời phòng ban hỗ trợ.");
+            throw new ForbiddenException("Chỉ Host phụ trách cơ sở này mới được xem danh sách phòng ban hỗ trợ.");
 
         var campusId = instance.CampusId;
         var keyword = string.IsNullOrWhiteSpace(request.Keyword) ? null : request.Keyword.Trim();
@@ -75,7 +77,10 @@ public sealed class GetSupportDepartmentsQueryHandler
             .GroupBy(l => l.DepartmentId)
             .ToDictionary(g => g.Key, g => g.OrderBy(x => x.FullName).ToList());
 
-        // Leaders already occupying a slot in this instance → cannot be re-invited.
+        // Leaders already occupying an active slot in this instance → cannot be re-invited as a
+        // participant. This ONLY affects CanInviteParticipant — logistics stays available because
+        // inviting the leader to join the visit and sending their department a logistics request
+        // are independent businesses (DECLINED/REMOVED rows block neither).
         var leaderIds = leaders.Select(l => l.UserId).Distinct().ToList();
         var alreadyInvitedLeaderIds = leaderIds.Count == 0
             ? new List<ulong>()
@@ -102,22 +107,30 @@ public sealed class GetSupportDepartmentsQueryHandler
                 : (d.HeadUserId.HasValue ? deptLeaders.FirstOrDefault(l => l.UserId == d.HeadUserId.Value) : null)
                   ?? deptLeaders.FirstOrDefault();
 
-            bool canInvite;
-            string? disabledReason;
+            bool canInviteParticipant;
+            string? participantDisabledReason;
+            bool canReceiveLogistics;
+            string? logisticsDisabledReason;
             if (leader == null)
             {
-                canInvite = false;
-                disabledReason = "Phòng này chưa có trưởng phòng đang hoạt động.";
+                canInviteParticipant = false;
+                participantDisabledReason = "Phòng này chưa có trưởng phòng đang hoạt động.";
+                canReceiveLogistics = false;
+                logisticsDisabledReason = "Phòng này chưa có trưởng phòng đang hoạt động, không thể nhận yêu cầu hậu cần.";
             }
             else if (alreadyInvitedLeaderIds.Contains(leader.UserId))
             {
-                canInvite = false;
-                disabledReason = "Trưởng phòng này đã có trong danh sách tham gia của đoàn.";
+                canInviteParticipant = false;
+                participantDisabledReason = "Trưởng phòng này đã có trong danh sách tham gia của đoàn.";
+                canReceiveLogistics = true;
+                logisticsDisabledReason = null;
             }
             else
             {
-                canInvite = true;
-                disabledReason = null;
+                canInviteParticipant = true;
+                participantDisabledReason = null;
+                canReceiveLogistics = true;
+                logisticsDisabledReason = null;
             }
 
             return new SupportDepartmentDto
@@ -129,8 +142,10 @@ public sealed class GetSupportDepartmentsQueryHandler
                 LeaderUserId = leader?.UserId,
                 LeaderName = leader?.FullName,
                 LeaderEmail = leader?.Email,
-                CanInvite = canInvite,
-                DisabledReason = disabledReason,
+                CanInviteParticipant = canInviteParticipant,
+                ParticipantDisabledReason = participantDisabledReason,
+                CanReceiveLogistics = canReceiveLogistics,
+                LogisticsDisabledReason = logisticsDisabledReason,
             };
         }).ToList();
     }
