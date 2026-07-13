@@ -70,12 +70,14 @@ public sealed class GetParticipantCandidatesQueryHandler
 
         if (type == ParticipantCandidateTypes.IcSupport)
         {
-            // Staff (sub_role STAFF) of an ACTIVE IC department on this campus — never the Staff Leader.
+            // STAFF (sub_role STAFF or LEADER) of an ACTIVE IC department on this campus. A Staff
+            // Leader may be invited as an IC_SUPPORT participant like any IC staff; the current
+            // host is already excluded by the base query above.
             query =
                 from x in query
                 join d in _db.Departments on x.u.DepartmentId equals d.DepartmentId
                 where x.RoleCode == RoleCodes.Staff
-                      && x.u.SubRole == UserSubRoles.Staff
+                      && (x.u.SubRole == UserSubRoles.Staff || x.u.SubRole == UserSubRoles.Leader)
                       && d.DepartmentType == "IC"
                       && d.Status == EntityStatuses.Active
                 select x;

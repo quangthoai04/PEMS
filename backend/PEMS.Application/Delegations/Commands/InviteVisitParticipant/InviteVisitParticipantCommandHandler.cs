@@ -349,22 +349,29 @@ public sealed class InviteVisitParticipantCommandHandler
         {
             if (request.UserId is null)
                 throw new ValidationException("Thiếu thông tin nhân sự cần mời.");
-            var ok = await (
+            // Both IC Staff (STAFF+STAFF) and Staff Leader (STAFF+LEADER) of an ACTIVE IC
+            // department on this campus are valid IC_SUPPORT invitees — same participant role,
+            // never the current host. Re-validated here so a direct API call can't bypass the
+            // candidate query.
+            var invitee = await (
                 from u in _db.Users
                 join r in _db.Roles on u.RoleId equals r.RoleId
                 join d in _db.Departments on u.DepartmentId equals d.DepartmentId
                 where u.UserId == request.UserId.Value
                       && r.RoleCode == RoleCodes.Staff
-                      && u.SubRole == UserSubRoles.Staff
+                      && (u.SubRole == UserSubRoles.Staff || u.SubRole == UserSubRoles.Leader)
                       && u.Status == UserStatuses.Active
                       && u.PrimaryCampusId == campusId
                       && d.DepartmentType == "IC"
                       && d.Status == EntityStatuses.Active
                       && u.UserId != instance.CurrentHostUserId
-                select u.UserId).AnyAsync(ct);
-            if (!ok)
-                throw new ConflictException("Nhân sự được chọn không hợp lệ (không phải Staff IC đang hoạt động cùng cơ sở).");
-            return (request.UserId.Value, ParticipantRoles.IcSupport, "Staff hỗ trợ IC", null);
+                select new { u.UserId, u.SubRole }).FirstOrDefaultAsync(ct);
+            if (invitee is null)
+                throw new ConflictException("Nhân sự được chọn không hợp lệ (không phải Staff hoặc Staff Leader IC đang hoạt động cùng cơ sở).");
+            var roleLabel = string.Equals(invitee.SubRole, UserSubRoles.Leader, StringComparison.OrdinalIgnoreCase)
+                ? "Staff Leader hỗ trợ IC"
+                : "Staff hỗ trợ IC";
+            return (request.UserId.Value, ParticipantRoles.IcSupport, roleLabel, null);
         }
 
         if (type == InviteParticipantTypes.Student)

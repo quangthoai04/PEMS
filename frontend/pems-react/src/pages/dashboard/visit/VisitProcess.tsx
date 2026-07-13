@@ -1263,6 +1263,8 @@ export function VisitProcess() {
                         delegationName={detail.delegationName}
                         campusName={detail.campusName ?? 'FPT University'}
                         hostName={detail.hostName ?? 'Host'}
+                        plannedStartAt={detail.plannedStartAt}
+                        plannedEndAt={detail.plannedEndAt}
                         pushToast={pushToast}
                       />
                     ) : (

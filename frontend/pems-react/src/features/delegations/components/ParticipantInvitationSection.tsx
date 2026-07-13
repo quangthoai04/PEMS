@@ -398,10 +398,10 @@ export function ParticipantInvitationSection({
                 <CandidateRow
                   key={c.userId}
                   candidate={c}
-                  roleLabel="Staff hỗ trợ IC"
+                  roleLabel={icSupportRoleLabel(c)}
                   busy={busyId === `ic-${c.userId}`}
                   onInvite={() => invite(`ic-${c.userId}`, { participantType: 'IC_SUPPORT', userId: c.userId }, c.fullName, close)}
-                  onPreview={() => openEmailPreviewFor('VISIT_PARTICIPANT_INVITATION', { key: `ic-${c.userId}`, payload: { participantType: 'IC_SUPPORT', userId: c.userId }, displayName: c.fullName, recipient: { name: c.fullName, email: c.email, roleLabel: 'Staff hỗ trợ IC', departmentName: c.departmentName, campusName: c.campusName } })}
+                  onPreview={() => openEmailPreviewFor('VISIT_PARTICIPANT_INVITATION', { key: `ic-${c.userId}`, payload: { participantType: 'IC_SUPPORT', userId: c.userId }, displayName: c.fullName, recipient: { name: c.fullName, email: c.email, roleLabel: icSupportRoleLabel(c), departmentName: c.departmentName, campusName: c.campusName } })}
                 />
               )}
             />
@@ -465,12 +465,12 @@ export function ParticipantInvitationSection({
                       {d.leaderName ? `Trưởng phòng: ${d.leaderName}` : 'Chưa có trưởng phòng đang hoạt động'}
                       {d.leaderEmail ? ` · ${d.leaderEmail}` : ''}
                     </div>
-                    {!d.canInvite && d.disabledReason && (
-                      <div className="mt-0.5 text-[11px] font-medium text-amber-600">{d.disabledReason}</div>
+                    {!d.canInviteParticipant && d.participantDisabledReason && (
+                      <div className="mt-0.5 text-[11px] font-medium text-amber-600">{d.participantDisabledReason}</div>
                     )}
                   </div>
                   <div className="flex shrink-0 items-center gap-1.5">
-                    {d.canInvite && (
+                    {d.canInviteParticipant && (
                       <button
                         type="button"
                         title="Xem trước & sửa email"
@@ -482,10 +482,10 @@ export function ParticipantInvitationSection({
                     )}
                     <button
                       type="button"
-                      disabled={!d.canInvite || busyId === `dept-${d.departmentId}`}
+                      disabled={!d.canInviteParticipant || busyId === `dept-${d.departmentId}`}
                       onClick={() => {
-                        if (!d.canInvite) {
-                          pushToast('warning', d.disabledReason || 'Không thể mời phòng ban này.');
+                        if (!d.canInviteParticipant) {
+                          pushToast('warning', d.participantDisabledReason || 'Không thể mời phòng ban này.');
                           return;
                         }
                         invite(
@@ -574,6 +574,12 @@ export function ParticipantInvitationSection({
       />
     </div>
   );
+}
+
+/** Display label for an IC_SUPPORT candidate — Staff Leader vs Staff, derived from subRole.
+ * The participant role stays IC_SUPPORT either way; this is presentation only. */
+export function icSupportRoleLabel(c: Pick<ParticipantCandidate, 'subRole'>): string {
+  return c.subRole?.toUpperCase() === 'LEADER' ? 'Staff Leader hỗ trợ IC' : 'Staff hỗ trợ IC';
 }
 
 function PreviewLink({ onClick }: { onClick: () => void }) {
