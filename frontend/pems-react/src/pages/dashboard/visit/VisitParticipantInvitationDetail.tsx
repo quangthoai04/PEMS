@@ -42,6 +42,7 @@ export function VisitParticipantInvitationDetail() {
   const isDept = roleCode === 'DEPARTMENT' || roleCode === 'DEPT';
   const isDeptLeader = isDept && subRole === 'LEADER';
   const isDeptStaff = isDept && subRole === 'STAFF';
+  const isStaffLeader = roleCode === 'STAFF' && subRole === 'LEADER';
 
   const [submitting, setSubmitting] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -218,7 +219,7 @@ export function VisitParticipantInvitationDetail() {
                    <Field icon={<Clock className="w-4 h-4" />} label="Thời gian mời" value={formatDateTime(invitation.invitedAt)} />
                  </>
               )}
-              <Field icon={<Users className="w-4 h-4" />} label="Vai trò tham gia" value={PARTICIPANT_ROLE_LABELS[invitation.participantRole] ?? invitation.participantRole} />
+              <Field icon={<Users className="w-4 h-4" />} label="Vai trò tham gia" value={isStaffLeader && invitation.participantRole === 'IC_SUPPORT' ? 'Staff Leader hỗ trợ IC' : (PARTICIPANT_ROLE_LABELS[invitation.participantRole] ?? invitation.participantRole)} />
               <Field icon={<MapPin className="w-4 h-4" />} label="Cơ sở" value={invitation.campusName || '-'} />
               <Field icon={<Calendar className="w-4 h-4" />} label="Bắt đầu" value={formatDateTime(invitation.plannedStartAt)} />
               <Field icon={<Calendar className="w-4 h-4" />} label="Kết thúc" value={formatDateTime(invitation.plannedEndAt)} />

@@ -183,7 +183,7 @@ public sealed class GetVisitInvitationsQueryHandler
                 && (x.CampusVisitStatus == VisitInstanceStatuses.Assigned
                     || x.CampusVisitStatus == VisitInstanceStatuses.BeforeVisit);
 
-            if ((x.Status == ParticipantStatuses.Accepted || x.Status == ParticipantStatuses.Assigned) && isActiveForInvitation)
+            if (x.Status == ParticipantStatuses.Accepted || x.Status == ParticipantStatuses.Assigned)
             {
                 dto.AllowedActions.Add("OPEN_CONTRIBUTION");
             }

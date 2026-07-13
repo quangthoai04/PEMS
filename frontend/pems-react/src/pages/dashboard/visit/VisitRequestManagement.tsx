@@ -160,8 +160,8 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
   const isDept = roleCode === 'DEPARTMENT' || roleCode === 'DEPT';
   const isStudent = roleCode === 'STUDENT';
 
-  // The "Đơn mời tham dự" (attending) tab is only for users who can be invited as a
-  const canUseAttendingTab = isRegularStaff || isDept || isStudent;
+  const canReceiveParticipantInvitations = isRegularStaff || isStaffLeader || isDept || isStudent;
+  const canUseAttendingTab = canReceiveParticipantInvitations;
   const canUseResponsibleTab = !isStudent && !isDept && !isAdmin;
   // Actor relation: tab "Đơn tôi đăng ký / Tôi là người đăng ký" (registrant, read-only)
   // cho các role được tạo đoàn khách; tab "Tôi là host" riêng cho Staff Leader.
@@ -582,14 +582,18 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Load pending invitations (invitee roles only). Non-blocking: a failure just hides the banner.
-  useEffect(() => {
+  const loadPendingInvitations = async () => {
     if (!showTabs) return;
-    let active = true;
-    delegationsApi.getMyInvitations(false)
-      .then((data) => { if (active) setPendingInvitations(data || []); })
-      .catch(() => { if (active) setPendingInvitations([]); });
-    return () => { active = false; };
+    try {
+      const data = await delegationsApi.getMyInvitations(false);
+      setPendingInvitations(data || []);
+    } catch {
+      setPendingInvitations([]);
+    }
+  };
+
+  useEffect(() => {
+    loadPendingInvitations();
   }, [showTabs]);
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
@@ -841,6 +845,9 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
       setReject({ open: false, row: null, action: null, text: '', submitting: false, error: null });
       pushToast('success', wasDecline ? 'Từ chối lời mời thành công.' : 'Đã từ chối tiếp nhận tại cơ sở này.');
       await loadDelegations(activeTab, currentPage, pageSize, appliedFilters, sortOrder);
+      if (wasDecline) {
+        await loadPendingInvitations();
+      }
     } catch (e: any) {
       const msg = apiErrorMessage(e, 'Đã xảy ra lỗi hệ thống. Vui lòng thử lại sau.');
       setReject((s) => ({ ...s, submitting: false, error: `Không thể từ chối. ${msg}` }));
@@ -852,6 +859,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
       await delegationsApi.visitInvitations.acceptInvitation((row as any).participantId);
       pushToast('success', 'Đã chấp nhận lời mời.');
       await loadDelegations(activeTab, currentPage, pageSize, appliedFilters, sortOrder);
+      await loadPendingInvitations();
     } catch (e: any) {
       pushToast('error', apiErrorMessage(e, 'Không thể chấp nhận lời mời. Vui lòng thử lại sau.'));
     }
@@ -1454,7 +1462,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
                 <div className="min-w-0">
                   <p className="text-sm font-bold text-[#004c91] truncate">{inv.delegationName || 'Đoàn khách'}</p>
                   <p className="text-xs text-slate-500 truncate">
-                    {PARTICIPANT_ROLE_LABELS[inv.participantRole] ?? inv.participantRole}
+                    {isStaffLeader && inv.participantRole === 'IC_SUPPORT' ? 'Staff Leader hỗ trợ IC' : (PARTICIPANT_ROLE_LABELS[inv.participantRole] ?? inv.participantRole)}
                     {inv.campusName ? ` · ${inv.campusName}` : ''}
                     {inv.invitedByName ? ` · Mời bởi ${inv.invitedByName}` : ''}
                   </p>
