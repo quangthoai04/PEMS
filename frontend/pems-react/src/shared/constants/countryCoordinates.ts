@@ -9,6 +9,9 @@ export interface CountryCoordinate {
   lng: number;
 }
 
+import { countryNameToAlpha2 } from '../utils/countryNames';
+import { ALPHA2_COORDINATES } from './countryCoordinatesFull';
+
 const COUNTRY_COORDINATES: Record<string, CountryCoordinate> = {
   'việt nam': { lat: 14.0583, lng: 108.2772 },
   'hàn quốc': { lat: 35.9078, lng: 127.7669 },
@@ -58,6 +61,9 @@ const COUNTRY_COORDINATES: Record<string, CountryCoordinate> = {
   'israel': { lat: 31.0461, lng: 34.8516 },
   'nam phi': { lat: -30.5595, lng: 22.9375 },
   'ai cập': { lat: 26.8206, lng: 30.8025 },
+  'nigeria': { lat: 9.0820, lng: 8.6753 },
+  'quần đảo cayman': { lat: 19.3133, lng: -81.2546 },
+  'cayman islands': { lat: 19.3133, lng: -81.2546 },
 };
 
 function normalize(input: string): string {
@@ -77,5 +83,11 @@ const NORMALIZED_TABLE = new Map<string, CountryCoordinate>(
 
 /** Returns coordinates for a country name, or null if unknown (caller should skip the pin). */
 export function resolveCountryCoordinates(countryName: string): CountryCoordinate | null {
+  const code = countryNameToAlpha2(countryName);
+  if (code && ALPHA2_COORDINATES[code]) {
+    return ALPHA2_COORDINATES[code];
+  }
+  
+  // Fallback
   return NORMALIZED_TABLE.get(normalize(countryName)) ?? null;
 }

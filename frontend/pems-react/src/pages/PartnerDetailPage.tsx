@@ -16,9 +16,11 @@ import { usePublicPartnerImage } from '../features/public-partners/hooks/usePubl
 import type { PublicPartner } from '../features/public-partners/types/publicPartners.types';
 import { getNameInitials } from '../shared/utils/nameInitials';
 import { useTranslation } from 'react-i18next';
+import { useCountryTranslation } from '../shared/hooks/useCountryTranslation';
 
 export function PartnerDetailPage() {
   const { t } = useTranslation(['partners']);
+  const tCountry = useCountryTranslation();
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
 
@@ -99,7 +101,8 @@ export function PartnerDetailPage() {
     );
   }
 
-  const location = [partner.city, partner.country].filter(Boolean).join(', ');
+  const translatedCountry = tCountry(partner.country);
+  const location = [partner.city, translatedCountry].filter(Boolean).join(', ');
   const websiteHref = partner.websiteUrl
     ? (partner.websiteUrl.startsWith('http') ? partner.websiteUrl : `https://${partner.websiteUrl}`)
     : null;
@@ -231,7 +234,7 @@ export function PartnerDetailPage() {
                 {partner.country && (
                   <div>
                     <dt className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-1">{t('partners:detail.country')}</dt>
-                    <dd className="text-slate-700 font-semibold">{partner.country}</dd>
+                    <dd className="text-slate-700 font-semibold">{translatedCountry}</dd>
                   </div>
                 )}
                 {partner.city && (

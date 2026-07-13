@@ -2,23 +2,53 @@ import React, { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import CreatableSelect from 'react-select/creatable';
 import type { StylesConfig, SingleValue } from 'react-select';
-import countries from 'i18n-iso-countries';
-import enLocale from 'i18n-iso-countries/langs/en.json';
+import {
+  getViCountryNames,
+  getEnCountryNames,
+  countryNameToAlpha2,
+} from '../../../../shared/utils/countryNames';
 
-countries.registerLocale(enLocale);
-
-interface CountryOption {
+export interface CountryOption {
   value: string;
   label: string;
+  /** Mã ISO alpha-2 — có khi option đến từ danh sách chuẩn, không có khi user nhập tự do. */
+  code?: string;
 }
 
-const COUNTRY_OPTIONS: CountryOption[] = Object.entries(
-  countries.getNames('en', { select: 'official' })
-)
-  .map(([, name]) => ({ value: name, label: name }))
-  .sort((a, b) => a.label.localeCompare(b.label));
+export type CountryLang = 'en' | 'vi';
 
-const buildStyles = (hasError?: boolean, isCell?: boolean): StylesConfig<CountryOption> => ({
+// label hiển thị theo ngôn ngữ UI đang chọn; value LƯU theo quy ước của từng form
+// (partner lưu tên tiếng Việt, visit request lưu tiếng Anh) — nhờ vậy tạo bằng UI
+// tiếng Việt hay tiếng Anh thì DB vẫn chỉ có MỘT tên cho một quốc gia.
+const optionCache = new Map<string, CountryOption[]>();
+function getCountryOptions(displayLang: CountryLang, storeLang: CountryLang): CountryOption[] {
+  const key = `${displayLang}|${storeLang}`;
+  let opts = optionCache.get(key);
+  if (!opts) {
+    const displayNames = displayLang === 'vi' ? getViCountryNames() : getEnCountryNames();
+    const storeNames = storeLang === 'vi' ? getViCountryNames() : getEnCountryNames();
+    opts = Object.keys(displayNames)
+      .map((code) => ({
+        code,
+        label: displayNames[code],
+        value: storeNames[code] ?? displayNames[code],
+      }))
+      .sort((a, b) => a.label.localeCompare(b.label, displayLang));
+    optionCache.set(key, opts);
+  }
+  return opts;
+}
+
+// Bỏ dấu để gõ "phap" vẫn khớp "Pháp" khi hiển thị tiếng Việt.
+const stripDiacritics = (s: string) =>
+  s
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'D')
+    .toLowerCase();
+
+export const buildSelectStyles = (hasError?: boolean, isCell?: boolean): StylesConfig<CountryOption> => ({
   control: (base, state) => ({
     ...base,
     borderRadius: isCell ? '0' : '0.75rem',
@@ -97,6 +127,9 @@ interface CountrySelectProps {
   hasError?: boolean;
   isCell?: boolean;
   disabled?: boolean;
+  /** Quy ước NGÔN NGỮ LƯU của form (mặc định 'en' — visit request lưu tên tiếng Anh;
+   *  form đối tác truyền 'vi'). Label hiển thị luôn theo ngôn ngữ UI hiện tại. */
+  storeLang?: CountryLang;
 }
 
 export const CountrySelect: React.FC<CountrySelectProps> = ({
@@ -107,32 +140,41 @@ export const CountrySelect: React.FC<CountrySelectProps> = ({
   hasError,
   isCell,
   disabled,
+  storeLang = 'en',
 }) => {
-  const { t } = useTranslation(['visitRequest']);
+  const { t, i18n } = useTranslation(['visitRequest']);
+  const displayLang: CountryLang = i18n.language?.toLowerCase().startsWith('vi') ? 'vi' : 'en';
+  const options = useMemo(
+    () => getCountryOptions(displayLang, storeLang),
+    [displayLang, storeLang]
+  );
   const selectedOption = useMemo(() => {
     const normalizedValue = value?.trim();
     if (!normalizedValue) {
       return null;
     }
 
-    const matchedOption = COUNTRY_OPTIONS.find(
-      (option) => option.value.trim().toLowerCase() === normalizedValue.toLowerCase()
+    const code = countryNameToAlpha2(normalizedValue);
+    const matchedOption = options.find(
+      (option) =>
+        (code && option.code === code) ||
+        option.value.trim().toLowerCase() === normalizedValue.toLowerCase()
     );
 
     return matchedOption ?? {
       value: normalizedValue,
       label: normalizedValue,
     };
-  }, [value]);
+  }, [value, options]);
 
   const styles = useMemo(
-    () => buildStyles(hasError, isCell),
+    () => buildSelectStyles(hasError, isCell),
     [hasError, isCell]
   );
 
   return (
     <CreatableSelect<CountryOption>
-      options={COUNTRY_OPTIONS}
+      options={options}
       value={selectedOption}
       onChange={(opt: SingleValue<CountryOption>) => onChange(opt?.value ?? '')}
       onCreateOption={(inputValue) => onChange(inputValue)}
@@ -147,7 +189,7 @@ export const CountrySelect: React.FC<CountrySelectProps> = ({
       formatCreateLabel={(input) => t('visitRequest:select.useInput', { input })}
       noOptionsMessage={() => t('visitRequest:select.countryNoOptions')}
       filterOption={(option, inputValue) =>
-        option.label.toLowerCase().includes(inputValue.toLowerCase())
+        stripDiacritics(option.label).includes(stripDiacritics(inputValue))
       }
     />
   );

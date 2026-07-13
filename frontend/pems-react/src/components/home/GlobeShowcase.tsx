@@ -14,6 +14,7 @@ import { publicPartnersApi } from '../../features/public-partners/api/publicPart
 import { resolveCountryCoordinates } from '../../shared/constants/countryCoordinates';
 import { getCountryIsoCode } from '../../features/public-partners/utils/countryFlag';
 import countriesGeoJson from '../../assets/ne_110m_admin_0_countries.geojson?url';
+import { useCountryTranslation } from '../../shared/hooks/useCountryTranslation';
 
 const VIETNAM_HUB = { lat: 21.0285, lng: 105.8542, name: 'FPT University' };
 
@@ -61,6 +62,7 @@ function buildRings(points: GlobePoint[]): GlobeRing[] {
 
 export default function GlobeShowcase() {
   const navigate = useNavigate();
+  const tCountry = useCountryTranslation();
   const globeRef = useRef<any>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
@@ -230,7 +232,7 @@ export default function GlobeShowcase() {
                 ${d.isoCode
                   ? `<span class="fi fi-${d.isoCode}" style="width: 16px; height: 12px; background-size: cover; background-position: center; border-radius: 2px; flex-shrink: 0;"></span>`
                   : `<span style="width: 5px; height: 5px; background-color: ${d.isHub ? '#ff5a00' : '#f37021'}; border-radius: 50%; box-shadow: 0 0 6px ${d.isHub ? '#ff5a00' : '#f37021'};"></span>`}
-                <span>${d.name}${!d.isHub && d.count ? ` (${d.count})` : ''}</span>
+                <span>${tCountry(d.name)}${!d.isHub && d.count ? ` (${d.count})` : ''}</span>
               </div>
             `}
             onPointHover={(point: any) => {
