@@ -66,6 +66,12 @@ public static class VisitRequestErrorCodes
     // an ACTIVE Staff Leader who will receive and process its instance.
     public const string CampusHasNoActiveStaffLeader = "CAMPUS_HAS_NO_ACTIVE_STAFF_LEADER";
 
+    // Operational availability recheck on submit (UC-86 §11): the campus has no ACTIVE IC
+    // department, or its IC-department/Staff-Leader configuration is invalid (more than one
+    // active IC department / more than one valid active Staff Leader — never auto-resolved).
+    public const string CampusHasNoActiveIcDepartment = "CAMPUS_HAS_NO_ACTIVE_IC_DEPARTMENT";
+    public const string CampusStaffLeaderConfigurationInvalid = "CAMPUS_STAFF_LEADER_CONFIGURATION_INVALID";
+
     // Approve must carry the official host in the same action (no WAITING_HOST_ASSIGNMENT).
     public const string HostRequiredOnApproval = "HOST_REQUIRED_ON_APPROVAL";
 

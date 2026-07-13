@@ -173,34 +173,11 @@ public sealed class VerifyAndCreateVisitRequestCommandHandler
                 request.PartnerId,
                 request.Notes);
 
-            // ── 3.5. Transactional routing check: Validate Staff Leader presence for all chosen campuses ──
-            var campusCodes = request.CampusVisits.Select(c => c.CampusId).Distinct().ToList();
-            var campusIds = await _db.Campuses
-                .Where(c => campusCodes.Contains(c.CampusCode))
-                .Select(c => c.CampusId)
-                .ToListAsync(cancellationToken);
-
-            // For each campus, we need at least one ACTIVE Staff Leader in the IC department
-            var validCampuses = await _db.Users
-                .Include(u => u.Role)
-                .Include(u => u.Department)
-                .Where(u => u.Role.RoleCode == RoleCodes.Staff
-                            && u.SubRole == "LEADER"
-                            && u.PrimaryCampusId.HasValue
-                            && campusIds.Contains(u.PrimaryCampusId.Value)
-                            && u.Status == "ACTIVE"
-                            && u.Department != null
-                            && u.Department.DepartmentType == "IC")
-                .Select(u => u.PrimaryCampusId.Value)
-                .Distinct()
-                .ToListAsync(cancellationToken);
-
-            if (validCampuses.Count < campusIds.Count)
-            {
-                throw new BusinessRuleException(
-                    "Một hoặc nhiều cơ sở bạn chọn hiện tại chưa có Staff Leader (IC) để tiếp nhận đơn. Vui lòng liên hệ FPTU để được hỗ trợ.",
-                    VisitRequestErrorCodes.CampusHasNoActiveStaffLeader);
-            }
+            // ── 3.5. Campus operational availability (campus ACTIVE + active IC department +
+            //         exactly one valid Staff Leader) is rechecked transactionally inside
+            //         _visitRequestService.CreateAsync (step 5) via the shared
+            //         CampusAvailabilityEvaluator — one source of truth with the registration
+            //         dropdown and UC-86 (§9/§11); no duplicate check here. ──
 
             // ── 4. Provision BOTH accounts inside the same transaction (actor relation):
             //       registrant (submitter, read-only) + contact owner (action owner).
