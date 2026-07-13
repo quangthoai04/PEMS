@@ -16,7 +16,7 @@
     "countries": "Quốc gia",
     "partnerTypes": "Loại hình đối tác",
     "searchPlaceholder": "Tìm tên đối tác, quốc gia, mô tả...",
-    "foundMatches": "Tìm thấy <span class=\"font-bold text-[#f37021]\">{{count}}</span> đối tác phù hợp.",
+    "foundMatches": "Tìm thấy <1>{{count}}</1> đối tác phù hợp.",
     "clearFilters": "Xóa bộ lọc",
     "exploreByCountry": "Khám phá theo quốc gia",
     "loadError": "Không thể tải danh sách đối tác. Vui lòng thử lại sau.",
@@ -31,8 +31,7 @@
     "contactDept": "Liên hệ Phòng HTQT",
     "partnersUnit": "đối tác",
     "prevCountry": "Xem quốc gia trước",
-    "nextCountry": "Xem quốc gia tiếp theo",
-    "foundMatchesTpl": "Tìm thấy"
+    "nextCountry": "Xem quốc gia tiếp theo"
   },
   "detail": {
     "notFound": "Không tìm thấy đối tác hoặc đối tác chưa được công khai.",

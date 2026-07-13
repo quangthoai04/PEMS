@@ -16,7 +16,7 @@
     "countries": "Countries",
     "partnerTypes": "Partner types",
     "searchPlaceholder": "Search partner name, country, description...",
-    "foundMatches": "Found <span class=\"font-bold text-[#f37021]\">{{count}}</span> matching partners.",
+    "foundMatches": "Found <1>{{count}}</1> matching partners.",
     "clearFilters": "Clear filters",
     "exploreByCountry": "Explore by country",
     "loadError": "Unable to load partners list. Please try again later.",
@@ -31,8 +31,7 @@
     "contactDept": "Contact Intl. Relations",
     "partnersUnit": "partners",
     "prevCountry": "Previous country",
-    "nextCountry": "Next country",
-    "foundMatchesTpl": "Found"
+    "nextCountry": "Next country"
   },
   "detail": {
     "notFound": "Partner not found or not public.",

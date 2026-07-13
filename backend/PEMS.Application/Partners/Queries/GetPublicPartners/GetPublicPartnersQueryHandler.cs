@@ -31,7 +31,26 @@ public sealed class GetPublicPartnersQueryHandler
                                      || (p.ShortName != null && EF.Functions.Like(p.ShortName, $"%{s}%")));
         }
         if (!string.IsNullOrWhiteSpace(request.Country))
-            query = query.Where(p => p.Country == request.Country);
+        {
+            // `country` is free text (no FK/enum), so rows for the same country can carry different
+            // raw spellings ("Việt Nam" / "VIETNAM" / " viet nam "). NormalizeKey can't be translated
+            // to SQL, so resolve the filter value to every raw spelling sharing its normalized key
+            // (mirrors GetPublicPartnerCountriesQueryHandler's grouping) and match any of them —
+            // otherwise a filter value differing only by casing/diacritics/whitespace from what's
+            // stored would silently return zero rows.
+            var countryKey = PartnerNormalization.NormalizeKey(request.Country);
+            var matchingRawCountries = await _db.Partners.AsNoTracking()
+                .Where(p => p.ProfileStatus == PartnerProfileStatuses.Approved
+                            && p.Visibility == PartnerVisibilities.Public
+                            && p.Country != null && p.Country != "")
+                .Select(p => p.Country!)
+                .Distinct()
+                .ToListAsync(cancellationToken);
+            var rawMatches = matchingRawCountries
+                .Where(c => PartnerNormalization.NormalizeKey(c) == countryKey)
+                .ToList();
+            query = query.Where(p => p.Country != null && rawMatches.Contains(p.Country));
+        }
 
         if (!string.IsNullOrWhiteSpace(request.PartnerType) && PartnerTypes.All.Contains(request.PartnerType))
             query = query.Where(p => p.PartnerType == request.PartnerType);
