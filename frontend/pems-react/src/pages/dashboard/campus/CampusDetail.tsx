@@ -12,7 +12,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useCampusDetail } from '../../../features/campus-management/hooks/useCampusManagement';
 import { campusManagementApi } from '../../../features/campus-management/api/campusManagementApi';
 import { getAuthErrorMessage } from '../../../features/authentication/api/authError';
-import { CAMPUS_PROVINCES } from '../../../features/campus-management/constants';
+import { CAMPUS_PROVINCES, campusReadinessReasons } from '../../../features/campus-management/constants';
 
 type Toast = { id: number; type: 'success' | 'error'; msg: string };
 type EditForm = { campusCode: string; name: string; city: string; address: string; phone: string; email: string };
@@ -223,6 +223,20 @@ export function CampusDetail() {
                 }`}>
                   {campus.status === 'ACTIVE' ? 'Hoạt động' : 'Ngừng hoạt động'}
                 </span>
+                {/* UC-86 §22.1 — operational readiness is shown separately from the status. */}
+                {campus.status !== 'ACTIVE' ? (
+                  <span className="inline-flex px-3 py-1 text-xs font-bold rounded-full bg-gray-100 text-gray-500 border border-gray-200">
+                    Không nhận đăng ký
+                  </span>
+                ) : campus.readiness?.isAvailableForVisitRegistration ? (
+                  <span className="inline-flex px-3 py-1 text-xs font-bold rounded-full bg-[#eaffe4] text-[#0aa14f] border border-[#ceefda]">
+                    Sẵn sàng nhận đăng ký
+                  </span>
+                ) : (
+                  <span className="inline-flex px-3 py-1 text-xs font-bold rounded-full bg-amber-50 text-amber-700 border border-amber-200">
+                    Chưa sẵn sàng nhận đăng ký
+                  </span>
+                )}
                 {campus.city && (
                   <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-white rounded-full text-xs font-bold text-[#004c91] shadow-sm">
                     {campus.city}
@@ -306,6 +320,22 @@ export function CampusDetail() {
                 <Info label="Email" value={dash(campus.email)} />
                 <Info label="Trưởng phòng IC" value={campus.icHeadName ?? 'Chưa phân công'} muted={!campus.icHeadName} />
                 <Info label="Trạng thái" value={campus.status === 'ACTIVE' ? 'Hoạt động' : 'Ngừng hoạt động'} />
+              </div>
+            )}
+
+            {/* UC-86 §22.1 — explain why an ACTIVE campus is not yet accepting registrations. */}
+            {!isEditing && campus.status === 'ACTIVE' && campus.readiness
+              && !campus.readiness.isAvailableForVisitRegistration && (
+              <div className="mt-4 flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-2xl p-4">
+                <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" aria-hidden="true" />
+                <div className="text-sm text-amber-800">
+                  <p className="font-bold">Campus đang hoạt động nhưng chưa nhận đăng ký tham quan.</p>
+                  <ul className="list-disc pl-5 mt-1 space-y-0.5">
+                    {campusReadinessReasons(campus.readiness).map((reason) => (
+                      <li key={reason}>{reason}</li>
+                    ))}
+                  </ul>
+                </div>
               </div>
             )}
           </section>

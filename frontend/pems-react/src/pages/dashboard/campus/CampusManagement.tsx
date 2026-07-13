@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
-import { CAMPUS_PROVINCES } from '../../../features/campus-management/constants';
+import { CAMPUS_PROVINCES, campusReadinessReasons } from '../../../features/campus-management/constants';
 import {
   useCampusFilterOptions,
   useCampusList,
@@ -21,9 +21,32 @@ import type {
   CampusListItem,
   CampusListQueryParams,
   CampusStatus,
+  CampusStatusImpact,
 } from '../../../features/campus-management/types/campusManagement.types';
 
-type Toast = { id: number; type: 'success' | 'error'; msg: string };
+type Toast = { id: number; type: 'success' | 'error' | 'warning'; msg: string };
+
+/** UC-86 §22.3 — groups the preview's blockersByStatus into the 3 confirmation-modal lines. */
+function summarizeBlockers(byStatus: Record<string, number>): string[] {
+  const count = (...statuses: string[]) =>
+    statuses.reduce((sum, s) => sum + (byStatus[s] ?? 0), 0);
+
+  const known = ['WAITING_REQUEST_APPROVAL', 'ASSIGNED', 'BEFORE_VISIT', 'DURING_VISIT', 'AFTER_VISIT'];
+  const waiting = count('WAITING_REQUEST_APPROVAL');
+  const prepared = count('ASSIGNED', 'BEFORE_VISIT');
+  const receiving = count('DURING_VISIT', 'AFTER_VISIT');
+  // Any unknown non-terminal status still blocks server-side — surface it verbatim.
+  const other = Object.entries(byStatus)
+    .filter(([status]) => !known.includes(status))
+    .reduce((sum, [, n]) => sum + n, 0);
+
+  const lines: string[] = [];
+  if (waiting > 0) lines.push(`${waiting} đơn đang chờ xử lý`);
+  if (prepared > 0) lines.push(`${prepared} chuyến đã được phân công/chuẩn bị`);
+  if (receiving > 0) lines.push(`${receiving} chuyến đang hoặc đã tiếp khách nhưng chưa đóng`);
+  if (other > 0) lines.push(`${other} chuyến ở trạng thái khác chưa kết thúc`);
+  return lines;
+}
 
 export function CampusManagement() {
   const navigate = useNavigate();
@@ -48,8 +71,11 @@ export function CampusManagement() {
     setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 4500);
   };
 
-  // ── Disable-confirm modal + toggle in-flight ──
+  // ── Disable-confirm modal (with UC-86 §18 impact preview) + toggle in-flight ──
   const [confirmTarget, setConfirmTarget] = useState<CampusListItem | null>(null);
+  const [impact, setImpact] = useState<CampusStatusImpact | null>(null);
+  const [impactLoading, setImpactLoading] = useState(false);
+  const [impactError, setImpactError] = useState<string | null>(null);
   const [togglingId, setTogglingId] = useState<number | null>(null);
 
   // ── UC-81 Create modal ──
@@ -101,31 +127,76 @@ export function CampusManagement() {
   }
 
   // UC-86 — apply a status change, then refetch the list to reflect the DB. On failure
-  // (e.g. 409 dependency / 422 missing master data) surface the backend's message; the
-  // toggle stays unchanged because we never optimistically mutated the row.
+  // (e.g. 409 blockers due to a race / 422 missing master data) surface the backend's message;
+  // the toggle stays unchanged because we never optimistically mutated the row, and the list
+  // is refreshed so the row/blocker state matches the server again (§22.4).
   const applyStatusChange = async (campus: CampusListItem, next: CampusStatus) => {
     setTogglingId(campus.campusId);
     try {
-      await campusManagementApi.manageCampusStatus({ campusId: campus.campusId, status: next });
-      pushToast(
-        'success',
-        next === 'ACTIVE'
-          ? `Đã kích hoạt campus "${campus.name}".`
-          : `Đã ngừng hoạt động campus "${campus.name}".`,
-      );
+      const res = await campusManagementApi.manageCampusStatus({ campusId: campus.campusId, status: next });
+      if (next === 'ACTIVE') {
+        if (res.readiness && !res.readiness.isAvailableForVisitRegistration) {
+          // §22.5 — enable succeeded but the campus is not ready: warning, NOT an error, and
+          // never a "đã sẵn sàng nhận đăng ký" success message.
+          const reasons = campusReadinessReasons(res.readiness);
+          pushToast(
+            'warning',
+            `Đã kích hoạt campus "${campus.name}". Campus chưa xuất hiện trên form đăng ký tham quan: ${
+              reasons[0] ?? 'chưa đủ điều kiện tiếp nhận.'
+            }`,
+          );
+        } else {
+          pushToast('success', `Đã kích hoạt campus "${campus.name}". Campus đã sẵn sàng nhận đăng ký.`);
+        }
+      } else {
+        // Disable also revokes sessions of the campus's STAFF/DEPARTMENT accounts (UC-86).
+        pushToast(
+          'success',
+          res.affectedAccountCount > 0
+            ? `Đã ngừng hoạt động campus "${campus.name}". ${res.affectedAccountCount} tài khoản thuộc cơ sở đã bị đăng xuất.`
+            : `Đã ngừng hoạt động campus "${campus.name}".`,
+        );
+      }
       refetch();
     } catch (err) {
       pushToast('error', getAuthErrorMessage(err, 'Không thể cập nhật trạng thái campus. Vui lòng thử lại.'));
+      // Refresh so the row (and any stale preview data) reflects the server state again.
+      refetch();
     } finally {
       setTogglingId(null);
     }
   };
 
+  // UC-86 §18/§22.3 — opening the disable modal fetches the impact preview. The preview is UX
+  // only: even when canChange=true the backend rechecks in its own transaction.
+  const openDisableConfirm = async (campus: CampusListItem) => {
+    setConfirmTarget(campus);
+    setImpact(null);
+    setImpactError(null);
+    setImpactLoading(true);
+    try {
+      const preview = await campusManagementApi.getCampusStatusImpact(campus.campusId, 'INACTIVE');
+      setImpact(preview);
+    } catch (err) {
+      // Preview failure must not silently allow the change — show the error and keep confirm disabled.
+      setImpactError(getAuthErrorMessage(err, 'Không thể kiểm tra ảnh hưởng. Vui lòng thử lại.'));
+    } finally {
+      setImpactLoading(false);
+    }
+  };
+
+  const closeConfirm = () => {
+    setConfirmTarget(null);
+    setImpact(null);
+    setImpactError(null);
+    setImpactLoading(false);
+  };
+
   const onToggle = (campus: CampusListItem) => {
     if (!campus.canManageStatus || togglingId !== null) return;
     if (campus.status === 'ACTIVE') {
-      // Disabling affects new registration/assignment dropdowns → confirm first (UC-86 §7).
-      setConfirmTarget(campus);
+      // Disabling affects new registration/assignment dropdowns → preview + confirm first.
+      openDisableConfirm(campus);
     } else {
       // Enabling: no confirm, but the backend may reject (missing master data / IC dept).
       applyStatusChange(campus, 'ACTIVE');
@@ -134,8 +205,9 @@ export function CampusManagement() {
 
   const confirmDisable = async () => {
     const target = confirmTarget;
-    setConfirmTarget(null);
-    if (target) await applyStatusChange(target, 'INACTIVE');
+    if (!target || impactLoading || !impact?.canChange) return;
+    closeConfirm();
+    await applyStatusChange(target, 'INACTIVE');
   };
 
   const openCreate = () => {
@@ -182,7 +254,12 @@ export function CampusManagement() {
         email: createForm.email.trim(),
       });
       setIsCreateOpen(false);
+      // §22.2 — create succeeds without a Staff Leader; explain why it is not on the form yet.
       pushToast('success', `Đã tạo campus "${res.name}" và phòng ban IC mặc định.`);
+      pushToast(
+        'warning',
+        'Campus hiện đang hoạt động nhưng chưa xuất hiện trên form đăng ký tham quan vì chưa có Staff Leader đang hoạt động.',
+      );
       setPage(1);
       refetch();
     } catch (err) {
@@ -256,22 +333,23 @@ export function CampusManagement() {
       {/* Table */}
       <div className="bg-white border rounded-2xl shadow-sm border-gray-100 relative z-10 overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[760px]">
+          <table className="w-full min-w-[960px]">
             <thead className="bg-[#004c91] text-white">
               <tr>
-                <th className="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider w-16">STT</th>
-                <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider w-[12%]">Mã code</th>
-                <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider w-[28%]">Tên Campus</th>
-                <th className="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider w-[15%]">Cơ sở</th>
-                <th className="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider w-[18%]">Trưởng phòng IC</th>
-                <th className="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider w-[15%]">Trạng thái</th>
+                <th className="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider w-14">STT</th>
+                <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider w-[10%]">Mã code</th>
+                <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider w-[22%]">Tên Campus</th>
+                <th className="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider w-[12%]">Cơ sở</th>
+                <th className="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider w-[15%]">Trưởng phòng IC</th>
+                <th className="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider w-[12%]">Trạng thái</th>
+                <th className="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider w-[18%]">Khả năng tiếp nhận</th>
                 <th className="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider w-24">Hành động</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {loading && (
                 <tr>
-                  <td colSpan={7} className="px-4 py-12 text-center text-gray-500 font-medium">
+                  <td colSpan={8} className="px-4 py-12 text-center text-gray-500 font-medium">
                     <Loader2 className="w-5 h-5 animate-spin inline mr-2 text-[#004c91]" />
                     Đang tải danh sách campus...
                   </td>
@@ -280,7 +358,7 @@ export function CampusManagement() {
 
               {!loading && error && (
                 <tr>
-                  <td colSpan={7} className="px-4 py-12 text-center">
+                  <td colSpan={8} className="px-4 py-12 text-center">
                     <div className="flex flex-col items-center gap-2 text-red-600">
                       <AlertTriangle className="w-6 h-6" />
                       <span className="font-medium">{error}</span>
@@ -327,6 +405,29 @@ export function CampusManagement() {
                       {item.status === 'ACTIVE' ? 'Hoạt động' : 'Ngừng hoạt động'}
                     </span>
                   </td>
+                  {/* UC-86 §22.1 — readiness is a SEPARATE signal from the administrative status. */}
+                  <td className="px-4 py-3 text-center">
+                    {item.status !== 'ACTIVE' ? (
+                      <span className="inline-flex px-3 py-1 text-xs font-bold rounded-full bg-gray-100 text-gray-500 border border-gray-200">
+                        Không nhận tiếp đón
+                      </span>
+                    ) : item.readiness?.isAvailableForVisitRegistration ? (
+                      <span className="inline-flex px-3 py-1 text-xs font-bold rounded-full bg-[#eaffe4] text-[#0aa14f] border border-[#ceefda]">
+                        Sẵn sàng nhận tiếp đón
+                      </span>
+                    ) : (
+                      <div className="flex flex-col items-center gap-1">
+                        <span className="inline-flex items-center gap-1 px-3 py-1 text-xs font-bold rounded-full bg-amber-50 text-amber-700 border border-amber-200">
+                          <AlertTriangle className="w-3 h-3" aria-hidden="true" /> Chưa sẵn sàng
+                        </span>
+                        {campusReadinessReasons(item.readiness).slice(0, 1).map((reason) => (
+                          <span key={reason} className="text-[11px] text-amber-700/90 leading-tight max-w-[200px]">
+                            {reason}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-1 justify-center">
                       <button
@@ -355,7 +456,7 @@ export function CampusManagement() {
 
               {!loading && !error && campuses.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-4 py-12 text-center text-gray-500 font-medium">
+                  <td colSpan={8} className="px-4 py-12 text-center text-gray-500 font-medium">
                     {hasActiveFilter ? 'Không tìm thấy campus phù hợp.' : 'Chưa có campus nào.'}
                   </td>
                 </tr>
@@ -514,37 +615,106 @@ export function CampusManagement() {
         document.body,
       )}
 
-      {/* UC-86 — Disable confirmation modal */}
+      {/* UC-86 — Disable confirmation modal with §18 impact preview */}
       {confirmTarget && createPortal(
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden">
-            <div className="p-5 border-b border-gray-100 flex items-center justify-between">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" role="dialog" aria-modal="true" aria-label="Ngừng hoạt động campus">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden max-h-[90vh] flex flex-col">
+            <div className="p-5 border-b border-gray-100 flex items-center justify-between shrink-0">
               <h3 className="text-lg font-bold text-[#004c91] flex items-center gap-2">
                 <AlertTriangle className="w-5 h-5 text-[#f37021]" />
                 Ngừng hoạt động campus
               </h3>
-              <button onClick={() => setConfirmTarget(null)} className="p-1.5 text-gray-400 hover:text-gray-600 transition-colors bg-gray-50 hover:bg-gray-100 rounded-lg">
+              <button onClick={closeConfirm} aria-label="Đóng" className="p-1.5 text-gray-400 hover:text-gray-600 transition-colors bg-gray-50 hover:bg-gray-100 rounded-lg">
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <div className="p-6 text-sm text-gray-700 leading-relaxed">
-              Bạn có chắc muốn ngừng hoạt động campus{' '}
-              <span className="font-bold text-gray-900">"{confirmTarget.name}"</span>? Campus sẽ không còn
-              xuất hiện trong các lựa chọn đăng ký/phân công mới.
+
+            <div className="p-6 text-sm text-gray-700 leading-relaxed space-y-3 overflow-y-auto">
+              {impactLoading && (
+                <div className="flex items-center gap-2 text-gray-500 font-medium">
+                  <Loader2 className="w-4 h-4 animate-spin text-[#004c91]" />
+                  Đang kiểm tra các chuyến thăm liên quan...
+                </div>
+              )}
+
+              {!impactLoading && impactError && (
+                <div className="text-red-600 font-medium">{impactError}</div>
+              )}
+
+              {!impactLoading && !impactError && impact && impact.canChange && (
+                <>
+                  <p>
+                    Bạn có chắc muốn ngừng hoạt động campus{' '}
+                    <span className="font-bold text-gray-900">"{confirmTarget.name}"</span>?
+                  </p>
+                  <ul className="list-disc pl-5 space-y-1 text-gray-600">
+                    <li>Campus sẽ không còn xuất hiện trong các lựa chọn đăng ký/phân công mới.</li>
+                    <li>Các tài khoản Staff/Phòng ban thuộc cơ sở sẽ bị đăng xuất và không đăng nhập lại được cho đến khi cơ sở hoạt động trở lại.</li>
+                    <li>Dữ liệu lịch sử, phòng ban và bản thân tài khoản vẫn được giữ nguyên (không bị xóa).</li>
+                  </ul>
+                </>
+              )}
+
+              {!impactLoading && !impactError && impact && !impact.canChange && (
+                <>
+                  <p className="font-bold text-gray-900">Không thể ngừng hoạt động campus.</p>
+                  <p>Campus hiện còn:</p>
+                  <ul className="list-disc pl-5 space-y-1 text-gray-700">
+                    {summarizeBlockers(impact.blockersByStatus).map((line) => (
+                      <li key={line}>{line}</li>
+                    ))}
+                  </ul>
+                  {impact.blockerExamples.length > 0 && (
+                    <div className="mt-2 border border-gray-100 rounded-xl divide-y divide-gray-100">
+                      {impact.blockerExamples.map((ex) => (
+                        <div key={ex.visitInstanceId} className="px-3 py-2 flex items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="text-xs font-bold text-gray-900 truncate">
+                              {ex.delegationName || ex.requestCode || `Chuyến #${ex.visitInstanceId}`}
+                            </div>
+                            {ex.plannedStartAt && (
+                              <div className="text-[11px] text-gray-500">
+                                {new Date(ex.plannedStartAt).toLocaleString('vi-VN')}
+                              </div>
+                            )}
+                          </div>
+                          <span className="shrink-0 inline-flex px-2 py-0.5 text-[10px] font-bold rounded-md bg-amber-50 text-amber-700 border border-amber-200">
+                            {ex.status}
+                          </span>
+                        </div>
+                      ))}
+                      {impact.blockerCount > impact.blockerExamples.length && (
+                        <div className="px-3 py-2 text-[11px] text-gray-500">
+                          ... và {impact.blockerCount - impact.blockerExamples.length} chuyến khác.
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  <p className="text-gray-500 text-xs">
+                    Vui lòng xử lý/đóng các chuyến thăm này trước khi ngừng hoạt động campus.
+                  </p>
+                </>
+              )}
             </div>
-            <div className="p-5 border-t border-gray-100 bg-gray-50 flex items-center justify-end gap-3">
+
+            <div className="p-5 border-t border-gray-100 bg-gray-50 flex items-center justify-end gap-3 shrink-0">
               <button
-                onClick={() => setConfirmTarget(null)}
+                onClick={closeConfirm}
                 className="px-5 py-2 bg-white border border-gray-200 text-gray-600 font-bold rounded-xl hover:bg-gray-50 transition-colors shadow-sm"
               >
-                Hủy
+                {impact && !impact.canChange ? 'Đóng' : 'Hủy'}
               </button>
-              <button
-                onClick={confirmDisable}
-                className="px-5 py-2 bg-[#f37021] text-white font-bold rounded-xl hover:bg-[#e85c0d] transition-colors shadow-sm"
-              >
-                Xác nhận
-              </button>
+              {/* Confirm is only actionable when the preview allows the change (§22.3). */}
+              {(impactLoading || impactError !== null || (impact?.canChange ?? false)) && (
+                <button
+                  onClick={confirmDisable}
+                  disabled={impactLoading || !impact?.canChange}
+                  aria-label={`Xác nhận ngừng hoạt động campus ${confirmTarget.name}`}
+                  className="px-5 py-2 bg-[#f37021] text-white font-bold rounded-xl hover:bg-[#e85c0d] transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Xác nhận
+                </button>
+              )}
             </div>
           </div>
         </div>,
@@ -559,7 +729,9 @@ export function CampusManagement() {
             className={`px-4 py-3 rounded-xl shadow-lg text-sm font-medium max-w-sm ${
               t.type === 'success'
                 ? 'bg-[#0aa14f] text-white'
-                : 'bg-red-600 text-white'
+                : t.type === 'warning'
+                  ? 'bg-amber-500 text-white'
+                  : 'bg-red-600 text-white'
             }`}
           >
             {t.msg}
