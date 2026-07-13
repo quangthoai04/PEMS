@@ -6,8 +6,11 @@ import { findCampusTimeOverlaps } from '../../schema/visitRequest.schema';
 import { FormField, inputCls, selectCls, textareaCls } from '../shared/FormField';
 import { FormSection } from '../shared/FormSection';
 import { useTranslation } from 'react-i18next';
+import { useRegistrationCampuses } from '../../hooks/useRegistrationCampuses';
 
-// Campus options are now defined inside the component to access t()
+// Campus options come from the backend (UC-86 §10): only campuses operationally available for
+// registration are selectable, and each is labelled by its campus NAME (campuses.name) so every
+// campus — including ones created at runtime — reads consistently (not the city).
 
 function findDuplicateCampusIndexes(visits: Array<{ campus?: string }>) {
   const seen = new Map<string, number>();
@@ -45,13 +48,11 @@ const dateTimeCls = (hasError?: boolean) =>
 export const VisitInfoSection: React.FC<Props> = ({ form, visitFields, showErrors }) => {
   const { t } = useTranslation(['visitRequest']);
 
-  const CAMPUS_OPTIONS = [
-    { value: 'HN',  label: t('visitRequest:step2Info.campusOptions.HN', 'Hà Nội') },
-    { value: 'DN',  label: t('visitRequest:step2Info.campusOptions.DN', 'Đà Nẵng') },
-    { value: 'CT',  label: t('visitRequest:step2Info.campusOptions.CT', 'Cần Thơ') },
-    { value: 'HCM', label: t('visitRequest:step2Info.campusOptions.HCM', 'Hồ Chí Minh') },
-    { value: 'QN',  label: t('visitRequest:step2Info.campusOptions.QN', 'Quy Nhơn') },
-  ];
+  const { campuses, loading: campusesLoading, error: campusesError } = useRegistrationCampuses();
+  const CAMPUS_OPTIONS = campuses.map((c) => ({
+    value: c.campusCode,
+    label: c.campusName,
+  }));
 
   const { register, control, watch, formState: { errors, touchedFields } } = form;
   const visitMode = watch('visitMode');
@@ -173,8 +174,16 @@ export const VisitInfoSection: React.FC<Props> = ({ form, visitFields, showError
                     <div className="relative">
                       <select
                         {...register(`visits.${index}.campus`)}
+                        disabled={campusesLoading}
                         className={selectCls(showErrors && !!slotErrors?.campus)}
                       >
+                        <option value="" disabled>
+                          {campusesLoading
+                            ? t('visitRequest:step2Info.campusLoading', 'Đang tải danh sách cơ sở...')
+                            : campusesError
+                              ? t('visitRequest:step2Info.campusLoadError', 'Không tải được danh sách cơ sở')
+                              : t('visitRequest:step2Info.campusPlaceholder', 'Chọn cơ sở')}
+                        </option>
                         {CAMPUS_OPTIONS.map((c) => (
                           <option key={c.value} value={c.value}>{c.label}</option>
                         ))}
@@ -261,7 +270,7 @@ export const VisitInfoSection: React.FC<Props> = ({ form, visitFields, showError
             <button
               type="button"
               onClick={() =>
-                visitFields.append({ campus: 'HN', startDatetime: '', endDatetime: '' })
+                visitFields.append({ campus: '', startDatetime: '', endDatetime: '' })
               }
               className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-[#f37021]/30 py-2.5 text-sm font-bold text-[#f37021] transition-colors hover:border-[#f37021] hover:bg-orange-50/50"
             >

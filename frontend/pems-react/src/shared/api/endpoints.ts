@@ -24,6 +24,11 @@ export const API_ENDPOINTS = {
     search: '/campuses/searchandfiltercampus',
     filterOptions: '/campuses/filter-options',
     manageStatus: '/campuses/managecampusstatus',
+    // UC-86 §18 status-impact preview (blockers on disable / activation issues on enable).
+    statusImpact: '/campuses/campusstatusimpact',
+    // UC-86 §10 — anonymous campus options for the visit registration form (only campuses
+    // ACTIVE + active IC department + valid Staff Leader; backend rechecks on submit).
+    availableForRegistration: '/campuses/available-for-registration',
     // UC-81 create (+ auto IC dept), UC-84 details, UC-85 update master data.
     create: '/campuses/addnewcampus',
     details: '/campuses/viewcampusdetails',

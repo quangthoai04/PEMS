@@ -121,6 +121,16 @@ internal static class CampusListQueryExecutor
             })
             .ToListAsync(ct);
 
+        // Operational readiness (UC-86 §21) — batch-computed for the current page only, via the
+        // shared evaluator, so the badge always matches the registration dropdown and the guard.
+        var readinessByCampus = await CampusAvailabilityEvaluator.EvaluateAsync(
+            db, items.Select(i => i.CampusId).ToList(), ct);
+        foreach (var item in items)
+        {
+            if (readinessByCampus.TryGetValue(item.CampusId, out var snapshot))
+                item.Readiness = snapshot.Readiness;
+        }
+
         return PaginatedResult<CampusListItemDto>.Create(items, page, pageSize, totalItems);
     }
 }

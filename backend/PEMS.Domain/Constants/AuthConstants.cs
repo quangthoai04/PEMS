@@ -189,6 +189,9 @@ public static class SessionRevokeReasons
 
     /// <summary>UC-106: the user's department was disabled, so every active session is revoked.</summary>
     public const string DepartmentDisabled = "DEPARTMENT_DISABLED";
+
+    /// <summary>UC-86: the user's primary campus was disabled, so every active session is revoked.</summary>
+    public const string CampusDisabled = "CAMPUS_DISABLED";
 }
 
 public static class CreatedViaValues

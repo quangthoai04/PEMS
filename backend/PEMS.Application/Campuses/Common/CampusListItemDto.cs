@@ -26,4 +26,10 @@ public sealed class CampusListItemDto
     /// campus; surfaced so the UI can hide the toggle for unauthorized callers.
     /// </summary>
     public bool CanManageStatus { get; init; }
+
+    /// <summary>
+    /// Computed operational availability (UC-86 §21) — lets the UI show the administrative
+    /// status and the "sẵn sàng nhận đăng ký" readiness as two separate signals.
+    /// </summary>
+    public CampusOperationalReadinessDto? Readiness { get; set; }
 }

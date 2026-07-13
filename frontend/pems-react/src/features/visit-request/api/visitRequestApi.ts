@@ -234,7 +234,27 @@ export interface CreateHostCandidate {
   conflictCount: number;
 }
 
+/** UC-86 §10 — one selectable campus on the registration form (GET /campuses/available-for-registration). */
+export interface RegistrationCampusOption {
+  campusId: number;
+  campusCode: string;
+  campusName: string;
+  city: string | null;
+}
+
 export const visitRequestApi = {
+  /**
+   * Campus options for the visit form. Anonymous; the backend returns ONLY campuses that are
+   * operationally available (ACTIVE + active IC department + valid Staff Leader) and rechecks
+   * on submit — the dropdown is never the security boundary.
+   */
+  async getRegistrationCampuses(): Promise<RegistrationCampusOption[]> {
+    const { data } = await httpClient.get<RegistrationCampusOption[]>(
+      API_ENDPOINTS.campuses.availableForRegistration,
+    );
+    return data;
+  },
+
   /**
    * Authenticated submit — no OTP; the JWT session is the registrant identity (the
    * backend overrides the registrant name/email from the DB user). Same payload shape

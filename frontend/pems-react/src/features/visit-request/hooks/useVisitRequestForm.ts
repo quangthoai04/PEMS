@@ -34,7 +34,8 @@ export const DEFAULT_VISIT_REQUEST_VALUES: VisitRequestSchema = {
   visitMode: 'single',
   visitType: 'CAMPUS_TOUR',
   visitTypeOther: '',
-  visits: [{ campus: 'HN', startDatetime: '', endDatetime: '' }],
+  // Campus starts empty — options are backend-driven (UC-86 §10) and the user must pick one.
+  visits: [{ campus: '', startDatetime: '', endDatetime: '' }],
   purpose: '',
   workingContent: '',
   visitors: [{ ...DEFAULT_VISITOR }],

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using PEMS.Application.Campuses.Common;
 using PEMS.Application.Common.DTOs;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
@@ -44,48 +45,57 @@ public sealed class VisitRequestService : IVisitRequestService
             .ToList();
 
         // Frontend sends campus codes (e.g. "HN", "HCM") — resolve to BIGINT campus_id.
-        var campuses = await _db.Campuses
+        var campusIdsByCode = await _db.Campuses
             .Where(c => requestedCodes.Contains(c.CampusCode))
-            .Select(c => new { c.CampusCode, c.CampusId, c.Status, c.Name })
-            .ToListAsync(cancellationToken);
-
-        var campusByCode = campuses.ToDictionary(c => c.CampusCode, StringComparer.OrdinalIgnoreCase);
+            .Select(c => new { c.CampusCode, c.CampusId })
+            .ToDictionaryAsync(c => c.CampusCode, c => c.CampusId, StringComparer.OrdinalIgnoreCase);
 
         foreach (var code in requestedCodes)
         {
-            if (!campusByCode.TryGetValue(code, out var campus))
+            if (!campusIdsByCode.ContainsKey(code))
                 throw new BusinessRuleException(
                     $"Cơ sở '{code}' không tồn tại.", VisitRequestErrorCodes.CampusNotFound);
-
-            if (!string.Equals(campus.Status, EntityStatuses.Active, StringComparison.OrdinalIgnoreCase))
-                throw new BusinessRuleException(
-                    $"Cơ sở '{code}' hiện không hoạt động.", VisitRequestErrorCodes.CampusInactive);
         }
 
-        // ── Campus-independent approval routing: every selected campus must have an ACTIVE
-        // Staff Leader (STAFF + sub_role LEADER of that campus) who receives the instance
-        // right after submit. Without one, the request would sit unprocessable — reject the
-        // whole submit up-front (no half-created request). The resolved leader also becomes
-        // the instance coordinator (the DB trigger requires the coordinator to be a Staff
-        // Leader of the same campus). ──
-        var requestedCampusIds = campuses.Select(c => c.CampusId).ToList();
-        var staffLeadersByCampus = (await _db.Users
-                .Where(u => u.Role.RoleCode == RoleCodes.Staff
-                            && u.SubRole == UserSubRoles.Leader
-                            && u.Status == UserStatuses.Active
-                            && u.PrimaryCampusId.HasValue
-                            && requestedCampusIds.Contains(u.PrimaryCampusId.Value))
-                .Select(u => new { u.UserId, CampusId = u.PrimaryCampusId!.Value })
-                .ToListAsync(cancellationToken))
-            .GroupBy(u => u.CampusId)
-            .ToDictionary(g => g.Key, g => g.First().UserId);
+        // ── Operational-availability recheck (UC-86 §11, BR-86-06): the dropdown is UX only —
+        // every selected campus is re-verified here, inside the caller's transaction, via the
+        // SAME evaluator that feeds the registration dropdown. A campus disabled (or whose
+        // Staff Leader changed) after the form was loaded fails the whole submit; nothing is
+        // half-created. The EXACTLY-ONE valid Staff Leader also becomes the instance
+        // coordinator — never an arbitrary pick among several (BR-86-19/20; the DB trigger
+        // requires the coordinator to be a Staff Leader of the same campus). ──
+        var snapshots = await CampusAvailabilityEvaluator.EvaluateAsync(
+            _db, campusIdsByCode.Values.ToList(), cancellationToken);
 
-        foreach (var campus in campuses)
+        var campusByCode = new Dictionary<string, CampusAvailabilitySnapshot>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (code, campusId) in campusIdsByCode)
         {
-            if (!staffLeadersByCampus.ContainsKey(campus.CampusId))
+            var snapshot = snapshots.TryGetValue(campusId, out var s)
+                ? s
+                : throw new BusinessRuleException(
+                    $"Cơ sở '{code}' không tồn tại.", VisitRequestErrorCodes.CampusNotFound);
+
+            if (!string.Equals(snapshot.Status, EntityStatuses.Active, StringComparison.OrdinalIgnoreCase))
                 throw new BusinessRuleException(
-                    $"Cơ sở {campus.Name} chưa có Staff Leader đang hoạt động nên chưa thể tiếp nhận yêu cầu.",
+                    $"Cơ sở '{code}' hiện không hoạt động.", VisitRequestErrorCodes.CampusInactive);
+
+            if (snapshot.ActiveIcDepartmentCount == 0)
+                throw new BusinessRuleException(
+                    $"Cơ sở {snapshot.Name} chưa có phòng ban IC đang hoạt động nên chưa thể tiếp nhận yêu cầu.",
+                    VisitRequestErrorCodes.CampusHasNoActiveIcDepartment);
+
+            if (snapshot.ValidStaffLeaderCount == 0)
+                throw new BusinessRuleException(
+                    $"Cơ sở {snapshot.Name} chưa có Staff Leader đang hoạt động nên chưa thể tiếp nhận yêu cầu.",
                     VisitRequestErrorCodes.CampusHasNoActiveStaffLeader);
+
+            // >1 IC dept / >1 leader = configuration error — never resolved by picking one.
+            if (!snapshot.IsAvailableForVisitRegistration)
+                throw new BusinessRuleException(
+                    $"Cấu hình tiếp nhận của cơ sở {snapshot.Name} không hợp lệ. Vui lòng liên hệ FPTU để được hỗ trợ.",
+                    VisitRequestErrorCodes.CampusStaffLeaderConfigurationInvalid);
+
+            campusByCode[code] = snapshot;
         }
 
         // Planned start must not be in the past (1-day grace covers client/server timezone skew);
@@ -181,7 +191,7 @@ public sealed class VisitRequestService : IVisitRequestService
                 CurrentHostUserId    = null,
                 HostAssignedBy       = null,
                 HostAssignedAt       = null,
-                CoordinatorUserId    = staffLeadersByCampus[campus.CampusId],
+                CoordinatorUserId    = campus.ValidStaffLeaderUserId,
                 CoordinatorAssignedBy = creatorUserId,
                 CoordinatorAssignedAt = vietnamNow,
 

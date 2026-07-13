@@ -13,6 +13,26 @@ export interface PaginatedResult<T> {
   hasPreviousPage: boolean;
 }
 
+/** UC-86 §21 — machine-readable readiness issue codes (mirrors CampusReadinessIssues). */
+export type CampusReadinessIssue =
+  | 'CAMPUS_INACTIVE'
+  | 'ACTIVE_IC_DEPARTMENT_MISSING'
+  | 'MULTIPLE_ACTIVE_IC_DEPARTMENTS'
+  | 'ACTIVE_STAFF_LEADER_MISSING'
+  | 'MULTIPLE_ACTIVE_STAFF_LEADERS'
+  | 'IC_HEAD_MAPPING_INCONSISTENT';
+
+/**
+ * UC-86 §21 — computed operational availability (campus status ≠ khả năng nhận đăng ký).
+ * Mirrors backend CampusOperationalReadinessDto.
+ */
+export interface CampusOperationalReadiness {
+  isAvailableForVisitRegistration: boolean;
+  activeIcDepartmentExists: boolean;
+  activeStaffLeaderExists: boolean;
+  readinessIssues: CampusReadinessIssue[];
+}
+
 /** UC-82/UC-83 — one campus row. Mirrors backend CampusListItemDto. */
 export interface CampusListItem {
   campusId: number;
@@ -25,6 +45,7 @@ export interface CampusListItem {
   createdAt: string;
   updatedAt: string | null;
   canManageStatus: boolean;
+  readiness: CampusOperationalReadiness | null;
 }
 
 /** UC-82/UC-83 query params. Empty/undefined values are dropped before the request. */
@@ -65,6 +86,37 @@ export interface ManageCampusStatusResponse {
   updatedAt: string;
   updatedBy: number | null;
   message: string;
+  /** Readiness recomputed after the change (enable may be ACTIVE but not yet ready). */
+  readiness: CampusOperationalReadiness | null;
+  /** On disable: STAFF/DEPARTMENT accounts of this campus whose sessions were revoked. */
+  affectedAccountCount: number;
+  /** On disable: number of active sessions revoked. */
+  revokedSessionCount: number;
+}
+
+/** UC-86 §18 — one blocking visit instance shown in the disable-confirmation modal. */
+export interface CampusVisitBlockerExample {
+  visitInstanceId: number;
+  requestId: number;
+  requestCode: string | null;
+  delegationName: string | null;
+  status: string;
+  plannedStartAt: string | null;
+  plannedEndAt: string | null;
+}
+
+/** UC-86 §18 — status-impact preview (GET /campuses/campusstatusimpact). */
+export interface CampusStatusImpact {
+  campusId: number;
+  name: string;
+  currentStatus: CampusStatus;
+  targetStatus: CampusStatus;
+  canChange: boolean;
+  blockerCount: number;
+  blockersByStatus: Record<string, number>;
+  blockerExamples: CampusVisitBlockerExample[];
+  enableIssues: string[];
+  readiness: CampusOperationalReadiness | null;
 }
 
 /** UC-81 — create campus (master data only; no IC head). */
@@ -122,6 +174,7 @@ export interface CampusDetail {
     headUserId: number | null;
     headUserName: string | null;
   } | null;
+  readiness: CampusOperationalReadiness | null;
 }
 
 /** UC-85 — update campus master data. */
