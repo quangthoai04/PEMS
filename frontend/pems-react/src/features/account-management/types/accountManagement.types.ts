@@ -318,7 +318,8 @@ export interface AccountDetails {
 /** UC-97 — change account status request. Mirrors backend ManageAccountStatusCommand. */
 export interface ManageAccountStatusRequest {
   userId: string | number;
-  status: 'ACTIVE' | 'INACTIVE';
+  /** LOCKED chỉ dành cho flow khóa bảo mật riêng của ADMIN (UC-97 mở rộng). */
+  status: 'ACTIVE' | 'INACTIVE' | 'LOCKED';
   reason?: string | null;
 }
 

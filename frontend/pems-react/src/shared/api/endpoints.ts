@@ -358,4 +358,20 @@ export const API_ENDPOINTS = {
     staffCalendarDetail: (visitInstanceId: string | number) =>
       `/dashboard/staff/calendar/${visitInstanceId}/detail`,
   },
+  // System Administration Console (ADMIN-only): dashboard thật, phiên đăng nhập,
+  // login/security logs và audit trail. Backend: AdminController (/api/admin/*).
+  admin: {
+    dashboardSummary: '/admin/dashboard/summary',
+    dashboardLoginActivity: '/admin/dashboard/login-activity',
+    dashboardSecurity: '/admin/dashboard/security',
+    dashboardIntegrations: '/admin/dashboard/integrations',
+    dashboardRecentAudits: '/admin/dashboard/recent-audits',
+    sessions: '/admin/sessions',
+    revokeSession: (sessionId: string | number) => `/admin/sessions/${sessionId}/revoke`,
+    revokeUserSessions: (userId: string | number) => `/admin/users/${userId}/revoke-sessions`,
+    loginLogs: '/admin/login-logs',
+    securityEvents: '/admin/security-events',
+    auditLogs: '/admin/audit-logs',
+    auditLogDetail: (auditLogId: string | number) => `/admin/audit-logs/${auditLogId}`,
+  },
 };

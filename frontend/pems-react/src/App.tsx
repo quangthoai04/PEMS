@@ -64,6 +64,9 @@ import { CampusManagement } from './pages/dashboard/campus/CampusManagement';
 import { CampusDetail } from './pages/dashboard/campus/CampusDetail';
 
 import { ApiManagement } from './pages/dashboard/apis/ApiManagement.tsx';
+import { SessionManagement } from './pages/dashboard/admin/SessionManagement';
+import { SecurityMonitoring } from './pages/dashboard/admin/SecurityMonitoring';
+import { AuditLogManagement } from './pages/dashboard/admin/AuditLogManagement';
 
 import { LoginPage } from './pages/auth/LoginPage';
 import { ForgotPasswordPage } from './pages/auth/ForgotPasswordPage';
@@ -195,6 +198,10 @@ export default function App() {
             <Route path="feedback" element={<FeedbackManagement />} />
             <Route path="feedback/:id" element={<FeedbackDetail />} />
             <Route path="apis" element={<ProtectedRoute roles={['ADMIN']}><ApiManagement /></ProtectedRoute>} />
+            {/* System Administration Console (ADMIN-only) */}
+            <Route path="admin/sessions" element={<ProtectedRoute roles={['ADMIN']}><SessionManagement /></ProtectedRoute>} />
+            <Route path="admin/security" element={<ProtectedRoute roles={['ADMIN']}><SecurityMonitoring /></ProtectedRoute>} />
+            <Route path="admin/audit-logs" element={<ProtectedRoute roles={['ADMIN']}><AuditLogManagement /></ProtectedRoute>} />
           </Route>
           
           <Route path="*" element={<NotFoundPage />} />

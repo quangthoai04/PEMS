@@ -31,6 +31,6 @@ public sealed class GetApiIntegrationsQueryHandler
             query = query.Where(c => c.Purpose == request.Purpose);
 
         var configs = await query.OrderBy(c => c.ApiConfigId).ToListAsync(cancellationToken);
-        return configs.Select(ApiIntegrationMapper.ToDto).ToList();
+        return configs.Select(c => ApiIntegrationMapper.ToDto(c, _currentUser)).ToList();
     }
 }

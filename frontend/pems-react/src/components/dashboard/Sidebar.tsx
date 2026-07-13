@@ -34,6 +34,8 @@ import {
   MessageSquare,
   PanelLeftClose,
   PanelLeftOpen,
+  KeyRound,
+  ScrollText,
 } from "lucide-react";
 import logo from "../../assets/images/2021-FPTU-Eng.png";
 import avatarImg from "../../assets/Avatar/AvatarDefault.png";
@@ -169,6 +171,37 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile, isCollapsed = fal
 
         {/* Navigation */}
         <nav className={`flex-grow space-y-2 overflow-y-auto ${collapsed ? "px-3" : "px-4"}`}>
+          {/* ── System Administration Console: ADMIN chỉ thấy 6 mục quản trị hệ thống,
+              toàn bộ menu nghiệp vụ (tiếp khách, đối tác, tin tức, FAQ...) bị ẩn. ── */}
+          {isRealAdmin ? (
+            <>
+              <NavLink to="/dashboard" end className={navItemClass} onClick={handleLinkClick}>
+                <Home className="w-5 h-5 flex-shrink-0" />
+                <span>Dashboard</span>
+              </NavLink>
+              <NavLink to="/dashboard/accounts" className={navItemClass} onClick={handleLinkClick}>
+                <UserCog className="w-5 h-5 flex-shrink-0" />
+                <span>Quản lý tài khoản</span>
+              </NavLink>
+              <NavLink to="/dashboard/admin/sessions" className={navItemClass} onClick={handleLinkClick}>
+                <KeyRound className="w-5 h-5 flex-shrink-0" />
+                <span>Phiên đăng nhập</span>
+              </NavLink>
+              <NavLink to="/dashboard/admin/security" className={navItemClass} onClick={handleLinkClick}>
+                <Shield className="w-5 h-5 flex-shrink-0" />
+                <span>Bảo mật</span>
+              </NavLink>
+              <NavLink to="/dashboard/apis" className={navItemClass} onClick={handleLinkClick}>
+                <Cpu className="w-5 h-5 flex-shrink-0" />
+                <span>Quản lý API</span>
+              </NavLink>
+              <NavLink to="/dashboard/admin/audit-logs" className={navItemClass} onClick={handleLinkClick}>
+                <ScrollText className="w-5 h-5 flex-shrink-0" />
+                <span>Nhật ký kiểm toán</span>
+              </NavLink>
+            </>
+          ) : (
+          <>
           {roleForSidebar !== 'VISITOR' && roleForSidebar !== 'STUDENT' && (
             <NavLink to="/dashboard" end className={navItemClass} onClick={handleLinkClick}>
               <Home className="w-5 h-5 flex-shrink-0" />
@@ -253,13 +286,7 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile, isCollapsed = fal
               <span>Quản lý FAQ</span>
             </NavLink>
           )}
-          {roleForSidebar === "ADMIN" && (
-            <>
-              <NavLink to="/dashboard/apis" className={navItemClass} onClick={handleLinkClick}>
-                <Cpu className="w-5 h-5 flex-shrink-0" />
-                <span>Quản lý API</span>
-              </NavLink>
-            </>
+          </>
           )}
         </nav>
 

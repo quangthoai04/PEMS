@@ -36,6 +36,15 @@ public sealed class ApiIntegrationDto
     public List<string> AllowedMimeTypes { get; set; } = new();
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
+
+    // ── Capabilities (computed per caller; the handlers stay the real gate) ──
+
+    /// <summary>DATABASE = managed via this console; ENVIRONMENT = configured on the server (read-only here).</summary>
+    public string ManagementSource { get; set; } = "DATABASE";
+    public bool CanEdit { get; set; }
+    public bool CanTest { get; set; }
+    public bool CanToggleStatus { get; set; }
+    public bool CanConfigureQuota { get; set; }
 }
 
 public sealed class ApiConnectionTestResultDto
