@@ -22,6 +22,12 @@ public static class CampusErrorCodes
     /// <summary>Cannot re-activate: campus has no ACTIVE IC department (UC-86 BR-86-06). (422)</summary>
     public const string CampusActivationMissingIcDepartment = "CAMPUS_ACTIVATION_MISSING_IC_DEPARTMENT";
 
+    /// <summary>
+    /// Cannot disable: the campus still has visit instances in a non-terminal status
+    /// (visit_request_campuses — UC-86 BR-86-07). (409)
+    /// </summary>
+    public const string CampusHasActiveVisits = "CAMPUS_HAS_ACTIVE_VISITS";
+
     // ── Duplicate master data (UC-81 create / UC-85 update). Only city may duplicate. (409) ──
     public const string CampusCodeAlreadyExists = "CAMPUS_CODE_ALREADY_EXISTS";
     public const string CampusNameAlreadyExists = "CAMPUS_NAME_ALREADY_EXISTS";

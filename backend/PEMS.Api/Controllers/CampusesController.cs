@@ -82,6 +82,29 @@ namespace PEMS.Api.Controllers
             return Ok(result);
         }
 
+        /// <summary>
+        /// UC-86 §18 status-impact preview for the confirmation modal (blockers on disable,
+        /// activation issues on enable). Read-only; the status command still rechecks.
+        /// </summary>
+        [HttpGet("campusstatusimpact")]
+        public async Task<IActionResult> GetCampusStatusImpact([FromQuery] PEMS.Application.Campuses.Queries.GetCampusStatusImpact.GetCampusStatusImpactQuery query, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(query, cancellationToken);
+            return Ok(result);
+        }
+
+        /// <summary>
+        /// Campus options for the visit registration form (UC-86 §10). Anonymous — only campuses
+        /// operationally available for registration (ACTIVE + active IC dept + valid Staff Leader).
+        /// </summary>
+        [HttpGet("available-for-registration")]
+        [AllowAnonymous]
+        public async Task<IActionResult> GetRegistrationCampuses(CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(new PEMS.Application.Campuses.Queries.GetRegistrationCampuses.GetRegistrationCampusesQuery(), cancellationToken);
+            return Ok(result);
+        }
+
         [HttpPost("assigncampuslead")]
         public async Task<IActionResult> AssignCampusLead([FromBody] PEMS.Application.Campuses.Commands.AssignCampusLead.AssignCampusLeadCommand command, CancellationToken cancellationToken)
         {

@@ -55,7 +55,8 @@ public sealed class SessionValidationMiddleware
                 u.Status,
                 RoleStatus = u.Role!.Status,
                 RoleCode = u.Role!.RoleCode,
-                DepartmentStatus = u.Department != null ? u.Department.Status : null
+                DepartmentStatus = u.Department != null ? u.Department.Status : null,
+                CampusStatus = u.PrimaryCampus != null ? u.PrimaryCampus.Status : null
             })
             .FirstOrDefaultAsync(context.RequestAborted);
 
@@ -72,6 +73,14 @@ public sealed class SessionValidationMiddleware
         if (DepartmentAccessRule.IsBlocked(account.RoleCode, account.DepartmentStatus))
         {
             await WriteUnauthorizedAsync(context, "Your department is no longer active. Please contact administrator.");
+            return;
+        }
+
+        // UC-86: STAFF/DEPARTMENT accounts lose access immediately when their primary campus is
+        // disabled (same immediacy as UC-106; HO/ADMIN are never blocked by campus status).
+        if (CampusAccessRule.IsBlocked(account.RoleCode, account.CampusStatus))
+        {
+            await WriteUnauthorizedAsync(context, "Your campus is no longer active. Please contact administrator.");
             return;
         }
 

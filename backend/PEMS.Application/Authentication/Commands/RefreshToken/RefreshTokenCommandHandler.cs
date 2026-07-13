@@ -50,6 +50,14 @@ public sealed class RefreshTokenCommandHandler : IRequestHandler<RefreshTokenCom
             throw new AuthenticationFailedException(ExpiredMessage, "department_inactive");
         }
 
+        // UC-86: a STAFF/DEPARTMENT account may not refresh while its primary campus is INACTIVE.
+        // Revoke the session so the old refresh token stays dead even after the campus is re-enabled.
+        if (CampusAccessRule.IsBlocked(user.Role.RoleCode, user.PrimaryCampus?.Status))
+        {
+            await _sessionService.RevokeSessionAsync(session.SessionId, SessionRevokeReasons.CampusDisabled, null, cancellationToken);
+            throw new AuthenticationFailedException(ExpiredMessage, "campus_inactive");
+        }
+
         var rotated = await _sessionService.RotateRefreshTokenAsync(session, cancellationToken);
         var accessToken = _jwtTokenService.GenerateAccessToken(user, session.SessionId, session.LoginPortal);
 
