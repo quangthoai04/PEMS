@@ -223,10 +223,10 @@ public sealed class ReplaceStaffLeaderCommandHandler
                 await _audit.WriteSecurityEventAsync(
                     userId: oldLeaderId,
                     emailSnapshot: oldLeaderEmail,
-                    eventType: SecurityEventTypes.StaffLeaderReplacedWhileLocked,
+                    eventType: SecurityEventTypes.SecurityPolicyCheck,
                     result: "SUCCESS",
                     selectedCampusId: request.CampusId,
-                    detailText: $"Replaced locked Staff Leader of campus {request.CampusId}. Reason: {reason}",
+                    detailText: $"event={SecurityEventDetailMarkers.StaffLeaderReplacedWhileLocked}; campusId={request.CampusId}; reason={reason}",
                     cancellationToken: cancellationToken);
         }
         catch

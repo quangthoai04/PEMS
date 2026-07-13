@@ -28,9 +28,12 @@ namespace PEMS.Application.Campuses.Commands.ManageCampusStatus;
 /// is NOT required — it only gates operational availability, which is recomputed for the
 /// response. Idempotent no-op on same-status requests. Audits ENABLE_CAMPUS/DISABLE_CAMPUS.
 ///
-/// A successful DISABLE also revokes every active session of the campus's STAFF/DEPARTMENT
-/// accounts (users.status is never touched — an org-level lock, mirror of UC-106 department
-/// disable). HO/ADMIN are never affected. Enable never restores revoked sessions.
+/// A successful DISABLE also revokes every active session of the campus's internal
+/// HO/ADMIN/STAFF/DEPARTMENT/STUDENT accounts (users.status is never touched — an
+/// org-level lock, mirror of UC-106 department disable) and writes one aggregate security
+/// policy event with a CAMPUS_DISABLED_SESSIONS_REVOKED detail marker. VISITOR and users of
+/// other campuses are never affected. Enable never restores revoked
+/// sessions (BR-AUTH-CAMPUS-09).
 /// </summary>
 public sealed class ManageCampusStatusCommandHandler
     : IRequestHandler<ManageCampusStatusCommand, ManageCampusStatusResponse>
@@ -40,18 +43,21 @@ public sealed class ManageCampusStatusCommandHandler
     private readonly IRoleAccessPolicy _accessPolicy;
     private readonly IDateTimeService _clock;
     private readonly ISessionService _sessionService;
+    private readonly ISecurityAuditService _securityAudit;
 
     public ManageCampusStatusCommandHandler(
         IApplicationDbContext db,
         ICurrentUserService currentUser,
         IRoleAccessPolicy accessPolicy,
         IDateTimeService clock,
-        ISessionService sessionService)
+        ISessionService sessionService,
+        ISecurityAuditService securityAudit)
     {
         _db = db;
         _currentUser = currentUser;
         _accessPolicy = accessPolicy;
         _sessionService = sessionService;
+        _securityAudit = securityAudit;
         _clock = clock;
     }
 
@@ -136,13 +142,16 @@ public sealed class ManageCampusStatusCommandHandler
                         });
                 }
 
-                // Campus-operational accounts (STAFF/DEPARTMENT) of this campus lose access:
-                // revoke their active sessions (users.status is NOT touched — org-level lock,
-                // mirror of UC-106). HO/ADMIN are never affected.
+                // Campus-scoped internal accounts (HO/ADMIN/STAFF/DEPARTMENT/STUDENT) of this
+                // campus lose access: revoke their active sessions. users.status is NOT touched;
+                // VISITOR and users of other campuses are never affected.
                 affectedUserIds = await _db.Users.AsNoTracking()
                     .Where(u => u.PrimaryCampusId == campus.CampusId
-                                && (u.Role!.RoleCode == RoleCodes.Staff
-                                    || u.Role!.RoleCode == RoleCodes.Department))
+                                && (u.Role!.RoleCode == RoleCodes.Ho
+                                    || u.Role!.RoleCode == RoleCodes.Admin
+                                    || u.Role!.RoleCode == RoleCodes.Staff
+                                    || u.Role!.RoleCode == RoleCodes.Department
+                                    || u.Role!.RoleCode == RoleCodes.Student))
                     .Select(u => u.UserId)
                     .ToListAsync(cancellationToken);
             }
@@ -154,6 +163,21 @@ public sealed class ManageCampusStatusCommandHandler
             foreach (var userId in affectedUserIds)
                 revokedSessionCount += await _sessionService.RevokeAllActiveSessionsAsync(
                     userId, SessionRevokeReasons.CampusDisabled, actorId, cancellationToken);
+
+            // One aggregate security event per disable (doc §17) — inside the transaction so a
+            // failed disable never leaves a success event behind. No per-session events, no
+            // tokens/PII in the detail text.
+            if (newStatus == EntityStatuses.Inactive)
+            {
+                await _securityAudit.WriteSecurityEventAsync(
+                    userId: actorId,
+                    emailSnapshot: _currentUser.Email,
+                    eventType: SecurityEventTypes.SecurityPolicyCheck,
+                    result: "SUCCESS",
+                    selectedCampusId: campus.CampusId,
+                    detailText: $"event={SecurityEventDetailMarkers.CampusDisabledSessionsRevoked}; campusId={campus.CampusId}; affectedUserCount={affectedUserIds.Count}; revokedSessionCount={revokedSessionCount}",
+                    cancellationToken: cancellationToken);
+            }
 
             var changes = new List<AuditLogChange>
             {

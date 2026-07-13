@@ -23,6 +23,14 @@ public static class AuthErrorCodes
     /// (credentials or SSO) or refresh a token until the department is enabled again. HTTP 403.
     /// </summary>
     public const string DepartmentInactive = "DEPARTMENT_INACTIVE";
+
+    /// <summary>
+    /// UC-86 force-logout: a campus-scoped account (STAFF/DEPARTMENT/STUDENT) whose PRIMARY
+    /// campus is INACTIVE may not sign in, refresh, or continue an authenticated request until
+    /// the campus is enabled again. The frontend clears auth state and redirects to login on
+    /// this code. HTTP 403.
+    /// </summary>
+    public const string CampusInactiveAccessDenied = "CAMPUS_INACTIVE_ACCESS_DENIED";
     public const string SsoDisabled = "SSO_DISABLED";
     public const string FeidDisabled = "FEID_DISABLED";
 
