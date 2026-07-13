@@ -116,8 +116,9 @@ test.describe('UC-86 Campus Management readiness & status', () => {
     await expect(row.getByTitle('Ngừng hoạt động')).toBeVisible();
 
     // Ready campus shows the ready badge; INACTIVE campus shows the no-registration badge.
-    await expect(rowOf(page, 'Campus Hà Nội').getByText('Sẵn sàng nhận đăng ký')).toBeVisible();
-    await expect(rowOf(page, 'Campus Cần Thơ').getByText('Không nhận đăng ký')).toBeVisible();
+    // Badge wording follows the page ("nhận tiếp đón"); the enable toast still says "nhận đăng ký".
+    await expect(rowOf(page, 'Campus Hà Nội').getByText('Sẵn sàng nhận tiếp đón')).toBeVisible();
+    await expect(rowOf(page, 'Campus Cần Thơ').getByText('Không nhận tiếp đón')).toBeVisible();
   });
 
   test('TC-02: disable preview with blockers never calls PATCH and shows the blocker summary', async ({ page }) => {
