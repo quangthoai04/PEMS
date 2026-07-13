@@ -72,13 +72,13 @@ public sealed class ViewGuestDelegationListQueryHandler
 
         // Admin does not take part in the reception flow (also has no UC-20 grant).
         // The "Đơn mời tham dự" (attending) tab is ONLY for users who can be invited as a
-        // non-host participant: regular Staff, Dept, Student. HO, Staff Leader/IC Head and
+        // non-host participant: regular Staff, Dept, Student, and Staff Leader. HO and
         // Visitor are never invitees (they approve / assign / own), so they have no Tab 2.
         // "registered" is for Visitor/Staff/Staff Leader (the only roles that may create);
         // "hosted" is instance-hosting Staff (in practice the Staff Leader's dedicated view).
         if (roleCode == RoleCodes.Admin ||
             (tab == TabAttending &&
-                (roleCode == RoleCodes.Visitor || roleCode == RoleCodes.Ho || isStaffLeader)) ||
+                (roleCode == RoleCodes.Visitor || roleCode == RoleCodes.Ho)) ||
             (tab == TabRegistered && !(roleCode == RoleCodes.Visitor || isStaffRole)) ||
             (tab == TabHosted && !isStaffRole))
         {
