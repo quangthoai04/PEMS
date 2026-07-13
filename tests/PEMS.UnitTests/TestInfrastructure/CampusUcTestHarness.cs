@@ -190,6 +190,8 @@ public static class CampusUcTestData
     public const ulong HoRoleId = 2;
     public const ulong DepartmentRoleId = 4;
     public const ulong AdminRoleId = 1;
+    public const ulong StudentRoleId = 5;
+    public const ulong VisitorRoleId = 6;
 
     /// <summary>Campus with COMPLETE master data (enable-eligible) — trim fields to test AF cases.</summary>
     public static Campus CreateCampus(ulong campusId, string status = EntityStatuses.Active) => new()
@@ -296,6 +298,10 @@ public static class CampusUcTestData
     public static User CreateDepartmentStaff(ulong userId, ulong campusId, ulong departmentId)
         => CreateUser(userId, DepartmentRoleId, UserSubRoles.Staff, campusId, departmentId);
 
+    /// <summary>STUDENT (sub_role NULL, no department) of the given campus.</summary>
+    public static User CreateStudent(ulong userId, ulong campusId)
+        => CreateUser(userId, StudentRoleId, null, campusId, null);
+
     public static UserSession CreateActiveSession(ulong sessionId, ulong userId) => new()
     {
         SessionId = sessionId,
@@ -354,4 +360,31 @@ public sealed class CampusRecordingSessionService : ISessionService
 
     public Task RevokeSessionAsync(ulong sessionId, string reason, ulong? revokedBy = null, CancellationToken cancellationToken = default)
         => throw new NotSupportedException("UC-86 disable revokes per-user, not per-session.");
+}
+
+/// <summary>
+/// Records every <see cref="WriteSecurityEventAsync"/> call (doc 08 §17 — one aggregate
+/// security policy event with a CAMPUS_DISABLED_SESSIONS_REVOKED detail marker per successful
+/// disable, none on failure).
+/// Login-log writes throw: the UC-86 disable flow must never write login logs.
+/// </summary>
+public sealed class RecordingSecurityAuditService : ISecurityAuditService
+{
+    public List<(ulong? UserId, string EventType, string Result, ulong? SelectedCampusId, string? DetailText)> Events { get; } = new();
+
+    public Task WriteSecurityEventAsync(
+        ulong? userId, string? emailSnapshot, string eventType, string result,
+        string? failureReasonCode = null, string? ipAddress = null, string? userAgent = null,
+        string? loginPortal = null, ulong? selectedCampusId = null, string? providerType = null,
+        ulong? sessionId = null, string? detailText = null, CancellationToken cancellationToken = default)
+    {
+        Events.Add((userId, eventType, result, selectedCampusId, detailText));
+        return Task.CompletedTask;
+    }
+
+    public Task WriteLoginLogAsync(
+        ulong? userId, string email, string loginPortal, ulong? selectedCampusId,
+        string? providerType, string status, string? failureReason, string? ipAddress,
+        string? userAgent, ulong? sessionId, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("UC-86 disable must not write login logs.");
 }

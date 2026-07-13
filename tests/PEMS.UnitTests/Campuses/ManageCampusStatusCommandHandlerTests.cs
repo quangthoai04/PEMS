@@ -36,13 +36,20 @@ public class ManageCampusStatusCommandHandlerTests
     }
 
     private ManageCampusStatusCommandHandler CreateHandler(CampusTestDbContext db) =>
-        CreateHandler(db, out _);
+        CreateHandler(db, out _, out _);
 
     private ManageCampusStatusCommandHandler CreateHandler(
         CampusTestDbContext db, out CampusRecordingSessionService sessions)
+        => CreateHandler(db, out sessions, out _);
+
+    private ManageCampusStatusCommandHandler CreateHandler(
+        CampusTestDbContext db,
+        out CampusRecordingSessionService sessions,
+        out RecordingSecurityAuditService securityAudit)
     {
         sessions = new CampusRecordingSessionService(db);
-        return new(db, _currentUser, new RoleAccessPolicy(), _clock, sessions);
+        securityAudit = new RecordingSecurityAuditService();
+        return new(db, _currentUser, new RoleAccessPolicy(), _clock, sessions, securityAudit);
     }
 
     private static CampusTestDbContext CreateContext(string campusStatus = EntityStatuses.Active)
@@ -124,51 +131,68 @@ public class ManageCampusStatusCommandHandlerTests
         Assert.False(response.Readiness!.IsAvailableForVisitRegistration);
     }
 
-    // ── Session revocation on disable (STAFF/DEPARTMENT of the campus lose access) ──
+    // ── Session revocation on disable (STAFF/DEPARTMENT/STUDENT of the campus lose access) ──
 
     [Fact]
-    public async Task Disable_RevokesSessionsOfCampusStaffAndDepartmentUsers()
+    public async Task Disable_RevokesSessionsOfCampusHoAdminStaffDepartmentAndStudentUsers()
     {
         using var db = CreateContext();
+        db.Roles.Add(CampusUcTestData.CreateRole(CampusUcTestData.HoRoleId, RoleCodes.Ho));
+        db.Roles.Add(CampusUcTestData.CreateRole(CampusUcTestData.AdminRoleId, RoleCodes.Admin));
         db.Roles.Add(CampusUcTestData.CreateRole(CampusUcTestData.DepartmentRoleId, RoleCodes.Department));
+        db.Roles.Add(CampusUcTestData.CreateRole(CampusUcTestData.StudentRoleId, RoleCodes.Student));
         db.Departments.Add(CampusUcTestData.CreateGeneralDepartment(20, CampusId));
-        // Staff Leader (STAFF) + a DEPARTMENT staff, both in the disabled campus.
+        // All five doc-08 §4 shapes: Staff Leader, IC Staff, Dept Leader, Dept Staff, Student.
+        db.Users.Add(CampusUcTestData.CreateUser(98, CampusUcTestData.HoRoleId, null, CampusId, null));
+        db.Users.Add(CampusUcTestData.CreateUser(99, CampusUcTestData.AdminRoleId, null, CampusId, null));
         db.Users.Add(CampusUcTestData.CreateStaffLeader(100, CampusId, IcDeptId));
-        db.Users.Add(CampusUcTestData.CreateDepartmentStaff(101, CampusId, 20));
-        db.UserSessions.Add(CampusUcTestData.CreateActiveSession(1000, 100));
-        db.UserSessions.Add(CampusUcTestData.CreateActiveSession(1001, 101));
+        db.Users.Add(CampusUcTestData.CreateUser(101, CampusUcTestData.StaffRoleId, UserSubRoles.Staff, CampusId, IcDeptId));
+        db.Users.Add(CampusUcTestData.CreateUser(102, CampusUcTestData.DepartmentRoleId, UserSubRoles.Leader, CampusId, 20));
+        db.Users.Add(CampusUcTestData.CreateDepartmentStaff(103, CampusId, 20));
+        db.Users.Add(CampusUcTestData.CreateStudent(104, CampusId));
+        foreach (var uid in new ulong[] { 98, 99, 100, 101, 102, 103, 104 })
+            db.UserSessions.Add(CampusUcTestData.CreateActiveSession(1000 + uid, uid));
         db.SaveChanges();
         var handler = CreateHandler(db, out var sessions);
 
         var response = await handler.Handle(Disable(), CancellationToken.None);
 
         Assert.Equal(EntityStatuses.Inactive, response.Status);
-        Assert.Equal(2, response.AffectedAccountCount);
-        Assert.Equal(2, response.RevokedSessionCount);
-        Assert.Equal(2, sessions.RevokeAllCalls.Count);
+        Assert.Equal(7, response.AffectedAccountCount);
+        Assert.Equal(7, response.RevokedSessionCount);
         Assert.All(sessions.RevokeAllCalls, c => Assert.Equal(SessionRevokeReasons.CampusDisabled, c.Reason));
-        // Sessions actually revoked; users.status untouched (org-level lock).
+        // Soft revoke only — sessions still exist as history; users.status / role / sub-role /
+        // department status all untouched (org-level lock, doc-08 §18 asserts).
+        Assert.Equal(7, db.UserSessions.Count());
         Assert.All(db.UserSessions.ToList(), s => Assert.NotNull(s.RevokedAt));
-        Assert.All(db.Users.Where(u => u.UserId == 100 || u.UserId == 101).ToList(),
-            u => Assert.Equal(UserStatuses.Active, u.Status));
+        Assert.All(db.Users.Where(u => u.UserId >= 98 && u.UserId <= 104).ToList(), u =>
+        {
+            Assert.Equal(UserStatuses.Active, u.Status);
+            Assert.Equal(u.UserId, u.UserId); // user rows still present
+        });
+        Assert.Equal(EntityStatuses.Active, db.Departments.Single(d => d.DepartmentId == 20).Status);
     }
 
     [Fact]
-    public async Task Disable_DoesNotRevoke_HoAdminOrOtherCampusSessions()
+    public async Task Disable_DoesNotRevoke_VisitorOrOtherCampusSessions()
     {
         using var db = CreateContext();
         db.Roles.Add(CampusUcTestData.CreateRole(CampusUcTestData.HoRoleId, RoleCodes.Ho));
         db.Roles.Add(CampusUcTestData.CreateRole(CampusUcTestData.AdminRoleId, RoleCodes.Admin));
+        db.Roles.Add(CampusUcTestData.CreateRole(CampusUcTestData.VisitorRoleId, RoleCodes.Visitor));
         db.Campuses.Add(CampusUcTestData.CreateCampus(2));
         db.Departments.Add(CampusUcTestData.CreateIcDepartment(21, 2));
         // HO + ADMIN whose primary campus IS the disabled one — must NOT be revoked.
-        db.Users.Add(CampusUcTestData.CreateUser(200, CampusUcTestData.HoRoleId, null, CampusId, null));
-        db.Users.Add(CampusUcTestData.CreateUser(201, CampusUcTestData.AdminRoleId, null, CampusId, null));
+        db.Users.Add(CampusUcTestData.CreateUser(200, CampusUcTestData.HoRoleId, null, 2, null));
+        db.Users.Add(CampusUcTestData.CreateUser(201, CampusUcTestData.AdminRoleId, null, 2, null));
         // STAFF of ANOTHER campus — must NOT be revoked.
         db.Users.Add(CampusUcTestData.CreateStaffLeader(202, 2, 21));
+        // VISITOR (no campus) — must NOT be revoked.
+        db.Users.Add(CampusUcTestData.CreateUser(203, CampusUcTestData.VisitorRoleId, null, null, null));
         db.UserSessions.Add(CampusUcTestData.CreateActiveSession(2000, 200));
         db.UserSessions.Add(CampusUcTestData.CreateActiveSession(2001, 201));
         db.UserSessions.Add(CampusUcTestData.CreateActiveSession(2002, 202));
+        db.UserSessions.Add(CampusUcTestData.CreateActiveSession(2003, 203));
         db.SaveChanges();
         var handler = CreateHandler(db, out var sessions);
 
@@ -177,6 +201,60 @@ public class ManageCampusStatusCommandHandlerTests
         Assert.Equal(0, response.AffectedAccountCount);
         Assert.Empty(sessions.RevokeAllCalls);
         Assert.All(db.UserSessions.ToList(), s => Assert.Null(s.RevokedAt));
+    }
+
+    [Fact]
+    public async Task Disable_WritesOneAggregateSecurityEvent()
+    {
+        using var db = CreateContext();
+        db.Users.Add(CampusUcTestData.CreateStaffLeader(100, CampusId, IcDeptId));
+        db.UserSessions.Add(CampusUcTestData.CreateActiveSession(1000, 100));
+        db.SaveChanges();
+        var handler = CreateHandler(db, out _, out var securityAudit);
+
+        await handler.Handle(Disable(), CancellationToken.None);
+
+        var evt = Assert.Single(securityAudit.Events);
+        Assert.Equal(SecurityEventTypes.SecurityPolicyCheck, evt.EventType);
+        Assert.Equal("SUCCESS", evt.Result);
+        Assert.Equal(900UL, evt.UserId);          // actor HO
+        Assert.Equal(CampusId, evt.SelectedCampusId);
+        Assert.Contains($"event={SecurityEventDetailMarkers.CampusDisabledSessionsRevoked}", evt.DetailText);
+        Assert.Contains("affectedUserCount=1", evt.DetailText);
+        Assert.Contains("revokedSessionCount=1", evt.DetailText);
+    }
+
+    [Fact]
+    public async Task Disable_Blocked_RevokesNothing_NoSecurityEvent()
+    {
+        using var db = CreateContext();
+        AddInstance(db, 50, VisitInstanceStatuses.Assigned); // hard blocker → disable fails
+        db.Users.Add(CampusUcTestData.CreateStaffLeader(100, CampusId, IcDeptId));
+        db.UserSessions.Add(CampusUcTestData.CreateActiveSession(1000, 100));
+        db.SaveChanges();
+        var handler = CreateHandler(db, out var sessions, out var securityAudit);
+
+        await Assert.ThrowsAsync<ConflictException>(
+            () => handler.Handle(Disable(), CancellationToken.None));
+
+        // BR-AUTH-CAMPUS-05: failed disable = campus stays ACTIVE, zero revocations, no
+        // success audit/security event.
+        Assert.Equal(EntityStatuses.Active, db.Campuses.Single().Status);
+        Assert.Empty(sessions.RevokeAllCalls);
+        Assert.Null(db.UserSessions.Single().RevokedAt);
+        Assert.Empty(securityAudit.Events);
+        Assert.Empty(db.AuditLogs);
+    }
+
+    [Fact]
+    public async Task Enable_WritesNoSecurityEvent()
+    {
+        using var db = CreateContext(EntityStatuses.Inactive);
+        var handler = CreateHandler(db, out _, out var securityAudit);
+
+        await handler.Handle(Enable(), CancellationToken.None);
+
+        Assert.Empty(securityAudit.Events);
     }
 
     [Fact]
