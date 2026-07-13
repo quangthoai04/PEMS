@@ -152,7 +152,19 @@ public static class SecurityEventTypes
     public const string SecurityPolicyCheck = "SECURITY_POLICY_CHECK";
 
     /// <summary>A LOCKED Staff Leader was replaced (REPLACE_STAFF_LEADER spec §18).</summary>
+    public const string StaffLeaderReplacedWhileLocked = SecurityPolicyCheck;
+
+    /// <summary>
+    /// UC-86 force-logout: one aggregate event per campus disable, carrying the affected
+    /// account count and revoked session count (never one event per session).
+    /// </summary>
+    public const string CampusDisabledSessionsRevoked = SecurityPolicyCheck;
+}
+
+public static class SecurityEventDetailMarkers
+{
     public const string StaffLeaderReplacedWhileLocked = "STAFF_LEADER_REPLACED_WHILE_LOCKED";
+    public const string CampusDisabledSessionsRevoked = "CAMPUS_DISABLED_SESSIONS_REVOKED";
 }
 
 public static class SecurityEventFailureReasonCodes
@@ -189,6 +201,9 @@ public static class SessionRevokeReasons
 
     /// <summary>UC-106: the user's department was disabled, so every active session is revoked.</summary>
     public const string DepartmentDisabled = "DEPARTMENT_DISABLED";
+
+    /// <summary>UC-86: the user's primary campus was disabled, so every active session is revoked.</summary>
+    public const string CampusDisabled = "CAMPUS_DISABLED";
 }
 
 public static class CreatedViaValues

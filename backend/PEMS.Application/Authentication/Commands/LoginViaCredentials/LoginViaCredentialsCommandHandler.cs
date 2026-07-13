@@ -118,6 +118,13 @@ public sealed class LoginviaCredentialsCommandHandler : IRequestHandler<Loginvia
             await FailAsync(user, email, portal, LoginLogStatuses.Blocked, "department_inactive", SecurityEventFailureReasonCodes.AccountDisabled,
                 request, AuthErrorCodes.DepartmentInactive, DepartmentAccessRule.BlockedMessage, 403, cancellationToken);
 
+        // UC-86 force-logout: campus-scoped accounts (STAFF/DEPARTMENT/STUDENT) may not sign in
+        // while their PRIMARY campus is INACTIVE — no session, no tokens (BR-AUTH-CAMPUS-06).
+        // Checked from the DB primary campus, independent of the selected-campus input below.
+        if (CampusAccessRule.IsBlocked(user.Role!.RoleCode, user.PrimaryCampus?.Status))
+            await FailAsync(user, email, portal, LoginLogStatuses.Blocked, "campus_inactive_access_denied", SecurityEventFailureReasonCodes.AccountDisabled,
+                request, AuthErrorCodes.CampusInactiveAccessDenied, CampusAccessRule.BlockedMessage, 403, cancellationToken);
+
         // Local password provider, if present, must be enabled.
         var localProvider = user.AuthProviders.FirstOrDefault(p => p.ProviderType == ProviderTypes.LocalPassword);
         if (localProvider is not null && !localProvider.IsEnabled)

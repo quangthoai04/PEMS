@@ -34,6 +34,20 @@ async function mockPartnerSearch(page: Page) {
   await page.route('**/public/partners/**', (route) => route.fulfill({ json: [] }));
 }
 
+/** Campus options are backend-driven (UC-86 §10) — mock the anonymous options endpoint. */
+async function mockRegistrationCampuses(page: Page) {
+  await page.route('**/campuses/available-for-registration', (route) =>
+    route.fulfill({
+      json: [
+        { campusId: 1, campusCode: 'HN', campusName: 'Hà Nội', city: 'Hà Nội' },
+        { campusId: 2, campusCode: 'DN', campusName: 'Đà Nẵng', city: 'Đà Nẵng' },
+        { campusId: 3, campusCode: 'CT', campusName: 'Cần Thơ', city: 'Cần Thơ' },
+        { campusId: 4, campusCode: 'HCM', campusName: 'Hồ Chí Minh', city: 'TP. Hồ Chí Minh' },
+        { campusId: 5, campusCode: 'QN', campusName: 'Quy Nhơn', city: 'Gia Lai' },
+      ],
+    }));
+}
+
 async function mockInitiate(page: Page) {
   const counter = { calls: 0, lastSubmissionId: '' };
   await page.route('**/visit-requests/initiate', async (route) => {
@@ -89,8 +103,10 @@ async function fillValidForm(page: Page) {
   await page.locator('#section-registrant input[type="tel"]').fill('912345678');
   await page.locator('input[name="registerInfo.email"]').fill('registrant@example.com');
 
-  // B. Visit info + schedule (single campus, ≥72h advance, ≥3h duration)
+  // B. Visit info + schedule (single campus, ≥72h advance, ≥3h duration).
+  // Campus starts unselected — options are backend-driven, so pick one explicitly.
   await page.locator('input[name="delegationName"]').fill('Đoàn Kiểm Thử');
+  await page.locator('select[name="visits.0.campus"] >> visible=true').selectOption('HN');
   await page.locator('input[name="visits.0.startDatetime"] >> visible=true').fill(localDateTime(5, 9));
   await page.locator('input[name="visits.0.endDatetime"] >> visible=true').fill(localDateTime(5, 15));
   await page.locator('textarea[name="purpose"]').fill('Tham quan và trao đổi hợp tác');
@@ -124,6 +140,7 @@ async function enterOtp(page: Page, code: string) {
 test.describe('UC17 single-form public visit request', () => {
   test.beforeEach(async ({ page }) => {
     await mockPartnerSearch(page);
+    await mockRegistrationCampuses(page);
   });
 
   test('TC-01: one continuous form — no wizard artifacts', async ({ page }) => {
@@ -338,6 +355,7 @@ const DUPLICATE_409 = {
 test.describe('UC17 OTP V2 + duplicate result', () => {
   test.beforeEach(async ({ page }) => {
     await mockPartnerSearch(page);
+    await mockRegistrationCampuses(page);
   });
 
   test('V2-01: wrong OTP shows server remaining attempts', async ({ page }) => {

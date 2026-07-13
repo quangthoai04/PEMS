@@ -236,6 +236,13 @@ public sealed class LoginviaSSOCommandHandler : IRequestHandler<LoginviaSSOComma
         if (DepartmentAccessRule.IsBlocked(user.Role!.RoleCode, user.Department?.Status))
             await FailAsync(user, email, portal, "department_inactive", SecurityEventFailureReasonCodes.AccountDisabled,
                 request, AuthErrorCodes.DepartmentInactive, DepartmentAccessRule.BlockedMessage, 403, cancellationToken);
+
+        // UC-86 force-logout: campus-scoped internal accounts (STAFF/DEPARTMENT/STUDENT) may not
+        // sign in while their PRIMARY campus is INACTIVE — no session, no tokens
+        // (BR-AUTH-CAMPUS-06). The rule is role-scoped, so Visitor SSO is never affected.
+        if (CampusAccessRule.IsBlocked(user.Role!.RoleCode, user.PrimaryCampus?.Status))
+            await FailAsync(user, email, portal, "campus_inactive_access_denied", SecurityEventFailureReasonCodes.AccountDisabled,
+                request, AuthErrorCodes.CampusInactiveAccessDenied, CampusAccessRule.BlockedMessage, 403, cancellationToken);
     }
 
     private async Task<AuthResponse> IssueAndAuditAsync(

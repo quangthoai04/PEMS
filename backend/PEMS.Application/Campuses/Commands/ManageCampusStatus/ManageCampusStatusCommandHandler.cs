@@ -18,12 +18,22 @@ namespace PEMS.Application.Campuses.Commands.ManageCampusStatus;
 /// <summary>
 /// UC-86 handler. HO toggles a campus between ACTIVE and INACTIVE.
 ///
-/// Mode (per UC-86 §9): this phase uses the SIMPLIFIED disable model — disabling is always
-/// allowed (no hard-delete, BR-86-02), existing links are preserved (BR-86-05), and an
-/// INACTIVE campus is simply hidden from new business flows (BR-86-04) because
-/// <c>GetActiveCampuses</c> only returns ACTIVE rows. Re-activation is guarded by
-/// BR-86-06: the campus must have complete master data and at least one ACTIVE IC
-/// department. Writes status + updated_by/updated_at and an audit log.
+/// Disable (BR-86-07/08/09): blocked with 409 while the campus still has visit instances in a
+/// non-terminal status — checked on <c>visit_request_campuses.campus_id</c> inside the same
+/// transaction that flips the status, so a submit that races the preview is still caught
+/// (BR-86-17). CLOSED/CANCELLED/REJECTED never block; nothing is cascaded, cancelled or deleted
+/// (BR-86-11/12/13).
+///
+/// Enable (BR-86-14/15): requires complete master data + an ACTIVE IC department; a Staff Leader
+/// is NOT required — it only gates operational availability, which is recomputed for the
+/// response. Idempotent no-op on same-status requests. Audits ENABLE_CAMPUS/DISABLE_CAMPUS.
+///
+/// A successful DISABLE also revokes every active session of the campus's internal
+/// HO/ADMIN/STAFF/DEPARTMENT/STUDENT accounts (users.status is never touched — an
+/// org-level lock, mirror of UC-106 department disable) and writes one aggregate security
+/// policy event with a CAMPUS_DISABLED_SESSIONS_REVOKED detail marker. VISITOR and users of
+/// other campuses are never affected. Enable never restores revoked
+/// sessions (BR-AUTH-CAMPUS-09).
 /// </summary>
 public sealed class ManageCampusStatusCommandHandler
     : IRequestHandler<ManageCampusStatusCommand, ManageCampusStatusResponse>
@@ -32,16 +42,22 @@ public sealed class ManageCampusStatusCommandHandler
     private readonly ICurrentUserService _currentUser;
     private readonly IRoleAccessPolicy _accessPolicy;
     private readonly IDateTimeService _clock;
+    private readonly ISessionService _sessionService;
+    private readonly ISecurityAuditService _securityAudit;
 
     public ManageCampusStatusCommandHandler(
         IApplicationDbContext db,
         ICurrentUserService currentUser,
         IRoleAccessPolicy accessPolicy,
-        IDateTimeService clock)
+        IDateTimeService clock,
+        ISessionService sessionService,
+        ISecurityAuditService securityAudit)
     {
         _db = db;
         _currentUser = currentUser;
         _accessPolicy = accessPolicy;
+        _sessionService = sessionService;
+        _securityAudit = securityAudit;
         _clock = clock;
     }
 
@@ -72,12 +88,13 @@ public sealed class ManageCampusStatusCommandHandler
             throw new ForbiddenException("Bạn không thể thay đổi trạng thái campus của chính mình.");
 
         var previousStatus = campus.Status;
-        var actorId = _currentUser.UserId;
-        var now = _clock.VietnamNow;
 
-        // Idempotent no-op: already at the requested status (UC-86 §10).
+        // Idempotent no-op: already at the requested status (UC-86 §17) — no updated_at
+        // change, no audit row.
         if (string.Equals(previousStatus, newStatus, StringComparison.Ordinal))
         {
+            var currentReadiness = await CampusAvailabilityEvaluator.EvaluateAsync(
+                _db, campus.CampusId, cancellationToken);
             return new ManageCampusStatusResponse
             {
                 CampusId = campus.CampusId,
@@ -85,29 +102,84 @@ public sealed class ManageCampusStatusCommandHandler
                 UpdatedAt = campus.UpdatedAt ?? campus.CreatedAt,
                 UpdatedBy = campus.UpdatedBy,
                 Message = "Campus đã ở trạng thái này.",
+                Readiness = currentReadiness?.Readiness,
             };
         }
 
-        // ── Enable (INACTIVE → ACTIVE): validate required master data + active IC dept (BR-86-06) ──
+        // ── Enable (INACTIVE → ACTIVE): master data + active IC dept (BR-86-14) ──
         if (newStatus == EntityStatuses.Active)
+            await EnsureActivationAllowedAsync(campus, cancellationToken);
+
+        var actorId = _currentUser.UserId;
+        var now = _clock.VietnamNow;
+        var action = newStatus == EntityStatuses.Active ? "ENABLE_CAMPUS" : "DISABLE_CAMPUS";
+
+        var affectedUserIds = new List<ulong>();
+        var revokedSessionCount = 0;
+
+        // ── Transactional transition: the disable-blocker recheck, the status write and the
+        // session revocation must be one unit (§23.2) — a visit submit committed after the
+        // preview still blocks here, and status + revocation commit or roll back together.
+        // ISessionService shares this scoped DbContext, so its writes join this transaction. ──
+        await using var transaction = await _db.BeginTransactionAsync(cancellationToken);
+        try
         {
-            await EnsureActivationAllowedAsync(campus.CampusId, campus, cancellationToken);
-        }
+            if (newStatus == EntityStatuses.Inactive)
+            {
+                var impact = await CampusStatusImpactCalculator.ComputeDisableImpactAsync(
+                    _db, campus.CampusId, cancellationToken);
 
-        // ── Disable (ACTIVE → INACTIVE): simplified mode, always allowed (see class summary). ──
+                if (impact.HasBlockers)
+                {
+                    // No update, no audit (§24: never audit a change that did not happen).
+                    throw new ConflictException(
+                        "Không thể ngừng hoạt động campus vì còn chuyến thăm chưa hoàn tất.",
+                        CampusErrorCodes.CampusHasActiveVisits,
+                        new
+                        {
+                            total = impact.BlockerCount,
+                            byStatus = impact.BlockersByStatus,
+                        });
+                }
 
-        campus.Status = newStatus;
-        campus.UpdatedAt = now;
-        campus.UpdatedBy = actorId;
+                // Campus-scoped internal accounts (HO/ADMIN/STAFF/DEPARTMENT/STUDENT) of this
+                // campus lose access: revoke their active sessions. users.status is NOT touched;
+                // VISITOR and users of other campuses are never affected.
+                affectedUserIds = await _db.Users.AsNoTracking()
+                    .Where(u => u.PrimaryCampusId == campus.CampusId
+                                && (u.Role!.RoleCode == RoleCodes.Ho
+                                    || u.Role!.RoleCode == RoleCodes.Admin
+                                    || u.Role!.RoleCode == RoleCodes.Staff
+                                    || u.Role!.RoleCode == RoleCodes.Department
+                                    || u.Role!.RoleCode == RoleCodes.Student))
+                    .Select(u => u.UserId)
+                    .ToListAsync(cancellationToken);
+            }
 
-        _db.AuditLogs.Add(new AuditLog
-        {
-            ActorUserId = actorId,
-            CampusId = campus.CampusId,
-            Action = "MANAGE_CAMPUS_STATUS",
-            EntityType = "Campus",
-            EntityId = campus.CampusId,
-            Changes = new List<AuditLogChange>
+            campus.Status = newStatus;
+            campus.UpdatedAt = now;
+            campus.UpdatedBy = actorId;
+
+            foreach (var userId in affectedUserIds)
+                revokedSessionCount += await _sessionService.RevokeAllActiveSessionsAsync(
+                    userId, SessionRevokeReasons.CampusDisabled, actorId, cancellationToken);
+
+            // One aggregate security event per disable (doc §17) — inside the transaction so a
+            // failed disable never leaves a success event behind. No per-session events, no
+            // tokens/PII in the detail text.
+            if (newStatus == EntityStatuses.Inactive)
+            {
+                await _securityAudit.WriteSecurityEventAsync(
+                    userId: actorId,
+                    emailSnapshot: _currentUser.Email,
+                    eventType: SecurityEventTypes.SecurityPolicyCheck,
+                    result: "SUCCESS",
+                    selectedCampusId: campus.CampusId,
+                    detailText: $"event={SecurityEventDetailMarkers.CampusDisabledSessionsRevoked}; campusId={campus.CampusId}; affectedUserCount={affectedUserIds.Count}; revokedSessionCount={revokedSessionCount}",
+                    cancellationToken: cancellationToken);
+            }
+
+            var changes = new List<AuditLogChange>
             {
                 new AuditLogChange
                 {
@@ -115,11 +187,37 @@ public sealed class ManageCampusStatusCommandHandler
                     OldValueText = previousStatus,
                     NewValueText = JsonSerializer.Serialize(new { status = newStatus, reason = request.Reason })
                 }
-            },
-            CreatedAt = now,
-        });
+            };
+            if (newStatus == EntityStatuses.Inactive)
+            {
+                changes.Add(new AuditLogChange { FieldName = "AffectedAccountCount", NewValueText = affectedUserIds.Count.ToString() });
+                changes.Add(new AuditLogChange { FieldName = "RevokedSessionCount", NewValueText = revokedSessionCount.ToString() });
+            }
 
-        await _db.SaveChangesAsync(cancellationToken);
+            _db.AuditLogs.Add(new AuditLog
+            {
+                ActorUserId = actorId,
+                CampusId = campus.CampusId,
+                Action = action,
+                EntityType = "Campus",
+                EntityId = campus.CampusId,
+                Changes = changes,
+                CreatedAt = now,
+            });
+
+            await _db.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+        }
+        catch
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            throw;
+        }
+
+        // Recompute operational readiness for the response (§19.2 step 10) — e.g. an enable
+        // without a Staff Leader returns ACTIVE + isAvailableForVisitRegistration = false.
+        var snapshot = await CampusAvailabilityEvaluator.EvaluateAsync(
+            _db, campus.CampusId, cancellationToken);
 
         return new ManageCampusStatusResponse
         {
@@ -129,25 +227,23 @@ public sealed class ManageCampusStatusCommandHandler
             UpdatedBy = actorId,
             Message = newStatus == EntityStatuses.Active
                 ? "Đã kích hoạt campus."
-                : "Đã ngừng hoạt động campus.",
+                : affectedUserIds.Count > 0
+                    ? $"Đã ngừng hoạt động campus. {affectedUserIds.Count} tài khoản không còn quyền truy cập hệ thống."
+                    : "Đã ngừng hoạt động campus.",
+            Readiness = snapshot?.Readiness,
+            AffectedAccountCount = affectedUserIds.Count,
+            RevokedSessionCount = revokedSessionCount,
         };
     }
 
     /// <summary>
-    /// BR-86-06: a campus may only be re-activated when its required master data is complete
-    /// and it has at least one ACTIVE IC department.
+    /// BR-86-14: a campus may only be re-activated when its required master data is complete
+    /// and it has at least one ACTIVE IC department. A Staff Leader is NOT required (BR-86-15).
     /// </summary>
     private async Task EnsureActivationAllowedAsync(
-        ulong campusId, Domain.Entities.Campuses.Campus campus, CancellationToken ct)
+        Domain.Entities.Campuses.Campus campus, CancellationToken ct)
     {
-        var missing = new List<string>();
-        if (string.IsNullOrWhiteSpace(campus.CampusCode)) missing.Add("campusCode");
-        if (string.IsNullOrWhiteSpace(campus.Name)) missing.Add("name");
-        if (string.IsNullOrWhiteSpace(campus.City)) missing.Add("city");
-        if (string.IsNullOrWhiteSpace(campus.Address)) missing.Add("address");
-        if (string.IsNullOrWhiteSpace(campus.Phone)) missing.Add("phone");
-        if (string.IsNullOrWhiteSpace(campus.Email) || !IsValidEmail(campus.Email)) missing.Add("email");
-
+        var missing = CampusActivationRequirements.GetMissingMasterData(campus);
         if (missing.Count > 0)
         {
             throw new BusinessRuleException(
@@ -156,7 +252,7 @@ public sealed class ManageCampusStatusCommandHandler
         }
 
         var hasActiveIcDept = await _db.Departments.AsNoTracking().AnyAsync(
-            d => d.CampusId == campusId
+            d => d.CampusId == campus.CampusId
                 && d.DepartmentType == "IC"
                 && d.Status == EntityStatuses.Active,
             ct);
@@ -167,13 +263,5 @@ public sealed class ManageCampusStatusCommandHandler
                 "Không thể kích hoạt campus vì chưa có phòng ban IC đang hoạt động.",
                 CampusErrorCodes.CampusActivationMissingIcDepartment);
         }
-    }
-
-    private static bool IsValidEmail(string? email)
-    {
-        if (string.IsNullOrWhiteSpace(email)) return false;
-        var at = email.IndexOf('@');
-        var dot = email.LastIndexOf('.');
-        return at > 0 && dot > at + 1 && dot < email.Length - 1;
     }
 }

@@ -47,6 +47,12 @@ async function performRefresh(): Promise<string | null> {
   }
 }
 
+/**
+ * UC-86 force-logout (BR-AUTH-CAMPUS-08): sessionStorage key read once by the login page to
+ * explain WHY the user was signed out ("cơ sở đã ngừng hoạt động").
+ */
+export const FORCED_LOGOUT_REASON_KEY = 'pems.forcedLogoutReason';
+
 httpClient.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {
@@ -55,6 +61,22 @@ httpClient.interceptors.response.use(
     const url = original?.url ?? '';
 
     const isAuthPath = NO_REFRESH_PATHS.some((p) => url.includes(p));
+
+    // UC-86 force-logout: the backend denies the account because its campus is INACTIVE
+    // (403 + CAMPUS_INACTIVE_ACCESS_DENIED from the session middleware / refresh / login gate).
+    // Clear ALL auth state and send the user to the login page — never keep them on the
+    // dashboard with a toast. Auth-form endpoints are excluded: their pages render the error
+    // inline and there is no signed-in state to clear. Other 403 codes never trigger this.
+    const errorBody = error.response?.data as { errorCode?: string; message?: string } | undefined;
+    if (status === 403 && errorBody?.errorCode === 'CAMPUS_INACTIVE_ACCESS_DENIED' && !isAuthPath) {
+      sessionStorage.setItem(
+        FORCED_LOGOUT_REASON_KEY,
+        errorBody.message || 'Cơ sở của tài khoản hiện đã ngừng hoạt động. Vui lòng liên hệ Head Office để được hỗ trợ.',
+      );
+      authStorage.clear();
+      window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT));
+      return Promise.reject(error);
+    }
 
     if (status === 401 && !isAuthPath) {
       if (!original || original._retry || !authStorage.getRefreshToken()) {

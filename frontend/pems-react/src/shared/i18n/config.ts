@@ -101,8 +101,14 @@ i18n
       escapeValue: false, // React already safe from xss
     },
     // Missing keys render as the key itself so gaps are visible during development
-    // instead of silently collapsing to an empty node.
-    parseMissingKeyHandler: (key) => key,
+    // instead of silently collapsing to an empty node — UNLESS an explicit defaultValue
+    // was passed to t(key, defaultValue). i18next routes a missing key with a default
+    // through this handler, so a handler that ignored the second arg would swallow the
+    // fallback (e.g. t('...campusOptions.TH', 'FPT Thanh Hóa') would render the raw key
+    // for any campus without a hardcoded translation — which every runtime-created campus
+    // is). Respecting defaultValue restores standard i18next semantics.
+    parseMissingKeyHandler: (key, defaultValue) =>
+      typeof defaultValue === 'string' && defaultValue.length > 0 ? defaultValue : key,
     saveMissing: import.meta.env.DEV,
     missingKeyHandler: (lngs, ns, key) => {
       if (import.meta.env.DEV) {
