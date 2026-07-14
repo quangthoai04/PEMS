@@ -146,7 +146,10 @@ export function AccountManagement() {
 
   const handleEditClick = () => {
     if (!selectedAccount) return;
-    setEditForm({...selectedAccount});
+    // Role editing is intentionally isolated from the account-detail snapshot.
+    // All other fields keep the exact values loaded by UC-98 and remain read-only.
+    setRoleError(null);
+    setEditForm({ role: selectedAccount.role });
     setIsEditingProfile(true);
   };
 
@@ -329,6 +332,7 @@ export function AccountManagement() {
       phone: a.phone,
       avatar: a.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(a.fullName)}&background=random`,
       createdAt: a.createdAt ? a.createdAt.substring(0, 10) : '',
+      departmentId: a.departmentId,
       department: a.departmentName,
       subRole: a.subRole,
       studentId: a.studentCode,
@@ -563,7 +567,9 @@ export function AccountManagement() {
       role: details.roleCode,
       roleName: details.roleName,
       subRole: details.displayPosition ?? details.subRole,
+      campusId: details.campusId ?? prev?.campusId ?? null,
       campus: details.campusName || prev?.campus || '',
+      departmentId: details.departmentId ?? null,
       department: details.departmentName,
       rawStatus: details.status,
       lastLoginAt: details.lastLoginAt,
@@ -666,14 +672,16 @@ export function AccountManagement() {
     setRoleError(null);
     setRoleSaving(true);
     const newRoleCode = editForm?.role;
-    // SL bắt buộc chọn phòng ban (dropdown campus của mình); ADMIN không có dropdown
-    // phòng ban theo campus target — backend sẽ validate và trả lỗi rõ ràng nếu thiếu.
-    if (isStaffLeader && newRoleCode === 'DEPARTMENT' && !selectedDept) {
+    // This drawer is a role-only editor. Preserve the account's original department id
+    // when the selected role still needs it; the server derives/clears the remaining shape.
+    const departmentId = newRoleCode === 'DEPARTMENT'
+      ? (selectedAccount.departmentId ?? null)
+      : null;
+    if (isStaffLeader && newRoleCode === 'DEPARTMENT' && !departmentId) {
       setRoleSaving(false);
-      setRoleError('Vui lòng chọn phòng ban cho vai trò Trưởng phòng ban.');
+      setRoleError('Tài khoản ban đầu chưa thuộc phòng ban phù hợp để chuyển sang Trưởng phòng ban.');
       return;
     }
-    const departmentId = newRoleCode === 'DEPARTMENT' && selectedDept ? selectedDept : null;
     try {
       await accountManagementApi.updateAccountRole({
         userId: (selectedAccount.userId ?? selectedAccount.id) as any,
@@ -1249,7 +1257,12 @@ export function AccountManagement() {
 
               <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 flex flex-col gap-6 relative z-10 w-full animate-in fade-in duration-300">
                 {(() => {
-                  const data = isEditingProfile ? editForm : selectedAccount;
+                  // The detail snapshot never changes while the role editor is open.
+                  // Only roleValue comes from editForm; every other field renders the UC-98 data.
+                  const data = selectedAccount;
+                  const roleValue = isEditingProfile
+                    ? (editForm?.role ?? selectedAccount.role)
+                    : selectedAccount.role;
                   const isEdit = isEditingProfile;
 
                   const Input = ({ label, value, field, type="text", disabled=false }: any) => (
@@ -1280,7 +1293,12 @@ export function AccountManagement() {
                             disabled={disabled}
                             className={`px-3 py-2 pr-8 border border-gray-200 rounded-lg text-sm font-medium text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#004c91] bg-gray-50 transition-all appearance-none w-full ${disabled ? 'opacity-70 cursor-not-allowed' : 'focus:bg-white'}`}
                           >
-                            {options.map((opt: any) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                            {value && !options.some((opt: any) => String(opt.value) === String(value)) && (
+                              <option value={value}>{value}</option>
+                            )}
+                            {options.map((opt: any) => (
+                              <option key={opt.value} value={opt.value} disabled={opt.disabled}>{opt.label}</option>
+                            ))}
                           </select>
                           <ChevronDown className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
                         </div>
@@ -1309,14 +1327,14 @@ export function AccountManagement() {
                   return (
                     <>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-5 w-full">
-                        <Input label="Họ và tên" value={data.name} field="name" disabled={isStaffLeader} />
-                        <Input label="Email" value={data.email} field="email" type="email" disabled={isStaffLeader} />
-                        <Select label="Giới tính" value={genderLabel(data.gender)} field="gender" options={[{value: 'Nam', label:'Nam'}, {value:'Nữ', label:'Nữ'}, {value:'Khác', label:'Khác'}, {value:'Không xác định', label:'Không xác định'}]} disabled={isStaffLeader} />
-                        <Input label="Số điện thoại" value={data.phone} field="phone" disabled={isStaffLeader} />
+                        <Input label="Họ và tên" value={data.name} field="name" disabled={isEdit} />
+                        <Input label="Email" value={data.email} field="email" type="email" disabled={isEdit} />
+                        <Select label="Giới tính" value={genderLabel(data.gender)} field="gender" options={[{value: 'Nam', label:'Nam'}, {value:'Nữ', label:'Nữ'}, {value:'Khác', label:'Khác'}, {value:'Không xác định', label:'Không xác định'}]} disabled={isEdit} />
+                        <Input label="Số điện thoại" value={data.phone} field="phone" disabled={isEdit} />
                         {(isHO || isRealAdmin || isStaffLeader) && (
                           <Select 
                             label="Vai trò" 
-                            value={data.role} 
+                            value={roleValue} 
                             field="role" 
                             disabled={false}
                             options={
@@ -1339,53 +1357,34 @@ export function AccountManagement() {
                           />
                         )}
 
-                        {/* UC-100-SL: choose the department this user will lead (optional). */}
-                        {isEditingProfile && isStaffLeader && data.role === 'DEPARTMENT' && (
-                          <div className="flex flex-col">
-                            <span className="block text-[10px] font-bold uppercase tracking-wider mb-1 text-gray-500">Phòng ban (Trưởng phòng)</span>
-                            <div className="relative">
-                              <select
-                                value={selectedDept}
-                                onChange={(e) => setSelectedDept(e.target.value)}
-                                className="px-3 py-2 pr-8 border border-gray-200 rounded-lg text-sm font-medium text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#004c91] bg-gray-50 focus:bg-white transition-all appearance-none w-full"
-                              >
-                                <option value="">-- Chọn phòng ban --</option>
-                                {campusDepartments.map((d) => (
-                                  <option key={d.departmentId} value={d.departmentId} disabled={d.hasHead}>
-                                    {d.name}{d.hasHead ? ' (đã có trưởng phòng)' : ''}
-                                  </option>
-                                ))}
-                              </select>
-                              <ChevronDown className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-                            </div>
-                          </div>
-                        )}
+                        {/* Role edit intentionally exposes no second mutable field.
+                            Existing campus/department/position values stay visible below as disabled data. */}
 
                         {data.role === 'STUDENT' && (
                           <>
-                            <HighlightInput label="Mã số sinh viên (MSSV)" value={data.studentId} field="studentId" disabled={isStaffLeader} />
-                            <Select label="Cơ sở trực thuộc" value={data.campus} field="campus" options={CAMPUSES.map(c=>({value:c,label:c}))} disabled={isStaffLeader} />
+                            <HighlightInput label="Mã số sinh viên (MSSV)" value={data.studentId} field="studentId" disabled={isEdit} />
+                            <Select label="Cơ sở trực thuộc" value={data.campus} field="campus" options={CAMPUSES.map(c=>({value:c,label:c}))} disabled={isEdit} />
                           </>
                         )}
 
                         {(data.role === 'STAFF' || data.role === 'DEPARTMENT') && (
                           <>
-                            <Select label="Cơ sở trực thuộc" value={data.campus} field="campus" options={CAMPUSES.map(c=>({value:c,label:c}))} disabled={isStaffLeader} />
-                            <Select label="Chức vụ" value={subRoleLabel(data.subRole)} field="subRole" options={[{value:'Trưởng phòng', label:'Trưởng phòng'}, {value:'Nhân viên', label:'Nhân viên'}]} disabled={isStaffLeader} />
-                            <Select label="Phòng ban" value={data.department} field="department" options={[{value:'Phòng Hành chính', label:'Phòng Hành chính'}, {value:'Phòng Đào tạo', label:'Phòng Đào tạo'}, {value:'Phòng Công tác sinh viên', label:'Phòng Công tác sinh viên'}, {value:'Phòng Hợp tác quốc tế', label:'Phòng Hợp tác quốc tế'}, {value:'Phòng Tuyển sinh', label:'Phòng Tuyển sinh'}]} disabled={isStaffLeader} />
+                            <Select label="Cơ sở trực thuộc" value={data.campus} field="campus" options={CAMPUSES.map(c=>({value:c,label:c}))} disabled={isEdit} />
+                            <Select label="Chức vụ" value={subRoleLabel(data.subRole)} field="subRole" options={[{value:'Trưởng phòng', label:'Trưởng phòng'}, {value:'Nhân viên', label:'Nhân viên'}]} disabled={isEdit} />
+                            <Select label="Phòng ban" value={data.department} field="department" options={[{value:'Phòng Hành chính', label:'Phòng Hành chính'}, {value:'Phòng Đào tạo', label:'Phòng Đào tạo'}, {value:'Phòng Công tác sinh viên', label:'Phòng Công tác sinh viên'}, {value:'Phòng Hợp tác quốc tế', label:'Phòng Hợp tác quốc tế'}, {value:'Phòng Tuyển sinh', label:'Phòng Tuyển sinh'}]} disabled={isEdit} />
                           </>
                         )}
 
                         {(data.role === 'ADMIN' || data.role === 'HO') && (
                           <>
-                            <Select label="Cơ sở trực thuộc" value={data.campus} field="campus" options={CAMPUSES.map(c=>({value:c,label:c}))} disabled={isStaffLeader} />
+                            <Select label="Cơ sở trực thuộc" value={data.campus} field="campus" options={CAMPUSES.map(c=>({value:c,label:c}))} disabled={isEdit} />
                           </>
                         )}
 
                         {data.role === 'VISITOR' && (
                           <>
-                            <Input label="Quốc tịch" value={data.nationality} field="nationality" disabled={isStaffLeader} />
-                            <HighlightInput label="Đơn vị công tác / Doanh nghiệp" value={data.organization} field="organization" colSpan={true} disabled={isStaffLeader} />
+                            <Input label="Quốc tịch" value={data.nationality} field="nationality" disabled={isEdit} />
+                            <HighlightInput label="Đơn vị công tác / Doanh nghiệp" value={data.organization} field="organization" colSpan={true} disabled={isEdit} />
                           </>
                         )}
                       </div>
