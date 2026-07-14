@@ -94,7 +94,8 @@ public sealed class ApproveNewsCommandHandler
                 ActorUserId: currentUserId,
                 Category: PEMS.Application.Notifications.Common.NotificationCategories.News,
                 ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenNewsDetail,
-                ActionUrl: $"/dashboard/news/{news.NewsId}"),
+                // Trang quản lý tin tức lọc đúng 1 bài (có nút "Xem tất cả"), không vào thẳng chi tiết.
+                ActionUrl: $"/dashboard/news?newsId={news.NewsId}"),
             cancellationToken
         );
 

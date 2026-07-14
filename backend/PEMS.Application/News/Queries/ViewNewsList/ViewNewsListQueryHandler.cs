@@ -56,6 +56,10 @@ public sealed class ViewNewsListQueryHandler
         // Apply role scope
         query = ApplyRoleScope(query, viewerMode, currentUserId, primaryCampusId, hostedInstanceIds);
 
+        // Lọc đúng 1 bài khi đi từ thông báo — đặt sau role scope để không lộ bài ngoài quyền xem.
+        if (request.NewsId is { } newsIdFilter)
+            query = query.Where(n => n.NewsId == newsIdFilter);
+
         // Apply status filter
         query = ApplyStatusFilter(query, viewerMode, status);
 

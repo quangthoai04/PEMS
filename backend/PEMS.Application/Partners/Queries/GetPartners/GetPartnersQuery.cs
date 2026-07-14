@@ -9,6 +9,9 @@ public sealed class GetPartnersQuery : IRequest<PartnerListResponse>
     /// <summary>Search by partner code / name / short name.</summary>
     public string? Search { get; set; }
     public string? Country { get; set; }
+
+    /// <summary>Lọc đúng 1 đối tác — dùng khi đi từ thông báo sang trang quản lý đối tác.</summary>
+    public ulong? PartnerId { get; set; }
     public ulong? CampusId { get; set; }
     public string? ProfileStatus { get; set; }
     public string? Visibility { get; set; }

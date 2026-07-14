@@ -46,6 +46,10 @@ public sealed class GetPartnersQueryHandler : IRequestHandler<GetPartnersQuery, 
         }
 
         // ── Filters ──
+        // Lọc đúng 1 đối tác khi đi từ thông báo — đặt sau role scope để không lộ hồ sơ ngoài quyền xem.
+        if (request.PartnerId is { } partnerIdFilter)
+            query = query.Where(p => p.PartnerId == partnerIdFilter);
+
         if (!string.IsNullOrWhiteSpace(request.Search))
         {
             var s = request.Search.Trim();
