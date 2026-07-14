@@ -324,6 +324,38 @@ public sealed class ViewListFaqApiTests : IClassFixture<PemsWebApplicationFactor
         Assert.All(result.Items, i => Assert.Equal(FaqConstants.Status.Published, i.Status));
     }
 
+    [Fact]
+    public async Task FaqType_All_ReturnsBothTypes()
+    {
+        var token = UniqueToken();
+        var idAccount = await SeedFaqAsync(SeedQuestion(token, "all-account"), "Câu trả lời.", FaqConstants.Type.AccountAccess, FaqConstants.Status.Published);
+        var idOther = await SeedFaqAsync(SeedQuestion(token, "all-other"), "Câu trả lời.", FaqConstants.Type.Other, FaqConstants.Status.Published);
+        var client = await CreateClientAsAsync(EffectiveRole.Ho);
+
+        var response = await client.GetAsync(BuildListUrl(keyword: token, faqType: "ALL"));
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var result = await response.Content.ReadFromJsonAsync<PaginatedResult<ViewListFAQDto>>(JsonOptions);
+        Assert.Contains(result!.Items, i => i.FaqId == idAccount);
+        Assert.Contains(result.Items, i => i.FaqId == idOther);
+    }
+
+    [Fact]
+    public async Task Status_All_ReturnsBothStatuses()
+    {
+        var token = UniqueToken();
+        var idPublished = await SeedFaqAsync(SeedQuestion(token, "all-published"), "Câu trả lời.", FaqConstants.Type.Other, FaqConstants.Status.Published);
+        var idHidden = await SeedFaqAsync(SeedQuestion(token, "all-hidden"), "Câu trả lời.", FaqConstants.Type.Other, FaqConstants.Status.Hidden);
+        var client = await CreateClientAsAsync(EffectiveRole.Ho);
+
+        var response = await client.GetAsync(BuildListUrl(keyword: token, status: "ALL"));
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var result = await response.Content.ReadFromJsonAsync<PaginatedResult<ViewListFAQDto>>(JsonOptions);
+        Assert.Contains(result!.Items, i => i.FaqId == idPublished);
+        Assert.Contains(result.Items, i => i.FaqId == idHidden);
+    }
+
     // Proves the handler's keyword search covers Answer (not just Question) — the token only
     // appears in Answer here.
     [Fact]

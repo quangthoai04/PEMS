@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using PEMS.Application.Common;
 using PEMS.Application.Common.Security;
 using PEMS.Domain.Constants;
 using PEMS.Infrastructure.Persistence;
@@ -39,7 +40,7 @@ public sealed class CreateFaqApiTests : IClassFixture<PemsWebApplicationFactory>
         await DatabaseResetHelper.DeleteTestFaqsAsync(db, DatabaseResetHelper.CreateFaqQuestionPrefix);
     }
 
-    private async Task<HttpClient> CreateClientAsAsync(string effectiveRole)
+    private async Task<(ulong UserId, HttpClient Client)> CreateClientWithUserIdAsAsync(string effectiveRole)
     {
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -52,6 +53,7 @@ public sealed class CreateFaqApiTests : IClassFixture<PemsWebApplicationFactory>
             EffectiveRole.Ho => (RoleCode.Ho, (string?)null),
             EffectiveRole.Admin => (RoleCode.Admin, (string?)null),
             EffectiveRole.Staff => (RoleCode.Staff, SubRole.Staff),
+            EffectiveRole.StaffLeader => (RoleCode.Staff, SubRole.Leader),
             EffectiveRole.Visitor => (RoleCode.Visitor, (string?)null),
             _ => throw new ArgumentOutOfRangeException(nameof(effectiveRole))
         };
@@ -63,8 +65,11 @@ public sealed class CreateFaqApiTests : IClassFixture<PemsWebApplicationFactory>
             client.DefaultRequestHeaders.Add(TestAuthHandler.SubRoleHeader, subRole);
         client.DefaultRequestHeaders.Add(TestAuthHandler.SessionIdHeader, sessionId.ToString());
 
-        return client;
+        return (userId, client);
     }
+
+    private async Task<HttpClient> CreateClientAsAsync(string effectiveRole) =>
+        (await CreateClientWithUserIdAsAsync(effectiveRole)).Client;
 
     private static string UniqueQuestion(string label) =>
         $"{DatabaseResetHelper.CreateFaqQuestionPrefix}{label} {Guid.NewGuid():N}?";
@@ -113,6 +118,17 @@ public sealed class CreateFaqApiTests : IClassFixture<PemsWebApplicationFactory>
 
         var response = await client.PostAsJsonAsync(Endpoint, new CreateFaqRequest(
             FaqConstants.Type.Other, UniqueQuestion("visitor"), "Câu trả lời.", FaqConstants.Status.Published));
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task StaffLeader_ReturnsForbidden()
+    {
+        var client = await CreateClientAsAsync(EffectiveRole.StaffLeader);
+
+        var response = await client.PostAsJsonAsync(Endpoint, new CreateFaqRequest(
+            FaqConstants.Type.Other, UniqueQuestion("staff-leader"), "Câu trả lời.", FaqConstants.Status.Published));
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
@@ -172,6 +188,32 @@ public sealed class CreateFaqApiTests : IClassFixture<PemsWebApplicationFactory>
         var saved = await db.Faqs.AsNoTracking().SingleAsync(f => f.Question == question);
 
         Assert.Equal(FaqConstants.Status.Published, saved.Status);
+    }
+
+    // ---- 2b. Audit ----------------------------------------------------------------------------
+
+    [Fact]
+    public async Task Ho_ValidPayload_SetsCreatedByAndCreatedAt()
+    {
+        var question = UniqueQuestion("audit");
+        var (hoUserId, client) = await CreateClientWithUserIdAsAsync(EffectiveRole.Ho);
+        var beforeCreate = VietnamTime.Now();
+
+        var response = await client.PostAsJsonAsync(Endpoint, new CreateFaqRequest(
+            FaqConstants.Type.Other, question, "Câu trả lời.", FaqConstants.Status.Published));
+        var afterCreate = VietnamTime.Now();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var saved = await db.Faqs.AsNoTracking().SingleAsync(f => f.Question == question);
+
+        Assert.Equal(hoUserId, saved.CreatedBy);
+        Assert.True(saved.CreatedAt >= beforeCreate.AddSeconds(-2));
+        Assert.True(saved.CreatedAt <= afterCreate.AddSeconds(5));
+        Assert.Null(saved.UpdatedBy);
+        Assert.Null(saved.UpdatedAt);
     }
 
     // ---- 3. Validation (HO, but invalid payload) ----------------------------------------------

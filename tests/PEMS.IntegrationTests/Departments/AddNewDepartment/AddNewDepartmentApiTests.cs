@@ -357,13 +357,52 @@ public sealed class AddNewDepartmentApiTests : IClassFixture<PemsWebApplicationF
     }
 
     [Fact]
+    public async Task SameNameDifferentCampus_Allowed()
+    {
+        var (client, _, campusId) = await CreateStaffLeaderClientAsync();
+        var name = $"{DatabaseResetHelper.AddDepartmentNamePrefix}cross-campus {UniqueToken()}";
+
+        // Pre-seed a department with the same name on a DIFFERENT active campus directly.
+        // pems_test has 5 campuses so there is always at least one other active campus to pick.
+        ulong otherCampusId;
+        using (var seedScope = _factory.Services.CreateScope())
+        {
+            var seedDb = seedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            otherCampusId = await seedDb.Campuses.AsNoTracking()
+                .Where(c => c.Status == "ACTIVE" && c.CampusId != campusId)
+                .Select(c => c.CampusId)
+                .FirstAsync();
+            await DatabaseResetHelper.CreateTestDepartmentAsync(seedDb, name, otherCampusId, "GENERAL", "ACTIVE");
+        }
+
+        // StaffLeader creates a department with the same name on THEIR OWN campus — must succeed.
+        var response = await client.PostAsJsonAsync(Url, new AddNewDepartmentCommand { Name = name });
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        // Verify both campuses now have a department with this name.
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var campusIds = await db.Departments
+            .Where(d => d.Name.ToLower() == name.ToLower())
+            .Select(d => d.CampusId)
+            .ToListAsync();
+
+        Assert.Equal(2, campusIds.Count);
+        Assert.Contains(campusId, campusIds);
+        Assert.Contains(otherCampusId, campusIds);
+    }
+
+    [Fact]
     public async Task InactiveCampus_DoesNotPersist()
     {
         var client = await CreateInactiveCampusStaffLeaderClientAsync();
         var name = $"{DatabaseResetHelper.AddDepartmentNamePrefix}inactive-campus {UniqueToken()}";
 
         var response = await client.PostAsJsonAsync(Url, new AddNewDepartmentCommand { Name = name });
-        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+        // SessionValidationMiddleware (UC-86) blocks Staff users whose PrimaryCampus is inactive
+        // with 403 before the request reaches the handler — the handler's BusinessRuleException
+        // for inactive campus is intentionally never hit in this path.
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
 
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
