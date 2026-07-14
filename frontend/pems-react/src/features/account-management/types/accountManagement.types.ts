@@ -308,11 +308,34 @@ export interface AccountDetails {
   campusName?: string | null;
   departmentId?: string | null;
   departmentName?: string | null;
+  /** MSSV — only meaningful for STUDENT accounts. */
+  studentCode?: string | null;
   status: string;
   createdVia?: string | null;
   createdAt: string;
   updatedAt?: string | null;
   lastLoginAt?: string | null;
+}
+
+/**
+ * UC-100-SL — role-assignment options for the "Chỉnh sửa vai trò" modal
+ * (GET /accounts/role-assignment-options?targetUserId=). Campus is resolved server-side.
+ * Mirrors backend RoleAssignmentOptionsDto.
+ */
+export interface RoleAssignmentOptions {
+  campusId: string;
+  campusName: string;
+  /** Campus IC department (auto-assigned for role STAFF); null when the campus has none active. */
+  icDepartment: { departmentId: string; name: string } | null;
+  generalDepartments: Array<{
+    departmentId: string;
+    name: string;
+    hasHead: boolean;
+    /** The current head of this department is the target account being edited. */
+    isCurrentTargetHead: boolean;
+    /** !hasHead || isCurrentTargetHead. */
+    selectable: boolean;
+  }>;
 }
 
 /** UC-97 — change account status request. Mirrors backend ManageAccountStatusCommand. */
@@ -337,6 +360,15 @@ export interface UpdateAccountRoleRequest {
   subRole?: AccountSubRole | null;
   primaryCampusId?: string | null;
   departmentId?: string | null;
+  /** MSSV — required when newRoleCode is STUDENT (Staff Leader flow); ignored otherwise. */
+  studentCode?: string | null;
+  /**
+   * Họ và tên — editable only when the target's ORIGINAL role permits identity edits
+   * (STAFF/STAFF, DEPARTMENT/LEADER, STUDENT). Omit/null to leave unchanged.
+   */
+  fullName?: string | null;
+  /** Email — same editability rule as fullName. Omit/null to leave unchanged. */
+  email?: string | null;
 }
 
 export interface UpdateAccountRoleResponse {

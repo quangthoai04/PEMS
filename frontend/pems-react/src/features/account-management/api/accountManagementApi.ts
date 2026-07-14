@@ -18,6 +18,7 @@ import type {
   RelatedVisitorQueryParams,
   ReplaceStaffLeaderRequest,
   ReplaceStaffLeaderResponse,
+  RoleAssignmentOptions,
   StaffLeaderAvailability,
   StaffLeaderReplacementPreview,
   UpdateAccountRoleRequest,
@@ -70,6 +71,18 @@ export const accountManagementApi = {
   /** Active GENERAL departments of the caller's campus (Department-Leader dropdown). */
   async getCampusDepartments(): Promise<CampusDepartmentOption[]> {
     const { data } = await httpClient.get<CampusDepartmentOption[]>(API_ENDPOINTS.accounts.campusDepartments);
+    return data;
+  },
+
+  /**
+   * UC-100-SL — role-assignment options for the "Chỉnh sửa vai trò" modal. Campus scope is
+   * resolved server-side from the authenticated Staff Leader; only the target account id is sent.
+   */
+  async getRoleAssignmentOptions(targetUserId: string | number): Promise<RoleAssignmentOptions> {
+    const { data } = await httpClient.get<RoleAssignmentOptions>(
+      API_ENDPOINTS.accounts.roleAssignmentOptions,
+      { params: { targetUserId } },
+    );
     return data;
   },
 

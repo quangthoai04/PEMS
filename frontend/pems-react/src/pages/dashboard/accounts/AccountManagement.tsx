@@ -24,6 +24,7 @@ import type {
   ActiveCampusOption,
   CampusDepartmentOption,
   HoCampusCheck,
+  RoleAssignmentOptions,
   StaffLeaderAvailability,
 } from '../../../features/account-management/types/accountManagement.types';
 import { ReplaceStaffLeaderModal } from '../../../features/account-management/components/ReplaceStaffLeaderModal';
@@ -31,6 +32,27 @@ import { RelatedVisitorsTab } from '../../../features/account-management/compone
 
 const CAMPUSES = ["Hà Nội", "Hồ Chí Minh", "Đà Nẵng", "Cần Thơ", "Quy Nhơn"];
 const ROLES = ["ADMIN", "HO", "STAFF", "DEPARTMENT", "STUDENT", "VISITOR"];
+
+// UC-100-SL — isolated role-edit state (never mutates the account-detail snapshot).
+// departmentId/studentCode are the dependent fields for DEPARTMENT / STUDENT respectively.
+// fullName/email are the identity fields, editable only for eligible targets (see canEditIdentity).
+interface RoleEditForm {
+  roleCode: string;
+  departmentId: string;
+  studentCode: string;
+  fullName: string;
+  email: string;
+}
+
+// Whether Họ tên / Email may be edited for a target, derived from its ORIGINAL role/sub-role
+// snapshot (never the role being chosen in the dropdown). Only a Staff Leader may edit identity,
+// and only for STAFF/STAFF, DEPARTMENT/LEADER or STUDENT targets (spec §4.2 / §4.9).
+const computeCanEditIdentity = (isStaffLeader: boolean, role?: string, rawSubRole?: unknown): boolean => {
+  if (!isStaffLeader) return false;
+  const r = String(role ?? '').toUpperCase();
+  const sr = String(rawSubRole ?? '').toUpperCase();
+  return (r === 'STAFF' && sr === 'STAFF') || (r === 'DEPARTMENT' && sr === 'LEADER') || r === 'STUDENT';
+};
 
 // Maps gender to its Vietnamese label. The backend exposes gender as the C# enum
 // Gender { Male=0, Female=1, Other=2 } and serializes it as a NUMBER, so we map both the
@@ -116,6 +138,11 @@ export function AccountManagement() {
   
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [editForm, setEditForm] = useState<any>(null);
+  // UC-100-SL role editor: isolated form + backend-provided options (campus scoped).
+  const [roleEditForm, setRoleEditForm] = useState<RoleEditForm | null>(null);
+  const [roleOptions, setRoleOptions] = useState<RoleAssignmentOptions | null>(null);
+  const [roleOptionsLoading, setRoleOptionsLoading] = useState(false);
+  const [roleOptionsError, setRoleOptionsError] = useState<string | null>(null);
 
   const [createMethod, setCreateMethod] = useState<'AUTO' | 'MANUAL'>('AUTO');
   const [selectedDept, setSelectedDept] = useState("");
@@ -127,8 +154,11 @@ export function AccountManagement() {
     name: "",
     email: "",
     phone: "",
-    gender: "Nam"
+    gender: "Nam",
+    studentCode: "",
   });
+  // Field-level error shown right under the MSSV input in the create modal (spec §5.5 / §7.2).
+  const [createStudentCodeError, setCreateStudentCodeError] = useState<string | null>(null);
 
   const mockDeptStaff = [
     { id: '1', department: 'Phòng Đào tạo', name: 'Nguyễn Văn A (Phó trưởng phòng)', email: 'nguyenvana.dt@fpt.edu.vn', phone: '0987654321' },
@@ -138,19 +168,58 @@ export function AccountManagement() {
   
   const currentSelectedStaff = mockDeptStaff.find(s => s.id === selectedDeptStaffId);
 
-  const closeViewDrawer = () => {
-    setIsViewDrawerOpen(false);
+  // Resets every transient bit of the role editor without touching selectedAccount (the snapshot).
+  const resetRoleEditor = () => {
     setIsEditingProfile(false);
     setEditForm(null);
+    setRoleEditForm(null);
+    setRoleOptions(null);
+    setRoleOptionsError(null);
+    setRoleError(null);
+    setRoleSaving(false);
   };
+
+  const closeViewDrawer = () => {
+    setIsViewDrawerOpen(false);
+    resetRoleEditor();
+  };
+
+  // UC-100-SL — role-assignment options (campus IC dept + active GENERAL depts), scoped server-side.
+  const loadRoleOptions = useCallback(async (targetUserId: string | number) => {
+    setRoleOptionsLoading(true);
+    setRoleOptionsError(null);
+    try {
+      const opts = await accountManagementApi.getRoleAssignmentOptions(targetUserId);
+      setRoleOptions(opts);
+    } catch {
+      setRoleOptions(null);
+      setRoleOptionsError('Không thể tải danh sách phòng ban. Vui lòng thử lại.');
+    } finally {
+      setRoleOptionsLoading(false);
+    }
+  }, []);
 
   const handleEditClick = () => {
     if (!selectedAccount) return;
     // Role editing is intentionally isolated from the account-detail snapshot.
     // All other fields keep the exact values loaded by UC-98 and remain read-only.
     setRoleError(null);
-    setEditForm({ role: selectedAccount.role });
+    const roleCode: string = selectedAccount.role;
+    setRoleEditForm({
+      roleCode,
+      // Preserve the original dependent value on first open (spec §3.4 / §3.5.6).
+      departmentId: roleCode === 'DEPARTMENT' && selectedAccount.departmentId != null
+        ? String(selectedAccount.departmentId)
+        : '',
+      studentCode: roleCode === 'STUDENT' ? (selectedAccount.studentId ?? '') : '',
+      // Identity fields seeded from the snapshot; only editable for eligible targets.
+      fullName: selectedAccount.name ?? '',
+      email: selectedAccount.email ?? '',
+    });
+    setEditForm({ role: roleCode });
     setIsEditingProfile(true);
+    // Staff Leader flow needs the campus-scoped department options; ADMIN keeps the legacy path.
+    if (isStaffLeader) loadRoleOptions(selectedAccount.userId ?? selectedAccount.id);
   };
 
   useEffect(() => {
@@ -335,6 +404,7 @@ export function AccountManagement() {
       departmentId: a.departmentId,
       department: a.departmentName,
       subRole: a.subRole,
+      rawSubRole: a.subRole,
       studentId: a.studentCode,
       major: null,
       nationality: a.nationality,
@@ -567,10 +637,14 @@ export function AccountManagement() {
       role: details.roleCode,
       roleName: details.roleName,
       subRole: details.displayPosition ?? details.subRole,
+      // Raw sub_role (never the localized displayPosition) so identity-edit eligibility is exact.
+      rawSubRole: details.subRole,
       campusId: details.campusId ?? prev?.campusId ?? null,
       campus: details.campusName || prev?.campus || '',
       departmentId: details.departmentId ?? null,
       department: details.departmentName,
+      // UC-98 detail is the source of truth for MSSV (spec §6); fall back to the list value.
+      studentId: details.studentCode ?? prev?.studentId ?? null,
       rawStatus: details.status,
       lastLoginAt: details.lastLoginAt,
     }));
@@ -581,6 +655,7 @@ export function AccountManagement() {
   // forces campus; we only collect what the role needs.
   const handleCreateAccount = async () => {
     setCreateError(null);
+    setCreateStudentCodeError(null);
     const role = manualForm.role;
     if (!role) { setCreateError('Vui lòng chọn vai trò.'); return; }
     if (isHO && !createCampus) { setCreateError('Vui lòng chọn cơ sở.'); return; }
@@ -593,6 +668,13 @@ export function AccountManagement() {
     if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       setCreateError('Vui lòng nhập email hợp lệ.');
       return;
+    }
+
+    // PHẦN B — MSSV bắt buộc/hợp lệ khi tạo STUDENT (validate again here, not only via disabled btn).
+    const studentCode = role === 'STUDENT' ? manualForm.studentCode.trim() : '';
+    if (role === 'STUDENT') {
+      if (!studentCode) { setCreateStudentCodeError('Vui lòng nhập mã số sinh viên.'); return; }
+      if (studentCode.length > 30) { setCreateStudentCodeError('Mã số sinh viên không được vượt quá 30 ký tự.'); return; }
     }
 
     const primaryCampusId = (isHO || isRealAdmin) && createCampus
@@ -642,6 +724,8 @@ export function AccountManagement() {
         gender: null,
         primaryCampusId: primaryCampusId ?? null,
         departmentId,
+        // MSSV only for STUDENT; null otherwise so no hidden code is ever sent (spec §5.6).
+        studentCode: role === 'STUDENT' ? studentCode : null,
       });
 
       // UC-96 requirement: toast for the email-notification outcome.
@@ -651,47 +735,123 @@ export function AccountManagement() {
         pushToast('warning', `Đã tạo tài khoản ${result.email} nhưng gửi email thông báo thất bại.`);
 
       setIsCreateModalOpen(false);
-      setManualForm({ role: '', name: '', email: '', phone: '', gender: 'Nam' });
+      setManualForm({ role: '', name: '', email: '', phone: '', gender: 'Nam', studentCode: '' });
       setCreateCampus('');
       setSelectedDept('');
       refetchAccounts();
       loadStatistics();
     } catch (err) {
       const msg = getAccountErrorMessage(err, 'Không thể tạo tài khoản. Vui lòng thử lại.');
-      setCreateError(msg);
+      // A duplicate MSSV maps to its own field (modal stays open, other inputs kept — spec §5.8).
+      if (role === 'STUDENT' && /mã số sinh viên/i.test(msg)) {
+        setCreateStudentCodeError(msg);
+      } else {
+        setCreateError(msg);
+      }
       pushToast('error', msg);
     } finally {
       setCreating(false);
     }
   };
 
-  // UC-100 — Staff Leader/ADMIN updates another account's role (and department for a
-  // Department Leader). Backend revokes the target's sessions and emails them.
-  const handleUpdateRole = async () => {
-    if (!selectedAccount) return;
+  // ── UC-100-SL role editor: derived flags (spec §3.6 / §8.1). ──
+  // Whether the selected role actually differs from the snapshot (incl. its dependent field), so
+  // the Update button can stay disabled on a no-op (avoids needless session revoke + email).
+  // Identity edit eligibility for the currently-selected target (spec §4.2.1 — from ORIGINAL role).
+  const canEditIdentity = !!selectedAccount
+    && computeCanEditIdentity(isStaffLeader, selectedAccount.role, selectedAccount.rawSubRole);
+
+  const roleIsDirty = !!(roleEditForm && selectedAccount) && (
+    roleEditForm.roleCode !== selectedAccount.role ||
+    (roleEditForm.roleCode === 'DEPARTMENT'
+      && String(roleEditForm.departmentId || '') !== String(selectedAccount.departmentId ?? '')) ||
+    (roleEditForm.roleCode === 'STUDENT'
+      && roleEditForm.studentCode.trim() !== (selectedAccount.studentId ?? '')) ||
+    // Identity changes (normalized) also count, but only for editable targets.
+    (canEditIdentity && roleEditForm.fullName.trim() !== (selectedAccount.name ?? '')) ||
+    (canEditIdentity && roleEditForm.email.trim().toLowerCase() !== String(selectedAccount.email ?? '').toLowerCase())
+  );
+
+  // Staff-Leader submit gate: options must be loaded/valid and the role's required field present.
+  const roleUpdateBlocked = !!roleEditForm && isStaffLeader && (
+    roleOptionsLoading ||
+    !!roleOptionsError ||
+    (roleEditForm.roleCode === 'STAFF' && !roleOptions?.icDepartment) ||
+    (roleEditForm.roleCode === 'DEPARTMENT' && !roleEditForm.departmentId) ||
+    (roleEditForm.roleCode === 'STUDENT' && roleEditForm.studentCode.trim().length === 0) ||
+    // Identity fields (when editable) must be non-empty and the email well-formed.
+    (canEditIdentity && roleEditForm.fullName.trim().length === 0) ||
+    (canEditIdentity && roleEditForm.email.trim().length === 0) ||
+    (canEditIdentity && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(roleEditForm.email.trim()))
+  );
+
+  // Switch the target role and reset the dependent fields (spec §3.3/§3.4/§3.5 — always fresh on a
+  // genuine role change; the original values are only preserved by handleEditClick on first open).
+  const changeRoleCode = (nextRole: string) => {
     setRoleError(null);
-    setRoleSaving(true);
-    const newRoleCode = editForm?.role;
-    // This drawer is a role-only editor. Preserve the account's original department id
-    // when the selected role still needs it; the server derives/clears the remaining shape.
-    const departmentId = newRoleCode === 'DEPARTMENT'
-      ? (selectedAccount.departmentId ?? null)
-      : null;
-    if (isStaffLeader && newRoleCode === 'DEPARTMENT' && !departmentId) {
-      setRoleSaving(false);
-      setRoleError('Tài khoản ban đầu chưa thuộc phòng ban phù hợp để chuyển sang Trưởng phòng ban.');
-      return;
+    // Reset the role-dependent fields, but keep the identity fields — their editability is fixed by
+    // the ORIGINAL target role and does not change with the dropdown (spec §4.2.1 / §4.7).
+    setRoleEditForm((prev) => (prev
+      ? { roleCode: nextRole, departmentId: '', studentCode: '', fullName: prev.fullName, email: prev.email }
+      : prev));
+  };
+
+  // UC-100 — Staff Leader/ADMIN updates another account's role. For a Staff Leader the payload is
+  // role-shaped (department for DEPARTMENT, MSSV for STUDENT); the backend re-validates and derives
+  // campus/sub-role, revokes the target's sessions and emails them.
+  const handleUpdateRole = async () => {
+    if (!selectedAccount || !roleEditForm) return;
+    setRoleError(null);
+    const { roleCode, departmentId, studentCode } = roleEditForm;
+
+    // Identity validation (only for editable targets; backend re-checks).
+    if (canEditIdentity) {
+      const fullName = roleEditForm.fullName.trim();
+      const email = roleEditForm.email.trim();
+      if (!fullName) { setRoleError('Vui lòng nhập họ và tên.'); return; }
+      if (fullName.length > 150) { setRoleError('Họ và tên không được vượt quá 150 ký tự.'); return; }
+      if (!email) { setRoleError('Vui lòng nhập địa chỉ email.'); return; }
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { setRoleError('Địa chỉ email không hợp lệ.'); return; }
+      if (email.length > 150) { setRoleError('Email không được vượt quá 150 ký tự.'); return; }
     }
+
+    // Frontend validation (backend remains the source of truth).
+    if (isStaffLeader) {
+      if (roleCode === 'STAFF' && !roleOptions?.icDepartment) {
+        setRoleError('Không tìm thấy Phòng Hợp tác Quốc tế đang hoạt động cho cơ sở của bạn.');
+        return;
+      }
+      if (roleCode === 'DEPARTMENT' && !departmentId) {
+        setRoleError('Vui lòng chọn phòng ban cho vai trò Trưởng phòng ban.');
+        return;
+      }
+      if (roleCode === 'STUDENT') {
+        const code = studentCode.trim();
+        if (!code) { setRoleError('Vui lòng nhập mã số sinh viên.'); return; }
+        if (code.length > 30) { setRoleError('Mã số sinh viên không được vượt quá 30 ký tự.'); return; }
+      }
+    }
+
+    // ADMIN keeps the legacy behaviour: role-only change, original department preserved.
+    const outgoingDepartmentId = roleCode === 'DEPARTMENT'
+      ? (isStaffLeader ? departmentId : (selectedAccount.departmentId ?? null))
+      : null;
+    const outgoingStudentCode = roleCode === 'STUDENT'
+      ? (isStaffLeader ? studentCode.trim() : null)
+      : null;
+
+    setRoleSaving(true);
     try {
       await accountManagementApi.updateAccountRole({
         userId: (selectedAccount.userId ?? selectedAccount.id) as any,
-        newRoleCode: newRoleCode as any,
-        departmentId,
+        newRoleCode: roleCode as any,
+        departmentId: outgoingDepartmentId as any,
+        studentCode: outgoingStudentCode,
+        // Identity is only sent for editable targets; otherwise leave null so the backend keeps it.
+        fullName: canEditIdentity ? roleEditForm.fullName.trim() : null,
+        email: canEditIdentity ? roleEditForm.email.trim() : null,
       });
-      pushToast('success', 'Cập nhật vai trò thành công. Đã gửi email thông báo cho người dùng.');
-      setIsEditingProfile(false);
-      setEditForm(null);
-      setSelectedDept('');
+      pushToast('success', 'Cập nhật tài khoản thành công. Đã gửi email thông báo cho người dùng.');
       closeViewDrawer();
       refetchAccounts();
       loadStatistics();
@@ -812,7 +972,7 @@ export function AccountManagement() {
 
       <div className="flex justify-end mb-8">
         <button
-          onClick={() => { setCreateError(null); setSelectedDept(''); setManualForm({ role: '', name: '', email: '', phone: '', gender: 'Nam' }); setIsCreateModalOpen(true); }}
+          onClick={() => { setCreateError(null); setCreateStudentCodeError(null); setSelectedDept(''); setManualForm({ role: '', name: '', email: '', phone: '', gender: 'Nam', studentCode: '' }); setIsCreateModalOpen(true); }}
           className="bg-[#f37021] hover:bg-[#e85c0d] text-white px-6 py-3.5 rounded-2xl font-bold flex items-center gap-2 shadow-sm shadow-orange-500/20 transition-all hover:shadow-md hover:shadow-orange-500/40 outline-none"
         >
           + Tạo tài khoản mới
@@ -1233,7 +1393,7 @@ export function AccountManagement() {
             <div className="flex-1 overflow-y-auto p-8 bg-[#f8fafc] relative">
               <div className="flex items-start justify-between mb-6">
                 <h3 className="text-xl font-black text-[#004c91] flex items-center gap-2 tracking-tight mt-1">
-                  <UserCog className="w-6 h-6" /> Thông tin chi tiết
+                  <UserCog className="w-6 h-6" /> {isEditingProfile ? 'Chỉnh sửa thông tin tài khoản' : 'Thông tin chi tiết'}
                 </h3>
                 <div className="flex items-center gap-3">
                   {/* Đổi role/campus/department — chỉ khi backend cho phép (canUpdateRole) */}
@@ -1243,7 +1403,7 @@ export function AccountManagement() {
                       onClick={handleEditClick}
                       className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold text-[#004c91] border border-[#004c91]/40 bg-white hover:bg-blue-50 transition-all outline-none"
                     >
-                      <Edit className="w-3.5 h-3.5" /> Chỉnh sửa vai trò
+                      <Edit className="w-3.5 h-3.5" /> Chỉnh sửa tài khoản
                     </button>
                   )}
                   <button
@@ -1324,70 +1484,208 @@ export function AccountManagement() {
                     </div>
                   );
 
+                  // Read-only labelled field: renders the snapshot value, or "-" when empty
+                  // (spec §3.1 — null/undefined/'' must show "-", never a fallback like "Nam").
+                  const DisplayField = ({ label, value, highlight = false, colSpan = false }: any) => (
+                    <div className={`flex flex-col min-w-0 ${colSpan ? 'md:col-span-2' : ''}`}>
+                      <span className={`block text-[10px] font-bold uppercase tracking-wider mb-1 ${highlight ? 'text-[#004c91]/80' : 'text-gray-500'}`}>{label}</span>
+                      <span className={`block text-sm p-2.5 rounded-lg border break-words ${highlight ? 'font-black text-[#004c91] bg-blue-50/30 border-blue-100' : 'font-bold text-gray-900 bg-gray-50/50 border-gray-100'}`}>
+                        {value === null || value === undefined || value === '' ? '-' : value}
+                      </span>
+                    </div>
+                  );
+
+                  // The role currently selected in the editor (falls back to the snapshot role).
+                  const editRoleCode: string = roleEditForm?.roleCode ?? data.role;
+                  const roleSelectOptions = isHO
+                    ? [{ value: 'HO', label: 'HO (Head Office)' }, { value: 'STAFF', label: 'Staff Leader (Trưởng phòng IC)' }]
+                    : isStaffLeader
+                      ? [{ value: 'STAFF', label: 'STAFF (Nhân sự IC)' }, { value: 'DEPARTMENT', label: 'Department (Trưởng phòng ban)' }, { value: 'STUDENT', label: 'STUDENT (Sinh viên)' }]
+                      : [{ value: 'ADMIN', label: 'ADMIN' }, { value: 'HO', label: 'HO (Head Office)' }, { value: 'STAFF', label: 'STAFF' }, { value: 'DEPARTMENT', label: 'DEPARTMENT' }, { value: 'STUDENT', label: 'STUDENT' }, { value: 'VISITOR', label: 'VISITOR' }];
+
+                  const selectClass = (disabled = false) =>
+                    `px-3 py-2 pr-8 border rounded-lg text-sm font-medium text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#004c91] bg-gray-50 transition-all appearance-none w-full ${disabled ? 'opacity-70 cursor-not-allowed border-gray-200' : 'border-gray-200 focus:bg-white'}`;
+
+                  // Gray, clearly-disabled styling for locked fields (spec §4.6).
+                  const identityInputClass = (disabled: boolean) =>
+                    `px-3 py-2 border rounded-lg text-sm font-medium text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#004c91] transition-all w-full ${
+                      disabled
+                        ? 'bg-slate-100 text-slate-500 border-slate-200 cursor-not-allowed'
+                        : 'bg-white border-gray-200 focus:bg-white'
+                    }`;
+
+                  // Locked-target identity display value (snapshot); editable value comes from the form.
+                  const identityDisabled = !canEditIdentity || roleSaving;
+
+                  // ── Edit mode (Chỉnh sửa thông tin tài khoản): identity editable for eligible targets,
+                  //    org fields locked, layout follows editRoleCode. Identity inputs are inline JSX
+                  //    (not a nested component) so typing never remounts them / loses focus. ──
+                  const editGrid = (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5 w-full">
+                      <div className="flex flex-col min-w-0">
+                        <span className="block text-[10px] font-bold uppercase tracking-wider mb-1 text-gray-500">
+                          Họ và tên{canEditIdentity && <span className="ml-1 text-red-500">*</span>}
+                        </span>
+                        <input
+                          type="text"
+                          value={canEditIdentity ? (roleEditForm?.fullName ?? '') : (data.name ?? '')}
+                          maxLength={150}
+                          disabled={identityDisabled}
+                          onChange={(e) => setRoleEditForm((prev) => (prev ? { ...prev, fullName: e.target.value } : prev))}
+                          className={identityInputClass(identityDisabled)}
+                        />
+                      </div>
+                      <div className="flex flex-col min-w-0">
+                        <span className="block text-[10px] font-bold uppercase tracking-wider mb-1 text-gray-500">
+                          Email{canEditIdentity && <span className="ml-1 text-red-500">*</span>}
+                        </span>
+                        <input
+                          type="email"
+                          value={canEditIdentity ? (roleEditForm?.email ?? '') : (data.email ?? '')}
+                          maxLength={150}
+                          disabled={identityDisabled}
+                          onChange={(e) => setRoleEditForm((prev) => (prev ? { ...prev, email: e.target.value } : prev))}
+                          className={identityInputClass(identityDisabled)}
+                        />
+                      </div>
+                      <DisplayField label="Giới tính" value={genderLabel(data.gender)} />
+                      <DisplayField label="Số điện thoại" value={data.phone} />
+
+                      {/* Vai trò — the only always-editable field. */}
+                      <div className="flex flex-col min-w-0">
+                        <span className="block text-[10px] font-bold uppercase tracking-wider mb-1 text-gray-500">Vai trò</span>
+                        <div className="relative">
+                          <select
+                            value={editRoleCode}
+                            onChange={(e) => changeRoleCode(e.target.value)}
+                            className={selectClass(false)}
+                          >
+                            {roleSelectOptions.map((o) => (
+                              <option key={o.value} value={o.value}>{o.label}</option>
+                            ))}
+                          </select>
+                          <ChevronDown className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                        </div>
+                      </div>
+
+                      <DisplayField label="Cơ sở trực thuộc" value={data.campus} />
+
+                      {roleOptionsError && (
+                        <div className="md:col-span-2 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-bold text-red-700">
+                          {roleOptionsError}
+                        </div>
+                      )}
+
+                      {/* ── Staff Leader dynamic matrix (spec §3.3/§3.4/§3.5) ── */}
+                      {isStaffLeader && editRoleCode === 'STAFF' && (
+                        <>
+                          <DisplayField label="Chức vụ" value="Nhân viên" />
+                          <div className="flex flex-col min-w-0">
+                            <span className="block text-[10px] font-bold uppercase tracking-wider mb-1 text-gray-500">Phòng ban</span>
+                            <span className="block text-sm font-bold text-gray-900 bg-gray-50/50 p-2.5 rounded-lg border border-gray-100 break-words">
+                              {roleOptionsLoading ? 'Đang tải...' : (roleOptions?.icDepartment?.name ?? 'Không có Phòng Hợp tác Quốc tế đang hoạt động')}
+                            </span>
+                          </div>
+                        </>
+                      )}
+
+                      {isStaffLeader && editRoleCode === 'DEPARTMENT' && (
+                        <>
+                          <DisplayField label="Chức vụ" value="Trưởng phòng" />
+                          <div className="flex flex-col min-w-0 md:col-span-2">
+                            <span className="block text-[10px] font-bold uppercase tracking-wider mb-1 text-gray-500">Phòng ban <span className="text-red-500">*</span></span>
+                            <div className="relative">
+                              <select
+                                value={roleEditForm?.departmentId ?? ''}
+                                disabled={roleOptionsLoading}
+                                onChange={(e) => setRoleEditForm((prev) => (prev ? { ...prev, departmentId: e.target.value } : prev))}
+                                className={selectClass(roleOptionsLoading)}
+                              >
+                                <option value="">-- Chọn phòng ban --</option>
+                                {(roleOptions?.generalDepartments ?? []).map((d) => (
+                                  <option key={d.departmentId} value={d.departmentId} disabled={!d.selectable}>
+                                    {d.name}{!d.selectable ? ' — Đã có trưởng phòng' : d.isCurrentTargetHead ? ' (Phòng ban hiện tại)' : ''}
+                                  </option>
+                                ))}
+                              </select>
+                              <ChevronDown className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                            </div>
+                            {roleOptionsLoading && <p className="mt-1.5 text-xs text-gray-500">Đang tải danh sách phòng ban...</p>}
+                            {!roleOptionsLoading && !roleOptionsError && (roleOptions?.generalDepartments.length ?? 0) === 0 && (
+                              <p className="mt-1.5 text-xs text-amber-600">Cơ sở của bạn hiện chưa có phòng ban phù hợp để gán trưởng phòng.</p>
+                            )}
+                          </div>
+                        </>
+                      )}
+
+                      {isStaffLeader && editRoleCode === 'STUDENT' && (
+                        <div className="flex flex-col min-w-0">
+                          <span className="block text-[10px] font-bold uppercase tracking-wider mb-1 text-[#004c91]/80">Mã số sinh viên (MSSV) <span className="text-red-500">*</span></span>
+                          <input
+                            value={roleEditForm?.studentCode ?? ''}
+                            maxLength={30}
+                            onChange={(e) => setRoleEditForm((prev) => (prev ? { ...prev, studentCode: e.target.value } : prev))}
+                            placeholder="Nhập mã số sinh viên"
+                            className="px-3 py-2 border border-blue-200 rounded-lg text-sm font-black text-[#004c91] focus:outline-none focus:ring-2 focus:ring-[#004c91] bg-blue-50/30 focus:bg-white transition-all w-full"
+                          />
+                        </div>
+                      )}
+
+                      {/* ADMIN keeps the legacy read-only snapshot of the current org fields. */}
+                      {isRealAdmin && (data.role === 'STAFF' || data.role === 'DEPARTMENT') && (
+                        <>
+                          <DisplayField label="Chức vụ" value={subRoleLabel(data.subRole)} />
+                          <DisplayField label="Phòng ban" value={data.department} />
+                        </>
+                      )}
+                      {isRealAdmin && data.role === 'STUDENT' && (
+                        <DisplayField label="Mã số sinh viên (MSSV)" value={data.studentId} highlight />
+                      )}
+                    </div>
+                  );
+
+                  // ── View mode (read-only detail): the original layout, keyed on the real role. ──
+                  const viewGrid = (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5 w-full">
+                      <Input label="Họ và tên" value={data.name} field="name" disabled={isEdit} />
+                      <Input label="Email" value={data.email} field="email" type="email" disabled={isEdit} />
+                      <Select label="Giới tính" value={genderLabel(data.gender)} field="gender" options={[{value: 'Nam', label:'Nam'}, {value:'Nữ', label:'Nữ'}, {value:'Khác', label:'Khác'}, {value:'Không xác định', label:'Không xác định'}]} disabled={isEdit} />
+                      <Input label="Số điện thoại" value={data.phone} field="phone" disabled={isEdit} />
+                      {(isHO || isRealAdmin || isStaffLeader) && (
+                        <Select label="Vai trò" value={roleValue} field="role" disabled={true} options={roleSelectOptions} />
+                      )}
+
+                      {data.role === 'STUDENT' && (
+                        <>
+                          <HighlightInput label="Mã số sinh viên (MSSV)" value={data.studentId} field="studentId" disabled={isEdit} />
+                          <Select label="Cơ sở trực thuộc" value={data.campus} field="campus" options={CAMPUSES.map(c=>({value:c,label:c}))} disabled={isEdit} />
+                        </>
+                      )}
+
+                      {(data.role === 'STAFF' || data.role === 'DEPARTMENT') && (
+                        <>
+                          <Select label="Cơ sở trực thuộc" value={data.campus} field="campus" options={CAMPUSES.map(c=>({value:c,label:c}))} disabled={isEdit} />
+                          <Select label="Chức vụ" value={subRoleLabel(data.subRole)} field="subRole" options={[{value:'Trưởng phòng', label:'Trưởng phòng'}, {value:'Nhân viên', label:'Nhân viên'}]} disabled={isEdit} />
+                          <Select label="Phòng ban" value={data.department} field="department" options={data.department ? [{value:data.department, label:data.department}] : []} disabled={isEdit} />
+                        </>
+                      )}
+
+                      {(data.role === 'ADMIN' || data.role === 'HO') && (
+                        <Select label="Cơ sở trực thuộc" value={data.campus} field="campus" options={CAMPUSES.map(c=>({value:c,label:c}))} disabled={isEdit} />
+                      )}
+
+                      {data.role === 'VISITOR' && (
+                        <>
+                          <Input label="Quốc tịch" value={data.nationality} field="nationality" disabled={isEdit} />
+                          <HighlightInput label="Đơn vị công tác / Doanh nghiệp" value={data.organization} field="organization" colSpan={true} disabled={isEdit} />
+                        </>
+                      )}
+                    </div>
+                  );
+
                   return (
                     <>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-5 w-full">
-                        <Input label="Họ và tên" value={data.name} field="name" disabled={isEdit} />
-                        <Input label="Email" value={data.email} field="email" type="email" disabled={isEdit} />
-                        <Select label="Giới tính" value={genderLabel(data.gender)} field="gender" options={[{value: 'Nam', label:'Nam'}, {value:'Nữ', label:'Nữ'}, {value:'Khác', label:'Khác'}, {value:'Không xác định', label:'Không xác định'}]} disabled={isEdit} />
-                        <Input label="Số điện thoại" value={data.phone} field="phone" disabled={isEdit} />
-                        {(isHO || isRealAdmin || isStaffLeader) && (
-                          <Select 
-                            label="Vai trò" 
-                            value={roleValue} 
-                            field="role" 
-                            disabled={false}
-                            options={
-                              isHO ? [
-                                {value:'HO', label:'HO (Head Office)'},
-                                {value:'STAFF', label:'Staff Leader (Trưởng phòng IC)'}
-                              ] : isStaffLeader ? [
-                                {value:'STAFF', label:'STAFF (Nhân sự IC)'},
-                                {value:'DEPARTMENT', label:'Department (Trưởng phòng ban)'},
-                                {value:'STUDENT', label:'STUDENT (Sinh viên)'}
-                              ] : [
-                                {value:'ADMIN', label:'ADMIN'},
-                                {value:'HO', label:'HO (Head Office)'},
-                                {value:'STAFF', label:'STAFF'},
-                                {value:'DEPARTMENT', label:'DEPARTMENT'},
-                                {value:'STUDENT', label:'STUDENT'},
-                                {value:'VISITOR', label:'VISITOR'}
-                              ]
-                            } 
-                          />
-                        )}
-
-                        {/* Role edit intentionally exposes no second mutable field.
-                            Existing campus/department/position values stay visible below as disabled data. */}
-
-                        {data.role === 'STUDENT' && (
-                          <>
-                            <HighlightInput label="Mã số sinh viên (MSSV)" value={data.studentId} field="studentId" disabled={isEdit} />
-                            <Select label="Cơ sở trực thuộc" value={data.campus} field="campus" options={CAMPUSES.map(c=>({value:c,label:c}))} disabled={isEdit} />
-                          </>
-                        )}
-
-                        {(data.role === 'STAFF' || data.role === 'DEPARTMENT') && (
-                          <>
-                            <Select label="Cơ sở trực thuộc" value={data.campus} field="campus" options={CAMPUSES.map(c=>({value:c,label:c}))} disabled={isEdit} />
-                            <Select label="Chức vụ" value={subRoleLabel(data.subRole)} field="subRole" options={[{value:'Trưởng phòng', label:'Trưởng phòng'}, {value:'Nhân viên', label:'Nhân viên'}]} disabled={isEdit} />
-                            <Select label="Phòng ban" value={data.department} field="department" options={[{value:'Phòng Hành chính', label:'Phòng Hành chính'}, {value:'Phòng Đào tạo', label:'Phòng Đào tạo'}, {value:'Phòng Công tác sinh viên', label:'Phòng Công tác sinh viên'}, {value:'Phòng Hợp tác quốc tế', label:'Phòng Hợp tác quốc tế'}, {value:'Phòng Tuyển sinh', label:'Phòng Tuyển sinh'}]} disabled={isEdit} />
-                          </>
-                        )}
-
-                        {(data.role === 'ADMIN' || data.role === 'HO') && (
-                          <>
-                            <Select label="Cơ sở trực thuộc" value={data.campus} field="campus" options={CAMPUSES.map(c=>({value:c,label:c}))} disabled={isEdit} />
-                          </>
-                        )}
-
-                        {data.role === 'VISITOR' && (
-                          <>
-                            <Input label="Quốc tịch" value={data.nationality} field="nationality" disabled={isEdit} />
-                            <HighlightInput label="Đơn vị công tác / Doanh nghiệp" value={data.organization} field="organization" colSpan={true} disabled={isEdit} />
-                          </>
-                        )}
-                      </div>
+                      {isEdit ? editGrid : viewGrid}
 
                       {isEditingProfile && (
                         <div className="mt-4 pt-6 border-t border-gray-100 animate-in fade-in slide-in-from-bottom-2 duration-300">
@@ -1399,24 +1697,18 @@ export function AccountManagement() {
                           <div className="flex items-center justify-end gap-3">
                             <button
                               type="button"
-                              onClick={() => { setIsEditingProfile(false); setEditForm(null); setRoleError(null); setSelectedDept(''); }}
+                              onClick={resetRoleEditor}
                               className="px-5 py-2.5 rounded-xl font-bold text-sm text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-colors outline-none"
                             >
                               Hủy
                             </button>
                             <button
                               type="button"
-                              disabled={roleSaving}
-                              onClick={(isStaffLeader || isRealAdmin)
-                                ? handleUpdateRole
-                                : () => {
-                                    setIsEditingProfile(false);
-                                    setAccounts(accounts.map(acc => acc.id === selectedAccount.id ? editForm : acc));
-                                    setSelectedAccount(editForm);
-                                  }}
+                              disabled={roleSaving || !roleIsDirty || roleUpdateBlocked}
+                              onClick={handleUpdateRole}
                               className="px-6 py-2.5 rounded-xl text-white font-bold text-sm bg-[#0aa14f] hover:bg-[#088c44] shadow-[0_4px_12px_rgba(10,161,79,0.2)] hover:shadow-[0_6px_16px_rgba(10,161,79,0.3)] transition-all outline-none disabled:opacity-60 disabled:cursor-not-allowed"
                             >
-                              {(isStaffLeader || isRealAdmin) && roleSaving ? 'Đang lưu...' : 'Cập nhật'}
+                              {roleSaving ? 'Đang lưu...' : 'Cập nhật'}
                             </button>
                           </div>
                         </div>
@@ -1489,9 +1781,15 @@ export function AccountManagement() {
                 <div className="space-y-5">                  
                   <div>
                     <label className="block text-sm font-bold text-gray-700 mb-2">Vai trò (Role) <span className="text-red-500">*</span></label>
-                    <select 
+                    <select
                       value={manualForm.role}
-                      onChange={(e) => setManualForm({...manualForm, role: e.target.value})}
+                      onChange={(e) => {
+                        const nextRole = e.target.value;
+                        // Clear MSSV (+ its error) whenever the role is not STUDENT, so a hidden code
+                        // is never carried over (spec §5.4).
+                        setManualForm((prev) => ({ ...prev, role: nextRole, studentCode: nextRole === 'STUDENT' ? prev.studentCode : '' }));
+                        setCreateStudentCodeError(null);
+                      }}
                       className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none transition-shadow text-sm bg-gray-50 hover:bg-gray-100 cursor-pointer"
                     >
                       <option value="">-- Chọn vai trò --</option>
@@ -1663,14 +1961,35 @@ export function AccountManagement() {
                     </div>
                     <div>
                       <label className="block text-sm font-bold text-gray-700 mb-2">Email (Tên đăng nhập) <span className="text-red-500">*</span></label>
-                      <input 
-                        type="email" 
+                      <input
+                        type="email"
                         value={manualForm.email}
                         onChange={(e) => setManualForm({...manualForm, email: e.target.value})}
-                        placeholder="example@domain.com" 
-                        className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none transition-shadow text-sm bg-white" 
+                        placeholder="example@domain.com"
+                        className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none transition-shadow text-sm bg-white"
                       />
                     </div>
+
+                    {/* PHẦN B — MSSV bắt buộc khi tạo tài khoản STUDENT (spec §5.2). */}
+                    {manualForm.role === 'STUDENT' && (
+                      <div className="col-span-2">
+                        <label className="block text-sm font-bold text-gray-700 mb-2">
+                          Mã số sinh viên (MSSV) <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={manualForm.studentCode}
+                          maxLength={30}
+                          placeholder="Ví dụ: SE123456"
+                          disabled={creating}
+                          onChange={(e) => { setManualForm({ ...manualForm, studentCode: e.target.value }); setCreateStudentCodeError(null); }}
+                          className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none transition-shadow text-sm bg-white placeholder:text-slate-400 disabled:bg-slate-100 disabled:text-slate-500 disabled:border-slate-200 disabled:cursor-not-allowed"
+                        />
+                        {createStudentCodeError && (
+                          <p className="mt-1.5 text-sm text-red-600 font-medium">{createStudentCodeError}</p>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
             </div>
@@ -1684,7 +2003,7 @@ export function AccountManagement() {
               )}
               <div className="flex items-center justify-end gap-3">
                 <button
-                  onClick={() => { setIsCreateModalOpen(false); setCreateError(null); }}
+                  onClick={() => { setIsCreateModalOpen(false); setCreateError(null); setCreateStudentCodeError(null); }}
                   className="px-5 py-2.5 rounded-xl font-bold text-gray-600 bg-white border border-gray-200 hover:bg-gray-100 transition-colors outline-none"
                 >
                   Hủy bỏ

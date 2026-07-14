@@ -29,6 +29,9 @@ public sealed class ViewAccountDetailsDto
     public ulong? DepartmentId { get; init; }
     public string? DepartmentName { get; init; }
 
+    /// <summary>Student code (MSSV). Only meaningful for STUDENT accounts; null otherwise.</summary>
+    public string? StudentCode { get; init; }
+
     public string Status { get; init; } = default!;
     public string? CreatedVia { get; init; }
 

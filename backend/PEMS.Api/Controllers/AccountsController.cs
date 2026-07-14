@@ -81,6 +81,20 @@ namespace PEMS.Api.Controllers
             return Ok(result);
         }
 
+        // UC-100-SL — role-assignment options for the Staff Leader "Chỉnh sửa vai trò" modal.
+        // Campus is resolved server-side from the authenticated Staff Leader; only the target
+        // account id is accepted. Returns the campus IC department + active GENERAL departments
+        // (each flagged with hasHead / isCurrentTargetHead / selectable).
+        [HttpGet("role-assignment-options")]
+        [EnableRateLimiting("accounts-read")]
+        public async Task<IActionResult> GetRoleAssignmentOptions([FromQuery] ulong targetUserId, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(
+                new PEMS.Application.Accounts.Queries.GetRoleAssignmentOptions.GetRoleAssignmentOptionsQuery { TargetUserId = targetUserId },
+                cancellationToken);
+            return Ok(result);
+        }
+
         // UC-96 — Staff Leader availability pre-check (HO only): can a Trưởng phòng IC be created
         // for the chosen campus? Drives the create modal's warning/disable state.
         [HttpGet("staff-leader-availability")]
