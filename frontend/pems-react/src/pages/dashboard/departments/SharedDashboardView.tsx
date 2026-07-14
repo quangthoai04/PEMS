@@ -41,6 +41,7 @@ import { getNotificationLink, timeAgo } from '../../../features/notifications/co
 import { NotificationDetailModal } from '../../../features/notifications/components/NotificationDetailModal';
 import type { NotificationItem } from '../../../features/notifications/types/notification.types';
 import { matchCalendarChangeNotifs } from '../../../features/notifications/utils/calendarChangeNotifs';
+import { VEHICLE_HANDOVER_CHECKLIST, isVehicleHandover } from '../../../features/department-reception-tasks/constants/vehicleHandover';
 import { useAuth } from '../../../shared/hooks/useAuth';
 import { EmailPreviewModal, type EmailPreviewSendPayload } from '../../../features/delegations/components/EmailPreviewModal';
 import { stripLegacyActionHtml } from '../../../features/emails/utils/actionLinks';
@@ -417,6 +418,10 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
   }, [activePopoverEvent?.id]);
 
   const [activeEventDetail, setActiveEventDetail] = useState<any>(null);
+
+  // Đơn mượn xe (TRANSPORT): biên bản dùng checklist xe ô tô điện cố định;
+  // đơn yêu cầu chung chung giữ nguyên biên bản hiện tại.
+  const isVehicleDoc = isVehicleHandover(activeEventDetail?.itemType);
 
   React.useEffect(() => {
     if (!activePopoverEvent || !activePopoverEvent.rawId) {
@@ -3728,11 +3733,16 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                         <p className="flex-1 min-w-[200px]">Bộ phận: <b>Ban Đào tạo & CTSV</b></p>
                       </div>
                       <p>Lý do bàn giao: <b>Đón tiếp phái đoàn đối tác thương mại Safuri</b></p>
-                      <p>Thời gian hẹn trả tài sản: <b>16:30, 08/08/2026</b></p>
+                      <p>
+                        {isVehicleDoc ? 'Thời gian hẹn trả xe' : 'Thời gian hẹn trả tài sản'}:{' '}
+                        <b>{activeEventDetail?.endTime && activeEventDetail?.date ? `${activeEventDetail.endTime}, ${activeEventDetail.date}` : '16:30, 08/08/2026'}</b>
+                      </p>
                     </div>
                   </div>
 
-                  <p className="font-bold text-[15px] mb-2 relative z-10">Cùng bàn giao tài sản với tình trạng sau:</p>
+                  <p className="font-bold text-[15px] mb-2 relative z-10">
+                    {isVehicleDoc ? 'Cùng bàn giao xe ô tô điện với tình trạng sau:' : 'Cùng bàn giao tài sản với tình trạng sau:'}
+                  </p>
                   <div className="overflow-x-auto mb-6 relative z-10">
                     <table className="w-full border-collapse border border-slate-500 text-[14px]">
                       <thead>
@@ -3740,36 +3750,58 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                           <th className="border border-slate-500 p-2 text-center w-12">STT</th>
                           <th className="border border-slate-500 p-2 text-center">Nội dung</th>
                           <th className="border border-slate-500 p-2 text-center w-24">Số Lượng</th>
-                          <th className="border border-slate-500 p-2 text-center">Tình Trạng bàn giao</th>
-                          <th className="border border-slate-500 p-2 text-center">Tình Trạng nhận</th>
+                          <th className="border border-slate-500 p-2 text-center">{isVehicleDoc ? 'Tình Trạng BTS bàn giao' : 'Tình Trạng bàn giao'}</th>
+                          <th className="border border-slate-500 p-2 text-center">{isVehicleDoc ? 'Tình Trạng BTS nhận bàn giao' : 'Tình Trạng nhận'}</th>
                           <th className="border border-slate-500 p-2 text-center">Ghi chú</th>
                         </tr>
                       </thead>
                       <tbody>
-                        <tr>
-                          <td className="border border-slate-500 p-2 text-center">1</td>
-                          <td className="border border-slate-500 p-2 font-semibold">Xe điện FPTU-EV-09 (8 ghế)</td>
-                          <td className="border border-slate-500 p-2 text-center">1</td>
-                          <td className="border border-slate-500 p-2 text-center">
-                            {safuriBG1Note || 'Đã sạc đầy 100%, 10 ô dù'}
-                          </td>
-                          <td className="border border-slate-500 p-2 text-center">
-                            {safuriBG2Signed ? (safuriBG2Note || 'Đã xác nhận') : ''}
-                          </td>
-                          <td className="border border-slate-500 p-2"></td>
-                        </tr>
+                        {isVehicleDoc ? (
+                          VEHICLE_HANDOVER_CHECKLIST.map((row, i) => (
+                            <tr key={i}>
+                              <td className="border border-slate-500 p-2 text-center">{i + 1}</td>
+                              <td className="border border-slate-500 p-2">{row.name}</td>
+                              <td className="border border-slate-500 p-2 text-center">{row.qty}</td>
+                              <td className="border border-slate-500 p-2"></td>
+                              <td className="border border-slate-500 p-2"></td>
+                              <td className="border border-slate-500 p-2"></td>
+                            </tr>
+                          ))
+                        ) : (
+                          <tr>
+                            <td className="border border-slate-500 p-2 text-center">1</td>
+                            <td className="border border-slate-500 p-2 font-semibold">Xe điện FPTU-EV-09 (8 ghế)</td>
+                            <td className="border border-slate-500 p-2 text-center">1</td>
+                            <td className="border border-slate-500 p-2 text-center">
+                              {safuriBG1Note || 'Đã sạc đầy 100%, 10 ô dù'}
+                            </td>
+                            <td className="border border-slate-500 p-2 text-center">
+                              {safuriBG2Signed ? (safuriBG2Note || 'Đã xác nhận') : ''}
+                            </td>
+                            <td className="border border-slate-500 p-2"></td>
+                          </tr>
+                        )}
                       </tbody>
                     </table>
                   </div>
 
                   <div className="space-y-1 text-[14px] mb-8 relative z-10">
-                    <p className="font-bold">Quy định khi sử dụng tài sản:</p>
-                    <ul className="list-disc pl-8 space-y-1">
-                      <li>Người mượn tài sản phải tuân thủ đúng mục đích sử dụng, không tự ý chuyển giao cho người khác.</li>
-                      <li>Khi có vấn đề xảy ra (bị hỏng hoặc không nguyên hiện trạng ban đầu), <b>người mượn tài sản</b> sẽ phải chịu hoàn toàn trách nhiệm chi trả chi phí sửa chữa/đền bù.</li>
-                      <li>An toàn trong quá trình sử dụng tài sản sẽ do <b>người mượn tài sản</b> chịu hoàn toàn trách nhiệm.</li>
-                      <li>Ghi chú khác: ....................................................................................................................</li>
-                    </ul>
+                    <p className="font-bold">{isVehicleDoc ? 'Quy định khi sử dụng xe ô tô điện:' : 'Quy định khi sử dụng tài sản:'}</p>
+                    {isVehicleDoc ? (
+                      <ul className="list-disc pl-8 space-y-1">
+                        <li>Người mượn xe phải tuân thủ đúng mục đích sử dụng, không tự ý chuyển giao xe cho người khác.</li>
+                        <li>Khi có vấn đề xảy ra (xe bị hỏng hoặc không nguyên hiện trạng ban đầu), <b>người mượn xe</b> sẽ phải chịu hoàn toàn trách nhiệm chi trả chi phí sửa chữa/đền bù.</li>
+                        <li>An toàn trong quá trình sử dụng xe sẽ do <b>người mượn xe</b> chịu hoàn toàn trách nhiệm.</li>
+                        <li>Ghi chú khác: ....................................................................................................................</li>
+                      </ul>
+                    ) : (
+                      <ul className="list-disc pl-8 space-y-1">
+                        <li>Người mượn tài sản phải tuân thủ đúng mục đích sử dụng, không tự ý chuyển giao cho người khác.</li>
+                        <li>Khi có vấn đề xảy ra (bị hỏng hoặc không nguyên hiện trạng ban đầu), <b>người mượn tài sản</b> sẽ phải chịu hoàn toàn trách nhiệm chi trả chi phí sửa chữa/đền bù.</li>
+                        <li>An toàn trong quá trình sử dụng tài sản sẽ do <b>người mượn tài sản</b> chịu hoàn toàn trách nhiệm.</li>
+                        <li>Ghi chú khác: ....................................................................................................................</li>
+                      </ul>
+                    )}
                     <p className="mt-4">
                       Tôi là <b>Đại diện Ban Đào tạo & CTSV</b>, đã đọc hiểu và cam kết thực hiện đúng quy định sử dụng.
                     </p>

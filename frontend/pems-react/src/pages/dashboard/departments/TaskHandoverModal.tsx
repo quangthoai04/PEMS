@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { FileText, Download, X, Loader2, PenLine } from 'lucide-react';
+import { FileText, Download, X, Loader2, PenLine, Plus } from 'lucide-react';
 import { departmentReceptionTasksApi } from '../../../features/department-reception-tasks/api/departmentReceptionTasksApi';
+import { VEHICLE_HANDOVER_CHECKLIST, isVehicleHandover } from '../../../features/department-reception-tasks/constants/vehicleHandover';
 import toast from 'react-hot-toast';
 
 function fmtDateTime(value?: string | null): string {
@@ -26,6 +27,7 @@ export function TaskHandoverModal({ isOpen, onClose, detailData, onSuccess, inli
   const [busy, setBusy] = useState(false);
   const [borrowNote, setBorrowNote] = useState('');
   const [returnNote, setReturnNote] = useState('');
+  const [extraRows, setExtraRows] = useState<{ id: number }[]>([]);
 
   if ((!isOpen && !inline) || !detailData) return null;
 
@@ -37,6 +39,10 @@ export function TaskHandoverModal({ isOpen, onClose, detailData, onSuccess, inli
   const canSignBG1 = !bg1; // Department is PROVIDER
   const isBorrowDone = bg1 && bg2;
   const canSignNT2 = isBorrowDone && nt1 && !nt2; // Department is PROVIDER
+
+  const isReturnStarted = nt1 || nt2;
+  const canEditFirst4Cols = !isBorrowDone && !isReturnStarted;
+  const canEditLastCol = isBorrowDone && !isReturnStarted;
 
   // parse date for top section
   let handoverTime = "....";
@@ -53,6 +59,13 @@ export function TaskHandoverModal({ isOpen, onClose, detailData, onSuccess, inli
 
   const hostName = detailData.BorrowBorrowerSignature?.Name || detailData.ReturnBorrowerSignature?.Name || detailData.SenderName || 'Đại diện Host đón tiếp';
   const providerName = detailData.BorrowProviderSignature?.Name || detailData.ReturnProviderSignature?.Name || detailData.AssigneeName || 'Đại diện Phòng ban';
+
+  // Đơn mượn xe (TRANSPORT): biên bản có checklist cố định theo mẫu giấy;
+  // đơn yêu cầu chung chung giữ nguyên biên bản hiện tại.
+  const isVehicle = isVehicleHandover(detailData.ItemType);
+  const vehicleReturnTime = detailData.UsageEndTime && detailData.UsageDate
+    ? `${detailData.UsageEndTime} ngày ${detailData.UsageDate}`
+    : '............................................';
 
   const handleSign = async (type: 'BORROW' | 'RETURN') => {
     setBusy(true);
@@ -152,11 +165,17 @@ export function TaskHandoverModal({ isOpen, onClose, detailData, onSuccess, inli
                 </div>
                 <p>Lý do bàn giao: <b>Phục vụ công tác đón tiếp đoàn khách</b></p>
                 <p>Đoàn khách: <b>{detailData.DelegationName}</b></p>
-                <p>Thời gian hẹn trả tài sản: <b>Sau khi kết thúc chuyến thăm</b></p>
+                {isVehicle ? (
+                  <p>Thời gian hẹn trả xe: <b>{vehicleReturnTime}</b></p>
+                ) : (
+                  <p>Thời gian hẹn trả tài sản: <b>Sau khi kết thúc chuyến thăm</b></p>
+                )}
               </div>
             </div>
 
-            <p className="font-bold text-[15px] mb-2">Cùng bàn giao tài sản với tình trạng sau:</p>
+            <p className="font-bold text-[15px] mb-2">
+              {isVehicle ? 'Cùng bàn giao xe ô tô điện với tình trạng sau:' : 'Cùng bàn giao tài sản với tình trạng sau:'}
+            </p>
             <div className="overflow-x-auto mb-6">
               <table className="w-full border-collapse border border-slate-500 text-[14px]">
                 <thead>
@@ -164,36 +183,78 @@ export function TaskHandoverModal({ isOpen, onClose, detailData, onSuccess, inli
                     <th className="border border-slate-500 p-2 text-center w-12">STT</th>
                     <th className="border border-slate-500 p-2 text-center">Nội dung</th>
                     <th className="border border-slate-500 p-2 text-center w-24">Số Lượng</th>
-                    <th className="border border-slate-500 p-2 text-center">Tình Trạng bàn giao</th>
-                    <th className="border border-slate-500 p-2 text-center">Tình Trạng nhận</th>
-                    <th className="border border-slate-500 p-2 text-center">Ghi chú</th>
+                    <th className="border border-slate-500 p-2 text-center">{isVehicle ? 'Tình Trạng BTS bàn giao' : 'Tình Trạng bàn giao'}</th>
+                    <th className="border border-slate-500 p-2 text-center">{isVehicle ? 'Tình Trạng BTS nhận bàn giao' : 'Tình Trạng nhận'}</th>
                   </tr>
                 </thead>
                 <tbody>
-                  <tr>
-                    <td className="border border-slate-500 p-2 text-center">1</td>
-                    <td className="border border-slate-500 p-2 font-semibold">{detailData.Title}</td>
-                    <td className="border border-slate-500 p-2 text-center">{detailData.Quantity || 1}</td>
-                    <td className="border border-slate-500 p-2 text-center">
-                      {detailData.BorrowNote || (bg1 ? 'Tốt' : '')}
-                    </td>
-                    <td className="border border-slate-500 p-2 text-center">
-                      {bg2 ? 'Đã xác nhận' : ''}
-                    </td>
-                    <td className="border border-slate-500 p-2"></td>
-                  </tr>
+                  {isVehicle ? (
+                    <>
+                      {VEHICLE_HANDOVER_CHECKLIST.map((row, i) => (
+                        <tr key={i}>
+                          <td className="border border-slate-500 p-2 text-center">{i + 1}</td>
+                          <td className="border border-slate-500 p-0"><input type="text" className="w-full min-h-[36px] bg-transparent outline-none px-2" defaultValue={row.name} disabled={!canEditFirst4Cols} /></td>
+                          <td className="border border-slate-500 p-0"><input type="text" className="w-full min-h-[36px] bg-transparent outline-none text-center px-1" defaultValue={row.qty} disabled={!canEditFirst4Cols} /></td>
+                          <td className="border border-slate-500 p-0"><input type="text" className="w-full min-h-[36px] bg-transparent outline-none px-2" disabled={!canEditFirst4Cols} /></td>
+                          <td className="border border-slate-500 p-0"><input type="text" className="w-full min-h-[36px] bg-transparent outline-none px-2" disabled={!canEditLastCol} /></td>
+                        </tr>
+                      ))}
+                      {extraRows.map((row, idx) => {
+                        const i = VEHICLE_HANDOVER_CHECKLIST.length + idx;
+                        return (
+                          <tr key={row.id}>
+                            <td className="border border-slate-500 p-2 text-center">{i + 1}</td>
+                            <td className="border border-slate-500 p-0"><input type="text" className="w-full min-h-[36px] bg-transparent outline-none px-2" disabled={!canEditFirst4Cols} /></td>
+                            <td className="border border-slate-500 p-0"><input type="text" className="w-full min-h-[36px] bg-transparent outline-none text-center px-1" disabled={!canEditFirst4Cols} /></td>
+                            <td className="border border-slate-500 p-0"><input type="text" className="w-full min-h-[36px] bg-transparent outline-none px-2" disabled={!canEditFirst4Cols} /></td>
+                            <td className="border border-slate-500 p-0"><input type="text" className="w-full min-h-[36px] bg-transparent outline-none px-2" disabled={!canEditLastCol} /></td>
+                          </tr>
+                        );
+                      })}
+                      {canEditFirst4Cols && (
+                        <tr className="print:hidden">
+                          <td colSpan={5} className="border border-slate-500 p-0">
+                            <button type="button" onClick={() => setExtraRows(prev => [...prev, { id: Date.now() }])} className="w-full py-2 flex items-center justify-center gap-1 text-sm font-bold text-[#004c91] bg-blue-50/50 hover:bg-blue-100/50 transition-colors">
+                              <Plus className="w-4 h-4" /> Thêm dòng
+                            </button>
+                          </td>
+                        </tr>
+                      )}
+                    </>
+                  ) : (
+                    <tr>
+                      <td className="border border-slate-500 p-2 text-center">1</td>
+                      <td className="border border-slate-500 p-2 font-semibold">{detailData.Title}</td>
+                      <td className="border border-slate-500 p-2 text-center">{detailData.Quantity || 1}</td>
+                      <td className="border border-slate-500 p-2 text-center">
+                        {detailData.BorrowNote || (bg1 ? 'Tốt' : '')}
+                      </td>
+                      <td className="border border-slate-500 p-2 text-center">
+                        {bg2 ? 'Đã xác nhận' : ''}
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
 
             <div className="space-y-1 text-[14px] mb-8">
-              <p className="font-bold">Quy định khi sử dụng tài sản:</p>
-              <ul className="list-disc pl-8 space-y-1">
-                <li>Người mượn tài sản phải tuân thủ đúng mục đích sử dụng, không tự ý chuyển giao cho người khác.</li>
-                <li>Khi có vấn đề xảy ra (bị hỏng hoặc không nguyên hiện trạng ban đầu), <b>người mượn tài sản</b> sẽ phải chịu hoàn toàn trách nhiệm chi trả chi phí sửa chữa/đền bù.</li>
-                <li>An toàn trong quá trình sử dụng tài sản sẽ do <b>người mượn tài sản</b> chịu hoàn toàn trách nhiệm.</li>
-                <li>Ghi chú khác: ....................................................................................................................</li>
-              </ul>
+              <p className="font-bold">{isVehicle ? 'Quy định khi sử dụng xe ô tô điện:' : 'Quy định khi sử dụng tài sản:'}</p>
+              {isVehicle ? (
+                <ul className="list-disc pl-8 space-y-1">
+                  <li>Người mượn xe phải tuân thủ đúng mục đích sử dụng, không tự ý chuyển giao xe cho người khác.</li>
+                  <li>Khi có vấn đề xảy ra (xe bị hỏng hoặc không nguyên hiện trạng ban đầu), <b>người mượn xe</b> sẽ phải chịu hoàn toàn trách nhiệm chi trả chi phí sửa chữa/đền bù.</li>
+                  <li>An toàn trong quá trình sử dụng xe sẽ do <b>người mượn xe</b> chịu hoàn toàn trách nhiệm.</li>
+                  <li>Ghi chú khác: ....................................................................................................................</li>
+                </ul>
+              ) : (
+                <ul className="list-disc pl-8 space-y-1">
+                  <li>Người mượn tài sản phải tuân thủ đúng mục đích sử dụng, không tự ý chuyển giao cho người khác.</li>
+                  <li>Khi có vấn đề xảy ra (bị hỏng hoặc không nguyên hiện trạng ban đầu), <b>người mượn tài sản</b> sẽ phải chịu hoàn toàn trách nhiệm chi trả chi phí sửa chữa/đền bù.</li>
+                  <li>An toàn trong quá trình sử dụng tài sản sẽ do <b>người mượn tài sản</b> chịu hoàn toàn trách nhiệm.</li>
+                  <li>Ghi chú khác: ....................................................................................................................</li>
+                </ul>
+              )}
               <p className="mt-4">
                 Tôi là <b>{hostName}</b>, đã đọc hiểu và cam kết thực hiện đúng quy định sử dụng.
               </p>

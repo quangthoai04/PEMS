@@ -186,6 +186,10 @@ export function StaffLeaderTaskModal({ item, onClose, onRefresh, changeNotifs = 
     LogisticsItemId: item?.rawId,
     Title: detail.title || item?.title,
     Quantity: detail.quantity,
+    // TRANSPORT → biên bản bàn giao xe ô tô điện với checklist cố định.
+    ItemType: detail.itemType,
+    UsageEndTime: detail.endTime,
+    UsageDate: detail.date,
     DelegationName: detail.delegationName || item?.delegationName,
     SenderName: detail.senderName || item?.host,
     AssigneeName: detail.assigneeName || detail.currentResponsibleName,
