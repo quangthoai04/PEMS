@@ -1,6 +1,8 @@
 import axios, { AxiosError, AxiosRequestConfig } from 'axios';
 import { authInterceptor } from './authInterceptor';
 import { authStorage, AUTH_EXPIRED_EVENT } from '../auth/authStorage';
+import { showMessageErrorToast } from '../utils/toast';
+import i18n from '../i18n/config';
 
 const baseURL = import.meta.env.VITE_API_BASE_URL || '/api';
 
@@ -60,6 +62,7 @@ httpClient.interceptors.response.use(
       if (!original || original._retry || !authStorage.getRefreshToken()) {
         authStorage.clear();
         window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT));
+        showMessageErrorToast(i18n.t('toast:http.401'), 'session-expired');
         return Promise.reject(error);
       }
 
@@ -79,6 +82,7 @@ httpClient.interceptors.response.use(
       // Refresh failed → clear auth and notify the app to redirect to /login.
       authStorage.clear();
       window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT));
+      showMessageErrorToast(i18n.t('toast:http.401'), 'session-expired');
     }
 
     return Promise.reject(error);
