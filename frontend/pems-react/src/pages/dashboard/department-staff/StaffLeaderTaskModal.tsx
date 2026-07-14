@@ -19,6 +19,8 @@ import toast from 'react-hot-toast';
 import { SubmittedVisitRequestDetailModal } from '../../../components/modals/SubmittedVisitRequestDetailModal';
 import { TaskHandoverModal } from '../departments/TaskHandoverModal';
 import { departmentReceptionTasksApi } from '../../../features/department-reception-tasks/api/departmentReceptionTasksApi';
+import { timeAgo } from '../../../features/notifications/components/NotificationBellButton';
+import type { NotificationItem } from '../../../features/notifications/types/notification.types';
 import { toVietnamDateTimeLocalInput } from '../../../shared/utils/vietnamTime';
 
 export type StaffLeaderTaskModalItem = {
@@ -45,6 +47,10 @@ type Props = {
   item: StaffLeaderTaskModalItem | null;
   onClose: () => void;
   onRefresh: () => void;
+  /** Thông báo chưa đọc gắn với đơn/thư mời này — hiện khung "Thay đổi mới". */
+  changeNotifs?: NotificationItem[];
+  /** Bấm 1 thay đổi → mark read + trỏ tới đúng chỗ như thông báo. */
+  onChangeNotifClick?: (n: NotificationItem) => void;
 };
 
 const statusLabel: Record<string, string> = {
@@ -102,7 +108,7 @@ function InfoRow({ label, children }: { label: string; children: React.ReactNode
   );
 }
 
-export function StaffLeaderTaskModal({ item, onClose, onRefresh }: Props) {
+export function StaffLeaderTaskModal({ item, onClose, onRefresh, changeNotifs = [], onChangeNotifClick }: Props) {
   const [detail, setDetail] = useState<any>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
@@ -297,6 +303,34 @@ export function StaffLeaderTaskModal({ item, onClose, onRefresh }: Props) {
 
           {/* Body */}
           <div className="flex-1 overflow-y-auto px-5 py-4">
+            {/* Thay đổi mới (thông báo chưa đọc gắn với đơn/thư mời này) */}
+            {changeNotifs.length > 0 && (
+              <div className="mb-4 bg-red-50/70 border border-red-200 rounded-2xl overflow-hidden">
+                <div className="px-4 py-2.5 flex items-center gap-2.5 border-b border-red-100 bg-red-50">
+                  <span className="relative flex h-2.5 w-2.5 shrink-0">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+                    <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
+                  </span>
+                  <span className="text-sm font-bold text-red-700">Thay đổi mới ({changeNotifs.length})</span>
+                  <span className="text-[11px] text-red-400 ml-auto hidden sm:block">Bấm vào từng thay đổi để mở đúng chỗ cần xem</span>
+                </div>
+                <div className="divide-y divide-red-100">
+                  {changeNotifs.map(n => (
+                    <button
+                      key={n.notificationId}
+                      onClick={() => onChangeNotifClick?.(n)}
+                      className="w-full text-left px-4 py-2.5 hover:bg-red-100/50 transition-colors cursor-pointer"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <span className="text-sm font-semibold text-slate-800">{n.title}</span>
+                        <span className="text-[10px] text-slate-400 whitespace-nowrap shrink-0 mt-0.5">{timeAgo(n.createdAt)}</span>
+                      </div>
+                      {n.message && <p className="text-xs text-slate-500 mt-0.5 line-clamp-2">{n.message}</p>}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             {loadingDetail ? (
               <div className="py-14 text-center text-sm font-semibold text-slate-400">Đang tải chi tiết...</div>
             ) : (

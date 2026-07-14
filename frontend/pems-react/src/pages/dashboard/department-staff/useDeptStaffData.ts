@@ -7,7 +7,7 @@
 
 import { useState, useCallback, useMemo } from 'react';
 import { departmentReceptionTasksApi } from '../../../features/department-reception-tasks/api/departmentReceptionTasksApi';
-import { parseApiDate, toVietnamCalendarDate } from '../../../shared/utils/vietnamTime';
+import { toVietnamCalendarDate } from '../../../shared/utils/vietnamTime';
 
 // ── Shared Types ──────────────────────────────────────────────────────────────
 
@@ -75,25 +75,32 @@ export type TaskStatusFilter =
   | 'CANCELLED';
 
 // ── Calendar colour logic for staff ──────────────────────────────────────────
-// Xanh dương  = staff này đã chấp nhận hoặc từ chối (đã xử lý)
+// Xanh dương  = staff này đã xử lý (chấp nhận / đang thực hiện / hoàn thành)
 // Xanh lá     = thư mời chưa xử lý
 // Cam          = đơn yêu cầu chưa xử lý
-// Xám         = đã hủy / hết hạn
+// Đã hủy      = giữ màu theo loại, chữ gạch ngang khi render (không tô xám)
+// Ngày quá khứ được phủ lớp xám ở lưới lịch, không tô xám từng item.
 function mapCalendarItem(item: any, idx: number): CalendarItem {
   const itemStatus = item.itemStatus || item.status;
   const rawId = item.itemId || item.logisticsItemId || item.participantId || item.id;
-  const itemEndTime = item.endAt ? (parseApiDate(item.endAt)?.getTime() ?? 0) : 0;
-  const isPast = itemEndTime > 0 && itemEndTime < Date.now();
   const isProcessed = itemStatus !== 'REQUESTED' && itemStatus !== 'ASSIGNED';
 
   let col = '';
   let hCol = '';
 
-  if (itemStatus === 'CANCELLED' || itemStatus === 'DECLINED' || itemStatus === 'REJECTED' || isPast) {
-    col = 'bg-slate-100 text-slate-500 border-slate-300 hover:bg-slate-200';
-    hCol = 'border-slate-400';
+  if (itemStatus === 'CANCELLED') {
+    if (item.itemType === 'INVITATION') {
+      col = 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100';
+      hCol = 'border-emerald-500';
+    } else if (item.itemType === 'REQUEST') {
+      col = 'bg-orange-50 text-orange-700 border-orange-300 hover:bg-orange-100';
+      hCol = 'border-orange-500';
+    } else {
+      col = 'bg-purple-100 text-purple-800 border-purple-400 hover:bg-purple-200';
+      hCol = 'border-purple-600';
+    }
   } else if (isProcessed) {
-    // Staff đã chấp nhận / từ chối → xanh dương
+    // Staff đã xử lý → xanh dương
     col = 'bg-blue-50 text-blue-700 border-blue-300 hover:bg-blue-100';
     hCol = 'border-blue-500';
   } else if (item.itemType === 'INVITATION') {
@@ -103,8 +110,8 @@ function mapCalendarItem(item: any, idx: number): CalendarItem {
     col = 'bg-orange-50 text-orange-700 border-orange-300 hover:bg-orange-100';
     hCol = 'border-orange-500';
   } else {
-    col = 'bg-purple-50 text-purple-700 border-purple-300 hover:bg-purple-100';
-    hCol = 'border-purple-500';
+    col = 'bg-purple-100 text-purple-800 border-purple-400 hover:bg-purple-200';
+    hCol = 'border-purple-600';
   }
 
   // Re-based: local getters bên dưới trả đúng phần giờ Việt Nam trên mọi browser.
@@ -171,7 +178,12 @@ export function useDeptStaffData(year: number) {
       const res = await departmentReceptionTasksApi.getCalendar(String(year));
       const list = res?.data || res || [];
       if (Array.isArray(list)) {
-        setCalendarItems(list.map(mapCalendarItem));
+        // Đơn/thư mời đã từ chối không hiện trên bảng lịch của staff nữa.
+        const visible = list.filter((it: any) => {
+          const st = it.itemStatus || it.status;
+          return st !== 'DECLINED' && st !== 'REJECTED';
+        });
+        setCalendarItems(visible.map(mapCalendarItem));
       }
     } catch (e) {
       console.error('Fetch calendar error:', e);
