@@ -25,15 +25,35 @@ namespace PEMS.Api.Controllers
     public class ApiIntegrationsController : ControllerBase
     {
         private readonly IMediator _mediator;
-        public ApiIntegrationsController(IMediator mediator) => _mediator = mediator;
+        private readonly IWebHostEnvironment _environment;
+
+        public ApiIntegrationsController(IMediator mediator, IWebHostEnvironment environment)
+        {
+            _mediator = mediator;
+            _environment = environment;
+        }
+
+        /// <summary>Detailed test diagnostics only surface in Development/Testing environments.</summary>
+        private bool ShowTestDiagnostics
+            => _environment.IsDevelopment() || _environment.IsEnvironment("Testing");
+
+        private PEMS.Application.ApiIntegrations.Common.ApiIntegrationDto Sanitize(
+            PEMS.Application.ApiIntegrations.Common.ApiIntegrationDto dto)
+        {
+            if (!ShowTestDiagnostics) dto.LastTestMessage = null;
+            return dto;
+        }
 
         [HttpGet]
         public async Task<IActionResult> GetList([FromQuery] GetApiIntegrationsQuery query, CancellationToken cancellationToken)
-            => Ok(await _mediator.Send(query, cancellationToken));
+        {
+            var result = await _mediator.Send(query, cancellationToken);
+            return Ok(result.Select(Sanitize).ToList());
+        }
 
         [HttpGet("{apiConfigId}")]
         public async Task<IActionResult> GetDetail(ulong apiConfigId, CancellationToken cancellationToken)
-            => Ok(await _mediator.Send(new GetApiIntegrationDetailQuery(apiConfigId), cancellationToken));
+            => Ok(Sanitize(await _mediator.Send(new GetApiIntegrationDetailQuery(apiConfigId), cancellationToken)));
 
         /// <summary>Create/replace the Google Document AI business-card OCR config.</summary>
         [HttpPost("business-card-ocr/google-document-ai")]

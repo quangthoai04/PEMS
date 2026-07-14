@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Search, Plus, Eye, Edit2, ChevronLeft, ChevronRight, ArrowUpDown } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import httpClient from '../../../shared/api/httpClient';
 
 import { formatVietnamDate } from '../../../shared/utils/vietnamTime';
@@ -70,6 +70,11 @@ function formatDate(dateStr?: string): string {
 export function NewsManagement() {
   const navigate = useNavigate();
 
+  // Đến từ 1 thông báo cụ thể (?newsId=...): chỉ hiển thị đúng bài đó thay vì cả danh sách.
+  // Nút "Xem tất cả" (hoặc đổi filter/tìm kiếm) xoá param này để xem lại toàn bộ.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const notificationNewsId = searchParams.get('newsId') || '';
+
   const [response, setResponse] = useState<NewsListResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -103,6 +108,7 @@ export function NewsManagement() {
         };
         if (debouncedSearch) params.keyword = debouncedSearch;
         if (selectedStatus) params.status = selectedStatus;
+        if (notificationNewsId) params.newsId = notificationNewsId;
         if (sortDirection) {
           params.sortBy = 'createdAt';
           params.sortDirection = sortDirection;
@@ -122,7 +128,19 @@ export function NewsManagement() {
 
     fetchNews();
     return () => { cancelled = true; };
-  }, [page, itemsPerPage, debouncedSearch, selectedStatus, sortDirection]);
+  }, [page, itemsPerPage, debouncedSearch, selectedStatus, sortDirection, notificationNewsId]);
+
+  // Bấm thông báo khi đang đứng ở trang khác trang 1 → về trang 1 để thấy đúng bài.
+  useEffect(() => {
+    if (notificationNewsId) setPage(1);
+  }, [notificationNewsId]);
+
+  const clearNotificationFilter = () => {
+    const params = new URLSearchParams(searchParams);
+    params.delete('newsId');
+    setSearchParams(params, { replace: true });
+    setPage(1);
+  };
 
   const viewerMode = response?.viewerMode ?? '';
   const isHO = viewerMode === 'HO_READONLY';
@@ -195,14 +213,14 @@ export function NewsManagement() {
             type="text"
             placeholder="Tìm kiếm tin tức..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => { setSearchQuery(e.target.value); if (notificationNewsId) clearNotificationFilter(); }}
             className="w-full pl-10 pr-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] text-gray-700 bg-white shadow-sm"
           />
         </div>
 
         <select
           value={selectedStatus}
-          onChange={(e) => { setSelectedStatus(e.target.value); setPage(1); }}
+          onChange={(e) => { setSelectedStatus(e.target.value); setPage(1); if (notificationNewsId) clearNotificationFilter(); }}
           className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none hover:border-[#004c91] hover:text-[#004c91] focus:border-[#004c91] text-gray-600 bg-white font-medium shadow-sm transition-colors cursor-pointer outline-none"
         >
           {statusOptions.map(opt => (
@@ -220,6 +238,20 @@ export function NewsManagement() {
           </button>
         )}
       </div>
+
+      {notificationNewsId && (
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm mb-4">
+          <span className="font-medium text-blue-800">
+            Đang hiển thị đúng tin tức từ thông báo bạn vừa bấm.
+          </span>
+          <button
+            onClick={clearNotificationFilter}
+            className="shrink-0 rounded-lg border border-blue-300 bg-white px-3 py-1.5 text-xs font-bold text-blue-700 hover:bg-blue-100 transition-colors"
+          >
+            Xem tất cả
+          </button>
+        </div>
+      )}
 
       {/* Table */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">

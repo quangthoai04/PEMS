@@ -102,7 +102,8 @@ public sealed class SubmitVisitInstanceNewsCommandHandler
                 VisitInstanceId: instance.VisitInstanceId,
                 CampusId: instance.CampusId,
                 ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenNewsDetail,
-                ActionUrl: $"/dashboard/news/{news.NewsId}"
+                // Trang quản lý tin tức lọc đúng 1 bài (có nút "Xem tất cả"), không vào thẳng chi tiết.
+                ActionUrl: $"/dashboard/news?newsId={news.NewsId}"
             ));
         }
 

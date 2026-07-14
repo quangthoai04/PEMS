@@ -27,6 +27,12 @@ export interface ApiIntegration {
   allowedMimeTypes: string[];
   createdAt: string;
   updatedAt?: string | null;
+  /** DATABASE = quản lý qua console này; ENVIRONMENT = cấu hình trên server (read-only). */
+  managementSource: 'DATABASE' | 'ENVIRONMENT';
+  canEdit: boolean;
+  canTest: boolean;
+  canToggleStatus: boolean;
+  canConfigureQuota: boolean;
 }
 
 export interface UpsertGoogleDocumentAiOcrConfigRequest {

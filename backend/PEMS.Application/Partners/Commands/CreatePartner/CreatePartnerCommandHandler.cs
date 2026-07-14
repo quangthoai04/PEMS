@@ -187,7 +187,8 @@ public sealed class CreatePartnerCommandHandler : IRequestHandler<CreatePartnerC
                     IsActionRequired: true,
                     CampusId: ownerCampusId,
                     ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenPartnerDetail,
-                    ActionUrl: $"/dashboard/partners/{partner.PartnerId}"),
+                    // Trang quản lý đối tác lọc đúng 1 hồ sơ (có nút "Xem tất cả"), không vào thẳng chi tiết.
+                    ActionUrl: $"/dashboard/partners?partnerId={partner.PartnerId}"),
                 cancellationToken);
         }
 

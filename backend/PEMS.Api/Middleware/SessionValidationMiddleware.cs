@@ -55,7 +55,8 @@ public sealed class SessionValidationMiddleware
                 u.Status,
                 RoleStatus = u.Role!.Status,
                 RoleCode = u.Role!.RoleCode,
-                DepartmentStatus = u.Department != null ? u.Department.Status : null
+                DepartmentStatus = u.Department != null ? u.Department.Status : null,
+                CampusStatus = u.PrimaryCampus != null ? u.PrimaryCampus.Status : null
             })
             .FirstOrDefaultAsync(context.RequestAborted);
 
@@ -75,6 +76,17 @@ public sealed class SessionValidationMiddleware
             return;
         }
 
+        // UC-86 force-logout: STAFF/DEPARTMENT/STUDENT accounts lose access immediately when
+        // their primary campus is disabled — a still-valid JWT never overrides the DB state
+        // (BR-AUTH-CAMPUS-06/07). 403 + machine-readable code so the frontend can clear its
+        // auth state and redirect to login (BR-AUTH-CAMPUS-08). HO/ADMIN are never blocked.
+        if (CampusAccessRule.IsBlocked(account.RoleCode, account.CampusStatus))
+        {
+            await WriteForbiddenAsync(
+                context, AuthErrorCodes.CampusInactiveAccessDenied, CampusAccessRule.BlockedMessage);
+            return;
+        }
+
         await _next(context);
     }
 
@@ -86,5 +98,20 @@ public sealed class SessionValidationMiddleware
         context.Response.StatusCode = StatusCodes.Status401Unauthorized;
         context.Response.ContentType = "application/json";
         await context.Response.WriteAsync(JsonSerializer.Serialize(new { message }, JsonOptions));
+    }
+
+    /// <summary>
+    /// 403 with a machine-readable error code (same payload shape as ExceptionHandlingMiddleware)
+    /// — the token itself is valid; the account's org context (campus) denies access.
+    /// </summary>
+    private static async Task WriteForbiddenAsync(HttpContext context, string errorCode, string message)
+    {
+        if (context.Response.HasStarted)
+            return;
+
+        context.Response.StatusCode = StatusCodes.Status403Forbidden;
+        context.Response.ContentType = "application/json";
+        await context.Response.WriteAsync(
+            JsonSerializer.Serialize(new { success = false, errorCode, message }, JsonOptions));
     }
 }

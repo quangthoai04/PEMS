@@ -80,6 +80,12 @@ public sealed class ViewCampusDetailsQueryHandler : IRequestHandler<ViewCampusDe
             .FirstOrDefaultAsync(cancellationToken)
             ?? throw new NotFoundException("Campus", request.CampusId);
 
+        // Operational readiness (UC-86 §21) via the shared evaluator — same source as the
+        // list badge, the registration dropdown and the submit guard.
+        var snapshot = await CampusAvailabilityEvaluator.EvaluateAsync(
+            _db, dto.CampusId, cancellationToken);
+        dto.Readiness = snapshot?.Readiness;
+
         return dto;
     }
 }

@@ -50,6 +50,18 @@ public sealed class RefreshTokenCommandHandler : IRequestHandler<RefreshTokenCom
             throw new AuthenticationFailedException(ExpiredMessage, "department_inactive");
         }
 
+        // UC-86 force-logout: a STAFF/DEPARTMENT/STUDENT account may not refresh while its
+        // primary campus is INACTIVE. Revoke the session so the old refresh token stays dead
+        // even after the campus is re-enabled (BR-AUTH-CAMPUS-09). 403 + machine-readable code
+        // (not a generic "session expired") so the frontend force-logs-out with the right
+        // message (doc §11: never a vague Unauthorized/Session expired).
+        if (CampusAccessRule.IsBlocked(user.Role.RoleCode, user.PrimaryCampus?.Status))
+        {
+            await _sessionService.RevokeSessionAsync(session.SessionId, SessionRevokeReasons.CampusDisabled, null, cancellationToken);
+            throw new AuthBusinessException(
+                AuthErrorCodes.CampusInactiveAccessDenied, CampusAccessRule.BlockedMessage, 403);
+        }
+
         var rotated = await _sessionService.RotateRefreshTokenAsync(session, cancellationToken);
         var accessToken = _jwtTokenService.GenerateAccessToken(user, session.SessionId, session.LoginPortal);
 

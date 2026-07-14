@@ -1,4 +1,5 @@
 using System;
+using PEMS.Application.Campuses.Common;
 
 namespace PEMS.Application.Campuses.Queries.ViewCampusDetails;
 
@@ -22,6 +23,9 @@ public sealed class ViewCampusDetailsDto
     public ulong? UpdatedBy { get; init; }
     public string? UpdatedByName { get; init; }
     public IcDepartmentDetail? IcDepartment { get; init; }
+
+    /// <summary>Computed operational availability (UC-86 §21).</summary>
+    public CampusOperationalReadinessDto? Readiness { get; set; }
 
     public sealed class IcDepartmentDetail
     {

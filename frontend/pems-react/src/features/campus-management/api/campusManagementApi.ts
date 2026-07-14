@@ -5,6 +5,8 @@ import type {
   CampusFilterOptions,
   CampusListItem,
   CampusListQueryParams,
+  CampusStatus,
+  CampusStatusImpact,
   CreateCampusRequest,
   CreateCampusResponse,
   ManageCampusStatusRequest,
@@ -56,6 +58,17 @@ export const campusManagementApi = {
       API_ENDPOINTS.campuses.manageStatus,
       payload,
     );
+    return data;
+  },
+
+  /** UC-86 §18 — status-impact preview for the confirmation modal (read-only). */
+  async getCampusStatusImpact(
+    campusId: number,
+    targetStatus: CampusStatus,
+  ): Promise<CampusStatusImpact> {
+    const { data } = await httpClient.get<CampusStatusImpact>(API_ENDPOINTS.campuses.statusImpact, {
+      params: { campusId, targetStatus },
+    });
     return data;
   },
 

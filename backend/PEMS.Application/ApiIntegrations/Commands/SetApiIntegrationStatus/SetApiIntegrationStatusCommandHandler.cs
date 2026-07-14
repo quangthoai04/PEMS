@@ -52,6 +52,6 @@ public sealed class SetApiIntegrationStatusCommandHandler
         });
         await _db.SaveChangesAsync(cancellationToken);
 
-        return ApiIntegrationMapper.ToDto(config);
+        return ApiIntegrationMapper.ToDto(config, _currentUser);
     }
 }

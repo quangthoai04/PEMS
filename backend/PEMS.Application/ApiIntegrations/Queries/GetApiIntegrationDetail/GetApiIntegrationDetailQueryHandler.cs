@@ -29,6 +29,6 @@ public sealed class GetApiIntegrationDetailQueryHandler
             .FirstOrDefaultAsync(c => c.ApiConfigId == request.ApiConfigId && c.DeletedAt == null, cancellationToken)
             ?? throw new NotFoundException("ApiConfiguration", request.ApiConfigId);
 
-        return ApiIntegrationMapper.ToDto(config);
+        return ApiIntegrationMapper.ToDto(config, _currentUser);
     }
 }

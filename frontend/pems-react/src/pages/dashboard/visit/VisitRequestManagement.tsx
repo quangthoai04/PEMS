@@ -11,7 +11,7 @@
  * Admin không tham gia luồng này.
  */
 
-import React, { Fragment, useEffect, useState } from 'react';
+import React, { Fragment, useEffect, useMemo, useState } from 'react';
 import {
   Search, Plus, Eye, AlertCircle, Users, MapPin, Calendar,
   ChevronLeft, ChevronRight, ChevronDown, Check, X, XCircle, Mail,
@@ -36,6 +36,7 @@ import {
 } from '../../../features/delegations/types/delegations.types';
 import { useAuthContext } from '../../../shared/auth/AuthContext';
 import { getVisitRequestFilterConfig } from '../../../features/delegations/config/visitRequestFilterConfig';
+import { useCampusFilterOptions } from '../../../features/campus-management/hooks/useCampusManagement';
 import { visitFeedbackApi } from '../../../features/feedbacks/api/visitFeedbackApi';
 import { VisitFeedbackModal } from '../../../features/feedbacks/components/VisitFeedbackModal';
 import type { PendingFeedbackItem } from '../../../features/feedbacks/types/visitFeedback.types';
@@ -210,6 +211,22 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
     activeTab,
     isVisitor,
   });
+
+  // Campus filter options (HO-only filter) from the database — never hardcoded. The filter
+  // sends campusId, so value = campusId; label = campuses.name. Best-effort: if the options
+  // fail to load the dropdown still renders the "Tất cả cơ sở" default. Includes INACTIVE
+  // campuses so historical/cancelled visits at a disabled campus stay filterable.
+  const campusFilterOptions = useCampusFilterOptions();
+  const campusOptions = useMemo(
+    () => [
+      { value: '', label: 'Tất cả cơ sở' },
+      ...(campusFilterOptions?.campuses ?? []).map((c) => ({
+        value: String(c.campusId),
+        label: c.name,
+      })),
+    ],
+    [campusFilterOptions],
+  );
 
   // Desktop (xl) single-row grid template — column count MUST match the rendered filter
   // children, which varies by role: showScope (Visitor/HO/Staff Leader) and showCampus (HO
@@ -1629,28 +1646,14 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
             <div className="relative min-w-0">
               <label className="block h-5 mb-1 truncate text-xs font-bold text-slate-500">Cơ sở</label>
               <button onClick={() => setIsCampusFilterOpen(!isCampusFilterOpen)} className="flex h-11 w-full min-w-0 items-center justify-between rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition-colors focus:border-[#004c91]">
-                <span className="min-w-0 truncate">{[
-                  { value: '', label: 'Tất cả cơ sở' },
-                  { value: '1', label: 'Hà Nội' },
-                  { value: '2', label: 'Hồ Chí Minh' },
-                  { value: '3', label: 'Đà Nẵng' },
-                  { value: '4', label: 'Cần Thơ' },
-                  { value: '5', label: 'Quy Nhơn' },
-                ].find((o) => o.value === draftFilters.campusId)?.label ?? 'Tất cả cơ sở'}</span>
+                <span className="min-w-0 truncate">{campusOptions.find((o) => o.value === draftFilters.campusId)?.label ?? 'Tất cả cơ sở'}</span>
                 <ChevronDown className="w-4 h-4 text-gray-500 flex-shrink-0 ml-2 pointer-events-none" />
               </button>
               {isCampusFilterOpen && (
                 <>
                   <div className="fixed inset-0 z-10" onClick={() => setIsCampusFilterOpen(false)} />
                   <div className="absolute left-0 top-full z-30 mt-1 w-full min-w-[210px] rounded-xl border border-slate-200 bg-white py-1 shadow-lg max-h-72 overflow-y-auto">
-                    {[
-                      { value: '', label: 'Tất cả cơ sở' },
-                      { value: '1', label: 'Hà Nội' },
-                      { value: '2', label: 'Hồ Chí Minh' },
-                      { value: '3', label: 'Đà Nẵng' },
-                      { value: '4', label: 'Cần Thơ' },
-                      { value: '5', label: 'Quy Nhơn' },
-                    ].map((option) => (
+                    {campusOptions.map((option) => (
                       <div key={option.value} className={`px-3 py-2 text-sm cursor-pointer hover:bg-slate-50 flex items-center ${draftFilters.campusId === option.value ? 'bg-blue-50 text-[#004c91] font-bold' : 'text-gray-700 font-medium'}`}
                         onClick={() => { applyFilterChange({ campusId: option.value }); setIsCampusFilterOpen(false); }}>
                         {option.label}

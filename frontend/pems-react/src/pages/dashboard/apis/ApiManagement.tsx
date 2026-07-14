@@ -223,13 +223,21 @@ export function ApiManagement() {
                     </p>
                   </div>
                 </div>
-                <span className={`px-2.5 py-1 rounded-md text-xs font-bold ${
-                  config.status === 'ACTIVE' ? 'bg-green-50 text-green-600'
-                    : config.status === 'INACTIVE' ? 'bg-gray-100 text-gray-500'
-                      : 'bg-red-50 text-red-500'
-                }`}>
-                  {config.status}
-                </span>
+                <div className="flex items-center gap-1.5">
+                  {config.managementSource === 'ENVIRONMENT' && (
+                    <span className="px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wider bg-slate-100 text-slate-500 border border-slate-200"
+                      title="Cấu hình qua environment trên server — chỉ xem trạng thái tại đây">
+                      Read-only (ENV)
+                    </span>
+                  )}
+                  <span className={`px-2.5 py-1 rounded-md text-xs font-bold ${
+                    config.status === 'ACTIVE' ? 'bg-green-50 text-green-600'
+                      : config.status === 'INACTIVE' ? 'bg-gray-100 text-gray-500'
+                        : 'bg-red-50 text-red-500'
+                  }`}>
+                    {config.status}
+                  </span>
+                </div>
               </div>
 
               <dl className="mt-4 grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
@@ -262,45 +270,59 @@ export function ApiManagement() {
               </dl>
 
               <div className="mt-4 pt-4 border-t border-gray-100 flex flex-wrap items-center gap-2">
-                <button
-                  onClick={() => {
-                    setEditTarget(config);
-                    setFormKind(config.purpose === 'NEWS_TRANSLATION' ? 'TRANSLATION' : 'OCR');
-                  }}
-                  className="px-3 py-1.5 rounded-lg text-sm font-bold text-[#004c91] border border-[#004c91] hover:bg-[#e6eff7] transition-colors flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Settings2 className="w-4 h-4" /> Chỉnh sửa
-                </button>
-                <button
-                  onClick={() => void test(config)}
-                  disabled={testBusy === config.apiConfigId}
-                  className="px-3 py-1.5 rounded-lg text-sm font-bold text-gray-600 border border-gray-300 hover:bg-gray-50 transition-colors flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
-                >
-                  {testBusy === config.apiConfigId
-                    ? <Loader2 className="w-4 h-4 animate-spin" />
-                    : <RefreshCw className="w-4 h-4" />}
-                  Test kết nối
-                </button>
-                <button
-                  onClick={() => void toggleStatus(config)}
-                  disabled={statusBusy === config.apiConfigId}
-                  className={`px-3 py-1.5 rounded-lg text-sm font-bold border transition-colors flex items-center gap-1.5 disabled:opacity-50 cursor-pointer ${
-                    config.status === 'ACTIVE'
-                      ? 'text-red-500 border-red-200 hover:bg-red-50'
-                      : 'text-green-600 border-green-200 hover:bg-green-50'
-                  }`}
-                  title={config.status !== 'ACTIVE' && config.lastTestStatus !== 'SUCCESS'
-                    ? 'Cần test kết nối thành công trước khi kích hoạt' : undefined}
-                >
-                  {config.status === 'ACTIVE' ? <PowerOff className="w-4 h-4" /> : <Power className="w-4 h-4" />}
-                  {config.status === 'ACTIVE' ? 'Tắt' : 'Kích hoạt'}
-                </button>
+                {/* Hành động theo capability backend (canEdit/canTest/canToggleStatus):
+                    provider dùng environment (SMTP, Drive...) chỉ hiển thị read-only. */}
+                {config.canEdit && (
+                  <button
+                    onClick={() => {
+                      setEditTarget(config);
+                      setFormKind(config.purpose === 'NEWS_TRANSLATION' ? 'TRANSLATION' : 'OCR');
+                    }}
+                    className="px-3 py-1.5 rounded-lg text-sm font-bold text-[#004c91] border border-[#004c91] hover:bg-[#e6eff7] transition-colors flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Settings2 className="w-4 h-4" /> Chỉnh sửa
+                  </button>
+                )}
+                {config.canTest && (
+                  <button
+                    onClick={() => void test(config)}
+                    disabled={testBusy === config.apiConfigId}
+                    className="px-3 py-1.5 rounded-lg text-sm font-bold text-gray-600 border border-gray-300 hover:bg-gray-50 transition-colors flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                  >
+                    {testBusy === config.apiConfigId
+                      ? <Loader2 className="w-4 h-4 animate-spin" />
+                      : <RefreshCw className="w-4 h-4" />}
+                    Test kết nối
+                  </button>
+                )}
+                {config.canToggleStatus && (
+                  <button
+                    onClick={() => void toggleStatus(config)}
+                    disabled={statusBusy === config.apiConfigId
+                      || (config.status !== 'ACTIVE' && config.lastTestStatus !== 'SUCCESS')}
+                    className={`px-3 py-1.5 rounded-lg text-sm font-bold border transition-colors flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer ${
+                      config.status === 'ACTIVE'
+                        ? 'text-red-500 border-red-200 hover:bg-red-50'
+                        : 'text-green-600 border-green-200 hover:bg-green-50'
+                    }`}
+                    title={config.status !== 'ACTIVE' && config.lastTestStatus !== 'SUCCESS'
+                      ? 'Cần test kết nối thành công trước khi kích hoạt' : undefined}
+                  >
+                    {config.status === 'ACTIVE' ? <PowerOff className="w-4 h-4" /> : <Power className="w-4 h-4" />}
+                    {config.status === 'ACTIVE' ? 'Tắt' : 'Kích hoạt'}
+                  </button>
+                )}
                 <button
                   onClick={() => { setPanelTarget(config); setPanelTab('QUOTA'); setLogsPage(1); }}
                   className="px-3 py-1.5 rounded-lg text-sm font-bold text-gray-600 border border-gray-300 hover:bg-gray-50 transition-colors flex items-center gap-1.5 cursor-pointer"
                 >
                   <Activity className="w-4 h-4" /> Hạn mức & Nhật ký
                 </button>
+                {!config.canEdit && !config.canTest && !config.canToggleStatus && (
+                  <span className="text-xs text-gray-400 font-medium">
+                    Cấu hình này được quản lý qua environment — chỉ xem trạng thái.
+                  </span>
+                )}
               </div>
             </div>
           ))}
@@ -346,17 +368,23 @@ export function ApiManagement() {
 
             {panelTab === 'QUOTA' ? (
               <div>
-                <div className="flex items-end gap-2 mb-4">
-                  <div>
-                    <label className={labelCls}>Hạn mức GLOBAL tháng hiện tại</label>
-                    <input className={`${inputCls} w-44`} type="number" min={1}
-                      placeholder="VD: 1000" value={quotaEdit} onChange={(e) => setQuotaEdit(e.target.value)} />
+                {panelTarget.canConfigureQuota ? (
+                  <div className="flex items-end gap-2 mb-4">
+                    <div>
+                      <label className={labelCls}>Hạn mức GLOBAL tháng hiện tại</label>
+                      <input className={`${inputCls} w-44`} type="number" min={1}
+                        placeholder="VD: 1000" value={quotaEdit} onChange={(e) => setQuotaEdit(e.target.value)} />
+                    </div>
+                    <button onClick={() => void saveQuota()} disabled={!quotaEdit.trim()}
+                      className="bg-[#004c91] hover:bg-[#003a70] text-white px-4 py-2 rounded-lg text-sm font-bold disabled:opacity-50 cursor-pointer">
+                      Cập nhật
+                    </button>
                   </div>
-                  <button onClick={() => void saveQuota()} disabled={!quotaEdit.trim()}
-                    className="bg-[#004c91] hover:bg-[#003a70] text-white px-4 py-2 rounded-lg text-sm font-bold disabled:opacity-50 cursor-pointer">
-                    Cập nhật
-                  </button>
-                </div>
+                ) : (
+                  <p className="mb-4 text-xs text-gray-400 font-medium">
+                    Hạn mức của cấu hình này chỉ xem — không chỉnh sửa tại đây.
+                  </p>
+                )}
                 <table className="w-full text-left">
                   <thead>
                     <tr className="bg-slate-50 text-[11px] uppercase text-gray-500">

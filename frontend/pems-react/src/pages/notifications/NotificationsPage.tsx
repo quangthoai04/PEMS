@@ -134,12 +134,14 @@ export function NotificationsPage() {
       setVisitorFeedbackVisitInstanceId(item.visitInstanceId);
       return;
     }
-    if (!item.canOpen || !item.targetUrl) {
+    // Tính link trước rồi mới quyết định modal: notification NEWS/PARTNER cũ không có
+    // targetUrl (canOpen=false) vẫn điều hướng được nhờ rewrite theo relatedType/relatedId.
+    const link = getNotificationLink(item, user);
+    if (!link) {
       setDetailModalItem(item);
       return;
     }
-    const link = getNotificationLink(item, user);
-    if (link) navigate(link);
+    navigate(link);
   };
 
   const handleMarkAllAsRead = async () => {

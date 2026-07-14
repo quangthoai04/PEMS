@@ -33,6 +33,7 @@ import type {
 } from '../features/public-partners/types/publicPartners.types';
 import { getNameInitials } from '../shared/utils/nameInitials';
 import { useTranslation, Trans } from 'react-i18next';
+import { useCountryTranslation } from '../shared/hooks/useCountryTranslation';
 
 const PAGE_SIZE = 12;
 
@@ -44,8 +45,9 @@ function PublicPartnerCard({
   partner, index, onClick,
 }: { partner: PublicPartner; index: number; onClick: () => void; key?: React.Key }) {
   const { t } = useTranslation(['partners']);
+  const tCountry = useCountryTranslation();
   const logoUrl = usePublicPartnerImage(partner.logoFileId);
-  const location = [partner.city, partner.country].filter(Boolean).join(', ');
+  const location = [partner.city, tCountry(partner.country)].filter(Boolean).join(', ');
 
   return (
     <motion.div
@@ -119,35 +121,46 @@ function PartnerCardSkeleton() {
 
 /* ───────────────────────── Hero showcase — country flags of partnered nations ───────────────────────── */
 
-const FLAGS_PER_PAGE = 9;
+const FLAGS_PER_PAGE = 6;
 
-function CountryFlagCard({ country, delay }: { country: PublicPartnerCountry; delay: number; key?: React.Key }) {
+function CountryFlagCard({
+  country, delay, active, onClick,
+}: { country: PublicPartnerCountry; delay: number; active: boolean; onClick: () => void; key?: React.Key }) {
   const { t } = useTranslation(['partners']);
+  const tCountry = useCountryTranslation();
   const isoCode = getCountryIsoCode(country.value);
+  const translatedName = tCountry(country.label);
   return (
-    <motion.div
+    <motion.button
+      type="button"
       initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, delay, ease: 'easeOut' }}
-      title={`${country.label} — ${country.count} ${t('partners:list.partnersUnit')}`}
-      className="aspect-[4/3] rounded-2xl border border-slate-200 shadow-sm overflow-hidden hover:shadow-md hover:-translate-y-0.5 transition-all duration-300 cursor-default"
+      onClick={onClick}
+      title={`${translatedName} — ${country.count} ${t('partners:list.partnersUnit')}`}
+      aria-pressed={active}
+      className={`aspect-[4/3] rounded-2xl border shadow-sm overflow-hidden hover:shadow-md hover:-translate-y-0.5 transition-all duration-300 cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#004c91]/40 ${
+        active ? 'border-[#004c91] ring-2 ring-[#004c91]/40' : 'border-slate-200'
+      }`}
     >
       {isoCode ? (
         <span
           className={`fi fi-${isoCode.toLowerCase()} fi-cover block`}
           role="img"
-          aria-label={country.label}
+          aria-label={translatedName}
         />
       ) : (
         <span className="w-full h-full bg-slate-100 flex items-center justify-center text-slate-400">
           <Globe className="w-6 h-6" />
         </span>
       )}
-    </motion.div>
+    </motion.button>
   );
 }
 
-function CountryFlagShowcase({ countries }: { countries: PublicPartnerCountry[] }) {
+function CountryFlagShowcase({
+  countries, selectedCountry, onSelectCountry,
+}: { countries: PublicPartnerCountry[]; selectedCountry: string; onSelectCountry: (value: string) => void }) {
   const { t } = useTranslation(['partners']);
   const [pageIndex, setPageIndex] = useState(0);
   const totalPages = Math.max(1, Math.ceil(countries.length / FLAGS_PER_PAGE));
@@ -169,7 +182,13 @@ function CountryFlagShowcase({ countries }: { countries: PublicPartnerCountry[] 
     <div>
       <div className="grid grid-cols-3 gap-4">
         {visible.map((c, i) => (
-          <CountryFlagCard key={c.value} country={c} delay={i * 0.05} />
+          <CountryFlagCard
+            key={c.value}
+            country={c}
+            delay={i * 0.05}
+            active={selectedCountry === c.value}
+            onClick={() => onSelectCountry(c.value)}
+          />
         ))}
       </div>
       {totalPages > 1 && (
@@ -199,6 +218,7 @@ function CountryFlagShowcase({ countries }: { countries: PublicPartnerCountry[] 
 
 export function PartnersPage() {
   const { t } = useTranslation(['partners']);
+  const tCountry = useCountryTranslation();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [isVisitorFormOpen, setIsVisitorFormOpen] = useState(false);
@@ -374,7 +394,16 @@ export function PartnersPage() {
               <p className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3 text-center lg:text-left">
                 {t('partners:list.partnersFrom')}
               </p>
-              <CountryFlagShowcase countries={countryOptions} />
+              <CountryFlagShowcase
+                countries={countryOptions}
+                selectedCountry={selectedCountry}
+                onSelectCountry={(value) => {
+                  setSelectedCountry(value === selectedCountry ? ALL_COUNTRIES_LABEL : value);
+                  setTimeout(() => {
+                    document.getElementById('partners-directory')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                  }, 40);
+                }}
+              />
             </div>
           </div>
 
@@ -423,7 +452,7 @@ export function PartnersPage() {
                   >
                     {countryDropdownOptions.map((c) => (
                       <option key={c.value} value={c.value}>
-                        {c.value === ALL_COUNTRIES_LABEL ? c.label : `${c.label} (${c.count})`}
+                        {c.value === ALL_COUNTRIES_LABEL ? c.label : `${tCountry(c.label)} (${c.count})`}
                       </option>
                     ))}
                   </select>
@@ -458,9 +487,11 @@ export function PartnersPage() {
             {hasActiveFilter && (
               <div className="mt-4 flex items-center justify-between flex-wrap gap-3 bg-orange-50/60 border border-orange-100 rounded-xl px-4 py-3">
                 <span className="text-xs font-semibold text-slate-700">
-                  <Trans i18nKey="partners:list.foundMatches" count={totalCount}>
-                    {t('partners:list.foundMatchesTpl')} <span className="font-bold text-[#f37021]">{totalCount}</span> {t('partners:list.partnersUnit')}
-                  </Trans>
+                  <Trans
+                    i18nKey="partners:list.foundMatches"
+                    count={totalCount}
+                    components={{ 1: <span className="font-bold text-[#f37021]" /> }}
+                  />
                 </span>
                 <button
                   onClick={clearFilters}
@@ -487,7 +518,7 @@ export function PartnersPage() {
                         : 'bg-white text-slate-600 border-slate-200 hover:border-[#004c91]/40'
                     }`}
                   >
-                    {c.label} ({c.count})
+                    {tCountry(c.label)} ({c.count})
                   </button>
                 ))}
               </div>

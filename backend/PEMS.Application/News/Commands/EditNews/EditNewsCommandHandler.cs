@@ -232,6 +232,8 @@ public sealed class EditNewsCommandHandler
                         Message          = $"{authorName} đã chỉnh sửa và nộp lại bài viết cần bạn duyệt: {sanitizedTitle}",
                         RelatedType      = "NEWS",
                         RelatedId        = news.NewsId,
+                        // Trang quản lý tin tức lọc đúng 1 bài (có nút "Xem tất cả").
+                        ActionUrl        = $"/dashboard/news?newsId={news.NewsId}",
                         IsRead           = false,
                         CreatedAt        = now
                     });

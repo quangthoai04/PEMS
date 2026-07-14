@@ -24,6 +24,11 @@ export const API_ENDPOINTS = {
     search: '/campuses/searchandfiltercampus',
     filterOptions: '/campuses/filter-options',
     manageStatus: '/campuses/managecampusstatus',
+    // UC-86 §18 status-impact preview (blockers on disable / activation issues on enable).
+    statusImpact: '/campuses/campusstatusimpact',
+    // UC-86 §10 — anonymous campus options for the visit registration form (only campuses
+    // ACTIVE + active IC department + valid Staff Leader; backend rechecks on submit).
+    availableForRegistration: '/campuses/available-for-registration',
     // UC-81 create (+ auto IC dept), UC-84 details, UC-85 update master data.
     create: '/campuses/addnewcampus',
     details: '/campuses/viewcampusdetails',
@@ -357,5 +362,21 @@ export const API_ENDPOINTS = {
     staffCalendar: '/dashboard/staff/calendar',
     staffCalendarDetail: (visitInstanceId: string | number) =>
       `/dashboard/staff/calendar/${visitInstanceId}/detail`,
+  },
+  // System Administration Console (ADMIN-only): dashboard thật, phiên đăng nhập,
+  // login/security logs và audit trail. Backend: AdminController (/api/admin/*).
+  admin: {
+    dashboardSummary: '/admin/dashboard/summary',
+    dashboardLoginActivity: '/admin/dashboard/login-activity',
+    dashboardSecurity: '/admin/dashboard/security',
+    dashboardIntegrations: '/admin/dashboard/integrations',
+    dashboardRecentAudits: '/admin/dashboard/recent-audits',
+    sessions: '/admin/sessions',
+    revokeSession: (sessionId: string | number) => `/admin/sessions/${sessionId}/revoke`,
+    revokeUserSessions: (userId: string | number) => `/admin/users/${userId}/revoke-sessions`,
+    loginLogs: '/admin/login-logs',
+    securityEvents: '/admin/security-events',
+    auditLogs: '/admin/audit-logs',
+    auditLogDetail: (auditLogId: string | number) => `/admin/audit-logs/${auditLogId}`,
   },
 };

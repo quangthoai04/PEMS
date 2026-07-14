@@ -6,7 +6,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
   Search, Plus, Eye, Check, X, ChevronLeft, ChevronRight, Globe2, Loader2,
 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import httpClient from '../../../shared/api/httpClient';
 import { API_ENDPOINTS } from '../../../shared/api/endpoints';
 import { partnersApi } from '../../../features/partners/api/partnersApi';
@@ -48,6 +48,11 @@ function StatusBadge({ status }: { status: PartnerListItem['profileStatus'] }) {
 export function PartnerManagement() {
   const navigate = useNavigate();
 
+  // Đến từ 1 thông báo cụ thể (?partnerId=...): chỉ hiển thị đúng hồ sơ đó thay vì cả danh
+  // sách. Nút "Xem tất cả" (hoặc đổi filter/tìm kiếm) xoá param này để xem lại toàn bộ.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const notificationPartnerId = searchParams.get('partnerId') || '';
+
   const [data, setData] = useState<PartnerListResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -76,6 +81,7 @@ export function PartnerManagement() {
         country: countryFilter || undefined,
         campusId: campusFilter ? Number(campusFilter) : undefined,
         profileStatus: statusFilter || undefined,
+        partnerId: notificationPartnerId ? Number(notificationPartnerId) : undefined,
         page,
         pageSize,
       });
@@ -91,9 +97,16 @@ export function PartnerManagement() {
     } finally {
       setLoading(false);
     }
-  }, [debouncedSearch, countryFilter, campusFilter, statusFilter, page, pageSize]);
+  }, [debouncedSearch, countryFilter, campusFilter, statusFilter, notificationPartnerId, page, pageSize]);
 
   useEffect(() => { void load(); }, [load]);
+
+  const clearNotificationFilter = () => {
+    const params = new URLSearchParams(searchParams);
+    params.delete('partnerId');
+    setSearchParams(params, { replace: true });
+    setPage(1);
+  };
 
   useEffect(() => {
     httpClient
@@ -102,7 +115,7 @@ export function PartnerManagement() {
       .catch(() => setCampuses([]));
   }, []);
 
-  useEffect(() => { setPage(1); }, [debouncedSearch, countryFilter, campusFilter, statusFilter, pageSize]);
+  useEffect(() => { setPage(1); }, [debouncedSearch, countryFilter, campusFilter, statusFilter, notificationPartnerId, pageSize]);
 
   const approve = async (item: PartnerListItem) => {
     setActionBusy(true);
@@ -160,14 +173,14 @@ export function PartnerManagement() {
             type="text"
             placeholder="Tìm kiếm theo mã hoặc tên đối tác..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => { setSearchQuery(e.target.value); if (notificationPartnerId) clearNotificationFilter(); }}
             className="w-full pl-10 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] text-gray-700 bg-white shadow-sm"
           />
         </div>
 
         <select
           value={countryFilter}
-          onChange={(e) => setCountryFilter(e.target.value)}
+          onChange={(e) => { setCountryFilter(e.target.value); if (notificationPartnerId) clearNotificationFilter(); }}
           className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none hover:border-[#004c91] text-gray-600 bg-white font-medium shadow-sm cursor-pointer min-w-[150px]"
         >
           <option value="">Tất cả quốc gia</option>
@@ -176,7 +189,7 @@ export function PartnerManagement() {
 
         <select
           value={campusFilter}
-          onChange={(e) => setCampusFilter(e.target.value)}
+          onChange={(e) => { setCampusFilter(e.target.value); if (notificationPartnerId) clearNotificationFilter(); }}
           className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none hover:border-[#004c91] text-gray-600 bg-white font-medium shadow-sm cursor-pointer min-w-[150px]"
         >
           <option value="">Tất cả cơ sở</option>
@@ -187,7 +200,7 @@ export function PartnerManagement() {
 
         <select
           value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
+          onChange={(e) => { setStatusFilter(e.target.value); if (notificationPartnerId) clearNotificationFilter(); }}
           className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none hover:border-[#004c91] text-gray-600 bg-white font-medium shadow-sm cursor-pointer min-w-[150px]"
         >
           <option value="">Tất cả trạng thái</option>
@@ -206,6 +219,20 @@ export function PartnerManagement() {
           </button>
         )}
       </div>
+
+      {notificationPartnerId && (
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm mb-4">
+          <span className="font-medium text-blue-800">
+            Đang hiển thị đúng đối tác từ thông báo bạn vừa bấm.
+          </span>
+          <button
+            onClick={clearNotificationFilter}
+            className="shrink-0 rounded-lg border border-blue-300 bg-white px-3 py-1.5 text-xs font-bold text-blue-700 hover:bg-blue-100 transition-colors"
+          >
+            Xem tất cả
+          </button>
+        </div>
+      )}
 
       {/* Table */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden mb-2">

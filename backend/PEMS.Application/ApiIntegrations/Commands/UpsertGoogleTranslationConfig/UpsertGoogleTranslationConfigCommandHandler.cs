@@ -122,6 +122,6 @@ public sealed class UpsertGoogleTranslationConfigCommandHandler
         });
 
         await _db.SaveChangesAsync(cancellationToken);
-        return ApiIntegrationMapper.ToDto(config);
+        return ApiIntegrationMapper.ToDto(config, _currentUser);
     }
 }

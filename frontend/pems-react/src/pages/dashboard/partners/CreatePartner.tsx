@@ -12,6 +12,8 @@ import type {
   PartnerType,
 } from '../../../features/partners/types/partners.types';
 import { PARTNER_TYPE_LABELS } from '../../../features/partners/types/partners.types';
+import { CountrySelect } from '../../../features/visit-request/components/shared/CountrySelect';
+import { CitySelect } from '../../../features/partners/components/CitySelect';
 import { useDebounce } from '../../../shared/hooks/useDebounce';
 import {
   getApiErrorMessage,
@@ -45,6 +47,15 @@ export function CreatePartner() {
   const [duplicateHint, setDuplicateHint] = useState<PartnerMatchResult | null>(null);
 
   const debouncedName = useDebounce(name, 500);
+
+  // Đổi sang quốc gia khác thì xoá thành phố cũ (gợi ý không còn khớp);
+  // giữ nguyên nếu trước đó chưa chọn quốc gia để không mất dữ liệu đã gõ.
+  const handleCountryChange = (next: string) => {
+    if (country.trim() && next.trim().toLowerCase() !== country.trim().toLowerCase()) {
+      setCity('');
+    }
+    setCountry(next);
+  };
 
   // Cảnh báo sớm khi tên tổ chức khớp một partner đã tồn tại (match API).
   useEffect(() => {
@@ -171,11 +182,21 @@ export function CreatePartner() {
           </div>
           <div>
             <label className={labelCls}>Quốc gia</label>
-            <input className={inputCls} value={country} onChange={(e) => setCountry(e.target.value)} maxLength={100} />
+            <CountrySelect
+              storeLang="vi"
+              value={country}
+              onChange={handleCountryChange}
+              placeholder="Chọn hoặc nhập quốc gia..."
+            />
           </div>
           <div>
             <label className={labelCls}>Thành phố</label>
-            <input className={inputCls} value={city} onChange={(e) => setCity(e.target.value)} maxLength={100} />
+            <CitySelect
+              country={country}
+              value={city}
+              onChange={setCity}
+              placeholder="Chọn hoặc nhập thành phố..."
+            />
           </div>
           <div>
             <label className={labelCls}>Website</label>
