@@ -177,6 +177,7 @@ export function AccountManagement() {
     setRoleOptionsError(null);
     setRoleError(null);
     setRoleSaving(false);
+    setBasicInfoEmailConfirm(null);
   };
 
   const closeViewDrawer = () => {
@@ -309,6 +310,8 @@ export function AccountManagement() {
   // UC-100 role-update feedback (detail drawer edit).
   const [roleSaving, setRoleSaving] = useState(false);
   const [roleError, setRoleError] = useState<string | null>(null);
+  // HO_BASIC_INFO — email-change confirmation (spec §10). Set to {oldEmail,newEmail} to prompt.
+  const [basicInfoEmailConfirm, setBasicInfoEmailConfirm] = useState<{ oldEmail: string; newEmail: string } | null>(null);
 
   // Lightweight toast notifications (create + email outcome, status, role update).
   const [toasts, setToasts] = useState<{ id: number; type: 'success' | 'error' | 'warning'; msg: string }[]>([]);
@@ -413,6 +416,7 @@ export function AccountManagement() {
       canViewDetails: a.canViewDetails,
       canUpdateRole: a.canUpdateRole,
       canManageStatus: a.canManageStatus,
+      canEditBasicInfo: a.canEditBasicInfo,
       isCurrentUser: a.isCurrentUser,
     })));
   }, [accountsData, activeTab]);
@@ -647,6 +651,8 @@ export function AccountManagement() {
       studentId: details.studentCode ?? prev?.studentId ?? null,
       rawStatus: details.status,
       lastLoginAt: details.lastLoginAt,
+      // HO_BASIC_INFO — detail is authoritative for the edit-basic-info permission.
+      canEditBasicInfo: details.canEditBasicInfo ?? prev?.canEditBasicInfo ?? false,
     }));
   };
 
@@ -758,8 +764,12 @@ export function AccountManagement() {
   // Whether the selected role actually differs from the snapshot (incl. its dependent field), so
   // the Update button can stay disabled on a no-op (avoids needless session revoke + email).
   // Identity edit eligibility for the currently-selected target (spec §4.2.1 — from ORIGINAL role).
-  const canEditIdentity = !!selectedAccount
-    && computeCanEditIdentity(isStaffLeader, selectedAccount.role, selectedAccount.rawSubRole);
+  // Staff Leader: STAFF/STAFF, DEPARTMENT/LEADER, STUDENT. HO (HO_BASIC_INFO): any HO / Staff Leader
+  // the backend flagged with canEditBasicInfo (never self / LOCKED / out of scope).
+  const canEditIdentity = !!selectedAccount && (
+    computeCanEditIdentity(isStaffLeader, selectedAccount.role, selectedAccount.rawSubRole)
+    || (isHO && selectedAccount.canEditBasicInfo === true)
+  );
 
   const roleIsDirty = !!(roleEditForm && selectedAccount) && (
     roleEditForm.roleCode !== selectedAccount.role ||
@@ -785,6 +795,16 @@ export function AccountManagement() {
     (canEditIdentity && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(roleEditForm.email.trim()))
   );
 
+  // HO basic-info submit gate (spec §7.1/§8): identity required + well-formed email. Applies to any
+  // editable-identity target (covers the HO flow where roleUpdateBlocked's isStaffLeader guard is off).
+  const identityInvalid = canEditIdentity && !!roleEditForm && (
+    roleEditForm.fullName.trim().length === 0 ||
+    roleEditForm.fullName.trim().length > 150 ||
+    roleEditForm.email.trim().length === 0 ||
+    roleEditForm.email.trim().length > 150 ||
+    !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(roleEditForm.email.trim())
+  );
+
   // Switch the target role and reset the dependent fields (spec §3.3/§3.4/§3.5 — always fresh on a
   // genuine role change; the original values are only preserved by handleEditClick on first open).
   const changeRoleCode = (nextRole: string) => {
@@ -799,8 +819,62 @@ export function AccountManagement() {
   // UC-100 — Staff Leader/ADMIN updates another account's role. For a Staff Leader the payload is
   // role-shaped (department for DEPARTMENT, MSSV for STUDENT); the backend re-validates and derives
   // campus/sub-role, revokes the target's sessions and emails them.
+  // HO_BASIC_INFO — HO edits only full name + email. Validates, then either submits directly (email
+  // unchanged) or opens the email-change confirmation (spec §10). The actual call is submitBasicInfo.
+  const handleUpdateBasicInfo = () => {
+    if (!selectedAccount || !roleEditForm) return;
+    setRoleError(null);
+    const fullName = roleEditForm.fullName.trim();
+    const email = roleEditForm.email.trim();
+    if (!fullName) { setRoleError('Vui lòng nhập họ và tên.'); return; }
+    if (fullName.length > 150) { setRoleError('Họ và tên không được vượt quá 150 ký tự.'); return; }
+    if (!email) { setRoleError('Vui lòng nhập email.'); return; }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { setRoleError('Email không đúng định dạng.'); return; }
+    if (email.length > 150) { setRoleError('Email không được vượt quá 150 ký tự.'); return; }
+
+    const oldEmail = String(selectedAccount.email ?? '');
+    const emailChanged = email.toLowerCase() !== oldEmail.trim().toLowerCase();
+    if (emailChanged) {
+      // Confirm before an email change (session revoke + SSO/FEID re-link).
+      setBasicInfoEmailConfirm({ oldEmail, newEmail: email });
+      return;
+    }
+    void submitBasicInfo();
+  };
+
+  const submitBasicInfo = async () => {
+    if (!selectedAccount || !roleEditForm) return;
+    setRoleSaving(true);
+    setRoleError(null);
+    try {
+      const res = await accountManagementApi.updateBasicAccountInfo({
+        userId: (selectedAccount.userId ?? selectedAccount.id) as any,
+        fullName: roleEditForm.fullName.trim(),
+        email: roleEditForm.email.trim(),
+      });
+      setBasicInfoEmailConfirm(null);
+      const emailNote = res.emailChanged
+        ? (res.emailNotificationStatus === 'SENT' ? ' Đã gửi email thông báo.'
+          : res.emailNotificationStatus === 'PARTIAL' ? ' Một số email thông báo chưa gửi được.'
+          : res.emailNotificationStatus === 'FAILED' ? ' Không gửi được email thông báo.' : '')
+        : '';
+      pushToast('success', `Cập nhật thông tin tài khoản thành công.${emailNote}`);
+      closeViewDrawer();
+      refetchAccounts();
+      loadStatistics();
+    } catch (err) {
+      const msg = getAccountErrorMessage(err, 'Không thể cập nhật thông tin tài khoản. Vui lòng thử lại.');
+      setRoleError(msg);
+      pushToast('error', msg);
+    } finally {
+      setRoleSaving(false);
+    }
+  };
+
   const handleUpdateRole = async () => {
     if (!selectedAccount || !roleEditForm) return;
+    // HO uses the dedicated basic-info endpoint (never role/campus/department).
+    if (isHO) { handleUpdateBasicInfo(); return; }
     setRoleError(null);
     const { roleCode, departmentId, studentCode } = roleEditForm;
 
@@ -1396,14 +1470,16 @@ export function AccountManagement() {
                   <UserCog className="w-6 h-6" /> {isEditingProfile ? 'Chỉnh sửa thông tin tài khoản' : 'Thông tin chi tiết'}
                 </h3>
                 <div className="flex items-center gap-3">
-                  {/* Đổi role/campus/department — chỉ khi backend cho phép (canUpdateRole) */}
-                  {(isStaffLeader || isRealAdmin) && !isEditingProfile
-                    && selectedAccount.canUpdateRole !== false && !selectedAccount.isCurrentUser && (
+                  {/* Chỉnh sửa: HO → basic info (canEditBasicInfo); Staff Leader/ADMIN → role (canUpdateRole). */}
+                  {!isEditingProfile && !selectedAccount.isCurrentUser && (
+                    (isHO && selectedAccount.canEditBasicInfo === true) ||
+                    ((isStaffLeader || isRealAdmin) && selectedAccount.canUpdateRole !== false)
+                  ) && (
                     <button
                       onClick={handleEditClick}
                       className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold text-[#004c91] border border-[#004c91]/40 bg-white hover:bg-blue-50 transition-all outline-none"
                     >
-                      <Edit className="w-3.5 h-3.5" /> Chỉnh sửa tài khoản
+                      <Edit className="w-3.5 h-3.5" /> {isHO ? 'Chỉnh sửa thông tin' : 'Chỉnh sửa tài khoản'}
                     </button>
                   )}
                   <button
@@ -1551,24 +1627,34 @@ export function AccountManagement() {
                       <DisplayField label="Giới tính" value={genderLabel(data.gender)} />
                       <DisplayField label="Số điện thoại" value={data.phone} />
 
-                      {/* Vai trò — the only always-editable field. */}
+                      {/* Vai trò — editable for Staff Leader/ADMIN; DISABLED for HO (basic-info only). */}
                       <div className="flex flex-col min-w-0">
                         <span className="block text-[10px] font-bold uppercase tracking-wider mb-1 text-gray-500">Vai trò</span>
                         <div className="relative">
                           <select
                             value={editRoleCode}
+                            disabled={isHO}
                             onChange={(e) => changeRoleCode(e.target.value)}
-                            className={selectClass(false)}
+                            className={selectClass(isHO)}
                           >
                             {roleSelectOptions.map((o) => (
                               <option key={o.value} value={o.value}>{o.label}</option>
                             ))}
                           </select>
-                          <ChevronDown className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                          <ChevronDown className={`w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none ${isHO ? 'text-slate-400' : 'text-gray-400'}`} />
                         </div>
                       </div>
 
                       <DisplayField label="Cơ sở trực thuộc" value={data.campus} />
+
+                      {/* HO editing a Staff Leader: position + IC department are shown read-only
+                          (spec §5.3 — HO never sees a control that can change them). */}
+                      {isHO && data.role === 'STAFF' && (
+                        <>
+                          <DisplayField label="Chức vụ" value="Trưởng phòng" />
+                          <DisplayField label="Phòng ban" value={data.department} />
+                        </>
+                      )}
 
                       {roleOptionsError && (
                         <div className="md:col-span-2 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-bold text-red-700">
@@ -1704,7 +1790,7 @@ export function AccountManagement() {
                             </button>
                             <button
                               type="button"
-                              disabled={roleSaving || !roleIsDirty || roleUpdateBlocked}
+                              disabled={roleSaving || !roleIsDirty || roleUpdateBlocked || identityInvalid}
                               onClick={handleUpdateRole}
                               className="px-6 py-2.5 rounded-xl text-white font-bold text-sm bg-[#0aa14f] hover:bg-[#088c44] shadow-[0_4px_12px_rgba(10,161,79,0.2)] hover:shadow-[0_6px_16px_rgba(10,161,79,0.3)] transition-all outline-none disabled:opacity-60 disabled:cursor-not-allowed"
                             >
@@ -2069,6 +2155,53 @@ export function AccountManagement() {
                 className={`px-5 py-2.5 rounded-xl font-bold text-white shadow-sm transition-all outline-none disabled:opacity-60 disabled:cursor-not-allowed ${statusTarget.status === 'Active' ? 'bg-red-500 hover:bg-red-600' : 'bg-[#0aa14f] hover:bg-[#088c44]'}`}
               >
                 {statusSaving ? 'Đang xử lý...' : 'Xác nhận'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* HO_BASIC_INFO §10 — xác nhận đổi email đăng nhập (thu hồi phiên + liên kết lại SSO/FEID). */}
+      {basicInfoEmailConfirm && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[70] flex items-center justify-center p-4 sm:p-6 animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-xl overflow-hidden animate-in zoom-in-95 duration-300 relative">
+            <div className="px-6 py-4 border-b border-gray-100 flex items-center gap-2">
+              <h2 className="text-xl font-black text-gray-800">✉️ Xác nhận thay đổi email đăng nhập</h2>
+              <button
+                onClick={() => setBasicInfoEmailConfirm(null)}
+                disabled={roleSaving}
+                className="absolute top-4 right-4 w-8 h-8 rounded-full hover:bg-gray-100 flex items-center justify-center text-gray-500 transition-colors outline-none disabled:opacity-50"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 text-gray-700 leading-relaxed text-[15px]">
+              Bạn đang thay đổi email đăng nhập từ <strong className="text-[#004c91]">{basicInfoEmailConfirm.oldEmail || '-'}</strong> sang <strong className="text-[#004c91]">{basicInfoEmailConfirm.newEmail}</strong>.
+              <div className="mt-3 text-sm text-gray-600">
+                Tài khoản sẽ bị đăng xuất khỏi các phiên hiện tại và phải liên kết lại SSO/FEID khi đăng nhập lần tiếp theo.
+              </div>
+              {roleError && (
+                <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-bold text-red-700">
+                  {roleError}
+                </div>
+              )}
+            </div>
+
+            <div className="px-6 py-4 border-t border-gray-100 bg-gray-50 flex items-center justify-end gap-3 rounded-b-2xl">
+              <button
+                onClick={() => setBasicInfoEmailConfirm(null)}
+                disabled={roleSaving}
+                className="px-5 py-2.5 rounded-xl font-bold text-gray-600 bg-white border border-gray-200 hover:bg-gray-100 transition-colors outline-none disabled:opacity-60"
+              >
+                Hủy
+              </button>
+              <button
+                onClick={submitBasicInfo}
+                disabled={roleSaving}
+                className="px-5 py-2.5 rounded-xl font-bold text-white bg-[#004c91] hover:bg-[#00386b] shadow-sm transition-all outline-none disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {roleSaving ? 'Đang lưu...' : 'Xác nhận thay đổi'}
               </button>
             </div>
           </div>

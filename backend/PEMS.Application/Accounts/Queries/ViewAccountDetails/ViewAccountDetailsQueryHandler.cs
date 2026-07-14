@@ -57,6 +57,23 @@ public sealed class ViewAccountDetailsQueryHandler : IRequestHandler<ViewAccount
 
         var isStaffLeader = row.RoleCode == RoleCodes.Staff && row.SubRole == UserSubRoles.Leader;
 
+        // ── HO basic-info edit permission (HO_BASIC_INFO spec §11). Only an HO caller may edit
+        //    another HO / Staff Leader's full name + email (never self, never a LOCKED account). ──
+        string? editBasicInfoDisabledReason = null;
+        var canEditBasicInfo = false;
+        if (_currentUser.RoleCode == RoleCodes.Ho)
+        {
+            var isSelf = _currentUser.UserId.HasValue && row.UserId == _currentUser.UserId.Value;
+            var targetInScope = row.RoleCode == RoleCodes.Ho || isStaffLeader;
+            if (isSelf)
+                editBasicInfoDisabledReason = "SELF_ACCOUNT";
+            else if (!targetInScope)
+                editBasicInfoDisabledReason = "TARGET_ROLE_NOT_MANAGEABLE";
+            else if (row.Status == UserStatuses.Locked)
+                editBasicInfoDisabledReason = "ACCOUNT_LOCKED";
+            canEditBasicInfo = editBasicInfoDisabledReason is null;
+        }
+
         return new ViewAccountDetailsDto
         {
             UserId = row.UserId,
@@ -79,6 +96,8 @@ public sealed class ViewAccountDetailsQueryHandler : IRequestHandler<ViewAccount
             CreatedAt = row.CreatedAt,
             UpdatedAt = row.UpdatedAt,
             LastLoginAt = row.LastLoginAt,
+            CanEditBasicInfo = canEditBasicInfo,
+            EditBasicInfoDisabledReason = editBasicInfoDisabledReason,
         };
     }
 

@@ -38,4 +38,13 @@ public sealed class ViewAccountDetailsDto
     public DateTime CreatedAt { get; init; }
     public DateTime? UpdatedAt { get; init; }
     public DateTime? LastLoginAt { get; init; }
+
+    /// <summary>
+    /// True when an HO caller may edit this account's basic info (full name / email) — see
+    /// HO_BASIC_INFO spec §11. Drives the "Chỉnh sửa thông tin" button in the detail modal.
+    /// </summary>
+    public bool CanEditBasicInfo { get; init; }
+
+    /// <summary>Reason the basic-info edit is disabled for an HO caller (null when allowed).</summary>
+    public string? EditBasicInfoDisabledReason { get; init; }
 }

@@ -45,9 +45,13 @@ export interface AccountListItem {
   canViewDetails: boolean;
   canUpdateRole: boolean;
   canManageStatus: boolean;
-  /** When canManageStatus is false, why the status toggle is hidden (e.g. HO_STATUS_CHANGE_REQUIRES_SPECIAL_FLOW). */
+  /** When canManageStatus is false, why the status toggle is hidden (e.g. SELF_ACCOUNT, ACCOUNT_LOCKED). */
   hideStatusToggleReason?: string | null;
   isCurrentUser: boolean;
+  /** HO_BASIC_INFO — true when an HO caller may edit this row's full name / email. */
+  canEditBasicInfo?: boolean;
+  /** When canEditBasicInfo is false (HO caller), the reason (SELF_ACCOUNT | ACCOUNT_LOCKED | ...). */
+  editBasicInfoDisabledReason?: string | null;
 }
 
 /** UC-95/UC-99 — query string params accepted by GET /accounts/viewaccountlist. */
@@ -315,6 +319,26 @@ export interface AccountDetails {
   createdAt: string;
   updatedAt?: string | null;
   lastLoginAt?: string | null;
+  /** HO_BASIC_INFO — true when an HO caller may edit this account's full name / email. */
+  canEditBasicInfo?: boolean;
+  editBasicInfoDisabledReason?: string | null;
+}
+
+/** HO_BASIC_INFO — request for POST /accounts/updatebasicaccountinfo (HO edits full name + email only). */
+export interface UpdateBasicAccountInfoRequest {
+  userId: string | number;
+  fullName: string;
+  email: string;
+}
+
+export interface UpdateBasicAccountInfoResponse {
+  userId: string;
+  fullName: string;
+  email: string;
+  emailChanged: boolean;
+  revokedSessions: number;
+  emailNotificationStatus: 'NOT_REQUIRED' | 'SENT' | 'FAILED' | 'PARTIAL';
+  message: string;
 }
 
 /**

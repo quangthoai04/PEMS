@@ -23,6 +23,8 @@ import type {
   StaffLeaderReplacementPreview,
   UpdateAccountRoleRequest,
   UpdateAccountRoleResponse,
+  UpdateBasicAccountInfoRequest,
+  UpdateBasicAccountInfoResponse,
 } from '../types/accountManagement.types';
 
 /** Drops undefined/null/'' so they never reach the query string. */
@@ -136,6 +138,18 @@ export const accountManagementApi = {
   /** UC-100 — change a user's role/campus/department (revokes their sessions). */
   async updateAccountRole(payload: UpdateAccountRoleRequest): Promise<UpdateAccountRoleResponse> {
     const { data } = await httpClient.post<UpdateAccountRoleResponse>(API_ENDPOINTS.accounts.updateRole, payload);
+    return data;
+  },
+
+  /**
+   * HO_BASIC_INFO — HO edits ONLY the full name + email of another HO / Staff Leader. When the email
+   * changes the backend re-points auth providers and revokes all active sessions.
+   */
+  async updateBasicAccountInfo(payload: UpdateBasicAccountInfoRequest): Promise<UpdateBasicAccountInfoResponse> {
+    const { data } = await httpClient.post<UpdateBasicAccountInfoResponse>(
+      API_ENDPOINTS.accounts.updateBasicInfo,
+      payload,
+    );
     return data;
   },
 

@@ -66,6 +66,16 @@ namespace PEMS.Api.Controllers
             return Ok(result);
         }
 
+        // HO basic-info edit (HO only) — updates ONLY full name + login email of another HO or a
+        // Staff Leader. A dedicated endpoint (never updateaccountrole) so the payload physically
+        // cannot carry role/campus/department/status; the handler is the final authorization gate.
+        [HttpPost("updatebasicaccountinfo")]
+        public async Task<IActionResult> UpdateBasicAccountInfo([FromBody] PEMS.Application.Accounts.Commands.UpdateBasicAccountInfo.UpdateBasicAccountInfoCommand command, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(command, cancellationToken);
+            return Ok(result);
+        }
+
         [HttpGet("statistics")]
         [EnableRateLimiting("accounts-read")]
         public async Task<IActionResult> GetStatistics(CancellationToken cancellationToken)
