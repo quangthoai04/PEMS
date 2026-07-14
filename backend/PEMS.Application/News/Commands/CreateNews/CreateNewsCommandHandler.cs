@@ -264,6 +264,7 @@ public sealed class CreateNewsCommandHandler
             var staffLeaderIds = await _dbContext.Users
                 .AsNoTracking()
                 .Where(u =>
+                    u.Role.RoleCode == RoleCodes.Staff &&
                     u.SubRole == UserSubRoles.Leader &&
                     u.PrimaryCampusId == visitInstance.CampusId &&
                     u.Status == UserStatuses.Active)

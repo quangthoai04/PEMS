@@ -216,6 +216,7 @@ public sealed class EditNewsCommandHandler
                 var leaderIds = await _dbContext.Users
                     .AsNoTracking()
                     .Where(u =>
+                        u.Role.RoleCode == RoleCodes.Staff &&
                         u.SubRole == UserSubRoles.Leader &&
                         u.PrimaryCampusId == campusId.Value &&
                         u.Status == UserStatuses.Active)
