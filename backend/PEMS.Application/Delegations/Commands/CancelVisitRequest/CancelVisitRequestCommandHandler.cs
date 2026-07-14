@@ -161,11 +161,11 @@ public sealed class CancelVisitRequestCommandHandler
             throw new BusinessRuleException(
                 "Không thể hủy lịch thăm. Chỉ có thể hủy đơn đã được duyệt (toàn phần hoặc một phần).");
 
-        // Campus instances that may be cancelled: only after approval and before the visit starts.
-        // WAITING_REQUEST_APPROVAL (pending), REJECTED, DURING_VISIT / AFTER_VISIT / CLOSED /
-        // CANCELLED are never cancellable through this self-service / external-confirmation flow.
+        // Campus instances that may be cancelled: only after approval and before the visit starts,
+        // OR while it is still waiting for request approval (pending).
         var cancellableStatuses = new[]
         {
+            VisitInstanceStatus.WaitingRequestApproval,
             VisitInstanceStatus.Assigned,
             VisitInstanceStatus.BeforeVisit,
         };
@@ -188,6 +188,21 @@ public sealed class CancelVisitRequestCommandHandler
         else
         {
             // Request-level cancellation
+            if (isVisitorOwner)
+            {
+                // Rule 1: Visitor cancel at Request level requires ALL active campuses to be >= 24h
+                var activeInstances = visit.CampusInstances.Where(c =>
+                    c.Status != VisitInstanceStatus.Cancelled &&
+                    c.Status != VisitInstanceStatus.Rejected).ToList();
+
+                if (activeInstances.Any(c => c.PlannedStartAt < _clock.VietnamNow.AddHours(24)))
+                {
+                    throw new BusinessRuleException(
+                        "Lịch thăm sắp diễn ra trong vòng 24 giờ. Vui lòng liên hệ FPTU để được hỗ trợ hủy/thay đổi.",
+                        VisitRequestErrorCodes.VisitCancelWindowExpired);
+                }
+            }
+
             if (visit.VisitScope == VisitScopes.MultiCampus)
             {
                 bool hasStartedCampus = visit.CampusInstances.Any(c => 

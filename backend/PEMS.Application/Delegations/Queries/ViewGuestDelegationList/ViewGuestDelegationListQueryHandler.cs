@@ -645,17 +645,20 @@ public sealed class ViewGuestDelegationListQueryHandler
                 && count > 0
                 && instances.All(i => i.Status == VisitInstanceStatus.Rejected);
 
-            // Cancel-eligibility (UC-136): APPROVED/PARTIALLY_APPROVED request + an instance still
-            // in a cancellable status and not yet started. Computed here (we have all instances)
-            // so the frontend never has to infer it from a multi-campus summary row.
+            // Cancel-eligibility (UC-136): REQUEST level.
+            // Rule 1: Visitor can cancel the whole request only if ALL active campuses are cancellable
+            // (i.e. status is Waiting/Assigned/BeforeVisit AND >= 24h).
+            var activeInstances = instances.Where(i => i.Status != VisitInstanceStatus.Cancelled && i.Status != VisitInstanceStatus.Rejected).ToList();
+            bool hasStartedCampus = activeInstances.Any(i => i.Status == VisitInstanceStatus.DuringVisit || i.Status == VisitInstanceStatus.AfterVisit || i.Status == VisitInstanceStatus.Closed);
+            
             bool hasCancellableInstance = !registeredView
-                && (vr.Status == VisitRequestStatuses.Approved
-                    || vr.Status == VisitRequestStatuses.PartiallyApproved)
-                && instances.Any(i =>
-                    (i.Status == VisitInstanceStatus.Assigned
+                && activeInstances.Any()
+                && !hasStartedCampus
+                && activeInstances.All(i =>
+                    (i.Status == VisitInstanceStatus.WaitingRequestApproval
+                        || i.Status == VisitInstanceStatus.Assigned
                         || i.Status == VisitInstanceStatus.BeforeVisit)
-                    && i.PlannedStartAt > nowForCancel);
-            bool hasStartedCampus = instances.Any(i => i.Status == VisitInstanceStatus.DuringVisit || i.Status == VisitInstanceStatus.AfterVisit || i.Status == VisitInstanceStatus.Closed);
+                    && i.PlannedStartAt >= vnNow.AddHours(24));
 
             string? campusName = single != null && campusNames.TryGetValue(single.CampusId, out var cnm) ? cnm
                 : count > 1 ? $"{count} cơ sở"
@@ -689,16 +692,17 @@ public sealed class ViewGuestDelegationListQueryHandler
             // instance, with backend-computed action booleans. Only the Visitor owner may cancel,
             // and only when the request is APPROVED and the instance is still cancellable. ──
             bool isVisitor = roleCode == RoleCodes.Visitor;
-            bool isVisitorOwner = !registeredView && isVisitor && vr.VisitorUserId == userId;
+            bool isVisitorOwner = !registeredView && isVisitor && (vr.VisitorUserId == userId || (vr.VisitorUserId == null && vr.CreatedBy == userId));
             var campusProgressItems = instances
                 .OrderBy(i => i.PlannedStartAt)
                 .Select(i =>
                 {
                     bool instanceCancellable = (vr.Status == VisitRequestStatuses.Approved
                             || vr.Status == VisitRequestStatuses.PartiallyApproved)
-                        && (i.Status == VisitInstanceStatus.Assigned
+                        && (i.Status == VisitInstanceStatus.WaitingRequestApproval
+                            || i.Status == VisitInstanceStatus.Assigned
                             || i.Status == VisitInstanceStatus.BeforeVisit)
-                        && i.PlannedStartAt > nowForCancel;
+                        && i.PlannedStartAt >= vnNow.AddHours(24);
                     return new CampusProgressItemDto
                     {
                         VisitInstanceId = i.VisitInstanceId,
@@ -826,6 +830,7 @@ public sealed class ViewGuestDelegationListQueryHandler
         bool beforeStart = !item.PlannedStartAt.HasValue || item.PlannedStartAt.Value > now;
         bool sameCampus = item.CampusId.HasValue && primaryCampusId.HasValue && item.CampusId == primaryCampusId;
         bool requestActive = item.RequestStatus != VisitRequestStatuses.Cancelled;
+        bool isVisitorOwner = isVisitor && (item.VisitorUserId == userId || (item.VisitorUserId == null && item.CreatedByUserId == userId));
 
         // HO never approves/rejects anymore (campus-independent approval) — monitor/read-only.
 
@@ -841,7 +846,7 @@ public sealed class ViewGuestDelegationListQueryHandler
         // Visitor — edit a still-fully-pending request / resubmit a fully-rejected one.
         // Eligibility (status + 24h window) is precomputed per row in QueryRequestLevelAsync;
         // the commands re-validate everything server-side.
-        if (isVisitor && item.VisitorUserId == userId)
+        if (isVisitorOwner)
         {
             if (item.CanEditPending)
                 actions.Add("EDIT_PENDING_REQUEST");
@@ -850,24 +855,20 @@ public sealed class ViewGuestDelegationListQueryHandler
         }
 
         // Visitor — self-cancel own request (UC-136).
-        if (isVisitor && item.VisitorUserId == userId)
+        if (isVisitorOwner)
         {
             if (item.RequestStatus == VisitRequestStatuses.PendingApproval)
             {
-                // PENDING_APPROVAL: can cancel whole request
-                actions.Add("CANCEL_BY_VISITOR");
+                if (item.HasCancellableInstance)
+                {
+                    actions.Add("CANCEL_BY_VISITOR");
+                }
             }
             else if (item.RequestStatus == VisitRequestStatuses.Approved
                      || item.RequestStatus == VisitRequestStatuses.PartiallyApproved)
             {
-                if (isSingle && item.HasCancellableInstance)
+                if (item.HasCancellableInstance)
                 {
-                    // SINGLE_CAMPUS: cancel if campus hasn't started
-                    actions.Add("CANCEL_BY_VISITOR");
-                }
-                else if (isMulti && !item.HasStartedCampus && item.HasCancellableInstance)
-                {
-                    // MULTI_CAMPUS: cancel WHOLE request only if NO campus has started
                     actions.Add("CANCEL_BY_VISITOR");
                 }
             }
