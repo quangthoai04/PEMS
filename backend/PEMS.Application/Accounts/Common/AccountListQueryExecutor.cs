@@ -281,26 +281,39 @@ internal static class AccountListQueryExecutor
             // never on an ADMIN/HO row.
             var inActionScope = privileged || (!rowIsHigh && (sameCampus || rowIsVisitor));
 
-            // BR-HO-STATUS: an HO may view but never enable/disable an HO account from a
-            // different campus (deny too when campus data is missing on either side).
-            var hoCrossCampus = isHoCaller && r.RoleCode == RoleCodes.Ho
-                && (!myCampusId.HasValue || r.CampusId is null || r.CampusId != myCampusId);
-
-            // ── Status-toggle availability + reason (UC-97 / HO_CREATE_HO_ACCOUNT spec §7/§12.3) ──
-            // A user can never toggle their own status; an HO caller can never toggle ANY HO row
-            // (HO needs a dedicated Re-enable/Unlock/Replace flow); LOCKED rows are excluded
-            // because UC-97 only toggles ACTIVE↔INACTIVE. The reason lets the UI explain the hide.
+            // ── Status-toggle availability + reason (UC-97 / HO_BASIC_INFO spec §13). ──
+            // A user can never toggle their own status; LOCKED rows are excluded because the toggle
+            // only moves ACTIVE↔INACTIVE. An HO caller MAY now enable/disable another HO (any campus)
+            // as well as Staff Leaders — the dedicated "special flow" block is gone. The reason lets
+            // the UI explain the hide.
             string? hideStatusToggleReason = null;
             if (!canManageStatusPerm)
                 hideStatusToggleReason = "NO_PERMISSION";
             else if (isCurrentUser)
                 hideStatusToggleReason = "SELF_ACCOUNT";
-            else if (isHoCaller && r.RoleCode == RoleCodes.Ho)
-                hideStatusToggleReason = hoCrossCampus ? "OTHER_CAMPUS_HO" : "HO_STATUS_CHANGE_REQUIRES_SPECIAL_FLOW";
             else if (!inActionScope)
                 hideStatusToggleReason = "TARGET_ROLE_NOT_MANAGEABLE";
             else if (r.Status == UserStatuses.Locked)
                 hideStatusToggleReason = "ACCOUNT_LOCKED";
+
+            // ── HO basic-info edit permission + reason (HO_BASIC_INFO spec §11). Only meaningful
+            //    for an HO caller: target not self, not LOCKED, and HO or STAFF/LEADER. ──
+            var targetIsHoScope = r.RoleCode == RoleCodes.Ho
+                || (r.RoleCode == RoleCodes.Staff && r.SubRole == UserSubRoles.Leader);
+            string? editBasicInfoDisabledReason = null;
+            var canEditBasicInfo = false;
+            if (isHoCaller)
+            {
+                if (!canManageStatusPerm)
+                    editBasicInfoDisabledReason = "NO_PERMISSION";
+                else if (isCurrentUser)
+                    editBasicInfoDisabledReason = "SELF_ACCOUNT";
+                else if (!targetIsHoScope)
+                    editBasicInfoDisabledReason = "TARGET_ROLE_NOT_MANAGEABLE";
+                else if (r.Status == UserStatuses.Locked)
+                    editBasicInfoDisabledReason = "ACCOUNT_LOCKED";
+                canEditBasicInfo = editBasicInfoDisabledReason is null;
+            }
 
             return new AccountListItemDto
             {
@@ -330,7 +343,9 @@ internal static class AccountListQueryExecutor
                 CanUpdateRole = canUpdateRolePerm && inActionScope && !isCurrentUser,
                 CanManageStatus = hideStatusToggleReason is null,
                 HideStatusToggleReason = hideStatusToggleReason,
-                IsCurrentUser = isCurrentUser
+                IsCurrentUser = isCurrentUser,
+                CanEditBasicInfo = canEditBasicInfo,
+                EditBasicInfoDisabledReason = editBasicInfoDisabledReason
             };
         }).ToList();
 

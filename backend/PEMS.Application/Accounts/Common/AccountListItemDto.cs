@@ -55,4 +55,17 @@ public sealed class AccountListItemDto
 
     /// <summary>True when this row is the caller's own account (UI hides the status toggle).</summary>
     public bool IsCurrentUser { get; init; }
+
+    /// <summary>
+    /// True when an HO caller may edit this row's basic info (full name / email). See
+    /// HO_BASIC_INFO spec §11: caller HO, target not self, not LOCKED, and target is HO or
+    /// STAFF/LEADER. Not driven by CanUpdateRole (HO cannot change roles).
+    /// </summary>
+    public bool CanEditBasicInfo { get; init; }
+
+    /// <summary>
+    /// When <see cref="CanEditBasicInfo"/> is false for an HO caller, the machine-readable reason
+    /// (SELF_ACCOUNT | ACCOUNT_LOCKED | TARGET_ROLE_NOT_MANAGEABLE | NO_PERMISSION). Null otherwise.
+    /// </summary>
+    public string? EditBasicInfoDisabledReason { get; init; }
 }

@@ -66,6 +66,16 @@ namespace PEMS.Api.Controllers
             return Ok(result);
         }
 
+        // HO basic-info edit (HO only) — updates ONLY full name + login email of another HO or a
+        // Staff Leader. A dedicated endpoint (never updateaccountrole) so the payload physically
+        // cannot carry role/campus/department/status; the handler is the final authorization gate.
+        [HttpPost("updatebasicaccountinfo")]
+        public async Task<IActionResult> UpdateBasicAccountInfo([FromBody] PEMS.Application.Accounts.Commands.UpdateBasicAccountInfo.UpdateBasicAccountInfoCommand command, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(command, cancellationToken);
+            return Ok(result);
+        }
+
         [HttpGet("statistics")]
         [EnableRateLimiting("accounts-read")]
         public async Task<IActionResult> GetStatistics(CancellationToken cancellationToken)
@@ -78,6 +88,20 @@ namespace PEMS.Api.Controllers
         public async Task<IActionResult> GetCampusDepartments(CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(new PEMS.Application.Accounts.Queries.GetCampusDepartments.GetCampusDepartmentsQuery(), cancellationToken);
+            return Ok(result);
+        }
+
+        // UC-100-SL — role-assignment options for the Staff Leader "Chỉnh sửa vai trò" modal.
+        // Campus is resolved server-side from the authenticated Staff Leader; only the target
+        // account id is accepted. Returns the campus IC department + active GENERAL departments
+        // (each flagged with hasHead / isCurrentTargetHead / selectable).
+        [HttpGet("role-assignment-options")]
+        [EnableRateLimiting("accounts-read")]
+        public async Task<IActionResult> GetRoleAssignmentOptions([FromQuery] ulong targetUserId, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(
+                new PEMS.Application.Accounts.Queries.GetRoleAssignmentOptions.GetRoleAssignmentOptionsQuery { TargetUserId = targetUserId },
+                cancellationToken);
             return Ok(result);
         }
 

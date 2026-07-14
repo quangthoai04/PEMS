@@ -41,8 +41,12 @@ export const API_ENDPOINTS = {
     details: '/accounts/viewaccountdetails',
     search: '/accounts/searchandfilteraccounts',
     updateRole: '/accounts/updateaccountrole',
+    // HO_BASIC_INFO — HO edits only full name + email of another HO / Staff Leader.
+    updateBasicInfo: '/accounts/updatebasicaccountinfo',
     statistics: '/accounts/statistics',
     campusDepartments: '/accounts/campus-departments',
+    // UC-100-SL — role-assignment options for the "Chỉnh sửa vai trò" modal (campus scoped server-side).
+    roleAssignmentOptions: '/accounts/role-assignment-options',
     staffLeaderAvailability: '/accounts/staff-leader-availability',
     hoCampusCheck: '/accounts/ho-campus-check',
     staffLeaderReplacementPreview: '/accounts/staff-leader-replacement-preview',

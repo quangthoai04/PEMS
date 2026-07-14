@@ -66,14 +66,70 @@ public sealed class UpdateAccountRoleCommandHandler : IRequestHandler<UpdateAcco
         }
 
         var oldRoleCode = user.Role?.RoleCode ?? "UNKNOWN";
+        var oldSubRole = user.SubRole;
         var oldDepartmentId = user.DepartmentId;
+        var oldStudentCode = user.StudentCode;
+        var oldFullName = user.FullName;
+        var oldEmail = user.Email;
         var oldValues = JsonSerializer.Serialize(new
         {
+            fullName = oldFullName,
+            email = oldEmail,
             roleCode = oldRoleCode,
-            subRole = user.SubRole,
+            subRole = oldSubRole,
             campusId = user.PrimaryCampusId,
             departmentId = user.DepartmentId,
+            studentCode = oldStudentCode,
         });
+
+        // ── Identity fields (Họ tên / Email), Staff Leader flow only ─────────────────────────────
+        // Whether identity may be edited is derived from the target's ORIGINAL role/sub-role loaded
+        // from the DB (NOT NewRoleCode / the dropdown), so promoting a STAFF/STAFF to STUDENT keeps
+        // identity editable while a DEPARTMENT/STAFF stays locked regardless of the new role.
+        var canEditIdentity = isStaffLeaderCaller && (
+            (oldRoleCode == RoleCodes.Staff && oldSubRole == UserSubRoles.Staff) ||
+            (oldRoleCode == RoleCodes.Department && oldSubRole == UserSubRoles.Leader) ||
+            oldRoleCode == RoleCodes.Student);
+
+        var requestedFullName = request.FullName?.Trim();
+        var requestedEmail = request.Email?.Trim().ToLowerInvariant();
+        var attemptsFullNameChange = requestedFullName is not null && requestedFullName != oldFullName;
+        var attemptsEmailChange = requestedEmail is not null && requestedEmail != oldEmail;
+
+        // A locked-down target may still be role-changed, but any real identity change is refused
+        // (the request must not silently succeed by dropping the field — BR §4.13).
+        if (!canEditIdentity && (attemptsFullNameChange || attemptsEmailChange))
+            throw new ForbiddenException(
+                "Bạn không có quyền chỉnh sửa họ tên hoặc email của tài khoản này.");
+
+        if (canEditIdentity)
+        {
+            if (requestedFullName is not null)
+            {
+                if (requestedFullName.Length == 0)
+                    throw new ValidationException("Vui lòng nhập họ và tên.");
+                if (requestedFullName.Length > 150)
+                    throw new ValidationException("Họ và tên không được vượt quá 150 ký tự.");
+                user.FullName = requestedFullName;
+            }
+
+            if (requestedEmail is not null && attemptsEmailChange)
+            {
+                if (requestedEmail.Length == 0)
+                    throw new ValidationException("Vui lòng nhập địa chỉ email.");
+                if (requestedEmail.Length > 150)
+                    throw new ValidationException("Email không được vượt quá 150 ký tự.");
+
+                // Uniqueness excludes the target itself (so re-sending the current email is a no-op).
+                var emailTaken = await _db.Users.AnyAsync(
+                    u => u.Email == requestedEmail && u.UserId != user.UserId, cancellationToken);
+                if (emailTaken)
+                    throw new ConflictException(
+                        "Email này đã được sử dụng bởi tài khoản khác.", AccountErrorCodes.EmailAlreadyExists);
+
+                user.Email = requestedEmail;
+            }
+        }
 
         var shape = isStaffLeaderCaller
             ? await AccountProvisioningRules.ResolveStaffLeaderTargetAsync(
@@ -81,6 +137,36 @@ public sealed class UpdateAccountRoleCommandHandler : IRequestHandler<UpdateAcco
             : await AccountProvisioningRules.ResolveAsync(
                 _db, request.NewRoleCode, request.SubRole, request.PrimaryCampusId, request.DepartmentId,
                 privileged, actorCampus, cancellationToken);
+
+        // ── student_code (MSSV), Staff Leader flow only ──────────────────────────────────────
+        // STUDENT requires a trimmed, ≤30-char code that is unique across other accounts; any
+        // other role clears the code so a promoted STUDENT never keeps a hidden MSSV. Privileged
+        // (ADMIN/HO) edits leave student_code untouched (out of scope for this flow).
+        var resolvedStudentCode = user.StudentCode;
+        if (isStaffLeaderCaller)
+        {
+            if (shape.RoleCode == RoleCodes.Student)
+            {
+                var code = (request.StudentCode ?? string.Empty).Trim();
+                if (code.Length == 0)
+                    throw new ValidationException("Vui lòng nhập mã số sinh viên.");
+                if (code.Length > 30)
+                    throw new ValidationException("Mã số sinh viên không được vượt quá 30 ký tự.");
+
+                // Re-check uniqueness at submit time (handles the race after the frontend loaded
+                // options); the DB also has uq_users_student_code as a last line of defence.
+                var duplicate = await _db.Users.AnyAsync(
+                    u => u.StudentCode == code && u.UserId != user.UserId, cancellationToken);
+                if (duplicate)
+                    throw new ConflictException("Mã số sinh viên này đã được sử dụng bởi tài khoản khác.");
+
+                resolvedStudentCode = code;
+            }
+            else
+            {
+                resolvedStudentCode = null;
+            }
+        }
 
         var now = _clock.VietnamNow;
 
@@ -121,6 +207,7 @@ public sealed class UpdateAccountRoleCommandHandler : IRequestHandler<UpdateAcco
         user.SubRole = shape.SubRole;
         user.DepartmentId = shape.DepartmentId;
         user.PrimaryCampusId = shape.PrimaryCampusId;
+        user.StudentCode = resolvedStudentCode;
         user.UpdatedAt = now;
         user.UpdatedBy = actorId;
         // Existing GOOGLE_SSO / FEID / LOCAL_PASSWORD providers are intentionally kept.
@@ -140,10 +227,13 @@ public sealed class UpdateAccountRoleCommandHandler : IRequestHandler<UpdateAcco
                     OldValueText = oldValues,
                     NewValueText = JsonSerializer.Serialize(new
                     {
+                        fullName = user.FullName,
+                        email = user.Email,
                         roleCode = shape.RoleCode,
                         subRole = shape.SubRole,
                         campusId = shape.PrimaryCampusId,
                         departmentId = shape.DepartmentId,
+                        studentCode = resolvedStudentCode,
                     })
                 }
             },
@@ -199,6 +289,9 @@ public sealed class UpdateAccountRoleCommandHandler : IRequestHandler<UpdateAcco
             $"<li>Vai trò mới: <strong>{roleEnc}</strong></li>" +
             $"<li>Cơ sở: <strong>{campusEnc}</strong></li>" +
             (departmentName is null ? "" : $"<li>Phòng ban: <strong>{System.Net.WebUtility.HtmlEncode(departmentName)}</strong></li>") +
+            (shape.RoleCode == RoleCodes.Student && !string.IsNullOrWhiteSpace(user.StudentCode)
+                ? $"<li>Mã số sinh viên: <strong>{System.Net.WebUtility.HtmlEncode(user.StudentCode)}</strong></li>"
+                : "") +
             "</ul>" +
             "<p>Thay đổi này có thể yêu cầu bạn đăng nhập lại để hệ thống áp dụng quyền truy cập mới.</p>" +
             "<p>Nếu bạn cho rằng thông tin này chưa chính xác, vui lòng liên hệ Staff Leader hoặc quản trị hệ thống để được hỗ trợ.</p>" +
