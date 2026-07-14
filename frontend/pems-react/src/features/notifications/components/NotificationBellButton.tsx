@@ -19,6 +19,17 @@ export function timeAgo(dateStr: string): string {
 }
 
 export function getNotificationLink(item: NotificationItem, user: AuthUser | null): string | undefined {
+  // Tin tức / đối tác: mọi thông báo (duyệt, từ chối, chờ duyệt) đều đưa về trang quản lý
+  // lọc đúng 1 bản ghi — có nút "Xem tất cả" để thoát. Rewrite theo relatedType/relatedId
+  // để xử lý luôn notification cũ trỏ trang chi tiết hoặc không có targetUrl.
+  const relatedType = item.relatedType?.toUpperCase();
+  if (relatedType === 'NEWS' && item.relatedId) {
+    return `/dashboard/news?newsId=${item.relatedId}`;
+  }
+  if (relatedType === 'PARTNER' && item.relatedId) {
+    return `/dashboard/partners?partnerId=${item.relatedId}`;
+  }
+
   let link = item.targetUrl || undefined;
 
   if (link && user) {
@@ -125,18 +136,16 @@ export function NotificationBellButton({ variant = 'dashboard', onNavigate }: No
       return;
     }
 
-    if (!item.canOpen || !item.targetUrl) {
-      setIsOpen(false);
+    // Tính link trước rồi mới quyết định modal: notification NEWS/PARTNER cũ không có
+    // targetUrl (canOpen=false) vẫn điều hướng được nhờ rewrite theo relatedType/relatedId.
+    const link = getNotificationLink(item, user);
+    setIsOpen(false);
+    if (!link) {
       setDetailModalItem(item);
       return;
     }
-
-    setIsOpen(false);
-    const link = getNotificationLink(item, user);
-    if (link) {
-      navigate(link);
-      onNavigate?.();
-    }
+    navigate(link);
+    onNavigate?.();
   };
 
   const handleMarkAllAsRead = async () => {

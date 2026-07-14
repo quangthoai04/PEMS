@@ -288,6 +288,8 @@ public sealed class CreateNewsCommandHandler
                         Message          = $"{authorName} mới đăng tin tức cần chờ bạn duyệt: {sanitizedTitle}",
                         RelatedType      = "NEWS",
                         RelatedId        = news.NewsId,
+                        // Trang quản lý tin tức lọc đúng 1 bài (có nút "Xem tất cả").
+                        ActionUrl        = $"/dashboard/news?newsId={news.NewsId}",
                         IsRead           = false,
                         CreatedAt        = now
                     });

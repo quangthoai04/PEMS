@@ -36,6 +36,8 @@ export interface PartnerListResponse {
 export interface PartnerListParams {
   search?: string;
   country?: string;
+  /** Lọc đúng 1 đối tác — dùng khi đi từ thông báo sang trang quản lý. */
+  partnerId?: number;
   campusId?: number;
   profileStatus?: string;
   visibility?: string;
