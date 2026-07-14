@@ -59,26 +59,18 @@ public sealed class ManageAccountStatusCommandHandler : IRequestHandler<ManageAc
         if (actorId is not null && user.UserId == actorId.Value)
             throw new ForbiddenException("You cannot change the status of your own account.");
 
-        // ── UC-97 HO scope: HO may only enable/disable HO and Staff-Leader accounts, only
-        //    between ACTIVE and INACTIVE, and never a LOCKED (security) account. ──
+        // ── HO scope (HO_BASIC_INFO spec §14): an HO may enable/disable another HO (any campus)
+        //    or a Staff Leader, only between ACTIVE and INACTIVE, and never a LOCKED account.
+        //    The self-account guard above already blocks changing one's own status. ──
         if (_currentUser.RoleCode == RoleCodes.Ho)
         {
-            // HO accounts require a dedicated Re-enable/Unlock/Replace flow — never the generic
-            // toggle. Block every HO target regardless of campus (spec §7.3). The frontend hides
-            // the toggle, but the backend is the final gate against a direct API call.
-            if (user.Role.RoleCode == RoleCodes.Ho)
-                throw new AuthBusinessException(
-                    AccountErrorCodes.HoStatusChangeRequiresSpecialFlow,
-                    "Không thể thay đổi trạng thái tài khoản HO bằng thao tác thông thường. Vui lòng sử dụng luồng xử lý HO chuyên biệt.",
-                    403);
-
-            // HO may only enable/disable Staff-Leader accounts, only between ACTIVE and INACTIVE,
-            // and never a LOCKED (security) account.
-            if (!(user.Role.RoleCode == RoleCodes.Staff && user.SubRole == UserSubRoles.Leader))
+            var targetInScope = user.Role.RoleCode == RoleCodes.Ho
+                || (user.Role.RoleCode == RoleCodes.Staff && user.SubRole == UserSubRoles.Leader);
+            if (!targetInScope)
                 throw new ForbiddenException("Tài khoản này nằm ngoài phạm vi quản lý của HO.");
 
             if (newStatus == UserStatuses.Locked)
-                throw new BusinessRuleException("UC-97 chỉ cho phép kích hoạt hoặc vô hiệu hóa tài khoản.");
+                throw new BusinessRuleException("HO chỉ được phép kích hoạt hoặc vô hiệu hóa tài khoản.");
 
             if (user.Status == UserStatuses.Locked)
                 throw new BusinessRuleException(

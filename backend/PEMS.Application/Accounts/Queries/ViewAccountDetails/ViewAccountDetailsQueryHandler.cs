@@ -43,6 +43,7 @@ public sealed class ViewAccountDetailsQueryHandler : IRequestHandler<ViewAccount
                 CampusName = u.PrimaryCampus != null ? u.PrimaryCampus.Name : null,
                 u.DepartmentId,
                 DepartmentName = u.Department != null ? u.Department.Name : null,
+                u.StudentCode,
                 u.Status,
                 u.CreatedVia,
                 u.CreatedAt,
@@ -55,6 +56,23 @@ public sealed class ViewAccountDetailsQueryHandler : IRequestHandler<ViewAccount
         EnforceScope(row.RoleCode, row.SubRole, row.PrimaryCampusId);
 
         var isStaffLeader = row.RoleCode == RoleCodes.Staff && row.SubRole == UserSubRoles.Leader;
+
+        // ── HO basic-info edit permission (HO_BASIC_INFO spec §11). Only an HO caller may edit
+        //    another HO / Staff Leader's full name + email (never self, never a LOCKED account). ──
+        string? editBasicInfoDisabledReason = null;
+        var canEditBasicInfo = false;
+        if (_currentUser.RoleCode == RoleCodes.Ho)
+        {
+            var isSelf = _currentUser.UserId.HasValue && row.UserId == _currentUser.UserId.Value;
+            var targetInScope = row.RoleCode == RoleCodes.Ho || isStaffLeader;
+            if (isSelf)
+                editBasicInfoDisabledReason = "SELF_ACCOUNT";
+            else if (!targetInScope)
+                editBasicInfoDisabledReason = "TARGET_ROLE_NOT_MANAGEABLE";
+            else if (row.Status == UserStatuses.Locked)
+                editBasicInfoDisabledReason = "ACCOUNT_LOCKED";
+            canEditBasicInfo = editBasicInfoDisabledReason is null;
+        }
 
         return new ViewAccountDetailsDto
         {
@@ -72,11 +90,14 @@ public sealed class ViewAccountDetailsQueryHandler : IRequestHandler<ViewAccount
             CampusName = row.CampusName,
             DepartmentId = row.DepartmentId,
             DepartmentName = row.DepartmentName,
+            StudentCode = row.StudentCode,
             Status = row.Status,
             CreatedVia = row.CreatedVia,
             CreatedAt = row.CreatedAt,
             UpdatedAt = row.UpdatedAt,
             LastLoginAt = row.LastLoginAt,
+            CanEditBasicInfo = canEditBasicInfo,
+            EditBasicInfoDisabledReason = editBasicInfoDisabledReason,
         };
     }
 
