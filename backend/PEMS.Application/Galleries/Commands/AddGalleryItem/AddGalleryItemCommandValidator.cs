@@ -24,14 +24,14 @@ public sealed class AddGalleryItemCommandValidator : AbstractValidator<AddGaller
         RuleFor(x => x.ItemType)
             .NotEmpty().WithMessage("Vui lòng chọn loại nội dung.");
 
-        // At least one media source: an uploaded file OR a YouTube URL.
+        // At least one media source: an uploaded image OR a YouTube URL.
         RuleFor(x => x)
             .Must(x => (x.Files?.Count ?? 0) + (x.YoutubeUrls?.Count ?? 0) >= 1)
-            .WithMessage("Vui lòng chọn ít nhất một tệp media hoặc thêm một video YouTube.");
+            .WithMessage("Vui lòng chọn ít nhất một ảnh hoặc thêm một video YouTube.");
 
-        // Total media (files + YouTube) capped at 20.
+        // Total media (images + YouTube) capped at 20.
         RuleFor(x => x)
             .Must(x => (x.Files?.Count ?? 0) + (x.YoutubeUrls?.Count ?? 0) <= 20)
-            .WithMessage("Chỉ được tối đa 20 media (tệp + video YouTube).");
+            .WithMessage("Chỉ được tối đa 20 media (ảnh + video YouTube).");
     }
 }

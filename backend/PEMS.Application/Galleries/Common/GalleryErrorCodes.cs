@@ -34,8 +34,11 @@ public static class GalleryErrorCodes
     /// <summary>More than the allowed number of files (20) were supplied. → 422.</summary>
     public const string TooManyFiles = "GALLERY_TOO_MANY_FILES";
 
-    /// <summary>A supplied file is neither a supported image nor video. → 422.</summary>
+    /// <summary>A supplied file is not a supported image. → 422.</summary>
     public const string InvalidMediaFile = "GALLERY_INVALID_MEDIA_FILE";
+
+    /// <summary>A video file was uploaded from the machine — videos must be added via YouTube. → 422.</summary>
+    public const string VideoUploadNotAllowed = "GALLERY_VIDEO_UPLOAD_NOT_ALLOWED";
 
     /// <summary>The item would be left with no active media after the edit. → 422.</summary>
     public const string MediaRequired = "GALLERY_MEDIA_REQUIRED";

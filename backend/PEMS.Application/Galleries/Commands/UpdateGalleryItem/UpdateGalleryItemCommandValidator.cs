@@ -25,6 +25,6 @@ public sealed class UpdateGalleryItemCommandValidator : AbstractValidator<Update
 
         RuleFor(x => x)
             .Must(x => (x.NewFiles?.Count ?? 0) + (x.YoutubeUrls?.Count ?? 0) <= 20)
-            .WithMessage("Chỉ được thêm tối đa 20 media mới (tệp + video YouTube).");
+            .WithMessage("Chỉ được thêm tối đa 20 media mới (ảnh + video YouTube).");
     }
 }

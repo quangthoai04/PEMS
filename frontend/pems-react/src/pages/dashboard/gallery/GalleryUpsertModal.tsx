@@ -16,7 +16,8 @@ import type {
 } from '../../../features/gallery-management/types/galleryManagement.types';
 
 type Mode = 'create' | 'edit';
-const MEDIA_ACCEPT = 'image/jpeg,image/png,image/webp,video/mp4,video/webm';
+// Machine uploads accept images only — videos are added via a YouTube link, never uploaded as files.
+const MEDIA_ACCEPT = 'image/jpeg,image/png,image/webp';
 const MAX_FILES = 20;
 // Narration cap: gallery_items.description feeds the EverAI TTS voice-over, hard-limited to 1000 chars.
 const MAX_DESCRIPTION_LENGTH = 1000;
@@ -234,11 +235,15 @@ export function GalleryUpsertModal({
     const incoming = Array.from(e.target.files) as File[];
     const accepted: NewFileEntry[] = [];
     for (const file of incoming) {
-      // A gallery may mix images and videos — accept a file if it passes EITHER rule.
+      // Machine uploads accept images only. A video picked here is rejected with a clear message that
+      // points the user to the YouTube field (videos are added by link, never uploaded as a file).
+      if (isVideoFile(file)) {
+        setFormError(`${file.name}: Chỉ chấp nhận ảnh khi tải từ máy. Vui lòng thêm video qua liên kết YouTube.`);
+        continue;
+      }
       const asImage = validateFile(file, 'GALLERY_IMAGE');
-      const asVideo = validateFile(file, 'GALLERY_VIDEO');
-      if (!asImage.ok && !asVideo.ok) {
-        setFormError(`${file.name}: ${isVideoFile(file) ? asVideo.message : asImage.message}`);
+      if (!asImage.ok) {
+        setFormError(`${file.name}: ${asImage.message}`);
         continue;
       }
       accepted.push({ id: nextLocalId(), file });
@@ -372,10 +377,10 @@ export function GalleryUpsertModal({
               <Upload className="w-6 h-6" />
             </div>
             <p className="text-sm font-bold text-gray-700 text-center">
-              {slotsLeft > 0 ? 'Click để chọn files' : `Đã đủ ${MAX_FILES} media`}
+              {slotsLeft > 0 ? 'Click để chọn ảnh' : `Đã đủ ${MAX_FILES} media`}
             </p>
             <p className="text-xs text-slate-400 mt-1 text-center">
-              Ảnh (JPG/PNG/WEBP ≤5MB) hoặc Video (MP4/WEBM ≤100MB) · tối đa {MAX_FILES} media
+              Chỉ ảnh (JPG/PNG/WEBP ≤5MB) · tối đa {MAX_FILES} media · video thêm qua YouTube bên dưới
             </p>
             <input type="file" multiple accept={MEDIA_ACCEPT} className="hidden" onChange={handleAddFiles} disabled={slotsLeft <= 0} />
           </label>
