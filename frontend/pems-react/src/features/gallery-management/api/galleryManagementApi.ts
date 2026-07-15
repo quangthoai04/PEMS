@@ -71,6 +71,8 @@ export const galleryManagementApi = {
     form.append('itemType', input.itemType);
     form.append('status', input.status);
     input.files.forEach((file) => form.append('files', file));
+    (input.youtubeUrls ?? []).forEach((url) => form.append('youtubeUrls', url));
+    if (input.primaryMediaKey) form.append('primaryMediaKey', input.primaryMediaKey);
 
     const { data } = await httpClient.post<GalleryItemDetail>(API_ENDPOINTS.gallery.create, form, {
       headers: { 'Content-Type': 'multipart/form-data' },
@@ -89,6 +91,8 @@ export const galleryManagementApi = {
     input.keepMediaIds.forEach((id) => form.append('keepMediaIds', String(id)));
     if (input.primaryMediaId != null) form.append('primaryMediaId', String(input.primaryMediaId));
     input.newFiles.forEach((file) => form.append('newFiles', file));
+    (input.youtubeUrls ?? []).forEach((url) => form.append('youtubeUrls', url));
+    if (input.primaryMediaKey) form.append('primaryMediaKey', input.primaryMediaKey);
 
     const { data } = await httpClient.post<GalleryItemDetail>(API_ENDPOINTS.gallery.update, form, {
       headers: { 'Content-Type': 'multipart/form-data' },
