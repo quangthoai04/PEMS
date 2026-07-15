@@ -5,7 +5,7 @@
 > Use case thuộc nhóm **Department Structure Management / Department Management**. Theo `USE_CASE_LIST.md`, `PERMISSION_MATRIX.md` mới và source hiện tại, UC ổn định là **UC-104 View Department List**, actor nghiệp vụ là **Staff Leader**.
 >
 > Mục tiêu: **tạo test code thật, chạy được, đúng source hiện tại, không viết test giả để lấy kết quả xanh, kiểm tra trực tiếp `pems_test` bằng các truy vấn read-only trước khi chạy Integration Test, và tuyệt đối không làm hỏng `pems_db` hoặc database dev/thật**.
-
+Viết  testcase cho tính năng/màn yêu cầu testcase bao phủ đầy đủ các trường hợp của tính năng chưa, không được viết test cố tình để pass, không viết test case chỉ test toàn positive để pass
 ---
 
 ## 0. Baseline source hiện tại đã xác nhận trước khi viết prompt
