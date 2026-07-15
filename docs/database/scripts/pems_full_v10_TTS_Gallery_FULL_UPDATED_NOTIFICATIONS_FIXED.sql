@@ -803,10 +803,18 @@ CREATE TABLE visit_requests (
   request_code VARCHAR(50) NOT NULL,
   submission_id CHAR(36) NULL COMMENT 'UUID idempotency cho một submit intent',
   business_fingerprint CHAR(64) NULL COMMENT 'SHA-256 fingerprint v1 của core visit identity',
-  visitor_user_id BIGINT UNSIGNED NULL COMMENT 'Tài khoản ĐẦU MỐI LIÊN HỆ (contact owner) — chủ sở hữu thao tác request (edit/resubmit/cancel/feedback theo status). Luôn là role VISITOR.',
-  registrant_user_id BIGINT UNSIGNED NULL COMMENT 'Tài khoản NGƯỜI ĐĂNG KÝ (submitter). Chỉ có quyền xem/theo dõi read-only; mọi mutation request-level thuộc về visitor_user_id (đầu mối liên hệ).',
+  visitor_user_id BIGINT UNSIGNED NULL COMMENT 'Tài khoản ĐẦU MỐI CHÍNH / người quản lý yêu cầu (primary contact owner), luôn role VISITOR. NULL khi contact B chưa xác nhận (primary_contact_access_status=PENDING_CONFIRMATION). Là owner cho cancel khi contact đã ACTIVE; KHÔNG còn là actor duy nhất được sửa form — xem registrant_user_id.',
+  registrant_user_id BIGINT UNSIGNED NULL COMMENT 'Tài khoản NGƯỜI ĐĂNG KÝ (submitter). KHÔNG còn read-only: là CO-EDITOR cùng đầu mối chính cho form edit/resubmit/safe-edit/amendment (backend PR-4+ enforce theo lifecycle). Được cancel theo ngoại lệ 3A khi initial contact còn PENDING_CONFIRMATION (trigger đã enforce). Có thể là VISITOR hoặc STAFF/STAFF LEADER.',
   partner_id BIGINT UNSIGNED NULL,
   created_source ENUM('VISITOR_SUBMITTED','STAFF_CREATED') NOT NULL DEFAULT 'VISITOR_SUBMITTED',
+
+  -- Per-campus form v2 (see docs/database/scripts/percampus_v2_migration).
+  -- Legacy rows/global columns stay as a compatibility projection; v2 active data
+  -- lives in visit_instance_form_details.
+  form_schema_version TINYINT UNSIGNED NOT NULL DEFAULT 1
+    COMMENT 'Form contract version: 1=legacy global-form, 2=per-campus detail',
+  has_mixed_campus_details TINYINT(1) NOT NULL DEFAULT 0
+    COMMENT 'Backend-derived: 1 when campus detail snapshots differ. Never accepted from the client.',
 
   -- 1. Registrant information from the Campus Visit form
   registrant_full_name VARCHAR(150) NOT NULL COMMENT 'Họ và tên người đăng ký',
@@ -816,25 +824,42 @@ CREATE TABLE visit_requests (
   registrant_email VARCHAR(150) NOT NULL COMMENT 'Email người đăng ký',
   registrant_nationality VARCHAR(100) NOT NULL COMMENT 'Quốc tịch người đăng ký',
 
-  -- 2. Delegation information
-  delegation_name VARCHAR(200) NOT NULL COMMENT 'Tên đoàn khách',
+  -- 2. Delegation information.
+  -- COMPATIBILITY PROJECTION for form v2: when form_schema_version=2 the ACTIVE source
+  -- of truth for delegation_name/visit_type/visit_type_other/purpose/working_content/
+  -- working_language/transportation_note/media_consent_*/note_to_fptu is per campus in
+  -- visit_instance_form_details. These columns are kept only for v1 compatibility; if
+  -- has_mixed_campus_details=1 they hold the smallest-campus_id snapshot and MUST NOT be
+  -- read as the shared value. Do not run v2 business queries off these columns.
+  delegation_name VARCHAR(200) NOT NULL COMMENT 'Tên đoàn khách (compatibility projection; v2 dùng visit_instance_form_details.delegation_name theo campus)',
   visit_scope ENUM('SINGLE_CAMPUS','MULTI_CAMPUS') NOT NULL DEFAULT 'SINGLE_CAMPUS'
     COMMENT 'SINGLE_CAMPUS/MULTI_CAMPUS chỉ mô tả số campus được chọn; cả hai đều route từng campus instance tới Staff Leader của campus tương ứng.',
-  visit_type ENUM('CAMPUS_TOUR','MEETING','WORKSHOP','SIGNING_CEREMONY','EXCHANGE','OTHER') NOT NULL DEFAULT 'CAMPUS_TOUR',
+  visit_type ENUM('CAMPUS_TOUR','MEETING','WORKSHOP','SIGNING_CEREMONY','EXCHANGE','OTHER') NOT NULL DEFAULT 'CAMPUS_TOUR' COMMENT 'Compatibility projection; v2 dùng visit_instance_form_details.visit_type theo campus',
   visit_type_other VARCHAR(255) NULL,
-  purpose TEXT NOT NULL COMMENT 'Mục đích thăm FPTU',
-  working_content TEXT NULL COMMENT 'Nội dung làm việc tại FPTU',
+  purpose TEXT NOT NULL COMMENT 'Mục đích thăm FPTU (compatibility projection; v2 dùng visit_instance_form_details.purpose theo campus)',
+  working_content TEXT NULL COMMENT 'Nội dung làm việc (compatibility projection; v2 dùng visit_instance_form_details.working_content theo campus)',
 
-  contact_person_full_name VARCHAR(150) NOT NULL,
+  -- PRIMARY CONTACT (đầu mối chính quản lý yêu cầu) snapshot at REQUEST level — the email
+  -- used to link/claim the VISITOR account. This is NOT the per-campus operational contact;
+  -- each campus keeps its own operational contact in visit_instance_form_details.operational_contact_*.
+  contact_person_full_name VARCHAR(150) NOT NULL COMMENT 'Đầu mối chính (primary contact) cấp request, không phải operational contact của campus',
   contact_person_organization VARCHAR(255) NOT NULL,
   contact_person_phone VARCHAR(50) NOT NULL,
-  contact_person_email VARCHAR(150) NOT NULL,
+  contact_person_email VARCHAR(150) NOT NULL COMMENT 'Email đầu mối chính; dùng để link/claim tài khoản VISITOR (xem visitor_user_id + primary_contact_access_status)',
 
   working_language ENUM('VI','EN') NOT NULL DEFAULT 'EN' COMMENT 'Ngôn ngữ sử dụng trong visit. Chỉ dùng VI/EN theo frontend hiện tại, không có lựa chọn OTHER',
   transportation_note TEXT NULL COMMENT 'Nhận diện phương tiện di chuyển tới FPTU do khách nhập tự do',
   media_consent_status ENUM('AGREED','DECLINED') NOT NULL DEFAULT 'DECLINED',
   media_consent_note TEXT NULL,
   note_to_fptu TEXT NULL COMMENT 'Ghi chú cho FPTU',
+
+  -- Primary-contact claim state (per-campus form v2, §16.4). Backfilled ACTIVE where
+  -- visitor_user_id IS NOT NULL. New v2 requests whose contact B differs from the
+  -- registrant stay PENDING_CONFIRMATION until B accepts the invitation.
+  primary_contact_access_status ENUM('PENDING_CONFIRMATION','ACTIVE') NOT NULL DEFAULT 'PENDING_CONFIRMATION'
+    COMMENT 'PENDING_CONFIRMATION=contact B has not claimed the request; ACTIVE=contact owner confirmed',
+  primary_contact_verified_at DATETIME NULL
+    COMMENT 'When the primary contact claim/transfer was applied (Vietnam wall-clock)',
 
   status ENUM('PENDING_APPROVAL','PARTIALLY_APPROVED','APPROVED','REJECTED','CANCELLED') NOT NULL DEFAULT 'PENDING_APPROVAL' COMMENT 'Aggregate request status derived from campus instance decisions; visit progress is derived from visit_request_campuses.status',
   submitted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -849,7 +874,7 @@ CREATE TABLE visit_requests (
 
   cancelled_by BIGINT UNSIGNED NULL COMMENT 'Visitor hủy toàn bộ request/delegation',
   cancelled_at DATETIME NULL COMMENT 'Thời điểm visitor hủy toàn bộ request/delegation',
-  cancellation_reason TEXT NULL COMMENT 'Lý do visitor nhập khi tự hủy toàn bộ request/delegation. Bảng tổng không lưu actor/source vì chỉ Visitor được hủy tổng.',
+  cancellation_reason TEXT NULL COMMENT 'Lý do hủy toàn bộ request/delegation. Người hủy = đầu mối chính (visitor_user_id) khi contact ACTIVE, HOẶC người đăng ký (registrant_user_id, role VISITOR/STAFF) theo ngoại lệ 3A khi initial contact còn PENDING_CONFIRMATION. Trigger trg_visit_requests_cancel_validate_bu enforce cả hai nhánh + guard 24h/started-campus.',
 
   row_version INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'Optimistic concurrency token',
 
@@ -872,12 +897,18 @@ CREATE TABLE visit_requests (
   KEY idx_visit_requests_scope_status (visit_scope, status),
   KEY idx_visit_requests_scope_status_submitted (visit_scope, status, submitted_at),
   KEY idx_visit_requests_created_source (created_source),
+  KEY idx_visit_requests_schema_version (form_schema_version, has_mixed_campus_details),
+  KEY idx_visit_requests_contact_access (primary_contact_access_status),
   KEY idx_visit_requests_visit_type (visit_type),
   KEY idx_visit_requests_contact_email (contact_person_email),
   KEY idx_visit_requests_media_consent (media_consent_status),
   KEY idx_visit_requests_cancelled (cancelled_by, cancelled_at),
   KEY idx_visit_requests_resubmission (resubmission_count, last_resubmitted_at),
   KEY idx_visit_requests_last_resubmitted_by (last_resubmitted_by, last_resubmitted_at),
+  -- Parent FULLTEXT indexes request code / registrant / primary-contact identity only.
+  -- v2 per-campus search (delegation_name/purpose/working_content/operational contact) uses
+  -- visit_instance_form_details.ft_vifd_search — do NOT treat this legacy delegation_name as
+  -- the per-campus search source once form_schema_version=2.
   FULLTEXT KEY ft_visit_requests_frontend_search (request_code, delegation_name, registrant_full_name, registrant_organization, registrant_email, contact_person_full_name, contact_person_organization, contact_person_email),
 
   CHECK (TRIM(registrant_job_title) <> ''),
@@ -902,7 +933,7 @@ CREATE TABLE visit_requests (
   CONSTRAINT fk_visit_requests_last_resubmitted_by
     FOREIGN KEY (last_resubmitted_by) REFERENCES users(user_id)
     ON UPDATE CASCADE ON DELETE SET NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-COMMENT='Đơn đăng ký tham quan. Bảng tổng lưu form, trạng thái aggregate và metadata resubmit; quyết định duyệt/từ chối thật nằm ở visit_request_campuses; transportation_note là text nhận diện phương tiện.';
+COMMENT='Request cha (parent): giữ danh tính (registrant + primary contact), quyền sở hữu/quan hệ (visitor_user_id/registrant_user_id + primary_contact_access_status), scope, trạng thái AGGREGATE và metadata resubmit/cancel. Các cột form global (delegation_name/visit_type/purpose/working_content/contact_person_*/...) là COMPATIBILITY PROJECTION cho v1; với form_schema_version=2 nội dung form ACTIVE nằm per-campus ở visit_instance_form_details. Quyết định duyệt/từ chối thật nằm ở visit_request_campuses.';
 
 CREATE TABLE visit_request_campuses (
   visit_instance_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -961,6 +992,9 @@ CREATE TABLE visit_request_campuses (
 
   PRIMARY KEY (visit_instance_id),
   UNIQUE KEY uq_visit_instance_request_campus (visit_request_id, campus_id),
+  -- Composite unique so per-campus v2 tables can carry a (visit_request_id, visit_instance_id)
+  -- FK. visit_instance_id is already the PK, so this composite is trivially unique.
+  UNIQUE KEY uq_vrc_request_instance (visit_request_id, visit_instance_id),
   KEY idx_visit_instances_campus_status_time (campus_id, status, planned_start_at),
   KEY idx_visit_instances_request (visit_request_id),
   KEY idx_visit_instances_status_time (status, planned_start_at),
@@ -976,6 +1010,10 @@ CREATE TABLE visit_request_campuses (
   KEY idx_visit_instances_visibility_campus_request (campus_id, visit_request_id, status, current_host_user_id),
 
   CHECK (planned_end_at > planned_start_at),
+  -- Minimum visit duration 30 minutes (per-campus form v2, §4.5). The end>start
+  -- check above is retained; this adds the named minimum-duration rule.
+  CONSTRAINT ck_visit_instance_min_duration_30m
+    CHECK (TIMESTAMPDIFF(MINUTE, planned_start_at, planned_end_at) >= 30),
 
   CONSTRAINT fk_visit_instances_request
     FOREIGN KEY (visit_request_id) REFERENCES visit_requests(visit_request_id)
@@ -1020,6 +1058,9 @@ CREATE TABLE visit_guest_members (
   updated_at DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
   updated_by BIGINT UNSIGNED NULL,
   PRIMARY KEY (guest_member_id),
+  -- Composite unique so visit_instance_guest_members can carry a
+  -- (visit_request_id, guest_member_id) FK. guest_member_id is already unique.
+  UNIQUE KEY uq_vgm_request_member (visit_request_id, guest_member_id),
   KEY idx_guest_members_request (visit_request_id),
   KEY idx_guest_members_type_order (visit_request_id, member_type, display_order),
   CHECK (TRIM(full_name) <> ''),
@@ -1067,6 +1108,261 @@ CREATE TABLE visit_participants (
     FOREIGN KEY (assigned_by) REFERENCES users(user_id)
     ON UPDATE CASCADE ON DELETE SET NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Người nội bộ tham gia visit instance. Chỉ gồm IC_HOST, IC_SUPPORT, DEPT_SUPPORT, STUDENT. Host chính lưu bằng is_host.';
+
+-- =====================================================================
+-- PER-CAMPUS FORM v2 + IDENTITY EDIT + AMENDMENT MODULE
+-- (docs/ChangeSauHopChiQUyen/sauhop_13-07/PEMS_MULTI_CAMPUS_PER_CAMPUS_FORM_AND_IDENTITY_EDIT_PLAN.md)
+-- Additive tables. Standalone patch/backfill/verify/rollback live in
+-- docs/database/scripts/percampus_v2_migration/. These CREATE TABLEs are the
+-- fresh-create equivalent of 02_up_additive.sql sections 3-6.
+-- =====================================================================
+
+-- One full form snapshot PER campus instance (active v2 data).
+CREATE TABLE visit_instance_form_details (
+  visit_instance_id BIGINT UNSIGNED NOT NULL,
+  delegation_name VARCHAR(200) NOT NULL COMMENT 'Tên đoàn hiển thị tại campus này',
+  visit_type ENUM('CAMPUS_TOUR','MEETING','WORKSHOP','SIGNING_CEREMONY','EXCHANGE','OTHER') NOT NULL DEFAULT 'CAMPUS_TOUR',
+  visit_type_other VARCHAR(255) NULL,
+  purpose TEXT NOT NULL COMMENT 'Mục đích tại campus này',
+  working_content TEXT NULL COMMENT 'Nội dung làm việc tại campus này',
+  operational_contact_full_name VARCHAR(150) NOT NULL COMMENT 'Đầu mối làm việc tại cơ sở (snapshot vận hành, KHÔNG cấp quyền đăng nhập)',
+  operational_contact_organization VARCHAR(255) NOT NULL,
+  operational_contact_phone VARCHAR(50) NOT NULL,
+  operational_contact_email VARCHAR(150) NOT NULL,
+  working_language ENUM('VI','EN') NOT NULL DEFAULT 'EN',
+  transportation_note TEXT NULL,
+  media_consent_status ENUM('AGREED','DECLINED') NOT NULL DEFAULT 'DECLINED',
+  media_consent_note TEXT NULL,
+  note_to_fptu TEXT NULL,
+  form_revision INT UNSIGNED NOT NULL DEFAULT 1,
+  approval_revision INT UNSIGNED NOT NULL DEFAULT 1,
+  row_version INT UNSIGNED NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_by BIGINT UNSIGNED NULL,
+  updated_at DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  updated_by BIGINT UNSIGNED NULL,
+  PRIMARY KEY (visit_instance_id),
+  KEY idx_vifd_visit_type (visit_type),
+  KEY idx_vifd_language (working_language),
+  KEY idx_vifd_media_consent (media_consent_status),
+  KEY idx_vifd_op_contact_email (operational_contact_email),
+  FULLTEXT KEY ft_vifd_search (delegation_name, purpose, working_content,
+    operational_contact_full_name, operational_contact_organization, operational_contact_email),
+  CONSTRAINT ck_vifd_visit_type_other CHECK (visit_type <> 'OTHER'
+    OR (visit_type_other IS NOT NULL AND TRIM(visit_type_other) <> '')),
+  CONSTRAINT ck_vifd_delegation_name CHECK (TRIM(delegation_name) <> ''),
+  CONSTRAINT ck_vifd_purpose CHECK (TRIM(purpose) <> ''),
+  CONSTRAINT ck_vifd_op_contact_name CHECK (TRIM(operational_contact_full_name) <> ''),
+  CONSTRAINT ck_vifd_op_contact_org CHECK (TRIM(operational_contact_organization) <> ''),
+  CONSTRAINT ck_vifd_op_contact_phone CHECK (TRIM(operational_contact_phone) <> ''),
+  CONSTRAINT ck_vifd_op_contact_email CHECK (TRIM(operational_contact_email) <> ''),
+  CONSTRAINT fk_vifd_instance
+    FOREIGN KEY (visit_instance_id) REFERENCES visit_request_campuses (visit_instance_id)
+    ON UPDATE CASCADE ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Snapshot form đầy đủ, độc lập cho từng campus instance (v2). Mỗi row là bản hoàn chỉnh; không có cờ same_as_other_campus.';
+
+-- Per-campus guest/support links; composite FKs bind member+instance to the same request.
+CREATE TABLE visit_instance_guest_members (
+  visit_request_id BIGINT UNSIGNED NOT NULL,
+  visit_instance_id BIGINT UNSIGNED NOT NULL,
+  guest_member_id BIGINT UNSIGNED NOT NULL,
+  display_order INT UNSIGNED NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_by BIGINT UNSIGNED NULL,
+  PRIMARY KEY (visit_instance_id, guest_member_id),
+  KEY idx_vigm_request (visit_request_id),
+  KEY idx_vigm_member (guest_member_id),
+  KEY idx_vigm_instance_order (visit_instance_id, display_order),
+  CONSTRAINT fk_vigm_instance
+    FOREIGN KEY (visit_request_id, visit_instance_id)
+    REFERENCES visit_request_campuses (visit_request_id, visit_instance_id)
+    ON UPDATE CASCADE ON DELETE CASCADE,
+  CONSTRAINT fk_vigm_member
+    FOREIGN KEY (visit_request_id, guest_member_id)
+    REFERENCES visit_guest_members (visit_request_id, guest_member_id)
+    ON UPDATE CASCADE ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Bảng nối khách/đội hỗ trợ theo campus instance. Composite FK chống cross-request link; copy-on-write khi campus dùng chung member cũ được sửa.';
+
+-- Primary-contact INITIAL_CLAIM / TRANSFER state machine (NOT a token store).
+CREATE TABLE visit_request_identity_changes (
+  identity_change_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  visit_request_id BIGINT UNSIGNED NOT NULL,
+  change_kind ENUM('INITIAL_CLAIM','TRANSFER') NOT NULL,
+  target_relation ENUM('PRIMARY_CONTACT') NOT NULL DEFAULT 'PRIMARY_CONTACT',
+  confirmation_method ENUM('GOOGLE_SSO','OTP_FALLBACK') NOT NULL DEFAULT 'GOOGLE_SSO',
+  old_user_id BIGINT UNSIGNED NULL,
+  new_user_id BIGINT UNSIGNED NULL,
+  old_email_normalized VARCHAR(150) NULL,
+  new_email_normalized VARCHAR(150) NULL COMMENT 'Required while PENDING; NULL after 90-day retention redaction',
+  new_email_masked VARCHAR(150) NOT NULL,
+  pending_snapshot_json JSON NULL,
+  status ENUM('PENDING','APPLIED','DECLINED','EXPIRED','CANCELLED','SUPERSEDED') NOT NULL DEFAULT 'PENDING',
+  expected_request_row_version INT UNSIGNED NOT NULL,
+  requested_by BIGINT UNSIGNED NOT NULL,
+  requested_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  expires_at DATETIME NOT NULL,
+  applied_at DATETIME NULL,
+  declined_at DATETIME NULL,
+  cancelled_at DATETIME NULL,
+  superseded_at DATETIME NULL,
+  retention_until DATETIME NULL,
+  redacted_at DATETIME NULL,
+  reason VARCHAR(500) NULL,
+  resend_count INT UNSIGNED NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  pending_guard VARCHAR(80) GENERATED ALWAYS AS (
+    CASE WHEN status = 'PENDING' THEN CONCAT(visit_request_id, ':', target_relation) ELSE NULL END
+  ) VIRTUAL,
+  PRIMARY KEY (identity_change_id),
+  UNIQUE KEY uq_identity_change_pending (pending_guard),
+  KEY idx_identity_change_request_relation_status (visit_request_id, target_relation, status),
+  KEY idx_identity_change_status_expires (status, expires_at),
+  KEY idx_identity_change_retention (status, retention_until),
+  KEY idx_identity_change_new_email (new_email_normalized),
+  -- "TRANSFER requires old_user_id" enforced by trg_identity_changes_transfer_bi/bu
+  -- (a CHECK on old_user_id is rejected by MySQL 8.0 error 3823 — FK action column).
+  CONSTRAINT fk_identity_change_request
+    FOREIGN KEY (visit_request_id) REFERENCES visit_requests (visit_request_id)
+    ON UPDATE CASCADE ON DELETE CASCADE,
+  CONSTRAINT fk_identity_change_old_user
+    FOREIGN KEY (old_user_id) REFERENCES users (user_id) ON UPDATE CASCADE ON DELETE SET NULL,
+  CONSTRAINT fk_identity_change_new_user
+    FOREIGN KEY (new_user_id) REFERENCES users (user_id) ON UPDATE CASCADE ON DELETE SET NULL,
+  CONSTRAINT fk_identity_change_requested_by
+    FOREIGN KEY (requested_by) REFERENCES users (user_id) ON UPDATE CASCADE ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Trạng thái hiện tại của claim/transfer đầu mối chính. visitor_user_id chỉ được swap trong transaction chuyển sang APPLIED.';
+
+-- Append-only identity-change transition log.
+CREATE TABLE visit_request_identity_change_events (
+  identity_change_event_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  identity_change_id BIGINT UNSIGNED NOT NULL,
+  visit_request_id BIGINT UNSIGNED NOT NULL,
+  event_type VARCHAR(80) NOT NULL,
+  from_status VARCHAR(30) NULL,
+  to_status VARCHAR(30) NULL,
+  actor_user_id BIGINT UNSIGNED NULL,
+  email_masked VARCHAR(150) NULL,
+  reason VARCHAR(500) NULL,
+  correlation_id VARCHAR(100) NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (identity_change_event_id),
+  KEY idx_ice_change (identity_change_id, created_at),
+  KEY idx_ice_request (visit_request_id, created_at),
+  KEY idx_ice_correlation (correlation_id),
+  CONSTRAINT fk_ice_change
+    FOREIGN KEY (identity_change_id) REFERENCES visit_request_identity_changes (identity_change_id)
+    ON UPDATE CASCADE ON DELETE CASCADE,
+  CONSTRAINT fk_ice_actor
+    FOREIGN KEY (actor_user_id) REFERENCES users (user_id) ON UPDATE CASCADE ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Append-only: mọi transition identity-change. Không update/delete ngoài retention job.';
+
+-- Post-approval amendment (approval-sensitive change proposal) per campus instance.
+CREATE TABLE visit_instance_amendments (
+  amendment_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  visit_request_id BIGINT UNSIGNED NOT NULL,
+  visit_instance_id BIGINT UNSIGNED NOT NULL,
+  amendment_no INT UNSIGNED NOT NULL,
+  status ENUM('DRAFT','PENDING_APPROVAL','APPROVED','REJECTED','WITHDRAWN','EXPIRED','CANCELLED') NOT NULL DEFAULT 'DRAFT',
+  base_form_revision INT UNSIGNED NOT NULL,
+  base_approval_revision INT UNSIGNED NOT NULL,
+  requested_by BIGINT UNSIGNED NOT NULL,
+  requested_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  reason VARCHAR(500) NULL,
+  decided_by BIGINT UNSIGNED NULL,
+  decided_at DATETIME NULL,
+  decision_note VARCHAR(500) NULL,
+  expires_at DATETIME NULL,
+  withdrawn_at DATETIME NULL,
+  expected_instance_row_version INT UNSIGNED NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  amendment_pending_guard BIGINT UNSIGNED GENERATED ALWAYS AS (
+    CASE WHEN status = 'PENDING_APPROVAL' THEN visit_instance_id ELSE NULL END
+  ) VIRTUAL,
+  PRIMARY KEY (amendment_id),
+  UNIQUE KEY uq_amendment_pending (amendment_pending_guard),
+  UNIQUE KEY uq_amendment_instance_no (visit_instance_id, amendment_no),
+  KEY idx_amendment_instance_status_time (visit_instance_id, status, requested_at),
+  KEY idx_amendment_request (visit_request_id, status),
+  CONSTRAINT fk_amendment_instance
+    FOREIGN KEY (visit_request_id, visit_instance_id)
+    REFERENCES visit_request_campuses (visit_request_id, visit_instance_id)
+    ON UPDATE CASCADE ON DELETE CASCADE,
+  CONSTRAINT fk_amendment_requested_by
+    FOREIGN KEY (requested_by) REFERENCES users (user_id) ON UPDATE CASCADE ON DELETE RESTRICT,
+  CONSTRAINT fk_amendment_decided_by
+    FOREIGN KEY (decided_by) REFERENCES users (user_id) ON UPDATE CASCADE ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Đề xuất thay đổi approval-sensitive cho campus instance đã duyệt. Chỉ một PENDING_APPROVAL/instance.';
+
+CREATE TABLE visit_instance_amendment_changes (
+  amendment_change_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  amendment_id BIGINT UNSIGNED NOT NULL,
+  field_path VARCHAR(150) NOT NULL,
+  change_class VARCHAR(40) NOT NULL COMMENT 'SAFE | APPROVAL_SENSITIVE | STRUCTURAL | PRIVACY_URGENT',
+  old_value_json JSON NULL,
+  new_value_json JSON NULL,
+  is_sensitive TINYINT(1) NOT NULL DEFAULT 0,
+  display_order INT UNSIGNED NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (amendment_change_id),
+  KEY idx_amendment_change_amendment (amendment_id, display_order),
+  CONSTRAINT fk_amendment_change_amendment
+    FOREIGN KEY (amendment_id) REFERENCES visit_instance_amendments (amendment_id)
+    ON UPDATE CASCADE ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Field-level proposal của một amendment (immutable sau PENDING_APPROVAL).';
+
+CREATE TABLE visit_instance_form_revision_history (
+  revision_history_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  visit_request_id BIGINT UNSIGNED NOT NULL,
+  visit_instance_id BIGINT UNSIGNED NOT NULL,
+  form_revision INT UNSIGNED NOT NULL,
+  approval_revision INT UNSIGNED NOT NULL,
+  source_type ENUM('CREATE','SAFE_EDIT','AMENDMENT_APPLIED','MIGRATION','RESUBMIT') NOT NULL,
+  source_id BIGINT UNSIGNED NULL,
+  snapshot_json JSON NOT NULL,
+  applied_by BIGINT UNSIGNED NULL,
+  applied_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  reason VARCHAR(500) NULL,
+  PRIMARY KEY (revision_history_id),
+  UNIQUE KEY uq_vifrh_instance_form_revision (visit_instance_id, form_revision),
+  KEY idx_vifrh_request_time (visit_request_id, applied_at),
+  KEY idx_vifrh_source (source_type, source_id),
+  CONSTRAINT fk_vifrh_instance
+    FOREIGN KEY (visit_request_id, visit_instance_id)
+    REFERENCES visit_request_campuses (visit_request_id, visit_instance_id)
+    ON UPDATE CASCADE ON DELETE CASCADE,
+  CONSTRAINT fk_vifrh_applied_by
+    FOREIGN KEY (applied_by) REFERENCES users (user_id) ON UPDATE CASCADE ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Lịch sử revision per-instance; mỗi form_revision là snapshot immutable.';
+
+CREATE TABLE visit_request_revision_history (
+  request_revision_history_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  visit_request_id BIGINT UNSIGNED NOT NULL,
+  request_revision INT UNSIGNED NOT NULL,
+  source_type ENUM('CREATE','SAFE_EDIT','MIGRATION','RESUBMIT') NOT NULL,
+  source_id BIGINT UNSIGNED NULL,
+  snapshot_json JSON NOT NULL,
+  applied_by BIGINT UNSIGNED NULL,
+  applied_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  reason VARCHAR(500) NULL,
+  PRIMARY KEY (request_revision_history_id),
+  UNIQUE KEY uq_vrrh_request_revision (visit_request_id, request_revision),
+  KEY idx_vrrh_request_time (visit_request_id, applied_at),
+  CONSTRAINT fk_vrrh_request
+    FOREIGN KEY (visit_request_id) REFERENCES visit_requests (visit_request_id)
+    ON UPDATE CASCADE ON DELETE CASCADE,
+  CONSTRAINT fk_vrrh_applied_by
+    FOREIGN KEY (applied_by) REFERENCES users (user_id) ON UPDATE CASCADE ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Lịch sử snapshot cấp request (display fields). Quan hệ email/account lấy identity-change events làm lịch sử chính.';
 
 -- =====================================================================
 -- AGENDA TEMPLATE MODULE (4 tables: agenda_templates, agenda_template_items,
@@ -3053,6 +3349,14 @@ CREATE TABLE audit_logs (
   ip_address VARCHAR(45) NULL,
   user_agent VARCHAR(500) NULL,
   request_id VARCHAR(100) NULL,
+  -- Per-campus form v2 audit context (§4.7). visit_request_id / visit_instance_id
+  -- carry NO FK: audit must survive business-row deletion (never cascade-deleted).
+  correlation_id VARCHAR(100) NULL,
+  visit_request_id BIGINT UNSIGNED NULL,
+  visit_instance_id BIGINT UNSIGNED NULL,
+  source_type VARCHAR(80) NULL,
+  source_id BIGINT UNSIGNED NULL,
+  reason VARCHAR(500) NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (audit_log_id),
   KEY idx_audit_actor_time (actor_user_id, created_at),
@@ -3060,6 +3364,10 @@ CREATE TABLE audit_logs (
   KEY idx_audit_action_time (action, created_at),
   KEY idx_audit_campus_time (campus_id, created_at),
   KEY idx_audit_request (request_id),
+  KEY idx_audit_visit_request_time (visit_request_id, created_at),
+  KEY idx_audit_visit_instance_time (visit_instance_id, created_at),
+  KEY idx_audit_correlation (correlation_id),
+  KEY idx_audit_source (source_type, source_id),
   CONSTRAINT fk_audit_actor
     FOREIGN KEY (actor_user_id) REFERENCES users(user_id)
     ON UPDATE CASCADE ON DELETE SET NULL,
@@ -3072,6 +3380,11 @@ CREATE TABLE audit_log_changes (
   audit_log_change_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   audit_log_id BIGINT UNSIGNED NOT NULL,
   field_name VARCHAR(150) NOT NULL,
+  -- Per-campus form v2 audit metadata (§4.7).
+  change_category VARCHAR(40) NULL,
+  value_format VARCHAR(20) NOT NULL DEFAULT 'TEXT',
+  is_sensitive TINYINT(1) NOT NULL DEFAULT 0,
+  display_order INT UNSIGNED NOT NULL DEFAULT 0,
   old_value_text LONGTEXT NULL,
   new_value_text LONGTEXT NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -3359,17 +3672,31 @@ BEGIN
     JOIN roles r ON r.role_id = u.role_id
     WHERE u.user_id = NEW.cancelled_by;
 
-    IF v_cancel_role_code <> 'VISITOR' THEN
-      SIGNAL SQLSTATE '45000'
-        SET MESSAGE_TEXT = 'Only VISITOR can cancel the main visit request';
-    END IF;
-
-    -- Actor relation hardening: the canceller must be THE contact owner of this
-    -- request, not merely any account with role VISITOR (legacy rows with a NULL
-    -- owner keep the old role-only check).
-    IF NEW.visitor_user_id IS NOT NULL AND NEW.cancelled_by <> NEW.visitor_user_id THEN
-      SIGNAL SQLSTATE '45000'
-        SET MESSAGE_TEXT = 'Only the contact owner (visitor_user_id) can cancel the main visit request';
+    -- Actor relation (cancel exception 3A, per-campus form v2 §16.7/§19.6). Discriminate
+    -- on the contact access state, with NULL-safe comparisons throughout:
+    --   ACTIVE               -> only the exact contact owner (visitor_user_id), VISITOR.
+    --   PENDING_CONFIRMATION -> the registrant (exception 3A) or, if already set, the
+    --                           contact owner; role must be in the VISITOR/STAFF create
+    --                           group. HO/ADMIN/DEPARTMENT/STUDENT never gain cancel via role.
+    IF NEW.primary_contact_access_status = 'ACTIVE' THEN
+      IF NEW.visitor_user_id IS NULL OR NEW.cancelled_by <> NEW.visitor_user_id THEN
+        SIGNAL SQLSTATE '45000'
+          SET MESSAGE_TEXT = 'Only the contact owner (visitor_user_id) can cancel this request';
+      END IF;
+      IF v_cancel_role_code <> 'VISITOR' THEN
+        SIGNAL SQLSTATE '45000'
+          SET MESSAGE_TEXT = 'Contact owner cancelling the request must be a VISITOR';
+      END IF;
+    ELSE
+      IF (NEW.registrant_user_id IS NULL OR NEW.cancelled_by <> NEW.registrant_user_id)
+         AND (NEW.visitor_user_id IS NULL OR NEW.cancelled_by <> NEW.visitor_user_id) THEN
+        SIGNAL SQLSTATE '45000'
+          SET MESSAGE_TEXT = 'Only the registrant (while initial contact is pending) or the contact owner can cancel this request';
+      END IF;
+      IF v_cancel_role_code NOT IN ('VISITOR','STAFF') THEN
+        SIGNAL SQLSTATE '45000'
+          SET MESSAGE_TEXT = 'Registrant-exception cancel is limited to VISITOR/STAFF create-group accounts';
+      END IF;
     END IF;
 
     -- Visitor self-service cancellation must be at least 24 hours before every active campus schedule.
@@ -3398,6 +3725,28 @@ BEGIN
           SET MESSAGE_TEXT = 'Request has campus visit(s) already started; cancel each not-yet-started campus instead of cancelling the whole request';
       END IF;
     END IF;
+  END IF;
+END$$
+
+-- Per-campus form v2: a TRANSFER identity change must capture the old owner.
+-- Enforced by trigger (a CHECK on old_user_id is rejected by MySQL error 3823).
+CREATE TRIGGER trg_identity_changes_transfer_bi
+BEFORE INSERT ON visit_request_identity_changes
+FOR EACH ROW
+BEGIN
+  IF NEW.change_kind = 'TRANSFER' AND NEW.old_user_id IS NULL THEN
+    SIGNAL SQLSTATE '45000'
+      SET MESSAGE_TEXT = 'TRANSFER identity change requires old_user_id (the current owner)';
+  END IF;
+END$$
+
+CREATE TRIGGER trg_identity_changes_transfer_bu
+BEFORE UPDATE ON visit_request_identity_changes
+FOR EACH ROW
+BEGIN
+  IF NEW.change_kind = 'TRANSFER' AND NEW.old_user_id IS NULL THEN
+    SIGNAL SQLSTATE '45000'
+      SET MESSAGE_TEXT = 'TRANSFER identity change requires old_user_id (the current owner)';
   END IF;
 END$$
 
@@ -6852,6 +7201,10 @@ INSERT INTO visit_requests (visit_request_id, request_code, visitor_user_id, par
   (9007, 'VR7-MC-CT-QN-PARTIAL-VISITOR-CANCEL-07', 212, 4, 'VISITOR_SUBMITTED', 'Fatima Zahra', 'Casablanca Tech Bridge', 'Program Director', '+21260000212', 'fatima.zahra@casablanca-tech.example', 'Morocco', 'Casablanca coastal program partial cancellation', 'MULTI_CAMPUS', 'OTHER', 'Coastal pathway audit', 'Kiểm thử lịch trình liên cơ sở CT-QN cho hospitality và student experience.', 'Visitor chỉ hủy chặng QN vì lịch bay nội địa thay đổi, chặng CT vẫn chờ Staff Leader approve và gán host.', 'Fatima Zahra', 'Casablanca Tech Bridge', '+21260000212', 'fatima.zahra@casablanca-tech.example', 'EN', 'Khách tự túc phương tiện. Đoàn tự sắp xếp vé bay và xe shuttle giữa hai thành phố.', 'DECLINED', NULL, 'Case v7: partial visitor cancel với một campus còn WAITING_REQUEST_APPROVAL.', 'PENDING_APPROVAL', CURRENT_TIMESTAMP - INTERVAL 6 DAY, CURRENT_TIMESTAMP - INTERVAL 5 DAY - INTERVAL 23 HOUR - INTERVAL 57 MINUTE, NULL, NULL, NULL, 2, CURRENT_TIMESTAMP - INTERVAL 6 DAY, 212, CURRENT_TIMESTAMP - INTERVAL 1 DAY - INTERVAL 4 HOUR, 2),
   (9008, 'VR7-MC-HN-DN-VISITOR-CANCEL-08', 8, 1, 'VISITOR_SUBMITTED', 'External Visitor Main', 'SeoulTech Global Engagement Center', 'Director of Global Programs', '+821012340001', 'visitor@example.com', 'Hàn Quốc', 'SeoulTech two-campus AI lab cancellation by visitor', 'MULTI_CAMPUS', 'WORKSHOP', NULL, 'Chuỗi workshop AI lab tại HN và DN, có host và student support ở cả hai campus.', 'Sau khi Staff Leader xử lý và Staff Leader gán host, visitor tự hủy toàn bộ do đoàn đổi sang kỳ sau.', 'External Visitor Main', 'SeoulTech Global Engagement Center', '+821012340001', 'visitor@example.com', 'EN', 'Khách đề nghị FPTU hỗ trợ phương tiện. Cần FPTU hỗ trợ bảng welcome và xe nội khu tại từng campus.', 'AGREED', 'Cho phép ảnh workshop nếu sự kiện diễn ra.', 'Case v7: visitor@example.com tự hủy toàn bộ multi-campus sau khi các campus đã có host.', 'CANCELLED', CURRENT_TIMESTAMP - INTERVAL 14 DAY, CURRENT_TIMESTAMP - INTERVAL 13 DAY - INTERVAL 23 HOUR - INTERVAL 57 MINUTE, 8, CURRENT_TIMESTAMP - INTERVAL 2 DAY - INTERVAL 8 HOUR, 'Visitor tự hủy toàn bộ request vì đối tác đổi đoàn sang lịch tháng sau.', 8, CURRENT_TIMESTAMP - INTERVAL 14 DAY, 8, CURRENT_TIMESTAMP - INTERVAL 2 DAY - INTERVAL 8 HOUR, 8);
 
+-- NOTE: per-campus form v2 seed backfill (detail/link/revision + access status) runs
+-- at the END of the seed section, AFTER all visit_requests enrichment UPDATEs, so the
+-- per-campus snapshot matches the final global values. See "SEED-TIME BACKFILL" below.
+
 INSERT INTO visit_request_campuses (visit_instance_id, visit_request_id, campus_id, planned_start_at, planned_end_at, status, coordinator_user_id, coordinator_assigned_by, coordinator_assigned_at, current_host_user_id, host_assigned_by, host_assigned_at, decided_by, decided_at, decision_actor_role, decision_note, closed_by, closed_at, close_note, cancelled_by, cancelled_at, cancellation_actor_type, cancellation_source, cancellation_reason, row_version, created_at, created_by, updated_at, updated_by) VALUES
   (9901, 9001, 2, CURRENT_DATE + INTERVAL 7 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 7 DAY + INTERVAL 9 HOUR + INTERVAL 150 MINUTE), 'CANCELLED', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 202, CURRENT_TIMESTAMP - INTERVAL 2 DAY - INTERVAL 4 HOUR, 'VISITOR', 'SELF_SERVICE', 'Visitor tự thao tác hủy chặng HCM trên portal trước ngày planned_start_at; chưa phát sinh host chính thức.', 2, CURRENT_TIMESTAMP - INTERVAL 12 DAY, 202, CURRENT_TIMESTAMP - INTERVAL 1 DAY, 202),
   (9902, 9002, 3, CURRENT_DATE + INTERVAL 12 DAY + INTERVAL 13 HOUR + INTERVAL 30 MINUTE, (CURRENT_DATE + INTERVAL 12 DAY + INTERVAL 13 HOUR + INTERVAL 30 MINUTE + INTERVAL 180 MINUTE), 'CANCELLED', 11, NULL, NULL, 12, 11, CURRENT_TIMESTAMP - INTERVAL 8 DAY - INTERVAL 20 HOUR, 11, CURRENT_TIMESTAMP - INTERVAL 8 DAY - INTERVAL 20 HOUR, 'STAFF_LEADER', 'Seed migration: campus had been approved and assigned before cancellation.', NULL, NULL, NULL, 203, CURRENT_TIMESTAMP - INTERVAL 3 DAY - INTERVAL 2 HOUR, 'VISITOR', 'SELF_SERVICE', 'Visitor tự hủy sau khi host DN và team hỗ trợ đã được phân công; logistics liên quan chuyển CANCELLED.', 3, CURRENT_TIMESTAMP - INTERVAL 12 DAY, 203, CURRENT_TIMESTAMP - INTERVAL 1 DAY, 203),
@@ -9062,6 +9415,67 @@ SET vr.status = CASE
   ELSE vr.status
 END
 WHERE vr.status <> 'CANCELLED';
+
+-- =====================================================================
+-- PER-CAMPUS FORM v2 SEED-TIME BACKFILL — runs at the END of the seed section,
+-- AFTER every visit_requests enrichment UPDATE, so each per-campus detail snapshot
+-- matches the FINAL global values (fresh-create equivalent of 03_backfill.sql).
+-- All statements are guarded (idempotent). Steps:
+--   1. one detail row per campus instance, cloned from the global request form;
+--   2. link every member to every instance of its request (v1 shared-list semantics);
+--   3. primary_contact_access_status = ACTIVE where a contact owner exists;
+--   4. one immutable baseline (form_revision=1) revision-history row per instance.
+-- =====================================================================
+INSERT INTO visit_instance_form_details (
+  visit_instance_id, delegation_name, visit_type, visit_type_other, purpose, working_content,
+  operational_contact_full_name, operational_contact_organization,
+  operational_contact_phone, operational_contact_email,
+  working_language, transportation_note, media_consent_status, media_consent_note, note_to_fptu,
+  form_revision, approval_revision, row_version, created_at, created_by)
+SELECT
+  vrc.visit_instance_id, vr.delegation_name, vr.visit_type, vr.visit_type_other, vr.purpose, vr.working_content,
+  vr.contact_person_full_name, vr.contact_person_organization, vr.contact_person_phone, vr.contact_person_email,
+  vr.working_language, vr.transportation_note, vr.media_consent_status, vr.media_consent_note, vr.note_to_fptu,
+  1, 1, 0, vrc.created_at, vr.created_by
+FROM visit_request_campuses vrc
+JOIN visit_requests vr ON vr.visit_request_id = vrc.visit_request_id
+WHERE NOT EXISTS (SELECT 1 FROM visit_instance_form_details d WHERE d.visit_instance_id = vrc.visit_instance_id);
+
+INSERT INTO visit_instance_guest_members (
+  visit_request_id, visit_instance_id, guest_member_id, display_order, created_at, created_by)
+SELECT
+  m.visit_request_id, vrc.visit_instance_id, m.guest_member_id, m.display_order, vrc.created_at, m.created_by
+FROM visit_guest_members m
+JOIN visit_request_campuses vrc ON vrc.visit_request_id = m.visit_request_id
+WHERE NOT EXISTS (
+  SELECT 1 FROM visit_instance_guest_members l
+  WHERE l.visit_instance_id = vrc.visit_instance_id AND l.guest_member_id = m.guest_member_id);
+
+UPDATE visit_requests
+SET primary_contact_access_status = 'ACTIVE',
+    primary_contact_verified_at = COALESCE(primary_contact_verified_at, email_verified_at, submitted_at)
+WHERE visitor_user_id IS NOT NULL;
+
+INSERT INTO visit_instance_form_revision_history (
+  visit_request_id, visit_instance_id, form_revision, approval_revision,
+  source_type, source_id, snapshot_json, applied_by, applied_at, reason)
+SELECT
+  vrc.visit_request_id, d.visit_instance_id, 1, 1, 'CREATE', NULL,
+  JSON_OBJECT(
+    'delegationName', d.delegation_name, 'visitType', d.visit_type, 'visitTypeOther', d.visit_type_other,
+    'purpose', d.purpose, 'workingContent', d.working_content,
+    'operationalContact', JSON_OBJECT('fullName', d.operational_contact_full_name,
+      'organization', d.operational_contact_organization, 'phone', d.operational_contact_phone,
+      'email', d.operational_contact_email),
+    'workingLanguage', d.working_language, 'transportationNote', d.transportation_note,
+    'mediaConsentStatus', d.media_consent_status, 'mediaConsentNote', d.media_consent_note,
+    'noteToFptu', d.note_to_fptu),
+  d.created_by, d.created_at, 'Fresh-create baseline'
+FROM visit_instance_form_details d
+JOIN visit_request_campuses vrc ON vrc.visit_instance_id = d.visit_instance_id
+WHERE NOT EXISTS (
+  SELECT 1 FROM visit_instance_form_revision_history h
+  WHERE h.visit_instance_id = d.visit_instance_id AND h.form_revision = 1);
 
 -- =====================================================================
 -- Create campus instance validation/aggregate triggers AFTER all seed and
