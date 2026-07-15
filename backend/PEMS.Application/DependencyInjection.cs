@@ -43,6 +43,9 @@ public static class DependencyInjection
         // visit_requests.status aggregate (campus-independent approval) — mirrors the DB triggers.
         services.AddScoped<PEMS.Application.Delegations.Services.IVisitRequestAggregateStatusService, PEMS.Application.Delegations.Services.VisitRequestAggregateStatusService>();
 
+        // Per-campus form v2 central dual-read resolver (PR-3).
+        services.AddScoped<PEMS.Application.Delegations.Services.VisitFormRead.IVisitFormReadService, PEMS.Application.Delegations.Services.VisitFormRead.VisitFormReadService>();
+
         return services;
     }
 }

@@ -45,6 +45,16 @@ public interface IApplicationDbContext
     DbSet<VisitLogisticsItemHandover> VisitLogisticsItemHandovers { get; }
     DbSet<VisitLogisticsAssignmentAttempt> VisitLogisticsAssignmentAttempts { get; }
     DbSet<VisitInstanceReminderSetting> VisitInstanceReminderSettings { get; }
+
+    // ── Per-campus form v2 (percampus_v2_migration) ──────────────────────────
+    DbSet<VisitInstanceFormDetail> VisitInstanceFormDetails { get; }
+    DbSet<VisitInstanceGuestMember> VisitInstanceGuestMembers { get; }
+    DbSet<VisitRequestIdentityChange> VisitRequestIdentityChanges { get; }
+    DbSet<VisitRequestIdentityChangeEvent> VisitRequestIdentityChangeEvents { get; }
+    DbSet<VisitInstanceAmendment> VisitInstanceAmendments { get; }
+    DbSet<VisitInstanceAmendmentChange> VisitInstanceAmendmentChanges { get; }
+    DbSet<VisitInstanceFormRevisionHistory> VisitInstanceFormRevisionHistories { get; }
+    DbSet<VisitRequestRevisionHistory> VisitRequestRevisionHistories { get; }
     DbSet<Minute> Minutes { get; }
     DbSet<MinuteActionItem> MinuteActionItems { get; }
     DbSet<MinuteParticipant> MinuteParticipants { get; }

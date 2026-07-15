@@ -45,6 +45,16 @@ public sealed class PartnersTestDbContext : DbContext, IApplicationDbContext
         modelBuilder.Ignore<PartnerContact>();
         modelBuilder.Ignore<PartnerAlias>();
         modelBuilder.Ignore<VisitGuestPartnerLink>();
+        // Per-campus form v2 entities (composite keys configured only in the real context) — keep
+        // them out of this InMemory slice; the partner handlers never touch them.
+        modelBuilder.Ignore<VisitInstanceFormDetail>();
+        modelBuilder.Ignore<VisitInstanceGuestMember>();
+        modelBuilder.Ignore<VisitRequestIdentityChange>();
+        modelBuilder.Ignore<VisitRequestIdentityChangeEvent>();
+        modelBuilder.Ignore<VisitInstanceAmendment>();
+        modelBuilder.Ignore<VisitInstanceAmendmentChange>();
+        modelBuilder.Ignore<VisitInstanceFormRevisionHistory>();
+        modelBuilder.Ignore<VisitRequestRevisionHistory>();
 
         // Campus navigates to User (IcHeadUser, Users) and Department, and User in turn pulls in
         // the entire domain graph (e.g. MinuteParticipant has two ambiguous FKs to User, which EF
@@ -78,6 +88,14 @@ public sealed class PartnersTestDbContext : DbContext, IApplicationDbContext
     DbSet<VisitRequest> IApplicationDbContext.VisitRequests => Set<VisitRequest>();
     DbSet<VisitRequestCampus> IApplicationDbContext.VisitRequestCampuses => Set<VisitRequestCampus>();
     DbSet<VisitGuestMember> IApplicationDbContext.VisitGuestMembers => Set<VisitGuestMember>();
+    DbSet<VisitInstanceFormDetail> IApplicationDbContext.VisitInstanceFormDetails => Set<VisitInstanceFormDetail>();
+    DbSet<VisitInstanceGuestMember> IApplicationDbContext.VisitInstanceGuestMembers => Set<VisitInstanceGuestMember>();
+    DbSet<VisitRequestIdentityChange> IApplicationDbContext.VisitRequestIdentityChanges => Set<VisitRequestIdentityChange>();
+    DbSet<VisitRequestIdentityChangeEvent> IApplicationDbContext.VisitRequestIdentityChangeEvents => Set<VisitRequestIdentityChangeEvent>();
+    DbSet<VisitInstanceAmendment> IApplicationDbContext.VisitInstanceAmendments => Set<VisitInstanceAmendment>();
+    DbSet<VisitInstanceAmendmentChange> IApplicationDbContext.VisitInstanceAmendmentChanges => Set<VisitInstanceAmendmentChange>();
+    DbSet<VisitInstanceFormRevisionHistory> IApplicationDbContext.VisitInstanceFormRevisionHistories => Set<VisitInstanceFormRevisionHistory>();
+    DbSet<VisitRequestRevisionHistory> IApplicationDbContext.VisitRequestRevisionHistories => Set<VisitRequestRevisionHistory>();
     DbSet<VisitParticipant> IApplicationDbContext.VisitParticipants => Set<VisitParticipant>();
     DbSet<VisitAgenda> IApplicationDbContext.VisitAgendas => Set<VisitAgenda>();
     DbSet<VisitLogisticsItem> IApplicationDbContext.VisitLogisticsItems => Set<VisitLogisticsItem>();

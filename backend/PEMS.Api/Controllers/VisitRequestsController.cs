@@ -10,6 +10,7 @@ using PEMS.Application.Delegations.Commands.UpdatePendingVisitRequest;
 using PEMS.Application.Delegations.Commands.VerifyAndCreateVisitRequest;
 using PEMS.Application.Delegations.Queries.GetCreateHostCandidates;
 using PEMS.Application.Delegations.Queries.GetEditableVisitRequestDetail;
+using PEMS.Application.Delegations.Queries.GetVisitRequestFormV2;
 
 namespace PEMS.Api.Controllers;
 
@@ -152,6 +153,19 @@ public sealed class VisitRequestsController : ControllerBase
     public async Task<IActionResult> GetEditableDetail(ulong visitRequestId, CancellationToken cancellationToken)
     {
         var result = await _mediator.Send(new GetEditableVisitRequestDetailQuery(visitRequestId), cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// PR-3 reference read path — returns the fully per-campus resolved form via the central
+    /// dual-read <c>IVisitFormReadService</c> (v1 or v2, correctly scoped to the caller). Gated by
+    /// the <c>PerCampusFormV2</c> feature flag: 404 when the flag is OFF. v1 endpoints are unchanged.
+    /// </summary>
+    [HttpGet("/api/v2/visit-requests/{visitRequestId}")]
+    [Authorize]
+    public async Task<IActionResult> GetFormV2(ulong visitRequestId, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new GetVisitRequestFormV2Query(visitRequestId), cancellationToken);
         return Ok(result);
     }
 
