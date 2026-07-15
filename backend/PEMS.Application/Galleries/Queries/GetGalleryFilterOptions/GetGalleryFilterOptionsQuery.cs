@@ -24,6 +24,8 @@ public sealed class GalleryAreaOptionDto
     public string Status { get; init; } = string.Empty;
     public ulong? CoverFileId { get; init; }
     public string? CoverUrl { get; init; }
+    /// <summary>IMAGE (legacy areas) or VIDEO (MP4 cover) — lets the edit modal preview the right element.</summary>
+    public string CoverMediaType { get; init; } = "IMAGE";
     public IReadOnlyList<GalleryLocationOptionDto> Locations { get; init; } = new List<GalleryLocationOptionDto>();
 }
 

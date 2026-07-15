@@ -13,6 +13,12 @@ public enum FilePurpose
     GalleryImage,
     GalleryVideo,
     GalleryAreaCover,
+    /// <summary>
+    /// MP4 video used as a gallery area's cover (the Area Showcase fullscreen background). Stored on
+    /// Google Drive like the image cover — the loved <c>gallery_areas.cover_file_id</c> can point at
+    /// either; the media kind is inferred from the <c>files</c> row (purpose / mime).
+    /// </summary>
+    GalleryAreaCoverVideo,
     GalleryLocationCover,
     GalleryItemImage,
     GalleryItemVideo,
@@ -46,6 +52,7 @@ public static class FilePurposeDbValues
     public const string GalleryImage = "GALLERY_IMAGE";
     public const string GalleryVideo = "GALLERY_VIDEO";
     public const string GalleryAreaCover = "GALLERY_AREA_COVER";
+    public const string GalleryAreaCoverVideo = "GALLERY_AREA_COVER_VIDEO";
     public const string GalleryLocationCover = "GALLERY_LOCATION_COVER";
     public const string GalleryItemImage = "GALLERY_ITEM_IMAGE";
     public const string GalleryItemVideo = "GALLERY_ITEM_VIDEO";
@@ -73,6 +80,7 @@ public static class FilePurposeExtensions
         FilePurpose.GalleryImage => FilePurposeDbValues.GalleryImage,
         FilePurpose.GalleryVideo => FilePurposeDbValues.GalleryVideo,
         FilePurpose.GalleryAreaCover => FilePurposeDbValues.GalleryAreaCover,
+        FilePurpose.GalleryAreaCoverVideo => FilePurposeDbValues.GalleryAreaCoverVideo,
         FilePurpose.GalleryLocationCover => FilePurposeDbValues.GalleryLocationCover,
         FilePurpose.GalleryItemImage => FilePurposeDbValues.GalleryItemImage,
         FilePurpose.GalleryItemVideo => FilePurposeDbValues.GalleryItemVideo,
@@ -99,7 +107,7 @@ public static class FilePurposeExtensions
     {
         FilePurpose.UserAvatar => "avatars",
         FilePurpose.GalleryImage or FilePurpose.GalleryVideo => "gallery",
-        FilePurpose.GalleryAreaCover => "gallery/areas",
+        FilePurpose.GalleryAreaCover or FilePurpose.GalleryAreaCoverVideo => "gallery/areas",
         FilePurpose.GalleryLocationCover => "gallery/locations",
         FilePurpose.GalleryItemImage or FilePurpose.GalleryItemVideo => "gallery/items",
         FilePurpose.GalleryDelegationImage or FilePurpose.GalleryDelegationVideo => "gallery/delegations",

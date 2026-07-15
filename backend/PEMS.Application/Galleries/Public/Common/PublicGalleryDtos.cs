@@ -36,9 +36,11 @@ public sealed class PublicGalleryAreaDto
     public ulong AreaId { get; init; }
     public string AreaName { get; init; } = string.Empty;
     public int DisplayOrder { get; init; }
-    /// <summary>Area cover image (gallery_areas.cover_file_id) — the Area Showcase fullscreen background.</summary>
+    /// <summary>Area cover file (gallery_areas.cover_file_id) — the Area Showcase fullscreen background.</summary>
     public ulong? AreaCoverFileId { get; init; }
     public string? AreaCoverUrl { get; init; }
+    /// <summary>IMAGE (legacy areas) or VIDEO (MP4 cover) — drives &lt;img&gt; vs &lt;video&gt; on the public page.</summary>
+    public string AreaCoverMediaType { get; init; } = GalleryCoverMediaType.Image;
     public IReadOnlyList<PublicGalleryLocationDto> Locations { get; init; } = Array.Empty<PublicGalleryLocationDto>();
 }
 

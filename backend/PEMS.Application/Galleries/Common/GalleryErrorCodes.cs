@@ -101,6 +101,20 @@ public static class GalleryErrorCodes
     /// <summary>The location cover file is not a supported image. → 422.</summary>
     public const string LocationCoverInvalid = "GALLERY_LOCATION_COVER_INVALID";
 
+    // ── Area cover VIDEO phase (MP4 area showcase background) ──
+
+    /// <summary>An area cover video is required when creating a new area. → 422.</summary>
+    public const string AreaCoverVideoRequired = "AREA_COVER_VIDEO_REQUIRED";
+
+    /// <summary>The area cover file is not a supported MP4 video. → 422.</summary>
+    public const string AreaCoverVideoInvalid = "AREA_COVER_VIDEO_INVALID";
+
+    /// <summary>The area cover video exceeds the 30 MB cap. → 422.</summary>
+    public const string AreaCoverVideoTooLarge = "AREA_COVER_VIDEO_TOO_LARGE";
+
+    /// <summary>The area cover video could not be uploaded to storage. → 502/500.</summary>
+    public const string AreaCoverVideoUploadFailed = "AREA_COVER_VIDEO_UPLOAD_FAILED";
+
     /// <summary><c>itemType</c> is required when creating/editing a gallery item. → 422.</summary>
     public const string ItemTypeRequired = "GALLERY_ITEM_TYPE_REQUIRED";
 

@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Exceptions;
+using PEMS.Application.Common.Files;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Galleries.Common;
 using PEMS.Domain.Constants;
@@ -60,6 +61,7 @@ public sealed class CreateGalleryLocationCommandHandler
 
         ulong areaId;
         string? auditNewArea = null;
+        ulong? auditAreaCoverFileId = null;
 
         if (mode == GalleryLocationModes.ExistingArea)
         {
@@ -97,16 +99,17 @@ public sealed class CreateGalleryLocationCommandHandler
             var areaKey = GalleryKeyNormalizer.ToKey(areaName);
             auditNewArea = areaName;
 
-            // A brand-new area needs its own cover image (BR-AREA-COVER-01).
-            if (request.AreaCoverImage is null)
+            // A brand-new area needs its own MP4 cover video (the Area Showcase background).
+            if (request.AreaCoverVideo is null)
                 throw new BusinessRuleException(
-                    "Vui lòng upload ảnh đại diện khu vực.", GalleryErrorCodes.AreaCoverRequired);
+                    "Vui lòng chọn một video đại diện cho khu vực.", GalleryErrorCodes.AreaCoverVideoRequired);
 
             // Reject a duplicate area key BEFORE uploading so the common case never orphans a Drive file.
             await GalleryLocationWriteGuard.EnsureAreaKeyFreeAsync(_db, campusId, areaKey, cancellationToken);
 
-            var areaCoverId = await GalleryCoverImage.UploadAsync(
-                _fileUpload, request.AreaCoverImage, isArea: true, actorId, cancellationToken);
+            var areaCoverId = await GalleryAreaCoverVideo.UploadAsync(
+                _fileUpload, request.AreaCoverVideo, actorId, cancellationToken);
+            auditAreaCoverFileId = areaCoverId;
             var locationCoverId = await GalleryCoverImage.UploadAsync(
                 _fileUpload, request.LocationCoverImage, isArea: false, actorId, cancellationToken);
 
@@ -175,7 +178,16 @@ public sealed class CreateGalleryLocationCommandHandler
                 new AuditLogChange
                 {
                     FieldName = "GalleryLocation",
-                    NewValueText = JsonSerializer.Serialize(new { mode, areaId, newArea = auditNewArea, locationName }),
+                    NewValueText = JsonSerializer.Serialize(new
+                    {
+                        mode,
+                        areaId,
+                        newArea = auditNewArea,
+                        locationName,
+                        areaCoverFileId = auditAreaCoverFileId,
+                        areaCoverMediaType = auditAreaCoverFileId is null ? null : GalleryCoverMediaType.Video,
+                        areaCoverFilePurpose = auditAreaCoverFileId is null ? null : FilePurposeDbValues.GalleryAreaCoverVideo,
+                    }),
                 },
             },
             CreatedAt = now,

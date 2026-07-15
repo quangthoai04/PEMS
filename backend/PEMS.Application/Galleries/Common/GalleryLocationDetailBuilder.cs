@@ -40,6 +40,18 @@ internal static class GalleryLocationDetailBuilder
             .Select(i => new { i.Status, i.ItemType })
             .ToListAsync(ct);
 
+        // Resolve the area cover media type (IMAGE vs VIDEO) from the cover file's metadata.
+        var areaCoverMediaType = GalleryCoverMediaType.Image;
+        if (head.AreaCoverFileId is { } coverId)
+        {
+            var cover = await db.Files.AsNoTracking()
+                .Where(f => f.FileId == coverId)
+                .Select(f => new { f.FilePurpose, f.MimeType })
+                .FirstOrDefaultAsync(ct);
+            if (cover is not null)
+                areaCoverMediaType = GalleryCoverMediaType.Resolve(cover.FilePurpose, cover.MimeType);
+        }
+
         return new GalleryLocationDetailDto
         {
             LocationId = head.LocationId,
@@ -47,6 +59,7 @@ internal static class GalleryLocationDetailBuilder
             AreaName = head.AreaName,
             AreaCoverFileId = head.AreaCoverFileId,
             AreaCoverUrl = GalleryFileUrls.ContentOrNull(head.AreaCoverFileId),
+            AreaCoverMediaType = areaCoverMediaType,
             LocationName = head.LocationName,
             LocationCoverFileId = head.LocationCoverFileId,
             LocationCoverUrl = GalleryFileUrls.ContentOrNull(head.LocationCoverFileId),

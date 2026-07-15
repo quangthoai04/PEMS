@@ -92,6 +92,11 @@ public sealed class ViewGalleryLocationListQueryHandler
 
         var locationIds = rows.Select(r => r.LocationId).ToList();
 
+        // Area cover media type (IMAGE vs VIDEO) — one flat file-metadata lookup for the page's cover
+        // file ids, resolved in memory (avoids N+1 and keeps the row projection Pomelo-safe).
+        var coverMediaByFileId = await LoadCoverMediaAsync(
+            rows.Select(r => r.AreaCoverFileId), cancellationToken);
+
         // Gallery items of the listed locations — one flat query, aggregated in memory so the
         // location list stays 1-row-per-location even when a location holds many items.
         var items = locationIds.Count == 0
@@ -119,6 +124,7 @@ public sealed class ViewGalleryLocationListQueryHandler
                 AreaName = r.AreaName,
                 AreaCoverFileId = r.AreaCoverFileId,
                 AreaCoverUrl = GalleryFileUrls.ContentOrNull(r.AreaCoverFileId),
+                AreaCoverMediaType = GalleryCoverMediaType.ResolveFor(r.AreaCoverFileId, coverMediaByFileId),
                 LocationName = r.LocationName,
                 LocationCoverFileId = r.LocationCoverFileId,
                 LocationCoverUrl = GalleryFileUrls.ContentOrNull(r.LocationCoverFileId),
@@ -133,6 +139,21 @@ public sealed class ViewGalleryLocationListQueryHandler
         }).ToList();
 
         return PaginatedResult<GalleryLocationListItemDto>.Create(result, page, pageSize, totalItems);
+    }
+
+    /// <summary>Loads (purpose, mime) for a set of cover file ids so the media type can be resolved in memory.</summary>
+    private async Task<IReadOnlyDictionary<ulong, (string? Purpose, string? Mime)>> LoadCoverMediaAsync(
+        IEnumerable<ulong?> coverFileIds, CancellationToken ct)
+    {
+        var ids = coverFileIds.Where(id => id.HasValue).Select(id => id!.Value).Distinct().ToList();
+        if (ids.Count == 0)
+            return new Dictionary<ulong, (string?, string?)>();
+
+        var files = await _db.Files.AsNoTracking()
+            .Where(f => ids.Contains(f.FileId))
+            .Select(f => new { f.FileId, f.FilePurpose, f.MimeType })
+            .ToListAsync(ct);
+        return files.ToDictionary(f => f.FileId, f => (f.FilePurpose, f.MimeType));
     }
 
     private sealed class RowDto
