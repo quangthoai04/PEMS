@@ -1,1383 +1,759 @@
 /**
- * Trang DeptReportManagement — Báo cáo hiệu suất phòng ban tại /dashboard/reports
- * (role DEPARTMENT · LEADER). Department operation dashboard: KPI strip compact,
- * khối "Cần xử lý ngay", tabs (Tổng quan / Công việc / Nhân sự / Bàn giao /
- * Phát sinh & Feedback / Hóa đơn) và xuất hóa đơn PDF theo đơn giá leader nhập.
- * Toàn bộ dữ liệu lấy từ GET /reports/department-leader-overview — scope đúng
- * department của leader (backend enforce), không mock.
+ * Trang DeptReportManagement — Báo cáo phòng ban của Department Leader tại /dashboard/reports.
+ * Bố cục 3 phần như Staff Leader: (1) Báo cáo nhiệm vụ (thư mời + đơn yêu cầu),
+ * (2) Nhân sự phòng ban, (3) Xuất hóa đơn (đơn đã hoàn thành, đã ký nghiệm thu) gửi
+ * cho Staff Leader campus. Bộ lọc duy nhất là khoảng thời gian, dùng chung cho cả 3
+ * phần. Dữ liệu từ GET /reports/dept-leader-report-v2.
  */
 
-import React, { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useCallback, useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import {
-  AlertTriangle, CheckCircle2, ChevronDown, Download, FileSpreadsheet, FileText,
-  Info, Loader2, Paperclip, ReceiptText, RefreshCw, ShieldAlert, X,
+  AlertTriangle, CalendarRange, CheckCircle2, ChevronDown, ChevronUp, Download,
+  FileText, Loader2, Mail, RefreshCw, Send, Star, Users, X, XCircle,
 } from 'lucide-react';
 import {
-  CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
+  CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts';
-import { useDeptLeaderReport } from '../../../features/reports/hooks/useReports';
-import { reportsAdapter as fmt } from '../../../features/reports/adapters/reportsAdapter';
+import { reportsApi } from '../../../features/reports/api/reportsApi';
 import type {
-  DeptLeaderExportFormat, DeptLeaderFeedbackEntry, DeptLeaderInvoiceItem,
-  DeptLeaderReportOverview, DeptLeaderReportSection,
-} from '../../../features/reports/types/deptLeaderReports.types';
+  DeptLeaderInvoiceItemV2, DeptLeaderReportV2, DeptLeaderV2Filters,
+  DeptLeaderV2PersonnelRow, DeptLeaderV2Preset,
+} from '../../../features/reports/types/deptLeaderReportsV2.types';
+import { TaskHandoverModal } from '../departments/TaskHandoverModal';
 
-// Palette chart đã validate CVD/contrast (scripts/validate_palette.js — ALL PASS light & dark,
-// cùng bộ với StaffLeaderReportManagement).
 const CHART_BLUE = '#1e6fc0';
-const CHART_ORANGE = '#d95f18';
 const CHART_GREEN = '#0a8a44';
 
-type TabKey = 'overview' | 'tasks' | 'staff' | 'handover' | 'incidents' | 'invoice';
-
-const TABS: { key: TabKey; label: string }[] = [
-  { key: 'overview', label: 'Tổng quan' },
-  { key: 'tasks', label: 'Công việc' },
-  { key: 'staff', label: 'Nhân sự' },
-  { key: 'handover', label: 'Bàn giao' },
-  { key: 'incidents', label: 'Phát sinh & Feedback' },
-  { key: 'invoice', label: 'Hóa đơn' },
+const PRESETS: { value: DeptLeaderV2Preset; label: string }[] = [
+  { value: 'THIS_MONTH', label: 'Tháng này' },
+  { value: 'THIS_QUARTER', label: 'Quý này' },
+  { value: 'THIS_YEAR', label: 'Năm nay' },
+  { value: 'CUSTOM', label: 'Tùy chỉnh' },
 ];
 
-// Backend attention.targetSection → tab trên UI.
-const SECTION_TO_TAB: Record<string, TabKey> = {
-  TASKS: 'tasks',
-  STAFF: 'staff',
-  HANDOVER: 'handover',
-  INCIDENTS: 'incidents',
-};
-
-const SECTION_OPTIONS: { value: DeptLeaderReportSection; label: string }[] = [
-  { value: 'EXECUTIVE_SUMMARY', label: 'Executive Summary' },
-  { value: 'TASK_PIPELINE', label: 'Công việc & Đề xuất' },
-  { value: 'STAFF_PERFORMANCE', label: 'Hiệu suất nhân sự' },
-  { value: 'HANDOVER_SUMMARY', label: 'Bàn giao / ký nhận' },
-  { value: 'INCIDENT_SUMMARY', label: 'Phát sinh sau bàn giao' },
-  { value: 'FEEDBACK_SUMMARY', label: 'Feedback' },
-];
-
-const PRESET_LABELS: Record<string, string> = {
-  THIS_MONTH: 'Tháng này',
-  THIS_QUARTER: 'Quý này',
-  THIS_YEAR: 'Năm nay',
-  CUSTOM: 'Tùy chỉnh',
+const GRANULARITY_LABELS: Record<string, string> = {
+  YEAR: 'năm', MONTH: 'tháng', WEEK: 'tuần', DAY: 'ngày', HOUR: 'giờ',
 };
 
 const ITEM_TYPE_LABELS: Record<string, string> = {
-  ROOM: 'Phòng / địa điểm',
-  TRANSPORT: 'Phương tiện / xe',
-  MEAL: 'Trà nước / đồ ăn',
-  EQUIPMENT: 'Thiết bị',
-  BANNER: 'Banner / ấn phẩm',
-  LED: 'LED / màn hình',
-  DEPARTMENT: 'Phòng ban (chung)',
-  OTHER: 'Khác',
-};
-const itemTypeLabel = (t: string) => ITEM_TYPE_LABELS[t] ?? t;
-
-const TASK_STATUS_LABELS: Record<string, string> = {
-  REQUESTED: 'Yêu cầu mới',
-  CHANGE_PROPOSED: 'Đề xuất thay đổi',
-  ASSIGNED: 'Chờ phản hồi',
-  ACCEPTED: 'Đã nhận',
-  IN_PROGRESS: 'Đang xử lý',
-  DONE: 'Hoàn thành',
-  REJECTED: 'PB từ chối',
-  DECLINED: 'NS từ chối',
-  CANCELLED: 'Đã hủy',
-};
-const taskStatusLabel = (s: string) => TASK_STATUS_LABELS[s] ?? s;
-
-const TASK_STATUS_BADGES: Record<string, string> = {
-  REQUESTED: 'bg-sky-50 text-sky-700 border-sky-200',
-  CHANGE_PROPOSED: 'bg-violet-50 text-violet-700 border-violet-200',
-  ASSIGNED: 'bg-amber-50 text-amber-700 border-amber-200',
-  ACCEPTED: 'bg-blue-50 text-blue-700 border-blue-200',
-  IN_PROGRESS: 'bg-indigo-50 text-indigo-700 border-indigo-200',
-  DONE: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-  REJECTED: 'bg-red-50 text-red-600 border-red-200',
-  DECLINED: 'bg-red-50 text-red-600 border-red-200',
-  CANCELLED: 'bg-slate-100 text-slate-500 border-slate-200',
-};
-const taskStatusBadge = (s: string) => TASK_STATUS_BADGES[s] ?? 'bg-slate-100 text-slate-500 border-slate-200';
-
-const PRIORITY_LABELS: Record<string, string> = {
-  URGENT: 'Khẩn cấp', HIGH: 'Cao', MEDIUM: 'Trung bình', LOW: 'Thấp',
-};
-const PRIORITY_BADGES: Record<string, string> = {
-  URGENT: 'bg-red-50 text-red-600 border-red-200',
-  HIGH: 'bg-orange-50 text-orange-700 border-orange-200',
-  MEDIUM: 'bg-slate-100 text-slate-600 border-slate-200',
-  LOW: 'bg-slate-50 text-slate-400 border-slate-200',
+  ROOM: 'Phòng họp', TRANSPORT: 'Xe / di chuyển', MEAL: 'Ẩm thực', EQUIPMENT: 'Thiết bị',
+  BANNER: 'Băng rôn', LED: 'LED', OTHER: 'Khác',
 };
 
-const SEVERITY_STYLES: Record<string, { dot: string; text: string }> = {
-  DANGER: { dot: 'bg-red-500', text: 'text-red-600' },
-  WARNING: { dot: 'bg-amber-500', text: 'text-amber-600' },
-  INFO: { dot: 'bg-sky-500', text: 'text-sky-600' },
-  SUCCESS: { dot: 'bg-emerald-500', text: 'text-emerald-600' },
-};
+const thClass = 'px-3 py-2.5 text-[11px] font-bold text-slate-400 uppercase tracking-wide whitespace-nowrap text-left';
+const tdClass = 'px-3 py-2.5 text-sm text-slate-600';
 
-const formatVnd = (v: number) => `${new Intl.NumberFormat('vi-VN').format(Math.round(v))} đ`;
+const vnMoney = (v: number) => `${v.toLocaleString('vi-VN')} ₫`;
+const fmtDate = (iso: string) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : '—');
+const fmtDateTime = (iso: string) => (iso ? `${iso.slice(11, 16)} ${fmtDate(iso)}` : '—');
 
-const selectClass =
-  'bg-white border border-slate-200 rounded-lg px-2.5 py-2 text-sm font-medium text-slate-700 outline-none focus:ring-2 focus:ring-[#004c91]/20 focus:border-[#004c91] cursor-pointer';
-const thClass = 'px-3 py-2.5 text-[11px] font-bold text-slate-400 uppercase tracking-wide whitespace-nowrap';
-const tdClass = 'px-3 py-2.5 text-sm text-slate-600 whitespace-nowrap';
+function StatTile({ label, value, sub, tone = 'blue', icon }: {
+  label: string; value: React.ReactNode; sub?: string; tone?: 'blue' | 'green' | 'red' | 'amber' | 'violet' | 'slate'; icon?: React.ReactNode;
+}) {
+  const tones: Record<string, string> = {
+    blue: 'bg-blue-50 text-[#004c91] border-blue-100',
+    green: 'bg-emerald-50 text-emerald-700 border-emerald-100',
+    red: 'bg-rose-50 text-rose-700 border-rose-100',
+    amber: 'bg-amber-50 text-amber-700 border-amber-100',
+    violet: 'bg-violet-50 text-violet-700 border-violet-100',
+    slate: 'bg-slate-50 text-slate-700 border-slate-200',
+  };
+  return (
+    <div className={`rounded-xl border px-3 py-2.5 ${tones[tone]}`}>
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[10px] font-bold uppercase tracking-wide opacity-80 truncate">{label}</p>
+        {icon}
+      </div>
+      <p className="text-lg font-extrabold mt-0.5 leading-tight">{value}</p>
+      {sub && <p className="text-[10px] font-medium opacity-75">{sub}</p>}
+    </div>
+  );
+}
+
+function Section({ index, title, subtitle, open, onToggle, children }: {
+  index: number; title: string; subtitle?: string; open: boolean; onToggle: () => void; children: React.ReactNode;
+}) {
+  return (
+    <section className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-slate-50/70 transition-colors cursor-pointer"
+      >
+        <span className="w-7 h-7 rounded-lg bg-[#004c91] text-white flex items-center justify-center text-xs font-black shrink-0">{index}</span>
+        <span className="flex-1 min-w-0">
+          <span className="block text-base font-extrabold text-[#004c91] leading-tight">{title}</span>
+          {subtitle && <span className="block text-[11px] text-slate-400 mt-0.5">{subtitle}</span>}
+        </span>
+        {open ? <ChevronUp className="w-4 h-4 text-slate-400 shrink-0" /> : <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />}
+      </button>
+      {open && <div className="px-4 pb-4 space-y-4">{children}</div>}
+    </section>
+  );
+}
 
 export function DeptReportManagement() {
-  const navigate = useNavigate();
-  const {
-    filters, setFilters, data, loading, error, refetch,
-    applyFilters, resetFilters, exportReport, exportLoading,
-    invoiceVisits, invoiceItems, invoiceVisitsLoading, invoiceItemsLoading,
-    invoiceExportLoading, fetchInvoiceVisits, fetchInvoiceItems, exportInvoicePdf,
-  } = useDeptLeaderReport();
+  // ── Bộ lọc thời gian (chung cho cả 3 phần) ──
+  const [filters, setFilters] = useState<DeptLeaderV2Filters>({ preset: 'THIS_YEAR', fromDate: '', toDate: '' });
+  const [data, setData] = useState<DeptLeaderReportV2 | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const [tab, setTab] = useState<TabKey>('overview');
-  const [exportMenuOpen, setExportMenuOpen] = useState(false);
-  const [exportConfirm, setExportConfirm] = useState<DeptLeaderExportFormat | null>(null);
-  const [exportSections, setExportSections] = useState<DeptLeaderReportSection[]>(SECTION_OPTIONS.map((s) => s.value));
-  const exportMenuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const close = (e: MouseEvent) => {
-      if (exportMenuRef.current && !exportMenuRef.current.contains(e.target as Node)) setExportMenuOpen(false);
-    };
-    document.addEventListener('mousedown', close);
-    return () => document.removeEventListener('mousedown', close);
+  const fetchReport = useCallback(async (f: DeptLeaderV2Filters) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await reportsApi.getDeptLeaderReportV2(f);
+      setData(res);
+    } catch (e: any) {
+      setError(e?.response?.data?.message || 'Không thể tải báo cáo. Vui lòng thử lại.');
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  // Giữ danh sách nhân sự đầy đủ từ lần load không lọc để option không biến mất khi lọc.
-  const [staffOptions, setStaffOptions] = useState<{ id: number; name: string }[]>([]);
-  useEffect(() => {
-    if (!data) return;
-    if (data.filterSummary.assignedUserId === 'ALL') {
-      setStaffOptions(data.staffPerformance.map((s) => ({ id: s.userId, name: s.fullName })));
-    }
-  }, [data]);
+  useEffect(() => { fetchReport(filters); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
 
-  const handleExport = async () => {
-    if (!exportConfirm) return;
+  const [openSections, setOpenSections] = useState({ tasks: true, personnel: true, invoice: false });
+  const toggleSection = (key: keyof typeof openSections) =>
+    setOpenSections((s) => ({ ...s, [key]: !s[key] }));
+
+  // ── Xuất báo cáo (PDF/Excel/CSV) — chọn phần ──
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  const [exportSections, setExportSections] = useState<string[]>(['TASKS', 'PERSONNEL']);
+  const [exporting, setExporting] = useState(false);
+  const toggleExportSection = (s: string) =>
+    setExportSections((cur) => (cur.includes(s) ? cur.filter((x) => x !== s) : [...cur, s]));
+
+  const exportReport = async (format: 'PDF' | 'EXCEL' | 'CSV') => {
+    if (exportSections.length === 0) {
+      toast.error('Chọn ít nhất một phần để xuất.');
+      return;
+    }
+    setExporting(true);
     try {
-      await exportReport(exportConfirm, exportSections);
-      toast.success('Đã xuất báo cáo thành công.');
-      setExportConfirm(null);
-    } catch (err: unknown) {
-      const status = (err as { response?: { status?: number } })?.response?.status;
-      toast.error(status === 403
-        ? 'Bạn không có quyền xuất báo cáo này.'
-        : 'Không thể xuất báo cáo. Vui lòng thử lại sau.');
+      const file = await reportsApi.exportDeptLeaderReportV2({
+        preset: filters.preset,
+        fromDate: filters.preset === 'CUSTOM' ? filters.fromDate : undefined,
+        toDate: filters.preset === 'CUSTOM' ? filters.toDate : undefined,
+        exportFormat: format,
+        sections: exportSections,
+      });
+      const url = URL.createObjectURL(file.blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = file.fileName;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success(`Đã xuất báo cáo ${format === 'EXCEL' ? 'Excel' : format} thành công.`);
+      setExportMenuOpen(false);
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message || 'Xuất báo cáo thất bại.');
+    } finally {
+      setExporting(false);
     }
   };
 
-  if (error === 'FORBIDDEN') {
-    return (
-      <div className="max-w-[1400px] mx-auto flex flex-col items-center justify-center py-24 text-center">
-        <ShieldAlert className="w-12 h-12 text-red-400 mb-4" />
-        <h2 className="text-xl font-bold text-slate-800 mb-1">Bạn không có quyền xem báo cáo Department Leader</h2>
-        <p className="text-sm text-slate-500">Vui lòng liên hệ quản trị viên nếu bạn cho rằng đây là nhầm lẫn.</p>
+  // ── Phần 2: bảng nhân sự ──
+  const [personnelNotes, setPersonnelNotes] = useState<Record<number, string>>({});
+  const [sendingUserId, setSendingUserId] = useState<number | null>(null);
+
+  const sendPersonnelReport = async (row: DeptLeaderV2PersonnelRow) => {
+    setSendingUserId(row.userId);
+    try {
+      const res = await reportsApi.sendDeptLeaderPersonnelReport({
+        userId: row.userId,
+        fromDate: data?.fromDate,
+        toDate: data?.toDate,
+        note: personnelNotes[row.userId]?.trim() || undefined,
+      });
+      toast.success(res.message || 'Đã gửi báo cáo.');
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message || 'Gửi báo cáo thất bại.');
+    } finally {
+      setSendingUserId(null);
+    }
+  };
+
+  // ── Phần 3: xuất hóa đơn ──
+  const [invoiceRange, setInvoiceRange] = useState<{ fromDate: string; toDate: string }>({ fromDate: '', toDate: '' });
+  const [invoiceItems, setInvoiceItems] = useState<DeptLeaderInvoiceItemV2[]>([]);
+  const [invoiceLoading, setInvoiceLoading] = useState(false);
+  const [invoiceLoaded, setInvoiceLoaded] = useState(false);
+  const [prices, setPrices] = useState<Record<number, string>>({});
+  const [invoiceSending, setInvoiceSending] = useState(false);
+  const [viewItem, setViewItem] = useState<DeptLeaderInvoiceItemV2 | null>(null);
+
+  useEffect(() => {
+    if (data && !invoiceRange.fromDate) {
+      setInvoiceRange({ fromDate: data.fromDate, toDate: data.toDate });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data]);
+
+  const loadInvoiceItems = async () => {
+    if (!invoiceRange.fromDate || !invoiceRange.toDate) {
+      toast.error('Chọn khoảng ngày để lấy danh sách đơn.');
+      return;
+    }
+    setInvoiceLoading(true);
+    try {
+      const items = await reportsApi.getDeptLeaderInvoiceItemsV2(invoiceRange.fromDate, invoiceRange.toDate);
+      setInvoiceItems(items);
+      setInvoiceLoaded(true);
+      setPrices({});
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message || 'Không tải được danh sách đơn.');
+    } finally {
+      setInvoiceLoading(false);
+    }
+  };
+
+  const priceOf = (id: number) => {
+    const raw = (prices[id] ?? '').replace(/[^\d]/g, '');
+    return raw ? Number(raw) : 0;
+  };
+  const lineTotal = (it: DeptLeaderInvoiceItemV2) => priceOf(it.logisticsItemId) * (it.quantity || 1);
+  const grandTotal = invoiceItems.reduce((sum, it) => sum + lineTotal(it), 0);
+
+  const sendInvoice = async () => {
+    const items = invoiceItems
+      .filter((it) => priceOf(it.logisticsItemId) > 0)
+      .map((it) => ({ logisticsItemId: it.logisticsItemId, unitPrice: priceOf(it.logisticsItemId) }));
+    if (items.length === 0) {
+      toast.error('Nhập đơn giá cho ít nhất một đơn trước khi gửi.');
+      return;
+    }
+    setInvoiceSending(true);
+    try {
+      const res = await reportsApi.sendDeptLeaderInvoiceToStaffLeader({
+        fromDate: invoiceRange.fromDate,
+        toDate: invoiceRange.toDate,
+        items,
+      });
+      toast.success(res.message || 'Đã gửi hóa đơn.');
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message || 'Gửi hóa đơn thất bại.');
+    } finally {
+      setInvoiceSending(false);
+    }
+  };
+
+  // "Xuất hóa đơn (PDF)" mở hộp thoại IN qua 1 cửa sổ mới chỉ chứa HTML hóa đơn —
+  // không phụ thuộc CSS/layout của trang dashboard nên không bị in trắng.
+  const exportInvoicePdf = () => {
+    if (invoiceItems.length === 0) {
+      toast.error('Chưa có đơn nào để xuất hóa đơn.');
+      return;
+    }
+    const esc = (s: string | null | undefined) =>
+      (s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const rowsHtml = invoiceItems.map((it, idx) => `
+      <tr>
+        <td style="text-align:center">${idx + 1}</td>
+        <td>${esc(it.title)}</td>
+        <td>${esc(it.delegationName)}</td>
+        <td style="text-align:center">${fmtDate(it.usageStartAt)}</td>
+        <td style="text-align:center">${it.quantity}</td>
+        <td style="text-align:right">${vnMoney(priceOf(it.logisticsItemId))}</td>
+        <td style="text-align:right">${vnMoney(lineTotal(it))}</td>
+      </tr>`).join('');
+    const html = `<!doctype html><html><head><meta charset="utf-8" />
+      <title>Hóa đơn hậu cần — ${esc(data?.departmentName)}</title>
+      <style>
+        body { font-family: 'Segoe UI', Arial, sans-serif; color: #0f172a; padding: 28px; }
+        .top { display: flex; justify-content: space-between; border-bottom: 1px solid #cbd5e1; padding-bottom: 12px; margin-bottom: 22px; font-size: 12px; }
+        h2 { text-align: center; text-transform: uppercase; margin: 4px 0 2px; font-size: 20px; }
+        .sub { text-align: center; font-size: 14px; margin-bottom: 20px; }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        th, td { border: 1px solid #475569; padding: 6px 8px; }
+        th { background: #f1f5f9; }
+        .total td { font-weight: 700; }
+        .sign { display: flex; justify-content: space-between; margin-top: 44px; text-align: center; font-size: 14px; }
+        .sign div { width: 48%; }
+        .sign .hint { font-size: 11px; color: #64748b; }
+      </style></head><body>
+      <div class="top">
+        <div>
+          <div style="font-weight:800;text-transform:uppercase;font-size:13px">TRƯỜNG ĐẠI HỌC FPT</div>
+          <div style="color:#64748b;font-weight:600">${esc(data?.departmentName)} · Hệ thống PEMS</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-weight:800;font-size:11px">CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM</div>
+          <div style="font-weight:800;font-size:11px;color:#f37021">Độc lập - Tự do - Hạnh phúc</div>
+        </div>
       </div>
-    );
-  }
+      <h2>HÓA ĐƠN HẬU CẦN TIẾP KHÁCH (ĐÃ HOÀN THÀNH)</h2>
+      <p class="sub">Phòng ban: <b>${esc(data?.departmentName)}</b> · Kỳ: <b>${fmtDate(invoiceRange.fromDate)} – ${fmtDate(invoiceRange.toDate)}</b></p>
+      <table>
+        <thead><tr><th>STT</th><th>Hạng mục</th><th>Đoàn khách</th><th>Ngày</th><th>SL</th><th>Đơn giá</th><th>Thành tiền</th></tr></thead>
+        <tbody>
+          ${rowsHtml}
+          <tr class="total"><td colspan="6" style="text-align:right">TỔNG CỘNG</td><td style="text-align:right">${vnMoney(grandTotal)}</td></tr>
+        </tbody>
+      </table>
+      <div class="sign">
+        <div><b>ĐẠI DIỆN PHÒNG BAN</b><div class="hint">(Ký, ghi rõ họ tên)</div></div>
+        <div><b>ĐẠI DIỆN VĂN PHÒNG IC</b><div class="hint">(Ký, ghi rõ họ tên)</div></div>
+      </div>
+      </body></html>`;
+    const win = window.open('', '_blank', 'width=980,height=720');
+    if (!win) {
+      toast.error('Trình duyệt đang chặn popup — hãy cho phép popup cho trang này rồi thử lại.');
+      return;
+    }
+    win.document.write(html);
+    win.document.close();
+    win.focus();
+    setTimeout(() => win.print(), 350);
+    toast.success('Đã mở bản in hóa đơn — chọn "Save as PDF" để lưu.');
+  };
+
+  // Biên bản đã ký giữa 2 bên — TaskHandoverModal (chỉ xem) nhận DTO PascalCase.
+  const toHandoverDto = (it: DeptLeaderInvoiceItemV2) => ({
+    LogisticsItemId: it.logisticsItemId,
+    Title: it.title,
+    Quantity: it.quantity,
+    ItemType: it.itemType,
+    UsageEndTime: it.usageEndAt ? it.usageEndAt.slice(11, 16) : undefined,
+    UsageDate: it.usageEndAt ? `${it.usageEndAt.slice(8, 10)}-${it.usageEndAt.slice(5, 7)}-${it.usageEndAt.slice(0, 4)}` : undefined,
+    DelegationName: it.delegationName,
+    SenderName: it.hostName,
+    AssigneeName: it.assigneeName,
+    BorrowNote: it.borrowNote,
+    ReturnNote: it.returnNote,
+    BorrowProviderSignature: it.borrowProviderSignature ? { Name: it.borrowProviderSignature.name, SignedAt: it.borrowProviderSignature.signedAt } : null,
+    BorrowBorrowerSignature: it.borrowBorrowerSignature ? { Name: it.borrowBorrowerSignature.name, SignedAt: it.borrowBorrowerSignature.signedAt } : null,
+    ReturnProviderSignature: it.returnProviderSignature ? { Name: it.returnProviderSignature.name, SignedAt: it.returnProviderSignature.signedAt } : null,
+    ReturnBorrowerSignature: it.returnBorrowerSignature ? { Name: it.returnBorrowerSignature.name, SignedAt: it.returnBorrowerSignature.signedAt } : null,
+  });
+
+  const t = data?.tasks;
+  const p = data?.personnel;
 
   return (
-    <div className="max-w-[1400px] mx-auto space-y-4 pb-12 font-sans animate-in fade-in duration-300">
-      {/* ── Header compact ── */}
-      <div>
-        <div className="flex items-center gap-2 text-xs font-medium text-slate-500 mb-1">
-          <span>Dashboard</span>
-          <span>/</span>
-          <span className="text-[#004c91] font-bold">Thống kê phòng ban</span>
+    <div className="w-full space-y-8 pb-16 animate-in fade-in duration-300">
+      {/* ── Header + nút xuất báo cáo ── */}
+      <div className="border-b border-gray-100 pb-4 flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold text-[#004c91]">Báo cáo phòng ban</h1>
+          <p className="text-slate-500 mt-2">
+            {data ? `${data.departmentName} · Kỳ ${fmtDate(data.fromDate)} – ${fmtDate(data.toDate)}` : 'Báo cáo vận hành phòng ban của Department Leader.'}
+          </p>
         </div>
-        <div className="flex flex-col md:flex-row md:items-end justify-between gap-3">
-          <div>
-            <div className="flex items-center gap-3 flex-wrap">
-              <h1 className="text-2xl font-black text-[#004c91] tracking-tight">Báo cáo hiệu suất phòng ban</h1>
-              <span className="text-[11px] font-bold uppercase tracking-wide text-[#004c91] bg-blue-50 border border-blue-100 rounded-full px-2.5 py-1">
-                Department Leader{data ? ` · ${data.filterSummary.departmentName}` : ''}
-              </span>
-            </div>
-            <p className="text-sm font-medium text-slate-500 mt-0.5">
-              Tổng quan công việc, nhân sự, bàn giao và phát sinh của phòng ban
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setTab('invoice')}
-              disabled={loading || !data}
-              className="flex items-center gap-2 px-4 py-2.5 bg-white border border-[#004c91]/30 text-[#004c91] text-sm font-bold rounded-xl hover:bg-blue-50 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-            >
-              <ReceiptText className="w-4 h-4" />
-              Xuất hóa đơn PDF
-            </button>
-            {/* Export dropdown */}
-            <div className="relative" ref={exportMenuRef}>
-              <button
-                onClick={() => setExportMenuOpen((v) => !v)}
-                disabled={loading || !data}
-                className="flex items-center gap-2 px-4 py-2.5 bg-[#004c91] text-white text-sm font-bold rounded-xl hover:bg-[#00386b] transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-              >
-                <Download className="w-4 h-4" />
-                Xuất báo cáo
-                <ChevronDown className="w-4 h-4" />
-              </button>
-              {exportMenuOpen && (
-                <div className="absolute right-0 mt-2 w-56 bg-white border border-slate-200 rounded-xl shadow-lg z-20 overflow-hidden">
-                  {([
-                    { format: 'EXCEL' as DeptLeaderExportFormat, label: 'Excel (.xlsx)', icon: FileSpreadsheet },
-                    { format: 'PDF' as DeptLeaderExportFormat, label: 'PDF (.pdf)', icon: FileText },
-                    { format: 'CSV' as DeptLeaderExportFormat, label: 'CSV (.csv)', icon: FileText },
-                  ]).map((opt) => (
+
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setExportMenuOpen((v) => !v)}
+            disabled={!data || exporting}
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-[#004c91] text-white text-sm font-bold rounded-xl hover:opacity-90 disabled:opacity-50 transition-all cursor-pointer"
+          >
+            {exporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+            Xuất báo cáo
+            <ChevronDown className="w-4 h-4" />
+          </button>
+          {exportMenuOpen && (
+            <>
+              <div className="fixed inset-0 z-20" onClick={() => setExportMenuOpen(false)} />
+              <div className="absolute right-0 top-full mt-2 w-64 bg-white border border-slate-200 rounded-2xl shadow-xl z-30 p-3 space-y-2">
+                <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wide px-1">Chọn phần xuất</p>
+                {[
+                  { key: 'TASKS', label: 'Phần 1 · Nhiệm vụ' },
+                  { key: 'PERSONNEL', label: 'Phần 2 · Nhân sự' },
+                ].map((s) => (
+                  <label key={s.key} className="flex items-center gap-2 px-1 py-0.5 text-sm text-slate-700 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={exportSections.includes(s.key)}
+                      onChange={() => toggleExportSection(s.key)}
+                      className="accent-[#004c91]"
+                    />
+                    {s.label}
+                  </label>
+                ))}
+                <label className="flex items-center gap-2 px-1 py-0.5 text-sm font-bold text-[#004c91] cursor-pointer border-t border-slate-100 pt-2">
+                  <input
+                    type="checkbox"
+                    checked={exportSections.length === 2}
+                    onChange={() => setExportSections(exportSections.length === 2 ? [] : ['TASKS', 'PERSONNEL'])}
+                    className="accent-[#004c91]"
+                  />
+                  Chọn tất cả
+                </label>
+                <div className="border-t border-slate-100 pt-2 space-y-1">
+                  {([['EXCEL', 'Excel (.xlsx)'], ['PDF', 'PDF (.pdf)'], ['CSV', 'CSV (.csv)']] as const).map(([fmt2, label]) => (
                     <button
-                      key={opt.format}
-                      onClick={() => { setExportMenuOpen(false); setExportConfirm(opt.format); }}
-                      className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors text-left cursor-pointer"
+                      key={fmt2}
+                      type="button"
+                      onClick={() => exportReport(fmt2)}
+                      disabled={exporting}
+                      className="w-full flex items-center gap-2 px-2 py-2 text-sm font-semibold text-slate-700 hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-50 cursor-pointer"
                     >
-                      <opt.icon className="w-4 h-4 text-slate-400" />
-                      {opt.label}
+                      <FileText className="w-4 h-4 text-slate-400" /> {label}
                     </button>
                   ))}
                 </div>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* ── Filter bar ── */}
-      <div className="bg-white border border-slate-200 rounded-xl p-3 flex flex-wrap items-center gap-2">
-        <select
-          value={filters.preset}
-          onChange={(e) => setFilters({ ...filters, preset: e.target.value })}
-          className={selectClass}
-          aria-label="Khoảng thời gian"
-        >
-          <option value="THIS_MONTH">Tháng này</option>
-          <option value="THIS_QUARTER">Quý này</option>
-          <option value="THIS_YEAR">Năm nay</option>
-          <option value="CUSTOM">Tùy chỉnh…</option>
-        </select>
-
-        {filters.preset === 'CUSTOM' && (
-          <>
-            <input
-              type="date"
-              value={filters.fromDate ?? ''}
-              onChange={(e) => setFilters({ ...filters, fromDate: e.target.value })}
-              className={selectClass}
-              aria-label="Từ ngày"
-            />
-            <span className="text-slate-400 text-sm">→</span>
-            <input
-              type="date"
-              value={filters.toDate ?? ''}
-              onChange={(e) => setFilters({ ...filters, toDate: e.target.value })}
-              className={selectClass}
-              aria-label="Đến ngày"
-            />
-          </>
-        )}
-
-        <select
-          value={filters.logisticsStatus}
-          onChange={(e) => setFilters({ ...filters, logisticsStatus: e.target.value })}
-          className={selectClass}
-          aria-label="Trạng thái"
-        >
-          <option value="ALL">Trạng thái: Tất cả</option>
-          {Object.entries(TASK_STATUS_LABELS).map(([value, label]) => (
-            <option key={value} value={value}>{label}</option>
-          ))}
-        </select>
-
-        <select
-          value={filters.itemType}
-          onChange={(e) => setFilters({ ...filters, itemType: e.target.value })}
-          className={selectClass}
-          aria-label="Mảng việc"
-        >
-          <option value="ALL">Mảng việc: Tất cả</option>
-          {['ROOM', 'TRANSPORT', 'MEAL', 'EQUIPMENT', 'BANNER', 'LED', 'OTHER'].map((t) => (
-            <option key={t} value={t}>{itemTypeLabel(t)}</option>
-          ))}
-        </select>
-
-        <select
-          value={filters.priority}
-          onChange={(e) => setFilters({ ...filters, priority: e.target.value })}
-          className={selectClass}
-          aria-label="Ưu tiên"
-        >
-          <option value="ALL">Ưu tiên: Tất cả</option>
-          <option value="URGENT">Khẩn cấp</option>
-          <option value="HIGH">Cao</option>
-          <option value="MEDIUM">Trung bình</option>
-          <option value="LOW">Thấp</option>
-        </select>
-
-        <select
-          value={filters.assignedUserId}
-          onChange={(e) => setFilters({ ...filters, assignedUserId: e.target.value })}
-          className={selectClass}
-          aria-label="Nhân sự"
-        >
-          <option value="ALL">Nhân sự: Tất cả</option>
-          {staffOptions.map((s) => (
-            <option key={s.id} value={String(s.id)}>{s.name}</option>
-          ))}
-        </select>
-
-        <select
-          value={filters.dueStatus}
-          onChange={(e) => setFilters({ ...filters, dueStatus: e.target.value })}
-          className={selectClass}
-          aria-label="Deadline"
-        >
-          <option value="ALL">Deadline: Tất cả</option>
-          <option value="DUE_SOON">Sắp đến hạn (72h)</option>
-          <option value="OVERDUE">Quá hạn</option>
-        </select>
-
-        <select
-          value={filters.handoverStatus}
-          onChange={(e) => setFilters({ ...filters, handoverStatus: e.target.value })}
-          className={selectClass}
-          aria-label="Bàn giao"
-        >
-          <option value="ALL">Bàn giao: Tất cả</option>
-          <option value="COMPLETE">Đủ chữ ký</option>
-          <option value="MISSING_SIGNATURE">Thiếu chữ ký</option>
-          <option value="DAMAGED">Có hư hỏng</option>
-          <option value="MISSING">Thiếu/mất</option>
-        </select>
-
-        <select
-          value={filters.feedbackRating}
-          onChange={(e) => setFilters({ ...filters, feedbackRating: e.target.value })}
-          className={selectClass}
-          aria-label="Mức đánh giá"
-        >
-          <option value="ALL">Rating: Tất cả</option>
-          <option value="LOW">Thấp (≤ 2)</option>
-          <option value="HIGH">Tốt (≥ 4)</option>
-        </select>
-
-        {data && (
-          <span className="text-xs font-semibold text-slate-400 border border-dashed border-slate-200 rounded-lg px-2.5 py-2">
-            Phòng ban: {data.filterSummary.departmentName}
-          </span>
-        )}
-
-        <div className="flex items-center gap-2 ml-auto">
-          <button
-            onClick={() => applyFilters()}
-            disabled={loading}
-            className="px-4 py-2 bg-[#004c91] text-white text-sm font-bold rounded-lg hover:bg-[#00386b] transition-colors disabled:opacity-50 cursor-pointer"
-          >
-            Áp dụng
-          </button>
-          <button
-            onClick={resetFilters}
-            disabled={loading}
-            className="px-3 py-2 text-sm font-bold text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors disabled:opacity-50 cursor-pointer"
-          >
-            Reset
-          </button>
-        </div>
-      </div>
-
-      {/* ── Error state ── */}
-      {error === 'ERROR' && (
-        <div className="bg-white border border-slate-200 rounded-xl p-10 flex flex-col items-center text-center">
-          <AlertTriangle className="w-8 h-8 text-amber-500 mb-3" />
-          <p className="text-sm font-semibold text-slate-700 mb-3">Không thể tải báo cáo. Vui lòng thử lại.</p>
-          <button
-            onClick={refetch}
-            className="flex items-center gap-2 px-4 py-2 bg-[#004c91] text-white text-sm font-bold rounded-lg hover:bg-[#00386b] cursor-pointer"
-          >
-            <RefreshCw className="w-4 h-4" /> Thử lại
-          </button>
-        </div>
-      )}
-
-      {/* ── Loading skeleton ── */}
-      {loading && !error && <ReportSkeleton />}
-
-      {!loading && !error && data && (
-        <>
-          <KpiStrip data={data} />
-          <AttentionBar data={data} onView={(section) => setTab(SECTION_TO_TAB[section] ?? 'tasks')} />
-
-          {/* ── Tabs ── */}
-          <div className="bg-white border border-slate-200 rounded-xl px-3 pt-1.5 flex items-center gap-1 overflow-x-auto">
-            {TABS.map((t) => (
-              <button
-                key={t.key}
-                onClick={() => setTab(t.key)}
-                className={`px-4 py-2.5 text-sm font-bold rounded-t-lg border-b-2 whitespace-nowrap transition-colors cursor-pointer ${
-                  tab === t.key ? 'border-[#004c91] text-[#004c91]' : 'border-transparent text-slate-400 hover:text-slate-600'
-                }`}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
-
-          {tab === 'overview' && <OverviewTab data={data} />}
-          {tab === 'tasks' && <TasksTab data={data} onOpen={() => navigate('/dashboard/visit')} />}
-          {tab === 'staff' && <StaffTab data={data} />}
-          {tab === 'handover' && <HandoverTab data={data} />}
-          {tab === 'incidents' && <IncidentsTab data={data} />}
-          {tab === 'invoice' && (
-            <InvoiceTab
-              visits={invoiceVisits}
-              items={invoiceItems}
-              visitsLoading={invoiceVisitsLoading}
-              itemsLoading={invoiceItemsLoading}
-              exportLoading={invoiceExportLoading}
-              onLoadVisits={fetchInvoiceVisits}
-              onLoadItems={fetchInvoiceItems}
-              onExport={exportInvoicePdf}
-            />
+              </div>
+            </>
           )}
-
-          <p className="text-[11px] text-slate-400 text-right">
-            Số liệu theo kỳ tính bằng ngày thăm dự kiến · Khối tác vụ (chưa phân công, chờ phản hồi, quá hạn…)
-            tính theo trạng thái hiện tại · Cập nhật {fmt.formatDateTime(data.generatedAt)}
-          </p>
-        </>
-      )}
-
-      {/* ── Modal xác nhận export ── */}
-      {exportConfirm && data && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
-              <h3 className="text-base font-bold text-slate-800">Xuất báo cáo phòng ban</h3>
-              <button onClick={() => setExportConfirm(null)} className="text-slate-400 hover:text-slate-600 cursor-pointer" aria-label="Đóng">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="px-5 py-4 space-y-3 text-sm">
-              <div className="grid grid-cols-[110px_1fr] gap-y-1.5 text-slate-600">
-                <span className="font-semibold text-slate-400">Định dạng</span>
-                <span className="font-bold text-slate-800">{exportConfirm}</span>
-                <span className="font-semibold text-slate-400">Phòng ban</span>
-                <span>{data.filterSummary.departmentName}</span>
-                <span className="font-semibold text-slate-400">Thời gian</span>
-                <span>{PRESET_LABELS[data.filterSummary.preset]} ({fmt.formatDate(data.filterSummary.fromDate)} – {fmt.formatDate(data.filterSummary.toDate)})</span>
-                <span className="font-semibold text-slate-400">Bộ lọc</span>
-                <span>
-                  Trạng thái: {data.filterSummary.logisticsStatus === 'ALL' ? 'Tất cả' : taskStatusLabel(data.filterSummary.logisticsStatus)}
-                  {' '}· Mảng việc: {data.filterSummary.itemType === 'ALL' ? 'Tất cả' : itemTypeLabel(data.filterSummary.itemType)}
-                  {' '}· Nhân sự: {data.filterSummary.assignedUserId === 'ALL' ? 'Tất cả' : data.filterSummary.assignedUserName ?? data.filterSummary.assignedUserId}
-                  {' '}· Rating: {data.filterSummary.feedbackRating === 'ALL' ? 'Tất cả' : data.filterSummary.feedbackRating}
-                </span>
-              </div>
-              <div>
-                <p className="font-semibold text-slate-400 mb-1.5">Section</p>
-                <div className="grid grid-cols-1 gap-1">
-                  {SECTION_OPTIONS.map((s) => (
-                    <label key={s.value} className="flex items-center gap-2 text-slate-700 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={exportSections.includes(s.value)}
-                        onChange={(e) => setExportSections((prev) =>
-                          e.target.checked ? [...prev, s.value] : prev.filter((v) => v !== s.value))}
-                        className="rounded border-slate-300 text-[#004c91] focus:ring-[#004c91]/30"
-                      />
-                      {s.label}
-                    </label>
-                  ))}
-                </div>
-              </div>
-            </div>
-            <div className="flex justify-end gap-2 px-5 py-4 border-t border-slate-100 bg-slate-50">
-              <button
-                onClick={() => setExportConfirm(null)}
-                className="px-4 py-2 text-sm font-bold text-slate-500 hover:text-slate-700 rounded-lg hover:bg-slate-100 cursor-pointer"
-              >
-                Hủy
-              </button>
-              <button
-                onClick={handleExport}
-                disabled={exportLoading || exportSections.length === 0}
-                className="flex items-center gap-2 px-4 py-2 bg-[#004c91] text-white text-sm font-bold rounded-lg hover:bg-[#00386b] disabled:opacity-50 cursor-pointer"
-              >
-                {exportLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-                Xuất báo cáo
-              </button>
-            </div>
-          </div>
         </div>
-      )}
-    </div>
-  );
-}
-
-// ───────────────────────────── Skeleton ─────────────────────────────
-
-function ReportSkeleton() {
-  return (
-    <div className="space-y-4 animate-pulse">
-      <div className="bg-white border border-slate-200 rounded-xl grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-px overflow-hidden">
-        {Array.from({ length: 6 }).map((_, i) => (
-          <div key={i} className="p-4 space-y-2">
-            <div className="h-3 bg-slate-100 rounded w-2/3" />
-            <div className="h-6 bg-slate-200 rounded w-1/2" />
-          </div>
-        ))}
       </div>
-      <div className="h-12 bg-white border border-slate-200 rounded-xl" />
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-        <div className="lg:col-span-3 h-[320px] bg-white border border-slate-200 rounded-xl" />
-        <div className="lg:col-span-2 h-[320px] bg-white border border-slate-200 rounded-xl" />
-      </div>
-      <div className="h-56 bg-white border border-slate-200 rounded-xl" />
-    </div>
-  );
-}
 
-// ───────────────────────────── KPI strip (6 KPI theo spec) ─────────────────────────────
-
-function KpiStrip({ data }: { data: DeptLeaderReportOverview }) {
-  const k = data.kpis;
-  const items: { label: string; value: string; sub?: string; tone?: 'warn' | 'danger' | 'good'; title?: string }[] = [
-    { label: 'Yêu cầu mới', value: fmt.formatNumber(k.newRequests), sub: `${k.waitingAssignment} chưa phân công`, tone: k.waitingAssignment > 0 ? 'warn' : undefined, title: 'Yêu cầu logistics ở trạng thái REQUESTED (hiện tại)' },
-    { label: 'Chờ phản hồi', value: fmt.formatNumber(k.waitingStaffResponse), sub: 'nhân sự chưa nhận việc', tone: k.waitingStaffResponse > 0 ? 'warn' : undefined },
-    { label: 'Đang xử lý', value: fmt.formatNumber(k.inProgress), sub: 'nhiệm vụ đang thực hiện' },
-    { label: 'Hoàn thành', value: fmt.formatNumber(k.completed), sub: 'trong kỳ báo cáo', tone: 'good' },
-    { label: 'Quá hạn', value: fmt.formatNumber(k.overdue), sub: 'qua deadline chưa xong', tone: k.overdue > 0 ? 'danger' : undefined },
-    { label: 'Thiếu ký', value: fmt.formatNumber(k.missingHandoverSignature), sub: 'biên bản bàn giao', tone: k.missingHandoverSignature > 0 ? 'warn' : undefined },
-  ];
-
-  return (
-    <div className="bg-slate-200 border border-slate-200 rounded-xl grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-px overflow-hidden">
-      {items.map((item) => (
-        <div key={item.label} className="bg-white px-4 py-3" title={item.title}>
-          <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wide truncate">{item.label}</p>
-          <p className={`text-xl font-black mt-0.5 ${
-            item.tone === 'warn' ? 'text-amber-600' : item.tone === 'danger' ? 'text-red-600' : item.tone === 'good' ? 'text-emerald-600' : 'text-slate-800'
-          }`}>
-            {item.value}
-          </p>
-          {item.sub && <p className="text-[11px] font-medium text-slate-400 truncate">{item.sub}</p>}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// ───────────────────────────── Cần xử lý ngay ─────────────────────────────
-
-function AttentionBar({ data, onView }: { data: DeptLeaderReportOverview; onView: (section: string) => void }) {
-  const actionable = data.attentionItems.filter((a) => a.count > 0);
-  return (
-    <div className="bg-white border border-slate-200 rounded-xl px-4 py-3">
-      <div className="flex items-center gap-2 flex-wrap">
-        <span className="text-xs font-bold text-slate-500 uppercase tracking-wide mr-1 shrink-0">Cần xử lý ngay</span>
-        {actionable.length === 0 && (
-          <span className="flex items-center gap-1.5 text-sm font-medium text-emerald-600">
-            <CheckCircle2 className="w-4 h-4" /> Không có công việc cần xử lý
-          </span>
-        )}
-        {actionable.map((a) => {
-          const style = SEVERITY_STYLES[a.severity] ?? SEVERITY_STYLES.INFO;
-          return (
-            <div
-              key={a.key}
-              title={a.description}
-              className="flex items-center gap-2 border border-slate-200 rounded-lg pl-2.5 pr-1.5 py-1.5 bg-slate-50/60"
+      {/* ── Bộ lọc thời gian (chung cho cả 3 phần) ── */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm px-4 py-3 flex flex-wrap items-center gap-3">
+        <span className="flex items-center gap-1.5 text-sm font-bold text-slate-600">
+          <CalendarRange className="w-4 h-4 text-[#f37021]" /> Thời gian
+        </span>
+        <div className="flex rounded-xl border border-slate-200 overflow-hidden">
+          {PRESETS.map((pr) => (
+            <button
+              key={pr.value}
+              type="button"
+              onClick={() => setFilters((f) => ({ ...f, preset: pr.value }))}
+              className={`px-3.5 py-2 text-xs font-bold transition-colors cursor-pointer ${
+                filters.preset === pr.value ? 'bg-[#004c91] text-white' : 'bg-white text-slate-600 hover:bg-slate-50'
+              }`}
             >
-              <span className={`w-2 h-2 rounded-full shrink-0 ${style.dot}`} />
-              <span className="text-xs font-semibold text-slate-600">{a.label}</span>
-              <span className={`text-sm font-black ${style.text}`}>{a.count}</span>
-              <button
-                onClick={() => onView(a.targetSection)}
-                className="text-[11px] font-bold text-[#004c91] hover:bg-blue-50 rounded px-1.5 py-0.5 cursor-pointer"
-              >
-                Xem
-              </button>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-// ───────────────────────────── Empty helpers ─────────────────────────────
-
-function ChartEmpty({ height }: { height: number }) {
-  return (
-    <div style={{ height }} className="flex flex-col items-center justify-center text-slate-400">
-      <Info className="w-6 h-6 mb-2" />
-      <p className="text-sm font-medium">Không có dữ liệu trong khoảng thời gian đã chọn.</p>
-    </div>
-  );
-}
-
-function SectionEmpty({ text }: { text: string }) {
-  return (
-    <div className="flex flex-col items-center justify-center text-slate-400 py-6">
-      <Info className="w-5 h-5 mb-1.5" />
-      <p className="text-sm font-medium">{text}</p>
-    </div>
-  );
-}
-
-// ───────────────────────────── Tab: Tổng quan ─────────────────────────────
-
-function OverviewTab({ data }: { data: DeptLeaderReportOverview }) {
-  const trend = data.monthlyTrend;
-  const trendEmpty = trend.length === 0 || trend.every((m) => m.totalTasks === 0);
-  const pipeline = data.taskStatusPipeline.filter((s) => s.count > 0);
-  const pipelineTotal = data.taskStatusPipeline.reduce((sum, s) => sum + s.count, 0);
-  const pipelineMax = Math.max(1, ...pipeline.map((s) => s.count));
-  const workTypes = data.workTypeDistribution;
-  const workTypeMax = Math.max(1, ...workTypes.map((w) => w.count));
-
-  return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Task status pipeline — horizontal bars, label trực tiếp từng dòng */}
-        <div className="bg-white border border-slate-200 rounded-xl p-4 flex flex-col">
-          <h3 className="text-sm font-bold text-slate-800">Trạng thái công việc</h3>
-          <p className="text-xs text-slate-400 font-medium mb-2">{fmt.formatNumber(pipelineTotal)} nhiệm vụ trong kỳ</p>
-          {pipelineTotal === 0 ? (
-            <ChartEmpty height={230} />
-          ) : (
-            <div className="flex-1 flex flex-col justify-center gap-2">
-              {pipeline.map((s) => (
-                <div key={s.status} className="flex items-center gap-2 text-xs" title={`${s.labelVi}: ${s.count} (${s.percentage}%)`}>
-                  <span className="w-28 truncate font-semibold text-slate-600 shrink-0">{s.labelVi}</span>
-                  <div className="flex-1 h-4 bg-slate-100 rounded overflow-hidden">
-                    <div className="h-full rounded" style={{ width: `${(s.count / pipelineMax) * 100}%`, background: CHART_BLUE }} />
-                  </div>
-                  <span className="font-bold text-slate-800 w-8 text-right">{s.count}</span>
-                  <span className="text-slate-400 w-12 text-right">{s.percentage}%</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Work type distribution */}
-        <div className="bg-white border border-slate-200 rounded-xl p-4 flex flex-col">
-          <h3 className="text-sm font-bold text-slate-800">Phân bổ mảng việc</h3>
-          <p className="text-xs text-slate-400 font-medium mb-2">Số nhiệm vụ và tổng số lượng theo mảng việc</p>
-          {workTypes.length === 0 ? (
-            <ChartEmpty height={230} />
-          ) : (
-            <div className="flex-1 flex flex-col justify-center gap-2">
-              {workTypes.map((w) => (
-                <div key={w.itemType} className="flex items-center gap-2 text-xs" title={`${w.labelVi}: ${w.count} nhiệm vụ · SL ${w.quantityTotal} (${w.percentage}%)`}>
-                  <span className="w-28 truncate font-semibold text-slate-600 shrink-0">{w.labelVi}</span>
-                  <div className="flex-1 h-4 bg-slate-100 rounded overflow-hidden">
-                    <div className="h-full rounded" style={{ width: `${(w.count / workTypeMax) * 100}%`, background: CHART_BLUE }} />
-                  </div>
-                  <span className="font-bold text-slate-800 w-8 text-right">{w.count}</span>
-                  <span className="text-slate-400 w-16 text-right">SL {fmt.formatNumber(w.quantityTotal)}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Monthly trend */}
-      <div className="bg-white border border-slate-200 rounded-xl p-4">
-        <div className="flex items-start justify-between gap-2 mb-2 flex-wrap">
-          <div>
-            <h3 className="text-sm font-bold text-slate-800">Xu hướng hoàn thành theo tháng</h3>
-            <p className="text-xs text-slate-400 font-medium">Tính theo ngày thăm dự kiến của chuyến</p>
-          </div>
-          <div className="flex items-center gap-3 text-[11px] font-semibold text-slate-500 flex-wrap">
-            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full" style={{ background: CHART_BLUE }} />Tổng nhiệm vụ</span>
-            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full" style={{ background: CHART_GREEN }} />Hoàn thành</span>
-            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full" style={{ background: CHART_ORANGE }} />Quá hạn</span>
-          </div>
-        </div>
-        {trendEmpty ? (
-          <ChartEmpty height={260} />
-        ) : (
-          <div className="h-[260px] w-full">
-            <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
-              <LineChart data={trend} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                <XAxis dataKey="monthLabel" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#64748b' }} dy={8} />
-                <YAxis allowDecimals={false} axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#64748b' }} />
-                <Tooltip
-                  contentStyle={{ borderRadius: 10, border: '1px solid #e2e8f0', boxShadow: '0 4px 12px rgb(0 0 0 / 0.08)', fontSize: 12 }}
-                  labelStyle={{ fontWeight: 700, color: '#1e293b' }}
-                />
-                <Line type="monotone" dataKey="totalTasks" name="Tổng nhiệm vụ" stroke={CHART_BLUE} strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
-                <Line type="monotone" dataKey="completedTasks" name="Hoàn thành" stroke={CHART_GREEN} strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
-                <Line type="monotone" dataKey="overdueTasks" name="Quá hạn" stroke={CHART_ORANGE} strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ───────────────────────────── Tab: Công việc ─────────────────────────────
-
-function TasksTab({ data, onOpen }: { data: DeptLeaderReportOverview; onOpen: () => void }) {
-  const rows = data.pendingTasks;
-  const proposals = data.proposalChanges;
-  return (
-    <div className="space-y-4">
-      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-        <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between gap-2 flex-wrap">
-          <h3 className="text-sm font-bold text-slate-800">
-            Công việc cần xử lý
-            {data.pendingTasksTotal > rows.length && (
-              <span className="text-slate-400 font-medium"> · hiển thị {rows.length}/{data.pendingTasksTotal}</span>
-            )}
-          </h3>
-          {data.pendingTasksTotal > 0 && (
-            <button onClick={onOpen} className="text-xs font-bold text-[#004c91] hover:underline cursor-pointer">
-              Mở Quản lý nhiệm vụ phòng ban
+              {pr.label}
             </button>
-          )}
+          ))}
         </div>
-        {rows.length === 0 ? (
-          <SectionEmpty text="Không có công việc cần xử lý." />
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse min-w-[1020px]">
-              <thead>
-                <tr className="bg-slate-50 border-b border-slate-100">
-                  <th className={thClass}>Ưu tiên</th>
-                  <th className={thClass}>Tên nhiệm vụ</th>
-                  <th className={thClass}>Đoàn / Visit</th>
-                  <th className={thClass}>Mảng việc</th>
-                  <th className={`${thClass} text-right`}>Số lượng</th>
-                  <th className={thClass}>Deadline</th>
-                  <th className={thClass}>Trạng thái</th>
-                  <th className={thClass}>Người xử lý</th>
-                  <th className={thClass}>Hành động</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {rows.map((r) => (
-                  <tr key={r.logisticsItemId} className="hover:bg-blue-50/40 transition-colors">
-                    <td className={tdClass}>
-                      <span className={`inline-block text-[11px] font-bold border rounded-full px-2 py-0.5 ${PRIORITY_BADGES[r.priority] ?? PRIORITY_BADGES.MEDIUM}`}>
-                        {PRIORITY_LABELS[r.priority] ?? r.priority}
-                      </span>
-                    </td>
-                    <td className={`${tdClass} font-semibold text-slate-800 max-w-[220px] truncate`} title={r.itemName}>{r.itemName}</td>
-                    <td className={`${tdClass} max-w-[200px] truncate`} title={`${r.requestCode} · ${r.delegationName}`}>
-                      <span className="font-bold text-[#004c91]">{r.requestCode}</span> · {r.delegationName}
-                    </td>
-                    <td className={tdClass}>{itemTypeLabel(r.itemType)}</td>
-                    <td className={`${tdClass} text-right font-semibold`}>{r.quantity}</td>
-                    <td className={`${tdClass} ${r.dueAt && new Date(r.dueAt) < new Date() ? 'text-red-600 font-bold' : ''}`}>
-                      {fmt.formatDate(r.dueAt)}
-                    </td>
-                    <td className={tdClass}>
-                      <span className={`inline-block text-[11px] font-bold border rounded-full px-2 py-0.5 ${taskStatusBadge(r.status)}`}>
-                        {taskStatusLabel(r.status)}
-                      </span>
-                    </td>
-                    <td className={tdClass}>{r.assignedToName ?? <span className="text-slate-400">Chưa gán</span>}</td>
-                    <td className={tdClass}>
-                      <button onClick={onOpen} className="text-xs font-bold text-[#004c91] hover:underline cursor-pointer" title={`Đã chờ ${fmt.formatWaitingHours(r.waitingHours)}`}>
-                        {r.actionLabel}
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        {filters.preset === 'CUSTOM' && (
+          <div className="flex items-center gap-2">
+            <input type="date" value={filters.fromDate} onChange={(e) => setFilters((f) => ({ ...f, fromDate: e.target.value }))}
+              className="border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm outline-none focus:border-[#004c91]" />
+            <span className="text-slate-400 text-sm">→</span>
+            <input type="date" value={filters.toDate} onChange={(e) => setFilters((f) => ({ ...f, toDate: e.target.value }))}
+              className="border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm outline-none focus:border-[#004c91]" />
           </div>
         )}
+        <button
+          type="button"
+          onClick={() => fetchReport(filters)}
+          disabled={loading}
+          className="px-4 py-2 bg-[#f37021] text-white text-xs font-black rounded-xl hover:opacity-90 disabled:opacity-50 transition-all cursor-pointer"
+        >
+          Áp dụng
+        </button>
+        <button
+          type="button"
+          onClick={() => fetchReport(filters)}
+          disabled={loading}
+          className="ml-auto p-2 rounded-xl hover:bg-slate-100 text-slate-500 transition-colors cursor-pointer"
+          title="Tải lại"
+        >
+          {loading ? <Loader2 className="w-4 h-4 animate-spin text-[#004c91]" /> : <RefreshCw className="w-4 h-4" />}
+        </button>
       </div>
 
-      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-        <div className="px-4 py-3 border-b border-slate-100">
-          <h3 className="text-sm font-bold text-slate-800">Đề xuất thay đổi</h3>
-          <p className="text-xs text-slate-400 font-medium">Đề xuất thay đổi số lượng/thời gian đang chờ host phản hồi</p>
-        </div>
-        {proposals.length === 0 ? (
-          <SectionEmpty text="Không có đề xuất thay đổi nào đang chờ." />
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse min-w-[860px]">
-              <thead>
-                <tr className="bg-slate-50 border-b border-slate-100">
-                  <th className={thClass}>Nhiệm vụ</th>
-                  <th className={thClass}>Người đề xuất</th>
-                  <th className={`${thClass} text-right`}>SL đề xuất</th>
-                  <th className={thClass}>Thời gian đề xuất</th>
-                  <th className={thClass}>Ghi chú</th>
-                  <th className={thClass}>Trạng thái</th>
-                  <th className={thClass}>Ngày tạo</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {proposals.map((p) => (
-                  <tr key={p.logisticsItemId} className="hover:bg-blue-50/40 transition-colors">
-                    <td className={`${tdClass} font-semibold text-slate-800 max-w-[220px] truncate`} title={p.itemName}>{p.itemName}</td>
-                    <td className={tdClass}>{p.proposedByName}</td>
-                    <td className={`${tdClass} text-right font-semibold`}>{p.proposedQuantity ?? '—'}</td>
-                    <td className={tdClass}>{fmt.formatDate(p.proposedUsageStartAt)} – {fmt.formatDate(p.proposedUsageEndAt)}</td>
-                    <td className={`${tdClass} max-w-[240px] truncate`} title={p.proposalNote ?? undefined}>
-                      {p.proposalNote || <span className="text-slate-400">—</span>}
-                    </td>
-                    <td className={tdClass}>
-                      <span className="inline-block text-[11px] font-bold border rounded-full px-2 py-0.5 bg-violet-50 text-violet-700 border-violet-200">
-                        {p.proposalStatus}
-                      </span>
-                    </td>
-                    <td className={tdClass}>{fmt.formatDate(p.createdAt)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ───────────────────────────── Tab: Nhân sự ─────────────────────────────
-
-function StaffTab({ data }: { data: DeptLeaderReportOverview }) {
-  const rows = data.staffPerformance;
-  return (
-    <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-      <div className="px-4 py-3 border-b border-slate-100">
-        <h3 className="text-sm font-bold text-slate-800">Hiệu suất nhân sự phòng ban</h3>
-        <p className="text-xs text-slate-400 font-medium">Theo lượt phân công và nhiệm vụ trong kỳ báo cáo</p>
-      </div>
-      {rows.length === 0 ? (
-        <SectionEmpty text="Chưa có dữ liệu nhân sự trong kỳ này." />
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse min-w-[980px]">
-            <thead>
-              <tr className="bg-slate-50 border-b border-slate-100">
-                <th className={thClass}>Nhân sự</th>
-                <th className={`${thClass} text-right`}>Được giao</th>
-                <th className={`${thClass} text-right`}>Chờ phản hồi</th>
-                <th className={`${thClass} text-right`}>Đã nhận</th>
-                <th className={`${thClass} text-right`}>Đang xử lý</th>
-                <th className={`${thClass} text-right`}>Hoàn thành</th>
-                <th className={`${thClass} text-right`}>Từ chối</th>
-                <th className={`${thClass} text-right`}>Quá hạn</th>
-                <th className={thClass}>Tỷ lệ hoàn thành</th>
-                <th className={`${thClass} text-right`}>Phản hồi TB</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {rows.map((s) => (
-                <tr key={s.userId} className="hover:bg-blue-50/40 transition-colors">
-                  <td className={`${tdClass} font-semibold text-slate-800 max-w-[200px] truncate`} title={s.fullName}>{s.fullName}</td>
-                  <td className={`${tdClass} text-right font-bold text-[#004c91]`}>{s.assignedCount}</td>
-                  <td className={`${tdClass} text-right ${s.pendingResponseCount > 0 ? 'text-amber-600 font-semibold' : 'text-slate-400'}`}>{s.pendingResponseCount}</td>
-                  <td className={`${tdClass} text-right`}>{s.acceptedCount}</td>
-                  <td className={`${tdClass} text-right`}>{s.inProgressCount}</td>
-                  <td className={`${tdClass} text-right text-emerald-600 font-semibold`}>{s.completedCount}</td>
-                  <td className={`${tdClass} text-right ${s.declinedCount > 0 ? 'text-red-600 font-semibold' : 'text-slate-400'}`}>{s.declinedCount}</td>
-                  <td className={`${tdClass} text-right ${s.overdueCount > 0 ? 'text-red-600 font-bold' : 'text-slate-400'}`}>{s.overdueCount}</td>
-                  <td className={tdClass}>
-                    <div className="flex items-center gap-2" title={`${s.completionRate}%`}>
-                      <div className="w-24 h-2 bg-slate-100 rounded overflow-hidden">
-                        <div className="h-full rounded" style={{ width: `${Math.min(100, s.completionRate)}%`, background: CHART_GREEN }} />
-                      </div>
-                      <span className="text-xs font-bold text-slate-700 w-11">{fmt.formatPercent(s.completionRate)}</span>
-                    </div>
-                  </td>
-                  <td className={`${tdClass} text-right font-semibold`}>
-                    {s.averageResponseHours != null ? fmt.formatWaitingHours(s.averageResponseHours) : '—'}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      {error && (
+        <div className="bg-rose-50 border border-rose-200 rounded-2xl px-5 py-4 text-sm text-rose-700 flex items-center gap-2">
+          <AlertTriangle className="w-4 h-4 shrink-0" /> {error}
         </div>
       )}
-    </div>
-  );
-}
 
-// ───────────────────────────── Tab: Bàn giao ─────────────────────────────
-
-function HandoverBadge({ label }: { label: string }) {
-  const cls = label === 'Đủ chữ ký'
-    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-    : label === 'Có hư hỏng' || label === 'Thiếu/mất'
-      ? 'bg-red-50 text-red-600 border-red-200'
-      : 'bg-amber-50 text-amber-700 border-amber-200';
-  return <span className={`inline-block text-[11px] font-bold border rounded-full px-2 py-0.5 ${cls}`}>{label}</span>;
-}
-
-function SignBadge({ signed }: { signed: boolean }) {
-  return (
-    <span className={`inline-block text-[11px] font-bold border rounded-full px-2 py-0.5 ${
-      signed ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'
-    }`}>
-      {signed ? 'Đã ký' : 'Chưa ký'}
-    </span>
-  );
-}
-
-function HandoverTab({ data }: { data: DeptLeaderReportOverview }) {
-  const rows = data.handoverSummary;
-  return (
-    <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-      <div className="px-4 py-3 border-b border-slate-100">
-        <h3 className="text-sm font-bold text-slate-800">
-          Bàn giao / ký mượn / ký trả
-          {data.handoverTotal > rows.length && (
-            <span className="text-slate-400 font-medium"> · hiển thị {rows.length}/{data.handoverTotal}</span>
-          )}
-        </h3>
-        <p className="text-xs text-slate-400 font-medium">Biên bản thiếu chữ ký được xếp lên đầu</p>
-      </div>
-      {rows.length === 0 ? (
-        <SectionEmpty text="Không có biên bản bàn giao trong kỳ này." />
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse min-w-[980px]">
-            <thead>
-              <tr className="bg-slate-50 border-b border-slate-100">
-                <th className={thClass}>Item</th>
-                <th className={thClass}>Visit</th>
-                <th className={thClass}>Loại bàn giao</th>
-                <th className={thClass}>Bên mượn/trả ký</th>
-                <th className={thClass}>Bên giao/nhận ký</th>
-                <th className={thClass}>Tình trạng đồ</th>
-                <th className={thClass}>Ghi chú</th>
-                <th className={thClass}>File</th>
-                <th className={thClass}>Trạng thái</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {rows.map((h, index) => (
-                <tr key={`${h.logisticsItemId}-${h.handoverType}-${index}`} className="hover:bg-blue-50/40 transition-colors">
-                  <td className={`${tdClass} font-semibold text-slate-800 max-w-[200px] truncate`} title={h.itemName}>{h.itemName}</td>
-                  <td className={`${tdClass} max-w-[180px] truncate`} title={`${h.visitCode} · ${h.delegationName}`}>
-                    <span className="font-bold text-[#004c91]">{h.visitCode}</span> · {h.delegationName}
-                  </td>
-                  <td className={tdClass}>
-                    <span className={`inline-block text-[11px] font-bold border rounded-full px-2 py-0.5 ${
-                      h.handoverType === 'BORROW' ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-violet-50 text-violet-700 border-violet-200'
-                    }`}>
-                      {h.handoverType === 'BORROW' ? 'Ký mượn' : 'Ký trả'}
-                    </span>
-                  </td>
-                  <td className={tdClass}><SignBadge signed={h.borrowerSigned} /></td>
-                  <td className={tdClass}><SignBadge signed={h.providerSigned} /></td>
-                  <td className={tdClass}>
-                    {h.itemCondition === 'GOOD' ? 'Tốt'
-                      : h.itemCondition === 'DAMAGED' ? <span className="text-red-600 font-semibold">Hư hỏng</span>
-                        : h.itemCondition === 'MISSING' ? <span className="text-red-600 font-semibold">Thiếu/mất</span>
-                          : h.itemCondition ?? '—'}
-                  </td>
-                  <td className={`${tdClass} max-w-[200px] truncate`} title={h.conditionNote ?? undefined}>
-                    {h.conditionNote || <span className="text-slate-400">—</span>}
-                  </td>
-                  <td className={tdClass}>
-                    {h.attachmentFileId != null
-                      ? <span className="inline-flex items-center gap-1 text-xs font-semibold text-slate-600"><Paperclip className="w-3.5 h-3.5" /> Có</span>
-                      : <span className="text-slate-400">—</span>}
-                  </td>
-                  <td className={tdClass}><HandoverBadge label={h.statusLabel} /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      {loading && !data ? (
+        <div className="py-24 text-center text-slate-500">
+          <Loader2 className="w-7 h-7 mx-auto mb-3 animate-spin text-[#004c91]" />
+          <p className="text-sm font-medium">Đang tổng hợp báo cáo...</p>
         </div>
-      )}
-    </div>
-  );
-}
-
-// ───────────────────────────── Tab: Phát sinh & Feedback ─────────────────────────────
-
-function IncidentsTab({ data }: { data: DeptLeaderReportOverview }) {
-  const incidents = data.incidentSummary;
-  const fb = data.feedbackSummary;
-  const [fbTab, setFbTab] = useState<'low' | 'recent'>('low');
-  const fbRows = fbTab === 'low' ? fb.lowRatedItems : fb.recentFeedbacks;
-
-  return (
-    <div className="space-y-4">
-      {/* Phát sinh sau bàn giao (đổi tên từ "Thanh toán khắc phục") */}
-      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-        <div className="px-4 py-3 border-b border-slate-100">
-          <h3 className="text-sm font-bold text-slate-800">Phát sinh sau bàn giao</h3>
-          <p className="text-xs text-slate-400 font-medium">Hư hỏng, thiếu/mất và biên bản chưa hoàn tất theo mảng việc</p>
-        </div>
-        {incidents.length === 0 ? (
-          <SectionEmpty text="Không có phát sinh sau bàn giao trong kỳ này." />
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse min-w-[860px]">
-              <thead>
-                <tr className="bg-slate-50 border-b border-slate-100">
-                  <th className={thClass}>Mảng việc</th>
-                  <th className={`${thClass} text-right`}>Tổng số lượng</th>
-                  <th className={`${thClass} text-right`}>Hư hỏng</th>
-                  <th className={`${thClass} text-right`}>Thiếu/mất</th>
-                  <th className={`${thClass} text-right`}>Cần xử lý</th>
-                  <th className={thClass}>Ghi chú mới nhất</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {incidents.map((i) => (
-                  <tr key={i.itemType} className="hover:bg-blue-50/40 transition-colors">
-                    <td className={`${tdClass} font-semibold text-slate-800`}>{i.itemTypeLabelVi}</td>
-                    <td className={`${tdClass} text-right font-semibold`}>{fmt.formatNumber(i.totalQuantity)}</td>
-                    <td className={`${tdClass} text-right ${i.damagedCount > 0 ? 'text-red-600 font-bold' : 'text-slate-400'}`}>{i.damagedCount}</td>
-                    <td className={`${tdClass} text-right ${i.missingCount > 0 ? 'text-red-600 font-bold' : 'text-slate-400'}`}>{i.missingCount}</td>
-                    <td className={`${tdClass} text-right ${i.needActionCount > 0 ? 'text-amber-600 font-bold' : 'text-slate-400'}`}>{i.needActionCount}</td>
-                    <td className={`${tdClass} max-w-[320px] truncate`} title={i.latestNote ?? undefined}>
-                      {i.latestNote || <span className="text-slate-400">Không có ghi chú phát sinh</span>}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      {/* Feedback theo mảng việc */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-          <div className="px-4 py-3 border-b border-slate-100">
-            <h3 className="text-sm font-bold text-slate-800">Feedback theo mảng việc</h3>
-            <p className="text-xs text-slate-400 font-medium">
-              Điểm TB <span className="font-black text-slate-700">{fmt.formatRating(fb.averageRating)}</span>/5
-              {' '}· {fmt.formatNumber(fb.totalFeedbacks)} feedback trong kỳ
-            </p>
-          </div>
-          {fb.feedbackByItemType.length === 0 ? (
-            <SectionEmpty text="Chưa có feedback trong kỳ này." />
-          ) : (
-            <div className="p-4 space-y-2">
-              {fb.feedbackByItemType.map((t) => (
-                <div key={t.itemType} className="flex items-center gap-2 text-xs" title={`${t.labelVi}: ${t.averageRating}/5 (${t.feedbackCount} feedback)`}>
-                  <span className="w-28 truncate font-semibold text-slate-600 shrink-0">{t.labelVi}</span>
-                  <div className="flex-1 h-4 bg-slate-100 rounded overflow-hidden">
-                    <div
-                      className="h-full rounded"
-                      style={{ width: `${(t.averageRating / 5) * 100}%`, background: t.averageRating < 3 ? CHART_ORANGE : CHART_BLUE }}
-                    />
-                  </div>
-                  <span className={`font-bold w-10 text-right ${t.averageRating < 3 ? 'text-red-600' : 'text-slate-800'}`}>{t.averageRating}/5</span>
-                  <span className="text-slate-400 w-8 text-right">({t.feedbackCount})</span>
-                </div>
-              ))}
+      ) : data && (
+        <>
+          {/* ═══ 1 · Báo cáo nhiệm vụ ═══ */}
+          <Section
+            index={1}
+            title="Báo cáo nhiệm vụ"
+            subtitle="Số liệu thư mời tham gia và đơn yêu cầu hậu cần gửi tới phòng ban trong kỳ."
+            open={openSections.tasks}
+            onToggle={() => toggleSection('tasks')}
+          >
+            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3">
+              <StatTile label="Tổng nhiệm vụ" value={t!.totalTasks} tone="blue" icon={<Users className="w-4 h-4 opacity-60" />} />
+              <StatTile label="Đã hoàn thành" value={t!.completed} tone="green" icon={<CheckCircle2 className="w-4 h-4 opacity-60" />} />
+              <StatTile label="Từ chối" value={t!.rejected} tone="red" icon={<XCircle className="w-4 h-4 opacity-60" />} />
+              <StatTile label="Chưa hoàn thành" value={t!.notCompleted} tone="amber" />
+              <StatTile
+                label="Feedback"
+                value={t!.feedbackAverage != null ? `${t!.feedbackAverage.toFixed(1)}★` : '—'}
+                sub={`${t!.feedbackTotalStars} sao / ${t!.feedbackCount} lượt`}
+                tone="violet"
+                icon={<Star className="w-4 h-4 opacity-60" />}
+              />
             </div>
-          )}
-        </div>
 
-        {/* Feedback thấp / gần đây */}
-        <div className="lg:col-span-2 bg-white border border-slate-200 rounded-xl overflow-hidden">
-          <div className="px-4 pt-3 border-b border-slate-100 flex items-center gap-1">
-            {([
-              { key: 'low' as const, label: `Feedback thấp cần chú ý (${fb.lowFeedbackCount})` },
-              { key: 'recent' as const, label: 'Feedback gần đây' },
-            ]).map((t) => (
-              <button
-                key={t.key}
-                onClick={() => setFbTab(t.key)}
-                className={`px-4 py-2 text-sm font-bold rounded-t-lg border-b-2 transition-colors cursor-pointer ${
-                  fbTab === t.key ? 'border-[#004c91] text-[#004c91]' : 'border-transparent text-slate-400 hover:text-slate-600'
-                }`}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
-          {fbRows.length === 0 ? (
-            <SectionEmpty text={fbTab === 'low' ? 'Không có feedback thấp trong kỳ này.' : 'Chưa có feedback trong kỳ này.'} />
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse min-w-[620px]">
-                <thead>
-                  <tr className="bg-slate-50 border-b border-slate-100">
-                    <th className={thClass}>Đoàn</th>
-                    <th className={thClass}>Đối tượng</th>
-                    <th className={`${thClass} text-right`}>Rating</th>
-                    <th className={thClass}>Nội dung</th>
-                    <th className={thClass}>Ngày gửi</th>
+            <div>
+              <h3 className="text-sm font-bold text-slate-700 mb-1">Tiến độ nhiệm vụ</h3>
+              <p className="text-xs text-slate-400 mb-3">
+                Số nhiệm vụ (thư mời + đơn yêu cầu) theo {GRANULARITY_LABELS[t!.trendGranularity] ?? 'tháng'} — mốc trục thời gian tự đổi theo khoảng lọc.
+              </p>
+              <div className="h-72">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={t!.trend} margin={{ top: 8, right: 16, bottom: 0, left: -12 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                    <XAxis dataKey="monthLabel" tick={{ fontSize: 11 }} stroke="#94a3b8" />
+                    <YAxis allowDecimals={false} tick={{ fontSize: 11 }} stroke="#94a3b8" />
+                    <Tooltip labelStyle={{ fontWeight: 700 }} contentStyle={{ borderRadius: 12, border: '1px solid #e2e8f0', fontSize: 12 }} />
+                    <Legend wrapperStyle={{ fontSize: 12 }} />
+                    <Line type="monotone" dataKey="totalTasks" name="Tổng nhiệm vụ" stroke={CHART_BLUE} strokeWidth={2.5} dot={{ r: 3 }} />
+                    <Line type="monotone" dataKey="completed" name="Hoàn thành" stroke={CHART_GREEN} strokeWidth={2.5} dot={{ r: 3 }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </Section>
+
+          {/* ═══ 2 · Báo cáo nhân sự ═══ */}
+          <Section
+            index={2}
+            title="Báo cáo nhân sự"
+            subtitle="Hiệu suất của Department Leader và Dept Staff trong kỳ."
+            open={openSections.personnel}
+            onToggle={() => toggleSection('personnel')}
+          >
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              <StatTile label="Tổng nhân sự" value={p!.totalStaff} tone="blue" icon={<Users className="w-4 h-4 opacity-60" />} />
+              <StatTile
+                label="Feedback trung bình"
+                value={p!.averageFeedback != null ? `${p!.averageFeedback.toFixed(1)}★` : '—'}
+                tone="violet"
+                icon={<Star className="w-4 h-4 opacity-60" />}
+              />
+            </div>
+
+            <div className="overflow-x-auto rounded-2xl border border-slate-200">
+              <table className="w-full text-left border-collapse">
+                <thead className="bg-slate-50">
+                  <tr>
+                    <th className={thClass}>STT</th>
+                    <th className={thClass}>Tên</th>
+                    <th className={thClass}>Số nhiệm vụ phụ trách</th>
+                    <th className={thClass}>Tổng giờ làm việc</th>
+                    <th className={thClass}>Feedback</th>
+                    <th className={thClass}>Từ chối</th>
+                    <th className={thClass}>Ghi chú</th>
+                    <th className={thClass}></th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {fbRows.map((e: DeptLeaderFeedbackEntry) => (
-                    <tr key={e.feedbackId} className="hover:bg-blue-50/40 transition-colors">
-                      <td className={`${tdClass} font-semibold text-slate-800 max-w-[180px] truncate`} title={e.delegationName}>{e.delegationName}</td>
-                      <td className={`${tdClass} max-w-[160px] truncate`} title={e.itemName ?? undefined}>{e.itemName ?? '—'}</td>
-                      <td className={`${tdClass} text-right font-black ${e.rating <= 2 ? 'text-red-600' : e.rating >= 4 ? 'text-emerald-600' : 'text-slate-700'}`}>
-                        {e.rating}/5
-                      </td>
-                      <td className={`${tdClass} max-w-[240px] truncate`} title={e.comment ?? undefined}>
-                        {e.comment || <span className="text-slate-400">Không có nhận xét</span>}
-                      </td>
-                      <td className={tdClass}>{fmt.formatDate(e.submittedAt)}</td>
-                    </tr>
-                  ))}
+                  {p!.rows.length === 0 && (
+                    <tr><td colSpan={8} className="px-4 py-8 text-center text-sm text-slate-400">Không có nhân sự nào.</td></tr>
+                  )}
+                  {p!.rows.map((row, idx) => {
+                    const lowFeedback = row.feedbackAverage != null && row.feedbackAverage < 2;
+                    return (
+                      <tr key={row.userId} className={lowFeedback ? 'bg-rose-50/50' : idx % 2 === 1 ? 'bg-slate-50/40' : ''}>
+                        <td className={`${tdClass} whitespace-nowrap`}>{idx + 1}</td>
+                        <td className={`${tdClass} font-semibold text-slate-800`}>
+                          <span className="flex items-center gap-1.5">
+                            {row.fullName}
+                            {row.role === 'DEPT_LEADER' && (
+                              <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400 shrink-0" aria-label="Department Leader" />
+                            )}
+                          </span>
+                          <span className="block text-[11px] font-normal text-slate-400">{row.email}</span>
+                        </td>
+                        <td className={`${tdClass} whitespace-nowrap`}>{row.taskCount}</td>
+                        <td className={`${tdClass} whitespace-nowrap`}>{row.totalHours.toLocaleString('vi-VN')} giờ</td>
+                        <td className={`${tdClass} whitespace-nowrap`}>
+                          {row.feedbackAverage != null ? (
+                            <span className={`inline-flex items-center gap-1 font-bold ${lowFeedback ? 'text-rose-600' : 'text-slate-700'}`}>
+                              {row.feedbackAverage.toFixed(1)}★
+                              <span className="text-[11px] font-normal text-slate-400">({row.feedbackCount})</span>
+                              {lowFeedback && <AlertTriangle className="w-3.5 h-3.5 text-rose-500" aria-label="Feedback dưới 2 sao" />}
+                            </span>
+                          ) : <span className="text-slate-400">—</span>}
+                        </td>
+                        <td className={`${tdClass} whitespace-nowrap`}>{row.declinedCount}</td>
+                        <td className={tdClass}>
+                          <input
+                            type="text"
+                            value={personnelNotes[row.userId] ?? ''}
+                            onChange={(e) => setPersonnelNotes((s) => ({ ...s, [row.userId]: e.target.value }))}
+                            placeholder="Ghi chú..."
+                            className="w-40 border border-slate-200 rounded-lg px-2 py-1.5 text-xs outline-none focus:border-[#004c91]"
+                          />
+                        </td>
+                        <td className={`${tdClass} whitespace-nowrap`}>
+                          <button
+                            type="button"
+                            onClick={() => sendPersonnelReport(row)}
+                            disabled={sendingUserId === row.userId}
+                            title={`Gửi báo cáo hiệu suất qua email cho ${row.fullName}`}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-[#004c91] text-xs font-bold rounded-lg border border-blue-200 transition-colors disabled:opacity-50 cursor-pointer"
+                          >
+                            {sendingUserId === row.userId ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                            Gửi
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
+          </Section>
 
-// ───────────────────────────── Tab: Hóa đơn ─────────────────────────────
-
-interface InvoiceRowState {
-  selected: boolean;
-  unitPrice: string;
-  unit: string;
-  note: string;
-}
-
-function InvoiceTab({
-  visits, items, visitsLoading, itemsLoading, exportLoading,
-  onLoadVisits, onLoadItems, onExport,
-}: {
-  visits: { visitInstanceId: number; requestCode: string; delegationName: string; plannedStartAt: string | null; plannedEndAt: string | null }[];
-  items: DeptLeaderInvoiceItem[];
-  visitsLoading: boolean;
-  itemsLoading: boolean;
-  exportLoading: boolean;
-  onLoadVisits: () => Promise<void>;
-  onLoadItems: (visitInstanceId: number) => Promise<void>;
-  onExport: (payload: {
-    visitInstanceId: number;
-    invoiceTitle: string;
-    invoiceNote: string;
-    items: { logisticsItemId: number; itemName: string; itemType: string; quantity: number; unit: string | null; unitPrice: number; note: string }[];
-  }) => Promise<void>;
-}) {
-  const [selectedVisit, setSelectedVisit] = useState<number | ''>('');
-  const [rowState, setRowState] = useState<Record<number, InvoiceRowState>>({});
-  const [invoiceNote, setInvoiceNote] = useState('');
-  const loadedRef = useRef(false);
-
-  // Load danh sách visit một lần khi mở tab.
-  useEffect(() => {
-    if (loadedRef.current) return;
-    loadedRef.current = true;
-    onLoadVisits().catch(() => toast.error('Không thể tải danh sách chuyến thăm.'));
-  }, [onLoadVisits]);
-
-  // Reset state dòng khi items đổi (chọn visit khác).
-  useEffect(() => {
-    const next: Record<number, InvoiceRowState> = {};
-    items.forEach((item) => {
-      next[item.logisticsItemId] = { selected: true, unitPrice: '', unit: '', note: '' };
-    });
-    setRowState(next);
-  }, [items]);
-
-  const handleSelectVisit = (value: string) => {
-    const id = value ? Number(value) : '';
-    setSelectedVisit(id);
-    if (id !== '') {
-      onLoadItems(id).catch(() => toast.error('Không thể tải danh sách hạng mục.'));
-    }
-  };
-
-  const updateRow = (id: number, patch: Partial<InvoiceRowState>) => {
-    setRowState((prev) => ({ ...prev, [id]: { ...prev[id], ...patch } }));
-  };
-
-  const selectedRows = items.filter((item) => rowState[item.logisticsItemId]?.selected);
-  const lineAmount = (item: DeptLeaderInvoiceItem) => {
-    const price = Number(rowState[item.logisticsItemId]?.unitPrice ?? '');
-    return Number.isFinite(price) && price >= 0 ? item.quantity * price : 0;
-  };
-  const total = selectedRows.reduce((sum, item) => sum + lineAmount(item), 0);
-  const hasInvalidPrice = selectedRows.some((item) => {
-    const raw = rowState[item.logisticsItemId]?.unitPrice ?? '';
-    const price = Number(raw);
-    return raw.trim() === '' || !Number.isFinite(price) || price < 0;
-  });
-  const canExport = selectedVisit !== '' && selectedRows.length > 0 && !hasInvalidPrice && !exportLoading;
-
-  const handleExport = async () => {
-    if (!canExport || typeof selectedVisit !== 'number') return;
-    try {
-      await onExport({
-        visitInstanceId: selectedVisit,
-        invoiceTitle: 'Hóa đơn chuẩn bị hậu cần',
-        invoiceNote,
-        items: selectedRows.map((item) => ({
-          logisticsItemId: item.logisticsItemId,
-          itemName: item.itemName,
-          itemType: item.itemType,
-          quantity: item.quantity,
-          unit: rowState[item.logisticsItemId]?.unit.trim() || null,
-          unitPrice: Number(rowState[item.logisticsItemId]?.unitPrice ?? 0),
-          note: rowState[item.logisticsItemId]?.note.trim() ?? '',
-        })),
-      });
-      toast.success('Đã xuất hóa đơn PDF thành công.');
-    } catch {
-      toast.error('Không thể xuất hóa đơn PDF. Vui lòng kiểm tra đơn giá và thử lại.');
-    }
-  };
-
-  return (
-    <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-      <div className="px-4 py-3 border-b border-slate-100 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h3 className="text-sm font-bold text-slate-800">Xuất hóa đơn chuẩn bị hậu cần</h3>
-          <p className="text-xs text-slate-400 font-medium">
-            Số lượng lấy theo yêu cầu của host trong hệ thống · Đơn giá do Department Leader nhập · Chỉ xuất PDF, không lưu hóa đơn
-          </p>
-        </div>
-        <select
-          value={selectedVisit === '' ? '' : String(selectedVisit)}
-          onChange={(e) => handleSelectVisit(e.target.value)}
-          className={`${selectClass} min-w-[280px]`}
-          aria-label="Chọn chuyến thăm"
-          disabled={visitsLoading}
-        >
-          <option value="">{visitsLoading ? 'Đang tải chuyến thăm…' : '— Chọn chuyến thăm / đoàn —'}</option>
-          {visits.map((v) => (
-            <option key={v.visitInstanceId} value={String(v.visitInstanceId)}>
-              {v.requestCode} · {v.delegationName} ({fmt.formatDate(v.plannedStartAt)})
-            </option>
-          ))}
-        </select>
-      </div>
-
-      {selectedVisit === '' ? (
-        <SectionEmpty text="Chọn chuyến thăm để xem danh sách hạng mục host yêu cầu phòng ban chuẩn bị." />
-      ) : itemsLoading ? (
-        <div className="flex items-center justify-center py-10 text-slate-400 gap-2">
-          <Loader2 className="w-5 h-5 animate-spin" />
-          <span className="text-sm font-medium">Đang tải hạng mục…</span>
-        </div>
-      ) : items.length === 0 ? (
-        <SectionEmpty text="Không có item để xuất hóa đơn cho chuyến này." />
-      ) : (
-        <>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse min-w-[1020px]">
-              <thead>
-                <tr className="bg-slate-50 border-b border-slate-100">
-                  <th className={`${thClass} w-10`}></th>
-                  <th className={`${thClass} w-10`}>STT</th>
-                  <th className={thClass}>Tên hạng mục</th>
-                  <th className={thClass}>Loại</th>
-                  <th className={`${thClass} text-right`}>Số lượng</th>
-                  <th className={thClass}>Đơn vị</th>
-                  <th className={`${thClass} text-right`}>Đơn giá (đ)</th>
-                  <th className={`${thClass} text-right`}>Thành tiền</th>
-                  <th className={thClass}>Ghi chú</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {items.map((item, index) => {
-                  const state = rowState[item.logisticsItemId] ?? { selected: true, unitPrice: '', unit: '', note: '' };
-                  const raw = state.unitPrice;
-                  const price = Number(raw);
-                  const invalid = state.selected && (raw.trim() === '' || !Number.isFinite(price) || price < 0);
-                  return (
-                    <tr key={item.logisticsItemId} className={`transition-colors ${state.selected ? 'hover:bg-blue-50/40' : 'opacity-50 bg-slate-50/40'}`}>
-                      <td className={tdClass}>
-                        <input
-                          type="checkbox"
-                          checked={state.selected}
-                          onChange={(e) => updateRow(item.logisticsItemId, { selected: e.target.checked })}
-                          className="rounded border-slate-300 text-[#004c91] focus:ring-[#004c91]/30 cursor-pointer"
-                          aria-label={`Chọn ${item.itemName}`}
-                        />
-                      </td>
-                      <td className={`${tdClass} text-slate-400 font-semibold`}>{index + 1}</td>
-                      <td className={`${tdClass} font-semibold text-slate-800 max-w-[220px] truncate`} title={item.itemName}>{item.itemName}</td>
-                      <td className={tdClass}>{item.itemTypeLabelVi}</td>
-                      <td className={`${tdClass} text-right font-bold`}>{fmt.formatNumber(item.quantity)}</td>
-                      <td className={tdClass}>
-                        <input
-                          type="text"
-                          value={state.unit}
-                          onChange={(e) => updateRow(item.logisticsItemId, { unit: e.target.value })}
-                          disabled={!state.selected}
-                          placeholder="cái, chai…"
-                          className="w-20 bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-[#004c91]/20 focus:border-[#004c91] disabled:bg-slate-50"
-                        />
-                      </td>
-                      <td className={`${tdClass} text-right`}>
-                        <input
-                          type="number"
-                          min={0}
-                          step={1000}
-                          value={state.unitPrice}
-                          onChange={(e) => updateRow(item.logisticsItemId, { unitPrice: e.target.value })}
-                          disabled={!state.selected}
-                          placeholder="0"
-                          className={`w-28 text-right bg-white border rounded-lg px-2 py-1.5 text-sm font-semibold outline-none focus:ring-2 focus:ring-[#004c91]/20 disabled:bg-slate-50 ${
-                            invalid ? 'border-red-300 focus:border-red-400' : 'border-slate-200 focus:border-[#004c91]'
-                          }`}
-                          aria-label={`Đơn giá ${item.itemName}`}
-                        />
-                      </td>
-                      <td className={`${tdClass} text-right font-bold text-slate-800`}>
-                        {state.selected && !invalid ? formatVnd(lineAmount(item)) : '—'}
-                      </td>
-                      <td className={tdClass}>
-                        <input
-                          type="text"
-                          value={state.note}
-                          onChange={(e) => updateRow(item.logisticsItemId, { note: e.target.value })}
-                          disabled={!state.selected}
-                          placeholder="Ghi chú…"
-                          className="w-40 bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-[#004c91]/20 focus:border-[#004c91] disabled:bg-slate-50"
-                        />
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="px-4 py-3 border-t border-slate-100 flex flex-col md:flex-row md:items-center gap-3">
-            <input
-              type="text"
-              value={invoiceNote}
-              onChange={(e) => setInvoiceNote(e.target.value)}
-              placeholder="Ghi chú hóa đơn (tùy chọn)…"
-              className="flex-1 bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#004c91]/20 focus:border-[#004c91]"
-            />
-            <div className="flex items-center gap-4 justify-between md:justify-end">
-              <div className="text-right">
-                <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wide">Tổng tiền ({selectedRows.length} hạng mục)</p>
-                <p className="text-xl font-black text-[#f37021]">{formatVnd(total)}</p>
+          {/* ═══ 3 · Xuất hóa đơn ═══ */}
+          <Section
+            index={3}
+            title="Xuất hóa đơn"
+            subtitle="Đơn yêu cầu hậu cần đã hoàn thành (đã ký nghiệm thu) trong khoảng ngày — gửi hóa đơn cho Staff Leader campus."
+            open={openSections.invoice}
+            onToggle={() => toggleSection('invoice')}
+          >
+            {!invoiceLoaded ? (
+              <div className="flex flex-wrap items-center gap-3 bg-orange-50/50 border border-orange-100 rounded-2xl p-4">
+                <span className="text-xs font-bold text-slate-600">Khoảng ngày:</span>
+                <input type="date" value={invoiceRange.fromDate}
+                  onChange={(e) => setInvoiceRange((s) => ({ ...s, fromDate: e.target.value }))}
+                  className="border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm bg-white outline-none focus:border-[#f37021]" />
+                <span className="text-slate-400 text-sm">→</span>
+                <input type="date" value={invoiceRange.toDate}
+                  onChange={(e) => setInvoiceRange((s) => ({ ...s, toDate: e.target.value }))}
+                  className="border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm bg-white outline-none focus:border-[#f37021]" />
+                <button
+                  type="button"
+                  onClick={loadInvoiceItems}
+                  disabled={invoiceLoading}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#f37021] text-white text-xs font-black rounded-xl hover:opacity-90 disabled:opacity-50 transition-all cursor-pointer"
+                >
+                  {invoiceLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
+                  Xuất hóa đơn
+                </button>
               </div>
-              <button
-                onClick={handleExport}
-                disabled={!canExport}
-                title={hasInvalidPrice ? 'Nhập đơn giá (≥ 0) cho các hạng mục đã chọn' : undefined}
-                className="flex items-center gap-2 px-5 py-2.5 bg-[#004c91] text-white text-sm font-bold rounded-xl hover:bg-[#00386b] transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-              >
-                {exportLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ReceiptText className="w-4 h-4" />}
-                Xuất hóa đơn PDF
-              </button>
-            </div>
-          </div>
+            ) : (
+              <div className="rounded-2xl border-2 border-orange-200 bg-orange-50/40 overflow-hidden">
+                <div className="px-5 py-3.5 bg-[#f37021] text-white flex items-center justify-between gap-3">
+                  <h3 className="text-sm font-black flex items-center gap-2">
+                    <FileText className="w-4 h-4" /> Hóa đơn hậu cần — {data.departmentName}
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={() => { setInvoiceLoaded(false); setInvoiceItems([]); }}
+                    className="p-1.5 hover:bg-white/10 rounded-full cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <div className="p-5 space-y-4">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <span className="text-xs font-bold text-slate-600">Khoảng ngày:</span>
+                    <input type="date" value={invoiceRange.fromDate}
+                      onChange={(e) => setInvoiceRange((s) => ({ ...s, fromDate: e.target.value }))}
+                      className="border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm bg-white outline-none focus:border-[#f37021]" />
+                    <span className="text-slate-400 text-sm">→</span>
+                    <input type="date" value={invoiceRange.toDate}
+                      onChange={(e) => setInvoiceRange((s) => ({ ...s, toDate: e.target.value }))}
+                      className="border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm bg-white outline-none focus:border-[#f37021]" />
+                    <button
+                      type="button"
+                      onClick={loadInvoiceItems}
+                      disabled={invoiceLoading}
+                      className="px-4 py-2 bg-[#004c91] text-white text-xs font-black rounded-xl hover:opacity-90 disabled:opacity-50 transition-all cursor-pointer"
+                    >
+                      {invoiceLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin inline" /> : 'Tải lại danh sách'}
+                    </button>
+                  </div>
+
+                  {invoiceItems.length === 0 ? (
+                    <p className="text-sm text-slate-500 py-4 text-center">Không có đơn yêu cầu nào đã hoàn thành trong khoảng ngày này.</p>
+                  ) : (
+                    <>
+                      <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+                        <table className="w-full text-left border-collapse">
+                          <thead className="bg-slate-50">
+                            <tr>
+                              <th className={thClass}>STT</th>
+                              <th className={thClass}>Đơn yêu cầu</th>
+                              <th className={thClass}>Đoàn khách</th>
+                              <th className={thClass}>Ngày</th>
+                              <th className={thClass}>SL</th>
+                              <th className={thClass}>Biên bản</th>
+                              <th className={thClass}>Đơn giá (₫)</th>
+                              <th className={thClass}>Thành tiền</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {invoiceItems.map((it, idx) => (
+                              <tr key={it.logisticsItemId}>
+                                <td className={`${tdClass} whitespace-nowrap`}>{idx + 1}</td>
+                                <td className={`${tdClass} font-semibold text-slate-800`}>
+                                  {it.title}
+                                  <span className="block text-[11px] font-normal text-slate-400">{ITEM_TYPE_LABELS[it.itemType] ?? it.itemType} · {it.requestCode}</span>
+                                </td>
+                                <td className={tdClass}>{it.delegationName}</td>
+                                <td className={`${tdClass} whitespace-nowrap`}>{fmtDateTime(it.usageStartAt)}</td>
+                                <td className={`${tdClass} whitespace-nowrap`}>{it.quantity}</td>
+                                <td className={`${tdClass} whitespace-nowrap`}>
+                                  <button
+                                    type="button"
+                                    onClick={() => setViewItem(it)}
+                                    className="text-xs font-bold text-[#004c91] hover:underline cursor-pointer"
+                                  >
+                                    Xem chi tiết
+                                  </button>
+                                </td>
+                                <td className={`${tdClass} whitespace-nowrap`}>
+                                  <input
+                                    type="text"
+                                    inputMode="numeric"
+                                    value={prices[it.logisticsItemId] ?? ''}
+                                    onChange={(e) => setPrices((s) => ({ ...s, [it.logisticsItemId]: e.target.value.replace(/[^\d]/g, '') }))}
+                                    placeholder="0"
+                                    className="w-28 border border-slate-200 rounded-lg px-2 py-1.5 text-sm text-right outline-none focus:border-[#f37021]"
+                                  />
+                                </td>
+                                <td className={`${tdClass} whitespace-nowrap font-bold text-slate-800 text-right`}>{vnMoney(lineTotal(it))}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                          <tfoot>
+                            <tr className="bg-orange-50">
+                              <td colSpan={7} className="px-3 py-3 text-right text-sm font-black text-slate-700">TỔNG TIỀN</td>
+                              <td className="px-3 py-3 text-right text-base font-black text-[#c2410c] whitespace-nowrap">{vnMoney(grandTotal)}</td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+
+                      <div className="flex flex-wrap items-center justify-end gap-3">
+                        <button
+                          type="button"
+                          onClick={exportInvoicePdf}
+                          className="inline-flex items-center gap-1.5 px-4 py-2.5 bg-white border border-slate-300 text-slate-700 text-xs font-black rounded-xl hover:bg-slate-50 transition-colors cursor-pointer"
+                        >
+                          <Download className="w-4 h-4" /> Xuất hóa đơn (PDF)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={sendInvoice}
+                          disabled={invoiceSending}
+                          className="inline-flex items-center gap-1.5 px-4 py-2.5 bg-[#f37021] text-white text-xs font-black rounded-xl hover:opacity-90 disabled:opacity-50 transition-all cursor-pointer"
+                        >
+                          {invoiceSending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
+                          Gửi hóa đơn cho Staff Leader
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
+          </Section>
         </>
+      )}
+
+      {/* Modal biên bản đã ký giữa 2 bên (chỉ xem) */}
+      {viewItem && (
+        <TaskHandoverModal
+          isOpen
+          readOnly
+          detailData={toHandoverDto(viewItem)}
+          onClose={() => setViewItem(null)}
+        />
       )}
     </div>
   );

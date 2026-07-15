@@ -14,6 +14,10 @@ using PEMS.Application.Reports.Commands.ExportStaffLeaderReportV2;
 using PEMS.Application.Reports.Queries.GetHoReportV2;
 using PEMS.Application.Reports.Commands.SendHoCampusReport;
 using PEMS.Application.Reports.Commands.ExportHoReportV2;
+using PEMS.Application.Reports.Queries.GetDeptLeaderReportV2;
+using PEMS.Application.Reports.Commands.SendDeptLeaderPersonnelReport;
+using PEMS.Application.Reports.Commands.SendDeptLeaderInvoiceToStaffLeader;
+using PEMS.Application.Reports.Commands.ExportDeptLeaderReportV2;
 using PEMS.Application.Reports.Queries.GetDeptLeaderReportOverview;
 using PEMS.Application.Reports.Commands.ExportDeptLeaderReport;
 using PEMS.Application.Reports.Queries.GetDeptLeaderInvoiceData;
@@ -140,6 +144,53 @@ namespace PEMS.Api.Controllers
             command.DepartmentId = departmentId;
             var result = await _mediator.Send(command, cancellationToken);
             return Ok(result);
+        }
+
+        /// <summary>Báo cáo phòng ban 2 phần của Department Leader (nhiệm vụ + nhân sự) — lọc theo thời gian.</summary>
+        [HttpGet("dept-leader-report-v2")]
+        [RoleAuthorize(EffectiveRole.DepartmentLead)]
+        public async Task<IActionResult> GetDeptLeaderReportV2([FromQuery] GetDeptLeaderReportV2Query query, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(query, cancellationToken);
+            return Ok(result);
+        }
+
+        /// <summary>Đơn hậu cần phòng ban ĐÃ HOÀN THÀNH trong khoảng ngày — panel xuất hóa đơn (Dept Leader).</summary>
+        [HttpGet("dept-leader-report-v2/invoice-items")]
+        [RoleAuthorize(EffectiveRole.DepartmentLead)]
+        public async Task<IActionResult> GetDeptLeaderInvoiceItemsV2([FromQuery] GetDeptLeaderInvoiceItemsV2Query query, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(query, cancellationToken);
+            return Ok(result);
+        }
+
+        /// <summary>Gửi email báo cáo hiệu suất cá nhân cho 1 nhân sự phòng ban (Dept Leader).</summary>
+        [HttpPost("dept-leader-report-v2/send-personnel-report")]
+        [RoleAuthorize(EffectiveRole.DepartmentLead)]
+        public async Task<IActionResult> SendDeptLeaderPersonnelReport(
+            [FromBody] SendDeptLeaderPersonnelReportCommand command, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(command, cancellationToken);
+            return Ok(result);
+        }
+
+        /// <summary>Gửi hóa đơn hậu cần đã hoàn thành cho Staff Leader của campus (Dept Leader).</summary>
+        [HttpPost("dept-leader-report-v2/send-invoice")]
+        [RoleAuthorize(EffectiveRole.DepartmentLead)]
+        public async Task<IActionResult> SendDeptLeaderInvoiceToStaffLeader(
+            [FromBody] SendDeptLeaderInvoiceToStaffLeaderCommand command, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(command, cancellationToken);
+            return Ok(result);
+        }
+
+        /// <summary>Xuất báo cáo phòng ban (PDF/Excel/CSV) — chọn phần nhiệm vụ/nhân sự hoặc cả hai.</summary>
+        [HttpPost("dept-leader-report-v2/export")]
+        [RoleAuthorize(EffectiveRole.DepartmentLead)]
+        public async Task<IActionResult> ExportDeptLeaderReportV2([FromBody] ExportDeptLeaderReportV2Command command, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(command, cancellationToken);
+            return File(result.Content, result.ContentType, result.FileName);
         }
 
         /// <summary>Department Leader operation report — scoped to the leader's own department.</summary>
