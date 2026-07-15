@@ -34,8 +34,11 @@ public static class GalleryErrorCodes
     /// <summary>More than the allowed number of files (20) were supplied. → 422.</summary>
     public const string TooManyFiles = "GALLERY_TOO_MANY_FILES";
 
-    /// <summary>A supplied file is neither a supported image nor video. → 422.</summary>
+    /// <summary>A supplied file is not a supported image. → 422.</summary>
     public const string InvalidMediaFile = "GALLERY_INVALID_MEDIA_FILE";
+
+    /// <summary>A video file was uploaded from the machine — videos must be added via YouTube. → 422.</summary>
+    public const string VideoUploadNotAllowed = "GALLERY_VIDEO_UPLOAD_NOT_ALLOWED";
 
     /// <summary>The item would be left with no active media after the edit. → 422.</summary>
     public const string MediaRequired = "GALLERY_MEDIA_REQUIRED";
@@ -98,6 +101,20 @@ public static class GalleryErrorCodes
     /// <summary>The location cover file is not a supported image. → 422.</summary>
     public const string LocationCoverInvalid = "GALLERY_LOCATION_COVER_INVALID";
 
+    // ── Area cover VIDEO phase (MP4 area showcase background) ──
+
+    /// <summary>An area cover video is required when creating a new area. → 422.</summary>
+    public const string AreaCoverVideoRequired = "AREA_COVER_VIDEO_REQUIRED";
+
+    /// <summary>The area cover file is not a supported MP4 video. → 422.</summary>
+    public const string AreaCoverVideoInvalid = "AREA_COVER_VIDEO_INVALID";
+
+    /// <summary>The area cover video exceeds the 30 MB cap. → 422.</summary>
+    public const string AreaCoverVideoTooLarge = "AREA_COVER_VIDEO_TOO_LARGE";
+
+    /// <summary>The area cover video could not be uploaded to storage. → 502/500.</summary>
+    public const string AreaCoverVideoUploadFailed = "AREA_COVER_VIDEO_UPLOAD_FAILED";
+
     /// <summary><c>itemType</c> is required when creating/editing a gallery item. → 422.</summary>
     public const string ItemTypeRequired = "GALLERY_ITEM_TYPE_REQUIRED";
 
@@ -108,4 +125,18 @@ public static class GalleryErrorCodes
 
     /// <summary>The description exceeds the 1000-character narration cap. → 422.</summary>
     public const string DescriptionTooLong = "GALLERY_DESCRIPTION_TOO_LONG";
+
+    // ── YouTube external video phase ──
+
+    /// <summary>A YouTube URL was empty/blank. → 422.</summary>
+    public const string YoutubeUrlRequired = "GALLERY_YOUTUBE_URL_REQUIRED";
+
+    /// <summary>The supplied string is not a valid absolute http(s) URL. → 422.</summary>
+    public const string YoutubeUrlInvalid = "GALLERY_YOUTUBE_URL_INVALID";
+
+    /// <summary>The URL host is not an allowed YouTube host (blocks spoofed domains). → 422.</summary>
+    public const string YoutubeHostNotAllowed = "GALLERY_YOUTUBE_HOST_NOT_ALLOWED";
+
+    /// <summary>No valid 11-character YouTube video id could be extracted. → 422.</summary>
+    public const string YoutubeVideoIdInvalid = "GALLERY_YOUTUBE_VIDEO_ID_INVALID";
 }

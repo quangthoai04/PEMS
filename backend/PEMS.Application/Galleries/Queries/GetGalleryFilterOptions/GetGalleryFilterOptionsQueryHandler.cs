@@ -38,6 +38,16 @@ public sealed class GetGalleryFilterOptionsQueryHandler
             .ToListAsync(cancellationToken);
 
         var areaIds = areas.Select(a => a.AreaId).ToList();
+
+        // Cover media type (IMAGE vs VIDEO) — one flat file-metadata lookup for the areas' cover file ids.
+        var coverIds = areas.Where(a => a.CoverFileId.HasValue).Select(a => a.CoverFileId!.Value).Distinct().ToList();
+        var coverMediaByFileId = coverIds.Count == 0
+            ? new Dictionary<ulong, (string? Purpose, string? Mime)>()
+            : (await _db.Files.AsNoTracking()
+                    .Where(f => coverIds.Contains(f.FileId))
+                    .Select(f => new { f.FileId, f.FilePurpose, f.MimeType })
+                    .ToListAsync(cancellationToken))
+                .ToDictionary(f => f.FileId, f => (f.FilePurpose, f.MimeType));
         var locations = areaIds.Count == 0
             ? new List<LocationRow>()
             : await _db.GalleryLocations.AsNoTracking()
@@ -63,6 +73,7 @@ public sealed class GetGalleryFilterOptionsQueryHandler
                 Status = a.Status,
                 CoverFileId = a.CoverFileId,
                 CoverUrl = GalleryFileUrls.ContentOrNull(a.CoverFileId),
+                CoverMediaType = GalleryCoverMediaType.ResolveFor(a.CoverFileId, coverMediaByFileId),
                 Locations = (locationsByArea.TryGetValue(a.AreaId, out var ls) ? ls : new List<LocationRow>())
                     .Select(l => new GalleryLocationOptionDto
                     {

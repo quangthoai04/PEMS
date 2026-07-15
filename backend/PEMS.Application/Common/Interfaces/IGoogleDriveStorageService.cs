@@ -30,6 +30,15 @@ public interface IGoogleDriveStorageService
     /// <summary>Downloads a Drive file's bytes by its external id (authorized request).</summary>
     Task<Stream> DownloadAsync(string externalFileId, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Streams a Drive file (optionally a byte range) without buffering the whole file into memory —
+    /// forwards an HTTP <c>Range</c> header to Drive so video playback can seek. <paramref name="from"/>
+    /// null streams the whole file; <paramref name="to"/> null means "to the end". The returned
+    /// <see cref="GoogleDriveDownloadResult"/> owns the live response and must be disposed by the caller.
+    /// </summary>
+    Task<GoogleDriveDownloadResult> DownloadRangeAsync(
+        string externalFileId, long? from, long? to, CancellationToken cancellationToken = default);
+
     /// <summary>Best-effort delete of a Drive file (used to roll back an orphaned upload).</summary>
     Task DeleteAsync(string externalFileId, CancellationToken cancellationToken = default);
 }

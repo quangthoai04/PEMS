@@ -57,6 +57,8 @@ public sealed class UpdateGalleryLocationCommandHandler
 
         var oldAreaId = location.AreaId;
         var oldName = location.LocationName;
+        ulong? auditOldAreaCoverFileId = null;
+        ulong? auditNewAreaCoverFileId = null;
 
         // A new cover is optional on edit — kept when omitted (BR-LOCATION-COVER-04).
         ulong? newLocationCoverId = request.LocationCoverImage is null
@@ -77,12 +79,16 @@ public sealed class UpdateGalleryLocationCommandHandler
             await GalleryLocationWriteGuard.EnsureLocationKeyFreeAsync(
                 _db, targetArea.AreaId, locationKey, location.LocationId, cancellationToken);
 
-            // Optionally replace the existing area's cover image too (kept when omitted). targetArea is
-            // tracked by LoadAreaInCampusAsync, so the change is persisted by SaveChangesAsync below.
-            if (request.AreaCoverImage is not null)
+            // Optionally replace the existing area's cover with a NEW MP4 video (kept when omitted). This
+            // lets a legacy image-cover area be switched to a video. targetArea is tracked by
+            // LoadAreaInCampusAsync, so the change is persisted by SaveChangesAsync below. We only swap the
+            // CoverFileId AFTER a successful upload, so a failed upload leaves the old cover intact.
+            if (request.AreaCoverVideo is not null)
             {
-                targetArea.CoverFileId = await GalleryCoverImage.UploadAsync(
-                    _fileUpload, request.AreaCoverImage, isArea: true, actorId, cancellationToken);
+                auditOldAreaCoverFileId = targetArea.CoverFileId;
+                targetArea.CoverFileId = await GalleryAreaCoverVideo.UploadAsync(
+                    _fileUpload, request.AreaCoverVideo, actorId, cancellationToken);
+                auditNewAreaCoverFileId = targetArea.CoverFileId;
                 targetArea.UpdatedAt = now;
                 targetArea.UpdatedBy = actorId;
             }
@@ -102,15 +108,16 @@ public sealed class UpdateGalleryLocationCommandHandler
                 throw new BusinessRuleException("Vui lòng nhập tên khu vực/tòa mới.", GalleryErrorCodes.NewAreaNameRequired);
             var areaKey = GalleryKeyNormalizer.ToKey(areaName);
 
-            // Creating a new area during edit requires an area cover (BR-LOCATION-COVER-05).
-            if (request.AreaCoverImage is null)
+            // Creating a new area during edit requires an MP4 area cover video (the Area Showcase background).
+            if (request.AreaCoverVideo is null)
                 throw new BusinessRuleException(
-                    "Vui lòng upload ảnh đại diện khu vực.", GalleryErrorCodes.AreaCoverRequired);
+                    "Vui lòng chọn một video đại diện cho khu vực.", GalleryErrorCodes.AreaCoverVideoRequired);
 
             await GalleryLocationWriteGuard.EnsureAreaKeyFreeAsync(_db, campusId, areaKey, cancellationToken);
 
-            var areaCoverId = await GalleryCoverImage.UploadAsync(
-                _fileUpload, request.AreaCoverImage, isArea: true, actorId, cancellationToken);
+            var areaCoverId = await GalleryAreaCoverVideo.UploadAsync(
+                _fileUpload, request.AreaCoverVideo, actorId, cancellationToken);
+            auditNewAreaCoverFileId = areaCoverId;
 
             // Create the area and move the location together (UC §21.4).
             await using var tx = await _db.BeginTransactionAsync(cancellationToken);
@@ -160,16 +167,39 @@ public sealed class UpdateGalleryLocationCommandHandler
             Action = "UPDATE_GALLERY_LOCATION",
             EntityType = "GalleryLocation",
             EntityId = location.LocationId,
-            Changes = new List<AuditLogChange>
-            {
-                new AuditLogChange { FieldName = "LocationName", OldValueText = oldName, NewValueText = locationName },
-                new AuditLogChange { FieldName = "AreaId", OldValueText = oldAreaId.ToString(), NewValueText = location.AreaId.ToString() },
-            },
+            Changes = BuildAuditChanges(
+                oldName, locationName, oldAreaId, location.AreaId,
+                auditOldAreaCoverFileId, auditNewAreaCoverFileId),
             CreatedAt = now,
         });
         await _db.SaveChangesAsync(cancellationToken);
 
         return await GalleryLocationDetailBuilder.BuildAsync(
             _db, location.LocationId, cancellationToken, "Đã cập nhật vị trí.");
+    }
+
+    /// <summary>Builds the audit change rows; the area-cover-video swap row is only added when it changed.</summary>
+    private static List<AuditLogChange> BuildAuditChanges(
+        string oldName, string newName, ulong oldAreaId, ulong newAreaId,
+        ulong? oldAreaCoverFileId, ulong? newAreaCoverFileId)
+    {
+        var changes = new List<AuditLogChange>
+        {
+            new AuditLogChange { FieldName = "LocationName", OldValueText = oldName, NewValueText = newName },
+            new AuditLogChange { FieldName = "AreaId", OldValueText = oldAreaId.ToString(), NewValueText = newAreaId.ToString() },
+        };
+
+        // Only recorded when a new MP4 area cover was uploaded (UPDATE_GALLERY_AREA_COVER, new type = VIDEO).
+        if (newAreaCoverFileId is not null)
+        {
+            changes.Add(new AuditLogChange
+            {
+                FieldName = "AreaCoverFileId",
+                OldValueText = oldAreaCoverFileId?.ToString(),
+                NewValueText = newAreaCoverFileId.ToString(),
+            });
+        }
+
+        return changes;
     }
 }

@@ -23,7 +23,7 @@ public sealed class GoogleDriveFolderResolver : IFileStorageFolderResolver
         {
             FilePurpose.UserAvatar => _options.AvatarFolderId,
 
-            FilePurpose.GalleryAreaCover => _options.GalleryAreaFolderId,
+            FilePurpose.GalleryAreaCover or FilePurpose.GalleryAreaCoverVideo => _options.GalleryAreaFolderId,
             FilePurpose.GalleryLocationCover => _options.GalleryLocationFolderId,
             FilePurpose.GalleryItemImage or FilePurpose.GalleryItemVideo => _options.GalleryItemFolderId,
             FilePurpose.GalleryDelegationImage or FilePurpose.GalleryDelegationVideo
@@ -51,7 +51,8 @@ public sealed class GoogleDriveFolderResolver : IFileStorageFolderResolver
         // The dedicated gallery folders must never fall back silently — a missing id would quietly
         // put covers/items/delegation media in the wrong folder, defeating the per-folder routing.
         var isDedicatedGalleryPurpose = purpose is
-            FilePurpose.GalleryAreaCover or FilePurpose.GalleryLocationCover
+            FilePurpose.GalleryAreaCover or FilePurpose.GalleryAreaCoverVideo
+            or FilePurpose.GalleryLocationCover
             or FilePurpose.GalleryItemImage or FilePurpose.GalleryItemVideo
             or FilePurpose.GalleryDelegationImage or FilePurpose.GalleryDelegationVideo
             or FilePurpose.GalleryAudio;

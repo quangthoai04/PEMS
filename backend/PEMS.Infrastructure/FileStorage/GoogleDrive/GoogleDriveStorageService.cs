@@ -230,6 +230,85 @@ public sealed class GoogleDriveStorageService : IGoogleDriveStorageService
         return ms;
     }
 
+    public async Task<GoogleDriveDownloadResult> DownloadRangeAsync(
+        string externalFileId, long? from, long? to, CancellationToken cancellationToken = default)
+    {
+        var accessToken = await GetAccessTokenAsync(cancellationToken);
+        var client = _httpClientFactory.CreateClient();
+
+        var url = $"{FilesEndpoint}/{Uri.EscapeDataString(externalFileId)}?alt=media";
+        var request = new HttpRequestMessage(HttpMethod.Get, url);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+
+        // Forward the byte range to Drive so playback can seek without downloading the whole file.
+        var wantRange = from.HasValue || to.HasValue;
+        if (wantRange)
+        {
+            var rangeStart = from ?? 0;
+            request.Headers.Range = to.HasValue
+                ? new RangeHeaderValue(rangeStart, to.Value)
+                : new RangeHeaderValue(rangeStart, null);
+        }
+
+        HttpResponseMessage response;
+        try
+        {
+            response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            request.Dispose();
+            _logger.LogError(ex, "Google Drive range download request failed.");
+            throw new BusinessRuleException(
+                "Không thể tải tệp từ Google Drive.", "GOOGLE_DRIVE_DOWNLOAD_FAILED");
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            _logger.LogError("Google Drive range download returned {Status}: {Body}", (int)response.StatusCode, body);
+            response.Dispose();
+            request.Dispose();
+            if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+                throw new BusinessRuleException(
+                    "Không tìm thấy tệp trên Google Drive.", "GOOGLE_DRIVE_FILE_NOT_FOUND");
+            throw new BusinessRuleException(
+                "Không thể tải tệp từ Google Drive.", "GOOGLE_DRIVE_DOWNLOAD_FAILED");
+        }
+
+        var isPartial = response.StatusCode == System.Net.HttpStatusCode.PartialContent;
+        long? total = null;
+        long rangeStartOut = 0;
+        long? rangeEndOut = null;
+
+        var contentRange = response.Content.Headers.ContentRange;
+        if (isPartial && contentRange is { HasRange: true })
+        {
+            rangeStartOut = contentRange.From ?? 0;
+            rangeEndOut = contentRange.To;
+            total = contentRange.Length;
+        }
+
+        var contentLength = response.Content.Headers.ContentLength;
+        total ??= contentLength;
+        if (rangeEndOut is null && total is { } t && t > 0)
+            rangeEndOut = t - 1;
+
+        var contentType = response.Content.Headers.ContentType?.ToString();
+        var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+
+        return new GoogleDriveDownloadResult
+        {
+            Stream = new ResponseOwningStream(stream, response, request),
+            TotalLength = total,
+            ContentLength = contentLength,
+            RangeStart = rangeStartOut,
+            RangeEnd = rangeEndOut ?? (total is { } tt && tt > 0 ? tt - 1 : 0),
+            IsPartial = isPartial,
+            ContentType = contentType,
+        };
+    }
+
     public async Task DeleteAsync(string externalFileId, CancellationToken cancellationToken = default)
     {
         var accessToken = await GetAccessTokenAsync(cancellationToken);
@@ -245,6 +324,59 @@ public sealed class GoogleDriveStorageService : IGoogleDriveStorageService
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
             _logger.LogWarning("Google Drive delete returned {Status} for {FileId}: {Body}",
                 (int)response.StatusCode, externalFileId, body);
+        }
+    }
+
+    /// <summary>
+    /// A read stream that also owns the HTTP response/request it was read from, disposing them when the
+    /// stream is disposed. This lets us return a live streamed body (no memory buffering) while keeping
+    /// the underlying <see cref="HttpResponseMessage"/> alive until the caller finishes reading.
+    /// </summary>
+    private sealed class ResponseOwningStream : Stream
+    {
+        private readonly Stream _inner;
+        private readonly HttpResponseMessage _response;
+        private readonly HttpRequestMessage _request;
+
+        public ResponseOwningStream(Stream inner, HttpResponseMessage response, HttpRequestMessage request)
+        {
+            _inner = inner;
+            _response = response;
+            _request = request;
+        }
+
+        public override bool CanRead => _inner.CanRead;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => _inner.Length;
+        public override long Position { get => _inner.Position; set => throw new NotSupportedException(); }
+        public override void Flush() => _inner.Flush();
+        public override int Read(byte[] buffer, int offset, int count) => _inner.Read(buffer, offset, count);
+        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken ct)
+            => _inner.ReadAsync(buffer, offset, count, ct);
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken ct = default)
+            => _inner.ReadAsync(buffer, ct);
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                _inner.Dispose();
+                _response.Dispose();
+                _request.Dispose();
+            }
+            base.Dispose(disposing);
+        }
+
+        public override async ValueTask DisposeAsync()
+        {
+            await _inner.DisposeAsync();
+            _response.Dispose();
+            _request.Dispose();
+            await base.DisposeAsync();
         }
     }
 

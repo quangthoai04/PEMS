@@ -165,6 +165,10 @@ internal static class GalleryItemListQueryExecutor
                     FileId = m.FileId,
                     MediaType = m.MediaType,
                     ThumbnailFileId = m.ThumbnailFileId,
+                    FilePurpose = m.File.FilePurpose,
+                    ExternalFileId = m.File.ExternalFileId,
+                    WebViewUrl = m.File.WebViewUrl,
+                    FileThumbnailUrl = m.File.ThumbnailUrl,
                 })
                 .ToListAsync(ct);
         var primaryByItem = primaryMedia
@@ -196,14 +200,7 @@ internal static class GalleryItemListQueryExecutor
             CreatedAt = r.CreatedAt,
             CreatedByName = r.CreatedBy.HasValue && creatorNames.TryGetValue(r.CreatedBy.Value, out var n) ? n : null,
             PrimaryMedia = primaryByItem.TryGetValue(r.GalleryItemId, out var pm)
-                ? new GalleryPrimaryMediaDto
-                {
-                    MediaId = pm.MediaId,
-                    FileId = pm.FileId,
-                    MediaType = pm.MediaType,
-                    FileUrl = GalleryFileUrls.Content(pm.FileId),
-                    ThumbnailUrl = GalleryFileUrls.ContentOrNull(pm.ThumbnailFileId),
-                }
+                ? MapPrimaryMedia(pm)
                 : null,
             AudioStatus = statusByItem.TryGetValue((long)r.GalleryItemId, out var st)
                 ? st.Status
@@ -216,6 +213,25 @@ internal static class GalleryItemListQueryExecutor
     /// <summary>Projects the page/candidate rows into the batch narration-status lookup input.</summary>
     private static IReadOnlyCollection<GalleryTtsItemDescriptor> Descriptors(IEnumerable<GalleryRow> rows)
         => rows.Select(r => new GalleryTtsItemDescriptor((long)r.GalleryItemId, r.Description)).ToList();
+
+    /// <summary>Maps a primary-media row, resolving UPLOADED_FILE vs YOUTUBE render fields.</summary>
+    private static GalleryPrimaryMediaDto MapPrimaryMedia(MediaRow pm)
+    {
+        var source = GalleryMediaSourceResolver.Resolve(pm.FilePurpose, pm.ExternalFileId, pm.WebViewUrl);
+        var isYouTube = source.SourceType == GalleryMediaSourceTypes.YouTube;
+        return new GalleryPrimaryMediaDto
+        {
+            MediaId = pm.MediaId,
+            FileId = pm.FileId,
+            MediaType = pm.MediaType,
+            SourceType = source.SourceType,
+            FileUrl = isYouTube ? null : GalleryFileUrls.Content(pm.FileId),
+            ThumbnailUrl = isYouTube ? pm.FileThumbnailUrl : GalleryFileUrls.ContentOrNull(pm.ThumbnailFileId),
+            YoutubeVideoId = source.YoutubeVideoId,
+            EmbedUrl = source.EmbedUrl,
+            WebViewUrl = source.WebViewUrl,
+        };
+    }
 
     private sealed class GalleryRow
     {
@@ -240,5 +256,9 @@ internal static class GalleryItemListQueryExecutor
         public ulong FileId { get; init; }
         public string MediaType { get; init; } = string.Empty;
         public ulong? ThumbnailFileId { get; init; }
+        public string? FilePurpose { get; init; }
+        public string? ExternalFileId { get; init; }
+        public string? WebViewUrl { get; init; }
+        public string? FileThumbnailUrl { get; init; }
     }
 }

@@ -13,12 +13,23 @@ public enum FilePurpose
     GalleryImage,
     GalleryVideo,
     GalleryAreaCover,
+    /// <summary>
+    /// MP4 video used as a gallery area's cover (the Area Showcase fullscreen background). Stored on
+    /// Google Drive like the image cover — the loved <c>gallery_areas.cover_file_id</c> can point at
+    /// either; the media kind is inferred from the <c>files</c> row (purpose / mime).
+    /// </summary>
+    GalleryAreaCoverVideo,
     GalleryLocationCover,
     GalleryItemImage,
     GalleryItemVideo,
     GalleryDelegationImage,
     GalleryDelegationVideo,
     GalleryAudio,
+    /// <summary>
+    /// External YouTube video referenced by a gallery item. No binary is ever stored on Drive — the
+    /// <c>files</c> row is metadata only (<c>storage_provider = OTHER</c>, external id = YouTube video id).
+    /// </summary>
+    GalleryYouTubeVideo,
     NewsImage,
     NewsAttachment,
     Document,
@@ -41,12 +52,14 @@ public static class FilePurposeDbValues
     public const string GalleryImage = "GALLERY_IMAGE";
     public const string GalleryVideo = "GALLERY_VIDEO";
     public const string GalleryAreaCover = "GALLERY_AREA_COVER";
+    public const string GalleryAreaCoverVideo = "GALLERY_AREA_COVER_VIDEO";
     public const string GalleryLocationCover = "GALLERY_LOCATION_COVER";
     public const string GalleryItemImage = "GALLERY_ITEM_IMAGE";
     public const string GalleryItemVideo = "GALLERY_ITEM_VIDEO";
     public const string GalleryDelegationImage = "GALLERY_DELEGATION_IMAGE";
     public const string GalleryDelegationVideo = "GALLERY_DELEGATION_VIDEO";
     public const string GalleryAudio = "GALLERY_AUDIO";
+    public const string GalleryYouTubeVideo = "GALLERY_YOUTUBE_VIDEO";
     public const string NewsImage = "NEWS_IMAGE";
     public const string NewsAttachment = "NEWS_ATTACHMENT";
     public const string Document = "DOCUMENT";
@@ -67,12 +80,14 @@ public static class FilePurposeExtensions
         FilePurpose.GalleryImage => FilePurposeDbValues.GalleryImage,
         FilePurpose.GalleryVideo => FilePurposeDbValues.GalleryVideo,
         FilePurpose.GalleryAreaCover => FilePurposeDbValues.GalleryAreaCover,
+        FilePurpose.GalleryAreaCoverVideo => FilePurposeDbValues.GalleryAreaCoverVideo,
         FilePurpose.GalleryLocationCover => FilePurposeDbValues.GalleryLocationCover,
         FilePurpose.GalleryItemImage => FilePurposeDbValues.GalleryItemImage,
         FilePurpose.GalleryItemVideo => FilePurposeDbValues.GalleryItemVideo,
         FilePurpose.GalleryDelegationImage => FilePurposeDbValues.GalleryDelegationImage,
         FilePurpose.GalleryDelegationVideo => FilePurposeDbValues.GalleryDelegationVideo,
         FilePurpose.GalleryAudio => FilePurposeDbValues.GalleryAudio,
+        FilePurpose.GalleryYouTubeVideo => FilePurposeDbValues.GalleryYouTubeVideo,
         FilePurpose.NewsImage => FilePurposeDbValues.NewsImage,
         FilePurpose.NewsAttachment => FilePurposeDbValues.NewsAttachment,
         FilePurpose.Document => FilePurposeDbValues.Document,
@@ -92,11 +107,12 @@ public static class FilePurposeExtensions
     {
         FilePurpose.UserAvatar => "avatars",
         FilePurpose.GalleryImage or FilePurpose.GalleryVideo => "gallery",
-        FilePurpose.GalleryAreaCover => "gallery/areas",
+        FilePurpose.GalleryAreaCover or FilePurpose.GalleryAreaCoverVideo => "gallery/areas",
         FilePurpose.GalleryLocationCover => "gallery/locations",
         FilePurpose.GalleryItemImage or FilePurpose.GalleryItemVideo => "gallery/items",
         FilePurpose.GalleryDelegationImage or FilePurpose.GalleryDelegationVideo => "gallery/delegations",
         FilePurpose.GalleryAudio => "gallery/audio",
+        FilePurpose.GalleryYouTubeVideo => "youtube/gallery",
         FilePurpose.NewsImage or FilePurpose.NewsAttachment => "news",
         FilePurpose.Document => "documents",
         FilePurpose.MinutesAttachment => "minutes",

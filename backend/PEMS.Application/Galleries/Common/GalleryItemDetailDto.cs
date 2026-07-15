@@ -55,8 +55,19 @@ public sealed class GalleryMediaDto
     public ulong MediaId { get; init; }
     public ulong FileId { get; init; }
     public string MediaType { get; init; } = string.Empty;
-    public string FileUrl { get; init; } = string.Empty;
+
+    /// <summary>UPLOADED_FILE or YOUTUBE — the frontend renders by this, not by media type alone.</summary>
+    public string SourceType { get; init; } = GalleryMediaSourceTypes.UploadedFile;
+
+    /// <summary>Proxy content URL for an uploaded file; null for a YouTube reference (no binary).</summary>
+    public string? FileUrl { get; init; }
     public string? ThumbnailUrl { get; init; }
+
+    // YouTube-only (null for uploaded files).
+    public string? YoutubeVideoId { get; init; }
+    public string? EmbedUrl { get; init; }
+    public string? WebViewUrl { get; init; }
+
     public bool IsPrimary { get; init; }
     public string? Caption { get; init; }
     public string? AltText { get; init; }

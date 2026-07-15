@@ -7,11 +7,13 @@ import {
   Volume2, CheckCircle2, XCircle, RefreshCw, Clock,
 } from 'lucide-react';
 import { useAuthenticatedMedia } from '../../../shared/hooks/useAuthenticatedImage';
+import { youtubeEmbedUrl, youtubeThumbnailUrl } from '../../../shared/utils/youtube';
 import { galleryManagementApi } from '../../../features/gallery-management/api/galleryManagementApi';
 import { getGalleryErrorMessage } from '../../../features/gallery-management/api/galleryError';
 import type {
   GalleryItemDetail,
   GalleryItemTtsStatus,
+  GalleryMedia,
   GalleryMediaKind,
 } from '../../../features/gallery-management/types/galleryManagement.types';
 import { formatVietnamDate } from '../../../shared/utils/vietnamTime';
@@ -64,6 +66,42 @@ const TTS_STATUS_META: Record<GalleryItemTtsStatus['status'], { label: string; c
 function formatDate(iso?: string | null): string {
   if (!iso) return '—';
   return formatVietnamDate(iso, { fallback: iso });
+}
+
+/** Main preview for one media — YouTube renders an embedded iframe, uploaded files stream via the proxy. */
+function MediaPreview({ media }: { media: GalleryMedia }) {
+  if (media.sourceType === 'YOUTUBE' && media.youtubeVideoId) {
+    return (
+      <div className="w-full h-full bg-black">
+        <iframe
+          src={media.embedUrl || youtubeEmbedUrl(media.youtubeVideoId)}
+          title={media.altText || 'YouTube video'}
+          className="w-full h-full"
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+          allowFullScreen
+        />
+      </div>
+    );
+  }
+  return <PreviewMedia fileUrl={media.fileUrl || ''} mediaType={media.mediaType} />;
+}
+
+/** A YouTube thumbnail (direct from YouTube — never the /api/files proxy). */
+function YoutubeThumb({ videoId, active, onClick }: { videoId: string; active: boolean; onClick: () => void }) {
+  const [failed, setFailed] = useState(false);
+  return (
+    <button
+      onClick={onClick}
+      className={`relative w-16 h-16 rounded-xl overflow-hidden shrink-0 border-2 transition-all ${active ? 'border-[#004c91]' : 'border-transparent opacity-70 hover:opacity-100'}`}
+    >
+      {failed
+        ? <div className="w-full h-full bg-slate-900 flex items-center justify-center text-white/50"><Film className="w-4 h-4" /></div>
+        : <img src={youtubeThumbnailUrl(videoId)} onError={() => setFailed(true)} className="w-full h-full object-cover" alt="" />}
+      <span className="absolute bottom-0.5 right-0.5 bg-red-600 rounded p-0.5">
+        <Film className="w-3 h-3 text-white" />
+      </span>
+    </button>
+  );
 }
 
 function PreviewMedia({ fileUrl, mediaType }: { fileUrl: string; mediaType: 'IMAGE' | 'VIDEO' }) {
@@ -232,7 +270,7 @@ export function GalleryDetailModal({
             <div className="w-full md:w-1/2 p-6 bg-slate-100 flex flex-col gap-4">
               <div className="flex-1 rounded-2xl overflow-hidden border border-slate-200 bg-white relative min-h-[240px]">
                 {selected ? (
-                  <PreviewMedia fileUrl={selected.fileUrl} mediaType={selected.mediaType} />
+                  <MediaPreview media={selected} />
                 ) : (
                   <div className="w-full h-full flex flex-col items-center justify-center text-amber-600 gap-2 p-6 text-center">
                     <AlertTriangle className="w-8 h-8" />
@@ -247,13 +285,22 @@ export function GalleryDetailModal({
               {media.length > 1 && (
                 <div className="flex gap-2 overflow-x-auto pb-1">
                   {media.map((m, i) => (
-                    <Thumb
-                      key={m.mediaId}
-                      fileUrl={m.thumbnailUrl || m.fileUrl}
-                      mediaType={m.mediaType}
-                      active={i === selectedIdx}
-                      onClick={() => setSelectedIdx(i)}
-                    />
+                    m.sourceType === 'YOUTUBE' && m.youtubeVideoId ? (
+                      <YoutubeThumb
+                        key={m.mediaId}
+                        videoId={m.youtubeVideoId}
+                        active={i === selectedIdx}
+                        onClick={() => setSelectedIdx(i)}
+                      />
+                    ) : (
+                      <Thumb
+                        key={m.mediaId}
+                        fileUrl={(m.thumbnailUrl || m.fileUrl) ?? ''}
+                        mediaType={m.mediaType}
+                        active={i === selectedIdx}
+                        onClick={() => setSelectedIdx(i)}
+                      />
+                    )
                   ))}
                 </div>
               )}

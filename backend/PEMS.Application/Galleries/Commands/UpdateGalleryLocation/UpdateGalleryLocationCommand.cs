@@ -7,7 +7,8 @@ namespace PEMS.Application.Galleries.Commands.UpdateGalleryLocation;
 /// UC-LOC-06 (rename / move location to an existing area) / UC-LOC-07 (move into a freshly created area).
 /// Editing never changes the location's status or its gallery item's status. The location cover image is
 /// optional on edit — when omitted the existing cover is kept; when supplied it replaces it. Creating a
-/// new area (NEW_AREA mode) always requires an area cover image.
+/// new area (NEW_AREA mode) always requires an area cover video; on EXISTING_AREA the area cover video is
+/// optional (kept when omitted) and lets a legacy image-cover area be switched to a video.
 /// </summary>
 public sealed record UpdateGalleryLocationCommand(
     long LocationId,
@@ -15,5 +16,5 @@ public sealed record UpdateGalleryLocationCommand(
     long? AreaId,
     string? NewAreaName,
     string LocationName,
-    GalleryUploadFileCommandDto? AreaCoverImage,
+    GalleryUploadFileCommandDto? AreaCoverVideo,
     GalleryUploadFileCommandDto? LocationCoverImage) : IRequest<GalleryLocationDetailDto>;

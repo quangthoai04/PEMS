@@ -45,24 +45,51 @@ internal static class GalleryDetailBuilder
             .FirstOrDefaultAsync(ct)
             ?? throw new NotFoundException("GalleryItem", galleryItemId);
 
-        var media = await db.GalleryItemMedia.AsNoTracking()
+        // Project raw media + file metadata, then map in memory (source-specific URLs can't be built in SQL).
+        var mediaRows = await db.GalleryItemMedia.AsNoTracking()
             .Where(m => m.GalleryItemId == galleryItemId && m.DeletedAt == null && m.Status == "ACTIVE")
             .OrderByDescending(m => m.IsPrimary)
             .ThenBy(m => m.DisplayOrder)
             .ThenBy(m => m.MediaId)
-            .Select(m => new GalleryMediaDto
+            .Select(m => new
+            {
+                m.MediaId,
+                m.FileId,
+                m.MediaType,
+                m.ThumbnailFileId,
+                m.IsPrimary,
+                m.Caption,
+                m.AltText,
+                m.DisplayOrder,
+                FilePurpose = m.File.FilePurpose,
+                ExternalFileId = m.File.ExternalFileId,
+                WebViewUrl = m.File.WebViewUrl,
+                FileThumbnailUrl = m.File.ThumbnailUrl,
+            })
+            .ToListAsync(ct);
+
+        var media = mediaRows.Select(m =>
+        {
+            var source = GalleryMediaSourceResolver.Resolve(m.FilePurpose, m.ExternalFileId, m.WebViewUrl);
+            var isYouTube = source.SourceType == GalleryMediaSourceTypes.YouTube;
+            return new GalleryMediaDto
             {
                 MediaId = m.MediaId,
                 FileId = m.FileId,
                 MediaType = m.MediaType,
-                FileUrl = GalleryFileUrls.Content(m.FileId),
-                ThumbnailUrl = GalleryFileUrls.ContentOrNull(m.ThumbnailFileId),
+                SourceType = source.SourceType,
+                // YouTube has no binary → no content endpoint; its thumbnail is the direct YouTube URL.
+                FileUrl = isYouTube ? null : GalleryFileUrls.Content(m.FileId),
+                ThumbnailUrl = isYouTube ? m.FileThumbnailUrl : GalleryFileUrls.ContentOrNull(m.ThumbnailFileId),
+                YoutubeVideoId = source.YoutubeVideoId,
+                EmbedUrl = source.EmbedUrl,
+                WebViewUrl = source.WebViewUrl,
                 IsPrimary = m.IsPrimary,
                 Caption = m.Caption,
                 AltText = m.AltText,
                 DisplayOrder = m.DisplayOrder,
-            })
-            .ToListAsync(ct);
+            };
+        }).ToList();
 
         var userIds = new List<ulong>();
         if (head.CreatedBy.HasValue) userIds.Add(head.CreatedBy.Value);

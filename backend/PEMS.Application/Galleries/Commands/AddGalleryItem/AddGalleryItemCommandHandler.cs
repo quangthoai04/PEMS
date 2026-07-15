@@ -33,6 +33,7 @@ public sealed class AddGalleryItemCommandHandler
     private readonly IApplicationDbContext _db;
     private readonly ICurrentUserService _currentUser;
     private readonly IFileUploadService _fileUpload;
+    private readonly IGalleryExternalMediaService _externalMedia;
     private readonly IDateTimeService _clock;
     private readonly IGalleryItemTtsService _tts;
     private readonly ILogger<AddGalleryItemCommandHandler> _logger;
@@ -41,6 +42,7 @@ public sealed class AddGalleryItemCommandHandler
         IApplicationDbContext db,
         ICurrentUserService currentUser,
         IFileUploadService fileUpload,
+        IGalleryExternalMediaService externalMedia,
         IDateTimeService clock,
         IGalleryItemTtsService tts,
         ILogger<AddGalleryItemCommandHandler> logger)
@@ -48,6 +50,7 @@ public sealed class AddGalleryItemCommandHandler
         _db = db;
         _currentUser = currentUser;
         _fileUpload = fileUpload;
+        _externalMedia = externalMedia;
         _clock = clock;
         _tts = tts;
         _logger = logger;
@@ -60,10 +63,18 @@ public sealed class AddGalleryItemCommandHandler
         var actorId = _currentUser.UserId!.Value;
 
         var files = request.Files ?? Array.Empty<GalleryUploadFileCommandDto>();
-        if (files.Count == 0)
-            throw new BusinessRuleException("Vui lòng chọn ít nhất một tệp media.", GalleryErrorCodes.FilesRequired);
-        if (files.Count > 20)
-            throw new BusinessRuleException("Chỉ được tải lên tối đa 20 tệp.", GalleryErrorCodes.TooManyFiles);
+        var youtubeUrls = request.YoutubeUrls ?? Array.Empty<string>();
+        if (files.Count + youtubeUrls.Count == 0)
+            throw new BusinessRuleException(
+                "Vui lòng chọn ít nhất một tệp media hoặc thêm một video YouTube.", GalleryErrorCodes.FilesRequired);
+        if (files.Count + youtubeUrls.Count > 20)
+            throw new BusinessRuleException(
+                "Chỉ được tối đa 20 media (tệp + video YouTube).", GalleryErrorCodes.TooManyFiles);
+
+        // Validate every YouTube URL up front (pure parse) so a bad URL rejects the whole request BEFORE any
+        // file is uploaded or any files row is written — no orphaned Drive object / files row (AC-YT-03).
+        foreach (var url in youtubeUrls)
+            YouTubeUrlParser.Parse(url);
 
         var status = NormalizeStatus(request.Status);
         var itemType = GalleryItemTypes.Normalize(request.ItemType);
@@ -83,18 +94,30 @@ public sealed class AddGalleryItemCommandHandler
             throw new BusinessRuleException(
                 "Mô tả không được vượt quá 1000 ký tự.", GalleryErrorCodes.DescriptionTooLong);
 
+        // Build the media list in a stable order — uploads first, then YouTube — so display order and the
+        // primaryMediaKey (upload:{i} / youtube:{i}) line up with what the client sent.
+        var media = new List<MediaToCreate>(files.Count + youtubeUrls.Count);
+
         // Upload every file first (each commits its own files row + Drive object); classify image vs video.
-        var uploads = new List<(UploadedFileDto Uploaded, string MediaType, string? Caption, string? AltText)>();
         foreach (var file in files)
         {
             var (mediaType, purpose) = GalleryMediaClassifier.Classify(file.FileName, file.ContentType, itemType);
             await using var stream = new MemoryStream(file.Content, writable: false);
             var uploaded = await _fileUpload.UploadBusinessFileAsync(
                 stream, file.FileName, file.ContentType ?? string.Empty, file.FileSize, purpose, (long)actorId, cancellationToken);
-            uploads.Add((uploaded, mediaType, file.Caption, file.AltText));
+            media.Add(new MediaToCreate((ulong)uploaded.FileId, mediaType, file.Caption, file.AltText));
         }
 
-        var mediaKind = GalleryMediaClassifier.ResolveMediaKind(uploads.Select(u => u.MediaType));
+        // Register each YouTube URL as a metadata-only files row (no Drive upload, no download). YouTube
+        // media is always VIDEO for media_kind purposes.
+        foreach (var url in youtubeUrls)
+        {
+            var registered = await _externalMedia.RegisterYouTubeAsync(url, (long)actorId, cancellationToken);
+            media.Add(new MediaToCreate((ulong)registered.FileId, GalleryMediaClassifier.Video, null, null));
+        }
+
+        var primaryIndex = ResolvePrimaryIndex(request.PrimaryMediaKey, files.Count, youtubeUrls.Count);
+        var mediaKind = GalleryMediaClassifier.ResolveMediaKind(media.Select(m => m.MediaType));
         var now = _clock.VietnamNow;
 
         var item = new GalleryItem
@@ -111,15 +134,16 @@ public sealed class AddGalleryItemCommandHandler
         };
 
         uint order = 1;
-        foreach (var u in uploads)
+        for (var i = 0; i < media.Count; i++)
         {
+            var m = media[i];
             item.Media.Add(new GalleryItemMedia
             {
-                FileId = (ulong)u.Uploaded.FileId,
-                MediaType = u.MediaType,
-                Caption = u.Caption,
-                AltText = u.AltText,
-                IsPrimary = order == 1,
+                FileId = m.FileId,
+                MediaType = m.MediaType,
+                Caption = m.Caption,
+                AltText = m.AltText,
+                IsPrimary = i == primaryIndex,
                 DisplayOrder = order,
                 Status = "ACTIVE",
                 CreatedAt = now,
@@ -145,7 +169,8 @@ public sealed class AddGalleryItemCommandHandler
                     FieldName = "GalleryItem",
                     NewValueText = JsonSerializer.Serialize(new
                     {
-                        title, locationId = request.LocationId, itemType, status, mediaKind, mediaCount = uploads.Count,
+                        title, locationId = request.LocationId, itemType, status, mediaKind,
+                        mediaCount = media.Count, uploadCount = files.Count, youtubeCount = youtubeUrls.Count,
                     }),
                 },
             },
@@ -179,4 +204,25 @@ public sealed class AddGalleryItemCommandHandler
             throw new BusinessRuleException("Trạng thái không hợp lệ.", GalleryErrorCodes.InvalidStatus);
         return s;
     }
+
+    /// <summary>
+    /// Maps a primaryMediaKey (<c>upload:{i}</c> / <c>youtube:{i}</c>) to an index into the combined
+    /// media list [uploads..., youtube...]. Anything unrecognised falls back to the first media (0).
+    /// </summary>
+    private static int ResolvePrimaryIndex(string? key, int uploadCount, int youtubeCount)
+    {
+        if (string.IsNullOrWhiteSpace(key)) return 0;
+        var parts = key.Split(':', 2);
+        if (parts.Length != 2 || !int.TryParse(parts[1], out var idx) || idx < 0) return 0;
+
+        return parts[0].ToLowerInvariant() switch
+        {
+            "upload" when idx < uploadCount => idx,
+            "youtube" when idx < youtubeCount => uploadCount + idx,
+            _ => 0,
+        };
+    }
+
+    /// <summary>One media row to create (an uploaded file or a registered YouTube reference).</summary>
+    private readonly record struct MediaToCreate(ulong FileId, string MediaType, string? Caption, string? AltText);
 }

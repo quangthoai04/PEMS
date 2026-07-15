@@ -34,6 +34,11 @@ public sealed class GetFileContentQueryHandler : IRequestHandler<GetFileContentQ
             .FirstOrDefaultAsync(f => f.FileId == request.FileId, cancellationToken)
             ?? throw new NotFoundException("File", request.FileId);
 
+        // A YouTube reference is metadata only (no binary). It is embedded via iframe on the client, so
+        // this content endpoint must never be used for it — reject cleanly instead of a bogus download.
+        if (string.Equals(file.FilePurpose, "GALLERY_YOUTUBE_VIDEO", StringComparison.OrdinalIgnoreCase))
+            throw new NotFoundException("FileContent", request.FileId);
+
         // Google Drive files need an authorized fetch (the generic OpenReadAsync only does an
         // unauthenticated GET, which fails for private Drive files such as avatars).
         var isGoogleDrive = string.Equals(file.StorageProvider, "GOOGLE_DRIVE", StringComparison.OrdinalIgnoreCase)

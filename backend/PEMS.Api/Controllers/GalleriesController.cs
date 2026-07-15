@@ -68,11 +68,15 @@ namespace PEMS.Api.Controllers
             [FromForm] long locationId,
             [FromForm] string? itemType,
             [FromForm] string? status,
+            [FromForm] List<string>? youtubeUrls,
+            [FromForm] string? primaryMediaKey,
             List<IFormFile>? files,
             CancellationToken cancellationToken)
         {
             var buffered = await BufferFilesAsync(files, cancellationToken);
-            var command = new AddGalleryItemCommand(title, description, locationId, itemType, status, buffered);
+            var command = new AddGalleryItemCommand(
+                title, description, locationId, itemType, status, buffered,
+                youtubeUrls ?? new List<string>(), primaryMediaKey);
             return Ok(await _mediator.Send(command, cancellationToken));
         }
 
@@ -89,6 +93,8 @@ namespace PEMS.Api.Controllers
             [FromForm] string? itemType,
             [FromForm] List<long>? keepMediaIds,
             [FromForm] long? primaryMediaId,
+            [FromForm] List<string>? youtubeUrls,
+            [FromForm] string? primaryMediaKey,
             List<IFormFile>? newFiles,
             CancellationToken cancellationToken)
         {
@@ -101,7 +107,9 @@ namespace PEMS.Api.Controllers
                 itemType,
                 keepMediaIds ?? new List<long>(),
                 buffered,
-                primaryMediaId);
+                primaryMediaId,
+                youtubeUrls ?? new List<string>(),
+                primaryMediaKey);
             return Ok(await _mediator.Send(command, cancellationToken));
         }
 
@@ -118,7 +126,7 @@ namespace PEMS.Api.Controllers
             => Ok(await _mediator.Send(query, cancellationToken));
 
         // UC-LOC-04 Add location into existing area / UC-LOC-05 New area + first location (multipart —
-        // carries the mandatory area/location cover images).
+        // carries the mandatory area cover VIDEO (new area) and the mandatory location cover image).
         [HttpPost("creategallerylocation")]
         [Consumes("multipart/form-data")]
         [RequestSizeLimit(GalleryUploadByteLimit)]
@@ -128,7 +136,7 @@ namespace PEMS.Api.Controllers
             [FromForm] long? areaId,
             [FromForm] string? newAreaName,
             [FromForm] string locationName,
-            IFormFile? areaCoverImage,
+            IFormFile? areaCoverVideo,
             IFormFile? locationCoverImage,
             CancellationToken cancellationToken)
         {
@@ -137,13 +145,14 @@ namespace PEMS.Api.Controllers
                 areaId,
                 newAreaName,
                 locationName,
-                await BufferOneAsync(areaCoverImage, cancellationToken),
+                await BufferOneAsync(areaCoverVideo, cancellationToken),
                 await BufferOneAsync(locationCoverImage, cancellationToken));
             return Ok(await _mediator.Send(command, cancellationToken));
         }
 
         // UC-LOC-06 Edit (existing area) / UC-LOC-07 Edit (new area). Multipart — the location cover is
-        // optional here (kept when omitted); a new area still requires its own cover image.
+        // optional here (kept when omitted); a new area still requires its own cover VIDEO. On an existing
+        // area a supplied area cover video replaces that area's cover (image → video allowed).
         [HttpPost("updategallerylocation")]
         [Consumes("multipart/form-data")]
         [RequestSizeLimit(GalleryUploadByteLimit)]
@@ -154,7 +163,7 @@ namespace PEMS.Api.Controllers
             [FromForm] long? areaId,
             [FromForm] string? newAreaName,
             [FromForm] string locationName,
-            IFormFile? areaCoverImage,
+            IFormFile? areaCoverVideo,
             IFormFile? locationCoverImage,
             CancellationToken cancellationToken)
         {
@@ -164,7 +173,7 @@ namespace PEMS.Api.Controllers
                 areaId,
                 newAreaName,
                 locationName,
-                await BufferOneAsync(areaCoverImage, cancellationToken),
+                await BufferOneAsync(areaCoverVideo, cancellationToken),
                 await BufferOneAsync(locationCoverImage, cancellationToken));
             return Ok(await _mediator.Send(command, cancellationToken));
         }
