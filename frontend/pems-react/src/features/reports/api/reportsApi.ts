@@ -14,6 +14,7 @@ import type {
   StaffLeaderV2Filters,
   StaffLeaderInvoiceItem,
 } from '../types/staffLeaderReportsV2.types';
+import type { HoReportV2, HoV2Filters } from '../types/hoReportsV2.types';
 
 /** Chuyển filters UI → query params; bỏ giá trị "ALL"/rỗng để backend hiểu là không lọc. */
 function toQueryParams(filters: HoReportFilters): Record<string, string | number> {
@@ -113,6 +114,47 @@ export const reportsApi = {
         ? plainMatch[1]
         : `PEMS_StaffLeader_Report.${ext}`;
 
+    return { blob: response.data as Blob, fileName };
+  },
+
+  // ────────────────────── HO — report v2 (3 phần) ──────────────────────
+
+  getHoReportV2: async (filters: HoV2Filters): Promise<HoReportV2> => {
+    const params: Record<string, string> = { preset: filters.preset };
+    if (filters.preset === 'CUSTOM') {
+      if (filters.fromDate) params.fromDate = filters.fromDate;
+      if (filters.toDate) params.toDate = filters.toDate;
+    }
+    const { data } = await httpClient.get<HoReportV2>('/reports/ho-report-v2', { params });
+    return data;
+  },
+
+  /** HO gửi email báo cáo vận hành 1 campus cho Staff Leader campus đó. */
+  sendHoCampusReport: async (payload: {
+    campusId: number; fromDate?: string; toDate?: string; note?: string;
+  }): Promise<{ success: boolean; message: string }> => {
+    const { data } = await httpClient.post<{ success: boolean; message: string }>(
+      '/reports/ho-report-v2/send-campus-report', payload,
+    );
+    return data;
+  },
+
+  /** Xuất báo cáo hệ thống HO (PDF/Excel/CSV) — sections rỗng = cả hai phần. */
+  exportHoReportV2: async (payload: {
+    preset: string; fromDate?: string; toDate?: string;
+    exportFormat: 'PDF' | 'EXCEL' | 'CSV';
+    sections: string[];
+  }): Promise<HoReportExportFile> => {
+    const response = await httpClient.post('/reports/ho-report-v2/export', payload, { responseType: 'blob' });
+    const disposition: string = response.headers?.['content-disposition'] ?? '';
+    const utf8Match = /filename\*=UTF-8''([^;]+)/i.exec(disposition);
+    const plainMatch = /filename="?([^";]+)"?/i.exec(disposition);
+    const ext = payload.exportFormat === 'PDF' ? 'pdf' : payload.exportFormat === 'CSV' ? 'csv' : 'xlsx';
+    const fileName = utf8Match
+      ? decodeURIComponent(utf8Match[1])
+      : plainMatch
+        ? plainMatch[1]
+        : `PEMS_BaoCao_HeThong.${ext}`;
     return { blob: response.data as Blob, fileName };
   },
 

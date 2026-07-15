@@ -11,6 +11,9 @@ using PEMS.Application.Reports.Commands.ExportStaffLeaderReport;
 using PEMS.Application.Reports.Commands.SendStaffLeaderPersonnelReport;
 using PEMS.Application.Reports.Commands.SendStaffLeaderDeptInvoice;
 using PEMS.Application.Reports.Commands.ExportStaffLeaderReportV2;
+using PEMS.Application.Reports.Queries.GetHoReportV2;
+using PEMS.Application.Reports.Commands.SendHoCampusReport;
+using PEMS.Application.Reports.Commands.ExportHoReportV2;
 using PEMS.Application.Reports.Queries.GetDeptLeaderReportOverview;
 using PEMS.Application.Reports.Commands.ExportDeptLeaderReport;
 using PEMS.Application.Reports.Queries.GetDeptLeaderInvoiceData;
@@ -41,6 +44,33 @@ namespace PEMS.Api.Controllers
         [HttpPost("ho-overview/export")]
         [RoleAuthorize(EffectiveRole.Ho)]
         public async Task<IActionResult> ExportHoReport([FromBody] ExportHoReportCommand command, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(command, cancellationToken);
+            return File(result.Content, result.ContentType, result.FileName);
+        }
+
+        /// <summary>Báo cáo hệ thống 3 phần của HO (tổng quan + campus, đối tác) — lọc theo thời gian.</summary>
+        [HttpGet("ho-report-v2")]
+        [RoleAuthorize(EffectiveRole.Ho)]
+        public async Task<IActionResult> GetHoReportV2([FromQuery] GetHoReportV2Query query, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(query, cancellationToken);
+            return Ok(result);
+        }
+
+        /// <summary>Gửi email báo cáo vận hành 1 campus cho Staff Leader campus đó (HO).</summary>
+        [HttpPost("ho-report-v2/send-campus-report")]
+        [RoleAuthorize(EffectiveRole.Ho)]
+        public async Task<IActionResult> SendHoCampusReport([FromBody] SendHoCampusReportCommand command, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(command, cancellationToken);
+            return Ok(result);
+        }
+
+        /// <summary>Xuất báo cáo hệ thống HO (PDF/Excel/CSV) — chọn phần tổng quan/đối tác hoặc cả hai.</summary>
+        [HttpPost("ho-report-v2/export")]
+        [RoleAuthorize(EffectiveRole.Ho)]
+        public async Task<IActionResult> ExportHoReportV2([FromBody] ExportHoReportV2Command command, CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(command, cancellationToken);
             return File(result.Content, result.ContentType, result.FileName);
