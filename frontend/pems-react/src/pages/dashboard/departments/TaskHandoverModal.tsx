@@ -21,9 +21,10 @@ interface TaskHandoverModalProps {
   detailData: any; // RequestDetailDto
   onSuccess?: () => void;
   inline?: boolean;
+  readOnly?: boolean;
 }
 
-export function TaskHandoverModal({ isOpen, onClose, detailData, onSuccess, inline }: TaskHandoverModalProps) {
+export function TaskHandoverModal({ isOpen, onClose, detailData, onSuccess, inline, readOnly }: TaskHandoverModalProps) {
   const [busy, setBusy] = useState(false);
   const [borrowNote, setBorrowNote] = useState('');
   const [returnNote, setReturnNote] = useState('');
@@ -36,13 +37,13 @@ export function TaskHandoverModal({ isOpen, onClose, detailData, onSuccess, inli
   const nt1 = detailData.ReturnBorrowerSignature?.Name ? `${detailData.ReturnBorrowerSignature.Name}` : null;
   const nt2 = detailData.ReturnProviderSignature?.Name ? `${detailData.ReturnProviderSignature.Name}` : null;
 
-  const canSignBG1 = !bg1; // Department is PROVIDER
+  const canSignBG1 = !bg1 && !readOnly; // Department is PROVIDER
   const isBorrowDone = bg1 && bg2;
-  const canSignNT2 = isBorrowDone && nt1 && !nt2; // Department is PROVIDER
+  const canSignNT2 = isBorrowDone && nt1 && !nt2 && !readOnly; // Department is PROVIDER
 
   const isReturnStarted = nt1 || nt2;
-  const canEditFirst4Cols = !isBorrowDone && !isReturnStarted;
-  const canEditLastCol = isBorrowDone && !isReturnStarted;
+  const canEditFirst4Cols = !isBorrowDone && !isReturnStarted && !readOnly;
+  const canEditLastCol = isBorrowDone && !isReturnStarted && !readOnly;
 
   // parse date for top section
   let handoverTime = "....";
@@ -297,7 +298,7 @@ export function TaskHandoverModal({ isOpen, onClose, detailData, onSuccess, inli
                           <FileText className={`w-4 h-4 shrink-0 ${canSignBG1 ? 'text-[#004c91]' : 'text-slate-400'}`} />
                           <div className="text-left">
                             <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block leading-none">Chữ ký Bên Giao</span>
-                            <span className="text-[9px] text-slate-450">{canSignBG1 ? 'Nhấp để xác nhận' : 'Đã ký'}</span>
+                            <span className="text-[9px] text-slate-450">{canSignBG1 ? 'Nhấp để xác nhận' : (bg1 ? 'Đã ký' : (readOnly ? 'Chỉ xem (Staff thực hiện)' : 'Chưa thể ký'))}</span>
                           </div>
                         </div>
                         {canSignBG1 && (
@@ -411,7 +412,7 @@ export function TaskHandoverModal({ isOpen, onClose, detailData, onSuccess, inli
                             <FileText className={`w-4 h-4 shrink-0 ${canSignNT2 ? 'text-[#f37021]' : 'text-slate-400'}`} />
                             <div className="text-left">
                               <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block leading-none">Chữ ký Bên Nhận (Lại)</span>
-                              <span className="text-[9px] text-slate-450">{canSignNT2 ? 'Nhấp để xác nhận' : 'Chờ Host trả'}</span>
+                              <span className="text-[9px] text-slate-450">{canSignNT2 ? 'Nhấp để xác nhận' : (nt2 ? 'Đã ký' : (readOnly && isBorrowDone && nt1 ? 'Chỉ xem (Staff thực hiện)' : 'Chờ Host trả'))}</span>
                             </div>
                           </div>
                           {canSignNT2 && (
