@@ -164,16 +164,100 @@ function GridCard({ item, onOpen }: { item: PublicGalleryGridItem; onOpen: () =>
 }
 
 /**
- * Area/Location Showcase fullscreen background — the cover image, falling back to the campus artwork
- * (AC-PGAL-AREA-12). Plain <img> with NO fade animation: switching areas/locations swaps the image the
- * moment the new one is ready (the old one stays until then, so there is no flash). The failed flag resets
- * on src change so a broken cover for one area doesn't force the fallback for the next.
+ * Area/Location Showcase fullscreen background. For an IMAGE cover: a plain <img>, falling back to the
+ * campus artwork (AC-PGAL-AREA-12). For a VIDEO cover (new area MP4): an autoplay/muted/loop/playsInline
+ * <video> that fades in only after `canplay`, over the campus artwork as a gradient/fallback — a broken
+ * or undecodable video never crashes the page (it just keeps the fallback). Only the selected area's
+ * video is mounted; switching areas remounts it (`key={src}`), so the old clip is torn down and stopped,
+ * and the video is paused when the tab is hidden. The failed flag resets on src change.
  */
-function ShowcaseBackground({ src, fallbackSrc, alt }: { src?: string | null; fallbackSrc: string; alt: string }) {
+function ShowcaseBackground({
+  src,
+  fallbackSrc,
+  alt,
+  mediaType,
+}: {
+  src?: string | null;
+  fallbackSrc: string;
+  alt: string;
+  mediaType?: 'IMAGE' | 'VIDEO';
+}) {
   const [failed, setFailed] = useState(false);
+  const [videoReady, setVideoReady] = useState(false);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+
   useEffect(() => {
     setFailed(false);
+    setVideoReady(false);
   }, [src]);
+
+  // Pause THIS clip when its source changes or the showcase unmounts (§15.4). The element is captured at
+  // effect setup — NOT read from the ref at teardown — because `<video key={src}>` remounts on an area
+  // switch, so by cleanup time the ref already points at the NEXT area's video; touching that one would
+  // blank the new video (both old and new would go dark). We only pause (reversible, StrictMode-safe);
+  // the key-based remount is what releases the old clip's buffer when its element unmounts.
+  useEffect(() => {
+    const video = videoRef.current;
+    return () => {
+      video?.pause();
+    };
+  }, [src]);
+
+  const isVideo = mediaType === 'VIDEO' && !!src && !failed;
+
+  // Pause when the tab is hidden; resume when it becomes visible again (§15.5). Video only.
+  useEffect(() => {
+    if (!isVideo) return;
+    const onVis = () => {
+      const video = videoRef.current;
+      if (!video) return;
+      if (document.hidden) video.pause();
+      else video.play().catch(() => { /* autoplay may be blocked; ignore */ });
+    };
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+  }, [isVideo, src]);
+
+  if (isVideo) {
+    return (
+      <>
+        {/* Gradient / fallback artwork shown until the video is ready (and if it ever fails). */}
+        <img
+          src={fallbackSrc}
+          alt={alt}
+          className="absolute inset-0 w-full h-full object-cover object-center z-0"
+        />
+        <video
+          key={src ?? undefined}
+          ref={videoRef}
+          src={src ?? undefined}
+          autoPlay
+          muted
+          loop
+          playsInline
+          preload="auto"
+          onCanPlay={async () => {
+            const video = videoRef.current;
+            if (!video) return;
+            try {
+              await video.play();
+              setVideoReady(true);
+            } catch {
+              setVideoReady(false);
+            }
+          }}
+          onError={() => {
+            setFailed(true);
+            setVideoReady(false);
+          }}
+          className={`absolute inset-0 w-full h-full object-cover object-center z-0 transition-opacity duration-500 ${
+            videoReady ? 'opacity-100' : 'opacity-0'
+          }`}
+        />
+      </>
+    );
+  }
+
   const finalSrc = !src || failed ? fallbackSrc : src;
   return (
     <img
@@ -1898,8 +1982,13 @@ export function CampusDetailVisitPage() {
             transition={{ duration: 0 }}
             className="fixed top-[64px] inset-x-0 bottom-0 z-30 overflow-hidden"
           >
-            {/* Background: area cover, fullscreen, cover-fit (BR-PGAL-AREA-02/03) */}
-            <ShowcaseBackground src={showcaseArea.areaCoverUrl} fallbackSrc={fallback.bg} alt={showcaseArea.areaName} />
+            {/* Background: area cover (image or MP4 video), fullscreen, cover-fit (BR-PGAL-AREA-02/03) */}
+            <ShowcaseBackground
+              src={showcaseArea.areaCoverUrl}
+              fallbackSrc={fallback.bg}
+              alt={showcaseArea.areaName}
+              mediaType={showcaseArea.areaCoverMediaType}
+            />
 
             {/* Dark overlay for legibility / cinematic feel (BR-PGAL-AREA-04) */}
             <div

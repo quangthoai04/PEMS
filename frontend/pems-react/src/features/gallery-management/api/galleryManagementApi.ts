@@ -26,14 +26,14 @@ function cleanParams(params: Record<string, unknown>): Record<string, unknown> {
   );
 }
 
-/** Builds the shared multipart body for create/update location (cover images are optional per mode). */
+/** Builds the shared multipart body for create/update location (area cover VIDEO + location cover image). */
 function buildLocationForm(input: CreateGalleryLocationInput): FormData {
   const form = new FormData();
   form.append('mode', input.mode);
   if (input.areaId != null) form.append('areaId', String(input.areaId));
   if (input.newAreaName) form.append('newAreaName', input.newAreaName);
   form.append('locationName', input.locationName);
-  if (input.areaCoverImage) form.append('areaCoverImage', input.areaCoverImage);
+  if (input.areaCoverVideo) form.append('areaCoverVideo', input.areaCoverVideo);
   if (input.locationCoverImage) form.append('locationCoverImage', input.locationCoverImage);
   return form;
 }

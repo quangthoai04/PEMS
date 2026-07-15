@@ -26,13 +26,18 @@ export interface PublicGalleryLocation {
   primaryMediaUrl?: string | null;
 }
 
+/** How an area cover is rendered on the public page: a legacy image or the new MP4 area-cover video. */
+export type PublicAreaCoverMediaType = 'IMAGE' | 'VIDEO';
+
 export interface PublicGalleryArea {
   areaId: number;
   areaName: string;
   displayOrder: number;
-  /** Area cover image (gallery_areas.cover_file_id) — the Area Showcase fullscreen background. */
+  /** Area cover file (gallery_areas.cover_file_id) — the Area Showcase fullscreen background. */
   areaCoverFileId?: number | null;
   areaCoverUrl?: string | null;
+  /** IMAGE (legacy areas) or VIDEO (MP4 cover) — drives <img> vs <video> in the Area Showcase. */
+  areaCoverMediaType?: PublicAreaCoverMediaType;
   locations: PublicGalleryLocation[];
 }
 

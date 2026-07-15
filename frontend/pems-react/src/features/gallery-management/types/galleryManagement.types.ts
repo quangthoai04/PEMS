@@ -104,6 +104,8 @@ export interface GalleryAreaOption {
   status: 'ACTIVE' | 'INACTIVE';
   coverFileId?: number | null;
   coverUrl?: string | null;
+  /** IMAGE (legacy areas) or VIDEO (MP4 cover) — lets the edit modal preview the right element. */
+  coverMediaType?: AreaCoverMediaType;
   locations: GalleryLocationOption[];
 }
 
@@ -189,6 +191,8 @@ export interface GalleryItemTtsRegenerateResult {
 
 export type GalleryLocationStatus = 'ACTIVE' | 'INACTIVE';
 export type GalleryLocationMode = 'EXISTING_AREA' | 'NEW_AREA';
+/** How an area cover is rendered: legacy image vs the new MP4 area-cover video. */
+export type AreaCoverMediaType = 'IMAGE' | 'VIDEO';
 
 export interface GalleryLocationListItem {
   locationId: number;
@@ -196,6 +200,8 @@ export interface GalleryLocationListItem {
   areaName: string;
   areaCoverFileId?: number | null;
   areaCoverUrl?: string | null;
+  /** IMAGE (legacy areas) or VIDEO (MP4 cover). */
+  areaCoverMediaType?: AreaCoverMediaType;
   locationName: string;
   locationCoverFileId?: number | null;
   locationCoverUrl?: string | null;
@@ -230,8 +236,8 @@ export interface CreateGalleryLocationInput {
   areaId?: number | null;
   newAreaName?: string | null;
   locationName: string;
-  /** Required when mode = NEW_AREA. */
-  areaCoverImage?: File | null;
+  /** MP4 area cover video. Required when mode = NEW_AREA; optional on edit of an existing area (replaces it). */
+  areaCoverVideo?: File | null;
   /** Required on create; optional on edit (kept when omitted). */
   locationCoverImage?: File | null;
 }
