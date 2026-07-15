@@ -23,8 +23,8 @@ public sealed class UpdateGalleryItemCommandValidator : AbstractValidator<Update
         RuleFor(x => x.LocationId)
             .GreaterThan(0).WithMessage("Vui lòng chọn vị trí.");
 
-        RuleFor(x => x.NewFiles)
-            .Must(f => f == null || f.Count <= 20)
-            .WithMessage("Chỉ được tải lên tối đa 20 tệp.");
+        RuleFor(x => x)
+            .Must(x => (x.NewFiles?.Count ?? 0) + (x.YoutubeUrls?.Count ?? 0) <= 20)
+            .WithMessage("Chỉ được thêm tối đa 20 media mới (ảnh + video YouTube).");
     }
 }

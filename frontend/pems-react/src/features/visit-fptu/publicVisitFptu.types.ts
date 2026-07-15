@@ -45,8 +45,14 @@ export interface PublicGalleryMedia {
   mediaId: number;
   fileId: number;
   mediaType: string; // IMAGE | VIDEO
-  url: string;
+  /** UPLOADED_FILE | YOUTUBE — render an iframe for YOUTUBE, else img/video. */
+  sourceType: 'UPLOADED_FILE' | 'YOUTUBE' | string;
+  /** Scoped proxy URL for an uploaded file; null for a YouTube reference. */
+  url?: string | null;
   thumbnailUrl?: string | null;
+  youtubeVideoId?: string | null;
+  embedUrl?: string | null;
+  webViewUrl?: string | null;
   caption?: string | null;
   altText?: string | null;
   isPrimary: boolean;

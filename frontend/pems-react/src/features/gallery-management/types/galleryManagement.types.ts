@@ -6,6 +6,8 @@
 export type GalleryStatus = 'PUBLISHED' | 'HIDDEN';
 export type GalleryMediaKind = 'IMAGE' | 'VIDEO' | 'MIXED';
 export type GalleryMediaType = 'IMAGE' | 'VIDEO';
+/** How a media is sourced: an uploaded Drive file vs an external YouTube reference. */
+export type GalleryMediaSourceType = 'UPLOADED_FILE' | 'YOUTUBE';
 /** Content type of a gallery item — distinct from media kind. MEDIA = giới thiệu vị trí; VISIT_DELEGATION = đoàn khách. */
 export type GalleryItemType = 'MEDIA' | 'VISIT_DELEGATION';
 
@@ -26,8 +28,13 @@ export interface GalleryPrimaryMedia {
   mediaId: number;
   fileId: number;
   mediaType: GalleryMediaType;
-  fileUrl: string;
+  sourceType: GalleryMediaSourceType;
+  /** Proxy content URL for an uploaded file; null for a YouTube reference. */
+  fileUrl?: string | null;
   thumbnailUrl?: string | null;
+  youtubeVideoId?: string | null;
+  embedUrl?: string | null;
+  webViewUrl?: string | null;
 }
 
 export interface GalleryListItem {
@@ -53,8 +60,13 @@ export interface GalleryMedia {
   mediaId: number;
   fileId: number;
   mediaType: GalleryMediaType;
-  fileUrl: string;
+  sourceType: GalleryMediaSourceType;
+  /** Proxy content URL for an uploaded file; null for a YouTube reference. */
+  fileUrl?: string | null;
   thumbnailUrl?: string | null;
+  youtubeVideoId?: string | null;
+  embedUrl?: string | null;
+  webViewUrl?: string | null;
   isPrimary: boolean;
   caption?: string | null;
   altText?: string | null;
@@ -120,6 +132,10 @@ export interface CreateGalleryItemInput {
   itemType: GalleryItemType;
   status: GalleryStatus;
   files: File[];
+  /** YouTube video URLs to attach as external VIDEO media (0..N). */
+  youtubeUrls?: string[];
+  /** `upload:{i}` or `youtube:{i}` — which media is primary. */
+  primaryMediaKey?: string | null;
 }
 
 export interface UpdateGalleryItemInput {
@@ -131,6 +147,10 @@ export interface UpdateGalleryItemInput {
   keepMediaIds: number[];
   newFiles: File[];
   primaryMediaId?: number | null;
+  /** New YouTube video URLs to add as external VIDEO media (0..N). */
+  youtubeUrls?: string[];
+  /** `existing:{mediaId}`, `upload:{i}` or `youtube:{i}` — which media is primary. */
+  primaryMediaKey?: string | null;
 }
 
 export interface ChangeGalleryStatusInput {

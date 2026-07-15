@@ -90,6 +90,11 @@ public sealed class GetPublicGalleryMediaQueryHandler : IRequestHandler<GetPubli
             .FirstOrDefaultAsync(f => f.FileId == request.FileId, cancellationToken)
             ?? throw new NotFoundException("File", request.FileId);
 
+        // A YouTube reference has no binary to stream — it is embedded via iframe on the client. Serving
+        // it here would try (and fail) a bogus download, so reject it cleanly (controlled 404).
+        if (string.Equals(file.FilePurpose, "GALLERY_YOUTUBE_VIDEO", StringComparison.OrdinalIgnoreCase))
+            throw new NotFoundException("PublicGalleryMedia", request.FileId);
+
         var isGoogleDrive = string.Equals(file.StorageProvider, "GOOGLE_DRIVE", StringComparison.OrdinalIgnoreCase)
             && !string.IsNullOrWhiteSpace(file.ExternalFileId);
 
