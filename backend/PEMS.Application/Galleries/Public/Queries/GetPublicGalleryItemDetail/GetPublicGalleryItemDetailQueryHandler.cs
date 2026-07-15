@@ -54,26 +54,31 @@ public sealed class GetPublicGalleryItemDetailQueryHandler
             .FirstOrDefaultAsync(cancellationToken)
             ?? throw new NotFoundException("PublicGalleryItem", request.GalleryItemId);
 
-        var media = await _db.GalleryItemMedia.AsNoTracking()
+        var mediaRows = await _db.GalleryItemMedia.AsNoTracking()
             .Where(m => m.GalleryItemId == head.GalleryItemId && m.Status == "ACTIVE" && m.DeletedAt == null)
             .OrderByDescending(m => m.IsPrimary)
             .ThenBy(m => m.DisplayOrder)
             .ThenBy(m => m.MediaId)
-            .Select(m => new PublicGalleryMediaDto
+            .Select(m => new
             {
-                MediaId = m.MediaId,
-                FileId = m.FileId,
-                MediaType = m.MediaType,
-                Url = PublicGalleryFileUrls.Content(m.FileId),
-                ThumbnailUrl = m.ThumbnailFileId != null
-                    ? PublicGalleryFileUrls.Content(m.ThumbnailFileId.Value)
-                    : null,
-                Caption = m.Caption,
-                AltText = m.AltText,
-                IsPrimary = m.IsPrimary,
-                DisplayOrder = (int)m.DisplayOrder,
+                m.MediaId,
+                m.FileId,
+                m.MediaType,
+                m.ThumbnailFileId,
+                m.Caption,
+                m.AltText,
+                m.IsPrimary,
+                m.DisplayOrder,
+                FilePurpose = m.File.FilePurpose,
+                ExternalFileId = m.File.ExternalFileId,
+                WebViewUrl = m.File.WebViewUrl,
+                FileThumbnailUrl = m.File.ThumbnailUrl,
             })
             .ToListAsync(cancellationToken);
+
+        var media = mediaRows.Select(m => PublicGalleryMediaFactory.Build(
+            m.MediaId, m.FileId, m.MediaType, m.ThumbnailFileId, m.Caption, m.AltText, m.IsPrimary,
+            (int)m.DisplayOrder, m.FilePurpose, m.ExternalFileId, m.WebViewUrl, m.FileThumbnailUrl)).ToList();
 
         // An item with zero active media is not public-visible (BR-PGAL-GRID-11).
         if (media.Count == 0)

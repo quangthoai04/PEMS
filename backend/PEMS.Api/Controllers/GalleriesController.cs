@@ -68,11 +68,15 @@ namespace PEMS.Api.Controllers
             [FromForm] long locationId,
             [FromForm] string? itemType,
             [FromForm] string? status,
+            [FromForm] List<string>? youtubeUrls,
+            [FromForm] string? primaryMediaKey,
             List<IFormFile>? files,
             CancellationToken cancellationToken)
         {
             var buffered = await BufferFilesAsync(files, cancellationToken);
-            var command = new AddGalleryItemCommand(title, description, locationId, itemType, status, buffered);
+            var command = new AddGalleryItemCommand(
+                title, description, locationId, itemType, status, buffered,
+                youtubeUrls ?? new List<string>(), primaryMediaKey);
             return Ok(await _mediator.Send(command, cancellationToken));
         }
 
@@ -89,6 +93,8 @@ namespace PEMS.Api.Controllers
             [FromForm] string? itemType,
             [FromForm] List<long>? keepMediaIds,
             [FromForm] long? primaryMediaId,
+            [FromForm] List<string>? youtubeUrls,
+            [FromForm] string? primaryMediaKey,
             List<IFormFile>? newFiles,
             CancellationToken cancellationToken)
         {
@@ -101,7 +107,9 @@ namespace PEMS.Api.Controllers
                 itemType,
                 keepMediaIds ?? new List<long>(),
                 buffered,
-                primaryMediaId);
+                primaryMediaId,
+                youtubeUrls ?? new List<string>(),
+                primaryMediaKey);
             return Ok(await _mediator.Send(command, cancellationToken));
         }
 

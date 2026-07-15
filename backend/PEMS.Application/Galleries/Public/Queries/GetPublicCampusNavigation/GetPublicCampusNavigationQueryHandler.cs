@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Galleries.Common;
 using PEMS.Application.Galleries.Public.Common;
 
 namespace PEMS.Application.Galleries.Public.Queries.GetPublicCampusNavigation;
@@ -85,6 +86,8 @@ public sealed class GetPublicCampusNavigationQueryHandler
                 IsPrimary = m.IsPrimary,
                 DisplayOrder = m.DisplayOrder,
                 MediaId = m.MediaId,
+                FilePurpose = m.File.FilePurpose,
+                FileThumbnailUrl = m.File.ThumbnailUrl,
             })
             .ToListAsync(cancellationToken);
 
@@ -133,8 +136,11 @@ public sealed class GetPublicCampusNavigationQueryHandler
                             Title = lead.Title,
                             MediaKind = lead.MediaKind,
                             PublicGalleryItemCount = lg.Count(),
+                            // YouTube primary → its direct YouTube thumbnail (no content proxy); else the proxy.
                             PrimaryMediaUrl = primaryByItem.TryGetValue(lead.GalleryItemId, out var pm)
-                                ? PublicGalleryFileUrls.Content(pm.FileId)
+                                ? (GalleryMediaSourceResolver.IsYouTube(pm.FilePurpose)
+                                    ? pm.FileThumbnailUrl
+                                    : PublicGalleryFileUrls.Content(pm.FileId))
                                 : null,
                         };
                     })
@@ -169,5 +175,7 @@ public sealed class GetPublicCampusNavigationQueryHandler
         public bool IsPrimary { get; init; }
         public uint DisplayOrder { get; init; }
         public ulong MediaId { get; init; }
+        public string? FilePurpose { get; init; }
+        public string? FileThumbnailUrl { get; init; }
     }
 }

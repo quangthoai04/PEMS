@@ -98,27 +98,33 @@ public sealed class GetPublicLocationShowcaseQueryHandler
 
         // Primary media (fallback lowest display-order / media-id) per item — flat query, grouped in memory.
         var itemIds = items.Select(i => i.GalleryItemId).ToList();
-        var mediaRows = await _db.GalleryItemMedia.AsNoTracking()
+        var mediaRaw = await _db.GalleryItemMedia.AsNoTracking()
             .Where(m => itemIds.Contains(m.GalleryItemId) && m.Status == "ACTIVE" && m.DeletedAt == null)
             .Select(m => new
             {
                 m.GalleryItemId,
-                Media = new PublicGalleryMediaDto
-                {
-                    MediaId = m.MediaId,
-                    FileId = m.FileId,
-                    MediaType = m.MediaType,
-                    Url = PublicGalleryFileUrls.Content(m.FileId),
-                    ThumbnailUrl = m.ThumbnailFileId != null
-                        ? PublicGalleryFileUrls.Content(m.ThumbnailFileId.Value)
-                        : null,
-                    Caption = m.Caption,
-                    AltText = m.AltText,
-                    IsPrimary = m.IsPrimary,
-                    DisplayOrder = (int)m.DisplayOrder,
-                },
+                m.MediaId,
+                m.FileId,
+                m.MediaType,
+                m.ThumbnailFileId,
+                m.Caption,
+                m.AltText,
+                m.IsPrimary,
+                m.DisplayOrder,
+                FilePurpose = m.File.FilePurpose,
+                ExternalFileId = m.File.ExternalFileId,
+                WebViewUrl = m.File.WebViewUrl,
+                FileThumbnailUrl = m.File.ThumbnailUrl,
             })
             .ToListAsync(cancellationToken);
+
+        var mediaRows = mediaRaw.Select(m => new
+        {
+            m.GalleryItemId,
+            Media = PublicGalleryMediaFactory.Build(
+                m.MediaId, m.FileId, m.MediaType, m.ThumbnailFileId, m.Caption, m.AltText, m.IsPrimary,
+                (int)m.DisplayOrder, m.FilePurpose, m.ExternalFileId, m.WebViewUrl, m.FileThumbnailUrl),
+        }).ToList();
 
         var primaryByItem = mediaRows
             .GroupBy(r => r.GalleryItemId)

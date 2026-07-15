@@ -108,4 +108,18 @@ public static class GalleryErrorCodes
 
     /// <summary>The description exceeds the 1000-character narration cap. → 422.</summary>
     public const string DescriptionTooLong = "GALLERY_DESCRIPTION_TOO_LONG";
+
+    // ── YouTube external video phase ──
+
+    /// <summary>A YouTube URL was empty/blank. → 422.</summary>
+    public const string YoutubeUrlRequired = "GALLERY_YOUTUBE_URL_REQUIRED";
+
+    /// <summary>The supplied string is not a valid absolute http(s) URL. → 422.</summary>
+    public const string YoutubeUrlInvalid = "GALLERY_YOUTUBE_URL_INVALID";
+
+    /// <summary>The URL host is not an allowed YouTube host (blocks spoofed domains). → 422.</summary>
+    public const string YoutubeHostNotAllowed = "GALLERY_YOUTUBE_HOST_NOT_ALLOWED";
+
+    /// <summary>No valid 11-character YouTube video id could be extracted. → 422.</summary>
+    public const string YoutubeVideoIdInvalid = "GALLERY_YOUTUBE_VIDEO_ID_INVALID";
 }

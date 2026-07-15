@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using PEMS.Application.Galleries.Common;
 
 namespace PEMS.Application.Galleries.Public.Common;
 
@@ -149,8 +150,19 @@ public sealed class PublicGalleryMediaDto
     public ulong MediaId { get; init; }
     public ulong FileId { get; init; }
     public string MediaType { get; init; } = string.Empty;
-    public string Url { get; init; } = string.Empty;
+
+    /// <summary>UPLOADED_FILE or YOUTUBE — the public page renders an iframe for YOUTUBE, else img/video.</summary>
+    public string SourceType { get; init; } = GalleryMediaSourceTypes.UploadedFile;
+
+    /// <summary>Scoped proxy content URL for an uploaded file; null for a YouTube reference (no binary).</summary>
+    public string? Url { get; init; }
     public string? ThumbnailUrl { get; init; }
+
+    // YouTube-only (null for uploaded files).
+    public string? YoutubeVideoId { get; init; }
+    public string? EmbedUrl { get; init; }
+    public string? WebViewUrl { get; init; }
+
     public string? Caption { get; init; }
     public string? AltText { get; init; }
     public bool IsPrimary { get; init; }

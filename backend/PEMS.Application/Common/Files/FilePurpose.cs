@@ -19,6 +19,11 @@ public enum FilePurpose
     GalleryDelegationImage,
     GalleryDelegationVideo,
     GalleryAudio,
+    /// <summary>
+    /// External YouTube video referenced by a gallery item. No binary is ever stored on Drive — the
+    /// <c>files</c> row is metadata only (<c>storage_provider = OTHER</c>, external id = YouTube video id).
+    /// </summary>
+    GalleryYouTubeVideo,
     NewsImage,
     NewsAttachment,
     Document,
@@ -47,6 +52,7 @@ public static class FilePurposeDbValues
     public const string GalleryDelegationImage = "GALLERY_DELEGATION_IMAGE";
     public const string GalleryDelegationVideo = "GALLERY_DELEGATION_VIDEO";
     public const string GalleryAudio = "GALLERY_AUDIO";
+    public const string GalleryYouTubeVideo = "GALLERY_YOUTUBE_VIDEO";
     public const string NewsImage = "NEWS_IMAGE";
     public const string NewsAttachment = "NEWS_ATTACHMENT";
     public const string Document = "DOCUMENT";
@@ -73,6 +79,7 @@ public static class FilePurposeExtensions
         FilePurpose.GalleryDelegationImage => FilePurposeDbValues.GalleryDelegationImage,
         FilePurpose.GalleryDelegationVideo => FilePurposeDbValues.GalleryDelegationVideo,
         FilePurpose.GalleryAudio => FilePurposeDbValues.GalleryAudio,
+        FilePurpose.GalleryYouTubeVideo => FilePurposeDbValues.GalleryYouTubeVideo,
         FilePurpose.NewsImage => FilePurposeDbValues.NewsImage,
         FilePurpose.NewsAttachment => FilePurposeDbValues.NewsAttachment,
         FilePurpose.Document => FilePurposeDbValues.Document,
@@ -97,6 +104,7 @@ public static class FilePurposeExtensions
         FilePurpose.GalleryItemImage or FilePurpose.GalleryItemVideo => "gallery/items",
         FilePurpose.GalleryDelegationImage or FilePurpose.GalleryDelegationVideo => "gallery/delegations",
         FilePurpose.GalleryAudio => "gallery/audio",
+        FilePurpose.GalleryYouTubeVideo => "youtube/gallery",
         FilePurpose.NewsImage or FilePurpose.NewsAttachment => "news",
         FilePurpose.Document => "documents",
         FilePurpose.MinutesAttachment => "minutes",
