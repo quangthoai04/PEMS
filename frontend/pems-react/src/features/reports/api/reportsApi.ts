@@ -9,6 +9,11 @@ import type {
   DeptLeaderInvoiceVisit,
   DeptLeaderInvoiceItem,
 } from '../types/deptLeaderReports.types';
+import type {
+  StaffLeaderReportV2,
+  StaffLeaderV2Filters,
+  StaffLeaderInvoiceItem,
+} from '../types/staffLeaderReportsV2.types';
 
 /** Chuyển filters UI → query params; bỏ giá trị "ALL"/rỗng để backend hiểu là không lọc. */
 function toQueryParams(filters: HoReportFilters): Record<string, string | number> {
@@ -109,6 +114,69 @@ export const reportsApi = {
         : `PEMS_StaffLeader_Report.${ext}`;
 
     return { blob: response.data as Blob, fileName };
+  },
+
+  // ────────────────────── Staff Leader — report v2 (3 phần) ──────────────────────
+
+  getStaffLeaderReportV2: async (filters: StaffLeaderV2Filters): Promise<StaffLeaderReportV2> => {
+    const params: Record<string, string> = { preset: filters.preset };
+    if (filters.preset === 'CUSTOM') {
+      if (filters.fromDate) params.fromDate = filters.fromDate;
+      if (filters.toDate) params.toDate = filters.toDate;
+    }
+    const { data } = await httpClient.get<StaffLeaderReportV2>('/reports/staff-leader-report-v2', { params });
+    return data;
+  },
+
+  /** Đơn hậu cần phòng ban đã nhận trong khoảng ngày (panel xuất hóa đơn). */
+  getStaffLeaderDeptInvoiceItems: async (
+    departmentId: number, fromDate: string, toDate: string,
+  ): Promise<StaffLeaderInvoiceItem[]> => {
+    const { data } = await httpClient.get<StaffLeaderInvoiceItem[]>(
+      `/reports/staff-leader-report-v2/departments/${departmentId}/invoice-items`,
+      { params: { fromDate, toDate } },
+    );
+    return data;
+  },
+
+  /** Gửi email báo cáo hiệu suất cá nhân cho 1 nhân sự/student. */
+  sendStaffLeaderPersonnelReport: async (payload: {
+    userId: number; fromDate?: string; toDate?: string; note?: string;
+  }): Promise<{ success: boolean; message: string }> => {
+    const { data } = await httpClient.post<{ success: boolean; message: string }>(
+      '/reports/staff-leader-report-v2/send-personnel-report', payload,
+    );
+    return data;
+  },
+
+  /** Xuất báo cáo campus 3 phần (PDF/Excel/CSV) — sections rỗng = cả 3 phần. */
+  exportStaffLeaderReportV2: async (payload: {
+    preset: string; fromDate?: string; toDate?: string;
+    exportFormat: 'PDF' | 'EXCEL' | 'CSV';
+    sections: string[];
+  }): Promise<HoReportExportFile> => {
+    const response = await httpClient.post('/reports/staff-leader-report-v2/export', payload, { responseType: 'blob' });
+    const disposition: string = response.headers?.['content-disposition'] ?? '';
+    const utf8Match = /filename\*=UTF-8''([^;]+)/i.exec(disposition);
+    const plainMatch = /filename="?([^";]+)"?/i.exec(disposition);
+    const ext = payload.exportFormat === 'PDF' ? 'pdf' : payload.exportFormat === 'CSV' ? 'csv' : 'xlsx';
+    const fileName = utf8Match
+      ? decodeURIComponent(utf8Match[1])
+      : plainMatch
+        ? plainMatch[1]
+        : `PEMS_BaoCao_Campus.${ext}`;
+    return { blob: response.data as Blob, fileName };
+  },
+
+  /** Gửi hóa đơn hậu cần (kèm đơn giá) qua email cho phòng ban. */
+  sendStaffLeaderDeptInvoice: async (departmentId: number, payload: {
+    fromDate?: string; toDate?: string; note?: string;
+    items: { logisticsItemId: number; unitPrice: number }[];
+  }): Promise<{ success: boolean; message: string }> => {
+    const { data } = await httpClient.post<{ success: boolean; message: string }>(
+      `/reports/staff-leader-report-v2/departments/${departmentId}/send-invoice`, payload,
+    );
+    return data;
   },
 
   // ────────────────────── Department Leader ──────────────────────

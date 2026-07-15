@@ -6,7 +6,11 @@ using PEMS.Application.Common.Security;
 using PEMS.Application.Reports.Commands.ExportHoReport;
 using PEMS.Application.Reports.Queries.GetHoReportOverview;
 using PEMS.Application.Reports.Queries.GetStaffLeaderReportOverview;
+using PEMS.Application.Reports.Queries.GetStaffLeaderReportV2;
 using PEMS.Application.Reports.Commands.ExportStaffLeaderReport;
+using PEMS.Application.Reports.Commands.SendStaffLeaderPersonnelReport;
+using PEMS.Application.Reports.Commands.SendStaffLeaderDeptInvoice;
+using PEMS.Application.Reports.Commands.ExportStaffLeaderReportV2;
 using PEMS.Application.Reports.Queries.GetDeptLeaderReportOverview;
 using PEMS.Application.Reports.Commands.ExportDeptLeaderReport;
 using PEMS.Application.Reports.Queries.GetDeptLeaderInvoiceData;
@@ -56,6 +60,56 @@ namespace PEMS.Api.Controllers
         {
             var result = await _mediator.Send(command, cancellationToken);
             return File(result.Content, result.ContentType, result.FileName);
+        }
+
+        /// <summary>Báo cáo campus 3 phần của Staff Leader (đoàn khách, nhân sự, phòng ban) — lọc theo thời gian.</summary>
+        [HttpGet("staff-leader-report-v2")]
+        [RoleAuthorize(EffectiveRole.StaffLeader)]
+        public async Task<IActionResult> GetStaffLeaderReportV2([FromQuery] GetStaffLeaderReportV2Query query, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(query, cancellationToken);
+            return Ok(result);
+        }
+
+        /// <summary>Xuất báo cáo campus 3 phần (PDF/Excel/CSV) — chọn phần 1/2/3 hoặc tất cả.</summary>
+        [HttpPost("staff-leader-report-v2/export")]
+        [RoleAuthorize(EffectiveRole.StaffLeader)]
+        public async Task<IActionResult> ExportStaffLeaderReportV2([FromBody] ExportStaffLeaderReportV2Command command, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(command, cancellationToken);
+            return File(result.Content, result.ContentType, result.FileName);
+        }
+
+        /// <summary>Đơn hậu cần phòng ban đã nhận trong khoảng ngày — panel xuất hóa đơn (Staff Leader).</summary>
+        [HttpGet("staff-leader-report-v2/departments/{departmentId}/invoice-items")]
+        [RoleAuthorize(EffectiveRole.StaffLeader)]
+        public async Task<IActionResult> GetStaffLeaderDeptInvoiceItems(
+            ulong departmentId, [FromQuery] GetStaffLeaderDeptInvoiceItemsQuery query, CancellationToken cancellationToken)
+        {
+            query.DepartmentId = departmentId;
+            var result = await _mediator.Send(query, cancellationToken);
+            return Ok(result);
+        }
+
+        /// <summary>Gửi email báo cáo hiệu suất cá nhân cho 1 nhân sự/student (Staff Leader).</summary>
+        [HttpPost("staff-leader-report-v2/send-personnel-report")]
+        [RoleAuthorize(EffectiveRole.StaffLeader)]
+        public async Task<IActionResult> SendStaffLeaderPersonnelReport(
+            [FromBody] SendStaffLeaderPersonnelReportCommand command, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(command, cancellationToken);
+            return Ok(result);
+        }
+
+        /// <summary>Gửi hóa đơn hậu cần (kèm đơn giá đã nhập) qua email cho phòng ban (Staff Leader).</summary>
+        [HttpPost("staff-leader-report-v2/departments/{departmentId}/send-invoice")]
+        [RoleAuthorize(EffectiveRole.StaffLeader)]
+        public async Task<IActionResult> SendStaffLeaderDeptInvoice(
+            ulong departmentId, [FromBody] SendStaffLeaderDeptInvoiceCommand command, CancellationToken cancellationToken)
+        {
+            command.DepartmentId = departmentId;
+            var result = await _mediator.Send(command, cancellationToken);
+            return Ok(result);
         }
 
         /// <summary>Department Leader operation report — scoped to the leader's own department.</summary>
