@@ -199,6 +199,12 @@ public static class SessionRevokeReasons
     public const string AccountDeactivated = "ACCOUNT_DEACTIVATED";
     public const string RoleChanged = "ROLE_CHANGED";
 
+    /// <summary>HO basic-info edit changed the login email, so every active session is revoked.</summary>
+    public const string AccountEmailChanged = "ACCOUNT_EMAIL_CHANGED";
+
+    /// <summary>HO basic-info edit updated identity fields (used when only non-email fields changed).</summary>
+    public const string AccountBasicInfoUpdated = "ACCOUNT_BASIC_INFO_UPDATED";
+
     /// <summary>UC-106: the user's department was disabled, so every active session is revoked.</summary>
     public const string DepartmentDisabled = "DEPARTMENT_DISABLED";
 

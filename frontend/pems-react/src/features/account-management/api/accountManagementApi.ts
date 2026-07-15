@@ -18,10 +18,13 @@ import type {
   RelatedVisitorQueryParams,
   ReplaceStaffLeaderRequest,
   ReplaceStaffLeaderResponse,
+  RoleAssignmentOptions,
   StaffLeaderAvailability,
   StaffLeaderReplacementPreview,
   UpdateAccountRoleRequest,
   UpdateAccountRoleResponse,
+  UpdateBasicAccountInfoRequest,
+  UpdateBasicAccountInfoResponse,
 } from '../types/accountManagement.types';
 
 /** Drops undefined/null/'' so they never reach the query string. */
@@ -70,6 +73,18 @@ export const accountManagementApi = {
   /** Active GENERAL departments of the caller's campus (Department-Leader dropdown). */
   async getCampusDepartments(): Promise<CampusDepartmentOption[]> {
     const { data } = await httpClient.get<CampusDepartmentOption[]>(API_ENDPOINTS.accounts.campusDepartments);
+    return data;
+  },
+
+  /**
+   * UC-100-SL — role-assignment options for the "Chỉnh sửa vai trò" modal. Campus scope is
+   * resolved server-side from the authenticated Staff Leader; only the target account id is sent.
+   */
+  async getRoleAssignmentOptions(targetUserId: string | number): Promise<RoleAssignmentOptions> {
+    const { data } = await httpClient.get<RoleAssignmentOptions>(
+      API_ENDPOINTS.accounts.roleAssignmentOptions,
+      { params: { targetUserId } },
+    );
     return data;
   },
 
@@ -123,6 +138,18 @@ export const accountManagementApi = {
   /** UC-100 — change a user's role/campus/department (revokes their sessions). */
   async updateAccountRole(payload: UpdateAccountRoleRequest): Promise<UpdateAccountRoleResponse> {
     const { data } = await httpClient.post<UpdateAccountRoleResponse>(API_ENDPOINTS.accounts.updateRole, payload);
+    return data;
+  },
+
+  /**
+   * HO_BASIC_INFO — HO edits ONLY the full name + email of another HO / Staff Leader. When the email
+   * changes the backend re-points auth providers and revokes all active sessions.
+   */
+  async updateBasicAccountInfo(payload: UpdateBasicAccountInfoRequest): Promise<UpdateBasicAccountInfoResponse> {
+    const { data } = await httpClient.post<UpdateBasicAccountInfoResponse>(
+      API_ENDPOINTS.accounts.updateBasicInfo,
+      payload,
+    );
     return data;
   },
 

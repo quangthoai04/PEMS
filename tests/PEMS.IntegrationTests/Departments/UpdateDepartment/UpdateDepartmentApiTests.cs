@@ -7,6 +7,7 @@ using PEMS.Application.Common.Security;
 using PEMS.Application.Departments.Commands.UpdateDepartment;
 using PEMS.Application.Departments.Common;
 using PEMS.Domain.Constants;
+using PEMS.Domain.Entities.Users;
 using PEMS.Infrastructure.Persistence;
 using PEMS.IntegrationTests.TestInfrastructure;
 using Xunit;
@@ -465,6 +466,36 @@ public sealed class UpdateDepartmentApiTests : IClassFixture<PemsWebApplicationF
         // Create audit must never be touched by an update.
         Assert.Equal(snapshot.CreatedAt, saved.CreatedAt);
         Assert.Equal(snapshot.CreatedBy, saved.CreatedBy);
+    }
+
+    [Fact]
+    public async Task StaffLeader_ValidPayload_CreatesAuditLog()
+    {
+        var (client, staffLeaderUserId, campusId) = await CreateStaffLeaderClientAsync();
+        var oldName = $"{DatabaseResetHelper.UpdateDepartmentNamePrefix}auditlog-old {UniqueToken()}";
+        var newName = $"{DatabaseResetHelper.UpdateDepartmentNamePrefix}auditlog-new {UniqueToken()}";
+        var departmentId = await SeedDepartmentAsync(oldName, campusId, "GENERAL", "ACTIVE");
+
+        var response = await client.PostAsJsonAsync(Url, new UpdateDepartmentCommand { DepartmentId = departmentId, Name = newName });
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
+        var log = await db.AuditLogs
+            .Include(l => l.Changes)
+            .SingleAsync(l =>
+                l.EntityType == "Department" &&
+                l.EntityId == departmentId &&
+                l.Action == "UPDATE_DEPARTMENT_NAME");
+
+        Assert.Equal((ulong?)staffLeaderUserId, log.ActorUserId);
+        Assert.Equal((ulong?)campusId, log.CampusId);
+
+        var change = Assert.Single(log.Changes);
+        Assert.Equal("name", change.FieldName);
+        Assert.Equal(oldName, change.OldValueText);
+        Assert.Equal(newName, change.NewValueText);
     }
 
     // Confirmed real handler behavior (AF-07): when the trimmed/collapsed name is byte-identical

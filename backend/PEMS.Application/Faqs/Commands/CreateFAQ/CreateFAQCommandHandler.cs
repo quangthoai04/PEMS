@@ -64,8 +64,6 @@ public sealed class CreateFAQCommandHandler : IRequestHandler<CreateFAQCommand, 
             Status = status,
             CreatedAt = now,
             CreatedBy = _currentUser.UserId,
-            UpdatedAt = now,
-            UpdatedBy = _currentUser.UserId
         };
 
         _dbContext.Faqs.Add(faq);

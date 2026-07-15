@@ -48,6 +48,7 @@ public sealed class TestApplicationDbContext : DbContext, IApplicationDbContext
     public DbSet<Department> Departments => Set<Department>();
     public DbSet<User> Users => Set<User>();
     public DbSet<UserSession> UserSessions => Set<UserSession>();
+    public DbSet<UserAuthProvider> UserAuthProviders => Set<UserAuthProvider>();
     public DbSet<VisitRequestCampus> VisitRequestCampuses => Set<VisitRequestCampus>();
     public DbSet<VisitParticipant> VisitParticipants => Set<VisitParticipant>();
     public DbSet<VisitLogisticsItem> VisitLogisticsItems => Set<VisitLogisticsItem>();
@@ -58,7 +59,6 @@ public sealed class TestApplicationDbContext : DbContext, IApplicationDbContext
         // Prune everything outside the UC-106 slice. EF discovers even explicit-interface DbSet
         // properties, so each unrelated aggregate must be ignored explicitly or its (unconfigured)
         // relationships break model finalization.
-        modelBuilder.Ignore<UserAuthProvider>();           // User.AuthProviders / UserSession.AuthProvider
         modelBuilder.Ignore<VisitRequest>();               // VisitRequestCampus.VisitRequest → Partner/guests
         modelBuilder.Ignore<VisitAgenda>();                // VisitRequestCampus.Agendas
         modelBuilder.Ignore<VisitLogisticsItemHandover>(); // VisitLogisticsItem.Handovers
@@ -122,6 +122,12 @@ public sealed class TestApplicationDbContext : DbContext, IApplicationDbContext
             .HasOne(u => u.Department).WithMany(d => d.Users).HasForeignKey(u => u.DepartmentId);
         modelBuilder.Entity<UserSession>()
             .HasOne(s => s.User).WithMany(u => u.Sessions).HasForeignKey(s => s.UserId);
+        // UserAuthProvider is mapped (HO basic-info email-change re-points providers). Configure both
+        // navigations that reference it so model finalization succeeds.
+        modelBuilder.Entity<UserAuthProvider>()
+            .HasOne(p => p.User).WithMany(u => u.AuthProviders).HasForeignKey(p => p.UserId);
+        modelBuilder.Entity<UserSession>()
+            .HasOne(s => s.AuthProvider).WithMany().HasForeignKey(s => s.AuthProviderId);
         modelBuilder.Entity<VisitParticipant>()
             .HasOne(vp => vp.VisitInstance).WithMany(vc => vc.Participants)
             .HasForeignKey(vp => vp.VisitInstanceId);
@@ -133,7 +139,6 @@ public sealed class TestApplicationDbContext : DbContext, IApplicationDbContext
     }
 
     // ── Aggregates the UC-106 slice never touches (NOT discovered by EF) ──────
-    DbSet<UserAuthProvider> IApplicationDbContext.UserAuthProviders => Set<UserAuthProvider>();
     DbSet<OtpToken> IApplicationDbContext.OtpTokens => Set<OtpToken>();
     DbSet<LoginLog> IApplicationDbContext.LoginLogs => Set<LoginLog>();
     DbSet<SecurityEvent> IApplicationDbContext.SecurityEvents => Set<SecurityEvent>();

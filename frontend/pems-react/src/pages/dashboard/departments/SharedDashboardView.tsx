@@ -35,9 +35,17 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import toast, { Toaster } from 'react-hot-toast';
 import { departmentReceptionTasksApi } from '../../../features/department-reception-tasks/api/departmentReceptionTasksApi';
 import { delegationsApi } from '../../../features/delegations/api/delegationsApi';
+import { notificationsApi } from '../../../features/notifications/api/notificationsApi';
+import { useNotifications } from '../../../features/notifications/context/NotificationsContext';
+import { getNotificationLink, timeAgo } from '../../../features/notifications/components/NotificationBellButton';
+import { NotificationDetailModal } from '../../../features/notifications/components/NotificationDetailModal';
+import type { NotificationItem } from '../../../features/notifications/types/notification.types';
+import { matchCalendarChangeNotifs } from '../../../features/notifications/utils/calendarChangeNotifs';
+import { VEHICLE_HANDOVER_CHECKLIST, isVehicleHandover } from '../../../features/department-reception-tasks/constants/vehicleHandover';
+import { useAuth } from '../../../shared/hooks/useAuth';
 import { EmailPreviewModal, type EmailPreviewSendPayload } from '../../../features/delegations/components/EmailPreviewModal';
 import { stripLegacyActionHtml } from '../../../features/emails/utils/actionLinks';
-import { formatVietnamDateTime, toVietnamCalendarDate, parseApiDate, toVietnamDateTimeLocalInput } from '../../../shared/utils/vietnamTime';
+import { formatVietnamDateTime, toVietnamCalendarDate, toVietnamDateTimeLocalInput } from '../../../shared/utils/vietnamTime';
 interface Event {
   id: string;
   title: string;
@@ -147,6 +155,40 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
   const [events, setEvents] = useState<any[]>([]);
   const [candidates, setCandidates] = useState<any[]>([]);
   const navigate = useNavigate();
+  const { user: authUser } = useAuth();
+  const { markAsRead: markNotificationRead } = useNotifications();
+  // Thông báo chưa đọc liên quan tới các đơn/thư mời — dùng cho chấm đỏ nháy trên lịch
+  // và danh sách "Thay đổi mới" trong modal chi tiết.
+  const [changeNotifs, setChangeNotifs] = useState<NotificationItem[]>([]);
+
+  const fetchChangeNotifs = React.useCallback(async () => {
+    try {
+      const res = await notificationsApi.getNotifications({ page: 1, pageSize: 50, isRead: false });
+      setChangeNotifs(res?.items || []);
+    } catch (e) { console.error(e); }
+  }, []);
+
+  /** Các thông báo chưa đọc gắn với đúng sự kiện lịch này (đơn yêu cầu / thư mời). */
+  const getEventChangeNotifs = React.useCallback(
+    (ev: any): NotificationItem[] => matchCalendarChangeNotifs(changeNotifs, ev),
+    [changeNotifs],
+  );
+
+  // Thay đổi không có link đích (notification cũ) → mở modal chi tiết như bell.
+  const [changeNotifDetail, setChangeNotifDetail] = useState<NotificationItem | null>(null);
+
+  /** Bấm 1 thay đổi trong modal: đánh dấu đã đọc rồi trỏ tới đúng chỗ như thông báo. */
+  const handleChangeNotifClick = async (n: NotificationItem) => {
+    try { await markNotificationRead(n.notificationId); } catch { /* ignore */ }
+    setChangeNotifs(prev => prev.filter(x => x.notificationId !== n.notificationId));
+    const link = getNotificationLink(n, authUser);
+    if (link) {
+      setActivePopoverEvent(null);
+      navigate(link);
+    } else {
+      setChangeNotifDetail(n);
+    }
+  };
   const [searchParams, setSearchParams] = useSearchParams();
   const [assignmentItems, setAssignmentItems] = useState<AssignmentProgressItem[]>([]);
   const [attentionItems, setAttentionItems] = useState<AssignmentProgressItem[]>([]);
@@ -377,6 +419,10 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
 
   const [activeEventDetail, setActiveEventDetail] = useState<any>(null);
 
+  // Đơn mượn xe (TRANSPORT): biên bản dùng checklist xe ô tô điện cố định;
+  // đơn yêu cầu chung chung giữ nguyên biên bản hiện tại.
+  const isVehicleDoc = isVehicleHandover(activeEventDetail?.itemType);
+
   React.useEffect(() => {
     if (!activePopoverEvent || !activePopoverEvent.rawId) {
       setActiveEventDetail(null);
@@ -468,14 +514,22 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
       const res = await departmentReceptionTasksApi.getCalendar(`${currentYear}`);
       const list = res?.data || res || [];
       if (Array.isArray(list)) {
-        const mapped = list.map((item: any, idx: number) => {
+        const mapped = list
+          .filter((item: any) => {
+            // Dept Leader: đơn bị từ chối không hiện trên bảng lịch nữa.
+            if (!isDeptLeader) return true;
+            const st = item.itemStatus || item.status;
+            return st !== 'REJECTED' && st !== 'DECLINED';
+          })
+          .map((item: any, idx: number) => {
            let cat = '';
            let col = '';
            let hCol = '';
            let isProcessed = false;
            const itemStatus = item.itemStatus || item.status;
-           const itemEndTime = item.endAt ? (parseApiDate(item.endAt)?.getTime() ?? 0) : 0;
-           const isPast = itemEndTime > 0 && itemEndTime < Date.now();
+           const relatedId = item.relatedUserId != null ? String(item.relatedUserId) : null;
+           const isMine = relatedId != null && [user?.id, user?.userId, user?.account, user?.user_id]
+             .some(v => v != null && String(v) === relatedId);
 
            if (item.itemType === 'INVITATION') {
               isProcessed = itemStatus !== 'REQUESTED';
@@ -487,15 +541,30 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
               cat = 'Lịch của tôi';
            }
 
-           if (itemStatus === 'CANCELLED' || isPast) {
-              col = 'bg-slate-100 text-slate-500 border-slate-300 hover:bg-slate-200';
-              hCol = 'border-slate-400';
+           if (itemStatus === 'CANCELLED') {
+              // Đã hủy: giữ màu theo loại đơn (không tô xám), chữ gạch ngang khi render.
+              if (item.itemType === 'INVITATION') {
+                 col = 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100';
+                 hCol = 'border-emerald-500';
+              } else if (item.itemType === 'REQUEST') {
+                 col = 'bg-orange-50 text-orange-700 border-orange-300 hover:bg-orange-100';
+                 hCol = 'border-orange-500';
+              } else {
+                 col = 'bg-purple-100 text-purple-800 border-purple-400 hover:bg-purple-200';
+                 hCol = 'border-purple-600';
+              }
            } else if (isProcessed) {
               if (item.status !== 'ASSIGNED') {
                  cat = 'Lịch của tôi';
               }
-              col = 'bg-blue-50 text-blue-700 border-blue-300 hover:bg-blue-100';
-              hCol = 'border-blue-500';
+              if (isDeptLeader && isMine) {
+                 // Đơn Dept Leader phụ trách (đã chấp nhận) → màu tím như "Tôi".
+                 col = 'bg-purple-100 text-purple-800 border-purple-400 hover:bg-purple-200';
+                 hCol = 'border-purple-600';
+              } else {
+                 col = 'bg-blue-50 text-blue-700 border-blue-300 hover:bg-blue-100';
+                 hCol = 'border-blue-500';
+              }
            } else if (item.itemType === 'INVITATION') {
               col = 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100';
               hCol = 'border-emerald-500';
@@ -503,8 +572,8 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
               col = 'bg-orange-50 text-orange-700 border-orange-300 hover:bg-orange-100';
               hCol = 'border-orange-500';
            } else {
-              col = 'bg-purple-50 text-purple-700 border-purple-300 hover:bg-purple-100';
-              hCol = 'border-purple-500';
+              col = 'bg-purple-100 text-purple-800 border-purple-400 hover:bg-purple-200';
+              hCol = 'border-purple-600';
            }
 
            // Re-based: UTC getters trả đúng phần giờ Việt Nam.
@@ -517,6 +586,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
              id: item.itemId + '_' + idx,
              rawId: item.itemId || item.id,
              visitRequestId: item.visitRequestId,
+             visitInstanceId: item.visitInstanceId,
              itemType: item.itemType,
              status: itemStatus,
              latestAttemptStatus: item.latestAttemptStatus,
@@ -543,7 +613,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
         setEvents(mapped);
       }
     } catch(e) { console.error(e); }
-  }, [currentYear]);
+  }, [currentYear, isDeptLeader, user?.id, user?.userId, user?.account, user?.user_id]);
 
   const fetchCandidates = React.useCallback(async () => {
     try {
@@ -640,7 +710,8 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
   React.useEffect(() => {
     fetchCalendarEvents();
     fetchCandidates();
-  }, [fetchCalendarEvents, fetchCandidates, user?.departmentId]);
+    fetchChangeNotifs();
+  }, [fetchCalendarEvents, fetchCandidates, fetchChangeNotifs, user?.departmentId]);
 
   React.useEffect(() => {
     if (viewMode === 'assignments') {
@@ -1120,7 +1191,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
   };
 
   const refetchAfterTaskAction = async () => {
-    await Promise.all([fetchAssignmentsProgress(), fetchCalendarEvents()]);
+    await Promise.all([fetchAssignmentsProgress(), fetchCalendarEvents(), fetchChangeNotifs()]);
   };
 
   const handleAcceptSelf = async (item: AssignmentProgressItem) => {
@@ -1557,8 +1628,9 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
           <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-emerald-50 border-2 border-emerald-400"></div>Thư mời</span>
           <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-orange-50 border-2 border-orange-400"></div>Đơn yêu cầu</span>
           <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-blue-50 border-2 border-blue-400"></div>Đã xử lý</span>
-          <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-slate-100 border-2 border-slate-400"></div>Bị hủy / Đã hết hạn</span>
-          <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-purple-50 border-2 border-purple-400"></div>Tôi</span>
+          <span className="flex items-center gap-2"><span className="line-through text-slate-500">Bị hủy</span></span>
+          <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-sm bg-slate-300/60 border border-slate-300"></div>Ngày đã qua</span>
+          <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-purple-200 border-2 border-purple-500"></div>Tôi</span>
         </div>
 
         {/* Google-Calendar-style toolbar button group */}
@@ -1836,6 +1908,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                   {daysGrid.map((cell, idx) => {
                     const dayEvents = filteredEvents.filter(e => e.date === cell.dateString);
                     const isSelected = selectedCellDate === cell.dateString;
+                    const isPastDay = cell.dateString < todayStr;
                     return (
                       <div
                         key={idx}
@@ -1884,6 +1957,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                             <div className="flex-grow space-y-1 overflow-y-auto no-scrollbar pt-1">
                               {dayEvents.map(ev => {
                                 const isHighlighted = activePopoverEvent?.id === ev.id;
+                                const hasChanges = getEventChangeNotifs(ev).length > 0;
                                 return (
                                   <div
                                     key={ev.id}
@@ -1893,18 +1967,28 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                                       setSelectedCellDate(cell.dateString);
                                       setActivePopoverEvent(ev);
                                     }}
-                                    className={`px-2 py-1.5 rounded-lg border text-[10px] font-bold leading-tight cursor-pointer transition-all truncate selection:bg-transparent ${ev.color} ${ev.hoverColor} ${
+                                    className={`relative px-2 py-1.5 rounded-lg border text-[10px] font-normal leading-tight cursor-pointer transition-all truncate selection:bg-transparent ${hasChanges ? 'pr-5' : ''} ${ev.color} ${ev.hoverColor} ${
                                       isHighlighted ? 'ring-2 ring-orange-500/10 border-orange-400 shadow-sm' : ''
                                     }`}
                                   >
                                     <span className="inline-block w-1.5 h-1.5 rounded-full mr-1.5 bg-current" />
-                                    {ev.title}
+                                    <span className={ev.status === 'CANCELLED' ? 'line-through' : ''}>{ev.title}</span>
+                                    {hasChanges && (
+                                      <span className="absolute top-1 right-1 flex h-2 w-2" title="Đơn này có thay đổi mới">
+                                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+                                        <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
+                                      </span>
+                                    )}
                                   </div>
                                 );
                               })}
                             </div>
                           </>
                         ) : null}
+                        {/* Lớp mờ phủ lên các ngày trong quá khứ */}
+                        {cell.isCurrent && isPastDay && (
+                          <div className="absolute inset-0 bg-slate-300/45 pointer-events-none z-10" aria-hidden="true" />
+                        )}
                       </div>
                     );
                   })}
@@ -1929,6 +2013,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                   {currentWeekDays.map((cell, idx) => {
                     const dayEvents = filteredEvents.filter(e => e.date === cell.dateString);
                     const isSelected = selectedCellDate === cell.dateString;
+                    const isPastDay = cell.dateString < todayStr;
                     return (
                       <div
                         key={idx}
@@ -1972,6 +2057,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                         <div className="flex-grow space-y-1.5 overflow-y-auto no-scrollbar pt-1">
                           {dayEvents.map(ev => {
                             const isHighlighted = activePopoverEvent?.id === ev.id;
+                            const hasChanges = getEventChangeNotifs(ev).length > 0;
                             return (
                               <div
                                 key={ev.id}
@@ -1980,16 +2066,26 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                                   setSelectedCellDate(cell.dateString);
                                   setActivePopoverEvent(ev);
                                 }}
-                                className={`px-2 py-2 rounded-lg border text-[10px] font-bold leading-tight cursor-pointer transition-all ${ev.color} ${ev.hoverColor} ${
-                                  isHighlighted ? 'ring-2 ring-[#f37021]/30 border-[#f37021] shadow-sm font-extrabold scale-[1.01]' : ''
+                                className={`relative px-2 py-2 rounded-lg border text-[10px] font-normal leading-tight cursor-pointer transition-all ${hasChanges ? 'pr-5' : ''} ${ev.color} ${ev.hoverColor} ${
+                                  isHighlighted ? 'ring-2 ring-[#f37021]/30 border-[#f37021] shadow-sm scale-[1.01]' : ''
                                 }`}
                               >
                                 <span className="inline-block w-1.5 h-1.5 rounded-full mr-1.5 bg-current" />
-                                {ev.title}
+                                <span className={ev.status === 'CANCELLED' ? 'line-through' : ''}>{ev.title}</span>
+                                {hasChanges && (
+                                  <span className="absolute top-1 right-1 flex h-2 w-2" title="Đơn này có thay đổi mới">
+                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+                                    <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
+                                  </span>
+                                )}
                               </div>
                             );
                           })}
                         </div>
+                        {/* Lớp mờ phủ lên các ngày trong quá khứ */}
+                        {isPastDay && (
+                          <div className="absolute inset-0 bg-slate-300/45 pointer-events-none z-10" aria-hidden="true" />
+                        )}
                       </div>
                     );
                   })}
@@ -2053,6 +2149,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                     <div className="space-y-4 flex-grow overflow-y-auto no-scrollbar max-h-[500px] pr-1">
                       {dayEvents.map((ev) => {
                         const isHighlighted = activePopoverEvent?.id === ev.id;
+                        const hasChanges = getEventChangeNotifs(ev).length > 0;
                         return (
                           <div
                             key={ev.id}
@@ -2065,11 +2162,17 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                               <div className="flex items-center gap-2">
                                 <span className="w-2.5 h-2.5 rounded-full bg-current" />
                                 <span className="text-[10px] font-black uppercase tracking-wider opacity-90">{ev.category}</span>
+                                {hasChanges && (
+                                  <span className="relative flex h-2 w-2" title="Đơn này có thay đổi mới">
+                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+                                    <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
+                                  </span>
+                                )}
                               </div>
                               <span className="text-[11px] font-bold opacity-80">{ev.time}</span>
                             </div>
                             
-                            <h4 className="text-sm font-black mt-2 leading-snug">{ev.title}</h4>
+                            <h4 className={`text-sm font-medium mt-2 leading-snug ${ev.status === 'CANCELLED' ? 'line-through' : ''}`}>{ev.title}</h4>
                             
                             <div className="mt-3.5 grid grid-cols-1 md:grid-cols-2 gap-2 text-[11px] font-medium opacity-90 border-t border-current/10 pt-2.5">
                               <div className="flex items-center gap-1.5">
@@ -2627,6 +2730,39 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
 
             {/* Modal Contents in a clean wide Horizontal Table layout */}
             <div className="p-6 md:p-8 space-y-4 overflow-y-auto max-h-[70vh] no-scrollbar bg-slate-50/50">
+                {/* Thay đổi mới (thông báo chưa đọc gắn với đơn/thư mời này) */}
+                {(() => {
+                  const changes = getEventChangeNotifs(activePopoverEvent);
+                  if (changes.length === 0) return null;
+                  return (
+                    <div className="bg-red-50/70 border border-red-200 rounded-2xl overflow-hidden">
+                      <div className="px-5 py-3 flex items-center gap-2.5 border-b border-red-100 bg-red-50">
+                        <span className="relative flex h-2.5 w-2.5 shrink-0">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+                          <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
+                        </span>
+                        <span className="text-sm font-bold text-red-700">Thay đổi mới ({changes.length})</span>
+                        <span className="text-[11px] text-red-400 ml-auto hidden sm:block">Bấm vào từng thay đổi để mở đúng chỗ cần xem</span>
+                      </div>
+                      <div className="divide-y divide-red-100">
+                        {changes.map(n => (
+                          <button
+                            key={n.notificationId}
+                            onClick={() => handleChangeNotifClick(n)}
+                            className="w-full text-left px-5 py-3 hover:bg-red-100/50 transition-colors cursor-pointer"
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <span className="text-sm font-semibold text-slate-800">{n.title}</span>
+                              <span className="text-[10px] text-slate-400 whitespace-nowrap shrink-0 mt-0.5">{timeAgo(n.createdAt)}</span>
+                            </div>
+                            {n.message && <p className="text-xs text-slate-500 mt-0.5 line-clamp-2">{n.message}</p>}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 {/* Xem chi tiết đoàn đón khách */}
                 <div className="w-full">
                   <button
@@ -3597,11 +3733,16 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                         <p className="flex-1 min-w-[200px]">Bộ phận: <b>Ban Đào tạo & CTSV</b></p>
                       </div>
                       <p>Lý do bàn giao: <b>Đón tiếp phái đoàn đối tác thương mại Safuri</b></p>
-                      <p>Thời gian hẹn trả tài sản: <b>16:30, 08/08/2026</b></p>
+                      <p>
+                        {isVehicleDoc ? 'Thời gian hẹn trả xe' : 'Thời gian hẹn trả tài sản'}:{' '}
+                        <b>{activeEventDetail?.endTime && activeEventDetail?.date ? `${activeEventDetail.endTime}, ${activeEventDetail.date}` : '16:30, 08/08/2026'}</b>
+                      </p>
                     </div>
                   </div>
 
-                  <p className="font-bold text-[15px] mb-2 relative z-10">Cùng bàn giao tài sản với tình trạng sau:</p>
+                  <p className="font-bold text-[15px] mb-2 relative z-10">
+                    {isVehicleDoc ? 'Cùng bàn giao xe ô tô điện với tình trạng sau:' : 'Cùng bàn giao tài sản với tình trạng sau:'}
+                  </p>
                   <div className="overflow-x-auto mb-6 relative z-10">
                     <table className="w-full border-collapse border border-slate-500 text-[14px]">
                       <thead>
@@ -3609,36 +3750,58 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                           <th className="border border-slate-500 p-2 text-center w-12">STT</th>
                           <th className="border border-slate-500 p-2 text-center">Nội dung</th>
                           <th className="border border-slate-500 p-2 text-center w-24">Số Lượng</th>
-                          <th className="border border-slate-500 p-2 text-center">Tình Trạng bàn giao</th>
-                          <th className="border border-slate-500 p-2 text-center">Tình Trạng nhận</th>
+                          <th className="border border-slate-500 p-2 text-center">{isVehicleDoc ? 'Tình Trạng BTS bàn giao' : 'Tình Trạng bàn giao'}</th>
+                          <th className="border border-slate-500 p-2 text-center">{isVehicleDoc ? 'Tình Trạng BTS nhận bàn giao' : 'Tình Trạng nhận'}</th>
                           <th className="border border-slate-500 p-2 text-center">Ghi chú</th>
                         </tr>
                       </thead>
                       <tbody>
-                        <tr>
-                          <td className="border border-slate-500 p-2 text-center">1</td>
-                          <td className="border border-slate-500 p-2 font-semibold">Xe điện FPTU-EV-09 (8 ghế)</td>
-                          <td className="border border-slate-500 p-2 text-center">1</td>
-                          <td className="border border-slate-500 p-2 text-center">
-                            {safuriBG1Note || 'Đã sạc đầy 100%, 10 ô dù'}
-                          </td>
-                          <td className="border border-slate-500 p-2 text-center">
-                            {safuriBG2Signed ? (safuriBG2Note || 'Đã xác nhận') : ''}
-                          </td>
-                          <td className="border border-slate-500 p-2"></td>
-                        </tr>
+                        {isVehicleDoc ? (
+                          VEHICLE_HANDOVER_CHECKLIST.map((row, i) => (
+                            <tr key={i}>
+                              <td className="border border-slate-500 p-2 text-center">{i + 1}</td>
+                              <td className="border border-slate-500 p-2">{row.name}</td>
+                              <td className="border border-slate-500 p-2 text-center">{row.qty}</td>
+                              <td className="border border-slate-500 p-2"></td>
+                              <td className="border border-slate-500 p-2"></td>
+                              <td className="border border-slate-500 p-2"></td>
+                            </tr>
+                          ))
+                        ) : (
+                          <tr>
+                            <td className="border border-slate-500 p-2 text-center">1</td>
+                            <td className="border border-slate-500 p-2 font-semibold">Xe điện FPTU-EV-09 (8 ghế)</td>
+                            <td className="border border-slate-500 p-2 text-center">1</td>
+                            <td className="border border-slate-500 p-2 text-center">
+                              {safuriBG1Note || 'Đã sạc đầy 100%, 10 ô dù'}
+                            </td>
+                            <td className="border border-slate-500 p-2 text-center">
+                              {safuriBG2Signed ? (safuriBG2Note || 'Đã xác nhận') : ''}
+                            </td>
+                            <td className="border border-slate-500 p-2"></td>
+                          </tr>
+                        )}
                       </tbody>
                     </table>
                   </div>
 
                   <div className="space-y-1 text-[14px] mb-8 relative z-10">
-                    <p className="font-bold">Quy định khi sử dụng tài sản:</p>
-                    <ul className="list-disc pl-8 space-y-1">
-                      <li>Người mượn tài sản phải tuân thủ đúng mục đích sử dụng, không tự ý chuyển giao cho người khác.</li>
-                      <li>Khi có vấn đề xảy ra (bị hỏng hoặc không nguyên hiện trạng ban đầu), <b>người mượn tài sản</b> sẽ phải chịu hoàn toàn trách nhiệm chi trả chi phí sửa chữa/đền bù.</li>
-                      <li>An toàn trong quá trình sử dụng tài sản sẽ do <b>người mượn tài sản</b> chịu hoàn toàn trách nhiệm.</li>
-                      <li>Ghi chú khác: ....................................................................................................................</li>
-                    </ul>
+                    <p className="font-bold">{isVehicleDoc ? 'Quy định khi sử dụng xe ô tô điện:' : 'Quy định khi sử dụng tài sản:'}</p>
+                    {isVehicleDoc ? (
+                      <ul className="list-disc pl-8 space-y-1">
+                        <li>Người mượn xe phải tuân thủ đúng mục đích sử dụng, không tự ý chuyển giao xe cho người khác.</li>
+                        <li>Khi có vấn đề xảy ra (xe bị hỏng hoặc không nguyên hiện trạng ban đầu), <b>người mượn xe</b> sẽ phải chịu hoàn toàn trách nhiệm chi trả chi phí sửa chữa/đền bù.</li>
+                        <li>An toàn trong quá trình sử dụng xe sẽ do <b>người mượn xe</b> chịu hoàn toàn trách nhiệm.</li>
+                        <li>Ghi chú khác: ....................................................................................................................</li>
+                      </ul>
+                    ) : (
+                      <ul className="list-disc pl-8 space-y-1">
+                        <li>Người mượn tài sản phải tuân thủ đúng mục đích sử dụng, không tự ý chuyển giao cho người khác.</li>
+                        <li>Khi có vấn đề xảy ra (bị hỏng hoặc không nguyên hiện trạng ban đầu), <b>người mượn tài sản</b> sẽ phải chịu hoàn toàn trách nhiệm chi trả chi phí sửa chữa/đền bù.</li>
+                        <li>An toàn trong quá trình sử dụng tài sản sẽ do <b>người mượn tài sản</b> chịu hoàn toàn trách nhiệm.</li>
+                        <li>Ghi chú khác: ....................................................................................................................</li>
+                      </ul>
+                    )}
                     <p className="mt-4">
                       Tôi là <b>Đại diện Ban Đào tạo & CTSV</b>, đã đọc hiểu và cam kết thực hiện đúng quy định sử dụng.
                     </p>
@@ -3975,6 +4138,8 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
         onRestore={reloadAssignPreview}
         onSend={confirmLogisticsAssign}
       />
+
+      <NotificationDetailModal item={changeNotifDetail} onClose={() => setChangeNotifDetail(null)} />
 
     </div>
     </div>

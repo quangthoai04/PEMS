@@ -8,8 +8,16 @@ import {
   ChevronLeft, ChevronRight, ChevronDown, X, Clock, MapPin, User, AlertCircle, FileText,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { useNavigate } from 'react-router-dom';
 import { SubmittedVisitRequestDetailModal } from '../../../components/modals/SubmittedVisitRequestDetailModal';
 import { departmentReceptionTasksApi } from '../../../features/department-reception-tasks/api/departmentReceptionTasksApi';
+import { notificationsApi } from '../../../features/notifications/api/notificationsApi';
+import { useNotifications } from '../../../features/notifications/context/NotificationsContext';
+import { getNotificationLink } from '../../../features/notifications/components/NotificationBellButton';
+import { NotificationDetailModal } from '../../../features/notifications/components/NotificationDetailModal';
+import type { NotificationItem } from '../../../features/notifications/types/notification.types';
+import { matchCalendarChangeNotifs } from '../../../features/notifications/utils/calendarChangeNotifs';
+import { useAuth } from '../../../shared/hooks/useAuth';
 import type { CalendarItem } from './useDeptStaffData';
 import { StaffLeaderTaskModal } from './StaffLeaderTaskModal';
 import { toVietnamCalendarDate } from '../../../shared/utils/vietnamTime';
@@ -92,6 +100,38 @@ export function StaffCalendarTab({ year, onYearChange, calendarItems, calendarLo
   const [handoverNote, setHandoverNote] = useState('');
   const [submittedVisitRequestId, setSubmittedVisitRequestId] = useState<number | null>(null);
 
+  const navigate = useNavigate();
+  const { user: authUser } = useAuth();
+  const { markAsRead: markNotificationRead } = useNotifications();
+  // Thông báo chưa đọc gắn với đơn/thư mời — chấm đỏ nháy + "Thay đổi mới" (giống Dept Leader).
+  const [changeNotifs, setChangeNotifs] = useState<NotificationItem[]>([]);
+  const [changeNotifDetail, setChangeNotifDetail] = useState<NotificationItem | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await notificationsApi.getNotifications({ page: 1, pageSize: 50, isRead: false });
+        setChangeNotifs(res?.items || []);
+      } catch (e) { console.error(e); }
+    })();
+  }, [calendarItems]);
+
+  const getEventChangeNotifs = (ev: CalendarItem | null): NotificationItem[] =>
+    matchCalendarChangeNotifs(changeNotifs, ev);
+
+  /** Bấm 1 thay đổi: đánh dấu đã đọc rồi trỏ tới đúng chỗ như thông báo. */
+  const handleChangeNotifClick = async (n: NotificationItem) => {
+    try { await markNotificationRead(n.notificationId); } catch { /* ignore */ }
+    setChangeNotifs(prev => prev.filter(x => x.notificationId !== n.notificationId));
+    const link = getNotificationLink(n, authUser);
+    if (link) {
+      setActiveEvent(null);
+      navigate(link);
+    } else {
+      setChangeNotifDetail(n);
+    }
+  };
+
   const daysGrid = useMemo(() => buildDaysGrid(year, month), [year, month]);
 
   const shiftView = (dir: -1 | 1) => {
@@ -150,12 +190,22 @@ export function StaffCalendarTab({ year, onYearChange, calendarItems, calendarLo
     return `${MONTHS[month]} ${year}`;
   }, [displayMode, month, selectedDate, weekDays, year]);
 
-  const renderEventPill = (ev: CalendarItem, dateStr: string) => (
-    <div key={ev.id} onClick={e => { e.stopPropagation(); setSelectedDate(dateStr); setActiveEvent(ev); }}
-      className={`px-1.5 py-1 rounded-md border text-[9px] font-bold leading-tight cursor-pointer truncate ${ev.color} ${activeEvent?.id === ev.id ? 'ring-2 ring-[#f37021]/50' : ''}`}>
-      <span className="inline-block w-1 h-1 rounded-full mr-1 bg-current" />{ev.title}
-    </div>
-  );
+  const renderEventPill = (ev: CalendarItem, dateStr: string) => {
+    const hasChanges = getEventChangeNotifs(ev).length > 0;
+    return (
+      <div key={ev.id} onClick={e => { e.stopPropagation(); setSelectedDate(dateStr); setActiveEvent(ev); }}
+        className={`relative px-1.5 py-1 rounded-md border text-[9px] font-normal leading-tight cursor-pointer truncate ${hasChanges ? 'pr-4' : ''} ${ev.color} ${activeEvent?.id === ev.id ? 'ring-2 ring-[#f37021]/50' : ''}`}>
+        <span className="inline-block w-1 h-1 rounded-full mr-1 bg-current" />
+        <span className={ev.status === 'CANCELLED' ? 'line-through' : ''}>{ev.title}</span>
+        {hasChanges && (
+          <span className="absolute top-1 right-1 flex h-2 w-2" title="Đơn này có thay đổi mới">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+            <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
+          </span>
+        )}
+      </div>
+    );
+  };
 
   const renderEmpty = (label = 'Không có lịch được giao') => (
     <div className="flex items-center justify-center min-h-[220px] text-sm text-slate-400 font-semibold">{label}</div>
@@ -309,15 +359,7 @@ export function StaffCalendarTab({ year, onYearChange, calendarItems, calendarLo
 
   return (
     <div className="space-y-4">
-      {/* Legend */}
-      <div className="flex flex-wrap items-center gap-4 text-xs font-semibold text-slate-600">
-        <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-emerald-50 border-2 border-emerald-400 inline-block" />Thư mời chưa xử lý</span>
-        <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-orange-50 border-2 border-orange-400 inline-block" />Đơn yêu cầu chưa xử lý</span>
-        <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-blue-50 border-2 border-blue-400 inline-block" />Đã chấp nhận / Từ chối</span>
-        <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-slate-100 border-2 border-slate-400 inline-block" />Đã hủy / Hết hạn</span>
-      </div>
-
-      {/* Toolbar */}
+      {/* Toolbar + chú thích gọn trên cùng 1 dòng */}
       <div className="flex items-center gap-3 flex-wrap">
         <div className="bg-slate-100 p-0.5 rounded-xl border border-slate-200 flex items-center gap-1">
           <button onClick={() => { setMonth(now.getUTCMonth()); onYearChange(now.getUTCFullYear()); }} className="px-4 py-2 text-xs font-bold text-slate-700 bg-white shadow-sm hover:bg-slate-50 border border-slate-200/60 rounded-lg">Hôm nay</button>
@@ -325,20 +367,26 @@ export function StaffCalendarTab({ year, onYearChange, calendarItems, calendarLo
           <button onClick={prevMonth} className="p-2 text-slate-600 hover:bg-white rounded-lg transition-all"><ChevronLeft className="w-4 h-4" /></button>
           <button onClick={nextMonth} className="p-2 text-slate-600 hover:bg-white rounded-lg transition-all"><ChevronRight className="w-4 h-4" /></button>
         </div>
-        <span className="text-base font-extrabold text-[#004c91]">{viewTitle}</span>
-        <div className="relative ml-auto">
+        <div className="relative">
           <button onClick={() => setShowDisplayDd(v => !v)} className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-50 shadow-sm">
             Hiển thị: {displayMode} <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
           </button>
           {showDisplayDd && (
             <><div className="fixed inset-0 z-20" onClick={() => setShowDisplayDd(false)} />
-            <div className="absolute right-0 top-full mt-2 w-32 bg-white border border-slate-200 rounded-xl shadow-xl z-30 py-1">
+            <div className="absolute left-0 top-full mt-2 w-32 bg-white border border-slate-200 rounded-xl shadow-xl z-30 py-1">
               {(['Ngày', 'Tuần', 'Tháng', 'Năm'] as const).map(m => (
                 <button key={m} onClick={() => { setDisplayMode(m); setShowDisplayDd(false); }}
                   className={`w-full text-left px-4 py-2.5 text-xs font-bold transition-colors ${displayMode === m ? 'bg-blue-50 text-[#004c91]' : 'text-slate-700 hover:bg-slate-50'}`}>{m}</button>
               ))}
             </div></>
           )}
+        </div>
+        <span className="text-base font-extrabold text-[#004c91]">{viewTitle}</span>
+        {/* Chú thích rút gọn */}
+        <div className="ml-auto flex flex-wrap items-center gap-4 text-xs font-medium text-slate-600">
+          <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-emerald-50 border-2 border-emerald-400 inline-block" />Thư mời</span>
+          <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-orange-50 border-2 border-orange-400 inline-block" />Đơn yêu cầu</span>
+          <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-blue-50 border-2 border-blue-400 inline-block" />Đã xử lý</span>
         </div>
       </div>
 
@@ -356,9 +404,16 @@ export function StaffCalendarTab({ year, onYearChange, calendarItems, calendarLo
                 const dayEvs = calendarItems.filter(e => e.date === cell.dateStr);
                 const isSelected = selectedDate === cell.dateStr;
                 const isToday = cell.dateStr === today;
+                const isPastDay = cell.dateStr < today;
                 return (
-                  <div key={idx} onClick={() => { setSelectedDate(cell.dateStr); if (dayEvs.length === 0) setActiveEvent(null); }}
-                    className={`h-[130px] max-h-[130px] overflow-hidden p-2 flex flex-col cursor-pointer transition-colors group ${
+                  <div key={idx}
+                    onClick={() => {
+                      setSelectedDate(cell.dateStr);
+                      // Bấm vào ô ngày có lịch → mở thẳng view Ngày (giống Dept Leader).
+                      if (dayEvs.length > 0) setDisplayMode('Ngày');
+                      else setActiveEvent(null);
+                    }}
+                    className={`relative h-[130px] max-h-[130px] overflow-hidden p-2 flex flex-col cursor-pointer transition-colors group ${
                       isSelected ? 'bg-orange-50 ring-2 ring-inset ring-[#f37021] z-10' : cell.isCurrent ? 'bg-white hover:bg-orange-50/40' : 'bg-slate-50/30 hover:bg-slate-50'
                     }`}>
                     {cell.isCurrent && (
@@ -369,6 +424,10 @@ export function StaffCalendarTab({ year, onYearChange, calendarItems, calendarLo
                         </div>
                       </>
                     )}
+                    {/* Lớp xám phủ lên các ngày trong quá khứ */}
+                    {cell.isCurrent && isPastDay && (
+                      <div className="absolute inset-0 bg-slate-300/45 pointer-events-none z-10" aria-hidden="true" />
+                    )}
                   </div>
                 );
               })}
@@ -378,31 +437,57 @@ export function StaffCalendarTab({ year, onYearChange, calendarItems, calendarLo
               {weekDays.map(day => {
                 const dayEvs = calendarItems.filter(e => e.date === day.dateStr);
                 const isToday = day.dateStr === today;
+                const isPastDay = day.dateStr < today;
                 return (
-                  <div key={day.dateStr} onClick={() => setSelectedDate(day.dateStr)} className={`p-3 ${selectedDate === day.dateStr ? 'bg-orange-50' : ''}`}>
+                  <div key={day.dateStr} onClick={() => setSelectedDate(day.dateStr)} className={`relative p-3 ${selectedDate === day.dateStr ? 'bg-orange-50' : ''}`}>
                     <div className="text-center mb-3">
                       <p className="text-[10px] font-black uppercase text-slate-400">{day.label}</p>
                       <span className={`inline-flex mt-1 w-8 h-8 items-center justify-center rounded-full text-sm font-black ${isToday ? 'bg-red-500 text-white' : selectedDate === day.dateStr ? 'bg-[#f37021] text-white' : 'bg-slate-100 text-slate-700'}`}>{day.day}</span>
                     </div>
                     <div className="space-y-1">{dayEvs.length ? dayEvs.map(ev => renderEventPill(ev, day.dateStr)) : <p className="text-[11px] text-slate-300 text-center font-semibold pt-4">Trống</p>}</div>
+                    {/* Lớp xám phủ lên các ngày trong quá khứ */}
+                    {isPastDay && (
+                      <div className="absolute inset-0 bg-slate-300/45 pointer-events-none z-10" aria-hidden="true" />
+                    )}
                   </div>
                 );
               })}
             </div>
           ) : displayMode === 'Ngày' ? (
             <div className="p-5 min-h-[520px] bg-white">
+              <div className="mb-4">
+                <button
+                  type="button"
+                  onClick={() => setDisplayMode('Tháng')}
+                  className="flex items-center gap-2 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold rounded-xl transition-all border border-slate-200/60"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5 text-slate-600" />
+                  <span>Quay lại lịch tháng</span>
+                </button>
+              </div>
               {(() => {
                 const dayEvs = calendarItems.filter(e => e.date === selectedDate);
                 if (!dayEvs.length) return renderEmpty();
-                return <div className="space-y-2 max-w-3xl mx-auto">{dayEvs.map(ev => (
-                  <div key={ev.id} onClick={() => setActiveEvent(ev)} className={`px-4 py-3 rounded-xl border text-sm font-bold cursor-pointer ${ev.color}`}>
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="truncate">{ev.title}</span>
-                      <span className="text-xs shrink-0">{ev.time}</span>
+                return <div className="space-y-2 max-w-3xl mx-auto">{dayEvs.map(ev => {
+                  const hasChanges = getEventChangeNotifs(ev).length > 0;
+                  return (
+                    <div key={ev.id} onClick={() => setActiveEvent(ev)} className={`px-4 py-3 rounded-xl border text-sm font-normal cursor-pointer ${ev.color}`}>
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="truncate flex items-center gap-2">
+                          <span className={`truncate ${ev.status === 'CANCELLED' ? 'line-through' : ''}`}>{ev.title}</span>
+                          {hasChanges && (
+                            <span className="relative flex h-2 w-2 shrink-0" title="Đơn này có thay đổi mới">
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+                              <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
+                            </span>
+                          )}
+                        </span>
+                        <span className="text-xs shrink-0">{ev.time}</span>
+                      </div>
+                      {ev.delegationName && <p className="text-xs opacity-80 mt-1">{ev.delegationName}</p>}
                     </div>
-                    {ev.delegationName && <p className="text-xs opacity-80 mt-1">{ev.delegationName}</p>}
-                  </div>
-                ))}</div>;
+                  );
+                })}</div>;
               })()}
             </div>
           ) : (
@@ -416,7 +501,9 @@ export function StaffCalendarTab({ year, onYearChange, calendarItems, calendarLo
                   </div>
                   <div className="space-y-1">
                     {items.slice(0, 3).map(ev => (
-                      <div key={ev.id} className={`px-2 py-1 rounded-md border text-[10px] font-bold truncate ${ev.color}`}>{ev.title}</div>
+                      <div key={ev.id} className={`px-2 py-1 rounded-md border text-[10px] font-normal truncate ${ev.color}`}>
+                        <span className={ev.status === 'CANCELLED' ? 'line-through' : ''}>{ev.title}</span>
+                      </div>
                     ))}
                     {items.length > 3 && <p className="text-[11px] font-bold text-orange-600">...và {items.length - 3} lịch khác</p>}
                     {!items.length && <p className="text-[11px] font-semibold text-slate-300">Không có lịch</p>}
@@ -431,6 +518,8 @@ export function StaffCalendarTab({ year, onYearChange, calendarItems, calendarLo
           item={isTaskModalItem(activeEvent) ? activeEvent : null}
           onClose={() => setActiveEvent(null)}
           onRefresh={onRefresh}
+          changeNotifs={isTaskModalItem(activeEvent) ? getEventChangeNotifs(activeEvent) : []}
+          onChangeNotifClick={handleChangeNotifClick}
         />
 
         {/* Event detail modal */}
@@ -632,6 +721,7 @@ export function StaffCalendarTab({ year, onYearChange, calendarItems, calendarLo
         visitRequestId={submittedVisitRequestId}
         onClose={() => setSubmittedVisitRequestId(null)}
       />
+      <NotificationDetailModal item={changeNotifDetail} onClose={() => setChangeNotifDetail(null)} />
     </div>
   );
 }

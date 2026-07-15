@@ -154,6 +154,22 @@ public sealed class CreateAccountCommandHandler : IRequestHandler<CreateAccountC
                     "Phòng ban này đã có trưởng phòng. Vui lòng bỏ gán trưởng phòng hiện tại trước khi chỉ định người mới.");
         }
 
+        // ── student_code (MSSV): required, trimmed, ≤30 and unique for a STUDENT; ignored for any
+        //    other role. Early-checked so the caller gets a friendly message instead of a raw
+        //    uq_users_student_code violation. ──
+        string? resolvedStudentCode = null;
+        if (shape.RoleCode == RoleCodes.Student)
+        {
+            var code = (request.StudentCode ?? string.Empty).Trim();
+            if (code.Length == 0)
+                throw new ValidationException("Vui lòng nhập mã số sinh viên.");
+            if (code.Length > 30)
+                throw new ValidationException("Mã số sinh viên không được vượt quá 30 ký tự.");
+            if (await _db.Users.AsNoTracking().AnyAsync(u => u.StudentCode == code, cancellationToken))
+                throw new ConflictException("Mã số sinh viên này đã được sử dụng bởi tài khoản khác.");
+            resolvedStudentCode = code;
+        }
+
         var now = _clock.VietnamNow;
         var user = new User
         {
@@ -162,7 +178,7 @@ public sealed class CreateAccountCommandHandler : IRequestHandler<CreateAccountC
             Phone = Clean(request.Phone),
             Gender = request.Gender,
             Nationality = Clean(request.Nationality),
-            StudentCode = shape.RoleCode == RoleCodes.Student ? Clean(request.StudentCode) : null,
+            StudentCode = resolvedStudentCode,
             RoleId = shape.RoleId,
             SubRole = shape.SubRole,
             PrimaryCampusId = shape.PrimaryCampusId,
