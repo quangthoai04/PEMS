@@ -2,7 +2,7 @@ import type { NotificationItem } from '../types/notification.types';
 
 /** Thông tin tối thiểu của 1 sự kiện trên bảng lịch để đối chiếu với thông báo. */
 export type CalendarChangeTarget = {
-  itemType?: string; // 'INVITATION' | 'REQUEST' | 'PERSONAL'
+  itemType?: string; // 'INVITATION' | 'REQUEST' | 'VISIT' | 'PERSONAL'
   rawId?: number | string; // participantId (INVITATION) | logisticsItemId (REQUEST)
   visitRequestId?: number | string | null;
   visitInstanceId?: number | string | null;
@@ -29,6 +29,16 @@ export function matchCalendarChangeNotifs(
       // Đích danh đơn hậu cần (VD: host phản hồi đề xuất) hoặc biên bản bàn giao của cùng visit.
       if (rt === 'LOGISTICS_ITEM') return n.relatedId != null && String(n.relatedId) === String(ev.rawId);
       if (rt === 'LOGISTICS_HANDOVER') return sameInstance;
+      return false;
+    }
+    if (ev.itemType === 'VISIT') {
+      // Lịch của Staff Leader / IC Staff hiện cả đoàn khách (visit instance): MỌI thay đổi
+      // gắn với đúng visit đó (kể cả hậu cần, người tham gia) đều tính là thay đổi của đơn.
+      if (sameInstance || sameRequest) return true;
+      if (rt === 'VISIT_INSTANCE') return n.relatedId != null && ev.visitInstanceId != null
+        && String(n.relatedId) === String(ev.visitInstanceId);
+      if (rt === 'VISIT_REQUEST') return n.relatedId != null && ev.visitRequestId != null
+        && String(n.relatedId) === String(ev.visitRequestId);
       return false;
     }
     // INVITATION: thay đổi mức người tham gia hoặc mức đoàn khách/visit.

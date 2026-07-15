@@ -14,6 +14,8 @@ import {
   staffCalendarApi,
   type StaffCalendarDetail,
 } from '../../../../features/dashboard/api/staffCalendarApi';
+import { timeAgo } from '../../../../features/notifications/components/NotificationBellButton';
+import type { NotificationItem } from '../../../../features/notifications/types/notification.types';
 import { toVietnamDateTimeLocalInput } from '../../../../shared/utils/vietnamTime';
 
 type StaffVisitDetailModalProps = {
@@ -30,6 +32,10 @@ type StaffVisitDetailModalProps = {
   onAssignHost?: (detail: StaffCalendarDetail) => void;
   /** Staff Leader: từ chối campus instance của campus mình (lý do bắt buộc). */
   onReject?: (detail: StaffCalendarDetail) => void;
+  /** Thông báo chưa đọc gắn với đơn tham quan này — hiện khung "Thay đổi mới". */
+  changeNotifs?: NotificationItem[];
+  /** Bấm 1 thay đổi → mark read + trỏ tới đúng chỗ như thông báo. */
+  onChangeNotifClick?: (n: NotificationItem) => void;
 };
 
 const COLOR_BADGE: Record<string, string> = {
@@ -88,6 +94,7 @@ function InfoRow({ icon, label, value }: { icon?: React.ReactNode; label: string
 
 export function StaffVisitDetailModal({
   isOpen, visitInstanceId, refreshKey = 0, onClose, onSelfHost, onAssignHost, onReject, selfHostSubmitting = false,
+  changeNotifs = [], onChangeNotifClick,
 }: StaffVisitDetailModalProps) {
   // Sau khi bấm "Chấp nhận" (canApprove), hiện 2 lựa chọn con thay vì mở modal ngay:
   // "Tôi là người phụ trách" hoặc "Gán người phụ trách". Reset mỗi khi đổi item xem.
@@ -191,6 +198,36 @@ export function StaffVisitDetailModal({
             </div>
           ) : detail ? (
             <div className="space-y-5">
+              {/* Thay đổi mới (thông báo chưa đọc gắn với đơn tham quan này) */}
+              {changeNotifs.length > 0 && (
+                <div className="bg-red-50/70 border border-red-200 rounded-2xl overflow-hidden">
+                  <div className="px-4 py-2.5 flex items-center gap-2.5 border-b border-red-100 bg-red-50">
+                    <span className="relative flex h-2.5 w-2.5 shrink-0">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+                      <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
+                    </span>
+                    <span className="text-sm font-bold text-red-700">Thay đổi mới ({changeNotifs.length})</span>
+                    <span className="text-[11px] text-red-400 ml-auto hidden sm:block">Bấm vào từng thay đổi để mở đúng chỗ cần xem</span>
+                  </div>
+                  <div className="divide-y divide-red-100">
+                    {changeNotifs.map((n) => (
+                      <button
+                        key={n.notificationId}
+                        type="button"
+                        onClick={() => onChangeNotifClick?.(n)}
+                        className="w-full text-left px-4 py-2.5 hover:bg-red-100/50 transition-colors cursor-pointer"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <span className="text-sm font-semibold text-slate-800">{n.title}</span>
+                          <span className="text-[10px] text-slate-400 whitespace-nowrap shrink-0 mt-0.5">{timeAgo(n.createdAt)}</span>
+                        </div>
+                        {n.message && <p className="text-xs text-slate-500 mt-0.5 line-clamp-2">{n.message}</p>}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Lý do hủy / từ chối (nếu có) */}
               {detail.isCancelled && (
                 <div className="rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-sm text-slate-700">
