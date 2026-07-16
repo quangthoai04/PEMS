@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Galleries.Common;
 using PEMS.Application.Galleries.Public.Common;
 
 namespace PEMS.Application.Galleries.Public.Queries.GetPublicCampusNavigation;
@@ -85,8 +86,21 @@ public sealed class GetPublicCampusNavigationQueryHandler
                 IsPrimary = m.IsPrimary,
                 DisplayOrder = m.DisplayOrder,
                 MediaId = m.MediaId,
+                FilePurpose = m.File.FilePurpose,
+                FileThumbnailUrl = m.File.ThumbnailUrl,
             })
             .ToListAsync(cancellationToken);
+
+        // Area cover media type (IMAGE vs VIDEO) — one flat file-metadata lookup for the areas' cover file ids.
+        var coverIds = rows.Where(r => r.AreaCoverFileId.HasValue)
+            .Select(r => r.AreaCoverFileId!.Value).Distinct().ToList();
+        var coverMediaByFileId = coverIds.Count == 0
+            ? new Dictionary<ulong, (string? Purpose, string? Mime)>()
+            : (await _db.Files.AsNoTracking()
+                    .Where(f => coverIds.Contains(f.FileId))
+                    .Select(f => new { f.FileId, f.FilePurpose, f.MimeType })
+                    .ToListAsync(cancellationToken))
+                .ToDictionary(f => f.FileId, f => (f.FilePurpose, f.MimeType));
 
         var primaryByItem = mediaRows
             .GroupBy(m => m.GalleryItemId)
@@ -108,6 +122,7 @@ public sealed class GetPublicCampusNavigationQueryHandler
                 DisplayOrder = (int)g.Key.AreaDisplayOrder,
                 AreaCoverFileId = g.Key.AreaCoverFileId,
                 AreaCoverUrl = PublicGalleryFileUrls.ContentOrNull(g.Key.AreaCoverFileId),
+                AreaCoverMediaType = GalleryCoverMediaType.ResolveFor(g.Key.AreaCoverFileId, coverMediaByFileId),
                 // A location may hold many visible items — collapse to one nav node per location,
                 // represented by its lead item (lowest item display order, then newest), and carry the
                 // total count so the UI can hint at a slider. The full list loads on location click.
@@ -133,8 +148,11 @@ public sealed class GetPublicCampusNavigationQueryHandler
                             Title = lead.Title,
                             MediaKind = lead.MediaKind,
                             PublicGalleryItemCount = lg.Count(),
+                            // YouTube primary → its direct YouTube thumbnail (no content proxy); else the proxy.
                             PrimaryMediaUrl = primaryByItem.TryGetValue(lead.GalleryItemId, out var pm)
-                                ? PublicGalleryFileUrls.Content(pm.FileId)
+                                ? (GalleryMediaSourceResolver.IsYouTube(pm.FilePurpose)
+                                    ? pm.FileThumbnailUrl
+                                    : PublicGalleryFileUrls.Content(pm.FileId))
                                 : null,
                         };
                     })
@@ -169,5 +187,7 @@ public sealed class GetPublicCampusNavigationQueryHandler
         public bool IsPrimary { get; init; }
         public uint DisplayOrder { get; init; }
         public ulong MediaId { get; init; }
+        public string? FilePurpose { get; init; }
+        public string? FileThumbnailUrl { get; init; }
     }
 }

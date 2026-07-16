@@ -1,1077 +1,843 @@
 /**
- * Trang StaffLeaderReportManagement — Báo cáo vận hành campus tại /dashboard/reports
- * (role STAFF · LEADER). Campus operation dashboard: KPI strip compact, action bar,
- * chart xu hướng + phân bổ trạng thái, host workload, đơn cần xử lý, close readiness,
- * logistics theo phòng ban, feedback thấp/tốt. Toàn bộ dữ liệu lấy từ
- * GET /reports/staff-leader-overview — scope đúng campus của Staff Leader, không mock.
+ * Trang StaffLeaderReportManagement — Báo cáo campus của Staff Leader tại /dashboard/reports.
+ * Bố cục 3 phần: (1) Đoàn tiếp khách + tiến độ hợp tác đối tác, (2) Nhân sự IC + Student,
+ * (3) Các phòng ban khác (kèm xuất/gửi hóa đơn). Bộ lọc duy nhất là khoảng thời gian,
+ * dùng chung cho cả 3 phần. Dữ liệu từ GET /reports/staff-leader-report-v2.
  */
 
-import React, { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import {
-  AlertTriangle, ArrowRight, CheckCircle2, ChevronDown, Download, FileSpreadsheet, FileText,
-  Info, Loader2, RefreshCw, ShieldAlert, X,
+  AlertTriangle, Building2, CalendarRange, CheckCircle2, ChevronDown, ChevronUp, Download,
+  FileText, Loader2, Mail, RefreshCw, Send, Star, Users, X, XCircle,
 } from 'lucide-react';
 import {
-  CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
+  CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts';
-import { useStaffLeaderReport } from '../../../features/reports/hooks/useReports';
-import { reportsAdapter as fmt } from '../../../features/reports/adapters/reportsAdapter';
+import { reportsApi } from '../../../features/reports/api/reportsApi';
 import type {
-  StaffLeaderExportFormat, StaffLeaderFeedbackEntry, StaffLeaderReportOverview, StaffLeaderReportSection,
-} from '../../../features/reports/types/staffLeaderReports.types';
+  StaffLeaderInvoiceItem, StaffLeaderReportV2, StaffLeaderV2DepartmentRow,
+  StaffLeaderV2Filters, StaffLeaderV2PersonnelRow, StaffLeaderV2Preset,
+} from '../../../features/reports/types/staffLeaderReportsV2.types';
+import { TaskHandoverModal } from '../departments/TaskHandoverModal';
 
-// Palette chart đã validate CVD/contrast (scripts/validate_palette.js — ALL PASS light & dark).
+// Palette chart đã validate CVD/contrast.
 const CHART_BLUE = '#1e6fc0';
-const CHART_ORANGE = '#d95f18';
 const CHART_GREEN = '#0a8a44';
-const CHART_VIOLET = '#7a5cc4';
 
-const SECTION_OPTIONS: { value: StaffLeaderReportSection; label: string }[] = [
-  { value: 'EXECUTIVE_SUMMARY', label: 'Executive Summary' },
-  { value: 'LIFECYCLE_SUMMARY', label: 'Lifecycle & Trend' },
-  { value: 'HOST_WORKLOAD', label: 'Host Workload' },
-  { value: 'PENDING_ACTIONS', label: 'Pending Actions' },
-  { value: 'LOGISTICS_SUMMARY', label: 'Logistics Summary' },
-  { value: 'CLOSE_READINESS', label: 'Close Readiness' },
-  { value: 'FEEDBACK_SUMMARY', label: 'Feedback Summary' },
-  { value: 'PARTNER_SUMMARY', label: 'Partner Summary' },
+const PRESETS: { value: StaffLeaderV2Preset; label: string }[] = [
+  { value: 'THIS_MONTH', label: 'Tháng này' },
+  { value: 'THIS_QUARTER', label: 'Quý này' },
+  { value: 'THIS_YEAR', label: 'Năm nay' },
+  { value: 'CUSTOM', label: 'Tùy chỉnh' },
 ];
 
-const PARTNER_TYPE_LABELS: Record<string, string> = {
-  UNIVERSITY: 'Trường ĐH',
-  COMPANY: 'Doanh nghiệp',
-  GOVERNMENT: 'Chính phủ',
-  NGO: 'NGO',
-  OTHER: 'Khác',
-};
-const partnerTypeLabel = (t: string) => PARTNER_TYPE_LABELS[t] ?? t;
-
-const COOPERATION_LABELS: Record<string, string> = {
-  ACTIVE: 'Đang hợp tác',
-  INACTIVE: 'Ngừng hợp tác',
-  PAUSED: 'Tạm dừng',
-};
-const cooperationLabel = (s: string) => COOPERATION_LABELS[s] ?? s;
-
-const PRESET_LABELS: Record<string, string> = {
-  THIS_MONTH: 'Tháng này',
-  THIS_QUARTER: 'Quý này',
-  THIS_YEAR: 'Năm nay',
-  CUSTOM: 'Tùy chỉnh',
+const ITEM_TYPE_LABELS: Record<string, string> = {
+  ROOM: 'Phòng họp', TRANSPORT: 'Xe / di chuyển', MEAL: 'Ẩm thực', EQUIPMENT: 'Thiết bị',
+  BANNER: 'Băng rôn', LED: 'LED', OTHER: 'Khác',
 };
 
-const SEVERITY_STYLES: Record<string, { dot: string; text: string }> = {
-  DANGER: { dot: 'bg-red-500', text: 'text-red-600' },
-  WARNING: { dot: 'bg-amber-500', text: 'text-amber-600' },
-  INFO: { dot: 'bg-sky-500', text: 'text-sky-600' },
-  SUCCESS: { dot: 'bg-emerald-500', text: 'text-emerald-600' },
-};
+const thClass = 'px-3 py-2.5 text-[11px] font-bold text-slate-400 uppercase tracking-wide whitespace-nowrap text-left';
+const tdClass = 'px-3 py-2.5 text-sm text-slate-600';
 
-const VISIT_TYPE_LABELS: Record<string, string> = {
-  CAMPUS_TOUR: 'Tham quan',
-  MEETING: 'Họp / Gặp gỡ',
-  WORKSHOP: 'Workshop',
-  SIGNING_CEREMONY: 'Lễ ký kết',
-  EXCHANGE: 'Giao lưu',
-};
-const visitTypeLabel = (t: string) => VISIT_TYPE_LABELS[t] ?? t;
+const vnMoney = (v: number) => `${v.toLocaleString('vi-VN')} ₫`;
+const fmtDate = (iso: string) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : '—');
+const fmtDateTime = (iso: string) => (iso ? `${iso.slice(11, 16)} ${fmtDate(iso)}` : '—');
 
-const selectClass =
-  'bg-white border border-slate-200 rounded-lg px-2.5 py-2 text-sm font-medium text-slate-700 outline-none focus:ring-2 focus:ring-[#004c91]/20 focus:border-[#004c91] cursor-pointer';
-const thClass = 'px-3 py-2.5 text-[11px] font-bold text-slate-400 uppercase tracking-wide whitespace-nowrap';
-const tdClass = 'px-3 py-2.5 text-sm text-slate-600 whitespace-nowrap';
+/** Ô thông số compact — 3 phần cùng 1 trang nên hạn chế khung/ô to. */
+function StatTile({ label, value, sub, tone = 'blue', icon }: {
+  label: string; value: React.ReactNode; sub?: string; tone?: 'blue' | 'green' | 'red' | 'amber' | 'violet' | 'slate'; icon?: React.ReactNode;
+}) {
+  const tones: Record<string, string> = {
+    blue: 'bg-blue-50 text-[#004c91] border-blue-100',
+    green: 'bg-emerald-50 text-emerald-700 border-emerald-100',
+    red: 'bg-rose-50 text-rose-700 border-rose-100',
+    amber: 'bg-amber-50 text-amber-700 border-amber-100',
+    violet: 'bg-violet-50 text-violet-700 border-violet-100',
+    slate: 'bg-slate-50 text-slate-700 border-slate-200',
+  };
+  return (
+    <div className={`rounded-xl border px-3 py-2.5 ${tones[tone]}`}>
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[10px] font-bold uppercase tracking-wide opacity-80 truncate">{label}</p>
+        {icon}
+      </div>
+      <p className="text-lg font-extrabold mt-0.5 leading-tight">{value}</p>
+      {sub && <p className="text-[10px] font-medium opacity-75">{sub}</p>}
+    </div>
+  );
+}
+
+/** Section đóng/mở được — header là nút toggle, thân chỉ render khi mở. */
+function Section({ index, title, subtitle, open, onToggle, children }: {
+  index: number; title: string; subtitle?: string; open: boolean; onToggle: () => void; children: React.ReactNode;
+}) {
+  return (
+    <section className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-slate-50/70 transition-colors cursor-pointer"
+      >
+        <span className="w-7 h-7 rounded-lg bg-[#004c91] text-white flex items-center justify-center text-xs font-black shrink-0">{index}</span>
+        <span className="flex-1 min-w-0">
+          <span className="block text-base font-extrabold text-[#004c91] leading-tight">{title}</span>
+          {subtitle && <span className="block text-[11px] text-slate-400 mt-0.5">{subtitle}</span>}
+        </span>
+        {open ? <ChevronUp className="w-4 h-4 text-slate-400 shrink-0" /> : <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />}
+      </button>
+      {open && <div className="px-4 pb-4 space-y-4">{children}</div>}
+    </section>
+  );
+}
 
 export function StaffLeaderReportManagement() {
-  const navigate = useNavigate();
-  const {
-    filters, setFilters, data, loading, error, refetch,
-    applyFilters, resetFilters, exportReport, exportLoading,
-  } = useStaffLeaderReport();
+  // ── Bộ lọc thời gian (chung cho cả 3 phần) ──
+  const [filters, setFilters] = useState<StaffLeaderV2Filters>({ preset: 'THIS_YEAR', fromDate: '', toDate: '' });
+  const [data, setData] = useState<StaffLeaderReportV2 | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
+  // Mỗi phần đóng/mở độc lập — mặc định mở cả 3.
+  const [openSections, setOpenSections] = useState({ visits: true, personnel: true, departments: true });
+  const toggleSection = (key: keyof typeof openSections) =>
+    setOpenSections((s) => ({ ...s, [key]: !s[key] }));
+
+  // ── Xuất báo cáo (PDF/Excel/CSV) — chọn phần 1/2/3 hoặc tất cả ──
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
-  const [exportConfirm, setExportConfirm] = useState<StaffLeaderExportFormat | null>(null);
-  const [exportSections, setExportSections] = useState<StaffLeaderReportSection[]>(SECTION_OPTIONS.map((s) => s.value));
-  const exportMenuRef = useRef<HTMLDivElement>(null);
+  const [exportSections, setExportSections] = useState<string[]>(['VISITS', 'PERSONNEL', 'DEPARTMENTS']);
+  const [exporting, setExporting] = useState(false);
+  const toggleExportSection = (s: string) =>
+    setExportSections((cur) => (cur.includes(s) ? cur.filter((x) => x !== s) : [...cur, s]));
 
-  useEffect(() => {
-    const close = (e: MouseEvent) => {
-      if (exportMenuRef.current && !exportMenuRef.current.contains(e.target as Node)) setExportMenuOpen(false);
-    };
-    document.addEventListener('mousedown', close);
-    return () => document.removeEventListener('mousedown', close);
+  const exportReport = async (format: 'PDF' | 'EXCEL' | 'CSV') => {
+    if (exportSections.length === 0) {
+      toast.error('Chọn ít nhất một phần để xuất.');
+      return;
+    }
+    setExporting(true);
+    try {
+      const file = await reportsApi.exportStaffLeaderReportV2({
+        preset: filters.preset,
+        fromDate: filters.preset === 'CUSTOM' ? filters.fromDate : undefined,
+        toDate: filters.preset === 'CUSTOM' ? filters.toDate : undefined,
+        exportFormat: format,
+        sections: exportSections,
+      });
+      const url = URL.createObjectURL(file.blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = file.fileName;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success(`Đã xuất báo cáo ${format === 'EXCEL' ? 'Excel' : format} thành công.`);
+      setExportMenuOpen(false);
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message || 'Xuất báo cáo thất bại.');
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const fetchReport = useCallback(async (f: StaffLeaderV2Filters) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await reportsApi.getStaffLeaderReportV2(f);
+      setData(res);
+    } catch (e: any) {
+      setError(e?.response?.data?.message || 'Không thể tải báo cáo. Vui lòng thử lại.');
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  // Giữ danh sách host/phòng ban đầy đủ từ lần load không lọc để option không biến mất khi lọc.
-  const [hostOptions, setHostOptions] = useState<{ id: number; name: string }[]>([]);
-  const [deptOptions, setDeptOptions] = useState<{ id: number; name: string }[]>([]);
-  useEffect(() => {
-    if (!data) return;
-    if (data.filterSummary.hostUserId === 'ALL') {
-      const hosts = new Map<number, string>();
-      data.hostWorkload.forEach((h) => hosts.set(h.hostUserId, h.hostName));
-      data.feedbackSummary.ratingByHost.forEach((h) => hosts.set(h.hostUserId, h.hostName));
-      setHostOptions([...hosts.entries()].map(([id, name]) => ({ id, name })));
-    }
-    if (data.filterSummary.departmentId === 'ALL') {
-      setDeptOptions(data.logisticsByDepartment
-        .filter((d) => d.departmentId > 0)
-        .map((d) => ({ id: d.departmentId, name: d.departmentName })));
-    }
-  }, [data]);
+  useEffect(() => { fetchReport(filters); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
 
-  const scrollTo = (sectionId: string) => {
-    document.getElementById(sectionId)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  };
+  const applyFilters = () => fetchReport(filters);
 
-  const handleExport = async () => {
-    if (!exportConfirm) return;
+  // ── Phần 2: bảng nhân sự ──
+  const [roleFilter, setRoleFilter] = useState<'ALL' | 'STAFF' | 'STUDENT'>('ALL');
+  const [personnelNotes, setPersonnelNotes] = useState<Record<number, string>>({});
+  const [sendingUserId, setSendingUserId] = useState<number | null>(null);
+
+  const personnelRows = useMemo(() => {
+    const rows = data?.personnel.rows ?? [];
+    if (roleFilter === 'STAFF') return rows.filter((r) => r.role !== 'STUDENT');
+    if (roleFilter === 'STUDENT') return rows.filter((r) => r.role === 'STUDENT');
+    return rows;
+  }, [data, roleFilter]);
+
+  const sendPersonnelReport = async (row: StaffLeaderV2PersonnelRow) => {
+    setSendingUserId(row.userId);
     try {
-      await exportReport(exportConfirm, exportSections);
-      toast.success('Đã xuất báo cáo thành công.');
-      setExportConfirm(null);
-    } catch (err: unknown) {
-      const status = (err as { response?: { status?: number } })?.response?.status;
-      toast.error(status === 403
-        ? 'Bạn không có quyền xuất báo cáo này.'
-        : 'Không thể xuất báo cáo. Vui lòng thử lại sau.');
+      const res = await reportsApi.sendStaffLeaderPersonnelReport({
+        userId: row.userId,
+        fromDate: data?.fromDate,
+        toDate: data?.toDate,
+        note: personnelNotes[row.userId]?.trim() || undefined,
+      });
+      toast.success(res.message || 'Đã gửi báo cáo.');
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message || 'Gửi báo cáo thất bại.');
+    } finally {
+      setSendingUserId(null);
     }
   };
 
-  if (error === 'FORBIDDEN') {
-    return (
-      <div className="max-w-[1400px] mx-auto flex flex-col items-center justify-center py-24 text-center">
-        <ShieldAlert className="w-12 h-12 text-red-400 mb-4" />
-        <h2 className="text-xl font-bold text-slate-800 mb-1">Bạn không có quyền xem báo cáo vận hành campus</h2>
-        <p className="text-sm text-slate-500">Vui lòng liên hệ quản trị viên nếu bạn cho rằng đây là nhầm lẫn.</p>
+  // ── Phần 3: panel hóa đơn phòng ban ──
+  const [invoiceDept, setInvoiceDept] = useState<StaffLeaderV2DepartmentRow | null>(null);
+  const [invoiceRange, setInvoiceRange] = useState<{ fromDate: string; toDate: string }>({ fromDate: '', toDate: '' });
+  const [invoiceItems, setInvoiceItems] = useState<StaffLeaderInvoiceItem[]>([]);
+  const [invoiceLoading, setInvoiceLoading] = useState(false);
+  const [invoiceLoaded, setInvoiceLoaded] = useState(false);
+  const [prices, setPrices] = useState<Record<number, string>>({});
+  const [invoiceSending, setInvoiceSending] = useState(false);
+  const [viewItem, setViewItem] = useState<StaffLeaderInvoiceItem | null>(null);
+
+  const openInvoicePanel = (dept: StaffLeaderV2DepartmentRow) => {
+    setInvoiceDept(dept);
+    setInvoiceRange({ fromDate: data?.fromDate ?? '', toDate: data?.toDate ?? '' });
+    setInvoiceItems([]);
+    setPrices({});
+    setInvoiceLoaded(false);
+  };
+
+  const loadInvoiceItems = async () => {
+    if (!invoiceDept) return;
+    if (!invoiceRange.fromDate || !invoiceRange.toDate) {
+      toast.error('Chọn khoảng ngày để lấy danh sách đơn.');
+      return;
+    }
+    setInvoiceLoading(true);
+    try {
+      const items = await reportsApi.getStaffLeaderDeptInvoiceItems(
+        invoiceDept.departmentId, invoiceRange.fromDate, invoiceRange.toDate);
+      setInvoiceItems(items);
+      setInvoiceLoaded(true);
+      setPrices({});
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message || 'Không tải được danh sách đơn.');
+    } finally {
+      setInvoiceLoading(false);
+    }
+  };
+
+  const priceOf = (id: number) => {
+    const raw = (prices[id] ?? '').replace(/[^\d]/g, '');
+    return raw ? Number(raw) : 0;
+  };
+  const lineTotal = (it: StaffLeaderInvoiceItem) => priceOf(it.logisticsItemId) * (it.quantity || 1);
+  const grandTotal = invoiceItems.reduce((sum, it) => sum + lineTotal(it), 0);
+
+  const sendInvoice = async () => {
+    if (!invoiceDept) return;
+    const items = invoiceItems
+      .filter((it) => priceOf(it.logisticsItemId) > 0)
+      .map((it) => ({ logisticsItemId: it.logisticsItemId, unitPrice: priceOf(it.logisticsItemId) }));
+    if (items.length === 0) {
+      toast.error('Nhập đơn giá cho ít nhất một đơn trước khi gửi.');
+      return;
+    }
+    setInvoiceSending(true);
+    try {
+      const res = await reportsApi.sendStaffLeaderDeptInvoice(invoiceDept.departmentId, {
+        fromDate: invoiceRange.fromDate,
+        toDate: invoiceRange.toDate,
+        items,
+      });
+      toast.success(res.message || 'Đã gửi hóa đơn.');
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message || 'Gửi hóa đơn thất bại.');
+    } finally {
+      setInvoiceSending(false);
+    }
+  };
+
+  // "Xuất hóa đơn (PDF)" mở hộp thoại IN (không tải file): dựng hẳn 1 cửa sổ mới chỉ chứa
+  // HTML hóa đơn rồi in cửa sổ đó — không phụ thuộc CSS/layout của trang nên không bị in trắng.
+  const exportInvoicePdf = () => {
+    if (!invoiceDept || invoiceItems.length === 0) {
+      toast.error('Chưa có đơn nào để xuất hóa đơn.');
+      return;
+    }
+    const esc = (s: string | null | undefined) =>
+      (s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const rowsHtml = invoiceItems.map((it, idx) => `
+      <tr>
+        <td style="text-align:center">${idx + 1}</td>
+        <td>${esc(it.title)}</td>
+        <td>${esc(it.delegationName)}</td>
+        <td style="text-align:center">${fmtDate(it.usageStartAt)}</td>
+        <td style="text-align:center">${it.quantity}</td>
+        <td style="text-align:right">${vnMoney(priceOf(it.logisticsItemId))}</td>
+        <td style="text-align:right">${vnMoney(lineTotal(it))}</td>
+      </tr>`).join('');
+    const html = `<!doctype html><html><head><meta charset="utf-8" />
+      <title>Hóa đơn hậu cần — ${esc(invoiceDept.name)}</title>
+      <style>
+        body { font-family: 'Segoe UI', Arial, sans-serif; color: #0f172a; padding: 28px; }
+        .top { display: flex; justify-content: space-between; border-bottom: 1px solid #cbd5e1; padding-bottom: 12px; margin-bottom: 22px; font-size: 12px; }
+        h2 { text-align: center; text-transform: uppercase; margin: 4px 0 2px; font-size: 20px; }
+        .sub { text-align: center; font-size: 14px; margin-bottom: 20px; }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        th, td { border: 1px solid #475569; padding: 6px 8px; }
+        th { background: #f1f5f9; }
+        .total td { font-weight: 700; }
+        .sign { display: flex; justify-content: space-between; margin-top: 44px; text-align: center; font-size: 14px; }
+        .sign div { width: 48%; }
+        .sign .hint { font-size: 11px; color: #64748b; }
+      </style></head><body>
+      <div class="top">
+        <div>
+          <div style="font-weight:800;text-transform:uppercase;font-size:13px">TRƯỜNG ĐẠI HỌC FPT — ${esc(data?.campusName)}</div>
+          <div style="color:#64748b;font-weight:600">Văn phòng IC · Hệ thống PEMS</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-weight:800;font-size:11px">CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM</div>
+          <div style="font-weight:800;font-size:11px;color:#f37021">Độc lập - Tự do - Hạnh phúc</div>
+        </div>
       </div>
-    );
-  }
+      <h2>HÓA ĐƠN HẬU CẦN TIẾP KHÁCH</h2>
+      <p class="sub">Phòng ban: <b>${esc(invoiceDept.name)}</b> · Kỳ: <b>${fmtDate(invoiceRange.fromDate)} – ${fmtDate(invoiceRange.toDate)}</b></p>
+      <table>
+        <thead><tr><th>STT</th><th>Hạng mục</th><th>Đoàn khách</th><th>Ngày</th><th>SL</th><th>Đơn giá</th><th>Thành tiền</th></tr></thead>
+        <tbody>
+          ${rowsHtml}
+          <tr class="total"><td colspan="6" style="text-align:right">TỔNG CỘNG</td><td style="text-align:right">${vnMoney(grandTotal)}</td></tr>
+        </tbody>
+      </table>
+      <div class="sign">
+        <div><b>ĐẠI DIỆN VĂN PHÒNG IC</b><div class="hint">(Ký, ghi rõ họ tên)</div></div>
+        <div><b>ĐẠI DIỆN PHÒNG BAN</b><div class="hint">(Ký, ghi rõ họ tên)</div></div>
+      </div>
+      </body></html>`;
+    const win = window.open('', '_blank', 'width=980,height=720');
+    if (!win) {
+      toast.error('Trình duyệt đang chặn popup — hãy cho phép popup cho trang này rồi thử lại.');
+      return;
+    }
+    win.document.write(html);
+    win.document.close();
+    win.focus();
+    setTimeout(() => win.print(), 350);
+    toast.success('Đã mở bản in hóa đơn — chọn "Save as PDF" để lưu.');
+  };
+
+  // Biên bản đã ký giữa 2 bên — TaskHandoverModal (chỉ xem) nhận DTO PascalCase.
+  const toHandoverDto = (it: StaffLeaderInvoiceItem) => ({
+    LogisticsItemId: it.logisticsItemId,
+    Title: it.title,
+    Quantity: it.quantity,
+    ItemType: it.itemType,
+    UsageEndTime: it.usageEndAt ? it.usageEndAt.slice(11, 16) : undefined,
+    UsageDate: it.usageEndAt ? `${it.usageEndAt.slice(8, 10)}-${it.usageEndAt.slice(5, 7)}-${it.usageEndAt.slice(0, 4)}` : undefined,
+    DelegationName: it.delegationName,
+    SenderName: it.hostName,
+    AssigneeName: it.assigneeName,
+    BorrowNote: it.borrowNote,
+    ReturnNote: it.returnNote,
+    BorrowProviderSignature: it.borrowProviderSignature ? { Name: it.borrowProviderSignature.name, SignedAt: it.borrowProviderSignature.signedAt } : null,
+    BorrowBorrowerSignature: it.borrowBorrowerSignature ? { Name: it.borrowBorrowerSignature.name, SignedAt: it.borrowBorrowerSignature.signedAt } : null,
+    ReturnProviderSignature: it.returnProviderSignature ? { Name: it.returnProviderSignature.name, SignedAt: it.returnProviderSignature.signedAt } : null,
+    ReturnBorrowerSignature: it.returnBorrowerSignature ? { Name: it.returnBorrowerSignature.name, SignedAt: it.returnBorrowerSignature.signedAt } : null,
+  });
+
+  const v = data?.visits;
+  const p = data?.personnel;
+  const d = data?.departments;
 
   return (
-    <div className="max-w-[1400px] mx-auto space-y-4 pb-12 font-sans animate-in fade-in duration-300">
-      {/* ── Header compact ── */}
-      <div>
-        <div className="flex items-center gap-2 text-xs font-medium text-slate-500 mb-1">
-          <span>Dashboard</span>
-          <span>/</span>
-          <span className="text-[#004c91] font-bold">Báo cáo campus</span>
-        </div>
-        <div className="flex flex-col md:flex-row md:items-end justify-between gap-3">
-          <div>
-            <div className="flex items-center gap-3 flex-wrap">
-              <h1 className="text-2xl font-black text-[#004c91] tracking-tight">Báo cáo vận hành campus</h1>
-              <span className="text-[11px] font-bold uppercase tracking-wide text-[#004c91] bg-blue-50 border border-blue-100 rounded-full px-2.5 py-1">
-                Staff Leader{data ? ` · ${data.filterSummary.campusName}` : ''}
-              </span>
-            </div>
-            <p className="text-sm font-medium text-slate-500 mt-0.5">
-              Tổng quan phê duyệt, phân công host, logistics và chất lượng tiếp đón
-            </p>
-          </div>
-          {/* Export dropdown */}
-          <div className="relative" ref={exportMenuRef}>
-            <button
-              onClick={() => setExportMenuOpen((v) => !v)}
-              disabled={loading || !data}
-              className="flex items-center gap-2 px-4 py-2.5 bg-[#004c91] text-white text-sm font-bold rounded-xl hover:bg-[#00386b] transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-            >
-              <Download className="w-4 h-4" />
-              Xuất báo cáo
-              <ChevronDown className="w-4 h-4" />
-            </button>
-            {exportMenuOpen && (
-              <div className="absolute right-0 mt-2 w-56 bg-white border border-slate-200 rounded-xl shadow-lg z-20 overflow-hidden">
-                {([
-                  { format: 'EXCEL' as StaffLeaderExportFormat, label: 'Excel (.xlsx)', icon: FileSpreadsheet },
-                  { format: 'PDF' as StaffLeaderExportFormat, label: 'PDF (.pdf)', icon: FileText },
-                  { format: 'CSV' as StaffLeaderExportFormat, label: 'CSV (.csv)', icon: FileText },
-                ]).map((opt) => (
-                  <button
-                    key={opt.format}
-                    onClick={() => { setExportMenuOpen(false); setExportConfirm(opt.format); }}
-                    className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors text-left cursor-pointer"
-                  >
-                    <opt.icon className="w-4 h-4 text-slate-400" />
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* ── Filter bar ── */}
-      <div className="bg-white border border-slate-200 rounded-xl p-3 flex flex-wrap items-center gap-2">
-        <select
-          value={filters.preset}
-          onChange={(e) => setFilters({ ...filters, preset: e.target.value })}
-          className={selectClass}
-          aria-label="Khoảng thời gian"
-        >
-          <option value="THIS_MONTH">Tháng này</option>
-          <option value="THIS_QUARTER">Quý này</option>
-          <option value="THIS_YEAR">Năm nay</option>
-          <option value="CUSTOM">Tùy chỉnh…</option>
-        </select>
-
-        {filters.preset === 'CUSTOM' && (
-          <>
-            <input
-              type="date"
-              value={filters.fromDate ?? ''}
-              onChange={(e) => setFilters({ ...filters, fromDate: e.target.value })}
-              className={selectClass}
-              aria-label="Từ ngày"
-            />
-            <span className="text-slate-400 text-sm">→</span>
-            <input
-              type="date"
-              value={filters.toDate ?? ''}
-              onChange={(e) => setFilters({ ...filters, toDate: e.target.value })}
-              className={selectClass}
-              aria-label="Đến ngày"
-            />
-          </>
-        )}
-
-        <select
-          value={filters.visitStatus}
-          onChange={(e) => setFilters({ ...filters, visitStatus: e.target.value })}
-          className={selectClass}
-          aria-label="Trạng thái chuyến"
-        >
-          <option value="ALL">Chuyến: Tất cả</option>
-          <option value="WAITING_REQUEST_APPROVAL">Chờ xử lý tại campus</option>
-          <option value="ASSIGNED">Đã duyệt & gán host</option>
-          <option value="BEFORE_VISIT">Trước chuyến</option>
-          <option value="DURING_VISIT">Đang diễn ra</option>
-          <option value="AFTER_VISIT">Sau chuyến</option>
-          <option value="CLOSED">Đã đóng</option>
-          <option value="CANCELLED">Đã hủy</option>
-          <option value="REJECTED">Đã từ chối</option>
-        </select>
-
-        <select
-          value={filters.hostUserId}
-          onChange={(e) => setFilters({ ...filters, hostUserId: e.target.value })}
-          className={selectClass}
-          aria-label="Host"
-        >
-          <option value="ALL">Host: Tất cả</option>
-          {hostOptions.map((h) => (
-            <option key={h.id} value={String(h.id)}>{h.name}</option>
-          ))}
-        </select>
-
-        <select
-          value={filters.departmentId}
-          onChange={(e) => setFilters({ ...filters, departmentId: e.target.value })}
-          className={selectClass}
-          aria-label="Phòng ban logistics"
-        >
-          <option value="ALL">Phòng ban: Tất cả</option>
-          {deptOptions.map((d) => (
-            <option key={d.id} value={String(d.id)}>{d.name}</option>
-          ))}
-        </select>
-
-        <select
-          value={filters.logisticsStatus}
-          onChange={(e) => setFilters({ ...filters, logisticsStatus: e.target.value })}
-          className={selectClass}
-          aria-label="Trạng thái logistics"
-        >
-          <option value="ALL">Logistics: Tất cả</option>
-          <option value="REQUESTED">Chờ phản hồi</option>
-          <option value="ACCEPTED">Đã nhận</option>
-          <option value="IN_PROGRESS">Đang xử lý</option>
-          <option value="DONE">Hoàn thành</option>
-          <option value="REJECTED">Từ chối</option>
-        </select>
-
-        <select
-          value={filters.feedbackRating}
-          onChange={(e) => setFilters({ ...filters, feedbackRating: e.target.value })}
-          className={selectClass}
-          aria-label="Mức đánh giá"
-        >
-          <option value="ALL">Rating: Tất cả</option>
-          <option value="LOW">Thấp (≤ 2)</option>
-          <option value="HIGH">Tốt (≥ 4)</option>
-        </select>
-
-        <div className="flex items-center gap-2 ml-auto">
-          <button
-            onClick={() => applyFilters()}
-            disabled={loading}
-            className="px-4 py-2 bg-[#004c91] text-white text-sm font-bold rounded-lg hover:bg-[#00386b] transition-colors disabled:opacity-50 cursor-pointer"
-          >
-            Áp dụng
-          </button>
-          <button
-            onClick={resetFilters}
-            disabled={loading}
-            className="px-3 py-2 text-sm font-bold text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors disabled:opacity-50 cursor-pointer"
-          >
-            Reset
-          </button>
-        </div>
-      </div>
-
-      {/* ── Error state ── */}
-      {error === 'ERROR' && (
-        <div className="bg-white border border-slate-200 rounded-xl p-10 flex flex-col items-center text-center">
-          <AlertTriangle className="w-8 h-8 text-amber-500 mb-3" />
-          <p className="text-sm font-semibold text-slate-700 mb-3">Không thể tải báo cáo. Vui lòng thử lại.</p>
-          <button
-            onClick={refetch}
-            className="flex items-center gap-2 px-4 py-2 bg-[#004c91] text-white text-sm font-bold rounded-lg hover:bg-[#00386b] cursor-pointer"
-          >
-            <RefreshCw className="w-4 h-4" /> Thử lại
-          </button>
-        </div>
-      )}
-
-      {/* ── Loading skeleton ── */}
-      {loading && !error && <ReportSkeleton />}
-
-      {!loading && !error && data && (
-        <>
-          <KpiStrip data={data} />
-          <ActionBar data={data} onView={scrollTo} />
-          <ChartsRow data={data} />
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <HostWorkloadCard data={data} />
-            <LogisticsCard data={data} />
-          </div>
-          <PendingActionsTable data={data} onOpen={() => navigate('/dashboard/visit')} />
-          <CloseReadinessTable
-            data={data}
-            onOpen={(visitInstanceId) => navigate(`/dashboard/visit/process-summary/${visitInstanceId}`)}
-          />
-          <PartnerSection data={data} onOpen={() => navigate('/dashboard/partners')} />
-          <FeedbackSection
-            data={data}
-            onOpen={(visitInstanceId) => navigate(`/dashboard/visit/process-summary/${visitInstanceId}`)}
-          />
-          <p className="text-[11px] text-slate-400 text-right">
-            Số liệu theo kỳ tính bằng ngày thăm dự kiến · Khối tác vụ (chờ duyệt, gán host, đóng hồ sơ)
-            tính theo trạng thái hiện tại · Cập nhật {fmt.formatDateTime(data.generatedAt)}
+    <div className="w-full space-y-8 pb-16 animate-in fade-in duration-300">
+      {/* ── Header + bộ lọc thời gian ── */}
+      <div className="border-b border-gray-100 pb-4 flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold text-[#004c91]">Báo cáo campus</h1>
+          <p className="text-slate-500 mt-2">
+            {data ? `${data.campusName} · Kỳ ${fmtDate(data.fromDate)} – ${fmtDate(data.toDate)}` : 'Báo cáo vận hành campus của Staff Leader.'}
           </p>
-        </>
-      )}
+        </div>
 
-      {/* ── Modal xác nhận export ── */}
-      {exportConfirm && data && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
-              <h3 className="text-base font-bold text-slate-800">Xuất báo cáo vận hành campus</h3>
-              <button onClick={() => setExportConfirm(null)} className="text-slate-400 hover:text-slate-600 cursor-pointer" aria-label="Đóng">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="px-5 py-4 space-y-3 text-sm">
-              <div className="grid grid-cols-[110px_1fr] gap-y-1.5 text-slate-600">
-                <span className="font-semibold text-slate-400">Định dạng</span>
-                <span className="font-bold text-slate-800">{exportConfirm}</span>
-                <span className="font-semibold text-slate-400">Campus</span>
-                <span>{data.filterSummary.campusName}</span>
-                <span className="font-semibold text-slate-400">Thời gian</span>
-                <span>{PRESET_LABELS[data.filterSummary.preset]} ({fmt.formatDate(data.filterSummary.fromDate)} – {fmt.formatDate(data.filterSummary.toDate)})</span>
-                <span className="font-semibold text-slate-400">Bộ lọc</span>
-                <span>
-                  Chuyến: {data.filterSummary.visitStatus === 'ALL' ? 'Tất cả' : fmt.instanceStatusLabel(data.filterSummary.visitStatus)}
-                  {' '}· Host: {data.filterSummary.hostUserId === 'ALL' ? 'Tất cả' : data.filterSummary.hostName ?? data.filterSummary.hostUserId}
-                  {' '}· Phòng ban: {data.filterSummary.departmentId === 'ALL' ? 'Tất cả' : data.filterSummary.departmentName ?? data.filterSummary.departmentId}
-                  {' '}· Rating: {data.filterSummary.feedbackRating === 'ALL' ? 'Tất cả' : data.filterSummary.feedbackRating}
-                </span>
-              </div>
-              <div>
-                <p className="font-semibold text-slate-400 mb-1.5">Section</p>
-                <div className="grid grid-cols-1 gap-1">
-                  {SECTION_OPTIONS.map((s) => (
-                    <label key={s.value} className="flex items-center gap-2 text-slate-700 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={exportSections.includes(s.value)}
-                        onChange={(e) => setExportSections((prev) =>
-                          e.target.checked ? [...prev, s.value] : prev.filter((v) => v !== s.value))}
-                        className="rounded border-slate-300 text-[#004c91] focus:ring-[#004c91]/30"
-                      />
-                      {s.label}
-                    </label>
+        {/* Nút xuất báo cáo — chọn phần + 3 định dạng */}
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setExportMenuOpen((v) => !v)}
+            disabled={!data || exporting}
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-[#004c91] text-white text-sm font-bold rounded-xl hover:opacity-90 disabled:opacity-50 transition-all cursor-pointer"
+          >
+            {exporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+            Xuất báo cáo
+            <ChevronDown className="w-4 h-4" />
+          </button>
+          {exportMenuOpen && (
+            <>
+              <div className="fixed inset-0 z-20" onClick={() => setExportMenuOpen(false)} />
+              <div className="absolute right-0 top-full mt-2 w-64 bg-white border border-slate-200 rounded-2xl shadow-xl z-30 p-3 space-y-2">
+                <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wide px-1">Chọn phần xuất</p>
+                {[
+                  { key: 'VISITS', label: 'Phần 1 · Đoàn tiếp khách' },
+                  { key: 'PERSONNEL', label: 'Phần 2 · Nhân sự' },
+                  { key: 'DEPARTMENTS', label: 'Phần 3 · Phòng ban khác' },
+                ].map((s) => (
+                  <label key={s.key} className="flex items-center gap-2 px-1 py-0.5 text-sm text-slate-700 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={exportSections.includes(s.key)}
+                      onChange={() => toggleExportSection(s.key)}
+                      className="accent-[#004c91]"
+                    />
+                    {s.label}
+                  </label>
+                ))}
+                <label className="flex items-center gap-2 px-1 py-0.5 text-sm font-bold text-[#004c91] cursor-pointer border-t border-slate-100 pt-2">
+                  <input
+                    type="checkbox"
+                    checked={exportSections.length === 3}
+                    onChange={() => setExportSections(exportSections.length === 3 ? [] : ['VISITS', 'PERSONNEL', 'DEPARTMENTS'])}
+                    className="accent-[#004c91]"
+                  />
+                  Chọn tất cả
+                </label>
+                <div className="border-t border-slate-100 pt-2 space-y-1">
+                  {([['EXCEL', 'Excel (.xlsx)'], ['PDF', 'PDF (.pdf)'], ['CSV', 'CSV (.csv)']] as const).map(([fmt2, label]) => (
+                    <button
+                      key={fmt2}
+                      type="button"
+                      onClick={() => exportReport(fmt2)}
+                      disabled={exporting}
+                      className="w-full flex items-center gap-2 px-2 py-2 text-sm font-semibold text-slate-700 hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-50 cursor-pointer"
+                    >
+                      <FileText className="w-4 h-4 text-slate-400" /> {label}
+                    </button>
                   ))}
                 </div>
               </div>
-            </div>
-            <div className="flex justify-end gap-2 px-5 py-4 border-t border-slate-100 bg-slate-50">
-              <button
-                onClick={() => setExportConfirm(null)}
-                className="px-4 py-2 text-sm font-bold text-slate-500 hover:text-slate-700 rounded-lg hover:bg-slate-100 cursor-pointer"
-              >
-                Hủy
-              </button>
-              <button
-                onClick={handleExport}
-                disabled={exportLoading || exportSections.length === 0}
-                className="flex items-center gap-2 px-4 py-2 bg-[#004c91] text-white text-sm font-bold rounded-lg hover:bg-[#00386b] disabled:opacity-50 cursor-pointer"
-              >
-                {exportLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-                Xuất báo cáo
-              </button>
-            </div>
-          </div>
+            </>
+          )}
         </div>
-      )}
-    </div>
-  );
-}
-
-// ───────────────────────────── Skeleton ─────────────────────────────
-
-function ReportSkeleton() {
-  return (
-    <div className="space-y-4 animate-pulse">
-      <div className="bg-white border border-slate-200 rounded-xl grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-8 gap-px overflow-hidden">
-        {Array.from({ length: 8 }).map((_, i) => (
-          <div key={i} className="p-4 space-y-2">
-            <div className="h-3 bg-slate-100 rounded w-2/3" />
-            <div className="h-6 bg-slate-200 rounded w-1/2" />
-          </div>
-        ))}
       </div>
-      <div className="h-12 bg-white border border-slate-200 rounded-xl" />
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-        <div className="lg:col-span-3 h-[320px] bg-white border border-slate-200 rounded-xl" />
-        <div className="lg:col-span-2 h-[320px] bg-white border border-slate-200 rounded-xl" />
-      </div>
-      <div className="h-56 bg-white border border-slate-200 rounded-xl" />
-    </div>
-  );
-}
 
-// ───────────────────────────── KPI strip ─────────────────────────────
-
-function KpiStrip({ data }: { data: StaffLeaderReportOverview }) {
-  const k = data.kpis;
-  const items: { label: string; value: string; sub?: string; tone?: 'warn' | 'danger' | 'good'; title?: string }[] = [
-    { label: 'Chờ xử lý', value: fmt.formatNumber(k.pendingSingleCampusApproval), sub: 'cơ sở chờ duyệt & gán host', tone: k.pendingSingleCampusApproval > 0 ? 'warn' : undefined, title: 'Campus instance của campus bạn đang chờ duyệt & gán host (mọi phạm vi đơn)' },
-    { label: 'Đã từ chối', value: fmt.formatNumber(k.rejectedInstances), sub: 'cơ sở đã từ chối' },
-    { label: 'Đang chuẩn bị', value: fmt.formatNumber(k.assignedVisits + k.beforeVisit), sub: 'đã gán + trước chuyến' },
-    { label: 'Đang diễn ra', value: fmt.formatNumber(k.duringVisit), sub: 'chuyến đang tiếp' },
-    { label: 'Sau tiếp khách', value: fmt.formatNumber(k.afterVisit), sub: 'chờ hoàn tất hồ sơ' },
-    { label: 'Chưa đóng/quá hạn', value: fmt.formatNumber(k.overdueOrNotClosed), sub: 'qua ngày kết thúc', tone: k.overdueOrNotClosed > 0 ? 'danger' : undefined },
-    { label: 'Feedback TB', value: k.averageFeedbackRating != null ? `${fmt.formatRating(k.averageFeedbackRating)}/5` : '—', sub: 'trong kỳ báo cáo', tone: 'good' },
-    { label: 'Tổng khách', value: fmt.formatNumber(k.totalGuests), sub: 'lượt khách trong kỳ' },
-  ];
-
-  return (
-    <div className="bg-slate-200 border border-slate-200 rounded-xl grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-8 gap-px overflow-hidden">
-      {items.map((item) => (
-        <div key={item.label} className="bg-white px-4 py-3" title={item.title}>
-          <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wide truncate">{item.label}</p>
-          <p className={`text-xl font-black mt-0.5 ${
-            item.tone === 'warn' ? 'text-amber-600' : item.tone === 'danger' ? 'text-red-600' : item.tone === 'good' ? 'text-emerald-600' : 'text-slate-800'
-          }`}>
-            {item.value}
-          </p>
-          {item.sub && <p className="text-[11px] font-medium text-slate-400 truncate">{item.sub}</p>}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// ───────────────────────────── Action bar ─────────────────────────────
-
-function ActionBar({ data, onView }: { data: StaffLeaderReportOverview; onView: (section: string) => void }) {
-  const actionable = data.attentionItems.filter((a) => a.count > 0);
-  return (
-    <div className="bg-white border border-slate-200 rounded-xl px-4 py-3">
-      <div className="flex items-center gap-2 flex-wrap">
-        <span className="text-xs font-bold text-slate-500 uppercase tracking-wide mr-1 shrink-0">Cần xử lý</span>
-        {actionable.length === 0 && (
-          <span className="flex items-center gap-1.5 text-sm font-medium text-emerald-600">
-            <CheckCircle2 className="w-4 h-4" /> Không có mục nào cần xử lý
-          </span>
-        )}
-        {actionable.map((a) => {
-          const style = SEVERITY_STYLES[a.severity] ?? SEVERITY_STYLES.INFO;
-          return (
-            <div
-              key={a.type}
-              className="flex items-center gap-2 border border-slate-200 rounded-lg pl-2.5 pr-1.5 py-1.5 bg-slate-50/60"
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm px-4 py-3 flex flex-wrap items-center gap-3">
+        <span className="flex items-center gap-1.5 text-sm font-bold text-slate-600">
+          <CalendarRange className="w-4 h-4 text-[#f37021]" /> Thời gian
+        </span>
+        <div className="flex rounded-xl border border-slate-200 overflow-hidden">
+          {PRESETS.map((pr) => (
+            <button
+              key={pr.value}
+              type="button"
+              onClick={() => setFilters((f) => ({ ...f, preset: pr.value }))}
+              className={`px-3.5 py-2 text-xs font-bold transition-colors cursor-pointer ${
+                filters.preset === pr.value ? 'bg-[#004c91] text-white' : 'bg-white text-slate-600 hover:bg-slate-50'
+              }`}
             >
-              <span className={`w-2 h-2 rounded-full shrink-0 ${style.dot}`} />
-              <span className="text-xs font-semibold text-slate-600">{a.label}</span>
-              <span className={`text-sm font-black ${style.text}`}>{a.count}</span>
-              <button
-                onClick={() => onView(a.targetSection)}
-                className="text-[11px] font-bold text-[#004c91] hover:bg-blue-50 rounded px-1.5 py-0.5 cursor-pointer"
-              >
-                Xem
-              </button>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-// ───────────────────────────── Charts row ─────────────────────────────
-
-function ChartsRow({ data }: { data: StaffLeaderReportOverview }) {
-  const trend = data.monthlyTrend;
-  const trendEmpty = trend.length === 0 || trend.every((m) => m.totalInstances === 0);
-  const pipeline = data.campusLifecyclePipeline;
-  const pipelineTotal = pipeline.reduce((sum, s) => sum + s.count, 0);
-  const pipelineRows = pipeline.filter((s) => s.count > 0);
-  const maxCount = Math.max(1, ...pipelineRows.map((s) => s.count));
-
-  return (
-    <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-      {/* Chart 1 — Xu hướng chuyến thăm theo tháng */}
-      <div className="lg:col-span-3 bg-white border border-slate-200 rounded-xl p-4">
-        <div className="flex items-start justify-between gap-2 mb-2 flex-wrap">
-          <div>
-            <h3 className="text-sm font-bold text-slate-800">Xu hướng chuyến thăm theo tháng</h3>
-            <p className="text-xs text-slate-400 font-medium">Tính theo ngày thăm dự kiến tại campus</p>
-          </div>
-          <div className="flex items-center gap-3 text-[11px] font-semibold text-slate-500 flex-wrap">
-            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full" style={{ background: CHART_BLUE }} />Tổng chuyến</span>
-            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full" style={{ background: CHART_ORANGE }} />Đang xử lý</span>
-            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full" style={{ background: CHART_GREEN }} />Đã đóng</span>
-            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full" style={{ background: CHART_VIOLET }} />Bị hủy</span>
-          </div>
+              {pr.label}
+            </button>
+          ))}
         </div>
-        {trendEmpty ? (
-          <ChartEmpty height={272} />
-        ) : (
-          <div className="h-[272px] w-full">
-            <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
-              <LineChart data={trend} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                <XAxis dataKey="monthLabel" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#64748b' }} dy={8} />
-                <YAxis allowDecimals={false} axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#64748b' }} />
-                <Tooltip
-                  contentStyle={{ borderRadius: 10, border: '1px solid #e2e8f0', boxShadow: '0 4px 12px rgb(0 0 0 / 0.08)', fontSize: 12 }}
-                  labelStyle={{ fontWeight: 700, color: '#1e293b' }}
-                />
-                <Line type="monotone" dataKey="totalInstances" name="Tổng chuyến" stroke={CHART_BLUE} strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
-                <Line type="monotone" dataKey="activeInstances" name="Đang xử lý" stroke={CHART_ORANGE} strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
-                <Line type="monotone" dataKey="closedInstances" name="Đã đóng" stroke={CHART_GREEN} strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
-                <Line type="monotone" dataKey="cancelledInstances" name="Bị hủy" stroke={CHART_VIOLET} strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
-              </LineChart>
-            </ResponsiveContainer>
+        {filters.preset === 'CUSTOM' && (
+          <div className="flex items-center gap-2">
+            <input type="date" value={filters.fromDate} onChange={(e) => setFilters((f) => ({ ...f, fromDate: e.target.value }))}
+              className="border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm outline-none focus:border-[#004c91]" />
+            <span className="text-slate-400 text-sm">→</span>
+            <input type="date" value={filters.toDate} onChange={(e) => setFilters((f) => ({ ...f, toDate: e.target.value }))}
+              className="border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm outline-none focus:border-[#004c91]" />
           </div>
         )}
-      </div>
-
-      {/* Chart 2 — Phân bổ trạng thái chuyến (horizontal bars, label trực tiếp từng dòng) */}
-      <div className="lg:col-span-2 bg-white border border-slate-200 rounded-xl p-4 flex flex-col">
-        <h3 className="text-sm font-bold text-slate-800">Phân bổ trạng thái chuyến</h3>
-        <p className="text-xs text-slate-400 font-medium mb-2">{fmt.formatNumber(pipelineTotal)} chuyến trong kỳ</p>
-        {pipelineTotal === 0 ? (
-          <ChartEmpty height={250} />
-        ) : (
-          <div className="flex-1 flex flex-col justify-center gap-2">
-            {pipelineRows.map((s) => (
-              <div key={s.status} className="flex items-center gap-2 text-xs" title={`${s.labelVi}: ${s.count} (${s.percentage}%)`}>
-                <span className="w-24 truncate font-semibold text-slate-600 shrink-0">{s.labelVi}</span>
-                <div className="flex-1 h-4 bg-slate-100 rounded overflow-hidden">
-                  <div
-                    className="h-full rounded"
-                    style={{ width: `${(s.count / maxCount) * 100}%`, background: CHART_BLUE }}
-                  />
-                </div>
-                <span className="font-bold text-slate-800 w-8 text-right">{s.count}</span>
-                <span className="text-slate-400 w-12 text-right">{s.percentage}%</span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function ChartEmpty({ height }: { height: number }) {
-  return (
-    <div style={{ height }} className="flex flex-col items-center justify-center text-slate-400">
-      <Info className="w-6 h-6 mb-2" />
-      <p className="text-sm font-medium">Không có dữ liệu trong bộ lọc này.</p>
-    </div>
-  );
-}
-
-function SectionEmpty({ text }: { text: string }) {
-  return (
-    <div className="flex flex-col items-center justify-center text-slate-400 py-6">
-      <Info className="w-5 h-5 mb-1.5" />
-      <p className="text-sm font-medium">{text}</p>
-    </div>
-  );
-}
-
-// ───────────────────────────── Host workload ─────────────────────────────
-
-function HostWorkloadCard({ data }: { data: StaffLeaderReportOverview }) {
-  const rows = data.hostWorkload;
-  return (
-    <div id="host-workload" className="bg-white border border-slate-200 rounded-xl overflow-hidden scroll-mt-4">
-      <div className="px-4 py-3 border-b border-slate-100">
-        <h3 className="text-sm font-bold text-slate-800">Khối lượng host</h3>
-        <p className="text-xs text-slate-400 font-medium">Chuyến đang phụ trách theo trạng thái hiện tại</p>
-      </div>
-      {rows.length === 0 ? (
-        <SectionEmpty text="Không có host đang phụ trách trong bộ lọc này." />
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse min-w-[560px]">
-            <thead>
-              <tr className="bg-slate-50 border-b border-slate-100">
-                <th className={thClass}>Host</th>
-                <th className={`${thClass} text-right`}>Phụ trách</th>
-                <th className={`${thClass} text-right`}>7 ngày tới</th>
-                <th className={`${thClass} text-right`}>Chuẩn bị</th>
-                <th className={`${thClass} text-right`}>Đang tiếp</th>
-                <th className={`${thClass} text-right`}>Sau chuyến</th>
-                <th className={`${thClass} text-right`}>FB TB</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {rows.map((h) => (
-                <tr key={h.hostUserId} className="hover:bg-blue-50/40 transition-colors">
-                  <td className={`${tdClass} font-semibold text-slate-800 max-w-[180px] truncate`} title={h.hostName}>{h.hostName}</td>
-                  <td className={`${tdClass} text-right font-bold text-[#004c91]`}>{h.assignedCount}</td>
-                  <td className={`${tdClass} text-right font-semibold ${h.upcoming7Days > 0 ? 'text-amber-600' : 'text-slate-400'}`}>{h.upcoming7Days}</td>
-                  <td className={`${tdClass} text-right`}>{h.beforeVisitCount}</td>
-                  <td className={`${tdClass} text-right`}>{h.duringVisitCount}</td>
-                  <td className={`${tdClass} text-right`}>{h.afterVisitCount}</td>
-                  <td className={`${tdClass} text-right font-semibold ${h.averageFeedbackRating != null && h.averageFeedbackRating < 3 ? 'text-red-600' : 'text-slate-700'}`}>
-                    {fmt.formatRating(h.averageFeedbackRating)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ───────────────────────────── Logistics ─────────────────────────────
-
-function LogisticsCard({ data }: { data: StaffLeaderReportOverview }) {
-  const rows = data.logisticsByDepartment;
-  return (
-    <div id="logistics" className="bg-white border border-slate-200 rounded-xl overflow-hidden scroll-mt-4">
-      <div className="px-4 py-3 border-b border-slate-100">
-        <h3 className="text-sm font-bold text-slate-800">Tiến độ logistics / hỗ trợ phòng ban</h3>
-        <p className="text-xs text-slate-400 font-medium">Yêu cầu hậu cần của các chuyến trong kỳ</p>
-      </div>
-      {rows.length === 0 ? (
-        <SectionEmpty text="Không có dữ liệu trong bộ lọc này." />
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse min-w-[560px]">
-            <thead>
-              <tr className="bg-slate-50 border-b border-slate-100">
-                <th className={thClass}>Phòng ban</th>
-                <th className={`${thClass} text-right`}>Tổng</th>
-                <th className={`${thClass} text-right`}>Chờ phản hồi</th>
-                <th className={`${thClass} text-right`}>Đang xử lý</th>
-                <th className={`${thClass} text-right`}>Hoàn thành</th>
-                <th className={`${thClass} text-right`}>Từ chối</th>
-                <th className={`${thClass} text-right`}>Quá hạn</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {rows.map((d) => (
-                <tr key={d.departmentId} className="hover:bg-blue-50/40 transition-colors">
-                  <td className={`${tdClass} font-semibold text-slate-800 max-w-[180px] truncate`} title={d.departmentName}>{d.departmentName}</td>
-                  <td className={`${tdClass} text-right font-bold text-slate-800`}>{d.totalItems}</td>
-                  <td className={`${tdClass} text-right font-semibold ${d.requested > 0 ? 'text-amber-600' : 'text-slate-400'}`}>{d.requested}</td>
-                  <td className={`${tdClass} text-right`}>{d.accepted + d.inProgress}</td>
-                  <td className={`${tdClass} text-right text-emerald-600 font-semibold`}>{d.done}</td>
-                  <td className={`${tdClass} text-right ${d.rejected > 0 ? 'text-red-600 font-semibold' : 'text-slate-400'}`}>{d.rejected}</td>
-                  <td className={`${tdClass} text-right font-bold ${d.overdueCount > 0 ? 'text-red-600' : 'text-slate-400'}`}>{d.overdueCount}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ───────────────────────────── Pending actions ─────────────────────────────
-
-function PriorityBadge({ waitingHours }: { waitingHours: number }) {
-  if (waitingHours >= 48) {
-    return <span className="inline-block text-[11px] font-bold border rounded-full px-2 py-0.5 bg-red-50 text-red-600 border-red-200">Cao</span>;
-  }
-  if (waitingHours >= 24) {
-    return <span className="inline-block text-[11px] font-bold border rounded-full px-2 py-0.5 bg-amber-50 text-amber-700 border-amber-200">Trung bình</span>;
-  }
-  return <span className="inline-block text-[11px] font-bold border rounded-full px-2 py-0.5 bg-slate-100 text-slate-500 border-slate-200">Bình thường</span>;
-}
-
-function PendingActionsTable({ data, onOpen }: { data: StaffLeaderReportOverview; onOpen: () => void }) {
-  const rows = data.pendingActionRequests;
-  return (
-    <div id="pending-actions" className="bg-white border border-slate-200 rounded-xl overflow-hidden scroll-mt-4">
-      <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between gap-2 flex-wrap">
-        <h3 className="text-sm font-bold text-slate-800">
-          Đơn cần Staff Leader xử lý
-          {data.pendingActionTotal > rows.length && (
-            <span className="text-slate-400 font-medium"> · hiển thị {rows.length}/{data.pendingActionTotal}</span>
-          )}
-        </h3>
-        {data.pendingActionTotal > 0 && (
-          <button onClick={onOpen} className="flex items-center gap-1 text-xs font-bold text-[#004c91] hover:underline cursor-pointer">
-            Mở Quản lý tiếp khách <ArrowRight className="w-3.5 h-3.5" />
-          </button>
-        )}
-      </div>
-      {rows.length === 0 ? (
-        <SectionEmpty text="Không có đơn nào đang chờ xử lý." />
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse min-w-[980px]">
-            <thead>
-              <tr className="bg-slate-50 border-b border-slate-100">
-                <th className={thClass}>Ưu tiên</th>
-                <th className={thClass}>Mã đơn</th>
-                <th className={thClass}>Tên đoàn</th>
-                <th className={thClass}>Loại đơn</th>
-                <th className={thClass}>Ngày thăm</th>
-                <th className={`${thClass} text-right`}>Khách</th>
-                <th className={thClass}>Trạng thái</th>
-                <th className={thClass}>Thời gian chờ</th>
-                <th className={thClass}>Hành động</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {rows.map((r) => (
-                <tr key={`${r.type}-${r.requestId}-${r.visitInstanceId ?? 0}`} className="hover:bg-blue-50/40 transition-colors">
-                  <td className={tdClass}><PriorityBadge waitingHours={r.waitingHours} /></td>
-                  <td className={`${tdClass} font-bold text-[#004c91]`}>{r.requestCode}</td>
-                  <td className={`${tdClass} font-semibold text-slate-800 max-w-[220px] truncate`} title={`${r.delegationName} · ${r.organizationName}`}>
-                    {r.delegationName}
-                  </td>
-                  <td className={tdClass}>{visitTypeLabel(r.visitType)}</td>
-                  <td className={tdClass}>{fmt.formatDate(r.plannedStartAt)} – {fmt.formatDate(r.plannedEndAt)}</td>
-                  <td className={`${tdClass} text-right`}>{r.guestCount}</td>
-                  <td className={tdClass}>
-                    <span className={`inline-block text-[11px] font-bold border rounded-full px-2 py-0.5 ${fmt.statusBadgeClass(r.status)}`}>
-                      {r.type === 'APPROVAL' ? fmt.requestStatusLabel(r.status) : fmt.instanceStatusLabel(r.status)}
-                    </span>
-                  </td>
-                  <td className={`${tdClass} font-semibold ${r.waitingHours >= 48 ? 'text-red-600' : 'text-amber-600'}`}>
-                    {fmt.formatWaitingHours(r.waitingHours)}
-                  </td>
-                  <td className={tdClass}>
-                    <button onClick={onOpen} className="text-xs font-bold text-[#004c91] hover:underline cursor-pointer">
-                      {r.actionLabel}
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ───────────────────────────── Close readiness ─────────────────────────────
-
-function ReadyBadge({ ok, okText, failText }: { ok: boolean; okText: string; failText: string }) {
-  return (
-    <span className={`inline-block text-[11px] font-bold border rounded-full px-2 py-0.5 ${
-      ok ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'
-    }`}>
-      {ok ? okText : failText}
-    </span>
-  );
-}
-
-function CloseReadinessTable({ data, onOpen }: { data: StaffLeaderReportOverview; onOpen: (visitInstanceId: number) => void }) {
-  const rows = data.closeReadiness;
-  return (
-    <div id="close-readiness" className="bg-white border border-slate-200 rounded-xl overflow-hidden scroll-mt-4">
-      <div className="px-4 py-3 border-b border-slate-100">
-        <h3 className="text-sm font-bold text-slate-800">
-          Hồ sơ cần hoàn tất sau tiếp khách
-          {data.closeReadinessTotal > rows.length && (
-            <span className="text-slate-400 font-medium"> · hiển thị {rows.length}/{data.closeReadinessTotal}</span>
-          )}
-        </h3>
-      </div>
-      {rows.length === 0 ? (
-        <SectionEmpty text="Không có hồ sơ sau tiếp khách cần hoàn tất." />
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse min-w-[900px]">
-            <thead>
-              <tr className="bg-slate-50 border-b border-slate-100">
-                <th className={thClass}>Đoàn</th>
-                <th className={thClass}>Host</th>
-                <th className={thClass}>Ngày kết thúc</th>
-                <th className={thClass}>Logistics</th>
-                <th className={thClass}>Minutes</th>
-                <th className={thClass}>News</th>
-                <th className={`${thClass} text-right`}>Feedback</th>
-                <th className={thClass}>Có thể đóng</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {rows.map((r) => (
-                <tr
-                  key={r.visitInstanceId}
-                  onClick={() => onOpen(r.visitInstanceId)}
-                  title={r.blockers.length > 0 ? `Vướng mắc: ${r.blockers.map(fmt.blockerLabel).join(', ')}` : 'Đủ điều kiện đóng'}
-                  className="hover:bg-blue-50/40 transition-colors cursor-pointer"
-                >
-                  <td className={`${tdClass} font-semibold text-slate-800 max-w-[240px] truncate`} title={`${r.requestCode} · ${r.delegationName}`}>
-                    {r.delegationName}
-                  </td>
-                  <td className={tdClass}>{r.hostName ?? '—'}</td>
-                  <td className={tdClass}>{fmt.formatDate(r.plannedEndAt)}</td>
-                  <td className={tdClass}>
-                    <ReadyBadge
-                      ok={r.logisticsOpenCount === 0 && r.missingHandoverSignatureCount === 0}
-                      okText="Đủ"
-                      failText={`Còn mở ${r.logisticsOpenCount + r.missingHandoverSignatureCount}`}
-                    />
-                  </td>
-                  <td className={tdClass}>
-                    {r.hasMinutes
-                      ? <ReadyBadge ok={r.openActionItemCount === 0} okText="Đủ" failText={`${r.openActionItemCount} việc mở`} />
-                      : <span className="inline-block text-[11px] font-bold border rounded-full px-2 py-0.5 bg-slate-100 text-slate-500 border-slate-200">Thiếu</span>}
-                  </td>
-                  <td className={tdClass}>
-                    {r.newsNotRequired
-                      ? <span className="inline-block text-[11px] font-bold border rounded-full px-2 py-0.5 bg-slate-100 text-slate-500 border-slate-200">Không cần</span>
-                      : <ReadyBadge ok={r.hasPublishedNews} okText="Đã đăng" failText="Thiếu" />}
-                  </td>
-                  <td className={`${tdClass} text-right font-semibold ${r.feedbackCount === 0 ? 'text-slate-400' : 'text-slate-700'}`}>
-                    {r.feedbackCount}
-                  </td>
-                  <td className={tdClass}>
-                    <span className={`inline-block text-[11px] font-bold border rounded-full px-2 py-0.5 ${
-                      r.canClose ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-red-50 text-red-600 border-red-200'
-                    }`}>
-                      {r.canClose ? 'Có thể đóng' : 'Chưa thể đóng'}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ───────────────────────────── Partner ─────────────────────────────
-
-function PartnerStat({ label, value, warn, good }: { label: string; value: number; warn?: boolean; good?: boolean }) {
-  return (
-    <div className="border border-slate-100 rounded-lg px-3 py-2.5">
-      <p className="text-[11px] font-bold text-slate-400 uppercase truncate">{label}</p>
-      <p className={`text-lg font-black ${warn && value > 0 ? 'text-amber-600' : good ? 'text-emerald-600' : 'text-slate-800'}`}>
-        {fmt.formatNumber(value)}
-      </p>
-    </div>
-  );
-}
-
-function PartnerSection({ data, onOpen }: { data: StaffLeaderReportOverview; onOpen: () => void }) {
-  const ps = data.partnerSummary;
-  const hasAny = ps.totalPartners > 0 || ps.pendingApprovalPartners > 0 || ps.topPartners.length > 0;
-  const maxTypeCount = Math.max(1, ...ps.partnersByType.map((t) => t.count));
-
-  return (
-    <div id="partners" className="bg-white border border-slate-200 rounded-xl overflow-hidden scroll-mt-4">
-      <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between gap-2 flex-wrap">
-        <div>
-          <h3 className="text-sm font-bold text-slate-800">Đối tác (Partner)</h3>
-          <p className="text-xs text-slate-400 font-medium">Partner do campus quản lý và mức độ gắn kết trong kỳ báo cáo</p>
-        </div>
-        <button onClick={onOpen} className="flex items-center gap-1 text-xs font-bold text-[#004c91] hover:underline cursor-pointer">
-          Mở Quản lý partner <ArrowRight className="w-3.5 h-3.5" />
+        <button
+          type="button"
+          onClick={applyFilters}
+          disabled={loading}
+          className="px-4 py-2 bg-[#f37021] text-white text-xs font-black rounded-xl hover:opacity-90 disabled:opacity-50 transition-all cursor-pointer"
+        >
+          Áp dụng
+        </button>
+        <button
+          type="button"
+          onClick={() => fetchReport(filters)}
+          disabled={loading}
+          className="ml-auto p-2 rounded-xl hover:bg-slate-100 text-slate-500 transition-colors cursor-pointer"
+          title="Tải lại"
+        >
+          {loading ? <Loader2 className="w-4 h-4 animate-spin text-[#004c91]" /> : <RefreshCw className="w-4 h-4" />}
         </button>
       </div>
 
-      {!hasAny ? (
-        <SectionEmpty text="Campus chưa có partner nào trong hệ thống." />
-      ) : (
-        <div className="p-4 space-y-4">
-          {/* Mini stats */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-            <PartnerStat label="Tổng partner" value={ps.totalPartners} />
-            <PartnerStat label="Đang hợp tác" value={ps.activePartners} good />
-            <PartnerStat label="Hồ sơ chờ duyệt" value={ps.pendingApprovalPartners} warn />
-            <PartnerStat label="Mới trong kỳ" value={ps.newPartnersInPeriod} />
-            <PartnerStat label="Chuyến có partner" value={ps.visitsWithPartner} />
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-            {/* Phân bổ theo loại */}
-            <div>
-              <p className="text-[11px] font-bold text-slate-400 uppercase mb-1.5">Phân bổ theo loại</p>
-              {ps.partnersByType.length === 0 ? (
-                <p className="text-xs text-slate-400">Chưa có partner được duyệt.</p>
-              ) : (
-                <div className="space-y-1.5">
-                  {ps.partnersByType.map((t) => (
-                    <div key={t.partnerType} className="flex items-center gap-2 text-xs">
-                      <span className="w-24 truncate font-semibold text-slate-600">{partnerTypeLabel(t.partnerType)}</span>
-                      <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                        <div className="h-full rounded-full" style={{ width: `${(t.count / maxTypeCount) * 100}%`, background: CHART_BLUE }} />
-                      </div>
-                      <span className="font-bold text-slate-700 w-8 text-right">{t.count}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Top partner theo số chuyến */}
-            <div className="lg:col-span-2">
-              <p className="text-[11px] font-bold text-slate-400 uppercase mb-1.5">Top partner theo số chuyến trong kỳ</p>
-              {ps.topPartners.length === 0 ? (
-                <p className="text-xs text-slate-400">Chưa có chuyến nào gắn partner trong bộ lọc này.</p>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse min-w-[560px]">
-                    <thead>
-                      <tr className="bg-slate-50 border-b border-slate-100">
-                        <th className={thClass}>Partner</th>
-                        <th className={thClass}>Loại</th>
-                        <th className={thClass}>Quốc gia</th>
-                        <th className={thClass}>Hợp tác</th>
-                        <th className={`${thClass} text-right`}>Chuyến</th>
-                        <th className={`${thClass} text-right`}>Khách gắn</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {ps.topPartners.map((p) => (
-                        <tr key={p.partnerId} className="hover:bg-blue-50/40 transition-colors">
-                          <td className={`${tdClass} font-semibold text-slate-800 max-w-[220px] truncate`} title={p.name}>{p.name}</td>
-                          <td className={tdClass}>{partnerTypeLabel(p.partnerType)}</td>
-                          <td className={tdClass}>{p.country ?? '—'}</td>
-                          <td className={tdClass}>
-                            <span className={`inline-block text-[11px] font-bold border rounded-full px-2 py-0.5 ${
-                              p.cooperationStatus === 'ACTIVE'
-                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                : 'bg-slate-100 text-slate-500 border-slate-200'
-                            }`}>
-                              {cooperationLabel(p.cooperationStatus)}
-                            </span>
-                          </td>
-                          <td className={`${tdClass} text-right font-bold text-[#004c91]`}>{p.visitCount}</td>
-                          <td className={`${tdClass} text-right`}>{p.linkedGuestCount}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          </div>
+      {error && (
+        <div className="bg-rose-50 border border-rose-200 rounded-2xl px-5 py-4 text-sm text-rose-700 flex items-center gap-2">
+          <AlertTriangle className="w-4 h-4 shrink-0" /> {error}
         </div>
       )}
-    </div>
-  );
-}
 
-// ───────────────────────────── Feedback ─────────────────────────────
-
-function FeedbackSection({ data, onOpen }: {
-  data: StaffLeaderReportOverview;
-  onOpen: (visitInstanceId: number) => void;
-}) {
-  // Mặc định tab feedback thấp — Staff Leader cần xử lý vấn đề trước.
-  const [tab, setTab] = useState<'low' | 'good'>('low');
-  const fb = data.feedbackSummary;
-  const rows = tab === 'low' ? fb.lowFeedbacks : fb.goodFeedbacks;
-
-  return (
-    <div id="feedback" className="bg-white border border-slate-200 rounded-xl overflow-hidden scroll-mt-4">
-      <div className="px-4 pt-3 border-b border-slate-100 flex items-center justify-between gap-2 flex-wrap">
-        <div className="flex items-center gap-1">
-          {([
-            { key: 'low' as const, label: `Feedback thấp cần chú ý (${fb.lowFeedbackCount})` },
-            { key: 'good' as const, label: 'Feedback tốt gần đây' },
-          ]).map((t) => (
-            <button
-              key={t.key}
-              onClick={() => setTab(t.key)}
-              className={`px-4 py-2 text-sm font-bold rounded-t-lg border-b-2 transition-colors cursor-pointer ${
-                tab === t.key ? 'border-[#004c91] text-[#004c91]' : 'border-transparent text-slate-400 hover:text-slate-600'
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
+      {loading && !data ? (
+        <div className="py-24 text-center text-slate-500">
+          <Loader2 className="w-7 h-7 mx-auto mb-3 animate-spin text-[#004c91]" />
+          <p className="text-sm font-medium">Đang tổng hợp báo cáo...</p>
         </div>
-        <p className="text-xs font-medium text-slate-400 pb-2">
-          Điểm TB <span className="font-black text-slate-700">{fmt.formatRating(fb.averageRating)}</span>/5
-          {' '}· {fmt.formatNumber(fb.totalFeedbacks)} feedback trong kỳ
-        </p>
-      </div>
+      ) : data && (
+        <>
+          {/* ═══ 1 · Báo cáo đoàn tiếp khách ═══ */}
+          <Section
+            index={1}
+            title="Báo cáo đoàn tiếp khách"
+            subtitle="Số liệu các đoàn đến thăm campus trong kỳ và tiến độ hợp tác với đối tác."
+            open={openSections.visits}
+            onToggle={() => toggleSection('visits')}
+          >
+            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
+              <StatTile label="Tổng đoàn khách" value={v!.totalVisits} sub={`${v!.totalGuests} khách`} tone="blue" icon={<Users className="w-4 h-4 opacity-60" />} />
+              <StatTile label="Đã hoàn thành" value={v!.completed} tone="green" icon={<CheckCircle2 className="w-4 h-4 opacity-60" />} />
+              <StatTile label="Từ chối" value={v!.rejected} sub={v!.cancelled > 0 ? `+${v!.cancelled} bị hủy` : undefined} tone="red" icon={<XCircle className="w-4 h-4 opacity-60" />} />
+              <StatTile label="Chưa hoàn thành" value={v!.notCompleted} tone="amber" />
+              <StatTile
+                label="Feedback"
+                value={v!.feedbackAverage != null ? `${v!.feedbackAverage.toFixed(1)}★` : '—'}
+                sub={`${v!.feedbackTotalStars} sao / ${v!.feedbackCount} lượt`}
+                tone="violet"
+                icon={<Star className="w-4 h-4 opacity-60" />}
+              />
+              <StatTile label="Tổng đối tác" value={v!.totalPartners} tone="slate" icon={<Building2 className="w-4 h-4 opacity-60" />} />
+            </div>
 
-      {rows.length === 0 ? (
-        <SectionEmpty text={tab === 'low' ? 'Không có feedback thấp trong bộ lọc này.' : 'Chưa có feedback tốt trong bộ lọc này.'} />
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse min-w-[860px]">
-            <thead>
-              <tr className="bg-slate-50 border-b border-slate-100">
-                <th className={thClass}>Đoàn</th>
-                <th className={thClass}>Host</th>
-                <th className={`${thClass} text-right`}>Rating</th>
-                <th className={thClass}>Nội dung</th>
-                <th className={thClass}>Ngày thăm</th>
-                <th className={thClass}>Hành động</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {rows.map((e: StaffLeaderFeedbackEntry) => (
-                <tr key={e.feedbackId} className="hover:bg-blue-50/40 transition-colors">
-                  <td className={`${tdClass} font-semibold text-slate-800 max-w-[220px] truncate`} title={e.delegationName}>
-                    {e.delegationName}
-                  </td>
-                  <td className={tdClass}>{e.hostName ?? '—'}</td>
-                  <td className={`${tdClass} text-right font-black ${e.rating <= 2 ? 'text-red-600' : e.rating >= 4 ? 'text-emerald-600' : 'text-slate-700'}`}>
-                    {e.rating}/5
-                  </td>
-                  <td className={`${tdClass} max-w-[320px] truncate`} title={e.comment ?? undefined}>
-                    {e.comment || <span className="text-slate-400">Không có nhận xét</span>}
-                  </td>
-                  <td className={tdClass}>{fmt.formatDate(e.plannedStartAt)}</td>
-                  <td className={tdClass}>
-                    <button onClick={() => onOpen(e.visitInstanceId)} className="text-xs font-bold text-[#004c91] hover:underline cursor-pointer">
-                      Xem chuyến
-                    </button>
-                  </td>
-                </tr>
+            {/* Biểu đồ đường tiến độ hợp tác đối tác — mốc trục thời gian đổi theo khoảng lọc */}
+            <div className="mt-6">
+              <h3 className="text-sm font-bold text-slate-700 mb-1">Tiến độ hợp tác với đối tác</h3>
+              <p className="text-xs text-slate-400 mb-3">
+                Lũy kế đối tác đã duyệt và số chuyến thăm gắn với đối tác theo{' '}
+                {{ YEAR: 'năm', MONTH: 'tháng', WEEK: 'tuần', DAY: 'ngày', HOUR: 'giờ' }[v!.trendGranularity] ?? 'tháng'}
+                {' '}— đường đi lên nghĩa là hợp tác đang tăng. Dữ liệu thuộc riêng {data.campusName}.
+              </p>
+              <div className="h-72">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={v!.partnerTrend} margin={{ top: 8, right: 16, bottom: 0, left: -12 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                    <XAxis dataKey="monthLabel" tick={{ fontSize: 11 }} stroke="#94a3b8" />
+                    <YAxis allowDecimals={false} tick={{ fontSize: 11 }} stroke="#94a3b8" />
+                    <Tooltip
+                      formatter={(value: number, name: string) => [value, name]}
+                      labelStyle={{ fontWeight: 700 }}
+                      contentStyle={{ borderRadius: 12, border: '1px solid #e2e8f0', fontSize: 12 }}
+                    />
+                    <Legend wrapperStyle={{ fontSize: 12 }} />
+                    <Line type="monotone" dataKey="cumulativePartners" name="Lũy kế đối tác" stroke={CHART_BLUE} strokeWidth={2.5} dot={{ r: 3 }} />
+                    <Line type="monotone" dataKey="visitsWithPartner" name="Chuyến thăm gắn đối tác" stroke={CHART_GREEN} strokeWidth={2.5} dot={{ r: 3 }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </Section>
+
+          {/* ═══ 2 · Báo cáo nhân sự ═══ */}
+          <Section
+            index={2}
+            title="Báo cáo nhân sự"
+            subtitle="Hiệu suất của Staff Leader, IC Staff và sinh viên hỗ trợ tiếp khách trong kỳ."
+            open={openSections.personnel}
+            onToggle={() => toggleSection('personnel')}
+          >
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              <StatTile label="Tổng nhân sự" value={p!.totalStaff} tone="blue" icon={<Users className="w-4 h-4 opacity-60" />} />
+              <StatTile label="Tổng student" value={p!.totalStudents} tone="slate" />
+              <StatTile
+                label="Feedback trung bình"
+                value={p!.averageFeedback != null ? `${p!.averageFeedback.toFixed(1)}★` : '—'}
+                sub="Trung bình cộng nhân sự + student"
+                tone="violet"
+                icon={<Star className="w-4 h-4 opacity-60" />}
+              />
+            </div>
+
+            {/* Bộ lọc vai trò */}
+            <div className="flex items-center gap-2 mt-5 mb-3">
+              {(['ALL', 'STAFF', 'STUDENT'] as const).map((rf) => (
+                <button
+                  key={rf}
+                  type="button"
+                  onClick={() => setRoleFilter(rf)}
+                  className={`px-3.5 py-1.5 rounded-full text-xs font-bold border transition-colors cursor-pointer ${
+                    roleFilter === rf ? 'bg-[#004c91] text-white border-[#004c91]' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  {rf === 'ALL' ? 'Tất cả' : rf === 'STAFF' ? 'Staff' : 'Student'}
+                </button>
               ))}
-            </tbody>
-          </table>
-        </div>
+              <span className="text-[11px] text-slate-400 ml-2 flex items-center gap-1">
+                <Star className="w-3 h-3 text-amber-400 fill-amber-400" /> = Staff Leader
+              </span>
+            </div>
+
+            <div className="overflow-x-auto rounded-2xl border border-slate-200">
+              <table className="w-full text-left border-collapse">
+                <thead className="bg-slate-50">
+                  <tr>
+                    <th className={thClass}>STT</th>
+                    <th className={thClass}>Tên</th>
+                    <th className={thClass}>Vai trò</th>
+                    <th className={thClass}>Số đoàn phụ trách</th>
+                    <th className={thClass}>Tổng giờ làm việc</th>
+                    <th className={thClass}>Feedback</th>
+                    <th className={thClass}>Từ chối</th>
+                    <th className={thClass}>Ghi chú</th>
+                    <th className={thClass}></th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {personnelRows.length === 0 && (
+                    <tr><td colSpan={9} className="px-4 py-8 text-center text-sm text-slate-400">Không có nhân sự nào.</td></tr>
+                  )}
+                  {personnelRows.map((row, idx) => {
+                    const lowFeedback = row.feedbackAverage != null && row.feedbackAverage < 2;
+                    return (
+                      <tr key={row.userId} className={lowFeedback ? 'bg-rose-50/50' : idx % 2 === 1 ? 'bg-slate-50/40' : ''}>
+                        <td className={`${tdClass} whitespace-nowrap`}>{idx + 1}</td>
+                        <td className={`${tdClass} font-semibold text-slate-800`}>
+                          <span className="flex items-center gap-1.5">
+                            {row.fullName}
+                            {row.role === 'STAFF_LEADER' && (
+                              <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400 shrink-0" aria-label="Staff Leader" />
+                            )}
+                          </span>
+                          <span className="block text-[11px] font-normal text-slate-400">{row.email}</span>
+                        </td>
+                        <td className={`${tdClass} whitespace-nowrap`}>{row.role === 'STUDENT' ? 'Student' : 'Staff'}</td>
+                        <td className={`${tdClass} whitespace-nowrap`}>{row.visitCount}</td>
+                        <td className={`${tdClass} whitespace-nowrap`}>{row.totalHours.toLocaleString('vi-VN')} giờ</td>
+                        <td className={`${tdClass} whitespace-nowrap`}>
+                          {row.feedbackAverage != null ? (
+                            <span className={`inline-flex items-center gap-1 font-bold ${lowFeedback ? 'text-rose-600' : 'text-slate-700'}`}>
+                              {row.feedbackAverage.toFixed(1)}★
+                              <span className="text-[11px] font-normal text-slate-400">({row.feedbackCount})</span>
+                              {lowFeedback && <AlertTriangle className="w-3.5 h-3.5 text-rose-500" aria-label="Feedback dưới 2 sao" />}
+                            </span>
+                          ) : <span className="text-slate-400">—</span>}
+                        </td>
+                        <td className={`${tdClass} whitespace-nowrap`}>{row.declinedCount}</td>
+                        <td className={tdClass}>
+                          <input
+                            type="text"
+                            value={personnelNotes[row.userId] ?? ''}
+                            onChange={(e) => setPersonnelNotes((s) => ({ ...s, [row.userId]: e.target.value }))}
+                            placeholder="Ghi chú..."
+                            className="w-40 border border-slate-200 rounded-lg px-2 py-1.5 text-xs outline-none focus:border-[#004c91]"
+                          />
+                        </td>
+                        <td className={`${tdClass} whitespace-nowrap`}>
+                          <button
+                            type="button"
+                            onClick={() => sendPersonnelReport(row)}
+                            disabled={sendingUserId === row.userId}
+                            title={`Gửi báo cáo hiệu suất qua email cho ${row.fullName}`}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-[#004c91] text-xs font-bold rounded-lg border border-blue-200 transition-colors disabled:opacity-50 cursor-pointer"
+                          >
+                            {sendingUserId === row.userId ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                            Gửi
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </Section>
+
+          {/* ═══ 3 · Báo cáo phòng ban khác ═══ */}
+          <Section
+            index={3}
+            title="Báo cáo phòng ban khác"
+            subtitle="Đơn yêu cầu hậu cần & thư mời hỗ trợ gửi tới các phòng ban trong kỳ."
+            open={openSections.departments}
+            onToggle={() => toggleSection('departments')}
+          >
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <StatTile label="Tổng phòng ban" value={d!.totalDepartments} tone="blue" icon={<Building2 className="w-4 h-4 opacity-60" />} />
+              <StatTile label="Hoàn thành" value={d!.completedTotal} tone="green" icon={<CheckCircle2 className="w-4 h-4 opacity-60" />} />
+              <StatTile label="Từ chối" value={d!.rejectedTotal} tone="red" icon={<XCircle className="w-4 h-4 opacity-60" />} />
+              <StatTile
+                label="Feedback trung bình"
+                value={d!.averageFeedback != null ? `${d!.averageFeedback.toFixed(1)}★` : '—'}
+                tone="violet"
+                icon={<Star className="w-4 h-4 opacity-60" />}
+              />
+            </div>
+
+            <div className="overflow-x-auto rounded-2xl border border-slate-200 mt-5">
+              <table className="w-full text-left border-collapse">
+                <thead className="bg-slate-50">
+                  <tr>
+                    <th className={thClass}>STT</th>
+                    <th className={thClass}>Tên phòng ban</th>
+                    <th className={thClass}>Tổng đơn/thư yêu cầu</th>
+                    <th className={thClass}>Hoàn thành</th>
+                    <th className={thClass}>Từ chối</th>
+                    <th className={thClass}>Feedback</th>
+                    <th className={thClass}>Hành động</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {d!.rows.length === 0 && (
+                    <tr><td colSpan={7} className="px-4 py-8 text-center text-sm text-slate-400">Không có phòng ban nào.</td></tr>
+                  )}
+                  {d!.rows.map((row, idx) => (
+                    <tr key={row.departmentId} className={invoiceDept?.departmentId === row.departmentId ? 'bg-orange-50/60' : idx % 2 === 1 ? 'bg-slate-50/40' : ''}>
+                      <td className={`${tdClass} whitespace-nowrap`}>{idx + 1}</td>
+                      <td className={`${tdClass} font-semibold text-slate-800`}>{row.name}</td>
+                      <td className={`${tdClass} whitespace-nowrap`}>{row.totalRequests}</td>
+                      <td className={`${tdClass} whitespace-nowrap text-emerald-700 font-semibold`}>{row.completed}</td>
+                      <td className={`${tdClass} whitespace-nowrap text-rose-600 font-semibold`}>{row.rejected}</td>
+                      <td className={`${tdClass} whitespace-nowrap`}>
+                        {row.feedbackAverage != null
+                          ? <span className="font-bold text-slate-700">{row.feedbackAverage.toFixed(1)}★ <span className="text-[11px] font-normal text-slate-400">({row.feedbackCount})</span></span>
+                          : <span className="text-slate-400">—</span>}
+                      </td>
+                      <td className={`${tdClass} whitespace-nowrap`}>
+                        <button
+                          type="button"
+                          onClick={() => openInvoicePanel(row)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-orange-50 hover:bg-orange-100 text-[#f37021] text-xs font-bold rounded-lg border border-orange-200 transition-colors cursor-pointer"
+                        >
+                          <FileText className="w-3.5 h-3.5" /> Xuất hóa đơn
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* ── Panel hóa đơn của phòng ban đã chọn ── */}
+            {invoiceDept && (
+              <div className="mt-5 rounded-2xl border-2 border-orange-200 bg-orange-50/40 overflow-hidden">
+                <div className="px-5 py-3.5 bg-[#f37021] text-white flex items-center justify-between gap-3">
+                  <h3 className="text-sm font-black flex items-center gap-2">
+                    <FileText className="w-4 h-4" /> Hóa đơn hậu cần — {invoiceDept.name}
+                  </h3>
+                  <button type="button" onClick={() => setInvoiceDept(null)} className="p-1.5 hover:bg-white/10 rounded-full cursor-pointer">
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <div className="p-5 space-y-4">
+                  {/* Chọn khoảng ngày */}
+                  <div className="flex flex-wrap items-center gap-3">
+                    <span className="text-xs font-bold text-slate-600">Khoảng ngày:</span>
+                    <input type="date" value={invoiceRange.fromDate}
+                      onChange={(e) => setInvoiceRange((s) => ({ ...s, fromDate: e.target.value }))}
+                      className="border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm bg-white outline-none focus:border-[#f37021]" />
+                    <span className="text-slate-400 text-sm">→</span>
+                    <input type="date" value={invoiceRange.toDate}
+                      onChange={(e) => setInvoiceRange((s) => ({ ...s, toDate: e.target.value }))}
+                      className="border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm bg-white outline-none focus:border-[#f37021]" />
+                    <button
+                      type="button"
+                      onClick={loadInvoiceItems}
+                      disabled={invoiceLoading}
+                      className="px-4 py-2 bg-[#004c91] text-white text-xs font-black rounded-xl hover:opacity-90 disabled:opacity-50 transition-all cursor-pointer"
+                    >
+                      {invoiceLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin inline" /> : 'Tải danh sách đơn'}
+                    </button>
+                  </div>
+
+                  {invoiceLoaded && invoiceItems.length === 0 && (
+                    <p className="text-sm text-slate-500 py-4 text-center">Phòng ban chưa nhận đơn yêu cầu nào trong khoảng ngày này.</p>
+                  )}
+
+                  {invoiceItems.length > 0 && (
+                    <>
+                      <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+                        <table className="w-full text-left border-collapse">
+                          <thead className="bg-slate-50">
+                            <tr>
+                              <th className={thClass}>STT</th>
+                              <th className={thClass}>Đơn yêu cầu</th>
+                              <th className={thClass}>Đoàn khách</th>
+                              <th className={thClass}>Ngày</th>
+                              <th className={thClass}>SL</th>
+                              <th className={thClass}>Biên bản</th>
+                              <th className={thClass}>Đơn giá (₫)</th>
+                              <th className={thClass}>Thành tiền</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {invoiceItems.map((it, idx) => (
+                              <tr key={it.logisticsItemId}>
+                                <td className={`${tdClass} whitespace-nowrap`}>{idx + 1}</td>
+                                <td className={`${tdClass} font-semibold text-slate-800`}>
+                                  {it.title}
+                                  <span className="block text-[11px] font-normal text-slate-400">{ITEM_TYPE_LABELS[it.itemType] ?? it.itemType} · {it.requestCode}</span>
+                                </td>
+                                <td className={tdClass}>{it.delegationName}</td>
+                                <td className={`${tdClass} whitespace-nowrap`}>{fmtDateTime(it.usageStartAt)}</td>
+                                <td className={`${tdClass} whitespace-nowrap`}>{it.quantity}</td>
+                                <td className={`${tdClass} whitespace-nowrap`}>
+                                  <button
+                                    type="button"
+                                    onClick={() => setViewItem(it)}
+                                    className="text-xs font-bold text-[#004c91] hover:underline cursor-pointer"
+                                  >
+                                    Xem chi tiết
+                                  </button>
+                                </td>
+                                <td className={`${tdClass} whitespace-nowrap`}>
+                                  <input
+                                    type="text"
+                                    inputMode="numeric"
+                                    value={prices[it.logisticsItemId] ?? ''}
+                                    onChange={(e) => setPrices((s) => ({ ...s, [it.logisticsItemId]: e.target.value.replace(/[^\d]/g, '') }))}
+                                    placeholder="0"
+                                    className="w-28 border border-slate-200 rounded-lg px-2 py-1.5 text-sm text-right outline-none focus:border-[#f37021]"
+                                  />
+                                </td>
+                                <td className={`${tdClass} whitespace-nowrap font-bold text-slate-800 text-right`}>{vnMoney(lineTotal(it))}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                          <tfoot>
+                            <tr className="bg-orange-50">
+                              <td colSpan={7} className="px-3 py-3 text-right text-sm font-black text-slate-700">TỔNG TIỀN</td>
+                              <td className="px-3 py-3 text-right text-base font-black text-[#c2410c] whitespace-nowrap">{vnMoney(grandTotal)}</td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+
+                      <div className="flex flex-wrap items-center justify-end gap-3">
+                        <button
+                          type="button"
+                          onClick={exportInvoicePdf}
+                          className="inline-flex items-center gap-1.5 px-4 py-2.5 bg-white border border-slate-300 text-slate-700 text-xs font-black rounded-xl hover:bg-slate-50 transition-colors cursor-pointer"
+                        >
+                          <Download className="w-4 h-4" /> Xuất hóa đơn (PDF)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={sendInvoice}
+                          disabled={invoiceSending}
+                          className="inline-flex items-center gap-1.5 px-4 py-2.5 bg-[#f37021] text-white text-xs font-black rounded-xl hover:opacity-90 disabled:opacity-50 transition-all cursor-pointer"
+                        >
+                          {invoiceSending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
+                          Gửi hóa đơn qua email
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
+          </Section>
+
+        </>
+      )}
+
+      {/* Modal biên bản đã ký giữa 2 bên (chỉ xem) */}
+      {viewItem && (
+        <TaskHandoverModal
+          isOpen
+          readOnly
+          detailData={toHandoverDto(viewItem)}
+          onClose={() => setViewItem(null)}
+        />
       )}
     </div>
   );

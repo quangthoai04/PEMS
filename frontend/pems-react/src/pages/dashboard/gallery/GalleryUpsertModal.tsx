@@ -1,10 +1,12 @@
-/** Create (UC-GAL-04) / Edit (UC-GAL-07) modal for a gallery item. */
+/** Create (UC-GAL-04) / Edit (UC-GAL-07) modal for a gallery item. Media can be uploaded files (images /
+ * videos) and/or external YouTube videos added by URL (no download to PEMS). */
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { motion } from 'motion/react';
-import { X, Upload, Trash2, Star, Loader2, CheckCircle2, AlertCircle, ImageOff } from 'lucide-react';
+import { X, Upload, Trash2, Star, Loader2, CheckCircle2, AlertCircle, ImageOff, Youtube, Plus, Play } from 'lucide-react';
 import { useAuthenticatedMedia } from '../../../shared/hooks/useAuthenticatedImage';
 import { validateFile } from '../../../shared/utils/fileValidation';
+import { parseYouTubeVideoId, youtubeWatchUrl, youtubeEmbedUrl, youtubeThumbnailUrl } from '../../../shared/utils/youtube';
 import { galleryManagementApi } from '../../../features/gallery-management/api/galleryManagementApi';
 import { getGalleryErrorMessage } from '../../../features/gallery-management/api/galleryError';
 import type {
@@ -14,10 +16,40 @@ import type {
 } from '../../../features/gallery-management/types/galleryManagement.types';
 
 type Mode = 'create' | 'edit';
-const MEDIA_ACCEPT = 'image/jpeg,image/png,image/webp,video/mp4,video/webm';
+// Machine uploads accept images only — videos are added via a YouTube link, never uploaded as files.
+const MEDIA_ACCEPT = 'image/jpeg,image/png,image/webp';
 const MAX_FILES = 20;
 // Narration cap: gallery_items.description feeds the EverAI TTS voice-over, hard-limited to 1000 chars.
 const MAX_DESCRIPTION_LENGTH = 1000;
+
+/** Which media is primary — stable across list reorders (existing = mediaId; new = a stable local id). */
+type PrimarySel =
+  | { kind: 'existing'; id: number }
+  | { kind: 'upload'; id: string }
+  | { kind: 'youtube'; id: string }
+  | null;
+
+interface NewFileEntry {
+  id: string;
+  file: File;
+}
+interface YoutubeEntry {
+  id: string;
+  url: string; // canonical watch URL sent to the backend
+  videoId: string;
+}
+interface KeptMediaState {
+  mediaId: number;
+  mediaType: 'IMAGE' | 'VIDEO';
+  sourceType: 'UPLOADED_FILE' | 'YOUTUBE';
+  fileUrl?: string | null;
+  thumbnailUrl?: string | null;
+  youtubeVideoId?: string | null;
+  kept: boolean;
+}
+
+let localIdSeq = 0;
+const nextLocalId = () => `m${Date.now().toString(36)}_${localIdSeq++}`;
 
 /** True when a picked file is a video (by MIME or extension), so previews/validation pick the right kind. */
 function isVideoFile(file: File): boolean {
@@ -25,8 +57,22 @@ function isVideoFile(file: File): boolean {
   return /\.(mp4|webm)$/i.test(file.name);
 }
 
-/** Existing (server-stored) media thumbnail with keep/remove + set-primary controls. */
-function ExistingMediaCard({
+/** A small round "set primary" star button shared by every media card. */
+function PrimaryStar({ isPrimary, onClick }: { isPrimary: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title="Đặt làm media chính"
+      className={`p-1 rounded ${isPrimary ? 'bg-[#f37021] text-white' : 'bg-white/90 text-slate-500 hover:text-[#f37021]'}`}
+    >
+      <Star className="w-3.5 h-3.5" fill={isPrimary ? 'currentColor' : 'none'} />
+    </button>
+  );
+}
+
+/** Existing UPLOADED media thumbnail (served through the authenticated proxy) with keep/remove + primary. */
+function ExistingUploadedCard({
   fileUrl,
   mediaType,
   kept,
@@ -58,16 +104,7 @@ function ExistingMediaCard({
         )}
       </div>
       <div className="absolute top-1 left-1 flex gap-1">
-        {kept && (
-          <button
-            type="button"
-            onClick={onSetPrimary}
-            title="Đặt làm ảnh chính"
-            className={`p-1 rounded ${isPrimary ? 'bg-[#f37021] text-white' : 'bg-white/90 text-slate-500 hover:text-[#f37021]'}`}
-          >
-            <Star className="w-3.5 h-3.5" fill={isPrimary ? 'currentColor' : 'none'} />
-          </button>
-        )}
+        {kept && <PrimaryStar isPrimary={isPrimary} onClick={onSetPrimary} />}
       </div>
       <button
         type="button"
@@ -81,12 +118,49 @@ function ExistingMediaCard({
   );
 }
 
-interface KeptMediaState {
-  mediaId: number;
-  mediaType: 'IMAGE' | 'VIDEO';
-  fileUrl: string;
-  thumbnailUrl?: string | null;
+/** A YouTube media card (existing or new): direct YouTube thumbnail (never /api/files) + badge + controls. */
+function YoutubeCard({
+  videoId,
+  kept,
+  isPrimary,
+  onToggleKeep,
+  onSetPrimary,
+}: {
+  videoId: string;
   kept: boolean;
+  isPrimary: boolean;
+  onToggleKeep: () => void;
+  onSetPrimary: () => void;
+}) {
+  const [failed, setFailed] = useState(false);
+  return (
+    <div className={`relative rounded-xl overflow-hidden border-2 ${isPrimary ? 'border-[#f37021]' : 'border-slate-200'} ${kept ? '' : 'opacity-40'}`}>
+      <div className="w-full h-24 bg-black relative">
+        {failed ? (
+          <div className="w-full h-full flex items-center justify-center text-white/50"><Play className="w-5 h-5" /></div>
+        ) : (
+          <img src={youtubeThumbnailUrl(videoId)} onError={() => setFailed(true)} className="w-full h-full object-cover" alt="" />
+        )}
+        <span className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <span className="w-8 h-8 rounded-full bg-red-600/90 flex items-center justify-center text-white"><Play className="w-4 h-4 ml-0.5" fill="currentColor" /></span>
+        </span>
+      </div>
+      <span className="absolute bottom-1 left-1 inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-red-600 text-white text-[9px] font-bold">
+        <Youtube className="w-3 h-3" /> YouTube
+      </span>
+      <div className="absolute top-1 left-1 flex gap-1">
+        {kept && <PrimaryStar isPrimary={isPrimary} onClick={onSetPrimary} />}
+      </div>
+      <button
+        type="button"
+        onClick={onToggleKeep}
+        title={kept ? 'Bỏ video này' : 'Giữ lại video này'}
+        className={`absolute top-1 right-1 p-1 rounded ${kept ? 'bg-white/90 text-red-500 hover:bg-red-50' : 'bg-green-600 text-white'}`}
+      >
+        {kept ? <Trash2 className="w-3.5 h-3.5" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+      </button>
+    </div>
+  );
 }
 
 export function GalleryUpsertModal({
@@ -115,19 +189,25 @@ export function GalleryUpsertModal({
   const [itemType, setItemType] = useState<GalleryItemType>(existing?.itemType ?? 'MEDIA');
   const [areaId, setAreaId] = useState<number | ''>(existing?.area.areaId ?? '');
   const [locationId, setLocationId] = useState<number | ''>(existing?.location.locationId ?? '');
-  const [newFiles, setNewFiles] = useState<File[]>([]);
+  const [newFiles, setNewFiles] = useState<NewFileEntry[]>([]);
+  const [youtubeEntries, setYoutubeEntries] = useState<YoutubeEntry[]>([]);
+  const [youtubeInput, setYoutubeInput] = useState('');
+  const [youtubeError, setYoutubeError] = useState<string | null>(null);
   const [keptMedia, setKeptMedia] = useState<KeptMediaState[]>(
     (existing?.media ?? []).map((m) => ({
       mediaId: m.mediaId,
       mediaType: m.mediaType,
+      sourceType: m.sourceType,
       fileUrl: m.fileUrl,
       thumbnailUrl: m.thumbnailUrl,
+      youtubeVideoId: m.youtubeVideoId,
       kept: true,
     })),
   );
-  const [primaryMediaId, setPrimaryMediaId] = useState<number | null>(
-    existing?.media.find((m) => m.isPrimary)?.mediaId ?? null,
-  );
+  const [primary, setPrimary] = useState<PrimarySel>(() => {
+    const p = existing?.media.find((m) => m.isPrimary);
+    return p ? { kind: 'existing', id: p.mediaId } : null;
+  });
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -138,40 +218,89 @@ export function GalleryUpsertModal({
   }, [activeAreas, areaId, existing]);
 
   // Object URLs for new-file previews (revoked on change/unmount).
-  const previews = useMemo(() => newFiles.map((f) => ({ file: f, url: URL.createObjectURL(f) })), [newFiles]);
+  const previews = useMemo(() => newFiles.map((n) => ({ entry: n, url: URL.createObjectURL(n.file) })), [newFiles]);
   useEffect(() => () => previews.forEach((p) => URL.revokeObjectURL(p.url)), [previews]);
 
   const keptCount = keptMedia.filter((m) => m.kept).length;
-  const totalAfter = keptCount + newFiles.length;
+  const totalAfter = keptCount + newFiles.length + youtubeEntries.length;
   const slotsLeft = MAX_FILES - totalAfter;
+
+  const isPrimary = (sel: PrimarySel): boolean => {
+    if (!sel || !primary || primary.kind !== sel.kind) return false;
+    return primary.id === sel.id;
+  };
 
   const handleAddFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files) return;
     const incoming = Array.from(e.target.files) as File[];
-    const accepted: File[] = [];
+    const accepted: NewFileEntry[] = [];
     for (const file of incoming) {
-      // A gallery may mix images and videos — accept a file if it passes EITHER rule.
-      const asImage = validateFile(file, 'GALLERY_IMAGE');
-      const asVideo = validateFile(file, 'GALLERY_VIDEO');
-      if (!asImage.ok && !asVideo.ok) {
-        setFormError(`${file.name}: ${isVideoFile(file) ? asVideo.message : asImage.message}`);
+      // Machine uploads accept images only. A video picked here is rejected with a clear message that
+      // points the user to the YouTube field (videos are added by link, never uploaded as a file).
+      if (isVideoFile(file)) {
+        setFormError(`${file.name}: Chỉ chấp nhận ảnh khi tải từ máy. Vui lòng thêm video qua liên kết YouTube.`);
         continue;
       }
-      accepted.push(file);
+      const asImage = validateFile(file, 'GALLERY_IMAGE');
+      if (!asImage.ok) {
+        setFormError(`${file.name}: ${asImage.message}`);
+        continue;
+      }
+      accepted.push({ id: nextLocalId(), file });
     }
-    const room = MAX_FILES - keptCount - newFiles.length;
+    const room = MAX_FILES - totalAfter;
     if (accepted.length > room) {
-      setFormError(`Gallery item chỉ được có tối đa ${MAX_FILES} tệp.`);
+      setFormError(`Gallery item chỉ được có tối đa ${MAX_FILES} media.`);
     }
-    setNewFiles((prev) => [...prev, ...accepted].slice(0, MAX_FILES - keptCount));
+    setNewFiles((prev) => [...prev, ...accepted].slice(0, prev.length + Math.max(0, room)));
     e.target.value = '';
   };
 
-  const removeNewFile = (idx: number) => setNewFiles((prev) => prev.filter((_, i) => i !== idx));
+  const removeNewFile = (id: string) => {
+    setNewFiles((prev) => prev.filter((n) => n.id !== id));
+    setPrimary((cur) => (cur && cur.kind === 'upload' && cur.id === id ? null : cur));
+  };
+
+  const addYoutube = () => {
+    const videoId = parseYouTubeVideoId(youtubeInput);
+    if (!videoId) {
+      setYoutubeError('URL YouTube không hợp lệ. Hãy dán liên kết dạng youtube.com/watch?v=... hoặc youtu.be/...');
+      return;
+    }
+    if (youtubeEntries.some((y) => y.videoId === videoId) ||
+        keptMedia.some((m) => m.kept && m.sourceType === 'YOUTUBE' && m.youtubeVideoId === videoId)) {
+      setYoutubeError('Video YouTube này đã được thêm.');
+      return;
+    }
+    if (totalAfter >= MAX_FILES) {
+      setYoutubeError(`Gallery item chỉ được có tối đa ${MAX_FILES} media.`);
+      return;
+    }
+    setYoutubeEntries((prev) => [...prev, { id: nextLocalId(), url: youtubeWatchUrl(videoId), videoId }]);
+    setYoutubeInput('');
+    setYoutubeError(null);
+  };
+
+  const removeYoutube = (id: string) => {
+    setYoutubeEntries((prev) => prev.filter((y) => y.id !== id));
+    setPrimary((cur) => (cur && cur.kind === 'youtube' && cur.id === id ? null : cur));
+  };
 
   const toggleKeep = (mediaId: number) => {
     setKeptMedia((prev) => prev.map((m) => (m.mediaId === mediaId ? { ...m, kept: !m.kept } : m)));
-    setPrimaryMediaId((cur) => (cur === mediaId ? null : cur));
+    setPrimary((cur) => (cur && cur.kind === 'existing' && cur.id === mediaId ? null : cur));
+  };
+
+  /** Translates the stable primary selection into the backend key (existing:{id} / upload:{i} / youtube:{i}). */
+  const primaryMediaKey = (): string | undefined => {
+    if (!primary) return undefined;
+    if (primary.kind === 'existing') return `existing:${primary.id}`;
+    if (primary.kind === 'upload') {
+      const idx = newFiles.findIndex((n) => n.id === primary.id);
+      return idx >= 0 ? `upload:${idx}` : undefined;
+    }
+    const idx = youtubeEntries.findIndex((y) => y.id === primary.id);
+    return idx >= 0 ? `youtube:${idx}` : undefined;
   };
 
   const validate = (): string | null => {
@@ -180,8 +309,9 @@ export function GalleryUpsertModal({
     if (description.length > MAX_DESCRIPTION_LENGTH) return `Mô tả không được vượt quá ${MAX_DESCRIPTION_LENGTH} ký tự.`;
     if (areaId === '') return 'Vui lòng chọn khu vực.';
     if (locationId === '') return 'Vui lòng chọn vị trí.';
-    if (mode === 'create' && newFiles.length === 0) return 'Vui lòng chọn ít nhất một tệp media.';
-    if (mode === 'edit' && totalAfter === 0) return 'Gallery item phải có ít nhất một file media.';
+    if (mode === 'create' && newFiles.length + youtubeEntries.length === 0)
+      return 'Vui lòng chọn ít nhất một tệp media hoặc thêm một video YouTube.';
+    if (mode === 'edit' && totalAfter === 0) return 'Gallery item phải có ít nhất một media.';
     return null;
   };
 
@@ -202,7 +332,9 @@ export function GalleryUpsertModal({
           locationId: Number(locationId),
           itemType,
           status: 'PUBLISHED',
-          files: newFiles,
+          files: newFiles.map((n) => n.file),
+          youtubeUrls: youtubeEntries.map((y) => y.url),
+          primaryMediaKey: primaryMediaKey(),
         });
         onCreated();
       } else if (existing) {
@@ -213,8 +345,9 @@ export function GalleryUpsertModal({
           locationId: Number(locationId),
           itemType,
           keepMediaIds: keptMedia.filter((m) => m.kept).map((m) => m.mediaId),
-          newFiles,
-          primaryMediaId: primaryMediaId ?? undefined,
+          newFiles: newFiles.map((n) => n.file),
+          youtubeUrls: youtubeEntries.map((y) => y.url),
+          primaryMediaKey: primaryMediaKey(),
         });
         onUpdated(updated);
       }
@@ -244,28 +377,84 @@ export function GalleryUpsertModal({
               <Upload className="w-6 h-6" />
             </div>
             <p className="text-sm font-bold text-gray-700 text-center">
-              {slotsLeft > 0 ? 'Click để chọn files' : `Đã đủ ${MAX_FILES} tệp`}
+              {slotsLeft > 0 ? 'Click để chọn ảnh' : `Đã đủ ${MAX_FILES} media`}
             </p>
             <p className="text-xs text-slate-400 mt-1 text-center">
-              Ảnh (JPG/PNG/WEBP ≤5MB) hoặc Video (MP4/WEBM ≤100MB) · tối đa {MAX_FILES} tệp
+              Chỉ ảnh (JPG/PNG/WEBP ≤5MB) · tối đa {MAX_FILES} media · video thêm qua YouTube bên dưới
             </p>
             <input type="file" multiple accept={MEDIA_ACCEPT} className="hidden" onChange={handleAddFiles} disabled={slotsLeft <= 0} />
           </label>
+
+          {/* YouTube video source (added by URL — not downloaded to PEMS) */}
+          <div className="mb-4 rounded-2xl border border-red-100 bg-white p-3">
+            <p className="text-xs font-bold text-slate-600 uppercase tracking-wide mb-2 flex items-center gap-1.5">
+              <Youtube className="w-4 h-4 text-red-600" /> Thêm video YouTube
+            </p>
+            <div className="flex items-center gap-2">
+              <input
+                type="url"
+                value={youtubeInput}
+                onChange={(e) => { setYoutubeInput(e.target.value); setYoutubeError(null); }}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addYoutube(); } }}
+                placeholder="https://www.youtube.com/watch?v=..."
+                className="flex-1 min-w-0 px-3 py-2 rounded-lg border border-slate-200 focus:border-red-400 focus:ring-1 focus:ring-red-400 outline-none text-xs font-medium"
+              />
+              <button
+                type="button"
+                onClick={addYoutube}
+                disabled={slotsLeft <= 0}
+                className="shrink-0 inline-flex items-center gap-1 px-3 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-bold disabled:opacity-50"
+              >
+                <Plus className="w-3.5 h-3.5" /> Thêm
+              </button>
+            </div>
+            {youtubeError && <p className="mt-1.5 text-[11px] text-red-600 font-medium">{youtubeError}</p>}
+          </div>
 
           {/* Existing media (edit) */}
           {mode === 'edit' && keptMedia.length > 0 && (
             <div className="mb-4">
               <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">Media hiện có</p>
               <div className="grid grid-cols-3 gap-2">
-                {keptMedia.map((m) => (
-                  <ExistingMediaCard
-                    key={m.mediaId}
-                    fileUrl={m.thumbnailUrl || m.fileUrl}
-                    mediaType={m.mediaType}
-                    kept={m.kept}
-                    isPrimary={primaryMediaId === m.mediaId}
-                    onToggleKeep={() => toggleKeep(m.mediaId)}
-                    onSetPrimary={() => setPrimaryMediaId(m.mediaId)}
+                {keptMedia.map((m) =>
+                  m.sourceType === 'YOUTUBE' && m.youtubeVideoId ? (
+                    <YoutubeCard
+                      key={m.mediaId}
+                      videoId={m.youtubeVideoId}
+                      kept={m.kept}
+                      isPrimary={isPrimary({ kind: 'existing', id: m.mediaId })}
+                      onToggleKeep={() => toggleKeep(m.mediaId)}
+                      onSetPrimary={() => setPrimary({ kind: 'existing', id: m.mediaId })}
+                    />
+                  ) : (
+                    <ExistingUploadedCard
+                      key={m.mediaId}
+                      fileUrl={m.thumbnailUrl || m.fileUrl || ''}
+                      mediaType={m.mediaType}
+                      kept={m.kept}
+                      isPrimary={isPrimary({ kind: 'existing', id: m.mediaId })}
+                      onToggleKeep={() => toggleKeep(m.mediaId)}
+                      onSetPrimary={() => setPrimary({ kind: 'existing', id: m.mediaId })}
+                    />
+                  ),
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* New YouTube videos */}
+          {youtubeEntries.length > 0 && (
+            <div className="mb-4">
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">Video YouTube mới ({youtubeEntries.length})</p>
+              <div className="grid grid-cols-3 gap-2">
+                {youtubeEntries.map((y) => (
+                  <YoutubeCard
+                    key={y.id}
+                    videoId={y.videoId}
+                    kept
+                    isPrimary={isPrimary({ kind: 'youtube', id: y.id })}
+                    onToggleKeep={() => removeYoutube(y.id)}
+                    onSetPrimary={() => setPrimary({ kind: 'youtube', id: y.id })}
                   />
                 ))}
               </div>
@@ -277,19 +466,22 @@ export function GalleryUpsertModal({
             <p className="text-xs font-bold text-slate-500 uppercase tracking-wide">
               Tệp mới ({newFiles.length}) · Tổng {totalAfter}/{MAX_FILES}
             </p>
-            {previews.map((p, idx) => (
-              <div key={idx} className="flex items-center justify-between p-2 rounded-xl bg-white border border-slate-200 shadow-sm">
+            {previews.map((p) => (
+              <div key={p.entry.id} className={`flex items-center justify-between p-2 rounded-xl bg-white border ${isPrimary({ kind: 'upload', id: p.entry.id }) ? 'border-[#f37021]' : 'border-slate-200'} shadow-sm`}>
                 <div className="flex items-center gap-3 min-w-0">
                   <div className="w-10 h-10 rounded-lg overflow-hidden shrink-0 bg-slate-100">
-                    {isVideoFile(p.file)
+                    {isVideoFile(p.entry.file)
                       ? <video src={p.url} className="w-full h-full object-cover" muted />
                       : <img src={p.url} className="w-full h-full object-cover" alt="" />}
                   </div>
-                  <p className="text-xs font-bold text-gray-700 truncate">{p.file.name}</p>
+                  <p className="text-xs font-bold text-gray-700 truncate">{p.entry.file.name}</p>
                 </div>
-                <button type="button" onClick={() => removeNewFile(idx)} className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors shrink-0">
-                  <Trash2 className="w-4 h-4" />
-                </button>
+                <div className="flex items-center gap-1 shrink-0">
+                  <PrimaryStar isPrimary={isPrimary({ kind: 'upload', id: p.entry.id })} onClick={() => setPrimary({ kind: 'upload', id: p.entry.id })} />
+                  <button type="button" onClick={() => removeNewFile(p.entry.id)} className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors">
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
             ))}
           </div>

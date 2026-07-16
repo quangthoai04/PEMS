@@ -439,11 +439,11 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
             setRejectReason(`Đơn yêu cầu / thư mời đã bị hủy do đoàn khách hủy.${detail.cancelReason ? ` Lý do: ${detail.cancelReason}` : ''}`);
           } else if (detail.status === 'ACCEPTED' || detail.status === 'IN_PROGRESS' || detail.status === 'DONE') {
             setInvitationStatus('accepted');
-            setAcceptSignature({ name: detail.responderName || detail.senderName, time: detail.actionTime });
+            setAcceptSignature({ name: detail.assigneeName || detail.responderName || detail.senderName, time: detail.actionTime });
           } else if (detail.status === 'REJECTED' || detail.status === 'DECLINED') {
             setInvitationStatus('rejected');
             setRejectReason(detail.rejectReason || '');
-            setRejectSignature({ name: detail.responderName || detail.senderName, time: detail.actionTime });
+            setRejectSignature({ name: detail.assigneeName || detail.responderName || detail.senderName, time: detail.actionTime });
           } else if (detail.status === 'ASSIGNED' || detail.assigneeName) {
             setAssignedPerson(detail.assigneeName);
             setInvitationStatus('assigned');
@@ -475,15 +475,15 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
           } else if (detail.status === 'ASSIGNED') {
              setAssignedPerson(detail.assigneeName);
              setRequestStatus('assigned');
-             setRequestAcceptSignature({ name: detail.responderName || detail.assigneeName || detail.senderName, time: detail.actionTime });
+             setRequestAcceptSignature({ name: detail.assigneeName || detail.responderName || detail.senderName, time: detail.actionTime });
           } else if (detail.status === 'ACCEPTED' || detail.status === 'IN_PROGRESS' || detail.status === 'DONE') {
              setAssignedPerson(detail.assigneeName);
              setRequestStatus('accepted');
-             setRequestAcceptSignature({ name: detail.responderName || detail.assigneeName || detail.senderName, time: detail.actionTime });
+             setRequestAcceptSignature({ name: detail.assigneeName || detail.responderName || detail.senderName, time: detail.actionTime });
           } else if (detail.status === 'REJECTED' || detail.status === 'DECLINED') {
              setRequestStatus('rejected');
              setRequestRejectReason(detail.rejectReason || '');
-             setRequestRejectSignature({ name: detail.responderName || detail.senderName, time: detail.actionTime });
+             setRequestRejectSignature({ name: detail.assigneeName || detail.responderName || detail.senderName, time: detail.actionTime });
              setAssignedPerson(null);
           } else if (detail.status === 'REQUESTED') {
              setAssignedPerson(null);
@@ -495,7 +495,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
           } else if (detail.status === 'REJECTED') {
              setRequestStatus('rejected');
              setRequestRejectReason(detail.rejectReason || '');
-             setRequestRejectSignature({ name: detail.responderName || detail.senderName, time: detail.actionTime });
+             setRequestRejectSignature({ name: detail.assigneeName || detail.responderName || detail.senderName, time: detail.actionTime });
           } else {
              setAssignedPerson(null);
              setRequestStatus('pending');

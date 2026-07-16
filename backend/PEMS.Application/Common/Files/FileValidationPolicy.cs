@@ -67,6 +67,16 @@ public sealed class FileValidationPolicy : IFileValidationPolicy
             RequireImageMagicBytes = false,
         },
 
+        // Gallery AREA cover video (Area Showcase background). MP4 only, capped at 100 MB — a short,
+        // muted, looping clip (frontend also enforces ≤ 120s via metadata; no FFmpeg on the backend).
+        FilePurpose.GalleryAreaCoverVideo => new FileValidationRule
+        {
+            MaxSizeBytes = 100 * Mb,
+            AllowedMimeTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "video/mp4" },
+            AllowedExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".mp4" },
+            RequireImageMagicBytes = false,
+        },
+
         // Generated gallery TTS narration audio (EverAI → Google Drive). Not user-supplied, but the
         // same rule guards the download from EverAI before it is stored.
         FilePurpose.GalleryAudio => new FileValidationRule

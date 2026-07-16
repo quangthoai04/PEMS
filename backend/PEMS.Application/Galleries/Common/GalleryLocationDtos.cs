@@ -14,6 +14,8 @@ public sealed class GalleryLocationListItemDto
     public string AreaName { get; init; } = string.Empty;
     public ulong? AreaCoverFileId { get; init; }
     public string? AreaCoverUrl { get; init; }
+    /// <summary>IMAGE (legacy areas) or VIDEO (MP4 cover) — inferred from the cover file's purpose/mime.</summary>
+    public string AreaCoverMediaType { get; init; } = GalleryCoverMediaType.Image;
     public string LocationName { get; init; } = string.Empty;
     public ulong? LocationCoverFileId { get; init; }
     public string? LocationCoverUrl { get; init; }
@@ -39,6 +41,8 @@ public sealed class GalleryLocationDetailDto
     public string AreaName { get; init; } = string.Empty;
     public ulong? AreaCoverFileId { get; init; }
     public string? AreaCoverUrl { get; init; }
+    /// <summary>IMAGE (legacy areas) or VIDEO (MP4 cover) — inferred from the cover file's purpose/mime.</summary>
+    public string AreaCoverMediaType { get; init; } = GalleryCoverMediaType.Image;
     public string LocationName { get; init; } = string.Empty;
     public ulong? LocationCoverFileId { get; init; }
     public string? LocationCoverUrl { get; init; }

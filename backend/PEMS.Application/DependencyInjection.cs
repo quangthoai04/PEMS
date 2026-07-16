@@ -27,6 +27,10 @@ public static class DependencyInjection
         services.AddScoped<IFileObjectKeyBuilder, FileObjectKeyBuilder>();
         services.AddScoped<IFileUploadService, FileUploadService>();
 
+        // Gallery external (YouTube) media — metadata-only files rows, no Drive upload.
+        services.AddScoped<PEMS.Application.Galleries.Common.IGalleryExternalMediaService,
+            PEMS.Application.Galleries.Common.GalleryExternalMediaService>();
+
         // EverAI TTS narration for gallery items (hash + ensure/job service + in-process job queue).
         // The EverAI HTTP client + hosted worker are registered in Infrastructure.
         services.AddSingleton<PEMS.Application.Galleries.Tts.IGalleryTtsHashService,

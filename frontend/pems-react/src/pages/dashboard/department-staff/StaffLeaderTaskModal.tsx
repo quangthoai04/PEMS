@@ -463,7 +463,7 @@ export function StaffLeaderTaskModal({ item, onClose, onRefresh, changeNotifs = 
                 {/* Phản hồi thư mời */}
                 {!isRequest && ['ACCEPTED', 'DECLINED', 'REJECTED', 'DONE', 'IN_PROGRESS'].includes(effectiveStatus) && (
                   <div className="mt-3 pt-3 border-t border-slate-100 text-xs font-semibold text-slate-700">
-                    <span className="font-black text-[#004c91]">{detail?.responderName || 'Nhân sự phụ trách'}</span>
+                    <span className="font-black text-[#004c91]">{detail?.assigneeName || detail?.responderName || 'Nhân sự phụ trách'}</span>
                     {effectiveStatus === 'DECLINED' || effectiveStatus === 'REJECTED'
                       ? <> đã từ chối lúc <span className="font-black">{detail?.actionTime || 'chưa ghi nhận thời gian'}</span>{detail?.rejectReason ? <> với lý do: <span className="text-rose-600 font-black">{detail.rejectReason}</span></> : '.'}</>
                       : <> đã chấp nhận lúc <span className="font-black">{detail?.actionTime || 'chưa ghi nhận thời gian'}</span>.</>}
@@ -471,13 +471,26 @@ export function StaffLeaderTaskModal({ item, onClose, onRefresh, changeNotifs = 
                 )}
 
                 {/* Biên bản bàn giao & nghiệm thu — inline giống bên Dept Leader */}
-                {canShowHandover && handoverDto && (
-                  <TaskHandoverModal
-                    inline
-                    detailData={handoverDto}
-                    onSuccess={refreshDetail}
-                  />
-                )}
+                {canShowHandover && handoverDto && (() => {
+                  const userStr = localStorage.getItem("currentUser");
+                  const currentUser = userStr ? JSON.parse(userStr) : null;
+                  const isDeptLeader = currentUser?.role?.toUpperCase() === 'DEPARTMENT' && currentUser?.subRole?.toUpperCase() === 'LEADER';
+                  
+                  // Check if task is assigned to someone else (a staff)
+                  const assignedUserId = detail?.assigneeId || detail?.currentResponsibleId;
+                  const isAssignedToOther = assignedUserId && assignedUserId !== currentUser?.id;
+                  
+                  const readOnlyHandover = isDeptLeader && isAssignedToOther;
+
+                  return (
+                    <TaskHandoverModal
+                      inline
+                      detailData={handoverDto}
+                      onSuccess={refreshDetail}
+                      readOnly={readOnlyHandover}
+                    />
+                  );
+                })()}
               </>
             )}
           </div>

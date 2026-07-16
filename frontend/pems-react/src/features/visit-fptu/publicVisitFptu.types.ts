@@ -26,13 +26,18 @@ export interface PublicGalleryLocation {
   primaryMediaUrl?: string | null;
 }
 
+/** How an area cover is rendered on the public page: a legacy image or the new MP4 area-cover video. */
+export type PublicAreaCoverMediaType = 'IMAGE' | 'VIDEO';
+
 export interface PublicGalleryArea {
   areaId: number;
   areaName: string;
   displayOrder: number;
-  /** Area cover image (gallery_areas.cover_file_id) — the Area Showcase fullscreen background. */
+  /** Area cover file (gallery_areas.cover_file_id) — the Area Showcase fullscreen background. */
   areaCoverFileId?: number | null;
   areaCoverUrl?: string | null;
+  /** IMAGE (legacy areas) or VIDEO (MP4 cover) — drives <img> vs <video> in the Area Showcase. */
+  areaCoverMediaType?: PublicAreaCoverMediaType;
   locations: PublicGalleryLocation[];
 }
 
@@ -45,8 +50,14 @@ export interface PublicGalleryMedia {
   mediaId: number;
   fileId: number;
   mediaType: string; // IMAGE | VIDEO
-  url: string;
+  /** UPLOADED_FILE | YOUTUBE — render an iframe for YOUTUBE, else img/video. */
+  sourceType: 'UPLOADED_FILE' | 'YOUTUBE' | string;
+  /** Scoped proxy URL for an uploaded file; null for a YouTube reference. */
+  url?: string | null;
   thumbnailUrl?: string | null;
+  youtubeVideoId?: string | null;
+  embedUrl?: string | null;
+  webViewUrl?: string | null;
   caption?: string | null;
   altText?: string | null;
   isPrimary: boolean;

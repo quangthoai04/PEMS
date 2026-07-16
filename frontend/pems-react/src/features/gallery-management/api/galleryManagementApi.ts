@@ -26,14 +26,14 @@ function cleanParams(params: Record<string, unknown>): Record<string, unknown> {
   );
 }
 
-/** Builds the shared multipart body for create/update location (cover images are optional per mode). */
+/** Builds the shared multipart body for create/update location (area cover VIDEO + location cover image). */
 function buildLocationForm(input: CreateGalleryLocationInput): FormData {
   const form = new FormData();
   form.append('mode', input.mode);
   if (input.areaId != null) form.append('areaId', String(input.areaId));
   if (input.newAreaName) form.append('newAreaName', input.newAreaName);
   form.append('locationName', input.locationName);
-  if (input.areaCoverImage) form.append('areaCoverImage', input.areaCoverImage);
+  if (input.areaCoverVideo) form.append('areaCoverVideo', input.areaCoverVideo);
   if (input.locationCoverImage) form.append('locationCoverImage', input.locationCoverImage);
   return form;
 }
@@ -71,6 +71,8 @@ export const galleryManagementApi = {
     form.append('itemType', input.itemType);
     form.append('status', input.status);
     input.files.forEach((file) => form.append('files', file));
+    (input.youtubeUrls ?? []).forEach((url) => form.append('youtubeUrls', url));
+    if (input.primaryMediaKey) form.append('primaryMediaKey', input.primaryMediaKey);
 
     const { data } = await httpClient.post<GalleryItemDetail>(API_ENDPOINTS.gallery.create, form, {
       headers: { 'Content-Type': 'multipart/form-data' },
@@ -89,6 +91,8 @@ export const galleryManagementApi = {
     input.keepMediaIds.forEach((id) => form.append('keepMediaIds', String(id)));
     if (input.primaryMediaId != null) form.append('primaryMediaId', String(input.primaryMediaId));
     input.newFiles.forEach((file) => form.append('newFiles', file));
+    (input.youtubeUrls ?? []).forEach((url) => form.append('youtubeUrls', url));
+    if (input.primaryMediaKey) form.append('primaryMediaKey', input.primaryMediaKey);
 
     const { data } = await httpClient.post<GalleryItemDetail>(API_ENDPOINTS.gallery.update, form, {
       headers: { 'Content-Type': 'multipart/form-data' },

@@ -19,10 +19,11 @@ internal static class GalleryMediaClassifier
     private static readonly string[] VideoExtensions = { ".mp4", ".webm" };
 
     /// <summary>
-    /// Returns the media type ("IMAGE"/"VIDEO") and Drive upload purpose for a file, or throws
-    /// <see cref="Common.Exceptions.BusinessRuleException"/> (422) if the extension/MIME is unsupported.
-    /// <paramref name="itemType"/> (normalized MEDIA / VISIT_DELEGATION) picks the purpose so the file
-    /// lands in the matching Google Drive folder (GalleryItemFolderId vs GalleryDelegationFolderId).
+    /// Classifies an uploaded (machine) file. Only images are accepted from the machine — a supported
+    /// image returns ("IMAGE", GalleryItemImage/GalleryDelegationImage per <paramref name="itemType"/>).
+    /// A video file throws (422, <see cref="GalleryErrorCodes.VideoUploadNotAllowed"/>) — videos must be
+    /// added via a YouTube link — and anything else throws
+    /// <see cref="GalleryErrorCodes.InvalidMediaFile"/> (422).
     /// </summary>
     public static (string MediaType, FilePurpose Purpose) Classify(
         string fileName, string? contentType, string itemType)
@@ -35,11 +36,16 @@ internal static class GalleryMediaClassifier
         if (Array.IndexOf(ImageExtensions, ext) >= 0 || mime.StartsWith("image/"))
             return (Image, isDelegation ? FilePurpose.GalleryDelegationImage : FilePurpose.GalleryItemImage);
 
+        // Uploading a video file from the machine is no longer allowed — videos are added via a YouTube
+        // link instead. Detected here (before any Drive upload) so the user gets a clear, specific message
+        // pointing them to the YouTube field rather than the generic "unsupported file" error.
         if (Array.IndexOf(VideoExtensions, ext) >= 0 || mime.StartsWith("video/"))
-            return (Video, isDelegation ? FilePurpose.GalleryDelegationVideo : FilePurpose.GalleryItemVideo);
+            throw new BusinessRuleException(
+                $"Tệp \"{fileName}\" là video. Khi tải từ máy chỉ chấp nhận ảnh — vui lòng thêm video qua liên kết YouTube.",
+                GalleryErrorCodes.VideoUploadNotAllowed);
 
         throw new BusinessRuleException(
-            $"Tệp \"{fileName}\" không phải ảnh hoặc video được hỗ trợ.",
+            $"Tệp \"{fileName}\" không phải ảnh được hỗ trợ.",
             GalleryErrorCodes.InvalidMediaFile);
     }
 

@@ -1,12 +1,14 @@
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using PEMS.Application.Galleries.Public.Queries.GetPublicCampuses;
 using PEMS.Application.Galleries.Public.Queries.GetPublicCampusNavigation;
 using PEMS.Application.Galleries.Public.Queries.GetPublicGalleryItemDetail;
-using PEMS.Application.Galleries.Public.Queries.GetPublicGalleryMedia;
+using PEMS.Application.Galleries.Public.Queries.GetPublicGalleryMediaStream;
 using PEMS.Application.Galleries.Public.Queries.GetPublicLocationGalleryItem;
 using PEMS.Application.Galleries.Public.Queries.GetPublicLocationShowcase;
 
@@ -59,13 +61,46 @@ namespace PEMS.Api.Controllers
         public async Task<IActionResult> GetGalleryItemDetail(long galleryItemId, CancellationToken cancellationToken)
             => Ok(await _mediator.Send(new GetPublicGalleryItemDetailQuery(galleryItemId), cancellationToken));
 
-        // Gallery-scoped public file proxy (images/videos) — inline, short private cache.
+        // Gallery-scoped public file proxy (images / audio / area cover video). Streams the bytes and
+        // honours an HTTP Range request (206 Partial Content) so an area cover MP4 can seek without the
+        // server buffering the whole file (UC §13). Authorization is enforced in the handler.
         [HttpGet("media/{fileId:long}/content")]
         public async Task<IActionResult> GetMediaContent(long fileId, CancellationToken cancellationToken)
         {
-            var result = await _mediator.Send(new GetPublicGalleryMediaQuery((ulong)fileId), cancellationToken);
-            Response.Headers.CacheControl = "public, max-age=3600";
-            return File(result.Content, result.ContentType);
+            // Parse a single byte range from the request, if any (multi-range is not supported → treated as full).
+            long? rangeFrom = null, rangeTo = null;
+            var typedRange = Request.GetTypedHeaders().Range;
+            if (typedRange is { Ranges.Count: 1 })
+            {
+                var r = typedRange.Ranges.First();
+                rangeFrom = r.From;
+                rangeTo = r.To;
+            }
+
+            var result = await _mediator.Send(
+                new GetPublicGalleryMediaStreamQuery((ulong)fileId, rangeFrom, rangeTo), cancellationToken);
+
+            await using (result)
+            {
+                Response.Headers.CacheControl = "public, max-age=3600";
+                if (result.SupportsRange)
+                    Response.Headers.AcceptRanges = "bytes";
+                Response.ContentType = result.ContentType;
+
+                if (result.IsPartial)
+                {
+                    Response.StatusCode = StatusCodes.Status206PartialContent;
+                    if (result.TotalLength is { } total)
+                        Response.Headers.ContentRange = $"bytes {result.RangeStart}-{result.RangeEnd}/{total}";
+                }
+
+                if (result.ContentLength is { } len)
+                    Response.ContentLength = len;
+
+                await result.Stream.CopyToAsync(Response.Body, cancellationToken);
+            }
+
+            return new EmptyResult();
         }
     }
 }

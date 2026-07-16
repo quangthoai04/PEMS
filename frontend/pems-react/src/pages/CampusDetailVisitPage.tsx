@@ -39,6 +39,7 @@ import bgCT from "../assets/FPTbanner_visit/CanTho.png";
 import bgDN from "../assets/FPTbanner_visit/DaNang.png";
 import bgQN from "../assets/FPTbanner_visit/QuyNhon.png";
 
+import { youtubeEmbedUrl } from "../shared/utils/youtube";
 import { publicVisitFptuApi } from "../features/visit-fptu/publicVisitFptuApi";
 import type {
   PublicGalleryArea,
@@ -163,16 +164,100 @@ function GridCard({ item, onOpen }: { item: PublicGalleryGridItem; onOpen: () =>
 }
 
 /**
- * Area/Location Showcase fullscreen background — the cover image, falling back to the campus artwork
- * (AC-PGAL-AREA-12). Plain <img> with NO fade animation: switching areas/locations swaps the image the
- * moment the new one is ready (the old one stays until then, so there is no flash). The failed flag resets
- * on src change so a broken cover for one area doesn't force the fallback for the next.
+ * Area/Location Showcase fullscreen background. For an IMAGE cover: a plain <img>, falling back to the
+ * campus artwork (AC-PGAL-AREA-12). For a VIDEO cover (new area MP4): an autoplay/muted/loop/playsInline
+ * <video> that fades in only after `canplay`, over the campus artwork as a gradient/fallback — a broken
+ * or undecodable video never crashes the page (it just keeps the fallback). Only the selected area's
+ * video is mounted; switching areas remounts it (`key={src}`), so the old clip is torn down and stopped,
+ * and the video is paused when the tab is hidden. The failed flag resets on src change.
  */
-function ShowcaseBackground({ src, fallbackSrc, alt }: { src?: string | null; fallbackSrc: string; alt: string }) {
+function ShowcaseBackground({
+  src,
+  fallbackSrc,
+  alt,
+  mediaType,
+}: {
+  src?: string | null;
+  fallbackSrc: string;
+  alt: string;
+  mediaType?: 'IMAGE' | 'VIDEO';
+}) {
   const [failed, setFailed] = useState(false);
+  const [videoReady, setVideoReady] = useState(false);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+
   useEffect(() => {
     setFailed(false);
+    setVideoReady(false);
   }, [src]);
+
+  // Pause THIS clip when its source changes or the showcase unmounts (§15.4). The element is captured at
+  // effect setup — NOT read from the ref at teardown — because `<video key={src}>` remounts on an area
+  // switch, so by cleanup time the ref already points at the NEXT area's video; touching that one would
+  // blank the new video (both old and new would go dark). We only pause (reversible, StrictMode-safe);
+  // the key-based remount is what releases the old clip's buffer when its element unmounts.
+  useEffect(() => {
+    const video = videoRef.current;
+    return () => {
+      video?.pause();
+    };
+  }, [src]);
+
+  const isVideo = mediaType === 'VIDEO' && !!src && !failed;
+
+  // Pause when the tab is hidden; resume when it becomes visible again (§15.5). Video only.
+  useEffect(() => {
+    if (!isVideo) return;
+    const onVis = () => {
+      const video = videoRef.current;
+      if (!video) return;
+      if (document.hidden) video.pause();
+      else video.play().catch(() => { /* autoplay may be blocked; ignore */ });
+    };
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+  }, [isVideo, src]);
+
+  if (isVideo) {
+    return (
+      <>
+        {/* Gradient / fallback artwork shown until the video is ready (and if it ever fails). */}
+        <img
+          src={fallbackSrc}
+          alt={alt}
+          className="absolute inset-0 w-full h-full object-cover object-center z-0"
+        />
+        <video
+          key={src ?? undefined}
+          ref={videoRef}
+          src={src ?? undefined}
+          autoPlay
+          muted
+          loop
+          playsInline
+          preload="auto"
+          onCanPlay={async () => {
+            const video = videoRef.current;
+            if (!video) return;
+            try {
+              await video.play();
+              setVideoReady(true);
+            } catch {
+              setVideoReady(false);
+            }
+          }}
+          onError={() => {
+            setFailed(true);
+            setVideoReady(false);
+          }}
+          className={`absolute inset-0 w-full h-full object-cover object-center z-0 transition-opacity duration-500 ${
+            videoReady ? 'opacity-100' : 'opacity-0'
+          }`}
+        />
+      </>
+    );
+  }
+
   const finalSrc = !src || failed ? fallbackSrc : src;
   return (
     <img
@@ -793,7 +878,15 @@ function GalleryItemDetailModal({
                     transition={{ duration: 0.35, ease: "easeInOut" }}
                     className="absolute inset-0 w-full h-full"
                   >
-                    {isVideo(cur.mediaType) ? (
+                    {cur.sourceType === "YOUTUBE" ? (
+                      <iframe
+                        src={cur.embedUrl || youtubeEmbedUrl(cur.youtubeVideoId || "")}
+                        title={cur.altText || detail?.galleryItem.title || "YouTube video"}
+                        className="w-full h-full"
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                        allowFullScreen
+                      />
+                    ) : isVideo(cur.mediaType) ? (
                       <video
                         src={mediaSrc(cur.url)}
                         poster={mediaSrc(cur.thumbnailUrl)}
@@ -911,7 +1004,17 @@ function GalleryItemDetailModal({
               </>
             )}
             <div className="relative flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
-              {isVideo(cur.mediaType) ? (
+              {cur.sourceType === "YOUTUBE" ? (
+                <div className="w-[92vw] max-w-[1280px] aspect-video bg-black">
+                  <iframe
+                    src={cur.embedUrl || youtubeEmbedUrl(cur.youtubeVideoId || "")}
+                    title={cur.altText || detail?.galleryItem.title || "YouTube video"}
+                    className="w-full h-full"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowFullScreen
+                  />
+                </div>
+              ) : isVideo(cur.mediaType) ? (
                 <video
                   src={mediaSrc(cur.url)}
                   poster={mediaSrc(cur.thumbnailUrl)}
@@ -969,6 +1072,11 @@ export function CampusDetailVisitPage() {
   // ── UI state ─────────────────────────────────────────────────────────────
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [hoveredAreaId, setHoveredAreaId] = useState<number | null>(null);
+  // Hover flyout for the sidebar area list. It is rendered on a fixed layer OUTSIDE the (transformed)
+  // sidebar container so the area list can scroll independently without clipping the flyout.
+  const [areaFlyout, setAreaFlyout] = useState<{ areaId: number; top: number; left: number; maxHeight: number } | null>(null);
+  const activeAreaButtonRef = useRef<HTMLButtonElement | null>(null);
+  const flyoutCloseTimer = useRef<number | null>(null);
   const [activeLocationId, setActiveLocationId] = useState<number | null>(null);
   const [selectedAreaId, setSelectedAreaId] = useState<number | null>(null);
   // Area Showcase (BR-PGAL-AREA-01..12): fullscreen area cover + vertical location-cover thumbnail rail.
@@ -1201,6 +1309,43 @@ export function CampusDetailVisitPage() {
     setSelectedAreaId(null);
     setActiveLocationThumbnailIndex(0);
   }, []);
+
+  // ── Sidebar hover flyout (rendered on a fixed layer so the area list can scroll independently) ──
+  // The flyout opens BESIDE the hovered row: its top is aligned with the row's top so the Location list sits
+  // right next to that area. It simply fills downward to the viewport bottom and scrolls internally, so even
+  // the last area (20 Locations) is fully reachable and nothing is cut. A small floor keeps the bottom-most
+  // rows from collapsing to a sliver, without lifting the flyout away from its area.
+  const openAreaFlyout = useCallback((areaId: number, rect: DOMRect) => {
+    if (flyoutCloseTimer.current != null) {
+      window.clearTimeout(flyoutCloseTimer.current);
+      flyoutCloseTimer.current = null;
+    }
+    setHoveredAreaId(areaId);
+    const topMargin = 88; // stay clear of the public header
+    const bottomMargin = 16;
+    const maxBottom = window.innerHeight - bottomMargin;
+    const top = Math.min(Math.max(topMargin, rect.top), maxBottom - 140); // keep ≥140px visible on last rows
+    const maxHeight = maxBottom - top;
+    setAreaFlyout({ areaId, top, left: rect.right + 8, maxHeight });
+  }, []);
+
+  // Small close delay so moving the pointer from an area button into its flyout doesn't dismiss it.
+  const closeAreaFlyoutSoon = useCallback(() => {
+    if (flyoutCloseTimer.current != null) window.clearTimeout(flyoutCloseTimer.current);
+    flyoutCloseTimer.current = window.setTimeout(() => setHoveredAreaId(null), 160);
+  }, []);
+
+  const keepAreaFlyoutOpen = useCallback(() => {
+    if (flyoutCloseTimer.current != null) {
+      window.clearTimeout(flyoutCloseTimer.current);
+      flyoutCloseTimer.current = null;
+    }
+  }, []);
+
+  // Keep the selected area visible in the (now scrollable) sidebar list when it changes (AC-SCROLL-04).
+  useEffect(() => {
+    activeAreaButtonRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [selectedAreaId]);
 
   // ── Navigation helpers ───────────────────────────────────────────────────
   const startTour = useCallback(() => {
@@ -1608,26 +1753,29 @@ export function CampusDetailVisitPage() {
       {/* ── Floating sidebar: areas + hover flyout of locations ── */}
       {hasContent && (
         <div
-          className={`fixed top-1/2 left-0 z-50 flex transition-transform duration-500 ease-in-out ${
-            isSidebarOpen ? "translate-x-4 md:translate-x-6 -translate-y-1/2" : "-translate-x-full -translate-y-1/2"
+          style={{ top: 176 }}
+          className={`fixed left-0 z-50 flex transition-transform duration-500 ease-in-out ${
+            isSidebarOpen ? "translate-x-4 md:translate-x-6" : "-translate-x-full"
           }`}
         >
-          <div className="w-56 h-auto max-h-[calc(100vh-140px)] bg-black/30 backdrop-blur-xl flex flex-col overflow-visible rounded-2xl shadow-[0_8px_32px_rgba(0,0,0,0.4)] border border-white/20">
-            <nav className="flex-1 flex flex-col relative">
-              <div className="absolute -inset-0.5 bg-gradient-to-b from-fpt-orange/20 to-transparent opacity-50 rounded-2xl pointer-events-none"></div>
-              {areas.map((area, index) => {
-                const mediaKinds = new Set(area.locations.map((l) => l.mediaKind?.toUpperCase()));
-                const showVideoIcon = mediaKinds.has("VIDEO") && mediaKinds.size === 1;
-                return (
-                  <div
-                    key={area.areaId}
-                    className="relative"
-                    onMouseEnter={() => setHoveredAreaId(area.areaId)}
-                    onMouseLeave={() => setHoveredAreaId(null)}
-                  >
+          {/* Height-bounded to the viewport; the area list scrolls on its own so the last area is always
+              reachable/clickable even with many areas (AC-SCROLL-01). The hover flyout is rendered on a
+              separate fixed layer (below) so this vertical scroller never clips it. */}
+          <div className="w-56 h-auto max-h-[calc(100dvh-200px)] min-h-0 bg-black/30 backdrop-blur-xl flex flex-col overflow-hidden rounded-2xl shadow-[0_8px_32px_rgba(0,0,0,0.4)] border border-white/20">
+            <nav className="flex-1 min-h-0 flex flex-col relative">
+              <div className="absolute -inset-0.5 bg-gradient-to-b from-fpt-orange/20 to-transparent opacity-50 rounded-2xl pointer-events-none z-0"></div>
+              <div className="relative z-10 flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain [scrollbar-width:thin] [scrollbar-color:rgba(255,255,255,0.45)_rgba(255,255,255,0.08)] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:bg-white/40 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-track]:bg-white/5">
+                {areas.map((area, index) => {
+                  const mediaKinds = new Set(area.locations.map((l) => l.mediaKind?.toUpperCase()));
+                  const showVideoIcon = mediaKinds.has("VIDEO") && mediaKinds.size === 1;
+                  return (
                     <button
+                      key={area.areaId}
+                      ref={selectedAreaId === area.areaId ? activeAreaButtonRef : undefined}
                       onClick={() => openAreaShowcase(area.areaId)}
-                      className={`w-full flex items-center justify-between px-4 py-3 border-b border-white/10 transition-all duration-300 text-left group relative z-10 ${
+                      onMouseEnter={(e) => openAreaFlyout(area.areaId, e.currentTarget.getBoundingClientRect())}
+                      onMouseLeave={closeAreaFlyoutSoon}
+                      className={`w-full flex items-center justify-between px-4 py-3 border-b border-white/10 transition-all duration-300 text-left group ${
                         selectedAreaId === area.areaId
                           ? "bg-[#F37021] text-white shadow-[0_0_20px_rgba(243,112,33,0.5)]"
                           : hoveredAreaId === area.areaId
@@ -1644,51 +1792,16 @@ export function CampusDetailVisitPage() {
                         {showVideoIcon ? <VideoIcon className="w-5 h-5" /> : <ImageIcon className="w-5 h-5" />}
                       </span>
                     </button>
-
-                    {/* Hover flyout: location list (hover does not open anything; click does) */}
-                    <AnimatePresence>
-                      {hoveredAreaId === area.areaId && area.locations.length > 0 && (
-                        <motion.div
-                          initial={{ opacity: 0, x: -10, scale: 0.95 }}
-                          animate={{ opacity: 1, x: 0, scale: 1 }}
-                          exit={{ opacity: 0, x: -10, scale: 0.95 }}
-                          transition={{ duration: 0.2, ease: "easeOut" }}
-                          className="absolute top-0 left-full ml-2 w-72 max-h-[60vh] overflow-y-auto backdrop-blur-2xl rounded-2xl shadow-[0_10px_40px_rgba(0,0,0,0.5)] z-50 border border-white/20 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
-                          style={{ background: "linear-gradient(135deg, rgba(235,116,45,0.85) 0%, rgba(200,80,30,0.95) 100%)" }}
-                        >
-                          <div className="flex flex-col py-3">
-                            {area.locations.map((loc) => (
-                              <button
-                                key={loc.locationId}
-                                onClick={() => openLocationShowcase(loc.locationId)}
-                                className={`w-full text-left px-5 py-3 text-sm transition-all flex justify-between items-center group/sub ${
-                                  activeLocationId === loc.locationId
-                                    ? "bg-white/25 text-white"
-                                    : "text-white hover:bg-white/20"
-                                }`}
-                              >
-                                <span className="font-medium tracking-wide drop-shadow-sm group-hover/sub:translate-x-1 transition-transform">
-                                  {loc.locationName}
-                                </span>
-                                <span className="flex items-center shrink-0">
-                                  <MapPin className="w-4 h-4 opacity-70 group-hover/sub:opacity-100 group-hover/sub:scale-110 transition-all" />
-                                </span>
-                              </button>
-                            ))}
-                          </div>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </nav>
           </div>
 
           {/* Sidebar toggle */}
           <button
             onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-            className="absolute top-6 -right-8 w-8 h-12 bg-black/40 backdrop-blur-xl border border-white/20 border-l-0 rounded-r-xl flex items-center justify-center text-white hover:bg-fpt-orange hover:border-fpt-orange hover:shadow-[0_0_20px_rgba(243,112,33,0.5)] transition-all cursor-pointer shadow-xl group"
+            className="absolute top-1/2 -translate-y-1/2 -right-8 w-8 h-14 bg-black/40 backdrop-blur-xl border border-white/20 border-l-0 rounded-r-xl flex items-center justify-center text-white hover:bg-fpt-orange hover:border-fpt-orange hover:shadow-[0_0_20px_rgba(243,112,33,0.5)] transition-all cursor-pointer shadow-xl group"
           >
             {isSidebarOpen ? (
               <ChevronLeft className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
@@ -1698,6 +1811,49 @@ export function CampusDetailVisitPage() {
           </button>
         </div>
       )}
+
+      {/* Sidebar hover flyout (fixed layer — never clipped by the scrollable area list) */}
+      <AnimatePresence>
+        {hasContent && areaFlyout && hoveredAreaId === areaFlyout.areaId && (() => {
+          const area = areas.find((a) => a.areaId === areaFlyout.areaId);
+          if (!area || area.locations.length === 0) return null;
+          return (
+            <motion.div
+              key={area.areaId}
+              initial={{ opacity: 0, x: -10, scale: 0.95 }}
+              animate={{ opacity: 1, x: 0, scale: 1 }}
+              exit={{ opacity: 0, x: -10, scale: 0.95 }}
+              transition={{ duration: 0.2, ease: "easeOut" }}
+              onMouseEnter={keepAreaFlyoutOpen}
+              onMouseLeave={closeAreaFlyoutSoon}
+              style={{ position: "fixed", top: areaFlyout.top, left: areaFlyout.left, maxHeight: areaFlyout.maxHeight }}
+              className="w-72 overflow-y-auto rounded-2xl shadow-[0_10px_40px_rgba(0,0,0,0.5)] z-[60] overscroll-contain [scrollbar-width:thin] [scrollbar-color:rgba(255,255,255,0.45)_rgba(255,255,255,0.08)] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:bg-white/40 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-track]:bg-white/5"
+            >
+              <div
+                className="flex flex-col py-3"
+                style={{ background: "linear-gradient(135deg, rgba(235,116,45,0.85) 0%, rgba(200,80,30,0.95) 100%)" }}
+              >
+                {area.locations.map((loc) => (
+                  <button
+                    key={loc.locationId}
+                    onClick={() => { setHoveredAreaId(null); openLocationShowcase(loc.locationId); }}
+                    className={`w-full text-left px-5 py-3 text-sm transition-all flex justify-between items-center group/sub ${
+                      activeLocationId === loc.locationId ? "bg-white/25 text-white" : "text-white hover:bg-white/20"
+                    }`}
+                  >
+                    <span className="font-medium tracking-wide drop-shadow-sm group-hover/sub:translate-x-1 transition-transform">
+                      {loc.locationName}
+                    </span>
+                    <span className="flex items-center shrink-0">
+                      <MapPin className="w-4 h-4 opacity-70 group-hover/sub:opacity-100 group-hover/sub:scale-110 transition-all" />
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </motion.div>
+          );
+        })()}
+      </AnimatePresence>
 
       {/* Back button */}
       <motion.button
@@ -1826,8 +1982,13 @@ export function CampusDetailVisitPage() {
             transition={{ duration: 0 }}
             className="fixed top-[64px] inset-x-0 bottom-0 z-30 overflow-hidden"
           >
-            {/* Background: area cover, fullscreen, cover-fit (BR-PGAL-AREA-02/03) */}
-            <ShowcaseBackground src={showcaseArea.areaCoverUrl} fallbackSrc={fallback.bg} alt={showcaseArea.areaName} />
+            {/* Background: area cover (image or MP4 video), fullscreen, cover-fit (BR-PGAL-AREA-02/03) */}
+            <ShowcaseBackground
+              src={showcaseArea.areaCoverUrl}
+              fallbackSrc={fallback.bg}
+              alt={showcaseArea.areaName}
+              mediaType={showcaseArea.areaCoverMediaType}
+            />
 
             {/* Dark overlay for legibility / cinematic feel (BR-PGAL-AREA-04) */}
             <div

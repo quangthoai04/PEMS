@@ -9,7 +9,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Plus, Edit, Search, X, ChevronRight, ChevronLeft, ChevronDown, ChevronUp, ArrowLeft,
-  Loader2, AlertCircle, CheckCircle2, MapPin, Upload, ImageOff,
+  Loader2, AlertCircle, CheckCircle2, MapPin, Upload, ImageOff, Film, Trash2,
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuthenticatedMedia } from '../../../shared/hooks/useAuthenticatedImage';
@@ -343,7 +343,7 @@ export function LocationManagementStaffLeader() {
           <LocationUpsertModal
             mode={modal.mode}
             target={modal.target}
-            activeAreas={activeAreas.map((a) => ({ areaId: a.areaId, areaName: a.areaName, coverUrl: a.coverUrl }))}
+            activeAreas={activeAreas.map((a) => ({ areaId: a.areaId, areaName: a.areaName, coverUrl: a.coverUrl, coverMediaType: a.coverMediaType }))}
             areasLoading={optionsLoading}
             onClose={() => setModal(null)}
             onSaved={onSaved}
@@ -374,6 +374,141 @@ interface AreaOption {
   areaId: number;
   areaName: string;
   coverUrl?: string | null;
+  coverMediaType?: 'IMAGE' | 'VIDEO';
+}
+
+// ── Area cover VIDEO rules (mirrors the backend FileValidationPolicy; duration is frontend-only) ──
+const MAX_AREA_VIDEO_BYTES = 100 * 1024 * 1024;
+const MAX_AREA_VIDEO_DURATION_SECONDS = 120;
+
+/** Reads a video file's duration (seconds) via an off-DOM <video>. Rejects on a broken/undecodable file. */
+function readVideoDuration(file: File): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const video = document.createElement('video');
+    const url = URL.createObjectURL(file);
+    video.preload = 'metadata';
+
+    const cleanup = () => {
+      video.removeAttribute('src');
+      video.load();
+      URL.revokeObjectURL(url);
+    };
+
+    video.onloadedmetadata = () => {
+      const duration = video.duration;
+      cleanup();
+      if (!Number.isFinite(duration) || duration <= 0) {
+        reject(new Error('File video không hợp lệ hoặc đã bị hỏng.'));
+        return;
+      }
+      resolve(duration);
+    };
+    video.onerror = () => {
+      cleanup();
+      reject(new Error('File video không hợp lệ hoặc đã bị hỏng.'));
+    };
+    video.src = url;
+  });
+}
+
+/** Validates one MP4 area cover video (≤100MB, ≤120s). Returns a VN error message, or null when valid. */
+async function validateAreaVideo(file: File): Promise<string | null> {
+  const name = file.name.toLowerCase();
+  if (file.size <= 0) return 'File video không hợp lệ hoặc đã bị hỏng.';
+  const mime = (file.type || '').toLowerCase();
+  if (!name.endsWith('.mp4') || (mime && mime !== 'video/mp4'))
+    return 'Video đại diện khu vực chỉ hỗ trợ định dạng MP4.';
+  if (file.size > MAX_AREA_VIDEO_BYTES) return 'Video đại diện khu vực không được vượt quá 100 MB.';
+  let duration: number;
+  try {
+    duration = await readVideoDuration(file);
+  } catch {
+    return 'File video không hợp lệ hoặc đã bị hỏng.';
+  }
+  if (duration > MAX_AREA_VIDEO_DURATION_SECONDS + 0.5)
+    return 'Video đại diện khu vực không được dài quá 120 giây (2 phút).';
+  return null;
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  if (bytes >= 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${bytes} B`;
+}
+
+/**
+ * Area cover VIDEO picker (MP4). Shows an inline muted/looping preview of the picked clip, or the
+ * existing cover (video or legacy image) when editing. The object URL is revoked on change/unmount.
+ */
+function CoverVideoField({
+  label,
+  required,
+  file,
+  onPick,
+  existingUrl,
+  existingMediaType,
+  hint,
+}: {
+  label: string;
+  required?: boolean;
+  file: File | null;
+  onPick: (f: File | null) => void;
+  existingUrl?: string | null;
+  existingMediaType?: 'IMAGE' | 'VIDEO';
+  hint?: string;
+}) {
+  const preview = useMemo(() => (file ? URL.createObjectURL(file) : null), [file]);
+  useEffect(() => () => { if (preview) URL.revokeObjectURL(preview); }, [preview]);
+  // Only fetch the stored cover when no new file has been picked.
+  const existing = useAuthenticatedMedia(!file && existingUrl ? existingUrl : null);
+
+  return (
+    <div className="space-y-1.5">
+      <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">
+        {label} {required && <span className="text-red-500">*</span>}
+      </label>
+      <div className="flex items-start gap-3">
+        <div className="w-28 h-20 rounded-xl overflow-hidden bg-slate-900 border border-slate-200 flex items-center justify-center shrink-0">
+          {preview ? (
+            <video src={preview} autoPlay muted loop playsInline className="w-full h-full object-cover" />
+          ) : existing.url ? (
+            existingMediaType === 'IMAGE' ? (
+              <img src={existing.url} className="w-full h-full object-cover" alt="" />
+            ) : (
+              <video src={existing.url} autoPlay muted loop playsInline className="w-full h-full object-cover" />
+            )
+          ) : (
+            <Film className="w-5 h-5 text-slate-400" />
+          )}
+        </div>
+        <div className="flex-1 space-y-1.5">
+          <label className="cursor-pointer border-2 border-dashed border-[#004c91]/30 rounded-xl px-4 py-3 flex items-center gap-2 text-sm font-bold text-[#004c91] hover:bg-blue-50/50 transition-colors">
+            <Upload className="w-4 h-4" />
+            {file ? 'Đổi video' : 'Chọn 1 video MP4'}
+            <input
+              type="file"
+              accept="video/mp4"
+              className="hidden"
+              onChange={(e) => { onPick(e.target.files?.[0] ?? null); e.target.value = ''; }}
+            />
+          </label>
+          {file && (
+            <div className="flex items-center justify-between gap-2 text-[11px] text-slate-500">
+              <span className="truncate" title={file.name}>{file.name} · {formatBytes(file.size)}</span>
+              <button
+                type="button"
+                onClick={() => onPick(null)}
+                className="inline-flex items-center gap-1 text-red-500 hover:text-red-600 font-semibold shrink-0"
+              >
+                <Trash2 className="w-3.5 h-3.5" /> Xóa
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+      <p className="text-[11px] text-slate-400">{hint ?? 'Chỉ chấp nhận MP4, tối đa 100 MB và tối đa 120 giây (2 phút). Khuyến nghị video ngang, H.264, Full HD hoặc thấp hơn.'}</p>
+    </div>
+  );
 }
 
 /** Single mandatory cover-image picker: preview of the picked file, or the existing (authenticated) cover. */
@@ -476,9 +611,9 @@ function LocationUpsertModal({
       onError('Vui lòng nhập tên khu vực/tòa mới.');
       return;
     }
-    // A new area always needs its own cover image (BR-AREA-COVER-01 / BR-LOCATION-COVER-05).
+    // A new area always needs its own MP4 cover VIDEO.
     if (areaMode === 'NEW_AREA' && !areaCover) {
-      onError('Vui lòng upload ảnh đại diện khu vực.');
+      onError('Vui lòng chọn một video đại diện cho khu vực.');
       return;
     }
     // Location cover: mandatory on create, optional on edit (kept when omitted).
@@ -486,13 +621,16 @@ function LocationUpsertModal({
       onError('Vui lòng upload ảnh đại diện vị trí.');
       return;
     }
-    // Client-side image sanity check (backend re-validates).
-    for (const [f, msg] of [
-      [areaCover, 'Ảnh đại diện khu vực không đúng định dạng.'],
-      [locationCover, 'Ảnh đại diện vị trí không đúng định dạng.'],
-    ] as [File | null, string][]) {
-      if (f && !validateFile(f, 'GALLERY_IMAGE').ok) {
-        onError(msg);
+    // Client-side sanity check for the location cover IMAGE (backend re-validates).
+    if (locationCover && !validateFile(locationCover, 'GALLERY_IMAGE').ok) {
+      onError('Ảnh đại diện vị trí không đúng định dạng.');
+      return;
+    }
+    // Client-side area cover VIDEO check (mp4 / ≤100 MB / ≤120 s) — the backend re-validates format & size.
+    if (areaCover) {
+      const videoError = await validateAreaVideo(areaCover);
+      if (videoError) {
+        onError(videoError);
         return;
       }
     }
@@ -502,8 +640,8 @@ function LocationUpsertModal({
       areaId: areaMode === 'EXISTING_AREA' ? Number(areaId) : null,
       newAreaName: areaMode === 'NEW_AREA' ? newAreaName.trim() : null,
       locationName: trimmedLocation,
-      // NEW_AREA: required area cover. EXISTING_AREA + edit: optional replacement of that area's cover.
-      areaCoverImage: areaCover,
+      // NEW_AREA: required area cover video. EXISTING_AREA + edit: optional replacement of that area's cover.
+      areaCoverVideo: areaCover,
       locationCoverImage: locationCover,
     };
 
@@ -598,20 +736,21 @@ function LocationUpsertModal({
               )}
 
               {areaMode === 'NEW_AREA' ? (
-                <CoverImageField
-                  label="Ảnh đại diện khu vực"
+                <CoverVideoField
+                  label="Video đại diện khu vực"
                   required
                   file={areaCover}
                   onPick={setAreaCover}
-                  hint="Ảnh tổng quan tòa/khu — chỉ 1 ảnh (JPG/PNG/WEBP ≤5MB)."
+                  hint="Chỉ chấp nhận MP4, tối đa 100 MB và tối đa 120 giây (2 phút). Khuyến nghị video ngang, H.264, Full HD hoặc thấp hơn."
                 />
               ) : mode === 'edit' ? (
-                <CoverImageField
-                  label="Ảnh đại diện khu vực"
+                <CoverVideoField
+                  label="Video đại diện khu vực"
                   file={areaCover}
                   onPick={setAreaCover}
                   existingUrl={activeAreas.find((a) => a.areaId === areaId)?.coverUrl}
-                  hint="Để trống nếu muốn giữ ảnh khu vực hiện tại. Chỉ 1 ảnh (JPG/PNG/WEBP ≤5MB)."
+                  existingMediaType={activeAreas.find((a) => a.areaId === areaId)?.coverMediaType}
+                  hint="Để trống nếu muốn giữ video/ảnh khu vực hiện tại. Chỉ MP4, tối đa 100 MB và 120 giây (2 phút)."
                 />
               ) : null}
             </div>

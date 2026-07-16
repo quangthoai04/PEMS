@@ -27,6 +27,14 @@ import {
 } from '../../../../features/dashboard/api/staffCalendarApi';
 import { delegationsApi } from '../../../../features/delegations/api/delegationsApi';
 import { departmentReceptionTasksApi } from '../../../../features/department-reception-tasks/api/departmentReceptionTasksApi';
+import { notificationsApi } from '../../../../features/notifications/api/notificationsApi';
+import { useNotifications } from '../../../../features/notifications/context/NotificationsContext';
+import { getNotificationLink } from '../../../../features/notifications/components/NotificationBellButton';
+import { NotificationDetailModal } from '../../../../features/notifications/components/NotificationDetailModal';
+import type { NotificationItem } from '../../../../features/notifications/types/notification.types';
+import { matchCalendarChangeNotifs } from '../../../../features/notifications/utils/calendarChangeNotifs';
+import { useAuth } from '../../../../shared/hooks/useAuth';
+import { useNavigate } from 'react-router-dom';
 import { AssignHostModal } from '../../../../components/modals/AssignHostModal';
 import { StaffVisitDetailModal } from './StaffVisitDetailModal';
 import { formatVietnamTime, toVietnamCalendarDate } from '../../../../shared/utils/vietnamTime';
@@ -40,12 +48,13 @@ const MONTH_NAMES = [
   'Tháng 7', 'Tháng 8', 'Tháng 9', 'Tháng 10', 'Tháng 11', 'Tháng 12',
 ];
 
-/** Legend đúng nhóm nghiệp vụ yêu cầu đến thăm (không dùng "thư mời"/"đơn yêu cầu"). */
+/** Legend đúng nhóm nghiệp vụ yêu cầu đến thăm (không dùng "thư mời"/"đơn yêu cầu").
+ *  Đơn bị hủy hiển thị bằng gạch ngang chữ (không chú thích xám riêng);
+ *  "Lịch cá nhân" (tím) chỉ hiện ở "Lịch của tôi" — ở lịch văn phòng nó gộp màu xanh dương với MINE. */
 const LEGEND: { key: string; label: string; dot: string }[] = [
   { key: 'NEEDS_ACTION', label: 'Cần xử lý', dot: 'bg-amber-400' },
   { key: 'MINE', label: 'Tôi là người phụ trách', dot: 'bg-[#004c91]' },
   { key: 'PROCESSED', label: 'Đã xử lý', dot: 'bg-emerald-500' },
-  { key: 'CANCELLED_OR_EXPIRED', label: 'Bị hủy / Đã hết hạn', dot: 'bg-slate-300' },
   { key: 'PERSONAL', label: 'Lịch cá nhân', dot: 'bg-purple-400' },
 ];
 
@@ -84,6 +93,8 @@ export function StaffDashboardCalendar({ isStaffLeader }: { user?: any; isStaffL
 
   // ── Điều hướng lịch ── (chế độ hiển thị gồm cả Năm — không tách bộ lọc riêng)
   const [displayMode, setDisplayMode] = useState<DisplayMode>('Tháng');
+  // View Ngày có thể mở từ lưới Tháng hoặc Tuần — nút "Quay lại" trả về đúng nơi xuất phát.
+  const [dayViewReturnMode, setDayViewReturnMode] = useState<'Tháng' | 'Tuần'>('Tháng');
   const [anchorDate, setAnchorDate] = useState<Date>(new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate())));
   const [calendarType, setCalendarType] = useState<CalendarType>('office');
   const [showModeDropdown, setShowModeDropdown] = useState(false);
@@ -113,6 +124,41 @@ export function StaffDashboardCalendar({ isStaffLeader }: { user?: any; isStaffL
     open: boolean; date: string; title: string; description: string;
     startTime: string; endTime: string; submitting: boolean; error: string | null;
   }>({ open: false, date: todayStr, title: '', description: '', startTime: '09:00', endTime: '10:00', submitting: false, error: null });
+
+  // ── Thông báo chưa đọc gắn với đơn tham quan — chấm đỏ nháy + "Thay đổi mới" (giống Dept Leader) ──
+  const navigate = useNavigate();
+  const { user: authUser } = useAuth();
+  const { markAsRead: markNotificationRead } = useNotifications();
+  const [changeNotifs, setChangeNotifs] = useState<NotificationItem[]>([]);
+  const [changeNotifDetail, setChangeNotifDetail] = useState<NotificationItem | null>(null);
+
+  const fetchChangeNotifs = useCallback(async () => {
+    try {
+      const res = await notificationsApi.getNotifications({ page: 1, pageSize: 50, isRead: false });
+      setChangeNotifs(res?.items || []);
+    } catch (e) { console.error(e); }
+  }, []);
+
+  const getVisitChangeNotifs = useCallback((item: StaffCalendarItem): NotificationItem[] =>
+    matchCalendarChangeNotifs(changeNotifs, {
+      itemType: 'VISIT',
+      rawId: item.visitInstanceId,
+      visitRequestId: item.visitRequestId,
+      visitInstanceId: item.visitInstanceId,
+    }), [changeNotifs]);
+
+  /** Bấm 1 thay đổi trong modal: đánh dấu đã đọc rồi trỏ tới đúng chỗ như thông báo. */
+  const handleChangeNotifClick = async (n: NotificationItem) => {
+    try { await markNotificationRead(n.notificationId); } catch { /* ignore */ }
+    setChangeNotifs(prev => prev.filter(x => x.notificationId !== n.notificationId));
+    const link = getNotificationLink(n, authUser);
+    if (link) {
+      setDetailInstanceId(null);
+      navigate(link);
+    } else {
+      setChangeNotifDetail(n);
+    }
+  };
 
   // ── Khoảng ngày hiển thị (và fetch) theo chế độ xem ──
   const { gridStart, gridEnd, monthCells } = useMemo(() => {
@@ -164,7 +210,8 @@ export function StaffDashboardCalendar({ isStaffLeader }: { user?: any; isStaffL
 
   useEffect(() => {
     fetchCalendar();
-  }, [fetchCalendar]);
+    fetchChangeNotifs();
+  }, [fetchCalendar, fetchChangeNotifs]);
 
   // ── Gộp yêu cầu đến thăm + lịch cá nhân thành 1 danh sách pill hiển thị chung ──
   type CalendarPill =
@@ -221,8 +268,8 @@ export function StaffDashboardCalendar({ isStaffLeader }: { user?: any; isStaffL
   // ── Refresh sau action (không reload trang) ──
   const refreshAfterAction = useCallback(async () => {
     setDetailRefreshKey((k) => k + 1);
-    await fetchCalendar();
-  }, [fetchCalendar]);
+    await Promise.all([fetchCalendar(), fetchChangeNotifs()]);
+  }, [fetchCalendar, fetchChangeNotifs]);
 
   // ── Flow từ chối (Staff Leader) — reject theo campus instance (campus-independent approval) ──
   const submitReject = async () => {
@@ -302,45 +349,56 @@ export function StaffDashboardCalendar({ isStaffLeader }: { user?: any; isStaffL
   const EventPill = ({ pill, full = false }: { pill: CalendarPill; full?: boolean; key?: string | number }) => {
     if (pill.kind === 'personal') {
       const ev = pill.event;
+      // Lịch văn phòng: lịch cá nhân gộp chung màu xanh dương với "Tôi là người phụ trách";
+      // Lịch của tôi: giữ màu tím để phân biệt đơn phụ trách và lịch cá nhân.
+      const personalClass = calendarType === 'mine' ? PILL_CLASS.PERSONAL : PILL_CLASS.MINE;
       return (
         <button
           type="button"
+          onClick={(e) => e.stopPropagation()}
           title={`${ev.title} — Lịch cá nhân`}
-          className={`w-full text-left border rounded-lg transition-colors cursor-default ${PILL_CLASS.PERSONAL} ${full ? 'px-3 py-2' : 'px-1.5 py-0.5'}`}
+          className={`w-full text-left border rounded-lg transition-colors cursor-default ${personalClass} ${full ? 'px-3 py-2' : 'px-1.5 py-0.5'}`}
         >
           {full ? (
             <>
-              <p className="text-xs font-bold truncate">{ev.title}</p>
-              <p className="text-[11px] font-medium opacity-80 mt-0.5">
+              <p className="text-xs font-normal truncate">{ev.title}</p>
+              <p className="text-[11px] font-normal opacity-80 mt-0.5">
                 {fmtTime(ev.startAt)} – {fmtTime(ev.endAt)} · Lịch cá nhân
               </p>
             </>
           ) : (
-            <p className="text-[10px] font-bold truncate leading-4">{fmtTime(ev.startAt)} {ev.title}</p>
+            <p className="text-[10px] font-normal truncate leading-4">{fmtTime(ev.startAt)} {ev.title}</p>
           )}
         </button>
       );
     }
     const item = pill.item;
+    const hasChanges = getVisitChangeNotifs(item).length > 0;
     return (
       <button
         type="button"
-        onClick={() => setDetailInstanceId(item.visitInstanceId)}
-        title={`${item.title} — ${item.displayStatus}`}
-        className={`w-full text-left border rounded-lg transition-colors cursor-pointer ${PILL_CLASS[item.colorType] || PILL_CLASS.NEUTRAL} ${full ? 'px-3 py-2' : 'px-1.5 py-0.5'}`}
+        onClick={(e) => { e.stopPropagation(); setDetailInstanceId(item.visitInstanceId); }}
+        title={`${item.title} — ${item.displayStatus}${hasChanges ? ' — Có thay đổi mới' : ''}`}
+        className={`relative w-full text-left border rounded-lg transition-colors cursor-pointer ${hasChanges ? 'pr-5' : ''} ${PILL_CLASS[item.colorType] || PILL_CLASS.NEUTRAL} ${full ? 'px-3 py-2' : 'px-1.5 py-0.5'}`}
       >
         {full ? (
           <>
-            <p className="text-xs font-bold truncate">{item.title}</p>
-            <p className="text-[11px] font-medium opacity-80 mt-0.5">
+            <p className={`text-xs font-normal truncate ${item.isCancelled ? 'line-through' : ''}`}>{item.title}</p>
+            <p className="text-[11px] font-normal opacity-80 mt-0.5">
               {fmtTime(item.plannedStartAt)} – {fmtTime(item.plannedEndAt)} · {item.displayStatus}
               {item.currentHostName ? ` · Người phụ trách: ${item.currentHostName}` : ''}
             </p>
           </>
         ) : (
-          <p className="text-[10px] font-bold truncate leading-4">
+          <p className={`text-[10px] font-normal truncate leading-4 ${item.isCancelled ? 'line-through' : ''}`}>
             {fmtTime(item.plannedStartAt)} {item.title}
           </p>
+        )}
+        {hasChanges && (
+          <span className="absolute top-1 right-1 flex h-2 w-2" title="Đơn này có thay đổi mới">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+            <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
+          </span>
         )}
       </button>
     );
@@ -363,7 +421,17 @@ export function StaffDashboardCalendar({ isStaffLeader }: { user?: any; isStaffL
     const isToday = key === todayKey;
     const isPast = key < todayKey;
     return (
-      <div key={key} className={`group flex-1 min-w-0 rounded-xl border p-2 ${isToday ? 'border-[#004c91]/50 bg-blue-50/40' : 'border-slate-200 bg-white'} ${isPast ? 'opacity-70' : ''}`}>
+      <div
+        key={key}
+        onClick={() => {
+          // Bấm vào 1 ô ngày trong tuần → mở thẳng view Ngày (nút quay lại trả về Tuần).
+          if (dayEvents.length > 0) {
+            setAnchorDate(new Date(date));
+            setDayViewReturnMode('Tuần');
+            setDisplayMode('Ngày');
+          }
+        }}
+        className={`group relative flex-1 min-w-0 rounded-xl border p-2 ${dayEvents.length > 0 ? 'cursor-pointer' : ''} ${isToday ? 'border-[#004c91]/50 bg-blue-50/40' : 'border-slate-200 bg-white'}`}>
         <div className="flex items-center justify-between mb-2">
           <p className={`text-xs font-bold ${isToday ? 'text-[#004c91]' : 'text-slate-500'}`}>
             {compactHeader
@@ -379,6 +447,10 @@ export function StaffDashboardCalendar({ isStaffLeader }: { user?: any; isStaffL
             dayEvents.map((p) => <EventPill key={`${p.key}_${key}`} pill={p} full />)
           )}
         </div>
+        {/* Lớp xám phủ lên các ngày trong quá khứ */}
+        {isPast && (
+          <div className="absolute inset-0 bg-slate-300/45 pointer-events-none z-10 rounded-xl" aria-hidden="true" />
+        )}
       </div>
     );
   };
@@ -463,10 +535,16 @@ export function StaffDashboardCalendar({ isStaffLeader }: { user?: any; isStaffL
       <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
         {/* Legend — màu "Cần xử lý" chỉ có ý nghĩa với Staff Leader (người xử lý được) */}
         <div className="px-4 py-2.5 border-b border-slate-100 flex flex-wrap items-center gap-x-4 gap-y-1.5">
-          {LEGEND.filter((l) => l.key !== 'NEEDS_ACTION' || isStaffLeader).map((l) => (
+          {/* Lịch của tôi: chỉ còn "Tôi là người phụ trách" (xanh dương) + "Lịch cá nhân" (tím). */}
+          {LEGEND.filter((l) =>
+            (l.key !== 'NEEDS_ACTION' || (isStaffLeader && calendarType === 'office'))
+            && (l.key !== 'PROCESSED' || calendarType === 'office')
+            && (l.key !== 'PERSONAL' || calendarType === 'mine'),
+          ).map((l) => (
             <span key={l.key} className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-500">
               <span className={`w-2.5 h-2.5 rounded-full ${l.dot}`} />
-              {l.label}
+              {/* Lịch văn phòng: xanh dương gộp đơn phụ trách + lịch cá nhân → gọi là "Lịch của tôi". */}
+              {l.key === 'MINE' && calendarType === 'office' ? 'Lịch của tôi' : l.label}
             </span>
           ))}
           {loading && <Loader2 className="w-4 h-4 animate-spin text-[#004c91] ml-auto" />}
@@ -502,26 +580,43 @@ export function StaffDashboardCalendar({ isStaffLeader }: { user?: any; isStaffL
                 return (
                   <div
                     key={key}
-                    className={`group min-h-[92px] rounded-lg border p-1 flex flex-col gap-0.5 transition-colors
+                    onClick={() => {
+                      // Bấm vào ô ngày có lịch → mở thẳng view Ngày (giống Dept Leader).
+                      if (inMonth && dayEvents.length > 0) {
+                        setAnchorDate(new Date(date));
+                        setDayViewReturnMode('Tháng');
+                        setDisplayMode('Ngày');
+                      }
+                    }}
+                    className={`group relative min-h-[92px] rounded-lg border p-1 flex flex-col gap-0.5 transition-colors ${inMonth && dayEvents.length > 0 ? 'cursor-pointer' : ''}
                       ${isToday ? 'border-[#004c91]/60 bg-blue-50/50' : 'border-slate-100'}
-                      ${!inMonth ? 'bg-slate-50/60' : isPast && !isToday ? 'bg-slate-50/40' : 'bg-white'}`}
+                      ${!inMonth ? 'bg-slate-50/60' : 'bg-white'}`}
                   >
-                    <div className="flex items-center justify-between">
-                      <span className={`text-[11px] font-bold px-1
-                        ${isToday ? 'text-white bg-[#004c91] rounded-md px-1.5 py-0.5' : !inMonth ? 'text-slate-300' : isPast ? 'text-slate-400' : 'text-slate-600'}`}>
-                        {date.getUTCDate()}
-                      </span>
-                      {inMonth && <DayAddButton dateStr={key} />}
-                    </div>
-                    {visible.map((p) => <EventPill key={`${p.key}_${key}`} pill={p} />)}
-                    {more > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => { setAnchorDate(new Date(date)); setDisplayMode('Ngày'); }}
-                        className="text-[10px] font-bold text-[#004c91] hover:underline text-left px-1 cursor-pointer"
-                      >
-                        +{more} khác
-                      </button>
+                    {/* Chỉ hiển thị ngày thuộc tháng đang xem — ô ngoài tháng để trống (giống Dept Leader). */}
+                    {inMonth && (
+                      <>
+                        <div className="flex items-center justify-between">
+                          <span className={`text-[11px] font-bold px-1
+                            ${isToday ? 'text-white bg-[#004c91] rounded-md px-1.5 py-0.5' : isPast ? 'text-slate-400' : 'text-slate-600'}`}>
+                            {date.getUTCDate()}
+                          </span>
+                          <DayAddButton dateStr={key} />
+                        </div>
+                        {visible.map((p) => <EventPill key={`${p.key}_${key}`} pill={p} />)}
+                        {more > 0 && (
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); setAnchorDate(new Date(date)); setDayViewReturnMode('Tháng'); setDisplayMode('Ngày'); }}
+                            className="text-[10px] font-bold text-[#004c91] hover:underline text-left px-1 cursor-pointer"
+                          >
+                            +{more} khác
+                          </button>
+                        )}
+                        {/* Lớp xám phủ lên các ngày trong quá khứ */}
+                        {isPast && !isToday && (
+                          <div className="absolute inset-0 bg-slate-300/45 pointer-events-none z-10 rounded-lg" aria-hidden="true" />
+                        )}
+                      </>
                     )}
                   </div>
                 );
@@ -569,7 +664,15 @@ export function StaffDashboardCalendar({ isStaffLeader }: { user?: any; isStaffL
           </div>
         ) : (
           <div className="p-4">
-            <div className="flex items-center justify-end mb-3">
+            <div className="flex items-center justify-between mb-3">
+              <button
+                type="button"
+                onClick={() => setDisplayMode(dayViewReturnMode)}
+                className="flex items-center gap-2 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold rounded-xl transition-all border border-slate-200/60 cursor-pointer"
+              >
+                <ChevronLeft className="w-3.5 h-3.5 text-slate-600" />
+                <span>{dayViewReturnMode === 'Tuần' ? 'Quay lại lịch tuần' : 'Quay lại lịch tháng'}</span>
+              </button>
               <button
                 type="button"
                 onClick={() => openAddEvent(toDateKey(anchorDate))}
@@ -604,7 +707,14 @@ export function StaffDashboardCalendar({ isStaffLeader }: { user?: any; isStaffL
         onAssignHost={isStaffLeader ? (d) => setAssign({ open: true, detail: d }) : undefined}
         onReject={isStaffLeader ? (d) => setReject({ open: true, detail: d, text: '', submitting: false, error: null }) : undefined}
         selfHostSubmitting={selfHostSubmittingId !== null && selfHostSubmittingId === detailInstanceId}
+        changeNotifs={(() => {
+          const openItem = items.find((i) => i.visitInstanceId === detailInstanceId);
+          return openItem ? getVisitChangeNotifs(openItem) : [];
+        })()}
+        onChangeNotifClick={handleChangeNotifClick}
       />
+
+      <NotificationDetailModal item={changeNotifDetail} onClose={() => setChangeNotifDetail(null)} />
 
       {/* ── Duyệt & gán host trong một bước (campus-independent approval, không gửi email) ── */}
       {assign.open && assign.detail && (
