@@ -185,6 +185,22 @@ public sealed class VisitRequestsController : ControllerBase
     }
 
     /// <summary>
+    /// Per-campus form v2 PUBLIC (OTP-gated) create — the unauthenticated sibling of <see cref="CreateFormV2"/>.
+    /// Verifies the OTP challenge (bound to the registrant email + submissionId), then creates the v2 request.
+    /// Gated by BOTH flags: write OFF makes this 404 (the v1 public verify flow is unchanged). Retries of the
+    /// same submission intent replay idempotently.
+    /// </summary>
+    [HttpPost("/api/v2/visit-requests/verify")]
+    [AllowAnonymous]
+    public async Task<IActionResult> VerifyAndCreateFormV2(
+        [FromBody] PEMS.Application.Delegations.Commands.VerifyAndCreateVisitRequestV2.VerifyAndCreateVisitRequestV2Command command,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(command, cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>
     /// Visitor edits a still-fully-pending request (every campus WAITING_REQUEST_APPROVAL,
     /// ≥ 24h before the earliest start). Campus list may change; status stays PENDING_APPROVAL.
     /// </summary>

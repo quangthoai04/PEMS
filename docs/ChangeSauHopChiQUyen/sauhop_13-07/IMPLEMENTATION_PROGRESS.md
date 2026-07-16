@@ -38,9 +38,27 @@ v1 byte-identical): GetVisitInvitationDetail `5ee29ab3`, GetStaffCalendarDetail 
     write-flag-gated 404). Tests: `CreateVisitRequestV2CommandTests` **3/3** (write-off→404 writes nothing;
     write-on+read-off→reject writes nothing; idempotent same-submission→same request, then cascade-cleanup so
     pems_pr3_test stays v2=0). Full IntegrationTests fresh master **320/320**; unit 474/474; arch 14/14.
-    Deferred to a follow-on (noted): after-commit Staff-Leader notifications; a FluentValidation structural
-    validator (business validation currently in the service); the public-OTP create-v2 path (this is the
-    authenticated create). Both flags remain default OFF, so create-v2 is inert in production.
+  - **B-2.5 create-v2 close-out** — ✅ DONE. Closes the three B-2 follow-ons:
+    (1) `CreateVisitRequestV2CommandValidator` — structural (payload-shape) FluentValidation that runs in the
+        MediatR `ValidationBehaviour` BEFORE the handler (campus non-empty/no-dup/≤10, min-30-min, required/
+        bounded fields, OTHER⇒visitTypeOther, EN|VI, AGREED|DECLINED, no-HTML transport note, guest/support
+        bounds). The service STILL revalidates every DB/clock rule; the validator never replaces it. System-
+        derived fields aren't in the DTO, so "client can't send them" is enforced by the DTO shape.
+    (2) Post-commit notifications via shared `V2CreateNotifier.NotifyStaffLeadersAfterCommitAsync` — dispatched
+        AFTER commit (rollback never notifies), best-effort (logged, never rolls back the committed request;
+        no outbox ⇒ not exactly-once), first-create-only (idempotent replay never re-notifies): Staff Leader
+        per campus + HO visibility for multi-campus. INITIAL_CLAIM invite email to contact B is Phase D.
+    (3) Public OTP create-v2 — `VerifyAndCreateVisitRequestV2Command` + handler + `POST /api/v2/visit-requests/verify`
+        (`[AllowAnonymous]`). Mirrors the proven v1 verify OTP-consume/idempotent-replay/race-replay mechanics,
+        adds NO new OTP logic (reuses `IOtpService.VerifyChallengeAsync`), provisions ONLY the registrant
+        (contact B stays PENDING/INITIAL_CLAIM — never linked before B accepts), builds the aggregate through
+        the shared `CreateV2Async`, and consumes the OTP atomically with the create. Flag-gated identically
+        (write OFF → 404, so the v1 public verify flow is byte-identical; write ON + read OFF → reject).
+    Tests: `CreateVisitRequestV2CommandTests` now also assert first-create-only notification dispatch (Batches==1,
+    replay adds none); `VerifyAndCreateVisitRequestV2CommandTests` **3/3** (write-off→404, write-on+read-off→reject,
+    both without touching OTP/DB; retry-of-committed-submission replays WITHOUT verifying OTP — a throwing OTP/
+    provision fake proves neither is consulted). Targeted **17/17** (11 service + 3 command + 3 public verify).
+    pems_pr3_test/pems_db v2_requests = 0. Both flags remain default OFF.
 
 ## Phase C — edit pending + resubmit v2 — ⬜ pending
 ## Phase D — identity claim/transfer + cancel 3A + expiry/redaction jobs — ⬜ pending

@@ -4,11 +4,13 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using PEMS.Application.Common.DTOs;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Common.Options;
 using PEMS.Application.Delegations.Commands.CreateVisitRequestV2;
+using PEMS.Application.Notifications.Common;
 using PEMS.Domain.Constants;
 using PEMS.Infrastructure.Persistence;
 using PEMS.Infrastructure.Services;
@@ -63,8 +65,30 @@ public sealed class CreateVisitRequestV2CommandTests
         public DateTime VietnamNow => Now;
     }
 
-    private static CreateVisitRequestV2CommandHandler Handler(ApplicationDbContext db, bool read, bool write)
+    /// <summary>Records dispatched notifications so tests can assert first-create-only (idempotent) behaviour.</summary>
+    private sealed class RecordingNotifications : INotificationService
+    {
+        public List<ulong> Recipients { get; } = new();
+        public int Batches { get; private set; }
+        public Task CreateManyAsync(IEnumerable<CreateNotificationRequest> requests, CancellationToken cancellationToken)
+        {
+            Batches++;
+            Recipients.AddRange(requests.Select(r => r.RecipientUserId));
+            return Task.CompletedTask;
+        }
+        public Task CreateManyAsync(IEnumerable<CreateNotificationItem> items, CancellationToken cancellationToken)
+            => Task.CompletedTask;
+        public Task CreateAsync(ulong recipientUserId, string title, string? message, string notificationType,
+            string? relatedType, ulong? relatedId, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task CreateAsync(CreateNotificationRequest request, CancellationToken cancellationToken)
+            => Task.CompletedTask;
+    }
+
+    private static CreateVisitRequestV2CommandHandler Handler(
+        ApplicationDbContext db, bool read, bool write, INotificationService? notifications = null)
         => new(db, new FakeUser(), new FixedClock(), new VisitRequestV2CreateService(db),
+            notifications ?? new RecordingNotifications(),
+            NullLogger<CreateVisitRequestV2CommandHandler>.Instance,
             new PerCampusFormV2Options { Enabled = read }, new PerCampusFormV2WriteOptions { Enabled = write });
 
     private static VisitRequestFormDataV2 Form(string submissionId)
@@ -118,23 +142,29 @@ public sealed class CreateVisitRequestV2CommandTests
         RequireDb();
         var submissionId = "IT-" + Guid.NewGuid().ToString("N");
         ulong createdId = 0;
+        var notifications = new RecordingNotifications();
         try
         {
             using (var db = NewContext())
             {
-                var first = await Handler(db, read: true, write: true)
+                var first = await Handler(db, read: true, write: true, notifications)
                     .Handle(new CreateVisitRequestV2Command(Form(submissionId)), CancellationToken.None);
                 createdId = first.VisitRequestId;
                 Assert.False(first.Idempotent);
                 Assert.Equal(FormSchemaVersions.PerCampus >= 2 ? "SINGLE_CAMPUS" : first.VisitScope, first.VisitScope);
             }
+            // First create dispatched exactly one post-commit notification batch (the campus Staff Leader).
+            Assert.Equal(1, notifications.Batches);
+            Assert.NotEmpty(notifications.Recipients);
             using (var db = NewContext())
             {
-                var second = await Handler(db, read: true, write: true)
+                var second = await Handler(db, read: true, write: true, notifications)
                     .Handle(new CreateVisitRequestV2Command(Form(submissionId)), CancellationToken.None);
                 Assert.True(second.Idempotent);
                 Assert.Equal(createdId, second.VisitRequestId); // same request, not a duplicate
             }
+            // The idempotent replay must NOT re-notify.
+            Assert.Equal(1, notifications.Batches);
             using (var db = NewContext())
             {
                 var count = await db.VisitRequests.CountAsync(v => v.SubmissionId == submissionId);

@@ -21,8 +21,12 @@ E2E + contract cleanup all shipped and all test gates green).
 |---|---|---|---|
 | A | 6 read-detail handlers → instance-level dual-read (mixed→200 target-only, missing→409, v1 byte-identical, no N+1, no leak) | consolidated in Dev merge as `770caa33` (Group 3) + `fb9a11c6` (Group 4); pre-merge: `4bdc1c6d 76a68c53 bae71e03 00f0ee06 50bebef4` + docs | IT 306/306 |
 | B-1 | 7 command/export read-consumers source target-instance delegation name for v2 (guarded, v1 byte-identical) | `38f22143` + `836041f0` (ExportDeptLeaderInvoice) | IT 306/306 |
-| B-2a | create-v2 aggregate SERVICE + write flag + v2 fingerprint + v2 DTOs (one-txn: request fsv=2 + backend scope/mixed/fingerprint/smallest-campus projection + N instances routed to Staff Leader + N form details + per-campus independent members + links + baseline revisions + VISIT_REQUEST_CREATED_V2 audit + INITIAL_CLAIM 72h) | `0f67eff8` | 11/11 service tests |
-| B-2b | create-v2 command + `POST /api/v2/visit-requests` + two-flag gate + submissionId idempotency (transaction-owned, concurrent-race safe) | `4dd1c1d4` | 3/3 command tests · Unit 474/474 · Arch 14/14 · IT **320/320** |
+| B-2a | create-v2 aggregate SERVICE + write flag + v2 fingerprint + v2 DTOs (one-txn: request fsv=2 + backend scope/mixed/fingerprint/smallest-campus projection + N instances routed to Staff Leader + N form details + per-campus independent members + links + baseline revisions + VISIT_REQUEST_CREATED_V2 audit + INITIAL_CLAIM 72h) | reorg `a5cb3977` (was `0f67eff8`) | 11/11 service tests |
+| B-2b | create-v2 command + `POST /api/v2/visit-requests` + two-flag gate + submissionId idempotency (transaction-owned, concurrent-race safe) | reorg `a5cb3977` (was `4dd1c1d4`) | 3/3 command tests · Unit 474/474 · Arch 14/14 · IT **320/320** |
+| B-2.5 | create-v2 close-out: structural validator (MediatR pipeline, service still revalidates) + shared `V2CreateNotifier` post-commit Staff-Leader/HO notifications (first-create-only, best-effort) + public OTP create-v2 (`VerifyAndCreateVisitRequestV2` + `POST /api/v2/visit-requests/verify`, reuses the v1 OTP primitive, provisions registrant only) | _(this commit)_ | 17/17 targeted (11 service + 3 command + 3 public verify) |
+
+> Note: after the `Dev` merge the Phase-A/B commits were reorganized into clean functional commits —
+> B-1 = `1d056fd7`, B-2 = `a5cb3977` (the pre-merge hashes above are the original per-handler commits).
 
 Handlers migrated (Phase A): GetVisitInvitationDetail, GetStaffCalendarDetail, GetRequestDetail (Dept),
 GetInvitationDetail (Dept), GetVisitInvitationById, GetAgendaSetupForInstance.
@@ -56,11 +60,15 @@ Missing v2 detail → `409 VISIT_FORM_DETAIL_MISSING`, no global fallback.
 
 ## 4. Remaining work — ordered, actionable roadmap
 
-### Phase B-2 — create-v2 — ✅ DONE (`0f67eff8`, `4dd1c1d4`)
-Service + command + `POST /api/v2/visit-requests`, both flags default OFF, 14 tests green, IT 320/320.
-Deferred follow-ons (noted, not blocking): after-commit Staff-Leader notifications; a FluentValidation
-structural validator (business validation currently lives in the service); the public-OTP create-v2 path
-(the shipped path is authenticated create). Original spec kept below for reference.
+### Phase B-2 — create-v2 — ✅ DONE (reorg `a5cb3977`) + B-2.5 close-out ✅ DONE
+Service + command + `POST /api/v2/visit-requests`, both flags default OFF, IT 320/320. **B-2.5 closed all three
+deferred follow-ons**: (1) `CreateVisitRequestV2CommandValidator` structural FluentValidation in the MediatR
+pipeline (service still revalidates every DB/clock rule); (2) shared `V2CreateNotifier` post-commit Staff-Leader
++ HO notifications — after-commit, first-create-only, best-effort (no outbox ⇒ not exactly-once), rollback never
+notifies; (3) public OTP create-v2 (`VerifyAndCreateVisitRequestV2Command` + handler + `POST /api/v2/visit-requests/verify`
+`[AllowAnonymous]`) reusing the v1 OTP primitive verbatim, provisioning ONLY the registrant (contact B stays
+PENDING/INITIAL_CLAIM). 17/17 targeted green. INITIAL_CLAIM invite **email** to contact B is Phase D (identity
+workflow). Original spec kept below for reference.
 
 <details><summary>B-2 spec (delivered)</summary>
 - New input types: `VisitRequestFormDataV2` (registrant + primaryContact + partnerId + visitScope +
