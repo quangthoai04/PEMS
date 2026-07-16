@@ -225,12 +225,71 @@ Visitor-owner-only edit/resubmit prefill form (`GET /api/visit-requests/{id}/edi
   (the single-form editor can't represent per-campus-divergent content — the per-campus v2 editor is a
   later PR). **v2 visible instance missing detail** → `409 VISIT_FORM_DETAIL_MISSING` (no fallback).
   Registrant / primary Contact / Partner stay request-level. Owner-only scope is unchanged.
-- `ViewGuestDelegationDetails` (also in this group) is an unimplemented scaffold (`throw
-  NotImplementedException`) with no read logic — nothing to migrate.
+- **`ViewGuestDelegationDetails` — NOT migrated, with evidence (not a bare "skip"):** the handler
+  `backend/PEMS.Application/Delegations/Queries/ViewGuestDelegationDetails/ViewGuestDelegationDetailsQueryHandler.cs`
+  is an unimplemented scaffold whose `Handle` unconditionally does
+  `throw new NotImplementedException("UC View Guest Delegation Details has been scaffolded …")`. Although a
+  route is wired (`DelegationsController.cs:87`, `ViewGuestDelegationDetails([FromQuery] …Query)`), it reads
+  **no** form data — every call 500s before any projection. It therefore cannot serve a v2 request as a
+  global snapshot and has nothing to migrate; it must implement the dual-read rule if/when the UC is built.
 
 Tests: `EditableVisitRequestDetailV2Tests` (5) green vs `pems_pr3_test` (v1 global, v2 non-mixed
 derive-from-detail, v2 mixed → 409, missing detail → 409, non-owner + non-visitor → 403). Full
 IntegrationTests on a fresh master = **237/237** (0 failed); unit 435/435; architecture 14/14.
+
+## 6e. Read-handler migration — handler group #3a: GetVisitProcessDetail (INSTANCE-LEVEL)
+
+Handlers are classified by their **contract**, not their name: request-level flat DTOs (handlers #1/#2)
+use `409 FORM_VERSION_UPGRADE_REQUIRED` for mixed v2, but an **instance-level** handler (its route/key
+identifies a `visit_instance_id`) must return **200** for a mixed request, sourcing only the target
+instance.
+
+`GetVisitProcessDetail` is instance-level: route `{visitRequestId}/campuses/{visitInstanceId}/process-detail`,
+query key `(VisitRequestId, VisitInstanceId)`, DTO carries `VisitInstanceId` + instance status/agenda, and
+scope is checked against that instance. Migration:
+- **v1** unchanged. **v2 (single / multi / MIXED)** → the `RequestSummary` form content + `GuestMembers` /
+  `ExternalSupportMembers` and the top-level `DelegationName` are sourced **only** from the TARGET
+  instance's `visit_instance_form_details` + `visit_instance_guest_members` via
+  `ResolveCampusFormContentAsync(request, [targetInstanceId], …)` — **never** the global fields, **never**
+  `FORM_VERSION_UPGRADE_REQUIRED`, **never** a sibling campus. Missing target detail →
+  `409 VISIT_FORM_DETAIL_MISSING`. Primary Contact / Registrant stay request-level; the `Campuses` list is
+  per-campus schedule only (no form content). Per-instance scope already blocks cross-campus access.
+
+Tests: `VisitProcessDetailV2Tests` (8) green vs `pems_pr3_test` — v1 global, v2 single, **mixed target
+A → 200 + A-only**, **same request target B → 200 + B-only** (no cross-campus guest leak), missing detail
+→ 409, Staff-Leader-of-campus-A forbidden on the campus-B instance (allowed on A), unrelated → 403, and a
+constant-DB-command-count assertion across 1-vs-3 campuses (no per-campus N+1). Full IntegrationTests on a
+fresh master = **245/245** (0 failed); unit 435/435; architecture 14/14.
+
+## 6f. Read-handler migration — handler group #3b: GetVisitInstanceSummary (INSTANCE-LEVEL)
+
+`GetVisitInstanceSummary` is instance-level (query key `VisitInstanceId`; scope = Staff-Leader-of-campus /
+HO / Host of that instance; DTO `ProcessSummaryPageDto` with the shared `VisitProcessRequestSummaryDto`).
+Same instance-level treatment as §6e: v1 unchanged; v2 (incl. MIXED) sources the `RequestSummary` form
+content + members and `Permissions.DelegationName` **only** from the TARGET instance's per-campus detail +
+links (never global, never a sibling); missing target detail → `409 VISIT_FORM_DETAIL_MISSING`.
+
+Tests: `VisitInstanceSummaryV2Tests` (8) green — v1 global, v2 single, mixed target A → 200 A-only, same
+request target B → 200 B-only (no cross-leak), missing → 409, Staff-Leader campus scope, Visitor → 403,
+constant query count 1-vs-3 campuses. Full IntegrationTests fresh master = **253/253**; unit 435/435;
+architecture 14/14.
+
+## 6g. Read-handler migration — handler group #3c: GetVisitInstanceContribution (INSTANCE-LEVEL) — group #3 COMPLETE
+
+`GetVisitInstanceContribution` is instance-level (route `visit-instances/{visitInstanceId}/contribution`,
+query key `VisitInstanceId`; access = Host / accepted participant / Department-with-logistics / HO). Same
+instance-level treatment: v1 unchanged; v2 (incl. MIXED) sources `Summary.Request` form content + members,
+`Summary.DelegationName` and `Summary.GuestCount` **only** from the TARGET instance's per-campus detail +
+links (never global, never a sibling); missing → `409 VISIT_FORM_DETAIL_MISSING`.
+
+Tests: `VisitInstanceContributionV2Tests` (8) green — v1, v2 single, mixed target A → 200 A-only, same
+request target B → 200 B-only (no cross-leak), missing → 409, Host-of-campus-A forbidden on the campus-B
+instance, Admin + unrelated Visitor → 403, constant query count 1-vs-3 campuses. Full IntegrationTests
+fresh master = **261/261**; unit 435/435; architecture 14/14.
+
+**Group #3 status: COMPLETE** — `GetVisitProcessDetail`, `GetVisitInstanceSummary`,
+`GetVisitInstanceContribution` all migrated as INSTANCE-LEVEL (mixed → 200 with the target instance), each
+its own commit, each verified full-green.
 
 ## 7. Definition of Done status
 
