@@ -214,6 +214,24 @@ runs** (deterministic/repeatable). Post-run, every active campus still has exact
 (no accumulation): the fix reuses the seed leader and never creates `it-uc63-staffleader`. No production
 code, production seed, or one-off manual DB edit was used.
 
+## 6d. Read-handler migration — handler #2: GetEditableVisitRequestDetail
+
+Second §6 read handler migrated to the dual-read rule (same primitive as handler #1). This is the
+Visitor-owner-only edit/resubmit prefill form (`GET /api/visit-requests/{id}/edit-detail`).
+
+- **v1** unchanged (global projection). **v2 non-mixed** → the flat form content is DERIVED from the
+  per-campus `visit_instance_form_details` + `visit_instance_guest_members` (never the global fields), via
+  `IVisitFormReadService.ResolveCampusFormContentAsync`. **v2 mixed** → `409 FORM_VERSION_UPGRADE_REQUIRED`
+  (the single-form editor can't represent per-campus-divergent content — the per-campus v2 editor is a
+  later PR). **v2 visible instance missing detail** → `409 VISIT_FORM_DETAIL_MISSING` (no fallback).
+  Registrant / primary Contact / Partner stay request-level. Owner-only scope is unchanged.
+- `ViewGuestDelegationDetails` (also in this group) is an unimplemented scaffold (`throw
+  NotImplementedException`) with no read logic — nothing to migrate.
+
+Tests: `EditableVisitRequestDetailV2Tests` (5) green vs `pems_pr3_test` (v1 global, v2 non-mixed
+derive-from-detail, v2 mixed → 409, missing detail → 409, non-owner + non-visitor → 403). Full
+IntegrationTests on a fresh master = **237/237** (0 failed); unit 435/435; architecture 14/14.
+
 ## 7. Definition of Done status
 
 Build pass ✅ · mapping matches PR-2 MySQL ✅ (11 integration tests) · dual-read v1/v2 works ✅ ·
