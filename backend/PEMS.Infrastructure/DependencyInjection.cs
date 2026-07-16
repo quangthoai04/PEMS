@@ -72,6 +72,7 @@ public static class DependencyInjection
 
         // Visit request flow services (UC-17)
         services.AddScoped<IVisitRequestService, VisitRequestService>();
+        services.AddScoped<IVisitRequestV2CreateService, VisitRequestV2CreateService>();
         services.AddScoped<IUserProvisionService, UserProvisionService>();
         services.AddScoped<IApprovalRoutingService, ApprovalRoutingService>();
 

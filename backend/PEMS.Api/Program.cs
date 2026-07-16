@@ -27,6 +27,13 @@ var perCampusFormV2Options = builder.Configuration
     ?? new PEMS.Application.Common.Options.PerCampusFormV2Options();
 builder.Services.AddSingleton(perCampusFormV2Options);
 
+// ── Per-campus visit form v2 WRITE feature flag (separate from read; default OFF). ──
+var perCampusFormV2WriteOptions = builder.Configuration
+    .GetSection(PEMS.Application.Common.Options.PerCampusFormV2WriteOptions.SectionName)
+    .Get<PEMS.Application.Common.Options.PerCampusFormV2WriteOptions>()
+    ?? new PEMS.Application.Common.Options.PerCampusFormV2WriteOptions();
+builder.Services.AddSingleton(perCampusFormV2WriteOptions);
+
 // ── Database (MySQL, database-first — schema is owned by manual SQL, not EF) ──
 // Every pooled connection is pinned to time_zone '+07:00' so CURRENT_TIMESTAMP defaults
 // and trigger NOW() produce Vietnam wall-clock, per the PEMS persistence policy.

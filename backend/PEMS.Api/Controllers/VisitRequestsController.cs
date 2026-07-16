@@ -170,6 +170,21 @@ public sealed class VisitRequestsController : ControllerBase
     }
 
     /// <summary>
+    /// Per-campus form v2 authenticated create. Gated by BOTH flags: the write flag OFF makes this 404
+    /// (the v1 create flow is unchanged); write ON with read OFF is rejected. Idempotent by submissionId.
+    /// </summary>
+    [HttpPost("/api/v2/visit-requests")]
+    [Authorize]
+    public async Task<IActionResult> CreateFormV2(
+        [FromBody] PEMS.Application.Common.DTOs.VisitRequestFormDataV2 form, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new PEMS.Application.Delegations.Commands.CreateVisitRequestV2.CreateVisitRequestV2Command(form),
+            cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>
     /// Visitor edits a still-fully-pending request (every campus WAITING_REQUEST_APPROVAL,
     /// ≥ 24h before the earliest start). Campus list may change; status stays PENDING_APPROVAL.
     /// </summary>

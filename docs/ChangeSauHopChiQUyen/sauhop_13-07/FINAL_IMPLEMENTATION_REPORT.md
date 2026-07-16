@@ -20,7 +20,9 @@ E2E + contract cleanup all shipped and all test gates green).
 | Phase | Scope | Commits | Gate |
 |---|---|---|---|
 | A | 6 read-detail handlers → instance-level dual-read (mixed→200 target-only, missing→409, v1 byte-identical, no N+1, no leak) | consolidated in Dev merge as `770caa33` (Group 3) + `fb9a11c6` (Group 4); pre-merge: `4bdc1c6d 76a68c53 bae71e03 00f0ee06 50bebef4` + docs | IT 306/306 |
-| B-1 | 6 command read-consumers source target-instance delegation name for v2 (guarded, v1 byte-identical) | `38f22143` | Unit 474/474 · Arch 14/14 · IT 306/306 |
+| B-1 | 7 command/export read-consumers source target-instance delegation name for v2 (guarded, v1 byte-identical) | `38f22143` + `836041f0` (ExportDeptLeaderInvoice) | IT 306/306 |
+| B-2a | create-v2 aggregate SERVICE + write flag + v2 fingerprint + v2 DTOs (one-txn: request fsv=2 + backend scope/mixed/fingerprint/smallest-campus projection + N instances routed to Staff Leader + N form details + per-campus independent members + links + baseline revisions + VISIT_REQUEST_CREATED_V2 audit + INITIAL_CLAIM 72h) | `0f67eff8` | 11/11 service tests |
+| B-2b | create-v2 command + `POST /api/v2/visit-requests` + two-flag gate + submissionId idempotency (transaction-owned, concurrent-race safe) | `4dd1c1d4` | 3/3 command tests · Unit 474/474 · Arch 14/14 · IT **320/320** |
 
 Handlers migrated (Phase A): GetVisitInvitationDetail, GetStaffCalendarDetail, GetRequestDetail (Dept),
 GetInvitationDetail (Dept), GetVisitInvitationById, GetAgendaSetupForInstance.
@@ -54,7 +56,13 @@ Missing v2 detail → `409 VISIT_FORM_DETAIL_MISSING`, no global fallback.
 
 ## 4. Remaining work — ordered, actionable roadmap
 
-### Phase B-2 — create-v2 (next; highest value)
+### Phase B-2 — create-v2 — ✅ DONE (`0f67eff8`, `4dd1c1d4`)
+Service + command + `POST /api/v2/visit-requests`, both flags default OFF, 14 tests green, IT 320/320.
+Deferred follow-ons (noted, not blocking): after-commit Staff-Leader notifications; a FluentValidation
+structural validator (business validation currently lives in the service); the public-OTP create-v2 path
+(the shipped path is authenticated create). Original spec kept below for reference.
+
+<details><summary>B-2 spec (delivered)</summary>
 - New input types: `VisitRequestFormDataV2` (registrant + primaryContact + partnerId + visitScope +
   `IList<CampusVisitFormDto>`) and `CampusVisitFormDto` (VisitSlot fields + delegationName, visitType/other,
   purpose, workingContent, visitors[], supportMembers[], operationalContact, workingLanguage,
@@ -79,8 +87,9 @@ Missing v2 detail → `409 VISIT_FORM_DETAIL_MISSING`, no global fallback.
   stable conflict code).
 - Tests: create single / multi-same / multi-mixed; per-campus validation; identity same-account vs
   invitation-pending; idempotency; against disposable DB.
+</details>
 
-### Phase C — edit pending + resubmit v2 (plan §6.4)
+### Phase C — edit pending + resubmit v2 (plan §6.4) — ⬅️ NEXT
 Per-campus edit; add/remove campus per lifecycle; full-replace guest/support scoped to target instance;
 copy-on-write for legacy shared members; request+instance optimistic concurrency; recompute
 scope/mixed/fingerprint/projection; resubmit all-REJECTED keeping instance IDs (no reset of other campuses'
@@ -129,15 +138,17 @@ prove flag-on flow by test; never auto-enable.
 Prepare guarded migration to drop the 10 global form columns/index/check; update fresh-create to clean v2
 schema; test on disposable DB; **never run destructive migration on a real DB**; document cutover + rollback.
 
-## 5. Test counts (this session, verified)
+## 5. Test counts (latest, verified)
 - UnitTests **474/474** (the historical "435" baseline was a stale incremental build; 0 failures throughout).
 - ArchitectureTests **14/14**.
-- IntegrationTests **306/306** on a fresh disposable `pems_it_regression` (includes all Phase-A V2 test classes).
+- IntegrationTests **320/320** on a fresh disposable `pems_it_regression` (Phase-A read V2 classes + Phase-B-2
+  create-v2 service (11) + command (3) classes). pems_pr3_test verified v2_requests = 0 after runs.
 
 ## 6. Known limitations / notes
 - A **Dev merge** (`ae060dcf`) landed mid-session; Phase-A commits were consolidated into `770caa33`/`fb9a11c6`.
   The merged tree is green (306/306), so Phase-A behavior is intact.
-- create-v2 and everything downstream of it (edit/identity/amendment/search/report/frontend/E2E) are **not yet
-  implemented**; §4 is the ready-to-execute spec.
+- create-v2 (Phase B-2) is **done** (service + command + endpoint, 14 tests, IT 320/320). Everything downstream
+  of it (edit/resubmit, identity confirm/transfer, amendments, list/search/report/export/email migration,
+  frontend, E2E, contract cleanup) is **not yet implemented**; §4 is the ready-to-execute spec, Phase C next.
 - No production seed/code was changed to make tests pass; the only test-infra change was adding the new
   `IVisitFormReadService` constructor arg (a bare mock) to one unit test.

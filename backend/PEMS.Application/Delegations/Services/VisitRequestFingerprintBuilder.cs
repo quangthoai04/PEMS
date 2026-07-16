@@ -82,6 +82,53 @@ public static class VisitRequestFingerprintBuilder
         return Convert.ToHexString(hash).ToLowerInvariant();
     }
 
+    public const string VersionV2 = "v2";
+
+    /// <summary>
+    /// Per-campus form v2 fingerprint (plan §6.3). Canonical input, in order: version tag, normalized
+    /// registrant email, normalized primary-contact email, effective scope, then each campus (SORTED by campus
+    /// code) as <c>code,start,end,delegationName,visitType,visitTypeOther</c>. Delegation name and visit type
+    /// are PER-CAMPUS in v2 (they are core identity here); purpose/notes/people are still excluded as soft
+    /// content. The version tag guarantees a v2 hash can never collide with a v1 hash for the same core data.
+    /// Only the SHA-256 hex digest is persisted — the canonical string carries PII and must not be stored/logged.
+    /// </summary>
+    public static string BuildV2(
+        string registrantEmail,
+        string primaryContactEmail,
+        string effectiveVisitScope,
+        IEnumerable<(string CampusCode, DateTime Start, DateTime End, string DelegationName, string VisitType, string? VisitTypeOther)> campusVisits)
+    {
+        var campuses = campusVisits
+            .Select(c =>
+            {
+                var type = NormalizeCode(c.VisitType);
+                var other = type == "OTHER" ? NormalizeText(c.VisitTypeOther) : string.Empty;
+                return string.Join(',', new[]
+                {
+                    NormalizeCode(c.CampusCode),
+                    FormatWallClock(c.Start),
+                    FormatWallClock(c.End),
+                    NormalizeText(c.DelegationName),
+                    type,
+                    other,
+                });
+            })
+            .OrderBy(s => s, StringComparer.Ordinal)
+            .ToList();
+
+        var canonical = string.Join('|', new[]
+        {
+            VersionV2,
+            NormalizeEmail(registrantEmail),
+            NormalizeEmail(primaryContactEmail),
+            NormalizeCode(effectiveVisitScope),
+            string.Join(';', campuses),
+        });
+
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(canonical));
+        return Convert.ToHexString(hash).ToLowerInvariant();
+    }
+
     /// <summary>Trim + lowercase (invariant). Emails are compared case-insensitively.</summary>
     public static string NormalizeEmail(string? value)
         => (value ?? string.Empty).Trim().ToLowerInvariant();
