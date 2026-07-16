@@ -8,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Delegations.Services.VisitFormRead;
 using PEMS.Domain.Constants;
 using PEMS.Shared;
 
@@ -32,15 +33,18 @@ public sealed class GetSubmittedVisitRequestFormDetailQueryHandler
     private readonly IApplicationDbContext _context;
     private readonly ICurrentUserService _currentUser;
     private readonly ILogger<GetSubmittedVisitRequestFormDetailQueryHandler> _logger;
+    private readonly IVisitFormReadService _formReadService;
 
     public GetSubmittedVisitRequestFormDetailQueryHandler(
         IApplicationDbContext context,
         ICurrentUserService currentUser,
-        ILogger<GetSubmittedVisitRequestFormDetailQueryHandler> logger)
+        ILogger<GetSubmittedVisitRequestFormDetailQueryHandler> logger,
+        IVisitFormReadService formReadService)
     {
         _context = context;
         _currentUser = currentUser;
         _logger = logger;
+        _formReadService = formReadService;
     }
 
     public async Task<SubmittedVisitRequestFormDetailDto> Handle(
@@ -199,6 +203,71 @@ public sealed class GetSubmittedVisitRequestFormDetailQueryHandler
                     ? visitRequest.CampusInstances.Where(c => departmentStaffAssignedInstanceIds.Contains(c.VisitInstanceId)).ToList()
                     : visitRequest.CampusInstances.ToList();
 
+        // ── Dual-read (per-campus form v2) — scope is already applied above, so this never reads a
+        // hidden campus. Decision / schedule / cancellation metadata below is version-agnostic (it lives
+        // on the instance/request rows in v1 AND v2); only the FORM CONTENT is version-specific. ──
+        var isV2 = visitRequest.FormSchemaVersion >= FormSchemaVersions.PerCampus;
+
+        // A v2 request whose campuses hold DIFFERENT form content cannot be represented by this flat,
+        // single-snapshot DTO. The client must switch to the per-campus v2 detail endpoint. Returned
+        // only after authorization so mixed-ness is never revealed to someone who may not see the request.
+        if (isV2 && visitRequest.HasMixedCampusDetails)
+        {
+            throw new ConflictException(
+                "Đơn này có nội dung khác nhau theo từng cơ sở; vui lòng dùng màn hình chi tiết theo cơ sở.",
+                VisitFormV2ErrorCodes.FormVersionUpgradeRequired);
+        }
+
+        // Form-content locals default to the v1 global compatibility projection. For a (non-mixed) v2
+        // request they are re-sourced from the per-campus detail + instance-member links via the central
+        // resolver — NEVER the global fields; a missing detail throws VISIT_FORM_DETAIL_MISSING (no fallback).
+        string delegationName = visitRequest.DelegationName;
+        string? visitType = visitRequest.VisitType;
+        string? visitTypeOther = visitRequest.VisitTypeOther;
+        string? purpose = visitRequest.Purpose;
+        string? workingContent = visitRequest.WorkingContent;
+        string? workingLanguage = visitRequest.WorkingLanguage;
+        string? mediaConsentStatus = visitRequest.MediaConsentStatus;
+        string? mediaConsentNote = visitRequest.MediaConsentNote;
+        string? transportationNote = visitRequest.TransportationNote;
+        string? noteToFptu = visitRequest.NoteToFptu;
+        var guestMembers = visitRequest.GuestMembers
+            .Where(m => m.MemberType != "EXTERNAL_SUPPORT")
+            .OrderBy(m => m.DisplayOrder)
+            .Select(MapMember)
+            .ToList();
+        var externalSupportMembers = visitRequest.GuestMembers
+            .Where(m => m.MemberType == "EXTERNAL_SUPPORT")
+            .OrderBy(m => m.DisplayOrder)
+            .Select(MapMember)
+            .ToList();
+
+        if (isV2)
+        {
+            // Non-mixed v2: every visible campus shares the same content — source it from a
+            // representative visible instance's per-campus detail (scope already applied above).
+            var visibleIds = visibleInstances.Select(c => c.VisitInstanceId).ToList();
+            var content = await _formReadService.ResolveCampusFormContentAsync(
+                visitRequest, visibleIds, cancellationToken);
+            var rep = content[visibleInstances[0].VisitInstanceId];
+            delegationName = rep.DelegationName;
+            visitType = rep.VisitType;
+            visitTypeOther = rep.VisitTypeOther;
+            purpose = rep.Purpose;
+            workingContent = rep.WorkingContent;
+            workingLanguage = rep.WorkingLanguage;
+            mediaConsentStatus = rep.MediaConsentStatus;
+            mediaConsentNote = rep.MediaConsentNote;
+            transportationNote = rep.TransportationNote;
+            noteToFptu = rep.NoteToFptu;
+            guestMembers = rep.Visitors.Select(MapMemberRow).ToList();
+            externalSupportMembers = rep.SupportMembers.Select(MapMemberRow).ToList();
+        }
+
+        // Decision counters: over the VISIBLE campuses for v2 (no hidden-campus aggregate leak). v1 keeps
+        // its historical whole-request rollup unchanged.
+        var summarySource = isV2 ? visibleInstances : visitRequest.CampusInstances.ToList();
+
         // Resolve every "who decided / who cancelled" name in one round-trip (per-instance
         // decision actors, request-level canceller, and each visible campus-instance canceller).
         var actorIds = new List<ulong>();
@@ -304,11 +373,11 @@ public sealed class GetSubmittedVisitRequestFormDetailQueryHandler
             RequestStatus = status,
             VisitScope = visitRequest.VisitScope,
 
-            DelegationName = visitRequest.DelegationName,
-            VisitType = visitRequest.VisitType,
-            VisitTypeOther = visitRequest.VisitTypeOther,
-            Purpose = visitRequest.Purpose,
-            WorkingContent = visitRequest.WorkingContent,
+            DelegationName = delegationName,
+            VisitType = visitType,
+            VisitTypeOther = visitTypeOther,
+            Purpose = purpose,
+            WorkingContent = workingContent,
 
             Registrant = new SubmittedRegistrantDto
             {
@@ -327,11 +396,11 @@ public sealed class GetSubmittedVisitRequestFormDetailQueryHandler
                 Email = visitRequest.ContactPersonEmail,
             },
 
-            WorkingLanguage = visitRequest.WorkingLanguage,
-            MediaConsentStatus = visitRequest.MediaConsentStatus,
-            MediaConsentNote = visitRequest.MediaConsentNote,
-            TransportationNote = visitRequest.TransportationNote,
-            NoteToFptu = visitRequest.NoteToFptu,
+            WorkingLanguage = workingLanguage,
+            MediaConsentStatus = mediaConsentStatus,
+            MediaConsentNote = mediaConsentNote,
+            TransportationNote = transportationNote,
+            NoteToFptu = noteToFptu,
 
             Campuses = visibleInstances
                 .OrderBy(c => c.PlannedStartAt)
@@ -364,28 +433,20 @@ public sealed class GetSubmittedVisitRequestFormDetailQueryHandler
 
             CampusDecisionSummary = new CampusDecisionSummaryDto
             {
-                Total = visitRequest.CampusInstances.Count,
-                Pending = visitRequest.CampusInstances.Count(c => c.Status == VisitInstanceStatus.WaitingRequestApproval),
-                Approved = visitRequest.CampusInstances.Count(c =>
+                Total = summarySource.Count,
+                Pending = summarySource.Count(c => c.Status == VisitInstanceStatus.WaitingRequestApproval),
+                Approved = summarySource.Count(c =>
                     c.Status == VisitInstanceStatus.Assigned
                     || c.Status == VisitInstanceStatus.BeforeVisit
                     || c.Status == VisitInstanceStatus.DuringVisit
                     || c.Status == VisitInstanceStatus.AfterVisit
                     || c.Status == VisitInstanceStatus.Closed),
-                Rejected = visitRequest.CampusInstances.Count(c => c.Status == VisitInstanceStatus.Rejected),
-                Cancelled = visitRequest.CampusInstances.Count(c => c.Status == VisitInstanceStatus.Cancelled),
+                Rejected = summarySource.Count(c => c.Status == VisitInstanceStatus.Rejected),
+                Cancelled = summarySource.Count(c => c.Status == VisitInstanceStatus.Cancelled),
             },
 
-            GuestMembers = visitRequest.GuestMembers
-                .Where(m => m.MemberType != "EXTERNAL_SUPPORT")
-                .OrderBy(m => m.DisplayOrder)
-                .Select(MapMember)
-                .ToList(),
-            ExternalSupportMembers = visitRequest.GuestMembers
-                .Where(m => m.MemberType == "EXTERNAL_SUPPORT")
-                .OrderBy(m => m.DisplayOrder)
-                .Select(MapMember)
-                .ToList(),
+            GuestMembers = guestMembers,
+            ExternalSupportMembers = externalSupportMembers,
 
             DecidedByUserId = decisionInstance?.DecidedBy is { } dby ? (long)dby : null,
             DecidedByName = decidedByName,
@@ -424,5 +485,17 @@ public sealed class GetSubmittedVisitRequestFormDetailQueryHandler
         JobTitle = m.JobTitle,
         Nationality = m.Nationality,
         DisplayOrder = (int)m.DisplayOrder,
+    };
+
+    // Maps a v2 per-campus member row (already resolved via IVisitFormReadService) to the flat DTO.
+    private static SubmittedGuestMemberDto MapMemberRow(VisitFormMemberRow r) => new()
+    {
+        GuestMemberId = r.GuestMemberId,
+        MemberType = r.MemberType,
+        FullName = r.FullName,
+        Organization = r.Organization,
+        JobTitle = r.JobTitle,
+        Nationality = r.Nationality,
+        DisplayOrder = r.DisplayOrder,
     };
 }

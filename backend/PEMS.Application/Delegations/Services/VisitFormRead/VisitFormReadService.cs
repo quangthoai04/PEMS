@@ -291,6 +291,120 @@ public sealed class VisitFormReadService : IVisitFormReadService
         };
     }
 
+    /// <inheritdoc />
+    public async Task<IReadOnlyDictionary<ulong, VisitCampusFormContent>> ResolveCampusFormContentAsync(
+        VisitRequest request, IReadOnlyList<ulong> visibleInstanceIds, CancellationToken cancellationToken)
+    {
+        var result = new Dictionary<ulong, VisitCampusFormContent>();
+        if (visibleInstanceIds.Count == 0)
+            return result;
+
+        var isV2 = request.FormSchemaVersion >= FormSchemaVersions.PerCampus;
+
+        if (!isV2)
+        {
+            // v1 compatibility projection: one global content object shared by every visible instance;
+            // members come from the request-level list (same for all campuses).
+            var members = await _db.VisitGuestMembers.AsNoTracking()
+                .Where(m => m.VisitRequestId == request.VisitRequestId)
+                .ToListAsync(cancellationToken);
+
+            var global = new VisitCampusFormContent
+            {
+                DelegationName = request.DelegationName,
+                VisitType = request.VisitType,
+                VisitTypeOther = request.VisitTypeOther,
+                Purpose = request.Purpose,
+                WorkingContent = request.WorkingContent,
+                WorkingLanguage = request.WorkingLanguage,
+                MediaConsentStatus = request.MediaConsentStatus,
+                MediaConsentNote = request.MediaConsentNote,
+                TransportationNote = request.TransportationNote,
+                NoteToFptu = request.NoteToFptu,
+                OperationalContact = new VisitFormOperationalContact
+                {
+                    FullName = request.ContactPersonFullName,
+                    Organization = request.ContactPersonOrganization,
+                    Phone = request.ContactPersonPhone,
+                    Email = request.ContactPersonEmail
+                },
+                Visitors = members.Where(m => m.MemberType != ExternalSupport)
+                    .OrderBy(m => m.DisplayOrder).Select(ToRow).ToList(),
+                SupportMembers = members.Where(m => m.MemberType == ExternalSupport)
+                    .OrderBy(m => m.DisplayOrder).Select(ToRow).ToList(),
+                FormRevision = 1,
+                ApprovalRevision = 1,
+                RowVersion = 0
+            };
+            foreach (var id in visibleInstanceIds)
+                result[id] = global;
+            return result;
+        }
+
+        // v2: read ONLY the per-campus detail + instance-member links, and ONLY for the visible
+        // instances. Two batched queries irrespective of campus/member count (no per-campus N+1).
+        var details = await _db.VisitInstanceFormDetails.AsNoTracking()
+            .Where(d => visibleInstanceIds.Contains(d.VisitInstanceId))
+            .ToListAsync(cancellationToken);
+        var detailByInstance = details.ToDictionary(d => d.VisitInstanceId);
+
+        var links = await _db.VisitInstanceGuestMembers.AsNoTracking()
+            .Where(l => visibleInstanceIds.Contains(l.VisitInstanceId))
+            .Join(_db.VisitGuestMembers.AsNoTracking(),
+                l => l.GuestMemberId, m => m.GuestMemberId,
+                (l, m) => new { l.VisitInstanceId, l.DisplayOrder, Member = m })
+            .ToListAsync(cancellationToken);
+        var membersByInstance = links
+            .GroupBy(x => x.VisitInstanceId)
+            .ToDictionary(g => g.Key, g => g.OrderBy(x => x.DisplayOrder).Select(x => x.Member).ToList());
+
+        foreach (var instanceId in visibleInstanceIds)
+        {
+            if (!detailByInstance.TryGetValue(instanceId, out var d))
+            {
+                // §6.B: a v2 instance MUST have a detail row. Never fall back to the global fields.
+                _logger.LogError(
+                    "PerCampusFormV2 consistency error: visit_instance {InstanceId} of request {RequestId} " +
+                    "(form_schema_version=2) has no visit_instance_form_details row.",
+                    instanceId, request.VisitRequestId);
+                throw new ConflictException(
+                    "Dữ liệu chuyến thăm theo cơ sở đang thiếu, không thể hiển thị.",
+                    VisitFormV2ErrorCodes.VisitFormDetailMissing);
+            }
+
+            var linked = membersByInstance.TryGetValue(instanceId, out var ms) ? ms : new List<VisitGuestMember>();
+            result[instanceId] = new VisitCampusFormContent
+            {
+                DelegationName = d.DelegationName,
+                VisitType = d.VisitType,
+                VisitTypeOther = d.VisitTypeOther,
+                Purpose = d.Purpose,
+                WorkingContent = d.WorkingContent,
+                WorkingLanguage = d.WorkingLanguage,
+                MediaConsentStatus = d.MediaConsentStatus,
+                MediaConsentNote = d.MediaConsentNote,
+                TransportationNote = d.TransportationNote,
+                NoteToFptu = d.NoteToFptu,
+                OperationalContact = new VisitFormOperationalContact
+                {
+                    FullName = d.OperationalContactFullName,
+                    Organization = d.OperationalContactOrganization,
+                    Phone = d.OperationalContactPhone,
+                    Email = d.OperationalContactEmail
+                },
+                Visitors = linked.Where(m => m.MemberType != ExternalSupport).Select(ToRow).ToList(),
+                SupportMembers = linked.Where(m => m.MemberType == ExternalSupport).Select(ToRow).ToList(),
+                FormRevision = d.FormRevision,
+                ApprovalRevision = d.ApprovalRevision,
+                RowVersion = d.RowVersion
+            };
+        }
+        return result;
+    }
+
+    private static VisitFormMemberRow ToRow(VisitGuestMember m) => new(
+        (long)m.GuestMemberId, m.MemberType, m.FullName, m.Organization, m.JobTitle, m.Nationality, (int)m.DisplayOrder);
+
     private static ResolvedMemberDto MapMember(VisitGuestMember m) => new()
     {
         GuestMemberId = (long)m.GuestMemberId,

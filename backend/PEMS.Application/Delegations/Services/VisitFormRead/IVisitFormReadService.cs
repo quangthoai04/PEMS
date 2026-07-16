@@ -1,3 +1,5 @@
+using PEMS.Domain.Entities.Delegations;
+
 namespace PEMS.Application.Delegations.Services.VisitFormRead;
 
 /// <summary>
@@ -21,4 +23,21 @@ public interface IVisitFormReadService
     /// the caller may see no campus of it, and a coded ConflictException on a v2 detail inconsistency.
     /// </summary>
     Task<ResolvedVisitFormDto> ResolveAsync(ulong visitRequestId, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Resolves the version-specific form CONTENT for an already-authorized set of visible campus
+    /// instances of <paramref name="request"/>, keyed by visit_instance_id. The caller keeps ownership
+    /// of scope, decision, schedule and cancellation metadata (version-agnostic instance/request
+    /// columns) and uses this only for the form-content half, so the dual-read rule lives in one place:
+    ///  • v1 → the global compatibility projection (the same content object for every visible instance);
+    ///    members come from the request-level list.
+    ///  • v2 → ONLY visit_instance_form_details + visit_instance_guest_members; NEVER the global fields;
+    ///    a visible instance missing its detail is a coded consistency error (no silent fallback).
+    /// Only the passed <paramref name="visibleInstanceIds"/> are read — hidden campuses are never queried.
+    /// Batched (v1: 1 query; v2: 2 queries) regardless of campus/member count — no per-campus N+1.
+    /// </summary>
+    Task<IReadOnlyDictionary<ulong, VisitCampusFormContent>> ResolveCampusFormContentAsync(
+        VisitRequest request,
+        IReadOnlyList<ulong> visibleInstanceIds,
+        CancellationToken cancellationToken);
 }

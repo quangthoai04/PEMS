@@ -123,6 +123,97 @@ Test harness scripts / DB provisioning were run from the session scratchpad; the
 - **Out of PR-3 scope (unchanged):** write/create/edit v2, identity claim/transfer, amendment
   submit/approve, `IVisitAuditWriter`, search 5A, frontend, dropping legacy columns.
 
+## 6b. Read-handler migration (follow-up) — handler #1: GetSubmittedVisitRequestFormDetail
+
+The first §6 read handler is now migrated to the dual-read rule. This is the flat, single-snapshot
+submitted-form endpoint (`GET /api/delegations/visit-requests/{id}/submitted-form-detail`), used by the
+pre-approval review / approved-detail / rejected-detail screens.
+
+**New reusable primitive.** `IVisitFormReadService.ResolveCampusFormContentAsync(request, visibleInstanceIds, ct)`
+resolves the *version-specific FORM CONTENT* (delegation / visit-type / purpose / working-content /
+language / media / notes / operational-contact / members / revisions) for an **already-authorized** set of
+visible instances, keyed by instance id. Every handler keeps its own version-agnostic metadata (scope,
+decision, schedule, cancellation — those columns live on `visit_requests` / `visit_request_campuses` in
+BOTH versions) and calls this for the form-content half, so the dual-read rule lives in exactly one place:
+v1 → global compatibility projection (identical per instance); v2 → ONLY `visit_instance_form_details` +
+`visit_instance_guest_members`, never the global fields; a visible instance missing its detail →
+`409 VISIT_FORM_DETAIL_MISSING` (no fallback). Batched (v1: 1 query; v2: 2 queries) regardless of
+campus/member count. Later handlers reuse this primitive instead of re-implementing v2 sourcing.
+
+**Handler behavior after migration:**
+- **v1 (form_schema_version=1):** byte-for-byte unchanged — the flat DTO is still the global projection,
+  same members, same whole-request `CampusDecisionSummary`. (No existing IntegrationTest exercises this
+  endpoint, and the ApplicationTests are `Skip` stubs, so there is no v1 contract regression surface.)
+- **v2 mixed (`has_mixed_campus_details=1`):** `409 FORM_VERSION_UPGRADE_REQUIRED` — the flat DTO cannot
+  represent per-campus-divergent content; the client must use the canonical v2 endpoint. Thrown only
+  **after** authorization, so mixed-ness is never revealed to an unauthorized caller.
+- **v2 non-mixed:** the flat form content is DERIVED from a representative visible instance's per-campus
+  detail + instance-member links via the primitive — **never** the global fields. `CampusDecisionSummary`
+  is computed over the **visible** instances only (no hidden-campus aggregate leak).
+- Scope is applied **before** any content is projected (unchanged scope block); hidden campuses never
+  appear in `Campuses[]`, the summary, or the member lists.
+
+**Tests added — `SubmittedVisitRequestFormDetailV2Tests` (12, all green vs `pems_pr3_test`):** v1 single +
+v1 multi (global, summary counts all), v2 single + v2 multi non-mixed (content derived from detail, not
+global), v2 mixed → `FORM_VERSION_UPGRADE_REQUIRED`, mixed via the resolver v2 path → per-campus
+`CampusVisits[]`, missing detail → `VISIT_FORM_DETAIL_MISSING` (no fallback), Staff-Leader own-campus (no
+aggregate or cross-campus member leak), HO all, Host hosted-only, Admin + unrelated → 403, and a
+constant-DB-command-count assertion (1 campus × 1 member vs 2 campuses × 3 members) proving no per-campus /
+per-member N+1.
+
+**Verification for handler #1:** `dotnet build` 0 errors; `SubmittedVisitRequestFormDetailV2Tests` 12/12;
+UnitTests 435/435; ArchitectureTests 14/14 (all green).
+
+**Full existing IntegrationTests — regression delta (the meaningful gate):** run against a **byte-faithful**
+disposable clone `pems_it_regression` (cloned from the PR-2 master via a single `mysqldump … | mysql …`
+pipe, `--default-character-set=utf8mb4 --hex-blob`, `pipefail`; HEX-verified identical to source, zero
+replacement chars; connection swapped via `appsettings.Testing.json` under a `trap` backup/restore, final
+`git diff` empty; default output path).
+
+| Run | Total | Passed | Failed |
+|-----|------:|-------:|-------:|
+| **HEAD `d5c29ecf`** (without Handler #1) | 220 | 203 | 17 |
+| **With Handler #1** | 232 | 215 | 17 |
+
+The **same 17 tests fail in both runs (identical by name)**; Handler #1 adds exactly **+12 passing** tests
+and **0 new failures** → **no regression**. `pems_test` no longer exists in this environment, so the only
+full-seed source is the PR-2 master.
+
+> **The 17 failures are a pre-existing FIXTURE/SEED incompatibility — NOT encoding, NOT Handler #1.** They
+> are all *create / OTP / idempotency* write-flow tests (`ActorRelationAuthenticatedCreateApiTests`,
+> `Uc17IdempotencyDuplicateApiTests`, `Uc17OtpChallengeApiTests`) that call
+> `DatabaseResetHelper.EnsureTestUserAsync(StaffLeader)` to add their own Staff Leader on campuses 1/2 —
+> but the PR-2 master already seeds a leader there (`user 3` "Hà Nội", `user 9` "TP.HCM"), and leftover
+> test users from prior runs (`user 216` "[IT-UC63]", `user 237` "[IT-ACTOR-REL]") add another. Result:
+> **2 valid leaders per campus → `IsAvailableForVisitRegistration = false` → `CAMPUS_STAFF_LEADER_CONFIGURATION_INVALID`**
+> (the "exactly one leader" rule, BR-86-19/20). These tests were authored against a `pems_test` seed where
+> campuses 1/2 had no pre-seeded master leader. (My earlier PowerShell-pipe clone additionally `?`-corrupted
+> the UTF-8, which is why the campus name first appeared as "H?? N???i"; the byte-faithful clone removes
+> that, but the 17 still fail for the seed-count reason above.)
+>
+> **Gate status:** no-regression is **PROVEN** (delta 0). A literally-green full suite was blocked by this
+> pre-existing seed incompatibility (see resolution below). Production code is **not** changed to
+> accommodate the clone.
+
+### 6c. Suite-health follow-up — the 17 fixture failures RESOLVED (separate commit)
+
+Fixed the test harness (not production code, not the seed): a campus must have **exactly one** valid Staff
+Leader (BR-86-19/20), and the PR-2 master already seeds one per campus, so the test helpers must **reuse**
+it rather than add a second.
+
+- `DatabaseResetHelper.EnsureTestUserAsync(StaffLeader)` — now returns the campus's existing valid IC Staff
+  Leader (the seed's) when present, instead of creating a duplicate. All StaffLeader-consuming test classes
+  therefore share the single seeded leader; the campus stays registration-valid.
+- `ActorRelationAuthenticatedCreateApiTests.EnsureLeaderOnCampusAsync` — reuses the campus's existing valid
+  leader; only creates one if the campus has none.
+
+Provisioning: each run imports a **fresh** disposable DB from the actual PR-2 master file
+(`pems_full_v10_…_FIXED.sql`, `pems_db`→`pems_it_regression`, byte-safe Git-Bash import) — never a clone of
+a polluted DB. **Result: full IntegrationTests = 232/232 passed, 0 failed, on TWO independent fresh-master
+runs** (deterministic/repeatable). Post-run, every active campus still has exactly one valid Staff Leader
+(no accumulation): the fix reuses the seed leader and never creates `it-uc63-staffleader`. No production
+code, production seed, or one-off manual DB edit was used.
+
 ## 7. Definition of Done status
 
 Build pass ✅ · mapping matches PR-2 MySQL ✅ (11 integration tests) · dual-read v1/v2 works ✅ ·
