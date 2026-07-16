@@ -291,6 +291,139 @@ fresh master = **261/261**; unit 435/435; architecture 14/14.
 `GetVisitInstanceContribution` all migrated as INSTANCE-LEVEL (mixed → 200 with the target instance), each
 its own commit, each verified full-green.
 
+## 6h. Read-handler migration — group #4a: GetVisitInvitationDetail (INSTANCE-LEVEL)
+
+Inventory: route `GET .../invitations/{participantId}` (VisitInvitationsController / DelegationsController /
+DepartmentReceptionTasksController); input key `ParticipantId` → a `VisitParticipant` bound to ONE
+`VisitInstanceId`; **no token** — authorization is `p.UserId == current user` (+ `!IsHost`, `Status != Removed`);
+consumer = the invited user's "my invitation detail" screen. The only global-legacy form field the DTO exposes
+is `DelegationName` (no Purpose/members/contact-email/guest-list → no extra PII surface).
+
+Classified **instance-level**: the invitation is for one campus instance, so a MIXED request returns **200**
+and `DelegationName` is sourced **only** from the invited instance's `visit_instance_form_details` (never
+global, never a sibling). Missing detail → `409 VISIT_FORM_DETAIL_MISSING`. Token hashing/expiry/one-time
+rules N/A (participant/user-bound, not token-bound); auth is applied in the query before any projection.
+
+Tests: `VisitInvitationDetailV2Tests` (6) green — v1 global, v2 non-mixed, v2 mixed with two participants of
+the SAME request (campus A → DELEG-A, campus B → DELEG-B, no cross-leak), missing → 409, wrong-recipient &
+removed invitation → NotFound, constant query count 1-vs-3 campuses. Full IntegrationTests fresh master =
+**267/267**; unit 435/435; architecture 14/14.
+
+## 6i. Read-handler migration — group #4b: GetStaffCalendarDetail (INSTANCE-LEVEL)
+
+Inventory: route `GET /api/dashboard/staff-calendar/{visitInstanceId}` (DashboardController); input key
+`VisitInstanceId`; consumer = the Staff / Staff-Leader dashboard calendar detail modal; authorization =
+Staff-Leader of the instance's campus (multi-campus only after HO approval or once a host exists) **or**
+Staff member of that campus / the instance's host — enforced BEFORE any projection. The global-legacy form
+fields the DTO exposes: `DelegationName`, the contact-person block (= operational contact), `Purpose`,
+`WorkingContent`, `VisitType`/`VisitTypeOther`, `WorkingLanguage`, `MediaConsent*`, `TransportationNote`,
+`NoteToFptu`, and `GuestCount`.
+
+Classified **instance-level**: the modal is keyed by one campus instance, so a MIXED request returns **200**
+and every form field, the operational contact and the guest count are sourced **only** from the target
+instance's `visit_instance_form_details` + `visit_instance_guest_members` (never global, never a sibling).
+Missing detail → `409 VISIT_FORM_DETAIL_MISSING`, no global fallback. The DTO exposes a guest COUNT (not the
+member list), so `GuestCount` for v2 is the target instance's linked-member count — never the request-wide
+total. Registrant fields and all calendar/event/host/decision/cancellation fields keep their existing source
+(request-/instance-metadata, identical in v1 and v2). v1 keeps the global projection, byte-identical.
+
+Tests: `StaffCalendarDetailV2Tests` (9) green — v1 byte-identical (delegation/purpose/content/type/language/
+media/contact/count), v2 single, v2 multi non-mixed → 200, v2 mixed target A → 200 A-only, same request
+target B → 200 B-only (no sibling leak), per-instance guest count (A=1 vs B=2, never the request total),
+missing → 409, hidden-sibling-campus & non-staff → 403, constant query count 1-vs-3 campuses. Full
+IntegrationTests fresh master = **276/276** (0 failed); unit 435/435; architecture 14/14.
+
+## 6j. Read-handler migration — group #4c: GetRequestDetail (Dept) (INSTANCE-LEVEL)
+
+Inventory: route `GET .../request-detail/{logisticsItemId}` (DepartmentReceptionTasksController, class-level
+`[Authorize]`); input key `LogisticsItemId` → a `VisitLogisticsItem` that belongs to exactly ONE campus
+instance (`l.VisitInstance` → `camp.VisitInstanceId`); consumer = the department reception-task detail modal
+(the department staff/leader handling that logistics item). The global-legacy form fields the DTO exposes:
+`DelegationName`, `Purpose`, `WorkingContent`, and the contact-person block (`ContactPersonFullName`,
+`ContactPersonPhone` = operational contact). `Registrant*` fields are request-level identity and stay in both
+versions.
+
+Classified **instance-level**: the logistics item is owned by one campus instance, so a MIXED request returns
+**200** and the delegation / purpose / working-content / operational-contact fields are sourced **only** from
+that target instance's `visit_instance_form_details` (never global, never a sibling). Missing detail →
+`409 VISIT_FORM_DETAIL_MISSING`, no global fallback. The item is already scoped to one instance, so there is
+no cross-campus query and no sibling leak; authorization is the controller's `[Authorize]` (no handler-level
+scope to unit-test). v1 keeps the global projection, byte-identical.
+
+Tests: `RequestDetailV2Tests` (7) green — v1 byte-identical (delegation/purpose/content/contact, registrant
+unchanged), v2 single, v2 multi non-mixed → 200, v2 mixed target A → 200 A-only, same request target B → 200
+B-only (no sibling A leak in delegation or contact), missing → 409, constant query count 1-vs-3 campuses. Full
+IntegrationTests fresh master = **283/283** (0 failed); unit 435/435; architecture 14/14.
+
+## 6k. Read-handler migration — group #4d: GetInvitationDetail (Dept) (INSTANCE-LEVEL)
+
+Inventory: route `GET .../invitation-detail/{participantId}` (DepartmentReceptionTasksController, class-level
+`[Authorize]`); input key `ParticipantId` → a `VisitParticipant` (Status != REMOVED) bound to exactly ONE
+campus instance (`p.VisitInstance` → `camp.VisitInstanceId`); consumer = the department invitation detail
+modal (the invited support staff's view). Same DTO shape as §6j — global-legacy form fields: `DelegationName`,
+`Purpose`, `WorkingContent`, and the contact-person block (`ContactPersonFullName`, `ContactPersonPhone` =
+operational contact); `Registrant*` fields are request-level identity and stay in both versions.
+
+Classified **instance-level**: the participant is bound to one campus instance, so a MIXED request returns
+**200** and the delegation / purpose / working-content / operational-contact fields are sourced **only** from
+that target instance's `visit_instance_form_details` (never global, never a sibling). Missing detail →
+`409 VISIT_FORM_DETAIL_MISSING`, no global fallback. The participant is already scoped to one instance (no
+cross-campus query, no sibling leak); authorization is the controller's `[Authorize]`. v1 keeps the global
+projection, byte-identical.
+
+Tests: `DeptInvitationDetailV2Tests` (7) green — v1 byte-identical (delegation/purpose/content/contact,
+registrant unchanged), v2 single, v2 multi non-mixed → 200, v2 mixed target A → 200 A-only, same request
+target B → 200 B-only (no sibling A leak), missing → 409, constant query count 1-vs-3 campuses. Full
+IntegrationTests fresh master = **290/290** (0 failed); unit 435/435; architecture 14/14.
+
+## 6l. Read-handler migration — group #4e: GetVisitInvitationById (ViewMyVisitInvitations) (INSTANCE-LEVEL)
+
+Inventory: route `GET .../my-invitations/{participantId}` (the invited user's own invitation-detail screen);
+input key `ParticipantId`; **ownership-scoped** — the query requires `p.UserId == current user`, `!p.IsHost`
+and role ∈ {IC_SUPPORT, DEPT_SUPPORT, STUDENT}, else `404 NotFound` (does not leak existence). The handler
+materialises a shared `VisitInvitationFlat` via one projection. Global-legacy form fields: `DelegationName`,
+`Purpose`, `WorkingContent`. `OrganizationName` is `RegistrantOrganization` (request-level identity) and stays.
+
+Classified **instance-level**: an invitation is bound to one campus instance, so a MIXED request returns
+**200** and delegation / purpose / working-content are sourced **only** from the target instance's
+`visit_instance_form_details` (never global, never a sibling). Missing detail → `409 VISIT_FORM_DETAIL_MISSING`,
+no global fallback. Ownership is enforced in the query **before** the v2 projection. To keep v1
+byte-identical *and* single-query, `FormSchemaVersion` is added to the flat projection (no extra query); only
+v2 then loads the request entity + resolves the target instance. The shared list query
+(`ViewMyVisitInvitations`, Class-C) leaves `FormSchemaVersion` 0 and stays on the global projection until PR-8
+(gated by the write flag staying OFF).
+
+Tests: `MyVisitInvitationByIdV2Tests` (8) green — v1 byte-identical (delegation/purpose/content, registrant
+org unchanged), v2 single, v2 multi non-mixed → 200, v2 mixed target A → 200 A-only, same request target B →
+200 B-only (no sibling A leak), missing → 409, non-owner → 404 (owner succeeds), constant query count 1-vs-3
+campuses. Full IntegrationTests fresh master = **298/298** (0 failed); unit 435/435; architecture 14/14.
+
+## 6m. Read-handler migration — group #4f: GetAgendaSetupForInstance (INSTANCE-LEVEL) — group #4 COMPLETE
+
+Inventory: route `GET .../agenda-setup/{visitInstanceId}` (AgendaTemplatesController); input key
+`VisitInstanceId`; consumer = the host / staff-leader-of-campus / HO agenda setup screen; authorization = Host
+of the instance **or** Staff Leader of the instance's campus **or** HO — enforced BEFORE any projection. Its
+**only** submitted-form field is `visit_type` (it drives the default-template resolution, the template ordering
+and the DTO); everything else is agenda/template/instance metadata.
+
+Classified **instance-level**: the screen is keyed by one campus instance, so a MIXED request returns **200**
+and `visit_type` is sourced **only** from the target instance's `visit_instance_form_details` (never the global
+field, never a sibling). The v2 resolve was placed **after** the authorization check (scope-before-projection).
+Missing detail → `409 VISIT_FORM_DETAIL_MISSING`, no global fallback. v1 keeps the global `visit_type`,
+byte-identical.
+
+Tests: `AgendaSetupForInstanceV2Tests` (8) green — v1 byte-identical (global visit type), v2 single, v2 multi
+non-mixed → 200, v2 mixed target A → 200 with A's visit type, same request target B → 200 with B's type (no
+sibling A leak), missing → 409, unauthorized role → 403 (HO succeeds), constant query count 1-vs-3 campuses
+(visit type + campus held constant so AgendaDefaultResolver's own query count doesn't confound the N+1 check).
+Full IntegrationTests fresh master = **306/306** (0 failed); unit 435/435; architecture 14/14.
+
+**Group #4 status: COMPLETE** — all Class-B read-detail handlers migrated (`GetVisitInvitationDetail`,
+`GetStaffCalendarDetail`, `GetRequestDetail`, `GetInvitationDetail`, `GetVisitInvitationById`,
+`GetAgendaSetupForInstance`), each instance-level (mixed → 200 with the target instance), each its own commit,
+each verified full-green. The remaining Class-C list/dashboard/report surfaces and export/report handlers are
+the PR-8 / write-flag-gate scope tracked in `PR3_PRE_PR4_AUDIT_MAP.md` §5–§8.
+
 ## 7. Definition of Done status
 
 Build pass ✅ · mapping matches PR-2 MySQL ✅ (11 integration tests) · dual-read v1/v2 works ✅ ·

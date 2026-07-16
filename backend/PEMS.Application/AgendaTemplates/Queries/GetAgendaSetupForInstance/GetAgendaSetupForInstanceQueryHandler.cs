@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using PEMS.Application.AgendaTemplates.Common;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Delegations.Services.VisitFormRead;
 using PEMS.Domain.Constants;
 using PEMS.Shared;
 
@@ -17,11 +18,14 @@ public sealed class GetAgendaSetupForInstanceQueryHandler
 {
     private readonly IApplicationDbContext _db;
     private readonly ICurrentUserService _currentUser;
+    private readonly IVisitFormReadService _formReadService;
 
-    public GetAgendaSetupForInstanceQueryHandler(IApplicationDbContext db, ICurrentUserService currentUser)
+    public GetAgendaSetupForInstanceQueryHandler(
+        IApplicationDbContext db, ICurrentUserService currentUser, IVisitFormReadService formReadService)
     {
         _db = db;
         _currentUser = currentUser;
+        _formReadService = formReadService;
     }
 
     public async Task<GetAgendaSetupForInstanceDto> Handle(
@@ -36,9 +40,6 @@ public sealed class GetAgendaSetupForInstanceQueryHandler
             .FirstOrDefaultAsync(c => c.VisitInstanceId == request.VisitInstanceId, cancellationToken)
             ?? throw new NotFoundException("VisitRequestCampus", request.VisitInstanceId);
 
-        // visit_type comes from the original submitted form, never from visit_request_campuses.
-        var visitType = instance.VisitRequest.VisitType;
-
         bool isHost = instance.CurrentHostUserId == userId;
         bool isStaffLeaderOfCampus = _currentUser.RoleCode == RoleCodes.Staff
             && string.Equals(_currentUser.SubRole, UserSubRoles.Leader, System.StringComparison.OrdinalIgnoreCase)
@@ -49,6 +50,19 @@ public sealed class GetAgendaSetupForInstanceQueryHandler
             throw new ForbiddenException("Bạn không có quyền thiết lập lịch trình cho cơ sở này.");
 
         var relation = isHost ? "HOST" : isStaffLeaderOfCampus ? "STAFF_LEADER" : "HO";
+
+        // visit_type comes from the submitted form, never from visit_request_campuses. v1 → the global
+        // projection on visit_requests; v2 → the TARGET instance's per-campus detail (this setup screen is
+        // keyed by one visit_instance_id, so a MIXED request still returns 200 with THIS instance's visit type,
+        // never the global field and never a sibling). Resolved AFTER the authorization check above; missing v2
+        // detail → 409 VISIT_FORM_DETAIL_MISSING (no global fallback). v1 keeps the global value, byte-identical.
+        string visitType = instance.VisitRequest.VisitType;
+        if (instance.VisitRequest.FormSchemaVersion >= FormSchemaVersions.PerCampus)
+        {
+            var content = await _formReadService.ResolveCampusFormContentAsync(
+                instance.VisitRequest, new[] { instance.VisitInstanceId }, cancellationToken);
+            visitType = content[instance.VisitInstanceId].VisitType!;
+        }
 
         bool isLive = instance.Status != VisitInstanceStatus.Cancelled && instance.Status != VisitInstanceStatus.Closed;
         // Applying/editing the agenda is the host's job during the preparation window only.
