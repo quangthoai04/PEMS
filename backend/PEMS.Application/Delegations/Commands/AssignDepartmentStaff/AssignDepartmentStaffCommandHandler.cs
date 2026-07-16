@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Common.Security;
+using PEMS.Application.Delegations.Services.VisitFormRead;
 using PEMS.Application.Emails.Common;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Delegations;
@@ -26,6 +27,7 @@ public sealed class AssignDepartmentStaffCommandHandler : IRequestHandler<Assign
     private readonly IEmailActionTokenService _tokens;
     private readonly IHtmlSanitizerService _sanitizer;
     private readonly IFileStorageService _storage;
+    private readonly IVisitFormReadService _formReadService;
 
     public AssignDepartmentStaffCommandHandler(
         IApplicationDbContext db,
@@ -34,7 +36,8 @@ public sealed class AssignDepartmentStaffCommandHandler : IRequestHandler<Assign
         IEmailService email,
         IEmailActionTokenService tokens,
         IHtmlSanitizerService sanitizer,
-        IFileStorageService storage)
+        IFileStorageService storage,
+        IVisitFormReadService formReadService)
     {
         _db = db;
         _currentUser = currentUser;
@@ -43,6 +46,7 @@ public sealed class AssignDepartmentStaffCommandHandler : IRequestHandler<Assign
         _tokens = tokens;
         _sanitizer = sanitizer;
         _storage = storage;
+        _formReadService = formReadService;
     }
 
     public async Task<ulong> Handle(AssignDepartmentStaffCommand request, CancellationToken cancellationToken)
@@ -89,11 +93,22 @@ public sealed class AssignDepartmentStaffCommandHandler : IRequestHandler<Assign
             {
                 vr.VisitRequestId,
                 vr.DelegationName,
+                vr.FormSchemaVersion,
                 inst.PlannedStartAt,
                 inst.PlannedEndAt
             }).FirstOrDefaultAsync(cancellationToken);
 
+        // The assignment email is for THIS campus instance → v2 (incl. mixed) sources the delegation name from
+        // this instance's per-campus detail (never global, never a sibling); v1 keeps the global value.
         var delegationName = instanceInfo?.DelegationName ?? "đoàn khách";
+        if (instanceInfo != null && instanceInfo.FormSchemaVersion >= FormSchemaVersions.PerCampus)
+        {
+            var visit = await _db.VisitRequests.AsNoTracking()
+                .FirstAsync(v => v.VisitRequestId == instanceInfo.VisitRequestId, cancellationToken);
+            var formContent = await _formReadService.ResolveCampusFormContentAsync(
+                visit, new[] { leaderParticipant.VisitInstanceId }, cancellationToken);
+            delegationName = formContent[leaderParticipant.VisitInstanceId].DelegationName;
+        }
         var templateId = await _db.EmailTemplates
             .Where(t => t.TemplateCode == EmailActionTemplates.ParticipantInvitation)
             .Select(t => (ulong?)t.EmailTemplateId)

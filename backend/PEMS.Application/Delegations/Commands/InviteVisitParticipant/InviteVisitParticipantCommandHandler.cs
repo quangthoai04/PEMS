@@ -37,12 +37,14 @@ public sealed class InviteVisitParticipantCommandHandler
     private readonly IFileStorageService _storage;
     private readonly PEMS.Application.Emails.Utils.IEmailImageLayoutNormalizer _normalizer;
     private readonly PEMS.Application.Notifications.Common.INotificationService _notificationService;
+    private readonly PEMS.Application.Delegations.Services.VisitFormRead.IVisitFormReadService _formReadService;
 
     public InviteVisitParticipantCommandHandler(
         IApplicationDbContext db, ICurrentUserService currentUser, IDateTimeService clock,
         IEmailService email, IEmailActionTokenService tokens, IHtmlSanitizerService sanitizer,
         IFileStorageService storage, PEMS.Application.Emails.Utils.IEmailImageLayoutNormalizer normalizer,
-        PEMS.Application.Notifications.Common.INotificationService notificationService)
+        PEMS.Application.Notifications.Common.INotificationService notificationService,
+        PEMS.Application.Delegations.Services.VisitFormRead.IVisitFormReadService formReadService)
     {
         _db = db;
         _currentUser = currentUser;
@@ -53,6 +55,7 @@ public sealed class InviteVisitParticipantCommandHandler
         _storage = storage;
         _normalizer = normalizer;
         _notificationService = notificationService;
+        _formReadService = formReadService;
     }
 
     public async Task<InviteVisitParticipantResponse> Handle(
@@ -103,7 +106,15 @@ public sealed class InviteVisitParticipantCommandHandler
         var campusName = await _db.Campuses
             .Where(c => c.CampusId == instance.CampusId).Select(c => c.Name)
             .FirstOrDefaultAsync(cancellationToken) ?? "FPT University";
+        // The invitation is for THIS campus instance → v2 (incl. mixed) sources the delegation name from this
+        // instance's per-campus detail (never the global field, never a sibling); v1 keeps the global value.
         var delegationName = instance.VisitRequest.DelegationName;
+        if (instance.VisitRequest.FormSchemaVersion >= FormSchemaVersions.PerCampus)
+        {
+            var formContent = await _formReadService.ResolveCampusFormContentAsync(
+                instance.VisitRequest, new[] { instance.VisitInstanceId }, cancellationToken);
+            delegationName = formContent[instance.VisitInstanceId].DelegationName;
+        }
 
         var now = _clock.VietnamNow;
 
