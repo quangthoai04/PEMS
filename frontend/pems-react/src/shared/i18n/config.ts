@@ -9,6 +9,7 @@ import viPartners from './locales/vi/partners.json';
 import viFaq from './locales/vi/faq.json';
 import viGallery from './locales/vi/gallery.json';
 import viVisitRequest from './locales/vi/visitRequest.json';
+import viVisitRequestV2 from './locales/vi/visitRequestV2.json';
 import viValidation from './locales/vi/validation.json';
 import viErrors from './locales/vi/errors.json';
 import viToast from './locales/vi/toast.json';
@@ -25,6 +26,7 @@ import enPartners from './locales/en/partners.json';
 import enFaq from './locales/en/faq.json';
 import enGallery from './locales/en/gallery.json';
 import enVisitRequest from './locales/en/visitRequest.json';
+import enVisitRequestV2 from './locales/en/visitRequestV2.json';
 import enValidation from './locales/en/validation.json';
 import enErrors from './locales/en/errors.json';
 import enToast from './locales/en/toast.json';
@@ -43,6 +45,7 @@ const resources = {
     faq: viFaq,
     gallery: viGallery,
     visitRequest: viVisitRequest,
+    visitRequestV2: viVisitRequestV2,
     validation: viValidation,
     errors: viErrors,
     toast: viToast,
@@ -60,6 +63,7 @@ const resources = {
     faq: enFaq,
     gallery: enGallery,
     visitRequest: enVisitRequest,
+    visitRequestV2: enVisitRequestV2,
     validation: enValidation,
     errors: enErrors,
     toast: enToast,
@@ -93,7 +97,7 @@ i18n
     // bare key segment (t('loginModal:title') -> "title") straight into the UI.
     ns: [
       'common', 'publicLayout', 'home', 'news', 'partners',
-      'faq', 'gallery', 'visitRequest', 'validation', 'errors', 'toast',
+      'faq', 'gallery', 'visitRequest', 'visitRequestV2', 'validation', 'errors', 'toast',
       'loginModal', 'search', 'visitFptu', 'notifications'
     ],
     defaultNS: 'common',

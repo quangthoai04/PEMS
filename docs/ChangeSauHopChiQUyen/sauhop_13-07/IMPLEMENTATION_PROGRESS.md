@@ -238,7 +238,54 @@ v2_requests = 0; both flags default OFF. Phase C = ✅ COMPLETE.
 - Tests: `V2MixedListSurfacesTests` **2/2** (helper matrix mixed/non-mixed + Staff-calendar end-to-end:
   each campus leader sees THEIR campus's name, never the sibling's, proving the Pomelo CASE+JOIN
   translation on a real surface).
-## Phase G — frontend multi-campus form + detail/edit/identity/amendment UI — ⬜ pending
+## Phase G — frontend multi-campus form + detail/edit/identity/amendment UI — 🟨 in progress
+- **G-1 foundation** — ✅ DONE: typed v2 API client (`visitRequestV2Api.ts`), invitation landing page
+  (`/visit-contact-claim/:token`, `/visit-contact-transfer/:token` — anonymous MASKED info; accept/decline
+  need the matching Google login), `ContactIdentityPanel` (claim resend/replace; transfer initiate/
+  resend/cancel), `VisitAmendmentPanel` (old→new diff, approve/reject-with-reason/withdraw),
+  `VisitHistoryTimeline` (scoped masked timeline). NOTE: the G-1 commit was pushed before its scope
+  could be amended, so the fix landed FORWARD (`0cec2972`): App.tsx routes wired + the two internal
+  planning docs untracked (kept local-only). tsc 0 errors, vite build ✓.
+- **G-2 per-campus form v2** — ✅ DONE:
+  - `visitRequestV2.schema.ts` — registrant + primaryContact request-level; `campusVisits[]` each a
+    COMPLETE independent snapshot (schedule/content/people/operationalContact/requirements) with stable
+    `clientKey` identity; 30-MINUTE minimum in ms math (29m59s fails, 30m00s passes — never auto-adjusts
+    the typed end time), 10-campus / 200-member caps, per-index duplicate-campus errors.
+  - `visitRequestV2Form.ts` pure utils — `cloneCampusVisitContent` (deep copy; target keeps identity/
+    campus/schedule), confirmed `applyContentToAllCampuses`, `buildV2CreatePayload`/`buildV2EditPayload`
+    (REAL `VisitRequestFormDataV2`/`VisitRequestEditV2Dto` contracts — no sameForAll, no client-sent
+    scope), `migrateV1DraftToV2` (global draft duplicated into every selected campus),
+    `mapServerFieldPathToFormPath` (FluentValidation path → exact RHF campus/nested field),
+    `applyImportedMembersToCampus` (per-campus Excel, never global).
+  - `visitRequestV2DraftStorage.ts` — draftSchemaVersion **3** under its OWN key (v1 form + its draft
+    untouched); load = v3 first, else one-time IN-MEMORY migration of the global draft (an existing v3
+    draft is never overwritten by the older global one); sanitize strips OTP/session/files.
+  - `useVisitRequestFormV2.ts` — `useFieldArray` campusVisits; add(copy)/remove(confirm-if-dirty)/
+    copy-into/two-step confirmed apply-to-all; server-error mapping lands on the exact campus card +
+    `firstErrorCampusIndex` drives expand/scroll; PUBLIC flow mints the OTP via the v1 initiate
+    endpoint with an explicit v1 projection (see report §6 gap) and creates via
+    `POST /v2/visit-requests/verify` with the REAL nested `{form, otpCode, sessionToken}` contract;
+    AUTHENTICATED posts `/v2/visit-requests` directly. Fixed two G-1 client bugs against backend
+    source: verify-v2 body was flattened (Form would bind null) and `V2EditPayload` was missing
+    registrant/primaryContact/partnerId.
+  - UI: `CampusVisitCard` (accordion that only CSS-hides its body — fields stay mounted, nothing
+    unregisters; per-card error badge; per-campus Excel import ≤5MB via the existing validated parser;
+    one-time copy-from + apply-to-all triggers), `VisitRequestFormV2` (registrant/contact once, cards,
+    both destructive confirms as accessible dialogs, reuse of `OtpVerificationModal`),
+    `VisitRequestV2Page` on NEW routes `/visit-registration/v2` (public) + `/visit/create-v2`
+    (authenticated) — the v1 flow is untouched and flags stay OFF server-side (backend 404 surfaces
+    honestly; no silent v1 fallback).
+  - i18n: new `visitRequestV2` namespace (vi+en, registered in config) + `minDurationMinutes`/
+    `maxCampuses` validation keys.
+  - Tests: **Vitest + RTL introduced** (`npm run test:unit`, vitest.config.ts + jsdom + setup);
+    33/33 — schema (30-min boundary, duplicate-campus paths, caps, OTHER-type), utils (deep-copy
+    independence, apply-to-all purity + overwrite list, payload contracts incl. processing matching &
+    partner mode, v1 projection dedupe, draft migration duplication + independence, server-path
+    mapping, per-campus Excel apply), draft storage (round-trip stable clientKeys, expiry, namespace,
+    migration + never-shadow rule, secret sanitize), hook (add/copy/remove independence, two-step
+    apply-to-all, public initiate→verify same submissionId + real v2 payload, authenticated direct
+    create, invalid → no API call + first-error campus index).
+- **G-3 read/detail/workflow UX** — ⬜ pending.
 ## Phase H — final verification + E2E + rollout readiness — ⬜ pending
 ## Phase I — contract cleanup prep (guarded, never run on real DB) — ⬜ pending
 

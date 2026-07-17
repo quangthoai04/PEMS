@@ -83,11 +83,17 @@ export interface V2CreateResponse {
 export const createVisitRequestV2 = (payload: V2CreatePayload) =>
   httpClient.post<V2CreateResponse>('/v2/visit-requests', payload).then(r => r.data);
 
-/** Public OTP sibling of create-v2 (step 2 of the public flow). */
-export const verifyAndCreateVisitRequestV2 = (payload: V2CreatePayload & {
-  otpCode: string;
-  sessionToken: string;
-}) => httpClient.post<V2CreateResponse>('/v2/visit-requests/verify', payload).then(r => r.data);
+/**
+ * Public OTP sibling of create-v2 (step 2 of the public flow). The backend command binds
+ * `{ form, otpCode, sessionToken }` — the form payload is NESTED, not flattened.
+ */
+export const verifyAndCreateVisitRequestV2 = (
+  payload: V2CreatePayload,
+  otpCode: string,
+  sessionToken: string,
+) => httpClient
+  .post<V2CreateResponse>('/v2/visit-requests/verify', { form: payload, otpCode, sessionToken })
+  .then(r => r.data);
 
 // ── Pending edit / resubmit (stable visitInstanceId + row versions) ───────────
 
@@ -97,8 +103,13 @@ export interface V2CampusVisitEdit extends V2CampusVisitForm {
   expectedRowVersion?: number | null;
 }
 
+/** Mirrors backend `VisitRequestEditV2Dto` — the edit payload carries the request-level
+ * snapshot too (registrant/primaryContact/partnerId), not just the campus list. */
 export interface V2EditPayload {
   expectedRequestRowVersion: number;
+  registrant: V2CreatePayload['registrant'];
+  primaryContact: V2ContactPointDto;
+  partnerId?: number | null;
   campusVisits: V2CampusVisitEdit[];
 }
 

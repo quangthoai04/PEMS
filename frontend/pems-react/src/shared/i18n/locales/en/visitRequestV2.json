@@ -1,0 +1,106 @@
+{
+  "page": {
+    "title": "Per-campus visit registration",
+    "subtitle": "Each campus is an independent section: its own schedule, guest list, working contact and requirements."
+  },
+  "sections": {
+    "registrant": "Registrant information",
+    "contact": "Request contact person",
+    "contactDesc": "The contact person manages the request and signs in with Google using this email. If it is someone else, they will receive a confirmation email.",
+    "contactSameAsRegistrant": "Same as registrant",
+    "campuses": "Visit content per campus",
+    "campusesDesc": "Add one card per campus. You can copy content between campuses — after copying, every campus is still edited independently."
+  },
+  "registrant": {
+    "fullName": "Full name",
+    "organization": "Organization",
+    "jobTitle": "Job title",
+    "nationality": "Nationality"
+  },
+  "person": {
+    "fullName": "Full name",
+    "jobTitle": "Job title",
+    "organization": "Organization",
+    "nationality": "Nationality"
+  },
+  "card": {
+    "cardN": "Campus {{n}}",
+    "unselectedCampus": "No campus selected",
+    "errorBadge": "{{count}} error(s)",
+    "removeCampus": "Remove this campus",
+    "removeRow": "Remove row",
+    "copyFromLabel": "Copy content from:",
+    "copyFromPlaceholder": "Choose source campus…",
+    "applyToAll": "Apply this content to the remaining campuses…",
+    "campus": "Campus",
+    "campusPlaceholder": "Select campus",
+    "startAt": "Start",
+    "endAt": "End",
+    "minDurationHint": "Minimum 30 minutes",
+    "delegationName": "Delegation name",
+    "visitType": "Visit type",
+    "visitTypeOther": "Other visit type",
+    "purpose": "Purpose",
+    "workingContent": "Working content",
+    "visitors": "Guest list",
+    "memberCount": "({{count}}/{{max}})",
+    "addVisitor": "Add guest",
+    "supportTeam": "Support staff",
+    "addSupport": "Add support member",
+    "operationalContact": "Working contact at this campus",
+    "operationalContactHint": "Coordination only at this campus — never a login account",
+    "phone": "Phone",
+    "email": "Email",
+    "additional": "Additional requirements",
+    "workingLanguage": "Working language",
+    "languageVi": "Vietnamese",
+    "languageEn": "English",
+    "mediaConsent": "Media consent",
+    "mediaAgreed": "Photography/recording allowed",
+    "mediaDeclined": "Not allowed",
+    "mediaNote": "Media note",
+    "transportationNote": "Transportation identification",
+    "notes": "Note to FPTU",
+    "addCampus": "Add campus ({{count}}/{{max}})"
+  },
+  "excel": {
+    "template": "Template",
+    "importForCampus": "Import Excel for this campus",
+    "invalidType": "Only .xlsx or .xls files are accepted.",
+    "tooLarge": "File exceeds {{maxMb}}MB.",
+    "parseFailed": "Could not read the Excel file.",
+    "importedVisitors": "Imported {{count}} guests for this campus.",
+    "importedSupport": "Imported {{count}} support members for this campus."
+  },
+  "applyAll": {
+    "title": "Apply to the remaining campuses?",
+    "overwrites": "The content already entered for these campuses will be OVERWRITTEN: {{campuses}}.",
+    "noOverwrites": "The remaining campuses are empty — they will receive a copy of this campus.",
+    "independentAfter": "After applying, each campus is still edited independently (no automatic syncing).",
+    "confirm": "Apply"
+  },
+  "remove": {
+    "title": "Remove a campus with content?",
+    "body": "\"{{campus}}\" already has data. Removing this card will discard everything entered for that campus.",
+    "confirm": "Remove campus"
+  },
+  "draft": {
+    "migrated": "Your previous draft (shared form) was converted to the per-campus layout — review each campus card before submitting."
+  },
+  "submit": {
+    "public": "Submit & receive OTP",
+    "authenticated": "Submit request"
+  },
+  "success": {
+    "title": "Visit request submitted",
+    "requestCode": "Request code: {{code}}",
+    "campusCount": "Campuses registered: {{count}}",
+    "mixedNote": "content varies by campus",
+    "idempotentReplay": "This request was already recorded (resubmitting did not create a duplicate).",
+    "claimPending": "The contact person differs from the registrant: a confirmation email has been sent (valid 72 hours). Campus approvals do not wait for this confirmation.",
+    "backHome": "Back to home"
+  },
+  "common": {
+    "cancel": "Cancel"
+  }
+}

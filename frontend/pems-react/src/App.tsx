@@ -6,6 +6,7 @@
 import React, { useEffect } from 'react';
 import { Navigate, Routes, Route, useLocation } from 'react-router-dom';
 import VisitContactInvitationPage from './pages/identity/VisitContactInvitationPage';
+import VisitRequestV2Page from './pages/visit/VisitRequestV2Page';
 import { Toaster } from 'react-hot-toast';
 import { Header } from './components/layout/Header';
 import { Footer } from './components/layout/Footer';
@@ -154,6 +155,10 @@ export default function App() {
               matching Google login (the page itself guides the user — no ProtectedRoute redirect). */}
           <Route path="/visit-contact-claim/:token" element={<VisitContactInvitationPage kind="claim" />} />
           <Route path="/visit-contact-transfer/:token" element={<VisitContactInvitationPage kind="transfer" />} />
+
+          {/* Per-campus form v2 (feature-flagged server-side; the v1 registration flow is untouched) */}
+          <Route path="/visit-registration/v2" element={<VisitRequestV2Page mode="public" />} />
+          <Route path="/visit/create-v2" element={<ProtectedRoute><VisitRequestV2Page mode="authenticated" /></ProtectedRoute>} />
 
           {/* Dashboard Routes (require authentication) */}
           <Route path="/dashboard" element={<ProtectedRoute><ErrorBoundary><DashboardLayout /></ErrorBoundary></ProtectedRoute>}>

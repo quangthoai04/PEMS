@@ -190,13 +190,28 @@ instance-scoped actor. Repository-wide 10-field sweep → **ZERO unclassified pr
 (classification table in audit map §10). Tests: `V2MixedListSurfacesTests` 2/2 (helper matrix + Staff
 calendar end-to-end per-campus names).
 
-### Phase G — frontend (plan §7/§8/§9)
-Common registrant + request-level primary contact + campus cards/tabs, each with independent schedule/form/
-guest/support/operational-contact/additional-requirements; "copy from campus" = UI-only; add/remove campus;
-per-campus validation (≥30 min); submit `campusVisits[]`; detail view per campus with own status/host/revision;
-edit-pending/resubmit; initial-claim/transfer contact UI; safe-edit/amendment + approve/reject UI; audit/
-revision display by permission; legacy 409 routed to a v2 experience (no raw technical error). Gate: `npm run
-build` AND `npm run lint` both 0 errors.
+### Phase G — frontend (plan §7/§8/§9) — 🚧 IN PROGRESS (G-1 + G-2 done)
+**G-1 ✅** typed v2 API client + invitation landing (`/visit-contact-claim|transfer/:token`, masked, explicit
+accept, wrong-account hint) + `ContactIdentityPanel` + `VisitAmendmentPanel` + `VisitHistoryTimeline`; routes
+wired and the two internal planning docs untracked in the forward-fix commit `0cec2972` (the G-1 commit had
+already been pushed, so history was NOT rewritten).
+**G-2 ✅** per-campus form v2: `visitRequestV2.schema.ts` (campusVisits[] full snapshots, stable clientKeys,
+30-MIN minimum in ms math — 29m59s fails/30m passes, 10/200 caps, per-index duplicate-campus), pure utils
+(deep `cloneCampusVisitContent` preserving target identity/schedule, confirmed apply-to-all + overwrite list,
+`buildV2CreatePayload`/`buildV2EditPayload` matching the REAL backend DTOs, `migrateV1DraftToV2`,
+FluentValidation-path→RHF-path mapper, per-campus Excel apply), draft storage v3 (own key; global draft
+migrated in-memory once, never shadows a newer v3), `useVisitRequestFormV2` (public v1-initiate→OTP→
+`POST /v2/visit-requests/verify` with the correct NESTED `{form,otpCode,sessionToken}` body; authenticated
+direct create; server errors land on the exact campus card), `CampusVisitCard` (CSS-hide accordion — never
+unregisters; error badge; ≤5MB per-campus Excel), `VisitRequestFormV2` + `VisitRequestV2Page` on NEW routes
+`/visit-registration/v2` + `/visit/create-v2` (v1 flow untouched; flags OFF ⇒ backend 404 surfaced honestly,
+no silent v1 fallback), i18n namespace `visitRequestV2` (vi+en). **Vitest+RTL introduced**: `npm run
+test:unit` → 33/33. Fixed two G-1 client/contract bugs (flattened verify body; V2EditPayload missing
+registrant/primaryContact/partnerId).
+**G-3 ⬜ remaining** detail view per campus with own status/host/revision; edit-pending/resubmit v2 UI;
+wiring identity/amendment/history panels into the real detail screens; mixed-state labels; legacy 409 routed
+to a v2 experience (no raw technical error); VI/EN + a11y + component tests. Gate: `npm run build` AND
+`npm run lint` AND `npm run test:unit` all 0 failures.
 
 ### Phase H — final verification + E2E + rollout readiness
 SQL fresh import + verify + upgrade/backfill/idempotency/rollback on disposable MySQL; dotnet build; full
@@ -210,24 +225,37 @@ prove flag-on flow by test; never auto-enable.
 Prepare guarded migration to drop the 10 global form columns/index/check; update fresh-create to clean v2
 schema; test on disposable DB; **never run destructive migration on a real DB**; document cutover + rollback.
 
-## 5. Test counts (latest, verified — end of Phase D)
+## 5. Test counts (latest, verified — end of Phase F backend, G-2 frontend)
 - UnitTests **474/474** (the historical "435" baseline was a stale incremental build; 0 failures throughout).
 - ArchitectureTests **14/14**.
-- IntegrationTests **352/352** on a fresh disposable `pems_it_regression` recreated from the (Phase-D-updated)
-  PR-2 master (Phase-A read V2 classes + the full v2 write group: create service 11 + create command 3 +
-  public OTP verify 3 + pending-edit service 14 + pending-edit command 1 + resubmit service 6 + resubmit
-  command 1 + contact-claim workflow 7 = 46 v2 tests).
+- IntegrationTests **368/368** on a fresh disposable `pems_it_regression` recreated from the PR-2 master
+  (352 through Phase D-4, +8 Phase E safe-edit/amendment, +2 Phase F mixed-surface, plus the v2 write group:
+  create service 11 + create command 3 + public OTP verify 3 + pending-edit service 14 + pending-edit
+  command 1 + resubmit service 6 + resubmit command 1 + contact-claim workflow 7 + transfer workflow 6).
   appsettings.Testing.json restored to `pems_test` (grep-verified); pems_db/pems_pr3_test/pems_it_regression
   v2_requests = 0, identity_changes = 0, claim tokens = 0; no live appsettings carries a PerCampusFormV2
   section (both flags default OFF).
+- Frontend (new since G-2): `npm run test:unit` (Vitest+RTL, first suite in the repo) **33/33**;
+  `npm run lint` (tsc) 0 errors; `vite build` green (pre-existing chunk-size warning only).
 
 ## 6. Known limitations / notes
 - A **Dev merge** (`ae060dcf`) landed mid-session; the branch was later reorganized into clean functional
   commits (B-1 `1d056fd7`, B-2 `a5cb3977`). The merged tree is green, so Phase-A/B behavior is intact.
-- Phases B (create-v2 + B-2.5 close-out), C (pending-edit + resubmit) and D (INITIAL_CLAIM + cancel-3A +
-  expiry/redaction job + **D-4 TRANSFER 24h**) are **done**. Everything downstream (amendments/safe-edit,
-  list/search/report/export/email migration, frontend, E2E, contract cleanup) is **not yet implemented**;
-  §4 is the ready-to-execute spec, Phase E next.
+- Phases B, C, D (incl. **D-4 TRANSFER 24h**), E (safe-edit + amendments + history) and F (Class-C surface
+  migration + zero-unclassified report) are **done**; frontend G-1 + G-2 are done, G-3 (detail/workflow
+  wiring) remains; then H (E2E/rollout) and I (guarded contract-drop prep).
+- **Public v2 OTP initiate gap (backend, needed before flag-ON)**: there is no `/api/v2/visit-requests/initiate`.
+  The public v2 form mints its OTP through the v1 `POST /visit-requests/initiate`, whose validator
+  (`ApplyVisitRequestFormRules`) enforces the v1 shape — ≥3h slot duration and ≥1 support member — while v2
+  legitimately allows 30-minute visits and 0 support members. The frontend sends an explicit v1 PROJECTION
+  for initiate only (the CREATE always posts the full v2 contract to `/v2/visit-requests/verify`), so
+  requests satisfying the v1 constraints work end-to-end, but a <3h or no-support public v2 submit is
+  rejected at the OTP step. Both flags are OFF so nothing user-facing is affected today; a v2-shape-aware
+  initiate endpoint should ship with the rollout (Phase H checklist item). Authenticated create-v2 has no
+  such constraint.
+- The G-1 commit `f9aa43f0` had been pushed to origin before its scope could be amended, so the correction
+  landed as the FORWARD commit `0cec2972` (App.tsx invitation routes + untracking the two internal planning
+  documents; the files remain in the worktree, local-only). History was not rewritten.
 - Phase D scope note: only the OTP_FALLBACK confirmation method remains deliberately deferred (Product has
   not enabled non-Google confirmation; TRANSFER does not depend on it). The `06_up_identity_claim_tokens.sql`
   and `07_up_transfer_tokens.sql` additive ENUM patches were applied to **pems_pr3_test** (the dedicated
