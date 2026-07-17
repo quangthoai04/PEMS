@@ -52,6 +52,15 @@ public sealed class CancelVisitRequestCommandHandler
 
         var isVisitorOwner = roleCode == RoleCodes.Visitor && visit.VisitorUserId == actorId;
 
+        // Exception 3A (plan §16.7): while the v2 initial claim is still unresolved (contact
+        // PENDING_CONFIRMATION, no owner linked), the verified REGISTRANT may cancel a pending
+        // request under the SAME lifecycle rules (24h window, reason required). Once the contact
+        // is ACTIVE this exception vanishes — cancel reverts to the exact owner rule below.
+        var isRegistrantPendingContact = roleCode == RoleCodes.Visitor
+            && visit.RegistrantUserId == actorId
+            && visit.VisitorUserId is null
+            && visit.PrimaryContactAccessStatus == PrimaryContactAccessStatuses.PendingConfirmation;
+
         // §1.1/§4.1: the Visitor owner may cancel a request that is still PENDING_APPROVAL. At this
         // point NO campus instance has a valid lifecycle yet (they stay WAITING_REQUEST_APPROVAL), so
         // we ONLY flip the parent request to CANCELLED and never touch campus instances / logistics.
@@ -59,7 +68,7 @@ public sealed class CancelVisitRequestCommandHandler
         // PENDING→CANCELLED only when the canceller has the VISITOR role — matching this guard.
         if (visit.Status == VisitRequestStatuses.PendingApproval)
         {
-            if (!isVisitorOwner)
+            if (!isVisitorOwner && !isRegistrantPendingContact)
                 throw new ForbiddenException("Chỉ khách sở hữu đơn mới được hủy đơn đang chờ duyệt.");
 
             // Rule 24h (spec §2.3): the Visitor may only self-cancel while EVERY still-active
@@ -91,11 +100,49 @@ public sealed class CancelVisitRequestCommandHandler
             _db.AuditLogs.Add(new AuditLog
             {
                 ActorUserId = actorId,
-                Action = "CANCEL_VISIT_REQUEST",
+                // Exception-3A cancels are auditable as such (plan §23.2): the actor was the
+                // registrant, allowed only because the contact had not claimed yet.
+                Action = isRegistrantPendingContact && !isVisitorOwner
+                    ? "VISIT_REQUEST_CANCELLED_BY_REGISTRANT_PENDING_CONTACT"
+                    : "CANCEL_VISIT_REQUEST",
                 EntityType = "VisitRequest",
                 EntityId = visit.VisitRequestId,
+                VisitRequestId = visit.VisitRequestId,
                 CreatedAt = nowPending
             });
+
+            // A cancelled request's pending contact invitation is moot: close every PENDING
+            // identity claim + burn its outstanding tokens so the old email link dies with the
+            // request (plan §16.7/§16.8). No-op for v1 rows (they have no claims).
+            var pendingClaims = await _db.VisitRequestIdentityChanges
+                .Where(c => c.VisitRequestId == visit.VisitRequestId
+                            && c.Status == IdentityChangeStatuses.Pending)
+                .ToListAsync(cancellationToken);
+            foreach (var pendingClaim in pendingClaims)
+            {
+                await PEMS.Application.EmailActions.EmailTokenInvalidationHelper
+                    .InvalidatePendingEmailActionTokensAsync(
+                        _db, EmailActionTargetTypes.VisitRequestIdentityChange,
+                        pendingClaim.IdentityChangeId, "Đơn đăng ký đã bị hủy.", nowPending,
+                        cancellationToken);
+                pendingClaim.Status = IdentityChangeStatuses.Cancelled;
+                pendingClaim.CancelledAt = nowPending;
+                pendingClaim.RetentionUntil = nowPending.AddDays(90);
+                pendingClaim.Reason = "Đơn đăng ký đã bị hủy.";
+                pendingClaim.UpdatedAt = nowPending;
+                _db.VisitRequestIdentityChangeEvents.Add(new Domain.Entities.Delegations.VisitRequestIdentityChangeEvent
+                {
+                    IdentityChangeId = pendingClaim.IdentityChangeId,
+                    VisitRequestId = visit.VisitRequestId,
+                    EventType = "PRIMARY_CONTACT_INVITATION_CANCELLED",
+                    FromStatus = IdentityChangeStatuses.Pending,
+                    ToStatus = IdentityChangeStatuses.Cancelled,
+                    ActorUserId = actorId,
+                    EmailMasked = pendingClaim.NewEmailMasked,
+                    Reason = "VISIT_REQUEST_CANCELLED",
+                    CreatedAt = nowPending,
+                });
+            }
 
             await _db.SaveChangesAsync(cancellationToken);
 

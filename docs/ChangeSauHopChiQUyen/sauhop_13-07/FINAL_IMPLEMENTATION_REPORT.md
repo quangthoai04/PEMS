@@ -116,13 +116,31 @@ campus trigger (parent → PENDING first); availability recheck + re-route to CU
 resubmission_count++; RESUBMIT revisions; post-commit re-process notifications. Service 6/6 + command 1/1;
 v2 test group 39/39.
 
-### Phase D — identity claim/transfer + cancel-3A + expiry jobs (plan §16.4/16.7/16.8, §4.4)
-INITIAL_CLAIM (72h) + TRANSFER (24h) state machines; exact-email Google SSO / OTP-fallback + explicit accept;
-resend supersedes old token; transfer self-service only before any campus DURING_VISIT; old account loses
-request relation but is never locked/deleted; registrant+active contact are co-editors; registrant cancel-3A
-only while access PENDING_CONFIRMATION (keep 24h/started-campus guards + reason); EXPIRED/CANCELLED retained 90
-days then redacted (masked email); APPLIED per audit policy; atomic, concurrency-safe, field-level masked
-audit; idempotent batchable expiry/redaction background jobs emitting `IDENTITY_CHANGE_REDACTED`.
+### Phase D — identity INITIAL_CLAIM + cancel-3A + expiry/redaction job (plan §16.4/16.7/16.8, §4.4) — ✅ DONE (this session)
+**SQL**: `email_action_tokens` ENUMs extended (+`VISIT_CONTACT_CLAIM` context, +`VISIT_REQUEST_IDENTITY_CHANGE`
+target) — master updated + idempotent `06_up_identity_claim_tokens.sql`; applied to pems_pr3_test only.
+**D-1 claim workflow**: `VisitContactClaimService` mints the single-use invitation token (hash-only, expiry =
+claim expiry) + sends the FE claim-page link post-commit from BOTH create paths (first-create-only, best-effort,
+recoverable via resend); the generic anonymous email-action handlers explicitly REJECT the claim context (link
+possession alone never applies a claim). Anonymous masked landing `GET /api/public/visit-contact-claims/{token}`;
+`POST /api/v2/visit-contact-claims/{token}/accept|decline` (`[Authorize]`, actor's DB email must equal
+`new_email_normalized`, VISITOR + ACTIVE only). Accept = one txn on the FOR-UPDATE-locked claim: link
+visitor_user_id + ACTIVE + verified_at + row-version bump, PENDING→APPLIED, token burned, sibling tokens
+invalidated, `PRIMARY_CONTACT_CLAIM_APPLIED` event + masked audit; campus decisions untouched. Decline =
+DECLINED + 90d retention stamp; the request stays alive and unowned.
+**D-2 registrant management + cancel-3A**: resend (supersede-all-tokens-first, 72h restart, cap 5) + replace
+pending contact ("typo fix": supersede claim, rewrite snapshot, same-email→instant registrant link,
+different→fresh claim+invite; internal emails rejected); both refuse once the contact is ACTIVE (TRANSFER
+territory). Cancel-3A: the REGISTRANT may cancel a PENDING request while access = PENDING_CONFIRMATION under
+the same 24h/reason rules, audited `VISIT_REQUEST_CANCELLED_BY_REGISTRANT_PENDING_CONTACT`, pending claims
+CANCELLED + tokens burned in-txn; exception disappears once ACTIVE.
+**D-3 job**: `VisitContactClaimMaintenanceService.RunOnceAsync` — idempotent FOR-UPDATE-batched EXPIRE
+(PENDING past 72h → EXPIRED + retention + event + tokens dead; request NOT cancelled) and REDACT (terminal past
+90d → full email/snapshot/reason nulled + token recipient masked; masked email/kind/status/actors/timestamps
+kept; `IDENTITY_CHANGE_REDACTED` event+audit); hosted `VisitContactClaimMaintenanceHostedService` (600s/200,
+flag-independent). **Deferred to a later phase (documented)**: TRANSFER workflow (24h owner handoff) and
+OTP_FALLBACK confirmation (non-Google not enabled by Product).
+Tests: `VisitContactClaimWorkflowTests` **7/7**; v2 group **46/46**.
 
 ### Phase E — safe edit + post-approval amendment (plan §16.6)
 Safe/correction fields apply immediately (+revision, audit, notify); privacy-urgent media→DECLINED applies even
@@ -158,21 +176,28 @@ prove flag-on flow by test; never auto-enable.
 Prepare guarded migration to drop the 10 global form columns/index/check; update fresh-create to clean v2
 schema; test on disposable DB; **never run destructive migration on a real DB**; document cutover + rollback.
 
-## 5. Test counts (latest, verified — end of Phase C)
+## 5. Test counts (latest, verified — end of Phase D)
 - UnitTests **474/474** (the historical "435" baseline was a stale incremental build; 0 failures throughout).
 - ArchitectureTests **14/14**.
-- IntegrationTests **345/345** on a fresh disposable `pems_it_regression` recreated from the PR-2 master
-  (Phase-A read V2 classes + the full v2 write group: create service 11 + create command 3 + public OTP verify 3
-  + pending-edit service 14 + pending-edit command 1 + resubmit service 6 + resubmit command 1 = 39 v2 tests).
-  appsettings.Testing.json restored to `pems_test` (grep-verified); pems_db/pems_pr3_test v2_requests = 0;
-  no live appsettings carries a PerCampusFormV2 section (both flags default OFF).
+- IntegrationTests **352/352** on a fresh disposable `pems_it_regression` recreated from the (Phase-D-updated)
+  PR-2 master (Phase-A read V2 classes + the full v2 write group: create service 11 + create command 3 +
+  public OTP verify 3 + pending-edit service 14 + pending-edit command 1 + resubmit service 6 + resubmit
+  command 1 + contact-claim workflow 7 = 46 v2 tests).
+  appsettings.Testing.json restored to `pems_test` (grep-verified); pems_db/pems_pr3_test/pems_it_regression
+  v2_requests = 0, identity_changes = 0, claim tokens = 0; no live appsettings carries a PerCampusFormV2
+  section (both flags default OFF).
 
 ## 6. Known limitations / notes
 - A **Dev merge** (`ae060dcf`) landed mid-session; the branch was later reorganized into clean functional
   commits (B-1 `1d056fd7`, B-2 `a5cb3977`). The merged tree is green, so Phase-A/B behavior is intact.
-- Phases B (create-v2 + B-2.5 close-out) and C (pending-edit + resubmit) are **done**. Everything downstream
-  (identity confirm/transfer + cancel-3A + expiry jobs, amendments, list/search/report/export/email migration,
-  frontend, E2E, contract cleanup) is **not yet implemented**; §4 is the ready-to-execute spec, Phase D next.
+- Phases B (create-v2 + B-2.5 close-out), C (pending-edit + resubmit) and D (INITIAL_CLAIM + cancel-3A +
+  expiry/redaction job) are **done**. Everything downstream (TRANSFER workflow, amendments/safe-edit,
+  list/search/report/export/email migration, frontend, E2E, contract cleanup) is **not yet implemented**;
+  §4 is the ready-to-execute spec, Phase E next.
+- Phase D scope note: the TRANSFER (owner→owner, 24h) state machine and the OTP_FALLBACK confirmation method
+  are deliberately deferred (plan treats them as separable; Product has not enabled non-Google confirmation).
+  The `06_up_identity_claim_tokens.sql` additive ENUM patch was applied to **pems_pr3_test** (the dedicated
+  direct-handler test DB) so claim tokens can be minted there; pems_db/pems_test remain untouched.
 - v2 create/edit notifications are post-commit **best-effort** (no outbox in the project): a rollback never
   notifies and an idempotent replay never re-notifies, but a crash between commit and dispatch can drop a
   notification — documented, not exactly-once.

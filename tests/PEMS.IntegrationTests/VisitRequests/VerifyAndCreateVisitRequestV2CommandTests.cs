@@ -96,7 +96,7 @@ public sealed class VerifyAndCreateVisitRequestV2CommandTests
 
     private static VerifyAndCreateVisitRequestV2CommandHandler Handler(ApplicationDbContext db, bool read, bool write)
         => new(db, new ThrowingOtp(), new ThrowingProvision(), new VisitRequestV2CreateService(db),
-            new NoopNotifications(), new FixedClock(),
+            new NoopNotifications(), new CreateVisitRequestV2CommandTests.RecordingClaimService(), new FixedClock(),
             NullLogger<VerifyAndCreateVisitRequestV2CommandHandler>.Instance,
             new PerCampusFormV2Options { Enabled = read }, new PerCampusFormV2WriteOptions { Enabled = write });
 

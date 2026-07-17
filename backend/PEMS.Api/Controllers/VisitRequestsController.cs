@@ -266,4 +266,78 @@ public sealed class VisitRequestsController : ControllerBase
         var result = await _mediator.Send(command with { VisitRequestId = visitRequestId }, cancellationToken);
         return Ok(result);
     }
+
+    // ── Per-campus v2 primary-contact INITIAL_CLAIM (plan §16.4) ─────────────────────────────
+    // The generic /api/public/email-actions handler REJECTS the claim context: possession of the
+    // email link alone never applies a claim. The landing page is anonymous + masked-only; accept
+    // and decline require a logged-in session whose email matches the invitation.
+
+    /// <summary>Anonymous masked landing summary for a contact-claim link.</summary>
+    [HttpGet("/api/public/visit-contact-claims/{token}")]
+    [AllowAnonymous]
+    public async Task<IActionResult> GetContactClaimInfo(string token, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new PEMS.Application.Delegations.Commands.VisitContactClaim.GetVisitContactClaimInfoQuery(token),
+            cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>The invited contact (logged in with the matching Google account) ACCEPTS the claim:
+    /// visitor_user_id is linked and the contact becomes ACTIVE in one transaction.</summary>
+    [HttpPost("/api/v2/visit-contact-claims/{token}/accept")]
+    [Authorize]
+    public async Task<IActionResult> AcceptContactClaim(string token, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new PEMS.Application.Delegations.Commands.VisitContactClaim.AcceptVisitContactClaimCommand(token),
+            cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>The invited contact DECLINES the claim. The request is not cancelled.</summary>
+    [HttpPost("/api/v2/visit-contact-claims/{token}/decline")]
+    [Authorize]
+    public async Task<IActionResult> DeclineContactClaim(
+        string token,
+        [FromBody] DeclineContactClaimBody? body,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new PEMS.Application.Delegations.Commands.VisitContactClaim.DeclineVisitContactClaimCommand(
+                token, body?.Reason),
+            cancellationToken);
+        return Ok(result);
+    }
+
+    public sealed record DeclineContactClaimBody(string? Reason);
+
+    /// <summary>Registrant re-sends the pending contact invitation (old links die, 72h restarts).</summary>
+    [HttpPost("/api/v2/visit-requests/{visitRequestId}/contact-claim/resend")]
+    [Authorize]
+    public async Task<IActionResult> ResendContactClaim(ulong visitRequestId, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new PEMS.Application.Delegations.Commands.VisitContactClaim.ResendVisitContactClaimCommand(visitRequestId),
+            cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>Registrant replaces the still-unclaimed pending contact (typo fix): supersedes the old
+    /// invitation and either links the registrant (same email) or invites the new email.</summary>
+    [HttpPut("/api/v2/visit-requests/{visitRequestId}/contact-claim")]
+    [Authorize]
+    public async Task<IActionResult> ReplacePendingContact(
+        ulong visitRequestId,
+        [FromBody] ReplacePendingContactBody body,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new PEMS.Application.Delegations.Commands.VisitContactClaim.ReplacePendingVisitContactCommand(
+                visitRequestId, body.FullName, body.Organization, body.Phone, body.Email),
+            cancellationToken);
+        return Ok(result);
+    }
+
+    public sealed record ReplacePendingContactBody(string FullName, string Organization, string Phone, string Email);
 }

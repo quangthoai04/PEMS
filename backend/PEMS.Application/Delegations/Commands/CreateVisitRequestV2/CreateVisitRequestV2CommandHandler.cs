@@ -22,6 +22,7 @@ public sealed class CreateVisitRequestV2CommandHandler
     private readonly IDateTimeService _clock;
     private readonly IVisitRequestV2CreateService _createService;
     private readonly INotificationService _notificationService;
+    private readonly IVisitContactClaimService _contactClaimService;
     private readonly ILogger<CreateVisitRequestV2CommandHandler> _logger;
     private readonly PerCampusFormV2Options _readFlag;
     private readonly PerCampusFormV2WriteOptions _writeFlag;
@@ -30,6 +31,7 @@ public sealed class CreateVisitRequestV2CommandHandler
         IApplicationDbContext db, ICurrentUserService currentUser, IDateTimeService clock,
         IVisitRequestV2CreateService createService,
         INotificationService notificationService,
+        IVisitContactClaimService contactClaimService,
         ILogger<CreateVisitRequestV2CommandHandler> logger,
         PerCampusFormV2Options readFlag, PerCampusFormV2WriteOptions writeFlag)
     {
@@ -38,6 +40,7 @@ public sealed class CreateVisitRequestV2CommandHandler
         _clock = clock;
         _createService = createService;
         _notificationService = notificationService;
+        _contactClaimService = contactClaimService;
         _logger = logger;
         _readFlag = readFlag;
         _writeFlag = writeFlag;
@@ -92,11 +95,13 @@ public sealed class CreateVisitRequestV2CommandHandler
             }
         }
 
-        // ── Post-commit notifications (only on the first successful create). Dispatched AFTER commit so a
-        //    rollback never notifies; a same-submission replay takes the idempotent return paths above and
-        //    never re-notifies. Best-effort (no outbox → not exactly-once); see V2CreateNotifier. ──
+        // ── Post-commit notifications + INITIAL_CLAIM invitation (only on the first successful create).
+        //    Dispatched AFTER commit so a rollback never notifies/invites; a same-submission replay takes
+        //    the idempotent return paths above and never re-sends. Best-effort; see V2CreateNotifier. ──
         await V2CreateNotifier.NotifyStaffLeadersAfterCommitAsync(
             _db, _notificationService, _logger, created, cancellationToken);
+        await V2CreateNotifier.SendContactClaimInvitationAfterCommitAsync(
+            _db, _contactClaimService, _logger, created, cancellationToken);
 
         return await ToResponseAsync(created.VisitRequestId, cancellationToken, idempotent: false);
     }

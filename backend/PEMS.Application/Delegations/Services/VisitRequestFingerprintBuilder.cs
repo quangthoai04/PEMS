@@ -134,6 +134,20 @@ public static class VisitRequestFingerprintBuilder
         => (value ?? string.Empty).Trim().ToLowerInvariant();
 
     /// <summary>
+    /// Masks the local part keeping first/last char: "abcd@x.com" → "a**d@x.com"; "ab@x.com" → "a*@x.com".
+    /// The masked form is what audit/events keep after redaction — never the full email.
+    /// </summary>
+    public static string MaskEmail(string normalizedEmail)
+    {
+        var at = normalizedEmail.IndexOf('@');
+        if (at <= 0) return "***";
+        var local = normalizedEmail[..at];
+        var domain = normalizedEmail[at..];
+        if (local.Length <= 2) return $"{local[0]}*{domain}";
+        return $"{local[0]}{new string('*', local.Length - 2)}{local[^1]}{domain}";
+    }
+
+    /// <summary>
     /// Unicode NFC + trim + collapse internal whitespace + lowercase (invariant).
     /// Vietnamese diacritics are preserved — "Đoàn ABC" and "Doan ABC" are different names.
     /// </summary>

@@ -81,4 +81,39 @@ internal static class V2CreateNotifier
                 created.VisitRequestId);
         }
     }
+
+    /// <summary>
+    /// Post-commit INITIAL_CLAIM invitation (plan §16.4): when the primary contact is NOT the registrant,
+    /// the create transaction stored a PENDING claim — this sends the invitation email with the single-use
+    /// claim token. Only the first successful create reaches here (idempotent replays return earlier), so a
+    /// retry never re-invites. Best-effort: on failure the claim stays PENDING and the registrant can resend.
+    /// </summary>
+    public static async Task SendContactClaimInvitationAfterCommitAsync(
+        IApplicationDbContext db,
+        IVisitContactClaimService claimService,
+        ILogger logger,
+        VisitRequest created,
+        CancellationToken cancellationToken)
+    {
+        if (created.VisitorUserId is not null)
+            return; // contact == registrant → linked at create; no claim exists
+
+        try
+        {
+            var claimId = await db.VisitRequestIdentityChanges.AsNoTracking()
+                .Where(c => c.VisitRequestId == created.VisitRequestId
+                            && c.ChangeKind == IdentityChangeKinds.InitialClaim
+                            && c.Status == IdentityChangeStatuses.Pending)
+                .Select(c => (ulong?)c.IdentityChangeId)
+                .FirstOrDefaultAsync(cancellationToken);
+            if (claimId is not null)
+                await claimService.SendInvitationAsync(claimId.Value, cancellationToken);
+        }
+        catch (System.Exception ex)
+        {
+            logger.LogError(ex,
+                "create-v2 post-commit contact-claim invitation failed for visit request {VisitRequestId}",
+                created.VisitRequestId);
+        }
+    }
 }

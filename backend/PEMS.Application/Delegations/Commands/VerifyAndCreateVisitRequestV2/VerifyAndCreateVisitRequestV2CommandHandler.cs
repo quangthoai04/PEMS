@@ -30,6 +30,7 @@ public sealed class VerifyAndCreateVisitRequestV2CommandHandler
     private readonly IUserProvisionService _userProvisionService;
     private readonly IVisitRequestV2CreateService _createService;
     private readonly INotificationService _notificationService;
+    private readonly IVisitContactClaimService _contactClaimService;
     private readonly IDateTimeService _clock;
     private readonly ILogger<VerifyAndCreateVisitRequestV2CommandHandler> _logger;
     private readonly PerCampusFormV2Options _readFlag;
@@ -41,6 +42,7 @@ public sealed class VerifyAndCreateVisitRequestV2CommandHandler
         IUserProvisionService userProvisionService,
         IVisitRequestV2CreateService createService,
         INotificationService notificationService,
+        IVisitContactClaimService contactClaimService,
         IDateTimeService clock,
         ILogger<VerifyAndCreateVisitRequestV2CommandHandler> logger,
         PerCampusFormV2Options readFlag,
@@ -51,6 +53,7 @@ public sealed class VerifyAndCreateVisitRequestV2CommandHandler
         _userProvisionService = userProvisionService;
         _createService = createService;
         _notificationService = notificationService;
+        _contactClaimService = contactClaimService;
         _clock = clock;
         _logger = logger;
         _readFlag = readFlag;
@@ -151,6 +154,8 @@ public sealed class VerifyAndCreateVisitRequestV2CommandHandler
         // ── 5. Post-commit notifications (best-effort, first-create only; replays never reach here). ──
         await V2CreateNotifier.NotifyStaffLeadersAfterCommitAsync(
             _db, _notificationService, _logger, created, cancellationToken);
+        await V2CreateNotifier.SendContactClaimInvitationAfterCommitAsync(
+            _db, _contactClaimService, _logger, created, cancellationToken);
 
         return await ToResponseAsync(created.VisitRequestId, cancellationToken, idempotent: false,
             "Đơn đăng ký thăm quan đã được gửi thành công và đang chờ phê duyệt.");

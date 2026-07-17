@@ -101,7 +101,52 @@ v1 byte-identical): GetVisitInvitationDetail `5ee29ab3`, GetStaffCalendarDetail 
 fresh `pems_it_regression` from the PR-2 master; appsettings restored `pems_test`; pems_db/pems_pr3_test
 v2_requests = 0; both flags default OFF. Phase C = ✅ COMPLETE.
 
-## Phase D — identity claim/transfer + cancel 3A + expiry/redaction jobs — ⬜ pending (NEXT)
+## Phase D — identity claim + cancel 3A + expiry/redaction job — 🚧 IN PROGRESS
+- **D-1 INITIAL_CLAIM workflow (plan §16.4/§4.4)** — ✅ DONE.
+  - SQL: master + idempotent `06_up_identity_claim_tokens.sql` extend the `email_action_tokens` ENUMs with
+    `VISIT_CONTACT_CLAIM` / `VISIT_REQUEST_IDENTITY_CHANGE` (applied to pems_pr3_test; pems_db/pems_test untouched).
+  - `IVisitContactClaimService` + `VisitContactClaimService` (Infrastructure): mints the single-use claim token
+    (hash-only stored, group key `CONTACT_CLAIM:{id}`, expiry = claim expiry) + sends the invitation email with
+    the FRONTEND claim-page URL; also owns the FOR-UPDATE claim locks (Application has no relational EF dep).
+    Wired post-commit into BOTH create paths via `V2CreateNotifier.SendContactClaimInvitationAfterCommitAsync`
+    (first-create-only, best-effort; crash before send is recovered by resend).
+  - Generic anonymous email-action handlers (`GetEmailActionInfo`/`ExecuteEmailAction`) explicitly REJECT the
+    claim context — link possession alone never applies a claim; the context is kept out of `All`.
+  - Endpoints: anonymous masked landing `GET /api/public/visit-contact-claims/{token}` (write-flag-gated 404,
+    masked email only, effective EXPIRED state, `Actionable`); `POST /api/v2/visit-contact-claims/{token}/accept`
+    + `/decline` (`[Authorize]`; actor's DB email must equal `new_email_normalized`; VISITOR-only; ACTIVE-only).
+  - Accept = one transaction on the FOR-UPDATE-locked claim: `visitor_user_id` set + access ACTIVE + verified_at
+    + row-version bump, claim PENDING→APPLIED(new_user_id), token burned ACCEPT/SUCCESS, sibling tokens
+    invalidated, event `PRIMARY_CONTACT_CLAIM_APPLIED` + masked field-level audit. Campus decisions untouched.
+  - Decline = claim DECLINED + reason + 90d retention stamp + token burned; request stays alive, unowned.
+- **D-2 registrant-side management + cancel-3A (plan §16.7)** — ✅ DONE.
+  - `POST …/{id}/contact-claim/resend` — registrant-only while unclaimed; supersedes ALL outstanding tokens
+    FIRST, restarts the 72h window, resend_count++ (cap 5 → `CONTACT_CLAIM_RESEND_LIMIT`), event RESENT,
+    new token+email after commit.
+  - `PUT …/{id}/contact-claim` (replace pending contact — the "typo fix"): old claim+tokens SUPERSEDED, contact
+    snapshot rewritten (internal-account emails rejected), same-email-as-registrant → immediate ACTIVE link
+    (no claim), different email → fresh PENDING claim + invitation; masked-only audit `PRIMARY_CONTACT_REPLACED`.
+    Once the contact is ACTIVE both endpoints refuse (`CONTACT_CLAIM_NOT_PENDING`) — that's TRANSFER territory.
+  - Cancel-3A in `CancelVisitRequestCommandHandler`: while `primary_contact_access_status=PENDING_CONFIRMATION`
+    (+ no owner), the REGISTRANT may cancel a PENDING request under the same 24h/reason rules; audited as
+    `VISIT_REQUEST_CANCELLED_BY_REGISTRANT_PENDING_CONTACT`; pending claims are CANCELLED + tokens burned in the
+    same txn. Once ACTIVE the exception vanishes (owner-only again). DB trigger already allows it (PR-2).
+- **D-3 expiry/redaction job (plan §16.8)** — ✅ DONE. `IVisitContactClaimMaintenanceService` +
+  `VisitContactClaimMaintenanceService.RunOnceAsync(now, batch)` — two idempotent FOR-UPDATE-batched sweeps:
+  EXPIRE (PENDING past expiry → EXPIRED + 90d retention + event + tokens invalidated; request NOT cancelled)
+  and REDACT (terminal past retention → null full email/snapshot/reason + token recipient masked + redacted_at;
+  masked email/kind/status/actors/timestamps KEPT; event `IDENTITY_CHANGE_REDACTED` + audit). Hosted job
+  `VisitContactClaimMaintenanceHostedService` (poll `IdentityClaims:PollSeconds` 600s, batch 200) runs
+  flag-independent (existing v2 data must age out even if flags turn off). APPLIED never redacted here.
+  - Deferred (documented, out of DoD scope for D): TRANSFER workflow (owner→owner handoff, 24h) — plan
+    explicitly separates it; OTP_FALLBACK confirmation method (Product hasn't enabled non-Google).
+  - Tests `VisitContactClaimWorkflowTests` **7/7** (committed + child-first cleanup, pems_pr3_test v2=0):
+    accept happy path (link/ACTIVE/rowversion/campus untouched/replay-blocked) · wrong-account EMAIL_MISMATCH +
+    flag-off 404 write nothing · decline terminal-but-alive · resend supersedes old link + new link works ·
+    maintenance expiry→accept-refused→EXPIRED→redaction (PII gone, masked kept, idempotent) · cancel-3A allowed
+    while pending (claim CANCELLED + 3A audit) and Forbidden after accept · replace re-invite (old claim
+    SUPERSEDED, C accepts new link) + replace-with-registrant-email instant ACTIVE. v2 group **46/46**.
+
 ## Phase E — safe edit + post-approval amendment — ⬜ pending
 ## Phase F — list/search/dashboard/calendar/report/export/email + zero-unclassified audit — ⬜ pending
 ## Phase G — frontend multi-campus form + detail/edit/identity/amendment UI — ⬜ pending

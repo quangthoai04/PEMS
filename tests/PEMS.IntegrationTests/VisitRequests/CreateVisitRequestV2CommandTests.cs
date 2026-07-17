@@ -84,10 +84,28 @@ public sealed class CreateVisitRequestV2CommandTests
             => Task.CompletedTask;
     }
 
+    /// <summary>Records claim-invitation sends; the A==B forms in these tests never create a claim.</summary>
+    internal sealed class RecordingClaimService : IVisitContactClaimService
+    {
+        public List<ulong> Invitations { get; } = new();
+        public Task<string?> SendInvitationAsync(ulong identityChangeId, CancellationToken cancellationToken)
+        {
+            Invitations.Add(identityChangeId);
+            return Task.FromResult<string?>(null);
+        }
+        public Task<PEMS.Domain.Entities.Delegations.VisitRequestIdentityChange?> LockClaimAsync(
+            ulong identityChangeId, CancellationToken cancellationToken)
+            => Task.FromResult<PEMS.Domain.Entities.Delegations.VisitRequestIdentityChange?>(null);
+        public Task<PEMS.Domain.Entities.Delegations.VisitRequestIdentityChange?> LockPendingInitialClaimAsync(
+            ulong visitRequestId, CancellationToken cancellationToken)
+            => Task.FromResult<PEMS.Domain.Entities.Delegations.VisitRequestIdentityChange?>(null);
+    }
+
     private static CreateVisitRequestV2CommandHandler Handler(
         ApplicationDbContext db, bool read, bool write, INotificationService? notifications = null)
         => new(db, new FakeUser(), new FixedClock(), new VisitRequestV2CreateService(db),
             notifications ?? new RecordingNotifications(),
+            new RecordingClaimService(),
             NullLogger<CreateVisitRequestV2CommandHandler>.Instance,
             new PerCampusFormV2Options { Enabled = read }, new PerCampusFormV2WriteOptions { Enabled = write });
 
